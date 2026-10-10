@@ -64,6 +64,8 @@ jobs:
       # One tag for both architectures: latest, plus the build date to pin or roll back.
       - working-directory: /tmp/digests
         run: |
+          # One argument per digest file: the split is the point.
+          # shellcheck disable=SC2046
           docker buildx imagetools create \
             -t "$IMAGE:latest" -t "$IMAGE:$(date -u +%Y-%m-%d)" \
             $(printf "$IMAGE@sha256:%s " *)

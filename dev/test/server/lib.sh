@@ -1,3 +1,4 @@
+# shellcheck shell=sh
 # Shared helpers for the test servers (sourced, POSIX sh).
 # Everything machine-specific (passwords, keys, lab checkouts, Terraform state) lives in
 # dev/test/server/.state/, which git ignores.
@@ -10,6 +11,7 @@ mkdir -p "$STATE"
 # GUI-installed tools are not always on PATH.
 export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:/Applications/Docker.app/Contents/Resources/bin:/Applications/VMware Fusion.app/Contents/Library:/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool"
 
+# shellcheck disable=SC2034 # used by the scripts that source this file
 TERRAFORM_IMAGE=hashicorp/terraform:1.16.5
 
 # secret NAME: load NAME from .state/secrets.env, generating it on first use (never printed).
@@ -19,6 +21,7 @@ secret() {
   if ! grep -q "^$1=" "$f"; then
     printf "%s='Cx%s9!'\n" "$1" "$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 16)" >> "$f"
   fi
+  # shellcheck source=/dev/null
   . "$f"
 }
 

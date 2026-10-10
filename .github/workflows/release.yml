@@ -115,6 +115,8 @@ jobs:
         run: |
           set -euo pipefail
           cargo install trusted-signing-cli --locked
+          # JavaScript in single quotes: its ${...} are template literals, not shell expansions.
+          # shellcheck disable=SC2016
           node -e '
             const fs = require("fs"), p = "src-tauri/tauri.conf.json", c = JSON.parse(fs.readFileSync(p, "utf8"));
             const e = process.env;
@@ -171,6 +173,8 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
+          # Tauri names the DMG itself (no odd characters); take the one there is.
+          # shellcheck disable=SC2012
           dmg=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
           echo "Notarizing $dmg"
           xcrun notarytool submit "$dmg" \
