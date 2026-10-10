@@ -10,6 +10,8 @@ mod machine;
 mod menu;
 mod operations;
 mod platform;
+#[cfg(test)]
+mod proptest_support;
 mod provisioning;
 mod quit;
 mod runtime;
