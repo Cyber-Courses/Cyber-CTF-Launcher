@@ -1,0 +1,99 @@
+name: Lint infrastructure
+
+# Static checks of the files around the app: the workflows (actionlint, with shellcheck on their
+# run: scripts), the Terraform templates the launcher writes at run time, the repo's shell
+# scripts, and the JSON the app and the Microsoft Store listing ship (with Partner Center's
+# limits, which otherwise only fail at release time).
+
+on:
+  pull_request:
+    paths:
+      - ".github/**"
+      - "**/*.tf"
+      - "**/*.hcl"
+      - "**/*.sh"
+      - "attack-box/**"
+      - "src/messages/**"
+      - "store/**"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: lint-infra-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actionlint
+        run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+      # shellcheck is on the runner image; actionlint runs it on every run: script.
+      - run: ./actionlint -color
+
+  terraform:
+    runs-on: ubuntu-latest
+    env:
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugins
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - uses: actions/cache@v4
+        with:
+          path: .terraform-plugins
+          key: terraform-plugins-${{ hashFiles('**/*.tf', '**/terraform.lock.hcl', '**/.terraform.lock.hcl') }}
+      - name: Format
+        run: |
+          set -euo pipefail
+          git ls-files '*.tf' | xargs -r dirname | sort -u | while read -r dir; do
+            echo "terraform fmt -check $dir"
+            terraform fmt -check -diff "$dir"
+          done
+      - name: Init and validate
+        run: |
+          set -euo pipefail
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          git ls-files '*.tf' | xargs -r dirname | sort -u | while read -r dir; do
+            echo "::group::terraform validate $dir"
+            # A copy, so nothing lands in the repo. The launcher ships its lock file as
+            # terraform.lock.hcl (no dot, see server_selftest/proxmox.rs): use it as the lock.
+            work=$(mktemp -d)
+            cp "$dir"/*.tf "$work"/
+            for lock in "$dir/terraform.lock.hcl" "$dir/.terraform.lock.hcl"; do
+              if [ -f "$lock" ]; then cp "$lock" "$work/.terraform.lock.hcl"; fi
+            done
+            lockfile=()
+            if [ -f "$work/.terraform.lock.hcl" ]; then lockfile=(-lockfile=readonly); fi
+            terraform -chdir="$work" init -backend=false -input=false -no-color "${lockfile[@]}"
+            terraform -chdir="$work" validate -no-color
+            echo "::endgroup::"
+          done
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Warnings and errors fail; style notes (info) don't. Intentional exceptions are marked
+      # in the scripts with `# shellcheck disable=...` and a reason.
+      - run: |
+          set -euo pipefail
+          shellcheck --version
+          mapfile -t scripts < <(git ls-files '*.sh' '*.bash' 'attack-box/bashrc.cyberctf')
+          printf '%s\n' "${scripts[@]}"
+          shellcheck --severity=warning --external-sources "${scripts[@]}"
+
+  json-and-store:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 .github/scripts/check-store-listings.py
