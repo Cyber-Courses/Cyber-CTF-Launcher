@@ -901,3 +901,6 @@ mod tests {
         assert_eq!(nets[0].subnet, "", "an unreadable mask leaves the subnet blank");
     }
 }
+
+#[cfg(test)]
+mod proptests;
