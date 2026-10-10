@@ -65,7 +65,10 @@ fn check(path: &Path) -> Result<()> {
         return Err(Error::Invalid("choose a full folder path".into()));
     }
     // Mounted as `host:container` for Docker and quoted in a Vagrantfile: keep it to plain paths.
-    if path.to_string_lossy().chars().any(|c| matches!(c, '"' | '\n' | '\r')) {
+    // A `:` past a Windows drive letter would split Docker's `-v` spec and fail the attack box.
+    let text = path.to_string_lossy();
+    let after_drive = if cfg!(windows) { text.get(2..).unwrap_or_default() } else { text.as_ref() };
+    if text.chars().any(|c| matches!(c, '"' | '\n' | '\r')) || after_drive.contains(':') {
         return Err(Error::Invalid("this folder's name has characters that can't be shared; pick another".into()));
     }
     Ok(())
@@ -195,3 +198,6 @@ mod tests {
         assert!(p.ends_with("CyberCTF/shared"));
     }
 }
+
+#[cfg(test)]
+mod proptests;
