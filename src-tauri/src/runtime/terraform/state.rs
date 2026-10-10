@@ -30,7 +30,7 @@ pub(super) fn run_record(vars: &[(String, String)], now: u64) -> serde_json::Map
         .collect();
     // When the lab host stops itself (cloud auto-stop), so status can tell.
     if let Some(hours) = vars.iter().find(|(k, _)| k == "auto_stop_hours").and_then(|(_, v)| v.parse::<u64>().ok()).filter(|h| *h > 0) {
-        run.insert(EXPIRES_AT.into(), Value::from(now + hours * 3600));
+        run.insert(EXPIRES_AT.into(), Value::from(now.saturating_add(hours.saturating_mul(3600))));
     }
     run
 }
@@ -307,3 +307,6 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
+
+#[cfg(test)]
+mod proptests;
