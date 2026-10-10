@@ -1,0 +1,163 @@
+name: Package smoke test
+
+# Builds the real app bundle (unsigned, no updater artifacts) on Linux, macOS and Windows, installs
+# or opens it, launches it and checks it is still running 15 s later: what CI's `cargo test`
+# can't see (the frontend embedded in the binary, the bundle layout, the .deb's dependencies,
+# the NSIS installer, a crash at startup). Logs are uploaded when a launch fails.
+
+on:
+  pull_request:
+    paths:
+      - "src-tauri/**"
+      - "src/**"
+      - "public/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "next.config.ts"
+      - ".github/workflows/package-smoke.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: package-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # How long the app must stay up.
+  SMOKE_SECONDS: 15
+
+jobs:
+  smoke:
+    name: smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            bundles: deb
+          - os: macos-latest
+            bundles: app
+          - os: windows-latest
+            bundles: nsis
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux build and test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libxdo-dev build-essential libssl-dev xvfb dbus-x11
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          shared-key: package-smoke
+      - uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('src/**') }}
+          restore-keys: next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      - run: pnpm install --frozen-lockfile
+
+      # Unsigned: no signing secrets, and no updater artifacts (they need the release's private
+      # key; release.yml passes TAURI_SIGNING_PRIVATE_KEY, this build has none).
+      - name: Build the bundle
+        run: |
+          set -euo pipefail
+          echo '{"bundle":{"createUpdaterArtifacts":false}}' > "$RUNNER_TEMP/smoke.conf.json"
+          pnpm tauri build --ci --bundles ${{ matrix.bundles }} --config "$RUNNER_TEMP/smoke.conf.json"
+          mkdir -p smoke-logs
+          find src-tauri/target/release/bundle -maxdepth 2 | tee smoke-logs/bundle.txt
+
+      - name: Install and launch (Linux, .deb under Xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          deb=$(find src-tauri/target/release/bundle/deb -name '*.deb' | head -1)
+          dpkg-deb --info "$deb" | tee smoke-logs/deb-info.txt
+          # Installing resolves the package's Depends on a clean system's terms.
+          sudo apt-get install -y "./$deb"
+          pkg=$(dpkg-deb -f "$deb" Package)
+          bin=$(dpkg -L "$pkg" | grep '^/usr/bin/' | head -1)
+          echo "Launching $bin"
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1 RUST_BACKTRACE=1
+          xvfb-run -a dbus-run-session -- "$bin" > smoke-logs/app.log 2>&1 &
+          pid=$!
+          sleep "$SMOKE_SECONDS"
+          if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid" && code=0 || code=$?
+            echo "::error::The app exited within ${SMOKE_SECONDS}s (code $code)"
+            cat smoke-logs/app.log
+            exit 1
+          fi
+          echo "Still running after ${SMOKE_SECONDS}s."
+          pkill -f "$bin" || true
+          kill "$pid" 2>/dev/null || true
+          ! grep -q "panicked" smoke-logs/app.log
+
+      - name: Launch (macOS, the .app)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          app=$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
+          exe=$(find "$app/Contents/MacOS" -type f -perm -u+x | head -1)
+          plutil -lint "$app/Contents/Info.plist"
+          echo "Launching $exe"
+          RUST_BACKTRACE=1 "$exe" > smoke-logs/app.log 2>&1 &
+          pid=$!
+          sleep "$SMOKE_SECONDS"
+          if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid" && code=0 || code=$?
+            echo "::error::The app exited within ${SMOKE_SECONDS}s (code $code)"
+            cat smoke-logs/app.log
+            exit 1
+          fi
+          echo "Still running after ${SMOKE_SECONDS}s."
+          kill "$pid"
+          ! grep -q "panicked" smoke-logs/app.log
+
+      - name: Install and launch (Windows, the NSIS installer)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *-setup.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP 'CyberCTF'
+          # Silent install into a known folder (/D must come last, unquoted).
+          $setup = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$dir" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "The installer failed (exit $($setup.ExitCode))" }
+          Get-ChildItem $dir | Out-File smoke-logs/installed.txt
+          $exe = Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notmatch 'unins' } | Select-Object -First 1
+          Write-Host "Launching $($exe.FullName)"
+          $env:RUST_BACKTRACE = '1'
+          $app = Start-Process -FilePath $exe.FullName -PassThru -WindowStyle Minimized `
+            -RedirectStandardOutput smoke-logs/app.log -RedirectStandardError smoke-logs/app.err.log
+          Start-Sleep -Seconds $env:SMOKE_SECONDS
+          if ($app.HasExited) {
+            Write-Host "::error::The app exited within $($env:SMOKE_SECONDS)s (code $($app.ExitCode))"
+            exit 1
+          }
+          Write-Host "Still running after $($env:SMOKE_SECONDS)s."
+          Stop-Process -Id $app.Id -Force
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-smoke-logs-${{ matrix.os }}
+          path: smoke-logs/
+          if-no-files-found: ignore
