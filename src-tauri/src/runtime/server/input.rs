@@ -175,9 +175,10 @@ fn valid_subscription(s: &str) -> bool {
     p.len() == 5 && [8usize, 4, 4, 4, 12].iter().zip(&p).all(|(n, seg)| seg.len() == *n && seg.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
-/// A GCP region id, e.g. "europe-west1", "us-central1" (lowercase letters/digits with a hyphen).
+/// A GCP region id, e.g. "europe-west1", "us-central1" (lowercase letters/digits with a hyphen,
+/// starting with a letter so it never reads as a flag).
 fn valid_gcp_region(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 32 && s.contains('-') && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    s.len() <= 32 && s.contains('-') && starts_lower_slug(s)
 }
 
 /// A GCP billing account id: three 6-char groups of uppercase hex, e.g. 0X0X0X-0X0X0X-0X0X0X.
@@ -434,3 +435,6 @@ mod tests {
         assert!(i.into_profile("ab".into(), c, None).is_err());
     }
 }
+
+#[cfg(test)]
+mod proptests;
