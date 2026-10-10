@@ -47,24 +47,24 @@ pub fn verdict(status: &str) -> Result<()> {
 }
 
 /// What the worker wrote between reads: whole lines go out, a cut-off last line waits for the
-/// rest.
+/// rest. Bytes, not text: a read can also cut a character in two (`…`, `✓`), which decoded on
+/// its own would come out as replacement characters.
 #[derive(Default)]
 struct LineBuffer {
-    carry: String,
+    carry: Vec<u8>,
 }
 
 impl LineBuffer {
-    fn push(&mut self, text: &str, mut line: impl FnMut(String)) {
-        self.carry.push_str(text);
-        while let Some(i) = self.carry.find('\n') {
-            let whole = self.carry[..i].to_string();
-            self.carry = self.carry[i + 1..].to_string();
-            line(whole);
+    fn push(&mut self, bytes: &[u8], mut line: impl FnMut(String)) {
+        self.carry.extend_from_slice(bytes);
+        while let Some(i) = self.carry.iter().position(|b| *b == b'\n') {
+            let whole: Vec<u8> = self.carry.drain(..=i).collect();
+            line(String::from_utf8_lossy(&whole[..i]).into_owned());
         }
     }
 
     fn rest(&mut self) -> Option<String> {
-        (!self.carry.is_empty()).then(|| std::mem::take(&mut self.carry))
+        (!self.carry.is_empty()).then(|| String::from_utf8_lossy(&std::mem::take(&mut self.carry)).into_owned())
     }
 }
 
@@ -79,7 +79,7 @@ pub async fn tail(spawned: &Spawned, mut log: impl FnMut(String)) -> Result<()> 
         if let Ok(bytes) = std::fs::read(&f.log)
             && bytes.len() > offset
         {
-            lines.push(&String::from_utf8_lossy(&bytes[offset..]), |line| {
+            lines.push(&bytes[offset..], |line| {
                 // The worker's closing ✗ line restates its verdict, which the caller reports.
                 if !line.starts_with(FAILED_MARK) {
                     log(line);
@@ -135,8 +135,8 @@ mod tests {
     fn a_line_cut_between_reads_comes_out_whole() {
         let mut buf = LineBuffer::default();
         let mut out = Vec::new();
-        buf.push("one\ntw", |l| out.push(l));
-        buf.push("o\nthr", |l| out.push(l));
+        buf.push(b"one\ntw", |l| out.push(l));
+        buf.push(b"o\nthr", |l| out.push(l));
         assert_eq!(out, ["one", "two"]);
         assert_eq!(buf.rest().as_deref(), Some("thr"));
         assert_eq!(buf.rest(), None);
@@ -170,3 +170,6 @@ mod tests {
         std::fs::remove_dir_all(dir).ok();
     }
 }
+
+#[cfg(test)]
+mod proptests;
