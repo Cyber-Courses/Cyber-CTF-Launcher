@@ -75,7 +75,7 @@ fn known_hosts_as_ssh_reads_it(option: &str) -> String {
 
 /// Checks `-o` words as ssh reads them: the fixed options, then the known_hosts file.
 fn check_options(opts: &[String], batch: bool, known_hosts: &str) {
-    let fixed: &[&str] = if batch { &["BatchMode=yes", "ConnectTimeout=10"] } else { &[] };
+    let fixed: &[&str] = if batch { &["BatchMode=yes", "ConnectTimeout=10", "ServerAliveInterval=15", "ServerAliveCountMax=3"] } else { &[] };
     assert_eq!(&opts[..fixed.len()], fixed);
     let rest = &opts[fixed.len()..];
     assert_eq!(rest.len(), 3, "{rest:?}");
@@ -190,9 +190,9 @@ proptest! {
         let (opts, rest) = take_options(&args);
         let login = format!("{user}@{host}");
         prop_assert_eq!(rest, ["-i", identity.as_str(), "-p", "22", login.as_str(), command.as_str()]);
-        check_options(&opts[..5], true, &known_hosts);
+        check_options(&opts[..7], true, &known_hosts);
         if let Some(jump) = &jump {
-            check_proxy(&opts[5], &identity, &known_hosts, jump);
+            check_proxy(&opts[7], &identity, &known_hosts, jump);
         }
     }
 

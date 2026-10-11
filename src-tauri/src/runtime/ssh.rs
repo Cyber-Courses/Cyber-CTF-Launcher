@@ -112,11 +112,13 @@ pub fn ssh_config_path(path: &str) -> String {
 
 /// The `-o` values every launcher SSH uses: accept a new host's key once, pinned in the
 /// launcher's own `known_hosts` (never the player's ~/.ssh), quiet. `batch` adds no prompts and
-/// a short connect timeout. `known_hosts` is the plain path; it is escaped for ssh here.
+/// a short connect timeout, and keepalives so a host that stops answering mid-command (a VM
+/// that froze, a dropped network) ends the command in under a minute instead of hanging it for
+/// hours. `known_hosts` is the plain path; it is escaped for ssh here.
 pub fn options(batch: bool, known_hosts: &str) -> Vec<String> {
     let mut opts: Vec<String> = Vec::new();
     if batch {
-        opts.extend(["BatchMode=yes".into(), "ConnectTimeout=10".into()]);
+        opts.extend(["BatchMode=yes".into(), "ConnectTimeout=10".into(), "ServerAliveInterval=15".into(), "ServerAliveCountMax=3".into()]);
     }
     opts.extend(["StrictHostKeyChecking=accept-new".into(), format!("UserKnownHostsFile={}", ssh_config_path(known_hosts)), "LogLevel=ERROR".into()]);
     opts
@@ -182,6 +184,14 @@ impl Target {
         run("ssh", &refs, None).await
     }
 
+    /// `exec` that gives up after `timeout` (ssh is killed): for short probes that must never
+    /// hang their caller, whatever the host or the network does.
+    pub async fn exec_timed(&self, known_hosts: &Path, command: &str, timeout: std::time::Duration) -> Result<String> {
+        let args = self.exec_args(known_hosts, command)?;
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        crate::exec::run_env_timed("ssh", &refs, None, &[], timeout).await
+    }
+
     /// The `ssh` arguments `exec` runs (no shell in between).
     fn exec_args(&self, known_hosts: &Path, command: &str) -> Result<Vec<String>> {
         self.check_endpoint()?;
@@ -236,7 +246,7 @@ mod tests {
         let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", "/k/id".into()) };
         assert_eq!(
             t.proxy_option(Path::new("/x/kh")).unwrap().unwrap(),
-            "ProxyCommand=ssh -i '/k/id' -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/x/kh -o LogLevel=ERROR -W %h:%p root@pve.lan"
+            "ProxyCommand=ssh -i '/k/id' -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/x/kh -o LogLevel=ERROR -W %h:%p root@pve.lan"
         );
         let cmd = t.attack_shell_command(Path::new("/x/kh")).unwrap();
         assert!(cmd.contains("-o 'ProxyCommand=ssh -i '\\''/k/id'\\''"), "{cmd}");
@@ -251,6 +261,8 @@ mod tests {
     fn options_add_batch_mode_only_when_asked() {
         assert_eq!(options(false, "/kh"), ["StrictHostKeyChecking=accept-new", "UserKnownHostsFile=/kh", "LogLevel=ERROR"]);
         assert_eq!(options(true, "/kh")[..2], ["BatchMode=yes", "ConnectTimeout=10"]);
+        // A host that stops answering mid-command ends it within 45 s, not hours later.
+        assert_eq!(options(true, "/kh")[2..4], ["ServerAliveInterval=15", "ServerAliveCountMax=3"]);
     }
 
     #[test]

@@ -9,8 +9,9 @@ use tauri::ipc::Channel;
 #[cfg(target_os = "macos")]
 use super::scripts::fetch_and_open;
 #[cfg(target_os = "linux")]
-use super::scripts::{TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, docker_script};
+use super::scripts::{TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, awscli_script, azurecli_script, docker_script};
 use super::steps::{Step, channel_log, command_line, run_step, run_steps, step};
+use super::uninstall;
 use crate::error::{Error, Result};
 
 #[derive(Deserialize, serde::Serialize, Clone, Copy, PartialEq, Debug)]
@@ -109,17 +110,9 @@ fn plan(dep: Dependency) -> Result<Vec<Step>> {
             Dependency::Libvirt => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y libvirt-daemon-system virt-manager"])],
             Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
             // Cloud CLIs via each vendor's official installer (best effort across distros).
-            // AWS CLI v2 from the official bundle: the distro `awscli` package is v1, which has no
-            // `aws login` (the app needs v2 >= 2.32). `uname -m` is x86_64/aarch64, matching the URLs.
-            Dependency::Awscli => vec![step(
-                "pkexec",
-                &[
-                    "sh",
-                    "-c",
-                    "curl -sL \"https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip\" -o /tmp/awscliv2.zip && { command -v unzip >/dev/null || { apt-get update && apt-get install -y unzip; }; } && unzip -oq /tmp/awscliv2.zip -d /tmp && /tmp/aws/install --update && rm -rf /tmp/awscliv2.zip /tmp/aws",
-                ],
-            )],
-            Dependency::Azurecli => vec![step("pkexec", &["sh", "-c", "curl -sL https://aka.ms/InstallAzureCLIDeb | bash"])],
+            // AWS CLI v2 from the official bundle, in a private temporary directory.
+            Dependency::Awscli => vec![root(awscli_script())],
+            Dependency::Azurecli => vec![root(azurecli_script())],
             // The SDK installs per user, without root: under pkexec it landed in /root, which the
             // player can't read. It goes to ~/google-cloud-sdk, whose bin the app adds to PATH.
             Dependency::Gcloud => vec![step("sh", &["-c", "curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --install-dir=\"$HOME\""])],
@@ -132,9 +125,15 @@ fn plan(dep: Dependency) -> Result<Vec<Step>> {
 pub async fn install_dependency(app: crate::AppHandle, dependency: Dependency, logs: Channel<String>) -> Result<()> {
     let mut on_line = channel_log(logs);
     let steps = plan(dependency).inspect_err(|e| on_line(e.to_string()))?;
+    let before = uninstall::present(dependency).await;
     run_steps(&steps, &mut on_line).await?;
-    // Remembered so Cleanup can offer to remove what Cyber CTF installed (and only that).
-    super::uninstall::record(&app, dependency);
+    // Remembered so Cleanup can offer to remove what Cyber CTF installed, and only that: a tool
+    // that was already there is never recorded, and one whose installer was only opened (macOS
+    // casks) or isn't found yet counts once a later check finds it.
+    if let Some(before) = before {
+        let after = uninstall::present(dependency).await.unwrap_or(false);
+        uninstall::record_outcome(&app, dependency, uninstall::outcome(before, after));
+    }
     on_line("Done. Re-checking this machine…".into());
     Ok(())
 }
@@ -220,7 +219,8 @@ mod tests {
                 _ => assert_eq!(p.unwrap()[0].program, "pkexec", "{dep:?}"),
             }
         }
-        assert!(plan(Dependency::Awscli).unwrap()[0].args.join(" ").contains("awscli-exe-linux"));
+        let aws = plan(Dependency::Awscli).unwrap()[0].args.join(" ");
+        assert!(aws.contains("awscli-exe-linux") && !aws.contains("/tmp/aws"), "{aws}");
     }
 
     #[cfg(target_os = "windows")]

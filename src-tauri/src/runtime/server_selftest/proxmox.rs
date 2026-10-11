@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::AppHandle;
 
-use super::{BOOT, CLEANUP, CORES, DISK_GB, MEMORY_MB, PREPARE, Reporter, wait_tcp, wait_tcp_from};
+use super::{BOOT, CLEANUP, CORES, DISK_GB, MEMORY_MB, PREPARE, Ran, Reporter, wait_tcp, wait_tcp_from};
 use crate::error::{Error, Result};
 use crate::runtime::{server, ssh, terraform};
 
@@ -22,18 +22,43 @@ const LOCK_HCL: &str = include_str!("templates/terraform.lock.hcl");
 /// Terraform container on macOS, like a lab's Proxmox module).
 const TARGET: &str = "proxmox-selftest";
 
-pub(super) async fn run(app: &AppHandle, id: &str, r: &Reporter, conn: &server::Connection, work: &Path) -> Result<()> {
-    let module = work.join("terraform").join(TARGET);
-    let state = work.join("state");
-    let (key, pubkey) = ssh::ensure_key(app).await?;
-    // A host-internal lab bridge: the VM is only reachable from the node, so probe from there.
-    let jump = server::proxmox_jump_for_host(app, id, &key, &pubkey).await?;
+fn module_dir(work: &Path) -> std::path::PathBuf {
+    work.join("terraform").join(TARGET)
+}
 
-    r.step("prepare", PREPARE, async {
-        write_module(&module)?;
-        Ok(((), None))
-    })
-    .await?;
+fn state_dir(work: &Path) -> std::path::PathBuf {
+    work.join("state")
+}
+
+/// Destroys the VM a previous run left behind (its cleanup failed), from that run's state.
+pub(super) async fn leftover(r: &Reporter, conn: &server::Connection, work: &Path) -> Result<()> {
+    let module = module_dir(work);
+    write_module(&module)?;
+    terraform::destroy(&module, &state_dir(work), &conn.tf_vars, &conn.tf_env, |l| r.progress("prepare", PREPARE, l)).await
+}
+
+pub(super) async fn run(app: &AppHandle, id: &str, r: &Reporter, conn: &server::Connection, work: &Path) -> Ran {
+    let (key, pubkey) = match ssh::ensure_key(app).await {
+        Ok(k) => k,
+        Err(e) => return Ran { result: Err(e), cleaned: true },
+    };
+    // A host-internal lab bridge: the VM is only reachable from the node, so probe from there.
+    let jump = match server::proxmox_jump_for_host(app, id, &key, &pubkey).await {
+        Ok(j) => j,
+        Err(e) => return Ran { result: Err(e), cleaned: true },
+    };
+    let module = module_dir(work);
+    let state = state_dir(work);
+
+    let prepared = r
+        .step("prepare", PREPARE, async {
+            write_module(&module)?;
+            Ok(((), None))
+        })
+        .await;
+    if let Err(e) = prepared {
+        return Ran { result: Err(e), cleaned: true };
+    }
 
     let vars = test_vars(&conn.tf_vars, pubkey);
 
@@ -48,8 +73,8 @@ pub(super) async fn run(app: &AppHandle, id: &str, r: &Reporter, conn: &server::
 
     // Whatever happened, tear down anything that was created before returning.
     if apply.is_err() {
-        destroy(r, conn, &module, &state).await;
-        return apply;
+        let cleaned = destroy(r, conn, &module, &state).await.is_ok();
+        return Ran { result: apply, cleaned };
     }
 
     let ip = r
@@ -74,17 +99,16 @@ pub(super) async fn run(app: &AppHandle, id: &str, r: &Reporter, conn: &server::
     }
 
     // Always clean up, and report it as its own step.
-    destroy(r, conn, &module, &state).await;
-    Ok(())
+    let cleaned = destroy(r, conn, &module, &state).await.is_ok();
+    Ran { result: Ok(()), cleaned }
 }
 
-async fn destroy(r: &Reporter, conn: &server::Connection, module: &Path, state: &Path) {
-    let _ = r
-        .step("cleanup", CLEANUP, async {
-            terraform::destroy(module, state, &conn.tf_vars, &conn.tf_env, |l| r.progress("cleanup", CLEANUP, l)).await?;
-            Ok(((), Some("removed".into())))
-        })
-        .await;
+async fn destroy(r: &Reporter, conn: &server::Connection, module: &Path, state: &Path) -> Result<()> {
+    r.step("cleanup", CLEANUP, async {
+        terraform::destroy(module, state, &conn.tf_vars, &conn.tf_env, |l| r.progress("cleanup", CLEANUP, l)).await?;
+        Ok(((), Some("removed".into())))
+    })
+    .await
 }
 
 /// The host's Terraform variables plus the test VM's: the launcher's key and a small size.

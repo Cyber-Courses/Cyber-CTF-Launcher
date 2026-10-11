@@ -86,8 +86,9 @@ pub(crate) fn vagrantfile(lab: &str, box_name: &str, links: &[Link], shared: Opt
     );
     // The folder shared with the attack box (Settings), at /shared inside it.
     if let Some(p) = shared {
-        // A Ruby double-quoted string: `#` too, or a folder named `#{...}` would run as Ruby.
-        let host = p.display().to_string().replace('\\', "\\\\").replace('#', "\\#");
+        // A Ruby double-quoted string: `"`, `\` and `#` are escaped, or a folder named `#{...}`
+        // (or one with a quote, from a hand-edited setting) would run as Ruby.
+        let host = p.display().to_string().replace('\\', "\\\\").replace('"', "\\\"").replace('#', "\\#");
         out.push_str(&format!("    m.vm.synced_folder \"{host}\", \"{}\"\n", crate::shared_folder::MOUNT_POINT));
     }
     for l in links {
@@ -313,6 +314,9 @@ mod tests {
         let vf = vagrantfile("lab", "kalilinux/rolling", &[], Some(std::path::Path::new("/Users/alex/CyberCTF/shared")));
         assert!(vf.contains("m.vm.synced_folder \"/Users/alex/CyberCTF/shared\", \"/shared\""), "{vf}");
         assert!(!vagrantfile("lab", "kalilinux/rolling", &[], None).contains("/shared"));
+        // A quote can't end the Ruby string early and run the rest as code.
+        let vf = vagrantfile("lab", "kalilinux/rolling", &[], Some(std::path::Path::new("/tmp/a\"; system(\"id\"); \"")));
+        assert!(vf.contains(r#"m.vm.synced_folder "/tmp/a\"; system(\"id\"); \"", "/shared""#), "{vf}");
     }
 
     const LAB: &str = r#"

@@ -1,7 +1,7 @@
 //! "Test connection" for cloud accounts: a checklist per cloud (credentials, what a launch
 //! needs, Terraform), each failure worded as the thing to fix.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::budget::{budget_unverifiable_message, month_to_date_cost};
 use super::checks::{Check, TestResult};
@@ -280,7 +280,7 @@ async fn test_token_api(cloud: &str, account_url: &str, instances: &str, token: 
     let started = Instant::now();
     let mut checks: Vec<Check> = Vec::new();
     let answer = match crate::http::api_client() {
-        Ok(client) => client.get(account_url).bearer_auth(token).send().await.map(|r| r.status()).map_err(|e| e.to_string()),
+        Ok(client) => client.get(account_url).timeout(Duration::from_secs(15)).bearer_auth(token).send().await.map(|r| r.status()).map_err(|e| e.to_string()),
         Err(e) => Err(e.to_string()),
     };
     if let Err(done) = token_outcome(cloud, instances, answer).settle(&mut checks, started) {

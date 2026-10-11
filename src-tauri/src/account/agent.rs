@@ -40,10 +40,7 @@ fn install_id_at(path: &std::path::Path) -> Result<String> {
         }
     }
     let id = random_hex();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, &id)?;
+    crate::atomic_file::write(path, &id)?;
     Ok(id)
 }
 
@@ -286,32 +283,55 @@ async fn poll_once(app: &AppHandle, agent_id: &str) -> Result<()> {
     Ok(())
 }
 
+/// The agent this machine is registered as, and the account it was registered for.
+#[derive(Clone, Debug, PartialEq)]
+struct Registration {
+    user: String,
+    agent_id: String,
+}
+
+/// What the agent loop does next, from whom it is registered for and who is signed in now.
+#[derive(Debug, PartialEq)]
+enum Next {
+    /// Signed out: no agent (its id is forgotten), wait for a sign-in.
+    SignedOut,
+    /// Signed in as someone it isn't registered for (first sign-in, or another account).
+    Register,
+    /// Registered for the signed-in account: heartbeat and poll.
+    Run,
+}
+
+fn next_step(current: Option<&Registration>, user: Option<&str>) -> Next {
+    match (current, user) {
+        (_, None) => Next::SignedOut,
+        (Some(r), Some(u)) if r.user == u => Next::Run,
+        _ => Next::Register,
+    }
+}
+
+/// The current registration's agent id, if any.
+fn agent_id_of(current: &Mutex<Option<Registration>>) -> Option<String> {
+    current.lock().ok().and_then(|r| r.as_ref().map(|r| r.agent_id.clone()))
+}
+
 /// Starts the background agent: waits for login, registers, then heartbeats (~30s) and
-/// polls for launches (~6s) for as long as the app runs.
+/// polls for launches (~6s) for as long as the app runs. Signing out forgets the agent, and
+/// signing in as another account registers again, so launches are never polled for (and
+/// the machine never shows online for) an account that isn't signed in here.
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        while auth::access_token().await.is_err() {
-            tokio::time::sleep(Duration::from_secs(5)).await;
-        }
-        let agent_id = loop {
-            match register(&app).await {
-                Ok(id) => break id,
-                Err(e) => {
-                    log::warn!("registerLauncher failed, retrying: {e}");
-                    tokio::time::sleep(Duration::from_secs(15)).await;
-                }
-            }
-        };
-        log::info!("launcher agent online: {agent_id}");
+        let current: std::sync::Arc<Mutex<Option<Registration>>> = Default::default();
         // Heartbeat on its own task: claiming and running a lab can block for a long time (a
         // cloud launch waits on terraform apply, up to tens of minutes), and the machine must
         // keep reporting that it's online for the whole launch, not drop offline while busy.
         {
             let app = app.clone();
-            let agent_id = agent_id.clone();
+            let current = current.clone();
             tokio::spawn(async move {
                 loop {
-                    if auth::access_token().await.is_ok() {
+                    if let Some(agent_id) = agent_id_of(&current)
+                        && auth::access_token().await.is_ok()
+                    {
                         let _ = heartbeat(&app, &agent_id).await;
                     }
                     tokio::time::sleep(Duration::from_secs(30)).await;
@@ -319,7 +339,40 @@ pub fn spawn(app: AppHandle) {
             });
         }
         loop {
-            if auth::access_token().await.is_ok() {
+            let user = auth::signed_in_user().await;
+            let registered = current.lock().ok().and_then(|r| r.clone());
+            match next_step(registered.as_ref(), user.as_deref()) {
+                Next::SignedOut => {
+                    if let Ok(mut r) = current.lock() {
+                        *r = None;
+                    }
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+                Next::Register => {
+                    if auth::access_token().await.is_err() {
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                    match register(&app).await {
+                        Ok(agent_id) => {
+                            log::info!("launcher agent online: {agent_id}");
+                            if let Ok(mut r) = current.lock() {
+                                *r = Some(Registration { user: user.unwrap_or_default(), agent_id });
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("registerLauncher failed, retrying: {e}");
+                            tokio::time::sleep(Duration::from_secs(15)).await;
+                            continue;
+                        }
+                    }
+                }
+                Next::Run => {}
+            }
+            if let Some(agent_id) = agent_id_of(&current)
+                && auth::access_token().await.is_ok()
+            {
                 let _ = poll_once(&app, &agent_id).await;
             }
             tokio::time::sleep(Duration::from_secs(6)).await;
@@ -336,6 +389,21 @@ pub fn agent_info(app: AppHandle) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_agent_registers_again_for_another_account_and_forgets_it_on_sign_out() {
+        // After signing out and in as someone else, the old agent id was still polled with.
+        let a = Registration { user: "u1".into(), agent_id: "agent-1".into() };
+        assert_eq!(next_step(None, None), Next::SignedOut);
+        assert_eq!(next_step(None, Some("u1")), Next::Register);
+        assert_eq!(next_step(Some(&a), Some("u1")), Next::Run);
+        assert_eq!(next_step(Some(&a), Some("u2")), Next::Register);
+        assert_eq!(next_step(Some(&a), None), Next::SignedOut);
+        let current = Mutex::new(Some(a));
+        assert_eq!(agent_id_of(&current).as_deref(), Some("agent-1"));
+        *current.lock().unwrap() = None;
+        assert_eq!(agent_id_of(&current), None);
+    }
 
     #[test]
     fn a_claim_runs_as_a_vm_lab_only_when_it_says_so() {

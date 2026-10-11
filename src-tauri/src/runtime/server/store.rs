@@ -38,14 +38,29 @@ fn load_from(path: &Path) -> Result<Store> {
     }
 }
 
-pub(super) fn save(app: &AppHandle, store: &Store) -> Result<()> {
-    save_to(&store_path(app)?, store)
+/// Serialises every change to `server.json`: each one reloads the file, changes it and saves it
+/// under this lock, so two windows (or a launch and a form) never write back a stale copy over
+/// each other's change.
+static WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Reloads the store, applies `change` and saves it, all under the store lock. Nothing is saved
+/// when `change` fails.
+pub(super) fn update<T>(app: &AppHandle, change: impl FnOnce(&mut Store) -> Result<T>) -> Result<T> {
+    update_at(&store_path(app)?, change)
 }
 
-/// Writes the store to `path` (pretty JSON).
+fn update_at<T>(path: &Path, change: impl FnOnce(&mut Store) -> Result<T>) -> Result<T> {
+    let _guard = WRITES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut store = load_from(path)?;
+    let out = change(&mut store)?;
+    save_to(path, &store)?;
+    Ok(out)
+}
+
+/// Writes the store to `path` (pretty JSON), atomically: a crash mid-write keeps the old file.
 fn save_to(path: &Path, store: &Store) -> Result<()> {
     let raw = serde_json::to_string_pretty(store).map_err(|e| Error::Invalid(e.to_string()))?;
-    std::fs::write(path, raw)?;
+    crate::atomic_file::write(path, raw)?;
     Ok(())
 }
 
@@ -94,6 +109,41 @@ mod tests {
         assert_eq!(back.hosts, vec![host.clone()]);
         assert_eq!(find(&back, "ab12").unwrap(), host);
         assert_eq!(find(&back, "zz").unwrap_err().to_string(), "server host `zz` not found");
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn concurrent_changes_all_land() {
+        // Each change reloads under the lock: none writes back a stale copy over another's.
+        let path = temp_store("concurrent");
+        let threads: Vec<_> = (0..8)
+            .map(|i| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    update_at(&path, |s| {
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                        s.hosts.push(HostProfile { id: format!("h{i}"), ..profile(Provider::Proxmox) });
+                        Ok(())
+                    })
+                    .unwrap()
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert_eq!(load_from(&path).unwrap().hosts.len(), 8);
+        // A failed change saves nothing.
+        assert!(
+            update_at(&path, |s| -> Result<()> {
+                s.hosts.clear();
+                Err(Error::Invalid("no".into()))
+            })
+            .is_err()
+        );
+        assert_eq!(load_from(&path).unwrap().hosts.len(), 8);
+        // Written whole: only the store itself in its folder, no temporary file left.
+        assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 

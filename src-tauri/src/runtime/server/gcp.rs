@@ -7,13 +7,18 @@
 use crate::AppHandle;
 
 use super::profile::random_hex;
-use super::store::{find, load, save};
+use super::store::{find, load, update};
 use crate::error::{Error, Result};
 
 /// The account's labs project, created when it doesn't exist yet (or was deleted).
 pub async fn labs_project(app: &AppHandle, id: &str) -> Result<String> {
-    let mut store = load(app)?;
-    let host = find(&store, id)?;
+    // One at a time: two launches (or a test and a launch) at once each saw no project yet and
+    // created one, and the last to save won. The second waits, then finds the first's project.
+    static CREATING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _one_at_a_time = CREATING.lock().await;
+    // Read fresh under the lock, and only this host's field is written back at the end (the
+    // rest of the store may have been edited meanwhile).
+    let host = find(&load(app)?, id)?;
     if let Some(p) = host.gcp_project.as_deref()
         && crate::exec::run("gcloud", &["projects", "describe", p, "--format", "value(lifecycleState)"], None).await.is_ok_and(|s| s.trim() == "ACTIVE")
     {
@@ -32,10 +37,12 @@ pub async fn labs_project(app: &AppHandle, id: &str) -> Result<String> {
     crate::exec::run("gcloud", &["services", "enable", "compute.googleapis.com", "--project", &project], None)
         .await
         .map_err(|e| Error::Invalid(format!("couldn't enable Compute Engine on the labs project: {}", last_error_line(&e))))?;
-    if let Some(h) = store.hosts.iter_mut().find(|h| h.id == id) {
-        h.gcp_project = Some(project.clone());
-    }
-    save(app, &store)?;
+    update(app, |store| {
+        if let Some(h) = store.hosts.iter_mut().find(|h| h.id == id) {
+            h.gcp_project = Some(project.clone());
+        }
+        Ok(())
+    })?;
     Ok(project)
 }
 

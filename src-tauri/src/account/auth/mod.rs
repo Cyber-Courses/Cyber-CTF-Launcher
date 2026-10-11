@@ -96,6 +96,16 @@ pub async fn access_token() -> Result<String> {
     Ok(token)
 }
 
+/// Who is signed in, to tell accounts apart: the access token's `sub`, else the email. None
+/// when signed out (or the session can't be read).
+pub async fn signed_in_user() -> Option<String> {
+    store::read().await.ok().flatten().map(|s| user_of(&s))
+}
+
+fn user_of(session: &Session) -> String {
+    tokens::jwt_claim(&session.access_token, "sub").or_else(|| session.email.clone()).unwrap_or_default()
+}
+
 /// The authorize URL the browser opens.
 fn authorize_url(client_id: &str, redirect_uri: &str, state: &str, verifier: &str, api: &str) -> Result<url::Url> {
     let mut authorize = url::Url::parse(&format!("{}/oauth2/authorize", config::auth_base())).map_err(|e| Error::Invalid(e.to_string()))?;
@@ -128,20 +138,23 @@ pub async fn auth_login(app: AppHandle) -> Result<AuthStatus> {
         .open_url(authorize.as_str(), None::<&str>)
         .map_err(|_| Error::Invalid("No browser opened for sign-in. Set a default web browser for this account and try again.".into()))?;
 
-    let (code, returned_state) = tokio::time::timeout(LOGIN_TIMEOUT, callback::receive(listener))
+    // Only the redirect carrying this login's `state` is taken, and the browser hears
+    // "signed in" only once the code was exchanged and the session kept.
+    let finish = |code: String| finish_login(code, &redirect_uri, &client_id, &verifier, &api);
+    tokio::time::timeout(LOGIN_TIMEOUT, callback::receive(listener, &state, finish))
         .await
-        .map_err(|_| Error::Invalid("Sign-in wasn't finished within 5 minutes, so it was cancelled. Try again.".into()))??;
-    if returned_state != state {
-        return Err(Error::Invalid("login state mismatch".into()));
-    }
+        .map_err(|_| Error::Invalid("Sign-in wasn't finished within 5 minutes, so it was cancelled. Try again.".into()))?
+}
 
+/// Exchanges the redirect's code for tokens and keeps the session.
+async fn finish_login(code: String, redirect_uri: &str, client_id: &str, verifier: &str, api: &str) -> Result<AuthStatus> {
     let tokens = token_request(&[
         ("grant_type", "authorization_code"),
         ("code", &code),
-        ("redirect_uri", &redirect_uri),
-        ("client_id", &client_id),
-        ("code_verifier", &verifier),
-        ("resource", &api),
+        ("redirect_uri", redirect_uri),
+        ("client_id", client_id),
+        ("code_verifier", verifier),
+        ("resource", api),
     ])
     .await?;
     let session = session_from(tokens, None);
@@ -220,5 +233,22 @@ mod tests {
         let failed = json(status_from_read(Err("no Secret Service".into())));
         assert_eq!(failed["keychainError"], "no Secret Service");
         assert_eq!(failed["loggedIn"], false);
+    }
+
+    #[test]
+    fn the_signed_in_user_is_the_tokens_subject_else_the_email() {
+        use base64::Engine;
+        let jwt = |claims: &str| format!("h.{}.s", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims));
+        let session = |access: String, email: Option<&str>| Session {
+            access_token: access,
+            refresh_token: None,
+            expires_at: 0,
+            name: None,
+            email: email.map(str::to_string),
+        };
+        assert_eq!(user_of(&session(jwt(r#"{"sub":"u1"}"#), Some("a@x"))), "u1");
+        assert_eq!(user_of(&session(jwt(r#"{"sub":"u2"}"#), Some("a@x"))), "u2");
+        assert_eq!(user_of(&session("opaque".into(), Some("a@x"))), "a@x");
+        assert_eq!(user_of(&session("opaque".into(), None)), "");
     }
 }

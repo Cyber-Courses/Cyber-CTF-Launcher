@@ -17,7 +17,7 @@ use super::input::{HostInput, valid_id};
 use super::profile::{HostProfile, new_id};
 use super::reachability::test_host;
 use super::secrets::{delete_secret, get_secret, host_secret, set_secret};
-use super::store::{Store, find, load, load_host, save};
+use super::store::{Store, find, load, load_host, update};
 use crate::error::{Error, Result};
 use crate::runtime::providers::Provider;
 
@@ -38,21 +38,21 @@ pub fn server_list(app: AppHandle) -> Result<HostList> {
 #[tauri::command]
 pub fn server_save(app: AppHandle, mut input: HostInput) -> Result<HostProfile> {
     let checked = input.check()?;
-    let mut store = load(&app)?;
-    let id = save_id(&store, input.id.take())?;
-    let gcp_project = kept_gcp_project(&store, &id, input.provider, &checked.username);
-    let password = input.password.take();
-    let profile = input.into_profile(id.clone(), checked, gcp_project)?;
-    match new_password(password)? {
-        Some(p) => set_secret(&id, &p)?,
-        None if profile.keeps_secret() && get_secret(&id).is_err() => {
-            return Err(Error::Invalid("enter the host's password".into()));
+    update(&app, |store| {
+        let id = save_id(store, input.id.take())?;
+        let gcp_project = kept_gcp_project(store, &id, input.provider, &checked.username);
+        let password = input.password.take();
+        let profile = input.into_profile(id.clone(), checked, gcp_project)?;
+        match new_password(password)? {
+            Some(p) => set_secret(&id, &p)?,
+            None if profile.keeps_secret() && get_secret(&id).is_err() => {
+                return Err(Error::Invalid("enter the host's password".into()));
+            }
+            None => {}
         }
-        None => {}
-    }
-    put_host(&mut store, profile.clone());
-    save(&app, &store)?;
-    Ok(profile)
+        put_host(store, profile.clone());
+        Ok(profile)
+    })
 }
 
 /// The id a save writes under: an existing host's (edit), or a new one.
@@ -124,9 +124,10 @@ pub fn server_remove(app: AppHandle, id: String) -> Result<()> {
     // destroy its labs. Removing it mid-run would leave them unstoppable from the app, and a
     // cloud lab would keep billing with no way left to tear it down.
     no_labs_running(lab_markers(&app).iter().filter(|m| **m == id).count())?;
-    let mut store = load(&app)?;
-    remove_host(&mut store, &id);
-    save(&app, &store)?;
+    update(&app, |store| {
+        remove_host(store, &id);
+        Ok(())
+    })?;
     delete_secret(&id);
     Ok(())
 }
@@ -155,9 +156,7 @@ fn remove_host(store: &mut Store, id: &str) {
 /// Sets (or clears, with None) the host VM labs run on by default.
 #[tauri::command]
 pub fn server_set_default(app: AppHandle, id: Option<String>) -> Result<()> {
-    let mut store = load(&app)?;
-    set_default_host(&mut store, id)?;
-    save(&app, &store)
+    update(&app, |store| set_default_host(store, id))
 }
 
 /// `server_set_default` on a loaded store.
