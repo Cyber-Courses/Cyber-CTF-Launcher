@@ -2,7 +2,12 @@ name: Attack box image
 
 # Builds cyberctf/attack-box (attack-box/Dockerfile) for amd64 and arm64 on native runners and
 # publishes one multi-arch tag to Docker Hub. Rebuilt weekly because Kali is a rolling release.
+# Every run first builds the image locally and smoke-tests it (attack-box/smoke-test.sh), on pull
+# requests too; only a push to main, the weekly run or a manual run publishes, and only once the
+# smoke test passed on both architectures, so a broken Kali update never reaches players.
 on:
+  pull_request:
+    paths: ["attack-box/**", ".github/workflows/attack-box.yml"]
   push:
     branches: [main]
     paths: ["attack-box/**", ".github/workflows/attack-box.yml"]
@@ -10,11 +15,50 @@ on:
     - cron: "0 4 * * 1"
   workflow_dispatch:
 
+concurrency:
+  group: attack-box-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 env:
   IMAGE: cyberctf/attack-box
 
 jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # The image is large (~14 GB unpacked): Docker keeps its data on the runner's scratch disk
+      # where there is one (as in labs.yml).
+      - name: Docker on the scratch disk
+        run: |
+          if sudo test -d /mnt; then
+            sudo systemctl stop docker docker.socket
+            echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+            sudo systemctl start docker
+          fi
+          docker info --format '{{.DockerRootDir}}'
+          df -h / /mnt || true
+      # No registry, no secrets: a plain local build, so pull requests from forks run it too.
+      - name: Build
+        run: docker build --pull -t attack-box:smoke attack-box
+      - name: Smoke test
+        run: attack-box/smoke-test.sh attack-box:smoke
+
   build:
+    needs: smoke
+    if: github.event_name != 'pull_request'
     strategy:
       matrix:
         include:
