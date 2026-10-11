@@ -1,6 +1,6 @@
 # Cyber CTF Desktop
 
-Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It runs **Docker labs** (Docker Compose) and **VM labs** (Vagrant, on any supported hypervisor) on the player's machine. Replaces the Electron [Cyber-CTF-Launcher](https://github.com/Cyber-Courses/Cyber-CTF-Launcher).
+Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It runs **Docker labs** (Docker Compose) and **VM labs** (Vagrant, on any supported hypervisor) on the player's machine, and labs on the player's own servers (ESXi, Proxmox) and cloud accounts. This app replaced the earlier Electron launcher in this repository.
 
 ## Architecture
 
@@ -11,16 +11,22 @@ Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It
 - **Core (Rust, [`src-tauri/`](src-tauri/)):** everything privileged. Processes are spawned without a shell, lab ids are validated, and the UI never passes paths or command lines.
   - [`account/`](src-tauri/src/account/): Cyber Auth sign-in (`auth.rs`: authorization code + PKCE through the system browser, loopback redirect on `127.0.0.1:47290-47292/callback`; tokens in the OS keychain, refreshed automatically, never in the webview), CyberBackend GraphQL with the token attached on the Rust side (`api.rs`), and the agent that links the launcher to the website (`agent.rs`, `colocation.rs`).
   - [`labs.rs`](src-tauri/src/labs.rs): `lab_launch` calls `startLab`, then downloads `CyberCTF/*` at the pinned commit (full SHA only; archive paths checked), and starts the lab with `CTF_API_URL` and `CTF_LAUNCH_TOKEN`. The lab's `evidence` service exchanges the token for this player's evidence.
-  - [`machine/`](src-tauri/src/machine/): what this machine can run (`system.rs`: Docker engines, Vagrant, hypervisors, package manager), the setup self-tests (`selftest.rs`) and the workloads/storage the Machine page shows (`workloads.rs`).
+  - [`machine/`](src-tauri/src/machine/): what this machine can run (`system/`: Docker engines, Vagrant, hypervisors, package manager), the setup self-tests (`selftest/`) and the workloads/storage the Machine page shows (`workloads/`, `storage.rs`).
   - [`platform/`](src-tauri/src/platform/): the PATH a GUI launch is missing (`env_path.rs`) and one-click dependency installs (`install.rs`).
   - [`runtime/`](src-tauri/src/runtime/): lab lifecycle, with logs streamed to the UI over a Tauri channel
+    - `lab.rs`: the lab's Isoloom side; the target's files (Compose, Vagrant, Terraform) are generated from its `isoloom.yml` with `isoloom-core` right before they run
+    - `launch.rs`, `lifecycle.rs`, `status.rs`: start, park/resume, stop and the auto-stop reaper for cloud labs, and what is running where
     - `docker/`: `docker compose -p cyberctf-<lab>`; stop removes volumes, so every start is a clean lab; status reports machines, interfaces, networks and declared services
-    - `vm.rs`: `vagrant up --provider <p>`; stop destroys the VMs
-    - `server.rs`, `proxmox.rs`, `terraform.rs`: labs on the player's own servers (ESXi, Proxmox) and cloud accounts
+    - `vm.rs` + `vm/`: `vagrant up --provider <p>`; stop destroys the VMs
+    - `server/`, `proxmox.rs`, `terraform/`: labs on the player's own servers (ESXi, Proxmox) and cloud accounts (AWS, Azure, GCP, DigitalOcean, Linode, OCI); `server_selftest/` checks a server or account before the first lab
     - `providers.rs`: Vagrant providers. Local: VirtualBox, VMware Desktop, Hyper-V, Parallels, libvirt, QEMU, UTM. Remote: VMware ESXi, Proxmox.
-  - `cloud.rs`, `provisioning.rs`: cloud CLIs and the Terraform/Ansible tooling; `exec.rs`, `error.rs`, `config.rs`: crate-wide basics.
+    - `exegol.rs`, `attack_box.rs`, `attack_vm.rs` + `attack_vm/`: the attack box (container) or attack VM beside the lab
+  - [`deploy_worker/`](src-tauri/src/deploy_worker/): launches, resumes, parks and provisioning runs in a detached worker process (`cyberctf-desktop deploy --job <file>`), so quitting the app never cuts a deploy short. A per-lab file lock keeps the app and the workers from running two operations on one lab at once.
+  - [`lan_relay/`](src-tauri/src/lan_relay/): loopback relays that let Vagrant and ovftool reach a LAN ESXi host on macOS.
+  - `terminal.rs`: the in-app attack box shell (a PTY streamed to xterm.js); `shared_folder.rs`: the folder shared with the attack box.
+  - `cloud.rs`: cloud account sign-in through each provider's CLI; [`exec/`](src-tauri/src/exec/), `http.rs` (HTTP clients with timeouts and a download size cap), `error.rs`, `config.rs`: crate-wide basics.
 
-The runtime layer knows nothing about CTFs: a lab is a directory with a `docker-compose.yml` or a `Vagrantfile`.
+The runtime layer knows nothing about CTFs: a lab is a directory with an `isoloom.yml` (its machines, networks, services and checks). The launcher generates the files for the target it runs on under the lab's `.isoloom/` folder.
 
 Labs live in `<app data>/labs/<lab id>/`.
 
@@ -33,10 +39,10 @@ A VM lab runs natively only where its boxes exist for the host architecture. On 
 - [x] System check, Docker/VM runtimes, provider detection
 - [x] Login: system browser + PKCE against cyberauth.co, loopback redirect, tokens in the OS keychain
 - [x] Lab catalogue from [CyberBackend](https://github.com/Cyber-Courses/CyberBackend); launch = `startLab`, download at the pinned commit, run with the launch token
-- [x] Servers (ESXi/Proxmox, credentials in the keychain) and cloud accounts (AWS)
+- [x] Servers (ESXi/Proxmox, credentials in the keychain) and cloud accounts (AWS, Azure, GCP, DigitalOcean, Linode, OCI)
 - [x] Attack box on the lab network (Cyber CTF image on Docker Hub, built by the attack-box workflow)
-- [ ] VM lab provisioning (Ansible runner), replacing the PowerShell scripts of Lab-Starter-Pack-VM
-- [ ] Signed builds + auto-update (GitHub Releases)
+- [x] VM lab provisioning from the lab's `isoloom.yml` (through Isoloom), re-runnable per machine from the lab page
+- [x] Signed builds + auto-update (GitHub Releases; the in-app updater installs signed updates from `latest.json`)
 
 ## Configuration
 
