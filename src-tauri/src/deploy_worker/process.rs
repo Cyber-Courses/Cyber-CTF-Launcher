@@ -280,6 +280,7 @@ fn signal_group(pid: u32, signal: &str) {
 
 /// Half-second checks a Terraform run gets to stop on its own once interrupted: it finishes the
 /// resources it is creating and records them in its state (2 minutes).
+#[cfg(unix)]
 const TERRAFORM_GRACE_CHECKS: u32 = 240;
 
 /// [`kill`], then waits until the worker is gone (SIGKILL to its group after 20 s), so what

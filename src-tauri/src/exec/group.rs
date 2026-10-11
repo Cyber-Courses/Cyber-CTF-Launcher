@@ -88,8 +88,8 @@ pub fn kill_live_tools() {
 mod job {
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
+        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_LIMIT_INFORMATION,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
     };
 
     /// A job object a tool's process (and every process it starts) runs in.
@@ -110,7 +110,7 @@ mod job {
                     return None;
                 }
                 let job = Job(job);
-                if !job.set_kill_on_close(true) || AssignProcessToJobObject(job.0, process as HANDLE) == 0 {
+                if !job.set_kill_on_close(true) || AssignProcessToJobObject(job.0, process) == 0 {
                     return None;
                 }
                 Some(job)
@@ -118,8 +118,13 @@ mod job {
         }
 
         fn set_kill_on_close(&self, on: bool) -> bool {
-            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-            info.BasicLimitInformation.LimitFlags = if on { JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE } else { 0 };
+            let info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+                BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION {
+                    LimitFlags: if on { JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE } else { 0 },
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
             // SAFETY: `info` is a valid, fully initialised struct of the size given.
             unsafe {
                 SetInformationJobObject(
