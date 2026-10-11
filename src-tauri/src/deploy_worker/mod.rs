@@ -11,6 +11,7 @@
 //! `<key>.status` (`ok` or `error: ...`, written last).
 
 mod files;
+pub(crate) mod lock;
 mod process;
 mod progress;
 mod worker;
@@ -114,10 +115,7 @@ pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<
 /// falls back to running it in this process (on a task that outlives a webview reload) when no
 /// worker can be started. Refuses while another operation of the same key is in progress.
 pub async fn run_job(app: &AppHandle, job: Job, logs: tauri::ipc::Channel<String>) -> Result<()> {
-    if running(app).contains(&job.key()) {
-        return Err(Error::Invalid(format!("{} of this lab is already in progress; wait for it to finish.", capitalize(job.what()))));
-    }
-    match process::spawn(app, &job) {
+    match start_worker(app, &job)? {
         Ok(spawned) => {
             let follow = logs.clone();
             progress::tail(&spawned, move |line| {
@@ -141,6 +139,36 @@ pub async fn run_job(app: &AppHandle, job: Job, logs: tauri::ipc::Channel<String
             Ok(())
         }
     }
+}
+
+/// Checks that nothing else runs on the job's key and starts its worker, as one step: two
+/// starts racing each other (a double click) must not both pass the check and spawn two
+/// workers. `Err` when the lab is busy; `Ok(Err)` when the worker couldn't be started (the
+/// caller falls back to running the job in this process).
+fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> {
+    static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one_at_a_time = STARTING.lock().unwrap_or_else(|e| e.into_inner());
+    if running(app).contains(&job.key()) {
+        return Err(Error::Invalid(format!("{} of this lab is already in progress; wait for it to finish.", capitalize(job.what()))));
+    }
+    // An operation of the app itself (a stop, the expiry reaper) holds the lab: the worker
+    // would only wait for it, then act on what it left (the attack VM runs beside the lab's
+    // operations and takes no lab lock).
+    if !matches!(job.op, Op::AttackVm { .. }) && lock::held(&lock_path(app, &job.lab_id)?) {
+        return Err(Error::Invalid(BUSY.into()));
+    }
+    // The pidfile is taken before the worker starts (another process may be racing for it too).
+    let pidfile = process::claim(&files::of(app, &job.key())?)?;
+    Ok(process::spawn(app, job, pidfile))
+}
+
+/// The refusal while another operation holds the lab.
+pub(crate) const BUSY: &str = "Another operation on this lab is already in progress; wait for it to finish.";
+
+/// The cross-process lock file of `lab` (see [`lock`]).
+pub fn lock_path(app: &AppHandle, lab: &str) -> Result<std::path::PathBuf> {
+    crate::runtime::validate_id(lab)?;
+    Ok(lock::path_in(&files::dir(app)?, lab))
 }
 
 fn capitalize(s: &str) -> String {

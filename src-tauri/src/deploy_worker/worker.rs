@@ -87,6 +87,19 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
         }
     };
     let launch = job.op == Op::Launch;
+    // The lab is this worker's for the whole job (download and install included): the app's
+    // own operations on it (a stop, the expiry reaper) wait or step aside meanwhile. The attack
+    // VM runs beside the lab's operations, without it.
+    let _lab = match job.op {
+        Op::AttackVm { .. } => None,
+        _ => match super::lock_path(app, &job.lab_id) {
+            Ok(path) => super::lock::acquire(&path).await.map_err(|e| log::warn!("deploy worker: no lab lock ({e})")).ok(),
+            Err(e) => {
+                log::warn!("deploy worker: no lab lock ({e})");
+                None
+            }
+        },
+    };
     let result = execute(app, job, &log).await;
     conclude(&f, &result, launch, log)
 }
@@ -104,7 +117,8 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
         let _ = std::fs::write(&f.launch_status, &status);
     }
     let _ = std::fs::write(&f.status, status);
-    let _ = std::fs::remove_file(&f.pid);
+    // Only while it still names this worker: a newer one's pidfile stays.
+    super::process::remove_pidfile_of(&f.pid, std::process::id());
     code
 }
 
@@ -149,7 +163,7 @@ mod tests {
     fn concluding_writes_the_verdict_and_drops_the_pidfile() {
         let dir = crate::deploy_worker::files::tests::temp_dir("conclude");
         let f = Files::of(&dir, "lab-1");
-        std::fs::write(&f.pid, "1").unwrap();
+        std::fs::write(&f.pid, std::process::id().to_string()).unwrap();
         let lines = std::sync::Mutex::new(Vec::new());
         let code = conclude(&f, &Err::<(), _>(Error::Invalid("boom".into())), true, |l| lines.lock().unwrap().push(l));
         assert_eq!(code, 1);

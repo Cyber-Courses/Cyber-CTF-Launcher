@@ -29,7 +29,7 @@ pub async fn start(
     env: &[(String, String)],
     mut log: impl FnMut(String),
 ) -> Result<()> {
-    let _lock = lock_lab(id).await;
+    let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Start);
     match host {
         None => start_here(app, dir, id, runtime, provider, env, &mut log).await,

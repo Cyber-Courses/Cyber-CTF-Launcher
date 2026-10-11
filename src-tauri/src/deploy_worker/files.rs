@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 
-use super::process::alive;
+use super::process::{Worker, alive};
 use crate::error::{Error, Result};
 
 /// A worker's files.
@@ -34,15 +34,15 @@ impl Files {
         }
     }
 
-    /// The worker's process id, when its pidfile names one.
-    pub fn pid(&self) -> Option<u32> {
-        read_pid(&self.pid)
+    /// The worker its pidfile names, if any.
+    pub fn worker(&self) -> Option<Worker> {
+        read_worker(&self.pid)
     }
 
     /// Whether this lab's last finished launch failed (none still running, `error: …` launch
     /// status). A failed pause, resume or provisioning run doesn't count.
     pub fn failed(&self) -> bool {
-        if self.pid().is_some_and(alive) {
+        if self.worker().is_some_and(|w| alive(&w)) {
             return false;
         }
         std::fs::read_to_string(&self.launch_status).is_ok_and(|s| s.trim_start().starts_with("error"))
@@ -61,8 +61,9 @@ pub fn of(app: &AppHandle, key: &str) -> Result<Files> {
     Ok(Files::of(&dir(app)?, key))
 }
 
-pub fn read_pid(path: &Path) -> Option<u32> {
-    std::fs::read_to_string(path).ok().and_then(|s| s.trim().parse().ok())
+/// The worker a pidfile names: `<pid> <start time>` (or a bare `<pid>`, from older versions).
+pub fn read_worker(path: &Path) -> Option<Worker> {
+    Worker::parse(&std::fs::read_to_string(path).ok()?)
 }
 
 /// Whether the lab's last finished launch failed (its worker wrote `error: …`). A run still in
@@ -99,10 +100,14 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("x.pid");
         std::fs::write(&p, "4242\n").unwrap();
-        assert_eq!(read_pid(&p), Some(4242));
+        assert_eq!(read_worker(&p), Some(Worker { pid: 4242, started: None }));
+        std::fs::write(&p, "4242 1760000000\n").unwrap();
+        assert_eq!(read_worker(&p), Some(Worker { pid: 4242, started: Some(1_760_000_000) }));
         std::fs::write(&p, "nope").unwrap();
-        assert_eq!(read_pid(&p), None);
-        assert_eq!(read_pid(&dir.join("missing.pid")), None);
+        assert_eq!(read_worker(&p), None);
+        std::fs::write(&p, "").unwrap();
+        assert_eq!(read_worker(&p), None);
+        assert_eq!(read_worker(&dir.join("missing.pid")), None);
         std::fs::remove_dir_all(dir).ok();
     }
 

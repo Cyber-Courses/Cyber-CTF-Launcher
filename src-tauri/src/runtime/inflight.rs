@@ -2,8 +2,10 @@
 //! registry of starts, stops and parks in flight that the quit guard and the UI read.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use tauri::AppHandle;
 use tokio::sync::OwnedMutexGuard;
 
 /// What is in flight for a lab: a start (provisioning) or a stop (teardown). Told apart so the
@@ -84,22 +86,73 @@ impl Drop for DeployGuard {
     }
 }
 
+/// A lab held for one operation: this process's own lock on it, and the lock across processes
+/// (see `deploy_worker::lock`), when its file could be opened.
+pub(super) struct LabLock {
+    _file: Option<crate::deploy_worker::lock::LabFileLock>,
+    _here: OwnedMutexGuard<()>,
+}
+
+/// This process's lock on lab `id`.
+fn process_lock(id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> = OnceLock::new();
+    let mut map = LOCKS.get_or_init(|| Mutex::new(HashMap::new())).lock().expect("lab lock registry");
+    map.entry(id.to_string()).or_default().clone()
+}
+
+/// The lab's lock file, if its folder can be had.
+fn lock_file(app: &AppHandle, id: &str) -> Option<PathBuf> {
+    crate::deploy_worker::lock_path(app, id).map_err(|e| log::warn!("lab lock for {id}: {e}")).ok()
+}
+
 /// One operation per lab at a time: start, stop and the expiry reaper all take this per-lab
 /// lock, so a user Start/Stop and the reaper can't run two Terraform (or Vagrant) operations
-/// over the same state at once, which could corrupt `terraform.tfstate`. Not reentrant: a caller
-/// already holding it uses the `_locked` variant of an operation.
-pub(super) async fn lock_lab(id: &str) -> OwnedMutexGuard<()> {
-    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> = OnceLock::new();
-    let lock = {
-        let mut map = LOCKS.get_or_init(|| Mutex::new(HashMap::new())).lock().expect("lab lock registry");
-        map.entry(id.to_string()).or_default().clone()
+/// over the same state at once, which could corrupt `terraform.tfstate`. It holds across
+/// processes too: a deploy worker holds it for its whole job, and an operation of the app waits
+/// for the worker (and the other way round). Not reentrant: a caller already holding it uses the
+/// `_locked` variant of an operation.
+pub(super) async fn lock_lab(app: &AppHandle, id: &str) -> LabLock {
+    lock_lab_at(lock_file(app, id).as_deref(), id).await
+}
+
+/// [`lock_lab`] with its lock file at `file`.
+async fn lock_lab_at(file: Option<&Path>, id: &str) -> LabLock {
+    let here = process_lock(id).lock_owned().await;
+    let file = match file {
+        Some(path) => crate::deploy_worker::lock::acquire(path).await.map_err(|e| log::warn!("lab lock for {id}: {e}")).ok(),
+        None => None,
     };
-    lock.lock_owned().await
+    LabLock { _file: file, _here: here }
+}
+
+/// [`lock_lab`] without waiting: `None` while another operation (of this process or another)
+/// holds the lab.
+pub(super) fn try_lock_lab(app: &AppHandle, id: &str) -> Option<LabLock> {
+    try_lock_lab_at(lock_file(app, id).as_deref(), id)
+}
+
+/// [`try_lock_lab`] with its lock file at `file`.
+fn try_lock_lab_at(file: Option<&Path>, id: &str) -> Option<LabLock> {
+    let here = process_lock(id).try_lock_owned().ok()?;
+    let file = match file.map(crate::deploy_worker::lock::try_acquire) {
+        Some(Ok(Some(lock))) => Some(lock),
+        Some(Ok(None)) => return None,
+        Some(Err(e)) => {
+            log::warn!("lab lock for {id}: {e}");
+            None
+        }
+        None => None,
+    };
+    Some(LabLock { _file: file, _here: here })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, DeployGuard, active_actions, active_deploys, deploying_labs, lock_lab, parking_labs, stopping_labs};
+    use super::{Action, DeployGuard, active_actions, active_deploys, deploying_labs, parking_labs, stopping_labs, try_lock_lab_at};
+
+    async fn lock_lab(id: &str) -> super::LabLock {
+        super::lock_lab_at(None, id).await
+    }
 
     #[test]
     fn every_guard_counts_as_an_operation_in_flight() {
@@ -153,5 +206,25 @@ mod tests {
         assert!(again.is_err());
         drop(a);
         assert!(tokio::time::timeout(std::time::Duration::from_secs(1), lock_lab("inflight-test-lock-a")).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_lab_held_by_another_process_is_waited_for_or_skipped() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-lablock-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("inflight-test-other.lock");
+        // Another process's hold on the lab (a deploy worker), as a handle of its own.
+        let worker = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&file).unwrap();
+        worker.lock().unwrap();
+        assert!(try_lock_lab_at(Some(&file), "inflight-test-other").is_none(), "the reaper steps aside");
+        let waiting = tokio::time::timeout(std::time::Duration::from_millis(600), super::lock_lab_at(Some(&file), "inflight-test-other")).await;
+        assert!(waiting.is_err(), "a stop waits for the worker");
+        drop(worker);
+        let held = try_lock_lab_at(Some(&file), "inflight-test-other").expect("free once the worker is gone");
+        // Held here now: a worker can't take it.
+        assert!(crate::deploy_worker::lock::held(&file));
+        drop(held);
+        assert!(!crate::deploy_worker::lock::held(&file));
+        std::fs::remove_dir_all(dir).ok();
     }
 }

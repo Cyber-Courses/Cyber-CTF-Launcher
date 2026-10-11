@@ -93,7 +93,7 @@ pub async fn tail(spawned: &Spawned, mut log: impl FnMut(String)) -> Result<()> 
             }
             return verdict(&status);
         }
-        if !alive(spawned.pid) {
+        if !alive(&spawned.worker) {
             // The status is written just before the worker exits: give it a moment to land.
             grace += 1;
             if grace > STATUS_GRACE {
@@ -145,7 +145,7 @@ mod tests {
     fn spawned(tag: &str) -> (std::path::PathBuf, Spawned) {
         let dir = crate::deploy_worker::files::tests::temp_dir(tag);
         let files = crate::deploy_worker::files::Files::of(&dir, "lab-1");
-        (dir, Spawned { files, pid: 4_000_000_000 })
+        (dir, Spawned { files, worker: crate::deploy_worker::process::Worker { pid: 4_000_000_000, started: None } })
     }
 
     #[tokio::test]

@@ -5,7 +5,7 @@ use std::path::Path;
 
 use tauri::{AppHandle, Manager};
 
-use super::inflight::{Action, DeployGuard, lock_lab};
+use super::inflight::{Action, DeployGuard, lock_lab, try_lock_lab};
 use super::paths::{deployed_ids, lab_dir, local_vm, mark_local_vm, mark_parked, parked, recorded_runtime, state_dir, vagrant_dirs};
 use super::{Park, Runtime, attack_vm, docker, lab, registry, server, terraform, vm};
 use crate::error::{Error, Result};
@@ -13,7 +13,7 @@ use crate::error::{Error, Result};
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
 /// that took an hour to build comes back in seconds (paused) or a boot (shut down), not a rebuild.
 async fn park(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(id).await;
+    let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Park);
     if server::lab_connection(app, dir)?.is_some() {
         return Err(Error::Invalid("Pausing a lab on a server host isn't available yet. Stop it instead.".into()));
@@ -55,7 +55,7 @@ fn parked_message(mode: Park) -> &'static str {
 
 /// Brings a parked lab back, as it was.
 async fn resume(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mut log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(id).await;
+    let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Start);
     resume_locked(app, dir, id, runtime, &mut log).await
 }
@@ -104,7 +104,7 @@ async fn provision(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mach
     if runtime != Runtime::Vm {
         return Err(Error::Invalid("Container labs aren't provisioned in place: use Reset for a clean copy.".into()));
     }
-    let _lock = lock_lab(id).await;
+    let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Start);
     let conn = server::lab_connection(app, dir)?;
     if conn.as_ref().is_some_and(|c| server::terraform_target(c.provider).is_some()) {
@@ -138,7 +138,7 @@ fn provision_target(status: &super::LabStatus, machine: Option<&str>) -> Result<
 
 /// Stops a lab wherever it runs, destroying remote VMs so the next start is clean.
 pub(super) async fn stop(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(id).await;
+    let _lock = lock_lab(app, id).await;
     stop_locked(app, dir, id, runtime, log).await
 }
 
@@ -225,7 +225,9 @@ pub async fn reap_expired_labs(app: &AppHandle) {
         // Take the lab lock before tearing it down, and re-check expiry while holding it: between
         // the cheap filter above and here a user may have restarted or extended this lab (a start
         // re-applies and writes a fresh expiry), and destroying their live lab would be wrong.
-        let _lock = lock_lab(&id).await;
+        // A lab busy with another operation (a deploy worker's, maybe for hours) is left to the
+        // next sweep rather than holding up the others.
+        let Some(_lock) = try_lock_lab(app, &id) else { continue };
         if !terraform::expired(&state) {
             continue;
         }
