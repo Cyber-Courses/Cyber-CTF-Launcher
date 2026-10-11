@@ -76,6 +76,10 @@ pub async fn tail(spawned: &Spawned, mut log: impl FnMut(String)) -> Result<()> 
     let mut lines = LineBuffer::default();
     let mut grace = 0u8;
     loop {
+        // The status first, then the log: the worker writes its last lines before its status, so
+        // a status seen here means the log read next holds every line. (Read the other way
+        // round, lines written between the two reads were dropped.)
+        let status = std::fs::read_to_string(&f.status);
         if let Ok(bytes) = std::fs::read(&f.log)
             && bytes.len() > offset
         {
@@ -87,7 +91,7 @@ pub async fn tail(spawned: &Spawned, mut log: impl FnMut(String)) -> Result<()> 
             });
             offset = bytes.len();
         }
-        if let Ok(status) = std::fs::read_to_string(&f.status) {
+        if let Ok(status) = status {
             if let Some(rest) = lines.rest() {
                 log(rest);
             }
@@ -159,6 +163,30 @@ mod tests {
         assert_eq!(lines, ["one", "two", "cut"]);
         std::fs::write(&s.files.status, "ok").unwrap();
         assert!(tail(&s, |_| {}).await.is_ok());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[tokio::test]
+    async fn lines_written_just_before_the_status_are_not_dropped() {
+        // Regression: the log was read before the status, so when the worker wrote its last
+        // lines and its status between the two reads, those lines never reached the app. The
+        // worker finishing while the first line is passed on stands in for that moment.
+        let (dir, s) = spawned("tail-race");
+        std::fs::write(&s.files.log, "one\n").unwrap();
+        let mut lines = Vec::new();
+        let files = crate::deploy_worker::files::Files::of(&dir, "lab-1");
+        tail(&s, |l| {
+            if l == "one" {
+                use std::io::Write as _;
+                let mut log = std::fs::OpenOptions::new().append(true).open(&files.log).unwrap();
+                writeln!(log, "Lab is ready at http://localhost:8080").unwrap();
+                std::fs::write(&files.status, "ok").unwrap();
+            }
+            lines.push(l);
+        })
+        .await
+        .unwrap();
+        assert_eq!(lines, ["one", "Lab is ready at http://localhost:8080"]);
         std::fs::remove_dir_all(dir).ok();
     }
 
