@@ -5,11 +5,10 @@
 use crate::AppHandle;
 use tauri::ipc::Channel;
 
-use super::launch::start;
 use super::lifecycle::stop;
 use super::paths::{lab_dir, validate_id};
 use super::shell::lab_shell_command;
-use super::{LabStatus, Park, Runtime, attack_vm, discover, docker, exegol, lab, providers, server, status};
+use super::{LabStatus, Park, Runtime, attack_vm, discover, docker, exegol, lab, server, status};
 use crate::deploy_worker::{self, Job, Op};
 use crate::error::{Error, Result};
 
@@ -31,21 +30,6 @@ fn check_box(box_name: &str) -> Result<()> {
 /// A machine name as Vagrant and Isoloom spell them: plain characters, dots allowed.
 fn valid_machine_name(m: &str) -> bool {
     m.len() <= 64 && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
-}
-
-/// Starts an installed lab without a launch token: it uses its development
-/// evidence. Players go through `labs::lab_launch` instead.
-#[tauri::command]
-pub async fn lab_start(
-    app: AppHandle,
-    id: String,
-    runtime: Runtime,
-    provider: Option<providers::Provider>,
-    host: Option<String>,
-    logs: Channel<String>,
-) -> Result<()> {
-    let dir = lab_dir(&app, &id)?;
-    start(&app, &dir, &id, runtime, provider, host.as_deref(), &[], channel_log(logs)).await
 }
 
 #[tauri::command]
@@ -149,14 +133,6 @@ pub async fn exegol_stop(id: String, logs: Channel<String>) -> Result<()> {
     exegol::stop(&id, channel_log(logs)).await
 }
 
-/// Opens the player's terminal attached to the running attack box.
-#[tauri::command]
-pub async fn exegol_shell(id: String) -> Result<()> {
-    validate_id(&id)?;
-    // Off the UI thread: finding a terminal that starts can take seconds.
-    tokio::task::spawn_blocking(move || exegol::shell(&id)).await.map_err(|e| Error::Invalid(e.to_string()))?
-}
-
 /// The attack VM beside a VM lab on this machine, in the container attack box's status shape.
 #[tauri::command]
 pub async fn attack_vm_status(app: AppHandle, id: String, box_name: String) -> Result<exegol::ExegolStatus> {
@@ -194,16 +170,22 @@ pub async fn attack_vm_shell(app: AppHandle, id: String) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        attack_vm_shell, attack_vm_start, attack_vm_status, attack_vm_stop, lab_attack_shell, lab_check, lab_park, lab_provision, lab_resume, lab_start,
-        lab_status, lab_stop, lab_tools, running_labs,
+        attack_vm_shell, attack_vm_start, attack_vm_status, attack_vm_stop, lab_attack_shell, lab_check, lab_park, lab_provision, lab_resume, lab_status,
+        lab_stop, lab_tools, running_labs,
     };
-    use super::{channel_log, check_box, check_image, exegol_shell, exegol_start, exegol_status, exegol_stop, valid_machine_name};
+    use super::{channel_log, check_box, check_image, exegol_start, exegol_status, exegol_stop, valid_machine_name};
     use crate::exec::fake::{Tools, ok};
     use crate::runtime::{Park, Runtime, server};
     use crate::test_app::TestApp;
     use tauri::ipc::{Channel, InvokeResponseBody};
 
     const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n";
+
+    /// Starts an installed lab on Docker the way a launch does, minus the worker and the token.
+    async fn start_docker(t: &TestApp, id: &str, logs: Channel<String>) -> crate::error::Result<()> {
+        let dir = super::lab_dir(t.handle(), id)?;
+        crate::runtime::start(t.handle(), &dir, id, Runtime::Docker, None, None, &[], super::channel_log(logs)).await
+    }
 
     fn sink() -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()))
@@ -216,7 +198,7 @@ mod tests {
         let app = || t.handle().clone();
         let tools = Tools::rules(&[("ps --all", ok(r#"{"Service":"web","State":"exited"}"#))]);
         let logs = sink();
-        lab_start(app(), "web".into(), Runtime::Docker, None, None, channel(logs.clone())).await.unwrap();
+        start_docker(&t, "web", channel(logs.clone())).await.unwrap();
         assert!(tools.called("up -d"));
         let s = lab_status(app(), "web".into(), Runtime::Docker).await.unwrap();
         assert!(!s.running);
@@ -251,7 +233,7 @@ mod tests {
         let tools = Tools::rules(&[]);
         let s = sink();
         let missing = "lab `gone` is not installed";
-        assert_eq!(lab_start(app(), "gone".into(), Runtime::Docker, None, None, channel(s.clone())).await.unwrap_err().to_string(), missing);
+        assert_eq!(start_docker(&t, "gone", channel(s.clone())).await.unwrap_err().to_string(), missing);
         assert_eq!(lab_stop(app(), "gone".into(), Runtime::Docker, channel(s.clone())).await.unwrap_err().to_string(), missing);
         assert_eq!(lab_park(app(), "gone".into(), Runtime::Docker, Park::Pause, channel(s.clone())).await.unwrap_err().to_string(), missing);
         assert_eq!(lab_resume(app(), "gone".into(), Runtime::Vm, channel(s.clone())).await.unwrap_err().to_string(), missing);
@@ -329,7 +311,6 @@ mod tests {
         assert!(exegol_start("a b".into(), "nwodtuhs/exegol:free".into(), channel(sink.clone())).await.is_err());
         assert!(exegol_start("web-1".into(), "x;y".into(), channel(sink.clone())).await.is_err());
         assert!(exegol_stop("a;rm".into(), channel(sink.clone())).await.is_err());
-        assert!(exegol_shell(String::new()).await.is_err());
         assert!(sink.lock().unwrap().is_empty(), "nothing ran");
     }
 

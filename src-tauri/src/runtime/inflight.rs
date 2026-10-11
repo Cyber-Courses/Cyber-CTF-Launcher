@@ -39,16 +39,6 @@ pub fn deploying_labs() -> Vec<String> {
     labs_with(Action::Start)
 }
 
-/// The labs being stopped right now (in this process), deduplicated.
-pub fn stopping_labs() -> Vec<String> {
-    labs_with(Action::Stop)
-}
-
-/// The labs being paused or shut down right now (in this process), deduplicated.
-pub fn parking_labs() -> Vec<String> {
-    labs_with(Action::Park)
-}
-
 /// Every in-process operation right now: the lab and what it is doing.
 pub fn active_actions() -> Vec<(String, Action)> {
     in_flight().lock().map(|m| m.iter().map(|(id, (a, _))| (id.clone(), *a)).collect()).unwrap_or_default()
@@ -148,7 +138,7 @@ fn try_lock_lab_at(file: Option<&Path>, id: &str) -> Option<LabLock> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, DeployGuard, active_actions, active_deploys, deploying_labs, parking_labs, stopping_labs, try_lock_lab_at};
+    use super::{Action, DeployGuard, active_actions, active_deploys, deploying_labs, try_lock_lab_at};
 
     async fn lock_lab(id: &str) -> super::LabLock {
         super::lock_lab_at(None, id).await
@@ -176,7 +166,6 @@ mod tests {
         // A stop entered while the start is still in flight names the state.
         let second = DeployGuard::new(id, Action::Stop);
         assert_eq!(action_of(id), Some(Action::Stop));
-        assert!(stopping_labs().contains(&id.to_string()));
         assert!(!deploying_labs().contains(&id.to_string()));
         drop(second);
         assert_eq!(action_of(id), Some(Action::Stop), "still one operation in flight");
@@ -188,11 +177,10 @@ mod tests {
     fn park_is_neither_a_deploy_nor_a_teardown() {
         let id = "inflight-test-park";
         let g = DeployGuard::new(id, Action::Park);
-        assert!(parking_labs().contains(&id.to_string()));
+        assert_eq!(action_of(id), Some(Action::Park));
         assert!(!deploying_labs().contains(&id.to_string()));
-        assert!(!stopping_labs().contains(&id.to_string()));
         drop(g);
-        assert!(!parking_labs().contains(&id.to_string()));
+        assert_eq!(action_of(id), None);
     }
 
     #[tokio::test]

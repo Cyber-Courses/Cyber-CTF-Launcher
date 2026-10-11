@@ -204,11 +204,6 @@ pub fn end_session_blocking(container: &str, tag: &str) {
 /// How long ending a shell's session may take at quit.
 const END_SESSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
-/// Opens the player's own terminal attached to the attack box.
-pub fn shell(id: &str) -> Result<()> {
-    open_terminal(&shell_command(id))
-}
-
 /// Escapes text for an AppleScript double-quoted string.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn applescript_string(s: &str) -> String {

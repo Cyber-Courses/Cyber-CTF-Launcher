@@ -185,11 +185,6 @@ export function answer(cmd: string, args: Record<string, unknown> | undefined): 
       return ["lab-goad"];
     case "active_operations":
       return [{ labId: "lab-goad", op: "launch", machine: "SRV02", step: "Configure SRV02 (ansible 41/88)" }];
-    case "stopping_labs":
-    case "parking_labs":
-      return [];
-    case "deploy_in_progress":
-      return false;
     case "lab_deploy_log":
       return "";
     case "machine_metrics":
@@ -274,7 +269,6 @@ export function answer(cmd: string, args: Record<string, unknown> | undefined): 
       return { available: true, ok: true, output: "", results: [{ name: "api", from: "attacker", ok: true, reason: "" }] };
     case "image_download_size":
       return 4.1 * GB;
-    case "provisioning_images":
     case "installed_tools":
       return [];
     case "shared_folder_get":
