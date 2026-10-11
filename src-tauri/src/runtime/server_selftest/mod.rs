@@ -182,7 +182,7 @@ async fn wait_tcp_from(login: &str, identity: &Path, host: &str, port: u16, with
     let target = ssh::Target::direct(node, user, identity.to_path_buf());
     let known = identity.with_file_name("known_hosts");
     let probe = format!("timeout 4 bash -c {}", ssh::sh_quote(&format!("</dev/tcp/{host}/{port}")));
-    if retry_until(within, || async { target.exec(&known, &probe).await.is_ok() }).await {
+    if retry_until(within, || async { target.exec_timed(&known, &probe, Duration::from_secs(20)).await.is_ok() }).await {
         Ok(())
     } else {
         Err(Error::Invalid(format!("no answer on {host}:{port} (from {node})")))

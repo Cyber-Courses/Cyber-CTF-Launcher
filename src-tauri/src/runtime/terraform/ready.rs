@@ -13,6 +13,9 @@ const READY_TIMEOUT: Duration = Duration::from_secs(40 * 60);
 /// Give up on confirming (not on the lab) when SSH never answers this long.
 const SSH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const POLL: Duration = Duration::from_secs(10);
+/// One status read (a `cat` and a `tail`) never takes longer than this; past it the read is
+/// abandoned and retried, so the deadlines above hold even when SSH hangs.
+const EXEC_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The bootstrap's report, read from the lab host.
 #[derive(Debug, PartialEq)]
@@ -73,7 +76,7 @@ pub(super) async fn wait_ready(state: &Path, log: &mut impl FnMut(String)) -> Re
     let mut reached = false;
     let mut last_step = String::new();
     loop {
-        match target.exec(&known_hosts, &command).await {
+        match target.exec_timed(&known_hosts, &command, EXEC_TIMEOUT).await {
             Ok(out) => {
                 reached = true;
                 if let Some(done) = report(&out, &mut last_step, log) {
