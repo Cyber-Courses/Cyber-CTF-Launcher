@@ -52,10 +52,7 @@ fn load_file(path: &std::path::Path) -> Option<Session> {
 /// Writes the session to a dev session file, creating its folder.
 #[cfg(debug_assertions)]
 fn save_file(path: &std::path::Path, raw: &str) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, raw)?;
+    crate::atomic_file::write(path, raw)?;
     Ok(())
 }
 

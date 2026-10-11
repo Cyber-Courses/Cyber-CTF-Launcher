@@ -39,10 +39,7 @@ fn install_id_at(path: &std::path::Path) -> Result<String> {
         }
     }
     let id = random_hex();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, &id)?;
+    crate::atomic_file::write(path, &id)?;
     Ok(id)
 }
 
