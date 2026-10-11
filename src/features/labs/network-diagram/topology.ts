@@ -34,7 +34,8 @@ export function topology(machines: Machine[], networks: LabNetwork[], attacker: 
 
   // Networks: as reported, plus any a machine names that wasn't (best effort), or a single
   // synthetic one for runtimes that report no networks (its subnet guessed from an address).
-  const nets = new Map<string, LabNetwork>(networks.map((n) => [n.name, n]));
+  // Copies: a guessed subnet below must not be written into the caller's (polled) networks.
+  const nets = new Map<string, LabNetwork>(networks.map((n) => [n.name, { ...n }]));
   const ifacesOf = (m: Machine): LabInterface[] => {
     if (m.interfaces?.length) return m.interfaces;
     const fallback = nets.keys().next().value ?? "default";
