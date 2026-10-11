@@ -547,7 +547,8 @@ mod tests {
         }
         let args = authorize_args(&host("pve.lan", None), &identity, "ssh-ed25519 AAAA launcher\n");
         assert_eq!(args[..4], ["-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "NumberOfPasswordPrompts=1"]);
-        assert!(args.contains(&format!("UserKnownHostsFile={}", dir.join("known_hosts").display())));
+        // Escaped for ssh's option parser (a Windows path's backslashes, a space).
+        assert!(args.contains(&format!("UserKnownHostsFile={}", ssh::ssh_config_path(&dir.join("known_hosts").display().to_string()))));
         assert_eq!(args[args.len() - 2], "root@pve.lan");
         assert!(args.last().unwrap().contains("grep -qxF 'ssh-ed25519 AAAA launcher' ~/.ssh/authorized_keys"), "{args:?}");
         std::fs::remove_dir_all(dir).unwrap();
