@@ -228,9 +228,16 @@ pub(super) fn pinned_ports(json: &str, mut pick: impl FnMut(u16) -> Option<u16>)
             } else {
                 p["published"].as_str().map(str::to_string).unwrap_or_else(|| p["published"].to_string())
             };
-            let ip = p.get("host_ip").and_then(|i| i.as_str()).filter(|i| !i.is_empty()).map(|i| format!("{i}:")).unwrap_or_default();
+            // An IPv6 address goes in brackets, or its colons read as the port separators.
+            let ip = p
+                .get("host_ip")
+                .and_then(|i| i.as_str())
+                .filter(|i| !i.is_empty())
+                .map(|i| if i.contains(':') { format!("[{i}]:") } else { format!("{i}:") })
+                .unwrap_or_default();
             let proto = p.get("protocol").and_then(|i| i.as_str()).unwrap_or("tcp");
-            lines.push(format!("      - \"{ip}{published}:{target}/{proto}\"\n"));
+            // A JSON string is a valid YAML scalar: a quote or newline in a value can't break the file.
+            lines.push(format!("      - {}\n", serde_json::Value::from(format!("{ip}{published}:{target}/{proto}"))));
         }
         out.push_str(&format!("  {}:\n    ports: !override\n{}", serde_json::Value::from(name.as_str()), lines.concat()));
     }
@@ -402,3 +409,6 @@ mod tests {
         assert_eq!(e[0].name, "");
     }
 }
+
+#[cfg(test)]
+mod proptests;

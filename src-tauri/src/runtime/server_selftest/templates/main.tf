@@ -11,15 +11,15 @@ terraform {
 }
 
 provider "proxmox" {
-  endpoint  = var.proxmox_endpoint
-  insecure  = var.proxmox_insecure
+  endpoint = var.proxmox_endpoint
+  insecure = var.proxmox_insecure
   # Token mode (username is a token id) uses api_token; otherwise username/password.
   api_token = var.proxmox_api_token != "" ? var.proxmox_api_token : null
   username  = var.proxmox_api_token != "" ? null : var.proxmox_username
   password  = var.proxmox_api_token != "" ? null : var.proxmox_password
   ssh {
-    agent       = false
-    username    = coalesce(var.proxmox_ssh_username, split("@", var.proxmox_username)[0])
+    agent    = false
+    username = coalesce(var.proxmox_ssh_username, split("@", var.proxmox_username)[0])
     # With a key file (token hosts), authenticate by key; otherwise by password.
     password    = var.proxmox_ssh_private_key_file != "" ? null : var.proxmox_password
     private_key = var.proxmox_ssh_private_key_file != "" ? file(var.proxmox_ssh_private_key_file) : null
@@ -53,7 +53,7 @@ resource "proxmox_virtual_environment_file" "user_data" {
   content_type = "snippets"
   source_raw {
     file_name = "${local.name}-user-data.yaml"
-    data = <<-EOT
+    data      = <<-EOT
       #cloud-config
       hostname: cyberctf-selftest
       ssh_authorized_keys:

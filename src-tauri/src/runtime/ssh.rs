@@ -89,21 +89,47 @@ pub fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
+/// A path as the value of an ssh `-o Key=value` option. OpenSSH splits option values into words
+/// (on whitespace, honouring quotes and backslash escapes) and expands `%` tokens in file paths:
+/// unescaped, `~/Library/Application Support/…/known_hosts` became two files and ssh pinned host
+/// keys in `~/Library/Application`. Escaped here so ssh reads the path back verbatim (a tab can't
+/// be escaped this way; app paths have none).
+pub fn ssh_config_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for c in path.chars() {
+        match c {
+            '\\' | '"' | '\'' | ' ' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '%' => out.push_str("%%"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// The `-o` values every launcher SSH uses: accept a new host's key once, pinned in the
 /// launcher's own `known_hosts` (never the player's ~/.ssh), quiet. `batch` adds no prompts and
-/// a short connect timeout. `known_hosts` goes in as given (quote it for a shell command line).
+/// a short connect timeout. `known_hosts` is the plain path; it is escaped for ssh here.
 pub fn options(batch: bool, known_hosts: &str) -> Vec<String> {
     let mut opts: Vec<String> = Vec::new();
     if batch {
         opts.extend(["BatchMode=yes".into(), "ConnectTimeout=10".into()]);
     }
-    opts.extend(["StrictHostKeyChecking=accept-new".into(), format!("UserKnownHostsFile={known_hosts}"), "LogLevel=ERROR".into()]);
+    opts.extend(["StrictHostKeyChecking=accept-new".into(), format!("UserKnownHostsFile={}", ssh_config_path(known_hosts)), "LogLevel=ERROR".into()]);
     opts
+}
+
+/// A word for a shell command line: as is when it is plain, single-quoted otherwise.
+fn shell_word(s: &str) -> String {
+    let plain = !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "=.,_/:@+-".contains(c));
+    if plain { s.to_string() } else { sh_quote(s) }
 }
 
 /// `options` as `-o …` words for a shell command line.
 fn shell_options(batch: bool, known_hosts: &Path) -> String {
-    options(batch, &sh_quote(&known_hosts.to_string_lossy())).iter().map(|o| format!("-o {o}")).collect::<Vec<_>>().join(" ")
+    options(batch, &known_hosts.to_string_lossy()).iter().map(|o| format!("-o {}", shell_word(o))).collect::<Vec<_>>().join(" ")
 }
 
 impl Target {
@@ -126,7 +152,9 @@ impl Target {
         if !safe_token(user) || !safe_token(host) {
             return Err(Error::Invalid("unexpected jump host".into()));
         }
-        Ok(Some(format!("ProxyCommand=ssh -i {} {} -W %h:%p {jump}", sh_quote(&self.identity.to_string_lossy()), shell_options(true, known_hosts),)))
+        // ssh expands `%` tokens in a ProxyCommand before its shell runs it: only `%h:%p` is ours.
+        let inner = format!("ssh -i {} {}", sh_quote(&self.identity.to_string_lossy()), shell_options(true, known_hosts)).replace('%', "%%");
+        Ok(Some(format!("ProxyCommand={inner} -W %h:%p {jump}")))
     }
 
     /// The shell command that opens the remote attack box. `known_hosts` keeps the
@@ -153,7 +181,7 @@ impl Target {
         run("ssh", &refs, None).await
     }
 
-    /// The `ssh` arguments of [`Target::exec`].
+    /// The `ssh` arguments `exec` runs (no shell in between).
     fn exec_args(&self, known_hosts: &Path, command: &str) -> Result<Vec<String>> {
         self.check_endpoint()?;
         let mut args: Vec<String> = vec!["-i".into(), self.identity.to_string_lossy().to_string(), "-p".into(), self.port.to_string()];
@@ -198,7 +226,7 @@ mod tests {
         let t = Target::direct("10.0.0.5", "debian", "/k/id".into());
         assert_eq!(
             t.attack_shell_command(Path::new("/x/kh")).unwrap(),
-            "ssh -t -i '/k/id' -p 22 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile='/x/kh' -o LogLevel=ERROR debian@10.0.0.5 sudo docker exec -it attacker bash"
+            "ssh -t -i '/k/id' -p 22 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/x/kh -o LogLevel=ERROR debian@10.0.0.5 sudo docker exec -it attacker bash"
         );
     }
 
@@ -207,7 +235,7 @@ mod tests {
         let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", "/k/id".into()) };
         assert_eq!(
             t.proxy_option(Path::new("/x/kh")).unwrap().unwrap(),
-            "ProxyCommand=ssh -i '/k/id' -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile='/x/kh' -o LogLevel=ERROR -W %h:%p root@pve.lan"
+            "ProxyCommand=ssh -i '/k/id' -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/x/kh -o LogLevel=ERROR -W %h:%p root@pve.lan"
         );
         let cmd = t.attack_shell_command(Path::new("/x/kh")).unwrap();
         assert!(cmd.contains("-o 'ProxyCommand=ssh -i '\\''/k/id'\\''"), "{cmd}");
@@ -261,4 +289,16 @@ mod tests {
         assert!(safe_token("192.168.1.5") && safe_token("fd00::1") && safe_token("pve_lan-1"));
         assert!(!safe_token("") && !safe_token("-x") && !safe_token("a b") && !safe_token(&"a".repeat(254)));
     }
+
+    #[test]
+    fn known_hosts_paths_with_spaces_stay_one_file() {
+        let kh = "/Users/a/Library/Application Support/org.cyberctf.desktop/ssh/known_hosts";
+        assert_eq!(options(false, kh)[1], r"UserKnownHostsFile=/Users/a/Library/Application\ Support/org.cyberctf.desktop/ssh/known_hosts");
+        assert_eq!(ssh_config_path(r"C:\Users\x y\50%\kh"), r"C:\\Users\\x\ y\\50%%\\kh");
+        let t = Target::direct("10.0.0.5", "debian", "/k/id".into());
+        assert!(t.attack_shell_command(Path::new(kh)).unwrap().contains(r"-o 'UserKnownHostsFile=/Users/a/Library/Application\ Support/"));
+    }
 }
+
+#[cfg(test)]
+mod proptests;

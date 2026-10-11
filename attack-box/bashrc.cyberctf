@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 
 # --- Cyber CTF -------------------------------------------------------------------------
 # Kali's prompt rewrites the terminal title on every prompt ("root@attacker: /"), which

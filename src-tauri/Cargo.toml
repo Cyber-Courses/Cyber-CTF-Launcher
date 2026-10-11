@@ -47,3 +47,10 @@ libc = "0.2"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+
+[dev-dependencies]
+# Property tests for the parsers of tool output and user input: never panic, round-trips,
+# quoting invariants.
+proptest = { version = "1", default-features = false, features = ["std"] }
+# A POSIX shell-word splitter, to check `sh_quote`d command lines split back into their words.
+shell-words = "1"
