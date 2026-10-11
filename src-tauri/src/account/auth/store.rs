@@ -24,7 +24,54 @@ pub(super) struct Session {
 
 #[cfg(not(debug_assertions))]
 fn entry() -> Result<keyring::Entry> {
-    keyring::Entry::new(config::KEYCHAIN_SERVICE, "session").map_err(keychain_error)
+    entry_named("session")
+}
+
+#[cfg(not(debug_assertions))]
+fn entry_named(name: &str) -> Result<keyring::Entry> {
+    keyring::Entry::new(config::KEYCHAIN_SERVICE, name).map_err(keychain_error)
+}
+
+/// The most a keychain entry holds here, in UTF-16 units: Windows' Credential Manager caps a
+/// credential at 2560 bytes (1280 UTF-16 units). A session (a JWT access token, a refresh token,
+/// the profile) can be longer, and saving it failed, so it was never kept. A longer session is
+/// split across `session.1`, `session.2`… with `session` holding how many there are.
+#[cfg_attr(debug_assertions, allow(dead_code))]
+const CHUNK_UNITS: usize = 1200;
+/// At most this many pieces (a session is a few KiB at most).
+#[cfg_attr(debug_assertions, allow(dead_code))]
+const MAX_CHUNKS: usize = 16;
+#[cfg_attr(debug_assertions, allow(dead_code))]
+const CHUNKS_PREFIX: &str = "cyberctf-chunks:";
+
+/// What goes in the `session` entry and, for a long session, the pieces for `session.1`….
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn split_chunks(raw: &str) -> (String, Vec<String>) {
+    if raw.encode_utf16().count() <= CHUNK_UNITS {
+        return (raw.to_string(), Vec::new());
+    }
+    let mut parts = vec![String::new()];
+    let mut units = 0;
+    for c in raw.chars() {
+        if units + c.len_utf16() > CHUNK_UNITS {
+            parts.push(String::new());
+            units = 0;
+        }
+        units += c.len_utf16();
+        if let Some(p) = parts.last_mut() {
+            p.push(c);
+        }
+    }
+    (format!("{CHUNKS_PREFIX}{}", parts.len()), parts)
+}
+
+/// The session's JSON from the `session` entry's value, reading the pieces with `piece(i)`
+/// (1-based) when it was split. None when a piece is missing.
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn join_chunks(head: String, mut piece: impl FnMut(usize) -> Option<String>) -> Option<String> {
+    let Some(n) = head.strip_prefix(CHUNKS_PREFIX) else { return Some(head) };
+    let n: usize = n.parse().ok().filter(|n| (1..=MAX_CHUNKS).contains(n))?;
+    (1..=n).map(&mut piece).collect()
 }
 
 /// The keychain failing is the common Linux case: no Secret Service (GNOME Keyring, KWallet)
@@ -69,8 +116,9 @@ fn load_blocking() -> std::result::Result<Option<Session>, String> {
         if let Some(why) = backoff::active() {
             return Err(why);
         }
+        let piece = |i: usize| entry_named(&format!("session.{i}")).ok()?.get_password().ok();
         let read = entry().map_err(|e| e.to_string()).and_then(|e| match e.get_password() {
-            Ok(raw) => Ok(serde_json::from_str(&raw).ok()),
+            Ok(head) => Ok(join_chunks(head, piece).and_then(|raw| serde_json::from_str(&raw).ok())),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(keychain_error(e).to_string()),
         });
@@ -124,9 +172,26 @@ fn save_blocking(session: &Session) -> Result<()> {
     }
     #[cfg(not(debug_assertions))]
     {
-        entry()?.set_password(&raw).map_err(keychain_error)?;
+        // The pieces first, then the head naming them: a reader never sees a head whose pieces
+        // aren't there yet. Pieces left from a longer session before are removed.
+        let (head, parts) = split_chunks(&raw);
+        for (i, part) in parts.iter().enumerate() {
+            entry_named(&format!("session.{}", i + 1))?.set_password(part).map_err(keychain_error)?;
+        }
+        entry()?.set_password(&head).map_err(keychain_error)?;
+        clear_chunks_from(parts.len() + 1);
         backoff::set(None);
         Ok(())
+    }
+}
+
+/// Removes the session pieces `session.<from>` and after.
+#[cfg(not(debug_assertions))]
+fn clear_chunks_from(from: usize) {
+    for i in from..=MAX_CHUNKS {
+        if let Ok(e) = entry_named(&format!("session.{i}")) {
+            let _ = e.delete_credential();
+        }
     }
 }
 
@@ -147,12 +212,37 @@ fn clear_blocking() {
         if let Ok(e) = entry() {
             let _ = e.delete_credential();
         }
+        clear_chunks_from(1);
     }
 }
 
 /// Forgets the session, on a blocking thread.
 pub(super) async fn clear() {
     let _ = tokio::task::spawn_blocking(clear_blocking).await;
+}
+
+#[cfg(test)]
+mod chunk_tests {
+    use super::*;
+
+    #[test]
+    fn a_session_too_long_for_one_windows_credential_is_split_and_joined_back() {
+        // Windows refuses a credential over 1280 UTF-16 units: a long session was never kept.
+        let short = r#"{"access_token":"a"}"#;
+        assert_eq!(split_chunks(short), (short.to_string(), Vec::new()));
+        assert_eq!(join_chunks(short.into(), |_| None).as_deref(), Some(short));
+
+        let long = format!(r#"{{"access_token":"{}","name":"Zoë 🦀{}"}}"#, "x".repeat(3000), "é".repeat(700));
+        let (head, parts) = split_chunks(&long);
+        assert_eq!(head, format!("cyberctf-chunks:{}", parts.len()));
+        assert!(parts.len() >= 3);
+        assert!(parts.iter().all(|p| p.encode_utf16().count() <= CHUNK_UNITS));
+        assert!(head.encode_utf16().count() <= CHUNK_UNITS);
+        assert_eq!(join_chunks(head.clone(), |i| parts.get(i - 1).cloned()).as_deref(), Some(long.as_str()));
+        // A missing piece reads as no session, never as a cut one.
+        assert_eq!(join_chunks(head, |i| (i != 2).then(|| parts[i - 1].clone())), None);
+        assert_eq!(join_chunks("cyberctf-chunks:999".into(), |_| Some(String::new())), None);
+    }
 }
 
 #[cfg(all(test, debug_assertions))]
