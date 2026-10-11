@@ -2,7 +2,7 @@
 //! machine names), hand long operations to the detached deploy worker, and stream logs back
 //! over a channel.
 
-use tauri::AppHandle;
+use crate::AppHandle;
 use tauri::ipc::Channel;
 
 use super::launch::start;
@@ -193,8 +193,112 @@ pub async fn attack_vm_shell(app: AppHandle, id: String) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::{
+        attack_vm_shell, attack_vm_start, attack_vm_status, attack_vm_stop, lab_attack_shell, lab_check, lab_park, lab_provision, lab_resume, lab_start,
+        lab_status, lab_stop, lab_tools, running_labs,
+    };
     use super::{channel_log, check_box, check_image, exegol_shell, exegol_start, exegol_status, exegol_stop, valid_machine_name};
+    use crate::exec::fake::{Tools, ok};
+    use crate::runtime::{Park, Runtime, server};
+    use crate::test_app::TestApp;
     use tauri::ipc::{Channel, InvokeResponseBody};
+
+    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n";
+
+    fn sink() -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()))
+    }
+
+    #[tokio::test]
+    async fn lab_commands_start_report_and_stop_an_installed_lab() {
+        let t = TestApp::new();
+        t.lab("web", &[("isoloom.yml", SPEC)]);
+        let app = || t.handle().clone();
+        let tools = Tools::rules(&[("ps --all", ok(r#"{"Service":"web","State":"exited"}"#))]);
+        let logs = sink();
+        lab_start(app(), "web".into(), Runtime::Docker, None, None, channel(logs.clone())).await.unwrap();
+        assert!(tools.called("up -d"));
+        let s = lab_status(app(), "web".into(), Runtime::Docker).await.unwrap();
+        assert!(!s.running);
+        assert_eq!(lab_tools(app(), "web".into(), Runtime::Docker).await.unwrap().len(), 0);
+        let check = lab_check(app(), "web".into(), Runtime::Docker).await.unwrap();
+        assert!(!check.ok);
+        let _ = running_labs(app()).await;
+        lab_stop(app(), "web".into(), Runtime::Docker, channel(logs.clone())).await.unwrap();
+        assert!(tools.called("down --volumes"));
+        assert!(!logs.lock().unwrap().is_empty());
+        // A VM lab's status is its VMs'.
+        t.lab("ad", &[]);
+        assert!(!lab_status(app(), "ad".into(), Runtime::Vm).await.unwrap().running);
+    }
+
+    #[tokio::test]
+    async fn a_lab_on_a_server_host_has_no_local_check() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[]);
+        server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
+        let _tools = Tools::rules(&[]);
+        let check = lab_check(t.handle().clone(), "web".into(), Runtime::Docker).await.unwrap();
+        assert!(!check.available);
+        let vm = lab_check(t.handle().clone(), "web".into(), Runtime::Vm).await.unwrap();
+        assert!(!vm.available);
+    }
+
+    #[tokio::test]
+    async fn lab_commands_refuse_labs_that_are_not_installed_and_bad_input() {
+        let t = TestApp::new();
+        let app = || t.handle().clone();
+        let tools = Tools::rules(&[]);
+        let s = sink();
+        let missing = "lab `gone` is not installed";
+        assert_eq!(lab_start(app(), "gone".into(), Runtime::Docker, None, None, channel(s.clone())).await.unwrap_err().to_string(), missing);
+        assert_eq!(lab_stop(app(), "gone".into(), Runtime::Docker, channel(s.clone())).await.unwrap_err().to_string(), missing);
+        assert_eq!(lab_park(app(), "gone".into(), Runtime::Docker, Park::Pause, channel(s.clone())).await.unwrap_err().to_string(), missing);
+        assert_eq!(lab_resume(app(), "gone".into(), Runtime::Vm, channel(s.clone())).await.unwrap_err().to_string(), missing);
+        assert_eq!(lab_provision(app(), "gone".into(), Runtime::Vm, None, channel(s.clone())).await.unwrap_err().to_string(), missing);
+        assert_eq!(lab_status(app(), "gone".into(), Runtime::Vm).await.err().unwrap().to_string(), missing);
+        assert!(lab_tools(app(), "gone".into(), Runtime::Docker).await.is_err());
+        assert!(lab_check(app(), "gone".into(), Runtime::Docker).await.is_err());
+        assert!(lab_attack_shell(app(), "gone".into(), Runtime::Docker).await.is_err());
+        assert!(attack_vm_status(app(), "gone".into(), "kalilinux/rolling".into()).await.is_err());
+        assert!(attack_vm_start(app(), "gone".into(), "kalilinux/rolling".into(), channel(s.clone())).await.is_err());
+        assert!(attack_vm_stop(app(), "gone".into(), channel(s.clone())).await.is_err());
+        assert!(attack_vm_shell(app(), "gone".into()).await.is_err());
+        // Installed, but a machine name or box that could reach a command line is refused.
+        t.lab("ad", &[]);
+        let err = lab_provision(app(), "ad".into(), Runtime::Vm, Some("a;rm".into()), channel(s.clone())).await.unwrap_err().to_string();
+        assert_eq!(err, "invalid machine name `a;rm`");
+        assert!(attack_vm_status(app(), "ad".into(), "rolling".into()).await.is_err());
+        assert!(attack_vm_start(app(), "ad".into(), "-x/y z".into(), channel(s.clone())).await.is_err());
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(s.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_attack_vm_commands_read_and_remove_it() {
+        let t = TestApp::new();
+        t.lab("ad", &[]);
+        let tools = Tools::rules(&[("box list", ok("kalilinux/rolling (virtualbox, 2024.4.0)\n"))]);
+        let s = attack_vm_status(t.handle().clone(), "ad".into(), "kalilinux/rolling".into()).await.unwrap();
+        assert!(s.image_present && !s.running);
+        attack_vm_stop(t.handle().clone(), "ad".into(), channel(sink())).await.unwrap();
+        // Never started: no shell to open.
+        let err = attack_vm_shell(t.handle().clone(), "ad".into()).await.unwrap_err().to_string();
+        assert_eq!(err, "the attack VM isn't started");
+        assert!(tools.called("vagrant box list"));
+    }
+
+    #[tokio::test]
+    async fn attack_box_commands_drive_docker_for_a_valid_lab() {
+        let tools = Tools::rules(&[("inspect", ok("true\t10.0.0.5\n"))]);
+        let s = sink();
+        let st = exegol_status("web-1".into(), "nwodtuhs/exegol:free".into()).await.unwrap();
+        assert!(st.running);
+        exegol_stop("web-1".into(), channel(s.clone())).await.unwrap();
+        assert!(tools.called("docker rm -f cyberctf-web-1-attacker"));
+        let _ = exegol_start("web-1".into(), "nwodtuhs/exegol:free".into(), channel(s.clone())).await;
+        assert!(tools.called("nwodtuhs/exegol:free"));
+    }
 
     /// A channel whose messages land in `sink`.
     fn channel(sink: std::sync::Arc<std::sync::Mutex<Vec<String>>>) -> Channel<String> {

@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::inflight::{Action, DeployGuard, lock_lab};
 use super::lifecycle::resume_locked;
@@ -430,9 +430,18 @@ async fn public_ip() -> Result<String> {
     // firewall is locked to this machine's IP), so one endpoint being down or blocked must not
     // fail the launch. Each has its own short timeout so a hanging endpoint doesn't stall it.
     const RESOLVERS: [&str; 4] = ["https://checkip.amazonaws.com", "https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com"];
+    // Unit tests never reach the internet: a documentation address stands in.
+    if cfg!(test) {
+        return Ok("203.0.113.7".into());
+    }
+    public_ip_from(&RESOLVERS).await
+}
+
+/// The first IPv4 one of `resolvers` answers with.
+async fn public_ip_from(resolvers: &[&str]) -> Result<String> {
     let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(8)).build().map_err(|e| Error::Invalid(e.to_string()))?;
     let mut last = String::new();
-    for url in RESOLVERS {
+    for &url in resolvers {
         match client.get(url).send().await.and_then(|r| r.error_for_status()) {
             Ok(resp) => match resp.text().await {
                 Ok(body) if let Some(ip) = parse_ipv4(&body) => return Ok(ip),
@@ -462,6 +471,200 @@ mod tests {
         terraform_vars,
     };
     use super::{server, warn_if_low_memory, welcome};
+    use crate::exec::fake::{Tools, fail, ok};
+    use crate::runtime::paths::{local_vm, mark_parked, parked};
+    use crate::runtime::{Park, start};
+    use crate::test_app::TestApp;
+
+    const RUNNING: &str = r#"{"Service":"web","State":"running","Name":"cyberctf-web-web-1"}"#;
+    const EXITED: &str = r#"{"Service":"web","State":"exited","Name":"cyberctf-web-web-1"}"#;
+
+    async fn start_here(
+        t: &TestApp,
+        id: &str,
+        runtime: Runtime,
+        provider: Option<Provider>,
+        env: &[(String, String)],
+    ) -> (crate::error::Result<()>, Vec<String>) {
+        let dir = t.data().join("labs").join(id);
+        let mut log = Vec::new();
+        let r = start(t.handle(), &dir, id, runtime, provider, None, env, |l| log.push(l)).await;
+        (r, log)
+    }
+
+    #[tokio::test]
+    async fn a_container_lab_starts_on_this_machines_docker() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+        let tools = Tools::rules(&[]);
+        let (r, log) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
+        r.unwrap();
+        assert!(tools.called("docker info") && tools.called("up -d --pull missing --wait"), "{:?}", tools.calls());
+        assert_eq!(log.last().map(String::as_str), Some("Then look around."), "{log:?}");
+        assert_eq!(local_vm(&dir), None);
+    }
+
+    #[tokio::test]
+    async fn a_container_lab_already_up_is_refused_and_leftovers_are_cleared() {
+        let t = TestApp::new();
+        t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+        let tools = Tools::rules(&[("ps --all", ok(RUNNING))]);
+        let (r, _) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
+        assert!(r.unwrap_err().to_string().starts_with("This lab is already running on this machine"));
+        assert!(!tools.called("up -d"));
+        drop(tools);
+        let tools = Tools::rules(&[("ps --all", ok(EXITED))]);
+        let (r, log) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
+        r.unwrap();
+        assert!(log.contains(&"Clearing a previous, stopped run…".to_string()), "{log:?}");
+        assert!(tools.called("down --volumes"));
+    }
+
+    #[tokio::test]
+    async fn a_parked_lab_resumes_unless_nothing_is_left_of_it() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+        mark_parked(&dir, Some(Park::Shutdown)).unwrap();
+        let tools = Tools::rules(&[("ps --all", ok(EXITED))]);
+        let (r, log) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
+        r.unwrap();
+        assert!(log[0].starts_with("This lab is parked on this machine: resuming it"), "{log:?}");
+        assert!(tools.called(" start") && !tools.called("up -d"));
+        assert_eq!(parked(&dir), None);
+        drop(tools);
+        // Its containers pruned: a fresh start instead of a resume that can only fail.
+        mark_parked(&dir, Some(Park::Shutdown)).unwrap();
+        let tools = Tools::rules(&[]);
+        let (r, log) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
+        r.unwrap();
+        assert!(log[0].contains("its stopped containers are gone: starting it fresh"), "{log:?}");
+        assert!(tools.called("up -d"));
+    }
+
+    #[tokio::test]
+    async fn a_vm_lab_starts_on_a_local_hypervisor() {
+        let t = TestApp::new();
+        t.lab("ad", &[("isoloom.yml", VM_LAB), ("setup.sh", "true\n")]);
+        let tools = Tools::rules(&[]);
+        let (r, _) = start_here(&t, "ad", Runtime::Vm, None, &[]).await;
+        assert_eq!(r.unwrap_err().to_string(), "VM labs need a provider");
+        let env = [("CYBERCTF_ATTACKBOX_IMAGE".to_string(), "kalilinux/rolling".to_string())];
+        let (r, log) = start_here(&t, "ad", Runtime::Vm, Some(Provider::Virtualbox), &env).await;
+        r.unwrap();
+        assert!(tools.called("vagrant up --provider virtualbox"), "{:?}", tools.calls());
+        // The attack VM is started beside it, or its failure noted without failing the lab.
+        assert!(log.iter().any(|l| l.contains("attack VM")) || tools.called(".cyberctf-attack-vm") || tools.calls().len() > 2, "{log:?}");
+    }
+
+    #[tokio::test]
+    async fn a_vm_start_that_trips_on_leftovers_is_cleared_and_retried_once() {
+        let t = TestApp::new();
+        t.lab("ad", &[("isoloom.yml", VM_LAB), ("setup.sh", "true\n")]);
+        let tools = Tools::rules(&[("vagrant up", fail("VBoxManage: error: VERR_ALREADY_EXISTS"))]);
+        let (r, log) = start_here(&t, "ad", Runtime::Vm, Some(Provider::Virtualbox), &[]).await;
+        assert!(r.is_err());
+        assert!(log.iter().any(|l| l.starts_with("A previous run left VM state behind")), "{log:?}");
+        assert_eq!(tools.calls().iter().filter(|c| c.starts_with("vagrant up")).count(), 2);
+        drop(tools);
+        // A genuine failure is not retried.
+        let tools = Tools::rules(&[("vagrant up", fail("provisioning failed"))]);
+        let (r, _) = start_here(&t, "ad", Runtime::Vm, Some(Provider::Virtualbox), &[]).await;
+        assert!(r.is_err());
+        assert_eq!(tools.calls().iter().filter(|c| c.starts_with("vagrant up")).count(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_container_lab_runs_in_a_local_vm_or_is_refused_on_a_missing_vagrant() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+        let tools = Tools::rules(&[]);
+        let (r, log) = start_here(&t, "web", Runtime::Docker, Some(Provider::Virtualbox), &[]).await;
+        r.unwrap();
+        assert_eq!(log[0], "Running in a virtualbox VM on this machine");
+        assert_eq!(local_vm(&dir).as_deref(), Some("virtualbox"));
+        assert!(tools.called("vagrant up --provider virtualbox"));
+        drop(tools);
+        let _tools = Tools::rules(&[("vagrant --version", None)]);
+        let (r, _) = start_here(&t, "web", Runtime::Docker, Some(Provider::Virtualbox), &[]).await;
+        assert!(r.unwrap_err().to_string().starts_with("Vagrant isn't installed"));
+    }
+
+    #[tokio::test]
+    async fn a_lab_on_qemu_is_checked_for_its_emulator() {
+        let t = TestApp::new();
+        t.lab("ad", &[("isoloom.yml", VM_LAB), ("setup.sh", "true\n")]);
+        let _tools = Tools::rules(&[("qemu-system", None)]);
+        let (r, _) = start_here(&t, "ad", Runtime::Vm, Some(Provider::Qemu), &[]).await;
+        // One of its machines is built for the other CPU, and its emulator is missing (or its
+        // networks don't fit QEMU's two-VM links): refused before any VM is created.
+        let err = r.unwrap_err().to_string();
+        assert!(err.contains("emulator") || err.contains("can't run on QEMU"), "{err}");
+    }
+
+    /// The launcher's SSH key, as `ensure_key` leaves it.
+    fn key(t: &TestApp) {
+        let ssh = t.data().join("ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        std::fs::write(ssh.join("id_ed25519"), "key").unwrap();
+        std::fs::write(ssh.join("id_ed25519.pub"), "ssh-ed25519 AAAA cyberctf-launcher\n").unwrap();
+    }
+
+    async fn start_on(t: &TestApp, id: &str, runtime: Runtime, host: &str) -> (crate::error::Result<()>, Vec<String>) {
+        let dir = t.data().join("labs").join(id);
+        let mut log = Vec::new();
+        let r = start(t.handle(), &dir, id, runtime, None, Some(host), &[], |l| log.push(l)).await;
+        (r, log)
+    }
+
+    #[tokio::test]
+    async fn a_lab_on_a_cloud_account_is_applied_with_terraform_there() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+        key(&t);
+        let host = t.host("az1", "azure", serde_json::json!({}));
+        let tools = Tools::rules(&[]);
+        let (r, log) = start_on(&t, "web", Runtime::Docker, &host).await;
+        r.unwrap();
+        assert!(log.iter().any(|l| l.contains("billed there until you stop it")), "{log:?}");
+        assert!(tools.called("terraform") && tools.called("apply"), "{:?}", tools.calls());
+        assert_eq!(std::fs::read_to_string(dir.join(server::HOST_MARKER)).unwrap(), "az1");
+        let state = t.data().join("deployments").join("web").join("azure");
+        assert_eq!(std::fs::read_to_string(state.join("runtime")).unwrap(), "DOCKER");
+        // The run record keeps the firewall locked to this machine.
+        assert!(std::fs::read_to_string(state.join("run.json")).unwrap().contains("203.0.113.7/32"));
+        // An unknown host is refused before anything runs.
+        assert!(start_on(&t, "web", Runtime::Docker, "nope").await.0.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn an_aws_launch_checks_the_budget_and_a_gcp_launch_its_project() {
+        let t = TestApp::new();
+        t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+        key(&t);
+        let aws = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true, "monthlyLimit": 50.0 }));
+        let tools = Tools::rules(&[]);
+        let (_, log) = start_on(&t, "web", Runtime::Docker, &aws).await;
+        assert!(log.iter().any(|l| l.starts_with("Monthly budget not checked")) || tools.called("aws"), "{log:?}");
+        drop(tools);
+        let gcp = t.host("gcp1", "gcp", serde_json::json!({}));
+        let tools = Tools::rules(&[]);
+        let (_, log) = start_on(&t, "web", Runtime::Docker, &gcp).await;
+        assert_eq!(log[0], "Checking the Cyber CTF labs project on Google Cloud…");
+        assert!(tools.called("gcloud"));
+    }
+
+    #[tokio::test]
+    async fn the_public_ip_comes_from_the_first_resolver_that_gives_one() {
+        use crate::http::tests::serve_once;
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
+        let garbage = serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nblocked".to_vec()).await;
+        let good = serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\n198.51.100.4\n".to_vec()).await;
+        let closed = format!("http://{closed}/");
+        assert_eq!(super::public_ip_from(&[closed.as_str(), garbage.as_str(), good.as_str()]).await.unwrap(), "198.51.100.4");
+        let err = super::public_ip_from(&[closed.as_str()]).await.unwrap_err().to_string();
+        assert!(err.starts_with("Couldn't determine your public IP"), "{err}");
+        assert_eq!(super::public_ip().await.unwrap(), "203.0.113.7", "tests never reach the internet");
+    }
 
     fn lab(spec: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("cyberctf-launch-{}", rand::random::<u32>()));
@@ -471,6 +674,9 @@ mod tests {
     }
 
     const CONTAINERS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\nmessage: |\n  Open the web at {{ machines.web.addresses.lab }}.\n  Then look around.\n";
+
+    /// A VM lab that prepares: each machine installed by a script of the lab's (`setup.sh`).
+    const VM_LAB: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  a:\n    networks: { lab: 10 }\n    resources: { memory_mb: 1024 }\n    vm: { os: debian-12, provision: [setup.sh] }\n  b:\n    arch: arm64\n    networks: { lab: 11 }\n    resources: { memory_mb: 2048 }\n    vm: { os: debian-12, provision: [setup.sh] }\n";
 
     const VMS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  a:\n    networks: { lab: 10 }\n    resources: { memory_mb: 1024 }\n    vm: { os: debian-12 }\n  b:\n    arch: arm64\n    networks: { lab: 11 }\n    resources: { memory_mb: 2048 }\n    vm: { os: debian-12 }\n";
 

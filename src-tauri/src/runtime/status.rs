@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::paths::{lab_dir, local_vm, parked, state_dir, vagrant_dirs};
 use super::{AttackerAt, LabStatus, Place, Runtime, docker, lab, remote, server, terraform, vm};
@@ -233,6 +233,48 @@ mod tests {
         // Indented `name:` keys belong to services, not the project.
         assert_eq!(compose_name("services:\n  web:\n    name: nope\n"), None);
         assert_eq!(compose_name("name: \"\"\n"), None);
+    }
+
+    #[tokio::test]
+    async fn a_lab_status_is_read_where_the_lab_runs() {
+        use crate::exec::fake::{Tools, ok};
+        let t = crate::test_app::TestApp::new();
+        let app = t.handle();
+        let dir = t.lab("web", &[]);
+        let _tools = Tools::rules(&[
+            ("ps --all", ok(r#"{"Service":"web","State":"running","Name":"cyberctf-web-web-1"}"#)),
+            ("vagrant status", ok("1,dc01,state,running\n1,dc01,provider-name,virtualbox\n")),
+        ]);
+        // Its containers here.
+        let s = super::status(app, &dir, "web", Runtime::Docker).await.unwrap();
+        assert!(s.running && matches!(s.place, Some(Place::Container)));
+        assert!(super::running_here(&dir, "web").await);
+        assert!(super::lab_running_here(app, "web").await);
+        assert!(!super::lab_running_here(app, "gone").await);
+        // Its VMs here, and a container lab in a local VM.
+        let s = super::status(app, &dir, "web", Runtime::Vm).await.unwrap();
+        assert!(s.running && matches!(s.place, Some(Place::LocalVm)));
+        crate::runtime::paths::mark_local_vm(&dir, Some(Provider::Virtualbox)).unwrap();
+        let s = super::status(app, &dir, "web", Runtime::Docker).await.unwrap();
+        assert_eq!(s.host.as_deref(), Some("VirtualBox VM on this machine"));
+        // In a cloud account: its Terraform state there (none yet: not running).
+        crate::runtime::server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
+        let s = super::status(app, &dir, "web", Runtime::Docker).await.unwrap();
+        assert!(!s.running && matches!(s.place, Some(Place::Cloud)));
+        assert_eq!(s.host.as_deref(), Some("Host az1"));
+    }
+
+    #[tokio::test]
+    async fn a_lab_with_nothing_up_is_not_running_here() {
+        use crate::exec::fake::Tools;
+        let dir = std::env::temp_dir().join(format!("cyberctf-status-here-{}", rand::random::<u32>()));
+        let vagrant = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
+        std::fs::create_dir_all(&vagrant).unwrap();
+        std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
+        let tools = Tools::rules(&[]);
+        assert!(!super::running_here(&dir, "t").await);
+        assert!(tools.called("vagrant status"));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

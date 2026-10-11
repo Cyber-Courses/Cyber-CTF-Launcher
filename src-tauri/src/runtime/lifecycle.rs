@@ -3,7 +3,8 @@
 
 use std::path::Path;
 
-use tauri::{AppHandle, Manager};
+use crate::AppHandle;
+use tauri::Manager;
 
 use super::inflight::{Action, DeployGuard, lock_lab};
 use super::paths::{deployed_ids, lab_dir, local_vm, mark_local_vm, mark_parked, parked, recorded_runtime, state_dir, vagrant_dirs};
@@ -257,8 +258,165 @@ pub async fn stop_lab(app: &AppHandle, id: &str, runtime: Runtime) -> Result<()>
 
 #[cfg(test)]
 mod tests {
-    use super::{Park, clear_parked, parked_message, provision_target, refuse_vm_shutdown};
+    use super::{Park, clear_parked, park_lab, parked_message, provision_lab, provision_target, reap_expired_labs, refuse_vm_shutdown, resume_lab, stop_lab};
+    use crate::exec::fake::{Tools, fail, ok};
+    use crate::runtime::paths::{local_vm, mark_local_vm, mark_parked, parked};
+    use crate::runtime::providers::Provider;
     use crate::runtime::test_support::status_with;
+    use crate::runtime::{Runtime, server};
+    use crate::test_app::TestApp;
+
+    const UP: &str = "1,dc01,state,running\n1,dc01,provider-name,virtualbox\n";
+
+    #[tokio::test]
+    async fn a_container_lab_parks_and_resumes_with_its_containers() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[]);
+        let tools = Tools::rules(&[("ps --all", ok(r#"{"Service":"web","State":"exited"}"#))]);
+        let mut log = Vec::new();
+        park_lab(t.handle(), "web", Runtime::Docker, Park::Shutdown, |l| log.push(l)).await.unwrap();
+        assert!(tools.called("docker stop -t 1 cyberctf-web-attacker") && tools.called("-p cyberctf-web stop"), "{:?}", tools.calls());
+        assert_eq!(parked(&dir), Some(Park::Shutdown));
+        assert_eq!(log.last().map(String::as_str), Some(parked_message(Park::Shutdown)));
+        resume_lab(t.handle(), "web", Runtime::Docker, |l| log.push(l)).await.unwrap();
+        assert!(tools.called("-p cyberctf-web start") && tools.called("docker start cyberctf-web-attacker"));
+        assert_eq!(parked(&dir), None);
+        assert_eq!(log.last().map(String::as_str), Some("Lab resumed."));
+    }
+
+    #[tokio::test]
+    async fn a_container_lab_with_nothing_left_offers_a_fresh_start() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[]);
+        mark_parked(&dir, Some(Park::Shutdown)).unwrap();
+        let tools = Tools::rules(&[]);
+        let err = resume_lab(t.handle(), "web", Runtime::Docker, |_| {}).await.unwrap_err().to_string();
+        assert!(err.starts_with("Nothing is left of this lab to resume"), "{err}");
+        assert_eq!(parked(&dir), None, "the parked mark is dropped");
+        assert!(!tools.called(" start"));
+        // A lab that isn't installed is refused before anything runs.
+        assert!(resume_lab(t.handle(), "gone", Runtime::Docker, |_| {}).await.is_err());
+        assert!(park_lab(t.handle(), "../x", Runtime::Docker, Park::Pause, |_| {}).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_container_lab_in_a_local_vm_pauses_and_resumes_the_vm() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[]);
+        mark_local_vm(&dir, Some(Provider::Virtualbox)).unwrap();
+        let tools = Tools::rules(&[]);
+        let err = park_lab(t.handle(), "web", Runtime::Docker, Park::Shutdown, |_| {}).await.unwrap_err().to_string();
+        assert!(err.contains("paused, not shut down"), "{err}");
+        assert!(tools.calls().is_empty());
+        park_lab(t.handle(), "web", Runtime::Docker, Park::Pause, |_| {}).await.unwrap();
+        assert!(tools.called("vagrant suspend"));
+        assert_eq!(parked(&dir), Some(Park::Pause));
+        resume_lab(t.handle(), "web", Runtime::Docker, |_| {}).await.unwrap();
+        assert!(tools.called("vagrant up --no-provision"));
+        // Stopping it destroys the VM and forgets where it ran.
+        stop_lab(t.handle(), "web", Runtime::Docker).await.unwrap();
+        assert!(tools.called("vagrant destroy --force"));
+        assert_eq!(local_vm(&dir), None);
+    }
+
+    #[tokio::test]
+    async fn a_vm_lab_parks_resumes_and_stops_with_its_vms() {
+        let t = TestApp::new();
+        let dir = t.lab("ad", &[]);
+        let tools = Tools::rules(&[("vagrant status", ok(UP))]);
+        park_lab(t.handle(), "ad", Runtime::Vm, Park::Shutdown, |_| {}).await.unwrap();
+        assert!(tools.called("vagrant halt"));
+        resume_lab(t.handle(), "ad", Runtime::Vm, |_| {}).await.unwrap();
+        assert!(tools.called("vagrant up --no-provision --provider virtualbox"), "{:?}", tools.calls());
+        mark_parked(&dir, Some(Park::Pause)).unwrap();
+        stop_lab(t.handle(), "ad", Runtime::Vm).await.unwrap();
+        assert!(tools.called("vagrant destroy --force"));
+        assert_eq!(parked(&dir), None);
+    }
+
+    #[tokio::test]
+    async fn a_failed_park_or_stop_keeps_the_labs_marks() {
+        let t = TestApp::new();
+        let dir = t.lab("ad", &[]);
+        mark_parked(&dir, Some(Park::Pause)).unwrap();
+        let _tools = Tools::rules(&[("vagrant up", fail("VBoxManage: error")), ("vagrant halt", fail("locked")), ("destroy", fail("locked"))]);
+        assert!(resume_lab(t.handle(), "ad", Runtime::Vm, |_| {}).await.is_err());
+        assert_eq!(parked(&dir), Some(Park::Pause));
+        assert!(park_lab(t.handle(), "ad", Runtime::Vm, Park::Shutdown, |_| {}).await.is_err());
+        assert_eq!(parked(&dir), Some(Park::Pause));
+        assert!(stop_lab(t.handle(), "ad", Runtime::Vm).await.is_err());
+        assert_eq!(parked(&dir), Some(Park::Pause));
+    }
+
+    #[tokio::test]
+    async fn provisioning_reruns_on_a_running_vm_lab_only() {
+        let t = TestApp::new();
+        t.lab("ad", &[]);
+        let tools = Tools::rules(&[("vagrant status", ok(UP))]);
+        let err = provision_lab(t.handle(), "ad", Runtime::Docker, None, |_| {}).await.unwrap_err().to_string();
+        assert!(err.starts_with("Container labs aren't provisioned in place"), "{err}");
+        let mut log = Vec::new();
+        provision_lab(t.handle(), "ad", Runtime::Vm, Some("dc01"), |l| log.push(l)).await.unwrap();
+        assert!(tools.called("vagrant provision dc01"));
+        assert_eq!(log.first().map(String::as_str), Some("Re-running provisioning on dc01…"));
+        assert_eq!(log.last().map(String::as_str), Some("Provisioning done."));
+        assert!(provision_lab(t.handle(), "ad", Runtime::Vm, Some("nope"), |_| {}).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_lab_on_a_cloud_account_is_neither_parked_nor_provisioned_there() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[]);
+        let host = t.host("az1", "azure", serde_json::json!({}));
+        server::mark_lab(&dir, Some(&host)).unwrap();
+        let tools = Tools::rules(&[]);
+        let err = park_lab(t.handle(), "web", Runtime::Docker, Park::Pause, |_| {}).await.unwrap_err().to_string();
+        assert!(err.starts_with("Pausing a lab on a server host"), "{err}");
+        let err = resume_lab(t.handle(), "web", Runtime::Docker, |_| {}).await.unwrap_err().to_string();
+        assert!(err.contains("parked on a server host"), "{err}");
+        let err = provision_lab(t.handle(), "web", Runtime::Vm, None, |_| {}).await.unwrap_err().to_string();
+        assert!(err.contains("Proxmox or a cloud"), "{err}");
+        assert!(tools.calls().is_empty());
+        // Stopping it destroys it with Terraform there: with no state, nothing is left to destroy,
+        // and the lab no longer reads as running there.
+        stop_lab(t.handle(), "web", Runtime::Docker).await.unwrap();
+        assert!(!dir.join(server::HOST_MARKER).exists());
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    }
+
+    #[tokio::test]
+    async fn the_reaper_only_looks_at_expired_cloud_labs() {
+        let t = TestApp::new();
+        let tools = Tools::rules(&[]);
+        reap_expired_labs(t.handle()).await;
+        // A deployment whose lab isn't installed, one on no host, one not expired yet.
+        for id in ["gone", "here", "fresh"] {
+            std::fs::create_dir_all(t.data().join("deployments").join(id).join("azure")).unwrap();
+        }
+        t.lab("here", &[]);
+        let fresh = t.lab("fresh", &[]);
+        server::mark_lab(&fresh, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
+        reap_expired_labs(t.handle()).await;
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        // Expired, with billable resources: torn down (best effort; Terraform's module is missing).
+        let state = t.data().join("deployments").join("fresh").join("azure");
+        std::fs::write(state.join("run.json"), r#"{"expires_at": 1}"#).unwrap();
+        std::fs::write(state.join("terraform.tfstate"), r#"{"resources": [{"type": "azurerm_linux_virtual_machine"}]}"#).unwrap();
+        reap_expired_labs(t.handle()).await;
+    }
+
+    #[tokio::test]
+    async fn a_parked_lab_is_cleared_before_its_folder_is_replaced() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[]);
+        mark_parked(&dir, Some(Park::Shutdown)).unwrap();
+        let tools = Tools::rules(&[]);
+        let lines = std::sync::Mutex::new(Vec::<String>::new());
+        clear_parked(&dir, "web", &|l: String| lines.lock().unwrap().push(l)).await;
+        assert!(tools.called("down --volumes --remove-orphans"));
+        assert_eq!(parked(&dir), None);
+        assert!(lines.lock().unwrap()[0].starts_with("A parked copy of an older version"));
+    }
 
     #[test]
     fn provisioning_needs_a_running_lab_and_a_known_machine() {

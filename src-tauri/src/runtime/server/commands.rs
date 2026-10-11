@@ -6,8 +6,9 @@ use std::path::Path;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+use crate::AppHandle;
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::Manager;
 
 use super::HOST_MARKER;
 use super::checks::{Check, TestResult};
@@ -279,6 +280,50 @@ mod tests {
 
     fn store(hosts: Vec<HostProfile>, default: Option<&str>) -> Store {
         Store { default: default.map(str::to_string), hosts }
+    }
+
+    #[tokio::test]
+    async fn hosts_are_saved_listed_tested_and_removed_through_the_commands() {
+        use crate::exec::fake::{Tools, ok};
+        let t = crate::test_app::TestApp::new();
+        let app = || t.handle().clone();
+        let input = |id: Option<&str>| -> HostInput {
+            serde_json::from_value(serde_json::json!({
+                "id": id, "name": "My Azure", "provider": "azure", "host": "westeurope", "username": "00000000-0000-0000-0000-000000000000"
+            }))
+            .unwrap()
+        };
+        let saved = server_save(app(), input(None)).unwrap();
+        assert_eq!(saved.provider, Provider::Azure);
+        let edited = server_save(app(), input(Some(&saved.id))).unwrap();
+        assert_eq!(edited.id, saved.id);
+        let list = server_list(app()).unwrap();
+        assert_eq!(list.hosts.len(), 1);
+        assert_eq!(list.default, None, "a cloud account never becomes the default");
+        assert_eq!(server_set_default(app(), Some(saved.id.clone())).unwrap_err().to_string(), "a cloud account can't be the default host");
+        server_set_default(app(), None).unwrap();
+        assert!(server_save(app(), input(Some("ffffffffffffffff"))).is_err());
+        // Testing it asks the Azure CLI (no network here).
+        let tools = Tools::rules(&[("account show", ok("Pay-As-You-Go\n"))]);
+        let result = server_test(app(), saved.id.clone()).await.unwrap();
+        assert!(tools.called("az account show --subscription 00000000-0000-0000-0000-000000000000"));
+        assert!(!result.checks.is_empty());
+        assert!(server_test(app(), "nope".into()).await.is_err());
+        assert!(server_capacity(app(), saved.id.clone()).await.is_none(), "only Proxmox reports capacity");
+        // A lab running on it keeps it.
+        let lab = t.lab("web", &[]);
+        std::fs::write(lab.join(HOST_MARKER), &saved.id).unwrap();
+        assert_eq!(server_running_labs(app()).get(&saved.id), Some(&1));
+        assert!(server_remove(app(), saved.id.clone()).unwrap_err().to_string().starts_with("1 lab still running"));
+        std::fs::remove_file(lab.join(HOST_MARKER)).unwrap();
+        server_remove(app(), saved.id.clone()).unwrap();
+        assert!(server_list(app()).unwrap().hosts.is_empty());
+        // The launcher's key, made once.
+        let ssh = t.data().join("ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        std::fs::write(ssh.join("id_ed25519"), "k").unwrap();
+        std::fs::write(ssh.join("id_ed25519.pub"), "ssh-ed25519 AAAA cyberctf-launcher\n").unwrap();
+        assert_eq!(server_public_key(app()).await.unwrap(), "ssh-ed25519 AAAA cyberctf-launcher");
     }
 
     #[test]
