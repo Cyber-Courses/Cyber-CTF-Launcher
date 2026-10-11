@@ -69,7 +69,7 @@
       "stopped": "A container engine is installed but not running. Start it to run labs.",
       "noEngineLinux": "No container engine yet. Docker Engine, Docker Desktop or Colima all work.",
       "noEngineMacos": "No container engine yet. Docker Desktop, OrbStack or Colima all work.",
-      "noEngineWindows": "No container engine yet. Docker Desktop all work."
+      "noEngineWindows": "No container engine yet. Docker Desktop works."
     },
     "vm": {
       "notApplicable": "No local hypervisor runs on this machine. VM labs can run on a server instead.",

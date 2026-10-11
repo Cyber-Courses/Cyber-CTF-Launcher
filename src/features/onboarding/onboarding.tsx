@@ -29,8 +29,10 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
       .then(setAuth)
       .catch(() => setAuth(null));
   }, []);
-  // Poll so an install finished in a native installer is picked up without a re-check.
-  const refreshReport = usePoll(systemCheck, CHECK_POLL_MS, { serial: true, onValue: setReport, onError: () => setReport(null) });
+  // Poll so an install finished in a native installer is picked up without a re-check. A failed
+  // re-check keeps the last report: clearing it blanked the current step to the loader and, on
+  // Windows, dropped the WSL step from the list, so the player landed on another step.
+  const refreshReport = usePoll(systemCheck, CHECK_POLL_MS, { serial: true, onValue: setReport });
 
   // The machine steps are the same ones the "Set up this machine" window shows.
   const setup = useMachineSetup(report, refreshReport);
