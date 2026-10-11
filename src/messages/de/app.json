@@ -7,7 +7,9 @@
     "commit": "Commit: {commit}",
     "failed": "Deine Antwort konnte nicht an Cyber CTF gesendet werden",
     "decline": "Ablehnen",
-    "approve": "In meiner Cloud ausführen"
+    "approve": "In meiner Cloud ausführen",
+    "expired": "Diese Anfrage ist abgelaufen: Der Start wurde nicht ausgeführt. Starte ihn erneut über die Website, wenn du ihn noch willst.",
+    "close": "Schließen"
   },
   "quitGuard": {
     "title": "Ein Lab wird noch bereitgestellt",

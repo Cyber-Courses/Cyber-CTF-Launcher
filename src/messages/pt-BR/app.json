@@ -7,7 +7,9 @@
     "commit": "commit: {commit}",
     "failed": "Não foi possível enviar sua resposta ao Cyber CTF",
     "decline": "Recusar",
-    "approve": "Rodar na minha nuvem"
+    "approve": "Rodar na minha nuvem",
+    "expired": "Esta solicitação expirou: o lançamento não foi iniciado. Lance de novo pelo site se ainda quiser.",
+    "close": "Fechar"
   },
   "quitGuard": {
     "title": "Um lab ainda está sendo implantado",

@@ -7,7 +7,9 @@
     "commit": "commit : {commit}",
     "failed": "Impossible d'envoyer votre réponse à Cyber CTF",
     "decline": "Refuser",
-    "approve": "Lancer sur mon cloud"
+    "approve": "Lancer sur mon cloud",
+    "expired": "Cette demande a expiré : le lancement n'a pas eu lieu. Relancez-le depuis le site si vous le voulez toujours.",
+    "close": "Fermer"
   },
   "quitGuard": {
     "title": "Un lab est encore en déploiement",
