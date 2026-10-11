@@ -31,7 +31,7 @@ export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, A
     () => machineWorkloads().then((w) => new Set(w.map((x) => x.id).filter((id) => id !== "selftest"))),
     WORKLOADS_POLL_MS,
     new Set<string>(),
-    { restartKey: busyKey },
+    { serial: true, restartKey: busyKey },
   );
   const statuses = useLabState("statuses");
 

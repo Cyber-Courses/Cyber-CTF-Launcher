@@ -19,7 +19,7 @@ export default function MachineSetupWindow() {
   });
   // Poll so an install (incl. one the user finishes in a native installer) is detected as
   // done and the steps update, without a manual re-check.
-  const check = usePoll(systemCheck, 5000, { onValue: setReport, onError: warn("system check") });
+  const check = usePoll(systemCheck, 5000, { serial: true, onValue: setReport, onError: warn("system check") });
   useTauriEvent<string>("machine-setup-step", (step) => setStartAt({ step, nonce: Date.now() }));
   const close = () => getCurrentWindow().close().catch(warn("closing the window"));
 
