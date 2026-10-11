@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 pub use attack_box::start_attack_vm;
 pub use commands::*;
 pub use docker::{PORTS_ENV, subnets_in_use};
-pub use inflight::{Action, active_actions, active_deploys, deploying_labs, parking_labs, stopping_labs};
+pub use inflight::{Action, active_actions, active_deploys, deploying_labs};
 pub use launch::{deployed_on_server, start};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, resume_lab, stop_lab};
 pub use model::{AttackerAt, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};

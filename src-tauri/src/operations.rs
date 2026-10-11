@@ -8,13 +8,6 @@ use serde::Serialize;
 use crate::deploy_worker::{self, Op};
 use crate::runtime::{self, Action, Park};
 
-/// Whether leaving now would interrupt a lab deploy. The UI reads this (and the quit handlers
-/// use it) to warn before quitting: an interrupted cloud apply can leave billable resources.
-#[tauri::command]
-pub fn deploy_in_progress(app: AppHandle) -> bool {
-    runtime::active_deploys() > 0 || !deploy_worker::running(&app).is_empty()
-}
-
 /// The labs currently starting or stopping. The UI reads this on load to rehydrate the "this lab
 /// is starting" state after a window reload: the deploy keeps running in this process even when
 /// the webview reloaded and lost its own in-memory deploy state.
@@ -33,18 +26,6 @@ fn merge_unique(mut ids: Vec<String>, more: impl IntoIterator<Item = String>) ->
         }
     }
     ids
-}
-
-/// The labs being stopped right now, so the UI says "Stopping", never "Deploying", for a teardown.
-#[tauri::command]
-pub fn stopping_labs() -> Vec<String> {
-    runtime::stopping_labs()
-}
-
-/// The labs being paused or shut down right now (machines kept), for the sidebar's label.
-#[tauri::command]
-pub fn parking_labs() -> Vec<String> {
-    runtime::parking_labs()
 }
 
 /// One operation in flight on a lab, for the sidebar: what it is and the step it is at.
@@ -143,13 +124,6 @@ mod tests {
         assert!(merge_operations(Vec::new(), Vec::new()).is_empty());
         // Serialized for the sidebar in camelCase.
         assert_eq!(serde_json::to_value(&ops[0]).unwrap()["labId"], "ad");
-    }
-
-    #[test]
-    fn the_in_process_lists_come_from_the_flight_registry() {
-        // Nothing of these ids is in flight in this test process.
-        assert!(!stopping_labs().iter().any(|id| id == "no-such-lab"));
-        assert!(!parking_labs().iter().any(|id| id == "no-such-lab"));
     }
 
     #[test]

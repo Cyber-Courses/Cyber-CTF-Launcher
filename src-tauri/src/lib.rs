@@ -14,7 +14,6 @@ mod operations;
 mod platform;
 #[cfg(test)]
 mod proptest_support;
-mod provisioning;
 mod quit;
 mod runtime;
 mod shared_folder;
@@ -114,11 +113,8 @@ pub fn run() {
             cloud::gcp_billing_accounts,
             cloud::gcp_organizations,
             cloud::oci_config,
-            provisioning::provisioning_images,
-            provisioning::provisioning_pull,
             platform::install::install_vagrant_plugin,
             labs::lab_launch,
-            runtime::lab_start,
             runtime::lab_stop,
             runtime::lab_park,
             runtime::lab_resume,
@@ -130,7 +126,6 @@ pub fn run() {
             runtime::exegol_status,
             runtime::exegol_start,
             runtime::exegol_stop,
-            runtime::exegol_shell,
             runtime::attack_vm_status,
             runtime::attack_vm_start,
             runtime::attack_vm_stop,
@@ -154,11 +149,8 @@ pub fn run() {
             runtime::server::server_capacity,
             runtime::server_selftest::server_selftest,
             runtime::server::server_open_setup,
-            operations::deploy_in_progress,
             operations::deploying_labs,
-            operations::stopping_labs,
             restart_app,
-            operations::parking_labs,
             operations::active_operations,
             operations::lab_deploy_log,
             quit::linger_quit,
