@@ -2,14 +2,17 @@
   "name": "cyber-ctf-desktop",
   "version": "1.4.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" && cargo fmt --manifest-path src-tauri/Cargo.toml",
-    "typecheck": "tsc --noEmit",
-    "check": "prettier --check \"src/**/*.{ts,tsx,css}\" && tsc --noEmit && eslint src && vitest run && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
+    "typecheck": "next typegen && tsc --noEmit",
+    "check": "prettier --check \"src/**/*.{ts,tsx,css}\" && pnpm typecheck && eslint src && vitest run && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
     "test": "vitest run",
     "test:watch": "vitest"
   },
