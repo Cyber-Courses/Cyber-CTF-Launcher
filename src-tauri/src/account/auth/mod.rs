@@ -96,6 +96,16 @@ pub async fn access_token() -> Result<String> {
     Ok(token)
 }
 
+/// Who is signed in, to tell accounts apart: the access token's `sub`, else the email. None
+/// when signed out (or the session can't be read).
+pub async fn signed_in_user() -> Option<String> {
+    store::read().await.ok().flatten().map(|s| user_of(&s))
+}
+
+fn user_of(session: &Session) -> String {
+    tokens::jwt_claim(&session.access_token, "sub").or_else(|| session.email.clone()).unwrap_or_default()
+}
+
 /// The authorize URL the browser opens.
 fn authorize_url(client_id: &str, redirect_uri: &str, state: &str, verifier: &str, api: &str) -> Result<url::Url> {
     let mut authorize = url::Url::parse(&format!("{}/oauth2/authorize", config::auth_base())).map_err(|e| Error::Invalid(e.to_string()))?;
@@ -223,5 +233,22 @@ mod tests {
         let failed = json(status_from_read(Err("no Secret Service".into())));
         assert_eq!(failed["keychainError"], "no Secret Service");
         assert_eq!(failed["loggedIn"], false);
+    }
+
+    #[test]
+    fn the_signed_in_user_is_the_tokens_subject_else_the_email() {
+        use base64::Engine;
+        let jwt = |claims: &str| format!("h.{}.s", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims));
+        let session = |access: String, email: Option<&str>| Session {
+            access_token: access,
+            refresh_token: None,
+            expires_at: 0,
+            name: None,
+            email: email.map(str::to_string),
+        };
+        assert_eq!(user_of(&session(jwt(r#"{"sub":"u1"}"#), Some("a@x"))), "u1");
+        assert_eq!(user_of(&session(jwt(r#"{"sub":"u2"}"#), Some("a@x"))), "u2");
+        assert_eq!(user_of(&session("opaque".into(), Some("a@x"))), "a@x");
+        assert_eq!(user_of(&session("opaque".into(), None)), "");
     }
 }
