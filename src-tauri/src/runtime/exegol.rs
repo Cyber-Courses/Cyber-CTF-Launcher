@@ -188,6 +188,7 @@ pub async fn end_session(container: &str, tag: &str) {
 }
 
 /// [`end_session`], blocking: for when the app is quitting and nothing async will run again.
+/// Bounded per session: a Docker that doesn't answer must not hold the quit up.
 pub fn end_session_blocking(container: &str, tag: &str) {
     if let Some(script) = end_session_script(tag) {
         let mut cmd = std::process::Command::new("docker");
@@ -196,9 +197,12 @@ pub fn end_session_blocking(container: &str, tag: &str) {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
         crate::exec::headless_std(&mut cmd);
-        let _ = cmd.status();
+        let _ = crate::exec::status_within(&mut cmd, END_SESSION_TIMEOUT);
     }
 }
+
+/// How long ending a shell's session may take at quit.
+const END_SESSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Opens the player's own terminal attached to the attack box.
 pub fn shell(id: &str) -> Result<()> {

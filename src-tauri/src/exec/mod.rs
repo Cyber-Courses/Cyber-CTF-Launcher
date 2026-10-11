@@ -59,6 +59,24 @@ pub fn headless_std(cmd: &mut std::process::Command) -> &mut std::process::Comma
     cmd
 }
 
+/// Runs a blocking command, giving up (and killing it) after `timeout`. Its exit status, or
+/// `None` when it couldn't start or ran out of time.
+pub fn status_within(cmd: &mut std::process::Command, timeout: Duration) -> Option<ExitStatus> {
+    let mut child = cmd.spawn().ok()?;
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status),
+            Ok(None) if std::time::Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+}
+
 /// Builds the Command: headless, Windows batch-wrapper tools routed through `cmd /C` so they
 /// resolve, and Docker kept on the engine the user picked.
 fn build(program: &str, args: &[&str]) -> Command {
@@ -297,6 +315,27 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         false
+    }
+
+    #[test]
+    fn a_blocking_command_is_given_up_after_its_time() {
+        // Regression: ending each shell session at quit ran `docker exec` with no time limit, so
+        // a Docker that didn't answer held the quit up.
+        let (mut quick, mut stuck) = if cfg!(windows) {
+            let mut quick = std::process::Command::new("cmd");
+            quick.args(["/C", "exit 0"]);
+            let mut stuck = std::process::Command::new("ping");
+            stuck.args(["-n", "30", "127.0.0.1"]).stdout(Stdio::null());
+            (quick, stuck)
+        } else {
+            let mut stuck = std::process::Command::new("sleep");
+            stuck.arg("30");
+            (std::process::Command::new("true"), stuck)
+        };
+        assert!(status_within(&mut quick, Duration::from_secs(10)).is_some_and(|s| s.success()));
+        let started = std::time::Instant::now();
+        assert!(status_within(&mut stuck, Duration::from_millis(500)).is_none());
+        assert!(started.elapsed() < Duration::from_secs(10), "gave up in time");
     }
 
     #[tokio::test]
