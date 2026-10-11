@@ -49,3 +49,26 @@ describe("setupNeeded", () => {
     });
   });
 });
+
+describe("setupNeeded: container labs and missing facts", () => {
+  const dockerLab = { runtime: { runtime: "DOCKER", providers: ["docker"] } } as unknown as Lab;
+  const docker = (p: Partial<SystemReport>) => ({ ...report([]), ...p }) as SystemReport;
+
+  it("says what the container engine needs, in order", () => {
+    expect(setupNeeded(dockerLab, docker({ docker: { installed: false, version: null } }), [])).toBe("Needs a container engine");
+    expect(setupNeeded(dockerLab, docker({ dockerDenied: true, dockerRunning: false }), [])).toBe("Docker needs permission (see Machine)");
+    expect(setupNeeded(dockerLab, docker({ dockerRunning: false }), [])).toBe("Start your container engine");
+    expect(setupNeeded(dockerLab, docker({}), [])).toBeNull();
+  });
+
+  it("is null without a runtime or before the machine report is in", () => {
+    expect(setupNeeded({ runtime: null } as unknown as Lab, report([]), [])).toBeNull();
+    expect(setupNeeded(dockerLab, null, [])).toBeNull();
+  });
+
+  it("asks for a server when no local hypervisor can run the lab, and none when one is saved", () => {
+    const lab = vmLab(["vmware_esxi"]);
+    expect(setupNeeded(lab, report([provider("virtualbox")]), [])).toBe("Needs a server to run on");
+    expect(setupNeeded(lab, report([]), [{ id: "esx", provider: "vmware_esxi" } as never])).toBeNull();
+  });
+});
