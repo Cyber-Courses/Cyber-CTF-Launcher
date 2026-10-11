@@ -88,7 +88,11 @@ impl Drop for DeployGuard {
 /// lock, so a user Start/Stop and the reaper can't run two Terraform (or Vagrant) operations
 /// over the same state at once, which could corrupt `terraform.tfstate`. Not reentrant: a caller
 /// already holding it uses the `_locked` variant of an operation.
-pub(super) async fn lock_lab(id: &str) -> OwnedMutexGuard<()> {
+///
+/// It only serialises this process. A deploy worker is another process with a lock of its own,
+/// so the reaper also skips a lab with a live worker, and a worker is only spawned under this
+/// lock (`deploy_worker::run_job`): the reaper's check and its teardown can't interleave a spawn.
+pub(crate) async fn lock_lab(id: &str) -> OwnedMutexGuard<()> {
     static LOCKS: OnceLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> = OnceLock::new();
     let lock = {
         let mut map = LOCKS.get_or_init(|| Mutex::new(HashMap::new())).lock().expect("lab lock registry");

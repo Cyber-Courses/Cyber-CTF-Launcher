@@ -114,33 +114,47 @@ pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<
 /// falls back to running it in this process (on a task that outlives a webview reload) when no
 /// worker can be started. Refuses while another operation of the same key is in progress.
 pub async fn run_job(app: &AppHandle, job: Job, logs: tauri::ipc::Channel<String>) -> Result<()> {
+    match spawn_locked(app, &job).await? {
+        Ok(spawned) => follow(&spawned, logs).await,
+        Err(e) => run_in_app(app, job, logs, e).await,
+    }
+}
+
+/// Starts the worker under the lab lock, which the expiry reaper holds while it checks for a
+/// live worker and tears the lab down: a worker can't start mid-teardown, and one started just
+/// before has its pidfile written (in `spawn`) by the time the reaper looks. The outer `Err` is a
+/// refusal (busy); the inner one, a worker that couldn't be started.
+async fn spawn_locked(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> {
+    let _lock = crate::runtime::lock_lab(&job.lab_id).await;
     if running(app).contains(&job.key()) {
         return Err(Error::Invalid(format!("{} of this lab is already in progress; wait for it to finish.", capitalize(job.what()))));
     }
-    match process::spawn(app, &job) {
-        Ok(spawned) => {
-            let follow = logs.clone();
-            progress::tail(&spawned, move |line| {
-                let _ = follow.send(line);
-            })
-            .await
-        }
-        // Fallback: run in this process, on a detached task (a webview reload aborts this command
-        // future and the child is kill_on_drop, so inline would be cut short). The app then has
-        // to stay open until it finishes; the quit guard keeps it alive.
-        Err(e) => {
-            let _ = logs.send(format!("Running inside the app (a background worker couldn't be started: {e}). Keep the app open until it finishes."));
-            let app = app.clone();
-            let handle = tauri::async_runtime::spawn(async move {
-                let log = move |line: String| {
-                    let _ = logs.send(line);
-                };
-                execute(&app, job, log).await
-            });
-            handle.await.map_err(|e| Error::Invalid(format!("the task did not finish: {e}")))??;
-            Ok(())
-        }
-    }
+    Ok(process::spawn(app, job))
+}
+
+/// Follows a started worker's log into `logs` until it finishes.
+async fn follow(spawned: &process::Spawned, logs: tauri::ipc::Channel<String>) -> Result<()> {
+    progress::tail(spawned, move |line| {
+        let _ = logs.send(line);
+    })
+    .await
+}
+
+/// Fallback: runs the job in this process, on a detached task (a webview reload aborts this
+/// command future and the child is kill_on_drop, so inline would be cut short). The app then has
+/// to stay open until it finishes; the quit guard keeps it alive. The lab lock is not held here:
+/// the operation takes it itself.
+async fn run_in_app(app: &AppHandle, job: Job, logs: tauri::ipc::Channel<String>, why: Error) -> Result<()> {
+    let _ = logs.send(format!("Running inside the app (a background worker couldn't be started: {why}). Keep the app open until it finishes."));
+    let app = app.clone();
+    let handle = tauri::async_runtime::spawn(async move {
+        let log = move |line: String| {
+            let _ = logs.send(line);
+        };
+        execute(&app, job, log).await
+    });
+    handle.await.map_err(|e| Error::Invalid(format!("the task did not finish: {e}")))??;
+    Ok(())
 }
 
 fn capitalize(s: &str) -> String {

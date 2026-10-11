@@ -1,13 +1,14 @@
 //! A lab after it started: parking (pause, shut down) and resuming it, re-running provisioning,
 //! stopping it wherever it runs, and the reaper that destroys expired cloud labs.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 
 use super::inflight::{Action, DeployGuard, lock_lab};
 use super::paths::{deployed_ids, lab_dir, local_vm, mark_local_vm, mark_parked, parked, recorded_runtime, state_dir, vagrant_dirs};
 use super::{Park, Runtime, attack_vm, docker, lab, registry, server, terraform, vm};
+use crate::deploy_worker;
 use crate::error::{Error, Result};
 
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
@@ -215,24 +216,51 @@ pub async fn clear_parked(dir: &Path, id: &str, log: &impl Fn(String)) {
 pub async fn reap_expired_labs(app: &AppHandle) {
     let Ok(base) = app.path().app_data_dir() else { return };
     for id in deployed_ids(&base) {
-        let Ok(dir) = lab_dir(app, &id) else { continue };
-        let Ok(Some(c)) = server::lab_connection(app, &dir) else { continue };
-        let Some(target) = server::terraform_target(c.provider) else { continue };
-        let Ok(state) = state_dir(app, &id, target) else { continue };
-        if !terraform::expired(&state) {
-            continue;
-        }
-        // Take the lab lock before tearing it down, and re-check expiry while holding it: between
-        // the cheap filter above and here a user may have restarted or extended this lab (a start
-        // re-applies and writes a fresh expiry), and destroying their live lab would be wrong.
-        let _lock = lock_lab(&id).await;
-        if !terraform::expired(&state) {
-            continue;
-        }
-        // Best effort: tear it down to end billing, with the runtime recorded at start. No UI
-        // context here, so logs are dropped; if the destroy fails, the next sweep retries.
-        let _ = stop_locked(app, &dir, &id, recorded_runtime(&state), |_line: String| {}).await;
+        reap_if_expired(app, &id).await;
     }
+}
+
+/// Tears one lab down if it is an expired cloud lab that nothing else is working on.
+async fn reap_if_expired(app: &AppHandle, id: &str) {
+    let Some((dir, state)) = cloud_state(app, id) else { return };
+    if !terraform::expired(&state) {
+        return;
+    }
+    // Take the lab lock before tearing it down, and re-check while holding it: between the cheap
+    // filter above and here a user may have restarted or extended this lab (a start re-applies
+    // and writes a fresh expiry), or a deploy worker may be relaunching or resuming it in its own
+    // process, where this lock doesn't reach. Workers are spawned under this lock, so one that
+    // isn't running now can't start before the teardown below is over.
+    let _lock = lock_lab(id).await;
+    if !should_reap(&state, id, &deploy_worker::running(app)) {
+        return;
+    }
+    // Best effort: tear it down to end billing, with the runtime recorded at start. No UI
+    // context here, so logs are dropped; if the destroy fails, the next sweep retries.
+    let _ = stop_locked(app, &dir, id, recorded_runtime(&state), |_line: String| {}).await;
+}
+
+/// A cloud lab's folder and Terraform state folder; `None` for a lab that isn't on a cloud.
+fn cloud_state(app: &AppHandle, id: &str) -> Option<(PathBuf, PathBuf)> {
+    let dir = lab_dir(app, id).ok()?;
+    let c = server::lab_connection(app, &dir).ok()??;
+    let target = server::terraform_target(c.provider)?;
+    let state = state_dir(app, id, target).ok()?;
+    Some((dir, state))
+}
+
+/// Whether the reaper destroys lab `id` now: its state is past its auto-stop time and no deploy
+/// worker (`running`: the live worker keys) is working on it. A worker's `terraform apply` racing
+/// the reaper's `destroy` on the same state (whose Terraform lock the runner clears) would
+/// corrupt it, and the stop's cleanup would then forget resources the worker just created.
+fn should_reap(state: &Path, id: &str, running: &[String]) -> bool {
+    terraform::expired(state) && !worker_busy(id, running)
+}
+
+/// Whether a deploy worker is working on lab `id`: its own operation or its attack VM's.
+fn worker_busy(id: &str, running: &[String]) -> bool {
+    let attack = deploy_worker::attack_key(id);
+    running.iter().any(|k| k == id || *k == attack)
 }
 
 // The bodies of the lab operations the deploy worker runs (`deploy_worker::execute`), by lab id.
@@ -257,7 +285,7 @@ pub async fn stop_lab(app: &AppHandle, id: &str, runtime: Runtime) -> Result<()>
 
 #[cfg(test)]
 mod tests {
-    use super::{Park, clear_parked, parked_message, provision_target, refuse_vm_shutdown};
+    use super::{Park, clear_parked, parked_message, provision_target, refuse_vm_shutdown, should_reap, worker_busy};
     use crate::runtime::test_support::status_with;
 
     #[test]
@@ -286,5 +314,29 @@ mod tests {
         clear_parked(&dir, "web-1", &|l: String| lines.lock().unwrap().push(l)).await;
         assert!(lines.lock().unwrap().is_empty());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_worker_on_the_lab_or_its_attack_vm_keeps_the_reaper_off() {
+        assert!(!worker_busy("web-1", &[]));
+        assert!(worker_busy("web-1", &["web-1".into()]));
+        assert!(worker_busy("web-1", &["web-1.attack".into()]));
+        // Another lab's worker, or one whose id only starts the same, is not this lab's.
+        assert!(!worker_busy("web-1", &["web-10".into(), "other.attack".into()]));
+    }
+
+    #[test]
+    fn an_expired_lab_is_reaped_only_when_no_worker_is_on_it() {
+        let state = std::env::temp_dir().join(format!("cyberctf-reap-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"10.0.0.9"}}}"#).unwrap();
+        std::fs::write(state.join("run.json"), r#"{"expires_at":1}"#).unwrap();
+        assert!(should_reap(&state, "web-1", &[]));
+        // A relaunch or resume in its worker process: its apply would race the destroy.
+        assert!(!should_reap(&state, "web-1", &["web-1".into()]));
+        // Not expired (the relaunch wrote a fresh stop time): nothing to reap either way.
+        std::fs::write(state.join("run.json"), r#"{"expires_at":99999999999}"#).unwrap();
+        assert!(!should_reap(&state, "web-1", &[]));
+        std::fs::remove_dir_all(state).unwrap();
     }
 }
