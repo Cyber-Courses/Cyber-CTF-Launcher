@@ -113,16 +113,18 @@ mod tests {
     fn a_labs_own_module_runs_on_the_launchers_state_and_var_files() {
         let state = Path::new("/d/deployments/goat/aws");
         let files = vec![PathBuf::from("/d/labs/goat/.isoloom/cloud-services/terraform.tfvars.json"), state.join("inputs.tfvars.json")];
+        // Paths as the platform joins them (backslashes on Windows).
+        let path = |p: &Path| p.display().to_string();
         assert_eq!(
             command_args("apply", state, &files),
             [
-                "apply",
-                "-auto-approve",
-                "-input=false",
-                "-no-color",
-                "-state=/d/deployments/goat/aws/terraform.tfstate",
-                "-var-file=/d/labs/goat/.isoloom/cloud-services/terraform.tfvars.json",
-                "-var-file=/d/deployments/goat/aws/inputs.tfvars.json",
+                "apply".to_string(),
+                "-auto-approve".into(),
+                "-input=false".into(),
+                "-no-color".into(),
+                format!("-state={}", path(&state.join("terraform.tfstate"))),
+                format!("-var-file={}", path(&files[0])),
+                format!("-var-file={}", path(&files[1])),
             ]
         );
         assert_eq!(command_args("destroy", state, &[])[0], "destroy");
