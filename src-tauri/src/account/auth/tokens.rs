@@ -48,7 +48,7 @@ fn id_token_profile(id_token: &str) -> (Option<String>, Option<String>) {
 }
 
 pub(super) async fn token_request(form: &[(&str, &str)]) -> Result<TokenResponse> {
-    let res = reqwest::Client::new()
+    let res = crate::http::api_client()?
         .post(format!("{}/oauth2/token", config::auth_base()))
         .form(form)
         .send()

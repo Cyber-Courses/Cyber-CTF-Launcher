@@ -4,6 +4,7 @@ mod config;
 mod deploy_worker;
 mod error;
 mod exec;
+mod http;
 mod labs;
 mod lan_relay;
 mod machine;

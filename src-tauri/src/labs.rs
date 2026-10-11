@@ -4,10 +4,11 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::AppHandle;
 use serde::Deserialize;
 use serde_json::json;
+use tauri::Manager;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager};
 
 use crate::account::api;
 use crate::error::{Error, Result};
@@ -71,19 +72,37 @@ fn extract(tarball: &[u8], dest: &Path) -> Result<()> {
 }
 
 /// The lab's GitHub tarball at `commit`.
-async fn download(repository: &str, commit: &str) -> Result<impl AsRef<[u8]>> {
-    let failed = |e: reqwest::Error| Error::Invalid(format!("download failed: {e}"));
-    let res = reqwest::get(format!("https://codeload.github.com/{repository}/tar.gz/{commit}")).await.map_err(failed)?;
+async fn download(repository: &str, commit: &str) -> Result<Vec<u8>> {
+    fetch_archive(&format!("https://codeload.github.com/{repository}/tar.gz/{commit}"), crate::http::MAX_LAB_ARCHIVE).await
+}
+
+/// A lab archive at `url`, streamed with timeouts (a stalled transfer is given up) and refused
+/// past `max` bytes. It was read whole into memory with no limit and no timeout: a stalled
+/// GitHub transfer hung the launch forever.
+async fn fetch_archive(url: &str, max: u64) -> Result<Vec<u8>> {
+    let res = crate::http::download_client()?.get(url).send().await.map_err(|e| Error::Invalid(format!("download failed: {e}")))?;
     if !res.status().is_success() {
         return Err(Error::Invalid(format!("download failed: HTTP {}", res.status())));
     }
-    res.bytes().await.map_err(failed)
+    crate::http::body_limited(res, max).await
 }
 
 /// Downloads the lab into `<app data>/labs/<lab id>/` unless that exact commit is
 /// already installed. Extracts next to it, then swaps, so a failed download
 /// never leaves a half-installed lab.
 async fn install(app: &AppHandle, lab_id: &str, repository: &str, commit: &str, log: &impl Fn(String)) -> Result<PathBuf> {
+    install_with(app, lab_id, repository, commit, log, || download(repository, commit)).await
+}
+
+/// [`install`], the archive fetched by `fetch` (when the commit isn't installed yet).
+async fn install_with(
+    app: &AppHandle,
+    lab_id: &str,
+    repository: &str,
+    commit: &str,
+    log: &impl Fn(String),
+    fetch: impl AsyncFnOnce() -> Result<Vec<u8>>,
+) -> Result<PathBuf> {
     // The lab id comes from the backend and is used to build paths (join, remove_dir_all, rename).
     // Validate it like every other id so a hostile/buggy response can't escape the labs dir with
     // `..` or an absolute path. Reachable unattended through the agent, so this is the guard.
@@ -108,9 +127,9 @@ async fn install(app: &AppHandle, lab_id: &str, repository: &str, commit: &str, 
     }
 
     log(format!("Downloading {repository}@{}", &commit[..12]));
-    let bytes = download(repository, commit).await?;
+    let bytes = fetch().await?;
 
-    let staging = stage(&labs, lab_id, &dir, bytes.as_ref(), repository, commit)?;
+    let staging = stage(&labs, lab_id, &dir, &bytes, repository, commit)?;
     // A paused copy of the previous version would be orphaned at the hypervisor once its
     // folder (and Vagrant's record of it) is gone: take it down first.
     runtime::clear_parked(&dir, lab_id, log).await;
@@ -344,6 +363,73 @@ mod tests {
         assert!(dest.join("docs").is_dir());
         assert!(std::fs::symlink_metadata(dest.join("passwd")).is_err());
         std::fs::remove_dir_all(dest).unwrap();
+    }
+
+    const SPEC: &str = "version: 1\nname: invoice\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n";
+    const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    #[tokio::test]
+    async fn a_new_lab_version_is_installed_unless_the_old_one_still_runs() {
+        use crate::exec::fake::{Tools, ok};
+        let t = crate::test_app::TestApp::new();
+        let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
+        let tools = Tools::rules(&[]);
+        let lines = std::sync::Mutex::new(Vec::<String>::new());
+        let log = |l: String| lines.lock().unwrap().push(l);
+        let dir = install_with(t.handle(), "invoice", "CyberCTF/invoice", SHA, &log, async || Ok(gz.clone())).await.unwrap();
+        assert_eq!(dir, t.data().join("labs").join("invoice"));
+        assert!(installed(&dir.join(".cyberctf-commit"), SHA) && dir.join("isoloom.yml").is_file());
+        assert_eq!(lines.lock().unwrap().as_slice(), ["Downloading CyberCTF/invoice@0123456789ab", "Lab installed"]);
+        // The same commit again: nothing downloaded.
+        install_with(t.handle(), "invoice", "CyberCTF/invoice", SHA, &log, async || panic!("no download")).await.unwrap();
+        drop(tools);
+        // A newer commit while the old one runs here: refused, the running copy left alone.
+        let _tools = Tools::rules(&[("ps --all", ok(r#"{"Service":"web","State":"running"}"#))]);
+        let newer = "1123456789abcdef0123456789abcdef01234567";
+        let err = install_with(t.handle(), "invoice", "CyberCTF/invoice", newer, &log, async || panic!("no download")).await.unwrap_err().to_string();
+        assert!(err.starts_with("A new version of this lab is out, but it is still running here"), "{err}");
+        // Ids and sources are checked before anything else.
+        assert!(install_with(t.handle(), "../x", "CyberCTF/invoice", SHA, &log, async || panic!()).await.is_err());
+        assert!(install_with(t.handle(), "invoice", "evil/lab", SHA, &log, async || panic!()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn an_installed_lab_launches_on_this_machines_docker() {
+        use crate::exec::fake::Tools;
+        let t = crate::test_app::TestApp::new();
+        let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (".cyberctf-commit", SHA)]);
+        let tools = Tools::rules(&[]);
+        let launch = serde_json::json!({
+            "labId": "invoice", "runtime": "DOCKER", "repository": "CyberCTF/invoice", "commit": SHA,
+            "env": [{ "name": "CTF_API_URL", "value": "https://api" }, { "name": "PATH", "value": "/evil" }]
+        });
+        run(t.handle(), launch, None, None, None, true, |_| {}).await.unwrap();
+        assert!(tools.called("up -d") && dir.join(runtime::lab::INSTANCE_MARKER).exists());
+        assert!(run(t.handle(), serde_json::json!({ "labId": "x" }), None, None, None, false, |_| {}).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_launch_refuses_a_bad_attack_box_image_before_asking_the_backend() {
+        let t = crate::test_app::TestApp::new();
+        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, tauri::ipc::Channel::new(|_| Ok(()))).await;
+        assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
+    }
+
+    #[tokio::test]
+    async fn an_archive_download_is_limited_and_says_why_it_failed() {
+        use crate::http::tests::serve_once;
+        let gz = tarball(&[("lab-abc/isoloom.yml", b"name: x")]);
+        let mut ok = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", gz.len()).into_bytes();
+        ok.extend_from_slice(&gz);
+        assert_eq!(fetch_archive(&serve_once(ok.clone()).await, 1024 * 1024).await.unwrap(), gz);
+        // Past the limit (regression: read whole, unbounded): refused with a clear error.
+        let err = fetch_archive(&serve_once(ok).await, 16).await.unwrap_err().to_string();
+        assert!(err.starts_with("download refused: it is larger than"), "{err}");
+        let missing = serve_once(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()).await;
+        assert_eq!(fetch_archive(&missing, 16).await.unwrap_err().to_string(), "download failed: HTTP 404 Not Found");
+        // Nothing listening: a connection error, not a hang.
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
+        assert!(fetch_archive(&format!("http://{closed}/"), 16).await.unwrap_err().to_string().starts_with("download failed: "));
     }
 
     #[test]
