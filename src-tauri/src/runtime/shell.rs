@@ -1,7 +1,7 @@
 //! The command lines for a lab's shells: the attack box wherever the lab runs (the local
 //! container, or over SSH on the lab host or local lab VM), and the attack VM beside a VM lab.
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::paths::{lab_dir, local_vm, state_dir};
 use super::{Runtime, attack_vm, exegol, lab, remote, server, ssh};
@@ -49,6 +49,12 @@ pub async fn shell_command_for(app: &AppHandle, id: &str, kind: ShellKind, runti
         ShellKind::Lab => lab_shell_command(app, id, runtime, Some(tag)).await,
         ShellKind::AttackVm => Ok((attack_vm::shell_command(&lab_dir(app, id)?)?, None)),
     }
+}
+
+/// The folder an embedded terminal runs the attack VM's `vagrant ssh` in, and the machine (on
+/// Windows, which has no `sh` for the command line, vagrant runs there directly).
+pub fn attack_vm_shell_target(app: &AppHandle, id: &str) -> Result<(std::path::PathBuf, Option<&'static str>)> {
+    attack_vm::shell_target(&lab_dir(app, id)?)
 }
 
 /// Ends what an in-app shell left running in the attack box container.

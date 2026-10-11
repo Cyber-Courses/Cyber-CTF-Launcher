@@ -7,13 +7,13 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Mutex;
 
+use crate::AppHandle;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::Serialize;
-use tauri::AppHandle;
 use tauri::ipc::Channel;
 
 use crate::error::{Error, Result};
-use crate::runtime::{Runtime, ShellKind, end_shell_session, end_shell_session_blocking, shell_command_for};
+use crate::runtime::{Runtime, ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for};
 
 struct Session {
     writer: Box<dyn Write + Send>,
@@ -86,7 +86,7 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
 /// Starts the shell for a lab in a pseudo-terminal; output goes to `events`. Returns the session.
 #[tauri::command]
 pub async fn terminal_open(
-    window: tauri::WebviewWindow,
+    window: crate::WebviewWindow,
     id: String,
     kind: ShellKind,
     runtime: Runtime,
@@ -100,19 +100,11 @@ pub async fn terminal_open(
     let tag = format!("{}-{session}", std::process::id());
     let (line, container) = shell_command_for(window.app_handle(), &id, kind, runtime, &tag).await?;
     let remote = container.map(|c| (c, tag));
+    // Windows has no `sh` for the attack VM's `cd … && vagrant ssh`: vagrant runs directly there,
+    // in the attack VM's folder.
+    let direct = if cfg!(windows) && matches!(kind, ShellKind::AttackVm) { Some(attack_vm_shell_target(window.app_handle(), &id)?) } else { None };
     let pair = native_pty_system().openpty(pty_size(cols, rows)).map_err(|e| Error::Invalid(format!("couldn't open a terminal: {e}")))?;
-    #[cfg(unix)]
-    let mut cmd = {
-        let mut c = CommandBuilder::new("sh");
-        c.args(["-c", &format!("exec {line}")]);
-        c
-    };
-    #[cfg(windows)]
-    let mut cmd = {
-        let mut c = CommandBuilder::new("cmd");
-        c.args(["/c", &line.replace('\'', "\"")]);
-        c
-    };
+    let mut cmd = pty_command(&line, direct.as_ref().map(|(d, m)| (d.as_path(), *m)));
     cmd.env("TERM", "xterm-256color");
     // Docker's "What's next" ad on exit.
     cmd.env("DOCKER_CLI_HINTS", "false");
@@ -131,6 +123,33 @@ pub async fn terminal_open(
         );
     });
     Ok(session)
+}
+
+/// What the pseudo-terminal runs: `vagrant ssh [machine]` in a folder (`direct`), or `line`
+/// through the platform's shell.
+fn pty_command(line: &str, direct: Option<(&std::path::Path, Option<&str>)>) -> CommandBuilder {
+    if let Some((dir, machine)) = direct {
+        let mut c = CommandBuilder::new("vagrant");
+        c.arg("ssh");
+        if let Some(m) = machine {
+            c.arg(m);
+        }
+        c.cwd(dir);
+        return c;
+    }
+    #[cfg(unix)]
+    let c = {
+        let mut c = CommandBuilder::new("sh");
+        c.args(["-c", &format!("exec {line}")]);
+        c
+    };
+    #[cfg(windows)]
+    let c = {
+        let mut c = CommandBuilder::new("cmd");
+        c.args(["/c", &line.replace('\'', "\"")]);
+        c
+    };
+    c
 }
 
 /// Streams the shell's output to `send` as text until it ends (or `send` refuses more), then
@@ -288,6 +307,26 @@ mod tests {
         }
         assert!(String::from_utf8_lossy(&out).contains("hi"));
         assert_eq!(child.wait().unwrap().exit_code(), 3);
+    }
+
+    fn argv(c: &CommandBuilder) -> Vec<String> {
+        c.get_argv().iter().map(|a| a.to_string_lossy().into_owned()).collect()
+    }
+
+    #[test]
+    fn the_attack_vm_runs_vagrant_ssh_directly_in_its_folder() {
+        // Windows (regression): no `sh` for `cd … && exec vagrant ssh`; vagrant runs in the folder.
+        let dir = std::env::temp_dir();
+        let c = pty_command("ignored", Some((dir.as_path(), Some("isoloom-controller"))));
+        assert_eq!(argv(&c), ["vagrant", "ssh", "isoloom-controller"]);
+        assert_eq!(c.get_cwd().map(std::path::PathBuf::from), Some(dir.clone()));
+        assert_eq!(argv(&pty_command("ignored", Some((dir.as_path(), None)))), ["vagrant", "ssh"]);
+        // Otherwise the line goes through the platform's shell, as before.
+        let line = pty_command("docker exec -it 'x' bash", None);
+        #[cfg(unix)]
+        assert_eq!(argv(&line), ["sh", "-c", "exec docker exec -it 'x' bash"]);
+        #[cfg(windows)]
+        assert_eq!(argv(&line), ["cmd", "/c", "docker exec -it \"x\" bash"]);
     }
 
     #[test]

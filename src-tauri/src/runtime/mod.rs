@@ -48,7 +48,7 @@ pub use launch::start;
 pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, resume_lab, stop_lab};
 pub use model::{AttackerAt, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
 pub use paths::{LOCAL_VM_MARKER, validate_id};
-pub use shell::{ShellKind, end_shell_session, end_shell_session_blocking, shell_command_for, valid_image};
+pub use shell::{ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for, valid_image};
 pub use status::{lab_running_here, primary_url, running_here};
 
 /// Mirrors `LabRuntime` in CyberBackend.
