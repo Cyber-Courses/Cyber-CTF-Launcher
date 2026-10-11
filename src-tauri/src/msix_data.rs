@@ -23,7 +23,7 @@ pub(crate) fn merge_missing(src: &Path, dst: &Path) {
 
 /// Windows: brings over what an earlier, virtualized Store build saved. No-op when there is none.
 #[cfg(windows)]
-pub(crate) fn migrate(app: &tauri::AppHandle) {
+pub(crate) fn migrate<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     use tauri::Manager;
     let Some(local) = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from) else { return };
     let Ok(packages) = std::fs::read_dir(local.join("Packages")) else { return };
