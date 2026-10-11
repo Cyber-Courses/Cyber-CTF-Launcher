@@ -28,7 +28,7 @@ export function RunningNowPanel({ refreshKey }: { refreshKey: unknown }) {
   // Lab titles for the list (the runtime only knows ids).
   const [titles, setTitles] = useState<Record<string, string>>({});
   useEffect(() => {
-    apiQuery<{ labs: { id: string; title: string }[] }>("{ labs { id title } }")
+    apiQuery<{ labs: { id: string; title: string }[] }>("labTitles")
       .then((d) => setTitles(Object.fromEntries(d.labs.map((l) => [l.id, l.title]))))
       .catch(ignore("lab ids are shown instead of titles"));
   }, []);

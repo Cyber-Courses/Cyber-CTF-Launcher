@@ -18,7 +18,7 @@ const WORKLOADS_POLL_MS = 8000;
 export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, ActiveOperation>) {
   const [labs, setLabs] = useState<SidebarLab[]>([]);
   useEffect(() => {
-    apiQuery<{ labs: SidebarLab[] }>("{ labs(sort: [{ title: ASC }]) { id slug title category } }")
+    apiQuery<{ labs: SidebarLab[] }>("sidebarLabs")
       .then((d) => setLabs(d.labs))
       .catch(() => setLabs([]));
   }, [loggedIn]);

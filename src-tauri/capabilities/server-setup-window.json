@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "server-setup-window",
+  "description": "the server setup window: close itself, drag, notify the main window, and the server-setup-window commands",
+  "windows": [
+    "server-setup"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "opener:default",
+    "dialog:allow-open",
+    "core:window:allow-set-theme",
+    "server-setup-window"
+  ]
+}

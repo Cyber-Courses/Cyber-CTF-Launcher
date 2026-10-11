@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings-window",
-  "description": "the Settings window: app version and updates, sign-in events to the main window, links, close and drag",
+  "description": "the Settings window: app version and updates, sign-in events to the main window, links, close and drag; its app commands are the settings-window set",
   "windows": [
     "settings"
   ],
@@ -13,6 +13,7 @@
     "updater:default",
     "notification:default",
     "dialog:allow-open",
-    "core:window:allow-set-theme"
+    "core:window:allow-set-theme",
+    "settings-window"
   ]
 }

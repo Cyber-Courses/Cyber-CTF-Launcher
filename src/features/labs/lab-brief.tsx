@@ -12,7 +12,7 @@ export function LabBrief({ labId }: { labId: string }) {
   const t = useT();
   const [content, setContent] = useState<string | null | undefined>(undefined);
   useEffect(() => {
-    apiQuery<{ labs: { contentMd: string | null }[] }>(`query($id: ID!) { labs(where: { id: { eq: $id } }) { contentMd } }`, { id: labId })
+    apiQuery<{ labs: { contentMd: string | null }[] }>("labBrief", { id: labId })
       .then((d) => setContent(d.labs[0]?.contentMd ?? null))
       .catch(() => setContent(null));
   }, [labId]);

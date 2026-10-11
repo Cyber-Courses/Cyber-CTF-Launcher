@@ -90,7 +90,7 @@ describe("hosted lab poll", () => {
     ];
     installTauri({
       api_query: (a) =>
-        String(a?.query).includes("myActiveLabSession") ? { myActiveLabSession: session } : (replies.shift() ?? (() => ({ labSession: null })))(),
+        String(a?.operation).includes("activeSession") ? { myActiveLabSession: session } : (replies.shift() ?? (() => ({ labSession: null })))(),
     });
     const { result } = renderHook(() => useHostedLabs());
     await advance(0);
@@ -106,7 +106,7 @@ describe("hosted lab poll", () => {
     setLocalePreference("en");
     installTauri({
       api_query: (a) => {
-        if (String(a?.query).includes("myActiveLabSession")) return { myActiveLabSession: session };
+        if (String(a?.operation).includes("activeSession")) return { myActiveLabSession: session };
         throw new Error("backend unreachable");
       },
     });
@@ -290,7 +290,7 @@ describe("a stale scan after a local stop", () => {
   it("shows a lab stopped here as stopped while the scan still reports it, so no attack box starts", async () => {
     const stale = lab("lab-e");
     const calls = installTauri({
-      api_query: (a) => (String(a?.query).includes("myCompletedLabs") ? { myCompletedLabs: [] } : { labs: [stale] }),
+      api_query: (a) => (String(a?.operation).includes("completedLabs") ? { myCompletedLabs: [] } : { labs: [stale] }),
       lab_status: () => status({ running: false, parked: null }),
       running_labs: () => ["lab-e"],
     });

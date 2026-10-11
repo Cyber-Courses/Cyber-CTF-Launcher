@@ -69,7 +69,7 @@ describe("Labs list", () => {
     installTauri({
       ...idle,
       api_query: (a) => {
-        if (String(a?.query).includes("labs(")) throw new Error("offline");
+        if (String(a?.operation).includes("labs")) throw new Error("offline");
         return {};
       },
     });
@@ -79,7 +79,7 @@ describe("Labs list", () => {
   });
 
   it("says when no lab is published yet", async () => {
-    installTauri({ ...idle, api_query: (a) => (String(a?.query).includes("labs(") ? { labs: [] } : {}), running_labs: () => [] });
+    installTauri({ ...idle, api_query: (a) => (String(a?.operation).includes("labs") ? { labs: [] } : {}), running_labs: () => [] });
     render(<Labs {...props} loggedIn={false} />);
     await flush(80);
     expect(screen.getByText("No labs published yet")).toBeTruthy();
@@ -99,8 +99,8 @@ describe("Labs list", () => {
     installTauri({
       ...idle,
       api_query: (a) => {
-        const q = String(a?.query);
-        if (!q.includes("labs(")) return {};
+        const q = String(a?.operation);
+        if (!q.includes("labs")) return {};
         return new Promise((r) => (release = r));
       },
     });
@@ -110,7 +110,7 @@ describe("Labs list", () => {
     // A spinner, never the list.
     expect(screen.queryByText("Labs")).toBeNull();
     const { answer } = await import("@/lib/dev-mock");
-    release(answer("api_query", { query: "labs(" }));
+    release(answer("api_query", { operation: "labs" }));
     await flush(80);
     expect(onDetailChange).toHaveBeenCalledWith("GOAD Light");
     expect(screen.getByRole("heading", { name: "GOAD Light" })).toBeTruthy();

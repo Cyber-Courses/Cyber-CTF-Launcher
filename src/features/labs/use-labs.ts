@@ -17,6 +17,7 @@ export interface LabRuntimeInfo {
   commit?: string;
 }
 
+/** A lab as the `labs` operation returns it (its fields are in src-tauri/src/account/api_operation.rs). */
 export interface Lab {
   id: string;
   slug: string;
@@ -29,15 +30,6 @@ export interface Lab {
   /** Skills the lab exercises (from the capabilities it targets), for grouping. */
   skills: { id: string; name: string }[];
 }
-
-const LABS_QUERY = `{ labs(sort: [{ title: ASC }]) {
-  id slug title description question difficulty category
-  runtime { runtime architectures providers hosted repository commit }
-  skills { id name }
-} }`;
-
-/** The labs this player has solved (correct evidence submitted on the website). */
-const COMPLETED_QUERY = `{ myCompletedLabs }`;
 
 /**
  * Loads the published labs from CyberBackend and tracks each lab's local runtime status
@@ -62,7 +54,7 @@ export function useLabs(reloadKey: unknown = 0) {
     // Cancelled when reloadKey changes (e.g. login toggles): a response in flight from the
     // previous key must not resolve last and overwrite the newer catalogue.
     let alive = true;
-    apiQuery<{ labs: Lab[] }>(LABS_QUERY)
+    apiQuery<{ labs: Lab[] }>("labs")
       .then((d) => {
         if (!alive) return;
         setCatalogue(reloadKey, d.labs);
@@ -72,7 +64,7 @@ export function useLabs(reloadKey: unknown = 0) {
       })
       .catch((e) => alive && setError(String(e)));
     // Best effort: logged out (or a backend without the query) just shows no progress.
-    apiQuery<{ myCompletedLabs: string[] }>(COMPLETED_QUERY)
+    apiQuery<{ myCompletedLabs: string[] }>("completedLabs")
       .then((d) => alive && setCompleted(new Set(d.myCompletedLabs)))
       .catch(() => alive && setCompleted(new Set()));
     return () => {

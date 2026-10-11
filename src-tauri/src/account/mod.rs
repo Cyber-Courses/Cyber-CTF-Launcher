@@ -3,5 +3,6 @@
 
 pub mod agent;
 pub mod api;
+pub mod api_operation;
 pub mod auth;
 pub mod colocation;
