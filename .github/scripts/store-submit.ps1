@@ -49,6 +49,8 @@ $sub.applicationPackages += @{ fileName = (Add-File $Package "CyberCTF.msixbundl
 # Image types this script owns; any other image (set by hand in Partner Center) is left as is.
 $managed = @("Screenshot", "StoreLogo9x16", "StoreLogoSquare", "Icon")
 $common = Get-Content (Join-Path $StoreDir "listings/common.json") -Raw | ConvertFrom-Json -AsHashtable
+# What the certification team reads first (why the restricted capabilities are needed).
+if ($common.notesForCertification) { $sub.notesForCertification = $common.notesForCertification }
 $trailers = @()
 
 foreach ($file in Get-ChildItem (Join-Path $StoreDir "listings") -Filter "*-*.json") {
