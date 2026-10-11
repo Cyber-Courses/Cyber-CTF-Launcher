@@ -11,8 +11,9 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
+use crate::AppHandle;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::oneshot;
 
@@ -387,6 +388,50 @@ mod tests {
         assert_eq!(pick_launch_host(&json!({ "runtime": "VM" }), known, default).unwrap().as_deref(), Some("proxmox-1"));
         assert_eq!(pick_launch_host(&json!({ "runtime": "VM" }), known, || None).unwrap(), None);
         assert_eq!(pick_launch_host(&json!({ "runtime": "DOCKER" }), known, default).unwrap(), None);
+    }
+
+    #[test]
+    fn this_machines_identity_is_its_install_id_name_and_arch() {
+        let t = crate::test_app::TestApp::new();
+        let info = agent_info(t.handle().clone()).unwrap();
+        assert_eq!(info["installId"].as_str().unwrap().len(), 32);
+        assert_eq!(agent_info(t.handle().clone()).unwrap()["installId"], info["installId"], "kept");
+        assert_eq!(info["arch"], arch());
+        assert_eq!(info["capabilities"], json!(["docker"]));
+    }
+
+    #[tokio::test]
+    async fn a_launch_onto_a_cloud_account_runs_only_once_confirmed_here() {
+        let t = crate::test_app::TestApp::new();
+        let app = t.handle();
+        let az = t.host("az1", "azure", json!({}));
+        let claim = json!({ "target": az, "repository": "CyberCTF/web", "commit": "abc" });
+        assert_eq!(launch_host(app, &claim).unwrap().as_deref(), Some("az1"));
+        assert_eq!(launch_host(app, &json!({ "runtime": "VM" })).unwrap(), None, "no default server host");
+        // Not a cloud (here, or no host): no question asked.
+        confirm_if_cloud(app, "s-local", &claim, None).await.unwrap();
+        // A cloud account: the answer from the UI decides.
+        for (sid, approve) in [("s-cloud-yes", true), ("s-cloud-no", false)] {
+            let answer = tokio::spawn(async move {
+                loop {
+                    if pending_confirmations().lock().unwrap().contains_key(sid) {
+                        confirm_launch(sid.into(), approve);
+                        return;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            });
+            let r = confirm_if_cloud(app, sid, &claim, Some(&az)).await;
+            answer.await.unwrap();
+            match approve {
+                true => r.unwrap(),
+                false => assert_eq!(r.unwrap_err().to_string(), "Launch on Host az1 was not confirmed on this machine."),
+            }
+        }
+        // A lab that was never installed has nothing to tear down.
+        let _tools = crate::exec::fake::Tools::rules(&[]);
+        tear_down(app, Some("gone"), Runtime::Docker).await;
+        tear_down(app, None, Runtime::Vm).await;
     }
 
     #[test]

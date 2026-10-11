@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::Job;
 use super::files::{self, Files, read_pid};
@@ -269,6 +269,42 @@ mod tests {
         assert!(!f.pid.exists());
         kill_files(&f);
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// A process that looks like a live worker (`… deploy --job …`), leading its own group.
+    #[cfg(unix)]
+    fn fake_worker() -> std::process::Child {
+        use std::os::unix::process::CommandExt;
+        std::process::Command::new("sh").args(["-c", "sleep 30; exit 0", "deploy", "--job", "x.json"]).process_group(0).spawn().unwrap()
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_live_worker_is_listed_refuses_a_second_run_and_is_stopped() {
+        let t = crate::test_app::TestApp::new();
+        let app = t.handle();
+        let mut child = fake_worker();
+        let job = Job::on_lab("lab-1", super::super::Op::Resume { runtime: crate::runtime::Runtime::Vm });
+        let f = files::of(app, &job.key()).unwrap();
+        std::fs::write(&f.pid, child.id().to_string()).unwrap();
+        std::fs::write(&f.job, serde_json::to_vec(&job).unwrap()).unwrap();
+        std::fs::write(&f.log, "Resuming the lab…\n").unwrap();
+        assert_eq!(running(app), ["lab-1"]);
+        let jobs = running_jobs(app);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].0, job);
+        // A second operation on the lab is refused while this one runs.
+        let err = super::super::run_job(app, job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err().to_string();
+        assert_eq!(err, "A resume of this lab is already in progress; wait for it to finish.");
+        // Stopping it ends its process group and drops its pidfile.
+        let waiter = std::thread::spawn(move || child.wait());
+        kill_and_wait(app, "lab-1").await;
+        assert!(waiter.join().unwrap().is_ok());
+        assert!(!f.pid.exists());
+        assert!(running(app).is_empty());
+        // Nothing left to stop.
+        kill_and_wait(app, "lab-1").await;
+        kill(app, "lab-2");
     }
 
     #[tokio::test]

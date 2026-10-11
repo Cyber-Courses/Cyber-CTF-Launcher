@@ -3,21 +3,21 @@
 use std::io::Write as _;
 use std::path::PathBuf;
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::progress::FAILED_MARK;
 use super::{Job, execute, files};
 
 /// The worker's entry point, in place of the app: a headless Tauri app on the same data dir
 /// (so lab, key and server paths resolve the same), the deploy, a status file, then exit.
-pub fn worker_main(job_path: PathBuf, mut context: tauri::Context) {
+pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRuntime>) {
     let Some(job) = read_job(&job_path) else {
         eprintln!("deploy worker: unreadable job file {}", job_path.display());
         std::process::exit(2);
     };
     // No window: this is a background process.
     context.config_mut().app.windows.clear();
-    tauri::Builder::default()
+    tauri::Builder::<crate::AppRuntime>::new()
         .setup(move |app| {
             crate::shared_folder::init(app.handle());
             // A background process, not an app: on macOS keep it out of the Dock, the app
@@ -139,6 +139,27 @@ mod tests {
         std::fs::write(&path, "{").unwrap();
         assert!(read_job(&path).is_none());
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[tokio::test]
+    async fn a_run_logs_its_failure_and_leaves_its_verdict() {
+        use crate::runtime::{Park, Runtime};
+        let t = crate::test_app::TestApp::new();
+        let _tools = crate::exec::fake::Tools::rules(&[]);
+        for op in [
+            Op::Resume { runtime: Runtime::Vm },
+            Op::Park { runtime: Runtime::Docker, mode: Park::Pause },
+            Op::Provision { runtime: Runtime::Vm, machine: None },
+            Op::AttackVm { box_name: "kalilinux/rolling".into() },
+            Op::Launch,
+        ] {
+            let job = Job::on_lab("gone", op);
+            let f = crate::deploy_worker::files::of(t.handle(), &job.key()).unwrap();
+            assert_eq!(super::run_logged(t.handle(), job).await, 1);
+            let status = std::fs::read_to_string(&f.status).unwrap();
+            assert!(status.starts_with("error: "), "{status}");
+            assert!(std::fs::read_to_string(&f.log).unwrap().starts_with("✗ "));
+        }
     }
 
     #[test]
