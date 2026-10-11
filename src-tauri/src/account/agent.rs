@@ -122,11 +122,16 @@ struct Progress<'a> {
 async fn update_state(session_id: &str, state: &str, p: Progress<'_>) -> Result<()> {
     api::graphql(
         "mutation ($id: ID!, $s: LabSessionState!, $u: String, $c: String, $t: String, $n: String, $m: String) { updateLabSession(sessionId: $id, state: $s, localUrl: $u, controlUrl: $c, localToken: $t, coLocationNonce: $n, message: $m) { id } }",
-        json!({ "id": session_id, "s": state, "u": p.local_url, "c": p.control_url, "t": p.token, "n": p.nonce, "m": p.message }),
+        update_vars(session_id, state, &p),
         true,
     )
     .await
     .map(|_| ())
+}
+
+/// The `updateLabSession` variables for a session moving to `state`.
+fn update_vars(session_id: &str, state: &str, p: &Progress<'_>) -> Value {
+    json!({ "id": session_id, "s": state, "u": p.local_url, "c": p.control_url, "t": p.token, "n": p.nonce, "m": p.message })
 }
 
 /// Cloud-launch confirmations awaiting the user's answer, keyed by session id. The agent inserts
@@ -158,11 +163,20 @@ async fn confirm_cloud_launch(app: &AppHandle, session_id: &str, repo: &str, com
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.set_focus();
     }
-    let approved = matches!(tokio::time::timeout(Duration::from_secs(180), rx).await, Ok(Ok(true)));
+    let approved = await_answer(rx, CONFIRM_WAIT).await;
     if let Ok(mut map) = pending_confirmations().lock() {
         map.remove(session_id);
     }
     approved
+}
+
+/// How long a cloud-launch prompt waits for the player.
+const CONFIRM_WAIT: Duration = Duration::from_secs(180);
+
+/// The player's answer on `rx`: only an explicit approval within `wait` counts; a decline, a
+/// dropped prompt or no answer in time is a no.
+async fn await_answer(rx: oneshot::Receiver<bool>, wait: Duration) -> bool {
+    matches!(tokio::time::timeout(wait, rx).await, Ok(Ok(true)))
 }
 
 /// Where a claimed launch runs: the target picked on the website (one of this launcher's hosts
@@ -222,18 +236,17 @@ async fn tear_down(app: &AppHandle, lab_id: Option<&str>, runtime: Runtime) {
 /// endpoint + one-time token/nonce so the website can verify co-location before trusting the
 /// 127.0.0.1 URL. The relay path for a remote/headless agent is the next step.
 async fn report_running(app: &AppHandle, session_id: &str, host: Option<&str>, url: Option<&str>) -> Result<()> {
-    let running_on = host.and_then(|h| server::host_name(app, h)).map(|n| format!("Running on {n}"));
+    let running_on = running_message(host.and_then(|h| server::host_name(app, h)));
     let token = random_hex();
     let nonce = random_hex();
     let control_url = colocation::serve(token.clone(), nonce.clone()).await.ok().map(|port| format!("http://127.0.0.1:{port}"));
-    let progress = Progress {
-        local_url: url,
-        control_url: control_url.as_deref(),
-        token: Some(&token),
-        nonce: Some(&nonce),
-        message: Some(running_on.as_deref().unwrap_or("Running on your machine")),
-    };
+    let progress = Progress { local_url: url, control_url: control_url.as_deref(), token: Some(&token), nonce: Some(&nonce), message: Some(&running_on) };
     update_state(session_id, "RUNNING", progress).await
+}
+
+/// Where the website says the lab runs: the host's name, or this machine.
+fn running_message(host_name: Option<String>) -> String {
+    host_name.map_or_else(|| "Running on your machine".to_string(), |n| format!("Running on {n}"))
 }
 
 /// Claims one pending session and runs its lab on this machine.
@@ -282,17 +295,36 @@ async fn claim_and_run(app: &AppHandle, session_id: &str) -> Result<()> {
 /// Picks up and runs every pending launch aimed at this agent.
 async fn poll_once(app: &AppHandle, agent_id: &str) -> Result<()> {
     let data = api::graphql("query ($a: ID) { myPendingLaunches(agentId: $a) { id } }", json!({ "a": agent_id }), true).await?;
-    if let Some(sessions) = data["myPendingLaunches"].as_array() {
-        for session in sessions {
-            if let Some(sid) = session.get("id").and_then(Value::as_str)
-                && let Err(e) = claim_and_run(app, sid).await
-            {
-                log::warn!("lab session {sid} failed: {e}");
-                let _ = update_state(sid, "FAILED", Progress { message: Some(&e.to_string()), ..Default::default() }).await;
-            }
+    claim_each(pending_ids(&data), |sid| async move { claim_and_run(app, &sid).await }, report_failed).await;
+    Ok(())
+}
+
+/// The session ids in a `myPendingLaunches` answer (entries without one are skipped).
+fn pending_ids(data: &Value) -> Vec<String> {
+    let sessions = data["myPendingLaunches"].as_array().map(Vec::as_slice).unwrap_or_default();
+    sessions.iter().filter_map(|s| s.get("id").and_then(Value::as_str)).map(String::from).collect()
+}
+
+/// Claims and runs each session in turn; one that fails is reported with `fail` (its id and why)
+/// and the next one still runs.
+async fn claim_each<C, CF, F, FF>(ids: Vec<String>, mut claim: C, mut fail: F)
+where
+    C: FnMut(String) -> CF,
+    CF: Future<Output = Result<()>>,
+    F: FnMut(String, String) -> FF,
+    FF: Future<Output = ()>,
+{
+    for sid in ids {
+        if let Err(e) = claim(sid.clone()).await {
+            log::warn!("lab session {sid} failed: {e}");
+            fail(sid, e.to_string()).await;
         }
     }
-    Ok(())
+}
+
+/// Marks a session FAILED on the backend, with the reason shown on the website.
+async fn report_failed(session_id: String, why: String) {
+    let _ = update_state(&session_id, "FAILED", Progress { message: Some(&why), ..Default::default() }).await;
 }
 
 /// The agent this machine is registered as, and the account it was registered for.
@@ -534,5 +566,66 @@ mod tests {
         let p = Progress::default();
         assert!(p.local_url.is_none() && p.control_url.is_none() && p.token.is_none() && p.nonce.is_none() && p.message.is_none());
         assert_eq!(DEFAULT_ATTACK_IMAGE, "cyberctf/attack-box");
+    }
+
+    #[test]
+    fn a_session_update_carries_its_state_and_progress() {
+        let p = Progress { local_url: Some("http://127.0.0.1:8080"), message: Some("Running on your machine"), ..Default::default() };
+        let vars = update_vars("s-1", "RUNNING", &p);
+        assert_eq!(vars["id"], "s-1");
+        assert_eq!(vars["s"], "RUNNING");
+        assert_eq!(vars["u"], "http://127.0.0.1:8080");
+        assert_eq!(vars["m"], "Running on your machine");
+        assert!(vars["c"].is_null() && vars["t"].is_null() && vars["n"].is_null());
+    }
+
+    #[test]
+    fn the_running_message_names_the_host_or_this_machine() {
+        assert_eq!(running_message(Some("My Proxmox".into())), "Running on My Proxmox");
+        assert_eq!(running_message(None), "Running on your machine");
+    }
+
+    #[test]
+    fn pending_launches_are_read_by_id() {
+        let data = json!({ "myPendingLaunches": [{ "id": "s-1" }, { "other": 1 }, { "id": 7 }, { "id": "s-2" }] });
+        assert_eq!(pending_ids(&data), ["s-1", "s-2"]);
+        assert!(pending_ids(&json!({ "myPendingLaunches": null })).is_empty());
+        assert!(pending_ids(&serde_json::Value::Null).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failed_claim_is_reported_and_the_next_one_still_runs() {
+        let claimed = Mutex::new(Vec::new());
+        let failed = Mutex::new(Vec::new());
+        let ids = vec!["s-1".to_string(), "s-2".to_string(), "s-3".to_string()];
+        let claim = |sid: String| {
+            claimed.lock().unwrap().push(sid.clone());
+            async move { if sid == "s-2" { Err(Error::Invalid("Launch on AWS was not confirmed on this machine.".into())) } else { Ok(()) } }
+        };
+        let fail = |sid: String, why: String| {
+            failed.lock().unwrap().push((sid, why));
+            async {}
+        };
+        claim_each(ids, claim, fail).await;
+        assert_eq!(*claimed.lock().unwrap(), ["s-1", "s-2", "s-3"]);
+        assert_eq!(*failed.lock().unwrap(), [("s-2".to_string(), "Launch on AWS was not confirmed on this machine.".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn a_cloud_launch_runs_only_on_an_explicit_yes_in_time() {
+        let (tx, rx) = oneshot::channel();
+        tx.send(true).unwrap();
+        assert!(await_answer(rx, Duration::from_secs(1)).await);
+        let (tx, rx) = oneshot::channel();
+        tx.send(false).unwrap();
+        assert!(!await_answer(rx, Duration::from_secs(1)).await);
+        // The prompt went away (sender dropped): a no.
+        let (tx, rx) = oneshot::channel::<bool>();
+        drop(tx);
+        assert!(!await_answer(rx, Duration::from_secs(1)).await);
+        // No answer in time: a no, so a missed prompt never spends money.
+        let (_tx, rx) = oneshot::channel::<bool>();
+        assert!(!await_answer(rx, Duration::from_millis(20)).await);
+        assert_eq!(CONFIRM_WAIT, Duration::from_secs(180));
     }
 }
