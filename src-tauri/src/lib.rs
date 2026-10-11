@@ -228,6 +228,24 @@ fn restart_app(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::worker_job;
+    use std::collections::BTreeSet;
+
+    /// The quoted or path-final names between the line starting `start` and the next `end`.
+    fn names_between(src: &str, start: &str, end: &str) -> BTreeSet<String> {
+        let body = src.split_once(start).map(|(_, rest)| rest).unwrap_or_default();
+        let body = body.split_once(end).map(|(list, _)| list).unwrap_or_default();
+        body.split(',').map(|n| n.trim().trim_matches('"').rsplit("::").next().unwrap_or_default().to_string()).filter(|n| !n.is_empty()).collect()
+    }
+
+    /// build.rs lists the commands the app manifest makes permissions for (each window's
+    /// capability is built on them): exactly the ones registered with `generate_handler!`.
+    #[test]
+    fn the_app_manifest_lists_every_registered_command() {
+        let registered = names_between(include_str!("lib.rs"), "generate_handler![", "])");
+        let manifest = names_between(include_str!("../build.rs"), "const COMMANDS: &[&str] = &[", "];");
+        assert!(registered.len() > 50, "{registered:?}");
+        assert_eq!(manifest, registered);
+    }
 
     #[test]
     fn only_deploy_job_arguments_make_a_worker() {

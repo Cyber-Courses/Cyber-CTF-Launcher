@@ -202,9 +202,9 @@ export function answer(cmd: string, args: Record<string, unknown> | undefined): 
     case "agent_info":
       return { installId: "c0ffee", name: "florian-mbp", arch: "arm64", capabilities: ["docker", "vagrant"] };
     case "api_query": {
-      const q = String(args?.query ?? "");
-      if (q.includes("myCompletedLabs")) return { myCompletedLabs: ["lab-s3"] };
-      if (q.includes("labs")) return { labs };
+      const op = String(args?.operation ?? "");
+      if (op === "completedLabs") return { myCompletedLabs: ["lab-s3"] };
+      if (["labs", "labTitles", "sidebarLabs"].includes(op)) return { labs };
       return {};
     }
     case "lab_status":

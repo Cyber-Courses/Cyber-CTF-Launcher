@@ -165,9 +165,9 @@ describe("LabDetail: starting", () => {
     const calls = installTauri({
       ...quiet,
       api_query: (a) => {
-        const q = String(a?.query);
-        if (q.includes("requestLabLaunch")) return { requestLabLaunch: LAUNCHED };
-        if (q.includes("stopLabSession")) throw "backend down";
+        const q = String(a?.operation);
+        if (q.includes("launchHosted")) return { requestLabLaunch: LAUNCHED };
+        if (q.includes("stopSession")) throw "backend down";
         return {};
       },
     });
@@ -179,7 +179,7 @@ describe("LabDetail: starting", () => {
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Start$/ }));
     await flush();
     expect(h.onStart).not.toHaveBeenCalled();
-    expect(calls.find((c) => String(c.args?.query).includes("requestLabLaunch"))?.args?.variables).toEqual({ labId: "lab-invoice" });
+    expect(calls.find((c) => String(c.args?.operation).includes("launchHosted"))?.args?.variables).toEqual({ labId: "lab-invoice" });
     expect(screen.getByText("Running, hosted by Cyber CTF")).toBeTruthy();
     // One run at a time: Start waits for the hosted one to end.
     const start = screen.getByRole("button", { name: /Start lab/ });
@@ -206,7 +206,7 @@ describe("LabDetail: starting", () => {
     };
     installTauri({
       ...quiet,
-      api_query: (a) => (String(a?.query).includes("myActiveLabSession") ? { myActiveLabSession: LAUNCHED } : {}),
+      api_query: (a) => (String(a?.operation).includes("activeSession") ? { myActiveLabSession: LAUNCHED } : {}),
     });
     const user = userEvent.setup();
     renderDetail({ lab: { ...dockerLab, runtime: { ...dockerLab.runtime!, hosted: true } }, status: stopped });

@@ -3,6 +3,7 @@
 
 use serde_json::{Value, json};
 
+use crate::account::api_operation::ApiOperation;
 use crate::account::auth;
 use crate::config;
 use crate::error::{Error, Result};
@@ -49,9 +50,10 @@ fn parse_response(status: reqwest::StatusCode, text: &str) -> Result<Value> {
     Ok(body.get("data").cloned().unwrap_or(Value::Null))
 }
 
+/// Runs one of the allowed CyberBackend operations for the webview (see [`ApiOperation`]).
 #[tauri::command]
-pub async fn api_query(query: String, variables: Option<Value>) -> Result<Value> {
-    graphql(&query, variables.unwrap_or(Value::Null), false).await
+pub async fn api_query(operation: ApiOperation, variables: Option<Value>) -> Result<Value> {
+    graphql(&operation.document(), variables.unwrap_or(Value::Null), false).await
 }
 
 #[cfg(test)]

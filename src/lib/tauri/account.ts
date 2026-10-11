@@ -13,5 +13,12 @@ export const authStatus = () => invoke<AuthStatus>("auth_status");
 export const authLogin = () => invoke<AuthStatus>("auth_login");
 export const authLogout = () => invoke<void>("auth_logout");
 
-/** GraphQL against CyberBackend; the Rust side attaches the player's token. */
-export const apiQuery = <T>(query: string, variables?: Record<string, unknown>) => invoke<T>("api_query", { query, variables });
+/**
+ * The CyberBackend operations the app may run. The GraphQL documents live on the Rust side
+ * (`account/api_operation.rs`), which refuses anything else.
+ */
+export type ApiOperation =
+  "labs" | "labTitles" | "sidebarLabs" | "labBrief" | "completedLabs" | "activeSession" | "launchHosted" | "labSession" | "stopSession";
+
+/** Runs a CyberBackend operation; the Rust side attaches the player's token. */
+export const apiQuery = <T>(operation: ApiOperation, variables?: Record<string, unknown>) => invoke<T>("api_query", { operation, variables });

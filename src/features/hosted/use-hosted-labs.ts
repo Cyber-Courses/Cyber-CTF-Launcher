@@ -25,14 +25,6 @@ export interface HostedSession {
   expiresAt: string;
 }
 
-const FIELDS = "id labId target state endpoints { port url } message expiresAt";
-// The player's one active session (any target), so running state shows on Home, the Labs list
-// and the lab page across tabs and restarts, not just where it was launched.
-const ACTIVE = `query { myActiveLabSession { ${FIELDS} } }`;
-const LAUNCH = `mutation ($labId: ID!) { requestLabLaunch(labId: $labId, target: "hosted") { ${FIELDS} } }`;
-const SESSION = `query ($id: ID!) { labSession(id: $id) { ${FIELDS} } }`;
-const STOP = `mutation ($id: ID!) { stopLabSession(sessionId: $id) { id state } }`;
-
 const SETTLED: HostedState[] = ["RUNNING", "FAILED", "STOPPED", "EXPIRED"];
 
 /**
@@ -53,7 +45,7 @@ export function useHostedLabs() {
 
   // Hydrate from the backend once (requires login; a logged-out / errored call just leaves it null).
   useEffect(() => {
-    apiQuery<{ myActiveLabSession: HostedSession | null }>(ACTIVE)
+    apiQuery<{ myActiveLabSession: HostedSession | null }>("activeSession")
       .then((d) => {
         const s = d.myActiveLabSession;
         if (s && s.target === "hosted" && !SETTLED.slice(1).includes(s.state)) setSession(s);
@@ -65,7 +57,7 @@ export function useHostedLabs() {
     setBusyLab(labId);
     setError(null);
     try {
-      const d = await apiQuery<{ requestLabLaunch: HostedSession }>(LAUNCH, { labId });
+      const d = await apiQuery<{ requestLabLaunch: HostedSession }>("launchHosted", { labId });
       setSession(d.requestLabLaunch);
     } catch (e) {
       setError(String(e));
@@ -94,7 +86,7 @@ export function useHostedLabs() {
     // not resolve afterwards and resurrect a session the user just stopped.
     let cancelled = false;
     const t = setTimeout(() => {
-      apiQuery<{ labSession: HostedSession | null }>(SESSION, { id: session.id })
+      apiQuery<{ labSession: HostedSession | null }>("labSession", { id: session.id })
         .then((d) => {
           if (cancelled) return;
           if (d.labSession) setSession(d.labSession);
@@ -116,7 +108,7 @@ export function useHostedLabs() {
     setSession(null);
     setBusyLab(null);
     // The session is already off the page; a stop that fails says so, or it would keep running unseen.
-    if (current) await apiQuery(STOP, { id: current.id }).catch((e) => setError(translate("hosted.stopFailed", { error: String(e) })));
+    if (current) await apiQuery("stopSession", { id: current.id }).catch((e) => setError(translate("hosted.stopFailed", { error: String(e) })));
   }, [session]);
 
   return { session, busyLab, error, launch, stop };
