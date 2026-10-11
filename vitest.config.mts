@@ -24,8 +24,10 @@ export default defineConfig({
       // The floor CI enforces: 2 points under the level reached, so it can only go up. Raise
       // it as tests are added.
       thresholds: {
-        lines: 82,
-        functions: 76,
+        lines: 96,
+        functions: 95,
+        branches: 93,
+        statements: 95,
       },
     },
   },
