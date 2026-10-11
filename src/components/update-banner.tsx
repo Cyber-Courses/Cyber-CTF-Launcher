@@ -5,7 +5,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { Button } from "@/components/ui/button";
 import { restartApp } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { tell } from "@/lib/failure";
+import { ignore, tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
 /**
@@ -37,12 +37,14 @@ export function UpdateBanner() {
     setPhase("downloading");
     try {
       await update.downloadAndInstall();
-      setPhase("ready");
-      // Reopen on the new version straight away; the button stays as a fallback if it can't.
-      await restartApp();
     } catch {
       setPhase("error");
+      return;
     }
+    setPhase("ready");
+    // Reopen on the new version straight away; the button stays as a fallback if it can't
+    // (the update is installed: a failed relaunch is not a failed update).
+    await restartApp().catch(ignore("Restart now stays as the fallback"));
   }
 
   return (
