@@ -92,6 +92,17 @@ export function endDeploy(labId: string) {
   setRun(labId, { ...prev, busy: false });
 }
 
+/** Put `labId`'s run back as it was before a `beginDeploy` that turned out not to start
+ *  anything (the backend refused it), so the previous run's log isn't replaced by a failure. */
+export function restoreDeploy(labId: string, run: DeployRun | undefined) {
+  if (run) return setRun(labId, run);
+  if (!(labId in state.runs)) return;
+  const rest = { ...state.runs };
+  delete rest[labId];
+  state = { runs: rest };
+  emit();
+}
+
 /** Subscribe to store changes; returns an unsubscribe. Exposed so the store can be driven and
  *  asserted in tests without rendering React. */
 export function subscribeDeploy(cb: () => void) {

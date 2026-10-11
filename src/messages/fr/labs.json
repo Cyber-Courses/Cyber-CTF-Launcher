@@ -67,7 +67,8 @@
     "startThemHint": "Démarrer les machines à l’arrêt, en conservant leur état",
     "startThem": "Les démarrer",
     "resetting": "Réinitialisation…",
-    "reset": "Réinitialiser le lab"
+    "reset": "Réinitialiser le lab",
+    "resetStopFailed": "Réinitialisation interrompue : le lab n'a pas pu être supprimé, il n'a donc pas été relancé"
   },
   "readiness": {
     "needsEngine": "Nécessite un moteur de conteneurs",
@@ -242,7 +243,8 @@
     "back": "{title} est de retour.",
     "foreignCpu": "Les VM de ce lab sont conçues pour {archs} et cette machine est en {arch}. Installez QEMU depuis la page Machine pour les exécuter en émulation (bien plus lent), ou exécutez le lab sur un serveur ou dans votre compte cloud.",
     "noHypervisor": "Aucun hyperviseur pour ce lab n’est installé sur cette machine (il s’exécute sur {providers}). Installez-en un depuis la page Machine, ou exécutez-le sur un serveur.",
-    "none": "aucun"
+    "none": "aucun",
+    "refused": "Une autre opération est encore en cours sur ce lab"
   },
   "detail": {
     "yourServer": "votre serveur",

@@ -8,7 +8,9 @@ import { notify } from "@/lib/notify";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import { localProviders, pickLocalHypervisor, readyHypervisors, runsNatively } from "@/features/labs/lab-runtime";
 import { setLastRun } from "@/lib/last-run";
-import { appendDeployLog, beginDeploy, endDeploy, useDeploy } from "@/lib/deploy-store";
+import { appendDeployLog, beginDeploy, endDeploy, getDeploySnapshot, restoreDeploy, useDeploy } from "@/lib/deploy-store";
+import { noteStopped } from "@/features/labs/lab-store";
+import { tell } from "@/lib/failure";
 import { translate } from "@/lib/i18n";
 
 /**
@@ -33,16 +35,32 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
   );
 
   // One operation on a lab: a run in the deploy store, its output streamed into the run's log,
-  // a failure as the log's last (✗) line.
+  // a failure as the log's last (✗) line. Resolves to the failure, or null once it went through,
+  // so a caller chaining operations (Reset = stop, then start) can stop at a failed step.
   const operate = useCallback(
-    async (lab: Lab, op: ActiveOperation["op"], body: (log: (line: string) => void, runtime: LabRuntimeInfo) => Promise<void>) => {
-      if (!lab.runtime) return;
+    async (lab: Lab, op: ActiveOperation["op"], body: (log: (line: string) => void, runtime: LabRuntimeInfo) => Promise<void>): Promise<string | null> => {
+      if (!lab.runtime) return null;
+      const previous = getDeploySnapshot().runs[lab.id];
+      let refused = false;
       beginDeploy(lab.id, op);
       try {
         await body((line) => appendDeployLog(lab.id, line), lab.runtime);
+        return null;
       } catch (e) {
-        appendDeployLog(lab.id, `✗ ${String(e)}`);
+        refused = REFUSED.test(String(e));
+        if (refused) {
+          // The backend refused it (another operation on the lab is in flight): nothing ran, so
+          // nothing failed. Keep the run that was there and say why instead of a ✗ in its log,
+          // which read as a failed deploy.
+          restoreDeploy(lab.id, previous);
+          tell(translate("labs.actions.refused"))(e);
+        } else {
+          appendDeployLog(lab.id, `✗ ${String(e)}`);
+        }
+        return String(e);
       } finally {
+        // Down now, by this app's hand: a scan answer from before this can't bring it back.
+        if (!refused && (op === "stop" || op === "pause" || op === "shutdown")) noteStopped(lab.id);
         await settle(lab);
       }
     },
@@ -156,6 +174,10 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
 
   return { runs, launch, stop, park, resume, provision };
 }
+
+/** The backend's answer to an operation started while another one runs on the lab
+ *  (deploy_worker::run_job): refused, not failed. */
+const REFUSED = /already in progress/i;
 
 /** The default server host id, if one is set and the lab supports its hypervisor. */
 async function defaultHostFor(lab: Lab): Promise<string | null> {

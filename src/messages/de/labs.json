@@ -67,7 +67,8 @@
     "startThemHint": "Ausgefallene Maschinen starten, ihr Zustand bleibt erhalten",
     "startThem": "Starten",
     "resetting": "Wird zurückgesetzt…",
-    "reset": "Lab zurücksetzen"
+    "reset": "Lab zurücksetzen",
+    "resetStopFailed": "Zurücksetzen abgebrochen: Das Lab konnte nicht entfernt werden und wurde daher nicht neu gestartet"
   },
   "readiness": {
     "needsEngine": "Benötigt eine Container-Engine",
@@ -242,7 +243,8 @@
     "back": "{title} ist zurück.",
     "foreignCpu": "Die VMs dieses Labs sind für {archs} gebaut, dieser Rechner ist {arch}. Installiere QEMU über die Seite Rechner, um sie emuliert auszuführen (um ein Vielfaches langsamer), oder führe das Lab auf einem Server oder in deinem Cloud-Konto aus.",
     "noHypervisor": "Auf diesem Rechner ist kein Hypervisor für dieses Lab installiert (es läuft auf {providers}). Installiere einen über die Seite Rechner oder führe es auf einem Server aus.",
-    "none": "keiner"
+    "none": "keiner",
+    "refused": "Auf diesem Lab läuft noch ein anderer Vorgang"
   },
   "detail": {
     "yourServer": "deinem Server",

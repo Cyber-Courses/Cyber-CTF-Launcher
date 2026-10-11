@@ -67,7 +67,8 @@
     "startThemHint": "Iniciar as máquinas fora do ar, mantendo o estado delas",
     "startThem": "Iniciá-las",
     "resetting": "Redefinindo…",
-    "reset": "Redefinir lab"
+    "reset": "Redefinir lab",
+    "resetStopFailed": "Redefinição interrompida: o lab não pôde ser removido, então não foi iniciado de novo"
   },
   "readiness": {
     "needsEngine": "Requer uma engine de contêineres",
@@ -242,7 +243,8 @@
     "back": "{title} voltou.",
     "foreignCpu": "As VMs deste lab são feitas para {archs} e esta máquina é {arch}. Instale o QEMU pela página Máquina para rodá-las emuladas (muitas vezes mais lento) ou rode o lab num servidor ou na sua conta de nuvem.",
     "noHypervisor": "Nenhum hypervisor para este lab está instalado nesta máquina (ele roda em {providers}). Instale um pela página Máquina ou rode-o num servidor.",
-    "none": "nenhum"
+    "none": "nenhum",
+    "refused": "Outra operação ainda está em andamento neste lab"
   },
   "detail": {
     "yourServer": "seu servidor",
