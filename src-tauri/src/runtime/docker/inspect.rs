@@ -160,17 +160,30 @@ async fn lab_networks(id: &str) -> Vec<Network> {
 /// own networks, left from an earlier run): what a new lab's networks must not overlap. Empty
 /// when Docker can't say.
 pub async fn subnets_in_use(except: &str) -> Vec<String> {
-    let Ok(names) = run_read("docker", &["network", "ls", "--format", "{{.Name}}"], None).await else {
+    let Ok(listed) = run_read("docker", &["network", "ls", "--format", "{{.Name}}\t{{.Label \"com.docker.compose.project\"}}"], None).await else {
         return Vec::new();
     };
-    let own = compose::project(except);
-    let names: Vec<&str> = listed_names(&names).into_iter().filter(|n| !n.starts_with(&own)).collect();
+    let names = networks_of_others(&listed, &compose::project(except));
     if names.is_empty() {
         return Vec::new();
     }
     let mut args = vec!["network", "inspect", "-f", "{{range .IPAM.Config}}{{.Subnet}} {{end}}"];
     args.extend(names);
     run_read("docker", &args, None).await.map(|out| ipv4_subnets(&out)).unwrap_or_default()
+}
+
+/// The networks `docker network ls` listed (`<name>\t<compose project>` per line) but those of
+/// the Compose project `own`, told by its exact label: a name prefix also matched another lab
+/// whose id starts with this one's (`web` and `web-2`).
+fn networks_of_others<'a>(listed: &'a str, own: &str) -> Vec<&'a str> {
+    listed
+        .lines()
+        .filter_map(|l| {
+            let (name, project) = l.split_once('\t').unwrap_or((l, ""));
+            let name = name.trim();
+            (!name.is_empty() && project.trim() != own).then_some(name)
+        })
+        .collect()
 }
 
 /// The names `docker network ls --format {{.Name}}` printed.
@@ -374,7 +387,17 @@ mod tests {
         HostProbe, declared_services, down_serving, first_published_url, is_datastore, is_running, parse_inspect, parse_networks, short_network,
         status_from_host, tcp_ports,
     };
-    use super::{build_status, ipv4_subnets, listed_names};
+    use super::{build_status, ipv4_subnets, listed_names, networks_of_others};
+
+    #[test]
+    fn a_labs_own_networks_are_told_by_their_exact_project() {
+        // Regression: a lab's own networks were picked by name prefix, so lab `web` also took
+        // lab `web-2`'s networks for its own, and a new instance could land on their subnets.
+        let listed = "bridge\t\ncyberctf-web_lab\tcyberctf-web\ncyberctf-web-2_lab\tcyberctf-web-2\nhost\t\n\n";
+        assert_eq!(networks_of_others(listed, "cyberctf-web"), ["bridge", "cyberctf-web-2_lab", "host"]);
+        assert_eq!(networks_of_others(listed, "cyberctf-web-2"), ["bridge", "cyberctf-web_lab", "host"]);
+        assert_eq!(networks_of_others("plain\n", "cyberctf-web"), ["plain"]);
+    }
 
     #[test]
     fn network_listings_skip_blanks_and_ipv6() {

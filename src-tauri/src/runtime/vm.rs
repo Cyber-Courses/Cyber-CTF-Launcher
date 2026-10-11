@@ -229,6 +229,14 @@ pub async fn reconcile_provider(dir: &Path, requested: Provider, env: &[(String,
     let _ = std::fs::remove_dir_all(dir.join(".vagrant"));
 }
 
+/// Whether Vagrant still tracks a created machine of this folder (on any provider): it writes
+/// `.vagrant/machines/<name>/<provider>/id` when the machine is created and removes it when it
+/// is destroyed. Read from the files only, so it never reaches the host.
+pub(super) fn has_machines(dir: &Path) -> bool {
+    let Ok(machines) = std::fs::read_dir(dir.join(".vagrant").join("machines")) else { return false };
+    machines.flatten().any(|m| std::fs::read_dir(m.path()).is_ok_and(|provs| provs.flatten().any(|p| p.path().join("id").is_file())))
+}
+
 /// Whether Vagrant recorded a machine of this folder under a provider other than `requested`.
 fn recorded_on_other_provider(dir: &Path, requested: Provider) -> bool {
     let machines = dir.join(".vagrant").join("machines");

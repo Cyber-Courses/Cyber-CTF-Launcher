@@ -7,22 +7,80 @@ use std::time::Duration;
 use tauri::AppHandle;
 
 use super::Job;
-use super::files::{self, Files, read_pid};
+use super::files::{self, Files, read_worker};
 use crate::error::{Error, Result};
 
-/// A worker just started: its files and its process id.
-pub struct Spawned {
-    pub files: Files,
+/// A worker process as its pidfile records it: its id and, when it could be read, its start
+/// time (seconds since the epoch, as the OS reports it). The start time tells the worker from
+/// an unrelated process that got its id after it was gone (Windows recycles ids quickly).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Worker {
     pub pid: u32,
+    pub started: Option<u64>,
 }
 
-/// Starts the worker for `job`, detached from this process. `Err` when it can't be started; the
-/// caller then deploys in-process as a fallback.
-pub fn spawn(app: &AppHandle, job: &Job) -> Result<Spawned> {
-    crate::runtime::validate_id(&job.lab_id)?;
+impl Worker {
+    /// A pidfile's text: `<pid> <start time>`, or a bare `<pid>` (older versions).
+    pub fn parse(text: &str) -> Option<Worker> {
+        let mut words = text.split_whitespace();
+        let pid = words.next()?.parse().ok()?;
+        Some(Worker { pid, started: words.next().and_then(|s| s.parse().ok()) })
+    }
+
+    /// The pidfile's text for this worker.
+    fn line(&self) -> String {
+        match self.started {
+            Some(t) => format!("{} {t}", self.pid),
+            None => self.pid.to_string(),
+        }
+    }
+}
+
+/// A worker just started: its files and its process.
+pub struct Spawned {
+    pub files: Files,
+    pub worker: Worker,
+}
+
+/// Takes the pidfile for a new worker: created only if no other worker holds it (a stale one,
+/// naming no live worker, is replaced). Refuses while a worker of the same key runs, so two
+/// starts racing each other never spawn two workers over the same lab.
+pub fn claim(f: &Files) -> Result<std::fs::File> {
+    let create = || std::fs::OpenOptions::new().write(true).create_new(true).open(&f.pid);
+    match create() {
+        Ok(file) => Ok(file),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            if f.worker().is_some_and(|w| alive(&w)) {
+                return Err(Error::Invalid(super::BUSY.into()));
+            }
+            let _ = std::fs::remove_file(&f.pid);
+            create().map_err(Error::Io)
+        }
+        Err(e) => Err(Error::Io(e)),
+    }
+}
+
+/// Starts the worker for `job`, detached from this process, under the pidfile `pidfile` the
+/// caller claimed (see [`claim`]). `Err` when it can't be started (the pidfile is then given
+/// back); the caller then deploys in-process as a fallback.
+pub fn spawn(app: &AppHandle, job: &Job, pidfile: std::fs::File) -> Result<Spawned> {
     let f = files::of(app, &job.key())?;
+    let path = f.pid.clone();
+    let started = start(f, job, pidfile);
+    if started.is_err() {
+        let _ = std::fs::remove_file(&path);
+    }
+    started
+}
+
+fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
+    use std::io::Write as _;
+    crate::runtime::validate_id(&job.lab_id)?;
     // A fresh run: no verdict or log left from an earlier one.
     let _ = std::fs::remove_file(&f.status);
+    if job.op == super::Op::Launch {
+        let _ = std::fs::remove_file(&f.launch_status);
+    }
     std::fs::write(&f.job, serde_json::to_vec(job).map_err(|e| Error::Invalid(e.to_string()))?).map_err(Error::Io)?;
     let log = std::fs::File::create(&f.log).map_err(Error::Io)?;
     let exe = std::env::current_exe().map_err(Error::Io)?;
@@ -31,18 +89,27 @@ pub fn spawn(app: &AppHandle, job: &Job) -> Result<Spawned> {
     detach(&mut cmd);
     let mut child = cmd.spawn().map_err(Error::Io)?;
     let pid = child.id();
-    std::fs::write(&f.pid, pid.to_string()).map_err(Error::Io)?;
+    let worker = Worker { pid, started: observe(pid).map(|o| o.started) };
+    pidfile.write_all(worker.line().as_bytes()).map_err(Error::Io)?;
+    drop(pidfile);
     // Reaped when it exits: unreaped, a finished worker stays a zombie for as long as the app
-    // runs, and a zombie still answers `kill -0`. Its pidfile goes with it: a worker that
-    // finished before the line above wrote the pidfile would otherwise leave one behind.
-    let pidfile = f.pid.clone();
+    // runs, and a zombie still answers `kill -0`. Its pidfile goes with it (only while it still
+    // names this worker): a worker that finished before the line above wrote the pidfile would
+    // otherwise leave one behind.
+    let path = f.pid.clone();
     std::thread::spawn(move || {
         let _ = child.wait();
-        if read_pid(&pidfile) == Some(pid) {
-            let _ = std::fs::remove_file(&pidfile);
-        }
+        remove_pidfile_of(&path, pid);
     });
-    Ok(Spawned { files: f, pid })
+    Ok(Spawned { files: f, worker })
+}
+
+/// Removes the pidfile at `path` only while it still names the worker `pid`: a newer worker's
+/// pidfile is left alone.
+pub fn remove_pidfile_of(path: &Path, pid: u32) {
+    if read_worker(path).is_some_and(|w| w.pid == pid) {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 /// Its own process group (and session leader on unix): closing the app's terminal or the app
@@ -62,43 +129,68 @@ fn detach(cmd: &mut std::process::Command) {
     }
 }
 
-/// Whether `pid` is a live deploy worker: running (not a zombie) and this app's `deploy --job`
-/// process, not another program that got the number of a worker long gone.
-pub fn alive(pid: u32) -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
-        let cmdline = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
-        proc_state(&stat).is_some_and(|c| c != 'Z' && c != 'X') && is_worker(&String::from_utf8_lossy(&cmdline).replace('\0', " "))
-    }
-    #[cfg(all(unix, not(target_os = "linux")))]
-    {
-        std::process::Command::new("ps")
-            .args(["-o", "stat=,command=", "-p", &pid.to_string()])
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .is_some_and(|l| !l.starts_with('Z') && is_worker(&l))
-    }
-    #[cfg(windows)]
-    {
-        crate::exec::headless_std(std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]))
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
-            .unwrap_or(false)
-    }
+/// A process as the OS describes it right now.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct Observed {
+    /// When it started (seconds since the epoch).
+    pub started: u64,
+    /// Exited but not reaped yet (or being torn down).
+    pub zombie: bool,
+    /// Its command line, arguments joined by spaces (empty when the OS wouldn't say).
+    pub cmdline: String,
+    /// Its executable's file name, when known.
+    pub exe: Option<String>,
 }
 
-/// The state letter in a `/proc/<pid>/stat` line. It follows the command name, which is in
-/// parentheses and may hold spaces.
-#[cfg(any(target_os = "linux", test))]
-fn proc_state(stat: &str) -> Option<char> {
-    stat.rsplit_once(") ").and_then(|(_, rest)| rest.chars().next())
+/// What the OS says about process `pid`, if it exists.
+pub(super) fn observe(pid: u32) -> Option<Observed> {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
+    let pid = Pid::from_u32(pid);
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always).with_exe(UpdateKind::Always),
+    );
+    let p = sys.process(pid)?;
+    Some(Observed {
+        started: p.start_time(),
+        zombie: matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead),
+        cmdline: p.cmd().iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" "),
+        exe: p.exe().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()),
+    })
 }
 
-/// A deploy worker's command line: `<app> deploy --job <file>`. (Windows checks the pid alone.)
-#[cfg(any(unix, test))]
+/// Start times read twice can differ by the rounding of the boot time: within this many
+/// seconds they are the same process.
+const START_SLACK: u64 = 2;
+
+/// Whether `worker` is a live deploy worker: running (not a zombie), this app's `deploy --job`
+/// process, and (when its start time was recorded) the very process that was started, not
+/// another one that got the id of a worker long gone.
+pub fn alive(worker: &Worker) -> bool {
+    let this_exe = std::env::current_exe().ok().and_then(|e| e.file_name().map(|n| n.to_string_lossy().into_owned()));
+    is_live_worker(worker, observe(worker.pid).as_ref(), this_exe.as_deref())
+}
+
+/// [`alive`] from what the OS said about the process (`None`: no such process) and this app's
+/// executable name.
+fn is_live_worker(worker: &Worker, seen: Option<&Observed>, this_exe: Option<&str>) -> bool {
+    let Some(seen) = seen else { return false };
+    if seen.zombie {
+        return false;
+    }
+    if worker.started.is_some_and(|t| seen.started.abs_diff(t) > START_SLACK) {
+        return false;
+    }
+    if seen.cmdline.is_empty() {
+        // The OS wouldn't give its arguments: at least the same program as this app.
+        return seen.exe.is_some() && seen.exe.as_deref() == this_exe;
+    }
+    is_worker(&seen.cmdline)
+}
+
+/// A deploy worker's command line: `<app> deploy --job <file>`.
 fn is_worker(cmdline: &str) -> bool {
     cmdline.contains(" deploy ") && cmdline.contains("--job")
 }
@@ -118,8 +210,10 @@ fn running_in(d: &Path) -> Vec<String> {
     for e in entries.flatten() {
         let p = e.path();
         let Some(key) = pidfile_key(&p) else { continue };
-        match read_pid(&p) {
-            Some(pid) if alive(pid) => out.push(key),
+        match read_worker(&p) {
+            Some(w) if alive(&w) => out.push(key),
+            // Just claimed, its worker not started yet (see `claim`): not stale.
+            None if std::fs::read(&p).is_ok_and(|b| b.is_empty()) => {}
             _ => {
                 let _ = std::fs::remove_file(&p);
             }
@@ -165,15 +259,16 @@ pub fn kill(app: &AppHandle, key: &str) {
 
 /// [`kill`] for a worker's files.
 fn kill_files(f: &Files) {
-    if let Some(pid) = f.pid().filter(|p| alive(*p)) {
+    let Some(worker) = f.worker() else { return };
+    if alive(&worker) {
         #[cfg(unix)]
-        signal_group(pid, "-TERM");
+        signal_group(worker.pid, "-TERM");
         #[cfg(windows)]
         {
-            let _ = crate::exec::headless_std(std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"])).status();
+            let _ = crate::exec::headless_std(std::process::Command::new("taskkill").args(["/PID", &worker.pid.to_string(), "/T", "/F"])).status();
         }
     }
-    let _ = std::fs::remove_file(&f.pid);
+    remove_pidfile_of(&f.pid, worker.pid);
 }
 
 /// Sends `signal` to the process group `pid` leads: the worker and its vagrant/docker/terraform.
@@ -183,25 +278,59 @@ fn signal_group(pid: u32, signal: &str) {
     let _ = std::process::Command::new("kill").args([signal, &format!("-{pid}")]).status();
 }
 
+/// Half-second checks a Terraform run gets to stop on its own once interrupted: it finishes the
+/// resources it is creating and records them in its state (2 minutes).
+#[cfg(unix)]
+const TERRAFORM_GRACE_CHECKS: u32 = 240;
+
 /// [`kill`], then waits until the worker is gone (SIGKILL to its group after 20 s), so what
 /// follows (a teardown) never races a `compose up` or `vagrant up` that is still creating what
-/// it removes.
+/// it removes. A worker running Terraform is interrupted first instead: killed mid-apply,
+/// Terraform never records what it was creating, and the destroy that follows leaves those
+/// resources running (and billing). Interrupted, it stops cleanly with its state saved, the
+/// worker ends with it, and the destroy that follows sees everything.
 pub async fn kill_and_wait(app: &AppHandle, key: &str) {
     let Ok(f) = files::of(app, key) else { return };
-    let Some(pid) = f.pid().filter(|p| alive(*p)) else { return };
+    let Some(worker) = f.worker().filter(alive) else { return };
+    #[cfg(unix)]
+    if interrupt_terraform(worker.pid) && gone_within(&worker, TERRAFORM_GRACE_CHECKS).await {
+        remove_pidfile_of(&f.pid, worker.pid);
+        return;
+    }
     kill(app, key);
-    if gone_within(pid, 40).await {
+    if gone_within(&worker, 40).await {
         return;
     }
     #[cfg(unix)]
-    signal_group(pid, "-KILL");
-    gone_within(pid, 10).await;
+    signal_group(worker.pid, "-KILL");
+    gone_within(&worker, 10).await;
 }
 
-/// Whether `pid` stops being a live worker within `checks` half-second checks.
-async fn gone_within(pid: u32, checks: u32) -> bool {
+/// Sends SIGINT to the Terraform runs in process group `group` (the host binary, or the `docker
+/// run` of its container, which hands the signal on): Terraform's own clean stop. Whether one
+/// was found.
+#[cfg(unix)]
+fn interrupt_terraform(group: u32) -> bool {
+    let pgrep = |args: &[&str]| std::process::Command::new("pgrep").args(args).output().map(|o| pids(&String::from_utf8_lossy(&o.stdout))).unwrap_or_default();
+    let group = group.to_string();
+    let mut found = pgrep(&["-g", &group, "-x", "terraform"]);
+    found.extend(pgrep(&["-g", &group, "-f", "hashicorp/terraform"]));
+    for pid in &found {
+        let _ = std::process::Command::new("kill").args(["-INT", &pid.to_string()]).status();
+    }
+    !found.is_empty()
+}
+
+/// The process ids `pgrep` printed, one per line.
+#[cfg(any(unix, test))]
+fn pids(out: &str) -> Vec<u32> {
+    out.lines().filter_map(|l| l.trim().parse().ok()).collect()
+}
+
+/// Whether `worker` stops being a live worker within `checks` half-second checks.
+async fn gone_within(worker: &Worker, checks: u32) -> bool {
     for _ in 0..checks {
-        if !alive(pid) {
+        if !alive(worker) {
             return true;
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -220,11 +349,75 @@ mod tests {
         assert!(!is_worker(""));
     }
 
+    fn seen(started: u64, cmdline: &str) -> Observed {
+        Observed { started, zombie: false, cmdline: cmdline.into(), exe: Some("cyberctf-desktop".into()) }
+    }
+
+    const WORKER: &str = "/usr/bin/cyberctf-desktop deploy --job /data/deploys/lab-1.json";
+
     #[test]
-    fn the_process_state_follows_a_command_name_with_spaces() {
-        assert_eq!(proc_state("1234 (cyberctf-desktop) S 1 1234"), Some('S'));
-        assert_eq!(proc_state("1234 (Web Content) Z 1 1234"), Some('Z'));
-        assert_eq!(proc_state(""), None);
+    fn a_recycled_pid_is_not_the_worker() {
+        // Regression: on Windows a pidfile left by a worker long gone named whatever process got
+        // its id next, and Stop taskkilled that unrelated process (and its tree). The start time
+        // recorded with the pid tells them apart.
+        let w = Worker { pid: 4242, started: Some(1_760_000_000) };
+        assert!(is_live_worker(&w, Some(&seen(1_760_000_000, WORKER)), None));
+        assert!(is_live_worker(&w, Some(&seen(1_760_000_001, WORKER)), None), "rounding");
+        assert!(!is_live_worker(&w, Some(&seen(1_760_090_000, WORKER)), None), "another process with the same id");
+        assert!(!is_live_worker(&w, Some(&seen(1_760_000_000, "C:\\Windows\\notepad.exe")), None), "not a worker");
+        assert!(!is_live_worker(&w, None, None), "no such process");
+        let zombie = Observed { zombie: true, ..seen(1_760_000_000, WORKER) };
+        assert!(!is_live_worker(&w, Some(&zombie), None));
+        // A pidfile from an older version (no start time) still needs a worker's command line.
+        let legacy = Worker { pid: 4242, started: None };
+        assert!(is_live_worker(&legacy, Some(&seen(1, WORKER)), None));
+        assert!(!is_live_worker(&legacy, Some(&seen(1, "/usr/bin/firefox")), None));
+        // Arguments the OS won't give: the same program as this app, or nothing.
+        assert!(is_live_worker(&w, Some(&seen(1_760_000_000, "")), Some("cyberctf-desktop")));
+        assert!(!is_live_worker(&w, Some(&seen(1_760_000_000, "")), Some("other")));
+        assert!(!is_live_worker(&w, Some(&Observed { exe: None, ..seen(1_760_000_000, "") }), None));
+    }
+
+    #[test]
+    fn pgrep_output_reads_as_pids() {
+        assert_eq!(pids("123\n 456\n\nnope\n"), [123, 456]);
+        assert!(pids("").is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_stop_interrupts_terraform_rather_than_killing_it() {
+        // Regression: Stop during a cloud `terraform apply` SIGTERMed the worker's whole group,
+        // then SIGKILLed it, so Terraform never recorded what it was creating and the destroy
+        // that followed left those resources running. Terraform alone gets SIGINT now (its clean
+        // stop). Terraform here is a stand-in for its container run (`… hashicorp/terraform …`),
+        // in a group of its own like a worker's.
+        use std::os::unix::process::CommandExt;
+        let mut run =
+            std::process::Command::new("sh").args(["-c", "sleep 30 & wait", "docker", "run", "hashicorp/terraform:1.9.8"]).process_group(0).spawn().unwrap();
+        let group = run.id();
+        // A group with no Terraform in it: nothing is sent.
+        let mut other = std::process::Command::new("sleep").arg("30").process_group(0).spawn().unwrap();
+        assert!(!interrupt_terraform(other.id()));
+        // `pgrep` may need a moment to see the new process by name.
+        let found = (0..20).any(|_| {
+            std::thread::sleep(Duration::from_millis(50));
+            interrupt_terraform(group)
+        });
+        assert!(found, "terraform found in its group");
+        let status = run.wait().unwrap();
+        // Ended by the interrupt (its sleep alone would take 30 s), however the shell reports it.
+        assert!(!status.success(), "{status:?}");
+        other.kill().unwrap();
+        other.wait().unwrap();
+    }
+
+    #[test]
+    fn pidfile_lines_read_back() {
+        for w in [Worker { pid: 7, started: Some(1_760_000_000) }, Worker { pid: 7, started: None }] {
+            assert_eq!(Worker::parse(&w.line()), Some(w));
+        }
+        assert_eq!(Worker::parse("  "), None);
     }
 
     #[test]
@@ -234,15 +427,89 @@ mod tests {
         assert_eq!(pidfile_key(Path::new("/d/lab-1.log")), None);
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn a_finished_or_foreign_process_is_not_alive() {
         // This test binary is alive but isn't a worker; a reaped child is gone.
-        assert!(!alive(std::process::id()));
-        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let me = Worker { pid: std::process::id(), started: observe(std::process::id()).map(|o| o.started) };
+        assert!(me.started.is_some(), "the OS describes this very process");
+        assert!(!alive(&me));
+        let mut child =
+            if cfg!(windows) { std::process::Command::new("cmd").args(["/C", "exit"]).spawn() } else { std::process::Command::new("true").spawn() }.unwrap();
         let pid = child.id();
         child.wait().unwrap();
-        assert!(!alive(pid));
+        assert!(!alive(&Worker { pid, started: None }));
+    }
+
+    /// A process whose command line reads like a worker's (`… deploy --job …`), sleeping.
+    #[cfg(unix)]
+    fn fake_worker() -> std::process::Child {
+        std::process::Command::new("sh").args(["-c", "sleep 20; :", "deploy", "--job", "x"]).spawn().unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_live_worker_is_alive_only_with_its_own_start_time() {
+        let mut child = fake_worker();
+        let pid = child.id();
+        let started = observe(pid).unwrap().started;
+        assert!(alive(&Worker { pid, started: Some(started) }));
+        assert!(!alive(&Worker { pid, started: Some(started - 3600) }));
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(!alive(&Worker { pid, started: Some(started) }));
+    }
+
+    #[test]
+    fn a_pidfile_is_claimed_once_and_a_stale_one_replaced() {
+        let dir = crate::deploy_worker::files::tests::temp_dir("claim");
+        let f = Files::of(&dir, "lab-1");
+        drop(claim(&f).unwrap());
+        assert!(f.pid.exists());
+        // A worker long gone: its pidfile is stale and is taken over.
+        std::fs::write(&f.pid, "4000000000 1").unwrap();
+        drop(claim(&f).unwrap());
+        assert_eq!(std::fs::read_to_string(&f.pid).unwrap(), "");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_second_start_is_refused_while_the_first_worker_runs() {
+        // Regression: two launches racing each other both saw no worker and spawned two.
+        let dir = crate::deploy_worker::files::tests::temp_dir("claim-live");
+        let f = Files::of(&dir, "lab-1");
+        let mut child = fake_worker();
+        let worker = Worker { pid: child.id(), started: observe(child.id()).map(|o| o.started) };
+        std::fs::write(&f.pid, worker.line()).unwrap();
+        let err = claim(&f).unwrap_err().to_string();
+        assert!(err.contains("already in progress"), "{err}");
+        assert_eq!(read_worker(&f.pid), Some(worker), "the running worker's pidfile is kept");
+        assert_eq!(running_in(&dir), ["lab-1"]);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_just_claimed_pidfile_is_not_swept_as_stale() {
+        let dir = crate::deploy_worker::files::tests::temp_dir("claimed");
+        let f = Files::of(&dir, "lab-1");
+        drop(claim(&f).unwrap());
+        assert!(running_in(&dir).is_empty());
+        assert!(f.pid.exists());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn only_the_workers_own_pidfile_is_removed() {
+        let dir = crate::deploy_worker::files::tests::temp_dir("own-pid");
+        let p = dir.join("lab-1.pid");
+        std::fs::write(&p, "200 1").unwrap();
+        remove_pidfile_of(&p, 100);
+        assert!(p.exists(), "a newer worker's pidfile stays");
+        remove_pidfile_of(&p, 200);
+        assert!(!p.exists());
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
@@ -273,6 +540,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_dead_pid_is_gone_at_once() {
-        assert!(gone_within(4_000_000_000, 3).await);
+        assert!(gone_within(&Worker { pid: 4_000_000_000, started: None }, 3).await);
     }
 }

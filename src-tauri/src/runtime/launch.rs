@@ -3,11 +3,11 @@
 
 use std::path::Path;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use super::inflight::{Action, DeployGuard, lock_lab};
 use super::lifecycle::resume_locked;
-use super::paths::{local_vm, mark_local_vm, mark_parked, parked, record_runtime, state_dir, vagrant_dirs};
+use super::paths::{deployment_states, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, state_dir, vagrant_dirs};
 use super::providers::Provider;
 use super::{Runtime, attack_box, attack_vm, docker, exegol, lab, registry, server, ssh, terraform, vm};
 use crate::error::{Error, Result};
@@ -29,12 +29,42 @@ pub async fn start(
     env: &[(String, String)],
     mut log: impl FnMut(String),
 ) -> Result<()> {
-    let _lock = lock_lab(id).await;
+    let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Start);
+    // A lab runs in one place: starting it here (or on another host) while its deployment is
+    // still up elsewhere would drop the marker naming that host, and with it the way to stop
+    // it (a cloud lab would keep billing).
+    if let Ok(base) = app.path().app_data_dir()
+        && let Some(other) = deployed_elsewhere(&base, dir, id, host)
+    {
+        let name = server::host_name(app, &other).unwrap_or(other);
+        return Err(Error::Invalid(format!("This lab is still running on {name}. Stop it there before starting it somewhere else.")));
+    }
     match host {
         None => start_here(app, dir, id, runtime, provider, env, &mut log).await,
         Some(host) => start_on_server(app, dir, id, runtime, host, env, &mut log).await,
     }
+}
+
+/// The name of the server host lab `id` (folder `dir`) is deployed on, if something of it is
+/// still there: its folder must stay as it is (Vagrant's record of its machines, the module its
+/// Terraform state was applied from) until it is stopped there.
+pub fn deployed_on_server(app: &AppHandle, dir: &Path, id: &str) -> Option<String> {
+    let host = deployed_elsewhere(&app.path().app_data_dir().ok()?, dir, id, None)?;
+    Some(server::host_name(app, &host).unwrap_or(host))
+}
+
+/// The server host lab `id` (folder `dir`, app data folder `base`) is still deployed on, when
+/// it is not `host` (`None`: this machine): its marker names that host and something of it is
+/// left there (a Terraform state holding resources, or machines Vagrant still tracks).
+fn deployed_elsewhere(base: &Path, dir: &Path, id: &str, host: Option<&str>) -> Option<String> {
+    let marked = server::marked_host(dir).filter(|h| !h.is_empty())?;
+    if host == Some(marked.as_str()) {
+        return None;
+    }
+    let terraform = deployment_states(base, id).iter().any(|(_, state)| terraform::deployed(state));
+    let vagrant = vagrant_dirs(dir).any(|v| vm::has_machines(&v));
+    (terraform || vagrant).then_some(marked)
 }
 
 async fn start_here(
@@ -220,8 +250,10 @@ async fn start_terraform(
     }
     let state = state_dir(app, id, tf)?;
     std::fs::create_dir_all(&state)?;
-    // Which output ran (containers or one VM per machine), for the auto-stop reaper.
+    // Which output ran (containers or one VM per machine), and on which host, for the auto-stop
+    // reaper (which also destroys a state left behind once the lab runs elsewhere).
     record_runtime(&state, runtime)?;
+    record_host(&state, host)?;
     match &jump {
         Some(login) => std::fs::write(state.join(terraform::JUMP_FILE), login)?,
         None => {
@@ -230,7 +262,9 @@ async fn start_terraform(
     }
     terraform::apply(&module, &state, &vars, &conn.tf_env, &mut *log).await?;
     if runtime == Runtime::Docker {
-        attack_box::on_terraform_host(app, id, &spec, env, log).await?;
+        // The lab is up at this point: a failing attack box is noted, not a failed deploy (the
+        // lab still gets recorded and its welcome shown).
+        attack_box::on_terraform_host_or_note(app, id, &spec, env, log).await;
     }
     registry::record(dir, &spec, target, provider.is_cloud().then_some(tf));
     welcome(dir, &spec, lab::vagrant_target(runtime), log);
@@ -574,6 +608,39 @@ mod tests {
         assert!(res.is_err());
         assert!(logged.is_empty(), "{logged:?}");
         assert!(left.is_empty());
+    }
+
+    #[test]
+    fn a_lab_still_deployed_on_another_host_is_not_started_elsewhere() {
+        // Regression: starting a lab here (or on another host) dropped the marker naming the host
+        // its deployment still ran on, so Stop, the expiry reaper and removing that host all lost
+        // it, and a cloud lab kept billing.
+        let base = std::env::temp_dir().join(format!("cyberctf-elsewhere-{}", rand::random::<u32>()));
+        let dir = base.join("labs").join("web-1");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Never deployed on a server: free to start anywhere.
+        assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", None), None);
+        server::mark_lab(&dir, Some("aws1")).unwrap();
+        // Marked, but nothing of it is left there (destroyed): free.
+        assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", None), None);
+        // A Terraform state still holding resources.
+        let state = base.join("deployments").join("web-1").join("aws");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
+        assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", None).as_deref(), Some("aws1"), "here");
+        assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", Some("pve1")).as_deref(), Some("aws1"), "another host");
+        assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", Some("aws1")), None, "the same host again");
+        std::fs::remove_dir_all(base.join("deployments")).unwrap();
+        // Machines Vagrant still tracks on an ESXi host.
+        server::mark_lab(&dir, Some("esxi1")).unwrap();
+        let vagrant = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
+        let machine = vagrant.join(".vagrant").join("machines").join("dc01").join("vmware_esxi");
+        std::fs::create_dir_all(&machine).unwrap();
+        std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
+        assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", None), None, "no machine created yet");
+        std::fs::write(machine.join("id"), "vm-42").unwrap();
+        assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", None).as_deref(), Some("esxi1"));
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

@@ -43,22 +43,38 @@ pub(crate) fn isoloom_name(yaml: &str) -> Option<String> {
     })
 }
 
-/// Installed labs by isoloom name, from `labs/<id>/isoloom.yml`.
+/// Installed labs by the name their VMs carry: the lab's name as its instance on this machine
+/// (`<name>-<instance>`, as Isoloom generates it), from `labs/<id>/isoloom.yml`. A name two labs
+/// share can't tell which one runs, so it is left out rather than guessed.
 pub(crate) fn lab_names(labs_dir: &Path) -> HashMap<String, String> {
-    let mut by_name = HashMap::new();
-    let Ok(entries) = std::fs::read_dir(labs_dir) else { return by_name };
+    let mut by_name: HashMap<String, Option<String>> = HashMap::new();
+    let Ok(entries) = std::fs::read_dir(labs_dir) else { return HashMap::new() };
     for e in entries.flatten() {
         let Some(id) = e.file_name().to_str().map(str::to_string) else { continue };
         if !is_lab_id(&id) {
             continue;
         }
-        if let Ok(yaml) = std::fs::read_to_string(e.path().join("isoloom.yml"))
-            && let Some(name) = isoloom_name(&yaml)
-        {
-            by_name.insert(name, id);
-        }
+        let Some(name) = vm_name_prefix(&e.path()) else { continue };
+        by_name
+            .entry(name)
+            .and_modify(|seen| {
+                log::warn!("running-labs scan: two installed labs name their VMs alike ({id} and {seen:?})");
+                *seen = None;
+            })
+            .or_insert(Some(id));
     }
-    by_name
+    by_name.into_iter().filter_map(|(name, id)| Some((name, id?))).collect()
+}
+
+/// The `<lab>` of a lab's VM names (`<lab> · <machine>`): its name as this instance
+/// (`<name>-<instance>`, the name `lab::instanced` gives it), or the plain `name:` of a lab with
+/// no instance. Read from the spec's `name:` line, not the whole spec: the scan is polled.
+fn vm_name_prefix(dir: &Path) -> Option<String> {
+    let name = isoloom_name(&std::fs::read_to_string(dir.join("isoloom.yml")).ok()?)?;
+    Some(match super::lab::instance(dir) {
+        Some(n) => format!("{name}-{n}"),
+        None => name,
+    })
 }
 
 /// The lab ids of running VMs named `<lab> · <machine>`, for the labs in `by_name`. A VM of an
@@ -234,6 +250,35 @@ mod tests {
         let by_name = super::lab_names(&labs);
         assert_eq!(by_name.len(), 1);
         assert_eq!(by_name["minilab"], "minilab-1");
+        std::fs::remove_dir_all(labs).unwrap();
+    }
+
+    #[test]
+    fn vms_are_matched_by_the_labs_instance_name() {
+        // Regression: the scan keyed labs by their raw isoloom name, but their VMs are named
+        // after the lab's instance (`minilab-2 · dc01`), so after a restart a VirtualBox or
+        // Parallels lab was never found running.
+        const SPEC: &str = "version: 1\nname: minilab\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  dc01:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n";
+        let labs = std::env::temp_dir().join(format!("cyberctf-discover-inst-{}", rand::random::<u32>()));
+        for (id, instance) in [("goad-a", Some("1")), ("goad-b", Some("2")), ("twin-1", None), ("twin-2", None)] {
+            let d = labs.join(id);
+            std::fs::create_dir_all(&d).unwrap();
+            let spec = if id.starts_with("twin") { SPEC.replace("minilab", "twin") } else { SPEC.to_string() };
+            std::fs::write(d.join("isoloom.yml"), spec).unwrap();
+            if let Some(n) = instance {
+                std::fs::write(d.join(crate::runtime::lab::INSTANCE_MARKER), n).unwrap();
+            }
+        }
+        let by_name = super::lab_names(&labs);
+        // The very name Isoloom gives the instance.
+        assert_eq!(crate::runtime::lab::instanced(&labs.join("goad-b")).map(|s| s.name).map_err(|e| e.to_string()), Ok("minilab-2".to_string()));
+        // Two copies of one lab, told apart by their instance.
+        assert_eq!(by_name.get("minilab-1").map(String::as_str), Some("goad-a"));
+        assert_eq!(by_name.get("minilab-2").map(String::as_str), Some("goad-b"));
+        // Two labs whose VMs would carry the same name: neither is guessed.
+        assert!(!by_name.contains_key("twin"));
+        let running = ["minilab-2 · dc01", "twin · dc01"];
+        assert_eq!(super::lab_ids_from_vm_names(running.into_iter(), &by_name), ["goad-b".to_string()]);
         std::fs::remove_dir_all(labs).unwrap();
     }
 }

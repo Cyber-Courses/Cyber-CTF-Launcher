@@ -45,13 +45,7 @@ const STARTING: &str = "Starting the attack box next to the lab (this pulls its 
 const READY: &str = "Attack box ready.";
 
 /// The attack box on a Terraform lab host (server or cloud), over SSH with the launcher's key.
-pub(super) async fn on_terraform_host(
-    app: &AppHandle,
-    id: &str,
-    spec: &isoloom_core::Spec,
-    env: &[(String, String)],
-    log: &mut impl FnMut(String),
-) -> Result<()> {
+async fn on_terraform_host(app: &AppHandle, id: &str, spec: &isoloom_core::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     let Some(image) = attack_box_image(env) else { return Ok(()) };
     let Some(conn) = server::lab_connection(app, &lab_dir(app, id)?)? else { return Ok(()) };
     let tf = server::terraform_target(conn.provider).unwrap_or_default();
@@ -76,7 +70,20 @@ async fn in_lab_vm(vagrant: &Path, spec: &isoloom_core::Spec, env: &[(String, St
 /// [`in_lab_vm`] once the lab is up: a failing attack box shouldn't read as a failed deploy, so
 /// it is noted and the lab stays usable (the shell can retry it).
 pub(super) async fn in_lab_vm_or_note(vagrant: &Path, spec: &isoloom_core::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) {
-    if let Err(e) = in_lab_vm(vagrant, spec, env, log).await {
+    let started = in_lab_vm(vagrant, spec, env, log).await;
+    note_failure(started, log);
+}
+
+/// [`on_terraform_host`] once the lab is up, noted rather than failing the deploy (see
+/// [`in_lab_vm_or_note`]).
+pub(super) async fn on_terraform_host_or_note(app: &AppHandle, id: &str, spec: &isoloom_core::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) {
+    let started = on_terraform_host(app, id, spec, env, log).await;
+    note_failure(started, log);
+}
+
+/// An attack box that didn't start beside a lab that is up: a line in the log, not an error.
+fn note_failure(started: Result<()>, log: &mut impl FnMut(String)) {
+    if let Err(e) = started {
         log(format!("The lab is running, but its attack box didn't start: {e}. Open the lab shell to retry it."));
     }
 }
@@ -98,7 +105,18 @@ pub async fn start_attack_vm(app: &AppHandle, id: &str, box_name: &str, log: imp
 
 #[cfg(test)]
 mod tests {
-    use super::{attack_box_image, attack_box_script, attack_vm_box};
+    use super::{attack_box_image, attack_box_script, attack_vm_box, note_failure};
+
+    #[test]
+    fn a_failed_attack_box_is_a_note_not_a_failed_deploy() {
+        // Regression: on a Terraform host the attack box error failed the whole launch after a
+        // successful apply, so the lab was never recorded and its welcome never shown.
+        let mut lines = Vec::new();
+        note_failure(Ok(()), &mut |l| lines.push(l));
+        assert!(lines.is_empty());
+        note_failure(Err(crate::error::Error::Invalid("no route to host".into())), &mut |l| lines.push(l));
+        assert_eq!(lines, ["The lab is running, but its attack box didn't start: no route to host. Open the lab shell to retry it."]);
+    }
 
     fn env(pick: &str) -> Vec<(String, String)> {
         vec![("OTHER".into(), "x".into()), ("CYBERCTF_ATTACKBOX_IMAGE".into(), pick.into())]
