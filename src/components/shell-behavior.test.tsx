@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { emit, listen } from "@tauri-apps/api/event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -326,7 +326,9 @@ describe("AppShell", () => {
     await shell();
     expect(screen.queryByRole("dialog")).toBeNull();
     await user.keyboard("{Control>}k{/Control}");
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    const dialog = screen.getByRole("dialog");
+    // The search field takes focus on the next animation frame: Escape is read inside the palette.
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
   });
