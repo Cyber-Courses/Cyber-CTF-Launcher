@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { type ServerCheck, type ServerHost, type ServerTest } from "@/lib/tauri";
 import { StatusPill, type Tone } from "@/components/ui/status-pill";
+import { hasBudget, isOverBudget } from "@/features/cloud/cloud-model";
 import { useFormat, useT } from "@/lib/i18n";
 
 export function AccountRow({
@@ -57,7 +58,7 @@ export function AccountRow({
             ? "cloud.account.status.needsAttention"
             : "cloud.account.status.failed",
   );
-  const isOver = host.monthlyLimit != null && spent != null && spent >= host.monthlyLimit;
+  const isOver = isOverBudget(host, spent);
   return (
     <div className="border-t border-border first:border-t-0">
       <div className="grid min-h-[3.25rem] grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3.5 px-4 py-2.5 transition-colors hover:bg-glass">
@@ -67,10 +68,10 @@ export function AccountRow({
           <p className="truncate font-mono text-[0.6875rem] text-faint">
             {facts.join(" · ")}
             {result?.latencyMs != null ? ` · ${result.latencyMs} ms` : ""}
-            {host.monthlyLimit != null
-              ? ` · ${t("cloud.account.budget", { amount: format.number(host.monthlyLimit, { style: "currency", currency: "USD", maximumFractionDigits: 0 }) })}`
+            {hasBudget(host)
+              ? ` · ${t("cloud.account.budget", { amount: format.number(host.monthlyLimit!, { style: "currency", currency: "USD", maximumFractionDigits: 0 }) })}`
               : ""}
-            {host.monthlyLimit != null && spent != null
+            {hasBudget(host) && spent != null
               ? `, ${t("cloud.account.spentThisMonth", { amount: format.number(spent, { style: "currency", currency: "USD" }) })}`
               : ""}
           </p>

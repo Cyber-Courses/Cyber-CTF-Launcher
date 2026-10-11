@@ -23,7 +23,9 @@ export function useHostedRun(labId: string) {
       void hosted.launch(labId);
     },
     stop: () => {
-      setTried(false);
+      // Stopping a session keeps the panel up so a failed stop shows its error (a successful one
+      // leaves nothing to show); dismissing a failed start or stop (no session) hides it.
+      setTried(!!session);
       void hosted.stop();
     },
   };

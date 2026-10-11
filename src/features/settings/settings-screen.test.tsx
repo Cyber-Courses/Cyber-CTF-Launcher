@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { SettingsScreen } from "@/features/settings/settings-screen";
 import { getPortMode } from "@/lib/settings";
+import { readyReport } from "@/test/fixtures";
 import { installTauri } from "@/test/tauri";
 import { clickEverything, flush } from "@/test/ui";
 
@@ -47,6 +48,45 @@ describe("SettingsScreen", () => {
     for (const r of radios) if (r.getAttribute("aria-checked") !== "true") await user.click(r);
     await flush();
     expect(getPortMode()).not.toBe(before);
+  });
+
+  it("still opens when the version, the machine check and the agent can't be read", async () => {
+    installTauri({
+      "plugin:app|version": () => {
+        throw "no version";
+      },
+      system_check: () => {
+        throw "check failed";
+      },
+      agent_info: () => {
+        throw "not registered";
+      },
+    });
+    render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
+    await flush();
+    expect(document.body.textContent).toContain("Registering…");
+    await openTab(/about/i);
+    expect(document.body.textContent).toContain("…");
+    expect(document.body.textContent).not.toContain("Install ID");
+    await openTab(/labs/i);
+    expect(document.body.textContent).toContain("Checking hypervisors…");
+  });
+
+  it("re-checks the machine after a hypervisor add-on install", async () => {
+    const calls = installTauri({
+      system_check: () => ({
+        ...readyReport(),
+        os: "linux",
+        vmProviders: [{ provider: "qemu", remote: false, available: false, hypervisor: true, plugin: "vagrant-qemu", pluginInstalled: false, reason: null }],
+      }),
+    });
+    render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
+    await flush();
+    const user = await openTab(/labs/i);
+    await user.click(screen.getByRole("button", { name: /install add-on/i }));
+    await flush();
+    expect(calls.filter((c) => c.cmd === "system_check")).toHaveLength(2);
+    expect(document.body.textContent).toContain("✓ Installed");
   });
 
   it("works signed out", async () => {
