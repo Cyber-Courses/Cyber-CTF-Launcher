@@ -262,7 +262,9 @@ async fn start_terraform(
     }
     terraform::apply(&module, &state, &vars, &conn.tf_env, &mut *log).await?;
     if runtime == Runtime::Docker {
-        attack_box::on_terraform_host(app, id, &spec, env, log).await?;
+        // The lab is up at this point: a failing attack box is noted, not a failed deploy (the
+        // lab still gets recorded and its welcome shown).
+        attack_box::on_terraform_host_or_note(app, id, &spec, env, log).await;
     }
     registry::record(dir, &spec, target, provider.is_cloud().then_some(tf));
     welcome(dir, &spec, lab::vagrant_target(runtime), log);
