@@ -81,8 +81,20 @@ pub fn held(path: &Path) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// Whether `f` holds within a second. A lock is released when its handle closes, but a
+    /// process another test starts meanwhile shares the handle for a moment (until it runs its
+    /// program), so a release can take that moment to show.
+    pub(crate) fn eventually(mut f: impl FnMut() -> bool) -> bool {
+        (0..40).any(|_| {
+            f() || {
+                std::thread::sleep(Duration::from_millis(25));
+                false
+            }
+        })
+    }
 
     fn lock_file(tag: &str) -> (PathBuf, PathBuf) {
         let dir = crate::deploy_worker::files::tests::temp_dir(tag);
@@ -103,11 +115,11 @@ mod tests {
         assert!(tokio::time::timeout(Duration::from_millis(600), acquire(&path)).await.is_err(), "waits while held");
         // The holder exits (its handle closes): the lock is free.
         drop(other);
-        assert!(!held(&path));
+        assert!(eventually(|| !held(&path)));
         let mine = tokio::time::timeout(Duration::from_secs(2), acquire(&path)).await.unwrap().unwrap();
         assert!(held(&path));
         drop(mine);
-        assert!(!held(&path));
+        assert!(eventually(|| !held(&path)));
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -123,7 +135,7 @@ mod tests {
         assert!(held(&path));
         assert!(matches!(other.try_lock(), Err(TryLockError::WouldBlock)));
         drop(job);
-        assert!(other.try_lock().is_ok());
+        assert!(eventually(|| other.try_lock().is_ok()));
         std::fs::remove_dir_all(dir).ok();
     }
 }

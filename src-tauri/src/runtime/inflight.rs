@@ -220,11 +220,18 @@ mod tests {
         let waiting = tokio::time::timeout(std::time::Duration::from_millis(600), super::lock_lab_at(Some(&file), "inflight-test-other")).await;
         assert!(waiting.is_err(), "a stop waits for the worker");
         drop(worker);
-        let held = try_lock_lab_at(Some(&file), "inflight-test-other").expect("free once the worker is gone");
+        let mut held = None;
+        assert!(
+            crate::deploy_worker::lock::tests::eventually(|| {
+                held = try_lock_lab_at(Some(&file), "inflight-test-other");
+                held.is_some()
+            }),
+            "free once the worker is gone"
+        );
         // Held here now: a worker can't take it.
         assert!(crate::deploy_worker::lock::held(&file));
         drop(held);
-        assert!(!crate::deploy_worker::lock::held(&file));
+        assert!(crate::deploy_worker::lock::tests::eventually(|| !crate::deploy_worker::lock::held(&file)));
         std::fs::remove_dir_all(dir).ok();
     }
 }

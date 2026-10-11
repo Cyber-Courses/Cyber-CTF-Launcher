@@ -278,12 +278,24 @@ fn signal_group(pid: u32, signal: &str) {
     let _ = std::process::Command::new("kill").args([signal, &format!("-{pid}")]).status();
 }
 
+/// Half-second checks a Terraform run gets to stop on its own once interrupted: it finishes the
+/// resources it is creating and records them in its state (2 minutes).
+const TERRAFORM_GRACE_CHECKS: u32 = 240;
+
 /// [`kill`], then waits until the worker is gone (SIGKILL to its group after 20 s), so what
 /// follows (a teardown) never races a `compose up` or `vagrant up` that is still creating what
-/// it removes.
+/// it removes. A worker running Terraform is interrupted first instead: killed mid-apply,
+/// Terraform never records what it was creating, and the destroy that follows leaves those
+/// resources running (and billing). Interrupted, it stops cleanly with its state saved, the
+/// worker ends with it, and the destroy that follows sees everything.
 pub async fn kill_and_wait(app: &AppHandle, key: &str) {
     let Ok(f) = files::of(app, key) else { return };
     let Some(worker) = f.worker().filter(alive) else { return };
+    #[cfg(unix)]
+    if interrupt_terraform(worker.pid) && gone_within(&worker, TERRAFORM_GRACE_CHECKS).await {
+        remove_pidfile_of(&f.pid, worker.pid);
+        return;
+    }
     kill(app, key);
     if gone_within(&worker, 40).await {
         return;
@@ -291,6 +303,27 @@ pub async fn kill_and_wait(app: &AppHandle, key: &str) {
     #[cfg(unix)]
     signal_group(worker.pid, "-KILL");
     gone_within(&worker, 10).await;
+}
+
+/// Sends SIGINT to the Terraform runs in process group `group` (the host binary, or the `docker
+/// run` of its container, which hands the signal on): Terraform's own clean stop. Whether one
+/// was found.
+#[cfg(unix)]
+fn interrupt_terraform(group: u32) -> bool {
+    let pgrep = |args: &[&str]| std::process::Command::new("pgrep").args(args).output().map(|o| pids(&String::from_utf8_lossy(&o.stdout))).unwrap_or_default();
+    let group = group.to_string();
+    let mut found = pgrep(&["-g", &group, "-x", "terraform"]);
+    found.extend(pgrep(&["-g", &group, "-f", "hashicorp/terraform"]));
+    for pid in &found {
+        let _ = std::process::Command::new("kill").args(["-INT", &pid.to_string()]).status();
+    }
+    !found.is_empty()
+}
+
+/// The process ids `pgrep` printed, one per line.
+#[cfg(any(unix, test))]
+fn pids(out: &str) -> Vec<u32> {
+    out.lines().filter_map(|l| l.trim().parse().ok()).collect()
 }
 
 /// Whether `worker` stops being a live worker within `checks` half-second checks.
@@ -342,6 +375,40 @@ mod tests {
         assert!(is_live_worker(&w, Some(&seen(1_760_000_000, "")), Some("cyberctf-desktop")));
         assert!(!is_live_worker(&w, Some(&seen(1_760_000_000, "")), Some("other")));
         assert!(!is_live_worker(&w, Some(&Observed { exe: None, ..seen(1_760_000_000, "") }), None));
+    }
+
+    #[test]
+    fn pgrep_output_reads_as_pids() {
+        assert_eq!(pids("123\n 456\n\nnope\n"), [123, 456]);
+        assert!(pids("").is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_stop_interrupts_terraform_rather_than_killing_it() {
+        // Regression: Stop during a cloud `terraform apply` SIGTERMed the worker's whole group,
+        // then SIGKILLed it, so Terraform never recorded what it was creating and the destroy
+        // that followed left those resources running. Terraform alone gets SIGINT now (its clean
+        // stop). Terraform here is a stand-in for its container run (`… hashicorp/terraform …`),
+        // in a group of its own like a worker's.
+        use std::os::unix::process::CommandExt;
+        let mut run =
+            std::process::Command::new("sh").args(["-c", "sleep 30 & wait", "docker", "run", "hashicorp/terraform:1.9.8"]).process_group(0).spawn().unwrap();
+        let group = run.id();
+        // A group with no Terraform in it: nothing is sent.
+        let mut other = std::process::Command::new("sleep").arg("30").process_group(0).spawn().unwrap();
+        assert!(!interrupt_terraform(other.id()));
+        // `pgrep` may need a moment to see the new process by name.
+        let found = (0..20).any(|_| {
+            std::thread::sleep(Duration::from_millis(50));
+            interrupt_terraform(group)
+        });
+        assert!(found, "terraform found in its group");
+        let status = run.wait().unwrap();
+        // Ended by the interrupt (its sleep alone would take 30 s), however the shell reports it.
+        assert!(!status.success(), "{status:?}");
+        other.kill().unwrap();
+        other.wait().unwrap();
     }
 
     #[test]

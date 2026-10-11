@@ -29,6 +29,17 @@ pub fn worker_main(job_path: PathBuf, mut context: tauri::Context) {
                 let code = run_logged(&handle, job).await;
                 handle.exit(code);
             });
+            // Stopped (the app's Stop sends SIGTERM to the worker's process group): the timed
+            // tools it runs (status probes) sit in groups of their own, out of that signal's
+            // reach; end them too before going.
+            #[cfg(unix)]
+            tauri::async_runtime::spawn(async {
+                if let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    term.recv().await;
+                    crate::exec::kill_live_tools();
+                    std::process::exit(143);
+                }
+            });
             Ok(())
         })
         .build(context)
