@@ -46,6 +46,14 @@ pub async fn start(
     }
 }
 
+/// The name of the server host lab `id` (folder `dir`) is deployed on, if something of it is
+/// still there: its folder must stay as it is (Vagrant's record of its machines, the module its
+/// Terraform state was applied from) until it is stopped there.
+pub fn deployed_on_server(app: &AppHandle, dir: &Path, id: &str) -> Option<String> {
+    let host = deployed_elsewhere(&app.path().app_data_dir().ok()?, dir, id, None)?;
+    Some(server::host_name(app, &host).unwrap_or(host))
+}
+
 /// The server host lab `id` (folder `dir`, app data folder `base`) is still deployed on, when
 /// it is not `host` (`None`: this machine): its marker names that host and something of it is
 /// left there (a Terraform state holding resources, or machines Vagrant still tracks).
