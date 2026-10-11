@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use tauri::AppHandle;
 
 use super::progress::FAILED_MARK;
-use super::{Job, execute, files};
+use super::{Job, Op, execute, files};
 
 /// The worker's entry point, in place of the app: a headless Tauri app on the same data dir
 /// (so lab, key and server paths resolve the same), the deploy, a status file, then exit.
@@ -86,19 +86,23 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
             let _ = writeln!(file, "{line}");
         }
     };
+    let launch = job.op == Op::Launch;
     let result = execute(app, job, &log).await;
-    conclude(&f, &result, log)
+    conclude(&f, &result, launch, log)
 }
 
-/// The end of a run: the failure in the log, the verdict in the status file, the pidfile gone.
-/// Returns the process's exit code.
-fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, log: impl Fn(String)) -> i32 {
+/// The end of a run: the failure in the log, the verdict in the status file (and, for a
+/// `launch`, in the launch status too), the pidfile gone. Returns the process's exit code.
+fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool, log: impl Fn(String)) -> i32 {
     // The log file says how it ended too, so a page that re-attaches to it after a reload or a
     // relaunch (it has no live verdict) still sees the run failed.
     if let Err(e) = result {
         log(format!("{FAILED_MARK} {e}"));
     }
     let (status, code) = status_line(result);
+    if launch {
+        let _ = std::fs::write(&f.launch_status, &status);
+    }
     let _ = std::fs::write(&f.status, status);
     let _ = std::fs::remove_file(&f.pid);
     code
@@ -147,13 +151,19 @@ mod tests {
         let f = Files::of(&dir, "lab-1");
         std::fs::write(&f.pid, "1").unwrap();
         let lines = std::sync::Mutex::new(Vec::new());
-        let code = conclude(&f, &Err::<(), _>(Error::Invalid("boom".into())), |l| lines.lock().unwrap().push(l));
+        let code = conclude(&f, &Err::<(), _>(Error::Invalid("boom".into())), true, |l| lines.lock().unwrap().push(l));
         assert_eq!(code, 1);
         assert_eq!(lines.lock().unwrap().as_slice(), ["✗ boom"]);
         assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "error: boom");
+        assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "error: boom");
         assert!(!f.pid.exists());
-        assert_eq!(conclude(&f, &Ok(()), |_| panic!("no log on success")), 0);
+        assert_eq!(conclude(&f, &Ok(()), true, |_| panic!("no log on success")), 0);
         assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "ok");
+        assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
+        // Another operation leaves the launch's verdict alone.
+        conclude(&f, &Err::<(), _>(Error::Invalid("park failed".into())), false, |_| {});
+        assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "error: park failed");
+        assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
         std::fs::remove_dir_all(dir).ok();
     }
 }

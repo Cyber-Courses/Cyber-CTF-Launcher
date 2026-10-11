@@ -23,6 +23,9 @@ pub fn spawn(app: &AppHandle, job: &Job) -> Result<Spawned> {
     let f = files::of(app, &job.key())?;
     // A fresh run: no verdict or log left from an earlier one.
     let _ = std::fs::remove_file(&f.status);
+    if job.op == super::Op::Launch {
+        let _ = std::fs::remove_file(&f.launch_status);
+    }
     std::fs::write(&f.job, serde_json::to_vec(job).map_err(|e| Error::Invalid(e.to_string()))?).map_err(Error::Io)?;
     let log = std::fs::File::create(&f.log).map_err(Error::Io)?;
     let exe = std::env::current_exe().map_err(Error::Io)?;
