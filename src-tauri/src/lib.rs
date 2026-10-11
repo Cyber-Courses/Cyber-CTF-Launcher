@@ -10,6 +10,7 @@ mod labs;
 mod lan_relay;
 mod machine;
 mod menu;
+mod msix_data;
 mod operations;
 mod platform;
 #[cfg(test)]
@@ -172,6 +173,9 @@ fn worker_job(args: impl IntoIterator<Item = String>) -> Option<PathBuf> {
 }
 
 fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    // Before anything reads its settings: what a virtualized Store build saved.
+    #[cfg(windows)]
+    msix_data::migrate(app.handle());
     shared_folder::init(app.handle());
     // Linux and Windows dev builds: register cyberctf:// at runtime (installers do it otherwise).
     #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
