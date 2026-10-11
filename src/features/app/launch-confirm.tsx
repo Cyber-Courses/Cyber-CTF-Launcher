@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Cloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { confirmLaunch } from "@/lib/tauri";
@@ -10,6 +10,10 @@ import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
 type Request = { sessionId: string; repository: string; commit: string; target: string };
+
+/** How long the agent waits for an answer (account/agent.rs: 180 s), less a margin so an answer
+ *  given at the very end isn't lost on its way: past it, Approve would silently do nothing. */
+export const CONFIRM_WINDOW_MS = 175_000;
 
 /**
  * A website-launched lab that would run on one of the player's cloud accounts (which costs
@@ -22,10 +26,19 @@ export function LaunchConfirm() {
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  // The request whose answer window ran out: it can only be dismissed.
+  const [expired, setExpired] = useState<string | null>(null);
+
   useTauriEvent<Request>("launch-confirm", setReq);
   useFocusTrap(ref, !!req);
+  useEffect(() => {
+    if (!req) return;
+    const timer = setTimeout(() => setExpired(req.sessionId), CONFIRM_WINDOW_MS);
+    return () => clearTimeout(timer);
+  }, [req]);
 
   if (!req) return null;
+  const isExpired = expired === req.sessionId;
 
   const answer = (approve: boolean) => {
     setBusy(true);
@@ -62,13 +75,26 @@ export function LaunchConfirm() {
             </div>
           </div>
         </div>
+        {isExpired && (
+          <p role="status" className="mt-4 text-[0.8125rem] text-muted-foreground">
+            {t("app.launchConfirm.expired")}
+          </p>
+        )}
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" size="sm" disabled={busy} onClick={() => answer(false)}>
-            {t("app.launchConfirm.decline")}
-          </Button>
-          <Button size="sm" disabled={busy} onClick={() => answer(true)}>
-            {t("app.launchConfirm.approve")}
-          </Button>
+          {isExpired ? (
+            <Button size="sm" onClick={() => setReq(null)}>
+              {t("app.launchConfirm.close")}
+            </Button>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" disabled={busy} onClick={() => answer(false)}>
+                {t("app.launchConfirm.decline")}
+              </Button>
+              <Button size="sm" disabled={busy} onClick={() => answer(true)}>
+                {t("app.launchConfirm.approve")}
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </div>

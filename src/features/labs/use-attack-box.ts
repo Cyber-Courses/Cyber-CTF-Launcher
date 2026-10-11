@@ -47,15 +47,22 @@ export function useAttackBox(
   // stopped must not resolve afterwards with a stale "running" and flip the button back (which
   // made Stop seem to need two or three clicks).
   const seq = useRef(0);
+  // Reads in flight: the poll skips a tick while one is (a `vagrant status` can take longer
+  // than the interval, and stacking them only slowed every one down).
+  const reading = useRef(0);
   const refresh = useCallback(() => {
     const mine = ++seq.current;
+    reading.current++;
     (kind === "vm" ? attackVmStatus(labId, getAttackBox()) : exegolStatus(labId, getAttackImage()))
       .then((s) => {
         if (mine === seq.current) setStatus(s);
       })
       // A failed read (Vagrant busy or slow, an emulated lab) says nothing about the box: keep
       // what was last seen rather than flip it to "not started".
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        reading.current--;
+      });
   }, [labId, kind]);
   useEffect(() => {
     if (!active || !local) {
@@ -64,7 +71,9 @@ export function useAttackBox(
       return;
     }
     refresh();
-    const t = setInterval(refresh, 5000);
+    const t = setInterval(() => {
+      if (reading.current === 0) refresh();
+    }, 5000);
     return () => clearInterval(t);
   }, [active, local, refresh]);
 

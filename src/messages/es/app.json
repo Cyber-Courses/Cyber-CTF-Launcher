@@ -7,7 +7,9 @@
     "commit": "commit: {commit}",
     "failed": "No se pudo enviar tu respuesta a Cyber CTF",
     "decline": "Rechazar",
-    "approve": "Ejecutar en mi nube"
+    "approve": "Ejecutar en mi nube",
+    "expired": "Esta solicitud caducó: el lanzamiento no se inició. Vuelve a lanzarlo desde el sitio web si todavía lo quieres.",
+    "close": "Cerrar"
   },
   "quitGuard": {
     "title": "Un lab aún se está desplegando",

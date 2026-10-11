@@ -67,6 +67,16 @@ const inFlight = new Map<string, Promise<void>>();
 const latest = new Map<string, number>();
 // When each lab's latest fresh read began: a scan begun before it is older news for that lab.
 const freshAt = new Map<string, number>();
+// When this app last stopped, paused or shut down each lab. The backend answers a scan asked
+// while another is running with that scan's last result, which can predate the stop: until a
+// status read begun after the stop sees the lab running again, the scan's word is not taken for it.
+const stoppedAt = new Map<string, number>();
+
+/** This app just took `labId` down (stop, pause, shut down): see `stoppedAt`. */
+export function noteStopped(labId: string) {
+  stoppedAt.set(labId, Date.now());
+  if (state.scanRunning.has(labId)) set({ scanRunning: new Set([...state.scanRunning].filter((id) => id !== labId)) });
+}
 
 /** Reads a lab's status into the store; see above for `fresh`. */
 export function refreshStatus(lab: Lab, { fresh = false }: { fresh?: boolean } = {}): Promise<void> {
@@ -75,10 +85,14 @@ export function refreshStatus(lab: Lab, { fresh = false }: { fresh?: boolean } =
   if (pending && !fresh) return pending;
   const mine = (latest.get(lab.id) ?? 0) + 1;
   latest.set(lab.id, mine);
-  if (fresh) freshAt.set(lab.id, Date.now());
+  const began = Date.now();
+  if (fresh) freshAt.set(lab.id, began);
   const read: Promise<void> = labStatus(lab.id, lab.runtime.runtime)
     .then((s) => {
       if (latest.get(lab.id) !== mine) return;
+      // Seen running again since this app took it down (started from the website, say): the
+      // scan counts for it again.
+      if (s.running && (stoppedAt.get(lab.id) ?? Infinity) <= began) stoppedAt.delete(lab.id);
       set({ statuses: { ...state.statuses, [lab.id]: s } });
       // Down now: the last scan's "running" for it is out of date.
       if (fresh && !s.running && state.scanRunning.has(lab.id)) {
@@ -96,9 +110,11 @@ export function refreshStatus(lab: Lab, { fresh = false }: { fresh?: boolean } =
   return read;
 }
 
-/** What a scan begun at `began` found running, but the labs read fresh since it began. */
+/** What a scan begun at `began` found running, but the labs read fresh since it began; returns
+ *  them, to read their status. Labs this app took down since are left out of the running set
+ *  (see `stoppedAt`) but still returned, so a status read can confirm them. */
 export function setScanRunning(ids: string[], began: number): string[] {
   const kept = ids.filter((id) => (freshAt.get(id) ?? 0) < began);
-  set({ scanRunning: new Set(kept) });
+  set({ scanRunning: new Set(kept.filter((id) => !stoppedAt.has(id))) });
   return kept;
 }

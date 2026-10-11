@@ -91,16 +91,23 @@ export function useLabs(reloadKey: unknown = 0) {
   // truth; refreshStatus then fills in each running lab's machines and URL.
   useEffect(() => {
     let alive = true;
+    // One scan at a time: a slow one (a wedged hypervisor) must not have the interval stack more.
+    let scanning = false;
     const scan = () => {
+      if (scanning) return;
+      scanning = true;
       const began = Date.now();
-      return runningLabs()
+      runningLabs()
         .then((all) => {
           if (!alive) return;
           // A lab read fresh after this scan began (an operation just ended on it) is left out.
           const ids = setScanRunning(all, began);
           (labs ?? []).filter((l) => ids.includes(l.id)).forEach((l) => void refreshStatus(l));
         })
-        .catch(ignore("scanned again in a moment"));
+        .catch(ignore("scanned again in a moment"))
+        .finally(() => {
+          scanning = false;
+        });
     };
     scan();
     const t = setInterval(scan, 6000);

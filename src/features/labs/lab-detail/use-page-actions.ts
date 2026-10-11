@@ -11,9 +11,9 @@ export function usePageActions({
   onResume,
   onProvision,
 }: {
-  onPark?: (mode: Park) => Promise<void> | void;
-  onResume?: () => Promise<void> | void;
-  onProvision?: (machine: string | null) => Promise<void> | void;
+  onPark?: (mode: Park) => Promise<unknown> | void;
+  onResume?: () => Promise<unknown> | void;
+  onProvision?: (machine: string | null) => Promise<unknown> | void;
 }) {
   const [acting, setActing] = useState<LabAction | null>(null);
   // Which machine to provision again ("" = all), from the Details panel.

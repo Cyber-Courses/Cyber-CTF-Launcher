@@ -67,7 +67,8 @@
     "startThemHint": "Start the machines that are down, keeping their state",
     "startThem": "Start them",
     "resetting": "Resetting…",
-    "reset": "Reset lab"
+    "reset": "Reset lab",
+    "resetStopFailed": "Reset stopped: the lab couldn't be removed, so it wasn't started again"
   },
   "readiness": {
     "needsEngine": "Needs a container engine",
@@ -242,7 +243,8 @@
     "back": "{title} is back.",
     "foreignCpu": "This lab's VMs are built for {archs} and this machine is {arch}. Install QEMU from the Machine page to run them emulated (many times slower), or run the lab on a server or in your cloud account.",
     "noHypervisor": "No hypervisor for this lab is installed on this machine (it runs on {providers}). Install one from the Machine page, or run it on a server.",
-    "none": "none"
+    "none": "none",
+    "refused": "Another operation is still running on this lab"
   },
   "detail": {
     "yourServer": "your server",

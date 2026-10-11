@@ -31,6 +31,7 @@ import { usePageActions } from "@/features/labs/lab-detail/use-page-actions";
 import { useRunTarget } from "@/features/labs/lab-detail/use-run-target";
 import { WhereItRunsPanel } from "@/features/labs/lab-detail/where-it-runs-panel";
 import { type LabStatus, type Park, type Provider } from "@/lib/tauri";
+import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
 /** A lab's own page: what it is, its state and the one thing to do next, then its deployment,
@@ -69,12 +70,13 @@ export function LabDetail({
   dockerRunning?: boolean | null;
   onBack: () => void;
   onStart: (target: RunTarget) => Promise<void> | void;
-  onStop: () => Promise<void> | void;
+  /** Resolves to the failure when the stop failed (Reset then doesn't start the lab again). */
+  onStop: () => Promise<string | null | void> | void;
   /** Pause (state saved) or shut down (powered off), machines kept for `onResume`. */
-  onPark?: (mode: Park) => Promise<void> | void;
-  onResume?: () => Promise<void> | void;
+  onPark?: (mode: Park) => Promise<unknown> | void;
+  onResume?: () => Promise<unknown> | void;
   /** Re-run a VM lab's provisioners on one machine (null = all), in place. */
-  onProvision?: (machine: string | null) => Promise<void> | void;
+  onProvision?: (machine: string | null) => Promise<unknown> | void;
   /** False until the first checks (sign-in, the lab's status) are in: the page then shows a
    *  placeholder instead of a Start button that flips to Running a moment later. */
   ready?: boolean;
@@ -121,7 +123,12 @@ export function LabDetail({
   async function reset() {
     setResetting(true);
     try {
-      await onStop();
+      // A stop that failed left the lab half removed: starting over it would build on the wreck.
+      const failure = await onStop();
+      if (typeof failure === "string") {
+        tell(t("labs.health.resetStopFailed"))(failure);
+        return;
+      }
       await onStart(restartTarget(status, run.hosts, run.runOn, run.localVm));
     } finally {
       setResetting(false);
@@ -177,6 +184,7 @@ export function LabDetail({
               state={s}
               url={status?.url}
               busy={busy}
+              deploying={s.deploying}
               acting={acting}
               resetting={resetting}
               onAct={(what) => void act(what)}
@@ -239,7 +247,13 @@ export function LabDetail({
               meta={meta}
               provision={
                 s.canProvision
-                  ? { target: provisionTarget, onTarget: setProvisionTarget, busy, running: acting === "provision", onRun: () => void act("provision") }
+                  ? {
+                      target: provisionTarget,
+                      onTarget: setProvisionTarget,
+                      busy: busy || s.deploying,
+                      running: acting === "provision",
+                      onRun: () => void act("provision"),
+                    }
                   : null
               }
             />
