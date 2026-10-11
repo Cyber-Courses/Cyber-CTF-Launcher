@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   awsCliIdentity,
   awsLogin,
@@ -52,15 +52,20 @@ export function useCloudAccounts(v: ServerHostInput, setV: Dispatch<SetStateActi
   // With pasted access keys these would reflect the machine's default AWS chain (a different
   // account), so they are neither fetched nor shown.
   const awsCli = aws && !!v.useCliCreds;
+  // Each read is numbered: switching profiles starts a new one, and an older read answering
+  // after it must not show the previous profile's account or spend.
+  const identityRead = useRef(0);
   const checkAwsIdentity = useCallback((profile: string | null) => {
+    const n = ++identityRead.current;
+    const latest = () => n === identityRead.current;
     setCheckingId(true);
     awsCliIdentity(profile ?? undefined)
-      .then(setAwsIdentity)
-      .catch(() => setAwsIdentity(null))
-      .finally(() => setCheckingId(false));
+      .then((id) => latest() && setAwsIdentity(id))
+      .catch(() => latest() && setAwsIdentity(null))
+      .finally(() => latest() && setCheckingId(false));
     awsMonthToDateCost(profile ?? undefined)
-      .then(setMtdCost)
-      .catch(() => setMtdCost(null));
+      .then((c) => latest() && setMtdCost(c))
+      .catch(() => latest() && setMtdCost(null));
   }, []);
   useEffect(() => {
     // A read starting shows its "checking" state at once.

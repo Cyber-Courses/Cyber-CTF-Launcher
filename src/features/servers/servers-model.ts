@@ -3,8 +3,9 @@ import type { Tone } from "@/components/ui/status-pill";
 
 // The Servers page's logic, as pure functions of the hosts, their tests and capacity.
 
-/** The hosts the Servers page lists: AWS, Azure and GCP accounts live on the Cloud page. */
-export const onPremHosts = (hosts: ServerHost[]) => hosts.filter((h) => h.provider !== "aws" && h.provider !== "azure" && h.provider !== "gcp");
+/** The hosts the Servers page lists: the hypervisors. Every cloud account (AWS, Azure, GCP,
+ *  DigitalOcean, Linode, Oracle Cloud) lives on the Cloud page. */
+export const onPremHosts = (hosts: ServerHost[]) => hosts.filter((h) => h.provider === "proxmox" || h.provider === "vmware_esxi");
 
 /** The hosts panel's summary: how many answered the last test, and its tone. */
 export function hostsSummary(hosts: ServerHost[], tests: Record<string, ServerTest | "testing">) {

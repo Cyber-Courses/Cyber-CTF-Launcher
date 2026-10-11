@@ -12,6 +12,11 @@ describe("servers model", () => {
     expect(onPremHosts(hosts).map((h) => h.id)).toEqual(["p", "e"]);
   });
 
+  it("leaves the token and key clouds to the Cloud page too", () => {
+    const hosts = [host("p"), host("d", "digitalocean"), host("l", "linode"), host("o", "oci")];
+    expect(onPremHosts(hosts).map((h) => h.id)).toEqual(["p"]);
+  });
+
   it("summarises the hosts' last tests", () => {
     const hosts = [host("a"), host("b")];
     expect(hostsSummary([], {}).tone).toBe("warn");

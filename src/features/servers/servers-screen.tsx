@@ -59,7 +59,8 @@ export function ServerScreen({ onNavigate }: { onNavigate: (tab: Tab) => void })
   const seen = useRef<Set<string>>(new Set());
   const { list, error, setError, reload } = useServerList({
     onLoaded: (l) => {
-      for (const h of l.hosts) {
+      // Only the hosts this page lists: the cloud accounts are tested on the Cloud page.
+      for (const h of onPremHosts(l.hosts)) {
         if (!seen.current.has(h.id)) {
           seen.current.add(h.id);
           void test(h.id);
