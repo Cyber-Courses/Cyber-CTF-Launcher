@@ -6,8 +6,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use crate::AppHandle;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::Manager;
 
 use crate::error::{Error, Result};
 

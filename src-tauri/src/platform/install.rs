@@ -129,7 +129,7 @@ fn plan(dep: Dependency) -> Result<Vec<Step>> {
 
 /// Installs a dependency, streaming each command and its output to the UI.
 #[tauri::command]
-pub async fn install_dependency(app: tauri::AppHandle, dependency: Dependency, logs: Channel<String>) -> Result<()> {
+pub async fn install_dependency(app: crate::AppHandle, dependency: Dependency, logs: Channel<String>) -> Result<()> {
     let mut on_line = channel_log(logs);
     let steps = plan(dependency).inspect_err(|e| on_line(e.to_string()))?;
     run_steps(&steps, &mut on_line).await?;

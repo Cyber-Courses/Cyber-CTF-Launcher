@@ -9,7 +9,8 @@ pub mod workloads;
 
 use std::path::PathBuf;
 
-use tauri::{AppHandle, Manager};
+use crate::AppHandle;
+use tauri::Manager;
 
 use crate::error::{Error, Result};
 

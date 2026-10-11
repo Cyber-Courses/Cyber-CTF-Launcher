@@ -17,12 +17,24 @@ mod quit;
 mod runtime;
 mod shared_folder;
 mod terminal;
+#[cfg(test)]
+mod test_app;
 mod window;
 
 use std::path::PathBuf;
 use std::time::Duration;
 
-use tauri::{App, AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
+
+/// The Tauri runtime the app runs on: the real webview, or Tauri's mock in unit tests, so code
+/// that takes an app handle (paths under the app data folder, the commands) runs there too.
+#[cfg(not(test))]
+pub(crate) type AppRuntime = tauri::Wry;
+#[cfg(test)]
+pub(crate) type AppRuntime = tauri::test::MockRuntime;
+pub(crate) type AppHandle = tauri::AppHandle<AppRuntime>;
+pub(crate) type WebviewWindow = tauri::WebviewWindow<AppRuntime>;
+type App = tauri::App<AppRuntime>;
 
 /// How often expired cloud labs are looked for and torn down.
 const REAP_EVERY: Duration = Duration::from_secs(300);
@@ -41,7 +53,7 @@ pub fn run() {
         deploy_worker::worker_main(job, context);
         return;
     }
-    tauri::Builder::default()
+    tauri::Builder::<AppRuntime>::new()
         // First: a cyberctf:// link opened while the app runs goes to that window
         // (Windows/Linux would otherwise start a second instance).
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {

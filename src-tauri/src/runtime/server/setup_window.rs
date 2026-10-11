@@ -1,6 +1,7 @@
 //! The host / cloud account setup form, opened in its own window over the main one.
 
-use tauri::{AppHandle, Manager};
+use crate::AppHandle;
+use tauri::Manager;
 
 use super::input::valid_id;
 use crate::error::{Error, Result};

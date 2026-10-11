@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::Workload;
 use crate::error::{Error, Result};

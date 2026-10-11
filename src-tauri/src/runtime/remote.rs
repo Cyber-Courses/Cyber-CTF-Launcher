@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::{ssh, terraform};
 use crate::error::{Error, Result};

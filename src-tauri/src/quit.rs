@@ -7,7 +7,8 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Emitter, Manager};
+use crate::AppHandle;
+use tauri::{Emitter, Manager};
 
 use crate::runtime;
 

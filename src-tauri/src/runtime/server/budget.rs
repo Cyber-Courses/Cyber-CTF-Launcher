@@ -1,7 +1,7 @@
 //! What an AWS account has cost this month (Cost Explorer), and the budget check run before a
 //! cloud launch. AWS-only: the other clouds have no cost read yet, and never persist a limit.
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::cloud_checks::{aws_cmd, last_line};
 use super::contract::terraform_env;

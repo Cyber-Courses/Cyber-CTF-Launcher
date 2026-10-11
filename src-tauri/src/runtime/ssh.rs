@@ -9,7 +9,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use tauri::{AppHandle, Manager};
+use crate::AppHandle;
+use tauri::Manager;
 
 use crate::error::{Error, Result};
 use crate::exec::run;

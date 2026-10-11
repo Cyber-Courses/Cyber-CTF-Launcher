@@ -2,6 +2,8 @@
 //! headless on Windows, killed with their children when cancelled or timed out.
 
 mod docker;
+#[cfg(test)]
+pub mod fake;
 mod group;
 
 use std::path::Path;
@@ -122,6 +124,10 @@ pub async fn run_env_timed(program: &'static str, args: &[&str], cwd: Option<&Pa
 }
 
 async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env: &[(String, String)], timeout: Option<Duration>) -> Result<String> {
+    #[cfg(test)]
+    if let Some(answer) = fake::answer(program, args) {
+        return answer;
+    }
     // Kept alive until the tool exits (see lan_relay).
     let relayed = crate::lan_relay::prepare(program, env).await;
     let env = relayed.env.as_slice();
@@ -180,6 +186,13 @@ async fn stream_from(
     stdin: Option<&Path>,
     on_line: impl FnMut(String),
 ) -> Result<()> {
+    #[cfg(test)]
+    let mut on_line = on_line;
+    #[cfg(test)]
+    if let Some(answer) = fake::answer_stream(program, args, &mut on_line) {
+        let _ = stdin;
+        return answer;
+    }
     let relayed = crate::lan_relay::prepare(program, env).await;
     let env = relayed.env.as_slice();
     let mut cmd = build(program, args);

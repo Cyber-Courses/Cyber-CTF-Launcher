@@ -8,8 +8,8 @@ mod tokens;
 
 use std::time::Duration;
 
+use crate::AppHandle;
 use serde::Serialize;
-use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::config;

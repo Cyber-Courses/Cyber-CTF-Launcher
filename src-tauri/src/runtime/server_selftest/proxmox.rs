@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::{BOOT, CLEANUP, CORES, DISK_GB, MEMORY_MB, PREPARE, Reporter, wait_tcp, wait_tcp_from};
 use crate::error::{Error, Result};

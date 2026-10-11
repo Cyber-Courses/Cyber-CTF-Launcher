@@ -19,8 +19,9 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::AppHandle;
+use tauri::Manager;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager};
 
 use super::providers::Provider;
 use super::{server, ssh};
