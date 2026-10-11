@@ -15,11 +15,14 @@ const CLOUD_PROVIDERS: readonly string[] = ["aws", "azure", "gcp", "digitalocean
 /** The cloud accounts among the saved hosts (the rest are servers). */
 export const cloudAccounts = (hosts: ServerHost[]) => hosts.filter((h) => CLOUD_PROVIDERS.includes(h.provider));
 
+/** Whether an account set a monthly budget (null or 0 means no limit). */
+export const hasBudget = (h: ServerHost) => !!h.monthlyLimit && h.monthlyLimit > 0;
+
 /** Whether an account's month-to-date spend reached its budget. */
-export const isOverBudget = (h: ServerHost, spent: number | null | undefined) => h.monthlyLimit != null && spent != null && spent >= h.monthlyLimit;
+export const isOverBudget = (h: ServerHost, spent: number | null | undefined) => hasBudget(h) && spent != null && spent >= h.monthlyLimit!;
 
 /** The accounts with a monthly budget (AWS only: Cost Explorer reads the spend). */
-export const budgetedAccounts = (hosts: ServerHost[]) => hosts.filter((h) => h.provider === "aws" && h.monthlyLimit != null);
+export const budgetedAccounts = (hosts: ServerHost[]) => hosts.filter((h) => h.provider === "aws" && hasBudget(h));
 
 /** Labs running on one of these accounts right now (a lab's status names the account it runs on). */
 export function labsOnAccounts(labs: Lab[], statuses: Record<string, LabStatus>, accounts: ServerHost[]) {

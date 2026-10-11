@@ -19,6 +19,13 @@ describe("cloud model", () => {
     expect(isOverBudget(host("b", "aws"), 1000)).toBe(false);
   });
 
+  it("treats a budget of 0 as no limit", () => {
+    const uncapped = host("a", "aws", { monthlyLimit: 0 });
+    expect(isOverBudget(uncapped, 0)).toBe(false);
+    expect(isOverBudget(uncapped, 12)).toBe(false);
+    expect(budgetedAccounts([uncapped])).toEqual([]);
+  });
+
   it("guards the budget of AWS accounts that set one", () => {
     const hosts = [host("a", "aws", { monthlyLimit: 50 }), host("b", "aws"), host("c", "azure", { monthlyLimit: 50 })];
     expect(budgetedAccounts(hosts).map((h) => h.id)).toEqual(["a"]);

@@ -6,6 +6,7 @@ import { authLogin, authLogout, type AuthStatus } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
+import { warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
 export function initials(name: string | null, email: string | null): string {
@@ -38,6 +39,9 @@ export function useAuthActions(onChange: (status: AuthStatus) => void) {
     // stuck "signed in" with no way out.
     try {
       await authLogout();
+    } catch (e) {
+      // The click handler has no one to reject to: log it rather than leave it unhandled.
+      warn("sign out")(e);
     } finally {
       onChange({ loggedIn: false, name: null, email: null });
     }
