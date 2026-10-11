@@ -167,7 +167,7 @@ pub fn kill(app: &AppHandle, key: &str) {
 fn kill_files(f: &Files) {
     if let Some(pid) = f.pid().filter(|p| alive(*p)) {
         #[cfg(unix)]
-        signal_group(pid, "-TERM");
+        signal_group(pid, libc::SIGTERM);
         #[cfg(windows)]
         {
             let _ = crate::exec::headless_std(std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"])).status();
@@ -177,10 +177,19 @@ fn kill_files(f: &Files) {
 }
 
 /// Sends `signal` to the process group `pid` leads: the worker and its vagrant/docker/terraform.
+/// A syscall, not `kill -TERM -<pid>`: procps' `kill` (Debian, Ubuntu) reads `-<pid>` as an
+/// option and signals the group named by its first digit, so `-1234` sent SIGTERM to every
+/// process of the user (`kill(-1)`) instead of the worker's group.
 #[cfg(unix)]
-fn signal_group(pid: u32, signal: &str) {
-    // The negative pid is the process group.
-    let _ = std::process::Command::new("kill").args([signal, &format!("-{pid}")]).status();
+fn signal_group(pid: u32, signal: libc::c_int) {
+    let Ok(group) = libc::pid_t::try_from(pid) else { return };
+    if group <= 1 {
+        return;
+    }
+    // SAFETY: plain syscall on a process group the worker leads (`process_group(0)` at spawn).
+    unsafe {
+        libc::killpg(group, signal);
+    }
 }
 
 /// [`kill`], then waits until the worker is gone (SIGKILL to its group after 20 s), so what
@@ -194,7 +203,7 @@ pub async fn kill_and_wait(app: &AppHandle, key: &str) {
         return;
     }
     #[cfg(unix)]
-    signal_group(pid, "-KILL");
+    signal_group(pid, libc::SIGKILL);
     gone_within(pid, 10).await;
 }
 
@@ -296,10 +305,16 @@ mod tests {
         // A second operation on the lab is refused while this one runs.
         let err = super::super::run_job(app, job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err().to_string();
         assert_eq!(err, "A resume of this lab is already in progress; wait for it to finish.");
-        // Stopping it ends its process group and drops its pidfile.
+        // Stopping it ends its process group, and only that (regression: procps' `kill -TERM
+        // -<pid>` signalled every process of the user), and drops its pidfile.
+        let mut bystander = std::process::Command::new("sleep").arg("30").spawn().unwrap();
         let waiter = std::thread::spawn(move || child.wait());
         kill_and_wait(app, "lab-1").await;
-        assert!(waiter.join().unwrap().is_ok());
+        let status = waiter.join().unwrap().unwrap();
+        assert!(!status.success(), "the worker was signalled");
+        assert!(bystander.try_wait().unwrap().is_none(), "a process outside its group is left alone");
+        let _ = bystander.kill();
+        let _ = bystander.wait();
         assert!(!f.pid.exists());
         assert!(running(app).is_empty());
         // Nothing left to stop.
