@@ -30,22 +30,34 @@ jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install actionlint
-        run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+        # The download script at the v1.7.7 tag's commit (a tag can be moved, a commit can't).
+        run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/03d0035246f3e81f36aed592ffb4bebf33a03106/scripts/download-actionlint.bash) 1.7.7
       # shellcheck is on the runner image; actionlint runs it on every run: script.
       - run: ./actionlint -color
+      # Every action is pinned to a full commit SHA (a tag or branch can be moved to new code,
+      # which then runs with this repo's secrets), with its version in a comment for updates.
+      - name: Actions pinned to commit SHAs
+        run: |
+          set -euo pipefail
+          if grep -nE '^\s*(- )?uses:' .github/workflows/*.yml \
+            | grep -vE 'uses: \./' \
+            | grep -vE 'uses: [^@[:space:]]+@[0-9a-f]{40} # \S'; then
+            echo "::error::pin these actions to a full commit SHA, with the version in a comment (uses: owner/repo@<sha> # vX.Y.Z)"
+            exit 1
+          fi
 
   terraform:
     runs-on: ubuntu-latest
     env:
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugins
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_wrapper: false
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .terraform-plugins
           key: terraform-plugins-${{ hashFiles('**/*.tf', '**/terraform.lock.hcl', '**/.terraform.lock.hcl') }}
@@ -79,7 +91,7 @@ jobs:
   shellcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # Warnings and errors fail; style notes (info) don't. Intentional exceptions are marked
       # in the scripts with `# shellcheck disable=...` and a reason.
       - run: |
@@ -92,8 +104,8 @@ jobs:
   json-and-store:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
       - run: python3 .github/scripts/check-store-listings.py
