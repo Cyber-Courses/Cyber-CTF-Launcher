@@ -63,6 +63,8 @@ describe("LabDetail, a cloud lab", () => {
     // Cloud accounts only: nothing runs on this machine.
     expect(within(dialog).queryByText("This machine")).toBeNull();
     expect(within(dialog).getByText("Billed to your cloud account.")).toBeTruthy();
+    // The account's auto-stop is the launcher's: said to need it open.
+    expect(within(dialog).getByText(/removes them after 4 h, but only while it is open/)).toBeTruthy();
     expect(within(dialog).getByText("It lets in your public IP only.")).toBeTruthy();
     const start = within(dialog)
       .getAllByRole("button")
@@ -100,6 +102,9 @@ describe("LabDetail, a cloud lab", () => {
     expect(screen.getByText("Sign in as Solus.")).toBeTruthy();
     expect(screen.getByText("AKIAEXAMPLE")).toBeTruthy();
     expect(screen.queryByText("s3cr3t")).toBeNull();
+    // Not in the copy tooltip either.
+    expect(screen.getByTitle("Copy secret_key")).toBeTruthy();
+    expect(document.body.innerHTML).not.toContain("s3cr3t");
     await user.click(screen.getByRole("button", { name: "Show secret_key" }));
     expect(screen.getByText("s3cr3t")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Hide secret_key" }));

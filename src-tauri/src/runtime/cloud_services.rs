@@ -426,15 +426,20 @@ fn launcher_vars(conn: &server::Connection, expires_at: Option<u64>) -> Vec<(Str
     vars
 }
 
-/// What the lab exposes, as the last lines of the deploy log: its non-secret outputs, then its
-/// message.
+/// What the lab exposes, as the last lines of the deploy log (kept on disk): its non-secret
+/// outputs, then its message with any secret it names masked.
 fn log_exposed(s: &LabStatus, log: &mut impl FnMut(String)) {
     for o in s.outputs.iter().filter(|o| !o.sensitive) {
         log(format!("{}: {}", o.name, o.value));
     }
     if let Some(m) = &s.message {
-        m.lines().for_each(|l| log(l.to_string()));
+        redact(m, &s.outputs).lines().for_each(|l| log(l.to_string()));
     }
+}
+
+/// `text` with the value of every sensitive output masked.
+fn redact(text: &str, outputs: &[Output]) -> String {
+    outputs.iter().filter(|o| o.sensitive && !o.value.is_empty()).fold(text.to_string(), |t, o| t.replace(&o.value, "••••••••"))
 }
 
 /// Destroys a cloud-services lab, ending what it costs.
@@ -693,12 +698,12 @@ mod tests {
                 Output { name: "url".into(), value: "http://x/".into(), sensitive: false },
                 Output { name: "secret".into(), value: "s3cr3t".into(), sensitive: true },
             ],
-            message: Some("Go\nnow".into()),
+            message: Some("Go\nwith s3cr3t".into()),
             ..LabStatus::default()
         };
         let mut lines = Vec::new();
         log_exposed(&s, &mut |l| lines.push(l));
-        assert_eq!(lines, ["url: http://x/", "Go", "now"]);
+        assert_eq!(lines, ["url: http://x/", "Go", "with ••••••••"]);
     }
 
     fn account(provider: Provider) -> server::Connection {

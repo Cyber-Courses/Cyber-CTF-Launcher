@@ -94,15 +94,13 @@ fn run_record(expires_at: Option<u64>, vars: &[(String, String)]) -> serde_json:
 }
 
 /// The launcher variables of a destroy, from the run record: the same `region` and
-/// `expires_at` the apply had (a module may require them even to destroy).
+/// `expires_at` the apply had (a module may require them even to destroy); no auto-stop is the
+/// empty `expires_at` the apply passed.
 fn replayed_vars(run_json: &str) -> Vec<(String, String)> {
     let mut vars = saved_vars(run_json);
-    if let Ok(v) = serde_json::from_str::<Value>(run_json)
-        && let Some(t) = v[EXPIRES_AT].as_u64()
-    {
-        vars.push(("expires_at".into(), t.to_string()));
-    }
-    vars.retain(|(k, _)| k == "region" || k == "expires_at");
+    vars.retain(|(k, _)| k == "region");
+    let expires_at = serde_json::from_str::<Value>(run_json).ok().and_then(|v| v[EXPIRES_AT].as_u64());
+    vars.push(("expires_at".into(), expires_at.map(|t| t.to_string()).unwrap_or_default()));
     vars
 }
 
@@ -140,10 +138,12 @@ mod tests {
         let mut back = replayed_vars(&json);
         back.sort();
         assert_eq!(back, vec![("expires_at".to_string(), "5000".to_string()), ("region".to_string(), "eu-west-3".to_string())]);
-        // No auto-stop: no expiry recorded nor replayed.
+        // No auto-stop: no expiry recorded, and the apply's empty one replayed (a module that
+        // declares it requires a value even to destroy).
         let json = serde_json::to_string(&run_record(None, &[])).unwrap();
-        assert!(replayed_vars(&json).is_empty());
-        assert!(replayed_vars("garbage").is_empty());
+        assert!(!json.contains(EXPIRES_AT));
+        assert_eq!(replayed_vars(&json), [("expires_at".to_string(), String::new())]);
+        assert_eq!(replayed_vars("garbage"), [("expires_at".to_string(), String::new())]);
     }
 
     #[test]

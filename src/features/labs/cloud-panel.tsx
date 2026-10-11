@@ -62,7 +62,7 @@ function OutputRow({ output }: { output: LabOutput }) {
     <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-[0.8125rem] first:border-t-0">
       <span className="shrink-0 font-mono text-[0.75rem] text-muted-foreground">{output.name}</span>
       <span className="flex min-w-0 items-center gap-1.5">
-        <CopyValue text={output.value} label={shown ? undefined : "••••••••"} />
+        <CopyValue text={output.value} label={shown ? undefined : "••••••••"} title={shown ? undefined : t("labs.cloud.copySecret", { name: output.name })} />
         {output.sensitive && (
           <button
             type="button"
