@@ -328,7 +328,9 @@ fn authorize_args(h: &HostProfile, identity: &std::path::Path, public: &str) -> 
     for o in password_auth.into_iter().chain(ssh::options(false, &known_hosts)) {
         args.extend(["-o".into(), o]);
     }
-    args.extend([node_login(h), command]);
+    // `--`: the login comes from the host profile, so it can never be read as an ssh option
+    // (a host such as `-oProxyCommand=...`).
+    args.extend(["--".into(), node_login(h), command]);
     args
 }
 
@@ -345,7 +347,7 @@ async fn ssh_key_problem(h: &HostProfile) -> Option<String> {
     let public = std::fs::read_to_string(identity.with_extension("pub")).unwrap_or_default().trim().to_string();
     let user = ssh_user(&h.username).to_string();
     let target = ssh::Target::direct(&h.host, &user, identity.clone());
-    match target.exec(&identity.with_file_name("known_hosts"), "true").await {
+    match target.exec_timed(&identity.with_file_name("known_hosts"), "true", std::time::Duration::from_secs(30)).await {
         Ok(_) => None,
         Err(_) => Some(format!(
             "The launcher can't SSH to {user}@{} with its key, which a token setup needs to upload the lab's cloud-init. On the node, run:\n  echo '{public}' >> ~/.ssh/authorized_keys",
@@ -549,7 +551,7 @@ mod tests {
         assert_eq!(args[..4], ["-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "NumberOfPasswordPrompts=1"]);
         // Escaped for ssh's option parser (a Windows path's backslashes, a space).
         assert!(args.contains(&format!("UserKnownHostsFile={}", ssh::ssh_config_path(&dir.join("known_hosts").display().to_string()))));
-        assert_eq!(args[args.len() - 2], "root@pve.lan");
+        assert_eq!(args[args.len() - 3..args.len() - 1], ["--", "root@pve.lan"]);
         assert!(args.last().unwrap().contains("grep -qxF 'ssh-ed25519 AAAA launcher' ~/.ssh/authorized_keys"), "{args:?}");
         std::fs::remove_dir_all(dir).unwrap();
     }

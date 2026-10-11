@@ -88,17 +88,69 @@ pub async fn server_selftest(app: AppHandle, id: String, events: Channel<Event>)
         .await?;
 
     let work = work_dir(&app, &id)?;
-    let _ = std::fs::remove_dir_all(&work);
+    // A folder still there is a previous run whose VM couldn't be removed: its state is the only
+    // way to find that VM, so destroy it from there before anything else, and keep the folder
+    // when that fails too.
+    if work.exists() {
+        let left = r
+            .step("prepare", PREPARE, async {
+                r.progress("prepare", PREPARE, "Removing the VM a previous test left on the host…".into());
+                match conn.provider {
+                    Provider::Proxmox => proxmox::leftover(&r, &conn, &work).await?,
+                    Provider::VmwareEsxi => esxi::leftover(&r, &conn, &work).await?,
+                    _ => {}
+                }
+                Ok(((), None))
+            })
+            .await;
+        if let Err(e) = left {
+            return kept(&work, Err(e));
+        }
+        let _ = std::fs::remove_dir_all(&work);
+    }
 
-    let result = match conn.provider {
+    let ran = match conn.provider {
         Provider::Proxmox => proxmox::run(&app, &id, &r, &conn, &work).await,
         Provider::VmwareEsxi => esxi::run(&r, &conn, &work).await,
-        Provider::Aws => Err(Error::Invalid("the VM test is for server hosts; AWS labs are billed, so it isn't run as a test".into())),
-        _ => Err(Error::Invalid("the VM test runs only on a Proxmox or ESXi host".into())),
+        Provider::Aws => Ran::nothing(Error::Invalid("the VM test is for server hosts; AWS labs are billed, so it isn't run as a test".into())),
+        _ => Ran::nothing(Error::Invalid("the VM test runs only on a Proxmox or ESXi host".into())),
     };
+    finish(&work, ran)
+}
 
-    let _ = std::fs::remove_dir_all(&work);
-    result
+/// How a run ended: its result, and whether its VM is gone (removed, or never created).
+pub(super) struct Ran {
+    pub result: Result<()>,
+    pub cleaned: bool,
+}
+
+impl Ran {
+    fn nothing(e: Error) -> Self {
+        Ran { result: Err(e), cleaned: true }
+    }
+}
+
+/// The run's folder goes only with its VM: when the cleanup failed, the folder (its Terraform
+/// state or Vagrant machine) is kept so the next run can remove the VM, and the result says so.
+fn finish(work: &Path, ran: Ran) -> Result<()> {
+    if ran.cleaned {
+        let _ = std::fs::remove_dir_all(work);
+        ran.result
+    } else {
+        kept(work, ran.result)
+    }
+}
+
+/// `result`, failed with a note that the test VM is still on the host and where its state is kept.
+fn kept(work: &Path, result: Result<()>) -> Result<()> {
+    let note = format!(
+        "the test VM couldn't be removed from the host. Its state is kept in {}; the next test removes it first, or delete the VM on the host yourself",
+        work.display()
+    );
+    Err(Error::Invalid(match result {
+        Ok(()) => note,
+        Err(e) => format!("{e}; {note}"),
+    }))
 }
 
 /// Retries `probe` every 3 s until it succeeds or `within` has passed.
@@ -130,7 +182,7 @@ async fn wait_tcp_from(login: &str, identity: &Path, host: &str, port: u16, with
     let target = ssh::Target::direct(node, user, identity.to_path_buf());
     let known = identity.with_file_name("known_hosts");
     let probe = format!("timeout 4 bash -c {}", ssh::sh_quote(&format!("</dev/tcp/{host}/{port}")));
-    if retry_until(within, || async { target.exec(&known, &probe).await.is_ok() }).await {
+    if retry_until(within, || async { target.exec_timed(&known, &probe, Duration::from_secs(20)).await.is_ok() }).await {
         Ok(())
     } else {
         Err(Error::Invalid(format!("no answer on {host}:{port} (from {node})")))
@@ -206,6 +258,29 @@ mod tests {
         assert_eq!(tries.load(std::sync::atomic::Ordering::SeqCst), 1);
         // Past the deadline, a failing probe is tried once and given up on.
         assert!(!retry_until(Duration::ZERO, || async { false }).await);
+    }
+
+    #[test]
+    fn a_failed_cleanup_keeps_the_runs_state_and_says_so() {
+        let work = std::env::temp_dir().join(format!("cyberctf-srv-selftest-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(work.join("state")).unwrap();
+        std::fs::write(work.join("state").join("terraform.tfstate"), "{}").unwrap();
+
+        // The VM is still on the host: its state must survive, and the result must say so even
+        // when the test itself passed.
+        let err = finish(&work, Ran { result: Ok(()), cleaned: false }).unwrap_err().to_string();
+        assert!(work.join("state").join("terraform.tfstate").is_file());
+        assert!(err.contains("couldn't be removed") && err.contains(&work.display().to_string()), "{err}");
+        let err = finish(&work, Ran { result: Err(Error::Invalid("no address".into())), cleaned: false }).unwrap_err().to_string();
+        assert!(err.starts_with("no address; the test VM couldn't be removed"), "{err}");
+        assert!(work.exists());
+
+        // Removed: the folder goes, and the run's own result comes back as is.
+        assert!(finish(&work, Ran { result: Ok(()), cleaned: true }).is_ok());
+        assert!(!work.exists());
+        std::fs::create_dir_all(&work).unwrap();
+        assert_eq!(finish(&work, Ran::nothing(Error::Invalid("boom".into()))).unwrap_err().to_string(), "boom");
+        assert!(!work.exists());
     }
 
     #[tokio::test]

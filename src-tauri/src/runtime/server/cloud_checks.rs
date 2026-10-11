@@ -1,7 +1,7 @@
 //! "Test connection" for cloud accounts: a checklist per cloud (credentials, what a launch
 //! needs, Terraform), each failure worded as the thing to fix.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::budget::{budget_unverifiable_message, month_to_date_cost};
 use super::checks::{Check, TestResult};
@@ -279,7 +279,8 @@ fn token_outcome(cloud: &str, instances: &str, answer: std::result::Result<reqwe
 async fn test_token_api(cloud: &str, account_url: &str, instances: &str, token: &str) -> TestResult {
     let started = Instant::now();
     let mut checks: Vec<Check> = Vec::new();
-    let answer = reqwest::Client::new().get(account_url).bearer_auth(token).send().await.map(|r| r.status()).map_err(|e| e.to_string());
+    let answer =
+        reqwest::Client::new().get(account_url).timeout(Duration::from_secs(15)).bearer_auth(token).send().await.map(|r| r.status()).map_err(|e| e.to_string());
     if let Err(done) = token_outcome(cloud, instances, answer).settle(&mut checks, started) {
         return done;
     }

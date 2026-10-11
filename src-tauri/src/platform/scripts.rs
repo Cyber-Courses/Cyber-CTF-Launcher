@@ -81,11 +81,42 @@ pub const VIRTUALBOX_SCRIPT: &str = concat!(
 /// the app). The group applies from the next login.
 #[cfg(any(target_os = "linux", test))]
 pub fn docker_script(user: Option<&str>) -> String {
-    let mut s = "curl -fsSL https://get.docker.com | sh".to_string();
+    let mut s = fetch_and_run("https://get.docker.com", "sh");
     if let Some(u) = user.filter(|u| valid_user(u)) {
-        s.push_str(&format!(" && usermod -aG docker {u} && echo 'Added {u} to the docker group: log out and back in (or restart) for it to apply.'"));
+        s.push_str(&format!("; usermod -aG docker {u}; echo 'Added {u} to the docker group: log out and back in (or restart) for it to apply.'"));
     }
     s
+}
+
+/// The start of every script run as root that downloads something: stop at the first failure,
+/// and work in a fresh private directory (`mktemp -d`, mode 0700, removed on exit). A fixed path
+/// such as `/tmp/aws` could be prepared by any local user beforehand and then run as root.
+#[cfg(any(target_os = "linux", test))]
+const PRIVATE_WORKDIR: &str = r#"set -e; d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT"#;
+
+/// Downloads a vendor's install script into a private directory, then runs it with `shell`.
+/// Not `curl | sh`: a failed or cut download (`curl -f`, `set -e`) stops the install instead of
+/// running half a script, or nothing at all and reporting success.
+#[cfg(any(target_os = "linux", test))]
+fn fetch_and_run(url: &str, shell: &str) -> String {
+    format!(r#"{PRIVATE_WORKDIR}; curl -fsSL '{url}' -o "$d/install.sh"; {shell} "$d/install.sh""#)
+}
+
+/// AWS CLI v2 from Amazon's official bundle, unpacked and installed from a private directory.
+/// The distro `awscli` package is v1, which has no `aws login` (the app needs v2 >= 2.32).
+/// `uname -m` is x86_64/aarch64, matching the URLs. `unzip -t` checks the archive is whole
+/// before anything in it runs.
+#[cfg(any(target_os = "linux", test))]
+pub fn awscli_script() -> String {
+    format!(
+        r#"{PRIVATE_WORKDIR}; curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "$d/awscliv2.zip"; command -v unzip >/dev/null || {{ apt-get update && apt-get install -y unzip; }}; unzip -tq "$d/awscliv2.zip" >/dev/null; unzip -oq "$d/awscliv2.zip" -d "$d"; "$d/aws/install" --update"#
+    )
+}
+
+/// Microsoft's install script for Debian/Ubuntu, downloaded first then run.
+#[cfg(any(target_os = "linux", test))]
+pub fn azurecli_script() -> String {
+    fetch_and_run("https://aka.ms/InstallAzureCLIDeb", "bash")
 }
 
 /// A login name safe to put in a shell script unquoted.
@@ -141,5 +172,23 @@ mod tests {
             assert!(ok.success(), "not valid sh: {s}");
         }
         assert!(VIRTUALBOX_SCRIPT.contains("download.virtualbox.org/virtualbox/debian"));
+    }
+
+    #[test]
+    fn root_scripts_never_use_fixed_temp_paths_or_pipe_downloads_into_a_shell() {
+        // Under pkexec the AWS CLI was unzipped into /tmp/aws and /tmp/aws/install run as root:
+        // any local user could plant that file first.
+        for s in [awscli_script(), azurecli_script(), docker_script(Some("player")), TERRAFORM_SCRIPT.into(), VIRTUALBOX_SCRIPT.into()] {
+            assert!(!s.contains("/tmp"), "fixed temp path: {s}");
+            assert!(!s.contains("| sh") && !s.contains("| bash"), "download piped into a shell: {s}");
+            assert!(!s.contains("curl -s") || s.contains("curl -fs"), "a failed download must fail: {s}");
+            assert!(s.starts_with("set -e"), "{s}");
+            let ok = std::process::Command::new("sh").args(["-n", "-c", &s]).status().unwrap();
+            assert!(ok.success(), "not valid sh: {s}");
+        }
+        for s in [awscli_script(), azurecli_script(), docker_script(None)] {
+            assert!(s.contains(r#"d="$(mktemp -d)""#) && s.contains("trap 'rm -rf \"$d\"' EXIT"), "{s}");
+        }
+        assert!(awscli_script().contains(r#""$d/aws/install" --update"#) && awscli_script().contains("unzip -tq"));
     }
 }

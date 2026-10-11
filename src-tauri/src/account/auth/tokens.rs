@@ -47,9 +47,18 @@ fn id_token_profile(id_token: &str) -> (Option<String>, Option<String>) {
     }
 }
 
+/// A string claim of a JWT's payload (unverified: used to tell accounts apart locally, never
+/// for authorization). None for an opaque token.
+pub(super) fn jwt_claim(token: &str, name: &str) -> Option<String> {
+    let payload = token.split('.').nth(1)?;
+    let claims: serde_json::Value = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload).ok()?).ok()?;
+    claims.get(name)?.as_str().map(str::to_string)
+}
+
 pub(super) async fn token_request(form: &[(&str, &str)]) -> Result<TokenResponse> {
     let res = reqwest::Client::new()
         .post(format!("{}/oauth2/token", config::auth_base()))
+        .timeout(std::time::Duration::from_secs(30))
         .form(form)
         .send()
         .await

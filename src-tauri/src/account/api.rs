@@ -15,7 +15,12 @@ pub async fn graphql(query: &str, variables: Value, require_login: bool) -> Resu
         Err(e) if require_login => return Err(e),
         Err(_) => None,
     };
-    let mut req = reqwest::Client::new().post(format!("{}/graphql", config::api_url())).json(&json!({ "query": query, "variables": variables }));
+    // Bounded: a backend that accepts the connection and never answers must not hang the
+    // agent loop or a UI call forever.
+    let mut req = reqwest::Client::new()
+        .post(format!("{}/graphql", config::api_url()))
+        .timeout(std::time::Duration::from_secs(30))
+        .json(&json!({ "query": query, "variables": variables }));
     if let Some(t) = token {
         req = req.bearer_auth(t);
     }

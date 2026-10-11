@@ -1,4 +1,5 @@
 mod account;
+mod atomic_file;
 mod cloud;
 mod config;
 mod deploy_worker;

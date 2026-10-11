@@ -112,7 +112,7 @@ fn save_to(file: Option<&Path>, enabled: bool, path: &str) -> Result<()> {
         std::fs::create_dir_all(dir)?;
     }
     let s = SharedFolder { enabled, path: (!path.trim().is_empty()).then(|| p.display().to_string()) };
-    std::fs::write(file, serde_json::to_string_pretty(&s).map_err(|e| Error::Invalid(e.to_string()))?)?;
+    crate::atomic_file::write(file, serde_json::to_string_pretty(&s).map_err(|e| Error::Invalid(e.to_string()))?)?;
     Ok(())
 }
 
