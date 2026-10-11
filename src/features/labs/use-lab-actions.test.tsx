@@ -74,7 +74,7 @@ describe("useLabActions: launch", () => {
     const { calls, hook } = setup();
     const user = userEvent.setup();
     render(<PortModePrompt />);
-    let done!: Promise<void>;
+    let done!: Promise<unknown>;
     act(() => {
       done = hook.result.current.launch({ ...dockerLab, id: "act-cancel" }, null, undefined, readyReport());
     });
@@ -90,7 +90,7 @@ describe("useLabActions: launch", () => {
     const { calls, hook } = setup();
     const user = userEvent.setup();
     render(<PortModePrompt />);
-    let done!: Promise<void>;
+    let done!: Promise<unknown>;
     act(() => {
       done = hook.result.current.launch({ ...dockerLab, id: "act-docker-2" }, null, undefined, readyReport());
     });
@@ -269,7 +269,7 @@ describe("useLabActions: operations on a built lab", () => {
     let release!: () => void;
     const refresh = vi.fn(() => new Promise<void>((r) => (release = r)));
     const hook = renderHook(() => useLabActions(refresh));
-    let done!: Promise<void>;
+    let done!: Promise<unknown>;
     act(() => {
       done = hook.result.current.stop({ ...vmLab, id: "act-settle" });
     });
