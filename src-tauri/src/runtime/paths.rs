@@ -52,6 +52,16 @@ pub(super) fn deployed_ids(base: &Path) -> Vec<String> {
     entries.flatten().filter_map(|e| e.file_name().into_string().ok()).filter(|id| validate_id(id).is_ok()).collect()
 }
 
+/// Every Terraform state folder of lab `id` under the app data folder `base`, by target
+/// (`aws`, `proxmox`, …): the current deployment's and any left from an earlier one elsewhere.
+pub(super) fn deployment_states(base: &Path, id: &str) -> Vec<(String, PathBuf)> {
+    let Ok(entries) = std::fs::read_dir(base.join("deployments").join(id)) else { return Vec::new() };
+    let mut out: Vec<(String, PathBuf)> =
+        entries.flatten().filter(|e| e.path().is_dir()).filter_map(|e| Some((e.file_name().into_string().ok()?, e.path()))).collect();
+    out.sort();
+    out
+}
+
 /// The lab's vagrant folders (Docker on one VM, one VM per machine) that hold a Vagrantfile, i.e.
 /// that a local or ESXi VM of it may have been started from.
 pub(super) fn vagrant_dirs(dir: &Path) -> impl Iterator<Item = PathBuf> {
@@ -78,6 +88,20 @@ pub(super) fn record_runtime(state: &Path, runtime: Runtime) -> Result<()> {
 /// The runtime recorded at start; containers when nothing (readable) was.
 pub(super) fn recorded_runtime(state: &Path) -> Runtime {
     std::fs::read_to_string(state.join(RUNTIME_FILE)).map(|t| runtime_from_tag(&t)).unwrap_or(Runtime::Docker)
+}
+
+/// Next to a lab's Terraform state: the host (server or cloud account id) it was applied on, so
+/// the state can still be destroyed with that host's credentials after the lab moved elsewhere.
+const HOST_FILE: &str = "host";
+
+pub(super) fn record_host(state: &Path, host: &str) -> Result<()> {
+    std::fs::write(state.join(HOST_FILE), host)?;
+    Ok(())
+}
+
+/// The host recorded with a Terraform state, if any (states from older versions have none).
+pub(super) fn recorded_host(state: &Path) -> Option<String> {
+    std::fs::read_to_string(state.join(HOST_FILE)).ok().map(|h| h.trim().to_string()).filter(|h| !h.is_empty())
 }
 
 /// Writes `value` to `dir/name`, or removes the file for `None`.

@@ -141,11 +141,15 @@ pub fn status(state: &Path) -> LabStatus {
 /// needs a `destroy` to free the resources and end billing (an OS poweroff does not deallocate
 /// on Azure). Unlike `status`, this stays true after expiry; it's the signal the reaper uses.
 pub fn expired(state: &Path) -> bool {
-    // A completed apply exposes the lab host's `ip`; an interrupted or crashed apply may have
-    // already created billable resources without ever writing that output. Reap on either, so a
-    // half-done cloud deploy can't keep billing silently.
-    let has_billable = read_state(state).is_some_and(|j| has_instance(&j["outputs"]) || j["resources"].as_array().is_some_and(|r| !r.is_empty()));
-    has_billable && expires_at(state).is_some_and(|t| now() >= t)
+    deployed(state) && expires_at(state).is_some_and(|t| now() >= t)
+}
+
+/// True when the state still holds resources a `destroy` has to remove. A completed apply
+/// exposes the lab host's `ip`; an interrupted or crashed apply may have already created
+/// billable resources without ever writing that output. Either counts, so a half-done cloud
+/// deploy can't keep billing silently.
+pub fn deployed(state: &Path) -> bool {
+    read_state(state).is_some_and(|j| has_instance(&j["outputs"]) || j["resources"].as_array().is_some_and(|r| !r.is_empty()))
 }
 
 #[cfg(test)]
