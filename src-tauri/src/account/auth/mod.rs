@@ -128,20 +128,23 @@ pub async fn auth_login(app: AppHandle) -> Result<AuthStatus> {
         .open_url(authorize.as_str(), None::<&str>)
         .map_err(|_| Error::Invalid("No browser opened for sign-in. Set a default web browser for this account and try again.".into()))?;
 
-    let (code, returned_state) = tokio::time::timeout(LOGIN_TIMEOUT, callback::receive(listener))
+    // Only the redirect carrying this login's `state` is taken, and the browser hears
+    // "signed in" only once the code was exchanged and the session kept.
+    let finish = |code: String| finish_login(code, &redirect_uri, &client_id, &verifier, &api);
+    tokio::time::timeout(LOGIN_TIMEOUT, callback::receive(listener, &state, finish))
         .await
-        .map_err(|_| Error::Invalid("Sign-in wasn't finished within 5 minutes, so it was cancelled. Try again.".into()))??;
-    if returned_state != state {
-        return Err(Error::Invalid("login state mismatch".into()));
-    }
+        .map_err(|_| Error::Invalid("Sign-in wasn't finished within 5 minutes, so it was cancelled. Try again.".into()))?
+}
 
+/// Exchanges the redirect's code for tokens and keeps the session.
+async fn finish_login(code: String, redirect_uri: &str, client_id: &str, verifier: &str, api: &str) -> Result<AuthStatus> {
     let tokens = token_request(&[
         ("grant_type", "authorization_code"),
         ("code", &code),
-        ("redirect_uri", &redirect_uri),
-        ("client_id", &client_id),
-        ("code_verifier", &verifier),
-        ("resource", &api),
+        ("redirect_uri", redirect_uri),
+        ("client_id", client_id),
+        ("code_verifier", verifier),
+        ("resource", api),
     ])
     .await?;
     let session = session_from(tokens, None);

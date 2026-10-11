@@ -1,8 +1,11 @@
 //! The loopback redirect (RFC 8252): a one-shot local server the browser comes back to after
 //! sign-in, and the page it shows there.
 
+use std::future::Future;
+use std::time::Duration;
+
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 use crate::config;
 use crate::error::{Error, Result};
@@ -68,20 +71,76 @@ fn html_response(page: &str) -> String {
     format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}", page.len())
 }
 
-/// Waits for the browser's redirect and returns (code, state) from its query.
-pub(super) async fn receive(listener: TcpListener) -> Result<(String, String)> {
-    loop {
-        let (mut stream, _) = listener.accept().await?;
-        let mut buf = vec![0u8; 8192];
-        let n = stream.read(&mut buf).await?;
-        let Some(url) = request_url(&String::from_utf8_lossy(&buf[..n])) else { continue };
-        if url.path() != "/callback" {
-            let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n").await;
-            continue;
+/// How long a connection may take to send its request line and headers. A browser opens
+/// speculative connections that send nothing; each is read on its own and dropped after this.
+const READ_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// A connection's request head (up to the blank line, at most 8 KiB), or None when it sends
+/// nothing in time.
+async fn read_request(stream: &mut TcpStream) -> Option<String> {
+    let read = async {
+        let mut buf = Vec::with_capacity(1024);
+        let mut chunk = [0u8; 1024];
+        loop {
+            let n = stream.read(&mut chunk).await.ok()?;
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+            if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.windows(2).any(|w| w == b"\n\n") || buf.len() >= 8192 {
+                break;
+            }
         }
-        let failed = url.query_pairs().any(|(key, _)| key == "error");
-        let _ = stream.write_all(html_response(&login_page(!failed)).as_bytes()).await;
-        return outcome(&url);
+        Some(String::from_utf8_lossy(&buf).into_owned())
+    };
+    tokio::time::timeout(READ_TIMEOUT, read).await.ok().flatten().filter(|r| !r.is_empty())
+}
+
+/// Whether a callback URL belongs to this sign-in: it carries the `state` this login sent.
+fn state_matches(url: &url::Url, state: &str) -> bool {
+    url.query_pairs().any(|(k, v)| k == "state" && v == state)
+}
+
+/// Waits for the browser's redirect for this sign-in (`state`), then finishes it with
+/// `finish(code)` (the token exchange) before answering the browser: the page says "signed in"
+/// only once that succeeded. Each connection is read in its own task, so an idle one (a
+/// browser's preconnect) can't hold up the real redirect, and a callback with a wrong or missing
+/// state is answered and ignored.
+pub(super) async fn receive<T, F, Fut>(listener: TcpListener, state: &str, mut finish: F) -> Result<T>
+where
+    F: FnMut(String) -> Fut,
+    Fut: Future<Output = Result<T>>,
+{
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<(TcpStream, url::Url)>(8);
+    loop {
+        tokio::select! {
+            accepted = listener.accept() => {
+                let (mut stream, _) = accepted?;
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    let Some(url) = read_request(&mut stream).await.as_deref().and_then(request_url) else { return };
+                    if url.path() != "/callback" {
+                        let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+                        return;
+                    }
+                    let _ = tx.send((stream, url)).await;
+                });
+            }
+            Some((mut stream, url)) = rx.recv() => {
+                if !state_matches(&url, state) {
+                    // Not this sign-in's redirect (an old tab, another page): keep waiting.
+                    let _ = stream.write_all(html_response(&login_page(false)).as_bytes()).await;
+                    continue;
+                }
+                let result = match outcome(&url) {
+                    Ok((code, _)) => finish(code).await,
+                    Err(e) => Err(e),
+                };
+                let _ = stream.write_all(html_response(&login_page(result.is_ok())).as_bytes()).await;
+                let _ = stream.shutdown().await;
+                return result;
+            }
+        }
     }
 }
 
@@ -117,24 +176,65 @@ mod tests {
         out
     }
 
-    #[tokio::test]
-    async fn receive_skips_other_paths_and_returns_the_callback() {
+    /// A listener on a free port, waiting for sign-in `s1` whose exchange answers `exchange`.
+    async fn waiting(exchange: Result<&'static str>) -> (u16, tokio::task::JoinHandle<Result<String>>) {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        let waiting = tokio::spawn(receive(listener));
+        let mut exchange = Some(exchange);
+        let task = tokio::spawn(async move {
+            receive(listener, "s1", move |code| {
+                let answer = exchange.take().unwrap().map(|t| format!("{t}:{code}"));
+                async move { answer }
+            })
+            .await
+        });
+        (port, task)
+    }
+
+    #[tokio::test]
+    async fn receive_skips_other_paths_and_finishes_the_callback() {
+        let (port, task) = waiting(Ok("token")).await;
         assert!(send(port, "GET /favicon.ico HTTP/1.1\r\n\r\n").await.starts_with("HTTP/1.1 404"));
         let page = send(port, "GET /callback?code=c1&state=s1 HTTP/1.1\r\n\r\n").await;
         assert!(page.starts_with("HTTP/1.1 200") && page.contains("You're signed in"));
-        assert_eq!(waiting.await.unwrap().unwrap(), ("c1".to_string(), "s1".to_string()));
+        assert_eq!(task.await.unwrap().unwrap(), "token:c1");
+    }
+
+    #[tokio::test]
+    async fn an_idle_connection_does_not_block_the_redirect() {
+        // A browser preconnect that never sends anything held the one-at-a-time listener.
+        let (port, task) = waiting(Ok("token")).await;
+        let _idle = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let page = tokio::time::timeout(Duration::from_secs(3), send(port, "GET /callback?code=c1&state=s1 HTTP/1.1\r\n\r\n")).await.unwrap();
+        assert!(page.contains("You're signed in"));
+        assert!(task.await.unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_callback_with_a_wrong_or_missing_state_is_ignored() {
+        // It ended the login before the state was checked.
+        let (port, task) = waiting(Ok("token")).await;
+        assert!(send(port, "GET /callback?code=evil&state=other HTTP/1.1\r\n\r\n").await.contains("Sign-in didn't finish"));
+        assert!(send(port, "GET /callback?code=evil HTTP/1.1\r\n\r\n").await.contains("Sign-in didn't finish"));
+        assert!(!task.is_finished());
+        assert!(send(port, "GET /callback?code=c2&state=s1 HTTP/1.1\r\n\r\n").await.contains("You're signed in"));
+        assert_eq!(task.await.unwrap().unwrap(), "token:c2");
+    }
+
+    #[tokio::test]
+    async fn a_failed_exchange_shows_the_failure_page() {
+        // "Signed in" was shown before the token exchange ran.
+        let (port, task) = waiting(Err(Error::Invalid("invalid_grant".into()))).await;
+        let page = send(port, "GET /callback?code=c1&state=s1 HTTP/1.1\r\n\r\n").await;
+        assert!(page.contains("Sign-in didn't finish") && !page.contains("You're signed in"));
+        assert_eq!(task.await.unwrap().unwrap_err().to_string(), "invalid_grant");
     }
 
     #[tokio::test]
     async fn receive_shows_the_failure_page_on_an_error() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let waiting = tokio::spawn(receive(listener));
-        let page = send(port, "GET /callback?error=access_denied HTTP/1.1\r\n\r\n").await;
+        let (port, task) = waiting(Ok("token")).await;
+        let page = send(port, "GET /callback?error=access_denied&state=s1 HTTP/1.1\r\n\r\n").await;
         assert!(page.contains("Sign-in didn't finish"));
-        assert!(waiting.await.unwrap().is_err());
+        assert!(task.await.unwrap().is_err());
     }
 }
