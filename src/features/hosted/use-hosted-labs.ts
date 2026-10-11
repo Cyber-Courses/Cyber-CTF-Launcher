@@ -47,6 +47,9 @@ export function useHostedLabs() {
   const [error, setError] = useState<string | null>(null);
   // Stop polling a session that never settles, so a stuck backend launch doesn't spin forever.
   const pollDeadline = useRef<{ id: string; until: number } | null>(null);
+  // Bumped after a poll that brought no new session (an error, or no answer), so the next poll
+  // is still armed: re-arming only on a new session object stopped polling after one failure.
+  const [pollTick, setPollTick] = useState(0);
 
   // Hydrate from the backend once (requires login; a logged-out / errored call just leaves it null).
   useEffect(() => {
@@ -93,15 +96,20 @@ export function useHostedLabs() {
     const t = setTimeout(() => {
       apiQuery<{ labSession: HostedSession | null }>(SESSION, { id: session.id })
         .then((d) => {
-          if (!cancelled && d.labSession) setSession(d.labSession);
+          if (cancelled) return;
+          if (d.labSession) setSession(d.labSession);
+          else setPollTick((n) => n + 1);
         })
-        .catch(ignore("polled again in a moment"));
+        .catch((e) => {
+          ignore("polled again in a moment")(e);
+          if (!cancelled) setPollTick((n) => n + 1);
+        });
     }, 2500);
     return () => {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [session]);
+  }, [session, pollTick]);
 
   const stop = useCallback(async () => {
     const current = session;
