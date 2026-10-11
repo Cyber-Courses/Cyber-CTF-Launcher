@@ -39,7 +39,7 @@ jobs:
       - name: Coverage
         run: |
           set -o pipefail
-          cargo llvm-cov --manifest-path src-tauri/Cargo.toml --summary-only --fail-under-lines 812>&1 | tee coverage.txt
+          cargo llvm-cov --manifest-path src-tauri/Cargo.toml --summary-only --fail-under-lines 81 2>&1 | tee coverage.txt
       - name: Summary
         if: always()
         run: |
