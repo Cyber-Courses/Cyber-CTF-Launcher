@@ -97,12 +97,30 @@ fn workloads_from(by_lab: BTreeMap<String, Vec<String>>, mem: &BTreeMap<String, 
         .collect()
 }
 
+/// The containers that are this lab's attack box, by exact name (the current name and the older
+/// `-exegol` one). Exact names only: a name prefix would also match another lab whose id starts
+/// with this one (`a` vs `a-b`).
+fn attack_box_names(id: &str) -> [String; 2] {
+    [format!("cyberctf-{id}-attacker"), format!("cyberctf-{id}-exegol")]
+}
+
+/// The filter selecting exactly this lab's Compose containers (never another lab's).
+fn project_filter(id: &str) -> String {
+    format!("label=com.docker.compose.project=cyberctf-{id}")
+}
+
 /// Removes a lab's containers, its attack box included.
 pub(super) async fn stop(id: &str) -> Result<()> {
     let project = format!("cyberctf-{id}");
+    // The attack box first: it is plugged into the lab network but isn't a Compose service, so
+    // while it is there `compose down` can't remove the network ("in use").
+    for name in attack_box_names(id) {
+        let _ = run("docker", &["rm", "-f", &name], None).await;
+    }
+    let _ = run("docker", &["network", "rm", &format!("{project}-attack")], None).await;
     let _ = run("docker", &["compose", "-p", &project, "down", "-t", "5", "--remove-orphans"], None).await;
-    // Whatever is left with the lab's name prefix (the attack box is a plain `docker run`).
-    let left = run("docker", &["ps", "-aq", "--filter", &format!("name=^{project}-")], None).await.unwrap_or_default();
+    // Whatever of this exact project is left.
+    let left = run("docker", &["ps", "-aq", "--filter", &project_filter(id)], None).await.unwrap_or_default();
     let ids: Vec<&str> = left.split_whitespace().collect();
     if !ids.is_empty() {
         let mut args = vec!["rm", "-f"];
@@ -115,6 +133,15 @@ pub(super) async fn stop(id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stopping_a_lab_never_targets_a_lab_whose_id_extends_it() {
+        // Lab `a` must not select lab `a-b`'s containers (`cyberctf-a-b-web-1`, `cyberctf-a-b-attacker`).
+        assert_eq!(project_filter("a"), "label=com.docker.compose.project=cyberctf-a");
+        let names = attack_box_names("a");
+        assert_eq!(names, ["cyberctf-a-attacker".to_string(), "cyberctf-a-exegol".to_string()]);
+        assert!(!names.iter().any(|n| n.starts_with("cyberctf-a-b")));
+    }
 
     #[test]
     fn parses_docker_sizes() {
