@@ -61,6 +61,24 @@ pub fn headless_std(cmd: &mut std::process::Command) -> &mut std::process::Comma
     cmd
 }
 
+/// Runs a blocking command, giving up (and killing it) after `timeout`. Its exit status, or
+/// `None` when it couldn't start or ran out of time.
+pub fn status_within(cmd: &mut std::process::Command, timeout: Duration) -> Option<ExitStatus> {
+    let mut child = cmd.spawn().ok()?;
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status),
+            Ok(None) if std::time::Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+}
+
 /// Builds the Command: headless, Windows batch-wrapper tools routed through `cmd /C` so they
 /// resolve, and Docker kept on the engine the user picked.
 fn build(program: &str, args: &[&str]) -> Command {
@@ -153,7 +171,7 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
             #[cfg(unix)]
             cmd.process_group(0);
             let child = cmd.spawn().map_err(spawn_error(program))?;
-            let group = GroupGuard::new(child.id());
+            let group = GroupGuard::new(&child);
             let Ok(waited) = tokio::time::timeout(dur, child.wait_with_output()).await else {
                 return Err(failed(program, args, format!("timed out after {}s (the tool or its backend may be stuck)", dur.as_secs())));
             };
@@ -296,6 +314,62 @@ mod tests {
             matches!(err, Error::CommandFailed { ref command, ref stderr } if command == "sh -c sleep 5" && stderr.starts_with("timed out after 0s")),
             "{err:?}"
         );
+    }
+
+    /// Whether process `pid` is gone (or a zombie) within a few seconds.
+    async fn gone(pid: u32) -> bool {
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
+        for _ in 0..60 {
+            let mut sys = System::new();
+            sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[Pid::from_u32(pid)]), true, ProcessRefreshKind::nothing());
+            if sys.process(Pid::from_u32(pid)).is_none_or(|p| matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead)) {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        false
+    }
+
+    #[test]
+    fn a_blocking_command_is_given_up_after_its_time() {
+        // Regression: ending each shell session at quit ran `docker exec` with no time limit, so
+        // a Docker that didn't answer held the quit up.
+        let (mut quick, mut stuck) = if cfg!(windows) {
+            let mut quick = std::process::Command::new("cmd");
+            quick.args(["/C", "exit 0"]);
+            let mut stuck = std::process::Command::new("ping");
+            stuck.args(["-n", "30", "127.0.0.1"]).stdout(Stdio::null());
+            (quick, stuck)
+        } else {
+            let mut stuck = std::process::Command::new("sleep");
+            stuck.arg("30");
+            (std::process::Command::new("true"), stuck)
+        };
+        assert!(status_within(&mut quick, Duration::from_secs(10)).is_some_and(|s| s.success()));
+        let started = std::time::Instant::now();
+        assert!(status_within(&mut stuck, Duration::from_millis(500)).is_none());
+        assert!(started.elapsed() < Duration::from_secs(10), "gave up in time");
+    }
+
+    #[tokio::test]
+    async fn a_timed_out_tool_takes_what_it_started_with_it() {
+        // Regression (Windows): a timeout killed the tool alone, and what it had started (a
+        // wrapper's real program) ran on. A tool's whole tree ends with it now (a job object on
+        // Windows, its process group on unix).
+        let file = std::env::temp_dir().join(format!("cyberctf-tree-{}", rand::random::<u32>()));
+        let path = file.display().to_string();
+        let err = if cfg!(windows) {
+            let script = format!(
+                "$p = Start-Process -FilePath ping -ArgumentList '-n','120','127.0.0.1' -PassThru -NoNewWindow; Set-Content -Path '{path}' -Value $p.Id; Start-Sleep 120"
+            );
+            run_env_timed("powershell", &["-NoProfile", "-NonInteractive", "-Command", &script], None, &[], Duration::from_secs(10)).await
+        } else {
+            run_env_timed("sh", &["-c", &format!("sleep 120 & echo $! > '{path}'; wait")], None, &[], Duration::from_secs(2)).await
+        };
+        assert!(err.is_err(), "timed out");
+        let pid: u32 = std::fs::read_to_string(&file).expect("the tool started its child").trim().parse().unwrap();
+        let _ = std::fs::remove_file(&file);
+        assert!(gone(pid).await, "the tool's child {pid} was left running");
     }
 
     #[cfg(unix)]

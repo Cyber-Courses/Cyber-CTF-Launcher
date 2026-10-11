@@ -109,6 +109,19 @@ fn markers_in(labs: &Path) -> Vec<String> {
     entries.flatten().filter_map(|e| std::fs::read_to_string(e.path().join(HOST_MARKER)).ok()).map(|id| id.trim().to_string()).collect()
 }
 
+/// Terraform deployments still holding resources on host `id` (under the app data folder
+/// `base`) of labs no longer marked as running there: their state can only be destroyed with
+/// that host's credentials.
+fn leftovers_on(base: &Path, id: &str) -> usize {
+    let paths = crate::runtime::paths::deployed_ids(base);
+    paths
+        .iter()
+        .filter(|lab| std::fs::read_to_string(base.join("labs").join(lab).join(HOST_MARKER)).map(|h| h.trim().to_string()).ok().as_deref() != Some(id))
+        .flat_map(|lab| crate::runtime::paths::deployment_states(base, lab))
+        .filter(|(_, state)| crate::runtime::paths::recorded_host(state).as_deref() == Some(id) && crate::runtime::terraform::deployed(state))
+        .count()
+}
+
 /// Lab counts per host id (markers with no id aren't counted).
 fn count_by_host(markers: &[String]) -> HashMap<String, u32> {
     let mut counts: HashMap<String, u32> = HashMap::new();
@@ -123,7 +136,8 @@ pub fn server_remove(app: AppHandle, id: String) -> Result<()> {
     // Don't strand running labs: this host holds the credentials and state needed to stop and
     // destroy its labs. Removing it mid-run would leave them unstoppable from the app, and a
     // cloud lab would keep billing with no way left to tear it down.
-    no_labs_running(lab_markers(&app).iter().filter(|m| **m == id).count())?;
+    let left = app.path().app_data_dir().map(|base| leftovers_on(&base, &id)).unwrap_or(0);
+    no_labs_running(lab_markers(&app).iter().filter(|m| **m == id).count() + left)?;
     update(&app, |store| {
         remove_host(store, &id);
         Ok(())
@@ -403,6 +417,31 @@ mod tests {
         assert_eq!(s.default.as_deref(), Some("pve1"));
         set_default_host(&mut s, None).unwrap();
         assert_eq!(s.default, None);
+    }
+
+    #[test]
+    fn a_deployment_left_on_a_host_keeps_it_from_being_removed() {
+        let base = std::env::temp_dir().join(format!("cyberctf-leftovers-{}", rand::random::<u32>()));
+        let deploy = |lab: &str, host: &str, marker: Option<&str>| {
+            let state = base.join("deployments").join(lab).join("aws");
+            std::fs::create_dir_all(&state).unwrap();
+            std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}}}"#).unwrap();
+            std::fs::write(state.join("host"), host).unwrap();
+            std::fs::create_dir_all(base.join("labs").join(lab)).unwrap();
+            if let Some(m) = marker {
+                std::fs::write(base.join("labs").join(lab).join(HOST_MARKER), m).unwrap();
+            }
+        };
+        assert_eq!(leftovers_on(&base, "aws1"), 0);
+        // Still marked as running there: counted by its marker already.
+        deploy("web-1", "aws1", Some("aws1"));
+        assert_eq!(leftovers_on(&base, "aws1"), 0);
+        // Moved elsewhere, its AWS state left behind.
+        deploy("db-1", "aws1", Some("pve1"));
+        deploy("api-1", "aws2", None);
+        assert_eq!(leftovers_on(&base, "aws1"), 1);
+        assert_eq!(leftovers_on(&base, "aws2"), 1);
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

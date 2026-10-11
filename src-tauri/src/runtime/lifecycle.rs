@@ -6,15 +6,17 @@ use std::path::Path;
 use crate::AppHandle;
 use tauri::Manager;
 
-use super::inflight::{Action, DeployGuard, lock_lab};
-use super::paths::{deployed_ids, lab_dir, local_vm, mark_local_vm, mark_parked, parked, recorded_runtime, state_dir, vagrant_dirs};
+use super::inflight::{Action, DeployGuard, lock_lab, try_lock_lab};
+use super::paths::{
+    deployed_ids, deployment_states, lab_dir, local_vm, mark_local_vm, mark_parked, parked, recorded_host, recorded_runtime, state_dir, vagrant_dirs,
+};
 use super::{Park, Runtime, attack_vm, docker, lab, registry, server, terraform, vm};
 use crate::error::{Error, Result};
 
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
 /// that took an hour to build comes back in seconds (paused) or a boot (shut down), not a rebuild.
 async fn park(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(id).await;
+    let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Park);
     if server::lab_connection(app, dir)?.is_some() {
         return Err(Error::Invalid("Pausing a lab on a server host isn't available yet. Stop it instead.".into()));
@@ -56,7 +58,7 @@ fn parked_message(mode: Park) -> &'static str {
 
 /// Brings a parked lab back, as it was.
 async fn resume(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mut log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(id).await;
+    let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Start);
     resume_locked(app, dir, id, runtime, &mut log).await
 }
@@ -105,7 +107,7 @@ async fn provision(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mach
     if runtime != Runtime::Vm {
         return Err(Error::Invalid("Container labs aren't provisioned in place: use Reset for a clean copy.".into()));
     }
-    let _lock = lock_lab(id).await;
+    let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Start);
     let conn = server::lab_connection(app, dir)?;
     if conn.as_ref().is_some_and(|c| server::terraform_target(c.provider).is_some()) {
@@ -139,7 +141,7 @@ fn provision_target(status: &super::LabStatus, machine: Option<&str>) -> Result<
 
 /// Stops a lab wherever it runs, destroying remote VMs so the next start is clean.
 pub(super) async fn stop(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(id).await;
+    let _lock = lock_lab(app, id).await;
     stop_locked(app, dir, id, runtime, log).await
 }
 
@@ -213,26 +215,72 @@ pub async fn clear_parked(dir: &Path, id: &str, log: &impl Fn(String)) {
 /// poweroff only stops (not deallocates) the VM, so it keeps billing until a `destroy`, and a
 /// destroy also cleans up leftover resources on every cloud. Runs on startup and periodically
 /// while the app is open; a lab that expired while the app was closed is reaped at the next sweep.
+/// Every state of a lab counts, not only the one its marker points at: a state left on a host
+/// the lab no longer runs on is destroyed with the host it was applied on.
 pub async fn reap_expired_labs(app: &AppHandle) {
     let Ok(base) = app.path().app_data_dir() else { return };
-    for id in deployed_ids(&base) {
+    for (id, target, state) in expired_states(&base) {
         let Ok(dir) = lab_dir(app, &id) else { continue };
-        let Ok(Some(c)) = server::lab_connection(app, &dir) else { continue };
-        let Some(target) = server::terraform_target(c.provider) else { continue };
-        let Ok(state) = state_dir(app, &id, target) else { continue };
-        if !terraform::expired(&state) {
+        let marked = server::marked_host(&dir).and_then(|h| Some((server::terraform_target(server::host_provider(app, &h)?)?, h)));
+        let Some(owner) = reap_owner(marked.as_ref().map(|(tf, h)| (*tf, h.as_str())), recorded_host(&state).as_deref(), &target) else {
+            log::warn!("expired Terraform state of {id} ({target}) names no host to destroy it with");
             continue;
-        }
+        };
         // Take the lab lock before tearing it down, and re-check expiry while holding it: between
         // the cheap filter above and here a user may have restarted or extended this lab (a start
         // re-applies and writes a fresh expiry), and destroying their live lab would be wrong.
-        let _lock = lock_lab(&id).await;
+        // A lab busy with another operation (a deploy worker's, maybe for hours) is left to the
+        // next sweep rather than holding up the others.
+        let Some(_lock) = try_lock_lab(app, &id) else { continue };
         if !terraform::expired(&state) {
             continue;
         }
         // Best effort: tear it down to end billing, with the runtime recorded at start. No UI
         // context here, so logs are dropped; if the destroy fails, the next sweep retries.
-        let _ = stop_locked(app, &dir, &id, recorded_runtime(&state), |_line: String| {}).await;
+        let runtime = recorded_runtime(&state);
+        match owner {
+            Owner::Current => {
+                let _ = stop_locked(app, &dir, &id, runtime, |_line: String| {}).await;
+            }
+            // Left behind: destroyed on its own host; the lab's markers (where it runs now) stay.
+            Owner::Left(host) => {
+                let Ok(c) = server::connection(app, &host) else { continue };
+                let Ok(module) = lab::terraform_to_destroy(&dir, runtime, &target) else { continue };
+                if let Err(e) = terraform::destroy(&module, &state, &c.tf_vars, &c.tf_env, |_line: String| {}).await {
+                    log::warn!("destroying the expired leftover of {id} on {host}: {e}");
+                }
+            }
+        }
+    }
+}
+
+/// Every expired Terraform state under the app data folder `base`: lab id, target, folder.
+fn expired_states(base: &Path) -> Vec<(String, String, std::path::PathBuf)> {
+    deployed_ids(base)
+        .into_iter()
+        .flat_map(|id| deployment_states(base, &id).into_iter().map(move |(target, state)| (id.clone(), target, state)))
+        .filter(|(_, _, state)| terraform::expired(state))
+        .collect()
+}
+
+/// Whose an expired state is.
+#[derive(Debug, PartialEq)]
+enum Owner {
+    /// The lab's current deployment (its marker names a host of this target).
+    Current,
+    /// Left on this host, which the lab no longer runs on.
+    Left(String),
+}
+
+/// Whose the expired state of `target` is: the current deployment's when the lab is marked
+/// (`marked`: the marked host's target and id) as running on a host of that target, else the
+/// leftover of the host recorded with the state (`recorded`). `None` when no host is known
+/// (a state from before hosts were recorded).
+fn reap_owner(marked: Option<(&str, &str)>, recorded: Option<&str>, target: &str) -> Option<Owner> {
+    match (marked, recorded) {
+        (Some((tf, host)), recorded) if tf == target && recorded.is_none_or(|r| r == host) => Some(Owner::Current),
+        (_, Some(recorded)) => Some(Owner::Left(recorded.to_string())),
+        _ => None,
     }
 }
 
@@ -258,10 +306,48 @@ pub async fn stop_lab(app: &AppHandle, id: &str, runtime: Runtime) -> Result<()>
 
 #[cfg(test)]
 mod tests {
-    use super::{Park, clear_parked, park_lab, parked_message, provision_lab, provision_target, reap_expired_labs, refuse_vm_shutdown, resume_lab, stop_lab};
+    use super::{
+        Owner, Park, clear_parked, expired_states, park_lab, parked_message, provision_lab, provision_target, reap_expired_labs, reap_owner,
+        refuse_vm_shutdown, resume_lab, stop_lab,
+    };
     use crate::exec::fake::{Tools, fail, ok};
     use crate::runtime::paths::{local_vm, mark_local_vm, mark_parked, parked};
     use crate::runtime::providers::Provider;
+
+    #[test]
+    fn the_reaper_finds_expired_states_left_on_another_host() {
+        // Regression: the reaper only looked at the state of the host a lab's marker named, so a
+        // cloud deployment left behind when the lab was started elsewhere was never destroyed.
+        let base = std::env::temp_dir().join(format!("cyberctf-reap-{}", rand::random::<u32>()));
+        let state = |id: &str, target: &str, expires_at: u64| {
+            let s = base.join("deployments").join(id).join(target);
+            std::fs::create_dir_all(&s).unwrap();
+            std::fs::write(s.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
+            std::fs::write(s.join("run.json"), format!(r#"{{"expires_at":{expires_at}}}"#)).unwrap();
+            s
+        };
+        let left = state("web-1", "aws", 1);
+        state("web-1", "proxmox", u64::MAX);
+        let other = state("db-1", "azure", 1);
+        let mut found = expired_states(&base);
+        found.sort();
+        assert_eq!(found, [("db-1".to_string(), "azure".to_string(), other), ("web-1".to_string(), "aws".to_string(), left)]);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn an_expired_state_is_destroyed_with_the_host_it_was_applied_on() {
+        // The lab still runs where its marker says: the usual stop.
+        assert_eq!(reap_owner(Some(("aws", "aws1")), Some("aws1"), "aws"), Some(Owner::Current));
+        assert_eq!(reap_owner(Some(("aws", "aws1")), None, "aws"), Some(Owner::Current), "a state from before hosts were recorded");
+        // The lab moved to Proxmox (or this machine): the AWS state is a leftover of aws1.
+        assert_eq!(reap_owner(Some(("proxmox", "pve1")), Some("aws1"), "aws"), Some(Owner::Left("aws1".into())));
+        assert_eq!(reap_owner(None, Some("aws1"), "aws"), Some(Owner::Left("aws1".into())));
+        assert_eq!(reap_owner(Some(("aws", "aws2")), Some("aws1"), "aws"), Some(Owner::Left("aws1".into())));
+        // Nothing says which credentials can destroy it.
+        assert_eq!(reap_owner(None, None, "aws"), None);
+        assert_eq!(reap_owner(Some(("proxmox", "pve1")), None, "aws"), None);
+    }
     use crate::runtime::test_support::status_with;
     use crate::runtime::{Runtime, server};
     use crate::test_app::TestApp;

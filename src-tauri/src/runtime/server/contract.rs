@@ -239,7 +239,7 @@ pub fn mark_lab(dir: &Path, host: Option<&str>) -> Result<()> {
 }
 
 /// The host id a lab directory is marked as running on.
-fn marked_host(dir: &Path) -> Option<String> {
+pub fn marked_host(dir: &Path) -> Option<String> {
     std::fs::read_to_string(dir.join(HOST_MARKER)).ok().map(|id| id.trim().to_string())
 }
 

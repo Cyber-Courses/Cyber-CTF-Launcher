@@ -120,10 +120,12 @@ async fn install_with(
 
     // A new version of a lab that is up here: swapping the folder would pull its files out from
     // under the running containers (they bind-mount them) and lose track of them. Stop it first.
-    if dir.exists() && runtime::running_here(&dir, lab_id).await {
-        return Err(Error::Invalid(
-            "A new version of this lab is out, but it is still running here. Stop it, then start it again to get the new version.".into(),
-        ));
+    // Same on a server host: the folder holds Vagrant's record of its ESXi machines (and the
+    // module its Terraform state was applied from), which the swap would delete.
+    if dir.exists() {
+        let on_server = runtime::deployed_on_server(app, &dir, lab_id);
+        let here = on_server.is_none() && runtime::running_here(&dir, lab_id).await;
+        refuse_update(here, on_server.as_deref())?;
     }
 
     log(format!("Downloading {repository}@{}", &commit[..12]));
@@ -138,6 +140,22 @@ async fn install_with(
     runtime::lab::ensure_instance(&labs, &dir, &in_use, &runtime::lab::registry_instances(&dir))?;
     log("Lab installed".into());
     Ok(dir)
+}
+
+/// Refuses to replace an installed lab with a new version while it runs `here`, or on the
+/// server host named `on_server`.
+fn refuse_update(here: bool, on_server: Option<&str>) -> Result<()> {
+    if let Some(host) = on_server {
+        return Err(Error::Invalid(format!(
+            "A new version of this lab is out, but it is still running on {host}. Stop it, then start it again to get the new version."
+        )));
+    }
+    if here {
+        return Err(Error::Invalid(
+            "A new version of this lab is out, but it is still running here. Stop it, then start it again to get the new version.".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Whether the lab at `commit` is the one installed (its commit marker says so).
@@ -342,6 +360,17 @@ mod tests {
         assert!(installed(&dir.join(".cyberctf-commit"), sha));
         assert!(!installed(&dir.join(".cyberctf-commit"), "ffffffffffffffffffffffffffffffffffffffff"));
         std::fs::remove_dir_all(labs).unwrap();
+    }
+
+    #[test]
+    fn a_lab_up_here_or_on_a_server_is_not_updated_under_it() {
+        // Regression: the update only asked this machine's Docker and hypervisors, so a lab
+        // running on ESXi was swapped out and its `.vagrant` (Vagrant's record of the machines)
+        // deleted.
+        assert!(refuse_update(false, None).is_ok());
+        assert!(refuse_update(true, None).unwrap_err().to_string().contains("still running here"));
+        let err = refuse_update(false, Some("ESXi lab")).unwrap_err().to_string();
+        assert!(err.contains("still running on ESXi lab"), "{err}");
     }
 
     #[test]

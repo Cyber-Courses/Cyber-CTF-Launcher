@@ -31,7 +31,7 @@ mod store;
 pub use budget::{BudgetCheck, check_budget};
 pub use commands::*;
 pub use contract::{
-    Connection, connection, default_host, host_name, host_provider, lab_connection, launch_targets, mark_lab, proxmox_jump, proxmox_jump_for_host,
+    Connection, connection, default_host, host_name, host_provider, lab_connection, launch_targets, mark_lab, marked_host, proxmox_jump, proxmox_jump_for_host,
 };
 pub use profile::{HostProfile, terraform_target};
 pub use setup_window::*;

@@ -26,7 +26,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-deep-link = "2"
-tokio = { version = "1", features = ["process", "io-util", "macros", "rt-multi-thread", "time", "net"] }
+tokio = { version = "1", features = ["process", "io-util", "macros", "rt-multi-thread", "time", "net", "signal"] }
 thiserror = "2"
 sha2 = "0.11.0"
 base64 = "0.23.1"
@@ -44,6 +44,10 @@ tauri-plugin-dialog = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# Job objects: a timed tool's whole process tree ends with it on Windows.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }

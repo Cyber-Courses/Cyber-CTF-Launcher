@@ -119,7 +119,16 @@ pub async fn terminal_open(
         forward(
             &mut reader,
             |e| events.send(e).is_ok(),
-            || with_sessions(|s| s.remove(&session)).and_then(|mut sess| sess.child.wait().ok()).map(|st| st.exit_code()),
+            |view_gone| {
+                let mut sess = with_sessions(|s| s.remove(&session))?;
+                if view_gone {
+                    // Nobody reads it any more, and the shell may never end on its own: waiting
+                    // for it would leak it (and this thread) for as long as the app runs.
+                    end(sess);
+                    return None;
+                }
+                sess.child.wait().ok().map(|st| st.exit_code())
+            },
         );
     });
     Ok(session)
@@ -153,10 +162,11 @@ fn pty_command(line: &str, direct: Option<(&std::path::Path, Option<&str>)>) -> 
 }
 
 /// Streams the shell's output to `send` as text until it ends (or `send` refuses more), then
-/// sends its exit code from `exit`.
-fn forward(reader: &mut dyn Read, mut send: impl FnMut(TermEvent) -> bool, exit: impl FnOnce() -> Option<u32>) {
+/// sends its exit code from `exit`, told whether the view went away (`send` refused).
+fn forward(reader: &mut dyn Read, mut send: impl FnMut(TermEvent) -> bool, exit: impl FnOnce(bool) -> Option<u32>) {
     let mut chunk = [0u8; 8192];
     let mut pending = Vec::new();
+    let mut view_gone = false;
     loop {
         match reader.read(&mut chunk) {
             Ok(0) | Err(_) => break,
@@ -164,12 +174,13 @@ fn forward(reader: &mut dyn Read, mut send: impl FnMut(TermEvent) -> bool, exit:
                 pending.extend_from_slice(&chunk[..n]);
                 let data = take_text(&mut pending);
                 if !data.is_empty() && !send(TermEvent::Data { data }) {
+                    view_gone = true;
                     break;
                 }
             }
         }
     }
-    let code = exit();
+    let code = exit(view_gone);
     send(TermEvent::Exit { code });
 }
 
@@ -337,8 +348,11 @@ mod tests {
         assert_eq!((size.cols, size.rows), (10, 2));
     }
 
-    fn events(input: &[u8], accept: usize) -> Vec<String> {
+    /// The events a view accepting `accept` of them gets, and whether the shell's end was told
+    /// the view went away.
+    fn events_and_end(input: &[u8], accept: usize) -> (Vec<String>, bool) {
         let mut out = Vec::new();
+        let mut gone = None;
         let mut reader = std::io::Cursor::new(input.to_vec());
         forward(
             &mut reader,
@@ -346,15 +360,23 @@ mod tests {
                 out.push(serde_json::to_string(&e).unwrap());
                 out.len() <= accept
             },
-            || Some(7),
+            |view_gone| {
+                gone = Some(view_gone);
+                Some(7)
+            },
         );
-        out
+        (out, gone.expect("the end is always reached"))
+    }
+
+    fn events(input: &[u8], accept: usize) -> Vec<String> {
+        events_and_end(input, accept).0
     }
 
     #[test]
     fn output_is_forwarded_then_the_exit_code() {
         assert_eq!(events(b"hello", 10), [r#"{"kind":"data","data":"hello"}"#, r#"{"kind":"exit","code":7}"#]);
         assert_eq!(events(b"", 10), [r#"{"kind":"exit","code":7}"#]);
+        assert!(!events_and_end(b"hello", 10).1, "the shell ended on its own: waited for");
     }
 
     #[test]
@@ -362,6 +384,13 @@ mod tests {
         let big = vec![b'a'; 20000];
         let out = events(&big, 0);
         assert_eq!(out.len(), 2, "one data event refused, then the exit");
+    }
+
+    #[test]
+    fn a_closed_view_ends_its_shell_instead_of_waiting_on_it() {
+        // Regression: once the view refused output, the thread waited for a shell nobody would
+        // end (its session already removed), leaking both for as long as the app ran.
+        assert!(events_and_end(&[b'a'; 20000], 0).1);
     }
 
     #[test]

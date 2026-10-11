@@ -202,6 +202,20 @@ pub(super) fn serving_services_from_config(json: &str) -> Vec<String> {
     names
 }
 
+/// A double-quoted YAML scalar. JSON's quoting does most of it, but YAML also reads NEL, LS and
+/// PS (U+0085, U+2028, U+2029) as line breaks, so every non-ASCII character is escaped too.
+fn yaml_str(s: &str) -> String {
+    let mut out = String::new();
+    for c in serde_json::Value::from(s).to_string().chars() {
+        match c as u32 {
+            n if n < 0x80 => out.push(c),
+            n if n <= 0xFFFF => out.push_str(&format!("\\u{n:04x}")),
+            n => out.push_str(&format!("\\U{n:08x}")),
+        }
+    }
+    out
+}
+
 /// A Compose override that gives every port published on an ephemeral host port (none set in
 /// `docker compose config` JSON) a fixed one from `pick` (given the container port), so it
 /// survives stop / start. A service's
@@ -237,9 +251,9 @@ pub(super) fn pinned_ports(json: &str, mut pick: impl FnMut(u16) -> Option<u16>)
                 .unwrap_or_default();
             let proto = p.get("protocol").and_then(|i| i.as_str()).unwrap_or("tcp");
             // A JSON string is a valid YAML scalar: a quote or newline in a value can't break the file.
-            lines.push(format!("      - {}\n", serde_json::Value::from(format!("{ip}{published}:{target}/{proto}"))));
+            lines.push(format!("      - {}\n", yaml_str(&format!("{ip}{published}:{target}/{proto}"))));
         }
-        out.push_str(&format!("  {}:\n    ports: !override\n{}", serde_json::Value::from(name.as_str()), lines.concat()));
+        out.push_str(&format!("  {}:\n    ports: !override\n{}", yaml_str(name), lines.concat()));
     }
     (!out.is_empty()).then(|| format!("# Written by Cyber CTF at the lab's first start: its host ports, kept across resumes.\nservices:\n{out}"))
 }
@@ -247,6 +261,16 @@ pub(super) fn pinned_ports(json: &str, mut pick: impl FnMut(u16) -> Option<u16>)
 #[cfg(test)]
 mod tests {
     use super::{host_ports_from_config, parse_ps, pinned_ports, project, published_from_config, serving_services_from_config};
+
+    #[test]
+    fn unicode_line_breaks_in_names_stay_inside_their_scalar() {
+        for name in ["\u{85}", "a\u{2028}b", "\u{2029}", "caf\u{e9} \u{1f600}"] {
+            let json = serde_json::json!({"services": {name: {"ports": [{"target": 80, "protocol": "tcp"}]}}}).to_string();
+            let yaml = pinned_ports(&json, |_| Some(40000)).unwrap();
+            let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yaml).unwrap_or_else(|e| panic!("{e}\n{yaml}"));
+            assert!(doc["services"].as_mapping().unwrap().contains_key(name), "{name:?} in {yaml}");
+        }
+    }
 
     #[test]
     fn pins_ephemeral_ports_and_keeps_fixed_ones() {

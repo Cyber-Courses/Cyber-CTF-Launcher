@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::AppHandle;
 
 use super::progress::FAILED_MARK;
-use super::{Job, execute, files};
+use super::{Job, Op, execute, files};
 
 /// The worker's entry point, in place of the app: a headless Tauri app on the same data dir
 /// (so lab, key and server paths resolve the same), the deploy, a status file, then exit.
@@ -28,6 +28,17 @@ pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRunt
             tauri::async_runtime::spawn(async move {
                 let code = run_logged(&handle, job).await;
                 handle.exit(code);
+            });
+            // Stopped (the app's Stop sends SIGTERM to the worker's process group): the timed
+            // tools it runs (status probes) sit in groups of their own, out of that signal's
+            // reach; end them too before going.
+            #[cfg(unix)]
+            tauri::async_runtime::spawn(async {
+                if let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    term.recv().await;
+                    crate::exec::kill_live_tools();
+                    std::process::exit(143);
+                }
             });
             Ok(())
         })
@@ -86,21 +97,39 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
             let _ = writeln!(file, "{line}");
         }
     };
+    let launch = job.op == Op::Launch;
+    // The lab is this worker's for the whole job (download and install included): the app's
+    // own operations on it (a stop, the expiry reaper) wait or step aside meanwhile. The attack
+    // VM runs beside the lab's operations, without it.
+    let _lab = match job.op {
+        Op::AttackVm { .. } => None,
+        _ => match super::lock_path(app, &job.lab_id) {
+            Ok(path) => super::lock::acquire(&path).await.map_err(|e| log::warn!("deploy worker: no lab lock ({e})")).ok(),
+            Err(e) => {
+                log::warn!("deploy worker: no lab lock ({e})");
+                None
+            }
+        },
+    };
     let result = execute(app, job, &log).await;
-    conclude(&f, &result, log)
+    conclude(&f, &result, launch, log)
 }
 
-/// The end of a run: the failure in the log, the verdict in the status file, the pidfile gone.
-/// Returns the process's exit code.
-fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, log: impl Fn(String)) -> i32 {
+/// The end of a run: the failure in the log, the verdict in the status file (and, for a
+/// `launch`, in the launch status too), the pidfile gone. Returns the process's exit code.
+fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool, log: impl Fn(String)) -> i32 {
     // The log file says how it ended too, so a page that re-attaches to it after a reload or a
     // relaunch (it has no live verdict) still sees the run failed.
     if let Err(e) = result {
         log(format!("{FAILED_MARK} {e}"));
     }
     let (status, code) = status_line(result);
+    if launch {
+        let _ = std::fs::write(&f.launch_status, &status);
+    }
     let _ = std::fs::write(&f.status, status);
-    let _ = std::fs::remove_file(&f.pid);
+    // Only while it still names this worker: a newer one's pidfile stays.
+    super::process::remove_pidfile_of(&f.pid, std::process::id());
     code
 }
 
@@ -166,15 +195,21 @@ mod tests {
     fn concluding_writes_the_verdict_and_drops_the_pidfile() {
         let dir = crate::deploy_worker::files::tests::temp_dir("conclude");
         let f = Files::of(&dir, "lab-1");
-        std::fs::write(&f.pid, "1").unwrap();
+        std::fs::write(&f.pid, std::process::id().to_string()).unwrap();
         let lines = std::sync::Mutex::new(Vec::new());
-        let code = conclude(&f, &Err::<(), _>(Error::Invalid("boom".into())), |l| lines.lock().unwrap().push(l));
+        let code = conclude(&f, &Err::<(), _>(Error::Invalid("boom".into())), true, |l| lines.lock().unwrap().push(l));
         assert_eq!(code, 1);
         assert_eq!(lines.lock().unwrap().as_slice(), ["✗ boom"]);
         assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "error: boom");
+        assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "error: boom");
         assert!(!f.pid.exists());
-        assert_eq!(conclude(&f, &Ok(()), |_| panic!("no log on success")), 0);
+        assert_eq!(conclude(&f, &Ok(()), true, |_| panic!("no log on success")), 0);
         assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "ok");
+        assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
+        // Another operation leaves the launch's verdict alone.
+        conclude(&f, &Err::<(), _>(Error::Invalid("park failed".into())), false, |_| {});
+        assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "error: park failed");
+        assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
         std::fs::remove_dir_all(dir).ok();
     }
 }

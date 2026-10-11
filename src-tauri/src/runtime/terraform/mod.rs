@@ -19,7 +19,7 @@ mod state;
 
 use std::path::{Path, PathBuf};
 
-pub use state::{JUMP_FILE, expired, ssh_endpoint, ssh_target, status};
+pub use state::{JUMP_FILE, deployed, expired, ssh_endpoint, ssh_target, status};
 
 use self::ready::wait_ready;
 use self::runner::terraform;
