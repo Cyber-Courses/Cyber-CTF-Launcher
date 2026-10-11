@@ -1,6 +1,7 @@
 //! The guided "set up this machine" flow, in its own window.
 
-use tauri::{AppHandle, Emitter, Manager};
+use crate::AppHandle;
+use tauri::{Emitter, Manager};
 
 use crate::error::{Error, Result};
 use crate::window;

@@ -238,19 +238,7 @@ pub fn open_terminal(command: &str) -> Result<()> {
     }
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        // cmd.exe's quote-stripping with nested quotes and `&` is unreliable (it breaks when the
-        // identity/known_hosts path contains a space, e.g. C:\Users\First Last\...), so write the
-        // command to a temp .cmd and run that: the ssh line lives in the file with normal
-        // double-quoted paths, and the only thing cmd parses is the balanced-quoted .cmd path.
-        let command = command.replace('\'', "\"");
-        let bat = std::env::temp_dir().join(format!("cyberctf-shell-{}.cmd", std::process::id()));
-        std::fs::write(&bat, format!("@echo off\r\ncls\r\n{command}\r\n"))?;
-        std::process::Command::new("cmd")
-            .raw_arg(format!("/c start \"Cyber CTF attack box\" cmd /c \"{}\"", bat.display()))
-            .env("DOCKER_CLI_HINTS", "false")
-            .spawn()?;
-        Ok(())
+        open_terminal_cmd(&command.replace('\'', "\""))
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
@@ -274,6 +262,69 @@ pub fn open_terminal(command: &str) -> Result<()> {
             }
         }
         Err(Error::Invalid(format!("couldn't open a terminal; run this yourself: {command}")))
+    }
+}
+
+/// Opens a console window titled "Cyber CTF attack box" on `line`, a cmd.exe command line.
+/// cmd.exe's quote-stripping with nested quotes and `&` is unreliable (it breaks when the
+/// identity/known_hosts path contains a space, e.g. C:\Users\First Last\...), so the line goes
+/// into a temp .cmd that is run: the line lives in the file with normal double-quoted paths, and
+/// the only thing cmd parses is the balanced-quoted .cmd path.
+#[cfg(windows)]
+pub fn open_terminal_cmd(line: &str) -> Result<()> {
+    use std::os::windows::process::CommandExt;
+    let bat = write_shell_script(&std::env::temp_dir(), line)?;
+    std::process::Command::new("cmd")
+        .raw_arg(format!("/c start \"Cyber CTF attack box\" cmd /c \"{}\"", bat.display()))
+        .env("DOCKER_CLI_HINTS", "false")
+        .spawn()?;
+    Ok(())
+}
+
+/// The temp scripts the Windows terminals run: `cyberctf-shell-<unique>.cmd`.
+#[cfg_attr(not(windows), allow(dead_code))]
+const SCRIPT_PREFIX: &str = "cyberctf-shell-";
+
+/// How long a shell's script is kept: cmd has read the line it runs long before.
+#[cfg_attr(not(windows), allow(dead_code))]
+const SCRIPT_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Writes the script a Windows terminal runs for `line` into `dir`, under a name no other shell
+/// uses, and clears the scripts earlier shells left. The name was the app's pid alone, so a
+/// second shell opened before the first started overwrote its script (both opened the same box),
+/// and none was ever deleted. Now the script deletes itself when its shell ends; one whose window
+/// was closed mid-session is cleared by a later call.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn write_shell_script(dir: &std::path::Path, line: &str) -> Result<std::path::PathBuf> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    clear_old_scripts(dir, SCRIPT_TTL);
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or_default();
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = dir.join(format!("{SCRIPT_PREFIX}{}-{n}-{nanos}.cmd", std::process::id()));
+    std::fs::write(&path, shell_script(line))?;
+    Ok(path)
+}
+
+/// A script running `line`: the screen cleared first, the script removed once it ends. A `%` in
+/// a batch file starts a variable, so the line's are doubled to stay literal.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn shell_script(line: &str) -> String {
+    format!("@echo off\r\ncls\r\n{}\r\n(goto) 2>nul & del \"%~f0\"\r\n", line.replace('%', "%%"))
+}
+
+/// Removes the shell scripts in `dir` older than `ttl`.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn clear_old_scripts(dir: &std::path::Path, ttl: std::time::Duration) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if !(name.starts_with(SCRIPT_PREFIX) && name.ends_with(".cmd")) {
+            continue;
+        }
+        let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age >= ttl);
+        if old {
+            let _ = std::fs::remove_file(e.path());
+        }
     }
 }
 
@@ -315,6 +366,87 @@ mod tests {
         let _ = other.wait();
         // A tag that could inject shell is refused.
         assert!(end_session_script("1'; rm -rf /; '").is_none() && end_session_script("").is_none());
+    }
+
+    const NETS: &str = "cyberctf-web_internal\ncyberctf-web_default\n";
+
+    #[tokio::test]
+    async fn the_attack_box_is_pulled_started_and_wired_to_every_lab_network() {
+        use crate::exec::fake::{Tools, fail, ok};
+        let tools = Tools::rules(&[("image inspect", fail("No such image")), ("network ls", ok(NETS))]);
+        let mut log = Vec::new();
+        super::start("web", "nwodtuhs/exegol:free", |l| log.push(l)).await.unwrap();
+        assert!(tools.called("docker pull nwodtuhs/exegol:free") && tools.called("docker network create cyberctf-web-attack"));
+        assert!(tools.called("--name cyberctf-web-attacker --network cyberctf-web-attack"));
+        assert!(tools.called("network connect cyberctf-web_default cyberctf-web-attacker") && tools.called("network connect cyberctf-web_internal"));
+        assert_eq!(log.last().map(String::as_str), Some("✓ Attack box ready — open a shell to start."));
+        drop(tools);
+        // No lab network: refused.
+        let _tools = Tools::rules(&[]);
+        let err = super::start("web", "nwodtuhs/exegol:free", |_| {}).await.unwrap_err().to_string();
+        assert_eq!(err, "the lab network isn't up — start the lab first");
+    }
+
+    #[tokio::test]
+    async fn a_half_wired_attack_box_is_torn_down() {
+        use crate::exec::fake::{Tools, fail, ok};
+        let tools = Tools::rules(&[("network ls", ok(NETS)), ("network connect", fail("no such network"))]);
+        assert!(super::start("web", "img:1", |_| {}).await.is_err());
+        assert!(tools.calls().iter().filter(|c| c.as_str() == "docker rm -f cyberctf-web-attacker").count() == 2, "{:?}", tools.calls());
+        assert!(tools.called("docker network rm cyberctf-web-attack"));
+        drop(tools);
+        let tools = Tools::rules(&[("network ls", ok(NETS)), ("run -d", fail("port is already allocated"))]);
+        assert!(super::start("web", "img:1", |_| {}).await.is_err());
+        assert!(tools.called("docker network rm cyberctf-web-attack") && !tools.called("network connect"));
+    }
+
+    #[tokio::test]
+    async fn the_status_reports_the_address_on_the_main_lab_network() {
+        use crate::exec::fake::{Tools, ok};
+        let _tools = Tools::rules(&[("network ls", ok(NETS)), ("docker inspect -f", ok("true\t10.0.0.9\n"))]);
+        let s = super::status("web", "img:1").await;
+        assert!(s.image_present && s.running);
+        assert_eq!((s.ip.as_str(), s.lab_network.as_str()), ("10.0.0.9", "default"));
+        assert_eq!(s.shell_cmd, "docker exec -it cyberctf-web-attacker bash");
+    }
+
+    #[tokio::test]
+    async fn a_running_box_rejoins_the_lab_networks() {
+        use crate::exec::fake::{Tools, ok};
+        let tools = Tools::rules(&[("{{.State.Running}}", ok("true\n")), ("network ls", ok(NETS))]);
+        super::rejoin("web").await;
+        assert!(tools.called("network connect cyberctf-web_default cyberctf-web-attacker"));
+        drop(tools);
+        let tools = Tools::rules(&[("{{.State.Running}}", ok("false\n"))]);
+        super::rejoin("web").await;
+        assert!(!tools.called("network connect"));
+    }
+
+    #[test]
+    fn each_windows_shell_gets_its_own_script_and_old_ones_are_cleared() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-scripts-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("other.cmd"), "keep").unwrap();
+        // Two shells opened at once (regression): two scripts, each with its own line.
+        let a = super::write_shell_script(&dir, "docker exec -it cyberctf-a-attacker bash").unwrap();
+        let b = super::write_shell_script(&dir, "docker exec -it cyberctf-b-attacker bash").unwrap();
+        assert_ne!(a, b);
+        assert!(std::fs::read_to_string(&a).unwrap().contains("cyberctf-a-attacker"));
+        assert!(std::fs::read_to_string(&b).unwrap().contains("cyberctf-b-attacker"));
+        // Fresh scripts survive a later call; old ones go, and nothing else in the folder does.
+        super::clear_old_scripts(&dir, super::SCRIPT_TTL);
+        assert!(a.exists() && b.exists());
+        super::clear_old_scripts(&dir, std::time::Duration::ZERO);
+        assert!(!a.exists() && !b.exists());
+        assert!(dir.join("other.cmd").exists());
+        super::clear_old_scripts(&dir.join("missing"), std::time::Duration::ZERO);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_shell_script_runs_its_line_literally_then_deletes_itself() {
+        let s = super::shell_script(r#"ssh -o "UserKnownHostsFile=C:\a%%b" x"#);
+        assert_eq!(s, "@echo off\r\ncls\r\nssh -o \"UserKnownHostsFile=C:\\a%%%%b\" x\r\n(goto) 2>nul & del \"%~f0\"\r\n");
     }
 
     #[test]

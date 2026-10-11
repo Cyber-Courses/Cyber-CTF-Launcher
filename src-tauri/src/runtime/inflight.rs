@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use tauri::AppHandle;
+use crate::AppHandle;
 use tokio::sync::OwnedMutexGuard;
 
 /// What is in flight for a lab: a start (provisioning) or a stop (teardown). Told apart so the

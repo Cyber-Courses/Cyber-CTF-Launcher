@@ -1,7 +1,8 @@
 //! The app's secondary windows (Settings, machine setup, shells) and what they share: the
 //! macOS overlaid title bar, attaching to the main window, and fitting the screen.
 
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use crate::AppHandle;
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// The main window's label.
 pub const MAIN: &str = "main";
@@ -26,7 +27,7 @@ pub fn focus_existing(app: &AppHandle, label: &str) -> bool {
 
 /// A window with the app's look: on macOS the page draws its own title bar under the traffic
 /// lights.
-pub fn builder<'a>(app: &'a AppHandle, label: &str, url: impl Into<String>) -> WebviewWindowBuilder<'a, tauri::Wry, AppHandle> {
+pub fn builder<'a>(app: &'a AppHandle, label: &str, url: impl Into<String>) -> WebviewWindowBuilder<'a, crate::AppRuntime, AppHandle> {
     let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into().into()));
     #[cfg(target_os = "macos")]
     let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
@@ -36,8 +37,8 @@ pub fn builder<'a>(app: &'a AppHandle, label: &str, url: impl Into<String>) -> W
 /// `builder` attached to the main window when it is open (it stays above it and closes with it).
 pub fn child_of_main<'a>(
     app: &'a AppHandle,
-    builder: WebviewWindowBuilder<'a, tauri::Wry, AppHandle>,
-) -> tauri::Result<WebviewWindowBuilder<'a, tauri::Wry, AppHandle>> {
+    builder: WebviewWindowBuilder<'a, crate::AppRuntime, AppHandle>,
+) -> tauri::Result<WebviewWindowBuilder<'a, crate::AppRuntime, AppHandle>> {
     match app.get_webview_window(MAIN) {
         Some(main) => builder.parent(&main),
         None => Ok(builder),

@@ -5,9 +5,10 @@
 
 use std::path::PathBuf;
 
+use crate::AppHandle;
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager};
 
 use super::install::Dependency;
 use super::steps::{Step, channel_log, run_steps, step};

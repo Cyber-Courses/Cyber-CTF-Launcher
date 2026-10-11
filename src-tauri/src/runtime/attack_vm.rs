@@ -232,7 +232,7 @@ fn own_view(d: &Path, image_present: bool, status: Option<super::LabStatus>) -> 
         }
         None => (false, String::new(), String::new()),
     };
-    ExegolStatus { image_present, running, ip, lab_network, shell_cmd: format!("cd {} && vagrant ssh", ssh::sh_quote(&d.to_string_lossy())) }
+    ExegolStatus { image_present, running, ip, lab_network, shell_cmd: shell_line(d, None, false, cfg!(windows)) }
 }
 
 /// On QEMU, the lab's network links two VMs: no room for an attack VM.
@@ -251,32 +251,54 @@ fn controller_view(lab_vagrant_dir: &Path, machines: Vec<super::Machine>) -> Exe
         Some(m) => (m.ip.clone(), m.interfaces.into_iter().next().map(|i| i.network).unwrap_or_default()),
         None => (String::new(), String::new()),
     };
-    ExegolStatus {
-        image_present: true,
-        running,
-        ip,
-        lab_network,
-        shell_cmd: format!("cd {} && vagrant ssh {}", ssh::sh_quote(&lab_vagrant_dir.to_string_lossy()), vm::CONTROLLER),
-    }
+    ExegolStatus { image_present: true, running, ip, lab_network, shell_cmd: shell_line(lab_vagrant_dir, Some(vm::CONTROLLER), false, cfg!(windows)) }
 }
 
-/// Opens the player's terminal on an SSH session into the attacker.
-/// The command line that opens the attack VM's shell.
-pub fn shell_command(lab_dir: &Path) -> Result<String> {
+/// Where the attack VM's shell is: the Vagrant folder `vagrant ssh` runs in, and the machine to
+/// reach there (None: the folder's only one). On QEMU, the lab's controller.
+pub fn shell_target(lab_dir: &Path) -> Result<(PathBuf, Option<&'static str>)> {
     let lab = super::lab::vagrant_dir(lab_dir, super::Runtime::Vm);
     if vm::on_qemu(&lab) {
-        let inner = format!("cd {} && exec vagrant ssh {}", ssh::sh_quote(&lab.to_string_lossy()), vm::CONTROLLER);
-        return Ok(format!("sh -c {}", ssh::sh_quote(&inner)));
+        return Ok((lab, Some(vm::CONTROLLER)));
     }
     let d = dir(lab_dir);
     if !d.join("Vagrantfile").exists() {
         return Err(Error::Invalid("the attack VM isn't started".into()));
     }
-    let inner = format!("cd {} && exec vagrant ssh", ssh::sh_quote(&d.to_string_lossy()));
-    Ok(format!("sh -c {}", ssh::sh_quote(&inner)))
+    Ok((d, None))
 }
 
+/// `vagrant ssh [machine]` from the folder `d`, as a command line: POSIX shell (`exec` replacing
+/// the shell when `exec`), or cmd.exe on Windows, which has no `sh` and no single quotes
+/// (Windows paths can't hold a `"`, so double quotes are enough there).
+fn shell_line(d: &Path, machine: Option<&str>, exec: bool, windows: bool) -> String {
+    let ssh = match machine {
+        Some(m) => format!("vagrant ssh {m}"),
+        None => "vagrant ssh".to_string(),
+    };
+    if windows {
+        format!("cd /d \"{}\" && {ssh}", d.display())
+    } else {
+        format!("cd {} && {}{ssh}", ssh::sh_quote(&d.to_string_lossy()), if exec { "exec " } else { "" })
+    }
+}
+
+/// The command line that opens the attack VM's shell: `sh -c 'cd … && exec vagrant ssh'` on
+/// macOS and Linux, `cd /d "…" && vagrant ssh` for cmd.exe on Windows.
+pub fn shell_command(lab_dir: &Path) -> Result<String> {
+    let (d, machine) = shell_target(lab_dir)?;
+    Ok(platform_shell_command(&d, machine, cfg!(windows)))
+}
+
+fn platform_shell_command(d: &Path, machine: Option<&str>, windows: bool) -> String {
+    if windows { shell_line(d, machine, false, true) } else { format!("sh -c {}", ssh::sh_quote(&shell_line(d, machine, true, false))) }
+}
+
+/// Opens the player's terminal on an SSH session into the attacker.
 pub fn shell(lab_dir: &Path) -> Result<()> {
+    #[cfg(windows)]
+    return exegol::open_terminal_cmd(&shell_command(lab_dir)?);
+    #[cfg(not(windows))]
     exegol::open_terminal(&shell_command(lab_dir)?)
 }
 
@@ -452,14 +474,36 @@ mod tests {
         std::fs::create_dir_all(super::dir(&lab)).unwrap();
         std::fs::write(super::dir(&lab).join("Vagrantfile"), "").unwrap();
         let cmd = super::shell_command(&lab).unwrap();
-        assert!(cmd.starts_with("sh -c "), "{cmd}");
-        assert!(cmd.contains("exec vagrant ssh") && !cmd.contains("isoloom-controller"), "{cmd}");
+        assert!(cmd.contains("vagrant ssh") && !cmd.contains("isoloom-controller"), "{cmd}");
+        assert_eq!(super::shell_target(&lab).unwrap(), (super::dir(&lab), None));
         // On QEMU, the controller is the attacker.
         let vagrant = crate::runtime::lab::vagrant_dir(&lab, crate::runtime::Runtime::Vm);
         std::fs::create_dir_all(vagrant.join(".vagrant").join("machines").join("isoloom-controller").join("qemu")).unwrap();
         let cmd = super::shell_command(&lab).unwrap();
-        assert!(cmd.contains("exec vagrant ssh isoloom-controller"), "{cmd}");
+        assert!(cmd.contains("vagrant ssh isoloom-controller"), "{cmd}");
+        assert_eq!(super::shell_target(&lab).unwrap(), (vagrant, Some("isoloom-controller")));
         std::fs::remove_dir_all(lab).unwrap();
+    }
+
+    #[test]
+    fn the_shell_runs_through_sh_on_unix_and_cmd_on_windows() {
+        let d = std::path::Path::new("/Users/alex o'neil/lab/.cyberctf-attack-vm");
+        // macOS and Linux: unchanged, a quoted `sh -c` that execs vagrant in the folder.
+        let posix = super::platform_shell_command(d, None, false);
+        let words = shell_words::split(&posix).unwrap();
+        assert_eq!(words[..2], ["sh", "-c"]);
+        assert_eq!(words[2], r#"cd '/Users/alex o'\''neil/lab/.cyberctf-attack-vm' && exec vagrant ssh"#);
+        // Windows (regression): no `sh` there, and the `'`-to-`"` rewrite broke the quoting. A
+        // plain cmd.exe line instead: the folder double-quoted, an apostrophe left alone.
+        let w = std::path::Path::new(r"C:\Users\Alex O'Neil\AppData\Roaming\cyberctf\labs\ad\.cyberctf-attack-vm");
+        assert_eq!(
+            super::platform_shell_command(w, None, true),
+            r#"cd /d "C:\Users\Alex O'Neil\AppData\Roaming\cyberctf\labs\ad\.cyberctf-attack-vm" && vagrant ssh"#
+        );
+        assert_eq!(super::platform_shell_command(w, Some("isoloom-controller"), true), format!("cd /d \"{}\" && vagrant ssh isoloom-controller", w.display()));
+        assert!(!super::platform_shell_command(w, None, true).contains("sh -c"));
+        // What the status shows to copy: without exec.
+        assert_eq!(super::shell_line(std::path::Path::new("/l"), Some("c"), false, false), "cd '/l' && vagrant ssh c");
     }
 
     #[test]

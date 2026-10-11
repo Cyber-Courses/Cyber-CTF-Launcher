@@ -16,8 +16,8 @@ mod process;
 mod progress;
 mod worker;
 
+use crate::AppHandle;
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
 
 pub use files::{last_deploy_failed, log_so_far};
 pub use process::{kill_and_wait, running, running_jobs};

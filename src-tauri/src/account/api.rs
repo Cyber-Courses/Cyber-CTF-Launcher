@@ -15,10 +15,15 @@ pub async fn graphql(query: &str, variables: Value, require_login: bool) -> Resu
         Err(e) if require_login => return Err(e),
         Err(_) => None,
     };
-    // Bounded: a backend that accepts the connection and never answers must not hang the
-    // agent loop or a UI call forever.
-    let mut req = reqwest::Client::new()
-        .post(format!("{}/graphql", config::api_url()))
+    send(&config::api_url(), token, query, variables).await
+}
+
+/// Posts a GraphQL operation to the API at `base`, with the access token when there is one.
+/// Bounded: a backend that accepts the connection and never answers must not hang the agent
+/// loop or a UI call forever.
+async fn send(base: &str, token: Option<String>, query: &str, variables: Value) -> Result<Value> {
+    let mut req = crate::http::api_client()?
+        .post(format!("{base}/graphql"))
         .timeout(std::time::Duration::from_secs(30))
         .json(&json!({ "query": query, "variables": variables }));
     if let Some(t) = token {
@@ -69,6 +74,24 @@ mod tests {
         let err = parse_response(StatusCode::BAD_GATEWAY, &format!("<html>{long}")).unwrap_err().to_string();
         assert!(err.starts_with("API error (HTTP 502 Bad Gateway): <html>xx"), "{err}");
         assert!(err.len() < 220);
+    }
+
+    #[tokio::test]
+    async fn an_operation_is_posted_with_the_token_and_its_data_read_back() {
+        use crate::http::tests::serve_once;
+        let body = r#"{"data":{"me":{"id":"1"}}}"#;
+        let base = serve_once(
+            format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).into_bytes(),
+        )
+        .await;
+        let data = super::send(base.trim_end_matches('/'), Some("tok".into()), "{ me { id } }", serde_json::Value::Null).await.unwrap();
+        assert_eq!(data, json!({ "me": { "id": "1" } }));
+        let base = serve_once(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 4\r\nConnection: close\r\n\r\ndown".to_vec()).await;
+        let err = super::send(base.trim_end_matches('/'), None, "{ x }", serde_json::Value::Null).await.unwrap_err().to_string();
+        assert_eq!(err, "API error (HTTP 502 Bad Gateway): down");
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
+        let err = super::send(&format!("http://{closed}"), None, "{ x }", serde_json::Value::Null).await.unwrap_err().to_string();
+        assert!(err.starts_with("API unreachable: "), "{err}");
     }
 
     /// Hits the real CyberBackend anonymously: `cargo test -- --ignored`.

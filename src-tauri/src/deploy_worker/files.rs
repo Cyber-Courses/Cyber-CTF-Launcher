@@ -2,7 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use tauri::{AppHandle, Manager};
+use crate::AppHandle;
+use tauri::Manager;
 
 use super::process::{Worker, alive};
 use crate::error::{Error, Result};

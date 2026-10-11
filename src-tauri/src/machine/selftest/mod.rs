@@ -15,9 +15,10 @@ mod vm;
 
 use std::path::PathBuf;
 
+use crate::AppHandle;
 use serde::Serialize;
+use tauri::Manager;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager};
 
 use crate::error::{Error, Result};
 use crate::runtime::providers::Provider;
@@ -192,6 +193,82 @@ mod tests {
         let out = explain(raw);
         assert!(out.starts_with("KVM isn't usable"));
         assert!(out.ends_with(raw));
+    }
+
+    /// A channel whose events land in a list, for the commands.
+    fn events() -> (Channel<Event>, Arc<Mutex<Vec<serde_json::Value>>>) {
+        let (r, seen) = reporter();
+        (r.0, seen)
+    }
+
+    #[tokio::test]
+    async fn the_container_test_runs_every_step_then_cleans_up() {
+        use crate::exec::fake::{Tools, ok};
+        let t = crate::test_app::TestApp::new();
+        // The lab's published port: a loopback server serving the test page.
+        let web = crate::http::tests::serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\ncyberctf-selftest-ok".to_vec()).await;
+        let addr = web.trim_start_matches("http://").trim_end_matches('/').to_string();
+        let tools = Tools::new(move |_, args| match args {
+            ["info", ..] => ok("27.3.1\n"),
+            [.., "exec", "-T", "probe", "wget", _, _, _, _] => ok("cyberctf-selftest-ok\n"),
+            [.., "port", "web", "80"] => ok(format!("{addr}\n")),
+            _ => ok(""),
+        });
+        let (channel, seen) = events();
+        machine_selftest(t.handle().clone(), Kind::Docker, None, channel).await.unwrap();
+        let done: Vec<String> = states(&seen).into_iter().filter(|s| !s.ends_with(":running")).collect();
+        assert_eq!(done, ["engine:ok", "pull:ok", "start:ok", "network:ok", "port:ok", "cleanup:ok"]);
+        assert!(tools.called("down -v --remove-orphans"));
+        machine_selftest_prefetch(t.handle().clone(), Kind::Docker, None).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_failed_container_test_stops_at_its_step_and_still_cleans_up() {
+        use crate::exec::fake::{Tools, fail};
+        let t = crate::test_app::TestApp::new();
+        let tools = Tools::rules(&[("docker info", fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"))]);
+        let (channel, seen) = events();
+        assert!(machine_selftest(t.handle().clone(), Kind::Docker, None, channel).await.is_err());
+        assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
+        assert!(seen.lock().unwrap()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
+        assert!(tools.called("down -v"), "the test lab is torn down even so");
+    }
+
+    #[tokio::test]
+    async fn the_vm_test_boots_pings_and_deletes_a_vm() {
+        use crate::exec::fake::{Tools, ok};
+        let t = crate::test_app::TestApp::new();
+        let boxes = "generic/alpine319 (virtualbox, 4.3.12)\nbento/debian-12 (virtualbox, 1)\ngeneric/alpine319 (libvirt, 4.3.12)\nbento/debian-12 (parallels, 1)\nbento/debian-12 (vmware_desktop, 1)\ngeneric/alpine319 (qemu, 1)\ngeneric/alpine319 (hyperv, 1)\nutm/bookworm (utm, 1)\n";
+        let tools = Tools::new(move |program, args| match (program, args) {
+            ("vagrant", ["plugin", "list"]) => {
+                ok("vagrant-qemu (0.3.6)\nvagrant-parallels (2.4)\nvagrant-vmware-desktop (3.0)\nvagrant-libvirt (0.12)\nvagrant_utm (0.1)\n")
+            }
+            ("vagrant", ["box", "list"]) => ok(boxes),
+            ("vagrant", ["--version"]) => ok("Vagrant 2.4.3\n"),
+            ("vagrant", ["ssh", "-c", _]) => ok("Linux 6.6 x86_64\n"),
+            _ => ok(""),
+        });
+        let (channel, seen) = events();
+        let r = machine_selftest(t.handle().clone(), Kind::Vm, None, channel).await;
+        let done: Vec<String> = states(&seen).into_iter().filter(|s| !s.ends_with(":running")).collect();
+        assert_eq!(&done[..2], ["vagrant:ok", "provider:ok"], "{done:?}");
+        r.unwrap();
+        assert_eq!(&done[2..6], ["hypervisor:ok", "box:ok", "boot:ok", "exec:ok"]);
+        assert!(done[6] == "network:ok" || done[6] == "network:skip");
+        assert_eq!(done.last().map(String::as_str), Some("cleanup:ok"));
+        assert!(tools.called("vagrant up --provider") && tools.called("vagrant destroy -f"));
+        // The box is there already: nothing to prefetch.
+        machine_selftest_prefetch(t.handle().clone(), Kind::Vm, None).await.unwrap();
+        assert!(!tools.called("box add"));
+    }
+
+    #[tokio::test]
+    async fn without_vagrant_the_vm_test_stops_at_once() {
+        let t = crate::test_app::TestApp::new();
+        let _tools = crate::exec::fake::Tools::rules(&[("vagrant", None)]);
+        let (channel, seen) = events();
+        assert!(machine_selftest(t.handle().clone(), Kind::Vm, None, channel).await.is_err());
+        assert_eq!(states(&seen), ["vagrant:running", "vagrant:fail"]);
     }
 
     #[test]

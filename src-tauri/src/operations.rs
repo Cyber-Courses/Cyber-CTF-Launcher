@@ -2,8 +2,8 @@
 //! workers and this process (a stop, or the fallback when no worker could start). A reloaded or
 //! relaunched window rehydrates its "starting" / "stopping" state from these.
 
+use crate::AppHandle;
 use serde::Serialize;
-use tauri::AppHandle;
 
 use crate::deploy_worker::{self, Op};
 use crate::runtime::{self, Action, Park};

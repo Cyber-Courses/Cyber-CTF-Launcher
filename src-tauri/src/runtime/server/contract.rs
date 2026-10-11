@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::HOST_MARKER;
 use super::profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile};

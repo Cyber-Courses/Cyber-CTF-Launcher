@@ -288,6 +288,63 @@ pub async fn aws_login(profile: Option<String>, logs: Channel<String>) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::exec::fake::{Tools, fail, ok};
+
+    fn sink() -> (Channel<String>, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let s = seen.clone();
+        let channel = Channel::new(move |body| {
+            if let tauri::ipc::InvokeResponseBody::Json(j) = body {
+                s.lock().unwrap().push(serde_json::from_str(&j).unwrap());
+            }
+            Ok(())
+        });
+        (channel, seen)
+    }
+
+    #[tokio::test]
+    async fn the_cloud_commands_read_their_clis() {
+        let tools = Tools::new(|program, args| match (program, args) {
+            ("aws", ["sts", ..]) => ok("arn:aws:iam::123456789012:user/ada\n"),
+            ("aws", ["configure", "list-profiles"]) => ok("default\nlabs\n\n"),
+            ("aws", ["ce", ..]) => ok("12.5\n"),
+            ("az", ["account", "list", ..]) => ok(r#"[{"name":"Pay-As-You-Go","id":"00000000-0000-0000-0000-000000000000","isDefault":true}]"#),
+            ("gcloud", ["auth", "list", ..]) => ok("ada@example.com\n"),
+            ("gcloud", ["billing", ..]) => ok(r#"[{"name":"billingAccounts/AAAAAA-BBBBBB-CCCCCC","displayName":"Main","open":true}]"#),
+            ("gcloud", ["organizations", ..]) => ok(r#"[{"name":"organizations/123","displayName":"Org"}]"#),
+            ("aws" | "az" | "gcloud", [..]) => ok("signed in\n"),
+            _ => None,
+        });
+        assert!(aws_cli_identity(Some("labs".into())).await.is_some());
+        assert!(tools.called("--profile labs"));
+        assert_eq!(aws_profiles().await, ["default", "labs"]);
+        let _ = aws_month_to_date_cost(None).await;
+        assert_eq!(azure_subscriptions().await.len(), 1);
+        assert_eq!(gcp_account().await.as_deref(), Some("ada@example.com"));
+        let _ = gcp_billing_accounts().await;
+        let _ = gcp_organizations().await;
+        let (channel, seen) = sink();
+        cloud_login(Cloud::Azure, channel).await.unwrap();
+        assert_eq!(*seen.lock().unwrap(), ["$ az login", "signed in"]);
+        let (channel, seen) = sink();
+        aws_login(Some("labs".into()), channel).await.unwrap();
+        assert_eq!(seen.lock().unwrap()[0], "$ aws login --profile labs");
+    }
+
+    #[tokio::test]
+    async fn signed_out_clis_read_as_nothing() {
+        let _tools = Tools::new(|_, args| match args {
+            ["auth", "list", ..] => ok("ada@example.com\n"),
+            _ => fail("expired"),
+        });
+        assert_eq!(aws_cli_identity(None).await, None);
+        assert!(aws_profiles().await.is_empty());
+        assert_eq!(aws_month_to_date_cost(None).await, None);
+        assert!(azure_subscriptions().await.is_empty());
+        assert_eq!(gcp_account().await, None, "an expired sign-in counts as signed out");
+        assert!(gcp_billing_accounts().await.is_empty() && gcp_organizations().await.is_empty());
+        assert!(cloud_login(Cloud::Gcp, sink().0).await.is_err());
+    }
 
     #[test]
     fn each_cloud_signs_in_with_its_own_cli() {

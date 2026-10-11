@@ -23,7 +23,16 @@ pub fn record_docker(dir: &Path, spec: &Spec, project: String) {
 
 fn upsert(dir: &Path, spec: &Spec, target: Target, cloud: Option<&str>, project: Option<String>) {
     let entry = entry(dir, spec, target, cloud, project, registry::now());
-    let _ = registry::update(|reg| reg.upsert(entry));
+    update(|reg| reg.upsert(entry));
+}
+
+/// Updates Isoloom's registry, best effort. Unit tests apply the change to an empty registry
+/// instead: the real one is the user's own `~/.isoloom`, never a test's to write.
+fn update(f: impl FnOnce(&mut registry::Registry)) {
+    #[cfg(not(test))]
+    let _ = registry::update(f);
+    #[cfg(test)]
+    f(&mut registry::Registry::default());
 }
 
 /// The registry entry of the lab in `dir`, running on `target` since `started`.
@@ -34,7 +43,7 @@ fn entry(dir: &Path, spec: &Spec, target: Target, cloud: Option<&str>, project: 
 /// Forgets every entry of the lab (whatever target it ran on).
 pub fn forget(dir: &Path) {
     let dir = key(dir);
-    let _ = registry::update(|reg| drop_dir(reg, &dir));
+    update(|reg| drop_dir(reg, &dir));
 }
 
 /// Removes every entry of `dir` (a [`key`]) from the registry.

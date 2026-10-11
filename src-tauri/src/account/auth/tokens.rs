@@ -56,7 +56,7 @@ pub(super) fn jwt_claim(token: &str, name: &str) -> Option<String> {
 }
 
 pub(super) async fn token_request(form: &[(&str, &str)]) -> Result<TokenResponse> {
-    let res = reqwest::Client::new()
+    let res = crate::http::api_client()?
         .post(format!("{}/oauth2/token", config::auth_base()))
         .timeout(std::time::Duration::from_secs(30))
         .form(form)

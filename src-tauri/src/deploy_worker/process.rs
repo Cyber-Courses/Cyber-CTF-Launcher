@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::Job;
 use super::files::{self, Files, read_worker};
@@ -262,7 +262,7 @@ fn kill_files(f: &Files) {
     let Some(worker) = f.worker() else { return };
     if alive(&worker) {
         #[cfg(unix)]
-        signal_group(worker.pid, "-TERM");
+        signal_group(worker.pid, libc::SIGTERM);
         #[cfg(windows)]
         {
             let _ = crate::exec::headless_std(std::process::Command::new("taskkill").args(["/PID", &worker.pid.to_string(), "/T", "/F"])).status();
@@ -272,10 +272,19 @@ fn kill_files(f: &Files) {
 }
 
 /// Sends `signal` to the process group `pid` leads: the worker and its vagrant/docker/terraform.
+/// A syscall, not `kill -TERM -<pid>`: procps' `kill` (Debian, Ubuntu) reads `-<pid>` as an
+/// option and signals the group named by its first digit, so `-1234` sent SIGTERM to every
+/// process of the user (`kill(-1)`) instead of the worker's group.
 #[cfg(unix)]
-fn signal_group(pid: u32, signal: &str) {
-    // The negative pid is the process group.
-    let _ = std::process::Command::new("kill").args([signal, &format!("-{pid}")]).status();
+fn signal_group(pid: u32, signal: libc::c_int) {
+    let Ok(group) = libc::pid_t::try_from(pid) else { return };
+    if group <= 1 {
+        return;
+    }
+    // SAFETY: plain syscall on a process group the worker leads (`process_group(0)` at spawn).
+    unsafe {
+        libc::killpg(group, signal);
+    }
 }
 
 /// Half-second checks a Terraform run gets to stop on its own once interrupted: it finishes the
@@ -302,7 +311,7 @@ pub async fn kill_and_wait(app: &AppHandle, key: &str) {
         return;
     }
     #[cfg(unix)]
-    signal_group(worker.pid, "-KILL");
+    signal_group(worker.pid, libc::SIGKILL);
     gone_within(&worker, 10).await;
 }
 
@@ -536,6 +545,48 @@ mod tests {
         assert!(!f.pid.exists());
         kill_files(&f);
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// A process that looks like a live worker (`… deploy --job …`), leading its own group.
+    #[cfg(unix)]
+    fn fake_worker_group() -> std::process::Child {
+        use std::os::unix::process::CommandExt;
+        std::process::Command::new("sh").args(["-c", "sleep 30; exit 0", "deploy", "--job", "x.json"]).process_group(0).spawn().unwrap()
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_live_worker_is_listed_refuses_a_second_run_and_is_stopped() {
+        let t = crate::test_app::TestApp::new();
+        let app = t.handle();
+        let mut child = fake_worker_group();
+        let job = Job::on_lab("lab-1", super::super::Op::Resume { runtime: crate::runtime::Runtime::Vm });
+        let f = files::of(app, &job.key()).unwrap();
+        std::fs::write(&f.pid, child.id().to_string()).unwrap();
+        std::fs::write(&f.job, serde_json::to_vec(&job).unwrap()).unwrap();
+        std::fs::write(&f.log, "Resuming the lab…\n").unwrap();
+        assert_eq!(running(app), ["lab-1"]);
+        let jobs = running_jobs(app);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].0, job);
+        // A second operation on the lab is refused while this one runs.
+        let err = super::super::run_job(app, job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err().to_string();
+        assert_eq!(err, "A resume of this lab is already in progress; wait for it to finish.");
+        // Stopping it ends its process group, and only that (regression: procps' `kill -TERM
+        // -<pid>` signalled every process of the user), and drops its pidfile.
+        let mut bystander = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let waiter = std::thread::spawn(move || child.wait());
+        kill_and_wait(app, "lab-1").await;
+        let status = waiter.join().unwrap().unwrap();
+        assert!(!status.success(), "the worker was signalled");
+        assert!(bystander.try_wait().unwrap().is_none(), "a process outside its group is left alone");
+        let _ = bystander.kill();
+        let _ = bystander.wait();
+        assert!(!f.pid.exists());
+        assert!(running(app).is_empty());
+        // Nothing left to stop.
+        kill_and_wait(app, "lab-1").await;
+        kill(app, "lab-2");
     }
 
     #[tokio::test]

@@ -2,8 +2,9 @@
 //! with the crate name (cyberctf-desktop), so they read "Cyber CTF" instead. Edit + Window are
 //! kept so clipboard shortcuts and window controls still work.
 
+use crate::AppHandle;
+use crate::AppRuntime as Wry;
 use tauri::menu::{Menu, MenuEvent};
-use tauri::{AppHandle, Wry};
 
 /// The menu item that opens Settings.
 const SETTINGS: &str = "settings";

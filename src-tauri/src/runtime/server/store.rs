@@ -3,8 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::AppHandle;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::Manager;
 
 use super::profile::HostProfile;
 use crate::error::{Error, Result};

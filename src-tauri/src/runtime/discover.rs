@@ -9,7 +9,8 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
-use tauri::{AppHandle, Manager};
+use crate::AppHandle;
+use tauri::Manager;
 
 use crate::exec::run_read;
 

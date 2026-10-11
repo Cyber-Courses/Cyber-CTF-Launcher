@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::paths::{lab_dir, state_dir};
 use super::providers::Provider;

@@ -6,8 +6,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use crate::AppHandle;
 use serde::Serialize;
-use tauri::AppHandle;
 
 use crate::error::Result;
 use crate::exec::run;
@@ -230,6 +230,29 @@ mod tests {
         let storage = Storage { images: vec![StoredItem { name: "i".into(), bytes: 5 }], boxes: found };
         assert_eq!(storage.total(), 1007);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[tokio::test]
+    async fn storage_lists_the_labs_images_and_cleans_them() {
+        use crate::exec::fake::{Tools, fail, ok};
+        let t = crate::test_app::TestApp::new();
+        let lab = t.lab("web", &[]);
+        let compose = crate::runtime::lab::compose_file(&lab);
+        std::fs::create_dir_all(compose.parent().unwrap()).unwrap();
+        std::fs::write(&compose, "services: {}\n").unwrap();
+        let tools = Tools::new(|_, args| match args {
+            [.., "config", "--images"] => ok("nginx:1.27\n\n"),
+            // One call for all fails (an image is missing): each is then asked on its own.
+            ["image", "inspect", "--format", _, "nginx:1.27"] => ok("nginx:1.27\t1000\n"),
+            ["image", "inspect", ..] => fail("No such image"),
+            _ => ok(""),
+        });
+        let s = machine_storage(t.handle().clone(), vec!["ghcr.io/x/box:1".into(), "-bad".into()]).await;
+        assert_eq!(s.images.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("nginx:1.27", 1000)]);
+        assert!(!tools.called("-bad"), "an invalid image is never passed to docker");
+        let freed = machine_storage_clean(t.handle().clone(), Vec::new()).await.unwrap();
+        assert!(tools.called("docker image rm nginx:1.27"));
+        assert_eq!(freed, 0, "docker still lists it, so nothing was freed");
     }
 
     #[test]

@@ -4,7 +4,7 @@
 //! refuses past that limit ("billing quota exceeded"); one project needs a single free slot,
 //! checked here with a clear message instead of a failed launch.
 
-use tauri::AppHandle;
+use crate::AppHandle;
 
 use super::profile::random_hex;
 use super::store::{find, load, update};
