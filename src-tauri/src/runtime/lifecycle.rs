@@ -10,7 +10,7 @@ use super::inflight::{Action, DeployGuard, lock_lab, try_lock_lab};
 use super::paths::{
     deployed_ids, deployment_states, lab_dir, local_vm, mark_local_vm, mark_parked, parked, recorded_host, recorded_runtime, state_dir, vagrant_dirs,
 };
-use super::{Park, Runtime, attack_vm, docker, lab, registry, server, terraform, vm};
+use super::{Park, Runtime, attack_vm, cloud_services, docker, lab, registry, server, terraform, vm};
 use crate::error::{Error, Result};
 
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
@@ -18,6 +18,7 @@ use crate::error::{Error, Result};
 async fn park(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
     let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Park);
+    refuse_cloud_park(runtime)?;
     if server::lab_connection(app, dir)?.is_some() {
         return Err(Error::Invalid("Pausing a lab on a server host isn't available yet. Stop it instead.".into()));
     }
@@ -33,9 +34,18 @@ async fn park(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mode: Par
             }
             vm::park(&lab::vagrant_dir(dir, runtime), mode, &[], &mut log).await?;
         }
+        Runtime::Cloud => unreachable!("refused above"),
     }
     mark_parked(dir, Some(mode))?;
     log(parked_message(mode).into());
+    Ok(())
+}
+
+/// Cloud services are created or destroyed, never kept switched off.
+fn refuse_cloud_park(runtime: Runtime) -> Result<()> {
+    if runtime == Runtime::Cloud {
+        return Err(Error::Invalid("A cloud lab can't be paused: stop it to end what it costs, and start it again later.".into()));
+    }
     Ok(())
 }
 
@@ -67,6 +77,7 @@ async fn resume(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mut log
 /// Also the repair for a lab some machines of which went down (powered off by hand, or a cut
 /// resume): the machines already up are left alone, the others come back.
 pub(super) async fn resume_locked(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, log: &mut impl FnMut(String)) -> Result<()> {
+    refuse_cloud_park(runtime)?;
     if server::lab_connection(app, dir)?.is_some() {
         return Err(Error::Invalid("This lab was parked on a server host; resuming there isn't available yet.".into()));
     }
@@ -93,6 +104,7 @@ pub(super) async fn resume_locked(app: &AppHandle, dir: &Path, id: &str, runtime
                 log(format!("The lab is back, but its attack VM didn't resume: {e}. Start it from the lab page."));
             }
         }
+        Runtime::Cloud => unreachable!("refused above"),
     }
     mark_parked(dir, None)?;
     log("Lab resumed.".into());
@@ -152,6 +164,8 @@ async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, lo
     let _deploy = DeployGuard::new(id, Action::Stop);
     let Some(c) = server::lab_connection(app, dir)? else { return stop_here(dir, id, runtime, log).await };
     let result = match server::terraform_target(c.provider) {
+        // Cloud services: destroyed on the account they run on.
+        _ if runtime == Runtime::Cloud => cloud_services::destroy(app, dir, id, &c, log).await,
         Some(tf) => {
             let module = lab::terraform_to_destroy(dir, runtime, tf)?;
             terraform::destroy(&module, &state_dir(app, id, tf)?, &c.tf_vars, &c.tf_env, log).await
@@ -176,6 +190,8 @@ pub(super) async fn stop_here(dir: &Path, id: &str, runtime: Runtime, mut log: i
             attack_vm::stop(dir, &mut log).await;
             vm::stop(&lab::vagrant_dir(dir, runtime), &[], log).await
         }
+        // Cloud services run on a cloud account only: nothing of them here.
+        Runtime::Cloud => Ok(()),
     };
     if result.is_ok() {
         forget_run(dir)?;
@@ -245,13 +261,22 @@ pub async fn reap_expired_labs(app: &AppHandle) {
             // Left behind: destroyed on its own host; the lab's markers (where it runs now) stay.
             Owner::Left(host) => {
                 let Ok(c) = server::connection(app, &host) else { continue };
-                let Ok(module) = lab::terraform_to_destroy(&dir, runtime, &target) else { continue };
-                if let Err(e) = terraform::destroy(&module, &state, &c.tf_vars, &c.tf_env, |_line: String| {}).await {
+                if let Err(e) = destroy_left(app, &dir, &id, runtime, (&target, &state), &c).await {
                     log::warn!("destroying the expired leftover of {id} on {host}: {e}");
                 }
             }
         }
     }
+}
+
+/// Destroys a deployment of lab `id` left on host `c` (its Terraform `target` and `state`), with
+/// the module that created it: the lab's own for cloud services, else its Isoloom module.
+async fn destroy_left(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, (target, state): (&str, &Path), c: &server::Connection) -> Result<()> {
+    if runtime == Runtime::Cloud {
+        return cloud_services::destroy(app, dir, id, c, |_line: String| {}).await;
+    }
+    let module = lab::terraform_to_destroy(dir, runtime, target)?;
+    terraform::destroy(&module, state, &c.tf_vars, &c.tf_env, |_line: String| {}).await
 }
 
 /// Every expired Terraform state under the app data folder `base`: lab id, target, folder.
@@ -307,7 +332,7 @@ pub async fn stop_lab(app: &AppHandle, id: &str, runtime: Runtime) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::{
-        Owner, Park, clear_parked, expired_states, park_lab, parked_message, provision_lab, provision_target, reap_expired_labs, reap_owner,
+        Owner, Park, clear_parked, expired_states, park_lab, parked_message, provision_lab, provision_target, reap_expired_labs, reap_owner, refuse_cloud_park,
         refuse_vm_shutdown, resume_lab, stop_lab,
     };
     use crate::exec::fake::{Tools, fail, ok};
@@ -520,6 +545,13 @@ mod tests {
         assert!(refuse_vm_shutdown(Park::Shutdown).unwrap_err().to_string().contains("paused, not shut down"));
         assert!(parked_message(Park::Pause).starts_with("Lab paused."));
         assert!(parked_message(Park::Shutdown).starts_with("Lab shut down."));
+    }
+
+    #[test]
+    fn a_cloud_lab_is_never_parked() {
+        assert!(refuse_cloud_park(Runtime::Cloud).unwrap_err().to_string().starts_with("A cloud lab can't be paused"));
+        assert!(refuse_cloud_park(Runtime::Docker).is_ok());
+        assert!(refuse_cloud_park(Runtime::Vm).is_ok());
     }
 
     #[tokio::test]

@@ -37,7 +37,7 @@ export function HeaderLead({ lab, state: s, status }: { lab: Lab; state: LabStat
   ];
   if (s.running) strip.push(<span key="where">{t("labs.detail.onWhere", { where: status?.host ?? thisMachine(t, s.engine) })}</span>);
   else if (s.parked && s.engine) strip.push(<span key="where">{s.engine}</span>);
-  if (lab.runtime) strip.push(<span key="rt">{runtimeWord(t, s.isDocker)}</span>);
+  if (lab.runtime) strip.push(<span key="rt">{runtimeWord(t, s)}</span>);
   if (lab.runtime && !s.native && (s.isDocker || s.emulates))
     strip.push(
       <span key="emu" className="text-warning">

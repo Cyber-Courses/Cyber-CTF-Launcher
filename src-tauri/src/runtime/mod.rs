@@ -3,6 +3,8 @@
 //! `lab`). The UI only ever passes a lab id and a runtime; paths and commands are built here.
 //!
 //! - `launch`: starting a lab, here or on a server host.
+//! - `cloud_services`: cloud-services labs, a Terraform module of the lab's own applied into the
+//!   player's cloud account.
 //! - `lifecycle`: park, resume, provision, stop, and the expired-lab reaper.
 //! - `status`: what a lab looks like right now, wherever it runs.
 //! - `attack_box`, `shell`: the player's attacker beside a lab, and the shells into it.
@@ -12,6 +14,7 @@
 
 mod attack_box;
 mod attack_vm;
+mod cloud_services;
 mod commands;
 mod discover;
 mod docker;
@@ -46,7 +49,7 @@ pub use docker::{PORTS_ENV, subnets_in_use};
 pub use inflight::{Action, active_actions, active_deploys, deploying_labs};
 pub use launch::{deployed_on_server, start};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, resume_lab, stop_lab};
-pub use model::{AttackerAt, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
+pub use model::{AttackerAt, Interface, LabStatus, Machine, Network, Output, Park, Place, Port, Service};
 pub use paths::{LOCAL_VM_MARKER, validate_id};
 pub use shell::{ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for, valid_image};
 pub use status::{lab_running_here, primary_url, running_here};
@@ -57,6 +60,9 @@ pub use status::{lab_running_here, primary_url, running_here};
 pub enum Runtime {
     Docker,
     Vm,
+    /// Cloud services (Isoloom's `cloud-services`): a Terraform module of the lab's own,
+    /// applied into the player's cloud account. See `cloud_services`.
+    Cloud,
 }
 
 /// Builders shared by the runtime's unit tests.
@@ -91,6 +97,8 @@ pub(crate) mod test_support {
             place: None,
             provider: None,
             attacker: None,
+            outputs: Vec::new(),
+            message: None,
         }
     }
 }

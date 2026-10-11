@@ -407,6 +407,8 @@ mod tests {
             place: None,
             provider: None,
             attacker: None,
+            outputs: Vec::new(),
+            message: None,
         }
     }
 

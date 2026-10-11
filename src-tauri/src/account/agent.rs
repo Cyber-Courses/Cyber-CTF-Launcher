@@ -177,6 +177,8 @@ fn pick_launch_host(claim: &Value, host_name: impl Fn(&str) -> Option<String>, d
         Some(target) => {
             Some(host_name(target).map(|_| target.to_string()).ok_or_else(|| Error::Invalid("that host is no longer set up in the launcher".into()))?)
         }
+        // A cloud lab never runs on an account it wasn't sent to (it costs money): no target, no
+        // launch (runtime::start says so).
         None => (claim["runtime"] == "VM").then(default_host).flatten(),
     })
 }
@@ -196,7 +198,17 @@ async fn confirm_if_cloud(app: &AppHandle, session_id: &str, claim: &Value, host
 }
 
 fn claim_runtime(claim: &Value) -> Runtime {
-    if claim["runtime"] == "VM" { Runtime::Vm } else { Runtime::Docker }
+    match claim["runtime"].as_str() {
+        Some("VM") => Runtime::Vm,
+        Some("CLOUD") => Runtime::Cloud,
+        _ => Runtime::Docker,
+    }
+}
+
+/// The attack box a launch on a server host brings; none here (the player's own setting) and
+/// none for cloud services, which the player works on from their own machine.
+fn attack_image(host: Option<&str>, runtime: Runtime) -> Option<&'static str> {
+    host.filter(|_| runtime != Runtime::Cloud).map(|_| DEFAULT_ATTACK_IMAGE)
 }
 
 /// Stops a claimed lab that must not keep running under a failed session.
@@ -236,8 +248,8 @@ async fn claim_and_run(app: &AppHandle, session_id: &str) -> Result<()> {
     update_state(session_id, "PULLING", Progress { message: Some("Preparing the lab on your machine"), ..Default::default() }).await?;
     let host = launch_host(app, claim)?;
     confirm_if_cloud(app, session_id, claim, host.as_deref()).await?;
-    let image = host.as_ref().map(|_| DEFAULT_ATTACK_IMAGE);
     let runtime = claim_runtime(claim);
+    let image = attack_image(host.as_deref(), runtime);
     let lab_id = claim["labId"].as_str();
     // A lab already up here is refused below, and must be left alone; anything else this start
     // brought up before failing (one unhealthy service, say) is torn down, or it would keep
@@ -410,6 +422,14 @@ mod tests {
         assert!(matches!(claim_runtime(&json!({ "runtime": "VM" })), Runtime::Vm));
         assert!(matches!(claim_runtime(&json!({ "runtime": "DOCKER" })), Runtime::Docker));
         assert!(matches!(claim_runtime(&json!({})), Runtime::Docker));
+        assert!(matches!(claim_runtime(&json!({ "runtime": "CLOUD" })), Runtime::Cloud));
+    }
+
+    #[test]
+    fn only_container_and_vm_launches_on_a_host_bring_the_attack_box() {
+        assert_eq!(attack_image(Some("aws-1"), Runtime::Docker), Some(DEFAULT_ATTACK_IMAGE));
+        assert_eq!(attack_image(Some("aws-1"), Runtime::Cloud), None);
+        assert_eq!(attack_image(None, Runtime::Docker), None);
     }
 
     #[test]

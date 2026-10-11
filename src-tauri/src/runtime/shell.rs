@@ -22,6 +22,9 @@ pub enum ShellKind {
 /// with the shell).
 pub(super) async fn lab_shell_command(app: &AppHandle, id: &str, runtime: Runtime, tag: Option<&str>) -> Result<(String, Option<String>)> {
     let dir = lab_dir(app, id)?;
+    if runtime == Runtime::Cloud {
+        return Err(Error::Invalid("A cloud lab has no attack box: work from your own terminal, with what the lab gives you.".into()));
+    }
     let target = match server::lab_connection(app, &dir)? {
         None if runtime == Runtime::Docker && local_vm(&dir).is_some() => remote::vagrant_host(&lab::vagrant_dir(&dir, runtime), &[], "lab VM").await?,
         // The local attack box container (`lab_dir` has validated the id it is named after).

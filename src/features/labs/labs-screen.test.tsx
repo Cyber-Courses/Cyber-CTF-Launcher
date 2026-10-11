@@ -31,10 +31,10 @@ describe("Labs list", () => {
     installTauri(idle);
     render(<Labs {...props} />);
     await flush(80);
-    expect(screen.getByText("5 in the catalogue · 1 running on this machine · 1 solved")).toBeTruthy();
+    expect(screen.getByText("6 in the catalogue · 1 running on this machine · 1 solved")).toBeTruthy();
     expect(screen.getByText("Running now")).toBeTruthy();
     expect(screen.getByText("1 lab")).toBeTruthy();
-    expect(titles()).toEqual(["Invoice portal API", "Blind orders", "Exposed dashboard", "GOAD Light", "Public backup"]);
+    expect(titles()).toEqual(["Invoice portal API", "Blind orders", "EC2 SSRF", "Exposed dashboard", "GOAD Light", "Public backup"]);
   });
 
   it("filters by status, runtime, level and search, and says when nothing matches", async () => {
@@ -52,6 +52,9 @@ describe("Labs list", () => {
     await user.click(within(group("Status")).getByRole("radio", { name: "All" }));
     await user.click(within(group("Runtime")).getByRole("radio", { name: "VM" }));
     expect(titles()).toEqual(["GOAD Light"]);
+    // Cloud: the cloud-services lab, and the labs a cloud account can run.
+    await user.click(within(group("Runtime")).getByRole("radio", { name: "Cloud" }));
+    expect(titles()).toEqual(["Invoice portal API", "EC2 SSRF", "Public backup"]);
     await user.click(within(group("Runtime")).getByRole("radio", { name: "Any runtime" }));
     await user.click(within(group("Level")).getByRole("radio", { name: "Hard" }));
     expect(titles()).toEqual(["GOAD Light"]);

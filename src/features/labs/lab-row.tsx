@@ -3,10 +3,10 @@
 import { useState, type ButtonHTMLAttributes } from "react";
 import { ChevronRight, ExternalLink, LogIn, Wrench } from "lucide-react";
 import { difficultyLabel, type Lab } from "@/features/labs/use-labs";
-import { runsNatively } from "@/features/labs/lab-runtime";
+import { runsNatively, runtimeLabel } from "@/features/labs/lab-runtime";
 import { rowPhase, type RowPhase } from "@/features/labs/lab-row-state";
 import { RunPlaceIcons } from "@/features/labs/run-place-icons";
-import { machineOpenSetup, type LabStatus } from "@/lib/tauri";
+import { machineOpenSetup, serverOpenSetup, type LabStatus } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 import { LevelBadge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/ui/status-pill";
@@ -67,6 +67,7 @@ export function LabRow({
   onResume,
   solved = false,
   setup = null,
+  connectCloud = false,
   deploying = false,
 }: {
   lab: Lab;
@@ -88,6 +89,8 @@ export function LabRow({
   solved?: boolean;
   /** What this machine is missing to run it (see lab-readiness), or null. */
   setup?: string | null;
+  /** A cloud lab with no account of its cloud yet: the setup action connects one. */
+  connectCloud?: boolean;
   /** A deploy is running for it in the backend (e.g. started before a reload), for the dot. */
   deploying?: boolean;
 }) {
@@ -166,7 +169,7 @@ export function LabRow({
           {rt && (
             <>
               {/* Fixed to the longest label ("docker") so the place icons line up from row to row. */}
-              <span className="w-[6ch] shrink-0">{rt.runtime === "VM" ? "vm" : "docker"}</span>
+              <span className="w-[6ch] shrink-0">{runtimeLabel(rt)}</span>
               <RunPlaceIcons runtime={rt} hostArch={hostArch} emulates={emulates} running={running} status={status} />
             </>
           )}
@@ -195,6 +198,10 @@ export function LabRow({
                 </RowButton>
               )}
             </>
+          ) : setup && connectCloud ? (
+            <RowButton onClick={() => serverOpenSetup(null, "cloud").catch(tell(t("labs.row.connectFailed")))} title={t("labs.row.connectHint", { setup })}>
+              <Wrench className="size-3" /> {t("labs.row.connect")}
+            </RowButton>
           ) : setup ? (
             <RowButton onClick={() => machineOpenSetup().catch(tell(t("labs.row.setupFailed")))} title={t("labs.row.setupHint", { setup })}>
               <Wrench className="size-3" /> {t("labs.row.setUp")}
@@ -222,7 +229,7 @@ export function LabRow({
               onStop();
             }}
           >
-            {t("labs.row.removeBody")}
+            {t(rt?.runtime === "CLOUD" ? "labs.row.removeBodyCloud" : "labs.row.removeBody")}
             {!status?.host && status?.place !== "local_vm" && t("labs.row.removeKeep")}
           </ConfirmDialog>
         </div>

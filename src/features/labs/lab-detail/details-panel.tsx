@@ -16,11 +16,14 @@ export function DetailsPanel({
   status,
   engine,
   meta,
+  cost = null,
   provision,
 }: {
   status: LabStatus | undefined;
   engine: string | null;
   meta: string;
+  /** A cloud lab's estimated cost, when it gives one. */
+  cost?: string | null;
   /** VM labs whose setup can run again in place. */
   provision: SetupProps | null;
 }) {
@@ -39,6 +42,7 @@ export function DetailsPanel({
             <AutoStop at={status.expiresAt} />
           </KeyValue>
         )}
+        {cost && <KeyValue k={t("labs.detail.estimatedCost")}>{cost}</KeyValue>}
         {!binds.length && url && (
           <KeyValue k={t("labs.detail.address")}>
             <CopyValue text={url} />

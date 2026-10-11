@@ -149,6 +149,8 @@ describe("Labs", () => {
         networks: [],
         machines: [],
         attacker: null,
+        outputs: [],
+        message: null,
       }),
     });
     const user = userEvent.setup();

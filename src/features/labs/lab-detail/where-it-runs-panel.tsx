@@ -16,6 +16,7 @@ export function WhereItRunsPanel({
   emulates,
   isDocker,
   meta,
+  cost = null,
 }: {
   runtime: LabRuntimeInfo;
   hostArch: string;
@@ -23,6 +24,8 @@ export function WhereItRunsPanel({
   emulates: boolean;
   isDocker: boolean;
   meta: string;
+  /** A cloud lab's estimated cost (null: none given, or not a cloud lab). */
+  cost?: string | null;
 }) {
   const t = useT();
   return (
@@ -40,6 +43,11 @@ export function WhereItRunsPanel({
             {!available && <span className="ml-auto font-mono text-[0.6875rem] text-faint">{t("labs.detail.na")}</span>}
           </div>
         ))}
+        {runtime.runtime === "CLOUD" && (
+          <div className="border-t border-border px-4 py-2.5 text-[0.75rem] leading-relaxed text-muted-foreground">
+            {cost ? t("labs.cloud.billedEstimate", { cost }) : t("labs.cloud.billedWhileRunning")}
+          </div>
+        )}
         {!native && (
           <div className="flex items-center gap-2.5 border-t border-border px-4 py-2.5 text-[0.75rem] text-muted-foreground">
             <StatusDot tone="warn" /> {isDocker ? t("labs.detail.emulatedContainers") : emulates ? t("labs.detail.emulatedQemu") : t("labs.detail.foreignCpu")}

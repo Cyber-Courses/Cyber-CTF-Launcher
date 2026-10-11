@@ -8,7 +8,7 @@ use tauri::ipc::Channel;
 use super::lifecycle::stop;
 use super::paths::{lab_dir, validate_id};
 use super::shell::lab_shell_command;
-use super::{LabStatus, Park, Runtime, attack_vm, discover, docker, exegol, lab, server, status};
+use super::{LabStatus, Park, Runtime, attack_vm, cloud_services, discover, docker, exegol, lab, server, status};
 use crate::deploy_worker::{self, Job, Op};
 use crate::error::{Error, Result};
 
@@ -76,11 +76,21 @@ pub async fn lab_status(app: AppHandle, id: String, runtime: Runtime) -> Result<
     status::status(&app, &dir, &id, runtime).await
 }
 
+/// Before a cloud-services lab starts: its cloud, its cost estimate, what it asks for at launch
+/// and what it exposes, from its spec at the catalogue's pinned commit. None for other labs.
+#[tauri::command]
+pub async fn lab_cloud_preview(app: AppHandle, id: String, repository: String, commit: String) -> Result<Option<cloud_services::Preview>> {
+    cloud_services::preview_at(&app, &id, &repository, &commit).await
+}
+
 /// The observers a lab puts beside itself (`tools:` in its spec), at their addresses where it
 /// runs (container addresses for a container lab, wherever its Compose file runs).
 #[tauri::command]
 pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<Vec<lab::Observer>> {
     let dir = lab_dir(&app, &id)?;
+    if runtime == Runtime::Cloud {
+        return Ok(Vec::new());
+    }
     let spec = lab::instanced(&dir)?;
     Ok(lab::tools(&spec, runtime == Runtime::Docker))
 }

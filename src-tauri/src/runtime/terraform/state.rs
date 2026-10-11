@@ -15,7 +15,7 @@ pub(super) const STATE_FILE: &str = "terraform.tfstate";
 /// Where the node login for a lab reached through its Proxmox node is kept (`user@host`).
 pub const JUMP_FILE: &str = "ssh-jump";
 
-pub(super) fn now() -> u64 {
+pub fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
@@ -50,12 +50,12 @@ fn read_json(path: PathBuf) -> Option<Value> {
 }
 
 /// The local state, parsed.
-fn read_state(state: &Path) -> Option<Value> {
+pub fn read_state(state: &Path) -> Option<Value> {
     read_json(state.join(STATE_FILE))
 }
 
 /// When the lab host stops itself, from the run record (seconds since epoch).
-fn expires_at(state: &Path) -> Option<u64> {
+pub fn expires_at(state: &Path) -> Option<u64> {
     read_json(state.join(RUN_FILE))?[EXPIRES_AT].as_u64()
 }
 
@@ -70,10 +70,15 @@ pub(super) fn output(state: &Path, name: &str) -> Option<String> {
 }
 
 /// Whether any resource instance in a Terraform state is tainted (a create or provisioner failed).
-fn has_tainted(state: &Value) -> bool {
+pub fn has_tainted(state: &Value) -> bool {
     state["resources"]
         .as_array()
         .is_some_and(|rs| rs.iter().any(|r| r["instances"].as_array().is_some_and(|is| is.iter().any(|i| i["status"].as_str() == Some("tainted")))))
+}
+
+/// Whether a state holds resources (anything that may bill).
+pub fn has_resources(state: &Value) -> bool {
+    state["resources"].as_array().is_some_and(|r| !r.is_empty())
 }
 
 /// The state holds a lab host: Isoloom modules output its `ip`.
@@ -134,6 +139,8 @@ pub fn status(state: &Path) -> LabStatus {
         place: None,
         provider: None,
         attacker: None,
+        outputs: Vec::new(),
+        message: None,
     }
 }
 
@@ -149,7 +156,7 @@ pub fn expired(state: &Path) -> bool {
 /// billable resources without ever writing that output. Either counts, so a half-done cloud
 /// deploy can't keep billing silently.
 pub fn deployed(state: &Path) -> bool {
-    read_state(state).is_some_and(|j| has_instance(&j["outputs"]) || j["resources"].as_array().is_some_and(|r| !r.is_empty()))
+    read_state(state).is_some_and(|j| has_instance(&j["outputs"]) || has_resources(&j))
 }
 
 #[cfg(test)]

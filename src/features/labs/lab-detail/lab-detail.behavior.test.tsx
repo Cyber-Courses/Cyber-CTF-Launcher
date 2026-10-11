@@ -51,6 +51,8 @@ const status = (p: Partial<LabStatus> = {}): LabStatus => ({
   place: "container",
   provider: "docker",
   attacker: null,
+  outputs: [],
+  message: null,
   ...p,
 });
 const stopped = status({ running: false, machines: [], url: null, place: null, provider: null });

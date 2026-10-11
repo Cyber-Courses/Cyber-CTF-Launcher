@@ -68,6 +68,24 @@ const labs = [
     runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws"], hosted: false },
     skills: [],
   },
+  {
+    id: "lab-goat",
+    slug: "cloudgoat-ec2-ssrf",
+    title: "EC2 SSRF",
+    description: "From a low-privilege IAM user to a Lambda function, through an SSRF on EC2.",
+    question: null,
+    difficulty: 2,
+    category: "Cloud",
+    runtime: {
+      runtime: "CLOUD",
+      architectures: [],
+      providers: ["aws"],
+      hosted: false,
+      repository: "CyberCTF/cloudgoat-ec2-ssrf",
+      commit: "0123456789abcdef0123456789abcdef01234567",
+    },
+    skills: [{ id: "s5", name: "IAM" }],
+  },
 ];
 
 const invoiceStatus = {
@@ -118,7 +136,19 @@ const invoiceStatus = {
     },
   ],
 };
-const stopped = { running: false, parked: null, url: null, host: null, expiresAt: null, place: null, provider: null, networks: [], machines: [] };
+const stopped = {
+  running: false,
+  parked: null,
+  url: null,
+  host: null,
+  expiresAt: null,
+  place: null,
+  provider: null,
+  networks: [],
+  machines: [],
+  outputs: [],
+  message: null,
+};
 
 const report = {
   os: "macos",
@@ -179,6 +209,10 @@ export function answer(cmd: string, args: Record<string, unknown> | undefined): 
     }
     case "lab_status":
       return args?.id === "lab-invoice" ? invoiceStatus : stopped;
+    case "lab_cloud_preview":
+      return args?.id === "lab-goat"
+        ? { provider: "aws", hourlyUsd: 0.02, inputs: ["PLAYER_CIDR"], allowList: true, outputs: ["access_key_id", "secret_key"] }
+        : null;
     case "running_labs":
       return ["lab-invoice"];
     case "deploying_labs":

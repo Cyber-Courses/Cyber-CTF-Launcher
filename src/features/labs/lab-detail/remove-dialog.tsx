@@ -7,18 +7,21 @@ import { useT } from "@/lib/i18n";
 export function RemoveDialog({
   title,
   canShutdown,
+  cloud = false,
   onCancel,
   onConfirm,
 }: {
   title: string;
   canShutdown: boolean;
+  /** A cloud lab: its services are destroyed in the player's account. */
+  cloud?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const t = useT();
   return (
     <ConfirmDialog title={t("labs.detail.removeTitle", { title })} confirmLabel={t("labs.detail.remove")} onCancel={onCancel} onConfirm={onConfirm}>
-      {t("labs.detail.removeBody")}
+      {t(cloud ? "labs.detail.removeBodyCloud" : "labs.detail.removeBody")}
       {canShutdown && t("labs.detail.removeKeep")}
     </ConfirmDialog>
   );

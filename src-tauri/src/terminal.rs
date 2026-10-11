@@ -246,6 +246,7 @@ fn shell_window(id: &str, kind: ShellKind, runtime: Runtime) -> (String, String)
     let rt = match runtime {
         Runtime::Docker => "DOCKER",
         Runtime::Vm => "VM",
+        Runtime::Cloud => "CLOUD",
     };
     (format!("shell-{k}-{id}"), format!("shell?id={id}&kind={k}&runtime={rt}"))
 }

@@ -114,7 +114,7 @@ impl Park {
     }
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LabStatus {
     pub running: bool,
@@ -140,6 +140,22 @@ pub struct LabStatus {
     /// Where the attack box sits when the lab host runs it (server and cloud labs): the local
     /// attack box probe can't see a container on another machine.
     pub attacker: Option<AttackerAt>,
+    /// What a cloud-services lab exposes (its module's outputs, by the spec's names): its
+    /// entry points and credentials. Empty for the other labs.
+    pub outputs: Vec<Output>,
+    /// The lab's own words once it is up, placeholders filled in (cloud-services labs, whose
+    /// message names their outputs); None for the others, whose message is in the deploy log.
+    pub message: Option<String>,
+}
+
+/// One thing a cloud-services lab exposes: a module output, under the spec's name for it.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Output {
+    pub name: String,
+    pub value: String,
+    /// Terraform marks it sensitive (a secret key): the UI masks it until asked.
+    pub sensitive: bool,
 }
 
 /// The attack box's address on the lab network.

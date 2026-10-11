@@ -53,6 +53,17 @@ afterEach(() => {
 });
 
 describe("useLabActions: launch", () => {
+  it("starts a cloud lab only on the cloud account picked, without an attack box", async () => {
+    const cloudLab: Lab = { ...dockerLab, id: "act-cloud", slug: "act-cloud", runtime: { runtime: "CLOUD", architectures: [], providers: ["aws"] } };
+    const { calls, hook } = setup();
+    await act(() => hook.result.current.launch(cloudLab, null, undefined, readyReport()));
+    expect(launchArgs(calls)).toBeUndefined();
+    expect(logsOf("act-cloud").at(-1)).toMatch(/^✗ .*pick one of your cloud accounts/);
+    await act(() => hook.result.current.launch(cloudLab, "aws1", undefined, readyReport()));
+    expect(launchArgs(calls)).toEqual({ labId: "act-cloud", provider: null, host: "aws1", attackboxImage: null, defaultPorts: false });
+    expect(logsOf("act-cloud").at(-1)).toBe("✓ Lab is running");
+  });
+
   it("starts a container lab here on the ports chosen in the dialog, without an attack box image", async () => {
     const { calls, refresh, hook } = setup();
     await act(() => hook.result.current.launch(dockerLab, null, undefined, readyReport(), "default"));

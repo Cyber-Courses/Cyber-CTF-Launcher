@@ -76,7 +76,9 @@
     "startEngine": "Inicie sua engine de contêineres",
     "needsServer": "Requer um servidor para rodar",
     "needsHypervisor": "Requer {names} ou um servidor",
-    "or": "{rest} ou {last}"
+    "or": "{rest} ou {last}",
+    "needsCloudAccount": "Precisa de uma conta {clouds}",
+    "needsTerraform": "Precisa do Terraform"
   },
   "runOn": {
     "dialogLabel": "Onde o lab deve rodar?",
@@ -173,7 +175,11 @@
     "removeTitle": "Remover {title}?",
     "remove": "Remover",
     "removeBody": "As máquinas dele e sua attack box são apagadas, com tudo o que foi alterado ou salvo nelas. A próxima inicialização reconstrói o lab do zero.",
-    "removeKeep": " Para mantê-las, abra o lab e desligue-o."
+    "removeKeep": " Para mantê-las, abra o lab e desligue-o.",
+    "connect": "Conectar",
+    "connectHint": "{setup}: conecte uma",
+    "connectFailed": "Não foi possível abrir a configuração da conta de nuvem",
+    "removeBodyCloud": "Seus serviços de nuvem são destruídos na sua conta, o que encerra o custo deles. O próximo início os cria de novo do zero."
   },
   "list": {
     "unreachableTitle": "Não foi possível acessar o catálogo de labs",
@@ -244,7 +250,9 @@
     "foreignCpu": "As VMs deste lab são feitas para {archs} e esta máquina é {arch}. Instale o QEMU pela página Máquina para rodá-las emuladas (muitas vezes mais lento) ou rode o lab num servidor ou na sua conta de nuvem.",
     "noHypervisor": "Nenhum hypervisor para este lab está instalado nesta máquina (ele roda em {providers}). Instale um pela página Máquina ou rode-o num servidor.",
     "none": "nenhum",
-    "refused": "Outra operação ainda está em andamento neste lab"
+    "refused": "Outra operação ainda está em andamento neste lab",
+    "pickCloudAccount": "Este lab roda na sua conta de nuvem: escolha uma das suas contas de nuvem para iniciá-lo.",
+    "readyInCloud": "{title} está rodando na sua conta de nuvem."
   },
   "detail": {
     "yourServer": "seu servidor",
@@ -319,6 +327,28 @@
     "removeTitle": "Remover {title}?",
     "remove": "Remover",
     "removeBody": "As máquinas dele e sua attack box são apagadas, com tudo o que foi alterado ou salvo nelas. A próxima inicialização reconstrói o lab do zero.",
-    "removeKeep": " Para mantê-las, desligue o lab."
+    "removeKeep": " Para mantê-las, desligue o lab.",
+    "cloudServices": "serviços de nuvem",
+    "cloudServicesTitle": "Serviços de nuvem",
+    "cloudLeftover": "Um início anterior deixou serviços de nuvem na sua conta. Pare o lab para removê-los e inicie de novo.",
+    "cloudIdle": "Inicie o lab para criar seus serviços de nuvem na sua conta. Pare-o quando terminar: isso os remove e encerra o custo deles.",
+    "connectAccount": "Conectar uma conta {clouds}",
+    "estimatedCost": "Custo estimado",
+    "removeBodyCloud": "Seus serviços de nuvem são destruídos na sua conta, o que encerra o custo deles. O próximo início os cria de novo do zero."
+  },
+  "cloud": {
+    "hourly": "cerca de US$ {usd} por hora",
+    "untilAutoStop": "{hourly} (cerca de US$ {usd} até parar sozinho em {hours} h)",
+    "billed": "Cobrado na sua conta de nuvem.",
+    "costsUntilStop": "O lab cria seus serviços lá, e eles custam dinheiro até você pará-lo.",
+    "costsUntilAutoStop": "O lab cria seus serviços lá, e eles custam dinheiro até você pará-lo ou ele parar sozinho após {hours} h.",
+    "estimate": "Custo estimado: {cost}. É a estimativa do próprio lab; sua nuvem cobra o valor real.",
+    "noEstimate": "Este lab não informa uma estimativa de custo.",
+    "allowList": "Ele só permite o seu IP público.",
+    "show": "Mostrar {name}",
+    "hide": "Ocultar {name}",
+    "nothingExposed": "O lab está no ar na sua conta de nuvem. Ele não expõe nada para mostrar aqui.",
+    "billedEstimate": "Cobrado de você: {cost}, pela estimativa do lab.",
+    "billedWhileRunning": "Cobrado na sua conta de nuvem enquanto roda."
   }
 }
