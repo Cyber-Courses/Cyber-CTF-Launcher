@@ -8,14 +8,15 @@ import { useT } from "@/lib/i18n";
 
 /** A value with a one-click copy. Shows a check for a moment after copying. `label` is what is
  *  displayed when it should differ from the copied `text` (e.g. show `:56235`, copy the full
- *  `http://127.0.0.1:56235`). */
-export function CopyValue({ text, label, className }: { text: string; label?: string; className?: string }) {
+ *  `http://127.0.0.1:56235`). `title` replaces the "Copy <text>" tooltip (a masked secret must
+ *  not show in it). */
+export function CopyValue({ text, label, title, className }: { text: string; label?: string; title?: string; className?: string }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
   return (
     <button
       type="button"
-      title={t("ui.copy.title", { text })}
+      title={title ?? t("ui.copy.title", { text })}
       onClick={() =>
         navigator.clipboard
           ?.writeText(text)

@@ -42,6 +42,8 @@ const status = (p: Partial<LabStatus> = {}): LabStatus => ({
   place: "container",
   provider: "docker",
   attacker: null,
+  outputs: [],
+  message: null,
   ...p,
 });
 

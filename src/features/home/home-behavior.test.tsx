@@ -134,6 +134,8 @@ describe("HomeScreen", () => {
       networks: [],
       machines: [],
       attacker: null,
+      outputs: [],
+      message: null,
     };
     const calls = installTauri({
       active_operations: () => [],

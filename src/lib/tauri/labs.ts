@@ -2,7 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { invokeStreaming } from "@/lib/tauri/stream";
 import type { Provider } from "@/lib/tauri/machine";
 
-export type Runtime = "DOCKER" | "VM";
+/** How a lab runs: containers, VMs, or cloud services (a Terraform module of its own, applied
+ *  into the player's cloud account). */
+export type Runtime = "DOCKER" | "VM" | "CLOUD";
 
 /** A machine's address on one lab network (the lab's name for it, e.g. "dmz"). */
 export interface LabInterface {
@@ -66,7 +68,37 @@ export interface LabStatus {
   /** Server and cloud labs: the attack box beside the lab on its host (address and lab
    *  network); null elsewhere (the local attack box reports itself). */
   attacker: { ip: string; labNetwork: string } | null;
+  /** What a cloud lab exposes once up (its module's outputs): entry points, credentials. Empty
+   *  for the other labs. */
+  outputs: LabOutput[];
+  /** A cloud lab's own words once up, its outputs filled in; null for the other labs. */
+  message: string | null;
 }
+
+/** One thing a cloud lab exposes: a module output under the lab's name for it. */
+export interface LabOutput {
+  name: string;
+  value: string;
+  /** A secret (Terraform marks it sensitive): masked until the player asks. */
+  sensitive: boolean;
+}
+
+/** A cloud lab before it starts, from its spec at the catalogue's commit. */
+export interface CloudPreview {
+  /** "aws", "azure" or "gcp". */
+  provider: string;
+  /** The lab's own estimate, in US dollars per hour; null when it gives none. */
+  hourlyUsd: number | null;
+  /** The launch-time inputs it takes (PLAYER_CIDR...). */
+  inputs: string[];
+  /** It lets in this machine's public IP only. */
+  allowList: boolean;
+  /** The names of what it exposes once up. */
+  outputs: string[];
+}
+
+/** A cloud lab's cost and inputs before it starts; null for other labs. */
+export const labCloudPreview = (id: string, repository: string, commit: string) => invoke<CloudPreview | null>("lab_cloud_preview", { id, repository, commit });
 
 export const labStop = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeStreaming("lab_stop", { id, runtime }, onLog);
 

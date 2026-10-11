@@ -7,14 +7,21 @@ import { PortChoice } from "@/features/labs/port-mode-prompt";
 import { RunOnDialog, RunOnPicker, type RunTarget } from "@/features/labs/run-on";
 import type { RunTargetChoice } from "@/features/labs/lab-detail/use-run-target";
 import type { Lab } from "@/features/labs/use-labs";
+import { CloudLaunchNote } from "@/features/labs/cloud-panel";
+import { cloudNames } from "@/features/labs/lab-runtime";
+import { joinOr } from "@/features/labs/lab-readiness";
+import { serverOpenSetup, type CloudPreview } from "@/lib/tauri";
+import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
 /** Start lab: with somewhere else to run it (servers, a VM here, hosted), asks where first in
- *  "Where should it run?"; otherwise starts here right away. */
+ *  "Where should it run?"; otherwise starts here right away. A cloud lab always asks (which
+ *  account, and what it costs), and with no account of its cloud offers to connect one. */
 export function StartLabButton({
   lab,
   run,
   isDocker,
+  cloud = null,
   loggedIn,
   hostedLive,
   busy,
@@ -24,6 +31,8 @@ export function StartLabButton({
   lab: Lab;
   run: RunTargetChoice;
   isDocker: boolean;
+  /** A cloud lab: its cost and inputs (`preview`, once read). Null for the other labs. */
+  cloud?: { preview: CloudPreview | null } | null;
   loggedIn: boolean;
   /** A hosted session of this lab is up: one run at a time. */
   hostedLive: boolean;
@@ -34,6 +43,7 @@ export function StartLabButton({
   const t = useT();
   const [choosing, setChoosing] = useState(false);
   const rt = lab.runtime;
+  if (cloud && run.cloudAccounts.length === 0) return <ConnectCloudButton providers={rt?.providers ?? []} />;
   return (
     <div className="relative">
       <Button
@@ -56,6 +66,7 @@ export function StartLabButton({
               <Button
                 variant="primary"
                 size="sm"
+                disabled={!!cloud && !run.pickedAccount}
                 onClick={() => {
                   setChoosing(false);
                   onStart(run.chosen());
@@ -77,6 +88,7 @@ export function StartLabButton({
             value={run.runOn}
             onChange={run.setRunOn}
             disabled={busy}
+            offerLocal={!cloud}
             localExtra={
               run.runOn.kind === "local" &&
               isDocker && (
@@ -87,8 +99,23 @@ export function StartLabButton({
               )
             }
           />
+          {cloud && (
+            <div className="mt-4">
+              <CloudLaunchNote preview={cloud.preview} autoStopHours={run.pickedAccount?.autoStopHours ?? null} />
+            </div>
+          )}
         </RunOnDialog>
       )}
     </div>
+  );
+}
+
+/** A cloud lab with no account of its cloud: connecting one is the next step. */
+function ConnectCloudButton({ providers }: { providers: readonly string[] }) {
+  const t = useT();
+  return (
+    <Button variant="primary" onClick={() => void serverOpenSetup(null, "cloud").catch(tell(t("labs.row.connectFailed")))}>
+      <Play className="size-3.5" /> {t("labs.detail.connectAccount", { clouds: joinOr(cloudNames(providers)) })}
+    </Button>
   );
 }

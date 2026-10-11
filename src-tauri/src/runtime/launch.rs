@@ -10,7 +10,7 @@ use super::inflight::{Action, DeployGuard, lock_lab};
 use super::lifecycle::resume_locked;
 use super::paths::{deployment_states, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, state_dir, vagrant_dirs};
 use super::providers::Provider;
-use super::{Runtime, attack_box, attack_vm, docker, exegol, lab, registry, server, ssh, terraform, vm};
+use super::{Runtime, attack_box, attack_vm, cloud_services, docker, exegol, lab, registry, server, ssh, terraform, vm};
 use crate::error::{Error, Result};
 
 /// Starts an installed lab; `env` is passed to the runtime (evidence claim, attack box).
@@ -19,6 +19,7 @@ use crate::error::{Error, Result};
 ///   local `provider` (Isoloom's docker-vm); VM labs run one VM per machine (Isoloom's vagrant).
 /// - With a server `host`: the lab runs there. ESXi runs the same Vagrantfiles; Proxmox and
 ///   the clouds run Isoloom's Terraform (Docker on one VM, or one VM per machine on Proxmox).
+/// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
 #[allow(clippy::too_many_arguments)]
 pub async fn start(
     app: &AppHandle,
@@ -40,6 +41,9 @@ pub async fn start(
     {
         let name = server::host_name(app, &other).unwrap_or(other);
         return Err(Error::Invalid(format!("This lab is still running on {name}. Stop it there before starting it somewhere else.")));
+    }
+    if runtime == Runtime::Cloud {
+        return cloud_services::start(app, dir, id, host, env, &mut log).await;
     }
     match host {
         None => start_here(app, dir, id, runtime, provider, env, &mut log).await,
@@ -147,6 +151,9 @@ pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String
     Ok(())
 }
 
+/// Cloud-services labs have nothing to run here.
+pub(super) const CLOUD_NEEDS_ACCOUNT: &str = "This lab runs in your cloud account: pick one of your cloud accounts to start it on.";
+
 /// How a lab runs on this machine.
 #[derive(Debug, PartialEq)]
 enum LocalRun {
@@ -173,6 +180,7 @@ fn local_run(runtime: Runtime, provider: Option<Provider>) -> Result<LocalRun> {
             }
             Ok(LocalRun::Vm(provider))
         }
+        Runtime::Cloud => Err(Error::Invalid(CLOUD_NEEDS_ACCOUNT.into())),
     }
 }
 
@@ -300,7 +308,7 @@ fn terraform_vars(
 
 /// Stops before spending if this AWS account is over its monthly budget, or if a budget is set
 /// and the spend is over it; if the spend can't be read, warns and lets the launch go on.
-async fn check_aws_budget(app: &AppHandle, host: &str, log: &mut impl FnMut(String)) -> Result<()> {
+pub(super) async fn check_aws_budget(app: &AppHandle, host: &str, log: &mut impl FnMut(String)) -> Result<()> {
     budget_verdict(server::check_budget(app, host).await, log)
 }
 
@@ -460,7 +468,7 @@ async fn start_local_vm(dir: &Path, provider: Provider, env: &[(String, String)]
 }
 
 /// This machine's public IPv4, for cloud firewall rules.
-async fn public_ip() -> Result<String> {
+pub(super) async fn public_ip() -> Result<String> {
     // Several resolvers, tried in turn: this is a hard dependency of every cloud launch (the
     // firewall is locked to this machine's IP), so one endpoint being down or blocked must not
     // fail the launch. Each has its own short timeout so a hanging endpoint doesn't stall it.
@@ -502,8 +510,8 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        LocalRun, Provider, Runtime, budget_verdict, check_qemu, emulated_arches, local_run, log_lines, low_memory_warning, parse_ipv4, start_on_docker,
-        terraform_vars,
+        CLOUD_NEEDS_ACCOUNT, LocalRun, Provider, Runtime, budget_verdict, check_qemu, emulated_arches, local_run, log_lines, low_memory_warning, parse_ipv4,
+        start_on_docker, terraform_vars,
     };
     use super::{server, warn_if_low_memory, welcome};
     use crate::exec::fake::{Tools, fail, ok};
@@ -724,6 +732,7 @@ mod tests {
         assert_eq!(local_run(Runtime::Vm, Some(Provider::Qemu)).unwrap(), LocalRun::Vm(Provider::Qemu));
         assert_eq!(local_run(Runtime::Vm, None).unwrap_err().to_string(), "VM labs need a provider");
         assert_eq!(local_run(Runtime::Vm, Some(Provider::VmwareEsxi)).unwrap_err().to_string(), "pick a server host to run on ESXi or Proxmox");
+        assert_eq!(local_run(Runtime::Cloud, None).unwrap_err().to_string(), CLOUD_NEEDS_ACCOUNT);
     }
 
     #[test]

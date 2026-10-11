@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { hostSupports, localProviders } from "@/features/labs/lab-runtime";
+import { cloudAccountsFor, hostSupports, isCloudLab, localProviders } from "@/features/labs/lab-runtime";
 import type { RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { getPortMode, type PortMode } from "@/lib/settings";
@@ -10,10 +10,12 @@ import { serverList, type Provider, type ServerHost } from "@/lib/tauri";
 /**
  * Where a lab starts, picked in "Where should it run?": this machine or one of the player's
  * server hosts (Docker labs through their deploy/ layer), a VM here for a container lab, or
- * hosted by Cyber CTF. VM labs default to the default host; Docker labs to here.
+ * hosted by Cyber CTF. VM labs default to the default host; Docker labs to here; a cloud lab
+ * to the first of the player's accounts on a cloud it runs on (never a default host: a server).
  */
 export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], hostArch: string) {
-  const isDocker = rt?.runtime !== "VM";
+  const isCloud = isCloudLab(rt);
+  const isDocker = rt?.runtime !== "VM" && !isCloud;
   const [hosts, setHosts] = useState<ServerHost[]>([]);
   const [runOn, setRunOn] = useState<RunTarget>({ kind: "local" });
   // A container lab here: its host ports (Settings' choice first).
@@ -29,12 +31,11 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
     serverList()
       .then((l) => {
         setHosts(l.hosts);
-        const def = l.hosts.find((h) => h.id === l.default);
-        const preferHost = !localReady && def && hostOk(def);
-        setRunOn(preferHost ? { kind: "host", id: def.id } : { kind: "local" });
+        setRunOn(initialTarget(rt, l.hosts, l.default, localReady));
       })
       .catch(() => setHosts([]));
-  }, [hostOk, localReady]);
+  }, [rt, localReady]);
+  const cloudAccounts = cloudAccountsFor(rt, hosts);
 
   return {
     hosts,
@@ -44,11 +45,26 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
     ports,
     setPorts,
     localVm,
-    /** With servers saved (or a VM here, or hosted), Start asks where to run first. */
-    hasChoice: hosts.length > 0 || localVm !== null || !!rt?.hosted,
+    /** A cloud lab: the player's accounts it can run on, and the one picked. */
+    cloudAccounts,
+    pickedAccount: runOn.kind === "host" ? cloudAccounts.find((h) => h.id === runOn.id) : undefined,
+    /** With servers saved (or a VM here, or hosted), Start asks where to run first; a cloud lab
+     *  always asks (which account, and what it costs there). */
+    hasChoice: isCloud || hosts.length > 0 || localVm !== null || !!rt?.hosted,
     /** The target picked, with the host ports for a container lab here. */
     chosen: (): RunTarget => (runOn.kind === "local" && isDocker ? { kind: "local", ports } : runOn),
   };
+}
+
+/** Where Start points at first: a cloud lab's first account; the default host when this machine
+ *  can't run the lab (`localReady`) and the host can; else here. */
+export function initialTarget(rt: LabRuntimeInfo | null, hosts: ServerHost[], defaultId: string | null, localReady: boolean): RunTarget {
+  if (isCloudLab(rt)) {
+    const account = cloudAccountsFor(rt, hosts)[0];
+    return account ? { kind: "host", id: account.id } : { kind: "local" };
+  }
+  const def = hosts.find((h) => h.id === defaultId);
+  return !localReady && def && hostSupports(rt, def) ? { kind: "host", id: def.id } : { kind: "local" };
 }
 
 export type RunTargetChoice = ReturnType<typeof useRunTarget>;

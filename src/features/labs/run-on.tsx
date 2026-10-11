@@ -121,6 +121,7 @@ export function RunOnPicker({
   onChange,
   disabled,
   localExtra,
+  offerLocal = true,
 }: {
   title: string;
   hosts: ServerHost[];
@@ -137,6 +138,8 @@ export function RunOnPicker({
   disabled: boolean;
   /** Shown right under the "This machine" group (e.g. the host-port choice). */
   localExtra?: React.ReactNode;
+  /** This machine is a place it can run (false for a cloud lab: cloud accounts only). */
+  offerLocal?: boolean;
 }) {
   const t = useT();
   const checks = useHostChecks(hosts);
@@ -180,7 +183,7 @@ export function RunOnPicker({
     });
   }
   const groups: { id: string; label: string; options: Option[] }[] = [
-    { id: "local", label: t("labs.runOn.thisMachine"), options: local },
+    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? local : [] },
     {
       id: "hosted",
       label: "Cyber CTF",

@@ -57,20 +57,24 @@ export function deriveLabState(i: LabStateInput) {
   // Only machines that actually exist count as leftovers: a VM lab's status lists every declared
   // machine, including ones Vagrant reports as `not_created`, and those are nothing to clean up
   // (counting them showed "Stop & clean up" on a lab that was never started).
-  const interrupted = !deploying && !running && !parked && machines.some((m) => m.state !== "not_created");
+  // Cloud services: no machines to count, but the account still recorded (a start that failed or
+  // was cut off) means services may be left behind there, billing.
+  const isCloud = rt?.runtime === "CLOUD";
+  const leftovers = isCloud ? !!status?.provider : machines.some((m) => m.state !== "not_created");
+  const interrupted = !deploying && !running && !parked && leftovers;
   // Machines that went down while the lab runs. Not while it's starting or stopping: machines
   // come up one after another then (a web server waits for its database), and that's normal.
   // The controller is powered off by design once the lab is built: never "down".
   const down = deploying ? [] : machines.filter((m) => !m.infra && m.state !== "running");
-  const isDocker = rt?.runtime !== "VM";
+  const isDocker = rt?.runtime !== "VM" && !isCloud;
   const remote = !!status?.host;
   // A container lab in a VM can only be paused (its containers don't restart on their own after a
   // power-off); a container lab here only shut down (its containers stop; there's no state to
   // save). A VM lab gets both. Nothing on a server host yet.
   const canPause = i.parkable && !remote && (!isDocker || status?.place === "local_vm");
-  const canShutdown = i.parkable && !remote && status?.place !== "local_vm";
+  const canShutdown = i.parkable && !remote && !isCloud && status?.place !== "local_vm";
   // Provisioning runs again in place on VM labs driven by Vagrant (here, or an ESXi host).
-  const canProvision = i.provisionable && !isDocker && status?.place !== "cloud" && status?.provider !== "proxmox";
+  const canProvision = i.provisionable && !isDocker && !isCloud && status?.place !== "cloud" && status?.provider !== "proxmox";
   // Where it actually runs: "on this machine" alone is misleading for a VM lab (which hypervisor
   // do I open?), so name the engine or hypervisor the status reports.
   const engine = status?.provider ? (status.provider === "docker" ? "Docker" : (PROVIDER_LABELS[status.provider] ?? status.provider)) : null;
@@ -102,6 +106,7 @@ export function deriveLabState(i: LabStateInput) {
     interrupted,
     down,
     isDocker,
+    isCloud,
     remote,
     canPause,
     canShutdown,
@@ -170,6 +175,14 @@ export function networkView(
   if (s.parked) return s.parked === "pause" ? "pausedNote" : "shutDownNote";
   if (s.running && s.remote) return "readingRemote";
   return "startToSee";
+}
+
+/** A cloud lab's main panel, in place of the network: its services once up, nothing while it
+ *  deploys, else a note (`labs.detail.<note>`): services left behind, or what a start does. */
+export function cloudView(s: LabState, { busy }: { busy: boolean }): "services" | "none" | "cloudLeftover" | "cloudIdle" {
+  if (s.running && !busy) return "services";
+  if (busy || s.starting) return "none";
+  return s.interrupted ? "cloudLeftover" : "cloudIdle";
 }
 
 /** Where the deployment panel goes: worth showing while a run is in progress, once the lab is

@@ -240,6 +240,8 @@ pub fn vagrant_dir(dir: &Path, runtime: Runtime) -> PathBuf {
     match runtime {
         Runtime::Docker => out(dir).join("docker-vm"),
         Runtime::Vm => out(dir).join("vagrant"),
+        // No Vagrant: its generated files (Terraform variables and scripts).
+        Runtime::Cloud => out(dir).join("cloud-services"),
     }
 }
 
@@ -248,6 +250,7 @@ pub fn vagrant_target(runtime: Runtime) -> Target {
     match runtime {
         Runtime::Docker => Target::DockerVm,
         Runtime::Vm => Target::Vagrant,
+        Runtime::Cloud => Target::CloudServices,
     }
 }
 
@@ -262,6 +265,8 @@ pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> Result<(PathBuf, Tar
         // Isoloom generates a cloud-vm module per cloud it can model the lab on; a cloud a lab
         // doesn't support has no module, and the run surfaces that when the directory is missing.
         (Runtime::Vm, cloud) => (out.join("cloud-vm").join(cloud), Target::CloudVm),
+        // Isoloom's variables for the lab's own module (see `cloud_services`).
+        (Runtime::Cloud, _) => (out.join("cloud-services"), Target::CloudServices),
     })
 }
 

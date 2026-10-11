@@ -69,16 +69,24 @@ pub(super) fn vagrant_dirs(dir: &Path) -> impl Iterator<Item = PathBuf> {
     [Runtime::Docker, Runtime::Vm].into_iter().map(|rt| super::lab::vagrant_dir(dir, rt)).filter(|v| v.join("Vagrantfile").exists())
 }
 
-/// Next to a lab's Terraform state: which runtime started it (`DOCKER` or `VM`), for the
-/// auto-stop reaper.
+/// Next to a lab's Terraform state: which runtime started it (`DOCKER`, `VM` or `CLOUD`), for
+/// the auto-stop reaper.
 const RUNTIME_FILE: &str = "runtime";
 
 fn runtime_tag(runtime: Runtime) -> &'static str {
-    if runtime == Runtime::Vm { "VM" } else { "DOCKER" }
+    match runtime {
+        Runtime::Docker => "DOCKER",
+        Runtime::Vm => "VM",
+        Runtime::Cloud => "CLOUD",
+    }
 }
 
 fn runtime_from_tag(tag: &str) -> Runtime {
-    if tag.trim() == "VM" { Runtime::Vm } else { Runtime::Docker }
+    match tag.trim() {
+        "VM" => Runtime::Vm,
+        "CLOUD" => Runtime::Cloud,
+        _ => Runtime::Docker,
+    }
 }
 
 pub(super) fn record_runtime(state: &Path, runtime: Runtime) -> Result<()> {
@@ -195,6 +203,9 @@ mod tests {
         assert_eq!(recorded_runtime(&dir), Runtime::Docker);
         std::fs::write(dir.join("runtime"), "VM\n").unwrap();
         assert_eq!(recorded_runtime(&dir), Runtime::Vm);
+        record_runtime(&dir, Runtime::Cloud).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("runtime")).unwrap(), "CLOUD");
+        assert_eq!(recorded_runtime(&dir), Runtime::Cloud);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

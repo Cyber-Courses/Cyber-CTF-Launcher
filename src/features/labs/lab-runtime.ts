@@ -41,6 +41,8 @@ export function readyHypervisors(
  *  a VM lab built for another CPU, which only an emulator can run (whatever the lab lists: its
  *  list names the hypervisors of its own CPU). */
 export function localProviders(rt: LabRuntimeInfo, hostArch?: string): Provider[] {
+  // Cloud services run in the player's cloud account only.
+  if (rt.runtime === "CLOUD") return [];
   if (rt.runtime === "VM" && hostArch && !runsNatively(rt, hostArch)) return [...EMULATORS];
   return rt.providers.filter((p: string) => isLocal(p));
 }
@@ -66,6 +68,7 @@ type PlaceKey = NonNullable<LabStatus["place"]> | "hosted";
  *  emulated, so "VM on this machine" needs `emulates` (QEMU ready); containers run emulated
  *  anyway. */
 export function runPlaces(rt: LabRuntimeInfo, hostArch?: string, emulates = false): { key: PlaceKey; icon: LucideIcon; available: boolean }[] {
+  if (rt.runtime === "CLOUD") return cloudPlaces();
   const local = rt.providers.some((p: string) => isLocal(p));
   const vm = rt.runtime === "VM";
   return [
@@ -76,3 +79,29 @@ export function runPlaces(rt: LabRuntimeInfo, hostArch?: string, emulates = fals
     { key: "hosted", icon: Globe, available: rt.hosted ?? false },
   ];
 }
+
+/** Cloud services: the player's cloud account, nowhere else. */
+function cloudPlaces(): { key: PlaceKey; icon: LucideIcon; available: boolean }[] {
+  return [
+    { key: "container", icon: Container, available: false },
+    { key: "local_vm", icon: Monitor, available: false },
+    { key: "server", icon: Server, available: false },
+    { key: "cloud", icon: Cloud, available: true },
+    { key: "hosted", icon: Globe, available: false },
+  ];
+}
+
+/** Whether the lab is cloud services (created in the player's cloud account, no machines). */
+export const isCloudLab = (rt: LabRuntimeInfo | null | undefined) => rt?.runtime === "CLOUD";
+
+/** The runtime column's word: what the lab is made of. */
+export const runtimeLabel = (rt: LabRuntimeInfo) => (rt.runtime === "VM" ? "vm" : rt.runtime === "CLOUD" ? "cloud" : "docker");
+
+const CLOUD_NAMES: Record<string, string> = { aws: "AWS", azure: "Azure", gcp: "Google Cloud" };
+
+/** The names of the clouds a cloud lab runs on ("AWS", "Google Cloud"), in its order. */
+export const cloudNames = (providers: readonly string[]): string[] => providers.filter((p) => CLOUD_NAMES[p]).map((p) => CLOUD_NAMES[p]);
+
+/** The player's accounts a cloud lab can run on: of a cloud it lists. */
+export const cloudAccountsFor = (rt: LabRuntimeInfo | null | undefined, hosts: ServerHost[]) =>
+  isCloudLab(rt) ? hosts.filter((h) => CLOUDS.has(h.provider) && hostSupports(rt!, h)) : [];

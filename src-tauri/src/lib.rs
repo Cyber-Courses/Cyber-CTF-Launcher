@@ -121,6 +121,7 @@ pub fn run() {
             runtime::lab_resume,
             runtime::lab_provision,
             runtime::lab_status,
+            runtime::lab_cloud_preview,
             runtime::running_labs,
             runtime::lab_check,
             runtime::lab_tools,

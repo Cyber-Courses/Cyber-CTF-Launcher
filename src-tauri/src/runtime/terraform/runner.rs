@@ -49,7 +49,7 @@ fn lab_root(module: &Path) -> &Path {
 }
 
 /// `env` plus what every run sets: the plugin cache beside the state, and automation mode.
-fn run_env(env: &[(String, String)], state: &Path) -> Vec<(String, String)> {
+pub(super) fn run_env(env: &[(String, String)], state: &Path) -> Vec<(String, String)> {
     let mut full = env.to_vec();
     full.push(("TF_DATA_DIR".to_string(), state.join(".terraform").display().to_string()));
     full.push(("TF_IN_AUTOMATION".to_string(), "1".to_string()));
@@ -120,7 +120,7 @@ fn is_download_failure(message: &str) -> bool {
 }
 
 /// A failed `init`, said plainly when it couldn't download the provider plugins.
-fn init_failure(e: Error) -> Error {
+pub(super) fn init_failure(e: Error) -> Error {
     if is_download_failure(&e.to_string()) {
         Error::Invalid("Couldn't download the Terraform provider plugins (the first run needs internet). Check your connection and try again.".into())
     } else {

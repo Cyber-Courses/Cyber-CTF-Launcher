@@ -379,6 +379,8 @@ describe("LabRow", () => {
       place: "container",
       provider: "docker",
       attacker: null,
+      outputs: [],
+      message: null,
       ...p,
     }) as LabStatus;
 
@@ -416,6 +418,27 @@ describe("LabRow", () => {
     expect(screen.queryByRole("button", { name: /^Open$/ })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Stop" }));
     expect(screen.queryByText(/To keep them/)).toBeNull();
+  });
+
+  it("offers to connect a cloud account a cloud lab lacks", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    const cloudLab: Lab = { ...lab, id: "lab-goat", title: "EC2 SSRF", runtime: { runtime: "CLOUD", architectures: [], providers: ["aws"] } };
+    const h = renderRow({ lab: cloudLab, setup: "Needs an account on AWS", connectCloud: true });
+    expect(screen.getByText("cloud")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: /Connect/ }));
+    await flush();
+    expect(calls.some((c) => c.cmd === "server_open_setup" && c.args?.kind === "cloud")).toBe(true);
+    expect(h.onOpen).not.toHaveBeenCalled();
+  });
+
+  it("says stopping a cloud lab destroys its services in the account", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    const cloudLab: Lab = { ...lab, id: "lab-goat", title: "EC2 SSRF", runtime: { runtime: "CLOUD", architectures: [], providers: ["aws"] } };
+    renderRow({ lab: cloudLab, status: running({ host: "AWS sandbox", url: null, place: "cloud", provider: "aws" }) });
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(screen.getByText(/Its cloud services are destroyed in your account/)).toBeTruthy();
   });
 
   it("says what is happening while busy and disables Stop", () => {

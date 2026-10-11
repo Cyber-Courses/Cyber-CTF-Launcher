@@ -38,6 +38,8 @@ const status = (p: Partial<LabStatus>): LabStatus => ({
   place: null,
   provider: null,
   attacker: null,
+  outputs: [],
+  message: null,
   ...p,
 });
 const derive = (p: Partial<LabStateInput>) =>

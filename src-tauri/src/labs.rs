@@ -32,7 +32,7 @@ struct EnvVar {
 
 /// Only CyberCTF repositories at a full commit SHA are downloaded; the API
 /// enforces the same rule when labs are published.
-fn validate_source(repository: &str, commit: &str) -> Result<()> {
+pub(crate) fn validate_source(repository: &str, commit: &str) -> Result<()> {
     let repo_ok = repository.strip_prefix("CyberCTF/").is_some_and(|name| {
         !name.is_empty() && name.len() <= 100 && !name.contains("..") && name.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
     });

@@ -33,7 +33,7 @@ pub use commands::*;
 pub use contract::{
     Connection, connection, default_host, host_name, host_provider, lab_connection, launch_targets, mark_lab, marked_host, proxmox_jump, proxmox_jump_for_host,
 };
-pub use profile::{HostProfile, terraform_target};
+pub use profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile, terraform_target};
 pub use setup_window::*;
 
 /// Written into a VM lab's directory when it runs on a server host, so stop/status

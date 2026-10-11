@@ -15,7 +15,8 @@ import { DetailsPanel } from "@/features/labs/lab-detail/details-panel";
 import { HeaderActions } from "@/features/labs/lab-detail/header-actions";
 import { HeaderLead } from "@/features/labs/lab-detail/header-lead";
 import { deployDestination, runtimeWord } from "@/features/labs/lab-detail/labels";
-import { deployPlacement, headerMode, networkView, restartTarget } from "@/features/labs/lab-detail/lab-state";
+import { cloudView, deployPlacement, headerMode, networkView, restartTarget } from "@/features/labs/lab-detail/lab-state";
+import { CloudNotePanel, CloudPanel, costEstimate, useCloudPreview } from "@/features/labs/cloud-panel";
 import { NetworkPanel } from "@/features/labs/lab-detail/network-panel";
 import { BackLink, ObjectivePanel } from "@/features/labs/lab-detail/page-parts";
 import { ObserversPanel } from "@/features/labs/lab-detail/observers-panel";
@@ -98,6 +99,7 @@ export function LabDetail({
     times,
   });
   const run = useRunTarget(rt, readyVms, hostArch);
+  const preview = useCloudPreview(lab.id, rt);
   const hosted = useHostedRun(lab.id);
   const [resetting, setResetting] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
@@ -109,15 +111,16 @@ export function LabDetail({
   // back on its own, and a second `vagrant up` in its folder at the same time would collide.
   // A failed deploy can leave the VMs up (a provisioning step broke): the lab then reads as
   // running, but its attack box must not start beside a lab that isn't ready.
+  // A cloud lab has none: the player works from their own machine.
   const box = useAttackBox(lab.id, {
-    running: s.running,
+    running: s.running && !s.isCloud,
     holding: s.deploying,
-    local: !s.remote,
+    local: !s.remote && !s.isCloud,
     kind: s.isDocker ? "container" : "vm",
     failed: s.deployFailed,
   });
   const [check, clearCheck] = useLabCheck(lab.id, { running: s.running, downCount: s.down.length, enabled: s.isDocker });
-  const tools = useLabTools(lab.id, s.running, s.isDocker);
+  const tools = useLabTools(lab.id, s.running && !s.isCloud, s.isDocker);
 
   // Reset = stop and start again where it ran: a clean lab.
   async function reset() {
@@ -140,10 +143,13 @@ export function LabDetail({
 
   if (!ready) return <LabDetailSkeleton />;
 
-  const meta = runtimeWord(t, s.isDocker);
+  const meta = runtimeWord(t, s);
   const mode = headerMode(s, { loggedIn, canLogin: !!onLogin, canResume: !!onResume });
   const placement = deployPlacement(s, { busy, failed: s.deployFailed });
-  const network = networkView(s, { busy, acting, hasMachines: !!status && status.machines.length > 0 });
+  const network = s.isCloud ? "none" : networkView(s, { busy, acting, hasMachines: !!status && status.machines.length > 0 });
+  const services = s.isCloud ? cloudView(s, { busy }) : "none";
+  // The lab's own hourly estimate, for the aside.
+  const cost = s.isCloud ? costEstimate(t, preview?.hourlyUsd) : null;
   const deploy = (
     <DeploymentPanel
       lines={s.shownLogs}
@@ -172,6 +178,7 @@ export function LabDetail({
               lab={lab}
               run={run}
               isDocker={s.isDocker}
+              cloud={s.isCloud ? { preview } : null}
               loggedIn={loggedIn}
               hostedLive={hosted.live}
               busy={busy}
@@ -217,6 +224,8 @@ export function LabDetail({
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_19rem]">
         <div className="min-w-0 space-y-5">
           {placement === "top" && deploy}
+          {services === "services" && <CloudPanel message={status?.message ?? null} outputs={status?.outputs ?? []} where={status?.host ?? meta} />}
+          {(services === "cloudLeftover" || services === "cloudIdle") && <CloudNotePanel note={services} meta={meta} />}
           {network !== "none" && <NetworkPanel view={network} status={status} remote={s.remote} box={box.status} meta={rt ? meta : undefined} />}
           {s.running && !busy && tools.length > 0 && <ObserversPanel tools={tools} />}
           {placement === "bottom" && deploy}
@@ -227,7 +236,7 @@ export function LabDetail({
           {lab.question && <ObjectivePanel question={lab.question} />}
 
           {/* VM labs on a server host have no attacker yet (their networks live on that host). */}
-          {(s.isDocker || !s.remote) && (
+          {!s.isCloud && (s.isDocker || !s.remote) && (
             <AttackBoxPanel
               box={box}
               running={s.running && !s.deploying}
@@ -238,13 +247,16 @@ export function LabDetail({
             />
           )}
 
-          {!s.running && rt && <WhereItRunsPanel runtime={rt} hostArch={hostArch} native={s.native} emulates={s.emulates} isDocker={s.isDocker} meta={meta} />}
+          {!s.running && rt && (
+            <WhereItRunsPanel runtime={rt} hostArch={hostArch} native={s.native} emulates={s.emulates} isDocker={s.isDocker} meta={meta} cost={cost} />
+          )}
 
           {s.running && (
             <DetailsPanel
               status={status}
               engine={s.engine}
               meta={meta}
+              cost={cost}
               provision={
                 s.canProvision
                   ? {
@@ -265,6 +277,7 @@ export function LabDetail({
         <RemoveDialog
           title={lab.title}
           canShutdown={s.canShutdown}
+          cloud={s.isCloud}
           onCancel={() => setConfirmingRemove(false)}
           onConfirm={() => {
             setConfirmingRemove(false);

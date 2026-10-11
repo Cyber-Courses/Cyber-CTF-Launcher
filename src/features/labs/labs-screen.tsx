@@ -14,7 +14,7 @@ import { filterLabs, NO_FILTERS, type LabFilters } from "@/features/labs/lab-fil
 import { LabsFilterBar } from "@/features/labs/labs-filter-bar";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { useLabActions } from "@/features/labs/use-lab-actions";
-import { setupNeeded } from "@/features/labs/lab-readiness";
+import { needsCloudAccount, setupNeeded } from "@/features/labs/lab-readiness";
 import { useDeployingLabs } from "@/lib/deploy-store";
 import { serverList, type ServerHost, type SystemReport } from "@/lib/tauri";
 import { getVmProvider } from "@/lib/settings";
@@ -170,6 +170,7 @@ export function Labs({
       solved={completed.has(lab.id)}
       deploying={deploying.has(lab.id)}
       setup={isRunning(lab) ? null : setupNeeded(lab, report ?? null, servers)}
+      connectCloud={needsCloudAccount(lab, servers)}
       onOpen={() => setDetailSlug(lab.slug)}
       onStop={() => stop(lab)}
       onResume={() => resume(lab)}

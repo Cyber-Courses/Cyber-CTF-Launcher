@@ -76,7 +76,9 @@
     "startEngine": "Inicia tu motor de contenedores",
     "needsServer": "Necesita un servidor donde ejecutarse",
     "needsHypervisor": "Necesita {names} o un servidor",
-    "or": "{rest} o {last}"
+    "or": "{rest} o {last}",
+    "needsCloudAccount": "Necesita una cuenta de {clouds}",
+    "needsTerraform": "Necesita Terraform"
   },
   "runOn": {
     "dialogLabel": "¿Dónde debe ejecutarse el lab?",
@@ -173,7 +175,11 @@
     "removeTitle": "¿Eliminar {title}?",
     "remove": "Eliminar",
     "removeBody": "Se borran sus máquinas y tu máquina de ataque, con todo lo modificado o guardado en ellas. El próximo inicio reconstruye el lab desde cero.",
-    "removeKeep": " Para conservarlas, abre el lab y apágalo."
+    "removeKeep": " Para conservarlas, abre el lab y apágalo.",
+    "connect": "Conectar",
+    "connectHint": "{setup}: conecta una",
+    "connectFailed": "No se pudo abrir la configuración de la cuenta en la nube",
+    "removeBodyCloud": "Sus servicios en la nube se destruyen en tu cuenta, lo que pone fin a su coste. El próximo inicio los vuelve a crear desde cero."
   },
   "list": {
     "unreachableTitle": "No se puede acceder al catálogo de labs",
@@ -244,7 +250,9 @@
     "foreignCpu": "Las VM de este lab están creadas para {archs} y esta máquina es {arch}. Instala QEMU desde la página Máquina para ejecutarlas emuladas (mucho más lento), o ejecuta el lab en un servidor o en tu cuenta en la nube.",
     "noHypervisor": "No hay ningún hipervisor para este lab instalado en esta máquina (se ejecuta en {providers}). Instala uno desde la página Máquina o ejecútalo en un servidor.",
     "none": "ninguno",
-    "refused": "Otra operación sigue en curso en este lab"
+    "refused": "Otra operación sigue en curso en este lab",
+    "pickCloudAccount": "Este lab se ejecuta en tu cuenta en la nube: elige una de tus cuentas en la nube para iniciarlo.",
+    "readyInCloud": "{title} se está ejecutando en tu cuenta en la nube."
   },
   "detail": {
     "yourServer": "tu servidor",
@@ -319,6 +327,29 @@
     "removeTitle": "¿Eliminar {title}?",
     "remove": "Eliminar",
     "removeBody": "Se borran sus máquinas y tu máquina de ataque, con todo lo modificado o guardado en ellas. El próximo inicio reconstruye el lab desde cero.",
-    "removeKeep": " Para conservarlas, apaga el lab en su lugar."
+    "removeKeep": " Para conservarlas, apaga el lab en su lugar.",
+    "cloudServices": "servicios en la nube",
+    "cloudServicesTitle": "Servicios en la nube",
+    "cloudLeftover": "Un inicio anterior dejó servicios en la nube en tu cuenta. Detén el lab para eliminarlos y vuelve a iniciarlo.",
+    "cloudIdle": "Inicia el lab para crear sus servicios en la nube en tu cuenta. Detenlo cuando termines: eso los elimina y pone fin a su coste.",
+    "connectAccount": "Conectar una cuenta de {clouds}",
+    "estimatedCost": "Coste estimado",
+    "removeBodyCloud": "Sus servicios en la nube se destruyen en tu cuenta, lo que pone fin a su coste. El próximo inicio los vuelve a crear desde cero."
+  },
+  "cloud": {
+    "hourly": "unos {usd} $ por hora",
+    "untilAutoStop": "{hourly} (unos {usd} $ hasta que se detenga solo en {hours} h)",
+    "billed": "Se factura en tu cuenta en la nube.",
+    "costsUntilStop": "El lab crea allí sus servicios, que cuestan dinero hasta que lo detengas.",
+    "costsUntilAutoStop": "El lab crea allí sus servicios, que cuestan dinero hasta que lo detengas. El launcher los elimina tras {hours} h, pero solo si está abierto: detén el lab antes de cerrarlo.",
+    "estimate": "Coste estimado: {cost}. Es la estimación del propio lab; tu nube factura el importe real.",
+    "noEstimate": "Este lab no da una estimación de coste.",
+    "allowList": "Solo deja entrar tu IP pública.",
+    "show": "Mostrar {name}",
+    "hide": "Ocultar {name}",
+    "copySecret": "Copiar {name}",
+    "nothingExposed": "El lab está en marcha en tu cuenta en la nube. No expone nada que mostrar aquí.",
+    "billedEstimate": "Se te factura: {cost}, según la estimación del lab.",
+    "billedWhileRunning": "Se factura en tu cuenta en la nube mientras se ejecuta."
   }
 }

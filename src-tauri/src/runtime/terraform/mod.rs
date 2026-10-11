@@ -12,18 +12,23 @@
 //! - `runner`: running terraform itself (host binary or container).
 //! - `ready`: waiting for the lab host's bootstrap after apply.
 //! - `state`: what the state files say (status, outputs, SSH target, expiry).
+//! - `services`: a cloud-services lab's own module, applied and destroyed as is.
 
 mod ready;
 mod runner;
+mod services;
 mod state;
 
 use std::path::{Path, PathBuf};
 
-pub use state::{JUMP_FILE, deployed, expired, ssh_endpoint, ssh_target, status};
+#[cfg(test)]
+pub use services::is_module;
+pub use services::{apply_services, destroy_services};
+pub use state::{JUMP_FILE, deployed, expired, expires_at, has_resources, has_tainted, now, read_state, ssh_endpoint, ssh_target, status};
 
 use self::ready::wait_ready;
 use self::runner::terraform;
-use self::state::{RUN_FILE, STATE_FILE, now, run_record, saved_vars};
+use self::state::{RUN_FILE, STATE_FILE, run_record, saved_vars};
 use super::ssh;
 use crate::error::Result;
 

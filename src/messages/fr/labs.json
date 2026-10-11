@@ -76,7 +76,9 @@
     "startEngine": "Démarrez votre moteur de conteneurs",
     "needsServer": "Nécessite un serveur où s’exécuter",
     "needsHypervisor": "Nécessite {names}, ou un serveur",
-    "or": "{rest} ou {last}"
+    "or": "{rest} ou {last}",
+    "needsCloudAccount": "Nécessite un compte {clouds}",
+    "needsTerraform": "Nécessite Terraform"
   },
   "runOn": {
     "dialogLabel": "Où exécuter le lab ?",
@@ -173,7 +175,11 @@
     "removeTitle": "Supprimer {title} ?",
     "remove": "Supprimer",
     "removeBody": "Ses machines et votre attack box sont supprimées, avec tout ce qui y a été modifié ou enregistré. Le prochain démarrage reconstruit le lab de zéro.",
-    "removeKeep": " Pour les conserver, ouvrez le lab et éteignez-le plutôt."
+    "removeKeep": " Pour les conserver, ouvrez le lab et éteignez-le plutôt.",
+    "connect": "Connecter",
+    "connectHint": "{setup} : connectez-en un",
+    "connectFailed": "Impossible d’ouvrir la configuration du compte cloud",
+    "removeBodyCloud": "Ses services cloud sont détruits dans votre compte, ce qui met fin à leur coût. Le prochain démarrage les recrée de zéro."
   },
   "list": {
     "unreachableTitle": "Impossible d’accéder au catalogue de labs",
@@ -244,7 +250,9 @@
     "foreignCpu": "Les VM de ce lab sont conçues pour {archs} et cette machine est en {arch}. Installez QEMU depuis la page Machine pour les exécuter en émulation (bien plus lent), ou exécutez le lab sur un serveur ou dans votre compte cloud.",
     "noHypervisor": "Aucun hyperviseur pour ce lab n’est installé sur cette machine (il s’exécute sur {providers}). Installez-en un depuis la page Machine, ou exécutez-le sur un serveur.",
     "none": "aucun",
-    "refused": "Une autre opération est encore en cours sur ce lab"
+    "refused": "Une autre opération est encore en cours sur ce lab",
+    "pickCloudAccount": "Ce lab tourne dans votre compte cloud : choisissez l’un de vos comptes cloud pour le démarrer.",
+    "readyInCloud": "{title} tourne dans votre compte cloud."
   },
   "detail": {
     "yourServer": "votre serveur",
@@ -319,6 +327,29 @@
     "removeTitle": "Supprimer {title} ?",
     "remove": "Supprimer",
     "removeBody": "Ses machines et votre attack box sont supprimées, avec tout ce qui y a été modifié ou enregistré. Le prochain démarrage reconstruit le lab de zéro.",
-    "removeKeep": " Pour les conserver, éteignez plutôt le lab."
+    "removeKeep": " Pour les conserver, éteignez plutôt le lab.",
+    "cloudServices": "services cloud",
+    "cloudServicesTitle": "Services cloud",
+    "cloudLeftover": "Un démarrage précédent a laissé des services cloud dans votre compte. Arrêtez le lab pour les supprimer, puis relancez-le.",
+    "cloudIdle": "Démarrez le lab pour créer ses services cloud dans votre compte. Arrêtez-le quand vous avez fini : cela les supprime et met fin à leur coût.",
+    "connectAccount": "Connecter un compte {clouds}",
+    "estimatedCost": "Coût estimé",
+    "removeBodyCloud": "Ses services cloud sont détruits dans votre compte, ce qui met fin à leur coût. Le prochain démarrage les recrée de zéro."
+  },
+  "cloud": {
+    "hourly": "environ {usd} $ de l’heure",
+    "untilAutoStop": "{hourly} (environ {usd} $ jusqu’à l’arrêt automatique dans {hours} h)",
+    "billed": "Facturé sur votre compte cloud.",
+    "costsUntilStop": "Le lab y crée ses services, qui coûtent de l’argent jusqu’à ce que vous l’arrêtiez.",
+    "costsUntilAutoStop": "Le lab y crée ses services, qui coûtent de l’argent jusqu’à ce que vous l’arrêtiez. Le launcher les supprime après {hours} h, mais seulement s’il est ouvert : arrêtez le lab avant de le quitter.",
+    "estimate": "Coût estimé : {cost}. C’est l’estimation du lab ; votre cloud facture le montant réel.",
+    "noEstimate": "Ce lab ne donne pas d’estimation de coût.",
+    "allowList": "Il n’autorise que votre IP publique.",
+    "show": "Afficher {name}",
+    "hide": "Masquer {name}",
+    "copySecret": "Copier {name}",
+    "nothingExposed": "Le lab tourne dans votre compte cloud. Il n’expose rien à afficher ici.",
+    "billedEstimate": "Facturé à vous : {cost}, selon l’estimation du lab.",
+    "billedWhileRunning": "Facturé sur votre compte cloud tant qu’il tourne."
   }
 }

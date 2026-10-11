@@ -67,10 +67,25 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
     [settle],
   );
 
+  /** A cloud lab, created in the cloud account `host`. No attack box: the player works from
+   *  their own machine. */
+  const launchCloud = useCallback(
+    (lab: Lab, host: string | null | undefined) =>
+      operate(lab, "launch", async (log) => {
+        if (!host) throw new Error(translate("labs.actions.pickCloudAccount"));
+        await labLaunch(lab.id, null, host, null, false, log);
+        log(translate("labs.actions.labRunning"));
+        setLastRun(lab.id);
+        notify(translate("labs.actions.labReady"), translate("labs.actions.readyInCloud", { title: lab.title }));
+      }),
+    [operate],
+  );
+
   /**
    * `host` = a server host id to run a VM lab on, null for this machine. Omitted, VM labs
    * go to the default server host when the lab supports its hypervisor. `vmProvider` runs a
    * container lab in a VM on this machine (its deploy/vagrant lab host) on that hypervisor.
+   * A cloud lab runs only on the cloud account `host` (never one picked implicitly: it costs).
    */
   const launch = useCallback(
     async (
@@ -87,6 +102,10 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
       chosenPorts?: PortMode,
     ) => {
       if (!lab.runtime) return;
+      if (lab.runtime.runtime === "CLOUD") {
+        await launchCloud(lab, host);
+        return;
+      }
       // A container lab on this machine publishes its services here: on random free ports or
       // on the lab's own, the player's call (asked unless Settings remember it). Cancel = no start.
       const containersHere = lab.runtime.runtime !== "VM" && host == null && !vmProvider;
@@ -128,7 +147,7 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
         );
       });
     },
-    [operate],
+    [operate, launchCloud],
   );
 
   const stop = useCallback(

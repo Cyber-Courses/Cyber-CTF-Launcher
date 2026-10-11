@@ -76,7 +76,9 @@
     "startEngine": "Start your container engine",
     "needsServer": "Needs a server to run on",
     "needsHypervisor": "Needs {names}, or a server",
-    "or": "{rest} or {last}"
+    "or": "{rest} or {last}",
+    "needsCloudAccount": "Needs an account on {clouds}",
+    "needsTerraform": "Needs Terraform"
   },
   "runOn": {
     "dialogLabel": "Where should the lab run?",
@@ -173,7 +175,11 @@
     "removeTitle": "Remove {title}?",
     "remove": "Remove",
     "removeBody": "Its machines and your attack box are deleted, with everything changed or saved on them. The next start rebuilds the lab from scratch.",
-    "removeKeep": " To keep them, open the lab and shut it down instead."
+    "removeKeep": " To keep them, open the lab and shut it down instead.",
+    "connect": "Connect",
+    "connectHint": "{setup}: connect one",
+    "connectFailed": "Couldn't open the cloud account setup",
+    "removeBodyCloud": "Its cloud services are destroyed in your account, which ends what they cost. The next start creates them again from scratch."
   },
   "list": {
     "unreachableTitle": "Can’t reach the lab catalogue",
@@ -244,7 +250,9 @@
     "foreignCpu": "This lab's VMs are built for {archs} and this machine is {arch}. Install QEMU from the Machine page to run them emulated (many times slower), or run the lab on a server or in your cloud account.",
     "noHypervisor": "No hypervisor for this lab is installed on this machine (it runs on {providers}). Install one from the Machine page, or run it on a server.",
     "none": "none",
-    "refused": "Another operation is still running on this lab"
+    "refused": "Another operation is still running on this lab",
+    "pickCloudAccount": "This lab runs in your cloud account: pick one of your cloud accounts to start it on.",
+    "readyInCloud": "{title} is running in your cloud account."
   },
   "detail": {
     "yourServer": "your server",
@@ -319,6 +327,29 @@
     "removeTitle": "Remove {title}?",
     "remove": "Remove",
     "removeBody": "Its machines and your attack box are deleted, with everything changed or saved on them. The next start rebuilds the lab from scratch.",
-    "removeKeep": " To keep them, shut the lab down instead."
+    "removeKeep": " To keep them, shut the lab down instead.",
+    "cloudServices": "cloud services",
+    "cloudServicesTitle": "Cloud services",
+    "cloudLeftover": "A previous start left cloud services behind in your account. Stop it to remove them, then start again.",
+    "cloudIdle": "Start the lab to create its cloud services in your account. Stop it when you're done: that removes them and ends what they cost.",
+    "connectAccount": "Connect an account on {clouds}",
+    "estimatedCost": "Estimated cost",
+    "removeBodyCloud": "Its cloud services are destroyed in your account, which ends what they cost. The next start creates them again from scratch."
+  },
+  "cloud": {
+    "hourly": "about ${usd} an hour",
+    "untilAutoStop": "{hourly} (about ${usd} until it auto-stops in {hours} h)",
+    "billed": "Billed to your cloud account.",
+    "costsUntilStop": "The lab creates its services there and they cost money until you stop it.",
+    "costsUntilAutoStop": "The lab creates its services there and they cost money until you stop it. The launcher removes them after {hours} h, but only while it is open: stop the lab before you quit it.",
+    "estimate": "Estimated cost: {cost}. The lab's own estimate; your cloud bills the real amount.",
+    "noEstimate": "This lab gives no cost estimate.",
+    "allowList": "It lets in your public IP only.",
+    "show": "Show {name}",
+    "hide": "Hide {name}",
+    "copySecret": "Copy {name}",
+    "nothingExposed": "The lab is up in your cloud account. It exposes nothing to show here.",
+    "billedEstimate": "Billed to you: {cost}, by the lab's estimate.",
+    "billedWhileRunning": "Billed to your cloud account while it runs."
   }
 }

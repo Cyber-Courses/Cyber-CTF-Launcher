@@ -39,6 +39,8 @@ reqwest = { version = "0.13", features = ["json", "form"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates and runs their files.
 isoloom-core = { git = "https://github.com/isoloom/isoloom", rev = "4d17353" }
+# The map type of isoloom-core's API (a cloud-services lab's outputs).
+indexmap = "2"
 portable-pty = "0.9"
 tauri-plugin-dialog = "2"
 

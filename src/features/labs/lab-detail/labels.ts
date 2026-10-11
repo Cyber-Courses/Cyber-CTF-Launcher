@@ -3,7 +3,8 @@ import type { LabStatus, ServerHost } from "@/lib/tauri";
 import type { T } from "@/lib/i18n";
 
 /** The lab's runtime, as the panels' header meta. */
-export const runtimeWord = (t: T, isDocker: boolean) => (isDocker ? t("labs.detail.containers") : "vm");
+export const runtimeWord = (t: T, { isDocker, isCloud }: { isDocker: boolean; isCloud: boolean }) =>
+  isCloud ? t("labs.detail.cloudServices") : isDocker ? t("labs.detail.containers") : "vm";
 
 /** "This machine", with the engine or hypervisor it runs on when known. */
 export const thisMachine = (t: T, engine: string | null) => (engine ? t("labs.detail.thisMachineWith", { engine }) : t("labs.detail.thisMachine"));

@@ -10,10 +10,13 @@ use std::time::{Duration, Instant};
 use crate::AppHandle;
 
 use super::paths::{lab_dir, local_vm, parked, state_dir, vagrant_dirs};
-use super::{AttackerAt, LabStatus, Place, Runtime, docker, lab, remote, server, terraform, vm};
+use super::{AttackerAt, LabStatus, Place, Runtime, cloud_services, docker, lab, remote, server, terraform, vm};
 use crate::error::Result;
 
 pub(super) async fn status(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
+    if runtime == Runtime::Cloud {
+        return cloud_status(app, dir, id);
+    }
     match server::lab_connection(app, dir)? {
         None => local_status(dir, id, runtime).await,
         Some(c) => server_status(app, dir, id, runtime, c).await,
@@ -26,8 +29,17 @@ pub(super) async fn local_status(dir: &Path, id: &str, runtime: Runtime) -> Resu
         Runtime::Docker if let Some(p) = local_vm(dir) => in_local_vm(vm::status(&lab::vagrant_dir(dir, runtime), &[]).await?, p),
         Runtime::Docker => LabStatus { place: Some(Place::Container), ..docker::status(dir, id).await? },
         Runtime::Vm => LabStatus { place: Some(Place::LocalVm), ..vm::status(&lab::vagrant_dir(dir, runtime), &[]).await? },
+        // Cloud services never run here.
+        Runtime::Cloud => LabStatus::default(),
     };
     Ok(with_parked(s, parked(dir)))
+}
+
+/// A cloud-services lab's status, from its state on the account it was started on; not running
+/// when its last deploy failed (what it created stays listed, to be stopped).
+fn cloud_status(app: &AppHandle, dir: &Path, id: &str) -> Result<LabStatus> {
+    let s = cloud_services::lab_status(app, dir, id, server::lab_connection(app, dir)?)?;
+    Ok(LabStatus { running: s.running && !crate::deploy_worker::last_deploy_failed(app, id), ..s })
 }
 
 /// A container lab's VM status, as the lab's: on `provider` (a hypervisor id) on this machine.

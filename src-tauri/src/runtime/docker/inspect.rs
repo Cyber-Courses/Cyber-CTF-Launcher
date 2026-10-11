@@ -370,6 +370,8 @@ fn build_status(entries: Vec<PsEntry>, mut inspected: HashMap<String, Inspected>
         place: None,
         provider: Some("docker".to_string()),
         attacker: None,
+        outputs: Vec::new(),
+        message: None,
     }
 }
 

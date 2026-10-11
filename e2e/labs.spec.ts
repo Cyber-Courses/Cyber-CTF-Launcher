@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { test, expect, openApp, navButton, pageTitle, breadcrumb } from "./fixtures";
 
 // The mock's catalogue (src/lib/dev-mock.ts): Invoice portal API runs, Public backup is solved.
-const ALL = ["Invoice portal API", "GOAD Light", "Blind orders", "Exposed dashboard", "Public backup"];
+const ALL = ["Invoice portal API", "GOAD Light", "Blind orders", "Exposed dashboard", "Public backup", "EC2 SSRF"];
 
 /** The lab rows the list shows, by title. */
 const row = (page: Page, title: string) => page.locator("main").getByRole("button", { name: `Open ${title}`, exact: true });
@@ -25,7 +25,7 @@ test.describe("labs", () => {
 
   test("the list shows the catalogue", async ({ page }) => {
     await expectListed(page, ALL);
-    await expect(navButton(page, "Labs")).toContainText("5");
+    await expect(navButton(page, "Labs")).toContainText("6");
   });
 
   test("filters narrow the list", async ({ page }) => {
@@ -37,19 +37,19 @@ test.describe("labs", () => {
     await expectListed(page, ["Public backup"]);
 
     await filter(page, "Status", "To do").click();
-    await expectListed(page, ["GOAD Light", "Blind orders", "Exposed dashboard"]);
+    await expectListed(page, ["GOAD Light", "Blind orders", "Exposed dashboard", "EC2 SSRF"]);
     await filter(page, "Status", "All").click();
 
     await filter(page, "Runtime", "VM").click();
     await expectListed(page, ["GOAD Light"]);
     await filter(page, "Runtime", "Cloud").click();
-    await expectListed(page, ["Invoice portal API", "Public backup"]);
+    await expectListed(page, ["Invoice portal API", "Public backup", "EC2 SSRF"]);
     await filter(page, "Runtime", "Any runtime").click();
 
     await filter(page, "Level", "Hard").click();
     await expectListed(page, ["GOAD Light"]);
     await filter(page, "Level", "Medium").click();
-    await expectListed(page, ["Blind orders", "Exposed dashboard"]);
+    await expectListed(page, ["Blind orders", "Exposed dashboard", "EC2 SSRF"]);
     await filter(page, "Level", "Any level").click();
 
     // The search matches titles, categories, descriptions and skills.
