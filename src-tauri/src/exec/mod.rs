@@ -5,6 +5,7 @@ mod docker;
 #[cfg(test)]
 pub mod fake;
 mod group;
+mod shim;
 
 use std::path::Path;
 use std::process::{ExitStatus, Stdio};
@@ -20,14 +21,6 @@ pub use group::kill_live_tools;
 
 use crate::error::{Error, Result};
 use group::GroupGuard;
-
-/// Tools that may ship as a `.cmd`/`.bat` wrapper on Windows (not a real `.exe`). `CreateProcessW`
-/// only appends `.exe` and does not consult `PATHEXT`, so `Command::new("az")` can't find
-/// `az.cmd`; these go through `cmd.exe` (which also resolves a plain `.exe`, so it's safe for a
-/// tool whose Windows form varies, like `oci`). `aws`/`terraform`/`docker`/`vagrant` are real
-/// `.exe` and resolve directly.
-#[cfg(windows)]
-const WINDOWS_CMD_SHIM: &[&str] = &["az", "gcloud", "oci"];
 
 /// On Windows, every child of a windowed app gets a console window of its own unless told not
 /// to: the status polls (docker, vagrant, VBoxManage) would flash one on screen every few
@@ -83,7 +76,7 @@ pub fn status_within(cmd: &mut std::process::Command, timeout: Duration) -> Opti
 /// resolve, and Docker kept on the engine the user picked.
 fn build(program: &str, args: &[&str]) -> Command {
     #[cfg(windows)]
-    if WINDOWS_CMD_SHIM.contains(&program) {
+    if shim::SHIMMED.contains(&program) {
         let mut cmd = Command::new("cmd");
         cmd.arg("/C").arg(program).args(args);
         headless(&mut cmd);
@@ -142,6 +135,7 @@ pub async fn run_env_timed(program: &'static str, args: &[&str], cwd: Option<&Pa
 }
 
 async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env: &[(String, String)], timeout: Option<Duration>) -> Result<String> {
+    shim::check_args(program, args)?;
     #[cfg(test)]
     if let Some(answer) = fake::answer(program, args) {
         return answer;
@@ -204,6 +198,7 @@ async fn stream_from(
     stdin: Option<&Path>,
     on_line: impl FnMut(String),
 ) -> Result<()> {
+    shim::check_args(program, args)?;
     #[cfg(test)]
     let mut on_line = on_line;
     #[cfg(test)]
