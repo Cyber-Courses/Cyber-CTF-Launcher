@@ -67,7 +67,7 @@ proptest! {
     }
 
     #[test]
-    fn a_bad_content_length_refuses_the_request(v in "[^0-9+\r\n ][^\r\n]{0,10}") {
+    fn a_bad_content_length_refuses_the_request(v in "[^0-9+\r\n \t][^\r\n]{0,10}") {
         let head = format!("POST http://h/x HTTP/1.1\r\nContent-Length: {v}");
         prop_assert!(rewrite_head(&head).is_none());
     }

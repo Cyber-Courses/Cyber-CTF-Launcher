@@ -56,7 +56,8 @@ pub(super) fn rewrite_head(head: &str) -> Option<(String, String, usize)> {
             continue;
         }
         if let Some(v) = lower.strip_prefix("content-length:") {
-            len = v.trim().parse().ok()?;
+            // Only spaces and tabs are optional whitespace in HTTP (`str::trim` also takes \v, \f...).
+            len = v.trim_matches([' ', '\t']).parse().ok()?;
         }
         out.push_str(line);
         out.push_str("\r\n");
@@ -135,6 +136,14 @@ async fn proxy_connection(inbound: TcpStream) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn content_length_takes_only_spaces_and_tabs_around_it() {
+        assert_eq!(rewrite_head("POST http://h/x HTTP/1.1\r\nContent-Length: \t12 ").unwrap().2, 12);
+        for v in ["\u{b}0", "\u{c}5", "1 2"] {
+            assert!(rewrite_head(&format!("POST http://h/x HTTP/1.1\r\nContent-Length: {v}")).is_none(), "{v:?}");
+        }
+    }
 
     #[test]
     fn proxy_heads_become_origin_form() {
