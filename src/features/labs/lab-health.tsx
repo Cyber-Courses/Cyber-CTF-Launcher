@@ -23,11 +23,18 @@ export function useLabCheck(labId: string, { running, downCount, enabled }: { ru
     // The check's own state changes are the point; it runs in the background.
     setCheck("checking");
     let alive = true;
+    let finished = false;
     labCheck(labId, "DOCKER")
       .then((c) => alive && setCheck(c))
-      .catch((e) => alive && setCheck({ available: true, ok: false, output: String(e), results: [] }));
+      .catch((e) => alive && setCheck({ available: true, ok: false, output: String(e), results: [] }))
+      .finally(() => {
+        finished = true;
+      });
     return () => {
       alive = false;
+      // Cut short (another container went down mid-check): its answer is dropped, so the re-run
+      // must check again instead of leaving "checking" up forever.
+      if (!finished) done.current = false;
     };
   }, [labId, running, downCount, enabled]);
   return [check, () => setCheck(null)] as const;
