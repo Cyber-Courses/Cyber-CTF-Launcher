@@ -203,7 +203,7 @@
     },
     "docker": {
       "title": "Motor de contenedores",
-      "descriptionWindows": "Los labs de contenedores necesitan un motor compatible con Docker (usa el WSL 2 que activaste). Elige el que prefieras.",
+      "descriptionWindows": "Los labs de contenedores necesitan un motor compatible con Docker (en Windows funciona sobre WSL 2). Elige el que prefieras.",
       "description": "Los labs de contenedores necesitan un motor compatible con Docker. Elige el que prefieras, todos funcionan."
     },
     "attack": {

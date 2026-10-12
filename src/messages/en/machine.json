@@ -203,7 +203,7 @@
     },
     "docker": {
       "title": "Container engine",
-      "descriptionWindows": "Container labs need one Docker-compatible engine (it uses the WSL 2 you enabled). Pick the one you prefer.",
+      "descriptionWindows": "Container labs need one Docker-compatible engine (on Windows it runs on WSL 2). Pick the one you prefer.",
       "description": "Container labs need one Docker-compatible engine. Pick the one you prefer, they all work."
     },
     "attack": {

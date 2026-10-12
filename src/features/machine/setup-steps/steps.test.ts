@@ -5,7 +5,7 @@ import type { MachineSetupState } from "@/features/machine/setup-steps/use-machi
 // steps.ts pulls icons and the setup hook's module only for types; no Tauri runtime needed.
 vi.mock("@/lib/tauri", () => ({}));
 
-const { canContinue, nextLabel } = await import("@/features/machine/setup-steps/steps");
+const { canContinue, nextLabel, stepMeta } = await import("@/features/machine/setup-steps/steps");
 
 const report = (over: Partial<SystemReport> = {}) =>
   ({
@@ -49,5 +49,12 @@ describe("machine setup steps", () => {
     expect(canContinue("docker", podman, setup())).toBe(true);
     expect(canContinue("docker", podman, setup({ engine: "docker-engine" }))).toBe(false);
     expect(canContinue("docker", report({ dockerRunning: false }), setup())).toBe(false);
+  });
+
+  it("the Windows engine step doesn't claim WSL 2 was enabled (the Machine page's Fix opens it directly)", () => {
+    const windows = stepMeta("docker", report({ os: "windows" } as Partial<SystemReport>)).description;
+    expect(windows).toContain("WSL 2");
+    expect(windows).not.toMatch(/you enabled/i);
+    expect(stepMeta("docker", report()).description).not.toContain("WSL");
   });
 });
