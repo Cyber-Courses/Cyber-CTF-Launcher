@@ -21,13 +21,15 @@ export default defineConfig({
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/messages/**", "src/app/**", "src/lib/dev-mock.ts"],
       reporter: ["text", "text-summary", "json-summary"],
-      // The floor CI enforces: 2 points under the level reached, so it can only go up. Raise
-      // it as tests are added.
+      // The floor CI enforces: 1 point under what main reaches (at e2a52fd: lines 98.52,
+      // functions 96.95, branches 94.99, statements 97.78), so it can only go up. Raise it as
+      // tests are added; the Web coverage job summary prints the gap. Keep one `name: number`
+      // per line: that workflow reads them from this file.
       thresholds: {
-        lines: 96,
-        functions: 95,
-        branches: 93,
-        statements: 95,
+        lines: 97.5,
+        functions: 95.9,
+        branches: 93.9,
+        statements: 96.7,
       },
     },
   },

@@ -1,7 +1,8 @@
 name: Coverage
 
 # Rust unit test line coverage of the launcher core, with a floor: a change that drops the
-# coverage below it fails. Raise the floor when the coverage goes up.
+# coverage below it fails. The floor sits 1 point under what main reaches; raise it when the
+# coverage goes up (the job summary prints the gap).
 
 on:
   pull_request:
@@ -14,6 +15,10 @@ concurrency:
 
 permissions:
   contents: read
+
+env:
+  # Line coverage floor in percent: 1 point under main (83.51% at e2a52fd).
+  RUST_LINES_FLOOR: "82.5"
 
 jobs:
   rust-coverage:
@@ -40,12 +45,23 @@ jobs:
       - name: Coverage
         run: |
           set -o pipefail
-          cargo llvm-cov --manifest-path src-tauri/Cargo.toml --summary-only --fail-under-lines 81 2>&1 | tee coverage.txt
+          cargo llvm-cov --manifest-path src-tauri/Cargo.toml --summary-only --fail-under-lines "$RUST_LINES_FLOOR" 2>&1 | tee coverage.txt
       - name: Summary
         if: always()
         run: |
+          # TOTAL row: Filename, then regions (3 columns), functions (3), lines (3): $10 is the line cover.
+          lines=$(awk '/^TOTAL/ { sub(/%/, "", $10); print $10 }' coverage.txt)
           {
             echo '## Rust line coverage'
+            echo
+            if [ -n "$lines" ]; then
+              gap=$(awk -v l="$lines" -v f="$RUST_LINES_FLOOR" 'BEGIN { printf "%+.2f", l - f }')
+              echo "| Metric | Covered | Floor | Gap |"
+              echo "| --- | --- | --- | --- |"
+              echo "| Lines | ${lines}% | ${RUST_LINES_FLOOR}% | ${gap} |"
+            else
+              echo "No TOTAL row (the tests did not finish)."
+            fi
             echo
             echo '```'
             sed -n '/^Filename/,$p' coverage.txt
