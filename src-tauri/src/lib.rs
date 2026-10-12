@@ -247,6 +247,76 @@ mod tests {
         assert_eq!(manifest, registered);
     }
 
+    /// Commands no unit test can call, each with why. Everything else in build.rs's list is
+    /// called by name from a test.
+    const NOT_UNIT_TESTED: &[(&str, &str)] = &[
+        ("auth_login", "opens the system browser and waits for cyber-auth's redirect; authorize_url and the callback are tested"),
+        ("restart_app", "restarts this very process"),
+    ];
+
+    /// The test code under `dir`: whole `tests.rs` / `proptests.rs` files, and each file's
+    /// `#[cfg(test)]` module onwards.
+    fn test_code(dir: &std::path::Path, out: &mut String) {
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                test_code(&path, out);
+                continue;
+            }
+            if path.extension().and_then(|x| x.to_str()) != Some("rs") {
+                continue;
+            }
+            let src = std::fs::read_to_string(&path).unwrap();
+            if matches!(path.file_name().and_then(|n| n.to_str()), Some("tests.rs" | "proptests.rs")) {
+                out.push_str(&src);
+                continue;
+            }
+            let lines: Vec<&str> = src.lines().collect();
+            let start = (0..lines.len()).find(|&i| {
+                let attr = lines[i].trim();
+                (attr == "#[cfg(test)]" || attr.starts_with("#[cfg(all(test"))
+                    && lines.get(i + 1).is_some_and(|l| l.trim_start().starts_with("mod ") || l.trim_start().starts_with("pub(crate) mod "))
+                    && lines.get(i + 1).is_some_and(|l| l.trim_end().ends_with('{'))
+            });
+            if let Some(i) = start {
+                out.push_str(&lines[i..].join("\n"));
+            }
+            out.push('\n');
+        }
+    }
+
+    /// Whether `code` calls `name(…)` (not `other_name(…)`), or invokes it through Tauri's IPC
+    /// (`cmd: "name"`).
+    fn calls(code: &str, name: &str) -> bool {
+        code.contains(&format!("cmd: \"{name}\""))
+            || code.match_indices(name).any(|(at, _)| {
+                let before = code[..at].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '_');
+                !before && code[at + name.len()..].trim_start().starts_with('(')
+            })
+    }
+
+    /// A command no test calls is one whose argument checks, plumbing and errors nobody checks.
+    #[test]
+    fn every_command_is_called_by_a_test() {
+        let commands = names_between(include_str!("../build.rs"), "const COMMANDS: &[&str] = &[", "];");
+        let mut tests = String::new();
+        test_code(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut tests);
+        let exempt = |c: &str| NOT_UNIT_TESTED.iter().any(|(n, _)| *n == c);
+        let untested: Vec<&String> = commands.iter().filter(|c| !exempt(c) && !calls(&tests, c)).collect();
+        assert!(untested.is_empty(), "commands no test calls (test them, or add them to NOT_UNIT_TESTED with why): {untested:?}");
+        for (name, _) in NOT_UNIT_TESTED {
+            assert!(commands.contains(*name), "{name} is no longer a command");
+        }
+    }
+
+    #[test]
+    fn a_call_is_told_apart_from_a_longer_name() {
+        assert!(calls("let x = lab_status (app, id);", "lab_status"));
+        assert!(!calls("server_lab_status(app)", "lab_status"));
+        assert!(!calls("\"lab_status\",", "lab_status"));
+        assert!(calls("InvokeRequest { cmd: \"lab_status\".into(), ..", "lab_status"));
+    }
+
     #[test]
     fn only_deploy_job_arguments_make_a_worker() {
         let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();

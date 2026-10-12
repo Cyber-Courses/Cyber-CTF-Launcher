@@ -172,7 +172,7 @@ pub struct GcpOrganization {
 }
 
 /// What the launcher found in ~/.oci/config (DEFAULT profile), to prefill the OCI setup.
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OciConfig {
     pub configured: bool,
@@ -184,11 +184,20 @@ pub struct OciConfig {
 /// can show whether it's configured and prefill the tenancy (as the compartment) and region.
 #[tauri::command]
 pub async fn oci_config() -> OciConfig {
-    let path = std::env::var_os("OCI_CLI_CONFIG_FILE")
+    read_oci_config(oci_config_path().as_deref())
+}
+
+/// OCI_CLI_CONFIG_FILE, else ~/.oci/config.
+fn oci_config_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("OCI_CLI_CONFIG_FILE")
         .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(|h| std::path::PathBuf::from(h).join(".oci").join("config")));
+        .or_else(|| std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(|h| std::path::PathBuf::from(h).join(".oci").join("config")))
+}
+
+/// The config file at `path`; not configured when there is none or it can't be read.
+fn read_oci_config(path: Option<&std::path::Path>) -> OciConfig {
     let Some(path) = path else { return OciConfig::default() };
-    let Ok(text) = std::fs::read_to_string(&path) else { return OciConfig::default() };
+    let Ok(text) = std::fs::read_to_string(path) else { return OciConfig::default() };
     parse_oci_config(&text)
 }
 
@@ -393,6 +402,22 @@ mod tests {
         assert_eq!((orgs[0].id.as_str(), orgs[0].name.as_str()), ("1234567890", "example.com"));
         assert!(billing_accounts("not json").is_empty());
         assert!(organizations("").is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_oci_config_command_reads_its_file_or_reports_none() {
+        // The command reads the file the CLI would (tests don't touch the environment).
+        assert_eq!(oci_config().await, read_oci_config(oci_config_path().as_deref()));
+        assert!(oci_config_path().is_some_and(|p| p.ends_with("config")));
+        let dir = std::env::temp_dir().join(format!("cyberctf-oci-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("config");
+        assert_eq!(read_oci_config(Some(&file)), OciConfig::default());
+        assert_eq!(read_oci_config(None), OciConfig::default());
+        std::fs::write(&file, "[DEFAULT]\ntenancy=ocid1.tenancy.oc1..t\nregion=eu-paris-1\n").unwrap();
+        let read = read_oci_config(Some(&file));
+        assert_eq!(read, OciConfig { configured: true, tenancy: "ocid1.tenancy.oc1..t".into(), region: "eu-paris-1".into() });
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

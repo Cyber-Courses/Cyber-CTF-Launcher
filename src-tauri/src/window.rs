@@ -77,7 +77,21 @@ pub fn reveal_main(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::fit_height;
+    use super::*;
+    use crate::test_app::TestApp;
+
+    #[test]
+    fn settings_open_once_in_their_own_window() {
+        // Without the main window: attaching to it needs a real one (Tauri's mock has none).
+        let t = TestApp::new();
+        open_settings(t.handle().clone()).unwrap();
+        let settings = t.handle().get_webview_window("settings").expect("the Settings window");
+        assert!(settings.url().unwrap().as_str().ends_with("?window=settings"), "{}", settings.url().unwrap());
+        // Asked again: the open one is focused, no second window.
+        open_settings(t.handle().clone()).unwrap();
+        assert_eq!(t.handle().webview_windows().len(), 1);
+        assert!(focus_existing(t.handle(), "settings") && !focus_existing(t.handle(), "nope"));
+    }
 
     #[test]
     fn a_window_fits_the_screen_but_stays_usable() {

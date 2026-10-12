@@ -46,6 +46,9 @@ use serde::{Deserialize, Serialize};
 pub use attack_box::start_attack_vm;
 pub use commands::*;
 pub use docker::{PORTS_ENV, subnets_in_use};
+/// For tests elsewhere that need an operation in flight.
+#[cfg(test)]
+pub(crate) use inflight::DeployGuard;
 pub use inflight::{Action, active_actions, active_deploys, deploying_labs};
 pub use launch::{deployed_on_server, start};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, resume_lab, stop_lab};

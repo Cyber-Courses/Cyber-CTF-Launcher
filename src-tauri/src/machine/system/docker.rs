@@ -175,6 +175,73 @@ mod tests {
         assert!(err.to_string().contains("can't start some-engine here"));
     }
 
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use crate::exec::fake::{Reply, Tools, fail, ok};
+
+    const DENIED: &str = "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock";
+    const DOWN: &str = "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?";
+
+    #[tokio::test]
+    async fn the_cli_is_pointed_at_the_context_of_the_engine_asked_for() {
+        let tools = Tools::rules(&[("context ls", ok("default *\norbstack\ncolima-dev\n"))]);
+        docker_use_engine("colima".into()).await.unwrap();
+        assert!(tools.called("docker context use colima-dev"), "{:?}", tools.calls());
+        let err = docker_use_engine("podman".into()).await.unwrap_err();
+        assert_eq!(err.to_string(), "no Docker context for podman");
+        assert_eq!(tools.calls().iter().filter(|c| c.contains("context use")).count(), 1);
+    }
+
+    /// Docker with colima installed: the daemon answers `info` (as `daemon`, once colima
+    /// started) and colima's context shows up once it runs.
+    fn colima(daemon: impl Fn() -> Option<Reply> + 'static) -> (Tools, Rc<Cell<bool>>) {
+        let up = Rc::new(Cell::new(false));
+        let started = up.clone();
+        let tools = Tools::new(move |program, args| match (program, args.first().copied()) {
+            ("colima", Some("start")) => {
+                started.set(true);
+                ok("")
+            }
+            ("docker", Some("info")) if !started.get() => fail(DOWN),
+            ("docker", Some("info")) => daemon(),
+            ("docker", Some("context")) if args.get(1) == Some(&"ls") => ok(if started.get() { "default *\ncolima\n" } else { "default *\n" }),
+            _ => ok(""),
+        });
+        (tools, up)
+    }
+
+    #[tokio::test]
+    async fn an_engine_is_started_docker_pointed_at_it_and_its_daemon_waited_for() {
+        let (tools, up) = colima(|| ok("Ubuntu 24.04 LTS"));
+        docker_start_engine("colima".into()).await.unwrap();
+        assert!(up.get());
+        assert!(tools.called("docker context use colima"), "{:?}", tools.calls());
+    }
+
+    #[tokio::test]
+    async fn a_daemon_this_account_cannot_use_is_reported_without_waiting() {
+        // Running already, for another account: not started again.
+        let tools = Tools::rules(&[("docker info", fail(DENIED))]);
+        let err = docker_start_engine("colima".into()).await.unwrap_err();
+        assert_eq!(err.to_string(), docker_denied_message());
+        assert!(!tools.called("colima start"));
+        drop(tools);
+        // Up once started, but denied: said at once, not after 3 minutes.
+        let (_tools, up) = colima(|| fail(DENIED));
+        let err = docker_start_engine("colima".into()).await.unwrap_err();
+        assert!(up.get());
+        assert_eq!(err.to_string(), docker_denied_message());
+    }
+
+    #[tokio::test]
+    async fn an_engine_that_cannot_be_started_here_is_refused() {
+        let tools = Tools::rules(&[("docker info", fail(DOWN))]);
+        let err = docker_start_engine("some-engine".into()).await.unwrap_err();
+        assert!(err.to_string().contains("can't start some-engine here"), "{err}");
+        assert_eq!(tools.calls(), ["docker info --format {{.OperatingSystem}}"]);
+    }
+
     #[test]
     fn more_engines_by_name() {
         assert_eq!(engine_named("podman", "default"), "podman");

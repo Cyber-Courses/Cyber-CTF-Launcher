@@ -395,6 +395,32 @@ mod tests {
     }
 
     #[test]
+    fn a_shell_window_opens_once_per_lab_and_kind() {
+        use tauri::Manager;
+        let t = crate::test_app::TestApp::new();
+        let open = |id: &str| terminal_window(t.handle().clone(), id.into(), ShellKind::Lab, Runtime::Docker, "SQLi\n lab".into());
+        assert_eq!(open("../x").unwrap_err().to_string(), "invalid lab id `../x`");
+        assert!(t.handle().webview_windows().is_empty());
+        open("sqli").unwrap();
+        let w = t.handle().get_webview_window("shell-lab-sqli").expect("the shell window");
+        assert!(w.url().unwrap().as_str().ends_with("shell?id=sqli&kind=lab&runtime=DOCKER"), "{}", w.url().unwrap());
+        open("sqli").unwrap();
+        assert_eq!(t.handle().webview_windows().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_shell_for_a_lab_that_is_not_installed_starts_nothing() {
+        let t = crate::test_app::TestApp::new();
+        let window = crate::window::builder(t.handle(), "shell-lab-gone", "").build().unwrap();
+        let tools = crate::exec::fake::Tools::rules(&[]);
+        let events = crate::test_app::Sink::default();
+        let err = terminal_open(window, "gone".into(), ShellKind::Lab, Runtime::Docker, 80, 24, events.channel()).await.unwrap_err();
+        assert_eq!(err.to_string(), "lab `gone` is not installed");
+        assert!(events.messages().is_empty() && tools.calls().is_empty());
+        assert!(with_sessions(|s| !s.values().any(|v| v.window == "shell-lab-gone")));
+    }
+
+    #[test]
     fn unknown_sessions_are_ended_or_ignored() {
         assert_eq!(terminal_write(u32::MAX, "x".into()).unwrap_err().to_string(), "the shell has ended");
         assert!(terminal_resize(u32::MAX, 80, 24).is_ok());

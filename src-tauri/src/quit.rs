@@ -111,9 +111,28 @@ mod tests {
         }
     }
 
+    /// One test for both: they share the process-wide flags.
     #[test]
-    fn a_relaunch_stops_lingering() {
+    fn a_background_finish_stays_open_once_relaunched_and_a_forced_quit_exits_at_once() {
+        let t = crate::test_app::TestApp::new();
+        // A deploy in flight holds the background finish (it looks again every 2 s).
+        let deploy = runtime::DeployGuard::new("quit-test-linger", runtime::Action::Start);
+        linger_quit(t.handle().clone());
+        assert!(LINGERING.load(Ordering::SeqCst));
+        // Opened again meanwhile: once the deploy is done, the app stays open.
         stop_lingering();
         assert!(!LINGERING.load(Ordering::SeqCst));
+        drop(deploy);
+        std::thread::sleep(Duration::from_millis(2500));
+        assert!(!FORCE_QUIT.load(Ordering::SeqCst), "a relaunched app doesn't exit");
+
+        // Quit anyway: the quit guard lets go and the runtime is asked to exit (Tauri's mock
+        // runtime has no exit to request: it panics there).
+        let exit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| force_quit(t.handle().clone())));
+        assert!(exit.is_err(), "the runtime was asked to exit");
+        assert!(FORCE_QUIT.load(Ordering::SeqCst));
+        let deploy = runtime::DeployGuard::new("quit-test-forced", runtime::Action::Start);
+        assert!(!intercept(t.handle()), "a forced quit is never held");
+        drop(deploy);
     }
 }

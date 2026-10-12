@@ -72,6 +72,22 @@ fn count_ids(out: &str) -> u32 {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn the_metrics_describe_this_machine_and_its_running_containers() {
+        let tools = crate::exec::fake::Tools::rules(&[("docker ps", crate::exec::fake::ok("a1\nb2\n"))]);
+        let m = machine_metrics().await;
+        assert!(m.cores > 0 && m.mem_total > 0 && m.mem_used <= m.mem_total, "{} {} {}", m.cores, m.mem_used, m.mem_total);
+        assert!(m.disk_used <= m.disk_total);
+        assert!((0.0..=100.0).contains(&m.cpu), "{}", m.cpu);
+        assert_eq!(m.containers, 2);
+        drop(tools);
+        // The engine down: none.
+        let _tools = crate::exec::fake::Tools::rules(&[("docker ps", crate::exec::fake::fail(DOCKER_DOWN))]);
+        assert_eq!(machine_metrics().await.containers, 0);
+    }
+
+    const DOCKER_DOWN: &str = "Cannot connect to the Docker daemon";
+
     #[test]
     fn counts_one_container_per_non_empty_line() {
         assert_eq!(count_ids("abc\n\n def \n"), 2);

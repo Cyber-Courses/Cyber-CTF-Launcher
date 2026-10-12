@@ -2,8 +2,10 @@
 //! identifier, removed when the test ends), so code taking an app handle runs in tests.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use tauri::Manager;
+use tauri::ipc::{Channel, InvokeResponseBody};
 
 use crate::AppHandle;
 
@@ -66,5 +68,32 @@ impl Drop for TestApp {
         for dir in [self.app.path().app_cache_dir(), self.app.path().app_config_dir(), self.app.path().app_local_data_dir()].into_iter().flatten() {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+}
+
+/// What a command sent the UI over its channels, each message as the JSON the webview gets.
+#[derive(Clone, Default)]
+pub struct Sink(Arc<Mutex<Vec<serde_json::Value>>>);
+
+impl Sink {
+    /// A channel whose messages land here.
+    pub fn channel<T>(&self) -> Channel<T> {
+        let sink = self.0.clone();
+        Channel::new(move |body| {
+            if let InvokeResponseBody::Json(json) = body {
+                sink.lock().unwrap().push(serde_json::from_str(&json).unwrap());
+            }
+            Ok(())
+        })
+    }
+
+    /// Every message so far.
+    pub fn messages(&self) -> Vec<serde_json::Value> {
+        self.0.lock().unwrap().clone()
+    }
+
+    /// The text messages so far (a log channel's lines).
+    pub fn lines(&self) -> Vec<String> {
+        self.messages().iter().filter_map(|m| m.as_str().map(str::to_string)).collect()
     }
 }

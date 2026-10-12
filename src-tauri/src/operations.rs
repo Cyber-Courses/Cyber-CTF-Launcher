@@ -127,6 +127,49 @@ mod tests {
     }
 
     #[test]
+    fn an_operation_in_this_process_is_listed_while_it_runs() {
+        let t = crate::test_app::TestApp::new();
+        // The in-process registry is process-wide: this test's own lab id.
+        let id = "operations-test-pause";
+        let listed = || active_operations(t.handle().clone()).into_iter().find(|o| o.lab_id == id);
+        let guard = crate::runtime::DeployGuard::new(id, Action::Park);
+        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "pause", machine: None, step: None }));
+        drop(guard);
+        assert_eq!(listed(), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_running_worker_is_listed_at_its_step_and_its_log_read_back() {
+        let t = crate::test_app::TestApp::new();
+        let id = "operations-test-worker";
+        let dir = t.data().join("deploys");
+        std::fs::create_dir_all(&dir).unwrap();
+        // A process whose command line reads like a worker's (`… deploy --job …`).
+        let mut worker = std::process::Command::new("sh").args(["-c", "sleep 20; :", "deploy", "--job", "x"]).spawn().unwrap();
+        let log = "Pulling images\n==> web: Booting VM...\n";
+        std::fs::write(dir.join(format!("{id}.pid")), worker.id().to_string()).unwrap();
+        std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string(&deploy_worker::Job::on_lab(id, Op::Launch)).unwrap()).unwrap();
+        std::fs::write(dir.join(format!("{id}.log")), log).unwrap();
+        let listed = || active_operations(t.handle().clone()).into_iter().find(|o| o.lab_id == id);
+        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "launch", machine: None, step: Some("web: Booting VM...".into()) }));
+        assert!(deploying_labs(t.handle().clone()).contains(&id.to_string()));
+        assert_eq!(lab_deploy_log(t.handle().clone(), id.into()).unwrap(), log);
+        worker.kill().unwrap();
+        worker.wait().unwrap();
+        // Gone: no longer listed, its log still readable.
+        assert_eq!(listed(), None);
+        assert_eq!(lab_deploy_log(t.handle().clone(), id.into()).unwrap(), log);
+    }
+
+    #[test]
+    fn a_deploy_log_is_read_for_a_valid_lab_id_only() {
+        let t = crate::test_app::TestApp::new();
+        assert_eq!(lab_deploy_log(t.handle().clone(), "never-deployed".into()).unwrap(), "");
+        assert_eq!(lab_deploy_log(t.handle().clone(), "../x".into()).unwrap_err(), "invalid lab id `../x`");
+    }
+
+    #[test]
     fn operations_get_their_sidebar_names() {
         assert_eq!(worker_op(&Op::Launch), ("launch", None));
         assert_eq!(worker_op(&Op::Park { runtime: Runtime::Vm, mode: Park::Pause }).0, "pause");

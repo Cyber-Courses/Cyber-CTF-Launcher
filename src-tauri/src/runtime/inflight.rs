@@ -50,10 +50,10 @@ fn labs_with(action: Action) -> Vec<String> {
 
 /// Marks its lab as starting, stopping or parking for as long as it is alive (RAII), so the mark
 /// is always cleared even if the operation errors or is cancelled.
-pub(super) struct DeployGuard(String);
+pub(crate) struct DeployGuard(String);
 
 impl DeployGuard {
-    pub(super) fn new(id: &str, action: Action) -> Self {
+    pub(crate) fn new(id: &str, action: Action) -> Self {
         if let Ok(mut m) = in_flight().lock() {
             let e = m.entry(id.to_string()).or_insert((action, 0));
             // The latest operation names the state (a stop right after a start is "stopping").

@@ -1,6 +1,8 @@
 //! Unit tests' stand-in for the tools: while a test holds a [`Tools`] guard, every `run*` and
 //! `stream*` on its thread answers from the test's script instead of starting a process, so code
-//! that drives docker, vagrant or terraform runs without them (and never touches real ones).
+//! that drives docker, vagrant or terraform runs without them (and never touches real ones). The
+//! install and removal steps (`platform::steps`) answer from it too: an install test never runs
+//! a package manager.
 //! Async tests run on one thread (`#[tokio::test]`), so the script is per thread: parallel tests
 //! don't see each other's.
 
@@ -96,7 +98,22 @@ pub(super) fn answer_stream(program: &'static str, args: &[&str], mut on_line: i
     })
 }
 
-fn reply(program: &'static str, args: &[&str]) -> Option<Option<Reply>> {
+/// [`answer_stream`] for an install or removal step (`platform::steps`), whose program is any
+/// path: a missing tool and a failure say what `run_step` says for them.
+pub fn answer_step(program: &str, args: &[String], on_line: &mut impl FnMut(String)) -> Option<Result<()>> {
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let reply = reply(program, &args)?;
+    if let Some(Reply::Out(text) | Reply::Fail(text)) = &reply {
+        text.lines().for_each(|l| on_line(l.to_string()));
+    }
+    Some(match reply {
+        Some(Reply::Out(_)) => Ok(()),
+        Some(Reply::Fail(_)) => Err(Error::Invalid(format!("`{program}` exited with exit status: 1"))),
+        None => Err(Error::Invalid(format!("{program} is not available on this machine."))),
+    })
+}
+
+fn reply(program: &str, args: &[&str]) -> Option<Option<Reply>> {
     STATE.with(|s| {
         let mut guard = s.borrow_mut();
         let st = guard.as_mut()?;
