@@ -83,24 +83,22 @@ export const LabRow = memo(function LabRow({
 
   return (
     <div className="@container border-t border-border first:border-t-0">
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label={t("labs.row.open", { title: lab.title })}
-        onClick={() => onOpen(lab)}
-        onKeyDown={(e) => {
-          // Only the row itself: Enter on one of its buttons (or in its dialog) is theirs.
-          if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-          e.preventDefault();
-          onOpen(lab);
-        }}
-        className="group grid h-13 cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto_1rem] items-center gap-3.5 px-4 text-[0.8125rem] outline-none transition-colors hover:bg-glass focus-visible:bg-glass focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @min-[44rem]:grid-cols-[auto_minmax(0,1fr)_8rem_5.5rem_7rem_9.5rem_1rem]"
-      >
+      {/* The title is the row's one link into the lab (a stretched button: its ::after covers the
+          row, so a click anywhere opens it); the actions are its siblings, drawn above it, so
+          no control sits inside another and Tab reaches each one. */}
+      <div className="group relative grid h-13 grid-cols-[auto_minmax(0,1fr)_auto_1rem] items-center gap-3.5 px-4 text-[0.8125rem] transition-colors hover:bg-glass has-[[data-row-open]:focus-visible]:bg-glass @min-[44rem]:grid-cols-[auto_minmax(0,1fr)_8rem_5.5rem_7rem_9.5rem_1rem]">
         <RowDot phase={phase} running={running} solved={solved} label={stateLabel} />
-        <RowTitle lab={lab} emulated={emulated} setup={setup} running={running} />
+        <RowTitle
+          lab={lab}
+          emulated={emulated}
+          setup={setup}
+          running={running}
+          openLabel={t("labs.row.open", { title: lab.title })}
+          onOpen={() => onOpen(lab)}
+        />
         <RowColumns lab={lab} hostArch={hostArch} emulates={emulates} running={running} status={status} />
 
-        <span className="flex items-center justify-end gap-1.5">
+        <span className="relative z-[1] flex items-center justify-end gap-1.5">
           <RowAction
             status={status}
             running={running}
@@ -117,7 +115,7 @@ export const LabRow = memo(function LabRow({
           {/* Starting happens on the lab's own page, where you pick where to run; the row opens it. */}
         </span>
 
-        <ChevronRight className="size-4 text-faint transition-colors group-hover:text-foreground" />
+        <ChevronRight aria-hidden className="size-4 text-faint transition-colors group-hover:text-foreground" />
       </div>
 
       {confirmingStop && (

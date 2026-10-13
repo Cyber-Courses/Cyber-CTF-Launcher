@@ -490,7 +490,7 @@ describe("LabRow", () => {
     expect(onLogin).toHaveBeenCalled();
   });
 
-  it("opens the lab from the row with a click, Enter or Space", async () => {
+  it("opens the lab from the row's title with a click, Enter or Space", async () => {
     installTauri();
     const user = userEvent.setup();
     const h = renderRow();
@@ -501,6 +501,36 @@ describe("LabRow", () => {
     await user.keyboard(" ");
     await user.keyboard("a");
     expect(h.onOpen).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps the row's actions beside its open button, not inside it, and Tab reaches each", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    const h = renderRow({ status: running() });
+    const open = screen.getByRole("button", { name: "Open Invoice portal API" });
+    // A real button holding only the title: no control is nested in another.
+    expect(open.tagName).toBe("BUTTON");
+    expect(open.textContent).toBe("Invoice portal API");
+    expect(open.querySelector("button, a, [role=button], [tabindex]")).toBeNull();
+    expect(document.querySelector("[role=button]")).toBeNull();
+    const [openUrl, stop] = [screen.getByRole("button", { name: /^Open$/ }), screen.getByRole("button", { name: "Stop" })];
+    expect(open.contains(openUrl) || open.contains(stop)).toBe(false);
+    // Its ::after stretches over the row (the positioned box); the actions are drawn above it.
+    expect(open.className).toContain("after:absolute");
+    expect(open.closest(".relative")?.contains(stop)).toBe(true);
+    expect(stop.closest(".z-\\[1\\]")).toBeTruthy();
+    // Keyboard: the title first, then the row's actions, in order; Enter on the title opens.
+    await user.tab();
+    expect(document.activeElement).toBe(open);
+    await user.keyboard("{Enter}");
+    expect(h.onOpen).toHaveBeenCalledTimes(1);
+    await user.tab();
+    expect(document.activeElement).toBe(openUrl);
+    await user.tab();
+    expect(document.activeElement).toBe(stop);
+    await user.keyboard("{Enter}");
+    expect(screen.getByText("Remove Invoice portal API?")).toBeTruthy();
+    expect(h.onOpen).toHaveBeenCalledTimes(1);
   });
 
   it("marks a lab built for another CPU as emulated, and a solved one", () => {
