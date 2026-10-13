@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import type { AttackBox } from "@/features/labs/use-attack-box";
 import { useLabCheck } from "@/features/labs/lab-health";
 import type { RunTarget } from "@/features/labs/run-on";
 import { useAttackBox } from "@/features/labs/use-attack-box";
 import type { Lab } from "@/features/labs/use-labs";
 import { useCloudPreview } from "@/features/labs/cloud-panel";
-import { restartTarget } from "@/features/labs/lab-detail/lab-state";
+import { removing, restartTarget } from "@/features/labs/lab-detail/lab-state";
 import { useObjectives } from "@/features/labs/objectives/use-objectives";
 import { useHostedRun } from "@/features/labs/lab-detail/use-hosted-run";
 import { useLabPageState } from "@/features/labs/lab-detail/use-lab-page-state";
@@ -24,6 +25,9 @@ export type LabDetailProps = {
   busy: boolean;
   logs: string[];
   times: number[];
+  /** This session's last run on the lab: what it was (launch, stop…) and when it began. */
+  runOp?: string;
+  runStartedAt?: number;
   loggedIn: boolean;
   /** Logged out: the start button logs in instead of being greyed out. */
   onLogin?: () => Promise<void>;
@@ -63,6 +67,21 @@ function useLabAttackBox(labId: string, s: PageState) {
     kind: s.isDocker ? "container" : "vm",
     failed: s.deployFailed,
   });
+}
+
+/** `value`, held at what it was when `hold` began, for as long as it lasts. */
+function useHeld<T>(value: T, hold: boolean): T {
+  const [held, setHeld] = useState(value);
+  if (!hold && held !== value) setHeld(value);
+  return hold ? held : value;
+}
+
+/** The attack box as the page shows it: while the lab is being removed, as it was before (the
+ *  box's status is dropped for the operation), so its panel and the diagram's attacker stay
+ *  put, dimmed, instead of flipping to "not started" and back should the removal fail. */
+function useShownBox(box: AttackBox, hold: boolean): AttackBox {
+  const status = useHeld(box.status, hold);
+  return hold && status !== box.status ? { ...box, status } : box;
 }
 
 /** Reset = stop and start again where it ran: a clean lab. */
@@ -105,12 +124,14 @@ export function useLabDetail(p: LabDetailProps) {
     provisionable: !!p.onProvision,
     logs: p.logs,
     times: p.times,
+    runOp: p.runOp,
+    runStartedAt: p.runStartedAt,
   });
   const run = useRunTarget(rt, readyVms, p.hostArch);
   const preview = useCloudPreview(lab.id, rt);
   const hosted = useHostedRun(lab.id);
   const shell = useLabShell(lab.id, lab.title, s.remote || s.isDocker);
-  const box = useLabAttackBox(lab.id, s);
+  const box = useShownBox(useLabAttackBox(lab.id, s), removing(s));
   const [check, clearCheck] = useLabCheck(lab.id, { running: s.running, downCount: s.down.length, enabled: s.isDocker });
   const tools = useLabTools(lab.id, s.running && !s.isCloud, s.isDocker);
   const objectives = useObjectives(lab.id, lab.question, t("labs.detail.objective"), p.loggedIn);

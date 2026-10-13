@@ -13,13 +13,13 @@ import { useT } from "@/lib/i18n";
 export { emulatorReady } from "@/features/labs/lab-runtime";
 
 const PHASE_WORDS = {
-  starting: "labs.state.startingEllipsis",
   running: "labs.state.running",
+  failed: "labs.state.failed",
   paused: "labs.state.paused",
   shutDown: "labs.state.shutDown",
   solved: "labs.state.solved",
   notStarted: "labs.state.notStarted",
-} as const satisfies Record<Exclude<RowPhase, "busy">, string>;
+} as const satisfies Record<Exclude<RowPhase, "busy" | "starting">, string>;
 
 /**
  * One lab as a dense 3.25rem list row: a status dot, the title over mono meta, then mono columns
@@ -46,6 +46,7 @@ export const LabRow = memo(function LabRow({
   setup = null,
   connectCloud = false,
   deploying = false,
+  failed = false,
 }: {
   lab: Lab;
   status?: LabStatus;
@@ -70,6 +71,8 @@ export const LabRow = memo(function LabRow({
   connectCloud?: boolean;
   /** A deploy is running for it in the backend (e.g. started before a reload), for the dot. */
   deploying?: boolean;
+  /** Its last start failed (see `startFailed`): a red dot, "Failed to start". */
+  failed?: boolean;
 }) {
   const t = useT();
   const { emulated, running, parked } = rowFacts({ runtime: lab.runtime, status, hostArch, emulates });
@@ -78,8 +81,9 @@ export const LabRow = memo(function LabRow({
   const doing = busy ? `${(operation && OPERATION_STATUS[operation]) ?? t("labs.state.working")}…` : null;
   // Stop deletes the lab's machines: ask first, as the lab's own page does.
   const [confirmingStop, setConfirmingStop] = useState(false);
-  const phase = rowPhase({ status, busy, deploying, solved });
-  const stateLabel = phase === "busy" ? doing : t(PHASE_WORDS[phase]);
+  const phase = rowPhase({ status, busy, deploying, solved, failed });
+  // "Starting…": the one word for a start, as on the lab's page and in the sidebar.
+  const stateLabel = phase === "busy" ? doing : phase === "starting" ? `${OPERATION_STATUS.launch}…` : t(PHASE_WORDS[phase]);
 
   return (
     <div className="@container border-t border-border first:border-t-0">
@@ -93,6 +97,7 @@ export const LabRow = memo(function LabRow({
           emulated={emulated}
           setup={setup}
           running={running}
+          failed={phase === "failed" ? stateLabel : null}
           openLabel={t("labs.row.open", { title: lab.title })}
           onOpen={() => onOpen(lab)}
         />

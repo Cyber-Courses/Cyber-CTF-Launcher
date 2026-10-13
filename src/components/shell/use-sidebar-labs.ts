@@ -39,8 +39,12 @@ export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, A
     { serial: true, restartKey: busyKey },
   );
   const statuses = useLabState("statuses");
+  // When this light list couldn't be read (offline), the catalogue a screen loaded since (its
+  // Retry) stands in, so the entries and the palette come back with it.
+  const catalogue = useLabState("catalogue");
+  const list = useMemo(() => (labs.length > 0 ? labs : (catalogue?.labs ?? labs)), [labs, catalogue]);
 
   // The same list object until one of its inputs changes, so the sidebar's entries don't re-render.
-  const active = useMemo(() => activeLabs(labs, deploying, ops, runningIds, statuses), [labs, deploying, ops, runningIds, statuses]);
-  return { labs, active };
+  const active = useMemo(() => activeLabs(list, deploying, ops, runningIds, statuses), [list, deploying, ops, runningIds, statuses]);
+  return { labs: list, active };
 }

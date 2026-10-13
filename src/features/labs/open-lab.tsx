@@ -80,6 +80,8 @@ export function OpenLab({
       busy={!!runs[lab.id]?.busy}
       logs={runs[lab.id]?.logs ?? []}
       times={runs[lab.id]?.times ?? []}
+      runOp={runs[lab.id]?.op}
+      runStartedAt={runs[lab.id]?.startedAt}
       loggedIn={loggedIn}
       onLogin={onLogin}
       hostArch={hostArch}

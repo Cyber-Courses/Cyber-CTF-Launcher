@@ -7,6 +7,7 @@ import { Tip } from "@/components/ui/tip";
 import { StartTimer } from "@/features/labs/lab-timers";
 import type { HeaderMode, LabAction, LabState } from "@/features/labs/lab-detail/lab-state";
 import { openExternal, tell } from "@/lib/failure";
+import { OPERATION_STATUS } from "@/lib/deploy-store";
 import { useT } from "@/lib/i18n";
 
 /** A button's icon and word, or a spinner and its busy word while its action runs. */
@@ -38,8 +39,9 @@ export function HeaderActions({
   onRemove,
   onStop,
   onLogin,
+  startedAt,
 }: {
-  mode: Exclude<HeaderMode, "start">;
+  mode: Exclude<HeaderMode, "start" | "failed">;
   state: LabState;
   url: string | null | undefined;
   busy: boolean;
@@ -53,6 +55,8 @@ export function HeaderActions({
   onRemove: () => void;
   onStop: () => Promise<unknown> | void;
   onLogin?: () => Promise<void>;
+  /** When the start in flight began, for its timer. */
+  startedAt?: number;
 }) {
   const t = useT();
   const locked = busy || deploying;
@@ -70,7 +74,7 @@ export function HeaderActions({
     case "starting":
       return (
         <Button variant="primary" disabled>
-          <Spinner className="size-3.5" /> {t("labs.detail.starting")} <StartTimer />
+          <Spinner className="size-3.5" /> {`${OPERATION_STATUS[s.operation ?? "launch"] ?? OPERATION_STATUS.launch}…`} <StartTimer from={startedAt} />
         </Button>
       );
     case "interrupted":

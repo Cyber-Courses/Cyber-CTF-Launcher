@@ -1,9 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ArrowRight, Cloud, Play, Server, TriangleAlert } from "lucide-react";
+import { ArrowRight, Cloud, Play, RotateCw, Server, TriangleAlert } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
+import { StatusDot } from "@/components/ui/status-pill";
 import { PageHeader } from "@/components/ui/page-header";
 import type { Lab } from "@/features/labs/use-labs";
 import { CalloutRow, StatCard } from "@/features/machine/machine-parts";
@@ -23,12 +24,15 @@ export function HomeHeader({
   now,
   dockerReady,
   running,
+  checkFailed = false,
   onBrowse,
 }: {
   auth: AuthStatus | null;
   now: number;
   dockerReady: boolean | null;
   running: number;
+  /** The machine check failed (no report): say so rather than "Checking this machine…". */
+  checkFailed?: boolean;
   onBrowse: () => void;
 }) {
   const t = useT();
@@ -47,7 +51,7 @@ export function HomeHeader({
           <>{t.rich("home.title.welcome", { em: (s) => <em>{s}</em> })}</>
         )
       }
-      lead={t(`home.status.${heroStatus(dockerReady, running)}`, { count: running })}
+      lead={t(`home.status.${heroStatus(dockerReady, running, checkFailed)}`, { count: running })}
       actions={
         dockerReady === false ? (
           <Button size="sm" onClick={() => machineOpenSetup().catch(tell(t("home.actions.setUpFailed")))}>
@@ -63,32 +67,38 @@ export function HomeHeader({
   );
 }
 
-/** CPU, memory and disk now, each with its sparkline. */
-export function UsageStats({ metrics, history }: { metrics: MachineMetrics | null; history: UsageHistory }) {
+/** CPU, memory and disk now, each with its sparkline; "unavailable" once reading them failed
+ *  (none read yet), not placeholders forever. */
+export function UsageStats({ metrics, history, failed = false }: { metrics: MachineMetrics | null; history: UsageHistory; failed?: boolean }) {
   const t = useT();
   const format = useFormat();
   /** Gigabytes with one decimal, without a trailing ".0" (19.5, 32). */
   const gb = (bytes: number) => format.number(bytes / 1e9, { maximumFractionDigits: 1, useGrouping: false });
   const use = metrics ? usage(metrics) : null;
+  const gone = failed && !metrics;
+  const unavailable = gone ? t("home.stats.unavailable") : "";
   return (
     <div className="grid gap-4 sm:grid-cols-3">
       <StatCard
         label={t("home.stats.cpu")}
-        detail={metrics ? t("home.stats.cores", { cores: metrics.cores }) : ""}
+        detail={metrics ? t("home.stats.cores", { cores: metrics.cores }) : unavailable}
         value={metrics ? metrics.cpu : null}
         history={history.cpu}
+        unavailable={gone}
       />
       <StatCard
         label={t("home.stats.memory")}
-        detail={metrics ? t("home.stats.usage", { used: gb(metrics.memUsed), total: gb(metrics.memTotal) }) : ""}
+        detail={metrics ? t("home.stats.usage", { used: gb(metrics.memUsed), total: gb(metrics.memTotal) }) : unavailable}
         value={use && metrics?.memTotal ? use.memPct : null}
         history={history.mem}
+        unavailable={gone}
       />
       <StatCard
         label={t("home.stats.disk")}
-        detail={metrics ? t("home.stats.usage", { used: gb(metrics.diskUsed), total: gb(metrics.diskTotal) }) : ""}
+        detail={metrics ? t("home.stats.usage", { used: gb(metrics.diskUsed), total: gb(metrics.diskTotal) }) : unavailable}
         value={use && metrics?.diskTotal ? use.diskPct : null}
         history={history.disk}
+        unavailable={gone}
       />
     </div>
   );
@@ -139,8 +149,21 @@ export function RunningPanel({ running, containers, children }: { running: numbe
   );
 }
 
-/** The first labs of the catalog, with a link to all of them. */
-export function LabsPreviewPanel({ labs, onAll, children }: { labs: Lab[] | null; onAll: () => void; children: ReactNode }) {
+/** The first labs of the catalog, with a link to all of them; why it couldn't load, with a retry. */
+export function LabsPreviewPanel({
+  labs,
+  error = null,
+  onRetry,
+  onAll,
+  children,
+}: {
+  labs: Lab[] | null;
+  /** Loading the catalogue failed. */
+  error?: string | null;
+  onRetry?: () => void;
+  onAll: () => void;
+  children: ReactNode;
+}) {
   const t = useT();
   return (
     <Panel>
@@ -156,7 +179,20 @@ export function LabsPreviewPanel({ labs, onAll, children }: { labs: Lab[] | null
           </Button>
         }
       />
-      {!labs ? (
+      {!labs && error ? (
+        <div role="alert" className="flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3.5">
+          <StatusDot tone="fail" />
+          <div className="min-w-0 flex-1 basis-64">
+            <p className="text-[0.8125rem] font-medium text-foreground">{t("labs.list.unreachableTitle")}</p>
+            <p className="mt-0.5 text-[0.75rem] text-muted-foreground">{t("labs.list.unreachableDescription")}</p>
+          </div>
+          {onRetry && (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <RotateCw className="size-3.5" /> {t("labs.list.retry")}
+            </Button>
+          )}
+        </div>
+      ) : !labs ? (
         <p className="px-4 py-3.5 text-[0.8125rem] text-muted-foreground">{t("home.labs.loading")}</p>
       ) : labs.length === 0 ? (
         <p className="px-4 py-3.5 text-[0.8125rem] text-muted-foreground">{t("home.labs.empty")}</p>

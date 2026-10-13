@@ -74,6 +74,16 @@ describe("activeLabs", () => {
     expect(out[2].op).toBeNull();
   });
 
+  it("keeps the labs the list doesn't have (the catalogue unreachable), by id", () => {
+    const op: ActiveOperation = { labId: "lab-goad", op: "launch", machine: "SRV02", step: "Configure SRV02" };
+    const out = activeLabs([], new Set(["lab-goad"]), new Map([["lab-goad", op]]), new Set(["lab-invoice", "lab-gone"]), { "lab-gone": status(false) });
+    expect(out.map((l) => [l.id, l.title, l.slug])).toEqual([
+      ["lab-goad", "Goad", ""],
+      ["lab-invoice", "Invoice", ""],
+    ]);
+    expect(out[0].op).toBe(op);
+  });
+
   it("lets a lab's own status overrule the workload scan", () => {
     const out = activeLabs(labs, new Set(), new Map(), new Set(["a", "d"]), { a: status(false), d: status(true) });
     expect(out.map((l) => l.id)).toEqual(["d"]);

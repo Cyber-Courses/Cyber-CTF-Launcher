@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -8,27 +8,18 @@ import { LIST_SCREEN } from "@/components/ui/screen-width";
 import { EMULATORS, readyHypervisors } from "@/features/labs/lab-runtime";
 import { filterLabs, NO_FILTERS, type LabFilters } from "@/features/labs/lab-filters";
 import { LabsFilterBar } from "@/features/labs/labs-filter-bar";
-import { LabListSkeleton, LabsCatalogue, LabsHeader, SignInBanner } from "@/features/labs/labs-list";
+import { LabListSkeleton, LabsCatalogue, LabsHeader, SignInBanner, UnlistedRunning } from "@/features/labs/labs-list";
+import { runningUnlisted } from "@/features/labs/lab-row-state";
 import { OpenLab, OpenLabLoading, useDetailTitle, useOpenLab } from "@/features/labs/open-lab";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import { useDeployingLabs } from "@/lib/deploy-store";
-import { serverList, type LabStatus, type ServerHost, type SystemReport } from "@/lib/tauri";
+import type { LabStatus, SystemReport } from "@/lib/tauri";
+import { useSavedServers } from "@/features/labs/use-saved-servers";
 import { getVmProvider } from "@/lib/settings";
 import { useStableCallback } from "@/lib/use-stable-callback";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
-/** Saved servers count as somewhere a VM lab can run (for the "needs setup" hint). */
-function useSavedServers() {
-  const [servers, setServers] = useState<ServerHost[]>([]);
-  useEffect(() => {
-    serverList()
-      .then((l) => setServers(l.hosts))
-      .catch(() => setServers([]));
-  }, []);
-  return servers;
-}
 
 /** The labs the filters keep: running ones pinned on top, the rest following in one list, by title. */
 function useFilteredLabs(labs: Lab[] | null, filters: LabFilters, statuses: Record<string, LabStatus>, completed: Set<string>) {
@@ -92,16 +83,21 @@ function LabsView({ loggedIn, authReady = true, onLogin, hostArch, report, openL
 
   if (error)
     return (
-      <EmptyState
-        icon="alert"
-        title={t("labs.list.unreachableTitle")}
-        description={t("labs.list.unreachableDescription")}
-        action={
-          <Button variant="outline" size="sm" onClick={onRetry}>
-            <RotateCw className="size-3.5" /> {t("labs.list.retry")}
-          </Button>
-        }
-      />
+      <div className={cn("space-y-5", LIST_SCREEN)}>
+        {/* The labs running here still run: listed while the catalogue can't be read (by the
+            catalogue last loaded, else by id). */}
+        <UnlistedRunning ids={runningUnlisted(null, statuses)} labs={labs} />
+        <EmptyState
+          icon="alert"
+          title={t("labs.list.unreachableTitle")}
+          description={t("labs.list.unreachableDescription")}
+          action={
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <RotateCw className="size-3.5" /> {t("labs.list.retry")}
+            </Button>
+          }
+        />
+      </div>
     );
   if (detailSlug && !detail && !labs) return <OpenLabLoading />;
   if (detail) {

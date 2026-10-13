@@ -6,11 +6,12 @@ import { useNow } from "@/lib/use-now";
 import { useFormat, useT, type T } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-/** Time since Start was pressed, ticking. */
-export function StartTimer() {
-  const [start] = useState(() => Date.now());
+/** Time since the start began (`from`: when Start was pressed, or the backend's operation was
+ *  first seen), ticking; since it mounted when unknown. */
+export function StartTimer({ from }: { from?: number }) {
+  const [mounted] = useState(() => Date.now());
   const [now] = useNow(250);
-  return <span className="font-mono tabular-nums opacity-80">{formatDuration(now - start)}</span>;
+  return <span className="font-mono tabular-nums opacity-80">{formatDuration(Math.max(0, now - (from ?? mounted)))}</span>;
 }
 
 /** "3h 58m", "58m": a time left, in hours and minutes. */

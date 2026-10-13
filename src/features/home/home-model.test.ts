@@ -22,6 +22,8 @@ describe("home model", () => {
 
   it("picks the line under the greeting", () => {
     expect(heroStatus(null, 3)).toBe("checking");
+    expect(heroStatus(null, 3, true)).toBe("checkFailed");
+    expect(heroStatus(true, 0, true)).toBe("ready");
     expect(heroStatus(false, 3)).toBe("setUpDocker");
     expect(heroStatus(true, 2)).toBe("running");
     expect(heroStatus(true, 0)).toBe("ready");

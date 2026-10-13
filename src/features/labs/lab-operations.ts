@@ -8,6 +8,7 @@ import { appendDeployLog, beginDeploy, getDeploySnapshot, restoreDeploy } from "
 import { noteStopped } from "@/features/labs/lab-store";
 import { tell } from "@/lib/failure";
 import { translate } from "@/lib/i18n";
+import { failureTitleKey } from "@/features/labs/failure-hints";
 
 // The operations on a lab (launch, stop, park, resume, provision) that useLabActions runs: each
 // one's body, streamed into the lab's deploy log, and the run around it.
@@ -50,6 +51,10 @@ export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: Op
       tell(translate("labs.actions.refused"))(e);
     } else {
       appendDeployLog(lab.id, `✗ ${String(e)}`);
+      // Said wherever the player is (a toast, or a notification when the window is away), not
+      // only in the lab's own deployment panel: a failed removal otherwise went unnoticed.
+      const title = failureTitleKey(op);
+      if (title) tell(translate(title, { title: lab.title }))(e);
     }
     return String(e);
   } finally {

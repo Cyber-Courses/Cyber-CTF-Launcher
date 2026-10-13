@@ -21,7 +21,8 @@ function RowButton({ danger = false, ...props }: ButtonHTMLAttributes<HTMLButton
   return <Button size="xs" variant={danger ? "destructive" : "outline"} {...props} />;
 }
 
-/** The status dot: busy or starting (pulsing), running, solved (jewel) or idle, and its word. */
+/** The status dot: busy or starting (pulsing), running, a failed start, solved (jewel) or idle,
+ *  and its word. */
 export function RowDot({ phase, running, solved, label }: { phase: RowPhase; running: boolean; solved: boolean; label: string | null }) {
   return (
     <span title={label ?? undefined} className="relative z-[1] flex w-2 justify-center">
@@ -29,6 +30,8 @@ export function RowDot({ phase, running, solved, label }: { phase: RowPhase; run
         <StatusDot tone="warn" pulse />
       ) : running ? (
         <StatusDot tone="ok" />
+      ) : phase === "failed" ? (
+        <StatusDot tone="fail" />
       ) : solved ? (
         <span aria-hidden className="dot dot-jewel" />
       ) : (
@@ -47,6 +50,7 @@ export function RowTitle({
   emulated,
   setup,
   running,
+  failed = null,
   openLabel,
   onOpen,
 }: {
@@ -54,6 +58,8 @@ export function RowTitle({
   emulated: boolean;
   setup: string | null;
   running: boolean;
+  /** Its last start failed: the words, in place of the description. */
+  failed?: string | null;
   /** "Open <title>": the button's name. */
   openLabel: string;
   onOpen: () => void;
@@ -80,7 +86,12 @@ export function RowTitle({
             </span>
           </>
         )}
-        {setup && !running ? (
+        {failed ? (
+          <>
+            {" · "}
+            <span className="text-destructive">{failed}</span>
+          </>
+        ) : setup && !running ? (
           <>
             {" · "}
             <span className="text-warning">{setup}</span>

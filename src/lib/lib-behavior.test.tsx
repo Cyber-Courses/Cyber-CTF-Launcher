@@ -137,7 +137,7 @@ describe("deploy-store", () => {
 
   it("names every operation", () => {
     expect((["launch", "resume", "pause", "shutdown", "provision", "attack_vm", "stop"] as const).map((o) => operationLabel(op(o)))).toEqual([
-      "Deploying…",
+      "Starting…",
       "Resuming…",
       "Pausing…",
       "Shutting down…",
