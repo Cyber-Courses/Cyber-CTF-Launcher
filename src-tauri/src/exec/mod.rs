@@ -111,6 +111,11 @@ fn failed(program: &str, args: &[&str], stderr: String) -> Error {
     Error::CommandFailed { command: format!("{program} {}", args.join(" ")), stderr }
 }
 
+/// Whether `e` is a timed tool that ran out of time (and was killed), not one that failed.
+pub fn timed_out(e: &Error) -> bool {
+    matches!(e, Error::CommandFailed { stderr, .. } if stderr.starts_with("timed out after"))
+}
+
 /// What a streamed tool's failure says: its last stderr lines, else just its exit status.
 fn stream_failure(stderr_tail: &[String], status: impl std::fmt::Display) -> String {
     let cause = stderr_tail.join("\n");
@@ -353,6 +358,8 @@ mod tests {
             matches!(err, Error::CommandFailed { ref command, ref stderr } if command == "sh -c sleep 5" && stderr.starts_with("timed out after 0s")),
             "{err:?}"
         );
+        assert!(timed_out(&err));
+        assert!(!timed_out(&failed("sh", &[], "exited 1".into())) && !timed_out(&Error::ToolMissing { tool: "sh" }));
     }
 
     /// Whether process `pid` is gone (or a zombie) within a few seconds.

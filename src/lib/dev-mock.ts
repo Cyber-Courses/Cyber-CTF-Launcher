@@ -42,6 +42,7 @@ const report = {
     { target: "docker", cloud: null, ready: true, summary: "Docker Desktop 27.3.1", notes: ["docker 27.3.1"] },
     { target: "vagrant", cloud: null, ready: true, summary: "Vagrant 2.4.3 with VirtualBox", notes: ["vagrant 2.4.3"] },
   ],
+  wsl: null,
 };
 
 /** The saved servers, a new copy per call (as the backend answers). */

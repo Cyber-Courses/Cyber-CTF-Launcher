@@ -27,6 +27,10 @@
          Terraform state, SSH known_hosts. Left virtualized, those writes land in the package's
          private copy of AppData and docker, vagrant, terraform and ssh can't find them. -->
     <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <!-- Likewise for the registry: the one-time RunOnce that reopens the app after the restart
+         finishing WSL 2 (and what the tools it runs write under HKCU) must reach the real hive,
+         not the package's private copy, which Windows never reads at sign-in. -->
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
   </Properties>
 
   <Dependencies>
@@ -69,7 +73,7 @@
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
-    <!-- Needed for FileSystemWriteVirtualization (above). -->
+    <!-- Needed for FileSystemWriteVirtualization and RegistryWriteVirtualization (above). -->
     <rescap:Capability Name="unvirtualizedResources" />
   </Capabilities>
 </Package>

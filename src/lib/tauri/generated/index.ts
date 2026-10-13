@@ -49,3 +49,5 @@ export type * from "./TargetReadiness";
 export type * from "./TermEvent";
 export type * from "./Tool";
 export type * from "./Workload";
+export type * from "./WslReport";
+export type * from "./WslState";

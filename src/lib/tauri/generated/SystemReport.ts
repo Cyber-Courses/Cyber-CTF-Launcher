@@ -4,6 +4,7 @@ import type { PkgManager } from "./PkgManager";
 import type { ProviderStatus } from "./ProviderStatus";
 import type { TargetReadiness } from "./TargetReadiness";
 import type { Tool } from "./Tool";
+import type { WslReport } from "./WslReport";
 
 export type SystemReport = { os: string, arch: string, pkgManager: PkgManager, docker: Tool, 
 /**
@@ -45,4 +46,8 @@ vmProviders: Array<ProviderStatus>,
  * What Isoloom says this machine can run, target by target (`isoloom targets --host`):
  * the tools and credentials each one needs, found or missing.
  */
-targets: Array<TargetReadiness>, };
+targets: Array<TargetReadiness>, 
+/**
+ * Windows: whether WSL 2 is on, waits for a restart, or is missing (`None` elsewhere).
+ */
+wsl: WslReport | null, };

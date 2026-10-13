@@ -102,6 +102,7 @@ pub fn run() {
             machine::system::docker::docker_start_engine,
             machine::system::metrics::machine_metrics,
             machine::system::setup_window::machine_open_setup,
+            machine::system::wsl::machine_restart,
             machine::selftest::machine_selftest,
             machine::selftest::machine_selftest_prefetch,
             machine::workloads::machine_workloads,

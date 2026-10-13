@@ -16,6 +16,8 @@ import type {
   TargetReadiness,
   Tool,
   Workload,
+  WslReport,
+  WslState,
 } from "@/lib/tauri/generated";
 
 export type {
@@ -34,6 +36,8 @@ export type {
   TargetReadiness,
   Tool,
   Workload,
+  WslReport,
+  WslState,
 };
 
 /** A Docker-compatible engine (`docker context` names it). */
@@ -50,6 +54,10 @@ export const machineMetrics = () => invoke<MachineMetrics>("machine_metrics");
 
 /** Opens the guided "set up this machine" window, optionally at one step (e.g. "docker", "vm"). */
 export const machineOpenSetup = (step?: string) => invoke<void>("machine_open_setup", { step: step ?? null });
+
+/** Restarts Windows in a few seconds (to finish turning WSL 2 on); `reason` is the note
+ *  Windows shows meanwhile. Windows only. */
+export const machineRestart = (reason: string) => invoke<void>("machine_restart", { reason });
 
 /** Assisted one-click install of a lab dependency, streaming the installer output. */
 export const installDependency = (dependency: Dependency, onLog: (line: string) => void) => invokeStreaming("install_dependency", { dependency }, onLog);

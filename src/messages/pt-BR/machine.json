@@ -165,6 +165,7 @@
     "add": "Adicionar",
     "setUp": "Configurar",
     "notInstalled": "não instalado",
+    "restartNeeded": "reinício necessário",
     "notChecked": "não verificado",
     "running": "rodando",
     "stopped": "parado",
@@ -229,7 +230,8 @@
     "next": {
       "done": "Já fiz isso",
       "skip": "Pular por enquanto",
-      "continue": "Continuar"
+      "continue": "Continuar",
+      "restartLater": "Vou reiniciar depois"
     }
   },
   "body": {
@@ -250,12 +252,25 @@
       "log": "Ativando o WSL 2. Aceite o aviso do Windows para continuar…",
       "turningOn": "Ativando o WSL 2…",
       "turnOn": "Ativar o WSL 2",
-      "restart": "Reinicie o Windows para concluir e depois abra o Cyber CTF de novo para continuar a configuração.",
+      "restart": "O WSL 2 está ativado. Reinicie o Windows para concluir a ativação.",
       "byHand": "Fazer manualmente",
       "step1": "Abra o <b>PowerShell</b> como Administrador (clique com o botão direito e depois em “Executar como administrador”).",
       "step2": "Rode isto e reinicie quando terminar:",
       "step3": "Se o Docker depois disser que a virtualização está desativada: abra “Ativar ou desativar recursos do Windows” e ative <b>Plataforma de Máquina Virtual</b> e <b>Subsistema do Windows para Linux</b>, e confirme que a virtualização está ativada na BIOS/UEFI.",
-      "guide": "Guia de instalação do WSL da Microsoft"
+      "guide": "Guia de instalação do WSL da Microsoft",
+      "readyTitle": "WSL 2",
+      "readyDetail": "Ativado e funcionando",
+      "restartNow": "Reiniciar agora",
+      "restarting": "Reiniciando em alguns segundos…",
+      "confirmTitle": "Reiniciar o Windows agora?",
+      "confirmBody": "O Windows reinicia em alguns segundos e os apps abertos fecham sem salvar: salve seu trabalho antes.",
+      "reopens": "O Cyber CTF abre de novo quando você entrar novamente. A configuração recomeça pela primeira etapa, e o que já foi feito aparece como concluído.",
+      "reopenByHand": "Depois de entrar novamente, abra o Cyber CTF de novo. A configuração recomeça pela primeira etapa, e o que já foi feito aparece como concluído.",
+      "restartReason": "Cyber CTF: reiniciando para concluir a ativação do WSL 2.",
+      "restartFailed": "Não foi possível reiniciar o Windows",
+      "unknown": "O Cyber CTF não conseguiu saber se o WSL 2 está ativado. Se você já o ativou e reiniciou, continue.",
+      "recheck": "Verificar de novo",
+      "firmware": "O WSL 2 está ativado, mas o Windows continua sem executar um hipervisor depois do reinício. A virtualização provavelmente está desligada no firmware do seu PC: ative Intel VT-x ou AMD-V (SVM) nas configurações da BIOS/UEFI e reinicie. Reiniciar de novo por aqui não resolve."
     },
     "dockerTestDescription": "busybox, dois contêineres numa rede de lab.",
     "vmTestDescription": "Inicia, roda um comando, faz ping numa rede de lab e apaga.",

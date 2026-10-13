@@ -165,6 +165,7 @@
     "add": "Add",
     "setUp": "Set up",
     "notInstalled": "not installed",
+    "restartNeeded": "restart needed",
     "notChecked": "not checked",
     "running": "running",
     "stopped": "stopped",
@@ -229,7 +230,8 @@
     "next": {
       "done": "I’ve done this",
       "skip": "Skip for now",
-      "continue": "Continue"
+      "continue": "Continue",
+      "restartLater": "I’ll restart later"
     }
   },
   "body": {
@@ -250,12 +252,25 @@
       "log": "Turning on WSL 2. Accept the Windows prompt to continue…",
       "turningOn": "Turning on WSL 2…",
       "turnOn": "Turn on WSL 2",
-      "restart": "Restart Windows to finish, then open Cyber CTF again to continue setup.",
+      "restart": "WSL 2 is on. Restart Windows to finish turning it on.",
       "byHand": "Do it by hand instead",
       "step1": "Open <b>PowerShell</b> as Administrator (right-click, then “Run as administrator”).",
       "step2": "Run this, then reboot when it finishes:",
       "step3": "If Docker later says virtualization is off: open “Turn Windows features on or off” and enable <b>Virtual Machine Platform</b> and <b>Windows Subsystem for Linux</b>, and make sure virtualization is enabled in your BIOS/UEFI.",
-      "guide": "Microsoft’s WSL install guide"
+      "guide": "Microsoft’s WSL install guide",
+      "readyTitle": "WSL 2",
+      "readyDetail": "On and running",
+      "restartNow": "Restart now",
+      "restarting": "Restarting in a few seconds…",
+      "confirmTitle": "Restart Windows now?",
+      "confirmBody": "Windows restarts in a few seconds, and open apps close without saving: save your work first.",
+      "reopens": "Cyber CTF opens again when you sign back in. Setup starts again from its first step, and what’s already done shows as done.",
+      "reopenByHand": "After you sign back in, open Cyber CTF again. Setup starts again from its first step, and what’s already done shows as done.",
+      "restartReason": "Cyber CTF: restarting to finish turning on WSL 2.",
+      "restartFailed": "Couldn’t restart Windows",
+      "unknown": "Cyber CTF couldn’t tell whether WSL 2 is on. If you’ve already turned it on and restarted, continue.",
+      "recheck": "Re-check",
+      "firmware": "WSL 2 is turned on, but Windows still runs no hypervisor after the restart. Virtualization is probably off in your PC’s firmware: turn on Intel VT-x or AMD-V (SVM) in the BIOS/UEFI settings, then restart. Another restart from here won’t fix it."
     },
     "dockerTestDescription": "busybox, two containers on a lab network.",
     "vmTestDescription": "Boots, runs a command, pings it on a lab network, deletes it.",
