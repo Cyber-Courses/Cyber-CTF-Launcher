@@ -1,10 +1,14 @@
 //! Login with cyber-auth: OAuth authorization code + PKCE (RFC 7636) through the
-//! system browser and a loopback redirect (RFC 8252). Tokens live in the OS
-//! keychain and never reach the webview; API calls go through `api.rs`.
+//! system browser, back to the app by a `cyberctf://` link or a loopback redirect (RFC 8252,
+//! see `config::scheme_redirect`). Tokens live in the OS keychain and never reach the webview;
+//! API calls go through `api.rs`.
 
 mod callback;
+mod scheme;
 mod store;
 mod tokens;
+
+pub use scheme::deliver as deliver_link;
 
 use std::time::Duration;
 
@@ -126,25 +130,48 @@ fn authorize_url(client_id: &str, redirect_uri: &str, state: &str, verifier: &st
     Ok(authorize)
 }
 
+const LOGIN_TIMED_OUT: &str = "Sign-in wasn't finished within 5 minutes, so it was cancelled. Try again.";
+
+/// Opens the sign-in page in the system browser.
+fn open_browser(app: &AppHandle, authorize: &url::Url) -> Result<()> {
+    app.opener()
+        .open_url(authorize.as_str(), None::<&str>)
+        .map_err(|_| Error::Invalid("No browser opened for sign-in. Set a default web browser for this account and try again.".into()))
+}
+
 #[tauri::command]
 pub async fn auth_login(app: AppHandle) -> Result<AuthStatus> {
+    if config::scheme_redirect() {
+        return login_by_link(&app).await;
+    }
     let (listener, port) = callback::bind_loopback().await?;
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
     let verifier = random_b64(32);
     let state = random_b64(16);
     let (client_id, api) = (config::client_id(), config::api_url());
 
-    let authorize = authorize_url(&client_id, &redirect_uri, &state, &verifier, &api)?;
-    app.opener()
-        .open_url(authorize.as_str(), None::<&str>)
-        .map_err(|_| Error::Invalid("No browser opened for sign-in. Set a default web browser for this account and try again.".into()))?;
+    open_browser(&app, &authorize_url(&client_id, &redirect_uri, &state, &verifier, &api)?)?;
 
     // Only the redirect carrying this login's `state` is taken, and the browser hears
     // "signed in" only once the code was exchanged and the session kept.
     let finish = |code: String| finish_login(code, &redirect_uri, &client_id, &verifier, &api);
-    tokio::time::timeout(LOGIN_TIMEOUT, callback::receive(listener, &state, finish))
+    tokio::time::timeout(LOGIN_TIMEOUT, callback::receive(listener, &state, finish)).await.map_err(|_| Error::Invalid(LOGIN_TIMED_OUT.into()))?
+}
+
+/// Sign-in that comes back as a `cyberctf://auth/callback` link (see `scheme`): the browser asks
+/// to open Cyber CTF, which takes the code and exchanges it.
+async fn login_by_link(app: &AppHandle) -> Result<AuthStatus> {
+    let verifier = random_b64(32);
+    let state = random_b64(16);
+    let (client_id, api) = (config::client_id(), config::api_url());
+    let link = scheme::expect(&state);
+    open_browser(app, &authorize_url(&client_id, scheme::REDIRECT_URI, &state, &verifier, &api)?)?;
+    let url = tokio::time::timeout(LOGIN_TIMEOUT, link)
         .await
-        .map_err(|_| Error::Invalid("Sign-in wasn't finished within 5 minutes, so it was cancelled. Try again.".into()))?
+        .map_err(|_| Error::Invalid(LOGIN_TIMED_OUT.into()))?
+        .map_err(|_| Error::Invalid("Another sign-in was started; this one was cancelled.".into()))?;
+    let (code, _) = callback::outcome(&url)?;
+    finish_login(code, scheme::REDIRECT_URI, &client_id, &verifier, &api).await
 }
 
 /// Exchanges the redirect's code for tokens and keeps the session.

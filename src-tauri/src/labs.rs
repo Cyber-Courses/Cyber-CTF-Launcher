@@ -183,11 +183,52 @@ fn stage(labs: &Path, lab_id: &str, dir: &Path, tarball: &[u8], repository: &str
     Ok(staging)
 }
 
-/// Replaces the installed lab with the staged one.
+/// Replaces the installed lab with the staged one, all or nothing: the old one is moved aside
+/// (a rename, which Windows refuses whole while a file inside is open, where deleting it would
+/// stop halfway and leave a broken lab), the new one moved in, and the old one put back if
+/// that fails. The old copy is deleted last, best effort; a leftover goes on the next update.
 fn swap_in(staging: &Path, dir: &Path) -> Result<()> {
-    let _ = std::fs::remove_dir_all(dir);
-    std::fs::rename(staging, dir)?;
+    let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let old = dir.with_file_name(format!(".{name}.old"));
+    let _ = std::fs::remove_dir_all(&old);
+    let had_old = dir.exists();
+    if had_old {
+        rename_retrying(dir, &old).map_err(|e| in_use(e, dir))?;
+    }
+    if let Err(e) = rename_retrying(staging, dir) {
+        if had_old {
+            let _ = rename_retrying(&old, dir);
+        }
+        return Err(in_use(e, dir));
+    }
+    let _ = std::fs::remove_dir_all(&old);
     Ok(())
+}
+
+/// `rename`, retried briefly: on Windows an antivirus or the search indexer holds a just-written
+/// file open for a moment, and the rename fails with "access denied" meanwhile.
+fn rename_retrying(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut last = None;
+    for wait_ms in [0, 100, 250, 500, 1000] {
+        std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("rename failed")))
+}
+
+/// A rename refused because something holds a file in the lab folder, said as what to do.
+fn in_use(e: std::io::Error, dir: &Path) -> Error {
+    if e.kind() == std::io::ErrorKind::PermissionDenied {
+        Error::Invalid(format!(
+            "Couldn't update the lab: a file in {} is open in another program (an editor, a terminal, or a VM). Close it and try again.",
+            dir.display()
+        ))
+    } else {
+        Error::Io(e)
+    }
 }
 
 /// The environment a launch runs with: only the evidence claim's two variables from the
@@ -359,6 +400,38 @@ mod tests {
         assert!(!dir.join("old.txt").exists());
         assert!(installed(&dir.join(".cyberctf-commit"), sha));
         assert!(!installed(&dir.join(".cyberctf-commit"), "ffffffffffffffffffffffffffffffffffffffff"));
+        assert!(!labs.join(".invoice.old").exists(), "the old copy is cleared");
+        std::fs::remove_dir_all(labs).unwrap();
+    }
+
+    /// Windows: a file of the installed lab open in another program (no delete sharing, like an
+    /// editor or a VM's disk) used to leave the lab half-deleted. Now the update is refused whole,
+    /// the installed lab intact, and it goes through once the file is closed.
+    #[cfg(windows)]
+    #[test]
+    fn an_update_with_a_file_held_open_keeps_the_installed_lab_whole() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let labs = std::env::temp_dir().join(format!("cyberctf-swap-{}", rand::random::<u32>()));
+        let (dir, staging) = (labs.join("invoice"), labs.join(".invoice.staging"));
+        for (d, v) in [(&dir, "old"), (&staging, "new")] {
+            std::fs::create_dir_all(d.join("sub")).unwrap();
+            std::fs::write(d.join("a.txt"), v).unwrap();
+            std::fs::write(d.join("sub").join("disk.vmdk"), v).unwrap();
+        }
+        const FILE_SHARE_READ: u32 = 1;
+        let held = std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(dir.join("sub").join("disk.vmdk")).unwrap();
+
+        let err = swap_in(&staging, &dir).unwrap_err().to_string();
+        assert!(err.contains("open in another program"), "{err}");
+        for f in ["a.txt", "sub/disk.vmdk"] {
+            assert_eq!(std::fs::read_to_string(dir.join(f)).unwrap(), "old", "{f}");
+            assert_eq!(std::fs::read_to_string(staging.join(f)).unwrap(), "new", "{f}");
+        }
+
+        drop(held);
+        swap_in(&staging, &dir).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("sub").join("disk.vmdk")).unwrap(), "new");
+        assert!(!staging.exists() && !labs.join(".invoice.old").exists());
         std::fs::remove_dir_all(labs).unwrap();
     }
 

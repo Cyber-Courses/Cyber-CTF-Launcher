@@ -17,6 +17,7 @@ mod attack_vm;
 mod cloud_services;
 mod commands;
 mod discover;
+pub(crate) use discover::is_lab_id;
 mod docker;
 mod exegol;
 mod inflight;

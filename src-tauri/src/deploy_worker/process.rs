@@ -87,13 +87,21 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
     let exe = std::env::current_exe().map_err(Error::Io)?;
     let mut cmd = std::process::Command::new(exe);
     cmd.arg("deploy").arg("--job").arg(&f.job).stdin(std::process::Stdio::null()).stdout(log.try_clone().map_err(Error::Io)?).stderr(log);
-    detach(&mut cmd);
+    detach(&mut cmd, true);
     // A UAC prompt it raises (Vagrant on Hyper-V) comes up for the app's window.
     #[cfg(windows)]
     if let Some(hwnd) = crate::exec::owner_window() {
         cmd.env(crate::exec::OWNER_WINDOW_ENV, hwnd.to_string());
     }
-    let mut child = cmd.spawn().map_err(Error::Io)?;
+    let mut child = match cmd.spawn() {
+        // Windows: the job the app runs in forbids breaking away; start the worker inside it.
+        Err(e) if cfg!(windows) && e.raw_os_error() == Some(ERROR_ACCESS_DENIED) => {
+            log::warn!("deploy worker can't leave the app's job object; it ends if that job is closed");
+            detach(&mut cmd, false);
+            cmd.spawn().map_err(Error::Io)?
+        }
+        spawned => spawned.map_err(Error::Io)?,
+    };
     let pid = child.id();
     let worker = Worker { pid, started: observe(pid).map(|o| o.started) };
     pidfile.write_all(worker.line().as_bytes()).map_err(Error::Io)?;
@@ -125,9 +133,17 @@ pub fn remove_pidfile_of(path: &Path, pid: u32) {
     }
 }
 
+/// What CreateProcess answers when the app's job object doesn't allow breaking away.
+const ERROR_ACCESS_DENIED: i32 = 5;
+
 /// Its own process group (and session leader on unix): closing the app's terminal or the app
 /// itself sends it nothing, and stopping it later stops its children too.
-fn detach(cmd: &mut std::process::Command) {
+///
+/// On Windows, also out of the app's job object when `breakaway`: an app started by a launcher,
+/// a terminal or an installer can sit in a job that kills its whole tree when it closes, which
+/// would cut the deploy short.
+#[cfg_attr(not(windows), allow(unused_variables))]
+fn detach(cmd: &mut std::process::Command, breakaway: bool) {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -138,7 +154,9 @@ fn detach(cmd: &mut std::process::Command) {
         use std::os::windows::process::CommandExt;
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        let flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
+        cmd.creation_flags(if breakaway { flags | CREATE_BREAKAWAY_FROM_JOB } else { flags });
     }
 }
 
@@ -348,7 +366,6 @@ fn signal_group(pid: u32, signal: libc::c_int) {
 
 /// Half-second checks a Terraform run gets to stop on its own once interrupted: it finishes the
 /// resources it is creating and records them in its state (2 minutes).
-#[cfg(unix)]
 const TERRAFORM_GRACE_CHECKS: u32 = 240;
 
 /// [`kill`], then waits until the worker is gone (SIGKILL to its group after 20 s), so what
@@ -360,7 +377,6 @@ const TERRAFORM_GRACE_CHECKS: u32 = 240;
 pub async fn kill_and_wait(app: &AppHandle, key: &str) {
     let Ok(f) = files::of(app, key) else { return };
     let Some(worker) = f.worker().filter(alive) else { return };
-    #[cfg(unix)]
     if interrupt_terraform(worker.pid) && gone_within(&worker, TERRAFORM_GRACE_CHECKS).await {
         remove_pidfile_of(&f.pid, worker.pid);
         return;
@@ -392,6 +408,67 @@ fn interrupt_terraform(group: u32) -> bool {
     !found.is_empty()
 }
 
+/// Windows: a Ctrl+C on the console of each Terraform run under the worker `root` (the host
+/// binary, or the `docker run` of its container, which hands it on as SIGINT). Whether one was
+/// interrupted.
+#[cfg(windows)]
+fn interrupt_terraform(root: u32) -> bool {
+    let found = terraform_runs_under(root);
+    found.into_iter().filter(|&pid| crate::platform::console::interrupt(pid)).count() > 0
+}
+
+/// The Terraform runs among `root`'s descendants, from a snapshot of all processes.
+#[cfg(windows)]
+fn terraform_runs_under(root: u32) -> Vec<u32> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always));
+    let procs: Vec<Proc> = sys
+        .processes()
+        .iter()
+        .map(|(pid, p)| Proc {
+            pid: pid.as_u32(),
+            parent: p.parent().map(|p| p.as_u32()),
+            name: p.name().to_string_lossy().to_lowercase(),
+            cmdline: p.cmd().iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" "),
+        })
+        .collect();
+    terraform_pids(&procs, root)
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+struct Proc {
+    pid: u32,
+    parent: Option<u32>,
+    name: String,
+    cmdline: String,
+}
+
+/// The Terraform runs below `root` in `procs`: `terraform.exe`, or a `docker run` of the
+/// hashicorp/terraform image. Not their own children (providers share their console, so the one
+/// Ctrl+C reaches them too).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn terraform_pids(procs: &[Proc], root: u32) -> Vec<u32> {
+    let is_terraform =
+        |p: &Proc| p.name == "terraform.exe" || p.name == "terraform" || (p.name.starts_with("docker") && p.cmdline.contains("hashicorp/terraform"));
+    let parent_of = |pid: u32| procs.iter().find(|p| p.pid == pid).and_then(|p| p.parent);
+    // Under `root`, and not under another Terraform run. Depth-capped: a pid can be reused, so
+    // the parent chain read from a snapshot may loop.
+    let under_root = |p: &Proc| {
+        let mut cur = p.parent;
+        for _ in 0..32 {
+            match cur {
+                Some(pid) if pid == root => return true,
+                Some(pid) if procs.iter().any(|q| q.pid == pid && is_terraform(q)) => return false,
+                Some(pid) => cur = parent_of(pid),
+                None => return false,
+            }
+        }
+        false
+    };
+    procs.iter().filter(|p| p.pid != root && is_terraform(p) && under_root(p)).map(|p| p.pid).collect()
+}
+
 /// The process ids `pgrep` printed, one per line.
 #[cfg(any(unix, test))]
 fn pids(out: &str) -> Vec<u32> {
@@ -412,6 +489,29 @@ async fn gone_within(worker: &Worker, checks: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_terraform_runs_found_are_the_workers_and_not_their_providers() {
+        let p = |pid, parent, name: &str, cmdline: &str| Proc { pid, parent: Some(parent), name: name.into(), cmdline: cmdline.into() };
+        let procs = [
+            p(100, 1, "cyberctf-desktop.exe", "cyberctf-desktop.exe deploy --job a.json"),
+            p(110, 100, "terraform.exe", "terraform apply -auto-approve"),
+            p(111, 110, "terraform-provider-aws_v5.exe", ""),
+            // Nested terraform (a module calling out): its parent run's Ctrl+C reaches it.
+            p(112, 110, "terraform.exe", "terraform version"),
+            p(120, 100, "docker.exe", "docker run --rm hashicorp/terraform:1.9.8 apply"),
+            p(130, 100, "docker.exe", "docker compose up"),
+            // Another worker's run, and a pid cycle from reuse: neither is this worker's.
+            p(200, 1, "cyberctf-desktop.exe", "cyberctf-desktop.exe deploy --job b.json"),
+            p(210, 200, "terraform.exe", "terraform apply"),
+            p(300, 301, "terraform.exe", ""),
+            p(301, 300, "cmd.exe", ""),
+        ];
+        let mut found = terraform_pids(&procs, 100);
+        found.sort();
+        assert_eq!(found, [110, 120]);
+        assert!(terraform_pids(&procs, 999).is_empty());
+    }
 
     #[test]
     fn only_a_deploy_worker_counts_as_one() {

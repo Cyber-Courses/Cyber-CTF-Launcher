@@ -40,9 +40,34 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// The banner with no lab deploying (the dev mock's sample data has one mid-deploy, which holds
+// the update back: see "waits for running deploys" below).
+const idleTauri = (overrides: Parameters<typeof installTauri>[0] = {}) => installTauri({ deploying_labs: () => [], ...overrides });
+
 describe("UpdateBanner", () => {
+  it("waits for running deploys: installing would end them", async () => {
+    let deploying = ["web-sqli"];
+    idleTauri({ deploying_labs: () => deploying });
+    const downloadAndInstall = vi.fn(async () => {});
+    updater.pending = { version: "1.5.0", downloadAndInstall };
+    render(<UpdateBanner />);
+    await flush();
+    expect(screen.getByRole("status").textContent).toContain("Wait until your labs finish deploying");
+    const button = screen.getByRole("button", { name: "Update" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    // A deploy that starts after the last poll is still caught when Update is clicked.
+    deploying = [];
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await flush();
+    expect(button.hasAttribute("disabled")).toBe(false);
+    deploying = ["web-sqli"];
+    fireEvent.click(button);
+    await flush();
+    expect(downloadAndInstall).not.toHaveBeenCalled();
+  });
+
   it("stays hidden when up to date, and when the check fails", async () => {
-    installTauri();
+    idleTauri();
     const { unmount } = render(<UpdateBanner />);
     await flush();
     expect(screen.queryByRole("status")).toBeNull();
@@ -54,7 +79,7 @@ describe("UpdateBanner", () => {
   });
 
   it("offers the new version, installs it and relaunches", async () => {
-    const calls = installTauri({ restart_app: () => null });
+    const calls = idleTauri({ restart_app: () => null });
     const downloadAndInstall = vi.fn(async () => {});
     updater.pending = { version: "1.5.0", downloadAndInstall };
     const user = userEvent.setup();
@@ -69,7 +94,7 @@ describe("UpdateBanner", () => {
   });
 
   it("disables the button while downloading", async () => {
-    installTauri();
+    idleTauri();
     let finish: () => void = () => {};
     updater.pending = { version: "1.5.0", downloadAndInstall: () => new Promise<void>((r) => (finish = r)) };
     const user = userEvent.setup();
@@ -82,7 +107,7 @@ describe("UpdateBanner", () => {
   });
 
   it("says when the update failed", async () => {
-    installTauri();
+    idleTauri();
     updater.pending = {
       version: "1.5.0",
       downloadAndInstall: async () => {
@@ -102,7 +127,7 @@ describe("UpdateBanner", () => {
   it("keeps Restart now when the relaunch fails after a good install", async () => {
     // The relaunch failing used to report the (installed) update as failed, hiding Restart now.
     let restarts = 0;
-    installTauri({
+    idleTauri({
       restart_app: () => {
         restarts++;
         throw new Error("relaunch denied");

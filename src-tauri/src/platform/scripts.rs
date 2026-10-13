@@ -310,8 +310,7 @@ mod tests {
         // gpg asked "overwrite?" on a second run, with no tty to answer it.
         for s in [TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT] {
             assert!(s.contains("gpg --batch --yes --dearmor"), "{s}");
-            let ok = std::process::Command::new("sh").args(["-n", "-c", s]).status().unwrap();
-            assert!(ok.success(), "not valid sh: {s}");
+            assert!(crate::platform::sh_parses(s), "not valid sh: {s}");
         }
         assert!(VIRTUALBOX_SCRIPT.contains("download.virtualbox.org/virtualbox/debian"));
     }
@@ -325,8 +324,7 @@ mod tests {
             assert!(!s.contains("| sh") && !s.contains("| bash"), "download piped into a shell: {s}");
             assert!(!s.contains("curl -s") || s.contains("curl -fs"), "a failed download must fail: {s}");
             assert!(s.starts_with("set -e"), "{s}");
-            let ok = std::process::Command::new("sh").args(["-n", "-c", &s]).status().unwrap();
-            assert!(ok.success(), "not valid sh: {s}");
+            assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
         }
         for s in [awscli_script(), azurecli_script(), docker_script(None)] {
             assert!(s.contains(r#"d="$(mktemp -d)""#) && s.contains("trap 'rm -rf \"$d\"' EXIT"), "{s}");
@@ -386,7 +384,7 @@ mod tests {
         // Verified before it is unpacked, let alone run.
         let verified = s.find(&format!("VALIDSIG {AWS_CLI_KEY_FINGERPRINT} ")).unwrap();
         assert!(verified < s.find("unzip -tq").unwrap() && verified < s.find(r#""$d/aws/install""#).unwrap(), "{s}");
-        assert!(sh_ok(&s), "not valid sh: {s}");
+        assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
     }
 
     #[test]
@@ -398,17 +396,9 @@ mod tests {
             "{s}"
         );
         assert!(!s.contains("| bash") && !s.contains("| sh") && !s.contains("/tmp"), "{s}");
-        assert!(sh_ok(&s), "not valid sh: {s}");
+        assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
         for s in [docker_script(Some("player")), azurecli_script()] {
-            assert!(sh_ok(&s), "not valid sh: {s}");
-        }
-    }
-
-    /// Whether `sh -n` accepts `script` (no `sh` on Windows: not checked there).
-    fn sh_ok(script: &str) -> bool {
-        match std::process::Command::new("sh").args(["-n", "-c", script]).status() {
-            Ok(status) => status.success(),
-            Err(_) => cfg!(windows),
+            assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
         }
     }
 

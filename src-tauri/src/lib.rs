@@ -8,6 +8,7 @@ mod exec;
 mod http;
 mod labs;
 mod lan_relay;
+mod logging;
 mod machine;
 mod menu;
 mod msix_data;
@@ -46,6 +47,14 @@ const REAP_EVERY: Duration = Duration::from_secs(300);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // First: a panic anywhere after this lands in the log file, not in a stderr nobody sees.
+    logging::install_panic_hook();
+    // `cyberctf-desktop interrupt --pid <pid>` (Windows): Ctrl+C a deploy's Terraform so it stops
+    // cleanly, from a throwaway process (see platform::console). Nothing else of the app starts.
+    #[cfg(windows)]
+    if let Some(pid) = platform::console::interrupt_pid(std::env::args()) {
+        std::process::exit(if platform::console::send_ctrl_c(pid) { 0 } else { 1 });
+    }
     runtime::server::mark_started();
     // Before anything else: GUI launches don't get the shell PATH (docker, vagrant, ovftool).
     platform::env_path::augment();
@@ -67,6 +76,7 @@ pub fn run() {
             quit::stop_lingering();
             window::reveal_main(app);
         }))
+        .plugin(logging::plugin(logging::APP_LOG))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -180,6 +190,7 @@ fn worker_job(args: impl IntoIterator<Item = String>) -> Option<PathBuf> {
 }
 
 fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    logging::log_startup(app.handle(), "app");
     // Before anything reads its settings: what a virtualized Store build saved.
     #[cfg(windows)]
     msix_data::migrate(app.handle());
@@ -202,8 +213,16 @@ fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
         use tauri_plugin_deep_link::DeepLinkExt;
         let _ = app.deep_link().register_all();
     }
-    if cfg!(debug_assertions) {
-        app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
+    // Sign-in coming back as a cyberctf://auth/callback link goes to the sign-in waiting for it
+    // (lab links stay the frontend's), and the app comes forward from the browser.
+    {
+        use tauri_plugin_deep_link::DeepLinkExt;
+        let handle = app.handle().clone();
+        app.deep_link().on_open_url(move |event| {
+            if event.urls().iter().any(account::auth::deliver_link) {
+                window::reveal_main(&handle);
+            }
+        });
     }
     // Bring your own compute: register this machine and run the player's labs on it.
     account::agent::spawn(app.handle().clone());

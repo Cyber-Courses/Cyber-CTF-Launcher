@@ -5,6 +5,7 @@ import { AlertTriangle, Copy, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { tell } from "@/lib/failure";
+import { logFrontendError } from "@/lib/error-log";
 import { useT } from "@/lib/i18n";
 
 /** The error as text to paste into a bug report: message, window, agent and stack. Kept in
@@ -44,6 +45,7 @@ function ErrorPanel({
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     console.error(error);
+    logFrontendError("error screen", errorDetails(error));
   }, [error]);
   const copy = () =>
     navigator.clipboard

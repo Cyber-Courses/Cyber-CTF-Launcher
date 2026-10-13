@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
-import { restartApp } from "@/lib/tauri";
+import { deployingLabs, restartApp } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
 import { translate } from "@/lib/i18n";
 
@@ -10,7 +10,8 @@ export type UpdateState = { phase: "idle" | "checking" | "none" | "error" } | { 
 
 /**
  * The About section's update check: ask the update server, then download and install what it
- * offers and reopen on the new version. `checkedAt` is when the last check ended.
+ * offers (unless a lab is deploying) and reopen on the new version. `checkedAt` is when the
+ * last check ended.
  */
 export function useUpdater() {
   const [upd, setUpd] = useState<UpdateState>({ phase: "idle" });
@@ -30,6 +31,9 @@ export function useUpdater() {
   async function install() {
     if (!("update" in upd)) return;
     const { update } = upd;
+    // Installing quits the deploy workers too: asked again now, as the polled set can be a few
+    // seconds old.
+    if ((await deployingLabs().catch(() => [])).length > 0) return;
     setUpd({ phase: "installing", update });
     try {
       await update.downloadAndInstall();

@@ -55,7 +55,8 @@
     "available": "Version <version>{version}</version> is available.",
     "restartNow": "Restart now",
     "updating": "Updating…",
-    "update": "Update"
+    "update": "Update",
+    "waitForDeploys": "Updating restarts Cyber CTF. Wait until your labs finish deploying."
   },
   "error": {
     "title": "Something went wrong",

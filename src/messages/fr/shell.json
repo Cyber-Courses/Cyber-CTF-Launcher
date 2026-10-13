@@ -55,7 +55,8 @@
     "available": "La version <version>{version}</version> est disponible.",
     "restartNow": "Redémarrer",
     "updating": "Mise à jour…",
-    "update": "Mettre à jour"
+    "update": "Mettre à jour",
+    "waitForDeploys": "La mise à jour redémarre Cyber CTF. Attendez la fin du déploiement de vos labs."
   },
   "error": {
     "title": "Une erreur est survenue",

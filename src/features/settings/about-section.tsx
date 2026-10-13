@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { KeyValue } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
 import { restartApp, type AgentInfo, type SystemReport } from "@/lib/tauri";
+import { useDeployingLabs } from "@/lib/deploy-store";
 import { getAttackBox, getAttackImage, getVmProvider } from "@/lib/settings";
 import { Row, Section } from "@/features/settings/settings-layout";
 import { ONBOARDED_KEY } from "@/features/settings/settings-screen";
@@ -91,6 +92,9 @@ export function AboutSection({ version, report, agent }: { version: string | nul
 function UpdatesRow() {
   const t = useT();
   const { upd, checkedAt, checkUpdates, install } = useUpdater();
+  // Installing quits every Cyber CTF process, the deploy workers included (the installer ends
+  // them by name on Windows), so an update waits for running deploys to finish.
+  const deploying = useDeployingLabs().size > 0;
   return (
     <Row
       title={
@@ -99,10 +103,10 @@ function UpdatesRow() {
           {upd.phase === "available" && <Badge variant="accent">{t("settings.about.updateAvailable")}</Badge>}
         </span>
       }
-      description={<UpdateStatus upd={upd} checkedAt={checkedAt} />}
+      description={<UpdateStatus upd={upd} checkedAt={checkedAt} deploying={deploying} />}
       control={
         upd.phase === "available" || upd.phase === "installing" ? (
-          <Button size="xs" onClick={install} disabled={upd.phase === "installing"}>
+          <Button size="xs" onClick={install} disabled={upd.phase === "installing" || deploying}>
             {upd.phase === "installing" ? (
               <>
                 <Spinner className="size-3.5" /> {t("settings.about.installing")}
@@ -132,7 +136,7 @@ function UpdatesRow() {
 }
 
 /** The update check's status line. */
-function UpdateStatus({ upd, checkedAt }: { upd: UpdateState; checkedAt: number | null }) {
+function UpdateStatus({ upd, checkedAt, deploying }: { upd: UpdateState; checkedAt: number | null; deploying: boolean }) {
   const t = useT();
   const format = useFormat();
   switch (upd.phase) {
@@ -145,7 +149,7 @@ function UpdateStatus({ upd, checkedAt }: { upd: UpdateState; checkedAt: number 
     case "error":
       return t("settings.about.status.error");
     case "available":
-      return t("settings.about.status.available", { version: upd.update.version });
+      return deploying ? t("shell.update.waitForDeploys") : t("settings.about.status.available", { version: upd.update.version });
     case "installing":
       return t("settings.about.status.installing", { version: upd.update.version });
     case "installed":

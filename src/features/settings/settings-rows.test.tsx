@@ -79,8 +79,21 @@ describe("AboutSection", () => {
     expect(button(/check for updates/i).hasAttribute("disabled")).toBe(false);
   });
 
+  it("holds an update back while a lab is deploying", async () => {
+    installTauri({ deploying_labs: () => ["web-sqli"] });
+    const downloadAndInstall = vi.fn(async () => {});
+    updater.answer = async () => ({ version: "1.5.0", downloadAndInstall });
+    const user = userEvent.setup();
+    render(<AboutSection version="1.4.0" report={null} agent={null} />);
+    await user.click(button(/check for updates/i));
+    await flush();
+    expect(text()).toContain("Wait until your labs finish deploying");
+    expect(button(/install update/i).hasAttribute("disabled")).toBe(true);
+    expect(downloadAndInstall).not.toHaveBeenCalled();
+  });
+
   it("installs an available update and restarts", async () => {
-    const calls = installTauri();
+    const calls = installTauri({ deploying_labs: () => [] });
     const downloadAndInstall = vi.fn(async () => {});
     updater.answer = async () => ({ version: "1.5.0", downloadAndInstall });
     const user = userEvent.setup();
@@ -101,7 +114,7 @@ describe("AboutSection", () => {
   });
 
   it("offers the update again when its install fails", async () => {
-    const calls = installTauri();
+    const calls = installTauri({ deploying_labs: () => [] });
     updater.answer = async () => ({
       version: "1.5.0",
       downloadAndInstall: async () => {
