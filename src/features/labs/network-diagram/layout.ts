@@ -1,12 +1,11 @@
 import { type Edge } from "@xyflow/react";
-import ELK, { type ElkExtendedEdge, type ElkNode } from "elkjs/lib/elk.bundled.js";
+import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
+import { elkEngine } from "@/features/labs/network-diagram/elk-engine";
 import { zoneMinWidth } from "@/features/labs/network-diagram/frame";
 import { LinkData, MIN_ZOOM, Pt } from "@/features/labs/network-diagram/model";
 import { Topology } from "@/features/labs/network-diagram/topology";
 
 // ELK layout of the topology; published ports are placed after it, along the card's bottom edge.
-
-const elk = new ELK();
 
 /** The room one published-port tab takes along the bottom row, in layout units. The tab is
  *  drawn at its own size (~80px with a gap) whatever the zoom, so the slot is sized for the
@@ -206,7 +205,7 @@ function tabRoute({ m, x, w, start, lane }: Placed, rowY: number): Pt[] {
  *  Returns absolute positions, zone frames and routes. */
 export async function layout(topo: Topology, size: Size, handleAt?: HandleAt) {
   const { lanes, laneRoom } = portLanes(topo);
-  const out = await elk.layout(elkGraph(topo, size, laneRoom));
+  const out = await (await elkEngine()).layout(elkGraph(topo, size, laneRoom));
   const { boxes, routes } = readLayout(out, laneRoom);
 
   // Published ports: a row below everything, each under its container (side by side when
