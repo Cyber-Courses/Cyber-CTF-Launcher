@@ -148,7 +148,46 @@ pub(super) struct Observed {
 }
 
 /// What the OS says about process `pid`, if it exists.
+///
+/// On macOS sysinfo first lists every process id, and finds nothing at all when processes were
+/// started between its two `proc_listallpids` calls: a live worker then read as gone, and its
+/// pidfile was swept as stale. So a process that sysinfo misses but the OS still has is looked
+/// at again, a few times.
 pub(super) fn observe(pid: u32) -> Option<Observed> {
+    for _ in 0..5 {
+        if let Some(seen) = observe_once(pid) {
+            return Some(seen);
+        }
+        if !exists(pid) {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    None
+}
+
+/// Whether process `pid` exists, by signal 0 (nothing is sent): it does when the signal could
+/// be sent, or was refused (another user's process).
+#[cfg(unix)]
+fn exists(pid: u32) -> bool {
+    // A pid past i32 would name a process group once negative.
+    let Ok(pid) = libc::pid_t::try_from(pid) else { return false };
+    if pid <= 0 {
+        return false;
+    }
+    // SAFETY: kill with signal 0 only checks the process exists.
+    let sent = unsafe { libc::kill(pid, 0) } == 0;
+    sent || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+/// Elsewhere sysinfo reads one process at a time: what it misses is gone.
+#[cfg(not(unix))]
+fn exists(_pid: u32) -> bool {
+    false
+}
+
+/// [`observe`], one look.
+fn observe_once(pid: u32) -> Option<Observed> {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
     let pid = Pid::from_u32(pid);
     let mut sys = System::new();
@@ -452,6 +491,20 @@ mod tests {
         let pid = child.id();
         child.wait().unwrap();
         assert!(!alive(&Worker { pid, started: None }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_process_exists_until_it_is_reaped() {
+        assert!(super::exists(std::process::id()));
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        assert!(!super::exists(pid));
+        assert!(observe(pid).is_none());
+        // Never a process group: a pid past i32, or 0.
+        assert!(!super::exists(4_000_000_000));
+        assert!(!super::exists(0));
     }
 
     /// A process whose command line reads like a worker's (`… deploy --job …`), sleeping.
