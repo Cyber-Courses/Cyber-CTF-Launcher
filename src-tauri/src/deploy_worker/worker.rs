@@ -23,6 +23,7 @@ pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRunt
         .setup(move |app| {
             crate::logging::log_startup(app.handle(), &format!("deploy worker ({})", job.lab_id));
             crate::shared_folder::init(app.handle());
+            crate::runtime::lab::registry::init(app.handle());
             // A background process, not an app: on macOS keep it out of the Dock, the app
             // switcher and Apple Events aimed at "Cyber CTF".
             #[cfg(target_os = "macos")]
@@ -32,9 +33,9 @@ pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRunt
                 let code = run_logged(&handle, job).await;
                 handle.exit(code);
             });
-            // Stopped (the app's Stop sends SIGTERM to the worker's process group): the timed
-            // tools it runs (status probes) sit in groups of their own, out of that signal's
-            // reach; end them too before going.
+            // Stopped (the app's Stop sends SIGTERM to the worker's process group): the tools it
+            // runs (status probes, and the vagrant/compose/terraform runs it streams) sit in
+            // groups of their own, out of that signal's reach; end them too before going.
             #[cfg(unix)]
             tauri::async_runtime::spawn(async {
                 if let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {

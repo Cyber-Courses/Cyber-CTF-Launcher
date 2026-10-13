@@ -41,5 +41,11 @@
     "worker": "worker",
     "ssh": "ssh",
     "service": "service"
+  },
+  "view": {
+    "fitWidth": "Fit to width",
+    "fitWidthHint": "Shrink the diagram to fit the card, or show it at its readable size",
+    "scrollMore": "Scroll for more",
+    "scrollMoreHint": "Scroll the diagram to see the rest"
   }
 }

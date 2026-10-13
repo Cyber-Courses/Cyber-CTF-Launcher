@@ -1,17 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-pill";
 import { StepRow } from "@/features/machine/step-row";
-import { machineSelftest, type SelfTestEvent } from "@/lib/tauri";
-import { getVmProvider, setLastTest } from "@/lib/settings";
+import { useSelfTest, type SelfTestResult, type Span } from "@/features/machine/use-self-test";
+import { type SelfTestEvent } from "@/lib/tauri";
 import { formatElapsed } from "@/lib/format";
-import { useNow } from "@/lib/use-now";
 import { useT, type MessageKey } from "@/lib/i18n";
 
-export type SelfTestResult = "idle" | "running" | "ok" | "fail";
+export type { SelfTestResult } from "@/features/machine/use-self-test";
 
 /** The steps each test reports, so the list shows up front instead of growing as it runs. */
 const PLAN: Record<"docker" | "vm", { step: string; label: MessageKey }[]> = {
@@ -49,57 +47,7 @@ export function SelfTest({
   auto?: boolean;
   onResult?: (r: SelfTestResult) => void;
 }) {
-  const t = useT();
-  const [events, setEvents] = useState<Record<string, SelfTestEvent>>({});
-  const [result, setResult] = useState<SelfTestResult>("idle");
-  const started = useRef(false);
-  // When the run and each step started and ended, for the counters (ms since epoch).
-  const [run, setRun] = useState<{ start: number; end?: number } | null>(null);
-  const [times, setTimes] = useState<Record<string, { start: number; end?: number }>>({});
-  // Re-render once a second while running, so the counters tick.
-  const [now, touchNow] = useNow(1000, result === "running");
-
-  const report = useCallback(
-    (r: SelfTestResult) => {
-      setResult(r);
-      onResult?.(r);
-    },
-    [onResult],
-  );
-
-  const runTest = useCallback(async () => {
-    setEvents({});
-    setTimes({});
-    setRun({ start: Date.now() });
-    touchNow();
-    report("running");
-    const onEvent = (e: SelfTestEvent) => {
-      setEvents((prev) => ({ ...prev, [e.step]: e }));
-      const at = Date.now();
-      setTimes((prev) => {
-        const t = prev[e.step] ?? { start: at };
-        return { ...prev, [e.step]: e.state === "running" ? t : { ...t, end: t.end ?? at } };
-      });
-    };
-    try {
-      await machineSelftest(kind, kind === "vm" ? getVmProvider() : null, onEvent);
-      setLastTest(kind, "ok");
-      report("ok");
-    } catch {
-      setLastTest(kind, "fail");
-      report("fail");
-    } finally {
-      setRun((r) => (r ? { ...r, end: Date.now() } : r));
-    }
-  }, [kind, report, touchNow]);
-
-  useEffect(() => {
-    if (auto && !started.current) {
-      started.current = true;
-      void runTest();
-    }
-  }, [auto, runTest]);
-
+  const { events, result, run, times, now, runTest } = useSelfTest(kind, auto, onResult);
   const passed = PLAN[kind].filter(({ step }) => events[step]?.state === "ok").length;
   return (
     <div className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
@@ -109,70 +57,114 @@ export function SelfTest({
           <p className="text-[0.75rem] text-muted-foreground">{description}</p>
         </div>
         <span className="ml-auto shrink-0">
-          {result === "running" ? (
-            <span className="flex items-center gap-2 text-[0.75rem] text-muted-foreground">
-              <StatusDot tone="warn" pulse /> {t("machine.selfTest.testing")}
-              <span className="font-mono text-[0.6875rem] tabular-nums text-faint">
-                {passed}/{PLAN[kind].length} · {run ? formatElapsed(now - run.start) : ""}
-              </span>
-            </span>
-          ) : result === "ok" ? (
-            <span className="flex items-center gap-2">
-              <span className="flex items-center gap-2 text-[0.75rem] text-foreground">
-                <StatusDot tone="ok" /> {t("machine.selfTest.passed")}
-                {run?.end ? <span className="font-mono text-[0.6875rem] tabular-nums text-faint">{formatElapsed(run.end - run.start)}</span> : null}
-              </span>
-              <Button variant="ghost" size="icon-sm" onClick={runTest} aria-label={t("machine.selfTest.runAgain")}>
-                <RefreshCw />
-              </Button>
-            </span>
-          ) : (
-            <span className="flex items-center gap-2">
-              {result === "fail" && (
-                <span className="flex items-center gap-2 text-[0.75rem] text-destructive">
-                  <StatusDot tone="fail" /> {t("machine.selfTest.failed")}
-                  {run?.end && <span className="font-mono text-[0.6875rem] tabular-nums text-faint">{formatElapsed(run.end - run.start)}</span>}
-                </span>
-              )}
-              <Button variant={result === "fail" ? "outline" : "primary"} size="xs" onClick={runTest}>
-                {result === "fail" ? (
-                  <>
-                    <RefreshCw /> {t("machine.selfTest.retry")}
-                  </>
-                ) : (
-                  t("machine.selfTest.run")
-                )}
-              </Button>
-            </span>
-          )}
+          <SelfTestStatus result={result} passed={passed} total={PLAN[kind].length} run={run} now={now} onRun={runTest} />
         </span>
       </div>
       {result !== "idle" && (
         <ul className="py-1.5">
-          {PLAN[kind].map(({ step, label }) => {
-            const e: SelfTestEvent | undefined = events[step];
-            const state: SelfTestEvent["state"] | "pending" = e ? e.state : "pending";
-            const time = times[step];
-            return (
-              <li key={step}>
-                <StepRow
-                  state={state === "ok" ? "done" : state === "running" ? "run" : state}
-                  label={t(label)}
-                  detail={e?.detail}
-                  detailTone={state === "fail" ? "fail" : undefined}
-                  meta={
-                    time && state !== "skip"
-                      ? formatElapsed((time.end ?? (result === "running" ? now : (run?.end ?? now))) - time.start)
-                      : state === "skip"
-                        ? t("machine.selfTest.skipped")
-                        : undefined
-                  }
-                />
-              </li>
-            );
-          })}
+          {PLAN[kind].map(({ step, label }) => (
+            <li key={step}>
+              <SelfTestStep label={label} event={events[step]} time={times[step]} result={result} run={run} now={now} />
+            </li>
+          ))}
         </ul>
       )}
     </div>
+  );
+}
+
+/** Testing with progress and elapsed time, passed or failed with the run's time, and the button
+ *  to run, retry or run again. */
+function SelfTestStatus({
+  result,
+  passed,
+  total,
+  run,
+  now,
+  onRun,
+}: {
+  result: SelfTestResult;
+  passed: number;
+  total: number;
+  run: Span | null;
+  now: number;
+  onRun: () => void;
+}) {
+  const t = useT();
+  if (result === "running")
+    return (
+      <span className="flex items-center gap-2 text-[0.75rem] text-muted-foreground">
+        <StatusDot tone="warn" pulse /> {t("machine.selfTest.testing")}
+        <span className="font-mono text-[0.6875rem] tabular-nums text-faint">
+          {passed}/{total} · {run ? formatElapsed(now - run.start) : ""}
+        </span>
+      </span>
+    );
+  if (result === "ok")
+    return (
+      <span className="flex items-center gap-2">
+        <span className="flex items-center gap-2 text-[0.75rem] text-foreground">
+          <StatusDot tone="ok" /> {t("machine.selfTest.passed")}
+          {run?.end ? <span className="font-mono text-[0.6875rem] tabular-nums text-faint">{formatElapsed(run.end - run.start)}</span> : null}
+        </span>
+        <Button variant="ghost" size="icon-sm" onClick={onRun} aria-label={t("machine.selfTest.runAgain")}>
+          <RefreshCw />
+        </Button>
+      </span>
+    );
+  return (
+    <span className="flex items-center gap-2">
+      {result === "fail" && (
+        <span className="flex items-center gap-2 text-[0.75rem] text-destructive">
+          <StatusDot tone="fail" /> {t("machine.selfTest.failed")}
+          {run?.end && <span className="font-mono text-[0.6875rem] tabular-nums text-faint">{formatElapsed(run.end - run.start)}</span>}
+        </span>
+      )}
+      <Button variant={result === "fail" ? "outline" : "primary"} size="xs" onClick={onRun}>
+        {result === "fail" ? (
+          <>
+            <RefreshCw /> {t("machine.selfTest.retry")}
+          </>
+        ) : (
+          t("machine.selfTest.run")
+        )}
+      </Button>
+    </span>
+  );
+}
+
+/** One step of the checklist: its state, detail and how long it took (still ticking while the
+ *  run goes on), or "skipped". */
+function SelfTestStep({
+  label,
+  event: e,
+  time,
+  result,
+  run,
+  now,
+}: {
+  label: MessageKey;
+  event: SelfTestEvent | undefined;
+  time: Span | undefined;
+  result: SelfTestResult;
+  run: Span | null;
+  now: number;
+}) {
+  const t = useT();
+  const state: SelfTestEvent["state"] | "pending" = e ? e.state : "pending";
+  return (
+    <StepRow
+      state={state === "ok" ? "done" : state === "running" ? "run" : state}
+      label={t(label)}
+      detail={e?.detail}
+      detailTone={state === "fail" ? "fail" : undefined}
+      meta={
+        time && state !== "skip"
+          ? formatElapsed((time.end ?? (result === "running" ? now : (run?.end ?? now))) - time.start)
+          : state === "skip"
+            ? t("machine.selfTest.skipped")
+            : undefined
+      }
+    />
   );
 }

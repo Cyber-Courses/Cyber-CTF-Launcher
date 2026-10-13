@@ -78,7 +78,7 @@ pub(in crate::runtime) fn vagrant_topology(
     text: &str,
     lab: &str,
 ) -> (std::collections::HashMap<String, Vec<crate::runtime::model::Interface>>, Vec<crate::runtime::model::Network>) {
-    let prefix = format!("isoloom-{lab}-");
+    let prefix = crate::runtime::lab::vm_network_prefix(lab);
     let mut ifaces: std::collections::HashMap<String, Vec<crate::runtime::model::Interface>> = std::collections::HashMap::new();
     let mut networks: Vec<crate::runtime::model::Network> = Vec::new();
     let mut machine: Option<String> = None;

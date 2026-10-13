@@ -1,56 +1,35 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
+import { RotateCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Spinner } from "@/components/ui/spinner";
-import { Panel, PanelHeader } from "@/components/ui/panel";
-import { PageHeader } from "@/components/ui/page-header";
-import { StatusDot } from "@/components/ui/status-pill";
-import { Skeleton } from "@/components/ui/skeleton";
-import { LabRow } from "@/features/labs/lab-row";
+import { LIST_SCREEN } from "@/components/ui/screen-width";
 import { EMULATORS, readyHypervisors } from "@/features/labs/lab-runtime";
-import { LabDetail } from "@/features/labs/lab-detail";
 import { filterLabs, NO_FILTERS, type LabFilters } from "@/features/labs/lab-filters";
 import { LabsFilterBar } from "@/features/labs/labs-filter-bar";
+import { LabListSkeleton, LabsCatalogue, LabsHeader, SignInBanner, UnlistedRunning } from "@/features/labs/labs-list";
+import { runningUnlisted } from "@/features/labs/lab-row-state";
+import { OpenLab, OpenLabLoading, useDetailTitle, useOpenLab } from "@/features/labs/open-lab";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { useLabActions } from "@/features/labs/use-lab-actions";
-import { needsCloudAccount, setupNeeded } from "@/features/labs/lab-readiness";
 import { useDeployingLabs } from "@/lib/deploy-store";
-import { serverList, type ServerHost, type SystemReport } from "@/lib/tauri";
+import type { LabStatus, SystemReport } from "@/lib/tauri";
+import { useSavedServers } from "@/features/labs/use-saved-servers";
 import { getVmProvider } from "@/lib/settings";
+import { useStableCallback } from "@/lib/use-stable-callback";
 import { useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
-/** The lab list's placeholder rows while the catalogue loads. */
-function LabListSkeleton() {
-  return (
-    <Panel>
-      {[0, 1, 2, 3, 4].map((i) => (
-        <div key={i} className="flex h-13 items-center gap-3.5 border-t border-border px-4 first:border-t-0">
-          <Skeleton className="size-2 rounded-full" />
-          <div className="flex-1">
-            <Skeleton className="h-3 w-44" />
-            <Skeleton className="mt-1.5 h-2.5 w-64 max-w-full" />
-          </div>
-          <Skeleton className="hidden h-2.5 w-20 md:block" />
-          <Skeleton className="hidden h-4 w-14 rounded-full md:block" />
-          <Skeleton className="h-7 w-16 rounded-full" />
-        </div>
-      ))}
-    </Panel>
-  );
+/** The labs the filters keep: running ones pinned on top, the rest following in one list, by title. */
+function useFilteredLabs(labs: Lab[] | null, filters: LabFilters, statuses: Record<string, LabStatus>, completed: Set<string>) {
+  const filtered = useMemo(() => (labs ? filterLabs(labs, filters, (l) => !!statuses[l.id]?.running, completed) : []), [labs, filters, statuses, completed]);
+  const running = filtered.filter((l) => !!statuses[l.id]?.running);
+  const rest = useMemo(() => filtered.filter((l) => !statuses[l.id]?.running).sort((a, b) => a.title.localeCompare(b.title)), [filtered, statuses]);
+  return { filtered, running, rest };
 }
 
-/** The Labs screen: the catalogue as a filterable list (running labs pinned on top), or one
- *  lab's page when one is open. */
-export function Labs({
-  loggedIn,
-  authReady = true,
-  onLogin,
-  hostArch,
-  report,
-  openLab,
-  onDetailChange,
-}: {
+type LabsProps = {
   loggedIn: boolean;
   /** False until the sign-in state is known (the lab page waits for it). */
   authReady?: boolean;
@@ -61,171 +40,109 @@ export function Labs({
   openLab: { slug: string | null; tick: number };
   /** Told the open lab's title (null on the list), for the shell's breadcrumb. */
   onDetailChange?: (title: string | null) => void;
-}) {
+};
+
+/** The Labs screen: the catalogue as a filterable list (running labs pinned on top), or one
+ *  lab's page when one is open. Retry (after the catalogue failed to load) mounts it afresh,
+ *  which loads the catalogue again. */
+export function Labs(props: LabsProps) {
+  const [attempt, setAttempt] = useState(0);
+  return <LabsView key={attempt} {...props} onRetry={() => setAttempt((n) => n + 1)} />;
+}
+
+/** The labs screen while the machine check (which it needs) hasn't answered: its header and
+ *  placeholder rows, the shape of what is coming. */
+export function LabsLoading() {
+  return (
+    <div className={cn("space-y-5", LIST_SCREEN)} aria-busy="true">
+      <LabsHeader labs={null} completed={new Set()} isRunning={() => false} />
+      <LabListSkeleton />
+    </div>
+  );
+}
+
+function LabsView({ loggedIn, authReady = true, onLogin, hostArch, report, openLab, onDetailChange, onRetry }: LabsProps & { onRetry: () => void }) {
   const t = useT();
   const { labs, error, statuses, completed, refreshStatus, probed } = useLabs(loggedIn);
-  const { runs, launch, stop, park, resume, provision } = useLabActions(refreshStatus);
+  const actions = useLabActions(refreshStatus);
   // Deploys running in the backend (started from another window or before a reload), for the rows' dots.
   const deploying = useDeployingLabs();
-  // Opened straight from the slug the navigation carried, so a lab opened from Overview, the
-  // command palette or a deep link shows its page on the first render instead of flashing the
-  // list first.
-  const [detailSlug, setDetailSlug] = useState<string | null>(() => openLab.slug);
+  const [detailSlug, setDetailSlug] = useOpenLab(openLab, labs);
   const [filters, setFilters] = useState<LabFilters>(NO_FILTERS);
-  const [servers, setServers] = useState<ServerHost[]>([]);
+  const servers = useSavedServers();
   // Local hypervisors ready for a lab VM (Vagrant + hypervisor), the Settings default first.
   const readyVms = useMemo(() => (report ? readyHypervisors(report, getVmProvider()) : []), [report]);
-  const emulates = readyVms.some((p) => EMULATORS.includes(p));
-
-  // Saved servers count as somewhere a VM lab can run (for the "needs setup" hint).
-  useEffect(() => {
-    serverList()
-      .then((l) => setServers(l.hosts))
-      .catch(() => setServers([]));
-  }, []);
-
-  // External navigation (sidebar, command palette, Overview): act only when the nav tick
-  // changes, so a labs refresh never ejects the user from a detail they opened from the list.
-  // A slug opens it (once labs load); no slug returns to the list.
-  const lastTick = useRef(openLab.tick);
-  useEffect(() => {
-    if (openLab.tick === lastTick.current) return;
-    // A slug that isn't in the catalogue yet: wait (don't consume the tick) until labs load.
-    if (openLab.slug && !labs?.some((l) => l.slug === openLab.slug)) return;
-    lastTick.current = openLab.tick;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDetailSlug(openLab.slug);
-  }, [openLab, labs]);
-
-  const isRunning = (l: Lab) => !!statuses[l.id]?.running;
-
-  const filtered = useMemo(() => (labs ? filterLabs(labs, filters, (l) => !!statuses[l.id]?.running, completed) : []), [labs, filters, statuses, completed]);
-
-  // Running labs are pinned on top; the rest follow in one list, by title.
-  const running = filtered.filter(isRunning);
-  const rest = useMemo(() => filtered.filter((l) => !statuses[l.id]?.running).sort((a, b) => a.title.localeCompare(b.title)), [filtered, statuses]);
-
+  const { filtered, running, rest } = useFilteredLabs(labs, filters, statuses, completed);
   const detail = labs && detailSlug ? labs.find((l) => l.slug === detailSlug) : undefined;
-  const detailTitle = detail?.title ?? null;
-  useEffect(() => onDetailChange?.(detailTitle), [detailTitle, onDetailChange]);
-  useEffect(() => () => onDetailChange?.(null), [onDetailChange]);
+  useDetailTitle(detail?.title ?? null, onDetailChange);
+  // Stable, for the memoized rows (see RowContext).
+  const onOpen = useStableCallback((lab: Lab) => setDetailSlug(lab.slug));
+  const onStop = useStableCallback((lab: Lab) => void actions.stop(lab));
+  const onResume = useStableCallback((lab: Lab) => void actions.resume(lab));
+  const login = useStableCallback(() => onLogin?.() ?? Promise.resolve());
 
-  if (error) return <EmptyState icon="alert" title={t("labs.list.unreachableTitle")} description={t("labs.list.unreachableDescription")} />;
-
-  // Opening a lab while the catalogue is still loading: show a placeholder, never the list, so
-  // there is no flash of the list before the lab page.
-  if (detailSlug && !detail && !labs) {
+  if (error)
     return (
-      <div className="flex items-center justify-center py-24 text-muted-foreground">
-        <Spinner className="size-5" />
+      <div className={cn("space-y-5", LIST_SCREEN)}>
+        {/* The labs running here still run: listed while the catalogue can't be read (by the
+            catalogue last loaded, else by id). */}
+        <UnlistedRunning ids={runningUnlisted(null, statuses)} labs={labs} />
+        <EmptyState
+          icon="alert"
+          title={t("labs.list.unreachableTitle")}
+          description={t("labs.list.unreachableDescription")}
+          action={
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <RotateCw className="size-3.5" /> {t("labs.list.retry")}
+            </Button>
+          }
+        />
       </div>
     );
-  }
+  if (detailSlug && !detail && !labs) return <OpenLabLoading />;
   if (detail) {
     return (
-      <LabDetail
+      <OpenLab
         // Its own state per lab (a pending action, an open remove dialog, the attack box's
         // auto-start): opening another lab from the sidebar or palette must not inherit it.
         key={detail.id}
         lab={detail}
         status={statuses[detail.id]}
-        busy={!!runs[detail.id]?.busy}
-        logs={runs[detail.id]?.logs ?? []}
-        times={runs[detail.id]?.times ?? []}
+        actions={actions}
         loggedIn={loggedIn}
         onLogin={onLogin}
         hostArch={hostArch}
-        onBack={() => setDetailSlug(null)}
         readyVms={readyVms}
-        dockerRunning={report ? report.dockerRunning : null}
-        onStart={(target) =>
-          launch(
-            detail,
-            target.kind === "host" ? target.id : null,
-            target.kind === "local-vm" ? target.provider : undefined,
-            report,
-            target.kind === "local" ? target.ports : undefined,
-          )
-        }
-        onStop={() => stop(detail)}
-        onPark={(mode) => park(detail, mode)}
-        onResume={() => resume(detail)}
-        onProvision={(machine) => provision(detail, machine)}
+        report={report}
         ready={authReady && (!detail.runtime || probed.has(detail.id))}
+        onBack={() => setDetailSlug(null)}
       />
     );
   }
 
-  const row = (lab: Lab) => (
-    <LabRow
-      key={lab.id}
-      lab={lab}
-      status={statuses[lab.id]}
-      busy={!!runs[lab.id]?.busy}
-      operation={runs[lab.id]?.op}
-      loggedIn={loggedIn}
-      onLogin={onLogin}
-      hostArch={hostArch}
-      emulates={emulates}
-      solved={completed.has(lab.id)}
-      deploying={deploying.has(lab.id)}
-      setup={isRunning(lab) ? null : setupNeeded(lab, report ?? null, servers)}
-      connectCloud={needsCloudAccount(lab, servers)}
-      onOpen={() => setDetailSlug(lab.slug)}
-      onStop={() => stop(lab)}
-      onResume={() => resume(lab)}
-    />
-  );
-
-  const solvedCount = labs ? labs.filter((l) => completed.has(l.id)).length : 0;
-  const runningCount = labs ? labs.filter(isRunning).length : 0;
-
+  const ctx = {
+    statuses,
+    runs: actions.runs,
+    completed,
+    deploying,
+    report,
+    servers,
+    loggedIn,
+    // Signed out, the banner above the list signs in: no Sign in button on every row.
+    onLogin: loggedIn && onLogin ? login : undefined,
+    hostArch,
+    emulates: readyVms.some((p) => EMULATORS.includes(p)),
+    onOpen,
+    onStop,
+    onResume,
+  };
+  // The catalogue stops at LIST_SCREEN; a lab's page (above) takes the shell's full width.
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title={t("labs.list.title")}
-        lead={
-          labs ? (
-            <span className="font-mono text-[0.75rem] tabular-nums">
-              {t("labs.list.summary", { total: labs.length, running: runningCount, solved: solvedCount })}
-            </span>
-          ) : (
-            t("labs.list.intro")
-          )
-        }
-      />
-
+    <div className={cn("space-y-5", LIST_SCREEN)}>
+      <LabsHeader labs={labs} completed={completed} isRunning={(l) => !!statuses[l.id]?.running} loggedIn={loggedIn} />
+      {!loggedIn && authReady && onLogin && <SignInBanner onLogin={onLogin} />}
       <LabsFilterBar filters={filters} onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))} />
-
-      {!labs ? (
-        <LabListSkeleton />
-      ) : labs.length === 0 ? (
-        <EmptyState icon="labs" title={t("labs.list.emptyTitle")} description={t("labs.list.emptyDescription")} />
-      ) : filtered.length === 0 ? (
-        <EmptyState icon="labs" title={t("labs.list.noMatchTitle")} description={t("labs.list.noMatchDescription")} />
-      ) : (
-        <>
-          {running.length > 0 && (
-            <Panel>
-              <PanelHeader
-                title={
-                  <>
-                    <StatusDot tone="ok" /> {t("labs.list.runningNow")}
-                  </>
-                }
-                meta={t("labs.list.labCount", { count: running.length })}
-              />
-              <div>{running.map(row)}</div>
-            </Panel>
-          )}
-          {rest.length > 0 && (
-            <Panel>
-              {running.length > 0 && <PanelHeader title={t("labs.list.allLabs")} meta={`${rest.length}`} />}
-              <div>{rest.map(row)}</div>
-            </Panel>
-          )}
-        </>
-      )}
+      <LabsCatalogue labs={labs} filtered={filtered} running={running} rest={rest} ctx={ctx} />
     </div>
   );
 }

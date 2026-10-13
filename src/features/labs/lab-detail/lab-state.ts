@@ -28,10 +28,50 @@ export type LabStateInput = {
   /** The page can pause / shut down, and re-run provisioning (their handlers are wired). */
   parkable: boolean;
   provisionable: boolean;
+  /** The last run on this lab was a start that failed (and nothing runs on it now). */
+  startFailed?: boolean;
 };
 
 /** The page's state as one word (see the status strip). */
-export type LabPhase = "operation" | "running" | "starting" | "paused" | "shutDown" | "interrupted" | "notStarted";
+export type LabPhase = "operation" | "running" | "starting" | "failed" | "paused" | "shutDown" | "interrupted" | "notStarted";
+
+/** What the page can do on the built lab. A container lab in a VM can only be paused (its
+ *  containers don't restart on their own after a power-off); a container lab here only shut down
+ *  (its containers stop; there's no state to save). A VM lab gets both. Nothing on a server host
+ *  yet. Provisioning runs again in place on VM labs driven by Vagrant (here, or an ESXi host). */
+function labControls(i: LabStateInput, { isDocker, isCloud, remote }: { isDocker: boolean; isCloud: boolean; remote: boolean }) {
+  const { status } = i;
+  return {
+    canPause: i.parkable && !remote && (!isDocker || status?.place === "local_vm"),
+    canShutdown: i.parkable && !remote && !isCloud && status?.place !== "local_vm",
+    canProvision: i.provisionable && !isDocker && !isCloud && status?.place !== "cloud" && status?.provider !== "proxmox",
+  };
+}
+
+/** The page's state as one word, most pressing first. */
+function labPhase({
+  operation,
+  running,
+  starting,
+  parked,
+  interrupted,
+  failed,
+}: {
+  operation: LabOperation | null;
+  running: boolean;
+  starting: boolean;
+  parked: LabStatus["parked"];
+  interrupted: boolean;
+  failed: boolean;
+}): LabPhase {
+  if (operation && OPERATION_STATUS[operation]) return "operation";
+  if (running) return "running";
+  if (starting) return "starting";
+  // Its start just failed: say so, not "Not started" (or "Interrupted", for what it left).
+  if (failed) return "failed";
+  if (parked) return parked === "pause" ? "paused" : "shutDown";
+  return interrupted ? "interrupted" : "notStarted";
+}
 
 export function deriveLabState(i: LabStateInput) {
   const { status, runtime: rt } = i;
@@ -68,31 +108,12 @@ export function deriveLabState(i: LabStateInput) {
   const down = deploying ? [] : machines.filter((m) => !m.infra && m.state !== "running");
   const isDocker = rt?.runtime !== "VM" && !isCloud;
   const remote = !!status?.host;
-  // A container lab in a VM can only be paused (its containers don't restart on their own after a
-  // power-off); a container lab here only shut down (its containers stop; there's no state to
-  // save). A VM lab gets both. Nothing on a server host yet.
-  const canPause = i.parkable && !remote && (!isDocker || status?.place === "local_vm");
-  const canShutdown = i.parkable && !remote && !isCloud && status?.place !== "local_vm";
-  // Provisioning runs again in place on VM labs driven by Vagrant (here, or an ESXi host).
-  const canProvision = i.provisionable && !isDocker && !isCloud && status?.place !== "cloud" && status?.provider !== "proxmox";
+  const { canPause, canShutdown, canProvision } = labControls(i, { isDocker, isCloud, remote });
   // Where it actually runs: "on this machine" alone is misleading for a VM lab (which hypervisor
   // do I open?), so name the engine or hypervisor the status reports.
   const engine = status?.provider ? (status.provider === "docker" ? "Docker" : (PROVIDER_LABELS[status.provider] ?? status.provider)) : null;
 
-  const phase: LabPhase =
-    operation && OPERATION_STATUS[operation]
-      ? "operation"
-      : running
-        ? "running"
-        : starting
-          ? "starting"
-          : parked
-            ? parked === "pause"
-              ? "paused"
-              : "shutDown"
-            : interrupted
-              ? "interrupted"
-              : "notStarted";
+  const phase = labPhase({ operation, running, starting, parked, interrupted, failed: !!i.startFailed && !deploying });
 
   return {
     native,
@@ -144,7 +165,7 @@ export function restartTarget(status: LabStatus | undefined, hosts: ServerHost[]
 }
 
 /** The header's actions, by what the lab is doing. */
-export type HeaderMode = "running" | "parked" | "stopping" | "starting" | "interrupted" | "signIn" | "start";
+export type HeaderMode = "running" | "parked" | "stopping" | "starting" | "interrupted" | "signIn" | "failed" | "start";
 
 export function headerMode(s: LabState, { loggedIn, canLogin, canResume }: { loggedIn: boolean; canLogin: boolean; canResume: boolean }): HeaderMode {
   if (s.running) return "running";
@@ -153,6 +174,8 @@ export function headerMode(s: LabState, { loggedIn, canLogin, canResume }: { log
   if (s.starting) return s.operation === "stop" ? "stopping" : "starting";
   if (s.interrupted) return "interrupted";
   if (!loggedIn && canLogin) return "signIn";
+  // Its start failed: Retry (and, for a port clash, Retry on random ports).
+  if (s.phase === "failed") return "failed";
   return "start";
 }
 
@@ -165,6 +188,9 @@ export function networkView(
   s: LabState,
   { busy, acting, hasMachines }: { busy: boolean; acting: LabAction | null; hasMachines: boolean },
 ): "diagram" | "none" | NetworkNote {
+  // Being stopped (or paused, shut down): the diagram stays, dimmed (see `removing`), so the page
+  // doesn't jump, and is still there should the stop fail.
+  if (hasMachines && s.tearingDown) return "diagram";
   // Only once the lab is up and no longer deploying: during a build the backend may already
   // report a machine "running" while it's still being provisioned, and a half-resolved diagram is
   // more confusing than helpful. Pausing, resuming or provisioning a lab, and a parked lab, keep
@@ -190,5 +216,22 @@ export function cloudView(s: LabState, { busy }: { busy: boolean }): "services" 
  *  are stale). While it starts it comes first; once ready, the diagram does. */
 export function deployPlacement(s: LabState, { busy, failed }: { busy: boolean; failed: boolean }): "top" | "bottom" | null {
   if (!(s.deploying || s.running || failed)) return null;
-  return s.running && !busy ? "bottom" : "top";
+  // A running lab keeps it under its panels through a stop, pause or shut down too: moved to the
+  // top for the run and back after it, the page jumped twice. How it went is said under the
+  // header (a failure notice) and in a toast.
+  return s.running && (!busy || s.tearingDown) ? "bottom" : "top";
+}
+
+/** The lab is being stopped and removed: its panels stay, dimmed and inert, until it is gone. */
+export const removing = (s: LabState) => s.deploying && s.operation === "stop";
+
+/** The window width from which a lab's diagram can leave the main column for the page's full
+ *  width (Tailwind's 2xl): narrower, the rail beside it would leave the diagram too little. */
+export const WIDE_LAB_PAGE = "(min-width: 96rem)";
+
+/** Whether the network diagram spans the page above the main column and the side rail: on a
+ *  wide window, once it is drawn, and not while the deployment's steps lead the page (those stay
+ *  first, the diagram after them, as on a narrow window). */
+export function diagramAbove(wide: boolean, view: ReturnType<typeof networkView>, placement: ReturnType<typeof deployPlacement>) {
+  return wide && view === "diagram" && placement !== "top";
 }

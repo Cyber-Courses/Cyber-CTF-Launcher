@@ -16,7 +16,8 @@
       "one": "1 Lab läuft auf diesem Rechner.",
       "other": "{count} Labs laufen auf diesem Rechner."
     },
-    "ready": "Dieser Rechner ist bereit. Wähle ein Lab zum Angreifen."
+    "ready": "Dieser Rechner ist bereit. Wähle ein Lab zum Angreifen.",
+    "checkFailed": "Dieser Rechner konnte nicht geprüft werden."
   },
   "actions": {
     "setUp": "Diesen Rechner einrichten",
@@ -28,7 +29,8 @@
     "memory": "Arbeitsspeicher",
     "disk": "Festplatte",
     "cores": "{cores} Kerne",
-    "usage": "{used} von {total} GB"
+    "usage": "{used}/{total} GB",
+    "unavailable": "nicht verfügbar"
   },
   "capacity": {
     "total": "{total} GB",
@@ -57,7 +59,8 @@
       "one": "1 Container",
       "other": "{count} Container"
     },
-    "empty": "Nichts läuft. Starte ein Lab auf seiner Seite."
+    "empty": "Nichts läuft. Starte ein Lab auf seiner Seite.",
+    "noDetails": "läuft · keine Details, solange der Katalog nicht erreichbar ist"
   },
   "deploy": {
     "inProgress": "In Arbeit",

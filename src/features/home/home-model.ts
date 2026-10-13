@@ -12,9 +12,14 @@ export const greetingKey = (hour: number): MessageKey =>
  *  call to action for a Docker that is simply not probed yet. */
 export const dockerReadiness = (report: SystemReport | null) => (report ? report.docker.installed && report.dockerRunning : null);
 
-/** The line under the greeting (home.status.*). */
-export function heroStatus(dockerReady: boolean | null, running: number): "checking" | "setUpDocker" | "running" | "ready" {
-  if (dockerReady === null) return "checking";
+/** The line under the greeting (home.status.*). `checkFailed`: the machine check failed, and none
+ *  answered before it (the report is unknown). */
+export function heroStatus(
+  dockerReady: boolean | null,
+  running: number,
+  checkFailed = false,
+): "checking" | "checkFailed" | "setUpDocker" | "running" | "ready" {
+  if (dockerReady === null) return checkFailed ? "checkFailed" : "checking";
   if (!dockerReady) return "setUpDocker";
   return running > 0 ? "running" : "ready";
 }

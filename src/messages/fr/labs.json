@@ -10,15 +10,14 @@
   },
   "state": {
     "running": "En cours",
-    "starting": "Démarrage",
-    "startingEllipsis": "Démarrage…",
     "resuming": "Reprise",
     "paused": "En pause",
     "shutDown": "Éteint",
     "interrupted": "Interrompu",
     "notStarted": "Non démarré",
     "solved": "Résolu",
-    "working": "En cours"
+    "working": "En cours",
+    "failed": "Échec du démarrage"
   },
   "places": {
     "container": "Conteneur sur cette machine",
@@ -147,7 +146,6 @@
     "title": "Déploiement",
     "on": "sur <where>{where}</where>",
     "failed": "Échec",
-    "building": "Construction",
     "ready": "Prêt",
     "preparingEllipsis": "Préparation…",
     "showLog": "Afficher le journal complet",
@@ -182,6 +180,10 @@
     "removeBodyCloud": "Ses services cloud sont détruits dans votre compte, ce qui met fin à leur coût. Le prochain démarrage les recrée de zéro."
   },
   "list": {
+    "summarySignedOut": "{total} dans le catalogue · {running} en cours sur cette machine",
+    "signInTitle": "Connectez-vous pour démarrer des labs",
+    "signInBody": "Parcourez librement ; une fois connecté, vous pouvez démarrer des labs et suivre ceux que vous résolvez.",
+    "retry": "Réessayer",
     "unreachableTitle": "Impossible d’accéder au catalogue de labs",
     "unreachableDescription": "Vérifiez votre connexion ou connectez-vous, puis réessayez.",
     "title": "Labs",
@@ -280,7 +282,6 @@
     "resumeHint": "Relancer le lab tel qu’il était",
     "resuming": "Reprise…",
     "resume": "Reprendre",
-    "starting": "Démarrage…",
     "interruptedHint": "Un démarrage précédent a été interrompu ; arrêtez-le et nettoyez-le, puis redémarrez",
     "cleaningUp": "Nettoyage…",
     "stopCleanUp": "Arrêter et nettoyer",
@@ -334,7 +335,9 @@
     "cloudIdle": "Démarrez le lab pour créer ses services cloud dans votre compte. Arrêtez-le quand vous avez fini : cela les supprime et met fin à leur coût.",
     "connectAccount": "Connecter un compte {clouds}",
     "estimatedCost": "Coût estimé",
-    "removeBodyCloud": "Ses services cloud sont détruits dans votre compte, ce qui met fin à leur coût. Le prochain démarrage les recrée de zéro."
+    "removeBodyCloud": "Ses services cloud sont détruits dans votre compte, ce qui met fin à leur coût. Le prochain démarrage les recrée de zéro.",
+    "retry": "Réessayer",
+    "retryRandomPorts": "Réessayer avec des ports aléatoires"
   },
   "cloud": {
     "hourly": "environ {usd} $ de l’heure",
@@ -351,5 +354,54 @@
     "nothingExposed": "Le lab tourne dans votre compte cloud. Il n’expose rien à afficher ici.",
     "billedEstimate": "Facturé à vous : {cost}, selon l’estimation du lab.",
     "billedWhileRunning": "Facturé sur votre compte cloud tant qu’il tourne."
+  },
+  "objectives": {
+    "title": "Objectifs",
+    "required": "{solved}/{total} requis",
+    "progress": "Défis requis résolus",
+    "completed": "Terminé",
+    "completedNote": "Lab terminé : tous les défis requis sont résolus.",
+    "signIn": "Connectez-vous pour soumettre vos réponses et suivre votre progression.",
+    "optional": "facultatif",
+    "guided": "guidé",
+    "solved": "Résolu",
+    "answerFor": "Réponse pour {title}",
+    "answerPlaceholder": "Votre réponse ou flag",
+    "submit": "Valider",
+    "checking": "Vérification…",
+    "correct": "Correct.",
+    "correctCompleted": "Correct. Le lab est terminé.",
+    "alreadySolved": "Correct, et déjà résolu auparavant.",
+    "wrong": "Pas tout à fait. Vérifiez et réessayez.",
+    "failed": "Impossible de vérifier la réponse : {error}",
+    "helpNote": "L'ouverture des étapes ou d'un indice est enregistrée : une résolution sans aide compte comme une preuve plus forte de la compétence.",
+    "guidedMode": "Mode guidé",
+    "guidedModeHint": "Découper ce défi en étapes",
+    "helpFailed": "Impossible de l'ouvrir : {error}",
+    "steps": "Étapes",
+    "step": "Étape {n}",
+    "hint": "Indice {n}",
+    "revealHint": "Afficher l'indice {n} sur {total}"
+  },
+  "failure": {
+    "title": {
+      "launch": "Impossible de démarrer {title}",
+      "resume": "Impossible de reprendre {title}",
+      "pause": "Impossible de mettre {title} en pause",
+      "shutdown": "Impossible d’éteindre {title}",
+      "stop": "Impossible d’arrêter et de supprimer {title}",
+      "provision": "Impossible de relancer la configuration de {title}"
+    },
+    "stillUp": "Une partie du lab tourne encore. Réessayez ; le journal de déploiement indique ce qui a échoué.",
+    "dismiss": "Masquer",
+    "hint": {
+      "ports": "Un port que publie ce lab est déjà pris sur cette machine. Démarrez-le plutôt sur des ports aléatoires.",
+      "docker": "Docker ne tourne pas. Démarrez votre moteur de conteneurs, puis réessayez.",
+      "dockerAccess": "Votre compte ne peut pas encore utiliser Docker : ajoutez-le au groupe docker, déconnectez-vous puis reconnectez-vous, et réessayez.",
+      "signedOut": "Votre session a expiré. Reconnectez-vous, puis réessayez.",
+      "network": "Un téléchargement, ou l’API Cyber CTF, est injoignable. Vérifiez votre connexion Internet, puis réessayez.",
+      "disk": "Cette machine manque d’espace disque. Libérez-en (la page Machine liste les images gardées par les labs), puis réessayez.",
+      "tool": "Un outil dont ce lab a besoin manque ici. Installez-le depuis la page Machine, puis réessayez."
+    }
   }
 }

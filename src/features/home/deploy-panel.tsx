@@ -6,6 +6,7 @@ import { StatusDot } from "@/components/ui/status-pill";
 import { StepRow } from "@/features/machine/step-row";
 import type { Lab } from "@/features/labs/use-labs";
 import { operationLabel } from "@/lib/deploy-store";
+import { prettyLabId } from "@/lib/format";
 import type { ActiveOperation } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
@@ -14,6 +15,8 @@ export function DeployPanel({ ops, labs, onOpen }: { ops: ActiveOperation[]; lab
   const t = useT();
   const one = ops.length === 1 ? ops[0] : null;
   const labOf = (id: string) => labs.find((l) => l.id === id);
+  // The lab's title; its id made readable while the catalogue isn't in (offline).
+  const titleOf = (id: string) => labOf(id)?.title ?? prettyLabId(id);
   const oneLab = one ? labOf(one.labId) : undefined;
   return (
     <Panel>
@@ -21,7 +24,7 @@ export function DeployPanel({ ops, labs, onOpen }: { ops: ActiveOperation[]; lab
         title={
           <>
             <StatusDot tone="warn" pulse />
-            <span className="truncate">{one ? (oneLab?.slug ?? one.labId) : t("home.deploy.inProgress")}</span>
+            <span className="truncate">{one ? titleOf(one.labId) : t("home.deploy.inProgress")}</span>
           </>
         }
         meta={one ? operationLabel(one).replace(/…$/, "").toLowerCase() : t("home.running.labs", { count: ops.length })}
@@ -41,7 +44,7 @@ export function DeployPanel({ ops, labs, onOpen }: { ops: ActiveOperation[]; lab
               key={o.labId}
               state="run"
               label={o.step ?? operationLabel(o)}
-              detail={one ? undefined : (lab?.title ?? o.labId)}
+              detail={one ? undefined : titleOf(o.labId)}
               meta={o.machine?.replace(/^isoloom-/, "") ?? t("home.deploy.running")}
               action={
                 !one &&

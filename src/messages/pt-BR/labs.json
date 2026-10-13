@@ -10,15 +10,14 @@
   },
   "state": {
     "running": "Rodando",
-    "starting": "Iniciando",
-    "startingEllipsis": "Iniciando…",
     "resuming": "Retomando",
     "paused": "Pausado",
     "shutDown": "Desligado",
     "interrupted": "Interrompido",
     "notStarted": "Não iniciado",
     "solved": "Resolvido",
-    "working": "Em andamento"
+    "working": "Em andamento",
+    "failed": "Falha ao iniciar"
   },
   "places": {
     "container": "Contêiner nesta máquina",
@@ -147,7 +146,6 @@
     "title": "Implantação",
     "on": "em <where>{where}</where>",
     "failed": "Falhou",
-    "building": "Construindo",
     "ready": "Pronto",
     "preparingEllipsis": "Preparando…",
     "showLog": "Mostrar log completo",
@@ -182,6 +180,10 @@
     "removeBodyCloud": "Seus serviços de nuvem são destruídos na sua conta, o que encerra o custo deles. O próximo início os cria de novo do zero."
   },
   "list": {
+    "summarySignedOut": "{total} no catálogo · {running} rodando nesta máquina",
+    "signInTitle": "Entre para iniciar labs",
+    "signInBody": "Navegue à vontade; ao entrar, você pode iniciar labs e acompanhar o que resolveu.",
+    "retry": "Tentar de novo",
     "unreachableTitle": "Não foi possível acessar o catálogo de labs",
     "unreachableDescription": "Verifique sua conexão ou entre, depois tente de novo.",
     "title": "Labs",
@@ -280,7 +282,6 @@
     "resumeHint": "Trazer o lab de volta como estava",
     "resuming": "Retomando…",
     "resume": "Retomar",
-    "starting": "Iniciando…",
     "interruptedHint": "Uma inicialização anterior foi interrompida; pare e limpe, depois inicie de novo",
     "cleaningUp": "Limpando…",
     "stopCleanUp": "Parar e limpar",
@@ -334,7 +335,9 @@
     "cloudIdle": "Inicie o lab para criar seus serviços de nuvem na sua conta. Pare-o quando terminar: isso os remove e encerra o custo deles.",
     "connectAccount": "Conectar uma conta {clouds}",
     "estimatedCost": "Custo estimado",
-    "removeBodyCloud": "Seus serviços de nuvem são destruídos na sua conta, o que encerra o custo deles. O próximo início os cria de novo do zero."
+    "removeBodyCloud": "Seus serviços de nuvem são destruídos na sua conta, o que encerra o custo deles. O próximo início os cria de novo do zero.",
+    "retry": "Tentar novamente",
+    "retryRandomPorts": "Tentar novamente com portas aleatórias"
   },
   "cloud": {
     "hourly": "cerca de US$ {usd} por hora",
@@ -351,5 +354,54 @@
     "nothingExposed": "O lab está no ar na sua conta de nuvem. Ele não expõe nada para mostrar aqui.",
     "billedEstimate": "Cobrado de você: {cost}, pela estimativa do lab.",
     "billedWhileRunning": "Cobrado na sua conta de nuvem enquanto roda."
+  },
+  "objectives": {
+    "title": "Objetivos",
+    "required": "{solved}/{total} obrigatórios",
+    "progress": "Desafios obrigatórios resolvidos",
+    "completed": "Concluído",
+    "completedNote": "Lab concluído: todos os desafios obrigatórios foram resolvidos.",
+    "signIn": "Entre para enviar respostas e acompanhar seu progresso.",
+    "optional": "opcional",
+    "guided": "guiado",
+    "solved": "Resolvido",
+    "answerFor": "Resposta para {title}",
+    "answerPlaceholder": "Sua resposta ou flag",
+    "submit": "Enviar",
+    "checking": "Verificando…",
+    "correct": "Correto.",
+    "correctCompleted": "Correto. Isso conclui o lab.",
+    "alreadySolved": "Correto, e já resolvido antes.",
+    "wrong": "Não exatamente. Confira e tente de novo.",
+    "failed": "Não foi possível verificar a resposta: {error}",
+    "helpNote": "Abrir os passos ou uma dica fica registrado: resolver sem eles conta como uma evidência mais forte da habilidade.",
+    "guidedMode": "Modo guiado",
+    "guidedModeHint": "Dividir este desafio em passos",
+    "helpFailed": "Não foi possível abrir: {error}",
+    "steps": "Passos",
+    "step": "Passo {n}",
+    "hint": "Dica {n}",
+    "revealHint": "Mostrar dica {n} de {total}"
+  },
+  "failure": {
+    "title": {
+      "launch": "Não foi possível iniciar {title}",
+      "resume": "Não foi possível retomar {title}",
+      "pause": "Não foi possível pausar {title}",
+      "shutdown": "Não foi possível desligar {title}",
+      "stop": "Não foi possível parar e remover {title}",
+      "provision": "Não foi possível executar de novo a configuração de {title}"
+    },
+    "stillUp": "Parte do lab ainda está rodando. Tente de novo; o log de implantação mostra o que falhou.",
+    "dismiss": "Dispensar",
+    "hint": {
+      "ports": "Uma porta que este lab publica já está em uso nesta máquina. Inicie-o com portas aleatórias.",
+      "docker": "O Docker não está rodando. Inicie seu mecanismo de contêineres e tente de novo.",
+      "dockerAccess": "Sua conta ainda não pode usar o Docker: adicione-a ao grupo docker, saia e entre de novo e tente novamente.",
+      "signedOut": "Sua sessão terminou. Entre novamente e tente de novo.",
+      "network": "Não foi possível acessar um download ou a API do Cyber CTF. Verifique sua conexão com a internet e tente de novo.",
+      "disk": "Esta máquina está sem espaço em disco. Libere um pouco (a página Máquina lista as imagens que os labs guardam) e tente de novo.",
+      "tool": "Falta aqui uma ferramenta de que este lab precisa. Instale-a pela página Máquina e tente de novo."
+    }
   }
 }

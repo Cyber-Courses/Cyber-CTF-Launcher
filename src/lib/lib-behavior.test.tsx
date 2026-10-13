@@ -137,7 +137,7 @@ describe("deploy-store", () => {
 
   it("names every operation", () => {
     expect((["launch", "resume", "pause", "shutdown", "provision", "attack_vm", "stop"] as const).map((o) => operationLabel(op(o)))).toEqual([
-      "Deploying…",
+      "Starting…",
       "Resuming…",
       "Pausing…",
       "Shutting down…",
@@ -171,8 +171,8 @@ describe("deploy-store", () => {
 
   it("polls the labs deploying and the operations in flight", async () => {
     installTauri();
-    const deploying = renderHook(() => useDeployingLabs(1000));
-    const ops = renderHook(() => useActiveOperations(1000));
+    const deploying = renderHook(() => useDeployingLabs());
+    const ops = renderHook(() => useActiveOperations());
     await flush();
     expect([...deploying.result.current]).toEqual(["lab-goad"]);
     expect(ops.result.current.get("lab-goad")?.step).toContain("SRV02");
@@ -182,11 +182,12 @@ describe("deploy-store", () => {
     const calls = installTauri({ lab_deploy_log: () => "line 1\n\nline 2\n" });
     const { result, rerender } = renderHook(({ active }) => useWorkerLog("lab-goad", active, 1000), { initialProps: { active: false } });
     await flush();
-    expect(result.current).toEqual([]);
+    expect(result.current.lines).toEqual([]);
     expect(commands(calls)).not.toContain("lab_deploy_log");
     rerender({ active: true });
     await flush();
-    expect(result.current).toEqual(["line 1", "line 2"]);
+    expect(result.current.lines).toEqual(["line 1", "line 2"]);
+    expect(result.current.times).toHaveLength(2);
     expect(calls.find((c) => c.cmd === "lab_deploy_log")?.args).toMatchObject({ id: "lab-goad" });
   });
 });

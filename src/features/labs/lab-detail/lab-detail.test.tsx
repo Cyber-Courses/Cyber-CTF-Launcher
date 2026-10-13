@@ -101,7 +101,8 @@ describe("LabDetail", () => {
     const user = userEvent.setup();
     const h = renderDetail({ status: status({}) });
     await flush();
-    expect(screen.getAllByText(/10\.42\.0\.3/).length).toBeGreaterThan(0);
+    // The diagram's code loads on first use (network-panel.tsx).
+    expect((await screen.findAllByText(/10\.42\.0\.3/)).length).toBeGreaterThan(0);
     // Every header action that doesn't leave the page.
     for (const b of screen.getAllByRole("button")) {
       if (/stop|remove|delete/i.test(b.textContent ?? "")) {
@@ -113,6 +114,44 @@ describe("LabDetail", () => {
     const dialogButtons = screen.queryAllByRole("button", { name: /cancel/i });
     if (dialogButtons[0]) await user.click(dialogButtons[0]);
     expect(h.onBack).not.toHaveBeenCalled();
+  });
+
+  it("draws the diagram across the page on a wide window, in the main column otherwise", async () => {
+    // A window that can be resized past the wide breakpoint (and back).
+    let wide = false;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      get matches() {
+        return query === "(min-width: 96rem)" && wide;
+      },
+      media: query,
+      addEventListener: (_: string, l: () => void) => listeners.add(l),
+      removeEventListener: (_: string, l: () => void) => listeners.delete(l),
+    }));
+    const resize = (to: boolean) =>
+      act(() => {
+        wide = to;
+        listeners.forEach((l) => l());
+      });
+    try {
+      installTauri();
+      renderDetail({ status: status({}) });
+      await flush();
+      const card = () => document.querySelector(".hostcard")!;
+      const grid = () => document.querySelector(".grid")!;
+      // Narrow: in the main column, beside the rail.
+      expect(grid().contains(card())).toBe(true);
+      resize(true);
+      expect(card()).not.toBeNull();
+      expect(grid().contains(card())).toBe(false);
+      expect(card().compareDocumentPosition(grid()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // Only one diagram, whichever the place.
+      expect(document.querySelectorAll(".hostcard")).toHaveLength(1);
+      resize(false);
+      expect(grid().contains(card())).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("reports a container that went down and resets the lab", async () => {

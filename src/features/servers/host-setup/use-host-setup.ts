@@ -9,6 +9,7 @@ import {
   machineTools,
   saveName,
   setupSteps,
+  setupTitle,
   withProvider,
 } from "@/features/servers/host-setup/setup-model";
 import { useCloudAccounts } from "@/features/servers/host-setup/use-cloud-accounts";
@@ -35,11 +36,6 @@ export function useHostSetup({
   const t = useT();
   const [v, setV] = useState<ServerHostInput>(initial);
   const [i, setI] = useState(0);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<ServerHost | null>(null);
-  const [test, setTest] = useState<ServerTest | "testing" | null>(null);
-
   const editing = initial.id !== null;
   const cloud = isCloud(v.provider);
   // Derived from the saved provider (not separate state) so it stays correct when editing an
@@ -59,52 +55,9 @@ export function useHostSetup({
   });
   const pickProvider = (id: CloudProvider) => setV((s) => withProvider(s, id));
 
-  // Installs one of the tools this server type needs on this machine, logging below.
-  const toolLog = useRunLog();
-  const [toolLabel, setToolLabel] = useState("Install");
-  const toolBusy = toolLog.lines !== null && !toolLog.lines.at(-1)?.match(/^[✓✗]/);
-  async function installTool(label: string, run: (onLog: (l: string) => void) => Promise<void>) {
-    setToolLabel(label);
-    await toolLog.run(translate("servers.setup.tools.installing", { name: label }), async (onLog) => {
-      await run(onLog);
-      return translate("servers.setup.tools.installDone");
-    });
-    onRefresh();
-  }
-
-  async function runTest(id: string) {
-    setTest("testing");
-    setTest(await testHost(id));
-  }
-
-  // Save, then move to the Test step and test the saved host.
-  async function saveAndTest() {
-    setSaving(true);
-    setError(null);
-    try {
-      const h = await serverSave({ ...v, name: saveName(v) });
-      setSaved(h);
-      onSaved(h);
-      next();
-      void runTest(h.id);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // "connected" only once the test says so: a saved host whose test failed isn't.
-  const failed = !!test && test !== "testing" && !test.ok;
-  const title = saved
-    ? failed
-      ? t("servers.setup.titles.savedNotConnected", { name: saved.name })
-      : t("servers.setup.titles.connected", { name: saved.name })
-    : editing
-      ? t("servers.setup.titles.edit", { name: initial.name })
-      : cloud
-        ? t("servers.setup.titles.cloud")
-        : t("servers.setup.titles.host");
+  const tools = useToolInstall(onRefresh);
+  const { saving, error, saved, test, runTest, saveAndTest } = useSaveAndTest(v, onSaved, next);
+  const title = setupTitle({ saved, test, editing, cloud, initialName: initial.name });
 
   return {
     report,
@@ -138,15 +91,60 @@ export function useHostSetup({
     connectionOk: connectionReady(v, editing),
     next,
     back,
-    pluginLog: toolLog.lines,
-    toolLabel,
-    toolBusy,
-    installTool,
+    ...tools,
     ...machineTools(v.provider, report),
     runTest,
     saveAndTest,
-    title,
+    title: t(`servers.setup.titles.${title.key}`, { name: title.name }),
   };
+}
+
+/** Installs one of the tools this server type needs on this machine, logging below, then
+ *  re-reads what the machine has. */
+function useToolInstall(onRefresh: () => void) {
+  const toolLog = useRunLog();
+  const [toolLabel, setToolLabel] = useState("Install");
+  const toolBusy = toolLog.lines !== null && !toolLog.lines.at(-1)?.match(/^[✓✗]/);
+  async function installTool(label: string, run: (onLog: (l: string) => void) => Promise<void>) {
+    setToolLabel(label);
+    await toolLog.run(translate("servers.setup.tools.installing", { name: label }), async (onLog) => {
+      await run(onLog);
+      return translate("servers.setup.tools.installDone");
+    });
+    onRefresh();
+  }
+  return { pluginLog: toolLog.lines, toolLabel, toolBusy, installTool };
+}
+
+/** Saving the host, then moving to the Test step (`next`) and testing the saved host. */
+function useSaveAndTest(v: ServerHostInput, onSaved: (h: ServerHost) => void, next: () => void) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<ServerHost | null>(null);
+  const [test, setTest] = useState<ServerTest | "testing" | null>(null);
+
+  async function runTest(id: string) {
+    setTest("testing");
+    setTest(await testHost(id));
+  }
+
+  async function saveAndTest() {
+    setSaving(true);
+    setError(null);
+    try {
+      const h = await serverSave({ ...v, name: saveName(v) });
+      setSaved(h);
+      onSaved(h);
+      next();
+      void runTest(h.id);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return { saving, error, saved, test, runTest, saveAndTest };
 }
 
 export type HostSetup = ReturnType<typeof useHostSetup>;

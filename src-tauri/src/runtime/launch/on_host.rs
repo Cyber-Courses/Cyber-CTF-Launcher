@@ -69,7 +69,7 @@ pub(super) async fn start_terraform(
     }
     // Every cloud firewall opens SSH and the published ports to this machine's public IP only.
     let allowed_ip = if provider.is_cloud() { Some(public_ip().await?) } else { None };
-    let vars = terraform_vars(&conn.tf_vars, lab::inputs_json(&spec, env), jump.is_some(), public, &key, allowed_ip.as_deref());
+    let vars = lab::run_vars(&conn.tf_vars, lab::inputs_json(&spec, env), jump.is_some(), public, &key, allowed_ip.as_deref());
     if provider == Provider::Aws {
         check_aws_budget(app, host, log).await?;
     }
@@ -97,32 +97,6 @@ pub(super) async fn start_terraform(
     registry::record(dir, &spec, target, provider.is_cloud().then_some(tf));
     welcome(dir, &spec, lab::vagrant_target(runtime), log);
     Ok(())
-}
-
-/// The variables a lab's Terraform is applied with: the host's own, then the lab's declared
-/// inputs, whether to reach the VM through the Proxmox node, the launcher's SSH key and (on a
-/// cloud) this machine's public IP as the only one the firewall lets in.
-pub(super) fn terraform_vars(
-    host: &[(String, String)],
-    inputs: Option<String>,
-    via_node: bool,
-    public_key: String,
-    private_key: &Path,
-    allowed_ip: Option<&str>,
-) -> Vec<(String, String)> {
-    let mut vars = host.to_vec();
-    if let Some(inputs) = inputs {
-        vars.push(("inputs".into(), inputs));
-    }
-    if via_node {
-        vars.push(("ssh_via_node".into(), "true".into()));
-    }
-    vars.push(("ssh_public_key".into(), public_key));
-    vars.push(("ssh_private_key_file".into(), private_key.to_string_lossy().to_string()));
-    if let Some(ip) = allowed_ip {
-        vars.push(("allowed_cidr".into(), format!("{ip}/32")));
-    }
-    vars
 }
 
 /// Stops before spending if this AWS account is over its monthly budget, or if a budget is set

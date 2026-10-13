@@ -16,7 +16,8 @@
       "one": "1 lab running on this machine.",
       "other": "{count} labs running on this machine."
     },
-    "ready": "This machine is ready. Pick a lab to attack."
+    "ready": "This machine is ready. Pick a lab to attack.",
+    "checkFailed": "Couldn’t check this machine."
   },
   "actions": {
     "setUp": "Set up this machine",
@@ -28,7 +29,8 @@
     "memory": "Memory",
     "disk": "Disk",
     "cores": "{cores} cores",
-    "usage": "{used} of {total} GB"
+    "usage": "{used}/{total} GB",
+    "unavailable": "unavailable"
   },
   "capacity": {
     "total": "{total} GB",
@@ -57,7 +59,8 @@
       "one": "1 container",
       "other": "{count} containers"
     },
-    "empty": "Nothing running. Start a lab from its page."
+    "empty": "Nothing running. Start a lab from its page.",
+    "noDetails": "running · no details while the catalogue can’t be reached"
   },
   "deploy": {
     "inProgress": "In progress",

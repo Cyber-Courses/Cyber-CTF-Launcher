@@ -39,7 +39,10 @@ export function SectionTitle({ title, description, saved }: { title: string; des
   );
 }
 
-/** One setting: label + description on the left, its control on the right (or below, when `stacked`). */
+/** One setting: label + description on the left, its control on the right (or below, when `stacked`).
+ *  The row is a size container: narrower than 26.25rem (420px, a small window or a long German
+ *  label beside a wide control), the label goes above its control instead of folding into a
+ *  column a word wide. */
 export function Row({
   title,
   description,
@@ -54,13 +57,18 @@ export function Row({
   children?: ReactNode;
 }) {
   return (
-    <div className="border-t border-border px-4 py-3.5 first:border-t-0">
-      <div className={cn("flex gap-6", stacked ? "flex-col gap-0" : "items-center justify-between")}>
+    <div className="@container border-t border-border px-4 py-3.5 first:border-t-0">
+      <div
+        className={cn(
+          "flex flex-col",
+          stacked ? "gap-0" : "gap-2.5 @min-[26.25rem]:flex-row @min-[26.25rem]:items-center @min-[26.25rem]:justify-between @min-[26.25rem]:gap-6",
+        )}
+      >
         <div className="min-w-0">
           <div className="text-[0.8125rem] font-medium text-foreground">{title}</div>
           {description && <div className="mt-0.5 text-[0.75rem] leading-relaxed text-muted-foreground">{description}</div>}
         </div>
-        {control && <div className="shrink-0">{control}</div>}
+        {control && <div className="max-w-full shrink-0 self-start @min-[26.25rem]:self-auto">{control}</div>}
       </div>
       {children}
     </div>

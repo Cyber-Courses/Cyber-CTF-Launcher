@@ -13,29 +13,26 @@ import type { Topology } from "@/features/labs/network-diagram/topology";
 /** A published port's tab over the card's bottom edge, `left` px from the shell's left. */
 export type Tab = { id: string; port: number; left: number };
 
-/** The diagram itself: measured, laid out by ELK, framed, then fitted into the shell. */
-export function Flow({
-  topo,
-  onSize,
-  onTabs,
-  width: shellW,
-  height: shellH,
-}: {
-  topo: Topology;
-  onSize: (w: number, h: number) => void;
-  onTabs: (tabs: Tab[]) => void;
-  width: number;
-  height: number;
-}) {
-  // First pass renders the nodes invisibly so React Flow measures them; then ELK lays them out
-  // with their real sizes (a card grows with its interfaces and ports).
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(topo.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+/** The view that fits the laid-out drawing into the shell. With published ports, their anchors
+ *  sit exactly on the bottom edge of the card (your machine): ports in its wall. */
+export function fittedView(bounds: Bounds, shellW: number, shellH: number) {
+  const side = 24;
+  const top = 26;
+  const bottom = bounds.docked ? 0 : 24;
+  const zoom = Math.min(1.05, (shellW - 2 * side) / Math.max(bounds.w, 1), (shellH - top - bottom) / Math.max(bounds.h, 1));
+  const x = (shellW - bounds.w * zoom) / 2 - bounds.x * zoom;
+  const y = bounds.docked ? shellH - (bounds.y + bounds.h) * zoom : (shellH - bounds.h * zoom) / 2 - bounds.y * zoom;
+  return { x, y, zoom };
+}
+
+/** Once React Flow has measured the nodes (rendered invisibly first), ELK lays them out with
+ *  their real sizes (a card grows with its interfaces and ports), then the zones are framed and
+ *  the nodes and routed edges set. Ready once laid out (or the layout failed). */
+function useElkLayout(topo: Topology, setNodes: (nodes: Node[]) => void, setEdges: (edges: Edge[]) => void, onSize: (w: number, h: number) => void) {
   const measured = useNodesInitialized();
-  const { getNode, getInternalNode, setViewport } = useReactFlow();
+  const { getNode, getInternalNode } = useReactFlow();
   const [ready, setReady] = useState(false);
   const [bounds, setBounds] = useState<Bounds | null>(null);
-
   useEffect(() => {
     if (!measured || ready) return;
     let live = true;
@@ -67,21 +64,32 @@ export function Flow({
       live = false;
     };
   }, [measured, ready, topo, getNode, getInternalNode, setNodes, setEdges, onSize]);
+  return { ready, bounds };
+}
 
-  // Fit once laid out, and again whenever the shell changes size. With published ports, their
-  // anchors sit exactly on the bottom edge of the card (your machine): ports in its wall.
-  const view = useMemo(() => {
-    if (!ready || !bounds || !shellW || !shellH) return null;
-    const side = 24;
-    const top = 26;
-    const bottom = bounds.docked ? 0 : 24;
-    const zoom = Math.min(1.05, (shellW - 2 * side) / Math.max(bounds.w, 1), (shellH - top - bottom) / Math.max(bounds.h, 1));
-    const x = (shellW - bounds.w * zoom) / 2 - bounds.x * zoom;
-    const y = bounds.docked ? shellH - (bounds.y + bounds.h) * zoom : (shellH - bounds.h * zoom) / 2 - bounds.y * zoom;
-    return { x, y, zoom };
-  }, [ready, bounds, shellW, shellH]);
+/** The diagram itself: measured, laid out by ELK, framed, then fitted into the shell. */
+export function Flow({
+  topo,
+  onSize,
+  onTabs,
+  width: shellW,
+  height: shellH,
+}: {
+  topo: Topology;
+  onSize: (w: number, h: number) => void;
+  onTabs: (tabs: Tab[]) => void;
+  width: number;
+  height: number;
+}) {
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(topo.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const { setViewport } = useReactFlow();
+  const { ready, bounds } = useElkLayout(topo, setNodes, setEdges, onSize);
+
+  // Fit once laid out, and again whenever the shell changes size.
+  const view = useMemo(() => (!ready || !bounds || !shellW || !shellH ? null : fittedView(bounds, shellW, shellH)), [ready, bounds, shellW, shellH]);
   useEffect(() => {
-    if (view) setViewport(view);
+    if (view) void setViewport(view);
   }, [view, setViewport]);
 
   // Published ports as tabs over the card's bottom edge, each under its link's anchor. The card

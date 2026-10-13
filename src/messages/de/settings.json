@@ -57,6 +57,10 @@
       "default": "Standard"
     }
   },
+  "isoloomRegistry": {
+    "title": "Isoloom-Labliste",
+    "description": "Trägt die Labs, die Sie starten, in ~/.isoloom/status.yml ein, damit die isoloom-Kommandozeile sie sieht (isoloom status, connect, exec). Ohne funktionieren die Labs genauso."
+  },
   "attackBox": {
     "title": "Image der Attack box",
     "description": "Läuft im Netzwerk jedes Labs als deine Werkzeugkiste. Beim ersten Start eines Images wird es heruntergeladen, das kann dauern.",

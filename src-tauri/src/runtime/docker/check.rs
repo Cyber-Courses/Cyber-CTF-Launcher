@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use isoloom_core::checks::{self, Line};
+use crate::runtime::lab::checks::{self, Line};
 
 use super::compose;
 use crate::error::Result;
@@ -39,7 +39,7 @@ pub struct Check {
 
 /// Isoloom's stand-in for the lab's access machine (the player's seat) and its routes, as named in
 /// its Compose file: the services a lab with an access machine defines.
-const STAND_INS: [&str; 2] = ["isoloom-access", "isoloom-access-routes"];
+const STAND_INS: [&str; 2] = crate::runtime::lab::ACCESS_STAND_INS;
 
 /// The stand-ins the lab's Compose file defines.
 fn stand_ins(compose: &str) -> Vec<&'static str> {
@@ -106,7 +106,7 @@ pub async fn check(dir: &Path, id: &str) -> Result<Check> {
             ran = false;
         }
         if let (false, checks::Position::Machine(m)) = (execs.is_empty(), &pos) {
-            let file = crate::runtime::lab::compose_file(dir).with_file_name("checks").join(isoloom_core::generate::exec_runner(m));
+            let file = crate::runtime::lab::compose_file(dir).with_file_name("checks").join(crate::runtime::lab::exec_runner(m));
             let from = format!("inside {m}");
             let before = results.len();
             let res = compose::stream_with_stdin(dir, &project, &["exec", "-T", m, "sh", "-s"], &file, |l| {
@@ -185,7 +185,7 @@ mod tests {
             "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\n  - { tcp: \"web:80\" }\n",
         );
         let spec = crate::runtime::lab::spec(&dir).unwrap();
-        let plan = isoloom_core::checks::plan(&spec);
+        let plan = crate::runtime::lab::checks::plan(&spec);
         assert!(plan.len() >= 2, "derived checks: {}", plan.len());
         let group: Vec<_> = plan.iter().collect();
         // The runner reported the first check, then stopped.

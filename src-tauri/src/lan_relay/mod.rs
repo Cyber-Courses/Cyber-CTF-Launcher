@@ -90,7 +90,7 @@ pub async fn prepare(program: &str, env: &[(String, String)]) -> Relayed {
     for k in HOSTPORT_KEYS {
         set(&mut out, k, ssh.port.to_string());
     }
-    set(&mut out, "ISOLOOM_SSH_PROXY_COMMAND", "/usr/bin/nc %h %p".into());
+    set(&mut out, crate::runtime::lab::SSH_PROXY_COMMAND_ENV, "/usr/bin/nc %h %p".into());
     // Windows guests: Vagrant's WinRM (plain HTTP to the guest) through the in-app proxy. Only
     // the lowercase http_proxy: HTTPS (box downloads) doesn't read it.
     let winrm = start_http_proxy().await.ok();

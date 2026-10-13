@@ -57,6 +57,10 @@
       "default": "デフォルト"
     }
   },
+  "isoloomRegistry": {
+    "title": "Isoloom のラボ一覧",
+    "description": "起動したラボを ~/.isoloom/status.yml に記録し、isoloom コマンドライン（isoloom status、connect、exec）から見えるようにします。オフにしてもラボは同じように動きます。"
+  },
   "attackBox": {
     "title": "アタックボックスのイメージ",
     "description": "各ラボのネットワーク上で、あなたのツールボックスとして動作します。イメージは初回起動時にダウンロードされるため、時間がかかる場合があります。",

@@ -1,4 +1,4 @@
-import type { CloudProvider, Dependency, RemoteProvider, ServerHostInput, SystemReport } from "@/lib/tauri";
+import type { CloudProvider, Dependency, RemoteProvider, ServerHostInput, ServerTest, SystemReport } from "@/lib/tauri";
 import {
   AWS_REGIONS,
   AZURE_LOCATIONS,
@@ -126,4 +126,25 @@ export function machineTools(provider: RemoteProvider, report: SystemReport | nu
 export function saveName(v: ServerHostInput): string {
   const fallback = isCloud(v.provider) ? (CLOUD_DEFAULT_NAME[v.provider] ?? v.host.trim()) : v.host.trim();
   return v.name.trim() || fallback;
+}
+
+/** The setup window's title: what was saved and whether its test passed ("connected" only once
+ *  the test says so: a saved host whose test failed isn't), else what is being set up. */
+export function setupTitle({
+  saved,
+  test,
+  editing,
+  cloud,
+  initialName,
+}: {
+  saved: { name: string } | null;
+  test: ServerTest | "testing" | null;
+  editing: boolean;
+  cloud: boolean;
+  initialName: string;
+}) {
+  const failed = !!test && test !== "testing" && !test.ok;
+  if (saved) return { key: failed ? "savedNotConnected" : "connected", name: saved.name } as const;
+  if (editing) return { key: "edit", name: initialName } as const;
+  return { key: cloud ? "cloud" : "host", name: "" } as const;
 }

@@ -15,7 +15,9 @@ import { useT, type T } from "@/lib/i18n";
 function stateWord(t: T, s: LabState): { tone: Tone; word: string; pulse?: boolean } {
   const words: Record<Exclude<LabPhase, "operation">, { tone: Tone; word: string; pulse?: boolean }> = {
     running: { tone: "ok", word: t("labs.state.running") },
-    starting: { tone: "warn", word: t("labs.state.starting"), pulse: true },
+    // The one word for a start, as in the list, the sidebar and the deployment panel.
+    starting: { tone: "warn", word: OPERATION_STATUS.launch!, pulse: true },
+    failed: { tone: "fail", word: t("labs.state.failed") },
     paused: { tone: "muted", word: t("labs.state.paused") },
     shutDown: { tone: "muted", word: t("labs.state.shutDown") },
     interrupted: { tone: "warn", word: t("labs.state.interrupted") },

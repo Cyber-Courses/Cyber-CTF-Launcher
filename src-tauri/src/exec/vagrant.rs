@@ -54,10 +54,12 @@ pub enum Event<'r> {
     End(usize, &'r Result<String>),
 }
 
-/// The environment variable naming the Hyper-V virtual switch the launcher's own Vagrantfiles
-/// attach their VM to (set by the script that runs Vagrant on Hyper-V, see [`super::elevate`]):
-/// with several switches and none named, Vagrant stops to ask which one.
-pub const HYPERV_SWITCH_ENV: &str = "CYBERCTF_HYPERV_SWITCH";
+/// The environment variable naming the Hyper-V virtual switch a VM's first adapter goes on (set
+/// by the script that runs Vagrant on Hyper-V, see [`super::elevate`], unless the user set it):
+/// with several switches and none named, Vagrant stops to ask which one. Isoloom's own name, so
+/// one value serves both kinds of Vagrantfile: the lab's (Isoloom reads it, and stops `vagrant
+/// up` when no switch has that name) and the launcher's own (attack VM, self-test).
+pub const HYPERV_SWITCH_ENV: &str = crate::runtime::lab::HYPERV_SWITCH_ENV;
 
 /// The Vagrantfile line attaching `target` (`config`, or a machine's variable) to that switch,
 /// when it is set.

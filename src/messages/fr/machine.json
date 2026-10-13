@@ -1,6 +1,7 @@
 {
   "format": {
     "gb": "{n} Go",
+    "gbOf": "{used}/{total} Go",
     "mb": "{n} Mo",
     "kb": "{n} ko",
     "justNow": "à l'instant",
@@ -37,7 +38,6 @@
     },
     "memory": "Mémoire",
     "disk": "Disque",
-    "usedOf": "{used} sur {total}",
     "lowDisk": {
       "title": "Espace disque faible",
       "meta": "{free} libres",
@@ -194,7 +194,7 @@
     "macInstallerVm": "Son programme d'installation s'ouvre dans sa propre fenêtre et demande votre mot de passe ; VirtualBox peut aussi nécessiter une autorisation dans Réglages Système > Confidentialité et sécurité.",
     "macInstaller": "Son programme d'installation s'ouvre dans sa propre fenêtre et demande votre mot de passe.",
     "pkgmgr": {
-      "title": "Outils d'installation",
+      "title": "Gestionnaire de paquets",
       "description": "Cyber CTF installe tout le reste pour vous via {pm}, le gestionnaire de paquets de votre système. Il suffit de le configurer une fois."
     },
     "virtualization": {

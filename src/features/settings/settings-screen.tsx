@@ -10,6 +10,7 @@ import { AccountSection } from "@/features/settings/account-section";
 import { AppearanceSection } from "@/features/settings/appearance-section";
 import { AttackBoxRows } from "@/features/settings/attack-box-rows";
 import { LabPortsRow } from "@/features/settings/lab-ports-row";
+import { IsoloomRegistryRow } from "@/features/settings/isoloom-registry-row";
 import { CleanupSection } from "@/features/settings/cleanup-section";
 import { HypervisorRow } from "@/features/settings/hypervisor-row";
 import { Section, useSavedFlash } from "@/features/settings/settings-layout";
@@ -66,8 +67,13 @@ export function SettingsScreen({
   const [tab, setTab] = useState<Tab>("account");
 
   return (
-    <div className="mx-auto flex max-w-[47.5rem] gap-8 pb-10">
-      <nav aria-label={t("settings.tabs.label")} className="w-44 shrink-0 space-y-0.5 pt-1">
+    // A rail beside the section; under 640px (the window's narrowest), a tab bar above it, text
+    // only so the longer languages fit.
+    <div className="mx-auto flex max-w-[47.5rem] flex-col gap-6 pb-10 sm:flex-row sm:gap-8">
+      <nav
+        aria-label={t("settings.tabs.label")}
+        className="-mx-1 flex shrink-0 gap-1 overflow-x-auto border-b border-border px-1 pt-1 pb-2 sm:mx-0 sm:block sm:w-44 sm:space-y-0.5 sm:overflow-visible sm:border-b-0 sm:px-0 sm:pb-0"
+      >
         {tabs.map((tb) => (
           <button
             key={tb.id}
@@ -75,13 +81,13 @@ export function SettingsScreen({
             onClick={() => setTab(tb.id)}
             aria-current={tab === tb.id ? "page" : undefined}
             className={cn(
-              "flex h-8 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-[0.8125rem] transition-colors",
+              "flex h-8 shrink-0 items-center gap-2 rounded-sm px-2.5 text-left text-[0.8125rem] whitespace-nowrap transition-colors sm:w-full sm:gap-2.5",
               tab === tb.id
                 ? "bg-glass-2 text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
                 : "text-muted-foreground hover:bg-glass hover:text-foreground",
             )}
           >
-            <tb.icon className="size-4 shrink-0 opacity-85" /> {tb.label}
+            <tb.icon className="hidden size-4 shrink-0 opacity-85 sm:block" /> {tb.label}
           </button>
         ))}
       </nav>
@@ -96,6 +102,7 @@ export function SettingsScreen({
             <LabPortsRow onSaved={flashLabs} />
             <AttackBoxRows onSaved={flashLabs} />
             <HypervisorRow report={report} onSaved={flashLabs} onNavigate={onNavigate} onRefresh={recheck} />
+            <IsoloomRegistryRow onSaved={flashLabs} />
           </Section>
         )}
 

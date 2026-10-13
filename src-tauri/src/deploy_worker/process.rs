@@ -166,7 +166,51 @@ pub(super) struct Observed {
 }
 
 /// What the OS says about process `pid`, if it exists.
+///
+/// On macOS sysinfo misreads a live process now and then, more often while other processes
+/// start: it first lists every process id and finds nothing at all when processes were started
+/// between its two `proc_listallpids` calls, and it reads the arguments with two
+/// `KERN_PROCARGS2` sysctls, the second of which can fail, leaving the command line empty. A
+/// live worker then read as gone (or as another program), and its pidfile was swept as stale.
+/// So a process that the OS still has is looked at again, a few times, until sysinfo sees it
+/// (on macOS, with its command line).
 pub(super) fn observe(pid: u32) -> Option<Observed> {
+    let mut last = None;
+    for _ in 0..5 {
+        match observe_once(pid) {
+            // Elsewhere an empty command line is what the OS says (Windows: an elevated process).
+            Some(seen) if seen.zombie || !seen.cmdline.is_empty() || !cfg!(target_os = "macos") => return Some(seen),
+            Some(seen) => last = Some(seen),
+            None if last.is_none() && !exists(pid) => return None,
+            None => {}
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    last
+}
+
+/// Whether process `pid` exists, by signal 0 (nothing is sent): it does when the signal could
+/// be sent, or was refused (another user's process).
+#[cfg(unix)]
+fn exists(pid: u32) -> bool {
+    // A pid past i32 would name a process group once negative.
+    let Ok(pid) = libc::pid_t::try_from(pid) else { return false };
+    if pid <= 0 {
+        return false;
+    }
+    // SAFETY: kill with signal 0 only checks the process exists.
+    let sent = unsafe { libc::kill(pid, 0) } == 0;
+    sent || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+/// Elsewhere sysinfo reads one process at a time: what it misses is gone.
+#[cfg(not(unix))]
+fn exists(_pid: u32) -> bool {
+    false
+}
+
+/// [`observe`], one look.
+fn observe_once(pid: u32) -> Option<Observed> {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
     let pid = Pid::from_u32(pid);
     let mut sys = System::new();
@@ -267,7 +311,7 @@ fn jobs_in(d: &Path) -> Vec<(Job, Option<String>)> {
         .filter_map(|key| {
             let f = Files::of(d, &key);
             let job: Job = serde_json::from_slice(&std::fs::read(&f.job).ok()?).ok()?;
-            let step = std::fs::read_to_string(&f.log).ok().and_then(|l| super::progress::last_step(&l));
+            let step = super::progress::step_of(&f.log);
             Some((job, step))
         })
         .collect()
@@ -342,9 +386,12 @@ pub async fn kill_and_wait(app: &AppHandle, key: &str) {
 #[cfg(unix)]
 fn interrupt_terraform(group: u32) -> bool {
     let pgrep = |args: &[&str]| std::process::Command::new("pgrep").args(args).output().map(|o| pids(&String::from_utf8_lossy(&o.stdout))).unwrap_or_default();
-    let group = group.to_string();
-    let mut found = pgrep(&["-g", &group, "-x", "terraform"]);
-    found.extend(pgrep(&["-g", &group, "-f", "hashicorp/terraform"]));
+    // The worker's group, and those of the tools it streams: each leads its own (exec::stream).
+    let mut groups = vec![group];
+    groups.extend(pgrep(&["-P", &group.to_string()]));
+    let groups = groups.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+    let mut found = pgrep(&["-g", &groups, "-x", "terraform"]);
+    found.extend(pgrep(&["-g", &groups, "-f", "hashicorp/terraform"]));
     for pid in &found {
         let _ = std::process::Command::new("kill").args(["-INT", &pid.to_string()]).status();
     }
@@ -526,6 +573,30 @@ mod tests {
         other.wait().unwrap();
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_stop_reaches_terraform_in_a_group_of_its_own() {
+        // A worker streams each tool in a process group of its own (so a cancel ends the tool's
+        // whole tree), out of the worker's group: Terraform's interrupt still finds it there.
+        // The stand-in worker starts it in a group of its own (perl's setpgrp, with SIGINT back
+        // to its default: `&` ignores it); the image name comes from the environment, so only
+        // the stand-in Terraform's command line names it.
+        use std::os::unix::process::CommandExt;
+        let run = r#"perl -e '$SIG{INT} = "DEFAULT"; setpgrp(0, 0); exec @ARGV' sh -c 'sleep 30 & wait' docker run "$IMAGE" & wait"#;
+        let mut worker = std::process::Command::new("sh").args(["-c", run]).env("IMAGE", "hashicorp/terraform:1.9.8").process_group(0).spawn().unwrap();
+        let found = (0..40).any(|_| {
+            std::thread::sleep(Duration::from_millis(50));
+            interrupt_terraform(worker.id())
+        });
+        assert!(found, "terraform found in its own group under the worker");
+        let started = std::time::Instant::now();
+        let waiter = std::thread::spawn(move || worker.wait());
+        while !waiter.is_finished() && started.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(waiter.is_finished(), "the interrupted run ended, and the worker with it");
+    }
+
     #[test]
     fn pidfile_lines_read_back() {
         for w in [Worker { pid: 7, started: Some(1_760_000_000) }, Worker { pid: 7, started: None }] {
@@ -552,6 +623,20 @@ mod tests {
         let pid = child.id();
         child.wait().unwrap();
         assert!(!alive(&Worker { pid, started: None }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_process_exists_until_it_is_reaped() {
+        assert!(super::exists(std::process::id()));
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        assert!(!super::exists(pid));
+        assert!(observe(pid).is_none());
+        // Never a process group: a pid past i32, or 0.
+        assert!(!super::exists(4_000_000_000));
+        assert!(!super::exists(0));
     }
 
     /// A process whose command line reads like a worker's (`… deploy --job …`), sleeping.
@@ -656,7 +741,15 @@ mod tests {
     #[cfg(unix)]
     fn fake_worker_group() -> std::process::Child {
         use std::os::unix::process::CommandExt;
-        std::process::Command::new("sh").args(["-c", "sleep 30; exit 0", "deploy", "--job", "x.json"]).process_group(0).spawn().unwrap()
+        let child = std::process::Command::new("sh").args(["-c", "sleep 30; exit 0", "deploy", "--job", "x.json"]).process_group(0).spawn().unwrap();
+        // Until `sh` has exec'd, the child's command line is still this test's: wait for it to
+        // read as a worker, or the first check would take its pidfile for a stale one.
+        let worker = Worker { pid: child.id(), started: None };
+        let started = std::time::Instant::now();
+        while !alive(&worker) && started.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        child
     }
 
     #[cfg(unix)]

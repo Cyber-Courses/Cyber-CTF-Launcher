@@ -21,11 +21,31 @@ async fn ensure_docker_up() -> Result<()> {
     })
 }
 
-/// A host port is taken if we can't bind it (another lab, or anything else, holds it). Checks
+/// A host port is taken if we can't bind it over its protocol (`udp`, else TCP): another lab, or
+/// anything else (dnsmasq, Windows' Internet Connection Sharing on UDP 53), holds it. Checks
 /// every interface a container can publish to: all interfaces and the loopback specifically
 /// (a port held only on 127.0.0.1 doesn't fail the 0.0.0.0 bind on its own).
-fn port_in_use(port: u16) -> bool {
+fn port_in_use(port: u16, proto: &str) -> bool {
+    if proto == "udp" {
+        return std::net::UdpSocket::bind(("0.0.0.0", port)).is_err() || std::net::UdpSocket::bind(("127.0.0.1", port)).is_err();
+    }
     std::net::TcpListener::bind(("0.0.0.0", port)).is_err() || std::net::TcpListener::bind(("127.0.0.1", port)).is_err()
+}
+
+/// A port is free over `proto` on the loopback, and held open so it isn't handed out twice.
+enum Held {
+    Tcp(#[allow(dead_code)] std::net::TcpListener),
+    Udp(#[allow(dead_code)] std::net::UdpSocket),
+}
+
+/// A free loopback port over `proto` (`udp`, else TCP), and its socket holding it.
+fn free_port(proto: &str) -> Option<(u16, Held)> {
+    if proto == "udp" {
+        let s = std::net::UdpSocket::bind(("127.0.0.1", 0)).ok()?;
+        return Some((s.local_addr().ok()?.port(), Held::Udp(s)));
+    }
+    let l = std::net::TcpListener::bind(("127.0.0.1", 0)).ok()?;
+    Some((l.local_addr().ok()?.port(), Held::Tcp(l)))
 }
 
 async fn is_running(dir: &Path, project: &str) -> bool {
@@ -42,7 +62,7 @@ async fn has_containers(dir: &Path, project: &str) -> bool {
     }
 }
 
-async fn published_host_ports(dir: &Path, project: &str, env: &[(String, String)]) -> Result<Vec<u16>> {
+async fn published_host_ports(dir: &Path, project: &str, env: &[(String, String)]) -> Result<Vec<(u16, String)>> {
     let out = compose::output_env(dir, project, &["config", "--format", "json"], env).await?;
     Ok(compose::host_ports_from_config(&out))
 }
@@ -71,28 +91,27 @@ fn default_ports(env: &[(String, String)]) -> bool {
 }
 
 /// The pinned-ports override for a lab's Compose `config`: each ephemeral port gets a free
-/// loopback port, or with `defaults` its own container port (once; a second service on the
-/// same port gets a free one).
+/// loopback port, or with `defaults` its own container port (once per protocol: a second
+/// service on the same port and protocol gets a free one; DNS keeps 53 over TCP and UDP).
 fn pick_pins(config: &str, defaults: bool) -> Option<String> {
     // Hold each port until all are picked, so the OS doesn't hand out the same one twice.
     let mut held = Vec::new();
     let mut taken = std::collections::HashSet::new();
-    let pins = compose::pinned_ports(config, |target| {
-        if defaults && target != 0 && taken.insert(target) {
+    let pins = compose::pinned_ports(config, |target, proto| {
+        if defaults && target != 0 && taken.insert((target, proto.to_string())) {
             return Some(target);
         }
-        let l = std::net::TcpListener::bind(("127.0.0.1", 0)).ok()?;
-        let port = l.local_addr().ok()?.port();
-        held.push(l);
+        let (port, socket) = free_port(proto)?;
+        held.push(socket);
         Some(port)
     });
     drop(held);
     pins
 }
 
-/// Where the lab's services answer on this machine: (service, container port, host port) for
-/// every published port, the pinned ones included. Empty when Compose can't be read.
-pub async fn published(dir: &Path, id: &str, env: &[(String, String)]) -> Vec<(String, u16, u16)> {
+/// Where the lab's services answer on this machine: (service, container port, protocol, host
+/// port) for every published port, the pinned ones included. Empty when Compose can't be read.
+pub async fn published(dir: &Path, id: &str, env: &[(String, String)]) -> Vec<(String, u16, String, u16)> {
     compose::output_env(dir, &compose::project(id), &["config", "--format", "json"], env).await.map(|c| compose::published_from_config(&c)).unwrap_or_default()
 }
 
@@ -108,8 +127,8 @@ pub async fn start(dir: &Path, id: &str, env: &[(String, String)], mut log: impl
     // engine confirmed up, a failure reading the ports is a real Compose-config error worth
     // surfacing now rather than letting `up` fail on it.
     if !is_running(dir, &project).await {
-        for port in published_host_ports(dir, &project, env).await? {
-            if port_in_use(port) {
+        for (port, proto) in published_host_ports(dir, &project, env).await? {
+            if port_in_use(port, &proto) {
                 return Err(Error::Invalid(format!(
                     "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever uses it, or start the lab with random ports."
                 )));
@@ -122,8 +141,7 @@ pub async fn start(dir: &Path, id: &str, env: &[(String, String)], mut log: impl
     // Compose's --wait fails when a one-shot job exits (even with 0) unless a running service
     // depends on it: an `init:` on a machine nothing depends on. Isoloom's start plan names
     // those jobs: wait for everything else, then run each attached, failing on its exit code.
-    let plan =
-        std::fs::read_to_string(crate::runtime::lab::compose_file(dir)).ok().and_then(|c| isoloom_core::generate::start_plan(&c).ok()).unwrap_or_default();
+    let plan = std::fs::read_to_string(crate::runtime::lab::compose_file(dir)).ok().and_then(|c| crate::runtime::lab::start_plan(&c)).unwrap_or_default();
     for step in start_steps(&plan) {
         let step: Vec<&str> = step.iter().map(String::as_str).collect();
         compose::stream(dir, &project, &step, env, &mut log).await?;
@@ -133,7 +151,7 @@ pub async fn start(dir: &Path, id: &str, env: &[(String, String)], mut log: impl
 
 /// The Compose commands that start a lab with Isoloom's start `plan`: `up --wait` (on the
 /// services to wait for, when some are one-shot jobs), then each job attached, in order.
-fn start_steps(plan: &isoloom_core::generate::StartPlan) -> Vec<Vec<String>> {
+fn start_steps(plan: &crate::runtime::lab::StartPlan) -> Vec<Vec<String>> {
     let up = ["up", "-d", "--pull", "missing", "--wait", "--wait-timeout", "600"];
     let mut first: Vec<String> = up.iter().map(|s| s.to_string()).collect();
     if plan.jobs.is_empty() {
@@ -230,7 +248,7 @@ async fn remove_network(net: &str) {
 #[cfg(test)]
 mod tests {
     use super::{PORTS_ENV, default_ports, pick_pins, port_in_use, stale_networks, start_steps};
-    use isoloom_core::generate::StartPlan;
+    use crate::runtime::lab::StartPlan;
 
     #[test]
     fn default_ports_only_when_asked_for() {
@@ -245,6 +263,10 @@ mod tests {
         let yaml = pick_pins(config, true).unwrap();
         assert_eq!(yaml.matches("\"8000:8000/tcp\"").count(), 1, "{yaml}");
         assert_eq!(yaml.matches(":8000/tcp\"").count(), 2, "the second one gets a free port: {yaml}");
+        // A port served over both protocols (DNS) keeps its own number for each.
+        let dns = r#"{"services":{"dns":{"ports":[{"target":53,"protocol":"tcp"},{"target":53,"protocol":"udp"}]}}}"#;
+        let yaml = pick_pins(dns, true).unwrap();
+        assert!(yaml.contains("\"53:53/tcp\"") && yaml.contains("\"53:53/udp\""), "{yaml}");
     }
 
     #[test]
@@ -258,10 +280,40 @@ mod tests {
         assert_eq!(pick_pins("not json", false), None);
     }
 
+    /// A port free over both TCP and UDP. Taken below every OS's ephemeral range (Linux
+    /// 32768-60999, Windows and macOS 49152-65535): a port the OS hands out for one protocol
+    /// (a bind to port 0) can be held over the other by anything else on the machine, such as
+    /// an outgoing connection from a test running alongside, or a range Windows reserves (Hyper-V,
+    /// WinNAT) for one protocol. On Windows a TCP listener can't even bind a port that an
+    /// outgoing connection uses, since Rust's std sets SO_REUSEADDR on Unix only. Checked free first,
+    /// and out of that range no connection is handed it while the test runs.
+    fn port_free_over_both() -> u16 {
+        let start = 20_000 + (std::process::id() % 10_000) as u16;
+        (start..32_768).chain(20_000..start).find(|&p| !port_in_use(p, "tcp") && !port_in_use(p, "udp")).expect("a port free over TCP and UDP")
+    }
+
     #[test]
     fn a_held_port_is_in_use() {
-        let held = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        assert!(port_in_use(held.local_addr().unwrap().port()));
+        // Held on the loopback or on all interfaces, over one protocol only.
+        for ip in ["127.0.0.1", "0.0.0.0"] {
+            let port = port_free_over_both();
+            let tcp = std::net::TcpListener::bind((ip, port)).unwrap();
+            assert!(port_in_use(port, "tcp"), "a TCP holder on {ip} is caught");
+            assert!(!port_in_use(port, "udp"), "a TCP holder on {ip} doesn't block a UDP-only port");
+            drop(tcp);
+            let _udp = std::net::UdpSocket::bind((ip, port)).unwrap();
+            assert!(port_in_use(port, "udp"), "a UDP holder on {ip} (dnsmasq on 53) is caught");
+            assert!(!port_in_use(port, "tcp"), "a UDP holder on {ip} doesn't block a TCP port");
+        }
+    }
+
+    #[test]
+    fn random_udp_ports_are_free_over_udp() {
+        let config = r#"{"services":{"dns":{"ports":[{"target":53,"protocol":"udp"},{"target":53,"protocol":"tcp"}]}}}"#;
+        let yaml = pick_pins(config, false).unwrap();
+        let udp: u16 =
+            yaml.lines().find(|l| l.contains("/udp")).and_then(|l| l.trim().strip_prefix("- \"")).unwrap().split(':').next().unwrap().parse().unwrap();
+        assert!(!port_in_use(udp, "udp"), "{yaml}");
     }
 
     #[test]

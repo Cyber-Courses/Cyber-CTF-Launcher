@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::{
     CLOUD_NEEDS_ACCOUNT, LocalRun, Provider, Runtime, budget_verdict, check_qemu, emulated_arches, local_run, log_lines, low_memory_warning, parse_ipv4,
-    start_on_docker, terraform_vars,
+    start_on_docker,
 };
 use super::{server, warn_if_low_memory, welcome};
 use crate::exec::fake::{Tools, fail, ok};
@@ -221,20 +221,6 @@ fn a_local_run_follows_the_runtime_and_the_hypervisor() {
 }
 
 #[test]
-fn terraform_gets_the_hosts_vars_then_the_launchers() {
-    let key = Path::new("keys").join("id_ed25519");
-    let host = vec![("node".to_string(), "pve".to_string())];
-    let vars = terraform_vars(&host, Some("{}".into()), true, "ssh-ed25519 AAA".into(), &key, Some("203.0.113.7"));
-    let names: Vec<&str> = vars.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(names, ["node", "inputs", "ssh_via_node", "ssh_public_key", "ssh_private_key_file", "allowed_cidr"]);
-    assert_eq!(vars[4].1, key.to_string_lossy());
-    assert_eq!(vars[5].1, "203.0.113.7/32");
-    // No inputs, a routable bridge, not a cloud: only the key.
-    let vars = terraform_vars(&[], None, false, "pk".into(), &key, None);
-    assert_eq!(vars.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), ["ssh_public_key", "ssh_private_key_file"]);
-}
-
-#[test]
 fn an_aws_budget_blocks_only_when_it_is_known_to_be_over() {
     let mut lines = Vec::new();
     assert!(budget_verdict(server::BudgetCheck::Ok, &mut |l| lines.push(l)).is_ok());
@@ -252,7 +238,7 @@ fn memory_is_a_warning_only_when_the_lab_needs_more_than_is_free() {
     assert!(low_memory_warning(8192, 4096).unwrap().contains("about 8192 MB, but only ~4096 MB"));
     // The real probe: it never fails, it only may warn.
     let dir = lab(VMS);
-    let spec = isoloom_core::load(&dir).unwrap();
+    let spec = crate::runtime::lab::load(&dir).unwrap();
     warn_if_low_memory(&spec, &mut |_l| {});
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -260,7 +246,7 @@ fn memory_is_a_warning_only_when_the_lab_needs_more_than_is_free() {
 #[test]
 fn qemu_emulates_only_the_vms_built_for_another_cpu() {
     let dir = lab(VMS);
-    let spec = isoloom_core::load(&dir).unwrap();
+    let spec = crate::runtime::lab::load(&dir).unwrap();
     assert_eq!(emulated_arches(&spec, "x86_64"), ["aarch64"]);
     assert_eq!(emulated_arches(&spec, "aarch64"), ["x86_64"]);
     let mut both = emulated_arches(&spec, "riscv64");
@@ -269,7 +255,7 @@ fn qemu_emulates_only_the_vms_built_for_another_cpu() {
     std::fs::remove_dir_all(dir).unwrap();
     // Containers have no CPU of their own to emulate.
     let dir = lab(CONTAINERS);
-    let spec = isoloom_core::load(&dir).unwrap();
+    let spec = crate::runtime::lab::load(&dir).unwrap();
     assert!(emulated_arches(&spec, "riscv64").is_empty());
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -277,7 +263,7 @@ fn qemu_emulates_only_the_vms_built_for_another_cpu() {
 #[tokio::test]
 async fn a_lab_without_vms_needs_no_emulator() {
     let dir = lab(CONTAINERS);
-    let spec = isoloom_core::load(&dir).unwrap();
+    let spec = crate::runtime::lab::load(&dir).unwrap();
     let mut lines = Vec::new();
     check_qemu(&spec, &mut |l| lines.push(l)).await.unwrap();
     assert!(lines.is_empty());
@@ -287,9 +273,9 @@ async fn a_lab_without_vms_needs_no_emulator() {
 #[test]
 fn the_welcome_is_the_labs_message_line_by_line() {
     let dir = lab(CONTAINERS);
-    let spec = isoloom_core::load(&dir).unwrap();
+    let spec = crate::runtime::lab::load(&dir).unwrap();
     let mut lines = Vec::new();
-    welcome(&dir, &spec, isoloom_core::Target::Vagrant, &mut |l| lines.push(l));
+    welcome(&dir, &spec, crate::runtime::lab::Target::Vagrant, &mut |l| lines.push(l));
     assert_eq!(lines, ["Open the web at 10.30.0.10.", "Then look around."]);
     let mut lines = Vec::new();
     log_lines("one\ntwo\n", &mut |l| lines.push(l));

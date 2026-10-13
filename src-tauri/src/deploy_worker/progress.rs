@@ -40,6 +40,26 @@ pub fn last_step(log: &str) -> Option<String> {
     Some(if step.chars().count() > STEP_MAX { format!("{}…", step.chars().take(STEP_MAX - 1).collect::<String>()) } else { step })
 }
 
+/// How much of a log's end [`step_of`] reads: a VM start's log runs to megabytes, and the
+/// sidebar polls every worker's step every 2 s.
+const STEP_TAIL: u64 = 64 * 1024;
+
+/// [`last_step`] of the log file at `path`, from its last [`STEP_TAIL`] bytes only (bytes that
+/// aren't UTF-8 replaced). `None` when it can't be read.
+pub fn step_of(path: &std::path::Path) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let from = len.saturating_sub(STEP_TAIL);
+    file.seek(SeekFrom::Start(from)).ok()?;
+    let mut bytes = Vec::new();
+    file.take(STEP_TAIL).read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    // Started mid-line: that line's start is cut off, so it's left out.
+    let whole = if from > 0 { text.split_once('\n').map_or("", |(_, rest)| rest) } else { &text };
+    last_step(whole)
+}
+
 /// The verdict in a status file: `Ok` for `ok`, the message otherwise.
 pub fn verdict(status: &str) -> Result<()> {
     let s = status.trim();
@@ -124,6 +144,27 @@ mod tests {
         let step = last_step(&long).unwrap();
         assert!(step.ends_with('…'));
         assert_eq!(step.chars().count(), STEP_MAX);
+    }
+
+    #[test]
+    fn a_step_is_read_from_the_end_of_a_long_log() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-step-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("lab.log");
+        assert_eq!(step_of(&log), None, "no log yet");
+        // Megabytes of chatter before the step: only the end is read, and the line cut at the
+        // start of that end doesn't count.
+        let mut text = "==> dc01: Booting VM...\n".repeat(2);
+        text.push_str(&"x".repeat(3 * STEP_TAIL as usize));
+        text.push_str("\n==> dc01: Waiting for the VM to boot...\n  dc01: \n");
+        std::fs::write(&log, &text).unwrap();
+        assert_eq!(step_of(&log).as_deref(), Some("dc01: Waiting for the VM to boot..."));
+        std::fs::write(&log, [&"y".repeat(2 * STEP_TAIL as usize)[..], "\nPulling images\n"].concat()).unwrap();
+        assert_eq!(step_of(&log).as_deref(), Some("Pulling images"));
+        // A log that isn't all UTF-8 (a tool's codepage) still has a step.
+        std::fs::write(&log, b"Cr\xe9ation du r\xe9seau\n").unwrap();
+        assert_eq!(step_of(&log).as_deref(), Some("Cr\u{fffd}ation du r\u{fffd}seau"));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

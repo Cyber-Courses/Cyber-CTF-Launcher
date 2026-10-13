@@ -29,7 +29,7 @@
   --secondary-foreground: var(--foreground);
   --accent-foreground: var(--foreground);
   --muted-foreground: #a0a0ab;
-  --faint: #64646f;
+  --faint: #84848f;
 
   /* Fills and lines */
   --accent: rgb(255 255 255 / 0.06);
@@ -114,7 +114,7 @@
   --secondary: #f1f1ef;
   --foreground: #0c0c10;
   --muted-foreground: #5c5c66;
-  --faint: #92929c;
+  --faint: #686872;
   --accent: rgb(16 16 24 / 0.05);
   --glass: rgb(255 255 255 / 0.7);
   --glass-2: rgb(16 16 24 / 0.045);
@@ -124,7 +124,7 @@
   --edge-line: rgb(16 16 24 / 0.28);
   --log: var(--surface);
   --scrim: rgb(12 12 16 / 0.25);
-  --success: #16a34a;
+  --success: #15803d;
   --warning: #b45309;
   --destructive: #dc2626;
   --jewel-text: #047857;

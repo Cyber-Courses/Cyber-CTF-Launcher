@@ -7,6 +7,7 @@ import { Tip } from "@/components/ui/tip";
 import { StartTimer } from "@/features/labs/lab-timers";
 import type { HeaderMode, LabAction, LabState } from "@/features/labs/lab-detail/lab-state";
 import { openExternal, tell } from "@/lib/failure";
+import { OPERATION_STATUS } from "@/lib/deploy-store";
 import { useT } from "@/lib/i18n";
 
 /** A button's icon and word, or a spinner and its busy word while its action runs. */
@@ -38,8 +39,9 @@ export function HeaderActions({
   onRemove,
   onStop,
   onLogin,
+  startedAt,
 }: {
-  mode: Exclude<HeaderMode, "start">;
+  mode: Exclude<HeaderMode, "start" | "failed">;
   state: LabState;
   url: string | null | undefined;
   busy: boolean;
@@ -53,60 +55,16 @@ export function HeaderActions({
   onRemove: () => void;
   onStop: () => Promise<unknown> | void;
   onLogin?: () => Promise<void>;
+  /** When the start in flight began, for its timer. */
+  startedAt?: number;
 }) {
   const t = useT();
   const locked = busy || deploying;
   switch (mode) {
     case "running":
-      return (
-        <>
-          {url && (
-            <Button variant="outline" onClick={() => openExternal(url)} title={t("labs.detail.openUrl", { url })}>
-              <ExternalLink className="size-3.5" /> {t("labs.detail.openInBrowser")}
-            </Button>
-          )}
-          {s.canPause && (
-            <Tip key="pause" text={t("labs.detail.pauseHint")}>
-              <Button variant="outline" onClick={() => onAct("pause")} disabled={locked}>
-                <ActionLabel pending={acting === "pause"} icon={Pause} idle={t("labs.detail.pause")} busy={t("labs.detail.pausing")} />
-              </Button>
-            </Tip>
-          )}
-          {s.canShutdown && (
-            <Tip key="shutdown" text={t("labs.detail.shutdownHint")}>
-              <Button variant="outline" onClick={() => onAct("shutdown")} disabled={locked}>
-                <ActionLabel pending={acting === "shutdown"} icon={Power} idle={t("labs.detail.shutDown")} busy={t("labs.detail.shuttingDown")} />
-              </Button>
-            </Tip>
-          )}
-          <Tip key="remove" text={t("labs.detail.removeHint")}>
-            <Button variant="destructive" onClick={onRemove} disabled={locked}>
-              {s.operation === "stop" && !resetting ? (
-                t("labs.detail.stopping")
-              ) : (
-                <>
-                  <Square className="size-3.5" /> {t("labs.detail.stopRemove")}
-                </>
-              )}
-            </Button>
-          </Tip>
-        </>
-      );
+      return <RunningActions state={s} url={url} locked={locked} acting={acting} resetting={resetting} onAct={onAct} onRemove={onRemove} />;
     case "parked":
-      return (
-        <>
-          <Tip key="remove-parked" text={t("labs.detail.removeHint")}>
-            <Button variant="destructive" onClick={onRemove} disabled={locked}>
-              <Square className="size-3.5" /> {t("labs.detail.stopRemove")}
-            </Button>
-          </Tip>
-          <Tip key="resume" text={t("labs.detail.resumeHint")}>
-            <Button variant="primary" onClick={() => onAct("resume")} disabled={locked}>
-              <ActionLabel pending={busy} icon={Play} idle={t("labs.detail.resume")} busy={t("labs.detail.resuming")} />
-            </Button>
-          </Tip>
-        </>
-      );
+      return <ParkedActions locked={locked} busy={busy} onAct={onAct} onRemove={onRemove} />;
     case "stopping":
       return (
         <Button variant="destructive" disabled>
@@ -116,7 +74,7 @@ export function HeaderActions({
     case "starting":
       return (
         <Button variant="primary" disabled>
-          <Spinner className="size-3.5" /> {t("labs.detail.starting")} <StartTimer />
+          <Spinner className="size-3.5" /> {`${OPERATION_STATUS[s.operation ?? "launch"] ?? OPERATION_STATUS.launch}…`} <StartTimer from={startedAt} />
         </Button>
       );
     case "interrupted":
@@ -141,4 +99,79 @@ export function HeaderActions({
         </Button>
       );
   }
+}
+
+/** A lab that is up: open it, pause or shut it down (when it can), stop and remove it. */
+function RunningActions({
+  state: s,
+  url,
+  locked,
+  acting,
+  resetting,
+  onAct,
+  onRemove,
+}: {
+  state: LabState;
+  url: string | null | undefined;
+  /** Every action waits for the operation in flight. */
+  locked: boolean;
+  acting: LabAction | null;
+  resetting: boolean;
+  onAct: (what: LabAction) => void;
+  onRemove: () => void;
+}) {
+  const t = useT();
+  return (
+    <>
+      {url && (
+        <Button variant="outline" onClick={() => openExternal(url)} title={t("labs.detail.openUrl", { url })}>
+          <ExternalLink className="size-3.5" /> {t("labs.detail.openInBrowser")}
+        </Button>
+      )}
+      {s.canPause && (
+        <Tip key="pause" text={t("labs.detail.pauseHint")}>
+          <Button variant="outline" onClick={() => onAct("pause")} disabled={locked}>
+            <ActionLabel pending={acting === "pause"} icon={Pause} idle={t("labs.detail.pause")} busy={t("labs.detail.pausing")} />
+          </Button>
+        </Tip>
+      )}
+      {s.canShutdown && (
+        <Tip key="shutdown" text={t("labs.detail.shutdownHint")}>
+          <Button variant="outline" onClick={() => onAct("shutdown")} disabled={locked}>
+            <ActionLabel pending={acting === "shutdown"} icon={Power} idle={t("labs.detail.shutDown")} busy={t("labs.detail.shuttingDown")} />
+          </Button>
+        </Tip>
+      )}
+      <Tip key="remove" text={t("labs.detail.removeHint")}>
+        <Button variant="destructive" onClick={onRemove} disabled={locked}>
+          {s.operation === "stop" && !resetting ? (
+            t("labs.detail.stopping")
+          ) : (
+            <>
+              <Square className="size-3.5" /> {t("labs.detail.stopRemove")}
+            </>
+          )}
+        </Button>
+      </Tip>
+    </>
+  );
+}
+
+/** A paused or shut-down lab: remove it, or resume it as it was. */
+function ParkedActions({ locked, busy, onAct, onRemove }: { locked: boolean; busy: boolean; onAct: (what: LabAction) => void; onRemove: () => void }) {
+  const t = useT();
+  return (
+    <>
+      <Tip key="remove-parked" text={t("labs.detail.removeHint")}>
+        <Button variant="destructive" onClick={onRemove} disabled={locked}>
+          <Square className="size-3.5" /> {t("labs.detail.stopRemove")}
+        </Button>
+      </Tip>
+      <Tip key="resume" text={t("labs.detail.resumeHint")}>
+        <Button variant="primary" onClick={() => onAct("resume")} disabled={locked}>
+          <ActionLabel pending={busy} icon={Play} idle={t("labs.detail.resume")} busy={t("labs.detail.resuming")} />
+        </Button>
+      </Tip>
+    </>
+  );
 }

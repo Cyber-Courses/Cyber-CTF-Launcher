@@ -30,7 +30,6 @@ pub mod providers;
 mod proxmox;
 #[cfg(test)]
 mod real_labs;
-mod registry;
 mod remote;
 pub mod server;
 pub mod server_selftest;

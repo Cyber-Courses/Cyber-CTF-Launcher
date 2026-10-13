@@ -8,7 +8,6 @@
       "stop": "Stopping"
     },
     "label": {
-      "launch": "Deploying…",
       "resume": "Resuming…",
       "pause": "Pausing…",
       "shutdown": "Shutting down…",

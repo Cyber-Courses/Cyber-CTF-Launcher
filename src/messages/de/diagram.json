@@ -41,5 +41,11 @@
     "worker": "Worker",
     "ssh": "SSH",
     "service": "Dienst"
+  },
+  "view": {
+    "fitWidth": "An Breite anpassen",
+    "fitWidthHint": "Das Diagramm auf die Kartenbreite verkleinern oder in lesbarer Größe zeigen",
+    "scrollMore": "Mehr per Scrollen",
+    "scrollMoreHint": "Das Diagramm scrollen, um den Rest zu sehen"
   }
 }
