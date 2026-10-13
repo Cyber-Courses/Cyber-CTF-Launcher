@@ -24,7 +24,8 @@ export type ObjectivesState =
   | { kind: "unavailable" }
   /** Nothing to answer: no objectives and no question. */
   | { kind: "none" }
-  | { kind: "ready"; challenges: Challenge[]; progress: LabProgress; signedIn: boolean };
+  /** `progressRead`: the player's progress is in (or failed, or signed out: there is none to read). */
+  | { kind: "ready"; challenges: Challenge[]; progress: LabProgress; signedIn: boolean; progressRead: boolean };
 
 type Loaded = { labId: string; challenges: Challenge[] | null | "unavailable" };
 type Progress = { key: string; progress: LabProgress | null };
@@ -55,7 +56,7 @@ export function useObjectives(labId: string, question: string | null, title: str
     const key = `${labId}:${loggedIn}`;
     await loadProgress(labId)
       .then((progress) => setStored({ key, progress }))
-      .catch(() => {});
+      .catch(() => setStored((s) => (s?.key === key ? s : { key, progress: null })));
   }, [labId, loggedIn]);
 
   useEffect(() => {
@@ -63,7 +64,8 @@ export function useObjectives(labId: string, question: string | null, title: str
     if (loggedIn)
       loadProgress(labId)
         .then((progress) => alive && setStored({ key: `${labId}:${loggedIn}`, progress }))
-        .catch(() => {});
+        // Unreadable: counted as read (nothing solved, or what this page recorded since) rather than waited for.
+        .catch(() => alive && setStored((s) => (s?.key === `${labId}:${loggedIn}` ? s : { key: `${labId}:${loggedIn}`, progress: null })));
     return () => {
       alive = false;
     };
@@ -110,7 +112,7 @@ export function useObjectives(labId: string, question: string | null, title: str
   if (challenges === undefined) state = { kind: "loading" };
   else if (challenges === "unavailable") state = { kind: "unavailable" };
   else if (!challenges) state = { kind: "none" };
-  else state = { kind: "ready", challenges, progress, signedIn: loggedIn };
+  else state = { kind: "ready", challenges, progress, signedIn: loggedIn, progressRead: !loggedIn || stored?.key === progressKey };
 
   return { state, submit, showSteps, revealHint };
 }

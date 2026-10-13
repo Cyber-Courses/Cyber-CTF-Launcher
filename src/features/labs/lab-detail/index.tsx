@@ -235,7 +235,8 @@ export function LabDetail({
           {objectives.state.kind === "loading" && lab.question && <ObjectivesLoading question={lab.question} />}
           {objectives.state.kind === "ready" && (
             <ObjectivesPanel
-              key={lab.id}
+              // Mounted again once the player's progress is in, so the rows it opens at first skip solved ones.
+              key={`${lab.id}:${objectives.state.progressRead}`}
               challenges={objectives.state.challenges}
               progress={objectives.state.progress}
               signedIn={objectives.state.signedIn}

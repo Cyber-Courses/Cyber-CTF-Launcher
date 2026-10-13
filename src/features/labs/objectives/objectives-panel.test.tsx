@@ -141,6 +141,24 @@ describe("Objectives panel", () => {
     expect(p.queryByText("Find the service account")).toBeNull();
   });
 
+  it("a longer list opens on the first challenge not solved yet, also when progress comes after the challenges", async () => {
+    const four = [...OBJECTIVES, { key: "extra", title: "Extra", prompt: "One more.", optional: true, points: null, hintCount: 0, steps: [] }];
+    const api = backend({ objectives: four, solved: ["find-dashboard"] });
+    renderLab((a) => (a?.operation === "labProgress" ? new Promise((r) => setTimeout(() => r(api(a)), 10)) : api(a)));
+    // The challenges render on their own first (one act would commit both answers together).
+    await act(async () => {});
+    expect(screen.getByRole("heading", { name: "Objectives" })).toBeTruthy();
+    await flush();
+    const p = panel();
+    expect(p.getByText("What is the password in db-credentials?")).toBeTruthy();
+    expect(p.queryByText("Which port does the dashboard use?")).toBeNull();
+    expect(p.queryByText("One more.")).toBeNull();
+    // Once the player toggles a row, that choice stays.
+    await userEvent.setup().click(p.getByRole("button", { name: /Find the dashboard/ }));
+    expect(p.getByText("Which port does the dashboard use?")).toBeTruthy();
+    expect(p.getByText("What is the password in db-credentials?")).toBeTruthy();
+  });
+
   it("submits an answer and says whether it was right", async () => {
     const calls = renderLab(backend());
     await flush();
