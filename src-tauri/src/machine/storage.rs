@@ -21,14 +21,14 @@ const IMAGE_FORMAT: &str = "{{index .RepoTags 0}}\t{{.Size}}";
 const LOCAL_PROVIDERS: [Provider; 7] =
     [Provider::Virtualbox, Provider::VmwareDesktop, Provider::Parallels, Provider::Utm, Provider::Libvirt, Provider::Qemu, Provider::Hyperv];
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredItem {
     pub name: String,
     pub bytes: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Storage {
     /// Container images labs, the attack box and the self-test use, present locally.

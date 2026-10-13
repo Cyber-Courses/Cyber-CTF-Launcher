@@ -29,11 +29,12 @@ fn merge_unique(mut ids: Vec<String>, more: impl IntoIterator<Item = String>) ->
 }
 
 /// One operation in flight on a lab, for the sidebar: what it is and the step it is at.
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Serialize, Debug, PartialEq, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveOperation {
     lab_id: String,
     /// "launch", "resume", "pause", "shutdown", "provision", "attack_vm" or "stop".
+    #[ts(type = r#""launch" | "resume" | "pause" | "shutdown" | "provision" | "attack_vm" | "stop""#)]
     op: &'static str,
     /// The machine a provisioning run targets, when one.
     machine: Option<String>,

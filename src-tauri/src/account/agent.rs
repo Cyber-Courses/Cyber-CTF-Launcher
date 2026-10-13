@@ -424,10 +424,20 @@ pub fn spawn(app: AppHandle) {
     });
 }
 
+/// This machine's launcher-agent identity, for the UI ("running as ...").
+#[derive(serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInfo {
+    install_id: String,
+    name: String,
+    arch: &'static str,
+    capabilities: Vec<String>,
+}
+
 /// This machine's identity, for the UI ("running as ...").
 #[tauri::command]
-pub fn agent_info(app: AppHandle) -> Result<Value> {
-    Ok(json!({ "installId": install_id(&app)?, "name": machine_name(), "arch": arch(), "capabilities": capabilities() }))
+pub fn agent_info(app: AppHandle) -> Result<AgentInfo> {
+    Ok(AgentInfo { install_id: install_id(&app)?, name: machine_name(), arch: arch(), capabilities: capabilities() })
 }
 
 #[cfg(test)]
@@ -513,9 +523,11 @@ mod tests {
     #[test]
     fn this_machines_identity_is_its_install_id_name_and_arch() {
         let t = crate::test_app::TestApp::new();
-        let info = agent_info(t.handle().clone()).unwrap();
-        assert_eq!(info["installId"].as_str().unwrap().len(), 32);
-        assert_eq!(agent_info(t.handle().clone()).unwrap()["installId"], info["installId"], "kept");
+        let info = || serde_json::to_value(agent_info(t.handle().clone()).unwrap()).unwrap();
+        let first = info();
+        assert_eq!(first["installId"].as_str().unwrap().len(), 32);
+        assert_eq!(info()["installId"], first["installId"], "kept");
+        let info = first;
         assert_eq!(info["arch"], arch());
         assert_eq!(info["capabilities"], json!(["docker"]));
     }

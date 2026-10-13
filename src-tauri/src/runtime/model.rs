@@ -3,18 +3,21 @@
 //! doesn't touch command registration or dispatch.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// A port the software inside a container binds: `target` is the port inside the
 /// container, `published` is where it is reachable on 127.0.0.1 (0 = not published).
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "LabPort")]
 pub struct Port {
     pub published: u16,
     pub target: u16,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "LabMachine")]
 pub struct Machine {
     /// The container (a small computer on the lab network).
     pub name: String,
@@ -46,8 +49,9 @@ pub struct Machine {
 }
 
 /// One service inside a machine, as declared by the lab.
-#[derive(Serialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Debug, PartialEq, Clone, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "LabService")]
 pub struct Service {
     /// The lab's name for it, e.g. "portal", "ssh".
     pub name: String,
@@ -58,8 +62,9 @@ pub struct Service {
 }
 
 /// One network interface of a machine: the lab network it sits on and its address there.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "LabInterface")]
 pub struct Interface {
     /// The lab's own name for the network (the compose key, e.g. "dmz"), not Docker's.
     pub network: String,
@@ -67,8 +72,9 @@ pub struct Interface {
 }
 
 /// A network segment of the lab (a Docker network = a switch the machines plug into).
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "LabNetwork")]
 pub struct Network {
     /// The lab's own name for it (the compose key), e.g. "default", "dmz", "internal".
     pub name: String,
@@ -79,8 +85,9 @@ pub struct Network {
 }
 
 /// Where a lab runs, for the UI: its own runtime here, a VM here, a server, or a cloud account.
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Clone, Copy, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(rename = "LabPlace")]
 pub enum Place {
     Container,
     LocalVm,
@@ -90,7 +97,7 @@ pub enum Place {
 
 /// How a lab was parked: its machines kept on disk, to resume later without rebuilding them.
 /// `Pause` saves the VMs' state (instant resume); `Shutdown` powers them off cleanly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Park {
     Pause,
@@ -114,7 +121,7 @@ impl Park {
     }
 }
 
-#[derive(Serialize, Clone, Default)]
+#[derive(Serialize, Clone, Default, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct LabStatus {
     pub running: bool,
@@ -149,8 +156,9 @@ pub struct LabStatus {
 }
 
 /// One thing a cloud-services lab exposes: a module output, under the spec's name for it.
-#[derive(Serialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "LabOutput")]
 pub struct Output {
     pub name: String,
     pub value: String,
@@ -159,8 +167,9 @@ pub struct Output {
 }
 
 /// The attack box's address on the lab network.
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Clone, Debug, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "LabAttacker")]
 pub struct AttackerAt {
     pub ip: String,
     pub lab_network: String,

@@ -14,7 +14,7 @@ use super::steps::{Step, channel_log, command_line, run_step, run_steps, step};
 use super::uninstall;
 use crate::error::{Error, Result};
 
-#[derive(Deserialize, serde::Serialize, Clone, Copy, PartialEq, Debug)]
+#[derive(Deserialize, serde::Serialize, Clone, Copy, PartialEq, Debug, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Dependency {
     Docker,

@@ -11,7 +11,7 @@ use crate::exec::run_read;
 /// CPU usage needs two samples a moment apart.
 const CPU_SAMPLE_GAP: Duration = Duration::from_millis(220);
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MachineMetrics {
     /// Overall CPU usage, 0-100.

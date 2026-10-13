@@ -26,7 +26,7 @@ const REFRESH_MARGIN_SECS: u64 = 60;
 /// or the keychain lost it). The app matches on "signed out" to flip to its signed-out state.
 pub const SIGNED_OUT: &str = "You're signed out. Sign in again to continue.";
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthStatus {
     logged_in: bool,
@@ -35,6 +35,7 @@ pub struct AuthStatus {
     /// Why the session couldn't be read (the keychain is locked, its prompt was dismissed, or
     /// there is no Secret Service), when that is why the player shows as signed out.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     keychain_error: Option<String>,
 }
 

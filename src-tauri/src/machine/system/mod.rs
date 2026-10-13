@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::exec::{docker_denied, docker_denied_message, run_read};
 use crate::runtime::providers::{self, ProviderStatus};
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Tool {
     pub installed: bool,
@@ -18,7 +18,7 @@ pub struct Tool {
 }
 
 /// The OS package manager our one-click installs rely on (brew / winget / apt).
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PkgManager {
     pub name: String,
@@ -28,7 +28,7 @@ pub struct PkgManager {
 }
 
 /// Cloud provider CLIs, for the Cloud setup (AWS / Azure / GCP).
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudClis {
     pub aws: Tool,
@@ -36,7 +36,7 @@ pub struct CloudClis {
     pub gcloud: Tool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemReport {
     pub os: &'static str,
@@ -51,9 +51,11 @@ pub struct SystemReport {
     pub docker_denied_hint: Option<String>,
     /// Which Docker-compatible engine answers, when one does: `docker-desktop`, `orbstack`,
     /// `colima`, `rancher-desktop`, `podman` or `docker-engine`.
+    #[ts(type = r#""docker-desktop" | "orbstack" | "colima" | "rancher-desktop" | "podman" | "docker-engine" | null"#)]
     pub docker_engine: Option<&'static str>,
     /// Every engine whose Docker context answers right now. Several can run side by side
     /// (e.g. Docker Desktop and OrbStack); `docker_engine` is the one the CLI uses.
+    #[ts(type = r#"("docker-desktop" | "orbstack" | "colima" | "rancher-desktop" | "podman" | "docker-engine")[]"#)]
     pub docker_engines_running: Vec<&'static str>,
     pub docker_compose: Tool,
     pub vagrant: Tool,
@@ -74,7 +76,7 @@ pub struct SystemReport {
 }
 
 /// One Isoloom target on this machine.
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetReadiness {
     /// The target id: `docker`, `vagrant`, `proxmox`, `cloud-vm`, ...

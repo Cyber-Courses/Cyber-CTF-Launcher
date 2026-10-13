@@ -21,6 +21,8 @@ mod shared_folder;
 mod terminal;
 #[cfg(test)]
 mod test_app;
+#[cfg(test)]
+mod ts_bindings;
 mod window;
 
 use std::path::PathBuf;

@@ -35,6 +35,9 @@ pub use contract::{
 };
 pub use profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile, terraform_target};
 pub use setup_window::*;
+/// For the generated TypeScript types (`ts_bindings`).
+#[cfg(test)]
+pub(crate) use {checks::TestResult, input::HostInput};
 
 /// Written into a VM lab's directory when it runs on a server host, so stop/status
 /// (which re-evaluate the Vagrantfile) get the same connection.

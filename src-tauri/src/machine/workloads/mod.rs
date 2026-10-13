@@ -11,12 +11,13 @@ use serde::Serialize;
 
 use crate::error::{Error, Result};
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Workload {
     /// Lab id, or `selftest` for a setup test.
     pub id: String,
     /// `docker` or `vm`.
+    #[ts(type = r#""docker" | "vm""#)]
     pub kind: &'static str,
     /// Containers running for it (VMs: 1 per machine).
     pub count: u32,

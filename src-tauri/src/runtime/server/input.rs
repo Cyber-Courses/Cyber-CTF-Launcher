@@ -2,14 +2,16 @@
 //! against its provider's shape (region ids, account ids, tokens) before anything is saved.
 
 use serde::Deserialize;
+use ts_rs::TS;
 
 use super::profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile, default_port};
 use crate::error::{Error, Result};
 use crate::runtime::providers::Provider;
 
 /// What the UI submits. `id` is None for a new host; `password` None keeps the stored one.
-#[derive(Deserialize)]
+#[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "ServerHostInput")]
 pub struct HostInput {
     pub(super) id: Option<String>,
     name: String,
@@ -24,10 +26,13 @@ pub struct HostInput {
     auto_stop_hours: Option<u32>,
     pub(super) password: Option<String>,
     #[serde(default)]
+    #[ts(optional = nullable)]
     use_cli_creds: Option<bool>,
     #[serde(default)]
+    #[ts(optional = nullable)]
     aws_profile: Option<String>,
     #[serde(default)]
+    #[ts(optional = nullable)]
     monthly_limit: Option<f64>,
 }
 

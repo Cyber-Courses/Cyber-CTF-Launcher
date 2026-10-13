@@ -75,8 +75,9 @@ fn check(path: &Path) -> Result<()> {
     Ok(())
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "SharedFolder")]
 pub struct SharedFolderInfo {
     pub enabled: bool,
     pub path: String,

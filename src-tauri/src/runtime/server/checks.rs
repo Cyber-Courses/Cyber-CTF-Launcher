@@ -4,9 +4,11 @@
 use std::time::Instant;
 
 use serde::Serialize;
+use ts_rs::TS;
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "ServerTest")]
 pub struct TestResult {
     /// Everything checked passed: the host looks usable for labs.
     pub(super) ok: bool,
@@ -24,16 +26,18 @@ pub struct TestResult {
 }
 
 /// One named pre-flight check in a cloud account test (e.g. "Credentials", "Terraform").
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "ServerCheck")]
 pub struct Check {
     pub name: String,
     pub state: CheckState,
     pub detail: String,
 }
 
-#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(rename = "ServerCheckState")]
 pub enum CheckState {
     Ok,
     /// Not a blocker, but worth knowing (e.g. couldn't verify, or a soft limit).

@@ -114,8 +114,9 @@ pub fn instanced(dir: &Path) -> Result<Spec> {
 
 /// An observer the lab puts beside itself (`tools:` in its spec): a toolbox or a capture box
 /// on every network, outside the lab's contract.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "LabTool")]
 pub struct Observer {
     pub name: String,
     pub image: Option<String>,

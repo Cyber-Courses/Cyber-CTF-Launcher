@@ -21,8 +21,9 @@ use super::store::{Store, find, load, load_host, update};
 use crate::error::{Error, Result};
 use crate::runtime::providers::Provider;
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "ServerList")]
 pub struct HostList {
     default: Option<String>,
     hosts: Vec<HostProfile>,
@@ -250,7 +251,7 @@ pub fn server_running_labs(app: AppHandle) -> HashMap<String, u32> {
 }
 
 /// A host's hardware headroom, shown on its row so you can see what it can run.
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HostCapacity {
     pub cores: u64,
