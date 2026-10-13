@@ -165,7 +165,10 @@ jobs:
       BRANCH: bot/attack-box-digest
       FILE: src-tauri/attack-box-image.json
     steps:
+      # The bump goes to dev, the staging branch; it reaches main with the next release.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: dev
       - name: Open or update the bump PR
         env:
           GH_TOKEN: ${{ github.token }}
@@ -186,10 +189,12 @@ jobs:
           git push -f origin "$BRANCH"
           title="Attack box: pin the $(date -u +%Y-%m-%d) image"
           body="Moves the launcher's default attack box to \`$PINNED\` (\`$IMAGE:$(date -u +%Y-%m-%d)\`), published and smoke-tested on amd64 and arm64 by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. The real-labs and CI workflows run on this branch by dispatch."
-          if [ -n "$(gh pr list --head "$BRANCH" --state open --json number -q '.[].number')" ]; then
-            gh pr edit "$BRANCH" --title "$title" --body "$body"
+          # `gh pr edit` fails on repos that still list classic Projects; the REST call doesn't.
+          number=$(gh pr list --head "$BRANCH" --base dev --state open --json number -q '.[0].number')
+          if [ -n "$number" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$number" -f title="$title" -f body="$body" > /dev/null
           else
-            gh pr create --head "$BRANCH" --base main --title "$title" --body "$body"
+            gh pr create --head "$BRANCH" --base dev --title "$title" --body "$body"
           fi
           # A GITHUB_TOKEN push starts no workflow; dispatched runs do, and report on the PR's commit.
           gh workflow run labs.yml --ref "$BRANCH"
