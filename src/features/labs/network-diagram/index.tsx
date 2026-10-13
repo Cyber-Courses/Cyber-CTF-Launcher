@@ -11,6 +11,7 @@ import { Flow, type Tab } from "@/features/labs/network-diagram/flow";
 import { Attacker, MIN_ZOOM, Machine } from "@/features/labs/network-diagram/model";
 import { CopyText } from "@/features/labs/network-diagram/copy-text";
 import { HostHeader, hasPortTabs } from "@/features/labs/network-diagram/host-header";
+import { FitWidthControls, fitShellSize, useFitWidth } from "@/features/labs/network-diagram/fit-width";
 import { topology } from "@/features/labs/network-diagram/topology";
 
 // The lab network diagram. Facts come from Docker (networks, interfaces, ports) or the lab's
@@ -99,7 +100,11 @@ export function NetworkDiagram({
   const onSize = useCallback((w: number, h: number) => setGraph({ w, h }), []);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [scrollX, setScrollX] = useState(0);
-  const { canvas, height } = shellSize(graph, width);
+  // Wider than the card at a readable zoom: it scrolls, unless the player chose to fit it.
+  const [fit, setFit] = useFitWidth();
+  const natural = shellSize(graph, width);
+  const wide = natural.canvas - width > 1;
+  const { canvas, height } = fit && wide ? fitShellSize(graph, width) : natural;
   // A wider window can leave less (or nothing) to scroll: the browser clamps the scroller's
   // offset without always firing a scroll event, so read it back, or the fades and the port tabs
   // would keep the old offset.
@@ -110,7 +115,18 @@ export function NetworkDiagram({
 
   return (
     <div className={cn("hostcard", hasPortTabs(machines) && "hostcard-docked")}>
-      <HostHeader host={host} />
+      <HostHeader
+        host={host}
+        tools={
+          <FitWidthControls
+            wide={wide}
+            fit={fit}
+            onFit={setFit}
+            moreRight={canvas - width - scrollX > 1}
+            onScrollMore={() => scroller.current?.scrollBy({ left: Math.round(width * 0.8), behavior: "smooth" })}
+          />
+        }
+      />
       <div
         ref={shell}
         className="topology-shell"
@@ -118,6 +134,7 @@ export function NetworkDiagram({
         // Fades on the sides that have more to scroll to, so a wide lab reads as scrollable.
         data-more-left={scrollX > 1 || undefined}
         data-more-right={canvas - width - scrollX > 1 || undefined}
+        data-fit={(fit && wide) || undefined}
       >
         <div ref={scroller} className="topology-scroll" onScroll={(e) => setScrollX(e.currentTarget.scrollLeft)}>
           <div className="topology-canvas" style={{ width: canvas || "100%" }}>

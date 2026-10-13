@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Laptop, Server } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import type { Machine } from "@/features/labs/network-diagram/model";
@@ -8,8 +9,9 @@ import { CopyText } from "@/features/labs/network-diagram/copy-text";
 // Kept apart from the diagram (React Flow, ELK) so the lab page can draw the card's header while
 // the diagram's code loads (see lab-detail/network-panel.tsx).
 
-/** The card's header: your machine (127.0.0.1) or the server the lab runs on. */
-export function HostHeader({ host }: { host: string | null }) {
+/** The card's header: your machine (127.0.0.1) or the server the lab runs on, then the view's
+ *  controls (`tools`, see fit-width.tsx) when the lab is wider than the card. */
+export function HostHeader({ host, tools }: { host: string | null; tools?: ReactNode }) {
   const t = useT();
   return (
     <div className="hostcard-header">
@@ -26,6 +28,7 @@ export function HostHeader({ host }: { host: string | null }) {
           )}
         </div>
       </div>
+      {tools}
       <span className="hostcard-online">
         <i /> {t("diagram.host.online")}
       </span>

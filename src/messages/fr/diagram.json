@@ -41,5 +41,11 @@
     "worker": "worker",
     "ssh": "ssh",
     "service": "service"
+  },
+  "view": {
+    "fitWidth": "Ajuster à la largeur",
+    "fitWidthHint": "Réduire le schéma à la largeur de la carte, ou l'afficher à taille lisible",
+    "scrollMore": "Faire défiler pour la suite",
+    "scrollMoreHint": "Faire défiler le schéma pour voir la suite"
   }
 }
