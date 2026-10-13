@@ -312,7 +312,7 @@ const SCHEDULED: u8 = 2;
 /// remounts it), but Windows restarts once and `RunOnce` is written once.
 static RESTART: AtomicU8 = AtomicU8::new(IDLE);
 
-/// Opening the app once at the next sign-in.
+/// Opening the app once at the next sign-in (shared across the command's await: `Sync`).
 trait Reopen {
     /// Registers it; whether it was written.
     fn register(&self) -> bool;
@@ -328,7 +328,7 @@ fn already_scheduled(e: &Error) -> bool {
 /// Asks Windows to restart in a few seconds, once per run of the app: a second ask while it
 /// counts down (another window, a remounted step) is the same restart. `RunOnce` is removed
 /// again only if this call wrote it and the restart couldn't be scheduled.
-async fn schedule_restart(app: &AppHandle, state: &AtomicU8, reason: &str, reopen: &dyn Reopen) -> Result<()> {
+async fn schedule_restart(app: &AppHandle, state: &AtomicU8, reason: &str, reopen: &(dyn Reopen + Sync)) -> Result<()> {
     if state.compare_exchange(IDLE, ASKING, Ordering::SeqCst, Ordering::SeqCst).is_err() {
         return Ok(());
     }
@@ -542,7 +542,7 @@ exit 0
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::sync::atomic::{AtomicBool, AtomicU32};
 
     use super::*;
     use crate::exec::fake::{Tools, fail, ok};
@@ -851,18 +851,24 @@ mod tests {
     #[derive(Default)]
     struct FakeReopen {
         refuses: bool,
-        written: Cell<bool>,
-        writes: Cell<u32>,
+        written: AtomicBool,
+        writes: AtomicU32,
+    }
+
+    impl FakeReopen {
+        fn written(&self) -> bool {
+            self.written.load(Ordering::SeqCst)
+        }
     }
 
     impl Reopen for FakeReopen {
         fn register(&self) -> bool {
-            self.writes.set(self.writes.get() + 1);
-            self.written.set(!self.refuses);
+            self.writes.fetch_add(1, Ordering::SeqCst);
+            self.written.store(!self.refuses, Ordering::SeqCst);
             !self.refuses
         }
         fn unregister(&self) {
-            self.written.set(false);
+            self.written.store(false, Ordering::SeqCst);
         }
     }
 
@@ -875,14 +881,25 @@ mod tests {
         let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
         schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
         assert_eq!(tools.calls(), [SHUTDOWN]);
-        assert!(reopen.written.get());
+        assert!(reopen.written());
         assert_eq!(marked_boot(t.handle(), RESTART_MARK), Some(sysinfo::System::boot_time()));
         // The other window, or the remounted step, asks again during the countdown: the same
         // restart, no second shutdown, RunOnce left as it is.
         schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
         assert_eq!(tools.calls().len(), 1);
-        assert_eq!(reopen.writes.get(), 1);
-        assert!(reopen.written.get());
+        assert_eq!(reopen.writes.load(Ordering::SeqCst), 1);
+        assert!(reopen.written());
+    }
+
+    #[test]
+    fn the_restart_can_run_as_a_tauri_command() {
+        // Tauri runs a command's future on its thread pool: it must be `Send` on every OS, though
+        // only Windows awaits it from the command.
+        fn send<T: Send>(_: &T) {}
+        let t = TestApp::new();
+        let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
+        send(&schedule_restart(t.handle(), &state, "x", &reopen));
+        send(&machine_restart(t.handle().clone(), String::new()));
     }
 
     #[tokio::test]
@@ -891,7 +908,7 @@ mod tests {
         let _tools = Tools::rules(&[("shutdown", fail("A system shutdown has already been scheduled.(1190)"))]);
         let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
         schedule_restart(t.handle(), &state, "x", &reopen).await.unwrap();
-        assert!(reopen.written.get(), "the app still reopens after that restart");
+        assert!(reopen.written(), "the app still reopens after that restart");
         assert_eq!(state.load(Ordering::SeqCst), SCHEDULED);
         assert!(marked_boot(t.handle(), RESTART_MARK).is_some());
     }
@@ -903,13 +920,13 @@ mod tests {
         let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
         let err = schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap_err();
         assert!(err.to_string().contains("Access is denied"), "{err}");
-        assert!(!reopen.written.get(), "RunOnce removed");
+        assert!(!reopen.written(), "RunOnce removed");
         assert!(marked_boot(t.handle(), RESTART_MARK).is_none());
         drop(tools);
         let tools = Tools::rules(&[("shutdown", ok(""))]);
         schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
         assert_eq!(tools.calls(), [SHUTDOWN]);
-        assert!(reopen.written.get());
+        assert!(reopen.written());
     }
 
     #[tokio::test]
@@ -930,7 +947,7 @@ mod tests {
         let refused = FakeReopen { refuses: true, ..FakeReopen::default() };
         let _tools = Tools::rules(&[("shutdown", ok(""))]);
         schedule_restart(t.handle(), &AtomicU8::new(IDLE), "x", &refused).await.unwrap();
-        assert!(!refused.written.get());
+        assert!(!refused.written());
     }
 
     #[cfg(not(windows))]
