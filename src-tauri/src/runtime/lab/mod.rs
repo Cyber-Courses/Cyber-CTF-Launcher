@@ -295,18 +295,16 @@ pub enum Requirements {
     None,
     /// All there.
     Met(Vec<String>),
-    /// Not checked (Isoloom checks them with `sh`, which Windows lacks): what it names.
-    Unchecked(Vec<String>),
     /// What is missing, as Isoloom words it.
     Missing(Vec<String>),
 }
 
-/// [`Requirements`] of a spec: a command name looked up on the PATH, a shell command run (the
-/// lab's own code, as its Terraform module is), as `isoloom run` does.
+/// [`Requirements`] of a spec, as `isoloom run` checks them: a command name looked up on the
+/// PATH (with `PATHEXT` on Windows), a shell command run (the lab's own code, as its Terraform
+/// module is) with `sh -c`, or PowerShell on Windows.
 pub async fn cloud_requirements(spec: &Spec) -> Requirements {
-    let Some(cloud) = spec.cloud.as_ref().filter(|c| !c.requires.is_empty()) else { return Requirements::None };
-    if cfg!(windows) {
-        return Requirements::Unchecked(cloud.requires.clone());
+    if !spec.cloud.as_ref().is_some_and(|c| !c.requires.is_empty()) {
+        return Requirements::None;
     }
     let spec = spec.clone();
     let checked = tokio::task::spawn_blocking(move || isoloom_core::host::requirements(&spec, true)).await.ok().flatten();

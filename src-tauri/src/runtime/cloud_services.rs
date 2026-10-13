@@ -445,10 +445,6 @@ async fn check_requirements(spec: &Spec, log: &mut impl FnMut(String)) -> Result
             log(format!("This lab's module needs {}: found.", found.join(", ")));
             Ok(())
         }
-        lab::Requirements::Unchecked(what) => {
-            log(format!("This lab's module needs {} on this machine (not checked on Windows).", what.join(", ")));
-            Ok(())
-        }
         lab::Requirements::Missing(missing) => {
             Err(Error::Invalid(format!("This lab's module needs what this machine lacks: {}. Install it, then start the lab again.", missing.join("; "))))
         }
@@ -845,11 +841,19 @@ mod tests {
 
     /// isoloom #127: an input inside a string at any depth (CloudGoat's allow-list), the lab's own
     /// environment, more applies, and what a lab needs here.
-    const GOAT: &str = "version: 1\nname: goat\ninputs: [PLAYER_IP]\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { cg_whitelist: [\"{{ inputs.PLAYER_IP }}/32\"], tag: \"lab-{{ inputs.PLAYER_IP }}-{{ inputs.PLAYER_IP }}\", region: us-east-1 }\n  env: { AWS_REGION: us-east-1 }\n  apply_retries: 1\n  requires: [sh]\n";
+    const GOAT_TEMPLATE: &str = "version: 1\nname: goat\ninputs: [PLAYER_IP]\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { cg_whitelist: [\"{{ inputs.PLAYER_IP }}/32\"], tag: \"lab-{{ inputs.PLAYER_IP }}-{{ inputs.PLAYER_IP }}\", region: us-east-1 }\n  env: { AWS_REGION: us-east-1 }\n  apply_retries: 1\n  requires: [{TOOL}]\n";
+
+    /// A command every machine the tests run on has.
+    const TOOL: &str = if cfg!(windows) { "cmd" } else { "sh" };
+
+    /// [`GOAT_TEMPLATE`] needing [`TOOL`].
+    fn goat() -> String {
+        GOAT_TEMPLATE.replace("{TOOL}", TOOL)
+    }
 
     #[test]
     fn an_input_inside_a_value_is_filled_in_place() {
-        let s = spec(GOAT);
+        let s = spec(&goat());
         let cloud = of(&s).unwrap();
         assert!(needs_player_ip(cloud));
         let v = inputs(cloud, &[], Some("203.0.113.7")).unwrap();
@@ -864,8 +868,8 @@ mod tests {
 
     #[test]
     fn set_up_steps_on_this_machine_are_refused_before_anything_runs() {
-        assert!(check_supported(of(&spec(GOAT)).unwrap()).is_ok());
-        let s = spec(&format!("{GOAT}  before: [keys.sh]\n"));
+        assert!(check_supported(of(&spec(&goat())).unwrap()).is_ok());
+        let s = spec(&format!("{}  before: [keys.sh]\n", goat()));
         let err = check_supported(of(&s).unwrap()).unwrap_err().to_string();
         assert!(err.contains("(keys.sh)") && err.contains("Nothing was created"), "{err}");
     }
@@ -890,14 +894,14 @@ mod tests {
             assert!(!reserved_env(name), "{name}");
         }
         let s = spec(
-            &GOAT.replace("env: { AWS_REGION: us-east-1 }", "env: { AWS_REGION: us-east-1, TF_CLI_ARGS_destroy: \"-target=x\", AWS_ACCESS_KEY_ID: AKIA }"),
+            &goat().replace("env: { AWS_REGION: us-east-1 }", "env: { AWS_REGION: us-east-1, TF_CLI_ARGS_destroy: \"-target=x\", AWS_ACCESS_KEY_ID: AKIA }"),
         );
         let err = check_supported(of(&s).unwrap()).unwrap_err().to_string();
         assert!(err.contains("TF_CLI_ARGS_destroy, AWS_ACCESS_KEY_ID") && err.contains("Nothing was created"), "{err}");
         // The region a run says it uses: the lab's, else the account's.
         let mut conn = account(Provider::Aws);
         conn.region = Some("eu-west-3".into());
-        assert_eq!(region_used(of(&spec(GOAT)).unwrap(), &conn), Some("us-east-1"));
+        assert_eq!(region_used(of(&spec(&goat())).unwrap(), &conn), Some("us-east-1"));
         assert_eq!(region_used(of(&spec(SPEC)).unwrap(), &conn), Some("eu-west-3"));
     }
 
@@ -913,7 +917,7 @@ mod tests {
             ("AWS_PROFILE".into(), "work".into()),
         ];
         // A lab sneaking keys in (a destroy of a lab started before the refusal): left out.
-        let s = spec(&GOAT.replace("env: { AWS_REGION: us-east-1 }", "env: { AWS_REGION: us-east-1, AWS_ACCESS_KEY_ID: AKIALAB }"));
+        let s = spec(&goat().replace("env: { AWS_REGION: us-east-1 }", "env: { AWS_REGION: us-east-1, AWS_ACCESS_KEY_ID: AKIALAB }"));
         let (env, files) = run_env(&conn, &state, of(&s).unwrap()).await.unwrap();
         let files = files.expect("keys, so files");
         let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
@@ -934,7 +938,7 @@ mod tests {
         let t = TestApp::new();
         let dir = t.lab(
             "goat",
-            &[("isoloom.yml", format!("{GOAT}  before: [keys.sh]\n").as_str()), ("keys.sh", "true\n"), ("terraform/main.tf", "variable \"region\" {}\n")],
+            &[("isoloom.yml", format!("{}  before: [keys.sh]\n", goat()).as_str()), ("keys.sh", "true\n"), ("terraform/main.tf", "variable \"region\" {}\n")],
         );
         let tools = Tools::rules(&[]);
         // No such account: had it been read first, that would be the error.
@@ -950,7 +954,7 @@ mod tests {
         let state = std::env::temp_dir().join(format!("cyberctf-cloudsvc-env-{}", rand::random::<u32>()));
         let mut conn = account(Provider::Azure);
         conn.tf_env = vec![("ARM_SUBSCRIPTION_ID".into(), "sub".into()), ("AWS_REGION".into(), "eu-west-3".into())];
-        let s = spec(GOAT);
+        let s = spec(&goat());
         let (env, files) = run_env(&conn, &state, of(&s).unwrap()).await.unwrap();
         assert!(files.is_none());
         assert_eq!(env, [("ARM_SUBSCRIPTION_ID".to_string(), "sub".to_string()), ("AWS_REGION".to_string(), "us-east-1".to_string())]);
@@ -959,17 +963,12 @@ mod tests {
     #[tokio::test]
     async fn what_a_lab_needs_is_looked_for_here() {
         let mut lines = Vec::new();
-        // `sh` is on every machine the tests run on (Windows: not checked, only said).
-        check_requirements(&spec(GOAT), &mut |l| lines.push(l)).await.unwrap();
-        assert_eq!(lines.len(), 1, "{lines:?}");
-        let missing = spec(&GOAT.replace("requires: [sh]", "requires: [cyberctf-no-such-tool]"));
-        let r = check_requirements(&missing, &mut |l| lines.push(l)).await;
-        if cfg!(windows) {
-            assert!(r.is_ok());
-        } else {
-            let err = r.unwrap_err().to_string();
-            assert!(err.contains("`cyberctf-no-such-tool` isn't installed"), "{err}");
-        }
+        // Checked on every OS (Windows too: PATH with PATHEXT, commands in PowerShell).
+        check_requirements(&spec(&goat()), &mut |l| lines.push(l)).await.unwrap();
+        assert_eq!(lines, [format!("This lab's module needs {TOOL}: found.")]);
+        let missing = spec(&goat().replace(&format!("requires: [{TOOL}]"), "requires: [cyberctf-no-such-tool, \"exit 3\"]"));
+        let err = check_requirements(&missing, &mut |l| lines.push(l)).await.unwrap_err().to_string();
+        assert!(err.contains("`cyberctf-no-such-tool` isn't installed") && err.contains("`exit 3` failed"), "{err}");
         lines.clear();
         check_requirements(&spec(SPEC), &mut |l| lines.push(l)).await.unwrap();
         assert!(lines.is_empty());
@@ -980,7 +979,7 @@ mod tests {
         use crate::exec::fake::{Tools, fail, ok};
         use crate::test_app::TestApp;
         let t = TestApp::new();
-        let dir = t.lab("goat", &[("isoloom.yml", GOAT), ("terraform/main.tf", "variable \"region\" {}\n")]);
+        let dir = t.lab("goat", &[("isoloom.yml", goat().as_str()), ("terraform/main.tf", "variable \"region\" {}\n")]);
         let aws = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
         let mut applies = 0;
         let tools = Tools::new(move |program, args| {
