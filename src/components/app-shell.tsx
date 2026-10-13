@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { CommandPalette } from "@/components/command-palette";
 import { UpdateBanner } from "@/components/update-banner";
@@ -11,7 +10,11 @@ import { ShellHeader } from "@/components/shell/shell-header";
 import { Screen } from "@/components/shell/screen";
 import { SettingsWindowView, isSettingsWindow } from "@/components/shell/settings-window";
 import { paletteCommands } from "@/components/shell/palette-commands";
-import { breadcrumbs, isNavTab, isTyping, shortcutFor, type Tab } from "@/components/shell/shell-model";
+import { breadcrumbs, type Tab } from "@/components/shell/shell-model";
+import { markOnboarded, readOnboarded } from "@/components/shell/onboarded-flag";
+import { useAppShortcuts } from "@/components/shell/use-app-shortcuts";
+import { useWindowRequests } from "@/components/shell/use-window-requests";
+import { useNavigation } from "@/components/shell/use-navigation";
 import { useAuthSession } from "@/components/shell/use-auth-session";
 import { useSidebarLabs } from "@/components/shell/use-sidebar-labs";
 import { useSystemCheck } from "@/components/shell/use-system-check";
@@ -24,17 +27,13 @@ import { openSettings } from "@/lib/tauri";
 import { useActiveOperations } from "@/lib/deploy-store";
 import { ignore, tell } from "@/lib/failure";
 import { useLabLinks } from "@/lib/deep-link";
-import { NAVIGATE_EVENT, REPLAY_ONBOARDING_EVENT } from "@/lib/app-events";
 import { installDevMock } from "@/lib/dev-mock";
 import { useAppearanceSync } from "@/lib/appearance";
 import { isMac as onMac } from "@/lib/platform";
-import { useTauriEvent } from "@/lib/use-tauri-event";
 import { translate, useT } from "@/lib/i18n";
 
 // Development only: ?mock in a plain browser answers the Tauri commands with sample data.
 installDevMock();
-
-const ONBOARDED_KEY = "cyberctf.onboarded";
 
 const openSettingsWindow = () => void openSettings().catch(tell(translate("shell.failures.openSettings")));
 
@@ -46,8 +45,7 @@ const openSettingsWindow = () => void openSettings().catch(tell(translate("shell
 export function AppShell() {
   useAppearanceSync();
   const t = useT();
-  const [tab, setTab] = useState<Tab>("home");
-  const [openLab, setOpenLab] = useState<{ slug: string | null; tick: number }>({ slug: null, tick: 0 });
+  const { tab, setTab, openLab, navigate, findALab } = useNavigation();
   const [onboarded, setOnboarded] = useState(true);
   const [ready, setReady] = useState(false);
   const [settingsWindow, setSettingsWindow] = useState(false);
@@ -68,63 +66,20 @@ export function AppShell() {
     getVersion().then(setVersion).catch(ignore("no version outside the app"));
     setIsMac(onMac());
     readSession();
-    try {
-      // Reads a per-machine flag once on mount (localStorage isn't available during render).
-      setOnboarded(localStorage.getItem(ONBOARDED_KEY) === "1");
-    } catch {
-      setOnboarded(true);
-    }
+    // Reads a per-machine flag once on mount (localStorage isn't available during render).
+    setOnboarded(readOnboarded());
     setReady(true);
   }, [check, readSession]);
   const mainWindow = ready && !settingsWindow;
 
-  function navigate(next: Tab, slug?: string) {
-    // Setup now lives inside the Machine dashboard; "setup" just lands on Machine.
-    setTab(next === "setup" ? "machine" : next);
-    setOpenLab((o) => ({ slug: next === "setup" ? null : (slug ?? null), tick: o.tick + 1 }));
-  }
-
-  function findALab() {
-    navigate("labs");
-    requestAnimationFrame(() => document.querySelector<HTMLInputElement>("[data-lab-search]")?.focus());
-  }
-
-  // Asked from the Settings window: switch screens, or show the onboarding again. Brought to the
-  // front, since the request came from another window.
-  const toFront = () => void getCurrentWindow().setFocus().catch(ignore("the window manager keeps focus where it is"));
-  useTauriEvent<string>(
-    NAVIGATE_EVENT,
-    (screen) => {
-      if (isNavTab(screen)) navigate(screen);
-      toFront();
-    },
-    mainWindow,
-  );
-  useTauriEvent(
-    REPLAY_ONBOARDING_EVENT,
-    () => {
-      setOnboarded(false);
-      toFront();
-    },
-    mainWindow,
-  );
+  // Asked from the Settings window: switch screens, or show the onboarding again.
+  useWindowRequests({ navigate, replayOnboarding: () => setOnboarded(false) }, mainWindow);
 
   // A cyberctf://labs/<slug> link (the one that opened the app, or one opened since) shows that
   // lab, whatever screen is open. Not in the Settings window: the main window takes it.
   useLabLinks((slug) => navigate("labs", slug), mainWindow);
 
-  const onKey = useEffectEvent((e: KeyboardEvent) => {
-    const shortcut = shortcutFor(e, onMac(), isTyping(document.activeElement));
-    if (!shortcut) return;
-    e.preventDefault();
-    if (shortcut === "palette") setPaletteOpen((o) => !o);
-    else if (shortcut === "settings") openSettingsWindow();
-    else findALab();
-  });
-  useEffect(() => {
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  useAppShortcuts({ togglePalette: () => setPaletteOpen((o) => !o), openSettings: openSettingsWindow, findLab: findALab });
 
   // What each busy lab is doing and the step it is at, for a live line under its name.
   const ops = useActiveOperations();
@@ -133,11 +88,7 @@ export function AppShell() {
   const sidebarLabs = useSidebarLabs(auth?.loggedIn, ops);
 
   function completeOnboarding() {
-    try {
-      localStorage.setItem(ONBOARDED_KEY, "1");
-    } catch {
-      /* ignore */
-    }
+    markOnboarded();
     setOnboarded(true);
     setTab("labs");
     void check();
