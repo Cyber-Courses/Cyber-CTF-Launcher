@@ -641,7 +641,15 @@ mod tests {
     #[cfg(unix)]
     fn fake_worker_group() -> std::process::Child {
         use std::os::unix::process::CommandExt;
-        std::process::Command::new("sh").args(["-c", "sleep 30; exit 0", "deploy", "--job", "x.json"]).process_group(0).spawn().unwrap()
+        let child = std::process::Command::new("sh").args(["-c", "sleep 30; exit 0", "deploy", "--job", "x.json"]).process_group(0).spawn().unwrap();
+        // Until `sh` has exec'd, the child's command line is still this test's: wait for it to
+        // read as a worker, or the first check would take its pidfile for a stale one.
+        let worker = Worker { pid: child.id(), started: None };
+        let started = std::time::Instant::now();
+        while !alive(&worker) && started.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        child
     }
 
     #[cfg(unix)]
