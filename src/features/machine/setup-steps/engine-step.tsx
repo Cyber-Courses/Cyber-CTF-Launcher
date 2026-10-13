@@ -1,53 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import { ExternalLink, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { dockerStartEngine, dockerUseEngine, type DockerEngine, type SystemReport } from "@/lib/tauri";
-import { ENGINES, Engine } from "@/features/machine/setup-steps/engines";
-import { CmdRow, Log } from "@/features/machine/setup-steps/parts";
+import { type DockerEngine, type SystemReport } from "@/lib/tauri";
+import { ENGINES, Engine, engineBadge, enginesFor, recommendedEngine } from "@/features/machine/setup-steps/engines";
+import { EngineAction, EngineHints } from "@/features/machine/setup-steps/engine-action";
+import { Log } from "@/features/machine/setup-steps/parts";
 import { Choice, ChoiceAction, ChoiceGrid } from "@/components/ui/choice-card";
 import { chosenEngine, isDockerReady } from "@/features/machine/setup-steps/steps";
+import { useEngineActions } from "@/features/machine/setup-steps/use-engine-actions";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
-import { openExternal, tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
 export function EngineStep({ report, setup }: { report: SystemReport; setup: MachineSetupState }) {
   const t = useT();
-  const isWin = report.os === "windows";
-  const isMac = report.os === "macos";
   const ready = isDockerReady(report);
-  const { installing, installerOpened, install, onRefresh } = setup;
-  const engines = ENGINES.filter((e) => e.os.includes(report.os));
-  const recommended = isMac || isWin ? "docker-desktop" : "docker-engine";
+  const engines = enginesFor(report.os);
+  const recommended = recommendedEngine(report.os);
   // One engine is enough; the pick lives in the setup state so the flow can wait for it.
   const choice = chosenEngine(report, setup);
-  // Several engines can run at once; Docker talks to one. Switching = `docker context use`.
-  const [switching, setSwitching] = useState(false);
-  const switchTo = (engine: DockerEngine) => {
-    setSwitching(true);
-    dockerUseEngine(engine)
-      .catch(tell(t("machine.errors.switchEngine")))
-      .finally(() => {
-        setSwitching(false);
-        onRefresh();
-      });
-  };
+  const actions = useEngineActions(setup.onRefresh);
   const inUse = report.dockerEngine === choice.id;
-  // Installed but stopped: start it from here instead of sending the player to do it.
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-  const start = () => {
-    setStarting(true);
-    setStartError(null);
-    dockerStartEngine(choice.id)
-      .catch((e) => setStartError(String(e)))
-      .finally(() => {
-        setStarting(false);
-        onRefresh();
-      });
-  };
   return (
     <div className="space-y-3">
       <ChoiceGrid>
@@ -59,109 +30,17 @@ export function EngineStep({ report, setup }: { report: SystemReport; setup: Mac
             mark={<EngineLogo engine={e} />}
             title={e.name}
             note={t(e.note)}
-            badge={
-              report.dockerEngine === e.id
-                ? "in use"
-                : report.dockerEnginesRunning?.includes(e.id)
-                  ? "running"
-                  : e.id === recommended
-                    ? "recommended"
-                    : undefined
-            }
+            badge={engineBadge(report, e.id, recommended)}
           />
         ))}
       </ChoiceGrid>
       {/* Only when there is something to do: an engine in use already says so on its card. */}
       {!inUse && (
         <ChoiceAction>
-          {report.dockerEnginesRunning?.includes(choice.id) ? (
-            <>
-              <span className="text-[0.8125rem] text-muted-foreground">
-                {t("machine.engine.otherRunning", {
-                  engine: choice.name,
-                  current: engines.find((e) => e.id === report.dockerEngine)?.name ?? t("machine.engine.anotherEngine"),
-                })}
-              </span>
-              <Button variant="primary" size="sm" disabled={switching} onClick={() => switchTo(choice.id)}>
-                {switching ? (
-                  <>
-                    <Spinner className="size-3.5" /> {t("machine.engine.switching")}
-                  </>
-                ) : (
-                  t("machine.engine.use", { engine: choice.name })
-                )}
-              </Button>
-            </>
-          ) : report.docker.installed && !ready ? (
-            <>
-              <span className="text-[0.8125rem] text-muted-foreground">
-                {startError ?? (starting ? t("machine.engine.starting", { engine: choice.name }) : t("machine.engine.notRunning", { engine: choice.name }))}
-              </span>
-              <span className="flex shrink-0 gap-2">
-                {startError && (
-                  <Button variant="outline" size="sm" onClick={() => openExternal(choice.url)}>
-                    <ExternalLink className="size-3.5" /> {t("machine.engine.get", { name: choice.name })}
-                  </Button>
-                )}
-                <Button variant="primary" size="sm" disabled={starting} onClick={start}>
-                  {starting ? (
-                    <>
-                      <Spinner className="size-3.5" /> {t("machine.engine.startingButton")}
-                    </>
-                  ) : (
-                    t("machine.engine.start", { engine: choice.name })
-                  )}
-                </Button>
-              </span>
-            </>
-          ) : choice.id === recommended && !report.docker.installed ? (
-            <>
-              <span className="text-[0.8125rem] text-muted-foreground">{t("machine.engine.canInstall", { name: choice.name })}</span>
-              {!installerOpened ? (
-                <Button variant="primary" size="sm" onClick={() => install("docker", "docker", t("machine.engine.installLog"))} disabled={installing !== null}>
-                  {installing === "docker" ? (
-                    <>
-                      <Spinner className="size-3.5" /> {t("machine.engine.installing")}
-                    </>
-                  ) : (
-                    t("machine.engine.install", { name: choice.name })
-                  )}
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" onClick={() => onRefresh()}>
-                  <RefreshCw className="size-3.5" /> {t("machine.engine.recheck")}
-                </Button>
-              )}
-            </>
-          ) : (
-            <>
-              <span className="text-[0.8125rem] text-muted-foreground">{t("machine.engine.installThenRecheck", { engine: choice.name })}</span>
-              <span className="flex shrink-0 gap-2">
-                <Button variant="outline" size="sm" onClick={() => openExternal(choice.url)}>
-                  <ExternalLink className="size-3.5" /> {t("machine.engine.get", { name: choice.name })}
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => onRefresh()}>
-                  <RefreshCw className="size-3.5" /> {t("machine.engine.recheck")}
-                </Button>
-              </span>
-            </>
-          )}
+          <EngineAction report={report} setup={setup} choice={choice} engines={engines} recommended={recommended} actions={actions} ready={ready} />
         </ChoiceAction>
       )}
-      {!ready && installerOpened && (
-        <p className="text-[0.75rem] text-muted-foreground">
-          {choice.id === "docker-desktop" ? t("machine.engine.finishDockerDesktop") : t("machine.engine.finishOther", { engine: choice.name })}
-        </p>
-      )}
-      {!ready && isWin && <p className="text-[0.75rem] text-muted-foreground">{t("machine.engine.windowsReboot")}</p>}
-      {!ready && !isMac && !isWin && choice.id === "docker-engine" && (
-        <div className="space-y-2 rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)] p-3 text-left text-[0.75rem] text-muted-foreground">
-          <p>{t("machine.engine.linuxPostInstall")}</p>
-          <CmdRow cmd="sudo usermod -aG docker $USER" />
-          <CmdRow cmd="sudo systemctl enable --now docker" />
-          <p>{t("machine.engine.linuxRelog")}</p>
-        </div>
-      )}
+      {!ready && <EngineHints report={report} choice={choice} installerOpened={setup.installerOpened} />}
       <Log setup={setup} of={["docker"]} />
       <EngineTrademarks />
     </div>
