@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { type SelfTestResult } from "@/features/machine/self-test";
 import { getVmProvider } from "@/lib/settings";
-import { installDependency, installVagrantPlugin, machineSelftestPrefetch, type Dependency, type DockerEngine, type SystemReport } from "@/lib/tauri";
+import {
+  installDependency,
+  installVagrantPlugin,
+  machineRestart,
+  machineSelftestPrefetch,
+  type Dependency,
+  type DockerEngine,
+  type SystemReport,
+} from "@/lib/tauri";
 import { hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
-import { ignore } from "@/lib/failure";
+import { ignore, tell } from "@/lib/failure";
 import { translate } from "@/lib/i18n";
 
 export function useMachineSetup(report: SystemReport | null, onRefresh: () => void) {
@@ -25,6 +33,9 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => vo
   const [installerOpened, setInstallerOpened] = useState(false);
   // "Turn on WSL 2" finished here: Windows needs a restart, whatever the last check said.
   const [wslTurnedOn, setWslTurnedOn] = useState(false);
+  // Windows counts down to the restart that finishes WSL 2: kept here, not in the step, so a
+  // remounted step (the onboarding draws each step afresh) can't ask for it a second time.
+  const [restarting, setRestarting] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   // What the log is about (an install id or a plugin): each step shows only its own.
   const [logsFor, setLogsFor] = useState<string | null>(null);
@@ -49,6 +60,18 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => vo
     }
   }
 
+  /** Restarts Windows to finish turning WSL 2 on; `reason` is the note Windows shows. */
+  async function restart(reason: string) {
+    if (restarting) return;
+    setRestarting(true);
+    try {
+      await machineRestart(reason);
+    } catch (e) {
+      setRestarting(false);
+      tell(translate("machine.body.wsl.restartFailed"))(e);
+    }
+  }
+
   /** Adds the Vagrant plugin a hypervisor needs (e.g. vagrant-vmware-desktop). */
   async function installPlugin(plugin: string) {
     setInstalling(plugin);
@@ -68,6 +91,8 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => vo
     installing,
     installerOpened,
     wslTurnedOn,
+    restarting,
+    restart,
     installPlugin,
     logs,
     logsFor,

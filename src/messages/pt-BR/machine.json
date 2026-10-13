@@ -264,12 +264,13 @@
       "restarting": "Reiniciando em alguns segundos…",
       "confirmTitle": "Reiniciar o Windows agora?",
       "confirmBody": "O Windows reinicia em alguns segundos e os apps abertos fecham sem salvar: salve seu trabalho antes.",
-      "reopens": "O Cyber CTF abre de novo quando você entrar novamente, e a configuração continua de onde parou.",
-      "reopenByHand": "Depois de entrar novamente, abra o Cyber CTF de novo: a configuração continua de onde parou.",
+      "reopens": "O Cyber CTF abre de novo quando você entrar novamente. A configuração recomeça pela primeira etapa, e o que já foi feito aparece como concluído.",
+      "reopenByHand": "Depois de entrar novamente, abra o Cyber CTF de novo. A configuração recomeça pela primeira etapa, e o que já foi feito aparece como concluído.",
       "restartReason": "Cyber CTF: reiniciando para concluir a ativação do WSL 2.",
       "restartFailed": "Não foi possível reiniciar o Windows",
       "unknown": "O Cyber CTF não conseguiu saber se o WSL 2 está ativado. Se você já o ativou e reiniciou, continue.",
-      "recheck": "Verificar de novo"
+      "recheck": "Verificar de novo",
+      "firmware": "O WSL 2 está ativado, mas o Windows continua sem executar um hipervisor depois do reinício. A virtualização provavelmente está desligada no firmware do seu PC: ative Intel VT-x ou AMD-V (SVM) nas configurações da BIOS/UEFI e reinicie. Reiniciar de novo por aqui não resolve."
     },
     "dockerTestDescription": "busybox, dois contêineres numa rede de lab.",
     "vmTestDescription": "Inicia, roda um comando, faz ping numa rede de lab e apaga.",

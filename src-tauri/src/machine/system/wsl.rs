@@ -13,14 +13,18 @@
 //!   runs (`Win32_ComputerSystem.HypervisorPresent`: the Virtual Machine Platform only starts
 //!   one after the restart);
 //! - the restart Windows' servicing waits for (`Component Based Servicing\RebootPending`), and
-//!   pending file renames, a weak sign (many installers leave some);
-//! - whether Cyber CTF's own "Turn on WSL 2" ran since this boot.
+//!   pending file renames, a weak sign (many installers, drivers and antivirus leave some at
+//!   every boot), only heeded right after Cyber CTF's own install;
+//! - whether Cyber CTF's own "Turn on WSL 2" ran since this boot, and whether Cyber CTF already
+//!   restarted Windows for WSL (then it never asks for another restart).
 //!
-//! Every probe is headless and timed: a hung `wsl.exe` costs the check a few seconds, never the
-//! setup.
+//! Every probe is headless and timed, its whole process tree killed on a timeout: a hung
+//! `wsl.exe` costs the check a few seconds, never the setup.
 
 // Off Windows only the types (for the UI) and the tests use most of this.
 #![cfg_attr(not(windows), allow(dead_code))]
+
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use serde::Serialize;
 
@@ -48,6 +52,9 @@ pub struct WslReport {
     pub state: WslState,
     /// Whether a restart from Cyber CTF opens it again once the player signs back in.
     pub reopens_after_restart: bool,
+    /// The Virtual Machine Platform is on but no hypervisor runs, a restart having (likely)
+    /// passed: virtualization is probably off in the firmware (BIOS/UEFI).
+    pub virtualization_off: bool,
 }
 
 /// How a probe command went.
@@ -95,6 +102,8 @@ pub struct Probes {
     pub renames_pending: Option<bool>,
     /// Cyber CTF's "Turn on WSL 2" ran since this boot.
     pub installed_this_boot: bool,
+    /// Cyber CTF restarted Windows for WSL in an earlier boot, with no install since.
+    pub restarted_for_wsl: bool,
 }
 
 /// Where WSL 2 stands, from what the probes found.
@@ -111,44 +120,51 @@ pub fn classify(p: &Probes) -> WslState {
     let pending = p.reboot_pending == Some(true);
 
     // Our own install ran this boot and Windows waits for a restart: whatever the features read
-    // meanwhile (they can read as on already), they only start after it.
-    if p.installed_this_boot && pending {
+    // meanwhile (they can read as on already), they only start after it. Renames count here
+    // only: right after our install they are likely its own.
+    if p.installed_this_boot && (pending || p.renames_pending == Some(true)) {
         return WslState::NeedsReboot;
     }
-    if wsl && !platform_off && !not_running {
+    if wsl && platform_on && running {
         // The platform is on and its hypervisor runs. A restart Windows waits for may be an
-        // update's; then WSL has to answer too.
-        if platform_on && running && (!pending || p.status == Run::Ok) {
+        // update's: then WSL has to answer too, or (without a distribution `wsl --status`
+        // fails) be the Store WSL, which only installs once the platform is set up.
+        if !pending || p.status == Run::Ok || (store && !p.installed_this_boot) {
             return WslState::Ready;
         }
-        // WSL answers and nothing waits for a restart (the features couldn't be read).
-        if p.status == Run::Ok && !pending && p.vm_platform.is_none() {
-            return WslState::Ready;
-        }
+    }
+    // WSL answers and nothing waits for a restart; the features couldn't be read.
+    if wsl && p.status == Run::Ok && p.reboot_pending == Some(false) && p.vm_platform.is_none() && !not_running {
+        return WslState::Ready;
     }
     if p.installed_this_boot {
         return WslState::NeedsReboot;
     }
-    if (wsl || platform_on) && pending {
+    // A restart is pending and WSL is partly there: that restart finishes it. Never a second
+    // time once Cyber CTF restarted for it: what is left isn't a restart's to fix.
+    if (wsl || platform_on) && pending && !p.restarted_for_wsl {
         return WslState::NeedsReboot;
-    }
-    if platform_on && not_running {
-        // On, yet no hypervisor: a restart still to come, or virtualization off in the firmware.
-        // Only file renames hint at the first.
-        return if p.renames_pending == Some(true) { WslState::NeedsReboot } else { WslState::Unknown };
     }
     let wsl_failed = matches!(p.status, Run::Failed | Run::Missing);
     let no_services = p.lxss_service == Some(false) && p.wsl_service == Some(false);
     // Nothing of WSL, as both the services and wsl.exe say; or WSL 1 only, without the platform.
-    if (!wsl && wsl_failed && (no_services || platform_off)) || (wsl && platform_off && !pending) {
+    if (!wsl && !platform_on && wsl_failed && (no_services || platform_off)) || (wsl && platform_off && !pending) {
         return WslState::Missing;
     }
+    // Among the rest: on, yet no hypervisor (virtualization off in the firmware, most likely).
     WslState::Unknown
+}
+
+/// Whether to tell the player virtualization looks off in the firmware: the platform is on, no
+/// hypervisor runs, and no restart is still to come.
+pub fn virtualization_off(p: &Probes, state: WslState) -> bool {
+    state == WslState::Unknown && p.vm_platform == Some(Feature::Enabled) && p.hypervisor == Some(false)
 }
 
 /// The features and the hypervisor, from the output of `windows::CIM_SCRIPT`: `features=ok` once
 /// the feature query answered, then `feature:<name>=<InstallState>` for each feature it lists
-/// (an unlisted one is absent), and `hypervisor=True|False`.
+/// (an unlisted one is absent), and `hypervisor=True|False`. Partial output reads as far as it
+/// goes.
 pub fn parse_cim(out: &str) -> (Option<Feature>, Option<Feature>, Option<bool>) {
     let lines: Vec<&str> = out.lines().map(str::trim).collect();
     let answered = lines.contains(&"features=ok");
@@ -173,10 +189,22 @@ pub fn parse_cim(out: &str) -> (Option<Feature>, Option<Feature>, Option<bool>) 
     (feature("VirtualMachinePlatform"), feature("Microsoft-Windows-Subsystem-Linux"), hypervisor)
 }
 
-// ---------- Cyber CTF's own install, this boot ----------
+/// How a timed probe went, and its stdout.
+fn outcome(result: &Result<String>) -> (Run, &str) {
+    match result {
+        Ok(out) => (Run::Ok, out.as_str()),
+        Err(Error::ToolMissing { .. }) => (Run::Missing, ""),
+        Err(e) if crate::exec::timed_out(e) => (Run::TimedOut, ""),
+        Err(_) => (Run::Failed, ""),
+    }
+}
+
+// ---------- What Cyber CTF did, by boot ----------
 
 /// The app data file holding the boot time at which "Turn on WSL 2" last ran.
-const MARKER: &str = "wsl-install-boot";
+const INSTALL_MARK: &str = "wsl-install-boot";
+/// The app data file holding the boot time in which Cyber CTF restarted Windows for WSL.
+const RESTART_MARK: &str = "wsl-restart-boot";
 
 /// Boot times read a second or so apart within one boot (they're derived from the uptime);
 /// two boots are minutes apart.
@@ -184,40 +212,73 @@ fn same_boot(a: u64, b: u64) -> bool {
     a.abs_diff(b) <= 30
 }
 
-fn marker(app: &AppHandle) -> Option<std::path::PathBuf> {
+fn mark_file(app: &AppHandle, name: &str) -> Option<std::path::PathBuf> {
     use tauri::Manager;
-    app.path().app_data_dir().ok().map(|d| d.join(MARKER))
+    app.path().app_data_dir().ok().map(|d| d.join(name))
 }
 
-/// Remembers that "Turn on WSL 2" ran in this boot, so the check asks for the restart even
-/// after the app was closed and opened again before it.
-pub fn mark_installed(app: &AppHandle) {
-    let Some(f) = marker(app) else { return };
+fn mark(app: &AppHandle, name: &str, boot: u64) {
+    let Some(f) = mark_file(app, name) else { return };
     if let Some(dir) = f.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let _ = std::fs::write(f, sysinfo::System::boot_time().to_string());
+    let _ = std::fs::write(f, boot.to_string());
 }
 
-/// Whether "Turn on WSL 2" ran in the current boot (a mark from an earlier boot is removed).
-fn installed_this_boot(app: &AppHandle, boot: u64) -> bool {
-    let Some(f) = marker(app) else { return false };
-    let Some(marked) = std::fs::read_to_string(&f).ok().and_then(|s| s.trim().parse::<u64>().ok()) else { return false };
-    if same_boot(marked, boot) {
-        return true;
+fn marked_boot(app: &AppHandle, name: &str) -> Option<u64> {
+    std::fs::read_to_string(mark_file(app, name)?).ok()?.trim().parse().ok()
+}
+
+fn unmark(app: &AppHandle, name: &str) {
+    if let Some(f) = mark_file(app, name) {
+        let _ = std::fs::remove_file(f);
     }
-    let _ = std::fs::remove_file(f);
-    false
+}
+
+/// Remembers that "Turn on WSL 2" ran in this boot, so the check asks for the restart even
+/// after the app was closed and opened again before it. A new install starts over: the next
+/// restart is one to ask for again.
+pub fn mark_installed(app: &AppHandle) {
+    mark(app, INSTALL_MARK, sysinfo::System::boot_time());
+    unmark(app, RESTART_MARK);
+}
+
+/// Whether "Turn on WSL 2" ran in boot `boot` (a mark from an earlier boot is removed).
+fn installed_this_boot(app: &AppHandle, boot: u64) -> bool {
+    match marked_boot(app, INSTALL_MARK) {
+        Some(marked) if same_boot(marked, boot) => true,
+        Some(_) => {
+            unmark(app, INSTALL_MARK);
+            false
+        }
+        None => false,
+    }
+}
+
+/// Whether Cyber CTF restarted Windows for WSL in a boot before `boot`.
+fn restarted_for_wsl(app: &AppHandle, boot: u64) -> bool {
+    marked_boot(app, RESTART_MARK).is_some_and(|marked| !same_boot(marked, boot))
+}
+
+/// What the check makes of `probes`, and what it remembers: once WSL 2 is ready, the restart
+/// done for it is forgotten.
+fn assess(app: &AppHandle, probes: &Probes) -> (WslState, bool) {
+    let state = classify(probes);
+    if state == WslState::Ready {
+        unmark(app, RESTART_MARK);
+    }
+    (state, virtualization_off(probes, state))
 }
 
 /// Where WSL 2 stands on this machine: Windows only (`None` elsewhere).
 pub async fn report(app: &AppHandle) -> Option<WslReport> {
     #[cfg(windows)]
     {
-        let probes = windows::probe(installed_this_boot(app, sysinfo::System::boot_time())).await;
-        let state = classify(&probes);
+        let boot = sysinfo::System::boot_time();
+        let probes = windows::probe(installed_this_boot(app, boot), restarted_for_wsl(app, boot)).await;
+        let (state, virtualization_off) = assess(app, &probes);
         log::info!("WSL check: {probes:?} -> {state:?}");
-        Some(WslReport { state, reopens_after_restart: windows::reopen_command().is_some() })
+        Some(WslReport { state, reopens_after_restart: windows::reopen_command().is_some(), virtualization_off })
     }
     #[cfg(not(windows))]
     {
@@ -240,10 +301,65 @@ fn reason(text: &str) -> Result<String> {
     Ok(if text.is_empty() { DEFAULT_REASON.to_string() } else { text.to_string() })
 }
 
+/// No restart asked for in this run of the app.
+const IDLE: u8 = 0;
+/// One being asked for right now.
+const ASKING: u8 = 1;
+/// Windows counts down to it.
+const SCHEDULED: u8 = 2;
+
+/// The restart of this run of the app: each window has its own WSL step (and the onboarding
+/// remounts it), but Windows restarts once and `RunOnce` is written once.
+static RESTART: AtomicU8 = AtomicU8::new(IDLE);
+
+/// Opening the app once at the next sign-in.
+trait Reopen {
+    /// Registers it; whether it was written.
+    fn register(&self) -> bool;
+    fn unregister(&self);
+}
+
+/// `shutdown.exe` refusing because one is already scheduled (ERROR_SHUTDOWN_IS_SCHEDULED, 1190:
+/// its message ends with the code in every language).
+fn already_scheduled(e: &Error) -> bool {
+    matches!(e, Error::CommandFailed { stderr, .. } if stderr.contains("1190"))
+}
+
+/// Asks Windows to restart in a few seconds, once per run of the app: a second ask while it
+/// counts down (another window, a remounted step) is the same restart. `RunOnce` is removed
+/// again only if this call wrote it and the restart couldn't be scheduled.
+async fn schedule_restart(app: &AppHandle, state: &AtomicU8, reason: &str, reopen: &dyn Reopen) -> Result<()> {
+    if state.compare_exchange(IDLE, ASKING, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        return Ok(());
+    }
+    let registered = reopen.register();
+    let boot = sysinfo::System::boot_time();
+    mark(app, RESTART_MARK, boot);
+    match crate::exec::run("shutdown", &["/r", "/t", "5", "/c", reason], None).await {
+        Ok(_) => {
+            state.store(SCHEDULED, Ordering::SeqCst);
+            Ok(())
+        }
+        // Another restart is on its way (from outside the app): this one is it.
+        Err(e) if already_scheduled(&e) => {
+            state.store(SCHEDULED, Ordering::SeqCst);
+            Ok(())
+        }
+        Err(e) => {
+            if registered {
+                reopen.unregister();
+            }
+            unmark(app, RESTART_MARK);
+            state.store(IDLE, Ordering::SeqCst);
+            Err(e)
+        }
+    }
+}
+
 /// Restarts Windows in a few seconds (`shutdown /r`), to finish turning WSL 2 on. Before that,
 /// asks Windows to open Cyber CTF once when the player signs back in (`RunOnce`). Windows only.
 #[tauri::command]
-pub async fn machine_restart(reason: String) -> Result<()> {
+pub async fn machine_restart(app: AppHandle, reason: String) -> Result<()> {
     let reason = self::reason(&reason)?;
     #[cfg(windows)]
     {
@@ -252,23 +368,19 @@ pub async fn machine_restart(reason: String) -> Result<()> {
         if !crate::exec::fake::scripted() {
             return Err(Error::Invalid("a test restarted without scripting shutdown".into()));
         }
-        let reopen = if cfg!(test) { None } else { windows::reopen_command() };
-        let registered = reopen.as_deref().is_some_and(windows::register_reopen);
-        let restart = crate::exec::run("shutdown", &["/r", "/t", "5", "/c", &reason], None).await;
-        if restart.is_err() && registered {
-            windows::unregister_reopen();
-        }
-        restart.map(|_| ())
+        let reopen = windows::UserRunOnce(if cfg!(test) { None } else { windows::reopen_command() });
+        schedule_restart(&app, &RESTART, &reason, &reopen).await
     }
     #[cfg(not(windows))]
     {
-        let _ = reason;
+        let _ = (app, reason);
         Err(Error::Invalid("Restarting from Cyber CTF is only available on Windows.".into()))
     }
 }
 
 /// The command that opens this app again, for `RunOnce`: the executable itself, or for the
 /// Store (MSIX) build, whose executable can't be started by path, its app through the shell.
+/// (The Store build writes the real `RunOnce`: its manifest turns registry virtualization off.)
 fn reopen_line(exe: &str) -> Option<String> {
     if exe.is_empty() || exe.contains('"') {
         return None;
@@ -289,7 +401,6 @@ fn reopen_line(exe: &str) -> Option<String> {
 
 #[cfg(windows)]
 mod windows {
-    use std::process::Stdio;
     use std::time::Duration;
 
     use base64::Engine;
@@ -299,13 +410,14 @@ mod windows {
         RegSetKeyValueW,
     };
 
-    use super::{Probes, Run, parse_cim};
+    use super::{Probes, outcome, parse_cim};
 
     const WSL_TIMEOUT: Duration = Duration::from_secs(10);
     const CIM_TIMEOUT: Duration = Duration::from_secs(20);
 
     /// The features and the hypervisor, through WMI (no admin rights needed), printed as
-    /// language-neutral `key=value` lines (see [`parse_cim`]). Each query fails on its own.
+    /// language-neutral `key=value` lines (see [`parse_cim`]). Each query fails on its own, and
+    /// the script exits 0 whatever happened, so what it printed is always read.
     pub const CIM_SCRIPT: &str = "$ProgressPreference = 'SilentlyContinue'
 try {
   $f = @(Get-CimInstance -ClassName Win32_OptionalFeature -Filter \"Name='VirtualMachinePlatform' OR Name='Microsoft-Windows-Subsystem-Linux'\" -ErrorAction Stop)
@@ -313,23 +425,27 @@ try {
   foreach ($x in $f) { 'feature:' + $x.Name + '=' + [int]$x.InstallState }
 } catch {}
 try { 'hypervisor=' + [bool](Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).HypervisorPresent } catch {}
+exit 0
 ";
 
-    /// Every signal, the commands side by side.
-    pub async fn probe(installed_this_boot: bool) -> Probes {
+    /// Every signal, the commands side by side. They run like every timed tool (`exec`):
+    /// headless, and on a timeout killed with whatever they started (the Store `wsl.exe` starts
+    /// a child of its own).
+    pub async fn probe(installed_this_boot: bool, restarted_for_wsl: bool) -> Probes {
         let encoded = encode(CIM_SCRIPT);
         let cim_args = ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded.as_str()];
-        let status = run("wsl", &["--status"], WSL_TIMEOUT);
-        let version = run("wsl", &["--version"], WSL_TIMEOUT);
-        let (status, version, cim) = tokio::join!(status, version, run("powershell", &cim_args, CIM_TIMEOUT));
-        let (vm_platform, wsl_feature, hypervisor) = match cim {
-            (Run::Ok, out) => parse_cim(&String::from_utf8_lossy(&out)),
-            _ => (None, None, None),
-        };
+        // wsl.exe writes UTF-16 unless told otherwise; only exit codes are read, but its output
+        // in a log stays readable.
+        let utf8 = [("WSL_UTF8".to_string(), "1".to_string())];
+        let status = crate::exec::run_env_timed("wsl", &["--status"], None, &utf8, WSL_TIMEOUT);
+        let version = crate::exec::run_env_timed("wsl", &["--version"], None, &utf8, WSL_TIMEOUT);
+        let cim = crate::exec::run_env_timed("powershell", &cim_args, None, &[], CIM_TIMEOUT);
+        let (status, version, cim) = tokio::join!(status, version, cim);
+        let (vm_platform, wsl_feature, hypervisor) = parse_cim(outcome(&cim).1);
         let services = r"SYSTEM\CurrentControlSet\Services";
         Probes {
-            status: status.0,
-            version: version.0,
+            status: outcome(&status).0,
+            version: outcome(&version).0,
             lxss_service: key_exists(HKEY_LOCAL_MACHINE, &format!(r"{services}\LxssManager")),
             wsl_service: key_exists(HKEY_LOCAL_MACHINE, &format!(r"{services}\WslService")),
             vm_platform,
@@ -338,6 +454,7 @@ try { 'hypervisor=' + [bool](Get-CimInstance -ClassName Win32_ComputerSystem -Er
             reboot_pending: key_exists(HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"),
             renames_pending: value_exists(HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager", "PendingFileRenameOperations"),
             installed_this_boot,
+            restarted_for_wsl,
         }
     }
 
@@ -346,26 +463,6 @@ try { 'hypervisor=' + [bool](Get-CimInstance -ClassName Win32_ComputerSystem -Er
     fn encode(script: &str) -> String {
         let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
         base64::engine::general_purpose::STANDARD.encode(bytes)
-    }
-
-    /// Runs a probe headless, with no input, killed after `timeout`: how it went, and its stdout.
-    async fn run(program: &str, args: &[&str], timeout: Duration) -> (Run, Vec<u8>) {
-        let mut cmd = tokio::process::Command::new(program);
-        // wsl.exe writes UTF-16 unless told otherwise; only exit codes are read, but a log of it
-        // stays readable.
-        cmd.args(args).env("WSL_UTF8", "1").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
-        crate::exec::headless(&mut cmd);
-        let child = match cmd.spawn() {
-            Ok(child) => child,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Run::Missing, Vec::new()),
-            Err(_) => return (Run::Failed, Vec::new()),
-        };
-        // On a timeout the child is dropped, which kills it.
-        match tokio::time::timeout(timeout, child.wait_with_output()).await {
-            Err(_) => (Run::TimedOut, Vec::new()),
-            Ok(Ok(out)) => (if out.status.success() { Run::Ok } else { Run::Failed }, out.stdout),
-            Ok(Err(_)) => (Run::Failed, Vec::new()),
-        }
     }
 
     fn wide(s: &str) -> Vec<u16> {
@@ -410,13 +507,17 @@ try { 'hypervisor=' + [bool](Get-CimInstance -ClassName Win32_ComputerSystem -Er
         super::reopen_line(std::env::current_exe().ok()?.to_str()?)
     }
 
-    /// Opens `line` once at the player's next sign-in (their own `RunOnce`: no admin rights).
-    pub fn register_reopen(line: &str) -> bool {
-        set_run_once(RUN_ONCE_NAME, line)
-    }
+    /// The player's own `RunOnce` (no admin rights), opening `.0` at the next sign-in.
+    pub struct UserRunOnce(pub Option<String>);
 
-    pub fn unregister_reopen() {
-        delete_run_once(RUN_ONCE_NAME);
+    impl super::Reopen for UserRunOnce {
+        fn register(&self) -> bool {
+            self.0.as_deref().is_some_and(|line| set_run_once(RUN_ONCE_NAME, line))
+        }
+
+        fn unregister(&self) {
+            delete_run_once(RUN_ONCE_NAME);
+        }
     }
 
     pub(super) fn set_run_once(name: &str, line: &str) -> bool {
@@ -441,7 +542,11 @@ try { 'hypervisor=' + [bool](Get-CimInstance -ClassName Win32_ComputerSystem -Er
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
+    use crate::exec::fake::{Tools, fail, ok};
+    use crate::test_app::TestApp;
     use WslState::*;
 
     /// A machine where nothing could be read.
@@ -457,6 +562,7 @@ mod tests {
             reboot_pending: None,
             renames_pending: None,
             installed_this_boot: false,
+            restarted_for_wsl: false,
         }
     }
 
@@ -499,7 +605,14 @@ mod tests {
             reboot_pending: Some(false),
             renames_pending: Some(false),
             installed_this_boot: false,
+            restarted_for_wsl: false,
         }
+    }
+
+    /// The Store WSL turned on, virtualization off in the firmware: the platform reads as on,
+    /// no hypervisor ever starts, and something re-adds file renames at every boot.
+    fn firmware_off() -> Probes {
+        Probes { status: Run::Failed, hypervisor: Some(false), renames_pending: Some(true), ..win11_store_ready() }
     }
 
     #[test]
@@ -509,8 +622,8 @@ mod tests {
         assert_eq!(classify(&Probes { status: Run::Missing, version: Run::Missing, ..win11_without_wsl() }), Missing);
         // The features couldn't be read: the services and wsl.exe still agree.
         assert_eq!(classify(&Probes { vm_platform: None, wsl_feature: None, hypervisor: None, ..win11_without_wsl() }), Missing);
-        // A restart for an update is no sign of WSL.
-        assert_eq!(classify(&Probes { reboot_pending: Some(true), ..win11_without_wsl() }), Missing);
+        // A restart for an update, or renames, are no sign of WSL.
+        assert_eq!(classify(&Probes { reboot_pending: Some(true), renames_pending: Some(true), ..win11_without_wsl() }), Missing);
     }
 
     #[test]
@@ -525,6 +638,28 @@ mod tests {
         assert_eq!(classify(&Probes { vm_platform: None, wsl_feature: None, hypervisor: None, ..win11_store_ready() }), Ready);
         // An update waiting for a restart, while WSL answers.
         assert_eq!(classify(&Probes { reboot_pending: Some(true), renames_pending: Some(true), ..win11_store_ready() }), Ready);
+        // Renames left by others never hold a working WSL back.
+        assert_eq!(classify(&Probes { renames_pending: Some(true), ..win10_inbox_ready() }), Ready);
+    }
+
+    #[test]
+    fn a_pending_update_doesnt_hide_a_store_wsl_without_a_distribution() {
+        // The usual state after `wsl --install --no-distribution` and its restart: `--status`
+        // fails (no distribution), and Windows Update waits for a restart of its own.
+        let store = Probes { status: Run::Failed, reboot_pending: Some(true), ..win11_store_ready() };
+        assert_eq!(classify(&store), Ready);
+        // Known by its service alone (`--version` timed out).
+        assert_eq!(classify(&Probes { version: Run::TimedOut, ..store }), Ready);
+        // The WSL feature (no Store WSL) gives no such proof: the restart may be its own.
+        let inbox = Probes { status: Run::Failed, reboot_pending: Some(true), ..win10_inbox_ready() };
+        assert_eq!(classify(&inbox), NeedsReboot);
+    }
+
+    #[test]
+    fn unreadable_servicing_is_no_proof_nothing_is_pending() {
+        let unread = Probes { vm_platform: None, wsl_feature: None, hypervisor: None, reboot_pending: None, ..win11_store_ready() };
+        assert_eq!(classify(&unread), Unknown);
+        assert_eq!(classify(&Probes { reboot_pending: Some(false), ..unread }), Ready);
     }
 
     #[test]
@@ -544,6 +679,8 @@ mod tests {
         assert_eq!(classify(&after_install), NeedsReboot);
         // Hyper-V already ran a hypervisor, and WSL answers: still the restart first.
         assert_eq!(classify(&Probes { hypervisor: Some(true), status: Run::Ok, ..after_install }), NeedsReboot);
+        // Servicing says nothing, but our install left renames.
+        assert_eq!(classify(&Probes { hypervisor: Some(true), reboot_pending: Some(false), renames_pending: Some(true), ..after_install }), NeedsReboot);
         // The app was reopened before the restart, and WMI still reads the features as off.
         let reopened = Probes {
             vm_platform: Some(Feature::Disabled),
@@ -566,14 +703,32 @@ mod tests {
             ..win11_without_wsl()
         };
         assert_eq!(classify(&by_hand), NeedsReboot);
-        // On, not running, nothing pending in servicing, but files wait for the restart.
-        assert_eq!(classify(&Probes { reboot_pending: Some(false), renames_pending: Some(true), ..by_hand }), NeedsReboot);
     }
 
     #[test]
     fn our_install_that_changed_nothing_is_judged_on_the_rest() {
-        // It ran this boot, yet no restart is pending: WSL was ready already.
+        // It ran this boot, yet no restart or rename is pending: WSL was ready already.
         assert_eq!(classify(&Probes { installed_this_boot: true, ..win11_store_ready() }), Ready);
+    }
+
+    #[test]
+    fn virtualization_off_in_the_firmware_never_loops_on_restarts() {
+        // Renames re-added at every boot are no reason to restart (again).
+        let off = firmware_off();
+        assert_eq!(classify(&off), Unknown);
+        assert!(virtualization_off(&off, classify(&off)));
+        // After Cyber CTF's restart, even with servicing waiting for another one: no second ask.
+        let after_ours = Probes { restarted_for_wsl: true, reboot_pending: Some(true), ..off };
+        assert_eq!(classify(&after_ours), Unknown);
+        assert!(virtualization_off(&after_ours, classify(&after_ours)));
+        // The same pending restart without one of ours yet: that one is worth trying, once.
+        let before_ours = Probes { reboot_pending: Some(true), ..off };
+        assert_eq!(classify(&before_ours), NeedsReboot);
+        assert!(!virtualization_off(&before_ours, NeedsReboot));
+        // A new install of ours starts over.
+        assert_eq!(classify(&Probes { installed_this_boot: true, ..after_ours }), NeedsReboot);
+        // A working machine is never told virtualization is off.
+        assert!(!virtualization_off(&win11_store_ready(), Ready));
     }
 
     #[test]
@@ -586,6 +741,9 @@ mod tests {
         // On but no hypervisor and nothing pending: perhaps virtualization is off in the firmware.
         let no_hypervisor = Probes { hypervisor: Some(false), ..win10_inbox_ready() };
         assert_eq!(classify(&no_hypervisor), Unknown);
+        assert!(virtualization_off(&no_hypervisor, Unknown));
+        // Only the platform on, nothing of WSL: neither ready nor plainly missing.
+        assert_eq!(classify(&Probes { vm_platform: Some(Feature::Enabled), ..win11_without_wsl() }), Unknown);
     }
 
     #[test]
@@ -613,14 +771,26 @@ mod tests {
     }
 
     #[test]
-    fn the_state_reaches_the_ui_in_camel_case() {
-        let report = WslReport { state: NeedsReboot, reopens_after_restart: true };
-        assert_eq!(serde_json::to_value(report).unwrap(), serde_json::json!({ "state": "needsReboot", "reopensAfterRestart": true }));
+    fn a_probe_reads_as_ok_failed_timed_out_or_missing() {
+        let failed = |stderr: &str| Err(Error::CommandFailed { command: "wsl --status".into(), stderr: stderr.into() });
+        assert_eq!(outcome(&Ok("features=ok".into())), (Run::Ok, "features=ok"));
+        assert_eq!(outcome(&failed("")).0, Run::Failed);
+        assert_eq!(outcome(&failed("timed out after 10s (the tool or its backend may be stuck)")).0, Run::TimedOut);
+        assert_eq!(outcome(&Err(Error::ToolMissing { tool: "wsl" })).0, Run::Missing);
     }
 
     #[test]
-    fn a_mark_counts_for_the_boot_it_was_made_in_only() {
-        let t = crate::test_app::TestApp::new();
+    fn the_state_reaches_the_ui_in_camel_case() {
+        let report = WslReport { state: NeedsReboot, reopens_after_restart: true, virtualization_off: false };
+        assert_eq!(
+            serde_json::to_value(report).unwrap(),
+            serde_json::json!({ "state": "needsReboot", "reopensAfterRestart": true, "virtualizationOff": false })
+        );
+    }
+
+    #[test]
+    fn an_install_mark_counts_for_the_boot_it_was_made_in_only() {
+        let t = TestApp::new();
         assert!(!installed_this_boot(t.handle(), 1_000));
         mark_installed(t.handle());
         let boot = sysinfo::System::boot_time();
@@ -628,11 +798,30 @@ mod tests {
         assert!(installed_this_boot(t.handle(), boot + 2), "the boot time jitters");
         // After a restart the mark is gone for good.
         assert!(!installed_this_boot(t.handle(), boot + 600));
-        assert!(!t.data().join(MARKER).exists());
+        assert!(!t.data().join(INSTALL_MARK).exists());
         assert!(!installed_this_boot(t.handle(), boot));
-        std::fs::write(t.data().join(MARKER), "garbage").unwrap();
+        std::fs::write(t.data().join(INSTALL_MARK), "garbage").unwrap();
         assert!(!installed_this_boot(t.handle(), boot));
         assert!(same_boot(10, 40) && !same_boot(10, 41));
+    }
+
+    #[test]
+    fn a_restart_mark_counts_from_the_next_boot_until_wsl_is_ready_or_installed_again() {
+        let t = TestApp::new();
+        mark(t.handle(), RESTART_MARK, 1_000);
+        // Still counting down in the same boot: not restarted yet.
+        assert!(!restarted_for_wsl(t.handle(), 1_000));
+        assert!(restarted_for_wsl(t.handle(), 2_000));
+        // Not ready: remembered.
+        assert_eq!(assess(t.handle(), &Probes { restarted_for_wsl: true, ..firmware_off() }), (Unknown, true));
+        assert!(restarted_for_wsl(t.handle(), 2_000));
+        // Ready: forgotten.
+        assert_eq!(assess(t.handle(), &win11_store_ready()), (Ready, false));
+        assert!(!restarted_for_wsl(t.handle(), 2_000));
+        // A new install forgets it too.
+        mark(t.handle(), RESTART_MARK, 1_000);
+        mark_installed(t.handle());
+        assert!(!restarted_for_wsl(t.handle(), 2_000));
     }
 
     #[test]
@@ -658,38 +847,126 @@ mod tests {
         assert_eq!(reopen_line(""), None);
     }
 
+    /// A `RunOnce` stand-in: whether it was written, and whether writing works.
+    #[derive(Default)]
+    struct FakeReopen {
+        refuses: bool,
+        written: Cell<bool>,
+        writes: Cell<u32>,
+    }
+
+    impl Reopen for FakeReopen {
+        fn register(&self) -> bool {
+            self.writes.set(self.writes.get() + 1);
+            self.written.set(!self.refuses);
+            !self.refuses
+        }
+        fn unregister(&self) {
+            self.written.set(false);
+        }
+    }
+
+    const SHUTDOWN: &str = "shutdown /r /t 5 /c Cyber CTF: finishing WSL 2";
+
+    #[tokio::test]
+    async fn a_restart_is_scheduled_once_whoever_asks() {
+        let t = TestApp::new();
+        let tools = Tools::rules(&[("shutdown", ok(""))]);
+        let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
+        schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
+        assert_eq!(tools.calls(), [SHUTDOWN]);
+        assert!(reopen.written.get());
+        assert_eq!(marked_boot(t.handle(), RESTART_MARK), Some(sysinfo::System::boot_time()));
+        // The other window, or the remounted step, asks again during the countdown: the same
+        // restart, no second shutdown, RunOnce left as it is.
+        schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
+        assert_eq!(tools.calls().len(), 1);
+        assert_eq!(reopen.writes.get(), 1);
+        assert!(reopen.written.get());
+    }
+
+    #[tokio::test]
+    async fn a_restart_already_scheduled_by_windows_counts_as_this_one() {
+        let t = TestApp::new();
+        let _tools = Tools::rules(&[("shutdown", fail("A system shutdown has already been scheduled.(1190)"))]);
+        let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
+        schedule_restart(t.handle(), &state, "x", &reopen).await.unwrap();
+        assert!(reopen.written.get(), "the app still reopens after that restart");
+        assert_eq!(state.load(Ordering::SeqCst), SCHEDULED);
+        assert!(marked_boot(t.handle(), RESTART_MARK).is_some());
+    }
+
+    #[tokio::test]
+    async fn a_failed_restart_takes_back_what_it_wrote_and_can_be_tried_again() {
+        let t = TestApp::new();
+        let tools = Tools::rules(&[("shutdown", fail("Access is denied.(5)"))]);
+        let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
+        let err = schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap_err();
+        assert!(err.to_string().contains("Access is denied"), "{err}");
+        assert!(!reopen.written.get(), "RunOnce removed");
+        assert!(marked_boot(t.handle(), RESTART_MARK).is_none());
+        drop(tools);
+        let tools = Tools::rules(&[("shutdown", ok(""))]);
+        schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
+        assert_eq!(tools.calls(), [SHUTDOWN]);
+        assert!(reopen.written.get());
+    }
+
+    #[tokio::test]
+    async fn a_failed_restart_leaves_a_runonce_it_didnt_write() {
+        // Writing RunOnce failed: nothing of ours to remove, and the unregister isn't called.
+        struct Untouchable;
+        impl Reopen for Untouchable {
+            fn register(&self) -> bool {
+                false
+            }
+            fn unregister(&self) {
+                panic!("removed a RunOnce entry this call didn't write");
+            }
+        }
+        let t = TestApp::new();
+        let _tools = Tools::rules(&[("shutdown", fail("Access is denied.(5)"))]);
+        assert!(schedule_restart(t.handle(), &AtomicU8::new(IDLE), "x", &Untouchable).await.is_err());
+        let refused = FakeReopen { refuses: true, ..FakeReopen::default() };
+        let _tools = Tools::rules(&[("shutdown", ok(""))]);
+        schedule_restart(t.handle(), &AtomicU8::new(IDLE), "x", &refused).await.unwrap();
+        assert!(!refused.written.get());
+    }
+
     #[cfg(not(windows))]
     #[tokio::test]
     async fn restarting_is_refused_off_windows_and_the_check_has_no_wsl() {
-        let err = machine_restart(String::new()).await.unwrap_err();
+        let t = TestApp::new();
+        let tools = Tools::rules(&[]);
+        let err = machine_restart(t.handle().clone(), String::new()).await.unwrap_err();
         assert_eq!(err.to_string(), "Restarting from Cyber CTF is only available on Windows.");
-        let t = crate::test_app::TestApp::new();
+        assert!(tools.calls().is_empty());
         assert!(report(t.handle()).await.is_none());
     }
 
     #[tokio::test]
-    async fn a_bad_restart_note_is_refused_before_anything_runs() {
-        let tools = crate::exec::fake::Tools::rules(&[]);
-        assert!(machine_restart("a\nb".into()).await.is_err());
-        assert!(tools.calls().is_empty());
+    async fn a_bad_restart_note_is_refused_whatever_the_os() {
+        let t = TestApp::new();
+        let err = machine_restart(t.handle().clone(), "a\nb".into()).await.unwrap_err();
+        assert_eq!(err.to_string(), "The restart note must be one line of at most 200 characters.");
     }
 
     #[cfg(windows)]
     #[tokio::test]
-    async fn the_restart_runs_shutdown_with_the_note() {
-        use crate::exec::fake::{Tools, fail, ok};
+    async fn the_restart_command_runs_shutdown_with_the_note() {
+        let t = TestApp::new();
         let tools = Tools::rules(&[("shutdown", ok(""))]);
-        machine_restart("Cyber CTF: finishing WSL 2".into()).await.unwrap();
-        assert_eq!(tools.calls(), ["shutdown /r /t 5 /c Cyber CTF: finishing WSL 2"]);
-        drop(tools);
-        let _tools = Tools::rules(&[("shutdown", fail("Access is denied.(5)"))]);
-        assert!(machine_restart(String::new()).await.unwrap_err().to_string().contains("Access is denied"));
+        machine_restart(t.handle().clone(), "Cyber CTF: finishing WSL 2".into()).await.unwrap();
+        assert_eq!(tools.calls(), [SHUTDOWN]);
+        // The process-wide state: later asks in this test process are the same restart.
+        RESTART.store(IDLE, Ordering::SeqCst);
     }
 
     #[cfg(windows)]
     #[tokio::test]
     async fn a_test_never_restarts_for_real() {
-        assert!(machine_restart(String::new()).await.is_err());
+        let t = TestApp::new();
+        assert!(machine_restart(t.handle().clone(), String::new()).await.is_err());
     }
 
     /// The real probes on this Windows: they finish in time, read the registry, and give a state.
@@ -697,22 +974,36 @@ mod tests {
     #[tokio::test]
     async fn the_probes_answer_on_this_machine() {
         let started = std::time::Instant::now();
-        let probes = windows::probe(false).await;
+        let probes = windows::probe(false, false).await;
         println!("{probes:?} -> {:?}", classify(&probes));
         assert!(started.elapsed() < std::time::Duration::from_secs(45));
         assert!(probes.reboot_pending.is_some() && probes.lxss_service.is_some() && probes.wsl_service.is_some(), "{probes:?}");
-        let t = crate::test_app::TestApp::new();
+        let t = TestApp::new();
         assert!(report(t.handle()).await.is_some());
+    }
+
+    /// Removes the test's RunOnce value however the test ends.
+    #[cfg(windows)]
+    struct RunOnceValue(String);
+
+    #[cfg(windows)]
+    impl Drop for RunOnceValue {
+        fn drop(&mut self) {
+            windows::delete_run_once(&self.0);
+        }
     }
 
     #[cfg(windows)]
     #[test]
     fn run_once_is_written_and_removed() {
-        let name = format!("CyberCTF-test-{}", rand::random::<u32>());
-        assert!(windows::set_run_once(&name, r#""C:\nowhere\app.exe""#));
-        assert_eq!(windows::run_once_exists(&name), Some(true));
-        windows::delete_run_once(&name);
-        assert_eq!(windows::run_once_exists(&name), Some(false));
+        // A name of its own: the app's `CyberCTF` value is never touched by a test.
+        let value = RunOnceValue(format!("CyberCTF-unit-test-{}", rand::random::<u32>()));
+        assert!(windows::set_run_once(&value.0, r#""C:\nowhere\app.exe""#));
+        assert_eq!(windows::run_once_exists(&value.0), Some(true));
+        windows::delete_run_once(&value.0);
+        assert_eq!(windows::run_once_exists(&value.0), Some(false));
         assert!(windows::reopen_command().is_some());
+        // Nothing to write: nothing written.
+        assert!(!Reopen::register(&windows::UserRunOnce(None)));
     }
 }

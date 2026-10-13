@@ -264,12 +264,13 @@
       "restarting": "Redémarrage dans quelques secondes…",
       "confirmTitle": "Redémarrer Windows maintenant ?",
       "confirmBody": "Windows redémarre dans quelques secondes et les applications ouvertes se ferment sans enregistrer : enregistrez votre travail d'abord.",
-      "reopens": "Cyber CTF se rouvre quand vous vous reconnectez, et la configuration reprend là où elle s'était arrêtée.",
-      "reopenByHand": "Une fois reconnecté, rouvrez Cyber CTF : la configuration reprend là où elle s'était arrêtée.",
+      "reopens": "Cyber CTF se rouvre quand vous vous reconnectez. La configuration reprend à sa première étape, et ce qui est déjà fait apparaît comme fait.",
+      "reopenByHand": "Une fois reconnecté, rouvrez Cyber CTF. La configuration reprend à sa première étape, et ce qui est déjà fait apparaît comme fait.",
       "restartReason": "Cyber CTF : redémarrage pour terminer l'activation de WSL 2.",
       "restartFailed": "Impossible de redémarrer Windows",
       "unknown": "Cyber CTF n'a pas pu déterminer si WSL 2 est activé. Si vous l'avez déjà activé puis redémarré, continuez.",
-      "recheck": "Revérifier"
+      "recheck": "Revérifier",
+      "firmware": "WSL 2 est activé, mais Windows n'exécute toujours aucun hyperviseur après le redémarrage. La virtualisation est probablement désactivée dans le firmware de votre PC : activez Intel VT-x ou AMD-V (SVM) dans les réglages du BIOS/UEFI, puis redémarrez. Redémarrer à nouveau d'ici n'y changera rien."
     },
     "dockerTestDescription": "busybox, deux conteneurs sur un réseau de lab.",
     "vmTestDescription": "Démarre, exécute une commande, la ping sur un réseau de lab, la supprime.",

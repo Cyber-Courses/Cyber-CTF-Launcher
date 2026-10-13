@@ -264,12 +264,13 @@
       "restarting": "Neustart in wenigen Sekunden…",
       "confirmTitle": "Windows jetzt neu starten?",
       "confirmBody": "Windows startet in wenigen Sekunden neu, und geöffnete Apps werden ohne Speichern geschlossen: Speichere vorher deine Arbeit.",
-      "reopens": "Cyber CTF öffnet sich wieder, wenn du dich erneut anmeldest, und die Einrichtung geht dort weiter, wo sie aufgehört hat.",
-      "reopenByHand": "Öffne Cyber CTF nach der Anmeldung erneut: Die Einrichtung geht dort weiter, wo sie aufgehört hat.",
+      "reopens": "Cyber CTF öffnet sich wieder, wenn du dich erneut anmeldest. Die Einrichtung beginnt wieder beim ersten Schritt, und was schon erledigt ist, wird als erledigt angezeigt.",
+      "reopenByHand": "Öffne Cyber CTF nach der Anmeldung erneut. Die Einrichtung beginnt wieder beim ersten Schritt, und was schon erledigt ist, wird als erledigt angezeigt.",
       "restartReason": "Cyber CTF: Neustart, um die Aktivierung von WSL 2 abzuschließen.",
       "restartFailed": "Windows konnte nicht neu gestartet werden",
       "unknown": "Cyber CTF konnte nicht feststellen, ob WSL 2 aktiviert ist. Wenn du es schon aktiviert und neu gestartet hast, mach weiter.",
-      "recheck": "Erneut prüfen"
+      "recheck": "Erneut prüfen",
+      "firmware": "WSL 2 ist aktiviert, aber Windows führt auch nach dem Neustart keinen Hypervisor aus. Die Virtualisierung ist wahrscheinlich in der Firmware deines PCs ausgeschaltet: Aktiviere Intel VT-x oder AMD-V (SVM) in den BIOS/UEFI-Einstellungen und starte dann neu. Ein weiterer Neustart von hier aus behebt das nicht."
     },
     "dockerTestDescription": "busybox, zwei Container in einem Lab-Netzwerk.",
     "vmTestDescription": "Bootet, führt einen Befehl aus, pingt sie im Lab-Netzwerk an, löscht sie.",

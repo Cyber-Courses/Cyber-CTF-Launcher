@@ -8,8 +8,8 @@ import { StatusDot } from "@/components/ui/status-pill";
 import { CmdRow, Log, Num, Requirement } from "@/features/machine/setup-steps/parts";
 import { wslState } from "@/features/machine/setup-steps/steps";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
-import { machineRestart, type SystemReport } from "@/lib/tauri";
-import { openExternal, tell } from "@/lib/failure";
+import { type SystemReport } from "@/lib/tauri";
+import { openExternal } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
 const bold = (s: string) => <b>{s}</b>;
@@ -20,7 +20,6 @@ export function WslStep({ report, setup }: { report: SystemReport; setup: Machin
   const t = useT();
   const state = wslState(report, setup);
   const [asking, setAsking] = useState(false);
-  const [restarting, setRestarting] = useState(false);
 
   if (state === "ready") {
     return (
@@ -31,15 +30,9 @@ export function WslStep({ report, setup }: { report: SystemReport; setup: Machin
   }
 
   const installing = setup.installing === "wsl";
-  async function restart() {
+  function restart() {
     setAsking(false);
-    setRestarting(true);
-    try {
-      await machineRestart(t("machine.body.wsl.restartReason"));
-    } catch (e) {
-      setRestarting(false);
-      tell(t("machine.body.wsl.restartFailed"))(e);
-    }
+    void setup.restart(t("machine.body.wsl.restartReason"));
   }
 
   return (
@@ -50,15 +43,28 @@ export function WslStep({ report, setup }: { report: SystemReport; setup: Machin
           className="flex items-center gap-3 rounded-control bg-glass px-4 py-3 text-[0.8125rem] text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
         >
           <StatusDot tone="warn" />
-          <span className="min-w-0 flex-1">{restarting ? t("machine.body.wsl.restarting") : t("machine.body.wsl.restart")}</span>
-          <Button variant="primary" size="sm" className="shrink-0" disabled={setup.busy || restarting} onClick={() => setAsking(true)}>
+          <span className="min-w-0 flex-1">{setup.restarting ? t("machine.body.wsl.restarting") : t("machine.body.wsl.restart")}</span>
+          <Button variant="primary" size="sm" className="shrink-0" disabled={setup.busy || setup.restarting} onClick={() => setAsking(true)}>
             <RotateCcw className="size-3.5" /> {t("machine.body.wsl.restartNow")}
           </Button>
         </div>
       ) : (
         <>
           <p className="text-[0.8125rem] text-muted-foreground">{t("machine.body.wsl.intro")}</p>
-          {state === "unknown" && <p className="mt-2 text-[0.8125rem] text-muted-foreground">{t("machine.body.wsl.unknown")}</p>}
+          {state === "unknown" &&
+            (report.wsl?.virtualizationOff ? (
+              <div
+                role="status"
+                className="mt-3 flex items-start gap-3 rounded-control bg-glass px-4 py-3 text-[0.8125rem] text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
+              >
+                <span className="mt-1">
+                  <StatusDot tone="warn" />
+                </span>
+                <span className="min-w-0">{t("machine.body.wsl.firmware")}</span>
+              </div>
+            ) : (
+              <p className="mt-2 text-[0.8125rem] text-muted-foreground">{t("machine.body.wsl.unknown")}</p>
+            ))}
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button variant="primary" size="sm" disabled={setup.busy} onClick={() => setup.install("wsl", "wsl", t("machine.body.wsl.log"))}>
               {installing ? t("machine.body.wsl.turningOn") : t("machine.body.wsl.turnOn")}

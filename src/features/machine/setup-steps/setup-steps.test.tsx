@@ -110,9 +110,9 @@ describe("WSL step", () => {
 });
 
 /** Windows, with the machine check's WSL answer. */
-const windows = (state: WslState | null, reopensAfterRestart = true): SystemReport => ({
+const windows = (state: WslState | null, reopensAfterRestart = true, virtualizationOff = false): SystemReport => ({
   ...freshReport("windows"),
-  wsl: state ? { state, reopensAfterRestart } : null,
+  wsl: state ? { state, reopensAfterRestart, virtualizationOff } : null,
 });
 
 /** The setup window at its WSL step (the second, after the package manager). */
@@ -223,6 +223,37 @@ describe("WSL step, from the machine check", () => {
     // The button comes back, to try again.
     expect(button(/restart now/i).hasAttribute("disabled")).toBe(false);
     expect(screen.getByRole("status").textContent).not.toContain("Restarting");
+  });
+});
+
+describe("WSL step, restarting once", () => {
+  /** The step drawn afresh on each `round`, as the onboarding does, with one setup state. */
+  function Remounting({ round, report }: { round: number; report: SystemReport }) {
+    const setup = useMachineSetup(report, () => {});
+    return <MachineStepBody key={round} step="virtualization" report={report} setup={setup} />;
+  }
+
+  it("a remounted step can't ask for a second restart during the countdown", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    const report = windows("needsReboot");
+    const r = render(<Remounting round={1} report={report} />);
+    await user.click(button(/restart now/i));
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /restart now/i }));
+    await flush();
+    r.rerender(<Remounting round={2} report={report} />);
+    expect(screen.getByRole("status").textContent).toContain("Restarting in a few seconds");
+    expect(button(/restart now/i).hasAttribute("disabled")).toBe(true);
+    expect(commands(calls).filter((c) => c === "machine_restart")).toHaveLength(1);
+  });
+
+  it("says virtualization looks off in the firmware, instead of asking for another restart", () => {
+    installTauri();
+    render(<SetupAtWsl report={windows("unknown", true, true)} />);
+    expect(screen.getByRole("status").textContent).toContain("Virtualization is probably off in your PC’s firmware");
+    expect(text()).not.toContain("couldn’t tell");
+    expect(screen.queryByRole("button", { name: /restart now/i })).toBeNull();
+    expect(button(/i’ve done this/i)).toBeTruthy();
   });
 });
 

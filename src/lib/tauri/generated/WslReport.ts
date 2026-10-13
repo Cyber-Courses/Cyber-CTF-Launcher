@@ -8,4 +8,9 @@ export type WslReport = { state: WslState,
 /**
  * Whether a restart from Cyber CTF opens it again once the player signs back in.
  */
-reopensAfterRestart: boolean, };
+reopensAfterRestart: boolean, 
+/**
+ * The Virtual Machine Platform is on but no hypervisor runs, a restart having (likely)
+ * passed: virtualization is probably off in the firmware (BIOS/UEFI).
+ */
+virtualizationOff: boolean, };

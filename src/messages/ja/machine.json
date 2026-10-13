@@ -264,12 +264,13 @@
       "restarting": "数秒後に再起動します…",
       "confirmTitle": "今すぐ Windows を再起動しますか？",
       "confirmBody": "数秒後に Windows が再起動し、開いているアプリは保存せずに閉じられます。先に作業内容を保存してください。",
-      "reopens": "再度サインインすると Cyber CTF が自動で開き、セットアップは中断したところから再開します。",
-      "reopenByHand": "再度サインインしたら Cyber CTF をもう一度開いてください。セットアップは中断したところから再開します。",
+      "reopens": "再度サインインすると Cyber CTF が自動で開きます。セットアップは最初のステップから始まりますが、完了済みの項目は完了として表示されます。",
+      "reopenByHand": "再度サインインしたら Cyber CTF をもう一度開いてください。セットアップは最初のステップから始まりますが、完了済みの項目は完了として表示されます。",
       "restartReason": "Cyber CTF: WSL 2 の有効化を完了するために再起動します。",
       "restartFailed": "Windows を再起動できませんでした",
       "unknown": "WSL 2 が有効かどうかを Cyber CTF で判断できませんでした。すでに有効にして再起動済みなら、続行してください。",
-      "recheck": "再確認"
+      "recheck": "再確認",
+      "firmware": "WSL 2 は有効ですが、再起動後も Windows でハイパーバイザーが動作していません。PC のファームウェアで仮想化が無効になっている可能性があります。BIOS/UEFI の設定で Intel VT-x または AMD-V (SVM) を有効にしてから再起動してください。ここから再起動し直しても解決しません。"
     },
     "dockerTestDescription": "busybox、ラボネットワーク上の 2 つのコンテナ。",
     "vmTestDescription": "起動し、コマンドを実行し、ラボネットワーク上で ping を送り、削除します。",
