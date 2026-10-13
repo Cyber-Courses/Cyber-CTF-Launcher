@@ -435,7 +435,7 @@ mod tests {
         let child = pair.slave.spawn_command(cmd).unwrap();
         drop(pair.slave);
         let reader = pair.master.try_clone_reader().unwrap();
-        let writer = pair.master.take_writer().unwrap();
+        let writer = Box::new(Input::spawn(pair.master.take_writer().unwrap()));
         // A live session, as terminal_open makes it: its window still open.
         let session = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         with_sessions(|s| s.insert(session, Session { writer, master: pair.master, child, window: "shell-test".into(), remote: None }));
@@ -449,7 +449,7 @@ mod tests {
                     // ConPTY asks where the cursor is (DSR) and holds all output until answered;
                     // in the app xterm.js answers it.
                     if data.contains("\x1b[6n") {
-                        terminal_write(session, "\x1b[1;1R".into()).unwrap();
+                        write_input("shell-test", session, b"\x1b[1;1R").unwrap();
                     }
                     out.push_str(&data);
                 }
