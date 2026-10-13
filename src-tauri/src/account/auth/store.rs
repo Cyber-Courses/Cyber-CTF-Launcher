@@ -106,10 +106,14 @@ fn load_file(path: &std::path::Path) -> Option<Session> {
     std::fs::read_to_string(path).ok().and_then(|raw| serde_json::from_str(&raw).ok())
 }
 
-/// Writes the session to a dev session file, creating its folder.
+/// Writes the session to a dev session file, creating its folder: both this user's only (the
+/// file holds the session's tokens).
 #[cfg(debug_assertions)]
 fn save_file(path: &std::path::Path, raw: &str) -> Result<()> {
-    crate::atomic_file::write(path, raw)?;
+    if let Some(dir) = path.parent() {
+        crate::private_fs::dir(dir)?;
+    }
+    crate::atomic_file::write_private(path, raw)?;
     Ok(())
 }
 
@@ -266,6 +270,11 @@ mod tests {
         assert!(load_file(&path).is_none());
         let session = Session { access_token: "a".into(), refresh_token: Some("r".into()), expires_at: 42, name: Some("N".into()), email: None };
         save_file(&path, &serde_json::to_string(&session).unwrap()).unwrap();
+        #[cfg(unix)]
+        {
+            assert_eq!(crate::private_fs::tests::mode(&path), 0o600);
+            assert_eq!(crate::private_fs::tests::mode(path.parent().unwrap()), 0o700);
+        }
         let back = load_file(&path).unwrap();
         assert_eq!((back.access_token.as_str(), back.refresh_token.as_deref(), back.expires_at), ("a", Some("r"), 42));
         assert_eq!(back.name.as_deref(), Some("N"));
