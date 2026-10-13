@@ -107,7 +107,8 @@ mod tests {
             cmd: "api_query".into(),
             callback: tauri::ipc::CallbackFn(0),
             error: tauri::ipc::CallbackFn(1),
-            url: "tauri://localhost".parse().unwrap(),
+            // The app's own origin, which Tauri trusts: `http://tauri.localhost` on Windows.
+            url: if cfg!(windows) { "http://tauri.localhost" } else { "tauri://localhost" }.parse().unwrap(),
             body: tauri::ipc::InvokeBody::Json(args),
             headers: Default::default(),
             invoke_key: tauri::test::INVOKE_KEY.to_string(),
