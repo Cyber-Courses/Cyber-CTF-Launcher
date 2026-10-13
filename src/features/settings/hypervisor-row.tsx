@@ -31,8 +31,7 @@ export function HypervisorRow({
 }) {
   const t = useT();
   const [provider, setProvider] = useState<Provider | null>(() => getVmProvider());
-  const [installing, setInstalling] = useState<string | null>(null);
-  const [log, setLog] = useState<string[] | null>(null);
+  const { installing, log, installAddon } = useAddonInstall(onRefresh);
 
   const local = report ? report.vmProviders.filter((p) => !p.remote && p.hypervisor === true) : null;
   // Ready = hypervisor + Vagrant + its plugin: VM labs can start on it right now.
@@ -45,20 +44,6 @@ export function HypervisorRow({
     setVmProvider(p);
     setProvider(p);
     onSaved();
-  }
-
-  async function installAddon(plugin: string) {
-    setInstalling(plugin);
-    setLog([translate("settings.hypervisor.logInstalling", { plugin })]);
-    try {
-      await installVagrantPlugin(plugin, (l) => setLog((x) => [...(x ?? []), l]));
-      setLog((x) => [...(x ?? []), translate("settings.hypervisor.logInstalled")]);
-    } catch (e) {
-      setLog((x) => [...(x ?? []), `✗ ${String(e)}`]);
-    } finally {
-      setInstalling(null);
-      onRefresh();
-    }
   }
 
   const setupLink = (
@@ -99,63 +84,119 @@ export function HypervisorRow({
       title={t("settings.hypervisor.title")}
       description={current ? t("settings.hypervisor.current", { name: providerLabel(current, report?.os) }) : t("settings.hypervisor.noneReady")}
     >
-      {ready.length > 0 && (
-        <RadioList label={t("settings.hypervisor.title")} className="mt-3">
-          {ready.length > 1 && (
-            <RadioRow
-              compact
-              selected={effective === null}
-              onSelect={() => choose(null)}
-              title={t("settings.hypervisor.automatic")}
-              subtitle={t("settings.hypervisor.automaticNote", { name: providerLabel(ready[0], report?.os) })}
-            />
-          )}
-          {ready.map((h) => (
-            <RadioRow
-              key={h.provider}
-              compact
-              selected={effective === h.provider || (ready.length === 1 && effective === null)}
-              onSelect={() => choose(h.provider)}
-              title={
-                <span className="flex items-center gap-2">
-                  <HypervisorLogo provider={h.provider} size="sm" />
-                  {providerLabel(h, report?.os)}
-                </span>
-              }
-              subtitle={h.plugin ? t("settings.hypervisor.readyPlugin", { plugin: h.plugin }) : t("settings.hypervisor.readyBuiltIn")}
-            />
-          ))}
-        </RadioList>
-      )}
+      {ready.length > 0 && <ReadyList ready={ready} effective={effective} os={report?.os} onChoose={choose} />}
       {notReady.length > 0 && (
-        <div className="mt-3 overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
-          {notReady.map((h) => (
-            <div key={h.provider} className="flex min-h-[3.25rem] items-center gap-3 border-t border-border px-3.5 py-2 first:border-t-0">
-              <HypervisorLogo provider={h.provider} size="sm" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[0.8125rem] font-medium text-foreground">{providerLabel(h, report?.os)}</p>
-                <p className="truncate text-[0.75rem] text-muted-foreground">
-                  {h.plugin && !h.pluginInstalled
-                    ? t("settings.hypervisor.needsPlugin", { plugin: h.plugin })
-                    : (h.reason ?? t("settings.hypervisor.notReady"))}
-                </p>
-              </div>
-              {h.plugin && !h.pluginInstalled && (
-                <Button variant="outline" size="xs" disabled={installing !== null || !report?.vagrant.installed} onClick={() => installAddon(h.plugin!)}>
-                  {installing === h.plugin ? (
-                    <>
-                      <Spinner className="size-3.5" /> {t("settings.hypervisor.installing")}
-                    </>
-                  ) : (
-                    t("settings.hypervisor.installAddon")
-                  )}
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
+        <NotReadyList notReady={notReady} os={report?.os} installing={installing} canInstall={!!report?.vagrant.installed} onInstall={installAddon} />
       )}
       {log && <LogConsole className="mt-3" lines={log} running={installing !== null} title={t("settings.hypervisor.logTitle")} />}
     </Row>
   );
+}
+
+/** The ready hypervisors to pick from, with Automatic first when there are several. */
+function ReadyList({
+  ready,
+  effective,
+  os,
+  onChoose,
+}: {
+  ready: ProviderStatus[];
+  effective: Provider | null;
+  os: string | undefined;
+  onChoose: (p: Provider | null) => void;
+}) {
+  const t = useT();
+  return (
+    <RadioList label={t("settings.hypervisor.title")} className="mt-3">
+      {ready.length > 1 && (
+        <RadioRow
+          compact
+          selected={effective === null}
+          onSelect={() => onChoose(null)}
+          title={t("settings.hypervisor.automatic")}
+          subtitle={t("settings.hypervisor.automaticNote", { name: providerLabel(ready[0], os) })}
+        />
+      )}
+      {ready.map((h) => (
+        <RadioRow
+          key={h.provider}
+          compact
+          selected={effective === h.provider || (ready.length === 1 && effective === null)}
+          onSelect={() => onChoose(h.provider)}
+          title={
+            <span className="flex items-center gap-2">
+              <HypervisorLogo provider={h.provider} size="sm" />
+              {providerLabel(h, os)}
+            </span>
+          }
+          subtitle={h.plugin ? t("settings.hypervisor.readyPlugin", { plugin: h.plugin }) : t("settings.hypervisor.readyBuiltIn")}
+        />
+      ))}
+    </RadioList>
+  );
+}
+
+/** The installed hypervisors that can't run VMs yet, each with why, and the add-on install. */
+function NotReadyList({
+  notReady,
+  os,
+  installing,
+  canInstall,
+  onInstall,
+}: {
+  notReady: ProviderStatus[];
+  os: string | undefined;
+  installing: string | null;
+  canInstall: boolean;
+  onInstall: (plugin: string) => void;
+}) {
+  const t = useT();
+  return (
+    <div className="mt-3 overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
+      {notReady.map((h) => (
+        <div key={h.provider} className="flex min-h-[3.25rem] items-center gap-3 border-t border-border px-3.5 py-2 first:border-t-0">
+          <HypervisorLogo provider={h.provider} size="sm" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[0.8125rem] font-medium text-foreground">{providerLabel(h, os)}</p>
+            <p className="truncate text-[0.75rem] text-muted-foreground">
+              {h.plugin && !h.pluginInstalled ? t("settings.hypervisor.needsPlugin", { plugin: h.plugin }) : (h.reason ?? t("settings.hypervisor.notReady"))}
+            </p>
+          </div>
+          {h.plugin && !h.pluginInstalled && (
+            <Button variant="outline" size="xs" disabled={installing !== null || !canInstall} onClick={() => onInstall(h.plugin!)}>
+              {installing === h.plugin ? (
+                <>
+                  <Spinner className="size-3.5" /> {t("settings.hypervisor.installing")}
+                </>
+              ) : (
+                t("settings.hypervisor.installAddon")
+              )}
+            </Button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Installs a hypervisor's Vagrant add-on, with its log, then re-checks the machine. */
+function useAddonInstall(onRefresh: () => void) {
+  const [installing, setInstalling] = useState<string | null>(null);
+  const [log, setLog] = useState<string[] | null>(null);
+
+  async function installAddon(plugin: string) {
+    setInstalling(plugin);
+    setLog([translate("settings.hypervisor.logInstalling", { plugin })]);
+    try {
+      await installVagrantPlugin(plugin, (l) => setLog((x) => [...(x ?? []), l]));
+      setLog((x) => [...(x ?? []), translate("settings.hypervisor.logInstalled")]);
+    } catch (e) {
+      setLog((x) => [...(x ?? []), `✗ ${String(e)}`]);
+    } finally {
+      setInstalling(null);
+      onRefresh();
+    }
+  }
+
+  return { installing, log, installAddon };
 }
