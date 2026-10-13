@@ -8,7 +8,7 @@ use super::{Runtime, attack_vm, exegol, lab, remote, server, ssh};
 use crate::error::{Error, Result};
 
 /// Which shell an embedded terminal attaches to.
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub enum ShellKind {
     /// The lab's attack box, wherever the lab runs.

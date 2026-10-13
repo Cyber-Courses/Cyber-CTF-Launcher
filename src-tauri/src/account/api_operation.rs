@@ -7,7 +7,7 @@ use serde::Deserialize;
 const SESSION_FIELDS: &str = "id labId target state endpoints { port url } message expiresAt";
 
 /// One allowed operation, by the name the frontend sends (`"labs"`, `"labBrief"`, ...).
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub enum ApiOperation {
     /// The published labs, for the Labs screen and Home.

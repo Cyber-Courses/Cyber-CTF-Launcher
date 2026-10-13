@@ -25,8 +25,9 @@ fn ymd_from_secs(secs: i64) -> (i64, u32, u32) {
     (y, m, d)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(rename = "CloudLoginProvider")]
 pub enum Cloud {
     Aws,
     Azure,
@@ -129,7 +130,7 @@ fn lines(out: &str) -> Vec<String> {
 }
 
 /// An Azure subscription the signed-in account can use.
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AzureSubscription {
     pub name: String,
@@ -155,7 +156,7 @@ fn subscriptions(out: &str) -> Vec<AzureSubscription> {
 }
 
 /// A GCP billing account the signed-in user can see.
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GcpBillingAccount {
     pub id: String,
@@ -164,7 +165,7 @@ pub struct GcpBillingAccount {
 }
 
 /// A GCP organization the signed-in user belongs to.
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GcpOrganization {
     pub id: String,
@@ -172,7 +173,7 @@ pub struct GcpOrganization {
 }
 
 /// What the launcher found in ~/.oci/config (DEFAULT profile), to prefill the OCI setup.
-#[derive(Serialize, Default, Debug, PartialEq)]
+#[derive(Serialize, Default, Debug, PartialEq, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct OciConfig {
     pub configured: bool,

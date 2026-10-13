@@ -469,8 +469,9 @@ pub(super) fn lab_status(app: &AppHandle, dir: &Path, id: &str, conn: Option<ser
 
 /// What the launch dialog shows before a cloud-services lab starts: its cloud, what it costs
 /// and what it asks for. Read from the lab's spec at its pinned commit.
-#[derive(serde::Serialize, Debug, PartialEq)]
+#[derive(serde::Serialize, Debug, PartialEq, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "CloudPreview")]
 pub struct Preview {
     pub provider: String,
     pub hourly_usd: Option<f64>,

@@ -2,11 +2,13 @@
 //! defaults that go with it.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::runtime::providers::Provider;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "ServerHost")]
 pub struct HostProfile {
     pub id: String,
     /// Display name, e.g. "Garage Proxmox".

@@ -47,7 +47,7 @@ fn with_sessions<T>(f: impl FnOnce(&mut HashMap<u32, Session>) -> T) -> T {
     f(guard.get_or_insert_with(HashMap::new))
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, ts_rs::TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum TermEvent {
     /// Output, as text (split multi-byte characters are held back until complete).

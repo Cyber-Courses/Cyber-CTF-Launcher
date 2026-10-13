@@ -14,7 +14,7 @@ use super::install::Dependency;
 use super::steps::{Step, channel_log, run_steps, step};
 use crate::error::{Error, Result};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledTool {
     pub dependency: Dependency,

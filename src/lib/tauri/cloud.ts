@@ -1,10 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { invokeStreaming } from "@/lib/tauri/stream";
+import type { AzureSubscription, CloudLoginProvider, GcpBillingAccount, GcpOrganization, OciConfig, Provider } from "@/lib/tauri/generated";
 
-export type CloudProvider = "aws" | "azure" | "gcp" | "digitalocean" | "linode" | "oci";
+export type { AzureSubscription, CloudLoginProvider, GcpBillingAccount, GcpOrganization, OciConfig };
 
-/** Signs in to a cloud provider using its CLI's own auth (browser flow). */
-export const cloudLogin = (provider: CloudProvider, onLog: (line: string) => void) => invokeStreaming("cloud_login", { provider }, onLog);
+/** The cloud accounts a lab can run in (the cloud ones of the providers). */
+export type CloudProvider = Extract<Provider, "aws" | "azure" | "gcp" | "digitalocean" | "linode" | "oci">;
+
+/** Signs in to a cloud provider using its CLI's own auth (browser flow): AWS, Azure or GCP. */
+export const cloudLogin = (provider: CloudLoginProvider, onLog: (line: string) => void) => invokeStreaming("cloud_login", { provider }, onLog);
 
 // --- AWS ---
 
@@ -22,19 +26,10 @@ export const awsLogin = (profile: string | null, onLog: (line: string) => void) 
 
 // --- Azure ---
 
-/** An Azure subscription the signed-in account can use. */
-export type AzureSubscription = { name: string; id: string; isDefault: boolean };
-
 /** Subscriptions the signed-in Azure account can see (`az account list`). Empty if not signed in. */
 export const azureSubscriptions = () => invoke<AzureSubscription[]>("azure_subscriptions");
 
 // --- Google Cloud ---
-
-/** A GCP billing account the signed-in user can see. */
-export type GcpBillingAccount = { id: string; name: string; open: boolean };
-
-/** A GCP organization the signed-in user belongs to. */
-export type GcpOrganization = { id: string; name: string };
 
 /** The active gcloud account email, or null if the CLI isn't signed in. */
 export const gcpAccount = () => invoke<string | null>("gcp_account");
@@ -46,9 +41,6 @@ export const gcpBillingAccounts = () => invoke<GcpBillingAccount[]>("gcp_billing
 export const gcpOrganizations = () => invoke<GcpOrganization[]>("gcp_organizations");
 
 // --- Oracle Cloud ---
-
-/** What the launcher found in ~/.oci/config, to prefill the OCI setup. */
-export type OciConfig = { configured: boolean; tenancy: string; region: string };
 
 /** Reads ~/.oci/config (DEFAULT profile) for the OCI setup prefill. */
 export const ociConfig = () => invoke<OciConfig>("oci_config");

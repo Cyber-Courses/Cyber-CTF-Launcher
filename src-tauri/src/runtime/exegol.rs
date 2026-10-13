@@ -21,7 +21,7 @@ pub fn valid_image(image: &str) -> bool {
         && image.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | ':' | '@'))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ExegolStatus {
     /// The image is pulled locally (otherwise the first start downloads it, several GB).

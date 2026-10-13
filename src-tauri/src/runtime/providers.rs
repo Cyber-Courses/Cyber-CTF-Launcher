@@ -4,11 +4,12 @@
 //! but are never detected here.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::exec::run_read;
 
 /// Vagrant provider ids (the value given to `vagrant up --provider`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Provider {
     Virtualbox,
@@ -187,7 +188,7 @@ fn qemu_binary() -> &'static str {
     if std::env::consts::ARCH == "aarch64" { "qemu-system-aarch64" } else { "qemu-system-x86_64" }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderStatus {
     pub provider: Provider,

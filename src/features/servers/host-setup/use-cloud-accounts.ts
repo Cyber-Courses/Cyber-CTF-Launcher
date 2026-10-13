@@ -150,14 +150,18 @@ export function useCloudAccounts(v: ServerHostInput, setV: Dispatch<SetStateActi
       return id ? translate("servers.setup.credentials.logSignedInAs", { id }) : translate("servers.setup.credentials.logNotSignedIn");
     });
 
-  /** The cloud CLI's own sign-in (Azure, GCP), then the subscriptions / projects it now sees. */
-  const signIn = () =>
-    signInWith(CLOUD_META[cloudProvider].label, async (onLog) => {
-      await cloudLogin(cloudProvider, onLog);
-      if (cloudProvider === "azure") loadAzureSubs();
-      if (cloudProvider === "gcp") loadGcpProjects();
+  /** The cloud CLI's own sign-in (Azure, GCP), then the subscriptions / projects it now sees.
+   *  The other clouds sign in with a token or a config file: `cloud_login` refuses them. */
+  const signIn = async () => {
+    const cloud = cloudProvider;
+    if (cloud !== "azure" && cloud !== "gcp") return;
+    await signInWith(CLOUD_META[cloud].label, async (onLog) => {
+      await cloudLogin(cloud, onLog);
+      if (cloud === "azure") loadAzureSubs();
+      if (cloud === "gcp") loadGcpProjects();
       return translate("servers.setup.credentials.logSignedIn");
     });
+  };
 
   return {
     signingIn,

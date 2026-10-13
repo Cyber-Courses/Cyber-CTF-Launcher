@@ -3,3 +3,5 @@ out
 src-tauri
 pnpm-lock.yaml
 dev
+# Written by ts-rs on `cargo test`; CI checks they match the Rust structs byte for byte.
+src/lib/tauri/generated

@@ -10,8 +10,9 @@ use super::compose;
 use crate::error::Result;
 
 /// One check's outcome.
-#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+#[derive(serde::Serialize, Clone, Debug, PartialEq, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "LabCheckResult")]
 pub struct CheckResult {
     pub name: String,
     /// Where it ran: "from web", or "from the environment's networks".
@@ -22,8 +23,9 @@ pub struct CheckResult {
 }
 
 /// Result of a lab's self-verification.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "LabCheck")]
 pub struct Check {
     /// The lab has checks (its own, or derived from its spec), so verification is possible.
     pub available: bool,

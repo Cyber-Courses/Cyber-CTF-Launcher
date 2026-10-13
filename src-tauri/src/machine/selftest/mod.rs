@@ -26,19 +26,22 @@ use crate::runtime::providers::Provider;
 pub(crate) use docker::IMAGE;
 pub(crate) use vm::candidate_boxes;
 
-#[derive(Clone, Copy, serde::Deserialize)]
+#[derive(Clone, Copy, serde::Deserialize, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(rename = "SelfTestKind")]
 pub enum Kind {
     Docker,
     Vm,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "SelfTestEvent")]
 pub struct Event {
     pub step: &'static str,
     pub label: &'static str,
     /// `running`, `ok`, `fail` or `skip`.
+    #[ts(type = r#""running" | "ok" | "fail" | "skip""#)]
     pub state: &'static str,
     pub detail: Option<String>,
 }

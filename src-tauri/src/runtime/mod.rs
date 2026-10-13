@@ -40,6 +40,7 @@ mod terraform;
 mod vm;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 // A glob, so each command's generated `__cmd__*` macro is re-exported with it: `lib.rs`
 // registers them as `runtime::<command>`.
@@ -56,9 +57,12 @@ pub use model::{AttackerAt, Interface, LabStatus, Machine, Network, Output, Park
 pub use paths::{LOCAL_VM_MARKER, validate_id};
 pub use shell::{ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for, valid_image};
 pub use status::{lab_running_here, primary_url, running_here};
+/// For the generated TypeScript types (`ts_bindings`).
+#[cfg(test)]
+pub(crate) use {cloud_services::Preview, docker::Check, exegol::ExegolStatus};
 
 /// Mirrors `LabRuntime` in CyberBackend.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Runtime {
     Docker,

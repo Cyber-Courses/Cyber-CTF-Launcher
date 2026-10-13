@@ -43,6 +43,9 @@ isoloom-core = { git = "https://github.com/isoloom/isoloom", rev = "4d17353" }
 indexmap = "2"
 portable-pty = "0.9"
 tauri-plugin-dialog = "2"
+# The TypeScript types of the commands' arguments and results, derived from these structs
+# (see `ts_bindings.rs`).
+ts-rs = "12"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
