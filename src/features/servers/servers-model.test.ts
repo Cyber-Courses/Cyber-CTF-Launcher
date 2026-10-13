@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ServerHost, ServerTest, SystemReport } from "@/lib/tauri";
-import { canRunVmHere, capacityHost, hostsSummary, onPremHosts } from "@/features/servers/servers-model";
+import { canRunVmHere, capacityHost, hostStatus, hostsSummary, isPrivateHost, onPremHosts } from "@/features/servers/servers-model";
 import { failedTest } from "@/features/servers/use-server-list";
 
 const host = (id: string, provider: ServerHost["provider"] = "proxmox") => ({ id, name: id, provider }) as ServerHost;
@@ -50,5 +50,19 @@ describe("servers model", () => {
       message: "Error: timed out",
       checks: [],
     });
+  });
+
+  it("reads a host's last test for its status pill", () => {
+    const failed = (message: string) => ({ ok: false, message }) as ServerTest;
+    expect(hostStatus(undefined)).toEqual({ result: null, needsPassword: false, tone: "muted", status: "notTested", online: false });
+    expect(hostStatus("testing")).toMatchObject({ result: null, tone: "muted", status: "testing", online: false });
+    expect(hostStatus(result(true))).toMatchObject({ tone: "ok", status: "online", online: true });
+    expect(hostStatus(failed("No password stored for root"))).toMatchObject({ needsPassword: true, tone: "warn", status: "needsPassword", online: false });
+    expect(hostStatus(failed("connection refused"))).toMatchObject({ needsPassword: false, tone: "fail", status: "unreachable", online: false });
+  });
+
+  it("knows the private LAN addresses macOS's Local Network permission governs", () => {
+    for (const h of ["10.0.0.2", "192.168.1.10", "172.16.0.1", "172.31.255.1", "pve.local"]) expect(isPrivateHost(h)).toBe(true);
+    for (const h of ["172.15.0.1", "172.32.0.1", "8.8.8.8", "pve.example.com"]) expect(isPrivateHost(h)).toBe(false);
   });
 });

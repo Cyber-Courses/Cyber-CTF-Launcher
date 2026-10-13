@@ -4,7 +4,6 @@
     "lead": "Run bigger, multi-machine labs on hardware you own. Proxmox or ESXi, over your network.",
     "testAll": "Test all",
     "addServer": "Add server",
-    "noServer": "No server connected",
     "checking": "Checking…",
     "onlineCount": "{online} of {total} online",
     "hosts": "Hosts",

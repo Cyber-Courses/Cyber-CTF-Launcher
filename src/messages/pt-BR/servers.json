@@ -4,7 +4,6 @@
     "lead": "Rode labs maiores, com várias máquinas, em hardware seu. Proxmox ou ESXi, pela sua rede.",
     "testAll": "Testar todos",
     "addServer": "Adicionar servidor",
-    "noServer": "Nenhum servidor conectado",
     "checking": "Verificando…",
     "onlineCount": "{online} de {total} online",
     "hosts": "Hosts",
