@@ -7,10 +7,11 @@ use crate::AppHandle;
 use tauri::Manager;
 
 use super::inflight::{Action, DeployGuard, lock_lab};
+use super::lab::registry;
 use super::lifecycle::resume_locked;
 use super::paths::{deployment_states, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, state_dir, vagrant_dirs};
 use super::providers::Provider;
-use super::{Runtime, attack_box, attack_vm, cloud_services, docker, exegol, lab, registry, server, ssh, terraform, vm};
+use super::{Runtime, attack_box, attack_vm, cloud_services, docker, exegol, lab, server, ssh, terraform, vm};
 use crate::error::{Error, Result};
 
 mod local;
@@ -21,7 +22,7 @@ use local::{check_qemu, ensure_local_slot_free, start_local_vm, warn_if_low_memo
 use local::{emulated_arches, low_memory_warning};
 use on_host::start_on_server;
 #[cfg(test)]
-use on_host::{budget_verdict, parse_ipv4, public_ip_from, terraform_vars};
+use on_host::{budget_verdict, parse_ipv4, public_ip_from};
 pub(super) use on_host::{check_aws_budget, public_ip};
 
 /// Starts an installed lab; `env` is passed to the runtime (evidence claim, attack box).
@@ -159,14 +160,14 @@ async fn start_vm_lab(dir: &Path, runtime: Runtime, provider: Provider, env: &[(
 /// running attack box back into its networks, and record it for Isoloom. Takes the lab folder
 /// (no app handle), so the real-lab tests run exactly this.
 pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-    let spec = lab::prepare(dir, isoloom_core::Target::Docker)?;
+    let spec = lab::prepare(dir, lab::Target::Docker)?;
     mark_local_vm(dir, None)?;
     docker::start(dir, id, env, &mut *log).await?;
     exegol::rejoin(id).await;
     registry::record_docker(dir, &spec, docker::project(id));
     // Its ports here are the ones picked at its first start, not the spec's.
     let published = docker::published(dir, id, env).await;
-    if let Some(m) = lab::message_at(dir, &spec, isoloom_core::Target::Docker, &published) {
+    if let Some(m) = lab::message_at(dir, &spec, lab::Target::Docker, &published) {
         log_lines(&m, log);
     }
     Ok(())
@@ -206,14 +207,14 @@ fn local_run(runtime: Runtime, provider: Option<Provider>) -> Result<LocalRun> {
 }
 
 /// The end of a Vagrant start (local or ESXi): the lab recorded, and its welcome message.
-fn finish_vagrant(dir: &Path, spec: &isoloom_core::Spec, runtime: Runtime, log: &mut impl FnMut(String)) {
+fn finish_vagrant(dir: &Path, spec: &lab::Spec, runtime: Runtime, log: &mut impl FnMut(String)) {
     registry::record(dir, spec, lab::vagrant_target(runtime), None);
     welcome(dir, spec, lab::vagrant_target(runtime), log);
 }
 
 /// The lab's own words once it is up (`message:` in its spec, addresses filled in): where to
 /// start and what to do first, as the last lines of the deploy log.
-fn welcome(dir: &Path, spec: &isoloom_core::Spec, target: isoloom_core::Target, log: &mut impl FnMut(String)) {
+fn welcome(dir: &Path, spec: &lab::Spec, target: lab::Target, log: &mut impl FnMut(String)) {
     if let Some(m) = lab::message(dir, spec, target) {
         log_lines(&m, log);
     }

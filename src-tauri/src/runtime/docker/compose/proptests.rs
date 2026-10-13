@@ -93,8 +93,8 @@ proptest! {
         let _ = host_ports_from_config(&out);
         let _ = published_from_config(&out);
         let _ = serving_services_from_config(&out);
-        let _ = pinned_ports(&out, |_| Some(40000));
-        let _ = pinned_ports(&out, |_| None);
+        let _ = pinned_ports(&out, |_, _| Some(40000));
+        let _ = pinned_ports(&out, |_, _| None);
     }
 
     #[test]
@@ -103,7 +103,7 @@ proptest! {
         let _ = host_ports_from_config(&s);
         let _ = published_from_config(&s);
         let _ = serving_services_from_config(&s);
-        let _ = pinned_ports(&s, Some);
+        let _ = pinned_ports(&s, |t, _| Some(t));
     }
 
     #[test]
@@ -150,8 +150,9 @@ proptest! {
             }
             for p in &ports {
                 if let Some(h) = num(&p["published"]).filter(|h| *h > 0) {
-                    want_host.push(h as u16);
-                    want_published.push((name.clone(), p["target"].as_u64().unwrap() as u16, h as u16));
+                    let proto = p["protocol"].as_str().filter(|x| !x.is_empty()).unwrap_or("tcp").to_string();
+                    want_host.push((h as u16, proto.clone()));
+                    want_published.push((name.clone(), p["target"].as_u64().unwrap() as u16, proto, h as u16));
                 }
             }
         }
@@ -165,7 +166,7 @@ proptest! {
     #[test]
     fn pinned_ports_writes_valid_yaml_for_any_config(cfg in compose_config(), base in 1024u16..60000) {
         let mut next = base;
-        let yaml = pinned_ports(&cfg.to_string(), |_| {
+        let yaml = pinned_ports(&cfg.to_string(), |_, _| {
             next = next.wrapping_add(1);
             Some(next)
         });

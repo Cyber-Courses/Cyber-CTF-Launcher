@@ -129,3 +129,7 @@ export const terminalClose = (session: number) => invoke<void>("terminal_close",
 export const sharedFolderGet = () => invoke<SharedFolder>("shared_folder_get");
 export const sharedFolderSet = (enabled: boolean, path: string) => invoke<SharedFolder>("shared_folder_set", { enabled, path });
 export const sharedFolderOpen = () => invoke<void>("shared_folder_open");
+
+/** Whether the labs started here are recorded in Isoloom's registry (`~/.isoloom/status.yml`). */
+export const isoloomRegistryGet = () => invoke<boolean>("isoloom_registry_get");
+export const isoloomRegistrySet = (enabled: boolean) => invoke<boolean>("isoloom_registry_set", { enabled });

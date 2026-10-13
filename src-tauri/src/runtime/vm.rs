@@ -24,7 +24,7 @@ async fn stop_bounded(dir: &Path, env: &[(String, String)]) {
 
 /// Isoloom's provisioning controller: the machine that runs Ansible against the others. Not a
 /// target, so it is powered off once the lab is built, and booted again to provision or check.
-pub const CONTROLLER: &str = "isoloom-controller";
+pub const CONTROLLER: &str = super::lab::CONTROLLER;
 
 fn has_controller(dir: &Path) -> bool {
     std::fs::read_to_string(dir.join("Vagrantfile")).is_ok_and(|t| t.contains(&format!("config.vm.define \"{CONTROLLER}\"")))

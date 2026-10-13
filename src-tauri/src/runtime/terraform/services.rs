@@ -21,19 +21,33 @@ pub fn is_module(dir: &Path) -> bool {
 }
 
 /// Applies a lab's own module. `vars` are the launcher's variables (`TF_VAR_*`), `env` the
-/// cloud's credentials, `expires_at` when the lab auto-stops.
+/// cloud's credentials, `expires_at` when the lab auto-stops, `retries` how many more applies
+/// after a failed one (`cloud.apply_retries`: a module that converges on a second apply). The
+/// last failure is the run's.
+#[allow(clippy::too_many_arguments)]
 pub async fn apply_services(
     module: &Path,
     state: &Path,
     var_files: &[PathBuf],
     vars: &[(String, String)],
     expires_at: Option<u64>,
+    retries: u8,
     env: &[(String, String)],
-    log: impl FnMut(String),
+    mut log: impl FnMut(String),
 ) -> Result<()> {
     std::fs::create_dir_all(state)?;
     std::fs::write(state.join(RUN_FILE), serde_json::to_string(&run_record(expires_at, vars)).unwrap_or_default())?;
-    run(module, state, var_files, &with_env(vars, env), "apply", log).await
+    let full = init(module, state, &with_env(vars, env), &mut log).await?;
+    let mut attempt = 0;
+    loop {
+        match command(module, state, var_files, &full, "apply", &mut log).await {
+            Err(e) if attempt < retries => {
+                attempt += 1;
+                log(format!("The apply failed ({e}); this lab's module may need another one: applying again ({attempt} of {retries})…"));
+            }
+            done => return done,
+        }
+    }
 }
 
 /// Destroys what [`apply_services`] created, with the variables it recorded.
@@ -51,16 +65,27 @@ pub async fn destroy_services(module: &Path, state: &Path, var_files: &[PathBuf]
 }
 
 /// `terraform init` then `command` on the lab's module, its state in `state`.
-async fn run(module: &Path, state: &Path, var_files: &[PathBuf], env: &[(String, String)], command: &str, mut log: impl FnMut(String)) -> Result<()> {
+async fn run(module: &Path, state: &Path, var_files: &[PathBuf], env: &[(String, String)], command_name: &str, mut log: impl FnMut(String)) -> Result<()> {
+    let full = init(module, state, env, &mut log).await?;
+    command(module, state, var_files, &full, command_name, log).await
+}
+
+/// `terraform init` on the lab's module, its state in `state`; the full environment of the run.
+async fn init(module: &Path, state: &Path, env: &[(String, String)], log: impl FnMut(String)) -> Result<Vec<(String, String)>> {
     check_can_run(module).await?;
     std::fs::create_dir_all(state)?;
     // The launcher is this state's only writer (see `runner::terraform`): a lock left now is stale.
     let _ = std::fs::remove_file(state.join(".terraform.tfstate.lock.info"));
     let full = run_env(env, state);
-    stream("terraform", &["init", "-input=false", "-no-color"], Some(module), &full, &mut log).await.map_err(init_failure)?;
+    stream("terraform", &["init", "-input=false", "-no-color"], Some(module), &full, log).await.map_err(init_failure)?;
+    Ok(full)
+}
+
+/// `terraform <command>` (apply, destroy) on the initialized module, with the full environment.
+async fn command(module: &Path, state: &Path, var_files: &[PathBuf], full: &[(String, String)], command: &str, log: impl FnMut(String)) -> Result<()> {
     let args = command_args(command, state, var_files);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    stream("terraform", &refs, Some(module), &full, log).await
+    stream("terraform", &refs, Some(module), full, log).await
 }
 
 /// Refuses a run without a module or without Terraform on this machine.
@@ -177,7 +202,7 @@ mod tests {
     async fn applying_records_the_run_then_needs_the_module() {
         let state = std::env::temp_dir().join(format!("cyberctf-tf-svc-nomod-{}", rand::random::<u32>()));
         let vars = vec![("region".to_string(), "us-east-1".to_string())];
-        let err = apply_services(&state.join("module"), &state, &[], &vars, Some(42), &[], |_| {}).await.unwrap_err();
+        let err = apply_services(&state.join("module"), &state, &[], &vars, Some(42), 2, &[], |_| {}).await.unwrap_err();
         assert!(err.to_string().contains("no Terraform module"), "{err}");
         assert_eq!(super::super::state::expires_at(&state), Some(42));
         std::fs::remove_dir_all(state).unwrap();
@@ -205,7 +230,7 @@ mod tests {
         // `region` isn't declared by the module: as TF_VAR_ it is ignored, not an error.
         let vars = vec![("expires_at".to_string(), "4102444800".to_string()), ("region".to_string(), "eu-west-3".to_string())];
         let print = |l: String| println!("{l}");
-        apply_services(&module, &state, &files, &vars, Some(4_102_444_800), &[], print).await.expect("apply");
+        apply_services(&module, &state, &files, &vars, Some(4_102_444_800), 0, &[], print).await.expect("apply");
         let s = read_state(&state).expect("state beside the launcher's other deployments");
         assert_eq!(s["outputs"]["svc"]["value"], "203.0.113.7/32:2:4102444800");
         assert_eq!(s["outputs"]["key"]["sensitive"], true);

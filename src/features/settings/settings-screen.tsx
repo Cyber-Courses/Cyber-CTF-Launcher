@@ -10,6 +10,7 @@ import { AccountSection } from "@/features/settings/account-section";
 import { AppearanceSection } from "@/features/settings/appearance-section";
 import { AttackBoxRows } from "@/features/settings/attack-box-rows";
 import { LabPortsRow } from "@/features/settings/lab-ports-row";
+import { IsoloomRegistryRow } from "@/features/settings/isoloom-registry-row";
 import { CleanupSection } from "@/features/settings/cleanup-section";
 import { HypervisorRow } from "@/features/settings/hypervisor-row";
 import { Section, useSavedFlash } from "@/features/settings/settings-layout";
@@ -96,6 +97,7 @@ export function SettingsScreen({
             <LabPortsRow onSaved={flashLabs} />
             <AttackBoxRows onSaved={flashLabs} />
             <HypervisorRow report={report} onSaved={flashLabs} onNavigate={onNavigate} onRefresh={recheck} />
+            <IsoloomRegistryRow onSaved={flashLabs} />
           </Section>
         )}
 

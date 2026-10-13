@@ -11,8 +11,9 @@
 //! file, no execution policy), elevated or not:
 //! - it reads the environment the commands need from a file in the batch's own folder (under the
 //!   user's temp folder) and deletes it, so values (tokens) never sit on a command line;
-//! - it picks the Hyper-V virtual switch the launcher's own Vagrantfiles attach to
-//!   ([`super::vagrant::HYPERV_SWITCH_ENV`]), so Vagrant doesn't stop to ask;
+//! - it picks the Hyper-V virtual switch the VMs' first adapter goes on, unless the user named
+//!   one ([`super::vagrant::HYPERV_SWITCH_ENV`], read by the lab's Isoloom Vagrantfile and the
+//!   launcher's own), so Vagrant doesn't stop to ask;
 //! - it runs each step, appending its stdout and stderr lines to a log file (UTF-8), framed by
 //!   marker lines carrying a random token (`start i`, `end i <exit code>`, `skip i`);
 //! - a watcher (a background job) ends the whole process tree when the batch folder gets a
@@ -134,7 +135,7 @@ const PROMPTS: &[(&str, &str)] = &[
     (
         "Please choose a switch to attach to your Hyper-V instance",
         "Vagrant stopped to ask which Hyper-V virtual switch to use (this machine has several), which the launcher can't answer. \
-Keep a single virtual switch in Hyper-V Manager, or give the lab's machines one (`bridge:` on a public network), then try again.",
+Set ISOLOOM_HYPERV_SWITCH to the name of one (Get-VMSwitch lists them), or keep a single virtual switch in Hyper-V Manager, then try again.",
     ),
     (
         "You will be asked for the username and password to use for the SMB",
@@ -286,8 +287,9 @@ fn script(p: &Plan) -> Result<String> {
         env = q(&p.work.env())
     ));
     s.push_str(&format!("  Set-Location -LiteralPath {} -ErrorAction Stop\n", q(p.dir)));
-    // The switch the launcher's own Vagrantfiles attach to: the built-in "Default Switch", else an
-    // external one, else the first (with one switch only, Vagrant picks it by itself anyway).
+    // The switch the VMs' first adapter goes on, unless the user named one: the built-in "Default
+    // Switch", else an external one, else the first. Isoloom's Vagrantfile would take the Default
+    // Switch, and stop on a host without one (Windows Server); the launcher's attach to it.
     s.push_str(&format!(
         "  if (-not $env:{HYPERV_SWITCH_ENV}) {{\n    try {{\n      $sw = @(Get-VMSwitch -ErrorAction Stop)\n      $pick = @($sw | Where-Object {{ $_.Name -eq 'Default Switch' }}) + @($sw | Where-Object {{ \"$($_.SwitchType)\" -eq 'External' }}) + $sw | Select-Object -First 1\n      if ($pick) {{ $env:{HYPERV_SWITCH_ENV} = $pick.Name }}\n    }} catch {{}}\n  }}\n"
     ));
@@ -836,6 +838,9 @@ mod tests {
         own.push(("VAGRANT_HOME".into(), "D:\\vagrant".into()));
         let env = forwarded_env(own, &[]);
         assert_eq!(env.iter().filter(|(k, _)| k == "VAGRANT_HOME").map(|(_, v)| v.as_str()).collect::<Vec<_>>(), ["D:\\vagrant"]);
+        // A switch the user named for Isoloom is the one the VMs get.
+        let env = forwarded_env([("isoloom_hyperv_switch".to_string(), "Lab NAT".to_string())], &[]);
+        assert_eq!(env, [("isoloom_hyperv_switch".to_string(), "Lab NAT".to_string())]);
         // The script names the file, never a value.
         let steps = [Step::new(&["up"])];
         let w = work();

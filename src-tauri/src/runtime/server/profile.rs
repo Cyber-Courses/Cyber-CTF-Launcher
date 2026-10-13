@@ -97,7 +97,7 @@ pub(super) fn new_id() -> String {
 }
 
 #[cfg(test)]
-pub(super) mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A complete profile for tests: a LAN address, the provider's default port, a username of
