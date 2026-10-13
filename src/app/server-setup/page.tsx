@@ -49,13 +49,13 @@ function Setup() {
           <Spinner className="size-4" /> {t("servers.setup.loading")}
         </div>
       ) : (
-        /* The wizard centers in the window; the trademark is pinned at the bottom so it
-           doesn't unbalance the centering. Scrolls when a step is tall. */
+        /* The wizard fills the window's height: its title stays at the top and each step's Nav
+           (Back / Continue) is pinned to the bottom of this scroller, so the buttons are always in
+           view and don't move from step to step; a tall step scrolls between them. The
+           trademark is pinned below. */
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {/* my-auto centers a short step but collapses to 0 when the step is tall, so the
-              top never clips and the window scrolls (unlike justify-center on a flex child). */}
-          <main className="mx-auto flex min-h-full w-full max-w-[38rem] flex-col px-6 py-6">
-            <div className="my-auto w-full">
+          <main className="mx-auto flex min-h-full w-full max-w-[38rem] flex-col px-6 pt-6">
+            <div className="flex w-full flex-1 flex-col">
               <HostSetupPage
                 initial={initial}
                 report={report}

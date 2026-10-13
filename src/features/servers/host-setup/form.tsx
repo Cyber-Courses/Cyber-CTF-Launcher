@@ -38,9 +38,11 @@ export function SetupTrademarks({ cloud = false }: { cloud?: boolean }) {
   );
 }
 
+/** A wizard step: its icon, title and description over its body. It grows to the window's height
+ *  (see the server-setup window), so its Nav sits at the bottom from step to step. */
 export function Step({ icon: Icon, title, description, children }: { icon: typeof Server; title: string; description: string; children: ReactNode }) {
   return (
-    <div className="mt-3">
+    <div className="mt-3 flex flex-1 flex-col">
       <div className="flex items-start gap-3.5">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-control bg-glass-2 text-muted-foreground shadow-[inset_0_0_0_1px_var(--input)]">
           <Icon className="size-4" />
@@ -50,16 +52,20 @@ export function Step({ icon: Icon, title, description, children }: { icon: typeo
           <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-muted-foreground">{description}</p>
         </div>
       </div>
-      <div className="mt-5">{children}</div>
+      <div className="mt-5 flex flex-1 flex-col">{children}</div>
     </div>
   );
 }
 
+/** A step's Back / Continue: pinned to the bottom of the window's scroller, so they stay in view
+ *  however tall the step is; the step scrolls under them, behind a short fade. */
 export function Nav({ left, right }: { left?: ReactNode; right: ReactNode }) {
   return (
-    <div className="mt-6 flex items-center justify-between gap-2 border-t border-border pt-4">
-      <div>{left}</div>
-      <div>{right}</div>
+    <div data-step-nav className="sticky bottom-0 z-10 -mx-2 mt-auto bg-[linear-gradient(to_bottom,transparent,var(--background)_1.5rem)] px-2 pt-6">
+      <div className="flex items-center justify-between gap-2 border-t border-border bg-background pt-4 pb-5">
+        <div>{left}</div>
+        <div>{right}</div>
+      </div>
     </div>
   );
 }

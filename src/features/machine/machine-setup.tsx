@@ -59,9 +59,11 @@ export function MachineSetup({
           <Spinner className="size-4" /> {t("machine.setup.checking")}
         </div>
       ) : (
-        /* Scrolls when a step is long; centered in the window when it's short. */
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <main className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-6 pt-2 pb-10">
+        /* The step's panel fills the window (up to 56rem, centred in a taller one): its body
+           scrolls and its footer stays at the bottom, so Back / Continue are always in view and
+           in the same place from step to step. The window scrolls only if it is shorter still. */
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <main className="mx-auto my-auto flex max-h-[56rem] min-h-[26rem] w-full max-w-2xl flex-1 flex-col px-6 pt-2 pb-6">
             <PageHeader title={<>{t.rich("machine.setup.title", { em: (s) => <em>{s}</em> })}</>} lead={t("machine.setup.lead", { os: osName })} />
 
             {/* Progress: one segment per step, the jewel up to the current one. */}
@@ -71,8 +73,9 @@ export function MachineSetup({
               ))}
             </div>
 
-            <Panel key={key} className="mt-5 animate-rise-in">
+            <Panel key={key} className="mt-5 flex min-h-0 flex-1 animate-rise-in flex-col">
               <PanelHeader
+                className="shrink-0"
                 title={
                   <>
                     <meta.icon className="size-4 shrink-0 text-muted-foreground" />
@@ -81,7 +84,7 @@ export function MachineSetup({
                 }
                 meta={<span className="tabular-nums">{t("machine.setup.stepOf", { current: at + 1, total: steps.length })}</span>}
               />
-              <div className="px-4 pt-3.5 pb-4">
+              <div data-step-body className="min-h-0 flex-1 overflow-y-auto px-4 pt-3.5 pb-4">
                 <p className="text-[0.8125rem] leading-relaxed text-muted-foreground">{meta.description}</p>
                 <div className="mt-4">
                   <ErrorBoundary resetKey={key} title={t("machine.setup.stepFailed")}>
@@ -89,7 +92,7 @@ export function MachineSetup({
                   </ErrorBoundary>
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
+              <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-3">
                 <div>
                   {at > 0 && (
                     <Button variant="outline" size="sm" onClick={back} disabled={setup.busy}>

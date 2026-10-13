@@ -7,7 +7,7 @@ import { StatusDot } from "@/components/ui/status-pill";
 import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { SetupOutcome, type MachineSetupState } from "@/features/machine/setup-steps";
-import { Feature, StepActions, StepHeader, SummaryRow } from "@/features/onboarding/onboarding-parts";
+import { Feature, StepActions, StepFooter, StepHeader, SummaryRow } from "@/features/onboarding/onboarding-parts";
 import type { AuthStatus, SystemReport } from "@/lib/tauri";
 import { useT, type T } from "@/lib/i18n";
 
@@ -20,7 +20,7 @@ const signedInLabel = (t: T, auth: AuthStatus) => (auth.name ? t("onboarding.sig
 export function WelcomeStep({ onNext }: { onNext: () => void }) {
   const t = useT();
   return (
-    <div>
+    <div className="flex flex-1 flex-col">
       <StepHeader title={<>{t.rich("onboarding.welcome.title", { em })}</>} description={t("onboarding.welcome.description")} />
       <Panel className="mt-8">
         <Feature icon="container" title={t("onboarding.welcome.labsTitle")} description={t("onboarding.welcome.labsDescription")} />
@@ -28,11 +28,11 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
         <Feature icon="shield" title={t("onboarding.welcome.targetsTitle")} description={t("onboarding.welcome.targetsDescription")} />
         <Feature icon="plug" title={t("onboarding.welcome.launchTitle")} description={t("onboarding.welcome.launchDescription")} />
       </Panel>
-      <div className="mt-8 flex justify-center">
+      <StepFooter className="flex justify-center">
         <Button size="lg" className="min-w-48" onClick={onNext}>
           {t("onboarding.welcome.start")} <ArrowRight className="size-4" />
         </Button>
-      </div>
+      </StepFooter>
     </div>
   );
 }
@@ -55,7 +55,7 @@ export function SignInStep({
 }) {
   const t = useT();
   return (
-    <div>
+    <div className="flex flex-1 flex-col">
       <StepHeader title={t("onboarding.signin.title")} description={t("onboarding.signin.description")} />
       <div className="mt-8">
         {auth?.loggedIn ? (
@@ -110,7 +110,7 @@ export function DoneStep({
 }) {
   const t = useT();
   return (
-    <div>
+    <div className="flex flex-1 flex-col">
       <StepHeader title={<>{t.rich("onboarding.done.title", { em })}</>} description={t("onboarding.done.description")} />
       <div className="mt-8 space-y-2.5">
         <SummaryRow
@@ -120,11 +120,11 @@ export function DoneStep({
         />
         <SetupOutcome report={report} setup={setup} />
       </div>
-      <div className="mt-8 flex justify-center">
+      <StepFooter className="flex justify-center">
         <Button size="lg" className="min-w-48" onClick={onComplete}>
           {t("onboarding.done.browse")} <ArrowRight className="size-4" />
         </Button>
-      </div>
+      </StepFooter>
     </div>
   );
 }

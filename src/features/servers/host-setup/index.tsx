@@ -47,7 +47,7 @@ export function HostSetupPage({
         ))}
       </div>
 
-      <div key={key} className="mt-6 animate-rise-in">
+      <div key={key} className="mt-6 flex flex-1 animate-rise-in flex-col">
         {key === "hypervisor" && <HypervisorStep s={s} />}
 
         {key === "tools" && <ToolsStep s={s} />}
