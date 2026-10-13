@@ -37,11 +37,16 @@ jobs:
             exit 0
           fi
           # JavaScript in single quotes: its ${...} are template literals, not shell expansions.
+          # The floors are read from the `thresholds` block of vitest.config.mts.
           # shellcheck disable=SC2016
           node -e '
+            const fs = require("fs");
             const t = require("./coverage/coverage-summary.json").total;
-            const row = (k) => `| ${k[0].toUpperCase() + k.slice(1)} | ${t[k].pct}% | ${t[k].covered} / ${t[k].total} |`;
-            console.log(["### Frontend coverage", "", "| Metric | Covered | Count |", "| --- | --- | --- |", ...["lines", "statements", "functions", "branches"].map(row)].join("\n"));
+            const block = (fs.readFileSync("vitest.config.mts", "utf8").match(/thresholds:\s*\{([^}]*)\}/) || [])[1] || "";
+            const floor = Object.fromEntries([...block.matchAll(/(\w+):\s*([\d.]+)/g)].map((m) => [m[1], Number(m[2])]));
+            const gap = (k) => (k in floor ? `${floor[k]}% | ${(t[k].pct - floor[k] >= 0 ? "+" : "") + (t[k].pct - floor[k]).toFixed(2)}` : "- | -");
+            const row = (k) => `| ${k[0].toUpperCase() + k.slice(1)} | ${t[k].pct}% | ${t[k].covered} / ${t[k].total} | ${gap(k)} |`;
+            console.log(["### Frontend coverage", "", "| Metric | Covered | Count | Floor | Gap |", "| --- | --- | --- | --- | --- |", ...["lines", "statements", "functions", "branches"].map(row)].join("\n"));
           ' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
