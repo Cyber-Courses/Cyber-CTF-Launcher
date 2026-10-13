@@ -110,28 +110,59 @@ pub async fn terminal_open(
     cmd.env("DOCKER_CLI_HINTS", "false");
     let child = pair.slave.spawn_command(cmd).map_err(|e| Error::Invalid(format!("couldn't start the shell: {e}")))?;
     drop(pair.slave);
-    let mut reader = pair.master.try_clone_reader().map_err(|e| Error::Invalid(e.to_string()))?;
+    let reader = pair.master.try_clone_reader().map_err(|e| Error::Invalid(e.to_string()))?;
     let writer = pair.master.take_writer().map_err(|e| Error::Invalid(e.to_string()))?;
     let window = window.label().to_string();
     with_sessions(|s| s.insert(session, Session { writer, master: pair.master, child, window, remote }));
-
-    std::thread::spawn(move || {
-        forward(
-            &mut reader,
-            |e| events.send(e).is_ok(),
-            |view_gone| {
-                let mut sess = with_sessions(|s| s.remove(&session))?;
-                if view_gone {
-                    // Nobody reads it any more, and the shell may never end on its own: waiting
-                    // for it would leak it (and this thread) for as long as the app runs.
-                    end(sess);
-                    return None;
-                }
-                sess.child.wait().ok().map(|st| st.exit_code())
-            },
-        );
-    });
+    follow(session, reader, move |e| events.send(e).is_ok());
     Ok(session)
+}
+
+/// Streams session `session`'s output to `send` until its shell ends, then its exit code.
+fn follow(session: u32, mut reader: Box<dyn Read + Send>, send: impl FnMut(TermEvent) -> bool + Send + 'static) {
+    // The code of a shell whose end was seen by the Windows watcher (which closed its session).
+    let ended = std::sync::Arc::new(Mutex::new(None::<u32>));
+    #[cfg(windows)]
+    watch_exit(session, ended.clone());
+    std::thread::spawn(move || {
+        forward(&mut reader, send, |view_gone| {
+            let Some(mut sess) = with_sessions(|s| s.remove(&session)) else {
+                return ended.lock().unwrap_or_else(|e| e.into_inner()).take();
+            };
+            if view_gone {
+                // Nobody reads it any more, and the shell may never end on its own: waiting
+                // for it would leak it (and this thread) for as long as the app runs.
+                end(sess);
+                return None;
+            }
+            sess.child.wait().ok().map(|st| st.exit_code())
+        });
+    });
+}
+
+/// Windows: ConPTY keeps the output open until the pseudo-console is closed, not when the shell
+/// ends, so the reader would wait (and the view show a live shell) forever. Watch the shell
+/// itself; once it has ended, keep its code in `ended` and close its session, which ends the
+/// output. Stops when the session is closed some other way (the window went).
+#[cfg(windows)]
+fn watch_exit(session: u32, ended: std::sync::Arc<Mutex<Option<u32>>>) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            let status = with_sessions(|s| s.get_mut(&session).map(|sess| sess.child.try_wait()));
+            let code = match status {
+                None => return,
+                Some(Ok(None)) => continue,
+                Some(Ok(Some(st))) => Some(st.exit_code()),
+                Some(Err(_)) => None,
+            };
+            *ended.lock().unwrap_or_else(|e| e.into_inner()) = code;
+            // Dropped outside the sessions lock: closing the pseudo-console can take a moment.
+            let closed = with_sessions(|s| s.remove(&session));
+            drop(closed);
+            return;
+        }
+    });
 }
 
 /// What the pseudo-terminal runs: `vagrant ssh [machine]` in a folder (`direct`), or `line`
@@ -153,12 +184,28 @@ fn pty_command(line: &str, direct: Option<(&std::path::Path, Option<&str>)>) -> 
         c
     };
     #[cfg(windows)]
-    let c = {
-        let mut c = CommandBuilder::new("cmd");
-        c.args(["/c", &line.replace('\'', "\"")]);
-        c
-    };
+    let c = windows_command(line);
     c
+}
+
+/// Windows has no `sh` and cmd.exe can't read POSIX quoting (`'…'\''…'`, which a jump host's
+/// ProxyCommand nests): the line's words, split back the way `sh` would, run directly. A line
+/// that needs a shell (an operator such as `&&`) still goes through cmd.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn windows_command(line: &str) -> CommandBuilder {
+    const OPERATORS: [&str; 6] = ["&&", "||", ";", "|", "&", ">"];
+    match shell_words::split(line) {
+        Ok(words) if !words.is_empty() && !words.iter().any(|w| OPERATORS.contains(&w.as_str())) => {
+            let mut c = CommandBuilder::new(&words[0]);
+            c.args(&words[1..]);
+            c
+        }
+        _ => {
+            let mut c = CommandBuilder::new("cmd");
+            c.args(["/c", &line.replace('\'', "\"")]);
+            c
+        }
+    }
 }
 
 /// Streams the shell's output to `send` as text until it ends (or `send` refuses more), then
@@ -321,6 +368,44 @@ mod tests {
         assert_eq!(child.wait().unwrap().exit_code(), 3);
     }
 
+    /// Windows: a shell that ends while its session (the pseudo-console) is still open reaches
+    /// the view as an Exit, with its code, and doesn't leave the reading thread waiting forever.
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_shell_that_exits_reports_its_exit() {
+        let pair = native_pty_system().openpty(pty_size(80, 24)).unwrap();
+        let mut cmd = CommandBuilder::new("cmd");
+        cmd.args(["/c", "echo hi& exit 3"]);
+        let child = pair.slave.spawn_command(cmd).unwrap();
+        drop(pair.slave);
+        let reader = pair.master.try_clone_reader().unwrap();
+        let writer = pair.master.take_writer().unwrap();
+        // A live session, as terminal_open makes it: its window still open.
+        let session = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        with_sessions(|s| s.insert(session, Session { writer, master: pair.master, child, window: "shell-test".into(), remote: None }));
+        let (tx, rx) = std::sync::mpsc::channel();
+        follow(session, reader, move |e| tx.send(e).is_ok());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        let mut out = String::new();
+        let code = loop {
+            match rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+                Ok(TermEvent::Data { data }) => {
+                    // ConPTY asks where the cursor is (DSR) and holds all output until answered;
+                    // in the app xterm.js answers it.
+                    if data.contains("\x1b[6n") {
+                        terminal_write(session, "\x1b[1;1R".into()).unwrap();
+                    }
+                    out.push_str(&data);
+                }
+                Ok(TermEvent::Exit { code }) => break code,
+                Err(_) => panic!("no Exit within 15 s; output so far: {out:?}"),
+            }
+        };
+        assert!(out.contains("hi"), "{out:?}");
+        assert_eq!(code, Some(3));
+        assert!(with_sessions(|s| !s.contains_key(&session)), "the ended session is closed");
+    }
+
     fn argv(c: &CommandBuilder) -> Vec<String> {
         c.get_argv().iter().map(|a| a.to_string_lossy().into_owned()).collect()
     }
@@ -333,12 +418,20 @@ mod tests {
         assert_eq!(argv(&c), ["vagrant", "ssh", "isoloom-controller"]);
         assert_eq!(c.get_cwd().map(std::path::PathBuf::from), Some(dir.clone()));
         assert_eq!(argv(&pty_command("ignored", Some((dir.as_path(), None)))), ["vagrant", "ssh"]);
-        // Otherwise the line goes through the platform's shell, as before.
+        // Otherwise the line goes through `sh`; Windows has none and runs its words directly.
         let line = pty_command("docker exec -it 'x' bash", None);
         #[cfg(unix)]
         assert_eq!(argv(&line), ["sh", "-c", "exec docker exec -it 'x' bash"]);
         #[cfg(windows)]
-        assert_eq!(argv(&line), ["cmd", "/c", "docker exec -it \"x\" bash"]);
+        assert_eq!(argv(&line), ["docker", "exec", "-it", "x", "bash"]);
+    }
+
+    #[test]
+    fn a_windows_line_that_needs_a_shell_still_gets_one() {
+        assert_eq!(argv(&windows_command("cd /d \"C:\\x\" && vagrant ssh")), ["cmd", "/c", "cd /d \"C:\\x\" && vagrant ssh"]);
+        // Unbalanced quotes don't split: cmd gets the line as is.
+        assert_eq!(argv(&windows_command("ssh 'oops")), ["cmd", "/c", "ssh \"oops"]);
+        assert_eq!(argv(&windows_command("docker exec -it -e CYBERCTF_SHELL=1-2 c bash")), ["docker", "exec", "-it", "-e", "CYBERCTF_SHELL=1-2", "c", "bash"]);
     }
 
     #[test]

@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KeyValue } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
-import { restartApp, type AgentInfo, type SystemReport } from "@/lib/tauri";
+import { deployingLabs, restartApp, type AgentInfo, type SystemReport } from "@/lib/tauri";
+import { useDeployingLabs } from "@/lib/deploy-store";
 import { getAttackBox, getAttackImage, getVmProvider } from "@/lib/settings";
 import { Row, Section } from "@/features/settings/settings-layout";
 import { ONBOARDED_KEY } from "@/features/settings/settings-screen";
@@ -26,6 +27,9 @@ export function AboutSection({ version, report, agent }: { version: string | nul
   const [upd, setUpd] = useState<UpdateState>({ phase: "idle" });
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  // Installing quits every Cyber CTF process, the deploy workers included (the installer ends
+  // them by name on Windows), so an update waits for running deploys to finish.
+  const deploying = useDeployingLabs().size > 0;
 
   async function checkUpdates() {
     setUpd({ phase: "checking" });
@@ -41,6 +45,8 @@ export function AboutSection({ version, report, agent }: { version: string | nul
   async function install() {
     if (!("update" in upd)) return;
     const { update } = upd;
+    // Asked again now: the polled set can be a few seconds old.
+    if ((await deployingLabs().catch(() => [])).length > 0) return;
     setUpd({ phase: "installing", update });
     try {
       await update.downloadAndInstall();
@@ -109,7 +115,7 @@ export function AboutSection({ version, report, agent }: { version: string | nul
       case "error":
         return t("settings.about.status.error");
       case "available":
-        return t("settings.about.status.available", { version: upd.update.version });
+        return deploying ? t("shell.update.waitForDeploys") : t("settings.about.status.available", { version: upd.update.version });
       case "installing":
         return t("settings.about.status.installing", { version: upd.update.version });
       case "installed":
@@ -138,7 +144,7 @@ export function AboutSection({ version, report, agent }: { version: string | nul
         description={updateText}
         control={
           upd.phase === "available" || upd.phase === "installing" ? (
-            <Button size="xs" onClick={install} disabled={upd.phase === "installing"}>
+            <Button size="xs" onClick={install} disabled={upd.phase === "installing" || deploying}>
               {upd.phase === "installing" ? (
                 <>
                   <Spinner className="size-3.5" /> {t("settings.about.installing")}

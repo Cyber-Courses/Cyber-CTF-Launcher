@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { Button } from "@/components/ui/button";
-import { restartApp } from "@/lib/tauri";
+import { deployingLabs, restartApp } from "@/lib/tauri";
+import { useDeployingLabs } from "@/lib/deploy-store";
 import { cn } from "@/lib/utils";
 import { ignore, tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
@@ -17,6 +18,9 @@ export function UpdateBanner() {
   const t = useT();
   const [update, setUpdate] = useState<Update | null>(null);
   const [phase, setPhase] = useState<"idle" | "downloading" | "ready" | "error">("idle");
+  // Installing quits every Cyber CTF process, the deploy workers included (the installer ends
+  // them by name on Windows), so an update waits for running deploys to finish.
+  const deploying = useDeployingLabs().size > 0;
 
   useEffect(() => {
     // A dev build carries its branch's version, so it would always "find" the latest release.
@@ -34,6 +38,8 @@ export function UpdateBanner() {
 
   async function install() {
     if (!update) return;
+    // Asked again now: the polled set can be a few seconds old.
+    if ((await deployingLabs().catch(() => [])).length > 0) return;
     setPhase("downloading");
     try {
       await update.downloadAndInstall();
@@ -55,14 +61,16 @@ export function UpdateBanner() {
           ? t("shell.update.installed")
           : phase === "error"
             ? t("shell.update.failed")
-            : t.rich("shell.update.available", { version: (v) => <span className="font-mono text-[0.75rem]">{v}</span> }, { version: update.version })}
+            : deploying && phase === "idle"
+              ? t("shell.update.waitForDeploys")
+              : t.rich("shell.update.available", { version: (v) => <span className="font-mono text-[0.75rem]">{v}</span> }, { version: update.version })}
       </span>
       {phase === "ready" ? (
         <Button size="xs" onClick={() => restartApp().catch(tell(t("shell.failures.restart")))}>
           {t("shell.update.restartNow")}
         </Button>
       ) : (
-        <Button size="xs" onClick={install} disabled={phase === "downloading"}>
+        <Button size="xs" onClick={install} disabled={phase === "downloading" || deploying}>
           {phase === "downloading" ? t("shell.update.updating") : t("shell.update.update")}
         </Button>
       )}

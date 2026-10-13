@@ -56,7 +56,7 @@ fn request_url(request: &str) -> Option<url::Url> {
 }
 
 /// What a callback URL says: (code, state), or why sign-in failed.
-fn outcome(url: &url::Url) -> Result<(String, String)> {
+pub(super) fn outcome(url: &url::Url) -> Result<(String, String)> {
     let param = |k: &str| url.query_pairs().find(|(key, _)| key == k).map(|(_, v)| v.into_owned());
     if let Some(error) = param("error") {
         return Err(Error::Invalid(format!("login failed: {error}")));
@@ -97,7 +97,7 @@ async fn read_request(stream: &mut TcpStream) -> Option<String> {
 }
 
 /// Whether a callback URL belongs to this sign-in: it carries the `state` this login sent.
-fn state_matches(url: &url::Url, state: &str) -> bool {
+pub(super) fn state_matches(url: &url::Url, state: &str) -> bool {
     url.query_pairs().any(|(k, v)| k == "state" && v == state)
 }
 

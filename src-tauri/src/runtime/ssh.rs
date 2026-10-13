@@ -257,6 +257,26 @@ mod tests {
         assert_eq!(Target::direct("h", "u", "/k".into()).proxy_option(Path::new("/x")).unwrap(), None);
     }
 
+    /// The in-app terminal on Windows runs the attack shell's words directly (no `sh` there):
+    /// they come back exactly, the jump host's nested ProxyCommand and a key path with a space
+    /// and a quote included. Swapping `'` for `"` for cmd.exe used to mangle both.
+    #[test]
+    fn the_windows_terminal_runs_the_attack_shell_with_its_exact_words() {
+        let key = PathBuf::from(r"C:\Users\Jo O'Brien\AppData\Roaming\org.cyberctf.desktop\ssh\id_ed25519");
+        let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", key.clone()) };
+        let kh = Path::new(r"C:\Users\Jo O'Brien\kh");
+        let line = t.attack_shell_command(kh).unwrap();
+        let argv: Vec<String> = crate::terminal::windows_command(&line).get_argv().iter().map(|a| a.to_string_lossy().into_owned()).collect();
+        let proxy = t.proxy_option(kh).unwrap().unwrap();
+        let mut want = vec!["ssh".to_string(), "-t".into(), "-i".into(), key.to_string_lossy().into_owned(), "-p".into(), "22".into()];
+        for o in options(false, &kh.to_string_lossy()) {
+            want.extend(["-o".to_string(), o]);
+        }
+        want.extend(["-o".to_string(), proxy, "isoloom@10.10.0.5".into()]);
+        want.extend(["sudo", "docker", "exec", "-it", "attacker", "bash"].map(String::from));
+        assert_eq!(argv, want);
+    }
+
     #[test]
     fn options_add_batch_mode_only_when_asked() {
         assert_eq!(options(false, "/kh"), ["StrictHostKeyChecking=accept-new", "UserKnownHostsFile=/kh", "LogLevel=ERROR"]);

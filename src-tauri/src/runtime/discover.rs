@@ -128,7 +128,7 @@ fn id_after_labs(path: &str) -> Option<String> {
 
 /// A plausible lab id: non-empty, bounded, and only the characters an id is built from. Keeps a
 /// stray token (or an attacker project like `cyberctf-<id>-attack`, which is not an id) out.
-fn is_lab_id(id: &str) -> bool {
+pub(crate) fn is_lab_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 

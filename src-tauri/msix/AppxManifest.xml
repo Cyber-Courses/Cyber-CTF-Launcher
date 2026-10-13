@@ -54,6 +54,16 @@
         Square44x44Logo="Assets\Square44x44Logo.png">
         <uap:DefaultTile Square71x71Logo="Assets\Square71x71Logo.png" />
       </uap:VisualElements>
+      <!-- cyberctf:// links (the website's lab launch, the sign-in page's way back to the app).
+           The NSIS installer registers the scheme in the registry; a Store package can only
+           declare it here, and the link then arrives as the app's argument the same way. -->
+      <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="cyberctf">
+            <uap:DisplayName>Cyber CTF</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
     </Application>
   </Applications>
 

@@ -92,14 +92,15 @@ pub struct TargetReadiness {
 
 #[tauri::command]
 pub async fn system_check() -> SystemReport {
+    // A tool installed since the last check (from the app or not) is found without a restart.
+    crate::platform::env_path::refresh();
     let (docker, docker_compose, vagrant, daemon, aws, azure, gcloud, terraform) = tokio::join!(
         probe("docker", &["--version"]),
         probe("docker", &["compose", "version", "--short"]),
         probe("vagrant", &["--version"]),
         docker::daemon_os(),
         probe("aws", &["--version"]),
-        // `az version` prints JSON (first line is "{"); ask for just the azure-cli version string.
-        probe("az", &["version", "--query", "\"azure-cli\"", "--output", "tsv"]),
+        probe_azure(),
         probe("gcloud", &["--version"]),
         probe("terraform", &["version"]),
     );
@@ -136,6 +137,20 @@ async fn probe(program: &'static str, args: &[&str]) -> Tool {
         Ok(out) => Tool { installed: true, version: first_line(&out) },
         Err(_) => Tool { installed: false, version: None },
     }
+}
+
+/// `az version` prints JSON (`{"azure-cli": "2.66.0", ...}`); read the version from it here. A
+/// `--query "\"azure-cli\""` would need quotes, which can't pass through cmd.exe (`az` is a .cmd).
+async fn probe_azure() -> Tool {
+    match run_read("az", &["version", "--output", "json"], None).await {
+        Ok(out) => Tool { installed: true, version: azure_version(&out) },
+        Err(_) => Tool { installed: false, version: None },
+    }
+}
+
+fn azure_version(json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json.trim()).ok()?;
+    value.get("azure-cli")?.as_str().map(str::to_owned)
 }
 
 fn first_line(out: &str) -> Option<String> {
@@ -209,6 +224,15 @@ mod tests {
     fn a_version_is_the_first_line_trimmed() {
         assert_eq!(super::first_line("Homebrew 4.6.3 \nHomebrew/core\n").as_deref(), Some("Homebrew 4.6.3"));
         assert_eq!(super::first_line(""), None);
+    }
+
+    #[test]
+    fn azure_version_comes_from_az_version_json() {
+        let out = "{\r\n  \"azure-cli\": \"2.66.0\",\r\n  \"azure-cli-core\": \"2.66.0\",\r\n  \"extensions\": {}\r\n}\r\n";
+        assert_eq!(super::azure_version(out).as_deref(), Some("2.66.0"));
+        assert_eq!(super::azure_version("WARNING: something\n{}"), None);
+        assert_eq!(super::azure_version("{\"azure-cli\": 2}"), None);
+        assert_eq!(super::azure_version(""), None);
     }
 
     #[test]

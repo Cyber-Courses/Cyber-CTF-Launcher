@@ -168,8 +168,7 @@ mod tests {
         // gpg asked "overwrite?" on a second run, with no tty to answer it.
         for s in [TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT] {
             assert!(s.contains("gpg --batch --yes --dearmor"), "{s}");
-            let ok = std::process::Command::new("sh").args(["-n", "-c", s]).status().unwrap();
-            assert!(ok.success(), "not valid sh: {s}");
+            assert!(crate::platform::sh_parses(s), "not valid sh: {s}");
         }
         assert!(VIRTUALBOX_SCRIPT.contains("download.virtualbox.org/virtualbox/debian"));
     }
@@ -183,8 +182,7 @@ mod tests {
             assert!(!s.contains("| sh") && !s.contains("| bash"), "download piped into a shell: {s}");
             assert!(!s.contains("curl -s") || s.contains("curl -fs"), "a failed download must fail: {s}");
             assert!(s.starts_with("set -e"), "{s}");
-            let ok = std::process::Command::new("sh").args(["-n", "-c", &s]).status().unwrap();
-            assert!(ok.success(), "not valid sh: {s}");
+            assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
         }
         for s in [awscli_script(), azurecli_script(), docker_script(None)] {
             assert!(s.contains(r#"d="$(mktemp -d)""#) && s.contains("trap 'rm -rf \"$d\"' EXIT"), "{s}");

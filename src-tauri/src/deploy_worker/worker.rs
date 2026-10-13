@@ -17,8 +17,11 @@ pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRunt
     };
     // No window: this is a background process.
     context.config_mut().app.windows.clear();
+    let log_name = crate::logging::worker_log_name(&job.lab_id);
     tauri::Builder::<crate::AppRuntime>::new()
+        .plugin(crate::logging::plugin(&log_name))
         .setup(move |app| {
+            crate::logging::log_startup(app.handle(), &format!("deploy worker ({})", job.lab_id));
             crate::shared_folder::init(app.handle());
             // A background process, not an app: on macOS keep it out of the Dock, the app
             // switcher and Apple Events aimed at "Cyber CTF".

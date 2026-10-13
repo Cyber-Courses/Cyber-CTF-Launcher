@@ -315,10 +315,12 @@ fn write_shell_script(dir: &std::path::Path, line: &str) -> Result<std::path::Pa
 }
 
 /// A script running `line`: the screen cleared first, the script removed once it ends. A `%` in
-/// a batch file starts a variable, so the line's are doubled to stay literal.
+/// a batch file starts a variable, so the line's are doubled to stay literal. The file is UTF-8
+/// and cmd.exe reads each line in the console's code page as it reaches it: `chcp 65001` first,
+/// or a path with "é" (C:\Users\José) arrives garbled.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn shell_script(line: &str) -> String {
-    format!("@echo off\r\ncls\r\n{}\r\n(goto) 2>nul & del \"%~f0\"\r\n", line.replace('%', "%%"))
+    format!("@echo off\r\nchcp 65001 >nul\r\ncls\r\n{}\r\n(goto) 2>nul & del \"%~f0\"\r\n", line.replace('%', "%%"))
 }
 
 /// Removes the shell scripts in `dir` older than `ttl`.
@@ -455,7 +457,7 @@ mod tests {
     #[test]
     fn a_shell_script_runs_its_line_literally_then_deletes_itself() {
         let s = super::shell_script(r#"ssh -o "UserKnownHostsFile=C:\a%%b" x"#);
-        assert_eq!(s, "@echo off\r\ncls\r\nssh -o \"UserKnownHostsFile=C:\\a%%%%b\" x\r\n(goto) 2>nul & del \"%~f0\"\r\n");
+        assert_eq!(s, "@echo off\r\nchcp 65001 >nul\r\ncls\r\nssh -o \"UserKnownHostsFile=C:\\a%%%%b\" x\r\n(goto) 2>nul & del \"%~f0\"\r\n");
     }
 
     #[test]

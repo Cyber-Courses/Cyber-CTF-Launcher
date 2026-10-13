@@ -55,7 +55,8 @@
     "available": "Version <version>{version}</version> ist verfügbar.",
     "restartNow": "Jetzt neu starten",
     "updating": "Wird aktualisiert…",
-    "update": "Aktualisieren"
+    "update": "Aktualisieren",
+    "waitForDeploys": "Das Update startet Cyber CTF neu. Warte, bis deine Labs fertig bereitgestellt sind."
   },
   "error": {
     "title": "Etwas ist schiefgelaufen",

@@ -357,8 +357,7 @@ mod tests {
         assert!(!VIRTUALBOX_UNINSTALL.contains("exec "));
         assert!(VIRTUALBOX_UNINSTALL.contains("Caches/Homebrew/downloads/*VirtualBox*.dmg"));
         assert!(VIRTUALBOX_UNINSTALL.contains("hdiutil detach"));
-        let ok = std::process::Command::new("sh").args(["-n", "-c", VIRTUALBOX_UNINSTALL]).status().unwrap();
-        assert!(ok.success());
+        assert!(crate::platform::sh_parses(VIRTUALBOX_UNINSTALL));
     }
 
     #[cfg(target_os = "windows")]
