@@ -139,7 +139,7 @@ export function AppShell() {
         <ShellHeader crumbs={breadcrumbs(tab, labTitle, title, t("shell.header.thisMachine"))} report={report} checkError={checkError} />
         <div className="flex-1 overflow-y-auto">
           <UpdateBanner />
-          <div className="mx-auto w-full max-w-[72rem] px-7 pt-7 pb-10">
+          <div className="mx-auto w-full max-w-[160rem] px-7 pt-7 pb-10 2xl:px-10">
             <Screen
               tab={tab}
               report={report}

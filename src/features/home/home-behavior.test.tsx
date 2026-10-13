@@ -41,8 +41,8 @@ describe("HomeScreen", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Florian");
     expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("Amette");
     expect(document.body.textContent).toMatch(/1 lab running/);
-    // Its 3 containers, from the lab's own status.
-    expect(document.body.textContent).toContain("3 containers");
+    // Its 7 containers (the dev mock's wide lab), from the lab's own status.
+    expect(document.body.textContent).toContain("7 containers");
     // Nothing deploying: the machine summary instead.
     expect(document.body.textContent).toMatch(/Docker engine/i);
     expect(document.body.textContent).not.toMatch(/sign in/i);

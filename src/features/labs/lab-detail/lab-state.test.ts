@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   bindHost,
   deployPlacement,
+  diagramAbove,
   deriveLabState,
   headerMode,
   networkView,
@@ -192,6 +193,19 @@ describe("deployPlacement", () => {
   it("shows a stopped lab's deployment only when it failed", () => {
     expect(deployPlacement(derive({ status: status({}) }), { busy: false, failed: false })).toBeNull();
     expect(deployPlacement(derive({ status: status({}) }), { busy: false, failed: true })).toBe("top");
+  });
+});
+
+describe("diagramAbove", () => {
+  it("lifts the drawn diagram above the columns on a wide window only", () => {
+    expect(diagramAbove(true, "diagram", "bottom")).toBe(true);
+    expect(diagramAbove(true, "diagram", null)).toBe(true);
+    expect(diagramAbove(false, "diagram", "bottom")).toBe(false);
+  });
+  it("keeps a note, and the diagram while the deployment leads, in the main column", () => {
+    expect(diagramAbove(true, "startToSee", null)).toBe(false);
+    expect(diagramAbove(true, "none", "top")).toBe(false);
+    expect(diagramAbove(true, "diagram", "top")).toBe(false);
   });
 });
 

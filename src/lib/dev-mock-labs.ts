@@ -80,6 +80,9 @@ const labs = [
   },
 ];
 
+// A wide topology on purpose (three networks, two pivots), so the lab page's diagram can be
+// checked at every window width: the public network, then the billing back end behind the API,
+// then the finance network behind the billing worker.
 const invoiceStatus = {
   running: true,
   parked: null,
@@ -88,7 +91,11 @@ const invoiceStatus = {
   expiresAt: null,
   place: "container",
   provider: null,
-  networks: [{ name: "default", subnet: "10.42.0.0/24", internal: false }],
+  networks: [
+    { name: "default", subnet: "10.42.0.0/24", internal: false },
+    { name: "billing", subnet: "10.42.1.0/24", internal: true },
+    { name: "finance", subnet: "10.42.2.0/24", internal: true },
+  ],
   machines: [
     {
       name: "api",
@@ -99,7 +106,10 @@ const invoiceStatus = {
         { published: 8080, target: 8080 },
         { published: 9090, target: 9090 },
       ],
-      interfaces: [{ network: "default", ip: "10.42.0.3" }],
+      interfaces: [
+        { network: "default", ip: "10.42.0.3" },
+        { network: "billing", ip: "10.42.1.3" },
+      ],
       services: [
         { name: "invoice-api", kind: "web", ports: [8080] },
         { name: "admin", kind: "web", ports: [9090] },
@@ -124,6 +134,49 @@ const invoiceStatus = {
       ports: [],
       interfaces: [{ network: "default", ip: "10.42.0.5" }],
       services: [],
+      infra: false,
+    },
+    {
+      name: "billing-worker",
+      state: "running",
+      image: "python:3.12",
+      ip: "10.42.1.10",
+      ports: [],
+      interfaces: [
+        { network: "billing", ip: "10.42.1.10" },
+        { network: "finance", ip: "10.42.2.10" },
+      ],
+      services: [{ name: "invoice-jobs", kind: "worker", ports: [] }],
+      infra: false,
+    },
+    {
+      name: "ledger-db",
+      state: "running",
+      image: "mysql:8",
+      ip: "10.42.1.11",
+      ports: [],
+      interfaces: [{ network: "billing", ip: "10.42.1.11" }],
+      services: [{ name: "ledger", kind: "database", ports: [3306] }],
+      infra: false,
+    },
+    {
+      name: "payroll",
+      state: "running",
+      image: "nginx:1.27",
+      ip: "10.42.2.20",
+      ports: [],
+      interfaces: [{ network: "finance", ip: "10.42.2.20" }],
+      services: [{ name: "payroll-web", kind: "web", ports: [80] }],
+      infra: false,
+    },
+    {
+      name: "backup",
+      state: "running",
+      image: "alpine:3.20",
+      ip: "10.42.2.21",
+      ports: [],
+      interfaces: [{ network: "finance", ip: "10.42.2.21" }],
+      services: [{ name: "sftp", kind: "ssh", ports: [22] }],
       infra: false,
     },
   ],

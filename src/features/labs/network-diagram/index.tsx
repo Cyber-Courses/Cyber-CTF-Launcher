@@ -124,6 +124,13 @@ export function NetworkDiagram({
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [scrollX, setScrollX] = useState(0);
   const { canvas, height } = shellSize(graph, width);
+  // A wider window can leave less (or nothing) to scroll: the browser clamps the scroller's
+  // offset without always firing a scroll event, so read it back, or the fades and the port tabs
+  // would keep the old offset.
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scroller.current) setScrollX(scroller.current.scrollLeft);
+  }, [canvas, width]);
 
   return (
     <div className={cn("hostcard", machines.some((m) => m.ports.some((p) => p.published > 0)) && "hostcard-docked")}>
@@ -136,7 +143,7 @@ export function NetworkDiagram({
         data-more-left={scrollX > 1 || undefined}
         data-more-right={canvas - width - scrollX > 1 || undefined}
       >
-        <div className="topology-scroll" onScroll={(e) => setScrollX(e.currentTarget.scrollLeft)}>
+        <div ref={scroller} className="topology-scroll" onScroll={(e) => setScrollX(e.currentTarget.scrollLeft)}>
           <div className="topology-canvas" style={{ width: canvas || "100%" }}>
             <ReactFlowProvider key={sig}>
               <Flow topo={topo} onSize={onSize} onTabs={setTabs} width={canvas} height={height} />

@@ -5,15 +5,25 @@ import { PageHeader } from "@/components/ui/page-header";
 import { LabBrief } from "@/features/labs/lab-brief";
 import { HeaderLead } from "@/features/labs/lab-detail/header-lead";
 import { runtimeWord } from "@/features/labs/lab-detail/labels";
-import { deployPlacement, headerMode } from "@/features/labs/lab-detail/lab-state";
+import { deployPlacement, diagramAbove, headerMode, WIDE_LAB_PAGE } from "@/features/labs/lab-detail/lab-state";
 import { costEstimate } from "@/features/labs/cloud-panel";
 import { BackLink } from "@/features/labs/lab-detail/page-parts";
-import { LabDeployment, LabHeaderActions, LabNotices, LabObjectives, LabPanels, LabSideRail } from "@/features/labs/lab-detail/page-sections";
+import {
+  LabDeployment,
+  LabHeaderActions,
+  LabNetwork,
+  labNetworkView,
+  LabNotices,
+  LabObjectives,
+  LabPanels,
+  LabSideRail,
+} from "@/features/labs/lab-detail/page-sections";
 import { RemoveDialog } from "@/features/labs/lab-detail/remove-dialog";
 import { LabDetailSkeleton } from "@/features/labs/lab-detail/skeleton";
 import { useEscapeBack } from "@/features/labs/lab-detail/use-escape-back";
 import { useLabDetail, type LabDetailProps } from "@/features/labs/lab-detail/use-lab-detail";
 import { useT } from "@/lib/i18n";
+import { useMediaQuery } from "@/lib/use-media-query";
 
 export type { LabDetailProps } from "@/features/labs/lab-detail/use-lab-detail";
 
@@ -26,6 +36,7 @@ export function LabDetail(props: LabDetailProps) {
   const page = useLabDetail(props);
   const { s } = page;
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const wide = useMediaQuery(WIDE_LAB_PAGE);
 
   if (!ready) return <LabDetailSkeleton />;
 
@@ -35,6 +46,9 @@ export function LabDetail(props: LabDetailProps) {
   // The lab's own hourly estimate, for the aside.
   const cost = s.isCloud ? costEstimate(t, page.preview?.hourlyUsd) : null;
   const deploy = <LabDeployment page={page} props={props} />;
+  // On a wide window the diagram takes the page's full width, above the main column and the rail,
+  // so a wide lab is drawn whole instead of scrolling sideways beside the rail.
+  const above = diagramAbove(wide, labNetworkView(page, props), placement);
 
   return (
     <div className="animate-rise-in space-y-5">
@@ -48,10 +62,12 @@ export function LabDetail(props: LabDetailProps) {
       />
       <LabNotices page={page} props={props} />
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_19rem]">
+      {above && <LabNetwork page={page} props={props} meta={meta} />}
+
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-w-0 space-y-5">
           {placement === "top" && deploy}
-          <LabPanels page={page} props={props} meta={meta} />
+          <LabPanels page={page} props={props} meta={meta} network={!above} />
           {placement === "bottom" && deploy}
           <LabObjectives page={page} props={props} />
           <LabBrief labId={lab.id} />

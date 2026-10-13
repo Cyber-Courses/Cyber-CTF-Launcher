@@ -101,18 +101,30 @@ export function LabDeployment({ page, props: p }: { page: LabPage; props: LabDet
   );
 }
 
-/** The main column's panels, after the deployment on top: the cloud services or note, the
- *  network, the observers. */
-export function LabPanels({ page, props: p, meta }: { page: LabPage; props: LabDetailProps; meta: string }) {
-  const { s, acting } = page;
+/** What the network panel shows (see networkView); a cloud lab has none. */
+export function labNetworkView(page: LabPage, p: LabDetailProps) {
   const { status, busy } = p;
-  const network = s.isCloud ? "none" : networkView(s, { busy, acting, hasMachines: !!status && status.machines.length > 0 });
+  return page.s.isCloud ? "none" : networkView(page.s, { busy, acting: page.acting, hasMachines: !!status && status.machines.length > 0 });
+}
+
+/** The network panel: the diagram, or the note in its place. */
+export function LabNetwork({ page, props: p, meta }: { page: LabPage; props: LabDetailProps; meta: string }) {
+  const view = labNetworkView(page, p);
+  if (view === "none") return null;
+  return <NetworkPanel view={view} status={p.status} remote={page.s.remote} box={page.box.status} meta={p.lab.runtime ? meta : undefined} />;
+}
+
+/** The main column's panels, after the deployment on top: the cloud services or note, the
+ *  network (unless the page draws it above, full width), the observers. */
+export function LabPanels({ page, props: p, meta, network = true }: { page: LabPage; props: LabDetailProps; meta: string; network?: boolean }) {
+  const { s } = page;
+  const { status, busy } = p;
   const services = s.isCloud ? cloudView(s, { busy }) : "none";
   return (
     <>
       {services === "services" && <CloudPanel message={status?.message ?? null} outputs={status?.outputs ?? []} where={status?.host ?? meta} />}
       {(services === "cloudLeftover" || services === "cloudIdle") && <CloudNotePanel note={services} meta={meta} />}
-      {network !== "none" && <NetworkPanel view={network} status={status} remote={s.remote} box={page.box.status} meta={p.lab.runtime ? meta : undefined} />}
+      {network && <LabNetwork page={page} props={p} meta={meta} />}
       {s.running && !busy && page.tools.length > 0 && <ObserversPanel tools={page.tools} />}
     </>
   );

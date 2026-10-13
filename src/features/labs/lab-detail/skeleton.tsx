@@ -17,7 +17,7 @@ export function LabDetailSkeleton() {
         </div>
         <Skeleton className="h-9 w-28 rounded-full" />
       </div>
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_19rem]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="space-y-5">
           <Skeleton className="h-72 w-full rounded-panel" />
           <Skeleton className="h-28 w-full rounded-panel" />

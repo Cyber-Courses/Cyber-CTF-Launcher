@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronRight, Circle, CircleCheck, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+import { FORM, PROSE } from "@/components/ui/screen-width";
 import { Spinner } from "@/components/ui/spinner";
 import { AnswerForm } from "@/features/labs/objectives/answer-form";
 import { GuidedHelp } from "@/features/labs/objectives/guided-help";
@@ -150,8 +151,8 @@ function ChallengeRow({
         {c.optional && <Badge variant="outline">{t("labs.objectives.optional")}</Badge>}
       </button>
       {open && (
-        <div id={bodyId} className="space-y-3 px-4 pb-4 pl-[2.875rem]">
-          {c.prompt && <p className="text-[0.8125rem] leading-relaxed whitespace-pre-line text-foreground">{c.prompt}</p>}
+        <div id={bodyId} className={cn("space-y-3 px-4 pb-4 pl-[2.875rem]", FORM)}>
+          {c.prompt && <p className={cn("text-[0.8125rem] leading-relaxed whitespace-pre-line text-foreground", PROSE)}>{c.prompt}</p>}
           <AnswerForm objectiveKey={c.key} title={c.title} solved={solved} signedIn={signedIn} submit={actions.submit} />
           <GuidedHelp challenge={c} progress={progress} signedIn={signedIn} actions={actions} />
         </div>
@@ -166,7 +167,7 @@ export function ObjectivesLoading({ question }: { question: string }) {
   return (
     <Panel>
       <PanelHeader title={t("labs.objectives.title")} meta={<Spinner className="size-3.5" />} />
-      <p className="px-4 py-3.5 text-[0.8125rem] leading-relaxed whitespace-pre-line text-foreground">{question}</p>
+      <p className={cn("px-4 py-3.5 text-[0.8125rem] leading-relaxed whitespace-pre-line text-foreground", PROSE)}>{question}</p>
     </Panel>
   );
 }

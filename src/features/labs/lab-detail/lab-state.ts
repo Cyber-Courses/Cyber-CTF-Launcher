@@ -207,3 +207,14 @@ export function deployPlacement(s: LabState, { busy, failed }: { busy: boolean; 
   if (!(s.deploying || s.running || failed)) return null;
   return s.running && !busy ? "bottom" : "top";
 }
+
+/** The window width from which a lab's diagram can leave the main column for the page's full
+ *  width (Tailwind's 2xl): narrower, the rail beside it would leave the diagram too little. */
+export const WIDE_LAB_PAGE = "(min-width: 96rem)";
+
+/** Whether the network diagram spans the page above the main column and the side rail: on a
+ *  wide window, once it is drawn, and not while the deployment's steps lead the page (those stay
+ *  first, the diagram after them, as on a narrow window). */
+export function diagramAbove(wide: boolean, view: ReturnType<typeof networkView>, placement: ReturnType<typeof deployPlacement>) {
+  return wide && view === "diagram" && placement !== "top";
+}
