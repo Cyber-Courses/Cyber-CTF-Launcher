@@ -342,7 +342,7 @@ mod tests {
     fn on_hyperv_the_attacker_gets_the_switch_and_no_smb_share() {
         use super::{Provider, shared_for, vagrantfile_for};
         let vf = vagrantfile_for(Provider::Hyperv, "lab", "kalilinux/rolling", &[], None);
-        assert!(vf.contains("    m.vm.network \"public_network\", bridge: ENV[\"CYBERCTF_HYPERV_SWITCH\"] if ENV[\"CYBERCTF_HYPERV_SWITCH\"]\n"), "{vf}");
+        assert!(vf.contains("    m.vm.network \"public_network\", bridge: ENV[\"ISOLOOM_HYPERV_SWITCH\"] if ENV[\"ISOLOOM_HYPERV_SWITCH\"]\n"), "{vf}");
         assert!(vf.contains("m.vm.provider \"hyperv\" do |v|\n      v.vmname = \"lab · attacker\"") && vf.ends_with("    end\n  end\nend\n"), "{vf}");
         assert_eq!(vf.matches("config.vm.define").count(), 1);
         // Other providers are unchanged.

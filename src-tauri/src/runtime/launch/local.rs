@@ -76,7 +76,7 @@ pub(super) fn emulated_arches(spec: &isoloom_core::Spec, host: &str) -> Vec<&'st
 /// A lab on QEMU: its networks must fit QEMU's two-VM links, and a machine built for another CPU
 /// needs that CPU's emulator (`qemu-system-x86_64` for an x86 lab on an Apple Silicon Mac).
 pub(super) async fn check_qemu(spec: &isoloom_core::Spec, log: &mut impl FnMut(String)) -> Result<()> {
-    if let Some(why) = isoloom_core::qemu_refusal(spec) {
+    if let Some(why) = isoloom_core::refusal_on(spec, isoloom_core::Target::Vagrant, Some(Provider::Qemu.id())) {
         return Err(Error::Invalid(format!("This lab can't run on QEMU yet: {why}. Run it on a server or in your cloud account.")));
     }
     let host = std::env::consts::ARCH;

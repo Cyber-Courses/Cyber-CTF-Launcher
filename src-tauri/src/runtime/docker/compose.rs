@@ -168,9 +168,10 @@ pub(super) fn host_ports_from_config(json: &str) -> Vec<u16> {
     ports
 }
 
-/// Every published port as (service, container port, host port), from `docker compose config`
-/// (env resolved, pinned ports applied): where each of the lab's services answers on this machine.
-pub(super) fn published_from_config(json: &str) -> Vec<(String, u16, u16)> {
+/// Every published port as (service, container port, protocol, host port), from `docker compose
+/// config` (env resolved, pinned ports applied): where each of the lab's services answers on this
+/// machine. The protocol is `tcp` or `udp` (Compose's, `tcp` when it names none).
+pub(super) fn published_from_config(json: &str) -> Vec<(String, u16, String, u16)> {
     let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
     let num =
         |x: Option<&serde_json::Value>| x.and_then(|x| x.as_u64().or_else(|| x.as_str().and_then(|s| s.parse().ok()))).and_then(|n| u16::try_from(n).ok());
@@ -180,7 +181,8 @@ pub(super) fn published_from_config(json: &str) -> Vec<(String, u16, u16)> {
             if let (Some(target), Some(host)) = (num(p.get("target")), num(p.get("published")))
                 && host > 0
             {
-                out.push((name.clone(), target, host));
+                let proto = p.get("protocol").and_then(|x| x.as_str()).filter(|x| !x.is_empty()).unwrap_or("tcp");
+                out.push((name.clone(), target, proto.to_string(), host));
             }
         }
     }
@@ -217,11 +219,11 @@ fn yaml_str(s: &str) -> String {
 }
 
 /// A Compose override that gives every port published on an ephemeral host port (none set in
-/// `docker compose config` JSON) a fixed one from `pick` (given the container port), so it
-/// survives stop / start. A service's
+/// `docker compose config` JSON) a fixed one from `pick` (given the container port and its
+/// protocol, `tcp` or `udp`), so it survives stop / start. A service's
 /// whole `ports` list is replaced (`!override`: Compose would otherwise add the entries). None
 /// when nothing is ephemeral.
-pub(super) fn pinned_ports(json: &str, mut pick: impl FnMut(u16) -> Option<u16>) -> Option<String> {
+pub(super) fn pinned_ports(json: &str, mut pick: impl FnMut(u16, &str) -> Option<u16>) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
     let mut out = String::new();
     for (name, svc) in v.get("services")?.as_object()? {
@@ -237,8 +239,9 @@ pub(super) fn pinned_ports(json: &str, mut pick: impl FnMut(u16) -> Option<u16>)
         let mut lines = Vec::new();
         for p in ports {
             let target = p.get("target").and_then(|t| t.as_u64())?;
+            let proto = p.get("protocol").and_then(|i| i.as_str()).unwrap_or("tcp");
             let published = if ephemeral(p) {
-                pick(u16::try_from(target).ok()?)?.to_string()
+                pick(u16::try_from(target).ok()?, proto)?.to_string()
             } else {
                 p["published"].as_str().map(str::to_string).unwrap_or_else(|| p["published"].to_string())
             };
@@ -249,7 +252,6 @@ pub(super) fn pinned_ports(json: &str, mut pick: impl FnMut(u16) -> Option<u16>)
                 .filter(|i| !i.is_empty())
                 .map(|i| if i.contains(':') { format!("[{i}]:") } else { format!("{i}:") })
                 .unwrap_or_default();
-            let proto = p.get("protocol").and_then(|i| i.as_str()).unwrap_or("tcp");
             // A JSON string is a valid YAML scalar: a quote or newline in a value can't break the file.
             lines.push(format!("      - {}\n", yaml_str(&format!("{ip}{published}:{target}/{proto}"))));
         }
@@ -266,7 +268,7 @@ mod tests {
     fn unicode_line_breaks_in_names_stay_inside_their_scalar() {
         for name in ["\u{85}", "a\u{2028}b", "\u{2029}", "caf\u{e9} \u{1f600}"] {
             let json = serde_json::json!({"services": {name: {"ports": [{"target": 80, "protocol": "tcp"}]}}}).to_string();
-            let yaml = pinned_ports(&json, |_| Some(40000)).unwrap();
+            let yaml = pinned_ports(&json, |_, _| Some(40000)).unwrap();
             let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yaml).unwrap_or_else(|e| panic!("{e}\n{yaml}"));
             assert!(doc["services"].as_mapping().unwrap().contains_key(name), "{name:?} in {yaml}");
         }
@@ -276,7 +278,7 @@ mod tests {
     fn pins_ephemeral_ports_and_keeps_fixed_ones() {
         let json = r#"{"services":{"web":{"ports":[{"host_ip":"127.0.0.1","target":80,"protocol":"tcp"},{"host_ip":"127.0.0.1","target":443,"published":"8443","protocol":"tcp"}]},"db":{},"dns":{"ports":[{"target":53,"published":"","protocol":"udp"}]}}}"#;
         let mut next = 40000;
-        let yaml = pinned_ports(json, |_| {
+        let yaml = pinned_ports(json, |_, _| {
             next += 1;
             Some(next)
         })
@@ -290,21 +292,23 @@ mod tests {
         );
         assert!(!yaml.contains("db"));
         // Nothing ephemeral, or no free port: no override.
-        assert!(pinned_ports(r#"{"services":{"web":{"ports":[{"target":80,"published":"8080"}]}}}"#, |_| Some(1)).is_none());
-        assert!(pinned_ports(r#"{"services":{"web":{"ports":[{"target":80}]}}}"#, |_| None).is_none());
+        assert!(pinned_ports(r#"{"services":{"web":{"ports":[{"target":80,"published":"8080"}]}}}"#, |_, _| Some(1)).is_none());
+        assert!(pinned_ports(r#"{"services":{"web":{"ports":[{"target":80}]}}}"#, |_, _| None).is_none());
     }
 
     #[test]
     fn the_pick_sees_each_container_port() {
         let json = r#"{"services":{"a":{"ports":[{"target":8000}]},"b":{"ports":[{"target":3000,"protocol":"tcp"}]}}}"#;
-        let yaml = pinned_ports(json, Some).unwrap();
+        let yaml = pinned_ports(json, |t, _| Some(t)).unwrap();
         assert!(yaml.contains("\"8000:8000/tcp\"") && yaml.contains("\"3000:3000/tcp\""), "{yaml}");
     }
 
     #[test]
     fn lists_published_ports_by_service() {
-        let json = r#"{"services":{"web":{"ports":[{"target":80,"published":"46709"},{"target":443}]},"db":{}}}"#;
-        assert_eq!(published_from_config(json), vec![("web".to_string(), 80, 46709)]);
+        let json = r#"{"services":{"web":{"ports":[{"target":80,"published":"46709"},{"target":443}]},"db":{},"dns":{"ports":[{"target":53,"published":"40053","protocol":"udp"}]}}}"#;
+        let mut found = published_from_config(json);
+        found.sort();
+        assert_eq!(found, vec![("dns".to_string(), 53, "udp".to_string(), 40053), ("web".to_string(), 80, "tcp".to_string(), 46709)]);
         assert!(published_from_config("not json").is_empty());
     }
 

@@ -244,7 +244,7 @@ mod tests {
         assert_eq!(uname_line("warning: something\ncyberctf-uname:Linux 6.6 x86_64\nConnection to 172.20.0.5 closed.\n"), "Linux 6.6 x86_64");
         assert_eq!(uname_line("Connection to x closed.\n"), "");
         assert_eq!(uname_command(), "echo cyberctf-uname:$(uname -srm)");
-        assert!(vagrantfile(Provider::Hyperv, "x", false).contains("config.vm.network \"public_network\", bridge: ENV[\"CYBERCTF_HYPERV_SWITCH\"]"));
+        assert!(vagrantfile(Provider::Hyperv, "x", false).contains("config.vm.network \"public_network\", bridge: ENV[\"ISOLOOM_HYPERV_SWITCH\"]"));
         assert!(!vagrantfile(Provider::Virtualbox, "x", false).contains("public_network"));
     }
 

@@ -9,7 +9,8 @@
 //!
 //! - The module is the lab's, used as is (see `terraform::services`), with Isoloom's
 //!   generated `terraform.tfvars.json` (the spec's fixed `cloud.vars`).
-//! - Variables written `{{ inputs.NAME }}` take launch-time inputs, written to
+//! - Variables holding `{{ inputs.NAME }}` (a whole value, or inside a string at any depth:
+//!   `["{{ inputs.PLAYER_IP }}/32"]`) take launch-time inputs, written to
 //!   `inputs.tfvars.json` (mode 0600) beside the state, so the destroy reuses them, as Isoloom's
 //!   CLI does. The launcher fills `PLAYER_CIDR` (this machine's public IP as a /32, for an
 //!   allow-list) and `PLAYER_IP`, and the launch's own values (`CTF_API_URL`,
@@ -20,6 +21,11 @@
 //!   `AwsFiles`): labs that name a profile (CloudGoat's `profile = var.profile`, and
 //!   `--profile` in its local-exec commands) find the picked account's keys under it, since an
 //!   explicitly set profile beats the environment's keys in the AWS provider.
+//! - `cloud.env` goes into Terraform's environment, over the account's own (a lab's
+//!   `AWS_REGION`), and `cloud.apply_retries` applies again after a failed apply. What
+//!   `cloud.requires` names must be on this machine. `cloud.before` (set-up steps run on this
+//!   machine before Terraform) isn't supported yet: such a lab is refused before anything is
+//!   created.
 //! - What the lab exposes is its outputs (`cloud.outputs`), read from the state; its message
 //!   names them (`{{ cloud.outputs.NAME }}`). Stop destroys everything: nothing is parked.
 
@@ -80,14 +86,27 @@ pub fn var_files(dir: &Path, state: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// The launch-time inputs the lab's variables take (`{{ inputs.NAME }}`), by input name.
-fn wanted(cloud: &CloudServices) -> Vec<(&str, &str)> {
-    cloud.vars.iter().filter_map(|(var, v)| CloudServices::input_of(v).map(|i| (var.as_str(), i))).collect()
+/// The launch-time inputs the lab's variables take (each `{{ inputs.NAME }}`, at any depth), as
+/// (variable, input) pairs.
+fn wanted(cloud: &CloudServices) -> Vec<(&str, String)> {
+    cloud.vars.iter().flat_map(|(var, v)| CloudServices::inputs_in(v).into_iter().map(move |i| (var.as_str(), i))).collect()
+}
+
+/// The value of a launch-time input: from the launch (`env`) or this machine's public IP. None
+/// when the launcher has none for it (or it is empty).
+fn input_value(input: &str, env: &[(String, String)], player_ip: Option<&str>) -> Option<String> {
+    match input {
+        PLAYER_CIDR => player_ip.map(|ip| format!("{ip}/32")),
+        PLAYER_IP => player_ip.map(str::to_string),
+        i if LAUNCH_INPUTS.contains(&i) => env.iter().find(|(k, _)| k == i).map(|(_, v)| v.clone()),
+        _ => None,
+    }
+    .filter(|v| !v.is_empty())
 }
 
 /// Whether a launch needs this machine's public IP (an allow-list input).
 pub fn needs_player_ip(cloud: &CloudServices) -> bool {
-    wanted(cloud).iter().any(|(_, i)| *i == PLAYER_CIDR || *i == PLAYER_IP)
+    wanted(cloud).iter().any(|(_, i)| i == PLAYER_CIDR || i == PLAYER_IP)
 }
 
 /// The values of the variables that take launch-time inputs, by variable name: from the launch
@@ -95,23 +114,18 @@ pub fn needs_player_ip(cloud: &CloudServices) -> bool {
 /// applied with a hole in it.
 pub fn inputs(cloud: &CloudServices, env: &[(String, String)], player_ip: Option<&str>) -> Result<serde_json::Map<String, Value>> {
     let mut values = serde_json::Map::new();
-    let mut missing = Vec::new();
-    for (var, input) in wanted(cloud) {
-        let value = match input {
-            PLAYER_CIDR => player_ip.map(|ip| format!("{ip}/32")),
-            PLAYER_IP => player_ip.map(str::to_string),
-            i if LAUNCH_INPUTS.contains(&i) => env.iter().find(|(k, _)| k == i).map(|(_, v)| v.clone()),
-            _ => None,
-        };
-        match value.filter(|v| !v.is_empty()) {
-            Some(v) => {
-                values.insert(var.to_string(), Value::String(v));
+    let mut missing: Vec<String> = Vec::new();
+    for (var, value) in cloud.vars.iter().filter(|(_, v)| !CloudServices::inputs_in(v).is_empty()) {
+        let filled = CloudServices::fill_inputs(value, &mut |input| {
+            let found = input_value(input, env, player_ip);
+            if found.is_none() && !missing.iter().any(|m| m == input) {
+                missing.push(input.to_string());
             }
-            None => missing.push(input.to_string()),
-        }
+            found
+        });
+        values.insert(var.clone(), filled);
     }
     if !missing.is_empty() {
-        missing.dedup();
         return Err(Error::Invalid(format!(
             "This lab takes {} at launch, which the launcher can't provide (it fills {PLAYER_CIDR}, {PLAYER_IP}, CTF_API_URL and CTF_LAUNCH_TOKEN).",
             missing.join(", ")
@@ -220,6 +234,11 @@ fn lab_profile(cloud: &CloudServices) -> Option<&str> {
 /// guard for the length of the run).
 async fn run_env(conn: &server::Connection, state: &Path, cloud: &CloudServices) -> Result<(Vec<(String, String)>, Option<AwsFiles>)> {
     let mut env = module_env(conn).await;
+    // The lab's own variables (`cloud.env`, names Isoloom checked), over the account's.
+    for (k, v) in &cloud.env {
+        env.retain(|(o, _)| o != k);
+        env.push((k.clone(), v.clone()));
+    }
     let files = if conn.provider == Provider::Aws { AwsFiles::write(state, &env, lab_profile(cloud))? } else { None };
     if let Some(f) = &files {
         // The keys stay in the environment too; a CLI profile name would point outside the files.
@@ -351,8 +370,10 @@ pub(super) async fn start(app: &AppHandle, dir: &Path, id: &str, host: Option<&s
     let spec = lab::prepare(dir, Target::CloudServices)?;
     let cloud = of(&spec)?;
     let module = module_dir(dir, cloud)?;
+    check_supported(cloud)?;
     let conn = server::connection(app, host)?;
     check_account(cloud.provider, &conn)?;
+    check_requirements(&spec, log).await?;
     let state = state_dir(app, id, server::terraform_target(conn.provider).unwrap_or_default())?;
     if status(&spec, &state).running {
         return Err(Error::Invalid("This lab is already running in your cloud account. Stop it before starting it again.".into()));
@@ -375,11 +396,42 @@ pub(super) async fn start(app: &AppHandle, dir: &Path, id: &str, host: Option<&s
     let expires_at = (hours > 0).then(|| terraform::now() + u64::from(hours) * 3600);
     let (tf_env, aws_files) = run_env(&conn, &state, cloud).await?;
     log(format!("Creating the lab's cloud services ({})…", cloud.terraform));
-    let applied = terraform::apply_services(&module, &state, &var_files(dir, &state), &launcher_vars(&conn, expires_at), expires_at, &tf_env, &mut *log).await;
+    let vars = launcher_vars(&conn, expires_at);
+    let applied = terraform::apply_services(&module, &state, &var_files(dir, &state), &vars, expires_at, cloud.apply_retries, &tf_env, &mut *log).await;
     drop(aws_files);
     applied?;
     log_exposed(&status(&spec, &state), log);
     Ok(())
+}
+
+/// Refuses a lab using what this launcher doesn't run yet: set-up steps on this machine before
+/// Terraform (`cloud.before`).
+fn check_supported(cloud: &CloudServices) -> Result<()> {
+    if cloud.before.is_empty() {
+        return Ok(());
+    }
+    Err(Error::Invalid(format!(
+        "This lab runs set-up steps on this machine before creating its cloud services ({}), which Cyber CTF can't run yet. Nothing was created.",
+        cloud.before.join(", ")
+    )))
+}
+
+/// Refuses a lab whose module needs a tool this machine lacks (`cloud.requires`), naming it.
+async fn check_requirements(spec: &Spec, log: &mut impl FnMut(String)) -> Result<()> {
+    match lab::cloud_requirements(spec).await {
+        lab::Requirements::None => Ok(()),
+        lab::Requirements::Met(found) => {
+            log(format!("This lab's module needs {}: found.", found.join(", ")));
+            Ok(())
+        }
+        lab::Requirements::Unchecked(what) => {
+            log(format!("This lab's module needs {} on this machine (not checked on Windows).", what.join(", ")));
+            Ok(())
+        }
+        lab::Requirements::Missing(missing) => {
+            Err(Error::Invalid(format!("This lab's module needs what this machine lacks: {}. Install it, then start the lab again.", missing.join("; "))))
+        }
+    }
 }
 
 /// Refuses an account of another cloud than the lab's.
@@ -488,7 +540,12 @@ pub fn preview(spec: &Spec) -> Option<Preview> {
     Some(Preview {
         provider: cloud.provider.id().to_string(),
         hourly_usd: cloud.hourly_usd,
-        inputs: wanted(cloud).into_iter().map(|(_, i)| i.to_string()).collect(),
+        inputs: wanted(cloud).into_iter().map(|(_, i)| i).fold(Vec::new(), |mut all, i| {
+            if !all.contains(&i) {
+                all.push(i);
+            }
+            all
+        }),
         allow_list: needs_player_ip(cloud),
         outputs: cloud.outputs.keys().cloned().collect(),
     })
@@ -754,6 +811,90 @@ mod tests {
         assert!(tools.called("terraform destroy"), "{:?}", tools.calls());
         assert!(!state.join(INPUTS_FILE).exists() && !state.join("terraform.tfstate").exists());
         assert_eq!(super::super::deployed_on_server(t.handle(), &dir, "goat"), None);
+    }
+
+    /// isoloom #127: an input inside a string at any depth (CloudGoat's allow-list), the lab's own
+    /// environment, more applies, and what a lab needs here.
+    const GOAT: &str = "version: 1\nname: goat\ninputs: [PLAYER_IP]\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { cg_whitelist: [\"{{ inputs.PLAYER_IP }}/32\"], tag: \"lab-{{ inputs.PLAYER_IP }}-{{ inputs.PLAYER_IP }}\", region: us-east-1 }\n  env: { AWS_REGION: us-east-1 }\n  apply_retries: 1\n  requires: [sh]\n";
+
+    #[test]
+    fn an_input_inside_a_value_is_filled_in_place() {
+        let s = spec(GOAT);
+        let cloud = of(&s).unwrap();
+        assert!(needs_player_ip(cloud));
+        let v = inputs(cloud, &[], Some("203.0.113.7")).unwrap();
+        assert_eq!(v["cg_whitelist"], serde_json::json!(["203.0.113.7/32"]));
+        assert_eq!(v["tag"], "lab-203.0.113.7-203.0.113.7");
+        assert!(!v.contains_key("region"));
+        // Named once however many times it is used.
+        assert_eq!(preview(&s).unwrap().inputs, ["PLAYER_IP"]);
+        let err = inputs(cloud, &[], None).unwrap_err().to_string();
+        assert_eq!(err.matches("PLAYER_IP").count(), 2, "named once, then in the list of what the launcher fills: {err}");
+    }
+
+    #[test]
+    fn set_up_steps_on_this_machine_are_refused_before_anything_runs() {
+        assert!(check_supported(of(&spec(GOAT)).unwrap()).is_ok());
+        let s = spec(&format!("{GOAT}  before: [keys.sh]\n"));
+        let err = check_supported(of(&s).unwrap()).unwrap_err().to_string();
+        assert!(err.contains("(keys.sh)") && err.contains("Nothing was created"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn the_labs_environment_goes_over_the_accounts() {
+        let _tools = crate::exec::fake::Tools::rules(&[]);
+        let state = std::env::temp_dir().join(format!("cyberctf-cloudsvc-env-{}", rand::random::<u32>()));
+        let mut conn = account(Provider::Azure);
+        conn.tf_env = vec![("ARM_SUBSCRIPTION_ID".into(), "sub".into()), ("AWS_REGION".into(), "eu-west-3".into())];
+        let s = spec(GOAT);
+        let (env, files) = run_env(&conn, &state, of(&s).unwrap()).await.unwrap();
+        assert!(files.is_none());
+        assert_eq!(env, [("ARM_SUBSCRIPTION_ID".to_string(), "sub".to_string()), ("AWS_REGION".to_string(), "us-east-1".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn what_a_lab_needs_is_looked_for_here() {
+        let mut lines = Vec::new();
+        // `sh` is on every machine the tests run on (Windows: not checked, only said).
+        check_requirements(&spec(GOAT), &mut |l| lines.push(l)).await.unwrap();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        let missing = spec(&GOAT.replace("requires: [sh]", "requires: [cyberctf-no-such-tool]"));
+        let r = check_requirements(&missing, &mut |l| lines.push(l)).await;
+        if cfg!(windows) {
+            assert!(r.is_ok());
+        } else {
+            let err = r.unwrap_err().to_string();
+            assert!(err.contains("`cyberctf-no-such-tool` isn't installed"), "{err}");
+        }
+        lines.clear();
+        check_requirements(&spec(SPEC), &mut |l| lines.push(l)).await.unwrap();
+        assert!(lines.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failed_apply_is_tried_again_as_the_lab_asks() {
+        use crate::exec::fake::{Tools, fail, ok};
+        use crate::test_app::TestApp;
+        let t = TestApp::new();
+        let dir = t.lab("goat", &[("isoloom.yml", GOAT), ("terraform/main.tf", "variable \"region\" {}\n")]);
+        let aws = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
+        let mut applies = 0;
+        let tools = Tools::new(move |program, args| {
+            if program == "terraform" && args.first() == Some(&"apply") {
+                applies += 1;
+                if applies == 1 {
+                    return fail("Error: eventual consistency");
+                }
+            }
+            ok("")
+        });
+        let mut log = Vec::new();
+        super::super::start(t.handle(), &dir, "goat", Runtime::Cloud, None, Some(&aws), &[], |l| log.push(l)).await.unwrap();
+        assert_eq!(tools.calls().iter().filter(|c| c.starts_with("terraform apply")).count(), 2, "{:?}", tools.calls());
+        assert_eq!(tools.calls().iter().filter(|c| c.starts_with("terraform init")).count(), 1, "initialized once");
+        assert!(log.iter().any(|l| l.contains("applying again (1 of 1)")), "{log:?}");
+        let inputs = std::fs::read_to_string(t.data().join("deployments/goat/aws").join(INPUTS_FILE)).unwrap();
+        assert!(inputs.contains("203.0.113.7/32"), "{inputs}");
     }
 
     #[test]

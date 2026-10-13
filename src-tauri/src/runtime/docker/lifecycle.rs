@@ -71,14 +71,14 @@ fn default_ports(env: &[(String, String)]) -> bool {
 }
 
 /// The pinned-ports override for a lab's Compose `config`: each ephemeral port gets a free
-/// loopback port, or with `defaults` its own container port (once; a second service on the
-/// same port gets a free one).
+/// loopback port, or with `defaults` its own container port (once per protocol: a second
+/// service on the same port and protocol gets a free one; DNS keeps 53 over TCP and UDP).
 fn pick_pins(config: &str, defaults: bool) -> Option<String> {
     // Hold each port until all are picked, so the OS doesn't hand out the same one twice.
     let mut held = Vec::new();
     let mut taken = std::collections::HashSet::new();
-    let pins = compose::pinned_ports(config, |target| {
-        if defaults && target != 0 && taken.insert(target) {
+    let pins = compose::pinned_ports(config, |target, proto| {
+        if defaults && target != 0 && taken.insert((target, proto.to_string())) {
             return Some(target);
         }
         let l = std::net::TcpListener::bind(("127.0.0.1", 0)).ok()?;
@@ -90,9 +90,9 @@ fn pick_pins(config: &str, defaults: bool) -> Option<String> {
     pins
 }
 
-/// Where the lab's services answer on this machine: (service, container port, host port) for
-/// every published port, the pinned ones included. Empty when Compose can't be read.
-pub async fn published(dir: &Path, id: &str, env: &[(String, String)]) -> Vec<(String, u16, u16)> {
+/// Where the lab's services answer on this machine: (service, container port, protocol, host
+/// port) for every published port, the pinned ones included. Empty when Compose can't be read.
+pub async fn published(dir: &Path, id: &str, env: &[(String, String)]) -> Vec<(String, u16, String, u16)> {
     compose::output_env(dir, &compose::project(id), &["config", "--format", "json"], env).await.map(|c| compose::published_from_config(&c)).unwrap_or_default()
 }
 
@@ -245,6 +245,10 @@ mod tests {
         let yaml = pick_pins(config, true).unwrap();
         assert_eq!(yaml.matches("\"8000:8000/tcp\"").count(), 1, "{yaml}");
         assert_eq!(yaml.matches(":8000/tcp\"").count(), 2, "the second one gets a free port: {yaml}");
+        // A port served over both protocols (DNS) keeps its own number for each.
+        let dns = r#"{"services":{"dns":{"ports":[{"target":53,"protocol":"tcp"},{"target":53,"protocol":"udp"}]}}}"#;
+        let yaml = pick_pins(dns, true).unwrap();
+        assert!(yaml.contains("\"53:53/tcp\"") && yaml.contains("\"53:53/udp\""), "{yaml}");
     }
 
     #[test]

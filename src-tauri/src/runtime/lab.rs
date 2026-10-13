@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use isoloom_core::model::Protocol;
 use isoloom_core::{Spec, Target};
 
 use super::{Interface, Network, Runtime};
@@ -216,14 +217,17 @@ pub fn message(dir: &Path, spec: &Spec, target: Target) -> Option<String> {
     message_at(dir, spec, target, &[])
 }
 
-/// `message` with the host ports the lab really got: (machine, container port, host port). A
-/// local container lab publishes on ports picked at its first start, not the `publish:` values
-/// its spec declares, so a `{{ machines.web.services.0.publish }}` must say where it answers.
-/// Addresses are the ones machines have on `target` (their Docker blocks on the Compose targets).
-pub fn message_at(dir: &Path, spec: &Spec, target: Target, published: &[(String, u16, u16)]) -> Option<String> {
+/// `message` with the host ports the lab really got: (machine, container port, protocol, host
+/// port), the protocol `tcp` or `udp`. A local container lab publishes on ports picked at its
+/// first start, not the `publish:` values its spec declares, so a
+/// `{{ machines.web.services.0.publish }}` must say where it answers. Addresses are the ones
+/// machines have on `target` (their Docker blocks on the Compose targets).
+pub fn message_at(dir: &Path, spec: &Spec, target: Target, published: &[(String, u16, String, u16)]) -> Option<String> {
     let text = spec.message.as_deref()?;
     let snapshot = isoloom_core::resolved::on_target(isoloom_core::resolved::resolve_with(spec, instance(dir)), target);
-    let snapshot = isoloom_core::resolved::with_published(snapshot, published);
+    let published: Vec<(String, u16, Protocol, u16)> =
+        published.iter().map(|(m, port, proto, host)| (m.clone(), *port, if proto == "udp" { Protocol::Udp } else { Protocol::Tcp }, *host)).collect();
+    let snapshot = isoloom_core::resolved::with_published(snapshot, &published);
     isoloom_core::resolved::fill(text, &snapshot).ok().map(|m| m.trim_end().to_string())
 }
 
@@ -245,6 +249,11 @@ pub fn vagrant_dir(dir: &Path, runtime: Runtime) -> PathBuf {
         Runtime::Cloud => out(dir).join("cloud-services"),
     }
 }
+
+/// The environment variable Isoloom's Vagrantfiles read on Hyper-V: the virtual switch each VM's
+/// first adapter (Vagrant's connection, and the internet) goes on. Isoloom takes the Default
+/// Switch without it, and stops `vagrant up` when no switch has the name.
+pub const HYPERV_SWITCH_ENV: &str = "ISOLOOM_HYPERV_SWITCH";
 
 /// The Isoloom target of a Vagrant run.
 pub fn vagrant_target(runtime: Runtime) -> Target {
@@ -280,6 +289,41 @@ pub fn terraform_to_destroy(dir: &Path, runtime: Runtime, tf: &str) -> Result<Pa
         return Ok(legacy);
     }
     Ok(terraform(dir, runtime, tf)?.0)
+}
+
+/// What a cloud-services lab's module needs on this machine besides Terraform
+/// (`cloud.requires`), checked here.
+#[derive(Debug, PartialEq)]
+pub enum Requirements {
+    /// It names nothing.
+    None,
+    /// All there.
+    Met(Vec<String>),
+    /// Not checked (Isoloom checks them with `sh`, which Windows lacks): what it names.
+    Unchecked(Vec<String>),
+    /// What is missing, as Isoloom words it.
+    Missing(Vec<String>),
+}
+
+/// [`Requirements`] of a spec: a command name looked up on the PATH, a shell command run (the
+/// lab's own code, as its Terraform module is), as `isoloom run` does.
+pub async fn cloud_requirements(spec: &Spec) -> Requirements {
+    let Some(cloud) = spec.cloud.as_ref().filter(|c| !c.requires.is_empty()) else { return Requirements::None };
+    if cfg!(windows) {
+        return Requirements::Unchecked(cloud.requires.clone());
+    }
+    let spec = spec.clone();
+    let checked = tokio::task::spawn_blocking(move || isoloom_core::host::requirements(&spec, true)).await.ok().flatten();
+    requirements_of(checked)
+}
+
+/// [`Requirements`] from Isoloom's readiness (each note an entry, `! ` before a missing one).
+fn requirements_of(checked: Option<isoloom_core::host::Readiness>) -> Requirements {
+    let Some(r) = checked else { return Requirements::None };
+    if r.ready {
+        return Requirements::Met(r.notes);
+    }
+    Requirements::Missing(r.notes.iter().filter_map(|n| n.strip_prefix("! ")).map(str::to_string).collect())
 }
 
 /// The lab's inputs found in `env`, as the JSON object Terraform's `inputs` variable takes.
@@ -402,7 +446,7 @@ mod tests {
         assert_eq!(message(&dir, &spec, Target::Vagrant).as_deref(), Some("Start at http://localhost:8080/ (web is 10.30.0.10)."));
         // Run locally, the lab answers on the port picked at its first start: the message says so.
         assert_eq!(
-            message_at(&dir, &spec, Target::Docker, &[("web".into(), 80, 46709)]).as_deref(),
+            message_at(&dir, &spec, Target::Docker, &[("web".into(), 80, "tcp".into(), 46709)]).as_deref(),
             Some("Start at http://localhost:46709/ (web is 10.30.0.10).")
         );
         std::fs::remove_dir_all(dir).unwrap();
@@ -488,6 +532,17 @@ mod tests {
         let spec = spec(&dir).unwrap();
         assert_eq!(inputs_json(&spec, &[("X".to_string(), "y".to_string())]), None);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn requirements_read_isoloom_s_readiness() {
+        use isoloom_core::host::Readiness;
+        let r = |ready: bool, notes: &[&str]| {
+            Some(Readiness { target: Target::CloudServices, cloud: Some("aws".into()), ready, notes: notes.iter().map(|n| n.to_string()).collect() })
+        };
+        assert_eq!(requirements_of(None), Requirements::None);
+        assert_eq!(requirements_of(r(true, &["jq"])), Requirements::Met(vec!["jq".into()]));
+        assert_eq!(requirements_of(r(false, &["jq", "! `gsed` isn't installed"])), Requirements::Missing(vec!["`gsed` isn't installed".into()]));
     }
 
     #[test]
