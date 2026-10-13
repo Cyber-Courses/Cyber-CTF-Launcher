@@ -203,7 +203,7 @@
     },
     "docker": {
       "title": "コンテナエンジン",
-      "descriptionWindows": "コンテナラボには Docker 互換のエンジンが 1 つ必要です（有効にした WSL 2 を使用します）。お好みのものを選んでください。",
+      "descriptionWindows": "コンテナラボには Docker 互換のエンジンが 1 つ必要です（Windows では WSL 2 上で動作します）。お好みのものを選んでください。",
       "description": "コンテナラボには Docker 互換のエンジンが 1 つ必要です。お好みのものを選んでください。どれでも動作します。"
     },
     "attack": {

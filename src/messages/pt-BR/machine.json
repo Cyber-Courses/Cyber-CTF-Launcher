@@ -203,7 +203,7 @@
     },
     "docker": {
       "title": "Engine de contêineres",
-      "descriptionWindows": "Os labs de contêiner precisam de uma engine compatível com Docker (ela usa o WSL 2 que você ativou). Escolha a que preferir.",
+      "descriptionWindows": "Os labs de contêiner precisam de uma engine compatível com Docker (no Windows, ela roda sobre o WSL 2). Escolha a que preferir.",
       "description": "Os labs de contêiner precisam de uma engine compatível com Docker. Escolha a que preferir, todas funcionam."
     },
     "attack": {
