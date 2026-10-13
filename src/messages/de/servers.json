@@ -4,7 +4,6 @@
     "lead": "Führe größere Labs mit mehreren Maschinen auf deiner eigenen Hardware aus. Proxmox oder ESXi, über dein Netzwerk.",
     "testAll": "Alle testen",
     "addServer": "Server hinzufügen",
-    "noServer": "Kein Server verbunden",
     "checking": "Wird geprüft…",
     "onlineCount": "{online} von {total} online",
     "hosts": "Hosts",

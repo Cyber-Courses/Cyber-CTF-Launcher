@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ServerHostInput, SystemReport } from "@/lib/tauri";
+import type { ServerHostInput, ServerTest, SystemReport } from "@/lib/tauri";
 import { EMPTY_CLOUD, EMPTY_HOST } from "@/features/servers/host-setup/constants";
 import {
   DEFAULT_REGION,
@@ -10,6 +10,7 @@ import {
   machineTools,
   saveName,
   setupSteps,
+  setupTitle,
   withProvider,
 } from "@/features/servers/host-setup/setup-model";
 
@@ -112,5 +113,18 @@ describe("saveName", () => {
     expect(saveName(form({ name: " ", host: " 10.0.0.2 " }))).toBe("10.0.0.2");
     expect(saveName(form({ provider: "gcp", name: "", host: "europe-west1" }))).toBe("GCP");
     expect(isCloud("proxmox")).toBe(false);
+  });
+});
+
+describe("setupTitle", () => {
+  const base = { saved: null, test: null, editing: false, cloud: false, initialName: "pve" };
+  it("names what is being set up, then what was saved and whether it connected", () => {
+    expect(setupTitle(base)).toEqual({ key: "host", name: "" });
+    expect(setupTitle({ ...base, cloud: true })).toEqual({ key: "cloud", name: "" });
+    expect(setupTitle({ ...base, editing: true })).toEqual({ key: "edit", name: "pve" });
+    const saved = { name: "Home lab" };
+    expect(setupTitle({ ...base, saved, test: "testing" })).toEqual({ key: "connected", name: "Home lab" });
+    expect(setupTitle({ ...base, saved, test: { ok: true } as ServerTest })).toEqual({ key: "connected", name: "Home lab" });
+    expect(setupTitle({ ...base, editing: true, saved, test: { ok: false } as ServerTest })).toEqual({ key: "savedNotConnected", name: "Home lab" });
   });
 });

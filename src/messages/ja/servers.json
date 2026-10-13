@@ -4,7 +4,6 @@
     "lead": "大規模な複数マシンのラボを、自分のハードウェアで実行します。ネットワーク経由で Proxmox または ESXi を使用します。",
     "testAll": "すべてテスト",
     "addServer": "サーバーを追加",
-    "noServer": "接続されたサーバーはありません",
     "checking": "確認中…",
     "onlineCount": "{total} 台中 {online} 台がオンライン",
     "hosts": "ホスト",

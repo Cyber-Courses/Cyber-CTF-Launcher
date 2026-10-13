@@ -27,3 +27,17 @@ export function capacityHost(hosts: ServerHost[], defaultId: string | null, caps
 
 /** Whether this machine already runs VM labs itself (then a server isn't suggested). */
 export const canRunVmHere = (report: SystemReport) => report.vmProviders.some((p) => !p.remote && p.available && p.hypervisor !== false);
+
+/** A host row's last test, read for its status pill: the result once it has one, whether it
+ *  only lacks a stored password, the pill's tone and label, and whether the host answered. */
+export function hostStatus(test: ServerTest | "testing" | undefined) {
+  const result = test && test !== "testing" ? test : null;
+  // A missing password is a credential to enter, not a host that is down.
+  const needsPassword = !!result && !result.ok && /no password stored/i.test(result.message);
+  const tone: Tone = !result ? "muted" : result.ok ? "ok" : needsPassword ? "warn" : "fail";
+  const status = test === "testing" ? "testing" : !result ? "notTested" : result.ok ? "online" : needsPassword ? "needsPassword" : "unreachable";
+  return { result, needsPassword, tone, status, online: !!result && result.ok } as const;
+}
+
+/** A host on a private LAN address: what macOS's Local Network permission governs. */
+export const isPrivateHost = (h: string) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h) || h.endsWith(".local");
