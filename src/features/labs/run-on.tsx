@@ -1,18 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { serverTest, type Provider, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { useEffect, useRef } from "react";
+import { type Provider, type ServerHost } from "@/lib/tauri";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
-import { StatusPill, type Tone } from "@/components/ui/status-pill";
-import { TypeIcon } from "@/components/ui/type-icon";
-import { KIND } from "@/features/servers/host-setup/constants";
-import { ProviderGlyph } from "@/features/servers/provider-glyph";
-import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
-import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
-import { CLOUDS } from "@/features/labs/lab-runtime";
+import { StatusPill } from "@/components/ui/status-pill";
+import { runOnGroups, useHostChecks, type OptionGroup } from "@/features/labs/run-on-options";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { PortMode } from "@/lib/settings";
-import { useT, type T } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 
 /** Where a lab starts: this machine (Docker, or a VM on a local hypervisor), a saved host, or
  *  hosted by Cyber CTF. `ports` on this machine: chosen in the dialog (container labs), else
@@ -55,55 +50,6 @@ export function RunOnDialog({ onClose, children, footer }: { onClose: () => void
   );
 }
 
-type Status = { tone: Tone; label: string; title?: string };
-type Option = { target: RunTarget; title: string; subtitle: string; ok: boolean; why?: string; logo: React.ReactNode; status?: Status };
-
-/** Each host's connection test, run once when the picker opens (like "Test" on the Servers page). */
-function useHostChecks(hosts: ServerHost[]) {
-  const [checks, setChecks] = useState<Record<string, ServerTest | "testing">>({});
-  const ids = hosts.map((h) => h.id).join(",");
-  useEffect(() => {
-    let live = true;
-    const list = ids ? ids.split(",") : [];
-    // Marks every host "testing" before the async checks settle (one batch, not a cascade).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setChecks(Object.fromEntries(list.map((id) => [id, "testing" as const])));
-    for (const id of list) {
-      serverTest(id)
-        .catch((e): ServerTest => ({ ok: false, reachable: false, authenticated: null, latencyMs: null, message: String(e), checks: [] }))
-        .then((r) => live && setChecks((c) => ({ ...c, [id]: r })));
-    }
-    return () => {
-      live = false;
-    };
-  }, [ids]);
-  return checks;
-}
-
-function hostStatus(t: T, check: ServerTest | "testing" | undefined): Status {
-  if (!check || check === "testing") return { tone: "muted", label: t("labs.runOn.checking") };
-  if (check.ok) return { tone: "ok", label: t("labs.runOn.online"), title: check.message };
-  return {
-    tone: check.reachable ? "warn" : "fail",
-    label: check.reachable ? t("labs.runOn.needsAttention") : t("labs.runOn.unreachable"),
-    title: check.message,
-  };
-}
-
-const CyberCtfLogo = () => (
-  <TypeIcon>
-    {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
-    <img src="/logo-mark.svg" alt="Cyber CTF" className="size-4 object-contain" draggable={false} />
-  </TypeIcon>
-);
-
-const DockerLogo = () => (
-  <TypeIcon>
-    {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
-    <img src="/brands/docker.svg" alt="Docker" className="size-5 object-contain" draggable={false} />
-  </TypeIcon>
-);
-
 /**
  * "Where should it run?": this machine (Docker, or a VM on the hypervisor chosen in Settings),
  * then the player's servers, then their cloud accounts, each with its logo and live status.
@@ -143,67 +89,7 @@ export function RunOnPicker({
 }) {
   const t = useT();
   const checks = useHostChecks(hosts);
-  const hostOption = (h: ServerHost): Option => {
-    const kind = KIND[h.provider]?.label ?? h.provider;
-    const cloud = CLOUDS.has(h.provider);
-    const ok = hostOk(h);
-    return {
-      target: { kind: "host", id: h.id },
-      title: h.name,
-      subtitle: t(cloud ? "labs.runOn.hostSubtitleCloud" : "labs.runOn.hostSubtitle", { kind, host: h.host }),
-      ok,
-      why: t("labs.runOn.unsupportedKind", { kind }),
-      logo: <ProviderGlyph provider={h.provider} />,
-      status: ok ? hostStatus(t, checks[h.id]) : undefined,
-    };
-  };
-  const local: Option[] = [
-    {
-      target: { kind: "local" },
-      title: t("labs.runOn.thisMachine"),
-      subtitle: localNote,
-      ok: true,
-      logo: dockerRunning === null ? <HypervisorLogo provider={null} /> : <DockerLogo />,
-      status:
-        dockerRunning === null
-          ? undefined
-          : dockerRunning
-            ? { tone: "ok", label: t("labs.runOn.running") }
-            : { tone: "warn", label: t("labs.runOn.engineStopped"), title: t("labs.runOn.engineStoppedHint") },
-    },
-  ];
-  if (localVm) {
-    local.push({
-      target: { kind: "local-vm", provider: localVm },
-      title: t("labs.runOn.inVm"),
-      subtitle: t("labs.runOn.inVmSubtitle", { provider: PROVIDER_LABELS[localVm] ?? localVm }),
-      ok: true,
-      logo: <HypervisorLogo provider={localVm} />,
-      status: { tone: "ok", label: t("labs.runOn.ready"), title: t("labs.runOn.readyHint") },
-    });
-  }
-  const groups: { id: string; label: string; options: Option[] }[] = [
-    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? local : [] },
-    {
-      id: "hosted",
-      label: "Cyber CTF",
-      options: hosted
-        ? [
-            {
-              target: { kind: "hosted" },
-              title: t("labs.runOn.hostedTitle"),
-              subtitle: t("labs.runOn.hostedSubtitle"),
-              ok: true,
-              logo: <CyberCtfLogo />,
-              status: { tone: "ok", label: t("labs.runOn.available") },
-            } satisfies Option,
-          ]
-        : [],
-    },
-    { id: "servers", label: t("labs.runOn.servers"), options: hosts.filter((h) => !CLOUDS.has(h.provider)).map(hostOption) },
-    { id: "cloud", label: t("labs.runOn.cloud"), options: hosts.filter((h) => CLOUDS.has(h.provider)).map(hostOption) },
-  ].filter((g) => g.options.length > 0);
-
+  const groups = runOnGroups(t, { hosts, hostOk, checks, localNote, dockerRunning, localVm, hosted, offerLocal });
   return (
     <div className="space-y-4">
       <div>
@@ -211,32 +97,40 @@ export function RunOnPicker({
         <p className="mt-1 text-[0.8125rem] text-muted-foreground">{title}</p>
       </div>
       {groups.flatMap((g) => [
-        <div key={g.id} className="space-y-1.5">
-          <p className="section-label">{g.label}</p>
-          <RadioList label={g.label}>
-            {g.options.map((o) => (
-              <RadioRow
-                key={targetKey(o.target)}
-                selected={targetKey(value) === targetKey(o.target)}
-                onSelect={() => onChange(o.target)}
-                disabled={disabled || !o.ok}
-                hint={o.ok ? o.status?.title : o.why}
-                title={o.title}
-                subtitle={o.ok ? o.subtitle : t("labs.runOn.notSupported")}
-                leading={o.logo}
-                trailing={
-                  o.status && (
-                    <StatusPill tone={o.status.tone}>
-                      <span className="whitespace-nowrap">{o.status.label}</span>
-                    </StatusPill>
-                  )
-                }
-              />
-            ))}
-          </RadioList>
-        </div>,
+        <OptionList key={g.id} group={g} value={value} onChange={onChange} disabled={disabled} />,
         g.id === "local" && localExtra ? <div key="local-extra">{localExtra}</div> : null,
       ])}
+    </div>
+  );
+}
+
+/** One group of places, as radio rows with their logo and live status. */
+function OptionList({ group: g, value, onChange, disabled }: { group: OptionGroup; value: RunTarget; onChange: (t: RunTarget) => void; disabled: boolean }) {
+  const t = useT();
+  return (
+    <div className="space-y-1.5">
+      <p className="section-label">{g.label}</p>
+      <RadioList label={g.label}>
+        {g.options.map((o) => (
+          <RadioRow
+            key={targetKey(o.target)}
+            selected={targetKey(value) === targetKey(o.target)}
+            onSelect={() => onChange(o.target)}
+            disabled={disabled || !o.ok}
+            hint={o.ok ? o.status?.title : o.why}
+            title={o.title}
+            subtitle={o.ok ? o.subtitle : t("labs.runOn.notSupported")}
+            leading={o.logo}
+            trailing={
+              o.status && (
+                <StatusPill tone={o.status.tone}>
+                  <span className="whitespace-nowrap">{o.status.label}</span>
+                </StatusPill>
+              )
+            }
+          />
+        ))}
+      </RadioList>
     </div>
   );
 }

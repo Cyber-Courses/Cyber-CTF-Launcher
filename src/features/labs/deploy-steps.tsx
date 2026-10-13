@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Check, ChevronRight, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { PanelHeader } from "@/components/ui/panel";
 import { StatusDot, StatusPill } from "@/components/ui/status-pill";
-import { LogConsole } from "@/components/ui/log-console";
-import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/format";
 import type { ActiveOperation } from "@/lib/tauri";
 import { deriveSteps, failedMachineStep, type Timed } from "@/features/labs/deploy-log";
+import { RawLog, StepItem, StepMark } from "@/features/labs/deploy-step-parts";
 import { useT, type T } from "@/lib/i18n";
 
 type Operation = ActiveOperation["op"];
@@ -17,8 +15,10 @@ type Operation = ActiveOperation["op"];
 // "Building" / "Preparing", which read as a new deploy while the lab was shutting down.
 const OPERATIONS = ["resume", "pause", "shutdown", "stop", "attack_vm"] as const;
 
+type OperationText = { busy: string; step: string; done: string };
+
 /** An operation's words (busy, its one step, done), when it is one of OPERATIONS. */
-function operationText(t: T, operation: Operation): { busy: string; step: string; done: string } | undefined {
+function operationText(t: T, operation: Operation): OperationText | undefined {
   const op = OPERATIONS.find((o) => o === operation);
   if (!op) return undefined;
   return { busy: t(`labs.deploy.ops.${op}.busy`), step: t(`labs.deploy.ops.${op}.step`), done: t(`labs.deploy.ops.${op}.done`) };
@@ -39,6 +39,127 @@ function useTimedLines(lines: string[]): Timed[] {
   return timed;
 }
 
+/** The current time, ticking every 100 ms while `busy`, for the running step's counter. */
+function useTicking(busy: boolean) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!busy) return;
+    const timer = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(timer);
+  }, [busy]);
+  return now;
+}
+
+/**
+ * The run read from its log: its timed lines, the ✓ or ✗ line that ended it, its span, and its
+ * steps (built from the log per the detected target, Vagrant / Terraform / Docker, or one step
+ * named after an operation on the built lab), with the one that failed.
+ */
+function useDeployTimeline(lines: string[], times: number[] | undefined, busy: boolean, operation: Operation) {
+  const t = useT();
+  const fallback = useTimedLines(lines);
+  // Prefer the per-line timestamps kept in the deploy store (they survive leaving and returning
+  // to the page, so the step durations don't reset); fall back to local timing if absent.
+  const timed: Timed[] = times && times.length === lines.length ? lines.map((line, i) => ({ line, at: times[i] })) : fallback;
+  const now = useTicking(busy);
+  const failed = timed.find((row) => row.line.startsWith("✗"));
+  const done = timed.find((row) => row.line.startsWith("✓"));
+  const start = timed[0]?.at;
+  const end = done?.at ?? failed?.at ?? (busy ? now : timed.at(-1)?.at);
+  const op = operationText(t, operation);
+  const steps = op ? (timed.length > 0 ? [{ id: operation, label: op.step, rows: timed }] : []) : deriveSteps(t, timed);
+  const lastSeen = steps.at(-1)?.id;
+  const named = failed ? failedMachineStep(failed.line) : null;
+  const failedStep = failed ? (named && steps.some((s) => s.id === named) ? named : lastSeen) : null;
+  return { timed, now, failed, done, start, end, op, steps, lastSeen, failedStep };
+}
+
+/** The panel's header: where it deploys, its state (failed, building, ready, done) and how long. */
+function DeployHeader({
+  where,
+  timeline: { failed, done, start, end, op, timed },
+  busy,
+  ready,
+}: {
+  where?: string;
+  timeline: ReturnType<typeof useDeployTimeline>;
+  busy: boolean;
+  ready: boolean;
+}) {
+  const t = useT();
+  return (
+    <PanelHeader
+      title={
+        <>
+          {t("labs.deploy.title")}
+          {where && (
+            <span className="truncate font-normal text-muted-foreground">
+              {t.rich("labs.deploy.on", { where: (s) => <span className="text-foreground">{s}</span> }, { where })}
+            </span>
+          )}
+        </>
+      }
+      action={
+        <span className="flex items-center gap-2.5">
+          {failed ? (
+            <StatusPill tone="fail">{t("labs.deploy.failed")}</StatusPill>
+          ) : busy ? (
+            <StatusPill tone="warn" pulse>
+              {op?.busy ?? t("labs.deploy.building")}
+            </StatusPill>
+          ) : ready || (done && !op) ? (
+            <StatusPill tone="ok">{t("labs.deploy.ready")}</StatusPill>
+          ) : op && timed.length > 0 ? (
+            <StatusPill tone="muted">{op.done}</StatusPill>
+          ) : null}
+          {start && end && <span className="font-mono text-[0.6875rem] tabular-nums text-faint">{formatDuration(end - start)}</span>}
+        </span>
+      }
+    />
+  );
+}
+
+/** The steps, then Ready once done, or a pending Preparing row before the first step shows. */
+function StepList({ timeline: tl, busy }: { timeline: ReturnType<typeof useDeployTimeline>; busy: boolean }) {
+  const t = useT();
+  const [open, setOpen] = useState<string | null>(null);
+  const { steps, now, done, failed, op } = tl;
+  return (
+    <ul className="py-1 empty:hidden">
+      {steps.map((p, i) => {
+        const next = steps[i + 1]?.rows[0]?.at;
+        const state = p.id === tl.failedStep ? "fail" : p.id === tl.lastSeen && busy ? "running" : "ok";
+        const to = next ?? (state === "running" ? now : (done?.at ?? failed?.at ?? p.rows.at(-1)!.at));
+        const expanded = open === p.id;
+        return (
+          <StepItem
+            key={p.id}
+            step={p}
+            state={state}
+            from={p.rows[0].at}
+            to={to}
+            origin={tl.start!}
+            expanded={expanded}
+            onToggle={() => setOpen(expanded ? null : p.id)}
+          />
+        );
+      })}
+      {done && !op && (
+        <li className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-3 px-4 py-2 text-[0.8125rem]">
+          <StepMark state="ok" />
+          <span className="text-foreground">{t("labs.deploy.ready")}</span>
+        </li>
+      )}
+      {busy && steps.length === 0 && (
+        <li className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-3 px-4 py-2 text-[0.8125rem] text-muted-foreground">
+          <StepMark state="pending" />
+          {op ? `${op.busy}…` : t("labs.deploy.preparingEllipsis")}
+        </li>
+      )}
+    </ul>
+  );
+}
+
 /** A lab's start-up as named steps with their durations, Vercel-build style (steps read from the
  *  log in deploy-log.ts, timed when each line arrives). The raw log stays one click away. */
 export function DeploySteps({
@@ -57,178 +178,20 @@ export function DeploySteps({
   /** What the log is of: a launch (steps read from the output) or an operation on the built lab. */
   operation?: Operation;
 }) {
-  const t = useT();
-  const fallback = useTimedLines(lines);
-  // Prefer the per-line timestamps kept in the deploy store (they survive leaving and returning
-  // to the page, so the step durations don't reset); fall back to local timing if absent.
-  const timed: Timed[] = times && times.length === lines.length ? lines.map((line, i) => ({ line, at: times[i] })) : fallback;
-  const [open, setOpen] = useState<string | null>(null);
+  const timeline = useDeployTimeline(lines, times, busy, operation);
   const [showLog, setShowLog] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!busy) return;
-    const timer = setInterval(() => setNow(Date.now()), 100);
-    return () => clearInterval(timer);
-  }, [busy]);
-
-  const failed = timed.find((row) => row.line.startsWith("✗"));
-  const done = timed.find((row) => row.line.startsWith("✓"));
-  const start = timed[0]?.at;
-  const end = done?.at ?? failed?.at ?? (busy ? now : timed.at(-1)?.at);
-
-  // The steps to show, built from the log per the detected target (Vagrant / Terraform / Docker).
-  const op = operationText(t, operation);
-  const steps = op ? (timed.length > 0 ? [{ id: operation, label: op.step, rows: timed }] : []) : deriveSteps(t, timed);
-  const lastSeen = steps.at(-1)?.id;
-  const named = failed ? failedMachineStep(failed.line) : null;
-  const failedStep = failed ? (named && steps.some((s) => s.id === named) ? named : lastSeen) : null;
-
+  const { failed, timed, start } = timeline;
   return (
     <div>
-      <PanelHeader
-        title={
-          <>
-            {t("labs.deploy.title")}
-            {where && (
-              <span className="truncate font-normal text-muted-foreground">
-                {t.rich("labs.deploy.on", { where: (s) => <span className="text-foreground">{s}</span> }, { where })}
-              </span>
-            )}
-          </>
-        }
-        action={
-          <span className="flex items-center gap-2.5">
-            {failed ? (
-              <StatusPill tone="fail">{t("labs.deploy.failed")}</StatusPill>
-            ) : busy ? (
-              <StatusPill tone="warn" pulse>
-                {op?.busy ?? t("labs.deploy.building")}
-              </StatusPill>
-            ) : ready || (done && !op) ? (
-              <StatusPill tone="ok">{t("labs.deploy.ready")}</StatusPill>
-            ) : op && timed.length > 0 ? (
-              <StatusPill tone="muted">{op.done}</StatusPill>
-            ) : null}
-            {start && end && <span className="font-mono text-[0.6875rem] tabular-nums text-faint">{formatDuration(end - start)}</span>}
-          </span>
-        }
-      />
-
-      <ul className="py-1 empty:hidden">
-        {steps.map((p, i) => {
-          const rows = p.rows;
-          const next = steps[i + 1]?.rows[0]?.at;
-          const isLast = p.id === lastSeen;
-          const state = p.id === failedStep ? "fail" : isLast && busy ? "running" : "ok";
-          const from = rows[0].at;
-          const to = next ?? (state === "running" ? now : (done?.at ?? failed?.at ?? rows.at(-1)!.at));
-          const expanded = open === p.id;
-          return (
-            <li key={p.id}>
-              <button
-                type="button"
-                aria-expanded={expanded}
-                onClick={() => setOpen(expanded ? null : p.id)}
-                className="group grid w-full grid-cols-[1.25rem_minmax(0,1fr)_auto_0.875rem] items-center gap-3 px-4 py-2 text-left text-[0.8125rem] transition-colors hover:bg-glass"
-              >
-                <StepMark state={state} />
-                <span className={cn("truncate", state === "fail" ? "text-destructive" : "text-foreground")}>{p.label}</span>
-                <span className="font-mono text-[0.6875rem] tabular-nums text-faint">{formatDuration(to - from)}</span>
-                <ChevronRight className={cn("size-3.5 text-faint transition-transform group-hover:text-muted-foreground", expanded && "rotate-90")} />
-              </button>
-              {/* While a phase is running, show its latest line inline (e.g. which container is
-                  still "Waiting"), so the long "Wait until healthy" step isn't a blank spinner. */}
-              {state === "running" && !expanded && rows.at(-1)?.line && (
-                <div className="-mt-1 truncate px-4 pb-2 pl-12 font-mono text-[0.6875rem] text-faint">{rows.at(-1)!.line.trim()}</div>
-              )}
-              {expanded && (
-                <div className="px-4 pb-2.5 pl-12">
-                  <TimedLog rows={rows} origin={start!} />
-                </div>
-              )}
-            </li>
-          );
-        })}
-        {done && !op && (
-          <li className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-3 px-4 py-2 text-[0.8125rem]">
-            <StepMark state="ok" />
-            <span className="text-foreground">{t("labs.deploy.ready")}</span>
-          </li>
-        )}
-        {busy && steps.length === 0 && (
-          <li className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-3 px-4 py-2 text-[0.8125rem] text-muted-foreground">
-            <StepMark state="pending" />
-            {op ? `${op.busy}…` : t("labs.deploy.preparingEllipsis")}
-          </li>
-        )}
-      </ul>
-
+      <DeployHeader where={where} timeline={timeline} busy={busy} ready={ready} />
+      <StepList timeline={timeline} busy={busy} />
       {failed && (
         <p className="flex items-start gap-2 border-t border-border px-4 py-2.5 font-mono text-[0.6875rem] text-muted-foreground">
           <StatusDot tone="fail" className="mt-1 shrink-0" />
           <span className="min-w-0 break-words">{failed.line.replace(/^✗\s*/, "")}</span>
         </p>
       )}
-
-      {timed.length > 0 && (
-        <div className="border-t border-border px-4 py-2">
-          <button
-            type="button"
-            aria-expanded={showLog}
-            onClick={() => setShowLog((v) => !v)}
-            className="flex items-center gap-1.5 text-[0.75rem] text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ChevronRight className={cn("size-3.5 transition-transform", showLog && "rotate-90")} />{" "}
-            {showLog ? t("labs.deploy.hideLog") : t("labs.deploy.showLog")}
-          </button>
-          {showLog && (
-            <div className="mt-2 pb-1">
-              <LogConsole lines={timed.map((row) => `${formatDuration(row.at - start!).padStart(6)}  ${row.line}`)} />
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** A step's 1.1rem circle: done (filled success with a check), running (warning ring with a
- *  pulsing dot), failed (fail ring with a cross), pending (an input ring). */
-function StepMark({ state }: { state: "ok" | "running" | "fail" | "pending" }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "flex size-[1.1rem] items-center justify-center rounded-full",
-        state === "ok" && "bg-success text-background",
-        state === "running" && "shadow-[inset_0_0_0_0.09375rem_var(--warning)]",
-        state === "fail" && "text-destructive shadow-[inset_0_0_0_0.09375rem_var(--destructive)]",
-        state === "pending" && "shadow-[inset_0_0_0_0.09375rem_var(--input)]",
-      )}
-    >
-      {state === "ok" && <Check className="size-2.5" strokeWidth={3.5} />}
-      {state === "running" && <span className="size-[0.4rem] animate-pulse rounded-full bg-warning" />}
-      {state === "fail" && <X className="size-2.5" strokeWidth={3} />}
-    </span>
-  );
-}
-
-/** A phase's own lines, each with its time since the launch started. */
-function TimedLog({ rows, origin }: { rows: Timed[]; origin: number }) {
-  const box = useRef<HTMLDivElement>(null);
-  // Tail the log: keep the newest line in view as the deployment streams.
-  useEffect(() => {
-    const el = box.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [rows]);
-  return (
-    <div ref={box} className="surface-log max-h-48 overflow-auto rounded-sm px-3 py-2 font-mono text-[0.6875rem] leading-relaxed">
-      {rows.map((r, i) => (
-        <div key={i} className="flex gap-3">
-          <span className="w-12 shrink-0 text-right tabular-nums text-faint">{formatDuration(r.at - origin)}</span>
-          <span className="min-w-0 break-words text-muted-foreground">{r.line}</span>
-        </div>
-      ))}
+      {timed.length > 0 && <RawLog timed={timed} origin={start!} shown={showLog} onToggle={() => setShowLog((v) => !v)} />}
     </div>
   );
 }

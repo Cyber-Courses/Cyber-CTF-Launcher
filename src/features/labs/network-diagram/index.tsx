@@ -19,6 +19,91 @@ import { topology } from "@/features/labs/network-diagram/topology";
 // machine on several (a pivot) sits between them in attack order. The attack box is a host on
 // the network it joined. Published ports are tabs on the card's bottom edge (the host's wall).
 
+/** What the diagram draws, as one string: it is laid out again only when this changes (not on
+ *  every status poll). The labels are drawn in the current language: a language change re-lays
+ *  them out too. */
+export function topologySig(locale: string, machines: Machine[], networks: LabNetwork[], attacker: Attacker) {
+  return (
+    `${locale}#` +
+    machines
+      .map(
+        (m) =>
+          `${m.name}:${m.state}:${m.ip}:${(m.interfaces ?? []).map((i) => `${i.network}=${i.ip}`).join(",")}:${(m.services ?? []).map((v) => `${v.name}=${v.kind}/${v.ports.join("+")}`).join(",")}:${m.ports.map((p) => `${p.published}-${p.target}`).join(",")}`,
+      )
+      .join("|") +
+    `#${networks.map((n) => `${n.name}=${n.subnet}${n.internal ? "!" : ""}`).join(",")}` +
+    `#${attacker?.running ? `${attacker.ip}@${attacker.labNetwork ?? ""}` : "off"}`
+  );
+}
+
+/** The shell's size for the graph (`graph`, the drawing's size plus its vertical margins; the
+ *  side margins are 24px each) at the shell's width. A wide lab is never shrunk below a readable
+ *  zoom: its canvas grows past the card instead, and the card scrolls sideways (trackpad,
+ *  shift+wheel, scrollbar). Tall labs get room instead of being shrunk to fit. */
+export function shellSize(graph: { w: number; h: number } | null, width: number) {
+  const fit = graph && width ? Math.min(1.05, (width - 48) / Math.max(graph.w, 1)) : 1;
+  const scale = Math.max(fit, MIN_ZOOM);
+  const canvas = graph && width ? Math.max(width, Math.ceil(graph.w * scale + 48)) : width;
+  const height = graph ? Math.round(Math.min(720, Math.max(220, graph.h * scale))) : 430;
+  return { canvas, height };
+}
+
+/** The shell's width, tracked so a resized window re-fits. */
+function useShellWidth() {
+  const shell = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = shell.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setWidth(Math.round(e.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [shell, width] as const;
+}
+
+/** The card's header: your machine (127.0.0.1) or the server the lab runs on. */
+function HostHeader({ host }: { host: string | null }) {
+  const t = useT();
+  return (
+    <div className="hostcard-header">
+      <span className="hostcard-icon">{host ? <Server size={16} /> : <Laptop size={16} />}</span>
+      <div>
+        <div className="hostcard-title">{host ?? t("diagram.host.yourMachine")}</div>
+        <div className="hostcard-sub mono">
+          {host ? (
+            t("diagram.host.serverSub")
+          ) : (
+            <>
+              <CopyText text="127.0.0.1">127.0.0.1</CopyText> · {t("diagram.host.host")}
+            </>
+          )}
+        </div>
+      </div>
+      <span className="hostcard-online">
+        <i /> {t("diagram.host.online")}
+      </span>
+    </div>
+  );
+}
+
+/** The published ports as tabs on the card's bottom edge, following the sideways scroll. */
+function PortTabs({ tabs, scrollX }: { tabs: Tab[]; scrollX: number }) {
+  const t = useT();
+  return (
+    <div className="port-tabs">
+      {tabs.map((tab) => (
+        <span key={tab.id} className="port-tab" style={{ left: tab.left - scrollX }} title={t("diagram.host.portTab", { url: `http://127.0.0.1:${tab.port}` })}>
+          <CopyText text={`http://127.0.0.1:${tab.port}`}>
+            <Plug size={11} />
+            <span className="mono">:{tab.port}</span>
+          </CopyText>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function NetworkDiagram({
   machines,
   networks = [],
@@ -30,67 +115,19 @@ export function NetworkDiagram({
   attacker?: Attacker;
   host?: string | null;
 }) {
-  const t = useT();
-  // The labels are drawn in the current language: a language change re-lays them out too.
-  const locale = useLocale();
-  // Re-layout only when the topology changes (not on every status poll).
-  const sig =
-    `${locale}#` +
-    machines
-      .map(
-        (m) =>
-          `${m.name}:${m.state}:${m.ip}:${(m.interfaces ?? []).map((i) => `${i.network}=${i.ip}`).join(",")}:${(m.services ?? []).map((v) => `${v.name}=${v.kind}/${v.ports.join("+")}`).join(",")}:${m.ports.map((p) => `${p.published}-${p.target}`).join(",")}`,
-      )
-      .join("|") +
-    `#${networks.map((n) => `${n.name}=${n.subnet}${n.internal ? "!" : ""}`).join(",")}` +
-    `#${attacker?.running ? `${attacker.ip}@${attacker.labNetwork ?? ""}` : "off"}`;
+  const sig = topologySig(useLocale(), machines, networks, attacker);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- sig captures everything drawn
   const topo = useMemo(() => topology(machines, networks, attacker), [sig]);
-
-  // Size the shell to the graph's shape at the current width: tall labs get room instead of
-  // being shrunk to fit. Tracks the shell's width so a resized window re-fits.
-  const shell = useRef<HTMLDivElement>(null);
+  const [shell, width] = useShellWidth();
   const [graph, setGraph] = useState<{ w: number; h: number } | null>(null);
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const el = shell.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([e]) => setWidth(Math.round(e.contentRect.width)));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
   const onSize = useCallback((w: number, h: number) => setGraph({ w, h }), []);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [scrollX, setScrollX] = useState(0);
-  // onSize gets the drawing's size plus its vertical margins; the side margins are 24px each.
-  // A wide lab is never shrunk below a readable zoom: its canvas grows past the card instead,
-  // and the card scrolls sideways (trackpad, shift+wheel, scrollbar).
-  const fit = graph && width ? Math.min(1.05, (width - 48) / Math.max(graph.w, 1)) : 1;
-  const scale = Math.max(fit, MIN_ZOOM);
-  const canvas = graph && width ? Math.max(width, Math.ceil(graph.w * scale + 48)) : width;
-  const height = graph ? Math.round(Math.min(720, Math.max(220, graph.h * scale))) : 430;
+  const { canvas, height } = shellSize(graph, width);
 
   return (
     <div className={cn("hostcard", machines.some((m) => m.ports.some((p) => p.published > 0)) && "hostcard-docked")}>
-      <div className="hostcard-header">
-        <span className="hostcard-icon">{host ? <Server size={16} /> : <Laptop size={16} />}</span>
-        <div>
-          <div className="hostcard-title">{host ?? t("diagram.host.yourMachine")}</div>
-          <div className="hostcard-sub mono">
-            {host ? (
-              t("diagram.host.serverSub")
-            ) : (
-              <>
-                <CopyText text="127.0.0.1">127.0.0.1</CopyText> · {t("diagram.host.host")}
-              </>
-            )}
-          </div>
-        </div>
-        <span className="hostcard-online">
-          <i /> {t("diagram.host.online")}
-        </span>
-      </div>
-
+      <HostHeader host={host} />
       <div
         ref={shell}
         className="topology-shell"
@@ -106,21 +143,7 @@ export function NetworkDiagram({
             </ReactFlowProvider>
           </div>
         </div>
-        <div className="port-tabs">
-          {tabs.map((tab) => (
-            <span
-              key={tab.id}
-              className="port-tab"
-              style={{ left: tab.left - scrollX }}
-              title={t("diagram.host.portTab", { url: `http://127.0.0.1:${tab.port}` })}
-            >
-              <CopyText text={`http://127.0.0.1:${tab.port}`}>
-                <Plug size={11} />
-                <span className="mono">:{tab.port}</span>
-              </CopyText>
-            </span>
-          ))}
-        </div>
+        <PortTabs tabs={tabs} scrollX={scrollX} />
       </div>
     </div>
   );

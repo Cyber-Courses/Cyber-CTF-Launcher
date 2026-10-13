@@ -33,6 +33,40 @@ export type LabStateInput = {
 /** The page's state as one word (see the status strip). */
 export type LabPhase = "operation" | "running" | "starting" | "paused" | "shutDown" | "interrupted" | "notStarted";
 
+/** What the page can do on the built lab. A container lab in a VM can only be paused (its
+ *  containers don't restart on their own after a power-off); a container lab here only shut down
+ *  (its containers stop; there's no state to save). A VM lab gets both. Nothing on a server host
+ *  yet. Provisioning runs again in place on VM labs driven by Vagrant (here, or an ESXi host). */
+function labControls(i: LabStateInput, { isDocker, isCloud, remote }: { isDocker: boolean; isCloud: boolean; remote: boolean }) {
+  const { status } = i;
+  return {
+    canPause: i.parkable && !remote && (!isDocker || status?.place === "local_vm"),
+    canShutdown: i.parkable && !remote && !isCloud && status?.place !== "local_vm",
+    canProvision: i.provisionable && !isDocker && !isCloud && status?.place !== "cloud" && status?.provider !== "proxmox",
+  };
+}
+
+/** The page's state as one word, most pressing first. */
+function labPhase({
+  operation,
+  running,
+  starting,
+  parked,
+  interrupted,
+}: {
+  operation: LabOperation | null;
+  running: boolean;
+  starting: boolean;
+  parked: LabStatus["parked"];
+  interrupted: boolean;
+}): LabPhase {
+  if (operation && OPERATION_STATUS[operation]) return "operation";
+  if (running) return "running";
+  if (starting) return "starting";
+  if (parked) return parked === "pause" ? "paused" : "shutDown";
+  return interrupted ? "interrupted" : "notStarted";
+}
+
 export function deriveLabState(i: LabStateInput) {
   const { status, runtime: rt } = i;
   const machines = status?.machines ?? [];
@@ -68,31 +102,12 @@ export function deriveLabState(i: LabStateInput) {
   const down = deploying ? [] : machines.filter((m) => !m.infra && m.state !== "running");
   const isDocker = rt?.runtime !== "VM" && !isCloud;
   const remote = !!status?.host;
-  // A container lab in a VM can only be paused (its containers don't restart on their own after a
-  // power-off); a container lab here only shut down (its containers stop; there's no state to
-  // save). A VM lab gets both. Nothing on a server host yet.
-  const canPause = i.parkable && !remote && (!isDocker || status?.place === "local_vm");
-  const canShutdown = i.parkable && !remote && !isCloud && status?.place !== "local_vm";
-  // Provisioning runs again in place on VM labs driven by Vagrant (here, or an ESXi host).
-  const canProvision = i.provisionable && !isDocker && !isCloud && status?.place !== "cloud" && status?.provider !== "proxmox";
+  const { canPause, canShutdown, canProvision } = labControls(i, { isDocker, isCloud, remote });
   // Where it actually runs: "on this machine" alone is misleading for a VM lab (which hypervisor
   // do I open?), so name the engine or hypervisor the status reports.
   const engine = status?.provider ? (status.provider === "docker" ? "Docker" : (PROVIDER_LABELS[status.provider] ?? status.provider)) : null;
 
-  const phase: LabPhase =
-    operation && OPERATION_STATUS[operation]
-      ? "operation"
-      : running
-        ? "running"
-        : starting
-          ? "starting"
-          : parked
-            ? parked === "pause"
-              ? "paused"
-              : "shutDown"
-            : interrupted
-              ? "interrupted"
-              : "notStarted";
+  const phase = labPhase({ operation, running, starting, parked, interrupted });
 
   return {
     native,

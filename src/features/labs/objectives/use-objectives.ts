@@ -30,17 +30,9 @@ export type ObjectivesState =
 type Loaded = { labId: string; challenges: Challenge[] | null | "unavailable" };
 type Progress = { key: string; progress: LabProgress | null };
 
-/**
- * Loads a lab's challenges and the player's progress, and wraps the two mutations. Progress is
- * updated in place from each answer, then read again from the backend after a correct one.
- * Each answer is kept with the lab (and sign-in) it was read for, so a page switching labs
- * never shows the previous lab's.
- */
-export function useObjectives(labId: string, question: string | null, title: string, loggedIn: boolean) {
+/** The lab's challenges, kept with the lab they were read for (undefined while loading). */
+function useChallenges(labId: string, question: string | null, title: string) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const progressKey = `${labId}:${loggedIn}`;
-  const [stored, setStored] = useState<Progress | null>(null);
-
   useEffect(() => {
     let alive = true;
     loadObjectives(labId)
@@ -50,6 +42,13 @@ export function useObjectives(labId: string, question: string | null, title: str
       alive = false;
     };
   }, [labId, question, title]);
+  return loaded?.labId === labId ? loaded.challenges : undefined;
+}
+
+/** The player's progress as last read or updated, kept with the lab and sign-in (`key`) it is
+ *  for; `refresh` reads it again. */
+function useStoredProgress(labId: string, loggedIn: boolean) {
+  const [stored, setStored] = useState<Progress | null>(null);
 
   const refresh = useCallback(async () => {
     if (!loggedIn) return;
@@ -71,7 +70,32 @@ export function useObjectives(labId: string, question: string | null, title: str
     };
   }, [labId, loggedIn]);
 
-  const challenges = loaded?.labId === labId ? loaded.challenges : undefined;
+  return { stored, setStored, refresh };
+}
+
+/** What the page shows of the objectives, from the challenges read (undefined while loading). */
+export function objectivesState(
+  challenges: Challenge[] | null | "unavailable" | undefined,
+  progress: LabProgress,
+  signedIn: boolean,
+  progressRead: boolean,
+): ObjectivesState {
+  if (challenges === undefined) return { kind: "loading" };
+  if (challenges === "unavailable") return { kind: "unavailable" };
+  if (!challenges) return { kind: "none" };
+  return { kind: "ready", challenges, progress, signedIn, progressRead };
+}
+
+/**
+ * Loads a lab's challenges and the player's progress, and wraps the two mutations. Progress is
+ * updated in place from each answer, then read again from the backend after a correct one.
+ * Each answer is kept with the lab (and sign-in) it was read for, so a page switching labs
+ * never shows the previous lab's.
+ */
+export function useObjectives(labId: string, question: string | null, title: string, loggedIn: boolean) {
+  const challenges = useChallenges(labId, question, title);
+  const progressKey = `${labId}:${loggedIn}`;
+  const { stored, setStored, refresh } = useStoredProgress(labId, loggedIn);
   const list = useMemo(() => (Array.isArray(challenges) ? challenges : []), [challenges]);
   const progress = (stored?.key === progressKey ? stored.progress : null) ?? emptyProgress(list);
 
@@ -79,7 +103,7 @@ export function useObjectives(labId: string, question: string | null, title: str
   const update = useCallback(
     (change: (p: LabProgress) => LabProgress) =>
       setStored((s) => ({ key: progressKey, progress: change((s?.key === progressKey ? s.progress : null) ?? emptyProgress(list)) })),
-    [progressKey, list],
+    [progressKey, list, setStored],
   );
 
   const submit = useCallback(
@@ -108,11 +132,6 @@ export function useObjectives(labId: string, question: string | null, title: str
     [labId, update],
   );
 
-  let state: ObjectivesState;
-  if (challenges === undefined) state = { kind: "loading" };
-  else if (challenges === "unavailable") state = { kind: "unavailable" };
-  else if (!challenges) state = { kind: "none" };
-  else state = { kind: "ready", challenges, progress, signedIn: loggedIn, progressRead: !loggedIn || stored?.key === progressKey };
-
+  const state = objectivesState(challenges, progress, loggedIn, !loggedIn || stored?.key === progressKey);
   return { state, submit, showSteps, revealHint };
 }

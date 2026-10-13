@@ -50,19 +50,7 @@ export function AttackBoxPanel({
         }
       />
       <KeyValue k={t("labs.attackBox.status")}>
-        {remote && running ? (
-          <>{t("labs.attackBox.runningOn", { host: host ?? "" })}</>
-        ) : status?.running ? (
-          <span className="inline-flex items-center gap-1.5">
-            <Crosshair className="size-3.5 text-you-text" /> {t("labs.attackBox.running")}
-          </span>
-        ) : busy ? (
-          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-            <Spinner className="size-3" /> {t("labs.attackBox.starting")}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">{running ? t("labs.attackBox.notStarted") : t("labs.attackBox.startsWithLab")}</span>
-        )}
+        <BoxState running={running} remote={remote} host={host} up={!!status?.running} busy={busy} />
       </KeyValue>
       {status?.running && status.ip && (
         <KeyValue k={t("labs.attackBox.address")}>
@@ -90,23 +78,50 @@ export function AttackBoxPanel({
             <span>{t.rich("labs.attackBox.firstDownload", { name: (s) => <span className="font-mono text-foreground">{s}</span> }, { name })}</span>
           </p>
         )}
-        {running && !remote && !controller && (
-          <div className="space-y-2">
-            {status?.running ? (
-              <Button variant="outline" size="sm" className="w-full" onClick={() => box.stop()} disabled={busy}>
-                <Square className="size-3.5" /> {busy ? t("labs.attackBox.working") : t("labs.attackBox.stop")}
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" className="w-full" onClick={() => box.start()} disabled={busy}>
-                {busy ? <Spinner className="size-3.5" /> : <Play className="size-3.5" />} {t("labs.attackBox.start")}
-              </Button>
-            )}
-          </div>
-        )}
+        {running && !remote && !controller && <BoxControls box={box} />}
         {(busy || log.some((l) => l.startsWith("✗"))) && log.length > 0 && (
           <LogConsole lines={log} running={busy} title={vm ? t("labs.attackBox.attackVm") : t("labs.attackBox.attackBox")} />
         )}
       </div>
     </Panel>
+  );
+}
+
+/** Where the box stands: on the lab's server, running, starting, not started (or it starts with
+ *  the lab). */
+function BoxState({ running, remote, host, up, busy }: { running: boolean; remote: boolean; host: string | null; up: boolean; busy: boolean }) {
+  const t = useT();
+  if (remote && running) return <>{t("labs.attackBox.runningOn", { host: host ?? "" })}</>;
+  if (up)
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <Crosshair className="size-3.5 text-you-text" /> {t("labs.attackBox.running")}
+      </span>
+    );
+  if (busy)
+    return (
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+        <Spinner className="size-3" /> {t("labs.attackBox.starting")}
+      </span>
+    );
+  return <span className="text-muted-foreground">{running ? t("labs.attackBox.notStarted") : t("labs.attackBox.startsWithLab")}</span>;
+}
+
+/** Start or stop a box on this machine by hand. */
+function BoxControls({ box }: { box: AttackBox }) {
+  const t = useT();
+  const { status, busy } = box;
+  return (
+    <div className="space-y-2">
+      {status?.running ? (
+        <Button variant="outline" size="sm" className="w-full" onClick={() => box.stop()} disabled={busy}>
+          <Square className="size-3.5" /> {busy ? t("labs.attackBox.working") : t("labs.attackBox.stop")}
+        </Button>
+      ) : (
+        <Button variant="outline" size="sm" className="w-full" onClick={() => box.start()} disabled={busy}>
+          {busy ? <Spinner className="size-3.5" /> : <Play className="size-3.5" />} {t("labs.attackBox.start")}
+        </Button>
+      )}
+    </div>
   );
 }

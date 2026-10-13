@@ -56,57 +56,89 @@ export function StartLabButton({
         <Play className="size-3.5" /> {t("labs.detail.startLab")}
       </Button>
       {choosing && (
-        <RunOnDialog
+        <StartDialog
+          lab={lab}
+          run={run}
+          isDocker={isDocker}
+          cloud={cloud}
+          busy={busy}
+          dockerRunning={dockerRunning}
           onClose={() => setChoosing(false)}
-          footer={
-            <>
-              <Button variant="ghost" size="sm" onClick={() => setChoosing(false)}>
-                {t("labs.detail.cancel")}
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!!cloud && !run.pickedAccount}
-                onClick={() => {
-                  setChoosing(false);
-                  onStart(run.chosen());
-                }}
-              >
-                <Play className="size-3.5" /> {t("labs.detail.start")}
-              </Button>
-            </>
-          }
-        >
-          <RunOnPicker
-            title={lab.title}
-            hosts={run.hosts}
-            hostOk={run.hostOk}
-            localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
-            localVm={run.localVm}
-            hosted={!!rt?.hosted}
-            dockerRunning={isDocker ? dockerRunning : null}
-            value={run.runOn}
-            onChange={run.setRunOn}
-            disabled={busy}
-            offerLocal={!cloud}
-            localExtra={
-              run.runOn.kind === "local" &&
-              isDocker && (
-                <div className="space-y-1.5">
-                  <p className="section-label">{t("labs.detail.portsHere")}</p>
-                  <PortChoice value={run.ports} onChange={run.setPorts} />
-                </div>
-              )
-            }
-          />
-          {cloud && (
-            <div className="mt-4">
-              <CloudLaunchNote preview={cloud.preview} autoStopHours={run.pickedAccount?.autoStopHours ?? null} />
-            </div>
-          )}
-        </RunOnDialog>
+          onStart={(target) => {
+            setChoosing(false);
+            onStart(target);
+          }}
+        />
       )}
     </div>
+  );
+}
+
+/** "Where should it run?", with the host ports for a container lab here and a cloud lab's cost;
+ *  Start goes with the target picked. */
+function StartDialog({
+  lab,
+  run,
+  isDocker,
+  cloud,
+  busy,
+  dockerRunning,
+  onClose,
+  onStart,
+}: {
+  lab: Lab;
+  run: RunTargetChoice;
+  isDocker: boolean;
+  cloud: { preview: CloudPreview | null } | null;
+  busy: boolean;
+  dockerRunning: boolean | null;
+  onClose: () => void;
+  onStart: (target: RunTarget) => void;
+}) {
+  const t = useT();
+  const rt = lab.runtime;
+  return (
+    <RunOnDialog
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            {t("labs.detail.cancel")}
+          </Button>
+          <Button variant="primary" size="sm" disabled={!!cloud && !run.pickedAccount} onClick={() => onStart(run.chosen())}>
+            <Play className="size-3.5" /> {t("labs.detail.start")}
+          </Button>
+        </>
+      }
+    >
+      <RunOnPicker
+        title={lab.title}
+        hosts={run.hosts}
+        hostOk={run.hostOk}
+        localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
+        localVm={run.localVm}
+        hosted={!!rt?.hosted}
+        dockerRunning={isDocker ? dockerRunning : null}
+        value={run.runOn}
+        onChange={run.setRunOn}
+        disabled={busy}
+        offerLocal={!cloud}
+        localExtra={
+          run.runOn.kind === "local" &&
+          isDocker && (
+            <div className="space-y-1.5">
+              <p className="section-label">{t("labs.detail.portsHere")}</p>
+              <PortChoice value={run.ports} onChange={run.setPorts} />
+            </div>
+          )
+        }
+      />
+      {cloud && (
+        <div className="mt-4">
+          <CloudLaunchNote preview={cloud.preview} autoStopHours={run.pickedAccount?.autoStopHours ?? null} />
+        </div>
+      )}
+    </RunOnDialog>
   );
 }
 

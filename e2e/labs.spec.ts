@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { test, expect, openApp, navButton, pageTitle, breadcrumb } from "./fixtures";
 
-// The mock's catalogue (src/lib/dev-mock.ts): Invoice portal API runs, Public backup is solved.
+// The mock's catalogue (src/lib/dev-mock-labs.ts): Invoice portal API runs, Public backup is solved.
 const ALL = ["Invoice portal API", "GOAD Light", "Blind orders", "Exposed dashboard", "Public backup", "EC2 SSRF"];
 
 /** The lab rows the list shows, by title. */
