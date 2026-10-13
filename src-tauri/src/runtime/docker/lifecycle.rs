@@ -21,11 +21,31 @@ async fn ensure_docker_up() -> Result<()> {
     })
 }
 
-/// A host port is taken if we can't bind it (another lab, or anything else, holds it). Checks
+/// A host port is taken if we can't bind it over its protocol (`udp`, else TCP): another lab, or
+/// anything else (dnsmasq, Windows' Internet Connection Sharing on UDP 53), holds it. Checks
 /// every interface a container can publish to: all interfaces and the loopback specifically
 /// (a port held only on 127.0.0.1 doesn't fail the 0.0.0.0 bind on its own).
-fn port_in_use(port: u16) -> bool {
+fn port_in_use(port: u16, proto: &str) -> bool {
+    if proto == "udp" {
+        return std::net::UdpSocket::bind(("0.0.0.0", port)).is_err() || std::net::UdpSocket::bind(("127.0.0.1", port)).is_err();
+    }
     std::net::TcpListener::bind(("0.0.0.0", port)).is_err() || std::net::TcpListener::bind(("127.0.0.1", port)).is_err()
+}
+
+/// A port is free over `proto` on the loopback, and held open so it isn't handed out twice.
+enum Held {
+    Tcp(#[allow(dead_code)] std::net::TcpListener),
+    Udp(#[allow(dead_code)] std::net::UdpSocket),
+}
+
+/// A free loopback port over `proto` (`udp`, else TCP), and its socket holding it.
+fn free_port(proto: &str) -> Option<(u16, Held)> {
+    if proto == "udp" {
+        let s = std::net::UdpSocket::bind(("127.0.0.1", 0)).ok()?;
+        return Some((s.local_addr().ok()?.port(), Held::Udp(s)));
+    }
+    let l = std::net::TcpListener::bind(("127.0.0.1", 0)).ok()?;
+    Some((l.local_addr().ok()?.port(), Held::Tcp(l)))
 }
 
 async fn is_running(dir: &Path, project: &str) -> bool {
@@ -42,7 +62,7 @@ async fn has_containers(dir: &Path, project: &str) -> bool {
     }
 }
 
-async fn published_host_ports(dir: &Path, project: &str, env: &[(String, String)]) -> Result<Vec<u16>> {
+async fn published_host_ports(dir: &Path, project: &str, env: &[(String, String)]) -> Result<Vec<(u16, String)>> {
     let out = compose::output_env(dir, project, &["config", "--format", "json"], env).await?;
     Ok(compose::host_ports_from_config(&out))
 }
@@ -81,9 +101,8 @@ fn pick_pins(config: &str, defaults: bool) -> Option<String> {
         if defaults && target != 0 && taken.insert((target, proto.to_string())) {
             return Some(target);
         }
-        let l = std::net::TcpListener::bind(("127.0.0.1", 0)).ok()?;
-        let port = l.local_addr().ok()?.port();
-        held.push(l);
+        let (port, socket) = free_port(proto)?;
+        held.push(socket);
         Some(port)
     });
     drop(held);
@@ -108,8 +127,8 @@ pub async fn start(dir: &Path, id: &str, env: &[(String, String)], mut log: impl
     // engine confirmed up, a failure reading the ports is a real Compose-config error worth
     // surfacing now rather than letting `up` fail on it.
     if !is_running(dir, &project).await {
-        for port in published_host_ports(dir, &project, env).await? {
-            if port_in_use(port) {
+        for (port, proto) in published_host_ports(dir, &project, env).await? {
+            if port_in_use(port, &proto) {
                 return Err(Error::Invalid(format!(
                     "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever uses it, or start the lab with random ports."
                 )));
@@ -264,7 +283,23 @@ mod tests {
     #[test]
     fn a_held_port_is_in_use() {
         let held = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        assert!(port_in_use(held.local_addr().unwrap().port()));
+        let port = held.local_addr().unwrap().port();
+        assert!(port_in_use(port, "tcp"));
+        // Held over TCP only: free over UDP (a TCP holder doesn't block a UDP-only port).
+        assert!(!port_in_use(port, "udp"));
+        let udp = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let port = udp.local_addr().unwrap().port();
+        assert!(port_in_use(port, "udp"), "a UDP holder (dnsmasq on 53) is caught");
+        assert!(!port_in_use(port, "tcp"));
+    }
+
+    #[test]
+    fn random_udp_ports_are_free_over_udp() {
+        let config = r#"{"services":{"dns":{"ports":[{"target":53,"protocol":"udp"},{"target":53,"protocol":"tcp"}]}}}"#;
+        let yaml = pick_pins(config, false).unwrap();
+        let udp: u16 =
+            yaml.lines().find(|l| l.contains("/udp")).and_then(|l| l.trim().strip_prefix("- \"")).unwrap().split(':').next().unwrap().parse().unwrap();
+        assert!(!port_in_use(udp, "udp"), "{yaml}");
     }
 
     #[test]

@@ -233,8 +233,9 @@ fn lab_profile(cloud: &CloudServices) -> Option<&str> {
 /// guard for the length of the run).
 async fn run_env(conn: &server::Connection, state: &Path, cloud: &CloudServices) -> Result<(Vec<(String, String)>, Option<AwsFiles>)> {
     let mut env = module_env(conn).await;
-    // The lab's own variables (`cloud.env`, names Isoloom checked), over the account's.
-    for (k, v) in &cloud.env {
+    // The lab's own variables (`cloud.env`), over the account's: only the ones it may set (see
+    // `reserved_env`; `start` refused a lab setting another, a destroy just leaves them out).
+    for (k, v) in cloud.env.iter().filter(|(k, _)| !reserved_env(k)) {
         env.retain(|(o, _)| o != k);
         env.push((k.clone(), v.clone()));
     }
@@ -375,7 +376,7 @@ pub(super) async fn start(app: &AppHandle, dir: &Path, id: &str, host: Option<&s
     let conn = ready_account(app, host, conn, log).await?;
     // Mark first, so a half-created lab can still be destroyed with the same account.
     server::mark_lab(dir, Some(host))?;
-    log(format!("Running in your {} account {} ({})", conn.provider.id().to_uppercase(), conn.name, conn.region.as_deref().unwrap_or("default region")));
+    log(format!("Running in your {} account {} ({})", conn.provider.id().to_uppercase(), conn.name, region_used(cloud, &conn).unwrap_or("default region")));
     if conn.provider == Provider::Aws {
         check_aws_budget(app, host, log).await?;
     }
@@ -401,13 +402,39 @@ pub(super) async fn start(app: &AppHandle, dir: &Path, id: &str, host: Option<&s
 /// Refuses a lab using what this launcher doesn't run yet: set-up steps on this machine before
 /// Terraform (`cloud.before`).
 fn check_supported(cloud: &CloudServices) -> Result<()> {
-    if cloud.before.is_empty() {
-        return Ok(());
+    if !cloud.before.is_empty() {
+        return Err(Error::Invalid(format!(
+            "This lab runs set-up steps on this machine before creating its cloud services ({}), which Cyber CTF can't run yet. Nothing was created.",
+            cloud.before.join(", ")
+        )));
     }
-    Err(Error::Invalid(format!(
-        "This lab runs set-up steps on this machine before creating its cloud services ({}), which Cyber CTF can't run yet. Nothing was created.",
-        cloud.before.join(", ")
-    )))
+    let reserved: Vec<&str> = cloud.env.keys().map(String::as_str).filter(|k| reserved_env(k)).collect();
+    if !reserved.is_empty() {
+        return Err(Error::Invalid(format!(
+            "This lab sets {} in its environment (`cloud.env`), which Cyber CTF keeps to itself: the cloud account's credentials and Terraform's own settings come from the launcher. Nothing was created.",
+            reserved.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+/// The environment variables a lab's `cloud.env` may not set (Isoloom refuses only its scripts'
+/// and the shell's own names): the cloud accounts' credentials and sign-in (every `AWS_*` but
+/// the region, `ARM_*`, `AZURE_*`, `GOOGLE_*`, `CLOUDSDK_*`, `OCI_*`, the DigitalOcean and Linode
+/// tokens) and Terraform's own (`TF_*`: `TF_VAR_*` would beat the launcher's variables,
+/// `TF_CLI_ARGS*` change what an apply or destroy does, `TF_LOG*` write files). The launcher
+/// sets those from the picked account; a lab may still pick its region (`AWS_REGION`).
+fn reserved_env(name: &str) -> bool {
+    let n = name.to_ascii_uppercase();
+    if n == "AWS_REGION" || n == "AWS_DEFAULT_REGION" {
+        return false;
+    }
+    ["AWS_", "ARM_", "AZURE_", "GOOGLE_", "CLOUDSDK_", "OCI_", "TF_"].iter().any(|p| n.starts_with(p)) || n == "DIGITALOCEAN_TOKEN" || n == "LINODE_TOKEN"
+}
+
+/// The region a run uses: the lab's own (`AWS_REGION` in `cloud.env`), else the account's.
+fn region_used<'a>(cloud: &'a CloudServices, conn: &'a server::Connection) -> Option<&'a str> {
+    ["AWS_REGION", "AWS_DEFAULT_REGION"].iter().find_map(|k| cloud.env.get(*k)).map(String::as_str).or(conn.region.as_deref())
 }
 
 /// Refuses a lab whose module needs a tool this machine lacks (`cloud.requires`), naming it.
@@ -841,6 +868,80 @@ mod tests {
         let s = spec(&format!("{GOAT}  before: [keys.sh]\n"));
         let err = check_supported(of(&s).unwrap()).unwrap_err().to_string();
         assert!(err.contains("(keys.sh)") && err.contains("Nothing was created"), "{err}");
+    }
+
+    #[test]
+    fn credentials_and_terraform_settings_stay_the_launchers() {
+        for name in [
+            "AWS_ACCESS_KEY_ID",
+            "aws_secret_access_key",
+            "AWS_PROFILE",
+            "ARM_CLIENT_SECRET",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "CLOUDSDK_CONFIG",
+            "TF_CLI_ARGS_destroy",
+            "TF_VAR_expires_at",
+            "TF_LOG_PATH",
+            "DIGITALOCEAN_TOKEN",
+        ] {
+            assert!(reserved_env(name), "{name}");
+        }
+        for name in ["AWS_REGION", "AWS_DEFAULT_REGION", "CG_ID", "PYTHONUNBUFFERED"] {
+            assert!(!reserved_env(name), "{name}");
+        }
+        let s = spec(
+            &GOAT.replace("env: { AWS_REGION: us-east-1 }", "env: { AWS_REGION: us-east-1, TF_CLI_ARGS_destroy: \"-target=x\", AWS_ACCESS_KEY_ID: AKIA }"),
+        );
+        let err = check_supported(of(&s).unwrap()).unwrap_err().to_string();
+        assert!(err.contains("TF_CLI_ARGS_destroy, AWS_ACCESS_KEY_ID") && err.contains("Nothing was created"), "{err}");
+        // The region a run says it uses: the lab's, else the account's.
+        let mut conn = account(Provider::Aws);
+        conn.region = Some("eu-west-3".into());
+        assert_eq!(region_used(of(&spec(GOAT)).unwrap(), &conn), Some("us-east-1"));
+        assert_eq!(region_used(of(&spec(SPEC)).unwrap(), &conn), Some("eu-west-3"));
+    }
+
+    #[tokio::test]
+    async fn on_aws_the_shared_files_get_the_labs_region_and_no_cli_profile() {
+        let _tools = crate::exec::fake::Tools::rules(&[]);
+        let state = std::env::temp_dir().join(format!("cyberctf-cloudsvc-awsenv-{}", rand::random::<u32>()));
+        let mut conn = account(Provider::Aws);
+        conn.tf_env = vec![
+            ("AWS_ACCESS_KEY_ID".into(), "AKIAEXAMPLE".into()),
+            ("AWS_SECRET_ACCESS_KEY".into(), "s3cret".into()),
+            ("AWS_REGION".into(), "eu-west-3".into()),
+            ("AWS_PROFILE".into(), "work".into()),
+        ];
+        // A lab sneaking keys in (a destroy of a lab started before the refusal): left out.
+        let s = spec(&GOAT.replace("env: { AWS_REGION: us-east-1 }", "env: { AWS_REGION: us-east-1, AWS_ACCESS_KEY_ID: AKIALAB }"));
+        let (env, files) = run_env(&conn, &state, of(&s).unwrap()).await.unwrap();
+        let files = files.expect("keys, so files");
+        let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
+        assert_eq!(get("AWS_REGION"), Some("us-east-1"));
+        assert_eq!(get("AWS_ACCESS_KEY_ID"), Some("AKIAEXAMPLE"));
+        assert_eq!(get("AWS_PROFILE"), None, "a CLI profile would point outside the files");
+        let config = std::fs::read_to_string(state.join(AWS_CONFIG_FILE)).unwrap();
+        assert_eq!(config, "[default]\nregion = us-east-1\n");
+        assert!(std::fs::read_to_string(state.join(AWS_CREDENTIALS_FILE)).unwrap().contains("AKIAEXAMPLE"));
+        drop(files);
+        let _ = std::fs::remove_dir_all(state);
+    }
+
+    #[tokio::test]
+    async fn a_lab_with_set_up_steps_is_refused_before_the_account_is_read() {
+        use crate::exec::fake::Tools;
+        use crate::test_app::TestApp;
+        let t = TestApp::new();
+        let dir = t.lab(
+            "goat",
+            &[("isoloom.yml", format!("{GOAT}  before: [keys.sh]\n").as_str()), ("keys.sh", "true\n"), ("terraform/main.tf", "variable \"region\" {}\n")],
+        );
+        let tools = Tools::rules(&[]);
+        // No such account: had it been read first, that would be the error.
+        let err = super::super::start(t.handle(), &dir, "goat", Runtime::Cloud, None, Some("no-such-account"), &[], |_| {}).await.unwrap_err().to_string();
+        assert!(err.contains("set-up steps on this machine"), "{err}");
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(!t.data().join("deployments/goat").exists());
     }
 
     #[tokio::test]

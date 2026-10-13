@@ -150,8 +150,8 @@ proptest! {
             }
             for p in &ports {
                 if let Some(h) = num(&p["published"]).filter(|h| *h > 0) {
-                    want_host.push(h as u16);
                     let proto = p["protocol"].as_str().filter(|x| !x.is_empty()).unwrap_or("tcp").to_string();
+                    want_host.push((h as u16, proto.clone()));
                     want_published.push((name.clone(), p["target"].as_u64().unwrap() as u16, proto, h as u16));
                 }
             }

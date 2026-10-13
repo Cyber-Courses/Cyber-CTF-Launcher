@@ -2,8 +2,9 @@
 //! what it starts and forgets what it stops, so `isoloom status`, `connect` and `exec` see
 //! launcher-run labs too. Best effort: a registry that can't be written never fails a launch.
 //!
-//! Optional interop, on by default: with the setting off (Settings > Labs) the launcher never
-//! writes the file, and works the same. It still reads it, to keep its labs' instance numbers
+//! Optional interop, on by default: with the setting off (Settings > Labs) the launcher records
+//! nothing there, and works the same. It still removes the entries of a lab that stops (one
+//! recorded while the setting was on), and reads the file, to keep its labs' instance numbers
 //! clear of environments the CLI runs.
 
 use std::path::{Path, PathBuf};
@@ -65,7 +66,7 @@ pub fn isoloom_registry_get() -> bool {
 }
 
 /// Turns recording labs in Isoloom's registry on or off; the setting as saved. Turned off, the
-/// entries already there stay until their labs stop.
+/// entries already there are removed as their labs stop.
 #[tauri::command]
 pub fn isoloom_registry_set(enabled: bool) -> Result<bool> {
     save_to(FILE.get().map(PathBuf::as_path), enabled)?;
@@ -89,19 +90,37 @@ pub fn record_docker(dir: &Path, spec: &Spec, project: String) {
 
 fn upsert(dir: &Path, spec: &Spec, target: Target, cloud: Option<&str>, project: Option<String>) {
     let entry = entry(dir, spec, target, cloud, project, registry::now());
-    update(|reg| reg.upsert(entry));
+    update(Change::Record(entry));
 }
 
-/// Updates Isoloom's registry, best effort. Unit tests apply the change to an empty registry
+/// What the launcher does to the registry.
+enum Change {
+    /// A lab started: its entry added (or replaced).
+    Record(registry::Entry),
+    /// A lab stopped: every entry of its folder (a [`key`]) removed.
+    Forget(PathBuf),
+}
+
+/// Applies `change` to Isoloom's registry, best effort. Unit tests apply it to an empty registry
 /// instead: the real one is the user's own `~/.isoloom`, never a test's to write.
-fn update(f: impl FnOnce(&mut registry::Registry)) {
-    if !enabled() {
-        return;
+fn update(change: Change) {
+    update_with(enabled(), change, |f| {
+        #[cfg(not(test))]
+        let _ = registry::update(f);
+        #[cfg(test)]
+        f(&mut registry::Registry::default());
+    });
+}
+
+/// [`update`] with the setting `enabled` and `write` writing the registry. With the setting off
+/// nothing is recorded, but a lab's entries are still forgotten: one recorded while it was on
+/// must not stay behind as a ghost (`isoloom status`, its instance number held) once it stops.
+fn update_with(enabled: bool, change: Change, write: impl FnOnce(Box<dyn FnOnce(&mut registry::Registry)>)) {
+    match change {
+        Change::Record(entry) if enabled => write(Box::new(move |reg| reg.upsert(entry))),
+        Change::Record(_) => {}
+        Change::Forget(dir) => write(Box::new(move |reg| drop_dir(reg, &dir))),
     }
-    #[cfg(not(test))]
-    let _ = registry::update(f);
-    #[cfg(test)]
-    f(&mut registry::Registry::default());
 }
 
 /// The instance numbers the registry records for environments in other folders than `dir` (run
@@ -118,8 +137,7 @@ fn entry(dir: &Path, spec: &Spec, target: Target, cloud: Option<&str>, project: 
 
 /// Forgets every entry of the lab (whatever target it ran on).
 pub fn forget(dir: &Path) {
-    let dir = key(dir);
-    update(|reg| drop_dir(reg, &dir));
+    update(Change::Forget(key(dir)));
 }
 
 /// Removes every entry of `dir` (a [`key`]) from the registry.
@@ -129,7 +147,7 @@ fn drop_dir(reg: &mut registry::Registry, dir: &Path) {
 
 #[cfg(test)]
 mod tests {
-    use super::{Setting, drop_dir, entry, isoloom_registry_get, isoloom_registry_set, key, load_from, save_to};
+    use super::{Change, Setting, drop_dir, entry, isoloom_registry_get, isoloom_registry_set, key, load_from, save_to, update_with};
     use isoloom_core::{Target, registry::Registry};
 
     fn spec(name: &str) -> isoloom_core::Spec {
@@ -191,5 +209,31 @@ mod tests {
         assert!(isoloom_registry_get());
         assert_eq!(isoloom_registry_set(false).unwrap_err().to_string(), "settings aren't ready yet");
         assert!(isoloom_registry_get());
+    }
+
+    /// Applies `change` with the setting `enabled` to `reg`; whether anything was written.
+    fn apply(reg: &mut Registry, enabled: bool, change: Change) -> bool {
+        let mut wrote = false;
+        update_with(enabled, change, |f| {
+            wrote = true;
+            f(reg)
+        });
+        wrote
+    }
+
+    #[test]
+    fn off_records_nothing_but_still_forgets() {
+        let spec = spec("a");
+        let (a, b) = (std::path::PathBuf::from("lab-a"), std::path::PathBuf::from("lab-b"));
+        let mut reg = Registry::default();
+        // On: recorded.
+        assert!(apply(&mut reg, true, Change::Record(entry(&a, &spec, Target::Docker, None, None, String::new()))));
+        assert_eq!(reg.environments.len(), 1);
+        // Off: a start writes nothing at all.
+        assert!(!apply(&mut reg, false, Change::Record(entry(&b, &spec, Target::Docker, None, None, String::new()))));
+        assert_eq!(reg.environments.len(), 1);
+        // Off: the lab recorded while on is forgotten when it stops, no ghost left.
+        assert!(apply(&mut reg, false, Change::Forget(key(&a))));
+        assert!(reg.environments.is_empty());
     }
 }

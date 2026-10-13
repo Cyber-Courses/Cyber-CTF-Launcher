@@ -147,8 +147,9 @@ pub(super) fn parse_ps(out: &str) -> Vec<PsEntry> {
     trimmed.lines().filter_map(|l| serde_json::from_str(l).ok()).collect()
 }
 
-/// Host ports a compose file publishes, from `docker compose config` (env resolved).
-pub(super) fn host_ports_from_config(json: &str) -> Vec<u16> {
+/// Host ports a compose file publishes, from `docker compose config` (env resolved), each with
+/// its protocol (`tcp` or `udp`, Compose's; `tcp` when it names none).
+pub(super) fn host_ports_from_config(json: &str) -> Vec<(u16, String)> {
     let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
     let mut ports = Vec::new();
     if let Some(services) = v.get("services").and_then(|s| s.as_object()) {
@@ -160,7 +161,8 @@ pub(super) fn host_ports_from_config(json: &str) -> Vec<u16> {
                     && n > 0
                     && n <= u16::MAX as u64
                 {
-                    ports.push(n as u16);
+                    let proto = p.get("protocol").and_then(|x| x.as_str()).filter(|x| !x.is_empty()).unwrap_or("tcp");
+                    ports.push((n as u16, proto.to_string()));
                 }
             }
         }
@@ -314,10 +316,10 @@ mod tests {
 
     #[test]
     fn reads_published_host_ports_from_config() {
-        let json = r#"{"services":{"web":{"ports":[{"published":"3206","target":3206}]},"db":{"ports":[{"published":3207,"target":3207}]},"init":{}}}"#;
+        let json = r#"{"services":{"web":{"ports":[{"published":"3206","target":3206}]},"db":{"ports":[{"published":3207,"target":3207}]},"dns":{"ports":[{"published":"53","target":53,"protocol":"udp"}]},"init":{}}}"#;
         let mut ports = host_ports_from_config(json);
         ports.sort();
-        assert_eq!(ports, vec![3206, 3207]);
+        assert_eq!(ports, vec![(53, "udp".to_string()), (3206, "tcp".to_string()), (3207, "tcp".to_string())]);
         assert!(host_ports_from_config("{}").is_empty());
     }
 
@@ -333,7 +335,7 @@ mod tests {
             "e":{"ports":[{"published":"notaport","target":9}]},
             "init":{}
         }}"#;
-        let mut ports = host_ports_from_config(json);
+        let mut ports: Vec<u16> = host_ports_from_config(json).into_iter().map(|(p, _)| p).collect();
         ports.sort();
         assert_eq!(ports, vec![80, 8443]);
     }

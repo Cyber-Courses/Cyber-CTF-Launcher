@@ -445,6 +445,11 @@ mod tests {
         assert_eq!(ifaces["web"].iter().map(|i| (i.network.as_str(), i.ip.as_str())).collect::<Vec<_>>(), [("lab", "10.30.0.10"), ("back", "10.31.0.10")]);
         assert_eq!(ifaces["db"].len(), 1);
         assert_eq!(message(&dir, &spec, Target::Vagrant).as_deref(), Some("Start at http://localhost:8080/ (web is 10.30.0.10)."));
+        // A UDP port of the same number is another service: it doesn't move the TCP one.
+        assert_eq!(
+            message_at(&dir, &spec, Target::Docker, &[("web".into(), 80, "udp".into(), 40053)]).as_deref(),
+            Some("Start at http://localhost:8080/ (web is 10.30.0.10).")
+        );
         // Run locally, the lab answers on the port picked at its first start: the message says so.
         assert_eq!(
             message_at(&dir, &spec, Target::Docker, &[("web".into(), 80, "tcp".into(), 46709)]).as_deref(),

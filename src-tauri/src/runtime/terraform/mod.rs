@@ -102,14 +102,24 @@ fn with_ssh_key(vars: &[(String, String)], key: Option<PathBuf>) -> Vec<(String,
     out
 }
 
-/// The run's environment: variables as `TF_VAR_<name>`, then the raw provider environment.
+/// The run's environment: variables as `TF_VAR_<name>`, then the raw provider environment. The
+/// launcher's variables always win: an environment entry naming one of them is left out.
 fn with_env(vars: &[(String, String)], env: &[(String, String)]) -> Vec<(String, String)> {
-    vars.iter().map(|(k, v)| (format!("TF_VAR_{k}"), v.clone())).chain(env.iter().cloned()).collect()
+    let vars: Vec<(String, String)> = vars.iter().map(|(k, v)| (format!("TF_VAR_{k}"), v.clone())).collect();
+    let others = env.iter().filter(|(k, _)| !vars.iter().any(|(v, _)| v.eq_ignore_ascii_case(k))).cloned();
+    vars.iter().cloned().chain(others).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_launchers_variables_win_over_the_environment() {
+        let vars = [pair("expires_at", "9"), pair("region", "eu-west-3")];
+        let env = [pair("TF_VAR_expires_at", ""), pair("tf_var_region", "us-east-1"), pair("AWS_REGION", "us-east-1")];
+        assert_eq!(with_env(&vars, &env), [pair("TF_VAR_expires_at", "9"), pair("TF_VAR_region", "eu-west-3"), pair("AWS_REGION", "us-east-1")]);
+    }
 
     /// A fresh, empty state folder in the system temp dir.
     pub fn temp_state() -> PathBuf {
