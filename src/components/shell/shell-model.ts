@@ -84,7 +84,9 @@ type Key = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey">;
  * app menu); "/" jumps to Labs search, except while typing in a field.
  */
 export function shortcutFor(e: Key, mac: boolean, typing: boolean): Shortcut | null {
-  if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) return "palette";
+  // Cmd+K on macOS, Ctrl+K elsewhere: on macOS Ctrl+K is the system's "delete to end of line"
+  // in every text field (and the shell's kill-line in the attack box terminal).
+  if ((e.key === "k" || e.key === "K") && (mac ? e.metaKey : e.ctrlKey)) return "palette";
   if ((e.ctrlKey || e.metaKey) && e.key === "," && !mac) return "settings";
   if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey || typing) return null;
   return "findLab";

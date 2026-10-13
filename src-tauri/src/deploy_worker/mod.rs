@@ -13,6 +13,8 @@
 mod files;
 pub(crate) mod lock;
 mod process;
+#[cfg(all(test, unix))]
+pub(crate) use process::pidfile_line;
 mod progress;
 mod worker;
 
@@ -205,6 +207,38 @@ mod tests {
         }
         assert_eq!(Job::on_lab("lab-1", Op::AttackVm { box_name: "a/b".into() }).key(), "lab-1.attack");
         assert_eq!(Job::on_lab("lab-1", Op::Resume { runtime: crate::runtime::Runtime::Vm }).key(), "lab-1");
+    }
+
+    #[test]
+    fn a_job_file_with_only_a_lab_id_reads_as_a_plain_launch() {
+        // The oldest shape (before provider, host, image or default ports were recorded): every
+        // newer field takes its default.
+        let job: Job = serde_json::from_str(r#"{"lab_id":"lab-1"}"#).unwrap();
+        assert_eq!(job, Job::on_lab("lab-1", Op::Launch));
+        assert!(job.launch.is_null() && !job.default_ports && job.provider.is_none() && job.host.is_none() && job.attackbox_image.is_none());
+        assert_eq!(job.key(), "lab-1");
+    }
+
+    #[test]
+    fn job_files_from_a_newer_version_read_when_only_fields_are_new_not_operations() {
+        use crate::runtime::Runtime;
+        // A field this version doesn't know (a newer one wrote it): ignored, the job still runs.
+        let newer = r#"{"lab_id":"lab-1","op":{"op":"resume","runtime":"VM"},"launch":null,"future_flag":true,"default_ports":true}"#;
+        let job: Job = serde_json::from_str(newer).unwrap();
+        assert_eq!(job.op, Op::Resume { runtime: Runtime::Vm });
+        assert!(job.default_ports);
+        // An operation this version doesn't know, or one missing what it needs: refused, never
+        // run as something else (a launch would download and start the lab).
+        for bad in [
+            r#"{"lab_id":"lab-1","op":{"op":"reboot"}}"#,
+            r#"{"lab_id":"lab-1","op":{"op":"park","runtime":"VM"}}"#,
+            r#"{"lab_id":"lab-1","op":{"op":"provision"}}"#,
+            r#"{"lab_id":"lab-1","op":{"op":"attack_vm"}}"#,
+            r#"{"lab_id":"lab-1","op":{"runtime":"VM"}}"#,
+            r#"{"op":{"op":"launch"}}"#,
+        ] {
+            assert!(serde_json::from_str::<Job>(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

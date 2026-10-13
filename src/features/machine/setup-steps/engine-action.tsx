@@ -55,7 +55,8 @@ function SwitchEngine({ report, choice, engines, actions }: ActionProps) {
 
 function StartEngine({ choice, actions }: ActionProps) {
   const t = useT();
-  const { starting, startError } = actions;
+  const { starting } = actions;
+  const startError = actions.startError(choice.id);
   return (
     <>
       <span className="text-[0.8125rem] text-muted-foreground">

@@ -9,7 +9,15 @@ import { openExternal } from "@/lib/failure";
  * headings, fenced code, lists, blockquotes, rules, paragraphs; inline code/bold/italic/links.
  */
 
-const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(\[[^\]]+\]\([^)]+\))/g;
+// A link's URL may hold one level of balanced parentheses (`Foo_(bar)`), as in CommonMark.
+const LINK = /\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)/;
+const INLINE = new RegExp(`(\`[^\`]+\`)|(\\*\\*[^*]+\\*\\*)|(\\*[^*]+\\*)|(${LINK.source})`, "g");
+/** A heading: one to six hashes, then a space. Deeper levels render as the third. */
+const HEADING = /^(#{1,6})\s+(.*)$/;
+
+/** Links that open in the browser: the web and mail only. A write-up is third-party content,
+ *  so a `javascript:` or `data:` URL stays text and never reaches the system opener. */
+const SAFE_URL = /^(https?:\/\/|mailto:)/i;
 
 function inline(text: string, k: string): ReactNode[] {
   const out: ReactNode[] = [];
@@ -35,11 +43,18 @@ function inline(text: string, k: string): ReactNode[] {
     } else if (t.startsWith("*")) {
       out.push(<em key={`${k}-${i}`}>{t.slice(1, -1)}</em>);
     } else {
-      const mm = /\[([^\]]+)\]\(([^)]+)\)/.exec(t)!;
+      const mm = LINK.exec(t)!;
       const href = mm[2];
+      if (!SAFE_URL.test(href)) {
+        out.push(mm[1]);
+        last = m.index + t.length;
+        i++;
+        continue;
+      }
       out.push(
         <a
           key={`${k}-${i}`}
+          href={href}
           onClick={(e) => {
             e.preventDefault();
             openExternal(href);
@@ -81,9 +96,9 @@ export function Markdown({ content, className }: { content: string; className?: 
       );
       continue;
     }
-    const h = /^(#{1,3})\s+(.*)$/.exec(line);
+    const h = HEADING.exec(line);
     if (h) {
-      const lvl = h[1].length;
+      const lvl = Math.min(h[1].length, 3);
       const cls =
         lvl === 1
           ? "serif-title mt-6 text-[1.5rem] text-foreground first:mt-0"
@@ -142,7 +157,9 @@ export function Markdown({ content, className }: { content: string; className?: 
     while (
       i < lines.length &&
       lines[i].trim() !== "" &&
-      !lines[i].startsWith("#") &&
+      // A heading ends the paragraph; any other line starting with "#" (`#hashtag`) is its
+      // text. Refusing them all left such a line in no block, and the parser spun forever.
+      !HEADING.test(lines[i]) &&
       !lines[i].startsWith("```") &&
       !lines[i].startsWith(">") &&
       !/^\s*[-*]\s+/.test(lines[i]) &&

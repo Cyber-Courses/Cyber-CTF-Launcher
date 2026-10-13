@@ -48,6 +48,17 @@ describe("package manager step", () => {
     expect(text()).toContain("brew4.4.0");
   });
 
+  it("warns Intel Mac players that Homebrew installs may compile from source, and nobody else", () => {
+    const { unmount } = render(<Step step="pkgmgr" report={{ ...readyReport(), os: "macos", arch: "x86_64" }} />);
+    expect(text()).toContain("Intel Mac");
+    unmount();
+    const arm = render(<Step step="pkgmgr" report={{ ...freshReport("macos"), arch: "aarch64" }} />);
+    expect(text()).not.toContain("Intel Mac");
+    arm.unmount();
+    render(<Step step="pkgmgr" report={{ ...freshReport("linux"), arch: "x86_64" }} />);
+    expect(text()).not.toContain("Intel Mac");
+  });
+
   it("gives Homebrew's install line on a Mac, and copies it", async () => {
     const calls = installTauri();
     const user = userEvent.setup();

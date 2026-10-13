@@ -8,7 +8,7 @@ export type Locale = (typeof LOCALES)[number];
 export const RAW_KEY = /^[a-z]+(\.[a-zA-Z]+)+$/;
 
 type Fixtures = {
-  /** The language every page of the test starts in (localStorage `cyberctf.locale`). */
+  /** The language the test starts in (localStorage `cyberctf.locale`, unless a page set one). */
   appLocale: Locale;
   /** Console errors, uncaught exceptions and missing-translation warnings, on every page of the
    *  test; the test fails if any were seen. */
@@ -24,7 +24,8 @@ export const test = base.extend<Fixtures>({
       // new tabs): the language, and onboarding done so the shell shows.
       await context.addInitScript((locale) => {
         try {
-          localStorage.setItem("cyberctf.locale", locale);
+          // Only when not set yet: a language picked during the test survives a reload.
+          if (!localStorage.getItem("cyberctf.locale")) localStorage.setItem("cyberctf.locale", locale);
           localStorage.setItem("cyberctf.onboarded", "1");
         } catch {
           /* storage unavailable */
@@ -48,11 +49,18 @@ export const test = base.extend<Fixtures>({
 
 export { expect };
 
-/** Opens the main window with the mock and waits for the shell. */
-export async function openApp(page: Page) {
-  await page.goto("/?mock");
+/** Opens the main window with the mock and waits for the shell. `query` adds the mock's
+ *  scenario switches (src/lib/dev-mock.ts, `Scenario`), e.g. "&launch=fail". */
+export async function openApp(page: Page, query = "") {
+  await page.goto(`/?mock${query}`);
   await expect(page.locator("aside nav")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+}
+
+/** The command palette's shortcut where the page thinks it runs: ⌘K on macOS, Ctrl+K elsewhere
+ *  (by the user agent, which the "Desktop Chrome" device sets to Windows). */
+export async function paletteKey(page: Page) {
+  return (await page.evaluate(() => navigator.userAgent)).includes("Mac") ? "Meta+k" : "Control+k";
 }
 
 /** A sidebar entry by its label (its name may go on with a count or a shortcut). */
@@ -139,4 +147,17 @@ export async function forceCommands(page: Page, forced: Record<string, Forced>) 
     // Lets the dev mock install itself over these internals.
     w.__CYBERCTF_MOCK__ = true;
   }, forced);
+}
+
+/** Sends an app event (what the Rust core emits: `quit-blocked`, `deep-link://new-url`…) to the
+ *  windows of the test's context, through the dev mock's event bus (src/lib/dev-mock.ts). */
+export function emitEvent(page: Page, event: string, payload: unknown) {
+  return page.evaluate(
+    ([event, payload]) => {
+      const bus = new BroadcastChannel("cyberctf-dev-mock-events");
+      bus.postMessage({ event, payload });
+      bus.close();
+    },
+    [event, payload] as const,
+  );
 }

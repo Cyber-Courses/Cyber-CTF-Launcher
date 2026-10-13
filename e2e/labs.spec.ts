@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, breadcrumb } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, breadcrumb, paletteKey } from "./fixtures";
 
 // The mock's catalogue (src/lib/dev-mock-labs.ts): Invoice portal API runs, Public backup is solved.
 const ALL = ["Invoice portal API", "GOAD Light", "Blind orders", "Exposed dashboard", "Public backup", "EC2 SSRF"];
@@ -111,7 +111,7 @@ test.describe("labs", () => {
   test("Escape closing the command palette stays on the lab page", async ({ page }) => {
     await row(page, "Blind orders").click();
     await expect(pageTitle(page)).toHaveText("Blind orders");
-    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press(await paletteKey(page));
     const palette = page.getByRole("dialog", { name: "Command menu" });
     await expect(palette).toBeVisible();
     await page.keyboard.press("Escape");

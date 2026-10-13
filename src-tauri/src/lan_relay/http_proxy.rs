@@ -68,7 +68,15 @@ pub async fn start_http_proxy(targets: Targets) -> std::io::Result<Relay> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let local = listener.local_addr()?.port();
     let task = tokio::spawn(async move {
-        while let Ok((inbound, _)) = listener.accept().await {
+        loop {
+            let (inbound, _) = match listener.accept().await {
+                Ok(pair) => pair,
+                // As in `start`: one failed accept must not end the proxy ovftool still uses.
+                Err(_) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+            };
             let targets = targets.clone();
             tokio::spawn(async move {
                 let _ = proxy_connection(inbound, &targets).await;
@@ -81,7 +89,13 @@ pub async fn start_http_proxy(targets: Targets) -> std::io::Result<Relay> {
 /// The request head's target as (host:port, origin-form path), from an absolute `http://` URI.
 pub(super) fn split_target(uri: &str) -> Option<(String, String)> {
     let rest = uri.strip_prefix("http://")?;
-    let (authority, path) = rest.find('/').map(|i| (&rest[..i], &rest[i..])).unwrap_or((rest, "/"));
+    // The authority ends at the path, or at a query or fragment following it directly
+    // (`http://host:5985?x=1` is a valid absolute-URI): the query stays on the request.
+    let (authority, path) = match rest.find(['/', '?', '#']) {
+        Some(i) if rest.as_bytes()[i] == b'/' => (&rest[..i], rest[i..].to_string()),
+        Some(i) => (&rest[..i], format!("/{}", &rest[i..])),
+        None => (rest, "/".to_string()),
+    };
     if authority.is_empty() {
         return None;
     }
@@ -90,13 +104,15 @@ pub(super) fn split_target(uri: &str) -> Option<(String, String)> {
     } else {
         format!("{authority}:80")
     };
-    Some((authority, path.to_string()))
+    Some((authority, path))
 }
 
 /// Rewrites one request head for the origin server: origin-form target, no proxy headers.
 /// Returns the target and the body length.
 pub(super) fn rewrite_head(head: &str) -> Option<(String, String, usize)> {
-    let mut lines = head.split("\r\n");
+    // Lines end at LF, a CR before it optional: as `read_head` reads them. Split on CRLF only, a
+    // header after a bare LF rode along hidden inside the line before it.
+    let mut lines = head.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l));
     let mut first = lines.next()?.splitn(3, ' ');
     let (method, uri, version) = (first.next()?, first.next()?, first.next()?);
     let (target, path) = split_target(uri)?;
@@ -106,6 +122,10 @@ pub(super) fn rewrite_head(head: &str) -> Option<(String, String, usize)> {
         let lower = line.to_ascii_lowercase();
         if lower.starts_with("proxy-connection:") || lower.starts_with("proxy-authorization:") {
             continue;
+        }
+        // A chunked body has no length to relay by: refused (a 502), not read as the next head.
+        if lower.starts_with("transfer-encoding:") {
+            return None;
         }
         if let Some(v) = lower.strip_prefix("content-length:") {
             // Only spaces and tabs are optional whitespace in HTTP (`str::trim` also takes \v, \f...).
@@ -142,14 +162,16 @@ async fn read_head<R: tokio::io::AsyncBufRead + Unpin>(reader: &mut R) -> std::i
         if line.len() > MAX_LINE || !line.ends_with('\n') {
             return Ok(Head::TooLong);
         }
-        if line == "\r\n" && head.is_empty() {
+        let blank = line == "\r\n" || line == "\n";
+        if blank && head.is_empty() {
             continue; // stray CRLF between requests
         }
         head.push_str(&line);
         if head.len() > MAX_HEAD {
             return Ok(Head::TooLong);
         }
-        if line == "\r\n" {
+        // A head ends at a blank line, a CR before its LF optional (as `rewrite_head` splits it).
+        if blank {
             return Ok(Head::Request(head));
         }
     }
@@ -230,6 +252,30 @@ mod tests {
         assert_eq!(len, 12);
         assert_eq!(split_target("http://host").unwrap(), ("host:80".into(), "/".into()));
         assert!(rewrite_head("GET /relative HTTP/1.1").is_none());
+    }
+
+    #[test]
+    fn content_length_takes_the_last_header_and_refuses_signs_or_blanks_and_proxy_headers_go_whatever_their_case() {
+        let head = |extra: &str| format!("POST http://h/x HTTP/1.1\r\nHost: h\r\n{extra}");
+        assert_eq!(rewrite_head(&head("Content-Length: 5\r\nContent-Length: 7")).unwrap().2, 7);
+        for bad in ["Content-Length: -1", "Content-Length:", "Content-Length: 1e3", "Content-Length: 0x10"] {
+            assert!(rewrite_head(&head(bad)).is_none(), "{bad:?}");
+        }
+        let (_, out, len) = rewrite_head(&head("PROXY-AUTHORIZATION: Basic x\r\nproxy-connection: close\r\nX-Odd no colon")).unwrap();
+        assert_eq!(len, 0);
+        assert_eq!(out, "POST /x HTTP/1.1\r\nHost: h\r\nX-Odd no colon\r\n\r\n");
+        // A request line with a missing part is malformed.
+        assert!(rewrite_head("GET http://h/x").is_none());
+        assert!(rewrite_head("").is_none());
+    }
+
+    #[test]
+    fn a_target_without_a_path_keeps_its_query_on_the_request() {
+        // `http://host:5985?x=1` is a valid absolute-URI (RFC 3986 lets the query follow the
+        // authority directly). It connects to `host:5985?x=1:80` (a DNS failure, so a 502) and
+        // would send `/`. Fix: end the authority at the first of `/`, `?` or `#`, and keep the
+        // query on the origin-form path (`/?x=1`).
+        assert_eq!(split_target("http://10.0.0.7:5985?x=1").unwrap(), ("10.0.0.7:5985".to_string(), "/?x=1".to_string()));
     }
 
     #[test]

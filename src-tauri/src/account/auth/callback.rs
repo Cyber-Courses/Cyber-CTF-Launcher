@@ -230,6 +230,53 @@ mod tests {
         assert_eq!(task.await.unwrap().unwrap_err().to_string(), "invalid_grant");
     }
 
+    #[test]
+    fn repeated_and_encoded_parameters_take_the_first_decoded_value() {
+        // A query is decoded before it is read, and a repeated key keeps its first value (a
+        // second `code` appended to the URL never replaces the one Cyber Auth sent).
+        let url = request_url("GET /callback?code=a%2Bb&code=second&state=s%31 HTTP/1.1\r\n\r\n").unwrap();
+        assert_eq!(outcome(&url).unwrap(), ("a+b".to_string(), "s1".to_string()));
+        assert!(state_matches(&url, "s1"));
+        assert!(!state_matches(&url, "s%31"), "compared decoded, not as typed");
+        // An error wins over a code that comes with it.
+        let both = request_url("GET /callback?code=c&error=access_denied&state=s1 HTTP/1.1").unwrap();
+        assert_eq!(outcome(&both).unwrap_err().to_string(), "login failed: access_denied");
+    }
+
+    #[tokio::test]
+    async fn a_request_without_an_http_version_or_with_bare_line_feeds_is_still_the_redirect() {
+        // HTTP/0.9 style: no version, LF-only line endings. Both are read and finish the login.
+        assert_eq!(request_url("GET /callback?code=c&state=s1\n").unwrap().path(), "/callback");
+        let (port, task) = waiting(Ok("token")).await;
+        let page = send(port, "GET /callback?code=c1&state=s1\n\n").await;
+        assert!(page.contains("You're signed in"), "{page}");
+        assert_eq!(task.await.unwrap().unwrap(), "token:c1");
+    }
+
+    #[tokio::test]
+    async fn an_oversized_garbled_or_closed_request_is_read_as_not_the_callback() {
+        // Read directly: the request head is capped at 8 KiB and whatever came is parsed, so a
+        // flood with no request line is a 404, not a hang; binary junk is decoded lossily and has
+        // no target; a connection closed without a byte is nothing at all.
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut client = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let (mut server, _) = listener.accept().await.unwrap();
+        client.write_all(&vec![b'A'; 12_000]).await.unwrap();
+        let head = read_request(&mut server).await.unwrap();
+        assert!((8192..12_000).contains(&head.len()), "{}", head.len());
+        assert_eq!(request_url(&head).unwrap().path(), "/");
+        let mut client = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let (mut server, _) = listener.accept().await.unwrap();
+        client.write_all(b"\xff\xfe\n\n").await.unwrap();
+        let head = read_request(&mut server).await.unwrap();
+        assert_eq!(request_url(&head).unwrap().path(), "/");
+        let client = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let (mut server, _) = listener.accept().await.unwrap();
+        drop(client);
+        assert_eq!(read_request(&mut server).await, None);
+    }
+
     #[tokio::test]
     async fn receive_shows_the_failure_page_on_an_error() {
         let (port, task) = waiting(Ok("token")).await;
@@ -238,3 +285,6 @@ mod tests {
         assert!(task.await.unwrap().is_err());
     }
 }
+
+#[cfg(test)]
+mod proptests;

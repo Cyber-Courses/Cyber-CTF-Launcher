@@ -294,6 +294,36 @@ mod tests {
     }
 
     #[test]
+    fn a_state_whose_stop_time_is_this_very_second_is_expired_and_not_running() {
+        // Expiry is inclusive, and status and the reaper agree at the boundary: the instance
+        // has terminated itself, so it isn't shown, and the reaper destroys what is left.
+        let dir = temp_state();
+        std::fs::write(dir.join(STATE_FILE), r#"{"outputs":{"ip":{"value":"10.0.0.9"}},"resources":[{}]}"#).unwrap();
+        std::fs::write(dir.join(RUN_FILE), format!(r#"{{"expires_at":{}}}"#, now())).unwrap();
+        assert!(expired(&dir));
+        let s = status(&dir);
+        assert!(!s.running && s.machines.is_empty() && s.expires_at.is_none());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_run_record_with_an_unreadable_stop_time_never_expires() {
+        // The launcher writes `expires_at` as a whole number; anything else (a hand edit, an
+        // older or newer format) is no auto-stop at all rather than an instant expiry that
+        // would destroy a lab the player is using.
+        let dir = temp_state();
+        std::fs::write(dir.join(STATE_FILE), r#"{"outputs":{"ip":{"value":"10.0.0.9"}}}"#).unwrap();
+        for raw in [r#"{"expires_at":"1"}"#, r#"{"expires_at":1.5}"#, r#"{"expires_at":-1}"#, r#"{"expires_at":null}"#, "[]", "garbage", ""] {
+            std::fs::write(dir.join(RUN_FILE), raw).unwrap();
+            assert_eq!(expires_at(&dir), None, "{raw}");
+            assert!(!expired(&dir), "{raw}");
+            let s = status(&dir);
+            assert!(s.running && s.expires_at.is_none(), "{raw}");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn status_reads_outputs_from_state() {
         let dir = temp_state();
         assert!(!status(&dir).running);

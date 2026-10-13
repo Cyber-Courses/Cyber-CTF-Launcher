@@ -86,3 +86,75 @@ proptest! {
         }
     }
 }
+
+/// What a setup field holds: pasted junk, or something shaped like the provider's ids so the
+/// check gets past its first test.
+fn field() -> impl Strategy<Value = String> {
+    prop_oneof![
+        2 => pasted(),
+        1 => "[ \t]{0,1}[a-z]{2}(-[a-z0-9]{1,8}){1,3}[ \t&|^%<>\"!()-]{0,2}",
+        1 => "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        1 => "[0-9A-Z]{6}-[0-9A-Z]{6}-[0-9A-Z]{6}",
+        1 => "ocid1\\.[a-z]{4,12}\\.[a-z0-9.&|-]{10,40}",
+        1 => "(AKIA|ASIA|-)[A-Z0-9&|^%]{12,20}",
+        1 => "[a-zA-Z0-9_&|%-]{38,60}",
+        1 => "[a-z0-9-]{1,20}@(pam|pve)",
+    ]
+}
+
+fn remote() -> impl Strategy<Value = Provider> {
+    proptest::sample::select(vec![
+        Provider::VmwareEsxi,
+        Provider::Proxmox,
+        Provider::Aws,
+        Provider::Azure,
+        Provider::Gcp,
+        Provider::DigitalOcean,
+        Provider::Linode,
+        Provider::Oci,
+    ])
+}
+
+proptest! {
+    #![proptest_config(config())]
+
+    /// Whatever the form holds, what `check` lets through as a cloud's region, account or token
+    /// can go to `az`/`gcloud`/`oci` (through cmd.exe on Windows) as an argument of its own.
+    #[test]
+    fn checked_cloud_fields_are_safe_cli_arguments(
+        provider in remote(),
+        host in field(),
+        username in field(),
+        password in proptest::option::of(field()),
+        node in proptest::option::of(field()),
+        use_cli in any::<bool>(),
+    ) {
+        let input: HostInput = serde_json::from_value(serde_json::json!({
+            "name": "x", "provider": provider, "host": host, "username": username, "password": password,
+            "node": node, "useCliCreds": use_cli,
+        })).unwrap();
+        let Ok(checked) = input.check() else { return Ok(()) };
+        prop_assert!(valid_host(&checked.host) || provider.is_cloud(), "{:?}", checked.host);
+        let mut args = vec![checked.host.as_str()];
+        if provider.is_cloud() {
+            args.push(checked.username.as_str());
+            if provider == Provider::Gcp {
+                args.extend(node.as_deref());
+            }
+            if matches!(provider, Provider::DigitalOcean | Provider::Linode) {
+                args.extend(password.as_deref());
+            }
+        }
+        for a in args.iter().filter(|a| !a.is_empty()) {
+            prop_assert!(!a.starts_with('-'), "{:?} accepted a flag: {:?}", provider, a);
+            prop_assert!(!a.chars().any(|c| c.is_control() || c.is_whitespace()), "{:?} accepted {:?}", provider, a);
+            prop_assert!(crate::exec::shim::check_args("az", &[a]).is_ok(), "{:?} accepted a cmd.exe operator: {:?}", provider, a);
+            prop_assert!(!a.contains(['!', '(', ')']), "{:?} accepted {:?}", provider, a);
+        }
+        // The address of a server is never a URL or a `host:port`.
+        if !provider.is_cloud() {
+            prop_assert!(!checked.host.contains('/') && (checked.host.parse::<std::net::Ipv6Addr>().is_ok() || !checked.host.contains(':')));
+        }
+        prop_assert!(!checked.username.chars().any(char::is_control));
+    }
+}

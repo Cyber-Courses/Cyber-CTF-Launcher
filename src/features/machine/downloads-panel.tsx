@@ -30,7 +30,12 @@ export function DownloadsPanel() {
   const [cleaning, setCleaning] = useState(false);
   const [freed, setFreed] = useState<number | null>(null);
   const alive = useRef(true);
-  useEffect(() => () => void (alive.current = false), []);
+  useEffect(() => {
+    // Set on every mount: React's dev StrictMode unmounts and remounts once, and the cleanup
+    // alone left this false for good (the panel never left its skeleton).
+    alive.current = true;
+    return () => void (alive.current = false);
+  }, []);
   const load = useCallback(() => {
     machineStorage(attackImages())
       .then((s) => alive.current && setStorage(s))

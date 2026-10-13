@@ -155,6 +155,32 @@ mod tests {
     }
 
     #[test]
+    fn jwt_claims_need_unpadded_base64url_and_string_values() {
+        use base64::engine::general_purpose::URL_SAFE;
+        let jwt = |payload: String| format!("h.{payload}.s");
+        assert_eq!(jwt_claim(&jwt(URL_SAFE_NO_PAD.encode(br#"{"sub":"u12"}"#)), "sub").as_deref(), Some("u12"));
+        // RFC 7515 forbids padding; a padded payload (13 bytes, so `=` at the end) is not read.
+        let padded = URL_SAFE.encode(br#"{"sub":"u12"}"#);
+        assert!(padded.ends_with('='));
+        assert_eq!(jwt_claim(&jwt(padded), "sub"), None);
+        // A claim that isn't a string, an empty payload, two segments, and a payload that isn't an object.
+        assert_eq!(jwt_claim(&jwt(URL_SAFE_NO_PAD.encode(br#"{"sub":123}"#)), "sub"), None);
+        assert_eq!(jwt_claim("h..s", "sub"), None);
+        assert_eq!(jwt_claim(&format!("a.{}", URL_SAFE_NO_PAD.encode(br#"{"sub":"u"}"#)), "sub").as_deref(), Some("u"));
+        assert_eq!(jwt_claim(&jwt(URL_SAFE_NO_PAD.encode(b"[1,2]")), "sub"), None);
+        assert_eq!(id_token_profile(&jwt(URL_SAFE_NO_PAD.encode(br#"{"name":1,"email":["x"]}"#))), (None, None));
+    }
+
+    #[test]
+    fn a_huge_expiry_saturates_instead_of_wrapping() {
+        let s = session_from(tokens("a", None, None, Some(u64::MAX)), None);
+        assert_eq!(s.expires_at, u64::MAX);
+        // And zero means "already expired", not the default lifetime.
+        let s = session_from(tokens("a", None, None, Some(0)), None);
+        assert!(s.expires_at <= now());
+    }
+
+    #[test]
     fn reads_display_claims_from_id_token() {
         let payload = URL_SAFE_NO_PAD.encode(br#"{"sub":"u1","name":"Camille","email":"c@cyberctf.fr"}"#);
         let (name, email) = id_token_profile(&format!("h.{payload}.s"));
@@ -163,3 +189,6 @@ mod tests {
         assert_eq!(id_token_profile("garbage"), (None, None));
     }
 }
+
+#[cfg(test)]
+mod proptests;

@@ -25,7 +25,7 @@ export function useLabPageState(
     runOp,
     runStartedAt,
     ...input
-  }: Omit<LabStateInput, "backendDeploying" | "backendOp" | "startFailed"> & {
+  }: Omit<LabStateInput, "backendDeploying" | "backendOp" | "startFailed" | "runOp"> & {
     logs: string[];
     times: number[];
     /** What this session's last run on the lab was (launch, stop…), and when it began. */
@@ -48,7 +48,9 @@ export function useLabPageState(
   const failure = logFailure(shownLogs);
   // Which operation failed: this session's run says; a worker's log is of the operation last seen.
   const failedOp = failure ? ((runOp as LabOperation | undefined) ?? lastOperation) : null;
-  const state = deriveLabState({ ...input, backendDeploying, backendOp, startFailed: failedOp === "launch" });
+  // The clicked operation names the state until the backend reports it (a clean-up read as
+  // "Starting…" until the next poll).
+  const state = deriveLabState({ ...input, backendDeploying, backendOp, runOp: runOp as LabOperation | undefined, startFailed: failedOp === "launch" });
   if (state.operation && state.operation !== lastOperation) setLastOperation(state.operation);
   return {
     ...state,

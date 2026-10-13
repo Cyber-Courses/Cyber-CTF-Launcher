@@ -77,11 +77,13 @@ export function AppShell() {
 
   useAppShortcuts({ togglePalette: () => setPaletteOpen((o) => !o), openSettings: openSettingsWindow, findLab: findALab });
 
-  // What each busy lab is doing and the step it is at, for a live line under its name.
-  const ops = useActiveOperations();
-  // Main window only: Settings runs this shell too, and two windows must not both start a box.
+  // What each busy lab is doing and the step it is at, for a live line under its name. Main
+  // window only: Settings runs this shell too, and its view uses none of this, so it must not
+  // double every poll (docker and vagrant are run for the workloads one).
+  const ops = useActiveOperations(mainWindow);
+  // Main window only: two windows must not both start a box.
   useAttackBoxAutoStart(ops, mainWindow);
-  const sidebarLabs = useSidebarLabs(auth?.loggedIn, ops);
+  const sidebarLabs = useSidebarLabs(auth?.loggedIn, ops, mainWindow);
 
   function completeOnboarding() {
     markOnboarded();

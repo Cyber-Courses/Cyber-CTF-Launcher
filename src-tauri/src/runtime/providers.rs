@@ -158,11 +158,15 @@ impl Provider {
         }
     }
 
-    /// Whether the hypervisor itself is installed here. None when there's nothing local to check:
-    /// remote providers, and Hyper-V (a Windows feature, not probed).
+    /// Whether the hypervisor itself is installed here. None when there's nothing local to check
+    /// (remote providers). Hyper-V is a Windows feature: its management service (`vmms.exe`)
+    /// exists once the feature is on, and Windows Home has none.
     async fn hypervisor_installed(self) -> Option<bool> {
         if self == Provider::Utm {
             return Some(std::path::Path::new(UTM_APP).exists());
+        }
+        if self == Provider::Hyperv {
+            return Some(hyperv_enabled());
         }
         let (program, args) = self.probe()?;
         Some(tool_present(program, args).await)
@@ -170,6 +174,12 @@ impl Provider {
 }
 
 const UTM_APP: &str = "/Applications/UTM.app";
+
+/// Whether the Hyper-V feature is on: its Virtual Machine Management service is installed with it.
+fn hyperv_enabled() -> bool {
+    let root = std::env::var_os("SystemRoot").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("C:\\Windows"));
+    root.join("System32").join("vmms.exe").is_file()
+}
 
 /// Why libvirt can't run VMs here although `virsh` is installed: vagrant-libvirt boots KVM
 /// guests, so it needs `/dev/kvm`, and the player must be allowed to open it.
@@ -258,11 +268,28 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
                 Err(crate::error::Error::CommandFailed { ref stderr, .. }) if stderr.contains("timed out")
             );
 
-        let reason = unavailable_reason(provider, vagrant_installed, unresponsive, hypervisor, plugin.as_deref(), plugin_installed);
+        // Vagrant's Hyper-V provider refuses to run without administrator rights (and asks for
+        // them on a console the app doesn't have): said here, not as a raw error mid-boot.
+        let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !elevated().await;
+
+        let reason = unavailable_reason(provider, vagrant_installed, unresponsive, hypervisor, plugin.as_deref(), plugin_installed, needs_admin);
 
         statuses.push(ProviderStatus { provider, remote: provider.is_remote(), available: reason.is_none(), hypervisor, plugin, plugin_installed, reason });
     }
     statuses
+}
+
+/// Whether this process runs with administrator rights (Windows; elsewhere nothing here needs
+/// them): `net session` answers only when elevated.
+async fn elevated() -> bool {
+    #[cfg(windows)]
+    {
+        crate::exec::run("net", &["session"], None).await.is_ok()
+    }
+    #[cfg(not(windows))]
+    {
+        true
+    }
 }
 
 /// Why a provider can't be used here (None: it can), from what `detect` found out about it.
@@ -273,6 +300,7 @@ fn unavailable_reason(
     hypervisor: Option<bool>,
     plugin: Option<&str>,
     plugin_installed: bool,
+    needs_admin: bool,
 ) -> Option<String> {
     if !vagrant_installed {
         Some("Vagrant is not installed".to_string())
@@ -281,6 +309,10 @@ fn unavailable_reason(
             "VirtualBox isn't responding (its background service is stuck). Quit VirtualBox and any VM windows, or restart the computer, then re-check."
                 .to_string(),
         )
+    } else if hypervisor == Some(false) && provider == Provider::Hyperv {
+        Some("Hyper-V isn't turned on (Windows Features > Hyper-V), or this edition of Windows doesn't have it".to_string())
+    } else if needs_admin {
+        Some("Vagrant drives Hyper-V only when Cyber CTF runs as administrator: quit it, then right-click it and choose Run as administrator".to_string())
     } else if hypervisor == Some(false) {
         provider.probe().map(|(program, _)| format!("`{program}` was not found")).or_else(|| Some("not installed".to_string()))
     } else if let Some(why) = (provider == Provider::Libvirt).then(kvm_problem).flatten() {
@@ -346,6 +378,17 @@ mod tests {
         assert_eq!(parse_plugins(out), vec!["vagrant-vmware-desktop", "vagrant-qemu"]);
         assert!(parse_plugins("").is_empty());
         assert!(parse_plugins("No plugins installed.\n").is_empty());
+    }
+
+    #[test]
+    fn plugin_lists_with_windows_line_ends_indentation_and_broken_lines_still_name_the_plugins() {
+        // CRLF (Windows), an indented entry, a line that is only a version in brackets (a wrapped
+        // or cut line), and an entry with no version at all: the plugins are still found, and
+        // no name carries a `\r` that would then never match.
+        let out = "vagrant-libvirt (0.12.2, global)\r\n  vagrant_utm (0.1.3, global)\r\n(2.5.5, global)\r\n  - Version Constraint: > 0\r\nvagrant-vmware-esxi\r\n\r\n";
+        assert_eq!(parse_plugins(out), ["vagrant-libvirt", "vagrant_utm", "vagrant-vmware-esxi"]);
+        // A version glued to the name is not how Vagrant prints, and is not a known plugin.
+        assert_eq!(parse_plugins("vagrant-qemu(0.3.3)\n"), ["vagrant-qemu(0.3.3)"]);
     }
 
     #[test]
@@ -460,7 +503,8 @@ mod tests {
     #[tokio::test]
     async fn remote_providers_have_nothing_local_to_check() {
         assert_eq!(Provider::Proxmox.hypervisor_installed().await, None);
-        assert_eq!(Provider::Hyperv.hypervisor_installed().await, None);
+        // Hyper-V: a Windows feature, read from its management service being installed.
+        assert_eq!(Provider::Hyperv.hypervisor_installed().await, Some(hyperv_enabled()));
         assert_eq!(Provider::Utm.hypervisor_installed().await, Some(std::path::Path::new(UTM_APP).exists()));
         for p in [Provider::VmwareEsxi, Provider::Proxmox, Provider::Aws, Provider::Linode] {
             assert_eq!(ensure_usable(p).await, Ok(()));
@@ -477,10 +521,13 @@ mod tests {
 
     #[test]
     fn the_first_missing_layer_is_the_reason() {
-        let r = |p, vagrant, stuck, hv, plugin, installed| unavailable_reason(p, vagrant, stuck, hv, plugin, installed);
+        let r = |p, vagrant, stuck, hv, plugin, installed| unavailable_reason(p, vagrant, stuck, hv, plugin, installed, false);
+        assert!(unavailable_reason(Provider::Hyperv, true, false, Some(true), None, true, true).unwrap().contains("Run as administrator"));
+        assert_eq!(unavailable_reason(Provider::Hyperv, true, false, Some(true), None, true, false), None);
         assert_eq!(r(Provider::Virtualbox, false, true, Some(false), None, false).as_deref(), Some("Vagrant is not installed"));
         assert!(r(Provider::Virtualbox, true, true, Some(true), None, true).unwrap().contains("isn't responding"));
         assert_eq!(r(Provider::Virtualbox, true, false, Some(false), None, true).as_deref(), Some("`VBoxManage` was not found"));
+        assert!(r(Provider::Hyperv, true, false, Some(false), None, true).unwrap().starts_with("Hyper-V isn't turned on"));
         assert_eq!(r(Provider::Utm, true, false, Some(false), Some("vagrant_utm"), true).as_deref(), Some("not installed"));
         assert_eq!(
             r(Provider::Parallels, true, false, Some(true), Some("vagrant-parallels"), false).as_deref(),

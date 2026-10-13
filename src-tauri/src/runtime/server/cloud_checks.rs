@@ -376,6 +376,25 @@ mod tests {
     }
 
     #[test]
+    fn azure_listings_of_the_wrong_shape_or_with_missing_fields_do_not_panic() {
+        // The SKU list as an object, a size with null restrictions and no family, and a usage
+        // list whose numbers are missing or not numbers.
+        assert!(size_family(Some("{}"), "Standard_D2als_v6", "westeurope").is_err());
+        let loose = r#"[{"name": "Standard_D2als_v6", "restrictions": null}]"#;
+        assert_eq!(size_family(Some(loose), "Standard_D2als_v6", "westeurope").ok().unwrap(), "");
+        let usage = serde_json::json!([
+            {"name": {"value": "fam"}, "limit": "10"},
+            {"name": {"value": "odd"}, "limit": "ten", "currentValue": 4},
+            {"name": "not an object"}
+        ]);
+        let usage = usage.as_array().unwrap();
+        assert_eq!(free_cores(usage, "fam"), Some(10), "no current use yet");
+        assert_eq!(free_cores(usage, "odd"), Some(-4), "unreadable numbers count as 0");
+        assert_eq!(free_cores(usage, "not an object"), None);
+        assert_eq!(quota_check(Some("{}"), "fam", "s", "r").state, CheckState::Warn);
+    }
+
+    #[test]
     fn aws_runs_on_the_host_cli_or_in_the_cli_container() {
         let cli = HostProfile { use_cli_creds: true, ..profile(Provider::Aws) };
         assert_eq!(aws_invocation(&cli, &["sts", "get-caller-identity"]), ("aws", vec!["sts", "get-caller-identity"]));

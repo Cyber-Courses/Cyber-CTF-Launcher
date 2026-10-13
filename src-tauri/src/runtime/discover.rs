@@ -39,7 +39,16 @@ pub(crate) fn lab_ids_from_docker_projects(out: &str) -> Vec<String> {
 /// The `name:` of an isoloom.yml: the prefix of the lab's VM names.
 pub(crate) fn isoloom_name(yaml: &str) -> Option<String> {
     yaml.lines().find_map(|l| {
-        let v = l.strip_prefix("name:")?.trim().trim_matches(|c| c == '"' || c == '\'');
+        let v = l.strip_prefix("name:")?.trim();
+        // As the YAML parser (and so the VM names) reads it: a quoted value whole, a bare one up
+        // to a comment.
+        let v = match v.chars().next() {
+            Some(q @ ('"' | '\'')) => v[1..].split(q).next().unwrap_or_default(),
+            _ => {
+                let cut = [" #", "\t#"].iter().filter_map(|m| v.find(m)).min().unwrap_or(v.len());
+                v[..cut].trim()
+            }
+        };
         (!v.is_empty()).then(|| v.to_string())
     })
 }
@@ -119,11 +128,17 @@ pub(crate) fn lab_ids_from_vmrun(out: &str) -> Vec<String> {
     ids.into_iter().collect()
 }
 
-/// The `<id>` in a path like `/Users/x/labs/<id>/.isoloom/vagrant/...`.
+/// The `<id>` in a path like `/Users/x/labs/<id>/.isoloom/vagrant/...`: the `labs/` folder
+/// followed by a lab's own layout (a parent folder named `labs`, say an account, comes first
+/// and is not it).
 fn id_after_labs(path: &str) -> Option<String> {
-    let rest = path.split("/labs/").nth(1)?;
-    let id = rest.split('/').next()?;
-    is_lab_id(id).then(|| id.to_string())
+    // `vmrun list` prints Windows paths with backslashes.
+    let path = path.replace('\\', "/");
+    let segments: Vec<&str> = path.split('/').collect();
+    let under_labs = |i: usize| segments.get(i) == Some(&"labs") && segments.get(i + 1).is_some_and(|id| is_lab_id(id));
+    let lab_layout = |i: usize| segments.get(i + 2).is_some_and(|d| d.starts_with(".isoloom") || *d == ".cyberctf-attack-vm");
+    let at = (0..segments.len()).rev().find(|&i| under_labs(i) && lab_layout(i)).or_else(|| (0..segments.len()).rev().find(|&i| under_labs(i)))?;
+    Some(segments[at + 1].to_string())
 }
 
 /// A plausible lab id: non-empty, bounded, and only the characters an id is built from. Keeps a
@@ -282,4 +297,95 @@ mod tests {
         assert_eq!(super::lab_ids_from_vm_names(running.into_iter(), &by_name), ["goad-b".to_string()]);
         std::fs::remove_dir_all(labs).unwrap();
     }
+
+    #[test]
+    fn isoloom_name_takes_the_top_level_key_only() {
+        // A commented-out or indented `name:` (a machine's, a tool's) is not the lab's.
+        assert_eq!(super::isoloom_name("# name: old\nmachines:\n  name: web\nname: minilab\n").as_deref(), Some("minilab"));
+        assert_eq!(super::isoloom_name("name:minilab\n").as_deref(), Some("minilab"), "no space after the colon");
+        assert_eq!(super::isoloom_name("name: 'minilab'\n").as_deref(), Some("minilab"));
+        assert_eq!(super::isoloom_name("name:   \n").as_deref(), None, "blank");
+        assert_eq!(super::isoloom_name("namespace: x\nname_old: y\n"), None, "other keys starting with name");
+        // Windows line endings and a trailing space are no part of the name.
+        assert_eq!(super::isoloom_name("version: 1\r\nname: minilab \r\n").as_deref(), Some("minilab"));
+    }
+
+    #[test]
+    fn a_comment_after_the_name_is_not_part_of_it() {
+        // The VMs are named after `spec.name` as isoloom-core parses it (YAML drops the comment);
+        // the scan's line reader keeps it, and `lab_names` then maps "minilab # ..." to the lab,
+        // which no VM name starts with: a VirtualBox/Parallels lab is never found running.
+        // Fails with: left: Some("minilab # the lab's name"), right: Some("minilab").
+        // Suggested fix: parse the line's value as YAML (`serde_yaml_ng::from_str::<String>`),
+        // or cut at " #" before trimming the quotes.
+        let yaml = "version: 1\nname: minilab # the lab's name\n";
+        let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(parsed["name"].as_str(), Some("minilab"), "what the spec parser (and the VM names) say");
+        assert_eq!(super::isoloom_name(yaml).as_deref(), Some("minilab"));
+    }
+
+    #[test]
+    fn docker_project_ids_are_checked_at_the_id_boundaries() {
+        let max = "a".repeat(64);
+        let over = "a".repeat(65);
+        let out = format!("cyberctf-{max}\ncyberctf-{over}\ncyberctf-\ncyberctf-é\ncyberctf-a b\ncyberctf-ok_id-1\r\n  cyberctf-spaced  \ncyberctf-x/../y\n");
+        assert_eq!(super::lab_ids_from_docker_projects(&out), vec![max, "ok_id-1".to_string(), "spaced".to_string()]);
+    }
+
+    #[test]
+    fn vbox_listings_skip_lines_that_are_not_a_quoted_name() {
+        let out = "\"minilab-1 · dc01\" {0185}\r\ninaccessible {dead}\n\n\"\" {empty}\n  \"spaced · ws01\" {3eeb}\n\"unterminated {x}\n";
+        assert_eq!(super::vbox_vm_names(out), ["minilab-1 · dc01", "", "spaced · ws01"]);
+    }
+
+    #[test]
+    fn a_vm_named_only_attacker_or_without_the_separator_does_not_mean_a_lab_runs() {
+        let by_name: HashMap<String, String> = [("minilab-1".to_string(), "goad".to_string())].into();
+        let names = ["minilab-1 · attacker", "minilab-1", "minilab-1·dc01", "minilab-1 · ", "minilab-1 · attacker2", " · dc01"];
+        // The attack VM alone: no. A machine named like the attacker but not exactly: yes.
+        assert_eq!(super::lab_ids_from_vm_names(names.into_iter(), &by_name), ["goad".to_string()]);
+        assert_eq!(super::lab_ids_from_vm_names(["minilab-1 · attacker"].into_iter(), &by_name), Vec::<String>::new());
+        assert_eq!(super::lab_ids_from_vm_names(["minilab-1 · "].into_iter(), &by_name), ["goad".to_string()], "an empty machine name still names the lab");
+    }
+
+    #[test]
+    fn vmrun_reads_windows_paths_and_skips_odd_lines() {
+        let out = "Total running VMs: 2\r\nC:\\Users\\me\\AppData\\Roaming\\com.cyberctf\\labs\\goad-light\\.isoloom\\vagrant\\.vagrant\\machines\\dc01\\vmware_desktop\\x.vmx\r\n/Users/me/labs/\n/Users/me/labs/bad id/x.vmx\n/Users/me/other/x.vmx\n";
+        assert_eq!(super::lab_ids_from_vmrun(out), vec!["goad-light".to_string()]);
+    }
+
+    #[test]
+    fn a_labs_folder_earlier_in_the_path_does_not_mislead_the_vmrun_scan() {
+        // The lab's id follows the launcher's own `labs/` folder, which sits under the app data
+        // folder; a parent folder also named `labs` (an account `labs`, a `~/labs` checkout holding
+        // the app data in a portable setup) comes first and its next segment is taken as the id.
+        // Fails with: left: ["Library"], right: ["goad-light"].
+        // Suggested fix: match the path against the app's own labs folder (`<app data>/labs/`),
+        // or take the id from the `/labs/<id>/.isoloom` (or `/.cyberctf-attack-vm`) shape.
+        let out = "Total running VMs: 1\n/Users/labs/Library/Application Support/com.cyberctf/labs/goad-light/.isoloom/vagrant/.vagrant/machines/dc01/vmware_desktop/x.vmx\n";
+        assert_eq!(super::lab_ids_from_vmrun(out), vec!["goad-light".to_string()]);
+    }
+
+    #[test]
+    fn an_unreadable_or_duplicate_name_leaves_the_lab_out_of_the_scan() {
+        let labs = std::env::temp_dir().join(format!("cyberctf-discover-dup-{}", rand::random::<u32>()));
+        // Three labs: two with the same instance name (never guessed), one with a marker that
+        // isn't an instance (plain name), and a folder that is a file.
+        for (id, yaml, marker) in [("a", "name: twin\n", Some("1")), ("b", "name: twin\n", Some("1")), ("c", "name: solo\n", Some("0"))] {
+            let d = labs.join(id);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("isoloom.yml"), yaml).unwrap();
+            if let Some(m) = marker {
+                std::fs::write(d.join(crate::runtime::lab::INSTANCE_MARKER), m).unwrap();
+            }
+        }
+        std::fs::write(labs.join("d"), "a file, not a lab").unwrap();
+        let by_name = super::lab_names(&labs);
+        assert_eq!(by_name.len(), 1, "{by_name:?}");
+        assert_eq!(by_name.get("solo").map(String::as_str), Some("c"), "a marker of 0 is no instance: the plain name");
+        std::fs::remove_dir_all(labs).unwrap();
+    }
 }
+
+#[cfg(test)]
+mod proptests;

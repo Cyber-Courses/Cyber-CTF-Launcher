@@ -34,7 +34,9 @@ pub(super) fn recorded_on_other_provider(dir: &Path, requested: Provider) -> boo
     for machine in entries.flatten() {
         if let Ok(provs) = std::fs::read_dir(machine.path()) {
             for prov in provs.flatten() {
-                if prov.path().is_dir() && prov.file_name().to_string_lossy() != requested.id() {
+                // Only a folder holding an `id` is a machine (as `has_machines` counts them): a
+                // destroy or a plain `vagrant status` leaves empty provider folders behind.
+                if prov.path().join("id").is_file() && prov.file_name().to_string_lossy() != requested.id() {
                     mismatch = true;
                 }
             }

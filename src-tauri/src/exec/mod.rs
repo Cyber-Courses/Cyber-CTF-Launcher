@@ -6,7 +6,7 @@ mod elevate;
 #[cfg(test)]
 pub mod fake;
 mod group;
-mod shim;
+pub(crate) mod shim;
 mod vagrant;
 
 use std::path::Path;
@@ -485,4 +485,35 @@ mod tests {
         assert!(matches!(err, Error::ToolMissing { tool: "vagrant" }));
         assert!(matches!(spawn_error("vagrant")(std::io::Error::from(std::io::ErrorKind::PermissionDenied)), Error::Io(_)));
     }
+
+    #[tokio::test]
+    async fn lines_are_read_lossily_whatever_the_read_boundaries() {
+        // A two-byte buffer makes every multi-byte character span reads: `read_until` gathers the
+        // whole line first, so a character is never cut at a chunk boundary. CRLF is stripped, a
+        // lone CR inside a line is kept, an invalid byte is replaced, and the last line needs no
+        // newline.
+        let mut input = "a\r\nb\rc\n\u{20ac}\u{20ac}\n".as_bytes().to_vec();
+        input.extend_from_slice(&[0xff, b'd']);
+        let mut reader = BufReader::with_capacity(2, &input[..]);
+        let mut buf = Vec::new();
+        let mut lines = Vec::new();
+        while reader.read_until(b'\n', &mut buf).await.unwrap() > 0 || !buf.is_empty() {
+            lines.push(take_line(&mut buf));
+        }
+        assert_eq!(lines, ["a", "b\rc", "\u{20ac}\u{20ac}", "\u{fffd}d"]);
+        assert_eq!(reader.read_until(b'\n', &mut buf).await.unwrap(), 0, "still at the end");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_streamed_tool_printing_invalid_utf8_is_forwarded_not_cut() {
+        // A provisioning script echoing Latin-1 (0xE9 alone) used to end the stream with an
+        // error and kill the tool; now the byte is replaced and the run goes on to its end.
+        let mut lines = Vec::new();
+        stream("sh", &["-c", "printf 'caf\\351 ok\\n'; printf 'done\\n'"], None, &[], |l| lines.push(l)).await.unwrap();
+        assert_eq!(lines, ["caf\u{fffd} ok", "done"]);
+    }
 }
+
+#[cfg(test)]
+mod proptests;

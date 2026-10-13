@@ -82,7 +82,8 @@
     "customImageNote": "Cualquier imagen de Docker o tag de registro.",
     "save": "Guardar",
     "autoStart": "Iniciar la máquina de ataque con el lab",
-    "autoStartDescription": "La inicia en cuanto un lab está activo en esta máquina: el contenedor en un lab de contenedores, la VM junto a un lab de VM. Aun así puedes iniciarla o detenerla desde el lab."
+    "autoStartDescription": "La inicia en cuanto un lab está activo en esta máquina: el contenedor en un lab de contenedores, la VM junto a un lab de VM. Aun así puedes iniciarla o detenerla desde el lab.",
+    "invalidImage": "Usa un nombre de imagen simple como registry/name:tag: solo letras, cifras y . _ - / : @, sin guion al principio."
   },
   "attackVm": {
     "title": "VM de ataque para labs de VM",

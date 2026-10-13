@@ -35,6 +35,9 @@ fn valid_machine_name(m: &str) -> bool {
 #[tauri::command]
 pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
     let dir = lab_dir(&app, &id)?;
+    // Marked as stopping from here: ending a deploy can take minutes (Terraform is interrupted
+    // and waited for), during which the page and the quit guard must see a stop, not a launch.
+    let _stopping = super::inflight::DeployGuard::new(&id, super::inflight::Action::Stop);
     // A deploy still running in its worker process is stopped first, so the teardown never races
     // a `vagrant up` or `compose up` that would recreate what it removes; same for an attack VM
     // start beside it.
@@ -322,6 +325,43 @@ mod tests {
         assert!(exegol_start("web-1".into(), "x;y".into(), channel(sink.clone())).await.is_err());
         assert!(exegol_stop("a;rm".into(), channel(sink.clone())).await.is_err());
         assert!(sink.lock().unwrap().is_empty(), "nothing ran");
+    }
+
+    #[tokio::test]
+    async fn a_stop_reads_as_stopping_from_the_moment_it_is_asked_for() {
+        // Regression guard: ending a deploy can take minutes (a Terraform apply is interrupted
+        // and waited for, then the lab lock); the page and the quit guard must see a stop, not
+        // a bare lab, the whole time.
+        let t = TestApp::new();
+        let id = "commands-test-stop-waits";
+        t.lab(id, &[]);
+        let tools = Tools::rules(&[]);
+        let held = crate::runtime::inflight::lock_lab(t.handle(), id).await;
+        let app = t.handle().clone();
+        let logs = sink();
+        let ch = channel(logs.clone());
+        let mut stop = tokio::spawn(async move { lab_stop(app, id.into(), Runtime::Docker, ch).await });
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(100), &mut stop).await.is_err(), "the stop waits for the lab");
+        let action = |id: &str| crate::runtime::active_actions().into_iter().find(|(l, _)| l == id).map(|(_, a)| a);
+        assert_eq!(action(id), Some(crate::runtime::Action::Stop));
+        assert!(!tools.called("down --volumes"));
+        drop(held);
+        stop.await.unwrap().unwrap();
+        assert!(tools.called("down --volumes"));
+        assert_eq!(action(id), None);
+    }
+
+    #[tokio::test]
+    async fn machine_names_outside_plain_ascii_are_refused_before_a_worker_starts() {
+        let t = TestApp::new();
+        t.lab("ad", &[]);
+        let tools = Tools::rules(&[]);
+        let s = sink();
+        for bad in ["dc01é", "dc01 ", "dc01\n", "ws01/x"] {
+            let err = lab_provision(t.handle().clone(), "ad".into(), Runtime::Vm, Some(bad.into()), channel(s.clone())).await.unwrap_err().to_string();
+            assert_eq!(err, format!("invalid machine name `{bad}`"));
+        }
+        assert!(tools.calls().is_empty() && s.lock().unwrap().is_empty());
     }
 
     #[test]

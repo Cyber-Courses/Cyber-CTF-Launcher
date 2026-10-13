@@ -146,6 +146,21 @@ mod tests {
         assert!(check(&Path::new(home).join("My Tools")).is_ok());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn folder_names_with_ruby_or_shell_characters_are_accepted_since_the_vagrantfile_escapes_them() {
+        // `#{...}`, `$`, a backslash, a single quote and a space are legal folder names; the
+        // attack VM's Vagrantfile escapes what Ruby would read, and Docker takes the path as one
+        // argument. Only what can't be escaped there (a double quote, a line break) and what
+        // splits Docker's `-v` spec (a colon) is refused.
+        for ok in ["/Users/a/#{x}", "/Users/a/$HOME", "/Users/a/b\\c", "/Users/a/it's", "/Users/a/My Tools", "/"] {
+            assert!(check(Path::new(ok)).is_ok(), "{ok}");
+        }
+        for bad in ["/Users/a/b:c", "/Users/a/b\"c", "/Users/a/b\nc", "/Users/a/b\rc", "", "~/shared"] {
+            assert!(check(Path::new(bad)).is_err(), "{bad:?}");
+        }
+    }
+
     fn temp(tag: &str) -> PathBuf {
         std::env::temp_dir().join(format!("cyberctf-shared-{tag}-{}", rand::random::<u32>()))
     }

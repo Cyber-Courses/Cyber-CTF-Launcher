@@ -91,6 +91,13 @@ fn note_failure(started: Result<()>, log: &mut impl FnMut(String)) {
 /// Starts the attack VM beside a VM lab on this machine, on the hypervisor the lab runs on.
 pub async fn start_attack_vm(app: &AppHandle, id: &str, box_name: &str, log: impl FnMut(String)) -> Result<()> {
     let dir = lab_dir(app, id)?;
+    // The attack VM lives beside a lab on this machine only (stop and park never reach one on a
+    // server): a lab on a host must not get one started here on a remote provider.
+    if crate::runtime::server::lab_connection(app, &dir)?.is_some() {
+        return Err(Error::Invalid(
+            "This lab runs on a server host: the attack VM is only for labs on this machine. Attack it from your own machine or a VM on that host.".into(),
+        ));
+    }
     let vagrant = lab::vagrant_dir(&dir, Runtime::Vm);
     let status = vm::status(&vagrant, &[]).await?;
     // The lab's internal networks exist as soon as one of its VMs is up; the attacker needn't
@@ -100,6 +107,9 @@ pub async fn start_attack_vm(app: &AppHandle, id: &str, box_name: &str, log: imp
     }
     let provider =
         status.provider.as_deref().and_then(Provider::from_id).ok_or_else(|| Error::Invalid("couldn't tell which hypervisor the lab runs on".into()))?;
+    if provider.is_remote() {
+        return Err(Error::Invalid("This lab's machines run on a remote host: the attack VM is only for labs on this machine.".into()));
+    }
     attack_vm::start(&dir, &vagrant, provider, box_name, log).await
 }
 
@@ -140,6 +150,51 @@ mod tests {
         assert!(s.contains("label=com.docker.compose.project='my lab'"), "{s}");
         assert!(s.contains("docker pull -q 'repo/img:tag'"), "{s}");
         assert!(s.contains("--network \"${networks[0]}\" 'repo/img:tag' sleep infinity"), "{s}");
+    }
+
+    /// A lab's generated Vagrantfile with one machine on one network, as the attack VM plans from.
+    const LAB_VAGRANTFILE: &str = "config.vm.define \"dc01\" do |m|\n  m.vm.network \"private_network\", ip: \"192.168.56.30\", netmask: \"255.255.255.0\", virtualbox__intnet: \"isoloom-ad-lab\"\n  m.vm.provider \"virtualbox\" do |v|\n    v.name = \"ad · dc01\"\n  end\nend\n";
+
+    #[tokio::test]
+    async fn the_attack_vm_needs_a_running_machine_and_a_hypervisor_it_knows() {
+        use crate::exec::fake::{Tools, ok};
+        let t = crate::test_app::TestApp::new();
+        let dir = t.lab("ad", &[]);
+        let vagrant = crate::runtime::lab::vagrant_dir(&dir, crate::runtime::Runtime::Vm);
+        std::fs::create_dir_all(&vagrant).unwrap();
+        std::fs::write(vagrant.join("Vagrantfile"), LAB_VAGRANTFILE).unwrap();
+        let cases = [
+            ("1,dc01,state,poweroff\n1,dc01,provider-name,virtualbox\n", "start the lab first: the attack VM joins its networks"),
+            // No `provider-name` line at all (an odd Vagrant answer), or one for a provider the
+            // launcher doesn't drive: refused rather than started on a guess.
+            ("1,dc01,state,running\n", "couldn't tell which hypervisor the lab runs on"),
+            ("1,dc01,state,running\n1,dc01,provider-name,\n", "couldn't tell which hypervisor the lab runs on"),
+            ("1,dc01,state,running\n1,dc01,provider-name,aws\n", "couldn't tell which hypervisor the lab runs on"),
+        ];
+        for (status, expected) in cases {
+            let tools = Tools::rules(&[("vagrant status", ok(status))]);
+            let err = super::start_attack_vm(t.handle(), "ad", "kalilinux/rolling", |_| {}).await.unwrap_err().to_string();
+            assert_eq!(err, expected, "{status:?}");
+            assert!(!tools.called("vagrant up"), "{:?}", tools.calls());
+        }
+    }
+
+    #[tokio::test]
+    async fn an_attack_vm_is_refused_beside_a_lab_running_on_an_esxi_host() {
+        use crate::exec::fake::{Tools, ok};
+        let t = crate::test_app::TestApp::new();
+        let dir = t.lab("ad", &[]);
+        let vagrant = crate::runtime::lab::vagrant_dir(&dir, crate::runtime::Runtime::Vm);
+        std::fs::create_dir_all(&vagrant).unwrap();
+        std::fs::write(vagrant.join("Vagrantfile"), LAB_VAGRANTFILE).unwrap();
+        // The lab runs on an ESXi host (its marker says so, and Vagrant tracks it there).
+        std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "esx1").unwrap();
+        let tools = Tools::rules(&[("vagrant status", ok("1,dc01,state,running\n1,dc01,provider-name,vmware_esxi\n"))]);
+        let r = super::start_attack_vm(t.handle(), "ad", "kalilinux/rolling", |_| {}).await;
+        // The attack VM lives beside a lab on this machine only (stop and park never reach one on
+        // a server): a lab elsewhere must be refused, not started on a remote provider here.
+        assert!(r.is_err(), "an attack VM beside a lab on a server host is refused");
+        assert!(!tools.called("--provider vmware_esxi"), "{:?}", tools.calls());
     }
 
     #[tokio::test]

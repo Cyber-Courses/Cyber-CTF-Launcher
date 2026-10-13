@@ -12,7 +12,7 @@ import { useT } from "@/lib/i18n";
 
 export function ConnectionStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, editing, kind, set, text, connectionOk, next, back } = s;
+  const { v, secretKept, kind, set, text, connectionOk, next, back } = s;
   // Proxmox accepts an API token id (user@realm!name) in the username field; in that mode the
   // "password" is the token secret and SSH uses the launcher's key, which must be authorized
   // on the node, so we show it.
@@ -72,7 +72,7 @@ export function ConnectionStep({ s }: { s: HostSetup }) {
             type="password"
             value={v.password ?? ""}
             onChange={(e) => set("password", e.target.value || null)}
-            placeholder={editing ? t("servers.setup.connection.keepPlaceholder") : ""}
+            placeholder={secretKept ? t("servers.setup.connection.keepPlaceholder") : ""}
             autoComplete="off"
           />
         </Field>

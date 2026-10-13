@@ -82,7 +82,8 @@
     "customImageNote": "Any Docker image or registry tag.",
     "save": "Save",
     "autoStart": "Start the attack box with the lab",
-    "autoStartDescription": "Starts it as soon as a lab is up on this machine: the container on a container lab, the VM beside a VM lab. You can still start or stop it from the lab."
+    "autoStartDescription": "Starts it as soon as a lab is up on this machine: the container on a container lab, the VM beside a VM lab. You can still start or stop it from the lab.",
+    "invalidImage": "Use a plain image name such as registry/name:tag: letters, digits and . _ - / : @ only, not starting with a dash."
   },
   "attackVm": {
     "title": "Attack VM for VM labs",

@@ -22,12 +22,14 @@ export function useEngineActions(onRefresh: () => void) {
   };
   // Installed but stopped: start it from here instead of sending the player to do it.
   const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
+  // Kept with the engine it is about: another engine picked since doesn't show this one's failure.
+  const [startFailure, setStartFailure] = useState<{ engine: DockerEngine; message: string } | null>(null);
+  const startError = (engine: DockerEngine) => (startFailure?.engine === engine ? startFailure.message : null);
   const start = (engine: DockerEngine) => {
     setStarting(true);
-    setStartError(null);
+    setStartFailure(null);
     dockerStartEngine(engine)
-      .catch((e) => setStartError(String(e)))
+      .catch((e) => setStartFailure({ engine, message: String(e) }))
       .finally(() => {
         setStarting(false);
         onRefresh();

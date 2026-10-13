@@ -245,7 +245,8 @@
       "wingetHint": "Installez-le depuis le Microsoft Store, puis revenez ici.",
       "get": "Obtenir",
       "linux": "Installez le gestionnaire de paquets de votre distribution pour profiter des installations en un clic.",
-      "linuxNamed": "Installez le gestionnaire de paquets de votre distribution ({name}) pour profiter des installations en un clic."
+      "linuxNamed": "Installez le gestionnaire de paquets de votre distribution ({name}) pour profiter des installations en un clic.",
+      "intelMac": "Ce Mac est un Mac Intel. Homebrew ne fournit plus de paquets précompilés pour lui : les installations peuvent compiler depuis les sources et prendre plusieurs minutes de plus."
     },
     "wsl": {
       "intro": "Cyber CTF active WSL 2 pour vous. Windows demande l'autorisation une fois (l'invite administrateur habituelle), puis un redémarrage est nécessaire.",

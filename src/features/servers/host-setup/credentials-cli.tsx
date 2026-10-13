@@ -155,11 +155,14 @@ export function AwsCliCredentials({ s }: { s: HostSetup }) {
         <Field label={t("servers.setup.credentials.profile")}>
           <Select value={s.v.awsProfile ?? ""} onChange={(e) => s.set("awsProfile", e.target.value || null)}>
             <option value="">default</option>
-            {s.profiles.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
+            {/* "default" is the first option already; the CLI lists it among the others too. */}
+            {s.profiles
+              .filter((p) => p !== "default")
+              .map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
           </Select>
         </Field>
       )}

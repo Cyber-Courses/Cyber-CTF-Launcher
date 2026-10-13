@@ -146,4 +146,51 @@ pub(crate) mod tests {
         assert!(!f.failed());
         std::fs::remove_dir_all(dir).ok();
     }
+
+    #[test]
+    fn pidfiles_with_odd_whitespace_bom_or_partial_writes() {
+        let dir = temp_dir("pid-odd");
+        let p = dir.join("x.pid");
+        for (text, want) in [
+            (" 4242 \r\n", Some(Worker { pid: 4242, started: None })),
+            ("4242\t1760000000\n", Some(Worker { pid: 4242, started: Some(1_760_000_000) })),
+            ("4242 176", Some(Worker { pid: 4242, started: Some(176) })),
+            ("4242 x", Some(Worker { pid: 4242, started: None })),
+            ("42", Some(Worker { pid: 42, started: None })),
+            ("-1", None),
+            ("4294967296", None),
+            ("\u{feff}4242", None),
+            ("4242.0", None),
+        ] {
+            std::fs::write(&p, text).unwrap();
+            assert_eq!(read_worker(&p), want, "{text:?}");
+        }
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_failed_verdict_is_read_however_it_is_written() {
+        let dir = temp_dir("failed-forms");
+        let f = Files::of(&dir, "lab-1");
+        for (text, want) in [("error: x", true), ("\r\n\terror", true), ("errors galore", true), ("Error: x", false), ("ok\nerror: later", false), ("", false)]
+        {
+            std::fs::write(&f.launch_status, text).unwrap();
+            assert_eq!(f.failed(), want, "{text:?}");
+        }
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn the_log_so_far_needs_a_valid_id_and_is_empty_before_any_deploy() {
+        let t = crate::test_app::TestApp::new();
+        assert!(log_so_far(t.handle(), "../x").unwrap_err().to_string().starts_with("invalid lab id"));
+        assert_eq!(log_so_far(t.handle(), "never-deployed").unwrap(), "");
+        assert!(!last_deploy_failed(t.handle(), "never-deployed"));
+        let f = of(t.handle(), "lab-1").unwrap();
+        std::fs::write(&f.log, "line\n").unwrap();
+        std::fs::write(&f.launch_status, "error: boom").unwrap();
+        assert_eq!(log_so_far(t.handle(), "lab-1").unwrap(), "line\n");
+        assert!(last_deploy_failed(t.handle(), "lab-1"));
+        assert!(!last_deploy_failed(t.handle(), "../x"), "a bad id is never a failed deploy");
+    }
 }

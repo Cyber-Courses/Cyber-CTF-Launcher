@@ -40,7 +40,8 @@ fn cloud_vars(h: &HostProfile) -> Vec<(String, String)> {
     let mut vars = vec![
         ("region".to_string(), h.host.clone()),
         ("auto_stop_hours".to_string(), hours.to_string()),
-        ("auto_stop_minutes".to_string(), (hours * 60).to_string()),
+        // Saturating: the form caps the hours, but the profile file can hold anything.
+        ("auto_stop_minutes".to_string(), hours.saturating_mul(60).to_string()),
     ];
     // The size, under each module's own variable name.
     if let Some(t) = &h.datastore {
@@ -159,6 +160,27 @@ mod tests {
         let vars = host_vars(&h, "sec");
         assert_eq!(get(&vars, "region"), Some("eu-west-3"));
         assert!(get(&vars, "proxmox_password").is_none());
+    }
+
+    #[test]
+    fn a_zero_auto_stop_is_zero_minutes_and_no_size_leaves_the_modules_default() {
+        let mut h = profile(Provider::Aws);
+        h.host = "eu-west-3".into();
+        h.auto_stop_hours = Some(0);
+        let vars = host_vars(&h, "");
+        assert_eq!((get(&vars, "auto_stop_hours"), get(&vars, "auto_stop_minutes")), (Some("0"), Some("0")));
+        assert!(get(&vars, "instance_type").is_none());
+    }
+
+    #[test]
+    fn an_auto_stop_beyond_the_u32_range_saturates_instead_of_wrapping() {
+        // The form caps the value at 72, but the profile is read back from a file an older
+        // version or a hand edit can hold anything in: it panicked (debug) or wrapped (release).
+        let mut h = profile(Provider::Aws);
+        h.host = "eu-west-3".into();
+        h.auto_stop_hours = Some(u32::MAX / 60 + 1);
+        let vars = host_vars(&h, "");
+        assert_eq!(get(&vars, "auto_stop_minutes"), Some(u32::MAX.to_string().as_str()));
     }
 
     #[test]

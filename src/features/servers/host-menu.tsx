@@ -22,11 +22,22 @@ export function HostMenu({ items }: { items: MenuItem[] }) {
   useEffect(() => {
     if (!pos) return;
     const close = () => setPos(null);
+    // Escape closes it and gives the focus back to its button, as a menu does.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setPos(null);
+      btnRef.current?.focus();
+    };
+    // Open: the focus goes to its first item, as a menu's does.
+    document.querySelector<HTMLElement>('[role="menu"] [role="menuitem"]')?.focus();
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
     };
   }, [pos]);
 
@@ -36,6 +47,8 @@ export function HostMenu({ items }: { items: MenuItem[] }) {
         ref={btnRef}
         type="button"
         aria-label={t("servers.host.moreActions")}
+        aria-haspopup="menu"
+        aria-expanded={!!pos}
         onClick={() => (pos ? setPos(null) : open())}
         className="grid size-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-glass-2 hover:text-foreground"
       >
@@ -44,11 +57,17 @@ export function HostMenu({ items }: { items: MenuItem[] }) {
       {pos && (
         <>
           <button type="button" aria-hidden tabIndex={-1} className="fixed inset-0 z-40 cursor-default" onClick={() => setPos(null)} />
-          <div style={{ position: "fixed", top: pos.top, right: pos.right }} className="surface-glass z-50 w-36 overflow-hidden rounded-control p-1">
+          <div
+            role="menu"
+            aria-label={t("servers.host.moreActions")}
+            style={{ position: "fixed", top: pos.top, right: pos.right }}
+            className="surface-glass z-50 w-36 overflow-hidden rounded-control p-1"
+          >
             {items.map((it) => (
               <button
                 key={it.label}
                 type="button"
+                role="menuitem"
                 onClick={() => {
                   setPos(null);
                   it.onClick();

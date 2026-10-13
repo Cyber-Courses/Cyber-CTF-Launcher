@@ -37,13 +37,14 @@
     "signedInAs": "{name} としてサインイン済み",
     "waiting": "ブラウザを待機中…（最大 5 分）",
     "button": "ブラウザでサインイン",
-    "hint": "ブラウザで <mono>cyberauth.co</mono> を開きます。後で行うこともできます。"
+    "hint": "ブラウザで <mono>cyberauth.co</mono> を開きます。アカウントなしでもラボは動きます。あとで設定からサインインできます。",
+    "skip": "今はスキップ"
   },
   "done": {
     "title": "<em>準備完了</em>です",
     "description": "これらの設定は後から「設定」または「このマシン」でいつでも変更できます。",
     "account": "アカウント",
-    "notSignedIn": "未サインイン",
+    "notSignedIn": "未サインイン（あとで設定からサインインできます）",
     "browse": "ラボを見る"
   }
 }

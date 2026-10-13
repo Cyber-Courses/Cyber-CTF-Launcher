@@ -1,4 +1,4 @@
-import { test, expect, openApp, navButton, pageTitle, breadcrumb } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, breadcrumb, paletteKey } from "./fixtures";
 
 test.describe("navigation", () => {
   test.beforeEach(async ({ page }) => openApp(page));
@@ -33,7 +33,7 @@ test.describe("navigation", () => {
   });
 
   test("command palette opens and navigates", async ({ page }) => {
-    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press(await paletteKey(page));
     const palette = page.getByRole("dialog", { name: "Command menu" });
     await expect(palette).toBeVisible();
     await expect(palette.getByPlaceholder("Search labs, screens, actions…")).toBeFocused();
@@ -49,7 +49,7 @@ test.describe("navigation", () => {
     await expect(pageTitle(page)).toHaveText("Servers");
 
     // Escape closes it without doing anything.
-    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press(await paletteKey(page));
     await expect(palette).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(palette).toBeHidden();

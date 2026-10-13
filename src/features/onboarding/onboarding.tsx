@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ErrorBoundary } from "@/components/error-screen";
 import { CtfMark } from "@/components/brand/mark";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
+import { WaitingForCheck } from "@/components/ui/waiting-for-check";
 import { MachineStepBody, canContinue, machineSteps, nextLabel, stepMeta, useMachineSetup } from "@/features/machine/setup-steps";
 import { STEP_NAMES, isMachineStep, onboardingSteps } from "@/features/onboarding/onboarding-model";
 import { StepActions, StepHeader, StepProgress } from "@/features/onboarding/onboarding-parts";
@@ -32,7 +32,17 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   // Poll so an install finished in a native installer is picked up without a re-check. A failed
   // re-check keeps the last report: clearing it blanked the current step to the loader and, on
   // Windows, dropped the WSL step from the list, so the player landed on another step.
-  const refreshReport = usePoll(systemCheck, CHECK_POLL_MS, { serial: true, onValue: setReport });
+  // A check that keeps failing (a wedged daemon, a hung tool) is said, with a retry: the loader
+  // alone sat there for good.
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const refreshReport = usePoll(systemCheck, CHECK_POLL_MS, {
+    serial: true,
+    onValue: (r) => {
+      setReport(r);
+      setCheckError(null);
+    },
+    onError: (e) => setCheckError(String(e)),
+  });
 
   // The machine steps are the same ones the "Set up this machine" window shows.
   const setup = useMachineSetup(report, refreshReport);
@@ -85,10 +95,14 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
               {step === "signin" && <SignInStep auth={auth} loggingIn={loggingIn} loginError={loginError} onLogin={login} onBack={back} onNext={next} />}
 
-              {/* A machine step before the machine check answers: just the loader, no step header. */}
+              {/* A machine step before the machine check answers: the loader, or why it failed. */}
               {isMachineStep(step) && report === null && (
-                <div className="flex items-center justify-center gap-2 text-[0.8125rem] text-muted-foreground">
-                  <Spinner className="size-4" /> {t("onboarding.checking")}
+                <div className="flex flex-1 flex-col">
+                  <div className="flex items-center justify-center gap-2 text-[0.8125rem] text-muted-foreground">
+                    <WaitingForCheck what={t("onboarding.checking")} checkError={checkError} onRetry={refreshReport} />
+                  </div>
+                  {/* Back still works (to sign in, say): without it "Skip setup" was the only way out. */}
+                  <StepActions onBack={back} onNext={next} disabled nextLabel={t("machine.steps.next.continue")} />
                 </div>
               )}
 

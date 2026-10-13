@@ -37,13 +37,14 @@
     "signedInAs": "Sesión iniciada como {name}",
     "waiting": "Esperando al navegador… (hasta 5 minutos)",
     "button": "Iniciar sesión con tu navegador",
-    "hint": "Abre <mono>cyberauth.co</mono> en tu navegador. También puedes hacerlo más tarde."
+    "hint": "Abre <mono>cyberauth.co</mono> en tu navegador. Los labs también funcionan sin cuenta: puedes iniciar sesión más tarde desde Ajustes.",
+    "skip": "Omitir por ahora"
   },
   "done": {
     "title": "Todo <em>listo</em>",
     "description": "Puedes cambiar todo esto más tarde en Ajustes o en Esta máquina.",
     "account": "Cuenta",
-    "notSignedIn": "Sin sesión iniciada",
+    "notSignedIn": "Sin iniciar sesión (inicia sesión más tarde desde Ajustes)",
     "browse": "Explorar labs"
   }
 }

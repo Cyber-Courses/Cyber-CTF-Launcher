@@ -195,6 +195,29 @@ mod tests {
     }
 
     #[test]
+    fn markers_are_read_trimmed_and_unknown_values_fall_back() {
+        use super::{LOCAL_VM_MARKER, recorded_host};
+        let dir = temp_dir("cyberctf-markers");
+        // A trailing newline (a hand edit, a tool that adds one) changes nothing; blank is none.
+        std::fs::write(dir.join(LOCAL_VM_MARKER), "virtualbox\n").unwrap();
+        assert_eq!(local_vm(&dir).as_deref(), Some("virtualbox"));
+        std::fs::write(dir.join(LOCAL_VM_MARKER), "  \n").unwrap();
+        assert_eq!(local_vm(&dir), None);
+        std::fs::write(dir.join(PARKED_MARKER), "pause\n").unwrap();
+        assert_eq!(parked(&dir), Some(Park::Pause));
+        std::fs::write(dir.join(PARKED_MARKER), "PAUSE").unwrap();
+        assert_eq!(parked(&dir), None, "exact ids only");
+        std::fs::write(dir.join("host"), "  aws1 \n").unwrap();
+        assert_eq!(recorded_host(&dir).as_deref(), Some("aws1"));
+        std::fs::write(dir.join("host"), "\n").unwrap();
+        assert_eq!(recorded_host(&dir), None);
+        // The runtime tag is exact too: an unknown one reads as containers (the oldest kind).
+        std::fs::write(dir.join("runtime"), "vm").unwrap();
+        assert_eq!(recorded_runtime(&dir), Runtime::Docker);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn recorded_runtime_round_trips_and_defaults_to_containers() {
         let dir = temp_dir("cyberctf-runtime");
         // Nothing recorded (a state from before the file existed): containers on one VM.

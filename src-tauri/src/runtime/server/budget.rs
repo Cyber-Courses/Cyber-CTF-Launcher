@@ -39,7 +39,12 @@ fn cost_args(period: &str) -> [&str; 12] {
 
 /// Cost Explorer's amount (text output) as a number.
 fn parse_spend(out: &str) -> Result<f64> {
-    out.trim().parse::<f64>().map_err(|_| Error::Invalid(format!("couldn't read the spend figure from Cost Explorer: {:?}", out.trim())))
+    // `f64::from_str` takes "NaN" and "inf" too; neither is a spend this check can act on.
+    out.trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite())
+        .ok_or_else(|| Error::Invalid(format!("couldn't read the spend figure from Cost Explorer: {:?}", out.trim())))
 }
 
 /// The budget check for a launch. Blocks only when the spend is readable and over the limit;
@@ -75,6 +80,7 @@ fn budget_limit(host: &HostProfile) -> Option<f64> {
 /// This month's spend (or why it couldn't be read) against `limit`.
 fn verdict(limit: f64, spent: Result<f64>) -> BudgetCheck {
     match spent {
+        Ok(spent) if spent.is_nan() => BudgetCheck::Unverifiable(budget_unverifiable_message("the spend figure isn't a number")),
         Ok(spent) if spent >= limit => BudgetCheck::Over(spent, limit),
         Ok(_) => BudgetCheck::Ok,
         Err(e) => BudgetCheck::Unverifiable(budget_unverifiable_message(&e.to_string())),
@@ -108,6 +114,28 @@ mod tests {
         assert_eq!(parse_spend("12.5\n").unwrap(), 12.5);
         assert_eq!(parse_spend(" 0 ").unwrap(), 0.0);
         assert_eq!(parse_spend("None\n").unwrap_err().to_string(), "couldn't read the spend figure from Cost Explorer: \"None\"");
+    }
+
+    #[test]
+    fn spend_figures_in_exponent_or_signed_form_parse_and_localized_ones_do_not() {
+        assert_eq!(parse_spend("1.5e2").unwrap(), 150.0);
+        assert_eq!(parse_spend("-0.0").unwrap(), 0.0);
+        assert_eq!(parse_spend("\n  7\n").unwrap(), 7.0);
+        for bad in ["", "12,5", "$12.5", "12.5 USD"] {
+            assert!(parse_spend(bad).is_err(), "{bad:?}");
+        }
+        // An infinite spend is over any limit.
+        assert!(matches!(verdict(40.0, Ok(f64::INFINITY)), BudgetCheck::Over(..)));
+    }
+
+    #[test]
+    fn a_spend_that_is_not_a_number_is_unverifiable_not_under_budget() {
+        // `f64::from_str` accepts "NaN", "inf" and "infinity" (any case). A NaN is not a readable
+        // spend: the launch should warn (Unverifiable), not read as under budget. Fix: refuse a
+        // parsed value that isn't finite (`.filter(f64::is_finite)`), and in `verdict` treat NaN
+        // as unverifiable.
+        assert!(parse_spend("NaN").is_err());
+        assert!(matches!(verdict(40.0, Ok(f64::NAN)), BudgetCheck::Unverifiable(_)));
     }
 
     #[test]

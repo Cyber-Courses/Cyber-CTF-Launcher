@@ -129,8 +129,11 @@ export function HomeScreen({
           canStart={(lab) => loggedIn && !!lab.runtime}
           onOpen={(lab) => openLab(lab.slug)}
           // A shut-down or paused lab comes back as it was; a fresh launch would start over on
-          // top of its kept machines.
-          onStart={(lab) => (statuses[lab.id]?.parked ? resume(lab) : launch(lab, undefined, undefined, report))}
+          // top of its kept machines. A cloud lab runs on an account picked on its page (it
+          // costs): launched from here it only failed, with the message in a log nobody saw.
+          onStart={(lab) =>
+            lab.runtime?.runtime === "CLOUD" ? openLab(lab.slug) : statuses[lab.id]?.parked ? resume(lab) : launch(lab, undefined, undefined, report)
+          }
         />
       )}
 

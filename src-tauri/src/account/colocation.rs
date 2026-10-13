@@ -219,6 +219,38 @@ mod tests {
     }
 
     #[test]
+    fn the_token_is_the_first_token_parameter_read_as_typed() {
+        // Among other parameters, and first of two: the one checked. A percent-encoded, a
+        // prefixed (`tokens=`) or a bare `token` never matches (tokens are plain hex).
+        let origin = "https://cyberctf.org";
+        assert!(build_response(&get("/health?x=1&token=secret&token=other", origin), "secret", "n").starts_with("HTTP/1.1 200"));
+        for path in ["/health?token=sec%72et", "/health?tokens=secret", "/health?token", "/health?token=", "/health"] {
+            let r = build_response(&get(path, origin), "secret", "n");
+            assert!(r.starts_with("HTTP/1.1 403") && !r.contains("\"nonce\""), "{path}: {r}");
+        }
+        // An empty expected token never matches an empty given one by accident of length.
+        assert!(build_response(&get("/health?token=", origin), "", "n").starts_with("HTTP/1.1 200"), "equal empty strings are equal");
+    }
+
+    #[test]
+    fn requests_with_bare_line_feeds_no_version_or_odd_header_spelling_still_answer() {
+        let ok = |req: &str| {
+            let r = build_response(req, "t", "n");
+            assert!(r.starts_with("HTTP/1.1 200") && r.contains("\"nonce\":\"n\""), "{req:?}: {r}");
+            r
+        };
+        ok("GET /health?token=t HTTP/1.1\n\n");
+        ok("GET /health?token=t");
+        // The Origin header is found whatever its case and spacing, and echoed trimmed.
+        let r = ok("GET /health?token=t HTTP/1.1\r\nORIGIN:   http://localhost:3000  \r\n\r\n");
+        assert!(r.contains("Access-Control-Allow-Origin: http://localhost:3000\r\n"), "{r}");
+        // A header value with its own colon (a port) is kept whole.
+        assert!(ok("GET /health?token=t HTTP/1.1\r\nOrigin: http://127.0.0.1:47290\r\n\r\n").contains("Allow-Origin: http://127.0.0.1:47290"));
+        // No line at all: not a GET.
+        assert!(build_response("\r\n\r\n", "t", "n").starts_with("HTTP/1.1 405"));
+    }
+
+    #[test]
     fn options_preflight_and_other_methods() {
         let pre = build_response("OPTIONS /health HTTP/1.1\r\nOrigin: https://cyberctf.org\r\n\r\n", "t", "n");
         assert!(pre.starts_with("HTTP/1.1 204") && pre.contains("Access-Control-Allow-Origin: https://cyberctf.org"));

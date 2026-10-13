@@ -26,11 +26,14 @@ export function OptionsStep({ s }: { s: HostSetup }) {
         </Field>
         <Field label={t("servers.setup.options.autoStop")}>
           <Select value={String(v.autoStopHours ?? 4)} onChange={(e) => set("autoStopHours", Number(e.target.value))}>
-            {[1, 2, 4, 8, 12, 24].map((h) => (
-              <option key={h} value={h}>
-                {t("servers.setup.options.hours", { count: h })}
-              </option>
-            ))}
+            {/* A saved auto-stop the list lacks (72 h, say) is shown as itself, not as "1 hour". */}
+            {[...new Set([1, 2, 4, 8, 12, 24, ...(v.autoStopHours ? [v.autoStopHours] : [])])]
+              .sort((a, b) => a - b)
+              .map((h) => (
+                <option key={h} value={h}>
+                  {t("servers.setup.options.hours", { count: h })}
+                </option>
+              ))}
             <option value={0}>{t("servers.setup.options.never")}</option>
           </Select>
         </Field>

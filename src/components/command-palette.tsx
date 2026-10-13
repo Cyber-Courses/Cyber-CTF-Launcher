@@ -72,7 +72,9 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActive(results.length ? (selected - 1 + results.length) % results.length : 0);
-    } else if (e.key === "Enter") {
+    } else if (e.key === "Enter" && e.target instanceof HTMLInputElement && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+      // From the search field only: a command reached with Tab runs itself (its own button), and
+      // an Enter that confirms an IME composition (Japanese) is the input method's, not a choice.
       e.preventDefault();
       run(results[selected]);
     }
@@ -88,6 +90,7 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
       <div
         ref={dialogRef}
         role="dialog"
+        data-command-palette
         aria-modal="true"
         aria-label={t("shell.palette.label")}
         className="surface-glass w-full max-w-[36rem] overflow-hidden rounded-[1rem]"

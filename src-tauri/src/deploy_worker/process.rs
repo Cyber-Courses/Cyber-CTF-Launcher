@@ -248,6 +248,13 @@ pub fn alive(worker: &Worker) -> bool {
     is_live_worker(worker, observe(worker.pid).as_ref(), this_exe.as_deref())
 }
 
+/// A pidfile line for `pid` as the app writes it (with the process's start time), for tests
+/// that stand a process in for a worker.
+#[cfg(all(test, unix))]
+pub(crate) fn pidfile_line(pid: u32) -> String {
+    Worker { pid, started: observe(pid).map(|o| o.started) }.line()
+}
+
 /// [`alive`] from what the OS said about the process (`None`: no such process) and this app's
 /// executable name.
 fn is_live_worker(worker: &Worker, seen: Option<&Observed>, this_exe: Option<&str>) -> bool {
@@ -256,6 +263,14 @@ fn is_live_worker(worker: &Worker, seen: Option<&Observed>, this_exe: Option<&st
         return false;
     }
     if worker.started.is_some_and(|t| seen.started.abs_diff(t) > START_SLACK) {
+        return false;
+    }
+    // A pidfile without a start time (older versions) can only be matched by what the process
+    // looks like: another program that got the id, whatever its arguments say, is not a worker.
+    if worker.started.is_none()
+        && let (Some(exe), Some(this)) = (seen.exe.as_deref(), this_exe)
+        && exe != this
+    {
         return false;
     }
     if seen.cmdline.is_empty() {
@@ -312,15 +327,26 @@ pub fn running_jobs(app: &AppHandle) -> Vec<(Job, Option<String>)> {
     jobs_in(&d)
 }
 
+/// The operation a worker key stands for when its job file can't be read: a launch of that
+/// lab, or the attack VM beside it (`<lab>.attack`).
+fn job_for_key(key: &str) -> Job {
+    match key.strip_suffix(".attack") {
+        Some(lab) => Job::on_lab(lab, super::Op::AttackVm { box_name: String::new() }),
+        None => Job::on_lab(key, super::Op::Launch),
+    }
+}
+
 /// [`running_jobs`] for the workers' folder `d`.
 fn jobs_in(d: &Path) -> Vec<(Job, Option<String>)> {
     running_in(d)
         .into_iter()
-        .filter_map(|key| {
+        .map(|key| {
             let f = Files::of(d, &key);
-            let job: Job = serde_json::from_slice(&std::fs::read(&f.job).ok()?).ok()?;
+            // A job file cut short (a full disk, a crash while it was written) must not hide a
+            // worker that is alive: it is listed as the plain operation its key names.
+            let job: Job = std::fs::read(&f.job).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_else(|| job_for_key(&key));
             let step = super::progress::step_of(&f.log);
-            Some((job, step))
+            (job, step)
         })
         .collect()
 }
@@ -365,8 +391,31 @@ fn signal_group(pid: u32, signal: libc::c_int) {
 }
 
 /// Half-second checks a Terraform run gets to stop on its own once interrupted: it finishes the
-/// resources it is creating and records them in its state (2 minutes).
-const TERRAFORM_GRACE_CHECKS: u32 = 240;
+/// resources it is creating and records them in its state. Ten minutes: an Azure or GCP VM
+/// alone can take several to come up, and a second signal makes Terraform exit at once, which
+/// is the orphaned-resource case this wait is here to avoid.
+#[cfg(unix)]
+const TERRAFORM_GRACE_CHECKS: u32 = 1200;
+
+/// Half-second checks a Terraform apply gets to end on its own on Windows, where no clean
+/// interrupt reaches it (twenty minutes, a whole lab's worth).
+#[cfg(windows)]
+const TERRAFORM_APPLY_WAIT_CHECKS: u32 = 2400;
+
+/// Whether `job` is a launch on a Terraform-driven host (a cloud account, Proxmox), given that
+/// host's provider: a worker mid-`terraform apply` must not be killed outright.
+#[cfg(any(windows, test))]
+fn terraform_launch(job: &Job, host_provider: Option<crate::runtime::providers::Provider>) -> bool {
+    job.op == super::Op::Launch && host_provider.is_some_and(|p| crate::runtime::server::terraform_target(p).is_some())
+}
+
+/// [`terraform_launch`] for the job a worker's files describe.
+#[cfg(windows)]
+fn launches_terraform(app: &AppHandle, f: &Files) -> bool {
+    let Some(job) = std::fs::read(&f.job).ok().and_then(|b| serde_json::from_slice::<Job>(&b).ok()) else { return false };
+    let provider = job.host.as_deref().and_then(|h| crate::runtime::server::host_provider(app, h));
+    terraform_launch(&job, provider)
+}
 
 /// [`kill`], then waits until the worker is gone (SIGKILL to its group after 20 s), so what
 /// follows (a teardown) never races a `compose up` or `vagrant up` that is still creating what
@@ -380,6 +429,18 @@ pub async fn kill_and_wait(app: &AppHandle, key: &str) {
     if interrupt_terraform(worker.pid) && gone_within(&worker, TERRAFORM_GRACE_CHECKS).await {
         remove_pidfile_of(&f.pid, worker.pid);
         return;
+    }
+    // Windows: the worker is detached (no console), so no Ctrl event reaches its Terraform, and
+    // `taskkill` mid-apply leaves what it was creating out of its state (the destroy that follows
+    // then leaves those resources running, and billing). The apply is waited for instead, bounded,
+    // so the destroy sees everything.
+    #[cfg(windows)]
+    if launches_terraform(app, &f) {
+        log::info!("stop of {key}: waiting for its Terraform apply to end before tearing down");
+        if gone_within(&worker, TERRAFORM_APPLY_WAIT_CHECKS).await {
+            remove_pidfile_of(&f.pid, worker.pid);
+            return;
+        }
     }
     kill(app, key);
     if gone_within(&worker, 40).await {
@@ -489,6 +550,23 @@ async fn gone_within(worker: &Worker, checks: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only a launch on a host Terraform drives is waited for: a VM lab on ESXi (Vagrant) or a
+    /// park can be ended as before.
+    #[test]
+    fn a_launch_on_a_terraform_host_is_told_apart() {
+        use crate::runtime::providers::Provider;
+        let launch = Job { host: Some("h".into()), ..Job::on_lab("lab-1", super::super::Op::Launch) };
+        assert!(terraform_launch(&launch, Some(Provider::Aws)));
+        assert!(terraform_launch(&launch, Some(Provider::Proxmox)));
+        assert!(!terraform_launch(&launch, Some(Provider::VmwareEsxi)));
+        assert!(!terraform_launch(&launch, None));
+        let park = Job {
+            host: Some("h".into()),
+            ..Job::on_lab("lab-1", super::super::Op::Park { runtime: crate::runtime::Runtime::Vm, mode: crate::runtime::Park::Pause })
+        };
+        assert!(!terraform_launch(&park, Some(Provider::Aws)));
+    }
 
     #[test]
     fn the_terraform_runs_found_are_the_workers_and_not_their_providers() {
@@ -652,7 +730,20 @@ mod tests {
     /// A process whose command line reads like a worker's (`… deploy --job …`), sleeping.
     #[cfg(unix)]
     fn fake_worker() -> std::process::Child {
-        std::process::Command::new("sh").args(["-c", "sleep 20; :", "deploy", "--job", "x"]).spawn().unwrap()
+        exec_done(std::process::Command::new("sh").args(["-c", "sleep 20; :", "deploy", "--job", "x"]).spawn().unwrap())
+    }
+
+    /// `child` once the OS shows it as the program it runs: right after `spawn` it can still be
+    /// the forked test binary, whose command line is no worker's (the tests were flaky).
+    #[cfg(unix)]
+    fn exec_done(child: std::process::Child) -> std::process::Child {
+        for _ in 0..200 {
+            if observe(child.id()).is_some_and(|o| is_worker(&o.cmdline)) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        child
     }
 
     #[cfg(unix)]
@@ -771,15 +862,7 @@ mod tests {
     #[cfg(unix)]
     fn fake_worker_group() -> std::process::Child {
         use std::os::unix::process::CommandExt;
-        let child = std::process::Command::new("sh").args(["-c", "sleep 30; exit 0", "deploy", "--job", "x.json"]).process_group(0).spawn().unwrap();
-        // Until `sh` has exec'd, the child's command line is still this test's: wait for it to
-        // read as a worker, or the first check would take its pidfile for a stale one.
-        let worker = Worker { pid: child.id(), started: None };
-        let started = std::time::Instant::now();
-        while !alive(&worker) && started.elapsed() < Duration::from_secs(5) {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        child
+        exec_done(std::process::Command::new("sh").args(["-c", "sleep 30; exit 0", "deploy", "--job", "x.json"]).process_group(0).spawn().unwrap())
     }
 
     #[cfg(unix)]
@@ -790,7 +873,7 @@ mod tests {
         let mut child = fake_worker_group();
         let job = Job::on_lab("lab-1", super::super::Op::Resume { runtime: crate::runtime::Runtime::Vm });
         let f = files::of(app, &job.key()).unwrap();
-        std::fs::write(&f.pid, child.id().to_string()).unwrap();
+        std::fs::write(&f.pid, pidfile_line(child.id())).unwrap();
         std::fs::write(&f.job, serde_json::to_vec(&job).unwrap()).unwrap();
         std::fs::write(&f.log, "Resuming the lab…\n").unwrap();
         assert_eq!(running(app), ["lab-1"]);
@@ -821,4 +904,80 @@ mod tests {
     async fn a_dead_pid_is_gone_at_once() {
         assert!(gone_within(&Worker { pid: 4_000_000_000, started: None }, 3).await);
     }
+
+    #[test]
+    fn a_foreign_program_mentioning_deploy_and_job_is_not_a_worker() {
+        // With a legacy pidfile (no start time) and a recycled id, `kubectl ... deploy --job x`
+        // (or any tool with those words) keeps the lab "in progress" and gets SIGTERMed by Stop.
+        // The OS named its executable, and it isn't this app's; that is enough to tell.
+        // Fails with: assertion failed: !is_live_worker(...).
+        // Suggested fix: when `seen.exe` is known and differs from `this_exe`, return false
+        // before looking at the command line.
+        let legacy = Worker { pid: 4242, started: None };
+        let foreign = Observed { started: 1, zombie: false, cmdline: "/usr/bin/kubectl rollout deploy --job x".into(), exe: Some("kubectl".into()) };
+        assert!(!is_live_worker(&legacy, Some(&foreign), Some("cyberctf-desktop")));
+    }
+
+    #[test]
+    fn a_pidfile_naming_pid_zero_or_one_never_signals_anything() {
+        // A half-written or corrupt pidfile may read as 0 or 1; signalling that group would hit
+        // this very process (0) or init (1). Both are dropped as stale, nothing is sent.
+        let dir = crate::deploy_worker::files::tests::temp_dir("kill-zero");
+        let f = Files::of(&dir, "lab-1");
+        for text in ["0", "1", "0 1760000000"] {
+            std::fs::write(&f.pid, text).unwrap();
+            kill_files(&f);
+            assert!(!f.pid.exists(), "{text}: the stale pidfile is dropped");
+        }
+        assert!(running_in(&dir).is_empty());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_half_written_start_time_never_names_the_live_worker() {
+        // The pidfile is written in one `write_all`, but a reader can still see a prefix of it.
+        // A truncated start time differs from the real one, so the worker reads as not alive:
+        // the pidfile is then stale and replaced, never a second worker killed by mistake.
+        let mut child = fake_worker();
+        let pid = child.id();
+        let started = observe(pid).unwrap().started;
+        let truncated = started.to_string();
+        let truncated = &truncated[..truncated.len() - 2];
+        let w = Worker::parse(&format!("{pid} {truncated}")).unwrap();
+        assert!(!alive(&w), "{w:?} is not the worker started at {started}");
+        // A bare pid prefix is some other (or no) process.
+        let prefix: u32 = pid.to_string()[..1].parse().unwrap();
+        assert!(!alive(&Worker { pid: prefix, started: None }));
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
+
+    #[test]
+    fn the_sweep_keeps_an_empty_pidfile_but_drops_a_whitespace_only_one() {
+        // `claim` creates the pidfile empty before the worker is spawned; a sweep in that window
+        // must leave it. One holding only whitespace was never a claim: stale.
+        let dir = crate::deploy_worker::files::tests::temp_dir("sweep-empty");
+        std::fs::write(dir.join("lab-1.pid"), "").unwrap();
+        std::fs::write(dir.join("lab-2.pid"), " \n").unwrap();
+        assert!(running_in(&dir).is_empty());
+        assert!(dir.join("lab-1.pid").exists());
+        assert!(!dir.join("lab-2.pid").exists());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_running_job_with_a_corrupt_job_file_is_listed_as_running_but_not_as_a_job() {
+        let dir = crate::deploy_worker::files::tests::temp_dir("jobs-corrupt");
+        let f = Files::of(&dir, "lab-1");
+        // This test process is alive, but not a worker: not listed at all.
+        std::fs::write(&f.pid, std::process::id().to_string()).unwrap();
+        std::fs::write(&f.job, "{not json").unwrap();
+        assert!(running_in(&dir).is_empty());
+        assert!(jobs_in(&dir).is_empty());
+        std::fs::remove_dir_all(dir).ok();
+    }
 }
+
+#[cfg(test)]
+mod proptests;

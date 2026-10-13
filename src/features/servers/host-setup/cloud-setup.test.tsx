@@ -44,9 +44,11 @@ describe("AWS account setup", () => {
     expect(heading()).toBe("Access keys");
     // A saved region the list doesn't know stays selectable.
     expect(selects()[0].value).toBe("mars-1");
-    // Editing keeps the stored secret: the key id is enough to go on.
+    // It signed in with the CLI before, so there is no stored secret key to keep: one is asked.
     await user.type(document.querySelector<HTMLInputElement>("input[placeholder='AKIA…']")!, "AKIA1");
-    expect(document.querySelector<HTMLInputElement>("input[type=password]")!.placeholder).toBe("Leave empty to keep");
+    const secret = document.querySelector<HTMLInputElement>("input[type=password]")!;
+    expect(secret.placeholder).not.toBe("Leave empty to keep");
+    await user.type(secret, "s3cret");
     await user.selectOptions(selects()[0], "eu-west-1");
     await go(user, /^continue$/i);
     expect(heading()).toBe("Lab settings");

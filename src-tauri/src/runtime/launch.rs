@@ -52,7 +52,7 @@ pub async fn start(
         && let Some(other) = deployed_elsewhere(&base, dir, id, host)
     {
         let name = server::host_name(app, &other).unwrap_or(other);
-        return Err(Error::Invalid(format!("This lab is still running on {name}. Stop it there before starting it somewhere else.")));
+        return Err(Error::Refused(format!("This lab is still running on {name}. Stop it there before starting it somewhere else.")));
     }
     if runtime == Runtime::Cloud {
         return cloud_services::start(app, dir, id, host, env, &mut log).await;
@@ -117,6 +117,12 @@ async fn start_here(
 async fn resumes_parked(dir: &Path, id: &str, runtime: Runtime, log: &mut impl FnMut(String)) -> Result<bool> {
     if parked(dir).is_some() && runtime == Runtime::Docker && local_vm(dir).is_none() && docker::containers(dir, id).await.is_ok_and(|n| n == 0) {
         log("This lab was shut down here, but its stopped containers are gone: starting it fresh.".into());
+        mark_parked(dir, None)?;
+    }
+    // Same for VMs deleted at the hypervisor (or Vagrant's record of them lost): resuming would
+    // build blank, unprovisioned machines that then read as the lab.
+    if parked(dir).is_some() && (runtime == Runtime::Vm || local_vm(dir).is_some()) && !vm::has_machines(&lab::vagrant_dir(dir, runtime)) {
+        log("This lab was shut down here, but its virtual machines are gone: starting it fresh.".into());
         mark_parked(dir, None)?;
     }
     Ok(parked(dir).is_some())

@@ -110,6 +110,10 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
         if let Some(why) = exit_codes::winget_failure(status.code(), installer_code, removing).filter(|_| step.program == "winget") {
             return Err(Error::Invalid(format!("{why} (`winget` exited with {status})")));
         }
+        // An installer run through PowerShell (WSL's) exits with the installer's own code.
+        if let Some(why) = exit_codes::installer_failure(status.code(), removing).filter(|_| step.program == "powershell") {
+            return Err(Error::Invalid(format!("{why} (`powershell` exited with {status})")));
+        }
         return Err(Error::Invalid(format!("`{}` exited with {status}", step.program)));
     }
     Ok(())
@@ -144,6 +148,21 @@ mod tests {
         assert!(lines.contains(&"out".to_string()) && lines.contains(&"err".to_string()));
         assert_eq!(lines.last().map(String::as_str), Some("$ sh -c exit 3"));
         assert!(err.to_string().starts_with("`sh` exited with"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_script_exiting_126_or_127_with_pkexecs_words_is_still_its_own_failure() {
+        // Only pkexec's own refusal (126/127 *and* its message, from pkexec itself) reads as the
+        // prompt being cancelled; a script that prints the same words and exits 126 is a plain
+        // failure of that program, raw code kept.
+        let mut lines = Vec::new();
+        let s = step("sh", &["-c", "echo 'Error executing command as another user: Not authorized' >&2; exit 126"]);
+        let err = run_step(&s, &mut |l| lines.push(l)).await.unwrap_err();
+        assert_eq!(err.to_string(), "`sh` exited with exit status: 126");
+        assert_eq!(lines, ["Error executing command as another user: Not authorized"]);
+        let err = run_step(&step("sh", &["-c", "exit 127"]), &mut |_| {}).await.unwrap_err();
+        assert_eq!(err.to_string(), "`sh` exited with exit status: 127");
     }
 
     #[tokio::test]

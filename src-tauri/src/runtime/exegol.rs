@@ -503,6 +503,58 @@ mod tests {
         super::end_session_blocking("cyberctf-x-attacker", "");
     }
 
+    #[tokio::test]
+    async fn the_status_reads_odd_inspect_output_without_misreading_it() {
+        use crate::exec::fake::{Tools, fail, ok};
+        // Two addresses on the line, an extra tab, a second line: the first address of the
+        // first line. Docker's "true" is exact: anything else is not running.
+        assert_eq!(super::parse_probe("true\t10.0.0.5 10.0.0.6\n"), (true, "10.0.0.5".to_string()));
+        assert_eq!(super::parse_probe("true\t\t10.0.0.5"), (true, "10.0.0.5".to_string()));
+        assert_eq!(super::parse_probe("true\t10.0.0.5\nfalse\t\n"), (true, "10.0.0.5".to_string()));
+        assert!(!super::parse_probe("TRUE\t10.0.0.5").0);
+        assert!(!super::parse_probe("<no value>\t<no value>").0);
+        // Running but not on the lab network yet (plugged in by hand, or mid-start): no address,
+        // the lab network still named.
+        let tools = Tools::rules(&[("network ls", ok(NETS)), ("docker inspect -f", ok("true\t\n"))]);
+        let s = super::status("web", "img:1").await;
+        assert!(s.running && s.ip.is_empty());
+        assert_eq!(s.lab_network, "default");
+        assert!(tools.called("index .NetworkSettings.Networks \"cyberctf-web_default\""), "{:?}", tools.calls());
+        drop(tools);
+        // No such container, and the image not pulled: nothing at all.
+        let _tools = Tools::rules(&[("network ls", ok(NETS)), ("image inspect", fail("No such image")), ("docker inspect -f", fail("No such object"))]);
+        let s = super::status("web", "img:1").await;
+        assert!(!s.image_present && !s.running && s.ip.is_empty() && s.lab_network.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_pull_that_fails_starts_nothing() {
+        use crate::exec::fake::{Tools, fail, ok};
+        let tools = Tools::rules(&[("image inspect", fail("No such image")), ("docker pull", fail("manifest unknown")), ("network ls", ok(NETS))]);
+        let err = super::start("web", "nwodtuhs/exegol:free", |_| {}).await.unwrap_err().to_string();
+        assert!(err.contains("manifest unknown"), "{err}");
+        assert!(!tools.called("network create") && !tools.called("run -d") && !tools.called("rm -f"), "{:?}", tools.calls());
+    }
+
+    #[tokio::test]
+    async fn the_main_lab_network_is_joined_first_however_docker_lists_them() {
+        use crate::exec::fake::{Tools, ok};
+        // Windows line ends, blank lines, the main network last.
+        let listed = "\r\ncyberctf-web_internal\r\n\r\ncyberctf-web_dmz\r\ncyberctf-web_default\r\n";
+        let tools = Tools::rules(&[("network ls", ok(listed))]);
+        super::start("web", "img:1", |_| {}).await.unwrap();
+        let connects: Vec<String> = tools.calls().into_iter().filter(|c| c.starts_with("docker network connect")).collect();
+        assert_eq!(
+            connects,
+            [
+                "docker network connect cyberctf-web_default cyberctf-web-attacker",
+                "docker network connect cyberctf-web_dmz cyberctf-web-attacker",
+                "docker network connect cyberctf-web_internal cyberctf-web-attacker"
+            ]
+        );
+        assert!(!tools.calls().iter().any(|c| c.contains('\r')), "{:?}", tools.calls());
+    }
+
     #[test]
     fn the_status_probe_reads_running_and_the_address() {
         assert_eq!(super::parse_probe("true\t10.0.0.5\n"), (true, "10.0.0.5".to_string()));

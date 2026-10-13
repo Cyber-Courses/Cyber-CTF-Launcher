@@ -257,7 +257,17 @@ pub fn message_at(dir: &Path, spec: &Spec, target: Target, published: &[(String,
     let published: Vec<(String, u16, Protocol, u16)> =
         published.iter().map(|(m, port, proto, host)| (m.clone(), *port, if proto == "udp" { Protocol::Udp } else { Protocol::Tcp }, *host)).collect();
     let snapshot = isoloom_core::resolved::with_published(snapshot, &published);
+    // A placeholder naming a value this run doesn't have (a port the lab never published on this
+    // target, a port not pinned yet) fills as nothing: the player got `http://localhost:/`.
+    if placeholders(text).any(|path| isoloom_core::resolved::lookup(&snapshot, path).is_none_or(|v| v.is_null() || v.as_str() == Some(""))) {
+        return None;
+    }
     isoloom_core::resolved::fill(text, &snapshot).ok().map(|m| m.trim_end().to_string())
+}
+
+/// The dotted paths of a message's `{{ ... }}` placeholders.
+fn placeholders(text: &str) -> impl Iterator<Item = &str> {
+    text.split("{{").skip(1).filter_map(|after| after.split_once("}}").map(|(path, _)| path.trim()))
 }
 
 /// The memory the lab's machines ask for, in MB.
@@ -559,5 +569,170 @@ mod tests {
         // Every cloud now has a cloud-vm module, not only AWS.
         assert_eq!(terraform(d, Runtime::Vm, "azure").unwrap(), (PathBuf::from("/l/.isoloom/cloud-vm/azure"), Target::CloudVm));
         assert_eq!(terraform(d, Runtime::Vm, "oci").unwrap(), (PathBuf::from("/l/.isoloom/cloud-vm/oci"), Target::CloudVm));
+    }
+
+    #[test]
+    fn an_instance_marker_is_read_only_between_one_and_the_maximum() {
+        let dir = lab(SPEC);
+        for (text, want) in
+            [("1", Some(1)), ("99", Some(99)), (" 7\r\n", Some(7)), ("0", None), ("100", None), ("", None), ("-1", None), ("x", None), ("1 2", None)]
+        {
+            std::fs::write(dir.join(INSTANCE_MARKER), text).unwrap();
+            assert_eq!(instance(&dir), want, "{text:?}");
+        }
+        // A marker that is a folder, or none: no instance.
+        std::fs::remove_file(dir.join(INSTANCE_MARKER)).unwrap();
+        assert_eq!(instance(&dir), None);
+        std::fs::create_dir(dir.join(INSTANCE_MARKER)).unwrap();
+        assert_eq!(instance(&dir), None);
+        assert_eq!(out(&dir), dir.join(".isoloom"), "no instance: the plain output folder");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_machine_with_every_instance_taken_refuses_a_new_lab() {
+        let labs = std::env::temp_dir().join(format!("cyberctf-labs-full-{}", rand::random::<u32>()));
+        let a = labs.join("a");
+        std::fs::create_dir_all(&a).unwrap();
+        // No spec: every number is clear on the address side; the registry holds 1..=99.
+        let elsewhere: Vec<u8> = (1..=isoloom_core::instance::MAX).collect();
+        let err = ensure_instance(&labs, &a, &[], &elsewhere).unwrap_err().to_string();
+        assert!(err.starts_with("no free instance for this lab"), "{err}");
+        assert!(!a.join(INSTANCE_MARKER).exists(), "nothing written on failure");
+        // One short of full: the last number is free.
+        assert_eq!(ensure_instance(&labs, &a, &[], &elsewhere[..98]).unwrap(), 99);
+        std::fs::remove_dir_all(labs).unwrap();
+    }
+
+    #[test]
+    fn a_staging_folder_left_by_a_crashed_install_still_holds_its_instance() {
+        // The install copies the instance marker into `.<id>.staging` before the swap; a crash
+        // between the two leaves that folder, and its number stays taken (never reused by
+        // another lab, which would then share its blocks with the lab once the swap completes).
+        let labs = std::env::temp_dir().join(format!("cyberctf-labs-stage-{}", rand::random::<u32>()));
+        let staging = labs.join(".a.staging");
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(staging.join(INSTANCE_MARKER), "1").unwrap();
+        // A stray file in the labs folder is not a lab.
+        std::fs::write(labs.join("notes.txt"), "1").unwrap();
+        let b = labs.join("b");
+        std::fs::create_dir_all(&b).unwrap();
+        assert_eq!(ensure_instance(&labs, &b, &[], &[]).unwrap(), 2);
+        std::fs::remove_dir_all(labs).unwrap();
+    }
+
+    #[test]
+    fn cidr_ranges_at_the_prefix_boundaries() {
+        let all = range("0.0.0.0/0").unwrap();
+        assert_eq!(all, (0, u32::MAX));
+        let one = range("10.1.2.3/32").unwrap();
+        assert_eq!(one.0, one.1);
+        assert_eq!(one.0, u32::from(std::net::Ipv4Addr::new(10, 1, 2, 3)));
+        for bad in ["10.0.0.0/33", "10.0.0.0/-1", "10.0.0.0/", "/24", "10.0.0.0", "256.0.0.0/8", "10.0.0.0/24/8", " 10.0.0.0/24", "10.0.0.0/ 24"] {
+            assert_eq!(range(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn spec_mistakes_are_reported_as_mistakes_not_crashes() {
+        let base =
+            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n";
+        let cases: [(&str, &str, &str); 7] = [
+            ("host out of the /24", &base.replace("lab: 10 }", "lab: 300 }"), "expected u8"),
+            ("the network address itself", &base.replace("lab: 10 }", "lab: 0 }"), "isn't a usable address"),
+            ("two machines at one address", &format!("{base}  db:\n    networks: {{ lab: 10 }}\n    docker: {{ image: redis:7 }}\n"), "already used by `web`"),
+            ("a port past 65535", &base.replace("docker:", "services: [{ port: 70000, http: true }]\n    docker:"), "expected u16"),
+            ("an IPv6 block", &base.replace("10.30.0.0/24", "'fd00::/64'"), "isn't a network address"),
+            (
+                "a machine declared twice",
+                &format!("{base}  web:\n    networks: {{ lab: 11 }}\n    docker: {{ image: nginx:1.27 }}\n"),
+                "duplicate entry with key \"web\"",
+            ),
+            ("a name that isn't kebab-case", &base.replace("name: t", "name: \"Lab é 1\""), "use kebab-case"),
+        ];
+        for (what, text, want) in cases {
+            let dir = lab(text);
+            let err = spec(&dir).unwrap_err().to_string();
+            assert!(err.contains(want), "{what}: {err}");
+            assert!(err.starts_with("this lab's isoloom.yml"), "{what}: {err}");
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_spec_with_windows_line_endings_reads_like_any_other() {
+        let dir = lab(&SPEC.replace('\n', "\r\n"));
+        let spec = spec(&dir).unwrap();
+        assert_eq!(spec.name, "t");
+        let (ifaces, networks) = topology(&spec);
+        assert_eq!(networks[0].subnet, "10.30.0.0/24");
+        assert_eq!(ifaces["web"][0].ip, "10.30.0.10");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_byte_order_mark_is_a_spec_error_not_a_crash() {
+        // An editor on Windows may save the file with a BOM; the YAML parser then sees two
+        // documents. The lab is refused with the parser's words (misleading, but not a crash).
+        let dir = lab(&format!("\u{feff}{SPEC}"));
+        let err = spec(&dir).unwrap_err().to_string();
+        assert!(err.starts_with("this lab's isoloom.yml:"), "{err}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_message_naming_a_value_the_lab_lacks_is_left_out() {
+        let dir = lab(&format!("{SPEC}message: 'go to {{{{ machines.nope.addresses.lab }}}}'\n"));
+        let spec = spec(&dir).unwrap();
+        assert_eq!(message(&dir, &spec, Target::Docker), None);
+        let mut spec = spec;
+        spec.message = Some("http://localhost:{{ machines.web.services.0.publish }}/".into());
+        assert_eq!(message_at(&dir, &spec, Target::Docker, &[("web".into(), 80, "tcp".into(), 40001)]).as_deref(), Some("http://localhost:40001/"));
+        // Trailing blank lines of a block scalar are trimmed; inner ones kept.
+        spec.message = Some("line one\n\nline two\n\n\n".into());
+        assert_eq!(message(&dir, &spec, Target::Docker).as_deref(), Some("line one\n\nline two"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_message_with_an_unpublished_port_is_not_shown() {
+        // SPEC's web service declares no `publish:`. On a target that publishes nothing (a VM
+        // lab), or before any port was pinned, the placeholder names a value that is null, and
+        // the player is shown a broken link. The doc of `message` promises None for a value the
+        // spec doesn't have; `isoloom_core::resolved::fill` fills a null with "" instead.
+        // Fails with: left: Some("http://localhost:/"), right: None.
+        // Suggested fix: in `message_at`, treat a null (or empty) substitution as missing
+        // (check the snapshot value before `fill`, or have isoloom-core's `fill` fail on null).
+        let dir = lab(SPEC);
+        let mut spec = spec(&dir).unwrap();
+        spec.message = Some("http://localhost:{{ machines.web.services.0.publish }}/".into());
+        assert_eq!(message(&dir, &spec, Target::Vagrant), None);
+        assert_eq!(message_at(&dir, &spec, Target::Docker, &[]), None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn prepare_replaces_the_previous_files_but_keeps_other_ones_in_the_output_folder() {
+        let dir = lab(SPEC);
+        prepare(&dir, Target::Docker).unwrap();
+        let compose = compose_file(&dir);
+        std::fs::write(&compose, "stale").unwrap();
+        // Something else in the output folder (a check runner's log, a pinned-ports file).
+        std::fs::write(compose.with_file_name("notes.txt"), "mine").unwrap();
+        prepare(&dir, Target::Docker).unwrap();
+        assert!(std::fs::read_to_string(&compose).unwrap().contains("services"), "regenerated");
+        assert_eq!(std::fs::read_to_string(compose.with_file_name("notes.txt")).unwrap(), "mine");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_instance_at_the_maximum_still_generates_and_resolves() {
+        let dir = lab(SPEC);
+        std::fs::write(dir.join(INSTANCE_MARKER), "99").unwrap();
+        let spec = prepare(&dir, Target::Docker).unwrap();
+        assert_eq!(spec.name, "t-99");
+        assert!(compose_file(&dir).starts_with(dir.join(".isoloom-99")));
+        assert!(compose_file(&dir).is_file());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

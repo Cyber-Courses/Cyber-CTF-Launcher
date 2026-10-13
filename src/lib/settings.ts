@@ -167,6 +167,12 @@ export function setVmProvider(provider: Provider | null) {
   }
 }
 
+/** An image name the core will run (exegol.rs `valid_image`): plain ASCII name characters, no
+ *  leading dash (it would read as a `docker` option). */
+export function validImage(image: string): boolean {
+  return image.length > 0 && image.length <= 200 && !image.startsWith("-") && /^[A-Za-z0-9._\-/:@]+$/.test(image);
+}
+
 const TEST_KEY = "cyberctf.selftest.";
 
 /** The last setup self-test result per kind, so the Machine page can show "tested 2 days ago". */
@@ -178,7 +184,10 @@ export interface LastTest {
 export function getLastTest(kind: "docker" | "vm"): LastTest | null {
   try {
     const raw = localStorage.getItem(TEST_KEY + kind);
-    return raw ? (JSON.parse(raw) as LastTest) : null;
+    const v: unknown = raw ? JSON.parse(raw) : null;
+    // Only a record of the right shape: anything else (an older format, a hand edit) is none.
+    const ok = !!v && typeof v === "object" && ["ok", "fail"].includes((v as LastTest).result) && Number.isFinite((v as LastTest).at);
+    return ok ? (v as LastTest) : null;
   } catch {
     return null;
   }

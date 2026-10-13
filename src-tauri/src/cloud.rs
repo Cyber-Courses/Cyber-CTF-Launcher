@@ -436,6 +436,60 @@ mod tests {
     }
 
     #[test]
+    fn cli_json_that_is_not_a_list_of_objects_reads_as_nothing() {
+        // An object, null, nothing, a warning printed before the JSON, and list entries that
+        // aren't objects: none of them is a subscription or an account, and none panics.
+        for out in ["{}", "null", "", "WARNING: update available\n[]", "[1, \"x\", null]"] {
+            assert!(subscriptions(out).is_empty(), "{out:?}");
+            assert!(billing_accounts(out).is_empty(), "{out:?}");
+            assert!(organizations(out).is_empty(), "{out:?}");
+        }
+        // Fields of the wrong type fall back rather than dropping the entry.
+        let accounts = billing_accounts(r#"[{"name": "billingAccounts/A", "displayName": 7, "open": "true"}]"#);
+        assert_eq!((accounts[0].id.as_str(), accounts[0].name.as_str(), accounts[0].open), ("A", "", false));
+        // An id that is only the prefix is empty, so it is dropped.
+        assert!(billing_accounts(r#"[{"name": "billingAccounts/"}]"#).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_profile_reaches_the_cli_as_one_argument_however_it_is_spelled() {
+        // No shell in between: a profile with a space is one argument, not two.
+        let tools = Tools::new(|_, args| match args {
+            [.., "--profile", _] => ok("arn:aws:iam::1:user/a\n"),
+            _ => fail("Unable to locate credentials"),
+        });
+        assert!(aws_cli_identity(Some("my profile".into())).await.is_some());
+        assert!(tools.calls().last().unwrap().ends_with(" --profile my profile"), "{:?}", tools.calls());
+        assert_eq!(aws_cli_identity(None).await, None, "no profile: none passed");
+        assert!(!tools.calls().last().unwrap().contains("--profile"));
+    }
+
+    #[test]
+    fn oci_config_lines_at_the_edges() {
+        // CRLF endings, a later DEFAULT section overriding, a value holding `=`, a key with
+        // spaces around it, and an empty value.
+        let text = "[DEFAULT]\r\nregion=eu-paris-1\r\ntenancy = ocid1.tenancy.oc1..a=b \r\n[OTHER]\r\nregion=x\r\n[DEFAULT]\r\nregion=\r\n";
+        let c = parse_oci_config(text);
+        assert_eq!((c.tenancy.as_str(), c.region.as_str()), ("ocid1.tenancy.oc1..a=b", ""));
+        // A section header with trailing text is another section.
+        assert_eq!(parse_oci_config("[DEFAULT] ; main\nregion=x\n").region, "");
+        assert!(parse_oci_config("").configured && parse_oci_config("").region.is_empty());
+    }
+
+    #[test]
+    fn the_civil_date_at_year_and_century_boundaries() {
+        // The last second of 2026, then the day after it: a month period crossing New Year
+        // ends on 2027-01-01.
+        assert_eq!(ymd_from_secs(1_798_761_599), (2026, 12, 31));
+        assert_eq!(ymd_from_secs(1_798_761_599 + 86_400), (2027, 1, 1));
+        // 2100 is not a leap year (2100-03-01 00:00 UTC less one second is Feb 28); 2000 was.
+        assert_eq!(ymd_from_secs(4_107_542_399), (2100, 2, 28));
+        assert_eq!(ymd_from_secs(951_782_400), (2000, 2, 29));
+        // The extremes don't overflow.
+        let _ = (ymd_from_secs(i64::MIN), ymd_from_secs(i64::MAX));
+    }
+
+    #[test]
     fn civil_date_from_unix_timestamp() {
         // Epoch.
         assert_eq!(ymd_from_secs(0), (1970, 1, 1));

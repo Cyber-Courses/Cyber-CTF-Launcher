@@ -270,6 +270,21 @@ mod tests {
     }
 
     #[test]
+    fn box_listings_with_windows_endings_wide_spacing_or_look_alike_names_match_exactly() {
+        // CRLF from Vagrant on Windows, tabs or runs of spaces before the parenthesis, a name
+        // that merely starts with the wanted one, and the empty listing.
+        let list = "bento/debian-12\t(virtualbox, 1)\r\nbento/debian-120    (virtualbox, 1)\r\ngeneric/alpine319 (vmware_desktop, 4.3.12, (arm64))\r\n";
+        assert!(box_listed(list, "bento/debian-12", "virtualbox", false));
+        assert!(box_listed(list, "bento/debian-120", "virtualbox", true));
+        assert!(!box_listed(list, "bento/debian-1", "virtualbox", false));
+        assert!(box_listed(list, "generic/alpine319", "vmware_desktop", true));
+        assert!(!box_listed(list, "generic/alpine319", "vmware_desktop", false), "an ARM box is not an x86 one");
+        assert!(!box_listed(list, "generic/alpine319", "vmware", true), "the provider id is whole");
+        assert!(!box_listed("There are no installed boxes! Use `vagrant box add` to add some.\n", "generic/alpine319", "qemu", false));
+        assert!(!box_listed("", "generic/alpine319", "qemu", false));
+    }
+
+    #[test]
     fn the_test_vm_is_on_a_private_network_where_the_provider_has_one() {
         assert!(vagrantfile(Provider::Virtualbox, "x", false).contains(VM_IP));
         assert!(!vagrantfile(Provider::Utm, "x", false).contains(VM_IP));

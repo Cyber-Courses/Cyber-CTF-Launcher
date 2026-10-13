@@ -15,9 +15,11 @@ const WORKLOADS_POLL_MS = 8000;
  * their own sidebar entries so one is a click away wherever you are. Deploys come from the
  * backend (so they survive a reload); the running set is polled from this machine's workloads.
  */
-export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, ActiveOperation>) {
+export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, ActiveOperation>, enabled = true) {
   const [labs, setLabs] = useState<SidebarLab[]>([]);
   useEffect(() => {
+    // Not in a window that shows none of it (Settings).
+    if (!enabled) return;
     // A sign-in change starts a new read: the one in flight from before it must not land last.
     let alive = true;
     apiQuery<{ labs: SidebarLab[] }>("sidebarLabs")
@@ -26,9 +28,9 @@ export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, A
     return () => {
       alive = false;
     };
-  }, [loggedIn]);
+  }, [loggedIn, enabled]);
 
-  const deploying = useDeployingLabs();
+  const deploying = useDeployingLabs(enabled);
   // Read again as soon as an operation starts or ends: a lab just shut down otherwise kept its
   // "Running" line until the next poll.
   const busyKey = [...deploying, ...ops.keys()].sort().join(",");
@@ -36,7 +38,7 @@ export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, A
     () => machineWorkloads().then((w) => new Set(w.map((x) => x.id).filter((id) => id !== "selftest"))),
     WORKLOADS_POLL_MS,
     new Set<string>(),
-    { serial: true, restartKey: busyKey },
+    { serial: true, restartKey: busyKey, enabled },
   );
   const statuses = useLabState("statuses");
   // When this light list couldn't be read (offline), the catalogue a screen loaded since (its

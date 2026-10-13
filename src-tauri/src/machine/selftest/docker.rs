@@ -108,4 +108,21 @@ mod tests {
         let f = super::compose_file();
         assert!(f.contains("image: busybox:1.36") && f.contains("echo cyberctf-selftest-ok") && f.contains("127.0.0.1::80"), "{f}");
     }
+
+    #[test]
+    fn the_compose_file_is_yaml_whose_shell_command_carries_the_marker_whole() {
+        // The web command is a `sh -c` script inside a YAML flow sequence inside a double-quoted
+        // scalar: it must parse as three list items, with the redirect intact in the third, and
+        // the ports entry must stay a string (YAML would read `127.0.0.1::80` oddly unquoted).
+        let f = super::compose_file();
+        assert!(!f.contains('\t'), "YAML forbids tabs in indentation");
+        let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&f).unwrap();
+        let web = &doc["services"]["web"];
+        let command: Vec<&str> = web["command"].as_sequence().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(command.len(), 3);
+        assert_eq!(&command[..2], ["sh", "-c"]);
+        assert!(command[2].contains(&format!("echo {} > /www/index.html", super::MARKER)) && command[2].ends_with("httpd -f -p 80 -h /www"), "{}", command[2]);
+        assert_eq!(web["ports"][0].as_str(), Some("127.0.0.1::80"));
+        assert_eq!(doc["services"]["probe"]["command"][0].as_str(), Some("sleep"));
+    }
 }

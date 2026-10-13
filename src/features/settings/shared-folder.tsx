@@ -31,8 +31,13 @@ export function SharedFolderControl({ onSaved, framed = false }: { onSaved?: () 
   };
 
   const choose = async () => {
-    const picked = await open({ directory: true, multiple: false, defaultPath: state?.path || undefined, title: t("settings.sharedFolder.pick") });
-    if (typeof picked === "string") save(true, picked);
+    try {
+      const picked = await open({ directory: true, multiple: false, defaultPath: state?.path || undefined, title: t("settings.sharedFolder.pick") });
+      if (typeof picked === "string") save(true, picked);
+    } catch (e) {
+      // The picker couldn't open (a denied permission): said, not dropped.
+      setError(String(e));
+    }
   };
 
   if (!state) return null;

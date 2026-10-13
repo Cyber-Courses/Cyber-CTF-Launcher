@@ -63,12 +63,21 @@ fn vagrantfile_boxes(path: &Path) -> Vec<String> {
 /// The box a Vagrantfile line sets, quoted either way.
 fn box_assignment(line: &str) -> Option<String> {
     let l = line.trim();
+    // A commented-out alternative is not a box the lab uses (Cleanup would remove it).
+    if l.starts_with('#') {
+        return None;
+    }
     let i = l.find(".vm.box")?;
     let rest = l[i + ".vm.box".len()..].trim_start();
     let rest = rest.strip_prefix('=')?.trim_start();
     let q = rest.chars().next().filter(|c| *c == '"' || *c == '\'')?;
     let rest = &rest[1..];
-    Some(rest[..rest.find(q)?].to_string())
+    let name = &rest[..rest.find(q)?];
+    // A box is `owner/name` (or a bare name): nothing that would point at Vagrant's boxes folder
+    // itself (empty, `..`) or read as an option, which Cleanup would measure and remove.
+    let plain =
+        !name.is_empty() && !name.starts_with('-') && !name.contains('\\') && name.split('/').all(|part| !part.is_empty() && part != "." && part != "..");
+    plain.then(|| name.to_string())
 }
 
 fn vagrant_home() -> Option<PathBuf> {
@@ -207,6 +216,29 @@ mod tests {
     }
 
     #[test]
+    fn box_lines_without_spaces_or_with_look_alike_keys_and_image_lines_on_windows_endings() {
+        assert_eq!(box_assignment("config.vm.box=\"a/b\"").as_deref(), Some("a/b"));
+        assert_eq!(box_assignment("  m.vm.box = \"a/b\" if ENV[\"X\"]").as_deref(), Some("a/b"));
+        // `box_url`, `box_version` and `box_check_update` share the prefix but set no box.
+        for other in ["config.vm.box_url = \"https://x/a.box\"", "config.vm.box_check_update = \"no\"", "config.vm.box_download_insecure = \"1\""] {
+            assert_eq!(box_assignment(other), None, "{other}");
+        }
+        assert_eq!(box_assignment("config.vm.box = \"\""), None, "an empty box names no box");
+        // `docker image inspect` on Windows: CRLF, and a size that isn't a number reads as 0.
+        let items = parse_images("busybox:1.36\t4261550\r\nother:1\t-5\r\n");
+        assert_eq!(items.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("busybox:1.36", 4_261_550), ("other:1", 0)]);
+    }
+
+    #[test]
+    fn a_commented_out_box_line_is_not_a_box_the_lab_uses() {
+        // A Vagrantfile keeping an alternative box in a comment lists that box as the lab's: it
+        // shows under storage and `vagrant box remove --all` is run on it. Fix: skip a line
+        // whose first non-blank character is `#` (and the part of a line after an unquoted `#`).
+        assert_eq!(box_assignment("# config.vm.box = \"old/box\""), None);
+        assert_eq!(box_assignment("config.vm.box = \"a/b\" # was \"old/box\"").as_deref(), Some("a/b"));
+    }
+
+    #[test]
     fn boxes_live_under_vagrants_slash_escaped_names() {
         assert_eq!(box_dir(Path::new("/h/.vagrant.d"), "bento/debian-12"), Path::new("/h/.vagrant.d/boxes/bento-VAGRANTSLASH-debian-12"));
     }
@@ -266,3 +298,6 @@ mod tests {
         assert_eq!(box_assignment("no box here"), None);
     }
 }
+
+#[cfg(test)]
+mod proptests;

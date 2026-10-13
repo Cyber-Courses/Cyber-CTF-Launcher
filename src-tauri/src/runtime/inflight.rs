@@ -183,6 +183,56 @@ mod tests {
         assert_eq!(action_of(id), None);
     }
 
+    #[test]
+    fn a_guard_dropped_by_a_panic_clears_its_mark() {
+        // An operation that panics (a bug in a runtime step) unwinds through its guard: the lab
+        // must not stay "starting" for the rest of the app's life, holding every quit.
+        let id = "inflight-test-panic";
+        let crashed = std::thread::spawn(move || {
+            let _guard = DeployGuard::new(id, Action::Start);
+            assert!(deploying_labs().contains(&id.to_string()));
+            panic!("a step blew up");
+        })
+        .join();
+        assert!(crashed.is_err(), "the thread panicked");
+        assert_eq!(action_of(id), None, "the mark went with the guard");
+        // The registry still works afterwards (its mutex wasn't poisoned by the unwind).
+        let again = DeployGuard::new(id, Action::Park);
+        assert_eq!(action_of(id), Some(Action::Park));
+        drop(again);
+        assert_eq!(action_of(id), None);
+    }
+
+    #[test]
+    fn nested_guards_release_the_lab_only_when_the_outermost_one_drops() {
+        // Three operations re-entering the same lab (a start that resumes, which parks the
+        // attacker...): the mark holds while any of them is alive, whatever the drop order.
+        let id = "inflight-test-nested-three";
+        let a = DeployGuard::new(id, Action::Start);
+        let b = DeployGuard::new(id, Action::Start);
+        let c = DeployGuard::new(id, Action::Start);
+        drop(a);
+        assert_eq!(action_of(id), Some(Action::Start), "the outermost dropped first");
+        drop(c);
+        assert_eq!(action_of(id), Some(Action::Start));
+        drop(b);
+        assert_eq!(action_of(id), None);
+    }
+
+    #[tokio::test]
+    async fn try_lock_steps_aside_for_a_holder_in_this_process() {
+        // The reaper's non-waiting lock sees an in-process operation (no lock file needed).
+        let id = "inflight-test-try-here";
+        let held = lock_lab(id).await;
+        assert!(try_lock_lab_at(None, id).is_none());
+        drop(held);
+        let mine = try_lock_lab_at(None, id);
+        assert!(mine.is_some());
+        assert!(try_lock_lab_at(None, id).is_none(), "not reentrant");
+        drop(mine);
+        assert!(try_lock_lab_at(None, id).is_some());
+    }
+
     #[tokio::test]
     async fn lab_lock_is_per_lab() {
         let a = lock_lab("inflight-test-lock-a").await;

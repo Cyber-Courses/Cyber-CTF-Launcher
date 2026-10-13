@@ -95,6 +95,21 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_body_at_exactly_the_limit_is_accepted_and_huge_declarations_do_not_overflow() {
+        let mut b = Limited::new(Some(10), 10).unwrap();
+        b.push(&[0; 10]).unwrap();
+        b.push(&[]).unwrap();
+        assert!(b.push(&[0]).is_err());
+        assert_eq!(b.into_bytes().len(), 10);
+        // A declared length of u64::MAX is refused without reserving anything; a limit of
+        // u64::MAX with no declared length reserves nothing either.
+        assert!(Limited::new(Some(u64::MAX), MAX_LAB_ARCHIVE).is_err());
+        let b = Limited::new(None, u64::MAX).unwrap();
+        assert_eq!(b.buf.capacity(), 0);
+        assert!(Limited::new(Some(0), 0).unwrap().push(&[]).is_ok());
+    }
+
+    #[test]
     fn clients_build() {
         assert!(api_client().is_ok());
         assert!(download_client().is_ok());

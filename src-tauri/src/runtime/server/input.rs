@@ -150,9 +150,13 @@ pub(super) fn clean_opt(value: Option<String>, field: &str) -> Result<Option<Str
     }
 }
 
-/// A bare hostname or IP (v4 or v6), never a URL: it is interpolated into an endpoint.
+/// A bare hostname or IP (v4 or v6), never a URL: it is interpolated into an endpoint. A colon
+/// is only an IPv6 address's: `pve.lan:8006` pasted from an address bar was bracketed as one
+/// (`https://[pve.lan:8006]:8006/`) and failed with no hint about the port.
 fn valid_host(host: &str) -> bool {
-    !host.is_empty() && host.len() <= 253 && host.chars().all(|c| c.is_ascii_alphanumeric() || ".-:".contains(c)) && !host.starts_with('-')
+    let chars_ok = host.chars().all(|c| c.is_ascii_alphanumeric() || ".-:".contains(c));
+    let colon_is_ipv6 = !host.contains(':') || host.parse::<std::net::Ipv6Addr>().is_ok();
+    !host.is_empty() && host.len() <= 253 && chars_ok && colon_is_ipv6 && !host.starts_with('-')
 }
 
 /// A host id as `new_id` makes it (any case).
@@ -411,6 +415,75 @@ mod tests {
         assert!(keep.check().is_ok());
         let bad = input(serde_json::json!({"name": "x", "provider": "linode", "host": "eu-central", "username": "", "password": "short"}));
         assert!(error(&bad).contains("Linode API token"));
+    }
+
+    #[test]
+    fn a_host_with_a_port_is_refused_and_only_an_ipv6_address_may_hold_colons() {
+        // A player pasting `pve.lan:8006` (the address bar's host) gets past the form, and the
+        // first connection fails on a bracketed URL with no hint about the port. Fix: when the
+        // host holds a `:`, require it to parse as an `Ipv6Addr` (`host.parse::<Ipv6Addr>().is_ok()`),
+        // and say "enter the port in its own field" otherwise.
+        for bad in ["pve.lan:8006", "10.0.0.5:22", "esxi:"] {
+            assert!(!valid_host(bad), "{bad}");
+        }
+        let i = input(serde_json::json!({"name": "x", "provider": "proxmox", "host": "pve.lan:8006", "username": "root@pam"}));
+        assert!(i.check().is_err(), "a port in the host must be refused, not bracketed as an IPv6 address");
+    }
+
+    #[test]
+    fn usernames_keep_spaces_quotes_and_dashes_but_not_control_characters_and_limits_are_bytes() {
+        // An ESXi login only ever travels through the environment and a Vagrantfile string, so
+        // a space, a quote or a leading dash is kept as typed; a tab or newline is refused.
+        let esxi = |user: &str| input(serde_json::json!({"name": "x", "provider": "vmware_esxi", "host": "esxi", "username": user}));
+        assert_eq!(esxi(" -root \"x\" ").check().unwrap().username, "-root \"x\"");
+        assert_eq!(error(&esxi("root\tx")), "invalid username");
+        assert_eq!(error(&esxi("root\u{7f}")), "invalid username");
+        // 128 is a byte limit: 65 two-byte characters are 130 bytes.
+        assert!(esxi(&"a".repeat(128)).check().is_ok());
+        assert_eq!(error(&esxi(&"a".repeat(129))), "invalid username");
+        assert_eq!(error(&esxi(&"\u{e9}".repeat(65))), "invalid username");
+        // A Proxmox realm is any `@`, even alone or with a token part.
+        let pve = |user: &str| input(serde_json::json!({"name": "x", "provider": "proxmox", "host": "pve", "username": user}));
+        assert!(pve("@").check().is_ok() && pve("a@b!c").check().is_ok());
+    }
+
+    #[test]
+    fn optional_names_are_trimmed_kept_verbatim_and_bounded() {
+        // Datastore and network names go to the Vagrantfile/Terraform as variables, never argv:
+        // spaces and parentheses stay; an aws profile is only kept in CLI mode.
+        let i = input(serde_json::json!({
+            "name": "x", "provider": "vmware_esxi", "host": "esxi", "username": "root",
+            "datastore": "  my datastore (ssd)  ", "network": "VM Network", "node": "ignored", "awsProfile": "work", "useCliCreds": true
+        }));
+        let c = i.check().unwrap();
+        assert!(!c.use_cli, "CLI credentials are AWS only");
+        let p = i.into_profile("ab".into(), c, None).unwrap();
+        assert_eq!((p.datastore.as_deref(), p.network.as_deref(), p.node, p.aws_profile), (Some("my datastore (ssd)"), Some("VM Network"), None, None));
+        let i = input(serde_json::json!({"name": "x", "provider": "vmware_esxi", "host": "esxi", "username": "root", "datastore": "a".repeat(129)}));
+        let c = i.check().unwrap();
+        assert_eq!(i.into_profile("ab".into(), c, None).unwrap_err().to_string(), "invalid datastore");
+        // The display name is bounded at 64 and may hold anything printable.
+        let i = input(serde_json::json!({"name": "\u{1f980} Lab \"one\"", "provider": "vmware_esxi", "host": "esxi", "username": "root"}));
+        let c = i.check().unwrap();
+        assert_eq!(i.into_profile("ab".into(), c, None).unwrap().name, "\u{1f980} Lab \"one\"");
+    }
+
+    #[test]
+    fn auto_stop_and_budget_at_their_bounds() {
+        let aws = |extra: serde_json::Value| {
+            let mut v = serde_json::json!({"name": "x", "provider": "aws", "host": "eu-west-3", "username": "AKIAIOSFODNN7EXAMPLE"});
+            v.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            let i = input(v);
+            let c = i.check().unwrap();
+            i.into_profile("ab".into(), c, None)
+        };
+        assert_eq!(aws(serde_json::json!({"autoStopHours": 0})).unwrap().auto_stop_hours, Some(0), "0 means never");
+        assert_eq!(aws(serde_json::json!({"autoStopHours": 72})).unwrap().auto_stop_hours, Some(72));
+        assert_eq!(aws(serde_json::json!({"autoStopHours": 73})).unwrap_err().to_string(), "auto-stop must be between 0 and 72 hours");
+        assert_eq!(aws(serde_json::json!({"monthlyLimit": -1.0})).unwrap().monthly_limit, None);
+        assert_eq!(aws(serde_json::json!({"monthlyLimit": 0.01})).unwrap().monthly_limit, Some(0.01));
+        // A port of 0 is "unset": the provider's default.
+        assert_eq!(aws(serde_json::json!({"port": 0})).unwrap().port, 443);
     }
 
     #[test]

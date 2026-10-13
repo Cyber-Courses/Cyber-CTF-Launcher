@@ -239,3 +239,135 @@ fn reads_the_services_a_lab_declares_and_nothing_else() {
     assert!(parse_inspect(&super::compose::project("x"), "/a\t\tnull\n")["a"].services.is_empty());
     assert!(declared_services(&[("cyberctf.service.db".to_string(), "database:abc".to_string())].into()).first().unwrap().ports.is_empty());
 }
+
+#[test]
+fn a_web_app_whose_name_contains_a_datastore_token_keeps_its_open_url() {
+    // `is_datastore` matches substrings: "wordpress" contains "rdp", "giftportal" contains
+    // "ftp". A WordPress lab (the most common web target there is) then has no Open button.
+    // Fails with: assertion failed: !is_datastore(&ps("wordpress", "wordpress:6.4")).
+    // Suggested fix: match whole tokens (split the service and image on non-alphanumerics)
+    // for the short keys, or at least for "ftp", "rdp", "vnc", "smtp".
+    let ps = |svc: &str, image: &str| {
+        parse_ps(&format!(r#"[{{"Service":"{svc}","Image":"{image}","State":"running","Publishers":[{{"PublishedPort":8080,"Protocol":"tcp"}}]}}]"#))
+            .pop()
+            .unwrap()
+    };
+    assert!(!is_datastore(&ps("wordpress", "wordpress:6.4")));
+    assert!(!is_datastore(&ps("web", "giftportal/app:1")));
+    assert_eq!(first_published_url(&[ps("wordpress", "wordpress:6.4")]).as_deref(), Some("http://127.0.0.1:8080"));
+}
+
+#[test]
+fn a_null_publishers_list_is_no_ports() {
+    // `#[serde(default)]` covers a missing field, not an explicit null. In NDJSON the line is
+    // dropped (the lab reads as not running when that was its only live container); in the array
+    // format the whole array fails and every container is gone.
+    // Fails with: left: 0, right: 1.
+    // Suggested fix: deserialize `Publishers` (and `Labels`, `Health`, `Image`, `Name`) through
+    // `Option` or a `deserialize_with` that reads null as empty.
+    let line = r#"{"Service":"web","State":"running","Name":"p-web-1","Publishers":null}"#;
+    assert_eq!(parse_ps(line).len(), 1);
+    assert_eq!(parse_ps(&format!("[{line}]")).len(), 1);
+    assert!(is_running(&parse_ps(line)));
+}
+
+#[test]
+fn ps_entries_with_odd_but_legal_values_are_read() {
+    // Unicode in names and images, a tab inside a label value, a very long name, CRLF endings.
+    let long = "n".repeat(10_000);
+    let out = format!(
+        "{{\"Service\":\"wéb\",\"State\":\"running\",\"Name\":\"{long}\",\"Image\":\"ghcr.io/x/y:1\",\"Labels\":\"a=b\\tc,com.docker.compose.oneoff=True\"}}\r\n{{\"Service\":\"db\",\"State\":\"running\",\"Health\":\"starting\",\"Publishers\":[]}}\r\n"
+    );
+    let e = parse_ps(&out);
+    assert_eq!(e.len(), 2);
+    assert_eq!(e[0].service, "wéb");
+    assert_eq!(e[0].name.len(), 10_000);
+    assert!(e[0].one_off(), "the one-off label is found after a tab-bearing one");
+    assert_eq!(e[1].health, "starting");
+    assert!(e[1].publishers.is_empty());
+}
+
+#[test]
+fn inspect_lines_with_missing_columns_or_odd_names_are_read_or_skipped() {
+    let project = super::compose::project("x");
+    // Name only (no tabs): a machine with no interfaces and no services. An empty line is an
+    // entry with an empty name, which no container ever has (harmless, and stated here).
+    let m = parse_inspect(&project, "/cyberctf-x-a-1\n\n/b\tcyberctf-x_lab=10.0.0.2 \n");
+    assert_eq!(m.len(), 3, "{:?}", m.keys().collect::<Vec<_>>());
+    assert!(m[""].interfaces.is_empty() && m[""].services.is_empty());
+    assert!(m["cyberctf-x-a-1"].interfaces.is_empty() && m["cyberctf-x-a-1"].services.is_empty());
+    assert_eq!(m["b"].interfaces[0].ip, "10.0.0.2");
+    // A label value holding a tab or newline comes JSON-escaped, so the columns hold.
+    let out = "/c\tcyberctf-x_lab=10.0.0.3 \t{\"isoloom.service.app\":\"http:80\",\"note\":\"a\\tb\\nc\"}\n";
+    let m = parse_inspect(&project, out);
+    assert_eq!(m["c"].interfaces[0].ip, "10.0.0.3");
+    assert_eq!(m["c"].services[0].kind, "web");
+    // A network name holding `=`: the first `=` splits it, the address is the rest.
+    let m = parse_inspect(&project, "/d\tcyberctf-x_a=b=10.0.0.4 \n");
+    assert_eq!((m["d"].interfaces[0].network.as_str(), m["d"].interfaces[0].ip.as_str()), ("a", "b=10.0.0.4"));
+    // Windows line endings: no carriage return in the labels JSON or the address.
+    let m = parse_inspect(&project, "/e\tcyberctf-x_lab=10.0.0.5 \t{\"isoloom.service.s\":\"tcp:22\"}\r\n");
+    assert_eq!(m["e"].interfaces[0].ip, "10.0.0.5");
+    assert_eq!(m["e"].services[0].ports, [22]);
+}
+
+#[test]
+fn declared_service_ports_at_the_boundaries() {
+    let labels = [
+        ("isoloom.service.a".to_string(), "tcp:65535,65536,-1,+22, 80 ,".to_string()),
+        ("isoloom.service.".to_string(), "http:80".to_string()),
+        ("isoloom.service.b".to_string(), "".to_string()),
+        ("isoloom.service.c".to_string(), ":80".to_string()),
+    ]
+    .into();
+    let s = declared_services(&labels);
+    let got: Vec<(&str, &str, Vec<u16>)> = s.iter().map(|s| (s.name.as_str(), s.kind.as_str(), s.ports.clone())).collect();
+    // 65536 and -1 are dropped; "+22" parses as 22 (a quirk of integer parsing, harmless); an
+    // empty name is no service; an empty value is a service with no kind (its own name) and no
+    // ports; an empty kind before the colon becomes the service's own name.
+    assert_eq!(got, vec![("a", "a", vec![65535, 22, 80]), ("b", "b", vec![]), ("c", "c", vec![80])]);
+}
+
+#[test]
+fn a_host_probe_needs_its_two_separators_and_tolerates_an_empty_third_part() {
+    assert!(HostProbe::parse("ps only, no separators").is_none());
+    // One separator: the inspect part is there (empty), the networks part defaults to empty.
+    let p = HostProbe::parse("[]\n@@@\n").unwrap();
+    assert!(p.inspect.trim().is_empty() && p.networks.is_empty());
+    let p = HostProbe::parse("[]\n@@@\n@@@").unwrap();
+    assert!(p.networks.is_empty());
+    let (status, attacker) = status_from_host("cyberctf-x", &p);
+    assert!(!status.running && status.machines.is_empty() && attacker.is_none());
+    // The attack box on a network that isn't one of the lab's: no address for it.
+    let p = HostProbe::parse("[{\"Service\":\"web\",\"State\":\"running\",\"Name\":\"web\"}]\n@@@\n/attacker\tbridge=172.17.0.2 \n/web\tcyberctf-x_lab=10.0.0.2 \n@@@\ncyberctf-x_lab\t10.0.0.0/24 \tfalse\n").unwrap();
+    let (status, attacker) = status_from_host("cyberctf-x", &p);
+    assert!(status.running);
+    assert_eq!(attacker, None);
+    assert_eq!(status.machines[0].ip, "10.0.0.2");
+}
+
+#[test]
+fn network_listings_with_only_a_name_or_a_trailing_carriage_return() {
+    let n = parse_networks("cyberctf-x", "cyberctf-x_lab\n\ncyberctf-x_back\t\t\ncyberctf-x_dmz\t10.0.0.0/24 \ttrue\r\n");
+    assert_eq!(
+        n.iter().map(|n| (n.name.as_str(), n.subnet.as_str(), n.internal)).collect::<Vec<_>>(),
+        [("back", "", false), ("dmz", "10.0.0.0/24", true), ("lab", "", false)]
+    );
+    assert_eq!(networks_of_others("cyberctf-x_lab\tcyberctf-x\r\nother\tp\r\n", "cyberctf-x"), ["other"]);
+    assert_eq!(ipv4_subnets("10.0.0.0/24\r\n"), ["10.0.0.0/24"]);
+    assert!(listed_names("\r\n \r\n").is_empty());
+}
+
+#[test]
+fn a_down_serving_service_is_listed_once_even_with_several_containers() {
+    // A scaled service with two exited containers is one down machine, and a running replica
+    // keeps it off the down list.
+    let entries = parse_ps(
+        r#"[{"Service":"web","State":"exited","Name":"p-web-1"},{"Service":"web","State":"exited","Name":"p-web-2"},{"Service":"db","State":"running","Name":"p-db-1"}]"#,
+    );
+    let status = build_status(entries, Default::default(), Vec::new(), &["web".into()]);
+    assert_eq!(status.machines.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["db", "web"]);
+    let entries = parse_ps(r#"[{"Service":"web","State":"exited","Name":"p-web-1"},{"Service":"web","State":"running","Name":"p-web-2"}]"#);
+    let status = build_status(entries, Default::default(), Vec::new(), &["web".into()]);
+    assert_eq!(status.machines.iter().map(|m| (m.name.as_str(), m.state.as_str())).collect::<Vec<_>>(), [("web", "running")]);
+}

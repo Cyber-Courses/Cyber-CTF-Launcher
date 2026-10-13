@@ -245,7 +245,8 @@
       "wingetHint": "Installiere ihn aus dem Microsoft Store und komm dann zurück.",
       "get": "Holen",
       "linux": "Installiere den Paketmanager deiner Distribution, um die Ein-Klick-Installationen zu nutzen.",
-      "linuxNamed": "Installiere den Paketmanager deiner Distribution ({name}), um die Ein-Klick-Installationen zu nutzen."
+      "linuxNamed": "Installiere den Paketmanager deiner Distribution ({name}), um die Ein-Klick-Installationen zu nutzen.",
+      "intelMac": "Dies ist ein Intel-Mac. Homebrew liefert dafür keine vorkompilierten Pakete mehr, daher können Installationen aus dem Quellcode bauen und mehrere Minuten länger dauern."
     },
     "wsl": {
       "intro": "Cyber CTF schaltet WSL 2 für dich ein. Windows fragt einmal nach der Berechtigung (die übliche Administrator-Abfrage) und braucht danach einen Neustart.",

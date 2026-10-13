@@ -151,6 +151,12 @@ pub async fn running_here(dir: &Path, id: &str) -> bool {
     false
 }
 
+/// Whether Vagrant still tracks machines of this lab (or its attack VM) on this machine, running
+/// or not: their record lives in the lab's folder, which must not be replaced under them.
+pub fn vms_recorded_here(dir: &Path) -> bool {
+    vagrant_dirs(dir).into_iter().any(|vdir| vm::has_machines(&vdir)) || vm::has_machines(&super::attack_vm::dir(dir))
+}
+
 /// [`running_here`] for a lab by id; false when it isn't installed.
 pub async fn lab_running_here(app: &AppHandle, id: &str) -> bool {
     match lab_dir(app, id) {
@@ -287,6 +293,47 @@ mod tests {
         assert!(!super::running_here(&dir, "t").await);
         assert!(tools.called("vagrant status"));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_lab_marked_on_a_host_that_is_no_longer_saved_names_that_host() {
+        use crate::exec::fake::Tools;
+        let t = crate::test_app::TestApp::new();
+        let dir = t.lab("web", &[]);
+        std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "gone1\n").unwrap();
+        let tools = Tools::rules(&[]);
+        for runtime in [Runtime::Docker, Runtime::Vm, Runtime::Cloud] {
+            let err = super::status(t.handle(), &dir, "web", runtime).await.err().expect("refused").to_string();
+            assert_eq!(err, "server host `gone1` not found", "{runtime:?}");
+        }
+        // Refused before anything local or remote is probed; the marker alone never makes it
+        // run here either.
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(!super::running_here(&dir, "web").await);
+    }
+
+    #[tokio::test]
+    async fn running_here_is_false_when_neither_docker_nor_vagrant_answers() {
+        use crate::exec::fake::{Tools, fail};
+        let dir = std::env::temp_dir().join(format!("cyberctf-status-down-{}", rand::random::<u32>()));
+        let vagrant = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
+        std::fs::create_dir_all(&vagrant).unwrap();
+        std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
+        // A wedged engine and a wedged hypervisor: an error, not a lab that reads as running.
+        let tools = Tools::rules(&[("docker", fail("Cannot connect to the Docker daemon")), ("vagrant status", fail("VBoxManage: error: timed out"))]);
+        assert!(!super::running_here(&dir, "t").await);
+        assert!(tools.called("docker compose") && tools.called("vagrant status"), "{:?}", tools.calls());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_parked_mark_is_reported_only_while_the_lab_is_down_whatever_the_mode() {
+        for mode in [Park::Pause, Park::Shutdown] {
+            assert_eq!(with_parked(status_with(false, &[]), Some(mode)).parked, Some(mode));
+            // Half up (one machine running by hand): the status is "running", never "parked",
+            // so the page offers Stop rather than a Resume that would do nothing.
+            assert_eq!(with_parked(status_with(true, &["dc01"]), Some(mode)).parked, None);
+        }
     }
 
     #[test]

@@ -39,7 +39,16 @@ pub async fn start(host: String, port: u16) -> std::io::Result<Relay> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let local = listener.local_addr()?.port();
     let task = tokio::spawn(async move {
-        while let Ok((mut inbound, _)) = listener.accept().await {
+        loop {
+            let (mut inbound, _) = match listener.accept().await {
+                Ok(pair) => pair,
+                // A refused handshake or fd exhaustion must not end the relay while the tool is
+                // still pointed at it (nor spin hot): wait a moment and keep accepting.
+                Err(_) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+            };
             let target = (host.clone(), port);
             tokio::spawn(async move {
                 if let Ok(mut outbound) = TcpStream::connect(target).await {
@@ -165,6 +174,23 @@ mod tests {
             assert_eq!(prepare("vagrant", &env).await.env, env, "{host}");
         }
         assert!(!is_this_machine("10.0.0.5") && !is_this_machine("esxi.lan") && !is_this_machine("[fd00::5]"));
+    }
+
+    #[tokio::test]
+    async fn a_blank_or_loopback_esxi_host_is_never_relayed() {
+        // Relaying loopback to itself would loop; a blank name is no host. Both leave the
+        // environment untouched on every OS, so a later run sees exactly what Isoloom set.
+        for host in ["", "127.0.0.1"] {
+            for key in HOSTNAME_KEYS {
+                let env = vec![(key.to_string(), host.to_string()), ("ESXI_HOSTPORT".to_string(), "2222".to_string())];
+                let r = prepare("vagrant", &env).await;
+                assert_eq!(r.env, env, "{key}={host:?}");
+                assert!(get(&r.env, "ISOLOOM_SSH_PROXY_COMMAND").is_none());
+            }
+        }
+        // The launcher's name alone (no Isoloom name) still counts as the host.
+        let env = vec![("CYBERCTF_ESXI_HOSTNAME".to_string(), "".to_string())];
+        assert_eq!(prepare("vagrant", &env).await.env, env);
     }
 
     #[test]

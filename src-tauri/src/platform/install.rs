@@ -58,7 +58,14 @@ fn plan(dep: Dependency) -> Result<Vec<Step>> {
             // https://learn.microsoft.com/cli/azure/install-azure-cli-macos
             Dependency::Azurecli => vec![
                 step(brew.clone(), &["tap", "azure/azure-cli"]),
-                step(brew.clone(), &["trust", "azure/azure-cli"]),
+                // `brew trust` exists from Homebrew 7 only; an older Homebrew needs no trust and
+                // must not fail here ("Unknown command"). On 7, an untrusted tap still fails at
+                // the install step with Homebrew's own message.
+                Step {
+                    program: "sh".into(),
+                    args: vec!["-c".into(), format!("'{brew}' trust azure/azure-cli 2>/dev/null || true")],
+                    note: Some("Trusting the azure/azure-cli tap (Homebrew 7 asks for it; older versions don't).".into()),
+                },
                 Step {
                     program: brew.clone(),
                     args: vec!["install".into(), "--cask".into(), "azure-cli-preview".into()],
@@ -87,9 +94,15 @@ fn plan(dep: Dependency) -> Result<Vec<Step>> {
             // Turns on the WSL and Virtual Machine Platform features and installs the WSL 2 kernel.
             // Elevated through Windows' own UAC prompt; the features need a restart to take effect.
             Dependency::Wsl => {
+                // `-PassThru` surfaces wsl.exe's own exit code (without it PowerShell exits 0
+                // whatever happened); a declined UAC prompt throws, reported as ERROR_CANCELLED.
                 return Ok(vec![step(
                     "powershell",
-                    &["-NoProfile", "-Command", "Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait"],
+                    &[
+                        "-NoProfile",
+                        "-Command",
+                        "try { $p = Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait -PassThru; exit $p.ExitCode } catch { exit 1223 }",
+                    ],
                 )]);
             }
         };

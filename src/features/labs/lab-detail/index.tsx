@@ -56,8 +56,10 @@ export function LabDetail(props: LabDetailProps) {
 
       {/* Header: what the lab is, its state at a glance, and the one thing to do next. */}
       <PageHeader
+        // Opened from the list (whose row is gone now): the focus starts here, not on <body>.
+        focusTitle
         title={lab.title}
-        lead={<HeaderLead lab={lab} state={s} status={status} />}
+        lead={<HeaderLead lab={lab} state={s} status={status} hosted={page.hosted.live} />}
         actions={<LabHeaderActions mode={mode} page={page} props={props} onRemove={() => setConfirmingRemove(true)} />}
       />
       <LabNotices page={page} props={props} />

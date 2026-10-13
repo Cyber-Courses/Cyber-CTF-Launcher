@@ -82,7 +82,8 @@
     "customImageNote": "Ein beliebiges Docker-Image oder Registry-Tag.",
     "save": "Speichern",
     "autoStart": "Attack box mit dem Lab starten",
-    "autoStartDescription": "Startet sie, sobald ein Lab auf diesem Rechner läuft: den Container bei einem Container-Lab, die VM neben einem VM-Lab. Du kannst sie weiterhin im Lab starten oder stoppen."
+    "autoStartDescription": "Startet sie, sobald ein Lab auf diesem Rechner läuft: den Container bei einem Container-Lab, die VM neben einem VM-Lab. Du kannst sie weiterhin im Lab starten oder stoppen.",
+    "invalidImage": "Verwende einen einfachen Image-Namen wie registry/name:tag: nur Buchstaben, Ziffern und . _ - / : @, nicht mit einem Bindestrich am Anfang."
   },
   "attackVm": {
     "title": "Angriffs-VM für VM-Labs",

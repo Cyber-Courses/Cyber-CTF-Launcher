@@ -125,6 +125,9 @@ pub fn inputs(cloud: &CloudServices, env: &[(String, String)], player_ip: Option
         values.insert(var.clone(), filled);
     }
     if !missing.is_empty() {
+        // Each missing input once, in the order met (`dedup` only drops adjacent repeats).
+        let mut seen = std::collections::HashSet::new();
+        missing.retain(|m| seen.insert(m.clone()));
         return Err(Error::Invalid(format!(
             "This lab takes {} at launch, which the launcher can't provide (it fills {PLAYER_CIDR}, {PLAYER_IP}, CTF_API_URL and CTF_LAUNCH_TOKEN).",
             missing.join(", ")
@@ -701,6 +704,61 @@ mod tests {
         assert!(!status(&s, &dir).running);
         assert!(status(&s, &dir).outputs.is_empty());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_empty_or_odd_state_exposes_nothing_and_unknown_outputs_are_left_out() {
+        let s = spec(SPEC);
+        let dir = std::env::temp_dir().join(format!("cyberctf-cloudsvc-odd-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("run.json"), format!(r#"{{"expires_at":{}}}"#, terraform::now() + 3600)).unwrap();
+        // Terraform's empty state, no state at all, a wrong shape, a cut-off file: not running,
+        // nothing exposed, no auto-stop shown (there is nothing to stop).
+        for raw in ["{}", "null", "[]", r#"{"resources":[]}"#, r#"{"resources":null}"#, "{\"resources\":[{"] {
+            std::fs::write(dir.join("terraform.tfstate"), raw).unwrap();
+            let st = status(&s, &dir);
+            assert!(!st.running && st.outputs.is_empty() && st.message.is_none() && st.expires_at.is_none(), "{raw}");
+            assert!(!terraform::expired(&dir), "{raw}");
+        }
+        // Resources, but outputs the spec doesn't name (and a null one): running, nothing to show.
+        std::fs::write(dir.join("terraform.tfstate"), r#"{"resources":[{"instances":[{}]}],"outputs":{"unknown":{"value":"x"},"secret_key":{"value":null}}}"#)
+            .unwrap();
+        let st = status(&s, &dir);
+        assert!(st.running && st.expires_at.is_some());
+        assert!(st.outputs.is_empty(), "{:?}", st.outputs.iter().map(|o| &o.name).collect::<Vec<_>>());
+        // A non-string value is shown as JSON; a `sensitive` that isn't a boolean reads as public.
+        std::fs::write(dir.join("terraform.tfstate"), r#"{"resources":[{}],"outputs":{"app_url":{"value":{"host":"x"},"sensitive":"yes"}}}"#).unwrap();
+        let out = status(&s, &dir).outputs;
+        assert_eq!(out.iter().map(|o| (o.name.as_str(), o.value.as_str(), o.sensitive)).collect::<Vec<_>>(), [("app", r#"{"host":"x"}"#, false)]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_missing_input_taken_by_two_variables_is_named_once() {
+        let s = spec(
+            "version: 1\nname: t\ninputs: [SECRET, OTHER]\ncloud:\n  provider: aws\n  terraform: tf\n  vars: { a: \"{{ inputs.SECRET }}\", b: \"{{ inputs.OTHER }}\", c: \"{{ inputs.SECRET }}\" }\n",
+        );
+        let err = inputs(of(&s).unwrap(), &[], None).unwrap_err().to_string();
+        assert_eq!(err.matches("SECRET").count(), 1, "{err}");
+        assert_eq!(err.matches("OTHER").count(), 1, "{err}");
+    }
+
+    #[test]
+    fn module_paths_with_dot_segments_and_doubled_slashes_stay_inside_the_lab() {
+        let d = Path::new("/l");
+        let c = |t: &str| of(&spec(&format!("version: 1\nname: t\ncloud:\n  provider: aws\n  terraform: \"{t}\"\n"))).unwrap().clone();
+        assert_eq!(module_dir(d, &c("./terraform")).unwrap(), PathBuf::from("/l/terraform"));
+        assert_eq!(module_dir(d, &c("terraform//")).unwrap(), PathBuf::from("/l/terraform"));
+        assert_eq!(module_dir(d, &c("a/./b")).unwrap(), PathBuf::from("/l/a/b"));
+        for bad in ["   ", "terraform/../terraform", "./..", "~/tf"] {
+            // `~` is a plain folder name to Terraform (no shell), so it stays inside the lab.
+            let r = module_dir(d, &c(bad));
+            if bad == "~/tf" {
+                assert_eq!(r.unwrap(), PathBuf::from("/l/~/tf"));
+            } else {
+                assert!(r.is_err(), "{bad}");
+            }
+        }
     }
 
     #[test]

@@ -63,7 +63,9 @@ pub(crate) fn plan(lab_vagrantfile: &str) -> Result<(String, Vec<Link>)> {
 fn parse_cidr(s: &str) -> Option<(Ipv4Addr, u8)> {
     let (ip, len) = s.split_once('/')?;
     let len: u8 = len.parse().ok()?;
-    (len <= 30).then_some((ip.parse().ok()?, len))
+    // A /0 (netmask 0.0.0.0) has no attacker address to pick, and sized the network with a
+    // 32-bit shift that overflowed.
+    (1..=30).contains(&len).then_some((ip.parse().ok()?, len))
 }
 
 fn mask_of(len: u8) -> Ipv4Addr {
@@ -465,6 +467,59 @@ mod tests {
         // A /31 network has no room for anyone.
         let tiny = "config.vm.define \"a\" do |m|\n  m.vm.network \"private_network\", ip: \"10.0.0.0\", netmask: \"255.255.255.254\", virtualbox__intnet: \"isoloom-lab-n\"\n  v.name = \"lab · a\"\nend\n";
         assert!(plan(tiny).unwrap_err().to_string().contains("no subnet"));
+    }
+
+    #[test]
+    fn a_zero_length_netmask_is_refused_without_a_panic() {
+        // A netmask of 0.0.0.0 in the lab's Vagrantfile: a refusal ("no subnet") is fine, a
+        // panic in the deploy worker is not.
+        let vf = "config.vm.define \"a\" do |m|\n  m.vm.network \"private_network\", ip: \"10.0.0.5\", netmask: \"0.0.0.0\", virtualbox__intnet: \"isoloom-lab-n\"\n  v.name = \"lab · a\"\nend\n";
+        let planned = std::panic::catch_unwind(|| plan(vf).map(|(lab, links)| (lab, links.len())));
+        assert!(planned.is_ok(), "the plan must not panic");
+    }
+
+    #[test]
+    fn the_plan_keeps_a_dotted_or_unicode_lab_name() {
+        // The VM-name prefix is the lab's `name:` as Isoloom wrote it; the internal network
+        // names are built from it, so they must match the lab's own to the character.
+        let vf = |lab: &str| {
+            format!(
+                "config.vm.define \"dc01\" do |m|\n  m.vm.network \"private_network\", ip: \"10.0.0.10\", netmask: \"255.255.255.0\", virtualbox__intnet: \"isoloom-{lab}-lab\"\n  m.vm.provider \"virtualbox\" do |v|\n    v.name = \"{lab} · dc01\"\n  end\nend\n"
+            )
+        };
+        for lab in ["my.lab", "ラボ", "lab-2_b"] {
+            let (name, links) = plan(&vf(lab)).unwrap();
+            assert_eq!(name, lab);
+            assert_eq!(links.len(), 1, "{lab}");
+            assert_eq!((links[0].net.as_str(), links[0].intnet.as_str()), ("lab", format!("isoloom-{lab}-lab").as_str()));
+            assert_eq!(links[0].ip, Ipv4Addr::new(10, 0, 0, 2));
+            let text = vagrantfile(&name, "kalilinux/rolling", &links, None);
+            assert!(text.contains(&format!("v.name = \"{lab} · attacker\"")), "{text}");
+            assert!(text.contains(&format!("virtualbox__intnet: \"isoloom-{lab}-lab\"")), "{text}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_start_that_fails_outright_is_not_retried_and_then_reads_as_not_running() {
+        use super::super::providers::Provider;
+        use crate::exec::fake::{Tools, fail, ok};
+        let lab = temp_lab();
+        std::fs::write(lab.join("Vagrantfile"), LAB).unwrap();
+        let tools = Tools::rules(&[
+            ("vagrant up", fail("VBoxManage: error: VT-x is not available")),
+            ("box list", ok("kalilinux/rolling (virtualbox, 2024.4.0)\n")),
+            ("vagrant status", fail("The machine is not created")),
+        ]);
+        let err = super::start(&lab, &lab, Provider::Virtualbox, "kalilinux/rolling", |_| {}).await.unwrap_err().to_string();
+        assert!(err.contains("VT-x"), "{err}");
+        // A genuine failure (neither a lock nor a missing shared-folder mount): one try, no reload.
+        assert_eq!(tools.calls().iter().filter(|c| c.starts_with("vagrant up")).count(), 1, "{:?}", tools.calls());
+        assert!(!tools.called("vagrant reload"));
+        assert!(super::dir(&lab).join("Vagrantfile").is_file(), "kept: a stop or the next start reuses it");
+        // Its status: the box is here, the VM is not up, and its shell has nothing to reach.
+        let s = super::status(&lab, "kalilinux/rolling").await.unwrap();
+        assert!(s.image_present && !s.running && s.ip.is_empty() && s.lab_network.is_empty());
+        std::fs::remove_dir_all(lab).unwrap();
     }
 
     #[test]

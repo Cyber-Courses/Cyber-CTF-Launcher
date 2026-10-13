@@ -247,6 +247,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn progress_lines_are_cut_by_characters_not_bytes() {
+        // Terraform and Vagrant print accented and box-drawing text: a cut inside a character
+        // would be a panic (or a replacement glyph), and 160 bytes would be far fewer letters.
+        let (r, events) = reporter();
+        r.progress("up", BOOT, "é".repeat(300));
+        r.progress("up", BOOT, "✓ ".repeat(100));
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["detail"].as_str().unwrap().chars().count(), 160);
+        assert!(events[0]["detail"].as_str().unwrap().chars().all(|c| c == 'é'));
+        assert_eq!(events[1]["detail"].as_str().unwrap().chars().count(), 160);
+    }
+
+    #[tokio::test]
     async fn retry_until_stops_at_the_first_success() {
         let tries = std::sync::atomic::AtomicU32::new(0);
         assert!(

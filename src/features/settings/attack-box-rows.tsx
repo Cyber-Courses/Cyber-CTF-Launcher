@@ -17,6 +17,7 @@ import {
   setAttackBox,
   setAttackImage,
   setAutoAttackBox,
+  validImage,
 } from "@/lib/settings";
 import { Row } from "@/features/settings/settings-layout";
 import { SharedFolderControl } from "@/features/settings/shared-folder";
@@ -60,7 +61,9 @@ export function AttackBoxRows({ onSaved }: { onSaved: () => void }) {
     onSaved();
   }
 
-  const customDirty = draft.trim() !== "" && draft.trim() !== image;
+  const customDirty = draft.trim() !== "" && draft.trim() !== image && validImage(draft.trim());
+  // Said under the field: a name the core refuses was saved before and failed only when a lab started.
+  const customInvalid = draft.trim() !== "" && !validImage(draft.trim());
 
   return (
     <>
@@ -126,6 +129,7 @@ export function AttackBoxRows({ onSaved }: { onSaved: () => void }) {
                   onClick={(e) => e.stopPropagation()}
                   spellCheck={false}
                   placeholder="registry/image:tag"
+                  aria-invalid={customInvalid || undefined}
                   className="min-w-0 flex-1"
                 />
                 <Button type="submit" variant="outline" size="xs" disabled={!customDirty} onClick={(e) => e.stopPropagation()}>
@@ -133,6 +137,7 @@ export function AttackBoxRows({ onSaved }: { onSaved: () => void }) {
                 </Button>
               </form>
             )}
+            {customOpen && customInvalid && <p className="mt-1.5 text-[0.75rem] text-destructive">{t("settings.attackBox.invalidImage")}</p>}
           </RadioRow>
         </RadioList>
       </Row>

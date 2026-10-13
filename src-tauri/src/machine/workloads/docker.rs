@@ -170,6 +170,21 @@ mod tests {
     }
 
     #[test]
+    fn sizes_docker_cannot_report_count_as_zero() {
+        // `docker stats` prints `--` for a container it has no figures for (just started, or
+        // gone between the two calls); a short or odd line must not be taken for a number.
+        assert_eq!(parse_size("--"), 0);
+        assert_eq!(parse_size(""), 0);
+        assert_eq!(parse_size("0B"), 0);
+        assert_eq!(parse_size("1.5kB"), 1500);
+        assert_eq!(parse_size("MiB"), 0);
+        let mem = memory_by_container("aaa\t-- / --\nbbb\t3MiB / 1GiB\nlonely\n\n");
+        assert_eq!(mem.len(), 2);
+        assert_eq!(memory_of("aaa", &mem), 0);
+        assert_eq!(memory_of("bbb", &mem), 3 * 1024 * 1024);
+    }
+
+    #[test]
     fn a_lab_workload_counts_its_containers_and_their_memory() {
         let by_lab = containers_by_lab("aaa\tcyberctf-sqli-web-1\tcyberctf-sqli\nbbb\tcyberctf-sqli-exegol\t\nccc\tcyberctf-xss-web-1\tcyberctf-xss\n");
         let mem = memory_by_container("aaa\t1kB / 1GiB\nbbb\t2KiB / 1GiB\n");

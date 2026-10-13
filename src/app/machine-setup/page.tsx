@@ -9,6 +9,11 @@ import { warn } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 
+import { installDevMock } from "@/lib/dev-mock";
+
+// Development only: ?mock in a plain browser answers the Tauri commands with sample data.
+installDevMock();
+
 /** The guided machine-setup window (opened by `machine_open_setup`, optionally `?step=`). */
 export default function MachineSetupWindow() {
   const [report, setReport] = useState<SystemReport | null>(null);

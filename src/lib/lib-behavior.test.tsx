@@ -166,7 +166,9 @@ describe("deploy-store", () => {
     appendDeployLog("lab-x", "✗ You're signed out. Sign in again.");
     expect(heard).toHaveBeenCalledTimes(1);
     window.removeEventListener(SIGNED_OUT_EVENT, heard);
-    expect(getDeploySnapshot().runs["lab-x"].busy).toBe(true);
+    // The lines are kept; whether the lab is busy stays begin/end's to say.
+    expect(getDeploySnapshot().runs["lab-x"].logs).toHaveLength(2);
+    expect(getDeploySnapshot().runs["lab-x"].busy).toBe(false);
   });
 
   it("polls the labs deploying and the operations in flight", async () => {

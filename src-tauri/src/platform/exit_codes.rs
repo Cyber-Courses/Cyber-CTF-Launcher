@@ -58,11 +58,21 @@ pub fn winget_failure(code: Option<i32>, installer_code: Option<u32>, removing: 
         Some(c) if code == WINGET_INSTALLER_FAILED && installer_cancelled(c) => Outcome::Cancelled,
         _ => winget_summary(code)?,
     };
-    Some(match outcome {
+    Some(summary(outcome, removing))
+}
+
+/// A summary of a failed installer the app ran itself (WSL's, through PowerShell), from the
+/// installer's own exit code: only a cancel is known.
+pub fn installer_failure(code: Option<i32>, removing: bool) -> Option<&'static str> {
+    installer_cancelled(code? as u32).then(|| summary(Outcome::Cancelled, removing))
+}
+
+fn summary(outcome: Outcome, removing: bool) -> &'static str {
+    match outcome {
         Outcome::Cancelled if removing => "The removal was cancelled, so nothing was changed. Try again and accept the administrator prompt.",
         Outcome::Cancelled => "The installation was cancelled, so nothing was installed. Try again and accept the administrator prompt.",
         Outcome::Failed(why) => why,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -95,6 +105,41 @@ mod tests {
     fn unknown_codes_get_no_summary() {
         assert_eq!(winget_failure(Some(1), None, false), None);
         assert_eq!(winget_failure(None, None, false), None);
+        assert_eq!(installer_failure(Some(1), false), None);
+        assert_eq!(installer_failure(None, false), None);
+    }
+
+    #[test]
+    fn an_installer_the_app_ran_itself_reads_a_declined_prompt_as_cancelled() {
+        assert!(installer_failure(Some(1223), false).unwrap().starts_with("The installation was cancelled"));
+        assert!(installer_failure(Some(1602), true).unwrap().starts_with("The removal was cancelled"));
+    }
+
+    #[test]
+    fn installer_codes_at_the_edges_of_the_range() {
+        let code = |rest: &str| installer_exit_code(&format!("Installer failed with exit code: {rest}"));
+        // The sign bit either way, and the top of the unsigned range.
+        assert_eq!(code("0x80000000"), Some(0x8000_0000));
+        assert_eq!(code("-2147483648"), Some(0x8000_0000));
+        assert_eq!(code("4294967295"), Some(u32::MAX));
+        assert_eq!(code("0X10"), Some(16));
+        // Past either range, an empty hex form, too many hex digits, and trailing text: not a code.
+        for bad in ["4294967296", "-2147483649", "0x", "0xFFFFFFFFF", "1602 (cancelled)", "+", ""] {
+            assert_eq!(code(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn winget_codes_at_the_edges_map_without_overflow() {
+        // The process exit code comes as i32: the sign bit set is still winget's HRESULT space.
+        assert_eq!(winget_failure(Some(i32::MIN), None, false), None);
+        assert_eq!(winget_failure(Some(-1), None, false), None);
+        assert!(installer_failure(Some(-5), true).unwrap().starts_with("The removal was cancelled"));
+        // winget's own "cancelled" wins whatever the installer said; an installer cancel only
+        // counts under winget's "installer failed" code, and 0 is never a cancel.
+        assert!(winget_failure(Some(0x8A15_010C_u32 as i32), Some(1603), false).unwrap().contains("cancelled"));
+        assert!(winget_failure(Some(0x8A15_0105_u32 as i32), Some(1602), false).unwrap().contains("disk space"));
+        assert!(winget_failure(Some(0x8A15_0006_u32 as i32), Some(0), false).unwrap().starts_with("The installer reported an error"));
     }
 
     #[test]
@@ -106,3 +151,6 @@ mod tests {
         assert_eq!(installer_exit_code("Installer failed with exit code: soon"), None);
     }
 }
+
+#[cfg(test)]
+mod proptests;

@@ -97,27 +97,29 @@ pub enum TermEvent {
     Exit { code: Option<u32> },
 }
 
-/// Splits `buf` into the text that is complete and the bytes of a character cut off at its end.
+/// Splits `buf` into the text that is complete (invalid bytes replaced) and the bytes of a
+/// character cut off at its end, kept for the next read whatever came before them.
 fn take_text(buf: &mut Vec<u8>) -> String {
-    match std::str::from_utf8(buf) {
-        Ok(s) => {
-            let out = s.to_string();
-            buf.clear();
-            out
-        }
-        Err(e) if e.error_len().is_none() => {
-            // An incomplete character at the end: keep it for the next read.
-            let valid = e.valid_up_to();
-            let out = String::from_utf8_lossy(&buf[..valid]).into_owned();
-            buf.drain(..valid);
-            out
-        }
-        Err(_) => {
-            let out = String::from_utf8_lossy(buf).into_owned();
-            buf.clear();
-            out
-        }
+    let complete = buf.len() - incomplete_tail(buf);
+    let out = String::from_utf8_lossy(&buf[..complete]).into_owned();
+    buf.drain(..complete);
+    out
+}
+
+/// How many bytes at the end of `buf` begin a UTF-8 character that isn't whole yet (0 to 3):
+/// a lead byte announcing more bytes than follow it.
+fn incomplete_tail(buf: &[u8]) -> usize {
+    for back in 1..=buf.len().min(3) {
+        let need = match buf[buf.len() - back] {
+            0x80..=0xBF => continue, // a continuation byte: look further back for its lead
+            0xC0..=0xDF => 2,
+            0xE0..=0xEF => 3,
+            0xF0..=0xF7 => 4,
+            _ => return 0,
+        };
+        return if need > back { back } else { 0 };
     }
+    0
 }
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
@@ -392,6 +394,39 @@ mod tests {
         assert!(buf.is_empty());
         let mut bad = vec![b'x', 0xff, b'y'];
         assert_eq!(take_text(&mut bad), "x\u{fffd}y");
+    }
+
+    #[test]
+    fn a_four_byte_character_arriving_one_byte_at_a_time_is_held_back_until_whole() {
+        // A PTY hands out whatever is ready, so an emoji can arrive split three ways.
+        let crab = "\u{1f980}".as_bytes();
+        let mut buf = Vec::new();
+        for b in &crab[..3] {
+            buf.push(*b);
+            assert_eq!(take_text(&mut buf), "", "nothing is sent until the character is whole");
+        }
+        assert_eq!(buf.len(), 3);
+        buf.push(crab[3]);
+        assert_eq!(take_text(&mut buf), "\u{1f980}");
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn a_character_split_at_the_end_is_held_back_even_after_an_invalid_byte() {
+        // `take_text` only holds back the tail when the *first* error is the incomplete one. With
+        // a stray byte before it (Latin-1 from a tool, a corrupted read), `from_utf8` reports that
+        // byte first, the `Err(_)` arm decodes everything lossily and clears the buffer: the two
+        // bytes of the split character become one U+FFFD here and its last byte another on the
+        // next read, so the character is lost. Fix: on any error, still check whether the buffer
+        // ends in an incomplete sequence (e.g. decode `valid_up_to..` with `error_len`, or use
+        // `Utf8Chunks` and keep the last chunk's `invalid()` when it could be the start of a
+        // character).
+        let euro = "\u{20ac}".as_bytes();
+        let mut buf = vec![b'x', 0xff, euro[0], euro[1]];
+        assert_eq!(take_text(&mut buf), "x\u{fffd}");
+        assert_eq!(buf, vec![euro[0], euro[1]], "the split character waits for its last byte");
+        buf.push(euro[2]);
+        assert_eq!(take_text(&mut buf), "\u{20ac}");
     }
 
     #[test]
@@ -683,3 +718,6 @@ mod tests {
         assert!(terminal_close(view, id).is_ok());
     }
 }
+
+#[cfg(test)]
+mod proptests;

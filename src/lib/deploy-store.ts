@@ -58,6 +58,15 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 const FLUSH_MS = 100;
 
 /** Adds the waiting log lines now (one update for all of them). */
+/** Forgets every run (tests start from a clean window: the store lives at module level). */
+export function resetDeployStore() {
+  if (flushTimer !== null) clearTimeout(flushTimer);
+  flushTimer = null;
+  pending.clear();
+  state = { runs: {} };
+  emit();
+}
+
 export function flushDeployLogs() {
   if (flushTimer !== null) clearTimeout(flushTimer);
   flushTimer = null;
@@ -65,7 +74,9 @@ export function flushDeployLogs() {
   const runs = { ...state.runs };
   for (const [labId, { lines, times }] of pending) {
     const prev = runs[labId] ?? EMPTY_RUN;
-    runs[labId] = { ...prev, busy: true, logs: [...prev.logs, ...lines], times: [...prev.times, ...times] };
+    // `busy` is begin/end's to set: a channel's last line can arrive after the command returned,
+    // and turned a finished run back into a "Starting…" that nothing ended.
+    runs[labId] = { ...prev, logs: [...prev.logs, ...lines], times: [...prev.times, ...times] };
   }
   pending.clear();
   state = { runs };
@@ -175,8 +186,8 @@ export function useDeploy(): DeployState {
  * fast-refresh), but the deploy keeps running; reading this lets a screen show "this lab is
  * starting" again instead of a bare Start button (which would invite a colliding second start).
  */
-export function useDeployingLabs(): Set<string> {
-  return useSharedPoll(deployingPoll);
+export function useDeployingLabs(enabled = true): Set<string> {
+  return useSharedPoll(deployingPoll, enabled);
 }
 
 // One poll of each for the whole window, whichever screens read it (see shared-poll).
@@ -212,8 +223,8 @@ export function operationLabel(o: ActiveOperation): string {
  * Every operation in flight, by lab, with the step its log is at. Polled often (steps move
  * every few seconds during a VM start), so the sidebar reads like a live progress line.
  */
-export function useActiveOperations(): Map<string, ActiveOperation> {
-  return useSharedPoll(operationsPoll);
+export function useActiveOperations(enabled = true): Map<string, ActiveOperation> {
+  return useSharedPoll(operationsPoll, enabled);
 }
 
 // When this window first saw each operation in flight ("lab:op" → ms), kept for the session (a

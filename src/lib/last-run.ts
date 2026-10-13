@@ -13,7 +13,8 @@ export function setLastRun(id: string) {
 export function getLastRun(id: string): number | null {
   try {
     const v = localStorage.getItem(KEY(id));
-    return v ? Number(v) : null;
+    const n = v ? Number(v) : NaN;
+    return Number.isFinite(n) ? n : null;
   } catch {
     return null;
   }

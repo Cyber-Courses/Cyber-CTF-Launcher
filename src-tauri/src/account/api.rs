@@ -71,6 +71,22 @@ mod tests {
     }
 
     #[test]
+    fn errors_without_a_text_message_fall_through_to_the_data() {
+        // GraphQL requires a message on every error; a body breaking that (a number, an empty
+        // list, `errors` not a list) is read for its data rather than refused outright.
+        assert_eq!(parse_response(StatusCode::OK, r#"{"errors":[{"message":5}],"data":{"a":1}}"#).unwrap(), json!({ "a": 1 }));
+        assert_eq!(parse_response(StatusCode::OK, r#"{"errors":[],"data":null}"#).unwrap(), serde_json::Value::Null);
+        assert_eq!(parse_response(StatusCode::OK, r#"{"errors":"down"}"#).unwrap(), serde_json::Value::Null);
+        // An empty message is still the error.
+        assert_eq!(parse_response(StatusCode::OK, r#"{"errors":[{"message":""}]}"#).unwrap_err().to_string(), "");
+        // A JSON body that isn't an object (a bare string from a proxy) is data of nothing.
+        assert_eq!(parse_response(StatusCode::OK, r#""ok""#).unwrap(), serde_json::Value::Null);
+        // The excerpt counts characters, so a multi-byte body is never cut inside one.
+        let err = parse_response(StatusCode::BAD_GATEWAY, &"\u{e9}".repeat(200)).unwrap_err().to_string();
+        assert!(err.ends_with(&"\u{e9}".repeat(160)) && !err.ends_with(&"\u{e9}".repeat(161)), "{err}");
+    }
+
+    #[test]
     fn a_non_json_body_names_the_status_and_an_excerpt() {
         let long = "x".repeat(500);
         let err = parse_response(StatusCode::BAD_GATEWAY, &format!("<html>{long}")).unwrap_err().to_string();

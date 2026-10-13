@@ -1,7 +1,7 @@
 // The dev mock's labs (see dev-mock.ts): the catalogue, their statuses, and the objectives of
 // "Exposed dashboard" with the player's progress, answered as the backend would.
 
-const labs = [
+export const labs = [
   {
     id: "lab-invoice",
     slug: "invoice-portal-api",
@@ -83,7 +83,7 @@ const labs = [
 // A wide topology on purpose (three networks, two pivots), so the lab page's diagram can be
 // checked at every window width: the public network, then the billing back end behind the API,
 // then the finance network behind the billing worker.
-const invoiceStatus = {
+export const invoiceStatus = {
   running: true,
   parked: null,
   url: "http://127.0.0.1:8080",
@@ -181,7 +181,7 @@ const invoiceStatus = {
     },
   ],
 };
-const stopped = {
+export const stopped = {
   running: false,
   parked: null,
   url: null,

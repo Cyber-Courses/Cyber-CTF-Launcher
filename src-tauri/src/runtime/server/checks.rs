@@ -83,7 +83,8 @@ impl TestResult {
 
     /// A cloud account whose service (or CLI) couldn't be reached at all.
     pub(super) fn unreachable_checks(checks: Vec<Check>) -> Self {
-        TestResult { reachable: false, ..TestResult::from_checks(checks, None) }
+        // Unreachable is never ok, and nothing was authenticated, whatever the checks say.
+        TestResult { ok: false, reachable: false, authenticated: None, ..TestResult::from_checks(checks, None) }
     }
 
     /// A server that didn't accept a connection.
@@ -117,6 +118,18 @@ mod tests {
         let r = TestResult::from_checks(vec![Check::warn("W", "w1"), Check::warn("W", "w2")], None);
         assert!(r.ok);
         assert_eq!(r.message, "w1");
+    }
+
+    #[test]
+    fn an_unreachable_account_with_only_warnings_is_not_ok() {
+        // The callers today always push a failing check first; `unreachable_checks` itself
+        // should still never say ok about a cloud it couldn't reach.
+        let r = TestResult::unreachable_checks(vec![Check::warn("CLI", "couldn't tell")]);
+        assert!(!r.reachable);
+        assert!(!r.ok, "unreachable is never ok");
+        assert_ne!(r.authenticated, Some(true));
+        let r = TestResult::unreachable_checks(Vec::new());
+        assert!(!r.ok && r.message.is_empty());
     }
 
     #[test]

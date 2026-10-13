@@ -49,6 +49,8 @@ export function sharedPoll<T>(o: SharedPollOptions<T>): SharedPoll<T> {
   const equal = o.equal ?? structurallyEqual;
   const listeners = new Set<() => void>();
   let value = o.initial;
+  // Bumped by `resetSharedPolls`: reads started before it neither publish nor count as in flight.
+  let generation = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let started = 0;
   let landed = 0;
@@ -69,11 +71,12 @@ export function sharedPoll<T>(o: SharedPollOptions<T>): SharedPoll<T> {
   function read() {
     clear();
     const mine = ++started;
+    const gen = generation;
     inFlight++;
     o.read()
       .then(
         (v) => {
-          if (mine < landed) return;
+          if (gen !== generation || mine < landed) return;
           landed = mine;
           if (equal(value, v)) return;
           value = v;
@@ -82,6 +85,7 @@ export function sharedPoll<T>(o: SharedPollOptions<T>): SharedPoll<T> {
         (e) => (o.onError ?? IGNORE)(e),
       )
       .finally(() => {
+        if (gen !== generation) return;
         inFlight--;
         schedule();
       });
@@ -100,6 +104,13 @@ export function sharedPoll<T>(o: SharedPollOptions<T>): SharedPoll<T> {
     if (isVisible() || o.hiddenMs?.(value) != null) read();
   }
 
+  resets.add(() => {
+    generation++;
+    clear();
+    value = o.initial;
+    inFlight = 0;
+  });
+
   return {
     subscribe(cb) {
       listeners.add(cb);
@@ -117,7 +128,19 @@ export function sharedPoll<T>(o: SharedPollOptions<T>): SharedPoll<T> {
   };
 }
 
-/** A shared poll's latest answer, re-rendering only when it changes. */
-export function useSharedPoll<T>(poll: SharedPoll<T>): T {
-  return useSyncExternalStore(poll.subscribe, poll.get, poll.get);
+const noSubscription = () => () => {};
+
+/** Every shared poll's reset, for `resetSharedPolls`. */
+const resets = new Set<() => void>();
+
+/** Puts every shared poll back to its first value, nothing in flight (tests start from a clean
+ *  window: the polls live at module level, so one test's answers otherwise reach the next). */
+export function resetSharedPolls() {
+  for (const reset of resets) reset();
+}
+
+/** A shared poll's latest answer, re-rendering only when it changes. Not `enabled` (a window
+ *  that shows none of it, such as Settings), it doesn't subscribe, so it doesn't keep the poll going. */
+export function useSharedPoll<T>(poll: SharedPoll<T>, enabled = true): T {
+  return useSyncExternalStore(enabled ? poll.subscribe : noSubscription, poll.get, poll.get);
 }

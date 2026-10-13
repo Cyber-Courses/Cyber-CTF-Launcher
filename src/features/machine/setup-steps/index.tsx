@@ -27,15 +27,22 @@ export function MachineStepBody({ step, report, setup }: { step: MachineStep; re
   const isMac = report.os === "macos";
 
   if (step === "pkgmgr") {
+    // Homebrew builds from source on Intel Macs (no bottles since macOS 26): say so before the
+    // installs that go through it, so a long "Installing…" isn't taken for a hang.
+    const intelMac = isMac && report.arch === "x86_64" && <p className="mt-3 text-[0.75rem] text-muted-foreground">{t("machine.body.pkgmgr.intelMac")}</p>;
     if (report.pkgManager.installed) {
       return (
-        <div className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
-          <Requirement ok title={report.pkgManager.name} detail={report.pkgManager.version ?? t("machine.body.installed")} action={null} />
-        </div>
+        <>
+          <div className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
+            <Requirement ok title={report.pkgManager.name} detail={report.pkgManager.version ?? t("machine.body.installed")} action={null} />
+          </div>
+          {intelMac}
+        </>
       );
     }
     return (
       <>
+        {intelMac}
         {isMac && (
           <div className="space-y-2">
             <p className="text-[0.8125rem] text-muted-foreground">{t("machine.body.pkgmgr.macRun")}</p>
@@ -77,7 +84,7 @@ export function MachineStepBody({ step, report, setup }: { step: MachineStep; re
         kind="docker"
         title={t("machine.selfTest.containerTitle")}
         description={t("machine.body.dockerTestDescription")}
-        auto
+        auto={setup.dockerTest === "idle"}
         onResult={setup.setDockerTest}
       />
     ) : (
@@ -86,7 +93,14 @@ export function MachineStepBody({ step, report, setup }: { step: MachineStep; re
   }
 
   return hasHypervisor(report) ? (
-    <SelfTest kind="vm" title={t("machine.selfTest.vmTitle")} description={t("machine.body.vmTestDescription")} auto onResult={setup.setVmTest} />
+    <SelfTest
+      kind="vm"
+      title={t("machine.selfTest.vmTitle")}
+      description={t("machine.body.vmTestDescription")}
+      // Once per setup: coming back to a passed step shows its run, it doesn't boot another VM.
+      auto={setup.vmTest === "idle"}
+      onResult={setup.setVmTest}
+    />
   ) : (
     <Skipped title={t("machine.body.nothingToTest")} reason={t("machine.body.noHypervisor")} />
   );

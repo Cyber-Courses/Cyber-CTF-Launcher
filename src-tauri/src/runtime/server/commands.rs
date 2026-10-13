@@ -446,6 +446,43 @@ mod tests {
     }
 
     #[test]
+    fn a_deployment_left_by_an_uninstalled_lab_keeps_its_host() {
+        // The lab's folder is gone (uninstalled) but its Terraform state still holds resources
+        // on the account: only this host's credentials can destroy them, so it stays.
+        let t = crate::test_app::TestApp::new();
+        let app = || t.handle().clone();
+        let host = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
+        let state = t.data().join("deployments").join("web").join("aws");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{},"resources":[{"type":"aws_instance"}]}"#).unwrap();
+        std::fs::write(state.join("host"), "aws1\n").unwrap();
+        let err = server_remove(app(), host.clone()).unwrap_err().to_string();
+        assert_eq!(err, "1 lab still running on this host. Stop it before removing the host.");
+        assert_eq!(server_list(app()).unwrap().hosts.len(), 1);
+        assert!(server_running_labs(app()).is_empty(), "no installed lab is marked as running there");
+        // Destroyed (its state gone): free to remove.
+        std::fs::remove_file(state.join("terraform.tfstate")).unwrap();
+        server_remove(app(), host).unwrap();
+        assert!(server_list(app()).unwrap().hosts.is_empty());
+    }
+
+    #[test]
+    fn removing_a_host_that_is_not_saved_changes_nothing() {
+        let t = crate::test_app::TestApp::new();
+        let app = || t.handle().clone();
+        t.host("az1", "azure", serde_json::json!({}));
+        server_remove(app(), "nope".into()).unwrap();
+        let list = server_list(app()).unwrap();
+        assert_eq!(list.hosts.iter().map(|h| h.id.as_str()).collect::<Vec<_>>(), ["az1"]);
+        // A marker of a lab on a host that was never saved blocks nothing else.
+        let lab = t.lab("web", &[]);
+        std::fs::write(lab.join(HOST_MARKER), "nope").unwrap();
+        assert_eq!(server_running_labs(app()).get("nope"), Some(&1));
+        server_remove(app(), "az1".into()).unwrap();
+        assert!(server_list(app()).unwrap().hosts.is_empty());
+    }
+
+    #[test]
     fn markers_are_read_from_each_lab_folder() {
         let labs = std::env::temp_dir().join(format!("cyberctf-markers-{}", rand::random::<u32>()));
         assert!(markers_in(&labs).is_empty());

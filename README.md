@@ -72,7 +72,7 @@ To preview the UI in a browser without the Rust core, run `pnpm dev` and open
 
 ## Development
 
-Requirements: Node 22+, pnpm, Rust (stable), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
+Requirements: Node 22 or 24 (an odd release such as 25 is refused by Next, see `engines`), pnpm, Rust (stable), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
 
 ```bash
 pnpm install

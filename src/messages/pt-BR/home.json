@@ -13,7 +13,7 @@
     "checking": "Verificando esta máquina…",
     "setUpDocker": "Configure o Docker para começar a rodar labs.",
     "running": {
-      "one": "1 lab rodando nesta máquina.",
+      "one": "{count} lab rodando nesta máquina.",
       "other": "{count} labs rodando nesta máquina."
     },
     "ready": "Esta máquina está pronta. Escolha um lab para atacar.",
@@ -52,11 +52,11 @@
   "running": {
     "title": "Rodando agora",
     "labs": {
-      "one": "1 lab",
+      "one": "{count} lab",
       "other": "{count} labs"
     },
     "containers": {
-      "one": "1 contêiner",
+      "one": "{count} contêiner",
       "other": "{count} contêineres"
     },
     "empty": "Nada rodando. Inicie um lab pela página dele.",

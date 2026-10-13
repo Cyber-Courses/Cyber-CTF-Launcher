@@ -284,6 +284,22 @@ mod tests {
         assert!(valid_user("_svc-1.x") && !valid_user("Root") && !valid_user(""));
     }
 
+    #[test]
+    fn login_names_at_the_edges_of_what_goes_unquoted_into_the_script() {
+        // 32 characters is the longest a login name can be; one more, a capital, a digit or a
+        // dash first, a space or non-ASCII anywhere: not a name, so no `usermod` line.
+        assert!(valid_user(&"a".repeat(32)) && !valid_user(&"a".repeat(33)));
+        assert!(valid_user("a") && valid_user("_") && valid_user("a-") && valid_user("a.b"));
+        for bad in ["1a", "-a", "A", "ab c", "caf\u{e9}", "a;b", "a$b", "a\nb"] {
+            assert!(!valid_user(bad), "{bad:?}");
+            assert!(!docker_script(Some(bad)).contains("usermod"), "{bad:?}");
+        }
+        // The group line names the player once, after the install, and the script stays one line.
+        let s = docker_script(Some("ada"));
+        assert_eq!(s.matches("usermod -aG docker ada").count(), 1);
+        assert!(!s.contains('\n'));
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn a_failed_cask_fetch_updates_homebrew_and_retries_once() {
@@ -319,7 +335,7 @@ mod tests {
     fn root_scripts_never_use_fixed_temp_paths_or_pipe_downloads_into_a_shell() {
         // Under pkexec the AWS CLI was unzipped into /tmp/aws and /tmp/aws/install run as root:
         // any local user could plant that file first.
-        for s in [awscli_script(), azurecli_script(), docker_script(Some("player")), TERRAFORM_SCRIPT.into(), VIRTUALBOX_SCRIPT.into()] {
+        for s in [awscli_script(), azurecli_script(), gcloud_script(), docker_script(Some("player")), TERRAFORM_SCRIPT.into(), VIRTUALBOX_SCRIPT.into()] {
             assert!(!s.contains("/tmp"), "fixed temp path: {s}");
             assert!(!s.contains("| sh") && !s.contains("| bash"), "download piped into a shell: {s}");
             assert!(!s.contains("curl -s") || s.contains("curl -fs"), "a failed download must fail: {s}");

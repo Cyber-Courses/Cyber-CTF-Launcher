@@ -3,6 +3,7 @@ import { serverSave, type CloudProvider, type ServerHost, type ServerHostInput, 
 import { KIND } from "@/features/servers/host-setup/constants";
 import {
   connectionReady,
+  keepsSecret,
   isCliAuthCloud,
   isCloud,
   isTokenCloud,
@@ -88,7 +89,8 @@ export function useHostSetup({
     key,
     set,
     text,
-    connectionOk: connectionReady(v, editing),
+    connectionOk: connectionReady(v, keepsSecret(initial, v)),
+    secretKept: keepsSecret(initial, v),
     next,
     back,
     ...tools,
@@ -104,13 +106,21 @@ export function useHostSetup({
 function useToolInstall(onRefresh: () => void) {
   const toolLog = useRunLog();
   const [toolLabel, setToolLabel] = useState("Install");
-  const toolBusy = toolLog.lines !== null && !toolLog.lines.at(-1)?.match(/^[✓✗]/);
+  // Set for the whole install: an installer printing its own "✓ …" line mid-run read as done
+  // from the log, and a second install could start beside the first.
+  const [toolBusy, setToolBusy] = useState(false);
   async function installTool(label: string, run: (onLog: (l: string) => void) => Promise<void>) {
+    if (toolBusy) return;
     setToolLabel(label);
-    await toolLog.run(translate("servers.setup.tools.installing", { name: label }), async (onLog) => {
-      await run(onLog);
-      return translate("servers.setup.tools.installDone");
-    });
+    setToolBusy(true);
+    try {
+      await toolLog.run(translate("servers.setup.tools.installing", { name: label }), async (onLog) => {
+        await run(onLog);
+        return translate("servers.setup.tools.installDone");
+      });
+    } finally {
+      setToolBusy(false);
+    }
     onRefresh();
   }
   return { pluginLog: toolLog.lines, toolLabel, toolBusy, installTool };

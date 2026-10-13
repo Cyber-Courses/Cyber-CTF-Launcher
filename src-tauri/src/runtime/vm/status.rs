@@ -35,19 +35,24 @@ pub(super) fn status_from(out: &str, dir: &Path) -> LabStatus {
     let running = targets.clone().count() > 0 && targets.clone().all(|m| m.state == "running");
     // The network diagram, as a Docker lab gets it: addresses are static (declared in the lab),
     // so it comes from the lab's spec (`.isoloom/vagrant` sits two levels under the lab).
-    let networks = match dir.parent().and_then(Path::parent).and_then(|lab| crate::runtime::lab::spec(lab).ok()) {
-        Some(spec) => {
-            let (mut ifaces, networks) = crate::runtime::lab::topology(&spec);
-            for m in &mut machines {
-                if let Some(list) = ifaces.remove(&m.name) {
-                    m.ip = list.first().map(|i| i.ip.clone()).unwrap_or_default();
-                    m.interfaces = list;
-                }
+    let (mut ifaces, networks) = match dir.parent().and_then(Path::parent).and_then(|lab| crate::runtime::lab::spec(lab).ok()) {
+        Some(spec) => crate::runtime::lab::topology(&spec),
+        // No lab spec two levels up (the attack VM's own folder, `<lab>/.cyberctf-attack-vm`):
+        // the generated Vagrantfile says where its machines sit.
+        None => match std::fs::read_to_string(dir.join("Vagrantfile")) {
+            Ok(text) => {
+                let lab = super::vm_names_from(&text).first().and_then(|n| n.split(" · ").next()).unwrap_or_default().to_string();
+                vagrant_topology(&text, &lab)
             }
-            networks
-        }
-        None => Vec::new(),
+            Err(_) => Default::default(),
+        },
     };
+    for m in &mut machines {
+        if let Some(list) = ifaces.remove(&m.name) {
+            m.ip = list.first().map(|i| i.ip.clone()).unwrap_or_default();
+            m.interfaces = list;
+        }
+    }
     // The hypervisor Vagrant runs them on (`provider-name` lines), e.g. "virtualbox".
     let provider = out.lines().find_map(|line| {
         let mut parts = line.splitn(4, ',');

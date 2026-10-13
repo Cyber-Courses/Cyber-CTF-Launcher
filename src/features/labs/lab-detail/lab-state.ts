@@ -23,6 +23,9 @@ export type LabStateInput = {
   backendDeploying: boolean;
   /** What the backend reports in flight on this lab. */
   backendOp: LabOperation | undefined;
+  /** What this session's run on the lab is, from the click that began it (known before the
+   *  backend's next poll: a clean-up read as "Starting…" until then). */
+  runOp?: LabOperation;
   /** The action this page clicked, while it runs. */
   acting: LabAction | null;
   /** The page can pause / shut down, and re-run provisioning (their handlers are wired). */
@@ -42,8 +45,11 @@ export type LabPhase = "operation" | "running" | "starting" | "failed" | "paused
 function labControls(i: LabStateInput, { isDocker, isCloud, remote }: { isDocker: boolean; isCloud: boolean; remote: boolean }) {
   const { status } = i;
   return {
-    canPause: i.parkable && !remote && (!isDocker || status?.place === "local_vm"),
-    canShutdown: i.parkable && !remote && !isCloud && status?.place !== "local_vm",
+    // A cloud lab can't be paused (the backend refuses).
+    canPause: i.parkable && !remote && !isCloud && (!isDocker || status?.place === "local_vm"),
+    // Not a container lab in a VM (its containers don't come back after a power-off). A VM lab on
+    // this machine is reported in a local VM too, and shuts down like any VM lab.
+    canShutdown: i.parkable && !remote && !isCloud && !(isDocker && status?.place === "local_vm"),
     canProvision: i.provisionable && !isDocker && !isCloud && status?.place !== "cloud" && status?.provider !== "proxmox",
   };
 }
@@ -90,7 +96,9 @@ export function deriveLabState(i: LabStateInput) {
   const parked = !running && !deploying ? (status?.parked ?? null) : null;
   // What is in flight on this lab: the button this page clicked, else what the backend reports
   // (a reload loses the former), else a stop when a built lab is being worked on, a launch if not.
-  const operation: LabOperation | null = deploying ? (i.acting ?? i.backendOp ?? (i.busy && (running || status?.parked) ? "stop" : "launch")) : null;
+  const operation: LabOperation | null = deploying
+    ? (i.acting ?? i.backendOp ?? (i.busy ? i.runOp : undefined) ?? (i.busy && (running || status?.parked) ? "stop" : "launch"))
+    : null;
   const tearingDown = operation === "stop" || operation === "shutdown" || operation === "pause";
   // Infrastructure exists but nothing is deploying and the lab isn't fully up: a run was cut off
   // (a crash or a restart mid-start). Offer to clean it up rather than a Start that would collide.
@@ -105,7 +113,8 @@ export function deriveLabState(i: LabStateInput) {
   // Machines that went down while the lab runs. Not while it's starting or stopping: machines
   // come up one after another then (a web server waits for its database), and that's normal.
   // The controller is powered off by design once the lab is built: never "down".
-  const down = deploying ? [] : machines.filter((m) => !m.infra && m.state !== "running");
+  // Nor while it is parked or down altogether: then every machine is off, by design.
+  const down = deploying || !running ? [] : machines.filter((m) => !m.infra && m.state !== "running");
   const isDocker = rt?.runtime !== "VM" && !isCloud;
   const remote = !!status?.host;
   const { canPause, canShutdown, canProvision } = labControls(i, { isDocker, isCloud, remote });
@@ -142,7 +151,17 @@ export type LabState = ReturnType<typeof deriveLabState>;
 /** Each published container port and the local port it is bound to, so the player sees the
  *  link between a service inside the lab (web :3206) and the port on this machine (:56235). */
 export function publishedBinds(machines: LabMachine[]) {
-  return machines.flatMap((m) => m.ports.filter((p) => p.published > 0).map((p) => ({ machine: m.name, target: p.target, published: p.published })));
+  // Docker reports a port once per address family (0.0.0.0 and ::): one row each.
+  const seen = new Set<string>();
+  return machines.flatMap((m) =>
+    m.ports
+      .filter((p) => p.published > 0)
+      .map((p) => ({ machine: m.name, target: p.target, published: p.published }))
+      .filter((b) => {
+        const k = `${b.machine}:${b.target}:${b.published}`;
+        return !seen.has(k) && !!seen.add(k);
+      }),
+  );
 }
 
 /** The host a lab's published ports answer on: its URL's, else loopback. */

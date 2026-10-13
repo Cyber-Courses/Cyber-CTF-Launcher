@@ -79,11 +79,17 @@ pub(super) struct PsEntry {
     pub(super) image: String,
     #[serde(rename = "Name", default)]
     pub(super) name: String,
-    #[serde(rename = "Publishers", default)]
+    /// `null` from some Compose versions for a container without ports: as none.
+    #[serde(rename = "Publishers", default, deserialize_with = "null_as_empty")]
     pub(super) publishers: Vec<Publisher>,
     /// Compose's labels, comma-joined ("com.docker.compose.oneoff=True,...").
     #[serde(rename = "Labels", default)]
     pub(super) labels: String,
+}
+
+/// A JSON `null` where a list is expected reads as an empty list.
+fn null_as_empty<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(d: D) -> std::result::Result<Vec<T>, D::Error> {
+    Ok(Option::<Vec<T>>::deserialize(d)?.unwrap_or_default())
 }
 
 impl PsEntry {
@@ -437,6 +443,48 @@ mod tests {
         // Image/Name/Health default to empty when absent.
         assert_eq!(e[0].image, "");
         assert_eq!(e[0].name, "");
+    }
+
+    #[test]
+    fn a_port_without_a_target_leaves_every_pin_out() {
+        // `docker compose config` always writes `target`; should it not, no override is written
+        // at all (every service then keeps ephemeral ports), rather than a half override.
+        let json = r#"{"services":{"a":{"ports":[{"published":""}]},"b":{"ports":[{"target":80}]}}}"#;
+        assert_eq!(pinned_ports(json, |_, _| Some(40000)), None);
+        // A target past u16, likewise.
+        assert_eq!(pinned_ports(r#"{"services":{"a":{"ports":[{"target":70000}]}}}"#, |_, _| Some(40000)), None);
+    }
+
+    #[test]
+    fn pins_treat_unreadable_published_values_as_ephemeral_and_keep_odd_host_ips() {
+        // `published: true` or an object isn't a port: treated as ephemeral (pinned). An IPv6
+        // host address is bracketed; an empty one is dropped; a protocol is kept verbatim.
+        let json =
+            r#"{"services":{"a":{"ports":[{"target":80,"published":true,"host_ip":"::1","protocol":"udp"},{"target":443,"published":"8443","host_ip":""}]}}}"#;
+        let yaml = pinned_ports(json, |_, _| Some(40000)).unwrap();
+        assert!(yaml.contains("- \"[::1]:40000:80/udp\"\n"), "{yaml}");
+        assert!(yaml.contains("- \"8443:443/tcp\"\n"), "{yaml}");
+    }
+
+    #[test]
+    fn config_readers_take_string_targets_and_drop_zero_or_missing_hosts() {
+        let json = r#"{"services":{"web":{"ports":[{"target":"80","published":"8080"},{"target":81,"published":0},{"target":82},{"target":83,"published":"65535"},{"target":84,"published":65536}]}}}"#;
+        assert_eq!(published_from_config(json), vec![("web".to_string(), 80, "tcp".to_string(), 8080), ("web".to_string(), 83, "tcp".to_string(), 65535)]);
+        let mut hosts = host_ports_from_config(json);
+        hosts.sort();
+        assert_eq!(hosts, [(8080, "tcp".to_string()), (65535, "tcp".to_string())]);
+        // `ports` that isn't a list, or `services` that isn't a map: nothing, no panic.
+        assert!(published_from_config(r#"{"services":{"web":{"ports":"8080:80"}}}"#).is_empty());
+        assert!(serving_services_from_config(r#"{"services":[]}"#).is_empty());
+        assert!(serving_services_from_config(r#"{"services":{"web":{"ports":"8080:80"}}}"#).is_empty());
+    }
+
+    #[test]
+    fn project_names_keep_the_id_verbatim() {
+        // Ids are validated before they get here (64 chars, [A-Za-z0-9_-]); the longest is kept whole.
+        let long = "a".repeat(64);
+        assert_eq!(project(&long), format!("cyberctf-{long}"));
+        assert_eq!(project("Up_Per"), "cyberctf-Up_Per");
     }
 }
 

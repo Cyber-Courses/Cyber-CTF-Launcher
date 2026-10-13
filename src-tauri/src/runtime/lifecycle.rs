@@ -100,7 +100,14 @@ pub(super) async fn resume_locked(app: &AppHandle, dir: &Path, id: &str, runtime
             }
         }
         Runtime::Vm => {
-            vm::resume(&lab::vagrant_dir(dir, runtime), &[], &mut *log).await?;
+            let vagrant = lab::vagrant_dir(dir, runtime);
+            if !vm::has_machines(&vagrant) {
+                // As for a container lab whose containers are gone: the mark is dropped, so the
+                // next start builds it fresh instead of failing the same way again.
+                mark_parked(dir, None)?;
+                return Err(Error::Invalid("Nothing is left of this lab to resume: its virtual machines are gone. Start it again to build it fresh.".into()));
+            }
+            vm::resume(&vagrant, &[], &mut *log).await?;
             if let Err(e) = attack_vm::resume(dir, &mut *log).await {
                 log(format!("The lab is back, but its attack VM didn't resume: {e}. Start it from the lab page."));
             }
@@ -438,6 +445,15 @@ mod tests {
         let tools = Tools::rules(&[("vagrant status", ok(UP))]);
         park_lab(t.handle(), "ad", Runtime::Vm, Park::Shutdown, |_| {}).await.unwrap();
         assert!(tools.called("vagrant halt"));
+        // Its VMs deleted at the hypervisor (Vagrant's record of them gone): resuming would build
+        // blank, unprovisioned machines. Refused, and the mark dropped so the next start is fresh.
+        let err = resume_lab(t.handle(), "ad", Runtime::Vm, |_| {}).await.unwrap_err().to_string();
+        assert!(err.starts_with("Nothing is left of this lab to resume"), "{err}");
+        assert!(!tools.called("vagrant up"), "{:?}", tools.calls());
+        assert_eq!(parked(&dir), None);
+        // With its machines on record, it comes back as it was.
+        mark_parked(&dir, Some(Park::Shutdown)).unwrap();
+        record_vm(&dir, "dc01");
         resume_lab(t.handle(), "ad", Runtime::Vm, |_| {}).await.unwrap();
         assert!(tools.called("vagrant up --no-provision --provider virtualbox"), "{:?}", tools.calls());
         mark_parked(&dir, Some(Park::Pause)).unwrap();
@@ -446,10 +462,18 @@ mod tests {
         assert_eq!(parked(&dir), None);
     }
 
+    /// Vagrant's record of a machine of the lab (`.vagrant/machines/<name>/<provider>/id`).
+    fn record_vm(dir: &std::path::Path, name: &str) {
+        let record = crate::runtime::lab::vagrant_dir(dir, Runtime::Vm).join(".vagrant").join("machines").join(name).join("virtualbox");
+        std::fs::create_dir_all(&record).unwrap();
+        std::fs::write(record.join("id"), "0000").unwrap();
+    }
+
     #[tokio::test]
     async fn a_failed_park_or_stop_keeps_the_labs_marks() {
         let t = TestApp::new();
         let dir = t.lab("ad", &[]);
+        record_vm(&dir, "dc01");
         mark_parked(&dir, Some(Park::Pause)).unwrap();
         let _tools = Tools::rules(&[("vagrant up", fail("VBoxManage: error")), ("vagrant halt", fail("locked")), ("destroy", fail("locked"))]);
         assert!(resume_lab(t.handle(), "ad", Runtime::Vm, |_| {}).await.is_err());
@@ -553,6 +577,200 @@ mod tests {
         assert!(refuse_cloud_park(Runtime::Cloud).unwrap_err().to_string().starts_with("A cloud lab can't be paused"));
         assert!(refuse_cloud_park(Runtime::Docker).is_ok());
         assert!(refuse_cloud_park(Runtime::Vm).is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_stop_waits_for_the_operation_that_holds_the_lab() {
+        // A stop asked for while a start is still in flight (in this process) must not tear
+        // down what the start is creating: it waits for the lab, then runs.
+        let t = TestApp::new();
+        let id = "lifecycle-test-stop-waits";
+        t.lab(id, &[]);
+        let tools = Tools::rules(&[]);
+        let held = crate::runtime::inflight::lock_lab(t.handle(), id).await;
+        let app = t.handle().clone();
+        let mut stop = tokio::spawn(async move { stop_lab(&app, id, Runtime::Docker).await });
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(200), &mut stop).await.is_err(), "the stop waits for the lab");
+        assert!(!tools.called("down --volumes"), "{:?}", tools.calls());
+        drop(held);
+        stop.await.unwrap().unwrap();
+        assert!(tools.called("down --volumes"));
+    }
+
+    #[tokio::test]
+    async fn a_park_whose_attack_vm_refuses_still_parks_the_lab_and_says_so() {
+        let t = TestApp::new();
+        let dir = t.lab("ad", &[]);
+        let attack = crate::runtime::attack_vm::dir(&dir);
+        std::fs::create_dir_all(&attack).unwrap();
+        std::fs::write(attack.join("Vagrantfile"), "").unwrap();
+        // The attacker is parked first: its `vagrant suspend` fails (an aborted VM can't be
+        // suspended), the lab's own goes through.
+        let mut suspends = 0;
+        let tools = Tools::new(move |program, args| {
+            if program == "vagrant" && args.first() == Some(&"suspend") {
+                suspends += 1;
+                return if suspends == 1 { fail("The VM is in the 'aborted' state") } else { ok("") };
+            }
+            ok("")
+        });
+        let mut log = Vec::new();
+        park_lab(t.handle(), "ad", Runtime::Vm, Park::Pause, |l| log.push(l)).await.unwrap();
+        assert_eq!(tools.calls().iter().filter(|c| c.starts_with("vagrant suspend")).count(), 2, "{:?}", tools.calls());
+        assert!(log.iter().any(|l| l.starts_with("The attack VM didn't park")), "{log:?}");
+        assert_eq!(parked(&dir), Some(Park::Pause));
+        assert_eq!(log.last().map(String::as_str), Some(parked_message(Park::Pause)));
+    }
+
+    #[tokio::test]
+    async fn a_park_cut_short_leaves_the_lab_unparked_and_a_resume_repairs_it() {
+        // One machine refused to halt: the lab is half down. It isn't marked parked (a start
+        // would wrongly resume it), and Resume brings the machines that went down back.
+        let t = TestApp::new();
+        let dir = t.lab("ad", &[]);
+        record_vm(&dir, "dc01");
+        let tools = Tools::rules(&[("vagrant halt", fail("ws01: The guest machine entered an invalid state")), ("vagrant status", ok(UP))]);
+        assert!(park_lab(t.handle(), "ad", Runtime::Vm, Park::Shutdown, |_| {}).await.is_err());
+        assert_eq!(parked(&dir), None, "half parked is not parked");
+        resume_lab(t.handle(), "ad", Runtime::Vm, |_| {}).await.unwrap();
+        assert!(tools.called("vagrant up --no-provision --provider virtualbox"), "{:?}", tools.calls());
+        assert_eq!(parked(&dir), None);
+    }
+
+    #[tokio::test]
+    async fn a_stop_whose_destroy_fails_keeps_every_marker_for_the_retry() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[]);
+        // A container lab in a local VM: `vagrant destroy` fails half-way.
+        mark_local_vm(&dir, Some(Provider::Virtualbox)).unwrap();
+        mark_parked(&dir, Some(Park::Pause)).unwrap();
+        let tools = Tools::rules(&[("vagrant destroy", fail("VBoxManage: error: The machine is locked"))]);
+        assert!(stop_lab(t.handle(), "web", Runtime::Docker).await.is_err());
+        assert!(tools.called("vagrant destroy --force"));
+        assert_eq!(local_vm(&dir).as_deref(), Some("virtualbox"), "stop, status and the shell still go to the VM");
+        assert_eq!(parked(&dir), Some(Park::Pause));
+        drop(tools);
+        // On a cloud account: its state holds resources, but the module to destroy them with
+        // is missing. The host marker stays, so the lab is still known to be up there.
+        let host = t.host("az1", "azure", serde_json::json!({}));
+        server::mark_lab(&dir, Some(&host)).unwrap();
+        let state = t.data().join("deployments").join("web").join("azure");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
+        let tools = Tools::rules(&[]);
+        let err = stop_lab(t.handle(), "web", Runtime::Docker).await.unwrap_err().to_string();
+        assert!(err.contains("no Terraform module"), "{err}");
+        assert!(!tools.called("terraform destroy"));
+        assert_eq!(server::marked_host(&dir).as_deref(), Some("az1"));
+        assert_eq!(crate::runtime::deployed_on_server(t.handle(), &dir, "web").as_deref(), Some("Host az1"));
+        assert!(state.join("terraform.tfstate").is_file(), "the state is kept for the retry");
+    }
+
+    /// A cloud-services lab `id` running on the AWS account `aws1`, its auto-stop at
+    /// `expires_at`: the lab folder and its Terraform state folder. Each test has a lab id of
+    /// its own: the lab lock is process-wide, and one test holds it on purpose.
+    const CLOUD_SPEC: &str =
+        "version: 1\nname: goat\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { region: us-east-1 }\n  outputs: { app: app_url }\n";
+
+    fn cloud_lab(t: &TestApp, id: &str, expires_at: u64) -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = t.lab(id, &[("isoloom.yml", CLOUD_SPEC), ("terraform/main.tf", "variable \"region\" {}\n")]);
+        let host = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
+        server::mark_lab(&dir, Some(&host)).unwrap();
+        let state = t.data().join("deployments").join(id).join("aws");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[{"instances":[{}]}],"outputs":{}}"#).unwrap();
+        std::fs::write(state.join("run.json"), format!(r#"{{"expires_at":{expires_at}}}"#)).unwrap();
+        std::fs::write(state.join("runtime"), "CLOUD").unwrap();
+        std::fs::write(state.join("host"), "aws1").unwrap();
+        (dir, state)
+    }
+
+    #[tokio::test]
+    async fn the_reaper_destroys_a_cloud_lab_that_expires_this_very_second() {
+        // Expiry is inclusive: at `expires_at` itself the lab is destroyed, not left for a tick.
+        let t = TestApp::new();
+        let (dir, state) = cloud_lab(&t, "reap-now", crate::runtime::terraform::now());
+        let tools = Tools::rules(&[]);
+        reap_expired_labs(t.handle()).await;
+        assert!(tools.called("terraform destroy"), "{:?}", tools.calls());
+        assert!(!state.join("terraform.tfstate").exists(), "destroyed with the account it ran on");
+        assert_eq!(server::marked_host(&dir), None, "no longer running there");
+        // Nothing left to reap: a second sweep runs nothing.
+        drop(tools);
+        let tools = Tools::rules(&[]);
+        reap_expired_labs(t.handle()).await;
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    }
+
+    #[tokio::test]
+    async fn the_reaper_leaves_a_lab_another_operation_holds_for_the_next_sweep() {
+        let t = TestApp::new();
+        let (dir, state) = cloud_lab(&t, "reap-held", 1);
+        let tools = Tools::rules(&[]);
+        // A stop (or a deploy worker) holds the lab: destroying under it could corrupt the state.
+        let held = crate::runtime::inflight::lock_lab(t.handle(), "reap-held").await;
+        reap_expired_labs(t.handle()).await;
+        assert!(!tools.called("terraform"), "{:?}", tools.calls());
+        assert!(state.join("terraform.tfstate").is_file());
+        assert_eq!(server::marked_host(&dir).as_deref(), Some("aws1"));
+        drop(held);
+        reap_expired_labs(t.handle()).await;
+        assert!(tools.called("terraform destroy"), "{:?}", tools.calls());
+        assert!(!state.join("terraform.tfstate").exists());
+    }
+
+    #[tokio::test]
+    async fn the_reaper_skips_an_expired_leftover_whose_host_was_removed() {
+        // The state names a host that is no longer saved: nothing can destroy it from here, and
+        // the sweep must neither fail nor touch the state (the host may be added back).
+        let t = TestApp::new();
+        let (dir, state) = cloud_lab(&t, "reap-gone", 1);
+        server::mark_lab(&dir, None).unwrap();
+        std::fs::write(state.join("host"), "removed-host").unwrap();
+        let tools = Tools::rules(&[]);
+        reap_expired_labs(t.handle()).await;
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(state.join("terraform.tfstate").is_file());
+        // Same when the lab itself is uninstalled: its state alone can't say how to destroy it.
+        std::fs::remove_dir_all(&dir).unwrap();
+        reap_expired_labs(t.handle()).await;
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(state.join("terraform.tfstate").is_file());
+    }
+
+    #[tokio::test]
+    async fn provisioning_reaches_a_dotted_machine_and_refuses_one_the_lab_lacks_before_vagrant() {
+        let t = TestApp::new();
+        t.lab("ad", &[]);
+        // Isoloom names Windows machines by their FQDN; the dot must reach `vagrant provision`.
+        let dotted = "1,kingslanding.sevenkingdoms,state,running\n1,kingslanding.sevenkingdoms,provider-name,virtualbox\n";
+        let tools = Tools::rules(&[("vagrant status", ok(dotted))]);
+        provision_lab(t.handle(), "ad", Runtime::Vm, Some("kingslanding.sevenkingdoms"), |_| {}).await.unwrap();
+        assert!(tools.called("vagrant provision kingslanding.sevenkingdoms"), "{:?}", tools.calls());
+        // A name that would read as a Vagrant option passes the command's character check (dash
+        // is allowed), but the lab has no such machine: refused before `vagrant provision` runs.
+        let err = provision_lab(t.handle(), "ad", Runtime::Vm, Some("--provision-with"), |_| {}).await.unwrap_err().to_string();
+        assert_eq!(err, "this lab has no machine `--provision-with`");
+        assert_eq!(tools.calls().iter().filter(|c| c.starts_with("vagrant provision")).count(), 1);
+    }
+
+    #[tokio::test]
+    async fn stopping_a_cloud_lab_that_runs_nowhere_clears_its_marks_without_running_anything() {
+        // A cloud-services lab has nothing on this machine: a stop with no host marker (the
+        // account was never recorded, or the marker was lost) only drops stale marks.
+        let t = TestApp::new();
+        let dir = t.lab("goat", &[]);
+        mark_parked(&dir, Some(Park::Pause)).unwrap();
+        let tools = Tools::rules(&[]);
+        stop_lab(t.handle(), "goat", Runtime::Cloud).await.unwrap();
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert_eq!(parked(&dir), None);
+        // Parking or resuming it is refused on the runtime alone.
+        let err = park_lab(t.handle(), "goat", Runtime::Cloud, Park::Pause, |_| {}).await.unwrap_err().to_string();
+        assert!(err.starts_with("A cloud lab can't be paused"), "{err}");
+        let err = resume_lab(t.handle(), "goat", Runtime::Cloud, |_| {}).await.unwrap_err().to_string();
+        assert!(err.starts_with("A cloud lab can't be paused"), "{err}");
+        assert!(tools.calls().is_empty());
     }
 
     #[tokio::test]

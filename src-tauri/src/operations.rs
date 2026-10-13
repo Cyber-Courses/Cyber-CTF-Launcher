@@ -164,8 +164,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         // A process whose command line reads like a worker's (`… deploy --job …`).
         let mut worker = std::process::Command::new("sh").args(["-c", "sleep 20; :", "deploy", "--job", "x"]).spawn().unwrap();
+        // Seen as the worker it stands for only once it has exec'd.
+        let _ = deploy_worker::pidfile_line(worker.id());
+        std::thread::sleep(std::time::Duration::from_millis(100));
         let log = "Pulling images\n==> web: Booting VM...\n";
-        std::fs::write(dir.join(format!("{id}.pid")), worker.id().to_string()).unwrap();
+        std::fs::write(dir.join(format!("{id}.pid")), deploy_worker::pidfile_line(worker.id())).unwrap();
         std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string(&deploy_worker::Job::on_lab(id, Op::Launch)).unwrap()).unwrap();
         std::fs::write(dir.join(format!("{id}.log")), log).unwrap();
         let listed = || wait(active_operations(t.handle().clone())).into_iter().find(|o| o.lab_id == id);
@@ -177,6 +180,47 @@ mod tests {
         // Gone: no longer listed, its log still readable.
         assert_eq!(listed(), None);
         assert_eq!(wait(lab_deploy_log(t.handle().clone(), id.into())).unwrap(), log);
+    }
+
+    #[test]
+    fn a_stale_pidfile_lists_no_operation_and_is_swept() {
+        // A worker that died (or finished before its pidfile was removed): not an operation,
+        // its pidfile cleared on the way, its log still there to read.
+        let t = crate::test_app::TestApp::new();
+        let id = "operations-test-stale";
+        let dir = t.data().join("deploys");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(format!("{id}.pid")), "4000000000 1").unwrap();
+        std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string(&deploy_worker::Job::on_lab(id, Op::Launch)).unwrap()).unwrap();
+        std::fs::write(dir.join(format!("{id}.log")), "Pulling images\n").unwrap();
+        assert!(wait(active_operations(t.handle().clone())).iter().all(|o| o.lab_id != id));
+        assert!(!wait(deploying_labs(t.handle().clone())).contains(&id.to_string()));
+        assert!(!dir.join(format!("{id}.pid")).exists(), "swept");
+        assert_eq!(wait(lab_deploy_log(t.handle().clone(), id.into())).unwrap(), "Pulling images\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_live_worker_with_an_unreadable_job_file_stays_in_the_operations_list() {
+        let t = crate::test_app::TestApp::new();
+        let id = "operations-test-truncated-job";
+        let dir = t.data().join("deploys");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut worker = std::process::Command::new("sh").args(["-c", "sleep 20; :", "deploy", "--job", "x"]).spawn().unwrap();
+        // Seen as the worker it stands for only once it has exec'd.
+        let _ = deploy_worker::pidfile_line(worker.id());
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::fs::write(dir.join(format!("{id}.pid")), deploy_worker::pidfile_line(worker.id())).unwrap();
+        // Its job file cut short (a full disk, a crash while it was written).
+        std::fs::write(dir.join(format!("{id}.json")), "{\"lab_id\":\"operations-test-trunc").unwrap();
+        std::fs::write(dir.join(format!("{id}.log")), "==> web: Booting VM...\n").unwrap();
+        let deploying = wait(deploying_labs(t.handle().clone())).contains(&id.to_string());
+        let listed = wait(active_operations(t.handle().clone())).into_iter().find(|o| o.lab_id == id);
+        worker.kill().unwrap();
+        worker.wait().unwrap();
+        assert!(deploying, "the lab page sees the worker");
+        // The sidebar should too: at least as a launch at its step.
+        assert_eq!(listed.map(|o| (o.op, o.step)), Some(("launch", Some("web: Booting VM...".to_string()))));
     }
 
     #[test]

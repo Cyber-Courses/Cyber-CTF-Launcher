@@ -10,6 +10,10 @@ import { useT } from "@/lib/i18n";
 import { useIsMac } from "@/lib/platform";
 import { labAttackShell, attackVmShell, type Runtime, type ShellKind } from "@/lib/tauri";
 import { useTerminalSession, type ShellState } from "@/app/shell/use-terminal-session";
+import { installDevMock } from "@/lib/dev-mock";
+
+// Development only: ?mock in a plain browser answers the Tauri commands with sample data.
+installDevMock();
 
 /** The attack box shell window (opened by `terminal_window`): xterm.js over a pseudo-terminal. */
 function Shell() {

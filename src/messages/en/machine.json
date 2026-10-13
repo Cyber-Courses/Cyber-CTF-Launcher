@@ -245,7 +245,8 @@
       "wingetHint": "Install it from the Microsoft Store, then come back.",
       "get": "Get",
       "linux": "Install your distribution’s package manager to use the one-click installs.",
-      "linuxNamed": "Install your distribution’s package manager ({name}) to use the one-click installs."
+      "linuxNamed": "Install your distribution’s package manager ({name}) to use the one-click installs.",
+      "intelMac": "This is an Intel Mac. Homebrew no longer ships prebuilt packages for it, so installs may compile from source and take several minutes longer."
     },
     "wsl": {
       "intro": "Cyber CTF turns on WSL 2 for you. Windows asks for permission once (the usual admin prompt), then needs a restart.",

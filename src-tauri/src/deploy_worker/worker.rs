@@ -131,7 +131,10 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
         log(format!("{FAILED_MARK} {e}"));
     }
     let (status, code) = status_line(result);
-    if launch {
+    // A refusal (the lab is still up elsewhere, an update of a running lab) changed nothing: the
+    // launch's last verdict stays, or a lab still running on its host would read as failed.
+    let refused = matches!(result, Err(crate::error::Error::Refused(_)));
+    if launch && !refused {
         let _ = std::fs::write(&f.launch_status, &status);
     }
     let _ = std::fs::write(&f.status, status);
@@ -177,6 +180,40 @@ mod tests {
         std::fs::write(&path, "{").unwrap();
         assert!(read_job(&path).is_none());
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_job_file_with_a_byte_order_mark_or_trailing_text_is_refused() {
+        // Hand-edited or half-overwritten job files: the worker exits rather than guessing.
+        let dir = crate::deploy_worker::files::tests::temp_dir("job-odd");
+        let path = dir.join("lab-1.json");
+        let job = Job::on_lab("lab-1", Op::Resume { runtime: crate::runtime::Runtime::Vm });
+        let json = serde_json::to_string(&job).unwrap();
+        std::fs::write(&path, format!("\u{feff}{json}")).unwrap();
+        assert!(read_job(&path).is_none(), "a BOM");
+        std::fs::write(&path, format!("{json}\n{{}}")).unwrap();
+        assert!(read_job(&path).is_none(), "two documents");
+        std::fs::write(&path, format!("  {json}\n\n")).unwrap();
+        assert_eq!(read_job(&path), Some(job), "whitespace around it is fine");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[tokio::test]
+    async fn an_attack_vm_job_never_takes_the_lab_lock() {
+        // The attack VM runs beside the lab's own operation (a start may still be booting the
+        // lab): its worker must not wait on, nor hold, the lab's lock.
+        let t = crate::test_app::TestApp::new();
+        let _tools = crate::exec::fake::Tools::rules(&[]);
+        t.lab("ad", &[]);
+        let lock = crate::deploy_worker::lock_path(t.handle(), "ad").unwrap();
+        // Another process holds the lab (a handle of its own stands in for it).
+        let other = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&lock).unwrap();
+        other.lock().unwrap();
+        let job = Job::on_lab("ad", Op::AttackVm { box_name: "kalilinux/rolling".into() });
+        let run = tokio::time::timeout(std::time::Duration::from_secs(2), super::run_logged(t.handle(), job)).await;
+        // Finished (refused: the lab's VMs aren't up) instead of waiting for the lock holder.
+        assert_eq!(run.expect("did not wait for the lab lock"), 1);
+        drop(other);
     }
 
     #[tokio::test]
@@ -226,6 +263,10 @@ mod tests {
         // Another operation leaves the launch's verdict alone.
         conclude(&f, &Err::<(), _>(Error::Invalid("park failed".into())), false, |_| {});
         assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "error: park failed");
+        assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
+        // So does a launch refused before it did anything (the lab is still up on its host).
+        conclude(&f, &Err::<(), _>(Error::Refused("still running on AWS".into())), true, |_| {});
+        assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "error: still running on AWS");
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
         std::fs::remove_dir_all(dir).ok();
     }

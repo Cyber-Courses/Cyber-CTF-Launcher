@@ -382,6 +382,30 @@ describe("ServerSelfTest", () => {
     expect(onDone).toHaveBeenCalledWith("fail");
   });
 
+  it("a panel reopened while the test runs attaches to it instead of starting a second VM", async () => {
+    let finish: () => void = () => {};
+    let args: Record<string, unknown> | undefined;
+    const selftest = vi.fn((a: Record<string, unknown> | undefined) => {
+      args = a;
+      return new Promise<null>((r) => (finish = () => r(null)));
+    });
+    installTauri({ server_selftest: selftest });
+    const onDone = vi.fn();
+    const first = render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
+    await flush();
+    await act(async () => stream(args, { step: "connect", label: "Connect", state: "ok", detail: null }));
+    first.unmount();
+    render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
+    await flush();
+    expect(selftest).toHaveBeenCalledTimes(1);
+    // The step that passed before this view opened is shown again.
+    expect(screen.getByText("Running a real VM on the host…")).toBeTruthy();
+    await act(async () => finish());
+    await flush();
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith("ok");
+  });
+
   it("is running until the host answers, and doesn't report after unmounting", async () => {
     let finish: () => void = () => {};
     installTauri({ server_selftest: () => new Promise<null>((r) => (finish = () => r(null))) });

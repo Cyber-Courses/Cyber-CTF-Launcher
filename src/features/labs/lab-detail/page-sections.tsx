@@ -48,7 +48,8 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
           isDocker={s.isDocker}
           cloud={s.isCloud ? { preview: page.preview } : null}
           loggedIn={p.loggedIn}
-          hostedLive={page.hosted.live}
+          // Also while the hosted launch request is on its way: a second click sent it twice.
+          hostedLive={page.hosted.live || page.hosted.starting}
           busy={p.busy}
           dockerRunning={p.dockerRunning ?? null}
           onStart={page.startOn}

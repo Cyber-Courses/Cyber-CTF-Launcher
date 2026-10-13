@@ -21,6 +21,13 @@ use networks::{lab_networks, parse_networks};
 /// services like SSH/FTP/RDP): the Open button must never point a browser at one.
 fn is_datastore(e: &PsEntry) -> bool {
     let s = format!("{} {}", e.service, e.image).to_ascii_lowercase();
+    // Short keys only as whole words (with a daemon's `d`): "wordpress" holds "rdp", "giftportal"
+    // "ftp", and those web apps lost their Open button.
+    let words: Vec<&str> = s.split(|c: char| !c.is_ascii_alphanumeric()).collect();
+    let word = |k: &str| words.iter().any(|w| *w == k || w.strip_suffix('d') == Some(k));
+    if ["ftp", "rdp", "vnc", "smtp"].iter().any(|k| word(k)) {
+        return true;
+    }
     [
         "mysql",
         "mariadb",
@@ -36,12 +43,8 @@ fn is_datastore(e: &PsEntry) -> bool {
         "openssh",
         "vsftpd",
         "proftpd",
-        "ftp",
-        "rdp",
         "xrdp",
-        "vnc",
         "telnet",
-        "smtp",
         "postfix",
         "bind9",
         "dnsmasq", // non-web network services

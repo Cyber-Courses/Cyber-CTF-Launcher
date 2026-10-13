@@ -9,13 +9,15 @@ function decimal(n: number, digits: number) {
 
 /** A running step's time: 0.4s, then 12s, then 1:05. */
 export function formatDuration(ms: number) {
+  if (!Number.isFinite(ms)) ms = 0;
   if (ms < 10_000) return translate("common.units.seconds", { n: decimal(Math.max(0, ms) / 1000, 1) });
   return formatElapsed(ms);
 }
 
 /** Whole seconds: 42s, then 1:05. */
 export function formatElapsed(ms: number) {
-  const s = Math.max(0, Math.floor(ms / 1000));
+  // A missing or garbled time reads as none, never NaN:NaN.
+  const s = Number.isFinite(ms) ? Math.max(0, Math.floor(ms / 1000)) : 0;
   return s < 60 ? translate("common.units.seconds", { n: s }) : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
@@ -33,6 +35,7 @@ const GB = 1e9;
 
 /** 12 GB, 3.4 GB, 512 MB, 8 kB. */
 export function formatBytes(b: number) {
+  if (!Number.isFinite(b)) b = 0;
   if (b >= GB) return translate("common.units.gigabytes", { n: decimal(b / GB, b >= 10 * GB ? 0 : 1) });
   if (b >= 1e6) return translate("common.units.megabytes", { n: Math.round(b / 1e6) });
   return translate("common.units.kilobytes", { n: Math.max(1, Math.round(b / 1e3)) });

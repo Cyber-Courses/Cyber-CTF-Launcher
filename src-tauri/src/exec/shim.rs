@@ -19,7 +19,7 @@ pub(super) const SHIMMED: &[&str] = &["az", "gcloud", "oci"];
 const CMD_OPERATORS: &[char] = &['&', '|', '<', '>', '^', '%', '"', '\n', '\r'];
 
 /// Refuses an argument cmd.exe would interpret, for a tool that goes through it.
-pub(super) fn check_args(program: &str, args: &[&str]) -> Result<()> {
+pub(crate) fn check_args(program: &str, args: &[&str]) -> Result<()> {
     if !SHIMMED.contains(&program) {
         return Ok(());
     }
@@ -38,6 +38,8 @@ mod tests {
         assert!(check_args("gcloud", &["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"]).is_ok());
         assert!(check_args("az", &["account", "list", "--query", "[].{name:name,id:id,isDefault:isDefault}", "--output", "json"]).is_ok());
         assert!(check_args("oci", &["iam", "region", "list", "--profile", "DEFAULT"]).is_ok());
+        // The Machine page's Azure CLI probe (a quoted `--query` here read as "not installed").
+        assert!(check_args("az", &["version", "--output", "json"]).is_ok());
     }
 
     #[test]
@@ -52,6 +54,17 @@ mod tests {
     fn tools_that_run_directly_are_not_restricted() {
         assert!(check_args("aws", &["s3", "ls", "a & b"]).is_ok());
         assert!(check_args("docker", &["run", "--entrypoint", "sh", "img", "-c", "a | b"]).is_ok());
+    }
+
+    #[test]
+    fn values_cmd_treats_as_plain_text_go_through_and_a_refusal_shows_the_argument_escaped() {
+        // An empty value, a tab, parentheses outside a block, `=`/`;`/`,` (batch delimiters that
+        // `%*` passes along whole) and non-ASCII are not operators: a size or a profile name with
+        // them reaches the tool as typed, since nothing is run through a shell but cmd.exe itself.
+        assert!(check_args("az", &["", "a\tb", "(x)", "a=b;c,d", "caf\u{e9}", "--size", "Standard D2"]).is_ok());
+        // The refusal quotes the value with its control characters visible, so a log says which.
+        let err = check_args("gcloud", &["projects", "create", "a\nb"]).unwrap_err().to_string();
+        assert!(err.contains("`a\\nb`") && err.contains("gcloud"), "{err}");
     }
 
     #[tokio::test]

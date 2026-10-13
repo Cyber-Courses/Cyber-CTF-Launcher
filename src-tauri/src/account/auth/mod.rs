@@ -70,14 +70,54 @@ fn fresh(session: &Session) -> bool {
 /// second one is rejected (`invalid_grant`), and that used to wipe the session: the app came
 /// back signed out after every restart past the token's lifetime. Callers queue here and re-read
 /// the session once they hold the lock, so the first refresh serves them all.
+/// One refresh (or sign-out) at a time: see `access_token`. Sign-out takes it too, so a refresh
+/// already in flight can't write a fresh session back over a session the player just ended.
+static REFRESH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// A renewed session the keychain refused to save. Refresh tokens rotate: the old one in the
+/// keychain is spent, so dropping the new one would sign the player out at the next call (an
+/// `invalid_grant`). It is served from here, and saved again at each read until that works.
+static UNSAVED: std::sync::Mutex<Option<Session>> = std::sync::Mutex::new(None);
+
+fn unsaved() -> Option<Session> {
+    UNSAVED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+}
+
+fn set_unsaved(session: Option<Session>) {
+    *UNSAVED.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = session;
+}
+
+/// The session calls use: the stored one, unless a newer renewed one is still waiting to be
+/// saved (then that one, and saving is tried again).
+async fn current_session() -> Result<Session> {
+    let stored = session_or_signed_out().await;
+    let Some(renewed) = unsaved() else { return stored };
+    match stored {
+        // Signed out (or unreadable) since: the renewed session is not resurrected.
+        Err(e) => {
+            set_unsaved(None);
+            Err(e)
+        }
+        Ok(s) if renewed.expires_at <= s.expires_at => {
+            set_unsaved(None);
+            Ok(s)
+        }
+        Ok(_) => {
+            if store::store(renewed.clone()).await.is_ok() {
+                set_unsaved(None);
+            }
+            Ok(renewed)
+        }
+    }
+}
+
 pub async fn access_token() -> Result<String> {
-    static REFRESH: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
-    let session = session_or_signed_out().await?;
+    let session = current_session().await?;
     if fresh(&session) {
         return Ok(session.access_token);
     }
-    let _one_at_a_time = REFRESH.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
-    let session = session_or_signed_out().await?;
+    let _one_at_a_time = REFRESH.lock().await;
+    let session = current_session().await?;
     if fresh(&session) {
         return Ok(session.access_token);
     }
@@ -97,7 +137,12 @@ pub async fn access_token() -> Result<String> {
     };
     let renewed = session_from(tokens, Some(&session));
     let token = renewed.access_token.clone();
-    store::store(renewed).await?;
+    if let Err(e) = store::store(renewed.clone()).await {
+        // The rotated refresh token must not be lost with the write: keep serving the renewed
+        // session and retry saving it (see `UNSAVED`).
+        log::warn!("the renewed session couldn't be saved yet ({e}); kept in memory until it can");
+        set_unsaved(Some(renewed));
+    }
     Ok(token)
 }
 
@@ -212,6 +257,10 @@ fn status_from_read(read: std::result::Result<Option<Session>, String>) -> AuthS
 
 #[tauri::command]
 pub async fn auth_logout() {
+    // Behind the refresh lock: a refresh that was in flight would otherwise store its renewed
+    // session right after this clear, and the player would be back in at the next call.
+    let _no_refresh = REFRESH.lock().await;
+    set_unsaved(None);
     store::clear().await;
 }
 
@@ -263,10 +312,14 @@ mod tests {
         assert_eq!(failed["loggedIn"], false);
     }
 
+    /// The dev session store and `UNSAVED` are shared: the tests over them run one at a time.
+    static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     /// The commands over the dev session store (a file of this test run's own).
     #[cfg(debug_assertions)]
     #[tokio::test]
     async fn the_status_follows_the_kept_session_and_logout_forgets_it() {
+        let _serial = ONE_AT_A_TIME.lock().await;
         let kept = Session { expires_at: now() + 3600, ..session() };
         store::store(kept).await.unwrap();
         let status = serde_json::to_value(auth_status().await).unwrap();
@@ -281,6 +334,31 @@ mod tests {
         assert_eq!(signed_in_user().await, None);
         // Signing out twice is fine.
         auth_logout().await;
+    }
+
+    /// A renewed session the keychain couldn't take is served (its refresh token is the only
+    /// valid one now), saved once that works, and dropped by a sign-out.
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn a_renewed_session_that_could_not_be_saved_is_served_then_saved_and_forgotten_by_logout() {
+        let _serial = ONE_AT_A_TIME.lock().await;
+        let stale = Session { expires_at: now() + 10, ..session() };
+        store::store(stale).await.unwrap();
+        let renewed = Session { access_token: "tok2".into(), refresh_token: Some("ref2".into()), expires_at: now() + 3600, ..session() };
+        set_unsaved(Some(renewed));
+        // Served over the stored one, and saved now that the store takes it.
+        assert_eq!(access_token().await.unwrap(), "tok2");
+        assert!(unsaved().is_none());
+        assert_eq!(store::read().await.unwrap().unwrap().refresh_token.as_deref(), Some("ref2"));
+        // An older leftover never replaces a newer stored session.
+        set_unsaved(Some(Session { access_token: "old".into(), expires_at: now() + 5, ..session() }));
+        assert_eq!(access_token().await.unwrap(), "tok2");
+        assert!(unsaved().is_none());
+        // Sign-out forgets both.
+        set_unsaved(Some(Session { access_token: "tok3".into(), expires_at: now() + 3600, ..session() }));
+        auth_logout().await;
+        assert!(unsaved().is_none());
+        assert_eq!(access_token().await.unwrap_err().to_string(), SIGNED_OUT);
     }
 
     #[test]

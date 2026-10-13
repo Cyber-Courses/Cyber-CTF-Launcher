@@ -388,6 +388,75 @@ fn a_lab_still_deployed_on_another_host_is_not_started_elsewhere() {
     std::fs::remove_dir_all(base).unwrap();
 }
 
+#[tokio::test]
+async fn a_start_refused_for_a_lab_still_up_elsewhere_changes_nothing() {
+    // Refused before anything ran: the host marker (the way to stop it there) and the parked
+    // mark stay, no tool is touched, and the error is a refusal, not a failed deploy.
+    let t = TestApp::new();
+    let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+    t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
+    server::mark_lab(&dir, Some("aws1")).unwrap();
+    mark_parked(&dir, Some(Park::Pause)).unwrap();
+    let state = t.data().join("deployments").join("web").join("aws");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{},"resources":[{"type":"aws_instance"}]}"#).unwrap();
+    let tools = Tools::rules(&[]);
+    let (r, log) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
+    let err = r.unwrap_err();
+    assert!(matches!(err, crate::error::Error::Refused(_)), "{err}");
+    assert_eq!(err.to_string(), "This lab is still running on Host aws1. Stop it there before starting it somewhere else.");
+    assert_eq!(server::marked_host(&dir).as_deref(), Some("aws1"));
+    assert_eq!(parked(&dir), Some(Park::Pause));
+    assert!(tools.calls().is_empty() && log.is_empty(), "{:?} {log:?}", tools.calls());
+    // The same for another host; its own host again is not "elsewhere".
+    let (r, _) = start_on(&t, "web", Runtime::Docker, "pve1").await;
+    assert!(matches!(r.unwrap_err(), crate::error::Error::Refused(_)));
+    assert_eq!(super::deployed_elsewhere(t.data(), &dir, "web", Some("aws1")), None);
+}
+
+#[tokio::test]
+async fn a_parked_container_lab_in_a_local_vm_whose_vm_is_gone_starts_fresh() {
+    let t = TestApp::new();
+    let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+    crate::runtime::paths::mark_local_vm(&dir, Some(Provider::Virtualbox)).unwrap();
+    mark_parked(&dir, Some(Park::Pause)).unwrap();
+    let tools = Tools::rules(&[]);
+    let (r, log) = start_here(&t, "web", Runtime::Docker, Some(Provider::Virtualbox), &[]).await;
+    r.unwrap();
+    assert!(log[0].contains("its virtual machines are gone: starting it fresh"), "{log:?}");
+    assert!(tools.called("vagrant up --provider virtualbox") && !tools.called("--no-provision"), "{:?}", tools.calls());
+    assert_eq!(parked(&dir), None);
+    assert_eq!(local_vm(&dir).as_deref(), Some("virtualbox"));
+}
+
+#[tokio::test]
+async fn a_vm_lab_already_up_here_is_refused_and_a_powered_off_leftover_is_cleared_first() {
+    let t = TestApp::new();
+    let dir = t.lab("ad", &[("isoloom.yml", VM_LAB), ("setup.sh", "true\n")]);
+    let vagrant = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
+    std::fs::create_dir_all(&vagrant).unwrap();
+    std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
+    // Every machine up: a second start would collide with it.
+    let tools = Tools::rules(&[("vagrant status", ok("1,a,state,running\n1,b,state,running\n1,a,provider-name,virtualbox\n"))]);
+    let (r, _) = start_here(&t, "ad", Runtime::Vm, Some(Provider::Virtualbox), &[]).await;
+    assert!(r.unwrap_err().to_string().starts_with("This lab is already running in a VM on this machine"));
+    assert!(!tools.called("vagrant up") && !tools.called("vagrant destroy"), "{:?}", tools.calls());
+    drop(tools);
+    // A lab a cut start left half built (one machine up, the other never created) is not
+    // "running": it is cleared, its running machine included, and built fresh. Same for a
+    // machine left powered off.
+    for left in ["1,a,state,running\n1,b,state,not_created\n", "1,a,state,poweroff\n1,b,state,not_created\n"] {
+        let tools = Tools::rules(&[("vagrant status", ok(left))]);
+        let (r, log) = start_here(&t, "ad", Runtime::Vm, Some(Provider::Virtualbox), &[]).await;
+        r.unwrap();
+        assert!(log.contains(&"Clearing a previous, incomplete VM…".to_string()), "{log:?}");
+        let calls = tools.calls();
+        let destroy = calls.iter().position(|c| c.starts_with("vagrant destroy --force")).expect("destroyed");
+        let up = calls.iter().position(|c| c.starts_with("vagrant up --provider virtualbox")).expect("started");
+        assert!(destroy < up, "{calls:?}");
+    }
+}
+
 #[test]
 fn resolver_answers_must_be_one_ipv4() {
     assert_eq!(parse_ipv4("203.0.113.7\n").as_deref(), Some("203.0.113.7"));

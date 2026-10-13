@@ -37,13 +37,14 @@
     "signedInAs": "Connecté en tant que {name}",
     "waiting": "En attente du navigateur… (jusqu'à 5 minutes)",
     "button": "Se connecter avec le navigateur",
-    "hint": "Ouvre <mono>cyberauth.co</mono> dans votre navigateur. Vous pouvez aussi le faire plus tard."
+    "hint": "Ouvre <mono>cyberauth.co</mono> dans votre navigateur. Les labs fonctionnent aussi sans compte : vous pourrez vous connecter plus tard depuis les Réglages.",
+    "skip": "Passer pour l'instant"
   },
   "done": {
     "title": "Tout est <em>prêt</em>",
     "description": "Vous pourrez modifier tout cela plus tard dans Réglages ou Cette machine.",
     "account": "Compte",
-    "notSignedIn": "Non connecté",
+    "notSignedIn": "Non connecté (connectez-vous plus tard depuis les Réglages)",
     "browse": "Parcourir les labs"
   }
 }

@@ -33,7 +33,9 @@ export function SectionTitle({ title, description, saved }: { title: string; des
           saved ? "opacity-100" : "opacity-0",
         )}
       >
-        <Check className="size-3.5" /> {t("settings.saved")}
+        {/* Text only once saved: a mark always there (just faded) was read out before any change,
+            and a live region whose text never changes announces nothing. */}
+        <Check className="size-3.5" aria-hidden /> {saved ? t("settings.saved") : null}
       </span>
     </div>
   );

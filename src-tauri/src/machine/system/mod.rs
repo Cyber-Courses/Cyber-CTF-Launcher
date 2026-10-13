@@ -157,8 +157,10 @@ fn azure_version(json: &str) -> Option<String> {
     value.get("azure-cli")?.as_str().map(str::to_owned)
 }
 
+/// The first non-blank line, trimmed: a tool whose output opens with a blank line (a banner's
+/// spacing) read as installed with an empty version.
 fn first_line(out: &str) -> Option<String> {
-    out.lines().next().map(|l| l.trim().to_string())
+    out.lines().map(str::trim).find(|l| !l.is_empty()).map(str::to_string)
 }
 
 async fn package_manager() -> PkgManager {
@@ -226,9 +228,34 @@ mod tests {
     }
 
     #[test]
+    fn the_azure_cli_version_comes_from_its_json_without_a_quoted_query() {
+        let out = "{\n  \"azure-cli\": \"2.90.0\",\n  \"azure-cli-core\": \"2.90.0\",\n  \"extensions\": {}\n}\n";
+        assert_eq!(super::azure_version(out).as_deref(), Some("2.90.0"));
+        assert_eq!(super::azure_version("not json"), None);
+        assert_eq!(super::azure_version("{}"), None);
+        // The probe's arguments must pass the cmd.exe guard, or `az` reads as missing everywhere.
+        assert!(crate::exec::shim::check_args("az", &["version", "--output", "json"]).is_ok());
+    }
+
+    #[test]
     fn a_version_is_the_first_line_trimmed() {
         assert_eq!(super::first_line("Homebrew 4.6.3 \nHomebrew/core\n").as_deref(), Some("Homebrew 4.6.3"));
         assert_eq!(super::first_line(""), None);
+        assert_eq!(super::first_line("\n  \nVagrant 2.4.9\n").as_deref(), Some("Vagrant 2.4.9"));
+    }
+
+    #[test]
+    fn a_version_on_windows_line_endings_or_without_a_newline_has_no_stray_characters() {
+        // A tool on Windows ends its lines with CRLF; one printing a single line ends it with
+        // nothing at all. Neither leaves a `\r` or needs a `\n`.
+        assert_eq!(super::first_line("Vagrant 2.4.3\r\n\r\n").as_deref(), Some("Vagrant 2.4.3"));
+        assert_eq!(super::first_line("Terraform v1.9.8").as_deref(), Some("Terraform v1.9.8"));
+        assert_eq!(super::first_line("\tDocker version 27.3.1, build x\t\r\n").as_deref(), Some("Docker version 27.3.1, build x"));
+        // Only blank lines: no version at all.
+        assert_eq!(super::first_line("\r\n"), None);
+        assert!(super::pkg_manager(Some("\r\n".into())).version.is_none());
+        assert_eq!(super::azure_version("{\"azure-cli\": \"2.90.0\"}\r\n").as_deref(), Some("2.90.0"));
+        assert_eq!(super::azure_version("{\"azure-cli\": 2.9}"), None, "a version that isn't text");
     }
 
     #[test]
@@ -254,3 +281,6 @@ mod tests {
         assert_eq!(v, serde_json::json!({ "installed": true, "version": "1" }));
     }
 }
+
+#[cfg(test)]
+mod proptests;

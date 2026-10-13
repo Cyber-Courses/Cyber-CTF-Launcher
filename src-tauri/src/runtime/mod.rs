@@ -57,7 +57,7 @@ pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, re
 pub use model::{AttackerAt, Interface, LabStatus, Machine, Network, Output, Park, Place, Port, Service};
 pub use paths::{LOCAL_VM_MARKER, validate_id};
 pub use shell::{ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for, valid_image};
-pub use status::{lab_running_here, primary_url, running_here};
+pub use status::{lab_running_here, primary_url, running_here, vms_recorded_here};
 /// For the generated TypeScript types (`ts_bindings`).
 #[cfg(test)]
 pub(crate) use {cloud_services::Preview, docker::Check, exegol::ExegolStatus};

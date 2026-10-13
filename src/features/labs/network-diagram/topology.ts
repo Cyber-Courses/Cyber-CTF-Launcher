@@ -149,11 +149,13 @@ function addMachine(g: Graph, m: Machine, ifaces: LabInterface[], d: (net: strin
     g.edges.push(link(`e-${ifaces[0].network}-${m.name}`, `bridge-${ifaces[0].network}`, id, GREY));
   } else {
     const near = Math.min(...ifaces.map((i) => d(i.network)));
-    ifaces.forEach((i) =>
+    // Two NICs on one network are two links: the second id gets its interface's index.
+    const taken = (edgeId: string, n: number) => (g.edges.some((e) => e.id === edgeId) ? `${edgeId}-${n}` : edgeId);
+    ifaces.forEach((i, n) =>
       g.edges.push(
         d(i.network) === near
-          ? link(`e-${i.network}-${m.name}`, `zone-${i.network}`, id, GREY, { sideways: true, label: i.ip })
-          : link(`e-${m.name}-${i.network}`, id, `zone-${i.network}`, PIVOT, { sideways: true, label: i.ip }),
+          ? link(taken(`e-${i.network}-${m.name}`, n), `zone-${i.network}`, id, GREY, { sideways: true, label: i.ip })
+          : link(taken(`e-${m.name}-${i.network}`, n), id, `zone-${i.network}`, PIVOT, { sideways: true, label: i.ip }),
       ),
     );
   }

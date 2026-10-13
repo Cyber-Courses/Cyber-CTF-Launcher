@@ -112,8 +112,9 @@ describe("deriveLabState", () => {
     expect([here.canPause, here.canShutdown]).toEqual([false, true]);
     const inVm = derive({ status: status({ running: true, place: "local_vm" }) });
     expect([inVm.canPause, inVm.canShutdown]).toEqual([true, false]);
+    // A VM lab here is reported in a local VM too: it can be paused and shut down.
     const vmLab = derive({ runtime: vm, status: status({ running: true, place: "local_vm" }) });
-    expect([vmLab.canPause, vmLab.canShutdown]).toEqual([true, false]);
+    expect([vmLab.canPause, vmLab.canShutdown]).toEqual([true, true]);
     const remote = derive({ runtime: vm, status: status({ running: true, host: "esxi", place: "server" }) });
     expect([remote.canPause, remote.canShutdown]).toEqual([false, false]);
     const noHandler = derive({ parkable: false, status: status({ running: true, place: "container" }) });

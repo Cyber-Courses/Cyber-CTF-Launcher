@@ -258,8 +258,10 @@ fn another_recorded_provider_is_a_mismatch() {
     assert!(!super::recorded_on_other_provider(&dir, Provider::Virtualbox), "never started");
     let machines = dir.join(".vagrant").join("machines");
     std::fs::create_dir_all(machines.join("dc01").join("virtualbox")).unwrap();
-    // A stray file is not a provider folder.
+    // A stray file is not a provider folder, and a provider folder is a machine only with its id.
     std::fs::write(machines.join("dc01").join("index_uuid"), "x").unwrap();
+    assert!(!super::recorded_on_other_provider(&dir, Provider::VmwareEsxi), "no id: nothing recorded");
+    std::fs::write(machines.join("dc01").join("virtualbox").join("id"), "0000").unwrap();
     assert!(!super::recorded_on_other_provider(&dir, Provider::Virtualbox));
     assert!(super::recorded_on_other_provider(&dir, Provider::VmwareEsxi));
     std::fs::remove_dir_all(dir).unwrap();
@@ -318,6 +320,23 @@ fn leftover_folders_go_by_their_exact_sanitized_names() {
     super::remove_leftover_folders(&base.join("nope"), &wanted, &mut |l| lines.push(l));
     assert_eq!(lines.len(), 1);
     std::fs::remove_dir_all(base).unwrap();
+}
+
+/// The attack VM's folder has no lab spec above it: its addresses come from its Vagrantfile.
+#[test]
+fn status_without_a_lab_spec_reads_the_addresses_from_the_vagrantfile() {
+    let dir = temp_dir("status-vf");
+    std::fs::write(
+        dir.join("Vagrantfile"),
+        "Vagrant.configure(\"2\") do |config|\n  config.vm.define \"attacker\" do |m|\n    m.vm.provider :virtualbox do |v|\n      v.name = \"minilab · attacker\"\n    end\n    m.vm.network \"private_network\", ip: \"192.168.56.250\", netmask: \"255.255.255.0\", virtualbox__intnet: \"isoloom-minilab-lab\"\n  end\nend\n",
+    )
+    .unwrap();
+    let s = super::status_from("1,attacker,state,running\n", &dir);
+    assert!(s.running);
+    assert_eq!(s.machines[0].ip, "192.168.56.250");
+    assert_eq!(s.machines[0].interfaces[0].network, "lab");
+    assert_eq!(s.networks.iter().map(|n| n.name.as_str()).collect::<Vec<_>>(), ["lab"]);
+    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -446,4 +465,141 @@ async fn reprovisioning_discards_an_aborted_saved_controller_first() {
         ["VBoxManage showvminfo lab · ctl --machinereadable", "VBoxManage discardstate lab · ctl", "vagrant up isoloom-controller --no-provision"]
     );
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn machine_readable_status_with_windows_line_endings_and_blank_lines() {
+    let out = "1,dc01,provider-name,hyperv\r\n\r\n1,dc01,state,running\r\n1,ws01,state,running\r\n1,isoloom-controller,state,poweroff\r\n";
+    let dir = temp_dir("status-crlf");
+    let s = super::status_from(out, &dir);
+    assert!(s.running, "{:?}", s.machines.iter().map(|m| (m.name.clone(), m.state.clone())).collect::<Vec<_>>());
+    assert_eq!(s.provider.as_deref(), Some("hyperv"), "no carriage return in the provider");
+    assert_eq!(s.machines.iter().map(|m| m.state.as_str()).collect::<Vec<_>>(), ["running", "running", "poweroff"]);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_state_with_vagrants_comma_escape_is_kept_whole_and_is_not_running() {
+    // Vagrant escapes a comma in a field as `%!(VAGRANT_COMMA)`; the state is shown as printed.
+    let m = parse_status("1,a,state,running%!(VAGRANT_COMMA) with a note\n1,b,state,running\n");
+    assert_eq!(m[0].state, "running%!(VAGRANT_COMMA) with a note");
+    let dir = temp_dir("status-comma");
+    assert!(!super::status_from("1,a,state,running%!(VAGRANT_COMMA) with a note\n", &dir).running);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn the_provider_comes_from_the_first_named_one_and_a_blank_one_is_skipped() {
+    let dir = temp_dir("status-provider");
+    let s = super::status_from("1,dc01,provider-name,\n1,ws01,provider-name,parallels\n1,dc01,state,running\n", &dir);
+    assert_eq!(s.provider.as_deref(), Some("parallels"));
+    // A machine-readable line with no data column is ignored, not read as a provider.
+    assert_eq!(super::status_from("1,dc01,provider-name\n1,dc01,state,running\n", &dir).provider, None);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_broken_lab_spec_falls_back_to_the_vagrantfile_for_addresses() {
+    // The spec two levels up can't be read (an edit in progress, a newer format): the diagram
+    // still comes from the generated Vagrantfile rather than disappearing.
+    let lab = temp_dir("status-broken-spec");
+    std::fs::write(lab.join("isoloom.yml"), "version: 1\nname: t\nbogus: 1\n").unwrap();
+    let vagrant = lab.join(".isoloom").join("vagrant");
+    std::fs::create_dir_all(&vagrant).unwrap();
+    std::fs::write(
+        vagrant.join("Vagrantfile"),
+        "config.vm.define \"web\" do |m|\n  m.vm.provider :virtualbox do |v|\n    v.name = \"t · web\"\n  end\n  m.vm.network \"private_network\", ip: \"10.30.0.10\", netmask: \"255.255.255.0\", virtualbox__intnet: \"isoloom-t-lab\"\nend\n",
+    )
+    .unwrap();
+    let s = super::status_from("1,web,state,running\n", &vagrant);
+    assert_eq!(s.machines[0].ip, "10.30.0.10");
+    assert_eq!(s.networks.iter().map(|n| (n.name.as_str(), n.subnet.as_str())).collect::<Vec<_>>(), [("lab", "10.30.0.0/24")]);
+    std::fs::remove_dir_all(lab).unwrap();
+}
+
+#[test]
+fn vagrantfile_values_with_windows_line_endings_and_single_quotes() {
+    // Isoloom writes double quotes; a hand-edited file with single quotes yields no names (never
+    // a wrong one), and CRLF endings don't leak into a name.
+    assert_eq!(vm_names_from("  v.name = \"lab · a\"\r\n  v.guest_name = \"lab-b\"\r\n"), ["lab · a", "lab-b"]);
+    assert!(vm_names_from("  v.name = 'lab · a'\n").is_empty());
+    // A commented-out name line is not a name; a name line without quotes is skipped.
+    assert!(vm_names_from("  # v.name = \"old\"\n  v.name = name_var\n").is_empty());
+    // The first quoted string after `=` is the name, whatever follows on the line.
+    assert_eq!(vm_names_from("v.vmx[\"displayName\"] = \"lab · c\" # was \"other\"\n"), ["lab · c"]);
+}
+
+#[test]
+fn vagrant_topology_reads_crlf_files_and_ipv6_addresses_leave_the_subnet_blank() {
+    let vf = "config.vm.define \"a\" do |m|\r\n  m.vm.network \"private_network\", ip: \"fd00::10\", virtualbox__intnet: \"isoloom-l-lab\"\r\n  m.vm.network \"private_network\", ip: \"10.0.0.5\", netmask: \"255.255.0.0\", virtualbox__intnet: \"isoloom-l-back\"\r\nend\r\n";
+    let (ifaces, nets) = super::vagrant_topology(vf, "l");
+    assert_eq!(ifaces["a"].iter().map(|i| (i.network.as_str(), i.ip.as_str())).collect::<Vec<_>>(), [("lab", "fd00::10"), ("back", "10.0.0.5")]);
+    assert_eq!(nets.iter().map(|n| (n.name.as_str(), n.subnet.as_str())).collect::<Vec<_>>(), [("lab", ""), ("back", "10.0.0.0/16")]);
+}
+
+#[test]
+fn virtualbox_listings_keep_braces_and_unicode_inside_a_name() {
+    let out = "\"lab · {odd} name\" {1111-aaaa}\r\n\"日本語 · dc01\" {2222}\n\"<inaccessible>\" {3333}\n";
+    assert_eq!(
+        super::parse_vbox_vms(out),
+        vec![
+            ("lab · {odd} name".to_string(), "1111-aaaa".to_string()),
+            ("日本語 · dc01".to_string(), "2222".to_string()),
+            ("<inaccessible>".to_string(), "3333".to_string())
+        ]
+    );
+}
+
+#[test]
+fn a_machine_is_tracked_only_by_an_id_file() {
+    let dir = temp_dir("has-machines");
+    let vbox = dir.join(".vagrant").join("machines").join("dc01").join("virtualbox");
+    std::fs::create_dir_all(&vbox).unwrap();
+    assert!(!super::has_machines(&dir), "a provider folder alone (left by a destroy, or a `vagrant status`) is no machine");
+    std::fs::create_dir_all(vbox.join("id")).unwrap();
+    assert!(!super::has_machines(&dir), "an `id` folder is not Vagrant's id file");
+    std::fs::remove_dir(vbox.join("id")).unwrap();
+    std::fs::write(vbox.join("id"), "").unwrap();
+    assert!(super::has_machines(&dir), "even an empty id file is Vagrant's record");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_provider_folder_without_an_id_is_not_a_recorded_machine() {
+    // Vagrant keeps `.vagrant/machines/<name>/<provider>/` after a destroy (only `id` goes), and
+    // creates it on a mere `vagrant status`. `has_machines` knows that (it looks for `id`);
+    // `recorded_on_other_provider` doesn't, so a lab that was once destroyed on VirtualBox and
+    // now starts on ESXi is told "last ran on a different target" and gets a needless bounded
+    // destroy. Worse, with live machines on the requested provider and a stale folder of
+    // another, `reconcile_provider` destroys the live machines and deletes `.vagrant`.
+    // Fails with: assertion failed: !recorded_on_other_provider(&dir, Provider::VmwareEsxi).
+    // Suggested fix: count a provider folder only when it holds an `id` file, as `has_machines`.
+    use super::super::providers::Provider;
+    let dir = temp_dir("reconcile-no-id");
+    let machines = dir.join(".vagrant").join("machines");
+    std::fs::create_dir_all(machines.join("dc01").join("virtualbox")).unwrap();
+    std::fs::write(machines.join("dc01").join("virtualbox").join("action_set_name"), "x").unwrap();
+    assert!(!super::has_machines(&dir));
+    assert!(!super::recorded_on_other_provider(&dir, Provider::VmwareEsxi));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn leftover_folder_removal_never_follows_a_symlink_out_of_the_base() {
+    // A folder named exactly like one of ours but that is a symlink to somewhere else: removing
+    // it must take the link, never the folder it points to.
+    let base = temp_dir("vbox-symlink");
+    let elsewhere = temp_dir("vbox-elsewhere");
+    std::fs::write(elsewhere.join("keep.txt"), "x").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&elsewhere, base.join("minilab - dc01")).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(&elsewhere, base.join("minilab - dc01")).unwrap();
+    let wanted: std::collections::HashSet<String> = ["minilab · dc01".to_string()].into();
+    let mut lines = Vec::new();
+    super::remove_leftover_folders(&base, &wanted, &mut |l| lines.push(l));
+    assert!(elsewhere.join("keep.txt").is_file(), "the link's target is untouched");
+    assert!(std::fs::symlink_metadata(base.join("minilab - dc01")).is_err(), "the link itself is removed: {lines:?}");
+    std::fs::remove_dir_all(base).unwrap();
+    std::fs::remove_dir_all(elsewhere).unwrap();
 }

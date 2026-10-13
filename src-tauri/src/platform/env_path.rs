@@ -15,8 +15,19 @@ use std::path::{Path, PathBuf};
 /// SDK, per user, from the Cloud setup) is then found without a restart, since PATH is only
 /// set once at startup.
 fn future_dirs() -> Vec<PathBuf> {
-    let gcloud_sdk = if cfg!(target_os = "linux") { super::home_dir().map(|home| home.join("google-cloud-sdk/bin")) } else { None };
-    gcloud_sdk.into_iter().collect()
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if cfg!(target_os = "linux")
+        && let Some(home) = super::home_dir()
+    {
+        dirs.push(home.join("google-cloud-sdk/bin"));
+    }
+    // Vagrant's Windows installer puts it under the system drive, not Program Files: added
+    // before it exists, so a Vagrant the setup installs is found without a restart.
+    if cfg!(windows) {
+        let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+        dirs.push(PathBuf::from(format!("{drive}\\HashiCorp\\Vagrant\\bin")));
+    }
+    dirs
 }
 
 /// Where the tools live when they are installed, on this OS.

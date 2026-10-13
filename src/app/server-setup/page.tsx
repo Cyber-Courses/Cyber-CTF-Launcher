@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { HostSetupPage, SetupTrademarks, EMPTY_CLOUD, EMPTY_HOST } from "@/features/servers/host-setup";
+import { isCloud } from "@/features/servers/host-setup/setup-model";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/toaster";
 import { SERVER_CHANGED, serverList, systemCheck, type ServerHostInput, type SystemReport } from "@/lib/tauri";
@@ -37,7 +38,7 @@ function Setup() {
 
   const close = () => getCurrentWindow().close().catch(warn("closing the window"));
 
-  const cloud = id ? initial?.provider === "aws" || initial?.provider === "azure" || initial?.provider === "gcp" : params.get("kind") === "cloud";
+  const cloud = id ? !!initial && isCloud(initial.provider) : params.get("kind") === "cloud";
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
