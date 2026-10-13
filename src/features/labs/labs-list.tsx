@@ -90,7 +90,8 @@ export function SignInBanner({ onLogin }: { onLogin: () => Promise<void> }) {
   );
 }
 
-/** What a row of the list reads besides its lab. */
+/** What a row of the list reads besides its lab. The handlers keep their identity across
+ *  renders (the rows are memoized). */
 export type RowContext = {
   statuses: Record<string, LabStatus>;
   runs: Record<string, DeployRun>;
@@ -124,9 +125,9 @@ function CatalogueRow({ lab, ctx: c }: { lab: Lab; ctx: RowContext }) {
       deploying={c.deploying.has(lab.id)}
       setup={running ? null : setupNeeded(lab, c.report ?? null, c.servers)}
       connectCloud={needsCloudAccount(lab, c.servers)}
-      onOpen={() => c.onOpen(lab)}
-      onStop={() => c.onStop(lab)}
-      onResume={() => c.onResume(lab)}
+      onOpen={c.onOpen}
+      onStop={c.onStop}
+      onResume={c.onResume}
     />
   );
 }

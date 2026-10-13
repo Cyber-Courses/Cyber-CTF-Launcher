@@ -15,6 +15,7 @@ import { useLabActions } from "@/features/labs/use-lab-actions";
 import { useDeployingLabs } from "@/lib/deploy-store";
 import { serverList, type LabStatus, type ServerHost, type SystemReport } from "@/lib/tauri";
 import { getVmProvider } from "@/lib/settings";
+import { useStableCallback } from "@/lib/use-stable-callback";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -83,6 +84,11 @@ function LabsView({ loggedIn, authReady = true, onLogin, hostArch, report, openL
   const { filtered, running, rest } = useFilteredLabs(labs, filters, statuses, completed);
   const detail = labs && detailSlug ? labs.find((l) => l.slug === detailSlug) : undefined;
   useDetailTitle(detail?.title ?? null, onDetailChange);
+  // Stable, for the memoized rows (see RowContext).
+  const onOpen = useStableCallback((lab: Lab) => setDetailSlug(lab.slug));
+  const onStop = useStableCallback((lab: Lab) => void actions.stop(lab));
+  const onResume = useStableCallback((lab: Lab) => void actions.resume(lab));
+  const login = useStableCallback(() => onLogin?.() ?? Promise.resolve());
 
   if (error)
     return (
@@ -127,12 +133,12 @@ function LabsView({ loggedIn, authReady = true, onLogin, hostArch, report, openL
     servers,
     loggedIn,
     // Signed out, the banner above the list signs in: no Sign in button on every row.
-    onLogin: loggedIn ? onLogin : undefined,
+    onLogin: loggedIn && onLogin ? login : undefined,
     hostArch,
     emulates: readyVms.some((p) => EMULATORS.includes(p)),
-    onOpen: (lab: Lab) => setDetailSlug(lab.slug),
-    onStop: (lab: Lab) => void actions.stop(lab),
-    onResume: (lab: Lab) => void actions.resume(lab),
+    onOpen,
+    onStop,
+    onResume,
   };
   // The catalogue stops at LIST_SCREEN; a lab's page (above) takes the shell's full width.
   return (

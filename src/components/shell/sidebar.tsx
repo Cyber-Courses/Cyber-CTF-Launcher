@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { memo } from "react";
 import { Cog, type LucideIcon, Search } from "lucide-react";
 import { Account } from "@/features/account/account";
 import { CtfMark } from "@/components/brand/mark";
@@ -64,14 +64,16 @@ export function Sidebar({
         {NAV.map((n) => (
           <div key={n.id}>
             {n.sep && <div className="mx-1.5 my-2 h-px bg-border" />}
-            <NavItem icon={n.icon} active={tab === n.id} dim={n.soon && tab !== n.id} onClick={() => onNavigate(n.id)}>
-              {title(n.id)}
-              {n.soon ? (
-                <span className="ml-auto font-mono text-[0.625rem] text-faint">{t("shell.sidebar.soon")}</span>
-              ) : n.id === "labs" && labCount > 0 ? (
-                <span className="ml-auto font-mono text-[0.6875rem] text-faint">{labCount}</span>
-              ) : null}
-            </NavItem>
+            <NavItem
+              id={n.id}
+              icon={n.icon}
+              active={tab === n.id}
+              dim={n.soon && tab !== n.id}
+              label={title(n.id)}
+              meta={n.soon ? t("shell.sidebar.soon") : n.id === "labs" && labCount > 0 ? String(labCount) : undefined}
+              metaSize={n.soon ? "text-[0.625rem]" : "text-[0.6875rem]"}
+              onSelect={onNavigate}
+            />
           </div>
         ))}
 
@@ -79,16 +81,21 @@ export function Sidebar({
           <>
             <div className="section-label px-2 pt-4 pb-1.5">{t("shell.sidebar.running")}</div>
             {activeLabs.map((l) => (
-              <ActiveLabItem key={l.id} lab={l} onOpen={() => onNavigate("labs", l.slug)} />
+              <ActiveLabItem key={l.id} lab={l} onNavigate={onNavigate} />
             ))}
           </>
         )}
 
         <div className="flex-1" />
-        <NavItem icon={Cog} active={false} onClick={onOpenSettings}>
-          {title("settings")}
-          <span className="ml-auto font-mono text-[0.625rem] text-faint">{isMac ? "⌘," : "Ctrl ,"}</span>
-        </NavItem>
+        <NavItem
+          id="settings"
+          icon={Cog}
+          active={false}
+          label={title("settings")}
+          meta={isMac ? "⌘," : "Ctrl ,"}
+          metaSize="text-[0.625rem]"
+          onSelect={onOpenSettings}
+        />
       </nav>
 
       <div className="mt-1 border-t border-border px-2.5 py-2.5">
@@ -98,12 +105,31 @@ export function Sidebar({
   );
 }
 
-/** One sidebar entry: 2rem high, icon then label; the current one sits on a glass fill. */
-function NavItem({ icon: I, active, dim, onClick, children }: { icon: LucideIcon; active: boolean; dim?: boolean; onClick: () => void; children: ReactNode }) {
+/** One sidebar entry: 2rem high, icon then label (and a note on the right); the current one sits
+ *  on a glass fill. Memoized: the shell re-renders on every poll that changes anything. */
+const NavItem = memo(function NavItem({
+  id,
+  icon: I,
+  active,
+  dim,
+  label,
+  meta,
+  metaSize,
+  onSelect,
+}: {
+  id: Tab;
+  icon: LucideIcon;
+  active: boolean;
+  dim?: boolean;
+  label: string;
+  meta?: string;
+  metaSize: string;
+  onSelect: (id: Tab) => void;
+}) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => onSelect(id)}
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-8 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-[0.8125rem] transition-colors",
@@ -114,17 +140,32 @@ function NavItem({ icon: I, active, dim, onClick, children }: { icon: LucideIcon
       )}
     >
       <I className="size-4 shrink-0 opacity-85" />
-      {children}
+      {label}
+      {meta && <span className={cn("ml-auto font-mono text-faint", metaSize)}>{meta}</span>}
     </button>
   );
-}
+});
+
+/** The same entry: its lab and what it is doing (a new object on each list rebuild). */
+const sameActiveLab = (a: { lab: ActiveLab; onNavigate: unknown }, b: { lab: ActiveLab; onNavigate: unknown }) =>
+  a.onNavigate === b.onNavigate &&
+  a.lab.id === b.lab.id &&
+  a.lab.slug === b.lab.slug &&
+  a.lab.title === b.lab.title &&
+  a.lab.op?.op === b.lab.op?.op &&
+  a.lab.op?.machine === b.lab.op?.machine &&
+  a.lab.op?.step === b.lab.op?.step;
 
 /** A lab running or busy: its name, then what it is doing and the step it is at. */
-function ActiveLabItem({ lab, onOpen }: { lab: ActiveLab; onOpen: () => void }) {
+const ActiveLabItem = memo(function ActiveLabItem({ lab, onNavigate }: { lab: ActiveLab; onNavigate: (tab: Tab, slug?: string) => void }) {
   const t = useT();
   const { op } = lab;
   return (
-    <button type="button" onClick={onOpen} className="flex w-full items-start gap-2.5 rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-glass">
+    <button
+      type="button"
+      onClick={() => onNavigate("labs", lab.slug)}
+      className="flex w-full items-start gap-2.5 rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-glass"
+    >
       <StatusDot tone={op ? "warn" : "ok"} pulse={!!op} className="mt-[0.4rem]" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[0.8125rem] text-foreground">{lab.title}</span>
@@ -144,4 +185,4 @@ function ActiveLabItem({ lab, onOpen }: { lab: ActiveLab; onOpen: () => void }) 
       </span>
     </button>
   );
-}
+}, sameActiveLab);

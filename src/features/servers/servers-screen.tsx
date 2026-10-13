@@ -81,7 +81,7 @@ export function ServerScreen({ onNavigate }: { onNavigate: (tab: Tab) => void })
               onEdit={() => open(h.id)}
               onDefault={() => act(() => serverSetDefault(h.id === defaultId ? null : h.id))}
               onRemove={() => {
-                if (confirm(t("servers.screen.removeConfirm", { name: h.name }))) act(() => serverRemove(h.id));
+                if (confirm(t("servers.screen.removeConfirm", { name: h.name }))) void act(() => serverRemove(h.id));
               }}
             />
           ))}

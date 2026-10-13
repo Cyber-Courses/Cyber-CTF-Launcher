@@ -1,9 +1,10 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { activeOperations, deployingLabs, labDeployLog, type ActiveOperation } from "@/lib/tauri";
 import { ignore } from "@/lib/failure";
-import { usePolled } from "@/lib/use-poll";
+import { usePoll } from "@/lib/use-poll";
+import { sharedPoll, useSharedPoll } from "@/lib/shared-poll";
 import { translate } from "@/lib/i18n";
 
 /**
@@ -44,8 +45,32 @@ function setRun(labId: string, run: DeployRun) {
   emit();
 }
 
+// Log lines waiting to be added, by lab: a deploy streams hundreds of lines a second at times,
+// and copying a run's logs and re-rendering every reader per line was most of a busy page's work.
+// They are added together about every 100 ms (a timer, not an animation frame: frames stop in a
+// hidden window, and a deploy finishing in the background must still end with all its lines).
+const pending = new Map<string, { lines: string[]; times: number[] }>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+const FLUSH_MS = 100;
+
+/** Adds the waiting log lines now (one update for all of them). */
+export function flushDeployLogs() {
+  if (flushTimer !== null) clearTimeout(flushTimer);
+  flushTimer = null;
+  if (pending.size === 0) return;
+  const runs = { ...state.runs };
+  for (const [labId, { lines, times }] of pending) {
+    const prev = runs[labId] ?? EMPTY_RUN;
+    runs[labId] = { ...prev, busy: true, logs: [...prev.logs, ...lines], times: [...prev.times, ...times] };
+  }
+  pending.clear();
+  state = { runs };
+  emit();
+}
+
 /** Begin a run (`op`) for `labId`: clears that lab's previous logs, leaves other labs untouched. */
 export function beginDeploy(labId: string, op?: string) {
+  flushDeployLogs();
   setRun(labId, { busy: true, logs: [], times: [], op });
 }
 
@@ -70,11 +95,14 @@ export const OPERATION_STATUS: Partial<Record<string, string>> = {
   },
 };
 
-/** Append a log line to `labId`'s run, timestamped on arrival. */
+/** Append a log line to `labId`'s run, timestamped on arrival (shown with the next batch). */
 export function appendDeployLog(labId: string, line: string) {
   noteSignedOut(line);
-  const prev = state.runs[labId] ?? EMPTY_RUN;
-  setRun(labId, { ...prev, busy: true, logs: [...prev.logs, line], times: [...prev.times, Date.now()] });
+  const batch = pending.get(labId) ?? { lines: [], times: [] };
+  batch.lines.push(line);
+  batch.times.push(Date.now());
+  pending.set(labId, batch);
+  if (flushTimer === null) flushTimer = setTimeout(flushDeployLogs, FLUSH_MS);
 }
 
 /** Fired when an action failed because the session is gone; the shell re-reads the sign-in. */
@@ -87,6 +115,7 @@ function noteSignedOut(text: string) {
 
 /** End `labId`'s run (keeps its logs so the console stays readable). */
 export function endDeploy(labId: string) {
+  flushDeployLogs();
   const prev = state.runs[labId];
   if (!prev) return;
   setRun(labId, { ...prev, busy: false });
@@ -95,6 +124,7 @@ export function endDeploy(labId: string) {
 /** Put `labId`'s run back as it was before a `beginDeploy` that turned out not to start
  *  anything (the backend refused it), so the previous run's log isn't replaced by a failure. */
 export function restoreDeploy(labId: string, run: DeployRun | undefined) {
+  flushDeployLogs();
   if (run) return setRun(labId, run);
   if (!(labId in state.runs)) return;
   const rest = { ...state.runs };
@@ -112,13 +142,16 @@ export function subscribeDeploy(cb: () => void) {
   };
 }
 
-/** The current state, for `useSyncExternalStore` and for tests. */
+/** The current state outside React (an operation's end, tests), with every line in so far. */
 export function getDeploySnapshot(): DeployState {
+  flushDeployLogs();
   return state;
 }
 
+const snapshot = () => state;
+
 export function useDeploy(): DeployState {
-  return useSyncExternalStore(subscribeDeploy, getDeploySnapshot, getDeploySnapshot);
+  return useSyncExternalStore(subscribeDeploy, snapshot, snapshot);
 }
 
 /**
@@ -127,9 +160,15 @@ export function useDeploy(): DeployState {
  * fast-refresh), but the deploy keeps running; reading this lets a screen show "this lab is
  * starting" again instead of a bare Start button (which would invite a colliding second start).
  */
-export function useDeployingLabs(pollMs = 4000): Set<string> {
-  return usePolled(() => deployingLabs().then((l) => new Set(l)), pollMs, new Set<string>(), { onFocus: true })[0];
+export function useDeployingLabs(): Set<string> {
+  return useSharedPoll(deployingPoll);
 }
+
+// One poll of each for the whole window, whichever screens read it (see shared-poll).
+const deployingPoll = sharedPoll({ read: () => deployingLabs().then((l) => new Set(l)), ms: 4000, initial: new Set<string>(), onFocus: true });
+
+/** The labs deploying in the backend as last read (empty while nothing reads them). */
+export const deployingLabsNow = () => deployingPoll.get();
 
 /** The sidebar's label for an operation, e.g. "Pausing…"; the machine when it targets one. */
 export function operationLabel(o: ActiveOperation): string {
@@ -157,19 +196,49 @@ export function operationLabel(o: ActiveOperation): string {
  * Every operation in flight, by lab, with the step its log is at. Polled often (steps move
  * every few seconds during a VM start), so the sidebar reads like a live progress line.
  */
-export function useActiveOperations(pollMs = 2000): Map<string, ActiveOperation> {
-  return usePolled(() => activeOperations().then((l) => new Map(l.map((o) => [o.labId, o]))), pollMs, new Map<string, ActiveOperation>())[0];
+export function useActiveOperations(): Map<string, ActiveOperation> {
+  return useSharedPoll(operationsPoll);
+}
+
+const operationsPoll = sharedPoll({
+  read: () => activeOperations().then((l) => new Map(l.map((o) => [o.labId, o]))),
+  ms: 2000,
+  initial: new Map<string, ActiveOperation>(),
+  // Read on in a hidden window, slower while nothing runs: the shell starts a lab's attack box
+  // when its launch ends (from the website too), which must not wait for the window to show.
+  hiddenMs: (ops) => (ops.size > 0 ? 2000 : 10_000),
+});
+
+/** The operations in flight as last read (empty while nothing reads them). */
+export const activeOperationsNow = () => operationsPoll.get();
+
+/** A log with each line's arrival time, parallel. */
+export type TimedLog = { lines: string[]; times: number[] };
+const NO_LOG: TimedLog = { lines: [], times: [] };
+
+/** `prev` followed by what a new read of the whole log (`lines`) adds, the new lines timed `at`;
+ *  a log that shrank or starts differently is a new run, timed afresh. The same lines again keep
+ *  `prev` as is. */
+export function timeLines(prev: TimedLog, lines: string[], at: number): TimedLog {
+  const restart = lines.length < prev.lines.length || (prev.lines.length > 0 && prev.lines[0] !== lines[0]);
+  const base = restart ? NO_LOG : prev;
+  if (base.lines.length === lines.length) return base;
+  return { lines, times: [...base.times, ...lines.slice(base.lines.length).map(() => at)] };
 }
 
 /**
- * The log of a lab's deploy running in its detached worker process, followed while `active`.
- * For a page that (re)attaches to a deploy after a reload or an app relaunch: the in-memory
- * store has no lines of it, the worker's log file has them all.
+ * The log of a lab's deploy running in its detached worker process, followed while `active`,
+ * each line timed when it was first read (for the steps' durations). For a page that
+ * (re)attaches to a deploy after a reload or an app relaunch: the in-memory store has no lines
+ * of it, the worker's log file has them all.
  */
-export function useWorkerLog(labId: string, active: boolean, pollMs = 1500): string[] {
-  return usePolled(() => labDeployLog(labId).then((text) => text.split("\n").filter((l) => l.length > 0)), pollMs, [] as string[], {
+export function useWorkerLog(labId: string, active: boolean, pollMs = 1500): TimedLog {
+  const [log, setLog] = useState<TimedLog>(NO_LOG);
+  usePoll(() => labDeployLog(labId).then((text) => text.split("\n").filter((l) => l.length > 0)), pollMs, {
     enabled: active,
     restartKey: labId,
     onError: ignore("read again in a moment"),
-  })[0];
+    onValue: (lines) => setLog((prev) => timeLines(prev, lines, Date.now())),
+  });
+  return log;
 }

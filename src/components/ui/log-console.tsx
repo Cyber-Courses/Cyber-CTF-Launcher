@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useNow } from "@/lib/use-now";
 import { Check, ChevronDown, ChevronRight, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatElapsed } from "@/lib/format";
@@ -31,8 +32,8 @@ export function LogConsole({
   const title = titleProp ?? t("ui.log.output");
   const pre = useRef<HTMLPreElement>(null);
   const [open, setOpen] = useState(true);
-  const [now, setNow] = useState<number>(() => Date.now());
-  const [startAt, setStartAt] = useState<number | null>(null);
+  // Bumped as each run starts: its clock starts over.
+  const [run, setRun] = useState(0);
 
   // Keep the newest line in view: scroll the log body itself to the bottom (not the page) on
   // every new line, so it reads like a tail -f and never needs manual scrolling.
@@ -48,32 +49,14 @@ export function LogConsole({
   if (wasRunning !== running) {
     setWasRunning(running);
     if (running) {
-      setStartAt(null);
+      setRun((r) => r + 1);
       setOpen(true);
     } else if (collapseOnDone && !(lines.at(-1)?.trimStart().startsWith("✗") ?? false)) setOpen(false);
   }
 
-  // Tick only while running; setState happens in the async interval callback (not in the
-  // effect body), and no refs are read during render.
-  useEffect(() => {
-    if (!running || lines.length === 0) return;
-    const tick = () => {
-      setNow(Date.now());
-      setStartAt((s) => s ?? Date.now());
-    };
-    // First tick at once, so a short run still shows its time.
-    const first = setTimeout(tick, 0);
-    const id = setInterval(tick, 300);
-    return () => {
-      clearTimeout(first);
-      clearInterval(id);
-    };
-  }, [running, lines.length]);
-
   if (lines.length === 0) return null;
 
   const failed = !running && (lines.at(-1)?.trimStart().startsWith("✗") ?? false);
-  const elapsed = startAt === null ? 0 : Math.max(0, now - startAt);
 
   return (
     <div className={cn("surface-log overflow-hidden rounded-control", className)}>
@@ -92,7 +75,7 @@ export function LogConsole({
         <span className="text-[0.75rem] font-medium text-foreground">
           {running ? t("ui.log.running", { title }) : failed ? t("ui.log.failed", { title }) : t("ui.log.done", { title })}
         </span>
-        <span className="ml-auto font-mono text-[0.6875rem] tabular-nums text-faint">{formatElapsed(elapsed)}</span>
+        <RunClock key={run} ticking={running} lines={lines.length} />
         {open ? <ChevronDown className="size-3.5 text-muted-foreground" /> : <ChevronRight className="size-3.5 text-muted-foreground" />}
       </button>
       {open && (
@@ -110,4 +93,23 @@ export function LogConsole({
       )}
     </div>
   );
+}
+
+/** The header's elapsed time: from the run's first line, ticking every 300 ms while it runs and
+ *  frozen once it ends. Its own component, so the tick re-renders only it, not the whole log. */
+function RunClock({ ticking, lines }: { ticking: boolean; lines: number }) {
+  const active = ticking && lines > 0;
+  const [now, touch] = useNow(300, active);
+  const [startAt, setStartAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    // At once, so a short run still shows its time.
+    const first = setTimeout(() => {
+      touch();
+      setStartAt((s) => s ?? Date.now());
+    }, 0);
+    return () => clearTimeout(first);
+  }, [active, lines, touch]);
+  const elapsed = startAt === null ? 0 : Math.max(0, now - startAt);
+  return <span className="ml-auto font-mono text-[0.6875rem] tabular-nums text-faint">{formatElapsed(elapsed)}</span>;
 }

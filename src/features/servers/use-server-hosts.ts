@@ -58,7 +58,7 @@ export function useServerHosts() {
   }, []);
 
   const open = (id: string | null) => serverOpenSetup(id, "server").catch((e) => setError(String(e)));
-  const testAll = () => hosts?.forEach((h) => test(h.id));
+  const testAll = () => hosts?.forEach((h) => void test(h.id));
   async function act(fn: () => Promise<unknown>) {
     try {
       await fn();

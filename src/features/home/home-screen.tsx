@@ -15,6 +15,7 @@ import { getLastRun } from "@/lib/last-run";
 import { useActiveOperations } from "@/lib/deploy-store";
 import { assessRam } from "@/features/home/capacity";
 import type { AuthStatus, SystemReport } from "@/lib/tauri";
+import { useStableCallback } from "@/lib/use-stable-callback";
 import { useT } from "@/lib/i18n";
 
 type Tab = "labs" | "machine" | "setup" | "server" | "cloud" | "settings";
@@ -47,6 +48,10 @@ export function HomeScreen({
 
   const capacity = metrics ? assessRam(metrics.memTotal) : null;
   const openLab = (slug: string) => onNavigate("labs", slug);
+  // The same handlers on every render, so the memoized rows re-render only when their lab changes.
+  const onOpenRow = useStableCallback((lab: Lab) => openLab(lab.slug));
+  const onStopRow = useStableCallback((lab: Lab) => void stop(lab));
+  const onResumeRow = useStableCallback((lab: Lab) => void resume(lab));
 
   const labRow = (lab: Lab) => (
     <LabRow
@@ -58,9 +63,9 @@ export function HomeScreen({
       loggedIn={loggedIn}
       hostArch={report?.arch ?? ""}
       emulates={emulatorReady(report)}
-      onOpen={() => openLab(lab.slug)}
-      onStop={() => stop(lab)}
-      onResume={() => resume(lab)}
+      onOpen={onOpenRow}
+      onStop={onStopRow}
+      onResume={onResumeRow}
     />
   );
 

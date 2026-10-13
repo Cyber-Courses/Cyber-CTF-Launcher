@@ -205,6 +205,7 @@
       "subscriptionId": "Subscription ID",
       "orPaste": "or paste it",
       "checkingGcloud": "Checking the gcloud CLI…",
+      "gcpReadFailed": "Couldn't read the Google Cloud account: {error}",
       "signedInAs": "Signed in as",
       "billingAccount": "Billing account",
       "billingHint": "the labs project is billed here",

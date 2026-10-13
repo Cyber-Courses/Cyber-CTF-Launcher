@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DeploySteps } from "@/features/labs/deploy-steps";
-import { flush } from "@/test/ui";
 
 const vagrant = [
   "==> DC01: Importing base box 'StefanScherer/windows_2019'...",
@@ -62,27 +61,32 @@ describe("DeploySteps", () => {
     rerender(<DeploySteps lines={["==> DC01: Saving state", "✓ Lab paused"]} times={at(2)} busy={false} ready={false} operation="pause" />);
     expect(screen.getByText("Paused")).toBeTruthy();
     expect(screen.queryByText("Ready")).toBeNull();
-    rerender(<DeploySteps lines={[]} busy ready={false} operation="shutdown" />);
+    rerender(<DeploySteps lines={[]} times={[]} busy ready={false} operation="shutdown" />);
     expect(screen.getByText("Shutting down…")).toBeTruthy();
     rerender(<DeploySteps lines={["x"]} times={at(1)} busy={false} ready operation="resume" />);
     expect(screen.getByText("Ready")).toBeTruthy();
   });
 
   it("says it is preparing before the first line of a launch", () => {
-    render(<DeploySteps lines={[]} busy ready={false} />);
+    render(<DeploySteps lines={[]} times={[]} busy ready={false} />);
     expect(screen.getByText("Preparing…")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Show full log/ })).toBeNull();
   });
 
-  it("times lines itself when the store has no times for them, and starts over on a new run", async () => {
-    const { rerender } = render(<DeploySteps lines={["Container api Creating"]} busy ready={false} />);
-    await flush();
-    rerender(<DeploySteps lines={["Container api Creating", "Container api Started"]} busy ready={false} />);
-    await flush();
+  it("starts over on a new run, and ticks the running step's time on its own", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const { rerender } = render(<DeploySteps lines={["Container api Creating"]} times={at(1)} busy ready={false} />);
+    rerender(<DeploySteps lines={["Container api Creating", "Container api Started"]} times={at(2)} busy ready={false} />);
     expect(screen.getByText("Start the containers")).toBeTruthy();
-    rerender(<DeploySteps lines={["Pulling api"]} busy ready={false} />);
-    await flush();
+    // The running step's time and the run's grow with the clock alone.
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(screen.getByRole("button", { name: /Start the containers/ }).textContent).toContain("2.0s");
+    rerender(<DeploySteps lines={["Pulling api"]} times={at(1)} busy ready={false} />);
     expect(screen.queryByText("Start the containers")).toBeNull();
     expect(screen.getByText("Get images")).toBeTruthy();
+    vi.useRealTimers();
   });
 });

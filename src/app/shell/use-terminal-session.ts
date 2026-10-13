@@ -1,6 +1,7 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { ignore } from "@/lib/failure";
 import { terminalClose, terminalOpen, terminalResize, terminalWrite, type Runtime, type ShellKind } from "@/lib/tauri";
 
 /** Reads a CSS custom property from the page, so the terminal follows the app's theme. */
@@ -60,7 +61,7 @@ export function useTerminalSession(
     })
       .then((s) => {
         if (disposed) {
-          void terminalClose(s);
+          void terminalClose(s).catch(ignore("the session ends with the window"));
           return;
         }
         session = s;
@@ -73,7 +74,7 @@ export function useTerminalSession(
       observer.disconnect();
       input.dispose();
       resized.dispose();
-      if (session !== null) void terminalClose(session);
+      if (session !== null) void terminalClose(session).catch(ignore("the session ends with the window"));
       term.dispose();
     };
   }, [host, id, kind, runtime, attempt, setState]);

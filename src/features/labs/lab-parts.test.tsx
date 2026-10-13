@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ComponentProps } from "react";
 import { act, render, renderHook, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -384,7 +385,7 @@ describe("LabRow", () => {
       ...p,
     }) as LabStatus;
 
-  function renderRow(p: Partial<Parameters<typeof LabRow>[0]> = {}) {
+  function renderRow(p: Partial<ComponentProps<typeof LabRow>> = {}) {
     const h = { onOpen: vi.fn(), onStop: vi.fn(), onResume: vi.fn() };
     render(<LabRow lab={lab} loggedIn hostArch="x86_64" {...h} {...p} />);
     return h;

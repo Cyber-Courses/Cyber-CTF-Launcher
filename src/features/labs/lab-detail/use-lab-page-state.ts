@@ -17,19 +17,19 @@ export function useLabPageState(
   const backendDeploying = useDeployingLabs().has(labId);
   // A deploy running in its worker process after this page reloaded (or the app relaunched): no
   // local log of it, so follow the worker's log file instead.
-  const workerLines = useWorkerLog(labId, backendDeploying && !input.busy && logs.length === 0);
+  const worker = useWorkerLog(labId, backendDeploying && !input.busy && logs.length === 0);
   const backendOp = useActiveOperations().get(labId)?.op;
   const state = deriveLabState({ ...input, backendDeploying, backendOp });
   // The panel keeps showing the last run's log once it's over (a resume's, say): keep reading
   // it as that operation.
   const [lastOperation, setLastOperation] = useState<LabOperation>("launch");
   if (state.operation && state.operation !== lastOperation) setLastOperation(state.operation);
-  const shownLogs = logs.length > 0 ? logs : workerLines;
+  const shownLogs = logs.length > 0 ? logs : worker.lines;
   return {
     ...state,
     lastOperation,
     shownLogs,
-    shownTimes: logs.length > 0 ? times : [],
+    shownTimes: logs.length > 0 ? times : worker.times,
     // A run that ended in ✗ failed.
     deployFailed: shownLogs.some((l) => l.startsWith("✗")),
   };

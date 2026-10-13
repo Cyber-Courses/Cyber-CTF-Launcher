@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { Lab } from "@/features/labs/use-labs";
 import { rowFacts, rowPhase, type RowPhase } from "@/features/labs/lab-row-state";
@@ -26,9 +26,11 @@ const PHASE_WORDS = {
  * (category, level, runtime with the run-place icons), the row action (Open and Stop while it
  * runs, Resume when parked, setup or sign-in when needed) and a chevron into the detail
  * (starting happens on the lab's own page). The secondary columns fold away in a narrow
- * container. Reused on the Overview rail-list and the full Labs list.
+ * container. Reused on the Overview rail-list and the full Labs list. Memoized: the handlers take
+ * the lab, so a list passes the same ones to every row and a poll re-renders only the rows whose
+ * lab changed.
  */
-export function LabRow({
+export const LabRow = memo(function LabRow({
   lab,
   status,
   busy = false,
@@ -56,10 +58,10 @@ export function LabRow({
   hostArch: string;
   /** An emulator (QEMU) is ready here, so a VM lab built for another CPU can run, slowly. */
   emulates?: boolean;
-  onOpen: () => void;
-  onStop: () => void;
+  onOpen: (lab: Lab) => void;
+  onStop: (lab: Lab) => void;
   /** Brings a paused or shut-down lab back as it was. */
-  onResume?: () => void;
+  onResume?: (lab: Lab) => void;
   /** The player already solved it (website evidence). */
   solved?: boolean;
   /** What this machine is missing to run it (see lab-readiness), or null. */
@@ -85,12 +87,12 @@ export function LabRow({
         role="button"
         tabIndex={0}
         aria-label={t("labs.row.open", { title: lab.title })}
-        onClick={onOpen}
+        onClick={() => onOpen(lab)}
         onKeyDown={(e) => {
           // Only the row itself: Enter on one of its buttons (or in its dialog) is theirs.
           if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
           e.preventDefault();
-          onOpen();
+          onOpen(lab);
         }}
         className="group grid h-13 cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto_1rem] items-center gap-3.5 px-4 text-[0.8125rem] outline-none transition-colors hover:bg-glass focus-visible:bg-glass focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @min-[44rem]:grid-cols-[auto_minmax(0,1fr)_8rem_5.5rem_7rem_9.5rem_1rem]"
       >
@@ -110,7 +112,7 @@ export function LabRow({
             loggedIn={loggedIn}
             onLogin={onLogin}
             onStop={() => setConfirmingStop(true)}
-            onResume={onResume}
+            onResume={onResume && (() => onResume(lab))}
           />
           {/* Starting happens on the lab's own page, where you pick where to run; the row opens it. */}
         </span>
@@ -125,10 +127,10 @@ export function LabRow({
           onCancel={() => setConfirmingStop(false)}
           onConfirm={() => {
             setConfirmingStop(false);
-            onStop();
+            onStop(lab);
           }}
         />
       )}
     </div>
   );
-}
+});

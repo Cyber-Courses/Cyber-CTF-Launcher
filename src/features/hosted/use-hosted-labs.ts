@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiQuery } from "@/lib/tauri";
 import { ignore, warn } from "@/lib/failure";
+import { structurallyEqual } from "@/lib/equal";
+import { usePoll } from "@/lib/use-poll";
 import { translate } from "@/lib/i18n";
 
 export interface HostedEndpoint {
@@ -39,9 +41,8 @@ export function useHostedLabs() {
   const [error, setError] = useState<string | null>(null);
   // Stop polling a session that never settles, so a stuck backend launch doesn't spin forever.
   const pollDeadline = useRef<{ id: string; until: number } | null>(null);
-  // Bumped after a poll that brought no new session (an error, or no answer), so the next poll
-  // is still armed: re-arming only on a new session object stopped polling after one failure.
-  const [pollTick, setPollTick] = useState(0);
+  // The session that gave up so (its polling stops).
+  const [gaveUp, setGaveUp] = useState<string | null>(null);
 
   // Hydrate from the backend once (requires login; a logged-out / errored call just leaves it null).
   useEffect(() => {
@@ -67,41 +68,33 @@ export function useHostedLabs() {
     }
   }, []);
 
-  // Poll the active session until it settles (RUNNING with endpoints, or FAILED/STOPPED/EXPIRED).
-  useEffect(() => {
-    if (!session || SETTLED.includes(session.state)) {
-      pollDeadline.current = null;
-      return;
-    }
-    // Give a launch a bounded time to come up; a session stuck in REQUESTED/CLAIMED/PULLING past
-    // it stops polling with a message instead of spinning forever.
-    if (!pollDeadline.current || pollDeadline.current.id !== session.id) {
-      pollDeadline.current = { id: session.id, until: Date.now() + 10 * 60 * 1000 };
-    }
-    if (Date.now() > pollDeadline.current.until) {
-      setError(translate("hosted.slowStart"));
-      return;
-    }
-    // Cancelled when the session changes (e.g. stop() clears it): a poll already in flight must
-    // not resolve afterwards and resurrect a session the user just stopped.
-    let cancelled = false;
-    const t = setTimeout(() => {
-      apiQuery<{ labSession: HostedSession | null }>("labSession", { id: session.id })
-        .then((d) => {
-          if (cancelled) return;
-          if (d.labSession) setSession(d.labSession);
-          else setPollTick((n) => n + 1);
-        })
-        .catch((e) => {
-          ignore("polled again in a moment")(e);
-          if (!cancelled) setPollTick((n) => n + 1);
-        });
-    }, 2500);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [session, pollTick]);
+  // Poll the active session until it settles (RUNNING with endpoints, or FAILED/STOPPED/EXPIRED),
+  // every 2.5 s, paused while the window is hidden. A failed or empty poll just polls again. A
+  // poll in flight when the session changes (e.g. stop() clears it) is dropped: it must not
+  // resurrect a session the user just stopped.
+  const pending = session && !SETTLED.includes(session.state) ? session.id : null;
+  // Give a launch a bounded time to come up; a session stuck in REQUESTED/CLAIMED/PULLING past
+  // it stops polling with a message instead of spinning forever.
+  const checkDeadline = (id: string) => {
+    if (!pollDeadline.current || pollDeadline.current.id !== id) pollDeadline.current = { id, until: Date.now() + 10 * 60 * 1000 };
+    if (Date.now() <= pollDeadline.current.until) return;
+    setError(translate("hosted.slowStart"));
+    setGaveUp(id);
+  };
+  usePoll(() => apiQuery<{ labSession: HostedSession | null }>("labSession", { id: pending }), 2500, {
+    enabled: pending !== null && gaveUp !== pending,
+    restartKey: pending,
+    leading: false,
+    onValue: (d) => {
+      const next = d.labSession;
+      if (next) setSession((prev) => (structurallyEqual(prev, next) ? prev : next));
+      if (pending) checkDeadline(pending);
+    },
+    onError: (e) => {
+      ignore("polled again in a moment")(e);
+      if (pending) checkDeadline(pending);
+    },
+  });
 
   const stop = useCallback(async () => {
     const current = session;

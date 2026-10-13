@@ -96,6 +96,7 @@ export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: bo
     gcpOrgs: gcp ? gcpAccounts.gcpOrgs : NONE,
     gcpEmail: gcpAccounts.gcpEmail,
     gcpChecking: gcpAccounts.gcpChecking,
+    gcpError: gcp ? gcpAccounts.gcpError : null,
     ociCfg: oci ? ociCfg : null,
   };
 }
@@ -138,16 +139,22 @@ function useAwsAccount(aws: boolean, awsCli: boolean, awsProfile: string | null)
 function useAzureSubscriptions(azure: boolean, setV: SetInput) {
   const [azureSubs, setAzureSubs] = useState<AzureSubscription[]>([]);
   const [azureChecking, setAzureChecking] = useState(false);
+  // Numbered as the AWS reads are: a sign-in reads again, and an older read answering after it
+  // must not show the subscriptions from before.
+  const subsRead = useRef(0);
   const loadAzureSubs = useCallback(() => {
+    const n = ++subsRead.current;
+    const latest = () => n === subsRead.current;
     setAzureChecking(true);
     azureSubscriptions()
       .then((subs) => {
+        if (!latest()) return;
         setAzureSubs(subs);
         // Default to the account's default subscription if none chosen yet.
         setV((s) => (s.provider === "azure" && !s.username && subs.length > 0 ? { ...s, username: (subs.find((x) => x.isDefault) ?? subs[0]).id } : s));
       })
-      .catch(() => setAzureSubs([]))
-      .finally(() => setAzureChecking(false));
+      .catch(() => latest() && setAzureSubs([]))
+      .finally(() => latest() && setAzureChecking(false));
   }, [setV]);
   useEffect(() => {
     // A read starting shows its "checking" state at once.
@@ -164,30 +171,36 @@ function useGcpAccounts(gcp: boolean, setV: SetInput) {
   const [gcpOrgs, setGcpOrgs] = useState<GcpOrganization[]>([]);
   const [gcpEmail, setGcpEmail] = useState<string | null>(null);
   const [gcpChecking, setGcpChecking] = useState(false);
+  const [gcpError, setGcpError] = useState<string | null>(null);
+  // Numbered as the AWS reads are (see there).
+  const projectsRead = useRef(0);
   const loadGcpProjects = useCallback(() => {
+    const n = ++projectsRead.current;
+    const latest = () => n === projectsRead.current;
     setGcpChecking(true);
-    Promise.all([gcpAccount(), gcpBillingAccounts(), gcpOrganizations()])
+    // Each list on its own: one call failing (no permission to list organizations, say) keeps
+    // what the others found, and says what went wrong.
+    void Promise.allSettled([gcpAccount(), gcpBillingAccounts(), gcpOrganizations()])
       .then(([email, billing, orgs]) => {
-        setGcpEmail(email);
-        setGcpBilling(billing);
-        setGcpOrgs(orgs);
+        if (!latest()) return;
+        setGcpEmail(email.status === "fulfilled" ? email.value : null);
+        const accounts = billing.status === "fulfilled" ? billing.value : [];
+        setGcpBilling(accounts);
+        setGcpOrgs(orgs.status === "fulfilled" ? orgs.value : []);
+        const failed = [email, billing, orgs].find((r) => r.status === "rejected");
+        setGcpError(failed ? String(failed.reason) : null);
         // Default to the first open billing account if none chosen yet.
-        const open = billing.find((b) => b.open) ?? billing[0];
+        const open = accounts.find((b) => b.open) ?? accounts[0];
         setV((s) => (s.provider === "gcp" && !s.username && open ? { ...s, username: open.id } : s));
       })
-      .catch(() => {
-        setGcpEmail(null);
-        setGcpBilling([]);
-        setGcpOrgs([]);
-      })
-      .finally(() => setGcpChecking(false));
+      .finally(() => latest() && setGcpChecking(false));
   }, [setV]);
   useEffect(() => {
     // A read starting shows its "checking" state at once.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (gcp) loadGcpProjects();
   }, [gcp, loadGcpProjects]);
-  return { gcpBilling, gcpOrgs, gcpEmail, gcpChecking, loadGcpProjects };
+  return { gcpBilling, gcpOrgs, gcpEmail, gcpChecking, gcpError, loadGcpProjects };
 }
 
 /** OCI: what ~/.oci/config holds, to prefill the compartment (tenancy root) and region. */

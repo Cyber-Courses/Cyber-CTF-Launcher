@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiQuery, machineWorkloads, type ActiveOperation } from "@/lib/tauri";
 import { useDeployingLabs } from "@/lib/deploy-store";
 import { useLabState } from "@/features/labs/lab-store";
@@ -18,9 +18,14 @@ const WORKLOADS_POLL_MS = 8000;
 export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, ActiveOperation>) {
   const [labs, setLabs] = useState<SidebarLab[]>([]);
   useEffect(() => {
+    // A sign-in change starts a new read: the one in flight from before it must not land last.
+    let alive = true;
     apiQuery<{ labs: SidebarLab[] }>("sidebarLabs")
-      .then((d) => setLabs(d.labs))
-      .catch(() => setLabs([]));
+      .then((d) => alive && setLabs(d.labs))
+      .catch(() => alive && setLabs([]));
+    return () => {
+      alive = false;
+    };
   }, [loggedIn]);
 
   const deploying = useDeployingLabs();
@@ -35,5 +40,7 @@ export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, A
   );
   const statuses = useLabState("statuses");
 
-  return { labs, active: activeLabs(labs, deploying, ops, runningIds, statuses) };
+  // The same list object until one of its inputs changes, so the sidebar's entries don't re-render.
+  const active = useMemo(() => activeLabs(labs, deploying, ops, runningIds, statuses), [labs, deploying, ops, runningIds, statuses]);
+  return { labs, active };
 }

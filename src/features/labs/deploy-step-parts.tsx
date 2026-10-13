@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { Check, ChevronRight, X } from "lucide-react";
 import { LogConsole } from "@/components/ui/log-console";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/format";
 import type { Step, Timed } from "@/features/labs/deploy-log";
+import { useNow } from "@/lib/use-now";
 import { useT } from "@/lib/i18n";
 
 // The parts of DeploySteps: a step's row and mark, its own lines, and the raw log.
@@ -31,6 +32,13 @@ export function StepMark({ state }: { state: StepState }) {
       {state === "fail" && <X className="size-2.5" strokeWidth={3} />}
     </span>
   );
+}
+
+/** A duration still running, from `from` to now: the one part of the timeline that ticks
+ *  (every 100 ms), so the steps and the log around it don't re-render with it. */
+export function LiveDuration({ from }: { from: number }) {
+  const [now] = useNow(100);
+  return <>{formatDuration(Math.max(0, now - from))}</>;
 }
 
 /** A phase's own lines, each with its time since the launch started. */
@@ -66,7 +74,8 @@ export function StepItem({
   step: Step;
   state: StepState;
   from: number;
-  to: number;
+  /** When it ended; null while it runs (its duration then ticks). */
+  to: number | null;
   /** When the run started, for the lines' times. */
   origin: number;
   expanded: boolean;
@@ -83,7 +92,7 @@ export function StepItem({
       >
         <StepMark state={state} />
         <span className={cn("truncate", state === "fail" ? "text-destructive" : "text-foreground")}>{p.label}</span>
-        <span className="font-mono text-[0.6875rem] tabular-nums text-faint">{formatDuration(to - from)}</span>
+        <span className="font-mono text-[0.6875rem] tabular-nums text-faint">{to === null ? <LiveDuration from={from} /> : formatDuration(to - from)}</span>
         <ChevronRight className={cn("size-3.5 text-faint transition-transform group-hover:text-muted-foreground", expanded && "rotate-90")} />
       </button>
       {/* While a phase is running, show its latest line inline (e.g. which container is
@@ -100,8 +109,9 @@ export function StepItem({
   );
 }
 
-/** The whole log, one click away, each line with its time since the start. */
-export function RawLog({ timed, origin, shown, onToggle }: { timed: Timed[]; origin: number; shown: boolean; onToggle: () => void }) {
+/** The whole log, one click away, each line with its time since the start. Memoized: it changes
+ *  only with the log. */
+export const RawLog = memo(function RawLog({ timed, origin, shown, onToggle }: { timed: Timed[]; origin: number; shown: boolean; onToggle: () => void }) {
   const t = useT();
   return (
     <div className="border-t border-border px-4 py-2">
@@ -120,4 +130,4 @@ export function RawLog({ timed, origin, shown, onToggle }: { timed: Timed[]; ori
       )}
     </div>
   );
-}
+});

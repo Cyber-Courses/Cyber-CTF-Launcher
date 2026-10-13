@@ -293,14 +293,16 @@ describe("Google Cloud account setup", () => {
     expect(document.body.textContent).toContain("new@example.com");
   });
 
-  it("falls back to the sign-in when listing fails", async () => {
+  it("keeps what the other lists found when one fails, and says why", async () => {
     installTauri({
       gcp_billing_accounts: () => {
         throw "PERMISSION_DENIED";
       },
     });
     await renderSetup(editing({ provider: "gcp", host: "europe-west1", username: "" }));
-    expect(screen.getByText("Sign in with the gcloud CLI to list your billing accounts.")).toBeTruthy();
+    // Still signed in (the account read fine), and the failure is shown, not swallowed.
+    expect(screen.queryByText("Sign in with the gcloud CLI to list your billing accounts.")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("PERMISSION_DENIED");
   });
 });
 
