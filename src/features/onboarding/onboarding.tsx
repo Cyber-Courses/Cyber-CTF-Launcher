@@ -68,45 +68,50 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
         )}
       </div>
 
-      <div className="flex flex-1 justify-center overflow-y-auto px-6 pt-6 pb-12">
-        <div className="my-auto w-full max-w-lg">
-          {/* The mark, then the step position: dots and a mono "3 / 9 · Step name". */}
-          <div className="flex flex-col items-center">
-            <CtfMark className="size-12" />
-            <StepProgress count={steps.length} pos={pos} icon={meta?.icon} name={t(STEP_NAMES[step])} />
-          </div>
+      {/* One fixed-height column (centred in a tall window): the step scrolls inside it and its
+          footer is pinned to the bottom, so the buttons stay in view and in place from step to
+          step. The scroller spans the window, so its scrollbar sits on the window's edge. */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="my-auto flex max-h-[50rem] min-h-0 flex-1 flex-col overflow-y-auto px-6">
+          <div className="mx-auto flex min-h-full w-full max-w-lg flex-col pt-6">
+            {/* The mark, then the step position: dots and a mono "3 / 9 · Step name". */}
+            <div className="flex shrink-0 flex-col items-center">
+              <CtfMark className="size-12" />
+              <StepProgress count={steps.length} pos={pos} icon={meta?.icon} name={t(STEP_NAMES[step])} />
+            </div>
 
-          <div key={step} className="mt-8 animate-rise-in">
-            {step === "welcome" && <WelcomeStep onNext={next} />}
+            <div key={step} className="mt-8 flex flex-1 animate-rise-in flex-col">
+              {step === "welcome" && <WelcomeStep onNext={next} />}
 
-            {step === "signin" && <SignInStep auth={auth} loggingIn={loggingIn} loginError={loginError} onLogin={login} onBack={back} onNext={next} />}
+              {step === "signin" && <SignInStep auth={auth} loggingIn={loggingIn} loginError={loginError} onLogin={login} onBack={back} onNext={next} />}
 
-            {/* A machine step before the machine check answers: just the loader, no step header. */}
-            {isMachineStep(step) && report === null && (
-              <div className="flex items-center justify-center gap-2 text-[0.8125rem] text-muted-foreground">
-                <Spinner className="size-4" /> {t("onboarding.checking")}
-              </div>
-            )}
-
-            {isMachineStep(step) && report !== null && meta && (
-              <div>
-                <StepHeader title={meta.title} description={meta.description} />
-                <div className="mt-8">
-                  <ErrorBoundary resetKey={step} title={t("onboarding.stepFailed")}>
-                    <MachineStepBody step={step} report={report} setup={setup} />
-                  </ErrorBoundary>
+              {/* A machine step before the machine check answers: just the loader, no step header. */}
+              {isMachineStep(step) && report === null && (
+                <div className="flex items-center justify-center gap-2 text-[0.8125rem] text-muted-foreground">
+                  <Spinner className="size-4" /> {t("onboarding.checking")}
                 </div>
-                <StepActions
-                  onBack={back}
-                  backDisabled={setup.busy}
-                  onNext={next}
-                  disabled={setup.busy || !canContinue(step, report, setup)}
-                  nextLabel={nextLabel(step, report, t)}
-                />
-              </div>
-            )}
+              )}
 
-            {step === "done" && <DoneStep auth={auth} report={report} setup={setup} onComplete={onComplete} />}
+              {isMachineStep(step) && report !== null && meta && (
+                <div className="flex flex-1 flex-col">
+                  <StepHeader title={meta.title} description={meta.description} />
+                  <div className="mt-8">
+                    <ErrorBoundary resetKey={step} title={t("onboarding.stepFailed")}>
+                      <MachineStepBody step={step} report={report} setup={setup} />
+                    </ErrorBoundary>
+                  </div>
+                  <StepActions
+                    onBack={back}
+                    backDisabled={setup.busy}
+                    onNext={next}
+                    disabled={setup.busy || !canContinue(step, report, setup)}
+                    nextLabel={nextLabel(step, report, t)}
+                  />
+                </div>
+              )}
+
+              {step === "done" && <DoneStep auth={auth} report={report} setup={setup} onComplete={onComplete} />}
+            </div>
           </div>
         </div>
       </div>

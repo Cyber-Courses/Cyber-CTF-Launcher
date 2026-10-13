@@ -23,7 +23,8 @@ export function RunPlaceIcons({
 }) {
   const t = useT();
   return (
-    <span className="inline-flex items-center gap-1">
+    // Above a lab row's stretched title (see LabRow), so each icon's hint shows on hover.
+    <span className="relative z-[1] inline-flex items-center gap-1">
       {runPlaces(runtime, hostArch, emulates).map(({ key, icon: Icon, available }) => {
         const label = t(`labs.places.${key}`);
         const inUse = running && status?.place === key;
@@ -33,7 +34,7 @@ export function RunPlaceIcons({
             ? t("labs.row.canRunOn", { where: label })
             : t("labs.row.notAvailable", { where: label });
         return (
-          <span key={key} title={hint} aria-label={hint} className="inline-flex">
+          <span key={key} role="img" title={hint} aria-label={hint} className="inline-flex">
             <Icon className={cn("size-3", inUse ? "text-success" : available ? "text-jewel-text" : "text-faint opacity-50")} />
           </span>
         );

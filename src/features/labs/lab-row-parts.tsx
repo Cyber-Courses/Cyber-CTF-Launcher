@@ -16,29 +16,15 @@ import { useT } from "@/lib/i18n";
 
 // The cells of a lab's list row (see LabRow): its dot, title, columns, action and the stop dialog.
 
-/** A row action: compact, and it doesn't open the row when clicked. */
-function RowButton({
-  danger = false,
-  onClick,
-  ...props
-}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick"> & { danger?: boolean; onClick: () => void }) {
-  return (
-    <Button
-      size="xs"
-      variant={danger ? "destructive" : "outline"}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      {...props}
-    />
-  );
+/** A row action: compact, drawn above the title's stretched click area (see LabRow). */
+function RowButton({ danger = false, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean }) {
+  return <Button size="xs" variant={danger ? "destructive" : "outline"} {...props} />;
 }
 
 /** The status dot: busy or starting (pulsing), running, solved (jewel) or idle, and its word. */
 export function RowDot({ phase, running, solved, label }: { phase: RowPhase; running: boolean; solved: boolean; label: string | null }) {
   return (
-    <span title={label ?? undefined} className="flex w-2 justify-center">
+    <span title={label ?? undefined} className="relative z-[1] flex w-2 justify-center">
       {phase === "busy" || phase === "starting" ? (
         <StatusDot tone="warn" pulse />
       ) : running ? (
@@ -53,18 +39,43 @@ export function RowDot({ phase, running, solved, label }: { phase: RowPhase; run
   );
 }
 
-/** The title over mono meta: slug, emulated, then what setup it needs or its description. */
-export function RowTitle({ lab, emulated, setup, running }: { lab: Lab; emulated: boolean; setup: string | null; running: boolean }) {
+/** The title over mono meta: slug, emulated, then what setup it needs or its description. The
+ *  title is the button that opens the lab, stretched over the whole row by its ::after (the row is
+ *  the positioned box; nothing between them may be), with the row's focus ring. */
+export function RowTitle({
+  lab,
+  emulated,
+  setup,
+  running,
+  openLabel,
+  onOpen,
+}: {
+  lab: Lab;
+  emulated: boolean;
+  setup: string | null;
+  running: boolean;
+  /** "Open <title>": the button's name. */
+  openLabel: string;
+  onOpen: () => void;
+}) {
   const t = useT();
   return (
     <span className="min-w-0">
-      <span className="block truncate font-medium text-foreground">{lab.title}</span>
+      <button
+        type="button"
+        data-row-open
+        aria-label={openLabel}
+        onClick={onOpen}
+        className="block w-full cursor-pointer truncate text-left font-medium text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-inset"
+      >
+        {lab.title}
+      </button>
       <span className="block truncate font-mono text-[0.6875rem] text-faint">
         {lab.slug}
         {emulated && (
           <>
             {" · "}
-            <span className="text-warning" title={t("labs.row.emulatedHint")}>
+            <span className="relative z-[1] text-warning" title={t("labs.row.emulatedHint")}>
               {t("labs.row.emulated")}
             </span>
           </>
@@ -198,12 +209,9 @@ export function RowAction({
 export function StopDialog({ lab, status, onCancel, onConfirm }: { lab: Lab; status?: LabStatus; onCancel: () => void; onConfirm: () => void }) {
   const t = useT();
   return (
-    // Clicks in the dialog stay in it: the row behind would open the lab.
-    <div onClick={(e) => e.stopPropagation()}>
-      <ConfirmDialog title={t("labs.row.removeTitle", { title: lab.title })} confirmLabel={t("labs.row.remove")} onCancel={onCancel} onConfirm={onConfirm}>
-        {t(lab.runtime?.runtime === "CLOUD" ? "labs.row.removeBodyCloud" : "labs.row.removeBody")}
-        {!status?.host && status?.place !== "local_vm" && t("labs.row.removeKeep")}
-      </ConfirmDialog>
-    </div>
+    <ConfirmDialog title={t("labs.row.removeTitle", { title: lab.title })} confirmLabel={t("labs.row.remove")} onCancel={onCancel} onConfirm={onConfirm}>
+      {t(lab.runtime?.runtime === "CLOUD" ? "labs.row.removeBodyCloud" : "labs.row.removeBody")}
+      {!status?.host && status?.place !== "local_vm" && t("labs.row.removeKeep")}
+    </ConfirmDialog>
   );
 }
