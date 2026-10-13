@@ -148,7 +148,51 @@ pub(super) struct Observed {
 }
 
 /// What the OS says about process `pid`, if it exists.
+///
+/// On macOS sysinfo misreads a live process now and then, more often while other processes
+/// start: it first lists every process id and finds nothing at all when processes were started
+/// between its two `proc_listallpids` calls, and it reads the arguments with two
+/// `KERN_PROCARGS2` sysctls, the second of which can fail, leaving the command line empty. A
+/// live worker then read as gone (or as another program), and its pidfile was swept as stale.
+/// So a process that the OS still has is looked at again, a few times, until sysinfo sees it
+/// (on macOS, with its command line).
 pub(super) fn observe(pid: u32) -> Option<Observed> {
+    let mut last = None;
+    for _ in 0..5 {
+        match observe_once(pid) {
+            // Elsewhere an empty command line is what the OS says (Windows: an elevated process).
+            Some(seen) if seen.zombie || !seen.cmdline.is_empty() || !cfg!(target_os = "macos") => return Some(seen),
+            Some(seen) => last = Some(seen),
+            None if last.is_none() && !exists(pid) => return None,
+            None => {}
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    last
+}
+
+/// Whether process `pid` exists, by signal 0 (nothing is sent): it does when the signal could
+/// be sent, or was refused (another user's process).
+#[cfg(unix)]
+fn exists(pid: u32) -> bool {
+    // A pid past i32 would name a process group once negative.
+    let Ok(pid) = libc::pid_t::try_from(pid) else { return false };
+    if pid <= 0 {
+        return false;
+    }
+    // SAFETY: kill with signal 0 only checks the process exists.
+    let sent = unsafe { libc::kill(pid, 0) } == 0;
+    sent || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+/// Elsewhere sysinfo reads one process at a time: what it misses is gone.
+#[cfg(not(unix))]
+fn exists(_pid: u32) -> bool {
+    false
+}
+
+/// [`observe`], one look.
+fn observe_once(pid: u32) -> Option<Observed> {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
     let pid = Pid::from_u32(pid);
     let mut sys = System::new();
@@ -452,6 +496,20 @@ mod tests {
         let pid = child.id();
         child.wait().unwrap();
         assert!(!alive(&Worker { pid, started: None }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_process_exists_until_it_is_reaped() {
+        assert!(super::exists(std::process::id()));
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        assert!(!super::exists(pid));
+        assert!(observe(pid).is_none());
+        // Never a process group: a pid past i32, or 0.
+        assert!(!super::exists(4_000_000_000));
+        assert!(!super::exists(0));
     }
 
     /// A process whose command line reads like a worker's (`… deploy --job …`), sleeping.
