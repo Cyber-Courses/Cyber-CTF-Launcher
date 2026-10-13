@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MachineSetup } from "@/features/machine/machine-setup";
+import { SetupChecklist } from "@/features/machine/setup-checklist";
 import { MachineStepBody, SetupOutcome, useMachineSetup, type MachineStep, type MachineSetupState } from "@/features/machine/setup-steps";
 import { Onboarding } from "@/features/onboarding/onboarding";
 import { getAttackImage, getAutoAttackBox, setAttackImage } from "@/lib/settings";
-import type { ProviderStatus, SystemReport } from "@/lib/tauri";
+import type { ProviderStatus, SystemReport, WslState } from "@/lib/tauri";
 import { freshReport, readyReport } from "@/test/fixtures";
 import { commands, installTauri, stream } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
@@ -105,6 +106,138 @@ describe("WSL step", () => {
     await user.click(button(/turn on wsl 2/i));
     await flush();
     expect(text()).toContain("✗ elevation refused");
+  });
+});
+
+/** Windows, with the machine check's WSL answer. */
+const windows = (state: WslState | null, reopensAfterRestart = true): SystemReport => ({
+  ...freshReport("windows"),
+  wsl: state ? { state, reopensAfterRestart } : null,
+});
+
+/** The setup window at its WSL step (the second, after the package manager). */
+function SetupAtWsl({ report }: { report: SystemReport }) {
+  return <MachineSetup report={report} onRefresh={() => {}} onClose={() => {}} startAt={{ step: "virtualization", nonce: 1 }} />;
+}
+
+describe("WSL step, from the machine check", () => {
+  it("is simply done when WSL 2 is on", () => {
+    installTauri();
+    render(<SetupAtWsl report={windows("ready")} />);
+    expect(text()).toContain("On and running");
+    expect(screen.queryByRole("button", { name: /turn on wsl 2|restart now|done this/i })).toBeNull();
+    expect(button(/^continue$/i)).toBeTruthy();
+  });
+
+  it("offers a restart when WSL 2 waits for one, with a way to restart later", () => {
+    installTauri();
+    render(<SetupAtWsl report={windows("needsReboot")} />);
+    expect(screen.getByRole("status").textContent).toContain("Restart Windows to finish");
+    expect(button(/restart now/i)).toBeTruthy();
+    expect(button(/restart later/i).hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByRole("button", { name: /turn on wsl 2|done this/i })).toBeNull();
+    // The manual way stays.
+    expect(text()).toContain("Do it by hand instead");
+  });
+
+  it("offers to turn WSL 2 on when it is missing, or skip", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    const onRefresh = vi.fn();
+    render(<Step step="virtualization" report={windows("missing")} onRefresh={onRefresh} />);
+    expect(button(/turn on wsl 2/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /restart now/i })).toBeNull();
+    expect(text()).not.toContain("couldn’t tell");
+    await user.click(button(/re-check/i));
+    expect(onRefresh).toHaveBeenCalledOnce();
+    expect(commands(calls)).not.toContain("machine_restart");
+  });
+
+  it("asks the player only when the check can't tell", () => {
+    installTauri();
+    const r = render(<SetupAtWsl report={windows("unknown")} />);
+    expect(text()).toContain("couldn’t tell whether WSL 2 is on");
+    expect(button(/i’ve done this/i)).toBeTruthy();
+    r.unmount();
+    render(<SetupAtWsl report={windows("missing")} />);
+    expect(screen.queryByRole("button", { name: /i’ve done this/i })).toBeNull();
+    expect(button(/skip for now/i)).toBeTruthy();
+  });
+
+  it("offers the restart once Turn on WSL 2 finished, whatever the last check said", async () => {
+    installTauri({ install_dependency: (a) => (stream(a, "The requested operation is successful."), null) });
+    const user = userEvent.setup();
+    render(<SetupAtWsl report={windows("missing")} />);
+    await user.click(button(/turn on wsl 2/i));
+    await flush();
+    expect(button(/restart now/i)).toBeTruthy();
+    expect(button(/restart later/i)).toBeTruthy();
+    expect(text()).toContain("The requested operation is successful.");
+  });
+
+  it("a failed Turn on WSL 2 doesn't offer a restart", async () => {
+    installTauri({
+      install_dependency: () => {
+        throw "elevation refused";
+      },
+    });
+    const user = userEvent.setup();
+    render(<SetupAtWsl report={windows("missing")} />);
+    await user.click(button(/turn on wsl 2/i));
+    await flush();
+    expect(screen.queryByRole("button", { name: /restart now/i })).toBeNull();
+  });
+
+  it("restarts only after the player confirms, saying what happens", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    render(<Step step="virtualization" report={windows("needsReboot")} />);
+    await user.click(button(/restart now/i));
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).toContain("open apps close without saving");
+    expect(dialog.textContent).toContain("Cyber CTF opens again when you sign back in");
+    // Cancel keeps everything.
+    await user.click(button(/cancel/i));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(commands(calls)).not.toContain("machine_restart");
+    await user.click(button(/restart now/i));
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /restart now/i }));
+    await flush();
+    expect(calls.find((c) => c.cmd === "machine_restart")?.args).toEqual({ reason: "Cyber CTF: restarting to finish turning on WSL 2." });
+    expect(screen.getByRole("status").textContent).toContain("Restarting in a few seconds");
+    expect(button(/restart now/i).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("says to reopen Cyber CTF by hand when it can't reopen itself, and shows a failed restart", async () => {
+    installTauri({
+      machine_restart: () => {
+        throw "Access is denied.";
+      },
+    });
+    const user = userEvent.setup();
+    render(<Step step="virtualization" report={windows("needsReboot", false)} />);
+    await user.click(button(/restart now/i));
+    expect(screen.getByRole("alertdialog").textContent).toContain("open Cyber CTF again");
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /restart now/i }));
+    await flush();
+    // The button comes back, to try again.
+    expect(button(/restart now/i).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("status").textContent).not.toContain("Restarting");
+  });
+});
+
+describe("guided setup checklist, WSL line", () => {
+  // A fresh Windows machine: only the attack machine (a default) is done besides WSL.
+  it.each([
+    ["ready", "WSL 2", 2],
+    ["needsReboot", "restart needed", 1],
+    ["missing", "not installed", 1],
+    [null, "not checked", 1],
+  ] as const)("%s reads as %s", (state, meta, done) => {
+    installTauri();
+    render(<SetupChecklist report={windows(state)} last={{ docker: null, vm: null }} onFix={vi.fn()} />);
+    expect(text()).toContain(`Enable virtualization (WSL 2)${meta}`);
+    expect(text()).toContain(`${done} of 8 done`);
   });
 });
 

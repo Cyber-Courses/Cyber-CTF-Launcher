@@ -76,6 +76,12 @@ impl Drop for Tools {
     }
 }
 
+/// Whether a test scripts the tools on this thread (so nothing real would run).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn scripted() -> bool {
+    STATE.with(|s| s.borrow().is_some())
+}
+
 /// The scripted answer to `program args`, when a test scripts the tools on this thread.
 pub(super) fn answer(program: &'static str, args: &[&str]) -> Option<Result<String>> {
     Some(match reply(program, args)? {

@@ -165,6 +165,7 @@
     "add": "Añadir",
     "setUp": "Configurar",
     "notInstalled": "no instalado",
+    "restartNeeded": "requiere reinicio",
     "notChecked": "sin comprobar",
     "running": "en ejecución",
     "stopped": "detenido",
@@ -229,7 +230,8 @@
     "next": {
       "done": "Ya lo he hecho",
       "skip": "Omitir por ahora",
-      "continue": "Continuar"
+      "continue": "Continuar",
+      "restartLater": "Reiniciaré más tarde"
     }
   },
   "body": {
@@ -250,12 +252,24 @@
       "log": "Activando WSL 2. Acepta el aviso de Windows para continuar…",
       "turningOn": "Activando WSL 2…",
       "turnOn": "Activar WSL 2",
-      "restart": "Reinicia Windows para terminar y vuelve a abrir Cyber CTF para continuar la configuración.",
+      "restart": "WSL 2 está activado. Reinicia Windows para terminar de activarlo.",
       "byHand": "Hacerlo manualmente",
       "step1": "Abre <b>PowerShell</b> como administrador (clic derecho y luego “Ejecutar como administrador”).",
       "step2": "Ejecuta esto y reinicia cuando termine:",
       "step3": "Si Docker dice más tarde que la virtualización está desactivada: abre “Activar o desactivar las características de Windows” y habilita <b>Plataforma de máquina virtual</b> y <b>Subsistema de Windows para Linux</b>, y asegúrate de que la virtualización está activada en tu BIOS/UEFI.",
-      "guide": "Guía de instalación de WSL de Microsoft"
+      "guide": "Guía de instalación de WSL de Microsoft",
+      "readyTitle": "WSL 2",
+      "readyDetail": "Activado y en marcha",
+      "restartNow": "Reiniciar ahora",
+      "restarting": "Reiniciando en unos segundos…",
+      "confirmTitle": "¿Reiniciar Windows ahora?",
+      "confirmBody": "Windows se reinicia en unos segundos y las aplicaciones abiertas se cierran sin guardar: guarda tu trabajo antes.",
+      "reopens": "Cyber CTF se abre de nuevo cuando vuelvas a iniciar sesión, y la configuración continúa donde se quedó.",
+      "reopenByHand": "Cuando vuelvas a iniciar sesión, abre Cyber CTF de nuevo: la configuración continúa donde se quedó.",
+      "restartReason": "Cyber CTF: reiniciando para terminar de activar WSL 2.",
+      "restartFailed": "No se pudo reiniciar Windows",
+      "unknown": "Cyber CTF no pudo saber si WSL 2 está activado. Si ya lo activaste y reiniciaste, continúa.",
+      "recheck": "Volver a comprobar"
     },
     "dockerTestDescription": "busybox, dos contenedores en una red de lab.",
     "vmTestDescription": "Arranca, ejecuta un comando, le hace ping en una red de lab y la borra.",

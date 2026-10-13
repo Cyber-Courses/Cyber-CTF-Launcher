@@ -5,7 +5,7 @@ import type { MachineSetupState } from "@/features/machine/setup-steps/use-machi
 // steps.ts pulls icons and the setup hook's module only for types; no Tauri runtime needed.
 vi.mock("@/lib/tauri", () => ({}));
 
-const { canContinue, nextLabel, stepMeta } = await import("@/features/machine/setup-steps/steps");
+const { canContinue, nextLabel, stepMeta, wslState } = await import("@/features/machine/setup-steps/steps");
 
 const report = (over: Partial<SystemReport> = {}) =>
   ({
@@ -56,5 +56,21 @@ describe("machine setup steps", () => {
     expect(windows).toContain("WSL 2");
     expect(windows).not.toMatch(/you enabled/i);
     expect(stepMeta("docker", report()).description).not.toContain("WSL");
+  });
+
+  it("the WSL step needs no confirmation when the check found it on, and can always be passed", () => {
+    const win = (state: string | null) => report({ os: "windows", wsl: state ? { state, reopensAfterRestart: true } : null } as Partial<SystemReport>);
+    expect(nextLabel("virtualization", win("ready"))).toBe("Continue");
+    expect(nextLabel("virtualization", win("needsReboot"))).toBe("I’ll restart later");
+    expect(nextLabel("virtualization", win("missing"))).toBe("Skip for now");
+    expect(nextLabel("virtualization", win("unknown"))).toBe("I’ve done this");
+    expect(nextLabel("virtualization", win(null))).toBe("I’ve done this");
+    for (const s of ["ready", "needsReboot", "missing", "unknown", null]) expect(canContinue("virtualization", win(s), setup())).toBe(true);
+    // Turned on here: a restart is due, unless the check already finds it on.
+    const turnedOn = { wslTurnedOn: true };
+    expect(nextLabel("virtualization", win("missing"), undefined, turnedOn)).toBe("I’ll restart later");
+    expect(wslState(win("unknown"), turnedOn)).toBe("needsReboot");
+    expect(wslState(win("ready"), turnedOn)).toBe("ready");
+    expect(wslState(null)).toBe("unknown");
   });
 });

@@ -116,7 +116,7 @@ export function MachineSetup({
                   </Button>
                 ) : (
                   <Button variant="primary" size="sm" onClick={next} disabled={setup.busy || !canContinue(key, report, setup)}>
-                    {nextLabel(key, report, t)}
+                    {nextLabel(key, report, t, setup)}
                   </Button>
                 )}
               </div>

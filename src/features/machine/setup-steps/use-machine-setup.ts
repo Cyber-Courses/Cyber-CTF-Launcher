@@ -23,6 +23,8 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => vo
 
   const [installing, setInstalling] = useState<string | null>(null);
   const [installerOpened, setInstallerOpened] = useState(false);
+  // "Turn on WSL 2" finished here: Windows needs a restart, whatever the last check said.
+  const [wslTurnedOn, setWslTurnedOn] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   // What the log is about (an install id or a plugin): each step shows only its own.
   const [logsFor, setLogsFor] = useState<string | null>(null);
@@ -38,6 +40,7 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => vo
     try {
       await installDependency(dep, (line) => setLogs((l) => [...l, line]));
       if (dep === "docker") setInstallerOpened(true);
+      if (dep === "wsl") setWslTurnedOn(true);
     } catch (e) {
       setLogs((l) => [...l, `✗ ${String(e)}`]);
     } finally {
@@ -64,6 +67,7 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => vo
   return {
     installing,
     installerOpened,
+    wslTurnedOn,
     installPlugin,
     logs,
     logsFor,

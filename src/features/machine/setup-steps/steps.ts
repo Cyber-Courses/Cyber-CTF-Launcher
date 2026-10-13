@@ -1,5 +1,5 @@
 import { Container, Cpu, Crosshair, FlaskConical, Package, Server, type LucideIcon } from "lucide-react";
-import { type SystemReport } from "@/lib/tauri";
+import { type SystemReport, type WslState } from "@/lib/tauri";
 import { translate, type MessageKey, type Vars } from "@/lib/i18n";
 import { cantRun, INSTALLABLE, usableHypervisors } from "@/features/machine/hypervisors";
 import { ENGINES, Engine } from "@/features/machine/setup-steps/engines";
@@ -14,6 +14,13 @@ type Tr = (key: MessageKey, vars?: Vars) => string;
 /** The steps this machine needs, in order. OS-aware: Windows gets the WSL step. */
 export function machineSteps(report: SystemReport | null): MachineStep[] {
   return ["pkgmgr", ...(report?.os === "windows" ? (["virtualization"] as const) : []), "docker", "docker-test", "attack", "vm", "vagrant", "vm-test"];
+}
+
+/** Where WSL 2 stands (Windows): the machine check's answer, and a restart pending once
+ *  "Turn on WSL 2" finished in this flow. */
+export function wslState(report: SystemReport | null, setup?: Pick<MachineSetupState, "wslTurnedOn">): WslState {
+  const state = report?.wsl?.state ?? "unknown";
+  return state !== "ready" && setup?.wslTurnedOn ? "needsReboot" : state;
 }
 
 export const isDockerReady = (r: SystemReport | null) => !!r && r.docker.installed && r.dockerRunning;
@@ -80,8 +87,16 @@ export function stepMeta(step: MachineStep, report: SystemReport | null, t: Tr =
  *  Starts each test's download in the background as soon as the machine can run it. */
 
 /** Label for the flow's forward button on this step. */
-export function nextLabel(step: MachineStep, report: SystemReport | null, t: Tr = translate): string {
-  if (step === "virtualization") return t("machine.steps.next.done");
+export function nextLabel(step: MachineStep, report: SystemReport | null, t: Tr = translate, setup?: Pick<MachineSetupState, "wslTurnedOn">): string {
+  if (step === "virtualization") {
+    // Found on: nothing to confirm. Waiting for a restart: the step's own button restarts, this
+    // one moves on without. Missing: skip. Only when the check can't tell does the player say.
+    const state = wslState(report, setup);
+    if (state === "ready") return t("machine.steps.next.continue");
+    if (state === "needsReboot") return t("machine.steps.next.restartLater");
+    if (state === "missing") return t("machine.steps.next.skip");
+    return t("machine.steps.next.done");
+  }
   if (step === "vm-test" && !hasHypervisor(report)) return t("machine.steps.next.skip");
   // A hypervisor is optional (VM labs can run on a server): with none set up, the VM steps
   // can be passed by.
