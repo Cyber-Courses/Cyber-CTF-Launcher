@@ -1,14 +1,14 @@
 //! Vagrant commands on a lab's machines, elevated when the hypervisor needs it.
 //!
 //! Hyper-V only takes management commands from an administrator, and Vagrant's Hyper-V provider
-//! refuses to run otherwise (issue #185). On Windows, when the machines run on Hyper-V and the
-//! app itself is not elevated, the commands go through [`super::elevate`]: one UAC prompt per
-//! [`Vagrant::batch`], their output streamed as usual. Everywhere else (and on every other
+//! refuses to run otherwise (issue #185). On Windows, commands on Hyper-V machines go through
+//! [`super::elevate`]'s script: elevated (one UAC prompt per [`Vagrant::batch`]) when the app may
+//! not manage Hyper-V itself, their output streamed as usual. Everywhere else (and on every other
 //! provider) they run exactly as any other tool, through [`super::stream`] and [`super::run_env`].
 
 use std::path::Path;
 
-use super::elevate;
+use super::elevate::{self, Mode};
 use crate::error::Result;
 
 /// When a step of a [`Vagrant::batch`] runs.
@@ -54,6 +54,17 @@ pub enum Event<'r> {
     End(usize, &'r Result<String>),
 }
 
+/// The environment variable naming the Hyper-V virtual switch the launcher's own Vagrantfiles
+/// attach their VM to (set by the script that runs Vagrant on Hyper-V, see [`super::elevate`]):
+/// with several switches and none named, Vagrant stops to ask which one.
+pub const HYPERV_SWITCH_ENV: &str = "CYBERCTF_HYPERV_SWITCH";
+
+/// The Vagrantfile line attaching `target` (`config`, or a machine's variable) to that switch,
+/// when it is set.
+pub fn hyperv_switch_line(indent: &str, target: &str) -> String {
+    format!("{indent}{target}.vm.network \"public_network\", bridge: ENV[\"{HYPERV_SWITCH_ENV}\"] if ENV[\"{HYPERV_SWITCH_ENV}\"]\n")
+}
+
 /// Whether the machines Vagrant tracks in `dir` were created on `provider` (a provider id).
 pub fn machines_on(dir: &Path, provider: &str) -> bool {
     std::fs::read_dir(dir.join(".vagrant").join("machines")).is_ok_and(|it| it.flatten().any(|m| m.path().join(provider).is_dir()))
@@ -68,13 +79,13 @@ pub fn on_hyperv(dir: &Path) -> bool {
 pub struct Vagrant<'a> {
     dir: &'a Path,
     env: &'a [(String, String)],
-    elevate: bool,
+    mode: Mode,
 }
 
 impl<'a> Vagrant<'a> {
     /// `hyperv`: the commands act on Hyper-V machines (they then run elevated where needed).
     pub fn new(dir: &'a Path, env: &'a [(String, String)], hyperv: bool) -> Vagrant<'a> {
-        Vagrant { dir, env, elevate: elevate::needed(hyperv) }
+        Vagrant { dir, env, mode: elevate::mode(hyperv) }
     }
 
     /// Vagrant for the machines already in `dir`, elevated when they run on Hyper-V.
@@ -84,7 +95,7 @@ impl<'a> Vagrant<'a> {
 
     /// Runs one command, forwarding each output line to `on_line` as it arrives.
     pub async fn stream(&self, args: &[&str], mut on_line: impl FnMut(String)) -> Result<()> {
-        if !self.elevate {
+        if self.mode == Mode::Direct {
             return super::stream("vagrant", args, Some(self.dir), self.env, on_line).await;
         }
         let outcomes = self
@@ -97,10 +108,10 @@ impl<'a> Vagrant<'a> {
         only(outcomes).map(|_| ())
     }
 
-    /// Runs one command and returns its output (stdout only when not elevated; both streams
-    /// when elevated, where they share one log).
+    /// Runs one command and returns its output (stdout only, except through the Hyper-V script,
+    /// where both streams share one log).
     pub async fn run(&self, args: &[&str]) -> Result<String> {
-        if !self.elevate {
+        if self.mode == Mode::Direct {
             return super::run_env("vagrant", args, Some(self.dir), self.env).await;
         }
         only(self.batch(&[Step::new(args)], |_| {}).await?)
@@ -112,8 +123,8 @@ impl<'a> Vagrant<'a> {
     /// each step's own failure is in its [`Outcome`].
     pub async fn batch(&self, steps: &[Step], on_event: impl FnMut(Event<'_>)) -> Result<Vec<Outcome>> {
         #[cfg(windows)]
-        if self.elevate {
-            return elevate::batch(self.dir, self.env, steps, on_event).await;
+        if let Mode::Script { runas } = self.mode {
+            return elevate::batch(self.dir, self.env, steps, runas, on_event).await;
         }
         Ok(self.batch_here(steps, on_event).await)
     }

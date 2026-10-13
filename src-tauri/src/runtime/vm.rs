@@ -139,6 +139,10 @@ pub async fn start(dir: &Path, provider: Provider, env: &[(String, String)], mut
 /// (after `machine`'s own steps, when one is named) and the controller powered off again.
 /// Without one, it is each machine's own provisioners (`vagrant provision [machine]`).
 pub async fn provision(dir: &Path, machine: Option<&str>, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
+    if has_controller(dir) {
+        // The controller is booted: an aborted saved state would make that fail for good.
+        discard_aborted_saved(dir, &mut log).await;
+    }
     run_parts(&Vagrant::of(dir, env), &provision_parts(dir, machine), &mut log).await
 }
 

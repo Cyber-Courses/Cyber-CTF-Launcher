@@ -88,6 +88,10 @@ fn vagrantfile(p: Provider, bx: &str, no_kvm: bool) -> String {
     if has_private_network(p) {
         v.push_str(&format!("  config.vm.network \"private_network\", ip: \"{VM_IP}\"\n"));
     }
+    // With several virtual switches and none named, Vagrant would stop to ask which one.
+    if p == Provider::Hyperv {
+        v.push_str(&crate::exec::hyperv_switch_line("  ", "config"));
+    }
     // A readable name in the hypervisor's VM list instead of Vagrant's `<dir>_default_<timestamp>`.
     let settings = match p {
         Provider::Virtualbox => format!("    h.name = \"{VM_NAME}\"\n    h.memory = 512\n"),
@@ -123,10 +127,18 @@ async fn destroy(dir: &Path) -> Result<String> {
     Vagrant::of(dir, &[]).run(&["destroy", "-f"]).await
 }
 
-/// What `uname -srm` printed, out of `vagrant ssh -c` output (which may also hold Vagrant's
-/// own lines, such as "Connection to … closed.").
+/// What the command inside the test VM prints its answer after, so it is told from anything
+/// else in the output (stderr shares it: warnings, "Connection to … closed.").
+const UNAME_TAG: &str = "cyberctf-uname:";
+
+/// The command run inside the test VM.
+fn uname_command() -> String {
+    format!("echo {UNAME_TAG}$(uname -srm)")
+}
+
+/// What `uname -srm` printed, out of the command's output.
 fn uname_line(out: &str) -> String {
-    out.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with("Connection to ")).unwrap_or("").to_string()
+    out.lines().find_map(|l| l.trim().strip_prefix(UNAME_TAG)).unwrap_or("").trim().to_string()
 }
 
 pub(super) async fn run_test(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<()> {
@@ -182,7 +194,7 @@ async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<
     r.step("boot", "Boot the test VM", async {
         let no_kvm = cfg!(target_os = "linux") && providers::kvm_problem().is_some();
         std::fs::write(dir.join("Vagrantfile"), vagrantfile(provider, bx, no_kvm))?;
-        let steps = [Step::new(&["up", "--provider", provider.id()]), Step::new(&["ssh", "-c", "uname -srm"])];
+        let steps = [Step::new(&["up", "--provider", provider.id()]), Step::new(&["ssh", "-c", &uname_command()])];
         let vagrant = Vagrant::new(dir, &[], provider == Provider::Hyperv);
         let mut outcomes = vagrant
             .batch(&steps, |e| {
@@ -229,8 +241,11 @@ mod tests {
 
     #[test]
     fn the_command_output_is_told_from_vagrants_own_lines() {
-        assert_eq!(uname_line("\nLinux 6.6 x86_64\nConnection to 172.20.0.5 closed.\n"), "Linux 6.6 x86_64");
+        assert_eq!(uname_line("warning: something\ncyberctf-uname:Linux 6.6 x86_64\nConnection to 172.20.0.5 closed.\n"), "Linux 6.6 x86_64");
         assert_eq!(uname_line("Connection to x closed.\n"), "");
+        assert_eq!(uname_command(), "echo cyberctf-uname:$(uname -srm)");
+        assert!(vagrantfile(Provider::Hyperv, "x", false).contains("config.vm.network \"public_network\", bridge: ENV[\"CYBERCTF_HYPERV_SWITCH\"]"));
+        assert!(!vagrantfile(Provider::Virtualbox, "x", false).contains("public_network"));
     }
 
     #[test]

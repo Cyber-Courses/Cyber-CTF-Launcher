@@ -429,3 +429,21 @@ async fn a_start_powers_the_controller_off_and_a_failed_halt_only_says_so() {
     assert_eq!(tools.calls(), ["vagrant up --provider qemu"]);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[tokio::test]
+async fn reprovisioning_discards_an_aborted_saved_controller_first() {
+    // Regression: the batched provisioning lost this, and an aborted-saved controller failed
+    // `up` with "the machine is not mutable" again.
+    use crate::exec::fake::{Tools, ok};
+    let dir = temp_dir("provision-aborted");
+    let vf = "Vagrant.configure(\"2\") do |config|\n  config.vm.define \"isoloom-controller\" do |m|\n    m.vm.provider \"virtualbox\" do |v|\n      v.name = \"lab · ctl\"\n    end\n  end\nend\n";
+    std::fs::write(dir.join("Vagrantfile"), vf).unwrap();
+    let tools = Tools::rules(&[("VBoxManage showvminfo", ok("VMState=\"aborted-saved\"\n"))]);
+    super::provision(&dir, None, &[], |_| {}).await.unwrap();
+    let calls = tools.calls();
+    assert_eq!(
+        calls[..3],
+        ["VBoxManage showvminfo lab · ctl --machinereadable", "VBoxManage discardstate lab · ctl", "vagrant up isoloom-controller --no-provision"]
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}

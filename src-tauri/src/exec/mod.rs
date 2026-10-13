@@ -19,8 +19,10 @@ use tokio::process::Command;
 #[cfg(target_os = "linux")]
 pub use docker::login_name;
 pub use docker::{docker_denied, docker_denied_message, valid_image};
+#[cfg(windows)]
+pub use elevate::{OWNER_WINDOW_ENV, owner_window, set_owner_window};
 pub use group::kill_live_tools;
-pub use vagrant::{Event, Step, Vagrant, machines_on, on_hyperv};
+pub use vagrant::{Event, Step, Vagrant, hyperv_switch_line, machines_on, on_hyperv};
 
 use crate::error::{Error, Result};
 use group::GroupGuard;

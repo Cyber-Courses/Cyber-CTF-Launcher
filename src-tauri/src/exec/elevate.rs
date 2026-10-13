@@ -1,42 +1,59 @@
-//! Vagrant elevated on Windows, for Hyper-V (issue #185).
+//! Vagrant on Hyper-V, on Windows: run by a generated PowerShell script, elevated when needed
+//! (issue #185).
 //!
-//! Hyper-V management needs an administrator token, and Vagrant's Hyper-V provider refuses to
-//! run without one. A non-elevated launcher asks Windows for it (UAC, `ShellExecuteEx` with the
-//! `runas` verb) once per batch of Vagrant commands, never for status reads.
+//! Hyper-V management needs an administrator (or a member of "Hyper-V Administrators"), and
+//! Vagrant's Hyper-V provider refuses to run otherwise. A launcher that is neither asks Windows
+//! for elevation (UAC, `ShellExecuteEx` with the `runas` verb) once per batch of Vagrant
+//! commands, never for status reads.
 //!
-//! An elevated process can't inherit pipes (or the environment) from a non-elevated parent, so
-//! the batch runs as a generated Windows PowerShell script (passed with `-EncodedCommand`, so no
-//! script file and no execution policy is involved):
-//! - it sets the folder and the environment the commands need (the caller's, plus `PATH` and
-//!   the `VAGRANT_*` variables, `VAGRANT_HOME` included so boxes are shared even when another
-//!   administrator account answers the prompt);
+//! An elevated process can't inherit pipes (or the environment) from a non-elevated parent, so a
+//! batch on Hyper-V runs as a Windows PowerShell script (passed with `-EncodedCommand`: no script
+//! file, no execution policy), elevated or not:
+//! - it reads the environment the commands need from a file in the batch's own folder (under the
+//!   user's temp folder) and deletes it, so values (tokens) never sit on a command line;
+//! - it picks the Hyper-V virtual switch the launcher's own Vagrantfiles attach to
+//!   ([`super::vagrant::HYPERV_SWITCH_ENV`]), so Vagrant doesn't stop to ask;
 //! - it runs each step, appending its stdout and stderr lines to a log file (UTF-8), framed by
 //!   marker lines carrying a random token (`start i`, `end i <exit code>`, `skip i`);
-//! - the launcher follows that log as it grows ([`follow`]), turns it back into the same events
-//!   a non-elevated batch reports ([`Collector`]), and waits on the process handle.
+//! - a watcher (a background job) ends the whole process tree when the batch folder gets a
+//!   `cancel` file (the caller gave up, or Vagrant asked a question nobody can answer), when the
+//!   launcher process is gone, or after [`DEADLINE`], and says why in a `reason` file.
 //!
-//! Declining the prompt (`ERROR_CANCELLED`) gives a plain-language error ([`launch_error`]). An
-//! elevated run can't be cancelled from the non-elevated app: if the caller gives up, the
-//! commands still run to their end.
+//! The launcher follows that log as it grows ([`follow`]), turns it back into the same events a
+//! batch run step by step reports ([`Collector`]), and waits for the process. Declining the UAC
+//! prompt (`ERROR_CANCELLED`) gives a plain-language error ([`launch_error`]).
 
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::vagrant::{Event, Outcome, Step, When};
+use super::vagrant::{Event, HYPERV_SWITCH_ENV, Outcome, Step, When};
 use crate::error::{Error, Result};
 
-/// Whether a Vagrant command on Hyper-V machines (`hyperv`) must ask for elevation here.
-pub(super) fn needed(hyperv: bool) -> bool {
-    // Never in unit tests: they answer from the scripted tools, and must never raise a prompt.
-    decide(cfg!(windows) && !cfg!(test), hyperv, is_elevated)
+/// How Vagrant runs for a batch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Mode {
+    /// As any other tool, one process per step.
+    Direct,
+    /// Through the PowerShell script; `runas`: elevated through a UAC prompt.
+    Script { runas: bool },
 }
 
-/// The decision itself: only Hyper-V, only on Windows, only when this process isn't elevated
-/// already (it then runs Vagrant directly, as on any other provider).
-fn decide(windows: bool, hyperv: bool, elevated: impl FnOnce() -> bool) -> bool {
-    windows && hyperv && !elevated()
+/// How Vagrant runs for machines on Hyper-V (`hyperv`) or not.
+pub(super) fn mode(hyperv: bool) -> Mode {
+    // Never in unit tests: they answer from the scripted tools, and must never raise a prompt.
+    decide(cfg!(windows) && !cfg!(test), hyperv, || is_elevated() || in_hyperv_admins())
+}
+
+/// The decision itself: only Hyper-V on Windows goes through the script, elevated only when this
+/// process may not manage Hyper-V already (`may_manage`: elevated, or a Hyper-V administrator,
+/// which Vagrant accepts too).
+fn decide(windows: bool, hyperv: bool, may_manage: impl FnOnce() -> bool) -> Mode {
+    if !(windows && hyperv) {
+        return Mode::Direct;
+    }
+    Mode::Script { runas: !may_manage() }
 }
 
 /// Whether this process runs with an administrator (elevated) token.
@@ -49,6 +66,40 @@ fn is_elevated() -> bool {
 #[cfg(not(windows))]
 fn is_elevated() -> bool {
     false
+}
+
+/// Whether this user is in "Hyper-V Administrators" (S-1-5-32-578).
+#[cfg(windows)]
+fn in_hyperv_admins() -> bool {
+    static MEMBER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *MEMBER.get_or_init(win::in_hyperv_admins)
+}
+
+#[cfg(not(windows))]
+fn in_hyperv_admins() -> bool {
+    false
+}
+
+/// The environment variable a deploy worker gets the app's main window in (see
+/// [`set_owner_window`]).
+pub const OWNER_WINDOW_ENV: &str = "CYBERCTF_OWNER_WINDOW";
+
+static OWNER_WINDOW: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// The app's main window (a Windows `HWND`): the UAC prompt is raised for it, so it comes to the
+/// front instead of waiting as a flashing taskbar button behind a windowless process.
+pub fn set_owner_window(hwnd: isize) {
+    OWNER_WINDOW.store(hwnd, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The window UAC prompts are raised for: the one set here, else the one a deploy worker was
+/// started with.
+pub fn owner_window() -> Option<isize> {
+    let set = OWNER_WINDOW.load(std::sync::atomic::Ordering::Relaxed);
+    if set != 0 {
+        return Some(set);
+    }
+    std::env::var(OWNER_WINDOW_ENV).ok().and_then(|v| v.parse().ok()).filter(|h| *h != 0)
 }
 
 /// What Windows' answer to the elevation request means, as an error.
@@ -72,11 +123,46 @@ Try again and choose Yes, or start Cyber CTF as administrator.";
 /// The longest command line Windows accepts, in UTF-16 units.
 const MAX_COMMAND_LINE: usize = 32_000;
 
+/// The longest a batch may run before the watcher ends it: a big lab's first boot takes a couple
+/// of hours at most; past this, it is stuck.
+const DEADLINE: Duration = Duration::from_secs(6 * 3600);
+
+/// A question Vagrant waits for an answer to (on Windows its `ask` reads the console even without
+/// a terminal, so it would wait forever), told by a line printed just before it, and what to
+/// say instead.
+const PROMPTS: &[(&str, &str)] = &[
+    (
+        "Please choose a switch to attach to your Hyper-V instance",
+        "Vagrant stopped to ask which Hyper-V virtual switch to use (this machine has several), which the launcher can't answer. \
+Keep a single virtual switch in Hyper-V Manager, or give the lab's machines one (`bridge:` on a public network), then try again.",
+    ),
+    (
+        "You will be asked for the username and password to use for the SMB",
+        "Vagrant stopped to ask for a Windows username and password, to share a folder with a Hyper-V VM over SMB, which the launcher can't answer. \
+Turn the shared folder off for this lab, then try again.",
+    ),
+];
+
+/// What to say instead of a question Vagrant asks on `line`, if it is one.
+fn prompt(line: &str) -> Option<&'static str> {
+    PROMPTS.iter().find(|(needle, _)| line.contains(needle)).map(|(_, say)| *say)
+}
+
+/// Why the watcher ended a batch, from its `reason` file, as a sentence.
+fn stopped(reason: &str) -> String {
+    match reason.trim() {
+        "timeout" => format!("Vagrant was stopped: it ran for more than {} hours.", DEADLINE.as_secs() / 3600),
+        "gone" => "Vagrant was stopped: the launcher that started it exited.".into(),
+        "" | "cancelled" => "Vagrant was stopped: the operation was cancelled.".into(),
+        other => other.to_string(),
+    }
+}
+
 /// Refuses an argument Windows PowerShell 5.1 can't pass through to a native program intact:
 /// it drops empty ones, mangles embedded double quotes, and stops parsing at `--%`.
 fn check_arg(arg: &str) -> Result<()> {
     if arg.is_empty() || arg.contains(['"', '\0', '\n', '\r']) || arg == "--%" {
-        return Err(Error::Invalid(format!("refusing to pass `{}` to an elevated Vagrant: Windows PowerShell can't pass it intact", arg.escape_debug())));
+        return Err(Error::Invalid(format!("refusing to pass `{}` to Vagrant through Windows PowerShell: it can't pass it intact", arg.escape_debug())));
     }
     Ok(())
 }
@@ -96,10 +182,10 @@ fn ps_quote(s: &str) -> String {
     out
 }
 
-/// The environment the elevated commands get: an elevated process starts from the account's
-/// stored environment, not this one. `PATH` (tools found here are found there) and every
-/// `VAGRANT_*` variable carry over, `VAGRANT_HOME` is pinned to this user's (so the boxes are
-/// the ones this user downloaded, whichever administrator approved), then the caller's `env`.
+/// The environment the commands get: an elevated process starts from the account's stored
+/// environment, not this one. `PATH` (tools found here are found there) and every `VAGRANT_*`
+/// variable carry over, `VAGRANT_HOME` is pinned to this user's (so the boxes are the ones this
+/// user downloaded, whichever administrator approved), then the caller's `env`.
 fn forwarded_env(own: impl IntoIterator<Item = (String, String)>, env: &[(String, String)]) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     let mut profile = None;
@@ -108,7 +194,7 @@ fn forwarded_env(own: impl IntoIterator<Item = (String, String)>, env: &[(String
         if upper == "USERPROFILE" {
             profile = Some(v.clone());
         }
-        if upper == "PATH" || upper.starts_with("VAGRANT_") {
+        if upper == "PATH" || upper.starts_with("VAGRANT_") || upper == HYPERV_SWITCH_ENV {
             out.push((k, v));
         }
     }
@@ -124,55 +210,134 @@ fn forwarded_env(own: impl IntoIterator<Item = (String, String)>, env: &[(String
     out
 }
 
-/// The PowerShell script that runs `steps` with `program` in `dir`, logging to `log` with the
-/// marker lines of [`Collector`].
-fn script(program: &str, dir: &Path, env: &[(String, String)], steps: &[Step], log: &Path, marker: &str) -> Result<String> {
-    for arg in steps.iter().flat_map(|s| &s.args) {
+/// This process's environment, without the variables that aren't Unicode (none the commands
+/// need).
+fn own_env() -> impl Iterator<Item = (String, String)> {
+    std::env::vars_os().filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
+}
+
+/// The environment file the script reads: a JSON list of `{k, v}`.
+fn env_json(env: &[(String, String)]) -> String {
+    serde_json::Value::Array(env.iter().map(|(k, v)| serde_json::json!({ "k": k, "v": v })).collect()).to_string()
+}
+
+/// The first `name` in the folders of `path` (a `PATH` value): the program the script runs, by
+/// its full path, so it doesn't depend on the elevated account's own `PATH`.
+fn resolve(name: &str, path: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    std::env::split_paths(path?).map(|d| d.join(name)).find(|p| p.is_file())
+}
+
+/// What a batch's script needs.
+struct Plan<'a> {
+    program: &'a str,
+    dir: &'a Path,
+    steps: &'a [Step],
+    work: &'a WorkDir,
+    marker: &'a str,
+    /// The launcher's process id: its end ends the batch.
+    launcher: u32,
+}
+
+/// The PowerShell script that runs a [`Plan`], logging with the marker lines of [`Collector`].
+fn script(p: &Plan) -> Result<String> {
+    for arg in p.steps.iter().flat_map(|s| &s.args) {
         check_arg(arg)?;
     }
+    let q = |path: &Path| ps_quote(&path.display().to_string());
     let mut s = String::new();
     // Native stderr lines must stay plain lines (with `Stop`, the first one would end the script).
     s.push_str("$ErrorActionPreference = 'Continue'\n$ProgressPreference = 'SilentlyContinue'\n");
     s.push_str("try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding -ArgumentList $false } catch {}\n");
     s.push_str(&format!(
         "$cyberctfFile = [System.IO.File]::Open({}, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)\n",
-        ps_quote(&log.display().to_string())
+        q(&p.work.log())
     ));
     s.push_str("$cyberctfLog = New-Object System.IO.StreamWriter -ArgumentList $cyberctfFile, (New-Object System.Text.UTF8Encoding -ArgumentList $false)\n");
     s.push_str("$cyberctfLog.AutoFlush = $true\n");
     s.push_str("function Write-CyberctfLine([string]$t) { $cyberctfLog.WriteLine($t) }\n");
-    s.push_str("$cyberctfFailed = $false\n$cyberctfCode = 0\ntry {\n");
-    s.push_str(&format!("  Set-Location -LiteralPath {}\n", ps_quote(&dir.display().to_string())));
-    for (k, v) in env {
-        s.push_str(&format!("  [System.Environment]::SetEnvironmentVariable({}, {}, 'Process')\n", ps_quote(k), ps_quote(v)));
-    }
-    let m = ps_quote(marker);
-    for (i, step) in steps.iter().enumerate() {
-        let guard = match step.when {
-            When::IfOk => "-not $cyberctfFailed",
+    // The watcher: a background job (its own process) that ends this script's whole tree.
+    s.push_str(&format!(
+        "$cyberctfWatch = Start-Job -ArgumentList $PID, {}, {}, {}, {} -ScriptBlock {{\n\
+         \x20 param($main, $launcherId, $cancel, $reason, $secs)\n\
+         \x20 $launcher = Get-Process -Id $launcherId -ErrorAction SilentlyContinue\n\
+         \x20 $deadline = (Get-Date).AddSeconds($secs)\n\
+         \x20 while ($true) {{\n\
+         \x20   $why = $null\n\
+         \x20   if (Test-Path -LiteralPath $cancel) {{ $why = [System.IO.File]::ReadAllText($cancel) }}\n\
+         \x20   elseif ($null -ne $launcher -and $launcher.HasExited) {{ $why = 'gone' }}\n\
+         \x20   elseif ((Get-Date) -gt $deadline) {{ $why = 'timeout' }}\n\
+         \x20   if ($null -ne $why) {{\n\
+         \x20     [System.IO.File]::WriteAllText($reason, $why)\n\
+         \x20     if ($IsLinux -or $IsMacOS) {{ Stop-Process -Id $main -Force }} else {{ & taskkill.exe /T /F /PID $main | Out-Null }}\n\
+         \x20     return\n\
+         \x20   }}\n\
+         \x20   Start-Sleep -Milliseconds 500\n\
+         \x20 }}\n\
+         }}\n",
+        p.launcher,
+        q(&p.work.cancel()),
+        q(&p.work.reason()),
+        DEADLINE.as_secs()
+    ));
+    s.push_str("$script:cyberctfFailed = $false\n$cyberctfCode = 0\ntry {\n");
+    // The environment, from a file read once and deleted, so no value sits on a command line.
+    s.push_str(&format!(
+        "  $cyberctfPairs = [System.IO.File]::ReadAllText({env}) | ConvertFrom-Json\n  Remove-Item -LiteralPath {env} -Force\n  foreach ($p in $cyberctfPairs) {{ [System.Environment]::SetEnvironmentVariable($p.k, $p.v, 'Process') }}\n",
+        env = q(&p.work.env())
+    ));
+    s.push_str(&format!("  Set-Location -LiteralPath {} -ErrorAction Stop\n", q(p.dir)));
+    // The switch the launcher's own Vagrantfiles attach to: the built-in "Default Switch", else an
+    // external one, else the first (with one switch only, Vagrant picks it by itself anyway).
+    s.push_str(&format!(
+        "  if (-not $env:{HYPERV_SWITCH_ENV}) {{\n    try {{\n      $sw = @(Get-VMSwitch -ErrorAction Stop)\n      $pick = @($sw | Where-Object {{ $_.Name -eq 'Default Switch' }}) + @($sw | Where-Object {{ \"$($_.SwitchType)\" -eq 'External' }}) + $sw | Select-Object -First 1\n      if ($pick) {{ $env:{HYPERV_SWITCH_ENV} = $pick.Name }}\n    }} catch {{}}\n  }}\n"
+    ));
+    let m = ps_quote(p.marker);
+    // One function runs a step, so each step is one short line (the whole script must fit on a
+    // command line, base64-encoded).
+    s.push_str(&format!(
+        "  function Invoke-CyberctfStep([int]$i, [bool]$always, [string[]]$a) {{\n\
+         \x20   if ($script:cyberctfFailed -and -not $always) {{ Write-CyberctfLine ({m} + ' skip ' + $i); return }}\n\
+         \x20   Write-CyberctfLine ({m} + ' start ' + $i)\n\
+         \x20   $global:LASTEXITCODE = 0\n\
+         \x20   $rc = $null\n\
+         \x20   try {{\n\
+         \x20     & {} @a 2>&1 | ForEach-Object {{ Write-CyberctfLine ([string]$_) }}\n\
+         \x20     $rc = $global:LASTEXITCODE\n\
+         \x20   }} catch [System.Management.Automation.CommandNotFoundException] {{\n\
+         \x20     Write-CyberctfLine ({m} + ' missing ' + $i)\n\
+         \x20     $rc = 127\n\
+         \x20   }}\n\
+         \x20   if ($null -eq $rc) {{ $rc = 0 }}\n\
+         \x20   Write-CyberctfLine ({m} + ' end ' + $i + ' ' + $rc)\n\
+         \x20   if ($rc -ne 0) {{ $script:cyberctfFailed = $true }}\n\
+         \x20 }}\n",
+        ps_quote(p.program)
+    ));
+    for (i, step) in p.steps.iter().enumerate() {
+        let always = match step.when {
+            When::IfOk => "$false",
             When::Always => "$true",
         };
         let args: Vec<String> = step.args.iter().map(|a| ps_quote(a)).collect();
-        s.push_str(&format!(
-            "  if ({guard}) {{\n    Write-CyberctfLine ({m} + ' start {i}')\n    $global:LASTEXITCODE = 0\n    try {{\n      & {} {} 2>&1 | ForEach-Object {{ Write-CyberctfLine ([string]$_) }}\n      $rc = $global:LASTEXITCODE\n    }} catch [System.Management.Automation.CommandNotFoundException] {{\n      Write-CyberctfLine ({m} + ' missing {i}')\n      $rc = 127\n    }}\n    if ($null -eq $rc) {{ $rc = 0 }}\n    Write-CyberctfLine ({m} + ' end {i} ' + $rc)\n    if ($rc -ne 0) {{ $cyberctfFailed = $true }}\n  }} else {{\n    Write-CyberctfLine ({m} + ' skip {i}')\n  }}\n",
-            ps_quote(program),
-            args.join(" ")
-        ));
+        s.push_str(&format!("  Invoke-CyberctfStep {i} {always} @({})\n", args.join(", ")));
     }
-    s.push_str(&format!("}} catch {{\n  Write-CyberctfLine ({m} + ' error ' + $_.Exception.Message)\n  $cyberctfCode = 1\n}} finally {{\n  $cyberctfLog.Close()\n}}\nexit $cyberctfCode\n"));
+    s.push_str(&format!(
+        "}} catch {{\n  Write-CyberctfLine ({m} + ' error ' + $_.Exception.Message)\n  $cyberctfCode = 1\n}} finally {{\n  Stop-Job -Job $cyberctfWatch -ErrorAction SilentlyContinue\n  Remove-Job -Job $cyberctfWatch -Force -ErrorAction SilentlyContinue\n  $cyberctfLog.Close()\n}}\nexit $cyberctfCode\n"
+    ));
     Ok(s)
 }
 
 /// The arguments of `powershell.exe` that run `script`.
-fn powershell_args(script: &str) -> Result<String> {
+fn powershell_args(script: &str) -> Result<Vec<String>> {
     use base64::Engine;
     let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    let args = format!(
-        "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand {}",
-        base64::engine::general_purpose::STANDARD.encode(utf16)
-    );
-    if args.len() > MAX_COMMAND_LINE {
-        return Err(Error::Invalid("the elevated Vagrant command is too long for Windows (too many or too large environment variables)".into()));
+    let args: Vec<String> = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-EncodedCommand"]
+        .into_iter()
+        .map(String::from)
+        .chain([base64::engine::general_purpose::STANDARD.encode(utf16)])
+        .collect();
+    if args.iter().map(|a| a.len() + 1).sum::<usize>() > MAX_COMMAND_LINE {
+        return Err(Error::Invalid("the Vagrant batch is too long for a Windows command line".into()));
     }
     Ok(args)
 }
@@ -180,7 +345,7 @@ fn powershell_args(script: &str) -> Result<String> {
 /// Lines kept for a failed step's error, as for a plain stream.
 const ERROR_LINES: usize = super::STREAM_ERROR_LINES;
 
-/// Turns the elevated batch's log back into a batch's events and outcomes.
+/// Turns a batch's log back into its events and outcomes.
 struct Collector<'s> {
     marker: String,
     steps: &'s [Step],
@@ -189,6 +354,7 @@ struct Collector<'s> {
     tail: std::collections::VecDeque<String>,
     missing: bool,
     outcomes: Vec<Outcome>,
+    skipped: Vec<bool>,
     error: Option<String>,
 }
 
@@ -202,6 +368,7 @@ impl<'s> Collector<'s> {
             tail: Default::default(),
             missing: false,
             outcomes: steps.iter().map(|_| None).collect(),
+            skipped: vec![false; steps.len()],
             error: None,
         }
     }
@@ -228,6 +395,7 @@ impl<'s> Collector<'s> {
                 on_event(Event::Start(i));
             }
             ("missing", Some(_)) => self.missing = true,
+            ("skip", Some(i)) if i < self.steps.len() => self.skipped[i] = true,
             ("end", Some(i)) if i < self.steps.len() => {
                 let code = words.next().unwrap_or("").trim().to_string();
                 let result = self.result(i, &code);
@@ -252,13 +420,19 @@ impl<'s> Collector<'s> {
         Err(super::failed("vagrant", &args, super::stream_failure(&tail, format!("exit code: {code}"))))
     }
 
-    /// The outcomes, once the script exited with `exit_code`.
-    fn finish(self, exit_code: u32) -> Result<Vec<Outcome>> {
+    /// The outcomes, once the script exited with `exit_code`; `reason`: why the watcher ended it,
+    /// if it did. A step that neither ended nor was skipped (the script was cut short) fails the
+    /// whole batch: the steps after it never ran.
+    fn finish(self, exit_code: u32, reason: Option<&str>) -> Result<Vec<Outcome>> {
         if let Some(e) = self.error {
-            return Err(Error::Invalid(format!("the elevated Vagrant run failed: {e}")));
+            return Err(Error::Invalid(format!("the Vagrant batch failed: {e}")));
         }
-        if exit_code != 0 && self.outcomes.iter().all(Option::is_none) {
-            return Err(Error::Invalid(format!("the elevated Vagrant run ended early (exit code {exit_code})")));
+        let incomplete = self.outcomes.iter().zip(&self.skipped).any(|(o, skipped)| o.is_none() && !skipped);
+        if incomplete || exit_code != 0 && self.outcomes.iter().all(Option::is_none) {
+            return Err(Error::Invalid(match reason {
+                Some(r) => stopped(r),
+                None => format!("the Vagrant batch ended before it finished (exit code {exit_code})"),
+            }));
         }
         Ok(self.outcomes)
     }
@@ -314,25 +488,68 @@ fn drain(pending: &mut Vec<u8>, last: bool, on_line: &mut dyn FnMut(&str)) {
     }
 }
 
-/// A folder of its own for one elevated batch's log, removed when done.
-struct WorkDir(std::path::PathBuf);
+/// A batch's own folder (its log, environment file, and the watcher's `cancel` and `reason`
+/// files). Dropped before the batch finished (its caller gave up), it asks the watcher to end
+/// the batch, and is removed once the script has let go of it.
+struct WorkDir {
+    dir: PathBuf,
+    finished: bool,
+}
 
 impl WorkDir {
     fn new() -> Result<WorkDir> {
-        let dir = std::env::temp_dir().join(format!("cyberctf-elevated-{:016x}", rand::random::<u64>()));
+        let dir = std::env::temp_dir().join(format!("cyberctf-vagrant-{:016x}", rand::random::<u64>()));
         std::fs::create_dir_all(&dir)?;
-        Ok(WorkDir(dir))
+        Ok(WorkDir { dir, finished: false })
+    }
+
+    fn log(&self) -> PathBuf {
+        self.dir.join("vagrant.log")
+    }
+
+    fn env(&self) -> PathBuf {
+        self.dir.join("env.json")
+    }
+
+    fn cancel(&self) -> PathBuf {
+        self.dir.join("cancel")
+    }
+
+    fn reason(&self) -> PathBuf {
+        self.dir.join("reason")
+    }
+
+    /// Asks the watcher to end the batch, saying `why` (kept when asked already).
+    fn stop(&self, why: &str) {
+        if !self.cancel().exists() {
+            let _ = std::fs::write(self.cancel(), why);
+        }
     }
 }
 
 impl Drop for WorkDir {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        if self.finished {
+            let _ = std::fs::remove_dir_all(&self.dir);
+            return;
+        }
+        self.stop("cancelled");
+        // The script may still hold the log open for a moment (or not have started, the prompt
+        // still up): try again for a while.
+        let dir = self.dir.clone();
+        std::thread::spawn(move || {
+            for _ in 0..300 {
+                if std::fs::remove_dir_all(&dir).is_ok() || !dir.exists() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        });
     }
 }
 
 /// Runs `steps` as `program` through `launch`, which starts PowerShell with the given arguments
-/// and resolves to its exit code once it ended. Shared by the elevated path and its tests.
+/// and resolves to its exit code once it ended.
 async fn run_script<L, F>(
     program: &str,
     dir: &Path,
@@ -342,48 +559,89 @@ async fn run_script<L, F>(
     mut on_event: impl FnMut(Event<'_>),
 ) -> Result<Vec<Outcome>>
 where
-    L: FnOnce(String) -> F,
+    L: FnOnce(Vec<String>) -> F,
     F: std::future::Future<Output = Result<u32>>,
 {
-    let work = WorkDir::new()?;
-    let log = work.0.join("vagrant.log");
-    std::fs::File::create(&log)?;
+    let mut work = WorkDir::new()?;
+    std::fs::File::create(work.log())?;
+    std::fs::write(work.env(), env_json(&forwarded_env(own_env(), env)))?;
     let marker = format!("##cyberctf-{:016x}##", rand::random::<u64>());
-    let env = forwarded_env(std::env::vars(), env);
-    let args = powershell_args(&script(program, dir, &env, steps, &log, &marker)?)?;
+    let plan = Plan { program, dir, steps, work: &work, marker: &marker, launcher: std::process::id() };
+    let args = powershell_args(&script(&plan)?)?;
     let mut collector = Collector::new(&marker, steps);
-    let code = follow(&log, launch(args), |l| collector.line(l, &mut on_event)).await??;
-    collector.finish(code)
+    let code = follow(&work.log(), launch(args), |l| {
+        if let Some(say) = prompt(l) {
+            work.stop(say);
+        }
+        collector.line(l, &mut on_event)
+    })
+    .await??;
+    let reason = std::fs::read_to_string(work.reason()).ok();
+    work.finished = true;
+    collector.finish(code, reason.as_deref())
 }
 
-/// Runs `steps` with Vagrant in `dir`, elevated: one UAC prompt for the whole batch.
+/// Starts PowerShell (`exe`) with `args` as a plain child; its exit code once it ended.
+async fn launch_plain(exe: &std::ffi::OsStr, args: Vec<String>) -> Result<u32> {
+    let mut cmd = tokio::process::Command::new(exe);
+    // `-WindowStyle` is Windows only (PowerShell 7 elsewhere refuses it).
+    let windows_only = |a: &&String| cfg!(windows) || (*a != "-WindowStyle" && *a != "Hidden");
+    cmd.args(args.iter().filter(windows_only)).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    super::headless(&mut cmd);
+    let status = cmd.status().await.map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => Error::ToolMissing { tool: "powershell" },
+        _ => Error::Io(e),
+    })?;
+    Ok(status.code().map(|c| c as u32).unwrap_or(1))
+}
+
+/// Runs `steps` with Vagrant in `dir` through the script: elevated (`runas`, one UAC prompt for
+/// the whole batch) or not.
 #[cfg(windows)]
-pub(super) async fn batch(dir: &Path, env: &[(String, String)], steps: &[Step], on_event: impl FnMut(Event<'_>)) -> Result<Vec<Outcome>> {
+pub(super) async fn batch(dir: &Path, env: &[(String, String)], steps: &[Step], runas: bool, on_event: impl FnMut(Event<'_>)) -> Result<Vec<Outcome>> {
+    let program = resolve("vagrant.exe", std::env::var_os("PATH").as_deref()).map(|p| p.display().to_string()).unwrap_or_else(|| "vagrant".into());
+    let exe = win::powershell();
+    if !runas {
+        return run_script(&program, dir, env, steps, move |args| async move { launch_plain(exe.as_os_str(), args).await }, on_event).await;
+    }
     let directory = dir.to_path_buf();
-    let launch = move |args: String| async move {
-        // The prompt blocks until it is answered; waiting blocks until the commands end.
-        let process =
-            tokio::task::spawn_blocking(move || win::launch(&args, &directory)).await.map_err(|e| Error::Invalid(e.to_string()))?.map_err(launch_error)?;
+    let owner = owner_window().unwrap_or(0);
+    let launch = move |args: Vec<String>| async move {
+        // The prompt blocks until it is answered; waiting blocks until the commands end. A
+        // process given up on is closed when dropped (its watcher ends it).
+        let process = tokio::task::spawn_blocking(move || win::launch(&exe, &args.join(" "), &directory, owner))
+            .await
+            .map_err(|e| Error::Invalid(e.to_string()))?
+            .map_err(launch_error)?;
         tokio::task::spawn_blocking(move || process.wait()).await.map_err(|e| Error::Invalid(e.to_string()))
     };
-    run_script("vagrant", dir, env, steps, launch, on_event).await
+    run_script(&program, dir, env, steps, launch, on_event).await
 }
 
 #[cfg(windows)]
 mod win {
     use std::os::windows::ffi::OsStrExt;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
-    use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation};
+    use windows_sys::Win32::Security::{
+        AllocateAndInitializeSid, CheckTokenMembership, FreeSid, GetTokenInformation, PSID, SID_IDENTIFIER_AUTHORITY, TOKEN_ELEVATION, TOKEN_QUERY,
+        TokenElevation,
+    };
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetExitCodeProcess, INFINITE, OpenProcessToken, WaitForSingleObject};
     use windows_sys::Win32::UI::Shell::{SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
 
-    /// `SW_HIDE`: the elevated PowerShell keeps its console window hidden.
+    /// `SW_HIDE`: the PowerShell keeps its console window hidden.
     const SW_HIDE: i32 = 0;
 
     fn wide(s: &std::ffi::OsStr) -> Vec<u16> {
         s.encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    /// Windows PowerShell, by its full path.
+    pub(super) fn powershell() -> PathBuf {
+        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+        Path::new(&root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
     }
 
     pub(super) fn is_elevated() -> bool {
@@ -408,31 +666,57 @@ mod win {
         }
     }
 
-    /// The elevated PowerShell process, until it is waited for.
+    /// Whether this process's token is in BUILTIN\Hyper-V Administrators (S-1-5-32-578).
+    pub(super) fn in_hyperv_admins() -> bool {
+        const SECURITY_NT_AUTHORITY: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 5] };
+        const SECURITY_BUILTIN_DOMAIN_RID: u32 = 32;
+        const DOMAIN_ALIAS_RID_HYPER_V_ADMINS: u32 = 578;
+        // SAFETY: the SID is allocated, checked against this thread's (or process's) token, and
+        // freed here.
+        unsafe {
+            let mut sid: PSID = std::ptr::null_mut();
+            if AllocateAndInitializeSid(&SECURITY_NT_AUTHORITY, 2, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_HYPER_V_ADMINS, 0, 0, 0, 0, 0, 0, &mut sid)
+                == 0
+            {
+                return false;
+            }
+            let mut member = 0;
+            let ok = CheckTokenMembership(std::ptr::null_mut(), sid, &mut member) != 0;
+            FreeSid(sid);
+            ok && member != 0
+        }
+    }
+
+    /// The elevated PowerShell process; its handle is closed when dropped.
     pub(super) struct Process(usize);
 
     impl Process {
         /// Waits for it to end; its exit code.
         pub(super) fn wait(self) -> u32 {
-            let handle = self.0 as HANDLE;
             let mut code = 1u32;
-            // SAFETY: the process handle ShellExecuteExW returned, waited on and closed once.
+            // SAFETY: the live process handle ShellExecuteExW returned (closed on drop).
             unsafe {
-                WaitForSingleObject(handle, INFINITE);
-                if GetExitCodeProcess(handle, &mut code) == 0 {
+                WaitForSingleObject(self.0 as HANDLE, INFINITE);
+                if GetExitCodeProcess(self.0 as HANDLE, &mut code) == 0 {
                     code = 1;
                 }
-                CloseHandle(handle);
             }
             code
         }
     }
 
-    /// Starts Windows PowerShell elevated with `args` (UAC asks first). The OS error code when it
-    /// couldn't (1223: the prompt was declined).
-    pub(super) fn launch(args: &str, dir: &Path) -> std::result::Result<Process, i32> {
-        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
-        let exe = Path::new(&root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe");
+    impl Drop for Process {
+        fn drop(&mut self) {
+            // SAFETY: the handle is ours and closed once.
+            unsafe {
+                CloseHandle(self.0 as HANDLE);
+            }
+        }
+    }
+
+    /// Starts PowerShell (`exe`) elevated with `args` (UAC asks first, for the window `owner` when
+    /// not 0). The OS error code when it couldn't (1223: the prompt was declined).
+    pub(super) fn launch(exe: &Path, args: &str, dir: &Path, owner: isize) -> std::result::Result<Process, i32> {
         let (verb, file, params, directory) = (wide("runas".as_ref()), wide(exe.as_os_str()), wide(args.as_ref()), wide(dir.as_os_str()));
         // SAFETY: a zeroed SHELLEXECUTEINFOW is valid (null pointers, no flags); every string
         // it points to outlives the call.
@@ -440,6 +724,7 @@ mod win {
             let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
             info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
             info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
+            info.hwnd = owner as _;
             info.lpVerb = verb.as_ptr();
             info.lpFile = file.as_ptr();
             info.lpParameters = params.as_ptr();
@@ -461,12 +746,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_hyperv_on_windows_without_elevation_is_elevated() {
-        assert!(decide(true, true, || false));
-        assert!(!decide(true, true, || true), "an elevated app runs Vagrant directly");
-        assert!(!decide(true, false, || false), "other providers never need it");
-        assert!(!decide(false, true, || false), "never off Windows");
-        assert!(!needed(true), "never in unit tests");
+    fn only_hyperv_on_windows_goes_through_the_script_elevated_when_it_must() {
+        assert_eq!(decide(true, true, || false), Mode::Script { runas: true });
+        assert_eq!(decide(true, true, || true), Mode::Script { runas: false }, "an admin (or Hyper-V admin) runs it without a prompt");
+        assert_eq!(decide(true, false, || false), Mode::Direct, "other providers never need it");
+        assert_eq!(decide(false, true, || false), Mode::Direct, "never off Windows");
+        assert_eq!(mode(true), Mode::Direct, "never in unit tests");
     }
 
     #[test]
@@ -478,6 +763,26 @@ mod tests {
     }
 
     #[test]
+    fn the_owner_window_comes_from_the_app_or_the_workers_environment() {
+        // No window set in this test process, nor in its environment.
+        assert_eq!(owner_window(), None);
+        set_owner_window(42);
+        assert_eq!(owner_window(), Some(42));
+        set_owner_window(0);
+    }
+
+    #[test]
+    fn questions_vagrant_waits_on_are_told_and_explained() {
+        let switch = prompt("    default: Please choose a switch to attach to your Hyper-V instance.").unwrap();
+        assert!(switch.contains("virtual switch") && switch.contains("try again"));
+        assert!(prompt("You will be asked for the username and password to use for the SMB").unwrap().contains("shared folder"));
+        assert!(prompt("==> default: Booting VM...").is_none());
+        assert!(stopped("timeout").contains("6 hours"));
+        assert!(stopped("cancelled").contains("cancelled") && stopped("").contains("cancelled"));
+        assert_eq!(stopped(switch), switch);
+    }
+
+    #[test]
     fn powershell_quoting_doubles_every_single_quote() {
         assert_eq!(ps_quote("plain"), "'plain'");
         assert_eq!(ps_quote("it's"), "'it''s'");
@@ -485,55 +790,85 @@ mod tests {
         assert_eq!(ps_quote("$env:X `n"), "'$env:X `n'", "nothing expands in single quotes");
     }
 
+    fn work() -> WorkDir {
+        WorkDir { dir: PathBuf::from("C:\\Temp\\w"), finished: true }
+    }
+
+    fn plan<'a>(steps: &'a [Step], work: &'a WorkDir) -> Plan<'a> {
+        Plan { program: "C:\\HashiCorp\\Vagrant\\bin\\vagrant.exe", dir: Path::new("C:\\Users\\Amélie\\lab"), steps, work, marker: "##m##", launcher: 77 }
+    }
+
     #[test]
     fn arguments_powershell_would_mangle_are_refused() {
         for bad in ["", "say \"hi\"", "--%", "a\nb"] {
             assert!(check_arg(bad).is_err(), "{bad:?}");
         }
-        for good in ["up", "--provider", "hyperv", "uname -srm", "isoloom-controller", "a&b|c"] {
+        for good in ["up", "--provider", "hyperv", "uname -srm", "isoloom-controller", "a&b|c", "echo $(uname)"] {
             assert!(check_arg(good).is_ok(), "{good:?}");
         }
         let steps = [Step::new(&["ssh", "-c", "echo \"x\""])];
-        assert!(script("vagrant", Path::new("C:\\lab"), &[], &steps, Path::new("C:\\t\\l.log"), "##m##").is_err());
+        let w = work();
+        assert!(script(&plan(&steps, &w)).is_err());
     }
 
     #[test]
-    fn the_elevated_environment_carries_path_vagrant_and_the_callers() {
+    fn the_environment_carries_path_vagrant_and_the_callers_and_stays_off_the_command_line() {
         let own = [
             ("Path".to_string(), "C:\\HashiCorp\\Vagrant\\bin".to_string()),
             ("USERPROFILE".into(), "C:\\Users\\Amélie\\".into()),
             ("VAGRANT_DEFAULT_PROVIDER".into(), "hyperv".into()),
             ("TEMP".into(), "C:\\Users\\Amélie\\AppData\\Local\\Temp".into()),
         ];
-        let env = forwarded_env(own.clone(), &[("CLAIM".into(), "x".into()), ("vagrant_default_provider".into(), "virtualbox".into())]);
+        let env = forwarded_env(own.clone(), &[("CTF_LAUNCH_TOKEN".into(), "s3cret".into()), ("vagrant_default_provider".into(), "virtualbox".into())]);
         assert_eq!(
             env,
             [
                 ("Path".to_string(), "C:\\HashiCorp\\Vagrant\\bin".to_string()),
                 ("VAGRANT_HOME".into(), "C:\\Users\\Amélie\\.vagrant.d".into()),
-                ("CLAIM".into(), "x".into()),
+                ("CTF_LAUNCH_TOKEN".into(), "s3cret".into()),
                 ("vagrant_default_provider".into(), "virtualbox".into()),
             ]
         );
+        let json: serde_json::Value = serde_json::from_str(&env_json(&env)).unwrap();
+        assert_eq!(json[2], serde_json::json!({ "k": "CTF_LAUNCH_TOKEN", "v": "s3cret" }));
         // A VAGRANT_HOME of the user's own is kept as it is.
         let mut own = own.to_vec();
         own.push(("VAGRANT_HOME".into(), "D:\\vagrant".into()));
         let env = forwarded_env(own, &[]);
         assert_eq!(env.iter().filter(|(k, _)| k == "VAGRANT_HOME").map(|(_, v)| v.as_str()).collect::<Vec<_>>(), ["D:\\vagrant"]);
+        // The script names the file, never a value.
+        let steps = [Step::new(&["up"])];
+        let w = work();
+        let s = script(&plan(&steps, &w)).unwrap();
+        assert!(s.contains("ReadAllText('C:\\Temp\\w") && s.contains("env.json") && !s.contains("s3cret"), "{s}");
+    }
+
+    #[test]
+    fn the_program_is_found_by_its_full_path() {
+        let d = std::env::temp_dir().join(format!("cyberctf-resolve-{}", rand::random::<u32>()));
+        let (a, b) = (d.join("a"), d.join("b"));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(b.join("vagrant.exe"), "").unwrap();
+        let path = std::env::join_paths([&a, &b]).unwrap();
+        assert_eq!(resolve("vagrant.exe", Some(&path)), Some(b.join("vagrant.exe")));
+        assert_eq!(resolve("vagrant.exe", Some(&std::env::join_paths([&a]).unwrap())), None);
+        assert_eq!(resolve("vagrant.exe", None), None);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
     fn the_script_runs_every_step_quoted_and_framed_by_markers() {
         let steps = [Step::new(&["up", "--provider", "hyperv"]), Step::new(&["halt", "o'brien"]).always()];
-        let env = [("CLAIM".to_string(), "a'b".to_string())];
-        let s = script("vagrant", Path::new("C:\\Users\\Amélie\\lab"), &env, &steps, Path::new("C:\\Temp\\x\\vagrant.log"), "##m##").unwrap();
-        assert!(s.contains("Set-Location -LiteralPath 'C:\\Users\\Amélie\\lab'"), "{s}");
-        assert!(s.contains("SetEnvironmentVariable('CLAIM', 'a''b', 'Process')"), "{s}");
-        assert!(s.contains("& 'vagrant' 'up' '--provider' 'hyperv' 2>&1"), "{s}");
-        assert!(s.contains("& 'vagrant' 'halt' 'o''brien' 2>&1"), "{s}");
-        assert!(s.contains("if (-not $cyberctfFailed) {\n    Write-CyberctfLine ('##m##' + ' start 0')"), "{s}");
-        assert!(s.contains("if ($true) {\n    Write-CyberctfLine ('##m##' + ' start 1')"), "a clean-up step always runs: {s}");
-        assert!(s.contains("[System.IO.File]::Open('C:\\Temp\\x\\vagrant.log'"), "{s}");
+        let w = work();
+        let s = script(&plan(&steps, &w)).unwrap();
+        assert!(s.contains("Set-Location -LiteralPath 'C:\\Users\\Amélie\\lab' -ErrorAction Stop"), "{s}");
+        assert!(s.contains("& 'C:\\HashiCorp\\Vagrant\\bin\\vagrant.exe' @a 2>&1"), "{s}");
+        assert!(s.contains("  Invoke-CyberctfStep 0 $false @('up', '--provider', 'hyperv')\n"), "{s}");
+        assert!(s.contains("  Invoke-CyberctfStep 1 $true @('halt', 'o''brien')\n"), "a clean-up step always runs: {s}");
+        assert!(s.contains("[System.IO.File]::Open('C:\\Temp\\w"), "{s}");
+        assert!(s.contains("Start-Job -ArgumentList $PID, 77, 'C:\\Temp\\w") && s.contains("taskkill.exe /T /F /PID $main"), "the watcher: {s}");
+        assert!(s.contains(&format!("$env:{HYPERV_SWITCH_ENV} = $pick.Name")), "{s}");
         assert!(s.trim_end().ends_with("exit $cyberctfCode"));
     }
 
@@ -541,15 +876,19 @@ mod tests {
     fn powershell_gets_the_script_utf16_encoded() {
         use base64::Engine;
         let args = powershell_args("Write-Output 'é'").unwrap();
-        let encoded = args.rsplit(' ').next().unwrap();
-        let bytes = base64::engine::general_purpose::STANDARD.decode(encoded).unwrap();
+        let bytes = base64::engine::general_purpose::STANDARD.decode(args.last().unwrap()).unwrap();
         let units: Vec<u16> = bytes.chunks(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
         assert_eq!(String::from_utf16(&units).unwrap(), "Write-Output 'é'");
-        assert!(args.starts_with("-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand "));
+        assert_eq!(args[..7], ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-EncodedCommand"]);
         assert!(powershell_args(&"x".repeat(MAX_COMMAND_LINE)).is_err(), "too long for a command line");
+        // A real batch's script fits with room to spare (the environment is in a file).
+        let steps: Vec<Step> = (0..12).map(|_| Step::new(&["provision", "isoloom-controller", "--provision-with", "ansible"])).collect();
+        let w = work();
+        let len: usize = powershell_args(&script(&plan(&steps, &w)).unwrap()).unwrap().iter().map(|a| a.len() + 1).sum();
+        assert!(len < MAX_COMMAND_LINE / 2, "{len}");
     }
 
-    fn collect(steps: &[Step], log: &[&str], exit: u32) -> (Vec<String>, Result<Vec<Outcome>>) {
+    fn collect(steps: &[Step], log: &[&str], exit: u32, reason: Option<&str>) -> (Vec<String>, Result<Vec<Outcome>>) {
         let mut events = Vec::new();
         let mut c = Collector::new("##m##", steps);
         for l in log {
@@ -567,7 +906,7 @@ mod tests {
                 })
             });
         }
-        (events, c.finish(exit))
+        (events, c.finish(exit, reason))
     }
 
     #[test]
@@ -584,7 +923,7 @@ mod tests {
             "##m## end 2 0",
             "##m##x start 2",
         ];
-        let (events, outcomes) = collect(&steps, &log, 0);
+        let (events, outcomes) = collect(&steps, &log, 0, None);
         assert_eq!(
             events[..3],
             ["start 0", "line 0 Bringing machine 'default' up with 'hyperv' provider...", "end 0 Bringing machine 'default' up with 'hyperv' provider...\n"]
@@ -600,14 +939,29 @@ mod tests {
     #[test]
     fn skipped_missing_and_broken_runs() {
         let steps = [Step::new(&["up"]), Step::new(&["ssh", "-c", "uname"])];
-        let (_, outcomes) = collect(&steps, &["##m## start 0", "##m## missing 0", "##m## end 0 127", "##m## skip 1"], 0);
+        let (_, outcomes) = collect(&steps, &["##m## start 0", "##m## missing 0", "##m## end 0 127", "##m## skip 1"], 0, None);
         let outcomes = outcomes.unwrap();
         assert!(matches!(&outcomes[0], Some(Err(Error::ToolMissing { tool: "vagrant" }))));
         assert!(outcomes[1].is_none(), "skipped");
-        let (_, broken) = collect(&steps, &["##m## error Cannot find path 'C:\\lab' because it does not exist."], 1);
+        let (_, broken) = collect(&steps, &["##m## error Cannot find path 'C:\\lab' because it does not exist."], 1, None);
         assert!(broken.unwrap_err().to_string().contains("Cannot find path"));
-        let (_, early) = collect(&steps, &[], 3);
+        let (_, early) = collect(&steps, &[], 3, None);
         assert!(early.unwrap_err().to_string().contains("exit code 3"));
+    }
+
+    #[test]
+    fn a_batch_cut_short_is_a_failure_never_a_success() {
+        // Regression: up done, then the script killed during the next step: the steps that never
+        // ended (or never ran) must not read as done.
+        let steps = [Step::new(&["up"]), Step::new(&["provision"]), Step::new(&["halt"]).always()];
+        let (_, cut) = collect(&steps, &["##m## start 0", "##m## end 0 0", "##m## start 1", "TASK [x]"], 1, None);
+        assert!(cut.unwrap_err().to_string().contains("ended before it finished"));
+        // Between two steps, with an exit code of 0 even.
+        let (_, between) = collect(&steps, &["##m## start 0", "##m## end 0 0"], 0, None);
+        assert!(between.is_err());
+        // Ended by the watcher: its reason is the error.
+        let (_, timed) = collect(&steps, &["##m## start 0"], 1, Some("timeout"));
+        assert!(timed.unwrap_err().to_string().contains("more than 6 hours"));
     }
 
     #[tokio::test]
@@ -632,23 +986,59 @@ mod tests {
         assert_eq!(lines, ["one", "two", "thr\u{e9}e", "no newline"]);
     }
 
+    #[test]
+    fn an_abandoned_batch_asks_its_watcher_to_stop_and_goes_away() {
+        let w = WorkDir::new().unwrap();
+        let dir = w.dir.clone();
+        w.stop("Vagrant stopped to ask something");
+        w.stop("cancelled");
+        assert_eq!(std::fs::read_to_string(w.cancel()).unwrap(), "Vagrant stopped to ask something", "the first reason stays");
+        drop(w);
+        for _ in 0..50 {
+            if !dir.exists() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        panic!("{} left behind", dir.display());
+    }
+
     /// The PowerShell that runs the scripts here: Windows PowerShell on Windows; elsewhere
     /// PowerShell 7 when `CYBERCTF_PWSH` names it (the script is the same).
-    fn powershell() -> Option<String> {
-        if cfg!(windows) { Some("powershell".into()) } else { std::env::var("CYBERCTF_PWSH").ok() }
+    fn powershell() -> Option<std::ffi::OsString> {
+        if cfg!(windows) { Some("powershell".into()) } else { std::env::var_os("CYBERCTF_PWSH") }
+    }
+
+    /// Runs `steps` with `program` through a real PowerShell (not elevated); its lines too.
+    async fn real(ps: std::ffi::OsString, program: &str, dir: &Path, steps: &[Step]) -> (Vec<String>, Result<Vec<Outcome>>) {
+        let mut lines = Vec::new();
+        let env = [("CYBERCTF_X".to_string(), "it's".to_string())];
+        let result = run_script(
+            program,
+            dir,
+            &env,
+            steps,
+            move |args| async move { launch_plain(&ps, args).await },
+            |e| {
+                if let Event::Line(i, l) = e {
+                    lines.push(format!("{i} {}", l.trim()));
+                }
+            },
+        )
+        .await;
+        (lines, result)
     }
 
     #[tokio::test]
     async fn a_real_powershell_runs_the_batch_as_planned() {
-        // The generated script, run by a real PowerShell (not elevated): steps, skips, clean-ups,
-        // exit codes, stderr and non-ASCII output come back through the log as they would from
-        // an elevated run.
+        // The generated script, run by a real PowerShell: steps, skips, clean-ups, exit codes,
+        // stderr, the environment from its file, and non-ASCII output come back through the log.
         let Some(ps) = powershell() else { return };
         let (program, steps) = if cfg!(windows) {
             (
                 "cmd.exe",
                 vec![
-                    Step::new(&["/c", "echo", "hello"]),
+                    Step::new(&["/c", "echo", "hello", "%CYBERCTF_X%"]),
                     Step::new(&["/c", "echo oops 1>&2 & exit 3"]),
                     Step::new(&["/c", "echo", "skipped"]),
                     Step::new(&["/c", "echo", "cleanup"]).always(),
@@ -658,37 +1048,50 @@ mod tests {
             (
                 "sh",
                 vec![
-                    Step::new(&["-c", "echo hello; echo caf\u{e9}"]),
+                    Step::new(&["-c", "echo hello $CYBERCTF_X; echo caf\u{e9}"]),
                     Step::new(&["-c", "echo oops >&2; exit 3"]),
                     Step::new(&["-c", "echo skipped"]),
                     Step::new(&["-c", "echo cleanup"]).always(),
                 ],
             )
         };
-        let dir = std::env::temp_dir();
-        let launch = |args: String| async move {
-            let mut cmd = tokio::process::Command::new(&ps);
-            // `powershell_args` is one command line; split it back for a plain spawn.
-            cmd.args(args.split(' ').filter(|a| *a != "-WindowStyle" && *a != "Hidden"));
-            let status = cmd.status().await?;
-            Ok(status.code().unwrap_or(1) as u32)
-        };
-        let mut lines = Vec::new();
-        let outcomes = run_script(program, &dir, &[("CYBERCTF_X".into(), "it's".into())], &steps, launch, |e| {
-            if let Event::Line(i, l) = e {
-                lines.push(format!("{i} {}", l.trim()));
-            }
-        })
-        .await
-        .unwrap();
-        assert!(matches!(&outcomes[0], Some(Ok(out)) if out.contains("hello")), "{outcomes:?}");
+        let (lines, outcomes) = real(ps, program, &std::env::temp_dir(), &steps).await;
+        let outcomes = outcomes.unwrap();
+        assert!(matches!(&outcomes[0], Some(Ok(out)) if out.contains("hello it's")), "{outcomes:?}");
         let Some(Err(Error::CommandFailed { stderr, .. })) = &outcomes[1] else { panic!("{outcomes:?}") };
         assert!(stderr.contains("oops") && stderr.contains("exit code: 3"), "{stderr}");
         assert!(outcomes[2].is_none(), "skipped after the failure");
         assert!(matches!(&outcomes[3], Some(Ok(out)) if out.contains("cleanup")), "{outcomes:?}");
-        assert!(lines.contains(&"0 hello".to_string()) && lines.contains(&"1 oops".to_string()), "{lines:?}");
+        assert!(lines.contains(&"1 oops".to_string()), "{lines:?}");
         if !cfg!(windows) {
             assert!(lines.contains(&"0 caf\u{e9}".to_string()), "{lines:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_real_powershell_stops_on_a_missing_folder() {
+        let Some(ps) = powershell() else { return };
+        let program = if cfg!(windows) { "cmd.exe" } else { "sh" };
+        let missing = std::env::temp_dir().join(format!("cyberctf-missing-{}", rand::random::<u32>()));
+        let (_, result) = real(ps, program, &missing, &[Step::new(&["-c", "echo ran"])]).await;
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("the Vagrant batch failed") && err.contains("cyberctf-missing-"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_question_vagrant_waits_on_ends_the_batch_with_a_plain_message() {
+        // Vagrant on Windows waits forever on its question: the launcher sees the line before it,
+        // and the watcher ends the run (the whole tree) instead of hanging.
+        let Some(ps) = powershell() else { return };
+        let (program, step) = if cfg!(windows) {
+            ("cmd.exe", Step::new(&["/c", "echo Please choose a switch to attach to your Hyper-V instance.& ping -n 60 127.0.0.1 >nul"]))
+        } else {
+            ("sh", Step::new(&["-c", "echo 'Please choose a switch to attach to your Hyper-V instance.'; sleep 60"]))
+        };
+        let started = std::time::Instant::now();
+        let (_, result) = real(ps, program, &std::env::temp_dir(), &[step]).await;
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("which Hyper-V virtual switch"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(45), "ended in {:?}", started.elapsed());
     }
 }

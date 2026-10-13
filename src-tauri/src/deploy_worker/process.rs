@@ -87,6 +87,11 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
     let mut cmd = std::process::Command::new(exe);
     cmd.arg("deploy").arg("--job").arg(&f.job).stdin(std::process::Stdio::null()).stdout(log.try_clone().map_err(Error::Io)?).stderr(log);
     detach(&mut cmd);
+    // A UAC prompt it raises (Vagrant on Hyper-V) comes up for the app's window.
+    #[cfg(windows)]
+    if let Some(hwnd) = crate::exec::owner_window() {
+        cmd.env(crate::exec::OWNER_WINDOW_ENV, hwnd.to_string());
+    }
     let mut child = cmd.spawn().map_err(Error::Io)?;
     let pid = child.id();
     let worker = Worker { pid, started: observe(pid).map(|o| o.started) };
