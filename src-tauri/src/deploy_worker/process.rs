@@ -149,21 +149,26 @@ pub(super) struct Observed {
 
 /// What the OS says about process `pid`, if it exists.
 ///
-/// On macOS sysinfo first lists every process id, and finds nothing at all when processes were
-/// started between its two `proc_listallpids` calls: a live worker then read as gone, and its
-/// pidfile was swept as stale. So a process that sysinfo misses but the OS still has is looked
-/// at again, a few times.
+/// On macOS sysinfo misreads a live process now and then, more often while other processes
+/// start: it first lists every process id and finds nothing at all when processes were started
+/// between its two `proc_listallpids` calls, and it reads the arguments with two
+/// `KERN_PROCARGS2` sysctls, the second of which can fail, leaving the command line empty. A
+/// live worker then read as gone (or as another program), and its pidfile was swept as stale.
+/// So a process that the OS still has is looked at again, a few times, until sysinfo sees it
+/// (on macOS, with its command line).
 pub(super) fn observe(pid: u32) -> Option<Observed> {
+    let mut last = None;
     for _ in 0..5 {
-        if let Some(seen) = observe_once(pid) {
-            return Some(seen);
-        }
-        if !exists(pid) {
-            return None;
+        match observe_once(pid) {
+            // Elsewhere an empty command line is what the OS says (Windows: an elevated process).
+            Some(seen) if seen.zombie || !seen.cmdline.is_empty() || !cfg!(target_os = "macos") => return Some(seen),
+            Some(seen) => last = Some(seen),
+            None if last.is_none() && !exists(pid) => return None,
+            None => {}
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    None
+    last
 }
 
 /// Whether process `pid` exists, by signal 0 (nothing is sent): it does when the signal could
