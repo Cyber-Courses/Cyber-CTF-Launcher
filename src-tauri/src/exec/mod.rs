@@ -223,13 +223,24 @@ async fn stream_from(
     // Kill the child (and, with it, the long-lived process we stream) if this future is dropped,
     // rather than orphaning a vagrant/docker/terraform run.
     cmd.kill_on_drop(true);
+    // Its own process group (a job object on Windows), so a cancellation ends the whole tree:
+    // `vagrant` is a wrapper whose `ruby` outlived the wrapper killed alone, and kept Vagrant's
+    // lock. A deploy worker being stopped reaches it through `kill_live_tools` (gently: SIGTERM),
+    // and Terraform's interrupt finds it as a group under the worker (see deploy_worker).
+    #[cfg(unix)]
+    cmd.process_group(0);
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
     let mut child = cmd.spawn().map_err(spawn_error(program))?;
+    let group = GroupGuard::stream(&child);
     // Keep the last few stderr lines so a failure's error carries the actual cause, not just the
     // exit status (callers that surface the returned error, not the log channel, rely on this).
-    let (status, tail) = forward_lines(&mut child, STREAM_ERROR_LINES, on_line, |_| {}).await?;
+    let forwarded = forward_lines(&mut child, STREAM_ERROR_LINES, on_line, |_| {}).await;
+    if forwarded.is_ok() {
+        group.disarm();
+    }
+    let (status, tail) = forwarded?;
     if !status.success() {
         return Err(failed(program, args, stream_failure(&tail, status)));
     }
@@ -239,21 +250,35 @@ async fn stream_from(
 /// Forwards a piped child's stdout and stderr lines to `on_line` as they arrive, until both
 /// close, then waits for it. `on_stderr` sees each stderr line first. Returns its exit status
 /// and its last `keep` stderr lines.
+///
+/// Lines are read as bytes and decoded lossily: tools print in the console's codepage
+/// (VBoxManage and Vagrant on a French Windows, WinRM output, a compose build's), and a line
+/// that isn't UTF-8 once failed the stream, which dropped (and so killed) a `terraform apply`
+/// mid-run.
 pub async fn forward_lines(
     child: &mut tokio::process::Child,
     keep: usize,
     mut on_line: impl FnMut(String),
     mut on_stderr: impl FnMut(&str),
 ) -> Result<(ExitStatus, Vec<String>)> {
-    let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
-    let mut stderr = BufReader::new(child.stderr.take().expect("piped stderr")).lines();
+    let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout"));
+    let mut stderr = BufReader::new(child.stderr.take().expect("piped stderr"));
+    // Kept across the loop: `read_until` is cancel safe only because a partial line stays here.
+    let (mut out_buf, mut err_buf) = (Vec::new(), Vec::new());
     let (mut out_done, mut err_done) = (false, false);
     let mut tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
     while !(out_done && err_done) {
         tokio::select! {
-            line = stdout.next_line(), if !out_done => match line? { Some(l) => on_line(l), None => out_done = true },
-            line = stderr.next_line(), if !err_done => match line? {
-                Some(l) => {
+            // At the end, a last line with no `\n` may already be in the buffer: read by a call
+            // the other stream's line cut short.
+            read = stdout.read_until(b'\n', &mut out_buf), if !out_done => match read? {
+                0 if out_buf.is_empty() => out_done = true,
+                _ => on_line(take_line(&mut out_buf)),
+            },
+            read = stderr.read_until(b'\n', &mut err_buf), if !err_done => match read? {
+                0 if err_buf.is_empty() => err_done = true,
+                _ => {
+                    let l = take_line(&mut err_buf);
                     on_stderr(&l);
                     if keep > 0 {
                         if tail.len() == keep { tail.pop_front(); }
@@ -261,12 +286,26 @@ pub async fn forward_lines(
                     }
                     on_line(l);
                 }
-                None => err_done = true,
             },
         }
     }
     let status = child.wait().await?;
     Ok((status, tail.into()))
+}
+
+/// The line read into `buf` (its `\n` or `\r\n` cut off, bytes that aren't UTF-8 replaced),
+/// leaving `buf` empty for the next one.
+fn take_line(buf: &mut Vec<u8>) -> String {
+    let mut end = buf.len();
+    if buf[..end].ends_with(b"\n") {
+        end -= 1;
+    }
+    if buf[..end].ends_with(b"\r") {
+        end -= 1;
+    }
+    let line = String::from_utf8_lossy(&buf[..end]).into_owned();
+    buf.clear();
+    line
 }
 
 #[cfg(test)]
@@ -367,6 +406,48 @@ mod tests {
             run_env_timed("sh", &["-c", &format!("sleep 120 & echo $! > '{path}'; wait")], None, &[], Duration::from_secs(2)).await
         };
         assert!(err.is_err(), "timed out");
+        let pid: u32 = std::fs::read_to_string(&file).expect("the tool started its child").trim().parse().unwrap();
+        let _ = std::fs::remove_file(&file);
+        assert!(gone(pid).await, "the tool's child {pid} was left running");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn output_that_isnt_utf8_is_read_lossily_and_the_tool_runs_on() {
+        // Regression: the first byte that wasn't UTF-8 (VBoxManage in a French Windows' codepage)
+        // failed the stream, which dropped the child and killed it: a `terraform apply` cut off
+        // mid-run. The line comes through with a replacement character, and the tool finishes.
+        let mut lines = Vec::new();
+        let script = r"printf 'Cr\351ation\r\n'; printf 'err \377\n' >&2; sleep 0.2; printf 'done'";
+        stream("sh", &["-c", script], None, &[], |l| lines.push(l)).await.expect("the tool ran to its end");
+        assert_eq!(lines, ["Cr\u{fffd}ation", "err \u{fffd}", "done"]);
+    }
+
+    #[test]
+    fn a_line_loses_its_ending_only() {
+        let mut buf = b"a\r\r\n".to_vec();
+        assert_eq!(take_line(&mut buf), "a\r");
+        assert!(buf.is_empty());
+        assert_eq!(take_line(&mut b"last".to_vec()), "last");
+        assert_eq!(take_line(&mut b"\n".to_vec()), "");
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_stream_takes_what_it_started_with_it() {
+        // A streamed `vagrant` is a wrapper around `ruby`: cancelled, the wrapper alone was
+        // killed, and its ruby ran on holding Vagrant's lock. The tool's tree ends with it now.
+        let file = std::env::temp_dir().join(format!("cyberctf-stream-tree-{}", rand::random::<u32>()));
+        let path = file.display().to_string();
+        let started = if cfg!(windows) {
+            let script = format!(
+                "$p = Start-Process -FilePath ping -ArgumentList '-n','120','127.0.0.1' -PassThru -NoNewWindow; Set-Content -Path '{path}' -Value $p.Id; Start-Sleep 120"
+            );
+            tokio::time::timeout(Duration::from_secs(10), stream("powershell", &["-NoProfile", "-NonInteractive", "-Command", &script], None, &[], |_| {}))
+                .await
+        } else {
+            tokio::time::timeout(Duration::from_secs(2), stream("sh", &["-c", &format!("sleep 120 & echo $! > '{path}'; wait")], None, &[], |_| {})).await
+        };
+        assert!(started.is_err(), "cancelled while it ran");
         let pid: u32 = std::fs::read_to_string(&file).expect("the tool started its child").trim().parse().unwrap();
         let _ = std::fs::remove_file(&file);
         assert!(gone(pid).await, "the tool's child {pid} was left running");

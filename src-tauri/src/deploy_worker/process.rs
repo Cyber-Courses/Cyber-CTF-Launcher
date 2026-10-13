@@ -293,7 +293,7 @@ fn jobs_in(d: &Path) -> Vec<(Job, Option<String>)> {
         .filter_map(|key| {
             let f = Files::of(d, &key);
             let job: Job = serde_json::from_slice(&std::fs::read(&f.job).ok()?).ok()?;
-            let step = std::fs::read_to_string(&f.log).ok().and_then(|l| super::progress::last_step(&l));
+            let step = super::progress::step_of(&f.log);
             Some((job, step))
         })
         .collect()
@@ -370,9 +370,12 @@ pub async fn kill_and_wait(app: &AppHandle, key: &str) {
 #[cfg(unix)]
 fn interrupt_terraform(group: u32) -> bool {
     let pgrep = |args: &[&str]| std::process::Command::new("pgrep").args(args).output().map(|o| pids(&String::from_utf8_lossy(&o.stdout))).unwrap_or_default();
-    let group = group.to_string();
-    let mut found = pgrep(&["-g", &group, "-x", "terraform"]);
-    found.extend(pgrep(&["-g", &group, "-f", "hashicorp/terraform"]));
+    // The worker's group, and those of the tools it streams: each leads its own (exec::stream).
+    let mut groups = vec![group];
+    groups.extend(pgrep(&["-P", &group.to_string()]));
+    let groups = groups.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+    let mut found = pgrep(&["-g", &groups, "-x", "terraform"]);
+    found.extend(pgrep(&["-g", &groups, "-f", "hashicorp/terraform"]));
     for pid in &found {
         let _ = std::process::Command::new("kill").args(["-INT", &pid.to_string()]).status();
     }
@@ -468,6 +471,30 @@ mod tests {
         assert!(!status.success(), "{status:?}");
         other.kill().unwrap();
         other.wait().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_stop_reaches_terraform_in_a_group_of_its_own() {
+        // A worker streams each tool in a process group of its own (so a cancel ends the tool's
+        // whole tree), out of the worker's group: Terraform's interrupt still finds it there.
+        // The stand-in worker starts it in a group of its own (perl's setpgrp, with SIGINT back
+        // to its default: `&` ignores it); the image name comes from the environment, so only
+        // the stand-in Terraform's command line names it.
+        use std::os::unix::process::CommandExt;
+        let run = r#"perl -e '$SIG{INT} = "DEFAULT"; setpgrp(0, 0); exec @ARGV' sh -c 'sleep 30 & wait' docker run "$IMAGE" & wait"#;
+        let mut worker = std::process::Command::new("sh").args(["-c", run]).env("IMAGE", "hashicorp/terraform:1.9.8").process_group(0).spawn().unwrap();
+        let found = (0..40).any(|_| {
+            std::thread::sleep(Duration::from_millis(50));
+            interrupt_terraform(worker.id())
+        });
+        assert!(found, "terraform found in its own group under the worker");
+        let started = std::time::Instant::now();
+        let waiter = std::thread::spawn(move || worker.wait());
+        while !waiter.is_finished() && started.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(waiter.is_finished(), "the interrupted run ended, and the worker with it");
     }
 
     #[test]

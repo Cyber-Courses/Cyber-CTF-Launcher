@@ -1,17 +1,21 @@
-//! Process groups of timed tools, so a timeout, a cancellation or the app's exit kills the whole
-//! tree a tool started, not just the tool: its own process group on unix, a job object (which
-//! ends every process in it when it is closed) on Windows.
+//! Process groups of timed and streamed tools, so a timeout, a cancellation or the app's exit
+//! kills the whole tree a tool started, not just the tool: its own process group on unix, a job
+//! object (which ends every process in it when it is closed) on Windows.
 
 use std::sync::Mutex;
 
-/// A timed tool still running: its process id and, on Windows, the job its tree runs in.
+/// A tool still running: its process id and, on Windows, the job its tree runs in.
 struct Live {
     pid: u32,
+    /// A streamed tool (a `vagrant up`, a `compose up`, a `terraform apply`), stopped gently on
+    /// the app's or worker's exit; a timed probe is just killed.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    stream: bool,
     #[cfg(windows)]
     job: std::sync::Arc<job::Job>,
 }
 
-/// Timed tools still running, so they can be ended when the app (or a deploy worker being
+/// Tools still running, so they can be ended when the app (or a deploy worker being
 /// stopped) exits: an exit doesn't drop their guards, and a leftover `vagrant status` keeps the
 /// machine's lock (every later status of that lab then fails as "locked").
 static LIVE_GROUPS: Mutex<Vec<Live>> = Mutex::new(Vec::new());
@@ -20,7 +24,17 @@ static LIVE_GROUPS: Mutex<Vec<Live>> = Mutex::new(Vec::new());
 pub(super) struct GroupGuard(Option<u32>);
 
 impl GroupGuard {
+    /// For a timed probe.
     pub(super) fn new(child: &tokio::process::Child) -> Self {
+        Self::track(child, false)
+    }
+
+    /// For a streamed tool.
+    pub(super) fn stream(child: &tokio::process::Child) -> Self {
+        Self::track(child, true)
+    }
+
+    fn track(child: &tokio::process::Child, stream: bool) -> Self {
         let pid = child.id();
         if let Some(p) = pid {
             #[cfg(windows)]
@@ -28,6 +42,7 @@ impl GroupGuard {
             if let Ok(mut live) = LIVE_GROUPS.lock() {
                 live.push(Live {
                     pid: p,
+                    stream,
                     #[cfg(windows)]
                     job: std::sync::Arc::new(job),
                 });
@@ -74,12 +89,21 @@ fn kill(live: &Live) {
     let _ = live;
 }
 
-/// Ends every timed tool this process started that is still running, with what it started. For
-/// the app's exit, and a deploy worker being stopped (a timed tool is in a group of its own, so
-/// a signal to the worker's group misses it).
+/// Ends every tool this process started that is still running, with what it started. For the
+/// app's exit, and a deploy worker being stopped (each tool is in a group of its own, so a signal
+/// to the worker's group misses it). A streamed tool gets SIGTERM on unix, as it did when it
+/// shared the worker's group, so Vagrant or Compose can stop what they were doing.
 pub fn kill_live_tools() {
     let groups = LIVE_GROUPS.lock().map(|mut g| std::mem::take(&mut *g)).unwrap_or_default();
     for live in &groups {
+        #[cfg(unix)]
+        if live.stream {
+            // SAFETY: plain syscall on a group created by `process_group(0)` at spawn.
+            unsafe {
+                libc::killpg(live.pid as libc::pid_t, libc::SIGTERM);
+            }
+            continue;
+        }
         kill(live);
     }
 }
