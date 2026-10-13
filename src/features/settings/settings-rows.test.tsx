@@ -331,6 +331,15 @@ describe("AttackBoxRows", () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  it("shows the pinned default by its repository, not its digest", async () => {
+    installTauri();
+    render(<AttackBoxRows onSaved={vi.fn()} />);
+    await flush();
+    expect(text()).toContain("cyberctf/attack-box (pinned)");
+    expect(text()).not.toContain("sha256:");
+    expect(screen.getByTitle(/^cyberctf\/attack-box@sha256:/)).toBeTruthy();
+  });
+
   it("saves a custom image only when it changed", async () => {
     installTauri();
     const onSaved = vi.fn();

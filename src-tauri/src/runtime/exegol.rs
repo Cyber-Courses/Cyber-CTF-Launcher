@@ -7,6 +7,20 @@ use serde::Serialize;
 use crate::error::{Error, Result};
 use crate::exec::{run, run_read, stream};
 
+/// The file naming the default attack box, read by the webview (`src/lib/settings.ts`) too. The
+/// attack-box workflow's bump PR rewrites it after each smoke-tested publish.
+const DEFAULT_IMAGE_FILE: &str = include_str!("../../attack-box-image.json");
+
+/// The default attack box: the Cyber CTF image pinned by digest (`cyberctf/attack-box@sha256:…`),
+/// so every player on one launcher version gets the same, tested box.
+pub fn default_image() -> &'static str {
+    static IMAGE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    IMAGE.get_or_init(|| {
+        let v: serde_json::Value = serde_json::from_str(DEFAULT_IMAGE_FILE).expect("attack-box-image.json is JSON");
+        v["image"].as_str().expect("attack-box-image.json names an image").to_string()
+    })
+}
+
 pub fn container(id: &str) -> String {
     format!("cyberctf-{id}-attacker")
 }
@@ -449,6 +463,16 @@ mod tests {
         assert_eq!(super::container("web"), "cyberctf-web-attacker");
         assert_eq!(super::shell_command("web"), "docker exec -it cyberctf-web-attacker bash");
         assert_eq!(super::tagged_shell_command("web", "12-3"), "docker exec -it -e CYBERCTF_SHELL=12-3 cyberctf-web-attacker bash");
+    }
+
+    #[test]
+    fn the_default_image_is_the_cyber_ctf_box_pinned_by_digest() {
+        let image = super::default_image();
+        let digest = image.strip_prefix("cyberctf/attack-box@sha256:").expect("cyberctf/attack-box@sha256:<digest>");
+        assert!(digest.len() == 64 && digest.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "{image}");
+        assert!(super::valid_image(image));
+        let file: serde_json::Value = serde_json::from_str(super::DEFAULT_IMAGE_FILE).unwrap();
+        assert!(file["previous"].as_array().unwrap().iter().all(|p| p.as_str() != Some(image)), "the default is not also a previous one");
     }
 
     #[test]

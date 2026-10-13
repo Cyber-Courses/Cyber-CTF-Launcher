@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { attackVmStart, attackVmStatus, attackVmStop, exegolStatus, exegolStop, type ExegolStatus } from "@/lib/tauri";
 import { startContainerAttackBox } from "@/features/labs/attack-box-auto";
-import { getAttackBox, getAttackImage, getAutoAttackBox } from "@/lib/settings";
+import { attackImageLabel, getAttackBox, getAttackImage, getAutoAttackBox } from "@/lib/settings";
 import { translate } from "@/lib/i18n";
 
 /** What the attack box is: a container on a container lab's networks, or the learner's own VM
@@ -41,7 +41,7 @@ export function useAttackBox(
   // Set in Settings; read once per visit.
   const [autoStart] = useState(() => getAutoAttackBox());
   // The image or box in use, for the panel's label.
-  const name = kind === "vm" ? getAttackBox() : getAttackImage();
+  const name = kind === "vm" ? getAttackBox() : attackImageLabel(getAttackImage());
 
   // Only the newest status read wins: a slow poll that was already in flight when the box was
   // stopped must not resolve afterwards with a stale "running" and flip the button back (which

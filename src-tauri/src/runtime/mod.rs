@@ -47,6 +47,7 @@ use ts_rs::TS;
 pub use attack_box::start_attack_vm;
 pub use commands::*;
 pub use docker::{PORTS_ENV, subnets_in_use};
+pub use exegol::default_image as default_attack_image;
 /// For tests elsewhere that need an operation in flight.
 #[cfg(test)]
 pub(crate) use inflight::DeployGuard;

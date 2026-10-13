@@ -62,6 +62,7 @@
     "description": "Runs on each lab’s network as your toolbox. The first launch of an image downloads it, which can take a while.",
     "default": "Default",
     "largeDownload": "Large download",
+    "pinned": "pinned",
     "presets": {
       "cyberctf": "Kali with its standard toolset, ready to use",
       "kali": "Official Kali base, add tools as needed",

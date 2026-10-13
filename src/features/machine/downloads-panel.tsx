@@ -9,9 +9,15 @@ import { StatusDot } from "@/components/ui/status-pill";
 import { ListSkeleton } from "@/features/machine/machine-parts";
 import { useMachineFormat } from "@/features/machine/use-machine-format";
 import { useT } from "@/lib/i18n";
-import { getAttackImage } from "@/lib/settings";
+import { getAttackImage, OLD_ATTACK_IMAGES } from "@/lib/settings";
 import { machineStorage, machineStorageClean, type Storage } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+
+/** The attack box images to count: the one in use, and an older launcher's default (several GB,
+ *  by tag or earlier digest) so it can be cleaned up. The bare repo is `:latest` again. */
+function attackImages(): string[] {
+  return [getAttackImage(), ...OLD_ATTACK_IMAGES.filter((i) => i.includes(":") || i.includes("@"))];
+}
 
 /** Downloaded container images and VM boxes, with a confirmed clean-up (the attack box image
  *  and anything in use are kept). */
@@ -26,7 +32,7 @@ export function DownloadsPanel() {
   const alive = useRef(true);
   useEffect(() => () => void (alive.current = false), []);
   const load = useCallback(() => {
-    machineStorage([getAttackImage()])
+    machineStorage(attackImages())
       .then((s) => alive.current && setStorage(s))
       .catch(() => alive.current && setStorage({ images: [], boxes: [] }));
   }, []);
@@ -37,7 +43,7 @@ export function DownloadsPanel() {
   async function clean() {
     setCleaning(true);
     try {
-      setFreed(await machineStorageClean([getAttackImage()]));
+      setFreed(await machineStorageClean(attackImages()));
     } catch {
       setFreed(0);
     } finally {
