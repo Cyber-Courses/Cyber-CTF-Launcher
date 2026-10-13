@@ -6,6 +6,7 @@ import { ignore } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
 import { sharedPoll, useSharedPoll } from "@/lib/shared-poll";
 import { translate } from "@/lib/i18n";
+import { structurallyEqual } from "@/lib/equal";
 
 /**
  * The live state of lab start/stop, kept outside the React tree so it survives navigating
@@ -25,6 +26,9 @@ export type DeployRun = {
   /** What the run is (launch, stop, shutdown…), so a list row can say "Starting…" or
    *  "Stopping…" instead of guessing from the lab's status. */
   op?: string;
+  /** When it began (ms): its timers count from here, not from its first log line or from when
+   *  a page showing it opened. */
+  startedAt?: number;
 };
 /** Every lab with a run in flight or just finished, keyed by lab id. A single global slot
  *  would cross-contaminate: with two deploys running, the second's lines would appear on the
@@ -71,8 +75,19 @@ export function flushDeployLogs() {
 /** Begin a run (`op`) for `labId`: clears that lab's previous logs, leaves other labs untouched. */
 export function beginDeploy(labId: string, op?: string) {
   flushDeployLogs();
-  setRun(labId, { busy: true, logs: [], times: [], op });
+  setRun(labId, { busy: true, logs: [], times: [], op, startedAt: Date.now() });
 }
+
+/** The failure that ended a lab's run (its ✗ line, without the mark), once the run is over;
+ *  null while it runs or when it went through. */
+export function runFailure(run: DeployRun | undefined): string | null {
+  if (!run || run.busy) return null;
+  const line = run.logs.findLast((l) => l.startsWith("✗"));
+  return line ? line.replace(/^✗\s*/, "") : null;
+}
+
+/** Whether a lab's last run was a start (a launch) that failed. */
+export const startFailed = (run: DeployRun | undefined) => run?.op === "launch" && runFailure(run) !== null;
 
 /** What a lab shows while an operation runs on it: the containers report "running" well before
  *  a launch or resume is done, and until the end of a shut down or stop. */
@@ -174,7 +189,8 @@ export const deployingLabsNow = () => deployingPoll.get();
 export function operationLabel(o: ActiveOperation): string {
   switch (o.op) {
     case "launch":
-      return translate("common.operation.label.launch");
+      // The same word as everywhere else a lab starts (header, list, deployment): "Starting…".
+      return `${translate("common.operation.status.launch")}…`;
     case "resume":
       return translate("common.operation.label.resume");
     case "pause":
@@ -200,8 +216,47 @@ export function useActiveOperations(): Map<string, ActiveOperation> {
   return useSharedPoll(operationsPoll);
 }
 
+// When this window first saw each operation in flight ("lab:op" → ms), kept for the session (a
+// reload keeps it): the backend doesn't say when an operation began, and a page opened on a
+// running deploy must not count from its own opening. For an operation already running when the
+// app started, that is when the app first read it.
+const SEEN_KEY = "cyberctf.operations.seen";
+let seen: Record<string, number> | null = null;
+const seenKey = (labId: string, op: string) => `${labId}:${op}`;
+
+function readSeen(): Record<string, number> {
+  if (seen) return seen;
+  try {
+    seen = JSON.parse(sessionStorage.getItem(SEEN_KEY) ?? "{}") as Record<string, number>;
+  } catch {
+    seen = {};
+  }
+  return seen;
+}
+
+/** Notes the operations in flight now: a new one is first seen now, one that ended is forgotten. */
+export function noteOperations(ops: ActiveOperation[], now = Date.now()) {
+  const before = readSeen();
+  const next: Record<string, number> = {};
+  for (const o of ops) next[seenKey(o.labId, o.op)] = before[seenKey(o.labId, o.op)] ?? now;
+  if (structurallyEqual(before, next)) return;
+  seen = next;
+  try {
+    sessionStorage.setItem(SEEN_KEY, JSON.stringify(next));
+  } catch {
+    /* no storage: kept in memory */
+  }
+}
+
+/** When this window first saw `op` in flight on `labId` (see above), if it did. */
+export const operationSeenAt = (labId: string, op: string): number | undefined => readSeen()[seenKey(labId, op)];
+
 const operationsPoll = sharedPoll({
-  read: () => activeOperations().then((l) => new Map(l.map((o) => [o.labId, o]))),
+  read: () =>
+    activeOperations().then((l) => {
+      noteOperations(l);
+      return new Map(l.map((o) => [o.labId, o]));
+    }),
   ms: 2000,
   initial: new Map<string, ActiveOperation>(),
   // Read on in a hidden window, slower while nothing runs: the shell starts a lab's attack box

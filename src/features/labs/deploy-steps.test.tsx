@@ -15,7 +15,7 @@ const at = (n: number, step = 1000) => Array.from({ length: n }, (_, i) => 1_000
 describe("DeploySteps", () => {
   it("shows a Vagrant start as one step per machine with its duration, the last one running", () => {
     render(<DeploySteps lines={vagrant} times={at(4, 2000)} busy ready={false} where="this machine" />);
-    expect(screen.getByText("Building")).toBeTruthy();
+    expect(screen.getByText("Starting")).toBeTruthy();
     expect(screen.getByText("DC01")).toBeTruthy();
     expect(screen.getByText("SRV02")).toBeTruthy();
     expect(screen.getByText("this machine")).toBeTruthy();

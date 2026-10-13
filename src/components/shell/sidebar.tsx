@@ -163,7 +163,8 @@ const ActiveLabItem = memo(function ActiveLabItem({ lab, onNavigate }: { lab: Ac
   return (
     <button
       type="button"
-      onClick={() => onNavigate("labs", lab.slug)}
+      // No slug (a lab the catalogue, unreachable, doesn't list): the Labs screen, which says why.
+      onClick={() => onNavigate("labs", lab.slug || undefined)}
       className="flex w-full items-start gap-2.5 rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-glass"
     >
       <StatusDot tone={op ? "warn" : "ok"} pulse={!!op} className="mt-[0.4rem]" />

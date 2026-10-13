@@ -7,7 +7,7 @@ import { MachineScreen } from "@/features/machine/machine-screen";
 import { ServerScreen } from "@/features/servers/servers-screen";
 import { CloudScreen } from "@/features/cloud/cloud-screen";
 import { SettingsScreen } from "@/features/settings/settings-screen";
-import { Button } from "@/components/ui/button";
+import { CheckFailed } from "@/features/machine/check-failed";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LIST_SCREEN } from "@/components/ui/screen-width";
 import { Spinner } from "@/components/ui/spinner";
@@ -41,7 +41,9 @@ type ScreenProps = {
 function TabScreen({ tab, report, checkError, auth, openLab, onRefresh, onNavigate, onAuthChange, onLabChange }: ScreenProps): ReactNode {
   const t = useT();
   const waiting = (what: string) => <WaitingForCheck what={what} checkError={checkError} onRetry={onRefresh} />;
-  if (tab === "home") return <HomeScreen report={report} auth={auth} onNavigate={onNavigate} />;
+  const login = async () => onAuthChange(await authLogin());
+  if (tab === "home")
+    return <HomeScreen report={report} checkError={checkError} onRetryCheck={onRefresh} auth={auth} onNavigate={onNavigate} onLogin={login} />;
   if (tab === "settings") return <SettingsScreen auth={auth} onAuthChange={onAuthChange} onNavigate={onNavigate} />;
   if (tab === "machine") return report ? <MachineScreen report={report} onRefresh={onRefresh} onNavigate={onNavigate} /> : waiting(t("shell.screen.checking"));
   if (tab === "server") return <ServerScreen onNavigate={onNavigate} />;
@@ -54,7 +56,7 @@ function TabScreen({ tab, report, checkError, auth, openLab, onRefresh, onNaviga
     <Labs
       loggedIn={auth?.loggedIn ?? false}
       authReady={auth !== null}
-      onLogin={async () => onAuthChange(await authLogin())}
+      onLogin={login}
       hostArch={report.arch}
       report={report}
       openLab={openLab}
@@ -70,18 +72,8 @@ function TabScreen({ tab, report, checkError, auth, openLab, onRefresh, onNaviga
 
 /** Shown where the machine check is needed and hasn't answered: a retry when it failed. */
 function WaitingForCheck({ what, checkError, onRetry }: { what: string; checkError: string | null; onRetry: () => void | Promise<void> }) {
-  const t = useT();
   return checkError ? (
-    <EmptyState
-      icon="alert"
-      title={t("shell.screen.checkFailed")}
-      description={checkError}
-      action={
-        <Button variant="outline" size="sm" onClick={() => void onRetry()}>
-          {t("shell.screen.tryAgain")}
-        </Button>
-      }
-    />
+    <CheckFailed error={checkError} onRetry={onRetry} />
   ) : (
     <p className="flex items-center gap-2.5 text-[0.8125rem] text-muted-foreground">
       <Spinner className="size-3.5" /> {what}

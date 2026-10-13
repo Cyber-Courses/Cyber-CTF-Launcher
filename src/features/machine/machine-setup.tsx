@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
+import { CheckFailed } from "@/features/machine/check-failed";
 import { MachineStepBody, SetupOutcome, canContinue, machineSteps, nextLabel, stepMeta, useMachineSetup } from "@/features/machine/setup-steps";
 import type { SystemReport } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -17,11 +18,16 @@ import { useT } from "@/lib/i18n";
  *  onboarding (`setup-steps`); this file is only the window's frame. */
 export function MachineSetup({
   report,
+  checkError = null,
+  onRetryCheck,
   onRefresh,
   onClose,
   startAt,
 }: {
   report: SystemReport | null;
+  /** The machine check failed and none answered before it: the error, with Try again. */
+  checkError?: string | null;
+  onRetryCheck?: () => unknown;
   onRefresh: () => void;
   onClose: () => void;
   /** Open at this step (a "Fix" link from the Machine page); changes jump again. */
@@ -54,7 +60,11 @@ export function MachineSetup({
 
       {/* Until the machine check answers, just say so: the title, stepper and step count all
           depend on what it finds. */}
-      {!report ? (
+      {!report && checkError ? (
+        <div className="flex flex-1 items-center justify-center px-6 pb-11">
+          <CheckFailed error={checkError} onRetry={onRetryCheck ?? onRefresh} className="w-full max-w-lg" />
+        </div>
+      ) : !report ? (
         <div className="flex flex-1 items-center justify-center gap-2 pb-11 text-[0.8125rem] text-muted-foreground">
           <Spinner className="size-4" /> {t("machine.setup.checking")}
         </div>

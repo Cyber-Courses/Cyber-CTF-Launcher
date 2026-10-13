@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Play } from "lucide-react";
+import { Play, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PortChoice } from "@/features/labs/port-mode-prompt";
 import { RunOnDialog, RunOnPicker, type RunTarget } from "@/features/labs/run-on";
@@ -27,6 +27,7 @@ export function StartLabButton({
   busy,
   dockerRunning,
   onStart,
+  retry = false,
 }: {
   lab: Lab;
   run: RunTargetChoice;
@@ -39,6 +40,8 @@ export function StartLabButton({
   busy: boolean;
   dockerRunning: boolean | null;
   onStart: (target: RunTarget) => void;
+  /** The last start failed: the same button, as Retry. */
+  retry?: boolean;
 }) {
   const t = useT();
   const [choosing, setChoosing] = useState(false);
@@ -53,7 +56,15 @@ export function StartLabButton({
         title={!rt ? t("labs.detail.noRuntime") : !loggedIn ? t("labs.detail.signInHint") : hostedLive ? t("labs.detail.hostedLive") : undefined}
         aria-haspopup={run.hasChoice ? "dialog" : undefined}
       >
-        <Play className="size-3.5" /> {t("labs.detail.startLab")}
+        {retry ? (
+          <>
+            <RotateCw className="size-3.5" /> {t("labs.detail.retry")}
+          </>
+        ) : (
+          <>
+            <Play className="size-3.5" /> {t("labs.detail.startLab")}
+          </>
+        )}
       </Button>
       {choosing && (
         <StartDialog

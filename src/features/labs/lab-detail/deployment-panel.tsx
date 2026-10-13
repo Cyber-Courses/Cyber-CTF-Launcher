@@ -26,6 +26,8 @@ export function DeploymentPanel({
   ready,
   where,
   operation,
+  startedAt,
+  liveStep,
   offerRerun,
   rerunning,
   onRerun,
@@ -36,6 +38,10 @@ export function DeploymentPanel({
   ready: boolean;
   where: string;
   operation: LabOperation;
+  /** When the run began (its timers count from there). */
+  startedAt?: number;
+  /** The backend's step for a run with no log here. */
+  liveStep?: string | null;
   offerRerun: boolean;
   rerunning: boolean;
   onRerun: () => void;
@@ -43,7 +49,7 @@ export function DeploymentPanel({
   const t = useT();
   return (
     <Panel>
-      <DeploySteps lines={lines} times={times} busy={busy} ready={ready} where={where} operation={operation} />
+      <DeploySteps lines={lines} times={times} busy={busy} ready={ready} where={where} operation={operation} startedAt={startedAt} liveStep={liveStep} />
       {/* A VM lab whose setup broke on one step (a Windows domain join timing out on a busy host)
           still has every machine built: running the setup again continues it in minutes, where
           a clean start would rebuild everything. */}

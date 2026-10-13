@@ -16,7 +16,8 @@
       "one": "{count} lab actif sur cette machine.",
       "other": "{count} labs actifs sur cette machine."
     },
-    "ready": "Cette machine est prête. Choisissez un lab à attaquer."
+    "ready": "Cette machine est prête. Choisissez un lab à attaquer.",
+    "checkFailed": "Impossible de vérifier cette machine."
   },
   "actions": {
     "setUp": "Configurer cette machine",
@@ -28,7 +29,8 @@
     "memory": "Mémoire",
     "disk": "Disque",
     "cores": "{cores} cœurs",
-    "usage": "{used}/{total} Go"
+    "usage": "{used}/{total} Go",
+    "unavailable": "indisponible"
   },
   "capacity": {
     "total": "{total} Go",
@@ -57,7 +59,8 @@
       "one": "{count} conteneur",
       "other": "{count} conteneurs"
     },
-    "empty": "Rien ne tourne. Lancez un lab depuis sa page."
+    "empty": "Rien ne tourne. Lancez un lab depuis sa page.",
+    "noDetails": "en cours · pas de détails tant que le catalogue est injoignable"
   },
   "deploy": {
     "inProgress": "En cours",

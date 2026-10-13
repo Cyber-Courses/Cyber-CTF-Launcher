@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentProps } from "react";
 import { LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -10,9 +11,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LabRow } from "@/features/labs/lab-row";
 import { needsCloudAccount, setupNeeded } from "@/features/labs/lab-readiness";
 import type { Lab } from "@/features/labs/use-labs";
-import type { DeployRun } from "@/lib/deploy-store";
+import { startFailed, type DeployRun } from "@/lib/deploy-store";
 import type { LabStatus, ServerHost, SystemReport } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
+import { prettyLabId } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 
 // The Labs list: its header, the placeholder while the catalogue loads, and the rows (running
@@ -108,28 +110,34 @@ export type RowContext = {
   onResume: (lab: Lab) => void;
 };
 
-/** One lab of the list, with what this machine is missing to run it. */
-function CatalogueRow({ lab, ctx: c }: { lab: Lab; ctx: RowContext }) {
+/** A lab row's props in a list (this one, the Overview's: they read the same), with what this
+ *  machine is missing to run it. Values and the context's stable handlers only, so the memoized
+ *  row skips a render that changes nothing for its lab. */
+export function catalogueRowProps(lab: Lab, c: RowContext): ComponentProps<typeof LabRow> {
   const running = !!c.statuses[lab.id]?.running;
-  return (
-    <LabRow
-      lab={lab}
-      status={c.statuses[lab.id]}
-      busy={!!c.runs[lab.id]?.busy}
-      operation={c.runs[lab.id]?.op}
-      loggedIn={c.loggedIn}
-      onLogin={c.onLogin}
-      hostArch={c.hostArch}
-      emulates={c.emulates}
-      solved={c.completed.has(lab.id)}
-      deploying={c.deploying.has(lab.id)}
-      setup={running ? null : setupNeeded(lab, c.report ?? null, c.servers)}
-      connectCloud={needsCloudAccount(lab, c.servers)}
-      onOpen={c.onOpen}
-      onStop={c.onStop}
-      onResume={c.onResume}
-    />
-  );
+  return {
+    lab,
+    status: c.statuses[lab.id],
+    busy: !!c.runs[lab.id]?.busy,
+    operation: c.runs[lab.id]?.op,
+    loggedIn: c.loggedIn,
+    onLogin: c.onLogin,
+    hostArch: c.hostArch,
+    emulates: c.emulates,
+    solved: c.completed.has(lab.id),
+    deploying: c.deploying.has(lab.id),
+    failed: startFailed(c.runs[lab.id]),
+    setup: running ? null : setupNeeded(lab, c.report ?? null, c.servers),
+    connectCloud: needsCloudAccount(lab, c.servers),
+    onOpen: c.onOpen,
+    onStop: c.onStop,
+    onResume: c.onResume,
+  };
+}
+
+/** One lab of the list. */
+function CatalogueRow({ lab, ctx }: { lab: Lab; ctx: RowContext }) {
+  return <LabRow {...catalogueRowProps(lab, ctx)} />;
 }
 
 /** The list: a placeholder while it loads, a note when empty or nothing matches, else the running
@@ -162,5 +170,46 @@ export function LabsCatalogue({ labs, filtered, running, rest, ctx }: { labs: La
         </Panel>
       )}
     </>
+  );
+}
+
+/** A lab running here that the catalogue doesn't list (it can't be reached): its id made
+ *  readable, so a running lab never vanishes from the Overview with the catalogue. */
+export function UnlistedRunningRow({ id, title }: { id: string; title?: string }) {
+  const t = useT();
+  return (
+    <div className="grid h-13 grid-cols-[auto_minmax(0,1fr)] items-center gap-3.5 border-t border-border px-4 text-[0.8125rem] first:border-t-0">
+      <span className="flex w-2 justify-center">
+        <StatusDot tone="ok" />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate font-medium text-foreground">{title ?? prettyLabId(id)}</span>
+        <span className="block truncate font-mono text-[0.6875rem] text-faint">
+          {id} · {t("home.running.noDetails")}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/** The labs running here, by id, as their own "Running now" panel: while the catalogue can't be
+ *  read (titled from the one last loaded, when there is one). */
+export function UnlistedRunning({ ids, labs = null }: { ids: string[]; labs?: Lab[] | null }) {
+  const t = useT();
+  if (ids.length === 0) return null;
+  return (
+    <Panel>
+      <PanelHeader
+        title={
+          <>
+            <StatusDot tone="ok" /> {t("labs.list.runningNow")}
+          </>
+        }
+        meta={t("labs.list.labCount", { count: ids.length })}
+      />
+      {ids.map((id) => (
+        <UnlistedRunningRow key={id} id={id} title={labs?.find((l) => l.id === id)?.title} />
+      ))}
+    </Panel>
   );
 }

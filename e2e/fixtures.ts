@@ -93,3 +93,50 @@ export function horizontalOverflow(page: Page) {
     return boxes.filter((b) => b.scrollWidth > b.clientWidth + 1).map((b) => `${b.tagName.toLowerCase()}.${b.className}: ${b.scrollWidth} > ${b.clientWidth}`);
   });
 }
+
+/** How a forced command answers: an error (after `delay` ms), or a value. */
+export type Forced = { error: string; delay?: number } | { value: unknown; delay?: number };
+
+/**
+ * Makes some Tauri commands fail (or answer `value`) on every page of the test, ahead of the dev
+ * mock, which answers the rest: the mock installs its `invoke` on `__TAURI_INTERNALS__`, and this
+ * wraps whatever is installed. Call before `openApp`.
+ */
+export async function forceCommands(page: Page, forced: Record<string, Forced>) {
+  await page.addInitScript((forced: Record<string, Forced>) => {
+    type Invoke = (cmd: string, args?: unknown, options?: unknown) => Promise<unknown>;
+    let real: Invoke | null = null;
+    // Callbacks and window metadata, for what registers before the mock is installed (event
+    // listeners on mount); the mock replaces them with its own.
+    const callbacks = new Map<number, unknown>();
+    let next = 1;
+    const internals = {
+      transformCallback: (cb: unknown) => {
+        callbacks.set(next, cb);
+        return next++;
+      },
+      unregisterCallback: (id: number) => callbacks.delete(id),
+      metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
+    } as { invoke?: Invoke };
+    Object.defineProperty(internals, "invoke", {
+      configurable: true,
+      enumerable: true,
+      set(fn: Invoke) {
+        real = fn;
+      },
+      get() {
+        return async (cmd: string, args?: unknown, options?: unknown) => {
+          const f = forced[cmd];
+          if (!f) return real?.(cmd, args, options);
+          if (f.delay) await new Promise((r) => setTimeout(r, f.delay));
+          if ("error" in f) throw f.error;
+          return structuredClone(f.value);
+        };
+      },
+    });
+    const w = window as unknown as { __TAURI_INTERNALS__: unknown; __CYBERCTF_MOCK__: boolean };
+    w.__TAURI_INTERNALS__ = internals;
+    // Lets the dev mock install itself over these internals.
+    w.__CYBERCTF_MOCK__ = true;
+  }, forced);
+}

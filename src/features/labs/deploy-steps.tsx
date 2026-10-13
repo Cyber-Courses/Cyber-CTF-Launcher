@@ -7,6 +7,7 @@ import { formatDuration } from "@/lib/format";
 import type { ActiveOperation } from "@/lib/tauri";
 import { deriveSteps, failedMachineStep, type Timed } from "@/features/labs/deploy-log";
 import { LiveDuration, RawLog, StepItem, StepMark } from "@/features/labs/deploy-step-parts";
+import { OPERATION_STATUS } from "@/lib/deploy-store";
 import { useT, type T } from "@/lib/i18n";
 
 type Operation = ActiveOperation["op"];
@@ -32,7 +33,7 @@ function operationText(t: T, operation: Operation): OperationText | undefined {
  * after an operation on the built lab), with the one that failed. Derived again only when the
  * log changes, not on every tick of the clock.
  */
-function useDeployTimeline(lines: string[], times: number[], busy: boolean, operation: Operation) {
+function useDeployTimeline(lines: string[], times: number[], busy: boolean, operation: Operation, startedAt: number | undefined) {
   const t = useT();
   const timed = useMemo<Timed[]>(() => lines.map((line, i) => ({ line, at: times[i] ?? times.at(-1) ?? 0 })), [lines, times]);
   const derived = useMemo(() => {
@@ -43,24 +44,28 @@ function useDeployTimeline(lines: string[], times: number[], busy: boolean, oper
     const lastSeen = steps.at(-1)?.id;
     const named = failed ? failedMachineStep(failed.line) : null;
     const failedStep = failed ? (named && steps.some((s) => s.id === named) ? named : lastSeen) : null;
-    return { timed, failed, done, start: timed[0]?.at, op, steps, lastSeen, failedStep };
-  }, [t, timed, operation]);
+    // From when the run began, when known: a run that failed on its first line otherwise read 0.0s.
+    const start = startedAt !== undefined ? Math.min(startedAt, timed[0]?.at ?? startedAt) : timed[0]?.at;
+    return { timed, failed, done, start, op, steps, lastSeen, failedStep };
+  }, [t, timed, operation, startedAt]);
   const { done, failed } = derived;
   const end: number | null | undefined = done?.at ?? failed?.at ?? (busy ? null : timed.at(-1)?.at);
   return { ...derived, end };
 }
 
-/** The panel's header: where it deploys, its state (failed, building, ready, done) and how long. */
+/** The panel's header: where it deploys, its state (failed, starting, ready, done) and how long. */
 function DeployHeader({
   where,
   timeline: { failed, done, start, end, op, timed },
   busy,
   ready,
+  operation,
 }: {
   where?: string;
   timeline: ReturnType<typeof useDeployTimeline>;
   busy: boolean;
   ready: boolean;
+  operation: Operation;
 }) {
   const t = useT();
   return (
@@ -81,7 +86,7 @@ function DeployHeader({
             <StatusPill tone="fail">{t("labs.deploy.failed")}</StatusPill>
           ) : busy ? (
             <StatusPill tone="warn" pulse>
-              {op?.busy ?? t("labs.deploy.building")}
+              {op?.busy ?? busyWord(t, operation)}
             </StatusPill>
           ) : ready || (done && !op) ? (
             <StatusPill tone="ok">{t("labs.deploy.ready")}</StatusPill>
@@ -99,8 +104,13 @@ function DeployHeader({
   );
 }
 
-/** The steps, then Ready once done, or a pending Preparing row before the first step shows. */
-function StepList({ timeline: tl, busy }: { timeline: ReturnType<typeof useDeployTimeline>; busy: boolean }) {
+/** A launch's or a provisioning run's word while it runs: the one word a start has everywhere. */
+const busyWord = (t: T, operation: Operation) =>
+  operation === "provision" ? t("common.operation.label.provision").replace(/…$/, "") : OPERATION_STATUS.launch!;
+
+/** The steps, then Ready once done; before the first step shows, the step the backend reports
+ *  (a run with no log here) or a pending Preparing row. */
+function StepList({ timeline: tl, busy, liveStep }: { timeline: ReturnType<typeof useDeployTimeline>; busy: boolean; liveStep?: string | null }) {
   const t = useT();
   const [open, setOpen] = useState<string | null>(null);
   const { steps, done, failed, op } = tl;
@@ -116,7 +126,8 @@ function StepList({ timeline: tl, busy }: { timeline: ReturnType<typeof useDeplo
             key={p.id}
             step={p}
             state={state}
-            from={p.rows[0].at}
+            // The first step from the run's start: what happened before its first line is its own.
+            from={i === 0 && tl.start !== undefined ? Math.min(tl.start, p.rows[0].at) : p.rows[0].at}
             to={to}
             origin={tl.start!}
             expanded={expanded}
@@ -130,7 +141,15 @@ function StepList({ timeline: tl, busy }: { timeline: ReturnType<typeof useDeplo
           <span className="text-foreground">{t("labs.deploy.ready")}</span>
         </li>
       )}
-      {busy && steps.length === 0 && (
+      {busy && steps.length === 0 && liveStep && (
+        <li className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-[0.8125rem]">
+          <StepMark state="running" />
+          <span key={liveStep} className="animate-fade-in truncate text-foreground" title={liveStep}>
+            {liveStep}
+          </span>
+        </li>
+      )}
+      {busy && steps.length === 0 && !liveStep && (
         <li className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-3 px-4 py-2 text-[0.8125rem] text-muted-foreground">
           <StepMark state="pending" />
           {op ? `${op.busy}…` : t("labs.deploy.preparingEllipsis")}
@@ -149,6 +168,8 @@ export function DeploySteps({
   ready,
   where,
   operation = "launch",
+  startedAt,
+  liveStep,
 }: {
   lines: string[];
   /** When each line arrived, parallel to `lines`. */
@@ -158,15 +179,20 @@ export function DeploySteps({
   where?: string;
   /** What the log is of: a launch (steps read from the output) or an operation on the built lab. */
   operation?: Operation;
+  /** When the run began: its durations count from there (else from its first line). */
+  startedAt?: number;
+  /** The step the backend reports, for a run with no log here (it runs in another window, or
+   *  its worker's log is empty): shown in place of "Preparing…", as the sidebar shows it. */
+  liveStep?: string | null;
 }) {
-  const timeline = useDeployTimeline(lines, times, busy, operation);
+  const timeline = useDeployTimeline(lines, times, busy, operation, startedAt);
   const [showLog, setShowLog] = useState(false);
   const toggleLog = useCallback(() => setShowLog((v) => !v), []);
   const { failed, timed, start } = timeline;
   return (
     <div>
-      <DeployHeader where={where} timeline={timeline} busy={busy} ready={ready} />
-      <StepList timeline={timeline} busy={busy} />
+      <DeployHeader where={where} timeline={timeline} busy={busy} ready={ready} operation={operation} />
+      <StepList timeline={timeline} busy={busy} liveStep={liveStep} />
       {failed && (
         <p className="flex items-start gap-2 border-t border-border px-4 py-2.5 font-mono text-[0.6875rem] text-muted-foreground">
           <StatusDot tone="fail" className="mt-1 shrink-0" />

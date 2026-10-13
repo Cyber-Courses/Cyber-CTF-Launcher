@@ -16,7 +16,8 @@
       "one": "1 lab rodando nesta máquina.",
       "other": "{count} labs rodando nesta máquina."
     },
-    "ready": "Esta máquina está pronta. Escolha um lab para atacar."
+    "ready": "Esta máquina está pronta. Escolha um lab para atacar.",
+    "checkFailed": "Não foi possível verificar esta máquina."
   },
   "actions": {
     "setUp": "Configurar esta máquina",
@@ -28,7 +29,8 @@
     "memory": "Memória",
     "disk": "Disco",
     "cores": "{cores} núcleos",
-    "usage": "{used}/{total} GB"
+    "usage": "{used}/{total} GB",
+    "unavailable": "indisponível"
   },
   "capacity": {
     "total": "{total} GB",
@@ -57,7 +59,8 @@
       "one": "1 contêiner",
       "other": "{count} contêineres"
     },
-    "empty": "Nada rodando. Inicie um lab pela página dele."
+    "empty": "Nada rodando. Inicie um lab pela página dele.",
+    "noDetails": "rodando · sem detalhes enquanto o catálogo estiver inacessível"
   },
   "deploy": {
     "inProgress": "Em andamento",

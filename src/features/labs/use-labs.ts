@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiQuery, type LabStatus, type Provider, type Runtime } from "@/lib/tauri";
 import { catalogueFor, refreshStatus, setCatalogue, useLabState } from "@/features/labs/lab-store";
 import { useLabPolling } from "@/features/labs/lab-polling";
@@ -32,11 +32,17 @@ export interface Lab {
 }
 
 /** The catalogue (the one last loaded for `reloadKey` meanwhile), its load error, and the labs
- *  the player completed; each lab's status is read once the catalogue is in. */
+ *  the player completed; each lab's status is read once the catalogue is in. `retry` loads it
+ *  again (after it failed). */
 function useCatalogue(reloadKey: unknown) {
   const [labs, setLabs] = useState<Lab[] | null>(() => catalogueFor(reloadKey));
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => {
+    setError(null);
+    setAttempt((n) => n + 1);
+  }, []);
   useEffect(() => {
     // Cancelled when reloadKey changes (e.g. login toggles): a response in flight from the
     // previous key must not resolve last and overwrite the newer catalogue.
@@ -57,8 +63,8 @@ function useCatalogue(reloadKey: unknown) {
     return () => {
       alive = false;
     };
-  }, [reloadKey]);
-  return { labs, error, completed };
+  }, [reloadKey, attempt]);
+  return { labs, error, completed, retry };
 }
 
 /** The scan is authoritative for "running": OR it over each lab's probed status, so a lab the
@@ -96,7 +102,7 @@ export function mergeScan(statuses: Record<string, LabStatus>, scanRunning: Set<
  * catalogue when it changes; the one last loaded for it shows meanwhile.
  */
 export function useLabs(reloadKey: unknown = 0) {
-  const { labs, error, completed } = useCatalogue(reloadKey);
+  const { labs, error, completed, retry } = useCatalogue(reloadKey);
   const statuses = useLabState("statuses");
   // Labs the infrastructure scan (docker/vagrant) reports running. Authoritative for the running
   // flag: a lab is shown running when the scan sees it even if its per-lab status probe is failing
@@ -108,7 +114,7 @@ export function useLabs(reloadKey: unknown = 0) {
   // One poll for the window, however many screens use this (see lab-polling).
   useLabPolling(labs);
   const mergedStatuses = useMemo(() => mergeScan(statuses, scanRunning), [statuses, scanRunning]);
-  return { labs, error, statuses: mergedStatuses, completed, refreshStatus, probed };
+  return { labs, error, retry, statuses: mergedStatuses, completed, refreshStatus, probed };
 }
 
 const DIFFICULTY_KEYS = ["easy", "medium", "hard"] as const;

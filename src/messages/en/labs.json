@@ -10,15 +10,14 @@
   },
   "state": {
     "running": "Running",
-    "starting": "Starting",
-    "startingEllipsis": "Starting…",
     "resuming": "Resuming",
     "paused": "Paused",
     "shutDown": "Shut down",
     "interrupted": "Interrupted",
     "notStarted": "Not started",
     "solved": "Solved",
-    "working": "Working"
+    "working": "Working",
+    "failed": "Failed to start"
   },
   "places": {
     "container": "Container on this machine",
@@ -147,7 +146,6 @@
     "title": "Deployment",
     "on": "on <where>{where}</where>",
     "failed": "Failed",
-    "building": "Building",
     "ready": "Ready",
     "preparingEllipsis": "Preparing…",
     "showLog": "Show full log",
@@ -284,7 +282,6 @@
     "resumeHint": "Bring the lab back as it was",
     "resuming": "Resuming…",
     "resume": "Resume",
-    "starting": "Starting…",
     "interruptedHint": "A previous start was interrupted; stop and clean it up, then start again",
     "cleaningUp": "Cleaning up…",
     "stopCleanUp": "Stop & clean up",
@@ -338,7 +335,9 @@
     "cloudIdle": "Start the lab to create its cloud services in your account. Stop it when you're done: that removes them and ends what they cost.",
     "connectAccount": "Connect an account on {clouds}",
     "estimatedCost": "Estimated cost",
-    "removeBodyCloud": "Its cloud services are destroyed in your account, which ends what they cost. The next start creates them again from scratch."
+    "removeBodyCloud": "Its cloud services are destroyed in your account, which ends what they cost. The next start creates them again from scratch.",
+    "retry": "Retry",
+    "retryRandomPorts": "Retry with random ports"
   },
   "cloud": {
     "hourly": "about ${usd} an hour",
@@ -383,5 +382,26 @@
     "step": "Step {n}",
     "hint": "Hint {n}",
     "revealHint": "Reveal hint {n} of {total}"
+  },
+  "failure": {
+    "title": {
+      "launch": "Couldn’t start {title}",
+      "resume": "Couldn’t resume {title}",
+      "pause": "Couldn’t pause {title}",
+      "shutdown": "Couldn’t shut {title} down",
+      "stop": "Couldn’t stop and remove {title}",
+      "provision": "Couldn’t run {title}’s setup again"
+    },
+    "stillUp": "Part of the lab is still up. Try again; the deployment log says what failed.",
+    "dismiss": "Dismiss",
+    "hint": {
+      "ports": "A port this lab publishes is taken on this machine. Start it on random ports instead.",
+      "docker": "Docker isn’t running. Start your container engine, then retry.",
+      "dockerAccess": "Your account can’t use Docker yet: add it to the docker group, log out and back in, then retry.",
+      "signedOut": "Your session ended. Sign in again, then retry.",
+      "network": "Something it downloads, or the Cyber CTF API, couldn’t be reached. Check your internet connection, then retry.",
+      "disk": "This machine is out of disk space. Free some (the Machine page lists the images labs keep), then retry.",
+      "tool": "A tool this lab needs is missing here. Install it from the Machine page, then retry."
+    }
   }
 }

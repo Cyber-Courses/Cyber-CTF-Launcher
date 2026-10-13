@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { rowFacts, rowPhase } from "@/features/labs/lab-row-state";
+import { rowFacts, rowPhase, runningUnlisted } from "@/features/labs/lab-row-state";
+import type { Lab } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
 
 const status = (p: Partial<LabStatus>) => ({ running: false, parked: null, ...p }) as LabStatus;
@@ -17,6 +18,19 @@ describe("rowPhase", () => {
   it("tells a paused lab from a shut-down one", () => {
     expect(phase({ status: status({ parked: "pause" }) })).toBe("paused");
     expect(phase({ status: status({ parked: "shutdown" }) })).toBe("shutDown");
+  });
+  it("says a start failed, until the lab runs or something else runs on it", () => {
+    expect(phase({ failed: true })).toBe("failed");
+    expect(phase({ failed: true, solved: true })).toBe("failed");
+    expect(phase({ failed: true, status: status({ running: true }) })).toBe("running");
+    expect(phase({ failed: true, busy: true })).toBe("busy");
+    expect(phase({ failed: true, deploying: true })).toBe("starting");
+  });
+  it("lists the labs running that the catalogue doesn't", () => {
+    const lab = { id: "a" } as Lab;
+    const s = { a: status({ running: true }), b: status({ running: true }), c: status({}) };
+    expect(runningUnlisted([lab], s)).toEqual(["b"]);
+    expect(runningUnlisted(null, s)).toEqual(["a", "b"]);
   });
   it("is solved or not started at rest", () => {
     expect(phase({ solved: true })).toBe("solved");

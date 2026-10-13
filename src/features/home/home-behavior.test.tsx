@@ -73,7 +73,7 @@ describe("HomeScreen", () => {
     );
     await flush(50);
     expect(document.body.textContent).toMatch(/Set up Docker/);
-    await user.click(screen.getByRole("button", { name: /set up/i }));
+    await user.click(screen.getByRole("button", { name: /set up this machine/i }));
     await flush();
     expect(commands(calls)).toContain("machine_open_setup");
     expect(document.body.textContent).toContain("setup window busy");
