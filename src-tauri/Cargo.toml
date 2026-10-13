@@ -46,6 +46,10 @@ tauri-plugin-dialog = "2"
 # The TypeScript types of the commands' arguments and results, derived from these structs
 # (see `ts_bindings.rs`).
 ts-rs = "12"
+# A POSIX shell-word splitter: the in-app terminal on Windows (no `sh`, and cmd.exe can't read
+# POSIX quoting) runs its `sh_quote`d command lines' words directly; tests check `sh_quote`
+# round-trips through it.
+shell-words = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -54,9 +58,6 @@ libc = "0.2"
 # its SHELLEXECUTEINFOW needs): the UAC-elevated Vagrant for Hyper-V.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell"] }
-# The in-app terminal splits its `sh_quote`d command lines back into words: Windows has no `sh`,
-# and cmd.exe can't read POSIX quoting.
-shell-words = "1"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
@@ -65,7 +66,5 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # Property tests for the parsers of tool output and user input: never panic, round-trips,
 # quoting invariants.
 proptest = { version = "1", default-features = false, features = ["std"] }
-# A POSIX shell-word splitter, to check `sh_quote`d command lines split back into their words.
-shell-words = "1"
 # Tauri's mock runtime, so code taking an app handle runs in unit tests (see `AppRuntime`).
 tauri = { version = "2.12.0", features = ["test"] }

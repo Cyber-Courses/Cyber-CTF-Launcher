@@ -6,6 +6,7 @@
 //! `cyberctf-desktop interrupt --pid <pid>`, a throwaway process that attaches, sends, and exits.
 
 /// The pid when this process was started as an interrupter (`<exe> interrupt --pid <pid>`).
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn interrupt_pid(args: impl IntoIterator<Item = String>) -> Option<u32> {
     let args: Vec<String> = args.into_iter().collect();
     match args.as_slice() {
