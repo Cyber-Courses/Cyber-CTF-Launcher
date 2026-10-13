@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Laptop, Plug, Server } from "lucide-react";
+import { Plug } from "lucide-react";
 import type { LabNetwork } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useLocale, useT } from "@/lib/i18n";
 import { Flow, type Tab } from "@/features/labs/network-diagram/flow";
 import { Attacker, MIN_ZOOM, Machine } from "@/features/labs/network-diagram/model";
-import { CopyText } from "@/features/labs/network-diagram/nodes";
+import { CopyText } from "@/features/labs/network-diagram/copy-text";
+import { HostHeader, hasPortTabs } from "@/features/labs/network-diagram/host-header";
 import { topology } from "@/features/labs/network-diagram/topology";
 
 // The lab network diagram. Facts come from Docker (networks, interfaces, ports) or the lab's
@@ -62,31 +63,6 @@ function useShellWidth() {
   return [shell, width] as const;
 }
 
-/** The card's header: your machine (127.0.0.1) or the server the lab runs on. */
-function HostHeader({ host }: { host: string | null }) {
-  const t = useT();
-  return (
-    <div className="hostcard-header">
-      <span className="hostcard-icon">{host ? <Server size={16} /> : <Laptop size={16} />}</span>
-      <div>
-        <div className="hostcard-title">{host ?? t("diagram.host.yourMachine")}</div>
-        <div className="hostcard-sub mono">
-          {host ? (
-            t("diagram.host.serverSub")
-          ) : (
-            <>
-              <CopyText text="127.0.0.1">127.0.0.1</CopyText> · {t("diagram.host.host")}
-            </>
-          )}
-        </div>
-      </div>
-      <span className="hostcard-online">
-        <i /> {t("diagram.host.online")}
-      </span>
-    </div>
-  );
-}
-
 /** The published ports as tabs on the card's bottom edge, following the sideways scroll. */
 function PortTabs({ tabs, scrollX }: { tabs: Tab[]; scrollX: number }) {
   const t = useT();
@@ -133,7 +109,7 @@ export function NetworkDiagram({
   }, [canvas, width]);
 
   return (
-    <div className={cn("hostcard", machines.some((m) => m.ports.some((p) => p.published > 0)) && "hostcard-docked")}>
+    <div className={cn("hostcard", hasPortTabs(machines) && "hostcard-docked")}>
       <HostHeader host={host} />
       <div
         ref={shell}
