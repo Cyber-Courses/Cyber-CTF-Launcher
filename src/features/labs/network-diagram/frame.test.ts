@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { frameLayout } from "@/features/labs/network-diagram/frame";
+import { ZONE_LABEL, frameLayout, zoneLabelWidth } from "@/features/labs/network-diagram/frame";
 import { layout } from "@/features/labs/network-diagram/layout";
 import { topology } from "@/features/labs/network-diagram/topology";
 import type { Machine } from "@/features/labs/network-diagram/model";
@@ -26,7 +26,7 @@ describe("frameLayout", () => {
   it("frames each network as a zone with its bridge centred on the top edge", async () => {
     const { topo, laid, zones } = await framed(
       [machine("web", "10.0.0.2"), machine("db", "10.0.0.3")],
-      [{ name: "default", subnet: "10.0.0.0/24", internal: true }],
+      [{ name: "default", subnet: "10.0.0.0/24", internal: false }],
     );
     expect(zones.length).toBeGreaterThan(0);
     expect(zones).toHaveLength(topo.zones.length);
@@ -36,6 +36,23 @@ describe("frameLayout", () => {
       expect(bridge.x + bridge.w / 2).toBeCloseTo(zone.position.x + width / 2);
       expect(zone.position.y).toBeCloseTo(bridge.y + bridge.h / 2);
     }
+  });
+
+  it("moves the bridge right of a label that would reach it, inside the frame", async () => {
+    const { topo, laid, zones } = await framed(
+      [machine("web", "10.0.0.2"), machine("db", "10.0.0.3")],
+      [{ name: "default", subnet: "10.0.0.0/24", internal: true }],
+    );
+    const [zone] = zones;
+    const z = topo.zones[0];
+    const bridge = laid.boxes.get(z.members[0])!;
+    const labelEnd = zone.position.x + ZONE_LABEL.left + zoneLabelWidth(z.data);
+    expect(bridge.x + bridge.w / 2).toBeGreaterThan(zone.position.x + Number(zone.style?.width) / 2);
+    expect(bridge.x).toBeGreaterThan(labelEnd);
+    expect(bridge.x + bridge.w).toBeLessThanOrEqual(zone.position.x + Number(zone.style?.width));
+    // Its links still leave from its centre.
+    const bus = topo.edges.filter((e) => e.source === z.members[0]).map((e) => laid.routes.get(e.id)![0]);
+    bus.forEach((p) => expect(p.x).toBeCloseTo(bridge.x + bridge.w / 2));
   });
 
   it("widens the bounds to the widest zone", async () => {

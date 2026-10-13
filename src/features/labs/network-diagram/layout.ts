@@ -1,5 +1,6 @@
 import { type Edge } from "@xyflow/react";
 import ELK, { type ElkExtendedEdge, type ElkNode } from "elkjs/lib/elk.bundled.js";
+import { zoneMinWidth } from "@/features/labs/network-diagram/frame";
 import { LinkData, MIN_ZOOM, Pt } from "@/features/labs/network-diagram/model";
 import { Topology } from "@/features/labs/network-diagram/topology";
 
@@ -95,6 +96,11 @@ function elkGraph(topo: Topology, size: Size, laneRoom: (id: string) => number):
           "elk.spacing.nodeNode": "24",
           "elk.padding": "[top=20,left=20,bottom=20,right=20]",
           "elk.portConstraints": "FIXED_SIDE",
+          // Room for the label beside the bridge, reserved here so ELK keeps the pivots and the
+          // other segments clear of it; the contents stay centred in a widened segment.
+          "elk.nodeSize.constraints": "MINIMUM_SIZE",
+          "elk.nodeSize.minimum": `(${zoneMinWidth(z.data, size(z.members[0]).w)}, 0)`,
+          "elk.contentAlignment": "H_CENTER V_TOP",
         },
         children: z.members.map((id) => leaf(id, size, laneRoom)),
         // A segment's side ports: ELK centres a lone port on its side, matching the handles.
