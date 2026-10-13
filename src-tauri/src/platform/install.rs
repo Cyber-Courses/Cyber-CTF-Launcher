@@ -134,6 +134,11 @@ pub async fn install_dependency(app: crate::AppHandle, dependency: Dependency, l
         let after = uninstall::present(dependency).await.unwrap_or(false);
         uninstall::record_outcome(&app, dependency, uninstall::outcome(before, after));
     }
+    // Its features start at the next restart: the check asks for one until then, even if the
+    // app is reopened first.
+    if dependency == Dependency::Wsl {
+        crate::machine::system::wsl::mark_installed(&app);
+    }
     on_line("Done. Re-checking this machine…".into());
     Ok(())
 }

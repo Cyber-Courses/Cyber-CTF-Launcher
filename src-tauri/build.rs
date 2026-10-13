@@ -52,6 +52,7 @@ const COMMANDS: &[&str] = &[
     "linger_quit",
     "machine_metrics",
     "machine_open_setup",
+    "machine_restart",
     "machine_selftest",
     "machine_selftest_prefetch",
     "machine_storage",

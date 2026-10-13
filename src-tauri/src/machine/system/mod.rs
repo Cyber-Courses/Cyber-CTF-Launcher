@@ -4,6 +4,7 @@
 pub mod docker;
 pub mod metrics;
 pub mod setup_window;
+pub mod wsl;
 
 use serde::Serialize;
 
@@ -73,6 +74,8 @@ pub struct SystemReport {
     /// What Isoloom says this machine can run, target by target (`isoloom targets --host`):
     /// the tools and credentials each one needs, found or missing.
     pub targets: Vec<TargetReadiness>,
+    /// Windows: whether WSL 2 is on, waits for a restart, or is missing (`None` elsewhere).
+    pub wsl: Option<wsl::WslReport>,
 }
 
 /// One Isoloom target on this machine.
@@ -91,7 +94,7 @@ pub struct TargetReadiness {
 }
 
 #[tauri::command]
-pub async fn system_check() -> SystemReport {
+pub async fn system_check(app: crate::AppHandle) -> SystemReport {
     let (docker, docker_compose, vagrant, daemon, aws, azure, gcloud, terraform) = tokio::join!(
         probe("docker", &["--version"]),
         probe("docker", &["compose", "version", "--short"]),
@@ -103,8 +106,8 @@ pub async fn system_check() -> SystemReport {
         probe("gcloud", &["--version"]),
         probe("terraform", &["version"]),
     );
-    let (vm_providers, docker_engines_running, ovftool, targets) =
-        tokio::join!(providers::detect(vagrant.installed), docker::running_engines(), probe("ovftool", &["--version"]), isoloom_targets());
+    let (vm_providers, docker_engines_running, ovftool, targets, wsl) =
+        tokio::join!(providers::detect(vagrant.installed), docker::running_engines(), probe("ovftool", &["--version"]), isoloom_targets(), wsl::report(&app));
     let docker_denied = daemon.as_ref().err().is_some_and(docker_denied);
     let docker_engine = match &daemon {
         Ok(os) => Some(docker::engine_in_use(os.trim()).await),
@@ -127,6 +130,7 @@ pub async fn system_check() -> SystemReport {
         cloud_clis: CloudClis { aws, azure, gcloud },
         vm_providers,
         targets,
+        wsl,
     }
 }
 
@@ -201,7 +205,8 @@ mod tests {
     #[tokio::test]
     #[ignore = "depends on the host's installed tools"]
     async fn prints_this_machines_report() {
-        let report = super::system_check().await;
+        let t = crate::test_app::TestApp::new();
+        let report = super::system_check(t.handle().clone()).await;
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
     }
 

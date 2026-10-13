@@ -165,6 +165,7 @@
     "add": "Ajouter",
     "setUp": "Configurer",
     "notInstalled": "non installé",
+    "restartNeeded": "redémarrage requis",
     "notChecked": "non vérifié",
     "running": "en marche",
     "stopped": "arrêté",
@@ -229,7 +230,8 @@
     "next": {
       "done": "C'est fait",
       "skip": "Passer pour l'instant",
-      "continue": "Continuer"
+      "continue": "Continuer",
+      "restartLater": "Je redémarrerai plus tard"
     }
   },
   "body": {
@@ -250,12 +252,25 @@
       "log": "Activation de WSL 2. Acceptez l'invite de Windows pour continuer…",
       "turningOn": "Activation de WSL 2…",
       "turnOn": "Activer WSL 2",
-      "restart": "Redémarrez Windows pour terminer, puis rouvrez Cyber CTF pour poursuivre la configuration.",
+      "restart": "WSL 2 est activé. Redémarrez Windows pour terminer l'activation.",
       "byHand": "Le faire à la main",
       "step1": "Ouvrez <b>PowerShell</b> en tant qu'administrateur (clic droit, puis « Exécuter en tant qu'administrateur »).",
       "step2": "Exécutez ceci, puis redémarrez une fois terminé :",
       "step3": "Si Docker indique ensuite que la virtualisation est désactivée : ouvrez « Activer ou désactiver des fonctionnalités Windows », activez <b>Plateforme de machine virtuelle</b> et <b>Sous-système Windows pour Linux</b>, et vérifiez que la virtualisation est activée dans votre BIOS/UEFI.",
-      "guide": "Guide d'installation de WSL de Microsoft"
+      "guide": "Guide d'installation de WSL de Microsoft",
+      "readyTitle": "WSL 2",
+      "readyDetail": "Activé et en marche",
+      "restartNow": "Redémarrer maintenant",
+      "restarting": "Redémarrage dans quelques secondes…",
+      "confirmTitle": "Redémarrer Windows maintenant ?",
+      "confirmBody": "Windows redémarre dans quelques secondes et les applications ouvertes se ferment sans enregistrer : enregistrez votre travail d'abord.",
+      "reopens": "Cyber CTF se rouvre quand vous vous reconnectez. La configuration reprend à sa première étape, et ce qui est déjà fait apparaît comme fait.",
+      "reopenByHand": "Une fois reconnecté, rouvrez Cyber CTF. La configuration reprend à sa première étape, et ce qui est déjà fait apparaît comme fait.",
+      "restartReason": "Cyber CTF : redémarrage pour terminer l'activation de WSL 2.",
+      "restartFailed": "Impossible de redémarrer Windows",
+      "unknown": "Cyber CTF n'a pas pu déterminer si WSL 2 est activé. Si vous l'avez déjà activé puis redémarré, continuez.",
+      "recheck": "Revérifier",
+      "firmware": "WSL 2 est activé, mais Windows n'exécute toujours aucun hyperviseur après le redémarrage. La virtualisation est probablement désactivée dans le firmware de votre PC : activez Intel VT-x ou AMD-V (SVM) dans les réglages du BIOS/UEFI, puis redémarrez. Redémarrer à nouveau d'ici n'y changera rien."
     },
     "dockerTestDescription": "busybox, deux conteneurs sur un réseau de lab.",
     "vmTestDescription": "Démarre, exécute une commande, la ping sur un réseau de lab, la supprime.",

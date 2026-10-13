@@ -105,7 +105,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                     backDisabled={setup.busy}
                     onNext={next}
                     disabled={setup.busy || !canContinue(step, report, setup)}
-                    nextLabel={nextLabel(step, report, t)}
+                    nextLabel={nextLabel(step, report, t, setup)}
                   />
                 </div>
               )}
