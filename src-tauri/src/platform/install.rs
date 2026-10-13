@@ -9,7 +9,7 @@ use tauri::ipc::Channel;
 #[cfg(target_os = "macos")]
 use super::scripts::fetch_and_open;
 #[cfg(target_os = "linux")]
-use super::scripts::{TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, awscli_script, azurecli_script, docker_script};
+use super::scripts::{TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, awscli_script, azurecli_script, docker_script, gcloud_script};
 use super::steps::{Step, channel_log, command_line, run_step, run_steps, step};
 use super::uninstall;
 use crate::error::{Error, Result};
@@ -115,7 +115,7 @@ fn plan(dep: Dependency) -> Result<Vec<Step>> {
             Dependency::Azurecli => vec![root(azurecli_script())],
             // The SDK installs per user, without root: under pkexec it landed in /root, which the
             // player can't read. It goes to ~/google-cloud-sdk, whose bin the app adds to PATH.
-            Dependency::Gcloud => vec![step("sh", &["-c", "curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --install-dir=\"$HOME\""])],
+            Dependency::Gcloud => vec![step("sh", &["-c", &gcloud_script()])],
         })
     }
 }
