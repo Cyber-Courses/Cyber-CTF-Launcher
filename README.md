@@ -34,6 +34,8 @@ Labs live in `<app data>/labs/<lab id>/`.
 
 A VM lab runs natively only where its boxes exist for the host architecture. On Apple Silicon, ARM boxes run natively on UTM/QEMU (Apple Hypervisor). x86-only boxes such as pfSense run there only under QEMU emulation, which is several times slower; heavy x86 labs should use a remote x86 host (ESXi, Proxmox).
 
+Hyper-V only takes management commands from an administrator, and Vagrant's Hyper-V provider refuses to run otherwise. When the launcher itself isn't elevated, it asks Windows for administrator rights (a UAC prompt) for the Vagrant commands that act on Hyper-V machines, and only those ([`exec/elevate.rs`](src-tauri/src/exec/elevate.rs)). Each lab operation is one batch, so one prompt: a start (boot, then power off the setup machine), a provisioning run, a pause or shutdown, a resume, a stop. The VM self-test asks twice (boot and run a command, then delete the test VM). Status reads are never elevated. The commands run in a hidden, elevated Windows PowerShell that writes their output to a log the launcher follows, so the log streams as usual. Declining the prompt fails the operation with a plain message. An elevated run can't be cut short from the app: cancelling leaves it to finish. Started as administrator, the launcher runs Vagrant directly, with no prompt.
+
 ## Roadmap
 
 - [x] System check, Docker/VM runtimes, provider detection

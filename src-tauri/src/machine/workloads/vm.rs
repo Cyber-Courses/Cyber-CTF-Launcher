@@ -10,7 +10,7 @@ use crate::AppHandle;
 
 use super::Workload;
 use crate::error::{Error, Result};
-use crate::exec::{run, run_env_timed};
+use crate::exec::run_env_timed;
 use crate::machine::{labs_dir, selftest};
 
 /// `vagrant global-status` talks to VirtualBox, which can be wedged: past this it is given up.
@@ -123,7 +123,7 @@ pub(super) async fn stop(app: &AppHandle, id: &str) -> Result<()> {
         return Err(Error::Invalid(format!("no VMs found for `{id}`")));
     }
     for dir in dirs {
-        run("vagrant", &["destroy", "-f"], Some(&dir)).await?;
+        crate::exec::Vagrant::of(&dir, &[]).run(&["destroy", "-f"]).await?;
     }
     Ok(())
 }

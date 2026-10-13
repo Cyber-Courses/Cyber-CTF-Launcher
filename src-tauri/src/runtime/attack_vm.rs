@@ -14,7 +14,7 @@ use super::model::Park;
 use super::providers::Provider;
 use super::{ssh, vm};
 use crate::error::{Error, Result};
-use crate::exec::{run_read, stream};
+use crate::exec::{Vagrant, run_read};
 
 /// The attacker's own Vagrant environment, inside the lab folder (removed with the lab).
 const DIR: &str = ".cyberctf-attack-vm";
@@ -130,16 +130,18 @@ pub async fn start(lab_dir: &Path, lab_vagrant_dir: &Path, provider: Provider, b
     // replays it (networks included) on a VM that exists; a plain second `up` would see it
     // running and do nothing.
     let mut args: Vec<&str> = vec!["up", "--provider", provider.id()];
+    let vagrant = Vagrant::new(&d, &[], provider == Provider::Hyperv);
     for attempt in 1..=LOCK_RETRIES {
         let mut locked = false;
         let mut mount_failed = false;
-        let result = stream("vagrant", &args, Some(&d), &[], |line: String| {
-            locked |= line.contains("because it is locked");
-            // The box can't mount host folders (no guest additions / tools for this hypervisor).
-            mount_failed |= ["vboxsf", "Guest Additions", "hgfs", "shared folder", "synced folder", "mount -t"].iter().any(|k| line.contains(k));
-            log(line)
-        })
-        .await;
+        let result = vagrant
+            .stream(&args, |line: String| {
+                locked |= line.contains("because it is locked");
+                // The box can't mount host folders (no guest additions / tools for this hypervisor).
+                mount_failed |= ["vboxsf", "Guest Additions", "hgfs", "shared folder", "synced folder", "mount -t"].iter().any(|k| line.contains(k));
+                log(line)
+            })
+            .await;
         match result {
             Ok(()) => break,
             Err(_) if mount_failed && shared.is_some() && attempt < LOCK_RETRIES => {
@@ -171,7 +173,7 @@ pub async fn stop(lab_dir: &Path, mut log: impl FnMut(String)) {
         return;
     }
     log("Removing the attack VM…".into());
-    let _ = stream("vagrant", &["destroy", "--force"], Some(&d), &[], &mut log).await;
+    let _ = Vagrant::of(&d, &[]).stream(&["destroy", "--force"], &mut log).await;
     let names: HashSet<String> = vm::vm_names(&d).into_iter().collect();
     if !names.is_empty() {
         vm::recover_virtualbox(&names, &mut log).await;

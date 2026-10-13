@@ -2,10 +2,12 @@
 //! headless on Windows, killed with their children when cancelled or timed out.
 
 mod docker;
+mod elevate;
 #[cfg(test)]
 pub mod fake;
 mod group;
 mod shim;
+mod vagrant;
 
 use std::path::Path;
 use std::process::{ExitStatus, Stdio};
@@ -18,6 +20,7 @@ use tokio::process::Command;
 pub use docker::login_name;
 pub use docker::{docker_denied, docker_denied_message, valid_image};
 pub use group::kill_live_tools;
+pub use vagrant::{Event, Step, Vagrant, machines_on, on_hyperv};
 
 use crate::error::{Error, Result};
 use group::GroupGuard;
