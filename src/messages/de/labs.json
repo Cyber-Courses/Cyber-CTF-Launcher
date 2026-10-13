@@ -351,5 +351,33 @@
     "nothingExposed": "Das Lab läuft in deinem Cloud-Konto. Es stellt nichts bereit, was hier angezeigt werden kann.",
     "billedEstimate": "Wird dir berechnet: {cost}, laut Schätzung des Labs.",
     "billedWhileRunning": "Wird deinem Cloud-Konto berechnet, solange es läuft."
+  },
+  "objectives": {
+    "title": "Ziele",
+    "required": "{solved}/{total} erforderlich",
+    "progress": "Gelöste Pflicht-Challenges",
+    "completed": "Abgeschlossen",
+    "completedNote": "Lab abgeschlossen: Alle erforderlichen Challenges sind gelöst.",
+    "signIn": "Melde dich an, um Antworten einzureichen und deinen Fortschritt zu verfolgen.",
+    "optional": "optional",
+    "guided": "geführt",
+    "solved": "Gelöst",
+    "answerFor": "Antwort für {title}",
+    "answerPlaceholder": "Deine Antwort oder Flag",
+    "submit": "Senden",
+    "checking": "Wird geprüft…",
+    "correct": "Richtig.",
+    "correctCompleted": "Richtig. Damit ist das Lab abgeschlossen.",
+    "alreadySolved": "Richtig, und bereits zuvor gelöst.",
+    "wrong": "Nicht ganz. Prüfe es und versuche es erneut.",
+    "failed": "Antwort konnte nicht geprüft werden: {error}",
+    "helpNote": "Das Öffnen der Schritte oder eines Hinweises wird erfasst: Eine Lösung ohne sie zählt als stärkerer Nachweis der Fähigkeit.",
+    "guidedMode": "Geführter Modus",
+    "guidedModeHint": "Diese Challenge in Schritte aufteilen",
+    "helpFailed": "Konnte nicht geöffnet werden: {error}",
+    "steps": "Schritte",
+    "step": "Schritt {n}",
+    "hint": "Hinweis {n}",
+    "revealHint": "Hinweis {n} von {total} anzeigen"
   }
 }

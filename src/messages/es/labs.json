@@ -351,5 +351,33 @@
     "nothingExposed": "El lab está en marcha en tu cuenta en la nube. No expone nada que mostrar aquí.",
     "billedEstimate": "Se te factura: {cost}, según la estimación del lab.",
     "billedWhileRunning": "Se factura en tu cuenta en la nube mientras se ejecuta."
+  },
+  "objectives": {
+    "title": "Objetivos",
+    "required": "{solved}/{total} obligatorios",
+    "progress": "Retos obligatorios resueltos",
+    "completed": "Completado",
+    "completedNote": "Lab completado: todos los retos obligatorios están resueltos.",
+    "signIn": "Inicia sesión para enviar respuestas y seguir tu progreso.",
+    "optional": "opcional",
+    "guided": "guiado",
+    "solved": "Resuelto",
+    "answerFor": "Respuesta para {title}",
+    "answerPlaceholder": "Tu respuesta o flag",
+    "submit": "Enviar",
+    "checking": "Comprobando…",
+    "correct": "Correcto.",
+    "correctCompleted": "Correcto. Con esto completas el lab.",
+    "alreadySolved": "Correcto, y ya estaba resuelto.",
+    "wrong": "No exactamente. Revísalo e inténtalo de nuevo.",
+    "failed": "No se pudo comprobar la respuesta: {error}",
+    "helpNote": "Abrir los pasos o una pista queda registrado: resolverlo sin ellos cuenta como una prueba más sólida de la habilidad.",
+    "guidedMode": "Modo guiado",
+    "guidedModeHint": "Dividir este reto en pasos",
+    "helpFailed": "No se pudo abrir: {error}",
+    "steps": "Pasos",
+    "step": "Paso {n}",
+    "hint": "Pista {n}",
+    "revealHint": "Mostrar pista {n} de {total}"
   }
 }
