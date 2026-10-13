@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 pub mod env_path;
+mod exit_codes;
 pub mod install;
 mod scripts;
 pub mod steps;

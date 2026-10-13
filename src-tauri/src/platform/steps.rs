@@ -6,6 +6,7 @@ use std::process::Stdio;
 use tauri::ipc::Channel;
 use tokio::process::Command;
 
+use super::exit_codes;
 use crate::error::{Error, Result};
 
 /// One command of an install or removal.
@@ -79,7 +80,15 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
     })?;
     // pkexec's own failure (refused, or no agent to ask), told apart from the script's exit code.
     let mut pkexec_error: Option<String> = None;
-    let (status, _) = crate::exec::forward_lines(&mut child, 0, &mut *on_line, |line| {
+    // The exit code of the installer winget ran, which says whether the player cancelled it.
+    let mut installer_code: Option<u32> = None;
+    let watch = |line: String| {
+        if step.program == "winget" {
+            installer_code = exit_codes::installer_exit_code(&line).or(installer_code);
+        }
+        on_line(line);
+    };
+    let (status, _) = crate::exec::forward_lines(&mut child, 0, watch, |line| {
         if step.program == "pkexec" && is_pkexec_error(line) {
             pkexec_error = Some(line.to_string());
         }
@@ -92,6 +101,11 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
         return Err(Error::Invalid(pkexec_refusal(&why).into()));
     }
     if !status.success() {
+        let removing = step.args.first().is_some_and(|a| a == "uninstall");
+        // A known winget code reads as what happened; the raw codes follow it (and are in the log).
+        if let Some(why) = exit_codes::winget_failure(status.code(), installer_code, removing).filter(|_| step.program == "winget") {
+            return Err(Error::Invalid(format!("{why} (`winget` exited with {status})")));
+        }
         return Err(Error::Invalid(format!("`{}` exited with {status}", step.program)));
     }
     Ok(())
