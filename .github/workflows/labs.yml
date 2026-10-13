@@ -12,7 +12,7 @@ on:
       - "src-tauri/**"
       - ".github/workflows/labs.yml"
   push:
-    branches: [main]
+    branches: [main, dev]
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:

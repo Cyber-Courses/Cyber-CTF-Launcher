@@ -1,13 +1,13 @@
 name: Web coverage
 
-# Every pull request and push to main: the frontend unit and component tests with coverage over
+# Every pull request and push to main or dev: the frontend unit and component tests with coverage over
 # all of src (vitest.config.mts). The thresholds there fail the job when coverage drops; the
 # totals land in the run's summary.
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 concurrency:
   group: web-coverage-${{ github.ref }}

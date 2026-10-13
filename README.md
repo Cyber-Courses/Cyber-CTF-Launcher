@@ -85,3 +85,14 @@ cargo test -- --ignored --nocapture   # prints this machine's system report
 ```
 
 The TypeScript types of the commands' arguments and results ([`src/lib/tauri/generated/`](src/lib/tauri/generated/)) are generated from the Rust structs by [ts-rs](https://github.com/Aleph-Alpha/ts-rs): `cargo test` rewrites them, and CI fails when the committed ones differ. A command taking or returning a new struct or enum derives `ts_rs::TS` and is listed in [`ts_bindings.rs`](src-tauri/src/ts_bindings.rs).
+
+### Branches
+
+```
+feature/… · fix/…  ──PR──▶  dev  ──PR──▶  main  ──tag v*──▶  release
+```
+
+- **Work** happens on a `feature/…` or `fix/…` branch cut from `dev`, merged into `dev` by pull request.
+- **`dev` is staging**: everything merged there is checked together (CI, coverage, E2E, labs on each push) before it reaches production.
+- **`main` is production**: it only takes pull requests from `dev`. Pushes to `main` publish the attack-box image; a `v*` tag on `main` builds and ships the release (`release.yml`, then `distribute.yml`).
+- A hotfix goes into `main` by pull request, then `main` is merged back into `dev`.
