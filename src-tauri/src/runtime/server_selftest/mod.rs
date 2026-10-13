@@ -288,4 +288,41 @@ mod tests {
     async fn wait_tcp_from_needs_a_login() {
         assert!(wait_tcp_from("pve.lan", Path::new("/k/id"), "10.0.0.5", 22, Duration::ZERO).await.is_err());
     }
+
+    /// Each event's step and state, as the UI gets them.
+    fn steps(events: &crate::test_app::Sink) -> Vec<(String, String)> {
+        events.messages().iter().map(|e| (e["step"].as_str().unwrap().to_string(), e["state"].as_str().unwrap().to_string())).collect()
+    }
+
+    #[tokio::test]
+    async fn the_vm_test_runs_on_proxmox_and_esxi_hosts_only() {
+        let t = crate::test_app::TestApp::new();
+        let tools = crate::exec::fake::Tools::rules(&[]);
+        let app = || t.handle().clone();
+        let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
+
+        // No such host: the first step fails and nothing else runs.
+        let events = crate::test_app::Sink::default();
+        assert!(server_selftest(app(), "nohost".into(), events.channel()).await.is_err());
+        assert_eq!(steps(&events), [pair("connect", "running"), pair("connect", "fail")]);
+
+        // A cloud account: reached, then refused.
+        t.host("az1", "azure", serde_json::json!({}));
+        let events = crate::test_app::Sink::default();
+        let err = server_selftest(app(), "az1".into(), events.channel()).await.unwrap_err();
+        assert_eq!(err.to_string(), "the VM test runs only on a Proxmox or ESXi host");
+        assert_eq!(steps(&events), [pair("connect", "running"), pair("connect", "ok")]);
+        assert_eq!(events.messages()[1]["detail"], "Host az1");
+
+        // AWS is billed: never a test. A folder a previous run left is cleared first.
+        t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
+        let work = work_dir(t.handle(), "aws1").unwrap();
+        std::fs::create_dir_all(&work).unwrap();
+        let events = crate::test_app::Sink::default();
+        let err = server_selftest(app(), "aws1".into(), events.channel()).await.unwrap_err();
+        assert!(err.to_string().contains("AWS labs are billed"), "{err}");
+        assert!(steps(&events).contains(&pair("prepare", "ok")), "{:?}", steps(&events));
+        assert!(!work.exists());
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    }
 }

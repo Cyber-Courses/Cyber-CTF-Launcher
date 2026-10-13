@@ -47,6 +47,17 @@ pub async fn server_open_setup(app: AppHandle, id: Option<String>, kind: Option<
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn the_setup_window_opens_at_its_page_and_an_unknown_host_is_refused() {
+        let t = crate::test_app::TestApp::new();
+        let err = server_open_setup(t.handle().clone(), Some("../x".into()), None).await.unwrap_err();
+        assert_eq!(err.to_string(), "unknown server host");
+        assert!(t.handle().webview_windows().is_empty());
+        server_open_setup(t.handle().clone(), None, Some("cloud".into())).await.unwrap();
+        let w = t.handle().get_webview_window(LABEL).expect("the setup window");
+        assert!(w.url().unwrap().as_str().ends_with("server-setup?kind=cloud"), "{}", w.url().unwrap());
+    }
+
     #[test]
     fn setup_paths() {
         assert_eq!(setup_path(None, false).unwrap(), "server-setup");

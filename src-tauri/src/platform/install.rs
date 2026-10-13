@@ -246,6 +246,110 @@ mod tests {
         assert_eq!(serde_json::from_str::<Dependency>("\"wsl\"").unwrap(), Dependency::Wsl);
     }
 
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use crate::exec::fake::{Tools, fail, ok};
+    use crate::test_app::{Sink, TestApp};
+
+    /// A dependency this OS doesn't install (on macOS without Homebrew, none does).
+    fn not_here() -> Dependency {
+        if cfg!(windows) { Dependency::Utm } else { Dependency::Wsl }
+    }
+
+    /// Scripted tools for an install of Terraform: `terraform version` answers once `installed`
+    /// is set, and the install step (whichever package manager runs it) sets it when `works`.
+    fn terraform_tools(installed: Rc<Cell<bool>>, works: bool) -> Tools {
+        Tools::new(move |program, _| {
+            if program == "terraform" {
+                return if installed.get() { ok("Terraform v1.9.8") } else { fail("terraform: not found") };
+            }
+            if !works {
+                return fail("E: Unable to locate package terraform");
+            }
+            installed.set(true);
+            ok("Setting up terraform (1.9.8-1) ...")
+        })
+    }
+
+    #[tokio::test]
+    async fn a_dependency_this_os_does_not_install_is_refused_in_the_log_before_running_anything() {
+        let t = TestApp::new();
+        let tools = Tools::rules(&[]);
+        let log = Sink::default();
+        let err = install_dependency(t.handle().clone(), not_here(), log.channel()).await.unwrap_err();
+        assert_eq!(log.lines(), [err.to_string()]);
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
+        let Ok(steps) = plan(Dependency::Terraform) else { return }; // macOS without Homebrew
+        let t = TestApp::new();
+        let tools = terraform_tools(Rc::new(Cell::new(false)), true);
+        let log = Sink::default();
+        install_dependency(t.handle().clone(), Dependency::Terraform, log.channel()).await.unwrap();
+        let lines = log.lines();
+        assert_eq!(lines.first(), Some(&command_line(&steps[0])), "{lines:?}");
+        assert!(lines.contains(&"Setting up terraform (1.9.8-1) ...".to_string()), "{lines:?}");
+        assert_eq!(lines.last().map(String::as_str), Some("Done. Re-checking this machine…"));
+        assert!(tools.called(&format!("{} {}", steps[0].program, steps[0].args.join(" "))));
+        let ours: Vec<_> = uninstall::installed_tools(t.handle().clone()).await.into_iter().map(|t| t.dependency).collect();
+        assert_eq!(ours, [Dependency::Terraform]);
+
+        // Cleanup removes it, then forgets it: a second removal is refused.
+        let log = Sink::default();
+        uninstall::uninstall_dependency(t.handle().clone(), Dependency::Terraform, log.channel()).await.unwrap();
+        assert_eq!(log.lines().last().map(String::as_str), Some("Removed."));
+        assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty());
+        let err = uninstall::uninstall_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().channel()).await.unwrap_err();
+        assert_eq!(err.to_string(), "Cyber CTF didn't install this tool, so it won't remove it.");
+    }
+
+    #[tokio::test]
+    async fn a_tool_that_was_already_there_is_never_recorded() {
+        if plan(Dependency::Terraform).is_err() {
+            return;
+        }
+        let t = TestApp::new();
+        let _tools = terraform_tools(Rc::new(Cell::new(true)), true);
+        install_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().channel()).await.unwrap();
+        assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_tool_not_found_yet_counts_once_a_later_check_finds_it() {
+        if plan(Dependency::Terraform).is_err() {
+            return;
+        }
+        let t = TestApp::new();
+        let present = Rc::new(Cell::new(false));
+        // The step "works" but the tool isn't on PATH yet (an installer left open).
+        let probe = present.clone();
+        let _tools = Tools::new(move |program, _| if program == "terraform" && !probe.get() { fail("not found") } else { ok("") });
+        install_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().channel()).await.unwrap();
+        assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty(), "pending, not shown");
+        present.set(true);
+        let ours: Vec<_> = uninstall::installed_tools(t.handle().clone()).await.into_iter().map(|t| t.dependency).collect();
+        assert_eq!(ours, [Dependency::Terraform]);
+    }
+
+    #[tokio::test]
+    async fn a_failed_install_says_so_and_records_nothing() {
+        if plan(Dependency::Terraform).is_err() {
+            return;
+        }
+        let t = TestApp::new();
+        let _tools = terraform_tools(Rc::new(Cell::new(false)), false);
+        let log = Sink::default();
+        let err = install_dependency(t.handle().clone(), Dependency::Terraform, log.channel()).await.unwrap_err();
+        assert!(err.to_string().contains("exited with"), "{err}");
+        assert!(log.lines().contains(&"E: Unable to locate package terraform".to_string()));
+        assert!(!log.lines().iter().any(|l| l.starts_with("Done.")));
+        assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty());
+    }
+
     #[tokio::test]
     async fn an_invalid_plugin_is_refused_before_running_anything() {
         let channel = Channel::new(|_| Ok(()));

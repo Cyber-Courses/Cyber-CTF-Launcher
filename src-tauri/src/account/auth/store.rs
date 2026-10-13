@@ -86,6 +86,16 @@ fn keychain_error(e: keyring::Error) -> Error {
 
 #[cfg(debug_assertions)]
 fn dev_session_path() -> Option<std::path::PathBuf> {
+    // Unit tests never read or replace the developer's own session: theirs is per test run.
+    if cfg!(test) {
+        return Some(std::env::temp_dir().join(format!("cyberctf-test-session-{}", std::process::id())).join("dev-session.json"));
+    }
+    home_session_path()
+}
+
+/// The dev session file in the home folder.
+#[cfg(debug_assertions)]
+fn home_session_path() -> Option<std::path::PathBuf> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
     Some(std::path::PathBuf::from(home).join(".cyberctf").join("dev-session.json"))
 }
@@ -265,9 +275,10 @@ mod tests {
     }
 
     #[test]
-    fn the_dev_session_lives_in_the_home_folder() {
-        if let Some(p) = dev_session_path() {
+    fn the_dev_session_lives_in_the_home_folder_but_not_in_tests() {
+        if let Some(p) = home_session_path() {
             assert!(p.ends_with(std::path::Path::new(".cyberctf").join("dev-session.json")));
+            assert_ne!(dev_session_path(), Some(p));
         }
         ask_keychain_again();
     }

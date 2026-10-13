@@ -48,6 +48,24 @@ pub async fn machine_open_setup(app: AppHandle, step: Option<String>) -> Result<
 
 #[cfg(test)]
 mod tests {
+    use tauri::{Listener, Manager};
+
+    /// Opening a new window sizes it to the screen, which Tauri's mock runtime can't tell: only
+    /// the open window is driven here.
+    #[tokio::test]
+    async fn an_open_setup_window_is_focused_and_moved_to_a_known_step_only() {
+        let t = crate::test_app::TestApp::new();
+        crate::window::builder(t.handle(), super::LABEL, super::page(None)).build().unwrap();
+        let steps = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = steps.clone();
+        t.handle().listen_any("machine-setup-step", move |e| seen.lock().unwrap().push(e.payload().to_string()));
+        super::machine_open_setup(t.handle().clone(), Some("docker-test".into())).await.unwrap();
+        super::machine_open_setup(t.handle().clone(), Some("../../settings".into())).await.unwrap();
+        super::machine_open_setup(t.handle().clone(), None).await.unwrap();
+        assert_eq!(*steps.lock().unwrap(), ["\"docker-test\""]);
+        assert_eq!(t.handle().webview_windows().len(), 1);
+    }
+
     #[test]
     fn opens_at_a_step_only_when_given_one() {
         assert_eq!(super::page(None), "machine-setup");

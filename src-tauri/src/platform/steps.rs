@@ -68,6 +68,10 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
     if let Some(note) = &step.note {
         on_line(note.clone());
     }
+    #[cfg(test)]
+    if let Some(answer) = crate::exec::fake::answer_step(&step.program, &step.args, on_line) {
+        return answer;
+    }
     let mut cmd = Command::new(&step.program);
     cmd.args(&step.args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     // Installers that need a console of their own (winget, an .msi) still get none here: their

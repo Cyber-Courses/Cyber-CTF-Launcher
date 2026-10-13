@@ -235,6 +235,26 @@ mod tests {
         assert_eq!(failed["loggedIn"], false);
     }
 
+    /// The commands over the dev session store (a file of this test run's own).
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn the_status_follows_the_kept_session_and_logout_forgets_it() {
+        let kept = Session { expires_at: now() + 3600, ..session() };
+        store::store(kept).await.unwrap();
+        let status = serde_json::to_value(auth_status().await).unwrap();
+        assert_eq!(status, serde_json::json!({ "loggedIn": true, "name": "Ada", "email": "ada@example.com" }));
+        // A fresh token is used as is: no refresh, no network.
+        assert_eq!(access_token().await.unwrap(), "tok");
+        assert_eq!(signed_in_user().await.as_deref(), Some("ada@example.com"));
+
+        auth_logout().await;
+        assert_eq!(serde_json::to_value(auth_status().await).unwrap()["loggedIn"], false);
+        assert_eq!(access_token().await.unwrap_err().to_string(), SIGNED_OUT);
+        assert_eq!(signed_in_user().await, None);
+        // Signing out twice is fine.
+        auth_logout().await;
+    }
+
     #[test]
     fn the_signed_in_user_is_the_tokens_subject_else_the_email() {
         use base64::Engine;

@@ -193,6 +193,27 @@ mod tests {
         folder(s.clone())
     }
 
+    /// The commands, over a settings file of this test's own. The setting is process-wide, so
+    /// sharing is never turned on here: other tests' attack boxes would mount the folder.
+    #[test]
+    fn the_commands_save_and_show_the_setting_and_never_open_a_folder_while_off() {
+        let root = temp("cmd");
+        let file = root.join("shared-folder.json");
+        assert!(FILE.set(file.clone()).is_ok(), "only this test points the setting at a file");
+        let folder = root.join("loot");
+        let shown = shared_folder_set(false, folder.display().to_string()).unwrap();
+        assert!(!shown.enabled);
+        assert_eq!((shown.path.as_str(), shown.mount_point), (folder.display().to_string().as_str(), MOUNT_POINT));
+        assert_eq!(shared_folder_get().path, folder.display().to_string());
+        assert!(file.is_file() && !folder.exists(), "off: the folder isn't created");
+        assert_eq!(shared_folder_open().unwrap_err().to_string(), "folder sharing is off");
+        // A path that can't be shared is refused and the setting kept.
+        assert_eq!(shared_folder_set(true, "relative/dir".into()).err().unwrap().to_string(), "choose a full folder path");
+        assert_eq!(shared_folder_get().path, folder.display().to_string());
+        assert!(current().is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn the_default_is_in_the_home_folder() {
         let p = default_path().unwrap();

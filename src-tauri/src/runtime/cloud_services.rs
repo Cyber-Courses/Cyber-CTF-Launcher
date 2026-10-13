@@ -843,4 +843,24 @@ mod tests {
         assert!(env.contains(&("AWS_SESSION_TOKEN".to_string(), "tok".to_string())));
         assert!(!env.iter().any(|(k, _)| k == "FOO" || k == "AWS_EMPTY"));
     }
+
+    #[tokio::test]
+    async fn the_preview_command_reads_the_installed_copy_at_that_commit() {
+        let t = crate::test_app::TestApp::new();
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        t.lab("goat", &[("isoloom.yml", SPEC), ("terraform/main.tf", "variable \"region\" {}\n"), (".cyberctf-commit", commit)]);
+        let app = || t.handle().clone();
+        let got = super::super::lab_cloud_preview(app(), "goat".into(), "CyberCTF/goat".into(), commit.into()).await.unwrap();
+        assert_eq!(got, preview(&spec(SPEC)));
+        assert_eq!(got.map(|p| p.provider).as_deref(), Some("aws"));
+        // A lab that isn't a cloud-services one has no preview.
+        let docker = "version: 1\nname: web\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n";
+        t.lab("web", &[("isoloom.yml", docker), (".cyberctf-commit", commit)]);
+        assert_eq!(super::super::lab_cloud_preview(app(), "web".into(), "CyberCTF/web".into(), commit.into()).await.unwrap(), None);
+        // Refused before anything is downloaded: a bad lab id, another owner, a short commit.
+        let refuse = |id: &str, repo: &str, commit: &str| super::super::lab_cloud_preview(app(), id.into(), repo.into(), commit.into());
+        assert_eq!(refuse("../x", "CyberCTF/goat", commit).await.unwrap_err().to_string(), "invalid lab id `../x`");
+        assert_eq!(refuse("goat", "evil/goat", commit).await.unwrap_err().to_string(), format!("refusing to download evil/goat@{commit}"));
+        assert_eq!(refuse("goat", "CyberCTF/goat", "main").await.unwrap_err().to_string(), "refusing to download CyberCTF/goat@main");
+    }
 }
