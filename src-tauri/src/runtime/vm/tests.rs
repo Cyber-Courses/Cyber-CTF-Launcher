@@ -191,13 +191,13 @@ fn a_controller_is_read_from_its_define_line() {
 #[tokio::test]
 async fn no_controller_or_one_on_qemu_is_never_powered_off() {
     let dir = temp_dir("park-ctl");
-    let mut lines = Vec::new();
-    super::park_controller(&dir, &[], &mut |l| lines.push(l)).await;
+    assert!(super::park_controller(&dir, false).is_none());
     // On QEMU the controller is the attacker: it stays on (no Vagrant run at all).
     std::fs::write(dir.join("Vagrantfile"), CONTROLLED).unwrap();
+    assert!(super::park_controller(&dir, true).is_none());
+    assert!(super::park_controller(&dir, false).is_some_and(|p| p.step.args == ["halt", super::CONTROLLER]));
     std::fs::create_dir_all(dir.join(".vagrant").join("machines").join(super::CONTROLLER).join("qemu")).unwrap();
-    super::park_controller(&dir, &[], &mut |l| lines.push(l)).await;
-    assert!(lines.is_empty(), "{lines:?}");
+    assert!(super::provision_parts(&dir, None).iter().all(|p| p.step.args[0] != "halt"), "the provisioning keeps it on");
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -385,4 +385,65 @@ fn topology_skips_lines_outside_a_machine_or_without_an_address() {
     assert_eq!(ifaces.len(), 1);
     assert_eq!(ifaces["a"].len(), 1);
     assert_eq!(nets[0].subnet, "", "an unreadable mask leaves the subnet blank");
+}
+
+#[tokio::test]
+async fn a_failed_setup_play_still_powers_the_controller_off_and_leads_with_ansible() {
+    // The steps of a provisioning run go as one batch (one administrator prompt on Hyper-V):
+    // the clean-up halt runs after the play failed, and the error is the play's.
+    use crate::exec::fake::{Tools, fail};
+    let dir = temp_dir("provision");
+    std::fs::write(dir.join("Vagrantfile"), CONTROLLED).unwrap();
+    let tools = Tools::rules(&[("--provision-with ansible", fail("dc01: fatal: [dc01]: UNREACHABLE! timed out\nnon-zero exit status"))]);
+    let mut lines = Vec::new();
+    let err = super::provision(&dir, Some("dc01"), &[], |l| lines.push(l)).await.unwrap_err();
+    assert_eq!(
+        tools.calls(),
+        [
+            "vagrant up isoloom-controller --no-provision",
+            "vagrant provision dc01",
+            "vagrant provision isoloom-controller --provision-with ansible",
+            "vagrant halt isoloom-controller"
+        ]
+    );
+    assert!(err.to_string().contains("ansible` failed: fatal: [dc01]: UNREACHABLE! timed out\n"), "{err}");
+    assert_eq!(lines[0], "Booting the setup machine…");
+    assert!(lines.contains(&"Running the lab's setup play…".to_string()) && lines.iter().any(|l| l.starts_with("Powering off")), "{lines:?}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn a_start_powers_the_controller_off_and_a_failed_halt_only_says_so() {
+    use crate::exec::fake::{Tools, fail};
+    let dir = temp_dir("start");
+    std::fs::write(dir.join("Vagrantfile"), CONTROLLED).unwrap();
+    let tools = Tools::rules(&[("vagrant halt", fail("locked"))]);
+    let mut lines = Vec::new();
+    super::start(&dir, super::Provider::Hyperv, &[], |l| lines.push(l)).await.unwrap();
+    assert_eq!(tools.calls(), ["vagrant up --provider hyperv", "vagrant halt isoloom-controller"]);
+    assert!(lines.iter().any(|l| l.starts_with("The setup machine stays on: ") && l.contains("locked")), "{lines:?}");
+    // A failed boot skips the halt.
+    drop(tools);
+    let tools = Tools::rules(&[("vagrant up", fail("boom"))]);
+    assert!(super::start(&dir, super::Provider::Qemu, &[], |_| {}).await.is_err());
+    assert_eq!(tools.calls(), ["vagrant up --provider qemu"]);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn reprovisioning_discards_an_aborted_saved_controller_first() {
+    // Regression: the batched provisioning lost this, and an aborted-saved controller failed
+    // `up` with "the machine is not mutable" again.
+    use crate::exec::fake::{Tools, ok};
+    let dir = temp_dir("provision-aborted");
+    let vf = "Vagrant.configure(\"2\") do |config|\n  config.vm.define \"isoloom-controller\" do |m|\n    m.vm.provider \"virtualbox\" do |v|\n      v.name = \"lab · ctl\"\n    end\n  end\nend\n";
+    std::fs::write(dir.join("Vagrantfile"), vf).unwrap();
+    let tools = Tools::rules(&[("VBoxManage showvminfo", ok("VMState=\"aborted-saved\"\n"))]);
+    super::provision(&dir, None, &[], |_| {}).await.unwrap();
+    let calls = tools.calls();
+    assert_eq!(
+        calls[..3],
+        ["VBoxManage showvminfo lab · ctl --machinereadable", "VBoxManage discardstate lab · ctl", "vagrant up isoloom-controller --no-provision"]
+    );
+    std::fs::remove_dir_all(dir).unwrap();
 }

@@ -6,7 +6,7 @@ use std::time::Duration;
 use super::downloads::ensure_box;
 use super::{Reporter, arm};
 use crate::error::{Error, Result};
-use crate::exec::{run, stream};
+use crate::exec::{Event, Step, Vagrant, run};
 use crate::runtime::providers::{self, Provider};
 
 /// The test VM's address on its private lab network (VirtualBox's default host-only range).
@@ -88,6 +88,10 @@ fn vagrantfile(p: Provider, bx: &str, no_kvm: bool) -> String {
     if has_private_network(p) {
         v.push_str(&format!("  config.vm.network \"private_network\", ip: \"{VM_IP}\"\n"));
     }
+    // With several virtual switches and none named, Vagrant would stop to ask which one.
+    if p == Provider::Hyperv {
+        v.push_str(&crate::exec::hyperv_switch_line("  ", "config"));
+    }
     // A readable name in the hypervisor's VM list instead of Vagrant's `<dir>_default_<timestamp>`.
     let settings = match p {
         Provider::Virtualbox => format!("    h.name = \"{VM_NAME}\"\n    h.memory = 512\n"),
@@ -120,7 +124,21 @@ fn ping_args(ip: &str) -> [&str; 5] {
 }
 
 async fn destroy(dir: &Path) -> Result<String> {
-    run("vagrant", &["destroy", "-f"], Some(dir)).await
+    Vagrant::of(dir, &[]).run(&["destroy", "-f"]).await
+}
+
+/// What the command inside the test VM prints its answer after, so it is told from anything
+/// else in the output (stderr shares it: warnings, "Connection to … closed.").
+const UNAME_TAG: &str = "cyberctf-uname:";
+
+/// The command run inside the test VM.
+fn uname_command() -> String {
+    format!("echo {UNAME_TAG}$(uname -srm)")
+}
+
+/// What `uname -srm` printed, out of the command's output.
+fn uname_line(out: &str) -> String {
+    out.lines().find_map(|l| l.trim().strip_prefix(UNAME_TAG)).unwrap_or("").trim().to_string()
 }
 
 pub(super) async fn run_test(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<()> {
@@ -170,17 +188,30 @@ async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<
     })
     .await?;
 
+    // Booting and the command inside run as one batch: on Hyper-V (not elevated) that is one
+    // administrator prompt for both.
+    let mut inside = None;
     r.step("boot", "Boot the test VM", async {
         let no_kvm = cfg!(target_os = "linux") && providers::kvm_problem().is_some();
         std::fs::write(dir.join("Vagrantfile"), vagrantfile(provider, bx, no_kvm))?;
-        stream("vagrant", &["up", "--provider", provider.id()], Some(dir), &[], |l| r.progress("boot", "Boot the test VM", l)).await?;
+        let steps = [Step::new(&["up", "--provider", provider.id()]), Step::new(&["ssh", "-c", &uname_command()])];
+        let vagrant = Vagrant::new(dir, &[], provider == Provider::Hyperv);
+        let mut outcomes = vagrant
+            .batch(&steps, |e| {
+                if let Event::Line(0, l) = e {
+                    r.progress("boot", "Boot the test VM", l)
+                }
+            })
+            .await?;
+        inside = outcomes.pop().flatten();
+        outcomes.pop().flatten().unwrap_or_else(|| Err(Error::Invalid("the test VM was not started".into())))?;
         Ok(((), Some(format!("{bx} on {}", provider.id()))))
     })
     .await?;
 
     r.step("exec", "Run a command inside the VM", async {
-        let out = run("vagrant", &["ssh", "-c", "uname -srm"], Some(dir)).await?;
-        Ok(((), Some(out.trim().to_string())))
+        let out = inside.take().unwrap_or_else(|| Err(Error::Invalid("the command did not run".into())))?;
+        Ok(((), Some(uname_line(&out))))
     })
     .await?;
 
@@ -207,6 +238,15 @@ async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_command_output_is_told_from_vagrants_own_lines() {
+        assert_eq!(uname_line("warning: something\ncyberctf-uname:Linux 6.6 x86_64\nConnection to 172.20.0.5 closed.\n"), "Linux 6.6 x86_64");
+        assert_eq!(uname_line("Connection to x closed.\n"), "");
+        assert_eq!(uname_command(), "echo cyberctf-uname:$(uname -srm)");
+        assert!(vagrantfile(Provider::Hyperv, "x", false).contains("config.vm.network \"public_network\", bridge: ENV[\"CYBERCTF_HYPERV_SWITCH\"]"));
+        assert!(!vagrantfile(Provider::Virtualbox, "x", false).contains("public_network"));
+    }
 
     #[test]
     fn qemu_test_vm_falls_back_to_software_emulation_without_kvm() {

@@ -179,6 +179,13 @@ fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Before anything reads its settings: what a virtualized Store build saved.
     #[cfg(windows)]
     msix_data::migrate(app.handle());
+    // The window a UAC prompt (Vagrant on Hyper-V) is raised for, here and in deploy workers.
+    #[cfg(windows)]
+    if let Some(w) = app.get_webview_window("main")
+        && let Ok(hwnd) = w.hwnd()
+    {
+        exec::set_owner_window(hwnd.0 as isize);
+    }
     shared_folder::init(app.handle());
     // Linux and Windows dev builds: register cyberctf:// at runtime (installers do it otherwise).
     #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]

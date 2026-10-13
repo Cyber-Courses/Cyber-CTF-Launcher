@@ -5,7 +5,7 @@ use super::model::Park;
 use super::providers::Provider;
 use super::{LabStatus, Machine};
 use crate::error::Result;
-use crate::exec::{run, run_env_timed, run_read, stream};
+use crate::exec::{Event, Step, Vagrant, run, run_env_timed, run_read};
 
 /// A status read must never hang the status poll: a wedged VirtualBox (its global lock held by
 /// a stuck VBoxManage) would otherwise pile up one blocked `vagrant status` per poll tick.
@@ -34,19 +34,81 @@ fn has_controller(dir: &Path) -> bool {
 /// VMs, so there is no room for an attack VM: the controller, on the lab network already, stays
 /// on as the player's attack position.
 pub fn on_qemu(dir: &Path) -> bool {
-    std::fs::read_dir(dir.join(".vagrant").join("machines")).is_ok_and(|it| it.flatten().any(|m| m.path().join(Provider::Qemu.id()).is_dir()))
+    crate::exec::machines_on(dir, Provider::Qemu.id())
+}
+
+/// One Vagrant command of a lab operation, as a step of a batch (one UAC prompt for the whole
+/// operation on Hyper-V): what it logs when it starts, and how a failure is taken.
+struct Part {
+    step: Step,
+    /// Logged when the step starts.
+    note: Option<&'static str>,
+    /// A best-effort step: its failure is logged after this, and doesn't fail the operation.
+    tolerated: Option<&'static str>,
+}
+
+impl Part {
+    fn new(args: &[&str]) -> Part {
+        Part { step: Step::new(args), note: None, tolerated: None }
+    }
+
+    fn note(mut self, note: &'static str) -> Part {
+        self.note = Some(note);
+        self
+    }
 }
 
 /// Powers the controller off (state kept) once the lab is built: it has no part in the attack
-/// surface and would only cost memory. Best effort. On QEMU it stays on: it is the attacker.
-async fn park_controller(dir: &Path, env: &[(String, String)], log: &mut impl FnMut(String)) {
-    if !has_controller(dir) || on_qemu(dir) {
-        return;
+/// surface and would only cost memory. Best effort. None without a controller, or on QEMU (`qemu`),
+/// where it stays on: it is the attacker.
+fn park_controller(dir: &Path, qemu: bool) -> Option<Part> {
+    if !has_controller(dir) || qemu {
+        return None;
     }
-    log("Powering off the setup machine (it comes back for provisioning and checks)…".into());
-    if let Err(e) = vagrant(dir, &["halt", CONTROLLER], env, &mut *log).await {
-        log(format!("The setup machine stays on: {e}"));
+    Some(Part {
+        step: Step::new(&["halt", CONTROLLER]),
+        note: Some("Powering off the setup machine (it comes back for provisioning and checks)…"),
+        tolerated: Some("The setup machine stays on"),
+    })
+}
+
+/// Runs an operation's parts in order with `vagrant`, logging their output; the first failure
+/// (led by Ansible's verdict when its step had one) is the operation's.
+async fn run_parts(vagrant: &Vagrant<'_>, parts: &[Part], log: &mut impl FnMut(String)) -> Result<()> {
+    let steps: Vec<Step> = parts.iter().map(|p| p.step.clone()).collect();
+    // When a provisioner's Ansible run fails, Vagrant only says "the SSH command responded with a
+    // non-zero exit status"; the reason (`fatal: [ws01]: UNREACHABLE! ... winrm ... timed out`)
+    // is hundreds of lines up in the stream. Keep each step's last verdict to lead its error with.
+    let mut verdicts: Vec<Option<String>> = vec![None; parts.len()];
+    let outcomes = vagrant
+        .batch(&steps, |e| match e {
+            Event::Start(i) => {
+                if let Some(n) = parts[i].note {
+                    log(n.into());
+                }
+            }
+            Event::Line(i, line) => {
+                if let Some(v) = ansible_verdict(&line) {
+                    verdicts[i] = Some(v);
+                }
+                log(line);
+            }
+            Event::End(i, Err(e)) => {
+                if let Some(t) = parts[i].tolerated {
+                    log(format!("{t}: {e}"));
+                }
+            }
+            Event::End(_, Ok(_)) => {}
+        })
+        .await?;
+    for (i, outcome) in outcomes.into_iter().enumerate() {
+        if let Some(Err(e)) = outcome
+            && parts[i].tolerated.is_none()
+        {
+            return lead_with_verdict(Err(e), verdicts[i].take());
+        }
     }
+    Ok(())
 }
 
 /// A VirtualBox VM whose saved state was cut off (a suspend killed midway, a host crash) is
@@ -66,9 +128,9 @@ pub(super) async fn discard_aborted_saved(dir: &Path, log: &mut impl FnMut(Strin
 /// `env` reaches the Vagrantfile and its provisioners (e.g. the evidence claim).
 pub async fn start(dir: &Path, provider: Provider, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
     discard_aborted_saved(dir, &mut log).await;
-    vagrant(dir, &["up", "--provider", provider.id()], env, &mut log).await?;
-    park_controller(dir, env, &mut log).await;
-    Ok(())
+    let mut parts = vec![Part::new(&["up", "--provider", provider.id()])];
+    parts.extend(park_controller(dir, provider == Provider::Qemu));
+    run_parts(&Vagrant::new(dir, env, provider == Provider::Hyperv), &parts, &mut log).await
 }
 
 /// Runs the lab's setup again on its running machines, without rebuilding it: the repair for a
@@ -78,38 +140,31 @@ pub async fn start(dir: &Path, provider: Provider, env: &[(String, String)], mut
 /// Without one, it is each machine's own provisioners (`vagrant provision [machine]`).
 pub async fn provision(dir: &Path, machine: Option<&str>, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
     if has_controller(dir) {
+        // The controller is booted: an aborted saved state would make that fail for good.
         discard_aborted_saved(dir, &mut log).await;
-        log("Booting the setup machine…".into());
-        vagrant(dir, &["up", CONTROLLER, "--no-provision"], env, &mut log).await?;
-        if let Some(m) = machine.filter(|m| *m != CONTROLLER) {
-            vagrant(dir, &["provision", m], env, &mut log).await?;
-        }
-        log("Running the lab's setup play…".into());
-        let result = vagrant(dir, &["provision", CONTROLLER, "--provision-with", "ansible"], env, &mut log).await;
-        park_controller(dir, env, &mut log).await;
-        return result;
     }
-    let mut args = vec!["provision"];
-    if let Some(m) = machine {
-        args.push(m);
-    }
-    vagrant(dir, &args, env, &mut log).await
+    run_parts(&Vagrant::of(dir, env), &provision_parts(dir, machine), &mut log).await
 }
 
-/// A streamed Vagrant command whose failure leads with Ansible's own verdict.
-async fn vagrant(dir: &Path, args: &[&str], env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
-    // When a provisioner's Ansible run fails, Vagrant only says "the SSH command responded with a
-    // non-zero exit status"; the reason (`fatal: [ws01]: UNREACHABLE! ... winrm ... timed out`)
-    // is hundreds of lines up in the stream. Keep Ansible's last verdict and lead the error with it.
-    let mut verdict: Option<String> = None;
-    let result = stream("vagrant", args, Some(dir), env, |line: String| {
-        if let Some(v) = ansible_verdict(&line) {
-            verdict = Some(v);
-        }
-        log(line);
-    })
-    .await;
-    lead_with_verdict(result, verdict)
+/// The steps of [`provision`]: with a controller, boot it, rerun `machine`'s own steps (when
+/// named), rerun its play, then power it off again (even after a failure: it would only cost
+/// memory). Without one, the machines' own provisioners.
+fn provision_parts(dir: &Path, machine: Option<&str>) -> Vec<Part> {
+    if !has_controller(dir) {
+        let mut args = vec!["provision"];
+        args.extend(machine);
+        return vec![Part::new(&args)];
+    }
+    let mut parts = vec![Part::new(&["up", CONTROLLER, "--no-provision"]).note("Booting the setup machine…")];
+    if let Some(m) = machine.filter(|m| *m != CONTROLLER) {
+        parts.push(Part::new(&["provision", m]));
+    }
+    parts.push(Part::new(&["provision", CONTROLLER, "--provision-with", "ansible"]).note("Running the lab's setup play…"));
+    if let Some(mut park) = park_controller(dir, on_qemu(dir)) {
+        park.step = park.step.always();
+        parts.push(park);
+    }
+    parts
 }
 
 /// A failed command's error, led by Ansible's verdict when the stream had one.
@@ -124,8 +179,8 @@ fn lead_with_verdict(result: Result<()>, verdict: Option<String>) -> Result<()> 
 
 /// Parks the lab's VMs without destroying them: `Pause` saves their state to disk (`vagrant
 /// suspend`, resumes in seconds), `Shutdown` powers them off cleanly (`vagrant halt`).
-pub async fn park(dir: &Path, mode: Park, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
-    stream("vagrant", &[park_verb(mode)], Some(dir), env, &mut log).await
+pub async fn park(dir: &Path, mode: Park, env: &[(String, String)], log: impl FnMut(String)) -> Result<()> {
+    Vagrant::of(dir, env).stream(&[park_verb(mode)], log).await
 }
 
 /// The Vagrant command that parks VMs in `mode`.
@@ -141,10 +196,13 @@ fn park_verb(mode: Park) -> &'static str {
 /// stays on the provider the VMs were created with.
 pub async fn resume(dir: &Path, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
     discard_aborted_saved(dir, &mut log).await;
+    // A status read is never elevated (it is polled): on a non-elevated Hyper-V it may fail,
+    // and the machines' folders still tell the provider.
     let provider = status(dir, env).await.ok().and_then(|s| s.provider);
-    stream("vagrant", &resume_args(provider.as_deref()), Some(dir), env, &mut log).await?;
-    park_controller(dir, env, &mut log).await;
-    Ok(())
+    let hyperv = provider.as_deref() == Some(Provider::Hyperv.id()) || crate::exec::on_hyperv(dir);
+    let mut parts = vec![Part::new(&resume_args(provider.as_deref()))];
+    parts.extend(park_controller(dir, on_qemu(dir)));
+    run_parts(&Vagrant::new(dir, env, hyperv), &parts, &mut log).await
 }
 
 /// `vagrant up` that brings parked VMs back on the provider they were created with.
@@ -183,7 +241,7 @@ fn ansible_verdict(line: &str) -> Option<String> {
 /// Destroys the VMs so the next start restores the lab's initial state. `env` must carry
 /// the same server connection as `start`: Vagrant re-evaluates the Vagrantfile.
 pub async fn stop(dir: &Path, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
-    let destroyed = stream("vagrant", &["destroy", "--force"], Some(dir), env, &mut log).await;
+    let destroyed = Vagrant::of(dir, env).stream(&["destroy", "--force"], &mut log).await;
     // Vagrant only destroys what it still tracks. A lab re-installed from its registered commit
     // loses `.vagrant/` (Vagrant's machine index), so the VMs of an earlier run become orphans
     // Vagrant reports as `not_created` and leaves behind — "Stop & clean up" then looked like it

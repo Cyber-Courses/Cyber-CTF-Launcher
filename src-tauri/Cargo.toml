@@ -50,9 +50,10 @@ ts-rs = "12"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# Job objects: a timed tool's whole process tree ends with it on Windows.
+# Job objects: a timed tool's whole process tree ends with it on Windows. Shell (and Registry, which
+# its SHELLEXECUTEINFOW needs): the UAC-elevated Vagrant for Hyper-V.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }

@@ -34,6 +34,13 @@ Labs live in `<app data>/labs/<lab id>/`.
 
 A VM lab runs natively only where its boxes exist for the host architecture. On Apple Silicon, ARM boxes run natively on UTM/QEMU (Apple Hypervisor). x86-only boxes such as pfSense run there only under QEMU emulation, which is several times slower; heavy x86 labs should use a remote x86 host (ESXi, Proxmox).
 
+Hyper-V only takes management commands from an administrator (or a member of "Hyper-V Administrators"), and Vagrant's Hyper-V provider refuses to run otherwise. On Windows, Vagrant commands on Hyper-V machines run through a generated, hidden Windows PowerShell script ([`exec/elevate.rs`](src-tauri/src/exec/elevate.rs)); when the launcher itself may not manage Hyper-V, Windows first asks for administrator rights (a UAC prompt, raised for the app's window). Status reads are never elevated.
+
+- Prompts: one per batch of Vagrant commands. A lab's own start (boot, then power off the setup machine), provisioning run, pause or shutdown, resume and stop are one batch each. A VM lab with an attack VM asks once more for the attack VM in each of these, and again for each retry of an attack VM start that hit Vagrant's machine lock. The VM self-test asks twice (boot and run a command, then delete the test VM), three times when it first deletes a test VM left from an earlier run. Started as administrator (or as a Hyper-V administrator), the launcher asks nothing.
+- Output streams as usual: the script writes it to a log the launcher follows. The environment the commands need (tokens included) goes through a file in the batch's own temp folder, read and deleted by the script, never on a command line.
+- Vagrant's questions: on Windows, Vagrant waits forever for an answer even with no one to give it. The launcher's own Vagrantfiles (self-test, attack VM) attach to a virtual switch the script picks ("Default Switch", else an external one, else the first), and the attack VM gets no shared folder on Hyper-V (Vagrant would ask for a Windows password to share it over SMB). If Vagrant asks anyway (a lab's machines with several switches and none named), the batch is stopped with a message saying so.
+- Stopping: cancelling an operation, the deploy worker being stopped, or the launcher exiting ends the batch and every process it started; a batch running for more than 6 hours is ended too. Declining the UAC prompt fails the operation with a plain message.
+
 ## Roadmap
 
 - [x] System check, Docker/VM runtimes, provider detection

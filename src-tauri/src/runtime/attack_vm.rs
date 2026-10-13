@@ -14,7 +14,7 @@ use super::model::Park;
 use super::providers::Provider;
 use super::{ssh, vm};
 use crate::error::{Error, Result};
-use crate::exec::{run_read, stream};
+use crate::exec::{Vagrant, run_read};
 
 /// The attacker's own Vagrant environment, inside the lab folder (removed with the lab).
 const DIR: &str = ".cyberctf-attack-vm";
@@ -103,6 +103,33 @@ pub(crate) fn vagrantfile(lab: &str, box_name: &str, links: &[Link], shared: Opt
     out
 }
 
+/// [`vagrantfile`] for `provider`. On Hyper-V the VM is attached to the virtual switch the
+/// launcher picked (Vagrant would otherwise stop to ask, when there are several), and named.
+fn vagrantfile_for(provider: Provider, lab: &str, box_name: &str, links: &[Link], shared: Option<&Path>) -> String {
+    let out = vagrantfile(lab, box_name, links, shared);
+    if provider != Provider::Hyperv {
+        return out;
+    }
+    let body = out.strip_suffix("  end\nend\n").unwrap_or(&out);
+    format!(
+        "{body}{}    m.vm.provider \"hyperv\" do |v|\n      v.vmname = \"{lab} · attacker\"\n      v.memory = 2048\n      v.cpus = 2\n    end\n  end\nend\n",
+        crate::exec::hyperv_switch_line("    ", "m")
+    )
+}
+
+/// The folder shared with the attack VM, if it can be mounted on `provider`: on Hyper-V Vagrant
+/// shares folders over SMB, which asks for a Windows password the launcher can't give, so none.
+fn shared_for(provider: Provider, shared: Option<PathBuf>, log: &mut impl FnMut(String)) -> Option<PathBuf> {
+    if provider == Provider::Hyperv && shared.is_some() {
+        log(format!(
+            "On Hyper-V the attack VM starts without the shared folder ({}): Vagrant would ask for a Windows password to share it.",
+            crate::shared_folder::MOUNT_POINT
+        ));
+        return None;
+    }
+    shared
+}
+
 /// How many times a start that hit Vagrant's machine lock is tried again.
 const LOCK_RETRIES: u32 = 4;
 
@@ -120,8 +147,8 @@ pub async fn start(lab_dir: &Path, lab_vagrant_dir: &Path, provider: Provider, b
     let (lab, links) = plan(&text)?;
     let d = dir(lab_dir);
     std::fs::create_dir_all(&d).map_err(Error::Io)?;
-    let shared = crate::shared_folder::current();
-    std::fs::write(d.join("Vagrantfile"), vagrantfile(&lab, box_name, &links, shared.as_deref())).map_err(Error::Io)?;
+    let shared = shared_for(provider, crate::shared_folder::current(), &mut log);
+    std::fs::write(d.join("Vagrantfile"), vagrantfile_for(provider, &lab, box_name, &links, shared.as_deref())).map_err(Error::Io)?;
     log(format!("Starting the attack VM ({box_name}) next to the lab; the first start downloads the box, which can take a while…"));
     vm::discard_aborted_saved(&d, &mut log).await;
     // Another Vagrant run touching the machine (a lab operation, a manual command) makes `up` fail
@@ -130,21 +157,23 @@ pub async fn start(lab_dir: &Path, lab_vagrant_dir: &Path, provider: Provider, b
     // replays it (networks included) on a VM that exists; a plain second `up` would see it
     // running and do nothing.
     let mut args: Vec<&str> = vec!["up", "--provider", provider.id()];
+    let vagrant = Vagrant::new(&d, &[], provider == Provider::Hyperv);
     for attempt in 1..=LOCK_RETRIES {
         let mut locked = false;
         let mut mount_failed = false;
-        let result = stream("vagrant", &args, Some(&d), &[], |line: String| {
-            locked |= line.contains("because it is locked");
-            // The box can't mount host folders (no guest additions / tools for this hypervisor).
-            mount_failed |= ["vboxsf", "Guest Additions", "hgfs", "shared folder", "synced folder", "mount -t"].iter().any(|k| line.contains(k));
-            log(line)
-        })
-        .await;
+        let result = vagrant
+            .stream(&args, |line: String| {
+                locked |= line.contains("because it is locked");
+                // The box can't mount host folders (no guest additions / tools for this hypervisor).
+                mount_failed |= ["vboxsf", "Guest Additions", "hgfs", "shared folder", "synced folder", "mount -t"].iter().any(|k| line.contains(k));
+                log(line)
+            })
+            .await;
         match result {
             Ok(()) => break,
             Err(_) if mount_failed && shared.is_some() && attempt < LOCK_RETRIES => {
                 log(format!("This attack VM can't mount the shared folder, so it starts without {}.", crate::shared_folder::MOUNT_POINT));
-                std::fs::write(d.join("Vagrantfile"), vagrantfile(&lab, box_name, &links, None)).map_err(Error::Io)?;
+                std::fs::write(d.join("Vagrantfile"), vagrantfile_for(provider, &lab, box_name, &links, None)).map_err(Error::Io)?;
                 args = vec!["reload", "--provision"];
             }
             Err(e) if attempt == LOCK_RETRIES => return Err(e),
@@ -171,7 +200,7 @@ pub async fn stop(lab_dir: &Path, mut log: impl FnMut(String)) {
         return;
     }
     log("Removing the attack VM…".into());
-    let _ = stream("vagrant", &["destroy", "--force"], Some(&d), &[], &mut log).await;
+    let _ = Vagrant::of(&d, &[]).stream(&["destroy", "--force"], &mut log).await;
     let names: HashSet<String> = vm::vm_names(&d).into_iter().collect();
     if !names.is_empty() {
         vm::recover_virtualbox(&names, &mut log).await;
@@ -308,6 +337,22 @@ mod tests {
     use std::net::Ipv4Addr;
 
     use super::{Link, free_address, plan, vagrantfile, valid_box};
+
+    #[test]
+    fn on_hyperv_the_attacker_gets_the_switch_and_no_smb_share() {
+        use super::{Provider, shared_for, vagrantfile_for};
+        let vf = vagrantfile_for(Provider::Hyperv, "lab", "kalilinux/rolling", &[], None);
+        assert!(vf.contains("    m.vm.network \"public_network\", bridge: ENV[\"CYBERCTF_HYPERV_SWITCH\"] if ENV[\"CYBERCTF_HYPERV_SWITCH\"]\n"), "{vf}");
+        assert!(vf.contains("m.vm.provider \"hyperv\" do |v|\n      v.vmname = \"lab · attacker\"") && vf.ends_with("    end\n  end\nend\n"), "{vf}");
+        assert_eq!(vf.matches("config.vm.define").count(), 1);
+        // Other providers are unchanged.
+        assert_eq!(vagrantfile_for(Provider::Virtualbox, "lab", "k/r", &[], None), vagrantfile("lab", "k/r", &[], None));
+        let mut lines = Vec::new();
+        let p = std::path::PathBuf::from("/s");
+        assert_eq!(shared_for(Provider::Hyperv, Some(p.clone()), &mut |l| lines.push(l)), None);
+        assert!(lines[0].contains("without the shared folder"), "{lines:?}");
+        assert_eq!(shared_for(Provider::Virtualbox, Some(p.clone()), &mut |l| lines.push(l)), Some(p));
+    }
 
     #[test]
     fn the_shared_folder_is_mounted_at_shared() {

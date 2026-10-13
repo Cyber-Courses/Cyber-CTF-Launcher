@@ -248,7 +248,7 @@ mod tests {
             }
             ("vagrant", ["box", "list"]) => ok(boxes),
             ("vagrant", ["--version"]) => ok("Vagrant 2.4.3\n"),
-            ("vagrant", ["ssh", "-c", _]) => ok("Linux 6.6 x86_64\n"),
+            ("vagrant", ["ssh", "-c", _]) => ok("cyberctf-uname:Linux 6.6 x86_64\n"),
             _ => ok(""),
         });
         let (channel, seen) = events();
