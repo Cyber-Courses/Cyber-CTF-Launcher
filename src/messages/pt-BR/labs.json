@@ -351,5 +351,33 @@
     "nothingExposed": "O lab está no ar na sua conta de nuvem. Ele não expõe nada para mostrar aqui.",
     "billedEstimate": "Cobrado de você: {cost}, pela estimativa do lab.",
     "billedWhileRunning": "Cobrado na sua conta de nuvem enquanto roda."
+  },
+  "objectives": {
+    "title": "Objetivos",
+    "required": "{solved}/{total} obrigatórios",
+    "progress": "Desafios obrigatórios resolvidos",
+    "completed": "Concluído",
+    "completedNote": "Lab concluído: todos os desafios obrigatórios foram resolvidos.",
+    "signIn": "Entre para enviar respostas e acompanhar seu progresso.",
+    "optional": "opcional",
+    "guided": "guiado",
+    "solved": "Resolvido",
+    "answerFor": "Resposta para {title}",
+    "answerPlaceholder": "Sua resposta ou flag",
+    "submit": "Enviar",
+    "checking": "Verificando…",
+    "correct": "Correto.",
+    "correctCompleted": "Correto. Isso conclui o lab.",
+    "alreadySolved": "Correto, e já resolvido antes.",
+    "wrong": "Não exatamente. Confira e tente de novo.",
+    "failed": "Não foi possível verificar a resposta: {error}",
+    "helpNote": "Abrir os passos ou uma dica fica registrado: resolver sem eles conta como uma evidência mais forte da habilidade.",
+    "guidedMode": "Modo guiado",
+    "guidedModeHint": "Dividir este desafio em passos",
+    "helpFailed": "Não foi possível abrir: {error}",
+    "steps": "Passos",
+    "step": "Passo {n}",
+    "hint": "Dica {n}",
+    "revealHint": "Mostrar dica {n} de {total}"
   }
 }

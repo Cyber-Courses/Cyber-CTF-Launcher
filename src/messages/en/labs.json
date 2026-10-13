@@ -351,5 +351,33 @@
     "nothingExposed": "The lab is up in your cloud account. It exposes nothing to show here.",
     "billedEstimate": "Billed to you: {cost}, by the lab's estimate.",
     "billedWhileRunning": "Billed to your cloud account while it runs."
+  },
+  "objectives": {
+    "title": "Objectives",
+    "required": "{solved}/{total} required",
+    "progress": "Required challenges solved",
+    "completed": "Completed",
+    "completedNote": "Lab completed: every required challenge is solved.",
+    "signIn": "Sign in to submit answers and track your progress.",
+    "optional": "optional",
+    "guided": "guided",
+    "solved": "Solved",
+    "answerFor": "Answer for {title}",
+    "answerPlaceholder": "Your answer or flag",
+    "submit": "Submit",
+    "checking": "Checking…",
+    "correct": "Correct.",
+    "correctCompleted": "Correct. That completes the lab.",
+    "alreadySolved": "Correct, and already solved before.",
+    "wrong": "Not quite. Check it and try again.",
+    "failed": "Couldn't check the answer: {error}",
+    "helpNote": "Opening the steps or a hint is recorded: a solve without them counts as stronger evidence of the skill.",
+    "guidedMode": "Guided mode",
+    "guidedModeHint": "Break this challenge into steps",
+    "helpFailed": "Couldn't open it: {error}",
+    "steps": "Steps",
+    "step": "Step {n}",
+    "hint": "Hint {n}",
+    "revealHint": "Reveal hint {n} of {total}"
   }
 }

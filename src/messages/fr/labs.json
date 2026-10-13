@@ -351,5 +351,33 @@
     "nothingExposed": "Le lab tourne dans votre compte cloud. Il n’expose rien à afficher ici.",
     "billedEstimate": "Facturé à vous : {cost}, selon l’estimation du lab.",
     "billedWhileRunning": "Facturé sur votre compte cloud tant qu’il tourne."
+  },
+  "objectives": {
+    "title": "Objectifs",
+    "required": "{solved}/{total} requis",
+    "progress": "Défis requis résolus",
+    "completed": "Terminé",
+    "completedNote": "Lab terminé : tous les défis requis sont résolus.",
+    "signIn": "Connectez-vous pour soumettre vos réponses et suivre votre progression.",
+    "optional": "facultatif",
+    "guided": "guidé",
+    "solved": "Résolu",
+    "answerFor": "Réponse pour {title}",
+    "answerPlaceholder": "Votre réponse ou flag",
+    "submit": "Valider",
+    "checking": "Vérification…",
+    "correct": "Correct.",
+    "correctCompleted": "Correct. Le lab est terminé.",
+    "alreadySolved": "Correct, et déjà résolu auparavant.",
+    "wrong": "Pas tout à fait. Vérifiez et réessayez.",
+    "failed": "Impossible de vérifier la réponse : {error}",
+    "helpNote": "L'ouverture des étapes ou d'un indice est enregistrée : une résolution sans aide compte comme une preuve plus forte de la compétence.",
+    "guidedMode": "Mode guidé",
+    "guidedModeHint": "Découper ce défi en étapes",
+    "helpFailed": "Impossible de l'ouvrir : {error}",
+    "steps": "Étapes",
+    "step": "Étape {n}",
+    "hint": "Indice {n}",
+    "revealHint": "Afficher l'indice {n} sur {total}"
   }
 }

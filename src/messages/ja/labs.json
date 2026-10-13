@@ -351,5 +351,33 @@
     "nothingExposed": "ラボはクラウドアカウントで稼働中です。ここに表示するものは公開されていません。",
     "billedEstimate": "あなたへの請求: {cost}（ラボの見積もり）。",
     "billedWhileRunning": "実行中はクラウドアカウントに課金されます。"
+  },
+  "objectives": {
+    "title": "目標",
+    "required": "必須 {solved}/{total}",
+    "progress": "解決した必須チャレンジ",
+    "completed": "完了",
+    "completedNote": "ラボ完了：必須チャレンジをすべて解決しました。",
+    "signIn": "回答を送信して進捗を記録するにはサインインしてください。",
+    "optional": "任意",
+    "guided": "ガイド付き",
+    "solved": "解決済み",
+    "answerFor": "{title} の回答",
+    "answerPlaceholder": "回答またはフラグ",
+    "submit": "送信",
+    "checking": "確認中…",
+    "correct": "正解です。",
+    "correctCompleted": "正解です。これでラボは完了です。",
+    "alreadySolved": "正解です（解決済み）。",
+    "wrong": "惜しいです。確認してもう一度お試しください。",
+    "failed": "回答を確認できませんでした：{error}",
+    "helpNote": "ステップやヒントを開くと記録されます。使わずに解いた場合、スキルのより強い証拠になります。",
+    "guidedMode": "ガイドモード",
+    "guidedModeHint": "このチャレンジをステップに分割",
+    "helpFailed": "開けませんでした：{error}",
+    "steps": "ステップ",
+    "step": "ステップ {n}",
+    "hint": "ヒント {n}",
+    "revealHint": "ヒント {n}/{total} を表示"
   }
 }

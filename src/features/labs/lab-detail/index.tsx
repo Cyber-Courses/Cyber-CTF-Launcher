@@ -19,6 +19,8 @@ import { cloudView, deployPlacement, headerMode, networkView, restartTarget } fr
 import { CloudNotePanel, CloudPanel, costEstimate, useCloudPreview } from "@/features/labs/cloud-panel";
 import { NetworkPanel } from "@/features/labs/lab-detail/network-panel";
 import { BackLink, ObjectivePanel } from "@/features/labs/lab-detail/page-parts";
+import { ObjectivesLoading, ObjectivesPanel } from "@/features/labs/objectives/objectives-panel";
+import { useObjectives } from "@/features/labs/objectives/use-objectives";
 import { ObserversPanel } from "@/features/labs/lab-detail/observers-panel";
 import { RemoveDialog } from "@/features/labs/lab-detail/remove-dialog";
 import { LabDetailSkeleton } from "@/features/labs/lab-detail/skeleton";
@@ -121,6 +123,7 @@ export function LabDetail({
   });
   const [check, clearCheck] = useLabCheck(lab.id, { running: s.running, downCount: s.down.length, enabled: s.isDocker });
   const tools = useLabTools(lab.id, s.running && !s.isCloud, s.isDocker);
+  const objectives = useObjectives(lab.id, lab.question, t("labs.detail.objective"), loggedIn);
 
   // Reset = stop and start again where it ran: a clean lab.
   async function reset() {
@@ -229,11 +232,22 @@ export function LabDetail({
           {network !== "none" && <NetworkPanel view={network} status={status} remote={s.remote} box={box.status} meta={rt ? meta : undefined} />}
           {s.running && !busy && tools.length > 0 && <ObserversPanel tools={tools} />}
           {placement === "bottom" && deploy}
+          {objectives.state.kind === "loading" && lab.question && <ObjectivesLoading question={lab.question} />}
+          {objectives.state.kind === "ready" && (
+            <ObjectivesPanel
+              key={lab.id}
+              challenges={objectives.state.challenges}
+              progress={objectives.state.progress}
+              signedIn={objectives.state.signedIn}
+              actions={objectives}
+            />
+          )}
           <LabBrief labId={lab.id} />
         </div>
 
         <aside className="h-fit min-w-0 space-y-5 lg:sticky lg:top-2">
-          {lab.question && <ObjectivePanel question={lab.question} />}
+          {/* A backend without the objectives API: the lab's question, as before. */}
+          {objectives.state.kind === "unavailable" && lab.question && <ObjectivePanel question={lab.question} />}
 
           {/* VM labs on a server host have no attacker yet (their networks live on that host). */}
           {!s.isCloud && (s.isDocker || !s.remote) && (
