@@ -29,7 +29,7 @@ export function useHostChecks(hosts: ServerHost[]) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setChecks(Object.fromEntries(list.map((id) => [id, "testing" as const])));
     for (const id of list) {
-      serverTest(id)
+      void serverTest(id)
         .catch((e): ServerTest => ({ ok: false, reachable: false, authenticated: null, latencyMs: null, message: String(e), checks: [] }))
         .then((r) => live && setChecks((c) => ({ ...c, [id]: r })));
     }

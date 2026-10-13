@@ -5,6 +5,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { useLabActions } from "@/features/labs/use-lab-actions";
 import type { Lab } from "@/features/labs/use-labs";
+import { useWatchLab } from "@/features/labs/lab-polling";
 import type { LabStatus, Provider, SystemReport } from "@/lib/tauri";
 
 // The Labs screen's open lab: which one, from the navigation, and its page.
@@ -70,6 +71,8 @@ export function OpenLab({
   ready: boolean;
   onBack: () => void;
 }) {
+  // Its status is read on every poll while its page is open, whatever state it is in.
+  useWatchLab(lab.id);
   return (
     <LabDetail
       lab={lab}

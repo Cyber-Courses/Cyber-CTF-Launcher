@@ -68,4 +68,22 @@ describe("lab-store", () => {
     // One begun after it counts.
     expect(setScanRunning(["lab-1"], Date.now() + 1)).toEqual(["lab-1"]);
   });
+
+  it("keeps the same statuses and scan objects when a read says nothing new", async () => {
+    const { refreshStatus, setScanRunning, getLabState } = await freshStore();
+    const first = refreshStatus(lab);
+    replies[0].resolve(status(true));
+    await first;
+    const statuses = getLabState().statuses;
+    const again = refreshStatus(lab);
+    replies[1].resolve(status(true));
+    await again;
+    expect(getLabState().statuses).toBe(statuses);
+    setScanRunning(["lab-1"], Date.now());
+    const scan = getLabState().scanRunning;
+    setScanRunning(["lab-1"], Date.now());
+    expect(getLabState().scanRunning).toBe(scan);
+    setScanRunning([], Date.now());
+    expect(getLabState().scanRunning.size).toBe(0);
+  });
 });

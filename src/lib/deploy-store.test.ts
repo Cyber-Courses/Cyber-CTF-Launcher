@@ -85,4 +85,48 @@ describe("deploy-store", () => {
     appendDeployLog("a", "y");
     expect(cb).toHaveBeenCalledTimes(3); // no more calls after unsubscribe
   });
+
+  it("adds streamed lines in batches, one update for many lines", async () => {
+    vi.useFakeTimers();
+    try {
+      const { beginDeploy, appendDeployLog, subscribeDeploy, getDeploySnapshot, endDeploy } = await freshStore();
+      beginDeploy("a");
+      const cb = vi.fn();
+      subscribeDeploy(cb);
+      for (let i = 0; i < 50; i++) appendDeployLog("a", `line ${i}`);
+      appendDeployLog("b", "other lab");
+      expect(cb).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(100);
+      // 51 lines, two labs, one notification.
+      expect(cb).toHaveBeenCalledTimes(1);
+      const { runs } = getDeploySnapshot();
+      expect(runs.a.logs).toHaveLength(50);
+      expect(runs.a.times).toHaveLength(50);
+      expect(runs.b.logs).toEqual(["other lab"]);
+      // Reading outside React, or ending the run, takes in the lines still waiting.
+      appendDeployLog("a", "last");
+      expect(getDeploySnapshot().runs.a.logs.at(-1)).toBe("last");
+      appendDeployLog("a", "✓ done");
+      endDeploy("a");
+      expect(getDeploySnapshot().runs.a).toMatchObject({ busy: false });
+      expect(getDeploySnapshot().runs.a.logs.at(-1)).toBe("✓ done");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("times a worker's log lines as they first show, starting over on a new run", async () => {
+    const { timeLines } = await freshStore();
+    const empty = { lines: [], times: [] };
+    const one = timeLines(empty, ["a"], 10);
+    expect(one).toEqual({ lines: ["a"], times: [10] });
+    const two = timeLines(one, ["a", "b"], 20);
+    expect(two).toEqual({ lines: ["a", "b"], times: [10, 20] });
+    // The same log again: the same object.
+    expect(timeLines(two, ["a", "b"], 30)).toBe(two);
+    // A new run (shorter, or another first line): timed afresh.
+    expect(timeLines(two, ["x"], 40)).toEqual({ lines: ["x"], times: [40] });
+    expect(timeLines(two, ["x", "y", "z"], 50)).toEqual({ lines: ["x", "y", "z"], times: [50, 50, 50] });
+    expect(timeLines(two, [], 60)).toEqual(empty);
+  });
 });

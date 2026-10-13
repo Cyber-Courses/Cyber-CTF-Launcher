@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { apiQuery, runningLabs, type LabStatus, type Provider, type Runtime } from "@/lib/tauri";
-import { catalogueFor, refreshStatus, setCatalogue, setScanRunning, useLabState } from "@/features/labs/lab-store";
-import { ignore } from "@/lib/failure";
+import { apiQuery, type LabStatus, type Provider, type Runtime } from "@/lib/tauri";
+import { catalogueFor, refreshStatus, setCatalogue, useLabState } from "@/features/labs/lab-store";
+import { useLabPolling } from "@/features/labs/lab-polling";
 import type { T } from "@/lib/i18n";
 
 export interface LabRuntimeInfo {
@@ -61,50 +61,6 @@ function useCatalogue(reloadKey: unknown) {
   return { labs, error, completed };
 }
 
-/** Poll local status so labs launched from the website (claimed + run by the agent) surface here
- *  within a few seconds without a manual refresh. */
-function useStatusPolling(labs: Lab[] | null) {
-  useEffect(() => {
-    if (!labs) return;
-    const t = setInterval(() => labs.forEach((l) => void refreshStatus(l)), 6000);
-    return () => clearInterval(t);
-  }, [labs]);
-}
-
-/** Reconcile what is actually running from the infrastructure itself (docker + vagrant), so a
- *  running lab is detected after a crash/restart, and a successful launch never falls back to a
- *  "Start lab" page just because its per-lab status probe briefly fails. The scan is ground
- *  truth; refreshStatus then fills in each running lab's machines and URL. */
-function useRunningScan(labs: Lab[] | null) {
-  useEffect(() => {
-    let alive = true;
-    // One scan at a time: a slow one (a wedged hypervisor) must not have the interval stack more.
-    let scanning = false;
-    const scan = () => {
-      if (scanning) return;
-      scanning = true;
-      const began = Date.now();
-      runningLabs()
-        .then((all) => {
-          if (!alive) return;
-          // A lab read fresh after this scan began (an operation just ended on it) is left out.
-          const ids = setScanRunning(all, began);
-          (labs ?? []).filter((l) => ids.includes(l.id)).forEach((l) => void refreshStatus(l));
-        })
-        .catch(ignore("scanned again in a moment"))
-        .finally(() => {
-          scanning = false;
-        });
-    };
-    scan();
-    const t = setInterval(scan, 6000);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, [labs]);
-}
-
 /** The scan is authoritative for "running": OR it over each lab's probed status, so a lab the
  *  scan sees stays running even when its per-lab probe returns not-running or errors. A lab the
  *  scan does not see keeps its probed status (remote labs, stopped labs). */
@@ -149,8 +105,8 @@ export function useLabs(reloadKey: unknown = 0) {
   // Labs whose status has been asked at least once (answered or not): a page can wait for its
   // first answer instead of rendering a "not started" lab that flips to running a beat later.
   const probed = useLabState("probed");
-  useStatusPolling(labs);
-  useRunningScan(labs);
+  // One poll for the window, however many screens use this (see lab-polling).
+  useLabPolling(labs);
   const mergedStatuses = useMemo(() => mergeScan(statuses, scanRunning), [statuses, scanRunning]);
   return { labs, error, statuses: mergedStatuses, completed, refreshStatus, probed };
 }

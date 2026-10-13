@@ -89,7 +89,7 @@ export function Flow({
   // Fit once laid out, and again whenever the shell changes size.
   const view = useMemo(() => (!ready || !bounds || !shellW || !shellH ? null : fittedView(bounds, shellW, shellH)), [ready, bounds, shellW, shellH]);
   useEffect(() => {
-    if (view) setViewport(view);
+    if (view) void setViewport(view);
   }, [view, setViewport]);
 
   // Published ports as tabs over the card's bottom edge, each under its link's anchor. The card

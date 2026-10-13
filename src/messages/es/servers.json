@@ -205,6 +205,7 @@
       "subscriptionId": "ID de suscripción",
       "orPaste": "o pégalo",
       "checkingGcloud": "Comprobando la CLI de gcloud…",
+      "gcpReadFailed": "No se pudo leer la cuenta de Google Cloud: {error}",
       "signedInAs": "Sesión iniciada como",
       "billingAccount": "Cuenta de facturación",
       "billingHint": "aquí se factura el proyecto de labs",

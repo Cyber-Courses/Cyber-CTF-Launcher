@@ -68,7 +68,7 @@ export const cloudLaunch =
     await labLaunch(lab.id, null, host, null, false, log);
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);
-    notify(translate("labs.actions.labReady"), translate("labs.actions.readyInCloud", { title: lab.title }));
+    void notify(translate("labs.actions.labReady"), translate("labs.actions.readyInCloud", { title: lab.title }));
   };
 
 /** The hypervisor a lab starts on here (a VM lab, or a container lab in a local VM), null for
@@ -115,7 +115,7 @@ export const localLaunch =
     await labLaunch(lab.id, provider, remote ? host! : null, attackbox, ports === "default", log);
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);
-    notify(
+    void notify(
       translate("labs.actions.labReady"),
       translate(remote ? "labs.actions.readyOnServer" : inLocalVm ? "labs.actions.readyInVm" : "labs.actions.readyHere", { title: lab.title }),
     );
@@ -143,7 +143,7 @@ export const resuming =
     await labResume(lab.id, rt.runtime, log);
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);
-    notify(translate("labs.actions.labReady"), translate("labs.actions.back", { title: lab.title }));
+    void notify(translate("labs.actions.labReady"), translate("labs.actions.back", { title: lab.title }));
   };
 
 /** Re-run a VM lab's provisioning on one machine (or all), streamed into its deploy log. */

@@ -18,7 +18,7 @@ export function useImageSizes(images: string[]): Record<string, number | null | 
           image,
           imageDownloadSize(image).catch(() => null),
         );
-      cache.get(image)!.then((size) => live && setSizes((s) => ({ ...s, [image]: size })));
+      void cache.get(image)!.then((size) => live && setSizes((s) => ({ ...s, [image]: size })));
     }
     return () => {
       live = false;

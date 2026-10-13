@@ -5,6 +5,9 @@ import { attackVmStart, attackVmStatus, attackVmStop, exegolStatus, exegolStop, 
 import { startContainerAttackBox } from "@/features/labs/attack-box-auto";
 import { attackImageLabel, getAttackBox, getAttackImage, getAutoAttackBox } from "@/lib/settings";
 import { translate } from "@/lib/i18n";
+import { ignore } from "@/lib/failure";
+import { usePoll } from "@/lib/use-poll";
+import { structurallyEqual } from "@/lib/equal";
 
 /** What the attack box is: a container on a container lab's networks, or the learner's own VM
  *  (a Vagrant box) beside a VM lab, on the same hypervisor. */
@@ -25,35 +28,23 @@ function useAttackBoxStatus(labId: string, kind: AttackBoxKind, active: boolean,
   // stopped must not resolve afterwards with a stale "running" and flip the button back (which
   // made Stop seem to need two or three clicks).
   const seq = useRef(0);
-  // Reads in flight: the poll skips a tick while one is (a `vagrant status` can take longer
-  // than the interval, and stacking them only slowed every one down).
-  const reading = useRef(0);
-  const refresh = useCallback(() => {
+  const read = useCallback(() => {
     const mine = ++seq.current;
-    reading.current++;
-    (kind === "vm" ? attackVmStatus(labId, getAttackBox()) : exegolStatus(labId, getAttackImage()))
-      .then((s) => {
-        if (mine === seq.current) setStatus(s);
-      })
-      // A failed read (Vagrant busy or slow, an emulated lab) says nothing about the box: keep
-      // what was last seen rather than flip it to "not started".
-      .catch(() => {})
-      .finally(() => {
-        reading.current--;
-      });
+    return (kind === "vm" ? attackVmStatus(labId, getAttackBox()) : exegolStatus(labId, getAttackImage())).then((s) => {
+      // The same answer again keeps the current object: the page doesn't re-render.
+      if (mine === seq.current) setStatus((prev) => (structurallyEqual(prev, s) ? prev : s));
+    });
   }, [labId, kind]);
+  // A failed read (Vagrant busy or slow, an emulated lab) says nothing about the box: keep what
+  // was last seen rather than flip it to "not started".
+  const refresh = useCallback(() => void read().catch(ignore("the box's status is read again in a moment")), [read]);
+  // Polled while the lab is up here, one read at a time (a `vagrant status` can take longer than
+  // the interval, and stacking them only slowed every one down), paused while the window is hidden.
+  usePoll(read, 5000, { enabled: active && local, restartKey: read, onValue: () => {}, onError: ignore("the box's status is read again in a moment") });
   useEffect(() => {
-    if (!active || !local) {
-      // A read still in flight belongs to the run that just ended: ignore it.
-      seq.current++;
-      return;
-    }
-    refresh();
-    const t = setInterval(() => {
-      if (reading.current === 0) refresh();
-    }, 5000);
-    return () => clearInterval(t);
-  }, [active, local, refresh]);
+    // A read still in flight belongs to the run that just ended: ignore it.
+    if (!active || !local) seq.current++;
+  }, [active, local]);
   return { status, setStatus, refresh };
 }
 
