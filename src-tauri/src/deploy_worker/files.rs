@@ -50,10 +50,10 @@ impl Files {
     }
 }
 
-/// The workers' folder, created if missing.
+/// The workers' folder, created if missing, owner-only (its jobs carry launch tokens).
 pub fn dir(app: &AppHandle) -> Result<PathBuf> {
     let d = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("deploys");
-    std::fs::create_dir_all(&d).map_err(Error::Io)?;
+    crate::private_fs::dir(&d).map_err(Error::Io)?;
     Ok(d)
 }
 

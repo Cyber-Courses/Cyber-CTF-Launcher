@@ -7,8 +7,13 @@ use super::state::STATE_FILE;
 use crate::error::{Error, Result};
 use crate::exec::{run_read, stream};
 
-/// The Terraform image for runs that can't use the host binary.
-const TERRAFORM_IMAGE: &str = "hashicorp/terraform:1.9.8";
+/// The Terraform image for runs that can't use the host binary, pinned by the digest of its
+/// multi-arch index: a tag can be moved to another image, a digest can't. The tag stays for
+/// people reading `docker ps`; Docker pulls by the digest and ignores it.
+///
+/// To bump it, take the new tag's index digest and replace both:
+/// `docker buildx imagetools inspect hashicorp/terraform:<version>` (the `Digest:` line).
+const TERRAFORM_IMAGE: &str = "hashicorp/terraform:1.9.8@sha256:18f9986038bbaf02cf49db9c09261c778161c51dcc7fb7e355ae8938459428cd";
 
 /// Runs `terraform init` then `command` (apply / destroy, auto-approved) on `module`, with its
 /// state in `state` and `env` as the full environment (variables as `TF_VAR_*`).
@@ -144,6 +149,14 @@ async fn terraform_host(dir: &Path, state: &Path, env: &[(String, String)], comm
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_terraform_image_is_pinned_by_digest() {
+        let (name, digest) = TERRAFORM_IMAGE.split_once('@').expect("pinned by digest");
+        assert!(name.starts_with("hashicorp/terraform:"), "{name}");
+        let hex = digest.strip_prefix("sha256:").expect("a sha256 digest");
+        assert!(hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)), "{digest}");
+    }
 
     #[test]
     fn container_mounts_the_whole_lab() {

@@ -15,6 +15,8 @@ pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRunt
         eprintln!("deploy worker: unreadable job file {}", job_path.display());
         std::process::exit(2);
     };
+    #[cfg(unix)]
+    let job_file = job_path.clone();
     // No window: this is a background process.
     context.config_mut().app.windows.clear();
     tauri::Builder::<crate::AppRuntime>::new()
@@ -34,10 +36,11 @@ pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRunt
             // runs (status probes, and the vagrant/compose/terraform runs it streams) sit in
             // groups of their own, out of that signal's reach; end them too before going.
             #[cfg(unix)]
-            tauri::async_runtime::spawn(async {
+            tauri::async_runtime::spawn(async move {
                 if let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
                     term.recv().await;
                     crate::exec::kill_live_tools();
+                    let _ = std::fs::remove_file(&job_file);
                     std::process::exit(143);
                 }
             });
@@ -90,7 +93,7 @@ fn open_main_app() {
 /// the verdict in the status file. Returns the process's exit code.
 async fn run_logged(app: &AppHandle, job: Job) -> i32 {
     let Ok(f) = files::of(app, &job.key()) else { return 2 };
-    let sink = std::sync::Mutex::new(std::fs::OpenOptions::new().append(true).create(true).open(&f.log).ok());
+    let sink = std::sync::Mutex::new(crate::private_fs::append(&f.log).ok());
     let log = |line: String| {
         if let Ok(mut guard) = sink.lock()
             && let Some(file) = guard.as_mut()
@@ -129,6 +132,8 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
         let _ = std::fs::write(&f.launch_status, &status);
     }
     let _ = std::fs::write(&f.status, status);
+    // The job file carries the launch token: done with it.
+    let _ = std::fs::remove_file(&f.job);
     // Only while it still names this worker: a newer one's pidfile stays.
     super::process::remove_pidfile_of(&f.pid, std::process::id());
     code
@@ -189,6 +194,12 @@ mod tests {
             let status = std::fs::read_to_string(&f.status).unwrap();
             assert!(status.starts_with("error: "), "{status}");
             assert!(std::fs::read_to_string(&f.log).unwrap().starts_with("✗ "));
+            // Only this user reads the log, and the folder of jobs and logs.
+            #[cfg(unix)]
+            {
+                assert_eq!(crate::private_fs::tests::mode(&f.log), 0o600);
+                assert_eq!(crate::private_fs::tests::mode(f.log.parent().unwrap()), 0o700);
+            }
         }
     }
 
@@ -197,6 +208,7 @@ mod tests {
         let dir = crate::deploy_worker::files::tests::temp_dir("conclude");
         let f = Files::of(&dir, "lab-1");
         std::fs::write(&f.pid, std::process::id().to_string()).unwrap();
+        std::fs::write(&f.job, "{}").unwrap();
         let lines = std::sync::Mutex::new(Vec::new());
         let code = conclude(&f, &Err::<(), _>(Error::Invalid("boom".into())), true, |l| lines.lock().unwrap().push(l));
         assert_eq!(code, 1);
@@ -204,6 +216,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "error: boom");
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "error: boom");
         assert!(!f.pid.exists());
+        assert!(!f.job.exists(), "the job file (it carries the launch token) is gone once it ends");
         assert_eq!(conclude(&f, &Ok(()), true, |_| panic!("no log on success")), 0);
         assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "ok");
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");

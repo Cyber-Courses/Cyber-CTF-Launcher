@@ -181,17 +181,75 @@ async fn an_aws_launch_checks_the_budget_and_a_gcp_launch_its_project() {
     assert!(tools.called("gcloud"));
 }
 
+/// A fake IP-lookup service answering `body` once.
+async fn resolver(body: &str) -> String {
+    crate::http::tests::serve_once(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).into_bytes()).await
+}
+
 #[tokio::test]
-async fn the_public_ip_comes_from_the_first_resolver_that_gives_one() {
-    use crate::http::tests::serve_once;
+async fn the_public_ip_is_the_one_two_resolvers_agree_on() {
     let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
-    let garbage = serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nblocked".to_vec()).await;
-    let good = serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\n198.51.100.4\n".to_vec()).await;
     let closed = format!("http://{closed}/");
-    assert_eq!(super::public_ip_from(&[closed.as_str(), garbage.as_str(), good.as_str()]).await.unwrap(), "198.51.100.4");
-    let err = super::public_ip_from(&[closed.as_str()]).await.unwrap_err().to_string();
-    assert!(err.starts_with("Couldn't determine your public IP"), "{err}");
+    let (garbage, a, b) = (resolver("blocked").await, resolver("93.184.216.34\n").await, resolver(" 93.184.216.34").await);
+    // One down, one answering a page: the two that answer agree.
+    assert_eq!(super::public_ip_from(&[closed.as_str(), garbage.as_str(), a.as_str(), b.as_str()]).await.unwrap(), "93.184.216.34");
+    // A single answer isn't enough to open the firewall to it.
+    let (one, garbage) = (resolver("93.184.216.34").await, resolver("blocked").await);
+    let err = super::public_ip_from(&[closed.as_str(), one.as_str(), garbage.as_str()]).await.unwrap_err().to_string();
+    assert!(err.starts_with("Couldn't confirm your public IP"), "{err}");
+    assert!(err.contains("an unexpected answer"), "{err}");
+    // Two that disagree: refused, naming both.
+    let (a, b, c) = (resolver("93.184.216.34").await, resolver("93.184.216.34").await, resolver("8.8.4.4").await);
+    let err = super::public_ip_from(&[a.as_str(), b.as_str(), c.as_str()]).await.unwrap_err().to_string();
+    assert!(err.starts_with("The services that tell Cyber CTF your public IP disagree"), "{err}");
+    assert!(err.contains("93.184.216.34") && err.contains("8.8.4.4"), "{err}");
+    // A private address (a proxy's own) counts as no answer.
+    let (lan, a) = (resolver("192.168.1.20").await, resolver("93.184.216.34").await);
+    let err = super::public_ip_from(&[lan.as_str(), a.as_str()]).await.unwrap_err().to_string();
+    assert!(err.contains("192.168.1.20, not a public address"), "{err}");
     assert_eq!(super::public_ip().await.unwrap(), "203.0.113.7", "tests never reach the internet");
+}
+
+#[test]
+fn the_verdict_needs_two_matching_public_answers() {
+    use std::net::Ipv4Addr;
+    let urls = ["https://a", "https://b", "https://c"];
+    let ip = Ipv4Addr::new(93, 184, 216, 34);
+    assert_eq!(super::agreed_ip(&urls, &[Ok(ip), Err("timeout".into()), Ok(ip)]).unwrap(), "93.184.216.34");
+    assert!(super::agreed_ip(&urls, &[Ok(ip), Err("timeout".into()), Err("refused".into())]).is_err());
+    assert!(super::agreed_ip(&urls, &[]).is_err());
+    let err = super::agreed_ip(&urls, &[Ok(ip), Ok(ip), Ok(Ipv4Addr::new(1, 1, 1, 1))]).unwrap_err().to_string();
+    assert!(err.contains("https://c: 1.1.1.1"), "{err}");
+}
+
+#[test]
+fn only_internet_addresses_are_public() {
+    use super::is_public_ipv4;
+    for ip in ["93.184.216.34", "8.8.8.8", "1.1.1.1", "100.63.255.255", "100.128.0.1", "198.20.0.1", "223.255.255.254"] {
+        assert!(is_public_ipv4(ip.parse().unwrap()), "{ip}");
+    }
+    for ip in [
+        "10.1.2.3",
+        "172.16.0.1",
+        "192.168.1.1",
+        "127.0.0.1",
+        "169.254.1.1",
+        "100.64.0.1",
+        "100.127.255.255",
+        "0.0.0.0",
+        "0.1.2.3",
+        "192.0.0.8",
+        "192.0.2.1",
+        "198.51.100.4",
+        "203.0.113.7",
+        "198.18.0.1",
+        "198.19.255.255",
+        "224.0.0.1",
+        "240.0.0.1",
+        "255.255.255.255",
+    ] {
+        assert!(!is_public_ipv4(ip.parse().unwrap()), "{ip}");
+    }
 }
 
 fn lab(spec: &str) -> PathBuf {
