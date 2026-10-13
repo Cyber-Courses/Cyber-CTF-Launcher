@@ -214,8 +214,10 @@ describe("Screen", () => {
     installTauri();
     const { rerender } = render(<Screen {...base} tab="machine" />);
     expect(document.body.textContent).toMatch(/checking/i);
+    // Labs: the list's header and placeholder rows, not a bare spinner.
     rerender(<Screen {...base} tab="labs" />);
-    expect(document.body.textContent).toMatch(/loading/i);
+    expect(document.querySelector("[aria-busy=true]")).toBeTruthy();
+    expect(document.body.textContent).toContain("Labs");
   });
 
   it("offers a retry when the machine check failed", async () => {
@@ -240,9 +242,11 @@ describe("Screen", () => {
     const user = userEvent.setup();
     render(<Screen {...base} tab="labs" report={readyReport()} auth={{ loggedIn: false, name: null, email: null }} onAuthChange={onAuthChange} />);
     await flush(50);
-    const signIn = document.querySelector<HTMLElement>('[title="Sign in to start labs"]');
-    expect(signIn).toBeTruthy();
-    await user.click(signIn!);
+    // One banner above the list signs in, not a button on every row.
+    expect(document.querySelector('[title="Sign in to start labs"]')).toBeNull();
+    const signIn = screen.getAllByRole("button", { name: "Sign in" });
+    expect(signIn).toHaveLength(1);
+    await user.click(signIn[0]);
     await flush();
     expect(commands(calls)).toContain("auth_login");
     expect(onAuthChange).toHaveBeenCalledWith({ loggedIn: true, name: "Ada", email: "ada@example.com" });

@@ -28,7 +28,7 @@
     "memory": "メモリ",
     "disk": "ディスク",
     "cores": "{cores} コア",
-    "usage": "{used} / {total} GB"
+    "usage": "{used}/{total} GB"
   },
   "capacity": {
     "total": "{total} GB",

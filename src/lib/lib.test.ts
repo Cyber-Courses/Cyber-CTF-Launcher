@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { formatAgo, formatBytes, formatDuration, formatElapsed } from "@/lib/format";
+import { formatAgo, formatBytes, formatDuration, formatElapsed, prettyLabId } from "@/lib/format";
 import { setLocalePreference } from "@/lib/i18n";
 import { getLastRun, setLastRun } from "@/lib/last-run";
 import {
@@ -61,6 +61,13 @@ describe("format", () => {
     expect(formatBytes(512e6)).toBe("512 MB");
     expect(formatBytes(8000)).toBe("8 kB");
     expect(formatBytes(10)).toBe("1 kB");
+  });
+
+  it("makes a lab id readable when its title isn't known", () => {
+    expect(prettyLabId("lab-goad")).toBe("Goad");
+    expect(prettyLabId("goad-light")).toBe("Goad Light");
+    expect(prettyLabId("lab_web_sqli")).toBe("Web Sqli");
+    expect(prettyLabId("lab-")).toBe("lab-");
   });
 
   it("follows the language's decimal separator", () => {

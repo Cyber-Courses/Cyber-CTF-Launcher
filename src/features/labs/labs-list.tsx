@@ -1,5 +1,7 @@
 "use client";
 
+import { LogIn } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { PageHeader } from "@/components/ui/page-header";
@@ -10,6 +12,7 @@ import { needsCloudAccount, setupNeeded } from "@/features/labs/lab-readiness";
 import type { Lab } from "@/features/labs/use-labs";
 import type { DeployRun } from "@/lib/deploy-store";
 import type { LabStatus, ServerHost, SystemReport } from "@/lib/tauri";
+import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
 // The Labs list: its header, the placeholder while the catalogue loads, and the rows (running
@@ -35,8 +38,19 @@ export function LabListSkeleton() {
   );
 }
 
-/** The title, with how many labs there are, run and are solved once the catalogue is in. */
-export function LabsHeader({ labs, completed, isRunning }: { labs: Lab[] | null; completed: Set<string>; isRunning: (lab: Lab) => boolean }) {
+/** The title, with how many labs there are, run and are solved once the catalogue is in (the
+ *  solved count only when signed in: signed out, nothing is tracked). */
+export function LabsHeader({
+  labs,
+  completed,
+  isRunning,
+  loggedIn = true,
+}: {
+  labs: Lab[] | null;
+  completed: Set<string>;
+  isRunning: (lab: Lab) => boolean;
+  loggedIn?: boolean;
+}) {
   const t = useT();
   const solvedCount = labs ? labs.filter((l) => completed.has(l.id)).length : 0;
   const runningCount = labs ? labs.filter(isRunning).length : 0;
@@ -46,13 +60,33 @@ export function LabsHeader({ labs, completed, isRunning }: { labs: Lab[] | null;
       lead={
         labs ? (
           <span className="font-mono text-[0.75rem] tabular-nums">
-            {t("labs.list.summary", { total: labs.length, running: runningCount, solved: solvedCount })}
+            {loggedIn
+              ? t("labs.list.summary", { total: labs.length, running: runningCount, solved: solvedCount })
+              : t("labs.list.summarySignedOut", { total: labs.length, running: runningCount })}
           </span>
         ) : (
           t("labs.list.intro")
         )
       }
     />
+  );
+}
+
+/** Signed out: one sign-in prompt above the list, instead of a Sign in button on every row. */
+export function SignInBanner({ onLogin }: { onLogin: () => Promise<void> }) {
+  const t = useT();
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3.5">
+        <div className="min-w-0 flex-1 basis-64">
+          <p className="text-[0.8125rem] font-medium text-foreground">{t("labs.list.signInTitle")}</p>
+          <p className="mt-0.5 text-[0.75rem] text-muted-foreground">{t("labs.list.signInBody")}</p>
+        </div>
+        <Button size="sm" onClick={() => void onLogin().catch(tell(t("labs.row.signInFailed")))}>
+          <LogIn className="size-3.5" /> {t("labs.row.signIn")}
+        </Button>
+      </div>
+    </Panel>
   );
 }
 

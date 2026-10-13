@@ -28,7 +28,7 @@
     "memory": "Mémoire",
     "disk": "Disque",
     "cores": "{cores} cœurs",
-    "usage": "{used} sur {total} Go"
+    "usage": "{used}/{total} Go"
   },
   "capacity": {
     "total": "{total} Go",

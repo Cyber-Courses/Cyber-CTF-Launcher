@@ -107,8 +107,10 @@ function NavItem({ icon: I, active, dim, onClick, children }: { icon: LucideIcon
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-8 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-[0.8125rem] transition-colors",
-        active ? "bg-glass-2 text-foreground shadow-[inset_0_0_0_1px_var(--border)]" : "text-muted-foreground hover:bg-glass hover:text-foreground",
-        dim && "opacity-60",
+        active
+          ? "bg-glass-2 text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
+          : // Dimmed with the faint ink, not opacity: still readable (4.5:1) at this size.
+            cn(dim ? "text-faint" : "text-muted-foreground", "hover:bg-glass hover:text-foreground"),
       )}
     >
       <I className="size-4 shrink-0 opacity-85" />

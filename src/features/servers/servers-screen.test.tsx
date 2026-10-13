@@ -129,6 +129,11 @@ describe("ServerScreen", () => {
     const defaults = screen.getAllByRole("button", { name: /default/ });
     expect(defaults[0].getAttribute("title")).toMatch(/Click to unset/);
     expect(defaults[1].getAttribute("title")).toMatch(/Make this the default/);
+    // The default host's chip is pressed and says Default; the other offers to become it.
+    expect(defaults.map((d) => [d.textContent?.trim(), d.getAttribute("aria-pressed")])).toEqual([
+      ["default", "true"],
+      ["Set as default", "false"],
+    ]);
     const lists = commands(calls).filter((c) => c === "server_list").length;
     await user.click(defaults[0]);
     await flush();

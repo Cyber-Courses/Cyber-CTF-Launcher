@@ -1,6 +1,7 @@
 {
   "format": {
     "gb": "{n} GB",
+    "gbOf": "{used}/{total} GB",
     "mb": "{n} MB",
     "kb": "{n} kB",
     "justNow": "agora mesmo",
@@ -37,7 +38,6 @@
     },
     "memory": "Memória",
     "disk": "Disco",
-    "usedOf": "{used} de {total}",
     "lowDisk": {
       "title": "Pouco espaço em disco",
       "meta": "{free} livres",
@@ -194,7 +194,7 @@
     "macInstallerVm": "O instalador abre na própria janela e pede sua senha; o VirtualBox também pode precisar de aprovação em Ajustes do Sistema > Privacidade e Segurança.",
     "macInstaller": "O instalador abre na própria janela e pede sua senha.",
     "pkgmgr": {
-      "title": "Ferramentas de configuração",
+      "title": "Gerenciador de pacotes",
       "description": "O Cyber CTF instala todo o resto para você pelo {pm}, o gerenciador de pacotes do seu sistema. Ele só precisa ser configurado uma vez."
     },
     "virtualization": {

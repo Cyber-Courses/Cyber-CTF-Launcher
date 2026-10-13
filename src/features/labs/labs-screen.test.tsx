@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { Labs } from "@/features/labs/labs-screen";
+import { answer } from "@/lib/dev-mock";
 import { readyReport } from "@/test/fixtures";
 import { installTauri, type Handler } from "@/test/tauri";
 import { flush } from "@/test/ui";
@@ -78,12 +79,49 @@ describe("Labs list", () => {
     expect(screen.getByText("Can’t reach the lab catalogue")).toBeTruthy();
   });
 
+  it("offers a Retry when the catalogue can't be reached, which loads it again", async () => {
+    let offline = true;
+    const calls = installTauri({
+      ...idle,
+      api_query: (a) => {
+        if (String(a?.operation) === "labs" && offline) throw new Error("offline");
+        return answer("api_query", a);
+      },
+    });
+    const user = userEvent.setup();
+    render(<Labs {...props} />);
+    await flush(80);
+    expect(screen.getByText("Can’t reach the lab catalogue")).toBeTruthy();
+    const asked = () => calls.filter((c) => c.cmd === "api_query" && c.args?.operation === "labs").length;
+    const before = asked();
+    offline = false;
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await flush(80);
+    expect(asked()).toBeGreaterThan(before);
+    expect(screen.queryByText("Can’t reach the lab catalogue")).toBeNull();
+  });
+
+  it("signed out: one sign-in banner above the list, no Sign in per row, no solved count", async () => {
+    installTauri(idle);
+    const onLogin = vi.fn(async () => {});
+    const user = userEvent.setup();
+    render(<Labs {...props} loggedIn={false} onLogin={onLogin} />);
+    await flush(80);
+    expect(screen.getByText("Sign in to start labs")).toBeTruthy();
+    const signIn = screen.getAllByRole("button", { name: "Sign in" });
+    expect(signIn).toHaveLength(1);
+    expect(document.body.textContent).not.toMatch(/solved/);
+    await user.click(signIn[0]);
+    expect(onLogin).toHaveBeenCalledTimes(1);
+  });
+
   it("says when no lab is published yet", async () => {
     installTauri({ ...idle, api_query: (a) => (String(a?.operation).includes("labs") ? { labs: [] } : {}), running_labs: () => [] });
     render(<Labs {...props} loggedIn={false} />);
     await flush(80);
     expect(screen.getByText("No labs published yet")).toBeTruthy();
-    expect(screen.getByText("0 in the catalogue · 0 running on this machine · 0 solved")).toBeTruthy();
+    // Signed out, nothing is tracked: no solved count.
+    expect(screen.getByText("0 in the catalogue · 0 running on this machine")).toBeTruthy();
   });
 
   it("shows placeholder rows while the catalogue loads", async () => {

@@ -182,6 +182,10 @@
     "removeBodyCloud": "クラウドサービスはアカウントから削除され、料金の発生も止まります。次回の起動で一から作り直されます。"
   },
   "list": {
+    "summarySignedOut": "カタログ {total} 件 · このマシンで実行中 {running} 件",
+    "signInTitle": "ラボを起動するにはサインインしてください",
+    "signInBody": "閲覧はそのままできます。サインインするとラボを起動でき、解決したラボが記録されます。",
+    "retry": "再試行",
     "unreachableTitle": "ラボカタログに接続できません",
     "unreachableDescription": "接続を確認するかサインインしてから、再試行してください。",
     "title": "ラボ",

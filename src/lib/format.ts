@@ -37,3 +37,14 @@ export function formatBytes(b: number) {
   if (b >= 1e6) return translate("common.units.megabytes", { n: Math.round(b / 1e6) });
   return translate("common.units.kilobytes", { n: Math.max(1, Math.round(b / 1e3)) });
 }
+
+/** A lab id made readable for when its title isn't known (the catalogue unreachable):
+ *  "lab-goad" reads "Goad", "goad-light" reads "Goad Light". */
+export function prettyLabId(id: string) {
+  const words = id
+    .replace(/^lab[-_]/i, "")
+    .split(/[-_\s]+/)
+    .filter(Boolean);
+  if (!words.length) return id;
+  return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+}

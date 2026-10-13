@@ -31,6 +31,7 @@
     "isDefaultTitle": "O host padrão para inicializações pelo site. Clique para desmarcar.",
     "makeDefaultTitle": "Tornar este o host padrão para inicializações pelo site.",
     "default": "padrão",
+    "setDefault": "Definir como padrão",
     "node": "nó {node}",
     "memFree": "{free} livres de {total}",
     "labsRunning": { "one": "{count} lab rodando", "other": "{count} labs rodando" },

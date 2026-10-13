@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CornerDownLeft, Search, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -29,6 +29,9 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Ids for the combobox wiring: the field controls the list and points at the active option.
+  const listId = useId();
+  const optionId = (i: number) => `${listId}-opt-${i}`;
   // A modal: Tab stays in the palette instead of reaching the page behind it, and focus goes
   // back where it was when it closes.
   useFocusTrap(dialogRef, open);
@@ -94,6 +97,12 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
           <Search className="size-4 shrink-0 text-faint" />
           <input
             ref={inputRef}
+            role="combobox"
+            aria-expanded={results.length > 0}
+            aria-controls={results.length ? listId : undefined}
+            aria-autocomplete="list"
+            aria-activedescendant={results.length ? optionId(selected) : undefined}
+            aria-label={t("shell.palette.label")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("shell.palette.placeholder")}
@@ -103,32 +112,45 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
         </div>
         <div ref={listRef} className="max-h-[24rem] overflow-y-auto pb-2">
           {results.length === 0 ? (
-            <p className="px-4 py-8 text-center text-[0.8125rem] text-muted-foreground">{t("shell.palette.noResults")}</p>
+            <p role="status" className="px-4 py-8 text-center text-[0.8125rem] text-muted-foreground">
+              {t("shell.palette.noResults")}
+            </p>
           ) : (
-            results.map((c, i) => {
-              const Icon = c.icon;
-              const heading = c.group && c.group !== results[i - 1]?.group ? c.group : null;
-              return (
-                <div key={c.id}>
-                  {heading && <div className="section-label px-4 pt-3 pb-1.5">{heading}</div>}
-                  <button
-                    type="button"
-                    data-active={i === selected}
-                    onMouseMove={() => setActive(i)}
-                    onClick={() => run(c)}
-                    className={cn(
-                      "flex h-9 w-full items-center gap-3 px-4 text-left text-[0.8125rem] transition-colors",
-                      i === selected ? "bg-glass-2 text-foreground" : "text-muted-foreground",
+            <div id={listId} role="listbox" aria-label={t("shell.palette.label")}>
+              {results.map((c, i) => {
+                const Icon = c.icon;
+                const heading = c.group && c.group !== results[i - 1]?.group ? c.group : null;
+                return (
+                  <div key={c.id} role="presentation">
+                    {heading && (
+                      <div role="presentation" aria-hidden className="section-label px-4 pt-3 pb-1.5">
+                        {heading}
+                      </div>
                     )}
-                  >
-                    <Icon className="size-3.5 shrink-0 text-faint" />
-                    <span className="flex-1 truncate">{c.label}</span>
-                    {c.hint && <span className="truncate font-mono text-[0.625rem] text-faint">{c.hint}</span>}
-                    {i === selected && <CornerDownLeft className="size-3.5 shrink-0 text-faint" />}
-                  </button>
-                </div>
-              );
-            })
+                    {/* An option, not a tab stop: focus stays in the field (aria-activedescendant). */}
+                    <div
+                      id={optionId(i)}
+                      role="option"
+                      aria-selected={i === selected}
+                      data-active={i === selected}
+                      onMouseMove={() => setActive(i)}
+                      // Focus stays in the field (a click would otherwise blur it).
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => run(c)}
+                      className={cn(
+                        "flex h-9 w-full cursor-pointer items-center gap-3 px-4 text-left text-[0.8125rem] transition-colors",
+                        i === selected ? "bg-glass-2 text-foreground" : "text-muted-foreground",
+                      )}
+                    >
+                      <Icon className="size-3.5 shrink-0 text-faint" />
+                      <span className="flex-1 truncate">{c.label}</span>
+                      {c.hint && <span className="truncate font-mono text-[0.625rem] text-faint">{c.hint}</span>}
+                      {i === selected && <CornerDownLeft className="size-3.5 shrink-0 text-faint" />}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

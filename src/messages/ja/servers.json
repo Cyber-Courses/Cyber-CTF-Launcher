@@ -31,6 +31,7 @@
     "isDefaultTitle": "Web サイトからの起動に使うデフォルトのホストです。クリックすると解除します。",
     "makeDefaultTitle": "Web サイトからの起動に使うデフォルトのホストに設定します。",
     "default": "デフォルト",
+    "setDefault": "デフォルトに設定",
     "node": "ノード {node}",
     "memFree": "{total} 中 {free} 空き",
     "labsRunning": { "one": "{count} 件のラボが実行中", "other": "{count} 件のラボが実行中" },

@@ -28,7 +28,7 @@
     "memory": "Arbeitsspeicher",
     "disk": "Festplatte",
     "cores": "{cores} Kerne",
-    "usage": "{used} von {total} GB"
+    "usage": "{used}/{total} GB"
   },
   "capacity": {
     "total": "{total} GB",

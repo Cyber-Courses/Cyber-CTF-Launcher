@@ -32,13 +32,15 @@ export function Toaster() {
     window.addEventListener(EVENT, on);
     return () => window.removeEventListener(EVENT, on);
   }, []);
-  if (items.length === 0) return null;
+  // The live region stays mounted (empty when idle) so assistive tech is already watching it
+  // when a toast arrives. It sits under modals (z-50): a toast never covers a dialog's buttons.
   return (
-    <div aria-live="polite" className="pointer-events-none fixed right-5 bottom-5 z-[70] flex w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col gap-2">
+    <div aria-live="polite" className="pointer-events-none fixed right-5 bottom-5 z-40 flex w-[22rem] max-w-[calc(100vw-2.5rem)] flex-col gap-2">
       {items.map((item) => (
         <div
           key={item.id}
-          role="status"
+          // A failure interrupts (alert); anything else waits its turn (status).
+          role={item.tone === "fail" ? "alert" : "status"}
           className="surface-glass animate-rise-in pointer-events-auto flex items-start gap-3 rounded-panel px-4 py-3 text-[0.8125rem]"
         >
           <StatusDot tone={item.tone} className="mt-1.5" />

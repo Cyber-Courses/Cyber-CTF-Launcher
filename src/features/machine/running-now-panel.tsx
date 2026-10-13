@@ -12,6 +12,7 @@ import { useMachineFormat } from "@/features/machine/use-machine-format";
 import { useT } from "@/lib/i18n";
 import { apiQuery, machineWorkloadStop, machineWorkloads, type Workload } from "@/lib/tauri";
 import { ignore } from "@/lib/failure";
+import { prettyLabId } from "@/lib/format";
 import { usePoll } from "@/lib/use-poll";
 
 /** What's running on this machine (Docker and Vagrant), with a Stop per lab. Polled every 8s,
@@ -30,7 +31,7 @@ export function RunningNowPanel({ refreshKey }: { refreshKey: unknown }) {
   useEffect(() => {
     apiQuery<{ labs: { id: string; title: string }[] }>("labTitles")
       .then((d) => setTitles(Object.fromEntries(d.labs.map((l) => [l.id, l.title]))))
-      .catch(ignore("lab ids are shown instead of titles"));
+      .catch(ignore("lab ids, made readable, are shown instead of titles"));
   }, []);
 
   async function stop(w: Workload) {
@@ -59,7 +60,7 @@ export function RunningNowPanel({ refreshKey }: { refreshKey: unknown }) {
       ) : (
         workloads.map((w) => {
           const key = `${w.kind}:${w.id}`;
-          const name = w.id === "selftest" ? t("machine.running.setupTest") : (titles[w.id] ?? w.id);
+          const name = w.id === "selftest" ? t("machine.running.setupTest") : (titles[w.id] ?? prettyLabId(w.id));
           const meta =
             w.kind === "docker"
               ? `${t("machine.running.containers", { count: w.count })}${w.memBytes ? ` · ${fmt.bytes(w.memBytes)}` : ""}`
