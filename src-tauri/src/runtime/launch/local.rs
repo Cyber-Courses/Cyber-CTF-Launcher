@@ -36,9 +36,9 @@ pub(super) async fn ensure_local_slot_free(dir: &Path, id: &str, log: &mut impl 
 /// Warns (without blocking) when the host likely can't fit all of a one-VM-per-machine lab's
 /// memory, so an out-of-memory failure mid-boot isn't a surprise. Not used for a container lab
 /// in a single VM, where the total would overcount.
-pub(super) fn warn_if_low_memory(spec: &isoloom_core::Spec, log: &mut impl FnMut(String)) {
+pub(super) fn warn_if_low_memory(spec: &lab::Spec, log: &mut impl FnMut(String)) {
     use sysinfo::System;
-    let needed_mb = u64::from(isoloom_core::totals(spec).memory_mb);
+    let needed_mb = u64::from(lab::memory_mb(spec));
     let mut sys = System::new();
     sys.refresh_memory();
     let available_mb = sys.available_memory() / (1024 * 1024);
@@ -58,14 +58,14 @@ pub(super) fn low_memory_warning(needed_mb: u64, available_mb: u64) -> Option<St
 
 /// The CPUs (`std::env::consts::ARCH` names) a lab's VMs are built for that differ from `host`,
 /// i.e. the ones QEMU has to emulate.
-pub(super) fn emulated_arches(spec: &isoloom_core::Spec, host: &str) -> Vec<&'static str> {
+pub(super) fn emulated_arches(spec: &lab::Spec, host: &str) -> Vec<&'static str> {
     let mut emulated: Vec<&'static str> = spec
         .machines
         .values()
         .filter(|m| m.vm.is_some())
         .map(|m| match m.arch {
-            isoloom_core::Arch::Amd64 => "x86_64",
-            isoloom_core::Arch::Arm64 => "aarch64",
+            lab::Arch::Amd64 => "x86_64",
+            lab::Arch::Arm64 => "aarch64",
         })
         .filter(|a| *a != host)
         .collect();
@@ -75,8 +75,8 @@ pub(super) fn emulated_arches(spec: &isoloom_core::Spec, host: &str) -> Vec<&'st
 
 /// A lab on QEMU: its networks must fit QEMU's two-VM links, and a machine built for another CPU
 /// needs that CPU's emulator (`qemu-system-x86_64` for an x86 lab on an Apple Silicon Mac).
-pub(super) async fn check_qemu(spec: &isoloom_core::Spec, log: &mut impl FnMut(String)) -> Result<()> {
-    if let Some(why) = isoloom_core::qemu_refusal(spec) {
+pub(super) async fn check_qemu(spec: &lab::Spec, log: &mut impl FnMut(String)) -> Result<()> {
+    if let Some(why) = lab::qemu_refusal(spec) {
         return Err(Error::Invalid(format!("This lab can't run on QEMU yet: {why}. Run it on a server or in your cloud account.")));
     }
     let host = std::env::consts::ARCH;

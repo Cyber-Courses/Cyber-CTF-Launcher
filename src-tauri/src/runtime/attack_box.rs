@@ -45,7 +45,7 @@ const STARTING: &str = "Starting the attack box next to the lab (this pulls its 
 const READY: &str = "Attack box ready.";
 
 /// The attack box on a Terraform lab host (server or cloud), over SSH with the launcher's key.
-async fn on_terraform_host(app: &AppHandle, id: &str, spec: &isoloom_core::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+async fn on_terraform_host(app: &AppHandle, id: &str, spec: &lab::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     let Some(image) = attack_box_image(env) else { return Ok(()) };
     let Some(conn) = server::lab_connection(app, &lab_dir(app, id)?)? else { return Ok(()) };
     let tf = server::terraform_target(conn.provider).unwrap_or_default();
@@ -58,7 +58,7 @@ async fn on_terraform_host(app: &AppHandle, id: &str, spec: &isoloom_core::Spec,
 }
 
 /// The attack box in a local or ESXi lab VM (Docker on one VM), through `vagrant ssh`.
-async fn in_lab_vm(vagrant: &Path, spec: &isoloom_core::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+async fn in_lab_vm(vagrant: &Path, spec: &lab::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     let Some(image) = attack_box_image(env) else { return Ok(()) };
     log(STARTING.into());
     let command = remote::sudo_bash(&attack_box_script(&spec.name, image));
@@ -69,14 +69,14 @@ async fn in_lab_vm(vagrant: &Path, spec: &isoloom_core::Spec, env: &[(String, St
 
 /// [`in_lab_vm`] once the lab is up: a failing attack box shouldn't read as a failed deploy, so
 /// it is noted and the lab stays usable (the shell can retry it).
-pub(super) async fn in_lab_vm_or_note(vagrant: &Path, spec: &isoloom_core::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) {
+pub(super) async fn in_lab_vm_or_note(vagrant: &Path, spec: &lab::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) {
     let started = in_lab_vm(vagrant, spec, env, log).await;
     note_failure(started, log);
 }
 
 /// [`on_terraform_host`] once the lab is up, noted rather than failing the deploy (see
 /// [`in_lab_vm_or_note`]).
-pub(super) async fn on_terraform_host_or_note(app: &AppHandle, id: &str, spec: &isoloom_core::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) {
+pub(super) async fn on_terraform_host_or_note(app: &AppHandle, id: &str, spec: &lab::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) {
     let started = on_terraform_host(app, id, spec, env, log).await;
     note_failure(started, log);
 }
@@ -144,7 +144,7 @@ mod tests {
 
     #[tokio::test]
     async fn no_attack_box_picked_means_nothing_to_start_in_the_lab_vm() {
-        let spec: isoloom_core::Spec = serde_yaml_ng::from_str("version: 1\nname: t\nmachines: {}\n").unwrap();
+        let spec: crate::runtime::lab::Spec = serde_yaml_ng::from_str("version: 1\nname: t\nmachines: {}\n").unwrap();
         let mut lines = Vec::new();
         // No pick, or a pick that is a Vagrant box shape but not a valid image: nothing runs.
         super::in_lab_vm_or_note(std::path::Path::new("lab"), &spec, &[], &mut |l| lines.push(l)).await;

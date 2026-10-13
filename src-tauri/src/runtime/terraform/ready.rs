@@ -63,7 +63,7 @@ fn report(out: &str, last_step: &mut String, log: &mut impl FnMut(String)) -> Op
 /// Waits for the bootstrap's `ready_file` over SSH; a failed bootstrap fails the launch with
 /// its log. Modules without a `ready_file` output (older labs) are not waited on.
 pub(super) async fn wait_ready(state: &Path, log: &mut impl FnMut(String)) -> Result<()> {
-    let Some(ready_file) = output(state, "ready_file") else { return Ok(()) };
+    let Some(ready_file) = output(state, crate::runtime::lab::outputs::READY_FILE) else { return Ok(()) };
     let Some(target) = ssh::launcher_key().and_then(|identity| ssh_target(state, identity)) else {
         log("Can't reach the lab host over SSH to confirm it started; check it from the lab page.".into());
         return Ok(());

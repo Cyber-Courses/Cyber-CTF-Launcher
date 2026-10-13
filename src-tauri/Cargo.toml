@@ -38,7 +38,10 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 reqwest = { version = "0.13", features = ["json", "form"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates and runs their files.
-isoloom-core = { git = "https://github.com/isoloom/isoloom", rev = "4d17353" }
+# Pinned to a commit of isoloom's `dev` branch: isoloom has cut no release yet. Move this to a
+# tag (`tag = "v0.x.y"`) once it does; isoloom's tags are its library's pinning points (its
+# CHANGELOG lists each "Breaking (library)" change). Only `src/runtime/lab/` calls it.
+isoloom-core = { git = "https://github.com/isoloom/isoloom", rev = "50147b3" }
 # The map type of isoloom-core's API (a cloud-services lab's outputs).
 indexmap = "2"
 portable-pty = "0.9"

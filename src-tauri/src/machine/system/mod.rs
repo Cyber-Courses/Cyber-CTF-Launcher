@@ -180,7 +180,7 @@ async fn package_manager_version() -> Option<String> {
 /// Isoloom's own view of the host, off the async runtime (it runs the tools).
 async fn isoloom_targets() -> Vec<TargetReadiness> {
     tokio::task::spawn_blocking(|| {
-        isoloom_core::host::all()
+        crate::runtime::lab::host_readiness()
             .into_iter()
             .map(|r| TargetReadiness {
                 target: r.target.id().to_string(),

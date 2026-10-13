@@ -143,6 +143,8 @@ pub fn run() {
             shared_folder::shared_folder_get,
             shared_folder::shared_folder_set,
             shared_folder::shared_folder_open,
+            runtime::lab::registry::isoloom_registry_get,
+            runtime::lab::registry::isoloom_registry_set,
             runtime::server::server_list,
             runtime::server::server_save,
             runtime::server::server_remove,
@@ -187,6 +189,7 @@ fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
         exec::set_owner_window(hwnd.0 as isize);
     }
     shared_folder::init(app.handle());
+    runtime::lab::registry::init(app.handle());
     // Linux and Windows dev builds: register cyberctf:// at runtime (installers do it otherwise).
     #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
     {

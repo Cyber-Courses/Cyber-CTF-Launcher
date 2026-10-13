@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::runtime::lab::outputs as isoloom_outputs;
 use crate::runtime::{LabStatus, Machine, ssh};
 
 /// Non-secret run parameters, kept next to the state so `destroy` can be replayed.
@@ -83,7 +84,7 @@ pub fn has_resources(state: &Value) -> bool {
 
 /// The state holds a lab host: Isoloom modules output its `ip`.
 fn has_instance(outputs: &Value) -> bool {
-    outputs["ip"]["value"].as_str().is_some_and(|ip| !ip.is_empty())
+    outputs[isoloom_outputs::IP]["value"].as_str().is_some_and(|ip| !ip.is_empty())
 }
 
 /// The lab host as an SSH target with the launcher's key, through the node when the launch
@@ -97,8 +98,8 @@ pub fn ssh_target(state: &Path, identity: PathBuf) -> Option<ssh::Target> {
 /// The lab host's address and SSH user, from the local state's outputs.
 pub fn ssh_endpoint(state: &Path) -> Option<(String, String)> {
     let v = read_state(state)?;
-    let ip = output_of(&v, "ip")?.to_string();
-    let user = v["outputs"]["ssh_user"]["value"].as_str().unwrap_or("isoloom").to_string();
+    let ip = output_of(&v, isoloom_outputs::IP)?.to_string();
+    let user = v["outputs"][isoloom_outputs::SSH_USER]["value"].as_str().unwrap_or(isoloom_outputs::DEFAULT_SSH_USER).to_string();
     Some((ip, user))
 }
 
@@ -113,7 +114,7 @@ pub fn status(state: &Path) -> LabStatus {
     // Past its auto-stop, the cloud instance has terminated itself.
     let expired = expires_at.is_some_and(|t| now() >= t);
     let created = has_instance(&outputs) && !expired;
-    let ip = outputs["ip"]["value"].as_str().unwrap_or_default().to_string();
+    let ip = outputs[isoloom_outputs::IP]["value"].as_str().unwrap_or_default().to_string();
     let machines = if created {
         vec![Machine {
             name: "labhost".into(),

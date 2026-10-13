@@ -7,10 +7,11 @@ use crate::AppHandle;
 use tauri::Manager;
 
 use super::inflight::{Action, DeployGuard, lock_lab, try_lock_lab};
+use super::lab::registry;
 use super::paths::{
     deployed_ids, deployment_states, lab_dir, local_vm, mark_local_vm, mark_parked, parked, recorded_host, recorded_runtime, state_dir, vagrant_dirs,
 };
-use super::{Park, Runtime, attack_vm, cloud_services, docker, lab, registry, server, terraform, vm};
+use super::{Park, Runtime, attack_vm, cloud_services, docker, lab, server, terraform, vm};
 use crate::error::{Error, Result};
 
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab

@@ -94,6 +94,7 @@ const servers = () => ({
 
 let cpu = 38;
 let sharedFolder = { enabled: false, path: "/Users/florian/cyberctf-share", mountPoint: "/workspace/share" };
+let isoloomRegistry = true;
 
 /** The app opens Settings and the server setup in their own windows; here, a browser tab. */
 function openWindow(path: string) {
@@ -140,6 +141,11 @@ const machineCommands: Record<string, Handler> = {
   shared_folder_set: (args) => {
     sharedFolder = { ...sharedFolder, enabled: !!args?.enabled, path: String(args?.path ?? sharedFolder.path) };
     return sharedFolder;
+  },
+  isoloom_registry_get: () => isoloomRegistry,
+  isoloom_registry_set: (args) => {
+    isoloomRegistry = !!args?.enabled;
+    return isoloomRegistry;
   },
 };
 

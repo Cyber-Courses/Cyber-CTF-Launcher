@@ -36,6 +36,8 @@ const COMMANDS: &[&str] = &[
     "install_dependency",
     "install_vagrant_plugin",
     "installed_tools",
+    "isoloom_registry_get",
+    "isoloom_registry_set",
     "lab_attack_shell",
     "lab_check",
     "lab_cloud_preview",
