@@ -66,9 +66,11 @@ pub fn claim(f: &Files) -> Result<std::fs::File> {
 pub fn spawn(app: &AppHandle, job: &Job, pidfile: std::fs::File) -> Result<Spawned> {
     let f = files::of(app, &job.key())?;
     let path = f.pid.clone();
+    let job_file = f.job.clone();
     let started = start(f, job, pidfile);
     if started.is_err() {
         let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&job_file);
     }
     started
 }
@@ -81,8 +83,7 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
     if job.op == super::Op::Launch {
         let _ = std::fs::remove_file(&f.launch_status);
     }
-    std::fs::write(&f.job, serde_json::to_vec(job).map_err(|e| Error::Invalid(e.to_string()))?).map_err(Error::Io)?;
-    let log = std::fs::File::create(&f.log).map_err(Error::Io)?;
+    let log = write_job(&f, job)?;
     let exe = std::env::current_exe().map_err(Error::Io)?;
     let mut cmd = std::process::Command::new(exe);
     cmd.arg("deploy").arg("--job").arg(&f.job).stdin(std::process::Stdio::null()).stdout(log.try_clone().map_err(Error::Io)?).stderr(log);
@@ -115,6 +116,13 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
         remove_pidfile_of(&path, pid);
     });
     Ok(Spawned { files: f, worker })
+}
+
+/// Writes the job for its worker and opens its fresh log, both owner-only: the job carries the
+/// launch token (the worker removes it when the job ends), the log what the tools printed.
+fn write_job(f: &Files, job: &Job) -> Result<std::fs::File> {
+    crate::private_fs::write(&f.job, serde_json::to_vec(job).map_err(|e| Error::Invalid(e.to_string()))?).map_err(Error::Io)?;
+    crate::private_fs::create(&f.log).map_err(Error::Io)
 }
 
 /// Removes the pidfile at `path` only while it still names the worker `pid`: a newer worker's
@@ -336,6 +344,8 @@ fn kill_files(f: &Files) {
         }
     }
     remove_pidfile_of(&f.pid, worker.pid);
+    // A worker killed outside its own end (Windows, or SIGKILL) leaves its job behind.
+    let _ = std::fs::remove_file(&f.job);
 }
 
 /// Sends `signal` to the process group `pid` leads: the worker and its vagrant/docker/terraform.
@@ -731,9 +741,29 @@ mod tests {
         let dir = crate::deploy_worker::files::tests::temp_dir("kill");
         let f = Files::of(&dir, "lab-1");
         std::fs::write(&f.pid, "4000000000").unwrap();
+        std::fs::write(&f.job, "{}").unwrap();
         kill_files(&f);
         assert!(!f.pid.exists());
+        assert!(!f.job.exists(), "its job (and launch token) goes with it");
         kill_files(&f);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn the_job_and_its_log_are_written_for_this_user_only() {
+        let dir = crate::deploy_worker::files::tests::temp_dir("private");
+        let f = Files::of(&dir, "lab-1");
+        // Left by an older version, readable by everyone.
+        std::fs::write(&f.log, "old run").unwrap();
+        let job = Job::on_lab("lab-1", super::super::Op::Launch);
+        drop(write_job(&f, &job).unwrap());
+        assert_eq!(serde_json::from_slice::<Job>(&std::fs::read(&f.job).unwrap()).unwrap(), job);
+        assert_eq!(std::fs::read_to_string(&f.log).unwrap(), "", "a fresh log");
+        #[cfg(unix)]
+        {
+            assert_eq!(crate::private_fs::tests::mode(&f.job), 0o600);
+            assert_eq!(crate::private_fs::tests::mode(&f.log), 0o600);
+        }
         std::fs::remove_dir_all(dir).ok();
     }
 

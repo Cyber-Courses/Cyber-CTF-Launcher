@@ -35,10 +35,14 @@ fn lab_dir_in(base: &Path, id: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// Terraform state for a lab's target, outside the lab folder.
+/// Terraform state for a lab's target, outside the lab folder. The `deployments` folder above
+/// every lab's state is made owner-only first: the state holds the lab's outputs (passwords,
+/// keys) in clear.
 pub(super) fn state_dir(app: &AppHandle, id: &str, target: &str) -> Result<PathBuf> {
     validate_id(id)?;
-    Ok(state_dir_in(&app_data(app)?, id, target))
+    let base = app_data(app)?;
+    crate::private_fs::dir(&base.join("deployments"))?;
+    Ok(state_dir_in(&base, id, target))
 }
 
 /// [`state_dir`] under the app data folder `base`.
@@ -153,7 +157,7 @@ pub(super) fn parked(dir: &Path) -> Option<Park> {
 mod tests {
     use super::{
         PARKED_MARKER, Park, Provider, Runtime, deployed_ids, lab_dir_in, local_vm, mark_local_vm, mark_parked, parked, record_runtime, recorded_runtime,
-        state_dir_in, vagrant_dirs, validate_id,
+        state_dir, state_dir_in, vagrant_dirs, validate_id,
     };
 
     fn temp_dir(prefix: &str) -> std::path::PathBuf {
@@ -233,6 +237,17 @@ mod tests {
     fn state_lives_outside_the_lab_folder_per_target() {
         let base = std::path::Path::new("base");
         assert_eq!(state_dir_in(base, "web-1", "aws"), base.join("deployments").join("web-1").join("aws"));
+    }
+
+    #[test]
+    fn every_labs_state_sits_in_a_folder_only_this_user_opens() {
+        let t = crate::test_app::TestApp::new();
+        let state = state_dir(t.handle(), "web-1", "aws").unwrap();
+        assert_eq!(state, t.data().join("deployments").join("web-1").join("aws"));
+        assert!(t.data().join("deployments").is_dir());
+        #[cfg(unix)]
+        assert_eq!(crate::private_fs::tests::mode(&t.data().join("deployments")), 0o700);
+        assert!(state_dir(t.handle(), "../x", "aws").is_err());
     }
 
     #[test]

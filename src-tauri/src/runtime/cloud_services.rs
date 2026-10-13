@@ -147,20 +147,7 @@ pub fn write_inputs(state: &Path, values: &serde_json::Map<String, Value>) -> Re
 /// Writes a file only its owner can read (mode 0600 from creation, never wider), replacing any
 /// previous one.
 fn write_private(file: &Path, contents: &str) -> Result<()> {
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let _ = std::fs::remove_file(file);
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(file)?;
-        f.write_all(contents.as_bytes())?;
-    }
-    #[cfg(not(unix))]
-    std::fs::write(file, contents)?;
-    Ok(())
+    Ok(crate::private_fs::write(file, contents)?)
 }
 
 /// Terraform's own AWS shared files, beside the state.

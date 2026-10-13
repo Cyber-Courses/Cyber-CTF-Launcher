@@ -14,6 +14,7 @@ mod menu;
 mod msix_data;
 mod operations;
 mod platform;
+mod private_fs;
 #[cfg(test)]
 mod proptest_support;
 mod quit;
@@ -198,6 +199,10 @@ fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
         && let Ok(hwnd) = w.hwnd()
     {
         exec::set_owner_window(hwnd.0 as isize);
+    }
+    // The app's data (deploy jobs, Terraform state, keys) is this user's alone.
+    if let Ok(dir) = app.path().app_data_dir() {
+        let _ = private_fs::dir(&dir);
     }
     shared_folder::init(app.handle());
     runtime::lab::registry::init(app.handle());

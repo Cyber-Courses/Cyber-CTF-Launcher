@@ -22,7 +22,7 @@ use local::{check_qemu, ensure_local_slot_free, start_local_vm, warn_if_low_memo
 use local::{emulated_arches, low_memory_warning};
 use on_host::start_on_server;
 #[cfg(test)]
-use on_host::{budget_verdict, parse_ipv4, public_ip_from};
+use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from};
 pub(super) use on_host::{check_aws_budget, public_ip};
 
 /// Starts an installed lab; `env` is passed to the runtime (evidence claim, attack box).

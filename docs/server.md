@@ -26,7 +26,7 @@ Debian "lab host" VM, configured by `deploy/ansible/site.yml` **inside** the VM.
 | Lab | Host | Launcher runs |
 | --- | --- | --- |
 | Docker | ESXi | `vagrant up --provider vmware_esxi` in `deploy/vagrant` |
-| Docker | Proxmox | `terraform apply` in `deploy/terraform/proxmox`, in the `hashicorp/terraform:1.16.5` container |
+| Docker | Proxmox | `terraform apply` in `deploy/terraform/proxmox`, on macOS in the `hashicorp/terraform:1.9.8` container (pinned by digest in `runner.rs`) |
 | VM (own Vagrantfile) | ESXi | `vagrant up --provider vmware_esxi` at the lab root |
 | VM (own Vagrantfile) | Proxmox | not supported (no working Vagrant provider) |
 

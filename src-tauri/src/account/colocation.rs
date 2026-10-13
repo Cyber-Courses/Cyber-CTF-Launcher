@@ -12,7 +12,8 @@ use tokio::net::TcpListener;
 
 use crate::error::{Error, Result};
 
-/// Site origins allowed to read the probe. Loopback origins (dev) are allowed too.
+/// Site origins allowed to read the probe. Loopback origins are allowed too, in dev builds only
+/// (the site's dev server): in a release any local web page could otherwise read it.
 const ALLOWED_ORIGINS: [&str; 4] = ["https://www.cybercourses.com", "https://cybercourses.com", "https://www.cyberctf.org", "https://cyberctf.org"];
 
 /// A loopback dev origin, by exact host match (not a prefix): `http(s)://localhost` or
@@ -33,8 +34,17 @@ fn is_loopback_origin(origin: &str) -> bool {
 }
 
 fn origin_allowed(origin: &str) -> bool {
-    ALLOWED_ORIGINS.contains(&origin) || is_loopback_origin(origin)
+    origin_allowed_in(origin, cfg!(debug_assertions))
 }
+
+/// [`origin_allowed`] in a dev build (`dev`) or a release.
+fn origin_allowed_in(origin: &str, dev: bool) -> bool {
+    ALLOWED_ORIGINS.contains(&origin) || (dev && is_loopback_origin(origin))
+}
+
+/// How long a connection gets to send its request, and to take the answer: a client that
+/// connects and stays silent must not hold a task (and a socket) for the life of the app.
+const IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(if cfg!(test) { 1 } else { 5 });
 
 /// Constant-time string equality, so the token check doesn't leak via response timing.
 fn ct_eq(a: &str, b: &str) -> bool {
@@ -85,6 +95,19 @@ fn build_response(req: &str, token: &str, nonce: &str) -> String {
     reply("200 OK", &format!("{{\"nonce\":\"{nonce}\"}}"))
 }
 
+/// Answers one connection's request, each way within [`IO_TIMEOUT`].
+async fn answer(socket: &mut tokio::net::TcpStream, token: &str, nonce: &str) {
+    let mut buf = [0u8; 2048];
+    let Ok(Ok(n)) = tokio::time::timeout(IO_TIMEOUT, socket.read(&mut buf)).await else { return };
+    let req = String::from_utf8_lossy(&buf[..n]);
+    let resp = build_response(&req, token, nonce);
+    let _ = tokio::time::timeout(IO_TIMEOUT, async {
+        let _ = socket.write_all(resp.as_bytes()).await;
+        let _ = socket.shutdown().await;
+    })
+    .await;
+}
+
 /// The co-location server of the current launch. A new launch retires the previous one, so
 /// listeners (and their ports/tokens) don't accumulate for the life of the app.
 static CURRENT: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>> = std::sync::Mutex::new(None);
@@ -105,14 +128,7 @@ pub async fn serve(token: String, nonce: String) -> Result<u16> {
                 }
             };
             let (token, nonce) = (token.clone(), nonce.clone());
-            tokio::spawn(async move {
-                let mut buf = [0u8; 2048];
-                let n = socket.read(&mut buf).await.unwrap_or(0);
-                let req = String::from_utf8_lossy(&buf[..n]);
-                let resp = build_response(&req, &token, &nonce);
-                let _ = socket.write_all(resp.as_bytes()).await;
-                let _ = socket.shutdown().await;
-            });
+            tokio::spawn(async move { answer(&mut socket, &token, &nonce).await });
         }
     });
     if let Ok(mut cur) = CURRENT.lock()
@@ -171,6 +187,35 @@ mod tests {
         assert!(!is_loopback_origin("http://localhostXYZ"));
         assert!(!is_loopback_origin("http://localhost/path"));
         assert!(!is_loopback_origin("http://localhost:not-a-port"));
+    }
+
+    #[test]
+    fn loopback_origins_read_the_probe_in_dev_builds_only() {
+        use super::origin_allowed_in;
+        assert!(origin_allowed_in("http://localhost:3000", true));
+        assert!(!origin_allowed_in("http://localhost:3000", false));
+        assert!(!origin_allowed_in("http://127.0.0.1:47290", false));
+        for site in super::ALLOWED_ORIGINS {
+            assert!(origin_allowed_in(site, false) && origin_allowed_in(site, true));
+        }
+        assert!(!origin_allowed_in("https://evil.example.com", true));
+        assert_eq!(super::origin_allowed("http://localhost:3000"), cfg!(debug_assertions));
+    }
+
+    #[tokio::test]
+    async fn a_silent_connection_is_dropped_after_the_timeout() {
+        use tokio::io::AsyncReadExt;
+        // Its own listener: `serve` would retire the server another test is using.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut s = tokio::net::TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+        let (mut server_side, _) = listener.accept().await.unwrap();
+        let served = tokio::spawn(async move { super::answer(&mut server_side, "tok", "n").await });
+        let mut out = Vec::new();
+        // Nothing sent: the server closes on its own, without an answer.
+        let read = tokio::time::timeout(super::IO_TIMEOUT * 5, s.read_to_end(&mut out)).await;
+        assert!(read.is_ok(), "still open after the timeout");
+        assert!(out.is_empty());
+        served.await.unwrap();
     }
 
     #[test]

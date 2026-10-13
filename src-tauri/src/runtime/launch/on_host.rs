@@ -124,9 +124,9 @@ pub(super) fn budget_verdict(check: server::BudgetCheck, log: &mut impl FnMut(St
 
 /// This machine's public IPv4, for cloud firewall rules.
 pub(in crate::runtime) async fn public_ip() -> Result<String> {
-    // Several resolvers, tried in turn: this is a hard dependency of every cloud launch (the
-    // firewall is locked to this machine's IP), so one endpoint being down or blocked must not
-    // fail the launch. Each has its own short timeout so a hanging endpoint doesn't stall it.
+    // Independent services, run by different companies: two of them must see the same address
+    // (see `public_ip_from`), so one that is down or blocked doesn't fail the launch, and one that
+    // answers wrong (compromised, or a captive portal's page) doesn't open the lab to someone else.
     const RESOLVERS: [&str; 4] = ["https://checkip.amazonaws.com", "https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com"];
     // Unit tests never reach the internet: a documentation address stands in.
     if cfg!(test) {
@@ -135,22 +135,51 @@ pub(in crate::runtime) async fn public_ip() -> Result<String> {
     public_ip_from(&RESOLVERS).await
 }
 
-/// The first IPv4 one of `resolvers` answers with.
+/// The public IPv4 `resolvers` agree on, all asked at once (each with its own short timeout, so
+/// a hanging one doesn't stall the launch). At least two must give it, and none another one:
+/// the lab's firewall opens to this address, so a single service's word isn't enough, and when
+/// they disagree (a VPN or a second internet connection, or a service lying) the launch stops
+/// rather than guess.
 pub(super) async fn public_ip_from(resolvers: &[&str]) -> Result<String> {
     let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(8)).build().map_err(|e| Error::Invalid(e.to_string()))?;
-    let mut last = String::new();
-    for &url in resolvers {
-        match client.get(url).send().await.and_then(|r| r.error_for_status()) {
-            Ok(resp) => match resp.text().await {
-                Ok(body) if let Some(ip) = parse_ipv4(&body) => return Ok(ip),
-                Ok(_) => last = format!("{url} gave an unexpected answer"),
-                Err(e) => last = format!("{url}: {e}"),
-            },
-            Err(e) => last = format!("{url}: {e}"),
-        }
+    let mut asked = tokio::task::JoinSet::new();
+    for (i, url) in resolvers.iter().enumerate() {
+        let (client, url) = (client.clone(), url.to_string());
+        asked.spawn(async move { (i, ask_ip(&client, &url).await) });
     }
+    let mut answers: Vec<(usize, std::result::Result<std::net::Ipv4Addr, String>)> = asked.join_all().await;
+    answers.sort_by_key(|(i, _)| *i);
+    agreed_ip(resolvers, &answers.into_iter().map(|(_, a)| a).collect::<Vec<_>>())
+}
+
+/// One resolver's answer: a public IPv4 address, or what went wrong.
+async fn ask_ip(client: &reqwest::Client, url: &str) -> std::result::Result<std::net::Ipv4Addr, String> {
+    let resp = client.get(url).send().await.and_then(|r| r.error_for_status()).map_err(|e| e.to_string())?;
+    // An address is a few bytes: a page (a captive portal) is no answer.
+    let body = crate::http::body_limited(resp, 256).await.map_err(|e| e.to_string())?;
+    let ip = parse_ipv4(&String::from_utf8_lossy(&body)).ok_or("an unexpected answer")?;
+    let ip: std::net::Ipv4Addr = ip.parse().map_err(|_| "an unexpected answer")?;
+    if !is_public_ipv4(ip) { Err(format!("{ip}, not a public address")) } else { Ok(ip) }
+}
+
+/// The verdict on the resolvers' answers (in the order of `resolvers`).
+pub(super) fn agreed_ip(resolvers: &[&str], answers: &[std::result::Result<std::net::Ipv4Addr, String>]) -> Result<String> {
+    let seen: Vec<(&str, std::net::Ipv4Addr)> = resolvers.iter().zip(answers).filter_map(|(url, a)| a.as_ref().ok().map(|ip| (*url, *ip))).collect();
+    if let Some(&(_, first)) = seen.first()
+        && seen.iter().any(|&(_, ip)| ip != first)
+    {
+        let said = seen.iter().map(|(url, ip)| format!("{url}: {ip}")).collect::<Vec<_>>().join(", ");
+        return Err(Error::Invalid(format!(
+            "The services that tell Cyber CTF your public IP disagree ({said}), so it won't open the lab's firewall to an address it isn't sure of. \
+             This happens behind a VPN that changes address or with two internet connections: disconnect the VPN or use one connection, then try again."
+        )));
+    }
+    if seen.len() >= 2 {
+        return Ok(seen[0].1.to_string());
+    }
+    let failed = resolvers.iter().zip(answers).filter_map(|(url, a)| a.as_ref().err().map(|e| format!("{url}: {e}"))).collect::<Vec<_>>().join("; ");
     Err(Error::Invalid(format!(
-        "Couldn't determine your public IP, needed to allow only your machine through the lab's firewall. Check your internet connection and try again. ({last})"
+        "Couldn't confirm your public IP, needed to allow only your machine through the lab's firewall: fewer than two services answered with it. Check your internet connection and try again. ({failed})"
     )))
 }
 
@@ -158,4 +187,23 @@ pub(super) async fn public_ip_from(resolvers: &[&str]) -> Result<String> {
 pub(super) fn parse_ipv4(body: &str) -> Option<String> {
     let ip = body.trim();
     ip.parse::<std::net::Ipv4Addr>().is_ok().then(|| ip.to_string())
+}
+
+/// Whether `ip` is an address on the internet: not private, loopback, link-local, shared
+/// (carrier-grade NAT), documentation, benchmarking, multicast, reserved or broadcast. Anything
+/// else can't be where this machine's traffic comes from, as a cloud firewall sees it.
+pub(super) fn is_public_ipv4(ip: std::net::Ipv4Addr) -> bool {
+    let [a, b, c, _] = ip.octets();
+    let special = ip.is_private()
+        || ip.is_loopback()
+        || ip.is_link_local()
+        || ip.is_broadcast()
+        || ip.is_documentation()
+        || ip.is_multicast()
+        || a == 0
+        || (a == 100 && (64..128).contains(&b))
+        || (a == 192 && b == 0 && c == 0)
+        || (a == 198 && (b == 18 || b == 19))
+        || a >= 240;
+    !special
 }
