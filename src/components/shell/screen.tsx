@@ -9,23 +9,24 @@ import { CloudScreen } from "@/features/cloud/cloud-screen";
 import { SettingsScreen } from "@/features/settings/settings-screen";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LIST_SCREEN } from "@/components/ui/screen-width";
 import { Spinner } from "@/components/ui/spinner";
 import { authLogin, type AuthStatus, type SystemReport } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 import type { Tab } from "@/components/shell/shell-model";
 
-/** The screen for `tab`, in the main column. */
-export function Screen({
-  tab,
-  report,
-  checkError,
-  auth,
-  openLab,
-  onRefresh,
-  onNavigate,
-  onAuthChange,
-  onLabChange,
-}: {
+/** The screen for `tab`, in the main column. The labs tab sizes itself (its list stops at
+ *  LIST_SCREEN, a lab's page uses the shell's full width); every other screen stops at LIST_SCREEN. */
+export function Screen(props: ScreenProps): ReactNode {
+  if (props.tab === "labs") return <TabScreen {...props} />;
+  return (
+    <div className={LIST_SCREEN}>
+      <TabScreen {...props} />
+    </div>
+  );
+}
+
+type ScreenProps = {
   tab: Tab;
   report: SystemReport | null;
   checkError: string | null;
@@ -35,7 +36,9 @@ export function Screen({
   onNavigate: (t: Tab, slug?: string) => void;
   onAuthChange: (status: AuthStatus) => void;
   onLabChange: (title: string | null) => void;
-}): ReactNode {
+};
+
+function TabScreen({ tab, report, checkError, auth, openLab, onRefresh, onNavigate, onAuthChange, onLabChange }: ScreenProps): ReactNode {
   const t = useT();
   const waiting = (what: string) => <WaitingForCheck what={what} checkError={checkError} onRetry={onRefresh} />;
   if (tab === "home") return <HomeScreen report={report} auth={auth} onNavigate={onNavigate} />;

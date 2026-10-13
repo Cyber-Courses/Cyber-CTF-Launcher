@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LIST_SCREEN } from "@/components/ui/screen-width";
 import { EMULATORS, readyHypervisors } from "@/features/labs/lab-runtime";
 import { filterLabs, NO_FILTERS, type LabFilters } from "@/features/labs/lab-filters";
 import { LabsFilterBar } from "@/features/labs/labs-filter-bar";
@@ -13,6 +14,7 @@ import { useDeployingLabs } from "@/lib/deploy-store";
 import { serverList, type LabStatus, type ServerHost, type SystemReport } from "@/lib/tauri";
 import { getVmProvider } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 /** Saved servers count as somewhere a VM lab can run (for the "needs setup" hint). */
 function useSavedServers() {
@@ -106,8 +108,9 @@ export function Labs({
     onStop: (lab: Lab) => void actions.stop(lab),
     onResume: (lab: Lab) => void actions.resume(lab),
   };
+  // The catalogue stops at LIST_SCREEN; a lab's page (above) takes the shell's full width.
   return (
-    <div className="space-y-5">
+    <div className={cn("space-y-5", LIST_SCREEN)}>
       <LabsHeader labs={labs} completed={completed} isRunning={(l) => !!statuses[l.id]?.running} />
       <LabsFilterBar filters={filters} onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))} />
       <LabsCatalogue labs={labs} filtered={filtered} running={running} rest={rest} ctx={ctx} />
