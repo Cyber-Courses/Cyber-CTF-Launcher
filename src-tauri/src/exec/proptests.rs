@@ -7,6 +7,8 @@ use std::task::{Context, Poll};
 use proptest::prelude::*;
 use tokio::io::{AsyncRead, BufReader, ReadBuf};
 
+// Only the Unix test below uses `forward_lines` (it runs a real `sh`).
+#[cfg(unix)]
 use super::*;
 use crate::proptest_support::config;
 
