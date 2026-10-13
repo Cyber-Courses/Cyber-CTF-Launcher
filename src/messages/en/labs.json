@@ -182,6 +182,10 @@
     "removeBodyCloud": "Its cloud services are destroyed in your account, which ends what they cost. The next start creates them again from scratch."
   },
   "list": {
+    "summarySignedOut": "{total} in the catalogue · {running} running on this machine",
+    "signInTitle": "Sign in to start labs",
+    "signInBody": "Browse freely; signing in lets you start labs and keeps track of what you solve.",
+    "retry": "Retry",
     "unreachableTitle": "Can’t reach the lab catalogue",
     "unreachableDescription": "Check your connection or sign in, then try again.",
     "title": "Labs",

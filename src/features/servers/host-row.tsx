@@ -68,7 +68,16 @@ export function HostRow({
             <span className="truncate">{host.name}</span>
             <DefaultToggle isDefault={isDefault} onClick={onDefault} />
           </p>
-          <p className="mt-0.5 truncate font-mono text-[0.6875rem] text-faint">{facts.join(" · ")}</p>
+          {/* Wraps between facts (never inside one): CPU and memory stay readable in a narrow
+              window or a longer language instead of being cut off. */}
+          <p className="mt-0.5 flex flex-wrap gap-x-1.5 font-mono text-[0.6875rem] text-faint">
+            {facts.map((f, i) => (
+              <span key={i} className="max-w-full truncate whitespace-nowrap">
+                {i > 0 && <span aria-hidden>· </span>}
+                {f}
+              </span>
+            ))}
+          </p>
           {/* The running-labs count is filesystem-only and can go stale when a host drops. Only
               trust it once the host answers as Online; an unreachable host must not report a
               phantom count. */}
@@ -108,22 +117,24 @@ export function HostRow({
   );
 }
 
-/** The "Default" chip beside the host's name: marks, or makes, the default host. */
+/** Beside the host's name: a filled "Default" chip on the default host (pressed: a click
+ *  unsets it), a quiet "Set as default" button on the others. */
 function DefaultToggle({ isDefault, onClick }: { isDefault: boolean; onClick: () => void }) {
   const t = useT();
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={isDefault}
       title={isDefault ? t("servers.host.isDefaultTitle") : t("servers.host.makeDefaultTitle")}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-px font-mono text-[0.625rem] font-medium transition-colors",
+        "inline-flex items-center gap-1 rounded-full px-2 py-px font-mono text-[0.625rem] font-medium whitespace-nowrap transition-colors",
         isDefault
-          ? "text-jewel-text shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--jewel)_40%,transparent)]"
-          : "text-faint shadow-[inset_0_0_0_1px_var(--border)] hover:text-foreground hover:shadow-[inset_0_0_0_1px_var(--input)]",
+          ? "bg-jewel/[0.12] text-jewel-text shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--jewel)_40%,transparent)]"
+          : "text-faint hover:text-foreground hover:shadow-[inset_0_0_0_1px_var(--input)]",
       )}
     >
-      <Star className={cn("size-2.5", isDefault && "fill-current")} /> {t("servers.host.default")}
+      <Star className={cn("size-2.5", isDefault && "fill-current")} /> {isDefault ? t("servers.host.default") : t("servers.host.setDefault")}
     </button>
   );
 }

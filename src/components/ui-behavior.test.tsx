@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -124,6 +125,9 @@ describe("Toaster", () => {
     vi.useFakeTimers();
     installTauri();
     render(<Toaster />);
+    // The live region is there before any toast, so a screen reader is already watching it.
+    const region = document.querySelector("[aria-live=polite]");
+    expect(region).toBeTruthy();
     expect(screen.queryByRole("status")).toBeNull();
     act(() => {
       toast("one");
@@ -131,13 +135,27 @@ describe("Toaster", () => {
       toast("three");
       toast("four", "it broke", "fail");
     });
-    expect(screen.getAllByRole("status").map((s) => s.querySelector("p")?.textContent)).toEqual(["two", "three", "four"]);
+    const titles = (role: "status" | "alert") => screen.queryAllByRole(role).map((s) => s.querySelector("p")?.textContent);
+    // A failure is an alert (announced at once), the others statuses.
+    expect(titles("status")).toEqual(["two", "three"]);
+    expect(titles("alert")).toEqual(["four"]);
     expect(screen.getByText("details")).toBeTruthy();
     act(() => vi.advanceTimersByTime(4000));
     // An ordinary toast goes after 4 s, a failure stays 7 s.
-    expect(screen.getAllByRole("status").map((s) => s.querySelector("p")?.textContent)).toEqual(["four"]);
+    expect(titles("status")).toEqual([]);
+    expect(titles("alert")).toEqual(["four"]);
     fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    // Empty again, the region stays mounted.
+    expect(document.querySelector("[aria-live=polite]")).toBe(region);
+  });
+
+  it("stays under modals (z-50) so a toast never covers a dialog's buttons", () => {
+    installTauri();
+    render(<Toaster />);
+    const region = document.querySelector<HTMLElement>("[aria-live=polite]")!;
+    expect(region.className).toContain("z-40");
+    expect(region.className).not.toMatch(/z-\[?[5-9]\d/);
   });
 });
 
@@ -173,6 +191,57 @@ describe("CopyValue", () => {
 });
 
 describe("RadioRow", () => {
+  it("makes the group one Tab stop, the arrow keys moving (and picking) between enabled rows", async () => {
+    const user = userEvent.setup();
+    const Group = () => {
+      const [value, setValue] = useState<string | null>(null);
+      const row = (id: string, disabled = false) => (
+        <RadioRow key={id} selected={value === id} onSelect={() => setValue(id)} title={id} subtitle={`${id} subtitle`} disabled={disabled} />
+      );
+      return (
+        <>
+          <button type="button">before</button>
+          <RadioList label="Where">{[row("a"), row("b"), row("off", true), row("c")]}</RadioList>
+          <button type="button">after</button>
+        </>
+      );
+    };
+    render(<Group />);
+    const radio = (name: string) => screen.getByRole("radio", { name: new RegExp(`^${name}`) });
+    const stops = () => screen.getAllByRole("radio").filter((r) => r.tabIndex === 0);
+    // Nothing picked yet: the first enabled row is the only stop.
+    expect(stops()).toEqual([radio("a")]);
+    screen.getByRole("button", { name: "before" }).focus();
+    await user.tab();
+    expect(document.activeElement).toBe(radio("a"));
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "after" }));
+    // Arrows move and pick, skipping the disabled row, wrapping at the ends.
+    radio("a").focus();
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(radio("b"));
+    expect(radio("b").getAttribute("aria-checked")).toBe("true");
+    await user.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(radio("c"));
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(radio("a"));
+    await user.keyboard("{ArrowUp}{ArrowLeft}");
+    expect(document.activeElement).toBe(radio("b"));
+    await user.keyboard("{End}");
+    expect(document.activeElement).toBe(radio("c"));
+    await user.keyboard("{Home}");
+    expect(document.activeElement).toBe(radio("a"));
+    expect(stops()).toEqual([radio("a")]);
+    // Other keys are left alone; the picked row stays the stop after a click elsewhere.
+    await user.keyboard("x");
+    await user.click(radio("c"));
+    expect(stops()).toEqual([radio("c")]);
+    // Long descriptions get two lines, and the whole text in a tooltip.
+    const sub = screen.getByText("c subtitle");
+    expect(sub.className).toContain("line-clamp-2");
+    expect(sub.getAttribute("title")).toBe("c subtitle");
+  });
+
   it("picks with a click, Enter or Space, and never when disabled", async () => {
     const pick = vi.fn();
     const blocked = vi.fn();

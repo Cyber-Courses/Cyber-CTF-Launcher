@@ -31,6 +31,7 @@
     "isDefaultTitle": "El host por defecto para los lanzamientos desde el sitio web. Haz clic para quitarlo.",
     "makeDefaultTitle": "Usar este host por defecto para los lanzamientos desde el sitio web.",
     "default": "por defecto",
+    "setDefault": "Establecer por defecto",
     "node": "nodo {node}",
     "memFree": "{free} libres de {total}",
     "labsRunning": { "one": "{count} lab en ejecución", "other": "{count} labs en ejecución" },

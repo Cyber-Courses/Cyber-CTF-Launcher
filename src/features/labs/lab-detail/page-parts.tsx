@@ -14,7 +14,7 @@ export function BackLink({ onBack }: { onBack: () => void }) {
       className="group -mb-1 inline-flex items-center gap-1.5 text-[0.75rem] text-muted-foreground transition-colors hover:text-foreground"
     >
       <ArrowLeft className="size-3.5" /> {t("labs.detail.allLabs")}
-      <kbd className="kbd opacity-60 transition-opacity group-hover:opacity-100">Esc</kbd>
+      <kbd className="kbd">Esc</kbd>
     </button>
   );
 }

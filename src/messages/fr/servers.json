@@ -31,6 +31,7 @@
     "isDefaultTitle": "L'hôte par défaut pour les lancements depuis le site. Cliquez pour le retirer.",
     "makeDefaultTitle": "En faire l'hôte par défaut pour les lancements depuis le site.",
     "default": "par défaut",
+    "setDefault": "Définir par défaut",
     "node": "nœud {node}",
     "memFree": "{free} libres sur {total}",
     "labsRunning": { "one": "{count} lab en cours", "other": "{count} labs en cours" },

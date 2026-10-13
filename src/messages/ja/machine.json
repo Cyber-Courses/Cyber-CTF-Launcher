@@ -1,6 +1,7 @@
 {
   "format": {
     "gb": "{n} GB",
+    "gbOf": "{used}/{total} GB",
     "mb": "{n} MB",
     "kb": "{n} kB",
     "justNow": "たった今",
@@ -37,7 +38,6 @@
     },
     "memory": "メモリ",
     "disk": "ディスク",
-    "usedOf": "{used} / {total}",
     "lowDisk": {
       "title": "ディスク容量が不足しています",
       "meta": "空き {free}",
@@ -194,7 +194,7 @@
     "macInstallerVm": "インストーラーが別ウィンドウで開き、パスワードを求められます。VirtualBox は「システム設定 > プライバシーとセキュリティ」での承認も必要な場合があります。",
     "macInstaller": "インストーラーが別ウィンドウで開き、パスワードを求められます。",
     "pkgmgr": {
-      "title": "セットアップツール",
+      "title": "パッケージマネージャー",
       "description": "Cyber CTF は、システムのパッケージマネージャーである {pm} を通じて、その他すべてをインストールします。セットアップは一度だけで済みます。"
     },
     "virtualization": {

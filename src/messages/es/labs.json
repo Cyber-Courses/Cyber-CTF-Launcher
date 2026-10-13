@@ -182,6 +182,10 @@
     "removeBodyCloud": "Sus servicios en la nube se destruyen en tu cuenta, lo que pone fin a su coste. El próximo inicio los vuelve a crear desde cero."
   },
   "list": {
+    "summarySignedOut": "{total} en el catálogo · {running} en ejecución en esta máquina",
+    "signInTitle": "Inicia sesión para iniciar labs",
+    "signInBody": "Explora libremente; con la sesión iniciada puedes iniciar labs y se guarda lo que resuelves.",
+    "retry": "Reintentar",
     "unreachableTitle": "No se puede acceder al catálogo de labs",
     "unreachableDescription": "Revisa tu conexión o inicia sesión y vuelve a intentarlo.",
     "title": "Labs",

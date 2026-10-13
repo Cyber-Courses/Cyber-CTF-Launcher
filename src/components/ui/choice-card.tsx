@@ -1,8 +1,11 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 // Pick one of several equivalent options, as a grid of cards (e.g. container engines).
+
+const BADGE = { "in use": "inUse", running: "running", installed: "installed", recommended: "recommended" } as const;
 
 export function ChoiceGrid({ children }: { children: React.ReactNode }) {
   return (
@@ -26,8 +29,9 @@ export function Choice({
   mark: React.ReactNode;
   title: string;
   note: string;
-  badge?: "in use" | "running" | "installed" | "recommended";
+  badge?: keyof typeof BADGE;
 }) {
+  const t = useT();
   return (
     <button
       type="button"
@@ -43,18 +47,19 @@ export function Choice({
     >
       {mark}
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2 text-[0.8125rem] font-medium text-foreground">
-          {title}
+        {/* The badge drops under the name when both don't fit; neither wraps inside itself. */}
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.8125rem] font-medium text-foreground">
+          <span className="min-w-0 break-words">{title}</span>
           {badge && (
             <span
               className={cn(
-                "rounded-full px-2 py-px font-mono text-[0.625rem] font-normal",
+                "rounded-full px-2 py-px font-mono text-[0.625rem] font-normal whitespace-nowrap",
                 badge === "recommended"
                   ? "text-jewel-text shadow-[inset_0_0_0_1px_rgb(var(--jewel-rgb)/0.4)]"
                   : "text-success shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--success)_35%,transparent)]",
               )}
             >
-              {badge}
+              {t(`ui.choice.${BADGE[badge]}`)}
             </span>
           )}
         </span>

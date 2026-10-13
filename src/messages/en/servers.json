@@ -31,6 +31,7 @@
     "isDefaultTitle": "The default host for website launches. Click to unset.",
     "makeDefaultTitle": "Make this the default host for website launches.",
     "default": "default",
+    "setDefault": "Set as default",
     "node": "node {node}",
     "memFree": "{free} free of {total}",
     "labsRunning": { "one": "{count} lab running", "other": "{count} labs running" },

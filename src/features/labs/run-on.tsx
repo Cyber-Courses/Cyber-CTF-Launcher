@@ -24,7 +24,13 @@ export function RunOnDialog({ onClose, children, footer }: { onClose: () => void
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // Escape is the dialog's alone: stopped here, it doesn't also reach the lab page's own
+    // Escape (which goes back to the list) once the dialog has closed and focus left it.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);

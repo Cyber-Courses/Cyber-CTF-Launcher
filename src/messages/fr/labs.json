@@ -182,6 +182,10 @@
     "removeBodyCloud": "Ses services cloud sont détruits dans votre compte, ce qui met fin à leur coût. Le prochain démarrage les recrée de zéro."
   },
   "list": {
+    "summarySignedOut": "{total} dans le catalogue · {running} en cours sur cette machine",
+    "signInTitle": "Connectez-vous pour démarrer des labs",
+    "signInBody": "Parcourez librement ; une fois connecté, vous pouvez démarrer des labs et suivre ceux que vous résolvez.",
+    "retry": "Réessayer",
     "unreachableTitle": "Impossible d’accéder au catalogue de labs",
     "unreachableDescription": "Vérifiez votre connexion ou connectez-vous, puis réessayez.",
     "title": "Labs",

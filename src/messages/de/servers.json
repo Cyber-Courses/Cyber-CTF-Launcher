@@ -31,6 +31,7 @@
     "isDefaultTitle": "Standard-Host für Starts von der Website. Klicken zum Aufheben.",
     "makeDefaultTitle": "Als Standard-Host für Starts von der Website festlegen.",
     "default": "Standard",
+    "setDefault": "Als Standard festlegen",
     "node": "Node {node}",
     "memFree": "{free} von {total} frei",
     "labsRunning": { "one": "{count} Lab läuft", "other": "{count} Labs laufen" },

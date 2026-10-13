@@ -182,6 +182,10 @@
     "removeBodyCloud": "Seine Cloud-Dienste werden in deinem Konto gelöscht, damit enden ihre Kosten. Der nächste Start legt sie von Grund auf neu an."
   },
   "list": {
+    "summarySignedOut": "{total} im Katalog · {running} auf diesem Rechner aktiv",
+    "signInTitle": "Melde dich an, um Labs zu starten",
+    "signInBody": "Stöbern geht auch so; angemeldet kannst du Labs starten, und deine gelösten Labs werden festgehalten.",
+    "retry": "Erneut versuchen",
     "unreachableTitle": "Lab-Katalog nicht erreichbar",
     "unreachableDescription": "Prüfe deine Verbindung oder melde dich an und versuche es dann erneut.",
     "title": "Labs",

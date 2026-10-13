@@ -416,7 +416,8 @@ describe("RunningNowPanel", () => {
     expect(text()).toContain("Setup test");
     expect(text()).toContain("1 container");
     expect(text()).toContain("1 VM · VirtualBox");
-    expect(text()).toContain("lab-x");
+    // No title known for it: its id, made readable.
+    expect(screen.getByText("X")).toBeTruthy();
     expect(text()).toContain("2 VMs");
     const rows = screen.getAllByRole("button", { name: /stop/i });
     await user.click(rows[0]);
@@ -436,7 +437,7 @@ describe("RunningNowPanel", () => {
     expect(text()).toContain("Nothing running.");
   });
 
-  it("keeps the list after a failed stop, and shows lab ids without titles", async () => {
+  it("keeps the list after a failed stop, and shows readable lab ids without titles", async () => {
     const calls = installTauri({
       api_query: () => {
         throw "offline";
@@ -449,10 +450,11 @@ describe("RunningNowPanel", () => {
     const user = userEvent.setup();
     render(<RunningNowPanel refreshKey={null} />);
     await flush();
-    expect(text()).toContain("lab-invoice");
+    expect(text()).toContain("Invoice");
+    expect(text()).not.toContain("lab-invoice");
     await user.click(button(/stop/i));
     await flush();
-    expect(text()).toContain("lab-invoice");
+    expect(text()).toContain("Invoice");
     expect(commands(calls).filter((c) => c === "machine_workloads").length).toBeGreaterThanOrEqual(2);
   });
 });
@@ -577,7 +579,8 @@ describe("MachineScreen", () => {
     expect(text()).toContain("macOS arm64");
     expect(text()).toContain("up 3d 4h");
     expect(text()).toContain("8 cores");
-    expect(text()).toContain("8.0 GB of 32 GB");
+    // Compact, so it fits the card's corner in every language.
+    expect(text()).toContain("8.0/32 GB");
     expect(text()).not.toContain("Low disk space");
     expect(screen.queryByRole("button", { name: /set up this machine/i })).toBeNull();
   });

@@ -64,14 +64,14 @@ export function Nav({ left, right }: { left?: ReactNode; right: ReactNode }) {
   );
 }
 
+/** A labelled field; its hint goes under the input, so fields side by side keep their labels
+ *  and inputs on the same lines whatever the hints' lengths. */
 export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block space-y-1.5">
-      <span className="flex items-baseline gap-2 text-[0.75rem] font-medium text-muted-foreground">
-        {label}
-        {hint && <span className="text-[0.6875rem] font-normal text-faint">{hint}</span>}
-      </span>
+      <span className="block text-[0.75rem] font-medium text-muted-foreground">{label}</span>
       {children}
+      {hint && <span className="block text-[0.6875rem] leading-snug text-faint">{hint}</span>}
     </label>
   );
 }

@@ -84,18 +84,8 @@ export function UsageCards({ m }: { m: MachineMetrics | null }) {
   return (
     <div className="grid gap-4 sm:grid-cols-3">
       <StatCard label={t("machine.screen.cpu")} detail={m ? t("machine.screen.cores", { count: m.cores }) : ""} value={m ? m.cpu : null} meter />
-      <StatCard
-        label={t("machine.screen.memory")}
-        detail={m ? t("machine.screen.usedOf", { used: fmt.bytes(m.memUsed), total: fmt.bytes(m.memTotal) }) : ""}
-        value={use ? use.memPct : null}
-        meter
-      />
-      <StatCard
-        label={t("machine.screen.disk")}
-        detail={m ? t("machine.screen.usedOf", { used: fmt.bytes(m.diskUsed), total: fmt.bytes(m.diskTotal) }) : ""}
-        value={use ? use.diskPct : null}
-        meter
-      />
+      <StatCard label={t("machine.screen.memory")} detail={m ? fmt.bytesOf(m.memUsed, m.memTotal) : ""} value={use ? use.memPct : null} meter />
+      <StatCard label={t("machine.screen.disk")} detail={m ? fmt.bytesOf(m.diskUsed, m.diskTotal) : ""} value={use ? use.diskPct : null} meter />
     </div>
   );
 }

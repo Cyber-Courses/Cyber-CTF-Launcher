@@ -28,7 +28,7 @@
     "memory": "Memory",
     "disk": "Disk",
     "cores": "{cores} cores",
-    "usage": "{used} of {total} GB"
+    "usage": "{used}/{total} GB"
   },
   "capacity": {
     "total": "{total} GB",

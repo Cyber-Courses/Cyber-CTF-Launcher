@@ -1,6 +1,7 @@
 {
   "format": {
     "gb": "{n} GB",
+    "gbOf": "{used}/{total} GB",
     "mb": "{n} MB",
     "kb": "{n} kB",
     "justNow": "just now",
@@ -37,7 +38,6 @@
     },
     "memory": "Memory",
     "disk": "Disk",
-    "usedOf": "{used} of {total}",
     "lowDisk": {
       "title": "Low disk space",
       "meta": "{free} free",
@@ -194,7 +194,7 @@
     "macInstallerVm": "Its installer opens in its own window and asks for your password; VirtualBox may also need approval in System Settings > Privacy & Security.",
     "macInstaller": "Its installer opens in its own window and asks for your password.",
     "pkgmgr": {
-      "title": "Setup tools",
+      "title": "Package manager",
       "description": "Cyber CTF installs everything else for you through {pm}, your system's package manager. It only has to be set up once."
     },
     "virtualization": {

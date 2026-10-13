@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Labs } from "@/features/labs/labs-screen";
+import { Labs, LabsLoading } from "@/features/labs/labs-screen";
 import { HomeScreen } from "@/features/home/home-screen";
 import { MachineScreen } from "@/features/machine/machine-screen";
 import { ServerScreen } from "@/features/servers/servers-screen";
@@ -60,8 +60,11 @@ function TabScreen({ tab, report, checkError, auth, openLab, onRefresh, onNaviga
       openLab={openLab}
       onDetailChange={onLabChange}
     />
-  ) : (
+  ) : checkError ? (
     waiting(t("shell.screen.loading"))
+  ) : (
+    // Placeholder rows, not a bare spinner: the list's shape while the machine check answers.
+    <LabsLoading />
   );
 }
 
