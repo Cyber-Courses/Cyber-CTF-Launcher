@@ -62,6 +62,7 @@
     "description": "Se ejecuta en la red de cada lab como tu caja de herramientas. El primer lanzamiento de una imagen la descarga, lo que puede tardar un rato.",
     "default": "Por defecto",
     "largeDownload": "Descarga grande",
+    "pinned": "fijada",
     "presets": {
       "cyberctf": "Kali con su conjunto de herramientas estándar, lista para usar",
       "kali": "Base oficial de Kali, añade herramientas según las necesites",

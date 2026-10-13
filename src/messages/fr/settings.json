@@ -62,6 +62,7 @@
     "description": "Tourne sur le réseau de chaque lab et sert de boîte à outils. Le premier lancement d'une image la télécharge, ce qui peut prendre un moment.",
     "default": "Par défaut",
     "largeDownload": "Gros téléchargement",
+    "pinned": "épinglée",
     "presets": {
       "cyberctf": "Kali avec ses outils standards, prête à l'emploi",
       "kali": "Base Kali officielle, ajoutez les outils au besoin",

@@ -62,6 +62,7 @@
     "description": "Roda na rede de cada lab como sua caixa de ferramentas. A primeira inicialização de uma imagem a baixa, o que pode demorar.",
     "default": "Padrão",
     "largeDownload": "Download grande",
+    "pinned": "fixada",
     "presets": {
       "cyberctf": "Kali com o conjunto de ferramentas padrão, pronto para usar",
       "kali": "Base oficial do Kali, adicione ferramentas conforme precisar",

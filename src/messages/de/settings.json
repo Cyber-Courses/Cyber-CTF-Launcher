@@ -62,6 +62,7 @@
     "description": "Läuft im Netzwerk jedes Labs als deine Werkzeugkiste. Beim ersten Start eines Images wird es heruntergeladen, das kann dauern.",
     "default": "Standard",
     "largeDownload": "Großer Download",
+    "pinned": "fixiert",
     "presets": {
       "cyberctf": "Kali mit dem Standard-Toolset, sofort einsatzbereit",
       "kali": "Offizielle Kali-Basis, Tools nach Bedarf ergänzen",

@@ -339,7 +339,7 @@ describe("DownloadsPanel", () => {
     const user = userEvent.setup();
     render(<DownloadsPanel />);
     await flush();
-    expect(calls.find((c) => c.cmd === "machine_storage")?.args).toEqual({ extraImages: ["kalilinux/kali-rolling"] });
+    expect(calls.find((c) => c.cmd === "machine_storage")?.args).toEqual({ extraImages: ["kalilinux/kali-rolling", "cyberctf/attack-box:latest"] });
     expect(text()).toContain("16 GB of lab downloads");
     expect(text()).toContain("2 container images · 1 VM image");
     expect(text()).not.toContain("postgres:16");
@@ -353,7 +353,7 @@ describe("DownloadsPanel", () => {
     await user.click(button(/clean up/i));
     await user.click(button(/^remove$/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "machine_storage_clean")?.args).toEqual({ extraImages: ["kalilinux/kali-rolling"] });
+    expect(calls.find((c) => c.cmd === "machine_storage_clean")?.args).toEqual({ extraImages: ["kalilinux/kali-rolling", "cyberctf/attack-box:latest"] });
     expect(text()).toContain("Freed 1.0 GB.");
     expect(commands(calls).filter((c) => c === "machine_storage")).toHaveLength(2);
   });

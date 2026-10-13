@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   ATTACK_PRESETS,
   ATTACK_VM_PRESETS,
+  CYBERCTF_ATTACK_REPO,
   DEFAULT_ATTACK_BOX,
   DEFAULT_ATTACK_IMAGE,
   getAttackBox,
@@ -26,7 +27,7 @@ import { useT, type MessageKey } from "@/lib/i18n";
 
 /** The presets' notes and terms, by image / box (a preset not listed keeps its English note). */
 const IMAGE_NOTES: Record<string, MessageKey> = {
-  "cyberctf/attack-box": "settings.attackBox.presets.cyberctf",
+  [DEFAULT_ATTACK_IMAGE]: "settings.attackBox.presets.cyberctf",
   "kalilinux/kali-rolling": "settings.attackBox.presets.kali",
   "parrotsec/security": "settings.attackBox.presets.parrot",
   "nwodtuhs/exegol:free": "settings.attackBox.presets.exegolFree",
@@ -88,7 +89,15 @@ export function AttackBoxRows({ onSaved }: { onSaved: () => void }) {
               }
               subtitle={
                 <>
-                  <span className="font-mono">{p.image}</span> <span className="text-faint">·</span> {IMAGE_NOTES[p.image] ? t(IMAGE_NOTES[p.image]) : p.note}
+                  {p.image === DEFAULT_ATTACK_IMAGE ? (
+                    // The pinned default reads as its repository; the digest is in the tooltip.
+                    <span className="font-mono" title={p.image}>
+                      {CYBERCTF_ATTACK_REPO} ({t("settings.attackBox.pinned")})
+                    </span>
+                  ) : (
+                    <span className="font-mono">{p.image}</span>
+                  )}{" "}
+                  <span className="text-faint">·</span> {IMAGE_NOTES[p.image] ? t(IMAGE_NOTES[p.image]) : p.note}
                 </>
               }
             />

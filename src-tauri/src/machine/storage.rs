@@ -14,8 +14,9 @@ use crate::exec::run;
 use crate::machine::{installed_labs, selftest};
 use crate::runtime::providers::Provider;
 
-/// `docker image inspect` format: the image's name and its size in bytes.
-const IMAGE_FORMAT: &str = "{{index .RepoTags 0}}\t{{.Size}}";
+/// `docker image inspect` format: the image's name and its size in bytes. An image pulled only by
+/// digest (the pinned attack box) has no tag, so its name is then its `repo@sha256:…` reference.
+const IMAGE_FORMAT: &str = "{{if .RepoTags}}{{index .RepoTags 0}}{{else}}{{index .RepoDigests 0}}{{end}}\t{{.Size}}";
 
 /// The local hypervisors the VM self-test can use, whose test boxes count as the app's.
 const LOCAL_PROVIDERS: [Provider; 7] =
@@ -128,13 +129,16 @@ async fn inspect_images(images: &BTreeSet<String>) -> String {
     o
 }
 
-/// The images in `docker image inspect` lines of `name\tsize`.
+/// The images in `docker image inspect` lines of `name\tsize`, each once: two references to one
+/// image (the pinned attack box and its old `latest` tag) are one download on disk.
 fn parse_images(out: &str) -> Vec<StoredItem> {
+    let mut seen = BTreeSet::new();
     out.lines()
         .filter_map(|line| {
             let (name, size) = line.split_once('\t')?;
             Some(StoredItem { name: name.to_string(), bytes: size.trim().parse().unwrap_or(0) })
         })
+        .filter(|i| seen.insert(i.name.clone()))
         .collect()
 }
 

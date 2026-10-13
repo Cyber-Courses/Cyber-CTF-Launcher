@@ -106,10 +106,6 @@ async fn heartbeat(app: &AppHandle, agent_id: &str) -> Result<()> {
     .map(|_| ())
 }
 
-/// Attack box for labs launched from the website onto a host: the default image (the
-/// per-machine setting lives in the webview). Matches DEFAULT_ATTACK_IMAGE in settings.ts.
-const DEFAULT_ATTACK_IMAGE: &str = "cyberctf/attack-box";
-
 #[derive(Default)]
 struct Progress<'a> {
     local_url: Option<&'a str>,
@@ -220,9 +216,10 @@ fn claim_runtime(claim: &Value) -> Runtime {
 }
 
 /// The attack box a launch on a server host brings; none here (the player's own setting) and
-/// none for cloud services, which the player works on from their own machine.
+/// none for cloud services, which the player works on from their own machine. On a host it is the
+/// default image (the per-machine setting lives in the webview), pinned by digest like settings.ts's.
 fn attack_image(host: Option<&str>, runtime: Runtime) -> Option<&'static str> {
-    host.filter(|_| runtime != Runtime::Cloud).map(|_| DEFAULT_ATTACK_IMAGE)
+    host.filter(|_| runtime != Runtime::Cloud).map(|_| crate::runtime::default_attack_image())
 }
 
 /// Stops a claimed lab that must not keep running under a failed session.
@@ -469,7 +466,7 @@ mod tests {
 
     #[test]
     fn only_container_and_vm_launches_on_a_host_bring_the_attack_box() {
-        assert_eq!(attack_image(Some("aws-1"), Runtime::Docker), Some(DEFAULT_ATTACK_IMAGE));
+        assert_eq!(attack_image(Some("aws-1"), Runtime::Docker), Some(crate::runtime::default_attack_image()));
         assert_eq!(attack_image(Some("aws-1"), Runtime::Cloud), None);
         assert_eq!(attack_image(None, Runtime::Docker), None);
     }
@@ -577,7 +574,6 @@ mod tests {
         assert!(!pending_confirmations().lock().unwrap().contains_key("s-confirm"));
         let p = Progress::default();
         assert!(p.local_url.is_none() && p.control_url.is_none() && p.token.is_none() && p.nonce.is_none() && p.message.is_none());
-        assert_eq!(DEFAULT_ATTACK_IMAGE, "cyberctf/attack-box");
     }
 
     #[test]

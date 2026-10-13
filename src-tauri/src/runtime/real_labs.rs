@@ -7,14 +7,13 @@
 //!   CYBERCTF_TEST_LAB=<invoice-portal-api checkout> \
 //!   CYBERCTF_TEST_SEGMENTED_LAB=<isoloom checkout>/examples/segmented \
 //!   ISOLOOM_HOME=$(mktemp -d) cargo test real_labs -- --ignored --nocapture --test-threads=1
-//! `CYBERCTF_TEST_ATTACK_BOX` overrides the attack-box image (default `cyberctf/attack-box`).
+//! `CYBERCTF_TEST_ATTACK_BOX` overrides the attack-box image (default: the launcher's own pinned
+//! default, `src-tauri/attack-box-image.json`).
 
 use std::path::{Path, PathBuf};
 
 use super::{LabStatus, Place, Runtime, docker, exegol, launch, lifecycle, status};
 use crate::exec::run;
-
-const DEFAULT_ATTACK_BOX: &str = "cyberctf/attack-box";
 
 /// What one lab must show once it is up.
 struct Expect {
@@ -37,7 +36,7 @@ struct Expect {
 }
 
 fn attack_box_image() -> String {
-    std::env::var("CYBERCTF_TEST_ATTACK_BOX").ok().filter(|i| !i.is_empty()).unwrap_or_else(|| DEFAULT_ATTACK_BOX.into())
+    std::env::var("CYBERCTF_TEST_ATTACK_BOX").ok().filter(|i| !i.is_empty()).unwrap_or_else(|| exegol::default_image().into())
 }
 
 /// A fresh copy of the lab, as the launcher installs one: its own folder, nothing generated.
