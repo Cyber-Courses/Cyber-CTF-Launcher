@@ -420,7 +420,11 @@ mod tests {
         let mut lines = Vec::new();
         let script = r"printf 'Cr\351ation\r\n'; printf 'err \377\n' >&2; sleep 0.2; printf 'done'";
         stream("sh", &["-c", script], None, &[], |l| lines.push(l)).await.expect("the tool ran to its end");
-        assert_eq!(lines, ["Cr\u{fffd}ation", "err \u{fffd}", "done"]);
+        // stdout and stderr are separate pipes: their lines interleave in no set order.
+        let at = |l: &str| lines.iter().position(|x| x == l);
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(at("err \u{fffd}").is_some(), "{lines:?}");
+        assert!(at("Cr\u{fffd}ation") < at("done") && at("Cr\u{fffd}ation").is_some(), "{lines:?}");
     }
 
     #[test]

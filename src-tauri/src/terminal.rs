@@ -486,8 +486,10 @@ mod tests {
     }
 
     /// A writer that blocks until `release` is dropped, as a PTY whose shell doesn't read does.
+    #[cfg(unix)]
     struct Stalled(std::sync::mpsc::Receiver<()>);
 
+    #[cfg(unix)]
     impl Write for Stalled {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             let _ = self.0.recv();
