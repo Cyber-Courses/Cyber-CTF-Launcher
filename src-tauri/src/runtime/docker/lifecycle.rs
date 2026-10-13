@@ -280,17 +280,31 @@ mod tests {
         assert_eq!(pick_pins("not json", false), None);
     }
 
+    /// A port free over both TCP and UDP. Taken below every OS's ephemeral range (Linux
+    /// 32768-60999, Windows and macOS 49152-65535): a port the OS hands out for one protocol
+    /// (a bind to port 0) can be held over the other by anything else on the machine, such as
+    /// an outgoing connection from a test running alongside, or a range Windows reserves (Hyper-V,
+    /// WinNAT) for one protocol. On Windows a TCP listener can't even bind a port that an
+    /// outgoing connection uses, since Rust's std sets SO_REUSEADDR on Unix only. Checked free first,
+    /// and out of that range no connection is handed it while the test runs.
+    fn port_free_over_both() -> u16 {
+        let start = 20_000 + (std::process::id() % 10_000) as u16;
+        (start..32_768).chain(20_000..start).find(|&p| !port_in_use(p, "tcp") && !port_in_use(p, "udp")).expect("a port free over TCP and UDP")
+    }
+
     #[test]
     fn a_held_port_is_in_use() {
-        let held = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let port = held.local_addr().unwrap().port();
-        assert!(port_in_use(port, "tcp"));
-        // Held over TCP only: free over UDP (a TCP holder doesn't block a UDP-only port).
-        assert!(!port_in_use(port, "udp"));
-        let udp = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
-        let port = udp.local_addr().unwrap().port();
-        assert!(port_in_use(port, "udp"), "a UDP holder (dnsmasq on 53) is caught");
-        assert!(!port_in_use(port, "tcp"));
+        // Held on the loopback or on all interfaces, over one protocol only.
+        for ip in ["127.0.0.1", "0.0.0.0"] {
+            let port = port_free_over_both();
+            let tcp = std::net::TcpListener::bind((ip, port)).unwrap();
+            assert!(port_in_use(port, "tcp"), "a TCP holder on {ip} is caught");
+            assert!(!port_in_use(port, "udp"), "a TCP holder on {ip} doesn't block a UDP-only port");
+            drop(tcp);
+            let _udp = std::net::UdpSocket::bind((ip, port)).unwrap();
+            assert!(port_in_use(port, "udp"), "a UDP holder on {ip} (dnsmasq on 53) is caught");
+            assert!(!port_in_use(port, "tcp"), "a UDP holder on {ip} doesn't block a TCP port");
+        }
     }
 
     #[test]
