@@ -76,3 +76,5 @@ pnpm check              # formatting, types, lint, clippy
 cd src-tauri && cargo test
 cargo test -- --ignored --nocapture   # prints this machine's system report
 ```
+
+The TypeScript types of the commands' arguments and results ([`src/lib/tauri/generated/`](src/lib/tauri/generated/)) are generated from the Rust structs by [ts-rs](https://github.com/Aleph-Alpha/ts-rs): `cargo test` rewrites them, and CI fails when the committed ones differ. A command taking or returning a new struct or enum derives `ts_rs::TS` and is listed in [`ts_bindings.rs`](src-tauri/src/ts_bindings.rs).

@@ -65,3 +65,14 @@ jobs:
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
+      # The tests rewrite the TypeScript command types from the Rust structs (ts_bindings.rs):
+      # a changed struct whose types weren't regenerated and committed fails here.
+      - name: Generated TypeScript types are committed
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          if [ -n "$(git status --porcelain -- src/lib/tauri/generated)" ]; then
+            git status --short -- src/lib/tauri/generated
+            git diff -- src/lib/tauri/generated
+            echo "::error::src/lib/tauri/generated differs from the Rust structs: run cargo test and commit the result"
+            exit 1
+          fi
