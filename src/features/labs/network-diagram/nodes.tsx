@@ -1,40 +1,13 @@
 "use client";
 
-import { useState } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { Check, Copy, DoorOpen, Lock, Monitor, Network, ShieldCheck, Terminal } from "lucide-react";
+import { DoorOpen, Lock, Monitor, Network, ShieldCheck, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ComputerData, ServiceRow, ZoneData, attack, isIp, netLabel, publishHandle, serviceMeta } from "@/features/labs/network-diagram/model";
-import { tell } from "@/lib/failure";
 import { useT, type T } from "@/lib/i18n";
+import { CopyText } from "@/features/labs/network-diagram/copy-text";
 
 // React Flow node cards for the lab network diagram.
-
-/** Click-to-copy wrapper (addresses). Stops React Flow from dragging the node. */
-export function CopyText({ text, children }: { text: string; children: React.ReactNode }) {
-  const t = useT();
-  const [copied, setCopied] = useState(false);
-  return (
-    <span
-      className="copy-chip"
-      title={t("diagram.copy.title", { text })}
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        navigator.clipboard
-          ?.writeText(text)
-          .then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1000);
-          })
-          .catch(tell(t("diagram.copy.failed")));
-      }}
-    >
-      {children}
-      {copied ? <Check size={11} className="copy-ok" /> : <Copy size={11} className="copy-ico" />}
-    </span>
-  );
-}
 
 function PortHandles({ accent = "var(--faint)", sides = false, top = true }: { accent?: string; sides?: boolean; top?: boolean }) {
   const style = { "--handle-accent": accent } as React.CSSProperties;

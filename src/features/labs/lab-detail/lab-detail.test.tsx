@@ -101,7 +101,8 @@ describe("LabDetail", () => {
     const user = userEvent.setup();
     const h = renderDetail({ status: status({}) });
     await flush();
-    expect(screen.getAllByText(/10\.42\.0\.3/).length).toBeGreaterThan(0);
+    // The diagram's code loads on first use (network-panel.tsx).
+    expect((await screen.findAllByText(/10\.42\.0\.3/)).length).toBeGreaterThan(0);
     // Every header action that doesn't leave the page.
     for (const b of screen.getAllByRole("button")) {
       if (/stop|remove|delete/i.test(b.textContent ?? "")) {

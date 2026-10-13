@@ -27,13 +27,9 @@ import { openSettings } from "@/lib/tauri";
 import { useActiveOperations } from "@/lib/deploy-store";
 import { ignore, tell } from "@/lib/failure";
 import { useLabLinks } from "@/lib/deep-link";
-import { installDevMock } from "@/lib/dev-mock";
 import { useAppearanceSync } from "@/lib/appearance";
 import { isMac as onMac } from "@/lib/platform";
 import { translate, useT } from "@/lib/i18n";
-
-// Development only: ?mock in a plain browser answers the Tauri commands with sample data.
-installDevMock();
 
 const openSettingsWindow = () => void openSettings().catch(tell(translate("shell.failures.openSettings")));
 
