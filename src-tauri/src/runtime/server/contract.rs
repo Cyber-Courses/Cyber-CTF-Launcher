@@ -10,6 +10,7 @@ use super::profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile};
 use super::secrets::{get_secret, host_secret};
 use super::store::{Store, load, load_host, saved_host};
 use crate::error::Result;
+use crate::runtime::lab;
 use crate::runtime::providers::Provider;
 use crate::runtime::proxmox;
 
@@ -25,20 +26,18 @@ pub fn connection_env(h: &HostProfile, password: &str) -> Vec<(String, String)> 
     set("CYBERCTF_REMOTE_HOST", h.host.clone());
     match h.provider {
         Provider::VmwareEsxi => {
-            // The launcher's names, then the ones Isoloom's Vagrantfiles read (same values; the
-            // datastore is named differently).
-            for (prefix, datastore) in [("CYBERCTF_ESXI_", "DISK_STORE"), ("ESXI_", "DATASTORE")] {
-                set(&format!("{prefix}HOSTNAME"), h.host.clone());
-                set(&format!("{prefix}HOSTPORT"), h.port.to_string());
-                set(&format!("{prefix}USERNAME"), h.username.clone());
-                set(&format!("{prefix}PASSWORD"), password.into());
-                if let Some(v) = &h.datastore {
-                    set(&format!("{prefix}{datastore}"), v.clone());
-                }
-                if let Some(v) = &h.network {
-                    set(&format!("{prefix}VIRTUAL_NETWORK"), v.clone());
-                }
+            // The launcher's names, then the ones Isoloom's Vagrantfiles read (same values).
+            set("CYBERCTF_ESXI_HOSTNAME", h.host.clone());
+            set("CYBERCTF_ESXI_HOSTPORT", h.port.to_string());
+            set("CYBERCTF_ESXI_USERNAME", h.username.clone());
+            set("CYBERCTF_ESXI_PASSWORD", password.into());
+            if let Some(v) = &h.datastore {
+                set("CYBERCTF_ESXI_DISK_STORE", v.clone());
             }
+            if let Some(v) = &h.network {
+                set("CYBERCTF_ESXI_VIRTUAL_NETWORK", v.clone());
+            }
+            env.extend(lab::esxi_env(h, password));
         }
         Provider::Proxmox => {
             set("CYBERCTF_PROXMOX_ENDPOINT", proxmox::api_url(h));
@@ -88,83 +87,10 @@ pub fn terraform_env(h: &HostProfile, password: &str) -> Vec<(String, String)> {
     }
 }
 
-/// Terraform variables for a host (the variables of Isoloom's modules).
-pub fn terraform_vars(h: &HostProfile, password: &str) -> Vec<(String, String)> {
-    if h.provider.is_cloud() { cloud_vars(h) } else { proxmox_vars(h, password) }
-}
-
-/// A cloud module's variables: region, auto-stop, size, and the account's own placement.
-fn cloud_vars(h: &HostProfile) -> Vec<(String, String)> {
-    let hours = h.auto_stop_hours.unwrap_or(DEFAULT_AUTO_STOP_HOURS);
-    // `auto_stop_hours` is the launcher's own (expiry, reaper); Isoloom's modules take minutes.
-    let mut vars = vec![
-        ("region".to_string(), h.host.clone()),
-        ("auto_stop_hours".to_string(), hours.to_string()),
-        ("auto_stop_minutes".to_string(), (hours * 60).to_string()),
-    ];
-    // The size, under each module's own variable name.
-    if let Some(t) = &h.datastore {
-        let name = match h.provider {
-            Provider::Azure | Provider::DigitalOcean => "size",
-            Provider::Gcp => "machine_type",
-            Provider::Linode => "type",
-            _ => "instance_type",
-        };
-        vars.push((name.into(), t.clone()));
-    }
-    // GCP: the account's labs project (see `gcp`), else a project per lab from the billing
-    // account (the module creates and deletes it).
-    if h.provider == Provider::Gcp {
-        match &h.gcp_project {
-            Some(p) => vars.push(("project".into(), p.clone())),
-            None => {
-                vars.push(("billing_account".into(), h.username.clone()));
-                if let Some(org) = &h.node {
-                    vars.push(("org_id".into(), org.clone()));
-                }
-            }
-        }
-    }
-    // OCI deploys into a compartment (the tenancy root works).
-    if h.provider == Provider::Oci {
-        vars.push(("compartment_id".into(), h.username.clone()));
-    }
-    vars
-}
-
-/// Isoloom's Proxmox module variables: the API connection, then node / storage / bridge.
-fn proxmox_vars(h: &HostProfile, password: &str) -> Vec<(String, String)> {
-    let mut vars = vec![
-        ("proxmox_endpoint", proxmox::terraform_endpoint(h)),
-        ("proxmox_username", proxmox::token_user(&h.username).to_string()),
-        ("proxmox_insecure", h.insecure_tls.to_string()),
-        // Snippets go over SSH to the address the player entered.
-        ("proxmox_ssh_address", h.host.clone()),
-    ];
-    // An API token replaces the password for the API; the snippet upload then uses the
-    // launcher's SSH key (added at apply time, see terraform).
-    if proxmox::is_token(&h.username) {
-        vars.push(("proxmox_api_token", proxmox::terraform_token(&h.username, password)));
-        vars.push(("proxmox_ssh_username", proxmox::ssh_user(&h.username).to_string()));
-    } else {
-        vars.push(("proxmox_password", password.to_string()));
-    }
-    if let Some(v) = &h.node {
-        vars.push(("node", v.clone()));
-    }
-    if let Some(v) = &h.datastore {
-        vars.push(("datastore", v.clone()));
-    }
-    if let Some(v) = &h.network {
-        vars.push(("uplink_bridge", v.clone()));
-    }
-    vars.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
-}
-
 // --- resolving a host for a launch ------------------------------------------
 
 /// A host resolved for a launch: its provider, the Vagrant env (Vagrantfile contract) and
-/// the Terraform variables (Terraform modules).
+/// the Terraform variables (Isoloom's modules, see `lab::host_vars`).
 pub struct Connection {
     pub provider: Provider,
     pub name: String,
@@ -172,6 +98,12 @@ pub struct Connection {
     pub tf_vars: Vec<(String, String)>,
     /// Raw environment for Terraform (cloud credentials the provider reads itself).
     pub tf_env: Vec<(String, String)>,
+    /// A cloud account's region (None for a server).
+    pub region: Option<String>,
+    /// A cloud account's auto-stop, in hours (0: none; None for a server).
+    pub auto_stop_hours: Option<u32>,
+    /// A GCP account's labs project, once it has one.
+    pub gcp_project: Option<String>,
 }
 
 pub fn connection(app: &AppHandle, id: &str) -> Result<Connection> {
@@ -187,8 +119,11 @@ fn connection_for(host: &HostProfile, password: &str) -> Connection {
         provider: host.provider,
         name: host.name.clone(),
         env: connection_env(host, password),
-        tf_vars: terraform_vars(host, password),
+        tf_vars: lab::host_vars(host, password),
         tf_env: terraform_env(host, password),
+        region: host.provider.is_cloud().then(|| host.host.clone()),
+        auto_stop_hours: host.provider.is_cloud().then(|| host.auto_stop_hours.unwrap_or(DEFAULT_AUTO_STOP_HOURS)),
+        gcp_project: host.gcp_project.clone().filter(|_| host.provider == Provider::Gcp),
     }
 }
 
@@ -291,6 +226,12 @@ mod tests {
         let c = connection_for(&HostProfile { host: "eu-west-3".into(), username: "AKIAEXAMPLE".into(), ..full_profile(Provider::Aws) }, "key");
         assert_eq!(get(&c.tf_env, "AWS_SECRET_ACCESS_KEY"), Some("key"));
         assert_eq!(get(&c.tf_vars, "region"), Some("eu-west-3"));
+        // The launcher's own view of the account, not read back from Isoloom's variables.
+        assert_eq!((c.region.as_deref(), c.auto_stop_hours, c.gcp_project.as_deref()), (Some("eu-west-3"), Some(DEFAULT_AUTO_STOP_HOURS), None));
+        let c = connection_for(&HostProfile { auto_stop_hours: Some(0), gcp_project: Some("labs-1".into()), ..full_profile(Provider::Gcp) }, "");
+        assert_eq!((c.auto_stop_hours, c.gcp_project.as_deref()), (Some(0), Some("labs-1")));
+        let c = connection_for(&full_profile(Provider::Proxmox), "pw");
+        assert_eq!((c.region, c.auto_stop_hours), (None, None));
     }
 
     #[test]
@@ -389,21 +330,6 @@ mod tests {
     }
 
     #[test]
-    fn aws_keys_vars_carry_no_proxmox_settings() {
-        let h = HostProfile {
-            provider: Provider::Aws,
-            host: "eu-west-3".into(),
-            username: "AKIAIOSFODNN7EXAMPLE".into(),
-            datastore: Some("t3.small".into()),
-            ..full_profile(Provider::Proxmox)
-        };
-        assert_eq!(get(&terraform_env(&h, "sec"), "AWS_SECRET_ACCESS_KEY"), Some("sec"));
-        let vars = terraform_vars(&h, "sec");
-        assert_eq!(get(&vars, "region"), Some("eu-west-3"));
-        assert!(get(&vars, "proxmox_password").is_none());
-    }
-
-    #[test]
     fn marked_host_reads_the_trimmed_marker() {
         let dir = std::env::temp_dir().join(format!("cyberctf-marker-{}", rand::random::<u32>()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -447,95 +373,5 @@ mod tests {
         assert_eq!(get(&terraform_env(&h, ""), "ARM_SUBSCRIPTION_ID"), Some("sub-id"));
         h.provider = Provider::Gcp;
         assert!(terraform_env(&h, "").is_empty());
-    }
-
-    #[test]
-    fn cloud_terraform_vars_carry_region_and_auto_stop_minutes() {
-        let mut h = profile(Provider::Aws);
-        h.host = "eu-west-3".into();
-        h.auto_stop_hours = Some(3);
-        h.datastore = Some("t3.small".into());
-        let vars = terraform_vars(&h, "sec");
-        assert_eq!(get(&vars, "region"), Some("eu-west-3"));
-        assert_eq!(get(&vars, "auto_stop_hours"), Some("3"));
-        assert_eq!(get(&vars, "auto_stop_minutes"), Some("180"));
-        // AWS size var is instance_type.
-        assert_eq!(get(&vars, "instance_type"), Some("t3.small"));
-        // No auto_stop_hours set falls back to the default.
-        h.auto_stop_hours = None;
-        let vars = terraform_vars(&h, "sec");
-        assert_eq!(get(&vars, "auto_stop_hours"), Some(DEFAULT_AUTO_STOP_HOURS.to_string().as_str()));
-    }
-
-    #[test]
-    fn cloud_size_var_name_differs_per_provider() {
-        let size = |p: Provider, var: &str| {
-            let mut h = profile(p);
-            h.datastore = Some("sz".into());
-            h.host = match p {
-                Provider::Azure => "westeurope".into(),
-                Provider::Gcp => "europe-west1".into(),
-                Provider::DigitalOcean => "fra1".into(),
-                Provider::Linode => "eu-central".into(),
-                _ => "eu-west-3".into(),
-            };
-            assert_eq!(get(&terraform_vars(&h, ""), var), Some("sz"), "{p:?}");
-        };
-        size(Provider::Azure, "size");
-        size(Provider::DigitalOcean, "size");
-        size(Provider::Gcp, "machine_type");
-        size(Provider::Linode, "type");
-        size(Provider::Aws, "instance_type");
-    }
-
-    #[test]
-    fn gcp_vars_prefer_existing_project_else_billing_account() {
-        let mut h = profile(Provider::Gcp);
-        h.host = "europe-west1".into();
-        h.username = "0X0X0X-0X0X0X-0X0X0X".into();
-        h.node = Some("123456789012".into());
-        // No project yet: pass billing account and org.
-        let vars = terraform_vars(&h, "");
-        assert_eq!(get(&vars, "billing_account"), Some("0X0X0X-0X0X0X-0X0X0X"));
-        assert_eq!(get(&vars, "org_id"), Some("123456789012"));
-        assert!(get(&vars, "project").is_none());
-        // An established project is reused instead.
-        h.gcp_project = Some("cyberctf-labs-xyz".into());
-        let vars = terraform_vars(&h, "");
-        assert_eq!(get(&vars, "project"), Some("cyberctf-labs-xyz"));
-        assert!(get(&vars, "billing_account").is_none());
-    }
-
-    #[test]
-    fn oci_vars_carry_the_compartment() {
-        let mut h = profile(Provider::Oci);
-        h.host = "eu-frankfurt-1".into();
-        h.username = "ocid1.compartment.oc1..aaaa".into();
-        assert_eq!(get(&terraform_vars(&h, ""), "compartment_id"), Some("ocid1.compartment.oc1..aaaa"));
-    }
-
-    #[test]
-    fn proxmox_password_vars_build_the_endpoint_and_connection() {
-        let mut h = profile(Provider::Proxmox);
-        h.username = "root@pam".into();
-        h.node = Some("pve".into());
-        let vars = terraform_vars(&h, "pw");
-        assert_eq!(get(&vars, "proxmox_endpoint"), Some("https://10.0.0.5:8006/"));
-        assert_eq!(get(&vars, "proxmox_username"), Some("root@pam"));
-        assert_eq!(get(&vars, "proxmox_password"), Some("pw"));
-        assert_eq!(get(&vars, "node"), Some("pve"));
-        // A password setup carries no api token var.
-        assert!(get(&vars, "proxmox_api_token").is_none());
-    }
-
-    #[test]
-    fn proxmox_token_vars_use_api_token_and_ssh_user() {
-        let mut h = profile(Provider::Proxmox);
-        h.username = "root@pam!cyberctf".into();
-        let vars = terraform_vars(&h, "sec");
-        assert_eq!(get(&vars, "proxmox_username"), Some("root@pam"));
-        assert_eq!(get(&vars, "proxmox_api_token"), Some("root@pam!cyberctf=sec"));
-        assert_eq!(get(&vars, "proxmox_ssh_username"), Some("root"));
-        assert!(get(&vars, "proxmox_password").is_none());
     }
 }

@@ -33,6 +33,9 @@ pub use commands::*;
 pub use contract::{
     Connection, connection, default_host, host_name, host_provider, lab_connection, launch_targets, mark_lab, marked_host, proxmox_jump, proxmox_jump_for_host,
 };
+/// The test profiles, for the tests of what is built from them elsewhere (`lab::vars`).
+#[cfg(test)]
+pub(crate) use profile::tests as profile_tests;
 pub use profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile, terraform_target};
 pub use setup_window::*;
 /// For the generated TypeScript types (`ts_bindings`).

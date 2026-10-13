@@ -7,15 +7,37 @@
 //! Each installed lab is an Isoloom *instance* (a number, kept in `.cyberctf-instance`): its
 //! Docker networks move to their own blocks and its names get a suffix, so two labs that
 //! declare the same addresses run at once. The generated files then live in `.isoloom-<n>/`.
+//!
+//! This module is the launcher's one door to Isoloom (`isoloom_core` is used nowhere else): the
+//! spec, the generated files, the resolved snapshot, the checks, the host's readiness and the
+//! registry go through it, and so do Isoloom's path and naming conventions (`names`). The
+//! launcher's own conventions sit on top: its overrides of the generated files (`overrides`,
+//! applied after Isoloom's defaults), the variables it gives Isoloom's Terraform modules from its
+//! hosts and cloud accounts (`vars`), and whether it records its labs in Isoloom's registry
+//! (`registry`, a setting).
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use isoloom_core::model::Protocol;
-use isoloom_core::{Spec, Target};
 
-use super::{Interface, Network, Runtime};
+use super::{Interface, Network};
 use crate::error::{Error, Result};
+
+mod names;
+mod overrides;
+pub mod registry;
+mod vars;
+
+pub use names::*;
+pub use registry::instances_elsewhere as registry_instances;
+pub use vars::{esxi_env, host_vars, run_vars};
+
+// What the rest of the launcher uses of Isoloom's types: through here, like its functions.
+pub use isoloom_core::checks;
+pub use isoloom_core::generate::StartPlan;
+pub use isoloom_core::model::{CloudProvider, CloudServices};
+pub use isoloom_core::{Arch, Spec, Target};
 
 /// The lab's spec, checked (fields and the files it names), with this machine's Isoloom
 /// defaults applied (its image table).
@@ -26,6 +48,16 @@ pub fn spec(dir: &Path) -> Result<Spec> {
         return Err(Error::Invalid(format!("this lab's isoloom.yml has mistakes:\n{}", problems.join("\n"))));
     }
     Ok(defaults(dir)?.images.apply(&spec))
+}
+
+/// A spec as written, unchecked (what a launch dialog previews): `isoloom.yml` in `dir`.
+pub fn load(dir: &Path) -> Result<Spec> {
+    isoloom_core::load(dir).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
+}
+
+/// A spec from its text, unchecked.
+pub fn parse(text: &str) -> Result<Spec> {
+    isoloom_core::parse(text).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
 }
 
 /// A spec this build can't read. Fields or values it doesn't know mean the lab uses a newer
@@ -86,13 +118,6 @@ pub fn ensure_instance(labs: &Path, dir: &Path, in_use: &[String], elsewhere: &[
     Ok(n)
 }
 
-/// The instance numbers Isoloom's registry records for environments in other folders (run
-/// with the CLI), for [`ensure_instance`].
-pub fn registry_instances(dir: &Path) -> Vec<u8> {
-    let here = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-    isoloom_core::registry::load().map(|reg| reg.environments.iter().filter(|e| e.dir != here).filter_map(|e| e.instance).collect()).unwrap_or_default()
-}
-
 /// An IPv4 CIDR as its first and last address.
 fn range(cidr: &str) -> Option<(u32, u32)> {
     let (ip, len) = cidr.split_once('/')?;
@@ -151,19 +176,16 @@ pub fn tools(spec: &Spec, docker: bool) -> Vec<Observer> {
         .unwrap_or_default()
 }
 
-/// Where the lab's generated files are: `.isoloom-<n>/` for an instance, else `.isoloom/`.
-pub fn out(dir: &Path) -> PathBuf {
-    dir.join(isoloom_core::instance::output_dir(instance(dir)))
-}
-
 /// Generates `target`'s files into the lab (overwriting the previous ones), and returns the
 /// spec as this lab's instance of it. Fails with Isoloom's own reason when the lab can't run
-/// there (e.g. Windows machines on a target without Windows images).
+/// there (e.g. Windows machines on a target without Windows images). Isoloom's defaults are
+/// applied to the files, then the launcher's own overrides (see `overrides`).
 pub fn prepare(dir: &Path, target: Target) -> Result<Spec> {
     let spec = instanced(dir)?;
     let n = instance(dir);
     let files = isoloom_core::generate(&spec, target).map_err(|e| Error::Invalid(format!("this lab can't run there: {e}")))?;
     let files = isoloom_core::defaults::apply_to_files(files, &defaults(dir)?);
+    let files = overrides::apply(files, &launcher_overrides(dir, target));
     for f in files {
         let (path, contents) = match n {
             Some(n) => isoloom_core::instance::relocate(&f.path, &f.contents, n),
@@ -176,6 +198,13 @@ pub fn prepare(dir: &Path, target: Target) -> Result<Spec> {
         std::fs::write(path, contents)?;
     }
     Ok(spec)
+}
+
+/// The launcher's overrides of a lab's files for `target`: on local Docker, its Compose project
+/// (`cyberctf-<lab id>`, the lab's folder being its id).
+fn launcher_overrides(dir: &Path, target: Target) -> overrides::Overrides {
+    let id = dir.file_name().and_then(|n| n.to_str()).filter(|_| target == Target::Docker);
+    overrides::Overrides { compose_project: id.map(super::docker::project) }
 }
 
 /// Each machine's lab interfaces and the lab's networks, from Isoloom's resolved snapshot of
@@ -231,64 +260,31 @@ pub fn message_at(dir: &Path, spec: &Spec, target: Target, published: &[(String,
     isoloom_core::resolved::fill(text, &snapshot).ok().map(|m| m.trim_end().to_string())
 }
 
-/// The lab's Compose file (local Docker, and inside "Docker on one VM").
-pub fn compose_file(dir: &Path) -> PathBuf {
-    out(dir).join("docker/compose.yml")
+/// The memory the lab's machines ask for, in MB.
+pub fn memory_mb(spec: &Spec) -> u32 {
+    isoloom_core::totals(spec).memory_mb
 }
 
-/// The Compose file's service running the lab's checks (profile `check`).
-pub const CHECK_SERVICE: &str = "isoloom-check";
-
-/// Where the Vagrantfile of a local or ESXi run is: Docker on one VM for container labs, one
-/// VM per machine for VM labs.
-pub fn vagrant_dir(dir: &Path, runtime: Runtime) -> PathBuf {
-    match runtime {
-        Runtime::Docker => out(dir).join("docker-vm"),
-        Runtime::Vm => out(dir).join("vagrant"),
-        // No Vagrant: its generated files (Terraform variables and scripts).
-        Runtime::Cloud => out(dir).join("cloud-services"),
-    }
+/// Why the lab's VMs can't run on Vagrant's QEMU provider (its networks), if they can't.
+pub fn qemu_refusal(spec: &Spec) -> Option<String> {
+    isoloom_core::refusal_on(spec, Target::Vagrant, Some("qemu"))
 }
 
-/// The environment variable Isoloom's Vagrantfiles read on Hyper-V: the virtual switch each VM's
-/// first adapter (Vagrant's connection, and the internet) goes on. Isoloom takes the Default
-/// Switch without it, and stops `vagrant up` when no switch has the name.
-pub const HYPERV_SWITCH_ENV: &str = "ISOLOOM_HYPERV_SWITCH";
-
-/// The Isoloom target of a Vagrant run.
-pub fn vagrant_target(runtime: Runtime) -> Target {
-    match runtime {
-        Runtime::Docker => Target::DockerVm,
-        Runtime::Vm => Target::Vagrant,
-        Runtime::Cloud => Target::CloudServices,
-    }
+/// How the lab's containers start, from its Compose file's text (Isoloom's start plan).
+pub fn start_plan(compose: &str) -> Option<StartPlan> {
+    isoloom_core::generate::start_plan(compose).ok()
 }
 
-/// The Terraform module and its Isoloom target for a server or cloud (`tf` is the launcher's
-/// Terraform target: `proxmox`, `aws`, `azure`, `gcp`, `digitalocean`, `linode`, `oci`).
-pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> Result<(PathBuf, Target)> {
-    let out = out(dir);
-    Ok(match (runtime, tf) {
-        (Runtime::Docker, "proxmox") => (out.join("docker-vm/proxmox"), Target::DockerVm),
-        (Runtime::Vm, "proxmox") => (out.join("proxmox"), Target::Proxmox),
-        (Runtime::Docker, cloud) => (out.join("cloud-docker").join(cloud), Target::CloudDocker),
-        // Isoloom generates a cloud-vm module per cloud it can model the lab on; a cloud a lab
-        // doesn't support has no module, and the run surfaces that when the directory is missing.
-        (Runtime::Vm, cloud) => (out.join("cloud-vm").join(cloud), Target::CloudVm),
-        // Isoloom's variables for the lab's own module (see `cloud_services`).
-        (Runtime::Cloud, _) => (out.join("cloud-services"), Target::CloudServices),
-    })
+/// The check runner Isoloom writes for `machine`'s `exec` checks (under the Compose file's
+/// `checks/`).
+pub fn exec_runner(machine: &str) -> String {
+    isoloom_core::generate::exec_runner(machine)
 }
 
-/// The module to destroy a lab's Terraform resources with: its Isoloom module, or, for a lab
-/// started before labs moved to Isoloom (still installed at that commit), its old
-/// `deploy/terraform/<target>` module, so those resources can still be removed.
-pub fn terraform_to_destroy(dir: &Path, runtime: Runtime, tf: &str) -> Result<PathBuf> {
-    let legacy = dir.join("deploy/terraform").join(tf);
-    if !out(dir).is_dir() && legacy.is_dir() {
-        return Ok(legacy);
-    }
-    Ok(terraform(dir, runtime, tf)?.0)
+/// Isoloom's view of this host: each target (each cloud for the cloud ones), ready or not, and
+/// why. Runs the tools, so call it off the async runtime.
+pub fn host_readiness() -> Vec<isoloom_core::host::Readiness> {
+    isoloom_core::host::all()
 }
 
 /// What a cloud-services lab's module needs on this machine besides Terraform
@@ -339,6 +335,8 @@ pub fn inputs_json(spec: &Spec, env: &[(String, String)]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::Runtime;
+    use std::path::PathBuf;
 
     #[test]
     fn a_newer_spec_asks_for_an_update() {
@@ -361,6 +359,9 @@ mod tests {
         prepare(&dir, Target::Docker).unwrap();
         let compose = std::fs::read_to_string(compose_file(&dir)).unwrap();
         assert!(compose.contains("isoloom.service.80"));
+        // Named after the launcher's project for the lab, not the spec.
+        let project = super::super::docker::project(dir.file_name().unwrap().to_str().unwrap());
+        assert!(compose.contains(&format!("\nname: {project}\n")), "{compose}");
         prepare(&dir, Target::CloudDocker).unwrap();
         assert!(dir.join(".isoloom/cloud-docker/aws/main.tf").is_file());
         std::fs::remove_dir_all(dir).unwrap();

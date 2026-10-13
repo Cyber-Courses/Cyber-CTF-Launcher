@@ -52,7 +52,7 @@ pub(crate) fn plan(lab_vagrantfile: &str) -> Result<(String, Vec<Link>)> {
         let (base, len) = parse_cidr(&n.subnet).ok_or_else(|| Error::Invalid(format!("network `{}` has no subnet", n.name)))?;
         let used: HashSet<Ipv4Addr> = ifaces.values().flatten().filter(|i| i.network == n.name).filter_map(|i| i.ip.parse().ok()).collect();
         let ip = free_address(base, len, &used).ok_or_else(|| Error::Invalid(format!("no free address on `{}` for the attack VM", n.name)))?;
-        links.push(Link { intnet: format!("isoloom-{lab}-{}", n.name), net: n.name, ip, mask: mask_of(len) });
+        links.push(Link { intnet: super::lab::vm_network(&lab, &n.name), net: n.name, ip, mask: mask_of(len) });
     }
     if links.is_empty() {
         return Err(Error::Invalid("the lab's Vagrantfile declares no network to join".into()));

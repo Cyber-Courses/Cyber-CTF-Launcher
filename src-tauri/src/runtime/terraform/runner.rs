@@ -45,7 +45,7 @@ async fn in_container(module: &Path) -> bool {
 /// The lab folder a module belongs to: the parent of its `.isoloom…` folder (the module itself
 /// when it isn't under one).
 fn lab_root(module: &Path) -> &Path {
-    module.ancestors().find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(".isoloom"))).and_then(Path::parent).unwrap_or(module)
+    module.ancestors().find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(crate::runtime::lab::is_output_dir)).and_then(Path::parent).unwrap_or(module)
 }
 
 /// `env` plus what every run sets: the plugin cache beside the state, and automation mode.

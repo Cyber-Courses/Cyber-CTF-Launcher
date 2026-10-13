@@ -20,6 +20,7 @@ pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRunt
     tauri::Builder::<crate::AppRuntime>::new()
         .setup(move |app| {
             crate::shared_folder::init(app.handle());
+            crate::runtime::lab::registry::init(app.handle());
             // A background process, not an app: on macOS keep it out of the Dock, the app
             // switcher and Apple Events aimed at "Cyber CTF".
             #[cfg(target_os = "macos")]

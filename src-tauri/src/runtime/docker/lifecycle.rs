@@ -122,8 +122,7 @@ pub async fn start(dir: &Path, id: &str, env: &[(String, String)], mut log: impl
     // Compose's --wait fails when a one-shot job exits (even with 0) unless a running service
     // depends on it: an `init:` on a machine nothing depends on. Isoloom's start plan names
     // those jobs: wait for everything else, then run each attached, failing on its exit code.
-    let plan =
-        std::fs::read_to_string(crate::runtime::lab::compose_file(dir)).ok().and_then(|c| isoloom_core::generate::start_plan(&c).ok()).unwrap_or_default();
+    let plan = std::fs::read_to_string(crate::runtime::lab::compose_file(dir)).ok().and_then(|c| crate::runtime::lab::start_plan(&c)).unwrap_or_default();
     for step in start_steps(&plan) {
         let step: Vec<&str> = step.iter().map(String::as_str).collect();
         compose::stream(dir, &project, &step, env, &mut log).await?;
@@ -133,7 +132,7 @@ pub async fn start(dir: &Path, id: &str, env: &[(String, String)], mut log: impl
 
 /// The Compose commands that start a lab with Isoloom's start `plan`: `up --wait` (on the
 /// services to wait for, when some are one-shot jobs), then each job attached, in order.
-fn start_steps(plan: &isoloom_core::generate::StartPlan) -> Vec<Vec<String>> {
+fn start_steps(plan: &crate::runtime::lab::StartPlan) -> Vec<Vec<String>> {
     let up = ["up", "-d", "--pull", "missing", "--wait", "--wait-timeout", "600"];
     let mut first: Vec<String> = up.iter().map(|s| s.to_string()).collect();
     if plan.jobs.is_empty() {
@@ -230,7 +229,7 @@ async fn remove_network(net: &str) {
 #[cfg(test)]
 mod tests {
     use super::{PORTS_ENV, default_ports, pick_pins, port_in_use, stale_networks, start_steps};
-    use isoloom_core::generate::StartPlan;
+    use crate::runtime::lab::StartPlan;
 
     #[test]
     fn default_ports_only_when_asked_for() {
