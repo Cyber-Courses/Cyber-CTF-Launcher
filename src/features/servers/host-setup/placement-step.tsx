@@ -40,7 +40,7 @@ export function PlacementStep({ s }: { s: HostSetup }) {
             <span className="block text-[0.8125rem] text-foreground">{t("servers.setup.placement.selfSigned")}</span>
             <span className="block text-[0.75rem] text-muted-foreground">{t("servers.setup.placement.selfSignedHint")}</span>
           </span>
-          <Switch checked={v.insecureTls} onCheckedChange={(c) => set("insecureTls", c)} aria-label={t("servers.setup.placement.selfSigned")} />
+          <Switch checked={v.insecureTls ?? false} onCheckedChange={(c) => set("insecureTls", c)} aria-label={t("servers.setup.placement.selfSigned")} />
         </Note>
       )}
       {error && (

@@ -1,101 +1,51 @@
 import { invoke } from "@tauri-apps/api/core";
 import { invokeStreaming } from "@/lib/tauri/stream";
-import type { Provider } from "@/lib/tauri/machine";
+import type {
+  ActiveOperation,
+  CloudPreview,
+  ExegolStatus,
+  LabAttacker,
+  LabCheck,
+  LabCheckResult,
+  LabInterface,
+  LabMachine,
+  LabNetwork,
+  LabOutput,
+  LabPlace,
+  LabPort,
+  LabService,
+  LabStatus,
+  LabTool,
+  Park,
+  Provider,
+  Runtime,
+  SharedFolder,
+  ShellKind,
+  TermEvent,
+} from "@/lib/tauri/generated";
 
-/** How a lab runs: containers, VMs, or cloud services (a Terraform module of its own, applied
- *  into the player's cloud account). */
-export type Runtime = "DOCKER" | "VM" | "CLOUD";
-
-/** A machine's address on one lab network (the lab's name for it, e.g. "dmz"). */
-export interface LabInterface {
-  network: string;
-  ip: string;
-}
-
-export interface LabMachine {
-  name: string;
-  state: string;
-  image: string;
-  ip: string;
-  ports: { published: number; target: number }[];
-  /** Every network it is plugged into; two or more = a pivot. Empty when unknown. */
-  interfaces: LabInterface[];
-  /** Services the lab declares inside it (compose labels); empty when none are declared. */
-  services: LabService[];
-  /** Lab plumbing (the provisioning controller), not a target: hidden, powered off once built. */
-  infra: boolean;
-}
-
-/** A service inside a machine, as the lab declares it (`cyberctf.service.<name>`). */
-export interface LabService {
-  name: string;
-  /** As declared: "web", "database", "cache", "worker", "ssh" or free text. */
-  kind: string;
-  /** Ports it listens on inside the container. */
-  ports: number[];
-}
-
-/** A lab network segment (a Docker network = a switch). */
-export interface LabNetwork {
-  name: string;
-  subnet: string;
-  /** No route out (compose `internal: true`). */
-  internal: boolean;
-}
-
-/** How a lab was parked: paused (state saved, resumes in seconds) or shut down (powered off). */
-export type Park = "pause" | "shutdown";
-
-export interface LabStatus {
-  running: boolean;
-  /** Set when the launcher parked the lab and it is still down: its machines resume as they
-   *  were, so the page offers Resume rather than "clean up". */
-  parked: Park | null;
-  machines: LabMachine[];
-  /** The lab's network segments (Docker labs); empty when the runtime doesn't report them. */
-  networks: LabNetwork[];
-  /** Loopback URL where the lab is reachable, once running (null for VM labs / no port). */
-  url: string | null;
-  /** Server host name a VM lab runs on; null when it runs on this machine. */
-  host: string | null;
-  /** Unix seconds a cloud lab stops itself (auto-stop); null if it doesn't. */
-  expiresAt: number | null;
-  /** Where it runs: its container here, a VM here, a server or a cloud account. */
-  place: "container" | "local_vm" | "server" | "cloud" | null;
-  /** The engine or hypervisor it runs on: "docker", a Vagrant provider id ("virtualbox",
-   *  "vmware_desktop", "parallels", ...) or a server/cloud provider; null when unknown. */
-  provider: string | null;
-  /** Server and cloud labs: the attack box beside the lab on its host (address and lab
-   *  network); null elsewhere (the local attack box reports itself). */
-  attacker: { ip: string; labNetwork: string } | null;
-  /** What a cloud lab exposes once up (its module's outputs): entry points, credentials. Empty
-   *  for the other labs. */
-  outputs: LabOutput[];
-  /** A cloud lab's own words once up, its outputs filled in; null for the other labs. */
-  message: string | null;
-}
-
-/** One thing a cloud lab exposes: a module output under the lab's name for it. */
-export interface LabOutput {
-  name: string;
-  value: string;
-  /** A secret (Terraform marks it sensitive): masked until the player asks. */
-  sensitive: boolean;
-}
-
-/** A cloud lab before it starts, from its spec at the catalogue's commit. */
-export interface CloudPreview {
-  /** "aws", "azure" or "gcp". */
-  provider: string;
-  /** The lab's own estimate, in US dollars per hour; null when it gives none. */
-  hourlyUsd: number | null;
-  /** The launch-time inputs it takes (PLAYER_CIDR...). */
-  inputs: string[];
-  /** It lets in this machine's public IP only. */
-  allowList: boolean;
-  /** The names of what it exposes once up. */
-  outputs: string[];
-}
+export type {
+  ActiveOperation,
+  CloudPreview,
+  ExegolStatus,
+  LabAttacker,
+  LabCheck,
+  LabCheckResult,
+  LabInterface,
+  LabMachine,
+  LabNetwork,
+  LabOutput,
+  LabPlace,
+  LabPort,
+  LabService,
+  LabStatus,
+  LabTool,
+  Park,
+  Runtime,
+  SharedFolder,
+  ShellKind,
+  TermEvent,
+};
 
 /** A cloud lab's cost and inputs before it starts; null for other labs. */
 export const labCloudPreview = (id: string, repository: string, commit: string) => invoke<CloudPreview | null>("lab_cloud_preview", { id, repository, commit });
@@ -117,48 +67,11 @@ export const labStatus = (id: string, runtime: Runtime) => invoke<LabStatus>("la
  *  Recovers running labs after a crash/restart, independent of any per-lab status probe. */
 export const runningLabs = () => invoke<string[]>("running_labs");
 
-/** One check of a lab's self-verification. */
-export interface LabCheckResult {
-  name: string;
-  /** Where it ran: "from web", or "from the environment's networks". */
-  from: string;
-  ok: boolean;
-  /** Why it failed (empty when it passed). */
-  reason: string;
-}
-
-/** Result of a lab's self-verification: its own checks and the ones derived from its spec. */
-export interface LabCheck {
-  available: boolean;
-  ok: boolean;
-  output: string;
-  results: LabCheckResult[];
-}
-
-/** An observer the lab puts beside itself (`tools:`): a toolbox or a capture box on every network, outside the lab's contract. */
-export interface LabTool {
-  name: string;
-  image: string | null;
-  /** Its address on each lab network, where the lab runs. */
-  addresses: { network: string; ip: string }[];
-  /** The loopback port its web UI is published on, when it has one. */
-  publish: number | null;
-}
-
 /** The lab's observers, at their addresses where it runs. */
 export const labTools = (id: string, runtime: Runtime) => invoke<LabTool[]>("lab_tools", { id, runtime });
 
 /** Runs a lab's exploitability check: is the intended exploit path still solvable? */
 export const labCheck = (id: string, runtime: Runtime) => invoke<LabCheck>("lab_check", { id, runtime });
-
-export interface ExegolStatus {
-  imagePresent: boolean;
-  running: boolean;
-  ip: string;
-  /** The lab network the attack box is plugged into, once running. */
-  labNetwork: string;
-  shellCmd: string;
-}
 
 /** Status of a lab's attack box (Exegol) for the configured image. */
 export const exegolStatus = (id: string, image: string) => invoke<ExegolStatus>("exegol_status", { id, image });
@@ -189,14 +102,6 @@ export const labLaunch = (
  *  "starting" state after a window reload, which loses the in-memory deploy store. */
 export const deployingLabs = () => invoke<string[]>("deploying_labs");
 
-/** One operation in flight on a lab, with the step its log is at (sidebar). */
-export interface ActiveOperation {
-  labId: string;
-  op: "launch" | "resume" | "pause" | "shutdown" | "provision" | "attack_vm" | "stop";
-  machine: string | null;
-  step: string | null;
-}
-
 /** Every lab operation in flight right now: workers and in-process ones. */
 export const activeOperations = () => invoke<ActiveOperation[]>("active_operations");
 
@@ -211,10 +116,6 @@ export const lingerQuit = () => invoke<void>("linger_quit");
 /** Quit the app even though a deploy is in progress (the user confirmed from the warning). */
 export const forceQuit = () => invoke<void>("force_quit");
 
-/** Which shell an embedded terminal attaches to: the lab's attack box, or a VM lab's attack VM. */
-export type ShellKind = "lab" | "attackVm";
-export type TermEvent = { kind: "data"; data: string } | { kind: "exit"; code: number | null };
-
 /** Opens (or focuses) the shell window for a lab. */
 export const terminalWindow = (id: string, kind: ShellKind, runtime: Runtime, title: string) => invoke<void>("terminal_window", { id, kind, runtime, title });
 
@@ -225,8 +126,6 @@ export const terminalWrite = (session: number, data: string) => invoke<void>("te
 export const terminalResize = (session: number, cols: number, rows: number) => invoke<void>("terminal_resize", { session, cols, rows });
 export const terminalClose = (session: number) => invoke<void>("terminal_close", { session });
 
-/** The folder shared with the attack box, at `mountPoint` inside it (off until chosen). */
-export type SharedFolder = { enabled: boolean; path: string; mountPoint: string };
 export const sharedFolderGet = () => invoke<SharedFolder>("shared_folder_get");
 export const sharedFolderSet = (enabled: boolean, path: string) => invoke<SharedFolder>("shared_folder_set", { enabled, path });
 export const sharedFolderOpen = () => invoke<void>("shared_folder_open");
