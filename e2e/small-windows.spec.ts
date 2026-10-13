@@ -54,13 +54,16 @@ test.describe("the server setup window at its minimum size", () => {
       const next = page.getByRole("button", { name: "Continue", exact: true });
       await expect(next).toBeInViewport({ ratio: 1 });
       // The next step too: its Continue sits in the same place (once the step's rise-in ends).
-      const y = async () => Math.round((await box(page, next)).y);
-      await expect.poll(async () => (await y()) - (await y())).toBe(0);
-      const at = await y();
+      // Finite animations only: a spinner or a pulsing dot never ends.
+      const settled = () =>
+        page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
+      await settled();
+      const at = (await box(page, next)).y;
       await next.click();
       await expect(page.getByText("Step 2 of", { exact: false })).toBeVisible();
       await expect(next).toBeInViewport({ ratio: 1 });
-      await expect.poll(y).toBe(at);
+      await settled();
+      expect(Math.abs((await box(page, next)).y - at)).toBeLessThanOrEqual(1);
     });
   }
 });

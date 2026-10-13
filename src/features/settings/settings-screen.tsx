@@ -67,7 +67,8 @@ export function SettingsScreen({
   const [tab, setTab] = useState<Tab>("account");
 
   return (
-    // A rail beside the section; under 640px (the window's narrowest), a tab bar above it.
+    // A rail beside the section; under 640px (the window's narrowest), a tab bar above it, text
+    // only so the longer languages fit.
     <div className="mx-auto flex max-w-[47.5rem] flex-col gap-6 pb-10 sm:flex-row sm:gap-8">
       <nav
         aria-label={t("settings.tabs.label")}
@@ -86,7 +87,7 @@ export function SettingsScreen({
                 : "text-muted-foreground hover:bg-glass hover:text-foreground",
             )}
           >
-            <tb.icon className="size-4 shrink-0 opacity-85" /> {tb.label}
+            <tb.icon className="hidden size-4 shrink-0 opacity-85 sm:block" /> {tb.label}
           </button>
         ))}
       </nav>
