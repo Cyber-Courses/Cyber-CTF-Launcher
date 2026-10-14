@@ -79,7 +79,8 @@ describe("machine setup steps", () => {
     // No hypervisor: Skip for now is a way past, not the recommended action.
     for (const step of ["vm", "vagrant", "vm-test"] as const) expect(nextVariant(step, report(), setup()), step).toBe("secondary");
     // WSL: I've done this, I'll restart later and a skip beside Turn on WSL 2, the step's jewel.
-    const win = (state: string) => report({ os: "windows", wsl: { state, reopensAfterRestart: true } } as Partial<SystemReport>);
+    // Docker not running yet: a running engine would count WSL 2 as on (#224).
+    const win = (state: string) => report({ os: "windows", dockerRunning: false, wsl: { state, reopensAfterRestart: true } } as Partial<SystemReport>);
     for (const state of ["unknown", "needsReboot", "missing"]) expect(nextVariant("virtualization", win(state), setup()), state).toBe("secondary");
     expect(nextVariant("virtualization", win("ready"), setup())).toBe("primary");
     // Continue while the step's own Install is still the thing to do: not the jewel either.

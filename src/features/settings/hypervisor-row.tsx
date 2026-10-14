@@ -234,7 +234,7 @@ function useAddonInstall(onRefresh: () => void) {
       await hypervJoinAdmins();
       setLog((x) => [...(x ?? []), translate("settings.hypervisor.logHypervAllowed")]);
     } catch (e) {
-      setLog((x) => [...(x ?? []), `✗ ${String(e)}`]);
+      setLog((x) => [...(x ?? []), `✗ ${describeError(e)}`]);
     } finally {
       setInstalling(null);
       onRefresh();

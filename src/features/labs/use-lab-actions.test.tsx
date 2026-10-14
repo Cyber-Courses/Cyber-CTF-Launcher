@@ -115,7 +115,14 @@ describe("useLabActions: launch", () => {
   it("offers an offline start when Cyber CTF can't be reached and the lab is installed, and starts it on yes", async () => {
     const offline: unknown[] = [];
     const { hook } = setup(
-      unreachableBackend({ code: "offlineReady", args: { detail: "API unreachable: offline" }, message: "Cyber CTF can't be reached (API unreachable: offline). This lab is installed here, so it can start offline, without saving progress." }, offline),
+      unreachableBackend(
+        {
+          code: "offlineReady",
+          args: { detail: "API unreachable: offline" },
+          message: "Cyber CTF can't be reached (API unreachable: offline). This lab is installed here, so it can start offline, without saving progress.",
+        },
+        offline,
+      ),
     );
     const user = userEvent.setup();
     render(<OfflineStartPrompt />);
@@ -135,7 +142,14 @@ describe("useLabActions: launch", () => {
   it("starts nothing offline when the player declines, and says why the launch failed", async () => {
     const offline: unknown[] = [];
     const { hook } = setup(
-      unreachableBackend({ code: "offlineReady", args: { detail: "API unreachable: offline" }, message: "Cyber CTF can't be reached (API unreachable: offline). This lab is installed here, so it can start offline, without saving progress." }, offline),
+      unreachableBackend(
+        {
+          code: "offlineReady",
+          args: { detail: "API unreachable: offline" },
+          message: "Cyber CTF can't be reached (API unreachable: offline). This lab is installed here, so it can start offline, without saving progress.",
+        },
+        offline,
+      ),
     );
     const user = userEvent.setup();
     render(<OfflineStartPrompt />);

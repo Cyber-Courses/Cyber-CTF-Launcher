@@ -324,8 +324,9 @@ describe("HypervisorRow", () => {
 
   it("shows a declined Hyper-V rights prompt in the log", async () => {
     installTauri({
+      // As the core rejects: the error's code and its message.
       hyperv_join_admins: () => {
-        throw "The Windows permission prompt was declined";
+        throw { code: "other", message: "The Windows permission prompt was declined" };
       },
     });
     const user = userEvent.setup();

@@ -43,6 +43,10 @@ pub enum Code {
     DockerDenied {
         user: String,
     },
+    /// The same on Windows: the engine's pipe belongs to the `docker-users` group.
+    DockerDeniedWindows {
+        user: String,
+    },
     /// A tool the operation runs isn't installed.
     ToolMissing {
         tool: String,

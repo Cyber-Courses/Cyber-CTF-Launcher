@@ -49,14 +49,18 @@ describe("command errors", () => {
         "alreadyInProgress",
         "commandFailed",
         "dockerDenied",
+        "dockerDeniedWindows",
         "dockerNotRunning",
         "loginTimeout",
         "noBrowser",
         "noPasswordStored",
+        "offlineReady",
         "portInUse",
         "sessionExpired",
+        "signInCancelled",
         "signedOut",
         "toolMissing",
+        "unreachable",
       ].sort(),
     );
   });
