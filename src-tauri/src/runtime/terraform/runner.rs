@@ -324,7 +324,17 @@ mod tests {
         std::fs::write(dir.join("plugin"), "x").unwrap();
         assert!(!clear_plugin_cache(&dir) && dir.join("plugin").exists());
         drop(held);
-        assert!(clear_plugin_cache(&dir) && !dir.join("plugin").exists());
+        // A child process another test spawns at this moment can hold a copy of the lock until
+        // it execs, so the release is awaited briefly rather than assumed instant.
+        let mut cleared = false;
+        for _ in 0..40 {
+            cleared = clear_plugin_cache(&dir);
+            if cleared {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(cleared && !dir.join("plugin").exists());
         assert!(lock_cache(&env).await.is_some());
         assert!(lock_cache(&[]).await.is_none(), "no cache, no lock");
         std::fs::remove_dir_all(dir).unwrap();
