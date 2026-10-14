@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { listen } from "@tauri-apps/api/event";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -297,6 +297,42 @@ describe("HypervisorRow", () => {
     expect(text()).toContain("Installing the 'vagrant-vmware-desktop' plugin");
     expect(text()).toContain("✓ Installed");
     expect(props.onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("lets a Windows account that may not manage Hyper-V join Hyper-V Administrators (#185)", async () => {
+    const calls = installTauri({ hyperv_join_admins: () => null });
+    const user = userEvent.setup();
+    const reason = "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators";
+    render(<HypervisorRow report={withProviders([hv({ provider: "hyperv", available: false, reason })], { os: "windows" })} {...props} />);
+    expect(text()).toContain(reason);
+    await user.click(button(/allow my account/i));
+    await flush();
+    expect(calls.some((c) => c.cmd === "hyperv_join_admins")).toBe(true);
+    expect(text()).toContain("Sign out of Windows and back in");
+    expect(props.onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("offers no Hyper-V rights where Hyper-V is off or Vagrant missing", () => {
+    installTauri();
+    render(<HypervisorRow report={withProviders([hv({ provider: "hyperv", available: false, hypervisor: false })], { os: "windows" })} {...props} />);
+    expect(screen.queryByRole("button", { name: /allow my account/i })).toBeNull();
+    cleanup();
+    const noVagrant = withProviders([hv({ provider: "hyperv", available: false })], { os: "windows" });
+    render(<HypervisorRow report={{ ...noVagrant, vagrant: { ...noVagrant.vagrant, installed: false } }} {...props} />);
+    expect(screen.queryByRole("button", { name: /allow my account/i })).toBeNull();
+  });
+
+  it("shows a declined Hyper-V rights prompt in the log", async () => {
+    installTauri({
+      hyperv_join_admins: () => {
+        throw "The Windows permission prompt was declined";
+      },
+    });
+    const user = userEvent.setup();
+    render(<HypervisorRow report={withProviders([hv({ provider: "hyperv", available: false })], { os: "windows" })} {...props} />);
+    await user.click(button(/allow my account/i));
+    await flush();
+    expect(text()).toContain("✗ The Windows permission prompt was declined");
   });
 
   it("shows a failed add-on install in the log", async () => {

@@ -22,17 +22,7 @@ pub fn default_image() -> &'static str {
 }
 
 pub fn container(id: &str) -> String {
-    format!("cyberctf-{id}-attacker")
-}
-
-/// Guards an image reference so it can't be read as a flag or smuggle extra args.
-/// (It's passed to docker without a shell, so this only blocks a leading `-` and
-/// anything outside a normal `registry/name:tag@digest`.)
-pub fn valid_image(image: &str) -> bool {
-    !image.is_empty()
-        && image.len() <= 200
-        && !image.starts_with('-')
-        && image.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | ':' | '@'))
+    format!("{}-attacker", super::docker::project(id))
 }
 
 #[derive(Serialize, ts_rs::TS)]
@@ -49,13 +39,10 @@ pub struct ExegolStatus {
     pub shell_cmd: String,
 }
 
-/// The lab's Docker networks (Compose labels them with the project name), the main one
-/// first: `<project>_default` when the lab has it, so the attack box's reported address
-/// is the one most targets see.
+/// The lab's Docker networks, the main one first: `<project>_default` when the lab has it, so
+/// the attack box's reported address is the one most targets see.
 async fn lab_networks(id: &str) -> Vec<String> {
-    let filter = format!("label=com.docker.compose.project=cyberctf-{id}");
-    let out = run_read("docker", &["network", "ls", "--filter", &filter, "--format", "{{.Name}}"], None).await.unwrap_or_default();
-    main_first(out.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect())
+    main_first(super::docker::lab_network_names(id).await)
 }
 
 fn main_first(mut networks: Vec<String>) -> Vec<String> {
@@ -104,7 +91,7 @@ pub async fn start(id: &str, image: &str, mut log: impl FnMut(String)) -> Result
     if lab_nets.is_empty() {
         return Err(Error::Invalid("the lab network isn't up — start the lab first".into()));
     }
-    let attack_net = format!("cyberctf-{id}-attack");
+    let attack_net = super::docker::attack_network(id);
     // Own network first, then join the lab network: a distinct attack segment that can
     // still reach the targets (so the attacker is not on the same subnet as the lab). Inside the
     // lab's own address room, not a block from Docker's default pool, which a later lab's
@@ -186,7 +173,7 @@ pub async fn rejoin(id: &str) {
 pub async fn stop(id: &str, mut log: impl FnMut(String)) -> Result<()> {
     log("Removing the attack box…".into());
     let _ = stream("docker", &["rm", "-f", &container(id)], None, &[], &mut log).await;
-    let _ = run("docker", &["network", "rm", &format!("cyberctf-{id}-attack")], None).await;
+    let _ = run("docker", &["network", "rm", &super::docker::attack_network(id)], None).await;
     Ok(())
 }
 
@@ -514,19 +501,9 @@ mod tests {
         let image = super::default_image();
         let digest = image.strip_prefix("cyberctf/attack-box@sha256:").expect("cyberctf/attack-box@sha256:<digest>");
         assert!(digest.len() == 64 && digest.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "{image}");
-        assert!(super::valid_image(image));
+        assert!(crate::exec::valid_image(image));
         let file: serde_json::Value = serde_json::from_str(super::DEFAULT_IMAGE_FILE).unwrap();
         assert!(file["previous"].as_array().unwrap().iter().all(|p| p.as_str() != Some(image)), "the default is not also a previous one");
-    }
-
-    #[test]
-    fn images_are_plain_references() {
-        assert!(super::valid_image("nwodtuhs/exegol:free"));
-        assert!(super::valid_image("ghcr.io/org/kali@sha256:abc"));
-        assert!(!super::valid_image(""));
-        assert!(!super::valid_image("-v"));
-        assert!(!super::valid_image("img; rm -rf /"));
-        assert!(!super::valid_image(&"a".repeat(201)));
     }
 
     #[test]

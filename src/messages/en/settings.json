@@ -113,7 +113,11 @@
     "installAddon": "Install add-on",
     "logInstalling": "Installing the Vagrant add-on {plugin}…",
     "logInstalled": "✓ Installed",
-    "logTitle": "Vagrant add-on"
+    "logTitle": "Vagrant add-on",
+    "allowHyperv": "Allow my account",
+    "allowingHyperv": "Allowing…",
+    "logAllowingHyperv": "Adding your account to Hyper-V Administrators (Windows asks for permission)…",
+    "logHypervAllowed": "✓ Done. Sign out of Windows and back in, then re-check."
   },
   "cleanup": {
     "title": "Cleanup",

@@ -113,7 +113,11 @@
     "installAddon": "Erweiterung installieren",
     "logInstalling": "Vagrant-Erweiterung {plugin} wird installiert…",
     "logInstalled": "✓ Installiert",
-    "logTitle": "Vagrant-Erweiterung"
+    "logTitle": "Vagrant-Erweiterung",
+    "allowHyperv": "Mein Konto zulassen",
+    "allowingHyperv": "Wird zugelassen…",
+    "logAllowingHyperv": "Ihr Konto wird zu den Hyper-V-Administratoren hinzugefügt (Windows fragt nach der Berechtigung)…",
+    "logHypervAllowed": "✓ Erledigt. Melden Sie sich bei Windows ab und wieder an, dann erneut prüfen."
   },
   "cleanup": {
     "title": "Aufräumen",

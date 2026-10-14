@@ -20,6 +20,8 @@ mod proptest_support;
 mod quit;
 mod runtime;
 mod shared_folder;
+#[cfg(test)]
+mod source_scan;
 mod terminal;
 #[cfg(test)]
 mod test_app;
@@ -128,6 +130,7 @@ pub fn run() {
             cloud::gcp_account,
             cloud::gcp_billing_accounts,
             cloud::gcp_organizations,
+            runtime::providers::hyperv_join_admins,
             cloud::oci_config,
             platform::install::install_vagrant_plugin,
             labs::lab_launch,
@@ -308,37 +311,6 @@ mod tests {
         ("open_log_folder", "opens the system's file manager; log_dir is tested"),
     ];
 
-    /// The test code under `dir`: whole `tests.rs` / `proptests.rs` files, and each file's
-    /// `#[cfg(test)]` module onwards.
-    fn test_code(dir: &std::path::Path, out: &mut String) {
-        for entry in std::fs::read_dir(dir).unwrap().flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                test_code(&path, out);
-                continue;
-            }
-            if path.extension().and_then(|x| x.to_str()) != Some("rs") {
-                continue;
-            }
-            let src = std::fs::read_to_string(&path).unwrap();
-            if matches!(path.file_name().and_then(|n| n.to_str()), Some("tests.rs" | "proptests.rs")) {
-                out.push_str(&src);
-                continue;
-            }
-            let lines: Vec<&str> = src.lines().collect();
-            let start = (0..lines.len()).find(|&i| {
-                let attr = lines[i].trim();
-                (attr == "#[cfg(test)]" || attr.starts_with("#[cfg(all(test"))
-                    && lines.get(i + 1).is_some_and(|l| l.trim_start().starts_with("mod ") || l.trim_start().starts_with("pub(crate) mod "))
-                    && lines.get(i + 1).is_some_and(|l| l.trim_end().ends_with('{'))
-            });
-            if let Some(i) = start {
-                out.push_str(&lines[i..].join("\n"));
-            }
-            out.push('\n');
-        }
-    }
-
     /// Whether `code` calls `name(…)` (not `other_name(…)`), or invokes it through Tauri's IPC
     /// (`cmd: "name"`).
     fn calls(code: &str, name: &str) -> bool {
@@ -353,8 +325,7 @@ mod tests {
     #[test]
     fn every_command_is_called_by_a_test() {
         let commands = names_between(include_str!("../build.rs"), "const COMMANDS: &[&str] = &[", "];");
-        let mut tests = String::new();
-        test_code(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut tests);
+        let tests: String = crate::source_scan::crate_sources().into_iter().map(|s| s.tests + "\n").collect();
         let exempt = |c: &str| NOT_UNIT_TESTED.iter().any(|(n, _)| *n == c);
         let untested: Vec<&String> = commands.iter().filter(|c| !exempt(c) && !calls(&tests, c)).collect();
         assert!(untested.is_empty(), "commands no test calls (test them, or add them to NOT_UNIT_TESTED with why): {untested:?}");

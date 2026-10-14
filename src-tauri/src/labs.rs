@@ -339,7 +339,7 @@ pub async fn lab_launch(
     logs: Channel<String>,
 ) -> Result<()> {
     if let Some(image) = &attackbox_image
-        && !runtime::valid_image(image)
+        && !crate::exec::valid_image(image)
     {
         return Err(Error::Invalid(format!("invalid attack-box image `{image}`")));
     }

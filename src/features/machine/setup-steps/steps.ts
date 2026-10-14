@@ -16,14 +16,17 @@ export function machineSteps(report: SystemReport | null): MachineStep[] {
   return ["pkgmgr", ...(report?.os === "windows" ? (["virtualization"] as const) : []), "docker", "docker-test", "attack", "vm", "vagrant", "vm-test"];
 }
 
+export const isDockerReady = (r: SystemReport | null) => !!r && r.docker.installed && r.dockerRunning;
+
 /** Where WSL 2 stands (Windows): the machine check's answer, and a restart pending once
- *  "Turn on WSL 2" finished in this flow. */
+ *  "Turn on WSL 2" finished in this flow. A running Docker engine is proof enough whatever the
+ *  check could tell (#224): onboarding and the Machine checklist both read it from here, so they
+ *  never disagree, and a working machine is never offered an install and a restart it doesn't need. */
 export function wslState(report: SystemReport | null, setup?: Pick<MachineSetupState, "wslTurnedOn">): WslState {
   const state = report?.wsl?.state ?? "unknown";
+  if (state !== "ready" && isDockerReady(report)) return "ready";
   return state !== "ready" && setup?.wslTurnedOn ? "needsReboot" : state;
 }
-
-export const isDockerReady = (r: SystemReport | null) => !!r && r.docker.installed && r.dockerRunning;
 export const hasHypervisor = (r: SystemReport | null) => !!r && usableHypervisors(r).some((p) => p.hypervisor === true);
 
 export function stepMeta(step: MachineStep, report: SystemReport | null, t: Tr = translate): { icon: LucideIcon; title: string; description: string } {

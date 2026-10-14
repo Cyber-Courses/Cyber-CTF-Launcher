@@ -113,7 +113,11 @@
     "installAddon": "Installer l'extension",
     "logInstalling": "Installation de l'extension Vagrant {plugin}…",
     "logInstalled": "✓ Installée",
-    "logTitle": "Extension Vagrant"
+    "logTitle": "Extension Vagrant",
+    "allowHyperv": "Autoriser mon compte",
+    "allowingHyperv": "Autorisation…",
+    "logAllowingHyperv": "Ajout de votre compte aux Administrateurs Hyper-V (Windows demande l’autorisation)…",
+    "logHypervAllowed": "✓ C’est fait. Déconnectez-vous de Windows puis reconnectez-vous, puis relancez la vérification."
   },
   "cleanup": {
     "title": "Nettoyage",

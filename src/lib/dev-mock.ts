@@ -625,6 +625,9 @@ export async function browserAnswer(cmd: string, args: Record<string, unknown> |
       if (!live.firstCheckAt) live.firstCheckAt = now;
       return withInstalls(scenarioReport(sc), live.installed, sc.pmLater ? now - live.firstCheckAt >= 1000 : null);
     }
+    case "hyperv_join_admins":
+      await sleep(300);
+      return null;
     case "install_dependency":
     case "install_vagrant_plugin": {
       const what = String(cmd === "install_dependency" ? args?.dependency : args?.plugin);

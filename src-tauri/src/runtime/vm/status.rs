@@ -27,6 +27,33 @@ pub async fn status(dir: &Path, env: &[(String, String)]) -> Result<LabStatus> {
     Ok(status_from(&out, dir))
 }
 
+/// A lab's machines' interfaces and its networks, from its spec.
+type Topology = (std::collections::HashMap<String, Vec<crate::runtime::Interface>>, Vec<crate::runtime::Network>);
+
+/// A lab folder, when its topology files last changed, and its topology then.
+type Cached = (PathBuf, Vec<Option<std::time::SystemTime>>, Option<Topology>);
+
+/// The topology of the lab in `lab` (None without a valid spec), kept while the files it comes
+/// from are unchanged: each status poll read and checked the spec, and this machine's Isoloom
+/// defaults, from disk again (#238).
+pub(super) fn lab_topology(lab: &Path) -> Option<Topology> {
+    static CACHE: std::sync::Mutex<Vec<Cached>> = std::sync::Mutex::new(Vec::new());
+    let stamps = topology_stamps(lab);
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, _, topology)) = cache.iter().find(|(dir, at, _)| dir == lab && *at == stamps) {
+        return topology.clone();
+    }
+    let topology = crate::runtime::lab::spec(lab).ok().map(|spec| crate::runtime::lab::topology(&spec));
+    cache.retain(|(dir, _, _)| dir != lab);
+    cache.push((lab.to_path_buf(), stamps, topology.clone()));
+    topology
+}
+
+/// When each file a lab's topology is read from last changed (None: absent).
+fn topology_stamps(lab: &Path) -> Vec<Option<std::time::SystemTime>> {
+    crate::runtime::lab::spec_files(lab).into_iter().map(|f| std::fs::metadata(f).and_then(|m| m.modified()).ok()).collect()
+}
+
 /// The status of the VMs in `dir` from `vagrant status --machine-readable` output.
 pub(super) fn status_from(out: &str, dir: &Path) -> LabStatus {
     let mut machines = parse_status(out);
@@ -35,8 +62,8 @@ pub(super) fn status_from(out: &str, dir: &Path) -> LabStatus {
     let running = targets.clone().count() > 0 && targets.clone().all(|m| m.state == "running");
     // The network diagram, as a Docker lab gets it: addresses are static (declared in the lab),
     // so it comes from the lab's spec (`.isoloom/vagrant` sits two levels under the lab).
-    let (mut ifaces, networks) = match dir.parent().and_then(Path::parent).and_then(|lab| crate::runtime::lab::spec(lab).ok()) {
-        Some(spec) => crate::runtime::lab::topology(&spec),
+    let (mut ifaces, networks) = match dir.parent().and_then(Path::parent).and_then(lab_topology) {
+        Some(topology) => topology,
         // No lab spec two levels up (the attack VM's own folder, `<lab>/.cyberctf-attack-vm`):
         // the generated Vagrantfile says where its machines sit.
         None => match std::fs::read_to_string(dir.join("Vagrantfile")) {
@@ -82,10 +109,10 @@ pub(super) fn status_from(out: &str, dir: &Path) -> LabStatus {
 pub(in crate::runtime) fn vagrant_topology(
     text: &str,
     lab: &str,
-) -> (std::collections::HashMap<String, Vec<crate::runtime::model::Interface>>, Vec<crate::runtime::model::Network>) {
+) -> (std::collections::HashMap<String, Vec<crate::runtime::Interface>>, Vec<crate::runtime::Network>) {
     let prefix = crate::runtime::lab::vm_network_prefix(lab);
-    let mut ifaces: std::collections::HashMap<String, Vec<crate::runtime::model::Interface>> = std::collections::HashMap::new();
-    let mut networks: Vec<crate::runtime::model::Network> = Vec::new();
+    let mut ifaces: std::collections::HashMap<String, Vec<crate::runtime::Interface>> = std::collections::HashMap::new();
+    let mut networks: Vec<crate::runtime::Network> = Vec::new();
     let mut machine: Option<String> = None;
     for line in text.lines() {
         let l = line.trim();
@@ -103,9 +130,9 @@ pub(in crate::runtime) fn vagrant_topology(
         if !networks.iter().any(|n| n.name == net) {
             // A VM's private network is a switch between the lab's machines; internet, when the
             // lab allows it, goes out through each VM's own NAT adapter, not through this segment.
-            networks.push(crate::runtime::model::Network { name: net.clone(), subnet: cidr(&ip, &mask).unwrap_or_default(), internal: false });
+            networks.push(crate::runtime::Network { name: net.clone(), subnet: cidr(&ip, &mask).unwrap_or_default(), internal: false });
         }
-        ifaces.entry(name.to_string()).or_default().push(crate::runtime::model::Interface { network: net, ip });
+        ifaces.entry(name.to_string()).or_default().push(crate::runtime::Interface { network: net, ip });
     }
     (ifaces, networks)
 }

@@ -125,15 +125,31 @@ pub fn options(batch: bool, known_hosts: &str) -> Vec<String> {
     opts
 }
 
-/// A word for a shell command line: as is when it is plain, single-quoted otherwise.
-fn shell_word(s: &str) -> String {
-    let plain = !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "=.,_/:@+-".contains(c));
-    if plain { s.to_string() } else { sh_quote(s) }
+/// Whether `s` is a word no command line needs to quote.
+fn plain_word(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "=.,_/:@+-".contains(c))
 }
 
-/// `options` as `-o …` words for a shell command line.
-fn shell_options(batch: bool, known_hosts: &Path) -> String {
-    options(batch, &known_hosts.to_string_lossy()).iter().map(|o| format!("-o {}", shell_word(o))).collect::<Vec<_>>().join(" ")
+/// A word for a shell command line: as is when it is plain, single-quoted otherwise.
+fn shell_word(s: &str) -> String {
+    if plain_word(s) { s.to_string() } else { sh_quote(s) }
+}
+
+/// A word of the ProxyCommand ssh runs: ssh hands it to `sh -c` on unix, but Windows' OpenSSH
+/// runs it with no POSIX shell, where a single quote is a plain character (the key's path then
+/// arrived wrapped in quotes and ssh couldn't open it). There only double quotes group a word,
+/// and a Windows path can't hold one.
+fn proxy_word(s: &str, windows: bool) -> String {
+    match (windows, plain_word(s)) {
+        (_, true) => s.to_string(),
+        (true, false) => format!("\"{s}\""),
+        (false, false) => sh_quote(s),
+    }
+}
+
+/// `options` as `-o …` words for a command line, each quoted by `quote`.
+fn quoted_options(batch: bool, known_hosts: &Path, quote: impl Fn(&str) -> String) -> String {
+    options(batch, &known_hosts.to_string_lossy()).iter().map(|o| format!("-o {}", quote(o))).collect::<Vec<_>>().join(" ")
 }
 
 impl Target {
@@ -149,15 +165,22 @@ impl Target {
         Ok(())
     }
 
-    /// `-o ProxyCommand=…` through the jump host, with the same key and known_hosts.
+    /// `-o ProxyCommand=…` through the jump host, with the same key and known_hosts, quoted for
+    /// this OS's ssh.
     fn proxy_option(&self, known_hosts: &Path) -> Result<Option<String>> {
+        self.proxy_command(known_hosts, cfg!(windows))
+    }
+
+    /// [`Target::proxy_option`] for Windows' ssh (`windows`) or a unix one.
+    fn proxy_command(&self, known_hosts: &Path, windows: bool) -> Result<Option<String>> {
         let Some(jump) = &self.jump else { return Ok(None) };
         let (user, host) = jump.split_once('@').ok_or_else(|| Error::Invalid("unexpected jump host".into()))?;
         if !safe_token(user) || !safe_token(host) {
             return Err(Error::Invalid("unexpected jump host".into()));
         }
         // ssh expands `%` tokens in a ProxyCommand before its shell runs it: only `%h:%p` is ours.
-        let inner = format!("ssh -i {} {}", sh_quote(&self.identity.to_string_lossy()), shell_options(true, known_hosts)).replace('%', "%%");
+        let quote = |s: &str| proxy_word(s, windows);
+        let inner = format!("ssh -i {} {}", quote(&self.identity.to_string_lossy()), quoted_options(true, known_hosts, quote)).replace('%', "%%");
         Ok(Some(format!("ProxyCommand={inner} -W %h:%p {jump}")))
     }
 
@@ -170,7 +193,7 @@ impl Target {
             "ssh -t -i {} -p {} {} {proxy}{}@{} sudo docker exec -it attacker bash",
             sh_quote(&self.identity.to_string_lossy()),
             self.port,
-            shell_options(false, known_hosts),
+            quoted_options(false, known_hosts, shell_word),
             self.user,
             self.host,
         ))
@@ -254,15 +277,34 @@ mod tests {
         let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", "/k/id".into()) };
         assert_eq!(
             t.proxy_option(Path::new("/x/kh")).unwrap().unwrap(),
-            "ProxyCommand=ssh -i '/k/id' -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/x/kh -o LogLevel=ERROR -W %h:%p root@pve.lan"
+            "ProxyCommand=ssh -i /k/id -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/x/kh -o LogLevel=ERROR -W %h:%p root@pve.lan"
         );
         let cmd = t.attack_shell_command(Path::new("/x/kh")).unwrap();
-        assert!(cmd.contains("-o 'ProxyCommand=ssh -i '\\''/k/id'\\''"), "{cmd}");
+        assert!(cmd.contains("-o 'ProxyCommand=ssh -i /k/id -o BatchMode=yes"), "{cmd}");
         for bad in ["nobody", "root@pve;rm", "-o@x"] {
             let t = Target { jump: Some(bad.into()), ..Target::direct("10.10.0.5", "isoloom", "/k/id".into()) };
             assert!(t.proxy_option(Path::new("/x")).is_err(), "{bad}");
         }
         assert_eq!(Target::direct("h", "u", "/k".into()).proxy_option(Path::new("/x")).unwrap(), None);
+    }
+
+    #[test]
+    fn a_windows_proxy_command_double_quotes_its_paths() {
+        // Regression (#217): Windows' ssh runs a ProxyCommand with no POSIX shell, so the
+        // single-quoted key path reached the jump host's ssh with its quotes, and it failed.
+        let key = PathBuf::from(r"C:\Users\Frédéric O'Brien\AppData\Roaming\org.cyberctf.desktop\ssh\id_ed25519");
+        let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", key.clone()) };
+        let kh = Path::new(r"C:\Users\Frédéric O'Brien\kh");
+        let proxy = t.proxy_command(kh, true).unwrap().unwrap();
+        assert!(proxy.starts_with(&format!("ProxyCommand=ssh -i \"{}\" -o BatchMode=yes ", key.display())), "{proxy}");
+        assert!(proxy.contains(r#"-o "UserKnownHostsFile=C:\\Users\\Frédéric\ O\'Brien\\kh""#), "{proxy}");
+        assert!(proxy.ends_with(" -W %h:%p root@pve.lan"), "{proxy}");
+        // Plain words stay bare, and unix keeps POSIX quoting.
+        assert!(proxy.contains(" -o LogLevel=ERROR "));
+        assert!(t.proxy_command(kh, false).unwrap().unwrap().contains(r"-i 'C:\Users\Frédéric O'\''Brien\"));
+        assert_eq!(proxy_word("a b", true), "\"a b\"");
+        assert_eq!(proxy_word("a b", false), "'a b'");
+        assert_eq!(proxy_word("BatchMode=yes", true), "BatchMode=yes");
     }
 
     /// The in-app terminal on Windows runs the attack shell's words directly (no `sh` there):

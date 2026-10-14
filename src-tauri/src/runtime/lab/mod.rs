@@ -78,6 +78,14 @@ fn defaults(dir: &Path) -> Result<isoloom_core::defaults::Defaults> {
     isoloom_core::defaults::load(dir, None, &[]).map(|r| r.defaults).map_err(|e| Error::Invalid(format!("this machine's Isoloom defaults: {e}")))
 }
 
+/// The files [`spec`] reads for the lab in `dir`: its spec (either name Isoloom accepts), its
+/// own defaults, its instance marker, and the user's Isoloom defaults (wherever Isoloom finds
+/// them). What a cache of a spec watches.
+pub fn spec_files(dir: &Path) -> Vec<std::path::PathBuf> {
+    let own = isoloom_core::SPEC_FILES.iter().copied().chain(["isoloom.defaults.yml", INSTANCE_MARKER]).map(|f| dir.join(f));
+    own.chain([isoloom_core::defaults::user_file()]).collect()
+}
+
 /// The lab's Isoloom instance number (see the module), when it has one.
 pub const INSTANCE_MARKER: &str = ".cyberctf-instance";
 

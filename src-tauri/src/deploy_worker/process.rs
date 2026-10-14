@@ -394,7 +394,6 @@ fn signal_group(pid: u32, signal: libc::c_int) {
 /// resources it is creating and records them in its state. Ten minutes: an Azure or GCP VM
 /// alone can take several to come up, and a second signal makes Terraform exit at once, which
 /// is the orphaned-resource case this wait is here to avoid.
-#[cfg(unix)]
 const TERRAFORM_GRACE_CHECKS: u32 = 1200;
 
 /// Half-second checks a Terraform apply gets to end on its own on Windows, where no clean

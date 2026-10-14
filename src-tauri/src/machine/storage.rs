@@ -47,7 +47,7 @@ impl Storage {
 
 /// Images an installed Docker lab's compose file references.
 async fn lab_images(dir: &Path, id: &str) -> Vec<String> {
-    let project = format!("cyberctf-{id}");
+    let project = crate::runtime::compose_project(id);
     let file = crate::runtime::lab::compose_file(dir).display().to_string();
     run("docker", &["compose", "-p", &project, "-f", &file, "config", "--images"], Some(dir))
         .await
@@ -120,7 +120,7 @@ pub(crate) async fn claim_lab(app: &AppHandle, dir: &Path, id: &str, before: &ow
 /// knows about) those of the attack box's own repository, whatever image they name now.
 fn image_candidates(owned: &Owned, extra_images: &[String]) -> Vec<(String, Option<String>)> {
     let launcher =
-        extra_images.iter().filter(|i| crate::runtime::valid_image(i) && crate::exec::image_repository(i) == ATTACK_BOX_REPOSITORY).map(|i| (i.clone(), None));
+        extra_images.iter().filter(|i| crate::exec::valid_image(i) && crate::exec::image_repository(i) == ATTACK_BOX_REPOSITORY).map(|i| (i.clone(), None));
     owned.images.iter().map(|i| (i.reference.clone(), Some(i.id.clone()))).chain(launcher).collect()
 }
 

@@ -33,8 +33,7 @@ function stepLine(step: MachineStep, report: SystemReport, last: Record<"docker"
       if (wsl === "ready") return { done: true, meta: "WSL 2" };
       if (wsl === "needsReboot") return { done: false, meta: t("machine.checklist.restartNeeded") };
       if (wsl === "missing") return { done: false, meta: t("machine.checklist.notInstalled") };
-      // The check couldn't tell: a running Docker engine is proof enough.
-      return { done: isDockerReady(report), meta: isDockerReady(report) ? "WSL 2" : t("machine.checklist.notChecked") };
+      return { done: false, meta: t("machine.checklist.notChecked") };
     }
     case "docker":
       return {

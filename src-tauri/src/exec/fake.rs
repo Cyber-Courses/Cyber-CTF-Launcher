@@ -127,3 +127,17 @@ fn reply(program: &str, args: &[&str]) -> Option<Option<Reply>> {
         Some((st.script)(program, args))
     })
 }
+
+/// Whether process `pid` is gone (or a zombie) within a few seconds.
+pub async fn gone(pid: u32) -> bool {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
+    for _ in 0..60 {
+        let mut sys = System::new();
+        sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[Pid::from_u32(pid)]), true, ProcessRefreshKind::nothing());
+        if sys.process(Pid::from_u32(pid)).is_none_or(|p| matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead)) {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    false
+}

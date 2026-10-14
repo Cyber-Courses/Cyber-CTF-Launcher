@@ -66,14 +66,31 @@ pub fn docker_denied(err: &Error) -> bool {
     matches!(err, Error::CommandFailed { stderr, .. } if denied_text(stderr))
 }
 
+/// The socket refusal on unix (`permission denied … docker.sock`), or the named pipe's on Windows
+/// (`open //./pipe/dockerDesktopLinuxEngine: Access is denied.`).
 fn denied_text(stderr: &str) -> bool {
     let s = stderr.to_lowercase();
-    s.contains("permission denied") && (s.contains("docker.sock") || s.contains("docker api") || s.contains("docker daemon"))
+    let socket = s.contains("permission denied") && (s.contains("docker.sock") || s.contains("docker api") || s.contains("docker daemon"));
+    let pipe = s.contains("access is denied") && s.contains("pipe");
+    socket || pipe
 }
 
 /// What to tell a player whose account can't use the running Docker daemon.
 pub fn docker_denied_message() -> String {
-    let user = login_name().unwrap_or_else(|| "$USER".into());
+    denied_message(std::env::consts::OS, login_name().as_deref())
+}
+
+/// [`docker_denied_message`] on `os`, for the account `user`. Windows grants the engine's pipe
+/// to the `docker-users` group (which Docker Desktop's installer fills only with the account
+/// that installed it); elsewhere the socket belongs to the `docker` group.
+fn denied_message(os: &str, user: Option<&str>) -> String {
+    if os == "windows" {
+        let user = user.unwrap_or("%USERNAME%");
+        return format!(
+            "Docker is running, but your account can't use it yet. Add yourself to the docker-users group (in a terminal run as administrator: net localgroup docker-users \"{user}\" /add), then sign out and back in."
+        );
+    }
+    let user = user.unwrap_or("$USER");
     format!(
         "Docker is running, but your account can't use it yet. Add yourself to the docker group in a terminal (sudo usermod -aG docker {user}), then log out and back in."
     )
@@ -119,6 +136,14 @@ mod tests {
             "Got permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.24/info\""
         )));
         assert!(!docker_denied(&failed("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")));
+        // Windows (#218): the engine's named pipe refuses the account.
+        assert!(docker_denied(&failed(
+            "permission denied while trying to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine: open //./pipe/dockerDesktopLinuxEngine: Access is denied."
+        )));
+        assert!(docker_denied(&failed("error during connect: open //./pipe/docker_engine: Access is denied.")));
+        // Not running at all on Windows: the pipe isn't there, which isn't a refusal.
+        assert!(!docker_denied(&failed("error during connect: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.")));
+        assert!(!docker_denied(&failed("Access is denied.")), "an unrelated refusal");
         assert!(!docker_denied(&Error::ToolMissing { tool: "docker" }));
     }
 
@@ -145,12 +170,19 @@ mod tests {
 
     #[test]
     fn image_references_never_read_as_flags() {
-        assert!(valid_image("cyberctf/attack-box") && valid_image("ghcr.io/org/img:1.2@sha256:abc"));
-        assert!(!valid_image("--privileged") && !valid_image("a b") && !valid_image("") && !valid_image(&"a".repeat(201)));
+        assert!(valid_image("cyberctf/attack-box") && valid_image("ghcr.io/org/img:1.2@sha256:abc") && valid_image("nwodtuhs/exegol:free"));
+        assert!(!valid_image("--privileged") && !valid_image("-v") && !valid_image("a b") && !valid_image("") && !valid_image(&"a".repeat(201)));
+        assert!(!valid_image("img; rm -rf /"));
     }
 
     #[test]
     fn the_denied_message_names_the_command_to_run() {
-        assert!(docker_denied_message().contains("sudo usermod -aG docker "));
+        assert!(denied_message("linux", Some("ada")).contains("sudo usermod -aG docker ada"));
+        assert!(denied_message("linux", None).contains("usermod -aG docker $USER"));
+        // Windows (#218): the docker-users group, not a Linux command.
+        let windows = denied_message("windows", Some("Ada Lovelace"));
+        assert!(windows.contains("net localgroup docker-users \"Ada Lovelace\" /add") && windows.contains("sign out"), "{windows}");
+        assert!(!windows.contains("usermod"));
+        assert!(docker_denied_message().contains(if cfg!(windows) { "docker-users" } else { "usermod -aG docker" }));
     }
 }

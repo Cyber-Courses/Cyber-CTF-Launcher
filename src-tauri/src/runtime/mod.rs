@@ -47,8 +47,8 @@ use ts_rs::TS;
 pub use attack_box::start_attack_vm;
 pub use attack_vm::dir as attack_vm_dir;
 pub use commands::*;
-pub use docker::{PORTS_ENV, subnets_in_use};
-pub use exegol::default_image as default_attack_image;
+pub use docker::{PORTS_ENV, attack_network, project as compose_project, subnets_in_use};
+pub use exegol::{container as attack_box_container, default_image as default_attack_image};
 /// For tests elsewhere that need an operation in flight.
 #[cfg(test)]
 pub(crate) use inflight::DeployGuard;
@@ -61,7 +61,7 @@ pub(crate) use launch::start_locked;
 pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, resume_lab, runtime_here, stop_lab};
 pub use model::{AttackerAt, Interface, LabStatus, Machine, Network, Output, Park, Place, Port, Service};
 pub use paths::{LOCAL_VM_MARKER, validate_id};
-pub use shell::{ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for, valid_image};
+pub use shell::{ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for};
 pub use status::{lab_running_here, primary_url, running_here, vms_recorded_here};
 /// For the generated TypeScript types (`ts_bindings`).
 #[cfg(test)]

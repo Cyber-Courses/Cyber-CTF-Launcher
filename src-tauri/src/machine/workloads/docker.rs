@@ -101,23 +101,23 @@ fn workloads_from(by_lab: BTreeMap<String, Vec<String>>, mem: &BTreeMap<String, 
 /// `-exegol` one). Exact names only: a name prefix would also match another lab whose id starts
 /// with this one (`a` vs `a-b`).
 fn attack_box_names(id: &str) -> [String; 2] {
-    [format!("cyberctf-{id}-attacker"), format!("cyberctf-{id}-exegol")]
+    [crate::runtime::attack_box_container(id), format!("{}-exegol", crate::runtime::compose_project(id))]
 }
 
 /// The filter selecting exactly this lab's Compose containers (never another lab's).
 fn project_filter(id: &str) -> String {
-    format!("label=com.docker.compose.project=cyberctf-{id}")
+    format!("label=com.docker.compose.project={}", crate::runtime::compose_project(id))
 }
 
 /// Removes a lab's containers, its attack box included.
 pub(super) async fn stop(id: &str) -> Result<()> {
-    let project = format!("cyberctf-{id}");
+    let project = crate::runtime::compose_project(id);
     // The attack box first: it is plugged into the lab network but isn't a Compose service, so
     // while it is there `compose down` can't remove the network ("in use").
     for name in attack_box_names(id) {
         let _ = run("docker", &["rm", "-f", &name], None).await;
     }
-    let _ = run("docker", &["network", "rm", &format!("{project}-attack")], None).await;
+    let _ = run("docker", &["network", "rm", &crate::runtime::attack_network(id)], None).await;
     let _ = run("docker", &["compose", "-p", &project, "down", "-t", "5", "--volumes", "--remove-orphans"], None).await;
     // Whatever of this exact project is left.
     let left = run("docker", &["ps", "-aq", "--filter", &project_filter(id)], None).await.unwrap_or_default();

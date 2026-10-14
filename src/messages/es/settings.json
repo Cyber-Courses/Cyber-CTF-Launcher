@@ -113,7 +113,11 @@
     "installAddon": "Instalar complemento",
     "logInstalling": "Instalando el complemento de Vagrant {plugin}…",
     "logInstalled": "✓ Instalado",
-    "logTitle": "Complemento de Vagrant"
+    "logTitle": "Complemento de Vagrant",
+    "allowHyperv": "Permitir mi cuenta",
+    "allowingHyperv": "Permitiendo…",
+    "logAllowingHyperv": "Añadiendo tu cuenta a Administradores de Hyper-V (Windows pide permiso)…",
+    "logHypervAllowed": "✓ Listo. Cierra la sesión de Windows y vuelve a iniciarla; después, vuelve a comprobar."
   },
   "cleanup": {
     "title": "Limpieza",

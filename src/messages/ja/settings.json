@@ -113,7 +113,11 @@
     "installAddon": "アドオンをインストール",
     "logInstalling": "Vagrant アドオン {plugin} をインストール中…",
     "logInstalled": "✓ インストールしました",
-    "logTitle": "Vagrant アドオン"
+    "logTitle": "Vagrant アドオン",
+    "allowHyperv": "自分のアカウントを許可",
+    "allowingHyperv": "許可しています…",
+    "logAllowingHyperv": "アカウントを Hyper-V Administrators に追加しています（Windows が許可を求めます）…",
+    "logHypervAllowed": "✓ 完了しました。Windows からサインアウトして再度サインインし、もう一度確認してください。"
   },
   "cleanup": {
     "title": "クリーンアップ",

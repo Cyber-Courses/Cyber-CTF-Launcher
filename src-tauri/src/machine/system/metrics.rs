@@ -34,7 +34,9 @@ pub async fn machine_metrics() -> MachineMetrics {
     sys.refresh_cpu_usage();
     sys.refresh_memory();
 
-    let (disk_used, disk_total) = system_disk();
+    // Listing the disks asks the OS for every volume (slow on Windows with network drives): off
+    // the async threads, which serve every other command meanwhile.
+    let (disk_used, disk_total) = tokio::task::spawn_blocking(system_disk).await.unwrap_or((0, 0));
     MachineMetrics {
         cpu: sys.global_cpu_usage(),
         mem_used: sys.used_memory(),

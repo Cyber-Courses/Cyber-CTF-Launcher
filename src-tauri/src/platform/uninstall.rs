@@ -404,8 +404,7 @@ mod tests {
         let script = virtualbox_uninstall(dmg);
         assert!(!script.contains("/Volumes/VirtualBox") && !script.contains("exec ") && !script.contains('~'), "{script}");
         assert!(script.contains(&format!("'{dmg}'")) && script.contains("hdiutil detach"));
-        let ok = std::process::Command::new("sh").args(["-n", "-c", &script]).status().unwrap();
-        assert!(ok.success());
+        assert!(crate::platform::sh_parses(&script), "{script}");
         // The path comes from Homebrew's answer, and only a quotable .dmg is accepted.
         assert_eq!(virtualbox_dmg_from(&format!("{dmg}\n")).unwrap(), dmg);
         for bad in ["", "/x/VirtualBox.pkg", "/x/it's.dmg", "/x/a\"b.dmg"] {
@@ -422,7 +421,7 @@ mod tests {
         assert_eq!(virtualbox_dmg_from(&format!("  {dmg}  \n")).unwrap(), dmg);
         let script = virtualbox_uninstall(dmg);
         assert!(script.contains(&format!("'{dmg}'")), "{script}");
-        assert!(std::process::Command::new("sh").args(["-n", "-c", &script]).status().unwrap().success());
+        assert!(crate::platform::sh_parses(&script), "{script}");
         // Two lines (a second path appended) or another extension: not the image.
         assert!(virtualbox_dmg_from("/a.dmg\n/b.dmg").is_err());
         assert!(virtualbox_dmg_from("/a.DMG").is_err());

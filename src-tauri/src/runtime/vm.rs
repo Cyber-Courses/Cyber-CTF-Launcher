@@ -276,7 +276,7 @@ mod recover;
 mod status;
 
 #[cfg(test)]
-use recover::{folder_candidates, ours_in_prlctl, parse_machine_folder, parse_vbox_vms, recorded_on_other_provider, remove_leftover_folders};
+use recover::{folder_candidates, machine_folder, ours_in_prlctl, parse_machine_folder, parse_vbox_vms, recorded_on_other_provider, remove_leftover_folders};
 pub(super) use recover::{has_machines, recover_parallels, recover_virtualbox, vm_names, vm_names_from};
 pub use recover::{reconcile_provider, recover_local};
 pub use status::status;

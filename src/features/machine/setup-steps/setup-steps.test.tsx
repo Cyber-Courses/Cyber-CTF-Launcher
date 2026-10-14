@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MachineSetup } from "@/features/machine/machine-setup";
 import { SetupChecklist } from "@/features/machine/setup-checklist";
 import { MachineStepBody, SetupOutcome, useMachineSetup, type MachineStep, type MachineSetupState } from "@/features/machine/setup-steps";
+import { wslState } from "@/features/machine/setup-steps/steps";
 import { Onboarding } from "@/features/onboarding/onboarding";
 import { getAttackImage, getAutoAttackBox, setAttackImage } from "@/lib/settings";
 import type { ProviderStatus, SystemReport, WslState } from "@/lib/tauri";
@@ -138,6 +139,20 @@ describe("WSL step, from the machine check", () => {
     expect(text()).toContain("On and running");
     expect(screen.queryByRole("button", { name: /turn on wsl 2|restart now|done this/i })).toBeNull();
     expect(button(/^continue$/i)).toBeTruthy();
+  });
+
+  it("is done when Docker already runs, whatever the WSL check could tell (#224)", () => {
+    // Windows 11 with Docker Desktop running on WSL 2: onboarding asked to turn WSL 2 on (a UAC
+    // prompt and a restart for nothing) while the Machine checklist said it was done.
+    for (const state of [null, "unknown", "missing"] as const) {
+      installTauri();
+      const report = { ...windows(state), docker: { ...windows(state).docker, installed: true }, dockerRunning: true };
+      render(<SetupAtWsl report={report} />);
+      expect(screen.queryByRole("button", { name: /turn on wsl 2|restart now|done this/i })).toBeNull();
+      expect(button(/^continue$/i)).toBeTruthy();
+      expect(wslState(report)).toBe("ready");
+      cleanup();
+    }
   });
 
   it("offers a restart when WSL 2 waits for one, with a way to restart later", () => {
@@ -670,7 +685,7 @@ describe("Onboarding", () => {
     installTauri({
       system_check: () => {
         if (fail) throw "system check timed out";
-        return { ...readyReport(), os: "windows" };
+        return { ...readyReport(), os: "windows", dockerRunning: false };
       },
     });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

@@ -67,6 +67,9 @@ export const installedTools = () => invoke<InstalledTool[]>("installed_tools");
 /** Removes a tool Cyber CTF installed, streaming the output. */
 export const uninstallDependency = (dependency: Dependency, onLog: (line: string) => void) => invokeStreaming("uninstall_dependency", { dependency }, onLog);
 
+/** Windows: adds this account to Hyper-V Administrators (one administrator prompt), so Vagrant drives Hyper-V for it after the next sign-in. */
+export const hypervJoinAdmins = () => invoke<void>("hyperv_join_admins");
+
 /** Installs a Vagrant plugin (userland), streaming the output. */
 export const installVagrantPlugin = (plugin: string, onLog: (line: string) => void) => invokeStreaming("install_vagrant_plugin", { plugin }, onLog);
 

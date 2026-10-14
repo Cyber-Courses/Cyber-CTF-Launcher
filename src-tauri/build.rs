@@ -33,6 +33,7 @@ const COMMANDS: &[&str] = &[
     "gcp_account",
     "gcp_billing_accounts",
     "gcp_organizations",
+    "hyperv_join_admins",
     "image_download_size",
     "install_dependency",
     "install_vagrant_plugin",
