@@ -162,6 +162,10 @@
     "diagnosticsDescription": "Copie votre version, votre OS et l'état de la configuration, pour un rapport de bug ou une demande d'assistance.",
     "copied": "Copié",
     "copy": "Copier",
+    "logs": "Fichiers journaux",
+    "logsDescription": "Ce que Cyber CTF a noté pendant son exécution. Joignez-les à un rapport de bug ou à une demande d'assistance.",
+    "openLogs": "Ouvrir le dossier",
+    "logsFailed": "Impossible d'ouvrir le dossier des journaux",
     "firstRun": "Configuration initiale",
     "firstRunDescription": "Refaire l'accueil. Vos réglages et vos labs sont conservés.",
     "replay": "Relancer"

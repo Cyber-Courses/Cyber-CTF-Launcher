@@ -47,8 +47,8 @@ pub enum Op {
 }
 
 /// What a worker needs: the lab, the operation, and for a launch the `startLab` payload and
-/// where/how to run it.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+/// where/how to run it. Its `Debug` leaves the payload out: it carries the launch token.
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Job {
     pub lab_id: String,
     /// Absent in job files from before operations existed: a launch.
@@ -67,6 +67,20 @@ pub struct Job {
     /// A container lab on the lab's own ports rather than random free ones.
     #[serde(default)]
     pub default_ports: bool,
+}
+
+impl std::fmt::Debug for Job {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Job")
+            .field("lab_id", &self.lab_id)
+            .field("op", &self.op)
+            .field("launch", &if self.launch.is_null() { "none" } else { "<redacted>" })
+            .field("provider", &self.provider)
+            .field("host", &self.host)
+            .field("attackbox_image", &self.attackbox_image)
+            .field("default_ports", &self.default_ports)
+            .finish()
+    }
 }
 
 impl Job {
@@ -254,6 +268,16 @@ mod tests {
         };
         let bytes = serde_json::to_vec(&job).unwrap();
         assert_eq!(serde_json::from_slice::<Job>(&bytes).unwrap(), job);
+    }
+
+    #[test]
+    fn a_job_never_prints_its_launch_token() {
+        // A job in a log line (`{job:?}`) must not carry the launch token into the log file.
+        let mut job = Job::on_lab("lab-1", Op::Launch);
+        job.launch = serde_json::json!({ "labId": "lab-1", "env": [{ "name": "CTF_LAUNCH_TOKEN", "value": "s3cret-token" }] });
+        let printed = format!("{job:?} {job:#?}");
+        assert!(!printed.contains("s3cret-token") && !printed.contains("CTF_LAUNCH_TOKEN"), "{printed}");
+        assert!(printed.contains("lab-1") && printed.contains("<redacted>"), "{printed}");
     }
 
     #[test]

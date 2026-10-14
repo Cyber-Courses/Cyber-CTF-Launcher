@@ -379,4 +379,17 @@ describe("ErrorScreen", () => {
     await flush();
     expect(document.body.textContent).toContain("clipboard locked");
   });
+
+  it("copies where the log files are, for support to ask for them", async () => {
+    installTauri({ "plugin:path|resolve_directory": () => "/logs/org.cyberctf.desktop" });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = userEvent.setup();
+    const writeText = vi.fn(async (_text: string) => {});
+    clipboard(writeText);
+    render(<ErrorScreen error={new Error("render failed")} />);
+    await flush();
+    await user.click(screen.getByRole("button", { name: /copy details/i }));
+    expect(writeText.mock.calls[0][0]).toContain("Error: render failed");
+    expect(writeText.mock.calls[0][0]).toContain("Log files: /logs/org.cyberctf.desktop");
+  });
 });

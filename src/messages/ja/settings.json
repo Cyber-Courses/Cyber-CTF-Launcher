@@ -162,6 +162,10 @@
     "diagnosticsDescription": "バグ報告やサポート依頼のために、バージョン、OS、セットアップの状態をコピーします。",
     "copied": "コピーしました",
     "copy": "コピー",
+    "logs": "ログファイル",
+    "logsDescription": "Cyber CTF の実行中の記録です。不具合の報告やサポートへの問い合わせに添えて送ってください。",
+    "openLogs": "フォルダを開く",
+    "logsFailed": "ログフォルダを開けませんでした",
     "firstRun": "初回セットアップ",
     "firstRunDescription": "オンボーディングをもう一度行います。設定とラボは保持されます。",
     "replay": "再実行"

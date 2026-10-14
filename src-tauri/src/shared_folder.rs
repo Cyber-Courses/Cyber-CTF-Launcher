@@ -122,15 +122,7 @@ fn save_to(file: Option<&Path>, enabled: bool, path: &str) -> Result<()> {
 #[tauri::command]
 pub fn shared_folder_open() -> Result<()> {
     let path = current().ok_or_else(|| Error::Invalid("folder sharing is off".into()))?;
-    let program = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(windows) {
-        "explorer"
-    } else {
-        "xdg-open"
-    };
-    std::process::Command::new(program).arg(&path).spawn()?;
-    Ok(())
+    Ok(crate::platform::open_folder(&path)?)
 }
 
 #[cfg(test)]

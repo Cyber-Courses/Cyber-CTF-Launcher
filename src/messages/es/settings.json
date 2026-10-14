@@ -162,6 +162,10 @@
     "diagnosticsDescription": "Copia tu versión, sistema operativo y estado de configuración, para un informe de error o una solicitud de soporte.",
     "copied": "Copiado",
     "copy": "Copiar",
+    "logs": "Archivos de registro",
+    "logsDescription": "Lo que Cyber CTF anotó mientras se ejecutaba. Envíalos con un informe de error o una solicitud de soporte.",
+    "openLogs": "Abrir carpeta",
+    "logsFailed": "No se pudo abrir la carpeta de registros",
     "firstRun": "Configuración inicial",
     "firstRunDescription": "Vuelve a recorrer la bienvenida. Tus ajustes y labs se conservan.",
     "replay": "Repetir"
