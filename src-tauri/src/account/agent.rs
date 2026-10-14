@@ -385,6 +385,23 @@ fn agent_id_of(current: &Mutex<Option<Registration>>) -> Option<String> {
     current.lock().ok().and_then(|r| r.as_ref().map(|r| r.agent_id.clone()))
 }
 
+/// Heartbeats (~30s) for the current registration, on its own task: claiming and running a lab
+/// can block for a long time (a cloud launch waits on terraform apply, up to tens of minutes),
+/// and the machine must keep reporting that it's online for the whole launch, not drop offline
+/// while busy.
+fn spawn_heartbeat(app: AppHandle, current: std::sync::Arc<Mutex<Option<Registration>>>) {
+    tokio::spawn(async move {
+        loop {
+            if let Some(agent_id) = agent_id_of(&current)
+                && auth::access_token().await.is_ok()
+            {
+                let _ = heartbeat(&app, &agent_id).await;
+            }
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
+    });
+}
+
 /// Starts the background agent: waits for login, registers, then heartbeats (~30s) and
 /// polls for launches (~6s) for as long as the app runs. Signing out forgets the agent, and
 /// signing in as another account registers again, so launches are never polled for (and
@@ -392,23 +409,7 @@ fn agent_id_of(current: &Mutex<Option<Registration>>) -> Option<String> {
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let current: std::sync::Arc<Mutex<Option<Registration>>> = Default::default();
-        // Heartbeat on its own task: claiming and running a lab can block for a long time (a
-        // cloud launch waits on terraform apply, up to tens of minutes), and the machine must
-        // keep reporting that it's online for the whole launch, not drop offline while busy.
-        {
-            let app = app.clone();
-            let current = current.clone();
-            tokio::spawn(async move {
-                loop {
-                    if let Some(agent_id) = agent_id_of(&current)
-                        && auth::access_token().await.is_ok()
-                    {
-                        let _ = heartbeat(&app, &agent_id).await;
-                    }
-                    tokio::time::sleep(Duration::from_secs(30)).await;
-                }
-            });
-        }
+        spawn_heartbeat(app.clone(), current.clone());
         loop {
             let user = auth::signed_in_user().await;
             let registered = current.lock().ok().and_then(|r| r.clone());

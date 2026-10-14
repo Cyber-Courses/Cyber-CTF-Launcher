@@ -244,36 +244,42 @@ async fn virtualbox_dmg(brew: &str, on_line: &mut impl FnMut(String)) -> Result<
     Ok(dmg)
 }
 
+/// How to remove `dep` on macOS: Homebrew's own packages, or the vendor's uninstaller.
+#[cfg(target_os = "macos")]
+fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
+    let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
+    Ok(match dep {
+        Dependency::Terraform => vec![step(brew, &["uninstall", "hashicorp/tap/terraform"])],
+        Dependency::Qemu => vec![step(brew, &["uninstall", "qemu"])],
+        Dependency::Awscli => vec![step(brew, &["uninstall", "awscli"])],
+        Dependency::Gcloud => vec![step(brew, &["uninstall", "--cask", "google-cloud-sdk"])],
+        Dependency::Azurecli => vec![step(brew, &["uninstall", "--cask", "azure-cli-preview"])],
+        // Installed from the vendors' own packages: removed the way their uninstallers do.
+        Dependency::Vagrant => vec![mac_admin(
+            "rm -rf /opt/vagrant /usr/local/bin/vagrant && pkgutil --forget com.vagrant.vagrant || true",
+            "Removing Vagrant (macOS asks for your password)…",
+        )],
+        Dependency::Virtualbox => {
+            let dmg = virtualbox_dmg.ok_or_else(|| Error::Invalid("VirtualBox's installer image is needed to run its uninstaller.".into()))?;
+            vec![mac_admin(&virtualbox_uninstall(dmg), "Running VirtualBox's own uninstaller (macOS asks for your password)…")]
+        }
+        Dependency::Docker => vec![Step {
+            program: "/Applications/Docker.app/Contents/MacOS/uninstall".into(),
+            args: vec![],
+            note: Some("Running Docker Desktop's own uninstaller…".into()),
+        }],
+        Dependency::Utm => vec![step("osascript", &["-e", "tell application \"Finder\" to delete POSIX file \"/Applications/UTM.app\""])],
+        Dependency::Libvirt | Dependency::Wsl => return Err(Error::Invalid("Not installed on macOS.".into())),
+    })
+}
+
 /// How to remove `dep` on this OS. On macOS, VirtualBox's step needs its installer image
 /// (`virtualbox_dmg`).
 fn plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
     let _ = virtualbox_dmg;
     #[cfg(target_os = "macos")]
     {
-        let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
-        Ok(match dep {
-            Dependency::Terraform => vec![step(brew, &["uninstall", "hashicorp/tap/terraform"])],
-            Dependency::Qemu => vec![step(brew, &["uninstall", "qemu"])],
-            Dependency::Awscli => vec![step(brew, &["uninstall", "awscli"])],
-            Dependency::Gcloud => vec![step(brew, &["uninstall", "--cask", "google-cloud-sdk"])],
-            Dependency::Azurecli => vec![step(brew, &["uninstall", "--cask", "azure-cli-preview"])],
-            // Installed from the vendors' own packages: removed the way their uninstallers do.
-            Dependency::Vagrant => vec![mac_admin(
-                "rm -rf /opt/vagrant /usr/local/bin/vagrant && pkgutil --forget com.vagrant.vagrant || true",
-                "Removing Vagrant (macOS asks for your password)…",
-            )],
-            Dependency::Virtualbox => {
-                let dmg = virtualbox_dmg.ok_or_else(|| Error::Invalid("VirtualBox's installer image is needed to run its uninstaller.".into()))?;
-                vec![mac_admin(&virtualbox_uninstall(dmg), "Running VirtualBox's own uninstaller (macOS asks for your password)…")]
-            }
-            Dependency::Docker => vec![Step {
-                program: "/Applications/Docker.app/Contents/MacOS/uninstall".into(),
-                args: vec![],
-                note: Some("Running Docker Desktop's own uninstaller…".into()),
-            }],
-            Dependency::Utm => vec![step("osascript", &["-e", "tell application \"Finder\" to delete POSIX file \"/Applications/UTM.app\""])],
-            Dependency::Libvirt | Dependency::Wsl => return Err(Error::Invalid("Not installed on macOS.".into())),
-        })
+        macos_plan(dep, virtualbox_dmg)
     }
     #[cfg(target_os = "windows")]
     {

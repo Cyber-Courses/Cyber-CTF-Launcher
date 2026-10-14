@@ -77,9 +77,19 @@ pub(super) async fn run(app: &AppHandle, id: &str, r: &Reporter, conn: &server::
         return Ran { result: apply, cleaned };
     }
 
+    probe(r, &state, jump.as_deref(), &key).await;
+
+    // Always clean up, and report it as its own step.
+    let cleaned = destroy(r, conn, &module, &state).await.is_ok();
+    Ran { result: Ok(()), cleaned }
+}
+
+/// The booted VM: it reports an address, then SSH answers there (from the node, behind a
+/// host-internal bridge). A failed step is reported by the reporter; cleanup follows either way.
+async fn probe(r: &Reporter, state: &Path, jump: Option<&str>, key: &Path) {
     let ip = r
         .step("boot", "VM reports a network address", async {
-            match terraform::ssh_endpoint(&state) {
+            match terraform::ssh_endpoint(state) {
                 Some((ip, _)) => Ok((ip.clone(), Some(ip))),
                 None => Err(Error::Invalid("the VM didn't report an address (guest agent didn't answer)".into())),
             }
@@ -89,18 +99,14 @@ pub(super) async fn run(app: &AppHandle, id: &str, r: &Reporter, conn: &server::
     if let Ok(ip) = ip {
         let _ = r
             .step("ssh", "SSH answers on the VM", async {
-                match &jump {
+                match jump {
                     None => wait_tcp(&ip, 22, Duration::from_secs(90)).await?,
-                    Some(login) => wait_tcp_from(login, &key, &ip, 22, Duration::from_secs(90)).await?,
+                    Some(login) => wait_tcp_from(login, key, &ip, 22, Duration::from_secs(90)).await?,
                 }
                 Ok(((), Some(ssh_detail(&ip, jump.is_some()))))
             })
             .await;
     }
-
-    // Always clean up, and report it as its own step.
-    let cleaned = destroy(r, conn, &module, &state).await.is_ok();
-    Ran { result: Ok(()), cleaned }
 }
 
 async fn destroy(r: &Reporter, conn: &server::Connection, module: &Path, state: &Path) -> Result<()> {
