@@ -53,6 +53,7 @@ fn stand_ins(compose: &str) -> Vec<&'static str> {
 /// How long one check runner may take.
 const CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
+#[allow(clippy::too_many_lines, reason = "#150: split once the fixes in flight on this file have landed")]
 pub async fn check(dir: &Path, id: &str) -> Result<Check> {
     let spec = crate::runtime::lab::spec(dir)?;
     let plan = checks::plan(&spec);

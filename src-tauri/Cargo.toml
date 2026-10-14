@@ -12,6 +12,11 @@ rust-version = "1.90"
 name = "cyberctf_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Function length (#150): over clippy.toml's `too-many-lines-threshold` fails `cargo clippy -D
+# warnings`. File length is checked by a test (src/code_size.rs).
+[lints.clippy]
+too_many_lines = "warn"
+
 [build-dependencies]
 tauri-build = { version = "2.7.0", features = [] }
 

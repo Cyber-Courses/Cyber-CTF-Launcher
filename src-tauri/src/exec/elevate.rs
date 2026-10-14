@@ -298,6 +298,7 @@ struct Plan<'a> {
 }
 
 /// The PowerShell script that runs a [`Plan`], logging with the marker lines of [`Collector`].
+#[allow(clippy::too_many_lines, reason = "#150: split once the fixes in flight on this file have landed")]
 fn script(p: &Plan) -> Result<String> {
     for arg in p.steps.iter().flat_map(|s| &s.args) {
         check_arg(arg)?;

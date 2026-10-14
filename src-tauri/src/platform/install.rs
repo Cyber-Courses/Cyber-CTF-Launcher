@@ -32,6 +32,7 @@ pub enum Dependency {
 }
 
 /// The ordered install steps for a dependency on this OS.
+#[allow(clippy::too_many_lines, reason = "#150: split once the fixes in flight on this file have landed")]
 fn plan(dep: Dependency) -> Result<Vec<Step>> {
     #[cfg(target_os = "macos")]
     {

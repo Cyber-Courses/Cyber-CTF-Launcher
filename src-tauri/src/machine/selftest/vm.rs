@@ -176,6 +176,7 @@ pub(super) async fn run_test(dir: &Path, preferred: Option<Provider>, r: &Report
     res
 }
 
+#[allow(clippy::too_many_lines, reason = "#150: split once the fixes in flight on this file have landed")]
 async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<()> {
     r.step("vagrant", "Vagrant is installed", async {
         let v = run("vagrant", &["--version"], None).await?;

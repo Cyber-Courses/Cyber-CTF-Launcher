@@ -1,6 +1,8 @@
 mod account;
 mod atomic_file;
 mod cloud;
+#[cfg(test)]
+mod code_size;
 mod config;
 mod deploy_worker;
 mod error;
