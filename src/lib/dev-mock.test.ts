@@ -19,6 +19,7 @@ describe("the dev mock answers like the core", () => {
       expect(s).toHaveProperty("attacker");
       expect(Array.isArray(s.outputs)).toBe(true);
       expect(s).toHaveProperty("message");
+      expect(s).toHaveProperty("reapError", null);
     }
   });
 

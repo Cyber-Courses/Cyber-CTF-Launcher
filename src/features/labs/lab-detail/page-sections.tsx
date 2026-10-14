@@ -93,7 +93,7 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
           onDismiss={() => setDismissed(failure)}
         />
       )}
-      {p.status?.reapError && <ReapFailedNotice title={p.lab.title} message={p.status.reapError} />}
+      {p.status?.reapError && <ReapFailedNotice title={p.lab.title} error={p.status.reapError} />}
       {shell.error && (
         <p className="-mt-2 flex items-center gap-2 text-[0.75rem] text-muted-foreground">
           <StatusDot tone="fail" /> {shell.error}

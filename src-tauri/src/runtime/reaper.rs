@@ -20,7 +20,7 @@ use super::inflight::try_lock_lab;
 use super::lifecycle::stop_locked;
 use super::paths::{deployed_ids, deployment_states, lab_dir, recorded_host, recorded_runtime};
 use super::{Runtime, cloud_services, lab, server, terraform};
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result, Wire};
 
 /// Beside a state: the last reap that failed on it (JSON: the stop time it was reaping, why).
 const REAP_ERROR: &str = "reap-error";
@@ -60,6 +60,17 @@ impl std::fmt::Display for ReapFailure {
 }
 
 impl ReapFailure {
+    /// The failure as the lab page says it, in the player's language.
+    fn code(&self) -> Code {
+        match self {
+            ReapFailure::NoHost => Code::ReapNoHost,
+            ReapFailure::LabGone(e) => Code::ReapLabGone { detail: e.to_string() },
+            ReapFailure::Account(account, e) => Code::ReapAccount { account: account.clone(), detail: e.to_string() },
+            ReapFailure::Destroy(account, e) => Code::ReapDestroy { account: account.clone(), detail: e.to_string() },
+            ReapFailure::TimedOut => Code::ReapTimedOut { minutes: REAP_TIMEOUT.as_secs() / 60 },
+        }
+    }
+
     /// What kind of failure it is, and where: the same again (a sweep failing the same way every
     /// 5 minutes, its tool's message differing only by a request id or a time) is not new.
     fn kind(&self) -> String {
@@ -206,7 +217,8 @@ fn record_failure(id: &str, state: &Path, failure: &ReapFailure) -> bool {
     log::warn!("{message}");
     let expires_at = terraform::expires_at(state);
     let new = recorded(state, expires_at).is_none_or(|r| r["kind"].as_str() != Some(failure.kind().as_str()));
-    let record = serde_json::json!({ "expires_at": expires_at, "kind": failure.kind(), "message": message });
+    let error = Wire { code: failure.code(), message: message.clone() };
+    let record = serde_json::json!({ "expires_at": expires_at, "kind": failure.kind(), "message": message, "error": error });
     if let Err(e) = std::fs::write(state.join(REAP_ERROR), record.to_string()) {
         log::warn!("auto-stop: couldn't record the failure beside {}: {e}", state.display());
     }
@@ -219,9 +231,11 @@ fn forget_failure(state: &Path) {
 }
 
 /// The failure recorded beside `state` for the stop time `expires_at`: a later launch (a new
-/// stop time) or an older record never shows.
-fn last_failure_at(state: &Path, expires_at: Option<u64>) -> Option<String> {
-    recorded(state, expires_at)?["message"].as_str().map(str::to_string)
+/// stop time) or an older record never shows. One recorded before failures had codes is said in
+/// its own words.
+fn last_failure_at(state: &Path, expires_at: Option<u64>) -> Option<Wire> {
+    let record = recorded(state, expires_at)?;
+    serde_json::from_value(record["error"].clone()).ok().or_else(|| record["message"].as_str().map(|m| Wire { code: Code::Other, message: m.to_string() }))
 }
 
 /// The failure record beside `state`, when it is about the stop time `expires_at`.
@@ -233,7 +247,7 @@ fn recorded(state: &Path, expires_at: Option<u64>) -> Option<serde_json::Value> 
 /// Why the auto-stop couldn't destroy lab `id` (on any of its deployments), while it is still
 /// past its stop time: the lab page shows it, so a lab billing past its auto-stop never looks
 /// stopped.
-pub fn last_failure(app: &AppHandle, id: &str) -> Option<String> {
+pub fn last_failure(app: &AppHandle, id: &str) -> Option<Wire> {
     let base = app.path().app_data_dir().ok()?;
     deployment_states(&base, id)
         .into_iter()

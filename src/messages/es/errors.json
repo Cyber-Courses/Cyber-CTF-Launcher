@@ -16,6 +16,23 @@
     "commandFailed": "{command} falló: {stderr}",
     "signInCancelled": "Inicio de sesión cancelado.",
     "unreachable": "No se puede conectar con Cyber CTF ({detail}). Comprueba tu conexión e inténtalo de nuevo.",
-    "offlineReady": "No se puede conectar con Cyber CTF ({detail}). Este lab está instalado aquí, así que puede iniciarse sin conexión, sin guardar el progreso."
+    "offlineReady": "No se puede conectar con Cyber CTF ({detail}). Este lab está instalado aquí, así que puede iniciarse sin conexión, sin guardar el progreso.",
+    "placementLockedHost": {
+      "one": "{count} lab sigue en este host: detenlo antes de cambiar su {fields}.",
+      "other": "{count} labs siguen en este host: detenlos antes de cambiar su {fields}."
+    },
+    "placementLockedAccount": {
+      "one": "{count} lab sigue en esta cuenta: detenlo antes de cambiar su {fields}.",
+      "other": "{count} labs siguen en esta cuenta: detenlos antes de cambiar su {fields}."
+    },
+    "hostHasLabs": {
+      "one": "{count} lab sigue ejecutándose en este host. Detenlo antes de quitar el host.",
+      "other": "{count} labs siguen ejecutándose en este host. Detenlos antes de quitar el host."
+    },
+    "reapNoHost": "No hay ninguna cuenta registrada para él, así que el launcher no puede destruirlo. Elimina sus recursos en la consola de tu nube.",
+    "reapLabGone": "Los archivos del lab ya no están ({detail}). Vuelve a instalar el lab y detenlo, o elimina sus recursos en la consola de tu nube.",
+    "reapAccount": "La cuenta {account} no se puede usar ({detail}). Corrige la cuenta en Ajustes y luego detén el lab.",
+    "reapDestroy": "Falló su destrucción en {account}: {detail}",
+    "reapTimedOut": "La destrucción no terminó en {minutes} minutos. Detén el lab para reintentarlo."
   }
 }

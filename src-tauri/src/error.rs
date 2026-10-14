@@ -47,6 +47,40 @@ pub enum Code {
     DockerDeniedWindows {
         user: String,
     },
+    /// The auto-stop couldn't destroy a lab: no account is recorded for its deployment.
+    ReapNoHost,
+    /// The auto-stop couldn't destroy a lab: its files (its Terraform module) are gone.
+    ReapLabGone {
+        detail: String,
+    },
+    /// The auto-stop couldn't destroy a lab: the account it runs in can't be used.
+    ReapAccount {
+        account: String,
+        detail: String,
+    },
+    /// The auto-stop's destroy failed (expired credentials, a cloud error).
+    ReapDestroy {
+        account: String,
+        detail: String,
+    },
+    /// The auto-stop's destroy ran out of time.
+    ReapTimedOut {
+        minutes: u64,
+    },
+    /// A server host's placement (provider, address, node…) can't change while labs are on it.
+    PlacementLockedHost {
+        count: u64,
+        fields: String,
+    },
+    /// The same for a cloud account (its region, subscription, profile…).
+    PlacementLockedAccount {
+        count: u64,
+        fields: String,
+    },
+    /// A host can't be removed while labs run on it.
+    HostHasLabs {
+        count: u64,
+    },
     /// A tool the operation runs isn't installed.
     ToolMissing {
         tool: String,
@@ -86,10 +120,29 @@ impl Code {
             Code::DockerDeniedWindows { user } => format!(
                 "Docker is running, but your account can't use it yet. Add yourself to the docker-users group (in a terminal run as administrator: net localgroup docker-users \"{user}\" /add), then sign out and back in."
             ),
+            Code::ReapNoHost => "No account is recorded for it, so the launcher can't destroy it. Remove its resources in your cloud console.".into(),
+            Code::ReapLabGone { detail } => {
+                format!("Its lab files are gone ({detail}). Install the lab again, then stop it, or remove its resources in your cloud console.")
+            }
+            Code::ReapAccount { account, detail } => format!("The account {account} can't be used ({detail}). Fix the account in Settings, then stop the lab."),
+            Code::ReapDestroy { account, detail } => format!("Destroying it on {account} failed: {detail}"),
+            Code::ReapTimedOut { minutes } => format!("The destroy didn't finish within {minutes} minutes. Stop the lab to retry."),
+            Code::PlacementLockedHost { count, fields } => placement_locked(*count, "host", fields),
+            Code::PlacementLockedAccount { count, fields } => placement_locked(*count, "account", fields),
+            Code::HostHasLabs { count } => {
+                let (labs, them) = if *count == 1 { ("lab", "it") } else { ("labs", "them") };
+                format!("{count} {labs} still running on this host. Stop {them} before removing the host.")
+            }
             Code::ToolMissing { tool } => format!("`{tool}` is not installed or not on PATH"),
             Code::CommandFailed { command, stderr } => format!("`{command}` failed: {stderr}"),
         }
     }
+}
+
+/// "2 labs are still on this account: stop them before changing its region."
+fn placement_locked(count: u64, what: &str, fields: &str) -> String {
+    let (labs, them) = if count == 1 { ("lab is", "it") } else { ("labs are", "them") };
+    format!("{count} {labs} still on this {what}: stop {them} before changing its {fields}.")
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -220,7 +273,10 @@ mod tests {
         let catalog: serde_json::Value = serde_json::from_str(include_str!("../../src/messages/en/errors.json")).unwrap();
         for code in sample_codes().into_iter().filter(|c| *c != Code::Other) {
             let wire = serde_json::to_value(Wire { code: code.clone(), message: String::new() }).unwrap();
-            let mut text = catalog["codes"][wire["code"].as_str().unwrap()].as_str().unwrap_or_else(|| panic!("no message for {wire}")).to_string();
+            let entry = &catalog["codes"][wire["code"].as_str().unwrap()];
+            // A plural ({ one, other }) by its `count`, as the webview picks it in English.
+            let form = if wire["args"]["count"] == 1 { "one" } else { "other" };
+            let mut text = entry.as_str().or_else(|| entry[form].as_str()).unwrap_or_else(|| panic!("no message for {wire}")).to_string();
             for (name, value) in wire["args"].as_object().into_iter().flatten() {
                 let value = value.as_str().map_or_else(|| value.to_string(), str::to_string);
                 text = text.replace(&format!("{{{name}}}"), &value);
@@ -245,6 +301,15 @@ mod tests {
             Code::DockerNotRunning,
             Code::DockerDenied { user: "player".into() },
             Code::DockerDeniedWindows { user: "Ada Lovelace".into() },
+            Code::PlacementLockedHost { count: 1, fields: "node, host".into() },
+            Code::PlacementLockedAccount { count: 2, fields: "region".into() },
+            Code::HostHasLabs { count: 1 },
+            Code::HostHasLabs { count: 3 },
+            Code::ReapNoHost,
+            Code::ReapLabGone { detail: "lab `web` is not installed".into() },
+            Code::ReapAccount { account: "My Azure".into(), detail: "unknown server host".into() },
+            Code::ReapDestroy { account: "My Azure".into(), detail: "token expired".into() },
+            Code::ReapTimedOut { minutes: 35 },
             Code::ToolMissing { tool: "terraform".into() },
             Code::CommandFailed { command: "vagrant up".into(), stderr: "locked".into() },
         ]

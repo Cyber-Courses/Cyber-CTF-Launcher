@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tokio::sync::oneshot;
 
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::exec::{run_cli, stream};
 
 /// Civil (year, month, day) for a Unix timestamp, UTC (Howard Hinnant's algorithm). Used to
@@ -84,10 +84,8 @@ async fn sign_in_within(limit: Duration, signing_in: impl Future<Output = Result
     tokio::select! {
         // A sign-in that is done wins over a cancel that came at the same time.
         biased;
-        done = tokio::time::timeout(limit, signing_in) => done.unwrap_or_else(|_| {
-            Err(Error::Invalid(format!("The sign-in wasn't finished within {} minutes, so it was stopped. Sign in again.", limit.as_secs() / 60)))
-        }),
-        _ = cancelled => Err(Error::Invalid("Sign-in cancelled.".into())),
+        done = tokio::time::timeout(limit, signing_in) => done.unwrap_or_else(|_| Err(Error::coded(Code::LoginTimeout { minutes: limit.as_secs() / 60 }))),
+        _ = cancelled => Err(Error::Cancelled),
     }
 }
 
@@ -413,10 +411,10 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
         cancel.send(()).unwrap();
         let err = tokio::time::timeout(Duration::from_secs(5), waiting).await.expect("ended at once").unwrap().unwrap_err();
-        assert!(err.to_string().contains("cancelled"), "{err}");
+        assert_eq!(err.code(), Code::SignInCancelled);
         let (_keep, never) = oneshot::channel();
-        let err = sign_in_within(Duration::from_millis(50), std::future::pending(), never).await.unwrap_err().to_string();
-        assert!(err.starts_with("The sign-in wasn't finished within 0 minutes"), "{err}");
+        let err = sign_in_within(Duration::from_millis(50), std::future::pending(), never).await.unwrap_err();
+        assert_eq!(err.code(), Code::LoginTimeout { minutes: 0 });
         assert_eq!(LOGIN_TIMEOUT, Duration::from_secs(600));
         // The command cancels the sign-in in progress.
         let pending = cancellable();

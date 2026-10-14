@@ -155,7 +155,7 @@ pub struct LabStatus {
     pub message: Option<String>,
     /// Why the auto-stop couldn't destroy this lab, while it is past its stop time (it may still
     /// be billing): set by the status dispatcher, None from the per-runtime probes.
-    pub reap_error: Option<String>,
+    pub reap_error: Option<crate::error::Wire>,
 }
 
 /// One thing a cloud-services lab exposes: a module output, under the spec's name for it.

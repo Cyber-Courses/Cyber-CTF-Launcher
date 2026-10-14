@@ -78,6 +78,8 @@ async fn a_destroy_the_reaper_cant_do_is_kept_and_shown_until_it_succeeds() {
     reap_expired_labs(t.handle()).await;
     assert!(failing.called("terraform destroy"), "{:?}", failing.calls());
     let shown = last_failure(t.handle(), "reap-fails").expect("the failure is kept for the lab's page");
+    assert!(matches!(&shown.code, Code::ReapDestroy { account, .. } if account == "Host az1"), "{shown:?}");
+    let shown = shown.message;
     assert!(shown.starts_with("Auto-stop couldn't destroy reap-fails: destroying it on Host az1 failed:") && shown.contains("AADSTS700082"), "{shown}");
     assert!(state.join("terraform.tfstate").is_file(), "kept for the next sweep");
     drop(failing);
@@ -111,10 +113,10 @@ async fn what_used_to_be_skipped_silently_is_recorded() {
     t.lab("reap-moved", &[]);
     expired("reap-moved", Some("removed-account"));
     reap_expired_labs(t.handle()).await;
-    let recorded = |state: &Path| last_failure_at(state, Some(1)).unwrap_or_default();
+    let recorded = |state: &Path| last_failure_at(state, Some(1)).map(|w| w.message).unwrap_or_default();
     assert!(recorded(&uninstalled).contains("its lab files are gone"), "{}", recorded(&uninstalled));
-    assert!(last_failure(t.handle(), "reap-orphan").unwrap().contains("no account is recorded for it"));
-    assert!(last_failure(t.handle(), "reap-moved").unwrap().contains("the account removed-account can't be used"));
+    assert!(last_failure(t.handle(), "reap-orphan").unwrap().message.contains("no account is recorded for it"));
+    assert!(last_failure(t.handle(), "reap-moved").unwrap().message.contains("the account removed-account can't be used"));
 }
 
 #[test]
@@ -128,12 +130,17 @@ fn a_failure_is_notified_once_and_only_shown_for_the_stop_time_it_was_about() {
     // The same failure in other words (the tool's request id changes on every try): not new.
     let again = ReapFailure::Destroy("My Azure".into(), Error::Invalid("token expired (RequestId: 42)".into()));
     assert!(!record_failure("web", &state, &again));
-    assert!(last_failure_at(&state, Some(7)).unwrap().contains("RequestId: 42"), "the latest words are shown");
+    assert!(last_failure_at(&state, Some(7)).unwrap().message.contains("RequestId: 42"), "the latest words are shown");
     assert!(record_failure("web", &state, &ReapFailure::TimedOut), "another failure is new");
-    assert_eq!(last_failure_at(&state, Some(7)).as_deref(), Some(failure_message("web", &ReapFailure::TimedOut).as_str()));
+    let timed_out = last_failure_at(&state, Some(7)).unwrap();
+    assert_eq!(timed_out.message, failure_message("web", &ReapFailure::TimedOut));
+    assert_eq!(timed_out.code, Code::ReapTimedOut { minutes: 35 });
     // Launched again since (a new stop time): the old failure isn't this lab's any more.
     assert_eq!(last_failure_at(&state, Some(8)), None);
     assert_eq!(last_failure_at(&state, None), None);
+    // A record from before failures had codes is said in its own words.
+    std::fs::write(state.join(REAP_ERROR), r#"{"expires_at": 7, "kind": "timed-out", "message": "Auto-stop couldn't destroy web"}"#).unwrap();
+    assert_eq!(last_failure_at(&state, Some(7)), Some(Wire { code: Code::Other, message: "Auto-stop couldn't destroy web".into() }));
     forget_failure(&state);
     assert_eq!(last_failure_at(&state, Some(7)), None);
     std::fs::remove_dir_all(state).unwrap();
@@ -214,7 +221,7 @@ async fn the_reaper_skips_an_expired_leftover_whose_host_was_removed() {
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
     assert!(state.join("terraform.tfstate").is_file());
     // Not silently, though: the lab's page says why it still bills.
-    assert!(last_failure(t.handle(), "reap-gone").unwrap().contains("the account removed-host can't be used"));
+    assert!(last_failure(t.handle(), "reap-gone").unwrap().message.contains("the account removed-host can't be used"));
     // Same when the lab itself is uninstalled: its state alone can't say how to destroy it.
     std::fs::remove_dir_all(&dir).unwrap();
     reap_expired_labs(t.handle()).await;

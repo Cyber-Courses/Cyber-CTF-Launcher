@@ -16,6 +16,23 @@
     "commandFailed": "`{command}` failed: {stderr}",
     "signInCancelled": "Sign-in cancelled.",
     "unreachable": "Cyber CTF can't be reached ({detail}). Check your connection and try again.",
-    "offlineReady": "Cyber CTF can't be reached ({detail}). This lab is installed here, so it can start offline, without saving progress."
+    "offlineReady": "Cyber CTF can't be reached ({detail}). This lab is installed here, so it can start offline, without saving progress.",
+    "placementLockedHost": {
+      "one": "{count} lab is still on this host: stop it before changing its {fields}.",
+      "other": "{count} labs are still on this host: stop them before changing its {fields}."
+    },
+    "placementLockedAccount": {
+      "one": "{count} lab is still on this account: stop it before changing its {fields}.",
+      "other": "{count} labs are still on this account: stop them before changing its {fields}."
+    },
+    "hostHasLabs": {
+      "one": "{count} lab still running on this host. Stop it before removing the host.",
+      "other": "{count} labs still running on this host. Stop them before removing the host."
+    },
+    "reapNoHost": "No account is recorded for it, so the launcher can't destroy it. Remove its resources in your cloud console.",
+    "reapLabGone": "Its lab files are gone ({detail}). Install the lab again, then stop it, or remove its resources in your cloud console.",
+    "reapAccount": "The account {account} can't be used ({detail}). Fix the account in Settings, then stop the lab.",
+    "reapDestroy": "Destroying it on {account} failed: {detail}",
+    "reapTimedOut": "The destroy didn't finish within {minutes} minutes. Stop the lab to retry."
   }
 }

@@ -98,7 +98,7 @@ async fn fake_clis_a_failing_auto_stop_is_recorded_until_the_credentials_work() 
     let t = TestApp::new();
     let (_, state) = deployed_on_aws(&t, "e2e-reap-fail", "eu-west-3");
     crate::runtime::reap_expired_labs(t.handle()).await;
-    let shown = crate::runtime::reaper::last_failure(t.handle(), "e2e-reap-fail").expect("recorded");
+    let shown = crate::runtime::reaper::last_failure(t.handle(), "e2e-reap-fail").expect("recorded").message;
     assert!(shown.contains("ExpiredToken"), "{shown}");
     assert!(state.join("terraform.tfstate").is_file());
     terraform(&bin, "echo destroyed");

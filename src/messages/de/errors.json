@@ -16,6 +16,23 @@
     "commandFailed": "{command} ist fehlgeschlagen: {stderr}",
     "signInCancelled": "Anmeldung abgebrochen.",
     "unreachable": "Cyber CTF ist nicht erreichbar ({detail}). Prüfe deine Verbindung und versuche es erneut.",
-    "offlineReady": "Cyber CTF ist nicht erreichbar ({detail}). Dieses Lab ist hier installiert und kann daher offline starten, ohne den Fortschritt zu speichern."
+    "offlineReady": "Cyber CTF ist nicht erreichbar ({detail}). Dieses Lab ist hier installiert und kann daher offline starten, ohne den Fortschritt zu speichern.",
+    "placementLockedHost": {
+      "one": "{count} Lab ist noch auf diesem Host: Stoppe es, bevor du {fields} änderst.",
+      "other": "{count} Labs sind noch auf diesem Host: Stoppe sie, bevor du {fields} änderst."
+    },
+    "placementLockedAccount": {
+      "one": "{count} Lab ist noch in diesem Konto: Stoppe es, bevor du {fields} änderst.",
+      "other": "{count} Labs sind noch in diesem Konto: Stoppe sie, bevor du {fields} änderst."
+    },
+    "hostHasLabs": {
+      "one": "{count} Lab läuft noch auf diesem Host. Stoppe es, bevor du den Host entfernst.",
+      "other": "{count} Labs laufen noch auf diesem Host. Stoppe sie, bevor du den Host entfernst."
+    },
+    "reapNoHost": "Für es ist kein Konto hinterlegt, daher kann der Launcher es nicht zerstören. Entferne seine Ressourcen in der Konsole deiner Cloud.",
+    "reapLabGone": "Die Dateien des Labs sind weg ({detail}). Installiere das Lab erneut und stoppe es, oder entferne seine Ressourcen in der Konsole deiner Cloud.",
+    "reapAccount": "Das Konto {account} ist nicht nutzbar ({detail}). Korrigiere das Konto in den Einstellungen und stoppe dann das Lab.",
+    "reapDestroy": "Das Zerstören auf {account} ist fehlgeschlagen: {detail}",
+    "reapTimedOut": "Das Zerstören wurde nicht innerhalb von {minutes} Minuten fertig. Stoppe das Lab, um es erneut zu versuchen."
   }
 }

@@ -99,6 +99,7 @@ export const invoiceStatus: LabStatus = {
   attacker: null,
   outputs: [],
   message: null,
+  reapError: null,
   networks: [
     { name: "default", subnet: "10.42.0.0/24", internal: false },
     { name: "billing", subnet: "10.42.1.0/24", internal: true },
@@ -198,6 +199,7 @@ export const stopped: LabStatus = {
   place: null,
   provider: null,
   attacker: null,
+  reapError: null,
   networks: [],
   machines: [],
   outputs: [],
