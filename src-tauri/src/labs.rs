@@ -72,6 +72,13 @@ fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
         if relative.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
             return Err(Error::Invalid(format!("unsafe path in lab archive: {}", path.display())));
         }
+        // Windows can't hold every name git can (a trailing space, `aux.c`): said plainly, not
+        // as the file system's "not found" halfway through the lab.
+        if cfg!(windows)
+            && let Some(why) = relative.components().find_map(|c| windows_name_problem(&c.as_os_str().to_string_lossy()))
+        {
+            return Err(Error::Invalid(format!("this lab can't be installed on Windows: its archive holds {}, {why}", path.display())));
+        }
         let target = dest.join(&relative);
         if kind.is_dir() {
             std::fs::create_dir_all(&target)?;
@@ -83,6 +90,24 @@ fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Why Windows can't create a file or folder named `name` (None: it can): a name ending in a
+/// space or a dot, a character Windows reserves, or a device name (`CON`, `aux.c`, `LPT1.txt`).
+fn windows_name_problem(name: &str) -> Option<&'static str> {
+    const DEVICES: &[&str] = &["CON", "PRN", "AUX", "NUL"];
+    if name.ends_with([' ', '.']) {
+        return Some("a name ending in a space or a dot");
+    }
+    if name.chars().any(|c| c < ' ' || "<>:\"|?*\\".contains(c)) {
+        return Some("a name with a character Windows reserves");
+    }
+    let stem = name.split('.').next().unwrap_or_default().trim_end().to_ascii_uppercase();
+    let numbered = |prefix: &str| stem.strip_prefix(prefix).is_some_and(|n| n.len() == 1 && n.as_bytes()[0].is_ascii_digit() && n != "0");
+    if DEVICES.contains(&stem.as_str()) || numbered("COM") || numbered("LPT") {
+        return Some("a device name Windows reserves");
+    }
+    None
 }
 
 /// The lab's GitHub tarball at `commit`.
@@ -401,6 +426,25 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("docker-compose.yml")).unwrap(), "services: {}");
         assert!(dir.join("evidence/claim.sh").is_file());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn names_windows_cant_hold_are_told_apart() {
+        for bad in ["0 ", "notes.", "aux", "AUX.c", "con.txt", "Lpt1", "com9.log", "a:b", "what?", "tab\there", "x\"y"] {
+            assert!(windows_name_problem(bad).is_some(), "{bad:?}");
+        }
+        for good in ["0", "a b", ".env", "auxiliary.c", "com10", "lpt0", "console", "README.md", "caf\u{e9}"] {
+            assert_eq!(windows_name_problem(good), None, "{good:?}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_lab_archive_with_a_name_windows_cant_hold_is_refused_plainly() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+        let err = extract(&tarball(&[("lab-abc/ok.txt", b"x"), ("lab-abc/notes ", b"y")]), &dir).unwrap_err().to_string();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.contains("can't be installed on Windows") && err.contains("ending in a space"), "{err}");
     }
 
     #[test]

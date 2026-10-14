@@ -295,9 +295,11 @@ mod tests {
     #[test]
     fn a_labs_runs_share_the_plugin_cache_beside_the_deployments() {
         let state = Path::new("/d/data/deployments/web/aws");
-        assert_eq!(plugin_cache(state), Some(PathBuf::from("/d/data/terraform-plugins")));
+        // Joined as the code joins it: on Windows the separator it adds is `\`.
+        let cache = Path::new("/d/data").join("terraform-plugins");
+        assert_eq!(plugin_cache(state), Some(cache.clone()));
         let env = run_env(&[], state);
-        assert!(env.contains(&("TF_PLUGIN_CACHE_DIR".to_string(), PathBuf::from("/d/data/terraform-plugins").display().to_string())));
+        assert!(env.contains(&("TF_PLUGIN_CACHE_DIR".to_string(), cache.display().to_string())));
         // A state elsewhere (a self-test's) keeps its plugins to itself.
         assert_eq!(plugin_cache(Path::new("/tmp/selftest/state")), None);
         assert_eq!(plugin_cache(Path::new("/")), None);

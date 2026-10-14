@@ -153,7 +153,9 @@ proptest! {
         top in "[a-zA-Z0-9._-]{1,20}-[0-9a-f]{7}",
         // Lowercase: the test may run on a case-insensitive file system. Some paths pass tar's
         // 100-byte name field (a GNU long name).
-        files in proptest::collection::btree_map(proptest::collection::vec(prop_oneof![4 => "[a-z0-9_][a-z0-9_. -]{0,12}", 1 => "[a-z]{60,120}"], 1..4), proptest::collection::vec(any::<u8>(), 0..100), 1..6),
+        // Names every OS can hold: Windows refuses a trailing space or dot, and device names
+        // (an archive holding one is refused there, see `windows_name_problem`).
+        files in proptest::collection::btree_map(proptest::collection::vec(prop_oneof![4 => "[a-z0-9_][a-z0-9_. -]{0,12}", 1 => "[a-z]{60,120}"].prop_filter("a name Windows can hold", |n| super::windows_name_problem(n).is_none()), 1..4), proptest::collection::vec(any::<u8>(), 0..100), 1..6),
         dot in any::<bool>(),
     ) {
         // A file's path can't also be another's folder.

@@ -46,6 +46,52 @@ fn openssh_argv_split(s: &str) -> Vec<String> {
     words
 }
 
+/// How a Windows program's C runtime splits its command line into words (`CommandLineToArgvW`
+/// past the program name): blanks separate words outside quotes, `"` toggles quoting (`""` in
+/// quotes is one `"`), and backslashes are literal unless a `"` follows them: then each pair is
+/// one backslash, and an odd one out makes that `"` literal.
+fn windows_argv_split(s: &str) -> Vec<String> {
+    let c: Vec<char> = s.chars().collect();
+    let mut words = Vec::new();
+    let mut i = 0;
+    loop {
+        while i < c.len() && (c[i] == ' ' || c[i] == '\t') {
+            i += 1;
+        }
+        if i == c.len() {
+            return words;
+        }
+        let (mut word, mut quoted) = (String::new(), false);
+        while i < c.len() && (quoted || (c[i] != ' ' && c[i] != '\t')) {
+            if c[i] == '\\' {
+                let run = c[i..].iter().take_while(|&&x| x == '\\').count();
+                i += run;
+                if c.get(i) == Some(&'"') {
+                    word.extend(std::iter::repeat_n('\\', run / 2));
+                    if run % 2 == 1 {
+                        word.push('"');
+                        i += 1;
+                    }
+                } else {
+                    word.extend(std::iter::repeat_n('\\', run));
+                }
+            } else if c[i] == '"' {
+                if quoted && c.get(i + 1) == Some(&'"') {
+                    word.push('"');
+                    i += 1;
+                } else {
+                    quoted = !quoted;
+                }
+                i += 1;
+            } else {
+                word.push(c[i]);
+                i += 1;
+            }
+        }
+        words.push(word);
+    }
+}
+
 /// ssh's `%` expansion: `%%` is a `%`, `%h`/`%p` the jump target. Any other token is a bug.
 fn percent_expand(s: &str, host: &str, port: &str) -> Option<String> {
     let mut out = String::new();
@@ -98,15 +144,17 @@ fn take_options(words: &[String]) -> (Vec<String>, Vec<String>) {
     (opts, rest)
 }
 
-/// The ProxyCommand as ssh runs it: `%` tokens expanded, then split by the shell.
-fn proxy_words(proxy: &str) -> Vec<String> {
+/// The ProxyCommand as ssh runs it: `%` tokens expanded, then split as `sh -c` does on unix, or
+/// as a Windows command line by Windows' OpenSSH (`windows`).
+fn proxy_words(proxy: &str, windows: bool) -> Vec<String> {
     let cmd = proxy.strip_prefix("ProxyCommand=").expect("a ProxyCommand option");
     let expanded = percent_expand(cmd, "TARGET", "2222").expect("no stray % token in the ProxyCommand");
-    shell_words::split(&expanded).expect("the ProxyCommand is valid shell")
+    if windows { windows_argv_split(&expanded) } else { shell_words::split(&expanded).expect("the ProxyCommand is valid shell") }
 }
 
-fn check_proxy(proxy: &str, identity: &str, known_hosts: &str, jump: &str) {
-    let words = proxy_words(proxy);
+/// Checks a ProxyCommand built for Windows' ssh (`windows`) or a unix one, read the way that ssh runs it.
+fn check_proxy(proxy: &str, windows: bool, identity: &str, known_hosts: &str, jump: &str) {
+    let words = proxy_words(proxy, windows);
     let (opts, rest) = take_options(&words);
     assert_eq!(rest, ["ssh", "-i", identity, "-W", "TARGET:2222", jump]);
     check_options(&opts, true, known_hosts);
@@ -169,7 +217,7 @@ proptest! {
         match &jump {
             Some(jump) => {
                 prop_assert_eq!(opts.len(), 4);
-                check_proxy(&opts[3], &identity, &known_hosts, jump);
+                check_proxy(&opts[3], cfg!(windows), &identity, &known_hosts, jump);
             }
             None => prop_assert_eq!(opts.len(), 3),
         }
@@ -192,8 +240,29 @@ proptest! {
         prop_assert_eq!(rest, ["-i", identity.as_str(), "-p", "22", login.as_str(), command.as_str()]);
         check_options(&opts[..7], true, &known_hosts);
         if let Some(jump) = &jump {
-            check_proxy(&opts[7], &identity, &known_hosts, jump);
+            check_proxy(&opts[7], cfg!(windows), &identity, &known_hosts, jump);
         }
+    }
+
+    #[test]
+    fn a_proxy_command_reaches_either_platforms_ssh_word_for_word(
+        identity in any_path(),
+        known_hosts in any_path(),
+        jump in (token(), token()),
+        windows: bool,
+    ) {
+        // Both quotings, checked on every OS: the unix one through `sh -c`'s rules, the Windows
+        // one through the C runtime's that Windows' ssh starts it with.
+        let jump = format!("{}@{}", jump.0, jump.1);
+        let t = Target { jump: Some(jump.clone()), ..Target::direct("10.0.0.5", "debian", identity.clone().into()) };
+        let proxy = t.proxy_command(Path::new(&known_hosts), windows).unwrap().unwrap();
+        check_proxy(&proxy, windows, &identity, &known_hosts, &jump);
+    }
+
+    #[test]
+    fn windows_quoting_splits_back_to_the_input(s in "[^\\x00]{0,48}", t in "[^\\x00]{0,8}") {
+        prop_assert_eq!(windows_argv_split(&windows_quote(&s)), vec![s.clone()]);
+        prop_assert_eq!(windows_argv_split(&format!("{} {}", windows_quote(&s), windows_quote(&t))), vec![s, t]);
     }
 
     #[test]

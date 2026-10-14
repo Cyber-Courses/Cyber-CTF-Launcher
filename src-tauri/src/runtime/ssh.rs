@@ -136,15 +136,34 @@ fn shell_word(s: &str) -> String {
 }
 
 /// A word of the ProxyCommand ssh runs: ssh hands it to `sh -c` on unix, but Windows' OpenSSH
-/// runs it with no POSIX shell, where a single quote is a plain character (the key's path then
-/// arrived wrapped in quotes and ssh couldn't open it). There only double quotes group a word,
-/// and a Windows path can't hold one.
+/// starts it as a plain Windows command line, where a single quote is a plain character (the
+/// key's path then arrived wrapped in quotes and ssh couldn't open it). There a word is quoted
+/// the way the C runtime splits a command line back ([`windows_quote`]).
 fn proxy_word(s: &str, windows: bool) -> String {
     match (windows, plain_word(s)) {
         (_, true) => s.to_string(),
-        (true, false) => format!("\"{s}\""),
+        (true, false) => windows_quote(s),
         (false, false) => sh_quote(s),
     }
+}
+
+/// `s` double-quoted for a Windows command line (the C runtime's rules, as `CommandLineToArgvW`
+/// reads them): backslashes are literal except before a `"`, so those before an inner `"` (then
+/// escaped) and before the closing one are doubled.
+fn windows_quote(s: &str) -> String {
+    let mut out = String::from("\"");
+    // The backslashes just written, doubled if a `"` follows them.
+    let mut run = 0;
+    for c in s.chars() {
+        if c == '"' {
+            out.extend(std::iter::repeat_n('\\', run + 1));
+        }
+        run = if c == '\\' { run + 1 } else { 0 };
+        out.push(c);
+    }
+    out.extend(std::iter::repeat_n('\\', run));
+    out.push('"');
+    out
 }
 
 /// `options` as `-o …` words for a command line, each quoted by `quote`.
