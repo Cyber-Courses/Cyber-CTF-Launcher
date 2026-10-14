@@ -400,7 +400,7 @@ mod tests {
         })
     }
 
-    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n  db:\n    networks: { lab: 20 }\n    docker: { image: postgres:16 }\n";
+    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n  db:\n    networks: { lab: 20 }\n    docker: { image: postgres:16 }\n";
 
     #[tokio::test]
     async fn an_image_present_before_any_lab_ran_is_never_removed() {

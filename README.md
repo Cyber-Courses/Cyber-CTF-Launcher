@@ -26,7 +26,7 @@ Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It
   - `terminal.rs`: the in-app attack box shell (a PTY streamed to xterm.js); `shared_folder.rs`: the folder shared with the attack box.
   - `cloud.rs`: cloud account sign-in through each provider's CLI; [`exec/`](src-tauri/src/exec/), `http.rs` (HTTP clients with timeouts and a download size cap), `error.rs`, `config.rs`: crate-wide basics.
 
-The runtime layer knows nothing about CTFs: a lab is a directory with an `isoloom.yml` (its machines, networks, services and checks). The launcher generates the files for the target it runs on under the lab's `.isoloom/` folder.
+The runtime layer knows nothing about CTFs: a lab is a directory with an `isoloom.yml` (its machines, networks, ports and checks). The launcher generates the files for the target it runs on under the lab's `.isoloom/` folder.
 
 Labs live in `<app data>/labs/<lab id>/`.
 

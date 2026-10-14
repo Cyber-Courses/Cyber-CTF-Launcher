@@ -26,9 +26,10 @@ ports: Array<LabPort>,
  */
 interfaces: Array<LabInterface>, 
 /**
- * The services running inside, as the lab declares them (compose labels
- * `cyberctf.service.<name>: "<kind>:<port>,<port>"`). A container may run several;
- * empty when the lab declares none (never inferred).
+ * The services running inside, as the lab declares them (Isoloom's compose labels
+ * `isoloom.port.<name>: "<http|tcp|udp>:<port>"`, `isoloom.service.<name>` before Isoloom
+ * 1.0, or the older `cyberctf.service.<name>: "<kind>:<port>,<port>"`). A container may run
+ * several; empty when the lab declares none (never inferred).
  */
 services: Array<LabService>, 
 /**

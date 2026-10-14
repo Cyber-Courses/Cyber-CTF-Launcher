@@ -40,6 +40,9 @@ fn a_remote_lab_host_reports_its_containers_and_the_attack_box() {
     let names: Vec<(&str, &str)> = status.machines.iter().map(|m| (m.name.as_str(), m.ip.as_str())).collect();
     assert_eq!(names.len(), 2, "{names:?}");
     assert!(names.contains(&("web", "10.21.0.31")) && names.contains(&("database", "10.21.0.32")), "{names:?}");
+    // Captured before Isoloom 1.0, its containers carry the old `isoloom.service.*` labels: still read.
+    let web = status.machines.iter().find(|m| m.name == "web").unwrap();
+    assert_eq!(web.services.iter().map(|s| (s.name.as_str(), s.kind.as_str(), s.ports.clone())).collect::<Vec<_>>(), [("portal", "web", vec![80])]);
     assert_eq!(status.networks.iter().map(|n| (n.name.as_str(), n.subnet.as_str())).collect::<Vec<_>>(), vec![("lab", "10.21.0.0/24")]);
     assert_eq!(attacker, Some(("10.21.0.2".to_string(), "lab".to_string())));
     assert_eq!(status.url, None, "a remote lab isn't on 127.0.0.1");
@@ -124,15 +127,37 @@ fn short_network_strips_only_this_labs_project_prefix() {
 #[test]
 fn declared_services_maps_isoloom_http_to_web_and_keeps_tcp_name() {
     let labels = [
-        ("isoloom.service.portal".to_string(), "http:80,443".to_string()),
-        ("isoloom.service.shell".to_string(), "tcp:22".to_string()),
+        ("isoloom.port.portal".to_string(), "http:80,443".to_string()),
+        ("isoloom.port.shell".to_string(), "tcp:22".to_string()),
+        ("isoloom.port.53-udp".to_string(), "udp:53".to_string()),
         ("com.docker.compose.service".to_string(), "app".to_string()),
     ]
     .into();
     let s = declared_services(&labels);
     let got: Vec<(&str, &str, Vec<u16>)> = s.iter().map(|s| (s.name.as_str(), s.kind.as_str(), s.ports.clone())).collect();
-    // isoloom http -> "web"; isoloom tcp -> the service's own name; sorted by name.
-    assert_eq!(got, vec![("portal", "web", vec![80, 443]), ("shell", "shell", vec![22])]);
+    // isoloom http -> "web"; isoloom tcp or udp -> the service's own name; sorted by name.
+    assert_eq!(got, vec![("53-udp", "53-udp", vec![53]), ("portal", "web", vec![80, 443]), ("shell", "shell", vec![22])]);
+}
+
+#[test]
+fn declared_services_still_reads_the_labels_of_a_lab_started_before_isoloom_1_0() {
+    // A lab started by the previous launcher keeps the labels Isoloom wrote then
+    // (`isoloom.service.<name>`, now `isoloom.port.<name>`) until it is recreated: read alike.
+    let labels = [
+        ("isoloom.service.portal".to_string(), "http:80".to_string()),
+        ("isoloom.service.mysql".to_string(), "tcp:3207".to_string()),
+        ("com.docker.compose.service".to_string(), "web".to_string()),
+    ]
+    .into();
+    let s = declared_services(&labels);
+    let got: Vec<(&str, &str, Vec<u16>)> = s.iter().map(|s| (s.name.as_str(), s.kind.as_str(), s.ports.clone())).collect();
+    assert_eq!(got, vec![("mysql", "mysql", vec![3207]), ("portal", "web", vec![80])]);
+    // And Open still goes to the one declared as HTTP.
+    let entries = parse_ps(
+        r#"[{"Service":"web","Name":"p-web-1","Image":"acme/web","State":"running","Publishers":[{"PublishedPort":2222,"TargetPort":22,"Protocol":"tcp"},{"PublishedPort":8080,"TargetPort":80,"Protocol":"tcp"}]}]"#,
+    );
+    let declared = parse_inspect("p", "/p-web-1\t\t{\"isoloom.service.portal\":\"http:80\"}\n");
+    assert_eq!(open_url(&entries, &declared).as_deref(), Some("http://127.0.0.1:8080"));
 }
 
 #[test]
@@ -144,7 +169,7 @@ fn declared_services_uses_the_declared_kind_for_cyberctf_labels() {
 
 #[test]
 fn declared_services_skips_malformed_ports_and_zero() {
-    let labels = [("isoloom.service.db".to_string(), "database:abc,0,5432".to_string())].into();
+    let labels = [("isoloom.port.db".to_string(), "database:abc,0,5432".to_string())].into();
     let s = declared_services(&labels);
     // Only the valid, non-zero port survives; bad ones are dropped, never guessed.
     assert_eq!(s[0].ports, vec![5432]);
@@ -292,7 +317,7 @@ fn open_goes_to_the_service_the_lab_declares_as_http() {
             {"Service":"metrics","Name":"p-metrics-1","Image":"acme/agent","State":"running","Publishers":[{"PublishedPort":3000,"TargetPort":3000,"Protocol":"tcp"}]}]"#,
     );
     assert_eq!(first_published_url(&entries).as_deref(), Some("http://127.0.0.1:2222"), "by name alone, the lowest port");
-    let declared = parse_inspect("p", "/p-portal-1\t\t{\"isoloom.service.site\":\"http:80\",\"isoloom.service.ssh\":\"tcp:22\"}\n");
+    let declared = parse_inspect("p", "/p-portal-1\t\t{\"isoloom.port.site\":\"http:80\",\"isoloom.port.ssh\":\"tcp:22\"}\n");
     assert_eq!(open_url(&entries, &declared).as_deref(), Some("http://127.0.0.1:8443"));
     // Nothing declared: the name-based pick.
     assert_eq!(open_url(&entries, &Default::default()).as_deref(), Some("http://127.0.0.1:2222"));
@@ -339,7 +364,7 @@ fn inspect_lines_with_missing_columns_or_odd_names_are_read_or_skipped() {
     assert!(m["cyberctf-x-a-1"].interfaces.is_empty() && m["cyberctf-x-a-1"].services.is_empty());
     assert_eq!(m["b"].interfaces[0].ip, "10.0.0.2");
     // A label value holding a tab or newline comes JSON-escaped, so the columns hold.
-    let out = "/c\tcyberctf-x_lab=10.0.0.3 \t{\"isoloom.service.app\":\"http:80\",\"note\":\"a\\tb\\nc\"}\n";
+    let out = "/c\tcyberctf-x_lab=10.0.0.3 \t{\"isoloom.port.app\":\"http:80\",\"note\":\"a\\tb\\nc\"}\n";
     let m = parse_inspect(&project, out);
     assert_eq!(m["c"].interfaces[0].ip, "10.0.0.3");
     assert_eq!(m["c"].services[0].kind, "web");
@@ -347,7 +372,7 @@ fn inspect_lines_with_missing_columns_or_odd_names_are_read_or_skipped() {
     let m = parse_inspect(&project, "/d\tcyberctf-x_a=b=10.0.0.4 \n");
     assert_eq!((m["d"].interfaces[0].network.as_str(), m["d"].interfaces[0].ip.as_str()), ("a", "b=10.0.0.4"));
     // Windows line endings: no carriage return in the labels JSON or the address.
-    let m = parse_inspect(&project, "/e\tcyberctf-x_lab=10.0.0.5 \t{\"isoloom.service.s\":\"tcp:22\"}\r\n");
+    let m = parse_inspect(&project, "/e\tcyberctf-x_lab=10.0.0.5 \t{\"isoloom.port.s\":\"tcp:22\"}\r\n");
     assert_eq!(m["e"].interfaces[0].ip, "10.0.0.5");
     assert_eq!(m["e"].services[0].ports, [22]);
 }
@@ -355,10 +380,10 @@ fn inspect_lines_with_missing_columns_or_odd_names_are_read_or_skipped() {
 #[test]
 fn declared_service_ports_at_the_boundaries() {
     let labels = [
-        ("isoloom.service.a".to_string(), "tcp:65535,65536,-1,+22, 80 ,".to_string()),
-        ("isoloom.service.".to_string(), "http:80".to_string()),
-        ("isoloom.service.b".to_string(), "".to_string()),
-        ("isoloom.service.c".to_string(), ":80".to_string()),
+        ("isoloom.port.a".to_string(), "tcp:65535,65536,-1,+22, 80 ,".to_string()),
+        ("isoloom.port.".to_string(), "http:80".to_string()),
+        ("isoloom.port.b".to_string(), "".to_string()),
+        ("isoloom.port.c".to_string(), ":80".to_string()),
     ]
     .into();
     let s = declared_services(&labels);

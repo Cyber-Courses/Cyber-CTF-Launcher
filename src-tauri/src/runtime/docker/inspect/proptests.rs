@@ -61,8 +61,8 @@ proptest! {
 
     #[test]
     fn declared_services_are_named_sorted_and_have_real_ports(labels in proptest::collection::hash_map(
-        prop_oneof!["isoloom\\.service\\.\\PC{0,8}", "cyberctf\\.service\\.\\PC{0,8}", "\\PC{0,12}"],
-        prop_oneof!["(http|tcp|web|db)?:?[0-9, ]{0,12}", "\\PC{0,16}"],
+        prop_oneof!["isoloom\\.port\\.\\PC{0,8}", "isoloom\\.service\\.\\PC{0,8}", "cyberctf\\.service\\.\\PC{0,8}", "\\PC{0,12}"],
+        prop_oneof!["(http|tcp|udp|web|db)?:?[0-9, ]{0,12}", "\\PC{0,16}"],
         0..6,
     )) {
         let services = declared_services(&labels);
@@ -72,7 +72,7 @@ proptest! {
             prop_assert!(s.ports.iter().all(|p| *p > 0));
         }
         let declared = labels.keys().filter(|k| {
-            k.strip_prefix("isoloom.service.").or_else(|| k.strip_prefix("cyberctf.service.")).is_some_and(|n| !n.trim().is_empty())
+            ["isoloom.port.", "isoloom.service.", "cyberctf.service."].iter().find_map(|p| k.strip_prefix(p)).is_some_and(|n| !n.trim().is_empty())
         });
         prop_assert_eq!(services.len(), declared.count());
     }

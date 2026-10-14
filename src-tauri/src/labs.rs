@@ -564,7 +564,7 @@ mod tests {
         std::fs::remove_dir_all(dest).unwrap();
     }
 
-    const SPEC: &str = "version: 1\nname: invoice\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n";
+    const SPEC: &str = "version: 1\nname: invoice\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n";
     const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
     #[tokio::test]

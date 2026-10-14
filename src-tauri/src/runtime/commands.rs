@@ -182,7 +182,7 @@ mod tests {
     use crate::test_app::TestApp;
     use tauri::ipc::{Channel, InvokeResponseBody};
 
-    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n";
+    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n";
 
     /// Starts an installed lab on Docker the way a launch does, minus the worker and the token.
     async fn start_docker(t: &TestApp, id: &str, logs: Channel<String>) -> crate::error::Result<()> {

@@ -157,6 +157,7 @@ pub fn tools(spec: &Spec, docker: bool) -> Vec<Observer> {
 /// applied to the files, then the launcher's own overrides (see `overrides`).
 pub fn prepare(dir: &Path, target: Target) -> Result<Spec> {
     let spec = instanced(dir)?;
+    warn_renamed(dir, &spec);
     let n = instance(dir);
     let files = render(&spec, target, n).map_err(|e| Error::Invalid(format!("this lab can't run there: {e}")))?;
     let files = isoloom_spec::defaults::apply_to_files(files, &defaults(dir)?);
@@ -173,6 +174,16 @@ pub fn prepare(dir: &Path, target: Target) -> Result<Spec> {
         std::fs::write(path, contents)?;
     }
     Ok(spec)
+}
+
+/// What the lab's spec still writes the way it did before Isoloom 1.0 (a machine's `services`,
+/// now `ports`), into the app's log at each start: Isoloom reads it as the new form for now, and
+/// the lab's author renames it before a later Isoloom stops reading it. Not in the deploy log:
+/// the player can't rename anything.
+fn warn_renamed(dir: &Path, spec: &Spec) {
+    for w in isoloom_spec::warnings(spec) {
+        log::warn!("{}: isoloom.yml: {w}", dir.display());
+    }
 }
 
 /// `target`'s files for `spec` (the spec already as instance `n`), from the target's backend in
@@ -239,20 +250,54 @@ pub fn message(dir: &Path, spec: &Spec, target: Target) -> Option<String> {
 /// `message` with the host ports the lab really got: (machine, container port, protocol, host
 /// port), the protocol `tcp` or `udp`. A local container lab publishes on ports picked at its
 /// first start, not the `publish:` values its spec declares, so a
-/// `{{ machines.web.services.0.publish }}` must say where it answers. Addresses are the ones
+/// `{{ machines.web.ports.0.publish }}` must say where it answers. Addresses are the ones
 /// machines have on `target` (their Docker blocks on the Compose targets).
 pub fn message_at(dir: &Path, spec: &Spec, target: Target, published: &[(String, u16, String, u16)]) -> Option<String> {
-    let text = spec.message.as_deref()?;
+    let written = spec.message.as_deref()?;
     let snapshot = isoloom_targets::resolved::on_target(isoloom_targets::resolved::resolve_with(spec, instance(dir)), target);
     let published: Vec<(String, u16, Protocol, u16)> =
         published.iter().map(|(m, port, proto, host)| (m.clone(), *port, if proto == "udp" { Protocol::Udp } else { Protocol::Tcp }, *host)).collect();
     let snapshot = isoloom_targets::resolved::with_published(snapshot, &published);
+    let text = ports_renamed(written, &snapshot);
+    if text != written {
+        log::warn!("{}: isoloom.yml: message: a machine's `services` is now `ports`: rename it in the placeholders", dir.display());
+    }
     // A placeholder naming a value this run doesn't have (a port the lab never published on this
     // target, a port not pinned yet) fills as nothing: the player got `http://localhost:/`.
-    if placeholders(text).any(|path| isoloom_targets::resolved::lookup(&snapshot, path).is_none_or(|v| v.is_null() || v.as_str() == Some(""))) {
+    if placeholders(&text).any(|path| isoloom_targets::resolved::lookup(&snapshot, path).is_none_or(|v| v.is_null() || v.as_str() == Some(""))) {
         return None;
     }
-    isoloom_targets::resolved::fill(text, &snapshot).ok().map(|m| m.trim_end().to_string())
+    isoloom_targets::resolved::fill(&text, &snapshot).ok().map(|m| m.trim_end().to_string())
+}
+
+/// A message written before Isoloom 1.0 names a machine's ports by their old key
+/// (`{{ machines.web.services.0.publish }}`), which the snapshot calls `ports` now: such a
+/// placeholder reads `ports`, so a lab not renamed yet keeps its message while Isoloom still
+/// reads its `services:` (see [`warn_renamed`]). Only when `services` points at nothing there
+/// and `ports` does.
+fn ports_renamed(text: &str, snapshot: &serde_json::Value) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some((before, after)) = rest.split_once("{{") {
+        let Some((path, next)) = after.split_once("}}") else { break };
+        out.push_str(before);
+        out.push_str("{{");
+        out.push_str(&renamed_path(path.trim(), snapshot).map_or_else(|| path.to_string(), |p| format!(" {p} ")));
+        out.push_str("}}");
+        rest = next;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `machines.<m>.services.<rest>` as `machines.<m>.ports.<rest>`, when only the latter is in the
+/// snapshot.
+fn renamed_path(path: &str, snapshot: &serde_json::Value) -> Option<String> {
+    use isoloom_targets::resolved::lookup;
+    let parts: Vec<&str> = path.split('.').collect();
+    let ["machines", machine, "services", rest @ ..] = parts.as_slice() else { return None };
+    let renamed = ["machines", machine, "ports"].into_iter().chain(rest.iter().copied()).collect::<Vec<_>>().join(".");
+    (lookup(snapshot, path).is_none() && lookup(snapshot, &renamed).is_some()).then_some(renamed)
 }
 
 /// The dotted paths of a message's `{{ ... }}` placeholders.
@@ -350,7 +395,7 @@ mod tests {
         assert!(load_error(&missing).starts_with("this lab's isoloom.yml: no isoloom.yml in"), "{}", load_error(&missing));
     }
 
-    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_LAUNCH_TOKEN]\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    inputs: [CTF_LAUNCH_TOKEN]\n    docker: { image: nginx:1.27 }\n";
+    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_LAUNCH_TOKEN]\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: [{ port: 80, http: true }]\n    inputs: [CTF_LAUNCH_TOKEN]\n    docker: { image: nginx:1.27 }\n";
 
     fn lab(spec: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("cyberctf-isoloom-{}", rand::random::<u32>()));
@@ -364,7 +409,7 @@ mod tests {
         let dir = lab(SPEC);
         prepare(&dir, Target::Docker).unwrap();
         let compose = std::fs::read_to_string(compose_file(&dir)).unwrap();
-        assert!(compose.contains("isoloom.service.80"));
+        assert!(compose.contains("isoloom.port.80"), "{compose}");
         // Named after the launcher's project for the lab, not the spec.
         let project = super::super::docker::project(dir.file_name().unwrap().to_str().unwrap());
         assert!(compose.contains(&format!("\nname: {project}\n")), "{compose}");
@@ -399,13 +444,21 @@ mod tests {
     }
 
     #[test]
-    fn the_snapshot_read_here_is_version_one() {
-        // `tools`, `topology` and `blocks_clear` read the resolved snapshot's v1 fields
-        // (`networks.*.cidr`, `docker_cidr`, `internet`, `machines.*.addresses`, `tools`). A new
-        // version changes or drops fields: this fails so they are read again.
-        assert_eq!(isoloom_targets::resolved::RESOLVED_VERSION, 1);
+    fn the_snapshot_read_here_is_version_two() {
+        // `tools`, `topology`, `blocks_clear` and `message_at` read the resolved snapshot's v2
+        // fields (`networks.*.cidr`, `docker_cidr`, `internet`, `machines.*.addresses`,
+        // `docker_addresses`, `tools`, and `machines.*.ports` in a message's placeholders; v2
+        // renamed a machine's `services` to `ports` and added `os_family` and `os_version`, which
+        // the launcher doesn't read). A new version changes or drops fields: this fails so they
+        // are read again.
+        assert_eq!(isoloom_targets::resolved::RESOLVED_VERSION, 2);
         let dir = lab(SPEC);
-        assert_eq!(isoloom_targets::resolved::resolve(&spec(&dir).unwrap())["resolved_version"], 1);
+        let snapshot = isoloom_targets::resolved::resolve(&spec(&dir).unwrap());
+        assert_eq!(snapshot["resolved_version"], 2);
+        assert_eq!(snapshot["machines"]["web"]["ports"][0]["port"], 80);
+        assert!(snapshot["machines"]["web"].get("services").is_none());
+        assert_eq!(snapshot["networks"]["lab"]["cidr"], "10.30.0.0/24");
+        assert_eq!(snapshot["machines"]["web"]["addresses"]["lab"], "10.30.0.10");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -467,7 +520,7 @@ mod tests {
     #[test]
     fn topology_and_message_come_from_the_resolved_spec() {
         let dir = lab(
-            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\n  back: { cidr: 10.31.0.0/24, internet: false }\nmachines:\n  web:\n    networks: { lab: 10, back: 10 }\n    services: [{ port: 80, http: true, publish: 8080 }]\n    docker: { image: nginx:1.27 }\n  db:\n    networks: { back: 20 }\n    docker: { image: redis:7 }\nmessage: |\n  Start at http://localhost:{{ machines.web.services.0.publish }}/ (web is {{ machines.web.addresses.lab }}).\n",
+            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\n  back: { cidr: 10.31.0.0/24, internet: false }\nmachines:\n  web:\n    networks: { lab: 10, back: 10 }\n    ports: [{ port: 80, http: true, publish: 8080 }]\n    docker: { image: nginx:1.27 }\n  db:\n    networks: { back: 20 }\n    docker: { image: redis:7 }\nmessage: |\n  Start at http://localhost:{{ machines.web.ports.0.publish }}/ (web is {{ machines.web.addresses.lab }}).\n",
         );
         let spec = spec(&dir).unwrap();
         let (ifaces, networks) = topology(&spec);
@@ -478,7 +531,7 @@ mod tests {
         assert_eq!(ifaces["web"].iter().map(|i| (i.network.as_str(), i.ip.as_str())).collect::<Vec<_>>(), [("lab", "10.30.0.10"), ("back", "10.31.0.10")]);
         assert_eq!(ifaces["db"].len(), 1);
         assert_eq!(message(&dir, &spec, Target::Vagrant).as_deref(), Some("Start at http://localhost:8080/ (web is 10.30.0.10)."));
-        // A UDP port of the same number is another service: it doesn't move the TCP one.
+        // A UDP port of the same number is another port: it doesn't move the TCP one.
         assert_eq!(
             message_at(&dir, &spec, Target::Docker, &[("web".into(), 80, "udp".into(), 40053)]).as_deref(),
             Some("Start at http://localhost:8080/ (web is 10.30.0.10).")
@@ -613,7 +666,7 @@ mod tests {
     #[test]
     fn inputs_json_is_none_when_the_spec_declares_no_inputs() {
         let dir = lab(
-            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n",
+            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n",
         );
         let spec = spec(&dir).unwrap();
         assert_eq!(inputs_json(&spec, &[("X".to_string(), "y".to_string())]), None);
@@ -709,11 +762,16 @@ mod tests {
     fn spec_mistakes_are_reported_as_mistakes_not_crashes() {
         let base =
             "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n";
-        let cases: [(&str, &str, &str); 7] = [
+        let cases: [(&str, &str, &str); 8] = [
             ("host out of the /24", &base.replace("lab: 10 }", "lab: 300 }"), "expected u8"),
             ("host 0 off a bridged network", &base.replace("lab: 10 }", "lab: 0 }"), "asks for an address by DHCP"),
             ("two machines at one address", &format!("{base}  db:\n    networks: {{ lab: 10 }}\n    docker: {{ image: redis:7 }}\n"), "already used by `web`"),
-            ("a port past 65535", &base.replace("docker:", "services: [{ port: 70000, http: true }]\n    docker:"), "expected u16"),
+            ("a port past 65535", &base.replace("docker:", "ports: [{ port: 70000, http: true }]\n    docker:"), "expected u16"),
+            (
+                "a machine's ports under both their names",
+                &base.replace("docker:", "ports: [{ port: 80 }]\n    services: [{ port: 81 }]\n    docker:"),
+                "sets both `ports` and `services`",
+            ),
             ("an IPv6 block", &base.replace("10.30.0.0/24", "'fd00::/64'"), "isn't a network address"),
             (
                 "a machine declared twice",
@@ -758,7 +816,7 @@ mod tests {
         let spec = spec(&dir).unwrap();
         assert_eq!(message(&dir, &spec, Target::Docker), None);
         let mut spec = spec;
-        spec.message = Some("http://localhost:{{ machines.web.services.0.publish }}/".into());
+        spec.message = Some("http://localhost:{{ machines.web.ports.0.publish }}/".into());
         assert_eq!(message_at(&dir, &spec, Target::Docker, &[("web".into(), 80, "tcp".into(), 40001)]).as_deref(), Some("http://localhost:40001/"));
         // Trailing blank lines of a block scalar are trimmed; inner ones kept.
         spec.message = Some("line one\n\nline two\n\n\n".into());
@@ -777,10 +835,45 @@ mod tests {
         // (check the snapshot value before `fill`, or have isoloom-targets' `fill` fail on null).
         let dir = lab(SPEC);
         let mut spec = spec(&dir).unwrap();
-        spec.message = Some("http://localhost:{{ machines.web.services.0.publish }}/".into());
+        spec.message = Some("http://localhost:{{ machines.web.ports.0.publish }}/".into());
         assert_eq!(message(&dir, &spec, Target::Vagrant), None);
         assert_eq!(message_at(&dir, &spec, Target::Docker, &[]), None);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_lab_written_before_isoloom_1_0_still_runs_with_its_message() {
+        // A machine's `services` (now `ports`) and a message naming them so, as labs not renamed
+        // yet write them: the lab loads with Isoloom's warning, its containers get the new labels,
+        // and its message still says where it answers.
+        let old = SPEC.replace("    ports: [{ port: 80, http: true }]", "    services: [{ port: 80, http: true }]");
+        let dir = lab(&format!("{old}message: 'Open http://localhost:{{{{ machines.web.services.0.publish }}}}/'\n"));
+        let spec = prepare(&dir, Target::Docker).unwrap();
+        assert_eq!(isoloom_spec::warnings(&spec).iter().map(|w| w.at.as_str()).collect::<Vec<_>>(), ["machines.web.services"]);
+        assert!(std::fs::read_to_string(compose_file(&dir)).unwrap().contains("isoloom.port.80"));
+        assert_eq!(message_at(&dir, &spec, Target::Docker, &[("web".into(), 80, "tcp".into(), 40001)]).as_deref(), Some("Open http://localhost:40001/"));
+        // Not published on this target: nothing to say, as with the new key.
+        assert_eq!(message_at(&dir, &spec, Target::Docker, &[]), None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn only_a_machines_old_services_key_is_read_as_ports() {
+        let snapshot = serde_json::json!({ "machines": { "web": { "ports": [{ "publish": 8080 }] }, "old": { "services": [{ "publish": 1 }] } } });
+        let renamed = |t: &str| ports_renamed(t, &snapshot);
+        assert_eq!(renamed("at {{machines.web.services.0.publish}}!"), "at {{ machines.web.ports.0.publish }}!");
+        // Already `ports`, a `services` the snapshot has, one it has under neither name, not a
+        // machine's, or not a placeholder: as written.
+        for kept in [
+            "{{ machines.web.ports.0.publish }}",
+            "{{ machines.old.services.0.publish }}",
+            "{{ machines.web.services.5.publish }}",
+            "{{ services.0 }}",
+            "{{ tools.web.services.0 }}",
+            "machines.web.services.0.publish {{ machines.web.services.0.publish",
+        ] {
+            assert_eq!(renamed(kept), kept);
+        }
     }
 
     #[test]
