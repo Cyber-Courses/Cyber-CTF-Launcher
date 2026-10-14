@@ -62,8 +62,18 @@ export function SignInNote({ hint, label, onSignIn, signingIn }: { hint: ReactNo
   );
 }
 
-/** The sign-in's streamed log, once one ran. */
+/** The sign-in's streamed log, once one ran, and a way out while it waits for the browser. */
 export function SignInLog({ s }: { s: HostSetup }) {
   const t = useT();
-  return s.signInLog && <LogConsole lines={s.signInLog} running={s.signingIn} title={t("servers.setup.credentials.signInLog")} collapseOnDone />;
+  if (!s.signInLog) return null;
+  return (
+    <>
+      <LogConsole lines={s.signInLog} running={s.signingIn} title={t("servers.setup.credentials.signInLog")} collapseOnDone />
+      {s.signingIn && (
+        <Button variant="ghost" size="xs" onClick={s.cancelSignIn}>
+          {t("servers.setup.credentials.cancelSignIn")}
+        </Button>
+      )}
+    </>
+  );
 }

@@ -35,15 +35,20 @@ pub fn server_list(app: AppHandle) -> Result<HostList> {
     Ok(HostList { default: store.default, hosts: store.hosts })
 }
 
-/// Creates or updates a host. The first host saved becomes the default.
+/// Creates or updates a host. The first host saved becomes the default. A host labs are still
+/// deployed on keeps its place (see `keeps_placement`).
 #[tauri::command]
 pub fn server_save(app: AppHandle, mut input: HostInput) -> Result<HostProfile> {
     let checked = input.check()?;
+    let deployed = input.id.as_deref().map_or(0, |id| labs_on(&app, id));
     update(&app, |store| {
         let id = save_id(store, input.id.take())?;
         let gcp_project = kept_gcp_project(store, &id, input.provider, &checked.username);
         let password = input.password.take();
         let profile = input.into_profile(id.clone(), checked, gcp_project)?;
+        if let Some(saved) = store.hosts.iter().find(|h| h.id == id) {
+            keeps_placement(saved, &profile, deployed)?;
+        }
         match new_password(password)? {
             Some(p) => set_secret(&id, &p)?,
             None if profile.keeps_secret() && get_secret(&id).is_err() => {
@@ -54,6 +59,30 @@ pub fn server_save(app: AppHandle, mut input: HostInput) -> Result<HostProfile> 
         put_host(store, profile.clone());
         Ok(profile)
     })
+}
+
+/// Refuses to move a host (another provider, region or address, port, node, or the account labs
+/// are created in) while `deployed` labs still have something on it: a stop would then look for
+/// them where they aren't, find nothing, and leave them running (and, on a cloud, billing).
+/// Everything else (its name, credentials, size, auto-stop, budget) can change.
+fn keeps_placement(saved: &HostProfile, edited: &HostProfile, deployed: usize) -> Result<()> {
+    let (before, after) = (saved.placement(), edited.placement());
+    let mut changed: Vec<&str> = Vec::new();
+    for (name, _) in before.iter().filter(|f| !after.contains(f)).chain(after.iter().filter(|f| !before.contains(f))) {
+        if !changed.contains(name) {
+            changed.push(name);
+        }
+    }
+    if deployed == 0 || changed.is_empty() {
+        return Ok(());
+    }
+    let what = if saved.provider.is_cloud() { "account" } else { "host" };
+    Err(Error::Invalid(format!(
+        "{deployed} lab{} still on this {what}: stop {} before changing its {}.",
+        if deployed == 1 { " is" } else { "s are" },
+        if deployed == 1 { "it" } else { "them" },
+        changed.join(", ")
+    )))
 }
 
 /// The id a save writes under: an existing host's (edit), or a new one.
@@ -132,13 +161,19 @@ fn count_by_host(markers: &[String]) -> HashMap<String, u32> {
     counts
 }
 
+/// How many labs still have something on host `id`: marked as running there, or a Terraform
+/// state left there that holds resources.
+fn labs_on(app: &AppHandle, id: &str) -> usize {
+    let left = app.path().app_data_dir().map(|base| leftovers_on(&base, id)).unwrap_or(0);
+    lab_markers(app).iter().filter(|m| *m == id).count() + left
+}
+
 #[tauri::command]
 pub fn server_remove(app: AppHandle, id: String) -> Result<()> {
     // Don't strand running labs: this host holds the credentials and state needed to stop and
     // destroy its labs. Removing it mid-run would leave them unstoppable from the app, and a
     // cloud lab would keep billing with no way left to tear it down.
-    let left = app.path().app_data_dir().map(|base| leftovers_on(&base, &id)).unwrap_or(0);
-    no_labs_running(lab_markers(&app).iter().filter(|m| **m == id).count() + left)?;
+    no_labs_running(labs_on(&app, &id))?;
     update(&app, |store| {
         remove_host(store, &id);
         Ok(())
@@ -338,6 +373,58 @@ mod tests {
         std::fs::write(ssh.join("id_ed25519"), "k").unwrap();
         std::fs::write(ssh.join("id_ed25519.pub"), "ssh-ed25519 AAAA cyberctf-launcher\n").unwrap();
         assert_eq!(server_public_key(app()).await.unwrap(), "ssh-ed25519 AAAA cyberctf-launcher");
+    }
+
+    #[test]
+    fn an_account_with_labs_on_it_keeps_its_place_but_not_its_credentials() {
+        // Regression: the player moved an AWS account with a lab running in eu-west-3 to
+        // us-east-1 for their next lab; Stop then destroyed in us-east-1, found nothing, and the
+        // instance kept billing in eu-west-3.
+        let t = crate::test_app::TestApp::new();
+        let app = || t.handle().clone();
+        let azure = |id: Option<&str>, region: &str, subscription: &str, name: &str| -> HostInput {
+            serde_json::from_value(
+                serde_json::json!({ "id": id, "name": name, "provider": "azure", "host": region, "username": subscription, "datastore": "Standard_B2s" }),
+            )
+            .unwrap()
+        };
+        let sub = "00000000-0000-0000-0000-000000000000";
+        let saved = server_save(app(), azure(None, "westeurope", sub, "Azure")).unwrap();
+        let lab = t.lab("placed", &[]);
+        std::fs::write(lab.join(HOST_MARKER), &saved.id).unwrap();
+        let err = server_save(app(), azure(Some(&saved.id), "eastus", sub, "Azure")).unwrap_err().to_string();
+        assert_eq!(err, "1 lab is still on this account: stop it before changing its address or region.");
+        let err = server_save(app(), azure(Some(&saved.id), "westeurope", "11111111-0000-0000-0000-000000000000", "Azure")).unwrap_err().to_string();
+        assert!(err.ends_with("changing its account."), "{err}");
+        assert_eq!(server_list(app()).unwrap().hosts[0].host, "westeurope", "nothing saved");
+        // Its name (and credentials, size, auto-stop) can change.
+        assert_eq!(server_save(app(), azure(Some(&saved.id), "westeurope", sub, "Renamed")).unwrap().name, "Renamed");
+        // Stopped: it can move.
+        std::fs::remove_file(lab.join(HOST_MARKER)).unwrap();
+        assert_eq!(server_save(app(), azure(Some(&saved.id), "eastus", sub, "Renamed")).unwrap().host, "eastus");
+    }
+
+    #[test]
+    fn a_host_moves_only_with_nothing_on_it_and_renewed_keys_never_move_it() {
+        let aws = |region: &str, key: &str| HostProfile { host: region.into(), username: key.into(), ..host("a1", Provider::Aws) };
+        let (now, keys) = (aws("eu-west-3", "AKIAOLD"), aws("eu-west-3", "AKIANEW"));
+        // A new access key (the old one deleted or expired) is how to sign in, not where.
+        keeps_placement(&now, &keys, 2).unwrap();
+        let err = keeps_placement(&now, &aws("us-east-1", "AKIAOLD"), 2).unwrap_err().to_string();
+        assert_eq!(err, "2 labs are still on this account: stop them before changing its address or region.");
+        keeps_placement(&now, &aws("us-east-1", "AKIAOLD"), 0).unwrap();
+        // A server pointed at another machine or node, or turned into another provider.
+        let pve = host("p1", Provider::Proxmox);
+        let err = keeps_placement(&pve, &HostProfile { node: Some("pve2".into()), host: "10.0.0.9".into(), ..pve.clone() }, 1).unwrap_err().to_string();
+        assert_eq!(err, "1 lab is still on this host: stop it before changing its address or region, node or organization.");
+        assert!(keeps_placement(&pve, &HostProfile { provider: Provider::VmwareEsxi, ..pve.clone() }, 1).unwrap_err().to_string().contains("provider"));
+        keeps_placement(&pve, &HostProfile { username: "root@pam!token".into(), datastore: Some("other".into()), ..pve.clone() }, 1).unwrap();
+        // An AWS CLI account switched to another profile (likely another AWS account), or from
+        // stored keys to the CLI.
+        let cli = HostProfile { use_cli_creds: true, aws_profile: Some("labs".into()), ..host("a2", Provider::Aws) };
+        let err = keeps_placement(&cli, &HostProfile { aws_profile: Some("personal".into()), ..cli.clone() }, 1).unwrap_err().to_string();
+        assert!(err.ends_with("changing its AWS CLI profile."), "{err}");
+        assert!(keeps_placement(&HostProfile { use_cli_creds: false, aws_profile: None, ..cli.clone() }, &cli, 1).is_err());
     }
 
     #[test]

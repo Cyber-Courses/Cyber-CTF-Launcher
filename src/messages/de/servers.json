@@ -195,6 +195,7 @@
       "checkingAzure": "Azure CLI wird geprüft…",
       "signedInAzure": "Bei der Azure CLI angemeldet.",
       "signingIn": "Anmeldung läuft…",
+      "cancelSignIn": "Anmeldung abbrechen",
       "switchAccount": "Konto wechseln",
       "signInLog": "Anmelden",
       "subscription": "Abonnement",

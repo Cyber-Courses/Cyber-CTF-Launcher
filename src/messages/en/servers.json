@@ -195,6 +195,7 @@
       "checkingAzure": "Checking the Azure CLI…",
       "signedInAzure": "Signed in to the Azure CLI.",
       "signingIn": "Signing in…",
+      "cancelSignIn": "Cancel sign-in",
       "switchAccount": "Switch account",
       "signInLog": "Sign in",
       "subscription": "Subscription",

@@ -8,6 +8,7 @@ import {
   awsProfiles,
   azureSubscriptions,
   cloudLogin,
+  cloudLoginCancel,
   gcpAccount,
   gcpBillingAccounts,
   gcpOrganizations,
@@ -80,10 +81,14 @@ export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: bo
     });
   };
 
+  /** Stops the sign-in in progress: its CLI is stopped, and the log says it was cancelled. */
+  const cancelSignIn = () => void cloudLoginCancel().catch(ignore("the sign-in ends on its own within its time limit"));
+
   return {
     signingIn,
     signInLog: signInLog.lines,
     signIn,
+    cancelSignIn,
     awsSignIn,
     profiles: awsAccount.profiles,
     // What another provider (or access keys) left behind isn't shown.

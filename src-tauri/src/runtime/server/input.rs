@@ -4,6 +4,7 @@
 use serde::Deserialize;
 use ts_rs::TS;
 
+use super::kind::{AccountField, Secret, kind};
 use super::profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile, default_port};
 use crate::error::{Error, Result};
 use crate::runtime::providers::Provider;
@@ -49,52 +50,36 @@ fn require(ok: bool, message: &str) -> Result<()> {
 }
 
 impl HostInput {
-    /// Checks the connection fields against the provider (address, account, credentials shape).
+    /// Checks the connection fields against the provider (address or region, account,
+    /// credentials shape), from its row in the table of kinds (see `kind`).
     pub(super) fn check(&self) -> Result<Checked> {
-        require(self.provider.is_remote(), "a host must be ESXi, Proxmox, AWS, Azure, GCP, DigitalOcean, Linode or OCI")?;
+        let kind = kind(self.provider).ok_or_else(|| Error::Invalid("a host must be ESXi, Proxmox, AWS, Azure, GCP, DigitalOcean, Linode or OCI".into()))?;
         let host = clean(&self.host, "host", 253)?;
         // AWS can connect with the AWS CLI's own credentials instead of stored keys.
-        let use_cli = self.provider == Provider::Aws && self.use_cli_creds.unwrap_or(false);
-        // DigitalOcean and Linode authenticate with just an API token (stored as the secret); no username.
-        let token_only = matches!(self.provider, Provider::DigitalOcean | Provider::Linode);
-        let username = if use_cli || token_only { String::new() } else { clean(&self.username, "username", 128)? };
-        // A new token must look like one; None or empty keeps the stored one.
-        let token_ok = || self.password.as_deref().filter(|p| !p.is_empty()).is_none_or(valid_do_token);
-        match self.provider {
-            Provider::Aws => {
-                require(valid_region(&host), "region must be an AWS region id, e.g. eu-west-3")?;
-                if !use_cli {
-                    require(
-                        !username.starts_with("ASIA"),
-                        "those are temporary credentials (ASIA...), which expire and need a session token. Switch to \"Connect with the AWS CLI\" and sign in with `aws login` / `aws sso login` so the launcher always has fresh credentials.",
-                    )?;
-                    require(valid_access_key_id(&username), "access key id looks wrong; an IAM user's key starts with AKIA...")?;
-                }
-            }
-            Provider::Azure => {
-                require(valid_azure_location(&host), "region must be an Azure location, e.g. westeurope")?;
-                require(valid_subscription(&username), "subscription must be a GUID (see `az account show`)")?;
-            }
-            Provider::Gcp => {
-                require(valid_gcp_region(&host), "region must be a GCP region id, e.g. europe-west1")?;
-                require(valid_billing_account(&username), "billing account must look like 0X0X0X-0X0X0X-0X0X0X (see `gcloud billing accounts list`)")?;
-                require(valid_org_id(self.node.as_deref().unwrap_or_default()), "organization id must be all digits, or empty for a personal account")?;
-            }
-            Provider::DigitalOcean => {
-                require(valid_do_region(&host), "region must be a DigitalOcean region slug, e.g. fra1 or nyc3")?;
-                require(token_ok(), "that doesn't look like a DigitalOcean API token")?;
-            }
-            Provider::Linode => {
-                require(valid_linode_region(&host), "region must be a Linode region slug, e.g. eu-central or us-east")?;
-                require(token_ok(), "that doesn't look like a Linode API token")?;
-            }
-            Provider::Oci => {
-                require(valid_oci_region(&host), "region must be an OCI region id, e.g. eu-frankfurt-1")?;
-                require(valid_ocid(&username), "compartment must be an OCID (ocid1.compartment... or the tenancy OCID)")?;
-            }
-            _ => require(valid_host(&host), "host must be a hostname or IP address, without https:// or a path")?,
+        let use_cli = kind.account == AccountField::AccessKeyId && self.use_cli_creds.unwrap_or(false);
+        // A token is the whole credential (DigitalOcean, Linode): no username.
+        let username = if use_cli || kind.account == AccountField::Unused { String::new() } else { clean(&self.username, "username", 128)? };
+        match &kind.region {
+            Some(region) => require((region.valid)(&host), region.message)?,
+            None => require(valid_host(&host), "host must be a hostname or IP address, without https:// or a path")?,
         }
-        require(self.provider != Provider::Proxmox || username.contains('@'), "Proxmox users include a realm, e.g. root@pam")?;
+        if kind.account == AccountField::AccessKeyId && !use_cli {
+            require(
+                !username.starts_with("ASIA"),
+                "those are temporary credentials (ASIA...), which expire and need a session token. Switch to \"Connect with the AWS CLI\" and sign in with `aws login` / `aws sso login` so the launcher always has fresh credentials.",
+            )?;
+        }
+        if let Some(account) = kind.account_shape.as_ref().filter(|_| !username.is_empty()) {
+            require((account.valid)(&username), account.message)?;
+        }
+        // A new token must look like one; None or empty keeps the stored one.
+        if kind.secret == Secret::ApiToken {
+            let token_ok = self.password.as_deref().filter(|p| !p.is_empty()).is_none_or(valid_do_token);
+            require(token_ok, &format!("that doesn't look like a {} API token", kind.name))?;
+        }
+        if self.provider == Provider::Gcp {
+            require(valid_org_id(self.node.as_deref().unwrap_or_default()), "organization id must be all digits, or empty for a personal account")?;
+        }
         Ok(Checked { host, username, use_cli })
     }
 
@@ -165,7 +150,7 @@ pub(super) fn valid_id(id: &str) -> bool {
 }
 
 /// An AWS region id, e.g. eu-west-3, us-gov-west-1.
-fn valid_region(region: &str) -> bool {
+pub(super) fn valid_region(region: &str) -> bool {
     let parts: Vec<&str> = region.split('-').collect();
     parts.len() >= 3
         && parts[0].len() == 2
@@ -174,24 +159,24 @@ fn valid_region(region: &str) -> bool {
 }
 
 /// An Azure location id, e.g. "westeurope" (lowercase letters/digits, no spaces).
-fn valid_azure_location(s: &str) -> bool {
+pub(super) fn valid_azure_location(s: &str) -> bool {
     !s.is_empty() && s.len() <= 32 && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
 }
 
 /// An Azure subscription id (a GUID, 8-4-4-4-12 hex).
-fn valid_subscription(s: &str) -> bool {
+pub(super) fn valid_subscription(s: &str) -> bool {
     let p: Vec<&str> = s.split('-').collect();
     p.len() == 5 && [8usize, 4, 4, 4, 12].iter().zip(&p).all(|(n, seg)| seg.len() == *n && seg.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 /// A GCP region id, e.g. "europe-west1", "us-central1" (lowercase letters/digits with a hyphen,
 /// starting with a letter so it never reads as a flag).
-fn valid_gcp_region(s: &str) -> bool {
+pub(super) fn valid_gcp_region(s: &str) -> bool {
     s.len() <= 32 && s.contains('-') && starts_lower_slug(s)
 }
 
 /// A GCP billing account id: three 6-char groups of uppercase hex, e.g. 0X0X0X-0X0X0X-0X0X0X.
-fn valid_billing_account(s: &str) -> bool {
+pub(super) fn valid_billing_account(s: &str) -> bool {
     let p: Vec<&str> = s.split('-').collect();
     p.len() == 3 && p.iter().all(|g| g.len() == 6 && g.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()))
 }
@@ -202,7 +187,7 @@ fn valid_org_id(s: &str) -> bool {
 }
 
 /// A DigitalOcean region slug, e.g. "fra1", "nyc3" (lowercase letters then digits).
-fn valid_do_region(s: &str) -> bool {
+pub(super) fn valid_do_region(s: &str) -> bool {
     (3..=8).contains(&s.len()) && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
 }
 
@@ -212,12 +197,12 @@ fn valid_do_token(s: &str) -> bool {
 }
 
 /// A Linode region slug, e.g. "eu-central", "us-east", "ap-south" (lowercase letters/digits/hyphens).
-fn valid_linode_region(s: &str) -> bool {
+pub(super) fn valid_linode_region(s: &str) -> bool {
     (3..=20).contains(&s.len()) && starts_lower_slug(s)
 }
 
 /// An OCI region id, e.g. "eu-frankfurt-1", "us-ashburn-1" (lowercase letters/digits/hyphens).
-fn valid_oci_region(s: &str) -> bool {
+pub(super) fn valid_oci_region(s: &str) -> bool {
     (5..=24).contains(&s.len()) && starts_lower_slug(s)
 }
 
@@ -227,13 +212,13 @@ fn starts_lower_slug(s: &str) -> bool {
 }
 
 /// An OCID (tenancy / compartment / ...): starts with "ocid1." then dot/hyphen-separated alnum.
-fn valid_ocid(s: &str) -> bool {
+pub(super) fn valid_ocid(s: &str) -> bool {
     s.starts_with("ocid1.") && (20..=255).contains(&s.len()) && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
 }
 
 /// A long-term AWS access key id (AKIA...). Temporary ASIA... keys are refused separately in
 /// `check`: they need a session token and expire, so the launcher steers them to CLI mode.
-fn valid_access_key_id(id: &str) -> bool {
+pub(super) fn valid_access_key_id(id: &str) -> bool {
     (16..=128).contains(&id.len()) && id.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
 }
 

@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::AppHandle;
 
 use super::HOST_MARKER;
+use super::kind::kind;
 use super::profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile};
 use super::secrets::{get_secret, host_secret};
 use super::store::{Store, load, load_host, saved_host};
@@ -61,30 +62,48 @@ pub fn connection_env(h: &HostProfile, password: &str) -> Vec<(String, String)> 
 
 // --- Terraform --------------------------------------------------------------
 
-/// Raw environment for Terraform (credentials the provider reads itself, never variables).
+/// Raw environment for Terraform (credentials the provider reads itself, never variables), by
+/// the host's kind (see `kind`).
 pub fn terraform_env(h: &HostProfile, password: &str) -> Vec<(String, String)> {
-    let pair = |k: &str, v: &str| (k.to_string(), v.to_string());
-    match h.provider {
-        // CLI credentials: pass the region (and the chosen profile); Terraform reads the AWS
-        // CLI's chain (works with a local terraform, which has the host's ~/.aws).
-        Provider::Aws if h.use_cli_creds => {
-            let mut env = vec![pair("AWS_REGION", &h.host)];
-            if let Some(p) = &h.aws_profile {
-                env.push(pair("AWS_PROFILE", p));
-            }
-            env
-        }
-        Provider::Aws => vec![pair("AWS_ACCESS_KEY_ID", &h.username), pair("AWS_SECRET_ACCESS_KEY", password), pair("AWS_REGION", &h.host)],
-        // azurerm uses the Azure CLI's auth (az login); it only needs the subscription id.
-        Provider::Azure => vec![pair("ARM_SUBSCRIPTION_ID", &h.username)],
-        // The google provider uses gcloud's ADC; the project comes as a variable (see `gcp`).
-        Provider::Gcp => Vec::new(),
-        // The digitalocean provider reads DIGITALOCEAN_TOKEN (the stored API token).
-        Provider::DigitalOcean => vec![pair("DIGITALOCEAN_TOKEN", password)],
-        // The linode provider reads LINODE_TOKEN (the stored API token).
-        Provider::Linode => vec![pair("LINODE_TOKEN", password)],
-        _ => Vec::new(),
+    kind(h.provider).map(|k| (k.terraform_env)(h, password)).unwrap_or_default()
+}
+
+fn pair(k: &str, v: &str) -> (String, String) {
+    (k.to_string(), v.to_string())
+}
+
+/// A provider that reads nothing from the environment (or signs in with its own CLI's
+/// credentials, like gcloud's ADC).
+pub(super) fn no_env(_: &HostProfile, _: &str) -> Vec<(String, String)> {
+    Vec::new()
+}
+
+/// AWS: the stored keys and the region; with the AWS CLI's own credentials, the region (and the
+/// chosen profile): Terraform reads the CLI's chain (a local terraform has the host's ~/.aws).
+pub(super) fn aws_env(h: &HostProfile, password: &str) -> Vec<(String, String)> {
+    if !h.use_cli_creds {
+        return vec![pair("AWS_ACCESS_KEY_ID", &h.username), pair("AWS_SECRET_ACCESS_KEY", password), pair("AWS_REGION", &h.host)];
     }
+    let mut env = vec![pair("AWS_REGION", &h.host)];
+    if let Some(p) = &h.aws_profile {
+        env.push(pair("AWS_PROFILE", p));
+    }
+    env
+}
+
+/// azurerm uses the Azure CLI's auth (az login); it only needs the subscription id.
+pub(super) fn azure_env(h: &HostProfile, _: &str) -> Vec<(String, String)> {
+    vec![pair("ARM_SUBSCRIPTION_ID", &h.username)]
+}
+
+/// The digitalocean provider reads DIGITALOCEAN_TOKEN (the stored API token).
+pub(super) fn digitalocean_env(_: &HostProfile, token: &str) -> Vec<(String, String)> {
+    vec![pair("DIGITALOCEAN_TOKEN", token)]
+}
+
+/// The linode provider reads LINODE_TOKEN (the stored API token).
+pub(super) fn linode_env(_: &HostProfile, token: &str) -> Vec<(String, String)> {
+    vec![pair("LINODE_TOKEN", token)]
 }
 
 // --- resolving a host for a launch ------------------------------------------

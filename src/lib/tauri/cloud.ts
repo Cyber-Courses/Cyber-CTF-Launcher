@@ -10,6 +10,9 @@ export type CloudProvider = Extract<Provider, "aws" | "azure" | "gcp" | "digital
 /** Signs in to a cloud provider using its CLI's own auth (browser flow): AWS, Azure or GCP. */
 export const cloudLogin = (provider: CloudLoginProvider, onLog: (line: string) => void) => invokeStreaming("cloud_login", { provider }, onLog);
 
+/** Cancels the CLI sign-in in progress (`cloudLogin` or `awsLogin`), which then rejects. */
+export const cloudLoginCancel = () => invoke<void>("cloud_login_cancel");
+
 // --- AWS ---
 
 /** The identity the AWS CLI resolves for a profile (or the default chain), or null. */
@@ -18,7 +21,8 @@ export const awsCliIdentity = (profile?: string) => invoke<string | null>("aws_c
 /** AWS CLI profiles configured on this machine. */
 export const awsProfiles = () => invoke<string[]>("aws_profiles");
 
-/** This month's AWS spend so far (USD) from Cost Explorer, or null if unavailable. */
+/** This month's AWS spend so far (USD) as the AWS CLI's profile sees it (the setup form, before
+ *  the account is saved), or null if unavailable. A saved account's is `serverMonthToDateCost`. */
 export const awsMonthToDateCost = (profile?: string) => invoke<number | null>("aws_month_to_date_cost", { profile: profile ?? null });
 
 /** Browser sign-in for an AWS profile (or the default) via `aws login`, streaming output. */

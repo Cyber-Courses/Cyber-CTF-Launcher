@@ -218,6 +218,30 @@ describe("Azure account setup", () => {
     expect(argsOf(calls, "server_save")[0]).toMatchObject({ input: { provider: "azure", username: "sub-dev" } });
   });
 
+  it("lets a sign-in waiting for the browser be cancelled", async () => {
+    // Regression: `cloud_login` had no cancel: a CLI waiting for a browser sign-in nobody
+    // finished kept the setup busy for good.
+    let reject: (why: string) => void = () => {};
+    const calls = installTauri({
+      azure_subscriptions: () => [],
+      cloud_login: (a) => {
+        stream(a, "Opening the browser…");
+        return new Promise((_, no) => (reject = no));
+      },
+      cloud_login_cancel: () => {
+        reject("Sign-in cancelled.");
+        return null;
+      },
+    });
+    const user = userEvent.setup();
+    await renderSetup(editing({ provider: "azure", host: "swedencentral", username: "" }));
+    await go(user, /sign in \(az login\)/i);
+    await go(user, /cancel sign-in/i);
+    expect(calls.some((c) => c.cmd === "cloud_login_cancel")).toBe(true);
+    expect(document.body.textContent).toContain("✗ Sign-in cancelled.");
+    expect(screen.queryByRole("button", { name: /cancel sign-in/i })).toBeNull();
+  });
+
   it("offers the CLI sign-in when no subscription is visible, then lists them", async () => {
     let subs: { name: string; id: string; isDefault: boolean }[] = [];
     const calls = installTauri({ azure_subscriptions: () => subs });

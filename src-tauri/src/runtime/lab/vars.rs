@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::runtime::providers::Provider;
 use crate::runtime::proxmox;
-use crate::runtime::server::{DEFAULT_AUTO_STOP_HOURS, HostProfile};
+use crate::runtime::server::{DEFAULT_AUTO_STOP_HOURS, HostProfile, size_var};
 
 /// The environment Isoloom's Vagrantfiles read to reach an ESXi host (the `vagrant-vmware-esxi`
 /// plugin's settings), from the host's profile and password.
@@ -38,20 +38,14 @@ fn cloud_vars(h: &HostProfile) -> Vec<(String, String)> {
     let hours = h.auto_stop_hours.unwrap_or(DEFAULT_AUTO_STOP_HOURS);
     // `auto_stop_hours` is the launcher's own (expiry, reaper); Isoloom's modules take minutes.
     let mut vars = vec![
-        ("region".to_string(), h.host.clone()),
+        ("region".to_string(), h.region().unwrap_or_default().to_string()),
         ("auto_stop_hours".to_string(), hours.to_string()),
         // Saturating: the form caps the hours, but the profile file can hold anything.
         ("auto_stop_minutes".to_string(), hours.saturating_mul(60).to_string()),
     ];
     // The size, under each module's own variable name.
-    if let Some(t) = &h.datastore {
-        let name = match h.provider {
-            Provider::Azure | Provider::DigitalOcean => "size",
-            Provider::Gcp => "machine_type",
-            Provider::Linode => "type",
-            _ => "instance_type",
-        };
-        vars.push((name.into(), t.clone()));
+    if let (Some(size), Some(name)) = (h.size(), size_var(h.provider)) {
+        vars.push((name.into(), size.to_string()));
     }
     // GCP: the account's labs project (see `gcp`), else a project per lab from the billing
     // account (the module creates and deletes it).
@@ -59,16 +53,16 @@ fn cloud_vars(h: &HostProfile) -> Vec<(String, String)> {
         match &h.gcp_project {
             Some(p) => vars.push(("project".into(), p.clone())),
             None => {
-                vars.push(("billing_account".into(), h.username.clone()));
-                if let Some(org) = &h.node {
-                    vars.push(("org_id".into(), org.clone()));
+                vars.push(("billing_account".into(), h.cloud_account().unwrap_or_default().to_string()));
+                if let Some(org) = h.gcp_org() {
+                    vars.push(("org_id".into(), org.to_string()));
                 }
             }
         }
     }
     // OCI deploys into a compartment (the tenancy root works).
     if h.provider == Provider::Oci {
-        vars.push(("compartment_id".into(), h.username.clone()));
+        vars.push(("compartment_id".into(), h.cloud_account().unwrap_or_default().to_string()));
     }
     vars
 }
