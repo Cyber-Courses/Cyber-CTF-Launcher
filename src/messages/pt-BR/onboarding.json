@@ -37,13 +37,14 @@
     "signedInAs": "Conectado como {name}",
     "waiting": "Aguardando o navegador… (até 5 minutos)",
     "button": "Entrar pelo navegador",
-    "hint": "Abre <mono>cyberauth.co</mono> no seu navegador. Você também pode fazer isso depois."
+    "hint": "Abre <mono>cyberauth.co</mono> no seu navegador. Os labs também funcionam sem conta: você pode entrar depois pelas Configurações.",
+    "skip": "Pular por enquanto"
   },
   "done": {
     "title": "Tudo <em>pronto</em>",
     "description": "Você pode mudar tudo isso depois em Configurações ou Esta máquina.",
     "account": "Conta",
-    "notSignedIn": "Não conectado",
+    "notSignedIn": "Não conectado (entre depois pelas Configurações)",
     "browse": "Ver labs"
   }
 }

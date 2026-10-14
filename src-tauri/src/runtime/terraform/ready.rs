@@ -63,12 +63,12 @@ fn report(out: &str, last_step: &mut String, log: &mut impl FnMut(String)) -> Op
 /// Waits for the bootstrap's `ready_file` over SSH; a failed bootstrap fails the launch with
 /// its log. Modules without a `ready_file` output (older labs) are not waited on.
 pub(super) async fn wait_ready(state: &Path, log: &mut impl FnMut(String)) -> Result<()> {
-    let Some(ready_file) = output(state, "ready_file") else { return Ok(()) };
+    let Some(ready_file) = output(state, crate::runtime::lab::outputs::READY_FILE) else { return Ok(()) };
     let Some(target) = ssh::launcher_key().and_then(|identity| ssh_target(state, identity)) else {
         log("Can't reach the lab host over SSH to confirm it started; check it from the lab page.".into());
         return Ok(());
     };
-    let known_hosts = state.join("known_hosts");
+    let known_hosts = super::known_hosts(state);
     let command = format!("cat {} 2>/dev/null || true; echo; tail -n 25 /var/log/cyberctf-lab.log 2>/dev/null || true", ssh::sh_quote(&ready_file));
 
     log("Waiting for the lab host to install Docker and start the lab…".into());

@@ -5,7 +5,7 @@
 //! - `launch`: starting a lab, here or on a server host.
 //! - `cloud_services`: cloud-services labs, a Terraform module of the lab's own applied into the
 //!   player's cloud account.
-//! - `lifecycle`: park, resume, provision, stop, and the expired-lab reaper.
+//! - `lifecycle`: park, resume, provision and stop; `reaper`: the auto-stop of expired cloud labs.
 //! - `status`: what a lab looks like right now, wherever it runs.
 //! - `attack_box`, `shell`: the player's attacker beside a lab, and the shells into it.
 //! - `commands`: the Tauri commands over all of the above.
@@ -17,8 +17,11 @@ mod attack_vm;
 mod cloud_services;
 mod commands;
 mod discover;
+pub(crate) use discover::is_lab_id;
 mod docker;
 mod exegol;
+#[cfg(all(test, unix))]
+mod fake_clis;
 mod inflight;
 pub mod lab;
 mod launch;
@@ -29,7 +32,7 @@ pub mod providers;
 mod proxmox;
 #[cfg(test)]
 mod real_labs;
-mod registry;
+mod reaper;
 mod remote;
 pub mod server;
 pub mod server_selftest;
@@ -45,18 +48,26 @@ use ts_rs::TS;
 // A glob, so each command's generated `__cmd__*` macro is re-exported with it: `lib.rs`
 // registers them as `runtime::<command>`.
 pub use attack_box::start_attack_vm;
+pub use attack_vm::dir as attack_vm_dir;
 pub use commands::*;
-pub use docker::{PORTS_ENV, subnets_in_use};
+pub use docker::{PORTS_ENV, attack_network, project as compose_project, subnets_in_use};
+pub use exegol::{container as attack_box_container, default_image as default_attack_image};
 /// For tests elsewhere that need an operation in flight.
 #[cfg(test)]
 pub(crate) use inflight::DeployGuard;
-pub use inflight::{Action, active_actions, active_deploys, deploying_labs};
-pub use launch::{deployed_on_server, start};
-pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, resume_lab, stop_lab};
+pub(crate) use inflight::lock_lab;
+pub use inflight::{Action, active_actions, active_deploys, deploying_labs, stopping};
+pub use launch::deployed_on_server;
+#[cfg(test)]
+pub(crate) use launch::start;
+pub(crate) use launch::start_locked;
+pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
 pub use model::{AttackerAt, Interface, LabStatus, Machine, Network, Output, Park, Place, Port, Service};
 pub use paths::{LOCAL_VM_MARKER, validate_id};
-pub use shell::{ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for, valid_image};
-pub use status::{lab_running_here, primary_url, running_here};
+pub use reaper::reap_expired_labs;
+pub use shell::{ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for};
+pub use status::{lab_installed, lab_present, primary_url, running_here, vms_recorded_here};
+pub use terraform::{PLUGIN_CACHE as TERRAFORM_PLUGINS, clear_plugin_cache};
 /// For the generated TypeScript types (`ts_bindings`).
 #[cfg(test)]
 pub(crate) use {cloud_services::Preview, docker::Check, exegol::ExegolStatus};
@@ -106,6 +117,7 @@ pub(crate) mod test_support {
             attacker: None,
             outputs: Vec::new(),
             message: None,
+            reap_error: None,
         }
     }
 }

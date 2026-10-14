@@ -12,6 +12,11 @@ rust-version = "1.90"
 name = "cyberctf_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Function length (#150): over clippy.toml's `too-many-lines-threshold` fails `cargo clippy -D
+# warnings`. File length is checked by a test (src/code_size.rs).
+[lints.clippy]
+too_many_lines = "warn"
+
 [build-dependencies]
 tauri-build = { version = "2.7.0", features = [] }
 
@@ -38,21 +43,34 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 reqwest = { version = "0.13", features = ["json", "form"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates and runs their files.
-isoloom-core = { git = "https://github.com/isoloom/isoloom", rev = "4d17353" }
-# The map type of isoloom-core's API (a cloud-services lab's outputs).
+# Pinned to a commit of isoloom's v1 `main` until v1.0.0 is tagged; move to that tag then. Only
+# `src/runtime/lab/` calls these crates, each the layer it needs: the spec (`isoloom-spec`), the
+# check plan (`isoloom-plan`), the backends' registry and the resolved snapshot
+# (`isoloom-targets`), the host's readiness and the registry of running environments
+# (`isoloom-runtime`).
+isoloom-spec = { git = "https://github.com/isoloom/isoloom", rev = "a0ae3f8358c616e3c4bb2afa9ca773e2cf943f3e" }
+isoloom-plan = { git = "https://github.com/isoloom/isoloom", rev = "a0ae3f8358c616e3c4bb2afa9ca773e2cf943f3e" }
+isoloom-targets = { git = "https://github.com/isoloom/isoloom", rev = "a0ae3f8358c616e3c4bb2afa9ca773e2cf943f3e" }
+isoloom-runtime = { git = "https://github.com/isoloom/isoloom", rev = "a0ae3f8358c616e3c4bb2afa9ca773e2cf943f3e" }
+# The map type of the Isoloom crates' API (a cloud-services lab's outputs).
 indexmap = "2"
 portable-pty = "0.9"
 tauri-plugin-dialog = "2"
 # The TypeScript types of the commands' arguments and results, derived from these structs
 # (see `ts_bindings.rs`).
 ts-rs = "12"
+# A POSIX shell-word splitter: the in-app terminal on Windows (no `sh`, and cmd.exe can't read
+# POSIX quoting) runs its `sh_quote`d command lines' words directly; tests check `sh_quote`
+# round-trips through it.
+shell-words = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# Job objects: a timed tool's whole process tree ends with it on Windows.
+# Job objects: a timed tool's whole process tree ends with it on Windows. Shell (and Registry, which
+# its SHELLEXECUTEINFOW needs): the UAC-elevated Vagrant for Hyper-V.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
@@ -61,7 +79,5 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # Property tests for the parsers of tool output and user input: never panic, round-trips,
 # quoting invariants.
 proptest = { version = "1", default-features = false, features = ["std"] }
-# A POSIX shell-word splitter, to check `sh_quote`d command lines split back into their words.
-shell-words = "1"
 # Tauri's mock runtime, so code taking an app handle runs in unit tests (see `AppRuntime`).
 tauri = { version = "2.12.0", features = ["test"] }

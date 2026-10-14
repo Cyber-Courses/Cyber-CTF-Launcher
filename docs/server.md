@@ -26,7 +26,7 @@ Debian "lab host" VM, configured by `deploy/ansible/site.yml` **inside** the VM.
 | Lab | Host | Launcher runs |
 | --- | --- | --- |
 | Docker | ESXi | `vagrant up --provider vmware_esxi` in `deploy/vagrant` |
-| Docker | Proxmox | `terraform apply` in `deploy/terraform/proxmox`, in the `hashicorp/terraform:1.16.5` container |
+| Docker | Proxmox | `terraform apply` in `deploy/terraform/proxmox`, on macOS in the `hashicorp/terraform:1.9.8` container (pinned by digest in `runner.rs`) |
 | VM (own Vagrantfile) | ESXi | `vagrant up --provider vmware_esxi` at the lab root |
 | VM (own Vagrantfile) | Proxmox | not supported (no working Vagrant provider) |
 
@@ -71,6 +71,18 @@ instance schedules its own poweroff at boot (systemd timer from cloud-init) and 
 terminate on shutdown, so a forgotten lab stops billing even with this machine off. The
 launcher records the expiry at apply and shows "Auto-stops at ..."; past it the lab shows
 as stopped. The security group (free) stays until the next Start or Stop.
+A reap that fails (expired credentials, a removed account, a destroy past its 30-minute limit)
+is logged, kept beside the state (`reap-error`), shown on the lab's page and notified once.
+
+**Where a destroy goes:** `run.json` beside the state keeps the placement the apply used (region,
+project, compartment, Proxmox endpoint and node, the provider's `AWS_REGION` / `GOOGLE_PROJECT`;
+never a secret), and Stop, the reaper and a leftover's destroy use it over the account's current
+settings. While labs are deployed on a host, Settings refuses to change its provider, address or
+region, port, node or the account labs are created in (credentials can still change).
+
+**Provider plugins** are shared by every lab's runs in `<app data>/terraform-plugins`
+(`TF_PLUGIN_CACHE_DIR`, one `init` writing it at a time); a successful destroy removes the
+deployment's own `.terraform`. The Machine page's Downloads counts and cleans the cache.
 The test is `sts get-caller-identity` in the `amazon/aws-cli` container.
 
 ## Attack box shell on remote labs

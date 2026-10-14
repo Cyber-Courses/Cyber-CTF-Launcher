@@ -14,7 +14,7 @@ Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It
   - [`machine/`](src-tauri/src/machine/): what this machine can run (`system/`: Docker engines, Vagrant, hypervisors, package manager), the setup self-tests (`selftest/`) and the workloads/storage the Machine page shows (`workloads/`, `storage.rs`).
   - [`platform/`](src-tauri/src/platform/): the PATH a GUI launch is missing (`env_path.rs`) and one-click dependency installs (`install.rs`).
   - [`runtime/`](src-tauri/src/runtime/): lab lifecycle, with logs streamed to the UI over a Tauri channel
-    - `lab.rs`: the lab's Isoloom side; the target's files (Compose, Vagrant, Terraform) are generated from its `isoloom.yml` with `isoloom-core` right before they run
+    - `lab/`: the launcher's one door to Isoloom (Isoloom's crates, `isoloom-spec`, `-plan`, `-targets` and `-runtime`, are used nowhere else): the target's files (Compose, Vagrant, Terraform) are generated from the lab's `isoloom.yml` right before they run, then the launcher's own overrides applied (`overrides.rs`); Isoloom's paths and names (`names.rs`); the variables of Isoloom's Terraform modules from the player's hosts and accounts (`vars.rs`); and recording labs in Isoloom's registry, `~/.isoloom/status.yml` (`registry.rs`, a setting under Settings > Labs, on by default)
     - `launch.rs`, `lifecycle.rs`, `status.rs`: start, park/resume, stop and the auto-stop reaper for cloud labs, and what is running where
     - `docker/`: `docker compose -p cyberctf-<lab>`; stop removes volumes, so every start is a clean lab; status reports machines, interfaces, networks and declared services
     - `vm.rs` + `vm/`: `vagrant up --provider <p>`; stop destroys the VMs
@@ -33,6 +33,13 @@ Labs live in `<app data>/labs/<lab id>/`.
 ### Platform notes
 
 A VM lab runs natively only where its boxes exist for the host architecture. On Apple Silicon, ARM boxes run natively on UTM/QEMU (Apple Hypervisor). x86-only boxes such as pfSense run there only under QEMU emulation, which is several times slower; heavy x86 labs should use a remote x86 host (ESXi, Proxmox).
+
+Hyper-V only takes management commands from an administrator (or a member of "Hyper-V Administrators"), and Vagrant's Hyper-V provider refuses to run otherwise. On Windows, Vagrant commands on Hyper-V machines run through a generated, hidden Windows PowerShell script ([`exec/elevate.rs`](src-tauri/src/exec/elevate.rs)); when the launcher itself may not manage Hyper-V, Windows first asks for administrator rights (a UAC prompt, raised for the app's window). Status reads are never elevated, and Vagrant refuses even those without the rights: so the Machine report shows Hyper-V as not ready for an account that may not manage it, and Settings > Hypervisor offers **Allow my account**, which adds the account to "Hyper-V Administrators" (one UAC prompt; it takes effect at the next Windows sign-in).
+
+- Prompts: one per batch of Vagrant commands. A lab's own start (boot, then power off the setup machine), provisioning run, pause or shutdown, resume and stop are one batch each. A VM lab with an attack VM asks once more for the attack VM in each of these, and again for each retry of an attack VM start that hit Vagrant's machine lock. The VM self-test asks twice (boot and run a command, then delete the test VM), three times when it first deletes a test VM left from an earlier run. Started as administrator (or as a Hyper-V administrator), the launcher asks nothing.
+- Output streams as usual: the script writes it to a log the launcher follows. The environment the commands need (tokens included) goes through a file in the batch's own temp folder, read and deleted by the script, never on a command line.
+- Vagrant's questions: on Windows, Vagrant waits forever for an answer even with no one to give it. The script picks a virtual switch ("Default Switch", else an external one, else the first) unless `ISOLOOM_HYPERV_SWITCH` already names one, and passes it as `ISOLOOM_HYPERV_SWITCH`: a lab's Isoloom Vagrantfile puts each VM's first adapter on it (and its lab networks on private switches `isoloom-<lab>-<network>`), and the launcher's own Vagrantfiles (self-test, attack VM) attach to it too. The attack VM gets no shared folder on Hyper-V (Vagrant would ask for a Windows password to share it over SMB). If Vagrant asks anyway, the batch is stopped with a message saying so.
+- Stopping: cancelling an operation, the deploy worker being stopped, or the launcher exiting ends the batch and every process it started; a batch running for more than 6 hours is ended too. Declining the UAC prompt fails the operation with a plain message.
 
 ## Roadmap
 
@@ -65,16 +72,30 @@ To preview the UI in a browser without the Rust core, run `pnpm dev` and open
 
 ## Development
 
-Requirements: Node 22+, pnpm, Rust (stable), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
+Requirements: Node 22 or 24 (an odd release such as 25 is refused by Next, see `engines`), pnpm, Rust (stable), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. On Windows that means **Visual Studio 2022 Build Tools** with the *Desktop development with C++* workload (it provides `link.exe` and the Windows SDK; without it the build stops at `linker 'link.exe' not found`).
 
 ```bash
 pnpm install
 pnpm tauri dev          # app with hot reload
-pnpm tauri build        # installers in src-tauri/target/release/bundle
+pnpm tauri build        # installers in src-tauri/target/release/bundle (needs the release signing key)
+pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'   # a local build without it
 pnpm format             # Prettier (src/) + rustfmt (src-tauri/)
 pnpm check              # formatting, types, lint, clippy
 cd src-tauri && cargo test
 cargo test -- --ignored --nocapture   # prints this machine's system report
 ```
 
+`.gitattributes` keeps every text file LF (Windows scripts CRLF) whatever `core.autocrlf` says; a checkout made before it may need `git add --renormalize .` once. The tests that syntax-check the Linux/macOS install scripts with `sh -n` skip that part where no `sh` is on PATH (Windows without Git's `usr\bin`); their other assertions still run.
+
 The TypeScript types of the commands' arguments and results ([`src/lib/tauri/generated/`](src/lib/tauri/generated/)) are generated from the Rust structs by [ts-rs](https://github.com/Aleph-Alpha/ts-rs): `cargo test` rewrites them, and CI fails when the committed ones differ. A command taking or returning a new struct or enum derives `ts_rs::TS` and is listed in [`ts_bindings.rs`](src-tauri/src/ts_bindings.rs).
+
+### Branches
+
+```
+feature/… · fix/…  ──PR──▶  dev  ──PR──▶  main  ──tag v*──▶  release
+```
+
+- **Work** happens on a `feature/…` or `fix/…` branch cut from `dev`, merged into `dev` by pull request.
+- **`dev` is staging**: everything merged there is checked together (CI, coverage, E2E, labs on each push) before it reaches production.
+- **`main` is production**: it only takes pull requests from `dev`. Pushes to `main` publish the attack-box image; a `v*` tag on `main` builds and ships the release (`release.yml`, then `distribute.yml`).
+- A hotfix goes into `main` by pull request, then `main` is merged back into `dev`.

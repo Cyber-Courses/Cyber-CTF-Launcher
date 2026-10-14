@@ -1,15 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "shell-windows",
-  "description": "the attack box shell windows: close, drag, open links, and their terminal (shell-window set)",
+  "description": "the attack box shell windows: close, drag, and their terminal (shell-window set); no opener, the terminal opens no links",
   "windows": [
     "shell-*"
   ],
   "permissions": [
     "core:default",
+    "log:default",
     "core:window:allow-close",
     "core:window:allow-start-dragging",
-    "opener:default",
     "core:window:allow-set-theme",
     "shell-window"
   ]

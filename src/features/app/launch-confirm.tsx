@@ -30,17 +30,20 @@ export function LaunchConfirm() {
   const [expired, setExpired] = useState<string | null>(null);
 
   useTauriEvent<Request>("launch-confirm", setReq);
-  useFocusTrap(ref, !!req);
+  // Escape declines (nothing starts, nothing is billed), or closes a request that ran out.
+  useFocusTrap(ref, !!req, () => {
+    if (!req || busy) return;
+    if (expired === req.sessionId) setReq(null);
+    else answer(false);
+  });
   useEffect(() => {
     if (!req) return;
     const timer = setTimeout(() => setExpired(req.sessionId), CONFIRM_WINDOW_MS);
     return () => clearTimeout(timer);
   }, [req]);
 
-  if (!req) return null;
-  const isExpired = expired === req.sessionId;
-
-  const answer = (approve: boolean) => {
+  function answer(approve: boolean) {
+    if (!req) return;
     setBusy(true);
     void confirmLaunch(req.sessionId, approve)
       .catch(tell(t("app.launchConfirm.failed")))
@@ -48,7 +51,10 @@ export function LaunchConfirm() {
         setBusy(false);
         setReq(null);
       });
-  };
+  }
+
+  if (!req) return null;
+  const isExpired = expired === req.sessionId;
 
   return (
     <div className="animate-fade-in fixed inset-0 z-[60] flex items-center justify-center bg-[var(--scrim)] p-4 backdrop-blur-[0.125rem]">

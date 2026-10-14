@@ -53,6 +53,7 @@ const status = (p: Partial<LabStatus> = {}): LabStatus => ({
   attacker: null,
   outputs: [],
   message: null,
+  reapError: null,
   ...p,
 });
 const stopped = status({ running: false, machines: [], url: null, place: null, provider: null });
@@ -160,6 +161,7 @@ describe("LabDetail: starting", () => {
       state: "RUNNING",
       endpoints: [{ port: 80, url: "https://s1.example" }],
       message: null,
+      reapError: null,
       expiresAt: new Date(Date.now() + 3600_000).toISOString(),
     };
     const calls = installTauri({
@@ -202,6 +204,7 @@ describe("LabDetail: starting", () => {
       state: "RUNNING",
       endpoints: [],
       message: null,
+      reapError: null,
       expiresAt: new Date(Date.now() + 3600_000).toISOString(),
     };
     installTauri({
@@ -276,12 +279,13 @@ describe("LabDetail: a lab that is up", () => {
     expect(h.onStop).toHaveBeenCalledTimes(1);
   });
 
-  it("pauses a VM lab here (no shut down), and re-runs its setup on one machine", async () => {
+  it("pauses or shuts down a VM lab here, and re-runs its setup on one machine", async () => {
     installTauri(quiet);
     const user = userEvent.setup();
     const h = renderDetail({ lab: vmLab, status: vmRunning });
     await flush();
-    expect(screen.queryByRole("button", { name: /Shut down/ })).toBeNull();
+    // A VM lab here can be shut down too (only a container lab in a VM can't).
+    expect(screen.getByRole("button", { name: /Shut down/ })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /^\s*Pause$/ }));
     expect(h.onPark).toHaveBeenCalledWith("pause");
     const select = screen.getByRole("combobox");

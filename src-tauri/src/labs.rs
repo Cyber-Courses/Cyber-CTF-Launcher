@@ -14,6 +14,8 @@ use crate::account::api;
 use crate::error::{Error, Result};
 use crate::runtime::{self, Runtime, providers::Provider};
 
+mod offline;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Launch {
@@ -43,20 +45,39 @@ pub(crate) fn validate_source(repository: &str, commit: &str) -> Result<()> {
 /// Extracts a GitHub tarball (single top-level `<repo>-<sha>/` folder) into
 /// `dest`, rejecting absolute paths, `..` and links.
 fn extract(tarball: &[u8], dest: &Path) -> Result<()> {
+    extract_within(tarball, dest, crate::http::MAX_LAB_UNPACKED)
+}
+
+/// [`extract`], refused before the files would add up to more than `max` bytes.
+fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(tarball));
+    let mut unpacked: u64 = 0;
     for entry in archive.entries()? {
         let mut entry = entry?;
         let kind = entry.header().entry_type();
         if !(kind.is_file() || kind.is_dir()) {
             continue;
         }
+        unpacked = unpacked.saturating_add(entry.size());
+        if unpacked > max {
+            return Err(Error::Invalid(format!("the lab archive unpacks to more than {} MB; refused", max / (1024 * 1024))));
+        }
         let path = entry.path()?.into_owned();
-        let relative: PathBuf = path.components().skip(1).collect();
+        // Past a leading `./` (GNU tar's `-C dir .` style), then the top folder GitHub names
+        // `<repo>-<sha>`.
+        let relative: PathBuf = path.components().skip_while(|c| matches!(c, std::path::Component::CurDir)).skip(1).collect();
         if relative.as_os_str().is_empty() {
             continue;
         }
         if relative.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
             return Err(Error::Invalid(format!("unsafe path in lab archive: {}", path.display())));
+        }
+        // Windows can't hold every name git can (a trailing space, `aux.c`): said plainly, not
+        // as the file system's "not found" halfway through the lab.
+        if cfg!(windows)
+            && let Some(why) = relative.components().find_map(|c| windows_name_problem(&c.as_os_str().to_string_lossy()))
+        {
+            return Err(Error::Invalid(format!("this lab can't be installed on Windows: its archive holds {}, {why}", path.display())));
         }
         let target = dest.join(&relative);
         if kind.is_dir() {
@@ -69,6 +90,24 @@ fn extract(tarball: &[u8], dest: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Why Windows can't create a file or folder named `name` (None: it can): a name ending in a
+/// space or a dot, a character Windows reserves, or a device name (`CON`, `aux.c`, `LPT1.txt`).
+fn windows_name_problem(name: &str) -> Option<&'static str> {
+    const DEVICES: &[&str] = &["CON", "PRN", "AUX", "NUL"];
+    if name.ends_with([' ', '.']) {
+        return Some("a name ending in a space or a dot");
+    }
+    if name.chars().any(|c| c < ' ' || "<>:\"|?*\\".contains(c)) {
+        return Some("a name with a character Windows reserves");
+    }
+    let stem = name.split('.').next().unwrap_or_default().trim_end().to_ascii_uppercase();
+    let numbered = |prefix: &str| stem.strip_prefix(prefix).is_some_and(|n| n.len() == 1 && n.as_bytes()[0].is_ascii_digit() && n != "0");
+    if DEVICES.contains(&stem.as_str()) || numbered("COM") || numbered("LPT") {
+        return Some("a device name Windows reserves");
+    }
+    None
 }
 
 /// The lab's GitHub tarball at `commit`.
@@ -124,7 +163,9 @@ async fn install_with(
     // module its Terraform state was applied from), which the swap would delete.
     if dir.exists() {
         let on_server = runtime::deployed_on_server(app, &dir, lab_id);
-        let here = on_server.is_none() && runtime::running_here(&dir, lab_id).await;
+        // Running here, or VMs Vagrant still tracks here (a launch that failed on one machine, a
+        // VM powered off by hand): the swap would delete its record and orphan them.
+        let here = on_server.is_none() && (runtime::running_here(&dir, lab_id).await || runtime::vms_recorded_here(&dir));
         refuse_update(here, on_server.as_deref())?;
     }
 
@@ -146,13 +187,13 @@ async fn install_with(
 /// server host named `on_server`.
 fn refuse_update(here: bool, on_server: Option<&str>) -> Result<()> {
     if let Some(host) = on_server {
-        return Err(Error::Invalid(format!(
+        return Err(Error::Refused(format!(
             "A new version of this lab is out, but it is still running on {host}. Stop it, then start it again to get the new version."
         )));
     }
     if here {
-        return Err(Error::Invalid(
-            "A new version of this lab is out, but it is still running here. Stop it, then start it again to get the new version.".into(),
+        return Err(Error::Refused(
+            "A new version of this lab is out, but it is still running here (or its machines still exist here). Stop it, then start it again to get the new version.".into(),
         ));
     }
     Ok(())
@@ -183,11 +224,52 @@ fn stage(labs: &Path, lab_id: &str, dir: &Path, tarball: &[u8], repository: &str
     Ok(staging)
 }
 
-/// Replaces the installed lab with the staged one.
+/// Replaces the installed lab with the staged one, all or nothing: the old one is moved aside
+/// (a rename, which Windows refuses whole while a file inside is open, where deleting it would
+/// stop halfway and leave a broken lab), the new one moved in, and the old one put back if
+/// that fails. The old copy is deleted last, best effort; a leftover goes on the next update.
 fn swap_in(staging: &Path, dir: &Path) -> Result<()> {
-    let _ = std::fs::remove_dir_all(dir);
-    std::fs::rename(staging, dir)?;
+    let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let old = dir.with_file_name(format!(".{name}.old"));
+    let _ = std::fs::remove_dir_all(&old);
+    let had_old = dir.exists();
+    if had_old {
+        rename_retrying(dir, &old).map_err(|e| in_use(e, dir))?;
+    }
+    if let Err(e) = rename_retrying(staging, dir) {
+        if had_old {
+            let _ = rename_retrying(&old, dir);
+        }
+        return Err(in_use(e, dir));
+    }
+    let _ = std::fs::remove_dir_all(&old);
     Ok(())
+}
+
+/// `rename`, retried briefly: on Windows an antivirus or the search indexer holds a just-written
+/// file open for a moment, and the rename fails with "access denied" meanwhile.
+fn rename_retrying(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut last = None;
+    for wait_ms in [0, 100, 250, 500, 1000] {
+        std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("rename failed")))
+}
+
+/// A rename refused because something holds a file in the lab folder, said as what to do.
+fn in_use(e: std::io::Error, dir: &Path) -> Error {
+    if e.kind() == std::io::ErrorKind::PermissionDenied {
+        Error::Invalid(format!(
+            "Couldn't update the lab: a file in {} is open in another program (an editor, a terminal, or a VM). Close it and try again.",
+            dir.display()
+        ))
+    } else {
+        Error::Io(e)
+    }
 }
 
 /// The environment a launch runs with: only the evidence claim's two variables from the
@@ -220,18 +302,57 @@ pub(crate) async fn run(
     log: impl Fn(String),
 ) -> Result<Option<String>> {
     let launch = parse_launch(launch_json)?;
+    runtime::validate_id(&launch.lab_id)?;
+    // The lab is this launch's from the download on: two installs of one lab share its staging
+    // folder, and a stop must not run while the new version is swapped in. Shared with the
+    // deploy worker's own hold on it (same process), so a worker runs on.
+    let _lock = runtime::lock_lab(app, &launch.lab_id).await?;
     let dir = install(app, &launch.lab_id, &launch.repository, &launch.commit, &log).await?;
     // Fixed names for every lab; the evidence itself is never in the environment.
     let env = launch_env(launch.env, attackbox_image, default_ports);
-    runtime::start(app, &dir, &launch.lab_id, launch.runtime, provider, host, &env, log).await?;
+    runtime::start_locked(app, &dir, &launch.lab_id, launch.runtime, provider, host, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
 }
 
+/// The backend's `startLab` answer for `lab_id`: what to download and run, and the evidence claim.
+async fn start_lab(lab_id: &str) -> Result<serde_json::Value> {
+    let data =
+        api::graphql("mutation ($id: ID!) { startLab(labId: $id) { labId runtime repository commit env { name value } } }", json!({ "id": lab_id }), true)
+            .await?;
+    Ok(data["startLab"].clone())
+}
+
+/// The launch spec for `lab_id`: the backend's answer (whose source is kept for a later offline
+/// start), or, when the backend can't be reached and the player asked for it (`offline`), the
+/// installed lab's (see `offline`).
+async fn launch_spec(app: &AppHandle, lab_id: &str, offline: bool, logs: &Channel<String>) -> Result<serde_json::Value> {
+    let base = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?;
+    let user = crate::account::auth::signed_in_user().await;
+    match start_lab(lab_id).await {
+        Ok(answer) => {
+            if let Some(user) = &user
+                && let Err(e) = offline::keep(&base, &answer, user)
+            {
+                log::warn!("couldn't keep {lab_id}'s launch for an offline start: {e}");
+            }
+            Ok(answer)
+        }
+        Err(failed) => {
+            let spec = offline::instead_of(failed, &base, lab_id, user.as_deref(), offline)?;
+            let _ = logs.send(offline::STARTING_OFFLINE.into());
+            Ok(spec)
+        }
+    }
+}
+
 /// `attackbox_image` starts an attack box next to the lab on a server host (where the
 /// lab network isn't reachable from this machine). `default_ports` publishes a container lab's
-/// services on their own ports instead of random free ones.
+/// services on their own ports instead of random free ones. `offline` starts the installed lab
+/// without the backend when it can't be reached (no progress saved): the player's answer to a
+/// launch that failed with `Code::OfflineReady`.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn lab_launch(
     app: AppHandle,
     lab_id: String,
@@ -239,17 +360,15 @@ pub async fn lab_launch(
     host: Option<String>,
     attackbox_image: Option<String>,
     default_ports: Option<bool>,
+    offline: Option<bool>,
     logs: Channel<String>,
 ) -> Result<()> {
     if let Some(image) = &attackbox_image
-        && !runtime::valid_image(image)
+        && !crate::exec::valid_image(image)
     {
         return Err(Error::Invalid(format!("invalid attack-box image `{image}`")));
     }
-    let data =
-        api::graphql("mutation ($id: ID!) { startLab(labId: $id) { labId runtime repository commit env { name value } } }", json!({ "id": lab_id }), true)
-            .await?;
-    let startlab = data["startLab"].clone();
+    let startlab = launch_spec(&app, &lab_id, offline.unwrap_or(false), &logs).await?;
     // The deploy runs in a detached worker process, so quitting (or crashing) this app never
     // cuts a vagrant/docker/terraform run short; this command only follows the worker's log.
     let job = crate::deploy_worker::Job {
@@ -310,6 +429,25 @@ mod tests {
     }
 
     #[test]
+    fn names_windows_cant_hold_are_told_apart() {
+        for bad in ["0 ", "notes.", "aux", "AUX.c", "con.txt", "Lpt1", "com9.log", "a:b", "what?", "tab\there", "x\"y"] {
+            assert!(windows_name_problem(bad).is_some(), "{bad:?}");
+        }
+        for good in ["0", "a b", ".env", "auxiliary.c", "com10", "lpt0", "console", "README.md", "caf\u{e9}"] {
+            assert_eq!(windows_name_problem(good), None, "{good:?}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_lab_archive_with_a_name_windows_cant_hold_is_refused_plainly() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+        let err = extract(&tarball(&[("lab-abc/ok.txt", b"x"), ("lab-abc/notes ", b"y")]), &dir).unwrap_err().to_string();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.contains("can't be installed on Windows") && err.contains("ending in a space"), "{err}");
+    }
+
+    #[test]
     fn a_launch_passes_only_the_evidence_variables_and_the_asked_extras() {
         let env = |pairs: &[(&str, &str)]| pairs.iter().map(|(n, v)| EnvVar { name: n.to_string(), value: v.to_string() }).collect::<Vec<_>>();
         let backend = env(&[("CTF_API_URL", "https://api"), ("PATH", "/evil"), ("CTF_LAUNCH_TOKEN", "t0k")]);
@@ -359,6 +497,38 @@ mod tests {
         assert!(!dir.join("old.txt").exists());
         assert!(installed(&dir.join(".cyberctf-commit"), sha));
         assert!(!installed(&dir.join(".cyberctf-commit"), "ffffffffffffffffffffffffffffffffffffffff"));
+        assert!(!labs.join(".invoice.old").exists(), "the old copy is cleared");
+        std::fs::remove_dir_all(labs).unwrap();
+    }
+
+    /// Windows: a file of the installed lab open in another program (no delete sharing, like an
+    /// editor or a VM's disk) used to leave the lab half-deleted. Now the update is refused whole,
+    /// the installed lab intact, and it goes through once the file is closed.
+    #[cfg(windows)]
+    #[test]
+    fn an_update_with_a_file_held_open_keeps_the_installed_lab_whole() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let labs = std::env::temp_dir().join(format!("cyberctf-swap-{}", rand::random::<u32>()));
+        let (dir, staging) = (labs.join("invoice"), labs.join(".invoice.staging"));
+        for (d, v) in [(&dir, "old"), (&staging, "new")] {
+            std::fs::create_dir_all(d.join("sub")).unwrap();
+            std::fs::write(d.join("a.txt"), v).unwrap();
+            std::fs::write(d.join("sub").join("disk.vmdk"), v).unwrap();
+        }
+        const FILE_SHARE_READ: u32 = 1;
+        let held = std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(dir.join("sub").join("disk.vmdk")).unwrap();
+
+        let err = swap_in(&staging, &dir).unwrap_err().to_string();
+        assert!(err.contains("open in another program"), "{err}");
+        for f in ["a.txt", "sub/disk.vmdk"] {
+            assert_eq!(std::fs::read_to_string(dir.join(f)).unwrap(), "old", "{f}");
+            assert_eq!(std::fs::read_to_string(staging.join(f)).unwrap(), "new", "{f}");
+        }
+
+        drop(held);
+        swap_in(&staging, &dir).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("sub").join("disk.vmdk")).unwrap(), "new");
+        assert!(!staging.exists() && !labs.join(".invoice.old").exists());
         std::fs::remove_dir_all(labs).unwrap();
     }
 
@@ -438,9 +608,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_launch_waits_for_the_lab_lock_before_installing_anything() {
+        // Regression: the install (download, staging, swap) ran before the lock was taken, so
+        // two installs of one lab shared its staging folder and a stop could run mid-swap.
+        use crate::exec::fake::Tools;
+        let t = crate::test_app::TestApp::new();
+        let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (".cyberctf-commit", SHA)]);
+        let tools = Tools::rules(&[]);
+        let held = runtime::lock_lab(t.handle(), "invoice").await.unwrap();
+        let launch = serde_json::json!({ "labId": "invoice", "runtime": "DOCKER", "repository": "CyberCTF/invoice", "commit": SHA, "env": [] });
+        let waiting = tokio::time::timeout(std::time::Duration::from_millis(300), run(t.handle(), launch.clone(), None, None, None, false, |_| {})).await;
+        assert!(waiting.is_err(), "the launch waits while another operation holds the lab");
+        assert!(tools.calls().is_empty(), "nothing of the install ran meanwhile: {:?}", tools.calls());
+        assert!(!dir.join(runtime::lab::INSTANCE_MARKER).exists());
+        drop(held);
+        run(t.handle(), launch, None, None, None, false, |_| {}).await.unwrap();
+        assert!(tools.called("up -d"));
+    }
+
+    #[tokio::test]
     async fn a_launch_refuses_a_bad_attack_box_image_before_asking_the_backend() {
         let t = crate::test_app::TestApp::new();
-        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, tauri::ipc::Channel::new(|_| Ok(()))).await;
+        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, tauri::ipc::Channel::new(|_| Ok(()))).await;
         assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
     }
 
@@ -468,4 +657,167 @@ mod tests {
         assert!(err.is_err());
         let _ = std::fs::remove_dir_all(dir);
     }
+
+    #[test]
+    fn repository_names_at_the_length_boundary_and_commit_lengths() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        assert!(validate_source(&format!("CyberCTF/{}", "a".repeat(100)), sha).is_ok());
+        assert!(validate_source(&format!("CyberCTF/{}", "a".repeat(101)), sha).is_err());
+        assert!(validate_source("CyberCTF/lab.v2_x-y", sha).is_ok());
+        for (repo, commit) in [
+            ("CyberCTF/lab", &sha[..39]),
+            ("CyberCTF/lab", &format!("{sha}0")),
+            ("CyberCTF/lab", &format!(" {}", &sha[1..])),
+            ("CyberCTF/lab", "0123456789abcdef0123456789abcdef0123456g"),
+            ("CyberCTF/café", sha),
+            ("cyberctf/lab", sha),
+            ("CyberCTF/lab ", sha),
+            ("CyberCTF//lab", sha),
+            ("", sha),
+            ("CyberCTF/lab", ""),
+        ] {
+            assert!(validate_source(repo, commit).is_err(), "{repo:?}@{commit:?}");
+        }
+    }
+
+    fn extract_to(entries: &[(&str, &[u8])]) -> Result<PathBuf> {
+        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+        extract(&tarball(entries), &dir).map(|()| dir)
+    }
+
+    #[test]
+    fn an_archive_unpacking_past_the_limit_is_refused() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+        // Highly compressible, like a gzip bomb: 3 MiB of zeros in a few KiB.
+        let zeros = vec![0u8; 3 * 1024 * 1024];
+        let archive = tarball(&[("lab-abc/a.bin", &zeros), ("lab-abc/b.bin", &zeros)]);
+        assert!(archive.len() < 64 * 1024);
+        let err = extract_within(&archive, &dir, 4 * 1024 * 1024).unwrap_err().to_string();
+        assert_eq!(err, "the lab archive unpacks to more than 4 MB; refused");
+        // The entry past the limit was never written.
+        assert!(!dir.join("b.bin").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+        extract_within(&archive, &dir, 6 * 1024 * 1024).unwrap();
+        assert_eq!(std::fs::metadata(dir.join("b.bin")).unwrap().len(), zeros.len() as u64);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_empty_archive_installs_nothing_and_fails_nothing() {
+        let dir = extract_to(&[]).unwrap();
+        // The destination is created by the caller (`stage`); nothing appears on its own.
+        assert!(!dir.exists() || std::fs::read_dir(&dir).unwrap().next().is_none());
+        let _ = std::fs::remove_dir_all(dir);
+        // An entry that is only the top-level folder name (no slash) is the folder itself: skipped.
+        let dir = extract_to(&[("lab-abc", b"not a file we want")]).unwrap();
+        assert!(!dir.exists() || std::fs::read_dir(&dir).unwrap().next().is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn paths_outside_the_top_folder_land_inside_the_destination_or_are_refused() {
+        // An absolute path and a leading `..` lose their first component like the top folder
+        // does, so they can only land inside the destination.
+        let dir = extract_to(&[("/etc/passwd", b"x"), ("../evil", b"y")]).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("etc/passwd")).unwrap(), "x");
+        assert_eq!(std::fs::read_to_string(dir.join("evil")).unwrap(), "y");
+        std::fs::remove_dir_all(dir).unwrap();
+        // A `..` anywhere after the top folder is refused, wherever it sits.
+        for path in ["lab-abc/a/../b", "lab-abc/..", "lab-abc/a/b/../../../c"] {
+            let err = extract_to(&[(path, b"x")]).unwrap_err().to_string();
+            assert!(err.starts_with("unsafe path in lab archive"), "{path}: {err}");
+        }
+        // A `.` in the middle is nothing; a backslash is a plain character on Unix, not a separator.
+        let dir = extract_to(&[("lab-abc/./a", b"x")]).unwrap();
+        assert!(dir.join("a").is_file());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_top_folder_with_a_leading_dot_is_stripped_too() {
+        // GNU tar (`tar czf x.tgz .`, or `-C dir .`) writes `./` before every entry; GitHub's
+        // tarballs don't, but a lab archive built any other way would install under
+        // `<dest>/<repo>-<sha>/`, where nothing looks.
+        // Fails with: assertion failed: dir.join("isoloom.yml").is_file().
+        // Suggested fix: skip a leading `CurDir` component before dropping the top folder
+        // (`path.components().skip_while(|c| matches!(c, Component::CurDir)).skip(1)`).
+        let dir = extract_to(&[("./lab-abc/isoloom.yml", b"name: x")]).unwrap();
+        assert!(dir.join("isoloom.yml").is_file(), "{:?}", std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect::<Vec<_>>());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_file_under_a_path_that_is_a_file_fails_cleanly_and_a_truncated_archive_fails() {
+        let err = extract_to(&[("lab-abc/sub", b"a file"), ("lab-abc/sub/x", b"under a file")]).unwrap_err();
+        assert!(matches!(err, Error::Io(_)), "{err}");
+        // Cut mid-stream: an error, never a lab installed from half an archive.
+        let gz = tarball(&[("lab-abc/isoloom.yml", b"name: x"), ("lab-abc/big", &[7u8; 20_000])]);
+        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+        assert!(extract(&gz[..gz.len() / 2], &dir).is_err());
+        assert!(extract(b"not a gzip at all", &dir).is_err());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn long_unicode_paths_and_hard_links_in_an_archive() {
+        // A path past tar's 100-byte name field (GNU long-name extension) with non-ASCII names
+        // extracts whole; a hard link (not a file or folder) is skipped like a symlink.
+        let deep = format!("lab-abc/{}/{}/fichier é.txt", "dossier-très-long-".repeat(4), "ü".repeat(40));
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
+        let mut file = tar::Header::new_gnu();
+        file.set_size(2);
+        file.set_mode(0o644);
+        file.set_entry_type(tar::EntryType::Regular);
+        builder.append_data(&mut file, &deep, &b"ok"[..]).unwrap();
+        let mut link = tar::Header::new_gnu();
+        link.set_entry_type(tar::EntryType::Link);
+        link.set_size(0);
+        builder.append_link(&mut link, "lab-abc/alias", &deep).unwrap();
+        let gz = builder.into_inner().unwrap().finish().unwrap();
+        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+        extract(&gz, &dir).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join(&deep["lab-abc/".len()..])).unwrap(), "ok");
+        assert!(std::fs::symlink_metadata(dir.join("alias")).is_err(), "a hard link is skipped");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_leftover_staging_folder_is_replaced_whole_and_an_installed_marker_is_trimmed() {
+        let labs = std::env::temp_dir().join(format!("cyberctf-stage-{}", rand::random::<u32>()));
+        let dir = labs.join("lab");
+        let staging = labs.join(".lab.staging");
+        std::fs::create_dir_all(staging.join("old")).unwrap();
+        std::fs::write(staging.join("old/file"), "from a crashed install").unwrap();
+        let staged = stage(&labs, "lab", &dir, &tarball(&[("lab-abc/isoloom.yml", b"name: lab")]), "CyberCTF/lab", SHA).unwrap();
+        assert_eq!(staged, staging);
+        assert!(!staging.join("old").exists(), "the crashed install's files are gone");
+        // The commit marker reads back with surrounding whitespace or CRLF (a hand edit).
+        std::fs::write(staging.join(".cyberctf-commit"), format!("  {SHA}\r\n")).unwrap();
+        assert!(installed(&staging.join(".cyberctf-commit"), SHA));
+        assert!(!installed(&staging.join(".cyberctf-commit"), &SHA.to_uppercase()));
+        std::fs::remove_dir_all(labs).unwrap();
+    }
+
+    #[tokio::test]
+    async fn lab_ids_at_the_validation_boundaries_install_or_are_refused() {
+        use crate::exec::fake::Tools;
+        let t = crate::test_app::TestApp::new();
+        let _tools = Tools::rules(&[]);
+        let log = |_: String| {};
+        let max = "A".repeat(63) + "_";
+        let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
+        let dir = install_with(t.handle(), &max, "CyberCTF/invoice", SHA, &log, async || Ok(gz.clone())).await.unwrap();
+        assert_eq!(dir.file_name().unwrap().to_str().unwrap(), max);
+        for bad in ["", &"a".repeat(65), "é", "a b", "a/b", ".", "a.b", "..", "a\u{0}b"] {
+            let bad = bad.to_string();
+            let err = install_with(t.handle(), &bad, "CyberCTF/invoice", SHA, &log, async || panic!("no download for {bad:?}")).await.unwrap_err().to_string();
+            assert!(err.starts_with("invalid lab id"), "{bad:?}: {err}");
+        }
+        // "-" and "_" alone pass the rule (a folder of that name is harmless).
+        let dir = install_with(t.handle(), "-", "CyberCTF/invoice", SHA, &log, async || Ok(gz.clone())).await.unwrap();
+        assert_eq!(dir, t.data().join("labs").join("-"));
+    }
 }
+
+#[cfg(test)]
+mod proptests;

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, renderHook, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DownloadsPanel } from "@/features/machine/downloads-panel";
@@ -12,7 +12,7 @@ import { RunningNowPanel } from "@/features/machine/running-now-panel";
 import { SelfTest } from "@/features/machine/self-test";
 import { SetupChecklist } from "@/features/machine/setup-checklist";
 import { StepRow } from "@/features/machine/step-row";
-import { useMachineFormat } from "@/features/machine/use-machine-format";
+import { formatAgo, formatBytes, formatBytesOf, formatUptime } from "@/lib/format";
 import { LOCALES, setLocalePreference } from "@/lib/i18n";
 import { setAttackImage, setLastTest, type LastTest } from "@/lib/settings";
 import type { ProviderStatus, SelfTestEvent, SystemReport } from "@/lib/tauri";
@@ -38,14 +38,17 @@ const metrics = (over: Record<string, number> = {}) => ({
 
 /* ------------------------------------------------------------------ format */
 
-describe("useMachineFormat", () => {
+describe("the Machine page's sizes and times (lib/format, the common.units keys)", () => {
   afterEach(() => {
     act(() => setLocalePreference("system"));
   });
 
   it("writes sizes, times and uptimes in English", () => {
-    const { result } = renderHook(() => useMachineFormat());
-    const f = result.current;
+    act(() => setLocalePreference("en"));
+    const f = { bytes: formatBytes, ago: formatAgo, uptime: formatUptime };
+    expect(formatBytesOf(3.42 * GB, 8 * GB)).toBe("3.4/8.0 GB");
+    expect(formatBytesOf(19.5 * GB, 32 * GB)).toBe("20/32 GB");
+    expect(formatBytesOf(512e6, 32 * GB)).toBe("512 MB / 32 GB");
     expect(f.bytes(12 * GB)).toBe("12 GB");
     expect(f.bytes(3.42 * GB)).toBe("3.4 GB");
     expect(f.bytes(512e6)).toBe("512 MB");
@@ -66,8 +69,7 @@ describe("useMachineFormat", () => {
   for (const locale of LOCALES) {
     it(`writes every unit in ${locale}`, () => {
       act(() => setLocalePreference(locale));
-      const { result } = renderHook(() => useMachineFormat());
-      const f = result.current;
+      const f = { bytes: formatBytes, ago: formatAgo, uptime: formatUptime };
       const now = 1_000_000_000_000;
       const out = [
         f.bytes(3.4 * GB),
@@ -84,7 +86,7 @@ describe("useMachineFormat", () => {
         f.uptime(60),
       ];
       for (const s of out) {
-        expect(s).not.toMatch(/\{|\}|machine\.format/);
+        expect(s).not.toMatch(/\{|\}|common\.units|common\.time/);
         expect(s.length).toBeGreaterThan(0);
       }
       // The number itself is always there, with the language's decimal separator.
@@ -238,9 +240,15 @@ describe("DockerLabRow", () => {
     const user = userEvent.setup();
     const { unmount } = render(<DockerLabRow {...base} report={stoppedDockerReport()} last={null} />);
     expect(text()).toContain("No permission");
-    expect(text()).toContain("sudo usermod -aG docker $USER");
+    expect(text()).toContain("sudo usermod -aG docker player");
     expect(screen.queryByRole("button")).toBeNull();
     unmount();
+    // Said in the player's language, from the hint's code (not the core's English sentence).
+    act(() => setLocalePreference("fr"));
+    const fr = render(<DockerLabRow {...base} report={stoppedDockerReport()} last={null} />);
+    expect(text()).toContain("Ajoutez-vous au groupe docker dans un terminal (sudo usermod -aG docker player)");
+    fr.unmount();
+    act(() => setLocalePreference("en"));
     const denied = render(<DockerLabRow {...base} report={{ ...stoppedDockerReport(), dockerDeniedHint: null }} last={null} />);
     expect(text()).toContain("add yourself to the docker group");
     denied.unmount();
@@ -339,7 +347,7 @@ describe("DownloadsPanel", () => {
     const user = userEvent.setup();
     render(<DownloadsPanel />);
     await flush();
-    expect(calls.find((c) => c.cmd === "machine_storage")?.args).toEqual({ extraImages: ["kalilinux/kali-rolling"] });
+    expect(calls.find((c) => c.cmd === "machine_storage")?.args).toEqual({ extraImages: ["kalilinux/kali-rolling", "cyberctf/attack-box:latest"] });
     expect(text()).toContain("16 GB of lab downloads");
     expect(text()).toContain("2 container images · 1 VM image");
     expect(text()).not.toContain("postgres:16");
@@ -353,7 +361,7 @@ describe("DownloadsPanel", () => {
     await user.click(button(/clean up/i));
     await user.click(button(/^remove$/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "machine_storage_clean")?.args).toEqual({ extraImages: ["kalilinux/kali-rolling"] });
+    expect(calls.find((c) => c.cmd === "machine_storage_clean")?.args).toEqual({ extraImages: ["kalilinux/kali-rolling", "cyberctf/attack-box:latest"] });
     expect(text()).toContain("Freed 1.0 GB.");
     expect(commands(calls).filter((c) => c === "machine_storage")).toHaveLength(2);
   });
@@ -416,7 +424,8 @@ describe("RunningNowPanel", () => {
     expect(text()).toContain("Setup test");
     expect(text()).toContain("1 container");
     expect(text()).toContain("1 VM · VirtualBox");
-    expect(text()).toContain("lab-x");
+    // No title known for it: its id, made readable.
+    expect(screen.getByText("X")).toBeTruthy();
     expect(text()).toContain("2 VMs");
     const rows = screen.getAllByRole("button", { name: /stop/i });
     await user.click(rows[0]);
@@ -436,7 +445,7 @@ describe("RunningNowPanel", () => {
     expect(text()).toContain("Nothing running.");
   });
 
-  it("keeps the list after a failed stop, and shows lab ids without titles", async () => {
+  it("keeps the list after a failed stop, and shows readable lab ids without titles", async () => {
     const calls = installTauri({
       api_query: () => {
         throw "offline";
@@ -449,10 +458,11 @@ describe("RunningNowPanel", () => {
     const user = userEvent.setup();
     render(<RunningNowPanel refreshKey={null} />);
     await flush();
-    expect(text()).toContain("lab-invoice");
+    expect(text()).toContain("Invoice");
+    expect(text()).not.toContain("lab-invoice");
     await user.click(button(/stop/i));
     await flush();
-    expect(text()).toContain("lab-invoice");
+    expect(text()).toContain("Invoice");
     expect(commands(calls).filter((c) => c === "machine_workloads").length).toBeGreaterThanOrEqual(2);
   });
 });
@@ -577,7 +587,8 @@ describe("MachineScreen", () => {
     expect(text()).toContain("macOS arm64");
     expect(text()).toContain("up 3d 4h");
     expect(text()).toContain("8 cores");
-    expect(text()).toContain("8.0 GB of 32 GB");
+    // Compact, so it fits the card's corner in every language.
+    expect(text()).toContain("8.0/32 GB");
     expect(text()).not.toContain("Low disk space");
     expect(screen.queryByRole("button", { name: /set up this machine/i })).toBeNull();
   });

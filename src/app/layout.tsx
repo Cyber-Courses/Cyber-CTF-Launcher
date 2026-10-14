@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
+import { ErrorLogging } from "@/components/error-logging";
 
 // Fonts ship inside the app (no Google Fonts at runtime): Geist and Geist Mono from the `geist`
 // package, Newsreader (variable, opsz + wght, normal and italic) from src/app/fonts.
@@ -29,7 +30,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* eslint-disable-next-line @next/next/no-sync-scripts -- must run before first paint to avoid a flash of the wrong mode */}
         <script src="/appearance.js" />
       </head>
-      <body className="flex min-h-full flex-col bg-background text-foreground">{children}</body>
+      <body className="flex min-h-full flex-col bg-background text-foreground">
+        <ErrorLogging />
+        {children}
+      </body>
     </html>
   );
 }

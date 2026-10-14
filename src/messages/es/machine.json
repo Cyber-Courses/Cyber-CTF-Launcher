@@ -1,17 +1,4 @@
 {
-  "format": {
-    "gb": "{n} GB",
-    "mb": "{n} MB",
-    "kb": "{n} kB",
-    "justNow": "ahora mismo",
-    "minutesAgo": "hace {n} min",
-    "hoursAgo": "hace {n} h",
-    "yesterday": "ayer",
-    "daysAgo": "hace {n} días",
-    "uptimeDays": "{d} d {h} h",
-    "uptimeHours": "{h} h {m} min",
-    "uptimeMinutes": "{m} min"
-  },
   "errors": {
     "openSetup": "No se pudo abrir la configuración de la máquina",
     "copy": "No se pudo copiar al portapapeles",
@@ -37,7 +24,6 @@
     },
     "memory": "Memoria",
     "disk": "Disco",
-    "usedOf": "{used} de {total}",
     "lowDisk": {
       "title": "Poco espacio en disco",
       "meta": "{free} libres",
@@ -165,6 +151,7 @@
     "add": "Añadir",
     "setUp": "Configurar",
     "notInstalled": "no instalado",
+    "restartNeeded": "requiere reinicio",
     "notChecked": "sin comprobar",
     "running": "en ejecución",
     "stopped": "detenido",
@@ -194,7 +181,7 @@
     "macInstallerVm": "Su instalador se abre en su propia ventana y pide tu contraseña; VirtualBox también puede requerir aprobación en Ajustes del Sistema > Privacidad y seguridad.",
     "macInstaller": "Su instalador se abre en su propia ventana y pide tu contraseña.",
     "pkgmgr": {
-      "title": "Herramientas de instalación",
+      "title": "Gestor de paquetes",
       "description": "Cyber CTF instala todo lo demás por ti mediante {pm}, el gestor de paquetes de tu sistema. Solo hay que configurarlo una vez."
     },
     "virtualization": {
@@ -229,7 +216,8 @@
     "next": {
       "done": "Ya lo he hecho",
       "skip": "Omitir por ahora",
-      "continue": "Continuar"
+      "continue": "Continuar",
+      "restartLater": "Reiniciaré más tarde"
     }
   },
   "body": {
@@ -243,19 +231,33 @@
       "wingetHint": "Instálalo desde Microsoft Store y vuelve.",
       "get": "Obtener",
       "linux": "Instala el gestor de paquetes de tu distribución para usar las instalaciones en un clic.",
-      "linuxNamed": "Instala el gestor de paquetes de tu distribución ({name}) para usar las instalaciones en un clic."
+      "linuxNamed": "Instala el gestor de paquetes de tu distribución ({name}) para usar las instalaciones en un clic.",
+      "intelMac": "Este es un Mac Intel. Homebrew ya no ofrece paquetes precompilados para él, así que las instalaciones pueden compilar desde el código fuente y tardar varios minutos más."
     },
     "wsl": {
       "intro": "Cyber CTF activa WSL 2 por ti. Windows pide permiso una vez (el aviso de administrador habitual) y luego necesita reiniciarse.",
       "log": "Activando WSL 2. Acepta el aviso de Windows para continuar…",
       "turningOn": "Activando WSL 2…",
       "turnOn": "Activar WSL 2",
-      "restart": "Reinicia Windows para terminar y vuelve a abrir Cyber CTF para continuar la configuración.",
+      "restart": "WSL 2 está activado. Reinicia Windows para terminar de activarlo.",
       "byHand": "Hacerlo manualmente",
       "step1": "Abre <b>PowerShell</b> como administrador (clic derecho y luego “Ejecutar como administrador”).",
       "step2": "Ejecuta esto y reinicia cuando termine:",
       "step3": "Si Docker dice más tarde que la virtualización está desactivada: abre “Activar o desactivar las características de Windows” y habilita <b>Plataforma de máquina virtual</b> y <b>Subsistema de Windows para Linux</b>, y asegúrate de que la virtualización está activada en tu BIOS/UEFI.",
-      "guide": "Guía de instalación de WSL de Microsoft"
+      "guide": "Guía de instalación de WSL de Microsoft",
+      "readyTitle": "WSL 2",
+      "readyDetail": "Activado y en marcha",
+      "restartNow": "Reiniciar ahora",
+      "restarting": "Reiniciando en unos segundos…",
+      "confirmTitle": "¿Reiniciar Windows ahora?",
+      "confirmBody": "Windows se reinicia en unos segundos y las aplicaciones abiertas se cierran sin guardar: guarda tu trabajo antes.",
+      "reopens": "Cyber CTF se abre de nuevo cuando vuelvas a iniciar sesión. La configuración empieza otra vez por su primer paso, y lo que ya está hecho aparece como hecho.",
+      "reopenByHand": "Cuando vuelvas a iniciar sesión, abre Cyber CTF de nuevo. La configuración empieza otra vez por su primer paso, y lo que ya está hecho aparece como hecho.",
+      "restartReason": "Cyber CTF: reiniciando para terminar de activar WSL 2.",
+      "restartFailed": "No se pudo reiniciar Windows",
+      "unknown": "Cyber CTF no pudo saber si WSL 2 está activado. Si ya lo activaste y reiniciaste, continúa.",
+      "recheck": "Volver a comprobar",
+      "firmware": "WSL 2 está activado, pero Windows sigue sin ejecutar ningún hipervisor tras el reinicio. Probablemente la virtualización está desactivada en el firmware de tu PC: activa Intel VT-x o AMD-V (SVM) en la configuración de la BIOS/UEFI y reinicia. Otro reinicio desde aquí no lo arreglará."
     },
     "dockerTestDescription": "busybox, dos contenedores en una red de lab.",
     "vmTestDescription": "Arranca, ejecuta un comando, le hace ping en una red de lab y la borra.",

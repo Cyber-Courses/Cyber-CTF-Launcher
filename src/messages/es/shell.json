@@ -55,7 +55,8 @@
     "available": "La versión <version>{version}</version> está disponible.",
     "restartNow": "Reiniciar",
     "updating": "Actualizando…",
-    "update": "Actualizar"
+    "update": "Actualizar",
+    "waitForDeploys": "La actualización reinicia Cyber CTF. Espera a que tus labs terminen de desplegarse."
   },
   "error": {
     "title": "Algo salió mal",

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { listen } from "@tauri-apps/api/event";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,9 +9,10 @@ import { AppearanceSection } from "@/features/settings/appearance-section";
 import { AttackBoxRows } from "@/features/settings/attack-box-rows";
 import { HypervisorRow } from "@/features/settings/hypervisor-row";
 import { InstalledToolsPanel } from "@/features/settings/installed-tools-panel";
+import { IsoloomRegistryRow } from "@/features/settings/isoloom-registry-row";
 import { LabPortsRow } from "@/features/settings/lab-ports-row";
 import { SharedFolderControl } from "@/features/settings/shared-folder";
-import { ONBOARDED_KEY } from "@/features/settings/settings-screen";
+import { readOnboarded, markOnboarded } from "@/components/shell/onboarded-flag";
 import { getLocalePreference, setLocalePreference } from "@/lib/i18n";
 import { getAttackBox, getAttackImage, getAutoAttackBox, getPortMode, getVmProvider, setAttackBox, setAttackImage, setVmProvider } from "@/lib/settings";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
@@ -78,8 +79,21 @@ describe("AboutSection", () => {
     expect(button(/check for updates/i).hasAttribute("disabled")).toBe(false);
   });
 
+  it("holds an update back while a lab is deploying", async () => {
+    installTauri({ deploying_labs: () => ["web-sqli"] });
+    const downloadAndInstall = vi.fn(async () => {});
+    updater.answer = async () => ({ version: "1.5.0", downloadAndInstall });
+    const user = userEvent.setup();
+    render(<AboutSection version="1.4.0" report={null} agent={null} />);
+    await user.click(button(/check for updates/i));
+    await flush();
+    expect(text()).toContain("Wait until your labs finish deploying");
+    expect(button(/install update/i).hasAttribute("disabled")).toBe(true);
+    expect(downloadAndInstall).not.toHaveBeenCalled();
+  });
+
   it("installs an available update and restarts", async () => {
-    const calls = installTauri();
+    const calls = installTauri({ deploying_labs: () => [] });
     const downloadAndInstall = vi.fn(async () => {});
     updater.answer = async () => ({ version: "1.5.0", downloadAndInstall });
     const user = userEvent.setup();
@@ -100,7 +114,7 @@ describe("AboutSection", () => {
   });
 
   it("offers the update again when its install fails", async () => {
-    const calls = installTauri();
+    const calls = installTauri({ deploying_labs: () => [] });
     updater.answer = async () => ({
       version: "1.5.0",
       downloadAndInstall: async () => {
@@ -196,12 +210,12 @@ describe("AboutSection", () => {
     installTauri();
     const heard = vi.fn();
     await listen("cyberctf:replay-onboarding", heard);
-    localStorage.setItem(ONBOARDED_KEY, "1");
+    markOnboarded();
     const user = userEvent.setup();
     render(<AboutSection version="1" report={null} agent={null} />);
     await user.click(button(/replay/i));
     await flush();
-    expect(localStorage.getItem(ONBOARDED_KEY)).toBeNull();
+    expect(readOnboarded()).toBe(false);
     expect(heard).toHaveBeenCalledOnce();
   });
 });
@@ -285,6 +299,43 @@ describe("HypervisorRow", () => {
     expect(props.onRefresh).toHaveBeenCalledOnce();
   });
 
+  it("lets a Windows account that may not manage Hyper-V join Hyper-V Administrators (#185)", async () => {
+    const calls = installTauri({ hyperv_join_admins: () => null });
+    const user = userEvent.setup();
+    const reason = "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators";
+    render(<HypervisorRow report={withProviders([hv({ provider: "hyperv", available: false, reason })], { os: "windows" })} {...props} />);
+    expect(text()).toContain(reason);
+    await user.click(button(/allow my account/i));
+    await flush();
+    expect(calls.some((c) => c.cmd === "hyperv_join_admins")).toBe(true);
+    expect(text()).toContain("Sign out of Windows and back in");
+    expect(props.onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("offers no Hyper-V rights where Hyper-V is off or Vagrant missing", () => {
+    installTauri();
+    render(<HypervisorRow report={withProviders([hv({ provider: "hyperv", available: false, hypervisor: false })], { os: "windows" })} {...props} />);
+    expect(screen.queryByRole("button", { name: /allow my account/i })).toBeNull();
+    cleanup();
+    const noVagrant = withProviders([hv({ provider: "hyperv", available: false })], { os: "windows" });
+    render(<HypervisorRow report={{ ...noVagrant, vagrant: { ...noVagrant.vagrant, installed: false } }} {...props} />);
+    expect(screen.queryByRole("button", { name: /allow my account/i })).toBeNull();
+  });
+
+  it("shows a declined Hyper-V rights prompt in the log", async () => {
+    installTauri({
+      // As the core rejects: the error's code and its message.
+      hyperv_join_admins: () => {
+        throw { code: "other", message: "The Windows permission prompt was declined" };
+      },
+    });
+    const user = userEvent.setup();
+    render(<HypervisorRow report={withProviders([hv({ provider: "hyperv", available: false })], { os: "windows" })} {...props} />);
+    await user.click(button(/allow my account/i));
+    await flush();
+    expect(text()).toContain("✗ The Windows permission prompt was declined");
+  });
+
   it("shows a failed add-on install in the log", async () => {
     installTauri({
       install_vagrant_plugin: () => {
@@ -329,6 +380,15 @@ describe("AttackBoxRows", () => {
     await user.click(radioWith("kalilinux/kali-rolling"));
     expect(getAttackImage()).toBe("kalilinux/kali-rolling");
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it("shows the pinned default by its repository, not its digest", async () => {
+    installTauri();
+    render(<AttackBoxRows onSaved={vi.fn()} />);
+    await flush();
+    expect(text()).toContain("cyberctf/attack-box (pinned)");
+    expect(text()).not.toContain("sha256:");
+    expect(screen.getByTitle(/^cyberctf\/attack-box@sha256:/)).toBeTruthy();
   });
 
   it("saves a custom image only when it changed", async () => {
@@ -661,6 +721,49 @@ describe("AppearanceSection", () => {
     await user.selectOptions(screen.getByRole("combobox"), "system");
     expect(getLocalePreference()).toBe("system");
     expect(text()).toContain("Theme");
+  });
+});
+
+describe("IsoloomRegistryRow", () => {
+  it("renders nothing until the setting is read", () => {
+    installTauri({ isoloom_registry_get: () => new Promise(() => {}) });
+    const { container } = render(<IsoloomRegistryRow onSaved={() => {}} />);
+    expect(container.textContent).toBe("");
+  });
+
+  it("is on by default, and turns off and on again", async () => {
+    const calls = installTauri();
+    const onSaved = vi.fn();
+    const user = userEvent.setup();
+    render(<IsoloomRegistryRow onSaved={onSaved} />);
+    await flush();
+    expect(text()).toContain("~/.isoloom/status.yml");
+    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    await user.click(screen.getByRole("switch"));
+    await flush();
+    expect(calls.find((c) => c.cmd === "isoloom_registry_set")?.args).toEqual({ enabled: false });
+    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+    await user.click(screen.getByRole("switch"));
+    await flush();
+    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    expect(onSaved).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a failed save and keeps the setting", async () => {
+    installTauri({
+      isoloom_registry_set: () => {
+        throw "settings aren't ready yet";
+      },
+    });
+    const onSaved = vi.fn();
+    const user = userEvent.setup();
+    render(<IsoloomRegistryRow onSaved={onSaved} />);
+    await flush();
+    await user.click(screen.getByRole("switch"));
+    await flush();
+    expect(text()).toContain("settings aren't ready yet");
+    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    expect(onSaved).not.toHaveBeenCalled();
   });
 });
 

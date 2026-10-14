@@ -120,3 +120,36 @@ proptest! {
         prop_assert_eq!(vm_names_from(&text), want);
     }
 }
+
+proptest! {
+    #![proptest_config(config())]
+
+    /// The lab's status from any `vagrant status` output, in a folder with no lab spec or
+    /// Vagrantfile: up exactly when it has targets and all of them run, the controller aside.
+    #[test]
+    fn status_from_is_up_only_when_every_target_runs(
+        machines in proptest::collection::vec((machine(), state(), "[0-9]{10}"), 0..6),
+        providers in proptest::collection::vec("[a-z_]{0,10}", 0..3),
+        noise in "(?s).{0,80}",
+    ) {
+        let mut lines: Vec<String> = machines.iter().map(|(name, state, ts)| format!("{ts},{name},state,{state}")).collect();
+        for (i, p) in providers.iter().enumerate() {
+            lines.insert(i.min(lines.len()), format!("1700000000,{},provider-name,{p}", machines.first().map_or("default", |m| m.0.as_str())));
+        }
+        let out = format!("{}\n{}", lines.join("\n"), noise.replace(",state,", ",").replace(",provider-name,", ","));
+        let dir = std::env::temp_dir().join(format!("cyberctf-vm-status-{}", rand::random::<u64>())).join(".isoloom").join("vagrant");
+        let s = status_from(&out, &dir);
+        prop_assert_eq!(s.machines.len(), parse_status(&out).len());
+        let targets: Vec<&(String, String, String)> = machines.iter().filter(|(n, ..)| n != CONTROLLER).collect();
+        let noise_targets = s.machines.len() > machines.len();
+        if !noise_targets {
+            prop_assert_eq!(s.running, !targets.is_empty() && targets.iter().all(|(_, st, _)| st == "running"));
+        }
+        // The first non-empty provider line names the hypervisor.
+        let want = providers.iter().find(|p| !p.is_empty()).cloned();
+        if want.is_some() {
+            prop_assert_eq!(s.provider, want);
+        }
+        prop_assert!(s.machines.iter().all(|m| m.interfaces.is_empty() && m.ip.is_empty()), "no topology without a spec");
+    }
+}

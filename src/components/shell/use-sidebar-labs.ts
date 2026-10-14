@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiQuery, machineWorkloads, type ActiveOperation } from "@/lib/tauri";
 import { useDeployingLabs } from "@/lib/deploy-store";
 import { useLabState } from "@/features/labs/lab-store";
@@ -15,15 +15,22 @@ const WORKLOADS_POLL_MS = 8000;
  * their own sidebar entries so one is a click away wherever you are. Deploys come from the
  * backend (so they survive a reload); the running set is polled from this machine's workloads.
  */
-export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, ActiveOperation>) {
+export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, ActiveOperation>, enabled = true) {
   const [labs, setLabs] = useState<SidebarLab[]>([]);
   useEffect(() => {
+    // Not in a window that shows none of it (Settings).
+    if (!enabled) return;
+    // A sign-in change starts a new read: the one in flight from before it must not land last.
+    let alive = true;
     apiQuery<{ labs: SidebarLab[] }>("sidebarLabs")
-      .then((d) => setLabs(d.labs))
-      .catch(() => setLabs([]));
-  }, [loggedIn]);
+      .then((d) => alive && setLabs(d.labs))
+      .catch(() => alive && setLabs([]));
+    return () => {
+      alive = false;
+    };
+  }, [loggedIn, enabled]);
 
-  const deploying = useDeployingLabs();
+  const deploying = useDeployingLabs(enabled);
   // Read again as soon as an operation starts or ends: a lab just shut down otherwise kept its
   // "Running" line until the next poll.
   const busyKey = [...deploying, ...ops.keys()].sort().join(",");
@@ -31,9 +38,15 @@ export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, A
     () => machineWorkloads().then((w) => new Set(w.map((x) => x.id).filter((id) => id !== "selftest"))),
     WORKLOADS_POLL_MS,
     new Set<string>(),
-    { serial: true, restartKey: busyKey },
+    { serial: true, restartKey: busyKey, enabled },
   );
   const statuses = useLabState("statuses");
+  // When this light list couldn't be read (offline), the catalogue a screen loaded since (its
+  // Retry) stands in, so the entries and the palette come back with it.
+  const catalogue = useLabState("catalogue");
+  const list = useMemo(() => (labs.length > 0 ? labs : (catalogue?.labs ?? labs)), [labs, catalogue]);
 
-  return { labs, active: activeLabs(labs, deploying, ops, runningIds, statuses) };
+  // The same list object until one of its inputs changes, so the sidebar's entries don't re-render.
+  const active = useMemo(() => activeLabs(list, deploying, ops, runningIds, statuses), [list, deploying, ops, runningIds, statuses]);
+  return { labs: list, active };
 }

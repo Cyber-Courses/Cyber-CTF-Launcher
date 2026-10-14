@@ -12,43 +12,88 @@ use crate::runtime::{Interface, LabStatus, Machine, Network, Port, Service};
 
 mod networks;
 
-pub use networks::subnets_in_use;
 #[cfg(test)]
 use networks::{ipv4_subnets, listed_names, networks_of_others};
+pub use networks::{lab_network_names, subnets_in_use};
 use networks::{lab_networks, parse_networks};
 
+/// Whole words of a service's name or image repository that mark it as no web UI: a
+/// datastore, or a non-HTTP network service (a daemon's name with or without its `d`).
+const NOT_WEB: &[&str] = &[
+    "mysql",
+    "mariadb",
+    "postgres",
+    "postgresql",
+    "redis",
+    "mongo",
+    "mongodb",
+    "memcached",
+    "rabbitmq",
+    "elasticsearch",
+    "mssql",
+    "oracledb",
+    "ssh",
+    "openssh",
+    "ftp",
+    "vsftp",
+    "proftp",
+    "pureftp",
+    "rdp",
+    "xrdp",
+    "vnc",
+    "smtp",
+    "postfix",
+    "telnet",
+    "bind9",
+    "dnsmasq",
+    "samba",
+    "openldap",
+];
+
+/// Service names that are no web UI only as the whole name: as a word they also name the web
+/// front ends of these services (`db-admin`, `dns-server`, `ldap-user-manager`).
+const NOT_WEB_SERVICES: &[&str] = &["db", "database", "sftp", "dns", "smb", "ldap"];
+
+/// Oracle's database images (`gvenzl/oracle-xe`, `oracle/database`), told from its web servers
+/// (`oracle-weblogic`) by the word next to `oracle`.
+const ORACLE_DATABASE: &[&str] = &["xe", "free", "database", "db"];
+
 /// True for services that aren't a web UI (databases, caches, brokers, and non-HTTP network
-/// services like SSH/FTP/RDP): the Open button must never point a browser at one.
+/// services like SSH/FTP/RDP): the Open button must never point a browser at one. Whole words
+/// of the service name and image repository only: substrings took web apps for them
+/// (`wordpress` holds "rdp", `novnc` "vnc", `sftpgo` "ftp", `oracle-weblogic` "oracle").
 fn is_datastore(e: &PsEntry) -> bool {
-    let s = format!("{} {}", e.service, e.image).to_ascii_lowercase();
-    [
-        "mysql",
-        "mariadb",
-        "postgres",
-        "redis",
-        "mongo",
-        "memcached",
-        "rabbitmq",
-        "elastic",
-        "mssql",
-        "oracle", // datastores
-        "sshd",
-        "openssh",
-        "vsftpd",
-        "proftpd",
-        "ftp",
-        "rdp",
-        "xrdp",
-        "vnc",
-        "telnet",
-        "smtp",
-        "postfix",
-        "bind9",
-        "dnsmasq", // non-web network services
-    ]
-    .iter()
-    .any(|k| s.contains(k))
-        || matches!(e.service.as_str(), "db" | "database" | "ssh" | "sftp" | "ftp" | "dns" | "smb" | "ldap")
+    let repository = crate::exec::image_repository(&e.image).to_ascii_lowercase();
+    let service = e.service.to_ascii_lowercase();
+    let words = |text: &str| -> Vec<String> { text.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_string).collect() };
+    let (image_words, all_words) = (words(&repository), words(&format!("{service} {repository}")));
+    let has = |words: &[String], k: &str| words.iter().any(|w| w == k || w.strip_suffix('d') == Some(k));
+    NOT_WEB.iter().any(|k| has(&all_words, k))
+        || NOT_WEB_SERVICES.contains(&service.as_str())
+        // An image published as a database (`oracle/database`, `container-registry…/database/free`).
+        || has(&image_words, "database")
+        || (has(&all_words, "oracle") && ORACLE_DATABASE.iter().any(|k| has(&all_words, k)))
+}
+
+/// Whether a published port's protocol is TCP (Compose leaves it empty for TCP at times).
+fn tcp(p: &Publisher) -> bool {
+    p.protocol.is_empty() || p.protocol == "tcp"
+}
+
+/// The loopback URL of the lowest of `ports` (published TCP ports, 0 for none).
+fn lowest_url(ports: impl Iterator<Item = u16>) -> Option<String> {
+    ports.filter(|p| *p > 0).min().map(|port| format!("http://127.0.0.1:{port}"))
+}
+
+/// Where Open goes: a service the lab declares as HTTP (Isoloom's `isoloom.service.*` labels, in
+/// `declared` by container name) on its published port, else [`first_published_url`].
+fn open_url(entries: &[PsEntry], declared: &HashMap<String, Inspected>) -> Option<String> {
+    let running = || entries.iter().filter(|e| e.state == "running");
+    let web_ports = running().flat_map(|e| {
+        let web: Vec<&Service> = declared.get(&e.name).map(|i| i.services.iter().filter(|s| s.kind == "web").collect()).unwrap_or_default();
+        e.publishers.iter().filter(move |p| tcp(p) && web.iter().any(|s| s.ports.is_empty() || s.ports.contains(&p.target_port))).map(|p| p.published_port)
+    });
+    lowest_url(web_ports).or_else(|| first_published_url(entries))
 }
 
 /// The loopback URL of a running web service's first published TCP port, i.e. where the
@@ -56,14 +101,7 @@ fn is_datastore(e: &PsEntry) -> bool {
 /// so Open never lands on a database port or a service whose container has exited. None if
 /// no web service is up and publishing yet.
 fn first_published_url(entries: &[PsEntry]) -> Option<String> {
-    entries
-        .iter()
-        .filter(|e| e.state == "running" && !is_datastore(e))
-        .flat_map(|e| &e.publishers)
-        .filter(|p| p.published_port > 0 && (p.protocol.is_empty() || p.protocol == "tcp"))
-        .map(|p| p.published_port)
-        .min()
-        .map(|port| format!("http://127.0.0.1:{port}"))
+    lowest_url(entries.iter().filter(|e| e.state == "running" && !is_datastore(e)).flat_map(|e| &e.publishers).filter(|p| tcp(p)).map(|p| p.published_port))
 }
 
 /// The lab's own name for a Docker network: Compose prefixes the compose key with the
@@ -249,7 +287,7 @@ pub fn status_from_host(project: &str, probe: &HostProbe) -> (LabStatus, Option<
 /// should be serving.
 fn build_status(entries: Vec<PsEntry>, mut inspected: HashMap<String, Inspected>, networks: Vec<Network>, serving: &[String]) -> LabStatus {
     let running = is_running(&entries);
-    let url = if running { first_published_url(&entries) } else { None };
+    let url = if running { open_url(&entries, &inspected) } else { None };
     let down: Vec<(String, String)> = down_serving(&entries, serving);
     // The lab's own networks, in order: a container also sits on Docker's own bridges (the
     // default `bridge`, a publish bridge), whose 172.x address isn't the lab address, and
@@ -318,6 +356,7 @@ fn docker_status(running: bool, machines: Vec<Machine>, networks: Vec<Network>, 
         attacker: None,
         outputs: Vec::new(),
         message: None,
+        reap_error: None,
     }
 }
 
@@ -325,7 +364,9 @@ fn docker_status(running: bool, machines: Vec<Machine>, networks: Vec<Network>, 
 pub async fn primary_url(dir: &Path, id: &str) -> Option<String> {
     let project = compose::project(id);
     let out = compose::output(dir, &project, &["ps", "--format", "json"]).await.ok()?;
-    first_published_url(&compose::parse_ps(&out))
+    let entries = compose::parse_ps(&out);
+    let names: Vec<String> = entries.iter().filter(|e| e.state == "running").map(|e| e.name.clone()).collect();
+    open_url(&entries, &inspect_containers(dir, id, &names).await)
 }
 
 #[cfg(test)]

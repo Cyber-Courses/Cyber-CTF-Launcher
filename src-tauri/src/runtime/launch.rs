@@ -6,11 +6,14 @@ use std::path::Path;
 use crate::AppHandle;
 use tauri::Manager;
 
-use super::inflight::{Action, DeployGuard, lock_lab};
+use super::inflight::{Action, DeployGuard};
+use super::lab::registry;
 use super::lifecycle::resume_locked;
-use super::paths::{deployment_states, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, state_dir, vagrant_dirs};
+use super::paths::{
+    deployment_states, forget_lab_host_keys, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, state_dir, vagrant_dirs,
+};
 use super::providers::Provider;
-use super::{Runtime, attack_box, attack_vm, cloud_services, docker, exegol, lab, registry, server, ssh, terraform, vm};
+use super::{Runtime, attack_box, attack_vm, cloud_services, docker, exegol, lab, server, ssh, terraform, vm};
 use crate::error::{Error, Result};
 
 mod local;
@@ -21,7 +24,7 @@ use local::{check_qemu, ensure_local_slot_free, start_local_vm, warn_if_low_memo
 use local::{emulated_arches, low_memory_warning};
 use on_host::start_on_server;
 #[cfg(test)]
-use on_host::{budget_verdict, parse_ipv4, public_ip_from, terraform_vars};
+use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from};
 pub(super) use on_host::{check_aws_budget, public_ip};
 
 /// Starts an installed lab; `env` is passed to the runtime (evidence claim, attack box).
@@ -31,8 +34,10 @@ pub(super) use on_host::{check_aws_budget, public_ip};
 /// - With a server `host`: the lab runs there. ESXi runs the same Vagrantfiles; Proxmox and
 ///   the clouds run Isoloom's Terraform (Docker on one VM, or one VM per machine on Proxmox).
 /// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
+///
+/// The caller holds the lab lock (`lock_lab`): a launch holds it from the download on.
 #[allow(clippy::too_many_arguments)]
-pub async fn start(
+pub(crate) async fn start_locked(
     app: &AppHandle,
     dir: &Path,
     id: &str,
@@ -42,7 +47,6 @@ pub async fn start(
     env: &[(String, String)],
     mut log: impl FnMut(String),
 ) -> Result<()> {
-    let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Start);
     // A lab runs in one place: starting it here (or on another host) while its deployment is
     // still up elsewhere would drop the marker naming that host, and with it the way to stop
@@ -51,7 +55,12 @@ pub async fn start(
         && let Some(other) = deployed_elsewhere(&base, dir, id, host)
     {
         let name = server::host_name(app, &other).unwrap_or(other);
-        return Err(Error::Invalid(format!("This lab is still running on {name}. Stop it there before starting it somewhere else.")));
+        return Err(Error::Refused(format!("This lab is still running on {name}. Stop it there before starting it somewhere else.")));
+    }
+    // New hosts may come up at the addresses of others: no key pinned before counts. A parked
+    // lab resumes its own machines, whose keys stay pinned.
+    if parked(dir).is_none() {
+        forget_lab_host_keys(dir);
     }
     if runtime == Runtime::Cloud {
         return cloud_services::start(app, dir, id, host, env, &mut log).await;
@@ -60,6 +69,23 @@ pub async fn start(
         None => start_here(app, dir, id, runtime, provider, env, &mut log).await,
         Some(host) => start_on_server(app, dir, id, runtime, host, env, &mut log).await,
     }
+}
+
+/// [`start_locked`] under the lab lock, for tests that start an installed lab directly.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn start(
+    app: &AppHandle,
+    dir: &Path,
+    id: &str,
+    runtime: Runtime,
+    provider: Option<Provider>,
+    host: Option<&str>,
+    env: &[(String, String)],
+    log: impl FnMut(String),
+) -> Result<()> {
+    let _lock = super::inflight::lock_lab(app, id).await?;
+    start_locked(app, dir, id, runtime, provider, host, env, log).await
 }
 
 /// The name of the server host lab `id` (folder `dir`) is deployed on, if something of it is
@@ -101,11 +127,17 @@ async fn start_here(
     // collides on its published host ports); if an earlier start left stopped or partial
     // infrastructure behind, clear it so this start is clean.
     ensure_local_slot_free(dir, id, log).await?;
-    match local_run(runtime, provider)? {
+    let run = local_run(runtime, provider)?;
+    // What it downloads (its images, or its boxes) is recorded as the app's, for Storage to
+    // clean up: only what wasn't on this machine before.
+    let before = crate::machine::storage::owned::Before::take(run == LocalRun::Docker, run != LocalRun::Docker).await;
+    let started = match run {
         LocalRun::DockerInVm(provider) => start_docker_in_vm(dir, runtime, provider, env, log).await,
         LocalRun::Docker => start_on_docker(dir, id, env, log).await,
         LocalRun::Vm(provider) => start_vm_lab(dir, runtime, provider, env, log).await,
-    }
+    };
+    crate::machine::storage::claim_lab(app, dir, id, &before).await;
+    started
 }
 
 /// Whether this start resumes the lab parked here rather than building it. A parked lab (paused
@@ -116,6 +148,12 @@ async fn start_here(
 async fn resumes_parked(dir: &Path, id: &str, runtime: Runtime, log: &mut impl FnMut(String)) -> Result<bool> {
     if parked(dir).is_some() && runtime == Runtime::Docker && local_vm(dir).is_none() && docker::containers(dir, id).await.is_ok_and(|n| n == 0) {
         log("This lab was shut down here, but its stopped containers are gone: starting it fresh.".into());
+        mark_parked(dir, None)?;
+    }
+    // Same for VMs deleted at the hypervisor (or Vagrant's record of them lost): resuming would
+    // build blank, unprovisioned machines that then read as the lab.
+    if parked(dir).is_some() && (runtime == Runtime::Vm || local_vm(dir).is_some()) && !vm::has_machines(&lab::vagrant_dir(dir, runtime)) {
+        log("This lab was shut down here, but its virtual machines are gone: starting it fresh.".into());
         mark_parked(dir, None)?;
     }
     Ok(parked(dir).is_some())
@@ -159,15 +197,29 @@ async fn start_vm_lab(dir: &Path, runtime: Runtime, provider: Provider, env: &[(
 /// running attack box back into its networks, and record it for Isoloom. Takes the lab folder
 /// (no app handle), so the real-lab tests run exactly this.
 pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-    let spec = lab::prepare(dir, isoloom_core::Target::Docker)?;
+    recheck_instance(dir, id, log).await?;
+    let spec = lab::prepare(dir, lab::Target::Docker)?;
     mark_local_vm(dir, None)?;
     docker::start(dir, id, env, &mut *log).await?;
     exegol::rejoin(id).await;
     registry::record_docker(dir, &spec, docker::project(id));
     // Its ports here are the ones picked at its first start, not the spec's.
     let published = docker::published(dir, id, env).await;
-    if let Some(m) = lab::message_at(dir, &spec, isoloom_core::Target::Docker, &published) {
+    if let Some(m) = lab::message_at(dir, &spec, lab::Target::Docker, &published) {
         log_lines(&m, log);
+    }
+    Ok(())
+}
+
+/// Checks the lab's instance against the networks Docker has now (an install with Docker down
+/// picked it blind), moving the lab (stopped: its slot was cleared) to a free one if its blocks
+/// are taken. With Docker down there is nothing to check against, and the start says so next.
+async fn recheck_instance(dir: &Path, id: &str, log: &mut impl FnMut(String)) -> Result<()> {
+    let Some(labs) = dir.parent() else { return Ok(()) };
+    let before = lab::instance(dir);
+    let now = lab::recheck_instance(labs, dir, &docker::subnets_in_use(id).await, &lab::registry_instances(dir))?;
+    if before.is_some_and(|b| b != now) {
+        log(format!("Another Docker network took this lab's addresses: it moves to free ones (instance {now})."));
     }
     Ok(())
 }
@@ -206,14 +258,14 @@ fn local_run(runtime: Runtime, provider: Option<Provider>) -> Result<LocalRun> {
 }
 
 /// The end of a Vagrant start (local or ESXi): the lab recorded, and its welcome message.
-fn finish_vagrant(dir: &Path, spec: &isoloom_core::Spec, runtime: Runtime, log: &mut impl FnMut(String)) {
+fn finish_vagrant(dir: &Path, spec: &lab::Spec, runtime: Runtime, log: &mut impl FnMut(String)) {
     registry::record(dir, spec, lab::vagrant_target(runtime), None);
     welcome(dir, spec, lab::vagrant_target(runtime), log);
 }
 
 /// The lab's own words once it is up (`message:` in its spec, addresses filled in): where to
 /// start and what to do first, as the last lines of the deploy log.
-fn welcome(dir: &Path, spec: &isoloom_core::Spec, target: isoloom_core::Target, log: &mut impl FnMut(String)) {
+fn welcome(dir: &Path, spec: &lab::Spec, target: lab::Target, log: &mut impl FnMut(String)) {
     if let Some(m) = lab::message(dir, spec, target) {
         log_lines(&m, log);
     }

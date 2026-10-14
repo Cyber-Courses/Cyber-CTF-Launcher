@@ -36,9 +36,16 @@ if (typeof window !== "undefined") {
     this.open = false;
   };
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
     clearMocks();
+    // Self-test runs are shared across views for the app's lifetime: each test starts clean.
+    // Imported here, not at the top: a test file's own module mocks (settings' image JSON) must
+    // apply before anything pulls those modules in.
+    (await import("@/features/machine/use-self-test")).resetSelfTests();
+    (await import("@/lib/shared-poll")).resetSharedPolls();
+    (await import("@/lib/deploy-store")).resetDeployStore();
+    (await import("@/lib/sign-in")).resetSignIn();
     try {
       localStorage.clear();
     } catch {

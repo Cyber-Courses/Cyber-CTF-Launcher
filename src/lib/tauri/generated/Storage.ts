@@ -3,10 +3,14 @@ import type { StoredItem } from "./StoredItem";
 
 export type Storage = { 
 /**
- * Container images labs, the attack box and the self-test use, present locally.
+ * Container images the app downloaded, present locally.
  */
 images: Array<StoredItem>, 
 /**
- * Vagrant boxes VM labs and the self-test use, present locally.
+ * Vagrant boxes the app downloaded, present locally.
  */
-boxes: Array<StoredItem>, };
+boxes: Array<StoredItem>, 
+/**
+ * The Terraform provider plugins server and cloud labs share (one entry, when there are any).
+ */
+plugins: Array<StoredItem>, };

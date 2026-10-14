@@ -13,6 +13,8 @@
 mod files;
 pub(crate) mod lock;
 mod process;
+#[cfg(all(test, unix))]
+pub(crate) use process::pidfile_line;
 mod progress;
 mod worker;
 
@@ -23,7 +25,7 @@ pub use files::{last_deploy_failed, log_so_far};
 pub use process::{kill_and_wait, running, running_jobs};
 pub use worker::worker_main;
 
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Park, Runtime};
 
@@ -45,8 +47,8 @@ pub enum Op {
 }
 
 /// What a worker needs: the lab, the operation, and for a launch the `startLab` payload and
-/// where/how to run it.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+/// where/how to run it. Its `Debug` leaves the payload out: it carries the launch token.
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Job {
     pub lab_id: String,
     /// Absent in job files from before operations existed: a launch.
@@ -67,6 +69,20 @@ pub struct Job {
     pub default_ports: bool,
 }
 
+impl std::fmt::Debug for Job {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Job")
+            .field("lab_id", &self.lab_id)
+            .field("op", &self.op)
+            .field("launch", &if self.launch.is_null() { "none" } else { "<redacted>" })
+            .field("provider", &self.provider)
+            .field("host", &self.host)
+            .field("attackbox_image", &self.attackbox_image)
+            .field("default_ports", &self.default_ports)
+            .finish()
+    }
+}
+
 impl Job {
     /// An operation on an installed lab (no launch payload).
     pub fn on_lab(lab_id: &str, op: Op) -> Job {
@@ -79,17 +95,6 @@ impl Job {
         match self.op {
             Op::AttackVm { .. } => attack_key(&self.lab_id),
             _ => self.lab_id.clone(),
-        }
-    }
-
-    /// What this operation is, for the "another one is in progress" message.
-    fn what(&self) -> &'static str {
-        match self.op {
-            Op::Launch => "a start",
-            Op::Resume { .. } => "a resume",
-            Op::Park { .. } => "a pause or shutdown",
-            Op::Provision { .. } => "a provisioning run",
-            Op::AttackVm { .. } => "an attack VM start",
         }
     }
 }
@@ -141,29 +146,44 @@ pub async fn run_job(app: &AppHandle, job: Job, logs: tauri::ipc::Channel<String
     }
 }
 
+/// Held while a worker is checked for and started (see [`start_worker`]).
+static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Ends the workers of lab `id` (its own operation's and its attack VM's), waiting until they
+/// are gone. Called by a stop already marked as stopping (see `runtime::stopping`): a start that
+/// passed its checks before the mark has claimed its pidfile once `STARTING` is free, so it is
+/// found and ended here, and every later attack VM start is refused.
+pub async fn end_workers(app: &AppHandle, id: &str) {
+    drop(STARTING.lock().unwrap_or_else(|e| e.into_inner()));
+    kill_and_wait(app, id).await;
+    kill_and_wait(app, &attack_key(id)).await;
+}
+
 /// Checks that nothing else runs on the job's key and starts its worker, as one step: two
 /// starts racing each other (a double click) must not both pass the check and spawn two
 /// workers. `Err` when the lab is busy; `Ok(Err)` when the worker couldn't be started (the
 /// caller falls back to running the job in this process).
 fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> {
-    static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _one_at_a_time = STARTING.lock().unwrap_or_else(|e| e.into_inner());
     if running(app).contains(&job.key()) {
-        return Err(Error::Invalid(format!("{} of this lab is already in progress; wait for it to finish.", capitalize(job.what()))));
+        return Err(Error::coded(Code::AlreadyInProgress));
+    }
+    // Nothing begins while the lab stops: between ending its workers and taking its lock, a
+    // start would win the lock and the stop then destroy what it built; and the attack VM takes
+    // no lab lock (it boots beside a lab that is still starting), so it would come up orphaned.
+    if crate::runtime::stopping(&job.lab_id) {
+        return Err(Error::Refused("This lab is stopping. Wait for it to stop, then try again.".into()));
     }
     // An operation of the app itself (a stop, the expiry reaper) holds the lab: the worker
     // would only wait for it, then act on what it left (the attack VM runs beside the lab's
     // operations and takes no lab lock).
     if !matches!(job.op, Op::AttackVm { .. }) && lock::held(&lock_path(app, &job.lab_id)?) {
-        return Err(Error::Invalid(BUSY.into()));
+        return Err(Error::coded(Code::AlreadyInProgress));
     }
     // The pidfile is taken before the worker starts (another process may be racing for it too).
     let pidfile = process::claim(&files::of(app, &job.key())?)?;
     Ok(process::spawn(app, job, pidfile))
 }
-
-/// The refusal while another operation holds the lab.
-pub(crate) const BUSY: &str = "Another operation on this lab is already in progress; wait for it to finish.";
 
 /// The cross-process lock file of `lab` (see [`lock`]).
 pub fn lock_path(app: &AppHandle, lab: &str) -> Result<std::path::PathBuf> {
@@ -171,17 +191,9 @@ pub fn lock_path(app: &AppHandle, lab: &str) -> Result<std::path::PathBuf> {
     Ok(lock::path_in(&files::dir(app)?, lab))
 }
 
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Job, Op, capitalize};
+    use super::{Job, Op};
 
     #[test]
     fn job_files_from_before_operations_existed_still_read_as_launches() {
@@ -208,6 +220,38 @@ mod tests {
     }
 
     #[test]
+    fn a_job_file_with_only_a_lab_id_reads_as_a_plain_launch() {
+        // The oldest shape (before provider, host, image or default ports were recorded): every
+        // newer field takes its default.
+        let job: Job = serde_json::from_str(r#"{"lab_id":"lab-1"}"#).unwrap();
+        assert_eq!(job, Job::on_lab("lab-1", Op::Launch));
+        assert!(job.launch.is_null() && !job.default_ports && job.provider.is_none() && job.host.is_none() && job.attackbox_image.is_none());
+        assert_eq!(job.key(), "lab-1");
+    }
+
+    #[test]
+    fn job_files_from_a_newer_version_read_when_only_fields_are_new_not_operations() {
+        use crate::runtime::Runtime;
+        // A field this version doesn't know (a newer one wrote it): ignored, the job still runs.
+        let newer = r#"{"lab_id":"lab-1","op":{"op":"resume","runtime":"VM"},"launch":null,"future_flag":true,"default_ports":true}"#;
+        let job: Job = serde_json::from_str(newer).unwrap();
+        assert_eq!(job.op, Op::Resume { runtime: Runtime::Vm });
+        assert!(job.default_ports);
+        // An operation this version doesn't know, or one missing what it needs: refused, never
+        // run as something else (a launch would download and start the lab).
+        for bad in [
+            r#"{"lab_id":"lab-1","op":{"op":"reboot"}}"#,
+            r#"{"lab_id":"lab-1","op":{"op":"park","runtime":"VM"}}"#,
+            r#"{"lab_id":"lab-1","op":{"op":"provision"}}"#,
+            r#"{"lab_id":"lab-1","op":{"op":"attack_vm"}}"#,
+            r#"{"lab_id":"lab-1","op":{"runtime":"VM"}}"#,
+            r#"{"op":{"op":"launch"}}"#,
+        ] {
+            assert!(serde_json::from_str::<Job>(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn job_round_trips_through_its_file_format() {
         let job = Job {
             lab_id: "lab-1".into(),
@@ -222,9 +266,31 @@ mod tests {
         assert_eq!(serde_json::from_slice::<Job>(&bytes).unwrap(), job);
     }
 
+    #[tokio::test]
+    async fn nothing_starts_on_a_lab_while_it_stops() {
+        // Regression: an attack VM start during a Stop passed its "lab is running" check early in
+        // the destroy, and its VM came up after the lab was gone; a start between the stop ending
+        // the lab's workers and taking its lock won the lock first.
+        let t = crate::test_app::TestApp::new();
+        let _tools = crate::exec::fake::Tools::rules(&[]);
+        t.lab("ad", &[]);
+        let stopping = crate::runtime::DeployGuard::new("ad", crate::runtime::Action::Stop);
+        for op in [Op::AttackVm { box_name: "kalilinux/rolling".into() }, Op::Launch, Op::Resume { runtime: crate::runtime::Runtime::Vm }] {
+            let job = Job::on_lab("ad", op);
+            let err = super::run_job(t.handle(), job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err().to_string();
+            assert!(err.starts_with("This lab is stopping"), "{err}");
+            assert!(!super::files::of(t.handle(), &job.key()).unwrap().pid.exists(), "no worker was claimed");
+        }
+        drop(stopping);
+    }
+
     #[test]
-    fn the_busy_message_starts_with_a_capital() {
-        assert_eq!(capitalize(Job::on_lab("lab-1", Op::AttackVm { box_name: "a/b".into() }).what()), "An attack VM start");
-        assert_eq!(capitalize(""), "");
+    fn a_job_never_prints_its_launch_token() {
+        // A job in a log line (`{job:?}`) must not carry the launch token into the log file.
+        let mut job = Job::on_lab("lab-1", Op::Launch);
+        job.launch = serde_json::json!({ "labId": "lab-1", "env": [{ "name": "CTF_LAUNCH_TOKEN", "value": "s3cret-token" }] });
+        let printed = format!("{job:?} {job:#?}");
+        assert!(!printed.contains("s3cret-token") && !printed.contains("CTF_LAUNCH_TOKEN"), "{printed}");
+        assert!(printed.contains("lab-1") && printed.contains("<redacted>"), "{printed}");
     }
 }

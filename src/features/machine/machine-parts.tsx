@@ -25,12 +25,15 @@ export function StatCard({
   value,
   history,
   meter,
+  unavailable = false,
 }: {
   label: string;
   detail: string;
   value: number | null;
   history?: number[];
   meter?: boolean;
+  /** No value, and none is coming (reading it failed): a dash, not placeholders. */
+  unavailable?: boolean;
 }) {
   return (
     <Panel className="grid gap-2.5 px-[1.1rem] py-4">
@@ -38,7 +41,11 @@ export function StatCard({
         <span>{label}</span>
         <span className="truncate font-mono text-[0.6875rem] text-faint">{detail}</span>
       </div>
-      {value === null ? (
+      {value === null && unavailable ? (
+        <div className="serif-title text-[2rem] leading-none text-faint" aria-hidden>
+          –
+        </div>
+      ) : value === null ? (
         <>
           <Skeleton className="h-8 w-20" />
           <Skeleton className={meter ? "h-1.5 w-full" : "h-9 w-full"} />

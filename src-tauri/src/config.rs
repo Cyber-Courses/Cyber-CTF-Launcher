@@ -25,6 +25,13 @@ pub fn client_id() -> String {
 /// http://127.0.0.1:<port>/callback (cyber-auth matches redirect URIs exactly).
 pub const REDIRECT_PORTS: [u16; 3] = [47290, 47291, 47292];
 
+/// Whether sign-in comes back as a `cyberctf://auth/callback` link instead of to a loopback
+/// page (`CYBERCTF_REDIRECT=scheme`; `loopback` otherwise). The OAuth client in cyber-auth must
+/// list that URI first: switch the default once it does.
+pub fn scheme_redirect() -> bool {
+    setting("CYBERCTF_REDIRECT", option_env!("CYBERCTF_REDIRECT"), "loopback") == "scheme"
+}
+
 // Used by the keychain-backed session store in release builds (dev stores a file).
 #[cfg_attr(debug_assertions, allow(dead_code))]
 pub const KEYCHAIN_SERVICE: &str = "org.cyberctf.desktop";

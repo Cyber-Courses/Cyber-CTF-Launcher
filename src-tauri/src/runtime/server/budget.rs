@@ -11,6 +11,46 @@ use super::store::load_host;
 use crate::error::{Error, Result};
 use crate::runtime::providers::Provider;
 
+/// This month's spend so far (USD) on the saved AWS account `id`, with its own credentials (its
+/// stored keys, or its CLI profile): the figure the Cloud screen shows is the one the launch
+/// budget gate checks, never another account's (the CLI's default profile's).
+#[tauri::command]
+pub async fn server_month_to_date_cost(app: AppHandle, id: String) -> Result<f64> {
+    let host = load_host(&app, &id)?;
+    if host.provider != Provider::Aws {
+        return Err(Error::Invalid("only AWS accounts report their spend".into()));
+    }
+    month_to_date_cost(&host, &host_secret(&host)?).await
+}
+
+/// This month's AWS spend as the AWS CLI's `profile` (or its default) sees it: the setup form's,
+/// before an account in CLI mode is saved.
+pub async fn cli_month_to_date_cost(profile: Option<String>) -> Result<f64> {
+    month_to_date_cost(&cli_account(profile), "").await
+}
+
+/// An AWS account signed in through the CLI's `profile`. Cost Explorer answers in us-east-1
+/// whatever the account's region.
+fn cli_account(profile: Option<String>) -> HostProfile {
+    HostProfile {
+        id: String::new(),
+        name: String::new(),
+        provider: Provider::Aws,
+        host: "us-east-1".into(),
+        port: super::profile::default_port(Provider::Aws),
+        username: String::new(),
+        datastore: None,
+        network: None,
+        node: None,
+        insecure_tls: false,
+        auto_stop_hours: None,
+        use_cli_creds: true,
+        aws_profile: profile,
+        monthly_limit: None,
+        gcp_project: None,
+    }
+}
+
 /// This month's AWS spend so far (USD) for a host, via Cost Explorer.
 pub(super) async fn month_to_date_cost(h: &HostProfile, password: &str) -> Result<f64> {
     let env = terraform_env(h, password);
@@ -39,7 +79,12 @@ fn cost_args(period: &str) -> [&str; 12] {
 
 /// Cost Explorer's amount (text output) as a number.
 fn parse_spend(out: &str) -> Result<f64> {
-    out.trim().parse::<f64>().map_err(|_| Error::Invalid(format!("couldn't read the spend figure from Cost Explorer: {:?}", out.trim())))
+    // `f64::from_str` takes "NaN" and "inf" too; neither is a spend this check can act on.
+    out.trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite())
+        .ok_or_else(|| Error::Invalid(format!("couldn't read the spend figure from Cost Explorer: {:?}", out.trim())))
 }
 
 /// The budget check for a launch. Blocks only when the spend is readable and over the limit;
@@ -75,6 +120,7 @@ fn budget_limit(host: &HostProfile) -> Option<f64> {
 /// This month's spend (or why it couldn't be read) against `limit`.
 fn verdict(limit: f64, spent: Result<f64>) -> BudgetCheck {
     match spent {
+        Ok(spent) if spent.is_nan() => BudgetCheck::Unverifiable(budget_unverifiable_message("the spend figure isn't a number")),
         Ok(spent) if spent >= limit => BudgetCheck::Over(spent, limit),
         Ok(_) => BudgetCheck::Ok,
         Err(e) => BudgetCheck::Unverifiable(budget_unverifiable_message(&e.to_string())),
@@ -103,11 +149,61 @@ mod tests {
     use super::*;
     use crate::runtime::server::profile::tests::profile;
 
+    #[tokio::test]
+    async fn an_accounts_spend_is_read_with_its_own_keys_not_the_clis_default() {
+        // Regression: the Cloud screen read the spend of an account added with stored keys through
+        // the host CLI's default profile: another account's spend, or nothing, while the launch
+        // budget gate read the stored keys.
+        use crate::exec::fake::{Tools, ok};
+        let t = crate::test_app::TestApp::new();
+        let cli = t.host("aws-cli", "aws", serde_json::json!({ "useCliCreds": true, "awsProfile": "labs" }));
+        let tools = Tools::rules(&[("ce get-cost-and-usage", ok("7.25\n"))]);
+        assert_eq!(server_month_to_date_cost(t.handle().clone(), cli).await.unwrap(), 7.25);
+        assert!(tools.called("aws ce get-cost-and-usage"), "{:?}", tools.calls());
+        assert_eq!(tools.env_of("ce get-cost-and-usage", "AWS_PROFILE").as_deref(), Some("labs"));
+        // Not an AWS account, or not saved: no figure.
+        let az = t.host("az1", "azure", serde_json::json!({}));
+        assert_eq!(server_month_to_date_cost(t.handle().clone(), az).await.unwrap_err().to_string(), "only AWS accounts report their spend");
+        assert!(server_month_to_date_cost(t.handle().clone(), "nope".into()).await.is_err());
+        // The setup form's figure, for a profile not saved yet.
+        assert_eq!(cli_month_to_date_cost(None).await.unwrap(), 7.25);
+    }
+
+    #[test]
+    fn stored_keys_reach_cost_explorer_in_the_cli_container() {
+        let keys = HostProfile { host: "eu-west-3".into(), username: "AKIAIOSFODNN7EXAMPLE".into(), ..profile(Provider::Aws) };
+        let env = terraform_env(&keys, "secret");
+        assert!(env.contains(&("AWS_ACCESS_KEY_ID".to_string(), "AKIAIOSFODNN7EXAMPLE".to_string())));
+        assert!(cli_account(Some("p".into())).use_cli_creds && cli_account(None).aws_profile.is_none());
+    }
+
     #[test]
     fn spend_figures_parse_or_say_what_came_back() {
         assert_eq!(parse_spend("12.5\n").unwrap(), 12.5);
         assert_eq!(parse_spend(" 0 ").unwrap(), 0.0);
         assert_eq!(parse_spend("None\n").unwrap_err().to_string(), "couldn't read the spend figure from Cost Explorer: \"None\"");
+    }
+
+    #[test]
+    fn spend_figures_in_exponent_or_signed_form_parse_and_localized_ones_do_not() {
+        assert_eq!(parse_spend("1.5e2").unwrap(), 150.0);
+        assert_eq!(parse_spend("-0.0").unwrap(), 0.0);
+        assert_eq!(parse_spend("\n  7\n").unwrap(), 7.0);
+        for bad in ["", "12,5", "$12.5", "12.5 USD"] {
+            assert!(parse_spend(bad).is_err(), "{bad:?}");
+        }
+        // An infinite spend is over any limit.
+        assert!(matches!(verdict(40.0, Ok(f64::INFINITY)), BudgetCheck::Over(..)));
+    }
+
+    #[test]
+    fn a_spend_that_is_not_a_number_is_unverifiable_not_under_budget() {
+        // `f64::from_str` accepts "NaN", "inf" and "infinity" (any case). A NaN is not a readable
+        // spend: the launch should warn (Unverifiable), not read as under budget. Fix: refuse a
+        // parsed value that isn't finite (`.filter(f64::is_finite)`), and in `verdict` treat NaN
+        // as unverifiable.
+        assert!(parse_spend("NaN").is_err());
+        assert!(matches!(verdict(40.0, Ok(f64::NAN)), BudgetCheck::Unverifiable(_)));
     }
 
     #[test]

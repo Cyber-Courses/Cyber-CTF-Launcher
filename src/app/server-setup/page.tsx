@@ -5,15 +5,13 @@ import { useSearchParams } from "next/navigation";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { HostSetupPage, SetupTrademarks, EMPTY_CLOUD, EMPTY_HOST } from "@/features/servers/host-setup";
+import { isCloud } from "@/features/servers/host-setup/setup-model";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/toaster";
 import { SERVER_CHANGED, serverList, systemCheck, type ServerHostInput, type SystemReport } from "@/lib/tauri";
 import { warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
-import { installDevMock } from "@/lib/dev-mock";
-
-// Development only: ?mock in a plain browser answers the Tauri commands with sample data.
-installDevMock();
+import { DevMockGate } from "@/components/dev-mock-gate";
 
 /** The server setup window (opened by `server_open_setup`), closed when setup ends. */
 function Setup() {
@@ -40,7 +38,7 @@ function Setup() {
 
   const close = () => getCurrentWindow().close().catch(warn("closing the window"));
 
-  const cloud = id ? initial?.provider === "aws" || initial?.provider === "azure" || initial?.provider === "gcp" : params.get("kind") === "cloud";
+  const cloud = id ? !!initial && isCloud(initial.provider) : params.get("kind") === "cloud";
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
@@ -52,13 +50,13 @@ function Setup() {
           <Spinner className="size-4" /> {t("servers.setup.loading")}
         </div>
       ) : (
-        /* The wizard centers in the window; the trademark is pinned at the bottom so it
-           doesn't unbalance the centering. Scrolls when a step is tall. */
+        /* The wizard fills the window's height: its title stays at the top and each step's Nav
+           (Back / Continue) is pinned to the bottom of this scroller, so the buttons are always in
+           view and don't move from step to step; a tall step scrolls between them. The
+           trademark is pinned below. */
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {/* my-auto centers a short step but collapses to 0 when the step is tall, so the
-              top never clips and the window scrolls (unlike justify-center on a flex child). */}
-          <main className="mx-auto flex min-h-full w-full max-w-[38rem] flex-col px-6 py-6">
-            <div className="my-auto w-full">
+          <main className="mx-auto flex min-h-full w-full max-w-[38rem] flex-col px-6 pt-6">
+            <div className="flex w-full flex-1 flex-col">
               <HostSetupPage
                 initial={initial}
                 report={report}
@@ -83,8 +81,10 @@ function Setup() {
 
 export default function ServerSetupWindow() {
   return (
-    <Suspense>
-      <Setup />
-    </Suspense>
+    <DevMockGate>
+      <Suspense>
+        <Setup />
+      </Suspense>
+    </DevMockGate>
   );
 }

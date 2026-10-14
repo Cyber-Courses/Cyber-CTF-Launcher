@@ -5,5 +5,8 @@
   "online": "Online: labs you launch from the website run on this machine",
   "signedIn": "Signed in",
   "signedInKeychain": "signed in · keychain",
-  "signOut": "Sign out"
+  "signOut": "Sign out",
+  "didntOpen": "Browser didn't open?",
+  "copyLink": "Copy the sign-in link",
+  "cancel": "Cancel"
 }

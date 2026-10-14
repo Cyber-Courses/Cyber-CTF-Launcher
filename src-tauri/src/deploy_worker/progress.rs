@@ -40,10 +40,35 @@ pub fn last_step(log: &str) -> Option<String> {
     Some(if step.chars().count() > STEP_MAX { format!("{}…", step.chars().take(STEP_MAX - 1).collect::<String>()) } else { step })
 }
 
-/// The verdict in a status file: `Ok` for `ok`, the message otherwise.
+/// How much of a log's end [`step_of`] reads: a VM start's log runs to megabytes, and the
+/// sidebar polls every worker's step every 2 s.
+const STEP_TAIL: u64 = 64 * 1024;
+
+/// [`last_step`] of the log file at `path`, from its last [`STEP_TAIL`] bytes only (bytes that
+/// aren't UTF-8 replaced). `None` when it can't be read.
+pub fn step_of(path: &std::path::Path) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let from = len.saturating_sub(STEP_TAIL);
+    file.seek(SeekFrom::Start(from)).ok()?;
+    let mut bytes = Vec::new();
+    file.take(STEP_TAIL).read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    // Started mid-line: that line's start is cut off, so it's left out.
+    let whole = if from > 0 { text.split_once('\n').map_or("", |(_, rest)| rest) } else { &text };
+    last_step(whole)
+}
+
+/// The verdict in a status file: `Ok` for `ok`, else the error the worker wrote, with its code
+/// (`error: {"code":…,"message":…}`), or a bare message (a worker of an older version).
 pub fn verdict(status: &str) -> Result<()> {
     let s = status.trim();
-    if s == "ok" { Ok(()) } else { Err(Error::Invalid(s.strip_prefix("error: ").unwrap_or(s).to_string())) }
+    if s == "ok" {
+        return Ok(());
+    }
+    let body = s.strip_prefix("error: ").unwrap_or(s);
+    Err(serde_json::from_str::<crate::error::Wire>(body).map_or_else(|_| Error::Invalid(body.to_string()), Error::from))
 }
 
 /// What the worker wrote between reads: whole lines go out, a cut-off last line waits for the
@@ -127,10 +152,35 @@ mod tests {
     }
 
     #[test]
+    fn a_step_is_read_from_the_end_of_a_long_log() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-step-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("lab.log");
+        assert_eq!(step_of(&log), None, "no log yet");
+        // Megabytes of chatter before the step: only the end is read, and the line cut at the
+        // start of that end doesn't count.
+        let mut text = "==> dc01: Booting VM...\n".repeat(2);
+        text.push_str(&"x".repeat(3 * STEP_TAIL as usize));
+        text.push_str("\n==> dc01: Waiting for the VM to boot...\n  dc01: \n");
+        std::fs::write(&log, &text).unwrap();
+        assert_eq!(step_of(&log).as_deref(), Some("dc01: Waiting for the VM to boot..."));
+        std::fs::write(&log, [&"y".repeat(2 * STEP_TAIL as usize)[..], "\nPulling images\n"].concat()).unwrap();
+        assert_eq!(step_of(&log).as_deref(), Some("Pulling images"));
+        // A log that isn't all UTF-8 (a tool's codepage) still has a step.
+        std::fs::write(&log, b"Cr\xe9ation du r\xe9seau\n").unwrap();
+        assert_eq!(step_of(&log).as_deref(), Some("Cr\u{fffd}ation du r\u{fffd}seau"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn verdict_reads_ok_and_errors() {
         assert!(verdict("ok\n").is_ok());
         let err = verdict("error: Docker isn't running").unwrap_err();
         assert!(format!("{err:?}").contains("Docker isn't running"));
+        // The worker's error keeps its code across the process boundary.
+        let err = verdict(r#"error: {"code":"portInUse","args":{"port":8080},"message":"Host port 8080 is taken"}"#).unwrap_err();
+        assert_eq!(err.code(), crate::error::Code::PortInUse { port: 8080 });
+        assert_eq!(err.to_string(), "Host port 8080 is taken");
         // A bare message is still an error, kept whole.
         assert!(verdict("something else").is_err());
     }

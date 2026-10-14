@@ -4,10 +4,11 @@
 pub mod docker;
 pub mod metrics;
 pub mod setup_window;
+pub mod wsl;
 
 use serde::Serialize;
 
-use crate::exec::{docker_denied, docker_denied_message, run_read};
+use crate::exec::{docker_denied, docker_denied_error, run_read};
 use crate::runtime::providers::{self, ProviderStatus};
 
 #[derive(Serialize, ts_rs::TS)]
@@ -46,9 +47,10 @@ pub struct SystemReport {
     /// The Docker daemon answers (Docker Desktop / engine is started).
     pub docker_running: bool,
     /// The daemon runs but refused this account (not in the `docker` group yet): starting the
-    /// engine won't help; `docker_denied_hint` says what will.
+    /// engine won't help; `docker_denied_hint` says what will (as an error with its code, for
+    /// the webview to say in the player's language).
     pub docker_denied: bool,
-    pub docker_denied_hint: Option<String>,
+    pub docker_denied_hint: Option<crate::error::Wire>,
     /// Which Docker-compatible engine answers, when one does: `docker-desktop`, `orbstack`,
     /// `colima`, `rancher-desktop`, `podman` or `docker-engine`.
     #[ts(type = r#""docker-desktop" | "orbstack" | "colima" | "rancher-desktop" | "podman" | "docker-engine" | null"#)]
@@ -73,6 +75,8 @@ pub struct SystemReport {
     /// What Isoloom says this machine can run, target by target (`isoloom targets --host`):
     /// the tools and credentials each one needs, found or missing.
     pub targets: Vec<TargetReadiness>,
+    /// Windows: whether WSL 2 is on, waits for a restart, or is missing (`None` elsewhere).
+    pub wsl: Option<wsl::WslReport>,
 }
 
 /// One Isoloom target on this machine.
@@ -91,20 +95,21 @@ pub struct TargetReadiness {
 }
 
 #[tauri::command]
-pub async fn system_check() -> SystemReport {
+pub async fn system_check(app: crate::AppHandle) -> SystemReport {
+    // A tool installed since the last check (from the app or not) is found without a restart.
+    crate::platform::env_path::refresh();
     let (docker, docker_compose, vagrant, daemon, aws, azure, gcloud, terraform) = tokio::join!(
         probe("docker", &["--version"]),
         probe("docker", &["compose", "version", "--short"]),
         probe("vagrant", &["--version"]),
         docker::daemon_os(),
         probe("aws", &["--version"]),
-        // `az version` prints JSON (first line is "{"); ask for just the azure-cli version string.
-        probe("az", &["version", "--query", "\"azure-cli\"", "--output", "tsv"]),
+        probe_azure(),
         probe("gcloud", &["--version"]),
         probe("terraform", &["version"]),
     );
-    let (vm_providers, docker_engines_running, ovftool, targets) =
-        tokio::join!(providers::detect(vagrant.installed), docker::running_engines(), probe("ovftool", &["--version"]), isoloom_targets());
+    let (vm_providers, docker_engines_running, ovftool, targets, wsl) =
+        tokio::join!(providers::detect(vagrant.installed), docker::running_engines(), probe("ovftool", &["--version"]), isoloom_targets(), wsl::report(&app));
     let docker_denied = daemon.as_ref().err().is_some_and(docker_denied);
     let docker_engine = match &daemon {
         Ok(os) => Some(docker::engine_in_use(os.trim()).await),
@@ -117,7 +122,7 @@ pub async fn system_check() -> SystemReport {
         docker,
         docker_running: daemon.is_ok(),
         docker_denied,
-        docker_denied_hint: docker_denied.then(docker_denied_message),
+        docker_denied_hint: docker_denied.then(|| docker_denied_error().to_wire()),
         docker_engine,
         docker_engines_running,
         docker_compose,
@@ -127,6 +132,7 @@ pub async fn system_check() -> SystemReport {
         cloud_clis: CloudClis { aws, azure, gcloud },
         vm_providers,
         targets,
+        wsl,
     }
 }
 
@@ -138,8 +144,24 @@ async fn probe(program: &'static str, args: &[&str]) -> Tool {
     }
 }
 
+/// `az version` prints JSON (`{"azure-cli": "2.66.0", ...}`); read the version from it here. A
+/// `--query "\"azure-cli\""` would need quotes, which can't pass through cmd.exe (`az` is a .cmd).
+async fn probe_azure() -> Tool {
+    match run_read("az", &["version", "--output", "json"], None).await {
+        Ok(out) => Tool { installed: true, version: azure_version(&out) },
+        Err(_) => Tool { installed: false, version: None },
+    }
+}
+
+fn azure_version(json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json.trim()).ok()?;
+    value.get("azure-cli")?.as_str().map(str::to_owned)
+}
+
+/// The first non-blank line, trimmed: a tool whose output opens with a blank line (a banner's
+/// spacing) read as installed with an empty version.
 fn first_line(out: &str) -> Option<String> {
-    out.lines().next().map(|l| l.trim().to_string())
+    out.lines().map(str::trim).find(|l| !l.is_empty()).map(str::to_string)
 }
 
 async fn package_manager() -> PkgManager {
@@ -180,7 +202,7 @@ async fn package_manager_version() -> Option<String> {
 /// Isoloom's own view of the host, off the async runtime (it runs the tools).
 async fn isoloom_targets() -> Vec<TargetReadiness> {
     tokio::task::spawn_blocking(|| {
-        isoloom_core::host::all()
+        crate::runtime::lab::host_readiness()
             .into_iter()
             .map(|r| TargetReadiness {
                 target: r.target.id().to_string(),
@@ -201,14 +223,49 @@ mod tests {
     #[tokio::test]
     #[ignore = "depends on the host's installed tools"]
     async fn prints_this_machines_report() {
-        let report = super::system_check().await;
+        let t = crate::test_app::TestApp::new();
+        let report = super::system_check(t.handle().clone()).await;
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    }
+
+    #[test]
+    fn the_azure_cli_version_comes_from_its_json_without_a_quoted_query() {
+        let out = "{\n  \"azure-cli\": \"2.90.0\",\n  \"azure-cli-core\": \"2.90.0\",\n  \"extensions\": {}\n}\n";
+        assert_eq!(super::azure_version(out).as_deref(), Some("2.90.0"));
+        assert_eq!(super::azure_version("not json"), None);
+        assert_eq!(super::azure_version("{}"), None);
+        // The probe's arguments must pass the cmd.exe guard, or `az` reads as missing everywhere.
+        assert!(crate::exec::shim::check_args("az", &["version", "--output", "json"]).is_ok());
     }
 
     #[test]
     fn a_version_is_the_first_line_trimmed() {
         assert_eq!(super::first_line("Homebrew 4.6.3 \nHomebrew/core\n").as_deref(), Some("Homebrew 4.6.3"));
         assert_eq!(super::first_line(""), None);
+        assert_eq!(super::first_line("\n  \nVagrant 2.4.9\n").as_deref(), Some("Vagrant 2.4.9"));
+    }
+
+    #[test]
+    fn a_version_on_windows_line_endings_or_without_a_newline_has_no_stray_characters() {
+        // A tool on Windows ends its lines with CRLF; one printing a single line ends it with
+        // nothing at all. Neither leaves a `\r` or needs a `\n`.
+        assert_eq!(super::first_line("Vagrant 2.4.3\r\n\r\n").as_deref(), Some("Vagrant 2.4.3"));
+        assert_eq!(super::first_line("Terraform v1.9.8").as_deref(), Some("Terraform v1.9.8"));
+        assert_eq!(super::first_line("\tDocker version 27.3.1, build x\t\r\n").as_deref(), Some("Docker version 27.3.1, build x"));
+        // Only blank lines: no version at all.
+        assert_eq!(super::first_line("\r\n"), None);
+        assert!(super::pkg_manager(Some("\r\n".into())).version.is_none());
+        assert_eq!(super::azure_version("{\"azure-cli\": \"2.90.0\"}\r\n").as_deref(), Some("2.90.0"));
+        assert_eq!(super::azure_version("{\"azure-cli\": 2.9}"), None, "a version that isn't text");
+    }
+
+    #[test]
+    fn azure_version_comes_from_az_version_json() {
+        let out = "{\r\n  \"azure-cli\": \"2.66.0\",\r\n  \"azure-cli-core\": \"2.66.0\",\r\n  \"extensions\": {}\r\n}\r\n";
+        assert_eq!(super::azure_version(out).as_deref(), Some("2.66.0"));
+        assert_eq!(super::azure_version("WARNING: something\n{}"), None);
+        assert_eq!(super::azure_version("{\"azure-cli\": 2}"), None);
+        assert_eq!(super::azure_version(""), None);
     }
 
     #[test]
@@ -225,3 +282,6 @@ mod tests {
         assert_eq!(v, serde_json::json!({ "installed": true, "version": "1" }));
     }
 }
+
+#[cfg(test)]
+mod proptests;

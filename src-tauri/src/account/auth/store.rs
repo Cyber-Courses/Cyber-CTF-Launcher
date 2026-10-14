@@ -38,17 +38,18 @@ fn entry_named(name: &str) -> Result<keyring::Entry> {
 /// split across `session.1`, `session.2`… with `session` holding how many there are.
 #[cfg_attr(debug_assertions, allow(dead_code))]
 const CHUNK_UNITS: usize = 1200;
-/// At most this many pieces (a session is a few KiB at most).
+/// At most this many pieces (a session is a few KiB; some identity providers issue tokens of
+/// several KiB each). A longer one is refused at save, never half-saved and read as signed out.
 #[cfg_attr(debug_assertions, allow(dead_code))]
-const MAX_CHUNKS: usize = 16;
+const MAX_CHUNKS: usize = 32;
 #[cfg_attr(debug_assertions, allow(dead_code))]
 const CHUNKS_PREFIX: &str = "cyberctf-chunks:";
 
 /// What goes in the `session` entry and, for a long session, the pieces for `session.1`….
 #[cfg_attr(debug_assertions, allow(dead_code))]
-fn split_chunks(raw: &str) -> (String, Vec<String>) {
+fn split_chunks(raw: &str) -> Result<(String, Vec<String>)> {
     if raw.encode_utf16().count() <= CHUNK_UNITS {
-        return (raw.to_string(), Vec::new());
+        return Ok((raw.to_string(), Vec::new()));
     }
     let mut parts = vec![String::new()];
     let mut units = 0;
@@ -62,7 +63,12 @@ fn split_chunks(raw: &str) -> (String, Vec<String>) {
             p.push(c);
         }
     }
-    (format!("{CHUNKS_PREFIX}{}", parts.len()), parts)
+    if parts.len() > MAX_CHUNKS {
+        return Err(Error::Invalid(
+            "Your session is too large to keep in the system keychain. Sign in again; if this keeps happening, contact support.".into(),
+        ));
+    }
+    Ok((format!("{CHUNKS_PREFIX}{}", parts.len()), parts))
 }
 
 /// The session's JSON from the `session` entry's value, reading the pieces with `piece(i)`
@@ -106,10 +112,14 @@ fn load_file(path: &std::path::Path) -> Option<Session> {
     std::fs::read_to_string(path).ok().and_then(|raw| serde_json::from_str(&raw).ok())
 }
 
-/// Writes the session to a dev session file, creating its folder.
+/// Writes the session to a dev session file, creating its folder: both this user's only (the
+/// file holds the session's tokens).
 #[cfg(debug_assertions)]
 fn save_file(path: &std::path::Path, raw: &str) -> Result<()> {
-    crate::atomic_file::write(path, raw)?;
+    if let Some(dir) = path.parent() {
+        crate::private_fs::dir(dir)?;
+    }
+    crate::atomic_file::write_private(path, raw)?;
     Ok(())
 }
 
@@ -184,7 +194,7 @@ fn save_blocking(session: &Session) -> Result<()> {
     {
         // The pieces first, then the head naming them: a reader never sees a head whose pieces
         // aren't there yet. Pieces left from a longer session before are removed.
-        let (head, parts) = split_chunks(&raw);
+        let (head, parts) = split_chunks(&raw)?;
         for (i, part) in parts.iter().enumerate() {
             entry_named(&format!("session.{}", i + 1))?.set_password(part).map_err(keychain_error)?;
         }
@@ -239,11 +249,11 @@ mod chunk_tests {
     fn a_session_too_long_for_one_windows_credential_is_split_and_joined_back() {
         // Windows refuses a credential over 1280 UTF-16 units: a long session was never kept.
         let short = r#"{"access_token":"a"}"#;
-        assert_eq!(split_chunks(short), (short.to_string(), Vec::new()));
+        assert_eq!(split_chunks(short).unwrap(), (short.to_string(), Vec::new()));
         assert_eq!(join_chunks(short.into(), |_| None).as_deref(), Some(short));
 
         let long = format!(r#"{{"access_token":"{}","name":"Zoë 🦀{}"}}"#, "x".repeat(3000), "é".repeat(700));
-        let (head, parts) = split_chunks(&long);
+        let (head, parts) = split_chunks(&long).unwrap();
         assert_eq!(head, format!("cyberctf-chunks:{}", parts.len()));
         assert!(parts.len() >= 3);
         assert!(parts.iter().all(|p| p.encode_utf16().count() <= CHUNK_UNITS));
@@ -252,6 +262,46 @@ mod chunk_tests {
         // A missing piece reads as no session, never as a cut one.
         assert_eq!(join_chunks(head, |i| (i != 2).then(|| parts[i - 1].clone())), None);
         assert_eq!(join_chunks("cyberctf-chunks:999".into(), |_| Some(String::new())), None);
+    }
+
+    #[test]
+    fn a_session_of_exactly_one_credential_is_kept_whole_and_one_unit_more_is_split() {
+        let exact = "a".repeat(CHUNK_UNITS);
+        assert_eq!(split_chunks(&exact).unwrap(), (exact.clone(), Vec::new()));
+        let over = format!("{exact}b");
+        let (head, parts) = split_chunks(&over).unwrap();
+        assert_eq!(head, "cyberctf-chunks:2");
+        assert_eq!((parts[0].len(), parts[1].as_str()), (CHUNK_UNITS, "b"));
+        assert_eq!(join_chunks(head, |i| parts.get(i - 1).cloned()).as_deref(), Some(over.as_str()));
+        // Counts that aren't pieces: zero, text, and a bare prefix.
+        for head in ["cyberctf-chunks:0", "cyberctf-chunks:two", "cyberctf-chunks:"] {
+            assert_eq!(join_chunks(head.into(), |_| Some("x".into())), None, "{head}");
+        }
+    }
+
+    #[test]
+    fn a_two_unit_character_never_straddles_a_piece_boundary() {
+        // 1199 units, then a character of two UTF-16 units: it moves whole to the next piece
+        // (a credential holding half a surrogate pair would not be a valid string on Windows).
+        let raw = format!("{}\u{1f980}b", "a".repeat(CHUNK_UNITS - 1));
+        let (head, parts) = split_chunks(&raw).unwrap();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].encode_utf16().count(), CHUNK_UNITS - 1);
+        assert!(parts[1].starts_with('\u{1f980}'));
+        assert_eq!(join_chunks(head, |i| parts.get(i - 1).cloned()).as_deref(), Some(raw.as_str()));
+    }
+
+    #[test]
+    fn a_session_with_more_pieces_than_the_read_accepts_is_refused_at_save() {
+        // `save_blocking` wrote every piece and a head naming them all, `load_blocking` refused
+        // the count and reported no session: signed out right after a sign-in that said it worked.
+        let raw = format!(r#"{{"access_token":"{}"}}"#, "x".repeat(CHUNK_UNITS * MAX_CHUNKS));
+        assert!(split_chunks(&raw).unwrap_err().to_string().contains("too large"));
+        // The largest session that fits still round-trips.
+        let fits = "y".repeat(CHUNK_UNITS * MAX_CHUNKS);
+        let (head, parts) = split_chunks(&fits).unwrap();
+        assert_eq!(parts.len(), MAX_CHUNKS);
+        assert_eq!(join_chunks(head, |i| parts.get(i - 1).cloned()).as_deref(), Some(fits.as_str()));
     }
 }
 
@@ -266,6 +316,11 @@ mod tests {
         assert!(load_file(&path).is_none());
         let session = Session { access_token: "a".into(), refresh_token: Some("r".into()), expires_at: 42, name: Some("N".into()), email: None };
         save_file(&path, &serde_json::to_string(&session).unwrap()).unwrap();
+        #[cfg(unix)]
+        {
+            assert_eq!(crate::private_fs::tests::mode(&path), 0o600);
+            assert_eq!(crate::private_fs::tests::mode(path.parent().unwrap()), 0o700);
+        }
         let back = load_file(&path).unwrap();
         assert_eq!((back.access_token.as_str(), back.refresh_token.as_deref(), back.expires_at), ("a", Some("r"), 42));
         assert_eq!(back.name.as_deref(), Some("N"));
@@ -283,3 +338,6 @@ mod tests {
         ask_keychain_again();
     }
 }
+
+#[cfg(test)]
+mod proptests;

@@ -7,14 +7,13 @@
 //!   CYBERCTF_TEST_LAB=<invoice-portal-api checkout> \
 //!   CYBERCTF_TEST_SEGMENTED_LAB=<isoloom checkout>/examples/segmented \
 //!   ISOLOOM_HOME=$(mktemp -d) cargo test real_labs -- --ignored --nocapture --test-threads=1
-//! `CYBERCTF_TEST_ATTACK_BOX` overrides the attack-box image (default `cyberctf/attack-box`).
+//! `CYBERCTF_TEST_ATTACK_BOX` overrides the attack-box image (default: the launcher's own pinned
+//! default, `src-tauri/attack-box-image.json`).
 
 use std::path::{Path, PathBuf};
 
 use super::{LabStatus, Place, Runtime, docker, exegol, launch, lifecycle, status};
 use crate::exec::run;
-
-const DEFAULT_ATTACK_BOX: &str = "cyberctf/attack-box";
 
 /// What one lab must show once it is up.
 struct Expect {
@@ -37,7 +36,7 @@ struct Expect {
 }
 
 fn attack_box_image() -> String {
-    std::env::var("CYBERCTF_TEST_ATTACK_BOX").ok().filter(|i| !i.is_empty()).unwrap_or_else(|| DEFAULT_ATTACK_BOX.into())
+    std::env::var("CYBERCTF_TEST_ATTACK_BOX").ok().filter(|i| !i.is_empty()).unwrap_or_else(|| exegol::default_image().into())
 }
 
 /// A fresh copy of the lab, as the launcher installs one: its own folder, nothing generated.
@@ -131,10 +130,16 @@ async fn exercise(dir: &Path, id: &str, e: &Expect, f: &mut Vec<String>) {
         check(false, format!("the lab starts: {err}"), f);
         return;
     }
+    exercise_status(dir, id, e, f).await;
+    exercise_attack_box(id, e, log, f).await;
+    exercise_checks(dir, id, f).await;
+}
+
+/// The lab's status, and its published port answering on this machine (as the Open button expects).
+async fn exercise_status(dir: &Path, id: &str, e: &Expect, f: &mut Vec<String>) {
     match status::local_status(dir, id, Runtime::Docker).await {
         Ok(s) => {
             check_status(&s, e, f);
-            // The published port answers on this machine, as the Open button expects.
             if let Some(url) = &s.url {
                 let res = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap().get(url).send().await;
                 check(res.is_ok(), format!("{url} answers on this machine ({:?})", res.as_ref().map(|r| r.status())), f);
@@ -142,30 +147,35 @@ async fn exercise(dir: &Path, id: &str, e: &Expect, f: &mut Vec<String>) {
         }
         Err(err) => check(false, format!("the lab's status reads: {err}"), f),
     }
+}
 
+/// The attack box starts on the lab's network and reaches the target.
+async fn exercise_attack_box(id: &str, e: &Expect, log: impl FnMut(String), f: &mut Vec<String>) {
     let image = attack_box_image();
-    match exegol::start(id, &image, log).await {
-        Ok(()) => {
-            let s = exegol::status(id, &image).await;
-            check(s.running && !s.ip.is_empty() && !s.lab_network.is_empty(), format!("the attack box runs at {} on {}", s.ip, s.lab_network), f);
-            let attacker = exegol::container(id);
-            let got = run("docker", &["exec", &attacker, "curl", "-s", "--max-time", "20", "-w", "\n%{http_code}", e.url], None).await;
-            match got {
-                Ok(out) => {
-                    let (body, code) = out.trim_end().rsplit_once('\n').unwrap_or(("", out.trim()));
-                    check(code == e.code, format!("from the attack box, {} answers {} (got {code})", e.url, e.code), f);
-                    check(
-                        body.contains(e.body),
-                        format!("from the attack box, {} returns {:?} (got {:?})", e.url, e.body, body.chars().take(200).collect::<String>()),
-                        f,
-                    );
-                }
-                Err(err) => check(false, format!("curl {} from the attack box: {err}", e.url), f),
-            }
-        }
-        Err(err) => check(false, format!("the attack box starts: {err}"), f),
+    if let Err(err) = exegol::start(id, &image, log).await {
+        check(false, format!("the attack box starts: {err}"), f);
+        return;
     }
+    let s = exegol::status(id, &image).await;
+    check(s.running && !s.ip.is_empty() && !s.lab_network.is_empty(), format!("the attack box runs at {} on {}", s.ip, s.lab_network), f);
+    let attacker = exegol::container(id);
+    let got = run("docker", &["exec", &attacker, "curl", "-s", "--max-time", "20", "-w", "\n%{http_code}", e.url], None).await;
+    match got {
+        Ok(out) => {
+            let (body, code) = out.trim_end().rsplit_once('\n').unwrap_or(("", out.trim()));
+            check(code == e.code, format!("from the attack box, {} answers {} (got {code})", e.url, e.code), f);
+            check(
+                body.contains(e.body),
+                format!("from the attack box, {} returns {:?} (got {:?})", e.url, e.body, body.chars().take(200).collect::<String>()),
+                f,
+            );
+        }
+        Err(err) => check(false, format!("curl {} from the attack box: {err}", e.url), f),
+    }
+}
 
+/// The lab's own checks pass.
+async fn exercise_checks(dir: &Path, id: &str, f: &mut Vec<String>) {
     match docker::check(dir, id).await {
         Ok(c) if !c.available => println!("the lab declares no checks"),
         Ok(c) => {

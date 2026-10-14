@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { StepRow } from "@/features/machine/step-row";
 import { machineSteps, stepMeta, type MachineStep } from "@/features/machine/setup-steps";
-import { hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
+import { hasHypervisor, isDockerReady, wslState } from "@/features/machine/setup-steps/steps";
 import { engineName } from "@/features/machine/setup-steps/engines";
 import { cantRun, usableHypervisors, providerLabel } from "@/features/machine/hypervisors";
 import { ATTACK_PRESETS, getAttackImage, type LastTest } from "@/lib/settings";
@@ -28,8 +28,13 @@ function stepLine(step: MachineStep, report: SystemReport, last: Record<"docker"
   switch (step) {
     case "pkgmgr":
       return { done: report.pkgManager.installed, meta: report.pkgManager.installed ? report.pkgManager.name : t("machine.checklist.notInstalled") };
-    case "virtualization":
-      return { done: isDockerReady(report), meta: isDockerReady(report) ? "WSL 2" : t("machine.checklist.notChecked") };
+    case "virtualization": {
+      const wsl = wslState(report);
+      if (wsl === "ready") return { done: true, meta: "WSL 2" };
+      if (wsl === "needsReboot") return { done: false, meta: t("machine.checklist.restartNeeded") };
+      if (wsl === "missing") return { done: false, meta: t("machine.checklist.notInstalled") };
+      return { done: false, meta: t("machine.checklist.notChecked") };
+    }
     case "docker":
       return {
         done: isDockerReady(report),

@@ -37,13 +37,14 @@
     "signedInAs": "Angemeldet als {name}",
     "waiting": "Warte auf den Browser… (bis zu 5 Minuten)",
     "button": "Im Browser anmelden",
-    "hint": "Öffnet <mono>cyberauth.co</mono> in deinem Browser. Das kannst du auch später erledigen."
+    "hint": "Öffnet <mono>cyberauth.co</mono> in deinem Browser. Labs laufen auch ohne Konto: Du kannst dich später in den Einstellungen anmelden.",
+    "skip": "Vorerst überspringen"
   },
   "done": {
     "title": "Alles <em>bereit</em>",
     "description": "Du kannst das alles später unter Einstellungen oder Dieser Rechner ändern.",
     "account": "Konto",
-    "notSignedIn": "Nicht angemeldet",
+    "notSignedIn": "Nicht angemeldet (später in den Einstellungen anmelden)",
     "browse": "Labs durchsuchen"
   }
 }

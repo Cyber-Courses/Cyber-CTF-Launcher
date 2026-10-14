@@ -137,7 +137,7 @@ describe("deploy-store", () => {
 
   it("names every operation", () => {
     expect((["launch", "resume", "pause", "shutdown", "provision", "attack_vm", "stop"] as const).map((o) => operationLabel(op(o)))).toEqual([
-      "Deploying…",
+      "Starting…",
       "Resuming…",
       "Pausing…",
       "Shutting down…",
@@ -158,21 +158,22 @@ describe("deploy-store", () => {
     expect(OPERATION_STATUS.launch).not.toBe(en);
   });
 
-  it("tells the shell when a log line says the session is gone", () => {
+  it("keeps log lines, and reads no sign-out from them", () => {
     const heard = vi.fn();
     window.addEventListener(SIGNED_OUT_EVENT, heard);
     appendDeployLog("lab-x", "Downloading");
-    expect(heard).not.toHaveBeenCalled();
     appendDeployLog("lab-x", "✗ You're signed out. Sign in again.");
-    expect(heard).toHaveBeenCalledTimes(1);
+    expect(heard).not.toHaveBeenCalled();
     window.removeEventListener(SIGNED_OUT_EVENT, heard);
-    expect(getDeploySnapshot().runs["lab-x"].busy).toBe(true);
+    // The lines are kept; whether the lab is busy stays begin/end's to say.
+    expect(getDeploySnapshot().runs["lab-x"].logs).toHaveLength(2);
+    expect(getDeploySnapshot().runs["lab-x"].busy).toBe(false);
   });
 
   it("polls the labs deploying and the operations in flight", async () => {
     installTauri();
-    const deploying = renderHook(() => useDeployingLabs(1000));
-    const ops = renderHook(() => useActiveOperations(1000));
+    const deploying = renderHook(() => useDeployingLabs());
+    const ops = renderHook(() => useActiveOperations());
     await flush();
     expect([...deploying.result.current]).toEqual(["lab-goad"]);
     expect(ops.result.current.get("lab-goad")?.step).toContain("SRV02");
@@ -182,11 +183,12 @@ describe("deploy-store", () => {
     const calls = installTauri({ lab_deploy_log: () => "line 1\n\nline 2\n" });
     const { result, rerender } = renderHook(({ active }) => useWorkerLog("lab-goad", active, 1000), { initialProps: { active: false } });
     await flush();
-    expect(result.current).toEqual([]);
+    expect(result.current.lines).toEqual([]);
     expect(commands(calls)).not.toContain("lab_deploy_log");
     rerender({ active: true });
     await flush();
-    expect(result.current).toEqual(["line 1", "line 2"]);
+    expect(result.current.lines).toEqual(["line 1", "line 2"]);
+    expect(result.current.times).toHaveLength(2);
     expect(calls.find((c) => c.cmd === "lab_deploy_log")?.args).toMatchObject({ id: "lab-goad" });
   });
 });

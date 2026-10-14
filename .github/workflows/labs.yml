@@ -12,7 +12,7 @@ on:
       - "src-tauri/**"
       - ".github/workflows/labs.yml"
   push:
-    branches: [main]
+    branches: [main, dev]
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
@@ -28,10 +28,15 @@ jobs:
   docker-labs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      ATTACK_BOX: cyberctf/attack-box
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # The exact attack box the launcher ships as its default, pinned by digest (the attack-box
+      # workflow's bump PR changes it, and dispatches this workflow on that PR).
+      - name: Pinned attack box
+        run: |
+          image=$(jq -er .image src-tauri/attack-box-image.json)
+          echo "Attack box: $image"
+          echo "ATTACK_BOX=$image" >> "$GITHUB_ENV"
       # The attack box is a large image (~14 GB unpacked): Docker keeps its data on the runner's
       # big scratch disk, and the pull runs while the launcher compiles.
       - name: Docker on the scratch disk, attack box pull
@@ -43,13 +48,13 @@ jobs:
           df -h / /mnt
           nohup docker pull -q "$ATTACK_BOX" > "$RUNNER_TEMP/pull.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/pull.pid"
-      # Isoloom's example at the commit the launcher builds against (the isoloom-core rev locked in
+      # Isoloom's example at the commit the launcher builds against (the isoloom-spec rev locked in
       # Cargo.lock), not its HEAD: an upstream change can't break or pass this run on its own.
       - name: Fetch the labs
         run: |
           git clone --depth 1 https://github.com/CyberCTF/invoice-portal-api "$RUNNER_TEMP/invoice-portal-api"
-          rev=$(grep -A2 '^name = "isoloom-core"$' src-tauri/Cargo.lock | sed -n 's/^source = "git+.*#\([0-9a-f]\{40\}\)"$/\1/p')
-          test -n "$rev" || { echo "::error::no isoloom-core git rev in src-tauri/Cargo.lock"; exit 1; }
+          rev=$(grep -A2 '^name = "isoloom-spec"$' src-tauri/Cargo.lock | sed -n 's/^source = "git+.*#\([0-9a-f]\{40\}\)"$/\1/p')
+          test -n "$rev" || { echo "::error::no isoloom-spec git rev in src-tauri/Cargo.lock"; exit 1; }
           echo "Isoloom at $rev"
           git init -q "$RUNNER_TEMP/isoloom"
           git -C "$RUNNER_TEMP/isoloom" fetch -q --depth 1 https://github.com/isoloom/isoloom "$rev"

@@ -7,12 +7,12 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { Field, Input, Nav, Note, Select, Step } from "@/features/servers/host-setup/form";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
-import { useFormat, useT } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
+import { formatUsd } from "@/lib/format";
 
 export function OptionsStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const format = useFormat();
-  const usd = (n: number) => format.number(n, { style: "currency", currency: "USD" });
+  const usd = (n: number) => formatUsd(n, t.locale);
   const { v, saving, error, mtdCost, set, text, connectionOk, back, saveAndTest } = s;
   return (
     <Step icon={Cloud} title={t("servers.setup.options.title")} description={t("servers.setup.options.description")}>
@@ -26,11 +26,14 @@ export function OptionsStep({ s }: { s: HostSetup }) {
         </Field>
         <Field label={t("servers.setup.options.autoStop")}>
           <Select value={String(v.autoStopHours ?? 4)} onChange={(e) => set("autoStopHours", Number(e.target.value))}>
-            {[1, 2, 4, 8, 12, 24].map((h) => (
-              <option key={h} value={h}>
-                {t("servers.setup.options.hours", { count: h })}
-              </option>
-            ))}
+            {/* A saved auto-stop the list lacks (72 h, say) is shown as itself, not as "1 hour". */}
+            {[...new Set([1, 2, 4, 8, 12, 24, ...(v.autoStopHours ? [v.autoStopHours] : [])])]
+              .sort((a, b) => a - b)
+              .map((h) => (
+                <option key={h} value={h}>
+                  {t("servers.setup.options.hours", { count: h })}
+                </option>
+              ))}
             <option value={0}>{t("servers.setup.options.never")}</option>
           </Select>
         </Field>

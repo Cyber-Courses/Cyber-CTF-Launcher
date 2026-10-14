@@ -12,26 +12,11 @@ import { useT } from "@/lib/i18n";
 
 export function ConnectionStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, editing, kind, set, text, connectionOk, next, back } = s;
+  const { v, secretKept, kind, set, text, connectionOk, next, back } = s;
   // Proxmox accepts an API token id (user@realm!name) in the username field; in that mode the
   // "password" is the token secret and SSH uses the launcher's key, which must be authorized
   // on the node, so we show it.
   const isToken = v.provider === "proxmox" && (v.username ?? "").includes("!");
-  const [pubkey, setPubkey] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (isToken && pubkey === null) serverPublicKey().then(setPubkey).catch(warn("reading this machine's public key"));
-  }, [isToken, pubkey]);
-  const copyKey = async () => {
-    if (!pubkey) return;
-    try {
-      await navigator.clipboard.writeText(pubkey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard blocked: the key is shown for manual copy */
-    }
-  };
   return (
     <Step
       icon={Network}
@@ -72,32 +57,12 @@ export function ConnectionStep({ s }: { s: HostSetup }) {
             type="password"
             value={v.password ?? ""}
             onChange={(e) => set("password", e.target.value || null)}
-            placeholder={editing ? t("servers.setup.connection.keepPlaceholder") : ""}
+            placeholder={secretKept ? t("servers.setup.connection.keepPlaceholder") : ""}
             autoComplete="off"
           />
         </Field>
       </div>
-      {isToken && (
-        <Note className="mt-3">
-          <div className="flex items-center gap-1.5 text-[0.8125rem] font-medium">
-            <KeyRound className="size-3.5 text-muted-foreground" /> {t("servers.setup.connection.authorizeKey")}
-          </div>
-          <p className="mt-1 text-[0.75rem] text-muted-foreground">
-            {t.rich("servers.setup.connection.authorizeKeyBody", {
-              code: (c) => <code className="mx-1 rounded-xs bg-glass-2 px-1 py-0.5 font-mono">{c}</code>,
-            })}
-          </p>
-          <div className="mt-2 flex items-start gap-2">
-            <code className="surface-log min-w-0 flex-1 break-all rounded-sm px-2 py-1.5 font-mono text-[0.6875rem] text-muted-foreground">
-              {pubkey ?? t("servers.setup.connection.loadingKey")}
-            </code>
-            <Button variant="outline" size="xs" onClick={copyKey} disabled={!pubkey}>
-              {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}{" "}
-              {copied ? t("servers.setup.connection.copied") : t("servers.setup.connection.copy")}
-            </Button>
-          </div>
-        </Note>
-      )}
+      {isToken && <AuthorizeKeyNote />}
       <Nav
         left={
           <Button variant="ghost" onClick={back}>
@@ -111,5 +76,46 @@ export function ConnectionStep({ s }: { s: HostSetup }) {
         }
       />
     </Step>
+  );
+}
+
+/** The launcher's public key, to authorize on the Proxmox node when signing in with an API token. */
+function AuthorizeKeyNote() {
+  const t = useT();
+  const [pubkey, setPubkey] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (pubkey === null) serverPublicKey().then(setPubkey).catch(warn("reading this machine's public key"));
+  }, [pubkey]);
+  const copyKey = async () => {
+    if (!pubkey) return;
+    try {
+      await navigator.clipboard.writeText(pubkey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked: the key is shown for manual copy */
+    }
+  };
+  return (
+    <Note className="mt-3">
+      <div className="flex items-center gap-1.5 text-[0.8125rem] font-medium">
+        <KeyRound className="size-3.5 text-muted-foreground" /> {t("servers.setup.connection.authorizeKey")}
+      </div>
+      <p className="mt-1 text-[0.75rem] text-muted-foreground">
+        {t.rich("servers.setup.connection.authorizeKeyBody", {
+          code: (c) => <code className="mx-1 rounded-xs bg-glass-2 px-1 py-0.5 font-mono">{c}</code>,
+        })}
+      </p>
+      <div className="mt-2 flex items-start gap-2">
+        <code className="surface-log min-w-0 flex-1 break-all rounded-sm px-2 py-1.5 font-mono text-[0.6875rem] text-muted-foreground">
+          {pubkey ?? t("servers.setup.connection.loadingKey")}
+        </code>
+        <Button variant="outline" size="xs" onClick={copyKey} disabled={!pubkey}>
+          {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}{" "}
+          {copied ? t("servers.setup.connection.copied") : t("servers.setup.connection.copy")}
+        </Button>
+      </div>
+    </Note>
   );
 }

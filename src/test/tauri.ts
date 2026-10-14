@@ -1,5 +1,6 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { answer } from "@/lib/dev-mock";
+import type { CommandError } from "@/lib/errors";
 
 export type Handler = (args: Record<string, unknown> | undefined) => unknown;
 export interface Call {
@@ -28,6 +29,8 @@ const DEFAULTS: Record<string, Handler> = {
   installed_tools: () => [{ dependency: "vagrant", at: Math.floor(Date.now() / 1000) - 3600 }],
   shared_folder_get: () => ({ enabled: false, path: "/Users/player/CyberCTF", mountPoint: "/shared" }),
   shared_folder_set: (a) => ({ enabled: !!a?.enabled, path: String(a?.path ?? ""), mountPoint: "/shared" }),
+  isoloom_registry_get: () => true,
+  isoloom_registry_set: (a) => !!a?.enabled,
   oci_config: () => ({ configured: false, tenancy: "", region: "" }),
   azure_subscriptions: () => [{ name: "Pay-As-You-Go", id: "sub-1", isDefault: true }],
   gcp_billing_accounts: () => [{ id: "billing-1", name: "My billing", open: true }],
@@ -72,6 +75,13 @@ export function installTauri(overrides: Record<string, Handler> = {}): Call[] {
   );
   return calls;
 }
+
+/** A command that fails as the Rust core does: rejected with its error's code and message. */
+export const rejects =
+  (error: CommandError): Handler =>
+  () => {
+    throw error;
+  };
 
 /** The names of the commands invoked, in order. */
 export const commands = (calls: Call[]) => calls.map((c) => c.cmd);

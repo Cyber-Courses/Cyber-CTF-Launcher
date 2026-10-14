@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { sharedFolderGet, sharedFolderOpen, sharedFolderSet, type SharedFolder } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 import { warn } from "@/lib/failure";
+import { describeError } from "@/lib/errors";
 
 /** The folder shared with the attack box: on/off, which folder, and a way to open it. Used in
  *  Settings and in the setup's attack box step (the same setting). */
@@ -27,12 +28,17 @@ export function SharedFolderControl({ onSaved, framed = false }: { onSaved?: () 
         setState(next);
         onSaved?.();
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(describeError(e)));
   };
 
   const choose = async () => {
-    const picked = await open({ directory: true, multiple: false, defaultPath: state?.path || undefined, title: t("settings.sharedFolder.pick") });
-    if (typeof picked === "string") save(true, picked);
+    try {
+      const picked = await open({ directory: true, multiple: false, defaultPath: state?.path || undefined, title: t("settings.sharedFolder.pick") });
+      if (typeof picked === "string") save(true, picked);
+    } catch (e) {
+      // The picker couldn't open (a denied permission): said, not dropped.
+      setError(describeError(e));
+    }
   };
 
   if (!state) return null;
@@ -56,7 +62,7 @@ export function SharedFolderControl({ onSaved, framed = false }: { onSaved?: () 
           <Button variant="outline" size="xs" onClick={() => void choose()}>
             {t("settings.sharedFolder.change")}
           </Button>
-          <Button variant="ghost" size="xs" onClick={() => sharedFolderOpen().catch((e) => setError(String(e)))} title={t("settings.sharedFolder.open")}>
+          <Button variant="ghost" size="xs" onClick={() => sharedFolderOpen().catch((e) => setError(describeError(e)))} title={t("settings.sharedFolder.open")}>
             <FolderOpen className="size-3.5" />
           </Button>
         </div>

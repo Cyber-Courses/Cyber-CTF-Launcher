@@ -27,6 +27,10 @@
          Terraform state, SSH known_hosts. Left virtualized, those writes land in the package's
          private copy of AppData and docker, vagrant, terraform and ssh can't find them. -->
     <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <!-- Likewise for the registry: the one-time RunOnce that reopens the app after the restart
+         finishing WSL 2 (and what the tools it runs write under HKCU) must reach the real hive,
+         not the package's private copy, which Windows never reads at sign-in. -->
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
   </Properties>
 
   <Dependencies>
@@ -54,12 +58,22 @@
         Square44x44Logo="Assets\Square44x44Logo.png">
         <uap:DefaultTile Square71x71Logo="Assets\Square71x71Logo.png" />
       </uap:VisualElements>
+      <!-- cyberctf:// links (the website's lab launch, the sign-in page's way back to the app).
+           The NSIS installer registers the scheme in the registry; a Store package can only
+           declare it here, and the link then arrives as the app's argument the same way. -->
+      <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="cyberctf">
+            <uap:DisplayName>Cyber CTF</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
     </Application>
   </Applications>
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
-    <!-- Needed for FileSystemWriteVirtualization (above). -->
+    <!-- Needed for FileSystemWriteVirtualization and RegistryWriteVirtualization (above). -->
     <rescap:Capability Name="unvirtualizedResources" />
   </Capabilities>
 </Package>

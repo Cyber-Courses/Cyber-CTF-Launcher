@@ -57,11 +57,16 @@
       "default": "デフォルト"
     }
   },
+  "isoloomRegistry": {
+    "title": "Isoloom のラボ一覧",
+    "description": "起動したラボを ~/.isoloom/status.yml に記録し、isoloom コマンドライン（isoloom status、connect、exec）から見えるようにします。オフにしてもラボは同じように動きます。"
+  },
   "attackBox": {
     "title": "アタックボックスのイメージ",
     "description": "各ラボのネットワーク上で、あなたのツールボックスとして動作します。イメージは初回起動時にダウンロードされるため、時間がかかる場合があります。",
     "default": "デフォルト",
     "largeDownload": "大容量のダウンロード",
+    "pinned": "固定版",
     "presets": {
       "cyberctf": "標準ツール一式入りの Kali、すぐに使えます",
       "kali": "公式 Kali ベース、必要に応じてツールを追加",
@@ -77,7 +82,8 @@
     "customImageNote": "任意の Docker イメージまたはレジストリタグ。",
     "save": "保存",
     "autoStart": "ラボと一緒にアタックボックスを起動",
-    "autoStartDescription": "このマシンでラボが起動したらすぐに起動します。コンテナラボではコンテナ、VM ラボでは隣に置かれた VM です。ラボの画面から起動・停止することもできます。"
+    "autoStartDescription": "このマシンでラボが起動したらすぐに起動します。コンテナラボではコンテナ、VM ラボでは隣に置かれた VM です。ラボの画面から起動・停止することもできます。",
+    "invalidImage": "registry/name:tag のような単純なイメージ名を使ってください。英字、数字、. _ - / : @ のみで、先頭にハイフンは使えません。"
   },
   "attackVm": {
     "title": "VM ラボ用の攻撃用 VM",
@@ -107,7 +113,11 @@
     "installAddon": "アドオンをインストール",
     "logInstalling": "Vagrant アドオン {plugin} をインストール中…",
     "logInstalled": "✓ インストールしました",
-    "logTitle": "Vagrant アドオン"
+    "logTitle": "Vagrant アドオン",
+    "allowHyperv": "自分のアカウントを許可",
+    "allowingHyperv": "許可しています…",
+    "logAllowingHyperv": "アカウントを Hyper-V Administrators に追加しています（Windows が許可を求めます）…",
+    "logHypervAllowed": "✓ 完了しました。Windows からサインアウトして再度サインインし、もう一度確認してください。"
   },
   "cleanup": {
     "title": "クリーンアップ",
@@ -156,6 +166,10 @@
     "diagnosticsDescription": "バグ報告やサポート依頼のために、バージョン、OS、セットアップの状態をコピーします。",
     "copied": "コピーしました",
     "copy": "コピー",
+    "logs": "ログファイル",
+    "logsDescription": "Cyber CTF の実行中の記録です。不具合の報告やサポートへの問い合わせに添えて送ってください。",
+    "openLogs": "フォルダを開く",
+    "logsFailed": "ログフォルダを開けませんでした",
     "firstRun": "初回セットアップ",
     "firstRunDescription": "オンボーディングをもう一度行います。設定とラボは保持されます。",
     "replay": "再実行"

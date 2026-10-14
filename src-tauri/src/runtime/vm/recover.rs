@@ -34,7 +34,9 @@ pub(super) fn recorded_on_other_provider(dir: &Path, requested: Provider) -> boo
     for machine in entries.flatten() {
         if let Ok(provs) = std::fs::read_dir(machine.path()) {
             for prov in provs.flatten() {
-                if prov.path().is_dir() && prov.file_name().to_string_lossy() != requested.id() {
+                // Only a folder holding an `id` is a machine (as `has_machines` counts them): a
+                // destroy or a plain `vagrant status` leaves empty provider folders behind.
+                if prov.path().join("id").is_file() && prov.file_name().to_string_lossy() != requested.id() {
                     mismatch = true;
                 }
             }
@@ -84,14 +86,18 @@ pub(in crate::runtime) fn vm_names_from(text: &str) -> Vec<String> {
 }
 
 /// VirtualBox's default machine folder (where VM directories live), parsed from
-/// `VBoxManage list systemproperties`; falls back to `~/VirtualBox VMs`.
+/// `VBoxManage list systemproperties`; falls back to `VirtualBox VMs` in the home folder
+/// (`USERPROFILE` on Windows, where `HOME` is usually unset: leftover folders were then never
+/// found, and the next import failed with VERR_ALREADY_EXISTS).
 async fn vbox_machine_folder() -> Option<PathBuf> {
-    if let Ok(out) = run("VBoxManage", &["list", "systemproperties"], None).await
-        && let Some(path) = parse_machine_folder(&out)
-    {
-        return Some(path);
-    }
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("VirtualBox VMs"))
+    let listed = run("VBoxManage", &["list", "systemproperties"], None).await.ok();
+    machine_folder(listed.as_deref(), crate::platform::home_dir())
+}
+
+/// The machine folder `VBoxManage list systemproperties` printed (`listed`), else the default
+/// one under `home`.
+pub(super) fn machine_folder(listed: Option<&str>, home: Option<PathBuf>) -> Option<PathBuf> {
+    listed.and_then(parse_machine_folder).or_else(|| home.map(|h| h.join("VirtualBox VMs")))
 }
 
 /// The `Default machine folder:` of `VBoxManage list systemproperties`.

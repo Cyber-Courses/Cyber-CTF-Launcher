@@ -14,7 +14,7 @@ use super::model::Park;
 use super::providers::Provider;
 use super::{ssh, vm};
 use crate::error::{Error, Result};
-use crate::exec::{run_read, stream};
+use crate::exec::{Vagrant, run_read};
 
 /// The attacker's own Vagrant environment, inside the lab folder (removed with the lab).
 const DIR: &str = ".cyberctf-attack-vm";
@@ -52,7 +52,7 @@ pub(crate) fn plan(lab_vagrantfile: &str) -> Result<(String, Vec<Link>)> {
         let (base, len) = parse_cidr(&n.subnet).ok_or_else(|| Error::Invalid(format!("network `{}` has no subnet", n.name)))?;
         let used: HashSet<Ipv4Addr> = ifaces.values().flatten().filter(|i| i.network == n.name).filter_map(|i| i.ip.parse().ok()).collect();
         let ip = free_address(base, len, &used).ok_or_else(|| Error::Invalid(format!("no free address on `{}` for the attack VM", n.name)))?;
-        links.push(Link { intnet: format!("isoloom-{lab}-{}", n.name), net: n.name, ip, mask: mask_of(len) });
+        links.push(Link { intnet: super::lab::vm_network(&lab, &n.name), net: n.name, ip, mask: mask_of(len) });
     }
     if links.is_empty() {
         return Err(Error::Invalid("the lab's Vagrantfile declares no network to join".into()));
@@ -63,7 +63,9 @@ pub(crate) fn plan(lab_vagrantfile: &str) -> Result<(String, Vec<Link>)> {
 fn parse_cidr(s: &str) -> Option<(Ipv4Addr, u8)> {
     let (ip, len) = s.split_once('/')?;
     let len: u8 = len.parse().ok()?;
-    (len <= 30).then_some((ip.parse().ok()?, len))
+    // A /0 (netmask 0.0.0.0) has no attacker address to pick, and sized the network with a
+    // 32-bit shift that overflowed.
+    (1..=30).contains(&len).then_some((ip.parse().ok()?, len))
 }
 
 fn mask_of(len: u8) -> Ipv4Addr {
@@ -103,6 +105,33 @@ pub(crate) fn vagrantfile(lab: &str, box_name: &str, links: &[Link], shared: Opt
     out
 }
 
+/// [`vagrantfile`] for `provider`. On Hyper-V the VM is attached to the virtual switch the
+/// launcher picked (Vagrant would otherwise stop to ask, when there are several), and named.
+fn vagrantfile_for(provider: Provider, lab: &str, box_name: &str, links: &[Link], shared: Option<&Path>) -> String {
+    let out = vagrantfile(lab, box_name, links, shared);
+    if provider != Provider::Hyperv {
+        return out;
+    }
+    let body = out.strip_suffix("  end\nend\n").unwrap_or(&out);
+    format!(
+        "{body}{}    m.vm.provider \"hyperv\" do |v|\n      v.vmname = \"{lab} · attacker\"\n      v.memory = 2048\n      v.cpus = 2\n    end\n  end\nend\n",
+        crate::exec::hyperv_switch_line("    ", "m")
+    )
+}
+
+/// The folder shared with the attack VM, if it can be mounted on `provider`: on Hyper-V Vagrant
+/// shares folders over SMB, which asks for a Windows password the launcher can't give, so none.
+fn shared_for(provider: Provider, shared: Option<PathBuf>, log: &mut impl FnMut(String)) -> Option<PathBuf> {
+    if provider == Provider::Hyperv && shared.is_some() {
+        log(format!(
+            "On Hyper-V the attack VM starts without the shared folder ({}): Vagrant would ask for a Windows password to share it.",
+            crate::shared_folder::MOUNT_POINT
+        ));
+        return None;
+    }
+    shared
+}
+
 /// How many times a start that hit Vagrant's machine lock is tried again.
 const LOCK_RETRIES: u32 = 4;
 
@@ -120,8 +149,8 @@ pub async fn start(lab_dir: &Path, lab_vagrant_dir: &Path, provider: Provider, b
     let (lab, links) = plan(&text)?;
     let d = dir(lab_dir);
     std::fs::create_dir_all(&d).map_err(Error::Io)?;
-    let shared = crate::shared_folder::current();
-    std::fs::write(d.join("Vagrantfile"), vagrantfile(&lab, box_name, &links, shared.as_deref())).map_err(Error::Io)?;
+    let shared = shared_for(provider, crate::shared_folder::current(), &mut log);
+    std::fs::write(d.join("Vagrantfile"), vagrantfile_for(provider, &lab, box_name, &links, shared.as_deref())).map_err(Error::Io)?;
     log(format!("Starting the attack VM ({box_name}) next to the lab; the first start downloads the box, which can take a while…"));
     vm::discard_aborted_saved(&d, &mut log).await;
     // Another Vagrant run touching the machine (a lab operation, a manual command) makes `up` fail
@@ -130,21 +159,23 @@ pub async fn start(lab_dir: &Path, lab_vagrant_dir: &Path, provider: Provider, b
     // replays it (networks included) on a VM that exists; a plain second `up` would see it
     // running and do nothing.
     let mut args: Vec<&str> = vec!["up", "--provider", provider.id()];
+    let vagrant = Vagrant::new(&d, &[], provider == Provider::Hyperv);
     for attempt in 1..=LOCK_RETRIES {
         let mut locked = false;
         let mut mount_failed = false;
-        let result = stream("vagrant", &args, Some(&d), &[], |line: String| {
-            locked |= line.contains("because it is locked");
-            // The box can't mount host folders (no guest additions / tools for this hypervisor).
-            mount_failed |= ["vboxsf", "Guest Additions", "hgfs", "shared folder", "synced folder", "mount -t"].iter().any(|k| line.contains(k));
-            log(line)
-        })
-        .await;
+        let result = vagrant
+            .stream(&args, |line: String| {
+                locked |= line.contains("because it is locked");
+                // The box can't mount host folders (no guest additions / tools for this hypervisor).
+                mount_failed |= ["vboxsf", "Guest Additions", "hgfs", "shared folder", "synced folder", "mount -t"].iter().any(|k| line.contains(k));
+                log(line)
+            })
+            .await;
         match result {
             Ok(()) => break,
             Err(_) if mount_failed && shared.is_some() && attempt < LOCK_RETRIES => {
                 log(format!("This attack VM can't mount the shared folder, so it starts without {}.", crate::shared_folder::MOUNT_POINT));
-                std::fs::write(d.join("Vagrantfile"), vagrantfile(&lab, box_name, &links, None)).map_err(Error::Io)?;
+                std::fs::write(d.join("Vagrantfile"), vagrantfile_for(provider, &lab, box_name, &links, None)).map_err(Error::Io)?;
                 args = vec!["reload", "--provision"];
             }
             Err(e) if attempt == LOCK_RETRIES => return Err(e),
@@ -164,20 +195,24 @@ pub async fn start(lab_dir: &Path, lab_vagrant_dir: &Path, provider: Provider, b
 }
 
 /// Destroys the attacker, finishing at the hypervisor by its exact VM name (as for the lab's
-/// own VMs). Nothing to do when it was never started.
-pub async fn stop(lab_dir: &Path, mut log: impl FnMut(String)) {
+/// own VMs). Nothing to do when it was never started. Vagrant's record of it (`.vagrant`) goes
+/// only once the destroy succeeded: on VMware, Hyper-V or libvirt nothing else can find the VM
+/// again, so a failed destroy keeps it, and says so, for the next stop to retry.
+pub async fn stop(lab_dir: &Path, mut log: impl FnMut(String)) -> Result<()> {
     let d = dir(lab_dir);
     if !d.join("Vagrantfile").exists() {
-        return;
+        return Ok(());
     }
     log("Removing the attack VM…".into());
-    let _ = stream("vagrant", &["destroy", "--force"], Some(&d), &[], &mut log).await;
+    let destroyed = Vagrant::of(&d, &[]).stream(&["destroy", "--force"], &mut log).await;
     let names: HashSet<String> = vm::vm_names(&d).into_iter().collect();
     if !names.is_empty() {
         vm::recover_virtualbox(&names, &mut log).await;
         vm::recover_parallels(&names, &mut log).await;
     }
+    destroyed.map_err(|e| Error::Invalid(format!("The attack VM wasn't removed: {e}")))?;
     let _ = std::fs::remove_dir_all(d.join(".vagrant"));
+    Ok(())
 }
 
 /// Parks the attacker with the lab (nothing to do when it was never started).
@@ -310,6 +345,22 @@ mod tests {
     use super::{Link, free_address, plan, vagrantfile, valid_box};
 
     #[test]
+    fn on_hyperv_the_attacker_gets_the_switch_and_no_smb_share() {
+        use super::{Provider, shared_for, vagrantfile_for};
+        let vf = vagrantfile_for(Provider::Hyperv, "lab", "kalilinux/rolling", &[], None);
+        assert!(vf.contains("    m.vm.network \"public_network\", bridge: ENV[\"ISOLOOM_HYPERV_SWITCH\"] if ENV[\"ISOLOOM_HYPERV_SWITCH\"]\n"), "{vf}");
+        assert!(vf.contains("m.vm.provider \"hyperv\" do |v|\n      v.vmname = \"lab · attacker\"") && vf.ends_with("    end\n  end\nend\n"), "{vf}");
+        assert_eq!(vf.matches("config.vm.define").count(), 1);
+        // Other providers are unchanged.
+        assert_eq!(vagrantfile_for(Provider::Virtualbox, "lab", "k/r", &[], None), vagrantfile("lab", "k/r", &[], None));
+        let mut lines = Vec::new();
+        let p = std::path::PathBuf::from("/s");
+        assert_eq!(shared_for(Provider::Hyperv, Some(p.clone()), &mut |l| lines.push(l)), None);
+        assert!(lines[0].contains("without the shared folder"), "{lines:?}");
+        assert_eq!(shared_for(Provider::Virtualbox, Some(p.clone()), &mut |l| lines.push(l)), Some(p));
+    }
+
+    #[test]
     fn the_shared_folder_is_mounted_at_shared() {
         let vf = vagrantfile("lab", "kalilinux/rolling", &[], Some(std::path::Path::new("/Users/alex/CyberCTF/shared")));
         assert!(vf.contains("m.vm.synced_folder \"/Users/alex/CyberCTF/shared\", \"/shared\""), "{vf}");
@@ -409,6 +460,7 @@ mod tests {
             attacker: None,
             outputs: Vec::new(),
             message: None,
+            reap_error: None,
         }
     }
 
@@ -420,6 +472,59 @@ mod tests {
         // A /31 network has no room for anyone.
         let tiny = "config.vm.define \"a\" do |m|\n  m.vm.network \"private_network\", ip: \"10.0.0.0\", netmask: \"255.255.255.254\", virtualbox__intnet: \"isoloom-lab-n\"\n  v.name = \"lab · a\"\nend\n";
         assert!(plan(tiny).unwrap_err().to_string().contains("no subnet"));
+    }
+
+    #[test]
+    fn a_zero_length_netmask_is_refused_without_a_panic() {
+        // A netmask of 0.0.0.0 in the lab's Vagrantfile: a refusal ("no subnet") is fine, a
+        // panic in the deploy worker is not.
+        let vf = "config.vm.define \"a\" do |m|\n  m.vm.network \"private_network\", ip: \"10.0.0.5\", netmask: \"0.0.0.0\", virtualbox__intnet: \"isoloom-lab-n\"\n  v.name = \"lab · a\"\nend\n";
+        let planned = std::panic::catch_unwind(|| plan(vf).map(|(lab, links)| (lab, links.len())));
+        assert!(planned.is_ok(), "the plan must not panic");
+    }
+
+    #[test]
+    fn the_plan_keeps_a_dotted_or_unicode_lab_name() {
+        // The VM-name prefix is the lab's `name:` as Isoloom wrote it; the internal network
+        // names are built from it, so they must match the lab's own to the character.
+        let vf = |lab: &str| {
+            format!(
+                "config.vm.define \"dc01\" do |m|\n  m.vm.network \"private_network\", ip: \"10.0.0.10\", netmask: \"255.255.255.0\", virtualbox__intnet: \"isoloom-{lab}-lab\"\n  m.vm.provider \"virtualbox\" do |v|\n    v.name = \"{lab} · dc01\"\n  end\nend\n"
+            )
+        };
+        for lab in ["my.lab", "ラボ", "lab-2_b"] {
+            let (name, links) = plan(&vf(lab)).unwrap();
+            assert_eq!(name, lab);
+            assert_eq!(links.len(), 1, "{lab}");
+            assert_eq!((links[0].net.as_str(), links[0].intnet.as_str()), ("lab", format!("isoloom-{lab}-lab").as_str()));
+            assert_eq!(links[0].ip, Ipv4Addr::new(10, 0, 0, 2));
+            let text = vagrantfile(&name, "kalilinux/rolling", &links, None);
+            assert!(text.contains(&format!("v.name = \"{lab} · attacker\"")), "{text}");
+            assert!(text.contains(&format!("virtualbox__intnet: \"isoloom-{lab}-lab\"")), "{text}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_start_that_fails_outright_is_not_retried_and_then_reads_as_not_running() {
+        use super::super::providers::Provider;
+        use crate::exec::fake::{Tools, fail, ok};
+        let lab = temp_lab();
+        std::fs::write(lab.join("Vagrantfile"), LAB).unwrap();
+        let tools = Tools::rules(&[
+            ("vagrant up", fail("VBoxManage: error: VT-x is not available")),
+            ("box list", ok("kalilinux/rolling (virtualbox, 2024.4.0)\n")),
+            ("vagrant status", fail("The machine is not created")),
+        ]);
+        let err = super::start(&lab, &lab, Provider::Virtualbox, "kalilinux/rolling", |_| {}).await.unwrap_err().to_string();
+        assert!(err.contains("VT-x"), "{err}");
+        // A genuine failure (neither a lock nor a missing shared-folder mount): one try, no reload.
+        assert_eq!(tools.calls().iter().filter(|c| c.starts_with("vagrant up")).count(), 1, "{:?}", tools.calls());
+        assert!(!tools.called("vagrant reload"));
+        assert!(super::dir(&lab).join("Vagrantfile").is_file(), "kept: a stop or the next start reuses it");
+        // Its status: the box is here, the VM is not up, and its shell has nothing to reach.
+        let s = super::status(&lab, "kalilinux/rolling").await.unwrap();
+        assert!(s.image_present && !s.running && s.ip.is_empty() && s.lab_network.is_empty());
+        std::fs::remove_dir_all(lab).unwrap();
     }
 
     #[test]
@@ -462,7 +567,7 @@ mod tests {
         use super::super::model::Park;
         let lab = temp_lab();
         let mut lines = Vec::new();
-        super::stop(&lab, |l| lines.push(l)).await;
+        super::stop(&lab, |l| lines.push(l)).await.unwrap();
         super::park(&lab, Park::Pause, |l| lines.push(l)).await.unwrap();
         super::resume(&lab, |l| lines.push(l)).await.unwrap();
         assert!(lines.is_empty());

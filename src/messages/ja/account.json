@@ -5,5 +5,8 @@
   "online": "オンライン：Web サイトから起動したラボはこのマシンで実行されます",
   "signedIn": "サインイン済み",
   "signedInKeychain": "サインイン済み · キーチェーン",
-  "signOut": "サインアウト"
+  "signOut": "サインアウト",
+  "didntOpen": "ブラウザが開きませんか？",
+  "copyLink": "サインインリンクをコピー",
+  "cancel": "キャンセル"
 }

@@ -5,7 +5,7 @@ import type { MachineSetupState } from "@/features/machine/setup-steps/use-machi
 // steps.ts pulls icons and the setup hook's module only for types; no Tauri runtime needed.
 vi.mock("@/lib/tauri", () => ({}));
 
-const { canContinue, nextLabel, stepMeta } = await import("@/features/machine/setup-steps/steps");
+const { canContinue, nextLabel, nextVariant, stepMeta, wslState } = await import("@/features/machine/setup-steps/steps");
 
 const report = (over: Partial<SystemReport> = {}) =>
   ({
@@ -56,5 +56,50 @@ describe("machine setup steps", () => {
     expect(windows).toContain("WSL 2");
     expect(windows).not.toMatch(/you enabled/i);
     expect(stepMeta("docker", report()).description).not.toContain("WSL");
+  });
+
+  it("the WSL step needs no confirmation when the check found it on, and can always be passed", () => {
+    const win = (state: string | null) =>
+      report({ os: "windows", dockerRunning: false, wsl: state ? { state, reopensAfterRestart: true } : null } as Partial<SystemReport>);
+    expect(nextLabel("virtualization", win("ready"))).toBe("Continue");
+    expect(nextLabel("virtualization", win("needsReboot"))).toBe("I’ll restart later");
+    expect(nextLabel("virtualization", win("missing"))).toBe("Skip for now");
+    expect(nextLabel("virtualization", win("unknown"))).toBe("I’ve done this");
+    expect(nextLabel("virtualization", win(null))).toBe("I’ve done this");
+    for (const s of ["ready", "needsReboot", "missing", "unknown", null]) expect(canContinue("virtualization", win(s), setup())).toBe(true);
+    // Turned on here: a restart is due, unless the check already finds it on.
+    const turnedOn = { wslTurnedOn: true };
+    expect(nextLabel("virtualization", win("missing"), undefined, turnedOn)).toBe("I’ll restart later");
+    expect(wslState(win("unknown"), turnedOn)).toBe("needsReboot");
+    expect(wslState(win("ready"), turnedOn)).toBe("ready");
+    expect(wslState(null)).toBe("unknown");
+  });
+
+  it("keeps the jewel off a forward button that only moves past the step (one jewel per view)", () => {
+    // No hypervisor: Skip for now is a way past, not the recommended action.
+    for (const step of ["vm", "vagrant", "vm-test"] as const) expect(nextVariant(step, report(), setup()), step).toBe("secondary");
+    // WSL: I've done this, I'll restart later and a skip beside Turn on WSL 2, the step's jewel.
+    // Docker not running yet: a running engine would count WSL 2 as on (#224).
+    const win = (state: string) => report({ os: "windows", dockerRunning: false, wsl: { state, reopensAfterRestart: true } } as Partial<SystemReport>);
+    for (const state of ["unknown", "needsReboot", "missing"]) expect(nextVariant("virtualization", win(state), setup()), state).toBe("secondary");
+    expect(nextVariant("virtualization", win("ready"), setup())).toBe("primary");
+    // Continue while the step's own Install is still the thing to do: not the jewel either.
+    const hypervisor = report({
+      vmProviders: [{ provider: "libvirt", remote: false, hypervisor: true, available: false, plugin: "vagrant-libvirt", pluginInstalled: false }],
+    } as Partial<SystemReport>);
+    expect(nextVariant("vagrant", hypervisor, setup())).toBe("secondary");
+    expect(nextVariant("docker", report({ dockerRunning: false }), setup())).toBe("secondary");
+    // Set up: Continue is the next action.
+    expect(nextVariant("docker", report(), setup())).toBe("primary");
+    expect(nextVariant("vm", hypervisor, setup())).toBe("primary");
+    // A hypervisor installed but not the one chosen ready: Continue passes, Install Vagrant is the jewel.
+    const notReady = report({
+      vmProviders: [
+        { provider: "virtualbox", remote: false, hypervisor: true, available: false, plugin: null, pluginInstalled: true },
+        { provider: "libvirt", remote: false, hypervisor: false, available: false, plugin: "vagrant-libvirt", pluginInstalled: false },
+      ],
+    } as Partial<SystemReport>);
+    expect(canContinue("vagrant", notReady, setup({ hypervisor: "libvirt" }))).toBe(true);
+    expect(nextVariant("vagrant", notReady, setup({ hypervisor: "libvirt" }))).toBe("secondary");
   });
 });

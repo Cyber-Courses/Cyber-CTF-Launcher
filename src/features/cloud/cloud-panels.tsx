@@ -11,8 +11,7 @@ import { AccountRow, LogoTile } from "@/features/cloud/account-row";
 import { MAIN_PROVIDERS, isOverBudget } from "@/features/cloud/cloud-model";
 import type { LabStatus, ServerHost, ServerTest } from "@/lib/tauri";
 import { useFormat, useT } from "@/lib/i18n";
-
-const usd = (format: ReturnType<typeof useFormat>, n: number) => format.number(n, { style: "currency", currency: "USD" });
+import { formatUsd } from "@/lib/format";
 
 /** The labs running on a cloud account now (they bill while they run), each with a Stop. */
 export function RunningCloudLabs({
@@ -120,8 +119,8 @@ export function BudgetPanel({ host, spent }: { host: ServerHost; spent: number |
       <div className="grid gap-3 px-4 pt-4 pb-5">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <span className="serif-title text-[1.75rem] leading-none text-foreground">
-            {spent != null ? usd(format, spent) : "$…"}{" "}
-            <small className="font-sans text-[0.8125rem] tracking-normal text-faint">{t("cloud.screen.ofLimit", { limit: usd(format, limit) })}</small>
+            {spent != null ? formatUsd(spent, t.locale) : "$…"}{" "}
+            <small className="font-sans text-[0.8125rem] tracking-normal text-faint">{t("cloud.screen.ofLimit", { limit: formatUsd(limit, t.locale) })}</small>
           </span>
           <span className="flex items-center gap-2 font-mono text-[0.6875rem] text-faint">
             {isOverBudget(host, spent) && <StatusPill tone="fail">{t("cloud.screen.overBudget")}</StatusPill>}

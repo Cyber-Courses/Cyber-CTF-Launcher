@@ -19,7 +19,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/messages/**", "src/app/**", "src/lib/dev-mock.ts"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/messages/**", "src/app/**", "src/lib/dev-mock.ts", "src/lib/dev-mock-labs.ts"],
       reporter: ["text", "text-summary", "json-summary"],
       // The floor CI enforces: 1 point under what main reaches (at e2a52fd: lines 98.52,
       // functions 96.95, branches 94.99, statements 97.78), so it can only go up. Raise it as

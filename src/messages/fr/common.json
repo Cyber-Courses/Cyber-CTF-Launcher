@@ -8,7 +8,6 @@
       "stop": "Arrêt"
     },
     "label": {
-      "launch": "Déploiement…",
       "resume": "Reprise…",
       "pause": "Mise en pause…",
       "shutdown": "Extinction…",
@@ -28,6 +27,7 @@
   "units": {
     "seconds": "{n} s",
     "gigabytes": "{n} Go",
+    "gigabytesOf": "{used}/{total} Go",
     "megabytes": "{n} Mo",
     "kilobytes": "{n} ko",
     "uptimeDays": "{days} j {hours} h",

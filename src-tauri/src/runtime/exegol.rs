@@ -7,18 +7,22 @@ use serde::Serialize;
 use crate::error::{Error, Result};
 use crate::exec::{run, run_read, stream};
 
-pub fn container(id: &str) -> String {
-    format!("cyberctf-{id}-attacker")
+/// The file naming the default attack box, read by the webview (`src/lib/settings.ts`) too. The
+/// attack-box workflow's bump PR rewrites it after each smoke-tested publish.
+const DEFAULT_IMAGE_FILE: &str = include_str!("../../attack-box-image.json");
+
+/// The default attack box: the Cyber CTF image pinned by digest (`cyberctf/attack-box@sha256:…`),
+/// so every player on one launcher version gets the same, tested box.
+pub fn default_image() -> &'static str {
+    static IMAGE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    IMAGE.get_or_init(|| {
+        let v: serde_json::Value = serde_json::from_str(DEFAULT_IMAGE_FILE).expect("attack-box-image.json is JSON");
+        v["image"].as_str().expect("attack-box-image.json names an image").to_string()
+    })
 }
 
-/// Guards an image reference so it can't be read as a flag or smuggle extra args.
-/// (It's passed to docker without a shell, so this only blocks a leading `-` and
-/// anything outside a normal `registry/name:tag@digest`.)
-pub fn valid_image(image: &str) -> bool {
-    !image.is_empty()
-        && image.len() <= 200
-        && !image.starts_with('-')
-        && image.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | ':' | '@'))
+pub fn container(id: &str) -> String {
+    format!("{}-attacker", super::docker::project(id))
 }
 
 #[derive(Serialize, ts_rs::TS)]
@@ -35,13 +39,10 @@ pub struct ExegolStatus {
     pub shell_cmd: String,
 }
 
-/// The lab's Docker networks (Compose labels them with the project name), the main one
-/// first: `<project>_default` when the lab has it, so the attack box's reported address
-/// is the one most targets see.
+/// The lab's Docker networks, the main one first: `<project>_default` when the lab has it, so
+/// the attack box's reported address is the one most targets see.
 async fn lab_networks(id: &str) -> Vec<String> {
-    let filter = format!("label=com.docker.compose.project=cyberctf-{id}");
-    let out = run_read("docker", &["network", "ls", "--filter", &filter, "--format", "{{.Name}}"], None).await.unwrap_or_default();
-    main_first(out.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect())
+    main_first(super::docker::lab_network_names(id).await)
 }
 
 fn main_first(mut networks: Vec<String>) -> Vec<String> {
@@ -90,10 +91,17 @@ pub async fn start(id: &str, image: &str, mut log: impl FnMut(String)) -> Result
     if lab_nets.is_empty() {
         return Err(Error::Invalid("the lab network isn't up — start the lab first".into()));
     }
-    let attack_net = format!("cyberctf-{id}-attack");
+    let attack_net = super::docker::attack_network(id);
     // Own network first, then join the lab network: a distinct attack segment that can
-    // still reach the targets (so the attacker is not on the same subnet as the lab).
-    let _ = run("docker", &["network", "create", &attack_net], None).await;
+    // still reach the targets (so the attacker is not on the same subnet as the lab). Inside the
+    // lab's own address room, not a block from Docker's default pool, which a later lab's
+    // instance could need.
+    let mut create = vec!["network".to_string(), "create".to_string()];
+    if let Some(subnet) = attack_subnet(id, &lab_nets).await {
+        create.extend(["--subnet".to_string(), subnet]);
+    }
+    create.push(attack_net.clone());
+    let _ = run("docker", &create.iter().map(String::as_str).collect::<Vec<_>>(), None).await;
     // Clear any previous attack box so a re-launch is clean.
     let _ = run("docker", &["rm", "-f", &name], None).await;
     log(format!("Starting the attack box on {attack_net}…"));
@@ -126,6 +134,29 @@ pub async fn start(id: &str, image: &str, mut log: impl FnMut(String)) -> Result
     Ok(())
 }
 
+/// A free /24 for the attack network in the /16 of the lab's first network (see
+/// [`pick_attack_subnet`]); `None` when Docker can't say, and Docker then picks one.
+async fn attack_subnet(id: &str, lab_nets: &[String]) -> Option<String> {
+    let mut args = vec!["network", "inspect", "-f", "{{range .IPAM.Config}}{{.Subnet}} {{end}}"];
+    args.extend(lab_nets.iter().map(String::as_str));
+    let lab: Vec<String> = run_read("docker", &args, None).await.ok()?.split_whitespace().filter(|s| !s.contains(':')).map(str::to_string).collect();
+    pick_attack_subnet(&lab, &super::docker::subnets_in_use(id).await)
+}
+
+/// The highest /24 of the /16 the lab's first network (`lab`, its subnets) is in that overlaps
+/// none of the lab's networks nor `in_use` (every other Docker network): next to the lab, out of
+/// the default pool, and in use from then on, so a later lab's instance is picked around it.
+fn pick_attack_subnet(lab: &[String], in_use: &[String]) -> Option<String> {
+    let (first, _) = super::lab::ipv4_range(lab.first()?)?;
+    let room = first & 0xFFFF_0000;
+    let taken: Vec<(u32, u32)> = lab.iter().chain(in_use).filter_map(|c| super::lab::ipv4_range(c)).collect();
+    (0..=255u32)
+        .rev()
+        .map(|c| room | (c << 8))
+        .find(|&lo| taken.iter().all(|&(a, b)| lo + 255 < a || b < lo))
+        .map(|lo| format!("{}/24", std::net::Ipv4Addr::from(lo)))
+}
+
 /// Plugs a running attack box into every current lab network (a lab restarted, or updated to
 /// a version with other networks, keeps the attack box but not its connections). Best effort.
 pub async fn rejoin(id: &str) {
@@ -142,7 +173,7 @@ pub async fn rejoin(id: &str) {
 pub async fn stop(id: &str, mut log: impl FnMut(String)) -> Result<()> {
     log("Removing the attack box…".into());
     let _ = stream("docker", &["rm", "-f", &container(id)], None, &[], &mut log).await;
-    let _ = run("docker", &["network", "rm", &format!("cyberctf-{id}-attack")], None).await;
+    let _ = run("docker", &["network", "rm", &super::docker::attack_network(id)], None).await;
     Ok(())
 }
 
@@ -301,10 +332,12 @@ fn write_shell_script(dir: &std::path::Path, line: &str) -> Result<std::path::Pa
 }
 
 /// A script running `line`: the screen cleared first, the script removed once it ends. A `%` in
-/// a batch file starts a variable, so the line's are doubled to stay literal.
+/// a batch file starts a variable, so the line's are doubled to stay literal. The file is UTF-8
+/// and cmd.exe reads each line in the console's code page as it reaches it: `chcp 65001` first,
+/// or a path with "é" (C:\Users\José) arrives garbled.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn shell_script(line: &str) -> String {
-    format!("@echo off\r\ncls\r\n{}\r\n(goto) 2>nul & del \"%~f0\"\r\n", line.replace('%', "%%"))
+    format!("@echo off\r\nchcp 65001 >nul\r\ncls\r\n{}\r\n(goto) 2>nul & del \"%~f0\"\r\n", line.replace('%', "%%"))
 }
 
 /// Removes the shell scripts in `dir` older than `ttl`.
@@ -327,7 +360,19 @@ fn clear_old_scripts(dir: &std::path::Path, ttl: std::time::Duration) {
 mod tests {
     #[cfg(target_os = "linux")]
     use super::{SESSION_VAR, end_session_script};
-    use super::{applescript_string, main_first};
+    use super::{applescript_string, main_first, pick_attack_subnet};
+
+    #[test]
+    fn the_attack_network_takes_a_free_block_beside_the_lab() {
+        // Regression: it was created with no subnet, taking a block from Docker's default pool.
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(pick_attack_subnet(&s(&["10.31.0.0/24", "10.31.1.0/24"]), &[]).as_deref(), Some("10.31.255.0/24"));
+        // Its top block is taken (by another network): the next one down.
+        assert_eq!(pick_attack_subnet(&s(&["10.31.0.0/24"]), &s(&["10.31.255.0/24", "172.17.0.0/16"])).as_deref(), Some("10.31.254.0/24"));
+        // A lab filling its whole /16, or no lab subnet known: Docker picks.
+        assert_eq!(pick_attack_subnet(&s(&["10.31.0.0/16"]), &[]), None);
+        assert_eq!(pick_attack_subnet(&[], &[]), None);
+    }
 
     #[test]
     fn main_lab_network_comes_first() {
@@ -441,7 +486,7 @@ mod tests {
     #[test]
     fn a_shell_script_runs_its_line_literally_then_deletes_itself() {
         let s = super::shell_script(r#"ssh -o "UserKnownHostsFile=C:\a%%b" x"#);
-        assert_eq!(s, "@echo off\r\ncls\r\nssh -o \"UserKnownHostsFile=C:\\a%%%%b\" x\r\n(goto) 2>nul & del \"%~f0\"\r\n");
+        assert_eq!(s, "@echo off\r\nchcp 65001 >nul\r\ncls\r\nssh -o \"UserKnownHostsFile=C:\\a%%%%b\" x\r\n(goto) 2>nul & del \"%~f0\"\r\n");
     }
 
     #[test]
@@ -451,14 +496,33 @@ mod tests {
         assert_eq!(super::tagged_shell_command("web", "12-3"), "docker exec -it -e CYBERCTF_SHELL=12-3 cyberctf-web-attacker bash");
     }
 
+    /// `cyberctf/attack-box@sha256:<64 lowercase hex digits>`: a tag (`:latest`, a date) can be
+    /// pushed over, a digest can't.
+    fn pinned(image: &str) -> bool {
+        image.strip_prefix("cyberctf/attack-box@sha256:").is_some_and(|d| d.len() == 64 && d.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()))
+    }
+
     #[test]
-    fn images_are_plain_references() {
-        assert!(super::valid_image("nwodtuhs/exegol:free"));
-        assert!(super::valid_image("ghcr.io/org/kali@sha256:abc"));
-        assert!(!super::valid_image(""));
-        assert!(!super::valid_image("-v"));
-        assert!(!super::valid_image("img; rm -rf /"));
-        assert!(!super::valid_image(&"a".repeat(201)));
+    fn the_default_image_is_the_cyber_ctf_box_pinned_by_digest() {
+        let image = super::default_image();
+        assert!(pinned(image), "the default attack box must be cyberctf/attack-box@sha256:<digest>, not {image}");
+        assert!(crate::exec::valid_image(image));
+        let file: serde_json::Value = serde_json::from_str(super::DEFAULT_IMAGE_FILE).unwrap();
+        let previous = file["previous"].as_array().unwrap();
+        assert!(previous.iter().all(|p| p.as_str() != Some(image)), "the default is not also a previous one");
+        // Earlier defaults are the digests the bump PRs replaced (the bare tag and `:latest` are
+        // known to the webview's migration on their own).
+        assert!(previous.iter().all(|p| p.as_str().is_some_and(pinned)), "{previous:?}");
+    }
+
+    #[test]
+    fn only_a_digest_counts_as_pinned() {
+        assert!(pinned(&format!("cyberctf/attack-box@sha256:{}", "0123456789abcdef".repeat(4))));
+        for tag in ["cyberctf/attack-box", "cyberctf/attack-box:latest", "cyberctf/attack-box:2026-10-05", "cyberctf/attack-box@sha256:abc"] {
+            assert!(!pinned(tag), "{tag}");
+        }
+        assert!(!pinned(&format!("cyberctf/attack-box@sha256:{}", "0123456789ABCDEF".repeat(4))));
+        assert!(!pinned(&format!("other/box@sha256:{}", "0".repeat(64))));
     }
 
     #[test]
@@ -475,6 +539,58 @@ mod tests {
         // An invalid tag never reaches docker, async or blocking.
         super::end_session("cyberctf-x-attacker", "bad tag").await;
         super::end_session_blocking("cyberctf-x-attacker", "");
+    }
+
+    #[tokio::test]
+    async fn the_status_reads_odd_inspect_output_without_misreading_it() {
+        use crate::exec::fake::{Tools, fail, ok};
+        // Two addresses on the line, an extra tab, a second line: the first address of the
+        // first line. Docker's "true" is exact: anything else is not running.
+        assert_eq!(super::parse_probe("true\t10.0.0.5 10.0.0.6\n"), (true, "10.0.0.5".to_string()));
+        assert_eq!(super::parse_probe("true\t\t10.0.0.5"), (true, "10.0.0.5".to_string()));
+        assert_eq!(super::parse_probe("true\t10.0.0.5\nfalse\t\n"), (true, "10.0.0.5".to_string()));
+        assert!(!super::parse_probe("TRUE\t10.0.0.5").0);
+        assert!(!super::parse_probe("<no value>\t<no value>").0);
+        // Running but not on the lab network yet (plugged in by hand, or mid-start): no address,
+        // the lab network still named.
+        let tools = Tools::rules(&[("network ls", ok(NETS)), ("docker inspect -f", ok("true\t\n"))]);
+        let s = super::status("web", "img:1").await;
+        assert!(s.running && s.ip.is_empty());
+        assert_eq!(s.lab_network, "default");
+        assert!(tools.called("index .NetworkSettings.Networks \"cyberctf-web_default\""), "{:?}", tools.calls());
+        drop(tools);
+        // No such container, and the image not pulled: nothing at all.
+        let _tools = Tools::rules(&[("network ls", ok(NETS)), ("image inspect", fail("No such image")), ("docker inspect -f", fail("No such object"))]);
+        let s = super::status("web", "img:1").await;
+        assert!(!s.image_present && !s.running && s.ip.is_empty() && s.lab_network.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_pull_that_fails_starts_nothing() {
+        use crate::exec::fake::{Tools, fail, ok};
+        let tools = Tools::rules(&[("image inspect", fail("No such image")), ("docker pull", fail("manifest unknown")), ("network ls", ok(NETS))]);
+        let err = super::start("web", "nwodtuhs/exegol:free", |_| {}).await.unwrap_err().to_string();
+        assert!(err.contains("manifest unknown"), "{err}");
+        assert!(!tools.called("network create") && !tools.called("run -d") && !tools.called("rm -f"), "{:?}", tools.calls());
+    }
+
+    #[tokio::test]
+    async fn the_main_lab_network_is_joined_first_however_docker_lists_them() {
+        use crate::exec::fake::{Tools, ok};
+        // Windows line ends, blank lines, the main network last.
+        let listed = "\r\ncyberctf-web_internal\r\n\r\ncyberctf-web_dmz\r\ncyberctf-web_default\r\n";
+        let tools = Tools::rules(&[("network ls", ok(listed))]);
+        super::start("web", "img:1", |_| {}).await.unwrap();
+        let connects: Vec<String> = tools.calls().into_iter().filter(|c| c.starts_with("docker network connect")).collect();
+        assert_eq!(
+            connects,
+            [
+                "docker network connect cyberctf-web_default cyberctf-web-attacker",
+                "docker network connect cyberctf-web_dmz cyberctf-web-attacker",
+                "docker network connect cyberctf-web_internal cyberctf-web-attacker"
+            ]
+        );
+        assert!(!tools.calls().iter().any(|c| c.contains('\r')), "{:?}", tools.calls());
     }
 
     #[test]

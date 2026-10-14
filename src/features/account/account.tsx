@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
 import { Cog } from "lucide-react";
-import { authLogin, authLogout, type AuthStatus } from "@/lib/tauri";
+import { authLogout, type AuthStatus } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
+import { CopyValue } from "@/components/ui/copy-value";
 import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
+import { cancelSignIn, signIn, useSignIn } from "@/lib/sign-in";
+import { cn } from "@/lib/utils";
 
 export function initials(name: string | null, email: string | null): string {
   const src = (name || email || "").trim();
@@ -17,20 +19,17 @@ export function initials(name: string | null, email: string | null): string {
   return src.slice(0, 2).toUpperCase();
 }
 
-/** Shared sign-in/out actions, so the sidebar and Settings drive the same auth state. */
+/** Shared sign-in/out actions, so the sidebar, Settings and the onboarding drive the same auth
+ *  state and the same sign-in (lib/sign-in): one at a time, its wait and failure shown in each. */
 export function useAuthActions(onChange: (status: AuthStatus) => void) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { waiting, error } = useSignIn();
 
   async function login() {
-    setBusy(true);
-    setError(null);
     try {
-      onChange(await authLogin());
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
+      const status = await signIn();
+      if (status) onChange(status);
+    } catch {
+      // Kept in the sign-in's state as `error`, and shown from there.
     }
   }
 
@@ -47,7 +46,26 @@ export function useAuthActions(onChange: (status: AuthStatus) => void) {
     }
   }
 
-  return { login, logout, busy, error };
+  return { login, logout, busy: waiting, error };
+}
+
+/** Under a sign-in's spinner: the sign-in link to copy into a browser when none showed it (a
+ *  broken default browser accepts the link and does nothing), and Cancel. */
+export function SignInHelp({ className }: { className?: string }) {
+  const t = useT();
+  const { waiting, url } = useSignIn();
+  // Once the link came: the backend's wait is registered by then, so Cancel always reaches it.
+  if (!waiting || !url) return null;
+  return (
+    <div className={cn("flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[0.75rem] text-muted-foreground", className)}>
+      <span className="flex items-center gap-1.5">
+        {t("account.didntOpen")} <CopyValue text={url} label={t("account.copyLink")} title={t("account.copyLink")} />
+      </span>
+      <Button variant="ghost" size="xs" onClick={() => void cancelSignIn().catch(warn("cancel sign-in"))}>
+        {t("account.cancel")}
+      </Button>
+    </div>
+  );
 }
 
 export function Account({
@@ -82,6 +100,7 @@ export function Account({
             t("account.signIn")
           )}
         </Button>
+        <SignInHelp />
         {onSettings && (
           <button
             onClick={onSettings}
@@ -105,11 +124,11 @@ export function Account({
         <p className="truncate font-mono text-[0.625rem] text-faint">{status.email ?? t("account.signedInKeychain")}</p>
       </div>
       {onSettings && (
-        <button onClick={onSettings} title={t("account.settings")} className={iconBtn}>
+        <button onClick={onSettings} title={t("account.settings")} aria-label={t("account.settings")} className={iconBtn}>
           <Cog className="size-4" />
         </button>
       )}
-      <button onClick={logout} title={t("account.signOut")} className={iconBtn}>
+      <button onClick={logout} title={t("account.signOut")} aria-label={t("account.signOut")} className={iconBtn}>
         <Icon name="logout" className="size-4" />
       </button>
     </div>

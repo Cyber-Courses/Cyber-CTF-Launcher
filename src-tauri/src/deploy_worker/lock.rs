@@ -35,6 +35,12 @@ impl Drop for LabFileLock {
     }
 }
 
+/// The failure of a lab lock that couldn't be taken (its file can't be opened or locked): the
+/// operation stops there rather than run unlocked.
+pub fn unavailable(e: std::io::Error) -> crate::error::Error {
+    crate::error::Error::Invalid(format!("Couldn't lock the lab: {e}"))
+}
+
 /// The lock file of `lab` in the workers' folder `dir`.
 pub fn path_in(dir: &Path, lab: &str) -> PathBuf {
     dir.join(format!("{lab}.lock"))
@@ -136,6 +142,51 @@ pub(crate) mod tests {
         assert!(matches!(other.try_lock(), Err(TryLockError::WouldBlock)));
         drop(job);
         assert!(eventually(|| other.try_lock().is_ok()));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_lock_in_a_missing_folder_is_an_error_and_never_held() {
+        let path = std::env::temp_dir().join("cyberctf-never-created").join("lab-1.lock");
+        assert!(try_acquire(&path).is_err());
+        assert!(!held(&path));
+    }
+
+    #[test]
+    fn many_threads_share_a_lock_of_this_process_and_the_last_one_frees_it() {
+        let (path, dir) = lock_file("lock-threads");
+        let first = try_acquire(&path).unwrap().unwrap();
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    let lock = try_acquire(&path).unwrap().expect("shared with this process");
+                    std::thread::sleep(Duration::from_millis(20));
+                    drop(lock);
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert!(held(&path), "the first holder still has it");
+        let other = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        assert!(matches!(other.try_lock(), Err(TryLockError::WouldBlock)));
+        drop(first);
+        assert!(eventually(|| other.try_lock().is_ok()));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn locks_of_two_labs_are_independent_and_an_empty_lock_file_is_left_behind() {
+        let dir = crate::deploy_worker::files::tests::temp_dir("lock-two");
+        let (a, b) = (path_in(&dir, "lab-a"), path_in(&dir, "lab-b"));
+        let _a = try_acquire(&a).unwrap().unwrap();
+        assert!(!held(&b));
+        assert!(try_acquire(&b).unwrap().is_some());
+        // The lock file is the lock's identity, not state: it stays, empty, and is harmless.
+        assert_eq!(std::fs::metadata(&a).unwrap().len(), 0);
+        assert!(b.exists());
         std::fs::remove_dir_all(dir).ok();
     }
 }

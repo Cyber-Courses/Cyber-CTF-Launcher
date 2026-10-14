@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { formatElapsed } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 import { useT, type MessageKey } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 /** The step plan each provider reports, shown up front so the list doesn't grow as it runs. */
 const SELFTEST_PLAN: Record<"proxmox" | "esxi", { step: string; label: MessageKey }[]> = {
@@ -28,6 +29,33 @@ const SELFTEST_PLAN: Record<"proxmox" | "esxi", { step: string; label: MessageKe
   ],
 };
 
+/** A self-test in progress on a host, shared by every view of it: the test runs on the server
+ *  whether or not its panel is shown, so a panel hidden and reopened while it runs attaches to
+ *  it instead of starting a second throwaway VM beside the first. */
+type Run = { startAt: number; events: SelfTestEvent[]; error: string | null; listeners: Set<(e: SelfTestEvent) => void>; onSettled: Set<() => void> };
+const runs = new Map<string, Run>();
+
+/** The run on host `id`, started now when none is in progress. */
+function runFor(id: string): Run {
+  const found = runs.get(id);
+  if (found) return found;
+  const run: Run = { startAt: Date.now(), events: [], error: null, listeners: new Set(), onSettled: new Set() };
+  runs.set(id, run);
+  serverSelftest(id, (e: SelfTestEvent) => {
+    run.events.push(e);
+    run.listeners.forEach((l) => l(e));
+  })
+    .catch((err) => {
+      run.error = describeError(err);
+    })
+    .finally(() => {
+      // Over: the next open starts a new one. A view still showing it hears the end.
+      runs.delete(id);
+      run.onSettled.forEach((f) => f());
+    });
+  return run;
+}
+
 /** Runs a real-VM self-test on a host and renders each step, like the machine VM test. It
  *  really provisions a throwaway VM on the server and destroys it, so it takes a few minutes. */
 export function ServerSelfTest({ id, provider, onDone }: { id: string; provider: ServerHost["provider"]; onDone: (result: "ok" | "fail") => void }) {
@@ -36,31 +64,30 @@ export function ServerSelfTest({ id, provider, onDone }: { id: string; provider:
   const [states, setStates] = useState<Record<string, { state: string; detail?: string }>>({});
   const [running, setRunning] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [startAt] = useState(() => Date.now());
-  const hadFail = useRef(false);
+  const [startAt, setStartAt] = useState(() => Date.now());
   const doneRef = useRef(onDone);
   useEffect(() => {
     doneRef.current = onDone;
   });
 
   useEffect(() => {
-    let alive = true;
-    serverSelftest(id, (e: SelfTestEvent) => {
-      if (e.state === "fail") hadFail.current = true;
-      if (alive) setStates((s) => ({ ...s, [e.step]: { state: e.state, detail: e.detail ?? undefined } }));
-    })
-      .catch((err) => {
-        hadFail.current = true;
-        if (alive) setError(String(err));
-      })
-      .finally(() => {
-        if (alive) {
-          setRunning(false);
-          doneRef.current(hadFail.current ? "fail" : "ok");
-        }
-      });
+    const run = runFor(id);
+    const shown = (e: SelfTestEvent) => setStates((s) => ({ ...s, [e.step]: { state: e.state, detail: e.detail ?? undefined } }));
+    // Attaching to a run already going: what it did so far, then the rest as it comes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStartAt(run.startAt);
+    run.events.forEach(shown);
+    run.listeners.add(shown);
+    const settled = () => {
+      setRunning(false);
+      if (run.error) setError(run.error);
+      doneRef.current(run.error || run.events.some((e) => e.state === "fail") ? "fail" : "ok");
+    };
+    run.onSettled.add(settled);
     return () => {
-      alive = false;
+      // The view goes, the test on the server doesn't: a later view attaches to it.
+      run.listeners.delete(shown);
+      run.onSettled.delete(settled);
     };
   }, [id]);
 

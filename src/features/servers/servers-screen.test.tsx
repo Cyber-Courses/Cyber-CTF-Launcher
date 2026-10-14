@@ -9,7 +9,7 @@ import { ServerSelfTest } from "@/features/servers/server-self-test";
 import { answer } from "@/lib/dev-mock";
 import type { ServerList, ServerTest } from "@/lib/tauri";
 import { freshReport } from "@/test/fixtures";
-import { commands, installTauri, stream, type Call } from "@/test/tauri";
+import { commands, installTauri, rejects, stream, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 const sample = () => structuredClone(answer("server_list", undefined) as ServerList);
@@ -95,7 +95,7 @@ describe("ServerScreen", () => {
 
   it("asks for a password instead of calling a host without one down", async () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)");
-    installTauri({ server_test: () => fail("No password stored for this host") });
+    installTauri({ server_test: rejects({ code: "noPasswordStored", message: "no password stored for this host, edit it and enter one" }) });
     await renderScreen();
     expect(screen.getAllByText("Needs password")).toHaveLength(2);
     // A missing password isn't a network problem: no Local Network hint.
@@ -129,6 +129,11 @@ describe("ServerScreen", () => {
     const defaults = screen.getAllByRole("button", { name: /default/ });
     expect(defaults[0].getAttribute("title")).toMatch(/Click to unset/);
     expect(defaults[1].getAttribute("title")).toMatch(/Make this the default/);
+    // The default host's chip is pressed and says Default; the other offers to become it.
+    expect(defaults.map((d) => [d.textContent?.trim(), d.getAttribute("aria-pressed")])).toEqual([
+      ["default", "true"],
+      ["Set as default", "false"],
+    ]);
     const lists = commands(calls).filter((c) => c === "server_list").length;
     await user.click(defaults[0]);
     await flush();
@@ -375,6 +380,30 @@ describe("ServerSelfTest", () => {
     expect(screen.getByText("terraform not found")).toBeTruthy();
     expect(screen.getByText("VM test failed")).toBeTruthy();
     expect(onDone).toHaveBeenCalledWith("fail");
+  });
+
+  it("a panel reopened while the test runs attaches to it instead of starting a second VM", async () => {
+    let finish: () => void = () => {};
+    let args: Record<string, unknown> | undefined;
+    const selftest = vi.fn((a: Record<string, unknown> | undefined) => {
+      args = a;
+      return new Promise<null>((r) => (finish = () => r(null)));
+    });
+    installTauri({ server_selftest: selftest });
+    const onDone = vi.fn();
+    const first = render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
+    await flush();
+    await act(async () => stream(args, { step: "connect", label: "Connect", state: "ok", detail: null }));
+    first.unmount();
+    render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
+    await flush();
+    expect(selftest).toHaveBeenCalledTimes(1);
+    // The step that passed before this view opened is shown again.
+    expect(screen.getByText("Running a real VM on the host…")).toBeTruthy();
+    await act(async () => finish());
+    await flush();
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith("ok");
   });
 
   it("is running until the host answers, and doesn't report after unmounting", async () => {

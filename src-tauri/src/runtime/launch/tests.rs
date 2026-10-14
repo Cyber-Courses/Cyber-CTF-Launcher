@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::{
     CLOUD_NEEDS_ACCOUNT, LocalRun, Provider, Runtime, budget_verdict, check_qemu, emulated_arches, local_run, log_lines, low_memory_warning, parse_ipv4,
-    start_on_docker, terraform_vars,
+    start_on_docker,
 };
 use super::{server, warn_if_low_memory, welcome};
 use crate::exec::fake::{Tools, fail, ok};
@@ -32,6 +32,18 @@ async fn a_container_lab_starts_on_this_machines_docker() {
     assert_eq!(local_vm(&dir), None);
 }
 
+/// The attack box shell pins the lab host's key with the lab: a start brings new hosts (maybe at
+/// another lab's old address), so the old pins go.
+#[tokio::test]
+async fn a_start_forgets_the_host_keys_pinned_for_the_lab() {
+    let t = TestApp::new();
+    let dir = t.lab("web", &[("isoloom.yml", CONTAINERS), (".cyberctf-known_hosts", "10.0.0.5 ssh-ed25519 AAAAold\n")]);
+    let _tools = Tools::rules(&[]);
+    let (r, _) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
+    r.unwrap();
+    assert!(!dir.join(".cyberctf-known_hosts").exists());
+}
+
 #[tokio::test]
 async fn a_container_lab_already_up_is_refused_and_leftovers_are_cleared() {
     let t = TestApp::new();
@@ -51,12 +63,14 @@ async fn a_container_lab_already_up_is_refused_and_leftovers_are_cleared() {
 #[tokio::test]
 async fn a_parked_lab_resumes_unless_nothing_is_left_of_it() {
     let t = TestApp::new();
-    let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+    // A resume brings back the same machines: the host keys pinned for them stay.
+    let dir = t.lab("web", &[("isoloom.yml", CONTAINERS), (".cyberctf-known_hosts", "10.0.0.5 ssh-ed25519 AAAAkept\n")]);
     mark_parked(&dir, Some(Park::Shutdown)).unwrap();
     let tools = Tools::rules(&[("ps --all", ok(EXITED))]);
     let (r, log) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
     r.unwrap();
     assert!(log[0].starts_with("This lab is parked on this machine: resuming it"), "{log:?}");
+    assert!(dir.join(".cyberctf-known_hosts").exists());
     assert!(tools.called(" start") && !tools.called("up -d"));
     assert_eq!(parked(&dir), None);
     drop(tools);
@@ -181,17 +195,75 @@ async fn an_aws_launch_checks_the_budget_and_a_gcp_launch_its_project() {
     assert!(tools.called("gcloud"));
 }
 
+/// A fake IP-lookup service answering `body` once.
+async fn resolver(body: &str) -> String {
+    crate::http::tests::serve_once(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).into_bytes()).await
+}
+
 #[tokio::test]
-async fn the_public_ip_comes_from_the_first_resolver_that_gives_one() {
-    use crate::http::tests::serve_once;
+async fn the_public_ip_is_the_one_two_resolvers_agree_on() {
     let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
-    let garbage = serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nblocked".to_vec()).await;
-    let good = serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\n198.51.100.4\n".to_vec()).await;
     let closed = format!("http://{closed}/");
-    assert_eq!(super::public_ip_from(&[closed.as_str(), garbage.as_str(), good.as_str()]).await.unwrap(), "198.51.100.4");
-    let err = super::public_ip_from(&[closed.as_str()]).await.unwrap_err().to_string();
-    assert!(err.starts_with("Couldn't determine your public IP"), "{err}");
+    let (garbage, a, b) = (resolver("blocked").await, resolver("93.184.216.34\n").await, resolver(" 93.184.216.34").await);
+    // One down, one answering a page: the two that answer agree.
+    assert_eq!(super::public_ip_from(&[closed.as_str(), garbage.as_str(), a.as_str(), b.as_str()]).await.unwrap(), "93.184.216.34");
+    // A single answer isn't enough to open the firewall to it.
+    let (one, garbage) = (resolver("93.184.216.34").await, resolver("blocked").await);
+    let err = super::public_ip_from(&[closed.as_str(), one.as_str(), garbage.as_str()]).await.unwrap_err().to_string();
+    assert!(err.starts_with("Couldn't confirm your public IP"), "{err}");
+    assert!(err.contains("an unexpected answer"), "{err}");
+    // Two that disagree: refused, naming both.
+    let (a, b, c) = (resolver("93.184.216.34").await, resolver("93.184.216.34").await, resolver("8.8.4.4").await);
+    let err = super::public_ip_from(&[a.as_str(), b.as_str(), c.as_str()]).await.unwrap_err().to_string();
+    assert!(err.starts_with("The services that tell Cyber CTF your public IP disagree"), "{err}");
+    assert!(err.contains("93.184.216.34") && err.contains("8.8.4.4"), "{err}");
+    // A private address (a proxy's own) counts as no answer.
+    let (lan, a) = (resolver("192.168.1.20").await, resolver("93.184.216.34").await);
+    let err = super::public_ip_from(&[lan.as_str(), a.as_str()]).await.unwrap_err().to_string();
+    assert!(err.contains("192.168.1.20, not a public address"), "{err}");
     assert_eq!(super::public_ip().await.unwrap(), "203.0.113.7", "tests never reach the internet");
+}
+
+#[test]
+fn the_verdict_needs_two_matching_public_answers() {
+    use std::net::Ipv4Addr;
+    let urls = ["https://a", "https://b", "https://c"];
+    let ip = Ipv4Addr::new(93, 184, 216, 34);
+    assert_eq!(super::agreed_ip(&urls, &[Ok(ip), Err("timeout".into()), Ok(ip)]).unwrap(), "93.184.216.34");
+    assert!(super::agreed_ip(&urls, &[Ok(ip), Err("timeout".into()), Err("refused".into())]).is_err());
+    assert!(super::agreed_ip(&urls, &[]).is_err());
+    let err = super::agreed_ip(&urls, &[Ok(ip), Ok(ip), Ok(Ipv4Addr::new(1, 1, 1, 1))]).unwrap_err().to_string();
+    assert!(err.contains("https://c: 1.1.1.1"), "{err}");
+}
+
+#[test]
+fn only_internet_addresses_are_public() {
+    use super::is_public_ipv4;
+    for ip in ["93.184.216.34", "8.8.8.8", "1.1.1.1", "100.63.255.255", "100.128.0.1", "198.20.0.1", "223.255.255.254"] {
+        assert!(is_public_ipv4(ip.parse().unwrap()), "{ip}");
+    }
+    for ip in [
+        "10.1.2.3",
+        "172.16.0.1",
+        "192.168.1.1",
+        "127.0.0.1",
+        "169.254.1.1",
+        "100.64.0.1",
+        "100.127.255.255",
+        "0.0.0.0",
+        "0.1.2.3",
+        "192.0.0.8",
+        "192.0.2.1",
+        "198.51.100.4",
+        "203.0.113.7",
+        "198.18.0.1",
+        "198.19.255.255",
+        "224.0.0.1",
+        "240.0.0.1",
+        "255.255.255.255",
+    ] {
+        assert!(!is_public_ipv4(ip.parse().unwrap()), "{ip}");
+    }
 }
 
 fn lab(spec: &str) -> PathBuf {
@@ -221,20 +293,6 @@ fn a_local_run_follows_the_runtime_and_the_hypervisor() {
 }
 
 #[test]
-fn terraform_gets_the_hosts_vars_then_the_launchers() {
-    let key = Path::new("keys").join("id_ed25519");
-    let host = vec![("node".to_string(), "pve".to_string())];
-    let vars = terraform_vars(&host, Some("{}".into()), true, "ssh-ed25519 AAA".into(), &key, Some("203.0.113.7"));
-    let names: Vec<&str> = vars.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(names, ["node", "inputs", "ssh_via_node", "ssh_public_key", "ssh_private_key_file", "allowed_cidr"]);
-    assert_eq!(vars[4].1, key.to_string_lossy());
-    assert_eq!(vars[5].1, "203.0.113.7/32");
-    // No inputs, a routable bridge, not a cloud: only the key.
-    let vars = terraform_vars(&[], None, false, "pk".into(), &key, None);
-    assert_eq!(vars.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), ["ssh_public_key", "ssh_private_key_file"]);
-}
-
-#[test]
 fn an_aws_budget_blocks_only_when_it_is_known_to_be_over() {
     let mut lines = Vec::new();
     assert!(budget_verdict(server::BudgetCheck::Ok, &mut |l| lines.push(l)).is_ok());
@@ -252,7 +310,7 @@ fn memory_is_a_warning_only_when_the_lab_needs_more_than_is_free() {
     assert!(low_memory_warning(8192, 4096).unwrap().contains("about 8192 MB, but only ~4096 MB"));
     // The real probe: it never fails, it only may warn.
     let dir = lab(VMS);
-    let spec = isoloom_core::load(&dir).unwrap();
+    let spec = crate::runtime::lab::load(&dir).unwrap();
     warn_if_low_memory(&spec, &mut |_l| {});
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -260,7 +318,7 @@ fn memory_is_a_warning_only_when_the_lab_needs_more_than_is_free() {
 #[test]
 fn qemu_emulates_only_the_vms_built_for_another_cpu() {
     let dir = lab(VMS);
-    let spec = isoloom_core::load(&dir).unwrap();
+    let spec = crate::runtime::lab::load(&dir).unwrap();
     assert_eq!(emulated_arches(&spec, "x86_64"), ["aarch64"]);
     assert_eq!(emulated_arches(&spec, "aarch64"), ["x86_64"]);
     let mut both = emulated_arches(&spec, "riscv64");
@@ -269,7 +327,7 @@ fn qemu_emulates_only_the_vms_built_for_another_cpu() {
     std::fs::remove_dir_all(dir).unwrap();
     // Containers have no CPU of their own to emulate.
     let dir = lab(CONTAINERS);
-    let spec = isoloom_core::load(&dir).unwrap();
+    let spec = crate::runtime::lab::load(&dir).unwrap();
     assert!(emulated_arches(&spec, "riscv64").is_empty());
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -277,7 +335,7 @@ fn qemu_emulates_only_the_vms_built_for_another_cpu() {
 #[tokio::test]
 async fn a_lab_without_vms_needs_no_emulator() {
     let dir = lab(CONTAINERS);
-    let spec = isoloom_core::load(&dir).unwrap();
+    let spec = crate::runtime::lab::load(&dir).unwrap();
     let mut lines = Vec::new();
     check_qemu(&spec, &mut |l| lines.push(l)).await.unwrap();
     assert!(lines.is_empty());
@@ -287,9 +345,9 @@ async fn a_lab_without_vms_needs_no_emulator() {
 #[test]
 fn the_welcome_is_the_labs_message_line_by_line() {
     let dir = lab(CONTAINERS);
-    let spec = isoloom_core::load(&dir).unwrap();
+    let spec = crate::runtime::lab::load(&dir).unwrap();
     let mut lines = Vec::new();
-    welcome(&dir, &spec, isoloom_core::Target::Vagrant, &mut |l| lines.push(l));
+    welcome(&dir, &spec, crate::runtime::lab::Target::Vagrant, &mut |l| lines.push(l));
     assert_eq!(lines, ["Open the web at 10.30.0.10.", "Then look around."]);
     let mut lines = Vec::new();
     log_lines("one\ntwo\n", &mut |l| lines.push(l));
@@ -342,6 +400,75 @@ fn a_lab_still_deployed_on_another_host_is_not_started_elsewhere() {
     std::fs::write(machine.join("id"), "vm-42").unwrap();
     assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", None).as_deref(), Some("esxi1"));
     std::fs::remove_dir_all(base).unwrap();
+}
+
+#[tokio::test]
+async fn a_start_refused_for_a_lab_still_up_elsewhere_changes_nothing() {
+    // Refused before anything ran: the host marker (the way to stop it there) and the parked
+    // mark stay, no tool is touched, and the error is a refusal, not a failed deploy.
+    let t = TestApp::new();
+    let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+    t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
+    server::mark_lab(&dir, Some("aws1")).unwrap();
+    mark_parked(&dir, Some(Park::Pause)).unwrap();
+    let state = t.data().join("deployments").join("web").join("aws");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{},"resources":[{"type":"aws_instance"}]}"#).unwrap();
+    let tools = Tools::rules(&[]);
+    let (r, log) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
+    let err = r.unwrap_err();
+    assert!(matches!(err, crate::error::Error::Refused(_)), "{err}");
+    assert_eq!(err.to_string(), "This lab is still running on Host aws1. Stop it there before starting it somewhere else.");
+    assert_eq!(server::marked_host(&dir).as_deref(), Some("aws1"));
+    assert_eq!(parked(&dir), Some(Park::Pause));
+    assert!(tools.calls().is_empty() && log.is_empty(), "{:?} {log:?}", tools.calls());
+    // The same for another host; its own host again is not "elsewhere".
+    let (r, _) = start_on(&t, "web", Runtime::Docker, "pve1").await;
+    assert!(matches!(r.unwrap_err(), crate::error::Error::Refused(_)));
+    assert_eq!(super::deployed_elsewhere(t.data(), &dir, "web", Some("aws1")), None);
+}
+
+#[tokio::test]
+async fn a_parked_container_lab_in_a_local_vm_whose_vm_is_gone_starts_fresh() {
+    let t = TestApp::new();
+    let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+    crate::runtime::paths::mark_local_vm(&dir, Some(Provider::Virtualbox)).unwrap();
+    mark_parked(&dir, Some(Park::Pause)).unwrap();
+    let tools = Tools::rules(&[]);
+    let (r, log) = start_here(&t, "web", Runtime::Docker, Some(Provider::Virtualbox), &[]).await;
+    r.unwrap();
+    assert!(log[0].contains("its virtual machines are gone: starting it fresh"), "{log:?}");
+    assert!(tools.called("vagrant up --provider virtualbox") && !tools.called("--no-provision"), "{:?}", tools.calls());
+    assert_eq!(parked(&dir), None);
+    assert_eq!(local_vm(&dir).as_deref(), Some("virtualbox"));
+}
+
+#[tokio::test]
+async fn a_vm_lab_already_up_here_is_refused_and_a_powered_off_leftover_is_cleared_first() {
+    let t = TestApp::new();
+    let dir = t.lab("ad", &[("isoloom.yml", VM_LAB), ("setup.sh", "true\n")]);
+    let vagrant = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
+    std::fs::create_dir_all(&vagrant).unwrap();
+    std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
+    // Every machine up: a second start would collide with it.
+    let tools = Tools::rules(&[("vagrant status", ok("1,a,state,running\n1,b,state,running\n1,a,provider-name,virtualbox\n"))]);
+    let (r, _) = start_here(&t, "ad", Runtime::Vm, Some(Provider::Virtualbox), &[]).await;
+    assert!(r.unwrap_err().to_string().starts_with("This lab is already running in a VM on this machine"));
+    assert!(!tools.called("vagrant up") && !tools.called("vagrant destroy"), "{:?}", tools.calls());
+    drop(tools);
+    // A lab a cut start left half built (one machine up, the other never created) is not
+    // "running": it is cleared, its running machine included, and built fresh. Same for a
+    // machine left powered off.
+    for left in ["1,a,state,running\n1,b,state,not_created\n", "1,a,state,poweroff\n1,b,state,not_created\n"] {
+        let tools = Tools::rules(&[("vagrant status", ok(left))]);
+        let (r, log) = start_here(&t, "ad", Runtime::Vm, Some(Provider::Virtualbox), &[]).await;
+        r.unwrap();
+        assert!(log.contains(&"Clearing a previous, incomplete VM…".to_string()), "{log:?}");
+        let calls = tools.calls();
+        let destroy = calls.iter().position(|c| c.starts_with("vagrant destroy --force")).expect("destroyed");
+        let up = calls.iter().position(|c| c.starts_with("vagrant up --provider virtualbox")).expect("started");
+        assert!(destroy < up, "{calls:?}");
+    }
 }
 
 #[test]

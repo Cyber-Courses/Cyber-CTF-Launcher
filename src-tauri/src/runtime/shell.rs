@@ -3,8 +3,10 @@
 
 use crate::AppHandle;
 
-use super::paths::{lab_dir, local_vm, state_dir};
-use super::{Runtime, attack_vm, exegol, lab, remote, server, ssh};
+use std::path::{Path, PathBuf};
+
+use super::paths::{lab_dir, lab_known_hosts, local_vm, state_dir};
+use super::{Runtime, attack_vm, exegol, lab, remote, server, terraform};
 use crate::error::{Error, Result};
 
 /// Which shell an embedded terminal attaches to.
@@ -25,6 +27,8 @@ pub(super) async fn lab_shell_command(app: &AppHandle, id: &str, runtime: Runtim
     if runtime == Runtime::Cloud {
         return Err(Error::Invalid("A cloud lab has no attack box: work from your own terminal, with what the lab gives you.".into()));
     }
+    // The Terraform deployment's state, for a lab host Terraform made.
+    let mut state = None;
     let target = match server::lab_connection(app, &dir)? {
         None if runtime == Runtime::Docker && local_vm(&dir).is_some() => remote::vagrant_host(&lab::vagrant_dir(&dir, runtime), &[], "lab VM").await?,
         // The local attack box container (`lab_dir` has validated the id it is named after).
@@ -36,13 +40,24 @@ pub(super) async fn lab_shell_command(app: &AppHandle, id: &str, runtime: Runtim
         }
         Some(_) if runtime != Runtime::Docker => return Err(Error::Invalid("this lab has no attack box".into())),
         Some(conn) => match server::terraform_target(conn.provider) {
-            Some(tf) => remote::terraform_host(app, &state_dir(app, id, tf)?)
-                .await?
-                .ok_or_else(|| Error::Invalid("the lab host has no address yet; wait for it to finish starting".into()))?,
+            Some(tf) => {
+                let tf_state = state.insert(state_dir(app, id, tf)?);
+                remote::terraform_host(app, tf_state)
+                    .await?
+                    .ok_or_else(|| Error::Invalid("the lab host has no address yet; wait for it to finish starting".into()))?
+            }
             None => remote::vagrant_host(&lab::vagrant_dir(&dir, runtime), &conn.env, "lab host").await?,
         },
     };
-    Ok((target.attack_shell_command(&ssh::known_hosts(app)?)?, None))
+    Ok((target.attack_shell_command(&shell_known_hosts(&dir, state.as_deref()))?, None))
+}
+
+/// Where an attack box shell pins the lab host's key: with the Terraform deployment's state (the
+/// file its readiness checks use, removed with the deployment), else with the lab (forgotten at
+/// each start). Never a file shared between labs: a lab host at an address another one had would
+/// meet that one's key and be refused.
+fn shell_known_hosts(lab: &Path, terraform_state: Option<&Path>) -> PathBuf {
+    terraform_state.map_or_else(|| lab_known_hosts(lab), terraform::known_hosts)
 }
 
 /// The command line an embedded terminal runs for `kind`, and the attack box container whose
@@ -70,25 +85,25 @@ pub fn end_shell_session_blocking(container: &str, tag: &str) {
     exegol::end_session_blocking(container, tag)
 }
 
-/// An attack-box image reference the launcher accepts.
-pub fn valid_image(image: &str) -> bool {
-    exegol::valid_image(image)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{ShellKind, valid_image};
+    use super::{ShellKind, shell_known_hosts};
+    use std::path::Path;
+
+    #[test]
+    fn a_shell_pins_host_keys_with_its_deployment_or_its_lab() {
+        let lab = Path::new("/data/labs/web");
+        let state = Path::new("/data/deployments/web/proxmox");
+        assert_eq!(shell_known_hosts(lab, Some(state)), state.join("known_hosts"));
+        assert_eq!(shell_known_hosts(lab, None), lab.join(".cyberctf-known_hosts"));
+        // Two labs never share a file.
+        assert_ne!(shell_known_hosts(lab, None), shell_known_hosts(Path::new("/data/labs/ad"), None));
+    }
 
     #[test]
     fn the_ui_names_the_shell_kinds_in_camel_case() {
         assert!(matches!(serde_json::from_str::<ShellKind>("\"lab\"").unwrap(), ShellKind::Lab));
         assert!(matches!(serde_json::from_str::<ShellKind>("\"attackVm\"").unwrap(), ShellKind::AttackVm));
         assert!(serde_json::from_str::<ShellKind>("\"attack_vm\"").is_err());
-    }
-
-    #[test]
-    fn attack_box_images_are_checked_like_the_commands_check_them() {
-        assert!(valid_image("nwodtuhs/exegol:free"));
-        assert!(!valid_image("-x"));
     }
 }

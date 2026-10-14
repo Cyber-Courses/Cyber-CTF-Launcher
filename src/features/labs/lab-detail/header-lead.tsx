@@ -15,7 +15,9 @@ import { useT, type T } from "@/lib/i18n";
 function stateWord(t: T, s: LabState): { tone: Tone; word: string; pulse?: boolean } {
   const words: Record<Exclude<LabPhase, "operation">, { tone: Tone; word: string; pulse?: boolean }> = {
     running: { tone: "ok", word: t("labs.state.running") },
-    starting: { tone: "warn", word: t("labs.state.starting"), pulse: true },
+    // The one word for a start, as in the list, the sidebar and the deployment panel.
+    starting: { tone: "warn", word: OPERATION_STATUS.launch!, pulse: true },
+    failed: { tone: "fail", word: t("labs.state.failed") },
     paused: { tone: "muted", word: t("labs.state.paused") },
     shutDown: { tone: "muted", word: t("labs.state.shutDown") },
     interrupted: { tone: "warn", word: t("labs.state.interrupted") },
@@ -26,16 +28,20 @@ function stateWord(t: T, s: LabState): { tone: Tone; word: string; pulse?: boole
 
 /** Under the title: the status strip (state, where, runtime, level, category), the skills and
  *  the description. */
-export function HeaderLead({ lab, state: s, status }: { lab: Lab; state: LabState; status?: LabStatus }) {
+export function HeaderLead({ lab, state: s, status, hosted }: { lab: Lab; state: LabState; status?: LabStatus; hosted?: boolean }) {
   const t = useT();
-  const state = stateWord(t, s);
+  // A hosted run has no local status: without this the line read "Not started" above the
+  // "Running, hosted by Cyber CTF" panel.
+  const hostedRun = !!hosted && s.phase === "notStarted";
+  const state = hostedRun ? { tone: "ok" as Tone, word: t("labs.state.running") } : stateWord(t, s);
   const strip: React.ReactNode[] = [
     <span key="state" className="inline-flex items-center gap-2">
       <StatusDot tone={state.tone} pulse={state.pulse} />
       <b>{state.word}</b>
     </span>,
   ];
-  if (s.running) strip.push(<span key="where">{t("labs.detail.onWhere", { where: status?.host ?? thisMachine(t, s.engine) })}</span>);
+  if (hostedRun) strip.push(<span key="where">{t("labs.places.hosted")}</span>);
+  else if (s.running) strip.push(<span key="where">{t("labs.detail.onWhere", { where: status?.host ?? thisMachine(t, s.engine) })}</span>);
   else if (s.parked && s.engine) strip.push(<span key="where">{s.engine}</span>);
   if (lab.runtime) strip.push(<span key="rt">{runtimeWord(t, s)}</span>);
   if (lab.runtime && !s.native && (s.isDocker || s.emulates))

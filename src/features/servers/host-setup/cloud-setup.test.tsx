@@ -44,9 +44,11 @@ describe("AWS account setup", () => {
     expect(heading()).toBe("Access keys");
     // A saved region the list doesn't know stays selectable.
     expect(selects()[0].value).toBe("mars-1");
-    // Editing keeps the stored secret: the key id is enough to go on.
+    // It signed in with the CLI before, so there is no stored secret key to keep: one is asked.
     await user.type(document.querySelector<HTMLInputElement>("input[placeholder='AKIA…']")!, "AKIA1");
-    expect(document.querySelector<HTMLInputElement>("input[type=password]")!.placeholder).toBe("Leave empty to keep");
+    const secret = document.querySelector<HTMLInputElement>("input[type=password]")!;
+    expect(secret.placeholder).not.toBe("Leave empty to keep");
+    await user.type(secret, "s3cret");
     await user.selectOptions(selects()[0], "eu-west-1");
     await go(user, /^continue$/i);
     expect(heading()).toBe("Lab settings");
@@ -216,6 +218,30 @@ describe("Azure account setup", () => {
     expect(argsOf(calls, "server_save")[0]).toMatchObject({ input: { provider: "azure", username: "sub-dev" } });
   });
 
+  it("lets a sign-in waiting for the browser be cancelled", async () => {
+    // Regression: `cloud_login` had no cancel: a CLI waiting for a browser sign-in nobody
+    // finished kept the setup busy for good.
+    let reject: (why: string) => void = () => {};
+    const calls = installTauri({
+      azure_subscriptions: () => [],
+      cloud_login: (a) => {
+        stream(a, "Opening the browser…");
+        return new Promise((_, no) => (reject = no));
+      },
+      cloud_login_cancel: () => {
+        reject("Sign-in cancelled.");
+        return null;
+      },
+    });
+    const user = userEvent.setup();
+    await renderSetup(editing({ provider: "azure", host: "swedencentral", username: "" }));
+    await go(user, /sign in \(az login\)/i);
+    await go(user, /cancel sign-in/i);
+    expect(calls.some((c) => c.cmd === "cloud_login_cancel")).toBe(true);
+    expect(document.body.textContent).toContain("✗ Sign-in cancelled.");
+    expect(screen.queryByRole("button", { name: /cancel sign-in/i })).toBeNull();
+  });
+
   it("offers the CLI sign-in when no subscription is visible, then lists them", async () => {
     let subs: { name: string; id: string; isDefault: boolean }[] = [];
     const calls = installTauri({ azure_subscriptions: () => subs });
@@ -293,14 +319,16 @@ describe("Google Cloud account setup", () => {
     expect(document.body.textContent).toContain("new@example.com");
   });
 
-  it("falls back to the sign-in when listing fails", async () => {
+  it("keeps what the other lists found when one fails, and says why", async () => {
     installTauri({
       gcp_billing_accounts: () => {
         throw "PERMISSION_DENIED";
       },
     });
     await renderSetup(editing({ provider: "gcp", host: "europe-west1", username: "" }));
-    expect(screen.getByText("Sign in with the gcloud CLI to list your billing accounts.")).toBeTruthy();
+    // Still signed in (the account read fine), and the failure is shown, not swallowed.
+    expect(screen.queryByText("Sign in with the gcloud CLI to list your billing accounts.")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("PERMISSION_DENIED");
   });
 });
 

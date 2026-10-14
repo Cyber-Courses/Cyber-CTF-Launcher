@@ -1,13 +1,16 @@
 name: CI
 
-# Every pull request and push to main: the frontend (build, types, lint, format, tests) and the
+# Every pull request and push to main or dev: the frontend (build, types, lint, format, tests) and the
 # Rust core (format, lint, tests) on Linux, macOS and Windows, so platform-specific code is at
 # least compiled and tested on its own platform.
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
+  # The attack-box workflow's bump PR is opened with GITHUB_TOKEN, which starts no pull_request
+  # run; that workflow dispatches this one on the PR's branch instead.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}

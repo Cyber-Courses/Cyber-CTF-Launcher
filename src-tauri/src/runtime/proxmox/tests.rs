@@ -180,8 +180,8 @@ fn authorizing_the_key_signs_in_by_password_once() {
     std::fs::create_dir_all(&dir).unwrap();
     let identity = dir.join("id_ed25519");
     let askpass = write_askpass(&identity).unwrap();
-    assert_eq!(askpass, dir.join("askpass.sh"));
-    assert!(std::fs::read_to_string(&askpass).unwrap().contains("$CYBERCTF_SSH_PASSWORD"));
+    assert_eq!(askpass, dir.join(if cfg!(windows) { "askpass.cmd" } else { "askpass.sh" }));
+    assert!(std::fs::read_to_string(&askpass).unwrap().contains("CYBERCTF_SSH_PASSWORD"));
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -189,10 +189,37 @@ fn authorizing_the_key_signs_in_by_password_once() {
     }
     let args = authorize_args(&host("pve.lan", None), &identity, "ssh-ed25519 AAAA launcher\n");
     assert_eq!(args[..4], ["-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "NumberOfPasswordPrompts=1"]);
+    // A node that doesn't answer fails the connection in seconds, not at the OS's TCP timeout.
+    assert_eq!(args[4..6], ["-o", "ConnectTimeout=10"]);
     // Escaped for ssh's option parser (a Windows path's backslashes, a space).
-    assert!(args.contains(&format!("UserKnownHostsFile={}", ssh::ssh_config_path(&dir.join("known_hosts").display().to_string()))));
+    assert!(args.contains(&format!("UserKnownHostsFile={}", ssh::ssh_config_path(&dir.join("nodes_known_hosts").display().to_string()))));
     assert_eq!(args[args.len() - 3..args.len() - 1], ["--", "root@pve.lan"]);
     assert!(args.last().unwrap().contains("grep -qxF 'ssh-ed25519 AAAA launcher' ~/.ssh/authorized_keys"), "{args:?}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// Windows' OpenSSH runs the askpass as a program: a `sh` script there never answered, so a
+/// password host behind an internal bridge couldn't launch from Windows.
+#[test]
+fn the_askpass_helper_is_a_cmd_on_windows_and_sh_elsewhere() {
+    let (name, script) = askpass_script(true);
+    assert_eq!(name, "askpass.cmd");
+    assert!(script.starts_with("@echo off\r\n") && script.contains("EnableDelayedExpansion") && script.contains("echo(!CYBERCTF_SSH_PASSWORD!"));
+    let (name, script) = askpass_script(false);
+    assert_eq!(name, "askpass.sh");
+    assert!(script.starts_with("#!/bin/sh\n"));
+}
+
+/// The sh helper prints the password exactly, whatever it holds.
+#[cfg(unix)]
+#[test]
+fn the_sh_askpass_prints_the_password_as_is() {
+    let dir = std::env::temp_dir().join(format!("cyberctf-askpass-{}", rand::random::<u32>()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let askpass = write_askpass(&dir.join("id_ed25519")).unwrap();
+    let password = "p@ss w$rd'&|%!\\n";
+    let out = std::process::Command::new(&askpass).env("CYBERCTF_SSH_PASSWORD", password).output().unwrap();
+    assert_eq!(String::from_utf8(out.stdout).unwrap(), format!("{password}\n"));
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -204,7 +231,9 @@ async fn an_unreachable_host_fails_to_sign_in() {
     assert!(matches!(sign_in(&h, "pw").await, Err(SignInError::Failed(_))));
     let r = test(&h, "pw").await;
     assert!(!r.ok && r.authenticated.is_none(), "{}", r.message);
-    assert!(!bridge_is_internal(&h, "pw").await);
+    // Not knowing whether the bridge is internal fails the launch: guessing "no" hung Terraform.
+    let err = bridge_is_internal(&h, "pw").await.unwrap_err().to_string();
+    assert!(err.starts_with("Couldn't check how this machine reaches the Proxmox lab network ("), "{err}");
     h.username = "root@pam!t".into();
     assert!(matches!(sign_in(&h, "pw").await, Err(SignInError::Failed(_))));
 }

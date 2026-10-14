@@ -2,18 +2,22 @@
 
 use super::*;
 
-/// The lab's networks (Compose labels them with the project), with subnet and isolation.
-pub(super) async fn lab_networks(id: &str) -> Vec<Network> {
+/// The names of the lab's Docker networks (Compose labels them with the project). Empty when
+/// Docker can't say.
+pub async fn lab_network_names(id: &str) -> Vec<String> {
     let filter = format!("label=com.docker.compose.project={}", compose::project(id));
-    let Ok(names) = run_read("docker", &["network", "ls", "--filter", &filter, "--format", "{{.Name}}"], None).await else {
-        return Vec::new();
-    };
-    let names = listed_names(&names);
+    let out = run_read("docker", &["network", "ls", "--filter", &filter, "--format", "{{.Name}}"], None).await.unwrap_or_default();
+    listed_names(&out).into_iter().map(str::to_string).collect()
+}
+
+/// The lab's networks, with subnet and isolation.
+pub(super) async fn lab_networks(id: &str) -> Vec<Network> {
+    let names = lab_network_names(id).await;
     if names.is_empty() {
         return Vec::new();
     }
     let mut args = vec!["network", "inspect", "-f", "{{.Name}}\t{{range .IPAM.Config}}{{.Subnet}} {{end}}\t{{.Internal}}"];
-    args.extend(names);
+    args.extend(names.iter().map(String::as_str));
     match run_read("docker", &args, None).await {
         Ok(out) => parse_networks(&compose::project(id), &out),
         Err(_) => Vec::new(),

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ServerHost, ServerTest, SystemReport } from "@/lib/tauri";
-import { canRunVmHere, capacityHost, hostsSummary, onPremHosts } from "@/features/servers/servers-model";
-import { failedTest } from "@/features/servers/use-server-list";
+import { canRunVmHere, capacityHost, failedTest, hostStatus, hostsSummary, isPrivateHost, onPremHosts } from "@/features/servers/servers-model";
 
 const host = (id: string, provider: ServerHost["provider"] = "proxmox") => ({ id, name: id, provider }) as ServerHost;
 const result = (ok: boolean) => ({ ok }) as ServerTest;
@@ -41,14 +40,40 @@ describe("servers model", () => {
     expect(canRunVmHere(report([{ remote: false, available: true, hypervisor: false }]))).toBe(false);
   });
 
-  it("turns a test that couldn't run into a failed one", () => {
+  it("turns a test that couldn't run into a failed one, keeping why", () => {
     expect(failedTest(new Error("timed out"))).toEqual({
       ok: false,
       reachable: false,
       authenticated: null,
       latencyMs: null,
-      message: "Error: timed out",
+      message: "timed out",
       checks: [],
+      errorCode: null,
     });
+    expect(failedTest({ code: "noPasswordStored", message: "no password stored for this host" })).toMatchObject({
+      message: "No password is stored for this host. Edit it and enter one.",
+      errorCode: "noPasswordStored",
+    });
+  });
+
+  it("reads a host's last test for its status pill", () => {
+    const failed = (message: string) => ({ ok: false, message }) as ServerTest;
+    expect(hostStatus(undefined)).toEqual({ result: null, needsPassword: false, tone: "muted", status: "notTested", online: false });
+    expect(hostStatus("testing")).toMatchObject({ result: null, tone: "muted", status: "testing", online: false });
+    expect(hostStatus(result(true))).toMatchObject({ tone: "ok", status: "online", online: true });
+    expect(hostStatus(failed("connection refused"))).toMatchObject({ needsPassword: false, tone: "fail", status: "unreachable", online: false });
+  });
+
+  it("tells a missing password from a host that is down by the error's code, not its words", () => {
+    const missing = failedTest({ code: "noPasswordStored", message: "reworded: the keychain has nothing" });
+    expect(hostStatus(missing)).toMatchObject({ needsPassword: true, tone: "warn", status: "needsPassword", online: false });
+    // The same English words without the code are a failure like any other.
+    const words = failedTest({ code: "other", message: "no password stored for this host" });
+    expect(hostStatus(words)).toMatchObject({ needsPassword: false, tone: "fail", status: "unreachable" });
+  });
+
+  it("knows the private LAN addresses macOS's Local Network permission governs", () => {
+    for (const h of ["10.0.0.2", "192.168.1.10", "172.16.0.1", "172.31.255.1", "pve.local"]) expect(isPrivateHost(h)).toBe(true);
+    for (const h of ["172.15.0.1", "172.32.0.1", "8.8.8.8", "pve.example.com"]) expect(isPrivateHost(h)).toBe(false);
   });
 });

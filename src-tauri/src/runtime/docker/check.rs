@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use isoloom_core::checks::{self, Line};
+use crate::runtime::lab::checks::{self, Line};
 
 use super::compose;
 use crate::error::Result;
@@ -39,20 +39,28 @@ pub struct Check {
 
 /// Isoloom's stand-in for the lab's access machine (the player's seat) and its routes, as named in
 /// its Compose file: the services a lab with an access machine defines.
-const STAND_INS: [&str; 2] = ["isoloom-access", "isoloom-access-routes"];
+const STAND_INS: [&str; 2] = crate::runtime::lab::ACCESS_STAND_INS;
 
 /// The stand-ins the lab's Compose file defines.
 fn stand_ins(compose: &str) -> Vec<&'static str> {
     STAND_INS.into_iter().filter(|n| compose.contains(&format!("\n  {n}:\n"))).collect()
 }
 
+/// How long one check runner may take.
+const CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// What the runners said so far: their output, the checks read from it, and whether every
+/// runner ran to its end.
+struct Tally {
+    lines: Vec<String>,
+    results: Vec<CheckResult>,
+    ran: bool,
+}
+
 /// Runs every check runner of the lab (compose `check` profile): containers on the lab's
 /// networks that assert what the lab declares and that the intended exploit path still
 /// works, so a learner who broke their box is told to reset it instead of fighting a lab that
 /// can no longer be solved.
-/// How long one check runner may take.
-const CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
-
 pub async fn check(dir: &Path, id: &str) -> Result<Check> {
     let spec = crate::runtime::lab::spec(dir)?;
     let plan = checks::plan(&spec);
@@ -61,67 +69,79 @@ pub async fn check(dir: &Path, id: &str) -> Result<Check> {
     }
     let default = checks::default_position(&spec);
     let project = compose::project(id);
-    let mut lines: Vec<String> = Vec::new();
-    let mut results: Vec<CheckResult> = Vec::new();
-    let mut ran = true;
-    // The runners run with --no-deps (`compose run` would otherwise rerun the lab's completed init
-    // jobs), so the stand-in for the lab's access machine, which the access runner shares its
-    // network with, is started first: it is in the `check` profile, so the lab's `up` left it down.
-    let compose_text = std::fs::read_to_string(crate::runtime::lab::compose_file(dir)).unwrap_or_default();
-    let stand_ins = stand_ins(&compose_text);
-    if !stand_ins.is_empty() {
-        let mut args = vec!["--profile", "check", "up", "-d", "--wait", "--no-deps"];
-        args.extend(stand_ins.iter().copied());
-        if let Err(e) = compose::stream(dir, &project, &args, &[], |l| lines.push(l)).await {
-            lines.push(format!("the access machine's stand-in didn't start: {e}"));
-            ran = false;
-        }
-    }
+    let mut t = Tally { lines: Vec::new(), results: Vec::new(), ran: true };
+    start_stand_ins(dir, &project, &mut t).await;
     for (pos, group) in checks::by_position(&spec, &plan) {
         let service =
             if pos == default { crate::runtime::lab::CHECK_SERVICE.to_string() } else { format!("{}-{}", crate::runtime::lab::CHECK_SERVICE, pos.id()) };
-        let from = pos.label();
         // `exec` checks run inside the machine, from their own runner (Isoloom's exec-<machine>.sh,
         // piped in); the runner beside the machine reports the others.
         let (execs, group): (Vec<&checks::Resolved>, Vec<&checks::Resolved>) = group.into_iter().partition(|c| matches!(c.probe, checks::Probe::Exec { .. }));
-        let before = results.len();
-        let run_args = ["--profile", "check", "run", "--rm", "--no-deps", service.as_str()];
-        let run = compose::stream(dir, &project, &run_args, &[], |l| {
-            record(&mut results, &from, &l);
-            lines.push(l);
-        });
-        // A runner that hangs (a target that never answers) must not run forever: past the limit
-        // the CLI is dropped, and its container, which outlives it, removed.
-        let res = match tokio::time::timeout(CHECK_TIMEOUT, run).await {
-            Ok(r) => r,
-            Err(_) => {
-                compose::remove_one_off(&project, &service).await;
-                lines.push(format!("{service}: no answer within {} minutes, stopped", CHECK_TIMEOUT.as_secs() / 60));
-                Err(crate::error::Error::Invalid("the check timed out".into()))
-            }
-        };
-        // A runner that stopped before reporting: the checks it owned, failed with that reason.
-        fail_unreported(&mut results, before, &group, &from);
-        if res.is_err() {
-            ran = false;
-        }
+        run_beside(dir, &project, &service, &pos.label(), &group, &mut t).await;
         if let (false, checks::Position::Machine(m)) = (execs.is_empty(), &pos) {
-            let file = crate::runtime::lab::compose_file(dir).with_file_name("checks").join(isoloom_core::generate::exec_runner(m));
-            let from = format!("inside {m}");
-            let before = results.len();
-            let res = compose::stream_with_stdin(dir, &project, &["exec", "-T", m, "sh", "-s"], &file, |l| {
-                record(&mut results, &from, &l);
-                lines.push(l);
-            })
-            .await;
-            fail_unreported(&mut results, before, &execs, &from);
-            if res.is_err() {
-                ran = false;
-            }
+            run_inside(dir, &project, m, &execs, &mut t).await;
         }
     }
-    let ok = ran && results.iter().all(|r| r.ok);
-    Ok(Check { available: true, ok, output: lines.join("\n"), results })
+    let ok = t.ran && t.results.iter().all(|r| r.ok);
+    Ok(Check { available: true, ok, output: t.lines.join("\n"), results: t.results })
+}
+
+/// The runners run with --no-deps (`compose run` would otherwise rerun the lab's completed init
+/// jobs), so the stand-in for the lab's access machine, which the access runner shares its
+/// network with, is started first: it is in the `check` profile, so the lab's `up` left it down.
+async fn start_stand_ins(dir: &Path, project: &str, t: &mut Tally) {
+    let compose_text = std::fs::read_to_string(crate::runtime::lab::compose_file(dir)).unwrap_or_default();
+    let stand_ins = stand_ins(&compose_text);
+    if stand_ins.is_empty() {
+        return;
+    }
+    let mut args = vec!["--profile", "check", "up", "-d", "--wait", "--no-deps"];
+    args.extend(stand_ins.iter().copied());
+    if let Err(e) = compose::stream(dir, project, &args, &[], |l| t.lines.push(l)).await {
+        t.lines.push(format!("the access machine's stand-in didn't start: {e}"));
+        t.ran = false;
+    }
+}
+
+/// The runner `service` beside a position, reporting `group` from there.
+async fn run_beside(dir: &Path, project: &str, service: &str, from: &str, group: &[&checks::Resolved], t: &mut Tally) {
+    let before = t.results.len();
+    let run_args = ["--profile", "check", "run", "--rm", "--no-deps", service];
+    let run = compose::stream(dir, project, &run_args, &[], |l| {
+        record(&mut t.results, from, &l);
+        t.lines.push(l);
+    });
+    // A runner that hangs (a target that never answers) must not run forever: past the limit
+    // the CLI is dropped, and its container, which outlives it, removed.
+    let res = match tokio::time::timeout(CHECK_TIMEOUT, run).await {
+        Ok(r) => r,
+        Err(_) => {
+            compose::remove_one_off(project, service).await;
+            t.lines.push(format!("{service}: no answer within {} minutes, stopped", CHECK_TIMEOUT.as_secs() / 60));
+            Err(crate::error::Error::Invalid("the check timed out".into()))
+        }
+    };
+    // A runner that stopped before reporting: the checks it owned, failed with that reason.
+    fail_unreported(&mut t.results, before, group, from);
+    if res.is_err() {
+        t.ran = false;
+    }
+}
+
+/// Machine `m`'s `exec` checks, run inside it by its exec runner piped to `sh`.
+async fn run_inside(dir: &Path, project: &str, m: &str, execs: &[&checks::Resolved], t: &mut Tally) {
+    let file = crate::runtime::lab::compose_file(dir).with_file_name("checks").join(crate::runtime::lab::exec_runner(m));
+    let from = format!("inside {m}");
+    let before = t.results.len();
+    let res = compose::stream_with_stdin(dir, project, &["exec", "-T", m, "sh", "-s"], &file, |l| {
+        record(&mut t.results, &from, &l);
+        t.lines.push(l);
+    })
+    .await;
+    fail_unreported(&mut t.results, before, execs, &from);
+    if res.is_err() {
+        t.ran = false;
+    }
 }
 
 /// Reads one line of a check runner's output into `results` (a pass or a fail, run `from`).
@@ -185,7 +205,7 @@ mod tests {
             "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\n  - { tcp: \"web:80\" }\n",
         );
         let spec = crate::runtime::lab::spec(&dir).unwrap();
-        let plan = isoloom_core::checks::plan(&spec);
+        let plan = crate::runtime::lab::checks::plan(&spec);
         assert!(plan.len() >= 2, "derived checks: {}", plan.len());
         let group: Vec<_> = plan.iter().collect();
         // The runner reported the first check, then stopped.

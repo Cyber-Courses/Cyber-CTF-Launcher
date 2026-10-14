@@ -7,14 +7,17 @@ export type RuntimeFilter = "all" | "DOCKER" | "VM" | "CLOUD";
 /** The Labs list's search and filters; `difficulty` 0 = any level. */
 export type LabFilters = { query: string; status: StatusFilter; runtime: RuntimeFilter; difficulty: number };
 
+/** Lower case without accents, so "elevation" finds "Élévation" (the catalogue is in six languages). */
+const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
 export const NO_FILTERS: LabFilters = { query: "", status: "all", runtime: "all", difficulty: 0 };
 
 /** The labs the search and filters keep: the query matches the title, category, description or
  *  a skill; "to do" is neither solved nor running. */
 export function filterLabs(labs: Lab[], f: LabFilters, isRunning: (lab: Lab) => boolean, completed: Set<string>): Lab[] {
-  const q = f.query.trim().toLowerCase();
+  const q = fold(f.query.trim());
   return labs.filter((l) => {
-    if (q && !`${l.title} ${l.category} ${l.description ?? ""} ${(l.skills ?? []).map((s) => s.name).join(" ")}`.toLowerCase().includes(q)) return false;
+    if (q && !fold(`${l.title} ${l.category} ${l.description ?? ""} ${(l.skills ?? []).map((s) => s.name).join(" ")}`).includes(q)) return false;
     if (!runtimeMatches(l, f.runtime)) return false;
     if (f.difficulty && l.difficulty !== f.difficulty) return false;
     const running = isRunning(l);

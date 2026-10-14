@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
-import { MachineStepBody, SetupOutcome, canContinue, machineSteps, nextLabel, stepMeta, useMachineSetup } from "@/features/machine/setup-steps";
+import { CheckFailed } from "@/features/machine/check-failed";
+import { MachineStepBody, SetupOutcome, canContinue, machineSteps, nextLabel, nextVariant, stepMeta, useMachineSetup } from "@/features/machine/setup-steps";
 import type { SystemReport } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
@@ -17,11 +18,16 @@ import { useT } from "@/lib/i18n";
  *  onboarding (`setup-steps`); this file is only the window's frame. */
 export function MachineSetup({
   report,
+  checkError = null,
+  onRetryCheck,
   onRefresh,
   onClose,
   startAt,
 }: {
   report: SystemReport | null;
+  /** The machine check failed and none answered before it: the error, with Try again. */
+  checkError?: string | null;
+  onRetryCheck?: () => unknown;
   onRefresh: () => void;
   onClose: () => void;
   /** Open at this step (a "Fix" link from the Machine page); changes jump again. */
@@ -54,14 +60,20 @@ export function MachineSetup({
 
       {/* Until the machine check answers, just say so: the title, stepper and step count all
           depend on what it finds. */}
-      {!report ? (
+      {!report && checkError ? (
+        <div className="flex flex-1 items-center justify-center px-6 pb-11">
+          <CheckFailed error={checkError} onRetry={onRetryCheck ?? onRefresh} className="w-full max-w-lg" />
+        </div>
+      ) : !report ? (
         <div className="flex flex-1 items-center justify-center gap-2 pb-11 text-[0.8125rem] text-muted-foreground">
           <Spinner className="size-4" /> {t("machine.setup.checking")}
         </div>
       ) : (
-        /* Scrolls when a step is long; centered in the window when it's short. */
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <main className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-6 pt-2 pb-10">
+        /* The step's panel fills the window (up to 56rem, centred in a taller one): its body
+           scrolls and its footer stays at the bottom, so Back / Continue are always in view and
+           in the same place from step to step. The window scrolls only if it is shorter still. */
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <main className="mx-auto my-auto flex max-h-[56rem] min-h-[26rem] w-full max-w-2xl flex-1 flex-col px-6 pt-2 pb-6">
             <PageHeader title={<>{t.rich("machine.setup.title", { em: (s) => <em>{s}</em> })}</>} lead={t("machine.setup.lead", { os: osName })} />
 
             {/* Progress: one segment per step, the jewel up to the current one. */}
@@ -71,8 +83,9 @@ export function MachineSetup({
               ))}
             </div>
 
-            <Panel key={key} className="mt-5 animate-rise-in">
+            <Panel key={key} className="mt-5 flex min-h-0 flex-1 animate-rise-in flex-col">
               <PanelHeader
+                className="shrink-0"
                 title={
                   <>
                     <meta.icon className="size-4 shrink-0 text-muted-foreground" />
@@ -81,7 +94,7 @@ export function MachineSetup({
                 }
                 meta={<span className="tabular-nums">{t("machine.setup.stepOf", { current: at + 1, total: steps.length })}</span>}
               />
-              <div className="px-4 pt-3.5 pb-4">
+              <div data-step-body className="min-h-0 flex-1 overflow-y-auto px-4 pt-3.5 pb-4">
                 <p className="text-[0.8125rem] leading-relaxed text-muted-foreground">{meta.description}</p>
                 <div className="mt-4">
                   <ErrorBoundary resetKey={key} title={t("machine.setup.stepFailed")}>
@@ -89,7 +102,7 @@ export function MachineSetup({
                   </ErrorBoundary>
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
+              <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-3">
                 <div>
                   {at > 0 && (
                     <Button variant="outline" size="sm" onClick={back} disabled={setup.busy}>
@@ -102,8 +115,8 @@ export function MachineSetup({
                     <Play className="size-3.5" /> {t("machine.setup.done")}
                   </Button>
                 ) : (
-                  <Button variant="primary" size="sm" onClick={next} disabled={setup.busy || !canContinue(key, report, setup)}>
-                    {nextLabel(key, report, t)}
+                  <Button variant={nextVariant(key, report, setup)} size="sm" onClick={next} disabled={setup.busy || !canContinue(key, report, setup)}>
+                    {nextLabel(key, report, t, setup)}
                   </Button>
                 )}
               </div>

@@ -13,12 +13,16 @@ import { appendUsage, type UsageHistory } from "@/features/machine/machine-statu
 export function useMachineMetrics(ms: number, { serial = false }: { serial?: boolean } = {}) {
   const [metrics, setMetrics] = useState<MachineMetrics | null>(null);
   const [history, setHistory] = useState<UsageHistory>({ cpu: [], mem: [], disk: [] });
+  // The last read failed (the next one may still answer).
+  const [failed, setFailed] = useState(false);
   usePoll(machineMetrics, ms, {
     serial,
     onValue: (m) => {
       setMetrics(m);
       setHistory((h) => appendUsage(h, m));
+      setFailed(false);
     },
+    onError: () => setFailed(true),
   });
-  return { metrics, history };
+  return { metrics, history, failed };
 }

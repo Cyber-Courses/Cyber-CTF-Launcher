@@ -181,7 +181,7 @@ async fn wait_tcp(host: &str, port: u16, within: Duration) -> Result<()> {
 async fn wait_tcp_from(login: &str, identity: &Path, host: &str, port: u16, within: Duration) -> Result<()> {
     let (user, node) = login.split_once('@').ok_or_else(|| Error::Invalid("unexpected jump host".into()))?;
     let target = ssh::Target::direct(node, user, identity.to_path_buf());
-    let known = identity.with_file_name("known_hosts");
+    let known = ssh::node_known_hosts(identity);
     let probe = format!("timeout 4 bash -c {}", ssh::sh_quote(&format!("</dev/tcp/{host}/{port}")));
     if retry_until(within, || async { target.exec_timed(&known, &probe, Duration::from_secs(20)).await.is_ok() }).await {
         Ok(())
@@ -244,6 +244,20 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0]["state"], "running");
         assert_eq!(events[0]["detail"].as_str().unwrap().len(), 160);
+    }
+
+    #[tokio::test]
+    async fn progress_lines_are_cut_by_characters_not_bytes() {
+        // Terraform and Vagrant print accented and box-drawing text: a cut inside a character
+        // would be a panic (or a replacement glyph), and 160 bytes would be far fewer letters.
+        let (r, events) = reporter();
+        r.progress("up", BOOT, "é".repeat(300));
+        r.progress("up", BOOT, "✓ ".repeat(100));
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["detail"].as_str().unwrap().chars().count(), 160);
+        assert!(events[0]["detail"].as_str().unwrap().chars().all(|c| c == 'é'));
+        assert_eq!(events[1]["detail"].as_str().unwrap().chars().count(), 160);
     }
 
     #[tokio::test]

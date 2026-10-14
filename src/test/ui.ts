@@ -9,11 +9,12 @@ export const flush = (ms = 20) =>
 
 /** The first button whose text or accessible name matches `name`. */
 export function button(name: RegExp): HTMLElement {
-  const found = screen.queryAllByRole("button").find((b) => name.test(b.textContent ?? "") || name.test(b.getAttribute("aria-label") ?? ""));
+  // A menu's items are buttons too, to click.
+  const all = () => [...screen.queryAllByRole("button"), ...screen.queryAllByRole("menuitem")];
+  const found = all().find((b) => name.test(b.textContent ?? "") || name.test(b.getAttribute("aria-label") ?? ""));
   if (!found)
     throw new Error(
-      `no button matching ${name}: ${screen
-        .queryAllByRole("button")
+      `no button matching ${name}: ${all()
         .map((b) => b.textContent)
         .join(" | ")}`,
     );

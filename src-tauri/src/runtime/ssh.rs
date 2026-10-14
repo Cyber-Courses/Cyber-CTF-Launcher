@@ -18,6 +18,7 @@ use crate::exec::run;
 fn ssh_dir(app: &AppHandle) -> Result<PathBuf> {
     let dir = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("ssh");
     std::fs::create_dir_all(&dir)?;
+    let _ = std::fs::remove_file(dir.join(SHARED_KNOWN_HOSTS));
     Ok(dir)
 }
 
@@ -124,15 +125,50 @@ pub fn options(batch: bool, known_hosts: &str) -> Vec<String> {
     opts
 }
 
-/// A word for a shell command line: as is when it is plain, single-quoted otherwise.
-fn shell_word(s: &str) -> String {
-    let plain = !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "=.,_/:@+-".contains(c));
-    if plain { s.to_string() } else { sh_quote(s) }
+/// Whether `s` is a word no command line needs to quote.
+fn plain_word(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "=.,_/:@+-".contains(c))
 }
 
-/// `options` as `-o …` words for a shell command line.
-fn shell_options(batch: bool, known_hosts: &Path) -> String {
-    options(batch, &known_hosts.to_string_lossy()).iter().map(|o| format!("-o {}", shell_word(o))).collect::<Vec<_>>().join(" ")
+/// A word for a shell command line: as is when it is plain, single-quoted otherwise.
+fn shell_word(s: &str) -> String {
+    if plain_word(s) { s.to_string() } else { sh_quote(s) }
+}
+
+/// A word of the ProxyCommand ssh runs: ssh hands it to `sh -c` on unix, but Windows' OpenSSH
+/// starts it as a plain Windows command line, where a single quote is a plain character (the
+/// key's path then arrived wrapped in quotes and ssh couldn't open it). There a word is quoted
+/// the way the C runtime splits a command line back ([`windows_quote`]).
+fn proxy_word(s: &str, windows: bool) -> String {
+    match (windows, plain_word(s)) {
+        (_, true) => s.to_string(),
+        (true, false) => windows_quote(s),
+        (false, false) => sh_quote(s),
+    }
+}
+
+/// `s` double-quoted for a Windows command line (the C runtime's rules, as `CommandLineToArgvW`
+/// reads them): backslashes are literal except before a `"`, so those before an inner `"` (then
+/// escaped) and before the closing one are doubled.
+fn windows_quote(s: &str) -> String {
+    let mut out = String::from("\"");
+    // The backslashes just written, doubled if a `"` follows them.
+    let mut run = 0;
+    for c in s.chars() {
+        if c == '"' {
+            out.extend(std::iter::repeat_n('\\', run + 1));
+        }
+        run = if c == '\\' { run + 1 } else { 0 };
+        out.push(c);
+    }
+    out.extend(std::iter::repeat_n('\\', run));
+    out.push('"');
+    out
+}
+
+/// `options` as `-o …` words for a command line, each quoted by `quote`.
+fn quoted_options(batch: bool, known_hosts: &Path, quote: impl Fn(&str) -> String) -> String {
+    options(batch, &known_hosts.to_string_lossy()).iter().map(|o| format!("-o {}", quote(o))).collect::<Vec<_>>().join(" ")
 }
 
 impl Target {
@@ -148,15 +184,22 @@ impl Target {
         Ok(())
     }
 
-    /// `-o ProxyCommand=…` through the jump host, with the same key and known_hosts.
+    /// `-o ProxyCommand=…` through the jump host, with the same key and known_hosts, quoted for
+    /// this OS's ssh.
     fn proxy_option(&self, known_hosts: &Path) -> Result<Option<String>> {
+        self.proxy_command(known_hosts, cfg!(windows))
+    }
+
+    /// [`Target::proxy_option`] for Windows' ssh (`windows`) or a unix one.
+    fn proxy_command(&self, known_hosts: &Path, windows: bool) -> Result<Option<String>> {
         let Some(jump) = &self.jump else { return Ok(None) };
         let (user, host) = jump.split_once('@').ok_or_else(|| Error::Invalid("unexpected jump host".into()))?;
         if !safe_token(user) || !safe_token(host) {
             return Err(Error::Invalid("unexpected jump host".into()));
         }
         // ssh expands `%` tokens in a ProxyCommand before its shell runs it: only `%h:%p` is ours.
-        let inner = format!("ssh -i {} {}", sh_quote(&self.identity.to_string_lossy()), shell_options(true, known_hosts)).replace('%', "%%");
+        let quote = |s: &str| proxy_word(s, windows);
+        let inner = format!("ssh -i {} {}", quote(&self.identity.to_string_lossy()), quoted_options(true, known_hosts, quote)).replace('%', "%%");
         Ok(Some(format!("ProxyCommand={inner} -W %h:%p {jump}")))
     }
 
@@ -169,7 +212,7 @@ impl Target {
             "ssh -t -i {} -p {} {} {proxy}{}@{} sudo docker exec -it attacker bash",
             sh_quote(&self.identity.to_string_lossy()),
             self.port,
-            shell_options(false, known_hosts),
+            quoted_options(false, known_hosts, shell_word),
             self.user,
             self.host,
         ))
@@ -204,9 +247,16 @@ impl Target {
     }
 }
 
-pub fn known_hosts(app: &AppHandle) -> Result<PathBuf> {
-    Ok(ssh_dir(app)?.join("known_hosts"))
+/// The host keys of the server nodes the launcher reaches with its key (a Proxmox node: the jump
+/// host to an internal lab bridge, its key setup), next to that key. A lab host's keys are never
+/// kept here (see `shell::shell_known_hosts`).
+pub fn node_known_hosts(identity: &Path) -> PathBuf {
+    identity.with_file_name("nodes_known_hosts")
 }
+
+/// The known_hosts every attack box shell once shared. Its keys of lab hosts long gone refused
+/// the shell to any new lab host at a recycled address: removed (nothing writes it any more).
+const SHARED_KNOWN_HOSTS: &str = "known_hosts";
 
 #[cfg(test)]
 mod tests {
@@ -246,15 +296,54 @@ mod tests {
         let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", "/k/id".into()) };
         assert_eq!(
             t.proxy_option(Path::new("/x/kh")).unwrap().unwrap(),
-            "ProxyCommand=ssh -i '/k/id' -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/x/kh -o LogLevel=ERROR -W %h:%p root@pve.lan"
+            "ProxyCommand=ssh -i /k/id -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/x/kh -o LogLevel=ERROR -W %h:%p root@pve.lan"
         );
         let cmd = t.attack_shell_command(Path::new("/x/kh")).unwrap();
-        assert!(cmd.contains("-o 'ProxyCommand=ssh -i '\\''/k/id'\\''"), "{cmd}");
+        assert!(cmd.contains("-o 'ProxyCommand=ssh -i /k/id -o BatchMode=yes"), "{cmd}");
         for bad in ["nobody", "root@pve;rm", "-o@x"] {
             let t = Target { jump: Some(bad.into()), ..Target::direct("10.10.0.5", "isoloom", "/k/id".into()) };
             assert!(t.proxy_option(Path::new("/x")).is_err(), "{bad}");
         }
         assert_eq!(Target::direct("h", "u", "/k".into()).proxy_option(Path::new("/x")).unwrap(), None);
+    }
+
+    #[test]
+    fn a_windows_proxy_command_double_quotes_its_paths() {
+        // Regression (#217): Windows' ssh runs a ProxyCommand with no POSIX shell, so the
+        // single-quoted key path reached the jump host's ssh with its quotes, and it failed.
+        let key = PathBuf::from(r"C:\Users\Frédéric O'Brien\AppData\Roaming\org.cyberctf.desktop\ssh\id_ed25519");
+        let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", key.clone()) };
+        let kh = Path::new(r"C:\Users\Frédéric O'Brien\kh");
+        let proxy = t.proxy_command(kh, true).unwrap().unwrap();
+        assert!(proxy.starts_with(&format!("ProxyCommand=ssh -i \"{}\" -o BatchMode=yes ", key.display())), "{proxy}");
+        assert!(proxy.contains(r#"-o "UserKnownHostsFile=C:\\Users\\Frédéric\ O\'Brien\\kh""#), "{proxy}");
+        assert!(proxy.ends_with(" -W %h:%p root@pve.lan"), "{proxy}");
+        // Plain words stay bare, and unix keeps POSIX quoting.
+        assert!(proxy.contains(" -o LogLevel=ERROR "));
+        assert!(t.proxy_command(kh, false).unwrap().unwrap().contains(r"-i 'C:\Users\Frédéric O'\''Brien\"));
+        assert_eq!(proxy_word("a b", true), "\"a b\"");
+        assert_eq!(proxy_word("a b", false), "'a b'");
+        assert_eq!(proxy_word("BatchMode=yes", true), "BatchMode=yes");
+    }
+
+    /// The in-app terminal on Windows runs the attack shell's words directly (no `sh` there):
+    /// they come back exactly, the jump host's nested ProxyCommand and a key path with a space
+    /// and a quote included. Swapping `'` for `"` for cmd.exe used to mangle both.
+    #[test]
+    fn the_windows_terminal_runs_the_attack_shell_with_its_exact_words() {
+        let key = PathBuf::from(r"C:\Users\Jo O'Brien\AppData\Roaming\org.cyberctf.desktop\ssh\id_ed25519");
+        let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", key.clone()) };
+        let kh = Path::new(r"C:\Users\Jo O'Brien\kh");
+        let line = t.attack_shell_command(kh).unwrap();
+        let argv: Vec<String> = crate::terminal::windows_command(&line).get_argv().iter().map(|a| a.to_string_lossy().into_owned()).collect();
+        let proxy = t.proxy_option(kh).unwrap().unwrap();
+        let mut want = vec!["ssh".to_string(), "-t".into(), "-i".into(), key.to_string_lossy().into_owned(), "-p".into(), "22".into()];
+        for o in options(false, &kh.to_string_lossy()) {
+            want.extend(["-o".to_string(), o]);
+        }
+        want.extend(["-o".to_string(), proxy, "isoloom@10.10.0.5".into()]);
+        want.extend(["sudo", "docker", "exec", "-it", "attacker", "bash"].map(String::from));
+        assert_eq!(argv, want);
     }
 
     #[test]
@@ -301,6 +390,17 @@ mod tests {
     fn safe_tokens_are_plain_hosts_and_users() {
         assert!(safe_token("192.168.1.5") && safe_token("fd00::1") && safe_token("pve_lan-1"));
         assert!(!safe_token("") && !safe_token("-x") && !safe_token("a b") && !safe_token(&"a".repeat(254)));
+    }
+
+    #[test]
+    fn the_shared_known_hosts_is_dropped_and_nodes_keep_their_own() {
+        let t = crate::test_app::TestApp::new();
+        let shared = t.data().join("ssh").join(SHARED_KNOWN_HOSTS);
+        std::fs::create_dir_all(shared.parent().unwrap()).unwrap();
+        std::fs::write(&shared, "10.0.0.5 ssh-ed25519 AAAAold\n").unwrap();
+        let dir = ssh_dir(t.handle()).unwrap();
+        assert!(!shared.exists());
+        assert_eq!(node_known_hosts(&dir.join("id_ed25519")), dir.join("nodes_known_hosts"));
     }
 
     #[test]

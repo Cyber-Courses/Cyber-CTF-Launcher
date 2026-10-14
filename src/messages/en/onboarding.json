@@ -37,13 +37,14 @@
     "signedInAs": "Signed in as {name}",
     "waiting": "Waiting for the browser… (up to 5 minutes)",
     "button": "Sign in with your browser",
-    "hint": "Opens <mono>cyberauth.co</mono> in your browser. You can also do this later."
+    "hint": "Opens <mono>cyberauth.co</mono> in your browser. Labs run without an account too: you can sign in later from Settings.",
+    "skip": "Skip for now"
   },
   "done": {
     "title": "You’re all <em>set</em>",
     "description": "You can change any of this later in Settings or This machine.",
     "account": "Account",
-    "notSignedIn": "Not signed in",
+    "notSignedIn": "Not signed in (sign in later from Settings)",
     "browse": "Browse labs"
   }
 }

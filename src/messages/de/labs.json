@@ -10,15 +10,14 @@
   },
   "state": {
     "running": "Läuft",
-    "starting": "Startet",
-    "startingEllipsis": "Startet…",
     "resuming": "Wird fortgesetzt",
     "paused": "Pausiert",
     "shutDown": "Heruntergefahren",
     "interrupted": "Unterbrochen",
     "notStarted": "Nicht gestartet",
     "solved": "Gelöst",
-    "working": "In Arbeit"
+    "working": "In Arbeit",
+    "failed": "Start fehlgeschlagen"
   },
   "places": {
     "container": "Container auf diesem Rechner",
@@ -147,7 +146,6 @@
     "title": "Bereitstellung",
     "on": "auf <where>{where}</where>",
     "failed": "Fehlgeschlagen",
-    "building": "Wird erstellt",
     "ready": "Bereit",
     "preparingEllipsis": "Wird vorbereitet…",
     "showLog": "Vollständiges Log anzeigen",
@@ -182,6 +180,10 @@
     "removeBodyCloud": "Seine Cloud-Dienste werden in deinem Konto gelöscht, damit enden ihre Kosten. Der nächste Start legt sie von Grund auf neu an."
   },
   "list": {
+    "summarySignedOut": "{total} im Katalog · {running} auf diesem Rechner aktiv",
+    "signInTitle": "Melde dich an, um Labs zu starten",
+    "signInBody": "Stöbern geht auch so; angemeldet kannst du Labs starten, und deine gelösten Labs werden festgehalten.",
+    "retry": "Erneut versuchen",
     "unreachableTitle": "Lab-Katalog nicht erreichbar",
     "unreachableDescription": "Prüfe deine Verbindung oder melde dich an und versuche es dann erneut.",
     "title": "Labs",
@@ -280,7 +282,6 @@
     "resumeHint": "Lab im vorherigen Zustand zurückholen",
     "resuming": "Wird fortgesetzt…",
     "resume": "Fortsetzen",
-    "starting": "Startet…",
     "interruptedHint": "Ein vorheriger Start wurde unterbrochen; stoppe und räume ihn auf, dann starte neu",
     "cleaningUp": "Wird aufgeräumt…",
     "stopCleanUp": "Stoppen & aufräumen",
@@ -334,11 +335,13 @@
     "cloudIdle": "Starte das Lab, um seine Cloud-Dienste in deinem Konto anzulegen. Stoppe es, wenn du fertig bist: Das entfernt sie und beendet ihre Kosten.",
     "connectAccount": "Konto bei {clouds} verbinden",
     "estimatedCost": "Geschätzte Kosten",
-    "removeBodyCloud": "Seine Cloud-Dienste werden in deinem Konto gelöscht, damit enden ihre Kosten. Der nächste Start legt sie von Grund auf neu an."
+    "removeBodyCloud": "Seine Cloud-Dienste werden in deinem Konto gelöscht, damit enden ihre Kosten. Der nächste Start legt sie von Grund auf neu an.",
+    "retry": "Erneut versuchen",
+    "retryRandomPorts": "Mit zufälligen Ports erneut versuchen"
   },
   "cloud": {
-    "hourly": "etwa {usd} $ pro Stunde",
-    "untilAutoStop": "{hourly} (etwa {usd} $ bis zum automatischen Stopp in {hours} h)",
+    "hourly": "etwa {usd} pro Stunde",
+    "untilAutoStop": "{hourly} (etwa {usd} bis zum automatischen Stopp in {hours} h)",
     "billed": "Wird deinem Cloud-Konto berechnet.",
     "costsUntilStop": "Das Lab legt dort seine Dienste an, und sie kosten Geld, bis du es stoppst.",
     "costsUntilAutoStop": "Das Lab legt dort seine Dienste an, und sie kosten Geld, bis du es stoppst. Der Launcher entfernt sie nach {hours} h, aber nur, solange er geöffnet ist: Stoppe das Lab, bevor du ihn beendest.",
@@ -351,5 +354,63 @@
     "nothingExposed": "Das Lab läuft in deinem Cloud-Konto. Es stellt nichts bereit, was hier angezeigt werden kann.",
     "billedEstimate": "Wird dir berechnet: {cost}, laut Schätzung des Labs.",
     "billedWhileRunning": "Wird deinem Cloud-Konto berechnet, solange es läuft."
+  },
+  "objectives": {
+    "title": "Ziele",
+    "required": "{solved}/{total} erforderlich",
+    "progress": "Gelöste Pflicht-Challenges",
+    "completed": "Abgeschlossen",
+    "completedNote": "Lab abgeschlossen: Alle erforderlichen Challenges sind gelöst.",
+    "signIn": "Melde dich an, um Antworten einzureichen und deinen Fortschritt zu verfolgen.",
+    "optional": "optional",
+    "guided": "geführt",
+    "solved": "Gelöst",
+    "answerFor": "Antwort für {title}",
+    "answerPlaceholder": "Deine Antwort oder Flag",
+    "submit": "Senden",
+    "checking": "Wird geprüft…",
+    "correct": "Richtig.",
+    "correctCompleted": "Richtig. Damit ist das Lab abgeschlossen.",
+    "alreadySolved": "Richtig, und bereits zuvor gelöst.",
+    "wrong": "Nicht ganz. Prüfe es und versuche es erneut.",
+    "failed": "Antwort konnte nicht geprüft werden: {error}",
+    "helpNote": "Das Öffnen der Schritte oder eines Hinweises wird erfasst: Eine Lösung ohne sie zählt als stärkerer Nachweis der Fähigkeit.",
+    "guidedMode": "Geführter Modus",
+    "guidedModeHint": "Diese Challenge in Schritte aufteilen",
+    "helpFailed": "Konnte nicht geöffnet werden: {error}",
+    "steps": "Schritte",
+    "step": "Schritt {n}",
+    "hint": "Hinweis {n}",
+    "revealHint": "Hinweis {n} von {total} anzeigen"
+  },
+  "reapFailed": {
+    "title": "Der automatische Stopp konnte {title} nicht entfernen",
+    "hint": "Es kann in deinem Cloud-Konto weiter Kosten verursachen. Behebe, was die Meldung nennt, und stoppe dann das Lab; oder entferne seine Ressourcen in deiner Cloud-Konsole."
+  },
+  "failure": {
+    "title": {
+      "launch": "{title} konnte nicht gestartet werden",
+      "resume": "{title} konnte nicht fortgesetzt werden",
+      "pause": "{title} konnte nicht pausiert werden",
+      "shutdown": "{title} konnte nicht heruntergefahren werden",
+      "stop": "{title} konnte nicht gestoppt und entfernt werden",
+      "provision": "Die Einrichtung von {title} konnte nicht erneut laufen"
+    },
+    "stillUp": "Ein Teil des Labs läuft noch. Versuche es erneut; das Bereitstellungsprotokoll zeigt, was fehlgeschlagen ist.",
+    "dismiss": "Ausblenden",
+    "hint": {
+      "ports": "Ein Port, den dieses Lab veröffentlicht, ist auf diesem Rechner belegt. Starte es stattdessen mit zufälligen Ports.",
+      "docker": "Docker läuft nicht. Starte deine Container-Engine und versuche es dann erneut.",
+      "dockerAccess": "Dein Konto kann Docker noch nicht nutzen: Füge es der Gruppe docker hinzu, melde dich ab und wieder an und versuche es dann erneut.",
+      "signedOut": "Deine Sitzung ist abgelaufen. Melde dich erneut an und versuche es dann noch einmal.",
+      "network": "Ein Download oder die Cyber-CTF-API war nicht erreichbar. Prüfe deine Internetverbindung und versuche es dann erneut.",
+      "disk": "Auf diesem Rechner ist kein Speicherplatz mehr frei. Gib welchen frei (die Seite Rechner listet die Images der Labs) und versuche es dann erneut.",
+      "tool": "Ein Werkzeug, das dieses Lab braucht, fehlt hier. Installiere es auf der Seite Rechner und versuche es dann erneut."
+    }
+  },
+  "offline": {
+    "question": "{title} offline starten?",
+    "body": "Cyber CTF ist gerade nicht erreichbar. Dieses Lab ist auf diesem Rechner installiert und kann ohne starten, aber dein Fortschritt und deine Nachweise werden erst gespeichert, wenn du es wieder online startest.",
+    "start": "Offline starten"
   }
 }

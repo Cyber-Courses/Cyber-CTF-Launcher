@@ -57,11 +57,16 @@
       "default": "Por defecto"
     }
   },
+  "isoloomRegistry": {
+    "title": "Lista de labs de Isoloom",
+    "description": "Anota los labs que inicias en ~/.isoloom/status.yml, para que la línea de comandos de isoloom los vea (isoloom status, connect, exec). Los labs funcionan igual sin ello."
+  },
   "attackBox": {
     "title": "Imagen de la máquina de ataque",
     "description": "Se ejecuta en la red de cada lab como tu caja de herramientas. El primer lanzamiento de una imagen la descarga, lo que puede tardar un rato.",
     "default": "Por defecto",
     "largeDownload": "Descarga grande",
+    "pinned": "fijada",
     "presets": {
       "cyberctf": "Kali con su conjunto de herramientas estándar, lista para usar",
       "kali": "Base oficial de Kali, añade herramientas según las necesites",
@@ -77,7 +82,8 @@
     "customImageNote": "Cualquier imagen de Docker o tag de registro.",
     "save": "Guardar",
     "autoStart": "Iniciar la máquina de ataque con el lab",
-    "autoStartDescription": "La inicia en cuanto un lab está activo en esta máquina: el contenedor en un lab de contenedores, la VM junto a un lab de VM. Aun así puedes iniciarla o detenerla desde el lab."
+    "autoStartDescription": "La inicia en cuanto un lab está activo en esta máquina: el contenedor en un lab de contenedores, la VM junto a un lab de VM. Aun así puedes iniciarla o detenerla desde el lab.",
+    "invalidImage": "Usa un nombre de imagen simple como registry/name:tag: solo letras, cifras y . _ - / : @, sin guion al principio."
   },
   "attackVm": {
     "title": "VM de ataque para labs de VM",
@@ -107,7 +113,11 @@
     "installAddon": "Instalar complemento",
     "logInstalling": "Instalando el complemento de Vagrant {plugin}…",
     "logInstalled": "✓ Instalado",
-    "logTitle": "Complemento de Vagrant"
+    "logTitle": "Complemento de Vagrant",
+    "allowHyperv": "Permitir mi cuenta",
+    "allowingHyperv": "Permitiendo…",
+    "logAllowingHyperv": "Añadiendo tu cuenta a Administradores de Hyper-V (Windows pide permiso)…",
+    "logHypervAllowed": "✓ Listo. Cierra la sesión de Windows y vuelve a iniciarla; después, vuelve a comprobar."
   },
   "cleanup": {
     "title": "Limpieza",
@@ -156,6 +166,10 @@
     "diagnosticsDescription": "Copia tu versión, sistema operativo y estado de configuración, para un informe de error o una solicitud de soporte.",
     "copied": "Copiado",
     "copy": "Copiar",
+    "logs": "Archivos de registro",
+    "logsDescription": "Lo que Cyber CTF anotó mientras se ejecutaba. Envíalos con un informe de error o una solicitud de soporte.",
+    "openLogs": "Abrir carpeta",
+    "logsFailed": "No se pudo abrir la carpeta de registros",
     "firstRun": "Configuración inicial",
     "firstRunDescription": "Vuelve a recorrer la bienvenida. Tus ajustes y labs se conservan.",
     "replay": "Repetir"

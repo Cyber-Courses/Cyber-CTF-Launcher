@@ -3,6 +3,8 @@
 
 use std::time::{Duration, Instant};
 
+use crate::exec::{CLI_TIMEOUT, run_cli, run_env_timed};
+
 use super::budget::{budget_unverifiable_message, month_to_date_cost};
 use super::checks::{Check, TestResult};
 use super::contract::terraform_env;
@@ -21,11 +23,16 @@ fn aws_invocation<'a>(h: &HostProfile, sub: &[&'a str]) -> (&'static str, Vec<&'
     }
 }
 
+/// How long an aws call in the CLI container may take: the first one pulls the image.
+const AWS_IMAGE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
 /// Runs an aws subcommand the way this host connects: the host CLI (CLI credentials), or the
-/// official CLI container with the keys in its environment (Docker is the floor).
+/// official CLI container with the keys in its environment (Docker is the floor). Given up after
+/// a minute (five in the container, whose image the first call pulls).
 pub(super) async fn aws_cmd(h: &HostProfile, env: &[(String, String)], sub: &[&str]) -> Result<String> {
     let (program, args) = aws_invocation(h, sub);
-    crate::exec::run_env(program, &args, None, env).await
+    let limit = if program == "docker" { AWS_IMAGE_TIMEOUT } else { CLI_TIMEOUT };
+    run_env_timed(program, &args, None, env, limit).await
 }
 
 /// The last line of a tool's output (where CLIs put the reason).
@@ -83,7 +90,7 @@ fn terraform_outcome(r: Result<String>) -> Check {
 /// Checks a `terraform` binary is on PATH. Every cloud lab is provisioned with it, so a missing
 /// Terraform fails every launch; this catches it before the user tries. Shared by all clouds.
 async fn terraform_check() -> Check {
-    terraform_outcome(crate::exec::run("terraform", &["version"], None).await)
+    terraform_outcome(run_cli("terraform", &["version"]).await)
 }
 
 /// AWS `sts get-caller-identity`: the identity's ARN, or why there is none.
@@ -101,13 +108,20 @@ fn aws_credentials(r: Result<String>) -> First<String> {
     }
 }
 
-/// AWS `ec2 run-instances --dry-run`: only an explicit `UnauthorizedOperation` is a refusal (a
-/// dry run that would have succeeded fails too, with `DryRunOperation`).
+/// AWS `ec2 run-instances --dry-run`: it passes only on `DryRunOperation` (how AWS says "would
+/// have succeeded"), fails on `UnauthorizedOperation`, and anything else (throttling, an expired
+/// token, no default VPC, the network) is a warning with the reason, never a green line.
 fn launch_permission(dry: &Result<String>, arn: &str) -> Check {
-    if matches!(dry, Err(Error::CommandFailed { stderr, .. }) if stderr.contains("UnauthorizedOperation")) {
-        Check::fail("Launch permission", format!("{arn} can't launch EC2 (ec2:RunInstances is denied). Add EC2 permissions to it."))
-    } else {
-        Check::ok("Launch permission", "Able to launch EC2 instances.")
+    match dry {
+        Err(Error::CommandFailed { stderr, .. }) if stderr.contains("DryRunOperation") => Check::ok("Launch permission", "Able to launch EC2 instances."),
+        Err(Error::CommandFailed { stderr, .. }) if stderr.contains("UnauthorizedOperation") => {
+            Check::fail("Launch permission", format!("{arn} can't launch EC2 (ec2:RunInstances is denied). Add EC2 permissions to it."))
+        }
+        Err(Error::CommandFailed { stderr, .. }) => {
+            Check::warn("Launch permission", format!("Couldn't confirm EC2 launches are allowed: {}", last_line(stderr)))
+        }
+        Err(e) => Check::warn("Launch permission", format!("Couldn't confirm EC2 launches are allowed: {e}")),
+        Ok(_) => Check::warn("Launch permission", "Couldn't confirm EC2 launches are allowed: the dry run gave no answer."),
     }
 }
 
@@ -172,8 +186,8 @@ fn azure_subscription(r: Result<String>) -> First<()> {
 pub(super) async fn test_azure(h: &HostProfile) -> TestResult {
     let started = Instant::now();
     let mut checks: Vec<Check> = Vec::new();
-    let args = ["account", "show", "--subscription", h.username.as_str(), "--query", "name", "--output", "tsv"];
-    if let Err(done) = azure_subscription(crate::exec::run("az", &args, None).await).settle(&mut checks, started) {
+    let args = ["account", "show", "--subscription", h.cloud_account().unwrap_or_default(), "--query", "name", "--output", "tsv"];
+    if let Err(done) = azure_subscription(run_cli("az", &args).await).settle(&mut checks, started) {
         return done;
     }
     checks.push(azure_capacity_check(h).await);
@@ -220,20 +234,17 @@ fn quota_check(usage_json: Option<&str>, family: &str, size: &str, region: &str)
 /// family has no core quota. All seen on real runs; each makes a launch fail late.
 async fn azure_capacity_check(h: &HostProfile) -> Check {
     // The size labs use: the one set on the account, else Isoloom's default for a small lab.
-    let size = h.datastore.clone().unwrap_or_else(|| "Standard_D2als_v6".into());
-    let region = h.host.as_str();
-    let sku = crate::exec::run(
-        "az",
-        &["vm", "list-skus", "--subscription", &h.username, "-l", region, "--size", &size, "--resource-type", "virtualMachines", "-o", "json"],
-        None,
-    )
-    .await;
-    let family = match size_family(sku.ok().as_deref(), &size, region) {
+    let size = h.size().unwrap_or("Standard_D2als_v6");
+    let (region, subscription) = (h.region().unwrap_or_default(), h.cloud_account().unwrap_or_default());
+    let sku =
+        run_cli("az", &["vm", "list-skus", "--subscription", subscription, "-l", region, "--size", size, "--resource-type", "virtualMachines", "-o", "json"])
+            .await;
+    let family = match size_family(sku.ok().as_deref(), size, region) {
         Ok(family) => family,
         Err(check) => return check,
     };
-    let usage = crate::exec::run("az", &["vm", "list-usage", "--subscription", &h.username, "-l", region, "-o", "json"], None).await;
-    quota_check(usage.ok().as_deref(), &family, &size, region)
+    let usage = run_cli("az", &["vm", "list-usage", "--subscription", subscription, "-l", region, "-o", "json"]).await;
+    quota_check(usage.ok().as_deref(), &family, size, region)
 }
 
 /// GCP `gcloud billing accounts describe`: the billing account's name, or why it can't be seen.
@@ -254,8 +265,8 @@ fn gcp_billing(r: Result<String>) -> First<()> {
 pub(super) async fn test_gcp(h: &HostProfile) -> TestResult {
     let started = Instant::now();
     let mut checks: Vec<Check> = Vec::new();
-    let args = ["billing", "accounts", "describe", h.username.as_str(), "--format", "value(displayName)"];
-    if let Err(done) = gcp_billing(crate::exec::run("gcloud", &args, None).await).settle(&mut checks, started) {
+    let args = ["billing", "accounts", "describe", h.cloud_account().unwrap_or_default(), "--format", "value(displayName)"];
+    if let Err(done) = gcp_billing(run_cli("gcloud", &args).await).settle(&mut checks, started) {
         return done;
     }
     checks.push(terraform_check().await);
@@ -323,7 +334,7 @@ pub(super) async fn test_oci(h: &HostProfile) -> TestResult {
     let started = Instant::now();
     let mut checks: Vec<Check> = Vec::new();
     let answer =
-        crate::exec::run("oci", &["iam", "compartment", "get", "--compartment-id", h.username.as_str(), "--query", "data.name", "--raw-output"], None).await;
+        run_cli("oci", &["iam", "compartment", "get", "--compartment-id", h.cloud_account().unwrap_or_default(), "--query", "data.name", "--raw-output"]).await;
     if let Err(done) = oci_compartment(answer).settle(&mut checks, started) {
         return done;
     }
@@ -373,6 +384,25 @@ mod tests {
         assert_eq!(free_cores(usage, "standarddasv6family"), Some(6));
         assert_eq!(free_cores(usage, "cores"), Some(1));
         assert_eq!(free_cores(usage, "other"), None);
+    }
+
+    #[test]
+    fn azure_listings_of_the_wrong_shape_or_with_missing_fields_do_not_panic() {
+        // The SKU list as an object, a size with null restrictions and no family, and a usage
+        // list whose numbers are missing or not numbers.
+        assert!(size_family(Some("{}"), "Standard_D2als_v6", "westeurope").is_err());
+        let loose = r#"[{"name": "Standard_D2als_v6", "restrictions": null}]"#;
+        assert_eq!(size_family(Some(loose), "Standard_D2als_v6", "westeurope").ok().unwrap(), "");
+        let usage = serde_json::json!([
+            {"name": {"value": "fam"}, "limit": "10"},
+            {"name": {"value": "odd"}, "limit": "ten", "currentValue": 4},
+            {"name": "not an object"}
+        ]);
+        let usage = usage.as_array().unwrap();
+        assert_eq!(free_cores(usage, "fam"), Some(10), "no current use yet");
+        assert_eq!(free_cores(usage, "odd"), Some(-4), "unreadable numbers count as 0");
+        assert_eq!(free_cores(usage, "not an object"), None);
+        assert_eq!(quota_check(Some("{}"), "fam", "s", "r").state, CheckState::Warn);
     }
 
     #[test]
@@ -428,9 +458,26 @@ mod tests {
         let c = launch_permission(&denied, "arn:x");
         assert_eq!(c.state, CheckState::Fail);
         assert!(c.detail.starts_with("arn:x can't launch EC2"), "{}", c.detail);
-        // DryRunOperation is how AWS says "would have succeeded".
+        // DryRunOperation is how AWS says "would have succeeded", and the only pass.
         assert_eq!(launch_permission(&Err(failed("(DryRunOperation) Request would have succeeded")), "arn:x").state, CheckState::Ok);
-        assert_eq!(launch_permission(&Ok(String::new()), "arn:x").state, CheckState::Ok);
+    }
+
+    #[test]
+    fn a_dry_run_that_failed_otherwise_is_a_warning_with_its_reason_not_a_pass() {
+        // Regression: any error but UnauthorizedOperation (throttling, an expired token, no
+        // default VPC, the network) showed a green "Able to launch EC2".
+        for stderr in [
+            "An error occurred (RequestLimitExceeded) when calling the RunInstances operation",
+            "An error occurred (ExpiredToken) when calling the RunInstances operation: The security token included in the request is expired",
+            "An error occurred (VPCIdNotSpecified) when calling the RunInstances operation: No default VPC for this user",
+        ] {
+            let c = launch_permission(&Err(failed(stderr)), "arn:x");
+            assert_eq!(c.state, CheckState::Warn, "{stderr}");
+            assert_eq!(c.detail, format!("Couldn't confirm EC2 launches are allowed: {stderr}"));
+        }
+        let timed_out = launch_permission(&Err(missing()), "arn:x");
+        assert_eq!(timed_out.state, CheckState::Warn);
+        assert_eq!(launch_permission(&Ok(String::new()), "arn:x").state, CheckState::Warn);
     }
 
     #[test]

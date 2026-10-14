@@ -43,7 +43,7 @@ export function TokenCredentials({ s }: { s: HostSetup }) {
           type="password"
           value={s.v.password ?? ""}
           onChange={(e) => s.set("password", e.target.value || null)}
-          placeholder={s.editing ? t("servers.setup.connection.keepPlaceholder") : s.digitalocean ? "dop_v1_…" : "…"}
+          placeholder={s.secretKept ? t("servers.setup.connection.keepPlaceholder") : s.digitalocean ? "dop_v1_…" : "…"}
           autoComplete="off"
         />
       </Field>
@@ -71,7 +71,7 @@ export function AccessKeyCredentials({ s }: { s: HostSetup }) {
             type="password"
             value={s.v.password ?? ""}
             onChange={(e) => s.set("password", e.target.value || null)}
-            placeholder={s.editing ? t("servers.setup.connection.keepPlaceholder") : ""}
+            placeholder={s.secretKept ? t("servers.setup.connection.keepPlaceholder") : ""}
             autoComplete="off"
           />
         </Field>

@@ -48,30 +48,50 @@ export function SummaryRow({ ok, label, value }: { ok: boolean; label: string; v
   );
 }
 
-/** Back (ghost) on the left, the step's single primary action on the right. */
+/** A step's footer: pinned to the bottom of the onboarding's scroller, so its buttons stay in
+ *  view however tall the step is (and in the same place from step to step); the content scrolls
+ *  under it, behind a short fade. */
+export function StepFooter({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <div
+      data-step-footer
+      className={cn(
+        "sticky bottom-0 z-10 -mx-3 mt-auto bg-background px-3 pt-6 pb-6 before:pointer-events-none before:absolute before:inset-x-0 before:-top-6 before:h-6 before:bg-gradient-to-t before:from-background before:to-transparent before:content-['']",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Back (ghost) on the left, the way forward on the right: the jewel when it is the step's next
+ *  action, ghost glass when it only moves past the step (`nextVariant`, Skip for now). */
 export function StepActions({
   onBack,
   onNext,
   nextLabel,
+  nextVariant = "primary",
   disabled,
   backDisabled,
 }: {
   onBack: () => void;
   onNext: () => void;
   nextLabel: ReactNode;
+  nextVariant?: "primary" | "secondary";
   disabled?: boolean;
   backDisabled?: boolean;
 }) {
   const t = useT();
   return (
-    <div className="mt-8 flex items-center justify-between gap-2">
+    <StepFooter className="flex items-center justify-between gap-2">
       <Button variant="ghost" onClick={onBack} disabled={backDisabled}>
         <ArrowLeft className="size-4" /> {t("onboarding.back")}
       </Button>
-      <Button onClick={onNext} disabled={disabled}>
+      <Button variant={nextVariant} onClick={onNext} disabled={disabled}>
         {nextLabel}
       </Button>
-    </div>
+    </StepFooter>
   );
 }
 

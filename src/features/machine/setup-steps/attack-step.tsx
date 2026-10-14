@@ -8,7 +8,7 @@ import { Choice, ChoiceGrid } from "@/components/ui/choice-card";
 import { Switch } from "@/components/ui/switch";
 import { TypeIcon } from "@/components/ui/type-icon";
 import { isDockerReady } from "@/features/machine/setup-steps/steps";
-import { useMachineFormat } from "@/features/machine/use-machine-format";
+import { formatBytes } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { useImageSizes } from "@/lib/use-image-sizes";
 import { SharedFolderControl } from "@/features/settings/shared-folder";
@@ -20,7 +20,6 @@ import { SharedFolderControl } from "@/features/settings/shared-folder";
 /** Pick the attack box image (same setting as Settings > Attack box) and whether it starts with each lab. */
 export function AttackStep({ report }: { report: SystemReport }) {
   const t = useT();
-  const fmt = useMachineFormat();
   const [image, setImage] = useState(() => getAttackImage());
   const [auto, setAuto] = useState(() => getAutoAttackBox());
   const presets = ATTACK_PRESETS;
@@ -47,7 +46,7 @@ export function AttackStep({ report }: { report: SystemReport }) {
             note={[
               p.note,
               sizes[p.image]
-                ? t("machine.attack.download", { size: fmt.bytes(sizes[p.image]!) })
+                ? t("machine.attack.download", { size: formatBytes(sizes[p.image]!) })
                 : sizes[p.image] === null && p.large
                   ? t("machine.attack.largeDownload")
                   : null,

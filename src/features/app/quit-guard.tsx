@@ -20,7 +20,8 @@ export function QuitGuard() {
   const ref = useRef<HTMLDivElement>(null);
 
   useTauriEvent<number>("quit-blocked", (n) => setCount(typeof n === "number" ? n : 1));
-  useFocusTrap(ref, count !== null);
+  // Escape is "keep waiting", the choice that changes nothing.
+  useFocusTrap(ref, count !== null, () => setCount(null));
 
   if (count === null) return null;
 

@@ -8,7 +8,7 @@ export type Locale = (typeof LOCALES)[number];
 export const RAW_KEY = /^[a-z]+(\.[a-zA-Z]+)+$/;
 
 type Fixtures = {
-  /** The language every page of the test starts in (localStorage `cyberctf.locale`). */
+  /** The language the test starts in (localStorage `cyberctf.locale`, unless a page set one). */
   appLocale: Locale;
   /** Console errors, uncaught exceptions and missing-translation warnings, on every page of the
    *  test; the test fails if any were seen. */
@@ -24,7 +24,8 @@ export const test = base.extend<Fixtures>({
       // new tabs): the language, and onboarding done so the shell shows.
       await context.addInitScript((locale) => {
         try {
-          localStorage.setItem("cyberctf.locale", locale);
+          // Only when not set yet: a language picked during the test survives a reload.
+          if (!localStorage.getItem("cyberctf.locale")) localStorage.setItem("cyberctf.locale", locale);
           localStorage.setItem("cyberctf.onboarded", "1");
         } catch {
           /* storage unavailable */
@@ -48,11 +49,18 @@ export const test = base.extend<Fixtures>({
 
 export { expect };
 
-/** Opens the main window with the mock and waits for the shell. */
-export async function openApp(page: Page) {
-  await page.goto("/?mock");
+/** Opens the main window with the mock and waits for the shell. `query` adds the mock's
+ *  scenario switches (src/lib/dev-mock.ts, `Scenario`), e.g. "&launch=fail". */
+export async function openApp(page: Page, query = "") {
+  await page.goto(`/?mock${query}`);
   await expect(page.locator("aside nav")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+}
+
+/** The command palette's shortcut where the page thinks it runs: ⌘K on macOS, Ctrl+K elsewhere
+ *  (by the user agent, which the "Desktop Chrome" device sets to Windows). */
+export async function paletteKey(page: Page) {
+  return (await page.evaluate(() => navigator.userAgent)).includes("Mac") ? "Meta+k" : "Control+k";
 }
 
 /** A sidebar entry by its label (its name may go on with a count or a shortcut). */
@@ -92,4 +100,64 @@ export function horizontalOverflow(page: Page) {
     const boxes = [document.documentElement, document.body, ...document.querySelectorAll<HTMLElement>("main .overflow-y-auto")];
     return boxes.filter((b) => b.scrollWidth > b.clientWidth + 1).map((b) => `${b.tagName.toLowerCase()}.${b.className}: ${b.scrollWidth} > ${b.clientWidth}`);
   });
+}
+
+/** How a forced command answers: an error (after `delay` ms), or a value. */
+export type Forced = { error: string; delay?: number } | { value: unknown; delay?: number };
+
+/**
+ * Makes some Tauri commands fail (or answer `value`) on every page of the test, ahead of the dev
+ * mock, which answers the rest: the mock installs its `invoke` on `__TAURI_INTERNALS__`, and this
+ * wraps whatever is installed. Call before `openApp`.
+ */
+export async function forceCommands(page: Page, forced: Record<string, Forced>) {
+  await page.addInitScript((forced: Record<string, Forced>) => {
+    type Invoke = (cmd: string, args?: unknown, options?: unknown) => Promise<unknown>;
+    let real: Invoke | null = null;
+    // Callbacks and window metadata, for what registers before the mock is installed (event
+    // listeners on mount); the mock replaces them with its own.
+    const callbacks = new Map<number, unknown>();
+    let next = 1;
+    const internals = {
+      transformCallback: (cb: unknown) => {
+        callbacks.set(next, cb);
+        return next++;
+      },
+      unregisterCallback: (id: number) => callbacks.delete(id),
+      metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
+    } as { invoke?: Invoke };
+    Object.defineProperty(internals, "invoke", {
+      configurable: true,
+      enumerable: true,
+      set(fn: Invoke) {
+        real = fn;
+      },
+      get() {
+        return async (cmd: string, args?: unknown, options?: unknown) => {
+          const f = forced[cmd];
+          if (!f) return real?.(cmd, args, options);
+          if (f.delay) await new Promise((r) => setTimeout(r, f.delay));
+          if ("error" in f) throw f.error;
+          return structuredClone(f.value);
+        };
+      },
+    });
+    const w = window as unknown as { __TAURI_INTERNALS__: unknown; __CYBERCTF_MOCK__: boolean };
+    w.__TAURI_INTERNALS__ = internals;
+    // Lets the dev mock install itself over these internals.
+    w.__CYBERCTF_MOCK__ = true;
+  }, forced);
+}
+
+/** Sends an app event (what the Rust core emits: `quit-blocked`, `deep-link://new-url`…) to the
+ *  windows of the test's context, through the dev mock's event bus (src/lib/dev-mock.ts). */
+export function emitEvent(page: Page, event: string, payload: unknown) {
+  return page.evaluate(
+    ([event, payload]) => {
+      const bus = new BroadcastChannel("cyberctf-dev-mock-events");
+      bus.postMessage({ event, payload });
+      bus.close();
+    },
+    [event, payload] as const,
+  );
 }

@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { formatAgo, formatBytes, formatDuration, formatElapsed } from "@/lib/format";
+import { formatAgo, formatBytes, formatDuration, formatElapsed, prettyLabId } from "@/lib/format";
 import { setLocalePreference } from "@/lib/i18n";
 import { getLastRun, setLastRun } from "@/lib/last-run";
 import {
   ATTACK_PRESETS,
   ATTACK_VM_PRESETS,
+  attackImageLabel,
+  CYBERCTF_ATTACK_REPO,
   DEFAULT_ATTACK_BOX,
   DEFAULT_ATTACK_IMAGE,
   getAttackBox,
@@ -14,6 +16,7 @@ import {
   getLastTest,
   getPortMode,
   getVmProvider,
+  OLD_ATTACK_IMAGES,
   setAttackBox,
   setAttackImage,
   setAutoAttackBox,
@@ -60,6 +63,13 @@ describe("format", () => {
     expect(formatBytes(10)).toBe("1 kB");
   });
 
+  it("makes a lab id readable when its title isn't known", () => {
+    expect(prettyLabId("lab-goad")).toBe("Goad");
+    expect(prettyLabId("goad-light")).toBe("Goad Light");
+    expect(prettyLabId("lab_web_sqli")).toBe("Web Sqli");
+    expect(prettyLabId("lab-")).toBe("lab-");
+  });
+
   it("follows the language's decimal separator", () => {
     setLocalePreference("fr");
     expect(formatBytes(3.4e9)).toMatch(/^3,4/);
@@ -71,6 +81,38 @@ describe("settings", () => {
   it("defaults the attack box image and VM box", () => {
     expect(getAttackImage()).toBe(DEFAULT_ATTACK_IMAGE);
     expect(getAttackBox()).toBe(DEFAULT_ATTACK_BOX);
+  });
+
+  it("defaults to the Cyber CTF box pinned by digest, shown as its repository", () => {
+    expect(DEFAULT_ATTACK_IMAGE).toMatch(/^cyberctf\/attack-box@sha256:[0-9a-f]{64}$/);
+    expect(ATTACK_PRESETS[0].image).toBe(DEFAULT_ATTACK_IMAGE);
+    expect(attackImageLabel(DEFAULT_ATTACK_IMAGE)).toBe(CYBERCTF_ATTACK_REPO);
+    expect(attackImageLabel("ghcr.io/me/box")).toBe("ghcr.io/me/box");
+    expect(OLD_ATTACK_IMAGES).toEqual(expect.arrayContaining(["cyberctf/attack-box", "cyberctf/attack-box:latest"]));
+    expect(OLD_ATTACK_IMAGES).not.toContain(DEFAULT_ATTACK_IMAGE);
+  });
+
+  it.each(["cyberctf/attack-box", "cyberctf/attack-box:latest"])("moves a saved old default (%s) to the pinned default", (old) => {
+    localStorage.setItem("cyberctf.attackbox.image", old);
+    expect(getAttackImage()).toBe(DEFAULT_ATTACK_IMAGE);
+    expect(localStorage.getItem("cyberctf.attackbox.image")).toBeNull();
+  });
+
+  it("keeps a custom image, even another tag or digest of the Cyber CTF box", () => {
+    for (const image of ["ghcr.io/me/box:1", "cyberctf/attack-box:2026-10-05", `cyberctf/attack-box@sha256:${"a".repeat(64)}`]) {
+      localStorage.setItem("cyberctf.attackbox.image", image);
+      expect(getAttackImage()).toBe(image);
+      expect(localStorage.getItem("cyberctf.attackbox.image")).toBe(image);
+    }
+  });
+
+  it("doesn't store the default, so a later pinned default applies", () => {
+    setAttackImage("ghcr.io/me/box");
+    setAttackImage(DEFAULT_ATTACK_IMAGE);
+    expect(localStorage.getItem("cyberctf.attackbox.image")).toBeNull();
+    expect(getAttackImage()).toBe(DEFAULT_ATTACK_IMAGE);
+    setAttackImage("cyberctf/attack-box:latest");
+    expect(localStorage.getItem("cyberctf.attackbox.image")).toBeNull();
   });
 
   it("saves trimmed images and falls back to the default when blank", () => {

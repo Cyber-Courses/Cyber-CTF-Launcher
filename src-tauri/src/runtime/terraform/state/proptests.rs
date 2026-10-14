@@ -7,11 +7,10 @@ use serde_json::{Value, json};
 use super::*;
 use crate::proptest_support::{config, json as any_json, json_ish_text};
 
-const KEPT: [&str; 3] = ["ssh_public_key", "ssh_private_key_file", "allowed_cidr"];
-
 fn var() -> impl Strategy<Value = (String, String)> {
     let key = prop_oneof![
-        proptest::sample::select(&KEPT[..]).prop_map(str::to_string),
+        proptest::sample::select(KEPT_VARS).prop_map(str::to_string),
+        Just("proxmox_password".to_string()),
         Just("auto_stop_hours".to_string()),
         Just("aws_secret_access_key".to_string()),
         "[a-z_]{1,12}",
@@ -44,11 +43,11 @@ proptest! {
     /// never a secret, and the expiry only when the host stops itself.
     #[test]
     fn the_run_record_round_trips_connection_vars(vars in proptest::collection::vec(var(), 0..8), now in 0u64..=u64::MAX) {
-        let record = run_record(&vars, now);
+        let record = run_record(&vars, &[], now);
         let mut back = saved_vars(&Value::Object(record.clone()).to_string());
         back.sort();
         let mut want: Vec<(String, String)> = Vec::new();
-        for (k, v) in vars.iter().filter(|(k, _)| KEPT.contains(&k.as_str())) {
+        for (k, v) in vars.iter().filter(|(k, _)| KEPT_VARS.contains(&k.as_str())) {
             want.retain(|(wk, _)| wk != k);
             want.push((k.clone(), v.clone()));
         }
@@ -59,6 +58,28 @@ proptest! {
             Some(h) => prop_assert_eq!(record[EXPIRES_AT].as_u64(), Some(now.saturating_add(h.saturating_mul(3600)))),
             None => prop_assert!(!record.contains_key(EXPIRES_AT)),
         }
+    }
+
+    /// The provider environment a destroy gets back is the kept placement (the last value of
+    /// each), never a credential, whatever else the run had.
+    #[test]
+    fn the_run_record_keeps_placement_env_only(env in proptest::collection::vec((prop_oneof![
+        proptest::sample::select(KEPT_ENV).prop_map(str::to_string),
+        Just("AWS_SECRET_ACCESS_KEY".to_string()),
+        Just("DIGITALOCEAN_TOKEN".to_string()),
+        "[A-Z_]{1,12}",
+    ], "\\PC{0,20}"), 0..8)) {
+        let record = Value::Object(run_record(&[], &env, 1)).to_string();
+        let mut back = saved_env(&record);
+        back.sort();
+        let mut want: Vec<(String, String)> = Vec::new();
+        for (k, v) in env.iter().filter(|(k, _)| KEPT_ENV.contains(&k.as_str())) {
+            want.retain(|(wk, _)| wk != k);
+            want.push((k.clone(), v.clone()));
+        }
+        want.sort();
+        prop_assert_eq!(back, want);
+        prop_assert!(saved_vars(&record).iter().all(|(k, _)| KEPT_VARS.contains(&k.as_str())));
     }
 
     #[test]

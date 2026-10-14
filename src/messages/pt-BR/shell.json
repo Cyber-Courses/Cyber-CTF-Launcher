@@ -55,7 +55,8 @@
     "available": "A versão <version>{version}</version> está disponível.",
     "restartNow": "Reiniciar agora",
     "updating": "Atualizando…",
-    "update": "Atualizar"
+    "update": "Atualizar",
+    "waitForDeploys": "A atualização reinicia o Cyber CTF. Aguarde seus labs terminarem de implantar."
   },
   "error": {
     "title": "Algo deu errado",

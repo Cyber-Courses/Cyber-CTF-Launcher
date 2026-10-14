@@ -2,6 +2,7 @@ import { CalendarDays, Cloud, FlaskConical, LayoutDashboard, type LucideIcon, Mo
 import type { ActiveOperation, LabStatus, SystemReport } from "@/lib/tauri";
 import { engineName } from "@/features/machine/setup-steps/engines";
 import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
+import { prettyLabId } from "@/lib/format";
 
 // The app shell's pure logic: the screens and their order, the breadcrumb, the header's engine
 // line, which labs the sidebar lists as running and the keyboard shortcuts.
@@ -50,7 +51,9 @@ export type ActiveLab = SidebarLab & { op: ActiveOperation | null };
  * The labs the sidebar lists as running or busy: deploying (backend), with an operation in flight,
  * or seen running by the workload scan. A lab's own status, once known, has the last word over
  * the scan: the scan counts any VM a lab left behind (a half-started VM lab), so the sidebar said
- * "Running" while the Overview, from the same statuses, counted one lab fewer.
+ * "Running" while the Overview, from the same statuses, counted one lab fewer. A lab `labs`
+ * doesn't list (the catalogue couldn't be loaded) is still listed, by its id made readable, with
+ * no slug to open: a running lab must not vanish with the catalogue.
  */
 export function activeLabs(
   labs: SidebarLab[],
@@ -60,9 +63,16 @@ export function activeLabs(
   statuses: Record<string, LabStatus>,
 ): ActiveLab[] {
   const scanSaysRunning = (id: string) => runningIds.has(id) && (statuses[id] ? statuses[id].running : true);
-  return labs
-    .filter((l) => deploying.has(l.id) || ops.has(l.id) || scanSaysRunning(l.id))
-    .map((l) => ({ ...l, op: ops.get(l.id) ?? (deploying.has(l.id) ? { labId: l.id, op: "launch" as const, machine: null, step: null } : null) }));
+  const active = (id: string) => deploying.has(id) || ops.has(id) || scanSaysRunning(id);
+  const listed = new Set(labs.map((l) => l.id));
+  const unlisted = [...new Set([...deploying, ...ops.keys(), ...runningIds])]
+    .filter((id) => !listed.has(id) && active(id))
+    .sort()
+    .map((id): SidebarLab => ({ id, slug: "", title: prettyLabId(id), category: "" }));
+  return [...labs.filter((l) => active(l.id)), ...unlisted].map((l) => ({
+    ...l,
+    op: ops.get(l.id) ?? (deploying.has(l.id) ? { labId: l.id, op: "launch" as const, machine: null, step: null } : null),
+  }));
 }
 
 export type Shortcut = "palette" | "settings" | "findLab";
@@ -74,7 +84,9 @@ type Key = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey">;
  * app menu); "/" jumps to Labs search, except while typing in a field.
  */
 export function shortcutFor(e: Key, mac: boolean, typing: boolean): Shortcut | null {
-  if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) return "palette";
+  // Cmd+K on macOS, Ctrl+K elsewhere: on macOS Ctrl+K is the system's "delete to end of line"
+  // in every text field (and the shell's kill-line in the attack box terminal).
+  if ((e.key === "k" || e.key === "K") && (mac ? e.metaKey : e.ctrlKey)) return "palette";
   if ((e.ctrlKey || e.metaKey) && e.key === "," && !mac) return "settings";
   if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey || typing) return null;
   return "findLab";

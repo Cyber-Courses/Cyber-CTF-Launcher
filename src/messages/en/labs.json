@@ -10,15 +10,14 @@
   },
   "state": {
     "running": "Running",
-    "starting": "Starting",
-    "startingEllipsis": "Starting…",
     "resuming": "Resuming",
     "paused": "Paused",
     "shutDown": "Shut down",
     "interrupted": "Interrupted",
     "notStarted": "Not started",
     "solved": "Solved",
-    "working": "Working"
+    "working": "Working",
+    "failed": "Failed to start"
   },
   "places": {
     "container": "Container on this machine",
@@ -147,7 +146,6 @@
     "title": "Deployment",
     "on": "on <where>{where}</where>",
     "failed": "Failed",
-    "building": "Building",
     "ready": "Ready",
     "preparingEllipsis": "Preparing…",
     "showLog": "Show full log",
@@ -182,6 +180,10 @@
     "removeBodyCloud": "Its cloud services are destroyed in your account, which ends what they cost. The next start creates them again from scratch."
   },
   "list": {
+    "summarySignedOut": "{total} in the catalogue · {running} running on this machine",
+    "signInTitle": "Sign in to start labs",
+    "signInBody": "Browse freely; signing in lets you start labs and keeps track of what you solve.",
+    "retry": "Retry",
     "unreachableTitle": "Can’t reach the lab catalogue",
     "unreachableDescription": "Check your connection or sign in, then try again.",
     "title": "Labs",
@@ -280,7 +282,6 @@
     "resumeHint": "Bring the lab back as it was",
     "resuming": "Resuming…",
     "resume": "Resume",
-    "starting": "Starting…",
     "interruptedHint": "A previous start was interrupted; stop and clean it up, then start again",
     "cleaningUp": "Cleaning up…",
     "stopCleanUp": "Stop & clean up",
@@ -334,11 +335,13 @@
     "cloudIdle": "Start the lab to create its cloud services in your account. Stop it when you're done: that removes them and ends what they cost.",
     "connectAccount": "Connect an account on {clouds}",
     "estimatedCost": "Estimated cost",
-    "removeBodyCloud": "Its cloud services are destroyed in your account, which ends what they cost. The next start creates them again from scratch."
+    "removeBodyCloud": "Its cloud services are destroyed in your account, which ends what they cost. The next start creates them again from scratch.",
+    "retry": "Retry",
+    "retryRandomPorts": "Retry with random ports"
   },
   "cloud": {
-    "hourly": "about ${usd} an hour",
-    "untilAutoStop": "{hourly} (about ${usd} until it auto-stops in {hours} h)",
+    "hourly": "about {usd} an hour",
+    "untilAutoStop": "{hourly} (about {usd} until it auto-stops in {hours} h)",
     "billed": "Billed to your cloud account.",
     "costsUntilStop": "The lab creates its services there and they cost money until you stop it.",
     "costsUntilAutoStop": "The lab creates its services there and they cost money until you stop it. The launcher removes them after {hours} h, but only while it is open: stop the lab before you quit it.",
@@ -351,5 +354,63 @@
     "nothingExposed": "The lab is up in your cloud account. It exposes nothing to show here.",
     "billedEstimate": "Billed to you: {cost}, by the lab's estimate.",
     "billedWhileRunning": "Billed to your cloud account while it runs."
+  },
+  "objectives": {
+    "title": "Objectives",
+    "required": "{solved}/{total} required",
+    "progress": "Required challenges solved",
+    "completed": "Completed",
+    "completedNote": "Lab completed: every required challenge is solved.",
+    "signIn": "Sign in to submit answers and track your progress.",
+    "optional": "optional",
+    "guided": "guided",
+    "solved": "Solved",
+    "answerFor": "Answer for {title}",
+    "answerPlaceholder": "Your answer or flag",
+    "submit": "Submit",
+    "checking": "Checking…",
+    "correct": "Correct.",
+    "correctCompleted": "Correct. That completes the lab.",
+    "alreadySolved": "Correct, and already solved before.",
+    "wrong": "Not quite. Check it and try again.",
+    "failed": "Couldn't check the answer: {error}",
+    "helpNote": "Opening the steps or a hint is recorded: a solve without them counts as stronger evidence of the skill.",
+    "guidedMode": "Guided mode",
+    "guidedModeHint": "Break this challenge into steps",
+    "helpFailed": "Couldn't open it: {error}",
+    "steps": "Steps",
+    "step": "Step {n}",
+    "hint": "Hint {n}",
+    "revealHint": "Reveal hint {n} of {total}"
+  },
+  "reapFailed": {
+    "title": "Auto-stop couldn’t destroy {title}",
+    "hint": "It may still be billing in your cloud account. Fix what the message says, then stop the lab; or remove its resources in your cloud console."
+  },
+  "failure": {
+    "title": {
+      "launch": "Couldn’t start {title}",
+      "resume": "Couldn’t resume {title}",
+      "pause": "Couldn’t pause {title}",
+      "shutdown": "Couldn’t shut {title} down",
+      "stop": "Couldn’t stop and remove {title}",
+      "provision": "Couldn’t run {title}’s setup again"
+    },
+    "stillUp": "Part of the lab is still up. Try again; the deployment log says what failed.",
+    "dismiss": "Dismiss",
+    "hint": {
+      "ports": "A port this lab publishes is taken on this machine. Start it on random ports instead.",
+      "docker": "Docker isn’t running. Start your container engine, then retry.",
+      "dockerAccess": "Your account can’t use Docker yet: add it to the docker group, log out and back in, then retry.",
+      "signedOut": "Your session ended. Sign in again, then retry.",
+      "network": "Something it downloads, or the Cyber CTF API, couldn’t be reached. Check your internet connection, then retry.",
+      "disk": "This machine is out of disk space. Free some (the Machine page lists the images labs keep), then retry.",
+      "tool": "A tool this lab needs is missing here. Install it from the Machine page, then retry."
+    }
+  },
+  "offline": {
+    "question": "Start {title} offline?",
+    "body": "Cyber CTF can't be reached right now. This lab is installed on this machine, so it can start without it, but your progress and evidence aren't saved until you start it again online.",
+    "start": "Start offline"
   }
 }

@@ -40,9 +40,34 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// The banner with no lab deploying (the dev mock's sample data has one mid-deploy, which holds
+// the update back: see "waits for running deploys" below).
+const idleTauri = (overrides: Parameters<typeof installTauri>[0] = {}) => installTauri({ deploying_labs: () => [], ...overrides });
+
 describe("UpdateBanner", () => {
+  it("waits for running deploys: installing would end them", async () => {
+    let deploying = ["web-sqli"];
+    idleTauri({ deploying_labs: () => deploying });
+    const downloadAndInstall = vi.fn(async () => {});
+    updater.pending = { version: "1.5.0", downloadAndInstall };
+    render(<UpdateBanner />);
+    await flush();
+    expect(screen.getByRole("status").textContent).toContain("Wait until your labs finish deploying");
+    const button = screen.getByRole("button", { name: "Update" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    // A deploy that starts after the last poll is still caught when Update is clicked.
+    deploying = [];
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await flush();
+    expect(button.hasAttribute("disabled")).toBe(false);
+    deploying = ["web-sqli"];
+    fireEvent.click(button);
+    await flush();
+    expect(downloadAndInstall).not.toHaveBeenCalled();
+  });
+
   it("stays hidden when up to date, and when the check fails", async () => {
-    installTauri();
+    idleTauri();
     const { unmount } = render(<UpdateBanner />);
     await flush();
     expect(screen.queryByRole("status")).toBeNull();
@@ -54,13 +79,15 @@ describe("UpdateBanner", () => {
   });
 
   it("offers the new version, installs it and relaunches", async () => {
-    const calls = installTauri({ restart_app: () => null });
+    const calls = idleTauri({ restart_app: () => null });
     const downloadAndInstall = vi.fn(async () => {});
     updater.pending = { version: "1.5.0", downloadAndInstall };
     const user = userEvent.setup();
     render(<UpdateBanner />);
     await flush();
     expect(screen.getByRole("status").textContent).toContain("Version 1.5.0 is available.");
+    // Ghost glass, not the jewel: it shows on every screen, beside each screen's own primary.
+    expect(screen.getByRole("button", { name: "Update" }).className).toContain("btn-glass");
     await user.click(screen.getByRole("button", { name: "Update" }));
     await flush();
     expect(downloadAndInstall).toHaveBeenCalledTimes(1);
@@ -69,7 +96,7 @@ describe("UpdateBanner", () => {
   });
 
   it("disables the button while downloading", async () => {
-    installTauri();
+    idleTauri();
     let finish: () => void = () => {};
     updater.pending = { version: "1.5.0", downloadAndInstall: () => new Promise<void>((r) => (finish = r)) };
     const user = userEvent.setup();
@@ -82,7 +109,7 @@ describe("UpdateBanner", () => {
   });
 
   it("says when the update failed", async () => {
-    installTauri();
+    idleTauri();
     updater.pending = {
       version: "1.5.0",
       downloadAndInstall: async () => {
@@ -102,7 +129,7 @@ describe("UpdateBanner", () => {
   it("keeps Restart now when the relaunch fails after a good install", async () => {
     // The relaunch failing used to report the (installed) update as failed, hiding Restart now.
     let restarts = 0;
-    installTauri({
+    idleTauri({
       restart_app: () => {
         restarts++;
         throw new Error("relaunch denied");
@@ -214,8 +241,10 @@ describe("Screen", () => {
     installTauri();
     const { rerender } = render(<Screen {...base} tab="machine" />);
     expect(document.body.textContent).toMatch(/checking/i);
+    // Labs: the list's header and placeholder rows, not a bare spinner.
     rerender(<Screen {...base} tab="labs" />);
-    expect(document.body.textContent).toMatch(/loading/i);
+    expect(document.querySelector("[aria-busy=true]")).toBeTruthy();
+    expect(document.body.textContent).toContain("Labs");
   });
 
   it("offers a retry when the machine check failed", async () => {
@@ -240,9 +269,11 @@ describe("Screen", () => {
     const user = userEvent.setup();
     render(<Screen {...base} tab="labs" report={readyReport()} auth={{ loggedIn: false, name: null, email: null }} onAuthChange={onAuthChange} />);
     await flush(50);
-    const signIn = document.querySelector<HTMLElement>('[title="Sign in to start labs"]');
-    expect(signIn).toBeTruthy();
-    await user.click(signIn!);
+    // One banner above the list signs in, not a button on every row.
+    expect(document.querySelector('[title="Sign in to start labs"]')).toBeNull();
+    const signIn = screen.getAllByRole("button", { name: "Sign in" });
+    expect(signIn).toHaveLength(1);
+    await user.click(signIn[0]);
     await flush();
     expect(commands(calls)).toContain("auth_login");
     expect(onAuthChange).toHaveBeenCalledWith({ loggedIn: true, name: "Ada", email: "ada@example.com" });

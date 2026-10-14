@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { labStatus, type LabStatus } from "@/lib/tauri";
 import type { Lab } from "@/features/labs/use-labs";
+import { structurallyEqual } from "@/lib/equal";
 
 /**
  * What this machine knows about the labs, kept outside the React tree and shared by every
@@ -93,7 +94,8 @@ export function refreshStatus(lab: Lab, { fresh = false }: { fresh?: boolean } =
       // Seen running again since this app took it down (started from the website, say): the
       // scan counts for it again.
       if (s.running && (stoppedAt.get(lab.id) ?? Infinity) <= began) stoppedAt.delete(lab.id);
-      set({ statuses: { ...state.statuses, [lab.id]: s } });
+      // The same answer again (most polls) keeps the current object: nothing re-renders.
+      if (!structurallyEqual(state.statuses[lab.id], s)) set({ statuses: { ...state.statuses, [lab.id]: s } });
       // Down now: the last scan's "running" for it is out of date.
       if (fresh && !s.running && state.scanRunning.has(lab.id)) {
         set({ scanRunning: new Set([...state.scanRunning].filter((id) => id !== lab.id)) });
@@ -115,6 +117,7 @@ export function refreshStatus(lab: Lab, { fresh = false }: { fresh?: boolean } =
  *  (see `stoppedAt`) but still returned, so a status read can confirm them. */
 export function setScanRunning(ids: string[], began: number): string[] {
   const kept = ids.filter((id) => (freshAt.get(id) ?? 0) < began);
-  set({ scanRunning: new Set(kept.filter((id) => !stoppedAt.has(id))) });
+  const running = new Set(kept.filter((id) => !stoppedAt.has(id)));
+  if (!structurallyEqual(state.scanRunning, running)) set({ scanRunning: running });
   return kept;
 }

@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiQuery } from "@/lib/tauri";
 import { ignore, warn } from "@/lib/failure";
+import { structurallyEqual } from "@/lib/equal";
+import { usePoll } from "@/lib/use-poll";
 import { translate } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
+import { useLatest } from "@/lib/use-latest";
 
 export interface HostedEndpoint {
   port: number;
@@ -39,77 +43,80 @@ export function useHostedLabs() {
   const [error, setError] = useState<string | null>(null);
   // Stop polling a session that never settles, so a stuck backend launch doesn't spin forever.
   const pollDeadline = useRef<{ id: string; until: number } | null>(null);
-  // Bumped after a poll that brought no new session (an error, or no answer), so the next poll
-  // is still armed: re-arming only on a new session object stopped polling after one failure.
-  const [pollTick, setPollTick] = useState(0);
+  // The session that gave up so (its polling stops).
+  const [gaveUp, setGaveUp] = useState<string | null>(null);
+
+  // The session as the player last set it: a Launch or Stop begins a new one, so the hydration
+  // (or an earlier launch) answering after it can't bring back a session just stopped.
+  const begin = useLatest();
 
   // Hydrate from the backend once (requires login; a logged-out / errored call just leaves it null).
   useEffect(() => {
+    const isLatest = begin();
     apiQuery<{ myActiveLabSession: HostedSession | null }>("activeSession")
       .then((d) => {
         const s = d.myActiveLabSession;
-        if (s && s.target === "hosted" && !SETTLED.slice(1).includes(s.state)) setSession(s);
+        if (isLatest() && s && s.target === "hosted" && !SETTLED.slice(1).includes(s.state)) setSession(s);
       })
       .catch(warn("reading the active hosted session"));
-  }, []);
+  }, [begin]);
 
-  const launch = useCallback(async (labId: string) => {
-    setBusyLab(labId);
-    setError(null);
-    try {
-      const d = await apiQuery<{ requestLabLaunch: HostedSession }>("launchHosted", { labId });
-      setSession(d.requestLabLaunch);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      // The request returns the REQUESTED session fast; the session state drives the rest.
-      setBusyLab(null);
-    }
-  }, []);
+  const launch = useCallback(
+    async (labId: string) => {
+      const isLatest = begin();
+      setBusyLab(labId);
+      setError(null);
+      try {
+        const d = await apiQuery<{ requestLabLaunch: HostedSession }>("launchHosted", { labId });
+        if (isLatest()) setSession(d.requestLabLaunch);
+        // Stopped while it was being requested: the session it made must not run on unseen.
+        else void apiQuery("stopSession", { id: d.requestLabLaunch.id }).catch(warn("stopping a hosted session stopped while it was requested"));
+      } catch (e) {
+        if (isLatest()) setError(describeError(e));
+      } finally {
+        // The request returns the REQUESTED session fast; the session state drives the rest.
+        if (isLatest()) setBusyLab(null);
+      }
+    },
+    [begin],
+  );
 
-  // Poll the active session until it settles (RUNNING with endpoints, or FAILED/STOPPED/EXPIRED).
-  useEffect(() => {
-    if (!session || SETTLED.includes(session.state)) {
-      pollDeadline.current = null;
-      return;
-    }
-    // Give a launch a bounded time to come up; a session stuck in REQUESTED/CLAIMED/PULLING past
-    // it stops polling with a message instead of spinning forever.
-    if (!pollDeadline.current || pollDeadline.current.id !== session.id) {
-      pollDeadline.current = { id: session.id, until: Date.now() + 10 * 60 * 1000 };
-    }
-    if (Date.now() > pollDeadline.current.until) {
-      setError(translate("hosted.slowStart"));
-      return;
-    }
-    // Cancelled when the session changes (e.g. stop() clears it): a poll already in flight must
-    // not resolve afterwards and resurrect a session the user just stopped.
-    let cancelled = false;
-    const t = setTimeout(() => {
-      apiQuery<{ labSession: HostedSession | null }>("labSession", { id: session.id })
-        .then((d) => {
-          if (cancelled) return;
-          if (d.labSession) setSession(d.labSession);
-          else setPollTick((n) => n + 1);
-        })
-        .catch((e) => {
-          ignore("polled again in a moment")(e);
-          if (!cancelled) setPollTick((n) => n + 1);
-        });
-    }, 2500);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [session, pollTick]);
+  // Poll the active session until it settles (RUNNING with endpoints, or FAILED/STOPPED/EXPIRED),
+  // every 2.5 s, paused while the window is hidden. A failed or empty poll just polls again. A
+  // poll in flight when the session changes (e.g. stop() clears it) is dropped: it must not
+  // resurrect a session the user just stopped.
+  const pending = session && !SETTLED.includes(session.state) ? session.id : null;
+  // Give a launch a bounded time to come up; a session stuck in REQUESTED/CLAIMED/PULLING past
+  // it stops polling with a message instead of spinning forever.
+  const checkDeadline = (id: string) => {
+    if (!pollDeadline.current || pollDeadline.current.id !== id) pollDeadline.current = { id, until: Date.now() + 10 * 60 * 1000 };
+    if (Date.now() <= pollDeadline.current.until) return;
+    setError(translate("hosted.slowStart"));
+    setGaveUp(id);
+  };
+  usePoll(() => apiQuery<{ labSession: HostedSession | null }>("labSession", { id: pending }), 2500, {
+    enabled: pending !== null && gaveUp !== pending,
+    restartKey: pending,
+    leading: false,
+    onValue: (d) => {
+      const next = d.labSession;
+      if (next) setSession((prev) => (structurallyEqual(prev, next) ? prev : next));
+      if (pending) checkDeadline(pending);
+    },
+    onError: (e) => {
+      ignore("polled again in a moment")(e);
+      if (pending) checkDeadline(pending);
+    },
+  });
 
   const stop = useCallback(async () => {
+    begin();
     const current = session;
     setSession(null);
     setBusyLab(null);
     // The session is already off the page; a stop that fails says so, or it would keep running unseen.
-    if (current) await apiQuery("stopSession", { id: current.id }).catch((e) => setError(translate("hosted.stopFailed", { error: String(e) })));
-  }, [session]);
+    if (current) await apiQuery("stopSession", { id: current.id }).catch((e) => setError(translate("hosted.stopFailed", { error: describeError(e) })));
+  }, [session, begin]);
 
   return { session, busyLab, error, launch, stop };
 }

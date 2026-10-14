@@ -8,17 +8,16 @@ import { Spinner } from "@/components/ui/spinner";
 import { TypeIcon } from "@/components/ui/type-icon";
 import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
 import { ListSkeleton } from "@/features/machine/machine-parts";
-import { useMachineFormat } from "@/features/machine/use-machine-format";
 import { useT } from "@/lib/i18n";
 import { apiQuery, machineWorkloadStop, machineWorkloads, type Workload } from "@/lib/tauri";
 import { ignore } from "@/lib/failure";
+import { formatBytes, prettyLabId } from "@/lib/format";
 import { usePoll } from "@/lib/use-poll";
 
 /** What's running on this machine (Docker and Vagrant), with a Stop per lab. Polled every 8s,
  *  and again whenever `refreshKey` changes (e.g. after a setup test). */
 export function RunningNowPanel({ refreshKey }: { refreshKey: unknown }) {
   const t = useT();
-  const fmt = useMachineFormat();
   const [workloads, setWorkloads] = useState<Workload[] | null>(null);
   const [stopping, setStopping] = useState<string | null>(null);
   // One workloads read at a time: the read shells out to docker/vagrant and can be slow, so the
@@ -30,7 +29,7 @@ export function RunningNowPanel({ refreshKey }: { refreshKey: unknown }) {
   useEffect(() => {
     apiQuery<{ labs: { id: string; title: string }[] }>("labTitles")
       .then((d) => setTitles(Object.fromEntries(d.labs.map((l) => [l.id, l.title]))))
-      .catch(ignore("lab ids are shown instead of titles"));
+      .catch(ignore("lab ids, made readable, are shown instead of titles"));
   }, []);
 
   async function stop(w: Workload) {
@@ -50,7 +49,7 @@ export function RunningNowPanel({ refreshKey }: { refreshKey: unknown }) {
     <Panel>
       <PanelHeader
         title={t("machine.running.title")}
-        meta={labMem > 0 ? <span className="tabular-nums">{t("machine.running.inUse", { size: fmt.bytes(labMem) })}</span> : undefined}
+        meta={labMem > 0 ? <span className="tabular-nums">{t("machine.running.inUse", { size: formatBytes(labMem) })}</span> : undefined}
       />
       {workloads === null ? (
         <ListSkeleton />
@@ -59,10 +58,10 @@ export function RunningNowPanel({ refreshKey }: { refreshKey: unknown }) {
       ) : (
         workloads.map((w) => {
           const key = `${w.kind}:${w.id}`;
-          const name = w.id === "selftest" ? t("machine.running.setupTest") : (titles[w.id] ?? w.id);
+          const name = w.id === "selftest" ? t("machine.running.setupTest") : (titles[w.id] ?? prettyLabId(w.id));
           const meta =
             w.kind === "docker"
-              ? `${t("machine.running.containers", { count: w.count })}${w.memBytes ? ` · ${fmt.bytes(w.memBytes)}` : ""}`
+              ? `${t("machine.running.containers", { count: w.count })}${w.memBytes ? ` · ${formatBytes(w.memBytes)}` : ""}`
               : `${t("machine.running.vms", { count: w.count })}${w.provider ? ` · ${PROVIDER_LABELS[w.provider] ?? w.provider}` : ""}`;
           return (
             <div

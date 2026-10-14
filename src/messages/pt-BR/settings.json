@@ -57,11 +57,16 @@
       "default": "Padrão"
     }
   },
+  "isoloomRegistry": {
+    "title": "Lista de labs do Isoloom",
+    "description": "Registra os labs que você inicia em ~/.isoloom/status.yml, para que a linha de comando do isoloom os veja (isoloom status, connect, exec). Os labs funcionam igual sem isso."
+  },
   "attackBox": {
     "title": "Imagem da attack box",
     "description": "Roda na rede de cada lab como sua caixa de ferramentas. A primeira inicialização de uma imagem a baixa, o que pode demorar.",
     "default": "Padrão",
     "largeDownload": "Download grande",
+    "pinned": "fixada",
     "presets": {
       "cyberctf": "Kali com o conjunto de ferramentas padrão, pronto para usar",
       "kali": "Base oficial do Kali, adicione ferramentas conforme precisar",
@@ -77,7 +82,8 @@
     "customImageNote": "Qualquer imagem Docker ou tag de registry.",
     "save": "Salvar",
     "autoStart": "Iniciar a attack box com o lab",
-    "autoStartDescription": "Inicia-a assim que um lab sobe nesta máquina: o contêiner num lab de contêiner, a VM ao lado de um lab de VM. Você ainda pode iniciá-la ou pará-la pelo lab."
+    "autoStartDescription": "Inicia-a assim que um lab sobe nesta máquina: o contêiner num lab de contêiner, a VM ao lado de um lab de VM. Você ainda pode iniciá-la ou pará-la pelo lab.",
+    "invalidImage": "Use um nome de imagem simples como registry/name:tag: só letras, números e . _ - / : @, sem hífen no início."
   },
   "attackVm": {
     "title": "VM de ataque para labs de VM",
@@ -107,7 +113,11 @@
     "installAddon": "Instalar complemento",
     "logInstalling": "Instalando o complemento Vagrant {plugin}…",
     "logInstalled": "✓ Instalado",
-    "logTitle": "Complemento Vagrant"
+    "logTitle": "Complemento Vagrant",
+    "allowHyperv": "Permitir minha conta",
+    "allowingHyperv": "Permitindo…",
+    "logAllowingHyperv": "Adicionando sua conta aos Administradores do Hyper-V (o Windows pede permissão)…",
+    "logHypervAllowed": "✓ Pronto. Saia do Windows e entre novamente; depois, verifique de novo."
   },
   "cleanup": {
     "title": "Limpeza",
@@ -156,6 +166,10 @@
     "diagnosticsDescription": "Copia sua versão, sistema operacional e status da configuração, para um relato de bug ou pedido de suporte.",
     "copied": "Copiado",
     "copy": "Copiar",
+    "logs": "Arquivos de log",
+    "logsDescription": "O que o Cyber CTF registrou enquanto rodava. Envie-os com um relatório de bug ou um pedido de suporte.",
+    "openLogs": "Abrir pasta",
+    "logsFailed": "Não foi possível abrir a pasta de logs",
     "firstRun": "Configuração inicial",
     "firstRunDescription": "Percorra a introdução de novo. Suas configurações e labs são mantidos.",
     "replay": "Refazer"

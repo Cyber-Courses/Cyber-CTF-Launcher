@@ -9,7 +9,7 @@ use tauri::ipc::Channel;
 #[cfg(target_os = "macos")]
 use super::scripts::fetch_and_open;
 #[cfg(target_os = "linux")]
-use super::scripts::{TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, awscli_script, azurecli_script, docker_script};
+use super::scripts::{TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, awscli_script, azurecli_script, docker_script, gcloud_script};
 use super::steps::{Step, channel_log, command_line, run_step, run_steps, step};
 use super::uninstall;
 use crate::error::{Error, Result};
@@ -31,92 +31,123 @@ pub enum Dependency {
     Wsl,
 }
 
+/// The install steps on macOS: Homebrew formulae, or a cask whose installer the user finishes.
+#[cfg(target_os = "macos")]
+fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
+    let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()))?;
+    Ok(match dep {
+        // Docker Desktop: download the app with brew, then open its installer; the user
+        // finishes in Docker's own flow (includes the docker CLI + compose).
+        Dependency::Docker => vec![fetch_and_open(&brew, "docker-desktop", "Docker Desktop")],
+        // Admin-requiring: download with brew, then open the tool's native installer.
+        Dependency::Vagrant => vec![fetch_and_open(&brew, "vagrant", "Vagrant")],
+        // Terraform is a brew formula (no admin); full tap name since core dropped it.
+        Dependency::Terraform => vec![step(brew.clone(), &["install", "hashicorp/tap/terraform"])],
+        Dependency::Virtualbox => vec![fetch_and_open(&brew, "virtualbox", "VirtualBox")],
+        // QEMU is a brew formula (no admin); UTM is a cask with its own installer.
+        Dependency::Qemu => vec![step(brew.clone(), &["install", "qemu"])],
+        Dependency::Utm => vec![fetch_and_open(&brew, "utm", "UTM")],
+        Dependency::Libvirt => return Err(Error::Invalid("libvirt isn't used on macOS; use QEMU or UTM instead.".into())),
+        Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
+        // Cloud CLIs (brew formulae; gcloud is a cask).
+        Dependency::Awscli => vec![step(brew.clone(), &["install", "awscli"])],
+        // Microsoft's prebuilt cask instead of the `azure-cli` formula: on recent macOS the
+        // formula has no bottle and builds its whole tree (llvm, rust) from source, which takes
+        // ~an hour. The cask is a signed download. `trust` is needed because the tap is third-party.
+        // https://learn.microsoft.com/cli/azure/install-azure-cli-macos
+        Dependency::Azurecli => vec![
+            step(brew.clone(), &["tap", "azure/azure-cli"]),
+            // `brew trust` exists from Homebrew 7 only; an older Homebrew needs no trust and
+            // must not fail here ("Unknown command"). On 7, an untrusted tap still fails at
+            // the install step with Homebrew's own message.
+            Step {
+                program: "sh".into(),
+                args: vec!["-c".into(), format!("'{brew}' trust azure/azure-cli 2>/dev/null || true")],
+                note: Some("Trusting the azure/azure-cli tap (Homebrew 7 asks for it; older versions don't).".into()),
+            },
+            Step {
+                program: brew.clone(),
+                args: vec!["install".into(), "--cask".into(), "azure-cli-preview".into()],
+                note: Some("Installing the prebuilt Azure CLI cask (avoids a long source build on this macOS).".into()),
+            },
+        ],
+        Dependency::Gcloud => vec![step(brew.clone(), &["install", "--cask", "google-cloud-sdk"])],
+    })
+}
+
+/// The install step on Windows: a winget package, or WSL's own elevated installer.
+#[cfg(target_os = "windows")]
+fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
+    let id = match dep {
+        Dependency::Docker => "Docker.DockerDesktop",
+        Dependency::Vagrant => "Hashicorp.Vagrant",
+        Dependency::Terraform => "Hashicorp.Terraform",
+        Dependency::Virtualbox if std::env::consts::ARCH == "aarch64" => {
+            return Err(Error::Invalid("VirtualBox doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.".into()));
+        }
+        Dependency::Virtualbox => "Oracle.VirtualBox",
+        Dependency::Qemu => "SoftwareFreedomConservancy.QEMU",
+        Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
+        Dependency::Libvirt => return Err(Error::Invalid("libvirt is Linux-only; on Windows use Hyper-V or WSL.".into())),
+        Dependency::Awscli => "Amazon.AWSCLI",
+        Dependency::Azurecli => "Microsoft.AzureCLI",
+        Dependency::Gcloud => "Google.CloudSDK",
+        // Turns on the WSL and Virtual Machine Platform features and installs the WSL 2 kernel.
+        // Elevated through Windows' own UAC prompt; the features need a restart to take effect.
+        Dependency::Wsl => {
+            // `-PassThru` surfaces wsl.exe's own exit code (without it PowerShell exits 0
+            // whatever happened); a declined UAC prompt throws, reported as ERROR_CANCELLED.
+            return Ok(vec![step(
+                "powershell",
+                &[
+                    "-NoProfile",
+                    "-Command",
+                    "try { $p = Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait -PassThru; exit $p.ExitCode } catch { exit 1223 }",
+                ],
+            )]);
+        }
+    };
+    Ok(vec![step("winget", &["install", "-e", "--id", id, "--accept-source-agreements", "--accept-package-agreements"])])
+}
+
+/// The install steps on Linux: apt and the vendors' installers, as root through pkexec.
+#[cfg(target_os = "linux")]
+fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
+    // pkexec raises a graphical password prompt (polkit) for the privileged install.
+    let root = |script: String| Step { program: "pkexec".into(), args: vec!["sh".into(), "-c".into(), script], note: None };
+    Ok(match dep {
+        Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
+        Dependency::Docker => vec![root(docker_script(crate::exec::login_name().as_deref()))],
+        Dependency::Vagrant => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y vagrant"])],
+        // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
+        Dependency::Terraform => vec![root(TERRAFORM_SCRIPT.into())],
+        Dependency::Virtualbox => vec![root(VIRTUALBOX_SCRIPT.into())],
+        Dependency::Qemu => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y qemu-system qemu-utils"])],
+        Dependency::Libvirt => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y libvirt-daemon-system virt-manager"])],
+        Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
+        // Cloud CLIs via each vendor's official installer (best effort across distros).
+        // AWS CLI v2 from the official bundle, in a private temporary directory.
+        Dependency::Awscli => vec![root(awscli_script())],
+        Dependency::Azurecli => vec![root(azurecli_script())],
+        // The SDK installs per user, without root: under pkexec it landed in /root, which the
+        // player can't read. It goes to ~/google-cloud-sdk, whose bin the app adds to PATH.
+        Dependency::Gcloud => vec![step("sh", &["-c", &gcloud_script()])],
+    })
+}
+
 /// The ordered install steps for a dependency on this OS.
 fn plan(dep: Dependency) -> Result<Vec<Step>> {
     #[cfg(target_os = "macos")]
     {
-        let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()))?;
-        Ok(match dep {
-            // Docker Desktop: download the app with brew, then open its installer; the user
-            // finishes in Docker's own flow (includes the docker CLI + compose).
-            Dependency::Docker => vec![fetch_and_open(&brew, "docker-desktop", "Docker Desktop")],
-            // Admin-requiring: download with brew, then open the tool's native installer.
-            Dependency::Vagrant => vec![fetch_and_open(&brew, "vagrant", "Vagrant")],
-            // Terraform is a brew formula (no admin); full tap name since core dropped it.
-            Dependency::Terraform => vec![step(brew.clone(), &["install", "hashicorp/tap/terraform"])],
-            Dependency::Virtualbox => vec![fetch_and_open(&brew, "virtualbox", "VirtualBox")],
-            // QEMU is a brew formula (no admin); UTM is a cask with its own installer.
-            Dependency::Qemu => vec![step(brew.clone(), &["install", "qemu"])],
-            Dependency::Utm => vec![fetch_and_open(&brew, "utm", "UTM")],
-            Dependency::Libvirt => return Err(Error::Invalid("libvirt isn't used on macOS; use QEMU or UTM instead.".into())),
-            Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
-            // Cloud CLIs (brew formulae; gcloud is a cask).
-            Dependency::Awscli => vec![step(brew.clone(), &["install", "awscli"])],
-            // Microsoft's prebuilt cask instead of the `azure-cli` formula: on recent macOS the
-            // formula has no bottle and builds its whole tree (llvm, rust) from source, which takes
-            // ~an hour. The cask is a signed download. `trust` is needed because the tap is third-party.
-            // https://learn.microsoft.com/cli/azure/install-azure-cli-macos
-            Dependency::Azurecli => vec![
-                step(brew.clone(), &["tap", "azure/azure-cli"]),
-                step(brew.clone(), &["trust", "azure/azure-cli"]),
-                Step {
-                    program: brew.clone(),
-                    args: vec!["install".into(), "--cask".into(), "azure-cli-preview".into()],
-                    note: Some("Installing the prebuilt Azure CLI cask (avoids a long source build on this macOS).".into()),
-                },
-            ],
-            Dependency::Gcloud => vec![step(brew.clone(), &["install", "--cask", "google-cloud-sdk"])],
-        })
+        macos_plan(dep)
     }
     #[cfg(target_os = "windows")]
     {
-        let id = match dep {
-            Dependency::Docker => "Docker.DockerDesktop",
-            Dependency::Vagrant => "Hashicorp.Vagrant",
-            Dependency::Terraform => "Hashicorp.Terraform",
-            Dependency::Virtualbox if std::env::consts::ARCH == "aarch64" => {
-                return Err(Error::Invalid("VirtualBox doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.".into()));
-            }
-            Dependency::Virtualbox => "Oracle.VirtualBox",
-            Dependency::Qemu => "SoftwareFreedomConservancy.QEMU",
-            Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
-            Dependency::Libvirt => return Err(Error::Invalid("libvirt is Linux-only; on Windows use Hyper-V or WSL.".into())),
-            Dependency::Awscli => "Amazon.AWSCLI",
-            Dependency::Azurecli => "Microsoft.AzureCLI",
-            Dependency::Gcloud => "Google.CloudSDK",
-            // Turns on the WSL and Virtual Machine Platform features and installs the WSL 2 kernel.
-            // Elevated through Windows' own UAC prompt; the features need a restart to take effect.
-            Dependency::Wsl => {
-                return Ok(vec![step(
-                    "powershell",
-                    &["-NoProfile", "-Command", "Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait"],
-                )]);
-            }
-        };
-        Ok(vec![step("winget", &["install", "-e", "--id", id, "--accept-source-agreements", "--accept-package-agreements"])])
+        windows_plan(dep)
     }
     #[cfg(target_os = "linux")]
     {
-        // pkexec raises a graphical password prompt (polkit) for the privileged install.
-        let root = |script: String| Step { program: "pkexec".into(), args: vec!["sh".into(), "-c".into(), script], note: None };
-        Ok(match dep {
-            Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
-            Dependency::Docker => vec![root(docker_script(crate::exec::login_name().as_deref()))],
-            Dependency::Vagrant => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y vagrant"])],
-            // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
-            Dependency::Terraform => vec![root(TERRAFORM_SCRIPT.into())],
-            Dependency::Virtualbox => vec![root(VIRTUALBOX_SCRIPT.into())],
-            Dependency::Qemu => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y qemu-system qemu-utils"])],
-            Dependency::Libvirt => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y libvirt-daemon-system virt-manager"])],
-            Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
-            // Cloud CLIs via each vendor's official installer (best effort across distros).
-            // AWS CLI v2 from the official bundle, in a private temporary directory.
-            Dependency::Awscli => vec![root(awscli_script())],
-            Dependency::Azurecli => vec![root(azurecli_script())],
-            // The SDK installs per user, without root: under pkexec it landed in /root, which the
-            // player can't read. It goes to ~/google-cloud-sdk, whose bin the app adds to PATH.
-            Dependency::Gcloud => vec![step("sh", &["-c", "curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --install-dir=\"$HOME\""])],
-        })
+        linux_plan(dep)
     }
 }
 
@@ -127,12 +158,19 @@ pub async fn install_dependency(app: crate::AppHandle, dependency: Dependency, l
     let steps = plan(dependency).inspect_err(|e| on_line(e.to_string()))?;
     let before = uninstall::present(dependency).await;
     run_steps(&steps, &mut on_line).await?;
+    // Windows: the installer wrote its folder to the registry PATH; pick it up before looking.
+    super::env_path::refresh();
     // Remembered so Cleanup can offer to remove what Cyber CTF installed, and only that: a tool
     // that was already there is never recorded, and one whose installer was only opened (macOS
     // casks) or isn't found yet counts once a later check finds it.
     if let Some(before) = before {
         let after = uninstall::present(dependency).await.unwrap_or(false);
         uninstall::record_outcome(&app, dependency, uninstall::outcome(before, after));
+    }
+    // Its features start at the next restart: the check asks for one until then, even if the
+    // app is reopened first.
+    if dependency == Dependency::Wsl {
+        crate::machine::system::wsl::mark_installed(&app);
     }
     on_line("Done. Re-checking this machine…".into());
     Ok(())

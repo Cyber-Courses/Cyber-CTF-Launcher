@@ -35,10 +35,14 @@ fn lab_dir_in(base: &Path, id: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// Terraform state for a lab's target, outside the lab folder.
+/// Terraform state for a lab's target, outside the lab folder. The `deployments` folder above
+/// every lab's state is made owner-only first: the state holds the lab's outputs (passwords,
+/// keys) in clear.
 pub(super) fn state_dir(app: &AppHandle, id: &str, target: &str) -> Result<PathBuf> {
     validate_id(id)?;
-    Ok(state_dir_in(&app_data(app)?, id, target))
+    let base = app_data(app)?;
+    crate::private_fs::dir(&base.join("deployments"))?;
+    Ok(state_dir_in(&base, id, target))
 }
 
 /// [`state_dir`] under the app data folder `base`.
@@ -137,6 +141,21 @@ pub(super) fn local_vm(dir: &Path) -> Option<String> {
     std::fs::read_to_string(dir.join(LOCAL_VM_MARKER)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
+/// The host keys of a lab's own hosts that Vagrant runs (a lab VM here, a lab host on ESXi), for
+/// its attack box shell. Kept with the lab, not shared: another lab later given the same address
+/// (DHCP, a recycled IP) has another key, and a shared pin refused every shell to it.
+const LAB_KNOWN_HOSTS: &str = ".cyberctf-known_hosts";
+
+pub(super) fn lab_known_hosts(dir: &Path) -> PathBuf {
+    dir.join(LAB_KNOWN_HOSTS)
+}
+
+/// Forgets the keys pinned for a lab's hosts: a new deployment brings new hosts, maybe at the
+/// address of another one.
+pub(super) fn forget_lab_host_keys(dir: &Path) {
+    let _ = std::fs::remove_file(lab_known_hosts(dir));
+}
+
 /// Written when the launcher parks a lab (paused or shut down), so a later start resumes its
 /// machines instead of clearing them as leftovers; removed on resume and on stop.
 const PARKED_MARKER: &str = ".cyberctf-parked";
@@ -153,7 +172,7 @@ pub(super) fn parked(dir: &Path) -> Option<Park> {
 mod tests {
     use super::{
         PARKED_MARKER, Park, Provider, Runtime, deployed_ids, lab_dir_in, local_vm, mark_local_vm, mark_parked, parked, record_runtime, recorded_runtime,
-        state_dir_in, vagrant_dirs, validate_id,
+        state_dir, state_dir_in, vagrant_dirs, validate_id,
     };
 
     fn temp_dir(prefix: &str) -> std::path::PathBuf {
@@ -187,6 +206,29 @@ mod tests {
         mark_parked(&dir, None).unwrap();
         assert_eq!(parked(&dir), None);
         assert!(!dir.join(PARKED_MARKER).exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn markers_are_read_trimmed_and_unknown_values_fall_back() {
+        use super::{LOCAL_VM_MARKER, recorded_host};
+        let dir = temp_dir("cyberctf-markers");
+        // A trailing newline (a hand edit, a tool that adds one) changes nothing; blank is none.
+        std::fs::write(dir.join(LOCAL_VM_MARKER), "virtualbox\n").unwrap();
+        assert_eq!(local_vm(&dir).as_deref(), Some("virtualbox"));
+        std::fs::write(dir.join(LOCAL_VM_MARKER), "  \n").unwrap();
+        assert_eq!(local_vm(&dir), None);
+        std::fs::write(dir.join(PARKED_MARKER), "pause\n").unwrap();
+        assert_eq!(parked(&dir), Some(Park::Pause));
+        std::fs::write(dir.join(PARKED_MARKER), "PAUSE").unwrap();
+        assert_eq!(parked(&dir), None, "exact ids only");
+        std::fs::write(dir.join("host"), "  aws1 \n").unwrap();
+        assert_eq!(recorded_host(&dir).as_deref(), Some("aws1"));
+        std::fs::write(dir.join("host"), "\n").unwrap();
+        assert_eq!(recorded_host(&dir), None);
+        // The runtime tag is exact too: an unknown one reads as containers (the oldest kind).
+        std::fs::write(dir.join("runtime"), "vm").unwrap();
+        assert_eq!(recorded_runtime(&dir), Runtime::Docker);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -233,6 +275,17 @@ mod tests {
     fn state_lives_outside_the_lab_folder_per_target() {
         let base = std::path::Path::new("base");
         assert_eq!(state_dir_in(base, "web-1", "aws"), base.join("deployments").join("web-1").join("aws"));
+    }
+
+    #[test]
+    fn every_labs_state_sits_in_a_folder_only_this_user_opens() {
+        let t = crate::test_app::TestApp::new();
+        let state = state_dir(t.handle(), "web-1", "aws").unwrap();
+        assert_eq!(state, t.data().join("deployments").join("web-1").join("aws"));
+        assert!(t.data().join("deployments").is_dir());
+        #[cfg(unix)]
+        assert_eq!(crate::private_fs::tests::mode(&t.data().join("deployments")), 0o700);
+        assert!(state_dir(t.handle(), "../x", "aws").is_err());
     }
 
     #[test]

@@ -41,5 +41,11 @@
     "worker": "worker",
     "ssh": "ssh",
     "service": "serviço"
+  },
+  "view": {
+    "fitWidth": "Ajustar à largura",
+    "fitWidthHint": "Reduzir o diagrama à largura do cartão, ou mostrá-lo em tamanho legível",
+    "scrollMore": "Role para ver mais",
+    "scrollMoreHint": "Rolar o diagrama para ver o resto"
   }
 }

@@ -1,4 +1,4 @@
-import { test, expect, openApp, navButton, pageTitle, breadcrumb } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, breadcrumb, paletteKey } from "./fixtures";
 
 test.describe("navigation", () => {
   test.beforeEach(async ({ page }) => openApp(page));
@@ -33,19 +33,23 @@ test.describe("navigation", () => {
   });
 
   test("command palette opens and navigates", async ({ page }) => {
-    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press(await paletteKey(page));
     const palette = page.getByRole("dialog", { name: "Command menu" });
     await expect(palette).toBeVisible();
     await expect(palette.getByPlaceholder("Search labs, screens, actions…")).toBeFocused();
 
     await page.keyboard.type("servers");
-    await expect(palette.getByRole("button", { name: "Go to Servers" })).toBeVisible();
+    // A combobox over a listbox: the field names the active option.
+    const option = palette.getByRole("option", { name: "Go to Servers" });
+    await expect(option).toBeVisible();
+    await expect(option).toHaveAttribute("aria-selected", "true");
+    await expect(palette.getByRole("combobox")).toHaveAttribute("aria-activedescendant", (await option.getAttribute("id"))!);
     await page.keyboard.press("Enter");
     await expect(palette).toBeHidden();
     await expect(pageTitle(page)).toHaveText("Servers");
 
     // Escape closes it without doing anything.
-    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press(await paletteKey(page));
     await expect(palette).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(palette).toBeHidden();
@@ -55,7 +59,7 @@ test.describe("navigation", () => {
     await page.getByRole("button", { name: /^Find/ }).click();
     await expect(palette).toBeVisible();
     await page.keyboard.type("GOAD");
-    await palette.getByRole("button", { name: /GOAD Light/ }).click();
+    await palette.getByRole("option", { name: /GOAD Light/ }).click();
     await expect(palette).toBeHidden();
     await expect(pageTitle(page)).toHaveText("GOAD Light");
   });

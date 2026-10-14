@@ -41,5 +41,11 @@
     "worker": "ワーカー",
     "ssh": "SSH",
     "service": "サービス"
+  },
+  "view": {
+    "fitWidth": "幅に合わせる",
+    "fitWidthHint": "図をカードの幅に収まるよう縮小するか、読みやすいサイズで表示します",
+    "scrollMore": "スクロールで続きを表示",
+    "scrollMoreHint": "図をスクロールして残りを表示します"
   }
 }

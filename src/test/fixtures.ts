@@ -37,6 +37,10 @@ export function stoppedDockerReport(): SystemReport {
     dockerEngine: null,
     dockerEnginesRunning: [],
     dockerDenied: true,
-    dockerDeniedHint: "sudo usermod -aG docker $USER",
+    dockerDeniedHint: {
+      code: "dockerDenied",
+      args: { user: "player" },
+      message: "Docker is running, but your account can't use it yet (sudo usermod -aG docker player)",
+    },
   };
 }

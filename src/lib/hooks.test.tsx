@@ -218,11 +218,9 @@ describe("timers", () => {
     const { result, unmount } = renderHook(() => usePoll(read, 1000, { onValue, onFocus: true }));
     await act(async () => {});
     expect(read).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      vi.advanceTimersByTime(2000);
-    });
+    await act(() => vi.advanceTimersByTimeAsync(2000));
     expect(read).toHaveBeenCalledTimes(3);
-    act(() => result.current());
+    await act(async () => result.current());
     expect(read).toHaveBeenCalledTimes(4);
     act(() => {
       window.dispatchEvent(new Event("focus"));

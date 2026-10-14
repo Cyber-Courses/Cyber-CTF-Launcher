@@ -55,7 +55,8 @@
     "available": "バージョン <version>{version}</version> が利用可能です。",
     "restartNow": "今すぐ再起動",
     "updating": "アップデート中…",
-    "update": "アップデート"
+    "update": "アップデート",
+    "waitForDeploys": "アップデートすると Cyber CTF が再起動します。ラボのデプロイが終わるまでお待ちください。"
   },
   "error": {
     "title": "問題が発生しました",

@@ -57,11 +57,16 @@
       "default": "Par défaut"
     }
   },
+  "isoloomRegistry": {
+    "title": "Liste des labs d'Isoloom",
+    "description": "Inscrit les labs que vous démarrez dans ~/.isoloom/status.yml, pour que la ligne de commande isoloom les voie (isoloom status, connect, exec). Les labs fonctionnent de la même façon sans."
+  },
   "attackBox": {
     "title": "Image de l'attack box",
     "description": "Tourne sur le réseau de chaque lab et sert de boîte à outils. Le premier lancement d'une image la télécharge, ce qui peut prendre un moment.",
     "default": "Par défaut",
     "largeDownload": "Gros téléchargement",
+    "pinned": "épinglée",
     "presets": {
       "cyberctf": "Kali avec ses outils standards, prête à l'emploi",
       "kali": "Base Kali officielle, ajoutez les outils au besoin",
@@ -77,7 +82,8 @@
     "customImageNote": "N'importe quelle image Docker ou tag de registre.",
     "save": "Enregistrer",
     "autoStart": "Démarrer l'attack box avec le lab",
-    "autoStartDescription": "La démarre dès qu'un lab tourne sur cette machine : le conteneur pour un lab conteneur, la VM à côté d'un lab VM. Vous pouvez toujours la démarrer ou l'arrêter depuis le lab."
+    "autoStartDescription": "La démarre dès qu'un lab tourne sur cette machine : le conteneur pour un lab conteneur, la VM à côté d'un lab VM. Vous pouvez toujours la démarrer ou l'arrêter depuis le lab.",
+    "invalidImage": "Utilisez un nom d'image simple comme registry/name:tag : lettres, chiffres et . _ - / : @ uniquement, sans tiret au début."
   },
   "attackVm": {
     "title": "VM d'attaque pour les labs VM",
@@ -107,7 +113,11 @@
     "installAddon": "Installer l'extension",
     "logInstalling": "Installation de l'extension Vagrant {plugin}…",
     "logInstalled": "✓ Installée",
-    "logTitle": "Extension Vagrant"
+    "logTitle": "Extension Vagrant",
+    "allowHyperv": "Autoriser mon compte",
+    "allowingHyperv": "Autorisation…",
+    "logAllowingHyperv": "Ajout de votre compte aux Administrateurs Hyper-V (Windows demande l’autorisation)…",
+    "logHypervAllowed": "✓ C’est fait. Déconnectez-vous de Windows puis reconnectez-vous, puis relancez la vérification."
   },
   "cleanup": {
     "title": "Nettoyage",
@@ -156,6 +166,10 @@
     "diagnosticsDescription": "Copie votre version, votre OS et l'état de la configuration, pour un rapport de bug ou une demande d'assistance.",
     "copied": "Copié",
     "copy": "Copier",
+    "logs": "Fichiers journaux",
+    "logsDescription": "Ce que Cyber CTF a noté pendant son exécution. Joignez-les à un rapport de bug ou à une demande d'assistance.",
+    "openLogs": "Ouvrir le dossier",
+    "logsFailed": "Impossible d'ouvrir le dossier des journaux",
     "firstRun": "Configuration initiale",
     "firstRunDescription": "Refaire l'accueil. Vos réglages et vos labs sont conservés.",
     "replay": "Relancer"

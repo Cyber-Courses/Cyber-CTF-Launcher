@@ -10,7 +10,7 @@ use crate::AppHandle;
 
 use super::Workload;
 use crate::error::{Error, Result};
-use crate::exec::{run, run_env_timed};
+use crate::exec::run_env_timed;
 use crate::machine::{labs_dir, selftest};
 
 /// `vagrant global-status` talks to VirtualBox, which can be wedged: past this it is given up.
@@ -123,7 +123,7 @@ pub(super) async fn stop(app: &AppHandle, id: &str) -> Result<()> {
         return Err(Error::Invalid(format!("no VMs found for `{id}`")));
     }
     for dir in dirs {
-        run("vagrant", &["destroy", "-f"], Some(&dir)).await?;
+        crate::exec::Vagrant::of(&dir, &[]).run(&["destroy", "-f"]).await?;
     }
     Ok(())
 }
@@ -151,6 +151,47 @@ mod tests {
         assert_eq!(owner(Path::new("/data/labs/goad/.isoloom/vagrant"), Some(labs), Some(selftest)).as_deref(), Some("goad"));
         assert_eq!(owner(selftest, Some(labs), Some(selftest)).as_deref(), Some("selftest"));
         assert_eq!(owner(Path::new("/home/me/other"), Some(labs), Some(selftest)), None);
+    }
+
+    #[test]
+    fn records_without_a_home_or_outside_the_labs_folder_are_not_workloads() {
+        let labs = std::env::temp_dir().join("cyberctf-wl-labs");
+        let selftest = std::env::temp_dir().join("cyberctf-wl-selftest").join("vm");
+        let home = |p: &Path| p.display().to_string();
+        // The labs folder itself (no lab under it), a record with no home line (a remote
+        // machine's), a sibling folder whose name only starts like the labs folder, and a lab
+        // VM that is saved rather than running.
+        let out = format!(
+            "1,,machine-id,a\n1,,provider-name,virtualbox\n1,,machine-home,{}\n1,,state,running\n\
+             2,,machine-id,b\n2,,provider-name,virtualbox\n2,,state,running\n\
+             3,,machine-id,c\n3,,provider-name,virtualbox\n3,,machine-home,{}2/goad/.isoloom/vagrant\n3,,state,running\n\
+             4,,machine-id,d\n4,,provider-name,virtualbox\n4,,machine-home,{}\n4,,state,saved\n",
+            home(&labs),
+            home(&labs),
+            home(&labs.join("goad").join(".isoloom").join("vagrant"))
+        );
+        assert!(running_by_owner(&out, Some(&labs), Some(&selftest)).is_empty());
+        // A folder with a Vagrantfile under a lab, however deep, belongs to that lab.
+        let deep =
+            format!("5,,machine-id,e\n5,,provider-name,qemu\n5,,machine-home,{}\n5,,state,running\n", home(&labs.join("goad").join(".cyberctf-attack-vm")));
+        let w = running_by_owner(&deep, Some(&labs), Some(&selftest));
+        assert_eq!(w.iter().map(|w| (w.id.as_str(), w.count)).collect::<Vec<_>>(), [("goad", 1)]);
+    }
+
+    #[tokio::test]
+    async fn stopping_a_lab_destroys_each_vagrant_folder_it_has() {
+        use crate::exec::fake::Tools;
+        let t = crate::test_app::TestApp::new();
+        let lab = t.lab("goad", &[]);
+        // Docker on one VM and one VM per machine both left something: each folder is destroyed.
+        for sub in ["vagrant", "docker-vm"] {
+            let d = crate::runtime::lab::out(&lab).join(sub);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("Vagrantfile"), "").unwrap();
+        }
+        let tools = Tools::rules(&[]);
+        super::stop(t.handle(), "goad").await.unwrap();
+        assert_eq!(tools.calls().iter().filter(|c| c.as_str() == "vagrant destroy -f").count(), 2, "{:?}", tools.calls());
     }
 
     #[test]

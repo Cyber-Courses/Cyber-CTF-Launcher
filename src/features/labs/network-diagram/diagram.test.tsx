@@ -32,14 +32,30 @@ const networks: LabNetwork[] = [{ name: "default", subnet: "10.42.0.0/24", inter
 
 // Each observed element reports this width: the shell sizes the drawing to it.
 let shellWidth = 900;
+const observed = new Set<SizedObserver>();
 class SizedObserver {
+  private el: Element | null = null;
   constructor(private cb: ResizeObserverCallback) {}
   observe(el: Element) {
-    this.cb([{ target: el, contentRect: { width: shellWidth, height: 400 } } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
+    this.el = el;
+    observed.add(this);
+    this.report();
+  }
+  report() {
+    if (this.el)
+      this.cb([{ target: this.el, contentRect: { width: shellWidth, height: 400 } } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
   }
   unobserve() {}
-  disconnect() {}
+  disconnect() {
+    observed.delete(this);
+  }
 }
+/** The window resized: every observed element now reports `width`. */
+const resizeTo = (width: number) =>
+  act(() => {
+    shellWidth = width;
+    observed.forEach((o) => o.report());
+  });
 
 beforeEach(() => {
   initialised.value = true;
@@ -53,7 +69,10 @@ beforeEach(() => {
     },
   );
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  observed.clear();
+});
 
 const settle = async () => {
   // ELK lays out asynchronously (a fake worker): give it a few turns.
@@ -200,6 +219,37 @@ describe("NetworkDiagram", () => {
       scroller.dispatchEvent(new Event("scroll"));
     });
     expect(document.querySelector(".topology-shell")?.getAttribute("data-more-left")).toBe("true");
+  });
+
+  it("re-fits to a resized shell: a wider one draws the lab whole, without fades", async () => {
+    shellWidth = 300;
+    render(<NetworkDiagram machines={["a", "b", "c", "d"].map((n, i) => machine(n, { ports: [{ published: 8000 + i, target: 80 }] }))} />);
+    await settle();
+    const shell = document.querySelector<HTMLElement>(".topology-shell")!;
+    const canvas = document.querySelector<HTMLElement>(".topology-canvas")!;
+    const scroller = document.querySelector<HTMLElement>(".topology-scroll")!;
+    // Narrow: the canvas grows past the shell, which scrolls, with a fade on the right.
+    const narrow = parseFloat(canvas.style.width);
+    expect(narrow).toBeGreaterThan(300);
+    expect(shell.getAttribute("data-more-right")).toBe("true");
+    act(() => {
+      scroller.scrollLeft = 120;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    expect(shell.getAttribute("data-more-left")).toBe("true");
+
+    // Wider than the drawing: the canvas is the shell, nothing to scroll. The browser clamps the
+    // offset to 0 without a scroll event; the fades must still follow.
+    scroller.scrollLeft = 0;
+    resizeTo(narrow + 600);
+    expect(canvas.style.width).toBe(`${narrow + 600}px`);
+    expect(shell.getAttribute("data-more-left")).toBeNull();
+    expect(shell.getAttribute("data-more-right")).toBeNull();
+
+    // Narrow again: the canvas grows past it again (no stale width).
+    resizeTo(300);
+    expect(parseFloat(canvas.style.width)).toBe(narrow);
+    expect(shell.getAttribute("data-more-right")).toBe("true");
   });
 });
 

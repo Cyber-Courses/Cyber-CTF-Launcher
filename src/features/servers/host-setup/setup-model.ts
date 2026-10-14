@@ -1,4 +1,4 @@
-import type { CloudProvider, Dependency, RemoteProvider, ServerHostInput, SystemReport } from "@/lib/tauri";
+import type { CloudProvider, Dependency, RemoteProvider, ServerHostInput, ServerTest, SystemReport } from "@/lib/tauri";
 import {
   AWS_REGIONS,
   AZURE_LOCATIONS,
@@ -73,15 +73,25 @@ export function withProvider(s: ServerHostInput, id: CloudProvider): ServerHostI
   };
 }
 
-/** Whether the connection / credentials step has what it needs to go on. */
-export function connectionReady(v: ServerHostInput, editing: boolean): boolean {
+/** Whether the connection / credentials step has what it needs to go on. `secretKept`: a saved
+ *  secret stays when the field is left empty (see `keepsSecret`). */
+export function connectionReady(v: ServerHostInput, secretKept: boolean): boolean {
   const host = v.host.trim() !== "";
   const user = v.username.trim() !== "";
-  const secret = editing || (v.password ?? "") !== "";
+  const secret = secretKept || (v.password ?? "") !== "";
   if (isTokenCloud(v.provider)) return host && secret;
   if (isCliAuthCloud(v.provider) || v.provider === "oci") return host && user;
   if (isCloud(v.provider) && v.useCliCreds) return host;
-  return host && user && secret;
+  // A server's port: empty (its default) or a whole number a TCP port can be (the field took 0
+  // or 70000 and went on).
+  const port = v.port == null || (Number.isInteger(v.port) && v.port >= 1 && v.port <= 65535);
+  return host && user && secret && port;
+}
+
+/** Whether an edited host or account has a saved secret to keep: one that signed in with the
+ *  cloud's CLI and now uses keys never had a secret key, so it must be typed. */
+export function keepsSecret(initial: ServerHostInput, v: ServerHostInput): boolean {
+  return initial.id !== null && !(initial.useCliCreds && !v.useCliCreds);
 }
 
 /** The CLI a cloud needs on this machine (none for the token and key clouds). */
@@ -126,4 +136,25 @@ export function machineTools(provider: RemoteProvider, report: SystemReport | nu
 export function saveName(v: ServerHostInput): string {
   const fallback = isCloud(v.provider) ? (CLOUD_DEFAULT_NAME[v.provider] ?? v.host.trim()) : v.host.trim();
   return v.name.trim() || fallback;
+}
+
+/** The setup window's title: what was saved and whether its test passed ("connected" only once
+ *  the test says so: a saved host whose test failed isn't), else what is being set up. */
+export function setupTitle({
+  saved,
+  test,
+  editing,
+  cloud,
+  initialName,
+}: {
+  saved: { name: string } | null;
+  test: ServerTest | "testing" | null;
+  editing: boolean;
+  cloud: boolean;
+  initialName: string;
+}) {
+  const failed = !!test && test !== "testing" && !test.ok;
+  if (saved) return { key: failed ? "savedNotConnected" : "connected", name: saved.name } as const;
+  if (editing) return { key: "edit", name: initialName } as const;
+  return { key: cloud ? "cloud" : "host", name: "" } as const;
 }

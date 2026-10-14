@@ -10,15 +10,14 @@
   },
   "state": {
     "running": "En ejecución",
-    "starting": "Iniciando",
-    "startingEllipsis": "Iniciando…",
     "resuming": "Reanudando",
     "paused": "En pausa",
     "shutDown": "Apagado",
     "interrupted": "Interrumpido",
     "notStarted": "Sin iniciar",
     "solved": "Resuelto",
-    "working": "Trabajando"
+    "working": "Trabajando",
+    "failed": "No se pudo iniciar"
   },
   "places": {
     "container": "Contenedor en esta máquina",
@@ -147,7 +146,6 @@
     "title": "Despliegue",
     "on": "en <where>{where}</where>",
     "failed": "Error",
-    "building": "Construyendo",
     "ready": "Listo",
     "preparingEllipsis": "Preparando…",
     "showLog": "Mostrar log completo",
@@ -182,6 +180,10 @@
     "removeBodyCloud": "Sus servicios en la nube se destruyen en tu cuenta, lo que pone fin a su coste. El próximo inicio los vuelve a crear desde cero."
   },
   "list": {
+    "summarySignedOut": "{total} en el catálogo · {running} en ejecución en esta máquina",
+    "signInTitle": "Inicia sesión para iniciar labs",
+    "signInBody": "Explora libremente; con la sesión iniciada puedes iniciar labs y se guarda lo que resuelves.",
+    "retry": "Reintentar",
     "unreachableTitle": "No se puede acceder al catálogo de labs",
     "unreachableDescription": "Revisa tu conexión o inicia sesión y vuelve a intentarlo.",
     "title": "Labs",
@@ -280,7 +282,6 @@
     "resumeHint": "Recupera el lab tal como estaba",
     "resuming": "Reanudando…",
     "resume": "Reanudar",
-    "starting": "Iniciando…",
     "interruptedHint": "Un inicio anterior se interrumpió; detenlo y límpialo, y vuelve a iniciarlo",
     "cleaningUp": "Limpiando…",
     "stopCleanUp": "Detener y limpiar",
@@ -334,11 +335,13 @@
     "cloudIdle": "Inicia el lab para crear sus servicios en la nube en tu cuenta. Detenlo cuando termines: eso los elimina y pone fin a su coste.",
     "connectAccount": "Conectar una cuenta de {clouds}",
     "estimatedCost": "Coste estimado",
-    "removeBodyCloud": "Sus servicios en la nube se destruyen en tu cuenta, lo que pone fin a su coste. El próximo inicio los vuelve a crear desde cero."
+    "removeBodyCloud": "Sus servicios en la nube se destruyen en tu cuenta, lo que pone fin a su coste. El próximo inicio los vuelve a crear desde cero.",
+    "retry": "Reintentar",
+    "retryRandomPorts": "Reintentar con puertos aleatorios"
   },
   "cloud": {
-    "hourly": "unos {usd} $ por hora",
-    "untilAutoStop": "{hourly} (unos {usd} $ hasta que se detenga solo en {hours} h)",
+    "hourly": "unos {usd} por hora",
+    "untilAutoStop": "{hourly} (unos {usd} hasta que se detenga solo en {hours} h)",
     "billed": "Se factura en tu cuenta en la nube.",
     "costsUntilStop": "El lab crea allí sus servicios, que cuestan dinero hasta que lo detengas.",
     "costsUntilAutoStop": "El lab crea allí sus servicios, que cuestan dinero hasta que lo detengas. El launcher los elimina tras {hours} h, pero solo si está abierto: detén el lab antes de cerrarlo.",
@@ -351,5 +354,63 @@
     "nothingExposed": "El lab está en marcha en tu cuenta en la nube. No expone nada que mostrar aquí.",
     "billedEstimate": "Se te factura: {cost}, según la estimación del lab.",
     "billedWhileRunning": "Se factura en tu cuenta en la nube mientras se ejecuta."
+  },
+  "objectives": {
+    "title": "Objetivos",
+    "required": "{solved}/{total} obligatorios",
+    "progress": "Retos obligatorios resueltos",
+    "completed": "Completado",
+    "completedNote": "Lab completado: todos los retos obligatorios están resueltos.",
+    "signIn": "Inicia sesión para enviar respuestas y seguir tu progreso.",
+    "optional": "opcional",
+    "guided": "guiado",
+    "solved": "Resuelto",
+    "answerFor": "Respuesta para {title}",
+    "answerPlaceholder": "Tu respuesta o flag",
+    "submit": "Enviar",
+    "checking": "Comprobando…",
+    "correct": "Correcto.",
+    "correctCompleted": "Correcto. Con esto completas el lab.",
+    "alreadySolved": "Correcto, y ya estaba resuelto.",
+    "wrong": "No exactamente. Revísalo e inténtalo de nuevo.",
+    "failed": "No se pudo comprobar la respuesta: {error}",
+    "helpNote": "Abrir los pasos o una pista queda registrado: resolverlo sin ellos cuenta como una prueba más sólida de la habilidad.",
+    "guidedMode": "Modo guiado",
+    "guidedModeHint": "Dividir este reto en pasos",
+    "helpFailed": "No se pudo abrir: {error}",
+    "steps": "Pasos",
+    "step": "Paso {n}",
+    "hint": "Pista {n}",
+    "revealHint": "Mostrar pista {n} de {total}"
+  },
+  "reapFailed": {
+    "title": "La parada automática no pudo destruir {title}",
+    "hint": "Puede seguir facturándose en tu cuenta de la nube. Corrige lo que indica el mensaje y detén el lab; o elimina sus recursos en tu consola de la nube."
+  },
+  "failure": {
+    "title": {
+      "launch": "No se pudo iniciar {title}",
+      "resume": "No se pudo reanudar {title}",
+      "pause": "No se pudo pausar {title}",
+      "shutdown": "No se pudo apagar {title}",
+      "stop": "No se pudo detener y eliminar {title}",
+      "provision": "No se pudo volver a ejecutar la configuración de {title}"
+    },
+    "stillUp": "Parte del lab sigue en marcha. Vuelve a intentarlo; el registro de despliegue indica qué falló.",
+    "dismiss": "Descartar",
+    "hint": {
+      "ports": "Un puerto que publica este lab ya está ocupado en esta máquina. Inícialo con puertos aleatorios.",
+      "docker": "Docker no está en marcha. Inicia tu motor de contenedores y vuelve a intentarlo.",
+      "dockerAccess": "Tu cuenta aún no puede usar Docker: añádela al grupo docker, cierra la sesión y vuelve a entrar, y reinténtalo.",
+      "signedOut": "Tu sesión terminó. Vuelve a iniciar sesión y reinténtalo.",
+      "network": "No se pudo acceder a una descarga o a la API de Cyber CTF. Revisa tu conexión a Internet y reinténtalo.",
+      "disk": "Esta máquina se quedó sin espacio en disco. Libera algo (la página Máquina muestra las imágenes que guardan los labs) y reinténtalo.",
+      "tool": "Falta aquí una herramienta que este lab necesita. Instálala desde la página Máquina y reinténtalo."
+    }
+  },
+  "offline": {
+    "question": "¿Iniciar {title} sin conexión?",
+    "body": "No se puede contactar con Cyber CTF ahora mismo. Este lab está instalado en esta máquina, así que puede iniciarse sin él, pero tu progreso y tus evidencias no se guardan hasta que lo inicies de nuevo con conexión.",
+    "start": "Iniciar sin conexión"
   }
 }

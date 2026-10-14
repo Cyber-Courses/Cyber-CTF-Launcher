@@ -1,164 +1,115 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, Cloud, ExternalLink, Play, Server, TriangleAlert } from "lucide-react";
-import { Panel, PanelHeader } from "@/components/ui/panel";
-import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/ui/page-header";
 import { LabRow, emulatorReady } from "@/features/labs/lab-row";
+import { catalogueRowProps, UnlistedRunningRow, type RowContext } from "@/features/labs/labs-list";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
+import { useSavedServers } from "@/features/labs/use-saved-servers";
 import { useLabActions } from "@/features/labs/use-lab-actions";
-import { CalloutRow, StatCard } from "@/features/machine/machine-parts";
-import { usage } from "@/features/machine/machine-status";
 import { useMachineMetrics } from "@/features/machine/use-machine-metrics";
 import { DeployPanel } from "@/features/home/deploy-panel";
 import { JumpBackPanel } from "@/features/home/jump-back-panel";
 import { MachineSummaryPanel } from "@/features/home/machine-summary-panel";
-import { dockerReadiness, greetingKey, heroStatus, labContainerCount, recentLabs, runningLabs } from "@/features/home/home-model";
+import { HomeHeader, LabsPreviewPanel, LowRamCallout, RunningPanel, SignInHint, UsageStats } from "@/features/home/home-sections";
+import { dockerReadiness, labContainerCount, recentLabs, runningLabs } from "@/features/home/home-model";
+import { runningUnlisted } from "@/features/labs/lab-row-state";
+import { CheckFailed } from "@/features/machine/check-failed";
 import { getLastRun } from "@/lib/last-run";
-import { useActiveOperations } from "@/lib/deploy-store";
+import { useActiveOperations, useDeployingLabs } from "@/lib/deploy-store";
 import { assessRam } from "@/features/home/capacity";
-import { machineOpenSetup, type AuthStatus, type SystemReport } from "@/lib/tauri";
-import { tell } from "@/lib/failure";
-import { useFormat, useT } from "@/lib/i18n";
+import type { AuthStatus, SystemReport } from "@/lib/tauri";
+import { useStableCallback } from "@/lib/use-stable-callback";
 
 type Tab = "labs" | "machine" | "setup" | "server" | "cloud" | "settings";
 
 export function HomeScreen({
   report,
+  checkError = null,
+  onRetryCheck,
   auth,
   onNavigate,
+  onLogin,
 }: {
   report: SystemReport | null;
+  /** The machine check failed (and none answered before it). */
+  checkError?: string | null;
+  onRetryCheck?: () => unknown;
   auth: AuthStatus | null;
   onNavigate: (tab: Tab, slug?: string) => void;
+  /** Signs in from a lab row (signed out). */
+  onLogin?: () => Promise<void>;
 }) {
-  const t = useT();
-  const format = useFormat();
-  /** Gigabytes with one decimal, without a trailing ".0" (19.5, 32). */
-  const gb = (bytes: number) => format.number(bytes / 1e9, { maximumFractionDigits: 1, useGrouping: false });
   const loggedIn = auth?.loggedIn ?? false;
-  const { labs, statuses, refreshStatus } = useLabs(loggedIn);
+  const { labs, error, retry, statuses, completed, refreshStatus } = useLabs(loggedIn);
   const { runs, launch, stop, resume } = useLabActions(refreshStatus);
   const ops = useActiveOperations();
+  // Deploys running in the backend (started before a reload, or from the website), for the rows.
+  const deploying = useDeployingLabs();
+  const servers = useSavedServers();
   // A rolling window of the 3 s polls, for the stat card sparklines.
-  const { metrics, history: hist } = useMachineMetrics(3000);
+  const { metrics, history: hist, failed: metricsFailed } = useMachineMetrics(3000);
   // "Now" for the "last run" labels and the greeting, taken once per visit.
   const [now] = useState(() => Date.now());
 
   const dockerReady = dockerReadiness(report);
   const running = runningLabs(labs ?? [], statuses);
+  // Running here but not in the catalogue (it couldn't be loaded): still listed, by id.
+  const unlisted = runningUnlisted(labs, statuses);
   const labContainers = labContainerCount(running, statuses);
   const preview = (labs ?? []).slice(0, 6);
   const activeOps = [...ops.values()];
   const recent = recentLabs(labs ?? [], statuses, getLastRun);
 
-  const name = auth?.name?.split(" ")[0];
-  const use = metrics ? usage(metrics) : null;
   const capacity = metrics ? assessRam(metrics.memTotal) : null;
-  const hello = t(greetingKey(new Date(now).getHours()));
   const openLab = (slug: string) => onNavigate("labs", slug);
+  // The same handlers on every render, so the memoized rows re-render only when their lab changes.
+  const onOpenRow = useStableCallback((lab: Lab) => openLab(lab.slug));
+  const onStopRow = useStableCallback((lab: Lab) => void stop(lab));
+  const onResumeRow = useStableCallback((lab: Lab) => void resume(lab));
+  const login = useStableCallback(() => onLogin?.() ?? Promise.resolve());
 
-  const labRow = (lab: Lab) => (
-    <LabRow
-      key={lab.id}
-      lab={lab}
-      status={statuses[lab.id]}
-      busy={!!runs[lab.id]?.busy}
-      operation={runs[lab.id]?.op}
-      loggedIn={loggedIn}
-      hostArch={report?.arch ?? ""}
-      emulates={emulatorReady(report)}
-      onOpen={() => openLab(lab.slug)}
-      onStop={() => stop(lab)}
-      onResume={() => resume(lab)}
-    />
-  );
+  // The rows read as on the Labs list (the same row): starting, solved, a failed start, what this
+  // machine needs, and Sign in when signed out (the Overview has no sign-in banner).
+  const ctx: RowContext = {
+    statuses,
+    runs,
+    completed,
+    deploying,
+    report,
+    servers,
+    loggedIn,
+    onLogin: !loggedIn && onLogin ? login : undefined,
+    hostArch: report?.arch ?? "",
+    emulates: emulatorReady(report),
+    onOpen: onOpenRow,
+    onStop: onStopRow,
+    onResume: onResumeRow,
+  };
+  // The memoized row itself, no wrapper: a metrics tick re-renders the screen, not its rows.
+  const labRow = (lab: Lab) => <LabRow key={lab.id} {...catalogueRowProps(lab, ctx)} />;
+  const runningCount = running.length + unlisted.length;
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title={
-          auth?.loggedIn ? (
-            name ? (
-              <>{t.rich("home.title.named", { em: (s) => <em>{s}</em> }, { greeting: hello, name })}</>
-            ) : (
-              t("home.title.plain", { greeting: hello })
-            )
-          ) : (
-            <>{t.rich("home.title.welcome", { em: (s) => <em>{s}</em> })}</>
-          )
-        }
-        lead={t(`home.status.${heroStatus(dockerReady, running.length)}`, { count: running.length })}
-        actions={
-          dockerReady === false ? (
-            <Button size="sm" onClick={() => machineOpenSetup().catch(tell(t("home.actions.setUpFailed")))}>
-              <Play className="size-3.5" /> {t("home.actions.setUp")}
-            </Button>
-          ) : (
-            <Button size="sm" onClick={() => onNavigate("labs")}>
-              {t("home.actions.browse")} <ArrowRight className="size-3.5" />
-            </Button>
-          )
-        }
+      <HomeHeader
+        auth={auth}
+        now={now}
+        dockerReady={dockerReady}
+        running={runningCount}
+        checkFailed={!report && !!checkError}
+        onBrowse={() => onNavigate("labs")}
       />
-
-      {/* Live usage */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label={t("home.stats.cpu")}
-          detail={metrics ? t("home.stats.cores", { cores: metrics.cores }) : ""}
-          value={metrics ? metrics.cpu : null}
-          history={hist.cpu}
-        />
-        <StatCard
-          label={t("home.stats.memory")}
-          detail={metrics ? t("home.stats.usage", { used: gb(metrics.memUsed), total: gb(metrics.memTotal) }) : ""}
-          value={use && metrics?.memTotal ? use.memPct : null}
-          history={hist.mem}
-        />
-        <StatCard
-          label={t("home.stats.disk")}
-          detail={metrics ? t("home.stats.usage", { used: gb(metrics.diskUsed), total: gb(metrics.diskTotal) }) : ""}
-          value={use && metrics?.diskTotal ? use.diskPct : null}
-          history={hist.disk}
-        />
-      </div>
-
-      {capacity && capacity.level === "low" && (
-        <CalloutRow
-          tone="warn"
-          icon={<TriangleAlert className="size-4" />}
-          title={capacity.title}
-          meta={t("home.capacity.total", { total: format.number(capacity.totalGB, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}
-          actions={
-            <>
-              <Button variant="outline" size="xs" onClick={() => onNavigate("cloud")}>
-                <Cloud /> {t("home.capacity.cloud")}
-              </Button>
-              <Button variant="outline" size="xs" onClick={() => onNavigate("server")}>
-                <Server /> {t("home.capacity.server")}
-              </Button>
-            </>
-          }
-        >
-          {capacity.detail}
-        </CalloutRow>
-      )}
+      {!report && checkError && onRetryCheck && <CheckFailed error={checkError} onRetry={onRetryCheck} />}
+      <UsageStats metrics={metrics} history={hist} failed={metricsFailed} />
+      {capacity && capacity.level === "low" && <LowRamCallout capacity={capacity} onNavigate={onNavigate} />}
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <Panel>
-          <PanelHeader
-            title={t("home.running.title")}
-            meta={
-              <span className="tabular-nums">
-                {t("home.running.labs", { count: running.length })}
-                {labContainers > 0 ? ` · ${t("home.running.containers", { count: labContainers })}` : ""}
-              </span>
-            }
-          />
-          {running.length > 0 ? running.map(labRow) : <p className="px-4 py-3.5 text-[0.8125rem] text-muted-foreground">{t("home.running.empty")}</p>}
-        </Panel>
+        <RunningPanel running={runningCount} containers={labContainers}>
+          {running.map(labRow)}
+          {unlisted.map((id) => (
+            <UnlistedRunningRow key={id} id={id} />
+          ))}
+        </RunningPanel>
 
         {activeOps.length > 0 ? (
           <DeployPanel ops={activeOps} labs={labs ?? []} onOpen={openLab} />
@@ -175,38 +126,19 @@ export function HomeScreen({
           canStart={(lab) => loggedIn && !!lab.runtime}
           onOpen={(lab) => openLab(lab.slug)}
           // A shut-down or paused lab comes back as it was; a fresh launch would start over on
-          // top of its kept machines.
-          onStart={(lab) => (statuses[lab.id]?.parked ? resume(lab) : launch(lab, undefined, undefined, report))}
+          // top of its kept machines. A cloud lab runs on an account picked on its page (it
+          // costs): launched from here it only failed, with the message in a log nobody saw.
+          onStart={(lab) =>
+            lab.runtime?.runtime === "CLOUD" ? openLab(lab.slug) : statuses[lab.id]?.parked ? resume(lab) : launch(lab, undefined, undefined, report)
+          }
         />
       )}
 
-      <Panel>
-        <PanelHeader
-          title={
-            <>
-              {t("home.labs.title")} {labs && <span className="font-mono text-[0.6875rem] font-normal text-faint">{labs.length}</span>}
-            </>
-          }
-          action={
-            <Button variant="ghost" size="xs" onClick={() => onNavigate("labs")}>
-              {t("home.labs.all")} <ArrowRight />
-            </Button>
-          }
-        />
-        {!labs ? (
-          <p className="px-4 py-3.5 text-[0.8125rem] text-muted-foreground">{t("home.labs.loading")}</p>
-        ) : labs.length === 0 ? (
-          <p className="px-4 py-3.5 text-[0.8125rem] text-muted-foreground">{t("home.labs.empty")}</p>
-        ) : (
-          preview.map(labRow)
-        )}
-      </Panel>
+      <LabsPreviewPanel labs={labs} error={error} onRetry={retry} onAll={() => onNavigate("labs")}>
+        {preview.map(labRow)}
+      </LabsPreviewPanel>
 
-      {!auth?.loggedIn && (
-        <p className="flex items-center gap-1.5 text-[0.75rem] text-muted-foreground">
-          <ExternalLink className="size-3.5" /> {t("home.signInHint")}
-        </p>
-      )}
+      {!auth?.loggedIn && <SignInHint />}
     </div>
   );
 }

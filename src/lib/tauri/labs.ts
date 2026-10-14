@@ -88,7 +88,9 @@ export const attackVmShell = (id: string) => invoke<void>("attack_vm_shell", { i
 
 /** Opens the attack box shell wherever the lab runs (local container, or SSH to a remote lab host). */
 export const labAttackShell = (id: string, runtime: Runtime) => invoke<void>("lab_attack_shell", { id, runtime });
-/** `defaultPorts`: a container lab here publishes its services on their own ports, not random ones. */
+/** `defaultPorts`: a container lab here publishes its services on their own ports, not random ones.
+ *  `offline`: start the installed lab without Cyber CTF when it can't be reached (no progress
+ *  saved), after a launch failed with the `offlineReady` code. */
 export const labLaunch = (
   labId: string,
   provider: Provider | null,
@@ -96,7 +98,8 @@ export const labLaunch = (
   attackboxImage: string | null,
   defaultPorts: boolean,
   onLog: (line: string) => void,
-) => invokeStreaming("lab_launch", { labId, provider, host, attackboxImage, defaultPorts }, onLog);
+  offline = false,
+) => invokeStreaming("lab_launch", { labId, provider, host, attackboxImage, defaultPorts, offline }, onLog);
 
 /** The lab ids currently starting or stopping in the backend. Read on load to rehydrate the
  *  "starting" state after a window reload, which loses the in-memory deploy store. */
@@ -129,3 +132,7 @@ export const terminalClose = (session: number) => invoke<void>("terminal_close",
 export const sharedFolderGet = () => invoke<SharedFolder>("shared_folder_get");
 export const sharedFolderSet = (enabled: boolean, path: string) => invoke<SharedFolder>("shared_folder_set", { enabled, path });
 export const sharedFolderOpen = () => invoke<void>("shared_folder_open");
+
+/** Whether the labs started here are recorded in Isoloom's registry (`~/.isoloom/status.yml`). */
+export const isoloomRegistryGet = () => invoke<boolean>("isoloom_registry_get");
+export const isoloomRegistrySet = (enabled: boolean) => invoke<boolean>("isoloom_registry_set", { enabled });

@@ -41,8 +41,8 @@ describe("HomeScreen", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Florian");
     expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("Amette");
     expect(document.body.textContent).toMatch(/1 lab running/);
-    // Its 3 containers, from the lab's own status.
-    expect(document.body.textContent).toContain("3 containers");
+    // Its 7 containers (the dev mock's wide lab), from the lab's own status.
+    expect(document.body.textContent).toContain("7 containers");
     // Nothing deploying: the machine summary instead.
     expect(document.body.textContent).toMatch(/Docker engine/i);
     expect(document.body.textContent).not.toMatch(/sign in/i);
@@ -73,7 +73,7 @@ describe("HomeScreen", () => {
     );
     await flush(50);
     expect(document.body.textContent).toMatch(/Set up Docker/);
-    await user.click(screen.getByRole("button", { name: /set up/i }));
+    await user.click(screen.getByRole("button", { name: /set up this machine/i }));
     await flush();
     expect(commands(calls)).toContain("machine_open_setup");
     expect(document.body.textContent).toContain("setup window busy");
@@ -163,7 +163,9 @@ describe("DeployPanel", () => {
     const onOpen = vi.fn();
     const user = userEvent.setup();
     render(<DeployPanel ops={[{ labId: "lab-goad", op: "provision", machine: "isoloom-SRV02", step: "TASK [users]" }]} labs={labs} onOpen={onOpen} />);
-    expect(screen.getByText("goad-light")).toBeTruthy();
+    // Its title, not its slug or id.
+    expect(screen.getByText("GOAD Light")).toBeTruthy();
+    expect(screen.queryByText("goad-light")).toBeNull();
     expect(screen.getByText("provisioning srv02")).toBeTruthy();
     expect(screen.getByText("TASK [users]")).toBeTruthy();
     expect(screen.getByText("SRV02")).toBeTruthy();
@@ -173,7 +175,7 @@ describe("DeployPanel", () => {
     expect(onOpen).toHaveBeenCalledWith("goad-light");
   });
 
-  it("lists several deploys, each with its own link; an unknown lab by its id", async () => {
+  it("lists several deploys, each with its own link; an unknown lab by its id made readable", async () => {
     const onOpen = vi.fn();
     const user = userEvent.setup();
     render(
@@ -189,7 +191,7 @@ describe("DeployPanel", () => {
     );
     expect(screen.getByText("3 labs")).toBeTruthy();
     expect(screen.getByText("GOAD Light")).toBeTruthy();
-    expect(screen.getByText("lab-gone")).toBeTruthy();
+    expect(screen.getByText("Gone")).toBeTruthy();
     expect(screen.getByText("Removing containers")).toBeTruthy();
     const views = screen.getAllByRole("button", { name: /view/i });
     expect(views).toHaveLength(2);
@@ -197,9 +199,9 @@ describe("DeployPanel", () => {
     expect(onOpen).toHaveBeenCalledWith("blind");
   });
 
-  it("names a lone deploy of an unknown lab by its id, without a link", () => {
-    render(<DeployPanel ops={[{ labId: "lab-gone", op: "launch", machine: null, step: null }]} labs={labs} onOpen={vi.fn()} />);
-    expect(screen.getByText("lab-gone")).toBeTruthy();
+  it("names a lone deploy of an unknown lab by its id made readable, without a link", () => {
+    render(<DeployPanel ops={[{ labId: "lab-goad-light", op: "launch", machine: null, step: null }]} labs={labs} onOpen={vi.fn()} />);
+    expect(screen.getByText("Goad Light")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /view/i })).toBeNull();
   });
 });

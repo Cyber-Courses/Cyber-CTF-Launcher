@@ -206,74 +206,127 @@ fn mac_admin(script: &str, note: &str) -> Step {
 }
 
 /// VirtualBox's own uninstaller, run as admin, only ever from the installer disk image Homebrew
-/// downloaded for the install (attached here, then detached). Never from whatever volume happens
-/// to be mounted as `/Volumes/VirtualBox*`: anyone can mount a disk image with that name and a
-/// `VirtualBox_Uninstall.tool` of their own, which would then run as root.
+/// downloaded (`dmg`, attached here, then detached). Never from whatever volume happens to be
+/// mounted as `/Volumes/VirtualBox*`: anyone can mount a disk image with that name and a
+/// `VirtualBox_Uninstall.tool` of their own, which would then run as root. The image is found
+/// before elevating: as root, `~` isn't the player's home.
 #[cfg(any(target_os = "macos", test))]
-const VIRTUALBOX_UNINSTALL: &str = "f=$(ls -t ~/Library/Caches/Homebrew/downloads/*VirtualBox*.dmg 2>/dev/null | head -n 1); [ -n \"$f\" ] || exit 3; \
-     m=$(hdiutil attach -nobrowse -noautoopen \"$f\" | awk -F'\\t' '/\\/Volumes\\//{print $NF; exit}'); [ -n \"$m\" ] || exit 3; \
-     \"$m/VirtualBox_Uninstall.tool\" --unattended; s=$?; hdiutil detach -quiet \"$m\"; exit $s";
+fn virtualbox_uninstall(dmg: &str) -> String {
+    format!(
+        "m=$(hdiutil attach -nobrowse -noautoopen '{dmg}' | awk -F'\\t' '/\\/Volumes\\//{{print $NF; exit}}'); [ -n \"$m\" ] || exit 3; \
+         \"$m/VirtualBox_Uninstall.tool\" --unattended; s=$?; hdiutil detach -quiet \"$m\"; exit $s"
+    )
+}
 
-/// How to remove `dep` on this OS.
-fn plan(dep: Dependency) -> Result<Vec<Step>> {
+/// The VirtualBox installer image, from `brew --cache --cask virtualbox`'s output: a `.dmg` path
+/// the admin script can quote.
+#[cfg(any(target_os = "macos", test))]
+fn virtualbox_dmg_from(out: &str) -> Result<String> {
+    let path = out.trim();
+    if path.is_empty() || !path.ends_with(".dmg") || path.contains(['\'', '"', '\n']) {
+        return Err(Error::Invalid("Homebrew didn't say where VirtualBox's installer image is, so its uninstaller can't be run.".into()));
+    }
+    Ok(path.to_string())
+}
+
+/// The VirtualBox installer image Homebrew has (fetched again first: Homebrew drops the download
+/// once the cask moves on, which it does often), as the player, before the admin step.
+#[cfg(target_os = "macos")]
+async fn virtualbox_dmg(brew: &str, on_line: &mut impl FnMut(String)) -> Result<String> {
+    run_steps(&[step(brew, &["fetch", "--cask", "virtualbox"])], on_line).await?;
+    let out = tokio::process::Command::new(brew).args(["--cache", "--cask", "virtualbox"]).output().await.map_err(Error::Io)?;
+    let dmg = virtualbox_dmg_from(&String::from_utf8_lossy(&out.stdout))?;
+    if !std::path::Path::new(&dmg).is_file() {
+        return Err(Error::Invalid(format!(
+            "VirtualBox's installer image isn't there ({dmg}), so its uninstaller can't be run. Run `brew fetch --cask virtualbox`, then try again."
+        )));
+    }
+    Ok(dmg)
+}
+
+/// How to remove `dep` on macOS: Homebrew's own packages, or the vendor's uninstaller.
+#[cfg(target_os = "macos")]
+fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
+    let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
+    Ok(match dep {
+        Dependency::Terraform => vec![step(brew, &["uninstall", "hashicorp/tap/terraform"])],
+        Dependency::Qemu => vec![step(brew, &["uninstall", "qemu"])],
+        Dependency::Awscli => vec![step(brew, &["uninstall", "awscli"])],
+        Dependency::Gcloud => vec![step(brew, &["uninstall", "--cask", "google-cloud-sdk"])],
+        Dependency::Azurecli => vec![step(brew, &["uninstall", "--cask", "azure-cli-preview"])],
+        // Installed from the vendors' own packages: removed the way their uninstallers do.
+        Dependency::Vagrant => vec![mac_admin(
+            "rm -rf /opt/vagrant /usr/local/bin/vagrant && pkgutil --forget com.vagrant.vagrant || true",
+            "Removing Vagrant (macOS asks for your password)…",
+        )],
+        Dependency::Virtualbox => {
+            let dmg = virtualbox_dmg.ok_or_else(|| Error::Invalid("VirtualBox's installer image is needed to run its uninstaller.".into()))?;
+            vec![mac_admin(&virtualbox_uninstall(dmg), "Running VirtualBox's own uninstaller (macOS asks for your password)…")]
+        }
+        Dependency::Docker => vec![Step {
+            program: "/Applications/Docker.app/Contents/MacOS/uninstall".into(),
+            args: vec![],
+            note: Some("Running Docker Desktop's own uninstaller…".into()),
+        }],
+        Dependency::Utm => vec![step("osascript", &["-e", "tell application \"Finder\" to delete POSIX file \"/Applications/UTM.app\""])],
+        Dependency::Libvirt | Dependency::Wsl => return Err(Error::Invalid("Not installed on macOS.".into())),
+    })
+}
+
+/// How to remove `dep` on Windows: its winget package.
+#[cfg(target_os = "windows")]
+fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
+    let id = match dep {
+        Dependency::Docker => "Docker.DockerDesktop",
+        Dependency::Vagrant => "Hashicorp.Vagrant",
+        Dependency::Terraform => "Hashicorp.Terraform",
+        Dependency::Virtualbox => "Oracle.VirtualBox",
+        Dependency::Qemu => "SoftwareFreedomConservancy.QEMU",
+        Dependency::Awscli => "Amazon.AWSCLI",
+        Dependency::Azurecli => "Microsoft.AzureCLI",
+        Dependency::Gcloud => "Google.CloudSDK",
+        Dependency::Wsl => return Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
+        Dependency::Utm | Dependency::Libvirt => return Err(Error::Invalid("Not installed on Windows.".into())),
+    };
+    Ok(vec![step("winget", &["uninstall", "-e", "--id", id])])
+}
+
+/// How to remove `dep` on Linux: its apt packages (as root through pkexec), or its folder.
+#[cfg(target_os = "linux")]
+fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
+    let root = |script: &str| step("pkexec", &["sh", "-c", script]);
+    Ok(match dep {
+        Dependency::Docker => vec![root("apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")],
+        Dependency::Vagrant => vec![root("apt-get remove -y vagrant")],
+        Dependency::Terraform => vec![root("apt-get remove -y terraform")],
+        Dependency::Virtualbox => vec![root("apt-get remove -y 'virtualbox*'")],
+        // The install's metapackages (qemu-system, libvirt-daemon-system) leave the packages
+        // they pulled in behind, with the binaries the Machine page looks for
+        // (qemu-system-x86_64, virsh): those go too, or the tool still reads as installed.
+        Dependency::Qemu => vec![root("apt-get remove -y 'qemu-system*' qemu-utils")],
+        Dependency::Libvirt => vec![root("apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager")],
+        Dependency::Awscli => vec![root("rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer")],
+        Dependency::Azurecli => vec![root("apt-get remove -y azure-cli")],
+        Dependency::Gcloud => vec![step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
+        Dependency::Utm | Dependency::Wsl => return Err(Error::Invalid("Not installed on Linux.".into())),
+    })
+}
+
+/// How to remove `dep` on this OS. On macOS, VirtualBox's step needs its installer image
+/// (`virtualbox_dmg`).
+fn plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
+    let _ = virtualbox_dmg;
     #[cfg(target_os = "macos")]
     {
-        let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
-        Ok(match dep {
-            Dependency::Terraform => vec![step(brew, &["uninstall", "hashicorp/tap/terraform"])],
-            Dependency::Qemu => vec![step(brew, &["uninstall", "qemu"])],
-            Dependency::Awscli => vec![step(brew, &["uninstall", "awscli"])],
-            Dependency::Gcloud => vec![step(brew, &["uninstall", "--cask", "google-cloud-sdk"])],
-            Dependency::Azurecli => vec![step(brew, &["uninstall", "--cask", "azure-cli-preview"])],
-            // Installed from the vendors' own packages: removed the way their uninstallers do.
-            Dependency::Vagrant => vec![mac_admin(
-                "rm -rf /opt/vagrant /usr/local/bin/vagrant && pkgutil --forget com.vagrant.vagrant || true",
-                "Removing Vagrant (macOS asks for your password)…",
-            )],
-            Dependency::Virtualbox => vec![mac_admin(VIRTUALBOX_UNINSTALL, "Running VirtualBox's own uninstaller (macOS asks for your password)…")],
-            Dependency::Docker => vec![Step {
-                program: "/Applications/Docker.app/Contents/MacOS/uninstall".into(),
-                args: vec![],
-                note: Some("Running Docker Desktop's own uninstaller…".into()),
-            }],
-            Dependency::Utm => vec![step("osascript", &["-e", "tell application \"Finder\" to delete POSIX file \"/Applications/UTM.app\""])],
-            Dependency::Libvirt | Dependency::Wsl => return Err(Error::Invalid("Not installed on macOS.".into())),
-        })
+        macos_plan(dep, virtualbox_dmg)
     }
     #[cfg(target_os = "windows")]
     {
-        let id = match dep {
-            Dependency::Docker => "Docker.DockerDesktop",
-            Dependency::Vagrant => "Hashicorp.Vagrant",
-            Dependency::Terraform => "Hashicorp.Terraform",
-            Dependency::Virtualbox => "Oracle.VirtualBox",
-            Dependency::Qemu => "SoftwareFreedomConservancy.QEMU",
-            Dependency::Awscli => "Amazon.AWSCLI",
-            Dependency::Azurecli => "Microsoft.AzureCLI",
-            Dependency::Gcloud => "Google.CloudSDK",
-            Dependency::Wsl => return Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
-            Dependency::Utm | Dependency::Libvirt => return Err(Error::Invalid("Not installed on Windows.".into())),
-        };
-        Ok(vec![step("winget", &["uninstall", "-e", "--id", id])])
+        windows_plan(dep)
     }
     #[cfg(target_os = "linux")]
     {
-        let root = |script: &str| step("pkexec", &["sh", "-c", script]);
-        Ok(match dep {
-            Dependency::Docker => vec![root("apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")],
-            Dependency::Vagrant => vec![root("apt-get remove -y vagrant")],
-            Dependency::Terraform => vec![root("apt-get remove -y terraform")],
-            Dependency::Virtualbox => vec![root("apt-get remove -y 'virtualbox*'")],
-            // The install's metapackages (qemu-system, libvirt-daemon-system) leave the packages
-            // they pulled in behind, with the binaries the Machine page looks for
-            // (qemu-system-x86_64, virsh): those go too, or the tool still reads as installed.
-            Dependency::Qemu => vec![root("apt-get remove -y 'qemu-system*' qemu-utils")],
-            Dependency::Libvirt => vec![root("apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager")],
-            Dependency::Awscli => vec![root("rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer")],
-            Dependency::Azurecli => vec![root("apt-get remove -y azure-cli")],
-            Dependency::Gcloud => vec![step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
-            Dependency::Utm | Dependency::Wsl => return Err(Error::Invalid("Not installed on Linux.".into())),
-        })
+        linux_plan(dep)
     }
 }
 
@@ -284,7 +337,17 @@ pub async fn uninstall_dependency(app: AppHandle, dependency: Dependency, logs: 
         return Err(Error::Invalid("Cyber CTF didn't install this tool, so it won't remove it.".into()));
     }
     let mut on_line = channel_log(logs);
-    run_steps(&plan(dependency)?, &mut on_line).await?;
+    #[cfg(target_os = "macos")]
+    let dmg = match dependency {
+        Dependency::Virtualbox => {
+            let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
+            Some(virtualbox_dmg(&brew, &mut on_line).await?)
+        }
+        _ => None,
+    };
+    #[cfg(not(target_os = "macos"))]
+    let dmg: Option<String> = None;
+    run_steps(&plan(dependency, dmg.as_deref())?, &mut on_line).await?;
     update(&app, |tools| tools.retain(|t| t.dependency != dependency));
     on_line("Removed.".into());
     Ok(())
@@ -352,13 +415,34 @@ mod tests {
 
     #[test]
     fn the_virtualbox_uninstaller_only_runs_from_the_downloaded_installer() {
-        // Any mounted /Volumes/VirtualBox* was trusted, and its tool run as admin.
-        assert!(!VIRTUALBOX_UNINSTALL.contains("/Volumes/VirtualBox"), "{VIRTUALBOX_UNINSTALL}");
-        assert!(!VIRTUALBOX_UNINSTALL.contains("exec "));
-        assert!(VIRTUALBOX_UNINSTALL.contains("Caches/Homebrew/downloads/*VirtualBox*.dmg"));
-        assert!(VIRTUALBOX_UNINSTALL.contains("hdiutil detach"));
-        let ok = std::process::Command::new("sh").args(["-n", "-c", VIRTUALBOX_UNINSTALL]).status().unwrap();
-        assert!(ok.success());
+        // Any mounted /Volumes/VirtualBox* was trusted, and its tool run as admin; then the image
+        // was globbed under `~` from the admin script, which runs as root (another home), after
+        // Homebrew may have cleaned it up.
+        let dmg = "/Users/ada/Library/Caches/Homebrew/downloads/abc--VirtualBox-7.2.20.dmg";
+        let script = virtualbox_uninstall(dmg);
+        assert!(!script.contains("/Volumes/VirtualBox") && !script.contains("exec ") && !script.contains('~'), "{script}");
+        assert!(script.contains(&format!("'{dmg}'")) && script.contains("hdiutil detach"));
+        assert!(crate::platform::sh_parses(&script), "{script}");
+        // The path comes from Homebrew's answer, and only a quotable .dmg is accepted.
+        assert_eq!(virtualbox_dmg_from(&format!("{dmg}\n")).unwrap(), dmg);
+        for bad in ["", "/x/VirtualBox.pkg", "/x/it's.dmg", "/x/a\"b.dmg"] {
+            assert!(virtualbox_dmg_from(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_installer_image_path_with_spaces_or_shell_characters_is_single_quoted_in_the_admin_script() {
+        // Homebrew's cache lives under the home folder, which can hold spaces; `$`, backticks and
+        // `;` in a folder name must stay literal in the script run as root.
+        let dmg = "/Users/a b/Library/Caches/Homebrew/$HOME`id`;x.dmg";
+        assert_eq!(virtualbox_dmg_from(&format!("  {dmg}  \n")).unwrap(), dmg);
+        let script = virtualbox_uninstall(dmg);
+        assert!(script.contains(&format!("'{dmg}'")), "{script}");
+        assert!(crate::platform::sh_parses(&script), "{script}");
+        // Two lines (a second path appended) or another extension: not the image.
+        assert!(virtualbox_dmg_from("/a.dmg\n/b.dmg").is_err());
+        assert!(virtualbox_dmg_from("/a.DMG").is_err());
     }
 
     #[cfg(target_os = "windows")]
@@ -374,9 +458,13 @@ mod tests {
             Dependency::Azurecli,
             Dependency::Gcloud,
         ] {
-            assert_eq!(plan(dep).unwrap()[0].program, "winget", "{dep:?}");
+            assert_eq!(plan(dep, Some("/x/VirtualBox.dmg")).unwrap()[0].program, "winget", "{dep:?}");
         }
-        assert!(plan(Dependency::Wsl).is_err() && plan(Dependency::Utm).is_err() && plan(Dependency::Libvirt).is_err());
+        assert!(
+            plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err()
+                && plan(Dependency::Utm, Some("/x/VirtualBox.dmg")).is_err()
+                && plan(Dependency::Libvirt, Some("/x/VirtualBox.dmg")).is_err()
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -396,9 +484,9 @@ mod tests {
             Dependency::Azurecli,
             Dependency::Gcloud,
         ] {
-            assert!(!plan(dep).unwrap().is_empty(), "{dep:?}");
+            assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");
         }
-        assert!(plan(Dependency::Wsl).is_err() && plan(Dependency::Libvirt).is_err());
+        assert!(plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err() && plan(Dependency::Libvirt, Some("/x/VirtualBox.dmg")).is_err());
     }
 
     #[cfg(target_os = "linux")]
@@ -415,12 +503,12 @@ mod tests {
             Dependency::Azurecli,
             Dependency::Gcloud,
         ] {
-            assert!(!plan(dep).unwrap().is_empty(), "{dep:?}");
+            assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");
         }
-        assert!(plan(Dependency::Wsl).is_err() && plan(Dependency::Utm).is_err());
+        assert!(plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err() && plan(Dependency::Utm, Some("/x/VirtualBox.dmg")).is_err());
         // The packages holding the binaries the Machine page looks for go too, not only the
         // metapackages the install named.
-        let script = |dep| plan(dep).unwrap()[0].args.join(" ");
+        let script = |dep| plan(dep, Some("/x/VirtualBox.dmg")).unwrap()[0].args.join(" ");
         assert!(script(Dependency::Qemu).contains("'qemu-system*'"));
         assert!(script(Dependency::Libvirt).contains("libvirt-clients"));
     }

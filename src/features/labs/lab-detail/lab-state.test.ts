@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   bindHost,
   deployPlacement,
+  diagramAbove,
   deriveLabState,
   headerMode,
   networkView,
+  removing,
   publishedBinds,
   restartTarget,
   type LabStateInput,
@@ -40,6 +42,7 @@ const status = (p: Partial<LabStatus>): LabStatus => ({
   attacker: null,
   outputs: [],
   message: null,
+  reapError: null,
   ...p,
 });
 const derive = (p: Partial<LabStateInput>) =>
@@ -110,8 +113,9 @@ describe("deriveLabState", () => {
     expect([here.canPause, here.canShutdown]).toEqual([false, true]);
     const inVm = derive({ status: status({ running: true, place: "local_vm" }) });
     expect([inVm.canPause, inVm.canShutdown]).toEqual([true, false]);
+    // A VM lab here is reported in a local VM too: it can be paused and shut down.
     const vmLab = derive({ runtime: vm, status: status({ running: true, place: "local_vm" }) });
-    expect([vmLab.canPause, vmLab.canShutdown]).toEqual([true, false]);
+    expect([vmLab.canPause, vmLab.canShutdown]).toEqual([true, true]);
     const remote = derive({ runtime: vm, status: status({ running: true, host: "esxi", place: "server" }) });
     expect([remote.canPause, remote.canShutdown]).toEqual([false, false]);
     const noHandler = derive({ parkable: false, status: status({ running: true, place: "container" }) });
@@ -153,6 +157,20 @@ describe("headerMode", () => {
   it("reads cleaning up an interrupted run as a stop", () => {
     expect(headerMode(derive({ busy: true, backendOp: "stop", status: status({}) }), opts)).toBe("stopping");
   });
+  it("offers Retry after a failed start, the clean-up first when it left machines", () => {
+    const failed = derive({ startFailed: true, status: status({}) });
+    expect(failed.phase).toBe("failed");
+    expect(headerMode(failed, opts)).toBe("failed");
+    // Signed out meanwhile: sign in first.
+    expect(headerMode(failed, { ...opts, loggedIn: false })).toBe("signIn");
+    // It left machines behind: the strip says it failed, the header cleans up.
+    const left = derive({ startFailed: true, status: status({ machines: [machine("web", "exited")] }) });
+    expect(left.phase).toBe("failed");
+    expect(headerMode(left, opts)).toBe("interrupted");
+    // Started again (or up after all): no longer failed.
+    expect(derive({ startFailed: true, busy: true, status: status({}) }).phase).toBe("operation");
+    expect(derive({ startFailed: true, status: status({ running: true }) }).phase).toBe("running");
+  });
   it("offers Resume only with its handler, and sign-in only when logged out with one", () => {
     expect(headerMode(derive({ status: status({ parked: "pause" }) }), { ...opts, canResume: false })).toBe("start");
     expect(headerMode(derive({ status: status({}) }), { ...opts, loggedIn: false })).toBe("signIn");
@@ -168,9 +186,12 @@ describe("networkView", () => {
     expect(view({ status: status({ parked: "pause" }) })).toBe("diagram");
     expect(view({ status: status({ running: true }) }, { hasMachines: false })).toBe("startToSee");
   });
-  it("keeps the diagram through the page's own actions, hides it during other runs", () => {
+  it("keeps the diagram through the page's own actions and a stop, hides it during other runs", () => {
     expect(view({ busy: true, acting: "pause", status: status({ running: true }) }, { busy: true, acting: "pause" })).toBe("diagram");
-    expect(view({ busy: true, status: status({ running: true }) }, { busy: true })).toBe("none");
+    // A stop (a busy run on a running lab): kept, dimmed, so the page doesn't jump.
+    expect(view({ busy: true, status: status({ running: true }) }, { busy: true })).toBe("diagram");
+    // A start, whose machines report running before it is done: not yet.
+    expect(view({ busy: true, backendOp: "launch", status: status({ running: true }) }, { busy: true })).toBe("none");
     expect(view({ busy: true, status: status({}) }, { busy: true, hasMachines: false })).toBe("none");
   });
   it("says why there is no diagram", () => {
@@ -186,12 +207,33 @@ describe("networkView", () => {
 describe("deployPlacement", () => {
   it("puts the deployment first while it runs, after the diagram once the lab is up", () => {
     expect(deployPlacement(derive({ busy: true, status: status({}) }), { busy: true, failed: false })).toBe("top");
-    expect(deployPlacement(derive({ busy: true, status: status({ running: true }) }), { busy: true, failed: false })).toBe("top");
+    expect(deployPlacement(derive({ busy: true, backendOp: "launch", status: status({ running: true }) }), { busy: true, failed: false })).toBe("top");
     expect(deployPlacement(derive({ status: status({ running: true }) }), { busy: false, failed: false })).toBe("bottom");
+  });
+  it("leaves it in place through a stop on a running lab, and after the stop failed", () => {
+    const stopping = derive({ busy: true, status: status({ running: true }) });
+    expect(stopping.operation).toBe("stop");
+    expect(removing(stopping)).toBe(true);
+    expect(deployPlacement(stopping, { busy: true, failed: false })).toBe("bottom");
+    expect(deployPlacement(derive({ status: status({ running: true }) }), { busy: false, failed: true })).toBe("bottom");
+    expect(removing(derive({ busy: true, acting: "pause", status: status({ running: true }) }))).toBe(false);
   });
   it("shows a stopped lab's deployment only when it failed", () => {
     expect(deployPlacement(derive({ status: status({}) }), { busy: false, failed: false })).toBeNull();
     expect(deployPlacement(derive({ status: status({}) }), { busy: false, failed: true })).toBe("top");
+  });
+});
+
+describe("diagramAbove", () => {
+  it("lifts the drawn diagram above the columns on a wide window only", () => {
+    expect(diagramAbove(true, "diagram", "bottom")).toBe(true);
+    expect(diagramAbove(true, "diagram", null)).toBe(true);
+    expect(diagramAbove(false, "diagram", "bottom")).toBe(false);
+  });
+  it("keeps a note, and the diagram while the deployment leads, in the main column", () => {
+    expect(diagramAbove(true, "startToSee", null)).toBe(false);
+    expect(diagramAbove(true, "none", "top")).toBe(false);
+    expect(diagramAbove(true, "diagram", "top")).toBe(false);
   });
 });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { describeError } from "@/lib/errors";
 
 /**
  * The streamed log of an install or a sign-in (null before the first run), and `run()` to start
@@ -17,7 +18,7 @@ export function useRunLog() {
         const done = await task(append);
         if (done) append(done);
       } catch (e) {
-        append(`✗ ${String(e)}`);
+        append(`✗ ${describeError(e)}`);
       }
     },
     [append],

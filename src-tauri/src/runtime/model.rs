@@ -153,6 +153,9 @@ pub struct LabStatus {
     /// The lab's own words once it is up, placeholders filled in (cloud-services labs, whose
     /// message names their outputs); None for the others, whose message is in the deploy log.
     pub message: Option<String>,
+    /// Why the auto-stop couldn't destroy this lab, while it is past its stop time (it may still
+    /// be billing): set by the status dispatcher, None from the per-runtime probes.
+    pub reap_error: Option<crate::error::Wire>,
 }
 
 /// One thing a cloud-services lab exposes: a module output, under the spec's name for it.
@@ -173,4 +176,21 @@ pub struct Output {
 pub struct AttackerAt {
     pub ip: String,
     pub lab_network: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Park;
+
+    #[test]
+    fn park_ids_round_trip_and_read_with_surrounding_whitespace_only() {
+        for p in [Park::Pause, Park::Shutdown] {
+            assert_eq!(Park::from_id(p.id()), Some(p));
+            assert_eq!(Park::from_id(&format!(" {}\r\n", p.id())), Some(p), "a marker file's trailing newline");
+        }
+        // Case and extra words are not tolerated: a marker reads as "not parked" rather than guessed.
+        for bad in ["Pause", "SHUTDOWN", "pause now", "", "halt", "suspend"] {
+            assert_eq!(Park::from_id(bad), None, "{bad:?}");
+        }
+    }
 }

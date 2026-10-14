@@ -20,6 +20,8 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 /// The largest lab archive downloaded.
 pub const MAX_LAB_ARCHIVE: u64 = 512 * 1024 * 1024;
+/// The most a lab archive unpacks to: a small download can inflate without end (a gzip bomb).
+pub const MAX_LAB_UNPACKED: u64 = 4 * 1024 * 1024 * 1024;
 
 fn built(b: reqwest::ClientBuilder) -> Result<reqwest::Client> {
     b.build().map_err(|e| Error::Invalid(format!("couldn't set up HTTP: {e}")))
@@ -92,6 +94,21 @@ pub(crate) mod tests {
         let mut big = Limited::new(Some(3 * 1024 * 1024), 4 * 1024 * 1024).unwrap();
         let err = big.push(&vec![0; 5 * 1024 * 1024]).unwrap_err().to_string();
         assert_eq!(err, "download refused: it is larger than 4 MB (at least 5 MB)");
+    }
+
+    #[test]
+    fn a_body_at_exactly_the_limit_is_accepted_and_huge_declarations_do_not_overflow() {
+        let mut b = Limited::new(Some(10), 10).unwrap();
+        b.push(&[0; 10]).unwrap();
+        b.push(&[]).unwrap();
+        assert!(b.push(&[0]).is_err());
+        assert_eq!(b.into_bytes().len(), 10);
+        // A declared length of u64::MAX is refused without reserving anything; a limit of
+        // u64::MAX with no declared length reserves nothing either.
+        assert!(Limited::new(Some(u64::MAX), MAX_LAB_ARCHIVE).is_err());
+        let b = Limited::new(None, u64::MAX).unwrap();
+        assert_eq!(b.buf.capacity(), 0);
+        assert!(Limited::new(Some(0), 0).unwrap().push(&[]).is_ok());
     }
 
     #[test]

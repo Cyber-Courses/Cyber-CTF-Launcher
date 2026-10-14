@@ -1,4 +1,4 @@
-import { type DockerEngine } from "@/lib/tauri";
+import { type DockerEngine, type SystemReport } from "@/lib/tauri";
 import { type MessageKey } from "@/lib/i18n";
 
 // ---------- Container engine ----------
@@ -43,3 +43,16 @@ export const ENGINES: Engine[] = [
 
 /** Display name of a Docker-compatible engine. */
 export const engineName = (id: DockerEngine) => (id === "podman" ? "Podman" : (ENGINES.find((e) => e.id === id)?.name ?? "Docker"));
+
+/** The engines offered on `os`. */
+export const enginesFor = (os: string) => ENGINES.filter((e) => e.os.includes(os));
+
+/** The engine that gets the one-click install: Docker Desktop on macOS and Windows, Docker Engine on Linux. */
+export const recommendedEngine = (os: string): DockerEngine => (os === "macos" || os === "windows" ? "docker-desktop" : "docker-engine");
+
+/** The badge on an engine's card: in use, running, recommended or none. */
+export function engineBadge(report: SystemReport, id: DockerEngine, recommended: DockerEngine) {
+  if (report.dockerEngine === id) return "in use";
+  if (report.dockerEnginesRunning?.includes(id)) return "running";
+  return id === recommended ? "recommended" : undefined;
+}

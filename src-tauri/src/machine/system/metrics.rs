@@ -1,6 +1,6 @@
 //! Live machine health, polled by the Machine screen.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -34,7 +34,9 @@ pub async fn machine_metrics() -> MachineMetrics {
     sys.refresh_cpu_usage();
     sys.refresh_memory();
 
-    let (disk_used, disk_total) = system_disk();
+    // Listing the disks asks the OS for every volume (slow on Windows with network drives): off
+    // the async threads, which serve every other command meanwhile.
+    let (disk_used, disk_total) = tokio::task::spawn_blocking(system_disk).await.unwrap_or((0, 0));
     MachineMetrics {
         cpu: sys.global_cpu_usage(),
         mem_used: sys.used_memory(),
@@ -47,16 +49,31 @@ pub async fn machine_metrics() -> MachineMetrics {
     }
 }
 
-/// (used, total) bytes of the root disk, else of the largest one.
+/// (used, total) bytes of the system disk (`/`, or `C:\` on Windows, which has no `/` mount and
+/// whose largest disk is often a second, data one), else of the largest one.
 fn system_disk() -> (u64, u64) {
     let disks = Disks::new_with_refreshed_list();
-    let (total, available) = disks
-        .iter()
-        .find(|d| d.mount_point() == Path::new("/"))
-        .or_else(|| disks.iter().max_by_key(|d| d.total_space()))
-        .map(|d| (d.total_space(), d.available_space()))
-        .unwrap_or((0, 0));
+    let mounts: Vec<(&Path, (u64, u64))> = disks.iter().map(|d| (d.mount_point(), (d.total_space(), d.available_space()))).collect();
+    let (total, available) = disk_holding(&mounts, &system_root()).or_else(|| mounts.iter().map(|(_, s)| *s).max_by_key(|(total, _)| *total)).unwrap_or((0, 0));
     (total.saturating_sub(available), total)
+}
+
+fn system_root() -> PathBuf {
+    if cfg!(windows) {
+        let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_owned());
+        PathBuf::from(format!("{drive}\\"))
+    } else {
+        PathBuf::from("/")
+    }
+}
+
+/// The (total, available) of the mount holding `path`: the longest mount point it starts with.
+/// Drive letters compare regardless of case (`c:\` and `C:\`).
+fn disk_holding(mounts: &[(&Path, (u64, u64))], path: &Path) -> Option<(u64, u64)> {
+    // Component-wise (`/mnt/data2` is not under `/mnt/data`).
+    let key = |p: &Path| if cfg!(windows) { PathBuf::from(p.to_string_lossy().to_lowercase()) } else { p.to_path_buf() };
+    let path = key(path);
+    mounts.iter().filter(|(m, _)| path.starts_with(key(m))).max_by_key(|(m, _)| m.as_os_str().len()).map(|(_, s)| *s)
 }
 
 async fn running_containers() -> u32 {
@@ -92,6 +109,24 @@ mod tests {
     fn counts_one_container_per_non_empty_line() {
         assert_eq!(count_ids("abc\n\n def \n"), 2);
         assert_eq!(count_ids(""), 0);
+    }
+
+    #[test]
+    fn the_disk_is_the_longest_mount_holding_the_path() {
+        let (root, data) = ((100, 40), (900, 800));
+        if cfg!(windows) {
+            // The second disk is bigger: it must not win over the system drive.
+            let mounts = [(Path::new(r"D:\"), data), (Path::new(r"C:\"), root)];
+            assert_eq!(disk_holding(&mounts, Path::new(r"c:\")), Some(root));
+            assert_eq!(disk_holding(&mounts, Path::new(r"D:\CyberCTF\labs")), Some(data));
+            assert_eq!(disk_holding(&mounts, Path::new(r"E:\")), None);
+        } else {
+            let mounts = [(Path::new("/"), root), (Path::new("/mnt/data"), data)];
+            assert_eq!(disk_holding(&mounts, Path::new("/")), Some(root));
+            assert_eq!(disk_holding(&mounts, Path::new("/mnt/data/labs")), Some(data));
+            assert_eq!(disk_holding(&mounts, Path::new("/home/p")), Some(root));
+            assert_eq!(disk_holding(&mounts, Path::new("/mnt/data2")), Some(root));
+        }
     }
 
     #[test]

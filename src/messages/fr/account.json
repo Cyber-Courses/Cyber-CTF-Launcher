@@ -5,5 +5,8 @@
   "online": "En ligne : les labs que vous lancez depuis le site web tournent sur cette machine",
   "signedIn": "Connecté",
   "signedInKeychain": "connecté · trousseau",
-  "signOut": "Se déconnecter"
+  "signOut": "Se déconnecter",
+  "didntOpen": "Le navigateur ne s'est pas ouvert ?",
+  "copyLink": "Copier le lien de connexion",
+  "cancel": "Annuler"
 }

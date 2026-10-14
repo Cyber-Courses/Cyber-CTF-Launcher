@@ -7,12 +7,13 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { labCloudPreview, type CloudPreview, type LabOutput } from "@/lib/tauri";
 import { useT, type T } from "@/lib/i18n";
+import { formatUsd } from "@/lib/format";
 
 /** "about $0.02 an hour (about $0.08 until it auto-stops in 4 h)" from a lab's own estimate. */
 export function costEstimate(t: T, hourlyUsd: number | null | undefined, autoStopHours?: number | null): string | null {
   if (hourlyUsd == null) return null;
-  const hourly = t("labs.cloud.hourly", { usd: hourlyUsd.toFixed(2) });
-  return autoStopHours ? t("labs.cloud.untilAutoStop", { hourly, usd: (hourlyUsd * autoStopHours).toFixed(2), hours: autoStopHours }) : hourly;
+  const hourly = t("labs.cloud.hourly", { usd: formatUsd(hourlyUsd, t.locale) });
+  return autoStopHours ? t("labs.cloud.untilAutoStop", { hourly, usd: formatUsd(hourlyUsd * autoStopHours, t.locale), hours: autoStopHours }) : hourly;
 }
 
 /** A cloud lab's cost and inputs, from its spec at the catalogue's commit (null until read, or

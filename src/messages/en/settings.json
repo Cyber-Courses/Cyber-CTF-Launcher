@@ -57,11 +57,16 @@
       "default": "Default"
     }
   },
+  "isoloomRegistry": {
+    "title": "Isoloom's lab list",
+    "description": "Records the labs you start in ~/.isoloom/status.yml, so the isoloom command line sees them (isoloom status, connect, exec). Labs work the same without it."
+  },
   "attackBox": {
     "title": "Attack box image",
     "description": "Runs on each lab’s network as your toolbox. The first launch of an image downloads it, which can take a while.",
     "default": "Default",
     "largeDownload": "Large download",
+    "pinned": "pinned",
     "presets": {
       "cyberctf": "Kali with its standard toolset, ready to use",
       "kali": "Official Kali base, add tools as needed",
@@ -77,7 +82,8 @@
     "customImageNote": "Any Docker image or registry tag.",
     "save": "Save",
     "autoStart": "Start the attack box with the lab",
-    "autoStartDescription": "Starts it as soon as a lab is up on this machine: the container on a container lab, the VM beside a VM lab. You can still start or stop it from the lab."
+    "autoStartDescription": "Starts it as soon as a lab is up on this machine: the container on a container lab, the VM beside a VM lab. You can still start or stop it from the lab.",
+    "invalidImage": "Use a plain image name such as registry/name:tag: letters, digits and . _ - / : @ only, not starting with a dash."
   },
   "attackVm": {
     "title": "Attack VM for VM labs",
@@ -107,7 +113,11 @@
     "installAddon": "Install add-on",
     "logInstalling": "Installing the Vagrant add-on {plugin}…",
     "logInstalled": "✓ Installed",
-    "logTitle": "Vagrant add-on"
+    "logTitle": "Vagrant add-on",
+    "allowHyperv": "Allow my account",
+    "allowingHyperv": "Allowing…",
+    "logAllowingHyperv": "Adding your account to Hyper-V Administrators (Windows asks for permission)…",
+    "logHypervAllowed": "✓ Done. Sign out of Windows and back in, then re-check."
   },
   "cleanup": {
     "title": "Cleanup",
@@ -156,6 +166,10 @@
     "diagnosticsDescription": "Copies your version, OS and setup status, for a bug report or a support request.",
     "copied": "Copied",
     "copy": "Copy",
+    "logs": "Log files",
+    "logsDescription": "What Cyber CTF wrote while it ran. Send them with a bug report or a support request.",
+    "openLogs": "Open folder",
+    "logsFailed": "Couldn't open the log folder",
     "firstRun": "First-run setup",
     "firstRunDescription": "Walk through the onboarding again. Your settings and labs are kept.",
     "replay": "Replay"

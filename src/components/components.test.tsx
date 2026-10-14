@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from "react";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FlaskConical, Server } from "lucide-react";
@@ -9,6 +10,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Markdown } from "@/components/ui/markdown";
 import { LogConsole } from "@/components/ui/log-console";
 import { askPortMode, PortModePrompt } from "@/features/labs/port-mode-prompt";
+import { RunOnDialog } from "@/features/labs/run-on";
+import { useEscapeBack } from "@/features/labs/lab-detail/use-escape-back";
 import { ServerSelfTest } from "@/features/servers/server-self-test";
 import { getPortMode } from "@/lib/settings";
 import { commands, installTauri, stream } from "@/test/tauri";
@@ -168,6 +171,34 @@ describe("CommandPalette", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
+  it("is a combobox over a listbox, the active option named by aria-activedescendant", async () => {
+    const { cmds } = make();
+    const user = userEvent.setup();
+    render(<CommandPalette open onClose={vi.fn()} commands={cmds} />);
+    const input = screen.getByRole("combobox");
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    const list = screen.getByRole("listbox");
+    expect(input.getAttribute("aria-controls")).toBe(list.id);
+    const options = screen.getAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual(["Labs", "ServersProxmox, ESXi", "GOAD Light"]);
+    // The first is active; focus stays in the field while the arrows move the active option.
+    expect(input.getAttribute("aria-activedescendant")).toBe(options[0].id);
+    expect(options[0].getAttribute("aria-selected")).toBe("true");
+    input.focus();
+    await user.keyboard("{ArrowDown}");
+    expect(input.getAttribute("aria-activedescendant")).toBe(options[1].id);
+    expect(options[1].getAttribute("aria-selected")).toBe("true");
+    expect(options[0].getAttribute("aria-selected")).toBe("false");
+    expect(document.activeElement).toBe(input);
+    // Nothing matches: no list, the field says it is collapsed and points nowhere.
+    await user.type(input, "zzz");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+    expect(input.hasAttribute("aria-activedescendant")).toBe(false);
+    expect(input.hasAttribute("aria-controls")).toBe(false);
+    expect(screen.getByRole("status").textContent).toMatch(/no/i);
+  });
+
   it("renders nothing while closed", () => {
     render(<CommandPalette open={false} onClose={vi.fn()} commands={make().cmds} />);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -274,5 +305,95 @@ describe("ServerSelfTest", () => {
     expect(onDone).toHaveBeenCalledWith("fail");
     expect(screen.getByText(/host unreachable/)).toBeTruthy();
     expect(commands(calls)).toContain("server_selftest");
+  });
+});
+
+describe("Escape in a dialog", () => {
+  // The lab page goes back to the list on Escape (useEscapeBack, on window). A dialog over it
+  // closes on Escape and must keep the key to itself: in a browser the dialog unmounts (and focus
+  // leaves it) before the event reaches window, so the page would also go back.
+  const pageBehind = () => {
+    const onBack = vi.fn();
+    const seen = vi.fn();
+    const Page = () => {
+      useEscapeBack(onBack);
+      return null;
+    };
+    window.addEventListener("keydown", seen);
+    return { onBack, seen, Page, done: () => window.removeEventListener("keydown", seen) };
+  };
+
+  it("closes the run dialog without leaving the lab page", async () => {
+    const user = userEvent.setup();
+    const { onBack, seen, Page, done } = pageBehind();
+    const Host = () => {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <Page />
+          {open && (
+            <RunOnDialog onClose={() => setOpen(false)} footer={<button type="button">Start</button>}>
+              <p>Where should it run?</p>
+            </RunOnDialog>
+          )}
+        </>
+      );
+    };
+    render(<Host />);
+    await flush();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(seen).not.toHaveBeenCalled();
+    expect(onBack).not.toHaveBeenCalled();
+    // With no dialog open, Escape goes back as before.
+    await user.keyboard("{Escape}");
+    expect(onBack).toHaveBeenCalledTimes(1);
+    done();
+  });
+
+  it("keeps Escape inside the remove dialog, the ports prompt and the palette too", async () => {
+    const user = userEvent.setup();
+    const { onBack, seen, Page, done } = pageBehind();
+    const onCancel = vi.fn();
+    const { unmount } = render(
+      <>
+        <Page />
+        <ConfirmDialog title="Remove?" confirmLabel="Remove" onConfirm={vi.fn()} onCancel={onCancel}>
+          Gone for good.
+        </ConfirmDialog>
+      </>,
+    );
+    await user.keyboard("{Escape}");
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    unmount();
+
+    const ports = render(
+      <>
+        <Page />
+        <PortModePrompt />
+      </>,
+    );
+    let answer: Promise<unknown> = Promise.resolve();
+    act(() => {
+      answer = askPortMode("Invoice portal API");
+    });
+    await user.keyboard("{Escape}");
+    await expect(answer).resolves.toBeNull();
+    ports.unmount();
+
+    const onClose = vi.fn();
+    render(
+      <>
+        <Page />
+        <CommandPalette open onClose={onClose} commands={[]} />
+      </>,
+    );
+    screen.getByRole("combobox").focus();
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    expect(seen).not.toHaveBeenCalled();
+    expect(onBack).not.toHaveBeenCalled();
+    done();
   });
 });

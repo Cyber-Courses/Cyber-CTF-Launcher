@@ -8,19 +8,17 @@
 
 import { ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { StatusDot } from "@/components/ui/status-pill";
 import { SelfTest } from "@/features/machine/self-test";
 import { type SystemReport } from "@/lib/tauri";
 import { AttackStep } from "@/features/machine/setup-steps/attack-step";
 import { EngineStep } from "@/features/machine/setup-steps/engine-step";
-import { CmdRow, Log, Num, Outcome, Requirement, Skipped } from "@/features/machine/setup-steps/parts";
+import { CmdRow, Outcome, Requirement, Skipped } from "@/features/machine/setup-steps/parts";
 import { MachineStep, hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 import { VagrantStep, VmStep } from "@/features/machine/setup-steps/vm-steps";
+import { WslStep } from "@/features/machine/setup-steps/wsl-step";
 import { openExternal } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
-
-const bold = (s: string) => <b>{s}</b>;
 
 /** The body of one setup step (no header, no nav: the flow draws those). */
 export function MachineStepBody({ step, report, setup }: { step: MachineStep; report: SystemReport; setup: MachineSetupState }) {
@@ -29,15 +27,22 @@ export function MachineStepBody({ step, report, setup }: { step: MachineStep; re
   const isMac = report.os === "macos";
 
   if (step === "pkgmgr") {
+    // Homebrew builds from source on Intel Macs (no bottles since macOS 26): say so before the
+    // installs that go through it, so a long "Installing…" isn't taken for a hang.
+    const intelMac = isMac && report.arch === "x86_64" && <p className="mt-3 text-[0.75rem] text-muted-foreground">{t("machine.body.pkgmgr.intelMac")}</p>;
     if (report.pkgManager.installed) {
       return (
-        <div className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
-          <Requirement ok title={report.pkgManager.name} detail={report.pkgManager.version ?? t("machine.body.installed")} action={null} />
-        </div>
+        <>
+          <div className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
+            <Requirement ok title={report.pkgManager.name} detail={report.pkgManager.version ?? t("machine.body.installed")} action={null} />
+          </div>
+          {intelMac}
+        </>
       );
     }
     return (
       <>
+        {intelMac}
         {isMac && (
           <div className="space-y-2">
             <p className="text-[0.8125rem] text-muted-foreground">{t("machine.body.pkgmgr.macRun")}</p>
@@ -67,51 +72,7 @@ export function MachineStepBody({ step, report, setup }: { step: MachineStep; re
     );
   }
 
-  if (step === "virtualization") {
-    const installing = setup.installing === "wsl";
-    // The WSL install ran (its log is the WSL one) and finished.
-    const tried = !installing && setup.logs.length > 0 && setup.logsFor === "wsl";
-    return (
-      <>
-        <p className="text-[0.8125rem] text-muted-foreground">{t("machine.body.wsl.intro")}</p>
-        <Button variant="primary" size="sm" className="mt-4" disabled={setup.busy} onClick={() => setup.install("wsl", "wsl", t("machine.body.wsl.log"))}>
-          {installing ? t("machine.body.wsl.turningOn") : t("machine.body.wsl.turnOn")}
-        </Button>
-        <div className="mt-3">
-          <Log setup={setup} of={["wsl"]} />
-        </div>
-        {tried && (
-          <div
-            role="status"
-            className="mt-3 flex items-center gap-3 rounded-control bg-glass px-4 py-3 text-[0.8125rem] text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
-          >
-            <StatusDot tone="warn" />
-            {t("machine.body.wsl.restart")}
-          </div>
-        )}
-        <details className="mt-4 text-[0.8125rem] text-muted-foreground">
-          <summary className="cursor-pointer hover:text-foreground">{t("machine.body.wsl.byHand")}</summary>
-          <ol className="mt-3 space-y-3">
-            <Num n={1}>{t.rich("machine.body.wsl.step1", { b: bold })}</Num>
-            <Num n={2}>
-              {t("machine.body.wsl.step2")}
-              <div className="mt-1.5">
-                <CmdRow cmd="wsl --install" />
-              </div>
-            </Num>
-            <Num n={3}>{t.rich("machine.body.wsl.step3", { b: bold })}</Num>
-          </ol>
-          <button
-            onClick={() => openExternal("https://learn.microsoft.com/windows/wsl/install")}
-            className="mt-4 inline-flex items-center gap-1.5 text-[0.75rem] text-jewel-text hover:underline"
-          >
-            <ExternalLink className="size-3.5" /> {t("machine.body.wsl.guide")}
-          </button>
-        </details>
-      </>
-    );
-  }
-
+  if (step === "virtualization") return <WslStep report={report} setup={setup} />;
   if (step === "docker") return <EngineStep report={report} setup={setup} />;
   if (step === "attack") return <AttackStep report={report} />;
   if (step === "vm") return <VmStep report={report} setup={setup} />;
@@ -123,7 +84,7 @@ export function MachineStepBody({ step, report, setup }: { step: MachineStep; re
         kind="docker"
         title={t("machine.selfTest.containerTitle")}
         description={t("machine.body.dockerTestDescription")}
-        auto
+        auto={setup.dockerTest === "idle"}
         onResult={setup.setDockerTest}
       />
     ) : (
@@ -132,7 +93,14 @@ export function MachineStepBody({ step, report, setup }: { step: MachineStep; re
   }
 
   return hasHypervisor(report) ? (
-    <SelfTest kind="vm" title={t("machine.selfTest.vmTitle")} description={t("machine.body.vmTestDescription")} auto onResult={setup.setVmTest} />
+    <SelfTest
+      kind="vm"
+      title={t("machine.selfTest.vmTitle")}
+      description={t("machine.body.vmTestDescription")}
+      // Once per setup: coming back to a passed step shows its run, it doesn't boot another VM.
+      auto={setup.vmTest === "idle"}
+      onResult={setup.setVmTest}
+    />
   ) : (
     <Skipped title={t("machine.body.nothingToTest")} reason={t("machine.body.noHypervisor")} />
   );
@@ -175,7 +143,7 @@ export function SetupOutcome({ report, setup }: { report: SystemReport | null; s
 }
 
 // The setup flow's public surface (machine setup window, onboarding, Machine and Servers pages).
-export { canContinue, machineSteps, nextLabel, stepMeta, type MachineStep } from "@/features/machine/setup-steps/steps";
+export { canContinue, machineSteps, nextLabel, nextVariant, stepMeta, type MachineStep } from "@/features/machine/setup-steps/steps";
 export { useMachineSetup, type MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 export { EngineMark } from "@/features/machine/setup-steps/engine-step";
 export { engineName } from "@/features/machine/setup-steps/engines";

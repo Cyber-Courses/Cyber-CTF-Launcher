@@ -117,6 +117,7 @@ export function VagrantStep({ report, setup }: { report: SystemReport; setup: Ma
           title="Vagrant"
           detail={report.vagrant.installed ? (report.vagrant.version ?? t("machine.body.installed")) : t("machine.vm.vagrantDetail")}
           action={
+            // The first thing missing is the jewel: Vagrant, then its plugin (one per view).
             <Button variant="primary" size="xs" onClick={() => install("vagrant", "vagrant", t("machine.vm.installVagrantLog"))} disabled={installing !== null}>
               {installing === "vagrant" ? (
                 <>
@@ -135,7 +136,7 @@ export function VagrantStep({ report, setup }: { report: SystemReport; setup: Ma
             detail={choice.pluginInstalled || report.vagrant.installed ? choice.plugin : t("machine.vm.pluginLater", { plugin: choice.plugin })}
             action={
               <Button
-                variant="primary"
+                variant={report.vagrant.installed ? "primary" : "outline"}
                 size="xs"
                 onClick={() => setup.installPlugin(choice.plugin!)}
                 disabled={installing !== null || !report.vagrant.installed}

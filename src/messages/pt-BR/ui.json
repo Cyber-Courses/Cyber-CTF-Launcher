@@ -16,5 +16,11 @@
   },
   "spinner": {
     "loading": "Carregando"
+  },
+  "choice": {
+    "inUse": "em uso",
+    "running": "em execução",
+    "installed": "instalado",
+    "recommended": "recomendado"
   }
 }

@@ -5,6 +5,10 @@ name: Attack box image
 # Every run first builds the image locally and smoke-tests it (attack-box/smoke-test.sh), on pull
 # requests too; only a push to main, the weekly run or a manual run publishes, and only once the
 # smoke test passed on both architectures, so a broken Kali update never reaches players.
+# The launcher doesn't follow `latest`: its default is the image pinned by digest in
+# src-tauri/attack-box-image.json. Once a publish is out, the pushed digest is pulled and smoke-tested
+# again on both architectures, then a bot PR moves the launcher's default to it (and the real-labs
+# and CI workflows are dispatched on that PR, since a GITHUB_TOKEN PR starts no runs by itself).
 on:
   pull_request:
     paths: ["attack-box/**", ".github/workflows/attack-box.yml"]
@@ -94,6 +98,8 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-24.04
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -114,3 +120,82 @@ jobs:
             -t "$IMAGE:latest" -t "$IMAGE:$(date -u +%Y-%m-%d)" \
             $(printf "$IMAGE@sha256:%s " *)
           docker buildx imagetools inspect "$IMAGE:latest"
+      # The multi-arch index just pushed: what the launcher pins.
+      - id: digest
+        run: |
+          digest=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest}}' | jq -er .digest)
+          [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::unexpected digest '$digest'"; exit 1; }
+          echo "Published $IMAGE@$digest"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+  # The pushed image itself, by digest, on both architectures: the smoke job tested a local build.
+  verify:
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Docker on the scratch disk
+        run: |
+          if sudo test -d /mnt; then
+            sudo systemctl stop docker docker.socket
+            echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+            sudo systemctl start docker
+          fi
+      - name: Smoke test the published image
+        env:
+          PINNED: ${{ env.IMAGE }}@${{ needs.publish.outputs.digest }}
+        run: |
+          docker pull -q "$PINNED"
+          attack-box/smoke-test.sh "$PINNED"
+
+  # A PR moving the launcher's default attack box to the digest just published and verified.
+  bump:
+    needs: [publish, verify]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      BRANCH: bot/attack-box-digest
+      FILE: src-tauri/attack-box-image.json
+    steps:
+      # The bump goes to dev, the staging branch; it reaches main with the next release.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: dev
+      - name: Open or update the bump PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PINNED: ${{ env.IMAGE }}@${{ needs.publish.outputs.digest }}
+        run: |
+          current=$(jq -er .image "$FILE")
+          if [ "$current" = "$PINNED" ]; then
+            echo "The launcher already pins $PINNED"
+            exit 0
+          fi
+          # The old default joins `previous`, so a player's saved old default moves to the new one.
+          jq --arg new "$PINNED" '.previous = ([.image] + .previous | map(select(. != $new)) | unique) | .image = $new' "$FILE" > "$RUNNER_TEMP/image.json"
+          mv "$RUNNER_TEMP/image.json" "$FILE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git commit -qam "Attack box: pin ${PINNED#*@}" -m "Published and smoke-tested by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+          git push -f origin "$BRANCH"
+          title="Attack box: pin the $(date -u +%Y-%m-%d) image"
+          body="Moves the launcher's default attack box to \`$PINNED\` (\`$IMAGE:$(date -u +%Y-%m-%d)\`), published and smoke-tested on amd64 and arm64 by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. The real-labs and CI workflows run on this branch by dispatch."
+          # `gh pr edit` fails on repos that still list classic Projects; the REST call doesn't.
+          number=$(gh pr list --head "$BRANCH" --base dev --state open --json number -q '.[0].number')
+          if [ -n "$number" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$number" -f title="$title" -f body="$body" > /dev/null
+          else
+            gh pr create --head "$BRANCH" --base dev --title "$title" --body "$body"
+          fi
+          # A GITHUB_TOKEN push starts no workflow; dispatched runs do, and report on the PR's commit.
+          gh workflow run labs.yml --ref "$BRANCH"
+          gh workflow run ci.yml --ref "$BRANCH"

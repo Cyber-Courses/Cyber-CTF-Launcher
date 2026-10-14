@@ -57,11 +57,16 @@
       "default": "Standard"
     }
   },
+  "isoloomRegistry": {
+    "title": "Isoloom-Labliste",
+    "description": "Trägt die Labs, die Sie starten, in ~/.isoloom/status.yml ein, damit die isoloom-Kommandozeile sie sieht (isoloom status, connect, exec). Ohne funktionieren die Labs genauso."
+  },
   "attackBox": {
     "title": "Image der Attack box",
     "description": "Läuft im Netzwerk jedes Labs als deine Werkzeugkiste. Beim ersten Start eines Images wird es heruntergeladen, das kann dauern.",
     "default": "Standard",
     "largeDownload": "Großer Download",
+    "pinned": "fixiert",
     "presets": {
       "cyberctf": "Kali mit dem Standard-Toolset, sofort einsatzbereit",
       "kali": "Offizielle Kali-Basis, Tools nach Bedarf ergänzen",
@@ -77,7 +82,8 @@
     "customImageNote": "Ein beliebiges Docker-Image oder Registry-Tag.",
     "save": "Speichern",
     "autoStart": "Attack box mit dem Lab starten",
-    "autoStartDescription": "Startet sie, sobald ein Lab auf diesem Rechner läuft: den Container bei einem Container-Lab, die VM neben einem VM-Lab. Du kannst sie weiterhin im Lab starten oder stoppen."
+    "autoStartDescription": "Startet sie, sobald ein Lab auf diesem Rechner läuft: den Container bei einem Container-Lab, die VM neben einem VM-Lab. Du kannst sie weiterhin im Lab starten oder stoppen.",
+    "invalidImage": "Verwende einen einfachen Image-Namen wie registry/name:tag: nur Buchstaben, Ziffern und . _ - / : @, nicht mit einem Bindestrich am Anfang."
   },
   "attackVm": {
     "title": "Angriffs-VM für VM-Labs",
@@ -107,7 +113,11 @@
     "installAddon": "Erweiterung installieren",
     "logInstalling": "Vagrant-Erweiterung {plugin} wird installiert…",
     "logInstalled": "✓ Installiert",
-    "logTitle": "Vagrant-Erweiterung"
+    "logTitle": "Vagrant-Erweiterung",
+    "allowHyperv": "Mein Konto zulassen",
+    "allowingHyperv": "Wird zugelassen…",
+    "logAllowingHyperv": "Ihr Konto wird zu den Hyper-V-Administratoren hinzugefügt (Windows fragt nach der Berechtigung)…",
+    "logHypervAllowed": "✓ Erledigt. Melden Sie sich bei Windows ab und wieder an, dann erneut prüfen."
   },
   "cleanup": {
     "title": "Aufräumen",
@@ -156,6 +166,10 @@
     "diagnosticsDescription": "Kopiert deine Version, dein Betriebssystem und den Einrichtungsstatus, für einen Fehlerbericht oder eine Supportanfrage.",
     "copied": "Kopiert",
     "copy": "Kopieren",
+    "logs": "Protokolldateien",
+    "logsDescription": "Was Cyber CTF während der Ausführung aufgezeichnet hat. Schick sie mit einem Fehlerbericht oder einer Supportanfrage mit.",
+    "openLogs": "Ordner öffnen",
+    "logsFailed": "Der Protokollordner konnte nicht geöffnet werden",
     "firstRun": "Ersteinrichtung",
     "firstRunDescription": "Das Onboarding noch einmal durchlaufen. Deine Einstellungen und Labs bleiben erhalten.",
     "replay": "Wiederholen"

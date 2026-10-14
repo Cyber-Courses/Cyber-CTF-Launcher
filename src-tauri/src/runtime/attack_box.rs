@@ -8,7 +8,7 @@ use crate::AppHandle;
 
 use super::paths::{lab_dir, state_dir};
 use super::providers::Provider;
-use super::{Runtime, attack_vm, exegol, lab, remote, server, ssh, vm};
+use super::{Runtime, attack_vm, lab, remote, server, ssh, vm};
 use crate::error::{Error, Result};
 
 /// The run env key carrying the player's pick: an attack-box image for a container lab, or the
@@ -21,7 +21,7 @@ fn attacker_pick(env: &[(String, String)]) -> Option<&str> {
 
 /// The attack-box image the player picked, when one was (passed in the run env).
 fn attack_box_image(env: &[(String, String)]) -> Option<&str> {
-    attacker_pick(env).filter(|i| exegol::valid_image(i))
+    attacker_pick(env).filter(|i| crate::exec::valid_image(i))
 }
 
 /// The attack VM's Vagrant box the player picked for a VM lab, when one was.
@@ -45,7 +45,7 @@ const STARTING: &str = "Starting the attack box next to the lab (this pulls its 
 const READY: &str = "Attack box ready.";
 
 /// The attack box on a Terraform lab host (server or cloud), over SSH with the launcher's key.
-async fn on_terraform_host(app: &AppHandle, id: &str, spec: &isoloom_core::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+async fn on_terraform_host(app: &AppHandle, id: &str, spec: &lab::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     let Some(image) = attack_box_image(env) else { return Ok(()) };
     let Some(conn) = server::lab_connection(app, &lab_dir(app, id)?)? else { return Ok(()) };
     let tf = server::terraform_target(conn.provider).unwrap_or_default();
@@ -58,7 +58,7 @@ async fn on_terraform_host(app: &AppHandle, id: &str, spec: &isoloom_core::Spec,
 }
 
 /// The attack box in a local or ESXi lab VM (Docker on one VM), through `vagrant ssh`.
-async fn in_lab_vm(vagrant: &Path, spec: &isoloom_core::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+async fn in_lab_vm(vagrant: &Path, spec: &lab::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     let Some(image) = attack_box_image(env) else { return Ok(()) };
     log(STARTING.into());
     let command = remote::sudo_bash(&attack_box_script(&spec.name, image));
@@ -69,14 +69,14 @@ async fn in_lab_vm(vagrant: &Path, spec: &isoloom_core::Spec, env: &[(String, St
 
 /// [`in_lab_vm`] once the lab is up: a failing attack box shouldn't read as a failed deploy, so
 /// it is noted and the lab stays usable (the shell can retry it).
-pub(super) async fn in_lab_vm_or_note(vagrant: &Path, spec: &isoloom_core::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) {
+pub(super) async fn in_lab_vm_or_note(vagrant: &Path, spec: &lab::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) {
     let started = in_lab_vm(vagrant, spec, env, log).await;
     note_failure(started, log);
 }
 
 /// [`on_terraform_host`] once the lab is up, noted rather than failing the deploy (see
 /// [`in_lab_vm_or_note`]).
-pub(super) async fn on_terraform_host_or_note(app: &AppHandle, id: &str, spec: &isoloom_core::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) {
+pub(super) async fn on_terraform_host_or_note(app: &AppHandle, id: &str, spec: &lab::Spec, env: &[(String, String)], log: &mut impl FnMut(String)) {
     let started = on_terraform_host(app, id, spec, env, log).await;
     note_failure(started, log);
 }
@@ -91,6 +91,13 @@ fn note_failure(started: Result<()>, log: &mut impl FnMut(String)) {
 /// Starts the attack VM beside a VM lab on this machine, on the hypervisor the lab runs on.
 pub async fn start_attack_vm(app: &AppHandle, id: &str, box_name: &str, log: impl FnMut(String)) -> Result<()> {
     let dir = lab_dir(app, id)?;
+    // The attack VM lives beside a lab on this machine only (stop and park never reach one on a
+    // server): a lab on a host must not get one started here on a remote provider.
+    if crate::runtime::server::lab_connection(app, &dir)?.is_some() {
+        return Err(Error::Invalid(
+            "This lab runs on a server host: the attack VM is only for labs on this machine. Attack it from your own machine or a VM on that host.".into(),
+        ));
+    }
     let vagrant = lab::vagrant_dir(&dir, Runtime::Vm);
     let status = vm::status(&vagrant, &[]).await?;
     // The lab's internal networks exist as soon as one of its VMs is up; the attacker needn't
@@ -100,7 +107,10 @@ pub async fn start_attack_vm(app: &AppHandle, id: &str, box_name: &str, log: imp
     }
     let provider =
         status.provider.as_deref().and_then(Provider::from_id).ok_or_else(|| Error::Invalid("couldn't tell which hypervisor the lab runs on".into()))?;
-    attack_vm::start(&dir, &vagrant, provider, box_name, log).await
+    if provider.is_remote() {
+        return Err(Error::Invalid("This lab's machines run on a remote host: the attack VM is only for labs on this machine.".into()));
+    }
+    crate::machine::storage::owned::tracked(app, &[], &[box_name.to_string()], attack_vm::start(&dir, &vagrant, provider, box_name, log)).await
 }
 
 #[cfg(test)]
@@ -142,9 +152,54 @@ mod tests {
         assert!(s.contains("--network \"${networks[0]}\" 'repo/img:tag' sleep infinity"), "{s}");
     }
 
+    /// A lab's generated Vagrantfile with one machine on one network, as the attack VM plans from.
+    const LAB_VAGRANTFILE: &str = "config.vm.define \"dc01\" do |m|\n  m.vm.network \"private_network\", ip: \"192.168.56.30\", netmask: \"255.255.255.0\", virtualbox__intnet: \"isoloom-ad-lab\"\n  m.vm.provider \"virtualbox\" do |v|\n    v.name = \"ad · dc01\"\n  end\nend\n";
+
+    #[tokio::test]
+    async fn the_attack_vm_needs_a_running_machine_and_a_hypervisor_it_knows() {
+        use crate::exec::fake::{Tools, ok};
+        let t = crate::test_app::TestApp::new();
+        let dir = t.lab("ad", &[]);
+        let vagrant = crate::runtime::lab::vagrant_dir(&dir, crate::runtime::Runtime::Vm);
+        std::fs::create_dir_all(&vagrant).unwrap();
+        std::fs::write(vagrant.join("Vagrantfile"), LAB_VAGRANTFILE).unwrap();
+        let cases = [
+            ("1,dc01,state,poweroff\n1,dc01,provider-name,virtualbox\n", "start the lab first: the attack VM joins its networks"),
+            // No `provider-name` line at all (an odd Vagrant answer), or one for a provider the
+            // launcher doesn't drive: refused rather than started on a guess.
+            ("1,dc01,state,running\n", "couldn't tell which hypervisor the lab runs on"),
+            ("1,dc01,state,running\n1,dc01,provider-name,\n", "couldn't tell which hypervisor the lab runs on"),
+            ("1,dc01,state,running\n1,dc01,provider-name,aws\n", "couldn't tell which hypervisor the lab runs on"),
+        ];
+        for (status, expected) in cases {
+            let tools = Tools::rules(&[("vagrant status", ok(status))]);
+            let err = super::start_attack_vm(t.handle(), "ad", "kalilinux/rolling", |_| {}).await.unwrap_err().to_string();
+            assert_eq!(err, expected, "{status:?}");
+            assert!(!tools.called("vagrant up"), "{:?}", tools.calls());
+        }
+    }
+
+    #[tokio::test]
+    async fn an_attack_vm_is_refused_beside_a_lab_running_on_an_esxi_host() {
+        use crate::exec::fake::{Tools, ok};
+        let t = crate::test_app::TestApp::new();
+        let dir = t.lab("ad", &[]);
+        let vagrant = crate::runtime::lab::vagrant_dir(&dir, crate::runtime::Runtime::Vm);
+        std::fs::create_dir_all(&vagrant).unwrap();
+        std::fs::write(vagrant.join("Vagrantfile"), LAB_VAGRANTFILE).unwrap();
+        // The lab runs on an ESXi host (its marker says so, and Vagrant tracks it there).
+        std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "esx1").unwrap();
+        let tools = Tools::rules(&[("vagrant status", ok("1,dc01,state,running\n1,dc01,provider-name,vmware_esxi\n"))]);
+        let r = super::start_attack_vm(t.handle(), "ad", "kalilinux/rolling", |_| {}).await;
+        // The attack VM lives beside a lab on this machine only (stop and park never reach one on
+        // a server): a lab elsewhere must be refused, not started on a remote provider here.
+        assert!(r.is_err(), "an attack VM beside a lab on a server host is refused");
+        assert!(!tools.called("--provider vmware_esxi"), "{:?}", tools.calls());
+    }
+
     #[tokio::test]
     async fn no_attack_box_picked_means_nothing_to_start_in_the_lab_vm() {
-        let spec: isoloom_core::Spec = serde_yaml_ng::from_str("version: 1\nname: t\nmachines: {}\n").unwrap();
+        let spec: crate::runtime::lab::Spec = serde_yaml_ng::from_str("version: 1\nname: t\nmachines: {}\n").unwrap();
         let mut lines = Vec::new();
         // No pick, or a pick that is a Vagrant box shape but not a valid image: nothing runs.
         super::in_lab_vm_or_note(std::path::Path::new("lab"), &spec, &[], &mut |l| lines.push(l)).await;

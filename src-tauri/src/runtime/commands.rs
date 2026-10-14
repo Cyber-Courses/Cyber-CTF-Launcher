@@ -5,7 +5,7 @@
 use crate::AppHandle;
 use tauri::ipc::Channel;
 
-use super::lifecycle::stop;
+use super::lifecycle::stop_lab;
 use super::paths::{lab_dir, validate_id};
 use super::shell::lab_shell_command;
 use super::{LabStatus, Park, Runtime, attack_vm, cloud_services, discover, docker, exegol, lab, server, status};
@@ -20,7 +20,7 @@ fn channel_log(logs: Channel<String>) -> impl Fn(String) + Send + Sync + 'static
 }
 
 fn check_image(image: &str) -> Result<()> {
-    if exegol::valid_image(image) { Ok(()) } else { Err(Error::Invalid(format!("invalid attack-box image `{image}`"))) }
+    if crate::exec::valid_image(image) { Ok(()) } else { Err(Error::Invalid(format!("invalid attack-box image `{image}`"))) }
 }
 
 fn check_box(box_name: &str) -> Result<()> {
@@ -34,13 +34,7 @@ fn valid_machine_name(m: &str) -> bool {
 
 #[tauri::command]
 pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
-    let dir = lab_dir(&app, &id)?;
-    // A deploy still running in its worker process is stopped first, so the teardown never races
-    // a `vagrant up` or `compose up` that would recreate what it removes; same for an attack VM
-    // start beside it.
-    deploy_worker::kill_and_wait(&app, &id).await;
-    deploy_worker::kill_and_wait(&app, &deploy_worker::attack_key(&id)).await;
-    stop(&app, &dir, &id, runtime, channel_log(logs)).await
+    stop_lab(&app, &id, runtime, channel_log(logs)).await
 }
 
 /// Pauses (state saved) or shuts down (powered off) a lab on this machine, keeping its machines
@@ -131,10 +125,10 @@ pub async fn exegol_status(id: String, image: String) -> Result<exegol::ExegolSt
 
 /// Launches the attack box on the lab's network (pulls the image first if needed).
 #[tauri::command]
-pub async fn exegol_start(id: String, image: String, logs: Channel<String>) -> Result<()> {
+pub async fn exegol_start(app: AppHandle, id: String, image: String, logs: Channel<String>) -> Result<()> {
     validate_id(&id)?;
     check_image(&image)?;
-    exegol::start(&id, &image, channel_log(logs)).await
+    crate::machine::storage::owned::tracked(&app, std::slice::from_ref(&image), &[], exegol::start(&id, &image, channel_log(logs))).await
 }
 
 #[tauri::command]
@@ -165,8 +159,7 @@ pub async fn attack_vm_stop(app: AppHandle, id: String, logs: Channel<String>) -
     let dir = lab_dir(&app, &id)?;
     // A start still downloading or booting it is stopped first, so the removal is final.
     deploy_worker::kill_and_wait(&app, &deploy_worker::attack_key(&id)).await;
-    attack_vm::stop(&dir, channel_log(logs)).await;
-    Ok(())
+    attack_vm::stop(&dir, channel_log(logs)).await
 }
 
 /// Opens the player's terminal on an SSH session into the attack VM.
@@ -282,13 +275,14 @@ mod tests {
 
     #[tokio::test]
     async fn attack_box_commands_drive_docker_for_a_valid_lab() {
+        let t = TestApp::new();
         let tools = Tools::rules(&[("inspect", ok("true\t10.0.0.5\n"))]);
         let s = sink();
         let st = exegol_status("web-1".into(), "nwodtuhs/exegol:free".into()).await.unwrap();
         assert!(st.running);
         exegol_stop("web-1".into(), channel(s.clone())).await.unwrap();
         assert!(tools.called("docker rm -f cyberctf-web-1-attacker"));
-        let _ = exegol_start("web-1".into(), "nwodtuhs/exegol:free".into(), channel(s.clone())).await;
+        let _ = exegol_start(t.handle().clone(), "web-1".into(), "nwodtuhs/exegol:free".into(), channel(s.clone())).await;
         assert!(tools.called("nwodtuhs/exegol:free"));
     }
 
@@ -313,15 +307,53 @@ mod tests {
 
     #[tokio::test]
     async fn attack_box_commands_refuse_bad_ids_and_images_before_touching_docker() {
+        let t = TestApp::new();
         let bad_id = exegol_status("../x".into(), "nwodtuhs/exegol:free".into()).await.err().unwrap().to_string();
         assert_eq!(bad_id, "invalid lab id `../x`");
         let bad_image = exegol_status("web-1".into(), "-x".into()).await.err().unwrap().to_string();
         assert_eq!(bad_image, "invalid attack-box image `-x`");
         let sink = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        assert!(exegol_start("a b".into(), "nwodtuhs/exegol:free".into(), channel(sink.clone())).await.is_err());
-        assert!(exegol_start("web-1".into(), "x;y".into(), channel(sink.clone())).await.is_err());
+        assert!(exegol_start(t.handle().clone(), "a b".into(), "nwodtuhs/exegol:free".into(), channel(sink.clone())).await.is_err());
+        assert!(exegol_start(t.handle().clone(), "web-1".into(), "x;y".into(), channel(sink.clone())).await.is_err());
         assert!(exegol_stop("a;rm".into(), channel(sink.clone())).await.is_err());
         assert!(sink.lock().unwrap().is_empty(), "nothing ran");
+    }
+
+    #[tokio::test]
+    async fn a_stop_reads_as_stopping_from_the_moment_it_is_asked_for() {
+        // Regression guard: ending a deploy can take minutes (a Terraform apply is interrupted
+        // and waited for, then the lab lock); the page and the quit guard must see a stop, not
+        // a bare lab, the whole time.
+        let t = TestApp::new();
+        let id = "commands-test-stop-waits";
+        t.lab(id, &[]);
+        let tools = Tools::rules(&[]);
+        let held = crate::runtime::inflight::lock_lab(t.handle(), id).await.unwrap();
+        let app = t.handle().clone();
+        let logs = sink();
+        let ch = channel(logs.clone());
+        let mut stop = tokio::spawn(async move { lab_stop(app, id.into(), Runtime::Docker, ch).await });
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(100), &mut stop).await.is_err(), "the stop waits for the lab");
+        let action = |id: &str| crate::runtime::active_actions().into_iter().find(|(l, _)| l == id).map(|(_, a)| a);
+        assert_eq!(action(id), Some(crate::runtime::Action::Stop));
+        assert!(!tools.called("down --volumes"));
+        drop(held);
+        stop.await.unwrap().unwrap();
+        assert!(tools.called("down --volumes"));
+        assert_eq!(action(id), None);
+    }
+
+    #[tokio::test]
+    async fn machine_names_outside_plain_ascii_are_refused_before_a_worker_starts() {
+        let t = TestApp::new();
+        t.lab("ad", &[]);
+        let tools = Tools::rules(&[]);
+        let s = sink();
+        for bad in ["dc01é", "dc01 ", "dc01\n", "ws01/x"] {
+            let err = lab_provision(t.handle().clone(), "ad".into(), Runtime::Vm, Some(bad.into()), channel(s.clone())).await.unwrap_err().to_string();
+            assert_eq!(err, format!("invalid machine name `{bad}`"));
+        }
+        assert!(tools.calls().is_empty() && s.lock().unwrap().is_empty());
     }
 
     #[test]

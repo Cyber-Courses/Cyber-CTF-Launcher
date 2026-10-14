@@ -6,6 +6,8 @@ import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
 import { installTauri } from "@/test/tauri";
+import type { CommandError } from "@/lib/errors";
+import { setLocalePreference } from "@/lib/i18n";
 
 const goat: Lab = {
   id: "lab-goat",
@@ -32,6 +34,7 @@ const status = (p: Partial<LabStatus>): LabStatus => ({
   attacker: null,
   outputs: [],
   message: null,
+  reapError: null,
   ...p,
 });
 
@@ -71,6 +74,37 @@ describe("LabDetail, a cloud lab", () => {
       .filter((b) => /^start$/i.test(b.textContent?.trim() ?? ""));
     await user.click(start[0]);
     expect(h.onStart).toHaveBeenCalledWith({ kind: "host", id: "aws1" });
+  });
+
+  it("says when the auto-stop couldn't destroy it, as it may still be billing", async () => {
+    installTauri(idle);
+    const reapError: CommandError = {
+      code: "reapDestroy",
+      args: { account: "My AWS", detail: "ExpiredToken" },
+      message: "Auto-stop couldn't destroy lab-goat: destroying it on My AWS failed: ExpiredToken",
+    };
+    renderGoat({ status: status({ reapError, host: "My AWS", place: "cloud" }) });
+    await flush();
+    expect(screen.getByText("Auto-stop couldn’t destroy EC2 SSRF")).toBeTruthy();
+    expect(screen.getByText("Destroying it on My AWS failed: ExpiredToken")).toBeTruthy();
+    expect(document.body.textContent).toContain("It may still be billing in your cloud account.");
+  });
+
+  it("says why the auto-stop failed in the player's language", async () => {
+    setLocalePreference("fr");
+    installTauri(idle);
+    const reapError: CommandError = { code: "reapTimedOut", args: { minutes: 35 }, message: "Auto-stop couldn't destroy lab-goat: the destroy didn't finish" };
+    renderGoat({ status: status({ reapError, host: "My AWS", place: "cloud" }) });
+    await flush();
+    expect(screen.getByText("La destruction ne s'est pas terminée en 35 minutes. Arrêtez le lab pour réessayer.")).toBeTruthy();
+    setLocalePreference("en");
+  });
+
+  it("says nothing of the auto-stop when it had nothing to report", async () => {
+    installTauri(idle);
+    renderGoat({ status: status({}) });
+    await flush();
+    expect(screen.queryByText(/Auto-stop couldn’t destroy/)).toBeNull();
   });
 
   it("with no account of its cloud, offers to connect one", async () => {

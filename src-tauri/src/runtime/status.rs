@@ -14,13 +14,13 @@ use super::{AttackerAt, LabStatus, Place, Runtime, cloud_services, docker, lab, 
 use crate::error::Result;
 
 pub(super) async fn status(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
-    if runtime == Runtime::Cloud {
-        return cloud_status(app, dir, id);
-    }
-    match server::lab_connection(app, dir)? {
-        None => local_status(dir, id, runtime).await,
-        Some(c) => server_status(app, dir, id, runtime, c).await,
-    }
+    let status = match (runtime, server::lab_connection(app, dir)?) {
+        (Runtime::Cloud, c) => cloud_status(app, dir, id, c)?,
+        (_, None) => local_status(dir, id, runtime).await?,
+        (_, Some(c)) => server_status(app, dir, id, runtime, c).await?,
+    };
+    // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
+    Ok(LabStatus { reap_error: super::reaper::last_failure(app, id), ..status })
 }
 
 pub(super) async fn local_status(dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
@@ -37,8 +37,8 @@ pub(super) async fn local_status(dir: &Path, id: &str, runtime: Runtime) -> Resu
 
 /// A cloud-services lab's status, from its state on the account it was started on; not running
 /// when its last deploy failed (what it created stays listed, to be stopped).
-fn cloud_status(app: &AppHandle, dir: &Path, id: &str) -> Result<LabStatus> {
-    let s = cloud_services::lab_status(app, dir, id, server::lab_connection(app, dir)?)?;
+fn cloud_status(app: &AppHandle, dir: &Path, id: &str, conn: Option<server::Connection>) -> Result<LabStatus> {
+    let s = cloud_services::lab_status(app, dir, id, conn)?;
     Ok(LabStatus { running: s.running && !crate::deploy_worker::last_deploy_failed(app, id), ..s })
 }
 
@@ -151,12 +151,25 @@ pub async fn running_here(dir: &Path, id: &str) -> bool {
     false
 }
 
-/// [`running_here`] for a lab by id; false when it isn't installed.
-pub async fn lab_running_here(app: &AppHandle, id: &str) -> bool {
-    match lab_dir(app, id) {
-        Ok(dir) => running_here(&dir, id).await,
-        Err(_) => false,
-    }
+/// Whether Vagrant still tracks machines of this lab (or its attack VM) on this machine, running
+/// or not: their record lives in the lab's folder, which must not be replaced under them.
+pub fn vms_recorded_here(dir: &Path) -> bool {
+    vagrant_dirs(dir).into_iter().any(|vdir| vm::has_machines(&vdir)) || vm::has_machines(&super::attack_vm::dir(dir))
+}
+
+/// Whether lab `id` is up somewhere before a start: running here, parked here, or marked as
+/// running on a server host or cloud account. What a failed start finds already up was not
+/// brought up by it, and must not be torn down with what it did bring up. A leftover (a state
+/// left on another account, stopped VMs the start clears) doesn't count: a failed start tears
+/// down its own deployment as before. False when it isn't installed.
+pub async fn lab_present(app: &AppHandle, id: &str) -> bool {
+    let Ok(dir) = lab_dir(app, id) else { return false };
+    server::marked_host(&dir).is_some_and(|h| !h.is_empty()) || parked(&dir).is_some() || running_here(&dir, id).await
+}
+
+/// Whether lab `id` is installed here.
+pub fn lab_installed(app: &AppHandle, id: &str) -> bool {
+    lab_dir(app, id).is_ok()
 }
 
 /// Where a running lab is reachable on this machine (its first published port). None for
@@ -248,6 +261,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_lab_is_present_wherever_something_of_it_is_left() {
+        // Regression: a failed website launch asked only whether the lab ran *here* (local Docker
+        // and Vagrant), so a lab up on a server host or cloud account read as absent, and the
+        // teardown of the failed start destroyed it.
+        use crate::exec::fake::Tools;
+        let t = crate::test_app::TestApp::new();
+        let app = t.handle();
+        let _tools = Tools::rules(&[]);
+        let dir = t.lab("present", &[]);
+        assert!(!super::lab_present(app, "present").await, "installed, nothing of it up");
+        // Marked as running on a host.
+        crate::runtime::server::mark_lab(&dir, Some("pve1")).unwrap();
+        assert!(super::lab_present(app, "present").await);
+        crate::runtime::server::mark_lab(&dir, None).unwrap();
+        // A Terraform state left on another account isn't this lab being up: a failed start on
+        // another account still tears down what it created there.
+        let state = t.data().join("deployments/present/aws");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[{"type":"aws_instance"}]}"#).unwrap();
+        assert!(!super::lab_present(app, "present").await);
+        assert!(super::lab_installed(app, "present") && !super::lab_installed(app, "gone"));
+        // Parked here.
+        crate::runtime::paths::mark_parked(&dir, Some(crate::runtime::Park::Pause)).unwrap();
+        assert!(super::lab_present(app, "present").await);
+    }
+
+    #[tokio::test]
     async fn a_lab_status_is_read_where_the_lab_runs() {
         use crate::exec::fake::{Tools, ok};
         let t = crate::test_app::TestApp::new();
@@ -261,8 +301,8 @@ mod tests {
         let s = super::status(app, &dir, "web", Runtime::Docker).await.unwrap();
         assert!(s.running && matches!(s.place, Some(Place::Container)));
         assert!(super::running_here(&dir, "web").await);
-        assert!(super::lab_running_here(app, "web").await);
-        assert!(!super::lab_running_here(app, "gone").await);
+        assert!(super::lab_present(app, "web").await);
+        assert!(!super::lab_present(app, "gone").await);
         // Its VMs here, and a container lab in a local VM.
         let s = super::status(app, &dir, "web", Runtime::Vm).await.unwrap();
         assert!(s.running && matches!(s.place, Some(Place::LocalVm)));
@@ -287,6 +327,47 @@ mod tests {
         assert!(!super::running_here(&dir, "t").await);
         assert!(tools.called("vagrant status"));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_lab_marked_on_a_host_that_is_no_longer_saved_names_that_host() {
+        use crate::exec::fake::Tools;
+        let t = crate::test_app::TestApp::new();
+        let dir = t.lab("web", &[]);
+        std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "gone1\n").unwrap();
+        let tools = Tools::rules(&[]);
+        for runtime in [Runtime::Docker, Runtime::Vm, Runtime::Cloud] {
+            let err = super::status(t.handle(), &dir, "web", runtime).await.err().expect("refused").to_string();
+            assert_eq!(err, "server host `gone1` not found", "{runtime:?}");
+        }
+        // Refused before anything local or remote is probed; the marker alone never makes it
+        // run here either.
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(!super::running_here(&dir, "web").await);
+    }
+
+    #[tokio::test]
+    async fn running_here_is_false_when_neither_docker_nor_vagrant_answers() {
+        use crate::exec::fake::{Tools, fail};
+        let dir = std::env::temp_dir().join(format!("cyberctf-status-down-{}", rand::random::<u32>()));
+        let vagrant = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
+        std::fs::create_dir_all(&vagrant).unwrap();
+        std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
+        // A wedged engine and a wedged hypervisor: an error, not a lab that reads as running.
+        let tools = Tools::rules(&[("docker", fail("Cannot connect to the Docker daemon")), ("vagrant status", fail("VBoxManage: error: timed out"))]);
+        assert!(!super::running_here(&dir, "t").await);
+        assert!(tools.called("docker compose") && tools.called("vagrant status"), "{:?}", tools.calls());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_parked_mark_is_reported_only_while_the_lab_is_down_whatever_the_mode() {
+        for mode in [Park::Pause, Park::Shutdown] {
+            assert_eq!(with_parked(status_with(false, &[]), Some(mode)).parked, Some(mode));
+            // Half up (one machine running by hand): the status is "running", never "parked",
+            // so the page offers Stop rather than a Resume that would do nothing.
+            assert_eq!(with_parked(status_with(true, &["dc01"]), Some(mode)).parked, None);
+        }
     }
 
     #[test]

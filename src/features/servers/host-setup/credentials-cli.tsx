@@ -61,6 +61,12 @@ export function GcpCredentials({ s }: { s: HostSetup }) {
   const { v, gcpBilling } = s;
   return (
     <div className="space-y-3">
+      {/* A list that couldn't be read: the others still show, and the reason does too. */}
+      {s.gcpError && !s.gcpChecking && (
+        <p role="alert" className="text-[0.75rem] break-words text-destructive">
+          {t("servers.setup.credentials.gcpReadFailed", { error: s.gcpError })}
+        </p>
+      )}
       {s.gcpChecking ? (
         <CheckingNote>{t("servers.setup.credentials.checkingGcloud")}</CheckingNote>
       ) : s.gcpEmail ? (
@@ -149,11 +155,14 @@ export function AwsCliCredentials({ s }: { s: HostSetup }) {
         <Field label={t("servers.setup.credentials.profile")}>
           <Select value={s.v.awsProfile ?? ""} onChange={(e) => s.set("awsProfile", e.target.value || null)}>
             <option value="">default</option>
-            {s.profiles.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
+            {/* "default" is the first option already; the CLI lists it among the others too. */}
+            {s.profiles
+              .filter((p) => p !== "default")
+              .map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
           </Select>
         </Field>
       )}
