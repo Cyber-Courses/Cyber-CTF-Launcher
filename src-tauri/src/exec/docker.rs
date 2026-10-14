@@ -45,6 +45,20 @@ pub fn valid_image(image: &str) -> bool {
         && image.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | ':' | '@'))
 }
 
+/// An image reference's repository, without registry, tag or digest:
+/// `registry.local:5000/team/wordpress:6.4` -> `team/wordpress`, `docker.io/x/y` -> `x/y`.
+pub fn image_repository(image: &str) -> &str {
+    let image = image.split('@').next().unwrap_or(image);
+    let image = match image.rfind(':') {
+        Some(i) if !image[i..].contains('/') => &image[..i],
+        _ => image,
+    };
+    match image.split_once('/') {
+        Some((host, rest)) if host.contains('.') || host.contains(':') || host == "localhost" => rest,
+        _ => image,
+    }
+}
+
 /// Whether a failed `docker` call means this account can't reach the daemon's socket (not in
 /// the `docker` group, or not since its last login) rather than a daemon that isn't running.
 /// Told apart, the app says which: offering to start an engine that already runs only spun.
@@ -85,6 +99,16 @@ pub fn login_name() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_image_repository_has_no_registry_tag_or_digest() {
+        assert_eq!(image_repository("wordpress:6.4"), "wordpress");
+        assert_eq!(image_repository("registry.local:5000/team/novnc:1@sha256:abc"), "team/novnc");
+        assert_eq!(image_repository("docker.io/cyberctf/attack-box:latest"), "cyberctf/attack-box");
+        assert_eq!(image_repository("index.docker.io/cyberctf/attack-box@sha256:abc"), "cyberctf/attack-box");
+        assert_eq!(image_repository("localhost/app"), "app");
+        assert_eq!(image_repository("team/app"), "team/app");
+    }
 
     #[test]
     fn a_denied_docker_socket_is_not_a_stopped_daemon() {

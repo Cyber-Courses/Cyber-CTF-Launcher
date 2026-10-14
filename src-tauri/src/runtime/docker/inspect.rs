@@ -31,12 +31,9 @@ const NOT_WEB: &[&str] = &[
     "rabbitmq",
     "elasticsearch",
     "mssql",
-    "db",
-    "database",
     "oracledb",
     "ssh",
     "openssh",
-    "sftp",
     "ftp",
     "vsftp",
     "proftp",
@@ -47,42 +44,35 @@ const NOT_WEB: &[&str] = &[
     "smtp",
     "postfix",
     "telnet",
-    "dns",
     "bind9",
     "dnsmasq",
-    "smb",
     "samba",
-    "ldap",
     "openldap",
 ];
+
+/// Service names that are no web UI only as the whole name: as a word they also name the web
+/// front ends of these services (`db-admin`, `dns-server`, `ldap-user-manager`).
+const NOT_WEB_SERVICES: &[&str] = &["db", "database", "sftp", "dns", "smb", "ldap"];
 
 /// Oracle's database images (`gvenzl/oracle-xe`, `oracle/database`), told from its web servers
 /// (`oracle-weblogic`) by the word next to `oracle`.
 const ORACLE_DATABASE: &[&str] = &["xe", "free", "database", "db"];
-
-/// An image reference's repository, without registry, tag or digest:
-/// `registry.local:5000/team/wordpress:6.4` -> `team/wordpress`.
-fn repository(image: &str) -> &str {
-    let image = image.split('@').next().unwrap_or(image);
-    let image = match image.rfind(':') {
-        Some(i) if !image[i..].contains('/') => &image[..i],
-        _ => image,
-    };
-    match image.split_once('/') {
-        Some((host, rest)) if host.contains('.') || host.contains(':') || host == "localhost" => rest,
-        _ => image,
-    }
-}
 
 /// True for services that aren't a web UI (databases, caches, brokers, and non-HTTP network
 /// services like SSH/FTP/RDP): the Open button must never point a browser at one. Whole words
 /// of the service name and image repository only: substrings took web apps for them
 /// (`wordpress` holds "rdp", `novnc` "vnc", `sftpgo` "ftp", `oracle-weblogic` "oracle").
 fn is_datastore(e: &PsEntry) -> bool {
-    let text = format!("{} {}", e.service, repository(&e.image)).to_ascii_lowercase();
-    let words: Vec<&str> = text.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect();
-    let has = |k: &str| words.iter().any(|w| *w == k || w.strip_suffix('d') == Some(k));
-    NOT_WEB.iter().any(|k| has(k)) || (has("oracle") && ORACLE_DATABASE.iter().any(|k| has(k)))
+    let repository = crate::exec::image_repository(&e.image).to_ascii_lowercase();
+    let service = e.service.to_ascii_lowercase();
+    let words = |text: &str| -> Vec<String> { text.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_string).collect() };
+    let (image_words, all_words) = (words(&repository), words(&format!("{service} {repository}")));
+    let has = |words: &[String], k: &str| words.iter().any(|w| w == k || w.strip_suffix('d') == Some(k));
+    NOT_WEB.iter().any(|k| has(&all_words, k))
+        || NOT_WEB_SERVICES.contains(&service.as_str())
+        // An image published as a database (`oracle/database`, `container-registry…/database/free`).
+        || has(&image_words, "database")
+        || (has(&all_words, "oracle") && ORACLE_DATABASE.iter().any(|k| has(&all_words, k)))
 }
 
 /// Whether a published port's protocol is TCP (Compose leaves it empty for TCP at times).

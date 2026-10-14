@@ -117,6 +117,46 @@ mod tests {
         assert!(!ports.exists(), "the next start picks its ports again");
     }
 
+    /// The real Docker: a lab's containers stopped from the Machine page go with their volume,
+    /// networks and pinned ports, as from the lab page. Opt-in (needs Docker and the image named
+    /// by `CYBERCTF_TEST_IMAGE`, default python:3.11-alpine, already local):
+    /// `cargo test real_docker -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn real_docker_machine_page_stop_removes_the_labs_volumes_and_networks() {
+        use crate::exec::run;
+        let image = std::env::var("CYBERCTF_TEST_IMAGE").unwrap_or_else(|_| "python:3.11-alpine".into());
+        let t = crate::test_app::TestApp::new();
+        let id = format!("e2e{}", rand::random::<u16>());
+        let project = format!("cyberctf-{id}");
+        let lab = t.lab(&id, &[]);
+        let compose = crate::runtime::lab::compose_file(&lab);
+        std::fs::create_dir_all(compose.parent().unwrap()).unwrap();
+        std::fs::write(
+            &compose,
+            format!(
+                "services:\n  web:\n    image: {image}\n    command: [\"sleep\", \"300\"]\n    labels: {{ cyberctf.e2e: stop }}\n    volumes: [\"data:/data\"]\n    networks: [lab]\nvolumes:\n  data: {{}}\nnetworks:\n  lab: {{}}\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(lab.join(".cyberctf-ports.yml"), "services: {}\n").unwrap();
+        let file = compose.display().to_string();
+        run("docker", &["compose", "-p", &project, "-f", &file, "up", "-d"], Some(&lab)).await.unwrap();
+        let listed = super::machine_workloads(t.handle().clone()).await;
+        assert!(listed.iter().any(|w| w.id == id && w.kind == "docker"), "{}", listed.iter().map(|w| w.id.as_str()).collect::<Vec<_>>().join(","));
+        super::machine_workload_stop(t.handle().clone(), "docker".into(), id.clone()).await.unwrap();
+        let label = format!("label=com.docker.compose.project={project}");
+        let containers = run("docker", &["ps", "-aq", "--filter", &label], None).await.unwrap();
+        let volumes = run("docker", &["volume", "ls", "-q", "--filter", &label], None).await.unwrap();
+        let networks = run("docker", &["network", "ls", "-q", "--filter", &label], None).await.unwrap();
+        // Whatever is left goes before the assertions, so a failure leaves nothing behind.
+        let _ = run("docker", &["compose", "-p", &project, "-f", &file, "down", "--volumes", "-t", "0"], Some(&lab)).await;
+        assert!(containers.trim().is_empty(), "containers left: {containers}");
+        assert!(volumes.trim().is_empty(), "the lab's volume was left: {volumes}");
+        assert!(networks.trim().is_empty(), "networks left: {networks}");
+        assert!(!lab.join(".cyberctf-ports.yml").exists(), "the pinned ports went");
+    }
+
     #[tokio::test]
     async fn nothing_running_lists_nothing() {
         let _tools = crate::exec::fake::Tools::rules(&[("docker ps", None)]);

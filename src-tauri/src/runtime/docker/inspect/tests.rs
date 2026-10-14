@@ -1,7 +1,7 @@
 use super::compose::parse_ps;
 use super::{
-    HostProbe, declared_services, down_serving, first_published_url, is_datastore, is_running, open_url, parse_inspect, parse_networks, repository,
-    short_network, status_from_host, tcp_ports,
+    HostProbe, declared_services, down_serving, first_published_url, is_datastore, is_running, open_url, parse_inspect, parse_networks, short_network,
+    status_from_host, tcp_ports,
 };
 use super::{build_status, ipv4_subnets, listed_names, networks_of_others};
 
@@ -267,6 +267,10 @@ fn web_uis_named_like_a_service_keep_their_open_url_and_databases_dont() {
         ("files", "drakkan/sftpgo:v2"),
         ("app", "container-registry.oracle.com/middleware/weblogic:14"),
         ("wls", "vulhub/oracle-weblogic:12"),
+        // Web front ends named after the service they manage.
+        ("db-admin", "adminer:4"),
+        ("resolver", "technitium/dns-server"),
+        ("users", "wheelybird/ldap-user-manager"),
     ] {
         assert!(!is_datastore(&ps(svc, image)), "{svc} {image}");
     }
@@ -278,14 +282,6 @@ fn web_uis_named_like_a_service_keep_their_open_url_and_databases_dont() {
     ] {
         assert!(is_datastore(&ps(svc, image)), "{svc} {image}");
     }
-}
-
-#[test]
-fn an_image_repository_has_no_registry_tag_or_digest() {
-    assert_eq!(repository("wordpress:6.4"), "wordpress");
-    assert_eq!(repository("registry.local:5000/team/novnc:1@sha256:abc"), "team/novnc");
-    assert_eq!(repository("localhost/app"), "app");
-    assert_eq!(repository("team/app"), "team/app");
 }
 
 #[test]
