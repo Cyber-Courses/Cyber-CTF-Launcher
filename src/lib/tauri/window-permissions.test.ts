@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { commandsFrom, permissionSets } from "@/test/command-graph";
 
@@ -45,5 +47,12 @@ describe("window permissions", () => {
     for (const [set, allowed] of sets) {
       if (set !== "shell-window") expect(pty.filter((c) => allowed.has(c))).toEqual([]);
     }
+  });
+
+  it("gives the terminal windows no opener: the xterm page opens no links", () => {
+    const file = fileURLToPath(new URL("../../../src-tauri/capabilities/shell-windows.json", import.meta.url));
+    const capability = JSON.parse(fs.readFileSync(file, "utf8")) as { permissions: (string | { identifier: string })[] };
+    const ids = capability.permissions.map((p) => (typeof p === "string" ? p : p.identifier));
+    expect(ids.filter((id) => id.startsWith("opener:"))).toEqual([]);
   });
 });

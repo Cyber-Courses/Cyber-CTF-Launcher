@@ -231,12 +231,12 @@ async fn tear_down(app: &AppHandle, lab_id: Option<&str>, runtime: Runtime) {
 
 /// Tells the backend the lab runs: where its target is reachable, plus a loopback control
 /// endpoint + one-time token/nonce so the website can verify co-location before trusting the
-/// 127.0.0.1 URL. The relay path for a remote/headless agent is the next step.
-async fn report_running(app: &AppHandle, session_id: &str, host: Option<&str>, url: Option<&str>) -> Result<()> {
+/// 127.0.0.1 URL (the endpoint ends once it answered, when the lab stops, or after a while). The relay path for a remote/headless agent is the next step.
+async fn report_running(app: &AppHandle, session_id: &str, lab_id: Option<&str>, host: Option<&str>, url: Option<&str>) -> Result<()> {
     let running_on = running_message(host.and_then(|h| server::host_name(app, h)));
     let token = random_hex();
     let nonce = random_hex();
-    let control_url = colocation::serve(token.clone(), nonce.clone()).await.ok().map(|port| format!("http://127.0.0.1:{port}"));
+    let control_url = colocation::serve(lab_id, token.clone(), nonce.clone()).await.ok().map(|port| format!("http://127.0.0.1:{port}"));
     let progress = Progress { local_url: url, control_url: control_url.as_deref(), token: Some(&token), nonce: Some(&nonce), message: Some(&running_on) };
     update_state(session_id, "RUNNING", progress).await
 }
@@ -280,7 +280,7 @@ async fn claim_and_run(app: &AppHandle, session_id: &str) -> Result<()> {
     // The lab is actually running on this machine now. If reporting back to the backend fails,
     // tear it down before returning the error, so we don't leave infra running under a session
     // the poller will mark FAILED.
-    if let Err(e) = report_running(app, session_id, host.as_deref(), url.as_deref()).await {
+    if let Err(e) = report_running(app, session_id, lab_id, host.as_deref(), url.as_deref()).await {
         tear_down(app, lab_id, runtime).await;
         return Err(e);
     }

@@ -20,6 +20,8 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 /// The largest lab archive downloaded.
 pub const MAX_LAB_ARCHIVE: u64 = 512 * 1024 * 1024;
+/// The most a lab archive unpacks to: a small download can inflate without end (a gzip bomb).
+pub const MAX_LAB_UNPACKED: u64 = 4 * 1024 * 1024 * 1024;
 
 fn built(b: reqwest::ClientBuilder) -> Result<reqwest::Client> {
     b.build().map_err(|e| Error::Invalid(format!("couldn't set up HTTP: {e}")))

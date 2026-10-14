@@ -43,12 +43,22 @@ pub(crate) fn validate_source(repository: &str, commit: &str) -> Result<()> {
 /// Extracts a GitHub tarball (single top-level `<repo>-<sha>/` folder) into
 /// `dest`, rejecting absolute paths, `..` and links.
 fn extract(tarball: &[u8], dest: &Path) -> Result<()> {
+    extract_within(tarball, dest, crate::http::MAX_LAB_UNPACKED)
+}
+
+/// [`extract`], refused before the files would add up to more than `max` bytes.
+fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(tarball));
+    let mut unpacked: u64 = 0;
     for entry in archive.entries()? {
         let mut entry = entry?;
         let kind = entry.header().entry_type();
         if !(kind.is_file() || kind.is_dir()) {
             continue;
+        }
+        unpacked = unpacked.saturating_add(entry.size());
+        if unpacked > max {
+            return Err(Error::Invalid(format!("the lab archive unpacks to more than {} MB; refused", max / (1024 * 1024))));
         }
         let path = entry.path()?.into_owned();
         // Past a leading `./` (GNU tar's `-C dir .` style), then the top folder GitHub names
@@ -571,6 +581,23 @@ mod tests {
     fn extract_to(entries: &[(&str, &[u8])]) -> Result<PathBuf> {
         let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
         extract(&tarball(entries), &dir).map(|()| dir)
+    }
+
+    #[test]
+    fn an_archive_unpacking_past_the_limit_is_refused() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+        // Highly compressible, like a gzip bomb: 3 MiB of zeros in a few KiB.
+        let zeros = vec![0u8; 3 * 1024 * 1024];
+        let archive = tarball(&[("lab-abc/a.bin", &zeros), ("lab-abc/b.bin", &zeros)]);
+        assert!(archive.len() < 64 * 1024);
+        let err = extract_within(&archive, &dir, 4 * 1024 * 1024).unwrap_err().to_string();
+        assert_eq!(err, "the lab archive unpacks to more than 4 MB; refused");
+        // The entry past the limit was never written.
+        assert!(!dir.join("b.bin").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+        extract_within(&archive, &dir, 6 * 1024 * 1024).unwrap();
+        assert_eq!(std::fs::metadata(dir.join("b.bin")).unwrap().len(), zeros.len() as u64);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
