@@ -406,6 +406,14 @@ fn the_labs_topology_is_read_again_only_once_its_spec_changed() {
     // Changed: read again.
     std::fs::File::options().write(true).open(&spec).unwrap().set_modified(written + std::time::Duration::from_secs(5)).unwrap();
     assert!(super::status::lab_topology(&lab).is_none(), "the new, broken spec was read");
+    // A spec under Isoloom's other name is watched too.
+    std::fs::remove_file(&spec).unwrap();
+    std::fs::write(
+        lab.join("isoloom.yaml"),
+        "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.31.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n",
+    )
+    .unwrap();
+    assert!(super::status::lab_topology(&lab).is_some(), "isoloom.yaml read");
     std::fs::remove_dir_all(lab).unwrap();
 }
 

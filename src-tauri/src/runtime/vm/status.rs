@@ -49,12 +49,9 @@ pub(super) fn lab_topology(lab: &Path) -> Option<Topology> {
     topology
 }
 
-/// When each file a lab's topology is read from last changed (None: absent): its spec, its
-/// instance number and defaults, and the user's Isoloom defaults.
+/// When each file a lab's topology is read from last changed (None: absent).
 fn topology_stamps(lab: &Path) -> Vec<Option<std::time::SystemTime>> {
-    let user_defaults = crate::platform::home_dir().map(|h| h.join(".isoloom").join("defaults.yml"));
-    let files = [Some(lab.join("isoloom.yml")), Some(lab.join("isoloom.defaults.yml")), Some(lab.join(crate::runtime::lab::INSTANCE_MARKER)), user_defaults];
-    files.into_iter().map(|f| f.and_then(|f| std::fs::metadata(f).and_then(|m| m.modified()).ok())).collect()
+    crate::runtime::lab::spec_files(lab).into_iter().map(|f| std::fs::metadata(f).and_then(|m| m.modified()).ok()).collect()
 }
 
 /// The status of the VMs in `dir` from `vagrant status --machine-readable` output.
