@@ -298,24 +298,46 @@ struct Plan<'a> {
 }
 
 /// The PowerShell script that runs a [`Plan`], logging with the marker lines of [`Collector`].
-#[allow(clippy::too_many_lines, reason = "#150: split once the fixes in flight on this file have landed")]
 fn script(p: &Plan) -> Result<String> {
     for arg in p.steps.iter().flat_map(|s| &s.args) {
         check_arg(arg)?;
     }
-    let q = |path: &Path| ps_quote(&path.display().to_string());
+    let m = ps_quote(p.marker);
+    let mut s = script_log(p);
+    s.push_str(&script_watcher(p));
+    s.push_str("$script:cyberctfFailed = $false\n$cyberctfCode = 0\ntry {\n");
+    s.push_str(&script_setup(p));
+    s.push_str(&script_step_function(p, &m));
+    s.push_str(&script_steps(p));
+    s.push_str(&script_end(&m));
+    Ok(s)
+}
+
+/// A path, quoted for PowerShell.
+fn ps_path(path: &Path) -> String {
+    ps_quote(&path.display().to_string())
+}
+
+/// The script's log: a UTF-8 file shared with the launcher, and `Write-CyberctfLine`.
+fn script_log(p: &Plan) -> String {
     let mut s = String::new();
     // Native stderr lines must stay plain lines (with `Stop`, the first one would end the script).
     s.push_str("$ErrorActionPreference = 'Continue'\n$ProgressPreference = 'SilentlyContinue'\n");
     s.push_str("try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding -ArgumentList $false } catch {}\n");
     s.push_str(&format!(
         "$cyberctfFile = [System.IO.File]::Open({}, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)\n",
-        q(&p.work.log())
+        ps_path(&p.work.log())
     ));
     s.push_str("$cyberctfLog = New-Object System.IO.StreamWriter -ArgumentList $cyberctfFile, (New-Object System.Text.UTF8Encoding -ArgumentList $false)\n");
     s.push_str("$cyberctfLog.AutoFlush = $true\n");
     s.push_str("function Write-CyberctfLine([string]$t) { $cyberctfLog.WriteLine($t) }\n");
-    // The watcher: a background job (its own process) that ends this script's whole tree.
+    s
+}
+
+/// The watcher: a background job (its own process) that ends this script's whole tree on cancel,
+/// when the launcher is gone, or at the deadline.
+fn script_watcher(p: &Plan) -> String {
+    let mut s = String::new();
     s.push_str(&format!(
         "$cyberctfWatch = Start-Job -ArgumentList $PID, {}, {}, {}, {} -ScriptBlock {{\n\
          \x20 param($main, $launcherId, $cancel, $reason, $secs)\n\
@@ -335,24 +357,34 @@ fn script(p: &Plan) -> Result<String> {
          \x20 }}\n\
          }}\n",
         p.launcher,
-        q(&p.work.cancel()),
-        q(&p.work.reason()),
+        ps_path(&p.work.cancel()),
+        ps_path(&p.work.reason()),
         DEADLINE.as_secs()
     ));
-    s.push_str("$script:cyberctfFailed = $false\n$cyberctfCode = 0\ntry {\n");
+    s
+}
+
+/// The environment, the working folder and the Hyper-V switch.
+fn script_setup(p: &Plan) -> String {
+    let mut s = String::new();
     // The environment, from a file read once and deleted, so no value sits on a command line.
     s.push_str(&format!(
         "  $cyberctfPairs = [System.IO.File]::ReadAllText({env}) | ConvertFrom-Json\n  Remove-Item -LiteralPath {env} -Force\n  foreach ($p in $cyberctfPairs) {{ [System.Environment]::SetEnvironmentVariable($p.k, $p.v, 'Process') }}\n",
-        env = q(&p.work.env())
+        env = ps_path(&p.work.env())
     ));
-    s.push_str(&format!("  Set-Location -LiteralPath {} -ErrorAction Stop\n", q(p.dir)));
+    s.push_str(&format!("  Set-Location -LiteralPath {} -ErrorAction Stop\n", ps_path(p.dir)));
     // The switch the VMs' first adapter goes on, unless the user named one: the built-in "Default
     // Switch", else an external one, else the first. Isoloom's Vagrantfile would take the Default
     // Switch, and stop on a host without one (Windows Server); the launcher's attach to it.
     s.push_str(&format!(
         "  if (-not $env:{HYPERV_SWITCH_ENV}) {{\n    try {{\n      $sw = @(Get-VMSwitch -ErrorAction Stop)\n      $pick = @($sw | Where-Object {{ $_.Name -eq 'Default Switch' }}) + @($sw | Where-Object {{ \"$($_.SwitchType)\" -eq 'External' }}) + $sw | Select-Object -First 1\n      if ($pick) {{ $env:{HYPERV_SWITCH_ENV} = $pick.Name }}\n    }} catch {{}}\n  }}\n"
     ));
-    let m = ps_quote(p.marker);
+    s
+}
+
+/// `Invoke-CyberctfStep`, which runs one step between its marker lines.
+fn script_step_function(p: &Plan, m: &str) -> String {
+    let mut s = String::new();
     // One function runs a step, so each step is one short line (the whole script must fit on a
     // command line, base64-encoded).
     s.push_str(&format!(
@@ -374,6 +406,12 @@ fn script(p: &Plan) -> Result<String> {
          \x20 }}\n",
         ps_quote(p.program)
     ));
+    s
+}
+
+/// One line per step.
+fn script_steps(p: &Plan) -> String {
+    let mut s = String::new();
     for (i, step) in p.steps.iter().enumerate() {
         let always = match step.when {
             When::IfOk => "$false",
@@ -382,10 +420,16 @@ fn script(p: &Plan) -> Result<String> {
         let args: Vec<String> = step.args.iter().map(|a| ps_quote(a)).collect();
         s.push_str(&format!("  Invoke-CyberctfStep {i} {always} @({})\n", args.join(", ")));
     }
+    s
+}
+
+/// The end: the error marker, the watcher stopped, the log closed, the exit code.
+fn script_end(m: &str) -> String {
+    let mut s = String::new();
     s.push_str(&format!(
         "}} catch {{\n  Write-CyberctfLine ({m} + ' error ' + $_.Exception.Message)\n  $cyberctfCode = 1\n}} finally {{\n  Stop-Job -Job $cyberctfWatch -ErrorAction SilentlyContinue\n  Remove-Job -Job $cyberctfWatch -Force -ErrorAction SilentlyContinue\n  $cyberctfLog.Close()\n}}\nexit $cyberctfCode\n"
     ));
-    Ok(s)
+    s
 }
 
 /// The arguments of `powershell.exe` that run `script`.
