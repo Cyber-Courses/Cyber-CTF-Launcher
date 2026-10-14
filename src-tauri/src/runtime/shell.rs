@@ -85,14 +85,9 @@ pub fn end_shell_session_blocking(container: &str, tag: &str) {
     exegol::end_session_blocking(container, tag)
 }
 
-/// An attack-box image reference the launcher accepts.
-pub fn valid_image(image: &str) -> bool {
-    exegol::valid_image(image)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{ShellKind, shell_known_hosts, valid_image};
+    use super::{ShellKind, shell_known_hosts};
     use std::path::Path;
 
     #[test]
@@ -110,11 +105,5 @@ mod tests {
         assert!(matches!(serde_json::from_str::<ShellKind>("\"lab\"").unwrap(), ShellKind::Lab));
         assert!(matches!(serde_json::from_str::<ShellKind>("\"attackVm\"").unwrap(), ShellKind::AttackVm));
         assert!(serde_json::from_str::<ShellKind>("\"attack_vm\"").is_err());
-    }
-
-    #[test]
-    fn attack_box_images_are_checked_like_the_commands_check_them() {
-        assert!(valid_image("nwodtuhs/exegol:free"));
-        assert!(!valid_image("-x"));
     }
 }

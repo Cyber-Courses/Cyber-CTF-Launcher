@@ -8,7 +8,7 @@ use crate::AppHandle;
 
 use super::paths::{lab_dir, state_dir};
 use super::providers::Provider;
-use super::{Runtime, attack_vm, exegol, lab, remote, server, ssh, vm};
+use super::{Runtime, attack_vm, lab, remote, server, ssh, vm};
 use crate::error::{Error, Result};
 
 /// The run env key carrying the player's pick: an attack-box image for a container lab, or the
@@ -21,7 +21,7 @@ fn attacker_pick(env: &[(String, String)]) -> Option<&str> {
 
 /// The attack-box image the player picked, when one was (passed in the run env).
 fn attack_box_image(env: &[(String, String)]) -> Option<&str> {
-    attacker_pick(env).filter(|i| exegol::valid_image(i))
+    attacker_pick(env).filter(|i| crate::exec::valid_image(i))
 }
 
 /// The attack VM's Vagrant box the player picked for a VM lab, when one was.

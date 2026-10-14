@@ -12,9 +12,9 @@ use crate::runtime::{Interface, LabStatus, Machine, Network, Port, Service};
 
 mod networks;
 
-pub use networks::subnets_in_use;
 #[cfg(test)]
 use networks::{ipv4_subnets, listed_names, networks_of_others};
+pub use networks::{lab_network_names, subnets_in_use};
 use networks::{lab_networks, parse_networks};
 
 /// Whole words of a service's name or image repository that mark it as no web UI: a

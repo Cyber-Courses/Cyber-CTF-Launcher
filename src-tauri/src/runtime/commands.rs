@@ -20,7 +20,7 @@ fn channel_log(logs: Channel<String>) -> impl Fn(String) + Send + Sync + 'static
 }
 
 fn check_image(image: &str) -> Result<()> {
-    if exegol::valid_image(image) { Ok(()) } else { Err(Error::Invalid(format!("invalid attack-box image `{image}`"))) }
+    if crate::exec::valid_image(image) { Ok(()) } else { Err(Error::Invalid(format!("invalid attack-box image `{image}`"))) }
 }
 
 fn check_box(box_name: &str) -> Result<()> {

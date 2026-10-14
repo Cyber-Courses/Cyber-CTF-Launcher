@@ -13,6 +13,12 @@ pub fn project(id: &str) -> String {
     format!("cyberctf-{id}")
 }
 
+/// The attack box's own network for lab `id`: a segment of its own, which it then leaves to join
+/// the lab's networks.
+pub fn attack_network(id: &str) -> String {
+    format!("{}-attack", project(id))
+}
+
 /// The host ports picked at the lab's first start, pinned over the ephemeral ones Isoloom's
 /// Compose file asks for (Docker picks a new ephemeral port each time a container starts, so a
 /// resumed lab moved to another address). In the lab folder, outside the generated files.
@@ -270,7 +276,7 @@ pub(super) fn pinned_ports(json: &str, mut pick: impl FnMut(u16, &str) -> Option
 
 #[cfg(test)]
 mod tests {
-    use super::{host_ports_from_config, parse_ps, pinned_ports, project, published_from_config, serving_services_from_config};
+    use super::{attack_network, host_ports_from_config, parse_ps, pinned_ports, project, published_from_config, serving_services_from_config};
 
     #[test]
     fn unicode_line_breaks_in_names_stay_inside_their_scalar() {
@@ -484,6 +490,8 @@ mod tests {
         // Ids are validated before they get here (64 chars, [A-Za-z0-9_-]); the longest is kept whole.
         let long = "a".repeat(64);
         assert_eq!(project(&long), format!("cyberctf-{long}"));
+        // The attack box's network is named after the project, in one place (#238).
+        assert_eq!(attack_network("web"), "cyberctf-web-attack");
         assert_eq!(project("Up_Per"), "cyberctf-Up_Per");
     }
 }

@@ -289,6 +289,18 @@ fn reads_virtualboxs_machine_folder() {
 }
 
 #[test]
+fn virtualboxs_machine_folder_falls_back_to_the_home_folder_given() {
+    // Regression (#238): the fallback read `HOME`, usually unset on Windows, so leftover VM
+    // folders were never found there. The caller now passes the platform's home folder.
+    let home = std::path::PathBuf::from(r"C:\Users\ada");
+    assert_eq!(super::machine_folder(None, Some(home.clone())), Some(home.join("VirtualBox VMs")));
+    assert_eq!(super::machine_folder(Some("no such line"), Some(home.clone())), Some(home.join("VirtualBox VMs")));
+    let listed = "Default machine folder:  D:\\VMs\n";
+    assert_eq!(super::machine_folder(Some(listed), Some(home)), Some(std::path::PathBuf::from(r"D:\VMs")));
+    assert_eq!(super::machine_folder(None, None), None);
+}
+
+#[test]
 fn lists_virtualbox_vms_by_name_and_uuid() {
     let out = "\"minilab · dc01\" {1111-aaaa}\n\"other\" {2222-bbbb}\ngarbage\n} backwards {\n";
     assert_eq!(super::parse_vbox_vms(out), vec![("minilab · dc01".to_string(), "1111-aaaa".to_string()), ("other".to_string(), "2222-bbbb".to_string())]);
@@ -372,6 +384,28 @@ fn status_reads_the_network_diagram_from_the_labs_spec() {
     assert_eq!(web.interfaces.len(), 1);
     assert_eq!(s.machines.iter().find(|m| m.name == "other").unwrap().ip, "");
     assert_eq!(s.networks.iter().map(|n| n.name.as_str()).collect::<Vec<_>>(), ["lab"]);
+    std::fs::remove_dir_all(lab).unwrap();
+}
+
+#[test]
+fn the_labs_topology_is_read_again_only_once_its_spec_changed() {
+    // Regression (#238): every status poll parsed the spec and the Isoloom defaults again.
+    let lab = temp_dir("status-cache");
+    let spec = lab.join("isoloom.yml");
+    std::fs::write(
+        &spec,
+        "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.31.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n",
+    )
+    .unwrap();
+    let written = std::fs::metadata(&spec).unwrap().modified().unwrap();
+    assert_eq!(super::status::lab_topology(&lab).unwrap().1.len(), 1);
+    // Unchanged on disk (same time): not read again, so an unreadable rewrite goes unseen.
+    std::fs::write(&spec, "not: [a spec").unwrap();
+    std::fs::File::options().write(true).open(&spec).unwrap().set_modified(written).unwrap();
+    assert!(super::status::lab_topology(&lab).is_some(), "served from the cache");
+    // Changed: read again.
+    std::fs::File::options().write(true).open(&spec).unwrap().set_modified(written + std::time::Duration::from_secs(5)).unwrap();
+    assert!(super::status::lab_topology(&lab).is_none(), "the new, broken spec was read");
     std::fs::remove_dir_all(lab).unwrap();
 }
 
