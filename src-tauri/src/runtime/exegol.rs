@@ -496,14 +496,33 @@ mod tests {
         assert_eq!(super::tagged_shell_command("web", "12-3"), "docker exec -it -e CYBERCTF_SHELL=12-3 cyberctf-web-attacker bash");
     }
 
+    /// `cyberctf/attack-box@sha256:<64 lowercase hex digits>`: a tag (`:latest`, a date) can be
+    /// pushed over, a digest can't.
+    fn pinned(image: &str) -> bool {
+        image.strip_prefix("cyberctf/attack-box@sha256:").is_some_and(|d| d.len() == 64 && d.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()))
+    }
+
     #[test]
     fn the_default_image_is_the_cyber_ctf_box_pinned_by_digest() {
         let image = super::default_image();
-        let digest = image.strip_prefix("cyberctf/attack-box@sha256:").expect("cyberctf/attack-box@sha256:<digest>");
-        assert!(digest.len() == 64 && digest.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "{image}");
+        assert!(pinned(image), "the default attack box must be cyberctf/attack-box@sha256:<digest>, not {image}");
         assert!(crate::exec::valid_image(image));
         let file: serde_json::Value = serde_json::from_str(super::DEFAULT_IMAGE_FILE).unwrap();
-        assert!(file["previous"].as_array().unwrap().iter().all(|p| p.as_str() != Some(image)), "the default is not also a previous one");
+        let previous = file["previous"].as_array().unwrap();
+        assert!(previous.iter().all(|p| p.as_str() != Some(image)), "the default is not also a previous one");
+        // Earlier defaults are the digests the bump PRs replaced (the bare tag and `:latest` are
+        // known to the webview's migration on their own).
+        assert!(previous.iter().all(|p| p.as_str().is_some_and(pinned)), "{previous:?}");
+    }
+
+    #[test]
+    fn only_a_digest_counts_as_pinned() {
+        assert!(pinned(&format!("cyberctf/attack-box@sha256:{}", "0123456789abcdef".repeat(4))));
+        for tag in ["cyberctf/attack-box", "cyberctf/attack-box:latest", "cyberctf/attack-box:2026-10-05", "cyberctf/attack-box@sha256:abc"] {
+            assert!(!pinned(tag), "{tag}");
+        }
+        assert!(!pinned(&format!("cyberctf/attack-box@sha256:{}", "0123456789ABCDEF".repeat(4))));
+        assert!(!pinned(&format!("other/box@sha256:{}", "0".repeat(64))));
     }
 
     #[test]
