@@ -11,7 +11,7 @@ pub(super) async fn ensure_local_slot_free(dir: &Path, id: &str, log: &mut impl 
     // compose file may not exist yet, and status then errors, which just means nothing to clear).
     if let Ok(s) = docker::status(dir, id).await {
         if s.running {
-            return Err(Error::Invalid("This lab is already running on this machine. Stop it before starting it again.".into()));
+            return Err(Error::Refused("This lab is already running on this machine. Stop it before starting it again.".into()));
         }
         if docker::containers(dir, id).await.is_ok_and(|n| n > 0) {
             log("Clearing a previous, stopped run…".into());
@@ -22,7 +22,7 @@ pub(super) async fn ensure_local_slot_free(dir: &Path, id: &str, log: &mut impl 
     for vdir in vagrant_dirs(dir) {
         let Ok(s) = vm::status(&vdir, &[]).await else { continue };
         if s.running {
-            return Err(Error::Invalid("This lab is already running in a VM on this machine. Stop it before starting it again.".into()));
+            return Err(Error::Refused("This lab is already running in a VM on this machine. Stop it before starting it again.".into()));
         }
         // "not_created" is a clean slate; anything else (poweroff, aborted, saved) is a leftover.
         if s.machines.iter().any(|m| m.state != "not_created") {

@@ -383,6 +383,10 @@
     "hint": "Pista {n}",
     "revealHint": "Mostrar pista {n} de {total}"
   },
+  "reapFailed": {
+    "title": "La parada automática no pudo destruir {title}",
+    "hint": "Puede seguir facturándose en tu cuenta de la nube. Corrige lo que indica el mensaje y detén el lab; o elimina sus recursos en tu consola de la nube."
+  },
   "failure": {
     "title": {
       "launch": "No se pudo iniciar {title}",

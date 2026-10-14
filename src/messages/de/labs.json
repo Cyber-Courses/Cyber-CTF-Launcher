@@ -383,6 +383,10 @@
     "hint": "Hinweis {n}",
     "revealHint": "Hinweis {n} von {total} anzeigen"
   },
+  "reapFailed": {
+    "title": "Der automatische Stopp konnte {title} nicht entfernen",
+    "hint": "Es kann in deinem Cloud-Konto weiter Kosten verursachen. Behebe, was die Meldung nennt, und stoppe dann das Lab; oder entferne seine Ressourcen in deiner Cloud-Konsole."
+  },
   "failure": {
     "title": {
       "launch": "{title} konnte nicht gestartet werden",

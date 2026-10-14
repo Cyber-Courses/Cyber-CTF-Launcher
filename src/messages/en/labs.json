@@ -383,6 +383,10 @@
     "hint": "Hint {n}",
     "revealHint": "Reveal hint {n} of {total}"
   },
+  "reapFailed": {
+    "title": "Auto-stop couldn’t destroy {title}",
+    "hint": "It may still be billing in your cloud account. Fix what the message says, then stop the lab; or remove its resources in your cloud console."
+  },
   "failure": {
     "title": {
       "launch": "Couldn’t start {title}",

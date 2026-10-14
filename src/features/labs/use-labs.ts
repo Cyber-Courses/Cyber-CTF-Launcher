@@ -90,6 +90,7 @@ export function mergeScan(statuses: Record<string, LabStatus>, scanRunning: Set<
           attacker: null,
           outputs: [],
           message: null,
+          reapError: null,
         };
   }
   return next;

@@ -53,4 +53,9 @@ outputs: Array<LabOutput>,
  * The lab's own words once it is up, placeholders filled in (cloud-services labs, whose
  * message names their outputs); None for the others, whose message is in the deploy log.
  */
-message: string | null, };
+message: string | null, 
+/**
+ * Why the auto-stop couldn't destroy this lab, while it is past its stop time (it may still
+ * be billing): set by the status dispatcher, None from the per-runtime probes.
+ */
+reapError: string | null, };

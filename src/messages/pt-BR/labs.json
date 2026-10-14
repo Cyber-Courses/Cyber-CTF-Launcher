@@ -383,6 +383,10 @@
     "hint": "Dica {n}",
     "revealHint": "Mostrar dica {n} de {total}"
   },
+  "reapFailed": {
+    "title": "A parada automática não conseguiu destruir {title}",
+    "hint": "Ele ainda pode estar sendo cobrado na sua conta de nuvem. Corrija o que a mensagem diz e pare o lab; ou remova os recursos dele no console da nuvem."
+  },
   "failure": {
     "title": {
       "launch": "Não foi possível iniciar {title}",

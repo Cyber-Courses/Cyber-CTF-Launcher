@@ -31,6 +31,7 @@ const stopped: LabStatus = {
   attacker: null,
   outputs: [],
   message: null,
+  reapError: null,
 };
 
 const OBJECTIVES = [
