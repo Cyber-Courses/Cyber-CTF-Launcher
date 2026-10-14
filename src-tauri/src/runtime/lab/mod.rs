@@ -8,7 +8,7 @@
 //! Docker networks move to their own blocks and its names get a suffix, so two labs that
 //! declare the same addresses run at once. The generated files then live in `.isoloom-<n>/`.
 //!
-//! This module is the launcher's one door to Isoloom (`isoloom_core` is used nowhere else): the
+//! This module is the launcher's one door to Isoloom (its crates are used nowhere else): the
 //! spec, the generated files, the resolved snapshot, the checks, the host's readiness and the
 //! registry go through it, and so do Isoloom's path and naming conventions (`names`). The
 //! launcher's own conventions sit on top: its overrides of the generated files (`overrides`,
@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use isoloom_core::model::Protocol;
+use isoloom_spec::model::Protocol;
 
 use super::{Interface, Network};
 use crate::error::{Error, Result};
@@ -34,16 +34,16 @@ pub use registry::instances_elsewhere as registry_instances;
 pub use vars::{esxi_env, host_vars, run_vars};
 
 // What the rest of the launcher uses of Isoloom's types: through here, like its functions.
-pub use isoloom_core::checks;
-pub use isoloom_core::generate::StartPlan;
-pub use isoloom_core::model::{CloudProvider, CloudServices};
-pub use isoloom_core::{Arch, Spec, Target};
+pub use isoloom_plan::checks;
+pub use isoloom_spec::model::{Arch, Spec, Target};
+pub use isoloom_spec::model::{CloudProvider, CloudServices};
+pub use isoloom_targets::StartPlan;
 
 /// The lab's spec, checked (fields and the files it names), with this machine's Isoloom
 /// defaults applied (its image table).
 pub fn spec(dir: &Path) -> Result<Spec> {
-    let spec = isoloom_core::load(dir).map_err(|e| Error::Invalid(load_error(&e.to_string())))?;
-    let problems: Vec<String> = isoloom_core::validate(&spec).into_iter().chain(isoloom_core::validate_files(&spec, dir)).map(|p| p.to_string()).collect();
+    let spec = isoloom_spec::load(dir).map_err(|e| Error::Invalid(load_error(&e)))?;
+    let problems: Vec<String> = isoloom_spec::validate(&spec).into_iter().chain(isoloom_spec::validate_files(&spec, dir)).map(|p| p.to_string()).collect();
     if !problems.is_empty() {
         return Err(Error::Invalid(format!("this lab's isoloom.yml has mistakes:\n{}", problems.join("\n"))));
     }
@@ -52,45 +52,60 @@ pub fn spec(dir: &Path) -> Result<Spec> {
 
 /// A spec as written, unchecked (what a launch dialog previews): `isoloom.yml` in `dir`.
 pub fn load(dir: &Path) -> Result<Spec> {
-    isoloom_core::load(dir).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
+    isoloom_spec::load(dir).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
 }
 
 /// A spec from its text, unchecked.
 pub fn parse(text: &str) -> Result<Spec> {
-    isoloom_core::parse(text).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
+    isoloom_spec::parse(text).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
 }
 
-/// A spec this build can't read. Fields or values it doesn't know mean the lab uses a newer
-/// format than this launcher (labs adopt spec additions before every player has updated), so
-/// say what to do instead of showing only the parser's message.
-fn load_error(e: &str) -> String {
-    if e.contains("unknown field") || e.contains("unknown variant") {
-        format!("This lab needs a newer version of Cyber CTF. Update it (Settings > About), then start the lab again.\n(isoloom.yml: {e})")
-    } else {
-        format!("this lab's isoloom.yml: {e}")
+/// A spec this build can't read. A key or a value the YAML parser doesn't know means the lab
+/// uses a newer format than this launcher (labs adopt spec additions before every player has
+/// updated), so say what to do instead of showing only the parser's message. Only the YAML, or
+/// a normalization step reading a part of it (`common:`, `groups:`, a clone), can say that; a
+/// missing or unreadable file is the lab's own problem whatever its text.
+fn load_error(e: &isoloom_spec::LoadError) -> String {
+    use isoloom_spec::LoadError;
+    let parsed = match e {
+        LoadError::Yaml(y) => Some(y.to_string()),
+        LoadError::Expand { reason, .. } => Some(reason.clone()),
+        _ => None,
+    };
+    match parsed {
+        Some(text) if newer_format(&text) => {
+            format!("This lab needs a newer version of Cyber CTF. Update it (Settings > About), then start the lab again.\n(isoloom.yml: {e})")
+        }
+        _ => format!("this lab's isoloom.yml: {e}"),
     }
+}
+
+/// Whether a YAML error is serde's for a key or an enum value the model doesn't have (the
+/// parser's error carries no kind, only its message).
+fn newer_format(yaml_error: &str) -> bool {
+    yaml_error.contains("unknown field") || yaml_error.contains("unknown variant")
 }
 
 /// This machine's Isoloom defaults for the lab: the user's `~/.isoloom/defaults.yml`, the
 /// lab's own `isoloom.defaults.yml`, then `ISOLOOM_*` in the environment (the same hierarchy
 /// the `isoloom` CLI reads), so a user's image table or cloud regions hold here too.
-fn defaults(dir: &Path) -> Result<isoloom_core::defaults::Defaults> {
-    isoloom_core::defaults::load(dir, None, &[]).map(|r| r.defaults).map_err(|e| Error::Invalid(format!("this machine's Isoloom defaults: {e}")))
+fn defaults(dir: &Path) -> Result<isoloom_spec::defaults::Defaults> {
+    isoloom_spec::defaults::load(dir, None, &[]).map(|r| r.defaults).map_err(|e| Error::Invalid(format!("this machine's Isoloom defaults: {e}")))
 }
 
 /// The files [`spec`] reads for the lab in `dir`: its spec (either name Isoloom accepts), its
 /// own defaults, its instance marker, and the user's Isoloom defaults (wherever Isoloom finds
 /// them). What a cache of a spec watches.
 pub fn spec_files(dir: &Path) -> Vec<std::path::PathBuf> {
-    let own = isoloom_core::SPEC_FILES.iter().copied().chain(["isoloom.defaults.yml", INSTANCE_MARKER]).map(|f| dir.join(f));
-    own.chain([isoloom_core::defaults::user_file()]).collect()
+    let own = isoloom_spec::SPEC_FILES.iter().copied().chain(["isoloom.defaults.yml", INSTANCE_MARKER]).map(|f| dir.join(f));
+    own.chain([isoloom_spec::defaults::user_file()]).collect()
 }
 
 /// The lab's Isoloom instance number (see the module), when it has one.
 pub const INSTANCE_MARKER: &str = ".cyberctf-instance";
 
 pub fn instance(dir: &Path) -> Option<u8> {
-    std::fs::read_to_string(dir.join(INSTANCE_MARKER)).ok()?.trim().parse().ok().filter(|n| (1..=isoloom_core::instance::MAX).contains(n))
+    std::fs::read_to_string(dir.join(INSTANCE_MARKER)).ok()?.trim().parse().ok().filter(|n| (1..=isoloom_spec::instance::MAX).contains(n))
 }
 
 /// Gives the lab an instance number if it has none: the lowest one no other installed lab
@@ -138,7 +153,7 @@ fn pick_instance(labs: &Path, dir: &Path, in_use: &[String], elsewhere: &[u8]) -
     taken.extend(elsewhere);
     let spec = spec(dir).ok();
     let used = ranges(in_use);
-    let n = (1..=isoloom_core::instance::MAX)
+    let n = (1..=isoloom_spec::instance::MAX)
         .find(|n| !taken.contains(n) && blocks_clear(spec.as_ref(), *n, &used))
         .ok_or_else(|| Error::Invalid("no free instance for this lab: 99 labs or networks already take its room on this machine".into()))?;
     crate::atomic_file::write(&dir.join(INSTANCE_MARKER), n.to_string())?;
@@ -154,8 +169,8 @@ fn ranges(cidrs: &[String]) -> Vec<(u32, u32)> {
 /// can't be read has no blocks to collide.
 fn blocks_clear(spec: Option<&Spec>, n: u8, used: &[(u32, u32)]) -> bool {
     let Some(spec) = spec else { return true };
-    let Ok(as_n) = isoloom_core::instance::apply(spec, n) else { return false };
-    let snapshot = isoloom_core::resolved::resolve_with(&as_n, Some(n));
+    let Ok(as_n) = isoloom_spec::instance::apply(spec, n) else { return false };
+    let snapshot = isoloom_targets::resolved::resolve_with(&as_n, Some(n));
     snapshot["networks"]
         .as_object()
         .into_iter()
@@ -179,7 +194,7 @@ pub fn ipv4_range(cidr: &str) -> Option<(u32, u32)> {
 pub fn instanced(dir: &Path) -> Result<Spec> {
     let spec = spec(dir)?;
     match instance(dir) {
-        Some(n) => isoloom_core::instance::apply(&spec, n).map_err(|e| Error::Invalid(format!("this lab as instance {n}: {e}"))),
+        Some(n) => isoloom_spec::instance::apply(&spec, n).map_err(|e| Error::Invalid(format!("this lab as instance {n}: {e}"))),
         None => Ok(spec),
     }
 }
@@ -201,7 +216,7 @@ pub struct Observer {
 /// The lab's observers at their addresses: the container ones when the lab runs as
 /// containers (`docker`), else the ones the spec writes.
 pub fn tools(spec: &Spec, docker: bool) -> Vec<Observer> {
-    let snapshot = isoloom_core::resolved::resolve(spec);
+    let snapshot = isoloom_targets::resolved::resolve(spec);
     let key = if docker { "docker_addresses" } else { "addresses" };
     snapshot["tools"]
         .as_object()
@@ -229,12 +244,12 @@ pub fn tools(spec: &Spec, docker: bool) -> Vec<Observer> {
 pub fn prepare(dir: &Path, target: Target) -> Result<Spec> {
     let spec = instanced(dir)?;
     let n = instance(dir);
-    let files = isoloom_core::generate(&spec, target).map_err(|e| Error::Invalid(format!("this lab can't run there: {e}")))?;
-    let files = isoloom_core::defaults::apply_to_files(files, &defaults(dir)?);
+    let files = render(&spec, target, n).map_err(|e| Error::Invalid(format!("this lab can't run there: {e}")))?;
+    let files = isoloom_spec::defaults::apply_to_files(files, &defaults(dir)?);
     let files = overrides::apply(files, &launcher_overrides(dir, target));
     for f in files {
         let (path, contents) = match n {
-            Some(n) => isoloom_core::instance::relocate(&f.path, &f.contents, n),
+            Some(n) => isoloom_spec::instance::relocate(&f.path, &f.contents, n),
             None => (f.path, f.contents),
         };
         let path = dir.join(path);
@@ -244,6 +259,21 @@ pub fn prepare(dir: &Path, target: Target) -> Result<Spec> {
         std::fs::write(path, contents)?;
     }
     Ok(spec)
+}
+
+/// `target`'s files for `spec` (the spec already as instance `n`), from the target's backend in
+/// Isoloom's registry: the plan for the target rendered, and the resolved snapshot beside it.
+/// Paths are Isoloom's, before an instance moves them. Refused, with the backend's reason, when
+/// the spec's machines don't allow the target or the plan needs what the backend can't do.
+fn render(spec: &Spec, target: Target, n: Option<u8>) -> std::result::Result<Vec<isoloom_targets::GeneratedFile>, isoloom_targets::GenerateError> {
+    use isoloom_targets::GenerateError;
+    if !isoloom_spec::targets::effective(spec).contains(&target) {
+        return Err(GenerateError::NotPossible(target));
+    }
+    let backend = isoloom_targets::backend(target).ok_or(GenerateError::NoGenerator(target))?;
+    let mut files = backend.render(&isoloom_targets::Environment::build(spec, target, n))?;
+    files.push(isoloom_targets::resolved::file_with(spec, n));
+    Ok(files)
 }
 
 /// The launcher's overrides of a lab's files for `target`: on local Docker, its Compose project
@@ -257,7 +287,7 @@ fn launcher_overrides(dir: &Path, target: Target) -> overrides::Overrides {
 /// the spec: addresses are static (declared in the lab), so the diagram of a VM lab comes from
 /// here, without reaching into the guests or reading the generated files.
 pub fn topology(spec: &Spec) -> (HashMap<String, Vec<Interface>>, Vec<Network>) {
-    let snapshot = isoloom_core::resolved::resolve(spec);
+    let snapshot = isoloom_targets::resolved::resolve(spec);
     let networks: Vec<Network> = snapshot["networks"]
         .as_object()
         .map(|nets| {
@@ -299,16 +329,16 @@ pub fn message(dir: &Path, spec: &Spec, target: Target) -> Option<String> {
 /// machines have on `target` (their Docker blocks on the Compose targets).
 pub fn message_at(dir: &Path, spec: &Spec, target: Target, published: &[(String, u16, String, u16)]) -> Option<String> {
     let text = spec.message.as_deref()?;
-    let snapshot = isoloom_core::resolved::on_target(isoloom_core::resolved::resolve_with(spec, instance(dir)), target);
+    let snapshot = isoloom_targets::resolved::on_target(isoloom_targets::resolved::resolve_with(spec, instance(dir)), target);
     let published: Vec<(String, u16, Protocol, u16)> =
         published.iter().map(|(m, port, proto, host)| (m.clone(), *port, if proto == "udp" { Protocol::Udp } else { Protocol::Tcp }, *host)).collect();
-    let snapshot = isoloom_core::resolved::with_published(snapshot, &published);
+    let snapshot = isoloom_targets::resolved::with_published(snapshot, &published);
     // A placeholder naming a value this run doesn't have (a port the lab never published on this
     // target, a port not pinned yet) fills as nothing: the player got `http://localhost:/`.
-    if placeholders(text).any(|path| isoloom_core::resolved::lookup(&snapshot, path).is_none_or(|v| v.is_null() || v.as_str() == Some(""))) {
+    if placeholders(text).any(|path| isoloom_targets::resolved::lookup(&snapshot, path).is_none_or(|v| v.is_null() || v.as_str() == Some(""))) {
         return None;
     }
-    isoloom_core::resolved::fill(text, &snapshot).ok().map(|m| m.trim_end().to_string())
+    isoloom_targets::resolved::fill(text, &snapshot).ok().map(|m| m.trim_end().to_string())
 }
 
 /// The dotted paths of a message's `{{ ... }}` placeholders.
@@ -318,29 +348,29 @@ fn placeholders(text: &str) -> impl Iterator<Item = &str> {
 
 /// The memory the lab's machines ask for, in MB.
 pub fn memory_mb(spec: &Spec) -> u32 {
-    isoloom_core::totals(spec).memory_mb
+    isoloom_spec::totals(spec).memory_mb
 }
 
 /// Why the lab's VMs can't run on Vagrant's QEMU provider (its networks), if they can't.
 pub fn qemu_refusal(spec: &Spec) -> Option<String> {
-    isoloom_core::refusal_on(spec, Target::Vagrant, Some("qemu"))
+    isoloom_targets::refusal_on(spec, Target::Vagrant, Some("qemu"))
 }
 
 /// How the lab's containers start, from its Compose file's text (Isoloom's start plan).
 pub fn start_plan(compose: &str) -> Option<StartPlan> {
-    isoloom_core::generate::start_plan(compose).ok()
+    isoloom_targets::start_plan(compose).ok()
 }
 
 /// The check runner Isoloom writes for `machine`'s `exec` checks (under the Compose file's
 /// `checks/`).
 pub fn exec_runner(machine: &str) -> String {
-    isoloom_core::generate::exec_runner(machine)
+    isoloom_targets::exec_runner(machine)
 }
 
 /// Isoloom's view of this host: each target (each cloud for the cloud ones), ready or not, and
 /// why. Runs the tools, so call it off the async runtime.
-pub fn host_readiness() -> Vec<isoloom_core::host::Readiness> {
-    isoloom_core::host::all()
+pub fn host_readiness() -> Vec<isoloom_runtime::host::Readiness> {
+    isoloom_runtime::host::all()
 }
 
 /// What a cloud-services lab's module needs on this machine besides Terraform
@@ -363,12 +393,12 @@ pub async fn cloud_requirements(spec: &Spec) -> Requirements {
         return Requirements::None;
     }
     let spec = spec.clone();
-    let checked = tokio::task::spawn_blocking(move || isoloom_core::host::requirements(&spec, true)).await.ok().flatten();
+    let checked = tokio::task::spawn_blocking(move || isoloom_runtime::host::requirements(&spec, true)).await.ok().flatten();
     requirements_of(checked)
 }
 
 /// [`Requirements`] from Isoloom's readiness (each note an entry, `! ` before a missing one).
-fn requirements_of(checked: Option<isoloom_core::host::Readiness>) -> Requirements {
+fn requirements_of(checked: Option<isoloom_runtime::host::Readiness>) -> Requirements {
     let Some(r) = checked else { return Requirements::None };
     if r.ready {
         return Requirements::Met(r.notes);
@@ -394,8 +424,16 @@ mod tests {
 
     #[test]
     fn a_newer_spec_asks_for_an_update() {
-        assert!(load_error("unknown field `common`, expected one of `version`").starts_with("This lab needs a newer version of Cyber CTF"));
-        assert!(load_error("invalid type: string, expected a map").starts_with("this lab's isoloom.yml:"));
+        use isoloom_spec::{LoadError, Stage};
+        let yaml = |text: &str| LoadError::Yaml(serde_yaml_ng::from_str::<isoloom_spec::Spec>(text).unwrap_err());
+        assert!(load_error(&yaml("version: 1\nname: t\nmachines: {}\nbogus: 1\n")).starts_with("This lab needs a newer version of Cyber CTF"));
+        assert!(load_error(&yaml("machines: 3\n")).starts_with("this lab's isoloom.yml:"));
+        // A part of the spec read by a normalization step (`common:`) says so too.
+        let expand = LoadError::Expand { stage: Stage::Groups, reason: "common: unknown field `sysctl`, expected one of `environment`".into() };
+        assert!(load_error(&expand).starts_with("This lab needs a newer version of Cyber CTF"));
+        // The file's own problems never ask for an update, whatever their words.
+        let missing = LoadError::NotFound(PathBuf::from("/labs/unknown field"));
+        assert!(load_error(&missing).starts_with("this lab's isoloom.yml: no isoloom.yml in"), "{}", load_error(&missing));
     }
 
     const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_LAUNCH_TOKEN]\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    inputs: [CTF_LAUNCH_TOKEN]\n    docker: { image: nginx:1.27 }\n";
@@ -427,6 +465,33 @@ mod tests {
         // No `vm:` part: no VMs.
         let err = prepare(&dir, Target::Vagrant).unwrap_err().to_string();
         assert!(err.contains("can't run there"), "{err}");
+        assert!(matches!(render(&spec(&dir).unwrap(), Target::Vagrant, None), Err(isoloom_targets::GenerateError::NotPossible(Target::Vagrant))));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_backend_refusal_keeps_its_reason() {
+        // Every target either renders (with the snapshot) or refuses in Isoloom's words, named
+        // after the target: what the player reads after "can't run there".
+        let dir = lab(SPEC);
+        let spec = spec(&dir).unwrap();
+        for target in isoloom_targets::GENERATED_TARGETS {
+            match render(&spec, *target, None) {
+                Ok(files) => assert!(files.iter().any(|f| f.path == isoloom_targets::resolved::PATH), "{target:?}: the snapshot goes with every target"),
+                Err(e) => assert!(e.to_string().starts_with(target.id()), "{target:?}: {e}"),
+            }
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_snapshot_read_here_is_version_one() {
+        // `tools`, `topology` and `blocks_clear` read the resolved snapshot's v1 fields
+        // (`networks.*.cidr`, `docker_cidr`, `internet`, `machines.*.addresses`, `tools`). A new
+        // version changes or drops fields: this fails so they are read again.
+        assert_eq!(isoloom_targets::resolved::RESOLVED_VERSION, 1);
+        let dir = lab(SPEC);
+        assert_eq!(isoloom_targets::resolved::resolve(&spec(&dir).unwrap())["resolved_version"], 1);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -528,6 +593,9 @@ mod tests {
         assert_eq!(compose_file(&b), b.join(".isoloom-2/docker/compose.yml"));
         let compose = std::fs::read_to_string(compose_file(&b)).unwrap();
         assert!(compose.contains("10.32.0.0/24"), "the Docker block moved: {compose}");
+        // The snapshot beside the files says which instance they are.
+        let snapshot: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(b.join(".isoloom-2/resolved.json")).unwrap()).unwrap();
+        assert_eq!(snapshot["instance"], 2);
         assert!(!b.join(".isoloom").exists());
         assert_eq!(vagrant_dir(&b, Runtime::Vm), b.join(".isoloom-2/vagrant"));
         // Its message gives the address its container really has (the moved block), not the spec's.
@@ -621,7 +689,7 @@ mod tests {
     #[test]
     fn the_labs_own_defaults_file_reaches_the_generated_files() {
         let dir = lab(SPEC);
-        std::fs::write(dir.join(isoloom_core::defaults::PROJECT_FILE), "cloud:\n  aws: { region: us-east-1 }\n").unwrap();
+        std::fs::write(dir.join(isoloom_spec::defaults::PROJECT_FILE), "cloud:\n  aws: { region: us-east-1 }\n").unwrap();
         prepare(&dir, Target::CloudDocker).unwrap();
         let tf = std::fs::read_to_string(dir.join(".isoloom/cloud-docker/aws/main.tf")).unwrap();
         assert!(tf.contains("us-east-1"), "{tf}");
@@ -640,7 +708,7 @@ mod tests {
 
     #[test]
     fn requirements_read_isoloom_s_readiness() {
-        use isoloom_core::host::Readiness;
+        use isoloom_runtime::host::Readiness;
         let r = |ready: bool, notes: &[&str]| {
             Some(Readiness { target: Target::CloudServices, cloud: Some("aws".into()), ready, notes: notes.iter().map(|n| n.to_string()).collect() })
         };
@@ -685,7 +753,7 @@ mod tests {
         let a = labs.join("a");
         std::fs::create_dir_all(&a).unwrap();
         // No spec: every number is clear on the address side; the registry holds 1..=99.
-        let elsewhere: Vec<u8> = (1..=isoloom_core::instance::MAX).collect();
+        let elsewhere: Vec<u8> = (1..=isoloom_spec::instance::MAX).collect();
         let err = ensure_instance(&labs, &a, &[], &elsewhere).unwrap_err().to_string();
         assert!(err.starts_with("no free instance for this lab"), "{err}");
         assert!(!a.join(INSTANCE_MARKER).exists(), "nothing written on failure");
@@ -789,10 +857,10 @@ mod tests {
         // SPEC's web service declares no `publish:`. On a target that publishes nothing (a VM
         // lab), or before any port was pinned, the placeholder names a value that is null, and
         // the player is shown a broken link. The doc of `message` promises None for a value the
-        // spec doesn't have; `isoloom_core::resolved::fill` fills a null with "" instead.
+        // spec doesn't have; `isoloom_targets::resolved::fill` fills a null with "" instead.
         // Fails with: left: Some("http://localhost:/"), right: None.
         // Suggested fix: in `message_at`, treat a null (or empty) substitution as missing
-        // (check the snapshot value before `fill`, or have isoloom-core's `fill` fail on null).
+        // (check the snapshot value before `fill`, or have isoloom-targets' `fill` fail on null).
         let dir = lab(SPEC);
         let mut spec = spec(&dir).unwrap();
         spec.message = Some("http://localhost:{{ machines.web.services.0.publish }}/".into());

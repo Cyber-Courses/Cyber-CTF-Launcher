@@ -25,7 +25,7 @@ credentials, timed destroy and budgets.
 
 1. Isoloom: the "Docker on one VM" output (Vagrant local and ESXi, Proxmox, each cloud), and the
    ready marker everywhere.
-2. Launcher: depend on `isoloom-core` (git dependency, the repo is public). For a lab, read
+2. Launcher: depend on Isoloom's crates (`isoloom-spec`, `-plan`, `-targets`, `-runtime`; git dependencies, the repo is public). For a lab, read
    `isoloom.yml`; its derived targets decide the run-on choices; generate into the lab's
    `.isoloom/` and run with the existing runners (docker compose, vagrant, terraform).
 3. Labs: an `isoloom.yml` per lab (starting with invoice-portal-api) and in the lab template;

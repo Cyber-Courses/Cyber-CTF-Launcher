@@ -10,7 +10,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use isoloom_core::{Spec, Target, registry};
+use isoloom_runtime::registry;
+use isoloom_spec::{Spec, Target};
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
@@ -132,7 +133,17 @@ pub fn instances_elsewhere(dir: &Path) -> Vec<u8> {
 
 /// The registry entry of the lab in `dir`, running on `target` since `started`.
 fn entry(dir: &Path, spec: &Spec, target: Target, cloud: Option<&str>, project: Option<String>, started: String) -> registry::Entry {
-    registry::Entry { name: spec.name.clone(), dir: key(dir), target, instance: super::instance(dir), cloud: cloud.map(str::to_string), project, started }
+    registry::Entry {
+        name: spec.name.clone(),
+        dir: key(dir),
+        target,
+        instance: super::instance(dir),
+        cloud: cloud.map(str::to_string),
+        project,
+        // The launcher runs a lab as its spec is, never through an Isoloom profile.
+        profile: None,
+        started,
+    }
 }
 
 /// Forgets every entry of the lab (whatever target it ran on).
@@ -148,9 +159,10 @@ fn drop_dir(reg: &mut registry::Registry, dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::{Change, Setting, drop_dir, entry, isoloom_registry_get, isoloom_registry_set, key, load_from, save_to, update_with};
-    use isoloom_core::{Target, registry::Registry};
+    use isoloom_runtime::registry::Registry;
+    use isoloom_spec::Target;
 
-    fn spec(name: &str) -> isoloom_core::Spec {
+    fn spec(name: &str) -> isoloom_spec::Spec {
         serde_yaml_ng::from_str(&format!("version: 1\nname: {name}\nmachines: {{}}\n")).unwrap()
     }
 

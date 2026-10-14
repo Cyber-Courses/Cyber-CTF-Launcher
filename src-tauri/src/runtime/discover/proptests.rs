@@ -12,7 +12,7 @@ fn lab_id() -> impl Strategy<Value = String> {
     "[a-zA-Z0-9_-]{1,64}"
 }
 
-/// A lab's name as isoloom-core accepts it: kebab-case.
+/// A lab's name as isoloom-spec accepts it: kebab-case.
 fn kebab() -> impl Strategy<Value = String> {
     "[a-z0-9]{1,8}(-[a-z0-9]{1,8}){0,3}"
 }

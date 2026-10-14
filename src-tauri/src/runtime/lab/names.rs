@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use isoloom_core::Target;
+use isoloom_spec::Target;
 
 use super::instance;
 use crate::error::Result;
@@ -16,7 +16,7 @@ use crate::runtime::Runtime;
 
 /// Where the lab's generated files are: `.isoloom-<n>/` for an instance, else `.isoloom/`.
 pub fn out(dir: &Path) -> PathBuf {
-    dir.join(isoloom_core::instance::output_dir(instance(dir)))
+    dir.join(isoloom_spec::instance::output_dir(instance(dir)))
 }
 
 /// The lab's Compose file (local Docker, and inside "Docker on one VM").

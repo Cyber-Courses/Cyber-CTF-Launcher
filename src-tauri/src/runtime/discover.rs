@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn a_comment_after_the_name_is_not_part_of_it() {
-        // The VMs are named after `spec.name` as isoloom-core parses it (YAML drops the comment);
+        // The VMs are named after `spec.name` as isoloom-spec parses it (YAML drops the comment);
         // the scan's line reader keeps it, and `lab_names` then maps "minilab # ..." to the lab,
         // which no VM name starts with: a VirtualBox/Parallels lab is never found running.
         // Fails with: left: Some("minilab # the lab's name"), right: Some("minilab").

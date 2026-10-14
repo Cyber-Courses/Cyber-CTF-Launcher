@@ -9,7 +9,7 @@
 //!   picked from the free ports at a lab's first start and kept across starts, so they stay a
 //!   Compose override file of their own (`docker::lifecycle`), added to every Compose call.
 
-use isoloom_core::GeneratedFile;
+use isoloom_targets::GeneratedFile;
 
 /// What the launcher changes in a target's generated files.
 #[derive(Debug, Default, PartialEq)]
@@ -25,7 +25,7 @@ pub fn apply(files: Vec<GeneratedFile>, o: &Overrides) -> Vec<GeneratedFile> {
         .into_iter()
         .map(|mut f| {
             if let Some(project) = &o.compose_project
-                && f.path == format!("{}/docker/compose.yml", isoloom_core::OUTPUT_DIR)
+                && f.path == format!("{}/docker/compose.yml", isoloom_targets::OUTPUT_DIR)
             {
                 f.contents = with_project(&f.contents, project);
             }
