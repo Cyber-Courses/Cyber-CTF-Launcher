@@ -4,6 +4,7 @@ import { useState } from "react";
 import { dockerStartEngine, dockerUseEngine, type DockerEngine } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 /** Switch Docker to an engine already running, or start the installed one that is stopped. Both
  *  re-read the machine when done. */
@@ -29,7 +30,7 @@ export function useEngineActions(onRefresh: () => void) {
     setStarting(true);
     setStartFailure(null);
     dockerStartEngine(engine)
-      .catch((e) => setStartFailure({ engine, message: String(e) }))
+      .catch((e) => setStartFailure({ engine, message: describeError(e) }))
       .finally(() => {
         setStarting(false);
         onRefresh();

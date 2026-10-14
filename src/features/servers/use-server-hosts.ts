@@ -6,6 +6,7 @@ import { onPremHosts } from "@/features/servers/servers-model";
 import { useHostTests, useServerList } from "@/features/servers/use-server-list";
 import { ignore, warn } from "@/lib/failure";
 import { usePolled } from "@/lib/use-poll";
+import { describeError } from "@/lib/errors";
 
 /**
  * What the Servers page shows of its hosts: the on-prem hosts and the default, each one's last
@@ -57,14 +58,14 @@ export function useServerHosts() {
     systemCheck().then(setReport).catch(warn("system check"));
   }, []);
 
-  const open = (id: string | null) => serverOpenSetup(id, "server").catch((e) => setError(String(e)));
+  const open = (id: string | null) => serverOpenSetup(id, "server").catch((e) => setError(describeError(e)));
   const testAll = () => hosts?.forEach((h) => void test(h.id));
   async function act(fn: () => Promise<unknown>) {
     try {
       await fn();
       reload();
     } catch (e) {
-      setError(String(e));
+      setError(describeError(e));
     }
   }
 

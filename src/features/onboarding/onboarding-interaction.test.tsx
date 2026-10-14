@@ -281,7 +281,7 @@ describe("Onboarding: installs that stream and then fail", () => {
     expect(button(/done this$/i).hasAttribute("disabled")).toBe(true);
     await act(async () => fail(new Error("The user declined the UAC prompt")));
     await flush();
-    expect(text()).toContain("✗ Error: The user declined the UAC prompt");
+    expect(text()).toContain("✗ The user declined the UAC prompt");
     // A declined prompt is not fixed by a restart: the restart notice stays away.
     expect(screen.queryByRole("status")).toBeNull();
     expect(button(/turn on wsl 2/i).hasAttribute("disabled")).toBe(false);

@@ -14,7 +14,8 @@ import {
   vmSetup,
 } from "@/features/machine/machine-status";
 
-const GB = 1024 ** 3;
+// Decimal, as the Machine page shows sizes.
+const GB = 1e9;
 const metrics = (patch: Partial<MachineMetrics> = {}): MachineMetrics => ({
   cpu: 12,
   memUsed: 4 * GB,
@@ -60,6 +61,9 @@ describe("usage", () => {
     expect(isLowDisk(metrics())).toBe(false);
     expect(isLowDisk(metrics({ diskUsed: 460 * GB }))).toBe(true);
     expect(isLowDisk(metrics({ diskTotal: 100 * GB, diskUsed: 100 * GB - LOW_DISK_BYTES + 1 }))).toBe(true);
+    // Sizes show in decimal GB: "21 GB free" is not low, "19 GB free" is.
+    expect(isLowDisk(metrics({ diskTotal: 200 * GB, diskUsed: 179 * GB }))).toBe(false);
+    expect(isLowDisk(metrics({ diskTotal: 200 * GB, diskUsed: 181 * GB }))).toBe(true);
     // An unknown disk (0 total) is not reported as full.
     expect(isLowDisk(metrics({ diskTotal: 0, diskUsed: 0 }))).toBe(false);
   });

@@ -103,7 +103,8 @@ describe("LabDetail", () => {
     const h = renderDetail({ status: status({}) });
     await flush();
     // The diagram's code loads on first use (network-panel.tsx).
-    expect((await screen.findAllByText(/10\.42\.0\.3/)).length).toBeGreaterThan(0);
+    // Under a full parallel run that import can take more than the default second.
+    expect((await screen.findAllByText(/10\.42\.0\.3/, {}, { timeout: 10_000 })).length).toBeGreaterThan(0);
     // Every header action that doesn't leave the page.
     for (const b of screen.getAllByRole("button")) {
       if (/stop|remove|delete/i.test(b.textContent ?? "")) {

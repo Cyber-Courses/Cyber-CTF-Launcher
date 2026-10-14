@@ -8,6 +8,7 @@ import { StatusDot } from "@/components/ui/status-pill";
 import { MAX_ANSWER, type SubmitResult } from "@/features/labs/objectives/objectives";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { describeError } from "@/lib/errors";
 
 type Feedback = { tone: "ok" | "warn" | "fail"; text: string } | null;
 
@@ -30,7 +31,7 @@ function useAnswer(objectiveKey: string, submit: (key: string, answer: string) =
       else setFeedback({ tone: "fail", text: t("labs.objectives.wrong") });
       if (r.correct) setAnswer("");
     } catch (err) {
-      setFeedback({ tone: "fail", text: t("labs.objectives.failed", { error: String(err) }) });
+      setFeedback({ tone: "fail", text: t("labs.objectives.failed", { error: describeError(err) }) });
     } finally {
       setChecking(false);
     }

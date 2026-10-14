@@ -10,6 +10,7 @@ import { installedTools, uninstallDependency, type Dependency, type InstalledToo
 import { formatAgo } from "@/lib/format";
 import { warn } from "@/lib/failure";
 import { translate, useT } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 const NAMES: Record<Dependency, string> = {
   docker: "Docker",
@@ -54,7 +55,7 @@ export function InstalledToolsPanel() {
     try {
       await uninstallDependency(dep, (line) => setLog((l) => [...l, line]));
     } catch (e) {
-      setLog((l) => [...l, `✗ ${String(e)}`]);
+      setLog((l) => [...l, `✗ ${describeError(e)}`]);
     } finally {
       setRemoving(null);
       load();

@@ -25,7 +25,7 @@ pub use files::{last_deploy_failed, log_so_far};
 pub use process::{kill_and_wait, running, running_jobs};
 pub use worker::worker_main;
 
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Park, Runtime};
 
@@ -97,17 +97,6 @@ impl Job {
             _ => self.lab_id.clone(),
         }
     }
-
-    /// What this operation is, for the "another one is in progress" message.
-    fn what(&self) -> &'static str {
-        match self.op {
-            Op::Launch => "a start",
-            Op::Resume { .. } => "a resume",
-            Op::Park { .. } => "a pause or shutdown",
-            Op::Provision { .. } => "a provisioning run",
-            Op::AttackVm { .. } => "an attack VM start",
-        }
-    }
 }
 
 /// The worker key of a lab's attack VM operation.
@@ -177,7 +166,7 @@ pub async fn end_workers(app: &AppHandle, id: &str) {
 fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> {
     let _one_at_a_time = STARTING.lock().unwrap_or_else(|e| e.into_inner());
     if running(app).contains(&job.key()) {
-        return Err(Error::Invalid(format!("{} of this lab is already in progress; wait for it to finish.", capitalize(job.what()))));
+        return Err(Error::coded(Code::AlreadyInProgress));
     }
     // Nothing begins while the lab stops: between ending its workers and taking its lock, a
     // start would win the lock and the stop then destroy what it built; and the attack VM takes
@@ -189,15 +178,12 @@ fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> 
     // would only wait for it, then act on what it left (the attack VM runs beside the lab's
     // operations and takes no lab lock).
     if !matches!(job.op, Op::AttackVm { .. }) && lock::held(&lock_path(app, &job.lab_id)?) {
-        return Err(Error::Invalid(BUSY.into()));
+        return Err(Error::coded(Code::AlreadyInProgress));
     }
     // The pidfile is taken before the worker starts (another process may be racing for it too).
     let pidfile = process::claim(&files::of(app, &job.key())?)?;
     Ok(process::spawn(app, job, pidfile))
 }
-
-/// The refusal while another operation holds the lab.
-pub(crate) const BUSY: &str = "Another operation on this lab is already in progress; wait for it to finish.";
 
 /// The cross-process lock file of `lab` (see [`lock`]).
 pub fn lock_path(app: &AppHandle, lab: &str) -> Result<std::path::PathBuf> {
@@ -205,17 +191,9 @@ pub fn lock_path(app: &AppHandle, lab: &str) -> Result<std::path::PathBuf> {
     Ok(lock::path_in(&files::dir(app)?, lab))
 }
 
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Job, Op, capitalize};
+    use super::{Job, Op};
 
     #[test]
     fn job_files_from_before_operations_existed_still_read_as_launches() {
@@ -314,11 +292,5 @@ mod tests {
         let printed = format!("{job:?} {job:#?}");
         assert!(!printed.contains("s3cret-token") && !printed.contains("CTF_LAUNCH_TOKEN"), "{printed}");
         assert!(printed.contains("lab-1") && printed.contains("<redacted>"), "{printed}");
-    }
-
-    #[test]
-    fn the_busy_message_starts_with_a_capital() {
-        assert_eq!(capitalize(Job::on_lab("lab-1", Op::AttackVm { box_name: "a/b".into() }).what()), "An attack VM start");
-        assert_eq!(capitalize(""), "");
     }
 }

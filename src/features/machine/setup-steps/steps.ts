@@ -89,22 +89,41 @@ export function stepMeta(step: MachineStep, report: SystemReport | null, t: Tr =
 /** Install + test state for the setup steps. One per flow, passed to every step body.
  *  Starts each test's download in the background as soon as the machine can run it. */
 
-/** Label for the flow's forward button on this step. */
-export function nextLabel(step: MachineStep, report: SystemReport | null, t: Tr = translate, setup?: Pick<MachineSetupState, "wslTurnedOn">): string {
+/** What the flow's forward button does on this step: continue, or move on without it done. */
+type NextKind = "continue" | "restartLater" | "skip" | "done";
+
+function nextKind(step: MachineStep, report: SystemReport | null, setup?: Pick<MachineSetupState, "wslTurnedOn">): NextKind {
   if (step === "virtualization") {
     // Found on: nothing to confirm. Waiting for a restart: the step's own button restarts, this
     // one moves on without. Missing: skip. Only when the check can't tell does the player say.
     const state = wslState(report, setup);
-    if (state === "ready") return t("machine.steps.next.continue");
-    if (state === "needsReboot") return t("machine.steps.next.restartLater");
-    if (state === "missing") return t("machine.steps.next.skip");
-    return t("machine.steps.next.done");
+    if (state === "ready") return "continue";
+    if (state === "needsReboot") return "restartLater";
+    if (state === "missing") return "skip";
+    return "done";
   }
-  if (step === "vm-test" && !hasHypervisor(report)) return t("machine.steps.next.skip");
   // A hypervisor is optional (VM labs can run on a server): with none set up, the VM steps
   // can be passed by.
-  if ((step === "vm" || step === "vagrant") && !hasHypervisor(report)) return t("machine.steps.next.skip");
-  return t("machine.steps.next.continue");
+  if ((step === "vm" || step === "vagrant" || step === "vm-test") && !hasHypervisor(report)) return "skip";
+  return "continue";
+}
+
+/** Label for the flow's forward button on this step. */
+export function nextLabel(step: MachineStep, report: SystemReport | null, t: Tr = translate, setup?: Pick<MachineSetupState, "wslTurnedOn">): string {
+  return t(`machine.steps.next.${nextKind(step, report, setup)}`);
+}
+
+/**
+ * The forward button's look: the jewel only for a Continue once the step is set up. Skip for
+ * now, I've done this and I'll restart later are ways past a step, not what we nudge players
+ * to, and while the step's own action (Install, Turn on WSL 2) is the thing to do, that action
+ * is the view's one jewel (docs/DESIGN.md).
+ */
+export function nextVariant(step: MachineStep, report: SystemReport | null, setup: MachineSetupState): "primary" | "secondary" {
+  if (nextKind(step, report, setup) !== "continue" || !canContinue(step, report, setup)) return "secondary";
+  // The Vagrant step can be passed with the hypervisor not ready yet, but while its installs
+  // show (Vagrant, the plugin), the first of them is the jewel.
+  return step === "vagrant" && report && !vagrantReady(report, setup) ? "secondary" : "primary";
 }
 
 /** The engine the player picked, else the one in use (it can be reported after the step
@@ -127,6 +146,12 @@ export function chosenHypervisor(report: SystemReport, setup: MachineSetupState)
   return hypervisors.find((p) => p.provider === (setup.hypervisor ?? fallback?.provider)) ?? fallback;
 }
 
+/** Vagrant, and the plugin that lets it drive the chosen hypervisor, are installed. */
+function vagrantReady(report: SystemReport, setup: MachineSetupState): boolean {
+  const choice = chosenHypervisor(report, setup);
+  return report.vagrant.installed && (!choice?.plugin || choice.pluginInstalled);
+}
+
 /** The flow moves on only once the option picked on this step is actually set up. */
 export function canContinue(step: MachineStep, report: SystemReport | null, setup: MachineSetupState): boolean {
   if (!report) return false;
@@ -144,8 +169,7 @@ export function canContinue(step: MachineStep, report: SystemReport | null, setu
     const choice = chosenHypervisor(report, setup);
     // No local hypervisor set up (VM labs go to a Server): nothing for Vagrant to drive here.
     if (!choice || choice.hypervisor !== true) return true;
-    // Vagrant, and the plugin that lets it drive the chosen hypervisor.
-    return report.vagrant.installed && (!choice.plugin || choice.pluginInstalled);
+    return vagrantReady(report, setup);
   }
   return true;
 }

@@ -14,7 +14,6 @@ import { HeaderActions } from "@/features/labs/lab-detail/header-actions";
 import { deployDestination } from "@/features/labs/lab-detail/labels";
 import { cloudView, networkView, removing, type HeaderMode } from "@/features/labs/lab-detail/lab-state";
 import { FailureNotice, ReapFailedNotice } from "@/features/labs/lab-detail/failure-notice";
-import { failureKind } from "@/features/labs/failure-hints";
 import { NetworkPanel } from "@/features/labs/lab-detail/network-panel";
 import { ObjectivePanel } from "@/features/labs/lab-detail/page-parts";
 import { ObserversPanel } from "@/features/labs/lab-detail/observers-panel";
@@ -36,7 +35,7 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
     return (
       <>
         {/* A port taken here: the same start on random free ports is the fix, one click away. */}
-        {mode === "failed" && s.isDocker && failureKind(s.failure) === "ports" && (
+        {mode === "failed" && s.isDocker && s.failureKind === "ports" && (
           <Button variant="outline" onClick={() => page.startOn({ kind: "local", ports: "random" })} disabled={p.busy || !p.loggedIn}>
             <Shuffle className="size-3.5" /> {t("labs.detail.retryRandomPorts")}
           </Button>
@@ -89,11 +88,12 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
           title={p.lab.title}
           op={s.failedOp!}
           message={s.failure!}
+          kind={s.failureKind}
           stillUp={s.failedOp === "stop" && s.running}
           onDismiss={() => setDismissed(failure)}
         />
       )}
-      {p.status?.reapError && <ReapFailedNotice title={p.lab.title} message={p.status.reapError} />}
+      {p.status?.reapError && <ReapFailedNotice title={p.lab.title} error={p.status.reapError} />}
       {shell.error && (
         <p className="-mt-2 flex items-center gap-2 text-[0.75rem] text-muted-foreground">
           <StatusDot tone="fail" /> {shell.error}

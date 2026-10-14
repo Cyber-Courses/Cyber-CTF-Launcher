@@ -86,6 +86,8 @@ describe("UpdateBanner", () => {
     render(<UpdateBanner />);
     await flush();
     expect(screen.getByRole("status").textContent).toContain("Version 1.5.0 is available.");
+    // Ghost glass, not the jewel: it shows on every screen, beside each screen's own primary.
+    expect(screen.getByRole("button", { name: "Update" }).className).toContain("btn-glass");
     await user.click(screen.getByRole("button", { name: "Update" }));
     await flush();
     expect(downloadAndInstall).toHaveBeenCalledTimes(1);

@@ -1,18 +1,4 @@
 {
-  "format": {
-    "gb": "{n} GB",
-    "gbOf": "{used}/{total} GB",
-    "mb": "{n} MB",
-    "kb": "{n} kB",
-    "justNow": "just now",
-    "minutesAgo": "{n} min ago",
-    "hoursAgo": "{n} h ago",
-    "yesterday": "yesterday",
-    "daysAgo": "{n} days ago",
-    "uptimeDays": "{d}d {h}h",
-    "uptimeHours": "{h}h {m}m",
-    "uptimeMinutes": "{m}m"
-  },
   "errors": {
     "openSetup": "Couldn't open machine setup",
     "copy": "Couldn't copy to the clipboard",

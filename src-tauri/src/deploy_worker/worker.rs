@@ -152,7 +152,8 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
 fn status_line<T>(result: &crate::error::Result<T>) -> (String, i32) {
     match result {
         Ok(_) => ("ok".to_string(), 0),
-        Err(e) => (format!("error: {e}"), 1),
+        // As the webview gets it: the app reads its code back (`progress::verdict`).
+        Err(e) => (format!("error: {}", serde_json::to_string(&e.to_wire()).unwrap_or_else(|_| e.to_string())), 1),
     }
 }
 
@@ -162,14 +163,19 @@ mod tests {
     use crate::deploy_worker::files::Files;
     use crate::deploy_worker::progress::verdict;
     use crate::deploy_worker::{Job, Op};
-    use crate::error::Error;
+    use crate::error::{Code, Error};
 
     #[test]
     fn the_status_line_reads_back_as_the_same_verdict() {
         assert_eq!(status_line(&Ok(())), ("ok".to_string(), 0));
         let (line, code) = status_line::<()>(&Err(Error::Invalid("Docker isn't running".into())));
-        assert_eq!((line.as_str(), code), ("error: Docker isn't running", 1));
+        assert_eq!((line.as_str(), code), (r#"error: {"code":"other","message":"Docker isn't running"}"#, 1));
         assert_eq!(verdict(&line).unwrap_err().to_string(), "Docker isn't running");
+        // A coded error comes back with its code, for the webview to say in its language.
+        let (line, _) = status_line::<()>(&Err(Error::coded(Code::DockerNotRunning)));
+        let back = verdict(&line).unwrap_err();
+        assert_eq!(back.code(), Code::DockerNotRunning);
+        assert_eq!(back.to_string(), Error::coded(Code::DockerNotRunning).to_string());
     }
 
     #[test]
@@ -231,7 +237,7 @@ mod tests {
         let f = crate::deploy_worker::files::of(t.handle(), &job.key()).unwrap();
         assert_eq!(super::run_logged(t.handle(), job).await, 1);
         let status = std::fs::read_to_string(&f.status).unwrap();
-        assert!(status.starts_with("error: Couldn't lock the lab"), "{status}");
+        assert!(verdict(&status).unwrap_err().to_string().starts_with("Couldn't lock the lab"), "{status}");
         assert!(tools.calls().is_empty(), "nothing ran: {:?}", tools.calls());
     }
 
@@ -272,8 +278,9 @@ mod tests {
         let code = conclude(&f, &Err::<(), _>(Error::Invalid("boom".into())), true, |l| lines.lock().unwrap().push(l));
         assert_eq!(code, 1);
         assert_eq!(lines.lock().unwrap().as_slice(), ["✗ boom"]);
-        assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "error: boom");
-        assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "error: boom");
+        let failed = r#"error: {"code":"other","message":"boom"}"#;
+        assert_eq!(std::fs::read_to_string(&f.status).unwrap(), failed);
+        assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), failed);
         assert!(!f.pid.exists());
         assert!(!f.job.exists(), "the job file (it carries the launch token) is gone once it ends");
         assert_eq!(conclude(&f, &Ok(()), true, |_| panic!("no log on success")), 0);
@@ -281,11 +288,11 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
         // Another operation leaves the launch's verdict alone.
         conclude(&f, &Err::<(), _>(Error::Invalid("park failed".into())), false, |_| {});
-        assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "error: park failed");
+        assert_eq!(verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string(), "park failed");
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
         // So does a launch refused before it did anything (the lab is still up on its host).
         conclude(&f, &Err::<(), _>(Error::Refused("still running on AWS".into())), true, |_| {});
-        assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "error: still running on AWS");
+        assert_eq!(verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string(), "still running on AWS");
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
         std::fs::remove_dir_all(dir).ok();
     }

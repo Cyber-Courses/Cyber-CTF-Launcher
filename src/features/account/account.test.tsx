@@ -3,7 +3,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { Account, initials } from "@/features/account/account";
-import { commands, installTauri, stream } from "@/test/tauri";
+import { setLocalePreference } from "@/lib/i18n";
+import { commands, installTauri, rejects, stream } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 const signedOut = { loggedIn: false, name: null, email: null };
@@ -46,7 +47,7 @@ describe("Account", () => {
     const calls = installTauri({
       auth_login: (args) => {
         stream(args, "https://auth.example/oauth2/authorize?state=s1");
-        return new Promise((_, reject) => (cancel = () => reject("Sign-in cancelled.")));
+        return new Promise((_, reject) => (cancel = () => reject({ code: "signInCancelled", message: "Sign-in cancelled." })));
       },
       auth_login_cancel: () => cancel(),
     });
@@ -83,6 +84,23 @@ describe("Account", () => {
     await flush();
     expect(screen.getByText("browser closed")).toBeTruthy();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("says a sign-in that timed out in the player's language", async () => {
+    setLocalePreference("fr");
+    installTauri({ auth_login: rejects({ code: "loginTimeout", args: { minutes: 5 }, message: "Sign-in wasn't finished within 5 minutes" }) });
+    const user = userEvent.setup();
+    render(<Account status={signedOut} onChange={vi.fn()} />);
+    await user.click(button(/^se connecter$/i));
+    await flush();
+    expect(screen.getByText("La connexion n'a pas été terminée en 5 minutes, elle a donc été annulée. Réessayez.")).toBeTruthy();
+    setLocalePreference("en");
+  });
+
+  it("names its icon-only buttons for screen readers, not by a tooltip alone", () => {
+    render(<Account status={{ loggedIn: true, name: "Ada", email: null }} onChange={vi.fn()} onSettings={vi.fn()} />);
+    expect(screen.getByTitle("Settings").getAttribute("aria-label")).toBe("Settings");
+    expect(screen.getByTitle("Sign out").getAttribute("aria-label")).toBe("Sign out");
   });
 
   it("opens Settings signed out and signed in", async () => {

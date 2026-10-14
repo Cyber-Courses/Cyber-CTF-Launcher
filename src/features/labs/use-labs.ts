@@ -5,6 +5,7 @@ import { apiQuery, type LabStatus, type Provider, type Runtime } from "@/lib/tau
 import { catalogueFor, refreshStatus, setCatalogue, useLabState } from "@/features/labs/lab-store";
 import { useLabPolling } from "@/features/labs/lab-polling";
 import type { T } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 export interface LabRuntimeInfo {
   runtime: Runtime;
@@ -55,7 +56,7 @@ function useCatalogue(reloadKey: unknown) {
         setError(null);
         d.labs.forEach((l) => void refreshStatus(l));
       })
-      .catch((e) => alive && setError(String(e)));
+      .catch((e) => alive && setError(describeError(e)));
     // Best effort: logged out (or a backend without the query) just shows no progress.
     apiQuery<{ myCompletedLabs: string[] }>("completedLabs")
       .then((d) => alive && setCompleted(new Set(d.myCompletedLabs)))

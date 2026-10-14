@@ -100,10 +100,14 @@ export function AppShell() {
   if (!ready) return <div className="h-dvh bg-background" />;
   // Settings runs standalone in its own window: no sidebar, no onboarding, just the screen.
   if (settingsWindow) return <SettingsWindowView auth={auth} onAuthChange={session.changed} />;
+  // The launch confirmation is the same one, at the same place, during the onboarding and after
+  // it: a cloud launch asked from the website while the onboarding is up must be shown (the
+  // website takes the silence for a no), and still be there once the onboarding ends.
   // With its own Toaster: `tell()` shows errors as toasts while the window has focus.
   if (!onboarded)
     return (
       <>
+        <LaunchConfirm />
         <Onboarding onComplete={completeOnboarding} />
         <Toaster />
       </>
@@ -113,47 +117,49 @@ export function AppShell() {
   const commands = paletteCommands(t, sidebarLabs.labs, { findLab: findALab, openSettings: openSettingsWindow, navigate });
 
   return (
-    // `overflow-clip`, not `hidden`: a hidden box can still be scrolled (focus, scrollIntoView,
-    // a wheel over the sidebar), which shifted the whole window up under the titlebar.
-    <div className="flex h-dvh overflow-clip bg-background text-foreground">
-      <CommandPalette key={paletteOpen ? "open" : "closed"} open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
-      <QuitGuard />
+    <>
       <LaunchConfirm />
-      <PortModePrompt />
-      <OfflineStartPrompt />
-      <Toaster />
-      <Sidebar
-        tab={tab}
-        isMac={isMac}
-        version={version}
-        labCount={sidebarLabs.labs.length}
-        activeLabs={sidebarLabs.active}
-        auth={auth}
-        onFind={() => setPaletteOpen(true)}
-        onNavigate={navigate}
-        onOpenSettings={openSettingsWindow}
-        onAuthChange={session.changed}
-      />
+      {/* `overflow-clip`, not `hidden`: a hidden box can still be scrolled (focus, scrollIntoView,
+          a wheel over the sidebar), which shifted the whole window up under the titlebar. */}
+      <div className="flex h-dvh overflow-clip bg-background text-foreground">
+        <CommandPalette key={paletteOpen ? "open" : "closed"} open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
+        <QuitGuard />
+        <PortModePrompt />
+        <OfflineStartPrompt />
+        <Toaster />
+        <Sidebar
+          tab={tab}
+          isMac={isMac}
+          version={version}
+          labCount={sidebarLabs.labs.length}
+          activeLabs={sidebarLabs.active}
+          auth={auth}
+          onFind={() => setPaletteOpen(true)}
+          onNavigate={navigate}
+          onOpenSettings={openSettingsWindow}
+          onAuthChange={session.changed}
+        />
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-clip">
-        <ShellHeader crumbs={breadcrumbs(tab, labTitle, title, t("shell.header.thisMachine"))} report={report} checkError={checkError} />
-        <div className="flex-1 overflow-y-auto">
-          <UpdateBanner />
-          <div className="mx-auto w-full max-w-[160rem] px-7 pt-7 pb-10 2xl:px-10">
-            <Screen
-              tab={tab}
-              report={report}
-              checkError={checkError}
-              auth={auth}
-              openLab={openLab}
-              onRefresh={check}
-              onNavigate={navigate}
-              onAuthChange={session.setAuth}
-              onLabChange={setLabTitle}
-            />
+        <main className="flex min-w-0 flex-1 flex-col overflow-clip">
+          <ShellHeader crumbs={breadcrumbs(tab, labTitle, title, t("shell.header.thisMachine"))} report={report} checkError={checkError} />
+          <div className="flex-1 overflow-y-auto">
+            <UpdateBanner />
+            <div className="mx-auto w-full max-w-[160rem] px-7 pt-7 pb-10 2xl:px-10">
+              <Screen
+                tab={tab}
+                report={report}
+                checkError={checkError}
+                auth={auth}
+                openLab={openLab}
+                onRefresh={check}
+                onNavigate={navigate}
+                onAuthChange={session.setAuth}
+                onLabChange={setLabTitle}
+              />
+            </div>
           </div>
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
+    </>
   );
 }

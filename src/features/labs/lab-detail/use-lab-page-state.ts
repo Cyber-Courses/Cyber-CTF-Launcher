@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { deriveLabState, type LabOperation, type LabStateInput } from "@/features/labs/lab-detail/lab-state";
+import { failureKind } from "@/features/labs/failure-hints";
+import type { ErrorCode } from "@/lib/errors";
 import { operationSeenAt, useActiveOperations, useDeployingLabs, useWorkerLog } from "@/lib/deploy-store";
 
 /** The failure a log ended on (its last ✗ line, without the mark), or null. */
@@ -24,6 +26,7 @@ export function useLabPageState(
     times,
     runOp,
     runStartedAt,
+    runFailureCode,
     ...input
   }: Omit<LabStateInput, "backendDeploying" | "backendOp" | "startFailed" | "runOp"> & {
     logs: string[];
@@ -31,6 +34,7 @@ export function useLabPageState(
     /** What this session's last run on the lab was (launch, stop…), and when it began. */
     runOp?: string;
     runStartedAt?: number;
+    runFailureCode?: ErrorCode | null;
   },
 ) {
   // Labs the backend is still deploying, so a window reload recovers the "starting" state.
@@ -62,6 +66,8 @@ export function useLabPageState(
     /** The failure the last run ended on, and which operation it was (null while one runs). */
     failure: state.deploying ? null : failure,
     failedOp: state.deploying ? null : failedOp,
+    /** What kind of failure it is, for a hint: by this session's error code, else its words. */
+    failureKind: state.deploying ? null : failureKind(failure, local ? runFailureCode : null),
     /** When the operation in flight (or the last one) began: this session's run, else when this
      *  window first saw the backend's. */
     startedAt: local ? runStartedAt : backendOp ? operationSeenAt(labId, backendOp) : undefined,

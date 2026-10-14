@@ -90,7 +90,7 @@ export const attackVmShell = (id: string) => invoke<void>("attack_vm_shell", { i
 export const labAttackShell = (id: string, runtime: Runtime) => invoke<void>("lab_attack_shell", { id, runtime });
 /** `defaultPorts`: a container lab here publishes its services on their own ports, not random ones.
  *  `offline`: start the installed lab without Cyber CTF when it can't be reached (no progress
- *  saved), after a launch failed saying the lab "can start offline". */
+ *  saved), after a launch failed with the `offlineReady` code. */
 export const labLaunch = (
   labId: string,
   provider: Provider | null,

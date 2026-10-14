@@ -17,6 +17,7 @@ import { useCloudAccounts } from "@/features/servers/host-setup/use-cloud-accoun
 import { useRunLog } from "@/features/servers/host-setup/use-run-log";
 import { testHost } from "@/features/servers/use-server-list";
 import { translate, useT } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 /** All the server / cloud setup state and actions, shared by the setup steps. */
 export function useHostSetup({
@@ -148,7 +149,7 @@ function useSaveAndTest(v: ServerHostInput, onSaved: (h: ServerHost) => void, ne
       next();
       void runTest(h.id);
     } catch (err) {
-      setError(String(err));
+      setError(describeError(err));
     } finally {
       setSaving(false);
     }

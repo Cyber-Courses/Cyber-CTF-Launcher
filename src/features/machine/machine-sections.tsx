@@ -8,7 +8,7 @@ import { StatusDot } from "@/components/ui/status-pill";
 import { machineOpenSetup, type MachineMetrics, type SystemReport } from "@/lib/tauri";
 import { CalloutRow, StatCard } from "@/features/machine/machine-parts";
 import { OS_NAME, isLowDisk, usage } from "@/features/machine/machine-status";
-import { useMachineFormat } from "@/features/machine/use-machine-format";
+import { formatBytes, formatBytesOf, formatUptime } from "@/lib/format";
 import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
@@ -31,7 +31,6 @@ export function MachineHeader({
   onView: (view: MachineView) => void;
 }) {
   const t = useT();
-  const fmt = useMachineFormat();
   return (
     <PageHeader
       title={t("machine.screen.title")}
@@ -48,7 +47,7 @@ export function MachineHeader({
             {m && (
               <>
                 <span>·</span>
-                <span>{t("machine.screen.uptime", { uptime: fmt.uptime(m.uptimeSecs) })}</span>
+                <span>{t("machine.screen.uptime", { uptime: formatUptime(m.uptimeSecs) })}</span>
               </>
             )}
           </StatusStrip>
@@ -79,13 +78,12 @@ export function MachineHeader({
 /** CPU, memory and disk as meters. */
 export function UsageCards({ m }: { m: MachineMetrics | null }) {
   const t = useT();
-  const fmt = useMachineFormat();
   const use = m ? usage(m) : null;
   return (
     <div className="grid gap-4 sm:grid-cols-3">
       <StatCard label={t("machine.screen.cpu")} detail={m ? t("machine.screen.cores", { count: m.cores }) : ""} value={m ? m.cpu : null} meter />
-      <StatCard label={t("machine.screen.memory")} detail={m ? fmt.bytesOf(m.memUsed, m.memTotal) : ""} value={use ? use.memPct : null} meter />
-      <StatCard label={t("machine.screen.disk")} detail={m ? fmt.bytesOf(m.diskUsed, m.diskTotal) : ""} value={use ? use.diskPct : null} meter />
+      <StatCard label={t("machine.screen.memory")} detail={m ? formatBytesOf(m.memUsed, m.memTotal) : ""} value={use ? use.memPct : null} meter />
+      <StatCard label={t("machine.screen.disk")} detail={m ? formatBytesOf(m.diskUsed, m.diskTotal) : ""} value={use ? use.diskPct : null} meter />
     </div>
   );
 }
@@ -93,9 +91,8 @@ export function UsageCards({ m }: { m: MachineMetrics | null }) {
 /** Low disk: labs and the attack box are several GB each, so say so before a download fails. */
 export function LowDiskCallout({ m }: { m: MachineMetrics | null }) {
   const t = useT();
-  const fmt = useMachineFormat();
   if (!m || !isLowDisk(m)) return null;
-  const free = fmt.bytes(usage(m).diskFree);
+  const free = formatBytes(usage(m).diskFree);
   return (
     <CalloutRow
       tone="warn"

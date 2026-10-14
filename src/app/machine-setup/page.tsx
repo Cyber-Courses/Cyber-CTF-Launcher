@@ -10,6 +10,7 @@ import { usePoll } from "@/lib/use-poll";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 
 import { installDevMock } from "@/lib/dev-mock";
+import { describeError } from "@/lib/errors";
 
 // Development only: ?mock in a plain browser answers the Tauri commands with sample data.
 installDevMock();
@@ -37,7 +38,7 @@ export default function MachineSetupWindow() {
     },
     onError: (e) => {
       warn("system check")(e);
-      setCheckError(String(e));
+      setCheckError(describeError(e));
     },
   });
   // Try again: one check now; it starts the poll again once it answers.
@@ -47,7 +48,7 @@ export default function MachineSetupWindow() {
         setReport(r);
         setCheckError(null);
       },
-      (e) => setCheckError(String(e)),
+      (e) => setCheckError(describeError(e)),
     );
   useTauriEvent<string>("machine-setup-step", (step) => setStartAt({ step, nonce: Date.now() }));
   const close = () => getCurrentWindow().close().catch(warn("closing the window"));

@@ -3,11 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { attackVmStart, attackVmStatus, attackVmStop, exegolStatus, exegolStop, type ExegolStatus } from "@/lib/tauri";
 import { startContainerAttackBox } from "@/features/labs/attack-box-auto";
+import { startOnce } from "@/lib/start-once";
 import { attackImageLabel, getAttackBox, getAttackImage, getAutoAttackBox } from "@/lib/settings";
 import { translate } from "@/lib/i18n";
 import { ignore } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
 import { structurallyEqual } from "@/lib/equal";
+import { useLatest } from "@/lib/use-latest";
+import { describeError } from "@/lib/errors";
+
+/** Starts the attack VM beside a VM lab here, or joins the start already under way: a second
+ *  `vagrant up` would run into the machine lock and its retries. */
+const startAttackVm = (labId: string, onLog: (line: string) => void) => startOnce(`vm:${labId}`, (log) => attackVmStart(labId, getAttackBox(), log), onLog);
 
 /** What the attack box is: a container on a container lab's networks, or the learner's own VM
  *  (a Vagrant box) beside a VM lab, on the same hypervisor. */
@@ -27,14 +34,14 @@ function useAttackBoxStatus(labId: string, kind: AttackBoxKind, active: boolean,
   // Only the newest status read wins: a slow poll that was already in flight when the box was
   // stopped must not resolve afterwards with a stale "running" and flip the button back (which
   // made Stop seem to need two or three clicks).
-  const seq = useRef(0);
+  const begin = useLatest();
   const read = useCallback(() => {
-    const mine = ++seq.current;
+    const isLatest = begin();
     return (kind === "vm" ? attackVmStatus(labId, getAttackBox()) : exegolStatus(labId, getAttackImage())).then((s) => {
       // The same answer again keeps the current object: the page doesn't re-render.
-      if (mine === seq.current) setStatus((prev) => (structurallyEqual(prev, s) ? prev : s));
+      if (isLatest()) setStatus((prev) => (structurallyEqual(prev, s) ? prev : s));
     });
-  }, [labId, kind]);
+  }, [labId, kind, begin]);
   // A failed read (Vagrant busy or slow, an emulated lab) says nothing about the box: keep what
   // was last seen rather than flip it to "not started".
   const refresh = useCallback(() => void read().catch(ignore("the box's status is read again in a moment")), [read]);
@@ -43,8 +50,8 @@ function useAttackBoxStatus(labId: string, kind: AttackBoxKind, active: boolean,
   usePoll(read, 5000, { enabled: active && local, restartKey: read, onValue: () => {}, onError: ignore("the box's status is read again in a moment") });
   useEffect(() => {
     // A read still in flight belongs to the run that just ended: ignore it.
-    if (!active || !local) seq.current++;
-  }, [active, local]);
+    if (!active || !local) begin();
+  }, [active, local, begin]);
   return { status, setStatus, refresh };
 }
 
@@ -59,7 +66,7 @@ function useAttackBoxRun(refresh: () => void) {
       try {
         await fn((line) => setLog((l) => [...l, line]));
       } catch (e) {
-        setLog((l) => [...l, `✗ ${String(e)}`]);
+        setLog((l) => [...l, `✗ ${describeError(e)}`]);
       } finally {
         setBusy(false);
         refresh();
@@ -127,7 +134,7 @@ export function useAttackBox(
   const start = useCallback(
     () =>
       run(
-        (l) => (kind === "vm" ? attackVmStart(labId, getAttackBox(), l) : startContainerAttackBox(labId, l)),
+        (l) => (kind === "vm" ? startAttackVm(labId, l) : startContainerAttackBox(labId, l)),
         kind === "vm" ? translate("labs.attackBox.startingVm") : translate("labs.attackBox.startingBox"),
       ),
     [run, labId, kind],

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { formatAgo, formatBytes, formatDuration, formatElapsed } from "@/lib/format";
+import { formatAgo, formatBytes, formatDuration, formatElapsed, formatUsd } from "@/lib/format";
 import { setLocalePreference } from "@/lib/i18n";
 
 // Boundary values of the shared formatters: the exact tick where each form changes, the far
@@ -87,5 +87,23 @@ describe("format: boundaries", () => {
     setLocalePreference("ja");
     expect(formatDuration(1_500)).toMatch(/^1\.5/);
     expect(formatBytes(2.5e9)).toMatch(/^2\.5/);
+  });
+});
+
+describe("formatUsd", () => {
+  it("writes dollars in the language's notation", () => {
+    expect(formatUsd(0.02, "en")).toBe("$0.02");
+    expect(formatUsd(0.02, "fr")).toBe("0,02 $US");
+    expect(formatUsd(6.4, "de")).toBe("6,40 $");
+  });
+
+  it("shows two significant digits under a cent, not $0.00", () => {
+    expect(formatUsd(0.0042, "en")).toBe("$0.0042");
+    expect(formatUsd(0.004, "en")).toBe("$0.004");
+    expect(formatUsd(0, "en")).toBe("$0.00");
+  });
+
+  it("drops the cents of a whole budget", () => {
+    expect(formatUsd(50, "en", { whole: true })).toBe("$50");
   });
 });

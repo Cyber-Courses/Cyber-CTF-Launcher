@@ -9,7 +9,7 @@ export const authStatus = () => invoke<AuthStatus>("auth_status");
  *  gets the sign-in link as soon as the browser was asked to open it. Use `signIn` (lib/sign-in),
  *  which keeps one sign-in at a time and its state for every view. */
 export const authLogin = (onOpened: (url: string) => void) => invokeStreaming<string, AuthStatus>("auth_login", {}, onOpened, "events");
-/** Ends the sign-in waiting for the browser: `authLogin` then rejects with SIGN_IN_CANCELLED. */
+/** Ends the sign-in waiting for the browser: `authLogin` then rejects with the `signInCancelled` code. */
 export const authLoginCancel = () => invoke<void>("auth_login_cancel");
 export const authLogout = () => invoke<void>("auth_logout");
 

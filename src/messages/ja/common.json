@@ -27,6 +27,7 @@
   "units": {
     "seconds": "{n}秒",
     "gigabytes": "{n} GB",
+    "gigabytesOf": "{used}/{total} GB",
     "megabytes": "{n} MB",
     "kilobytes": "{n} kB",
     "uptimeDays": "{days}日 {hours}時間",

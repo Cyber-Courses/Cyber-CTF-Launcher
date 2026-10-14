@@ -19,17 +19,13 @@ use tauri::ipc::Channel;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::config;
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use store::Session;
 use tokens::{TokenResponse, code_challenge, now, random_b64, session_from, token_request};
 
 const SCOPES: &str = "openid profile email offline_access";
 /// An access token this close to expiry is refreshed before use.
 const REFRESH_MARGIN_SECS: u64 = 60;
-
-/// What a call needing the account says when there is no session (never signed in, signed out,
-/// or the keychain lost it). The app matches on "signed out" to flip to its signed-out state.
-pub const SIGNED_OUT: &str = "You're signed out. Sign in again to continue.";
 
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -54,7 +50,7 @@ async fn session_or_signed_out() -> Result<Session> {
 fn session_from_read(read: std::result::Result<Option<Session>, String>) -> Result<Session> {
     match read {
         Ok(Some(s)) => Ok(s),
-        Ok(None) => Err(Error::Invalid(SIGNED_OUT.into())),
+        Ok(None) => Err(Error::coded(Code::SignedOut)),
         Err(why) => Err(Error::Invalid(why)),
     }
 }
@@ -140,7 +136,7 @@ where
     if fresh(&session) {
         return Ok(session.access_token);
     }
-    let refresh = session.refresh_token.clone().ok_or_else(|| Error::Invalid("Your session expired: you're signed out. Sign in again to continue.".into()))?;
+    let refresh = session.refresh_token.clone().ok_or_else(|| Error::coded(Code::SessionExpired))?;
     let tokens = match renew(refresh).await {
         Ok(tokens) => tokens,
         Err(e) => {
@@ -340,7 +336,7 @@ mod tests {
     #[test]
     fn a_missing_session_is_signed_out_and_a_keychain_failure_says_why() {
         assert_eq!(session_from_read(Ok(Some(session()))).unwrap().access_token, "tok");
-        assert_eq!(session_from_read(Ok(None)).err().unwrap().to_string(), SIGNED_OUT);
+        assert_eq!(session_from_read(Ok(None)).err().unwrap().code(), Code::SignedOut);
         assert_eq!(session_from_read(Err("locked".into())).err().unwrap().to_string(), "locked");
     }
 
@@ -375,7 +371,7 @@ mod tests {
 
         auth_logout().await;
         assert_eq!(serde_json::to_value(auth_status().await).unwrap()["loggedIn"], false);
-        assert_eq!(access_token().await.unwrap_err().to_string(), SIGNED_OUT);
+        assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
         assert_eq!(signed_in_user().await, None);
         // Signing out twice is fine.
         auth_logout().await;
@@ -403,7 +399,7 @@ mod tests {
         set_unsaved(Some(Session { access_token: "tok3".into(), expires_at: now() + 3600, ..session() }));
         auth_logout().await;
         assert!(unsaved().is_none());
-        assert_eq!(access_token().await.unwrap_err().to_string(), SIGNED_OUT);
+        assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
     }
 
     /// A session whose access token needs a refresh, and the tokens a refresh answers with.
@@ -449,7 +445,7 @@ mod tests {
         assert_eq!(refresh.await.unwrap().unwrap(), "renewed");
         logout.await.unwrap();
         assert!(store::read().await.unwrap().is_none());
-        assert_eq!(access_token().await.unwrap_err().to_string(), SIGNED_OUT);
+        assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
     }
 
     /// A sign-in during another session's refresh is the session kept, not the refreshed one.
@@ -487,7 +483,7 @@ mod tests {
         auth_login_cancel();
         let Err(err) = login.await.unwrap() else { panic!("a cancelled sign-in went through") };
         assert!(matches!(err, Error::Cancelled));
-        assert_eq!(err.to_string(), crate::error::SIGN_IN_CANCELLED);
+        assert_eq!(err.code(), Code::SignInCancelled);
     }
 
     #[test]

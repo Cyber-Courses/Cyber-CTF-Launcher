@@ -1,18 +1,4 @@
 {
-  "format": {
-    "gb": "{n} GB",
-    "gbOf": "{used}/{total} GB",
-    "mb": "{n} MB",
-    "kb": "{n} kB",
-    "justNow": "agora mesmo",
-    "minutesAgo": "há {n} min",
-    "hoursAgo": "há {n} h",
-    "yesterday": "ontem",
-    "daysAgo": "há {n} dias",
-    "uptimeDays": "{d}d {h}h",
-    "uptimeHours": "{h}h {m}min",
-    "uptimeMinutes": "{m}min"
-  },
   "errors": {
     "openSetup": "Não foi possível abrir a configuração da máquina",
     "copy": "Não foi possível copiar para a área de transferência",

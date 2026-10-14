@@ -9,7 +9,7 @@ import { ServerSelfTest } from "@/features/servers/server-self-test";
 import { answer } from "@/lib/dev-mock";
 import type { ServerList, ServerTest } from "@/lib/tauri";
 import { freshReport } from "@/test/fixtures";
-import { commands, installTauri, stream, type Call } from "@/test/tauri";
+import { commands, installTauri, rejects, stream, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 const sample = () => structuredClone(answer("server_list", undefined) as ServerList);
@@ -95,7 +95,7 @@ describe("ServerScreen", () => {
 
   it("asks for a password instead of calling a host without one down", async () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)");
-    installTauri({ server_test: () => fail("No password stored for this host") });
+    installTauri({ server_test: rejects({ code: "noPasswordStored", message: "no password stored for this host, edit it and enter one" }) });
     await renderScreen();
     expect(screen.getAllByText("Needs password")).toHaveLength(2);
     // A missing password isn't a network problem: no Local Network hint.

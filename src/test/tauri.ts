@@ -1,5 +1,6 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { answer } from "@/lib/dev-mock";
+import type { CommandError } from "@/lib/errors";
 
 export type Handler = (args: Record<string, unknown> | undefined) => unknown;
 export interface Call {
@@ -74,6 +75,13 @@ export function installTauri(overrides: Record<string, Handler> = {}): Call[] {
   );
   return calls;
 }
+
+/** A command that fails as the Rust core does: rejected with its error's code and message. */
+export const rejects =
+  (error: CommandError): Handler =>
+  () => {
+    throw error;
+  };
 
 /** The names of the commands invoked, in order. */
 export const commands = (calls: Call[]) => calls.map((c) => c.cmd);

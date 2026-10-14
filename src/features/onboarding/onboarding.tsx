@@ -5,7 +5,7 @@ import { ErrorBoundary } from "@/components/error-screen";
 import { CtfMark } from "@/components/brand/mark";
 import { Button } from "@/components/ui/button";
 import { WaitingForCheck } from "@/components/ui/waiting-for-check";
-import { MachineStepBody, canContinue, machineSteps, nextLabel, stepMeta, useMachineSetup } from "@/features/machine/setup-steps";
+import { MachineStepBody, canContinue, machineSteps, nextLabel, nextVariant, stepMeta, useMachineSetup } from "@/features/machine/setup-steps";
 import { STEP_NAMES, isMachineStep, onboardingSteps } from "@/features/onboarding/onboarding-model";
 import { StepActions, StepHeader, StepProgress } from "@/features/onboarding/onboarding-parts";
 import { DoneStep, SignInStep, WelcomeStep } from "@/features/onboarding/onboarding-steps";
@@ -13,6 +13,7 @@ import { useAuthActions } from "@/features/account/account";
 import { authStatus, systemCheck, type AuthStatus, type SystemReport } from "@/lib/tauri";
 import { usePoll } from "@/lib/use-poll";
 import { useT } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 /** Machine checks while onboarding: an install finished in a native installer shows up on its own. */
 const CHECK_POLL_MS = 5000;
@@ -43,7 +44,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
       setReport(r);
       setCheckError(null);
     },
-    onError: (e) => setCheckError(String(e)),
+    onError: (e) => setCheckError(describeError(e)),
   });
 
   // The machine steps are the same ones the "Set up this machine" window shows.
@@ -109,6 +110,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                     onNext={next}
                     disabled={setup.busy || !canContinue(step, report, setup)}
                     nextLabel={nextLabel(step, report, t, setup)}
+                    nextVariant={nextVariant(step, report, setup)}
                   />
                 </div>
               )}

@@ -12,7 +12,7 @@ import { InstalledToolsPanel } from "@/features/settings/installed-tools-panel";
 import { IsoloomRegistryRow } from "@/features/settings/isoloom-registry-row";
 import { LabPortsRow } from "@/features/settings/lab-ports-row";
 import { SharedFolderControl } from "@/features/settings/shared-folder";
-import { ONBOARDED_KEY } from "@/features/settings/settings-screen";
+import { readOnboarded, markOnboarded } from "@/components/shell/onboarded-flag";
 import { getLocalePreference, setLocalePreference } from "@/lib/i18n";
 import { getAttackBox, getAttackImage, getAutoAttackBox, getPortMode, getVmProvider, setAttackBox, setAttackImage, setVmProvider } from "@/lib/settings";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
@@ -210,12 +210,12 @@ describe("AboutSection", () => {
     installTauri();
     const heard = vi.fn();
     await listen("cyberctf:replay-onboarding", heard);
-    localStorage.setItem(ONBOARDED_KEY, "1");
+    markOnboarded();
     const user = userEvent.setup();
     render(<AboutSection version="1" report={null} agent={null} />);
     await user.click(button(/replay/i));
     await flush();
-    expect(localStorage.getItem(ONBOARDED_KEY)).toBeNull();
+    expect(readOnboarded()).toBe(false);
     expect(heard).toHaveBeenCalledOnce();
   });
 });
@@ -324,8 +324,9 @@ describe("HypervisorRow", () => {
 
   it("shows a declined Hyper-V rights prompt in the log", async () => {
     installTauri({
+      // As the core rejects: the error's code and its message.
       hyperv_join_admins: () => {
-        throw "The Windows permission prompt was declined";
+        throw { code: "other", message: "The Windows permission prompt was declined" };
       },
     });
     const user = userEvent.setup();

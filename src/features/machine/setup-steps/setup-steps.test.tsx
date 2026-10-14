@@ -630,6 +630,46 @@ describe("MachineSetup window", () => {
 
 /* ------------------------------------------------------------------ onboarding */
 
+describe("one jewel per view", () => {
+  const jewels = () => Array.from(document.querySelectorAll(".btn-jewel"));
+
+  it("a VM step with no hypervisor offers Skip for now as ghost glass, its Install as the jewel", async () => {
+    installTauri();
+    render(<MachineSetup report={freshReport("linux")} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "vm", nonce: 1 }} />);
+    await flush();
+    expect(button(/skip for now/i).className).toContain("btn-glass");
+    expect(jewels()).toHaveLength(1);
+  });
+
+  it("the WSL step's I've done this is ghost glass beside Turn on WSL 2", async () => {
+    installTauri();
+    render(<SetupAtWsl report={windows("unknown")} />);
+    await flush();
+    expect(button(/done this/i).className).toContain("btn-glass");
+    expect(jewels().length).toBeLessThanOrEqual(1);
+  });
+
+  it("the Vagrant step has one jewel: Vagrant first, its plugin only once Vagrant is in", async () => {
+    installTauri();
+    const libvirt = hv({ provider: "libvirt", plugin: "vagrant-libvirt", pluginInstalled: false });
+    const report = { ...freshReport("linux"), vmProviders: [libvirt] };
+    const r = render(<MachineSetup report={report} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "vagrant", nonce: 1 }} />);
+    await flush();
+    expect(jewels().map((b) => b.textContent)).toEqual(["Install Vagrant"]);
+    r.unmount();
+    render(
+      <MachineSetup
+        report={{ ...report, vagrant: { installed: true, version: "2.4.3" } }}
+        onRefresh={vi.fn()}
+        onClose={vi.fn()}
+        startAt={{ step: "vagrant", nonce: 1 }}
+      />,
+    );
+    await flush();
+    expect(jewels().map((b) => b.textContent)).toEqual(["Install plugin"]);
+  });
+});
+
 describe("Onboarding", () => {
   afterEach(() => vi.useRealTimers());
 

@@ -23,6 +23,17 @@ describe("failureKind", () => {
     expect(failureHintKey("ports")).toBe("labs.failure.hint.ports");
   });
 
+  it("knows an error by its code, whatever language its message is in", () => {
+    expect(failureKind("Le port 8080 de l'hôte est déjà utilisé sur cette machine", "portInUse")).toBe("ports");
+    expect(failureKind("Docker が実行されていません。", "dockerNotRunning")).toBe("docker");
+    expect(failureKind("Docker läuft, aber dein Konto kann es noch nicht nutzen.", "dockerDenied")).toBe("dockerAccess");
+    expect(failureKind("Sua sessão expirou", "sessionExpired")).toBe("signedOut");
+    expect(failureKind("terraform n'est pas installé", "toolMissing")).toBe("tool");
+    // A code with no hint of its own still lets the words of a tool's output speak.
+    expect(failureKind("write /tmp: no space left on device", "other")).toBe("disk");
+    expect(failureKind("Une autre opération est déjà en cours", "alreadyInProgress")).toBeNull();
+  });
+
   it("names the operations it reports", () => {
     expect(failureTitleKey("stop")).toBe("labs.failure.title.stop");
     expect(failureTitleKey("attack_vm")).toBeNull();

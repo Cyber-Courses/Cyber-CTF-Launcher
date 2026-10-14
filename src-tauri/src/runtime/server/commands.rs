@@ -18,7 +18,7 @@ use super::profile::{HostProfile, new_id};
 use super::reachability::test_host;
 use super::secrets::{delete_secret, get_secret, host_secret, set_secret};
 use super::store::{Store, find, load, load_host, update};
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::runtime::providers::Provider;
 
 #[derive(Serialize, ts_rs::TS)]
@@ -76,13 +76,8 @@ fn keeps_placement(saved: &HostProfile, edited: &HostProfile, deployed: usize) -
     if deployed == 0 || changed.is_empty() {
         return Ok(());
     }
-    let what = if saved.provider.is_cloud() { "account" } else { "host" };
-    Err(Error::Invalid(format!(
-        "{deployed} lab{} still on this {what}: stop {} before changing its {}.",
-        if deployed == 1 { " is" } else { "s are" },
-        if deployed == 1 { "it" } else { "them" },
-        changed.join(", ")
-    )))
+    let (count, fields) = (deployed as u64, changed.join(", "));
+    Err(Error::coded(if saved.provider.is_cloud() { Code::PlacementLockedAccount { count, fields } } else { Code::PlacementLockedHost { count, fields } }))
 }
 
 /// The id a save writes under: an existing host's (edit), or a new one.
@@ -185,11 +180,7 @@ pub fn server_remove(app: AppHandle, id: String) -> Result<()> {
 /// Refuses to remove a host `running` labs still run on.
 fn no_labs_running(running: usize) -> Result<()> {
     if running > 0 {
-        return Err(Error::Invalid(format!(
-            "{running} lab{} still running on this host. Stop {} before removing the host.",
-            if running == 1 { "" } else { "s" },
-            if running == 1 { "it" } else { "them" },
-        )));
+        return Err(Error::coded(Code::HostHasLabs { count: running as u64 }));
     }
     Ok(())
 }

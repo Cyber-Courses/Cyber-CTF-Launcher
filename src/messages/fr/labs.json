@@ -340,8 +340,8 @@
     "retryRandomPorts": "Réessayer avec des ports aléatoires"
   },
   "cloud": {
-    "hourly": "environ {usd} $ de l’heure",
-    "untilAutoStop": "{hourly} (environ {usd} $ jusqu’à l’arrêt automatique dans {hours} h)",
+    "hourly": "environ {usd} de l’heure",
+    "untilAutoStop": "{hourly} (environ {usd} jusqu’à l’arrêt automatique dans {hours} h)",
     "billed": "Facturé sur votre compte cloud.",
     "costsUntilStop": "Le lab y crée ses services, qui coûtent de l’argent jusqu’à ce que vous l’arrêtiez.",
     "costsUntilAutoStop": "Le lab y crée ses services, qui coûtent de l’argent jusqu’à ce que vous l’arrêtiez. Le launcher les supprime après {hours} h, mais seulement s’il est ouvert : arrêtez le lab avant de le quitter.",

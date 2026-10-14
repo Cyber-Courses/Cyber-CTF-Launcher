@@ -1,7 +1,7 @@
 //! The Docker CLI's quirks: which engine it talks to, and telling a refused socket from a
 //! daemon that isn't running.
 
-use crate::error::Error;
+use crate::error::{Code, Error};
 
 /// Environment variables that would redirect the Docker CLI to a different engine than the one
 /// the user configured as current (`docker context use`, which Docker Desktop's UI reflects).
@@ -75,25 +75,20 @@ fn denied_text(stderr: &str) -> bool {
     socket || pipe
 }
 
-/// What to tell a player whose account can't use the running Docker daemon.
-pub fn docker_denied_message() -> String {
-    denied_message(std::env::consts::OS, login_name().as_deref())
+/// The error of a player whose account can't use the running Docker daemon.
+pub fn docker_denied_error() -> Error {
+    Error::coded(denied_code(std::env::consts::OS, login_name().as_deref()))
 }
 
-/// [`docker_denied_message`] on `os`, for the account `user`. Windows grants the engine's pipe
-/// to the `docker-users` group (which Docker Desktop's installer fills only with the account
+/// [`docker_denied_error`]'s code on `os`, for the account `user`. Windows grants the engine's
+/// pipe to the `docker-users` group (which Docker Desktop's installer fills only with the account
 /// that installed it); elsewhere the socket belongs to the `docker` group.
-fn denied_message(os: &str, user: Option<&str>) -> String {
+fn denied_code(os: &str, user: Option<&str>) -> Code {
     if os == "windows" {
-        let user = user.unwrap_or("%USERNAME%");
-        return format!(
-            "Docker is running, but your account can't use it yet. Add yourself to the docker-users group (in a terminal run as administrator: net localgroup docker-users \"{user}\" /add), then sign out and back in."
-        );
+        Code::DockerDeniedWindows { user: user.unwrap_or("%USERNAME%").into() }
+    } else {
+        Code::DockerDenied { user: user.unwrap_or("$USER").into() }
     }
-    let user = user.unwrap_or("$USER");
-    format!(
-        "Docker is running, but your account can't use it yet. Add yourself to the docker group in a terminal (sudo usermod -aG docker {user}), then log out and back in."
-    )
 }
 
 /// The login name of the user running the app.
@@ -177,12 +172,14 @@ mod tests {
 
     #[test]
     fn the_denied_message_names_the_command_to_run() {
-        assert!(denied_message("linux", Some("ada")).contains("sudo usermod -aG docker ada"));
-        assert!(denied_message("linux", None).contains("usermod -aG docker $USER"));
+        let message = |os, user| Error::coded(denied_code(os, user)).to_string();
+        assert!(message("linux", Some("ada")).contains("sudo usermod -aG docker ada"));
+        assert!(message("linux", None).contains("usermod -aG docker $USER"));
         // Windows (#218): the docker-users group, not a Linux command.
-        let windows = denied_message("windows", Some("Ada Lovelace"));
+        assert_eq!(denied_code("windows", Some("Ada Lovelace")), Code::DockerDeniedWindows { user: "Ada Lovelace".into() });
+        let windows = message("windows", Some("Ada Lovelace"));
         assert!(windows.contains("net localgroup docker-users \"Ada Lovelace\" /add") && windows.contains("sign out"), "{windows}");
         assert!(!windows.contains("usermod"));
-        assert!(docker_denied_message().contains(if cfg!(windows) { "docker-users" } else { "usermod -aG docker" }));
+        assert!(docker_denied_error().to_string().contains(if cfg!(windows) { "docker-users" } else { "usermod -aG docker" }));
     }
 }

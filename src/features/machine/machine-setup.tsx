@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
 import { CheckFailed } from "@/features/machine/check-failed";
-import { MachineStepBody, SetupOutcome, canContinue, machineSteps, nextLabel, stepMeta, useMachineSetup } from "@/features/machine/setup-steps";
+import { MachineStepBody, SetupOutcome, canContinue, machineSteps, nextLabel, nextVariant, stepMeta, useMachineSetup } from "@/features/machine/setup-steps";
 import type { SystemReport } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
@@ -115,7 +115,7 @@ export function MachineSetup({
                     <Play className="size-3.5" /> {t("machine.setup.done")}
                   </Button>
                 ) : (
-                  <Button variant="primary" size="sm" onClick={next} disabled={setup.busy || !canContinue(key, report, setup)}>
+                  <Button variant={nextVariant(key, report, setup)} size="sm" onClick={next} disabled={setup.busy || !canContinue(key, report, setup)}>
                     {nextLabel(key, report, t, setup)}
                   </Button>
                 )}

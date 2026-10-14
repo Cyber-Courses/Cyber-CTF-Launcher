@@ -51,7 +51,7 @@ pub fn claim(f: &Files) -> Result<std::fs::File> {
         Ok(file) => Ok(file),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             if f.worker().is_some_and(|w| alive(&w)) {
-                return Err(Error::Invalid(super::BUSY.into()));
+                return Err(Error::coded(crate::error::Code::AlreadyInProgress));
             }
             let _ = std::fs::remove_file(&f.pid);
             create().map_err(Error::Io)
@@ -896,8 +896,8 @@ mod tests {
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].0, job);
         // A second operation on the lab is refused while this one runs.
-        let err = super::super::run_job(app, job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err().to_string();
-        assert_eq!(err, "A resume of this lab is already in progress; wait for it to finish.");
+        let err = super::super::run_job(app, job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err();
+        assert_eq!(err.code(), crate::error::Code::AlreadyInProgress);
         // Stopping it ends its process group, and only that (regression: procps' `kill -TERM
         // -<pid>` signalled every process of the user), and drops its pidfile.
         let mut bystander = std::process::Command::new("sleep").arg("30").spawn().unwrap();

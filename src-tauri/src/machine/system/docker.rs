@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use crate::error::{Error, Result};
-use crate::exec::{docker_denied, docker_denied_message, run, run_read};
+use crate::exec::{docker_denied, docker_denied_error, run, run_read};
 
 /// How long each engine's context may take to answer before it counts as stopped.
 const ENGINE_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
@@ -111,7 +111,7 @@ pub async fn docker_start_engine(engine: String) -> Result<()> {
     if let Err(e) = daemon_os().await
         && docker_denied(&e)
     {
-        return Err(Error::Invalid(docker_denied_message()));
+        return Err(docker_denied_error());
     }
     launch(&engine).await?;
     for _ in 0..START_TRIES {
@@ -120,7 +120,7 @@ pub async fn docker_start_engine(engine: String) -> Result<()> {
         match daemon_os().await {
             Ok(_) => return Ok(()),
             // Up now, but not for this account: say so instead of waiting out the 3 minutes.
-            Err(e) if docker_denied(&e) => return Err(Error::Invalid(docker_denied_message())),
+            Err(e) if docker_denied(&e) => return Err(docker_denied_error()),
             Err(_) => {}
         }
         tokio::time::sleep(START_POLL).await;
@@ -224,14 +224,14 @@ mod tests {
         // Running already, for another account: not started again.
         let tools = Tools::rules(&[("docker info", fail(DENIED))]);
         let err = docker_start_engine("colima".into()).await.unwrap_err();
-        assert_eq!(err.to_string(), docker_denied_message());
+        assert!(matches!(err.code(), crate::error::Code::DockerDenied { .. } | crate::error::Code::DockerDeniedWindows { .. }), "{err}");
         assert!(!tools.called("colima start"));
         drop(tools);
         // Up once started, but denied: said at once, not after 3 minutes.
         let (_tools, up) = colima(|| fail(DENIED));
         let err = docker_start_engine("colima".into()).await.unwrap_err();
         assert!(up.get());
-        assert_eq!(err.to_string(), docker_denied_message());
+        assert!(matches!(err.code(), crate::error::Code::DockerDenied { .. } | crate::error::Code::DockerDeniedWindows { .. }), "{err}");
     }
 
     #[tokio::test]

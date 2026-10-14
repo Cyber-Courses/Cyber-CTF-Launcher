@@ -13,6 +13,7 @@ import {
 import { hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
 import { ignore, tell } from "@/lib/failure";
 import { translate } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 export function useMachineSetup(report: SystemReport | null, onRefresh: () => void) {
   const prefetched = useRef({ docker: false, vm: false });
@@ -53,7 +54,7 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => vo
       if (dep === "docker") setInstallerOpened(true);
       if (dep === "wsl") setWslTurnedOn(true);
     } catch (e) {
-      setLogs((l) => [...l, `✗ ${String(e)}`]);
+      setLogs((l) => [...l, `✗ ${describeError(e)}`]);
     } finally {
       setInstalling(null);
       onRefresh();
@@ -80,7 +81,7 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => vo
     try {
       await installVagrantPlugin(plugin, (line) => setLogs((l) => [...l, line]));
     } catch (e) {
-      setLogs((l) => [...l, `✗ ${String(e)}`]);
+      setLogs((l) => [...l, `✗ ${describeError(e)}`]);
     } finally {
       setInstalling(null);
       onRefresh();

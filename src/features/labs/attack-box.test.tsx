@@ -158,6 +158,36 @@ describe("startContainerAttackBox", () => {
   });
 });
 
+describe("the attack VM's start", () => {
+  it("runs once when its lab page is left and opened again while it boots", async () => {
+    setAutoAttackBox(true);
+    let finish!: () => void;
+    const calls = installTauri({
+      attack_vm_status: () => box({ running: false }),
+      attack_vm_start: () => new Promise<null>((r) => (finish = () => r(null))),
+    });
+    const visit = () => renderHook(() => useAttackBox("ab-vm-twice", { running: true, local: true, kind: "vm" }));
+    const first = visit();
+    await flush();
+    expect(count(calls, "attack_vm_start")).toBe(1);
+    // Left while `vagrant up` runs; back again: the status still reads "not running".
+    first.unmount();
+    const second = visit();
+    await flush();
+    expect(count(calls, "attack_vm_start")).toBe(1);
+    // A click joins the start under way too.
+    await act(async () => {
+      void second.result.current.start();
+      await flush();
+    });
+    expect(count(calls, "attack_vm_start")).toBe(1);
+    await act(async () => {
+      finish();
+      await flush();
+    });
+  });
+});
+
 describe("useAttackBoxAutoStart", () => {
   const op = (labId: string, o: ActiveOperation["op"]): [string, ActiveOperation] => [labId, { labId, op: o, machine: null, step: null }];
 

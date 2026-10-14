@@ -48,15 +48,23 @@ describe("deploy-store: edges", () => {
     expect(getDeploySnapshot().runs.a.busy).toBe(false);
   });
 
-  it("raises the signed-out event only for the whole words, in any case", async () => {
+  it("never reads a signed-out from a log line: a lab's own output can say anything", async () => {
     const { appendDeployLog, SIGNED_OUT_EVENT } = await freshStore();
     const fired = vi.fn();
     window.addEventListener(SIGNED_OUT_EVENT, fired);
-    appendDeployLog("a", "unsigned outage in the designed output");
+    appendDeployLog("a", "user bob signed out of the domain controller");
+    appendDeployLog("a", "✗ You're SIGNED OUT: sign in again");
     expect(fired).not.toHaveBeenCalled();
-    appendDeployLog("a", "You're SIGNED OUT: sign in again");
-    expect(fired).toHaveBeenCalledTimes(1);
     window.removeEventListener(SIGNED_OUT_EVENT, fired);
+  });
+
+  it("keeps the code of the error a run failed with, beside its ✗ line", async () => {
+    const { beginDeploy, failDeploy, getDeploySnapshot } = await freshStore();
+    beginDeploy("a", "launch");
+    failDeploy("a", { code: "portInUse", args: { port: 8080 }, message: "Host port 8080 is already in use" });
+    const run = getDeploySnapshot().runs.a;
+    expect(run.failureCode).toBe("portInUse");
+    expect(run.logs.at(-1)).toMatch(/^✗ Host port 8080/);
   });
 
   it("a listener another one removes during a change is not called", async () => {

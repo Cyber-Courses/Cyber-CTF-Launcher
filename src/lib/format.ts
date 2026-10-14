@@ -31,14 +31,43 @@ export function formatAgo(at: number, now: number) {
   return d === 1 ? translate("common.time.yesterday") : translate("common.time.daysAgo", { count: d });
 }
 
-const GB = 1e9;
+/** A gigabyte as sizes are shown: decimal, like the disk and memory figures next to them. */
+export const GB = 1e9;
+
+/** 12, 3.4: gigabytes with one decimal under 10. */
+const gigabytes = (b: number) => decimal(b / GB, b >= 10 * GB ? 0 : 1);
 
 /** 12 GB, 3.4 GB, 512 MB, 8 kB. */
 export function formatBytes(b: number) {
   if (!Number.isFinite(b)) b = 0;
-  if (b >= GB) return translate("common.units.gigabytes", { n: decimal(b / GB, b >= 10 * GB ? 0 : 1) });
-  if (b >= 1e6) return translate("common.units.megabytes", { n: Math.round(b / 1e6) });
-  return translate("common.units.kilobytes", { n: Math.max(1, Math.round(b / 1e3)) });
+  if (b >= GB) return translate("common.units.gigabytes", { n: gigabytes(b) });
+  if (b >= 1e6) return translate("common.units.megabytes", { n: decimal(Math.round(b / 1e6), 0) });
+  return translate("common.units.kilobytes", { n: decimal(Math.max(1, Math.round(b / 1e3)), 0) });
+}
+
+/** A share of a whole, compact so it fits a card's corner in every language: 3.4/8.0 GB (one
+ *  unit when both are in GB), else 512 MB / 1 GB. */
+export function formatBytesOf(used: number, total: number) {
+  if (used >= GB && total >= GB) return translate("common.units.gigabytesOf", { used: gigabytes(used), total: gigabytes(total) });
+  return `${formatBytes(used)} / ${formatBytes(total)}`;
+}
+
+/** 3d 4h, 5h 12m, 42m. */
+export function formatUptime(secs: number) {
+  const days = Math.floor(secs / 86400);
+  const hours = Math.floor((secs % 86400) / 3600);
+  const minutes = Math.floor((secs % 3600) / 60);
+  if (days) return translate("common.units.uptimeDays", { days, hours });
+  if (hours) return translate("common.units.uptimeHours", { hours, minutes });
+  return translate("common.units.uptimeMinutes", { minutes });
+}
+
+/** US dollars in `locale`'s notation ("$0.02", "0,02 $US"). Under a cent, two significant
+ *  digits ("$0.0042") rather than "$0.00"; `whole` drops the cents (a monthly budget). */
+export function formatUsd(n: number, locale: string = getLocale(), { whole = false }: { whole?: boolean } = {}) {
+  const tiny = n !== 0 && Math.abs(n) < 0.01;
+  const digits: Intl.NumberFormatOptions = tiny ? { maximumSignificantDigits: 2 } : whole ? { maximumFractionDigits: 0 } : {};
+  return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", ...digits }).format(n);
 }
 
 /** A lab id made readable for when its title isn't known (the catalogue unreachable):

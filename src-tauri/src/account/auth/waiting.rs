@@ -9,10 +9,14 @@ use std::time::Duration;
 
 use tokio::sync::oneshot;
 
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
-pub(super) const LOGIN_TIMED_OUT: &str = "Sign-in wasn't finished within 5 minutes, so it was cancelled. Try again.";
+
+/// The sign-in not finished within [`LOGIN_TIMEOUT`].
+fn login_timed_out() -> Error {
+    Error::coded(Code::LoginTimeout { minutes: LOGIN_TIMEOUT.as_secs() / 60 })
+}
 
 /// The sign-in waiting now: its number, and the sender that cancels it.
 static WAITING: Mutex<Option<(u64, oneshot::Sender<()>)>> = Mutex::new(None);
@@ -91,7 +95,7 @@ impl Waiting {
             }
         };
         tokio::select! {
-            done = tokio::time::timeout(timeout, wait) => done.unwrap_or_else(|_| Err(Error::Invalid(LOGIN_TIMED_OUT.into()))),
+            done = tokio::time::timeout(timeout, wait) => done.unwrap_or_else(|_| Err(login_timed_out())),
             () = cancelled => Err(Error::Cancelled),
         }
     }
@@ -161,6 +165,6 @@ pub(super) mod tests {
     async fn a_wait_past_the_timeout_says_so() {
         let _serial = ONE_AT_A_TIME.lock().await;
         let err = begin().run_within(Duration::from_millis(10), std::future::pending::<Result<()>>()).await.unwrap_err();
-        assert_eq!(err.to_string(), LOGIN_TIMED_OUT);
+        assert_eq!(err.code(), Code::LoginTimeout { minutes: 5 });
     }
 }
