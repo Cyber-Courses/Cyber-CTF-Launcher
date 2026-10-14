@@ -195,20 +195,24 @@ pub async fn start(lab_dir: &Path, lab_vagrant_dir: &Path, provider: Provider, b
 }
 
 /// Destroys the attacker, finishing at the hypervisor by its exact VM name (as for the lab's
-/// own VMs). Nothing to do when it was never started.
-pub async fn stop(lab_dir: &Path, mut log: impl FnMut(String)) {
+/// own VMs). Nothing to do when it was never started. Vagrant's record of it (`.vagrant`) goes
+/// only once the destroy succeeded: on VMware, Hyper-V or libvirt nothing else can find the VM
+/// again, so a failed destroy keeps it, and says so, for the next stop to retry.
+pub async fn stop(lab_dir: &Path, mut log: impl FnMut(String)) -> Result<()> {
     let d = dir(lab_dir);
     if !d.join("Vagrantfile").exists() {
-        return;
+        return Ok(());
     }
     log("Removing the attack VM…".into());
-    let _ = Vagrant::of(&d, &[]).stream(&["destroy", "--force"], &mut log).await;
+    let destroyed = Vagrant::of(&d, &[]).stream(&["destroy", "--force"], &mut log).await;
     let names: HashSet<String> = vm::vm_names(&d).into_iter().collect();
     if !names.is_empty() {
         vm::recover_virtualbox(&names, &mut log).await;
         vm::recover_parallels(&names, &mut log).await;
     }
+    destroyed.map_err(|e| Error::Invalid(format!("The attack VM wasn't removed: {e}")))?;
     let _ = std::fs::remove_dir_all(d.join(".vagrant"));
+    Ok(())
 }
 
 /// Parks the attacker with the lab (nothing to do when it was never started).
@@ -562,7 +566,7 @@ mod tests {
         use super::super::model::Park;
         let lab = temp_lab();
         let mut lines = Vec::new();
-        super::stop(&lab, |l| lines.push(l)).await;
+        super::stop(&lab, |l| lines.push(l)).await.unwrap();
         super::park(&lab, Park::Pause, |l| lines.push(l)).await.unwrap();
         super::resume(&lab, |l| lines.push(l)).await.unwrap();
         assert!(lines.is_empty());

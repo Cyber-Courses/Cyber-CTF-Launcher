@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::AppHandle;
 use tauri::Manager;
 
-use super::inflight::{Action, DeployGuard, lock_lab};
+use super::inflight::{Action, DeployGuard};
 use super::lab::registry;
 use super::lifecycle::resume_locked;
 use super::paths::{deployment_states, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, state_dir, vagrant_dirs};
@@ -32,8 +32,10 @@ pub(super) use on_host::{check_aws_budget, public_ip};
 /// - With a server `host`: the lab runs there. ESXi runs the same Vagrantfiles; Proxmox and
 ///   the clouds run Isoloom's Terraform (Docker on one VM, or one VM per machine on Proxmox).
 /// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
+///
+/// The caller holds the lab lock (`lock_lab`): a launch holds it from the download on.
 #[allow(clippy::too_many_arguments)]
-pub async fn start(
+pub(crate) async fn start_locked(
     app: &AppHandle,
     dir: &Path,
     id: &str,
@@ -43,7 +45,6 @@ pub async fn start(
     env: &[(String, String)],
     mut log: impl FnMut(String),
 ) -> Result<()> {
-    let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Start);
     // A lab runs in one place: starting it here (or on another host) while its deployment is
     // still up elsewhere would drop the marker naming that host, and with it the way to stop
@@ -61,6 +62,23 @@ pub async fn start(
         None => start_here(app, dir, id, runtime, provider, env, &mut log).await,
         Some(host) => start_on_server(app, dir, id, runtime, host, env, &mut log).await,
     }
+}
+
+/// [`start_locked`] under the lab lock, for tests that start an installed lab directly.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn start(
+    app: &AppHandle,
+    dir: &Path,
+    id: &str,
+    runtime: Runtime,
+    provider: Option<Provider>,
+    host: Option<&str>,
+    env: &[(String, String)],
+    log: impl FnMut(String),
+) -> Result<()> {
+    let _lock = super::inflight::lock_lab(app, id).await?;
+    start_locked(app, dir, id, runtime, provider, host, env, log).await
 }
 
 /// The name of the server host lab `id` (folder `dir`) is deployed on, if something of it is

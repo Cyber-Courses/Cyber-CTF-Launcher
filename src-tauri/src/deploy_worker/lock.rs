@@ -35,6 +35,12 @@ impl Drop for LabFileLock {
     }
 }
 
+/// The failure of a lab lock that couldn't be taken (its file can't be opened or locked): the
+/// operation stops there rather than run unlocked.
+pub fn unavailable(e: std::io::Error) -> crate::error::Error {
+    crate::error::Error::Invalid(format!("Couldn't lock the lab: {e}"))
+}
+
 /// The lock file of `lab` in the workers' folder `dir`.
 pub fn path_in(dir: &Path, lab: &str) -> PathBuf {
     dir.join(format!("{lab}.lock"))

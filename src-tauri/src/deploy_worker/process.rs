@@ -425,7 +425,7 @@ fn launches_terraform(app: &AppHandle, f: &Files) -> bool {
 /// worker ends with it, and the destroy that follows sees everything.
 pub async fn kill_and_wait(app: &AppHandle, key: &str) {
     let Ok(f) = files::of(app, key) else { return };
-    let Some(worker) = f.worker().filter(alive) else { return };
+    let Some(worker) = claimed_worker(&f).await.filter(alive) else { return };
     if interrupt_terraform(worker.pid) && gone_within(&worker, TERRAFORM_GRACE_CHECKS).await {
         remove_pidfile_of(&f.pid, worker.pid);
         return;
@@ -449,6 +449,22 @@ pub async fn kill_and_wait(app: &AppHandle, key: &str) {
     #[cfg(unix)]
     signal_group(worker.pid, libc::SIGKILL);
     gone_within(&worker, 10).await;
+}
+
+/// Looks (quarter-second apart) a stop gives a just-claimed pidfile to name its worker.
+const CLAIM_CHECKS: u32 = 20;
+
+/// The worker the pidfile names, waiting while it is claimed but still empty (`claim` creates
+/// it before the worker is spawned): a stop in that window found nothing to stop, and the worker
+/// then took the lab and ran its job after the stop.
+async fn claimed_worker(f: &Files) -> Option<Worker> {
+    for _ in 0..CLAIM_CHECKS {
+        if !std::fs::read(&f.pid).is_ok_and(|b| b.is_empty()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    f.worker()
 }
 
 /// Sends SIGINT to the Terraform runs in process group `group` (the host binary, or the `docker
@@ -898,6 +914,38 @@ mod tests {
         // Nothing left to stop.
         kill_and_wait(app, "lab-1").await;
         kill(app, "lab-2");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_stop_waits_for_a_claimed_pidfile_to_name_its_worker() {
+        // Regression: `kill_and_wait` returned at once while the pidfile was claimed but still
+        // empty, so the worker spawned right after went on to take the lab and run its job.
+        let t = crate::test_app::TestApp::new();
+        let app = t.handle();
+        let f = files::of(app, "lab-1").unwrap();
+        std::fs::write(&f.pid, "").unwrap();
+        let mut child = fake_worker_group();
+        let line = pidfile_line(child.id());
+        let pid = f.pid.clone();
+        let spawner = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(400));
+            std::fs::write(&pid, line).unwrap();
+        });
+        let waiter = std::thread::spawn(move || child.wait());
+        kill_and_wait(app, "lab-1").await;
+        spawner.join().unwrap();
+        assert!(!waiter.join().unwrap().unwrap().success(), "the worker was found and stopped");
+        assert!(!f.pid.exists());
+    }
+
+    #[tokio::test]
+    async fn a_pidfile_left_empty_is_waited_for_only_briefly() {
+        let t = crate::test_app::TestApp::new();
+        let f = files::of(t.handle(), "lab-2").unwrap();
+        std::fs::write(&f.pid, "").unwrap();
+        let waited = tokio::time::timeout(Duration::from_secs(10), kill_and_wait(t.handle(), "lab-2")).await;
+        assert!(waited.is_ok());
     }
 
     #[tokio::test]

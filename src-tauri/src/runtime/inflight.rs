@@ -2,10 +2,12 @@
 //! registry of starts, stops and parks in flight that the quit guard and the UI read.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::AppHandle;
+use crate::deploy_worker::lock;
+use crate::error::Result;
 use tokio::sync::OwnedMutexGuard;
 
 /// What is in flight for a lab: a start (provisioning) or a stop (teardown). Told apart so the
@@ -44,6 +46,11 @@ pub fn active_actions() -> Vec<(String, Action)> {
     in_flight().lock().map(|m| m.iter().map(|(id, (a, _))| (id.clone(), *a)).collect()).unwrap_or_default()
 }
 
+/// Whether lab `id` is being stopped in this process right now.
+pub fn stopping(id: &str) -> bool {
+    labs_with(Action::Stop).iter().any(|l| l == id)
+}
+
 fn labs_with(action: Action) -> Vec<String> {
     in_flight().lock().map(|m| m.iter().filter(|(_, (a, _))| *a == action).map(|(id, _)| id.clone()).collect()).unwrap_or_default()
 }
@@ -77,8 +84,8 @@ impl Drop for DeployGuard {
 }
 
 /// A lab held for one operation: this process's own lock on it, and the lock across processes
-/// (see `deploy_worker::lock`), when its file could be opened.
-pub(super) struct LabLock {
+/// (see `deploy_worker::lock`).
+pub(crate) struct LabLock {
     _file: Option<crate::deploy_worker::lock::LabFileLock>,
     _here: OwnedMutexGuard<()>,
 }
@@ -90,58 +97,57 @@ fn process_lock(id: &str) -> Arc<tokio::sync::Mutex<()>> {
     map.entry(id.to_string()).or_default().clone()
 }
 
-/// The lab's lock file, if its folder can be had.
-fn lock_file(app: &AppHandle, id: &str) -> Option<PathBuf> {
-    crate::deploy_worker::lock_path(app, id).map_err(|e| log::warn!("lab lock for {id}: {e}")).ok()
+/// One operation per lab at a time: install, start, stop and the expiry reaper all take this
+/// per-lab lock, so a user Start/Stop and the reaper can't run two Terraform (or Vagrant)
+/// operations over the same state at once, which could corrupt `terraform.tfstate`. It holds
+/// across processes too: a deploy worker holds it for its whole job, and an operation of the app
+/// waits for the worker (and the other way round). Not reentrant: a caller already holding it
+/// uses the `_locked` variant of an operation. A lock that can't be taken fails the operation:
+/// carrying on without it is what the lock is there to prevent (Terraform's own state lock is
+/// cleared on the assumption that this one is held).
+pub(crate) async fn lock_lab(app: &AppHandle, id: &str) -> Result<LabLock> {
+    lock_lab_at(Some(&crate::deploy_worker::lock_path(app, id)?), id).await
 }
 
-/// One operation per lab at a time: start, stop and the expiry reaper all take this per-lab
-/// lock, so a user Start/Stop and the reaper can't run two Terraform (or Vagrant) operations
-/// over the same state at once, which could corrupt `terraform.tfstate`. It holds across
-/// processes too: a deploy worker holds it for its whole job, and an operation of the app waits
-/// for the worker (and the other way round). Not reentrant: a caller already holding it uses the
-/// `_locked` variant of an operation.
-pub(super) async fn lock_lab(app: &AppHandle, id: &str) -> LabLock {
-    lock_lab_at(lock_file(app, id).as_deref(), id).await
-}
-
-/// [`lock_lab`] with its lock file at `file`.
-async fn lock_lab_at(file: Option<&Path>, id: &str) -> LabLock {
+/// [`lock_lab`] with its lock file at `file` (`None`: this process's lock only).
+async fn lock_lab_at(file: Option<&Path>, id: &str) -> Result<LabLock> {
     let here = process_lock(id).lock_owned().await;
     let file = match file {
-        Some(path) => crate::deploy_worker::lock::acquire(path).await.map_err(|e| log::warn!("lab lock for {id}: {e}")).ok(),
+        Some(path) => Some(lock::acquire(path).await.map_err(lock::unavailable)?),
         None => None,
     };
-    LabLock { _file: file, _here: here }
+    Ok(LabLock { _file: file, _here: here })
 }
 
 /// [`lock_lab`] without waiting: `None` while another operation (of this process or another)
 /// holds the lab.
-pub(super) fn try_lock_lab(app: &AppHandle, id: &str) -> Option<LabLock> {
-    try_lock_lab_at(lock_file(app, id).as_deref(), id)
+pub(super) fn try_lock_lab(app: &AppHandle, id: &str) -> Result<Option<LabLock>> {
+    try_lock_lab_at(Some(&crate::deploy_worker::lock_path(app, id)?), id)
 }
 
-/// [`try_lock_lab`] with its lock file at `file`.
-fn try_lock_lab_at(file: Option<&Path>, id: &str) -> Option<LabLock> {
-    let here = process_lock(id).try_lock_owned().ok()?;
-    let file = match file.map(crate::deploy_worker::lock::try_acquire) {
-        Some(Ok(Some(lock))) => Some(lock),
-        Some(Ok(None)) => return None,
-        Some(Err(e)) => {
-            log::warn!("lab lock for {id}: {e}");
-            None
-        }
+/// [`try_lock_lab`] with its lock file at `file` (`None`: this process's lock only).
+fn try_lock_lab_at(file: Option<&Path>, id: &str) -> Result<Option<LabLock>> {
+    let Ok(here) = process_lock(id).try_lock_owned() else { return Ok(None) };
+    let file = match file {
+        Some(path) => match lock::try_acquire(path).map_err(lock::unavailable)? {
+            Some(held) => Some(held),
+            None => return Ok(None),
+        },
         None => None,
     };
-    Some(LabLock { _file: file, _here: here })
+    Ok(Some(LabLock { _file: file, _here: here }))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, DeployGuard, active_actions, active_deploys, deploying_labs, try_lock_lab_at};
+    use super::{Action, DeployGuard, active_actions, active_deploys, deploying_labs, stopping, try_lock_lab_at};
 
     async fn lock_lab(id: &str) -> super::LabLock {
-        super::lock_lab_at(None, id).await
+        super::lock_lab_at(None, id).await.unwrap()
+    }
+
+    fn try_lock(file: Option<&std::path::Path>, id: &str) -> Option<super::LabLock> {
+        try_lock_lab_at(file, id).unwrap()
     }
 
     #[test]
@@ -224,13 +230,38 @@ mod tests {
         // The reaper's non-waiting lock sees an in-process operation (no lock file needed).
         let id = "inflight-test-try-here";
         let held = lock_lab(id).await;
-        assert!(try_lock_lab_at(None, id).is_none());
+        assert!(try_lock(None, id).is_none());
         drop(held);
-        let mine = try_lock_lab_at(None, id);
+        let mine = try_lock(None, id);
         assert!(mine.is_some());
-        assert!(try_lock_lab_at(None, id).is_none(), "not reentrant");
+        assert!(try_lock(None, id).is_none(), "not reentrant");
         drop(mine);
-        assert!(try_lock_lab_at(None, id).is_some());
+        assert!(try_lock(None, id).is_some());
+    }
+
+    #[tokio::test]
+    async fn a_lock_that_cant_be_taken_fails_the_operation() {
+        // Regression: a lock file that couldn't be opened was logged and the operation carried
+        // on unlocked, beside Terraform runs that clear their own state lock assuming it held.
+        let file = std::env::temp_dir().join("cyberctf-never-created").join("inflight-test-unlockable.lock");
+        let waited = super::lock_lab_at(Some(&file), "inflight-test-unlockable").await;
+        assert!(waited.err().unwrap().to_string().starts_with("Couldn't lock the lab"));
+        let tried = try_lock_lab_at(Some(&file), "inflight-test-unlockable");
+        assert!(tried.err().unwrap().to_string().starts_with("Couldn't lock the lab"));
+        // Its in-process lock went with the failure: the next operation isn't held up.
+        assert!(try_lock(None, "inflight-test-unlockable").is_some());
+    }
+
+    #[test]
+    fn a_lab_is_stopping_while_a_stop_guard_lives() {
+        let id = "inflight-test-stopping";
+        assert!(!stopping(id));
+        let start = DeployGuard::new(id, Action::Start);
+        assert!(!stopping(id));
+        let stop = DeployGuard::new(id, Action::Stop);
+        assert!(stopping(id) && !stopping("inflight-test-stopping-other"));
+        drop((start, stop));
+        assert!(!stopping(id));
     }
 
     #[tokio::test]
@@ -254,14 +285,14 @@ mod tests {
         // Another process's hold on the lab (a deploy worker), as a handle of its own.
         let worker = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&file).unwrap();
         worker.lock().unwrap();
-        assert!(try_lock_lab_at(Some(&file), "inflight-test-other").is_none(), "the reaper steps aside");
+        assert!(try_lock(Some(&file), "inflight-test-other").is_none(), "the reaper steps aside");
         let waiting = tokio::time::timeout(std::time::Duration::from_millis(600), super::lock_lab_at(Some(&file), "inflight-test-other")).await;
         assert!(waiting.is_err(), "a stop waits for the worker");
         drop(worker);
         let mut held = None;
         assert!(
             crate::deploy_worker::lock::tests::eventually(|| {
-                held = try_lock_lab_at(Some(&file), "inflight-test-other");
+                held = try_lock(Some(&file), "inflight-test-other");
                 held.is_some()
             }),
             "free once the worker is gone"

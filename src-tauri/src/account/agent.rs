@@ -225,7 +225,7 @@ fn attack_image(host: Option<&str>, runtime: Runtime) -> Option<&'static str> {
 /// Stops a claimed lab that must not keep running under a failed session.
 async fn tear_down(app: &AppHandle, lab_id: Option<&str>, runtime: Runtime) {
     if let Some(id) = lab_id {
-        let _ = crate::runtime::stop_lab(app, id, runtime).await;
+        let _ = crate::runtime::stop_lab(app, id, runtime, |_line: String| {}).await;
     }
 }
 

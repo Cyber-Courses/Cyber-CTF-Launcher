@@ -265,10 +265,15 @@ pub(crate) async fn run(
     log: impl Fn(String),
 ) -> Result<Option<String>> {
     let launch = parse_launch(launch_json)?;
+    runtime::validate_id(&launch.lab_id)?;
+    // The lab is this launch's from the download on: two installs of one lab share its staging
+    // folder, and a stop must not run while the new version is swapped in. Shared with the
+    // deploy worker's own hold on it (same process), so a worker runs on.
+    let _lock = runtime::lock_lab(app, &launch.lab_id).await?;
     let dir = install(app, &launch.lab_id, &launch.repository, &launch.commit, &log).await?;
     // Fixed names for every lab; the evidence itself is never in the environment.
     let env = launch_env(launch.env, attackbox_image, default_ports);
-    runtime::start(app, &dir, &launch.lab_id, launch.runtime, provider, host, &env, log).await?;
+    runtime::start_locked(app, &dir, &launch.lab_id, launch.runtime, provider, host, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
 }
@@ -512,6 +517,25 @@ mod tests {
         run(t.handle(), launch, None, None, None, true, |_| {}).await.unwrap();
         assert!(tools.called("up -d") && dir.join(runtime::lab::INSTANCE_MARKER).exists());
         assert!(run(t.handle(), serde_json::json!({ "labId": "x" }), None, None, None, false, |_| {}).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_launch_waits_for_the_lab_lock_before_installing_anything() {
+        // Regression: the install (download, staging, swap) ran before the lock was taken, so
+        // two installs of one lab shared its staging folder and a stop could run mid-swap.
+        use crate::exec::fake::Tools;
+        let t = crate::test_app::TestApp::new();
+        let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (".cyberctf-commit", SHA)]);
+        let tools = Tools::rules(&[]);
+        let held = runtime::lock_lab(t.handle(), "invoice").await.unwrap();
+        let launch = serde_json::json!({ "labId": "invoice", "runtime": "DOCKER", "repository": "CyberCTF/invoice", "commit": SHA, "env": [] });
+        let waiting = tokio::time::timeout(std::time::Duration::from_millis(300), run(t.handle(), launch.clone(), None, None, None, false, |_| {})).await;
+        assert!(waiting.is_err(), "the launch waits while another operation holds the lab");
+        assert!(tools.calls().is_empty(), "nothing of the install ran meanwhile: {:?}", tools.calls());
+        assert!(!dir.join(runtime::lab::INSTANCE_MARKER).exists());
+        drop(held);
+        run(t.handle(), launch, None, None, None, false, |_| {}).await.unwrap();
+        assert!(tools.called("up -d"));
     }
 
     #[tokio::test]

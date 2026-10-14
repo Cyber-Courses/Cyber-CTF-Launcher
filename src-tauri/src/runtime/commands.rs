@@ -5,7 +5,7 @@
 use crate::AppHandle;
 use tauri::ipc::Channel;
 
-use super::lifecycle::stop;
+use super::lifecycle::stop_lab;
 use super::paths::{lab_dir, validate_id};
 use super::shell::lab_shell_command;
 use super::{LabStatus, Park, Runtime, attack_vm, cloud_services, discover, docker, exegol, lab, server, status};
@@ -34,16 +34,7 @@ fn valid_machine_name(m: &str) -> bool {
 
 #[tauri::command]
 pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
-    let dir = lab_dir(&app, &id)?;
-    // Marked as stopping from here: ending a deploy can take minutes (Terraform is interrupted
-    // and waited for), during which the page and the quit guard must see a stop, not a launch.
-    let _stopping = super::inflight::DeployGuard::new(&id, super::inflight::Action::Stop);
-    // A deploy still running in its worker process is stopped first, so the teardown never races
-    // a `vagrant up` or `compose up` that would recreate what it removes; same for an attack VM
-    // start beside it.
-    deploy_worker::kill_and_wait(&app, &id).await;
-    deploy_worker::kill_and_wait(&app, &deploy_worker::attack_key(&id)).await;
-    stop(&app, &dir, &id, runtime, channel_log(logs)).await
+    stop_lab(&app, &id, runtime, channel_log(logs)).await
 }
 
 /// Pauses (state saved) or shuts down (powered off) a lab on this machine, keeping its machines
@@ -168,8 +159,7 @@ pub async fn attack_vm_stop(app: AppHandle, id: String, logs: Channel<String>) -
     let dir = lab_dir(&app, &id)?;
     // A start still downloading or booting it is stopped first, so the removal is final.
     deploy_worker::kill_and_wait(&app, &deploy_worker::attack_key(&id)).await;
-    attack_vm::stop(&dir, channel_log(logs)).await;
-    Ok(())
+    attack_vm::stop(&dir, channel_log(logs)).await
 }
 
 /// Opens the player's terminal on an SSH session into the attack VM.
@@ -336,7 +326,7 @@ mod tests {
         let id = "commands-test-stop-waits";
         t.lab(id, &[]);
         let tools = Tools::rules(&[]);
-        let held = crate::runtime::inflight::lock_lab(t.handle(), id).await;
+        let held = crate::runtime::inflight::lock_lab(t.handle(), id).await.unwrap();
         let app = t.handle().clone();
         let logs = sink();
         let ch = channel(logs.clone());

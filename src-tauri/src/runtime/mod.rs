@@ -51,8 +51,12 @@ pub use exegol::default_image as default_attack_image;
 /// For tests elsewhere that need an operation in flight.
 #[cfg(test)]
 pub(crate) use inflight::DeployGuard;
-pub use inflight::{Action, active_actions, active_deploys, deploying_labs};
-pub use launch::{deployed_on_server, start};
+pub(crate) use inflight::lock_lab;
+pub use inflight::{Action, active_actions, active_deploys, deploying_labs, stopping};
+pub use launch::deployed_on_server;
+#[cfg(test)]
+pub(crate) use launch::start;
+pub(crate) use launch::start_locked;
 pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, resume_lab, stop_lab};
 pub use model::{AttackerAt, Interface, LabStatus, Machine, Network, Output, Park, Place, Port, Service};
 pub use paths::{LOCAL_VM_MARKER, validate_id};

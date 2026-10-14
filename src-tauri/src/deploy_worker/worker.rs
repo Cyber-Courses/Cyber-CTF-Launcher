@@ -107,19 +107,22 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
     let launch = job.op == Op::Launch;
     // The lab is this worker's for the whole job (download and install included): the app's
     // own operations on it (a stop, the expiry reaper) wait or step aside meanwhile. The attack
-    // VM runs beside the lab's operations, without it.
-    let _lab = match job.op {
-        Op::AttackVm { .. } => None,
-        _ => match super::lock_path(app, &job.lab_id) {
-            Ok(path) => super::lock::acquire(&path).await.map_err(|e| log::warn!("deploy worker: no lab lock ({e})")).ok(),
-            Err(e) => {
-                log::warn!("deploy worker: no lab lock ({e})");
-                None
-            }
-        },
+    // VM runs beside the lab's operations, without it. A lock that can't be taken fails the
+    // job: running unlocked is what it is there to prevent.
+    let held = match job.op {
+        Op::AttackVm { .. } => Ok(None),
+        _ => hold_lab(app, &job.lab_id).await.map(Some),
     };
-    let result = execute(app, job, &log).await;
+    let result = match held {
+        Ok(_lab) => execute(app, job, &log).await,
+        Err(e) => Err(e),
+    };
     conclude(&f, &result, launch, log)
+}
+
+/// The cross-process lock of lab `id`, waited for.
+async fn hold_lab(app: &AppHandle, id: &str) -> crate::error::Result<super::lock::LabFileLock> {
+    super::lock::acquire(&super::lock_path(app, id)?).await.map_err(super::lock::unavailable)
 }
 
 /// The end of a run: the failure in the log, the verdict in the status file (and, for a
@@ -214,6 +217,22 @@ mod tests {
         // Finished (refused: the lab's VMs aren't up) instead of waiting for the lock holder.
         assert_eq!(run.expect("did not wait for the lab lock"), 1);
         drop(other);
+    }
+
+    #[tokio::test]
+    async fn a_job_whose_lab_lock_cant_be_taken_fails_instead_of_running_unlocked() {
+        // Regression: the worker logged "no lab lock" and ran the job anyway.
+        let t = crate::test_app::TestApp::new();
+        let tools = crate::exec::fake::Tools::rules(&[]);
+        t.lab("web", &[]);
+        // A folder where the lock file goes: it can't be opened.
+        std::fs::create_dir_all(crate::deploy_worker::lock_path(t.handle(), "web").unwrap()).unwrap();
+        let job = Job::on_lab("web", Op::Resume { runtime: crate::runtime::Runtime::Docker });
+        let f = crate::deploy_worker::files::of(t.handle(), &job.key()).unwrap();
+        assert_eq!(super::run_logged(t.handle(), job).await, 1);
+        let status = std::fs::read_to_string(&f.status).unwrap();
+        assert!(status.starts_with("error: Couldn't lock the lab"), "{status}");
+        assert!(tools.calls().is_empty(), "nothing ran: {:?}", tools.calls());
     }
 
     #[tokio::test]

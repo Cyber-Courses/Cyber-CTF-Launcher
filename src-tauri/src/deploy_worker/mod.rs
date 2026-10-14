@@ -157,15 +157,32 @@ pub async fn run_job(app: &AppHandle, job: Job, logs: tauri::ipc::Channel<String
     }
 }
 
+/// Held while a worker is checked for and started (see [`start_worker`]).
+static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Ends the workers of lab `id` (its own operation's and its attack VM's), waiting until they
+/// are gone. Called by a stop already marked as stopping (see `runtime::stopping`): a start that
+/// passed its checks before the mark has claimed its pidfile once `STARTING` is free, so it is
+/// found and ended here, and every later attack VM start is refused.
+pub async fn end_workers(app: &AppHandle, id: &str) {
+    drop(STARTING.lock().unwrap_or_else(|e| e.into_inner()));
+    kill_and_wait(app, id).await;
+    kill_and_wait(app, &attack_key(id)).await;
+}
+
 /// Checks that nothing else runs on the job's key and starts its worker, as one step: two
 /// starts racing each other (a double click) must not both pass the check and spawn two
 /// workers. `Err` when the lab is busy; `Ok(Err)` when the worker couldn't be started (the
 /// caller falls back to running the job in this process).
 fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> {
-    static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _one_at_a_time = STARTING.lock().unwrap_or_else(|e| e.into_inner());
     if running(app).contains(&job.key()) {
         return Err(Error::Invalid(format!("{} of this lab is already in progress; wait for it to finish.", capitalize(job.what()))));
+    }
+    // The attack VM takes no lab lock (it boots beside a lab that is still starting), so a stop
+    // must keep it from starting while the lab goes: it would come up beside nothing, orphaned.
+    if matches!(job.op, Op::AttackVm { .. }) && crate::runtime::stopping(&job.lab_id) {
+        return Err(Error::Refused("This lab is stopping. Start the attack VM once the lab is up again.".into()));
     }
     // An operation of the app itself (a stop, the expiry reaper) holds the lab: the worker
     // would only wait for it, then act on what it left (the attack VM runs beside the lab's
@@ -268,6 +285,21 @@ mod tests {
         };
         let bytes = serde_json::to_vec(&job).unwrap();
         assert_eq!(serde_json::from_slice::<Job>(&bytes).unwrap(), job);
+    }
+
+    #[tokio::test]
+    async fn an_attack_vm_start_is_refused_while_its_lab_stops() {
+        // Regression: an attack VM start during a Stop passed its "lab is running" check early in
+        // the destroy, and its VM came up after the lab was gone.
+        let t = crate::test_app::TestApp::new();
+        let _tools = crate::exec::fake::Tools::rules(&[]);
+        t.lab("ad", &[]);
+        let job = Job::on_lab("ad", Op::AttackVm { box_name: "kalilinux/rolling".into() });
+        let stopping = crate::runtime::DeployGuard::new("ad", crate::runtime::Action::Stop);
+        let err = super::run_job(t.handle(), job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err().to_string();
+        assert!(err.starts_with("This lab is stopping"), "{err}");
+        assert!(!super::files::of(t.handle(), &job.key()).unwrap().pid.exists(), "no worker was claimed");
+        drop(stopping);
     }
 
     #[test]
