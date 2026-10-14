@@ -443,7 +443,8 @@ describe("UpdateBanner retry", () => {
         if (++tries === 1) throw new Error("signature mismatch");
       },
     };
-    const calls = installTauri({ restart_app: () => null });
+    // No lab deploying: an update waits for deploys to finish.
+    const calls = installTauri({ restart_app: () => null, deploying_labs: () => [] });
     const user = userEvent.setup();
     render(<UpdateBanner />);
     await flush();
