@@ -9,7 +9,9 @@ use tauri::Manager;
 use super::inflight::{Action, DeployGuard, lock_lab};
 use super::lab::registry;
 use super::lifecycle::resume_locked;
-use super::paths::{deployment_states, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, state_dir, vagrant_dirs};
+use super::paths::{
+    deployment_states, forget_lab_host_keys, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, state_dir, vagrant_dirs,
+};
 use super::providers::Provider;
 use super::{Runtime, attack_box, attack_vm, cloud_services, docker, exegol, lab, server, ssh, terraform, vm};
 use crate::error::{Error, Result};
@@ -53,6 +55,11 @@ pub async fn start(
     {
         let name = server::host_name(app, &other).unwrap_or(other);
         return Err(Error::Refused(format!("This lab is still running on {name}. Stop it there before starting it somewhere else.")));
+    }
+    // New hosts may come up at the addresses of others: no key pinned before counts. A parked
+    // lab resumes its own machines, whose keys stay pinned.
+    if parked(dir).is_none() {
+        forget_lab_host_keys(dir);
     }
     if runtime == Runtime::Cloud {
         return cloud_services::start(app, dir, id, host, env, &mut log).await;

@@ -29,7 +29,7 @@ pub(super) fn sudo_bash(script: &str) -> String {
 
 /// Runs `script` as root on a Terraform lab host, trusting the host keys kept with its state.
 pub(super) async fn run_on_terraform_host(target: &ssh::Target, state: &Path, script: &str) -> Result<String> {
-    target.exec(&state.join("known_hosts"), &sudo_bash(script)).await
+    target.exec(&terraform::known_hosts(state), &sudo_bash(script)).await
 }
 
 #[cfg(test)]

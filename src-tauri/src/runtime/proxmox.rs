@@ -21,7 +21,7 @@ pub use check::{bridge_is_internal, test};
 use check::{bridge_problem, node_report, outcome, sign_in_report, storage_content, storage_problems};
 use node_ssh::ssh_key_problem;
 #[cfg(test)]
-use node_ssh::{authorize_args, write_askpass};
+use node_ssh::{askpass_script, authorize_args, write_askpass};
 pub use node_ssh::{authorize_launcher_key, node_login, ssh_user};
 
 const TIMEOUT: Duration = Duration::from_secs(8);
@@ -90,6 +90,15 @@ pub enum SignInError {
     Rejected,
     /// Couldn't talk to the API (TLS, network, unexpected answer).
     Failed(String),
+}
+
+impl std::fmt::Display for SignInError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SignInError::Rejected => f.write_str("Proxmox rejected the credentials"),
+            SignInError::Failed(e) => f.write_str(e),
+        }
+    }
 }
 
 pub async fn sign_in(h: &HostProfile, secret: &str) -> Result<Session, SignInError> {

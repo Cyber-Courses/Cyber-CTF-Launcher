@@ -170,6 +170,8 @@ pub(super) async fn stop(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime
 /// reentrant, so it must not call `stop`, which would deadlock).
 async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
     let _deploy = DeployGuard::new(id, Action::Stop);
+    // Its hosts' keys go with its hosts.
+    super::paths::forget_lab_host_keys(dir);
     let Some(c) = server::lab_connection(app, dir)? else { return stop_here(dir, id, runtime, log).await };
     let result = match server::terraform_target(c.provider) {
         // Cloud services: destroyed on the account they run on.

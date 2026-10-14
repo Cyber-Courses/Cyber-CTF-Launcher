@@ -181,7 +181,7 @@ async fn wait_tcp(host: &str, port: u16, within: Duration) -> Result<()> {
 async fn wait_tcp_from(login: &str, identity: &Path, host: &str, port: u16, within: Duration) -> Result<()> {
     let (user, node) = login.split_once('@').ok_or_else(|| Error::Invalid("unexpected jump host".into()))?;
     let target = ssh::Target::direct(node, user, identity.to_path_buf());
-    let known = identity.with_file_name("known_hosts");
+    let known = ssh::node_known_hosts(identity);
     let probe = format!("timeout 4 bash -c {}", ssh::sh_quote(&format!("</dev/tcp/{host}/{port}")));
     if retry_until(within, || async { target.exec_timed(&known, &probe, Duration::from_secs(20)).await.is_ok() }).await {
         Ok(())
