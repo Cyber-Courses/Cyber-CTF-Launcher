@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink } from "lucide-react";
 import { LabRow, emulatorReady } from "@/features/labs/lab-row";
 import { catalogueRowProps, UnlistedRunningRow, type RowContext } from "@/features/labs/labs-list";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
@@ -11,7 +10,7 @@ import { useMachineMetrics } from "@/features/machine/use-machine-metrics";
 import { DeployPanel } from "@/features/home/deploy-panel";
 import { JumpBackPanel } from "@/features/home/jump-back-panel";
 import { MachineSummaryPanel } from "@/features/home/machine-summary-panel";
-import { HomeHeader, LabsPreviewPanel, LowRamCallout, RunningPanel, UsageStats } from "@/features/home/home-sections";
+import { HomeHeader, LabsPreviewPanel, LowRamCallout, RunningPanel, SignInHint, UsageStats } from "@/features/home/home-sections";
 import { dockerReadiness, labContainerCount, recentLabs, runningLabs } from "@/features/home/home-model";
 import { runningUnlisted } from "@/features/labs/lab-row-state";
 import { CheckFailed } from "@/features/machine/check-failed";
@@ -20,7 +19,6 @@ import { useActiveOperations, useDeployingLabs } from "@/lib/deploy-store";
 import { assessRam } from "@/features/home/capacity";
 import type { AuthStatus, SystemReport } from "@/lib/tauri";
 import { useStableCallback } from "@/lib/use-stable-callback";
-import { useT } from "@/lib/i18n";
 
 type Tab = "labs" | "machine" | "setup" | "server" | "cloud" | "settings";
 
@@ -41,7 +39,6 @@ export function HomeScreen({
   /** Signs in from a lab row (signed out). */
   onLogin?: () => Promise<void>;
 }) {
-  const t = useT();
   const loggedIn = auth?.loggedIn ?? false;
   const { labs, error, retry, statuses, completed, refreshStatus } = useLabs(loggedIn);
   const { runs, launch, stop, resume } = useLabActions(refreshStatus);
@@ -141,11 +138,7 @@ export function HomeScreen({
         {preview.map(labRow)}
       </LabsPreviewPanel>
 
-      {!auth?.loggedIn && (
-        <p className="flex items-center gap-1.5 text-[0.75rem] text-muted-foreground">
-          <ExternalLink className="size-3.5" /> {t("home.signInHint")}
-        </p>
-      )}
+      {!auth?.loggedIn && <SignInHint />}
     </div>
   );
 }

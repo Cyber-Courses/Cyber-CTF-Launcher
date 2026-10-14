@@ -244,71 +244,89 @@ async fn virtualbox_dmg(brew: &str, on_line: &mut impl FnMut(String)) -> Result<
     Ok(dmg)
 }
 
+/// How to remove `dep` on macOS: Homebrew's own packages, or the vendor's uninstaller.
+#[cfg(target_os = "macos")]
+fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
+    let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
+    Ok(match dep {
+        Dependency::Terraform => vec![step(brew, &["uninstall", "hashicorp/tap/terraform"])],
+        Dependency::Qemu => vec![step(brew, &["uninstall", "qemu"])],
+        Dependency::Awscli => vec![step(brew, &["uninstall", "awscli"])],
+        Dependency::Gcloud => vec![step(brew, &["uninstall", "--cask", "google-cloud-sdk"])],
+        Dependency::Azurecli => vec![step(brew, &["uninstall", "--cask", "azure-cli-preview"])],
+        // Installed from the vendors' own packages: removed the way their uninstallers do.
+        Dependency::Vagrant => vec![mac_admin(
+            "rm -rf /opt/vagrant /usr/local/bin/vagrant && pkgutil --forget com.vagrant.vagrant || true",
+            "Removing Vagrant (macOS asks for your password)…",
+        )],
+        Dependency::Virtualbox => {
+            let dmg = virtualbox_dmg.ok_or_else(|| Error::Invalid("VirtualBox's installer image is needed to run its uninstaller.".into()))?;
+            vec![mac_admin(&virtualbox_uninstall(dmg), "Running VirtualBox's own uninstaller (macOS asks for your password)…")]
+        }
+        Dependency::Docker => vec![Step {
+            program: "/Applications/Docker.app/Contents/MacOS/uninstall".into(),
+            args: vec![],
+            note: Some("Running Docker Desktop's own uninstaller…".into()),
+        }],
+        Dependency::Utm => vec![step("osascript", &["-e", "tell application \"Finder\" to delete POSIX file \"/Applications/UTM.app\""])],
+        Dependency::Libvirt | Dependency::Wsl => return Err(Error::Invalid("Not installed on macOS.".into())),
+    })
+}
+
+/// How to remove `dep` on Windows: its winget package.
+#[cfg(target_os = "windows")]
+fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
+    let id = match dep {
+        Dependency::Docker => "Docker.DockerDesktop",
+        Dependency::Vagrant => "Hashicorp.Vagrant",
+        Dependency::Terraform => "Hashicorp.Terraform",
+        Dependency::Virtualbox => "Oracle.VirtualBox",
+        Dependency::Qemu => "SoftwareFreedomConservancy.QEMU",
+        Dependency::Awscli => "Amazon.AWSCLI",
+        Dependency::Azurecli => "Microsoft.AzureCLI",
+        Dependency::Gcloud => "Google.CloudSDK",
+        Dependency::Wsl => return Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
+        Dependency::Utm | Dependency::Libvirt => return Err(Error::Invalid("Not installed on Windows.".into())),
+    };
+    Ok(vec![step("winget", &["uninstall", "-e", "--id", id])])
+}
+
+/// How to remove `dep` on Linux: its apt packages (as root through pkexec), or its folder.
+#[cfg(target_os = "linux")]
+fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
+    let root = |script: &str| step("pkexec", &["sh", "-c", script]);
+    Ok(match dep {
+        Dependency::Docker => vec![root("apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")],
+        Dependency::Vagrant => vec![root("apt-get remove -y vagrant")],
+        Dependency::Terraform => vec![root("apt-get remove -y terraform")],
+        Dependency::Virtualbox => vec![root("apt-get remove -y 'virtualbox*'")],
+        // The install's metapackages (qemu-system, libvirt-daemon-system) leave the packages
+        // they pulled in behind, with the binaries the Machine page looks for
+        // (qemu-system-x86_64, virsh): those go too, or the tool still reads as installed.
+        Dependency::Qemu => vec![root("apt-get remove -y 'qemu-system*' qemu-utils")],
+        Dependency::Libvirt => vec![root("apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager")],
+        Dependency::Awscli => vec![root("rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer")],
+        Dependency::Azurecli => vec![root("apt-get remove -y azure-cli")],
+        Dependency::Gcloud => vec![step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
+        Dependency::Utm | Dependency::Wsl => return Err(Error::Invalid("Not installed on Linux.".into())),
+    })
+}
+
 /// How to remove `dep` on this OS. On macOS, VirtualBox's step needs its installer image
 /// (`virtualbox_dmg`).
 fn plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
     let _ = virtualbox_dmg;
     #[cfg(target_os = "macos")]
     {
-        let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
-        Ok(match dep {
-            Dependency::Terraform => vec![step(brew, &["uninstall", "hashicorp/tap/terraform"])],
-            Dependency::Qemu => vec![step(brew, &["uninstall", "qemu"])],
-            Dependency::Awscli => vec![step(brew, &["uninstall", "awscli"])],
-            Dependency::Gcloud => vec![step(brew, &["uninstall", "--cask", "google-cloud-sdk"])],
-            Dependency::Azurecli => vec![step(brew, &["uninstall", "--cask", "azure-cli-preview"])],
-            // Installed from the vendors' own packages: removed the way their uninstallers do.
-            Dependency::Vagrant => vec![mac_admin(
-                "rm -rf /opt/vagrant /usr/local/bin/vagrant && pkgutil --forget com.vagrant.vagrant || true",
-                "Removing Vagrant (macOS asks for your password)…",
-            )],
-            Dependency::Virtualbox => {
-                let dmg = virtualbox_dmg.ok_or_else(|| Error::Invalid("VirtualBox's installer image is needed to run its uninstaller.".into()))?;
-                vec![mac_admin(&virtualbox_uninstall(dmg), "Running VirtualBox's own uninstaller (macOS asks for your password)…")]
-            }
-            Dependency::Docker => vec![Step {
-                program: "/Applications/Docker.app/Contents/MacOS/uninstall".into(),
-                args: vec![],
-                note: Some("Running Docker Desktop's own uninstaller…".into()),
-            }],
-            Dependency::Utm => vec![step("osascript", &["-e", "tell application \"Finder\" to delete POSIX file \"/Applications/UTM.app\""])],
-            Dependency::Libvirt | Dependency::Wsl => return Err(Error::Invalid("Not installed on macOS.".into())),
-        })
+        macos_plan(dep, virtualbox_dmg)
     }
     #[cfg(target_os = "windows")]
     {
-        let id = match dep {
-            Dependency::Docker => "Docker.DockerDesktop",
-            Dependency::Vagrant => "Hashicorp.Vagrant",
-            Dependency::Terraform => "Hashicorp.Terraform",
-            Dependency::Virtualbox => "Oracle.VirtualBox",
-            Dependency::Qemu => "SoftwareFreedomConservancy.QEMU",
-            Dependency::Awscli => "Amazon.AWSCLI",
-            Dependency::Azurecli => "Microsoft.AzureCLI",
-            Dependency::Gcloud => "Google.CloudSDK",
-            Dependency::Wsl => return Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
-            Dependency::Utm | Dependency::Libvirt => return Err(Error::Invalid("Not installed on Windows.".into())),
-        };
-        Ok(vec![step("winget", &["uninstall", "-e", "--id", id])])
+        windows_plan(dep)
     }
     #[cfg(target_os = "linux")]
     {
-        let root = |script: &str| step("pkexec", &["sh", "-c", script]);
-        Ok(match dep {
-            Dependency::Docker => vec![root("apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")],
-            Dependency::Vagrant => vec![root("apt-get remove -y vagrant")],
-            Dependency::Terraform => vec![root("apt-get remove -y terraform")],
-            Dependency::Virtualbox => vec![root("apt-get remove -y 'virtualbox*'")],
-            // The install's metapackages (qemu-system, libvirt-daemon-system) leave the packages
-            // they pulled in behind, with the binaries the Machine page looks for
-            // (qemu-system-x86_64, virsh): those go too, or the tool still reads as installed.
-            Dependency::Qemu => vec![root("apt-get remove -y 'qemu-system*' qemu-utils")],
-            Dependency::Libvirt => vec![root("apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager")],
-            Dependency::Awscli => vec![root("rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer")],
-            Dependency::Azurecli => vec![root("apt-get remove -y azure-cli")],
-            Dependency::Gcloud => vec![step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
-            Dependency::Utm | Dependency::Wsl => return Err(Error::Invalid("Not installed on Linux.".into())),
-        })
+        linux_plan(dep)
     }
 }
 

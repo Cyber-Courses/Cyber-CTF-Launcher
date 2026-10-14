@@ -177,6 +177,23 @@ pub(super) async fn run_test(dir: &Path, preferred: Option<Provider>, r: &Report
 }
 
 async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<()> {
+    let provider = host_provider(preferred, r).await?;
+    let arm = arm();
+    let (bx, _) = pick_box(provider, arm).await;
+    r.step("box", "Get a small test VM image", async {
+        let had = ensure_box(dir, provider, bx, arm, |l| r.progress("box", "Get a small test VM image", l)).await?;
+        Ok(((), Some(if had { format!("{bx} (ready)") } else { bx.to_string() })))
+    })
+    .await?;
+
+    // An address for the ping check that nothing answers on before the VM exists.
+    let ip = if has_private_network(provider) { free_ip().await } else { None };
+    boot_and_exec(dir, provider, bx, ip, r).await?;
+    network(provider, ip, r).await
+}
+
+/// Vagrant and a hypervisor that answers: the provider the test runs on.
+async fn host_provider(preferred: Option<Provider>, r: &Reporter) -> Result<Provider> {
     r.step("vagrant", "Vagrant is installed", async {
         let v = run("vagrant", &["--version"], None).await?;
         Ok(((), Some(v.trim().to_string())))
@@ -201,18 +218,12 @@ async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<
     })
     .await?;
 
-    let arm = arm();
-    let (bx, _) = pick_box(provider, arm).await;
-    r.step("box", "Get a small test VM image", async {
-        let had = ensure_box(dir, provider, bx, arm, |l| r.progress("box", "Get a small test VM image", l)).await?;
-        Ok(((), Some(if had { format!("{bx} (ready)") } else { bx.to_string() })))
-    })
-    .await?;
+    Ok(provider)
+}
 
-    // An address for the ping check that nothing answers on before the VM exists.
-    let ip = if has_private_network(provider) { free_ip().await } else { None };
-    // Booting and the command inside run as one batch: on Hyper-V (not elevated) that is one
-    // administrator prompt for both.
+/// Boots the test VM and runs a command inside. Both run as one batch: on Hyper-V (not
+/// elevated) that is one administrator prompt for both.
+async fn boot_and_exec(dir: &Path, provider: Provider, bx: &str, ip: Option<&'static str>, r: &Reporter) -> Result<()> {
     let mut inside = None;
     r.step("boot", "Boot the test VM", async {
         let no_kvm = cfg!(target_os = "linux") && providers::kvm_problem().is_some();
@@ -237,6 +248,11 @@ async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<
     })
     .await?;
 
+    Ok(())
+}
+
+/// The VM answers ping on its private lab network (skipped without one, or a free address).
+async fn network(provider: Provider, ip: Option<&'static str>, r: &Reporter) -> Result<()> {
     match ip {
         Some(ip) => {
             r.step("network", "VM reachable on a lab network", async {

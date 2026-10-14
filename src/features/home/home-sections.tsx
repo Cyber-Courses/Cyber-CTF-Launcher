@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ArrowRight, Cloud, Play, RotateCw, Server, TriangleAlert } from "lucide-react";
+import { ArrowRight, Cloud, ExternalLink, Play, RotateCw, Server, TriangleAlert } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-pill";
@@ -200,5 +200,15 @@ export function LabsPreviewPanel({
         children
       )}
     </Panel>
+  );
+}
+
+/** Signed out: signing in here lets labs started on the website run on this machine. */
+export function SignInHint() {
+  const t = useT();
+  return (
+    <p className="flex items-center gap-1.5 text-[0.75rem] text-muted-foreground">
+      <ExternalLink className="size-3.5" /> {t("home.signInHint")}
+    </p>
   );
 }
