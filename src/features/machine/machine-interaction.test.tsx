@@ -234,10 +234,20 @@ describe("Machine page", () => {
   });
 });
 
+describe("Downloads panel: Terraform plugins", () => {
+  it("counts the provider plugins labs share in what is stored", async () => {
+    installTauri({ machine_storage: () => ({ images: [], boxes: [], plugins: [{ name: "Terraform provider plugins", bytes: 700_000_000 }] }) });
+    render(<DownloadsPanel />);
+    await flush();
+    expect(screen.getAllByText(/700(\.0)? MB/).length).toBeGreaterThan(0);
+  });
+});
+
 describe("Downloads panel: clean-up", () => {
   const storage = () => ({
     images: [{ name: "cyberctf/attack:latest", bytes: 3_400_000_000 }],
     boxes: [{ name: "generic/alpine318", bytes: 600_000_000 }],
+    plugins: [] as { name: string; bytes: number }[],
   });
 
   it("asks before removing anything, and Cancel keeps everything", async () => {

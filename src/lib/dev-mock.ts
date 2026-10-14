@@ -137,6 +137,7 @@ const machineCommands: Record<string, Handler> = {
       { name: "postgres:16", bytes: 0.43 * GB },
     ],
     boxes: [{ name: "StefanScherer/windows_2019", bytes: 11.2 * GB }],
+    plugins: [{ name: "Terraform provider plugins", bytes: 0.6 * GB }],
   }),
   exegol_status: () => attackBox(),
   attack_vm_status: () => attackBox(),
