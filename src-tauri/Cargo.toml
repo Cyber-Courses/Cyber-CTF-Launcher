@@ -48,10 +48,10 @@ serde_yaml_ng = "0.10.0"
 # check plan (`isoloom-plan`), the backends' registry and the resolved snapshot
 # (`isoloom-targets`), the host's readiness and the registry of running environments
 # (`isoloom-runtime`).
-isoloom-spec = { git = "https://github.com/isoloom/isoloom", rev = "a0ae3f8358c616e3c4bb2afa9ca773e2cf943f3e" }
-isoloom-plan = { git = "https://github.com/isoloom/isoloom", rev = "a0ae3f8358c616e3c4bb2afa9ca773e2cf943f3e" }
-isoloom-targets = { git = "https://github.com/isoloom/isoloom", rev = "a0ae3f8358c616e3c4bb2afa9ca773e2cf943f3e" }
-isoloom-runtime = { git = "https://github.com/isoloom/isoloom", rev = "a0ae3f8358c616e3c4bb2afa9ca773e2cf943f3e" }
+isoloom-spec = { git = "https://github.com/isoloom/isoloom", rev = "ba771a3bb034fa6f95f56e8e087ff9133349dbf8" }
+isoloom-plan = { git = "https://github.com/isoloom/isoloom", rev = "ba771a3bb034fa6f95f56e8e087ff9133349dbf8" }
+isoloom-targets = { git = "https://github.com/isoloom/isoloom", rev = "ba771a3bb034fa6f95f56e8e087ff9133349dbf8" }
+isoloom-runtime = { git = "https://github.com/isoloom/isoloom", rev = "ba771a3bb034fa6f95f56e8e087ff9133349dbf8" }
 # The map type of the Isoloom crates' API (a cloud-services lab's outputs).
 indexmap = "2"
 portable-pty = "0.9"

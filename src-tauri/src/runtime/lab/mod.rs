@@ -711,7 +711,7 @@ mod tests {
             "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n";
         let cases: [(&str, &str, &str); 7] = [
             ("host out of the /24", &base.replace("lab: 10 }", "lab: 300 }"), "expected u8"),
-            ("the network address itself", &base.replace("lab: 10 }", "lab: 0 }"), "isn't a usable address"),
+            ("host 0 off a bridged network", &base.replace("lab: 10 }", "lab: 0 }"), "asks for an address by DHCP"),
             ("two machines at one address", &format!("{base}  db:\n    networks: {{ lab: 10 }}\n    docker: {{ image: redis:7 }}\n"), "already used by `web`"),
             ("a port past 65535", &base.replace("docker:", "services: [{ port: 70000, http: true }]\n    docker:"), "expected u16"),
             ("an IPv6 block", &base.replace("10.30.0.0/24", "'fd00::/64'"), "isn't a network address"),
