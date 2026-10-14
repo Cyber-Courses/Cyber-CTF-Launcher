@@ -403,5 +403,10 @@
       "disk": "Cette machine manque d’espace disque. Libérez-en (la page Machine liste les images gardées par les labs), puis réessayez.",
       "tool": "Un outil dont ce lab a besoin manque ici. Installez-le depuis la page Machine, puis réessayez."
     }
+  },
+  "offline": {
+    "question": "Démarrer {title} hors ligne ?",
+    "body": "Cyber CTF est injoignable pour le moment. Ce lab est installé sur cette machine : il peut démarrer sans, mais votre progression et vos preuves ne sont pas enregistrées tant que vous ne le relancez pas en ligne.",
+    "start": "Démarrer hors ligne"
   }
 }

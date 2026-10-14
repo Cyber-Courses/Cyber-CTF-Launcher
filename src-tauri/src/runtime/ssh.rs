@@ -18,6 +18,7 @@ use crate::exec::run;
 fn ssh_dir(app: &AppHandle) -> Result<PathBuf> {
     let dir = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("ssh");
     std::fs::create_dir_all(&dir)?;
+    let _ = std::fs::remove_file(dir.join(SHARED_KNOWN_HOSTS));
     Ok(dir)
 }
 
@@ -204,9 +205,16 @@ impl Target {
     }
 }
 
-pub fn known_hosts(app: &AppHandle) -> Result<PathBuf> {
-    Ok(ssh_dir(app)?.join("known_hosts"))
+/// The host keys of the server nodes the launcher reaches with its key (a Proxmox node: the jump
+/// host to an internal lab bridge, its key setup), next to that key. A lab host's keys are never
+/// kept here (see `shell::shell_known_hosts`).
+pub fn node_known_hosts(identity: &Path) -> PathBuf {
+    identity.with_file_name("nodes_known_hosts")
 }
+
+/// The known_hosts every attack box shell once shared. Its keys of lab hosts long gone refused
+/// the shell to any new lab host at a recycled address: removed (nothing writes it any more).
+const SHARED_KNOWN_HOSTS: &str = "known_hosts";
 
 #[cfg(test)]
 mod tests {
@@ -321,6 +329,17 @@ mod tests {
     fn safe_tokens_are_plain_hosts_and_users() {
         assert!(safe_token("192.168.1.5") && safe_token("fd00::1") && safe_token("pve_lan-1"));
         assert!(!safe_token("") && !safe_token("-x") && !safe_token("a b") && !safe_token(&"a".repeat(254)));
+    }
+
+    #[test]
+    fn the_shared_known_hosts_is_dropped_and_nodes_keep_their_own() {
+        let t = crate::test_app::TestApp::new();
+        let shared = t.data().join("ssh").join(SHARED_KNOWN_HOSTS);
+        std::fs::create_dir_all(shared.parent().unwrap()).unwrap();
+        std::fs::write(&shared, "10.0.0.5 ssh-ed25519 AAAAold\n").unwrap();
+        let dir = ssh_dir(t.handle()).unwrap();
+        assert!(!shared.exists());
+        assert_eq!(node_known_hosts(&dir.join("id_ed25519")), dir.join("nodes_known_hosts"));
     }
 
     #[test]

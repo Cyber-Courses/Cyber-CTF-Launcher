@@ -68,7 +68,7 @@ pub(super) async fn wait_ready(state: &Path, log: &mut impl FnMut(String)) -> Re
         log("Can't reach the lab host over SSH to confirm it started; check it from the lab page.".into());
         return Ok(());
     };
-    let known_hosts = state.join("known_hosts");
+    let known_hosts = super::known_hosts(state);
     let command = format!("cat {} 2>/dev/null || true; echo; tail -n 25 /var/log/cyberctf-lab.log 2>/dev/null || true", ssh::sh_quote(&ready_file));
 
     log("Waiting for the lab host to install Docker and start the lab…".into());

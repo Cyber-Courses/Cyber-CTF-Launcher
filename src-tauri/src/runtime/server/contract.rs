@@ -192,7 +192,7 @@ pub async fn proxmox_jump_for_host(app: &AppHandle, id: &str, identity: &Path, p
         return Ok(None);
     }
     let secret = get_secret(id)?;
-    if !proxmox::bridge_is_internal(&host, &secret).await {
+    if !proxmox::bridge_is_internal(&host, &secret).await? {
         return Ok(None);
     }
     if !proxmox::is_token(&host.username) {

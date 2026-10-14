@@ -24,14 +24,29 @@ pub async fn authorize_launcher_key(h: &HostProfile, password: &str, identity: &
     ];
     let args = authorize_args(h, identity, public);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    crate::exec::run_env("ssh", &refs, None, &env).await.map(|_| ())
+    crate::exec::run_env_timed("ssh", &refs, None, &env, AUTHORIZE_TIMEOUT).await.map(|_| ())
 }
 
-/// The askpass helper next to the launcher's key: it answers SSH's prompt with the password
-/// passed in the environment.
+/// The most letting the key in may take: a node that stops answering must not hang the launch.
+const AUTHORIZE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The askpass helper's file name and contents: it answers SSH's prompt with the password in
+/// `CYBERCTF_SSH_PASSWORD`. Windows' OpenSSH can't run a `sh` script: there it is a `.cmd`, the
+/// password echoed after the line is parsed (delayed expansion), so `&`, `|` or `%` in it are
+/// printed, not run.
+pub(super) fn askpass_script(windows: bool) -> (&'static str, &'static str) {
+    if windows {
+        ("askpass.cmd", "@echo off\r\nsetlocal EnableDelayedExpansion\r\necho(!CYBERCTF_SSH_PASSWORD!\r\n")
+    } else {
+        ("askpass.sh", "#!/bin/sh\nprintf '%s\\n' \"$CYBERCTF_SSH_PASSWORD\"\n")
+    }
+}
+
+/// The askpass helper next to the launcher's key (see [`askpass_script`]), this user's only.
 pub(super) fn write_askpass(identity: &std::path::Path) -> crate::error::Result<std::path::PathBuf> {
-    let askpass = identity.with_file_name("askpass.sh");
-    std::fs::write(&askpass, "#!/bin/sh\nprintf '%s\\n' \"$CYBERCTF_SSH_PASSWORD\"\n")?;
+    let (name, script) = askpass_script(cfg!(windows));
+    let askpass = identity.with_file_name(name);
+    std::fs::write(&askpass, script)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -44,8 +59,9 @@ pub(super) fn write_askpass(identity: &std::path::Path) -> crate::error::Result<
 pub(super) fn authorize_args(h: &HostProfile, identity: &std::path::Path, public: &str) -> Vec<String> {
     let key = ssh::sh_quote(public.trim());
     let command = format!("umask 077; mkdir -p ~/.ssh; grep -qxF {key} ~/.ssh/authorized_keys 2>/dev/null || echo {key} >> ~/.ssh/authorized_keys");
-    let known_hosts = identity.with_file_name("known_hosts").display().to_string();
-    let password_auth = ["PreferredAuthentications=password,keyboard-interactive".to_string(), "NumberOfPasswordPrompts=1".to_string()];
+    let known_hosts = ssh::node_known_hosts(identity).display().to_string();
+    let password_auth =
+        ["PreferredAuthentications=password,keyboard-interactive".to_string(), "NumberOfPasswordPrompts=1".to_string(), "ConnectTimeout=10".to_string()];
     let mut args: Vec<String> = Vec::new();
     for o in password_auth.into_iter().chain(ssh::options(false, &known_hosts)) {
         args.extend(["-o".into(), o]);
@@ -69,7 +85,7 @@ pub(super) async fn ssh_key_problem(h: &HostProfile) -> Option<String> {
     let public = std::fs::read_to_string(identity.with_extension("pub")).unwrap_or_default().trim().to_string();
     let user = ssh_user(&h.username).to_string();
     let target = ssh::Target::direct(&h.host, &user, identity.clone());
-    match target.exec_timed(&identity.with_file_name("known_hosts"), "true", std::time::Duration::from_secs(30)).await {
+    match target.exec_timed(&ssh::node_known_hosts(&identity), "true", std::time::Duration::from_secs(30)).await {
         Ok(_) => None,
         Err(_) => Some(format!(
             "The launcher can't SSH to {user}@{} with its key, which a token setup needs to upload the lab's cloud-init. On the node, run:\n  echo '{public}' >> ~/.ssh/authorized_keys",

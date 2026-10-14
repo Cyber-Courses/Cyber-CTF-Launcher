@@ -110,6 +110,7 @@ pub fn run() {
             machine::storage::machine_storage,
             machine::storage::machine_storage_clean,
             account::auth::auth_login,
+            account::auth::auth_login_cancel,
             account::auth::auth_status,
             account::auth::auth_logout,
             account::api::api_query,

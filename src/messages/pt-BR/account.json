@@ -5,5 +5,8 @@
   "online": "Online: os labs que você inicia pelo site rodam nesta máquina",
   "signedIn": "Conectado",
   "signedInKeychain": "conectado · keychain",
-  "signOut": "Sair"
+  "signOut": "Sair",
+  "didntOpen": "O navegador não abriu?",
+  "copyLink": "Copiar o link de login",
+  "cancel": "Cancelar"
 }

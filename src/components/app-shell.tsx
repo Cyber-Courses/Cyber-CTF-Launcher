@@ -22,6 +22,7 @@ import { QuitGuard } from "@/features/app/quit-guard";
 import { LaunchConfirm } from "@/features/app/launch-confirm";
 import { Onboarding } from "@/features/onboarding/onboarding";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
+import { OfflineStartPrompt } from "@/features/labs/offline-start-prompt";
 import { useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
 import { openSettings } from "@/lib/tauri";
 import { useActiveOperations } from "@/lib/deploy-store";
@@ -119,6 +120,7 @@ export function AppShell() {
       <QuitGuard />
       <LaunchConfirm />
       <PortModePrompt />
+      <OfflineStartPrompt />
       <Toaster />
       <Sidebar
         tab={tab}

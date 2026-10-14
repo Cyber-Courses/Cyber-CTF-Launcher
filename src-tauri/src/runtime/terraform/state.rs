@@ -87,6 +87,11 @@ fn has_instance(outputs: &Value) -> bool {
     outputs[isoloom_outputs::IP]["value"].as_str().is_some_and(|ip| !ip.is_empty())
 }
 
+/// The host keys of a deployment's lab host, kept with its state and removed with it.
+pub fn known_hosts(state: &Path) -> PathBuf {
+    state.join("known_hosts")
+}
+
 /// The lab host as an SSH target with the launcher's key, through the node when the launch
 /// recorded one (see JUMP_FILE).
 pub fn ssh_target(state: &Path, identity: PathBuf) -> Option<ssh::Target> {

@@ -141,6 +141,21 @@ pub(super) fn local_vm(dir: &Path) -> Option<String> {
     std::fs::read_to_string(dir.join(LOCAL_VM_MARKER)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
+/// The host keys of a lab's own hosts that Vagrant runs (a lab VM here, a lab host on ESXi), for
+/// its attack box shell. Kept with the lab, not shared: another lab later given the same address
+/// (DHCP, a recycled IP) has another key, and a shared pin refused every shell to it.
+const LAB_KNOWN_HOSTS: &str = ".cyberctf-known_hosts";
+
+pub(super) fn lab_known_hosts(dir: &Path) -> PathBuf {
+    dir.join(LAB_KNOWN_HOSTS)
+}
+
+/// Forgets the keys pinned for a lab's hosts: a new deployment brings new hosts, maybe at the
+/// address of another one.
+pub(super) fn forget_lab_host_keys(dir: &Path) {
+    let _ = std::fs::remove_file(lab_known_hosts(dir));
+}
+
 /// Written when the launcher parks a lab (paused or shut down), so a later start resumes its
 /// machines instead of clearing them as leftovers; removed on resume and on stop.
 const PARKED_MARKER: &str = ".cyberctf-parked";

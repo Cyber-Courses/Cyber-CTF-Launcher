@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 #[cfg(test)]
 pub use services::is_module;
 pub use services::{apply_services, destroy_services};
-pub use state::{JUMP_FILE, deployed, expired, expires_at, has_resources, has_tainted, now, read_state, ssh_endpoint, ssh_target, status};
+pub use state::{JUMP_FILE, deployed, expired, expires_at, has_resources, has_tainted, known_hosts, now, read_state, ssh_endpoint, ssh_target, status};
 
 use self::ready::wait_ready;
 use self::runner::terraform;
@@ -69,7 +69,7 @@ pub async fn destroy(module: &Path, state: &Path, vars: &[(String, String)], env
     let _ = std::fs::remove_file(state.join(STATE_FILE));
     // Drop the per-deployment known_hosts too: the next lab can get a recycled host IP with a
     // new host key, and a stale pinned key would make its SSH (wait_ready, attack shell) fail.
-    let _ = std::fs::remove_file(state.join("known_hosts"));
+    let _ = std::fs::remove_file(known_hosts(state));
     Ok(())
 }
 

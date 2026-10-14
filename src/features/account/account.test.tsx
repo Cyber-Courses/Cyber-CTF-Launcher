@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { Account, initials } from "@/features/account/account";
-import { commands, installTauri } from "@/test/tauri";
+import { commands, installTauri, stream } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 const signedOut = { loggedIn: false, name: null, email: null };
@@ -39,6 +39,35 @@ describe("Account", () => {
     await flush();
     expect(commands(calls)).toContain("auth_login");
     expect(onChange).toHaveBeenCalledWith({ loggedIn: true, name: "Ada", email: "ada@example.com" });
+  });
+
+  it("while waiting, offers the sign-in link to copy and a Cancel that ends it quietly", async () => {
+    let cancel: () => void = () => {};
+    const calls = installTauri({
+      auth_login: (args) => {
+        stream(args, "https://auth.example/oauth2/authorize?state=s1");
+        return new Promise((_, reject) => (cancel = () => reject("Sign-in cancelled.")));
+      },
+      auth_login_cancel: () => cancel(),
+    });
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(<Account status={signedOut} onChange={onChange} />);
+    await user.click(button(/^sign in$/i));
+    await flush();
+    expect(screen.getByText("Browser didn't open?")).toBeTruthy();
+    await user.click(button(/copy the sign-in link/i));
+    expect(writeText).toHaveBeenCalledWith("https://auth.example/oauth2/authorize?state=s1");
+    await user.click(button(/^cancel$/i));
+    await flush();
+    expect(commands(calls)).toContain("auth_login_cancel");
+    // Back to Sign in, with no error and no change of session.
+    expect(button(/^sign in$/i).hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByText(/cancelled/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^cancel$/i })).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("shows why the sign-in failed", async () => {

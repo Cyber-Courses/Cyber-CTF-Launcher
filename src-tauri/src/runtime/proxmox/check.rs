@@ -113,10 +113,19 @@ pub(super) fn outcome(node: &str, bridge: &str, problems: &[String]) -> Report {
 }
 
 /// Whether the host's lab bridge is host-internal (no physical port, e.g. a NAT bridge for
-/// lab VMs): this machine can't route to VMs on it, only the node can. Unknown counts as no.
-pub async fn bridge_is_internal(h: &HostProfile, secret: &str) -> bool {
-    let Ok(session) = sign_in(h, secret).await else { return false };
-    let Ok(node) = session.node(h).await else { return false };
-    let Ok(ifaces) = session.call(&format!("/nodes/{node}/network")).await else { return false };
-    find_iface(&ifaces, &lab_bridge(h)).is_some_and(has_no_ports)
+/// lab VMs): this machine can't route to VMs on it, only the node can. Not knowing is an error,
+/// never a "no": that guess sent Terraform straight at a VM it can't reach (where it hung) and
+/// dropped the jump host of a lab already running.
+pub async fn bridge_is_internal(h: &HostProfile, secret: &str) -> crate::error::Result<bool> {
+    let session = sign_in(h, secret).await.map_err(bridge_unknown)?;
+    let node = session.node(h).await.map_err(bridge_unknown)?;
+    let ifaces = session.call(&format!("/nodes/{node}/network")).await.map_err(bridge_unknown)?;
+    Ok(find_iface(&ifaces, &lab_bridge(h)).is_some_and(has_no_ports))
+}
+
+/// Why the lab bridge couldn't be checked, as the launch's error.
+fn bridge_unknown(why: impl std::fmt::Display) -> crate::error::Error {
+    crate::error::Error::Invalid(format!(
+        "Couldn't check how this machine reaches the Proxmox lab network ({why}). Check the host with Test connection in Servers, then try again."
+    ))
 }

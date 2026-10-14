@@ -403,5 +403,10 @@
       "disk": "Esta máquina se quedó sin espacio en disco. Libera algo (la página Máquina muestra las imágenes que guardan los labs) y reinténtalo.",
       "tool": "Falta aquí una herramienta que este lab necesita. Instálala desde la página Máquina y reinténtalo."
     }
+  },
+  "offline": {
+    "question": "¿Iniciar {title} sin conexión?",
+    "body": "No se puede contactar con Cyber CTF ahora mismo. Este lab está instalado en esta máquina, así que puede iniciarse sin él, pero tu progreso y tus evidencias no se guardan hasta que lo inicies de nuevo con conexión.",
+    "start": "Iniciar sin conexión"
   }
 }

@@ -2,6 +2,7 @@
 import { act, render, renderHook, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { OfflineStartPrompt } from "@/features/labs/offline-start-prompt";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import type { Lab } from "@/features/labs/use-labs";
@@ -95,6 +96,67 @@ describe("useLabActions: launch", () => {
     await act(() => done);
     expect(launchArgs(calls)).toBeUndefined();
     expect(getDeploySnapshot().runs["act-cancel"]).toBeUndefined();
+  });
+
+  /** A `lab_launch` failing as the backend does when Cyber CTF can't be reached: the second
+   *  time, offline, it runs. Its calls' `offline` flags land in `asked`. */
+  function unreachableBackend(reason: string, asked: unknown[]) {
+    return {
+      lab_launch: (args: Record<string, unknown> | undefined) => {
+        asked.push(args?.offline);
+        if (!args?.offline) throw reason;
+        return null;
+      },
+    };
+  }
+
+  it("offers an offline start when Cyber CTF can't be reached and the lab is installed, and starts it on yes", async () => {
+    const offline: unknown[] = [];
+    const { hook } = setup(
+      unreachableBackend("API unreachable: offline. This lab is installed here, so it can start offline, without saving progress.", offline),
+    );
+    const user = userEvent.setup();
+    render(<OfflineStartPrompt />);
+    let done!: Promise<unknown>;
+    act(() => {
+      done = hook.result.current.launch({ ...dockerLab, id: "act-offline" }, null, undefined, readyReport(), "random");
+    });
+    await flush();
+    expect(screen.getByText("Start Invoice portal API offline?")).toBeTruthy();
+    expect(screen.getByText(/progress and evidence aren't saved/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Start offline" }));
+    await act(() => done);
+    expect(offline).toEqual([false, true]);
+    expect(logsOf("act-offline").at(-1)).toBe("✓ Lab is running");
+  });
+
+  it("starts nothing offline when the player declines, and says why the launch failed", async () => {
+    const offline: unknown[] = [];
+    const { hook } = setup(
+      unreachableBackend("API unreachable: offline. This lab is installed here, so it can start offline, without saving progress.", offline),
+    );
+    const user = userEvent.setup();
+    render(<OfflineStartPrompt />);
+    let done!: Promise<unknown>;
+    act(() => {
+      done = hook.result.current.launch({ ...dockerLab, id: "act-decline" }, null, undefined, readyReport(), "random");
+    });
+    await flush();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await act(() => done);
+    expect(offline).toEqual([false]);
+    expect(logsOf("act-decline").at(-1)).toMatch(/^✗ API unreachable/);
+  });
+
+  it("never offers an offline start for a refusal or a lab that can't start offline", async () => {
+    for (const reason of ["You don't have access to this lab.", "API unreachable: offline", "You're signed out. Sign in again to continue."]) {
+      const offline: unknown[] = [];
+      const { hook } = setup(unreachableBackend(reason, offline));
+      render(<OfflineStartPrompt />);
+      await act(() => hook.result.current.launch({ ...dockerLab, id: "act-refused" }, null, undefined, readyReport(), "random"));
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(offline).toEqual([false]);
+    }
   });
 
   it("asks for the ports, remembers them, and starts on the lab's own ports", async () => {

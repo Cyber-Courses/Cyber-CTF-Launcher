@@ -30,19 +30,22 @@ async fn send(base: &str, token: Option<String>, query: &str, variables: Value) 
     if let Some(t) = token {
         req = req.bearer_auth(t);
     }
-    let res = req.send().await.map_err(|e| Error::Invalid(format!("API unreachable: {e}")))?;
+    let res = req.send().await.map_err(|e| Error::Unreachable(format!("API unreachable: {e}")))?;
     let status = res.status();
-    let text = res.text().await.map_err(|e| Error::Invalid(format!("API response interrupted: {e}")))?;
+    let text = res.text().await.map_err(|e| Error::Unreachable(format!("API response interrupted: {e}")))?;
     parse_response(status, &text)
 }
 
 /// A GraphQL response body as its `data`, or the first error message, or (for a body that
-/// isn't JSON) the HTTP status and the start of the body.
+/// isn't JSON) the HTTP status and the start of the body. A body that isn't JSON came from
+/// something other than the API (a platform error page, a captive portal): unreachable, unless it
+/// is a 4xx, a refusal (a gateway or firewall blocking the call) that must not read as an outage.
 fn parse_response(status: reqwest::StatusCode, text: &str) -> Result<Value> {
     // Platform errors (e.g. a timed-out cold start) are not GraphQL JSON.
     let body: Value = serde_json::from_str(text).map_err(|_| {
         let excerpt: String = text.chars().take(160).collect();
-        Error::Invalid(format!("API error (HTTP {status}): {excerpt}"))
+        let message = format!("API error (HTTP {status}): {excerpt}");
+        if status.is_client_error() { Error::Invalid(message) } else { Error::Unreachable(message) }
     })?;
     if let Some(message) = body.pointer("/errors/0/message").and_then(Value::as_str) {
         return Err(Error::Invalid(message.to_string()));
@@ -89,7 +92,14 @@ mod tests {
     #[test]
     fn a_non_json_body_names_the_status_and_an_excerpt() {
         let long = "x".repeat(500);
-        let err = parse_response(StatusCode::BAD_GATEWAY, &format!("<html>{long}")).unwrap_err().to_string();
+        let err = parse_response(StatusCode::BAD_GATEWAY, &format!("<html>{long}")).unwrap_err();
+        // Not the API answering: unreachable, unlike a refusal in GraphQL's own errors.
+        assert!(matches!(err, crate::error::Error::Unreachable(_)), "{err}");
+        assert!(matches!(parse_response(StatusCode::OK, r#"{"errors":[{"message":"no"}]}"#).unwrap_err(), crate::error::Error::Invalid(_)));
+        // A captive portal's page is no answer of the API; a firewall's 403 page is a refusal.
+        assert!(matches!(parse_response(StatusCode::OK, "<html>login</html>").unwrap_err(), crate::error::Error::Unreachable(_)));
+        assert!(matches!(parse_response(StatusCode::FORBIDDEN, "<html>blocked</html>").unwrap_err(), crate::error::Error::Invalid(_)));
+        let err = err.to_string();
         assert!(err.starts_with("API error (HTTP 502 Bad Gateway): <html>xx"), "{err}");
         assert!(err.len() < 220);
     }
@@ -110,6 +120,8 @@ mod tests {
         let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
         let err = super::send(&format!("http://{closed}"), None, "{ x }", serde_json::Value::Null).await.unwrap_err().to_string();
         assert!(err.starts_with("API unreachable: "), "{err}");
+        let err = super::send(&format!("http://{closed}"), None, "{ x }", serde_json::Value::Null).await.unwrap_err();
+        assert!(matches!(err, crate::error::Error::Unreachable(_)), "{err}");
     }
 
     /// What a webview calling `api_query` with `args` gets back, through Tauri's IPC.

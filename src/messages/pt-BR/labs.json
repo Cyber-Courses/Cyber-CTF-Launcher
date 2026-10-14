@@ -403,5 +403,10 @@
       "disk": "Esta máquina está sem espaço em disco. Libere um pouco (a página Máquina lista as imagens que os labs guardam) e tente de novo.",
       "tool": "Falta aqui uma ferramenta de que este lab precisa. Instale-a pela página Máquina e tente de novo."
     }
+  },
+  "offline": {
+    "question": "Iniciar {title} offline?",
+    "body": "Não foi possível acessar o Cyber CTF agora. Este lab está instalado nesta máquina, então pode iniciar sem ele, mas seu progresso e suas evidências não são salvos até você iniciá-lo novamente online.",
+    "start": "Iniciar offline"
   }
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Plug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
 import { Switch } from "@/components/ui/switch";
+import { createAsk } from "@/lib/ask";
 import { setPortMode, type PortMode } from "@/lib/settings";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useT } from "@/lib/i18n";
@@ -14,42 +15,15 @@ import { useT } from "@/lib/i18n";
 // `askPortMode` opens the dialog (mounted once, in the app shell) and resolves with the choice,
 // or null when the player cancels.
 
-type Ask = { id: number; title: string; resolve: (mode: PortMode | null) => void };
+// A second start while the dialog is open answers the first one with a cancel.
+const { ask, answer, useAsked } = createAsk<string, PortMode | null>(null);
 
-let current: Ask | null = null;
-let asked = 0;
-const listeners = new Set<() => void>();
-const emit = () => listeners.forEach((l) => l());
-
-export function askPortMode(title: string): Promise<PortMode | null> {
-  // A second start while the dialog is open answers the first one with a cancel.
-  current?.resolve(null);
-  return new Promise((resolve) => {
-    current = { id: ++asked, title, resolve };
-    emit();
-  });
-}
-
-function answer(mode: PortMode | null) {
-  const ask = current;
-  current = null;
-  emit();
-  ask?.resolve(mode);
-}
-
-const subscribe = (l: () => void) => {
-  listeners.add(l);
-  return () => listeners.delete(l);
-};
+export const askPortMode = (title: string): Promise<PortMode | null> => ask(title);
 
 export function PortModePrompt() {
-  const ask = useSyncExternalStore(
-    subscribe,
-    () => current,
-    () => null,
-  );
+  const asked = useAsked();
   // Keyed per request so each one starts on the recommended choice.
-  return ask ? <Dialog key={ask.id} title={ask.title} /> : null;
+  return asked ? <Dialog key={asked.id} title={asked.question} /> : null;
 }
 
 function Dialog({ title }: { title: string }) {

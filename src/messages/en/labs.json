@@ -403,5 +403,10 @@
       "disk": "This machine is out of disk space. Free some (the Machine page lists the images labs keep), then retry.",
       "tool": "A tool this lab needs is missing here. Install it from the Machine page, then retry."
     }
+  },
+  "offline": {
+    "question": "Start {title} offline?",
+    "body": "Cyber CTF can't be reached right now. This lab is installed on this machine, so it can start without it, but your progress and evidence aren't saved until you start it again online.",
+    "start": "Start offline"
   }
 }

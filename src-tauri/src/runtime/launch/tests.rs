@@ -32,6 +32,18 @@ async fn a_container_lab_starts_on_this_machines_docker() {
     assert_eq!(local_vm(&dir), None);
 }
 
+/// The attack box shell pins the lab host's key with the lab: a start brings new hosts (maybe at
+/// another lab's old address), so the old pins go.
+#[tokio::test]
+async fn a_start_forgets_the_host_keys_pinned_for_the_lab() {
+    let t = TestApp::new();
+    let dir = t.lab("web", &[("isoloom.yml", CONTAINERS), (".cyberctf-known_hosts", "10.0.0.5 ssh-ed25519 AAAAold\n")]);
+    let _tools = Tools::rules(&[]);
+    let (r, _) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
+    r.unwrap();
+    assert!(!dir.join(".cyberctf-known_hosts").exists());
+}
+
 #[tokio::test]
 async fn a_container_lab_already_up_is_refused_and_leftovers_are_cleared() {
     let t = TestApp::new();
@@ -51,12 +63,14 @@ async fn a_container_lab_already_up_is_refused_and_leftovers_are_cleared() {
 #[tokio::test]
 async fn a_parked_lab_resumes_unless_nothing_is_left_of_it() {
     let t = TestApp::new();
-    let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+    // A resume brings back the same machines: the host keys pinned for them stay.
+    let dir = t.lab("web", &[("isoloom.yml", CONTAINERS), (".cyberctf-known_hosts", "10.0.0.5 ssh-ed25519 AAAAkept\n")]);
     mark_parked(&dir, Some(Park::Shutdown)).unwrap();
     let tools = Tools::rules(&[("ps --all", ok(EXITED))]);
     let (r, log) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
     r.unwrap();
     assert!(log[0].starts_with("This lab is parked on this machine: resuming it"), "{log:?}");
+    assert!(dir.join(".cyberctf-known_hosts").exists());
     assert!(tools.called(" start") && !tools.called("up -d"));
     assert_eq!(parked(&dir), None);
     drop(tools);
