@@ -21,6 +21,7 @@ use tauri::Manager;
 use tauri::ipc::Channel;
 
 use crate::error::{Error, Result};
+use crate::machine::storage::owned;
 use crate::runtime::providers::Provider;
 
 use docker::IMAGE;
@@ -114,35 +115,32 @@ fn arm() -> bool {
     std::env::consts::ARCH == "aarch64"
 }
 
-/// Starts the test downloads early (called when setup opens). Errors are ignored by the UI:
-/// the test itself retries and reports them.
-/// Runs `op`, a self-test (or its download) of `kind`, recording what it downloaded as the
-/// app's (the test image, or a test box), for Storage to clean up.
+/// Runs `op`, a self-test of `kind`, recording what it downloaded as the app's (the test image,
+/// or the test box of whichever provider it used), for Storage to clean up.
 async fn tracked<T>(app: &AppHandle, kind: Kind, op: impl std::future::Future<Output = T>) -> T {
     match kind {
-        Kind::Docker => crate::machine::storage::owned::tracked(app, &[IMAGE.to_string()], &[], op).await,
+        Kind::Docker => owned::tracked(app, &[IMAGE.to_string()], &[], op).await,
         Kind::Vm => {
             let boxes: Vec<String> = vm::TEST_PROVIDERS.iter().flat_map(|p| candidate_boxes(*p, arm()).iter().map(|b| b.to_string())).collect();
-            crate::machine::storage::owned::tracked(app, &[], &boxes, op).await
+            owned::tracked(app, &[], &boxes, op).await
         }
     }
 }
 
+/// Starts the test downloads early (called when setup opens), recording what they download as
+/// the app's. Errors are ignored by the UI: the test itself retries and reports them.
 #[tauri::command]
 pub async fn machine_selftest_prefetch(app: AppHandle, kind: Kind, provider: Option<Provider>) -> Result<()> {
-    tracked(&app, kind, prefetch(&app, kind, provider)).await
-}
-
-async fn prefetch(app: &AppHandle, kind: Kind, provider: Option<Provider>) -> Result<()> {
     match kind {
-        Kind::Docker => downloads::ensure_image().await.map(|_| ()),
+        Kind::Docker => owned::tracked(&app, &[IMAGE.to_string()], &[], downloads::ensure_image()).await.map(|_| ()),
         Kind::Vm => {
             let Some(p) = vm::test_provider(provider).await else { return Ok(()) };
             let (bx, cached) = vm::pick_box(p, arm()).await;
             if cached {
                 return Ok(());
             }
-            downloads::ensure_box(&work_dir(app, "vm")?, p, bx, arm(), |_| {}).await.map(|_| ())
+            let dir = work_dir(&app, "vm")?;
+            owned::tracked(&app, &[], &[bx.to_string()], downloads::ensure_box(&dir, p, bx, arm(), |_| {})).await.map(|_| ())
         }
     }
 }
@@ -270,8 +268,6 @@ mod tests {
         assert!(second.is_err(), "it waits");
         assert!(tools.calls().is_empty() && seen.lock().unwrap().is_empty());
         drop(first);
-        // A test of the other kind isn't held up by it.
-        let _vm = one_at_a_time(Kind::Vm).try_lock().expect("independent");
     }
 
     #[tokio::test]

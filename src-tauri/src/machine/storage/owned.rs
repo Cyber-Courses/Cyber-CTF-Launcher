@@ -75,7 +75,8 @@ pub struct Before {
 
 impl Before {
     pub async fn take(images: bool, boxes: bool) -> Before {
-        Before { images: if images { image_ids().await } else { None }, boxes: if boxes { box_list().await } else { None } }
+        let (images, boxes) = tokio::join!(async { if images { image_ids().await } else { None } }, async { if boxes { box_list().await } else { None } });
+        Before { images, boxes }
     }
 
     /// Whether images are compared (worth listing the ones an operation used).
@@ -84,8 +85,8 @@ impl Before {
     }
 }
 
-/// Every image id on this machine.
-async fn image_ids() -> Option<BTreeSet<String>> {
+/// Every image id on this machine; `None` when Docker can't say.
+pub async fn image_ids() -> Option<BTreeSet<String>> {
     let out = run_read("docker", &["image", "ls", "-q", "--no-trunc"], None).await.ok()?;
     Some(out.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect())
 }
@@ -96,8 +97,8 @@ async fn image_id(reference: &str) -> Option<String> {
     Some(out.trim().to_string()).filter(|id| !id.is_empty())
 }
 
-/// Every box version on this machine.
-async fn box_list() -> Option<BTreeSet<OwnedBox>> {
+/// Every box version on this machine; `None` when Vagrant can't say.
+pub async fn box_list() -> Option<BTreeSet<OwnedBox>> {
     run_read("vagrant", &["box", "list"], None).await.ok().map(|out| parse_box_list(&out))
 }
 

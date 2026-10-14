@@ -101,10 +101,11 @@ fn dir_size(path: &Path) -> u64 {
     std::fs::read_dir(path).map(|it| it.flatten().map(|e| dir_size(&e.path())).sum()).unwrap_or(0)
 }
 
-/// The boxes a lab's generated Vagrantfiles name (one VM per machine, or Docker in one VM).
+/// The boxes a lab's Vagrantfiles name: its generated ones (one VM per machine, or Docker in one
+/// VM) and its attack VM's, which a VM lab's start brings up beside it.
 fn lab_boxes(dir: &Path) -> Vec<String> {
     let out = crate::runtime::lab::out(dir);
-    ["vagrant", "docker-vm"].iter().flat_map(|target| vagrantfile_boxes(&out.join(target).join("Vagrantfile"))).collect()
+    [out.join("vagrant"), out.join("docker-vm"), crate::runtime::attack_vm_dir(dir)].iter().flat_map(|d| vagrantfile_boxes(&d.join("Vagrantfile"))).collect()
 }
 
 /// Records as the app's what a lab start on this machine downloaded: the images its Compose file
@@ -115,20 +116,11 @@ pub(crate) async fn claim_lab(app: &AppHandle, dir: &Path, id: &str, before: &ow
     owned::claim(&store, before, &images, &lab_boxes(dir)).await;
 }
 
-/// An image reference's repository, without a Docker Hub prefix, tag or digest.
-fn repository(image: &str) -> &str {
-    let image = image.split('@').next().unwrap_or(image);
-    let image = match image.rfind(':') {
-        Some(i) if !image[i..].contains('/') => &image[..i],
-        _ => image,
-    };
-    image.strip_prefix("docker.io/").unwrap_or(image)
-}
-
 /// The images to list: the recorded ones, and of `extra_images` (the attack-box images the UI
 /// knows about) those of the attack box's own repository, whatever image they name now.
 fn image_candidates(owned: &Owned, extra_images: &[String]) -> Vec<(String, Option<String>)> {
-    let launcher = extra_images.iter().filter(|i| crate::runtime::valid_image(i) && repository(i) == ATTACK_BOX_REPOSITORY).map(|i| (i.clone(), None));
+    let launcher =
+        extra_images.iter().filter(|i| crate::runtime::valid_image(i) && crate::exec::image_repository(i) == ATTACK_BOX_REPOSITORY).map(|i| (i.clone(), None));
     owned.images.iter().map(|i| (i.reference.clone(), Some(i.id.clone()))).chain(launcher).collect()
 }
 
@@ -231,13 +223,31 @@ async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>) -> Re
         let _ = run("vagrant", &["box", "remove", &b.name, "--provider", &b.provider, "--box-version", &b.version], None).await;
     }
     let after = Present::find(&owned::load(store), extra_images, home).await;
-    let kept_images: BTreeSet<&str> = after.images.iter().map(|(r, _, _)| r.as_str()).collect();
-    let kept_boxes: Vec<&OwnedBox> = after.boxes.iter().map(|(b, _)| b).collect();
-    owned::update(store, |o| {
-        o.images.retain(|i| kept_images.contains(i.reference.as_str()));
-        o.boxes.retain(|b| kept_boxes.contains(&b));
-    })?;
+    forget_gone(store).await?;
     Ok(before.storage().total().saturating_sub(after.storage().total()))
+}
+
+/// Drops from the record the images and boxes no longer on this machine, as Docker and Vagrant
+/// say it (nothing of a kind when its tool can't say: Docker down must not erase the record).
+/// Only those are dropped: a download another operation records meanwhile stays.
+async fn forget_gone(store: &Path) -> Result<()> {
+    let (images, boxes) = tokio::join!(owned::image_ids(), owned::box_list());
+    let owned = owned::load(store);
+    let gone_images: Vec<owned::OwnedImage> = match &images {
+        Some(ids) => owned.images.iter().filter(|i| !ids.contains(&i.id)).cloned().collect(),
+        None => Vec::new(),
+    };
+    let gone_boxes: Vec<OwnedBox> = match &boxes {
+        Some(listed) => owned.boxes.difference(listed).cloned().collect(),
+        None => Vec::new(),
+    };
+    if gone_images.is_empty() && gone_boxes.is_empty() {
+        return Ok(());
+    }
+    owned::update(store, |o| {
+        o.images.retain(|i| !gone_images.contains(i));
+        o.boxes.retain(|b| !gone_boxes.contains(b));
+    })
 }
 
 #[cfg(test)]
@@ -337,9 +347,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
-    /// Docker as the tests see it: `images` (reference, id, size) are on the machine, and
-    /// `pulled` among them only once the lab started (`up`).
-    fn docker(images: &'static [(&'static str, &'static str, u64)], pulled: &'static [&'static str]) -> Tools {
+    /// Docker and Vagrant as the tests see them: `images` (reference, id, size) are on the
+    /// machine, and `pulled` among them only once the lab started (`up`); `vagrant box list`
+    /// says `boxes`.
+    fn docker(images: &'static [(&'static str, &'static str, u64)], pulled: &'static [&'static str], boxes: &'static str) -> Tools {
         let here = move |r: &str, up: bool| images.iter().find(|(name, _, _)| *name == r).filter(|(name, _, _)| up || !pulled.contains(name));
         let mut up = false;
         Tools::new(move |_, args| -> Option<Reply> {
@@ -357,6 +368,7 @@ mod tests {
                     None => fail("No such image"),
                 },
                 [.., "config", "--images"] => ok(images.iter().map(|(n, _, _)| format!("{n}\n")).collect::<String>()),
+                ["box", "list"] => ok(boxes),
                 _ => ok(""),
             }
         })
@@ -370,7 +382,7 @@ mod tests {
         // developer's own postgres:16 went with it.
         let t = crate::test_app::TestApp::new();
         let dir = t.lab("web", &[("isoloom.yml", SPEC)]);
-        let tools = docker(&[("nginx:1.27", "sha256:nginx", 1000), ("postgres:16", "sha256:postgres", 4000)], &["nginx:1.27"]);
+        let tools = docker(&[("nginx:1.27", "sha256:nginx", 1000), ("postgres:16", "sha256:postgres", 4000)], &["nginx:1.27"], "");
         crate::runtime::start(t.handle(), &dir, "web", crate::runtime::Runtime::Docker, None, None, &[], |_| {}).await.unwrap();
         let listed = machine_storage(t.handle().clone(), Vec::new()).await.unwrap();
         assert_eq!(listed.images.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("nginx:1.27", 1000)]);
@@ -403,6 +415,7 @@ mod tests {
                 ("kalilinux/kali-rolling", "sha256:kali", 500),
             ],
             &[],
+            "generic/alpine319 (virtualbox, 4.3.12)\nbento/debian-12 (virtualbox, 1)\n",
         );
         let extra = ["cyberctf/attack-box:latest".to_string(), "kalilinux/kali-rolling".into()];
         clean(&store, &extra, Some(&home)).await.unwrap();
@@ -418,11 +431,75 @@ mod tests {
                 .any(|c| c.contains("redis") && c.contains(" rm ") || c.contains("kali") && c.contains(" rm ") || c.contains("debian") || c.contains("--all")),
             "{calls:?}"
         );
-        // Still here (the fake Docker and Vagrant removed nothing): still recorded.
-        assert_eq!(owned::load(&store).images.len(), 1, "the redis record went: it names another image now");
-        std::fs::remove_dir_all(box_dir(&home, &alpine.name)).unwrap();
+        // Still here (the fake Docker and Vagrant removed nothing): still recorded. The old redis
+        // image is gone from the machine: its record goes.
+        let owned = owned::load(&store);
+        assert_eq!(owned.images.iter().map(|i| i.reference.as_str()).collect::<Vec<_>>(), ["nginx:1.27"]);
+        assert_eq!(owned.boxes.len(), 1);
+        drop(tools);
+        // Docker down and Vagrant gone: nothing can be told, so nothing is forgotten.
+        let _down = Tools::rules(&[("docker", crate::exec::fake::fail("Cannot connect to the Docker daemon")), ("vagrant", None)]);
         clean(&store, &[], Some(&home)).await.unwrap();
-        assert!(owned::load(&store).boxes.is_empty(), "a box gone is forgotten");
+        assert_eq!(owned::load(&store), owned, "the record survives a clean-up the tools couldn't answer");
+    }
+
+    #[tokio::test]
+    async fn a_download_recorded_during_a_clean_up_is_kept() {
+        let t = crate::test_app::TestApp::new();
+        let store = owned::path(t.handle()).unwrap();
+        let _tools = docker(&[("nginx:1.27", "sha256:nginx", 1000)], &[], "");
+        let recorded = || owned::OwnedImage { reference: "nginx:1.27".into(), id: "sha256:nginx".into() };
+        // Recorded after the clean-up looked (a worker's lab start): `forget_gone` reads it again.
+        owned::update(&store, |o| {
+            o.images.insert(recorded());
+        })
+        .unwrap();
+        forget_gone(&store).await.unwrap();
+        assert!(owned::load(&store).images.contains(&recorded()));
+    }
+
+    /// Builds a throwaway image `tag` (no layers, labelled as this test's) on the real Docker.
+    async fn build_throwaway(tag: &str, which: &str) {
+        let dir = std::env::temp_dir().join(format!("cyberctf-e2e-{which}-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Dockerfile"), format!("FROM scratch\nLABEL cyberctf.e2e=storage cyberctf.e2e.which={which}\n")).unwrap();
+        crate::exec::run("docker", &["build", "-q", "-t", tag, "."], Some(&dir)).await.unwrap();
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// The real Docker: an image the player had keeps through Clean up, even when the app's
+    /// operation used it too; the one the app pulled goes. Opt-in (needs Docker):
+    /// `cargo test real_docker -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn real_docker_clean_up_keeps_the_players_image() {
+        let (mine, apps) = ("cyberctf-e2e-player:1", "cyberctf-e2e-app:1");
+        let store = std::env::temp_dir().join(format!("cyberctf-e2e-store-{}", rand::random::<u32>())).join("storage.json");
+        build_throwaway(mine, "player").await;
+        let before = owned::Before::take(true, false).await;
+        build_throwaway(apps, "app").await;
+        owned::claim(&store, &before, &[apps.to_string(), mine.to_string()], &[]).await;
+        let freed = clean(&store, &[], None).await.unwrap();
+        let exists = |tag: &'static str| async move { crate::exec::run("docker", &["image", "inspect", tag], None).await.is_ok() };
+        let (mine_left, apps_left) = (exists(mine).await, exists(apps).await);
+        let _ = crate::exec::run("docker", &["image", "rm", mine], None).await;
+        let _ = crate::exec::run("docker", &["image", "rm", apps], None).await;
+        std::fs::remove_dir_all(store.parent().unwrap()).ok();
+        assert!(mine_left, "the player's image stays");
+        assert!(!apps_left, "the app's image went");
+        assert!(freed > 0, "the app's image's size is freed");
+    }
+
+    #[test]
+    fn a_vm_labs_boxes_include_its_attack_vms() {
+        // The attack VM comes up with a VM lab's start: its box is that start's download too.
+        let t = crate::test_app::TestApp::new();
+        let dir = t.lab("ad", &[]);
+        for (folder, bx) in [(crate::runtime::lab::out(&dir).join("vagrant"), "bento/debian-12"), (crate::runtime::attack_vm_dir(&dir), "kalilinux/rolling")] {
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(folder.join("Vagrantfile"), format!("config.vm.box = \"{bx}\"\n")).unwrap();
+        }
+        assert_eq!(lab_boxes(&dir), ["bento/debian-12", "kalilinux/rolling"]);
     }
 
     #[test]

@@ -45,6 +45,7 @@ use ts_rs::TS;
 // A glob, so each command's generated `__cmd__*` macro is re-exported with it: `lib.rs`
 // registers them as `runtime::<command>`.
 pub use attack_box::start_attack_vm;
+pub use attack_vm::dir as attack_vm_dir;
 pub use commands::*;
 pub use docker::{PORTS_ENV, subnets_in_use};
 pub use exegol::default_image as default_attack_image;
