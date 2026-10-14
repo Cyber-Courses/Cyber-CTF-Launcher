@@ -237,7 +237,7 @@ mod tests {
         let f = crate::deploy_worker::files::of(t.handle(), &job.key()).unwrap();
         assert_eq!(super::run_logged(t.handle(), job).await, 1);
         let status = std::fs::read_to_string(&f.status).unwrap();
-        assert!(status.starts_with("error: Couldn't lock the lab"), "{status}");
+        assert!(verdict(&status).unwrap_err().to_string().starts_with("Couldn't lock the lab"), "{status}");
         assert!(tools.calls().is_empty(), "nothing ran: {:?}", tools.calls());
     }
 

@@ -293,5 +293,4 @@ mod tests {
         assert!(!printed.contains("s3cret-token") && !printed.contains("CTF_LAUNCH_TOKEN"), "{printed}");
         assert!(printed.contains("lab-1") && printed.contains("<redacted>"), "{printed}");
     }
-
 }

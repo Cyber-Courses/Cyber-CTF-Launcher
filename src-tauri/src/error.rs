@@ -30,9 +30,13 @@ pub enum Code {
     SignInCancelled,
     /// CyberBackend or the sign-in service couldn't be reached (no network, an outage, an
     /// answer that isn't the API's): trying again later may work. `detail` is the technical why.
-    Unreachable { detail: String },
+    Unreachable {
+        detail: String,
+    },
     /// Cyber CTF couldn't be reached, and the lab is installed here, so it can start offline.
-    OfflineReady { detail: String },
+    OfflineReady {
+        detail: String,
+    },
     /// The container engine isn't running.
     DockerNotRunning,
     /// Docker runs, but this account isn't allowed to use it.
@@ -97,7 +101,7 @@ pub enum Error {
     Cancelled,
     /// CyberBackend or the sign-in service couldn't be reached (no network, an outage, an answer
     /// that isn't the API's): unlike a refusal, trying again later may work.
-    #[error("{}", Code::Unreachable { detail: .0.clone() }.message())]
+    #[error("{0}")]
     Unreachable(String),
     /// A failure the UI knows by its code (see [`Code`]).
     #[error("{message}")]
@@ -149,7 +153,7 @@ impl From<Wire> for Error {
         match w.code {
             Code::Other => Error::Invalid(w.message),
             Code::SignInCancelled => Error::Cancelled,
-            Code::Unreachable { detail } => Error::Unreachable(detail),
+            Code::Unreachable { .. } => Error::Unreachable(w.message),
             code => Error::Coded { code, message: w.message },
         }
     }
@@ -176,7 +180,7 @@ mod tests {
             (Error::Cancelled, json!({ "code": "signInCancelled", "message": "Sign-in cancelled." })),
             (
                 Error::Unreachable("API unreachable: timed out".into()),
-                json!({ "code": "unreachable", "args": { "detail": "API unreachable: timed out" }, "message": "Cyber CTF can't be reached (API unreachable: timed out). Check your connection and try again." }),
+                json!({ "code": "unreachable", "args": { "detail": "API unreachable: timed out" }, "message": "API unreachable: timed out" }),
             ),
             (
                 Error::ToolMissing { tool: "vagrant" },
@@ -245,13 +249,20 @@ mod tests {
     #[test]
     fn every_code_round_trips_through_the_wire() {
         for code in sample_codes() {
-            let wire = Wire { code: code.clone(), message: code.message() };
+            // As the core raises it: its own variant where it has one, else coded.
+            let error = match code.clone() {
+                Code::Other => Error::Invalid("bad id".into()),
+                Code::SignInCancelled => Error::Cancelled,
+                Code::Unreachable { detail } => Error::Unreachable(detail),
+                c => Error::coded(c),
+            };
+            let wire = error.to_wire();
+            assert_eq!(wire.code, code);
             let text = serde_json::to_string(&wire).unwrap();
             let back: Wire = serde_json::from_str(&text).unwrap();
             assert_eq!(back, wire, "{text}");
             let error = Error::from(back);
-            assert_eq!(error.code(), code);
-            assert_eq!(error.to_string(), code.message());
+            assert_eq!(error.to_wire(), wire, "{text}");
         }
     }
 }

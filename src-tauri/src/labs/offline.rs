@@ -19,7 +19,6 @@ use serde_json::Value;
 use crate::error::{Code, Error, Result};
 use crate::runtime::{self, Runtime};
 
-
 /// The first line of an offline start's log.
 pub const STARTING_OFFLINE: &str = "Starting offline: progress and evidence aren't saved until the lab is started online again.";
 
@@ -176,7 +175,10 @@ mod tests {
         let base = base();
         // Never started online here: the failure as it was, and no offline start.
         install(&base, "web", SHA);
-        assert_eq!(instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err().code(), Code::Unreachable { detail: "API unreachable: connection refused".into() });
+        assert_eq!(
+            instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err().code(),
+            Code::Unreachable { detail: "API unreachable: connection refused".into() }
+        );
         assert!(
             instead_of(unreachable(), &base, "web", Some(ADA), true)
                 .unwrap_err()
