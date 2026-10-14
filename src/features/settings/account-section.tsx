@@ -1,7 +1,7 @@
 "use client";
 
 import { LogOut } from "lucide-react";
-import { initials, useAuthActions } from "@/features/account/account";
+import { initials, SignInHelp, useAuthActions } from "@/features/account/account";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -72,7 +72,10 @@ export function AccountSection({ auth, agent, onAuthChange }: { auth: AuthStatus
             </span>
           }
           description={
-            (error ?? auth.keychainError) ? <span className="text-destructive">{error ?? auth.keychainError}</span> : t("settings.account.signInHint")
+            <>
+              {(error ?? auth.keychainError) ? <span className="text-destructive">{error ?? auth.keychainError}</span> : t("settings.account.signInHint")}
+              <SignInHelp className="mt-1.5 justify-start" />
+            </>
           }
           control={
             <Button size="sm" onClick={login} disabled={busy}>

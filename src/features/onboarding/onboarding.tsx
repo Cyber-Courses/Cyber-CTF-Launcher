@@ -9,7 +9,8 @@ import { MachineStepBody, canContinue, machineSteps, nextLabel, stepMeta, useMac
 import { STEP_NAMES, isMachineStep, onboardingSteps } from "@/features/onboarding/onboarding-model";
 import { StepActions, StepHeader, StepProgress } from "@/features/onboarding/onboarding-parts";
 import { DoneStep, SignInStep, WelcomeStep } from "@/features/onboarding/onboarding-steps";
-import { authLogin, authStatus, systemCheck, type AuthStatus, type SystemReport } from "@/lib/tauri";
+import { useAuthActions } from "@/features/account/account";
+import { authStatus, systemCheck, type AuthStatus, type SystemReport } from "@/lib/tauri";
 import { usePoll } from "@/lib/use-poll";
 import { useT } from "@/lib/i18n";
 
@@ -21,8 +22,9 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const [i, setI] = useState(0);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [report, setReport] = useState<SystemReport | null>(null);
-  const [loggingIn, setLoggingIn] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
+  // The app's one sign-in: on failure the step stays and says why (a timeout, a missing browser
+  // or an unsaved session).
+  const { login, busy: loggingIn, error: loginError } = useAuthActions(setAuth);
 
   useEffect(() => {
     authStatus()
@@ -51,19 +53,6 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const step = steps[pos];
   const next = () => setI((n) => Math.min(n + 1, steps.length - 1));
   const back = () => setI((n) => Math.max(n - 1, 0));
-
-  async function login() {
-    setLoggingIn(true);
-    setLoginError(null);
-    try {
-      setAuth(await authLogin());
-    } catch (e) {
-      // Stay on this step, and say why: a timeout, a missing browser or an unsaved session.
-      setLoginError(String(e));
-    } finally {
-      setLoggingIn(false);
-    }
-  }
 
   const meta = isMachineStep(step) && report !== null ? stepMeta(step, report, t) : null;
 

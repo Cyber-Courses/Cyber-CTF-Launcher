@@ -5,5 +5,8 @@
   "online": "Online: Labs, die du auf der Website startest, laufen auf diesem Rechner",
   "signedIn": "Angemeldet",
   "signedInKeychain": "angemeldet · Schlüsselbund",
-  "signOut": "Abmelden"
+  "signOut": "Abmelden",
+  "didntOpen": "Browser nicht geöffnet?",
+  "copyLink": "Anmeldelink kopieren",
+  "cancel": "Abbrechen"
 }

@@ -5,5 +5,8 @@
   "online": "En línea: los labs que lances desde el sitio web se ejecutan en esta máquina",
   "signedIn": "Sesión iniciada",
   "signedInKeychain": "sesión iniciada · llavero",
-  "signOut": "Cerrar sesión"
+  "signOut": "Cerrar sesión",
+  "didntOpen": "¿No se abrió el navegador?",
+  "copyLink": "Copiar el enlace de inicio de sesión",
+  "cancel": "Cancelar"
 }

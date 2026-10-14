@@ -6,6 +6,7 @@ import { Panel } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-pill";
 import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
+import { SignInHelp } from "@/features/account/account";
 import { SetupOutcome, type MachineSetupState } from "@/features/machine/setup-steps";
 import { Feature, StepActions, StepFooter, StepHeader, SummaryRow } from "@/features/onboarding/onboarding-parts";
 import type { AuthStatus, SystemReport } from "@/lib/tauri";
@@ -79,6 +80,7 @@ export function SignInStep({
                 </>
               )}
             </Button>
+            <SignInHelp className="mt-2.5" />
             <p className="mt-2.5 text-[0.75rem] text-muted-foreground">
               {t.rich("onboarding.signin.hint", { mono: (s) => <span className="font-mono text-[0.6875rem]">{s}</span> })}
             </p>

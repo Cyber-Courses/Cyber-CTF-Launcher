@@ -644,6 +644,8 @@ export async function browserAnswer(cmd: string, args: Record<string, unknown> |
     case "auth_status":
       return live.signedIn ? answer(cmd, args) : { loggedIn: false, name: null, email: null };
     case "auth_login":
+      // The link the "Copy the sign-in link" fallback offers.
+      (args?.events as Stream | undefined)?.onmessage?.("https://www.cyberauth.co/api/auth/oauth2/authorize?client_id=dev-mock");
       await sleep(400);
       live.signedIn = true;
       return answer(cmd, args);

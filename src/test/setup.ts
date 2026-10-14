@@ -45,6 +45,7 @@ if (typeof window !== "undefined") {
     (await import("@/features/machine/use-self-test")).resetSelfTests();
     (await import("@/lib/shared-poll")).resetSharedPolls();
     (await import("@/lib/deploy-store")).resetDeployStore();
+    (await import("@/lib/sign-in")).resetSignIn();
     try {
       localStorage.clear();
     } catch {

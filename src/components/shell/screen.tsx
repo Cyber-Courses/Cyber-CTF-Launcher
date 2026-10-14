@@ -11,7 +11,8 @@ import { CheckFailed } from "@/features/machine/check-failed";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LIST_SCREEN } from "@/components/ui/screen-width";
 import { Spinner } from "@/components/ui/spinner";
-import { authLogin, type AuthStatus, type SystemReport } from "@/lib/tauri";
+import { type AuthStatus, type SystemReport } from "@/lib/tauri";
+import { signIn } from "@/lib/sign-in";
 import { useT } from "@/lib/i18n";
 import type { Tab } from "@/components/shell/shell-model";
 
@@ -41,7 +42,11 @@ type ScreenProps = {
 function TabScreen({ tab, report, checkError, auth, openLab, onRefresh, onNavigate, onAuthChange, onLabChange }: ScreenProps): ReactNode {
   const t = useT();
   const waiting = (what: string) => <WaitingForCheck what={what} checkError={checkError} onRetry={onRefresh} />;
-  const login = async () => onAuthChange(await authLogin());
+  // A cancelled sign-in (null) changes nothing.
+  const login = async () => {
+    const status = await signIn();
+    if (status) onAuthChange(status);
+  };
   if (tab === "home")
     return <HomeScreen report={report} checkError={checkError} onRetryCheck={onRefresh} auth={auth} onNavigate={onNavigate} onLogin={login} />;
   if (tab === "settings") return <SettingsScreen auth={auth} onAuthChange={onAuthChange} onNavigate={onNavigate} />;
