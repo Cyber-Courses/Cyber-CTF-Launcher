@@ -72,7 +72,9 @@ describe("machine steps: per OS", () => {
 
 describe("step words and picks", () => {
   it("the Windows virtualization step says Done; VM steps say Skip without a hypervisor and Continue with one", () => {
-    expect(nextLabel("virtualization", report(), t)).toBe("machine.steps.next.done");
+    expect(nextLabel("virtualization", report({ dockerRunning: false }), t)).toBe("machine.steps.next.done");
+    // Docker running proves WSL 2 works (#224): nothing to confirm.
+    expect(nextLabel("virtualization", report({ dockerRunning: true }), t)).toBe("machine.steps.next.continue");
     for (const step of ["vm", "vagrant", "vm-test"] as const)
       expect(nextLabel(step, report({ vmProviders: [hv({})] }), t), step).toBe("machine.steps.next.skip");
     const ready = report({ vmProviders: [hv({ hypervisor: true })] });

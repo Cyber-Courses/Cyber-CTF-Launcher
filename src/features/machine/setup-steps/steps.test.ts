@@ -59,7 +59,7 @@ describe("machine setup steps", () => {
   });
 
   it("the WSL step needs no confirmation when the check found it on, and can always be passed", () => {
-    const win = (state: string | null) => report({ os: "windows", wsl: state ? { state, reopensAfterRestart: true } : null } as Partial<SystemReport>);
+    const win = (state: string | null) => report({ os: "windows", dockerRunning: false, wsl: state ? { state, reopensAfterRestart: true } : null } as Partial<SystemReport>);
     expect(nextLabel("virtualization", win("ready"))).toBe("Continue");
     expect(nextLabel("virtualization", win("needsReboot"))).toBe("I’ll restart later");
     expect(nextLabel("virtualization", win("missing"))).toBe("Skip for now");
