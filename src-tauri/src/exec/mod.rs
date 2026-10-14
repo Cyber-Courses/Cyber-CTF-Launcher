@@ -14,18 +14,18 @@ use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 
 #[cfg(target_os = "linux")]
 pub use docker::login_name;
 pub use docker::{docker_denied, docker_denied_message, image_repository, valid_image};
 #[cfg(windows)]
 pub use elevate::{OWNER_WINDOW_ENV, owner_window, set_owner_window};
+pub(crate) use group::GroupGuard;
 pub use group::kill_live_tools;
 pub use vagrant::{Event, Step, Vagrant, hyperv_switch_line, machines_on, on_hyperv};
 
 use crate::error::{Error, Result};
-use group::GroupGuard;
 
 /// On Windows, every child of a windowed app gets a console window of its own unless told not
 /// to: the status polls (docker, vagrant, VBoxManage) would flash one on screen every few
@@ -122,6 +122,33 @@ pub async fn within<T>(what: &str, limit: Duration, run: impl std::future::Futur
     tokio::time::timeout(limit, run).await.unwrap_or_else(|_| Err(Error::CommandFailed { command: what.to_string(), stderr: timed_out_after(limit) }))
 }
 
+/// The error of a tool that ran and exited with `code`: missing when cmd.exe, which runs it on
+/// Windows, said it found no such command; else its failure.
+fn exit_error(program: &'static str, args: &[&str], code: Option<i32>, stderr: String) -> Error {
+    if shim::missing_behind_cmd(program, code) {
+        return Error::ToolMissing { tool: program };
+    }
+    failed(program, args, stderr)
+}
+
+/// Starts `cmd` as a group of its own, tracked until the guard is disarmed: its own process
+/// group on unix; on Windows a job object, the process created suspended and resumed only once
+/// it is in the job, so nothing it starts in between escapes it. Dropped armed (a timeout, a
+/// cancellation), the guard ends the whole tree, and so does the app's exit
+/// ([`kill_live_tools`]). `stream`: a long-running tool, stopped gently on unix.
+pub(crate) fn spawn_group(cmd: &mut Command, stream: bool) -> std::io::Result<(Child, GroupGuard)> {
+    cmd.kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW | group::CREATE_SUSPENDED);
+    let child = cmd.spawn()?;
+    let guard = if stream { GroupGuard::stream(&child) } else { GroupGuard::new(&child) };
+    #[cfg(windows)]
+    group::resume(&child)?;
+    Ok((child, guard))
+}
+
 /// Whether `e` is a timed tool that ran out of time (and was killed), not one that failed.
 pub fn timed_out(e: &Error) -> bool {
     matches!(e, Error::CommandFailed { stderr, .. } if stderr.starts_with("timed out after"))
@@ -165,37 +192,29 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
     let relayed = crate::lan_relay::prepare(program, env).await;
     let env = relayed.env.as_slice();
     let mut cmd = build(program, args);
-    cmd.stdin(Stdio::null());
+    // Piped explicitly: `spawn` (unlike `output`) inherits the parent's stdio by default, and
+    // `wait_with_output` then returned an empty stdout although the tool printed plenty (every
+    // timed status probe read as "nothing running").
+    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     cmd.envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
-    // Kill the child if this future is dropped (cancellation), so a long tool (vagrant/docker/
-    // cloud CLI) isn't left orphaned.
-    cmd.kill_on_drop(true);
-    let output = match timeout {
-        None => cmd.output().await.map_err(spawn_error(program))?,
-        Some(dur) => {
-            // `spawn` (unlike `output`) inherits the parent's stdio by default, so without
-            // explicit pipes `wait_with_output` returns an empty stdout even though the tool
-            // printed plenty: every timed status probe then read as "nothing running".
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-            // Its own process group, so a timeout or cancellation kills the whole tree: `vagrant`
-            // is a wrapper that starts `ruby` as a child, and killing only the wrapper orphaned
-            // one ruby per timed-out poll until they all deadlocked on Vagrant's lock.
-            #[cfg(unix)]
-            cmd.process_group(0);
-            let child = cmd.spawn().map_err(spawn_error(program))?;
-            let group = GroupGuard::new(&child);
-            let Ok(waited) = tokio::time::timeout(dur, child.wait_with_output()).await else {
-                return Err(failed(program, args, timed_out_after(dur)));
-            };
-            group.disarm();
-            waited.map_err(spawn_error(program))?
-        }
+    // Its own group, so a timeout or cancellation ends the whole tree: `vagrant` is a wrapper
+    // around `ruby` (an orphaned ruby per timed-out poll deadlocked on Vagrant's lock), and
+    // `cmd /C az` around `python` (a cancelled `az login` left it running).
+    let (child, group) = spawn_group(&mut cmd, false).map_err(spawn_error(program))?;
+    let waiting = child.wait_with_output();
+    let waited = match timeout {
+        None => waiting.await,
+        Some(dur) => tokio::time::timeout(dur, waiting)
+            .await
+            .map_err(|_| failed(program, args, timed_out_after(dur)))?,
     };
+    group.disarm();
+    let output = waited.map_err(spawn_error(program))?;
     if !output.status.success() {
-        return Err(failed(program, args, String::from_utf8_lossy(&output.stderr).trim().to_string()));
+        return Err(exit_error(program, args, output.status.code(), String::from_utf8_lossy(&output.stderr).trim().to_string()));
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
@@ -236,20 +255,14 @@ async fn stream_from(
     };
     cmd.stdin(input).stdout(Stdio::piped()).stderr(Stdio::piped());
     cmd.envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-    // Kill the child (and, with it, the long-lived process we stream) if this future is dropped,
-    // rather than orphaning a vagrant/docker/terraform run.
-    cmd.kill_on_drop(true);
-    // Its own process group (a job object on Windows), so a cancellation ends the whole tree:
-    // `vagrant` is a wrapper whose `ruby` outlived the wrapper killed alone, and kept Vagrant's
-    // lock. A deploy worker being stopped reaches it through `kill_live_tools` (gently: SIGTERM),
-    // and Terraform's interrupt finds it as a group under the worker (see deploy_worker).
-    #[cfg(unix)]
-    cmd.process_group(0);
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
-    let mut child = cmd.spawn().map_err(spawn_error(program))?;
-    let group = GroupGuard::stream(&child);
+    // A cancellation ends the whole tree: `vagrant` is a wrapper whose `ruby` outlived the
+    // wrapper killed alone, and kept Vagrant's lock. A deploy worker being stopped reaches it
+    // through `kill_live_tools` (gently: SIGTERM), and Terraform's interrupt finds it as a group
+    // under the worker (see deploy_worker).
+    let (mut child, group) = spawn_group(&mut cmd, true).map_err(spawn_error(program))?;
     // Keep the last few stderr lines so a failure's error carries the actual cause, not just the
     // exit status (callers that surface the returned error, not the log channel, rely on this).
     let forwarded = forward_lines(&mut child, STREAM_ERROR_LINES, on_line, |_| {}).await;
@@ -258,7 +271,7 @@ async fn stream_from(
     }
     let (status, tail) = forwarded?;
     if !status.success() {
-        return Err(failed(program, args, stream_failure(&tail, status)));
+        return Err(exit_error(program, args, status.code(), stream_failure(&tail, status)));
     }
     Ok(())
 }
@@ -381,20 +394,6 @@ mod tests {
         assert!(!timed_out(&failed("sh", &[], "exited 1".into())) && !timed_out(&Error::ToolMissing { tool: "sh" }));
     }
 
-    /// Whether process `pid` is gone (or a zombie) within a few seconds.
-    async fn gone(pid: u32) -> bool {
-        use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
-        for _ in 0..60 {
-            let mut sys = System::new();
-            sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[Pid::from_u32(pid)]), true, ProcessRefreshKind::nothing());
-            if sys.process(Pid::from_u32(pid)).is_none_or(|p| matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead)) {
-                return true;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        false
-    }
-
     #[test]
     fn a_blocking_command_is_given_up_after_its_time() {
         // Regression: ending each shell session at quit ran `docker exec` with no time limit, so
@@ -434,7 +433,7 @@ mod tests {
         assert!(err.is_err(), "timed out");
         let pid: u32 = std::fs::read_to_string(&file).expect("the tool started its child").trim().parse().unwrap();
         let _ = std::fs::remove_file(&file);
-        assert!(gone(pid).await, "the tool's child {pid} was left running");
+        assert!(fake::gone(pid).await, "the tool's child {pid} was left running");
     }
 
     #[cfg(unix)]
@@ -480,7 +479,7 @@ mod tests {
         assert!(started.is_err(), "cancelled while it ran");
         let pid: u32 = std::fs::read_to_string(&file).expect("the tool started its child").trim().parse().unwrap();
         let _ = std::fs::remove_file(&file);
-        assert!(gone(pid).await, "the tool's child {pid} was left running");
+        assert!(fake::gone(pid).await, "the tool's child {pid} was left running");
     }
 
     #[cfg(unix)]

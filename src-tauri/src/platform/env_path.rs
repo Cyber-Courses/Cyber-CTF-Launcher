@@ -49,18 +49,28 @@ fn extra_dirs() -> Vec<PathBuf> {
         dirs.push("/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool".into());
         dirs.push("/Applications/VMware Fusion.app/Contents/Library".into());
     }
-    #[cfg(windows)]
-    {
-        if let Some(pf) = std::env::var_os("ProgramFiles").map(PathBuf::from) {
-            dirs.push(pf.join("VMware").join("VMware OVF Tool"));
-            dirs.push(pf.join("Vagrant").join("bin"));
-            // VirtualBox never adds itself to PATH; VBoxManage is how its VMs are driven.
-            dirs.push(pf.join("Oracle").join("VirtualBox"));
-            dirs.push(pf.join("Docker").join("Docker").join("resources").join("bin"));
-        }
-        if let Some(vbox) = std::env::var_os("VBOX_MSI_INSTALL_PATH") {
-            dirs.push(PathBuf::from(vbox));
-        }
+    if cfg!(windows) {
+        dirs.extend(windows_dirs(|name| std::env::var_os(name)));
+    }
+    dirs
+}
+
+/// The Windows tool folders, from the environment `var` reads. None of these installers adds
+/// itself to PATH: VirtualBox (VBoxManage drives its VMs) says where it went in
+/// `VBOX_MSI_INSTALL_PATH`, and VMware Workstation puts `vmrun` under the 32-bit Program Files.
+fn windows_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Some(vbox) = var("VBOX_MSI_INSTALL_PATH") {
+        dirs.push(PathBuf::from(vbox));
+    }
+    if let Some(pf) = var("ProgramFiles").map(PathBuf::from) {
+        dirs.push(pf.join("Oracle").join("VirtualBox"));
+        dirs.push(pf.join("VMware").join("VMware OVF Tool"));
+        dirs.push(pf.join("Vagrant").join("bin"));
+        dirs.push(pf.join("Docker").join("Docker").join("resources").join("bin"));
+    }
+    if let Some(pf86) = var("ProgramFiles(x86)").map(PathBuf::from) {
+        dirs.push(pf86.join("VMware").join("VMware Workstation"));
     }
     dirs
 }
@@ -195,6 +205,28 @@ mod tests {
     fn appending_keeps_existing_entries_first_and_adds_each_new_dir_once() {
         let out = appended(Some(joined(&["/a", "/b"])), ["/b", "/c", "/c", ""].map(PathBuf::from)).unwrap();
         assert_eq!(std::env::split_paths(&out).collect::<Vec<_>>(), ["/a", "/b", "/c"].map(PathBuf::from));
+    }
+
+    #[test]
+    fn windows_finds_the_hypervisors_that_never_join_path() {
+        // Regression (#218): VirtualBox read as not installed right after its installer ran, and
+        // VMware Workstation's vmrun was never found.
+        let env = |name: &str| -> Option<OsString> {
+            match name {
+                "VBOX_MSI_INSTALL_PATH" => Some(r"D:\VBox\".into()),
+                "ProgramFiles" => Some(r"C:\Program Files".into()),
+                "ProgramFiles(x86)" => Some(r"C:\Program Files (x86)".into()),
+                _ => None,
+            }
+        };
+        let dirs = windows_dirs(env);
+        let has = |p: &str| dirs.iter().any(|d| d.to_string_lossy().replace('/', r"\") == p);
+        assert!(has(r"D:\VBox\"), "{dirs:?}");
+        assert!(has(r"C:\Program Files\Oracle\VirtualBox") && has(r"C:\Program Files\Vagrant\bin"), "{dirs:?}");
+        assert!(has(r"C:\Program Files (x86)\VMware\VMware Workstation"), "{dirs:?}");
+        // The installer's own answer comes first: a VirtualBox moved elsewhere wins.
+        assert_eq!(dirs[0], PathBuf::from(r"D:\VBox\"));
+        assert!(windows_dirs(|_| None).is_empty());
     }
 
     #[test]

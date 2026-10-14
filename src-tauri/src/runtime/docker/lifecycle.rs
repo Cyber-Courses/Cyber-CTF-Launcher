@@ -21,15 +21,29 @@ async fn ensure_docker_up() -> Result<()> {
     })
 }
 
-/// A host port is taken if we can't bind it over its protocol (`udp`, else TCP): another lab, or
-/// anything else (dnsmasq, Windows' Internet Connection Sharing on UDP 53), holds it. Checks
-/// every interface a container can publish to: all interfaces and the loopback specifically
-/// (a port held only on 127.0.0.1 doesn't fail the 0.0.0.0 bind on its own).
+/// A host port is taken if we can't bind it on the loopback over its protocol (`udp`, else TCP):
+/// another lab, or anything else (dnsmasq, Windows' Internet Connection Sharing on UDP 53),
+/// holds it. Labs publish on 127.0.0.1 only (Isoloom's default address), so that is all `up`
+/// needs. Never all interfaces: binding 0.0.0.0 made Windows Firewall ask whether Cyber CTF may
+/// accept connections from the network on a player's first lab (#230). A program holding the
+/// port on 0.0.0.0 still fails the loopback bind on Linux; where it doesn't (Windows, macOS),
+/// Docker's own loopback publish goes through too. `[::1]` counts when another program listens
+/// there: a browser opening `localhost` may reach it first.
 fn port_in_use(port: u16, proto: &str) -> bool {
-    if proto == "udp" {
-        return std::net::UdpSocket::bind(("0.0.0.0", port)).is_err() || std::net::UdpSocket::bind(("127.0.0.1", port)).is_err();
-    }
-    std::net::TcpListener::bind(("0.0.0.0", port)).is_err() || std::net::TcpListener::bind(("127.0.0.1", port)).is_err()
+    let v4 = bind(std::net::Ipv4Addr::LOCALHOST.into(), port, proto);
+    let v6 = bind(std::net::Ipv6Addr::LOCALHOST.into(), port, proto);
+    v4.is_err() || v6.is_err_and(|e| held_elsewhere(&e))
+}
+
+/// Binds (then frees) `ip:port` over `proto`.
+fn bind(ip: std::net::IpAddr, port: u16, proto: &str) -> std::io::Result<()> {
+    if proto == "udp" { std::net::UdpSocket::bind((ip, port)).map(drop) } else { std::net::TcpListener::bind((ip, port)).map(drop) }
+}
+
+/// Whether a failed bind means someone holds the port (or the OS reserved it), not that the
+/// address doesn't exist here (no IPv6 loopback).
+fn held_elsewhere(e: &std::io::Error) -> bool {
+    matches!(e.kind(), std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied)
 }
 
 /// A port is free over `proto` on the loopback, and held open so it isn't handed out twice.
@@ -258,7 +272,7 @@ async fn remove_network(net: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{PORTS_ENV, default_ports, explain_pool_overlap, pick_pins, port_in_use, stale_networks, start_steps};
+    use super::{PORTS_ENV, default_ports, explain_pool_overlap, held_elsewhere, pick_pins, port_in_use, stale_networks, start_steps};
     use crate::runtime::lab::StartPlan;
 
     #[test]
@@ -317,16 +331,41 @@ mod tests {
 
     #[test]
     fn a_held_port_is_in_use() {
-        // Held on the loopback or on all interfaces, over one protocol only.
-        for ip in ["127.0.0.1", "0.0.0.0"] {
-            let port = port_free_over_both();
-            let tcp = std::net::TcpListener::bind((ip, port)).unwrap();
-            assert!(port_in_use(port, "tcp"), "a TCP holder on {ip} is caught");
-            assert!(!port_in_use(port, "udp"), "a TCP holder on {ip} doesn't block a UDP-only port");
-            drop(tcp);
-            let _udp = std::net::UdpSocket::bind((ip, port)).unwrap();
-            assert!(port_in_use(port, "udp"), "a UDP holder on {ip} (dnsmasq on 53) is caught");
-            assert!(!port_in_use(port, "tcp"), "a UDP holder on {ip} doesn't block a TCP port");
+        // Held on the IPv4 loopback, over one protocol only. A fresh port for each holder: a
+        // tool another test spawns meanwhile can inherit a socket for a moment (macOS marks a new
+        // socket close-on-exec only after creating it), and hold a port past its drop.
+        let port = port_free_over_both();
+        let _tcp = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+        assert!(port_in_use(port, "tcp"), "a TCP holder is caught");
+        assert!(!port_in_use(port, "udp"), "a TCP holder doesn't block a UDP-only port");
+        let port = port_free_over_both();
+        let _udp = std::net::UdpSocket::bind(("127.0.0.1", port)).unwrap();
+        assert!(port_in_use(port, "udp"), "a UDP holder (dnsmasq on 53) is caught");
+        assert!(!port_in_use(port, "tcp"), "a UDP holder doesn't block a TCP port");
+        // Held on the IPv6 loopback, where this machine has one.
+        let port = port_free_over_both();
+        if let Ok(_v6) = std::net::TcpListener::bind(("::1", port)) {
+            assert!(port_in_use(port, "tcp"), "a holder on [::1] is caught");
+        }
+    }
+
+    #[test]
+    fn only_a_held_or_reserved_address_counts_on_the_ipv6_loopback() {
+        use std::io::{Error, ErrorKind};
+        assert!(held_elsewhere(&Error::from(ErrorKind::AddrInUse)));
+        assert!(held_elsewhere(&Error::from(ErrorKind::PermissionDenied)), "a range Windows reserves (WinNAT, Hyper-V)");
+        assert!(!held_elsewhere(&Error::from(ErrorKind::AddrNotAvailable)), "no IPv6 loopback on this machine");
+    }
+
+    #[test]
+    fn nothing_the_app_runs_listens_beyond_the_loopback() {
+        // Regression (#230): the port check bound 0.0.0.0, and Windows Firewall asked the player
+        // whether Cyber CTF may accept connections from public networks, mid-deploy.
+        for src in crate::source_scan::crate_sources() {
+            for needle in ["\"0.0.0.0\"", "UNSPECIFIED", "\"::\"", "\"[::]"] {
+                let binds = src.code.lines().filter(|l| l.contains("bind") && l.contains(needle)).collect::<Vec<_>>();
+                assert!(binds.is_empty(), "{} binds beyond the loopback: {binds:?}", src.path.display());
+            }
         }
     }
 

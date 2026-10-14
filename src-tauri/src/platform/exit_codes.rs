@@ -14,12 +14,28 @@ fn winget_summary(code: u32) -> Option<Outcome> {
         0x8A15_0102 => Outcome::Failed("Another installation is already running. Wait for it to finish, then try again."),
         0x8A15_0105 => Outcome::Failed("There isn't enough disk space. Free up some space, then try again."),
         0x8A15_0107 => Outcome::Failed("This needs an internet connection. Check your connection, then try again."),
-        0x8A15_0109 => Outcome::Failed("Restart Windows to finish."),
         0x8A15_010A => Outcome::Failed("Restart Windows, then try again."),
         0x8A15_010F => Outcome::Failed("This is blocked by a policy on this computer. Ask your administrator."),
         WINGET_INSTALLER_FAILED => Outcome::Failed("The installer reported an error, so it didn't finish. The details are in the log above."),
         _ => return None,
     })
+}
+
+/// winget's "no applicable update": the package is installed already, at its latest version.
+const WINGET_ALREADY_INSTALLED: u32 = 0x8A15_002B;
+/// winget's "a restart is required to finish": the install (or removal) itself went through.
+const WINGET_RESTART_TO_FINISH: u32 = 0x8A15_0109;
+
+/// winget results that are not failures although winget exits non-zero, as the note to show:
+/// nothing to do, or done once Windows restarts. (A restart needed *before* installing,
+/// `0x8A15010A`, is a failure: nothing was installed.)
+pub fn winget_done(code: Option<i32>, removing: bool) -> Option<&'static str> {
+    match code? as u32 {
+        WINGET_ALREADY_INSTALLED => Some("Already installed and up to date: nothing to do."),
+        WINGET_RESTART_TO_FINISH if removing => Some("Removed. Restart Windows to finish."),
+        WINGET_RESTART_TO_FINISH => Some("Installed. Restart Windows to finish."),
+        _ => None,
+    }
 }
 
 /// Installer exit codes that mean the player said no (to the UAC prompt or the installer).
@@ -99,6 +115,23 @@ mod tests {
         // Not English output: winget's code alone still says it failed.
         assert!(failed(None).starts_with("The installer reported an error"));
         assert!(winget_failure(Some(0x8A15_0105_u32 as i32), None, false).unwrap().contains("disk space"));
+    }
+
+    #[test]
+    fn an_up_to_date_package_or_a_pending_restart_is_done_not_failed() {
+        // Regression (#220): `winget install` of a package already there exits 0x8A15002B, and
+        // Docker Desktop's or WSL's install 0x8A150109 (restart to finish): both read as failed,
+        // so the step never counted as done.
+        let code = |c: u32| Some(c as i32);
+        assert!(winget_done(code(0x8A15_002B), false).unwrap().starts_with("Already installed"));
+        assert!(winget_done(code(0x8A15_0109), false).unwrap().contains("Restart Windows to finish"));
+        assert!(winget_done(code(0x8A15_0109), true).unwrap().starts_with("Removed"));
+        assert_eq!(winget_failure(code(0x8A15_0109), None, false), None, "no longer a failure");
+        // A restart needed before installing is still a failure, as is anything else.
+        assert_eq!(winget_done(code(0x8A15_010A), false), None);
+        assert!(winget_failure(code(0x8A15_010A), None, false).unwrap().contains("Restart Windows, then try again"));
+        assert_eq!(winget_done(code(0x8A15_0006), false), None);
+        assert_eq!(winget_done(None, false), None);
     }
 
     #[test]

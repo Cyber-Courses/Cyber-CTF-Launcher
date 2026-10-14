@@ -142,7 +142,7 @@ proptest! {
     fn known_hosts_reaches_ssh_as_one_verbatim_path(known_hosts in any_path(), batch: bool) {
         check_options(&options(batch, &known_hosts), batch, &known_hosts);
         // In a shell command line too: the shell, then ssh.
-        let words = shell_words::split(&shell_options(batch, Path::new(&known_hosts))).unwrap();
+        let words = shell_words::split(&quoted_options(batch, Path::new(&known_hosts), shell_word)).unwrap();
         let (opts, rest) = take_options(&words);
         prop_assert!(rest.is_empty(), "{:?}", rest);
         check_options(&opts, batch, &known_hosts);

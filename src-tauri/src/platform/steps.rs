@@ -77,7 +77,9 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
     // Installers that need a console of their own (winget, an .msi) still get none here: their
     // output streams into the app's setup log instead of a window flashing on screen.
     crate::exec::headless(&mut cmd);
-    let mut child = cmd.spawn().map_err(|e| match e.kind() {
+    // In a group of its own, like every tool: a step whose output fails mid-way is ended with
+    // what it started, not left installing unattended (#220).
+    let (mut child, group) = crate::exec::spawn_group(&mut cmd, true).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound if step.program == "pkexec" => Error::Invalid(NO_PKEXEC.into()),
         std::io::ErrorKind::NotFound => Error::Invalid(format!("{} is not available on this machine.", step.program)),
         _ => Error::Io(e),
@@ -92,31 +94,59 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
         }
         on_line(line);
     };
-    let (status, _) = crate::exec::forward_lines(&mut child, 0, watch, |line| {
+    let forwarded = crate::exec::forward_lines(&mut child, 0, watch, |line| {
         if step.program == "pkexec" && is_pkexec_error(line) {
             pkexec_error = Some(line.to_string());
         }
     })
-    .await?;
+    .await;
+    if forwarded.is_ok() {
+        group.disarm();
+    }
+    let (status, _) = forwarded?;
     // pkexec exits 126 when the password prompt was dismissed or refused and 127 when no polkit
     // agent could show one, but the script's own 126/127 (a command missing or not executable)
     // come through as is: only pkexec's own message says which it was.
     if let Some(why) = pkexec_error.filter(|_| matches!(status.code(), Some(126 | 127))) {
         return Err(Error::Invalid(pkexec_refusal(&why).into()));
     }
-    if !status.success() {
-        let removing = step.args.first().is_some_and(|a| a == "uninstall");
-        // A known winget code reads as what happened; the raw codes follow it (and are in the log).
-        if let Some(why) = exit_codes::winget_failure(status.code(), installer_code, removing).filter(|_| step.program == "winget") {
-            return Err(Error::Invalid(format!("{why} (`winget` exited with {status})")));
+    let removing = step.args.first().is_some_and(|a| a == "uninstall");
+    match end_of(&step.program, removing, status.code(), installer_code) {
+        End::Done(note) => {
+            if let Some(note) = note {
+                on_line(note.into());
+            }
+            Ok(())
         }
-        // An installer run through PowerShell (WSL's) exits with the installer's own code.
-        if let Some(why) = exit_codes::installer_failure(status.code(), removing).filter(|_| step.program == "powershell") {
-            return Err(Error::Invalid(format!("{why} (`powershell` exited with {status})")));
-        }
-        return Err(Error::Invalid(format!("`{}` exited with {status}", step.program)));
+        // A known code reads as what happened; the raw codes follow it (and are in the log).
+        End::Failed(Some(why)) => Err(Error::Invalid(format!("{why} (`{}` exited with {status})", step.program))),
+        End::Failed(None) => Err(Error::Invalid(format!("`{}` exited with {status}", step.program))),
     }
-    Ok(())
+}
+
+/// How a step that exited with `code` ended.
+#[derive(Debug, PartialEq)]
+enum End {
+    /// Done, with a note for the log (winget's "already installed", "restart to finish").
+    Done(Option<&'static str>),
+    /// Failed, with what that means when the code is known.
+    Failed(Option<&'static str>),
+}
+
+/// What `program`'s exit `code` means for its step: winget's own codes, and an installer run
+/// through PowerShell (WSL's) exiting with the installer's code. `removing`: an uninstall.
+fn end_of(program: &str, removing: bool, code: Option<i32>, installer_code: Option<u32>) -> End {
+    if code == Some(0) {
+        return End::Done(None);
+    }
+    match program {
+        "winget" => match exit_codes::winget_done(code, removing) {
+            Some(note) => End::Done(Some(note)),
+            None => End::Failed(exit_codes::winget_failure(code, installer_code, removing)),
+        },
+        "powershell" => End::Failed(exit_codes::installer_failure(code, removing)),
+        _ => End::Failed(None),
+    }
 }
 
 #[cfg(test)]
@@ -163,6 +193,35 @@ mod tests {
         assert_eq!(lines, ["Error executing command as another user: Not authorized"]);
         let err = run_step(&step("sh", &["-c", "exit 127"]), &mut |_| {}).await.unwrap_err();
         assert_eq!(err.to_string(), "`sh` exited with exit status: 127");
+    }
+
+    #[test]
+    fn a_step_ends_by_its_programs_codes() {
+        let winget = |code: u32, installer| end_of("winget", false, Some(code as i32), installer);
+        assert_eq!(end_of("winget", false, Some(0), None), End::Done(None));
+        // Regression (#220): nothing to do, or a restart to finish, is a step done.
+        assert!(matches!(winget(0x8A15_002B, None), End::Done(Some(note)) if note.starts_with("Already installed")));
+        assert!(matches!(winget(0x8A15_0109, None), End::Done(Some(note)) if note.contains("Restart Windows")));
+        assert!(matches!(winget(0x8A15_0006, Some(1602)), End::Failed(Some(why)) if why.contains("cancelled")));
+        assert_eq!(winget(1, None), End::Failed(None));
+        // Only winget's codes are winget's: another program exiting with one just failed.
+        assert_eq!(end_of("sh", false, Some(0x8A15_002B_u32 as i32), None), End::Failed(None));
+        assert!(matches!(end_of("powershell", true, Some(1223), None), End::Failed(Some(why)) if why.starts_with("The removal was cancelled")));
+        assert_eq!(end_of("pkexec", false, None, None), End::Failed(None), "killed by a signal");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_step_whose_output_fails_takes_what_it_started_with_it() {
+        // Regression (#220): an install step was spawned without kill_on_drop or a group, so a
+        // failed read of its output left it (and its installer) running unattended.
+        let file = std::env::temp_dir().join(format!("cyberctf-step-tree-{}", rand::random::<u32>()));
+        let script = format!("sleep 120 & echo $! > '{}'; wait", file.display());
+        let started = tokio::time::timeout(std::time::Duration::from_secs(2), run_step(&step("sh", &["-c", &script]), &mut |_| {})).await;
+        assert!(started.is_err(), "cancelled while it ran");
+        let pid: u32 = std::fs::read_to_string(&file).expect("the step started its child").trim().parse().unwrap();
+        let _ = std::fs::remove_file(&file);
+        assert!(crate::exec::fake::gone(pid).await, "the step's child {pid} was left running");
     }
 
     #[tokio::test]
