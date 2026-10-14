@@ -46,13 +46,29 @@ const BOX_NOTES: Record<string, MessageKey> = {
 /* ------------------------------------------------------------------ labs */
 
 export function AttackBoxRows({ onSaved }: { onSaved: () => void }) {
+  return (
+    <>
+      <AttackImageRow onSaved={onSaved} />
+
+      <AttackVmRow onSaved={onSaved} />
+
+      <div className="border-t border-border px-4 py-3.5">
+        <SharedFolderControl onSaved={onSaved} />
+      </div>
+
+      <AutoStartRow onSaved={onSaved} />
+    </>
+  );
+}
+
+/** The attack box image beside container labs: a preset, or any image the core accepts. */
+function AttackImageRow({ onSaved }: { onSaved: () => void }) {
   const t = useT();
   const [image, setImage] = useState(() => getAttackImage());
   const isPreset = ATTACK_PRESETS.some((p) => p.image === image);
   const sizes = useImageSizes(ATTACK_PRESETS.map((p) => p.image));
   const [customOpen, setCustomOpen] = useState(!isPreset);
   const [draft, setDraft] = useState(isPreset ? "" : image);
-  const [autoStart, setAutoStart] = useState(() => getAutoAttackBox());
 
   function choose(next: string) {
     const value = next.trim() || DEFAULT_ATTACK_IMAGE;
@@ -66,104 +82,132 @@ export function AttackBoxRows({ onSaved }: { onSaved: () => void }) {
   const customInvalid = draft.trim() !== "" && !validImage(draft.trim());
 
   return (
-    <>
-      <Row stacked title={t("settings.attackBox.title")} description={t("settings.attackBox.description")}>
-        <RadioList label={t("settings.attackBox.title")} className="mt-3">
-          {ATTACK_PRESETS.map((p) => (
-            <RadioRow
-              key={p.image}
-              compact
-              selected={!customOpen && image === p.image}
-              onSelect={() => {
-                setCustomOpen(false);
-                choose(p.image);
-              }}
-              title={
-                <>
-                  {p.label}
-                  {p.image === DEFAULT_ATTACK_IMAGE && <Badge>{t("settings.attackBox.default")}</Badge>}
-                  {sizes[p.image] ? (
-                    <Badge variant="outline">{formatBytes(sizes[p.image]!)}</Badge>
-                  ) : (
-                    sizes[p.image] === null && p.large && <Badge variant="outline">{t("settings.attackBox.largeDownload")}</Badge>
-                  )}
-                  {p.terms && <Badge variant="warning">{TERMS[p.terms] ? t(TERMS[p.terms]) : p.terms}</Badge>}
-                </>
-              }
-              subtitle={
-                <>
-                  {p.image === DEFAULT_ATTACK_IMAGE ? (
-                    // The pinned default reads as its repository; the digest is in the tooltip.
-                    <span className="font-mono" title={p.image}>
-                      {CYBERCTF_ATTACK_REPO} ({t("settings.attackBox.pinned")})
-                    </span>
-                  ) : (
-                    <span className="font-mono">{p.image}</span>
-                  )}{" "}
-                  <span className="text-faint">·</span> {IMAGE_NOTES[p.image] ? t(IMAGE_NOTES[p.image]) : p.note}
-                </>
-              }
-            />
-          ))}
+    <Row stacked title={t("settings.attackBox.title")} description={t("settings.attackBox.description")}>
+      <RadioList label={t("settings.attackBox.title")} className="mt-3">
+        {ATTACK_PRESETS.map((p) => (
           <RadioRow
+            key={p.image}
             compact
-            selected={customOpen}
-            onSelect={() => setCustomOpen(true)}
-            title={t("settings.attackBox.customImage")}
-            subtitle={t("settings.attackBox.customImageNote")}
-          >
-            {customOpen && (
-              <form
-                className="mt-2.5 flex items-center gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (customDirty) choose(draft);
-                }}
-              >
-                <Input
-                  fieldSize="sm"
-                  mono
-                  autoFocus
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  spellCheck={false}
-                  placeholder="registry/image:tag"
-                  aria-invalid={customInvalid || undefined}
-                  className="min-w-0 flex-1"
-                />
-                <Button type="submit" variant="outline" size="xs" disabled={!customDirty} onClick={(e) => e.stopPropagation()}>
-                  {t("settings.attackBox.save")}
-                </Button>
-              </form>
-            )}
-            {customOpen && customInvalid && <p className="mt-1.5 text-[0.75rem] text-destructive">{t("settings.attackBox.invalidImage")}</p>}
-          </RadioRow>
-        </RadioList>
-      </Row>
-
-      <AttackVmRow onSaved={onSaved} />
-
-      <div className="border-t border-border px-4 py-3.5">
-        <SharedFolderControl onSaved={onSaved} />
-      </div>
-
-      <Row
-        title={t("settings.attackBox.autoStart")}
-        description={t("settings.attackBox.autoStartDescription")}
-        control={
-          <Switch
-            aria-label={t("settings.attackBox.autoStart")}
-            checked={autoStart}
-            onCheckedChange={(on) => {
-              setAutoAttackBox(on);
-              setAutoStart(on);
-              onSaved();
+            selected={!customOpen && image === p.image}
+            onSelect={() => {
+              setCustomOpen(false);
+              choose(p.image);
             }}
+            title={<ImagePresetTitle preset={p} size={sizes[p.image]} />}
+            subtitle={<ImagePresetSubtitle preset={p} />}
           />
-        }
-      />
+        ))}
+        <RadioRow
+          compact
+          selected={customOpen}
+          onSelect={() => setCustomOpen(true)}
+          title={t("settings.attackBox.customImage")}
+          subtitle={t("settings.attackBox.customImageNote")}
+        >
+          {customOpen && (
+            <CustomValueForm
+              draft={draft}
+              onDraft={setDraft}
+              dirty={customDirty}
+              invalid={customInvalid}
+              placeholder="registry/image:tag"
+              onSave={() => choose(draft)}
+            />
+          )}
+          {customOpen && customInvalid && <p className="mt-1.5 text-[0.75rem] text-destructive">{t("settings.attackBox.invalidImage")}</p>}
+        </RadioRow>
+      </RadioList>
+    </Row>
+  );
+}
+
+type ImagePreset = (typeof ATTACK_PRESETS)[number];
+
+/** A preset's name with its badges: default, download size (or "Large download"), terms. */
+function ImagePresetTitle({ preset: p, size }: { preset: ImagePreset; size: number | null | undefined }) {
+  const t = useT();
+  return (
+    <>
+      {p.label}
+      {p.image === DEFAULT_ATTACK_IMAGE && <Badge>{t("settings.attackBox.default")}</Badge>}
+      {size ? (
+        <Badge variant="outline">{formatBytes(size)}</Badge>
+      ) : (
+        size === null && p.large && <Badge variant="outline">{t("settings.attackBox.largeDownload")}</Badge>
+      )}
+      {p.terms && <Badge variant="warning">{TERMS[p.terms] ? t(TERMS[p.terms]) : p.terms}</Badge>}
     </>
+  );
+}
+
+/** A preset's image reference and note. */
+function ImagePresetSubtitle({ preset: p }: { preset: ImagePreset }) {
+  const t = useT();
+  return (
+    <>
+      {p.image === DEFAULT_ATTACK_IMAGE ? (
+        // The pinned default reads as its repository; the digest is in the tooltip.
+        <span className="font-mono" title={p.image}>
+          {CYBERCTF_ATTACK_REPO} ({t("settings.attackBox.pinned")})
+        </span>
+      ) : (
+        <span className="font-mono">{p.image}</span>
+      )}{" "}
+      <span className="text-faint">·</span> {IMAGE_NOTES[p.image] ? t(IMAGE_NOTES[p.image]) : p.note}
+    </>
+  );
+}
+
+/** Starts the attack box with each lab. */
+function AutoStartRow({ onSaved }: { onSaved: () => void }) {
+  const t = useT();
+  const [autoStart, setAutoStart] = useState(() => getAutoAttackBox());
+  return (
+    <Row
+      title={t("settings.attackBox.autoStart")}
+      description={t("settings.attackBox.autoStartDescription")}
+      control={
+        <Switch
+          aria-label={t("settings.attackBox.autoStart")}
+          checked={autoStart}
+          onCheckedChange={(on) => {
+            setAutoAttackBox(on);
+            setAutoStart(on);
+            onSaved();
+          }}
+        />
+      }
+    />
+  );
+}
+
+/** The free-text field of a "Custom" choice and its Save button (saves only a changed, valid value). */
+function CustomValueForm(props: { draft: string; onDraft: (v: string) => void; dirty: boolean; invalid?: boolean; placeholder: string; onSave: () => void }) {
+  const t = useT();
+  return (
+    <form
+      className="mt-2.5 flex items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (props.dirty) props.onSave();
+      }}
+    >
+      <Input
+        fieldSize="sm"
+        mono
+        autoFocus
+        value={props.draft}
+        onChange={(e) => props.onDraft(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        spellCheck={false}
+        placeholder={props.placeholder}
+        aria-invalid={props.invalid || undefined}
+        className="min-w-0 flex-1"
+      />
+      <Button type="submit" variant="outline" size="xs" disabled={!props.dirty} onClick={(e) => e.stopPropagation()}>
+        {t("settings.attackBox.save")}
+      </Button>
+    </form>
   );
 }
 
@@ -216,30 +260,7 @@ function AttackVmRow({ onSaved }: { onSaved: () => void }) {
           title={t("settings.attackVm.customBox")}
           subtitle={t("settings.attackVm.customBoxNote")}
         >
-          {customOpen && (
-            <form
-              className="mt-2.5 flex items-center gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (customDirty) choose(draft);
-              }}
-            >
-              <Input
-                fieldSize="sm"
-                mono
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                spellCheck={false}
-                placeholder="owner/name"
-                className="min-w-0 flex-1"
-              />
-              <Button type="submit" variant="outline" size="xs" disabled={!customDirty} onClick={(e) => e.stopPropagation()}>
-                {t("settings.attackBox.save")}
-              </Button>
-            </form>
-          )}
+          {customOpen && <CustomValueForm draft={draft} onDraft={setDraft} dirty={customDirty} placeholder="owner/name" onSave={() => choose(draft)} />}
         </RadioRow>
       </RadioList>
     </Row>
