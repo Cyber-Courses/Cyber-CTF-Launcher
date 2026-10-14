@@ -179,10 +179,11 @@ fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> 
     if running(app).contains(&job.key()) {
         return Err(Error::Invalid(format!("{} of this lab is already in progress; wait for it to finish.", capitalize(job.what()))));
     }
-    // The attack VM takes no lab lock (it boots beside a lab that is still starting), so a stop
-    // must keep it from starting while the lab goes: it would come up beside nothing, orphaned.
-    if matches!(job.op, Op::AttackVm { .. }) && crate::runtime::stopping(&job.lab_id) {
-        return Err(Error::Refused("This lab is stopping. Start the attack VM once the lab is up again.".into()));
+    // Nothing begins while the lab stops: between ending its workers and taking its lock, a
+    // start would win the lock and the stop then destroy what it built; and the attack VM takes
+    // no lab lock (it boots beside a lab that is still starting), so it would come up orphaned.
+    if crate::runtime::stopping(&job.lab_id) {
+        return Err(Error::Refused("This lab is stopping. Wait for it to stop, then try again.".into()));
     }
     // An operation of the app itself (a stop, the expiry reaper) holds the lab: the worker
     // would only wait for it, then act on what it left (the attack VM runs beside the lab's
@@ -288,17 +289,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_attack_vm_start_is_refused_while_its_lab_stops() {
+    async fn nothing_starts_on_a_lab_while_it_stops() {
         // Regression: an attack VM start during a Stop passed its "lab is running" check early in
-        // the destroy, and its VM came up after the lab was gone.
+        // the destroy, and its VM came up after the lab was gone; a start between the stop ending
+        // the lab's workers and taking its lock won the lock first.
         let t = crate::test_app::TestApp::new();
         let _tools = crate::exec::fake::Tools::rules(&[]);
         t.lab("ad", &[]);
-        let job = Job::on_lab("ad", Op::AttackVm { box_name: "kalilinux/rolling".into() });
         let stopping = crate::runtime::DeployGuard::new("ad", crate::runtime::Action::Stop);
-        let err = super::run_job(t.handle(), job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err().to_string();
-        assert!(err.starts_with("This lab is stopping"), "{err}");
-        assert!(!super::files::of(t.handle(), &job.key()).unwrap().pid.exists(), "no worker was claimed");
+        for op in [Op::AttackVm { box_name: "kalilinux/rolling".into() }, Op::Launch, Op::Resume { runtime: crate::runtime::Runtime::Vm }] {
+            let job = Job::on_lab("ad", op);
+            let err = super::run_job(t.handle(), job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err().to_string();
+            assert!(err.starts_with("This lab is stopping"), "{err}");
+            assert!(!super::files::of(t.handle(), &job.key()).unwrap().pid.exists(), "no worker was claimed");
+        }
         drop(stopping);
     }
 

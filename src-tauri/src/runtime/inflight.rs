@@ -63,8 +63,12 @@ impl DeployGuard {
     pub(crate) fn new(id: &str, action: Action) -> Self {
         if let Ok(mut m) = in_flight().lock() {
             let e = m.entry(id.to_string()).or_insert((action, 0));
-            // The latest operation names the state (a stop right after a start is "stopping").
-            e.0 = action;
+            // The latest operation names the state (a stop right after a start is "stopping"),
+            // but a stop waiting for the lab stays the state: the start it waits for doesn't
+            // undo it, and nothing may begin beside it meanwhile (see `stopping`).
+            if e.0 != Action::Stop {
+                e.0 = action;
+            }
             e.1 += 1;
         }
         Self(id.to_string())
@@ -260,7 +264,10 @@ mod tests {
         assert!(!stopping(id));
         let stop = DeployGuard::new(id, Action::Stop);
         assert!(stopping(id) && !stopping("inflight-test-stopping-other"));
-        drop((start, stop));
+        // A launch that held the lab reaches its start while the stop waits: still stopping.
+        let launch = DeployGuard::new(id, Action::Start);
+        assert!(stopping(id), "a pending stop isn't undone by the start it waits for");
+        drop((start, launch, stop));
         assert!(!stopping(id));
     }
 
