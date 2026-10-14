@@ -21,6 +21,7 @@ pub use docker::login_name;
 pub use docker::{docker_denied, docker_denied_message, image_repository, valid_image};
 #[cfg(windows)]
 pub use elevate::{OWNER_WINDOW_ENV, owner_window, set_owner_window};
+pub use elevate::{join_hyperv_admins, may_manage_hyperv};
 pub(crate) use group::GroupGuard;
 pub use group::kill_live_tools;
 pub use vagrant::{Event, Step, Vagrant, hyperv_switch_line, machines_on, on_hyperv};

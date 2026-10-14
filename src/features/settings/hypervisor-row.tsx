@@ -10,7 +10,7 @@ import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { providerLabel } from "@/features/machine/hypervisors";
 import { Row } from "@/features/settings/settings-layout";
 import { getVmProvider, setVmProvider } from "@/lib/settings";
-import { installVagrantPlugin, type Provider, type ProviderStatus, type SystemReport } from "@/lib/tauri";
+import { hypervJoinAdmins, installVagrantPlugin, type Provider, type ProviderStatus, type SystemReport } from "@/lib/tauri";
 import { translate, useT } from "@/lib/i18n";
 
 /**
@@ -31,7 +31,7 @@ export function HypervisorRow({
 }) {
   const t = useT();
   const [provider, setProvider] = useState<Provider | null>(() => getVmProvider());
-  const { installing, log, installAddon } = useAddonInstall(onRefresh);
+  const { installing, log, installAddon, allowHyperv } = useAddonInstall(onRefresh);
 
   const local = report ? report.vmProviders.filter((p) => !p.remote && p.hypervisor === true) : null;
   // Ready = hypervisor + Vagrant + its plugin: VM labs can start on it right now.
@@ -86,7 +86,14 @@ export function HypervisorRow({
     >
       {ready.length > 0 && <ReadyList ready={ready} effective={effective} os={report?.os} onChoose={choose} />}
       {notReady.length > 0 && (
-        <NotReadyList notReady={notReady} os={report?.os} installing={installing} canInstall={!!report?.vagrant.installed} onInstall={installAddon} />
+        <NotReadyList
+          notReady={notReady}
+          os={report?.os}
+          installing={installing}
+          canInstall={!!report?.vagrant.installed}
+          onInstall={installAddon}
+          onAllowHyperv={allowHyperv}
+        />
       )}
       {log && <LogConsole className="mt-3" lines={log} running={installing !== null} title={t("settings.hypervisor.logTitle")} />}
     </Row>
@@ -143,12 +150,14 @@ function NotReadyList({
   installing,
   canInstall,
   onInstall,
+  onAllowHyperv,
 }: {
   notReady: ProviderStatus[];
   os: string | undefined;
   installing: string | null;
   canInstall: boolean;
   onInstall: (plugin: string) => void;
+  onAllowHyperv: () => void;
 }) {
   const t = useT();
   return (
@@ -173,13 +182,32 @@ function NotReadyList({
               )}
             </Button>
           )}
+          {canInstall && needsHypervRights(h) && (
+            <Button variant="outline" size="xs" disabled={installing !== null} onClick={onAllowHyperv}>
+              {installing === HYPERV_RIGHTS ? (
+                <>
+                  <Spinner className="size-3.5" /> {t("settings.hypervisor.allowingHyperv")}
+                </>
+              ) : (
+                t("settings.hypervisor.allowHyperv")
+              )}
+            </Button>
+          )}
         </div>
       ))}
     </div>
   );
 }
 
-/** Installs a hypervisor's Vagrant add-on, with its log, then re-checks the machine. */
+/** What `installing` holds while this account is being allowed to manage Hyper-V. */
+const HYPERV_RIGHTS = "hyperv-rights";
+
+/** Hyper-V is on and Vagrant installed, yet not ready: the one thing left is this account's
+ *  right to manage Hyper-V (Vagrant needs an administrator or a Hyper-V Administrators member). */
+const needsHypervRights = (h: ProviderStatus) => h.provider === "hyperv" && h.hypervisor === true && !h.available;
+
+/** Installs a hypervisor's Vagrant add-on (or allows this account to manage Hyper-V), with its
+ *  log, then re-checks the machine. */
 function useAddonInstall(onRefresh: () => void) {
   const [installing, setInstalling] = useState<string | null>(null);
   const [log, setLog] = useState<string[] | null>(null);
@@ -198,5 +226,19 @@ function useAddonInstall(onRefresh: () => void) {
     }
   }
 
-  return { installing, log, installAddon };
+  async function allowHyperv() {
+    setInstalling(HYPERV_RIGHTS);
+    setLog([translate("settings.hypervisor.logAllowingHyperv")]);
+    try {
+      await hypervJoinAdmins();
+      setLog((x) => [...(x ?? []), translate("settings.hypervisor.logHypervAllowed")]);
+    } catch (e) {
+      setLog((x) => [...(x ?? []), `✗ ${String(e)}`]);
+    } finally {
+      setInstalling(null);
+      onRefresh();
+    }
+  }
+
+  return { installing, log, installAddon, allowHyperv };
 }

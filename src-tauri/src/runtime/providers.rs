@@ -268,9 +268,9 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
                 Err(crate::error::Error::CommandFailed { ref stderr, .. }) if stderr.contains("timed out")
             );
 
-        // Vagrant's Hyper-V provider refuses to run without administrator rights (and asks for
-        // them on a console the app doesn't have): said here, not as a raw error mid-boot.
-        let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !elevated().await;
+        // Vagrant's Hyper-V provider refuses every command (status reads too) from an account
+        // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
+        let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !crate::exec::may_manage_hyperv();
 
         let reason = unavailable_reason(provider, vagrant_installed, unresponsive, hypervisor, plugin.as_deref(), plugin_installed, needs_admin);
 
@@ -279,18 +279,16 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
     statuses
 }
 
-/// Whether this process runs with administrator rights (Windows; elsewhere nothing here needs
-/// them): `net session` answers only when elevated.
-async fn elevated() -> bool {
-    #[cfg(windows)]
-    {
-        crate::exec::run("net", &["session"], None).await.is_ok()
-    }
-    #[cfg(not(windows))]
-    {
-        true
-    }
+/// Adds this Windows account to "Hyper-V Administrators" (one administrator prompt), so Vagrant
+/// can drive Hyper-V for it from the next sign-in on (#185).
+#[tauri::command]
+pub async fn hyperv_join_admins() -> crate::error::Result<()> {
+    crate::exec::join_hyperv_admins().await
 }
+
+/// Why Hyper-V can't be used by this account yet, and the two ways out.
+pub const HYPERV_NEEDS_ADMIN: &str = "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators: \
+choose Allow my account (then sign out of Windows and back in), or run Cyber CTF as administrator";
 
 /// Why a provider can't be used here (None: it can), from what `detect` found out about it.
 fn unavailable_reason(
@@ -312,7 +310,7 @@ fn unavailable_reason(
     } else if hypervisor == Some(false) && provider == Provider::Hyperv {
         Some("Hyper-V isn't turned on (Windows Features > Hyper-V), or this edition of Windows doesn't have it".to_string())
     } else if needs_admin {
-        Some("Vagrant drives Hyper-V only when Cyber CTF runs as administrator: quit it, then right-click it and choose Run as administrator".to_string())
+        Some(HYPERV_NEEDS_ADMIN.to_string())
     } else if hypervisor == Some(false) {
         provider.probe().map(|(program, _)| format!("`{program}` was not found")).or_else(|| Some("not installed".to_string()))
     } else if let Some(why) = (provider == Provider::Libvirt).then(kvm_problem).flatten() {
@@ -522,7 +520,8 @@ mod tests {
     #[test]
     fn the_first_missing_layer_is_the_reason() {
         let r = |p, vagrant, stuck, hv, plugin, installed| unavailable_reason(p, vagrant, stuck, hv, plugin, installed, false);
-        assert!(unavailable_reason(Provider::Hyperv, true, false, Some(true), None, true, true).unwrap().contains("Run as administrator"));
+        assert_eq!(unavailable_reason(Provider::Hyperv, true, false, Some(true), None, true, true).as_deref(), Some(HYPERV_NEEDS_ADMIN));
+        assert!(HYPERV_NEEDS_ADMIN.contains("Hyper-V Administrators") && HYPERV_NEEDS_ADMIN.contains("Allow my account"));
         assert_eq!(unavailable_reason(Provider::Hyperv, true, false, Some(true), None, true, false), None);
         assert_eq!(r(Provider::Virtualbox, false, true, Some(false), None, false).as_deref(), Some("Vagrant is not installed"));
         assert!(r(Provider::Virtualbox, true, true, Some(true), None, true).unwrap().contains("isn't responding"));
@@ -553,5 +552,13 @@ mod tests {
         let v = serde_json::to_value(s).unwrap();
         assert_eq!(v["provider"], "virtualbox");
         assert_eq!(v["pluginInstalled"], true);
+    }
+
+    #[tokio::test]
+    async fn joining_hyperv_administrators_is_windows_only() {
+        if !cfg!(windows) {
+            let err = hyperv_join_admins().await.unwrap_err();
+            assert!(err.to_string().contains("only on Windows"), "{err}");
+        }
     }
 }

@@ -130,6 +130,7 @@ pub fn run() {
             cloud::gcp_account,
             cloud::gcp_billing_accounts,
             cloud::gcp_organizations,
+            runtime::providers::hyperv_join_admins,
             cloud::oci_config,
             platform::install::install_vagrant_plugin,
             labs::lab_launch,

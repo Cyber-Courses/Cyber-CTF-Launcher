@@ -44,7 +44,7 @@ pub(super) enum Mode {
 /// How Vagrant runs for machines on Hyper-V (`hyperv`) or not.
 pub(super) fn mode(hyperv: bool) -> Mode {
     // Never in unit tests: they answer from the scripted tools, and must never raise a prompt.
-    decide(cfg!(windows) && !cfg!(test), hyperv, || is_elevated() || in_hyperv_admins())
+    decide(cfg!(windows) && !cfg!(test), hyperv, may_manage_hyperv)
 }
 
 /// The decision itself: only Hyper-V on Windows goes through the script, elevated only when this
@@ -79,6 +79,64 @@ fn in_hyperv_admins() -> bool {
 #[cfg(not(windows))]
 fn in_hyperv_admins() -> bool {
     false
+}
+
+/// Whether this process may manage Hyper-V itself, as Vagrant's Hyper-V provider requires for
+/// every command on its machines (`vagrant status` included): elevated, or a member of "Hyper-V
+/// Administrators". Never off Windows.
+pub fn may_manage_hyperv() -> bool {
+    cfg!(windows) && (is_elevated() || in_hyperv_admins())
+}
+
+/// The well-known SID of BUILTIN\Hyper-V Administrators (its name is translated).
+const HYPERV_ADMINS_SID: &str = "S-1-5-32-578";
+
+/// The PowerShell script adding `account` (`DOMAIN\user`) to Hyper-V Administrators; one already
+/// in it is fine. Any other failure ends it with a non-zero exit code.
+fn join_hyperv_admins_script(account: &str) -> String {
+    format!(
+        "$ErrorActionPreference = 'Stop'\ntry {{ Add-LocalGroupMember -SID {} -Member {} }} catch [Microsoft.PowerShell.Commands.MemberExistsException] {{ }}\n",
+        ps_quote(HYPERV_ADMINS_SID),
+        ps_quote(account)
+    )
+}
+
+/// What declining the prompt (or another refusal) to join Hyper-V Administrators means.
+fn join_error(code: i32) -> Error {
+    const ERROR_CANCELLED: i32 = 1223;
+    match code {
+        ERROR_CANCELLED => Error::Invalid("The Windows permission prompt was declined, so nothing was changed. Try again and choose Yes.".into()),
+        _ => Error::Invalid(format!("Windows couldn't add your account to Hyper-V Administrators ({}).", std::io::Error::from_raw_os_error(code))),
+    }
+}
+
+/// Adds this user to "Hyper-V Administrators", through one UAC prompt (#185). From the next
+/// sign-in on, Vagrant drives Hyper-V for this account without administrator rights, status
+/// reads included, so the app needn't run as administrator nor ask again for each lab.
+#[cfg(windows)]
+pub async fn join_hyperv_admins() -> Result<()> {
+    let account = match (std::env::var("USERDOMAIN"), std::env::var("USERNAME")) {
+        (Ok(domain), Ok(user)) => format!("{domain}\\{user}"),
+        (_, Ok(user)) => user,
+        _ => return Err(Error::Invalid("couldn't tell which Windows account this is".into())),
+    };
+    let args = powershell_args(&join_hyperv_admins_script(&account))?.join(" ");
+    let exe = win::powershell();
+    let dir = std::env::temp_dir();
+    let owner = owner_window().unwrap_or(0);
+    let code = tokio::task::spawn_blocking(move || win::launch(&exe, &args, &dir, owner).map(|p| p.wait()))
+        .await
+        .map_err(|e| Error::Invalid(e.to_string()))?
+        .map_err(join_error)?;
+    if code != 0 {
+        return Err(Error::Invalid(format!("Windows couldn't add your account to Hyper-V Administrators (PowerShell exited with {code}).")));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub async fn join_hyperv_admins() -> Result<()> {
+    Err(Error::Invalid("Hyper-V is only on Windows.".into()))
 }
 
 /// The environment variable a deploy worker gets the app's main window in (see
@@ -754,6 +812,17 @@ mod tests {
         assert_eq!(decide(true, false, || false), Mode::Direct, "other providers never need it");
         assert_eq!(decide(false, true, || false), Mode::Direct, "never off Windows");
         assert_eq!(mode(true), Mode::Direct, "never in unit tests");
+    }
+
+    #[test]
+    fn joining_hyperv_administrators_adds_this_account_by_the_groups_sid() {
+        // #185: the group's name is translated (Administrateurs Hyper-V), its SID isn't.
+        let script = join_hyperv_admins_script(r"PC\Jo O'Brien");
+        assert!(script.contains(r"Add-LocalGroupMember -SID 'S-1-5-32-578' -Member 'PC\Jo O''Brien'"), "{script}");
+        assert!(script.contains("MemberExistsException") && script.starts_with("$ErrorActionPreference = 'Stop'"), "{script}");
+        assert!(join_error(1223).to_string().contains("declined"));
+        assert!(join_error(5).to_string().contains("Hyper-V Administrators"));
+        assert!(!may_manage_hyperv() || cfg!(windows), "never off Windows");
     }
 
     #[test]
