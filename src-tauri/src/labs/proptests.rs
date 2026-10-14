@@ -103,6 +103,13 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Whether `name` is a Windows device name, with or without an extension (`con`, `com1.txt`).
+fn windows_device(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).trim_end();
+    matches!(stem, "con" | "prn" | "aux" | "nul")
+        || (stem.len() == 4 && (stem.starts_with("com") || stem.starts_with("lpt")) && stem.as_bytes()[3].is_ascii_digit())
+}
+
 /// A fresh sandbox holding the destination, so anything written next to it shows.
 fn sandbox() -> (PathBuf, PathBuf) {
     let root = std::env::temp_dir().join(format!("cyberctf-extract-prop-{}", rand::random::<u64>()));
@@ -151,14 +158,17 @@ proptest! {
     #[test]
     fn a_well_formed_archive_lands_whole(
         top in "[a-zA-Z0-9._-]{1,20}-[0-9a-f]{7}",
-        // Lowercase: the test may run on a case-insensitive file system. Some paths pass tar's
-        // 100-byte name field (a GNU long name).
-        files in proptest::collection::btree_map(proptest::collection::vec(prop_oneof![4 => "[a-z0-9_][a-z0-9_. -]{0,12}", 1 => "[a-z]{60,120}"], 1..4), proptest::collection::vec(any::<u8>(), 0..100), 1..6),
+        // Lowercase: the test may run on a case-insensitive file system. No name ends in a space
+        // or a dot, which Windows can't create. Some paths pass tar's 100-byte name field (a GNU
+        // long name).
+        files in proptest::collection::btree_map(proptest::collection::vec(prop_oneof![4 => "[a-z0-9_]([a-z0-9_. -]{0,11}[a-z0-9_])?", 1 => "[a-z]{60,120}"], 1..4), proptest::collection::vec(any::<u8>(), 0..100), 1..6),
         dot in any::<bool>(),
     ) {
         // A file's path can't also be another's folder.
         let paths: Vec<&Vec<String>> = files.keys().collect();
         prop_assume!(!paths.iter().any(|a| paths.iter().any(|b| b.len() > a.len() && b.starts_with(a))));
+        // Nor a Windows device name (`con`, `nul.txt`…), which Windows can't create either.
+        prop_assume!(!paths.iter().flat_map(|p| p.iter()).any(|c| windows_device(c)));
         let lead = if dot { "./" } else { "" };
         let mut entries = vec![Entry { path: format!("{lead}{top}/"), kind: tar::EntryType::Directory, link: String::new(), data: Vec::new() }];
         entries.extend(files.iter().map(|(p, data)| Entry { path: format!("{lead}{top}/{}", p.join("/")), kind: tar::EntryType::Regular, link: String::new(), data: data.clone() }));
