@@ -5,7 +5,7 @@ import { ErrorBoundary } from "@/components/error-screen";
 import { CtfMark } from "@/components/brand/mark";
 import { Button } from "@/components/ui/button";
 import { WaitingForCheck } from "@/components/ui/waiting-for-check";
-import { MachineStepBody, canContinue, machineSteps, nextLabel, stepMeta, useMachineSetup } from "@/features/machine/setup-steps";
+import { MachineStepBody, canContinue, machineSteps, nextLabel, nextVariant, stepMeta, useMachineSetup } from "@/features/machine/setup-steps";
 import { STEP_NAMES, isMachineStep, onboardingSteps } from "@/features/onboarding/onboarding-model";
 import { StepActions, StepHeader, StepProgress } from "@/features/onboarding/onboarding-parts";
 import { DoneStep, SignInStep, WelcomeStep } from "@/features/onboarding/onboarding-steps";
@@ -110,6 +110,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                     onNext={next}
                     disabled={setup.busy || !canContinue(step, report, setup)}
                     nextLabel={nextLabel(step, report, t, setup)}
+                    nextVariant={nextVariant(step, report, setup)}
                   />
                 </div>
               )}

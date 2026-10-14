@@ -66,11 +66,11 @@ export function UpdateBanner() {
               : t.rich("shell.update.available", { version: (v) => <span className="font-mono text-[0.75rem]">{v}</span> }, { version: update.version })}
       </span>
       {phase === "ready" ? (
-        <Button size="xs" onClick={() => restartApp().catch(tell(t("shell.failures.restart")))}>
+        <Button variant="outline" size="xs" onClick={() => restartApp().catch(tell(t("shell.failures.restart")))}>
           {t("shell.update.restartNow")}
         </Button>
       ) : (
-        <Button size="xs" onClick={install} disabled={phase === "downloading" || deploying}>
+        <Button variant="outline" size="xs" onClick={install} disabled={phase === "downloading" || deploying}>
           {phase === "downloading" ? t("shell.update.updating") : t("shell.update.update")}
         </Button>
       )}

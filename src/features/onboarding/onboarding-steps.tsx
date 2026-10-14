@@ -95,7 +95,12 @@ export function SignInStep({
       </div>
       {/* Signing in is optional (labs run without an account): said on the button, so going on
           without it reads as a choice, not a mistake. */}
-      <StepActions onBack={onBack} onNext={onNext} nextLabel={auth?.loggedIn ? t("onboarding.continue") : t("onboarding.signin.skip")} />
+      <StepActions
+        onBack={onBack}
+        onNext={onNext}
+        nextLabel={auth?.loggedIn ? t("onboarding.continue") : t("onboarding.signin.skip")}
+        nextVariant={auth?.loggedIn ? "primary" : "secondary"}
+      />
     </div>
   );
 }

@@ -143,7 +143,7 @@ export function SetupOutcome({ report, setup }: { report: SystemReport | null; s
 }
 
 // The setup flow's public surface (machine setup window, onboarding, Machine and Servers pages).
-export { canContinue, machineSteps, nextLabel, stepMeta, type MachineStep } from "@/features/machine/setup-steps/steps";
+export { canContinue, machineSteps, nextLabel, nextVariant, stepMeta, type MachineStep } from "@/features/machine/setup-steps/steps";
 export { useMachineSetup, type MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 export { EngineMark } from "@/features/machine/setup-steps/engine-step";
 export { engineName } from "@/features/machine/setup-steps/engines";

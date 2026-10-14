@@ -5,7 +5,7 @@ import type { MachineSetupState } from "@/features/machine/setup-steps/use-machi
 // steps.ts pulls icons and the setup hook's module only for types; no Tauri runtime needed.
 vi.mock("@/lib/tauri", () => ({}));
 
-const { canContinue, nextLabel, stepMeta, wslState } = await import("@/features/machine/setup-steps/steps");
+const { canContinue, nextLabel, nextVariant, stepMeta, wslState } = await import("@/features/machine/setup-steps/steps");
 
 const report = (over: Partial<SystemReport> = {}) =>
   ({
@@ -73,5 +73,23 @@ describe("machine setup steps", () => {
     expect(wslState(win("unknown"), turnedOn)).toBe("needsReboot");
     expect(wslState(win("ready"), turnedOn)).toBe("ready");
     expect(wslState(null)).toBe("unknown");
+  });
+
+  it("keeps the jewel off a forward button that only moves past the step (one jewel per view)", () => {
+    // No hypervisor: Skip for now is a way past, not the recommended action.
+    for (const step of ["vm", "vagrant", "vm-test"] as const) expect(nextVariant(step, report(), setup()), step).toBe("secondary");
+    // WSL: I've done this, I'll restart later and a skip beside Turn on WSL 2, the step's jewel.
+    const win = (state: string) => report({ os: "windows", wsl: { state, reopensAfterRestart: true } } as Partial<SystemReport>);
+    for (const state of ["unknown", "needsReboot", "missing"]) expect(nextVariant("virtualization", win(state), setup()), state).toBe("secondary");
+    expect(nextVariant("virtualization", win("ready"), setup())).toBe("primary");
+    // Continue while the step's own Install is still the thing to do: not the jewel either.
+    const hypervisor = report({
+      vmProviders: [{ provider: "libvirt", remote: false, hypervisor: true, available: false, plugin: "vagrant-libvirt", pluginInstalled: false }],
+    } as Partial<SystemReport>);
+    expect(nextVariant("vagrant", hypervisor, setup())).toBe("secondary");
+    expect(nextVariant("docker", report({ dockerRunning: false }), setup())).toBe("secondary");
+    // Set up: Continue is the next action.
+    expect(nextVariant("docker", report(), setup())).toBe("primary");
+    expect(nextVariant("vm", hypervisor, setup())).toBe("primary");
   });
 });

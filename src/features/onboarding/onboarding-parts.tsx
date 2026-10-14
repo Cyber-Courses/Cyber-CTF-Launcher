@@ -65,17 +65,20 @@ export function StepFooter({ className, children }: { className?: string; childr
   );
 }
 
-/** Back (ghost) on the left, the step's single primary action on the right. */
+/** Back (ghost) on the left, the way forward on the right: the jewel when it is the step's next
+ *  action, ghost glass when it only moves past the step (`nextVariant`, Skip for now). */
 export function StepActions({
   onBack,
   onNext,
   nextLabel,
+  nextVariant = "primary",
   disabled,
   backDisabled,
 }: {
   onBack: () => void;
   onNext: () => void;
   nextLabel: ReactNode;
+  nextVariant?: "primary" | "secondary";
   disabled?: boolean;
   backDisabled?: boolean;
 }) {
@@ -85,7 +88,7 @@ export function StepActions({
       <Button variant="ghost" onClick={onBack} disabled={backDisabled}>
         <ArrowLeft className="size-4" /> {t("onboarding.back")}
       </Button>
-      <Button onClick={onNext} disabled={disabled}>
+      <Button variant={nextVariant} onClick={onNext} disabled={disabled}>
         {nextLabel}
       </Button>
     </StepFooter>
