@@ -25,14 +25,12 @@ const eslintConfig = defineConfig([
       "max-lines-per-function": ["error", { max: 100, skipBlankLines: true, skipComments: true }],
     },
   },
-  // Still over the caps, to split once the fixes in flight on them have landed (#150).
+  // Still over the caps, to split in a follow-up (#150).
   {
     files: [
       "src/lib/dev-mock.ts",
       "src/components/command-palette.tsx",
       "src/features/cloud/account-row.tsx",
-      "src/features/home/home-screen.tsx",
-      "src/features/machine/downloads-panel.tsx",
     ],
     rules: { "max-lines": "off", "max-lines-per-function": "off" },
   },

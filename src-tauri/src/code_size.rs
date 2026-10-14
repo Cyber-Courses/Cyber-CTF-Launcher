@@ -10,13 +10,7 @@ const MAX_FILE_LINES: usize = 400;
 
 /// Files still over the limit, to split in a follow-up. A file leaves the list when it is split
 /// (the test fails while it's listed but under the limit).
-const OVER_THE_LIMIT: &[&str] = &[
-    "account/agent.rs",
-    "deploy_worker/process.rs",
-    "exec/elevate.rs",
-    "machine/system/wsl.rs",
-    "runtime/cloud_services.rs",
-];
+const OVER_THE_LIMIT: &[&str] = &["account/agent.rs", "deploy_worker/process.rs", "exec/elevate.rs", "machine/system/wsl.rs", "runtime/cloud_services.rs"];
 
 /// The ignored real-lab tests: a test-only module without an inline `mod tests`.
 const TEST_ONLY: &[&str] = &["runtime/real_labs.rs"];
