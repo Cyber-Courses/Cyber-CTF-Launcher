@@ -17,7 +17,7 @@ use crate::error::{Error, Result};
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
 /// that took an hour to build comes back in seconds (paused) or a boot (shut down), not a rebuild.
 async fn park(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(app, id).await;
+    let _lock = lock_lab(app, id).await?;
     let _deploy = DeployGuard::new(id, Action::Park);
     refuse_cloud_park(runtime)?;
     if server::lab_connection(app, dir)?.is_some() {
@@ -69,7 +69,7 @@ fn parked_message(mode: Park) -> &'static str {
 
 /// Brings a parked lab back, as it was.
 async fn resume(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mut log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(app, id).await;
+    let _lock = lock_lab(app, id).await?;
     let _deploy = DeployGuard::new(id, Action::Start);
     resume_locked(app, dir, id, runtime, &mut log).await
 }
@@ -127,7 +127,7 @@ async fn provision(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mach
     if runtime != Runtime::Vm {
         return Err(Error::Invalid("Container labs aren't provisioned in place: use Reset for a clean copy.".into()));
     }
-    let _lock = lock_lab(app, id).await;
+    let _lock = lock_lab(app, id).await?;
     let _deploy = DeployGuard::new(id, Action::Start);
     let conn = server::lab_connection(app, dir)?;
     if conn.as_ref().is_some_and(|c| server::terraform_target(c.provider).is_some()) {
@@ -160,8 +160,8 @@ fn provision_target(status: &super::LabStatus, machine: Option<&str>) -> Result<
 }
 
 /// Stops a lab wherever it runs, destroying remote VMs so the next start is clean.
-pub(super) async fn stop(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(app, id).await;
+async fn stop(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+    let _lock = lock_lab(app, id).await?;
     stop_locked(app, dir, id, runtime, log).await
 }
 
@@ -194,9 +194,10 @@ pub(super) async fn stop_here(dir: &Path, id: &str, runtime: Runtime, mut log: i
         Runtime::Docker if local_vm(dir).is_some() => vm::stop(&lab::vagrant_dir(dir, runtime), &[], log).await,
         Runtime::Docker => docker::stop(dir, id, log).await,
         Runtime::Vm => {
-            // The learner's attack VM goes with the lab it was started beside.
-            attack_vm::stop(dir, &mut log).await;
-            vm::stop(&lab::vagrant_dir(dir, runtime), &[], log).await
+            // The learner's attack VM goes with the lab it was started beside. The lab goes
+            // even when it couldn't; the lab then still reads as running, so Stop retries both.
+            let attacker = attack_vm::stop(dir, &mut log).await;
+            vm::stop(&lab::vagrant_dir(dir, runtime), &[], log).await.and(attacker)
         }
         // Cloud services run on a cloud account only: nothing of them here.
         Runtime::Cloud => Ok(()),
@@ -231,7 +232,7 @@ pub async fn clear_parked(dir: &Path, id: &str, log: &impl Fn(String)) {
     for vdir in vagrant_dirs(dir) {
         let _ = vm::stop(&vdir, &[], &mut sink).await;
     }
-    attack_vm::stop(dir, &mut sink).await;
+    let _ = attack_vm::stop(dir, &mut sink).await;
     let _ = mark_parked(dir, None);
 }
 
@@ -255,7 +256,14 @@ pub async fn reap_expired_labs(app: &AppHandle) {
         // re-applies and writes a fresh expiry), and destroying their live lab would be wrong.
         // A lab busy with another operation (a deploy worker's, maybe for hours) is left to the
         // next sweep rather than holding up the others.
-        let Some(_lock) = try_lock_lab(app, &id) else { continue };
+        let _lock = match try_lock_lab(app, &id) {
+            Ok(Some(lock)) => lock,
+            Ok(None) => continue,
+            Err(e) => {
+                log::warn!("not reaping {id} this time: {e}");
+                continue;
+            }
+        };
         if !terraform::expired(&state) {
             continue;
         }
@@ -331,10 +339,29 @@ pub async fn provision_lab(app: &AppHandle, id: &str, runtime: Runtime, machine:
     provision(app, &lab_dir(app, id)?, id, runtime, machine, log).await
 }
 
-/// Stops a lab with no log sink, for a caller that only needs the teardown (the hosted agent
-/// cleaning up after a launch that started infra but then failed to report back).
-pub async fn stop_lab(app: &AppHandle, id: &str, runtime: Runtime) -> Result<()> {
-    stop(app, &lab_dir(app, id)?, id, runtime, |_l: String| {}).await
+/// How lab `id` runs on this machine, for a Stop of what the Machine page found of it there
+/// (`in_vm`: its VMs, else its containers). `None` when it isn't an installed lab that runs here
+/// (removed since, the self-test, or marked as running on a server host): its leftovers then go
+/// by name.
+pub fn runtime_here(app: &AppHandle, id: &str, in_vm: bool) -> Option<Runtime> {
+    let dir = lab_dir(app, id).ok()?;
+    if server::marked_host(&dir).is_some_and(|h| !h.is_empty()) {
+        return None;
+    }
+    Some(if in_vm && local_vm(&dir).is_none() { Runtime::Vm } else { Runtime::Docker })
+}
+
+/// Stops lab `id` wherever it runs: the one Stop of the lab page, the Machine page and the
+/// hosted agent. Marked as stopping from the start: ending a deploy can take minutes (Terraform
+/// is interrupted and waited for), during which the page and the quit guard must see a stop, and
+/// no attack VM may start. A deploy still running in its worker (and an attack VM start beside
+/// it) is ended first, so the teardown never races a `vagrant up` or `compose up` that would
+/// recreate what it removes; then the lab is torn down under its lock.
+pub async fn stop_lab(app: &AppHandle, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+    let dir = lab_dir(app, id)?;
+    let _stopping = DeployGuard::new(id, Action::Stop);
+    crate::deploy_worker::end_workers(app, id).await;
+    stop(app, &dir, id, runtime, log).await
 }
 
 #[cfg(test)]
@@ -433,7 +460,7 @@ mod tests {
         resume_lab(t.handle(), "web", Runtime::Docker, |_| {}).await.unwrap();
         assert!(tools.called("vagrant up --no-provision"));
         // Stopping it destroys the VM and forgets where it ran.
-        stop_lab(t.handle(), "web", Runtime::Docker).await.unwrap();
+        stop_lab(t.handle(), "web", Runtime::Docker, |_| {}).await.unwrap();
         assert!(tools.called("vagrant destroy --force"));
         assert_eq!(local_vm(&dir), None);
     }
@@ -457,7 +484,7 @@ mod tests {
         resume_lab(t.handle(), "ad", Runtime::Vm, |_| {}).await.unwrap();
         assert!(tools.called("vagrant up --no-provision --provider virtualbox"), "{:?}", tools.calls());
         mark_parked(&dir, Some(Park::Pause)).unwrap();
-        stop_lab(t.handle(), "ad", Runtime::Vm).await.unwrap();
+        stop_lab(t.handle(), "ad", Runtime::Vm, |_| {}).await.unwrap();
         assert!(tools.called("vagrant destroy --force"));
         assert_eq!(parked(&dir), None);
     }
@@ -467,6 +494,34 @@ mod tests {
         let record = crate::runtime::lab::vagrant_dir(dir, Runtime::Vm).join(".vagrant").join("machines").join(name).join("virtualbox");
         std::fs::create_dir_all(&record).unwrap();
         std::fs::write(record.join("id"), "0000").unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_attack_vm_whose_destroy_failed_stays_on_record_and_the_stop_says_so() {
+        // Regression: the attack VM's `.vagrant` was deleted whatever `vagrant destroy` said; on
+        // VMware, Hyper-V or libvirt the VM then ran on with nothing left to destroy it with.
+        let t = TestApp::new();
+        let dir = t.lab("ad", &[]);
+        let attacker = crate::runtime::attack_vm::dir(&dir);
+        std::fs::create_dir_all(attacker.join(".vagrant").join("machines").join("attacker").join("vmware_desktop")).unwrap();
+        std::fs::write(attacker.join("Vagrantfile"), "").unwrap();
+        let mut destroys = 0;
+        let tools = Tools::new(move |_, args| match args {
+            // The attack VM goes first: its destroy fails, the lab's own one works.
+            ["destroy", ..] => {
+                destroys += 1;
+                if destroys == 1 { fail("The VMware VM is busy") } else { ok("") }
+            }
+            _ => ok(""),
+        });
+        let err = stop_lab(t.handle(), "ad", Runtime::Vm, |_| {}).await.unwrap_err().to_string();
+        assert!(err.starts_with("The attack VM wasn't removed") && err.contains("busy"), "{err}");
+        assert_eq!(tools.calls().iter().filter(|c| c.contains("destroy")).count(), 2, "the lab's VMs went anyway");
+        assert!(attacker.join(".vagrant").exists(), "kept, for the next stop to retry");
+        drop(tools);
+        let _tools = Tools::rules(&[]);
+        stop_lab(t.handle(), "ad", Runtime::Vm, |_| {}).await.unwrap();
+        assert!(!attacker.join(".vagrant").exists());
     }
 
     #[tokio::test]
@@ -480,7 +535,7 @@ mod tests {
         assert_eq!(parked(&dir), Some(Park::Pause));
         assert!(park_lab(t.handle(), "ad", Runtime::Vm, Park::Shutdown, |_| {}).await.is_err());
         assert_eq!(parked(&dir), Some(Park::Pause));
-        assert!(stop_lab(t.handle(), "ad", Runtime::Vm).await.is_err());
+        assert!(stop_lab(t.handle(), "ad", Runtime::Vm, |_| {}).await.is_err());
         assert_eq!(parked(&dir), Some(Park::Pause));
     }
 
@@ -515,7 +570,7 @@ mod tests {
         assert!(tools.calls().is_empty());
         // Stopping it destroys it with Terraform there: with no state, nothing is left to destroy,
         // and the lab no longer reads as running there.
-        stop_lab(t.handle(), "web", Runtime::Docker).await.unwrap();
+        stop_lab(t.handle(), "web", Runtime::Docker, |_| {}).await.unwrap();
         assert!(!dir.join(server::HOST_MARKER).exists());
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
     }
@@ -587,9 +642,9 @@ mod tests {
         let id = "lifecycle-test-stop-waits";
         t.lab(id, &[]);
         let tools = Tools::rules(&[]);
-        let held = crate::runtime::inflight::lock_lab(t.handle(), id).await;
+        let held = crate::runtime::inflight::lock_lab(t.handle(), id).await.unwrap();
         let app = t.handle().clone();
-        let mut stop = tokio::spawn(async move { stop_lab(&app, id, Runtime::Docker).await });
+        let mut stop = tokio::spawn(async move { stop_lab(&app, id, Runtime::Docker, |_| {}).await });
         assert!(tokio::time::timeout(std::time::Duration::from_millis(200), &mut stop).await.is_err(), "the stop waits for the lab");
         assert!(!tools.called("down --volumes"), "{:?}", tools.calls());
         drop(held);
@@ -645,7 +700,7 @@ mod tests {
         mark_local_vm(&dir, Some(Provider::Virtualbox)).unwrap();
         mark_parked(&dir, Some(Park::Pause)).unwrap();
         let tools = Tools::rules(&[("vagrant destroy", fail("VBoxManage: error: The machine is locked"))]);
-        assert!(stop_lab(t.handle(), "web", Runtime::Docker).await.is_err());
+        assert!(stop_lab(t.handle(), "web", Runtime::Docker, |_| {}).await.is_err());
         assert!(tools.called("vagrant destroy --force"));
         assert_eq!(local_vm(&dir).as_deref(), Some("virtualbox"), "stop, status and the shell still go to the VM");
         assert_eq!(parked(&dir), Some(Park::Pause));
@@ -658,7 +713,7 @@ mod tests {
         std::fs::create_dir_all(&state).unwrap();
         std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
         let tools = Tools::rules(&[]);
-        let err = stop_lab(t.handle(), "web", Runtime::Docker).await.unwrap_err().to_string();
+        let err = stop_lab(t.handle(), "web", Runtime::Docker, |_| {}).await.unwrap_err().to_string();
         assert!(err.contains("no Terraform module"), "{err}");
         assert!(!tools.called("terraform destroy"));
         assert_eq!(server::marked_host(&dir).as_deref(), Some("az1"));
@@ -708,7 +763,7 @@ mod tests {
         let (dir, state) = cloud_lab(&t, "reap-held", 1);
         let tools = Tools::rules(&[]);
         // A stop (or a deploy worker) holds the lab: destroying under it could corrupt the state.
-        let held = crate::runtime::inflight::lock_lab(t.handle(), "reap-held").await;
+        let held = crate::runtime::inflight::lock_lab(t.handle(), "reap-held").await.unwrap();
         reap_expired_labs(t.handle()).await;
         assert!(!tools.called("terraform"), "{:?}", tools.calls());
         assert!(state.join("terraform.tfstate").is_file());
@@ -762,7 +817,7 @@ mod tests {
         let dir = t.lab("goat", &[]);
         mark_parked(&dir, Some(Park::Pause)).unwrap();
         let tools = Tools::rules(&[]);
-        stop_lab(t.handle(), "goat", Runtime::Cloud).await.unwrap();
+        stop_lab(t.handle(), "goat", Runtime::Cloud, |_| {}).await.unwrap();
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert_eq!(parked(&dir), None);
         // Parking or resuming it is refused on the runtime alone.

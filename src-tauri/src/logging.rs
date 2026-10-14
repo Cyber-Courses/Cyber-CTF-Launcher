@@ -5,8 +5,10 @@
 //! `~/Library/Logs/org.cyberctf.desktop` on macOS, `~/.local/share/org.cyberctf.desktop/logs` on
 //! Linux): `cyberctf.log` for the app, `deploy-<lab>.log` for each lab's deploy worker.
 
-use tauri::Runtime;
+use std::path::PathBuf;
+
 use tauri::plugin::TauriPlugin;
+use tauri::{Manager, Runtime};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
 /// A file is rotated past this size; the last few are kept, so the folder stays small.
@@ -33,6 +35,20 @@ pub fn plugin<R: Runtime>(file_name: &str) -> TauriPlugin<R> {
         builder = builder.target(Target::new(TargetKind::Stdout));
     }
     builder.build()
+}
+
+/// The folder the log files are in.
+pub fn log_dir(app: &crate::AppHandle) -> crate::error::Result<PathBuf> {
+    app.path().app_log_dir().map_err(|e| crate::error::Error::Invalid(format!("no log folder: {e}")))
+}
+
+/// Opens the log folder in the system's file manager (Settings > About), so a player can send
+/// the files to support.
+#[tauri::command]
+pub fn open_log_folder(app: crate::AppHandle) -> crate::error::Result<()> {
+    let dir = log_dir(&app)?;
+    std::fs::create_dir_all(&dir)?;
+    crate::platform::open_folder(&dir)
 }
 
 /// The deploy worker's log file for this lab. A lab id that isn't one (a damaged job file)
@@ -76,6 +92,13 @@ fn os_version() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_log_folder_is_the_apps_own() {
+        let t = crate::test_app::TestApp::new();
+        let dir = log_dir(t.handle()).unwrap();
+        assert!(dir.is_absolute(), "{}", dir.display());
+    }
 
     #[test]
     fn a_worker_log_is_named_after_its_lab() {

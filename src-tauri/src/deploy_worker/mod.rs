@@ -47,8 +47,8 @@ pub enum Op {
 }
 
 /// What a worker needs: the lab, the operation, and for a launch the `startLab` payload and
-/// where/how to run it.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+/// where/how to run it. Its `Debug` leaves the payload out: it carries the launch token.
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Job {
     pub lab_id: String,
     /// Absent in job files from before operations existed: a launch.
@@ -67,6 +67,20 @@ pub struct Job {
     /// A container lab on the lab's own ports rather than random free ones.
     #[serde(default)]
     pub default_ports: bool,
+}
+
+impl std::fmt::Debug for Job {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Job")
+            .field("lab_id", &self.lab_id)
+            .field("op", &self.op)
+            .field("launch", &if self.launch.is_null() { "none" } else { "<redacted>" })
+            .field("provider", &self.provider)
+            .field("host", &self.host)
+            .field("attackbox_image", &self.attackbox_image)
+            .field("default_ports", &self.default_ports)
+            .finish()
+    }
 }
 
 impl Job {
@@ -143,15 +157,33 @@ pub async fn run_job(app: &AppHandle, job: Job, logs: tauri::ipc::Channel<String
     }
 }
 
+/// Held while a worker is checked for and started (see [`start_worker`]).
+static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Ends the workers of lab `id` (its own operation's and its attack VM's), waiting until they
+/// are gone. Called by a stop already marked as stopping (see `runtime::stopping`): a start that
+/// passed its checks before the mark has claimed its pidfile once `STARTING` is free, so it is
+/// found and ended here, and every later attack VM start is refused.
+pub async fn end_workers(app: &AppHandle, id: &str) {
+    drop(STARTING.lock().unwrap_or_else(|e| e.into_inner()));
+    kill_and_wait(app, id).await;
+    kill_and_wait(app, &attack_key(id)).await;
+}
+
 /// Checks that nothing else runs on the job's key and starts its worker, as one step: two
 /// starts racing each other (a double click) must not both pass the check and spawn two
 /// workers. `Err` when the lab is busy; `Ok(Err)` when the worker couldn't be started (the
 /// caller falls back to running the job in this process).
 fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> {
-    static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _one_at_a_time = STARTING.lock().unwrap_or_else(|e| e.into_inner());
     if running(app).contains(&job.key()) {
         return Err(Error::Invalid(format!("{} of this lab is already in progress; wait for it to finish.", capitalize(job.what()))));
+    }
+    // Nothing begins while the lab stops: between ending its workers and taking its lock, a
+    // start would win the lock and the stop then destroy what it built; and the attack VM takes
+    // no lab lock (it boots beside a lab that is still starting), so it would come up orphaned.
+    if crate::runtime::stopping(&job.lab_id) {
+        return Err(Error::Refused("This lab is stopping. Wait for it to stop, then try again.".into()));
     }
     // An operation of the app itself (a stop, the expiry reaper) holds the lab: the worker
     // would only wait for it, then act on what it left (the attack VM runs beside the lab's
@@ -254,6 +286,34 @@ mod tests {
         };
         let bytes = serde_json::to_vec(&job).unwrap();
         assert_eq!(serde_json::from_slice::<Job>(&bytes).unwrap(), job);
+    }
+
+    #[tokio::test]
+    async fn nothing_starts_on_a_lab_while_it_stops() {
+        // Regression: an attack VM start during a Stop passed its "lab is running" check early in
+        // the destroy, and its VM came up after the lab was gone; a start between the stop ending
+        // the lab's workers and taking its lock won the lock first.
+        let t = crate::test_app::TestApp::new();
+        let _tools = crate::exec::fake::Tools::rules(&[]);
+        t.lab("ad", &[]);
+        let stopping = crate::runtime::DeployGuard::new("ad", crate::runtime::Action::Stop);
+        for op in [Op::AttackVm { box_name: "kalilinux/rolling".into() }, Op::Launch, Op::Resume { runtime: crate::runtime::Runtime::Vm }] {
+            let job = Job::on_lab("ad", op);
+            let err = super::run_job(t.handle(), job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err().to_string();
+            assert!(err.starts_with("This lab is stopping"), "{err}");
+            assert!(!super::files::of(t.handle(), &job.key()).unwrap().pid.exists(), "no worker was claimed");
+        }
+        drop(stopping);
+    }
+
+    #[test]
+    fn a_job_never_prints_its_launch_token() {
+        // A job in a log line (`{job:?}`) must not carry the launch token into the log file.
+        let mut job = Job::on_lab("lab-1", Op::Launch);
+        job.launch = serde_json::json!({ "labId": "lab-1", "env": [{ "name": "CTF_LAUNCH_TOKEN", "value": "s3cret-token" }] });
+        let printed = format!("{job:?} {job:#?}");
+        assert!(!printed.contains("s3cret-token") && !printed.contains("CTF_LAUNCH_TOKEN"), "{printed}");
+        assert!(printed.contains("lab-1") && printed.contains("<redacted>"), "{printed}");
     }
 
     #[test]

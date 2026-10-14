@@ -174,6 +174,7 @@ pub fn run() {
             quit::linger_quit,
             quit::force_quit,
             window::open_settings,
+            logging::open_log_folder,
         ])
         .build(context)
         .expect("error while building Cyber CTF")
@@ -233,12 +234,26 @@ fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
 /// Timed teardown of expired cloud labs: once on startup, then every 5 minutes, so a forgotten
 /// (or app-was-closed) lab stops billing instead of lingering.
 fn spawn_reaper(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        loop {
-            runtime::reap_expired_labs(&app).await;
-            tokio::time::sleep(REAP_EVERY).await;
+    tauri::async_runtime::spawn(every_pass(REAP_EVERY, move || {
+        let app = app.clone();
+        async move { runtime::reap_expired_labs(&app).await }
+    }));
+}
+
+/// Runs `pass` now, then again `every` after each one ends, each pass on a task of its own: a
+/// panic in one pass (the panic hook logs it) ends that pass, not the loop. A bare loop ended
+/// for good on the first panic, and expired cloud labs then kept billing until a restart.
+async fn every_pass<F, Fut>(every: Duration, mut pass: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    loop {
+        if let Err(e) = tauri::async_runtime::spawn(pass()).await {
+            log::error!("a background pass ended early: {e}");
         }
-    });
+        tokio::time::sleep(every).await;
+    }
 }
 
 fn on_run_event(app: &AppHandle, event: RunEvent) {
@@ -289,6 +304,7 @@ mod tests {
     const NOT_UNIT_TESTED: &[(&str, &str)] = &[
         ("auth_login", "opens the system browser and waits for cyber-auth's redirect; authorize_url and the callback are tested"),
         ("restart_app", "restarts this very process"),
+        ("open_log_folder", "opens the system's file manager; log_dir is tested"),
     ];
 
     /// The test code under `dir`: whole `tests.rs` / `proptests.rs` files, and each file's
@@ -352,6 +368,28 @@ mod tests {
         assert!(!calls("server_lab_status(app)", "lab_status"));
         assert!(!calls("\"lab_status\",", "lab_status"));
         assert!(calls("InvokeRequest { cmd: \"lab_status\".into(), ..", "lab_status"));
+    }
+
+    #[tokio::test]
+    async fn a_panicking_pass_never_ends_the_loop() {
+        // Regression: the reaper was a bare loop, so one panic in a pass stopped cloud auto-stop
+        // for the rest of the session.
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let passes = Arc::new(AtomicUsize::new(0));
+        let counted = passes.clone();
+        let looping = tokio::spawn(super::every_pass(std::time::Duration::from_millis(1), move || {
+            let n = counted.fetch_add(1, Ordering::SeqCst);
+            async move { assert!(n > 0, "the first pass panics") }
+        }));
+        let waited = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while passes.load(Ordering::SeqCst) < 3 {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        looping.abort();
+        assert!(waited.is_ok(), "passes ran after the one that panicked");
     }
 
     #[test]

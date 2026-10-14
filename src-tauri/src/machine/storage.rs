@@ -1,7 +1,10 @@
 //! What Cyber CTF stores on this machine, for the Machine page: the container images and
-//! Vagrant boxes installed labs (and the self-tests) use, with sizes, and a clean-up that removes
-//! only those. Images still used by a container, or boxes used by a VM, are left alone
-//! (Docker/Vagrant refuse).
+//! Vagrant boxes it downloaded itself (see `owned`), with sizes, and a clean-up that removes only
+//! those. An image or box the player had before, or pulled for their own projects, is never
+//! listed nor removed, even when a lab uses the same one. Images still used by a container, or
+//! boxes used by a VM, are left alone (Docker/Vagrant refuse).
+
+pub(crate) mod owned;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -11,16 +14,14 @@ use serde::Serialize;
 
 use crate::error::Result;
 use crate::exec::run;
-use crate::machine::{installed_labs, selftest};
-use crate::runtime::providers::Provider;
+use owned::{Owned, OwnedBox};
 
-/// `docker image inspect` format: the image's name and its size in bytes. An image pulled only by
-/// digest (the pinned attack box) has no tag, so its name is then its `repo@sha256:…` reference.
-const IMAGE_FORMAT: &str = "{{if .RepoTags}}{{index .RepoTags 0}}{{else}}{{index .RepoDigests 0}}{{end}}\t{{.Size}}";
+/// `docker image inspect` format: the image's id and its size in bytes.
+const IMAGE_FORMAT: &str = "{{.Id}}\t{{.Size}}";
 
-/// The local hypervisors the VM self-test can use, whose test boxes count as the app's.
-const LOCAL_PROVIDERS: [Provider; 7] =
-    [Provider::Virtualbox, Provider::VmwareDesktop, Provider::Parallels, Provider::Utm, Provider::Libvirt, Provider::Qemu, Provider::Hyperv];
+/// The attack box's own repository. Its images are the app's by name: earlier launchers pulled
+/// them before downloads were recorded, and nobody else publishes it.
+const ATTACK_BOX_REPOSITORY: &str = "cyberctf/attack-box";
 
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -32,9 +33,9 @@ pub struct StoredItem {
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Storage {
-    /// Container images labs, the attack box and the self-test use, present locally.
+    /// Container images the app downloaded, present locally.
     pub images: Vec<StoredItem>,
-    /// Vagrant boxes VM labs and the self-test use, present locally.
+    /// Vagrant boxes the app downloaded, present locally.
     pub boxes: Vec<StoredItem>,
 }
 
@@ -100,104 +101,159 @@ fn dir_size(path: &Path) -> u64 {
     std::fs::read_dir(path).map(|it| it.flatten().map(|e| dir_size(&e.path())).sum()).unwrap_or(0)
 }
 
-/// Every image and box Cyber CTF uses, by name (present or not).
-async fn wanted(app: &AppHandle, extra_images: &[String]) -> (BTreeSet<String>, BTreeSet<String>) {
-    let mut images: BTreeSet<String> = extra_images.iter().filter(|i| crate::runtime::valid_image(i)).cloned().collect();
-    images.insert(selftest::IMAGE.to_string());
-    let mut boxes = BTreeSet::new();
-    for (id, dir) in installed_labs(app) {
-        // The lab's generated files (written when it last ran on that target).
-        if crate::runtime::lab::compose_file(&dir).is_file() {
-            images.extend(lab_images(&dir, &id).await);
-        }
-        let out = crate::runtime::lab::out(&dir);
-        boxes.extend(vagrantfile_boxes(&out.join("vagrant/Vagrantfile")));
-        boxes.extend(vagrantfile_boxes(&out.join("docker-vm/Vagrantfile")));
-    }
-    let arm = std::env::consts::ARCH == "aarch64";
-    for p in LOCAL_PROVIDERS {
-        boxes.extend(selftest::candidate_boxes(p, arm).iter().map(|b| b.to_string()));
-    }
-    (images, boxes)
+/// The boxes a lab's Vagrantfiles name: its generated ones (one VM per machine, or Docker in one
+/// VM) and its attack VM's, which a VM lab's start brings up beside it.
+fn lab_boxes(dir: &Path) -> Vec<String> {
+    let out = crate::runtime::lab::out(dir);
+    [out.join("vagrant"), out.join("docker-vm"), crate::runtime::attack_vm_dir(dir)].iter().flat_map(|d| vagrantfile_boxes(&d.join("Vagrantfile"))).collect()
 }
 
-/// `docker image inspect` lines for `images`. One call for all; it fails if any image is missing
-/// but still prints the ones it found, so then each is asked on its own.
-async fn inspect_images(images: &BTreeSet<String>) -> String {
-    let mut args = vec!["image", "inspect", "--format", IMAGE_FORMAT];
-    args.extend(images.iter().map(String::as_str));
-    if let Ok(o) = run("docker", &args, None).await {
-        return o;
-    }
-    let mut o = String::new();
-    for img in images {
-        if let Ok(line) = run("docker", &["image", "inspect", "--format", IMAGE_FORMAT, img], None).await {
-            o.push_str(&line);
-        }
-    }
-    o
+/// Records as the app's what a lab start on this machine downloaded: the images its Compose file
+/// names and the boxes its Vagrantfiles name, that weren't here `before` it.
+pub(crate) async fn claim_lab(app: &AppHandle, dir: &Path, id: &str, before: &owned::Before) {
+    let Ok(store) = owned::path(app) else { return };
+    let images = if before.tracks_images() && crate::runtime::lab::compose_file(dir).is_file() { lab_images(dir, id).await } else { Vec::new() };
+    owned::claim(&store, before, &images, &lab_boxes(dir)).await;
 }
 
-/// The images in `docker image inspect` lines of `name\tsize`, each once: two references to one
-/// image (the pinned attack box and its old `latest` tag) are one download on disk.
-fn parse_images(out: &str) -> Vec<StoredItem> {
+/// The images to list: the recorded ones, and of `extra_images` (the attack-box images the UI
+/// knows about) those of the attack box's own repository, whatever image they name now.
+fn image_candidates(owned: &Owned, extra_images: &[String]) -> Vec<(String, Option<String>)> {
+    let launcher =
+        extra_images.iter().filter(|i| crate::runtime::valid_image(i) && crate::exec::image_repository(i) == ATTACK_BOX_REPOSITORY).map(|i| (i.clone(), None));
+    owned.images.iter().map(|i| (i.reference.clone(), Some(i.id.clone()))).chain(launcher).collect()
+}
+
+/// `docker image inspect` of `reference`: its image id and size.
+async fn inspect_image(reference: &str) -> Option<(String, u64)> {
+    run("docker", &["image", "inspect", "--format", IMAGE_FORMAT, reference], None).await.ok().and_then(|o| parse_image_line(&o))
+}
+
+/// An `id\tsize` line (a size that isn't a number reads as 0).
+fn parse_image_line(out: &str) -> Option<(String, u64)> {
+    let (id, size) = out.lines().next()?.split_once('\t')?;
+    Some((id.trim().to_string(), size.trim().parse().unwrap_or(0))).filter(|(id, _)| !id.is_empty())
+}
+
+/// The app's images present now, as (reference, image id, size): a recorded reference only while
+/// it still names the image the app pulled.
+async fn present_images(candidates: &[(String, Option<String>)]) -> Vec<(String, String, u64)> {
+    let mut found = Vec::new();
+    for (reference, want) in candidates {
+        if let Some((id, size)) = inspect_image(reference).await
+            && want.as_ref().is_none_or(|w| *w == id)
+        {
+            found.push((reference.clone(), id, size));
+        }
+    }
+    found
+}
+
+/// The listed images: one per image (two references to one image are one download on disk).
+fn image_items(found: &[(String, String, u64)]) -> Vec<StoredItem> {
     let mut seen = BTreeSet::new();
-    out.lines()
-        .filter_map(|line| {
-            let (name, size) = line.split_once('\t')?;
-            Some(StoredItem { name: name.to_string(), bytes: size.trim().parse().unwrap_or(0) })
-        })
-        .filter(|i| seen.insert(i.name.clone()))
-        .collect()
+    found.iter().filter(|(_, id, _)| seen.insert(id.clone())).map(|(reference, _, bytes)| StoredItem { name: reference.clone(), bytes: *bytes }).collect()
 }
 
-/// The boxes of `boxes` downloaded under `home`, with their size on disk.
-fn present_boxes(home: &Path, boxes: &BTreeSet<String>) -> Vec<StoredItem> {
-    boxes
-        .iter()
-        .filter_map(|b| {
-            let dir = box_dir(home, b);
-            dir.is_dir().then(|| StoredItem { name: b.clone(), bytes: dir_size(&dir) })
-        })
-        .collect()
+/// Where Vagrant keeps a box version for a provider: `<box>/<version>/<provider>`, or with the
+/// architecture between (`<box>/<version>/<arch>/<provider>`).
+fn box_version_dir(home: &Path, b: &OwnedBox) -> Option<PathBuf> {
+    let version = box_dir(home, &b.name).join(&b.version);
+    let direct = version.join(&b.provider);
+    if direct.is_dir() {
+        return Some(direct);
+    }
+    std::fs::read_dir(&version).ok()?.flatten().map(|arch| arch.path().join(&b.provider)).find(|p| p.is_dir())
 }
 
-async fn present(images: &BTreeSet<String>, boxes: &BTreeSet<String>) -> Storage {
-    let found_images = if images.is_empty() { Vec::new() } else { parse_images(&inspect_images(images).await) };
-    let found_boxes = match vagrant_home() {
-        Some(home) => present_boxes(&home, boxes),
-        None => Vec::new(),
-    };
-    Storage { images: found_images, boxes: found_boxes }
+/// The app's boxes downloaded under `home`, with their size on disk.
+fn present_boxes(home: &Path, boxes: &BTreeSet<OwnedBox>) -> Vec<(OwnedBox, u64)> {
+    boxes.iter().filter_map(|b| box_version_dir(home, b).map(|dir| (b.clone(), dir_size(&dir)))).collect()
 }
 
-/// `extra_images`: images the UI knows about that the backend doesn't (the attack-box image setting).
+/// How a box shows in the list: `name (provider, version)`, as `vagrant box list` says it.
+fn box_label(b: &OwnedBox) -> String {
+    format!("{} ({}, {})", b.name, b.provider, b.version)
+}
+
+/// What of the app's downloads is here now.
+struct Present {
+    images: Vec<(String, String, u64)>,
+    boxes: Vec<(OwnedBox, u64)>,
+}
+
+impl Present {
+    /// What of `owned` (and of `extra_images`) is here, boxes under Vagrant's `home`.
+    async fn find(owned: &Owned, extra_images: &[String], home: Option<&Path>) -> Present {
+        let images = present_images(&image_candidates(owned, extra_images)).await;
+        let boxes = home.map(|home| present_boxes(home, &owned.boxes)).unwrap_or_default();
+        Present { images, boxes }
+    }
+
+    fn storage(&self) -> Storage {
+        Storage { images: image_items(&self.images), boxes: self.boxes.iter().map(|(b, bytes)| StoredItem { name: box_label(b), bytes: *bytes }).collect() }
+    }
+}
+
+/// `extra_images`: the attack-box images the UI knows about; only those of the attack box's own
+/// repository count (see [`image_candidates`]), any other is the player's unless recorded.
 #[tauri::command]
-pub async fn machine_storage(app: AppHandle, extra_images: Vec<String>) -> Storage {
-    let (images, boxes) = wanted(&app, &extra_images).await;
-    present(&images, &boxes).await
+pub async fn machine_storage(app: AppHandle, extra_images: Vec<String>) -> Result<Storage> {
+    let owned = owned::load(&owned::path(&app)?);
+    Ok(Present::find(&owned, &extra_images, vagrant_home().as_deref()).await.storage())
 }
 
-/// Removes the images and boxes `machine_storage` lists. Ones still in use stay. Returns
-/// the bytes freed.
+/// Removes what `machine_storage` lists (see [`clean`]). Returns the bytes freed.
 #[tauri::command]
 pub async fn machine_storage_clean(app: AppHandle, extra_images: Vec<String>) -> Result<u64> {
-    let (images, boxes) = wanted(&app, &extra_images).await;
-    let before = present(&images, &boxes).await;
-    for img in &before.images {
-        let _ = run("docker", &["image", "rm", &img.name], None).await;
+    clean(&owned::path(&app)?, &extra_images, vagrant_home().as_deref()).await
+}
+
+/// Removes the app's downloads recorded in `store` (and the attack box's of `extra_images`):
+/// each image reference it pulled (untagged, so an image the player tagged too stays), each box
+/// version for its provider (never `--all`). Ones still in use stay. Then forgets what is gone.
+/// Returns the bytes freed.
+async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>) -> Result<u64> {
+    let before = Present::find(&owned::load(store), extra_images, home).await;
+    for (reference, _, _) in &before.images {
+        let _ = run("docker", &["image", "rm", reference], None).await;
     }
-    for b in &before.boxes {
+    for (b, _) in &before.boxes {
         // No --force: Vagrant refuses to remove a box a VM still uses.
-        let _ = run("vagrant", &["box", "remove", &b.name, "--all"], None).await;
+        let _ = run("vagrant", &["box", "remove", &b.name, "--provider", &b.provider, "--box-version", &b.version], None).await;
     }
-    let after = present(&images, &boxes).await;
-    Ok(before.total().saturating_sub(after.total()))
+    let after = Present::find(&owned::load(store), extra_images, home).await;
+    forget_gone(store).await?;
+    Ok(before.storage().total().saturating_sub(after.storage().total()))
+}
+
+/// Drops from the record the images and boxes no longer on this machine, as Docker and Vagrant
+/// say it (nothing of a kind when its tool can't say: Docker down must not erase the record).
+/// Only those are dropped: a download another operation records meanwhile stays.
+async fn forget_gone(store: &Path) -> Result<()> {
+    let (images, boxes) = tokio::join!(owned::image_ids(), owned::box_list());
+    let owned = owned::load(store);
+    let gone_images: Vec<owned::OwnedImage> = match &images {
+        Some(ids) => owned.images.iter().filter(|i| !ids.contains(&i.id)).cloned().collect(),
+        None => Vec::new(),
+    };
+    let gone_boxes: Vec<OwnedBox> = match &boxes {
+        Some(listed) => owned.boxes.difference(listed).cloned().collect(),
+        None => Vec::new(),
+    };
+    if gone_images.is_empty() && gone_boxes.is_empty() {
+        return Ok(());
+    }
+    owned::update(store, |o| {
+        o.images.retain(|i| !gone_images.contains(i));
+        o.boxes.retain(|b| !gone_boxes.contains(b));
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::exec::fake::{Reply, Tools, fail, ok};
 
     #[test]
     fn reads_boxes_from_vagrantfiles() {
@@ -225,8 +281,9 @@ mod tests {
         }
         assert_eq!(box_assignment("config.vm.box = \"\""), None, "an empty box names no box");
         // `docker image inspect` on Windows: CRLF, and a size that isn't a number reads as 0.
-        let items = parse_images("busybox:1.36\t4261550\r\nother:1\t-5\r\n");
-        assert_eq!(items.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("busybox:1.36", 4_261_550), ("other:1", 0)]);
+        assert_eq!(parse_image_line("sha256:a\t4261550\r\n"), Some(("sha256:a".into(), 4_261_550)));
+        assert_eq!(parse_image_line("sha256:b\t-5\r\n"), Some(("sha256:b".into(), 0)));
+        assert_eq!(parse_image_line("garbage"), None);
     }
 
     #[test]
@@ -244,51 +301,205 @@ mod tests {
     }
 
     #[test]
-    fn image_lines_give_names_and_sizes() {
-        let items = parse_images("busybox:1.36\t4261550\ncyberctf/attack-box:latest\tnope\ngarbage\n");
-        assert_eq!(items.len(), 2);
-        assert_eq!((items[0].name.as_str(), items[0].bytes), ("busybox:1.36", 4261550));
-        assert_eq!(items[1].bytes, 0);
+    fn two_references_to_one_image_are_listed_once() {
+        let found =
+            [("cyberctf/attack-box:latest".to_string(), "sha256:a".to_string(), 3000), ("cyberctf/attack-box@sha256:d".into(), "sha256:a".into(), 3000)];
+        let items = image_items(&found);
+        assert_eq!(items.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("cyberctf/attack-box:latest", 3000)]);
     }
 
     #[test]
-    fn present_boxes_are_the_downloaded_ones_with_their_size() {
+    fn only_the_attack_boxs_own_repository_is_the_apps_by_name() {
+        let extra =
+            ["cyberctf/attack-box@sha256:abc".to_string(), "docker.io/cyberctf/attack-box:latest".into(), "kalilinux/kali-rolling".into(), "-bad".into()];
+        let names: Vec<String> = image_candidates(&Owned::default(), &extra).into_iter().map(|(r, want)| format!("{r} {want:?}")).collect();
+        assert_eq!(names, ["cyberctf/attack-box@sha256:abc None", "docker.io/cyberctf/attack-box:latest None"]);
+    }
+
+    /// A box version downloaded under `home` (`<arch>` between version and provider when given).
+    fn download_box(home: &Path, b: &OwnedBox, arch: Option<&str>, bytes: usize) {
+        let mut dir = box_dir(home, &b.name).join(&b.version);
+        if let Some(arch) = arch {
+            dir = dir.join(arch);
+        }
+        let dir = dir.join(&b.provider);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("box.vmdk"), vec![0u8; bytes]).unwrap();
+    }
+
+    fn owned_box(name: &str, provider: &str, version: &str) -> OwnedBox {
+        OwnedBox { name: name.into(), provider: provider.into(), version: version.into() }
+    }
+
+    #[test]
+    fn present_boxes_are_the_apps_downloaded_versions_with_their_size() {
         let home = std::env::temp_dir().join(format!("cyberctf-vhome-{}", rand::random::<u32>()));
-        let bx = box_dir(&home, "bento/debian-12").join("0").join("virtualbox");
-        std::fs::create_dir_all(&bx).unwrap();
-        std::fs::write(bx.join("box.vmdk"), vec![0u8; 1000]).unwrap();
-        std::fs::write(bx.join("metadata.json"), "{}").unwrap();
-        let wanted: BTreeSet<String> = ["bento/debian-12".to_string(), "generic/alpine319".to_string()].into();
-        let found = present_boxes(&home, &wanted);
-        assert_eq!(found.len(), 1);
-        assert_eq!((found[0].name.as_str(), found[0].bytes), ("bento/debian-12", 1002));
+        let alpine = owned_box("generic/alpine319", "virtualbox", "4.3.12");
+        let debian = owned_box("bento/debian-12", "parallels", "202510.26.0");
+        download_box(&home, &alpine, None, 1000);
+        download_box(&home, &debian, Some("arm64"), 500);
+        // Another version of the same box (the player's): not the app's.
+        download_box(&home, &owned_box("generic/alpine319", "virtualbox", "4.3.11"), None, 9999);
+        let gone = owned_box("utm/bookworm", "utm", "1");
+        let found = present_boxes(&home, &[alpine.clone(), debian.clone(), gone].into());
+        assert_eq!(found, [(debian, 500), (alpine, 1000)]);
         assert_eq!(dir_size(&home.join("missing")), 0);
-        let storage = Storage { images: vec![StoredItem { name: "i".into(), bytes: 5 }], boxes: found };
-        assert_eq!(storage.total(), 1007);
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    /// Docker and Vagrant as the tests see them: `images` (reference, id, size) are on the
+    /// machine, and `pulled` among them only once the lab started (`up`); `vagrant box list`
+    /// says `boxes`.
+    fn docker(images: &'static [(&'static str, &'static str, u64)], pulled: &'static [&'static str], boxes: &'static str) -> Tools {
+        let here = move |r: &str, up: bool| images.iter().find(|(name, _, _)| *name == r).filter(|(name, _, _)| up || !pulled.contains(name));
+        let mut up = false;
+        Tools::new(move |_, args| -> Option<Reply> {
+            match args {
+                a if a.contains(&"up") && a.contains(&"--pull") => {
+                    up = true;
+                    ok("")
+                }
+                ["image", "ls", "-q", "--no-trunc"] => {
+                    ok(images.iter().filter(|(n, _, _)| up || !pulled.contains(n)).map(|(_, id, _)| format!("{id}\n")).collect::<String>())
+                }
+                ["image", "inspect", "--format", format, reference] => match here(reference, up) {
+                    Some((_, id, size)) if format.contains("Size") => ok(format!("{id}\t{size}\n")),
+                    Some((_, id, _)) => ok(format!("{id}\n")),
+                    None => fail("No such image"),
+                },
+                [.., "config", "--images"] => ok(images.iter().map(|(n, _, _)| format!("{n}\n")).collect::<String>()),
+                ["box", "list"] => ok(boxes),
+                _ => ok(""),
+            }
+        })
+    }
+
+    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n  db:\n    networks: { lab: 20 }\n    docker: { image: postgres:16 }\n";
+
     #[tokio::test]
-    async fn storage_lists_the_labs_images_and_cleans_them() {
-        use crate::exec::fake::{Tools, fail, ok};
+    async fn an_image_present_before_any_lab_ran_is_never_removed() {
+        // Regression: Clean up removed every image an installed lab names, by name: a
+        // developer's own postgres:16 went with it.
         let t = crate::test_app::TestApp::new();
-        let lab = t.lab("web", &[]);
-        let compose = crate::runtime::lab::compose_file(&lab);
-        std::fs::create_dir_all(compose.parent().unwrap()).unwrap();
-        std::fs::write(&compose, "services: {}\n").unwrap();
-        let tools = Tools::new(|_, args| match args {
-            [.., "config", "--images"] => ok("nginx:1.27\n\n"),
-            // One call for all fails (an image is missing): each is then asked on its own.
-            ["image", "inspect", "--format", _, "nginx:1.27"] => ok("nginx:1.27\t1000\n"),
-            ["image", "inspect", ..] => fail("No such image"),
-            _ => ok(""),
-        });
-        let s = machine_storage(t.handle().clone(), vec!["ghcr.io/x/box:1".into(), "-bad".into()]).await;
-        assert_eq!(s.images.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("nginx:1.27", 1000)]);
-        assert!(!tools.called("-bad"), "an invalid image is never passed to docker");
-        let freed = machine_storage_clean(t.handle().clone(), Vec::new()).await.unwrap();
+        let dir = t.lab("web", &[("isoloom.yml", SPEC)]);
+        let tools = docker(&[("nginx:1.27", "sha256:nginx", 1000), ("postgres:16", "sha256:postgres", 4000)], &["nginx:1.27"], "");
+        crate::runtime::start(t.handle(), &dir, "web", crate::runtime::Runtime::Docker, None, None, &[], |_| {}).await.unwrap();
+        let listed = machine_storage(t.handle().clone(), Vec::new()).await.unwrap();
+        assert_eq!(listed.images.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("nginx:1.27", 1000)]);
+        machine_storage_clean(t.handle().clone(), Vec::new()).await.unwrap();
         assert!(tools.called("docker image rm nginx:1.27"));
-        assert_eq!(freed, 0, "docker still lists it, so nothing was freed");
+        assert!(!tools.called("image rm postgres"), "{:?}", tools.calls());
+    }
+
+    #[tokio::test]
+    async fn clean_up_removes_only_the_apps_downloads_and_forgets_what_went() {
+        let t = crate::test_app::TestApp::new();
+        let store = owned::path(t.handle()).unwrap();
+        let home = t.data().join("vagrant-home");
+        let alpine = owned_box("generic/alpine319", "virtualbox", "4.3.12");
+        download_box(&home, &alpine, None, 1000);
+        // The player's own box, of a name the self-test also uses.
+        download_box(&home, &owned_box("bento/debian-12", "virtualbox", "1"), None, 1000);
+        owned::update(&store, |o| {
+            o.images.insert(owned::OwnedImage { reference: "nginx:1.27".into(), id: "sha256:nginx".into() });
+            // Pulled again by the player since (another image under that name now): theirs.
+            o.images.insert(owned::OwnedImage { reference: "redis:7".into(), id: "sha256:old-redis".into() });
+            o.boxes.insert(alpine.clone());
+        })
+        .unwrap();
+        let tools = docker(
+            &[
+                ("nginx:1.27", "sha256:nginx", 1000),
+                ("redis:7", "sha256:new-redis", 50),
+                ("cyberctf/attack-box:latest", "sha256:ab", 3000),
+                ("kalilinux/kali-rolling", "sha256:kali", 500),
+            ],
+            &[],
+            "generic/alpine319 (virtualbox, 4.3.12)\nbento/debian-12 (virtualbox, 1)\n",
+        );
+        let extra = ["cyberctf/attack-box:latest".to_string(), "kalilinux/kali-rolling".into()];
+        clean(&store, &extra, Some(&home)).await.unwrap();
+        let calls = tools.calls();
+        assert!(
+            calls.contains(&"docker image rm nginx:1.27".to_string()) && calls.contains(&"docker image rm cyberctf/attack-box:latest".to_string()),
+            "{calls:?}"
+        );
+        assert!(calls.contains(&"vagrant box remove generic/alpine319 --provider virtualbox --box-version 4.3.12".to_string()), "{calls:?}");
+        assert!(
+            !calls
+                .iter()
+                .any(|c| c.contains("redis") && c.contains(" rm ") || c.contains("kali") && c.contains(" rm ") || c.contains("debian") || c.contains("--all")),
+            "{calls:?}"
+        );
+        // Still here (the fake Docker and Vagrant removed nothing): still recorded. The old redis
+        // image is gone from the machine: its record goes.
+        let owned = owned::load(&store);
+        assert_eq!(owned.images.iter().map(|i| i.reference.as_str()).collect::<Vec<_>>(), ["nginx:1.27"]);
+        assert_eq!(owned.boxes.len(), 1);
+        drop(tools);
+        // Docker down and Vagrant gone: nothing can be told, so nothing is forgotten.
+        let _down = Tools::rules(&[("docker", crate::exec::fake::fail("Cannot connect to the Docker daemon")), ("vagrant", None)]);
+        clean(&store, &[], Some(&home)).await.unwrap();
+        assert_eq!(owned::load(&store), owned, "the record survives a clean-up the tools couldn't answer");
+    }
+
+    #[tokio::test]
+    async fn a_download_recorded_during_a_clean_up_is_kept() {
+        let t = crate::test_app::TestApp::new();
+        let store = owned::path(t.handle()).unwrap();
+        let _tools = docker(&[("nginx:1.27", "sha256:nginx", 1000)], &[], "");
+        let recorded = || owned::OwnedImage { reference: "nginx:1.27".into(), id: "sha256:nginx".into() };
+        // Recorded after the clean-up looked (a worker's lab start): `forget_gone` reads it again.
+        owned::update(&store, |o| {
+            o.images.insert(recorded());
+        })
+        .unwrap();
+        forget_gone(&store).await.unwrap();
+        assert!(owned::load(&store).images.contains(&recorded()));
+    }
+
+    /// Builds a throwaway image `tag` (no layers, labelled as this test's) on the real Docker.
+    async fn build_throwaway(tag: &str, which: &str) {
+        let dir = std::env::temp_dir().join(format!("cyberctf-e2e-{which}-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Dockerfile"), format!("FROM scratch\nLABEL cyberctf.e2e=storage cyberctf.e2e.which={which}\n")).unwrap();
+        crate::exec::run("docker", &["build", "-q", "-t", tag, "."], Some(&dir)).await.unwrap();
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// The real Docker: an image the player had keeps through Clean up, even when the app's
+    /// operation used it too; the one the app pulled goes. Opt-in (needs Docker):
+    /// `cargo test real_docker -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn real_docker_clean_up_keeps_the_players_image() {
+        let (mine, apps) = ("cyberctf-e2e-player:1", "cyberctf-e2e-app:1");
+        let store = std::env::temp_dir().join(format!("cyberctf-e2e-store-{}", rand::random::<u32>())).join("storage.json");
+        build_throwaway(mine, "player").await;
+        let before = owned::Before::take(true, false).await;
+        build_throwaway(apps, "app").await;
+        owned::claim(&store, &before, &[apps.to_string(), mine.to_string()], &[]).await;
+        let freed = clean(&store, &[], None).await.unwrap();
+        let exists = |tag: &'static str| async move { crate::exec::run("docker", &["image", "inspect", tag], None).await.is_ok() };
+        let (mine_left, apps_left) = (exists(mine).await, exists(apps).await);
+        let _ = crate::exec::run("docker", &["image", "rm", mine], None).await;
+        let _ = crate::exec::run("docker", &["image", "rm", apps], None).await;
+        std::fs::remove_dir_all(store.parent().unwrap()).ok();
+        assert!(mine_left, "the player's image stays");
+        assert!(!apps_left, "the app's image went");
+        assert!(freed > 0, "the app's image's size is freed");
+    }
+
+    #[test]
+    fn a_vm_labs_boxes_include_its_attack_vms() {
+        // The attack VM comes up with a VM lab's start: its box is that start's download too.
+        let t = crate::test_app::TestApp::new();
+        let dir = t.lab("ad", &[]);
+        for (folder, bx) in [(crate::runtime::lab::out(&dir).join("vagrant"), "bento/debian-12"), (crate::runtime::attack_vm_dir(&dir), "kalilinux/rolling")] {
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(folder.join("Vagrantfile"), format!("config.vm.box = \"{bx}\"\n")).unwrap();
+        }
+        assert_eq!(lab_boxes(&dir), ["bento/debian-12", "kalilinux/rolling"]);
     }
 
     #[test]

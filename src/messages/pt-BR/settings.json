@@ -162,6 +162,10 @@
     "diagnosticsDescription": "Copia sua versão, sistema operacional e status da configuração, para um relato de bug ou pedido de suporte.",
     "copied": "Copiado",
     "copy": "Copiar",
+    "logs": "Arquivos de log",
+    "logsDescription": "O que o Cyber CTF registrou enquanto rodava. Envie-os com um relatório de bug ou um pedido de suporte.",
+    "openLogs": "Abrir pasta",
+    "logsFailed": "Não foi possível abrir a pasta de logs",
     "firstRun": "Configuração inicial",
     "firstRunDescription": "Percorra a introdução de novo. Suas configurações e labs são mantidos.",
     "replay": "Refazer"

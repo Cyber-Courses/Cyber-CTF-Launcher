@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, RotateCcw } from "lucide-react";
+import { Check, Copy, FolderOpen, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KeyValue } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
-import { restartApp, type AgentInfo, type SystemReport } from "@/lib/tauri";
+import { openLogFolder, restartApp, type AgentInfo, type SystemReport } from "@/lib/tauri";
 import { useDeployingLabs } from "@/lib/deploy-store";
 import { getAttackBox, getAttackImage, getVmProvider } from "@/lib/settings";
 import { Row, Section } from "@/features/settings/settings-layout";
@@ -72,6 +72,15 @@ export function AboutSection({ version, report, agent }: { version: string | nul
                 <Copy className="size-3.5" /> {t("settings.about.copy")}
               </>
             )}
+          </Button>
+        }
+      />
+      <Row
+        title={t("settings.about.logs")}
+        description={t("settings.about.logsDescription")}
+        control={
+          <Button variant="outline" size="xs" onClick={() => openLogFolder().catch(tell(t("settings.about.logsFailed")))}>
+            <FolderOpen className="size-3.5" /> {t("settings.about.openLogs")}
           </Button>
         }
       />

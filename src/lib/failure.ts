@@ -2,6 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { notify } from "@/lib/notify";
 import { toast } from "@/components/ui/toaster";
 import { translate } from "@/lib/i18n";
+import { logFrontendWarning } from "@/lib/error-log";
 
 /**
  * `.catch` handlers that say what a failure means, instead of an anonymous `() => {}`:
@@ -13,10 +14,13 @@ import { translate } from "@/lib/i18n";
  */
 export const ignore = (why: string) => (e: unknown) => console.debug(`ignored (${why}):`, e);
 
-export const warn = (what: string) => (e: unknown) => console.warn(`${what}:`, e);
+export const warn = (what: string) => (e: unknown) => {
+  console.warn(`${what}:`, e);
+  logFrontendWarning(what, e);
+};
 
 export const tell = (title: string) => (e: unknown) => {
-  console.warn(`${title}:`, e);
+  warn(title)(e);
   if (typeof document !== "undefined" && document.hasFocus()) toast(title, String(e), "fail");
   else void notify(title, String(e));
 };

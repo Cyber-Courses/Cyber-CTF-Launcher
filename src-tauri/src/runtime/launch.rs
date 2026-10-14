@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::AppHandle;
 use tauri::Manager;
 
-use super::inflight::{Action, DeployGuard, lock_lab};
+use super::inflight::{Action, DeployGuard};
 use super::lab::registry;
 use super::lifecycle::resume_locked;
 use super::paths::{deployment_states, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, state_dir, vagrant_dirs};
@@ -32,8 +32,10 @@ pub(super) use on_host::{check_aws_budget, public_ip};
 /// - With a server `host`: the lab runs there. ESXi runs the same Vagrantfiles; Proxmox and
 ///   the clouds run Isoloom's Terraform (Docker on one VM, or one VM per machine on Proxmox).
 /// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
+///
+/// The caller holds the lab lock (`lock_lab`): a launch holds it from the download on.
 #[allow(clippy::too_many_arguments)]
-pub async fn start(
+pub(crate) async fn start_locked(
     app: &AppHandle,
     dir: &Path,
     id: &str,
@@ -43,7 +45,6 @@ pub async fn start(
     env: &[(String, String)],
     mut log: impl FnMut(String),
 ) -> Result<()> {
-    let _lock = lock_lab(app, id).await;
     let _deploy = DeployGuard::new(id, Action::Start);
     // A lab runs in one place: starting it here (or on another host) while its deployment is
     // still up elsewhere would drop the marker naming that host, and with it the way to stop
@@ -61,6 +62,23 @@ pub async fn start(
         None => start_here(app, dir, id, runtime, provider, env, &mut log).await,
         Some(host) => start_on_server(app, dir, id, runtime, host, env, &mut log).await,
     }
+}
+
+/// [`start_locked`] under the lab lock, for tests that start an installed lab directly.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn start(
+    app: &AppHandle,
+    dir: &Path,
+    id: &str,
+    runtime: Runtime,
+    provider: Option<Provider>,
+    host: Option<&str>,
+    env: &[(String, String)],
+    log: impl FnMut(String),
+) -> Result<()> {
+    let _lock = super::inflight::lock_lab(app, id).await?;
+    start_locked(app, dir, id, runtime, provider, host, env, log).await
 }
 
 /// The name of the server host lab `id` (folder `dir`) is deployed on, if something of it is
@@ -102,11 +120,17 @@ async fn start_here(
     // collides on its published host ports); if an earlier start left stopped or partial
     // infrastructure behind, clear it so this start is clean.
     ensure_local_slot_free(dir, id, log).await?;
-    match local_run(runtime, provider)? {
+    let run = local_run(runtime, provider)?;
+    // What it downloads (its images, or its boxes) is recorded as the app's, for Storage to
+    // clean up: only what wasn't on this machine before.
+    let before = crate::machine::storage::owned::Before::take(run == LocalRun::Docker, run != LocalRun::Docker).await;
+    let started = match run {
         LocalRun::DockerInVm(provider) => start_docker_in_vm(dir, runtime, provider, env, log).await,
         LocalRun::Docker => start_on_docker(dir, id, env, log).await,
         LocalRun::Vm(provider) => start_vm_lab(dir, runtime, provider, env, log).await,
-    }
+    };
+    crate::machine::storage::claim_lab(app, dir, id, &before).await;
+    started
 }
 
 /// Whether this start resumes the lab parked here rather than building it. A parked lab (paused
@@ -166,6 +190,7 @@ async fn start_vm_lab(dir: &Path, runtime: Runtime, provider: Provider, env: &[(
 /// running attack box back into its networks, and record it for Isoloom. Takes the lab folder
 /// (no app handle), so the real-lab tests run exactly this.
 pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+    recheck_instance(dir, id, log).await?;
     let spec = lab::prepare(dir, lab::Target::Docker)?;
     mark_local_vm(dir, None)?;
     docker::start(dir, id, env, &mut *log).await?;
@@ -175,6 +200,19 @@ pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String
     let published = docker::published(dir, id, env).await;
     if let Some(m) = lab::message_at(dir, &spec, lab::Target::Docker, &published) {
         log_lines(&m, log);
+    }
+    Ok(())
+}
+
+/// Checks the lab's instance against the networks Docker has now (an install with Docker down
+/// picked it blind), moving the lab (stopped: its slot was cleared) to a free one if its blocks
+/// are taken. With Docker down there is nothing to check against, and the start says so next.
+async fn recheck_instance(dir: &Path, id: &str, log: &mut impl FnMut(String)) -> Result<()> {
+    let Some(labs) = dir.parent() else { return Ok(()) };
+    let before = lab::instance(dir);
+    let now = lab::recheck_instance(labs, dir, &docker::subnets_in_use(id).await, &lab::registry_instances(dir))?;
+    if before.is_some_and(|b| b != now) {
+        log(format!("Another Docker network took this lab's addresses: it moves to free ones (instance {now})."));
     }
     Ok(())
 }

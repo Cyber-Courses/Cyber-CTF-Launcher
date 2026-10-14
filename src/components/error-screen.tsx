@@ -5,17 +5,19 @@ import { AlertTriangle, Copy, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { tell } from "@/lib/failure";
-import { logFrontendError } from "@/lib/error-log";
+import { logFolder, logFrontendError } from "@/lib/error-log";
 import { useT } from "@/lib/i18n";
 
-/** The error as text to paste into a bug report: message, window, agent and stack. Kept in
- *  English whatever the language: it is read by us, not shown in the app. */
-function errorDetails(error: Error & { digest?: string }): string {
+/** The error as text to paste into a bug report: message, window, agent, where the log files
+ *  are (support asks for them next) and stack. Kept in English whatever the language: it is
+ *  read by us, not shown in the app. */
+export function errorDetails(error: Error & { digest?: string }, logs: string | null = null): string {
   return [
     `Error: ${error.message || String(error)}`,
     error.digest ? `Digest: ${error.digest}` : null,
     `Window: ${typeof window === "undefined" ? "" : window.location.pathname + window.location.search}`,
     `Agent: ${typeof navigator === "undefined" ? "" : navigator.userAgent}`,
+    logs ? `Log files: ${logs}` : null,
     error.stack ? `\n${error.stack}` : null,
   ]
     .filter(Boolean)
@@ -43,13 +45,17 @@ function ErrorPanel({
   const title = titleProp ?? t("shell.error.title");
   const description = descriptionProp ?? t("shell.error.description");
   const [copied, setCopied] = useState(false);
+  const [logs, setLogs] = useState<string | null>(null);
   useEffect(() => {
     console.error(error);
     logFrontendError("error screen", errorDetails(error));
   }, [error]);
+  useEffect(() => {
+    void logFolder().then(setLogs);
+  }, []);
   const copy = () =>
     navigator.clipboard
-      .writeText(errorDetails(error))
+      .writeText(errorDetails(error, logs))
       .then(() => setCopied(true))
       .catch(tell(t("errors.clipboard")));
 

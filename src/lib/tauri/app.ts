@@ -7,6 +7,8 @@ export type { AgentInfo };
 export const openSettings = () => invoke<void>("open_settings");
 /** Relaunches the app (applies an installed update). */
 export const restartApp = () => invoke<void>("restart_app");
+/** Opens the folder of the app's log files in the system's file manager. */
+export const openLogFolder = () => invoke<void>("open_log_folder");
 
 /** This machine's launcher-agent identity (for the Settings screen). */
 export const agentInfo = () => invoke<AgentInfo>("agent_info");

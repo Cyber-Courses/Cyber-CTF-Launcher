@@ -45,15 +45,20 @@ use ts_rs::TS;
 // A glob, so each command's generated `__cmd__*` macro is re-exported with it: `lib.rs`
 // registers them as `runtime::<command>`.
 pub use attack_box::start_attack_vm;
+pub use attack_vm::dir as attack_vm_dir;
 pub use commands::*;
 pub use docker::{PORTS_ENV, subnets_in_use};
 pub use exegol::default_image as default_attack_image;
 /// For tests elsewhere that need an operation in flight.
 #[cfg(test)]
 pub(crate) use inflight::DeployGuard;
-pub use inflight::{Action, active_actions, active_deploys, deploying_labs};
-pub use launch::{deployed_on_server, start};
-pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, resume_lab, stop_lab};
+pub(crate) use inflight::lock_lab;
+pub use inflight::{Action, active_actions, active_deploys, deploying_labs, stopping};
+pub use launch::deployed_on_server;
+#[cfg(test)]
+pub(crate) use launch::start;
+pub(crate) use launch::start_locked;
+pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, resume_lab, runtime_here, stop_lab};
 pub use model::{AttackerAt, Interface, LabStatus, Machine, Network, Output, Park, Place, Port, Service};
 pub use paths::{LOCAL_VM_MARKER, validate_id};
 pub use shell::{ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for, valid_image};

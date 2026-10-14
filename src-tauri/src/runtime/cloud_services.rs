@@ -878,7 +878,7 @@ mod tests {
         let err = super::super::start(t.handle(), &dir, "goat", Runtime::Cloud, None, Some(&aws), &[], |l| log.push(l)).await.unwrap_err();
         assert!(err.to_string().starts_with("This lab is already running in your cloud account"), "{err}");
         // Stopped: destroyed with the account, the inputs forgotten.
-        super::super::stop_lab(t.handle(), "goat", Runtime::Cloud).await.unwrap();
+        super::super::stop_lab(t.handle(), "goat", Runtime::Cloud, |_| {}).await.unwrap();
         assert!(tools.called("terraform destroy"), "{:?}", tools.calls());
         assert!(!state.join(INPUTS_FILE).exists() && !state.join("terraform.tfstate").exists());
         assert_eq!(super::super::deployed_on_server(t.handle(), &dir, "goat"), None);

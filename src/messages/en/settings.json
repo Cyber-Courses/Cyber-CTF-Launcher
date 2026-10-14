@@ -162,6 +162,10 @@
     "diagnosticsDescription": "Copies your version, OS and setup status, for a bug report or a support request.",
     "copied": "Copied",
     "copy": "Copy",
+    "logs": "Log files",
+    "logsDescription": "What Cyber CTF wrote while it ran. Send them with a bug report or a support request.",
+    "openLogs": "Open folder",
+    "logsFailed": "Couldn't open the log folder",
     "firstRun": "First-run setup",
     "firstRunDescription": "Walk through the onboarding again. Your settings and labs are kept.",
     "replay": "Replay"

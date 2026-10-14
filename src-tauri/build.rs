@@ -60,6 +60,7 @@ const COMMANDS: &[&str] = &[
     "machine_workload_stop",
     "machine_workloads",
     "oci_config",
+    "open_log_folder",
     "open_settings",
     "restart_app",
     "running_labs",

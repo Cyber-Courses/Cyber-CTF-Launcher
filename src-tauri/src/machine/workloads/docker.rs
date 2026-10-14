@@ -118,7 +118,7 @@ pub(super) async fn stop(id: &str) -> Result<()> {
         let _ = run("docker", &["rm", "-f", &name], None).await;
     }
     let _ = run("docker", &["network", "rm", &format!("{project}-attack")], None).await;
-    let _ = run("docker", &["compose", "-p", &project, "down", "-t", "5", "--remove-orphans"], None).await;
+    let _ = run("docker", &["compose", "-p", &project, "down", "-t", "5", "--volumes", "--remove-orphans"], None).await;
     // Whatever of this exact project is left.
     let left = run("docker", &["ps", "-aq", "--filter", &project_filter(id)], None).await.unwrap_or_default();
     let ids: Vec<&str> = left.split_whitespace().collect();

@@ -162,6 +162,10 @@
     "diagnosticsDescription": "Kopiert deine Version, dein Betriebssystem und den Einrichtungsstatus, für einen Fehlerbericht oder eine Supportanfrage.",
     "copied": "Kopiert",
     "copy": "Kopieren",
+    "logs": "Protokolldateien",
+    "logsDescription": "Was Cyber CTF während der Ausführung aufgezeichnet hat. Schick sie mit einem Fehlerbericht oder einer Supportanfrage mit.",
+    "openLogs": "Ordner öffnen",
+    "logsFailed": "Der Protokollordner konnte nicht geöffnet werden",
     "firstRun": "Ersteinrichtung",
     "firstRunDescription": "Das Onboarding noch einmal durchlaufen. Deine Einstellungen und Labs bleiben erhalten.",
     "replay": "Wiederholen"
