@@ -1,4 +1,5 @@
 import { afterEach, vi } from "vitest";
+import { resetModuleState } from "@/lib/module-state";
 
 // Shared setup for every test file. Node-environment tests skip the DOM half.
 if (typeof window !== "undefined") {
@@ -39,12 +40,8 @@ if (typeof window !== "undefined") {
   afterEach(async () => {
     cleanup();
     clearMocks();
-    // Self-test runs are shared across views for the app's lifetime: each test starts clean.
-    // Imported here, not at the top: a test file's own module mocks (settings' image JSON) must
-    // apply before anything pulls those modules in.
-    (await import("@/features/machine/use-self-test")).resetSelfTests();
-    (await import("@/lib/shared-poll")).resetSharedPolls();
-    (await import("@/lib/deploy-store")).resetDeployStore();
+    // Shared polls, the deploy store and self-test runs live at module level: each test starts clean.
+    resetModuleState();
     try {
       localStorage.clear();
     } catch {

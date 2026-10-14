@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MoreHorizontal, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEscape } from "@/lib/use-escape";
 import { useT } from "@/lib/i18n";
 
 export type MenuItem = { label: string; icon: LucideIcon; onClick: () => void; danger?: boolean };
@@ -19,25 +20,22 @@ export function HostMenu({ items }: { items: MenuItem[] }) {
     if (r) setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
   };
 
+  // Escape closes it and gives the focus back to its button, as a menu does.
+  useEscape(() => {
+    setPos(null);
+    btnRef.current?.focus();
+  }, !!pos);
+
   useEffect(() => {
     if (!pos) return;
     const close = () => setPos(null);
-    // Escape closes it and gives the focus back to its button, as a menu does.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      setPos(null);
-      btnRef.current?.focus();
-    };
     // Open: the focus goes to its first item, as a menu's does.
     document.querySelector<HTMLElement>('[role="menu"] [role="menuitem"]')?.focus();
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
-    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
-      window.removeEventListener("keydown", onKey);
     };
   }, [pos]);
 

@@ -657,6 +657,14 @@ export async function browserAnswer(cmd: string, args: Record<string, unknown> |
     }
     case "running_labs":
       return [...live.running];
+    case "machine_workloads": {
+      // The scan follows the labs started and stopped here: a started container lab shows up in
+      // it (the sidebar lists running labs from it), a stopped one leaves it.
+      const fixed = answer(cmd, args) as { id: string; kind: string }[];
+      const kept = fixed.filter((w) => w.kind !== "docker" || live.running.has(w.id));
+      const started = [...live.running].filter((id) => !fixed.some((w) => w.id === id) && !live.placed.has(id));
+      return [...kept, ...started.map((id) => ({ id, kind: "docker", count: 1, memBytes: 0.3 * GB, provider: null }))];
+    }
     case "deploying_labs":
       return [...new Set([...(sc.noDeploying ? [] : (answer(cmd, args) as string[])), ...live.ops.keys()])];
     case "active_operations":

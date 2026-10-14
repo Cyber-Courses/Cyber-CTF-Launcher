@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, type RefObject } from "react";
+import { useEscape } from "@/lib/use-escape";
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
@@ -8,13 +9,11 @@ const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:n
  * Traps keyboard focus inside `ref` while `active`: focuses the first focusable element on open,
  * cycles Tab / Shift+Tab within the container (so focus can't escape to the page behind a modal),
  * and restores focus to the previously focused element on close. A no-op when inactive.
- * `onEscape`, when given, runs on Escape inside the dialog (its "cancel" action).
+ * `onEscape`, when given, runs on Escape while the trap is active (the dialog's "cancel"), see
+ * useEscape.
  */
 export function useFocusTrap(ref: RefObject<HTMLElement | null>, active = true, onEscape?: () => void) {
-  const escape = useRef(onEscape);
-  useEffect(() => {
-    escape.current = onEscape;
-  });
+  useEscape(() => onEscape?.(), active && !!onEscape);
   useEffect(() => {
     const el = ref.current;
     if (!active || !el) return;
@@ -23,12 +22,6 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, active = true, 
     (focusable()[0] ?? el).focus();
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && escape.current) {
-        e.preventDefault();
-        e.stopPropagation();
-        escape.current();
-        return;
-      }
       if (e.key !== "Tab") return;
       const f = focusable();
       if (f.length === 0) {

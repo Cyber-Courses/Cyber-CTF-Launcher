@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ErrorBoundary } from "@/components/error-screen";
 import { CtfMark } from "@/components/brand/mark";
 import { Button } from "@/components/ui/button";
-import { WaitingForCheck } from "@/components/ui/waiting-for-check";
+import { WaitingForCheck } from "@/features/machine/waiting-for-check";
 import { MachineStepBody, canContinue, machineSteps, nextLabel, stepMeta, useMachineSetup } from "@/features/machine/setup-steps";
 import { STEP_NAMES, isMachineStep, onboardingSteps } from "@/features/onboarding/onboarding-model";
 import { StepActions, StepHeader, StepProgress } from "@/features/onboarding/onboarding-parts";

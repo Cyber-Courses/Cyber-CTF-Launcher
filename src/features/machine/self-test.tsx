@@ -33,8 +33,6 @@ const PLAN: Record<"docker" | "vm", { step: string; label: MessageKey }[]> = {
   ],
 };
 
-export { resetSelfTests } from "@/features/machine/use-self-test";
-
 /** A runnable setup self-test with a live checklist. Runs on mount when `auto`, unless a run of
  *  this kind is already going (it then shows that one). */
 export function SelfTest({

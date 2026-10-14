@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -25,18 +25,7 @@ export function ConfirmDialog({
 }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
-  useFocusTrap(ref);
-  useEffect(() => {
-    // Escape is the dialog's alone: stopped here, it doesn't also reach the page's own Escape
-    // (the lab page goes back to the list on it).
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      onCancel();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  useFocusTrap(ref, true, onCancel);
 
   return (
     <div

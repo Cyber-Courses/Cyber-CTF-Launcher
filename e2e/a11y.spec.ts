@@ -64,7 +64,16 @@ for (const theme of ["dark", "light"] as const) {
       // The command palette.
       await page.keyboard.press("Control+k");
       await expect(page.getByRole("combobox")).toBeFocused();
-      await page.waitForTimeout(300);
+      // Measured once its fade-in is over: mid-animation, its text reads as low contrast.
+      // (Looping animations, like a spinner's, never finish: not waited for.)
+      await page.evaluate(() =>
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((a) => a.effect?.getTiming().iterations !== Infinity)
+            .map((a) => a.finished.catch(() => {})),
+        ),
+      );
       await check("palette");
 
       expect(found).toEqual([]);

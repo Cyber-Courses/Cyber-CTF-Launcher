@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { structurallyEqual } from "@/lib/equal";
 import { ignore } from "@/lib/failure";
 import { isVisible, onVisibilityChange } from "@/lib/visibility";
+import { registerReset } from "@/lib/module-state";
 
 export interface SharedPollOptions<T> {
   read: () => Promise<T>;
@@ -49,7 +50,7 @@ export function sharedPoll<T>(o: SharedPollOptions<T>): SharedPoll<T> {
   const equal = o.equal ?? structurallyEqual;
   const listeners = new Set<() => void>();
   let value = o.initial;
-  // Bumped by `resetSharedPolls`: reads started before it neither publish nor count as in flight.
+  // Bumped on a reset: reads started before it neither publish nor count as in flight.
   let generation = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let started = 0;
@@ -104,7 +105,8 @@ export function sharedPoll<T>(o: SharedPollOptions<T>): SharedPoll<T> {
     if (isVisible() || o.hiddenMs?.(value) != null) read();
   }
 
-  resets.add(() => {
+  // Back to its first value, nothing in flight: one test's answers must not reach the next.
+  registerReset(() => {
     generation++;
     clear();
     value = o.initial;
@@ -129,15 +131,6 @@ export function sharedPoll<T>(o: SharedPollOptions<T>): SharedPoll<T> {
 }
 
 const noSubscription = () => () => {};
-
-/** Every shared poll's reset, for `resetSharedPolls`. */
-const resets = new Set<() => void>();
-
-/** Puts every shared poll back to its first value, nothing in flight (tests start from a clean
- *  window: the polls live at module level, so one test's answers otherwise reach the next). */
-export function resetSharedPolls() {
-  for (const reset of resets) reset();
-}
 
 /** A shared poll's latest answer, re-rendering only when it changes. Not `enabled` (a window
  *  that shows none of it, such as Settings), it doesn't subscribe, so it doesn't keep the poll going. */
