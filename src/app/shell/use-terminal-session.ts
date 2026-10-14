@@ -54,10 +54,12 @@ export function useTerminalSession(
     observer.observe(host.current);
 
     terminalOpen(id, kind, runtime, term.cols, term.rows, (e) => {
+      // Output still arriving after Reconnect or the window closing: its terminal is gone.
+      if (disposed) return;
       if (e.kind === "data") term.write(e.data);
       else {
         session = null;
-        if (!disposed) setState({ kind: "ended", code: e.code });
+        setState({ kind: "ended", code: e.code });
       }
     })
       .then((s) => {

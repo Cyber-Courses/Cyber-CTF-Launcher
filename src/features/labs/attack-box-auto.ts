@@ -3,20 +3,13 @@
 import { useEffect, useRef } from "react";
 import { exegolStart, exegolStatus, labStatus, type ActiveOperation } from "@/lib/tauri";
 import { getAttackImage, getAutoAttackBox } from "@/lib/settings";
+import { startOnce } from "@/lib/start-once";
 import { warn } from "@/lib/failure";
 
-// One start of a lab's container attack box at a time: the lab page and the app-wide watcher
-// below can both decide to start it, and a second `docker run` of the same name would fail.
-const starting = new Map<string, Promise<void>>();
-
-/** Starts the container attack box beside a lab here, or joins the start already under way. */
-export function startContainerAttackBox(labId: string, onLog: (line: string) => void = () => {}): Promise<void> {
-  const pending = starting.get(labId);
-  if (pending) return pending;
-  const run = exegolStart(labId, getAttackImage(), onLog).finally(() => starting.delete(labId));
-  starting.set(labId, run);
-  return run;
-}
+/** Starts the container attack box beside a lab here, or joins the start already under way (a
+ *  second `docker run` of the same name would fail). */
+export const startContainerAttackBox = (labId: string, onLog: (line: string) => void = () => {}) =>
+  startOnce(`container:${labId}`, () => exegolStart(labId, getAttackImage(), onLog));
 
 /**
  * "Start it with each lab", wherever the lab was started: when a launch or resume ends with

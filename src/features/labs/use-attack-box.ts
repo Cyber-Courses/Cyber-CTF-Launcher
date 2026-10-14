@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { attackVmStart, attackVmStatus, attackVmStop, exegolStatus, exegolStop, type ExegolStatus } from "@/lib/tauri";
 import { startContainerAttackBox } from "@/features/labs/attack-box-auto";
+import { startOnce } from "@/lib/start-once";
 import { attackImageLabel, getAttackBox, getAttackImage, getAutoAttackBox } from "@/lib/settings";
 import { translate } from "@/lib/i18n";
 import { ignore } from "@/lib/failure";
@@ -10,6 +11,10 @@ import { usePoll } from "@/lib/use-poll";
 import { structurallyEqual } from "@/lib/equal";
 import { useLatest } from "@/lib/use-latest";
 import { describeError } from "@/lib/errors";
+
+/** Starts the attack VM beside a VM lab here, or joins the start already under way: a second
+ *  `vagrant up` would run into the machine lock and its retries. */
+const startAttackVm = (labId: string, onLog: (line: string) => void) => startOnce(`vm:${labId}`, () => attackVmStart(labId, getAttackBox(), onLog));
 
 /** What the attack box is: a container on a container lab's networks, or the learner's own VM
  *  (a Vagrant box) beside a VM lab, on the same hypervisor. */
@@ -129,7 +134,7 @@ export function useAttackBox(
   const start = useCallback(
     () =>
       run(
-        (l) => (kind === "vm" ? attackVmStart(labId, getAttackBox(), l) : startContainerAttackBox(labId, l)),
+        (l) => (kind === "vm" ? startAttackVm(labId, l) : startContainerAttackBox(labId, l)),
         kind === "vm" ? translate("labs.attackBox.startingVm") : translate("labs.attackBox.startingBox"),
       ),
     [run, labId, kind],

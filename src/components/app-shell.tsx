@@ -100,11 +100,14 @@ export function AppShell() {
   if (!ready) return <div className="h-dvh bg-background" />;
   // Settings runs standalone in its own window: no sidebar, no onboarding, just the screen.
   if (settingsWindow) return <SettingsWindowView auth={auth} onAuthChange={session.changed} />;
-  // With its own Toaster: `tell()` shows errors as toasts while the window has focus.
+  // With its own Toaster (`tell()` shows errors as toasts while the window has focus) and the
+  // launch confirmation: a cloud launch asked from the website during onboarding must be shown,
+  // or the website takes the silence for a no.
   if (!onboarded)
     return (
       <>
         <Onboarding onComplete={completeOnboarding} />
+        <LaunchConfirm />
         <Toaster />
       </>
     );
