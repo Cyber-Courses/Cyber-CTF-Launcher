@@ -125,10 +125,10 @@ pub async fn exegol_status(id: String, image: String) -> Result<exegol::ExegolSt
 
 /// Launches the attack box on the lab's network (pulls the image first if needed).
 #[tauri::command]
-pub async fn exegol_start(id: String, image: String, logs: Channel<String>) -> Result<()> {
+pub async fn exegol_start(app: AppHandle, id: String, image: String, logs: Channel<String>) -> Result<()> {
     validate_id(&id)?;
     check_image(&image)?;
-    exegol::start(&id, &image, channel_log(logs)).await
+    crate::machine::storage::owned::tracked(&app, std::slice::from_ref(&image), &[], exegol::start(&id, &image, channel_log(logs))).await
 }
 
 #[tauri::command]
@@ -275,13 +275,14 @@ mod tests {
 
     #[tokio::test]
     async fn attack_box_commands_drive_docker_for_a_valid_lab() {
+        let t = TestApp::new();
         let tools = Tools::rules(&[("inspect", ok("true\t10.0.0.5\n"))]);
         let s = sink();
         let st = exegol_status("web-1".into(), "nwodtuhs/exegol:free".into()).await.unwrap();
         assert!(st.running);
         exegol_stop("web-1".into(), channel(s.clone())).await.unwrap();
         assert!(tools.called("docker rm -f cyberctf-web-1-attacker"));
-        let _ = exegol_start("web-1".into(), "nwodtuhs/exegol:free".into(), channel(s.clone())).await;
+        let _ = exegol_start(t.handle().clone(), "web-1".into(), "nwodtuhs/exegol:free".into(), channel(s.clone())).await;
         assert!(tools.called("nwodtuhs/exegol:free"));
     }
 
@@ -306,13 +307,14 @@ mod tests {
 
     #[tokio::test]
     async fn attack_box_commands_refuse_bad_ids_and_images_before_touching_docker() {
+        let t = TestApp::new();
         let bad_id = exegol_status("../x".into(), "nwodtuhs/exegol:free".into()).await.err().unwrap().to_string();
         assert_eq!(bad_id, "invalid lab id `../x`");
         let bad_image = exegol_status("web-1".into(), "-x".into()).await.err().unwrap().to_string();
         assert_eq!(bad_image, "invalid attack-box image `-x`");
         let sink = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        assert!(exegol_start("a b".into(), "nwodtuhs/exegol:free".into(), channel(sink.clone())).await.is_err());
-        assert!(exegol_start("web-1".into(), "x;y".into(), channel(sink.clone())).await.is_err());
+        assert!(exegol_start(t.handle().clone(), "a b".into(), "nwodtuhs/exegol:free".into(), channel(sink.clone())).await.is_err());
+        assert!(exegol_start(t.handle().clone(), "web-1".into(), "x;y".into(), channel(sink.clone())).await.is_err());
         assert!(exegol_stop("a;rm".into(), channel(sink.clone())).await.is_err());
         assert!(sink.lock().unwrap().is_empty(), "nothing ran");
     }

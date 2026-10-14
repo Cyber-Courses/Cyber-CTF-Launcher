@@ -43,6 +43,10 @@ fn responds(p: Provider) -> Option<(&'static str, &'static [&'static str])> {
     }
 }
 
+/// The local hypervisors the VM self-test can use.
+pub(super) const TEST_PROVIDERS: [Provider; 7] =
+    [Provider::Virtualbox, Provider::VmwareDesktop, Provider::Parallels, Provider::Utm, Provider::Libvirt, Provider::Qemu, Provider::Hyperv];
+
 /// Small public boxes that exist for this provider and CPU, smallest first.
 pub(crate) fn candidate_boxes(p: Provider, arm: bool) -> &'static [&'static str] {
     match (p, arm) {

@@ -23,7 +23,7 @@ proptest! {
             prop_assert!(line.contains(&b));
             prop_assert!(!b.contains('\n'));
         }
-        let _ = parse_images(&line);
+        let _ = parse_image_line(&line);
     }
 
     #[test]
@@ -54,14 +54,9 @@ proptest! {
     }
 
     #[test]
-    fn image_lines_read_back(items in proptest::collection::vec(("[a-z0-9./:_-]{1,30}", any::<u64>()), 0..5), crlf in any::<bool>()) {
+    fn image_lines_read_back(id in "sha256:[a-f0-9]{1,64}", size in any::<u64>(), crlf in any::<bool>()) {
         let end = if crlf { "\r\n" } else { "\n" };
-        let out: String = items.iter().map(|(n, b)| format!("{n}\t{b}{end}")).collect();
-        let got: Vec<(String, u64)> = parse_images(&out).into_iter().map(|i| (i.name, i.bytes)).collect();
-        // An image listed twice (two tags of one name) is measured once: its first line.
-        let mut seen = std::collections::HashSet::new();
-        let want: Vec<(String, u64)> = items.into_iter().filter(|(n, _)| seen.insert(n.clone())).collect();
-        prop_assert_eq!(got, want);
+        prop_assert_eq!(parse_image_line(&format!("{id}\t{size}{end}")), Some((id, size)));
     }
 }
 

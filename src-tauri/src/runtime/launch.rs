@@ -120,11 +120,17 @@ async fn start_here(
     // collides on its published host ports); if an earlier start left stopped or partial
     // infrastructure behind, clear it so this start is clean.
     ensure_local_slot_free(dir, id, log).await?;
-    match local_run(runtime, provider)? {
+    let run = local_run(runtime, provider)?;
+    // What it downloads (its images, or its boxes) is recorded as the app's, for Storage to
+    // clean up: only what wasn't on this machine before.
+    let before = crate::machine::storage::owned::Before::take(run == LocalRun::Docker, run != LocalRun::Docker).await;
+    let started = match run {
         LocalRun::DockerInVm(provider) => start_docker_in_vm(dir, runtime, provider, env, log).await,
         LocalRun::Docker => start_on_docker(dir, id, env, log).await,
         LocalRun::Vm(provider) => start_vm_lab(dir, runtime, provider, env, log).await,
-    }
+    };
+    crate::machine::storage::claim_lab(app, dir, id, &before).await;
+    started
 }
 
 /// Whether this start resumes the lab parked here rather than building it. A parked lab (paused

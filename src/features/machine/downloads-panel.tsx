@@ -14,13 +14,14 @@ import { machineStorage, machineStorageClean, type Storage } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 /** The attack box images to count: the one in use, and an older launcher's default (several GB,
- *  by tag or earlier digest) so it can be cleaned up. The bare repo is `:latest` again. */
+ *  by tag or earlier digest) so it can be cleaned up. The bare repo is `:latest` again. Only the
+ *  Cyber CTF image's are the app's by name; another image counts only if the app pulled it. */
 function attackImages(): string[] {
   return [getAttackImage(), ...OLD_ATTACK_IMAGES.filter((i) => i.includes(":") || i.includes("@"))];
 }
 
-/** Downloaded container images and VM boxes, with a confirmed clean-up (the attack box image
- *  and anything in use are kept). */
+/** The container images and VM boxes Cyber CTF downloaded itself, with a confirmed clean-up
+ *  (anything in use is kept; the player's own images and boxes are never listed). */
 export function DownloadsPanel() {
   const t = useT();
   const fmt = useMachineFormat();

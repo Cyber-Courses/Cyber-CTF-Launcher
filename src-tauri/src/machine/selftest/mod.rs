@@ -23,8 +23,8 @@ use tauri::ipc::Channel;
 use crate::error::{Error, Result};
 use crate::runtime::providers::Provider;
 
-pub(crate) use docker::IMAGE;
-pub(crate) use vm::candidate_boxes;
+use docker::IMAGE;
+use vm::candidate_boxes;
 
 #[derive(Clone, Copy, serde::Deserialize, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
@@ -116,8 +116,24 @@ fn arm() -> bool {
 
 /// Starts the test downloads early (called when setup opens). Errors are ignored by the UI:
 /// the test itself retries and reports them.
+/// Runs `op`, a self-test (or its download) of `kind`, recording what it downloaded as the
+/// app's (the test image, or a test box), for Storage to clean up.
+async fn tracked<T>(app: &AppHandle, kind: Kind, op: impl std::future::Future<Output = T>) -> T {
+    match kind {
+        Kind::Docker => crate::machine::storage::owned::tracked(app, &[IMAGE.to_string()], &[], op).await,
+        Kind::Vm => {
+            let boxes: Vec<String> = vm::TEST_PROVIDERS.iter().flat_map(|p| candidate_boxes(*p, arm()).iter().map(|b| b.to_string())).collect();
+            crate::machine::storage::owned::tracked(app, &[], &boxes, op).await
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn machine_selftest_prefetch(app: AppHandle, kind: Kind, provider: Option<Provider>) -> Result<()> {
+    tracked(&app, kind, prefetch(&app, kind, provider)).await
+}
+
+async fn prefetch(app: &AppHandle, kind: Kind, provider: Option<Provider>) -> Result<()> {
     match kind {
         Kind::Docker => downloads::ensure_image().await.map(|_| ()),
         Kind::Vm => {
@@ -126,7 +142,7 @@ pub async fn machine_selftest_prefetch(app: AppHandle, kind: Kind, provider: Opt
             if cached {
                 return Ok(());
             }
-            downloads::ensure_box(&work_dir(&app, "vm")?, p, bx, arm(), |_| {}).await.map(|_| ())
+            downloads::ensure_box(&work_dir(app, "vm")?, p, bx, arm(), |_| {}).await.map(|_| ())
         }
     }
 }
@@ -147,10 +163,13 @@ fn one_at_a_time(kind: Kind) -> &'static tokio::sync::Mutex<()> {
 pub async fn machine_selftest(app: AppHandle, kind: Kind, provider: Option<Provider>, events: Channel<Event>) -> Result<()> {
     let _alone = one_at_a_time(kind).lock().await;
     let r = Reporter(events);
-    match kind {
-        Kind::Docker => docker::run_test(&work_dir(&app, "docker")?, &r).await,
-        Kind::Vm => vm::run_test(&work_dir(&app, "vm")?, provider, &r).await,
-    }
+    tracked(&app, kind, async {
+        match kind {
+            Kind::Docker => docker::run_test(&work_dir(&app, "docker")?, &r).await,
+            Kind::Vm => vm::run_test(&work_dir(&app, "vm")?, provider, &r).await,
+        }
+    })
+    .await
 }
 
 #[cfg(test)]

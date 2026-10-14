@@ -110,7 +110,7 @@ pub async fn start_attack_vm(app: &AppHandle, id: &str, box_name: &str, log: imp
     if provider.is_remote() {
         return Err(Error::Invalid("This lab's machines run on a remote host: the attack VM is only for labs on this machine.".into()));
     }
-    attack_vm::start(&dir, &vagrant, provider, box_name, log).await
+    crate::machine::storage::owned::tracked(app, &[], &[box_name.to_string()], attack_vm::start(&dir, &vagrant, provider, box_name, log)).await
 }
 
 #[cfg(test)]
