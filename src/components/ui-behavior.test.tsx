@@ -384,7 +384,7 @@ describe("ErrorScreen", () => {
     installTauri({ "plugin:path|resolve_directory": () => "/logs/org.cyberctf.desktop" });
     vi.spyOn(console, "error").mockImplementation(() => {});
     const user = userEvent.setup();
-    const writeText = vi.fn(async (_text: string) => {});
+    const writeText = vi.fn<(text: string) => Promise<void>>(async () => {});
     clipboard(writeText);
     render(<ErrorScreen error={new Error("render failed")} />);
     await flush();

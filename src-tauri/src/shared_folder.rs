@@ -122,7 +122,7 @@ fn save_to(file: Option<&Path>, enabled: bool, path: &str) -> Result<()> {
 #[tauri::command]
 pub fn shared_folder_open() -> Result<()> {
     let path = current().ok_or_else(|| Error::Invalid("folder sharing is off".into()))?;
-    Ok(crate::platform::open_folder(&path)?)
+    crate::platform::open_folder(&path)
 }
 
 #[cfg(test)]

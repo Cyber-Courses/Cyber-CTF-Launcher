@@ -48,7 +48,7 @@ pub fn log_dir(app: &crate::AppHandle) -> crate::error::Result<PathBuf> {
 pub fn open_log_folder(app: crate::AppHandle) -> crate::error::Result<()> {
     let dir = log_dir(&app)?;
     std::fs::create_dir_all(&dir)?;
-    Ok(crate::platform::open_folder(&dir)?)
+    crate::platform::open_folder(&dir)
 }
 
 /// The deploy worker's log file for this lab. A lab id that isn't one (a damaged job file)

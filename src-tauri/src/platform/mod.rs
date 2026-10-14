@@ -15,16 +15,9 @@ pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)
 }
 
-/// Opens `path` in the system's file manager.
-pub fn open_folder(path: &Path) -> std::io::Result<()> {
-    let program = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(windows) {
-        "explorer"
-    } else {
-        "xdg-open"
-    };
-    std::process::Command::new(program).arg(path).spawn().map(drop)
+/// Opens folder `path` in the system's file manager (through the opener plugin).
+pub fn open_folder(path: &Path) -> crate::error::Result<()> {
+    tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| crate::error::Error::Invalid(format!("couldn't open {}: {e}", path.display())))
 }
 
 /// Whether `sh -n` accepts `script` (the install scripts run on macOS and Linux). Windows has no
