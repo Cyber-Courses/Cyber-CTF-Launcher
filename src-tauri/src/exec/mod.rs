@@ -18,7 +18,7 @@ use tokio::process::{Child, Command};
 
 #[cfg(target_os = "linux")]
 pub use docker::login_name;
-pub use docker::{docker_denied, docker_denied_error, docker_denied_message, image_repository, valid_image};
+pub use docker::{docker_denied, docker_denied_error, image_repository, valid_image};
 #[cfg(windows)]
 pub use elevate::{OWNER_WINDOW_ENV, owner_window, set_owner_window};
 pub use elevate::{join_hyperv_admins, may_manage_hyperv};

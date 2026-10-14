@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn a_missing_secret_says_to_enter_one() {
         assert_eq!(found(Some("pw".into())).unwrap(), "pw");
-        assert_eq!(found(None).unwrap_err().to_string(), "no password stored for this host, edit it and enter one");
+        assert_eq!(found(None).unwrap_err().code(), Code::NoPasswordStored);
     }
 
     #[test]

@@ -300,6 +300,19 @@ describe("AppShell shortcuts", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("closes the palette with its own shortcut even when a modal opened over it", async () => {
+    onLinux();
+    installTauri();
+    await shell();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await act(() => emit("quit-blocked", 1));
+    await flush();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+  });
+
   // Bug: shortcutFor accepts Ctrl+K on macOS too, where the palette's shortcut is Cmd+K (the
   // sidebar shows "⌘K"). On macOS, Ctrl+K is the system's "delete to end of line" in every text
   // field, and in the attack box terminal the shell's kill-line: the shell takes it (with

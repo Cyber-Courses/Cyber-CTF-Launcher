@@ -120,7 +120,10 @@ export function nextLabel(step: MachineStep, report: SystemReport | null, t: Tr 
  * is the view's one jewel (docs/DESIGN.md).
  */
 export function nextVariant(step: MachineStep, report: SystemReport | null, setup: MachineSetupState): "primary" | "secondary" {
-  return nextKind(step, report, setup) === "continue" && canContinue(step, report, setup) ? "primary" : "secondary";
+  if (nextKind(step, report, setup) !== "continue" || !canContinue(step, report, setup)) return "secondary";
+  // The Vagrant step can be passed with the hypervisor not ready yet, but while its installs
+  // show (Vagrant, the plugin), the first of them is the jewel.
+  return step === "vagrant" && report && !vagrantReady(report, setup) ? "secondary" : "primary";
 }
 
 /** The engine the player picked, else the one in use (it can be reported after the step
@@ -143,6 +146,12 @@ export function chosenHypervisor(report: SystemReport, setup: MachineSetupState)
   return hypervisors.find((p) => p.provider === (setup.hypervisor ?? fallback?.provider)) ?? fallback;
 }
 
+/** Vagrant, and the plugin that lets it drive the chosen hypervisor, are installed. */
+function vagrantReady(report: SystemReport, setup: MachineSetupState): boolean {
+  const choice = chosenHypervisor(report, setup);
+  return report.vagrant.installed && (!choice?.plugin || choice.pluginInstalled);
+}
+
 /** The flow moves on only once the option picked on this step is actually set up. */
 export function canContinue(step: MachineStep, report: SystemReport | null, setup: MachineSetupState): boolean {
   if (!report) return false;
@@ -160,8 +169,7 @@ export function canContinue(step: MachineStep, report: SystemReport | null, setu
     const choice = chosenHypervisor(report, setup);
     // No local hypervisor set up (VM labs go to a Server): nothing for Vagrant to drive here.
     if (!choice || choice.hypervisor !== true) return true;
-    // Vagrant, and the plugin that lets it drive the chosen hypervisor.
-    return report.vagrant.installed && (!choice.plugin || choice.pluginInstalled);
+    return vagrantReady(report, setup);
   }
   return true;
 }

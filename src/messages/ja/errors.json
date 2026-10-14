@@ -9,7 +9,7 @@
     "alreadyInProgress": "このラボでは別の操作がすでに進行中です。完了するまでお待ちください。",
     "noPasswordStored": "このホストのパスワードが保存されていません。ホストを編集してパスワードを入力してください。",
     "portInUse": "ホストのポート {port} はこのマシンですでに使用されています（別のラボまたはアプリが使用中）。使用中のものを停止するか、ランダムなポートでラボを起動してください。",
-    "dockerNotRunning": "Docker が実行されていません。コンテナーエンジン（Docker Desktop、または Linux では docker サービス）を起動してから、もう一度お試しください。",
+    "dockerNotRunning": "Docker が実行されていません。コンテナーエンジン（Docker Desktop、または Linux では docker サービス）を起動してから、ラボをもう一度起動してください。",
     "dockerDenied": "Docker は実行中ですが、このアカウントではまだ使用できません。ターミナルで自分を docker グループに追加し（sudo usermod -aG docker {user}）、いったんログアウトしてから再度ログインしてください。",
     "dockerDeniedWindows": "Docker は実行中ですが、このアカウントではまだ使用できません。自分を docker-users グループに追加し（管理者として実行したターミナルで net localgroup docker-users \"{user}\" /add）、いったんサインアウトしてから再度サインインしてください。",
     "toolMissing": "{tool} がインストールされていないか、PATH にありません。",

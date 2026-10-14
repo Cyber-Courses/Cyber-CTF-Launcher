@@ -8,7 +8,7 @@ pub mod wsl;
 
 use serde::Serialize;
 
-use crate::exec::{docker_denied, docker_denied_message, run_read};
+use crate::exec::{docker_denied, docker_denied_error, run_read};
 use crate::runtime::providers::{self, ProviderStatus};
 
 #[derive(Serialize, ts_rs::TS)]
@@ -47,9 +47,10 @@ pub struct SystemReport {
     /// The Docker daemon answers (Docker Desktop / engine is started).
     pub docker_running: bool,
     /// The daemon runs but refused this account (not in the `docker` group yet): starting the
-    /// engine won't help; `docker_denied_hint` says what will.
+    /// engine won't help; `docker_denied_hint` says what will (as an error with its code, for
+    /// the webview to say in the player's language).
     pub docker_denied: bool,
-    pub docker_denied_hint: Option<String>,
+    pub docker_denied_hint: Option<crate::error::Wire>,
     /// Which Docker-compatible engine answers, when one does: `docker-desktop`, `orbstack`,
     /// `colima`, `rancher-desktop`, `podman` or `docker-engine`.
     #[ts(type = r#""docker-desktop" | "orbstack" | "colima" | "rancher-desktop" | "podman" | "docker-engine" | null"#)]
@@ -121,7 +122,7 @@ pub async fn system_check(app: crate::AppHandle) -> SystemReport {
         docker,
         docker_running: daemon.is_ok(),
         docker_denied,
-        docker_denied_hint: docker_denied.then(docker_denied_message),
+        docker_denied_hint: docker_denied.then(|| docker_denied_error().to_wire()),
         docker_engine,
         docker_engines_running,
         docker_compose,

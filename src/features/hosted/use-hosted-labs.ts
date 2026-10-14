@@ -69,6 +69,8 @@ export function useHostedLabs() {
       try {
         const d = await apiQuery<{ requestLabLaunch: HostedSession }>("launchHosted", { labId });
         if (isLatest()) setSession(d.requestLabLaunch);
+        // Stopped while it was being requested: the session it made must not run on unseen.
+        else void apiQuery("stopSession", { id: d.requestLabLaunch.id }).catch(warn("stopping a hosted session stopped while it was requested"));
       } catch (e) {
         if (isLatest()) setError(describeError(e));
       } finally {

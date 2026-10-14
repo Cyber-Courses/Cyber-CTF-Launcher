@@ -13,6 +13,7 @@ import { formatAgo, formatBytes } from "@/lib/format";
 import type { SystemReport } from "@/lib/tauri";
 import type { LastTest } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 type RowProps = {
   report: SystemReport;
@@ -66,7 +67,11 @@ export function DockerLabRow({ report, last, now, memFree, testing, onToggleTest
             {report.dockerEngine ? engineName(report.dockerEngine) : "Docker"} · {parts.testLine(last)}
           </>
         ) : state === "denied" ? (
-          (report.dockerDeniedHint ?? t("machine.screen.docker.denied"))
+          report.dockerDeniedHint ? (
+            describeError(report.dockerDeniedHint, t)
+          ) : (
+            t("machine.screen.docker.denied")
+          )
         ) : state === "stopped" ? (
           t("machine.screen.docker.stopped")
         ) : // The engines this OS has (OrbStack is macOS-only; Docker Engine is Linux's own).

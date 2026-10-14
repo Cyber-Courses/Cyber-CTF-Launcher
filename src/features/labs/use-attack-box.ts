@@ -14,7 +14,7 @@ import { describeError } from "@/lib/errors";
 
 /** Starts the attack VM beside a VM lab here, or joins the start already under way: a second
  *  `vagrant up` would run into the machine lock and its retries. */
-const startAttackVm = (labId: string, onLog: (line: string) => void) => startOnce(`vm:${labId}`, () => attackVmStart(labId, getAttackBox(), onLog));
+const startAttackVm = (labId: string, onLog: (line: string) => void) => startOnce(`vm:${labId}`, (log) => attackVmStart(labId, getAttackBox(), log), onLog);
 
 /** What the attack box is: a container on a container lab's networks, or the learner's own VM
  *  (a Vagrant box) beside a VM lab, on the same hypervisor. */

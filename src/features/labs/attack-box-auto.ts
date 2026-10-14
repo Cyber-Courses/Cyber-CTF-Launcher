@@ -9,7 +9,7 @@ import { warn } from "@/lib/failure";
 /** Starts the container attack box beside a lab here, or joins the start already under way (a
  *  second `docker run` of the same name would fail). */
 export const startContainerAttackBox = (labId: string, onLog: (line: string) => void = () => {}) =>
-  startOnce(`container:${labId}`, () => exegolStart(labId, getAttackImage(), onLog));
+  startOnce(`container:${labId}`, (log) => exegolStart(labId, getAttackImage(), log), onLog);
 
 /**
  * "Start it with each lab", wherever the lab was started: when a launch or resume ends with

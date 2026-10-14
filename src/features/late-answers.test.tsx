@@ -100,6 +100,36 @@ describe("late answers", () => {
     expect(result.current.session).toBeNull();
   });
 
+  it("stops the session a launch makes when the player stopped while it was requested", async () => {
+    const launched = deferred<unknown>();
+    const running: HostedSession = {
+      id: "s2",
+      labId: "lab",
+      target: "hosted",
+      state: "REQUESTED",
+      endpoints: [],
+      message: null,
+      expiresAt: "2026-10-11T12:00:00Z",
+    };
+    const calls = installTauri({
+      api_query: (a) => (a?.operation === "launchHosted" ? launched.promise : a?.operation === "activeSession" ? { myActiveLabSession: null } : {}),
+    });
+    const { result } = renderHook(() => useHostedLabs());
+    await flush();
+    let launching!: Promise<void>;
+    act(() => {
+      launching = result.current.launch("lab");
+    });
+    await act(() => result.current.stop());
+    await act(async () => {
+      launched.resolve({ requestLabLaunch: running });
+      await launching;
+      await flush(5);
+    });
+    expect(result.current.session).toBeNull();
+    expect(calls.filter((c) => c.cmd === "api_query" && c.args?.operation === "stopSession").map((c) => c.args?.variables)).toEqual([{ id: "s2" }]);
+  });
+
   it("keeps the target the player picked when the server list is read again", async () => {
     installTauri();
     const rt: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "proxmox", "vmware_esxi"] };

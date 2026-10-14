@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import {
   awsCliIdentity,
   awsLogin,
@@ -23,6 +23,8 @@ import {
 import { CLOUD_META } from "@/features/servers/host-setup/constants";
 import { useRunLog } from "@/features/servers/host-setup/use-run-log";
 import { ignore } from "@/lib/failure";
+import { describeError } from "@/lib/errors";
+import { useLatest } from "@/lib/use-latest";
 import { translate } from "@/lib/i18n";
 
 const NONE: never[] = [];
@@ -116,21 +118,23 @@ function useAwsAccount(aws: boolean, awsCli: boolean, awsProfile: string | null)
   useEffect(() => {
     if (aws) awsProfiles().then(setProfiles).catch(ignore("profiles are a convenience; typed by hand otherwise"));
   }, [aws]);
-  // Each read is numbered: switching profiles starts a new one, and an older read answering
+  // Only the newest read applies: switching profiles starts a new one, and an older read answering
   // after it must not show the previous profile's account or spend.
-  const identityRead = useRef(0);
-  const checkAwsIdentity = useCallback((profile: string | null) => {
-    const n = ++identityRead.current;
-    const latest = () => n === identityRead.current;
-    setCheckingId(true);
-    awsCliIdentity(profile ?? undefined)
-      .then((id) => latest() && setAwsIdentity(id))
-      .catch(() => latest() && setAwsIdentity(null))
-      .finally(() => latest() && setCheckingId(false));
-    awsMonthToDateCost(profile ?? undefined)
-      .then((c) => latest() && setMtdCost(c))
-      .catch(() => latest() && setMtdCost(null));
-  }, []);
+  const beginIdentityRead = useLatest();
+  const checkAwsIdentity = useCallback(
+    (profile: string | null) => {
+      const latest = beginIdentityRead();
+      setCheckingId(true);
+      awsCliIdentity(profile ?? undefined)
+        .then((id) => latest() && setAwsIdentity(id))
+        .catch(() => latest() && setAwsIdentity(null))
+        .finally(() => latest() && setCheckingId(false));
+      awsMonthToDateCost(profile ?? undefined)
+        .then((c) => latest() && setMtdCost(c))
+        .catch(() => latest() && setMtdCost(null));
+    },
+    [beginIdentityRead],
+  );
   useEffect(() => {
     // A read starting shows its "checking" state at once.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -146,10 +150,9 @@ function useAzureSubscriptions(azure: boolean, setV: SetInput) {
   const [azureChecking, setAzureChecking] = useState(false);
   // Numbered as the AWS reads are: a sign-in reads again, and an older read answering after it
   // must not show the subscriptions from before.
-  const subsRead = useRef(0);
+  const beginSubsRead = useLatest();
   const loadAzureSubs = useCallback(() => {
-    const n = ++subsRead.current;
-    const latest = () => n === subsRead.current;
+    const latest = beginSubsRead();
     setAzureChecking(true);
     azureSubscriptions()
       .then((subs) => {
@@ -160,7 +163,7 @@ function useAzureSubscriptions(azure: boolean, setV: SetInput) {
       })
       .catch(() => latest() && setAzureSubs([]))
       .finally(() => latest() && setAzureChecking(false));
-  }, [setV]);
+  }, [setV, beginSubsRead]);
   useEffect(() => {
     // A read starting shows its "checking" state at once.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -178,10 +181,9 @@ function useGcpAccounts(gcp: boolean, setV: SetInput) {
   const [gcpChecking, setGcpChecking] = useState(false);
   const [gcpError, setGcpError] = useState<string | null>(null);
   // Numbered as the AWS reads are (see there).
-  const projectsRead = useRef(0);
+  const beginProjectsRead = useLatest();
   const loadGcpProjects = useCallback(() => {
-    const n = ++projectsRead.current;
-    const latest = () => n === projectsRead.current;
+    const latest = beginProjectsRead();
     setGcpChecking(true);
     // Each list on its own: one call failing (no permission to list organizations, say) keeps
     // what the others found, and says what went wrong.
@@ -193,13 +195,13 @@ function useGcpAccounts(gcp: boolean, setV: SetInput) {
         setGcpBilling(accounts);
         setGcpOrgs(orgs.status === "fulfilled" ? orgs.value : []);
         const failed = [email, billing, orgs].find((r) => r.status === "rejected");
-        setGcpError(failed ? String(failed.reason) : null);
+        setGcpError(failed ? describeError(failed.reason) : null);
         // Default to the first open billing account if none chosen yet.
         const open = accounts.find((b) => b.open) ?? accounts[0];
         setV((s) => (s.provider === "gcp" && !s.username && open ? { ...s, username: open.id } : s));
       })
       .finally(() => latest() && setGcpChecking(false));
-  }, [setV]);
+  }, [setV, beginProjectsRead]);
   useEffect(() => {
     // A read starting shows its "checking" state at once.
     // eslint-disable-next-line react-hooks/set-state-in-effect

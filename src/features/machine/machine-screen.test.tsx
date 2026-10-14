@@ -240,9 +240,15 @@ describe("DockerLabRow", () => {
     const user = userEvent.setup();
     const { unmount } = render(<DockerLabRow {...base} report={stoppedDockerReport()} last={null} />);
     expect(text()).toContain("No permission");
-    expect(text()).toContain("sudo usermod -aG docker $USER");
+    expect(text()).toContain("sudo usermod -aG docker player");
     expect(screen.queryByRole("button")).toBeNull();
     unmount();
+    // Said in the player's language, from the hint's code (not the core's English sentence).
+    act(() => setLocalePreference("fr"));
+    const fr = render(<DockerLabRow {...base} report={stoppedDockerReport()} last={null} />);
+    expect(text()).toContain("Ajoutez-vous au groupe docker dans un terminal (sudo usermod -aG docker player)");
+    fr.unmount();
+    act(() => setLocalePreference("en"));
     const denied = render(<DockerLabRow {...base} report={{ ...stoppedDockerReport(), dockerDeniedHint: null }} last={null} />);
     expect(text()).toContain("add yourself to the docker group");
     denied.unmount();

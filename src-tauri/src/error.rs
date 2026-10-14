@@ -60,7 +60,7 @@ impl Code {
             Code::LoginTimeout { minutes } => format!("Sign-in wasn't finished within {minutes} minutes, so it was cancelled. Try again."),
             Code::NoBrowser => "No browser opened for sign-in. Set a default web browser for this account and try again.".into(),
             Code::AlreadyInProgress => "Another operation on this lab is already in progress; wait for it to finish.".into(),
-            Code::NoPasswordStored => "no password stored for this host, edit it and enter one".into(),
+            Code::NoPasswordStored => "No password is stored for this host. Edit it and enter one.".into(),
             Code::SignInCancelled => "Sign-in cancelled.".into(),
             Code::Unreachable { detail } => format!("Cyber CTF can't be reached ({detail}). Check your connection and try again."),
             Code::OfflineReady { detail } => {
@@ -205,9 +205,24 @@ mod tests {
         assert_eq!(e.code(), Code::LoginTimeout { minutes: 5 });
     }
 
+    /// Each code's English message is said twice: here (the log, a worker's ✗ line) and in the
+    /// webview's catalog (`errors.codes.*`, what the English UI shows). They must agree.
     #[test]
-    fn every_code_round_trips_through_the_wire() {
-        let codes = [
+    fn every_code_says_what_the_english_catalog_says() {
+        let catalog: serde_json::Value = serde_json::from_str(include_str!("../../src/messages/en/errors.json")).unwrap();
+        for code in sample_codes().into_iter().filter(|c| *c != Code::Other) {
+            let wire = serde_json::to_value(Wire { code: code.clone(), message: String::new() }).unwrap();
+            let mut text = catalog["codes"][wire["code"].as_str().unwrap()].as_str().unwrap_or_else(|| panic!("no message for {wire}")).to_string();
+            for (name, value) in wire["args"].as_object().into_iter().flatten() {
+                let value = value.as_str().map_or_else(|| value.to_string(), str::to_string);
+                text = text.replace(&format!("{{{name}}}"), &value);
+            }
+            assert_eq!(code.message(), text, "{wire}");
+        }
+    }
+
+    fn sample_codes() -> Vec<Code> {
+        vec![
             Code::Other,
             Code::SignedOut,
             Code::SessionExpired,
@@ -224,8 +239,12 @@ mod tests {
             Code::DockerDeniedWindows { user: "Ada Lovelace".into() },
             Code::ToolMissing { tool: "terraform".into() },
             Code::CommandFailed { command: "vagrant up".into(), stderr: "locked".into() },
-        ];
-        for code in codes {
+        ]
+    }
+
+    #[test]
+    fn every_code_round_trips_through_the_wire() {
+        for code in sample_codes() {
             let wire = Wire { code: code.clone(), message: code.message() };
             let text = serde_json::to_string(&wire).unwrap();
             let back: Wire = serde_json::from_str(&text).unwrap();

@@ -97,17 +97,6 @@ impl Job {
             _ => self.lab_id.clone(),
         }
     }
-
-    /// What this operation is, for the "another one is in progress" message.
-    fn what(&self) -> &'static str {
-        match self.op {
-            Op::Launch => "a start",
-            Op::Resume { .. } => "a resume",
-            Op::Park { .. } => "a pause or shutdown",
-            Op::Provision { .. } => "a provisioning run",
-            Op::AttackVm { .. } => "an attack VM start",
-        }
-    }
 }
 
 /// The worker key of a lab's attack VM operation.
@@ -177,10 +166,7 @@ pub async fn end_workers(app: &AppHandle, id: &str) {
 fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> {
     let _one_at_a_time = STARTING.lock().unwrap_or_else(|e| e.into_inner());
     if running(app).contains(&job.key()) {
-        return Err(Error::Coded {
-            code: Code::AlreadyInProgress,
-            message: format!("{} of this lab is already in progress; wait for it to finish.", capitalize(job.what())),
-        });
+        return Err(Error::coded(Code::AlreadyInProgress));
     }
     // Nothing begins while the lab stops: between ending its workers and taking its lock, a
     // start would win the lock and the stop then destroy what it built; and the attack VM takes
@@ -205,17 +191,9 @@ pub fn lock_path(app: &AppHandle, lab: &str) -> Result<std::path::PathBuf> {
     Ok(lock::path_in(&files::dir(app)?, lab))
 }
 
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Job, Op, capitalize};
+    use super::{Job, Op};
 
     #[test]
     fn job_files_from_before_operations_existed_still_read_as_launches() {
@@ -316,9 +294,4 @@ mod tests {
         assert!(printed.contains("lab-1") && printed.contains("<redacted>"), "{printed}");
     }
 
-    #[test]
-    fn the_busy_message_starts_with_a_capital() {
-        assert_eq!(capitalize(Job::on_lab("lab-1", Op::AttackVm { box_name: "a/b".into() }).what()), "An attack VM start");
-        assert_eq!(capitalize(""), "");
-    }
 }

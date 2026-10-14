@@ -91,5 +91,14 @@ describe("machine setup steps", () => {
     // Set up: Continue is the next action.
     expect(nextVariant("docker", report(), setup())).toBe("primary");
     expect(nextVariant("vm", hypervisor, setup())).toBe("primary");
+    // A hypervisor installed but not the one chosen ready: Continue passes, Install Vagrant is the jewel.
+    const notReady = report({
+      vmProviders: [
+        { provider: "virtualbox", remote: false, hypervisor: true, available: false, plugin: null, pluginInstalled: true },
+        { provider: "libvirt", remote: false, hypervisor: false, available: false, plugin: "vagrant-libvirt", pluginInstalled: false },
+      ],
+    } as Partial<SystemReport>);
+    expect(canContinue("vagrant", notReady, setup({ hypervisor: "libvirt" }))).toBe(true);
+    expect(nextVariant("vagrant", notReady, setup({ hypervisor: "libvirt" }))).toBe("secondary");
   });
 });

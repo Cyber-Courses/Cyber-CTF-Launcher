@@ -91,11 +91,6 @@ fn denied_code(os: &str, user: Option<&str>) -> Code {
     }
 }
 
-/// What to tell a player whose account can't use the running Docker daemon.
-pub fn docker_denied_message() -> String {
-    docker_denied_error().to_string()
-}
-
 /// The login name of the user running the app.
 pub fn login_name() -> Option<String> {
     #[cfg(unix)]
@@ -185,6 +180,6 @@ mod tests {
         let windows = message("windows", Some("Ada Lovelace"));
         assert!(windows.contains("net localgroup docker-users \"Ada Lovelace\" /add") && windows.contains("sign out"), "{windows}");
         assert!(!windows.contains("usermod"));
-        assert!(docker_denied_message().contains(if cfg!(windows) { "docker-users" } else { "usermod -aG docker" }));
+        assert!(docker_denied_error().to_string().contains(if cfg!(windows) { "docker-users" } else { "usermod -aG docker" }));
     }
 }
