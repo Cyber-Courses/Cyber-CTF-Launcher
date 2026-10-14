@@ -124,11 +124,11 @@ export function Account({
         <p className="truncate font-mono text-[0.625rem] text-faint">{status.email ?? t("account.signedInKeychain")}</p>
       </div>
       {onSettings && (
-        <button onClick={onSettings} title={t("account.settings")} className={iconBtn}>
+        <button onClick={onSettings} title={t("account.settings")} aria-label={t("account.settings")} className={iconBtn}>
           <Cog className="size-4" />
         </button>
       )}
-      <button onClick={logout} title={t("account.signOut")} className={iconBtn}>
+      <button onClick={logout} title={t("account.signOut")} aria-label={t("account.signOut")} className={iconBtn}>
         <Icon name="logout" className="size-4" />
       </button>
     </div>

@@ -7,6 +7,7 @@ import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { getPortMode, type PortMode } from "@/lib/settings";
 import { SERVER_CHANGED, serverList, type Provider, type ServerHost } from "@/lib/tauri";
 import { useTauriEvent } from "@/lib/use-tauri-event";
+import { useLatest } from "@/lib/use-latest";
 
 /**
  * Where a lab starts, picked in "Where should it run?": this machine or one of the player's
@@ -17,8 +18,10 @@ import { useTauriEvent } from "@/lib/use-tauri-event";
 export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], hostArch: string) {
   const isCloud = isCloudLab(rt);
   const isDocker = rt?.runtime !== "VM" && !isCloud;
-  const [hosts, setHosts] = useState<ServerHost[]>([]);
-  const [runOn, setRunOn] = useState<RunTarget>({ kind: "local" });
+  const [{ hosts, defaultId }, setServers] = useState<{ hosts: ServerHost[]; defaultId: string | null }>(NO_SERVERS);
+  // The player's own pick, kept over what Start points at first (a server list read late, or
+  // the machine report arriving, must not reset it).
+  const [picked, setRunOn] = useState<RunTarget | null>(null);
   // A container lab here: its host ports (Settings' choice first).
   const [ports, setPorts] = useState<PortMode>(() => getPortMode() ?? "random");
   // A container lab can also run in a VM here: on the hypervisor chosen in Settings (readyVms
@@ -29,18 +32,20 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
   // only when none can. A default server shouldn't silently capture every VM lab.
   const localReady = isDocker || (!!rt && readyVms.some((p) => localProviders(rt, hostArch).includes(p)));
   const [serversChanged, setServersChanged] = useState(0);
+  // Only the newest read is kept: the one on mount can answer after one a change asked for.
+  const begin = useLatest();
   useEffect(() => {
+    const isLatest = begin();
     serverList()
-      .then((l) => {
-        setHosts(l.hosts);
-        setRunOn(initialTarget(rt, l.hosts, l.default, localReady));
-      })
-      .catch(() => setHosts([]));
-  }, [rt, localReady, serversChanged]);
+      .then((l) => isLatest() && setServers({ hosts: l.hosts, defaultId: l.default }))
+      .catch(() => isLatest() && setServers(NO_SERVERS));
+  }, [begin, serversChanged]);
   // A server or cloud account added (or removed) in its setup window: the page follows at once,
   // instead of asking to "Connect an account" until it is left and opened again.
   useTauriEvent(SERVER_CHANGED, () => setServersChanged((n) => n + 1));
   const cloudAccounts = cloudAccountsFor(rt, hosts);
+  // A server picked, then removed in its setup window: back to where Start points at first.
+  const runOn = picked && (picked.kind !== "host" || hosts.some((h) => h.id === picked.id)) ? picked : initialTarget(rt, hosts, defaultId, localReady);
 
   return {
     hosts,
@@ -60,6 +65,8 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
     chosen: (): RunTarget => (runOn.kind === "local" && isDocker ? { kind: "local", ports } : runOn),
   };
 }
+
+const NO_SERVERS = { hosts: [], defaultId: null };
 
 /** Where Start points at first: a cloud lab's first account; the default host when this machine
  *  can't run the lab (`localReady`) and the host can; else here. */

@@ -283,6 +283,23 @@ describe("AppShell shortcuts", () => {
     expect(dialog.contains(document.activeElement)).toBe(true);
   });
 
+  it("keeps / and Ctrl+K off while a modal is open, even with the focus outside it", async () => {
+    onLinux();
+    installTauri();
+    await shell();
+    await act(() => emit("quit-blocked", 1));
+    await flush();
+    const dialog = screen.getByRole("alertdialog");
+    // A click on the page behind, or a dialog that didn't take the focus: it's on the body.
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(dialog.contains(document.activeElement)).toBe(false);
+    fireEvent.keyDown(window, { key: "/" });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    await flush(50);
+    expect(current()).toContain("Overview");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   // Bug: shortcutFor accepts Ctrl+K on macOS too, where the palette's shortcut is Cmd+K (the
   // sidebar shows "⌘K"). On macOS, Ctrl+K is the system's "delete to end of line" in every text
   // field, and in the attack box terminal the shell's kill-line: the shell takes it (with
