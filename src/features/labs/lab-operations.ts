@@ -9,6 +9,7 @@ import { noteStopped } from "@/features/labs/lab-store";
 import { tell } from "@/lib/failure";
 import { translate } from "@/lib/i18n";
 import { failureTitleKey } from "@/features/labs/failure-hints";
+import { askOfflineStart } from "@/features/labs/offline-start-prompt";
 
 // The operations on a lab (launch, stop, park, resume, provision) that useLabActions runs: each
 // one's body, streamed into the lab's deploy log, and the run around it.
@@ -26,6 +27,21 @@ export type LaunchReport = {
 /** The backend's answer to an operation started while another one runs on the lab
  *  (deploy_worker::run_job): refused, not failed. */
 const REFUSED = /already in progress/i;
+
+/** The backend's answer to a launch when Cyber CTF can't be reached and the lab, installed here,
+ *  can start without it (labs/offline.rs OFFLINE_READY). */
+const OFFLINE_READY = /can start offline/i;
+
+/** Runs `launch`; when it fails because Cyber CTF can't be reached and the lab can start offline,
+ *  asks the player (the lab `title`) and, on yes, runs it again offline. */
+export async function launchOrOfferOffline(title: string, launch: (offline: boolean) => Promise<void>) {
+  try {
+    await launch(false);
+  } catch (e) {
+    if (!OFFLINE_READY.test(String(e)) || !(await askOfflineStart(title))) throw e;
+    await launch(true);
+  }
+}
 
 /**
  * One operation on a lab: a run in the deploy store, its output streamed into the run's log,
@@ -117,7 +133,7 @@ export const localLaunch =
     // Remotely or inside a local VM: the container attack box image. A VM lab here: the
     // attack VM's Vagrant box, when Settings start the attack box with each lab.
     const attackbox = remote || inLocalVm ? getAttackImage() : vm && getAutoAttackBox() ? getAttackBox() : null;
-    await labLaunch(lab.id, provider, remote ? host! : null, attackbox, ports === "default", log);
+    await launchOrOfferOffline(lab.title, (offline) => labLaunch(lab.id, provider, remote ? host! : null, attackbox, ports === "default", log, offline));
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);
     void notify(

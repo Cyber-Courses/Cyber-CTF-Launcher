@@ -14,6 +14,8 @@ use crate::account::api;
 use crate::error::{Error, Result};
 use crate::runtime::{self, Runtime, providers::Provider};
 
+mod offline;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Launch {
@@ -283,10 +285,44 @@ pub(crate) async fn run(
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
 }
 
+/// The backend's `startLab` answer for `lab_id`: what to download and run, and the evidence claim.
+async fn start_lab(lab_id: &str) -> Result<serde_json::Value> {
+    let data =
+        api::graphql("mutation ($id: ID!) { startLab(labId: $id) { labId runtime repository commit env { name value } } }", json!({ "id": lab_id }), true)
+            .await?;
+    Ok(data["startLab"].clone())
+}
+
+/// The launch spec for `lab_id`: the backend's answer (whose source is kept for a later offline
+/// start), or, when the backend can't be reached and the player asked for it (`offline`), the
+/// installed lab's (see `offline`).
+async fn launch_spec(app: &AppHandle, lab_id: &str, offline: bool, logs: &Channel<String>) -> Result<serde_json::Value> {
+    let base = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?;
+    let user = crate::account::auth::signed_in_user().await;
+    match start_lab(lab_id).await {
+        Ok(answer) => {
+            if let Some(user) = &user
+                && let Err(e) = offline::keep(&base, &answer, user)
+            {
+                log::warn!("couldn't keep {lab_id}'s launch for an offline start: {e}");
+            }
+            Ok(answer)
+        }
+        Err(failed) => {
+            let spec = offline::instead_of(failed, &base, lab_id, user.as_deref(), offline)?;
+            let _ = logs.send(offline::STARTING_OFFLINE.into());
+            Ok(spec)
+        }
+    }
+}
+
 /// `attackbox_image` starts an attack box next to the lab on a server host (where the
 /// lab network isn't reachable from this machine). `default_ports` publishes a container lab's
-/// services on their own ports instead of random free ones.
+/// services on their own ports instead of random free ones. `offline` starts the installed lab
+/// without the backend when it can't be reached (no progress saved): the player's answer to a
+/// launch that failed saying it "can start offline".
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn lab_launch(
     app: AppHandle,
     lab_id: String,
@@ -294,6 +330,7 @@ pub async fn lab_launch(
     host: Option<String>,
     attackbox_image: Option<String>,
     default_ports: Option<bool>,
+    offline: Option<bool>,
     logs: Channel<String>,
 ) -> Result<()> {
     if let Some(image) = &attackbox_image
@@ -301,10 +338,7 @@ pub async fn lab_launch(
     {
         return Err(Error::Invalid(format!("invalid attack-box image `{image}`")));
     }
-    let data =
-        api::graphql("mutation ($id: ID!) { startLab(labId: $id) { labId runtime repository commit env { name value } } }", json!({ "id": lab_id }), true)
-            .await?;
-    let startlab = data["startLab"].clone();
+    let startlab = launch_spec(&app, &lab_id, offline.unwrap_or(false), &logs).await?;
     // The deploy runs in a detached worker process, so quitting (or crashing) this app never
     // cuts a vagrant/docker/terraform run short; this command only follows the worker's log.
     let job = crate::deploy_worker::Job {
@@ -527,7 +561,7 @@ mod tests {
     #[tokio::test]
     async fn a_launch_refuses_a_bad_attack_box_image_before_asking_the_backend() {
         let t = crate::test_app::TestApp::new();
-        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, tauri::ipc::Channel::new(|_| Ok(()))).await;
+        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, tauri::ipc::Channel::new(|_| Ok(()))).await;
         assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
     }
 

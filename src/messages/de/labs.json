@@ -403,5 +403,10 @@
       "disk": "Auf diesem Rechner ist kein Speicherplatz mehr frei. Gib welchen frei (die Seite Rechner listet die Images der Labs) und versuche es dann erneut.",
       "tool": "Ein Werkzeug, das dieses Lab braucht, fehlt hier. Installiere es auf der Seite Rechner und versuche es dann erneut."
     }
+  },
+  "offline": {
+    "question": "{title} offline starten?",
+    "body": "Cyber CTF ist gerade nicht erreichbar. Dieses Lab ist auf diesem Rechner installiert und kann ohne starten, aber dein Fortschritt und deine Nachweise werden erst gespeichert, wenn du es wieder online startest.",
+    "start": "Offline starten"
   }
 }
