@@ -9,4 +9,8 @@ images: Array<StoredItem>,
 /**
  * Vagrant boxes the app downloaded, present locally.
  */
-boxes: Array<StoredItem>, };
+boxes: Array<StoredItem>, 
+/**
+ * The Terraform provider plugins server and cloud labs share (one entry, when there are any).
+ */
+plugins: Array<StoredItem>, };

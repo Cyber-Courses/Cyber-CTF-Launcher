@@ -9,7 +9,7 @@
 //! commit replaces that folder and must not orphan the VM it created.
 //!
 //! - this module: `apply` / `destroy` and the variables they pass.
-//! - `runner`: running terraform itself (host binary or container).
+//! - `runner`: running terraform itself (host binary or container), and what every run shares.
 //! - `ready`: waiting for the lab host's bootstrap after apply.
 //! - `state`: what the state files say (status, outputs, SSH target, expiry).
 //! - `services`: a cloud-services lab's own module, applied and destroyed as is.
@@ -22,55 +22,74 @@ mod state;
 use std::path::{Path, PathBuf};
 
 #[cfg(test)]
-pub use services::is_module;
+pub(in crate::runtime) use runner::DESTROY_TIMEOUT;
+#[cfg(test)]
+pub use runner::is_module;
+pub use runner::{PLUGIN_CACHE, clear_plugin_cache};
 pub use services::{apply_services, destroy_services};
 pub use state::{JUMP_FILE, deployed, expired, expires_at, has_resources, has_tainted, known_hosts, now, read_state, ssh_endpoint, ssh_target, status};
 
 use self::ready::wait_ready;
-use self::runner::terraform;
-use self::state::{RUN_FILE, STATE_FILE, run_record, saved_vars};
+use self::runner::{DATA_DIR, terraform};
+use self::state::{RUN_FILE, STATE_FILE, run_record, saved_env, saved_vars, with_saved};
 use super::ssh;
 use crate::error::Result;
+
+/// What a destroy says when a deploy was recorded but its state is gone.
+const NO_STATE: &str = "No Terraform state for this lab (it may have been reset). If resources were created, check your account and remove them there.";
 
 /// Creates (or updates) the target's resources. `vars` are Terraform variable names;
 /// `env` is raw environment the provider reads itself (cloud credentials).
 pub async fn apply(module: &Path, state: &Path, vars: &[(String, String)], env: &[(String, String)], log: impl FnMut(String)) -> Result<()> {
     std::fs::create_dir_all(state)?;
-    // Remember the non-secret variables, so a later destroy has them without the launch spec.
-    let run = run_record(vars, now());
-    std::fs::write(state.join(RUN_FILE), serde_json::to_string(&run).unwrap_or_default())?;
     let mut log = log;
     let vars = with_ssh_key(vars, ssh::launcher_key());
+    // Remember the non-secret variables and where the resources go, so a later destroy has them
+    // without the launch spec, and reaches them even once the account's settings changed.
+    let run = run_record(&vars, env, now());
+    std::fs::write(state.join(RUN_FILE), serde_json::to_string(&run).unwrap_or_default())?;
     terraform(module, state, &with_env(&vars, env), "apply", &mut log).await?;
     wait_ready(state, &mut log).await
 }
 
-/// Destroys everything the target created. `vars` carry the connection again (the
-/// provider needs it); the lab variables are restored from the last apply.
+/// Destroys everything the target created. `vars` and `env` carry the connection again (the
+/// provider needs it); the lab variables and the placement (region, project, node…) are the
+/// ones the last apply recorded, whatever the account says now. Idempotent: with no state left,
+/// there is nothing to do.
 pub async fn destroy(module: &Path, state: &Path, vars: &[(String, String)], env: &[(String, String)], log: impl FnMut(String)) -> Result<()> {
     let mut log = log;
-    if !state.join(STATE_FILE).is_file() {
-        // A recorded deploy whose state is gone (e.g. the app data was wiped): there's nothing to
-        // destroy from here, but resources may still exist on the account. Say so rather than
-        // reporting a clean stop.
-        if state.join(RUN_FILE).is_file() {
-            log("No Terraform state for this lab (it may have been reset). If resources were created, check your account and remove them there.".into());
-        }
-        return Ok(());
-    }
-    let mut all: Vec<(String, String)> = vars.to_vec();
-    if let Ok(raw) = std::fs::read_to_string(state.join(RUN_FILE)) {
-        all.extend(saved_vars(&raw));
-    }
+    let Some(raw) = recorded_deploy(state, &mut log) else { return Ok(()) };
+    let all = with_saved(vars, saved_vars(&raw));
+    let env = with_saved(env, saved_env(&raw));
     let key = ssh::launcher_key();
     let public = key.as_ref().and_then(|k| std::fs::read_to_string(k.with_extension("pub")).ok());
-    let all = with_destroy_keys(all, key, public);
-    terraform(module, state, &with_env(&all, env), "destroy", log).await?;
-    let _ = std::fs::remove_file(state.join(STATE_FILE));
-    // Drop the per-deployment known_hosts too: the next lab can get a recycled host IP with a
-    // new host key, and a stale pinned key would make its SSH (wait_ready, attack shell) fail.
-    let _ = std::fs::remove_file(known_hosts(state));
+    let all = with_ssh_key(&with_destroy_keys(all, key.clone(), public), key);
+    terraform(module, state, &with_env(&all, &env), "destroy", log).await?;
+    forget_state(state);
     Ok(())
+}
+
+/// The run record of a deployment that still has a state to destroy (`""` when it has none, from
+/// an older version). None when there is no state: nothing to destroy from here, but resources
+/// may still exist on the account when a deploy was recorded (the app data was wiped), and `log`
+/// says so rather than reporting a clean stop.
+fn recorded_deploy(state: &Path, log: &mut impl FnMut(String)) -> Option<String> {
+    if !state.join(STATE_FILE).is_file() {
+        if state.join(RUN_FILE).is_file() {
+            log(NO_STATE.into());
+        }
+        return None;
+    }
+    Some(std::fs::read_to_string(state.join(RUN_FILE)).unwrap_or_default())
+}
+
+/// What a successful destroy leaves no use for: the state, the run's data folder (its modules
+/// and the plugins it linked), and the per-deployment known_hosts (the next lab can get a
+/// recycled host IP with a new host key, and a stale pinned key would make its SSH fail).
+fn forget_state(state: &Path) {
+    let _ = std::fs::remove_file(state.join(STATE_FILE));
+    let _ = std::fs::remove_dir_all(state.join(DATA_DIR));
+    let _ = std::fs::remove_file(known_hosts(state));
 }
 
 /// Modules validate the SSH key variables even to destroy, and older runs didn't save them: the
@@ -146,7 +165,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn destroying_with_state_needs_the_labs_module() {
+    async fn destroying_with_state_needs_the_labs_module_and_keeps_the_state() {
         let state = temp_state();
         std::fs::write(state.join(STATE_FILE), "{}").unwrap();
         std::fs::write(state.join(RUN_FILE), r#"{"allowed_cidr":"1.2.3.4/32"}"#).unwrap();
@@ -166,6 +185,70 @@ mod tests {
         let run = std::fs::read_to_string(state.join(RUN_FILE)).unwrap();
         assert!(run.contains("ssh-ed25519 AAAA") && !run.contains("secret"), "{run}");
         std::fs::remove_dir_all(state.parent().unwrap()).unwrap();
+    }
+
+    /// A module folder (one `.tf` file) and a state holding a deployment recorded at apply with
+    /// `run` (its run record).
+    fn deployed(run: &str) -> (PathBuf, PathBuf) {
+        let root = temp_state();
+        let (module, state) = (root.join("module"), root.join("deployments/web/aws"));
+        std::fs::create_dir_all(&module).unwrap();
+        std::fs::write(module.join("main.tf"), "").unwrap();
+        std::fs::create_dir_all(state.join(DATA_DIR).join("providers")).unwrap();
+        std::fs::write(state.join(STATE_FILE), r#"{"resources":[{"type":"aws_instance"}]}"#).unwrap();
+        std::fs::write(state.join(RUN_FILE), run).unwrap();
+        (module, state)
+    }
+
+    #[tokio::test]
+    async fn a_destroy_goes_where_the_apply_went_after_the_account_moved() {
+        // Regression: Stop rebuilt the place from the account as it is now. The player moved the
+        // account to us-east-1 for their next lab: Terraform refreshed there, found nothing, and
+        // the destroy "succeeded" while the instance kept billing in eu-west-3.
+        let (module, state) = deployed(r#"{"region":"eu-west-3","env":{"AWS_REGION":"eu-west-3"}}"#);
+        let tools = crate::exec::fake::Tools::rules(&[]);
+        let now = [pair("region", "us-east-1"), pair("auto_stop_hours", "4")];
+        let env = [pair("AWS_REGION", "us-east-1"), pair("AWS_SECRET_ACCESS_KEY", "s3cret")];
+        destroy(&module, &state, &now, &env, |_| {}).await.unwrap();
+        assert!(tools.called("terraform destroy -auto-approve"), "{:?}", tools.calls());
+        assert_eq!(tools.env_of("terraform destroy", "TF_VAR_region").as_deref(), Some("eu-west-3"));
+        assert_eq!(tools.env_of("terraform destroy", "AWS_REGION").as_deref(), Some("eu-west-3"));
+        // The credentials are still the account's (never kept beside the state).
+        assert_eq!(tools.env_of("terraform destroy", "AWS_SECRET_ACCESS_KEY").as_deref(), Some("s3cret"));
+        // Gone: the state, and the run's data folder with the plugins it linked.
+        assert!(!state.join(STATE_FILE).exists() && !state.join(DATA_DIR).exists());
+        std::fs::remove_dir_all(state.ancestors().nth(3).unwrap()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_failed_destroy_keeps_everything_for_a_retry_and_a_second_stop_is_a_no_op() {
+        let (module, state) = deployed("{}");
+        let failing = crate::exec::fake::Tools::rules(&[("terraform destroy", crate::exec::fake::fail("ExpiredToken: the security token is expired"))]);
+        let err = destroy(&module, &state, &[], &[], |_| {}).await.unwrap_err();
+        assert!(err.to_string().contains("ExpiredToken"), "{err}");
+        assert!(state.join(STATE_FILE).is_file() && state.join(DATA_DIR).is_dir());
+        drop(failing);
+        let tools = crate::exec::fake::Tools::rules(&[]);
+        destroy(&module, &state, &[], &[], |_| {}).await.unwrap();
+        // Idempotent: nothing left, nothing run.
+        let runs = tools.calls().len();
+        destroy(&module, &state, &[], &[], |_| {}).await.unwrap();
+        assert_eq!(tools.calls().len(), runs);
+        std::fs::remove_dir_all(state.ancestors().nth(3).unwrap()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_apply_records_where_it_creates_the_lab() {
+        let root = temp_state();
+        let (module, state) = (root.join("module"), root.join("state"));
+        std::fs::create_dir_all(&module).unwrap();
+        std::fs::write(module.join("main.tf"), "").unwrap();
+        let _tools = crate::exec::fake::Tools::rules(&[("terraform apply", crate::exec::fake::fail("quota"))]);
+        let vars = [pair("region", "eu-west-3"), pair("project", "labs-1"), pair("proxmox_password", "pw")];
+        assert!(apply(&module, &state, &vars, &[pair("GOOGLE_PROJECT", "labs-1"), pair("LINODE_TOKEN", "tok")], |_| {}).await.is_err());
+        let raw = std::fs::read_to_string(state.join(RUN_FILE)).unwrap();
+        assert!(raw.contains("eu-west-3") && raw.contains("labs-1") && !raw.contains("pw") && !raw.contains("tok"), "{raw}");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

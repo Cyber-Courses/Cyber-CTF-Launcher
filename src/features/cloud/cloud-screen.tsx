@@ -11,7 +11,7 @@ import { NoticePanel } from "@/components/ui/notice-panel";
 import { PageHeader } from "@/components/ui/page-header";
 import { Spinner } from "@/components/ui/spinner";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
-import { awsMonthToDateCost, serverOpenSetup, serverRemove } from "@/lib/tauri";
+import { serverMonthToDateCost, serverOpenSetup, serverRemove } from "@/lib/tauri";
 import { FirstRun } from "@/features/cloud/first-run";
 import { AccountsPanel, BudgetPanel, RunningCloudLabs } from "@/features/cloud/cloud-panels";
 import { budgetedAccounts, cloudAccounts, isOverBudget, labsOnAccounts } from "@/features/cloud/cloud-model";
@@ -33,12 +33,13 @@ export function CloudScreen() {
   // until its status after the stop is read, so Stop can't be pressed twice.
   const { runs, stop } = useLabActions(refreshStatus);
 
-  // Month-to-date spend, only for accounts that set a budget (Cost Explorer costs per call).
+  // Month-to-date spend, only for accounts that set a budget (Cost Explorer costs per call), read
+  // with each account's own credentials: the figure the launch budget gate checks.
   useEffect(() => {
     (allHosts ?? [])
       .filter((h) => h.provider === "aws" && h.monthlyLimit)
       .forEach((h) => {
-        awsMonthToDateCost(h.awsProfile ?? undefined)
+        serverMonthToDateCost(h.id)
           .then((c) => setSpend((s) => ({ ...s, [h.id]: c })))
           .catch(ignore("the spend is shown only when it can be read"));
       });

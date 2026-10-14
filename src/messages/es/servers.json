@@ -195,6 +195,7 @@
       "checkingAzure": "Comprobando la Azure CLI…",
       "signedInAzure": "Sesión iniciada en la Azure CLI.",
       "signingIn": "Iniciando sesión…",
+      "cancelSignIn": "Cancelar inicio de sesión",
       "switchAccount": "Cambiar de cuenta",
       "signInLog": "Iniciar sesión",
       "subscription": "Suscripción",

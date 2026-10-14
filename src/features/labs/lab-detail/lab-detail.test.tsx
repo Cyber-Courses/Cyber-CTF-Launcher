@@ -51,6 +51,7 @@ const status = (p: Partial<LabStatus>): LabStatus => ({
   attacker: null,
   outputs: [],
   message: null,
+  reapError: null,
   ...p,
 });
 

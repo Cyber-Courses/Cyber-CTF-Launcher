@@ -13,7 +13,7 @@ import { DetailsPanel } from "@/features/labs/lab-detail/details-panel";
 import { HeaderActions } from "@/features/labs/lab-detail/header-actions";
 import { deployDestination } from "@/features/labs/lab-detail/labels";
 import { cloudView, networkView, removing, type HeaderMode } from "@/features/labs/lab-detail/lab-state";
-import { FailureNotice } from "@/features/labs/lab-detail/failure-notice";
+import { FailureNotice, ReapFailedNotice } from "@/features/labs/lab-detail/failure-notice";
 import { failureKind } from "@/features/labs/failure-hints";
 import { NetworkPanel } from "@/features/labs/lab-detail/network-panel";
 import { ObjectivePanel } from "@/features/labs/lab-detail/page-parts";
@@ -93,6 +93,7 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
           onDismiss={() => setDismissed(failure)}
         />
       )}
+      {p.status?.reapError && <ReapFailedNotice title={p.lab.title} message={p.status.reapError} />}
       {shell.error && (
         <p className="-mt-2 flex items-center gap-2 text-[0.75rem] text-muted-foreground">
           <StatusDot tone="fail" /> {shell.error}

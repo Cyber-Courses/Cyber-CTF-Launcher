@@ -40,7 +40,7 @@ export function DownloadsPanel() {
   const load = useCallback(() => {
     machineStorage(attackImages())
       .then((s) => alive.current && setStorage(s))
-      .catch(() => alive.current && setStorage({ images: [], boxes: [] }));
+      .catch(() => alive.current && setStorage({ images: [], boxes: [], plugins: [] }));
   }, []);
   useEffect(() => {
     load();
@@ -59,7 +59,7 @@ export function DownloadsPanel() {
     }
   }
 
-  const storeItems = storage ? [...storage.images, ...storage.boxes] : [];
+  const storeItems = storage ? [...storage.images, ...storage.boxes, ...storage.plugins] : [];
   const storeTotal = storeItems.reduce((a, i) => a + i.bytes, 0);
   return (
     <Panel>

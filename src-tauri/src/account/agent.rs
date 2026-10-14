@@ -222,10 +222,55 @@ fn attack_image(host: Option<&str>, runtime: Runtime) -> Option<&'static str> {
     host.filter(|_| runtime != Runtime::Cloud).map(|_| crate::runtime::default_attack_image())
 }
 
-/// Stops a claimed lab that must not keep running under a failed session.
-async fn tear_down(app: &AppHandle, lab_id: Option<&str>, runtime: Runtime) {
-    if let Some(id) = lab_id {
-        let _ = crate::runtime::stop_lab(app, id, runtime, |_line: String| {}).await;
+/// Stops a claimed lab that must not keep running under a failed session. A lab that never got
+/// installed (its download failed) has nothing to stop.
+async fn tear_down(app: &AppHandle, lab_id: Option<&str>, runtime: Runtime) -> Result<()> {
+    match lab_id.filter(|id| crate::runtime::lab_installed(app, id)) {
+        Some(id) => crate::runtime::stop_lab(app, id, runtime, |_line: String| {}).await,
+        None => Ok(()),
+    }
+}
+
+/// `failure`, after tearing down what the failed start brought up, when it must be (see
+/// [`undoes`]). A teardown that fails too is said with it: the lab may still be running (and,
+/// on a cloud account, billing), and the website and the log must say so.
+async fn undo_start(app: &AppHandle, lab_id: Option<&str>, runtime: Runtime, present_before: bool, failure: Error) -> Error {
+    if !undoes(&failure, present_before) {
+        return failure;
+    }
+    match tear_down(app, lab_id, runtime).await {
+        Ok(()) => failure,
+        Err(e) => {
+            log::warn!("stopping what a failed launch of {lab_id:?} started: {e}");
+            Error::Invalid(format!("{failure} Stopping what it had started failed too ({e}): stop the lab from its page."))
+        }
+    }
+}
+
+/// Whether a failed start is undone: only what it brought up is. A start refused before it
+/// changed anything (still running elsewhere, a new version of a running lab, already up) left
+/// the lab as it was, and so did any start of a lab something of which was already there
+/// (`present_before`: up on a server host or cloud account, parked, its VMs): tearing it down
+/// would destroy the player's running lab, the opposite of what the refusal tells them.
+fn undoes(failure: &Error, present_before: bool) -> bool {
+    !present_before && !matches!(failure, Error::Refused(_))
+}
+
+/// Whether something of the claimed lab exists before its start (see `runtime::lab_present`).
+async fn present_before(app: &AppHandle, claim: &Value) -> bool {
+    match claim["labId"].as_str() {
+        Some(id) => crate::runtime::lab_present(app, id).await,
+        None => false,
+    }
+}
+
+/// Starts a claimed lab on `host` (None: this machine). A failure tears down what this start
+/// brought up, and only that (see [`undoes`]). Where the lab is reachable here, once running.
+async fn run_claimed(app: &AppHandle, claim: &Value, host: Option<&str>, runtime: Runtime, present_before: bool) -> Result<Option<String>> {
+    let lab_id = claim["labId"].as_str();
+    match labs::run(app, claim.clone(), None, host, attack_image(host, runtime), false, |_line: String| {}).await {
+        Ok(url) => Ok(url),
+        Err(e) => Err(undo_start(app, lab_id, runtime, present_before, e).await),
     }
 }
 
@@ -259,30 +304,15 @@ async fn claim_and_run(app: &AppHandle, session_id: &str) -> Result<()> {
     let host = launch_host(app, claim)?;
     confirm_if_cloud(app, session_id, claim, host.as_deref()).await?;
     let runtime = claim_runtime(claim);
-    let image = attack_image(host.as_deref(), runtime);
-    let lab_id = claim["labId"].as_str();
-    // A lab already up here is refused below, and must be left alone; anything else this start
-    // brought up before failing (one unhealthy service, say) is torn down, or it would keep
-    // running under a FAILED session and every later launch of it would be refused.
-    let was_running = match lab_id {
-        Some(id) => crate::runtime::lab_running_here(app, id).await,
-        None => false,
-    };
-    let url = match labs::run(app, claim.clone(), None, host.as_deref(), image, false, |_line: String| {}).await {
-        Ok(url) => url,
-        Err(e) => {
-            if !was_running {
-                tear_down(app, lab_id, runtime).await;
-            }
-            return Err(e);
-        }
-    };
-    // The lab is actually running on this machine now. If reporting back to the backend fails,
-    // tear it down before returning the error, so we don't leave infra running under a session
-    // the poller will mark FAILED.
-    if let Err(e) = report_running(app, session_id, lab_id, host.as_deref(), url.as_deref()).await {
-        tear_down(app, lab_id, runtime).await;
-        return Err(e);
+    // Anything this start brought up before failing (one unhealthy service, say) is torn down, or
+    // it would keep running under a FAILED session and every later launch of it would be refused.
+    let present = present_before(app, claim).await;
+    let url = run_claimed(app, claim, host.as_deref(), runtime, present).await?;
+    // The lab is actually running now. If reporting back to the backend fails, tear down what
+    // this start brought up before returning the error, so we don't leave infra running under a
+    // session the poller will mark FAILED.
+    if let Err(e) = report_running(app, session_id, claim["labId"].as_str(), host.as_deref(), url.as_deref()).await {
+        return Err(undo_start(app, claim["labId"].as_str(), runtime, present, e).await);
     }
     // A lab launched from the website just started here: let the player know on this machine.
     let _ = app.notification().builder().title("Lab running").body("A lab launched from the website is now running on this machine.").show();
@@ -557,10 +587,85 @@ mod tests {
                 false => assert_eq!(r.unwrap_err().to_string(), "Launch on Host az1 was not confirmed on this machine."),
             }
         }
-        // A lab that was never installed has nothing to tear down.
-        let _tools = crate::exec::fake::Tools::rules(&[]);
-        tear_down(app, Some("gone"), Runtime::Docker).await;
-        tear_down(app, None, Runtime::Vm).await;
+        // A lab that was never installed (its download failed) has nothing to tear down: the
+        // failure isn't said to have left anything up.
+        let tools = crate::exec::fake::Tools::rules(&[]);
+        tear_down(app, Some("gone"), Runtime::Docker).await.unwrap();
+        tear_down(app, None, Runtime::Vm).await.unwrap();
+        let err = undo_start(app, Some("gone"), Runtime::Docker, false, Error::Invalid("download failed: HTTP 404".into())).await;
+        assert_eq!(err.to_string(), "download failed: HTTP 404");
+        assert!(tools.calls().is_empty());
+    }
+
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    /// A website claim of lab `id` (Docker) at another commit than the one installed.
+    fn claim_of(id: &str) -> Value {
+        json!({ "labId": id, "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": COMMIT, "env": [] })
+    }
+
+    #[tokio::test]
+    async fn a_refused_website_launch_leaves_the_lab_running_on_the_players_account() {
+        // Regression: the agent asked only whether the lab ran *here*. Up on the player's AWS
+        // account and launched again from the website after a new version was published, the
+        // refusal ("still running on <host>. Stop it, then start it again") was followed by a
+        // teardown that ran `terraform destroy` on their lab.
+        let t = crate::test_app::TestApp::new();
+        let app = t.handle();
+        let id = "agent-refused";
+        let dir = t.lab(id, &[(".cyberctf-commit", "ffffffffffffffffffffffffffffffffffffffff"), (".isoloom/cloud-docker/aws/main.tf", "")]);
+        let aws = t.host("aws1", "aws", json!({ "useCliCreds": true }));
+        server::mark_lab(&dir, Some(&aws)).unwrap();
+        let state = t.data().join("deployments").join(id).join("aws");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
+        let tools = crate::exec::fake::Tools::rules(&[]);
+        let claim = claim_of(id);
+        assert!(present_before(app, &claim).await);
+        let err = run_claimed(app, &claim, None, Runtime::Docker, false).await.unwrap_err();
+        assert!(matches!(err, Error::Refused(_)) && err.to_string().contains("still running on Host aws1"), "{err}");
+        assert!(!tools.called("terraform"), "nothing torn down: {:?}", tools.calls());
+        assert!(state.join("terraform.tfstate").is_file());
+        assert_eq!(server::marked_host(&dir).as_deref(), Some("aws1"));
+    }
+
+    #[tokio::test]
+    async fn a_failed_start_of_a_lab_that_was_already_there_is_not_torn_down() {
+        // A start that fails on a lab something of which was there before (here, a lab up on a
+        // Proxmox host whose start this time failed for another reason) stops nothing.
+        let t = crate::test_app::TestApp::new();
+        let id = "agent-present";
+        let dir = t.lab(id, &[]);
+        server::mark_lab(&dir, Some("pve1")).unwrap();
+        let tools = crate::exec::fake::Tools::rules(&[]);
+        let failure = Error::Invalid("the lab host didn't answer".into());
+        let err = undo_start(t.handle(), Some(id), Runtime::Docker, crate::runtime::lab_present(t.handle(), id).await, failure).await;
+        assert_eq!(err.to_string(), "the lab host didn't answer");
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert_eq!(server::marked_host(&dir).as_deref(), Some("pve1"));
+    }
+
+    #[tokio::test]
+    async fn what_a_failed_start_brought_up_is_torn_down_and_a_failed_teardown_said() {
+        let t = crate::test_app::TestApp::new();
+        let id = "agent-fresh";
+        t.lab(id, &[]);
+        let tools = crate::exec::fake::Tools::rules(&[]);
+        let err = undo_start(t.handle(), Some(id), Runtime::Docker, false, Error::Invalid("web is unhealthy".into())).await;
+        assert_eq!(err.to_string(), "web is unhealthy");
+        assert!(tools.called("down --volumes"), "torn down: {:?}", tools.calls());
+        drop(tools);
+        // The teardown fails too: the error says the lab may still be up.
+        let _tools = crate::exec::fake::Tools::rules(&[("down --volumes", crate::exec::fake::fail("daemon not responding"))]);
+        let err = undo_start(t.handle(), Some(id), Runtime::Docker, false, Error::Invalid("web is unhealthy".into())).await.to_string();
+        assert!(err.starts_with("web is unhealthy Stopping what it had started failed too") && err.contains("daemon not responding"), "{err}");
+    }
+
+    #[test]
+    fn only_a_start_that_brought_something_up_is_undone() {
+        assert!(undoes(&Error::Invalid("unhealthy".into()), false));
+        assert!(!undoes(&Error::Invalid("unhealthy".into()), true), "the lab was there before");
+        assert!(!undoes(&Error::Refused("still running on AWS".into()), false), "refused before anything changed");
     }
 
     #[test]

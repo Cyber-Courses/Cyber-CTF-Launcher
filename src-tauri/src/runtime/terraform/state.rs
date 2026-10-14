@@ -20,30 +20,95 @@ pub fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
+/// The variables a run record keeps (none of them secret): the launcher's key and firewall, and
+/// where the resources are, so a destroy goes where the apply went even after the account's
+/// settings changed (another region, project or Proxmox node) and never "succeeds" against an
+/// empty place while the lab keeps billing where it was created.
+pub(super) const KEPT_VARS: &[&str] = &[
+    // How the launcher reaches the lab host.
+    "ssh_public_key",
+    "ssh_private_key_file",
+    "allowed_cidr",
+    // Where a cloud deployment is.
+    "region",
+    "project",
+    "billing_account",
+    "org_id",
+    "compartment_id",
+    // Which Proxmox server, node and storage. Not how to sign in (the login, its TLS setting):
+    // those may be renewed since, and the current ones are the ones that work.
+    "proxmox_endpoint",
+    "proxmox_ssh_address",
+    "node",
+    "datastore",
+    "uplink_bridge",
+];
+
+/// The provider environment a run record keeps, for the same reason: the region and project the
+/// providers read from it (never a credential).
+pub(super) const KEPT_ENV: &[&str] = &["AWS_REGION", "AWS_DEFAULT_REGION", "GOOGLE_PROJECT", "GOOGLE_REGION", "ARM_SUBSCRIPTION_ID"];
+
+/// The run record's object holding the kept environment.
+const ENV_KEY: &str = "env";
+
 /// The non-secret run record written beside the state at apply time, so a later destroy can be
-/// replayed without the launch spec: the connection/key variables plus, for auto-stopping cloud
-/// hosts, the computed `expires_at` (seconds since epoch; `now` is the current time).
-pub(super) fn run_record(vars: &[(String, String)], now: u64) -> serde_json::Map<String, Value> {
-    let mut run: serde_json::Map<String, Value> = vars
-        .iter()
-        .filter(|(k, _)| matches!(k.as_str(), "ssh_public_key" | "ssh_private_key_file" | "allowed_cidr"))
-        .map(|(k, v)| (k.clone(), Value::String(v.clone())))
-        .collect();
+/// replayed without the launch spec and against the same place: the kept variables and provider
+/// environment (see [`KEPT_VARS`], [`KEPT_ENV`]) plus, for auto-stopping cloud hosts, the
+/// computed `expires_at` (seconds since epoch; `now` is the current time).
+pub(super) fn run_record(vars: &[(String, String)], env: &[(String, String)], now: u64) -> serde_json::Map<String, Value> {
+    let mut run = kept(vars, KEPT_VARS);
     // When the lab host stops itself (cloud auto-stop), so status can tell.
     if let Some(hours) = vars.iter().find(|(k, _)| k == "auto_stop_hours").and_then(|(_, v)| v.parse::<u64>().ok()).filter(|h| *h > 0) {
         run.insert(EXPIRES_AT.into(), Value::from(now.saturating_add(hours.saturating_mul(3600))));
     }
+    record_env(&mut run, env);
     run
 }
 
-/// Lab variables restored from the run record for a destroy. Strings only: the lab variables
-/// the provider needs again (`expires_at` is a number and is skipped). A missing or malformed
-/// record yields nothing, never an error.
-pub(super) fn saved_vars(run_json: &str) -> Vec<(String, String)> {
-    match serde_json::from_str::<Value>(run_json) {
-        Ok(Value::Object(run)) => run.into_iter().filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string()))).collect(),
+/// The pairs of `pairs` named in `names`, the last value of each, as a JSON object.
+fn kept(pairs: &[(String, String)], names: &[&str]) -> serde_json::Map<String, Value> {
+    pairs.iter().filter(|(k, _)| names.contains(&k.as_str())).map(|(k, v)| (k.clone(), Value::String(v.clone()))).collect()
+}
+
+/// Adds the kept provider environment of `env` to a run record.
+pub(super) fn record_env(run: &mut serde_json::Map<String, Value>, env: &[(String, String)]) {
+    let env = kept(env, KEPT_ENV);
+    if !env.is_empty() {
+        run.insert(ENV_KEY.into(), Value::Object(env));
+    }
+}
+
+/// The provider environment a run record kept (see [`record_env`]); nothing from a missing or
+/// malformed record, or from an older one that kept none.
+pub(super) fn saved_env(run_json: &str) -> Vec<(String, String)> {
+    let Ok(Value::Object(mut run)) = serde_json::from_str::<Value>(run_json) else { return Vec::new() };
+    match run.remove(ENV_KEY) {
+        Some(Value::Object(env)) => strings(env).filter(|(k, _)| KEPT_ENV.contains(&k.as_str())).collect(),
         _ => Vec::new(),
     }
+}
+
+/// `current` with every name `saved` has taken from `saved`: what the apply ran with wins over
+/// the account's settings now.
+pub(super) fn with_saved(current: &[(String, String)], saved: Vec<(String, String)>) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = current.iter().filter(|(k, _)| !saved.iter().any(|(s, _)| s == k)).cloned().collect();
+    out.extend(saved);
+    out
+}
+
+/// Lab variables restored from the run record for a destroy. Strings only: the lab variables
+/// the provider needs again (`expires_at` is a number and is skipped, the kept environment an
+/// object). A missing or malformed record yields nothing, never an error.
+pub(super) fn saved_vars(run_json: &str) -> Vec<(String, String)> {
+    match serde_json::from_str::<Value>(run_json) {
+        Ok(Value::Object(run)) => strings(run).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The string members of a JSON object.
+fn strings(object: serde_json::Map<String, Value>) -> impl Iterator<Item = (String, String)> {
+    object.into_iter().filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
 }
 
 fn read_json(path: PathBuf) -> Option<Value> {
@@ -147,6 +212,7 @@ pub fn status(state: &Path) -> LabStatus {
         attacker: None,
         outputs: Vec::new(),
         message: None,
+        reap_error: None,
     }
 }
 
@@ -180,31 +246,64 @@ mod tests {
     }
 
     #[test]
-    fn run_record_keeps_only_connection_vars_and_expiry() {
+    fn run_record_keeps_connection_and_placement_vars_and_expiry() {
         let vars = vec![
             ("ssh_public_key".to_string(), "ssh-ed25519 AAAA".to_string()),
             ("ssh_private_key_file".to_string(), "/k/id".to_string()),
             ("allowed_cidr".to_string(), "1.2.3.0/24".to_string()),
             ("proxmox_password".to_string(), "secret".to_string()),
+            ("proxmox_api_token".to_string(), "root@pam!x=secret".to_string()),
+            ("inputs".to_string(), r#"{"CTF_LAUNCH_TOKEN":"secret"}"#.to_string()),
             ("region".to_string(), "eu-west-3".to_string()),
+            ("node".to_string(), "pve2".to_string()),
             ("auto_stop_hours".to_string(), "4".to_string()),
         ];
-        let run = run_record(&vars, 1_000);
-        // Secrets and lab-specific vars are not persisted; the connection keys are.
+        let run = run_record(&vars, &[], 1_000);
+        // Secrets and the lab's inputs are not persisted; the connection keys and placement are.
         assert_eq!(run.get("ssh_public_key").and_then(|v| v.as_str()), Some("ssh-ed25519 AAAA"));
         assert_eq!(run.get("ssh_private_key_file").and_then(|v| v.as_str()), Some("/k/id"));
         assert_eq!(run.get("allowed_cidr").and_then(|v| v.as_str()), Some("1.2.3.0/24"));
-        assert!(run.get("proxmox_password").is_none());
-        assert!(run.get("region").is_none());
+        assert_eq!(run.get("region").and_then(|v| v.as_str()), Some("eu-west-3"));
+        assert_eq!(run.get("node").and_then(|v| v.as_str()), Some("pve2"));
+        let text = serde_json::to_string(&run).unwrap();
+        assert!(!text.contains("secret"), "{text}");
         // 4 hours past the given `now`.
         assert_eq!(run.get(EXPIRES_AT).and_then(|v| v.as_u64()), Some(1_000 + 4 * 3600));
     }
 
     #[test]
+    fn run_record_keeps_the_providers_region_never_its_credentials() {
+        let env = vec![
+            ("AWS_ACCESS_KEY_ID".to_string(), "AKIA".to_string()),
+            ("AWS_SECRET_ACCESS_KEY".to_string(), "secret".to_string()),
+            ("AWS_REGION".to_string(), "eu-west-3".to_string()),
+        ];
+        let json = serde_json::to_string(&run_record(&[], &env, 1)).unwrap();
+        assert!(!json.contains("AKIA") && !json.contains("secret"), "{json}");
+        assert_eq!(saved_env(&json), [("AWS_REGION".to_string(), "eu-west-3".to_string())]);
+        // The kept environment is not a variable.
+        assert!(saved_vars(&json).is_empty());
+        // Nothing kept: no `env` at all; and odd records read as none.
+        assert!(!serde_json::to_string(&run_record(&[], &[], 1)).unwrap().contains("env"));
+        for raw in ["", "garbage", "[]", r#"{"env":"x"}"#, r#"{"env":{"AWS_SECRET_ACCESS_KEY":"s","AWS_REGION":1}}"#] {
+            assert!(saved_env(raw).is_empty(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn what_the_apply_ran_with_wins_over_the_settings_now() {
+        let pair = |k: &str, v: &str| (k.to_string(), v.to_string());
+        let current = [pair("region", "us-east-1"), pair("proxmox_password", "pw"), pair("node", "pve1")];
+        let saved = vec![pair("region", "eu-west-3"), pair("node", "pve2")];
+        assert_eq!(with_saved(&current, saved), [pair("proxmox_password", "pw"), pair("region", "eu-west-3"), pair("node", "pve2")]);
+        assert_eq!(with_saved(&current, Vec::new()), current);
+    }
+
+    #[test]
     fn run_record_omits_expiry_when_auto_stop_absent_or_zero() {
-        assert!(run_record(&[], 1_000).get(EXPIRES_AT).is_none());
+        assert!(run_record(&[], &[], 1_000).get(EXPIRES_AT).is_none());
         let zero = vec![("auto_stop_hours".to_string(), "0".to_string())];
-        assert!(run_record(&zero, 1_000).get(EXPIRES_AT).is_none());
+        assert!(run_record(&zero, &[], 1_000).get(EXPIRES_AT).is_none());
     }
 
     #[test]
@@ -214,7 +313,7 @@ mod tests {
             ("allowed_cidr".to_string(), "1.2.3.0/24".to_string()),
             ("auto_stop_hours".to_string(), "4".to_string()),
         ];
-        let json = serde_json::to_string(&run_record(&vars, 1_000)).unwrap();
+        let json = serde_json::to_string(&run_record(&vars, &[], 1_000)).unwrap();
         let mut restored = saved_vars(&json);
         restored.sort();
         // expires_at is a number and is not restored as a variable.

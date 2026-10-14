@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::kind::{HostField, Secret, kind};
 use crate::runtime::providers::Provider;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
@@ -57,7 +58,48 @@ impl HostProfile {
     /// Whether the keychain holds a secret for this host. AWS in CLI mode, Azure, GCP and OCI
     /// sign in through their own CLI / config, so the launcher keeps nothing for them.
     pub(super) fn keeps_secret(&self) -> bool {
-        !self.use_cli_creds && !matches!(self.provider, Provider::Azure | Provider::Gcp | Provider::Oci)
+        !self.use_cli_creds && kind(self.provider).is_some_and(|k| k.secret != Secret::None)
+    }
+
+    /// A cloud account's region (its `host`); None for a server, whose `host` is an address.
+    pub fn region(&self) -> Option<&str> {
+        kind(self.provider).filter(|k| k.host == HostField::Region).map(|_| self.host.as_str())
+    }
+
+    /// The account a cloud creates labs in, as its `username` names it: the Azure subscription,
+    /// the GCP billing account, the OCI compartment. None for the others, whose `username` is a
+    /// login or a key id.
+    pub fn cloud_account(&self) -> Option<&str> {
+        kind(self.provider).filter(|k| k.account.is_placement()).map(|_| self.username.as_str())
+    }
+
+    /// A cloud instance's size (its `datastore`); None on a server, where it is the storage.
+    pub fn size(&self) -> Option<&str> {
+        self.datastore.as_deref().filter(|_| self.provider.is_cloud())
+    }
+
+    /// A GCP account's organization (its `node`); None for the others.
+    pub fn gcp_org(&self) -> Option<&str> {
+        self.node.as_deref().filter(|_| self.provider == Provider::Gcp)
+    }
+
+    /// What says where this host's labs are (its provider, address or region, port, Proxmox node,
+    /// the account labs are created in, an AWS CLI profile), never a renewable credential: while
+    /// labs are deployed on it, a stop must still find them where they were created.
+    pub(super) fn placement(&self) -> Vec<(&'static str, String)> {
+        let mut fields = vec![
+            ("provider", self.provider.id().to_string()),
+            ("address or region", self.host.clone()),
+            ("port", self.port.to_string()),
+            ("node or organization", self.node.clone().unwrap_or_default()),
+        ];
+        fields.extend(self.cloud_account().map(|a| ("account", a.to_string())));
+        // AWS through the CLI: the profile picks the account (another profile is likely another
+        // account). Stored keys can't be told apart offline: renewing them must stay possible.
+        if self.use_cli_creds {
+            fields.push(("AWS CLI profile", self.aws_profile.clone().unwrap_or_default()));
+        }
+        fields
     }
 }
 
@@ -65,25 +107,12 @@ impl HostProfile {
 pub const DEFAULT_AUTO_STOP_HOURS: u32 = 4;
 
 pub(super) fn default_port(provider: Provider) -> u16 {
-    match provider {
-        Provider::Proxmox => 8006,
-        p if p.is_cloud() => 443,
-        _ => 22,
-    }
+    kind(provider).map_or(22, |k| k.default_port)
 }
 
 /// The Terraform target (state folder, Isoloom module) for a provider, if it uses Terraform.
 pub fn terraform_target(provider: Provider) -> Option<&'static str> {
-    match provider {
-        Provider::Proxmox => Some("proxmox"),
-        Provider::Aws => Some("aws"),
-        Provider::Azure => Some("azure"),
-        Provider::Gcp => Some("gcp"),
-        Provider::DigitalOcean => Some("digitalocean"),
-        Provider::Linode => Some("linode"),
-        Provider::Oci => Some("oci"),
-        _ => None,
-    }
+    kind(provider).and_then(|k| k.terraform)
 }
 
 /// `bytes` random bytes as lowercase hex (host ids, GCP project suffixes).

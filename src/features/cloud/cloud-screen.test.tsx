@@ -41,16 +41,18 @@ describe("CloudScreen", () => {
     expect(screen.getByText("Google Cloud")).toBeTruthy();
     expect(document.body.textContent).toContain("eu-west-3 · CLI · default · auto-stop 4h");
     // No budget set: Cost Explorer (billed per call) isn't asked.
-    expect(commands(calls)).not.toContain("aws_month_to_date_cost");
+    expect(commands(calls)).not.toContain("server_month_to_date_cost");
     expect(screen.getByText("Not tested")).toBeTruthy();
   });
 
   it("reads this month's spend for an account with a budget and warns when it is over", async () => {
     const list = sample();
     list.hosts[2] = account({ monthlyLimit: 5, awsProfile: "lab" });
-    const calls = installTauri({ server_list: () => list, aws_month_to_date_cost: () => 6.4 });
+    const calls = installTauri({ server_list: () => list, server_month_to_date_cost: () => 6.4 });
     await renderScreen();
-    expect(argsOf(calls, "aws_month_to_date_cost")).toEqual([{ profile: "lab" }]);
+    // The account's own spend (its credentials), never the CLI's default profile's.
+    expect(argsOf(calls, "server_month_to_date_cost")).toEqual([{ id: list.hosts[2].id }]);
+    expect(commands(calls)).not.toContain("aws_month_to_date_cost");
     expect(screen.getByText(/AWS sandbox is over its monthly budget/)).toBeTruthy();
     expect(screen.getByText("Budget guard · AWS sandbox")).toBeTruthy();
     expect(screen.getAllByText("Over budget").length).toBe(2);
@@ -60,7 +62,7 @@ describe("CloudScreen", () => {
   it("counts the accounts over budget", async () => {
     const list = sample();
     list.hosts = [account({ id: "a", name: "A", monthlyLimit: 1 }), account({ id: "b", name: "B", monthlyLimit: 2 })];
-    installTauri({ server_list: () => list, aws_month_to_date_cost: () => 10 });
+    installTauri({ server_list: () => list, server_month_to_date_cost: () => 10 });
     await renderScreen();
     expect(screen.getByText(/2 accounts are over their monthly budget/)).toBeTruthy();
   });
@@ -70,7 +72,7 @@ describe("CloudScreen", () => {
     list.hosts[2] = account({ monthlyLimit: 0 });
     const calls = installTauri({ server_list: () => list });
     await renderScreen();
-    expect(commands(calls)).not.toContain("aws_month_to_date_cost");
+    expect(commands(calls)).not.toContain("server_month_to_date_cost");
     expect(screen.queryByText(/Budget guard/)).toBeNull();
     expect(screen.queryByText("Over budget")).toBeNull();
     expect(document.body.textContent).not.toContain("budget $0");
@@ -81,7 +83,7 @@ describe("CloudScreen", () => {
     list.hosts[2] = account({ monthlyLimit: 50 });
     installTauri({
       server_list: () => list,
-      aws_month_to_date_cost: () => {
+      server_month_to_date_cost: () => {
         throw "ce:GetCostAndUsage denied";
       },
     });

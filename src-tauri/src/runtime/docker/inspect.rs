@@ -356,6 +356,7 @@ fn docker_status(running: bool, machines: Vec<Machine>, networks: Vec<Network>, 
         attacker: None,
         outputs: Vec::new(),
         message: None,
+        reap_error: None,
     }
 }
 

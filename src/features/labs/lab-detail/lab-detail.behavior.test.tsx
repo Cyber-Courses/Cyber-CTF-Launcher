@@ -53,6 +53,7 @@ const status = (p: Partial<LabStatus> = {}): LabStatus => ({
   attacker: null,
   outputs: [],
   message: null,
+  reapError: null,
   ...p,
 });
 const stopped = status({ running: false, machines: [], url: null, place: null, provider: null });
@@ -160,6 +161,7 @@ describe("LabDetail: starting", () => {
       state: "RUNNING",
       endpoints: [{ port: 80, url: "https://s1.example" }],
       message: null,
+      reapError: null,
       expiresAt: new Date(Date.now() + 3600_000).toISOString(),
     };
     const calls = installTauri({
@@ -202,6 +204,7 @@ describe("LabDetail: starting", () => {
       state: "RUNNING",
       endpoints: [],
       message: null,
+      reapError: null,
       expiresAt: new Date(Date.now() + 3600_000).toISOString(),
     };
     installTauri({

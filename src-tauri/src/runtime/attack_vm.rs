@@ -460,6 +460,7 @@ mod tests {
             attacker: None,
             outputs: Vec::new(),
             message: None,
+            reap_error: None,
         }
     }
 

@@ -25,6 +25,9 @@ export const serverTest = (id: string) => invoke<ServerTest>("server_test", { id
 export const serverPublicKey = () => invoke<string>("server_public_key");
 /** How many installed labs are currently running on each host, keyed by host id. */
 export const serverRunningLabs = () => invoke<Record<string, number>>("server_running_labs");
+/** This month's spend so far (USD) on a saved AWS account, with its own credentials: the figure
+ *  the launch budget gate checks. Rejects when it can't be read. */
+export const serverMonthToDateCost = (id: string) => invoke<number>("server_month_to_date_cost", { id });
 /** A host's hardware headroom (Proxmox only; null otherwise or on failure). */
 export const serverCapacity = (id: string) => invoke<HostCapacity | null>("server_capacity", { id });
 /** Real-VM self-test: provisions a throwaway VM on the host, checks it, then destroys it. */

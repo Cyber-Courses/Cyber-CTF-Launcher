@@ -195,6 +195,7 @@
       "checkingAzure": "Azure CLI を確認中…",
       "signedInAzure": "Azure CLI にサインイン済みです。",
       "signingIn": "サインイン中…",
+      "cancelSignIn": "サインインをキャンセル",
       "switchAccount": "アカウントを切り替え",
       "signInLog": "サインイン",
       "subscription": "サブスクリプション",

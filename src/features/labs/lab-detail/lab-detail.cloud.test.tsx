@@ -32,6 +32,7 @@ const status = (p: Partial<LabStatus>): LabStatus => ({
   attacker: null,
   outputs: [],
   message: null,
+  reapError: null,
   ...p,
 });
 
@@ -71,6 +72,23 @@ describe("LabDetail, a cloud lab", () => {
       .filter((b) => /^start$/i.test(b.textContent?.trim() ?? ""));
     await user.click(start[0]);
     expect(h.onStart).toHaveBeenCalledWith({ kind: "host", id: "aws1" });
+  });
+
+  it("says when the auto-stop couldn't destroy it, as it may still be billing", async () => {
+    installTauri(idle);
+    const reapError = "Auto-stop couldn't destroy lab-goat: destroying it on My AWS failed: ExpiredToken";
+    renderGoat({ status: status({ reapError, host: "My AWS", place: "cloud" }) });
+    await flush();
+    expect(screen.getByText("Auto-stop couldn’t destroy EC2 SSRF")).toBeTruthy();
+    expect(screen.getByText(reapError)).toBeTruthy();
+    expect(document.body.textContent).toContain("It may still be billing in your cloud account.");
+  });
+
+  it("says nothing of the auto-stop when it had nothing to report", async () => {
+    installTauri(idle);
+    renderGoat({ status: status({}) });
+    await flush();
+    expect(screen.queryByText(/Auto-stop couldn’t destroy/)).toBeNull();
   });
 
   it("with no account of its cloud, offers to connect one", async () => {

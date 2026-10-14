@@ -361,7 +361,7 @@ pub(super) async fn start(app: &AppHandle, dir: &Path, id: &str, host: Option<&s
     check_requirements(&spec, log).await?;
     let state = state_dir(app, id, server::terraform_target(conn.provider).unwrap_or_default())?;
     if status(&spec, &state).running {
-        return Err(Error::Invalid("This lab is already running in your cloud account. Stop it before starting it again.".into()));
+        return Err(Error::Refused("This lab is already running in your cloud account. Stop it before starting it again.".into()));
     }
     let conn = ready_account(app, host, conn, log).await?;
     // Mark first, so a half-created lab can still be destroyed with the same account.

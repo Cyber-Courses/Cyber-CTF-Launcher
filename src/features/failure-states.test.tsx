@@ -55,6 +55,7 @@ const stopped: LabStatus = {
   attacker: null,
   outputs: [],
   message: null,
+  reapError: null,
 };
 const up: LabStatus = {
   ...stopped,

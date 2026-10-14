@@ -1,13 +1,15 @@
 //! Cloud account connection via each provider's own CLI auth (browser flow), so we don't
 //! store long-lived cloud secrets. Terraform then uses the CLI's credential chain.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Mutex;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
+use tokio::sync::oneshot;
 
-use crate::error::Result;
-use crate::exec::{run, stream};
+use crate::error::{Error, Result};
+use crate::exec::{run_cli, stream};
 
 /// Civil (year, month, day) for a Unix timestamp, UTC (Howard Hinnant's algorithm). Used to
 /// build Cost Explorer date ranges without a date-crate dependency.
@@ -35,15 +37,58 @@ pub enum Cloud {
 }
 
 /// Signs in to a cloud provider using its CLI. AWS uses SSO (needs a configured SSO
-/// profile); Azure and GCP open the browser. Streams the CLI output to the UI.
+/// profile); Azure and GCP open the browser. Streams the CLI output to the UI, until it ends,
+/// the player cancels it (`cloud_login_cancel`) or [`LOGIN_TIMEOUT`] passes.
 #[tauri::command]
 pub async fn cloud_login(provider: Cloud, logs: Channel<String>) -> Result<()> {
+    let (program, args) = login_command(&provider);
+    sign_in(program, args, logs).await
+}
+
+/// How long a CLI sign-in waits for the player to finish it in the browser.
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// The CLI sign-in in progress: sending on it cancels it.
+static SIGN_IN: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
+
+/// Cancels the CLI sign-in in progress (its CLI is stopped), if any.
+#[tauri::command]
+pub fn cloud_login_cancel() {
+    if let Some(cancel) = SIGN_IN.lock().ok().and_then(|mut s| s.take()) {
+        let _ = cancel.send(());
+    }
+}
+
+/// Runs a CLI sign-in (`program args`), its lines on `logs`, until it ends, is cancelled, or
+/// [`LOGIN_TIMEOUT`] passes. A new sign-in cancels the one before it.
+async fn sign_in(program: &'static str, args: &[&str], logs: Channel<String>) -> Result<()> {
     let on_line = move |line: String| {
         let _ = logs.send(line);
     };
-    let (program, args) = login_command(&provider);
     on_line(format!("$ {program} {}", args.join(" ")));
-    stream(program, args, None, &[], on_line).await
+    sign_in_within(LOGIN_TIMEOUT, stream(program, args, None, &[], on_line), cancellable()).await
+}
+
+/// A cancel for a new sign-in, through `cloud_login_cancel`; the one before it is cancelled.
+fn cancellable() -> oneshot::Receiver<()> {
+    let (tx, cancelled) = oneshot::channel();
+    if let Some(previous) = SIGN_IN.lock().ok().and_then(|mut s| s.replace(tx)) {
+        let _ = previous.send(());
+    }
+    cancelled
+}
+
+/// `signing_in` until it ends, `cancelled` fires, or `limit` passes. Ended either way, it is
+/// dropped: its CLI is killed with what it started.
+async fn sign_in_within(limit: Duration, signing_in: impl Future<Output = Result<()>>, cancelled: oneshot::Receiver<()>) -> Result<()> {
+    tokio::select! {
+        // A sign-in that is done wins over a cancel that came at the same time.
+        biased;
+        done = tokio::time::timeout(limit, signing_in) => done.unwrap_or_else(|_| {
+            Err(Error::Invalid(format!("The sign-in wasn't finished within {} minutes, so it was stopped. Sign in again.", limit.as_secs() / 60)))
+        }),
+        _ = cancelled => Err(Error::Invalid("Sign-in cancelled.".into())),
+    }
 }
 
 /// The CLI sign-in for a cloud.
@@ -78,7 +123,7 @@ fn non_empty(out: String) -> Option<String> {
 #[tauri::command]
 pub async fn aws_cli_identity(profile: Option<String>) -> Option<String> {
     let args = with_profile(vec!["sts", "get-caller-identity", "--query", "Arn", "--output", "text"], profile.as_deref());
-    run("aws", &args, None).await.ok().and_then(non_empty)
+    run_cli("aws", &args).await.ok().and_then(non_empty)
 }
 
 /// The Cost Explorer time period for this month so far: Start = the 1st, End = tomorrow
@@ -90,38 +135,19 @@ pub(crate) fn month_period() -> String {
     format!("Start={y:04}-{m:02}-01,End={ey:04}-{em:02}-{ed:02}")
 }
 
-/// This month's AWS spend so far in USD, from Cost Explorer, for the budget check. None
-/// when the CLI or Cost Explorer isn't available (CE must be enabled on the account).
+/// This month's AWS spend so far in USD, as the AWS CLI's `profile` (or its default) sees it:
+/// the setup form's, before the account is saved (a saved account's is `server_month_to_date_cost`,
+/// with its own credentials). None when the CLI or Cost Explorer isn't available.
 #[tauri::command]
 pub async fn aws_month_to_date_cost(profile: Option<String>) -> Option<f64> {
-    let period = month_period();
-    let args = with_profile(cost_args(&period), profile.as_deref());
-    run("aws", &args, None).await.ok().and_then(|s| s.trim().parse::<f64>().ok())
-}
-
-/// `aws ce get-cost-and-usage` for `period`, printing just the amount.
-fn cost_args(period: &str) -> Vec<&str> {
-    vec![
-        "ce",
-        "get-cost-and-usage",
-        "--time-period",
-        period,
-        "--granularity",
-        "MONTHLY",
-        "--metrics",
-        "UnblendedCost",
-        "--query",
-        "ResultsByTime[0].Total.UnblendedCost.Amount",
-        "--output",
-        "text",
-    ]
+    crate::runtime::server::cli_month_to_date_cost(profile).await.ok()
 }
 
 /// The AWS CLI profiles configured on this machine (`aws configure list-profiles`), so the
 /// user can pick one when they have several. Empty when the CLI is missing or has none.
 #[tauri::command]
 pub async fn aws_profiles() -> Vec<String> {
-    run("aws", &["configure", "list-profiles"], None).await.ok().map(|s| lines(&s)).unwrap_or_default()
+    run_cli("aws", &["configure", "list-profiles"]).await.ok().map(|s| lines(&s)).unwrap_or_default()
 }
 
 /// The non-blank lines of a CLI's output, trimmed.
@@ -143,7 +169,7 @@ pub struct AzureSubscription {
 /// pick one instead of pasting a GUID. Empty when the CLI is missing or not signed in.
 #[tauri::command]
 pub async fn azure_subscriptions() -> Vec<AzureSubscription> {
-    run("az", &["account", "list", "--query", "[].{name:name,id:id,isDefault:isDefault}", "--output", "json"], None)
+    run_cli("az", &["account", "list", "--query", "[].{name:name,id:id,isDefault:isDefault}", "--output", "json"])
         .await
         .ok()
         .map(|out| subscriptions(&out))
@@ -233,8 +259,8 @@ fn parse_oci_config(text: &str) -> OciConfig {
 /// again instead of showing an empty billing list.
 #[tauri::command]
 pub async fn gcp_account() -> Option<String> {
-    let email = run("gcloud", &["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"], None).await.ok().and_then(non_empty)?;
-    run("gcloud", &["auth", "print-access-token", "--quiet"], None).await.ok()?;
+    let email = run_cli("gcloud", &["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"]).await.ok().and_then(non_empty)?;
+    run_cli("gcloud", &["auth", "print-access-token", "--quiet"]).await.ok()?;
     Some(email)
 }
 
@@ -242,7 +268,7 @@ pub async fn gcp_account() -> Option<String> {
 /// pick one for the per-lab projects. Empty when the CLI is missing or not signed in.
 #[tauri::command]
 pub async fn gcp_billing_accounts() -> Vec<GcpBillingAccount> {
-    run("gcloud", &["billing", "accounts", "list", "--format", "json"], None).await.ok().map(|out| billing_accounts(&out)).unwrap_or_default()
+    run_cli("gcloud", &["billing", "accounts", "list", "--format", "json"]).await.ok().map(|out| billing_accounts(&out)).unwrap_or_default()
 }
 
 /// The entries of a gcloud JSON list; none when it doesn't parse.
@@ -267,7 +293,7 @@ fn billing_accounts(out: &str) -> Vec<GcpBillingAccount> {
 /// a personal / no-org account, so the user can create projects without a parent.
 #[tauri::command]
 pub async fn gcp_organizations() -> Vec<GcpOrganization> {
-    run("gcloud", &["organizations", "list", "--format", "json"], None).await.ok().map(|out| organizations(&out)).unwrap_or_default()
+    run_cli("gcloud", &["organizations", "list", "--format", "json"]).await.ok().map(|out| organizations(&out)).unwrap_or_default()
 }
 
 /// `gcloud organizations list --format json` as organizations (ids without their prefix).
@@ -287,12 +313,8 @@ fn organizations(out: &str) -> Vec<GcpOrganization> {
 /// Streams the CLI output.
 #[tauri::command]
 pub async fn aws_login(profile: Option<String>, logs: Channel<String>) -> Result<()> {
-    let on_line = move |line: String| {
-        let _ = logs.send(line);
-    };
     let args = with_profile(vec!["login"], profile.as_deref());
-    on_line(format!("$ aws {}", args.join(" ")));
-    stream("aws", &args, None, &[], on_line).await
+    sign_in("aws", &args, logs).await
 }
 
 #[cfg(test)]
@@ -339,6 +361,8 @@ mod tests {
         let (channel, seen) = sink();
         aws_login(Some("labs".into()), channel).await.unwrap();
         assert_eq!(seen.lock().unwrap()[0], "$ aws login --profile labs");
+        // Nothing to cancel any more: a no-op.
+        cloud_login_cancel();
     }
 
     #[tokio::test]
@@ -368,9 +392,37 @@ mod tests {
     fn a_profile_is_passed_only_when_chosen() {
         assert_eq!(with_profile(vec!["login"], None), ["login"]);
         assert_eq!(with_profile(vec!["login"], Some("work")), ["login", "--profile", "work"]);
-        let cost = with_profile(cost_args("Start=2026-10-01,End=2026-10-11"), Some("p"));
-        assert_eq!(cost[..4], ["ce", "get-cost-and-usage", "--time-period", "Start=2026-10-01,End=2026-10-11"]);
-        assert_eq!(cost[cost.len() - 2..], ["--profile", "p"]);
+    }
+
+    #[tokio::test]
+    async fn a_profiles_spend_is_read_with_that_profile() {
+        let tools = Tools::rules(&[("ce get-cost-and-usage", ok("12.5\n"))]);
+        assert_eq!(aws_month_to_date_cost(Some("work".into())).await, Some(12.5));
+        assert!(tools.called("aws ce get-cost-and-usage --time-period"), "{:?}", tools.calls());
+        assert_eq!(tools.env_of("ce get-cost-and-usage", "AWS_PROFILE").as_deref(), Some("work"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_sign_in_can_be_cancelled_and_never_waits_forever() {
+        // Regression: `cloud_login` had no time limit and no cancel: a CLI waiting for a browser
+        // sign-in nobody finished kept the setup busy for good.
+        // Its own cancel, so tests running at the same time can't end it.
+        let (cancel, cancelled) = oneshot::channel();
+        let waiting = tokio::spawn(sign_in_within(Duration::from_secs(30), crate::exec::stream("sh", &["-c", "sleep 30"], None, &[], |_| {}), cancelled));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        cancel.send(()).unwrap();
+        let err = tokio::time::timeout(Duration::from_secs(5), waiting).await.expect("ended at once").unwrap().unwrap_err();
+        assert!(err.to_string().contains("cancelled"), "{err}");
+        let (_keep, never) = oneshot::channel();
+        let err = sign_in_within(Duration::from_millis(50), std::future::pending(), never).await.unwrap_err().to_string();
+        assert!(err.starts_with("The sign-in wasn't finished within 0 minutes"), "{err}");
+        assert_eq!(LOGIN_TIMEOUT, Duration::from_secs(600));
+        // The command cancels the sign-in in progress.
+        let pending = cancellable();
+        cloud_login_cancel();
+        // (A sign-in started meanwhile by another test cancels it too.)
+        assert!(pending.await.is_ok());
     }
 
     #[test]

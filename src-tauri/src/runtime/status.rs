@@ -14,13 +14,13 @@ use super::{AttackerAt, LabStatus, Place, Runtime, cloud_services, docker, lab, 
 use crate::error::Result;
 
 pub(super) async fn status(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
-    if runtime == Runtime::Cloud {
-        return cloud_status(app, dir, id);
-    }
-    match server::lab_connection(app, dir)? {
-        None => local_status(dir, id, runtime).await,
-        Some(c) => server_status(app, dir, id, runtime, c).await,
-    }
+    let status = match (runtime, server::lab_connection(app, dir)?) {
+        (Runtime::Cloud, c) => cloud_status(app, dir, id, c)?,
+        (_, None) => local_status(dir, id, runtime).await?,
+        (_, Some(c)) => server_status(app, dir, id, runtime, c).await?,
+    };
+    // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
+    Ok(LabStatus { reap_error: super::reaper::last_failure(app, id), ..status })
 }
 
 pub(super) async fn local_status(dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
@@ -37,8 +37,8 @@ pub(super) async fn local_status(dir: &Path, id: &str, runtime: Runtime) -> Resu
 
 /// A cloud-services lab's status, from its state on the account it was started on; not running
 /// when its last deploy failed (what it created stays listed, to be stopped).
-fn cloud_status(app: &AppHandle, dir: &Path, id: &str) -> Result<LabStatus> {
-    let s = cloud_services::lab_status(app, dir, id, server::lab_connection(app, dir)?)?;
+fn cloud_status(app: &AppHandle, dir: &Path, id: &str, conn: Option<server::Connection>) -> Result<LabStatus> {
+    let s = cloud_services::lab_status(app, dir, id, conn)?;
     Ok(LabStatus { running: s.running && !crate::deploy_worker::last_deploy_failed(app, id), ..s })
 }
 
@@ -157,12 +157,19 @@ pub fn vms_recorded_here(dir: &Path) -> bool {
     vagrant_dirs(dir).into_iter().any(|vdir| vm::has_machines(&vdir)) || vm::has_machines(&super::attack_vm::dir(dir))
 }
 
-/// [`running_here`] for a lab by id; false when it isn't installed.
-pub async fn lab_running_here(app: &AppHandle, id: &str) -> bool {
-    match lab_dir(app, id) {
-        Ok(dir) => running_here(&dir, id).await,
-        Err(_) => false,
-    }
+/// Whether lab `id` is up somewhere before a start: running here, parked here, or marked as
+/// running on a server host or cloud account. What a failed start finds already up was not
+/// brought up by it, and must not be torn down with what it did bring up. A leftover (a state
+/// left on another account, stopped VMs the start clears) doesn't count: a failed start tears
+/// down its own deployment as before. False when it isn't installed.
+pub async fn lab_present(app: &AppHandle, id: &str) -> bool {
+    let Ok(dir) = lab_dir(app, id) else { return false };
+    server::marked_host(&dir).is_some_and(|h| !h.is_empty()) || parked(&dir).is_some() || running_here(&dir, id).await
+}
+
+/// Whether lab `id` is installed here.
+pub fn lab_installed(app: &AppHandle, id: &str) -> bool {
+    lab_dir(app, id).is_ok()
 }
 
 /// Where a running lab is reachable on this machine (its first published port). None for
@@ -254,6 +261,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_lab_is_present_wherever_something_of_it_is_left() {
+        // Regression: a failed website launch asked only whether the lab ran *here* (local Docker
+        // and Vagrant), so a lab up on a server host or cloud account read as absent, and the
+        // teardown of the failed start destroyed it.
+        use crate::exec::fake::Tools;
+        let t = crate::test_app::TestApp::new();
+        let app = t.handle();
+        let _tools = Tools::rules(&[]);
+        let dir = t.lab("present", &[]);
+        assert!(!super::lab_present(app, "present").await, "installed, nothing of it up");
+        // Marked as running on a host.
+        crate::runtime::server::mark_lab(&dir, Some("pve1")).unwrap();
+        assert!(super::lab_present(app, "present").await);
+        crate::runtime::server::mark_lab(&dir, None).unwrap();
+        // A Terraform state left on another account isn't this lab being up: a failed start on
+        // another account still tears down what it created there.
+        let state = t.data().join("deployments/present/aws");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[{"type":"aws_instance"}]}"#).unwrap();
+        assert!(!super::lab_present(app, "present").await);
+        assert!(super::lab_installed(app, "present") && !super::lab_installed(app, "gone"));
+        // Parked here.
+        crate::runtime::paths::mark_parked(&dir, Some(crate::runtime::Park::Pause)).unwrap();
+        assert!(super::lab_present(app, "present").await);
+    }
+
+    #[tokio::test]
     async fn a_lab_status_is_read_where_the_lab_runs() {
         use crate::exec::fake::{Tools, ok};
         let t = crate::test_app::TestApp::new();
@@ -267,8 +301,8 @@ mod tests {
         let s = super::status(app, &dir, "web", Runtime::Docker).await.unwrap();
         assert!(s.running && matches!(s.place, Some(Place::Container)));
         assert!(super::running_here(&dir, "web").await);
-        assert!(super::lab_running_here(app, "web").await);
-        assert!(!super::lab_running_here(app, "gone").await);
+        assert!(super::lab_present(app, "web").await);
+        assert!(!super::lab_present(app, "gone").await);
         // Its VMs here, and a container lab in a local VM.
         let s = super::status(app, &dir, "web", Runtime::Vm).await.unwrap();
         assert!(s.running && matches!(s.place, Some(Place::LocalVm)));

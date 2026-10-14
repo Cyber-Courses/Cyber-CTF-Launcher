@@ -383,6 +383,10 @@
     "hint": "Indice {n}",
     "revealHint": "Afficher l'indice {n} sur {total}"
   },
+  "reapFailed": {
+    "title": "L’arrêt automatique n’a pas pu détruire {title}",
+    "hint": "Il peut encore être facturé sur votre compte cloud. Corrigez ce qu’indique le message, puis arrêtez le lab ; ou supprimez ses ressources dans votre console cloud."
+  },
   "failure": {
     "title": {
       "launch": "Impossible de démarrer {title}",

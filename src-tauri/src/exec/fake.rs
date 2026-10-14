@@ -30,6 +30,8 @@ type Script = Box<dyn FnMut(&str, &[&str]) -> Option<Reply>>;
 struct State {
     script: Script,
     calls: Vec<String>,
+    /// The environment each call was given, beside `calls`.
+    envs: Vec<Vec<(String, String)>>,
 }
 
 thread_local! {
@@ -42,7 +44,7 @@ pub struct Tools;
 
 impl Tools {
     pub fn new(script: impl FnMut(&str, &[&str]) -> Option<Reply> + 'static) -> Tools {
-        STATE.with(|s| *s.borrow_mut() = Some(State { script: Box::new(script), calls: Vec::new() }));
+        STATE.with(|s| *s.borrow_mut() = Some(State { script: Box::new(script), calls: Vec::new(), envs: Vec::new() }));
         Tools
     }
 
@@ -68,6 +70,16 @@ impl Tools {
     pub fn called(&self, text: &str) -> bool {
         self.calls().iter().any(|c| c.contains(text))
     }
+
+    /// The value of `name` in the environment of the last call containing `text`.
+    pub fn env_of(&self, text: &str, name: &str) -> Option<String> {
+        STATE.with(|s| {
+            let guard = s.borrow();
+            let st = guard.as_ref()?;
+            let at = st.calls.iter().rposition(|c| c.contains(text))?;
+            st.envs[at].iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.clone())
+        })
+    }
 }
 
 impl Drop for Tools {
@@ -83,8 +95,8 @@ pub fn scripted() -> bool {
 }
 
 /// The scripted answer to `program args`, when a test scripts the tools on this thread.
-pub(super) fn answer(program: &'static str, args: &[&str]) -> Option<Result<String>> {
-    Some(match reply(program, args)? {
+pub(super) fn answer(program: &'static str, args: &[&str], env: &[(String, String)]) -> Option<Result<String>> {
+    Some(match reply(program, args, env)? {
         Some(Reply::Out(out)) => Ok(out),
         Some(Reply::Fail(stderr)) => Err(super::failed(program, args, stderr)),
         None => Err(Error::ToolMissing { tool: program }),
@@ -92,8 +104,8 @@ pub(super) fn answer(program: &'static str, args: &[&str]) -> Option<Result<Stri
 }
 
 /// [`answer`] for a streamed tool: its output lines (stderr too, on a failure) go to `on_line`.
-pub(super) fn answer_stream(program: &'static str, args: &[&str], mut on_line: impl FnMut(String)) -> Option<Result<()>> {
-    let reply = reply(program, args)?;
+pub(super) fn answer_stream(program: &'static str, args: &[&str], env: &[(String, String)], mut on_line: impl FnMut(String)) -> Option<Result<()>> {
+    let reply = reply(program, args, env)?;
     if let Some(Reply::Out(text) | Reply::Fail(text)) = &reply {
         text.lines().for_each(|l| on_line(l.to_string()));
     }
@@ -108,7 +120,7 @@ pub(super) fn answer_stream(program: &'static str, args: &[&str], mut on_line: i
 /// path: a missing tool and a failure say what `run_step` says for them.
 pub fn answer_step(program: &str, args: &[String], on_line: &mut impl FnMut(String)) -> Option<Result<()>> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let reply = reply(program, &args)?;
+    let reply = reply(program, &args, &[])?;
     if let Some(Reply::Out(text) | Reply::Fail(text)) = &reply {
         text.lines().for_each(|l| on_line(l.to_string()));
     }
@@ -119,11 +131,12 @@ pub fn answer_step(program: &str, args: &[String], on_line: &mut impl FnMut(Stri
     })
 }
 
-fn reply(program: &str, args: &[&str]) -> Option<Option<Reply>> {
+fn reply(program: &str, args: &[&str], env: &[(String, String)]) -> Option<Option<Reply>> {
     STATE.with(|s| {
         let mut guard = s.borrow_mut();
         let st = guard.as_mut()?;
         st.calls.push(std::iter::once(program).chain(args.iter().copied()).collect::<Vec<_>>().join(" "));
+        st.envs.push(env.to_vec());
         Some((st.script)(program, args))
     })
 }
