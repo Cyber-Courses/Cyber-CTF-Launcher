@@ -131,8 +131,21 @@ pub async fn machine_selftest_prefetch(app: AppHandle, kind: Kind, provider: Opt
     }
 }
 
+/// One self-test of a kind at a time in this app: the Machine window and the onboarding both run
+/// them, and two runs share the test's Compose project, folder and VM, so each tore the other's
+/// down. A second run waits for the first.
+fn one_at_a_time(kind: Kind) -> &'static tokio::sync::Mutex<()> {
+    static DOCKER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    static VM: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    match kind {
+        Kind::Docker => &DOCKER,
+        Kind::Vm => &VM,
+    }
+}
+
 #[tauri::command]
 pub async fn machine_selftest(app: AppHandle, kind: Kind, provider: Option<Provider>, events: Channel<Event>) -> Result<()> {
+    let _alone = one_at_a_time(kind).lock().await;
     let r = Reporter(events);
     match kind {
         Kind::Docker => docker::run_test(&work_dir(&app, "docker")?, &r).await,
@@ -223,6 +236,23 @@ mod tests {
         assert_eq!(done, ["engine:ok", "pull:ok", "start:ok", "network:ok", "port:ok", "cleanup:ok"]);
         assert!(tools.called("down -v --remove-orphans"));
         machine_selftest_prefetch(t.handle().clone(), Kind::Docker, None).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_second_test_of_a_kind_waits_for_the_first() {
+        // Regression: the Machine window's and the onboarding's runs shared the test project and
+        // tore each other's test lab down.
+        use crate::exec::fake::Tools;
+        let t = crate::test_app::TestApp::new();
+        let tools = Tools::rules(&[]);
+        let first = one_at_a_time(Kind::Docker).lock().await;
+        let (channel, seen) = events();
+        let second = tokio::time::timeout(std::time::Duration::from_millis(200), machine_selftest(t.handle().clone(), Kind::Docker, None, channel)).await;
+        assert!(second.is_err(), "it waits");
+        assert!(tools.calls().is_empty() && seen.lock().unwrap().is_empty());
+        drop(first);
+        // A test of the other kind isn't held up by it.
+        let _vm = one_at_a_time(Kind::Vm).try_lock().expect("independent");
     }
 
     #[tokio::test]

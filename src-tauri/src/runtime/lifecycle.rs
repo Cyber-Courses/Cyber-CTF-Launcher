@@ -339,6 +339,18 @@ pub async fn provision_lab(app: &AppHandle, id: &str, runtime: Runtime, machine:
     provision(app, &lab_dir(app, id)?, id, runtime, machine, log).await
 }
 
+/// How lab `id` runs on this machine, for a Stop of what the Machine page found of it there
+/// (`in_vm`: its VMs, else its containers). `None` when it isn't an installed lab that runs here
+/// (removed since, the self-test, or marked as running on a server host): its leftovers then go
+/// by name.
+pub fn runtime_here(app: &AppHandle, id: &str, in_vm: bool) -> Option<Runtime> {
+    let dir = lab_dir(app, id).ok()?;
+    if server::marked_host(&dir).is_some_and(|h| !h.is_empty()) {
+        return None;
+    }
+    Some(if in_vm && local_vm(&dir).is_none() { Runtime::Vm } else { Runtime::Docker })
+}
+
 /// Stops lab `id` wherever it runs: the one Stop of the lab page, the Machine page and the
 /// hosted agent. Marked as stopping from the start: ending a deploy can take minutes (Terraform
 /// is interrupted and waited for), during which the page and the quit guard must see a stop, and

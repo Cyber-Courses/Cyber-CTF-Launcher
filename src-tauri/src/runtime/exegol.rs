@@ -106,8 +106,15 @@ pub async fn start(id: &str, image: &str, mut log: impl FnMut(String)) -> Result
     }
     let attack_net = format!("cyberctf-{id}-attack");
     // Own network first, then join the lab network: a distinct attack segment that can
-    // still reach the targets (so the attacker is not on the same subnet as the lab).
-    let _ = run("docker", &["network", "create", &attack_net], None).await;
+    // still reach the targets (so the attacker is not on the same subnet as the lab). Inside the
+    // lab's own address room, not a block from Docker's default pool, which a later lab's
+    // instance could need.
+    let mut create = vec!["network".to_string(), "create".to_string()];
+    if let Some(subnet) = attack_subnet(id, &lab_nets).await {
+        create.extend(["--subnet".to_string(), subnet]);
+    }
+    create.push(attack_net.clone());
+    let _ = run("docker", &create.iter().map(String::as_str).collect::<Vec<_>>(), None).await;
     // Clear any previous attack box so a re-launch is clean.
     let _ = run("docker", &["rm", "-f", &name], None).await;
     log(format!("Starting the attack box on {attack_net}…"));
@@ -138,6 +145,29 @@ pub async fn start(id: &str, image: &str, mut log: impl FnMut(String)) -> Result
     }
     log("✓ Attack box ready — open a shell to start.".into());
     Ok(())
+}
+
+/// A free /24 for the attack network in the /16 of the lab's first network (see
+/// [`pick_attack_subnet`]); `None` when Docker can't say, and Docker then picks one.
+async fn attack_subnet(id: &str, lab_nets: &[String]) -> Option<String> {
+    let mut args = vec!["network", "inspect", "-f", "{{range .IPAM.Config}}{{.Subnet}} {{end}}"];
+    args.extend(lab_nets.iter().map(String::as_str));
+    let lab: Vec<String> = run_read("docker", &args, None).await.ok()?.split_whitespace().filter(|s| !s.contains(':')).map(str::to_string).collect();
+    pick_attack_subnet(&lab, &super::docker::subnets_in_use(id).await)
+}
+
+/// The highest /24 of the /16 the lab's first network (`lab`, its subnets) is in that overlaps
+/// none of the lab's networks nor `in_use` (every other Docker network): next to the lab, out of
+/// the default pool, and in use from then on, so a later lab's instance is picked around it.
+fn pick_attack_subnet(lab: &[String], in_use: &[String]) -> Option<String> {
+    let (first, _) = super::lab::ipv4_range(lab.first()?)?;
+    let room = first & 0xFFFF_0000;
+    let taken: Vec<(u32, u32)> = lab.iter().chain(in_use).filter_map(|c| super::lab::ipv4_range(c)).collect();
+    (0..=255u32)
+        .rev()
+        .map(|c| room | (c << 8))
+        .find(|&lo| taken.iter().all(|&(a, b)| lo + 255 < a || b < lo))
+        .map(|lo| format!("{}/24", std::net::Ipv4Addr::from(lo)))
 }
 
 /// Plugs a running attack box into every current lab network (a lab restarted, or updated to
@@ -343,7 +373,19 @@ fn clear_old_scripts(dir: &std::path::Path, ttl: std::time::Duration) {
 mod tests {
     #[cfg(target_os = "linux")]
     use super::{SESSION_VAR, end_session_script};
-    use super::{applescript_string, main_first};
+    use super::{applescript_string, main_first, pick_attack_subnet};
+
+    #[test]
+    fn the_attack_network_takes_a_free_block_beside_the_lab() {
+        // Regression: it was created with no subnet, taking a block from Docker's default pool.
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(pick_attack_subnet(&s(&["10.31.0.0/24", "10.31.1.0/24"]), &[]).as_deref(), Some("10.31.255.0/24"));
+        // Its top block is taken (by another network): the next one down.
+        assert_eq!(pick_attack_subnet(&s(&["10.31.0.0/24"]), &s(&["10.31.255.0/24", "172.17.0.0/16"])).as_deref(), Some("10.31.254.0/24"));
+        // A lab filling its whole /16, or no lab subnet known: Docker picks.
+        assert_eq!(pick_attack_subnet(&s(&["10.31.0.0/16"]), &[]), None);
+        assert_eq!(pick_attack_subnet(&[], &[]), None);
+    }
 
     #[test]
     fn main_lab_network_comes_first() {

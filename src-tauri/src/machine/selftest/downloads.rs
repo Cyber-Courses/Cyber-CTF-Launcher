@@ -12,11 +12,13 @@ use std::time::Duration;
 use super::docker::IMAGE;
 use super::vm::pick_box;
 use crate::error::Result;
-use crate::exec::{run, stream};
+use crate::exec::{run, run_env_timed, stream};
 use crate::runtime::providers::Provider;
 
 static DOCKER_DL: AtomicBool = AtomicBool::new(false);
 static VM_DL: AtomicBool = AtomicBool::new(false);
+/// The test image is 2 MB: past this the engine is stuck, not the network slow.
+const PULL_LIMIT: Duration = Duration::from_secs(300);
 /// Last line of the VM box download, so a test waiting on it can show progress.
 static VM_DL_LINE: Mutex<String> = Mutex::new(String::new());
 
@@ -44,7 +46,7 @@ pub(super) async fn ensure_image() -> Result<bool> {
             return Ok(true);
         }
         if let Some(_busy) = Busy::try_take(&DOCKER_DL) {
-            run("docker", &["pull", "-q", IMAGE], None).await?;
+            run_env_timed("docker", &["pull", "-q", IMAGE], None, &[], PULL_LIMIT).await?;
             return Ok(waited);
         }
         waited = true;

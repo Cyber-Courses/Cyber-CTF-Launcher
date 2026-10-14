@@ -92,34 +92,72 @@ pub fn instance(dir: &Path) -> Option<u8> {
 /// different numbers can still land on one subnet; Docker would refuse the second. Returns
 /// the lab's number.
 pub fn ensure_instance(labs: &Path, dir: &Path, in_use: &[String], elsewhere: &[u8]) -> Result<u8> {
-    if let Some(n) = instance(dir) {
-        return Ok(n);
+    let _picking = lock_instances(labs)?;
+    match instance(dir) {
+        Some(n) => Ok(n),
+        None => pick_instance(labs, dir, in_use, elsewhere),
     }
-    let mut taken: Vec<u8> =
-        std::fs::read_dir(labs).map(|entries| entries.filter_map(|e| e.ok()).filter_map(|e| instance(&e.path())).collect()).unwrap_or_default();
+}
+
+/// [`ensure_instance`] at a start, for a lab that isn't running: its number stays unless its
+/// blocks overlap one of `in_use` now (picked while Docker was down and couldn't say what it
+/// had, or taken since), in which case it moves to a free one. Docker would otherwise refuse
+/// its networks ("Pool overlaps").
+pub fn recheck_instance(labs: &Path, dir: &Path, in_use: &[String], elsewhere: &[u8]) -> Result<u8> {
+    // A lab without a readable spec can't start: nothing to place, nothing written.
+    let spec = spec(dir)?;
+    let _picking = lock_instances(labs)?;
+    match instance(dir) {
+        Some(n) if blocks_clear(Some(&spec), n, &ranges(in_use)) => Ok(n),
+        _ => pick_instance(labs, dir, in_use, elsewhere),
+    }
+}
+
+/// Held (an OS lock on `<labs>/.instances.lock`, across processes) while an instance is picked
+/// and saved: two labs installing at once read the same free number otherwise.
+fn lock_instances(labs: &Path) -> Result<std::fs::File> {
+    std::fs::create_dir_all(labs)?;
+    let file = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(labs.join(".instances.lock"))?;
+    file.lock()?;
+    Ok(file)
+}
+
+/// The lowest instance number free for lab `dir` (see [`ensure_instance`]), saved in its marker.
+fn pick_instance(labs: &Path, dir: &Path, in_use: &[String], elsewhere: &[u8]) -> Result<u8> {
+    let mut taken: Vec<u8> = std::fs::read_dir(labs)
+        .map(|entries| entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p != dir).filter_map(|p| instance(&p)).collect())
+        .unwrap_or_default();
     taken.extend(elsewhere);
     let spec = spec(dir).ok();
-    let used: Vec<(u32, u32)> = in_use.iter().filter_map(|c| range(c)).collect();
-    let clear = |n: u8| -> bool {
-        let Some(spec) = &spec else { return true };
-        let Ok(as_n) = isoloom_core::instance::apply(spec, n) else { return false };
-        let snapshot = isoloom_core::resolved::resolve_with(&as_n, Some(n));
-        snapshot["networks"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .filter_map(|(_, net)| net["docker_cidr"].as_str().and_then(range))
-            .all(|(lo, hi)| used.iter().all(|&(a, b)| hi < a || b < lo))
-    };
+    let used = ranges(in_use);
     let n = (1..=isoloom_core::instance::MAX)
-        .find(|n| !taken.contains(n) && clear(*n))
+        .find(|n| !taken.contains(n) && blocks_clear(spec.as_ref(), *n, &used))
         .ok_or_else(|| Error::Invalid("no free instance for this lab: 99 labs or networks already take its room on this machine".into()))?;
-    std::fs::write(dir.join(INSTANCE_MARKER), n.to_string())?;
+    crate::atomic_file::write(&dir.join(INSTANCE_MARKER), n.to_string())?;
     Ok(n)
 }
 
+/// The IPv4 ranges of `cidrs`.
+fn ranges(cidrs: &[String]) -> Vec<(u32, u32)> {
+    cidrs.iter().filter_map(|c| ipv4_range(c)).collect()
+}
+
+/// Whether the Docker blocks of `spec` as instance `n` overlap none of `used`. A lab whose spec
+/// can't be read has no blocks to collide.
+fn blocks_clear(spec: Option<&Spec>, n: u8, used: &[(u32, u32)]) -> bool {
+    let Some(spec) = spec else { return true };
+    let Ok(as_n) = isoloom_core::instance::apply(spec, n) else { return false };
+    let snapshot = isoloom_core::resolved::resolve_with(&as_n, Some(n));
+    snapshot["networks"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(_, net)| net["docker_cidr"].as_str().and_then(ipv4_range))
+        .all(|(lo, hi)| used.iter().all(|&(a, b)| hi < a || b < lo))
+}
+
 /// An IPv4 CIDR as its first and last address.
-fn range(cidr: &str) -> Option<(u32, u32)> {
+pub fn ipv4_range(cidr: &str) -> Option<(u32, u32)> {
     let (ip, len) = cidr.split_once('/')?;
     let ip: u32 = ip.parse::<std::net::Ipv4Addr>().ok()?.into();
     let len: u32 = len.parse().ok().filter(|l| *l <= 32)?;
@@ -508,10 +546,54 @@ mod tests {
     }
 
     #[test]
+    fn a_stopped_labs_instance_moves_when_its_blocks_are_taken_now() {
+        // Regression: the instance was picked once at install, with Docker down (no networks to
+        // avoid), and kept for good: the start then failed on "Pool overlaps".
+        let labs = std::env::temp_dir().join(format!("cyberctf-labs-{}", rand::random::<u32>()));
+        let a = labs.join("a");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::write(a.join("isoloom.yml"), SPEC).unwrap();
+        assert_eq!(ensure_instance(&labs, &a, &[], &[]).unwrap(), 1, "picked blind");
+        // Docker now has a network on instance 1's block (10.31): the start moves the lab to 2.
+        assert_eq!(recheck_instance(&labs, &a, &["10.31.0.0/24".into()], &[]).unwrap(), 2);
+        assert_eq!(instance(&a), Some(2));
+        // Clear: kept.
+        assert_eq!(recheck_instance(&labs, &a, &["10.31.0.0/24".into()], &[]).unwrap(), 2);
+        // Without a number yet, one is picked.
+        std::fs::remove_file(a.join(INSTANCE_MARKER)).unwrap();
+        assert_eq!(recheck_instance(&labs, &a, &[], &[]).unwrap(), 1);
+        std::fs::remove_dir_all(labs).unwrap();
+    }
+
+    #[test]
+    fn labs_picking_their_instances_at_once_get_different_ones() {
+        let labs = std::env::temp_dir().join(format!("cyberctf-labs-{}", rand::random::<u32>()));
+        let dirs: Vec<_> = (0..8).map(|i| labs.join(format!("lab{i}"))).collect();
+        for d in &dirs {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let picks: Vec<u8> = dirs
+            .iter()
+            .map(|d| {
+                let (labs, d) = (labs.clone(), d.clone());
+                std::thread::spawn(move || ensure_instance(&labs, &d, &[], &[]).unwrap())
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect();
+        let mut unique = picks.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), picks.len(), "{picks:?}");
+        std::fs::remove_dir_all(labs).unwrap();
+    }
+
+    #[test]
     fn cidr_ranges() {
-        assert_eq!(range("10.31.0.0/24"), Some((u32::from(std::net::Ipv4Addr::new(10, 31, 0, 0)), u32::from(std::net::Ipv4Addr::new(10, 31, 0, 255)))));
-        assert_eq!(range("10.31.5.7/16").map(|r| r.0), Some(u32::from(std::net::Ipv4Addr::new(10, 31, 0, 0))));
-        assert_eq!(range("fd00::/64"), None);
+        assert_eq!(ipv4_range("10.31.0.0/24"), Some((u32::from(std::net::Ipv4Addr::new(10, 31, 0, 0)), u32::from(std::net::Ipv4Addr::new(10, 31, 0, 255)))));
+        assert_eq!(ipv4_range("10.31.5.7/16").map(|r| r.0), Some(u32::from(std::net::Ipv4Addr::new(10, 31, 0, 0))));
+        assert_eq!(ipv4_range("fd00::/64"), None);
     }
 
     #[test]
@@ -623,13 +705,13 @@ mod tests {
 
     #[test]
     fn cidr_ranges_at_the_prefix_boundaries() {
-        let all = range("0.0.0.0/0").unwrap();
+        let all = ipv4_range("0.0.0.0/0").unwrap();
         assert_eq!(all, (0, u32::MAX));
-        let one = range("10.1.2.3/32").unwrap();
+        let one = ipv4_range("10.1.2.3/32").unwrap();
         assert_eq!(one.0, one.1);
         assert_eq!(one.0, u32::from(std::net::Ipv4Addr::new(10, 1, 2, 3)));
         for bad in ["10.0.0.0/33", "10.0.0.0/-1", "10.0.0.0/", "/24", "10.0.0.0", "256.0.0.0/8", "10.0.0.0/24/8", " 10.0.0.0/24", "10.0.0.0/ 24"] {
-            assert_eq!(range(bad), None, "{bad}");
+            assert_eq!(ipv4_range(bad), None, "{bad}");
         }
     }
 

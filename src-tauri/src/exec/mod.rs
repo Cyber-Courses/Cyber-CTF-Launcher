@@ -111,6 +111,17 @@ fn failed(program: &str, args: &[&str], stderr: String) -> Error {
     Error::CommandFailed { command: format!("{program} {}", args.join(" ")), stderr }
 }
 
+/// What a tool given up on after `limit` failed with (see [`timed_out`]).
+fn timed_out_after(limit: Duration) -> String {
+    format!("timed out after {}s (the tool or its backend may be stuck)", limit.as_secs())
+}
+
+/// `run`, a tool run (or several) described as `what`, given up after `limit` like a timed tool:
+/// dropping it kills what it started (`kill_on_drop`, and its process group).
+pub async fn within<T>(what: &str, limit: Duration, run: impl std::future::Future<Output = Result<T>>) -> Result<T> {
+    tokio::time::timeout(limit, run).await.unwrap_or_else(|_| Err(Error::CommandFailed { command: what.to_string(), stderr: timed_out_after(limit) }))
+}
+
 /// Whether `e` is a timed tool that ran out of time (and was killed), not one that failed.
 pub fn timed_out(e: &Error) -> bool {
     matches!(e, Error::CommandFailed { stderr, .. } if stderr.starts_with("timed out after"))
@@ -177,7 +188,7 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
             let child = cmd.spawn().map_err(spawn_error(program))?;
             let group = GroupGuard::new(&child);
             let Ok(waited) = tokio::time::timeout(dur, child.wait_with_output()).await else {
-                return Err(failed(program, args, format!("timed out after {}s (the tool or its backend may be stuck)", dur.as_secs())));
+                return Err(failed(program, args, timed_out_after(dur)));
             };
             group.disarm();
             waited.map_err(spawn_error(program))?
@@ -316,6 +327,14 @@ fn take_line(buf: &mut Vec<u8>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_run_given_up_on_reads_as_timed_out() {
+        let err = within("docker compose exec", Duration::from_millis(10), std::future::pending::<Result<()>>()).await.unwrap_err();
+        assert!(timed_out(&err), "{err}");
+        assert!(err.to_string().starts_with("`docker compose exec` failed: timed out after"), "{err}");
+        assert_eq!(within("x", Duration::from_secs(1), async { Ok(7) }).await.unwrap(), 7);
+    }
 
     #[cfg(unix)]
     #[tokio::test]

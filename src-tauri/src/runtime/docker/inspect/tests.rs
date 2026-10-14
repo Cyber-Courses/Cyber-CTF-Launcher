@@ -1,7 +1,7 @@
 use super::compose::parse_ps;
 use super::{
-    HostProbe, declared_services, down_serving, first_published_url, is_datastore, is_running, parse_inspect, parse_networks, short_network, status_from_host,
-    tcp_ports,
+    HostProbe, declared_services, down_serving, first_published_url, is_datastore, is_running, open_url, parse_inspect, parse_networks, repository,
+    short_network, status_from_host, tcp_ports,
 };
 use super::{build_status, ipv4_subnets, listed_names, networks_of_others};
 
@@ -255,6 +255,51 @@ fn a_web_app_whose_name_contains_a_datastore_token_keeps_its_open_url() {
     assert!(!is_datastore(&ps("wordpress", "wordpress:6.4")));
     assert!(!is_datastore(&ps("web", "giftportal/app:1")));
     assert_eq!(first_published_url(&[ps("wordpress", "wordpress:6.4")]).as_deref(), Some("http://127.0.0.1:8080"));
+}
+
+#[test]
+fn web_uis_named_like_a_service_keep_their_open_url_and_databases_dont() {
+    // Regression: `novnc` (a web UI) matched "vnc", `sftpgo` "ftp", `oracle-weblogic` "oracle":
+    // those labs got no Open URL, or the database's.
+    let ps = |svc: &str, image: &str| parse_ps(&format!(r#"[{{"Service":"{svc}","Image":"{image}","State":"running"}}]"#)).pop().unwrap();
+    for (svc, image) in [
+        ("viewer", "theasp/novnc:latest"),
+        ("files", "drakkan/sftpgo:v2"),
+        ("app", "container-registry.oracle.com/middleware/weblogic:14"),
+        ("wls", "vulhub/oracle-weblogic:12"),
+    ] {
+        assert!(!is_datastore(&ps(svc, image)), "{svc} {image}");
+    }
+    for (svc, image) in [
+        ("oracle", "gvenzl/oracle-xe:21"),
+        ("x", "container-registry.oracle.com/database/free:23"),
+        ("shell", "linuxserver/openssh-server"),
+        ("files", "fauria/vsftpd"),
+    ] {
+        assert!(is_datastore(&ps(svc, image)), "{svc} {image}");
+    }
+}
+
+#[test]
+fn an_image_repository_has_no_registry_tag_or_digest() {
+    assert_eq!(repository("wordpress:6.4"), "wordpress");
+    assert_eq!(repository("registry.local:5000/team/novnc:1@sha256:abc"), "team/novnc");
+    assert_eq!(repository("localhost/app"), "app");
+    assert_eq!(repository("team/app"), "team/app");
+}
+
+#[test]
+fn open_goes_to_the_service_the_lab_declares_as_http() {
+    // The declared web service wins over a lower port of a service whose name says nothing.
+    let entries = parse_ps(
+        r#"[{"Service":"portal","Name":"p-portal-1","Image":"acme/portal","State":"running","Publishers":[{"PublishedPort":8443,"TargetPort":80,"Protocol":"tcp"},{"PublishedPort":2222,"TargetPort":22,"Protocol":"tcp"}]},
+            {"Service":"metrics","Name":"p-metrics-1","Image":"acme/agent","State":"running","Publishers":[{"PublishedPort":3000,"TargetPort":3000,"Protocol":"tcp"}]}]"#,
+    );
+    assert_eq!(first_published_url(&entries).as_deref(), Some("http://127.0.0.1:2222"), "by name alone, the lowest port");
+    let declared = parse_inspect("p", "/p-portal-1\t\t{\"isoloom.service.site\":\"http:80\",\"isoloom.service.ssh\":\"tcp:22\"}\n");
+    assert_eq!(open_url(&entries, &declared).as_deref(), Some("http://127.0.0.1:8443"));
+    // Nothing declared: the name-based pick.
+    assert_eq!(open_url(&entries, &Default::default()).as_deref(), Some("http://127.0.0.1:2222"));
 }
 
 #[test]

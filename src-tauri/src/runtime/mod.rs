@@ -57,7 +57,7 @@ pub use launch::deployed_on_server;
 #[cfg(test)]
 pub(crate) use launch::start;
 pub(crate) use launch::start_locked;
-pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, resume_lab, stop_lab};
+pub use lifecycle::{clear_parked, park_lab, provision_lab, reap_expired_labs, resume_lab, runtime_here, stop_lab};
 pub use model::{AttackerAt, Interface, LabStatus, Machine, Network, Output, Park, Place, Port, Service};
 pub use paths::{LOCAL_VM_MARKER, validate_id};
 pub use shell::{ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for, valid_image};

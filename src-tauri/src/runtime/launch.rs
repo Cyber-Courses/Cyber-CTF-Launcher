@@ -184,6 +184,7 @@ async fn start_vm_lab(dir: &Path, runtime: Runtime, provider: Provider, env: &[(
 /// running attack box back into its networks, and record it for Isoloom. Takes the lab folder
 /// (no app handle), so the real-lab tests run exactly this.
 pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+    recheck_instance(dir, id, log).await?;
     let spec = lab::prepare(dir, lab::Target::Docker)?;
     mark_local_vm(dir, None)?;
     docker::start(dir, id, env, &mut *log).await?;
@@ -193,6 +194,19 @@ pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String
     let published = docker::published(dir, id, env).await;
     if let Some(m) = lab::message_at(dir, &spec, lab::Target::Docker, &published) {
         log_lines(&m, log);
+    }
+    Ok(())
+}
+
+/// Checks the lab's instance against the networks Docker has now (an install with Docker down
+/// picked it blind), moving the lab (stopped: its slot was cleared) to a free one if its blocks
+/// are taken. With Docker down there is nothing to check against, and the start says so next.
+async fn recheck_instance(dir: &Path, id: &str, log: &mut impl FnMut(String)) -> Result<()> {
+    let Some(labs) = dir.parent() else { return Ok(()) };
+    let before = lab::instance(dir);
+    let now = lab::recheck_instance(labs, dir, &docker::subnets_in_use(id).await, &lab::registry_instances(dir))?;
+    if before.is_some_and(|b| b != now) {
+        log(format!("Another Docker network took this lab's addresses: it moves to free ones (instance {now})."));
     }
     Ok(())
 }
