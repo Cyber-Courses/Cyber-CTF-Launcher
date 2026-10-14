@@ -20,6 +20,7 @@ import { ignore } from "@/lib/failure";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import { getDeploySnapshot } from "@/lib/deploy-store";
 import { useT } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 export function CloudScreen() {
   const t = useT();
@@ -45,14 +46,14 @@ export function CloudScreen() {
       });
   }, [allHosts]);
 
-  const openSetup = (id?: string) => serverOpenSetup(id ?? null, "cloud").catch((e) => setError(String(e)));
+  const openSetup = (id?: string) => serverOpenSetup(id ?? null, "cloud").catch((e) => setError(describeError(e)));
 
   async function remove(id: string) {
     try {
       await serverRemove(id);
       reload();
     } catch (e) {
-      setError(String(e));
+      setError(describeError(e));
     }
   }
 

@@ -3,7 +3,7 @@
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CalloutRow } from "@/features/machine/machine-parts";
-import { failureHintKey, failureKind, failureTitleKey } from "@/features/labs/failure-hints";
+import { failureHintKey, failureTitleKey, type FailureKind } from "@/features/labs/failure-hints";
 import type { LabOperation } from "@/features/labs/lab-detail/lab-state";
 import { useT } from "@/lib/i18n";
 
@@ -16,6 +16,7 @@ export function FailureNotice({
   title,
   op,
   message,
+  kind,
   stillUp,
   onDismiss,
 }: {
@@ -23,13 +24,14 @@ export function FailureNotice({
   title: string;
   op: LabOperation;
   message: string;
+  /** What kind of failure it is, when it has a known fix. */
+  kind: FailureKind | null;
   /** The lab still runs (a stop that failed). */
   stillUp: boolean;
   onDismiss: () => void;
 }) {
   const t = useT();
   const key = failureTitleKey(op);
-  const kind = failureKind(message);
   if (!key) return null;
   return (
     <CalloutRow

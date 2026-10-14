@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SERVER_CHANGED, serverList, serverTest, type ServerList, type ServerTest } from "@/lib/tauri";
+import { SERVER_CHANGED, serverList, serverTest, type ServerList } from "@/lib/tauri";
 import { useTauriEvent } from "@/lib/use-tauri-event";
-
-/** A test that couldn't run, in the shape of one that failed (the row shows why). */
-export const failedTest = (e: unknown): ServerTest => ({ ok: false, reachable: false, authenticated: null, latencyMs: null, message: String(e), checks: [] });
+import { describeError } from "@/lib/errors";
+import { failedTest, type HostTest } from "@/features/servers/servers-model";
 
 /** Tests a server or cloud account; never rejects (a failure to test reads as a failed test). */
-export const testHost = (id: string) => serverTest(id).catch(failedTest);
+export const testHost = (id: string): Promise<HostTest> => serverTest(id).catch(failedTest);
 
 /**
  * The saved servers and cloud accounts, read on mount, again with `reload()`, and whenever the
@@ -28,7 +27,7 @@ export function useServerList({ onLoaded, onChanged }: { onLoaded?: (list: Serve
         setError(null);
         loaded.current?.(l);
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(describeError(e)));
   }, []);
   useEffect(reload, [reload]);
   // The setup window saves hosts; refresh when it says so.
@@ -41,7 +40,7 @@ export function useServerList({ onLoaded, onChanged }: { onLoaded?: (list: Serve
 
 /** The last test of each host ("testing" while one runs), and `test(id)` to run one. */
 export function useHostTests() {
-  const [tests, setTests] = useState<Record<string, ServerTest | "testing">>({});
+  const [tests, setTests] = useState<Record<string, HostTest | "testing">>({});
   const test = useCallback(async (id: string) => {
     setTests((t) => ({ ...t, [id]: "testing" }));
     const r = await testHost(id);

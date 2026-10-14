@@ -8,6 +8,7 @@ import { translate } from "@/lib/i18n";
 import { ignore } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
 import { structurallyEqual } from "@/lib/equal";
+import { describeError } from "@/lib/errors";
 
 /** What the attack box is: a container on a container lab's networks, or the learner's own VM
  *  (a Vagrant box) beside a VM lab, on the same hypervisor. */
@@ -59,7 +60,7 @@ function useAttackBoxRun(refresh: () => void) {
       try {
         await fn((line) => setLog((l) => [...l, line]));
       } catch (e) {
-        setLog((l) => [...l, `✗ ${String(e)}`]);
+        setLog((l) => [...l, `✗ ${describeError(e)}`]);
       } finally {
         setBusy(false);
         refresh();

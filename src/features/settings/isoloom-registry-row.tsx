@@ -6,6 +6,7 @@ import { Row } from "@/features/settings/settings-layout";
 import { isoloomRegistryGet, isoloomRegistrySet } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 import { warn } from "@/lib/failure";
+import { describeError } from "@/lib/errors";
 
 /** Whether the labs started here are recorded in Isoloom's registry (`~/.isoloom/status.yml`),
  *  so the `isoloom` command line sees them. On by default; labs work the same without it. */
@@ -34,7 +35,7 @@ export function IsoloomRegistryRow({ onSaved }: { onSaved: () => void }) {
                 setOn(saved);
                 onSaved();
               })
-              .catch((e) => setError(String(e)));
+              .catch((e) => setError(describeError(e)));
           }}
         />
       }

@@ -16,12 +16,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::runtime::{self, Runtime};
 
-/// What a launch that failed for want of the backend says when the lab can start offline. The app
-/// knows it by "can start offline" (lab-operations.ts) and asks the player.
-pub const OFFLINE_READY: &str = "This lab is installed here, so it can start offline, without saving progress.";
 
 /// The first line of an offline start's log.
 pub const STARTING_OFFLINE: &str = "Starting offline: progress and evidence aren't saved until the lab is started online again.";
@@ -97,7 +94,8 @@ pub fn instead_of(failed: Error, base: &Path, lab_id: &str, user: Option<&str>, 
     let Error::Unreachable(why) = failed else { return Err(failed) };
     match offline_spec(base, lab_id, user) {
         Ok(spec) if offline => Ok(spec),
-        Ok(_) => Err(Error::Unreachable(format!("{why}. {OFFLINE_READY}"))),
+        // The app knows it by its code (`offlineReady`) and asks the player.
+        Ok(_) => Err(Error::coded(Code::OfflineReady { detail: why })),
         Err(not_ready) if offline => Err(not_ready),
         Err(_) => Err(Error::Unreachable(why)),
     }
@@ -154,8 +152,7 @@ mod tests {
         keep(&base, &start_lab_answer("web"), ADA).unwrap();
         install(&base, "web", SHA);
         let offered = instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err();
-        assert!(matches!(offered, Error::Unreachable(_)));
-        assert_eq!(offered.to_string(), format!("API unreachable: connection refused. {OFFLINE_READY}"));
+        assert_eq!(offered.code(), Code::OfflineReady { detail: "API unreachable: connection refused".into() });
         let spec = instead_of(unreachable(), &base, "web", Some(ADA), true).unwrap();
         assert_eq!(spec, json!({ "labId": "web", "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": SHA, "env": [] }));
         std::fs::remove_dir_all(base).unwrap();
@@ -166,7 +163,7 @@ mod tests {
         let base = base();
         keep(&base, &start_lab_answer("web"), ADA).unwrap();
         install(&base, "web", SHA);
-        for answered in [Error::Invalid("You don't have access to this lab.".into()), Error::Invalid(crate::account::auth::SIGNED_OUT.into())] {
+        for answered in [Error::Invalid("You don't have access to this lab.".into()), Error::coded(Code::SignedOut)] {
             let message = answered.to_string();
             let err = instead_of(answered, &base, "web", Some(ADA), true).unwrap_err();
             assert_eq!(err.to_string(), message);
@@ -179,7 +176,7 @@ mod tests {
         let base = base();
         // Never started online here: the failure as it was, and no offline start.
         install(&base, "web", SHA);
-        assert_eq!(instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err().to_string(), "API unreachable: connection refused");
+        assert_eq!(instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err().code(), Code::Unreachable { detail: "API unreachable: connection refused".into() });
         assert!(
             instead_of(unreachable(), &base, "web", Some(ADA), true)
                 .unwrap_err()
@@ -189,7 +186,7 @@ mod tests {
         // Another version installed (or none): nothing would run without a download.
         keep(&base, &start_lab_answer("web"), ADA).unwrap();
         install(&base, "web", "ffffffffffffffffffffffffffffffffffffffff");
-        assert!(!instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err().to_string().contains(OFFLINE_READY));
+        assert!(!matches!(instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err().code(), Code::OfflineReady { .. }));
         assert!(instead_of(unreachable(), &base, "web", Some(ADA), true).unwrap_err().to_string().contains("isn't the one last started online"));
         // Another lab's kept answer never starts this one, and a hostile id is refused.
         keep(&base, &start_lab_answer("other"), ADA).unwrap();
@@ -216,7 +213,7 @@ mod tests {
         cloud["runtime"] = json!("CLOUD");
         keep(&base, &cloud, ADA).unwrap();
         install(&base, "web", SHA);
-        assert!(!instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err().to_string().contains(OFFLINE_READY));
+        assert!(!matches!(instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err().code(), Code::OfflineReady { .. }));
         assert!(instead_of(unreachable(), &base, "web", Some(ADA), true).unwrap_err().to_string().contains("can't start offline"));
         std::fs::remove_dir_all(base).unwrap();
     }

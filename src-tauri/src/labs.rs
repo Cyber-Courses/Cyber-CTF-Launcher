@@ -325,7 +325,7 @@ async fn launch_spec(app: &AppHandle, lab_id: &str, offline: bool, logs: &Channe
 /// lab network isn't reachable from this machine). `default_ports` publishes a container lab's
 /// services on their own ports instead of random free ones. `offline` starts the installed lab
 /// without the backend when it can't be reached (no progress saved): the player's answer to a
-/// launch that failed saying it "can start offline".
+/// launch that failed with `Code::OfflineReady`.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn lab_launch(

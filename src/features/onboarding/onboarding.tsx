@@ -13,6 +13,7 @@ import { useAuthActions } from "@/features/account/account";
 import { authStatus, systemCheck, type AuthStatus, type SystemReport } from "@/lib/tauri";
 import { usePoll } from "@/lib/use-poll";
 import { useT } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 /** Machine checks while onboarding: an install finished in a native installer shows up on its own. */
 const CHECK_POLL_MS = 5000;
@@ -43,7 +44,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
       setReport(r);
       setCheckError(null);
     },
-    onError: (e) => setCheckError(String(e)),
+    onError: (e) => setCheckError(describeError(e)),
   });
 
   // The machine steps are the same ones the "Set up this machine" window shows.

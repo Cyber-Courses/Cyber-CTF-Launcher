@@ -1,10 +1,23 @@
 import type { MessageKey } from "@/lib/i18n";
+import type { ErrorCode } from "@/lib/errors";
 
-// What a failed lab operation's error means, for a hint on what to do about it. The backend
-// returns its errors as plain strings (src-tauri: error.rs, the runtimes' `Error::Invalid`
-// messages, and the tools' own output), so they are recognised by their words.
+// What a failed lab operation's error means, for a hint on what to do about it. An error this
+// window saw is known by its code (src-tauri error.rs `Code`). A failure read back from a
+// worker's log file (a deploy that ran through a reload) is only text, in English, and so is
+// what the tools themselves print (Docker's bind error, a full disk): those are recognised by
+// their words.
 
 export type FailureKind = "ports" | "docker" | "dockerAccess" | "signedOut" | "network" | "disk" | "tool";
+
+const BY_CODE: Partial<Record<ErrorCode, FailureKind>> = {
+  portInUse: "ports",
+  dockerNotRunning: "docker",
+  dockerDenied: "dockerAccess",
+  dockerDeniedWindows: "dockerAccess",
+  signedOut: "signedOut",
+  sessionExpired: "signedOut",
+  toolMissing: "tool",
+};
 
 // Most specific first: Docker's "can't use it yet" message also says "Docker is running".
 const RULES: [FailureKind, RegExp][] = [
@@ -21,8 +34,11 @@ const RULES: [FailureKind, RegExp][] = [
   ["network", /error sending request|could not resolve host|couldn't download|network is unreachable|connection refused|tls handshake/i],
 ];
 
-/** What kind of failure `message` is, when it is one with a known fix. */
-export function failureKind(message: string | null | undefined): FailureKind | null {
+/** What kind of failure this is, when it is one with a known fix: by the error's `code` when
+ *  there is one, else by the words of `message`. */
+export function failureKind(message: string | null | undefined, code?: ErrorCode | null): FailureKind | null {
+  const known = code ? BY_CODE[code] : undefined;
+  if (known) return known;
   if (!message) return null;
   return RULES.find(([, re]) => re.test(message))?.[0] ?? null;
 }

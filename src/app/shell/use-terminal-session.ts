@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { ignore } from "@/lib/failure";
 import { terminalClose, terminalOpen, terminalResize, terminalWrite, type Runtime, type ShellKind } from "@/lib/tauri";
+import { describeError } from "@/lib/errors";
 
 /** Reads a CSS custom property from the page, so the terminal follows the app's theme. */
 const cssVar = (name: string, fallback: string) =>
@@ -67,7 +68,7 @@ export function useTerminalSession(
         session = s;
         setState((prev) => (prev.kind === "connecting" ? { kind: "open" } : prev));
       })
-      .catch((err) => !disposed && setState({ kind: "failed", message: String(err) }));
+      .catch((err) => !disposed && setState({ kind: "failed", message: describeError(err) }));
 
     return () => {
       disposed = true;

@@ -1,4 +1,21 @@
 {
   "clipboard": "Kopieren in die Zwischenablage fehlgeschlagen",
-  "browser": "Dein Browser konnte nicht geöffnet werden"
+  "browser": "Dein Browser konnte nicht geöffnet werden",
+  "codes": {
+    "signedOut": "Du bist abgemeldet. Melde dich erneut an, um fortzufahren.",
+    "sessionExpired": "Deine Sitzung ist abgelaufen: Du bist abgemeldet. Melde dich erneut an, um fortzufahren.",
+    "loginTimeout": "Die Anmeldung wurde nicht innerhalb von {minutes} Minuten abgeschlossen und daher abgebrochen. Versuche es erneut.",
+    "noBrowser": "Für die Anmeldung hat sich kein Browser geöffnet. Lege einen Standardbrowser für dieses Konto fest und versuche es erneut.",
+    "alreadyInProgress": "Für dieses Lab läuft bereits ein anderer Vorgang; warte, bis er abgeschlossen ist.",
+    "noPasswordStored": "Für diesen Host ist kein Passwort gespeichert. Bearbeite ihn und gib eines ein.",
+    "portInUse": "Host-Port {port} wird auf diesem Rechner bereits verwendet (von einem anderen Lab oder einer App). Beende, was ihn nutzt, oder starte das Lab mit zufälligen Ports.",
+    "dockerNotRunning": "Docker läuft nicht. Starte deine Container-Engine (Docker Desktop oder unter Linux den docker-Dienst) und versuche es erneut.",
+    "dockerDenied": "Docker läuft, aber dein Konto kann es noch nicht nutzen. Füge dich in einem Terminal der Gruppe docker hinzu (sudo usermod -aG docker {user}), melde dich dann ab und wieder an.",
+    "dockerDeniedWindows": "Docker läuft, aber dein Konto kann es noch nicht nutzen. Füge dich der Gruppe docker-users hinzu (in einem Terminal als Administrator: net localgroup docker-users \"{user}\" /add), melde dich dann ab und wieder an.",
+    "toolMissing": "{tool} ist nicht installiert oder nicht im PATH.",
+    "commandFailed": "{command} ist fehlgeschlagen: {stderr}",
+    "signInCancelled": "Anmeldung abgebrochen.",
+    "unreachable": "Cyber CTF ist nicht erreichbar ({detail}). Prüfe deine Verbindung und versuche es erneut.",
+    "offlineReady": "Cyber CTF ist nicht erreichbar ({detail}). Dieses Lab ist hier installiert und kann daher offline starten, ohne den Fortschritt zu speichern."
+  }
 }

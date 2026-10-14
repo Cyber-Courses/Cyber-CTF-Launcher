@@ -2,15 +2,13 @@
 
 import { useSyncExternalStore } from "react";
 import { authLogin, authLoginCancel, type AuthStatus } from "@/lib/tauri";
+import { describeError, errorCode } from "@/lib/errors";
 
 // The sign-in through the browser, one at a time for the whole window: the sidebar, Settings,
 // the onboarding and the lab pages all start it here and show the same wait, so a second click
 // elsewhere joins it instead of starting another one on another callback port. While it waits,
 // the sign-in link can be copied (a browser that takes the link and shows nothing can't be
 // detected) and the sign-in cancelled.
-
-/** What the backend says when a sign-in was cancelled (error.rs SIGN_IN_CANCELLED). */
-export const SIGN_IN_CANCELLED = "Sign-in cancelled.";
 
 export type SignInState = {
   /** Waiting for the player to finish in the browser. */
@@ -46,11 +44,12 @@ export function signIn(): Promise<AuthStatus | null> {
         return status;
       },
       (e: unknown) => {
-        if (String(e) === SIGN_IN_CANCELLED) {
+        // Cancelled (here, or by another sign-in): not a failure to show.
+        if (errorCode(e) === "signInCancelled") {
           set(IDLE);
           return null;
         }
-        set({ ...IDLE, error: String(e) });
+        set({ ...IDLE, error: describeError(e) });
         throw e;
       },
     )

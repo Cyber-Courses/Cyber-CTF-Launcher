@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import { act, render, renderHook, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OfflineStartPrompt } from "@/features/labs/offline-start-prompt";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import type { Lab } from "@/features/labs/use-labs";
-import { getDeploySnapshot } from "@/lib/deploy-store";
+import { getDeploySnapshot, SIGNED_OUT_EVENT } from "@/lib/deploy-store";
+import { setLocalePreference } from "@/lib/i18n";
+import type { CommandError } from "@/lib/errors";
 import { setAttackBox, setAttackImage, setAutoAttackBox, setPortMode, setVmProvider } from "@/lib/settings";
 import { readyReport as armReport } from "@/test/fixtures";
-import { installTauri, type Call } from "@/test/tauri";
+import { installTauri, rejects, type Call } from "@/test/tauri";
 import { flush } from "@/test/ui";
 
 const dockerLab: Lab = {
@@ -100,7 +102,7 @@ describe("useLabActions: launch", () => {
 
   /** A `lab_launch` failing as the backend does when Cyber CTF can't be reached: the second
    *  time, offline, it runs. Its calls' `offline` flags land in `asked`. */
-  function unreachableBackend(reason: string, asked: unknown[]) {
+  function unreachableBackend(reason: CommandError, asked: unknown[]) {
     return {
       lab_launch: (args: Record<string, unknown> | undefined) => {
         asked.push(args?.offline);
@@ -113,7 +115,7 @@ describe("useLabActions: launch", () => {
   it("offers an offline start when Cyber CTF can't be reached and the lab is installed, and starts it on yes", async () => {
     const offline: unknown[] = [];
     const { hook } = setup(
-      unreachableBackend("API unreachable: offline. This lab is installed here, so it can start offline, without saving progress.", offline),
+      unreachableBackend({ code: "offlineReady", args: { detail: "API unreachable: offline" }, message: "Cyber CTF can't be reached (API unreachable: offline). This lab is installed here, so it can start offline, without saving progress." }, offline),
     );
     const user = userEvent.setup();
     render(<OfflineStartPrompt />);
@@ -133,7 +135,7 @@ describe("useLabActions: launch", () => {
   it("starts nothing offline when the player declines, and says why the launch failed", async () => {
     const offline: unknown[] = [];
     const { hook } = setup(
-      unreachableBackend("API unreachable: offline. This lab is installed here, so it can start offline, without saving progress.", offline),
+      unreachableBackend({ code: "offlineReady", args: { detail: "API unreachable: offline" }, message: "Cyber CTF can't be reached (API unreachable: offline). This lab is installed here, so it can start offline, without saving progress." }, offline),
     );
     const user = userEvent.setup();
     render(<OfflineStartPrompt />);
@@ -145,11 +147,18 @@ describe("useLabActions: launch", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await act(() => done);
     expect(offline).toEqual([false]);
-    expect(logsOf("act-decline").at(-1)).toMatch(/^✗ API unreachable/);
+    expect(logsOf("act-decline").at(-1)).toMatch(/^✗ Cyber CTF can't be reached \(API unreachable: offline\)/);
   });
 
   it("never offers an offline start for a refusal or a lab that can't start offline", async () => {
-    for (const reason of ["You don't have access to this lab.", "API unreachable: offline", "You're signed out. Sign in again to continue."]) {
+    const refusals: CommandError[] = [
+      { code: "other", message: "You don't have access to this lab." },
+      { code: "unreachable", args: { detail: "API unreachable: offline" }, message: "Cyber CTF can't be reached (API unreachable: offline)." },
+      { code: "signedOut", message: "You're signed out. Sign in again to continue." },
+      // The words without the code: the app goes by the code.
+      { code: "other", message: "This lab is installed here, so it can start offline, without saving progress." },
+    ];
+    for (const reason of refusals) {
       const offline: unknown[] = [];
       const { hook } = setup(unreachableBackend(reason, offline));
       render(<OfflineStartPrompt />);
@@ -244,7 +253,7 @@ describe("useLabActions: launch", () => {
     const { calls, hook } = setup();
     await act(() => hook.result.current.launch({ ...vmLab, id: "act-vm-none" }, null, undefined, report));
     expect(launchArgs(calls)).toBeUndefined();
-    expect(logsOf("act-vm-none").at(-1)).toMatch(/^✗ Error: No hypervisor for this lab is installed on this machine \(it runs on virtualbox\)/);
+    expect(logsOf("act-vm-none").at(-1)).toMatch(/^✗ No hypervisor for this lab is installed on this machine \(it runs on virtualbox\)/);
   });
 
   it("names 'none' when the lab lists no local hypervisor", async () => {
@@ -354,5 +363,38 @@ describe("useLabActions: operations on a built lab", () => {
       await done;
     });
     expect(getDeploySnapshot().runs["act-settle"].busy).toBe(false);
+  });
+});
+
+describe("useLabActions: a failure the core knows by its code", () => {
+  // Settings' port choice made, so a start here doesn't stop to ask.
+  beforeEach(() => setPortMode("random"));
+  afterEach(() => setLocalePreference("en"));
+
+  it("ends the log on the error in the player's language, with its code kept for the hints", async () => {
+    setLocalePreference("fr");
+    const { hook } = setup({ lab_launch: rejects({ code: "portInUse", args: { port: 8080 }, message: "Host port 8080 is already in use on this machine" }) });
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-port-fr" }, null, undefined, readyReport()));
+    const run = getDeploySnapshot().runs["act-port-fr"];
+    expect(run.logs.at(-1)).toMatch(/^✗ Le port 8080 de l'hôte est déjà utilisé/);
+    expect(run.failureCode).toBe("portInUse");
+  });
+
+  it("tells the shell the session is gone from a signed-out error's code", async () => {
+    const heard = vi.fn();
+    window.addEventListener(SIGNED_OUT_EVENT, heard);
+    const { hook } = setup({ lab_launch: rejects({ code: "sessionExpired", message: "Your session expired" }) });
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-signed-out" }, null, undefined, readyReport()));
+    expect(heard).toHaveBeenCalledTimes(1);
+    window.removeEventListener(SIGNED_OUT_EVENT, heard);
+  });
+
+  it("doesn't take another failure that mentions signing out for one", async () => {
+    const heard = vi.fn();
+    window.addEventListener(SIGNED_OUT_EVENT, heard);
+    const { hook } = setup({ lab_launch: rejects({ code: "other", message: "ansible: user signed out of the DC" }) });
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-not-signed-out" }, null, undefined, readyReport()));
+    expect(heard).not.toHaveBeenCalled();
+    window.removeEventListener(SIGNED_OUT_EVENT, heard);
   });
 });

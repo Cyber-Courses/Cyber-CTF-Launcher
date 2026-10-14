@@ -46,7 +46,7 @@ describe("Account", () => {
     const calls = installTauri({
       auth_login: (args) => {
         stream(args, "https://auth.example/oauth2/authorize?state=s1");
-        return new Promise((_, reject) => (cancel = () => reject("Sign-in cancelled.")));
+        return new Promise((_, reject) => (cancel = () => reject({ code: "signInCancelled", message: "Sign-in cancelled." })));
       },
       auth_login_cancel: () => cancel(),
     });

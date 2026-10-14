@@ -1,4 +1,21 @@
 {
   "clipboard": "Não foi possível copiar para a área de transferência",
-  "browser": "Não foi possível abrir seu navegador"
+  "browser": "Não foi possível abrir seu navegador",
+  "codes": {
+    "signedOut": "Você saiu da conta. Entre novamente para continuar.",
+    "sessionExpired": "Sua sessão expirou: você saiu da conta. Entre novamente para continuar.",
+    "loginTimeout": "O login não foi concluído em {minutes} minutos, então foi cancelado. Tente de novo.",
+    "noBrowser": "Nenhum navegador abriu para o login. Defina um navegador padrão para esta conta e tente de novo.",
+    "alreadyInProgress": "Outra operação neste lab já está em andamento; espere ela terminar.",
+    "noPasswordStored": "Nenhuma senha está salva para este host. Edite-o e informe uma.",
+    "portInUse": "A porta {port} do host já está em uso nesta máquina (outro lab ou app a ocupa). Pare o que a usa ou inicie o lab com portas aleatórias.",
+    "dockerNotRunning": "O Docker não está em execução. Inicie seu mecanismo de contêineres (Docker Desktop, ou o serviço docker no Linux) e tente de novo.",
+    "dockerDenied": "O Docker está em execução, mas sua conta ainda não pode usá-lo. Adicione-se ao grupo docker em um terminal (sudo usermod -aG docker {user}), depois saia e entre de novo na sessão.",
+    "dockerDeniedWindows": "O Docker está em execução, mas sua conta ainda não pode usá-lo. Adicione-se ao grupo docker-users (em um terminal como administrador: net localgroup docker-users \"{user}\" /add), depois saia e entre de novo na sessão.",
+    "toolMissing": "{tool} não está instalado ou não está no PATH.",
+    "commandFailed": "{command} falhou: {stderr}",
+    "signInCancelled": "Login cancelado.",
+    "unreachable": "Não foi possível acessar o Cyber CTF ({detail}). Verifique sua conexão e tente de novo.",
+    "offlineReady": "Não foi possível acessar o Cyber CTF ({detail}). Este lab está instalado aqui, então pode iniciar offline, sem salvar o progresso."
+  }
 }

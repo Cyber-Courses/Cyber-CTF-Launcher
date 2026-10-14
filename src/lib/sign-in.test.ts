@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { commands, installTauri, stream } from "@/test/tauri";
-import { SIGN_IN_CANCELLED, cancelSignIn, signIn, useSignIn } from "@/lib/sign-in";
+import { cancelSignIn, signIn, useSignIn } from "@/lib/sign-in";
+
+const SIGN_IN_CANCELLED = { code: "signInCancelled", message: "Sign-in cancelled." };
 import { act, renderHook } from "@testing-library/react";
 
 const ada = { loggedIn: true, name: "Ada", email: "ada@example.com" };
@@ -11,7 +13,7 @@ function pendingLogin() {
   let finish: (outcome: unknown) => void = () => {};
   const handler = (args: Record<string, unknown> | undefined) => {
     stream(args, "https://auth.example/oauth2/authorize?state=s1");
-    return new Promise((resolve, reject) => (finish = (o) => (o instanceof Error || typeof o === "string" ? reject(o) : resolve(o))));
+    return new Promise((resolve, reject) => (finish = (o) => (o instanceof Error || typeof o === "string" || (typeof o === "object" && o !== null && "code" in o) ? reject(o) : resolve(o))));
   };
   return { handler, finish: (o: unknown) => finish(o) };
 }

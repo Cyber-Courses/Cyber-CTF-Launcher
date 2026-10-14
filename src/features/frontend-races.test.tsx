@@ -14,7 +14,7 @@ import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { beginDeploy, appendDeployLog, endDeploy, getDeploySnapshot } from "@/lib/deploy-store";
 import { setLocalePreference, translate } from "@/lib/i18n";
 import type { LabCheck, LabStatus } from "@/lib/tauri";
-import { commands, installTauri } from "@/test/tauri";
+import { commands, installTauri, rejects } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 // Regression tests for polling and state races on the frontend: each failed before its fix.
@@ -175,9 +175,7 @@ describe("lab page actions during a worker operation", () => {
 
   it("a refused operation keeps the previous run's log and isn't a failed deploy", async () => {
     installTauri({
-      lab_park: () => {
-        throw "Pause of this lab is already in progress; wait for it to finish.";
-      },
+      lab_park: rejects({ code: "alreadyInProgress", message: "Pause of this lab is already in progress; wait for it to finish." }),
       lab_status: () => status(),
     });
     beginDeploy("lab-r", "launch");

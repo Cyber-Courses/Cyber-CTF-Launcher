@@ -9,6 +9,7 @@ import { AnswerForm } from "@/features/labs/objectives/answer-form";
 import { hintsOf, usedHelp, type Challenge, type LabProgress, type ObjectiveStep } from "@/features/labs/objectives/objectives";
 import type { ObjectiveActions } from "@/features/labs/objectives/objectives-panel";
 import { useT } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 // A challenge's guided help, on demand: its steps (each answered on its own) and its hints.
 
@@ -23,7 +24,7 @@ function useHelpRequest() {
     try {
       await open();
     } catch (err) {
-      setError(t("labs.objectives.helpFailed", { error: String(err) }));
+      setError(t("labs.objectives.helpFailed", { error: describeError(err) }));
     } finally {
       setOpening(false);
     }

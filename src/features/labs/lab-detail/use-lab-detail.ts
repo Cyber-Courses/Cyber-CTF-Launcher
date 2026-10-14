@@ -18,6 +18,7 @@ import { useRunTarget } from "@/features/labs/lab-detail/use-run-target";
 import { type LabStatus, type Park, type Provider } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
+import type { ErrorCode } from "@/lib/errors";
 
 export type LabDetailProps = {
   lab: Lab;
@@ -28,6 +29,8 @@ export type LabDetailProps = {
   /** This session's last run on the lab: what it was (launch, stop…) and when it began. */
   runOp?: string;
   runStartedAt?: number;
+  /** The code of the error this session's last run failed with. */
+  runFailureCode?: ErrorCode | null;
   loggedIn: boolean;
   /** Logged out: the start button logs in instead of being greyed out. */
   onLogin?: () => Promise<void>;
@@ -126,6 +129,7 @@ export function useLabDetail(p: LabDetailProps) {
     times: p.times,
     runOp: p.runOp,
     runStartedAt: p.runStartedAt,
+    runFailureCode: p.runFailureCode,
   });
   const run = useRunTarget(rt, readyVms, p.hostArch);
   const preview = useCloudPreview(lab.id, rt);

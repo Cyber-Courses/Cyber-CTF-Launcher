@@ -12,6 +12,7 @@ import { Row } from "@/features/settings/settings-layout";
 import { getVmProvider, setVmProvider } from "@/lib/settings";
 import { hypervJoinAdmins, installVagrantPlugin, type Provider, type ProviderStatus, type SystemReport } from "@/lib/tauri";
 import { translate, useT } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 /**
  * Which local hypervisor VM labs run on. Every installed one is listed: the ready ones can be
@@ -219,7 +220,7 @@ function useAddonInstall(onRefresh: () => void) {
       await installVagrantPlugin(plugin, (l) => setLog((x) => [...(x ?? []), l]));
       setLog((x) => [...(x ?? []), translate("settings.hypervisor.logInstalled")]);
     } catch (e) {
-      setLog((x) => [...(x ?? []), `✗ ${String(e)}`]);
+      setLog((x) => [...(x ?? []), `✗ ${describeError(e)}`]);
     } finally {
       setInstalling(null);
       onRefresh();

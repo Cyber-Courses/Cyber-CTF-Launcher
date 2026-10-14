@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { labCheck, type LabCheck } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 type CheckState = LabCheck | "checking" | null;
 
@@ -26,7 +27,7 @@ export function useLabCheck(labId: string, { running, downCount, enabled }: { ru
     let finished = false;
     labCheck(labId, "DOCKER")
       .then((c) => alive && setCheck(c))
-      .catch((e) => alive && setCheck({ available: true, ok: false, output: String(e), results: [] }))
+      .catch((e) => alive && setCheck({ available: true, ok: false, output: describeError(e), results: [] }))
       .finally(() => {
         finished = true;
       });

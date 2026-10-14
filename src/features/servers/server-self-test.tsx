@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { formatElapsed } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 import { useT, type MessageKey } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 /** The step plan each provider reports, shown up front so the list doesn't grow as it runs. */
 const SELFTEST_PLAN: Record<"proxmox" | "esxi", { step: string; label: MessageKey }[]> = {
@@ -45,7 +46,7 @@ function runFor(id: string): Run {
     run.listeners.forEach((l) => l(e));
   })
     .catch((err) => {
-      run.error = String(err);
+      run.error = describeError(err);
     })
     .finally(() => {
       // Over: the next open starts a new one. A view still showing it hears the end.

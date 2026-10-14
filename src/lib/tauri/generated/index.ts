@@ -7,6 +7,7 @@ export type * from "./AzureSubscription";
 export type * from "./CloudClis";
 export type * from "./CloudLoginProvider";
 export type * from "./CloudPreview";
+export type * from "./CommandError";
 export type * from "./Dependency";
 export type * from "./ExegolStatus";
 export type * from "./GcpBillingAccount";

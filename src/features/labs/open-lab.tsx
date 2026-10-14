@@ -82,6 +82,7 @@ export function OpenLab({
       times={runs[lab.id]?.times ?? []}
       runOp={runs[lab.id]?.op}
       runStartedAt={runs[lab.id]?.startedAt}
+      runFailureCode={runs[lab.id]?.failureCode}
       loggedIn={loggedIn}
       onLogin={onLogin}
       hostArch={hostArch}

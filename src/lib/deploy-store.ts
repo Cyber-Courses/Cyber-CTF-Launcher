@@ -7,6 +7,7 @@ import { usePoll } from "@/lib/use-poll";
 import { sharedPoll, useSharedPoll } from "@/lib/shared-poll";
 import { translate } from "@/lib/i18n";
 import { structurallyEqual } from "@/lib/equal";
+import { describeError, errorCode, type ErrorCode } from "@/lib/errors";
 
 /**
  * The live state of lab start/stop, kept outside the React tree so it survives navigating
@@ -29,6 +30,8 @@ export type DeployRun = {
   /** When it began (ms): its timers count from here, not from its first log line or from when
    *  a page showing it opened. */
   startedAt?: number;
+  /** The code of the error it failed with (its ✗ line is in the player's language). */
+  failureCode?: ErrorCode | null;
 };
 /** Every lab with a run in flight or just finished, keyed by lab id. A single global slot
  *  would cross-contaminate: with two deploys running, the second's lines would appear on the
@@ -89,6 +92,15 @@ export function beginDeploy(labId: string, op?: string) {
   setRun(labId, { busy: true, logs: [], times: [], op, startedAt: Date.now() });
 }
 
+/** Ends `labId`'s log on the error it failed with: a ✗ line in the player's language, and the
+ *  error's code kept beside it for the hints. */
+export function failDeploy(labId: string, e: unknown) {
+  appendDeployLog(labId, `✗ ${describeError(e)}`);
+  flushDeployLogs();
+  const prev = state.runs[labId];
+  if (prev) setRun(labId, { ...prev, failureCode: errorCode(e) });
+}
+
 /** The failure that ended a lab's run (its ✗ line, without the mark), once the run is over;
  *  null while it runs or when it went through. */
 export function runFailure(run: DeployRun | undefined): string | null {
@@ -123,7 +135,6 @@ export const OPERATION_STATUS: Partial<Record<string, string>> = {
 
 /** Append a log line to `labId`'s run, timestamped on arrival (shown with the next batch). */
 export function appendDeployLog(labId: string, line: string) {
-  noteSignedOut(line);
   const batch = pending.get(labId) ?? { lines: [], times: [] };
   batch.lines.push(line);
   batch.times.push(Date.now());
@@ -134,9 +145,9 @@ export function appendDeployLog(labId: string, line: string) {
 /** Fired when an action failed because the session is gone; the shell re-reads the sign-in. */
 export const SIGNED_OUT_EVENT = "cyberctf:signed-out";
 
-/** The backend's "You're signed out…" / "…session expired…" errors (account/auth.rs). */
-function noteSignedOut(text: string) {
-  if (typeof window !== "undefined" && /\bsigned out\b/i.test(text)) window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+/** An operation failed because the session is gone (its error's code said so, see `isSignedOut`). */
+export function noteSignedOut() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
 }
 
 /** End `labId`'s run (keeps its logs so the console stays readable). */

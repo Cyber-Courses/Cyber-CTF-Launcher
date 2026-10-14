@@ -51,7 +51,7 @@ pub fn claim(f: &Files) -> Result<std::fs::File> {
         Ok(file) => Ok(file),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             if f.worker().is_some_and(|w| alive(&w)) {
-                return Err(Error::Invalid(super::BUSY.into()));
+                return Err(Error::coded(crate::error::Code::AlreadyInProgress));
             }
             let _ = std::fs::remove_file(&f.pid);
             create().map_err(Error::Io)

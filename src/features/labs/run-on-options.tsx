@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { serverTest, type Provider, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { type Provider, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { testHost } from "@/features/servers/use-server-list";
 import { type Tone } from "@/components/ui/status-pill";
 import { TypeIcon } from "@/components/ui/type-icon";
 import { KIND } from "@/features/servers/host-setup/constants";
@@ -29,9 +30,7 @@ export function useHostChecks(hosts: ServerHost[]) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setChecks(Object.fromEntries(list.map((id) => [id, "testing" as const])));
     for (const id of list) {
-      void serverTest(id)
-        .catch((e): ServerTest => ({ ok: false, reachable: false, authenticated: null, latencyMs: null, message: String(e), checks: [] }))
-        .then((r) => live && setChecks((c) => ({ ...c, [id]: r })));
+      void testHost(id).then((r) => live && setChecks((c) => ({ ...c, [id]: r })));
     }
     return () => {
       live = false;

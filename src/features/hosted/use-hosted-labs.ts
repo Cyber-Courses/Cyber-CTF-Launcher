@@ -6,6 +6,7 @@ import { ignore, warn } from "@/lib/failure";
 import { structurallyEqual } from "@/lib/equal";
 import { usePoll } from "@/lib/use-poll";
 import { translate } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
 
 export interface HostedEndpoint {
   port: number;
@@ -61,7 +62,7 @@ export function useHostedLabs() {
       const d = await apiQuery<{ requestLabLaunch: HostedSession }>("launchHosted", { labId });
       setSession(d.requestLabLaunch);
     } catch (e) {
-      setError(String(e));
+      setError(describeError(e));
     } finally {
       // The request returns the REQUESTED session fast; the session state drives the rest.
       setBusyLab(null);
@@ -101,7 +102,7 @@ export function useHostedLabs() {
     setSession(null);
     setBusyLab(null);
     // The session is already off the page; a stop that fails says so, or it would keep running unseen.
-    if (current) await apiQuery("stopSession", { id: current.id }).catch((e) => setError(translate("hosted.stopFailed", { error: String(e) })));
+    if (current) await apiQuery("stopSession", { id: current.id }).catch((e) => setError(translate("hosted.stopFailed", { error: describeError(e) })));
   }, [session]);
 
   return { session, busyLab, error, launch, stop };

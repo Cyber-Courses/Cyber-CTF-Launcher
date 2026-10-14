@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { systemCheck, type SystemReport } from "@/lib/tauri";
+import { describeError } from "@/lib/errors";
 
 /** At most one re-check per this long when the window comes back. */
 const FOCUS_RECHECK_MS = 15_000;
@@ -24,7 +25,7 @@ export function useSystemCheck() {
         setReport(r);
         setCheckError(null);
       })
-      .catch((e) => setCheckError(String(e)));
+      .catch((e) => setCheckError(describeError(e)));
   }, []);
   useEffect(() => {
     const onFocus = () => {

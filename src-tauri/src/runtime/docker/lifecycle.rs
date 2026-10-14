@@ -3,22 +3,17 @@
 use std::path::Path;
 
 use super::compose;
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::exec::{run, run_read};
 
 /// Fails fast with a clear message when the Docker engine isn't reachable, instead of letting
 /// `compose up` (or the port/config probes) surface a raw "Cannot connect to the Docker daemon".
 /// Timed, so a wedged daemon can't hang the start.
 async fn ensure_docker_up() -> Result<()> {
-    run_read("docker", &["info", "--format", "{{.ServerVersion}}"], None).await.map(|_| ()).map_err(|e| {
-        if crate::exec::docker_denied(&e) {
-            Error::Invalid(crate::exec::docker_denied_message())
-        } else {
-            Error::Invalid(
-                "Docker isn't running. Start your container engine (Docker Desktop, or the docker service on Linux), then start the lab again.".into(),
-            )
-        }
-    })
+    run_read("docker", &["info", "--format", "{{.ServerVersion}}"], None)
+        .await
+        .map(|_| ())
+        .map_err(|e| if crate::exec::docker_denied(&e) { crate::exec::docker_denied_error() } else { Error::coded(Code::DockerNotRunning) })
 }
 
 /// A host port is taken if we can't bind it on the loopback over its protocol (`udp`, else TCP):
@@ -143,9 +138,7 @@ pub async fn start(dir: &Path, id: &str, env: &[(String, String)], mut log: impl
     if !is_running(dir, &project).await {
         for (port, proto) in published_host_ports(dir, &project, env).await? {
             if port_in_use(port, &proto) {
-                return Err(Error::Invalid(format!(
-                    "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever uses it, or start the lab with random ports."
-                )));
+                return Err(Error::coded(Code::PortInUse { port }));
             }
         }
     }

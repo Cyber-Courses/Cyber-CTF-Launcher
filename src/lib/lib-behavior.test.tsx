@@ -158,13 +158,12 @@ describe("deploy-store", () => {
     expect(OPERATION_STATUS.launch).not.toBe(en);
   });
 
-  it("tells the shell when a log line says the session is gone", () => {
+  it("keeps log lines, and reads no sign-out from them", () => {
     const heard = vi.fn();
     window.addEventListener(SIGNED_OUT_EVENT, heard);
     appendDeployLog("lab-x", "Downloading");
-    expect(heard).not.toHaveBeenCalled();
     appendDeployLog("lab-x", "✗ You're signed out. Sign in again.");
-    expect(heard).toHaveBeenCalledTimes(1);
+    expect(heard).not.toHaveBeenCalled();
     window.removeEventListener(SIGNED_OUT_EVENT, heard);
     // The lines are kept; whether the lab is busy stays begin/end's to say.
     expect(getDeploySnapshot().runs["lab-x"].logs).toHaveLength(2);

@@ -3,7 +3,7 @@
 //! and the keychain would re-prompt on each run (same as auth.rs).
 
 use super::profile::HostProfile;
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 
 #[cfg(not(debug_assertions))]
 fn entry(id: &str) -> Result<keyring::Entry> {
@@ -57,7 +57,7 @@ mod dev_file {
 
 /// The secret stored for `id`, or the reason there is none.
 fn found(secret: Option<String>) -> Result<String> {
-    secret.ok_or_else(|| Error::Invalid("no password stored for this host, edit it and enter one".into()))
+    secret.ok_or_else(|| Error::coded(Code::NoPasswordStored))
 }
 
 pub(super) fn get_secret(id: &str) -> Result<String> {

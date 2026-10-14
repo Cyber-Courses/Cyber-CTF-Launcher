@@ -4,7 +4,8 @@ import { notify } from "@/lib/notify";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import { localProviders, pickLocalHypervisor, readyHypervisors, runsNatively } from "@/features/labs/lab-runtime";
 import { setLastRun } from "@/lib/last-run";
-import { appendDeployLog, beginDeploy, getDeploySnapshot, restoreDeploy } from "@/lib/deploy-store";
+import { appendDeployLog, beginDeploy, failDeploy, getDeploySnapshot, noteSignedOut, restoreDeploy } from "@/lib/deploy-store";
+import { describeError, errorCode, isSignedOut } from "@/lib/errors";
 import { noteStopped } from "@/features/labs/lab-store";
 import { tell } from "@/lib/failure";
 import { translate } from "@/lib/i18n";
@@ -24,21 +25,14 @@ export type LaunchReport = {
   vmProviders: { provider: Provider; remote: boolean; available: boolean; hypervisor?: boolean | null }[];
 } | null;
 
-/** The backend's answer to an operation started while another one runs on the lab
- *  (deploy_worker::run_job): refused, not failed. */
-const REFUSED = /already in progress/i;
-
-/** The backend's answer to a launch when Cyber CTF can't be reached and the lab, installed here,
- *  can start without it (labs/offline.rs OFFLINE_READY). */
-const OFFLINE_READY = /can start offline/i;
-
-/** Runs `launch`; when it fails because Cyber CTF can't be reached and the lab can start offline,
- *  asks the player (the lab `title`) and, on yes, runs it again offline. */
+/** Runs `launch`; when it fails because Cyber CTF can't be reached and the lab, installed here,
+ *  can start without it (the `offlineReady` code, labs/offline.rs), asks the player (the lab
+ *  `title`) and, on yes, runs it again offline. */
 export async function launchOrOfferOffline(title: string, launch: (offline: boolean) => Promise<void>) {
   try {
     await launch(false);
   } catch (e) {
-    if (!OFFLINE_READY.test(String(e)) || !(await askOfflineStart(title))) throw e;
+    if (errorCode(e) !== "offlineReady" || !(await askOfflineStart(title))) throw e;
     await launch(true);
   }
 }
@@ -58,7 +52,9 @@ export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: Op
     await body((line) => appendDeployLog(lab.id, line), lab.runtime);
     return null;
   } catch (e) {
-    refused = REFUSED.test(String(e));
+    // The backend's answer to an operation started while another one runs on the lab
+    // (deploy_worker::start_worker): refused, not failed.
+    refused = errorCode(e) === "alreadyInProgress";
     if (refused) {
       // The backend refused it (another operation on the lab is in flight): nothing ran, so
       // nothing failed. Keep the run that was there and say why instead of a ✗ in its log,
@@ -66,13 +62,15 @@ export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: Op
       restoreDeploy(lab.id, previous);
       tell(translate("labs.actions.refused"))(e);
     } else {
-      appendDeployLog(lab.id, `✗ ${String(e)}`);
+      failDeploy(lab.id, e);
+      // The account's session is gone (a cloud launch needs it): the shell reads it again.
+      if (isSignedOut(e)) noteSignedOut();
       // Said wherever the player is (a toast, or a notification when the window is away), not
       // only in the lab's own deployment panel: a failed removal otherwise went unnoticed.
       const title = failureTitleKey(op);
       if (title) tell(translate(title, { title: lab.title }))(e);
     }
-    return String(e);
+    return describeError(e);
   } finally {
     // Down now, by this app's hand: a scan answer from before this can't bring it back.
     if (!refused && (op === "stop" || op === "pause" || op === "shutdown")) noteStopped(lab.id);
