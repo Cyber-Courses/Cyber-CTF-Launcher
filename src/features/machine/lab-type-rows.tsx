@@ -9,7 +9,7 @@ import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { providerLabel } from "@/features/machine/hypervisors";
 import { LabTypeRow, type LabKind } from "@/features/machine/machine-parts";
 import { WANT_FREE, dockerState, type vmSetup } from "@/features/machine/machine-status";
-import { useMachineFormat } from "@/features/machine/use-machine-format";
+import { formatAgo, formatBytes } from "@/lib/format";
 import type { SystemReport } from "@/lib/tauri";
 import type { LastTest } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
@@ -182,24 +182,23 @@ function TestButton({ testing, onClick }: { testing: boolean; onClick: () => voi
 /** The lines both rows share: the last test, and a warning when memory is short for the type. */
 function useRowParts(now: number, memFree: number | null) {
   const t = useT();
-  const fmt = useMachineFormat();
   const lowFor = (kind: LabKind) => memFree !== null && memFree < WANT_FREE[kind];
   return {
     lowFor,
     freeHint: (kind: LabKind) =>
       lowFor(kind)
         ? t(kind === "vm" ? "machine.screen.freeHintVm" : "machine.screen.freeHintDocker", {
-            want: fmt.bytes(WANT_FREE[kind]),
-            free: fmt.bytes(Math.max(0, memFree!)),
+            want: formatBytes(WANT_FREE[kind]),
+            free: formatBytes(Math.max(0, memFree!)),
           })
         : undefined,
     testLine: (test: LastTest | null) =>
       !test ? (
         <span>{t("machine.screen.notTestedYet")}</span>
       ) : test.result === "ok" ? (
-        <span>{t("machine.screen.tested", { ago: fmt.ago(test.at, now) })}</span>
+        <span>{t("machine.screen.tested", { ago: formatAgo(test.at, now) })}</span>
       ) : (
-        <span className="text-destructive">{t("machine.screen.lastTestFailed", { ago: fmt.ago(test.at, now) })}</span>
+        <span className="text-destructive">{t("machine.screen.lastTestFailed", { ago: formatAgo(test.at, now) })}</span>
       ),
   };
 }

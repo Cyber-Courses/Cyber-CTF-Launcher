@@ -1,18 +1,4 @@
 {
-  "format": {
-    "gb": "{n} Go",
-    "gbOf": "{used}/{total} Go",
-    "mb": "{n} Mo",
-    "kb": "{n} ko",
-    "justNow": "à l'instant",
-    "minutesAgo": "il y a {n} min",
-    "hoursAgo": "il y a {n} h",
-    "yesterday": "hier",
-    "daysAgo": "il y a {n} jours",
-    "uptimeDays": "{d} j {h} h",
-    "uptimeHours": "{h} h {m} min",
-    "uptimeMinutes": "{m} min"
-  },
   "errors": {
     "openSetup": "Impossible d'ouvrir la configuration de la machine",
     "copy": "Impossible de copier dans le presse-papiers",

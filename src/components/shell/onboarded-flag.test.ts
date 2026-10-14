@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { markOnboarded, readOnboarded } from "@/components/shell/onboarded-flag";
+import { clearOnboarded, markOnboarded, readOnboarded } from "@/components/shell/onboarded-flag";
 
 describe("onboarded flag", () => {
   afterEach(() => {
@@ -14,6 +14,8 @@ describe("onboarded flag", () => {
     markOnboarded();
     expect(localStorage.getItem("cyberctf.onboarded")).toBe("1");
     expect(readOnboarded()).toBe(true);
+    clearOnboarded();
+    expect(readOnboarded()).toBe(false);
   });
 
   it("takes the onboarding as done without storage", () => {
@@ -24,6 +26,10 @@ describe("onboarded flag", () => {
       throw new Error("no storage");
     });
     expect(readOnboarded()).toBe(true);
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new Error("no storage");
+    });
     expect(() => markOnboarded()).not.toThrow();
+    expect(() => clearOnboarded()).not.toThrow();
   });
 });

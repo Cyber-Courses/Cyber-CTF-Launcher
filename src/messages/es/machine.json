@@ -1,18 +1,4 @@
 {
-  "format": {
-    "gb": "{n} GB",
-    "gbOf": "{used}/{total} GB",
-    "mb": "{n} MB",
-    "kb": "{n} kB",
-    "justNow": "ahora mismo",
-    "minutesAgo": "hace {n} min",
-    "hoursAgo": "hace {n} h",
-    "yesterday": "ayer",
-    "daysAgo": "hace {n} días",
-    "uptimeDays": "{d} d {h} h",
-    "uptimeHours": "{h} h {m} min",
-    "uptimeMinutes": "{m} min"
-  },
   "errors": {
     "openSetup": "No se pudo abrir la configuración de la máquina",
     "copy": "No se pudo copiar al portapapeles",

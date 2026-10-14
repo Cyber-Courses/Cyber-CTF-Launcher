@@ -10,7 +10,7 @@ import { openLogFolder, restartApp, type AgentInfo, type SystemReport } from "@/
 import { useDeployingLabs } from "@/lib/deploy-store";
 import { getAttackBox, getAttackImage, getVmProvider } from "@/lib/settings";
 import { Row, Section } from "@/features/settings/settings-layout";
-import { ONBOARDED_KEY } from "@/features/settings/settings-screen";
+import { clearOnboarded } from "@/components/shell/onboarded-flag";
 import { diagnosticsText } from "@/features/settings/diagnostics";
 import { useUpdater, type UpdateState } from "@/features/settings/use-updater";
 import { tell } from "@/lib/failure";
@@ -39,11 +39,7 @@ export function AboutSection({ version, report, agent }: { version: string | nul
   // The onboarding shows in the main window: it is asked to show it again (a reload here only
   // reloaded the Settings window, which never shows it).
   function replayOnboarding() {
-    try {
-      localStorage.removeItem(ONBOARDED_KEY);
-    } catch {
-      /* ignore */
-    }
+    clearOnboarded();
     emit(REPLAY_ONBOARDING_EVENT).catch(tell(t("settings.about.replayFailed")));
     closeIfSettings();
   }

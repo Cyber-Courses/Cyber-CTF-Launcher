@@ -6,16 +6,21 @@
  * a production build or inside the app. The labs and their objectives are in dev-mock-labs.ts.
  */
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import type { CommandError } from "@/lib/errors";
+import { GB } from "@/lib/format";
+import type { LabStatus, Provider, ProviderStatus, ServerHost, ServerList, SystemReport } from "@/lib/tauri";
+import type { Args, Handler, Handlers } from "@/lib/dev-mock-types";
 import { apiQuery, invoiceStatus, labCommands, labs, stopped } from "@/lib/dev-mock-labs";
+import { clearOnboarded, markOnboarded } from "@/components/shell/onboarded-flag";
 
-const GB = 1e9;
-
-const report = {
+const report: SystemReport = {
   os: "macos",
   arch: "arm64",
   pkgManager: { name: "brew", installed: true, version: "4.4.0" },
   docker: { installed: true, version: "27.3.1" },
   dockerRunning: true,
+  dockerDenied: false,
+  dockerDeniedHint: null,
   dockerEngine: "docker-desktop",
   dockerEnginesRunning: ["docker-desktop"],
   dockerCompose: { installed: true, version: "2.29.7" },
@@ -45,11 +50,25 @@ const report = {
   wsl: null,
 };
 
+/** A saved server or cloud account: the fields only some providers use left empty. */
+const savedHost = (h: Pick<ServerHost, "id" | "name" | "provider" | "host" | "port" | "username"> & Partial<ServerHost>): ServerHost => ({
+  datastore: null,
+  network: null,
+  node: null,
+  insecureTls: false,
+  autoStopHours: null,
+  useCliCreds: false,
+  awsProfile: null,
+  monthlyLimit: null,
+  gcpProject: null,
+  ...h,
+});
+
 /** The saved servers, a new copy per call (as the backend answers). */
-const servers = () => ({
+const servers = (): ServerList => ({
   default: "pve",
   hosts: [
-    {
+    savedHost({
       id: "pve",
       name: "homelab-pve",
       provider: "proxmox",
@@ -61,8 +80,8 @@ const servers = () => ({
       node: "pve",
       insecureTls: true,
       autoStopHours: 4,
-    },
-    {
+    }),
+    savedHost({
       id: "esxi",
       name: "office-esxi",
       provider: "vmware_esxi",
@@ -74,8 +93,8 @@ const servers = () => ({
       node: null,
       insecureTls: true,
       autoStopHours: null,
-    },
-    {
+    }),
+    savedHost({
       id: "aws1",
       name: "AWS sandbox",
       provider: "aws",
@@ -89,7 +108,7 @@ const servers = () => ({
       autoStopHours: 4,
       useCliCreds: true,
       awsProfile: "default",
-    },
+    }),
   ],
 });
 
@@ -106,22 +125,19 @@ function openWindow(path: string) {
   window.open(`${path}${path.includes("?") ? "&" : "?"}mock${extra ? `&${extra}` : ""}`, "_blank");
 }
 
-type Args = Record<string, unknown> | undefined;
-type Handler = (args: Args) => unknown;
-
 /** The player, this install and the API. */
-const accountCommands: Record<string, Handler> = {
+const accountCommands = {
   auth_status: () => ({ loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" }),
   auth_login: () => ({ loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" }),
   agent_info: () => ({ installId: "c0ffee", name: "florian-mbp", arch: "arm64", capabilities: ["docker", "vagrant"] }),
   api_query: apiQuery,
-};
+} satisfies Handlers;
 
 /** The attack box (a container or the attack VM), up on the lab network. */
 const attackBox = () => ({ imagePresent: true, running: true, ip: "10.42.0.9", labNetwork: "default", shellCmd: "docker exec -it attack-box zsh" });
 
 /** This machine: its report, live usage, what runs and is stored on it, the attack box. */
-const machineCommands: Record<string, Handler> = {
+const machineCommands = {
   system_check: () => report,
   machine_metrics: () => {
     cpu = Math.max(8, Math.min(92, cpu + (Math.random() - 0.5) * 14));
@@ -153,20 +169,20 @@ const machineCommands: Record<string, Handler> = {
     isoloomRegistry = !!args?.enabled;
     return isoloomRegistry;
   },
-};
+} satisfies Handlers;
 
 /** The saved servers and the AWS account. */
-const serverCommands: Record<string, Handler> = {
+const serverCommands = {
   server_list: servers,
   server_capacity: () => ({ cores: 32, memTotal: 64 * GB, memFree: 42 * GB }),
   server_test: () => ({ ok: true, reachable: true, authenticated: true, latencyMs: 12, message: "Connected", checks: [] }),
   aws_month_to_date_cost: () => 6.4,
   aws_cli_identity: () => "arn:aws:iam::482100000193:user/florian",
   aws_profiles: () => ["default"],
-};
+} satisfies Handlers;
 
 /** The app's windows and Tauri plugins. */
-const appCommands: Record<string, Handler> = {
+const appCommands = {
   open_settings: () => {
     openWindow("/?window=settings");
     return null;
@@ -179,7 +195,7 @@ const appCommands: Record<string, Handler> = {
   "plugin:app|version": () => "0.3.2",
   "plugin:notification|is_permission_granted": () => false,
   "plugin:event|listen": () => 1,
-};
+} satisfies Handlers;
 
 // A Map, not an object lookup: a command named like an Object.prototype member is unknown too.
 const HANDLERS = new Map<string, Handler>(Object.entries({ ...accountCommands, ...labCommands, ...machineCommands, ...serverCommands, ...appCommands }));
@@ -254,7 +270,7 @@ const notInstalled = { installed: false, version: null };
 
 /** The local hypervisors each OS reports (the remote ones are the same everywhere). */
 function localProviders(os: Scenario["os"], fresh: boolean) {
-  const p = (provider: string, plugin: string | null = null) => ({
+  const p = (provider: Provider, plugin: string | null = null): ProviderStatus => ({
     provider,
     remote: false,
     available: !fresh && provider === "virtualbox",
@@ -270,7 +286,7 @@ function localProviders(os: Scenario["os"], fresh: boolean) {
 
 /** The system check's answer for a scenario. On an Apple Silicon Mac VirtualBox can't run, so a
  *  ready machine there has UTM instead. */
-export function scenarioReport(sc: Scenario) {
+export function scenarioReport(sc: Scenario): SystemReport {
   const remote = report.vmProviders.filter((p) => p.remote);
   let local = localProviders(sc.os, sc.fresh);
   if (!sc.fresh && sc.os === "macos" && sc.arch === "arm64") {
@@ -304,11 +320,9 @@ export function scenarioReport(sc: Scenario) {
   };
 }
 
-type Report = ReturnType<typeof scenarioReport>;
-
 /** The system check once the preview's one-click installs ran (`installed`: dependencies and
  *  Vagrant plugins), with the package manager there or not as `pm` says (null: as reported). */
-export function withInstalls(r: Report, installed: ReadonlySet<string>, pm: boolean | null = null): Report {
+export function withInstalls(r: SystemReport, installed: ReadonlySet<string>, pm: boolean | null = null): SystemReport {
   const pkgManager = pm === null ? r.pkgManager : { ...r.pkgManager, installed: pm, version: pm ? "4.4.0" : null };
   if (!installed.size) return { ...r, pkgManager };
   const has = (tool: string) => installed.has(tool);
@@ -353,7 +367,7 @@ const VM_MACHINES = [
 ];
 
 /** A VM lab's status: its machines on the lab network, running, saved or powered off. */
-function vmStatus(p: Placement) {
+function vmStatus(p: Placement): LabStatus {
   const state = p.parked === "pause" ? "saved" : p.parked === "shutdown" ? "poweroff" : "running";
   return {
     ...stopped,
@@ -377,7 +391,7 @@ function vmStatus(p: Placement) {
 }
 
 /** A cloud lab's status: up in the account, with its outputs and when it stops itself. */
-function cloudStatus(p: Placement) {
+function cloudStatus(p: Placement): LabStatus {
   const hours = Number(p.host?.autoStopHours ?? 0);
   return {
     ...stopped,
@@ -423,8 +437,8 @@ type Live = {
 
 type Stream = { onmessage?: (m: unknown) => void };
 const send = (args: Record<string, unknown> | undefined, m: unknown) => (args?.logs as Stream | undefined)?.onmessage?.(m);
-/** A failed command: the Rust core rejects with the error's text, not an Error. */
-const rejected = (message: string) => Promise.reject(message);
+/** A failed command: the Rust core rejects with the error's code and message, not an Error. */
+const rejected = (message: string, code: CommandError["code"] = "other") => Promise.reject({ code, message });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** A Docker Compose start, as the launcher streams it. */
@@ -444,7 +458,7 @@ const LAUNCH_LINES = (slug: string) => [
 ];
 
 /** A started lab's status: one web container on its own network, next to the attack box. */
-function startedStatus(id: string) {
+function startedStatus(id: string): LabStatus {
   if (id === "lab-invoice") return invoiceStatus;
   const lab = labs.find((l) => l.id === id);
   const name = lab?.slug ?? id;
@@ -907,10 +921,6 @@ export function installDevMock() {
     eventBus.onmessage = (e: MessageEvent<{ event: string; payload: unknown }>) => deliver(e.data.event, e.data.payload);
   }
   (window as unknown as { __CYBERCTF_MOCK__?: boolean }).__CYBERCTF_MOCK__ = true;
-  try {
-    if (sc.onboarding) localStorage.removeItem("cyberctf.onboarded");
-    else localStorage.setItem("cyberctf.onboarded", "1");
-  } catch {
-    /* ignore */
-  }
+  if (sc.onboarding) clearOnboarded();
+  else markOnboarded();
 }

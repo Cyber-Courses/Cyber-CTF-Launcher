@@ -18,3 +18,12 @@ export function markOnboarded() {
     /* ignore */
   }
 }
+
+/** The onboarding shows again on the next start (Settings' Replay onboarding). */
+export function clearOnboarded() {
+  try {
+    localStorage.removeItem(ONBOARDED_KEY);
+  } catch {
+    /* ignore */
+  }
+}

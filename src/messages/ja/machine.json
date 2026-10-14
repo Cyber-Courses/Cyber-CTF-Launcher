@@ -1,18 +1,4 @@
 {
-  "format": {
-    "gb": "{n} GB",
-    "gbOf": "{used}/{total} GB",
-    "mb": "{n} MB",
-    "kb": "{n} kB",
-    "justNow": "たった今",
-    "minutesAgo": "{n} 分前",
-    "hoursAgo": "{n} 時間前",
-    "yesterday": "昨日",
-    "daysAgo": "{n} 日前",
-    "uptimeDays": "{d}日 {h}時間",
-    "uptimeHours": "{h}時間 {m}分",
-    "uptimeMinutes": "{m}分"
-  },
   "errors": {
     "openSetup": "マシンのセットアップを開けませんでした",
     "copy": "クリップボードにコピーできませんでした",

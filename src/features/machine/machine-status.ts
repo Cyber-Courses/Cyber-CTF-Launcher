@@ -2,6 +2,7 @@ import type { MachineMetrics, ProviderStatus, SystemReport, Tool } from "@/lib/t
 import type { LastTest } from "@/lib/settings";
 import { usableHypervisors } from "@/features/machine/hypervisors";
 import type { LabKind } from "@/features/machine/machine-parts";
+import { GB } from "@/lib/format";
 
 // What the Machine page says about this machine, as pure functions of the system report, the
 // live metrics and the last self-tests.
@@ -11,8 +12,9 @@ export const OS_NAME: Record<string, string> = { macos: "macOS", windows: "Windo
 /** Free memory each lab type wants to start comfortably. */
 export const WANT_FREE: Record<LabKind, number> = { docker: 2e9, vm: 8e9 };
 
-/** Under this much free space the Machine page warns: a lab image plus the attack box needs more. */
-export const LOW_DISK_BYTES = 20 * 1024 ** 3;
+/** Under this much free space the Machine page warns: a lab image plus the attack box needs more.
+ *  In decimal GB, as the page shows sizes: "21 GB free" isn't low. */
+export const LOW_DISK_BYTES = 20 * GB;
 
 /** `used` as a percentage of `total` (0 when the total is unknown). */
 export const percent = (used: number, total: number) => (total ? (used / total) * 100 : 0);

@@ -7,7 +7,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
 import { StatusDot } from "@/components/ui/status-pill";
 import { ListSkeleton } from "@/features/machine/machine-parts";
-import { useMachineFormat } from "@/features/machine/use-machine-format";
+import { formatBytes } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { getAttackImage, OLD_ATTACK_IMAGES } from "@/lib/settings";
 import { machineStorage, machineStorageClean, type Storage } from "@/lib/tauri";
@@ -24,7 +24,6 @@ function attackImages(): string[] {
  *  (anything in use is kept; the player's own images and boxes are never listed). */
 export function DownloadsPanel() {
   const t = useT();
-  const fmt = useMachineFormat();
   const [storage, setStorage] = useState<Storage | null>(null);
   const [showStorage, setShowStorage] = useState(false);
   const [confirmClean, setConfirmClean] = useState(false);
@@ -65,7 +64,7 @@ export function DownloadsPanel() {
     <Panel>
       <PanelHeader
         title={t("machine.downloads.title")}
-        meta={storage && storeItems.length > 0 ? <span className="tabular-nums">{fmt.bytes(storeTotal)}</span> : undefined}
+        meta={storage && storeItems.length > 0 ? <span className="tabular-nums">{formatBytes(storeTotal)}</span> : undefined}
         action={
           storage && storeItems.length > 0 && !confirmClean ? (
             <Button variant="outline" size="xs" onClick={() => setConfirmClean(true)} disabled={cleaning}>
@@ -89,7 +88,7 @@ export function DownloadsPanel() {
             />
             <div className="min-w-0 flex-1">
               <p className="text-[0.8125rem] font-medium text-foreground">
-                {storeItems.length ? t("machine.downloads.total", { size: fmt.bytes(storeTotal) }) : t("machine.downloads.empty")}
+                {storeItems.length ? t("machine.downloads.total", { size: formatBytes(storeTotal) }) : t("machine.downloads.empty")}
               </p>
               <p className="font-mono text-[0.6875rem] text-faint">
                 {t("machine.downloads.containerImages", { count: storage.images.length })} · {t("machine.downloads.vmImages", { count: storage.boxes.length })}
@@ -100,13 +99,13 @@ export function DownloadsPanel() {
             storeItems.map((it) => (
               <div key={it.name} className="flex items-center gap-3 border-t border-border py-2 pr-4 pl-10 transition-colors hover:bg-glass">
                 <span className="min-w-0 flex-1 truncate font-mono text-[0.6875rem] text-muted-foreground">{it.name}</span>
-                <span className="shrink-0 font-mono text-[0.6875rem] tabular-nums text-faint">{fmt.bytes(it.bytes)}</span>
+                <span className="shrink-0 font-mono text-[0.6875rem] tabular-nums text-faint">{formatBytes(it.bytes)}</span>
               </div>
             ))}
           {confirmClean && (
             <div role="alert" className="flex flex-wrap items-center gap-3 border-t border-border bg-glass px-4 py-3">
               <StatusDot tone="warn" />
-              <p className="min-w-0 flex-1 text-[0.75rem] text-foreground">{t("machine.downloads.confirm", { size: fmt.bytes(storeTotal) })}</p>
+              <p className="min-w-0 flex-1 text-[0.75rem] text-foreground">{t("machine.downloads.confirm", { size: formatBytes(storeTotal) })}</p>
               <div className="flex gap-2">
                 <Button variant="ghost" size="xs" onClick={() => setConfirmClean(false)} disabled={cleaning}>
                   {t("machine.downloads.cancel")}
@@ -125,7 +124,7 @@ export function DownloadsPanel() {
           )}
           {freed !== null && !confirmClean && (
             <p className="border-t border-border px-4 py-2.5 text-[0.75rem] text-muted-foreground">
-              {freed > 0 ? t("machine.downloads.freed", { size: fmt.bytes(freed) }) : t("machine.downloads.nothingFreed")}
+              {freed > 0 ? t("machine.downloads.freed", { size: formatBytes(freed) }) : t("machine.downloads.nothingFreed")}
             </p>
           )}
         </>

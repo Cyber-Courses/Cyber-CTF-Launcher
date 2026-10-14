@@ -340,8 +340,8 @@
     "retryRandomPorts": "ランダムなポートで再試行"
   },
   "cloud": {
-    "hourly": "1 時間あたり約 ${usd}",
-    "untilAutoStop": "{hourly}（{hours} 時間後の自動停止まで約 ${usd}）",
+    "hourly": "1 時間あたり約 {usd}",
+    "untilAutoStop": "{hourly}（{hours} 時間後の自動停止まで約 {usd}）",
     "billed": "クラウドアカウントに課金されます。",
     "costsUntilStop": "ラボはそこにサービスを作成し、停止するまで料金が発生します。",
     "costsUntilAutoStop": "ラボはそこにサービスを作成し、停止するまで料金が発生します。ランチャーは {hours} 時間後に削除しますが、起動中の場合に限ります。終了する前にラボを停止してください。",

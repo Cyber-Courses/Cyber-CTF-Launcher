@@ -1,3 +1,6 @@
+import type { LabStatus } from "@/lib/tauri";
+import type { Handlers } from "@/lib/dev-mock-types";
+
 // The dev mock's labs (see dev-mock.ts): the catalogue, their statuses, and the objectives of
 // "Exposed dashboard" with the player's progress, answered as the backend would.
 
@@ -83,7 +86,7 @@ export const labs = [
 // A wide topology on purpose (three networks, two pivots), so the lab page's diagram can be
 // checked at every window width: the public network, then the billing back end behind the API,
 // then the finance network behind the billing worker.
-export const invoiceStatus = {
+export const invoiceStatus: LabStatus = {
   running: true,
   parked: null,
   url: "http://127.0.0.1:8080",
@@ -91,6 +94,11 @@ export const invoiceStatus = {
   expiresAt: null,
   place: "container",
   provider: null,
+  // The attack box of a lab here is read on its own (exegol_status); the core names it only for a
+  // lab on a server or in a VM.
+  attacker: null,
+  outputs: [],
+  message: null,
   networks: [
     { name: "default", subnet: "10.42.0.0/24", internal: false },
     { name: "billing", subnet: "10.42.1.0/24", internal: true },
@@ -181,7 +189,7 @@ export const invoiceStatus = {
     },
   ],
 };
-export const stopped = {
+export const stopped: LabStatus = {
   running: false,
   parked: null,
   url: null,
@@ -189,6 +197,7 @@ export const stopped = {
   expiresAt: null,
   place: null,
   provider: null,
+  attacker: null,
   networks: [],
   machines: [],
   outputs: [],
@@ -278,7 +287,7 @@ export function mockObjectives(op: string, v: Record<string, unknown>): unknown 
 }
 
 /** The lab commands: their status, a cloud lab's preview, what runs and deploys. */
-export const labCommands: Record<string, (args: Record<string, unknown> | undefined) => unknown> = {
+export const labCommands = {
   lab_status: (args) => (args?.id === "lab-invoice" ? invoiceStatus : stopped),
   lab_cloud_preview: (args) =>
     args?.id === "lab-goat" ? { provider: "aws", hourlyUsd: 0.02, inputs: ["PLAYER_CIDR"], allowList: true, outputs: ["access_key_id", "secret_key"] } : null,
@@ -288,7 +297,7 @@ export const labCommands: Record<string, (args: Record<string, unknown> | undefi
   lab_deploy_log: () => "",
   lab_tools: () => [{ name: "Burp Suite", image: null, addresses: [{ network: "default", ip: "10.42.0.9" }], publish: null }],
   lab_check: () => ({ available: true, ok: true, output: "", results: [{ name: "api", from: "attacker", ok: true, reason: "" }] }),
-};
+} satisfies Handlers;
 
 /** A GraphQL operation (`api_query`): the completed labs, the objectives, the catalogue. */
 export function apiQuery(args: Record<string, unknown> | undefined): unknown {

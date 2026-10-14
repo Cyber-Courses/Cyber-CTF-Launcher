@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, renderHook, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DownloadsPanel } from "@/features/machine/downloads-panel";
@@ -12,7 +12,7 @@ import { RunningNowPanel } from "@/features/machine/running-now-panel";
 import { SelfTest } from "@/features/machine/self-test";
 import { SetupChecklist } from "@/features/machine/setup-checklist";
 import { StepRow } from "@/features/machine/step-row";
-import { useMachineFormat } from "@/features/machine/use-machine-format";
+import { formatAgo, formatBytes, formatBytesOf, formatUptime } from "@/lib/format";
 import { LOCALES, setLocalePreference } from "@/lib/i18n";
 import { setAttackImage, setLastTest, type LastTest } from "@/lib/settings";
 import type { ProviderStatus, SelfTestEvent, SystemReport } from "@/lib/tauri";
@@ -38,14 +38,17 @@ const metrics = (over: Record<string, number> = {}) => ({
 
 /* ------------------------------------------------------------------ format */
 
-describe("useMachineFormat", () => {
+describe("the Machine page's sizes and times (lib/format, the common.units keys)", () => {
   afterEach(() => {
     act(() => setLocalePreference("system"));
   });
 
   it("writes sizes, times and uptimes in English", () => {
-    const { result } = renderHook(() => useMachineFormat());
-    const f = result.current;
+    act(() => setLocalePreference("en"));
+    const f = { bytes: formatBytes, ago: formatAgo, uptime: formatUptime };
+    expect(formatBytesOf(3.42 * GB, 8 * GB)).toBe("3.4/8.0 GB");
+    expect(formatBytesOf(19.5 * GB, 32 * GB)).toBe("20/32 GB");
+    expect(formatBytesOf(512e6, 32 * GB)).toBe("512 MB / 32 GB");
     expect(f.bytes(12 * GB)).toBe("12 GB");
     expect(f.bytes(3.42 * GB)).toBe("3.4 GB");
     expect(f.bytes(512e6)).toBe("512 MB");
@@ -66,8 +69,7 @@ describe("useMachineFormat", () => {
   for (const locale of LOCALES) {
     it(`writes every unit in ${locale}`, () => {
       act(() => setLocalePreference(locale));
-      const { result } = renderHook(() => useMachineFormat());
-      const f = result.current;
+      const f = { bytes: formatBytes, ago: formatAgo, uptime: formatUptime };
       const now = 1_000_000_000_000;
       const out = [
         f.bytes(3.4 * GB),
@@ -84,7 +86,7 @@ describe("useMachineFormat", () => {
         f.uptime(60),
       ];
       for (const s of out) {
-        expect(s).not.toMatch(/\{|\}|machine\.format/);
+        expect(s).not.toMatch(/\{|\}|common\.units|common\.time/);
         expect(s.length).toBeGreaterThan(0);
       }
       // The number itself is always there, with the language's decimal separator.

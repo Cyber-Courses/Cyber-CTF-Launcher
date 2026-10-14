@@ -9,7 +9,7 @@ import { needsCloudAccount, setupNeeded } from "@/features/labs/lab-readiness";
 import { cloudAccountsFor, cloudNames, isCloudLab, localProviders, runPlaces, runtimeLabel } from "@/features/labs/lab-runtime";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabStatus, ServerHost, SystemReport } from "@/lib/tauri";
-import { translate } from "@/lib/i18n";
+import { setLocalePreference, translate } from "@/lib/i18n";
 
 const rt = (runtime: LabRuntimeInfo["runtime"], providers: string[]) => ({ runtime, providers, architectures: [] }) as unknown as LabRuntimeInfo;
 const cloud = rt("CLOUD", ["aws"]);
@@ -125,5 +125,16 @@ describe("cloud labs", () => {
     expect(costEstimate(t, 0.02, 4)).toBe("about $0.02 an hour (about $0.08 until it auto-stops in 4 h)");
     expect(costEstimate(t, 0.5, 0)).toBe("about $0.50 an hour");
     expect(costEstimate(t, null, 4)).toBeNull();
+    // A very cheap lab isn't "$0.00".
+    expect(costEstimate(t, 0.0042, 0)).toBe("about $0.0042 an hour");
+  });
+
+  it("estimate their cost in the player's money notation", () => {
+    setLocalePreference("fr");
+    try {
+      expect(costEstimate(translate as never, 0.02, 4)).toBe("environ 0,02\u00a0$US de l’heure (environ 0,08\u00a0$US jusqu’à l’arrêt automatique dans 4 h)");
+    } finally {
+      setLocalePreference("en");
+    }
   });
 });

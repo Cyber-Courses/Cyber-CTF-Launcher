@@ -340,8 +340,8 @@
     "retryRandomPorts": "Retry with random ports"
   },
   "cloud": {
-    "hourly": "about ${usd} an hour",
-    "untilAutoStop": "{hourly} (about ${usd} until it auto-stops in {hours} h)",
+    "hourly": "about {usd} an hour",
+    "untilAutoStop": "{hourly} (about {usd} until it auto-stops in {hours} h)",
     "billed": "Billed to your cloud account.",
     "costsUntilStop": "The lab creates its services there and they cost money until you stop it.",
     "costsUntilAutoStop": "The lab creates its services there and they cost money until you stop it. The launcher removes them after {hours} h, but only while it is open: stop the lab before you quit it.",

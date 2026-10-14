@@ -7,12 +7,12 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { Field, Input, Nav, Note, Select, Step } from "@/features/servers/host-setup/form";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
-import { useFormat, useT } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
+import { formatUsd } from "@/lib/format";
 
 export function OptionsStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const format = useFormat();
-  const usd = (n: number) => format.number(n, { style: "currency", currency: "USD" });
+  const usd = (n: number) => formatUsd(n, t.locale);
   const { v, saving, error, mtdCost, set, text, connectionOk, back, saveAndTest } = s;
   return (
     <Step icon={Cloud} title={t("servers.setup.options.title")} description={t("servers.setup.options.description")}>

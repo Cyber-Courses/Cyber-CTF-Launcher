@@ -7,7 +7,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { type ServerCheck, type ServerHost, type ServerTest } from "@/lib/tauri";
 import { StatusPill, type Tone } from "@/components/ui/status-pill";
 import { hasBudget, isOverBudget } from "@/features/cloud/cloud-model";
-import { useFormat, useT } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
+import { formatUsd } from "@/lib/format";
 
 export function AccountRow({
   host,
@@ -25,7 +26,6 @@ export function AccountRow({
   onRemove: () => void;
 }) {
   const t = useT();
-  const format = useFormat();
   const result = test && test !== "testing" ? test : null;
   const ok = result ? result.ok : null;
   // Status dot: red on any failure, amber when something only warrants a warning, else green.
@@ -68,12 +68,8 @@ export function AccountRow({
           <p className="truncate font-mono text-[0.6875rem] text-faint">
             {facts.join(" · ")}
             {result?.latencyMs != null ? ` · ${result.latencyMs} ms` : ""}
-            {hasBudget(host)
-              ? ` · ${t("cloud.account.budget", { amount: format.number(host.monthlyLimit!, { style: "currency", currency: "USD", maximumFractionDigits: 0 }) })}`
-              : ""}
-            {hasBudget(host) && spent != null
-              ? `, ${t("cloud.account.spentThisMonth", { amount: format.number(spent, { style: "currency", currency: "USD" }) })}`
-              : ""}
+            {hasBudget(host) ? ` · ${t("cloud.account.budget", { amount: formatUsd(host.monthlyLimit!, t.locale, { whole: true }) })}` : ""}
+            {hasBudget(host) && spent != null ? `, ${t("cloud.account.spentThisMonth", { amount: formatUsd(spent, t.locale) })}` : ""}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

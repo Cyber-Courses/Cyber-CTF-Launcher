@@ -17,8 +17,6 @@ import { Section, useSavedFlash } from "@/features/settings/settings-layout";
 import { warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
-export const ONBOARDED_KEY = "cyberctf.onboarded";
-
 /* ------------------------------------------------------------------ screen */
 
 export function SettingsScreen({

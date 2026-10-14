@@ -1,18 +1,4 @@
 {
-  "format": {
-    "gb": "{n} GB",
-    "gbOf": "{used}/{total} GB",
-    "mb": "{n} MB",
-    "kb": "{n} kB",
-    "justNow": "gerade eben",
-    "minutesAgo": "vor {n} Min.",
-    "hoursAgo": "vor {n} Std.",
-    "yesterday": "gestern",
-    "daysAgo": "vor {n} Tagen",
-    "uptimeDays": "{d} T {h} h",
-    "uptimeHours": "{h} h {m} min",
-    "uptimeMinutes": "{m} min"
-  },
   "errors": {
     "openSetup": "Rechner-Einrichtung konnte nicht geöffnet werden",
     "copy": "Kopieren in die Zwischenablage fehlgeschlagen",
