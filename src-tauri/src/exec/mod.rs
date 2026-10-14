@@ -208,9 +208,7 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
     let waiting = child.wait_with_output();
     let waited = match timeout {
         None => waiting.await,
-        Some(dur) => tokio::time::timeout(dur, waiting)
-            .await
-            .map_err(|_| failed(program, args, timed_out_after(dur)))?,
+        Some(dur) => tokio::time::timeout(dur, waiting).await.map_err(|_| failed(program, args, timed_out_after(dur)))?,
     };
     group.disarm();
     let output = waited.map_err(spawn_error(program))?;
