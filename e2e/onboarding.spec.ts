@@ -53,7 +53,11 @@ test.describe("onboarding", () => {
           if (machine.intel) await expect(intelNote).toBeVisible();
           else await expect(intelNote).toHaveCount(0);
         }
-        if (steps[n] === "Virtualization") await expect(page.getByText(/turns on WSL 2 for you/)).toBeVisible();
+        // Docker runs on a ready machine, so WSL 2 works: nothing to turn on, no restart (#224).
+        if (steps[n] === "Virtualization") {
+          await expect(page.getByText("On and running")).toBeVisible();
+          await expect(page.getByRole("button", { name: "Turn on WSL 2" })).toHaveCount(0);
+        }
         // The self-tests run on their own; the flow waits for them.
         if (steps[n].endsWith("test") || steps[n].startsWith("VM test")) await expect(page.getByText("Passed")).toBeVisible();
         await expect(forward(page)).toBeEnabled();
