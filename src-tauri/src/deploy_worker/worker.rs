@@ -18,6 +18,10 @@ use super::{Job, Op, execute, files};
 ///
 /// When Tauri can't build the worker's app.
 pub fn worker_main(job_path: &Path, mut context: tauri::Context<crate::AppRuntime>) -> tauri::Result<()> {
+    // Windows starts the worker (a process group of its own) with Ctrl+C ignored, which its tools
+    // would inherit: a stop's Ctrl+C never reached Terraform.
+    #[cfg(windows)]
+    crate::platform::console::let_tools_take_ctrl_c();
     let Some(job) = read_job(job_path) else {
         eprintln!("deploy worker: unreadable job file {}", job_path.display());
         std::process::exit(2);

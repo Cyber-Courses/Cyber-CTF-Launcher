@@ -40,6 +40,15 @@ pub fn send_ctrl_c(pid: u32) -> bool {
     }
 }
 
+/// Takes Ctrl+C again (`SetConsoleCtrlHandler(NULL, FALSE)`), which the console programs this
+/// process starts from now on inherit. A process created in a process group of its own starts with
+/// Ctrl+C ignored, and so would every program it starts. Whether it was set.
+pub fn take_ctrl_c() -> bool {
+    use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
+    // SAFETY: no pointer: a null handler routine (this process's own Ctrl+C setting) and a flag.
+    unsafe { SetConsoleCtrlHandler(None, 0) != 0 }
+}
+
 /// `s` as a NUL-terminated UTF-16 string, for the `W` calls.
 fn wide(s: &OsStr) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
