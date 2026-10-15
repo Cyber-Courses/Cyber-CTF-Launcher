@@ -1,19 +1,75 @@
-//! Real labs through the launcher's own local Docker path, end to end: generate and start the
-//! lab (`launch::start_on_docker`), read its status (`status::local_status`), start the attack
-//! box beside it (`exegol::start`) and reach a target from inside it, run the lab's checks
-//! (`docker::check`), then stop it (`lifecycle::stop_here`) and assert nothing of it is left.
+//! Real labs through the launcher's local Docker paths, end to end: generate and start the lab,
+//! read its status, start the attack box beside it and reach a target from inside it, run the
+//! lab's checks, then stop it and assert nothing of it is left. Each lab runs through the
+//! launcher's own Docker code (`launch::start_on_docker`, `status::local_status`,
+//! `docker::check`, `lifecycle::stop_here`) and through the Isothrum runner (`isothrum`, the
+//! hidden developer switch's path), which also parks and resumes it, the attack box following.
 //!
-//! Opt-in (they need Docker, a lab checkout and the attack-box image), run by `labs.yml`:
-//!   CYBERCTF_TEST_LAB=<invoice-portal-api checkout> \
-//!   CYBERCTF_TEST_SEGMENTED_LAB=<isoloom checkout>/examples/segmented \
-//!   ISOLOOM_HOME=$(mktemp -d) cargo test real_labs -- --ignored --nocapture --test-threads=1
+//! Opt-in (they need Docker, a lab checkout and the attack-box image):
+//!
+//! ```text
+//! CYBERCTF_TEST_LAB=<invoice-portal-api checkout> \
+//! CYBERCTF_TEST_HELLO_LAB=<isoloom checkout>/examples/hello-stack \
+//! CYBERCTF_TEST_SEGMENTED_LAB=<isoloom checkout>/examples/segmented \
+//! cargo test real_labs -- --ignored --nocapture --test-threads=1
+//! ```
+//!
 //! `CYBERCTF_TEST_ATTACK_BOX` overrides the attack-box image (default: the launcher's own pinned
 //! default, `src-tauri/attack-box-image.json`).
 
 use std::path::{Path, PathBuf};
 
-use super::{LabStatus, Place, Runtime, docker, exegol, launch, lifecycle, status};
+use super::{LabStatus, Place, Runtime, docker, exegol, isothrum, launch, lifecycle, status};
+use crate::error::Result;
 use crate::platform::exec::run;
+
+/// Which of the launcher's paths runs the lab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Via {
+    /// The launcher's own Docker code.
+    Launcher,
+    /// The Isothrum runner, from the run manifest Isoloom writes.
+    Runner,
+}
+
+/// One lab installed for a test, and the path it runs through.
+struct Run {
+    dir: PathBuf,
+    id: String,
+    via: Via,
+    /// The runner's home (its runs under `runs/`), for [`Via::Runner`].
+    home: PathBuf,
+}
+
+impl Run {
+    async fn start(&self, log: &mut impl FnMut(String)) -> Result<()> {
+        match self.via {
+            Via::Launcher => launch::start_on_docker(&self.dir, &self.id, &[], log).await,
+            Via::Runner => launch::start_docker_run(&self.home, &self.dir, &self.id, &[], log).await,
+        }
+    }
+
+    async fn status(&self) -> Result<LabStatus> {
+        match self.via {
+            Via::Launcher => status::local_status(&self.dir, &self.id, Runtime::Docker).await,
+            Via::Runner => isothrum::DockerRun::new(&self.home, &self.dir, &self.id)?.status().await,
+        }
+    }
+
+    async fn check(&self) -> Result<docker::Check> {
+        match self.via {
+            Via::Launcher => docker::check(&self.dir, &self.id).await,
+            Via::Runner => isothrum::DockerRun::new(&self.home, &self.dir, &self.id)?.check().await,
+        }
+    }
+
+    async fn stop(&self, log: impl FnMut(String)) -> Result<()> {
+        match self.via {
+            Via::Launcher => lifecycle::stop_here(&self.dir, &self.id, Runtime::Docker, log).await,
+            Via::Runner => lifecycle::stop_docker_run(&self.home, &self.dir, &self.id, log).await,
+        }
+    }
+}
 
 /// What one lab must show once it is up.
 struct Expect {
@@ -124,25 +180,48 @@ fn check_status(s: &LabStatus, e: &Expect, f: &mut Vec<String>) {
 }
 
 /// The lab while it is up; every failure is collected so the lab is always stopped after.
-async fn exercise(dir: &Path, id: &str, e: &Expect, f: &mut Vec<String>) {
-    let mut log = log(id);
-    if let Err(err) = launch::start_on_docker(dir, id, &[], &mut log).await {
+async fn exercise(r: &Run, e: &Expect, f: &mut Vec<String>) {
+    let mut log = log(&r.id);
+    if let Err(err) = r.start(&mut log).await {
         check(false, format!("the lab starts: {err}"), f);
         return;
     }
-    exercise_status(dir, id, e, f).await;
-    exercise_attack_box(id, e, log, f).await;
-    exercise_checks(dir, id, f).await;
+    exercise_status(r, e, f).await;
+    exercise_attack_box(&r.id, e, log, f).await;
+    exercise_checks(r, f).await;
+    if r.via == Via::Runner {
+        exercise_park_and_resume(r, e, f).await;
+    }
+}
+
+/// Parked, the lab and its attack box stop and stay; resumed, both come back as they were, the
+/// lab at the same address and the attack box on its networks.
+async fn exercise_park_and_resume(r: &Run, e: &Expect, f: &mut Vec<String>) {
+    let url = r.status().await.ok().and_then(|s| s.url);
+    let run = match isothrum::DockerRun::new(&r.home, &r.dir, &r.id) {
+        Ok(run) => run,
+        Err(err) => return check(false, format!("the runner opens the lab: {err}"), f),
+    };
+    let parked = run.park(&mut log(&r.id)).await;
+    check(parked.is_ok(), format!("the lab parks ({:?})", parked.err()), f);
+    let s = r.status().await;
+    check(s.as_ref().is_ok_and(|s| !s.running && s.parked.is_some()), format!("parked, it reads as parked ({:?})", s.map(|s| (s.running, s.parked))), f);
+    check(!exegol::status(&r.id, &attack_box_image()).await.running, "the attack box stopped with the lab".into(), f);
+    let resumed = run.resume(&mut log(&r.id)).await;
+    check(resumed.is_ok(), format!("the lab resumes ({:?})", resumed.err()), f);
+    let s = r.status().await;
+    check(s.as_ref().is_ok_and(|s| s.running && s.url == url), format!("resumed, it runs at the same address ({url:?})"), f);
+    exercise_attack_box_reaches(&r.id, e, f).await;
 }
 
 /// The lab's status, and its published port answering on this machine (as the Open button expects).
-async fn exercise_status(dir: &Path, id: &str, e: &Expect, f: &mut Vec<String>) {
-    match status::local_status(dir, id, Runtime::Docker).await {
+async fn exercise_status(r: &Run, e: &Expect, f: &mut Vec<String>) {
+    match r.status().await {
         Ok(s) => {
             check_status(&s, e, f);
             if let Some(url) = &s.url {
                 let res = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap().get(url).send().await;
-                check(res.is_ok(), format!("{url} answers on this machine ({:?})", res.as_ref().map(|r| r.status())), f);
+                check(res.is_ok(), format!("{url} answers on this machine ({:?})", res.as_ref().map(reqwest::Response::status)), f);
             }
         }
         Err(err) => check(false, format!("the lab's status reads: {err}"), f),
@@ -156,7 +235,12 @@ async fn exercise_attack_box(id: &str, e: &Expect, log: impl FnMut(String), f: &
         check(false, format!("the attack box starts: {err}"), f);
         return;
     }
-    let s = exegol::status(id, &image).await;
+    exercise_attack_box_reaches(id, e, f).await;
+}
+
+/// The attack box runs on the lab's network and reaches the target.
+async fn exercise_attack_box_reaches(id: &str, e: &Expect, f: &mut Vec<String>) {
+    let s = exegol::status(id, &attack_box_image()).await;
     check(s.running && !s.ip.is_empty() && !s.lab_network.is_empty(), format!("the attack box runs at {} on {}", s.ip, s.lab_network), f);
     let attacker = exegol::container(id);
     let got = run("docker", &["exec", &attacker, "curl", "-s", "--max-time", "20", "-w", "\n%{http_code}", e.url], None).await;
@@ -175,8 +259,8 @@ async fn exercise_attack_box(id: &str, e: &Expect, log: impl FnMut(String), f: &
 }
 
 /// The lab's own checks pass.
-async fn exercise_checks(dir: &Path, id: &str, f: &mut Vec<String>) {
-    match docker::check(dir, id).await {
+async fn exercise_checks(r: &Run, f: &mut Vec<String>) {
+    match r.check().await {
         Ok(c) if !c.available => println!("the lab declares no checks"),
         Ok(c) => {
             for r in &c.results {
@@ -197,35 +281,90 @@ async fn exercise_checks(dir: &Path, id: &str, f: &mut Vec<String>) {
     }
 }
 
-async fn real_lab(name: &str, e: Expect) {
+async fn real_lab(name: &str, via: Via, e: Expect) {
     let src = std::env::var(e.lab_var).unwrap_or_else(|_| panic!("set {} to the lab's checkout", e.lab_var));
     let id = format!("ci-{name}-{}", rand::random::<u16>());
-    let dir = install_copy(Path::new(&src), &id);
+    let r = Run { dir: install_copy(Path::new(&src), &id), home: std::env::temp_dir().join(format!("cyberctf-{id}-home")), id, via };
     let started = std::time::Instant::now();
     let mut failures = Vec::new();
-    exercise(&dir, &id, &e, &mut failures).await;
+    exercise(&r, &e, &mut failures).await;
     if !failures.is_empty() {
         // What the lab said, before stopping it takes its containers (and logs) away.
-        let logs = run("docker", &["compose", "-p", &docker::project(&id), "logs", "--no-color", "--tail", "200"], None).await;
+        let logs = run("docker", &["compose", "-p", &docker::project(&r.id), "logs", "--no-color", "--tail", "200"], None).await;
         println!("compose logs:\n{}", logs.unwrap_or_else(|err| err.to_string()));
     }
     // Stop and remove, whatever happened above (as the Stop button does).
-    let stopped = lifecycle::stop_here(&dir, &id, Runtime::Docker, log(&id)).await;
+    let stopped = r.stop(log(&r.id)).await;
     check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), &mut failures);
-    let left = leftovers(&id).await;
+    let left = leftovers(&r.id).await;
     check(left.is_empty(), format!("nothing of the lab is left: {left:?}"), &mut failures);
-    let _ = std::fs::remove_dir_all(&dir);
-    println!("{name}: {:.0?}", started.elapsed());
+    if via == Via::Runner {
+        let record = std::fs::read_to_string(r.home.join("runs").join(docker::project(&r.id)).join("record.json")).unwrap_or_default();
+        check(record.contains(r#""state": "absent""#), format!("the runner records the run as gone ({record})"), &mut failures);
+    }
+    let _ = std::fs::remove_dir_all(&r.dir);
+    let _ = std::fs::remove_dir_all(&r.home);
+    println!("{name} ({via:?}): {:.0?}", started.elapsed());
     assert!(failures.is_empty(), "{} failed:\n{}", name, failures.join("\n"));
+}
+
+/// Isoloom's hello-stack: one network with no internet, a web server publishing its page and a
+/// cache seeded by a set-up job, and checks of every kind (http, tcp, exec inside the cache, a
+/// script).
+fn hello_stack() -> Expect {
+    Expect {
+        lab_var: "CYBERCTF_TEST_HELLO_LAB",
+        target: "web",
+        networks: &["app"],
+        services: &["80=web"],
+        url: "http://web/",
+        code: "200",
+        body: "hello from isoloom",
+        published: true,
+    }
+}
+
+/// A segmented lab: three networks behind a router, reach rules between them, nothing published,
+/// checks run from the user's seat (Isoloom's access stand-in) and from inside the segments.
+fn segmented() -> Expect {
+    Expect {
+        lab_var: "CYBERCTF_TEST_SEGMENTED_LAB",
+        target: "web",
+        networks: &["front", "back", "access"],
+        services: &[],
+        url: "http://web/",
+        code: "200",
+        body: "web on the front network",
+        published: false,
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs Docker, Isoloom's hello-stack example and the attack-box image"]
+async fn real_labs_hello_stack() {
+    real_lab("hello", Via::Launcher, hello_stack()).await;
+}
+
+#[tokio::test]
+#[ignore = "needs Docker, Isoloom's hello-stack example and the attack-box image"]
+async fn real_labs_hello_stack_on_the_runner() {
+    real_lab("hello", Via::Runner, hello_stack()).await;
+}
+
+#[tokio::test]
+#[ignore = "needs Docker, Isoloom's segmented example and the attack-box image"]
+async fn real_labs_segmented_on_the_runner() {
+    real_lab("segmented", Via::Runner, segmented()).await;
 }
 
 /// One network, two machines (a web API and its database), checks of its own (an HTTP probe
 /// and a script on the lab network).
 #[tokio::test]
-#[ignore]
+#[ignore = "needs Docker, the invoice-portal-api lab (rewritten in Isoloom's current syntax) and the attack-box image"]
 async fn real_labs_supplier_portal() {
     real_lab(
         "invoice",
+        Via::Launcher,
         Expect {
             lab_var: "CYBERCTF_TEST_LAB",
             target: "web",
@@ -240,23 +379,9 @@ async fn real_labs_supplier_portal() {
     .await;
 }
 
-/// A segmented lab: three networks behind a router, reach rules between them, nothing published,
-/// checks run from the user's seat (Isoloom's access stand-in) and from inside the segments.
+/// The segmented lab through the launcher's own Docker code.
 #[tokio::test]
-#[ignore]
+#[ignore = "needs Docker, Isoloom's segmented example and the attack-box image"]
 async fn real_labs_segmented() {
-    real_lab(
-        "segmented",
-        Expect {
-            lab_var: "CYBERCTF_TEST_SEGMENTED_LAB",
-            target: "web",
-            networks: &["front", "back", "access"],
-            services: &[],
-            url: "http://web/",
-            code: "200",
-            body: "web on the front network",
-            published: false,
-        },
-    )
-    .await;
+    real_lab("segmented", Via::Launcher, segmented()).await;
 }

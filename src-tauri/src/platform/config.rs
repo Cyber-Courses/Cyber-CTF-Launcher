@@ -32,6 +32,13 @@ pub fn scheme_redirect() -> bool {
     setting("CYBERCTF_REDIRECT", option_env!("CYBERCTF_REDIRECT"), "loopback") == "scheme"
 }
 
+/// Whether container labs on this machine's Docker run through the Isothrum runner
+/// (`CYBERCTF_RUNNER=isothrum`) rather than the launcher's own Docker code: a developer switch,
+/// hidden (no setting shows it) until the runner covers the VM modes too.
+pub fn isothrum_runner() -> bool {
+    setting("CYBERCTF_RUNNER", option_env!("CYBERCTF_RUNNER"), "launcher") == "isothrum"
+}
+
 /// The keychain service the session and the server secrets are kept under.
 pub const KEYCHAIN_SERVICE: &str = "org.cyberctf.desktop";
 

@@ -28,9 +28,11 @@ pub fn worker_main(job_path: &Path, mut context: tauri::Context<crate::AppRuntim
     let app = tauri::Builder::<crate::AppRuntime>::new()
         .plugin(crate::app::logging::plugin(&log_name))
         .setup(move |app| {
-            start(app, job);
+            let task = start(app, job);
             #[cfg(unix)]
-            end_tools_when_stopped(job_file);
+            end_tools_when_stopped(job_file, task);
+            #[cfg(not(unix))]
+            drop(task);
             Ok(())
         })
         .build(context)
@@ -45,8 +47,9 @@ pub fn worker_main(job_path: &Path, mut context: tauri::Context<crate::AppRuntim
     Ok(())
 }
 
-/// The worker's start: its log and data folder, then the job, and an exit with its code.
-fn start(app: &mut tauri::App<crate::AppRuntime>, job: Job) {
+/// The worker's start: its log and data folder, then the job, and an exit with its code. Returns
+/// the job's task, which a stop ends.
+fn start(app: &mut tauri::App<crate::AppRuntime>, job: Job) -> tauri::async_runtime::JoinHandle<()> {
     crate::app::logging::log_startup(app.handle(), &format!("deploy worker ({})", job.lab_id));
     if let Ok(dir) = app.path().app_data_dir() {
         crate::shared_folder::init(&dir);
@@ -59,18 +62,22 @@ fn start(app: &mut tauri::App<crate::AppRuntime>, job: Job) {
     tauri::async_runtime::spawn(async move {
         let code = run_logged(&handle, job).await;
         handle.exit(code);
-    });
+    })
 }
 
 /// Stopped (the app's Stop sends SIGTERM to the worker's process group): the tools it runs
 /// (status probes, and the vagrant/compose/terraform runs it streams) sit in groups of their own,
-/// out of that signal's reach; end them too before going.
+/// out of that signal's reach; end them too before going. The launcher's own are ended gently
+/// first; then the job's task is ended, which drops an Isothrum runner's operation and with it
+/// every process tree the runner started (its contract: they end when the operation is dropped).
 #[cfg(unix)]
-fn end_tools_when_stopped(job_file: PathBuf) {
+fn end_tools_when_stopped(job_file: PathBuf, task: tauri::async_runtime::JoinHandle<()>) {
     tauri::async_runtime::spawn(async move {
         if let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
             term.recv().await;
             crate::platform::exec::kill_live_tools();
+            task.abort();
+            let _ = task.await;
             let _ = std::fs::remove_file(&job_file);
             std::process::exit(143);
         }

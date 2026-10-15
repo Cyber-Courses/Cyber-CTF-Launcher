@@ -170,6 +170,19 @@ pub async fn rejoin(id: &str) {
     }
 }
 
+/// Stops the attack box beside a lab that parks, keeping it to start again with the lab. Nothing
+/// in it needs a clean shutdown; `-t 1` also covers boxes made before they ran with `--init`
+/// (their PID 1 ignores SIGTERM, so a plain stop waited 10 s). Best effort: there may be none.
+pub async fn park(id: &str) {
+    let _ = run("docker", &["stop", "-t", "1", &container(id)], None).await;
+}
+
+/// Starts a parked attack box again with its lab, back on the lab's networks. Best effort.
+pub async fn wake(id: &str) {
+    let _ = run("docker", &["start", &container(id)], None).await;
+    rejoin(id).await;
+}
+
 pub async fn stop(id: &str, mut log: impl FnMut(String)) -> Result<()> {
     log("Removing the attack box…".into());
     let _ = stream("docker", &["rm", "-f", &container(id)], None, &[], &mut log).await;

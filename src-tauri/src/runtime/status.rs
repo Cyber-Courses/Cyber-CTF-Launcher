@@ -9,13 +9,14 @@ use std::time::{Duration, Instant};
 
 use crate::AppHandle;
 
-use super::paths::{lab_dir, local_vm, parked, state_dir, vagrant_dirs};
-use super::{AttackerAt, LabStatus, Place, Runtime, cloud_services, docker, lab, remote, server, terraform, vm};
+use super::paths::{lab_dir, local_vm, parked, runner_home, state_dir, vagrant_dirs};
+use super::{AttackerAt, LabStatus, Place, Runtime, cloud_services, docker, isothrum, lab, remote, server, terraform, vm};
 use crate::error::Result;
 
 pub(super) async fn status(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
     let status = match (runtime, server::lab_connection(app, dir)?) {
         (Runtime::Cloud, c) => cloud_status(app, dir, id, c)?,
+        (Runtime::Docker, None) if local_vm(dir).is_none() && isothrum::chosen() => isothrum::DockerRun::new(&runner_home(app)?, dir, id)?.status().await?,
         (_, None) => local_status(dir, id, runtime).await?,
         (_, Some(c)) => server_status(app, dir, id, runtime, c).await?,
     };

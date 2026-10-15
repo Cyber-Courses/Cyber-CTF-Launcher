@@ -127,7 +127,7 @@
         "rs:runtime": 4
       },
       "clippy/doc_markdown": {
-        "rs:runtime": 52
+        "rs:runtime": 48
       },
       "clippy/expect_used": {
         "rs:runtime": 3
@@ -148,7 +148,7 @@
         "rs:runtime": 1
       },
       "clippy/ignore_without_reason": {
-        "rs:runtime": 5
+        "rs:runtime": 3
       },
       "clippy/ip_constant": {
         "rs:runtime": 1
@@ -178,7 +178,7 @@
         "rs:runtime": 1
       },
       "clippy/redundant_closure_for_method_calls": {
-        "rs:runtime": 17
+        "rs:runtime": 16
       },
       "clippy/semicolon_if_nothing_returned": {
         "rs:runtime": 4

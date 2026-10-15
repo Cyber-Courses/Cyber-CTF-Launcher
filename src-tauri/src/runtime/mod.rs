@@ -11,6 +11,8 @@
 //! - `commands`: the Tauri commands over all of the above.
 //! - `inflight`, `paths`, `remote`: the per-lab lock and in-flight registry, a lab's files and
 //!   markers, and SSH to a lab host.
+//! - `isothrum`: a container lab on this machine's Docker through the Isothrum runner, behind a
+//!   hidden developer switch (`CYBERCTF_RUNNER=isothrum`).
 
 mod attack_box;
 mod attack_vm;
@@ -23,6 +25,7 @@ mod exegol;
 #[cfg(all(test, unix))]
 mod fake_clis;
 mod inflight;
+mod isothrum;
 pub mod lab;
 mod launch;
 mod lifecycle;

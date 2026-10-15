@@ -24,6 +24,12 @@ pub fn compose_file(dir: &Path) -> PathBuf {
     out(dir).join("docker/compose.yml")
 }
 
+/// The lab's run manifest on local Docker (Isoloom writes it beside the Compose file): what the
+/// Isothrum runner executes.
+pub fn docker_manifest(dir: &Path) -> PathBuf {
+    out(dir).join("docker/run.json")
+}
+
 /// The Compose file's service running the lab's checks (profile `check`).
 pub const CHECK_SERVICE: &str = "isoloom-check";
 

@@ -12,7 +12,8 @@ mod compose;
 mod inspect;
 mod lifecycle;
 
-pub use check::{Check, check};
+pub use check::{Check, CheckResult, check};
 pub use compose::{attack_network, project};
 pub use inspect::{HostProbe, containers, host_probe_script, lab_network_names, primary_url, short_network, status, status_from_host, subnets_in_use};
+pub(crate) use lifecycle::explain_pool_overlap;
 pub use lifecycle::{PORTS_ENV, park, published, resume, start, stop};

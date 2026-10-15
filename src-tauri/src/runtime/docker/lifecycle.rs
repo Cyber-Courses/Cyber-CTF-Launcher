@@ -158,7 +158,7 @@ pub async fn start(dir: &Path, id: &str, env: &[(String, String)], mut log: impl
 
 /// Docker's "Pool overlaps with other one on this address space", said as what to do: another
 /// network (a lab, or one left behind) holds an address block this lab needs.
-fn explain_pool_overlap(e: Error) -> Error {
+pub(crate) fn explain_pool_overlap(e: Error) -> Error {
     if !e.to_string().contains("Pool overlaps") {
         return e;
     }
@@ -185,9 +185,7 @@ fn start_steps(plan: &crate::runtime::lab::StartPlan) -> Vec<Vec<String>> {
 /// was (`compose start`), no rebuild. The attack box is stopped alongside, so it comes back too.
 pub async fn park(dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
     let project = compose::project(id);
-    // Nothing in the attack box needs a clean shutdown; -t 1 also covers boxes made before
-    // they ran with --init (their PID 1 ignores SIGTERM, so a plain stop waited 10 s).
-    let _ = run("docker", &["stop", "-t", "1", &crate::runtime::exegol::container(id)], None).await;
+    crate::runtime::exegol::park(id).await;
     compose::stream(dir, &project, &["stop"], &[], &mut log).await
 }
 
@@ -196,8 +194,7 @@ pub async fn resume(dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result
     ensure_docker_up().await?;
     let project = compose::project(id);
     compose::stream(dir, &project, &["start"], &[], &mut log).await?;
-    let _ = run("docker", &["start", &crate::runtime::exegol::container(id)], None).await;
-    crate::runtime::exegol::rejoin(id).await;
+    crate::runtime::exegol::wake(id).await;
     Ok(())
 }
 

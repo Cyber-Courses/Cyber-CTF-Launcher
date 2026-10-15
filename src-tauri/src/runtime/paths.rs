@@ -20,6 +20,11 @@ fn app_data(app: &AppHandle) -> Result<PathBuf> {
     app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))
 }
 
+/// The Isothrum runner's home: the app data folder, its runs kept under `runs/` beside `labs/`.
+pub(super) fn runner_home(app: &AppHandle) -> Result<PathBuf> {
+    app_data(app)
+}
+
 /// An installed lab's folder.
 pub(super) fn lab_dir(app: &AppHandle, id: &str) -> Result<PathBuf> {
     validate_id(id)?;

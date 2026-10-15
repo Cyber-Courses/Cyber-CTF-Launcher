@@ -6,9 +6,9 @@ use crate::AppHandle;
 use tauri::ipc::Channel;
 
 use super::lifecycle::stop_lab;
-use super::paths::{lab_dir, validate_id};
+use super::paths::{lab_dir, local_vm, runner_home, validate_id};
 use super::shell::lab_shell_command;
-use super::{LabStatus, Park, Runtime, attack_vm, cloud_services, discover, docker, exegol, lab, server, status};
+use super::{LabStatus, Park, Runtime, attack_vm, cloud_services, discover, docker, exegol, isothrum, lab, server, status};
 use crate::deploy_worker::{self, Job, Op};
 use crate::error::{Error, Result};
 
@@ -104,6 +104,9 @@ pub async fn running_labs(app: AppHandle) -> Vec<String> {
 pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<docker::Check> {
     let dir = lab_dir(&app, &id)?;
     match runtime {
+        Runtime::Docker if server::lab_connection(&app, &dir)?.is_none() && local_vm(&dir).is_none() && isothrum::chosen() => {
+            isothrum::DockerRun::new(&runner_home(&app)?, &dir, &id)?.check().await
+        }
         Runtime::Docker if server::lab_connection(&app, &dir)?.is_none() => docker::check(&dir, &id).await,
         _ => Ok(docker::Check { available: false, ok: false, output: String::new(), results: Vec::new() }),
     }

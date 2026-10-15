@@ -89,7 +89,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-deep-link = "2"
-tokio = { version = "1", features = ["process", "io-util", "macros", "rt-multi-thread", "time", "net", "signal"] }
+tokio = { version = "1", features = ["process", "io-util", "macros", "rt-multi-thread", "time", "net", "signal", "sync"] }
 thiserror = "2"
 sha2 = "0.11.0"
 base64 = "0.23.1"
@@ -109,6 +109,12 @@ serde_yaml_ng = "0.10.0"
 isoloom-spec = { git = "https://github.com/isoloom/isoloom", rev = "2201afe561d5dd9de91694caf1b245ed2bb79b57" }
 isoloom-plan = { git = "https://github.com/isoloom/isoloom", rev = "2201afe561d5dd9de91694caf1b245ed2bb79b57" }
 isoloom-targets = { git = "https://github.com/isoloom/isoloom", rev = "2201afe561d5dd9de91694caf1b245ed2bb79b57" }
+# The run manifest's types, shared with the Isothrum runner: what `runtime/isothrum` reads of a run.
+isoloom-manifest = { git = "https://github.com/isoloom/isoloom", rev = "2201afe561d5dd9de91694caf1b245ed2bb79b57" }
+# The Isothrum runner: executes the run manifest Isoloom writes (`runtime/isothrum`, local Docker
+# behind the hidden developer flag `CYBERCTF_RUNNER=isothrum`). Pinned to a commit of Isothrum's
+# local main, like Isoloom's crates.
+isothrum-runner = { git = "https://github.com/isoloom/isothrum", rev = "5d7f59bf642b3775a0f9d5e9ccb7828833f13af6" }
 # The map type of the Isoloom crates' API (a cloud-services lab's outputs).
 indexmap = "2"
 portable-pty = "0.9"
@@ -138,3 +144,5 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
 # Tauri's mock runtime, so code taking an app handle runs in unit tests (see `AppRuntime`).
 tauri = { version = "2.12.0", features = ["test"] }
+# The runner's test doubles (scripted processes, host ports and clock), for `runtime/isothrum`'s.
+isothrum-runner = { git = "https://github.com/isoloom/isothrum", rev = "5d7f59bf642b3775a0f9d5e9ccb7828833f13af6", features = ["fake"] }

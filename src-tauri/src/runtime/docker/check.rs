@@ -23,7 +23,7 @@ pub struct CheckResult {
 }
 
 /// Result of a lab's self-verification.
-#[derive(serde::Serialize, ts_rs::TS)]
+#[derive(serde::Serialize, Debug, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabCheck")]
 pub struct Check {

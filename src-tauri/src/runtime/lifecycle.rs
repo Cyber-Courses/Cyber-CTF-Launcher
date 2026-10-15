@@ -6,8 +6,8 @@ use std::path::Path;
 use crate::AppHandle;
 
 use super::inflight::{Action, DeployGuard, lock_lab};
-use super::paths::{lab_dir, local_vm, mark_local_vm, mark_parked, parked, state_dir, vagrant_dirs};
-use super::{Park, Runtime, attack_vm, cloud_services, docker, lab, server, terraform, vm};
+use super::paths::{lab_dir, local_vm, mark_local_vm, mark_parked, parked, runner_home, state_dir, vagrant_dirs};
+use super::{Park, Runtime, attack_vm, cloud_services, docker, isothrum, lab, server, terraform, vm};
 use crate::error::{Error, Result};
 
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
@@ -24,6 +24,7 @@ async fn park(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mode: Par
             refuse_vm_shutdown(mode)?;
             vm::park(&lab::vagrant_dir(dir, runtime), mode, &[], &mut log).await?;
         }
+        Runtime::Docker if isothrum::chosen() => isothrum::DockerRun::new(&runner_home(app)?, dir, id)?.park(&mut log).await?,
         Runtime::Docker => docker::park(dir, id, &mut log).await?,
         Runtime::Vm => {
             if let Err(e) = attack_vm::park(dir, mode, &mut log).await {
@@ -81,6 +82,7 @@ pub(super) async fn resume_locked(app: &AppHandle, dir: &Path, id: &str, runtime
     log("Resuming the lab…".into());
     match runtime {
         Runtime::Docker if local_vm(dir).is_some() => vm::resume(&lab::vagrant_dir(dir, runtime), &[], &mut *log).await?,
+        Runtime::Docker if isothrum::chosen() => isothrum::DockerRun::new(&runner_home(app)?, dir, id)?.resume(&mut *log).await?,
         Runtime::Docker => {
             // Its stopped containers pruned (or Docker reset): nothing to bring back. Say so and
             // drop the parked mark, so the page offers a fresh start instead of a resume that
@@ -166,7 +168,12 @@ pub(super) async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: 
     // keys go with its hosts.
     crate::account::colocation::retire(id);
     super::paths::forget_lab_host_keys(dir);
-    let Some(c) = server::lab_connection(app, dir)? else { return stop_here(dir, id, runtime, log).await };
+    let Some(c) = server::lab_connection(app, dir)? else {
+        if runtime == Runtime::Docker && local_vm(dir).is_none() && isothrum::chosen() {
+            return stop_docker_run(&runner_home(app)?, dir, id, log).await;
+        }
+        return stop_here(dir, id, runtime, log).await;
+    };
     let result = match server::terraform_target(c.provider) {
         // Cloud services: destroyed on the account they run on.
         _ if runtime == Runtime::Cloud => cloud_services::destroy(app, dir, id, &c, log).await,
@@ -202,6 +209,13 @@ pub(super) async fn stop_here(dir: &Path, id: &str, runtime: Runtime, mut log: i
         forget_run(dir)?;
     }
     result
+}
+
+/// Stops a container lab the Isothrum runner runs (runner home `home`) and, once it is gone,
+/// clears what marked it as running. Takes no app handle, so the real-lab tests run exactly this.
+pub(super) async fn stop_docker_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
+    isothrum::DockerRun::new(home, dir, id)?.down(&mut log).await?;
+    forget_run(dir)
 }
 
 /// A stopped lab's markers: where it ran, its local VM, parked.

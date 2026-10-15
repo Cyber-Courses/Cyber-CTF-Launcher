@@ -9,10 +9,10 @@ use tauri::Manager;
 use super::inflight::{Action, DeployGuard};
 use super::lifecycle::resume_locked;
 use super::paths::{
-    deployment_states, forget_lab_host_keys, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, state_dir, vagrant_dirs,
+    deployment_states, forget_lab_host_keys, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, runner_home, state_dir, vagrant_dirs,
 };
 use super::providers::Provider;
-use super::{Runtime, attack_box, attack_vm, cloud_services, docker, exegol, lab, server, ssh, terraform, vm};
+use super::{Runtime, attack_box, attack_vm, cloud_services, docker, exegol, isothrum, lab, server, ssh, terraform, vm};
 use crate::error::{Error, Result};
 
 mod local;
@@ -118,6 +118,9 @@ async fn start_here(
     log: &mut impl FnMut(String),
 ) -> Result<()> {
     server::mark_lab(dir, None)?;
+    if runtime == Runtime::Docker && provider.is_none_or(Provider::is_remote) && isothrum::chosen() {
+        return start_with_runner(app, dir, id, env, log).await;
+    }
     if resumes_parked(dir, id, runtime, log).await? {
         log("This lab is parked on this machine: resuming it as it was. Stop it first if you want a fresh copy.".into());
         return resume_locked(app, dir, id, runtime, log).await;
@@ -207,6 +210,26 @@ pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String
         log_lines(&m, log);
     }
     Ok(())
+}
+
+/// A container lab on this machine's Docker through the Isothrum runner (see `isothrum`), its
+/// downloads recorded for Storage as on the launcher's own path.
+async fn start_with_runner(app: &AppHandle, dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+    let before = crate::machine::storage::owned::Before::take(true, false).await;
+    let started = start_docker_run(&runner_home(app)?, dir, id, env, log).await;
+    crate::machine::storage::claim_lab(app, dir, id, &before).await;
+    started
+}
+
+/// The runner's start of a container lab (runner home `home`): its files generated (the run
+/// manifest with them), then up, or resumed as it was when it is parked (the runner's own rule).
+/// Takes no app handle, so the real-lab tests run exactly this.
+pub(super) async fn start_docker_run(home: &Path, dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+    recheck_instance(dir, id, log).await?;
+    lab::prepare(dir, lab::Target::Docker)?;
+    mark_local_vm(dir, None)?;
+    isothrum::DockerRun::new(home, dir, id)?.up(env, log).await?;
+    mark_parked(dir, None)
 }
 
 /// Checks the lab's instance against the networks Docker has now (an install with Docker down
