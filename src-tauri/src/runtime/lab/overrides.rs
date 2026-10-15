@@ -18,20 +18,28 @@ pub struct Overrides {
     pub compose_project: Option<String>,
 }
 
-/// `files` with the launcher's overrides applied (paths as Isoloom wrote them, before an
-/// instance moves them).
+/// `files` with the launcher's overrides applied (paths as Isoloom wrote them: under
+/// `.isoloom/`, or `.isoloom-<n>/` for an instance).
 pub fn apply(files: Vec<GeneratedFile>, o: &Overrides) -> Vec<GeneratedFile> {
     files
         .into_iter()
         .map(|mut f| {
             if let Some(project) = &o.compose_project
-                && f.path == format!("{}/docker/compose.yml", isoloom_targets::OUTPUT_DIR)
+                && is_compose_file(&f.path)
             {
                 f.contents = with_project(&f.contents, project);
             }
             f
         })
         .collect()
+}
+
+/// Whether `path` is the local Docker target's Compose file: `<output folder>/docker/compose.yml`.
+fn is_compose_file(path: &str) -> bool {
+    match path.split('/').collect::<Vec<_>>().as_slice() {
+        [out, "docker", "compose.yml"] => out.strip_prefix(isoloom_targets::OUTPUT_DIR).is_some_and(|rest| rest.is_empty() || rest.starts_with('-')),
+        _ => false,
+    }
 }
 
 /// A Compose file with its top-level `name:` set to `project` (a plain name: lowercase letters,
@@ -75,5 +83,16 @@ mod tests {
         let same = apply(vec![file(".isoloom/docker/compose.yml", compose)], &Overrides::default());
         assert_eq!(same[0].contents, compose);
         assert_eq!(with_project("name: a", "b"), "name: b");
+    }
+
+    #[test]
+    fn an_instances_compose_file_names_the_launchers_project_too() {
+        let o = Overrides { compose_project: Some("cyberctf-shop".into()) };
+        let out = apply(vec![file(".isoloom-2/docker/compose.yml", "name: shop-2\n"), file(".isoloom-2/docker/run.json", "name: shop-2\n")], &o);
+        assert_eq!(out[0].contents, "name: cyberctf-shop\n");
+        assert_eq!(out[1].contents, "name: shop-2\n", "the run manifest is left as Isoloom wrote it");
+        for other in [".isoloomx/docker/compose.yml", "docker/compose.yml", ".isoloom/docker-vm/docker/compose.yml"] {
+            assert!(!is_compose_file(other), "{other}");
+        }
     }
 }

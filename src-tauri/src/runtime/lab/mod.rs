@@ -104,8 +104,12 @@ pub fn spec_files(dir: &Path) -> Vec<std::path::PathBuf> {
 /// The spec as this lab's instance of it (what `prepare` generates from): its own name and
 /// Docker blocks when the lab has an instance number.
 pub fn instanced(dir: &Path) -> Result<Spec> {
-    let spec = spec(dir)?;
-    match instance(dir) {
+    as_instance(spec(dir)?, instance(dir))
+}
+
+/// `spec` as instance `n` of it (unchanged without one).
+fn as_instance(spec: Spec, n: Option<u8>) -> Result<Spec> {
+    match n {
         Some(n) => isoloom_spec::instance::apply(&spec, n).map_err(|e| Error::Invalid(format!("this lab as instance {n}: {e}"))),
         None => Ok(spec),
     }
@@ -154,38 +158,30 @@ pub fn tools(spec: &Spec, docker: bool) -> Vec<Observer> {
 /// there (e.g. Windows machines on a target without Windows images). Isoloom's defaults are
 /// applied to the files, then the launcher's own overrides (see `overrides`).
 pub fn prepare(dir: &Path, target: Target) -> Result<Spec> {
-    let spec = instanced(dir)?;
+    let spec = spec(dir)?;
     let n = instance(dir);
-    let files = render(&spec, target, n).map_err(|e| Error::Invalid(format!("this lab can't run there: {e}")))?;
+    let files = generate(&spec, target, n).map_err(|e| Error::Invalid(format!("this lab can't run there: {e}")))?;
     let files = isoloom_spec::defaults::apply_to_files(files, &defaults(dir)?);
-    let files = overrides::apply(files, &launcher_overrides(dir, target));
-    for f in files {
-        let (path, contents) = match n {
-            Some(n) => isoloom_spec::instance::relocate(&f.path, &f.contents, n),
-            None => (f.path, f.contents),
-        };
-        let path = dir.join(path);
+    for f in overrides::apply(files, &launcher_overrides(dir, target)) {
+        let path = dir.join(f.path);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(path, contents)?;
+        std::fs::write(path, f.contents)?;
     }
-    Ok(spec)
+    as_instance(spec, n)
 }
 
-/// `target`'s files for `spec` (the spec already as instance `n`), from the target's backend in
-/// Isoloom's registry: the plan for the target rendered, and the resolved snapshot beside it.
-/// Paths are Isoloom's, before an instance moves them. Refused, with the backend's reason, when
-/// the spec's machines don't allow the target or the plan needs what the backend can't do.
-fn render(spec: &Spec, target: Target, n: Option<u8>) -> std::result::Result<Vec<isoloom_targets::GeneratedFile>, isoloom_targets::GenerateError> {
-    use isoloom_targets::GenerateError;
-    if !isoloom_spec::targets::effective(spec).contains(&target) {
-        return Err(GenerateError::NotPossible(target));
+/// `target`'s files for `spec`, as Isoloom generates them: the plan rendered by the target's
+/// backend, its run manifest (`<target>/run.json`) when it has one, and the resolved snapshot;
+/// for instance `n`, the spec as that instance and everything under `.isoloom-<n>/`. Refused,
+/// with the backend's reason, when the spec's machines don't allow the target or the plan needs
+/// what the backend can't do.
+fn generate(spec: &Spec, target: Target, n: Option<u8>) -> std::result::Result<Vec<isoloom_targets::GeneratedFile>, isoloom_targets::GenerateError> {
+    match n {
+        Some(n) => isoloom_targets::generate_instance(spec, target, n),
+        None => isoloom_targets::generate(spec, target),
     }
-    let backend = isoloom_targets::backend(target).ok_or(GenerateError::NoGenerator(target))?;
-    let mut files = backend.render(&isoloom_targets::Environment::build(spec, target, n))?;
-    files.push(isoloom_targets::resolved::file_with(spec, n));
-    Ok(files)
 }
 
 /// The launcher's overrides of a lab's files for `target`: on local Docker, its Compose project
@@ -338,7 +334,7 @@ mod tests {
         // No `vm:` part: no VMs.
         let err = prepare(&dir, Target::Vagrant).unwrap_err().to_string();
         assert!(err.contains("can't run there"), "{err}");
-        assert!(matches!(render(&spec(&dir).unwrap(), Target::Vagrant, None), Err(isoloom_targets::GenerateError::NotPossible(Target::Vagrant))));
+        assert!(matches!(generate(&spec(&dir).unwrap(), Target::Vagrant, None), Err(isoloom_targets::GenerateError::NotPossible(Target::Vagrant))));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -349,7 +345,7 @@ mod tests {
         let dir = lab(SPEC);
         let spec = spec(&dir).unwrap();
         for target in isoloom_targets::GENERATED_TARGETS {
-            match render(&spec, *target, None) {
+            match generate(&spec, *target, None) {
                 Ok(files) => assert!(files.iter().any(|f| f.path == isoloom_targets::resolved::PATH), "{target:?}: the snapshot goes with every target"),
                 Err(e) => assert!(e.to_string().starts_with(target.id()), "{target:?}: {e}"),
             }
