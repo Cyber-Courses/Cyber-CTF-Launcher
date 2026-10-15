@@ -1,12 +1,10 @@
 "use client";
 
-import { ArrowLeft, HardDrive } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { StatusDot } from "@/components/ui/status-pill";
-import { Spinner } from "@/components/ui/spinner";
+import { HardDrive } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { Field, Input, Nav, Note, Step } from "@/features/servers/host-setup/form";
+import { Field, Input, Note, Step } from "@/features/servers/host-setup/form";
+import { BackNav, SaveAndTestButton, StepError } from "@/features/servers/host-setup/step-nav";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { useT } from "@/lib/i18n";
 
@@ -40,27 +38,19 @@ export function PlacementStep({ s }: { s: HostSetup }) {
             <span className="block text-[0.8125rem] text-foreground">{t("servers.setup.placement.selfSigned")}</span>
             <span className="block text-[0.75rem] text-muted-foreground">{t("servers.setup.placement.selfSignedHint")}</span>
           </span>
-          <Switch checked={v.insecureTls ?? false} onCheckedChange={(c) => set("insecureTls", c)} aria-label={t("servers.setup.placement.selfSigned")} />
+          <Switch
+            checked={v.insecureTls ?? false}
+            onCheckedChange={(c) => {
+              set("insecureTls", c);
+            }}
+            aria-label={t("servers.setup.placement.selfSigned")}
+          />
         </Note>
       )}
-      {error && (
-        <Note className="mt-3 flex items-start gap-2.5">
-          <StatusDot tone="fail" className="mt-1.5" />
-          <span className="min-w-0 break-words text-muted-foreground">{error}</span>
-        </Note>
-      )}
-      <Nav
-        left={
-          <Button variant="ghost" onClick={back}>
-            <ArrowLeft className="size-4" /> {t("servers.setup.nav.back")}
-          </Button>
-        }
-        right={
-          <Button onClick={saveAndTest} disabled={saving}>
-            {saving && <Spinner className="size-4" />} {t("servers.setup.nav.saveAndTest")}
-          </Button>
-        }
-      />
+      <StepError error={error} />
+      <BackNav onBack={back}>
+        <SaveAndTestButton onClick={saveAndTest} saving={saving} />
+      </BackNav>
     </Step>
   );
 }

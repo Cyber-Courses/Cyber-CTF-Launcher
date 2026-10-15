@@ -19,7 +19,7 @@ describe("container engines", () => {
     expect(engineBadge(r, "orbstack", "orbstack")).toBe("in use");
     expect(engineBadge(r, "colima", "colima")).toBe("running");
     expect(engineBadge(r, "docker-desktop", "docker-desktop")).toBe("recommended");
-    expect(engineBadge(report({ dockerEnginesRunning: undefined }), "docker-desktop", "docker-engine")).toBeUndefined();
+    expect(engineBadge(report(), "docker-desktop", "docker-engine")).toBeUndefined();
   });
 
   it("names engines, Podman included", () => {

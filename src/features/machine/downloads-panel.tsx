@@ -20,10 +20,11 @@ function attackImages(): string[] {
   return [getAttackImage(), ...OLD_ATTACK_IMAGES.filter((i) => i.includes(":") || i.includes("@"))];
 }
 
-/** The container images and VM boxes Cyber CTF downloaded itself, with a confirmed clean-up
- *  (anything in use is kept; the player's own images and boxes are never listed). */
-export function DownloadsPanel() {
-  const t = useT();
+/** Nothing downloaded, or nothing the storage read could see. */
+const NO_STORAGE: Storage = { images: [], boxes: [], plugins: [] };
+
+/** What Cyber CTF downloaded (null until read), and its confirmed clean-up: what it freed. */
+function useDownloads() {
   const [storage, setStorage] = useState<Storage | null>(null);
   const [confirmClean, setConfirmClean] = useState(false);
   const [cleaning, setCleaning] = useState(false);
@@ -33,12 +34,17 @@ export function DownloadsPanel() {
     // Set on every mount: React's dev StrictMode unmounts and remounts once, and the cleanup
     // alone left this false for good (the panel never left its skeleton).
     alive.current = true;
-    return () => void (alive.current = false);
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const load = useCallback(() => {
-    machineStorage(attackImages())
-      .then((s) => alive.current && setStorage(s))
-      .catch(() => alive.current && setStorage({ images: [], boxes: [], plugins: [] }));
+    const show = (s: Storage) => {
+      if (alive.current) setStorage(s);
+    };
+    machineStorage(attackImages()).then(show, () => {
+      show(NO_STORAGE);
+    });
   }, []);
   useEffect(() => {
     load();
@@ -46,17 +52,28 @@ export function DownloadsPanel() {
 
   async function clean() {
     setCleaning(true);
-    try {
-      setFreed(await machineStorageClean(attackImages()));
-    } catch {
-      setFreed(0);
-    } finally {
-      setCleaning(false);
-      setConfirmClean(false);
-      load();
-    }
+    setFreed(await machineStorageClean(attackImages()).catch(() => 0));
+    setCleaning(false);
+    setConfirmClean(false);
+    load();
   }
+  return {
+    storage,
+    confirmClean,
+    setConfirmClean,
+    cleaning,
+    freed,
+    clean: () => {
+      void clean();
+    },
+  };
+}
 
+/** The container images and VM boxes Cyber CTF downloaded itself, with a confirmed clean-up
+ *  (anything in use is kept; the player's own images and boxes are never listed). */
+export function DownloadsPanel() {
+  const t = useT();
+  const { storage, confirmClean, setConfirmClean, cleaning, freed, clean } = useDownloads();
   const storeItems = storage ? [...storage.images, ...storage.boxes, ...storage.plugins] : [];
   const storeTotal = storeItems.reduce((a, i) => a + i.bytes, 0);
   return (
@@ -66,7 +83,14 @@ export function DownloadsPanel() {
         meta={storage && storeItems.length > 0 ? <span className="tabular-nums">{formatBytes(storeTotal)}</span> : undefined}
         action={
           storage && storeItems.length > 0 && !confirmClean ? (
-            <Button variant="outline" size="xs" onClick={() => setConfirmClean(true)} disabled={cleaning}>
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => {
+                setConfirmClean(true);
+              }}
+              disabled={cleaning}
+            >
               <Trash2 /> {t("machine.downloads.cleanUp")}
             </Button>
           ) : undefined
@@ -77,7 +101,16 @@ export function DownloadsPanel() {
       ) : (
         <>
           <StorageList storage={storage} items={storeItems} total={storeTotal} />
-          {confirmClean && <CleanConfirm total={storeTotal} cleaning={cleaning} onCancel={() => setConfirmClean(false)} onConfirm={clean} />}
+          {confirmClean && (
+            <CleanConfirm
+              total={storeTotal}
+              cleaning={cleaning}
+              onCancel={() => {
+                setConfirmClean(false);
+              }}
+              onConfirm={clean}
+            />
+          )}
           {freed !== null && !confirmClean && (
             <p className="border-t border-border px-4 py-2.5 text-[0.75rem] text-muted-foreground">
               {freed > 0 ? t("machine.downloads.freed", { size: formatBytes(freed) }) : t("machine.downloads.nothingFreed")}
@@ -98,7 +131,9 @@ function StorageList({ storage, items, total }: { storage: Storage; items: Store
   return (
     <>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => !v);
+        }}
         disabled={items.length === 0}
         aria-expanded={open}
         className="flex min-h-[3.25rem] w-full items-center gap-3 px-4 py-2 text-left transition-colors enabled:hover:bg-glass"

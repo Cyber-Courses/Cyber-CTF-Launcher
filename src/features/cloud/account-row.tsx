@@ -5,10 +5,19 @@ import { AlertTriangle, CheckCircle2, Pencil, Trash2, X, XCircle, Zap } from "lu
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { type ServerCheck, type ServerHost, type ServerTest } from "@/lib/tauri";
-import { StatusPill, type Tone } from "@/components/ui/status-pill";
-import { hasBudget, isOverBudget } from "@/features/cloud/cloud-model";
-import { useT } from "@/lib/i18n";
+import { StatusPill } from "@/components/ui/status-pill";
+import { budgetOf, credentialOf, isOverBudget, outcomeOf, type Credential, type Outcome } from "@/features/cloud/cloud-model";
+import { useT, type T } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
+
+/** An account's test: running, its result, or never run. */
+type TestState = ServerTest | "testing" | undefined;
+
+const OUTCOME_LABEL = {
+  ok: "cloud.account.status.connected",
+  warn: "cloud.account.status.needsAttention",
+  fail: "cloud.account.status.failed",
+} as const satisfies Record<Outcome, string>;
 
 export function AccountRow({
   host,
@@ -19,107 +28,145 @@ export function AccountRow({
   onRemove,
 }: {
   host: ServerHost;
-  test: ServerTest | "testing" | undefined;
+  test: TestState;
   spent?: number | null;
   onTest: () => void;
   onEdit: () => void;
   onRemove: () => void;
 }) {
   const t = useT();
-  const result = test && test !== "testing" ? test : null;
-  const ok = result ? result.ok : null;
-  // Status dot: red on any failure, amber when something only warrants a warning, else green.
-  const dot = result == null ? null : !result.ok ? "fail" : result.checks?.some((c) => c.state === "warn") ? "warn" : "ok";
-  const [confirming, setConfirming] = useState(false);
-  const facts = [
-    host.host,
-    host.provider === "digitalocean" || host.provider === "linode"
-      ? t("cloud.account.apiToken")
-      : host.provider === "oci"
-        ? t("cloud.account.apiKey")
-        : host.provider !== "aws"
-          ? t("cloud.account.cliSignIn")
-          : host.useCliCreds
-            ? host.awsProfile
-              ? t("cloud.account.cliProfile", { profile: host.awsProfile })
-              : t("cloud.account.cliCredentials")
-            : t("cloud.account.accessKeys"),
-    host.autoStopHours ? t("cloud.account.autoStop", { hours: host.autoStopHours }) : t("cloud.account.noAutoStop"),
-  ];
-  const tone: Tone = test === "testing" ? "muted" : dot === null ? "muted" : dot;
-  const label = t(
-    test === "testing"
-      ? "cloud.account.status.testing"
-      : dot === null
-        ? "cloud.account.status.notTested"
-        : dot === "ok"
-          ? "cloud.account.status.connected"
-          : dot === "warn"
-            ? "cloud.account.status.needsAttention"
-            : "cloud.account.status.failed",
-  );
-  const isOver = isOverBudget(host, spent);
+  const result = test === "testing" ? undefined : test;
   return (
     <div className="border-t border-border first:border-t-0">
       <div className="grid min-h-[3.25rem] grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3.5 px-4 py-2.5 transition-colors hover:bg-glass">
         <LogoTile provider={host.provider} />
         <div className="min-w-0">
           <p className="truncate text-[0.8125rem] font-medium text-foreground">{host.name}</p>
-          <p className="truncate font-mono text-[0.6875rem] text-faint">
-            {facts.join(" · ")}
-            {result?.latencyMs != null ? ` · ${result.latencyMs} ms` : ""}
-            {hasBudget(host) ? ` · ${t("cloud.account.budget", { amount: formatUsd(host.monthlyLimit!, t.locale, { whole: true }) })}` : ""}
-            {hasBudget(host) && spent != null ? `, ${t("cloud.account.spentThisMonth", { amount: formatUsd(spent, t.locale) })}` : ""}
-          </p>
+          <p className="truncate font-mono text-[0.6875rem] text-faint">{accountFacts(t, { host, result, spent })}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {confirming ? (
-            <>
-              <span className="text-[0.75rem] text-muted-foreground">{t("cloud.account.removeConfirm")}</span>
-              <Button variant="destructive" size="xs" onClick={onRemove}>
-                {t("cloud.account.remove")}
-              </Button>
-              <IconButton label={t("cloud.account.cancel")} onClick={() => setConfirming(false)}>
-                <X className="size-3.5" />
-              </IconButton>
-            </>
-          ) : (
-            <>
-              <StatusPill tone={isOver ? "fail" : tone} pulse={test === "testing"}>
-                {isOver ? t("cloud.account.status.overBudget") : label}
-              </StatusPill>
-              <Button variant="outline" size="xs" onClick={onTest} disabled={test === "testing"}>
-                {test === "testing" ? <Spinner className="size-3" /> : <Zap className="size-3" />} {t("cloud.account.test")}
-              </Button>
-              <IconButton label={t("cloud.account.edit")} onClick={onEdit}>
-                <Pencil className="size-3.5" />
-              </IconButton>
-              <IconButton label={t("cloud.account.remove")} onClick={() => setConfirming(true)}>
-                <Trash2 className="size-3.5" />
-              </IconButton>
-            </>
-          )}
+          <AccountActions test={test} overBudget={isOverBudget(host, spent)} onTest={onTest} onEdit={onEdit} onRemove={onRemove} />
         </div>
       </div>
-      {result &&
-        (result.checks?.length ? (
-          <ul className="space-y-1 px-4 pb-3 pl-[4.125rem]">
-            {result.checks.map((c) => (
-              <li key={c.name} className="flex items-start gap-2 text-[0.75rem]">
-                <CheckGlyph state={c.state} />
-                <span className="min-w-0 break-words">
-                  <span className="font-medium text-foreground">{c.name}:</span> <span className="text-muted-foreground">{c.detail}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="flex items-start gap-2 px-4 pb-3 pl-[4.125rem] text-[0.75rem] text-muted-foreground">
-            {ok ? <CheckCircle2 className="mt-px size-3.5 shrink-0 text-success" /> : <XCircle className="mt-px size-3.5 shrink-0 text-destructive" />}
-            <span className="min-w-0 break-words">{result.message}</span>
-          </p>
-        ))}
+      {result && <TestDetails result={result} />}
     </div>
+  );
+}
+
+function credentialText(t: T, c: Credential): string {
+  return c.kind === "cliProfile" ? t("cloud.account.cliProfile", { profile: c.profile }) : t(`cloud.account.${c.kind}`);
+}
+
+/** The account's facts line: region, sign-in, auto-stop, then the last latency and the budget. */
+function accountFacts(t: T, { host, result, spent }: { host: ServerHost; result: ServerTest | undefined; spent: number | null | undefined }): string {
+  const facts = [
+    host.host,
+    credentialText(t, credentialOf(host)),
+    host.autoStopHours ? t("cloud.account.autoStop", { hours: host.autoStopHours }) : t("cloud.account.noAutoStop"),
+  ].join(" · ");
+  const latency = result?.latencyMs == null ? "" : ` · ${String(result.latencyMs)} ms`;
+  const limit = budgetOf(host);
+  if (limit === null) return facts + latency;
+  const budget = ` · ${t("cloud.account.budget", { amount: formatUsd(limit, t.locale, { whole: true }) })}`;
+  const spend = spent == null ? "" : `, ${t("cloud.account.spentThisMonth", { amount: formatUsd(spent, t.locale) })}`;
+  return facts + latency + budget + spend;
+}
+
+/** The test's status and the row's buttons, or the remove confirmation in their place. */
+function AccountActions({
+  test,
+  overBudget,
+  onTest,
+  onEdit,
+  onRemove,
+}: {
+  test: TestState;
+  overBudget: boolean;
+  onTest: () => void;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  const t = useT();
+  const [confirming, setConfirming] = useState(false);
+  if (confirming)
+    return (
+      <>
+        <span className="text-[0.75rem] text-muted-foreground">{t("cloud.account.removeConfirm")}</span>
+        <Button variant="destructive" size="xs" onClick={onRemove}>
+          {t("cloud.account.remove")}
+        </Button>
+        <IconButton
+          label={t("cloud.account.cancel")}
+          onClick={() => {
+            setConfirming(false);
+          }}
+        >
+          <X className="size-3.5" />
+        </IconButton>
+      </>
+    );
+  const testing = test === "testing";
+  return (
+    <>
+      <TestStatus test={test} overBudget={overBudget} />
+      <Button variant="outline" size="xs" onClick={onTest} disabled={testing}>
+        {testing ? <Spinner className="size-3" /> : <Zap className="size-3" />} {t("cloud.account.test")}
+      </Button>
+      <IconButton label={t("cloud.account.edit")} onClick={onEdit}>
+        <Pencil className="size-3.5" />
+      </IconButton>
+      <IconButton
+        label={t("cloud.account.remove")}
+        onClick={() => {
+          setConfirming(true);
+        }}
+      >
+        <Trash2 className="size-3.5" />
+      </IconButton>
+    </>
+  );
+}
+
+/** Over budget first, then the test: running, never run, or its outcome. */
+function TestStatus({ test, overBudget }: { test: TestState; overBudget: boolean }) {
+  const t = useT();
+  if (overBudget)
+    return (
+      <StatusPill tone="fail" pulse={test === "testing"}>
+        {t("cloud.account.status.overBudget")}
+      </StatusPill>
+    );
+  if (test === "testing")
+    return (
+      <StatusPill tone="muted" pulse>
+        {t("cloud.account.status.testing")}
+      </StatusPill>
+    );
+  if (!test) return <StatusPill tone="muted">{t("cloud.account.status.notTested")}</StatusPill>;
+  const outcome = outcomeOf(test);
+  return <StatusPill tone={outcome}>{t(OUTCOME_LABEL[outcome])}</StatusPill>;
+}
+
+/** Under the row: each check of the last test, or its message when it ran none. */
+function TestDetails({ result }: { result: ServerTest }) {
+  if (result.checks.length === 0)
+    return (
+      <p className="flex items-start gap-2 px-4 pb-3 pl-[4.125rem] text-[0.75rem] text-muted-foreground">
+        <CheckGlyph state={result.ok ? "ok" : "fail"} />
+        <span className="min-w-0 break-words">{result.message}</span>
+      </p>
+    );
+  return (
+    <ul className="space-y-1 px-4 pb-3 pl-[4.125rem]">
+      {result.checks.map((c) => (
+        <li key={c.name} className="flex items-start gap-2 text-[0.75rem]">
+          <CheckGlyph state={c.state} />
+          <span className="min-w-0 break-words">
+            <span className="font-medium text-foreground">{c.name}:</span> <span className="text-muted-foreground">{c.detail}</span>
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

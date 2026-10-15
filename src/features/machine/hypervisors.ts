@@ -20,7 +20,7 @@ export function providerLabel(p: ProviderStatus, os?: string): string {
 }
 
 /** Hypervisors we can install in one click (per-OS plans live in the Rust installer). */
-export const INSTALLABLE: Record<string, Dependency> = {
+export const INSTALLABLE: Partial<Record<string, Dependency>> = {
   virtualbox: "virtualbox",
   qemu: "qemu",
   utm: "utm",
@@ -28,7 +28,7 @@ export const INSTALLABLE: Record<string, Dependency> = {
 };
 
 /** The rest are behind a login / paywall (or an OS feature), so we link to them. */
-export const DOWNLOAD: Record<string, string> = {
+export const DOWNLOAD: Partial<Record<string, string>> = {
   vmware_desktop: "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion",
   parallels: "https://www.parallels.com/products/desktop/",
   hyperv: "https://learn.microsoft.com/virtualization/hyper-v-on-windows/quick-start/enable-hyper-v",

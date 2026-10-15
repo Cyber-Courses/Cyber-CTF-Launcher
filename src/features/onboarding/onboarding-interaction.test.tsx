@@ -6,26 +6,45 @@ import { Onboarding } from "@/features/onboarding/onboarding";
 import { setLocalePreference } from "@/lib/i18n";
 import type { SystemReport } from "@/lib/tauri";
 import { freshReport, readyReport } from "@/test/fixtures";
-import { commands, installTauri, stream, type Handler } from "@/test/tauri";
+import { commands, installTauri, rejects, rejectWith, stream, type Handler } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
-const text = () => document.body.textContent ?? "";
+const text = () => document.body.textContent;
 const signedOut = () => ({ loggedIn: false, name: null, email: null });
+/** An install that fails as brew does, with the Rust core's `other` error. */
+const brewFails = rejects({ code: "other", message: "brew exited with status 1" });
 /** The mono "3 / 10 · Package manager" line under the mark. */
-const progress = () => screen.getByText((_, el) => el?.tagName === "P" && /^\d+ \/ \d+ · /.test(el.textContent ?? "")).textContent;
+const progress = () => screen.getByText((_, el) => el?.tagName === "P" && /^\d+ \/ \d+ · /.test(el.textContent)).textContent;
 
-/** Renders the onboarding on `report` and moves past the welcome and the sign-in. */
-async function atFirstMachineStep(report: SystemReport | (() => SystemReport), extra: Record<string, Handler> = {}) {
-  const calls = installTauri({ auth_status: signedOut, system_check: typeof report === "function" ? report : () => report, ...extra });
-  const user = userEvent.setup();
+type User = ReturnType<typeof userEvent.setup>;
+
+/** The onboarding with `handlers` answering its commands, once its first reads have settled. */
+async function renderOnboarding(handlers: Record<string, Handler> = {}, user: User = userEvent.setup()) {
+  const calls = installTauri(handlers);
   const onComplete = vi.fn();
   render(<Onboarding onComplete={onComplete} />);
   await flush();
-  await user.click(button(/get started/i));
-  // Signed out: the sign-in step is skipped for now.
-  await user.click(button(/^skip for now$/i));
-  await flush();
   return { calls, user, onComplete };
+}
+
+/** Renders the onboarding on `report` and moves past the welcome and the sign-in. */
+async function atFirstMachineStep(report: SystemReport | (() => SystemReport), extra: Record<string, Handler> = {}) {
+  const opened = await renderOnboarding({ auth_status: signedOut, system_check: typeof report === "function" ? report : () => report, ...extra });
+  await opened.user.click(button(/get started/i));
+  // Signed out: the sign-in step is skipped for now.
+  await opened.user.click(button(/^skip for now$/i));
+  await flush();
+  return opened;
+}
+
+/** Presses the way forward (a button matching `forward`) until the summary, or none is left. */
+async function forwardToSummary(user: User, forward: RegExp) {
+  for (let n = 0; n < 12 && !/Done$/.test(progress()); n++) {
+    const next = screen.queryAllByRole("button").find((b) => forward.test(b.textContent.trim()) && !b.hasAttribute("disabled"));
+    if (!next) return;
+    await user.click(next);
+    await flush();
+  }
 }
 
 describe("Onboarding: the step list per OS", () => {
@@ -36,7 +55,7 @@ describe("Onboarding: the step list per OS", () => {
     ["windows", 11],
   ])("counts every step of a fresh %s machine in the progress line", async (os, total) => {
     await atFirstMachineStep(freshReport(os));
-    expect(progress()).toBe(`3 / ${total} · Package manager`);
+    expect(progress()).toBe(`3 / ${String(total)} · Package manager`);
   });
 
   it("puts the WSL step right after the package manager on Windows only", async () => {
@@ -81,12 +100,7 @@ describe("Onboarding: Back, Continue and Skip", () => {
 
   it("reaches the summary on a ready machine and hides Skip there", async () => {
     const { user, onComplete } = await atFirstMachineStep(readyReport());
-    for (let n = 0; n < 12 && !/Done$/.test(progress() ?? ""); n++) {
-      const forward = screen.queryAllByRole("button").find((b) => /^(continue|skip)$/i.test((b.textContent ?? "").trim()) && !b.hasAttribute("disabled"));
-      if (!forward) break;
-      await user.click(forward);
-      await flush();
-    }
+    await forwardToSummary(user, /^(continue|skip)$/i);
     expect(progress()).toBe("10 / 10 · Done");
     // The summary has its own way out; "Skip setup" there would be the same button twice.
     expect(screen.queryByRole("button", { name: /skip setup/i })).toBeNull();
@@ -101,10 +115,7 @@ describe("Onboarding: Back, Continue and Skip", () => {
   });
 
   it("moves forward with the keyboard alone", async () => {
-    installTauri({ auth_status: signedOut });
-    const user = userEvent.setup();
-    render(<Onboarding onComplete={vi.fn()} />);
-    await flush();
+    const { user } = await renderOnboarding({ auth_status: signedOut });
     button(/get started/i).focus();
     await user.keyboard("{Enter}");
     expect(progress()).toBe("2 / 10 · Sign in");
@@ -112,9 +123,13 @@ describe("Onboarding: Back, Continue and Skip", () => {
 
   it("follows a language change made while it is open", async () => {
     await atFirstMachineStep(readyReport());
-    act(() => setLocalePreference("fr"));
+    act(() => {
+      setLocalePreference("fr");
+    });
     expect(text()).not.toContain("Package manager");
-    act(() => setLocalePreference("system"));
+    act(() => {
+      setLocalePreference("system");
+    });
     expect(text()).toContain("Package manager");
   });
 });
@@ -125,17 +140,19 @@ describe("Onboarding: sign-in", () => {
   it("says why a sign-in failed, and clears it on the next try", async () => {
     let attempt = 0;
     let finish: () => void = () => {};
-    installTauri({
+    const { user } = await renderOnboarding({
       auth_status: signedOut,
       auth_login: () => {
         attempt += 1;
         if (attempt === 1) throw new Error("no browser could be opened");
-        return new Promise((r) => (finish = () => r({ loggedIn: true, name: "Ada", email: "ada@example.com" })));
+        return new Promise(
+          (r) =>
+            (finish = () => {
+              r({ loggedIn: true, name: "Ada", email: "ada@example.com" });
+            }),
+        );
       },
     });
-    const user = userEvent.setup();
-    render(<Onboarding onComplete={vi.fn()} />);
-    await flush();
     await user.click(button(/get started/i));
     await user.click(button(/sign in with your browser/i));
     await flush();
@@ -144,17 +161,14 @@ describe("Onboarding: sign-in", () => {
     // Waiting for the browser again: the old reason is gone and the button is busy.
     expect(screen.queryByRole("alert")).toBeNull();
     expect(button(/waiting for the browser/i).hasAttribute("disabled")).toBe(true);
-    await act(async () => finish());
+    finish();
     await flush();
     expect(text()).toContain("Signed in as Ada");
     expect(text()).toContain("ada@example.com");
   });
 
   it("opens the browser once however often the sign-in button is pressed", async () => {
-    const calls = installTauri({ auth_status: signedOut, auth_login: () => new Promise(() => {}) });
-    const user = userEvent.setup();
-    render(<Onboarding onComplete={vi.fn()} />);
-    await flush();
+    const { user, calls } = await renderOnboarding({ auth_status: signedOut, auth_login: () => new Promise(() => {}) });
     await user.click(button(/get started/i));
     const signIn = button(/sign in with your browser/i);
     await user.dblClick(signIn);
@@ -164,10 +178,7 @@ describe("Onboarding: sign-in", () => {
   });
 
   it("lets a signed-out player skip signing in for now, and says where to do it later", async () => {
-    const calls = installTauri({ auth_status: signedOut });
-    const user = userEvent.setup();
-    render(<Onboarding onComplete={vi.fn()} />);
-    await flush();
+    const { user, calls } = await renderOnboarding({ auth_status: signedOut });
     await user.click(button(/get started/i));
     // Optional, and said so on the button: no plain "Continue" past a step left undone.
     expect(text()).toContain("sign in later from Settings");
@@ -178,24 +189,18 @@ describe("Onboarding: sign-in", () => {
   });
 
   it("says Continue on the sign-in step once signed in", async () => {
-    installTauri();
-    const user = userEvent.setup();
-    render(<Onboarding onComplete={vi.fn()} />);
-    await flush();
+    const { user } = await renderOnboarding();
     await user.click(button(/get started/i));
     expect(button(/^continue$/i).hasAttribute("disabled")).toBe(false);
     expect(screen.queryByRole("button", { name: /skip for now/i })).toBeNull();
   });
 
   it("treats an unreadable sign-in state as signed out", async () => {
-    installTauri({
+    const { user } = await renderOnboarding({
       auth_status: () => {
         throw new Error("keychain locked");
       },
     });
-    const user = userEvent.setup();
-    render(<Onboarding onComplete={vi.fn()} />);
-    await flush();
     await user.click(button(/get started/i));
     expect(button(/sign in with your browser/i).hasAttribute("disabled")).toBe(false);
   });
@@ -222,13 +227,13 @@ describe("Onboarding: a machine check that fails, then recovers", () => {
     let n = 0;
     const { user, calls } = await atFirstMachineStep(() => {
       n += 1;
-      throw new Error(`attempt ${n} failed`);
+      throw new Error(`attempt ${String(n)} failed`);
     });
     const before = commands(calls).filter((c) => c === "system_check").length;
     await user.click(button(/try again/i));
     await flush();
     expect(commands(calls).filter((c) => c === "system_check").length).toBe(before + 1);
-    expect(text()).toContain(`attempt ${n} failed`);
+    expect(text()).toContain(`attempt ${String(n)} failed`);
   });
 
   it("recovers on its own on the next poll, without Try again", async () => {
@@ -240,7 +245,7 @@ describe("Onboarding: a machine check that fails, then recovers", () => {
     });
     expect(text()).toContain("Try again");
     fail = false;
-    await act(async () => void vi.advanceTimersByTime(5000));
+    await act(() => vi.advanceTimersByTimeAsync(5000));
     await flush();
     expect(text()).not.toContain("Try again");
     vi.useRealTimers();
@@ -279,7 +284,7 @@ describe("Onboarding: installs that stream and then fail", () => {
     // An install is running: neither Back nor the forward button may leave the step.
     expect(button(/back$/i).hasAttribute("disabled")).toBe(true);
     expect(button(/done this$/i).hasAttribute("disabled")).toBe(true);
-    await act(async () => fail(new Error("The user declined the UAC prompt")));
+    fail(new Error("The user declined the UAC prompt"));
     await flush();
     expect(text()).toContain("✗ The user declined the UAC prompt");
     // A declined prompt is not fixed by a restart: the restart notice stays away.
@@ -293,7 +298,7 @@ describe("Onboarding: installs that stream and then fail", () => {
     const { user, calls } = await atFirstMachineStep(report, {
       install_dependency: (a) => {
         stream(a, "==> Downloading docker.dmg", "==> Verifying checksum");
-        throw "brew exited with status 1";
+        return brewFails(a);
       },
     });
     await user.click(button(/^continue$/i));
@@ -312,9 +317,7 @@ describe("Onboarding: installs that stream and then fail", () => {
   it("keeps an install's log on its own step only", async () => {
     const report = { ...freshReport("macos"), pkgManager: { name: "brew", installed: true, version: "4.5" } };
     const { user } = await atFirstMachineStep(report, {
-      install_dependency: () => {
-        throw "brew exited with status 1";
-      },
+      install_dependency: brewFails,
     });
     await user.click(button(/^continue$/i));
     await flush();
@@ -323,5 +326,63 @@ describe("Onboarding: installs that stream and then fail", () => {
     expect(text()).toContain("✗ brew exited with status 1");
     await user.click(button(/back$/i));
     expect(text()).not.toContain("✗ brew exited with status 1");
+  });
+});
+
+describe("Onboarding: the summary and the machine check", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("shows who is signed in, and goes back to the welcome", async () => {
+    const { user } = await renderOnboarding({ auth_status: () => ({ loggedIn: true, name: null, email: "p@example.com" }) });
+    await user.click(button(/get started/i));
+    await flush();
+    expect(text()).toContain("Signed in");
+    expect(text()).toContain("p@example.com");
+    await user.click(button(/back/i));
+    expect(text()).toContain("Get started");
+  });
+
+  it("waits for the machine check before showing a machine step", async () => {
+    const { user } = await renderOnboarding({ system_check: () => new Promise(() => {}) });
+    await user.click(button(/get started/i));
+    await user.click(button(/^continue$/i));
+    await flush();
+    expect(text()).toContain("Checking this machine…");
+  });
+
+  it("summarises a signed-out player on the last step", async () => {
+    const { user, onComplete } = await renderOnboarding({ auth_status: signedOut, system_check: () => ({ ...readyReport(), vmProviders: [] }) });
+    await forwardToSummary(user, /^(get started|continue|skip for now)/i);
+    expect(text()).toContain("Not signed in");
+    expect(screen.queryByRole("button", { name: /skip setup/i })).toBeNull();
+    await user.click(button(/browse labs/i));
+    expect(onComplete).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the current step when a machine re-check fails", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let fail = false;
+    const { user } = await renderOnboarding(
+      {
+        system_check: () => {
+          if (fail) rejectWith("system check timed out");
+          return { ...readyReport(), os: "windows", dockerRunning: false };
+        },
+      },
+      userEvent.setup({ advanceTimers: vi.advanceTimersByTime }),
+    );
+    await user.click(button(/get started/i));
+    await user.click(button(/^continue$/i));
+    await flush();
+    await user.click(button(/^continue$/i));
+    await flush();
+    expect(text()).toContain("Turn on WSL 2");
+    expect(text()).toContain("4 / 11");
+    fail = true;
+    await act(() => vi.advanceTimersByTimeAsync(5_100));
+    await flush();
+    // Still on the WSL step: a failed re-check neither blanks it nor shifts the step list.
+    expect(text()).toContain("Turn on WSL 2");
+    expect(text()).toContain("4 / 11");
   });
 });

@@ -17,11 +17,11 @@ const FORWARD = /^(continue|next|save and test|save|test connection|connect)/i;
 async function walk(user: ReturnType<typeof userEvent.setup>, { explore = true, max = 8 } = {}) {
   const titles: string[] = [];
   for (let n = 0; n < max; n++) {
-    titles.push(screen.getByRole("heading", { level: 1 }).textContent ?? "");
+    titles.push(screen.getByRole("heading", { level: 1 }).textContent);
     await fillEmptyFields(user);
     if (explore) await clickEverything(user, { skip: /^(back|continue|next|save.*|cancel|done|close|finish)$/i, max: 12 });
     await fillEmptyFields(user);
-    const forward = enabled().find((b) => FORWARD.test((b.textContent ?? "").trim()));
+    const forward = enabled().find((b) => FORWARD.test(b.textContent.trim()));
     if (!forward) break;
     await user.click(forward);
     await flush(30);

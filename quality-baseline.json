@@ -1,91 +1,10 @@
 {
   "rules": {
     "dup/clone": {
-      "rs:runtime": 9,
-      "ts:features/machine": 8,
-      "ts:features/servers": 8
-    },
-    "eslint/@typescript-eslint/no-base-to-string": {
-      "ts:features/servers": 1
-    },
-    "eslint/@typescript-eslint/no-confusing-void-expression": {
-      "ts:features/cloud": 8,
-      "ts:features/machine": 54,
-      "ts:features/onboarding": 9,
-      "ts:features/servers": 59
-    },
-    "eslint/@typescript-eslint/no-invalid-void-type": {
-      "ts:features/servers": 1
-    },
-    "eslint/@typescript-eslint/no-misused-promises": {
-      "ts:features/cloud": 4,
-      "ts:features/machine": 12,
-      "ts:features/servers": 17
-    },
-    "eslint/@typescript-eslint/no-non-null-assertion": {
-      "ts:features/cloud": 4,
-      "ts:features/machine": 16,
-      "ts:features/servers": 9
-    },
-    "eslint/@typescript-eslint/no-unnecessary-condition": {
-      "ts:features/cloud": 5,
-      "ts:features/machine": 35,
-      "ts:features/onboarding": 4,
-      "ts:features/servers": 16
-    },
-    "eslint/@typescript-eslint/no-unnecessary-type-assertion": {
-      "ts:features/machine": 9,
-      "ts:features/servers": 7
-    },
-    "eslint/@typescript-eslint/no-unsafe-assignment": {
-      "ts:features/machine": 3,
-      "ts:features/servers": 2
-    },
-    "eslint/@typescript-eslint/no-unsafe-member-access": {
-      "ts:features/machine": 2,
-      "ts:features/servers": 1
-    },
-    "eslint/@typescript-eslint/no-unsafe-return": {
-      "ts:features/machine": 2,
-      "ts:features/servers": 1
-    },
-    "eslint/@typescript-eslint/only-throw-error": {
-      "ts:features/cloud": 3,
-      "ts:features/machine": 17,
-      "ts:features/onboarding": 2,
-      "ts:features/servers": 16
-    },
-    "eslint/@typescript-eslint/require-await": {
-      "ts:features/machine": 6,
-      "ts:features/onboarding": 3,
-      "ts:features/servers": 8
-    },
-    "eslint/@typescript-eslint/restrict-template-expressions": {
-      "ts:features/cloud": 1,
-      "ts:features/machine": 1,
-      "ts:features/onboarding": 3,
-      "ts:features/servers": 1
-    },
-    "eslint/@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "ts:features/cloud": 1,
-      "ts:features/machine": 1,
-      "ts:features/servers": 3
-    },
-    "eslint/max-lines-per-function": {
-      "ts:features/cloud": 2,
-      "ts:features/machine": 11,
-      "ts:features/onboarding": 2,
-      "ts:features/servers": 8
-    },
-    "eslint/sonarjs/cognitive-complexity": {
-      "ts:features/cloud": 1,
-      "ts:features/machine": 5,
-      "ts:features/servers": 2
+      "rs:runtime": 9
     },
     "exception/without-reason": {
-      "rs:runtime": 3,
-      "ts:features/machine": 2,
-      "ts:features/servers": 4
+      "rs:runtime": 3
     },
     "knip/exports": {
       "ts:e2e": 1
@@ -278,7 +197,7 @@
       "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
     },
     "src/features/machine/setup-steps/engine-step.tsx": {
-      "eslint-disable-next-line @next/next/no-img-element": 2
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 2
     },
     "src/features/servers/host-setup/form.tsx": {
       "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
@@ -287,13 +206,13 @@
       "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
     },
     "src/features/servers/host-setup/use-cloud-accounts.ts": {
-      "eslint-disable-next-line react-hooks/set-state-in-effect": 3
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its \"checking\" state at once": 3
     },
     "src/features/servers/provider-glyph.tsx": {
       "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
     },
     "src/features/servers/server-self-test.tsx": {
-      "eslint-disable-next-line react-hooks/set-state-in-effect": 1
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- the start lives in the module's run, which only this effect starts or finds": 1
     },
     "src/lib/appearance.ts": {
       "eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage isn't readable during a server render, so the saved choice can only arrive after mount": 1

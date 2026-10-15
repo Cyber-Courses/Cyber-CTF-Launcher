@@ -18,8 +18,10 @@ type Kind = "docker" | "vm";
  *  test, another VM boot of minutes). */
 type Shared = {
   result: SelfTestResult;
-  events: Record<string, SelfTestEvent>;
-  times: Record<string, Span>;
+  /** Each step's last event, by step (none for a step not reached). */
+  events: Partial<Record<string, SelfTestEvent>>;
+  /** Each step's timing, by step. */
+  times: Partial<Record<string, Span>>;
   run: Span | null;
   listeners: Set<() => void>;
 };
@@ -27,7 +29,11 @@ const shared: Record<Kind, Shared> = {
   docker: { result: "idle", events: {}, times: {}, run: null, listeners: new Set() },
   vm: { result: "idle", events: {}, times: {}, run: null, listeners: new Set() },
 };
-const changed = (s: Shared) => s.listeners.forEach((l) => l());
+const changed = (s: Shared) => {
+  s.listeners.forEach((l) => {
+    l();
+  });
+};
 
 /** The store's writes, outside any component (its state belongs to the app, not one view). */
 function setRunResult(kind: Kind, r: SelfTestResult) {
@@ -60,9 +66,13 @@ export function useSelfTest(kind: Kind, auto: boolean | undefined, onResult: ((r
   const s = shared[kind];
   const [, rerender] = useState(0);
   useEffect(() => {
-    const l = () => rerender((n) => n + 1);
+    const l = () => {
+      rerender((n) => n + 1);
+    };
     s.listeners.add(l);
-    return () => void s.listeners.delete(l);
+    return () => {
+      s.listeners.delete(l);
+    };
   }, [s]);
   const { events, result, run, times } = s;
   const started = useRef(false);
@@ -87,7 +97,9 @@ export function useSelfTest(kind: Kind, auto: boolean | undefined, onResult: ((r
     touchNow();
     report("running");
     try {
-      await machineSelftest(kind, kind === "vm" ? getVmProvider() : null, (e) => addEvent(kind, e));
+      await machineSelftest(kind, kind === "vm" ? getVmProvider() : null, (e) => {
+        addEvent(kind, e);
+      });
       setLastTest(kind, "ok");
       report("ok");
     } catch {
@@ -104,5 +116,14 @@ export function useSelfTest(kind: Kind, auto: boolean | undefined, onResult: ((r
     else if (auto) void runTest();
   }, [auto, runTest, s]);
 
-  return { events, result, run, times, now, runTest };
+  return {
+    events,
+    result,
+    run,
+    times,
+    now,
+    runTest: () => {
+      void runTest();
+    },
+  };
 }

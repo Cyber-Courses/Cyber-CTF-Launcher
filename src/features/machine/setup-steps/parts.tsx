@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import type { ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { LogConsole } from "@/components/ui/log-console";
 import { StatusDot } from "@/components/ui/status-pill";
 import { StepCircle } from "@/features/machine/step-row";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
-import { tell } from "@/lib/failure";
+import { useCopy } from "@/components/ui/copy-value";
 import { useT } from "@/lib/i18n";
 
 export function Requirement({
@@ -53,22 +54,11 @@ export function Log({ setup, of }: { setup: MachineSetupState; of: (string | nul
 
 export function CmdRow({ cmd }: { cmd: string }) {
   const t = useT();
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopy(cmd, { showFor: 1200, failure: t("machine.errors.copy") });
   return (
     <div className="surface-log flex items-center gap-2 rounded-control px-3 py-2">
       <code className="flex-1 overflow-x-auto text-left font-mono text-[0.75rem] text-foreground">{cmd}</code>
-      <button
-        onClick={() =>
-          navigator.clipboard
-            ?.writeText(cmd)
-            .then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1200);
-            })
-            .catch(tell(t("machine.errors.copy")))
-        }
-        className="inline-flex shrink-0 items-center gap-1 text-[0.6875rem] text-muted-foreground transition-colors hover:text-foreground"
-      >
+      <button onClick={copy} className="inline-flex shrink-0 items-center gap-1 text-[0.6875rem] text-muted-foreground transition-colors hover:text-foreground">
         {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />} {copied ? t("machine.body.copied") : t("machine.body.copy")}
       </button>
     </div>
@@ -109,5 +99,16 @@ export function Skipped({ title, reason }: { title: string; reason: string }) {
         <p className="text-[0.75rem] text-muted-foreground">{reason}</p>
       </div>
     </div>
+  );
+}
+
+/** A button's label, or a spinner and `label` while its action runs. */
+export function BusyLabel({ busy, label, spinner = "size-3.5", children }: { busy: boolean; label: string; spinner?: string; children: ReactNode }) {
+  return busy ? (
+    <>
+      <Spinner className={spinner} /> {label}
+    </>
+  ) : (
+    children
   );
 }

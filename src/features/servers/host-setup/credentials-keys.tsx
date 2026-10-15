@@ -2,7 +2,7 @@
 
 import { CheckCircle2 } from "lucide-react";
 import { Field, Input, Note } from "@/features/servers/host-setup/form";
-import { ExternalLinkButton } from "@/features/servers/host-setup/credentials-parts";
+import { ExternalLinkButton, SecretInput } from "@/features/servers/host-setup/credentials-parts";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { useT } from "@/lib/i18n";
 
@@ -39,13 +39,7 @@ export function TokenCredentials({ s }: { s: HostSetup }) {
   return (
     <div className="space-y-3">
       <Field label={t("servers.setup.credentials.apiToken")} hint={t("servers.setup.credentials.apiTokenHint")}>
-        <Input
-          type="password"
-          value={s.v.password ?? ""}
-          onChange={(e) => s.set("password", e.target.value || null)}
-          placeholder={s.secretKept ? t("servers.setup.connection.keepPlaceholder") : s.digitalocean ? "dop_v1_…" : "…"}
-          autoComplete="off"
-        />
+        <SecretInput s={s} placeholder={s.digitalocean ? "dop_v1_…" : "…"} />
       </Field>
       <p className="text-[0.75rem] text-muted-foreground">
         {t("servers.setup.credentials.noToken")}{" "}
@@ -67,13 +61,7 @@ export function AccessKeyCredentials({ s }: { s: HostSetup }) {
           <Input {...s.text("username")} placeholder="AKIA…" />
         </Field>
         <Field label={t("servers.setup.credentials.secretKey")} hint={t("servers.setup.connection.keychainHint")}>
-          <Input
-            type="password"
-            value={s.v.password ?? ""}
-            onChange={(e) => s.set("password", e.target.value || null)}
-            placeholder={s.secretKept ? t("servers.setup.connection.keepPlaceholder") : ""}
-            autoComplete="off"
-          />
+          <SecretInput s={s} />
         </Field>
       </div>
       <p className="mt-1.5 text-[0.75rem] text-muted-foreground">

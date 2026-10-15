@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DownloadsPanel } from "@/features/machine/downloads-panel";
@@ -14,16 +14,16 @@ import { SetupChecklist } from "@/features/machine/setup-checklist";
 import { StepRow } from "@/features/machine/step-row";
 import { formatAgo, formatBytes, formatBytesOf, formatUptime } from "@/lib/format";
 import { LOCALES, setLocalePreference } from "@/lib/i18n";
-import { setAttackImage, setLastTest, type LastTest } from "@/lib/settings";
-import type { ProviderStatus, SelfTestEvent, SystemReport } from "@/lib/tauri";
-import { freshReport, readyReport, stoppedDockerReport } from "@/test/fixtures";
-import { commands, installTauri, stream } from "@/test/tauri";
-import { button, flush } from "@/test/ui";
+import { getLastTest, setAttackImage, setLastTest, type LastTest } from "@/lib/settings";
+import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
+import type { SelfTestResult } from "@/features/machine/use-self-test";
+import { freshReport, hypervisorStatus as hv, readyReport, stoppedDockerReport } from "@/test/fixtures";
+import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
+import { button, flush, settle } from "@/test/ui";
+import { pressFirstTest, renderMachineScreen } from "@/features/machine/machine-test-kit";
 
 const GB = 1e9;
-const text = () => document.body.textContent ?? "";
-const hv = (over: Partial<ProviderStatus>): ProviderStatus =>
-  ({ provider: "virtualbox", remote: false, available: true, hypervisor: true, plugin: null, pluginInstalled: true, reason: null, ...over }) as ProviderStatus;
+const text = () => document.body.textContent;
 const metrics = (over: Record<string, number> = {}) => ({
   cpu: 40,
   memUsed: 8 * GB,
@@ -40,11 +40,15 @@ const metrics = (over: Record<string, number> = {}) => ({
 
 describe("the Machine page's sizes and times (lib/format, the common.units keys)", () => {
   afterEach(() => {
-    act(() => setLocalePreference("system"));
+    act(() => {
+      setLocalePreference("system");
+    });
   });
 
   it("writes sizes, times and uptimes in English", () => {
-    act(() => setLocalePreference("en"));
+    act(() => {
+      setLocalePreference("en");
+    });
     const f = { bytes: formatBytes, ago: formatAgo, uptime: formatUptime };
     expect(formatBytesOf(3.42 * GB, 8 * GB)).toBe("3.4/8.0 GB");
     expect(formatBytesOf(19.5 * GB, 32 * GB)).toBe("20/32 GB");
@@ -68,7 +72,9 @@ describe("the Machine page's sizes and times (lib/format, the common.units keys)
 
   for (const locale of LOCALES) {
     it(`writes every unit in ${locale}`, () => {
-      act(() => setLocalePreference(locale));
+      act(() => {
+        setLocalePreference(locale);
+      });
       const f = { bytes: formatBytes, ago: formatAgo, uptime: formatUptime };
       const now = 1_000_000_000_000;
       const out = [
@@ -135,8 +141,7 @@ describe("machine parts", () => {
 /* ------------------------------------------------------------------ self-test */
 
 describe("SelfTest", () => {
-  const ev = (step: string, state: SelfTestEvent["state"], detail?: string): SelfTestEvent =>
-    ({ step, label: step, state, detail: detail ?? null }) as SelfTestEvent;
+  const ev = (step: string, state: SelfTestEvent["state"], detail?: string): SelfTestEvent => ({ step, label: step, state, detail: detail ?? null });
 
   it("runs on demand, ticks its steps and records a pass", async () => {
     const calls = installTauri({
@@ -154,7 +159,7 @@ describe("SelfTest", () => {
         return null;
       },
     });
-    const onResult = vi.fn();
+    const onResult = vi.fn<(r: SelfTestResult) => void>();
     const user = userEvent.setup();
     render(<SelfTest kind="docker" title="Container test" description="Pulls a tiny image" onResult={onResult} />);
     expect(screen.queryByRole("listitem")).toBeNull();
@@ -165,7 +170,7 @@ describe("SelfTest", () => {
     expect(text()).toContain("Passed");
     expect(text()).toContain("skipped");
     expect(screen.getAllByRole("listitem")).toHaveLength(6);
-    expect(JSON.parse(localStorage.getItem("cyberctf.selftest.docker")!).result).toBe("ok");
+    expect(getLastTest("docker")?.result).toBe("ok");
     // And again.
     await user.click(screen.getByRole("button", { name: /run again/i }));
     await flush();
@@ -177,10 +182,10 @@ describe("SelfTest", () => {
     const calls = installTauri({
       machine_selftest: (a) => {
         stream(a, ev("vagrant", "ok"), ev("provider", "fail", "vagrant-qemu is missing"));
-        throw "provider check failed";
+        rejectWith("provider check failed");
       },
     });
-    const onResult = vi.fn();
+    const onResult = vi.fn<(r: SelfTestResult) => void>();
     render(<SelfTest kind="vm" title="VM test" description="Boots a tiny VM" auto onResult={onResult} />);
     await flush();
     expect(calls.find((c) => c.cmd === "machine_selftest")?.args).toMatchObject({ kind: "vm", provider: "qemu" });
@@ -189,7 +194,7 @@ describe("SelfTest", () => {
     expect(text()).toContain("vagrant-qemu is missing");
     expect(screen.getAllByRole("listitem")).toHaveLength(8);
     expect(button(/retry/i)).toBeTruthy();
-    expect(JSON.parse(localStorage.getItem("cyberctf.selftest.vm")!).result).toBe("fail");
+    expect(getLastTest("vm")?.result).toBe("fail");
   });
 
   it("counts passed steps while running", async () => {
@@ -197,14 +202,21 @@ describe("SelfTest", () => {
     installTauri({
       machine_selftest: (a) => {
         stream(a, ev("engine", "ok"), ev("pull", "running"));
-        return new Promise<null>((r) => (finish = () => r(null)));
+        return new Promise<null>(
+          (r) =>
+            (finish = () => {
+              r(null);
+            }),
+        );
       },
     });
     render(<SelfTest kind="docker" title="t" description="d" auto />);
     await flush();
     expect(text()).toContain("Testing");
     expect(text()).toMatch(/1\/6/);
-    await act(async () => finish());
+    await settle(() => {
+      finish();
+    });
     await flush();
     expect(text()).toContain("Passed");
   });
@@ -244,11 +256,15 @@ describe("DockerLabRow", () => {
     expect(screen.queryByRole("button")).toBeNull();
     unmount();
     // Said in the player's language, from the hint's code (not the core's English sentence).
-    act(() => setLocalePreference("fr"));
+    act(() => {
+      setLocalePreference("fr");
+    });
     const fr = render(<DockerLabRow {...base} report={stoppedDockerReport()} last={null} />);
     expect(text()).toContain("Ajoutez-vous au groupe docker dans un terminal (sudo usermod -aG docker player)");
     fr.unmount();
-    act(() => setLocalePreference("en"));
+    act(() => {
+      setLocalePreference("en");
+    });
     const denied = render(<DockerLabRow {...base} report={{ ...stoppedDockerReport(), dockerDeniedHint: null }} last={null} />);
     expect(text()).toContain("add yourself to the docker group");
     denied.unmount();
@@ -377,7 +393,7 @@ describe("DownloadsPanel", () => {
     await flush();
     expect(text()).toContain("Nothing could be removed (all in use).");
     clean = () => {
-      throw "docker is not running";
+      rejectWith("docker is not running");
     };
     await user.click(button(/clean up/i));
     await user.click(button(/^remove$/i));
@@ -388,7 +404,7 @@ describe("DownloadsPanel", () => {
   it("shows an empty list when there are no downloads or they can't be read", async () => {
     installTauri({
       machine_storage: () => {
-        throw "docker is not running";
+        rejectWith("docker is not running");
       },
     });
     render(<DownloadsPanel />);
@@ -437,7 +453,7 @@ describe("RunningNowPanel", () => {
   it("says nothing runs, also when the list can't be read", async () => {
     installTauri({
       machine_workloads: () => {
-        throw "docker is not running";
+        rejectWith("docker is not running");
       },
     });
     render(<RunningNowPanel refreshKey={null} />);
@@ -448,11 +464,11 @@ describe("RunningNowPanel", () => {
   it("keeps the list after a failed stop, and shows readable lab ids without titles", async () => {
     const calls = installTauri({
       api_query: () => {
-        throw "offline";
+        rejectWith("offline");
       },
       machine_workloads: () => [{ id: "lab-invoice", kind: "docker", count: 1, memBytes: 0, provider: null }],
       machine_workload_stop: () => {
-        throw "container is stuck";
+        rejectWith("container is stuck");
       },
     });
     const user = userEvent.setup();
@@ -476,7 +492,7 @@ describe("MachineDetails", () => {
       dockerRunning: true,
       docker: { installed: true, version: "Docker version 27.3.1, build ce12230" },
       dockerCompose: { installed: true, version: "no number" },
-    } as SystemReport;
+    };
     const hypervisors = [
       hv({ provider: "vmware_desktop", plugin: "vagrant-vmware-desktop", pluginInstalled: true }),
       hv({ provider: "qemu", plugin: "vagrant-qemu", pluginInstalled: false }),
@@ -623,7 +639,7 @@ describe("MachineScreen", () => {
     expect(text()).toContain("Running now");
   });
 
-  it("re-reads the machine when the window regains focus, with the latest callback", async () => {
+  it("re-reads the machine when the window regains focus, with the latest callback", () => {
     installTauri();
     const first = vi.fn();
     const second = vi.fn();
@@ -637,10 +653,8 @@ describe("MachineScreen", () => {
   it("opens the container test inline and shows its result in the row", async () => {
     installTauri();
     const user = userEvent.setup();
-    render(<MachineScreen report={readyReport()} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
-    await flush(50);
-    const engines = screen.getByText("Engines").closest("section, div")!.parentElement!;
-    await user.click(within(engines).getAllByRole("button", { name: /^test$/i })[0]);
+    await renderMachineScreen();
+    await pressFirstTest(user);
     await flush(50);
     expect(text()).toContain("Hide test");
     expect(text()).toMatch(/tested just now/);

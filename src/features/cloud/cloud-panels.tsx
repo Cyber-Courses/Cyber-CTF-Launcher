@@ -21,7 +21,7 @@ export function RunningCloudLabs({
   onStop,
 }: {
   labs: Lab[];
-  statuses: Record<string, LabStatus>;
+  statuses: Partial<Record<string, LabStatus>>;
   isBusy: (lab: Lab) => boolean;
   onStop: (lab: Lab) => void;
 }) {
@@ -45,7 +45,14 @@ export function RunningCloudLabs({
                 {s?.expiresAt ? ` · ${t("cloud.screen.autoStops", { time: format.date(s.expiresAt * 1000, { hour: "2-digit", minute: "2-digit" }) })}` : ""}
               </p>
             </div>
-            <Button variant="destructive" size="xs" onClick={() => onStop(l)} disabled={isBusy(l)}>
+            <Button
+              variant="destructive"
+              size="xs"
+              onClick={() => {
+                onStop(l);
+              }}
+              disabled={isBusy(l)}
+            >
               {isBusy(l) ? <Spinner className="size-3" /> : <Square className="size-3" />} {t("cloud.screen.stop")}
             </Button>
           </div>
@@ -66,8 +73,8 @@ export function AccountsPanel({
   onSetup,
 }: {
   accounts: ServerHost[];
-  tests: Record<string, ServerTest | "testing">;
-  spend: Record<string, number | null>;
+  tests: Partial<Record<string, ServerTest | "testing">>;
+  spend: Partial<Record<string, number | null>>;
   onTest: (id: string) => void;
   onEdit: (id: string) => void;
   onRemove: (id: string) => void;
@@ -83,9 +90,15 @@ export function AccountsPanel({
           host={h}
           test={tests[h.id]}
           spent={spend[h.id]}
-          onTest={() => onTest(h.id)}
-          onEdit={() => onEdit(h.id)}
-          onRemove={() => onRemove(h.id)}
+          onTest={() => {
+            onTest(h.id);
+          }}
+          onEdit={() => {
+            onEdit(h.id);
+          }}
+          onRemove={() => {
+            onRemove(h.id);
+          }}
         />
       ))}
       {/* The main providers not connected yet, one click from their setup. */}
@@ -109,10 +122,9 @@ export function AccountsPanel({
 }
 
 /** An account's budget guard: this month's spend against its limit, and its auto-stop. */
-export function BudgetPanel({ host, spent }: { host: ServerHost; spent: number | null | undefined }) {
+export function BudgetPanel({ host, limit, spent }: { host: ServerHost; limit: number; spent: number | null | undefined }) {
   const t = useT();
   const format = useFormat();
-  const limit = host.monthlyLimit!;
   return (
     <Panel>
       <PanelHeader title={t("cloud.screen.budgetGuard", { name: host.name })} meta={format.date(new Date(), { month: "long" })} />
@@ -127,7 +139,7 @@ export function BudgetPanel({ host, spent }: { host: ServerHost; spent: number |
             {host.autoStopHours ? t("cloud.screen.autoStopAfter", { hours: host.autoStopHours }) : t("cloud.screen.noAutoStop")}
           </span>
         </div>
-        <Meter value={spent != null && limit > 0 ? (spent / limit) * 100 : 0} />
+        <Meter value={spent == null ? 0 : (spent / limit) * 100} />
       </div>
     </Panel>
   );

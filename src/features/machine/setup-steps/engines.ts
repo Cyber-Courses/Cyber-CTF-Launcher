@@ -53,6 +53,6 @@ export const recommendedEngine = (os: string): DockerEngine => (os === "macos" |
 /** The badge on an engine's card: in use, running, recommended or none. */
 export function engineBadge(report: SystemReport, id: DockerEngine, recommended: DockerEngine) {
   if (report.dockerEngine === id) return "in use";
-  if (report.dockerEnginesRunning?.includes(id)) return "running";
+  if (report.dockerEnginesRunning.includes(id)) return "running";
   return id === recommended ? "recommended" : undefined;
 }

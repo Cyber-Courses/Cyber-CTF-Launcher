@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { PageHeader, StatusStrip } from "@/components/ui/page-header";
 import { Segmented } from "@/components/ui/segmented";
 import { StatusDot } from "@/components/ui/status-pill";
-import { machineOpenSetup, type MachineMetrics, type SystemReport } from "@/lib/tauri";
+import type { MachineMetrics, SystemReport } from "@/lib/tauri";
 import { CalloutRow, StatCard } from "@/features/machine/machine-parts";
 import { OS_NAME, isLowDisk, usage } from "@/features/machine/machine-status";
 import { formatBytes, formatBytesOf, formatUptime } from "@/lib/format";
-import { tell } from "@/lib/failure";
+import { useOpenSetup } from "@/features/machine/use-open-setup";
 import { useT } from "@/lib/i18n";
 
 // The sections of the Machine page: its header and the live usage of the Health view.
@@ -31,32 +31,25 @@ export function MachineHeader({
   onView: (view: MachineView) => void;
 }) {
   const t = useT();
+  const openSetup = useOpenSetup();
   return (
     <PageHeader
       title={t("machine.screen.title")}
       lead={
         <>
           {t("machine.screen.lead")}
-          <StatusStrip className="mt-2.5">
-            <StatusDot tone={needsSetup ? "warn" : "ok"} />
-            <b>{needsSetup ? t("machine.screen.needsSetup", { count: needsSetup }) : t("machine.screen.readyForLabs")}</b>
-            <span>·</span>
-            <span>
-              {OS_NAME[report.os] ?? report.os} {report.arch}
-            </span>
-            {m && (
-              <>
-                <span>·</span>
-                <span>{t("machine.screen.uptime", { uptime: formatUptime(m.uptimeSecs) })}</span>
-              </>
-            )}
-          </StatusStrip>
+          <ReadinessStrip report={report} m={m} needsSetup={needsSetup} />
         </>
       }
       actions={
         <>
           {needsSetup > 0 && (
-            <Button size="sm" onClick={() => machineOpenSetup().catch(tell(t("machine.errors.openSetup")))}>
+            <Button
+              size="sm"
+              onClick={() => {
+                openSetup();
+              }}
+            >
               <Wrench className="size-3.5" /> {t("machine.screen.setUp")}
             </Button>
           )}
@@ -72,6 +65,27 @@ export function MachineHeader({
         </>
       }
     />
+  );
+}
+
+/** Setup left (or ready), the OS and, once read, the uptime. */
+function ReadinessStrip({ report, m, needsSetup }: { report: SystemReport; m: MachineMetrics | null; needsSetup: number }) {
+  const t = useT();
+  return (
+    <StatusStrip className="mt-2.5">
+      <StatusDot tone={needsSetup ? "warn" : "ok"} />
+      <b>{needsSetup ? t("machine.screen.needsSetup", { count: needsSetup }) : t("machine.screen.readyForLabs")}</b>
+      <span>·</span>
+      <span>
+        {OS_NAME[report.os] ?? report.os} {report.arch}
+      </span>
+      {m && (
+        <>
+          <span>·</span>
+          <span>{t("machine.screen.uptime", { uptime: formatUptime(m.uptimeSecs) })}</span>
+        </>
+      )}
+    </StatusStrip>
   );
 }
 

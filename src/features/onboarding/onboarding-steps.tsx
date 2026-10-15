@@ -59,39 +59,7 @@ export function SignInStep({
     <div className="flex flex-1 flex-col">
       <StepHeader title={t("onboarding.signin.title")} description={t("onboarding.signin.description")} />
       <div className="mt-8">
-        {auth?.loggedIn ? (
-          <Panel className="flex items-center gap-3 px-4 py-3.5">
-            <StatusDot tone="ok" />
-            <div className="min-w-0">
-              <p className="text-[0.8125rem] font-medium text-foreground">{signedInLabel(t, auth)}</p>
-              {auth.email && <p className="truncate font-mono text-[0.6875rem] text-faint">{auth.email}</p>}
-            </div>
-          </Panel>
-        ) : (
-          <Panel className="px-5 py-5 text-center">
-            <Button variant="outline" size="lg" className="w-full" onClick={onLogin} disabled={loggingIn}>
-              {loggingIn ? (
-                <>
-                  <Spinner className="size-4" /> {t("onboarding.signin.waiting")}
-                </>
-              ) : (
-                <>
-                  <Icon name="user" className="size-4" /> {t("onboarding.signin.button")}
-                </>
-              )}
-            </Button>
-            <SignInHelp className="mt-2.5" />
-            <p className="mt-2.5 text-[0.75rem] text-muted-foreground">
-              {t.rich("onboarding.signin.hint", { mono: (s) => <span className="font-mono text-[0.6875rem]">{s}</span> })}
-            </p>
-            {loginError && (
-              <p role="alert" className="surface-log mt-4 flex items-start gap-2 rounded-control p-3 text-left text-[0.75rem] text-foreground">
-                <StatusDot tone="fail" className="mt-[0.3rem]" />
-                <span className="min-w-0 break-words">{loginError}</span>
-              </p>
-            )}
-          </Panel>
-        )}
+        {auth?.loggedIn ? <SignedInPanel auth={auth} /> : <SignInPanel loggingIn={loggingIn} loginError={loginError} onLogin={onLogin} />}
       </div>
       {/* Signing in is optional (labs run without an account): said on the button, so going on
           without it reads as a choice, not a mistake. */}
@@ -102,6 +70,42 @@ export function SignInStep({
         nextVariant={auth?.loggedIn ? "primary" : "secondary"}
       />
     </div>
+  );
+}
+
+function SignedInPanel({ auth }: { auth: AuthStatus }) {
+  const t = useT();
+  return (
+    <Panel className="flex items-center gap-3 px-4 py-3.5">
+      <StatusDot tone="ok" />
+      <div className="min-w-0">
+        <p className="text-[0.8125rem] font-medium text-foreground">{signedInLabel(t, auth)}</p>
+        {auth.email && <p className="truncate font-mono text-[0.6875rem] text-faint">{auth.email}</p>}
+      </div>
+    </Panel>
+  );
+}
+
+/** The sign-in button (waiting while the browser is out), its help, and why the last one failed. */
+function SignInPanel({ loggingIn, loginError, onLogin }: { loggingIn: boolean; loginError: string | null; onLogin: () => void }) {
+  const t = useT();
+  return (
+    <Panel className="px-5 py-5 text-center">
+      <Button variant="outline" size="lg" className="w-full" onClick={onLogin} disabled={loggingIn}>
+        {loggingIn ? <Spinner className="size-4" /> : <Icon name="user" className="size-4" />}{" "}
+        {loggingIn ? t("onboarding.signin.waiting") : t("onboarding.signin.button")}
+      </Button>
+      <SignInHelp className="mt-2.5" />
+      <p className="mt-2.5 text-[0.75rem] text-muted-foreground">
+        {t.rich("onboarding.signin.hint", { mono: (s) => <span className="font-mono text-[0.6875rem]">{s}</span> })}
+      </p>
+      {loginError && (
+        <p role="alert" className="surface-log mt-4 flex items-start gap-2 rounded-control p-3 text-left text-[0.75rem] text-foreground">
+          <StatusDot tone="fail" className="mt-[0.3rem]" />
+          <span className="min-w-0 break-words">{loginError}</span>
+        </p>
+      )}
+    </Panel>
   );
 }
 

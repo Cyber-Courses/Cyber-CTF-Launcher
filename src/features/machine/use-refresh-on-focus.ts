@@ -13,6 +13,8 @@ export function useRefreshOnFocus(onRefresh: () => void | Promise<void>) {
   useEffect(() => {
     const onFocus = () => void refresh.current();
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 }

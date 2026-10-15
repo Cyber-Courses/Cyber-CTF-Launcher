@@ -7,35 +7,40 @@ import type { Tone } from "@/components/ui/status-pill";
 import { EngineMark, engineName } from "@/features/machine/setup-steps";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { providerLabel } from "@/features/machine/hypervisors";
-import { LabTypeRow, type LabKind } from "@/features/machine/machine-parts";
-import { WANT_FREE, dockerState, type vmSetup } from "@/features/machine/machine-status";
-import { formatAgo, formatBytes } from "@/lib/format";
+import { LabTypeRow } from "@/features/machine/machine-parts";
+import { dockerState, type DockerState, type VmState, type vmSetup } from "@/features/machine/machine-status";
+import { FixButton, TestButton, TestLine, lowFor, useFreeHint, type RowProps } from "@/features/machine/lab-row-parts";
 import type { SystemReport } from "@/lib/tauri";
 import type { LastTest } from "@/lib/settings";
-import { useT } from "@/lib/i18n";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";
 
-type RowProps = {
-  report: SystemReport;
-  last: LastTest | null;
-  now: number;
-  /** Free memory now (null until the first metrics read). */
-  memFree: number | null;
-  testing: boolean;
-  onToggleTest: () => void;
-  onTestDone: () => void;
-  /** Opens the setup window at a step. */
-  onFix: (step: string) => void;
+const DOCKER_STATUS: Record<DockerState, MessageKey> = {
+  ready: "machine.screen.status.ready",
+  testFailed: "machine.screen.status.testFailed",
+  denied: "machine.screen.status.noPermission",
+  stopped: "machine.screen.status.engineStopped",
+  missing: "machine.screen.status.needsSetup",
 };
 
-const TONE = { ready: "ok", testFailed: "fail" } as const;
+const VM_STATUS: Record<VmState, MessageKey> = {
+  notApplicable: "machine.screen.status.notOnThisMachine",
+  ready: "machine.screen.status.ready",
+  testFailed: "machine.screen.status.testFailed",
+  blocked: "machine.screen.status.needsSetup",
+  vagrantMissing: "machine.screen.status.needsSetup",
+  needHypervisor: "machine.screen.status.needsSetup",
+};
+
+/** What a row's tone is once its lab type runs here: its last test passed or failed. */
+const TESTED_TONE = { ready: "ok", testFailed: "fail" } as const;
 
 /** Container labs on this machine: the engine, its last test, and the fix or the test. */
 export function DockerLabRow({ report, last, now, memFree, testing, onToggleTest, onTestDone, onFix }: RowProps) {
   const t = useT();
-  const parts = useRowParts(now, memFree);
   const state = dockerState(report, last);
   const ready = state === "ready" || state === "testFailed";
+  const freeHint = useFreeHint("docker", memFree);
   return (
     <LabTypeRow
       kind="docker"
@@ -49,161 +54,91 @@ export function DockerLabRow({ report, last, now, memFree, testing, onToggleTest
         )
       }
       title={t("machine.screen.containerLabs")}
-      tone={ready ? TONE[state] : "warn"}
-      status={
-        state === "ready"
-          ? t("machine.screen.status.ready")
-          : state === "testFailed"
-            ? t("machine.screen.status.testFailed")
-            : state === "denied"
-              ? t("machine.screen.status.noPermission")
-              : state === "stopped"
-                ? t("machine.screen.status.engineStopped")
-                : t("machine.screen.status.needsSetup")
-      }
-      detail={
-        ready ? (
-          <>
-            {report.dockerEngine ? engineName(report.dockerEngine) : "Docker"} · {parts.testLine(last)}
-          </>
-        ) : state === "denied" ? (
-          report.dockerDeniedHint ? (
-            describeError(report.dockerDeniedHint, t)
-          ) : (
-            t("machine.screen.docker.denied")
-          )
-        ) : state === "stopped" ? (
-          t("machine.screen.docker.stopped")
-        ) : // The engines this OS has (OrbStack is macOS-only; Docker Engine is Linux's own).
-        report.os === "linux" ? (
-          t("machine.screen.docker.noEngineLinux")
-        ) : report.os === "macos" ? (
-          t("machine.screen.docker.noEngineMacos")
-        ) : (
-          t("machine.screen.docker.noEngineWindows")
-        )
-      }
-      hint={ready ? parts.freeHint("docker") : undefined}
-      actions={
-        ready ? (
-          <TestButton testing={testing} onClick={onToggleTest} />
-        ) : state === "denied" ? null : (
-          <Button variant="outline" size="xs" onClick={() => onFix("docker")}>
-            {t("machine.screen.fix")}
-          </Button>
-        )
-      }
+      tone={ready ? TESTED_TONE[state] : "warn"}
+      status={t(DOCKER_STATUS[state])}
+      detail={<DockerDetail report={report} state={state} last={last} now={now} />}
+      hint={ready ? freeHint : undefined}
+      actions={ready ? <TestButton testing={testing} onClick={onToggleTest} /> : state !== "denied" && <FixButton step="docker" onFix={onFix} />}
       testing={testing}
       onTestDone={onTestDone}
     />
   );
 }
 
-/** VM labs on this machine: the hypervisor, its last test, and the fix, the test or a server. */
-export function VmLabRow({
-  report,
-  vm,
-  last,
-  now,
-  memFree,
-  testing,
-  onToggleTest,
-  onTestDone,
-  onFix,
-  onUseServer,
-}: RowProps & { vm: ReturnType<typeof vmSetup>; onUseServer: () => void }) {
+/** The engine and its last test once it runs, else why it doesn't. */
+function DockerDetail({ report, state, last, now }: { report: SystemReport; state: DockerState; last: LastTest | null; now: number }) {
   const t = useT();
-  const parts = useRowParts(now, memFree);
+  if (state === "ready" || state === "testFailed")
+    return (
+      <>
+        {report.dockerEngine ? engineName(report.dockerEngine) : "Docker"} · <TestLine test={last} now={now} />
+      </>
+    );
+  if (state === "denied") return report.dockerDeniedHint ? describeError(report.dockerDeniedHint, t) : t("machine.screen.docker.denied");
+  if (state === "stopped") return t("machine.screen.docker.stopped");
+  // The engines this OS has (OrbStack is macOS-only; Docker Engine is Linux's own).
+  if (report.os === "linux") return t("machine.screen.docker.noEngineLinux");
+  return report.os === "macos" ? t("machine.screen.docker.noEngineMacos") : t("machine.screen.docker.noEngineWindows");
+}
+
+type Vm = ReturnType<typeof vmSetup>;
+
+/** VM labs on this machine: the hypervisor, its last test, and the fix, the test or a server. */
+export function VmLabRow({ vm, onUseServer, ...row }: RowProps & { vm: Vm; onUseServer: () => void }) {
+  const t = useT();
   const { state, provider } = vm;
   const ready = state === "ready" || state === "testFailed";
-  const tone: Tone = state === "notApplicable" ? "muted" : ready ? TONE[state] : "warn";
-  const serverButton = (variant: "outline" | "ghost") => (
-    <Button variant={variant} size="xs" onClick={onUseServer}>
-      {t("machine.screen.useServer")}
-    </Button>
-  );
+  const tone: Tone = state === "notApplicable" ? "muted" : ready ? TESTED_TONE[state] : "warn";
+  const freeHint = useFreeHint("vm", row.memFree);
   return (
     <LabTypeRow
       kind="vm"
       icon={<HypervisorLogo provider={provider?.provider} />}
       title={t("machine.screen.vmLabs")}
       tone={tone}
-      status={
-        state === "notApplicable"
-          ? t("machine.screen.status.notOnThisMachine")
-          : state === "ready"
-            ? t("machine.screen.status.ready")
-            : state === "testFailed"
-              ? t("machine.screen.status.testFailed")
-              : t("machine.screen.status.needsSetup")
-      }
-      detail={
-        state === "notApplicable" ? (
-          t("machine.screen.vm.notApplicable")
-        ) : ready && provider ? (
-          <>
-            {providerLabel(provider, report.os)}
-            {vm.automatic ? t("machine.screen.vm.automatic") : ""} · {parts.testLine(last)}
-          </>
-        ) : state === "blocked" ? (
-          vm.blockedReason
-        ) : state === "vagrantMissing" ? (
-          t("machine.screen.vm.vagrantMissing")
-        ) : (
-          t("machine.screen.vm.needHypervisor")
-        )
-      }
-      hint={provider ? parts.freeHint("vm") : undefined}
-      actions={
-        state === "notApplicable" || state === "blocked" ? (
-          serverButton("outline")
-        ) : ready ? (
-          <>
-            {parts.lowFor("vm") && serverButton("ghost")}
-            <TestButton testing={testing} onClick={onToggleTest} />
-          </>
-        ) : (
-          <Button variant="outline" size="xs" onClick={() => onFix(state === "vagrantMissing" ? "vagrant" : "vm")}>
-            {t("machine.screen.fix")}
-          </Button>
-        )
-      }
-      testing={testing}
-      onTestDone={onTestDone}
+      status={t(VM_STATUS[state])}
+      detail={<VmDetail vm={vm} report={row.report} last={row.last} now={row.now} />}
+      hint={provider ? freeHint : undefined}
+      actions={<VmActions vm={vm} row={row} onUseServer={onUseServer} />}
+      testing={row.testing}
+      onTestDone={row.onTestDone}
     />
   );
 }
 
-/** Opens or hides a lab type's self-test inline. */
-function TestButton({ testing, onClick }: { testing: boolean; onClick: () => void }) {
+/** The hypervisor and its last test once it runs, else why it doesn't. */
+function VmDetail({ vm, report, last, now }: { vm: Vm; report: SystemReport; last: LastTest | null; now: number }) {
   const t = useT();
-  return (
-    <Button variant="outline" size="xs" onClick={onClick}>
-      {testing ? t("machine.screen.hideTest") : t("machine.screen.test")}
-    </Button>
-  );
+  const { state, provider } = vm;
+  if (state === "notApplicable") return t("machine.screen.vm.notApplicable");
+  if ((state === "ready" || state === "testFailed") && provider)
+    return (
+      <>
+        {providerLabel(provider, report.os)}
+        {vm.automatic ? t("machine.screen.vm.automatic") : ""} · <TestLine test={last} now={now} />
+      </>
+    );
+  if (state === "blocked") return vm.blockedReason;
+  return state === "vagrantMissing" ? t("machine.screen.vm.vagrantMissing") : t("machine.screen.vm.needHypervisor");
 }
 
-/** The lines both rows share: the last test, and a warning when memory is short for the type. */
-function useRowParts(now: number, memFree: number | null) {
+/** A server where VM labs can't run here, the test (and a server when memory is short) where
+ *  they can, else the fix. */
+function VmActions({ vm, row, onUseServer }: { vm: Vm; row: Omit<RowProps, "report">; onUseServer: () => void }) {
   const t = useT();
-  const lowFor = (kind: LabKind) => memFree !== null && memFree < WANT_FREE[kind];
-  return {
-    lowFor,
-    freeHint: (kind: LabKind) =>
-      lowFor(kind)
-        ? t(kind === "vm" ? "machine.screen.freeHintVm" : "machine.screen.freeHintDocker", {
-            want: formatBytes(WANT_FREE[kind]),
-            free: formatBytes(Math.max(0, memFree!)),
-          })
-        : undefined,
-    testLine: (test: LastTest | null) =>
-      !test ? (
-        <span>{t("machine.screen.notTestedYet")}</span>
-      ) : test.result === "ok" ? (
-        <span>{t("machine.screen.tested", { ago: formatAgo(test.at, now) })}</span>
-      ) : (
-        <span className="text-destructive">{t("machine.screen.lastTestFailed", { ago: formatAgo(test.at, now) })}</span>
-      ),
-  };
+  const { state } = vm;
+  const server = (variant: "outline" | "ghost") => (
+    <Button variant={variant} size="xs" onClick={onUseServer}>
+      {t("machine.screen.useServer")}
+    </Button>
+  );
+  if (state === "notApplicable" || state === "blocked") return server("outline");
+  if (state === "ready" || state === "testFailed")
+    return (
+      <>
+        {lowFor("vm", row.memFree) && server("ghost")}
+        <TestButton testing={row.testing} onClick={row.onToggleTest} />
+      </>
+    );
+  return <FixButton step={state === "vagrantMissing" ? "vagrant" : "vm"} onFix={row.onFix} />;
 }

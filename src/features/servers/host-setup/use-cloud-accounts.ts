@@ -54,7 +54,8 @@ export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: bo
   const gcpAccounts = useGcpAccounts(gcp, setV);
   const ociCfg = useOciConfig(oci, editing, setV);
 
-  /** Runs a sign-in, logging it below, with the button busy meanwhile. */
+  /** Runs a sign-in, logging it below, with the button busy meanwhile. Never rejects: the log
+   *  says how it went. */
   async function signInWith(cloud: string, task: (onLog: (l: string) => void) => Promise<string>) {
     setSigningIn(true);
     await signInLog.run(translate("servers.setup.credentials.logSigningIn", { cloud }), task);
@@ -62,23 +63,24 @@ export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: bo
   }
 
   /** The AWS CLI's browser sign-in for the chosen profile, then who it signed in as. */
-  const awsSignIn = () =>
-    signInWith("AWS", async (onLog) => {
+  const awsSignIn = () => {
+    void signInWith("AWS", async (onLog) => {
       await awsLogin(v.awsProfile ?? null, onLog);
       const id = await awsCliIdentity(v.awsProfile ?? undefined);
       awsAccount.setAwsIdentity(id);
       return id ? translate("servers.setup.credentials.logSignedInAs", { id }) : translate("servers.setup.credentials.logNotSignedIn");
     });
+  };
 
   /** The cloud CLI's own sign-in (Azure, GCP), then the subscriptions / projects it now sees.
    *  The other clouds sign in with a token or a config file: `cloud_login` refuses them. */
-  const signIn = async () => {
+  const signIn = () => {
     const cloud = cloudProvider;
     if (cloud !== "azure" && cloud !== "gcp") return;
-    await signInWith(CLOUD_META[cloud].label, async (onLog) => {
+    void signInWith(CLOUD_META[cloud].label, async (onLog) => {
       await cloudLogin(cloud, onLog);
       if (cloud === "azure") azureAccount.loadAzureSubs();
-      if (cloud === "gcp") gcpAccounts.loadGcpProjects();
+      else gcpAccounts.loadGcpProjects();
       return translate("servers.setup.credentials.logSignedIn");
     });
   };
@@ -125,19 +127,25 @@ function useAwsAccount(aws: boolean, awsCli: boolean, awsProfile: string | null)
     (profile: string | null) => {
       const latest = beginIdentityRead();
       setCheckingId(true);
-      awsCliIdentity(profile ?? undefined)
-        .then((id) => latest() && setAwsIdentity(id))
-        .catch(() => latest() && setAwsIdentity(null))
-        .finally(() => latest() && setCheckingId(false));
-      awsMonthToDateCost(profile ?? undefined)
-        .then((c) => latest() && setMtdCost(c))
-        .catch(() => latest() && setMtdCost(null));
+      // The identity and the spend each read as nothing when they can't be read.
+      void awsCliIdentity(profile ?? undefined)
+        .catch(() => null)
+        .then((id) => {
+          if (latest()) setAwsIdentity(id);
+        })
+        .finally(() => {
+          if (latest()) setCheckingId(false);
+        });
+      void awsMonthToDateCost(profile ?? undefined)
+        .catch(() => null)
+        .then((c) => {
+          if (latest()) setMtdCost(c);
+        });
     },
     [beginIdentityRead],
   );
   useEffect(() => {
-    // A read starting shows its "checking" state at once.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its "checking" state at once
     if (awsCli) checkAwsIdentity(awsProfile);
   }, [awsCli, awsProfile, checkAwsIdentity]);
   return { profiles, awsIdentity, setAwsIdentity, checkingId, mtdCost };
@@ -161,12 +169,15 @@ function useAzureSubscriptions(azure: boolean, setV: SetInput) {
         // Default to the account's default subscription if none chosen yet.
         setV((s) => (s.provider === "azure" && !s.username && subs.length > 0 ? { ...s, username: (subs.find((x) => x.isDefault) ?? subs[0]).id } : s));
       })
-      .catch(() => latest() && setAzureSubs([]))
-      .finally(() => latest() && setAzureChecking(false));
+      .catch(() => {
+        if (latest()) setAzureSubs([]);
+      })
+      .finally(() => {
+        if (latest()) setAzureChecking(false);
+      });
   }, [setV, beginSubsRead]);
   useEffect(() => {
-    // A read starting shows its "checking" state at once.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its "checking" state at once
     if (azure) loadAzureSubs();
   }, [azure, loadAzureSubs]);
   return { azureSubs, azureChecking, loadAzureSubs };
@@ -197,14 +208,15 @@ function useGcpAccounts(gcp: boolean, setV: SetInput) {
         const failed = [email, billing, orgs].find((r) => r.status === "rejected");
         setGcpError(failed ? describeError(failed.reason) : null);
         // Default to the first open billing account if none chosen yet.
-        const open = accounts.find((b) => b.open) ?? accounts[0];
+        const open = accounts.find((b) => b.open) ?? accounts.at(0);
         setV((s) => (s.provider === "gcp" && !s.username && open ? { ...s, username: open.id } : s));
       })
-      .finally(() => latest() && setGcpChecking(false));
+      .finally(() => {
+        if (latest()) setGcpChecking(false);
+      });
   }, [setV, beginProjectsRead]);
   useEffect(() => {
-    // A read starting shows its "checking" state at once.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its "checking" state at once
     if (gcp) loadGcpProjects();
   }, [gcp, loadGcpProjects]);
   return { gcpBilling, gcpOrgs, gcpEmail, gcpChecking, gcpError, loadGcpProjects };
@@ -220,7 +232,9 @@ function useOciConfig(oci: boolean, editing: boolean, setV: SetInput) {
         setOciCfg(cfg);
         setV((s) => (s.provider === "oci" ? { ...s, username: s.username || cfg.tenancy, host: cfg.region && !editing ? cfg.region : s.host } : s));
       })
-      .catch(() => setOciCfg(null));
+      .catch(() => {
+        setOciCfg(null);
+      });
   }, [oci, editing, setV]);
   return ociCfg;
 }

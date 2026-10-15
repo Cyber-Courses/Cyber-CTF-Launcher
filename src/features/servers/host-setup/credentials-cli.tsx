@@ -26,7 +26,12 @@ export function AzureCredentials({ s }: { s: HostSetup }) {
           </SignedInNote>
           <SignInLog s={s} />
           <Field label={t("servers.setup.credentials.subscription")}>
-            <Select value={v.username} onChange={(e) => s.set("username", e.target.value)}>
+            <Select
+              value={v.username}
+              onChange={(e) => {
+                s.set("username", e.target.value);
+              }}
+            >
               {!v.username && <option value="">{t("servers.setup.credentials.chooseSubscription")}</option>}
               {azureSubs.map((sub) => (
                 <option key={sub.id} value={sub.id}>
@@ -58,7 +63,6 @@ export function AzureCredentials({ s }: { s: HostSetup }) {
 /** Google Cloud: the CLI sign-in, then the billing account and organization for the lab projects. */
 export function GcpCredentials({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, gcpBilling } = s;
   return (
     <div className="space-y-3">
       {/* A list that couldn't be read: the others still show, and the reason does too. */}
@@ -70,43 +74,7 @@ export function GcpCredentials({ s }: { s: HostSetup }) {
       {s.gcpChecking ? (
         <CheckingNote>{t("servers.setup.credentials.checkingGcloud")}</CheckingNote>
       ) : s.gcpEmail ? (
-        <>
-          {/* The sign-in, its log, then the billing account it gives access to. */}
-          <SignedInNote s={s}>
-            <span className="min-w-0 truncate">
-              <span className="text-muted-foreground">{t("servers.setup.credentials.signedInAs")} </span>
-              <span className="text-foreground">{s.gcpEmail}</span>
-            </span>
-          </SignedInNote>
-          <SignInLog s={s} />
-          {gcpBilling.length > 0 ? (
-            <Field label={t("servers.setup.credentials.billingAccount")} hint={t("servers.setup.credentials.billingHint")}>
-              <Select value={v.username} onChange={(e) => s.set("username", e.target.value)}>
-                {!v.username && <option value="">{t("servers.setup.credentials.chooseBilling")}</option>}
-                {gcpBilling.map((b) => (
-                  <option key={b.id} value={b.id} disabled={!b.open}>
-                    {b.name ? `${b.name} (${b.id})` : b.id}
-                    {b.open ? "" : ` ${t("servers.setup.credentials.closed")}`}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          ) : (
-            <Field label={t("servers.setup.credentials.billingAccount")} hint={t("servers.setup.credentials.billingNone")}>
-              <Input {...s.text("username")} placeholder="0X0X0X-0X0X0X-0X0X0X" />
-            </Field>
-          )}
-          <Field label={t("servers.setup.credentials.organization")}>
-            <Select value={v.node ?? ""} onChange={(e) => s.set("node", e.target.value || null)}>
-              <option value="">{t("servers.setup.credentials.noOrganization")}</option>
-              {s.gcpOrgs.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name ? `${o.name} (${o.id})` : o.id}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </>
+        <GcpAccount s={s} email={s.gcpEmail} />
       ) : (
         <>
           <SignInNote
@@ -122,6 +90,60 @@ export function GcpCredentials({ s }: { s: HostSetup }) {
         </>
       )}
     </div>
+  );
+}
+
+/** Signed in to Google Cloud: who as, its log, then the billing account and organization. */
+function GcpAccount({ s, email }: { s: HostSetup; email: string }) {
+  const t = useT();
+  const { v } = s;
+  return (
+    <>
+      <SignedInNote s={s}>
+        <span className="min-w-0 truncate">
+          <span className="text-muted-foreground">{t("servers.setup.credentials.signedInAs")} </span>
+          <span className="text-foreground">{email}</span>
+        </span>
+      </SignedInNote>
+      <SignInLog s={s} />
+      {s.gcpBilling.length > 0 ? (
+        <Field label={t("servers.setup.credentials.billingAccount")} hint={t("servers.setup.credentials.billingHint")}>
+          <Select
+            value={v.username}
+            onChange={(e) => {
+              s.set("username", e.target.value);
+            }}
+          >
+            {!v.username && <option value="">{t("servers.setup.credentials.chooseBilling")}</option>}
+            {s.gcpBilling.map((b) => (
+              <option key={b.id} value={b.id} disabled={!b.open}>
+                {b.name ? `${b.name} (${b.id})` : b.id}
+                {b.open ? "" : ` ${t("servers.setup.credentials.closed")}`}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : (
+        <Field label={t("servers.setup.credentials.billingAccount")} hint={t("servers.setup.credentials.billingNone")}>
+          <Input {...s.text("username")} placeholder="0X0X0X-0X0X0X-0X0X0X" />
+        </Field>
+      )}
+      <Field label={t("servers.setup.credentials.organization")}>
+        <Select
+          value={v.node ?? ""}
+          onChange={(e) => {
+            s.set("node", e.target.value || null);
+          }}
+        >
+          <option value="">{t("servers.setup.credentials.noOrganization")}</option>
+          {s.gcpOrgs.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name ? `${o.name} (${o.id})` : o.id}
+            </option>
+          ))}
+        </Select>
+      </Field>
+    </>
   );
 }
 
@@ -153,7 +175,12 @@ export function AwsCliCredentials({ s }: { s: HostSetup }) {
       <SignInLog s={s} />
       {s.profiles.length > 0 && (
         <Field label={t("servers.setup.credentials.profile")}>
-          <Select value={s.v.awsProfile ?? ""} onChange={(e) => s.set("awsProfile", e.target.value || null)}>
+          <Select
+            value={s.v.awsProfile ?? ""}
+            onChange={(e) => {
+              s.set("awsProfile", e.target.value || null);
+            }}
+          >
             <option value="">default</option>
             {/* "default" is the first option already; the CLI lists it among the others too. */}
             {s.profiles

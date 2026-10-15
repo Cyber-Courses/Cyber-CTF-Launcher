@@ -43,25 +43,30 @@ function runFor(id: string): Run {
   runs.set(id, run);
   serverSelftest(id, (e: SelfTestEvent) => {
     run.events.push(e);
-    run.listeners.forEach((l) => l(e));
+    run.listeners.forEach((l) => {
+      l(e);
+    });
   })
-    .catch((err) => {
+    .catch((err: unknown) => {
       run.error = describeError(err);
     })
     .finally(() => {
       // Over: the next open starts a new one. A view still showing it hears the end.
       runs.delete(id);
-      run.onSettled.forEach((f) => f());
+      run.onSettled.forEach((f) => {
+        f();
+      });
     });
   return run;
 }
 
-/** Runs a real-VM self-test on a host and renders each step, like the machine VM test. It
- *  really provisions a throwaway VM on the server and destroys it, so it takes a few minutes. */
-export function ServerSelfTest({ id, provider, onDone }: { id: string; provider: ServerHost["provider"]; onDone: (result: "ok" | "fail") => void }) {
-  const t = useT();
-  const plan = SELFTEST_PLAN[provider === "proxmox" ? "proxmox" : "esxi"];
-  const [states, setStates] = useState<Record<string, { state: string; detail?: string }>>({});
+/** Each step's last state and detail, by step name (none for a step not reached). */
+type StepStates = Partial<Record<string, { state: string; detail?: string }>>;
+
+/** The view's side of host `id`'s run: its steps so far, whether it still runs, why it couldn't
+ *  run, and when it started. `onDone` hears how it ended. */
+function useServerSelfTest(id: string, onDone: (result: "ok" | "fail") => void) {
+  const [states, setStates] = useState<StepStates>({});
   const [running, setRunning] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [startAt, setStartAt] = useState(() => Date.now());
@@ -72,9 +77,11 @@ export function ServerSelfTest({ id, provider, onDone }: { id: string; provider:
 
   useEffect(() => {
     const run = runFor(id);
-    const shown = (e: SelfTestEvent) => setStates((s) => ({ ...s, [e.step]: { state: e.state, detail: e.detail ?? undefined } }));
+    const shown = (e: SelfTestEvent) => {
+      setStates((s) => ({ ...s, [e.step]: { state: e.state, detail: e.detail ?? undefined } }));
+    };
     // Attaching to a run already going: what it did so far, then the rest as it comes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the start lives in the module's run, which only this effect starts or finds
     setStartAt(run.startAt);
     run.events.forEach(shown);
     run.listeners.add(shown);
@@ -90,42 +97,55 @@ export function ServerSelfTest({ id, provider, onDone }: { id: string; provider:
       run.onSettled.delete(settled);
     };
   }, [id]);
+  return { states, running, error, startAt };
+}
 
+/** Runs a real-VM self-test on a host and renders each step, like the machine VM test. It
+ *  really provisions a throwaway VM on the server and destroys it, so it takes a few minutes. */
+export function ServerSelfTest({ id, provider, onDone }: { id: string; provider: ServerHost["provider"]; onDone: (result: "ok" | "fail") => void }) {
+  const t = useT();
+  const { states, running, error, startAt } = useServerSelfTest(id, onDone);
   const [now] = useNow(500, running);
-
-  const failed = Object.values(states).some((s) => s.state === "fail") || !!error;
-  const fmt = formatElapsed(now - startAt);
+  const failed = Object.values(states).some((s) => s?.state === "fail") || !!error;
+  const tone = running ? "warn" : failed ? "fail" : "ok";
+  const headline = running ? t("servers.selfTest.running") : failed ? t("servers.selfTest.failed") : t("servers.selfTest.passed");
 
   return (
     <div className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
       <div className="flex items-center gap-2.5 border-b border-border px-4 py-2">
-        <StatusDot tone={running ? "warn" : failed ? "fail" : "ok"} pulse={running} />
-        <span className="text-[0.8125rem] font-medium">
-          {running ? t("servers.selfTest.running") : failed ? t("servers.selfTest.failed") : t("servers.selfTest.passed")}
-        </span>
-        <span className="ml-auto font-mono text-[0.6875rem] tabular-nums text-faint">{fmt}</span>
+        <StatusDot tone={tone} pulse={running} />
+        <span className="text-[0.8125rem] font-medium">{headline}</span>
+        <span className="ml-auto font-mono text-[0.6875rem] tabular-nums text-faint">{formatElapsed(now - startAt)}</span>
       </div>
-      <div className="grid py-1">
-        {plan.map((p) => {
-          const st = states[p.step]?.state ?? "idle";
-          const detail = states[p.step]?.detail;
-          return (
-            <div key={p.step} className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-3 px-4 py-1.5 text-[0.8125rem]">
-              <StepMark state={st} />
-              <div className="min-w-0">
-                <p className={cn(st === "idle" || st === "skip" ? "text-faint" : "text-foreground")}>{t(p.label)}</p>
-                {detail && <p className="mt-0.5 break-words font-mono text-[0.6875rem] text-faint">{detail}</p>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <StepList plan={SELFTEST_PLAN[provider === "proxmox" ? "proxmox" : "esxi"]} states={states} />
       {error && (
         <div className="flex items-start gap-2.5 border-t border-border px-4 py-2 text-[0.75rem] text-muted-foreground">
           <StatusDot tone="fail" className="mt-1.5" />
           <span className="min-w-0 break-words">{error}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+/** The provider's steps, each with its mark and its last detail. */
+function StepList({ plan, states }: { plan: { step: string; label: MessageKey }[]; states: StepStates }) {
+  const t = useT();
+  return (
+    <div className="grid py-1">
+      {plan.map((p) => {
+        const st = states[p.step]?.state ?? "idle";
+        const detail = states[p.step]?.detail;
+        return (
+          <div key={p.step} className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-3 px-4 py-1.5 text-[0.8125rem]">
+            <StepMark state={st} />
+            <div className="min-w-0">
+              <p className={cn(st === "idle" || st === "skip" ? "text-faint" : "text-foreground")}>{t(p.label)}</p>
+              {detail && <p className="mt-0.5 break-words font-mono text-[0.6875rem] text-faint">{detail}</p>}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

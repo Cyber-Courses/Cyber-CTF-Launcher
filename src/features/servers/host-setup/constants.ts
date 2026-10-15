@@ -136,7 +136,7 @@ export const CLOUD_META: Record<CloudProvider, { label: string; cli: string; rea
 
 /** The provider picker. `logo` marks the ones with an SVG in public/brands (others fall back to
  *  a cloud icon). */
-export const CLOUD_PICKER: { id: string; label: string; ready: boolean; logo: boolean }[] = [
+export const CLOUD_PICKER: { id: CloudProvider; label: string; ready: boolean; logo: boolean }[] = [
   { id: "aws", label: "Amazon Web Services", ready: true, logo: true },
   { id: "azure", label: "Microsoft Azure", ready: true, logo: true },
   { id: "gcp", label: "Google Cloud", ready: true, logo: true },

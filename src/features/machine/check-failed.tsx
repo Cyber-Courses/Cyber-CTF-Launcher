@@ -22,7 +22,9 @@ export function CheckFailed({ error, onRetry, className }: { error: string; onRe
       .catch(() => {
         /* the card stays, with the new error */
       })
-      .finally(() => setRetrying(false));
+      .finally(() => {
+        setRetrying(false);
+      });
   };
   return (
     <EmptyState

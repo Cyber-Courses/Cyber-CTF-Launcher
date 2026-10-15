@@ -141,8 +141,8 @@ export function chosenHypervisor(report: SystemReport, setup: MachineSetupState)
   const fallback =
     hypervisors.find((p) => p.hypervisor === true && !cantRun(p, report)) ??
     hypervisors.find((p) => p.hypervisor === true) ??
-    hypervisors.find((p) => INSTALLABLE[p.provider]) ??
-    hypervisors[0];
+    hypervisors.find((p) => INSTALLABLE[p.provider] !== undefined) ??
+    hypervisors.at(0);
   return hypervisors.find((p) => p.provider === (setup.hypervisor ?? fallback?.provider)) ?? fallback;
 }
 

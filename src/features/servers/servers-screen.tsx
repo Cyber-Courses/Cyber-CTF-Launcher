@@ -7,15 +7,15 @@ import { Button } from "@/components/ui/button";
 import { NoticePanel } from "@/components/ui/notice-panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { serverRemove, serverSetDefault } from "@/lib/tauri";
+import { serverRemove, serverSetDefault, type ServerHost } from "@/lib/tauri";
 import { PageHeader } from "@/components/ui/page-header";
-import { HostRow } from "@/features/servers/host-row";
+import { HostRow, type HostActions } from "@/features/servers/host-row";
 import { CapacityPanel } from "@/features/servers/capacity-panel";
 import { ServersEmptyState } from "@/features/servers/servers-empty-state";
 import { StatusDot, type Tone } from "@/components/ui/status-pill";
-import { VmTest, loadVmTests, saveVmTest } from "@/features/servers/vm-tests";
+import { loadVmTests, saveVmTest, type VmTests } from "@/features/servers/vm-tests";
 import { canRunVmHere, capacityHost, hostsSummary } from "@/features/servers/servers-model";
-import { useServerHosts } from "@/features/servers/use-server-hosts";
+import { useServerHosts, type ServerHosts } from "@/features/servers/use-server-hosts";
 import { useNow } from "@/lib/use-now";
 import { useT } from "@/lib/i18n";
 
@@ -23,15 +23,13 @@ type Tab = "setup";
 
 export function ServerScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   const t = useT();
-  const { hosts, defaultId, tests, test, caps, running, loadRunning, report, error, open, testAll, act } = useServerHosts();
-  const [vmTestId, setVmTestId] = useState<string | null>(null);
-  const [vmResults, setVmResults] = useState<Record<string, VmTest>>(() => loadVmTests());
-  // Relative "Xm ago" labels, refreshed on a slow tick.
-  const [now] = useNow(30_000);
-
-  const hasHosts = !!hosts && hosts.length > 0;
-  const { online, anyTesting, tone } = hostsSummary(hosts ?? [], tests);
-  const capacity = capacityHost(hosts ?? [], defaultId, caps);
+  const page = useServerHosts();
+  const { hosts, report, error } = page;
+  const summary = hostsSummary(hosts ?? [], page.tests);
+  const capacity = capacityHost(hosts ?? [], page.defaultId, page.caps);
+  const add = () => {
+    page.open(null);
+  };
 
   return (
     <div className="space-y-5">
@@ -40,12 +38,12 @@ export function ServerScreen({ onNavigate }: { onNavigate: (tab: Tab) => void })
         lead={t("servers.screen.lead")}
         actions={
           <>
-            {hasHosts && (
-              <Button variant="outline" size="sm" onClick={testAll} disabled={anyTesting}>
-                {anyTesting ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" />} {t("servers.screen.testAll")}
+            {hosts && hosts.length > 0 && (
+              <Button variant="outline" size="sm" onClick={page.testAll} disabled={summary.anyTesting}>
+                {summary.anyTesting ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" />} {t("servers.screen.testAll")}
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => open(null)}>
+            <Button variant="outline" size="sm" onClick={add}>
               <Plus className="size-3.5" /> {t("servers.screen.addServer")}
             </Button>
           </>
@@ -54,46 +52,73 @@ export function ServerScreen({ onNavigate }: { onNavigate: (tab: Tab) => void })
 
       {error && <NoticePanel tone="fail">{error}</NoticePanel>}
 
-      {hosts === null ? (
-        <HostsLoading />
-      ) : !hasHosts ? (
-        <ServersEmptyState onAdd={() => open(null)} />
-      ) : (
-        <HostsPanel count={hosts.length} online={online} testing={anyTesting} tone={tone}>
-          {hosts.map((h) => (
-            <HostRow
-              key={h.id}
-              host={h}
-              isDefault={h.id === defaultId}
-              running={running[h.id] ?? 0}
-              capacity={caps[h.id]}
-              test={tests[h.id]}
-              lastVm={vmResults[h.id]}
-              now={now}
-              vmTesting={vmTestId === h.id}
-              onTest={() => test(h.id)}
-              onVmTest={() => setVmTestId(vmTestId === h.id ? null : h.id)}
-              onVmTestDone={(result) => {
-                setVmResults(saveVmTest(h.id, result));
-                void test(h.id);
-                loadRunning();
-              }}
-              onEdit={() => open(h.id)}
-              onDefault={() => act(() => serverSetDefault(h.id === defaultId ? null : h.id))}
-              onRemove={() => {
-                if (confirm(t("servers.screen.removeConfirm", { name: h.name }))) void act(() => serverRemove(h.id));
-              }}
-            />
-          ))}
+      {hosts === null && <HostsLoading />}
+      {hosts?.length === 0 && <ServersEmptyState onAdd={add} />}
+      {hosts && hosts.length > 0 && (
+        <HostsPanel count={hosts.length} online={summary.online} testing={summary.anyTesting} tone={summary.tone}>
+          <HostRows page={page} hosts={hosts} />
         </HostsPanel>
       )}
 
       {capacity && <CapacityPanel host={capacity.host} cap={capacity.cap} />}
 
       {/* Only worth suggesting when this machine can't already run VM labs itself. */}
-      {report && !canRunVmHere(report) && <SetUpMachineHint onSetUp={() => onNavigate("setup")} />}
+      {report && !canRunVmHere(report) && (
+        <SetUpMachineHint
+          onSetUp={() => {
+            onNavigate("setup");
+          }}
+        />
+      )}
     </div>
   );
+}
+
+/** A row per host, with the VM test open under at most one of them. */
+function HostRows({ page, hosts }: { page: ServerHosts; hosts: ServerHost[] }) {
+  const t = useT();
+  const [vmTestId, setVmTestId] = useState<string | null>(null);
+  const [vmResults, setVmResults] = useState<VmTests>(() => loadVmTests());
+  // Relative "Xm ago" labels, refreshed on a slow tick.
+  const [now] = useNow(30_000);
+  const actionsFor = (h: ServerHost): HostActions => ({
+    onTest: () => {
+      void page.test(h.id);
+    },
+    onVmTest: () => {
+      setVmTestId(vmTestId === h.id ? null : h.id);
+    },
+    onVmTestDone: (result) => {
+      setVmResults(saveVmTest(h.id, result));
+      void page.test(h.id);
+      page.loadRunning();
+    },
+    onEdit: () => {
+      page.open(h.id);
+    },
+    onDefault: () => {
+      page.act(() => serverSetDefault(h.id === page.defaultId ? null : h.id));
+    },
+    onRemove: () => {
+      if (confirm(t("servers.screen.removeConfirm", { name: h.name }))) page.act(() => serverRemove(h.id));
+    },
+  });
+  return hosts.map((h) => (
+    <HostRow
+      key={h.id}
+      host={h}
+      now={now}
+      actions={actionsFor(h)}
+      view={{
+        isDefault: h.id === page.defaultId,
+        running: page.running[h.id] ?? 0,
+        capacity: page.caps[h.id],
+        test: page.tests[h.id],
+        lastVm: vmResults[h.id],
+        vmTesting: vmTestId === h.id,
+      }}
+    />
+  ));
 }
 
 function HostsLoading() {

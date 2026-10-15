@@ -4,10 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ServerScreen } from "@/features/servers/servers-screen";
-import { HostRow } from "@/features/servers/host-row";
+import { HostRow, type HostView } from "@/features/servers/host-row";
 import { ServerSelfTest } from "@/features/servers/server-self-test";
+import { loadVmTests } from "@/features/servers/vm-tests";
 import { answer } from "@/lib/dev-mock";
-import type { ServerList, ServerTest } from "@/lib/tauri";
+import type { ServerHost, ServerList, ServerTest } from "@/lib/tauri";
 import { freshReport } from "@/test/fixtures";
 import { commands, installTauri, rejects, stream, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
@@ -17,6 +18,8 @@ const [pve, esxi] = sample().hosts;
 const ok: ServerTest = { ok: true, reachable: true, authenticated: true, latencyMs: 12, message: "Connected", checks: [] };
 const fail = (message: string): ServerTest => ({ ok: false, reachable: false, authenticated: null, latencyMs: null, message, checks: [] });
 const argsOf = (calls: Call[], cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
+/** A command that fails with `message`, as the Rust core's `other` error. */
+const failsWith = (message: string) => rejects({ code: "other", message });
 
 async function renderScreen(onNavigate = vi.fn()) {
   render(<ServerScreen onNavigate={onNavigate} />);
@@ -30,6 +33,13 @@ async function menu(user: ReturnType<typeof userEvent.setup>, rowName: string, i
   await user.click(within(row).getByRole("button", { name: /more actions/i }));
   await user.click(button(item));
   await flush();
+}
+
+/** The open menu's backdrop: hidden from assistive tech, a click on it closes the menu. */
+function menuBackdrop(): Element {
+  const el = document.querySelector("button[aria-hidden]");
+  if (!el) throw new Error("the menu is closed");
+  return el;
 }
 
 afterEach(() => {
@@ -87,7 +97,7 @@ describe("ServerScreen", () => {
     expect(screen.getByText("Connection refused (os error 61)")).toBeTruthy();
     // The unreachable ESXi host doesn't claim its 3 stale running labs.
     expect(screen.queryByText("3 labs running")).toBeNull();
-    await act(async () => resolve(ok));
+    resolve(ok);
     await flush();
     expect(document.body.textContent).toContain("1 of 2 online");
     expect(screen.getByText("1 lab running")).toBeTruthy();
@@ -112,7 +122,7 @@ describe("ServerScreen", () => {
     expect(links).toHaveLength(2);
     await user.click(links[0]);
     await flush();
-    expect(argsOf(calls, "plugin:opener|open_url")[0]).toMatchObject({ url: expect.stringContaining("Privacy_LocalNetwork") });
+    expect(argsOf(calls, "plugin:opener|open_url")[0]?.url).toMatch(/Privacy_LocalNetwork/);
   });
 
   it("does not show the Local Network hint off macOS or for a public host", async () => {
@@ -130,7 +140,7 @@ describe("ServerScreen", () => {
     expect(defaults[0].getAttribute("title")).toMatch(/Click to unset/);
     expect(defaults[1].getAttribute("title")).toMatch(/Make this the default/);
     // The default host's chip is pressed and says Default; the other offers to become it.
-    expect(defaults.map((d) => [d.textContent?.trim(), d.getAttribute("aria-pressed")])).toEqual([
+    expect(defaults.map((d) => [d.textContent.trim(), d.getAttribute("aria-pressed")])).toEqual([
       ["default", "true"],
       ["Set as default", "false"],
     ]);
@@ -145,9 +155,7 @@ describe("ServerScreen", () => {
 
   it("shows why setting the default failed", async () => {
     installTauri({
-      server_set_default: () => {
-        throw "servers.json is read-only";
-      },
+      server_set_default: failsWith("servers.json is read-only"),
     });
     const user = userEvent.setup();
     await renderScreen();
@@ -171,9 +179,7 @@ describe("ServerScreen", () => {
 
   it("shows why a removal failed", async () => {
     installTauri({
-      server_remove: () => {
-        throw "keychain locked";
-      },
+      server_remove: failsWith("keychain locked"),
     });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
@@ -185,10 +191,7 @@ describe("ServerScreen", () => {
   it("opens the setup window to edit a host or add one, and shows when it can't", async () => {
     let failOpen = false;
     const calls = installTauri({
-      server_open_setup: () => {
-        if (failOpen) throw "window already open";
-        return null;
-      },
+      server_open_setup: (a) => (failOpen ? failsWith("window already open")(a) : null),
     });
     const user = userEvent.setup();
     await renderScreen();
@@ -219,7 +222,7 @@ describe("ServerScreen", () => {
     fireEvent.scroll(window);
     expect(screen.queryByText("VM test")).toBeNull();
     await user.click(more);
-    fireEvent.click(document.querySelector("button[aria-hidden]")!);
+    fireEvent.click(menuBackdrop());
     expect(screen.queryByText("VM test")).toBeNull();
   });
 
@@ -238,7 +241,7 @@ describe("ServerScreen", () => {
     expect(argsOf(calls, "server_selftest")[0]).toMatchObject({ id: "pve" });
     expect(screen.getAllByText("VM test passed").length).toBeGreaterThan(0);
     expect(screen.getByText("vm 9001")).toBeTruthy();
-    expect(JSON.parse(localStorage.getItem("cyberctf.server.vmtest")!).pve.result).toBe("ok");
+    expect(loadVmTests().pve?.result).toBe("ok");
     expect(argsOf(calls, "server_test")).toEqual([{ id: "pve" }]);
     expect(commands(calls)).toContain("server_running_labs");
     // The menu now offers to hide it.
@@ -268,9 +271,7 @@ describe("ServerScreen", () => {
 
   it("shows the list error", async () => {
     installTauri({
-      server_list: () => {
-        throw "servers.json is corrupt";
-      },
+      server_list: failsWith("servers.json is corrupt"),
     });
     await renderScreen();
     expect(screen.getByText("servers.json is corrupt")).toBeTruthy();
@@ -296,12 +297,8 @@ describe("ServerScreen", () => {
 
   it("keeps the page up when the capacity read or running count fails", async () => {
     installTauri({
-      server_capacity: () => {
-        throw "pveproxy down";
-      },
-      server_running_labs: () => {
-        throw "no state dir";
-      },
+      server_capacity: failsWith("pveproxy down"),
+      server_running_labs: failsWith("no state dir"),
     });
     await renderScreen();
     expect(screen.getByText("homelab-pve")).toBeTruthy();
@@ -311,27 +308,14 @@ describe("ServerScreen", () => {
 
 describe("HostRow", () => {
   const noop = () => {};
-  const props = {
-    host: pve,
-    isDefault: false,
-    running: 0,
-    capacity: undefined,
-    test: undefined,
-    lastVm: undefined,
-    now: Date.now(),
-    vmTesting: false,
-    onTest: noop,
-    onVmTest: noop,
-    onVmTestDone: noop,
-    onEdit: noop,
-    onRemove: noop,
-    onDefault: noop,
-  };
+  const actions = { onTest: noop, onVmTest: noop, onVmTestDone: noop, onEdit: noop, onRemove: noop, onDefault: noop };
+  const view: HostView = { isDefault: false, running: 0, capacity: undefined, test: undefined, lastVm: undefined, vmTesting: false };
+  const row = (host: ServerHost, patch: Partial<HostView>) => render(<HostRow host={host} view={{ ...view, ...patch }} now={Date.now()} actions={actions} />);
 
   it("reads Not tested before the first test, with the host's facts", () => {
-    render(<HostRow {...props} host={{ ...esxi, node: null }} capacity={{ cores: 8, memTotal: 16 * 2 ** 30, memFree: 4 * 2 ** 30 }} />);
+    row({ ...esxi, node: null }, { capacity: { cores: 8, memTotal: 16 * 2 ** 30, memFree: 4 * 2 ** 30 } });
     expect(screen.getByText("Not tested")).toBeTruthy();
-    const facts = document.body.textContent ?? "";
+    const facts = document.body.textContent;
     expect(facts).toContain("VMware ESXi");
     expect(facts).toContain("root@10.0.4.12:443");
     expect(facts).toContain("8 vCPU");
@@ -339,7 +323,7 @@ describe("HostRow", () => {
   });
 
   it("disables Test while a test runs", () => {
-    render(<HostRow {...props} test="testing" />);
+    row(pve, { test: "testing" });
     expect(button(/^\s*test$/i).hasAttribute("disabled")).toBe(true);
   });
 });
@@ -370,9 +354,7 @@ describe("ServerSelfTest", () => {
 
   it("shows the error when the test can't run", async () => {
     installTauri({
-      server_selftest: () => {
-        throw "terraform not found";
-      },
+      server_selftest: failsWith("terraform not found"),
     });
     const onDone = vi.fn();
     render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
@@ -387,20 +369,27 @@ describe("ServerSelfTest", () => {
     let args: Record<string, unknown> | undefined;
     const selftest = vi.fn((a: Record<string, unknown> | undefined) => {
       args = a;
-      return new Promise<null>((r) => (finish = () => r(null)));
+      return new Promise<null>(
+        (r) =>
+          (finish = () => {
+            r(null);
+          }),
+      );
     });
     installTauri({ server_selftest: selftest });
     const onDone = vi.fn();
     const first = render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
     await flush();
-    await act(async () => stream(args, { step: "connect", label: "Connect", state: "ok", detail: null }));
+    act(() => {
+      stream(args, { step: "connect", label: "Connect", state: "ok", detail: null });
+    });
     first.unmount();
     render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
     await flush();
     expect(selftest).toHaveBeenCalledTimes(1);
     // The step that passed before this view opened is shown again.
     expect(screen.getByText("Running a real VM on the host…")).toBeTruthy();
-    await act(async () => finish());
+    finish();
     await flush();
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(onDone).toHaveBeenCalledWith("ok");
@@ -408,13 +397,21 @@ describe("ServerSelfTest", () => {
 
   it("is running until the host answers, and doesn't report after unmounting", async () => {
     let finish: () => void = () => {};
-    installTauri({ server_selftest: () => new Promise<null>((r) => (finish = () => r(null))) });
+    installTauri({
+      server_selftest: () =>
+        new Promise<null>(
+          (r) =>
+            (finish = () => {
+              r(null);
+            }),
+        ),
+    });
     const onDone = vi.fn();
     const { unmount } = render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
     await flush();
     expect(screen.getByText("Running a real VM on the host…")).toBeTruthy();
     unmount();
-    await act(async () => finish());
+    finish();
     await flush();
     expect(onDone).not.toHaveBeenCalled();
   });

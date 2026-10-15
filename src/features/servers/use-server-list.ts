@@ -5,7 +5,7 @@ import { SERVER_CHANGED, serverList, serverTest, type ServerList } from "@/lib/t
 import { useTauriEvent } from "@/lib/use-tauri-event";
 import { describeError } from "@/lib/errors";
 import { useLatest } from "@/lib/use-latest";
-import { failedTest, type HostTest } from "@/features/servers/servers-model";
+import { failedTest, type HostTest, type HostTests } from "@/features/servers/servers-model";
 
 /** Tests a server or cloud account; never rejects (a failure to test reads as a failed test). */
 export const testHost = (id: string): Promise<HostTest> => serverTest(id).catch(failedTest);
@@ -32,7 +32,9 @@ export function useServerList({ onLoaded, onChanged }: { onLoaded?: (list: Serve
         setError(null);
         loaded.current?.(l);
       })
-      .catch((e) => isLatest() && setError(describeError(e)));
+      .catch((e: unknown) => {
+        if (isLatest()) setError(describeError(e));
+      });
   }, [begin]);
   useEffect(reload, [reload]);
   // The setup window saves hosts; refresh when it says so.
@@ -46,7 +48,7 @@ export function useServerList({ onLoaded, onChanged }: { onLoaded?: (list: Serve
 /** The last test of each host ("testing" while one runs), and `test(id)` to run one. A second
  *  test of a host supersedes the first: whichever answers last, the newest one is shown. */
 export function useHostTests() {
-  const [tests, setTests] = useState<Record<string, HostTest | "testing">>({});
+  const [tests, setTests] = useState<HostTests>({});
   const begin = useLatest();
   const test = useCallback(
     async (id: string) => {

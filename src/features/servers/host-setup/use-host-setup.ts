@@ -1,13 +1,11 @@
 import { useState } from "react";
-import { serverSave, type CloudProvider, type ServerHost, type ServerHostInput, type ServerTest, type SystemReport } from "@/lib/tauri";
-import { KIND } from "@/features/servers/host-setup/constants";
+import { serverSave, type CloudProvider, type RemoteProvider, type ServerHost, type ServerHostInput, type ServerTest, type SystemReport } from "@/lib/tauri";
 import {
   connectionReady,
   keepsSecret,
-  isCliAuthCloud,
   isCloud,
-  isTokenCloud,
   machineTools,
+  providerTraits,
   saveName,
   setupSteps,
   setupTitle,
@@ -18,15 +16,11 @@ import { useRunLog } from "@/features/servers/host-setup/use-run-log";
 import { testHost } from "@/features/servers/use-server-list";
 import { translate, useT } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";
+import { useStepper } from "@/lib/use-stepper";
 
-/** All the server / cloud setup state and actions, shared by the setup steps. */
-export function useHostSetup({
-  initial,
-  report,
-  onRefresh,
-  onSaved,
-  onDone,
-}: {
+/** The setup's inputs: the host or account it starts from and the machine's tools, and what it
+ *  tells its window. */
+type SetupInput = {
   initial: ServerHostInput;
   report: SystemReport | null;
   onRefresh: () => void;
@@ -34,72 +28,66 @@ export function useHostSetup({
   onSaved: (h: ServerHost) => void;
   /** Setup finished or cancelled: the window closes. */
   onDone: () => void;
-}) {
+};
+
+/** All the server / cloud setup state and actions, shared by the setup steps. */
+export function useHostSetup({ initial, report, onRefresh, onSaved, onDone }: SetupInput) {
   const t = useT();
-  const [v, setV] = useState<ServerHostInput>(initial);
-  const [i, setI] = useState(0);
+  const form = useHostForm(initial);
+  const { v } = form;
   const editing = initial.id !== null;
-  const cloud = isCloud(v.provider);
+  const traits = providerTraits(v.provider);
   // Derived from the saved provider (not separate state) so it stays correct when editing an
   // existing account, where the provider step that would set it is skipped.
   const cloudProvider: CloudProvider = isCloud(v.provider) ? v.provider : "aws";
-  const accounts = useCloudAccounts(v, setV, editing, cloudProvider);
-
-  const steps = setupSteps(v.provider, editing);
-  const key = steps[Math.min(i, steps.length - 1)];
-  const next = () => setI((n) => Math.min(n + 1, steps.length - 1));
-  const back = () => setI((n) => Math.max(n - 1, 0));
-
-  const set = <K extends keyof ServerHostInput>(k: K, value: ServerHostInput[K]) => setV((s) => ({ ...s, [k]: value }));
-  const text = (k: "name" | "host" | "username" | "datastore" | "network" | "node") => ({
-    value: (v[k] as string | null) ?? "",
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(k, e.target.value),
-  });
-  const pickProvider = (id: CloudProvider) => setV((s) => withProvider(s, id));
-
+  const accounts = useCloudAccounts(v, form.setV, editing, cloudProvider);
+  const stepper = useSteps(v.provider, editing);
   const tools = useToolInstall(onRefresh);
-  const { saving, error, saved, test, runTest, saveAndTest } = useSaveAndTest(v, onSaved, next);
-  const title = setupTitle({ saved, test, editing, cloud, initialName: initial.name });
+  const saving = useSaveAndTest(v, onSaved, stepper.next);
+  const title = setupTitle({ saved: saving.saved, test: saving.test, editing, cloud: traits.cloud, initialName: initial.name });
 
   return {
     report,
     onRefresh,
     onDone,
-    v,
-    setV,
-    i,
-    saving,
-    error,
-    saved,
-    test,
+    ...form,
     editing,
-    cloud,
     cloudProvider,
-    aws: v.provider === "aws",
-    azure: v.provider === "azure",
-    gcp: v.provider === "gcp",
-    digitalocean: v.provider === "digitalocean",
-    linode: v.provider === "linode",
-    oci: v.provider === "oci",
-    tokenCloud: isTokenCloud(v.provider),
-    cliAuth: isCliAuthCloud(v.provider),
-    kind: KIND[v.provider],
+    ...traits,
     ...accounts,
-    pickProvider,
-    steps,
-    key,
-    set,
-    text,
+    ...stepper,
     connectionOk: connectionReady(v, keepsSecret(initial, v)),
     secretKept: keepsSecret(initial, v),
-    next,
-    back,
     ...tools,
     ...machineTools(v.provider, report),
-    runTest,
-    saveAndTest,
+    ...saving,
     title: t(`servers.setup.titles.${title.key}`, { name: title.name }),
   };
+}
+
+/** The form's values, and the helpers its fields and the provider tiles change them with. */
+function useHostForm(initial: ServerHostInput) {
+  const [v, setV] = useState<ServerHostInput>(initial);
+  const set = <K extends keyof ServerHostInput>(k: K, value: ServerHostInput[K]) => {
+    setV((s) => ({ ...s, [k]: value }));
+  };
+  const text = (k: "name" | "host" | "username" | "datastore" | "network" | "node") => ({
+    value: v[k] ?? "",
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+      set(k, e.target.value);
+    },
+  });
+  const pickProvider = (id: CloudProvider) => {
+    setV((s) => withProvider(s, id));
+  };
+  return { v, setV, set, text, pickProvider };
+}
+
+/** The steps this setup takes, and where the player is among them. */
+function useSteps(provider: RemoteProvider, editing: boolean) {
+  const steps = setupSteps(provider, editing);
+  const { pos, next, back } = useStepper(steps.length);
+  return { i: pos, steps, key: steps[pos], next, back };
 }
 
 /** Installs one of the tools this server type needs on this machine, logging below, then
@@ -111,20 +99,24 @@ function useToolInstall(onRefresh: () => void) {
   // from the log, and a second install could start beside the first.
   const [toolBusy, setToolBusy] = useState(false);
   async function installTool(label: string, run: (onLog: (l: string) => void) => Promise<void>) {
-    if (toolBusy) return;
     setToolLabel(label);
     setToolBusy(true);
-    try {
-      await toolLog.run(translate("servers.setup.tools.installing", { name: label }), async (onLog) => {
-        await run(onLog);
-        return translate("servers.setup.tools.installDone");
-      });
-    } finally {
-      setToolBusy(false);
-    }
+    // The log says how it went: the run never rejects.
+    await toolLog.run(translate("servers.setup.tools.installing", { name: label }), async (onLog) => {
+      await run(onLog);
+      return translate("servers.setup.tools.installDone");
+    });
+    setToolBusy(false);
     onRefresh();
   }
-  return { pluginLog: toolLog.lines, toolLabel, toolBusy, installTool };
+  return {
+    pluginLog: toolLog.lines,
+    toolLabel,
+    toolBusy,
+    installTool: (label: string, run: (onLog: (l: string) => void) => Promise<void>) => {
+      if (!toolBusy) void installTool(label, run);
+    },
+  };
 }
 
 /** Saving the host, then moving to the Test step (`next`) and testing the saved host. */
@@ -134,6 +126,7 @@ function useSaveAndTest(v: ServerHostInput, onSaved: (h: ServerHost) => void, ne
   const [saved, setSaved] = useState<ServerHost | null>(null);
   const [test, setTest] = useState<ServerTest | "testing" | null>(null);
 
+  // A failed test reads as one (`testHost` never rejects).
   async function runTest(id: string) {
     setTest("testing");
     setTest(await testHost(id));
@@ -155,7 +148,18 @@ function useSaveAndTest(v: ServerHostInput, onSaved: (h: ServerHost) => void, ne
     }
   }
 
-  return { saving, error, saved, test, runTest, saveAndTest };
+  return {
+    saving,
+    error,
+    saved,
+    test,
+    runTest: (id: string) => {
+      void runTest(id);
+    },
+    saveAndTest: () => {
+      void saveAndTest();
+    },
+  };
 }
 
 export type HostSetup = ReturnType<typeof useHostSetup>;

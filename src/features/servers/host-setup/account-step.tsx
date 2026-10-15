@@ -20,7 +20,9 @@ export function AccountStep({ s }: { s: HostSetup }) {
       <ChoiceGrid>
         <Choice
           selected={!!v.useCliCreds}
-          onSelect={() => set("useCliCreds", true)}
+          onSelect={() => {
+            set("useCliCreds", true);
+          }}
           mark={
             <MarkTile>
               <Terminal className="size-4" />
@@ -31,7 +33,9 @@ export function AccountStep({ s }: { s: HostSetup }) {
         />
         <Choice
           selected={!v.useCliCreds}
-          onSelect={() => set("useCliCreds", false)}
+          onSelect={() => {
+            set("useCliCreds", false);
+          }}
           mark={
             <MarkTile>
               <KeyRound className="size-4" />

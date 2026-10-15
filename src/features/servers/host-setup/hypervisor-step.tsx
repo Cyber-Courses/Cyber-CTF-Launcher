@@ -18,7 +18,9 @@ export function HypervisorStep({ s }: { s: HostSetup }) {
           <RadioRow
             key={p}
             selected={v.provider === p}
-            onSelect={() => setV((s) => ({ ...s, provider: p, port: null }))}
+            onSelect={() => {
+              setV((s) => ({ ...s, provider: p, port: null }));
+            }}
             leading={
               <MarkTile>
                 <HypervisorMark provider={p} />

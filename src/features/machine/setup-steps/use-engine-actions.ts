@@ -30,7 +30,9 @@ export function useEngineActions(onRefresh: () => void) {
     setStarting(true);
     setStartFailure(null);
     dockerStartEngine(engine)
-      .catch((e) => setStartFailure({ engine, message: describeError(e) }))
+      .catch((e: unknown) => {
+        setStartFailure({ engine, message: describeError(e) });
+      })
       .finally(() => {
         setStarting(false);
         onRefresh();

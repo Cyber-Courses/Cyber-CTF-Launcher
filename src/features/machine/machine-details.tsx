@@ -5,9 +5,12 @@ import { Panel } from "@/components/ui/panel";
 import { engineName } from "@/features/machine/setup-steps";
 import { providerLabel } from "@/features/machine/hypervisors";
 import { DetailRow } from "@/features/machine/machine-parts";
-import { hypervisorDetail, versionNumber } from "@/features/machine/machine-status";
+import { hypervisorDetail, versionNumber, type HypervisorDetail } from "@/features/machine/machine-status";
 import type { ProviderStatus, SystemReport, Tool } from "@/lib/tauri";
-import { useT } from "@/lib/i18n";
+import { useT, type T } from "@/lib/i18n";
+
+const detailText = (t: T, d: HypervisorDetail) =>
+  "plugin" in d ? t(`machine.screen.detail.${d.kind}`, { plugin: d.plugin }) : t(`machine.screen.detail.${d.kind}`);
 
 /** Tool versions, folded away for people who want them. */
 export function MachineDetails({ report, hypervisors, hasHypervisor }: { report: SystemReport; hypervisors: ProviderStatus[]; hasHypervisor: boolean }) {
@@ -35,23 +38,14 @@ export function MachineDetails({ report, hypervisors, hasHypervisor }: { report:
         <DetailRow name="Docker CLI" value={ver(report.docker)} bad={!report.docker.installed} />
         <DetailRow name="Docker Compose" value={ver(report.dockerCompose)} bad={!report.dockerCompose.installed} />
         <DetailRow name="Vagrant" value={ver(report.vagrant)} bad={hasHypervisor && !report.vagrant.installed} />
-        {hypervisors.map((p) => {
-          const detail = hypervisorDetail(p);
-          return (
-            <DetailRow
-              key={p.provider}
-              name={providerLabel(p, report.os)}
-              value={
-                detail === "installedWithPlugin"
-                  ? t("machine.screen.detail.installedWithPlugin", { plugin: p.plugin! })
-                  : detail === "pluginMissing"
-                    ? t("machine.screen.detail.pluginMissing", { plugin: p.plugin! })
-                    : t(`machine.screen.detail.${detail}`)
-              }
-              bad={p.hypervisor === true && !p.pluginInstalled}
-            />
-          );
-        })}
+        {hypervisors.map((p) => (
+          <DetailRow
+            key={p.provider}
+            name={providerLabel(p, report.os)}
+            value={detailText(t, hypervisorDetail(p))}
+            bad={p.hypervisor === true && !p.pluginInstalled}
+          />
+        ))}
         <DetailRow name={report.pkgManager.name} value={report.pkgManager.installed ? installed : notInstalled} bad={!report.pkgManager.installed} />
       </Panel>
     </details>

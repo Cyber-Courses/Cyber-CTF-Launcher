@@ -7,11 +7,12 @@ import { machineSteps } from "@/features/machine/setup-steps";
 import { Onboarding } from "@/features/onboarding/onboarding";
 import type { SystemReport } from "@/lib/tauri";
 import { freshReport, readyReport, stoppedDockerReport } from "@/test/fixtures";
+import { must } from "@/components/test-support";
 import { installTauri } from "@/test/tauri";
 import { clickEverything, flush } from "@/test/ui";
 
 const enabled = () => screen.queryAllByRole("button").filter((b) => !b.hasAttribute("disabled"));
-const text = (b: HTMLElement) => (b.textContent ?? "").trim();
+const text = (b: HTMLElement) => b.textContent.trim();
 
 /** Presses the forward button (Get started, Continue, Skip this step) until there is none; the
  *  names of the steps' forward buttons, in order. */
@@ -112,7 +113,11 @@ describe("Onboarding", () => {
     await flush();
     await user.click(screen.getByRole("button", { name: /get started/i }));
     await flush();
-    const signIn = () => enabled().find((b) => /sign in|log in/i.test(text(b)))!;
+    const signIn = () =>
+      must(
+        enabled().find((b) => /sign in|log in/i.test(text(b))),
+        "the sign-in button",
+      );
     await user.click(signIn());
     await flush();
     expect(screen.getAllByText(/timed out/).length).toBeGreaterThan(0);

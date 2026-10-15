@@ -1,22 +1,19 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MachineSetup } from "@/features/machine/machine-setup";
 import { SetupChecklist } from "@/features/machine/setup-checklist";
 import { MachineStepBody, SetupOutcome, useMachineSetup, type MachineStep, type MachineSetupState } from "@/features/machine/setup-steps";
 import { wslState } from "@/features/machine/setup-steps/steps";
-import { Onboarding } from "@/features/onboarding/onboarding";
 import { getAttackImage, getAutoAttackBox, setAttackImage } from "@/lib/settings";
-import type { ProviderStatus, SystemReport, WslState } from "@/lib/tauri";
-import { freshReport, readyReport } from "@/test/fixtures";
-import { commands, installTauri, stream } from "@/test/tauri";
-import { button, flush } from "@/test/ui";
+import type { SystemReport, WslState } from "@/lib/tauri";
+import { freshReport, hypervisorStatus as hv, readyReport } from "@/test/fixtures";
+import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
+import { button, flush, settle } from "@/test/ui";
+import { radioWith } from "@/features/machine/machine-test-kit";
 
-const text = () => document.body.textContent ?? "";
-const hv = (over: Partial<ProviderStatus>): ProviderStatus =>
-  ({ provider: "virtualbox", remote: false, available: true, hypervisor: true, plugin: null, pluginInstalled: true, reason: null, ...over }) as ProviderStatus;
-const radioWith = (s: string) => screen.getAllByRole("radio").find((r) => r.textContent?.includes(s))!;
+const text = () => document.body.textContent;
 
 /** One step body with a live setup state; `onSetup` sees each render's state. */
 function Step({
@@ -82,7 +79,7 @@ describe("package manager step", () => {
     const r = render(<Step step="pkgmgr" report={freshReport("windows")} />);
     await user.click(button(/^\s*get$/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args).toMatchObject({ url: expect.stringContaining("apps.microsoft.com") });
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args?.url).toMatch(/apps\.microsoft\.com/);
     r.unmount();
     const linux = render(<Step step="pkgmgr" report={freshReport("linux")} />);
     expect(text()).toContain("package manager (apt)");
@@ -110,7 +107,7 @@ describe("WSL step", () => {
   it("shows a failed WSL install in its log", async () => {
     installTauri({
       install_dependency: () => {
-        throw "elevation refused";
+        rejectWith("elevation refused");
       },
     });
     const user = userEvent.setup();
@@ -204,7 +201,7 @@ describe("WSL step, from the machine check", () => {
   it("a failed Turn on WSL 2 doesn't offer a restart", async () => {
     installTauri({
       install_dependency: () => {
-        throw "elevation refused";
+        rejectWith("elevation refused");
       },
     });
     const user = userEvent.setup();
@@ -237,7 +234,7 @@ describe("WSL step, from the machine check", () => {
   it("says to reopen Cyber CTF by hand when it can't reopen itself, and shows a failed restart", async () => {
     installTauri({
       machine_restart: () => {
-        throw "Access is denied.";
+        rejectWith("Access is denied.");
       },
     });
     const user = userEvent.setup();
@@ -294,11 +291,20 @@ describe("guided setup checklist, WSL line", () => {
     installTauri();
     render(<SetupChecklist report={windows(state)} last={{ docker: null, vm: null }} onFix={vi.fn()} />);
     expect(text()).toContain(`Enable virtualization (WSL 2)${meta}`);
-    expect(text()).toContain(`${done} of 8 done`);
+    expect(text()).toContain(`${String(done)} of 8 done`);
   });
 });
 
 /* ------------------------------------------------------------------ engine */
+
+/** The engine step on a fresh Mac, with its calls and its re-check. */
+function freshMacEngineStep() {
+  const calls = installTauri();
+  const onRefresh = vi.fn();
+  const user = userEvent.setup();
+  render(<Step step="docker" report={freshReport("macos")} onRefresh={onRefresh} />);
+  return { calls, onRefresh, user };
+}
 
 describe("engine step", () => {
   it("says nothing more when the chosen engine is in use", () => {
@@ -334,7 +340,7 @@ describe("engine step", () => {
     let fail = false;
     const calls = installTauri({
       docker_start_engine: () => {
-        if (fail) throw "Docker Desktop is not installed";
+        if (fail) rejectWith("Docker Desktop is not installed");
         return null;
       },
     });
@@ -356,10 +362,7 @@ describe("engine step", () => {
   });
 
   it("installs the recommended engine, then asks to finish in its installer", async () => {
-    const calls = installTauri();
-    const onRefresh = vi.fn();
-    const user = userEvent.setup();
-    render(<Step step="docker" report={freshReport("macos")} onRefresh={onRefresh} />);
+    const { calls, onRefresh, user } = freshMacEngineStep();
     expect(text()).toContain("Cyber CTF can install Docker Desktop for you.");
     await user.click(button(/install docker desktop/i));
     await flush();
@@ -370,10 +373,7 @@ describe("engine step", () => {
   });
 
   it("links out for an engine Cyber CTF does not install", async () => {
-    const calls = installTauri();
-    const onRefresh = vi.fn();
-    const user = userEvent.setup();
-    render(<Step step="docker" report={freshReport("macos")} onRefresh={onRefresh} />);
+    const { calls, onRefresh, user } = freshMacEngineStep();
     await user.click(radioWith("Colima"));
     expect(text()).toContain("Install Colima, start it, then re-check.");
     await user.click(button(/get colima/i));
@@ -465,7 +465,7 @@ describe("VM step", () => {
     expect(text()).toContain("Install VMware Workstation, then re-check.");
     await user.click(button(/get vmware workstation/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args).toMatchObject({ url: expect.stringContaining("vmware.com") });
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args?.url).toMatch(/vmware\.com/);
     await user.click(button(/re-check/i));
     expect(onRefresh).toHaveBeenCalledOnce();
   });
@@ -508,7 +508,7 @@ describe("Vagrant step", () => {
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "vagrant" });
     await user.click(button(/^\s*get$/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args).toMatchObject({ url: expect.stringContaining("vagrant/install/vmware") });
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args?.url).toMatch(/vagrant\/install\/vmware/);
     r.unmount();
     render(<Step step="vagrant" report={{ ...report, vagrant: { installed: true, version: null } }} />);
     expect(text()).toContain("Installed");
@@ -521,7 +521,7 @@ describe("Vagrant step", () => {
   it("shows a failed plugin install", async () => {
     installTauri({
       install_vagrant_plugin: () => {
-        throw "network unreachable";
+        rejectWith("network unreachable");
       },
     });
     const user = userEvent.setup();
@@ -562,7 +562,7 @@ describe("test steps and the outcome", () => {
   it("reports a failed VM test in the outcome", async () => {
     installTauri({
       machine_selftest: () => {
-        throw "boot timed out";
+        rejectWith("boot timed out");
       },
     });
     render(<Step step="vm-test" report={{ ...readyReport(), os: "linux" }} />);
@@ -615,20 +615,28 @@ describe("MachineSetup window", () => {
 
   it("holds the flow while an install runs", async () => {
     let finish: () => void = () => {};
-    installTauri({ install_dependency: () => new Promise<null>((r) => (finish = () => r(null))) });
+    installTauri({
+      install_dependency: () =>
+        new Promise<null>(
+          (r) =>
+            (finish = () => {
+              r(null);
+            }),
+        ),
+    });
     const user = userEvent.setup();
     render(<MachineSetup report={freshReport("macos")} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "docker", nonce: 1 }} />);
     await flush();
     await user.click(button(/install docker desktop/i));
     await flush();
     expect(button(/back/i).hasAttribute("disabled")).toBe(true);
-    await act(async () => finish());
+    await settle(() => {
+      finish();
+    });
     await flush();
     expect(button(/back/i).hasAttribute("disabled")).toBe(false);
   });
 });
-
-/* ------------------------------------------------------------------ onboarding */
 
 describe("one jewel per view", () => {
   const jewels = () => Array.from(document.querySelectorAll(".btn-jewel"));
@@ -667,84 +675,5 @@ describe("one jewel per view", () => {
     );
     await flush();
     expect(jewels().map((b) => b.textContent)).toEqual(["Install plugin"]);
-  });
-});
-
-describe("Onboarding", () => {
-  afterEach(() => vi.useRealTimers());
-
-  it("shows who is signed in, and a signed-out summary", async () => {
-    installTauri({ auth_status: () => ({ loggedIn: true, name: null, email: "p@example.com" }) });
-    const user = userEvent.setup();
-    const onComplete = vi.fn();
-    render(<Onboarding onComplete={onComplete} />);
-    await flush();
-    await user.click(button(/get started/i));
-    await flush();
-    expect(text()).toContain("Signed in");
-    expect(text()).toContain("p@example.com");
-    // Back to the welcome, and forward again.
-    await user.click(button(/back/i));
-    expect(text()).toContain("Get started");
-  });
-
-  it("waits for the machine check before showing a machine step", async () => {
-    installTauri({ system_check: () => new Promise(() => {}) });
-    const user = userEvent.setup();
-    render(<Onboarding onComplete={vi.fn()} />);
-    await flush();
-    await user.click(button(/get started/i));
-    await user.click(button(/^continue$/i));
-    await flush();
-    expect(text()).toContain("Checking this machine…");
-  });
-
-  it("summarises a signed-out player on the last step", async () => {
-    installTauri({ auth_status: () => ({ loggedIn: false, name: null, email: null }), system_check: () => ({ ...readyReport(), vmProviders: [] }) });
-    const user = userEvent.setup();
-    const onComplete = vi.fn();
-    render(<Onboarding onComplete={onComplete} />);
-    await flush();
-    for (let n = 0; n < 12; n++) {
-      const forward = screen
-        .queryAllByRole("button")
-        .find((b) => /^(get started|continue|skip for now)/i.test((b.textContent ?? "").trim()) && !b.hasAttribute("disabled"));
-      if (!forward) break;
-      await user.click(forward);
-      await flush();
-    }
-    expect(text()).toContain("Not signed in");
-    expect(screen.queryByRole("button", { name: /skip setup/i })).toBeNull();
-    await user.click(button(/browse labs/i));
-    expect(onComplete).toHaveBeenCalledOnce();
-  });
-
-  it("keeps the current step when a machine re-check fails", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    let fail = false;
-    installTauri({
-      system_check: () => {
-        if (fail) throw "system check timed out";
-        return { ...readyReport(), os: "windows", dockerRunning: false };
-      },
-    });
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<Onboarding onComplete={vi.fn()} />);
-    await flush();
-    await user.click(button(/get started/i));
-    await user.click(button(/^continue$/i));
-    await flush();
-    await user.click(button(/^continue$/i));
-    await flush();
-    expect(text()).toContain("Turn on WSL 2");
-    expect(text()).toContain("4 / 11");
-    fail = true;
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_100);
-    });
-    await flush();
-    // Still on the WSL step: a failed re-check neither blanks it nor shifts the step list.
-    expect(text()).toContain("Turn on WSL 2");
-    expect(text()).toContain("4 / 11");
   });
 });

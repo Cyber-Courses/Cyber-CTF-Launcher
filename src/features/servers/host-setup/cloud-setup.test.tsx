@@ -1,32 +1,16 @@
 // @vitest-environment jsdom
-import { act, render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
-import { EMPTY_CLOUD, HostSetupPage } from "@/features/servers/host-setup";
-import type { ServerHostInput, SystemReport } from "@/lib/tauri";
-import { freshReport, readyReport } from "@/test/fixtures";
-import { installTauri, stream, type Call } from "@/test/tauri";
+import { describe, expect, it } from "vitest";
+import { EMPTY_CLOUD } from "@/features/servers/host-setup";
+import { argsOf, failsWith, go, heading, input, renderSetup, selects, title } from "@/features/servers/host-setup/setup-test-kit";
+import type { ServerHostInput } from "@/lib/tauri";
+import { freshReport } from "@/test/fixtures";
+import { installTauri, stream } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
-
-const argsOf = (calls: Call[], cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
-const heading = () => screen.getByRole("heading", { level: 2 }).textContent;
-const title = () => screen.getByRole("heading", { level: 1 }).textContent;
-const selects = () => screen.queryAllByRole("combobox") as HTMLSelectElement[];
 
 /** An account being edited (the provider and tools steps are skipped). */
 const editing = (patch: Partial<ServerHostInput>): ServerHostInput => ({ ...EMPTY_CLOUD, id: "acct", name: "Lab account", password: null, ...patch });
-
-async function renderSetup(initial: ServerHostInput, report: SystemReport | null = readyReport()) {
-  const handlers = { onRefresh: vi.fn(), onSaved: vi.fn(), onDone: vi.fn() };
-  render(<HostSetupPage initial={initial} report={report} {...handlers} />);
-  await flush(30);
-  return handlers;
-}
-
-const go = async (user: ReturnType<typeof userEvent.setup>, name: RegExp) => {
-  await user.click(button(name));
-  await flush(30);
-};
 
 describe("AWS account setup", () => {
   it("edits an account with access keys: region, budget, save and test", async () => {
@@ -45,8 +29,8 @@ describe("AWS account setup", () => {
     // A saved region the list doesn't know stays selectable.
     expect(selects()[0].value).toBe("mars-1");
     // It signed in with the CLI before, so there is no stored secret key to keep: one is asked.
-    await user.type(document.querySelector<HTMLInputElement>("input[placeholder='AKIA…']")!, "AKIA1");
-    const secret = document.querySelector<HTMLInputElement>("input[type=password]")!;
+    await user.type(input("input[placeholder='AKIA…']"), "AKIA1");
+    const secret = input("input[type=password]");
     expect(secret.placeholder).not.toBe("Leave empty to keep");
     await user.type(secret, "s3cret");
     await user.selectOptions(selects()[0], "eu-west-1");
@@ -55,7 +39,7 @@ describe("AWS account setup", () => {
     // Access keys: the CLI's identity and spend belong to another account, so neither is read.
     expect(argsOf(calls, "aws_cli_identity")).toEqual([]);
     expect(document.body.textContent).not.toContain("Spent this month");
-    await user.type(document.querySelector<HTMLInputElement>("input[type=number]")!, "30");
+    await user.type(input("input[type=number]"), "30");
     await user.selectOptions(selects()[0], "0");
     await go(user, /save and test/i);
     expect(argsOf(calls, "server_save")[0]).toMatchObject({
@@ -100,7 +84,7 @@ describe("AWS account setup", () => {
     const pending: Record<string, (id: string) => void> = {};
     installTauri({
       aws_profiles: () => ["default", "lab"],
-      aws_cli_identity: (a) => new Promise<string>((r) => (pending[String(a?.profile ?? "default")] = r)),
+      aws_cli_identity: (a) => new Promise<string>((r) => (pending[typeof a?.profile === "string" ? a.profile : "default"] = r)),
     });
     const user = userEvent.setup();
     await renderSetup(editing({ useCliCreds: true }));
@@ -109,8 +93,9 @@ describe("AWS account setup", () => {
     await user.selectOptions(selects()[0], "lab");
     await flush();
     // The newer read answers first, the stale one after it.
-    await act(async () => pending.lab("arn:aws:iam::2:user/lab"));
-    await act(async () => pending.default("arn:aws:iam::1:user/default"));
+    pending.lab("arn:aws:iam::2:user/lab");
+    await flush();
+    pending.default("arn:aws:iam::1:user/default");
     await flush();
     expect(document.body.textContent).toContain("arn:aws:iam::2:user/lab");
     expect(document.body.textContent).not.toContain("arn:aws:iam::1:user/default");
@@ -140,9 +125,7 @@ describe("AWS account setup", () => {
   it("logs a failed browser sign-in", async () => {
     installTauri({
       aws_cli_identity: () => null,
-      aws_login: () => {
-        throw "aws: command not found";
-      },
+      aws_login: failsWith("aws: command not found"),
     });
     const user = userEvent.setup();
     await renderSetup(editing({ useCliCreds: true }));
@@ -154,9 +137,7 @@ describe("AWS account setup", () => {
 
   it("shows why the save failed and stays on the step", async () => {
     installTauri({
-      server_save: () => {
-        throw "keychain locked";
-      },
+      server_save: failsWith("keychain locked"),
     });
     const user = userEvent.setup();
     const h = await renderSetup(editing({ useCliCreds: true }));
@@ -264,7 +245,7 @@ describe("Azure account setup", () => {
     const user = userEvent.setup();
     await renderSetup(editing({ provider: "azure", host: "swedencentral", username: "" }));
     expect(screen.getByText("Checking the Azure CLI…")).toBeTruthy();
-    await act(async () => fail("az not found"));
+    fail("az not found");
     await flush();
     await user.type(screen.getByPlaceholderText("00000000-0000-0000-0000-000000000000"), "pasted-sub");
     expect(button(/^continue$/i).hasAttribute("disabled")).toBe(false);
@@ -287,7 +268,7 @@ describe("Google Cloud account setup", () => {
     const [billing, org] = selects();
     expect(billing.value).toBe("open-1");
     expect(billing.textContent).toContain("Old (closed-1) (closed)");
-    expect((billing.options[0] as HTMLOptionElement).disabled).toBe(true);
+    expect(billing.options[0].disabled).toBe(true);
     await user.selectOptions(org, "org-1");
     await user.selectOptions(org, "");
     await user.selectOptions(org, "org-1");
@@ -321,9 +302,7 @@ describe("Google Cloud account setup", () => {
 
   it("keeps what the other lists found when one fails, and says why", async () => {
     installTauri({
-      gcp_billing_accounts: () => {
-        throw "PERMISSION_DENIED";
-      },
+      gcp_billing_accounts: failsWith("PERMISSION_DENIED"),
     });
     await renderSetup(editing({ provider: "gcp", host: "europe-west1", username: "" }));
     // Still signed in (the account read fine), and the failure is shown, not swallowed.
@@ -341,7 +320,7 @@ describe("token and key clouds", () => {
     const user = userEvent.setup();
     await renderSetup(editing({ provider, host, username: "" }));
     expect(heading()).toBe(name);
-    const token = document.querySelector<HTMLInputElement>("input[type=password]")!;
+    const token = input("input[type=password]");
     expect(token.placeholder).toBe("Leave empty to keep");
     await user.type(token, "secret-token");
     await user.click(button(/create one in the/i));
@@ -364,9 +343,7 @@ describe("token and key clouds", () => {
 
   it("says when there is no ~/.oci/config", async () => {
     installTauri({
-      oci_config: () => {
-        throw "no such file";
-      },
+      oci_config: failsWith("no such file"),
     });
     await renderSetup(editing({ provider: "oci", host: "eu-frankfurt-1", username: "" }));
     expect(screen.getByText(/No ~\/.oci\/config found/)).toBeTruthy();
@@ -411,9 +388,7 @@ describe("new cloud account: provider and tools", () => {
 
   it("logs a failed install and frees the buttons", async () => {
     installTauri({
-      install_dependency: () => {
-        throw "winget failed";
-      },
+      install_dependency: failsWith("winget failed"),
     });
     const user = userEvent.setup();
     await renderSetup({ ...EMPTY_CLOUD }, freshReport("windows"));

@@ -3,35 +3,22 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CloudScreen } from "@/features/cloud/cloud-screen";
-import { EMPTY_CLOUD, EMPTY_HOST, HostSetupPage } from "@/features/servers/host-setup";
+import { must } from "@/components/test-support";
+import { EMPTY_CLOUD, EMPTY_HOST } from "@/features/servers/host-setup";
+import { argsOf, failsWith, field, go, heading, input, renderSetup, type User } from "@/features/servers/host-setup/setup-test-kit";
 import { ServerScreen } from "@/features/servers/servers-screen";
 import { answer } from "@/lib/dev-mock";
-import type { ServerHostInput, ServerList, SystemReport } from "@/lib/tauri";
+import type { ServerHostInput, ServerList } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
-import { installTauri, stream, type Call } from "@/test/tauri";
+import { installTauri, stream } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 // The server / cloud setup wizard driven the way a player does: typing in the fields, pressing
 // Continue, Back and Save. Complements server-setup.test.tsx and cloud-setup.test.tsx, which
 // cover each step's content; these tests look at what moves between steps and what is saved.
 
-type User = ReturnType<typeof userEvent.setup>;
-const argsOf = (calls: Call[], cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
-const heading = () => screen.getByRole("heading", { level: 2 }).textContent;
-const field = (placeholder: string) => screen.getByPlaceholderText(placeholder) as HTMLInputElement;
-const password = () => document.querySelector<HTMLInputElement>("input[type=password]")!;
+const password = () => input("input[type=password]");
 const disabled = (name: RegExp) => button(name).hasAttribute("disabled");
-
-async function renderSetup(initial: ServerHostInput, report: SystemReport | null = readyReport()) {
-  const handlers = { onRefresh: vi.fn(), onSaved: vi.fn(), onDone: vi.fn() };
-  render(<HostSetupPage initial={initial} report={report} {...handlers} />);
-  await flush(30);
-  return handlers;
-}
-const go = async (user: User, name: RegExp) => {
-  await user.click(button(name));
-  await flush(30);
-};
 
 /** A saved Proxmox host opened for editing: connection, placement, test. */
 const editingServer = (patch: Partial<ServerHostInput> = {}): ServerHostInput => ({
@@ -128,7 +115,7 @@ describe("server setup: validation and saving", () => {
     let fail = true;
     installTauri({
       server_save: (a) => {
-        if (fail) throw "enter the host's password";
+        if (fail) return failsWith("enter the host's password")(a);
         return { ...(a?.input as object), id: "pve" };
       },
     });
@@ -241,7 +228,7 @@ describe("cloud setup: validation per provider", () => {
     await renderSetup({ ...EMPTY_CLOUD, id: "do1", name: "DO", provider: "digitalocean", host: "fra1", autoStopHours: 72 });
     await go(user, /^continue$/i);
     const autoStop = screen.getAllByRole("combobox").at(-1) as HTMLSelectElement;
-    expect(autoStop.selectedOptions[0]?.textContent).toMatch(/72/);
+    expect(autoStop.selectedOptions.item(0)?.textContent).toMatch(/72/);
   });
 
   // Bug: use-host-setup.ts:73 derives "an install is running" from the log's last line not
@@ -255,7 +242,9 @@ describe("cloud setup: validation per provider", () => {
       install_dependency: (a) =>
         new Promise<null>((r) => {
           stream(a, "✓ Downloaded terraform_1.9.0.zip");
-          finish = () => r(null);
+          finish = () => {
+            r(null);
+          };
         }),
     });
     const user = userEvent.setup();
@@ -278,9 +267,7 @@ describe("removing a host or account that still runs labs", () => {
   it("leaves a server with a running lab listed and says why the core refused", async () => {
     installTauri({
       server_running_labs: () => ({ pve: 1 }),
-      server_remove: () => {
-        throw refused;
-      },
+      server_remove: failsWith(refused),
     });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
@@ -296,14 +283,15 @@ describe("removing a host or account that still runs labs", () => {
 
   it("leaves a cloud account with a running lab listed and says why the core refused", async () => {
     installTauri({
-      server_remove: () => {
-        throw refused;
-      },
+      server_remove: failsWith(refused),
     });
     const user = userEvent.setup();
     render(<CloudScreen />);
     await flush(50);
-    const accountName = (answer("server_list", undefined) as ServerList).hosts.find((h) => h.provider === "aws")!.name;
+    const accountName = must(
+      (answer("server_list", undefined) as ServerList).hosts.find((h) => h.provider === "aws"),
+      "the dev mock's AWS account",
+    ).name;
     expect(screen.getByText(accountName)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Remove" }));
     await user.click(button(/^remove$/i));

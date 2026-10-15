@@ -5,7 +5,7 @@ import { CheckCircle2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { LogConsole } from "@/components/ui/log-console";
-import { Note } from "@/features/servers/host-setup/form";
+import { Input, Note } from "@/features/servers/host-setup/form";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { openExternal } from "@/lib/failure";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,13 @@ import { useT } from "@/lib/i18n";
 /** An underlined link that opens in the player's browser. */
 export function ExternalLinkButton({ url, className, children }: { url: string; className?: string; children: ReactNode }) {
   return (
-    <button type="button" onClick={() => openExternal(url)} className={cn("inline-flex items-center gap-0.5 underline-offset-2 hover:underline", className)}>
+    <button
+      type="button"
+      onClick={() => {
+        openExternal(url);
+      }}
+      className={cn("inline-flex items-center gap-0.5 underline-offset-2 hover:underline", className)}
+    >
       {children} <ExternalLink className="size-3" />
     </button>
   );
@@ -75,5 +81,22 @@ export function SignInLog({ s }: { s: HostSetup }) {
         </Button>
       )}
     </>
+  );
+}
+
+/** The host's or account's secret (a password, a token, a secret key), kept in the OS keychain.
+ *  Left empty while editing, the saved one stays. */
+export function SecretInput({ s, placeholder = "" }: { s: HostSetup; placeholder?: string }) {
+  const t = useT();
+  return (
+    <Input
+      type="password"
+      value={s.v.password ?? ""}
+      onChange={(e) => {
+        s.set("password", e.target.value || null);
+      }}
+      placeholder={s.secretKept ? t("servers.setup.connection.keepPlaceholder") : placeholder}
+      autoComplete="off"
+    />
   );
 }

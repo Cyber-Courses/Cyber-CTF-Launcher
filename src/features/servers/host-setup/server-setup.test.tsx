@@ -1,27 +1,14 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { EMPTY_HOST, HostSetupPage } from "@/features/servers/host-setup";
-import type { ServerHostInput, SystemReport } from "@/lib/tauri";
+import { EMPTY_HOST } from "@/features/servers/host-setup";
+import { argsOf, failsWith, field, go, heading, input, renderSetup } from "@/features/servers/host-setup/setup-test-kit";
+import type { ServerHostInput } from "@/lib/tauri";
 import { freshReport, readyReport } from "@/test/fixtures";
-import { installTauri, type Call } from "@/test/tauri";
+import { installTauri } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
-const argsOf = (calls: Call[], cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
-const heading = () => screen.getByRole("heading", { level: 2 }).textContent;
-const field = (placeholder: string) => screen.getByPlaceholderText(placeholder) as HTMLInputElement;
-
-async function renderSetup(initial: ServerHostInput, report: SystemReport | null = readyReport()) {
-  const handlers = { onRefresh: vi.fn(), onSaved: vi.fn(), onDone: vi.fn() };
-  render(<HostSetupPage initial={initial} report={report} {...handlers} />);
-  await flush(30);
-  return handlers;
-}
-const go = async (user: ReturnType<typeof userEvent.setup>, name: RegExp) => {
-  await user.click(button(name));
-  await flush(30);
-};
 /** An existing host being edited: connection, placement, test. */
 const editing = (patch: Partial<ServerHostInput>): ServerHostInput => ({
   ...EMPTY_HOST,
@@ -48,7 +35,7 @@ describe("server connection step", () => {
     fireEvent.change(field("192.168.1.20 or pve.lan"), { target: { value: "10.0.4.12" } });
     fireEvent.change(field("root"), { target: { value: "root" } });
     expect(button(/^continue$/i).hasAttribute("disabled")).toBe(true);
-    fireEvent.change(document.querySelector("input[type=password]")!, { target: { value: "hunter2" } });
+    fireEvent.change(input("input[type=password]"), { target: { value: "hunter2" } });
     fireEvent.change(field("22"), { target: { value: "2222" } });
     await go(user, /^continue$/i);
     expect(screen.getByText("Port group")).toBeTruthy();
@@ -72,7 +59,7 @@ describe("server connection step", () => {
 
   it("shows the launcher's SSH key for a Proxmox API token, and copies it", async () => {
     const calls = installTauri();
-    const writeText = vi.fn(async () => {});
+    const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     await renderSetup(editing({}));
     expect(screen.getByText("Password")).toBeTruthy();
@@ -91,9 +78,7 @@ describe("server connection step", () => {
   it("keeps the key on screen when the clipboard is blocked, and while it loads", async () => {
     Object.defineProperty(navigator, "clipboard", {
       value: {
-        writeText: async () => {
-          throw new Error("denied");
-        },
+        writeText: () => Promise.reject(new Error("denied")),
       },
       configurable: true,
     });
@@ -113,9 +98,7 @@ describe("server connection step", () => {
 
   it("turns off the self-signed certificate on Proxmox and shows a failed save", async () => {
     const calls = installTauri({
-      server_save: () => {
-        throw "duplicate name";
-      },
+      server_save: failsWith("duplicate name"),
     });
     const user = userEvent.setup();
     await renderSetup(editing({}));
@@ -153,7 +136,7 @@ describe("server tools step", () => {
     await go(user, /install vagrant/i);
     expect(argsOf(calls, "install_dependency")[0]).toMatchObject({ dependency: "vagrant" });
     await go(user, /^\s*get$/i);
-    expect(argsOf(calls, "plugin:opener|open_url")[0]).toMatchObject({ url: expect.stringContaining("broadcom.com") });
+    expect(argsOf(calls, "plugin:opener|open_url")[0]?.url).toMatch(/broadcom\.com/);
   });
 
   it("installs the ESXi plugin once Vagrant is there", async () => {

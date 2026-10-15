@@ -8,11 +8,19 @@ import { AccountsPanel, BudgetPanel, RunningCloudLabs } from "@/features/cloud/c
 import type { Lab } from "@/features/labs/use-labs";
 import { answer } from "@/lib/dev-mock";
 import type { LabStatus, ServerHost, ServerList, ServerTest } from "@/lib/tauri";
-import { commands, installTauri, type Call } from "@/test/tauri";
+import { commands, installTauri, rejects, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 const sample = () => structuredClone(answer("server_list", undefined) as ServerList);
-const aws = sample().hosts.find((h) => h.provider === "aws")!;
+/** The dev mock's AWS account. */
+function sampleAws(): ServerHost {
+  const found = sample().hosts.find((h) => h.provider === "aws");
+  if (!found) throw new Error("the dev mock lists an AWS account");
+  return found;
+}
+const aws = sampleAws();
+/** A command that fails with `message`, as the Rust core's `other` error. */
+const failsWith = (message: string) => rejects({ code: "other", message });
 const account = (patch: Partial<ServerHost>): ServerHost => ({ ...aws, ...patch });
 const argsOf = (calls: Call[], cmd: string) => calls.filter((c) => c.cmd === cmd).map((c) => c.args);
 const result = (patch: Partial<ServerTest>): ServerTest => ({
@@ -83,9 +91,7 @@ describe("CloudScreen", () => {
     list.hosts[2] = account({ monthlyLimit: 50 });
     installTauri({
       server_list: () => list,
-      server_month_to_date_cost: () => {
-        throw "ce:GetCostAndUsage denied";
-      },
+      server_month_to_date_cost: failsWith("ce:GetCostAndUsage denied"),
     });
     await renderScreen();
     expect(document.body.textContent).toContain("$…");
@@ -115,10 +121,7 @@ describe("CloudScreen", () => {
   it("removes an account after confirming, and shows why it failed", async () => {
     let fails = false;
     const calls = installTauri({
-      server_remove: () => {
-        if (fails) throw "keychain locked";
-        return null;
-      },
+      server_remove: (a) => (fails ? failsWith("keychain locked")(a) : null),
     });
     const user = userEvent.setup();
     await renderScreen();
@@ -154,9 +157,7 @@ describe("CloudScreen", () => {
 
   it("shows why the setup window didn't open", async () => {
     installTauri({
-      server_open_setup: () => {
-        throw "no window";
-      },
+      server_open_setup: failsWith("no window"),
     });
     const user = userEvent.setup();
     await renderScreen();
@@ -260,7 +261,7 @@ describe("cloud panels", () => {
   });
 
   it("shows a budget under its limit, with no auto-stop", () => {
-    const { container } = render(<BudgetPanel host={account({ monthlyLimit: 100, autoStopHours: 0 })} spent={25} />);
+    const { container } = render(<BudgetPanel host={account({ monthlyLimit: 100, autoStopHours: 0 })} limit={100} spent={25} />);
     expect(container.textContent).toContain("$25.00");
     expect(container.textContent).toContain("of $100.00");
     expect(container.textContent).toContain("no auto-stop");

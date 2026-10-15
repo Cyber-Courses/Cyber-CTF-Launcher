@@ -1,4 +1,4 @@
-import type { CloudProvider, Dependency, RemoteProvider, ServerHostInput, ServerTest, SystemReport } from "@/lib/tauri";
+import type { CloudClis, CloudProvider, Dependency, RemoteProvider, ServerHostInput, ServerTest, SystemReport } from "@/lib/tauri";
 import {
   AWS_REGIONS,
   AZURE_LOCATIONS,
@@ -6,6 +6,7 @@ import {
   CLOUD_META,
   DO_REGIONS,
   GCP_REGIONS,
+  KIND,
   LINODE_REGIONS,
   OCI_REGIONS,
   type StepKey,
@@ -19,10 +20,10 @@ const DEFAULT_NAMES = Object.values(CLOUD_DEFAULT_NAME);
 export const isCloud = (p: RemoteProvider): p is CloudProvider => CLOUDS.includes(p);
 
 /** Token clouds (DigitalOcean, Linode) authenticate with just a pasted API token (no CLI, no username). */
-export const isTokenCloud = (p: RemoteProvider) => p === "digitalocean" || p === "linode";
+const isTokenCloud = (p: RemoteProvider) => p === "digitalocean" || p === "linode";
 
 /** Azure and GCP authenticate through their CLI (no access keys); the flow is the same shape. */
-export const isCliAuthCloud = (p: RemoteProvider) => p === "azure" || p === "gcp";
+const isCliAuthCloud = (p: RemoteProvider) => p === "azure" || p === "gcp";
 
 /**
  * The ordered steps for this setup. Editing skips choosing the provider or hypervisor and
@@ -94,13 +95,33 @@ export function keepsSecret(initial: ServerHostInput, v: ServerHostInput): boole
   return initial.id !== null && !(initial.useCliCreds && !v.useCliCreds);
 }
 
+/** The provider's kind and how it connects, as the setup steps read it. */
+export function providerTraits(provider: RemoteProvider) {
+  return {
+    cloud: isCloud(provider),
+    aws: provider === "aws",
+    azure: provider === "azure",
+    gcp: provider === "gcp",
+    digitalocean: provider === "digitalocean",
+    linode: provider === "linode",
+    oci: provider === "oci",
+    tokenCloud: isTokenCloud(provider),
+    cliAuth: isCliAuthCloud(provider),
+    kind: KIND[provider],
+  };
+}
+
+/** The clouds with a CLI of their own: the dependency that installs it, its key in the report. */
+const CLIS = {
+  aws: { dependency: "awscli", key: "aws" },
+  azure: { dependency: "azurecli", key: "azure" },
+  gcp: { dependency: "gcloud", key: "gcloud" },
+} as const satisfies Record<string, { dependency: Dependency; key: keyof CloudClis }>;
+
 /** The CLI a cloud needs on this machine (none for the token and key clouds). */
 export function cloudCli(provider: CloudProvider) {
-  return {
-    has: CLOUD_META[provider].cli !== "",
-    dependency: (provider === "azure" ? "azurecli" : provider === "gcp" ? "gcloud" : "awscli") as Dependency,
-    key: (provider === "gcp" ? "gcloud" : provider === "azure" ? "azure" : "aws") as "aws" | "azure" | "gcloud",
-  };
+  const cli = provider === "azure" || provider === "gcp" ? CLIS[provider] : CLIS.aws;
+  return { has: CLOUD_META[provider].cli !== "", ...cli };
 }
 
 /**
@@ -117,7 +138,7 @@ export function machineTools(provider: RemoteProvider, report: SystemReport | nu
   const tools = {
     vagrantOk: !!report?.vagrant.installed,
     esxiPluginOk: !!status?.pluginInstalled,
-    ovftoolOk: !!report?.ovftool?.installed,
+    ovftoolOk: !!report?.ovftool.installed,
     terraformOk: !!report?.terraform.installed,
     cloudHasCli,
     cloudCliTool,
@@ -134,7 +155,7 @@ export function machineTools(provider: RemoteProvider, report: SystemReport | nu
 
 /** The name a host is saved under: the typed one, else the cloud's short name or the address. */
 export function saveName(v: ServerHostInput): string {
-  const fallback = isCloud(v.provider) ? (CLOUD_DEFAULT_NAME[v.provider] ?? v.host.trim()) : v.host.trim();
+  const fallback = isCloud(v.provider) ? CLOUD_DEFAULT_NAME[v.provider] : v.host.trim();
   return v.name.trim() || fallback;
 }
 

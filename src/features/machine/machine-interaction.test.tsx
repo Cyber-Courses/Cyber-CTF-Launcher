@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Toaster } from "@/components/ui/toaster";
@@ -11,16 +11,16 @@ import { MachineStepBody, useMachineSetup, type MachineStep } from "@/features/m
 import { setLocalePreference } from "@/lib/i18n";
 import { getAttackImage } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
+import type { SelfTestResult } from "@/features/machine/use-self-test";
 import { freshReport, readyReport } from "@/test/fixtures";
-import { commands, installTauri, stream } from "@/test/tauri";
-import { button, flush } from "@/test/ui";
+import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
+import { button, flush, settle } from "@/test/ui";
+import { pressFirstTest, radioWith, renderMachineScreen } from "@/features/machine/machine-test-kit";
 
-const text = () => document.body.textContent ?? "";
+const text = () => document.body.textContent;
 const disabled = (el: HTMLElement) => el.hasAttribute("disabled");
 const count = (calls: { cmd: string }[], cmd: string) => commands(calls as never).filter((c) => c === cmd).length;
-const radioWith = (s: string) => screen.getAllByRole("radio").find((r) => r.textContent?.includes(s))!;
-const ev = (step: string, state: SelfTestEvent["state"], detail?: string): SelfTestEvent =>
-  ({ step, label: step, state, detail: detail ?? null }) as SelfTestEvent;
+const ev = (step: string, state: SelfTestEvent["state"], detail?: string): SelfTestEvent => ({ step, label: step, state, detail: detail ?? null });
 
 /** One step body with a live setup state, the way both setup flows mount it. */
 function Step({ step, report, onRefresh = () => {} }: { step: MachineStep; report: SystemReport; onRefresh?: () => void }) {
@@ -43,7 +43,7 @@ describe("engine step: switching and starting", () => {
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     installTauri({
       docker_use_engine: () => {
-        throw "context orbstack not found";
+        rejectWith("context orbstack not found");
       },
     });
     const onRefresh = vi.fn();
@@ -100,7 +100,7 @@ describe("engine step: switching and starting", () => {
   it("forgets one engine's start error when the player picks another engine", async () => {
     installTauri({
       docker_start_engine: () => {
-        throw "Docker Desktop.app is damaged";
+        rejectWith("Docker Desktop.app is damaged");
       },
     });
     const user = userEvent.setup();
@@ -131,7 +131,12 @@ describe("SelfTest: states and re-runs", () => {
     const calls = installTauri({
       machine_selftest: (a) => {
         stream(a, ev("engine", "running"));
-        return new Promise<null>((r) => (finish = () => r(null)));
+        return new Promise<null>(
+          (r) =>
+            (finish = () => {
+              r(null);
+            }),
+        );
       },
     });
     const user = userEvent.setup();
@@ -139,7 +144,9 @@ describe("SelfTest: states and re-runs", () => {
     await user.click(button(/run test/i));
     await flush();
     expect(screen.queryByRole("button")).toBeNull();
-    await act(async () => finish());
+    await settle(() => {
+      finish();
+    });
     await flush();
     expect(count(calls, "machine_selftest")).toBe(1);
   });
@@ -150,13 +157,13 @@ describe("SelfTest: states and re-runs", () => {
       machine_selftest: (a) => {
         if (fail) {
           stream(a, ev("engine", "ok"), ev("pull", "fail", "toomanyrequests: rate limit"));
-          throw "pull failed";
+          rejectWith("pull failed");
         }
         stream(a, ...["engine", "pull", "start", "network", "port", "cleanup"].map((s) => ev(s, "ok")));
         return null;
       },
     });
-    const onResult = vi.fn();
+    const onResult = vi.fn<(r: SelfTestResult) => void>();
     const user = userEvent.setup();
     render(<SelfTest kind="docker" title="Container lab test" description="d" auto onResult={onResult} />);
     await flush();
@@ -190,13 +197,11 @@ describe("SelfTest: states and re-runs", () => {
   it("does not start a second self-test when the test is hidden and shown again mid-run", async () => {
     const calls = installTauri({ machine_selftest: () => new Promise(() => {}) });
     const user = userEvent.setup();
-    render(<MachineScreen report={readyReport()} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
-    await flush(50);
-    const engines = screen.getByText("Engines").closest("section, div")!.parentElement!;
-    await user.click(within(engines).getAllByRole("button", { name: /^test$/i })[0]);
+    await renderMachineScreen();
+    await pressFirstTest(user);
     await flush();
     await user.click(button(/hide test/i));
-    await user.click(within(engines).getAllByRole("button", { name: /^test$/i })[0]);
+    await pressFirstTest(user);
     await flush();
     expect(count(calls, "machine_selftest")).toBe(1);
   });
@@ -208,7 +213,7 @@ describe("Machine page", () => {
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     installTauri({
       machine_open_setup: () => {
-        throw "window label already exists";
+        rejectWith("window label already exists");
       },
     });
     const user = userEvent.setup();
@@ -258,7 +263,7 @@ describe("Downloads panel: clean-up", () => {
     await user.click(button(/clean up/i));
     expect(screen.getByRole("alert").textContent).toContain("Remove 4.0 GB?");
     // While asking, the header's Clean up is gone: one question at a time.
-    expect(screen.queryAllByRole("button").some((b) => /clean up/i.test(b.textContent ?? ""))).toBe(false);
+    expect(screen.queryAllByRole("button").some((b) => /clean up/i.test(b.textContent))).toBe(false);
     await user.click(button(/^cancel$/i));
     expect(screen.queryByRole("alert")).toBeNull();
     expect(count(calls, "machine_storage_clean")).toBe(0);
@@ -275,7 +280,9 @@ describe("Downloads panel: clean-up", () => {
     await user.dblClick(button(/^remove$/i));
     expect(disabled(button(/removing/i))).toBe(true);
     expect(disabled(button(/^cancel$/i))).toBe(true);
-    await act(async () => finish(600_000_000));
+    await settle(() => {
+      finish(600_000_000);
+    });
     await flush();
     expect(count(calls, "machine_storage_clean")).toBe(1);
     // The attack box image is named so it is kept: it is the slowest download of all.
@@ -343,12 +350,22 @@ describe("MachineSetup window", () => {
 
   it("holds Back and Continue while a self-test runs on its step", async () => {
     let finish: () => void = () => {};
-    installTauri({ machine_selftest: () => new Promise<null>((r) => (finish = () => r(null))) });
+    installTauri({
+      machine_selftest: () =>
+        new Promise<null>(
+          (r) =>
+            (finish = () => {
+              r(null);
+            }),
+        ),
+    });
     render(<MachineSetup report={readyReport()} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "docker-test", nonce: 1 }} />);
     await flush();
     expect(disabled(button(/back$/i))).toBe(true);
     expect(disabled(button(/^continue$/i))).toBe(true);
-    await act(async () => finish());
+    await settle(() => {
+      finish();
+    });
     await flush();
     expect(disabled(button(/back$/i))).toBe(false);
     expect(disabled(button(/^continue$/i))).toBe(false);

@@ -1,5 +1,5 @@
 import { answer } from "@/lib/dev-mock";
-import type { SystemReport } from "@/lib/tauri";
+import type { ProviderStatus, SystemReport } from "@/lib/tauri";
 
 const missing = { installed: false, version: null };
 
@@ -43,3 +43,16 @@ export function stoppedDockerReport(): SystemReport {
     },
   };
 }
+
+/** A local hypervisor as the machine check reports it: VirtualBox, installed and able to run labs,
+ *  with `over`. */
+export const hypervisorStatus = (over: Partial<ProviderStatus>): ProviderStatus => ({
+  provider: "virtualbox",
+  remote: false,
+  available: true,
+  hypervisor: true,
+  plugin: null,
+  pluginInstalled: true,
+  reason: null,
+  ...over,
+});

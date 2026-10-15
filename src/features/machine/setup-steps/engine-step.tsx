@@ -26,7 +26,9 @@ export function EngineStep({ report, setup }: { report: SystemReport; setup: Mac
           <Choice
             key={e.id}
             selected={e.id === choice.id}
-            onSelect={() => setup.setEngine(e.id)}
+            onSelect={() => {
+              setup.setEngine(e.id);
+            }}
             mark={<EngineLogo engine={e} />}
             title={e.name}
             note={t(e.note)}
@@ -57,11 +59,11 @@ export function EngineMark({ id }: { id: DockerEngine }) {
  *  tile (white in every mode) so dark artwork stays legible. */
 function EngineLogo({ engine }: { engine: Engine }) {
   return engine.tile ? (
-    // eslint-disable-next-line @next/next/no-img-element
+    // eslint-disable-next-line @next/next/no-img-element -- static export, plain asset
     <img src={engine.logo} alt="" className="size-8 shrink-0 rounded-control object-contain" />
   ) : (
     <span className="logo-tile flex size-8 shrink-0 items-center justify-center rounded-control p-1.5">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
       <img src={engine.logo} alt="" className="size-full object-contain" />
     </span>
   );

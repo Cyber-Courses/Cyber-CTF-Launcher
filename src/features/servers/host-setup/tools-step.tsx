@@ -1,13 +1,14 @@
 "use client";
 
-import { ArrowLeft, ExternalLink, HardDrive } from "lucide-react";
+import { ExternalLink, HardDrive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { LogConsole } from "@/components/ui/log-console";
 import { Requirement } from "@/features/machine/setup-steps";
 import { installDependency, installVagrantPlugin } from "@/lib/tauri";
 import { CLOUD_META, KIND } from "@/features/servers/host-setup/constants";
-import { Nav, Step } from "@/features/servers/host-setup/form";
+import { Step } from "@/features/servers/host-setup/form";
+import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { openExternal } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
@@ -47,25 +48,21 @@ export function ToolsStep({ s }: { s: HostSetup }) {
           <LogConsole lines={pluginLog} running={toolBusy} title={t("servers.setup.tools.install", { name: toolLabel })} />
         </div>
       )}
-      <Nav
-        left={
-          <Button variant="ghost" onClick={back}>
-            <ArrowLeft className="size-4" /> {t("servers.setup.nav.back")}
-          </Button>
-        }
-        right={
-          <span className="flex gap-2">
-            {!toolsOk && (
-              <Button variant="outline" onClick={() => onRefresh()}>
-                {t("servers.setup.nav.recheck")}
-              </Button>
-            )}
-            <Button onClick={next} disabled={!toolsOk}>
-              {t("servers.setup.nav.continue")}
+      <BackNav onBack={back}>
+        <span className="flex gap-2">
+          {!toolsOk && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                onRefresh();
+              }}
+            >
+              {t("servers.setup.nav.recheck")}
             </Button>
-          </span>
-        }
-      />
+          )}
+          <ContinueButton onClick={next} disabled={!toolsOk} />
+        </span>
+      </BackNav>
     </Step>
   );
 }
@@ -83,7 +80,14 @@ function CloudTools({ s }: { s: HostSetup }) {
           title={t("servers.setup.tools.cliTitle", { cloud: CLOUD_META[cloudProvider].label })}
           detail={cloudCliOk ? (cloudCliTool?.version ?? t("servers.setup.tools.installed")) : t("servers.setup.tools.cliDetail", { cli })}
           action={
-            <Button variant="outline" size="xs" disabled={toolBusy} onClick={() => installTool(`${cli} CLI`, (log) => installDependency(cloudDep, log))}>
+            <Button
+              variant="outline"
+              size="xs"
+              disabled={toolBusy}
+              onClick={() => {
+                installTool(`${cli} CLI`, (log) => installDependency(cloudDep, log));
+              }}
+            >
               {t("servers.setup.tools.install", { name: cli })}
             </Button>
           }
@@ -105,7 +109,14 @@ function EsxiTools({ s }: { s: HostSetup }) {
         title="Vagrant"
         detail={vagrantOk ? (report?.vagrant.version ?? t("servers.setup.tools.installed")) : t("servers.setup.tools.vagrant")}
         action={
-          <Button variant="outline" size="xs" disabled={toolBusy} onClick={() => installTool("Vagrant", (log) => installDependency("vagrant", log))}>
+          <Button
+            variant="outline"
+            size="xs"
+            disabled={toolBusy}
+            onClick={() => {
+              installTool("Vagrant", (log) => installDependency("vagrant", log));
+            }}
+          >
             {t("servers.setup.tools.install", { name: "Vagrant" })}
           </Button>
         }
@@ -119,7 +130,9 @@ function EsxiTools({ s }: { s: HostSetup }) {
             variant="outline"
             size="xs"
             disabled={toolBusy || !vagrantOk}
-            onClick={() => installTool(kind.plugin, (log) => installVagrantPlugin(kind.plugin, log))}
+            onClick={() => {
+              installTool(kind.plugin, (log) => installVagrantPlugin(kind.plugin, log));
+            }}
           >
             {t("servers.setup.tools.installPlugin")}
           </Button>
@@ -130,7 +143,13 @@ function EsxiTools({ s }: { s: HostSetup }) {
         title="VMware OVF Tool"
         detail={ovftoolOk ? (report?.ovftool.version ?? t("servers.setup.tools.installed")) : t("servers.setup.tools.ovftool")}
         action={
-          <Button variant="outline" size="xs" onClick={() => openExternal(OVFTOOL_URL)}>
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => {
+              openExternal(OVFTOOL_URL);
+            }}
+          >
             <ExternalLink className="size-3" /> {t("servers.setup.tools.get")}
           </Button>
         }
@@ -149,7 +168,14 @@ function TerraformRequirement({ s, detail }: { s: HostSetup; detail: string | nu
       title="Terraform"
       detail={detail === null ? (report?.terraform.version ?? t("servers.setup.tools.installed")) : detail}
       action={
-        <Button variant="outline" size="xs" disabled={toolBusy} onClick={() => installTool("Terraform", (log) => installDependency("terraform", log))}>
+        <Button
+          variant="outline"
+          size="xs"
+          disabled={toolBusy}
+          onClick={() => {
+            installTool("Terraform", (log) => installDependency("terraform", log));
+          }}
+        >
           {t("servers.setup.tools.install", { name: "Terraform" })}
         </Button>
       }

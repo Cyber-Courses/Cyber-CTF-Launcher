@@ -27,7 +27,13 @@ export function TestStep({ s }: { s: HostSetup }) {
       )}
       <Nav
         left={
-          <Button variant="outline" onClick={() => saved && runTest(saved.id)} disabled={test === "testing"}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (saved) runTest(saved.id);
+            }}
+            disabled={test === "testing"}
+          >
             {t("servers.setup.nav.testAgain")}
           </Button>
         }

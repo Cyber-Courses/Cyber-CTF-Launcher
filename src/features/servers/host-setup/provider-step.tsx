@@ -2,10 +2,10 @@
 
 import { Cloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { type CloudProvider } from "@/lib/tauri";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
-import { CLOUD_META, CLOUD_PICKER, KIND } from "@/features/servers/host-setup/constants";
+import { CLOUD_META, CLOUD_PICKER } from "@/features/servers/host-setup/constants";
 import { MarkTile, Nav, Step } from "@/features/servers/host-setup/form";
+import { ContinueButton } from "@/features/servers/host-setup/step-nav";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { useT } from "@/lib/i18n";
 
@@ -19,7 +19,9 @@ export function ProviderStep({ s }: { s: HostSetup }) {
           <RadioRow
             key={p.id}
             selected={p.ready && cloudProvider === p.id}
-            onSelect={() => pickProvider(p.id as CloudProvider)}
+            onSelect={() => {
+              pickProvider(p.id);
+            }}
             disabled={!p.ready}
             hint={p.ready ? undefined : t("servers.setup.provider.comingSoon")}
             leading={
@@ -33,13 +35,7 @@ export function ProviderStep({ s }: { s: HostSetup }) {
               </MarkTile>
             }
             title={p.label}
-            subtitle={
-              p.ready
-                ? KIND[p.id as CloudProvider]
-                  ? t(`servers.setup.kinds.${p.id as CloudProvider}`)
-                  : t("servers.setup.provider.available")
-                : t("servers.setup.provider.comingSoon")
-            }
+            subtitle={p.ready ? t(`servers.setup.kinds.${p.id}`) : t("servers.setup.provider.comingSoon")}
           />
         ))}
       </RadioList>
@@ -49,11 +45,7 @@ export function ProviderStep({ s }: { s: HostSetup }) {
             {t("servers.setup.nav.cancel")}
           </Button>
         }
-        right={
-          <Button onClick={next} disabled={!CLOUD_META[cloudProvider]?.ready}>
-            {t("servers.setup.nav.continue")}
-          </Button>
-        }
+        right={<ContinueButton onClick={next} disabled={!CLOUD_META[cloudProvider].ready} />}
       />
     </Step>
   );

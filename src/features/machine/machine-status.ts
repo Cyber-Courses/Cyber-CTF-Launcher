@@ -50,30 +50,41 @@ export function dockerState(report: SystemReport, last: LastTest | null): Docker
 /** Where VM labs stand on this machine. */
 export type VmState = "notApplicable" | "ready" | "testFailed" | "blocked" | "vagrantMissing" | "needHypervisor";
 
+/** A hypervisor with Vagrant and its plugin in place that still can't run (no /dev/kvm, not in
+ *  the kvm group): its own reason, since installing Vagrant again wouldn't help. */
+function blockedReasonOf(report: SystemReport, hypervisors: ProviderStatus[]): string | null {
+  if (!report.vagrant.installed) return null;
+  const reason = hypervisors.find((p) => p.hypervisor === true && (!p.plugin || p.pluginInstalled) && !p.available && p.reason)?.reason;
+  return reason ? `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.` : null;
+}
+
+function vmStateOf({
+  count,
+  provider,
+  blockedReason,
+  hasHypervisor,
+  last,
+}: {
+  count: number;
+  provider: ProviderStatus | null;
+  blockedReason: string | null;
+  hasHypervisor: boolean;
+  last: LastTest | null;
+}): VmState {
+  if (count === 0) return "notApplicable";
+  if (provider) return last?.result === "fail" ? "testFailed" : "ready";
+  if (blockedReason) return "blocked";
+  return hasHypervisor ? "vagrantMissing" : "needHypervisor";
+}
+
 /** The VM side of this machine: the hypervisors it can use, the one labs run on, and its state. */
 export function vmSetup(report: SystemReport, preferred: string | null, last: LastTest | null) {
   const hypervisors = usableHypervisors(report);
   const readyList: ProviderStatus[] = report.vmProviders.filter((p) => !p.remote && p.available && p.hypervisor !== false);
-  const provider = readyList.find((p) => p.provider === preferred) ?? readyList[0] ?? null;
+  const provider = readyList.find((p) => p.provider === preferred) ?? readyList.at(0) ?? null;
   const hasHypervisor = hypervisors.some((p) => p.hypervisor === true);
-  // A hypervisor with Vagrant and its plugin in place that still can't run (no /dev/kvm, not in
-  // the kvm group): its own reason, since installing Vagrant again wouldn't help.
-  const blocked = report.vagrant.installed
-    ? hypervisors.find((p) => p.hypervisor === true && (!p.plugin || p.pluginInstalled) && !p.available && p.reason)
-    : undefined;
-  const blockedReason = blocked?.reason ? `${blocked.reason.charAt(0).toUpperCase()}${blocked.reason.slice(1)}.` : null;
-  const state: VmState =
-    hypervisors.length === 0
-      ? "notApplicable"
-      : provider
-        ? last?.result === "fail"
-          ? "testFailed"
-          : "ready"
-        : blockedReason
-          ? "blocked"
-          : hasHypervisor
-            ? "vagrantMissing"
-            : "needHypervisor";
+  const blockedReason = blockedReasonOf(report, hypervisors);
+  const state = vmStateOf({ count: hypervisors.length, provider, blockedReason, hasHypervisor, last });
   // Several ready and no preference: the first one is picked automatically.
   const automatic = readyList.length > 1 && !preferred;
   return { hypervisors, provider, hasHypervisor, blockedReason, automatic, state };
@@ -83,12 +94,16 @@ export function vmSetup(report: SystemReport, preferred: string | null, last: La
 export const setupCount = (docker: DockerState, vm: VmState) =>
   (docker === "ready" || docker === "testFailed" ? 0 : 1) + (vm === "blocked" || vm === "vagrantMissing" || vm === "needHypervisor" ? 1 : 0);
 
-/** A local hypervisor's line in Details: installed (with or without its plugin), missing, or built in. */
-export type HypervisorDetail = "installedWithPlugin" | "pluginMissing" | "installed" | "notInstalled" | "builtIn";
+/** A local hypervisor's line in Details: installed (with its plugin, or the plugin it lacks, or
+ *  none needed), missing, or built in. */
+export type HypervisorDetail = { kind: "installedWithPlugin" | "pluginMissing"; plugin: string } | { kind: "installed" | "notInstalled" | "builtIn" };
 
 export function hypervisorDetail(p: ProviderStatus): HypervisorDetail {
-  if (p.hypervisor === true) return p.plugin ? (p.pluginInstalled ? "installedWithPlugin" : "pluginMissing") : "installed";
-  return p.hypervisor === false ? "notInstalled" : "builtIn";
+  if (p.hypervisor === true) {
+    if (!p.plugin) return { kind: "installed" };
+    return { kind: p.pluginInstalled ? "installedWithPlugin" : "pluginMissing", plugin: p.plugin };
+  }
+  return { kind: p.hypervisor === false ? "notInstalled" : "builtIn" };
 }
 
 /** Points kept for a stat card's sparkline. */

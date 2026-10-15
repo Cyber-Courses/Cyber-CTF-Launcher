@@ -28,7 +28,9 @@ export function SetupTrademarks({ cloud = false }: { cloud?: boolean }) {
     <p className="text-[0.6875rem] leading-relaxed text-faint">
       {t("servers.setup.trademarks.proxmox")}{" "}
       <button
-        onClick={() => openExternal("https://www.proxmox.com")}
+        onClick={() => {
+          openExternal("https://www.proxmox.com");
+        }}
         className="inline-flex items-center gap-0.5 underline-offset-2 hover:text-muted-foreground hover:underline"
       >
         proxmox.com <ExternalLink className="size-3" />

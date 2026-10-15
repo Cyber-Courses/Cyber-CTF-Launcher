@@ -22,7 +22,9 @@ export function useMachineMetrics(ms: number, { serial = false }: { serial?: boo
       setHistory((h) => appendUsage(h, m));
       setFailed(false);
     },
-    onError: () => setFailed(true),
+    onError: () => {
+      setFailed(true);
+    },
   });
   return { metrics, history, failed };
 }
