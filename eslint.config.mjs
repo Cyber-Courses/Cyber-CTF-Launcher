@@ -15,28 +15,11 @@ const TESTS = ["src/**/*.test.{ts,tsx}", "src/test/**"];
 /** Next.js entry points, which must be default exports. */
 const ENTRY_POINTS = ["src/app/**/{page,layout,error,global-error,not-found,loading}.tsx"];
 
-/** Rules the shipped code and the tests don't meet yet. */
-const RATCHETED = [
-  "@typescript-eslint/no-base-to-string",
-  "@typescript-eslint/no-confusing-void-expression",
-  "@typescript-eslint/no-invalid-void-type",
-  "@typescript-eslint/no-misused-promises",
-  "@typescript-eslint/no-non-null-assertion",
-  "@typescript-eslint/no-unnecessary-condition",
-  "@typescript-eslint/no-unnecessary-type-assertion",
-  "@typescript-eslint/no-unsafe-return",
-  "@typescript-eslint/restrict-template-expressions",
-  "@typescript-eslint/use-unknown-in-catch-callback-variable",
-  "max-lines-per-function",
-  "sonarjs/cognitive-complexity",
-];
-/** Rules only the tests don't meet yet. */
-const RATCHETED_IN_TESTS = [
-  "@typescript-eslint/no-unsafe-assignment",
-  "@typescript-eslint/no-unsafe-member-access",
-  "@typescript-eslint/only-throw-error",
-  "@typescript-eslint/require-await",
-];
+/** Rules the shipped code and the tests don't meet yet: none, every area is at zero. A rule added
+ *  before the code meets it goes here, at "warn", until its count reaches zero. */
+const RATCHETED = [];
+/** Rules only the tests don't meet yet: none (as above). */
+const RATCHETED_IN_TESTS = [];
 
 /** A rule's level: "warn" while the ratchet counts it, else "error". */
 const level = (rule) => (RATCHETED.includes(rule) ? "warn" : "error");
