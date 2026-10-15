@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Position, ReactFlowProvider } from "@xyflow/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { edgeTypes, link } from "@/features/labs/network-diagram/edges";
+import { elkEngine } from "@/features/labs/network-diagram/elk-engine";
 import { NetworkDiagram } from "@/features/labs/network-diagram";
 import { GREY, type Machine } from "@/features/labs/network-diagram/model";
 import type { LabNetwork } from "@/lib/tauri";
@@ -59,6 +60,13 @@ const resizeTo = (width: number) => {
     });
   });
 };
+
+// ELK's first load (a 1.4 MB module) happens here, once, rather than inside the first test's
+// layout: on a loaded machine (the Windows VM) it outlasted that test's wait for the laid-out
+// diagram. The diagram then gets the loaded engine.
+beforeAll(async () => {
+  await elkEngine();
+});
 
 beforeEach(() => {
   initialised.value = true;
