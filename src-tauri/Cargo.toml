@@ -19,7 +19,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [lints.rust]
 unused = { level = "deny", priority = -1 }
 missing_docs = "deny"
-# Calls into libc and Win32 need `unsafe`; each such site is to carry a local allow saying why.
+# Calls into libc and Win32 need `unsafe`: outside runtime/ they all sit in `platform::sys`, the one
+# audited module allowed it; runtime/'s own go there as it moves to the Isothrum runner.
 unsafe_code = "warn"
 
 [lints.clippy]
