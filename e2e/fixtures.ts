@@ -1,4 +1,4 @@
-import { test as base, expect, type Page } from "@playwright/test";
+import { test as base, expect, type Locator, type Page } from "@playwright/test";
 
 /** The six languages the launcher ships (src/lib/i18n). */
 export const LOCALES = ["en", "fr", "es", "de", "pt-BR", "ja"] as const;
@@ -55,6 +55,15 @@ export async function openApp(page: Page, query = "") {
   await page.goto(`/?mock${query}`);
   await expect(page.locator("aside nav")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+}
+
+/** With `check=down` (src/lib/dev-mock.ts): brings the machine back and presses `retry` in one
+ *  go, inside the page, so no background re-check can answer in between. */
+export async function machineBackAndRetry(retry: Locator) {
+  await retry.evaluate((button: HTMLElement) => {
+    (window as unknown as { __CYBERCTF_MOCK_MACHINE_UP__: () => void }).__CYBERCTF_MOCK_MACHINE_UP__();
+    button.click();
+  });
 }
 
 /** The command palette's shortcut where the page thinks it runs: ⌘K on macOS, Ctrl+K elsewhere

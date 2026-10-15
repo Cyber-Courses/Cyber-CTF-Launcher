@@ -215,8 +215,9 @@ export function answer(cmd: string, args: Args): unknown {
  *  - `machine=fresh`: nothing installed yet (no package manager, engine, Vagrant or hypervisor).
  *  - `onboarding`: the first-run onboarding shows (on every load with the switch).
  *  - `auth=out`: signed out until "Sign in" is used.
- *  - `check=fail`: the first `checkFails` rounds of system checks (default 1) of each page load
- *    fail; checks asked within half a second of each other are one round.
+ *  - `check=down`: every system check fails until the test brings the machine back
+ *    (`window.__CYBERCTF_MOCK_MACHINE_UP__()`), so no background re-check can answer before the
+ *    test has seen the failure.
  *  - `launch=fail`: the first lab start of each page load fails, after a few lines of output.
  *  - `pm=later`: the package manager is missing from the first round of checks of each page load,
  *    then there (as if the player ran its install command while the setup window was open).
@@ -238,7 +239,7 @@ export type Scenario = {
   fresh: boolean;
   onboarding: boolean;
   signedOut: boolean;
-  checkFails: number;
+  checkDown: boolean;
   launchFails: boolean;
   pmLater: boolean;
   installFails: boolean;
@@ -256,7 +257,7 @@ export function scenarioFrom(search: string): Scenario {
     fresh: q.get("machine") === "fresh",
     onboarding: q.has("onboarding"),
     signedOut: q.get("auth") === "out",
-    checkFails: q.get("check") === "fail" ? Math.max(1, Number(q.get("checkFails") ?? 1) || 1) : 0,
+    checkDown: q.get("check") === "down",
     launchFails: q.get("launch") === "fail",
     pmLater: q.get("pm") === "later",
     installFails: q.get("install") === "fail",
@@ -418,9 +419,8 @@ type Session = { id: string; labId: string; target: "hosted"; state: string; end
 type Live = {
   running: Set<string>;
   signedIn: boolean;
-  checkFails: number;
-  /** When the last failed round of checks began (ms). */
-  checkFailedAt: number;
+  /** System checks fail (`check=down`) until the test brings the machine back. */
+  checkDown: boolean;
   launchFails: boolean;
   /** The operations in flight on each lab, as the core reports them. */
   ops: Map<string, "launch" | "stop" | "pause" | "shutdown" | "resume" | "provision">;
@@ -622,21 +622,13 @@ export async function browserAnswer(cmd: string, args: Record<string, unknown> |
       return null;
     }
     case "system_check": {
-      // The calls of one round (the screens mounting together, twice under React's strict mode)
-      // fail together; a later one (Try again) is the next round.
-      const now = Date.now();
-      // Timed from the round's first call (the screens' checks on mount come within a few ms of
-      // each other): calls coming in faster than that must not stretch one round forever, and a
-      // Try again a moment later is the next round.
-      const sameRound = now - live.checkFailedAt < 250;
-      if (sameRound || live.checkFails > 0) {
-        if (!sameRound) {
-          live.checkFails -= 1;
-          live.checkFailedAt = now;
-        }
+      // Decided when the answer is given: a check in flight when the machine comes back answers
+      // like the next one, so no failure lands after the test's retry.
+      if (live.checkDown) {
         await sleep(150);
-        return rejected("docker info timed out after 20 s");
+        if (live.checkDown) return rejected("docker info timed out after 20 s");
       }
+      const now = Date.now();
       if (!live.firstCheckAt) live.firstCheckAt = now;
       return withInstalls(scenarioReport(sc), live.installed, sc.pmLater ? now - live.firstCheckAt >= 1000 : null);
     }
@@ -912,8 +904,7 @@ export function installDevMock() {
   const live: Live = {
     running: new Set(answer("running_labs", undefined) as string[]),
     signedIn: !sc.signedOut,
-    checkFails: sc.checkFails,
-    checkFailedAt: 0,
+    checkDown: sc.checkDown,
     launchFails: sc.launchFails,
     ops: new Map(),
     installed: new Set(),
@@ -929,6 +920,9 @@ export function installDevMock() {
     eventBus.onmessage = (e: MessageEvent<{ event: string; payload: unknown }>) => deliver(e.data.event, e.data.payload);
   }
   (window as unknown as { __CYBERCTF_MOCK__?: boolean }).__CYBERCTF_MOCK__ = true;
+  (window as unknown as { __CYBERCTF_MOCK_MACHINE_UP__?: () => void }).__CYBERCTF_MOCK_MACHINE_UP__ = () => {
+    live.checkDown = false;
+  };
   if (sc.onboarding) clearOnboarded();
   else markOnboarded();
 }

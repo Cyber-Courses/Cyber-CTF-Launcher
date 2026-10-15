@@ -1,13 +1,14 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, horizontalOverflow, paletteKey } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, horizontalOverflow, paletteKey, machineBackAndRetry } from "./fixtures";
 
 // A machine check that fails, the window at its minimum size and larger, and the main flows by
 // keyboard alone.
 
 test.describe("a failed machine check", () => {
   test("is said where the report is needed, and Try again recovers", async ({ page }) => {
-    // The first round of checks fails (`check=fail`, src/lib/dev-mock.ts); the next one answers.
-    await openApp(page, "&check=fail");
+    // Every check fails (`check=down`, src/lib/dev-mock.ts) until the machine comes back with the
+    // Try again.
+    await openApp(page, "&check=down");
     await expect(page.locator("main > [data-tauri-drag-region]")).toContainText("machine check failed");
 
     await navButton(page, "Machine").click();
@@ -17,7 +18,7 @@ test.describe("a failed machine check", () => {
     await navButton(page, "Labs").click();
     await expect(page.getByText("Couldn’t check this machine")).toBeVisible();
 
-    await page.getByRole("button", { name: "Try again" }).click();
+    await machineBackAndRetry(page.getByRole("button", { name: "Try again" }));
     await expect(page.locator("main").getByRole("button", { name: "Open Invoice portal API", exact: true })).toBeVisible();
     await expect(page.locator("main > [data-tauri-drag-region]")).not.toContainText("machine check failed");
     await navButton(page, "Machine").click();
