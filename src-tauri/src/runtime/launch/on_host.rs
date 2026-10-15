@@ -156,7 +156,7 @@ pub(super) async fn public_ip_from(resolvers: &[&str]) -> Result<String> {
 async fn ask_ip(client: &reqwest::Client, url: &str) -> std::result::Result<std::net::Ipv4Addr, String> {
     let resp = client.get(url).send().await.and_then(|r| r.error_for_status()).map_err(|e| e.to_string())?;
     // An address is a few bytes: a page (a captive portal) is no answer.
-    let body = crate::http::body_limited(resp, 256).await.map_err(|e| e.to_string())?;
+    let body = crate::platform::http::body_limited(resp, 256).await.map_err(|e| e.to_string())?;
     let ip = parse_ipv4(&String::from_utf8_lossy(&body)).ok_or("an unexpected answer")?;
     let ip: std::net::Ipv4Addr = ip.parse().map_err(|_| "an unexpected answer")?;
     if !is_public_ipv4(ip) { Err(format!("{ip}, not a public address")) } else { Ok(ip) }

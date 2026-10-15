@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 
 use crate::account::api_operation::ApiOperation;
 use crate::account::auth;
-use crate::config;
+use crate::app::config;
 use crate::error::{Error, Result};
 
 /// Runs a GraphQL operation as the logged-in player (anonymous if logged out
@@ -23,7 +23,7 @@ pub async fn graphql(query: &str, variables: Value, require_login: bool) -> Resu
 /// Bounded: a backend that accepts the connection and never answers must not hang the agent
 /// loop or a UI call forever.
 async fn send(base: &str, token: Option<String>, query: &str, variables: Value) -> Result<Value> {
-    let mut req = crate::http::api_client()?
+    let mut req = crate::platform::http::api_client()?
         .post(format!("{base}/graphql"))
         .timeout(std::time::Duration::from_secs(30))
         .json(&json!({ "query": query, "variables": variables }));
@@ -106,7 +106,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_operation_is_posted_with_the_token_and_its_data_read_back() {
-        use crate::http::tests::serve_once;
+        use crate::platform::http::tests::serve_once;
         let body = r#"{"data":{"me":{"id":"1"}}}"#;
         let base = serve_once(
             format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).into_bytes(),

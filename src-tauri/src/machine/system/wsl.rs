@@ -194,7 +194,7 @@ fn outcome(result: &Result<String>) -> (Run, &str) {
     match result {
         Ok(out) => (Run::Ok, out.as_str()),
         Err(Error::ToolMissing { .. }) => (Run::Missing, ""),
-        Err(e) if crate::exec::timed_out(e) => (Run::TimedOut, ""),
+        Err(e) if crate::platform::exec::timed_out(e) => (Run::TimedOut, ""),
         Err(_) => (Run::Failed, ""),
     }
 }
@@ -335,7 +335,7 @@ async fn schedule_restart(app: &AppHandle, state: &AtomicU8, reason: &str, reope
     let registered = reopen.register();
     let boot = sysinfo::System::boot_time();
     mark(app, RESTART_MARK, boot);
-    match crate::exec::run("shutdown", &["/r", "/t", "5", "/c", reason], None).await {
+    match crate::platform::exec::run("shutdown", &["/r", "/t", "5", "/c", reason], None).await {
         Ok(_) => {
             state.store(SCHEDULED, Ordering::SeqCst);
             Ok(())
@@ -365,7 +365,7 @@ pub async fn machine_restart(app: AppHandle, reason: String) -> Result<()> {
     {
         // A unit test must never restart the machine it runs on: only scripted tools here.
         #[cfg(test)]
-        if !crate::exec::fake::scripted() {
+        if !crate::platform::exec::fake::scripted() {
             return Err(Error::Invalid("a test restarted without scripting shutdown".into()));
         }
         let reopen = windows::UserRunOnce(if cfg!(test) { None } else { windows::reopen_command() });
@@ -437,9 +437,9 @@ exit 0
         // wsl.exe writes UTF-16 unless told otherwise; only exit codes are read, but its output
         // in a log stays readable.
         let utf8 = [("WSL_UTF8".to_string(), "1".to_string())];
-        let status = crate::exec::run_env_timed("wsl", &["--status"], None, &utf8, WSL_TIMEOUT);
-        let version = crate::exec::run_env_timed("wsl", &["--version"], None, &utf8, WSL_TIMEOUT);
-        let cim = crate::exec::run_env_timed("powershell", &cim_args, None, &[], CIM_TIMEOUT);
+        let status = crate::platform::exec::run_env_timed("wsl", &["--status"], None, &utf8, WSL_TIMEOUT);
+        let version = crate::platform::exec::run_env_timed("wsl", &["--version"], None, &utf8, WSL_TIMEOUT);
+        let cim = crate::platform::exec::run_env_timed("powershell", &cim_args, None, &[], CIM_TIMEOUT);
         let (status, version, cim) = tokio::join!(status, version, cim);
         let (vm_platform, wsl_feature, hypervisor) = parse_cim(outcome(&cim).1);
         let services = r"SYSTEM\CurrentControlSet\Services";
@@ -545,8 +545,8 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU32};
 
     use super::*;
-    use crate::exec::fake::{Tools, fail, ok};
-    use crate::test_app::TestApp;
+    use crate::platform::exec::fake::{Tools, fail, ok};
+    use crate::testing::test_app::TestApp;
     use WslState::*;
 
     /// A machine where nothing could be read.

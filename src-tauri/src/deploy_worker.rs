@@ -271,8 +271,8 @@ mod tests {
         // Regression: an attack VM start during a Stop passed its "lab is running" check early in
         // the destroy, and its VM came up after the lab was gone; a start between the stop ending
         // the lab's workers and taking its lock won the lock first.
-        let t = crate::test_app::TestApp::new();
-        let _tools = crate::exec::fake::Tools::rules(&[]);
+        let t = crate::testing::test_app::TestApp::new();
+        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
         t.lab("ad", &[]);
         let stopping = crate::runtime::DeployGuard::new("ad", crate::runtime::Action::Stop);
         for op in [Op::AttackVm { box_name: "kalilinux/rolling".into() }, Op::Launch, Op::Resume { runtime: crate::runtime::Runtime::Vm }] {

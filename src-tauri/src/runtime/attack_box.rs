@@ -21,7 +21,7 @@ fn attacker_pick(env: &[(String, String)]) -> Option<&str> {
 
 /// The attack-box image the player picked, when one was (passed in the run env).
 fn attack_box_image(env: &[(String, String)]) -> Option<&str> {
-    attacker_pick(env).filter(|i| crate::exec::valid_image(i))
+    attacker_pick(env).filter(|i| crate::platform::exec::valid_image(i))
 }
 
 /// The attack VM's Vagrant box the player picked for a VM lab, when one was.
@@ -62,7 +62,7 @@ async fn in_lab_vm(vagrant: &Path, spec: &lab::Spec, env: &[(String, String)], l
     let Some(image) = attack_box_image(env) else { return Ok(()) };
     log(STARTING.into());
     let command = remote::sudo_bash(&attack_box_script(&spec.name, image));
-    crate::exec::run_env("vagrant", &["ssh", "-c", &command], Some(vagrant), env).await?;
+    crate::platform::exec::run_env("vagrant", &["ssh", "-c", &command], Some(vagrant), env).await?;
     log(READY.into());
     Ok(())
 }
@@ -157,8 +157,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_attack_vm_needs_a_running_machine_and_a_hypervisor_it_knows() {
-        use crate::exec::fake::{Tools, ok};
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("ad", &[]);
         let vagrant = crate::runtime::lab::vagrant_dir(&dir, crate::runtime::Runtime::Vm);
         std::fs::create_dir_all(&vagrant).unwrap();
@@ -181,8 +181,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_attack_vm_is_refused_beside_a_lab_running_on_an_esxi_host() {
-        use crate::exec::fake::{Tools, ok};
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("ad", &[]);
         let vagrant = crate::runtime::lab::vagrant_dir(&dir, crate::runtime::Runtime::Vm);
         std::fs::create_dir_all(&vagrant).unwrap();

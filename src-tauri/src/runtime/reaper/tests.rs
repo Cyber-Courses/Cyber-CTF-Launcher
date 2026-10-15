@@ -1,6 +1,6 @@
 use super::*;
-use crate::exec::fake::{Tools, fail};
-use crate::test_app::TestApp;
+use crate::platform::exec::fake::{Tools, fail};
+use crate::testing::test_app::TestApp;
 
 #[test]
 fn the_reaper_finds_expired_states_left_on_another_host() {

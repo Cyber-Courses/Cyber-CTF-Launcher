@@ -4,7 +4,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::proptest_support::config;
+use crate::testing::proptest_support::config;
 
 fn worker() -> impl Strategy<Value = Worker> {
     (any::<u32>(), proptest::option::of(any::<u64>())).prop_map(|(pid, started)| Worker { pid, started })

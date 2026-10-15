@@ -20,7 +20,7 @@ fn channel_log(logs: Channel<String>) -> impl Fn(String) + Send + Sync + 'static
 }
 
 fn check_image(image: &str) -> Result<()> {
-    if crate::exec::valid_image(image) { Ok(()) } else { Err(Error::Invalid(format!("invalid attack-box image `{image}`"))) }
+    if crate::platform::exec::valid_image(image) { Ok(()) } else { Err(Error::Invalid(format!("invalid attack-box image `{image}`"))) }
 }
 
 fn check_box(box_name: &str) -> Result<()> {
@@ -177,9 +177,9 @@ mod tests {
         lab_stop, lab_tools, running_labs,
     };
     use super::{channel_log, check_box, check_image, exegol_start, exegol_status, exegol_stop, valid_machine_name};
-    use crate::exec::fake::{Tools, ok};
+    use crate::platform::exec::fake::{Tools, ok};
     use crate::runtime::{Park, Runtime, server};
-    use crate::test_app::TestApp;
+    use crate::testing::test_app::TestApp;
     use tauri::ipc::{Channel, InvokeResponseBody};
 
     const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n";

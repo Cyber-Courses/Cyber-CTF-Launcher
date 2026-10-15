@@ -150,7 +150,7 @@ pub fn write_inputs(state: &Path, values: &serde_json::Map<String, Value>) -> Re
 /// Writes a file only its owner can read (mode 0600 from creation, never wider), replacing any
 /// previous one.
 fn write_private(file: &Path, contents: &str) -> Result<()> {
-    Ok(crate::private_fs::write(file, contents)?)
+    Ok(crate::platform::private_fs::write(file, contents)?)
 }
 
 /// Terraform's own AWS shared files, beside the state.
@@ -334,7 +334,7 @@ async fn aws_session(profile: Option<&str>) -> Vec<(String, String)> {
     if let Some(p) = profile {
         args.extend(["--profile", p]);
     }
-    match crate::exec::run_read("aws", &args, None).await {
+    match crate::platform::exec::run_read("aws", &args, None).await {
         Ok(out) => parse_session(&out),
         Err(_) => Vec::new(),
     }
@@ -841,8 +841,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_cloud_lab_starts_on_an_account_of_its_cloud_and_is_destroyed_there() {
-        use crate::exec::fake::Tools;
-        use crate::test_app::TestApp;
+        use crate::platform::exec::fake::Tools;
+        use crate::testing::test_app::TestApp;
         let t = TestApp::new();
         let dir = t.lab("goat", &[("isoloom.yml", SPEC), ("terraform/main.tf", "variable \"region\" {}\n")]);
         let gcp = t.host("gcp1", "gcp", serde_json::json!({}));
@@ -952,7 +952,7 @@ mod tests {
 
     #[tokio::test]
     async fn on_aws_the_shared_files_get_the_labs_region_and_no_cli_profile() {
-        let _tools = crate::exec::fake::Tools::rules(&[]);
+        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
         let state = std::env::temp_dir().join(format!("cyberctf-cloudsvc-awsenv-{}", rand::random::<u32>()));
         let mut conn = account(Provider::Aws);
         conn.tf_env = vec![
@@ -978,8 +978,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_lab_with_set_up_steps_is_refused_before_the_account_is_read() {
-        use crate::exec::fake::Tools;
-        use crate::test_app::TestApp;
+        use crate::platform::exec::fake::Tools;
+        use crate::testing::test_app::TestApp;
         let t = TestApp::new();
         let dir = t.lab(
             "goat",
@@ -995,7 +995,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_labs_environment_goes_over_the_accounts() {
-        let _tools = crate::exec::fake::Tools::rules(&[]);
+        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
         let state = std::env::temp_dir().join(format!("cyberctf-cloudsvc-env-{}", rand::random::<u32>()));
         let mut conn = account(Provider::Azure);
         conn.tf_env = vec![("ARM_SUBSCRIPTION_ID".into(), "sub".into()), ("AWS_REGION".into(), "eu-west-3".into())];
@@ -1021,8 +1021,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_apply_is_tried_again_as_the_lab_asks() {
-        use crate::exec::fake::{Tools, fail, ok};
-        use crate::test_app::TestApp;
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        use crate::testing::test_app::TestApp;
         let t = TestApp::new();
         let dir = t.lab("goat", &[("isoloom.yml", goat().as_str()), ("terraform/main.tf", "variable \"region\" {}\n")]);
         let aws = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
@@ -1136,7 +1136,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_preview_command_reads_the_installed_copy_at_that_commit() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let commit = "0123456789abcdef0123456789abcdef01234567";
         t.lab("goat", &[("isoloom.yml", SPEC), ("terraform/main.tf", "variable \"region\" {}\n"), (".cyberctf-commit", commit)]);
         let app = || t.handle().clone();

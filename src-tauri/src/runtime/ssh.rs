@@ -13,7 +13,7 @@ use crate::AppHandle;
 use tauri::Manager;
 
 use crate::error::{Error, Result};
-use crate::exec::run;
+use crate::platform::exec::run;
 
 fn ssh_dir(app: &AppHandle) -> Result<PathBuf> {
     let dir = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("ssh");
@@ -232,7 +232,7 @@ impl Target {
     pub async fn exec_timed(&self, known_hosts: &Path, command: &str, timeout: std::time::Duration) -> Result<String> {
         let args = self.exec_args(known_hosts, command)?;
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        crate::exec::run_env_timed("ssh", &refs, None, &[], timeout).await
+        crate::platform::exec::run_env_timed("ssh", &refs, None, &[], timeout).await
     }
 
     /// The `ssh` arguments `exec` runs (no shell in between).
@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn the_shared_known_hosts_is_dropped_and_nodes_keep_their_own() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let shared = t.data().join("ssh").join(SHARED_KNOWN_HOSTS);
         std::fs::create_dir_all(shared.parent().unwrap()).unwrap();
         std::fs::write(&shared, "10.0.0.5 ssh-ed25519 AAAAold\n").unwrap();

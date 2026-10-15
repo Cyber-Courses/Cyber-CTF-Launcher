@@ -4,7 +4,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::proptest_support::{config, json_ish_text};
+use crate::testing::proptest_support::{config, json_ish_text};
 
 const PROJECT: &str = "cyberctf-lab1";
 

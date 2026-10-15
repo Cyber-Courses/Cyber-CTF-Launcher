@@ -279,13 +279,13 @@ pub async fn stop_lab(app: &AppHandle, id: &str, runtime: Runtime, log: impl FnM
 #[cfg(test)]
 mod tests {
     use super::{Park, clear_parked, park_lab, parked_message, provision_lab, provision_target, refuse_cloud_park, refuse_vm_shutdown, resume_lab, stop_lab};
-    use crate::exec::fake::{Tools, fail, ok};
+    use crate::platform::exec::fake::{Tools, fail, ok};
     use crate::runtime::paths::{local_vm, mark_local_vm, mark_parked, parked};
     use crate::runtime::providers::Provider;
 
     use crate::runtime::test_support::status_with;
     use crate::runtime::{Runtime, server};
-    use crate::test_app::TestApp;
+    use crate::testing::test_app::TestApp;
 
     const UP: &str = "1,dc01,state,running\n1,dc01,provider-name,virtualbox\n";
 

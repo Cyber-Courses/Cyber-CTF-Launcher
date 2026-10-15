@@ -361,10 +361,10 @@ fn shell_window(id: &str, kind: ShellKind, runtime: Runtime) -> (String, String)
 pub fn terminal_window(app: AppHandle, id: String, kind: ShellKind, runtime: Runtime, title: String) -> Result<()> {
     crate::runtime::validate_id(&id)?;
     let (label, page) = shell_window(&id, kind, runtime);
-    if crate::window::focus_existing(&app, &label) {
+    if crate::app::window::focus_existing(&app, &label) {
         return Ok(());
     }
-    let window = crate::window::builder(&app, &label, page)
+    let window = crate::app::window::builder(&app, &label, page)
         .title(format!("{} · attack box", window_title(&title)))
         .inner_size(900.0, 560.0)
         .min_inner_size(480.0, 280.0)
@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn a_shell_window_opens_once_per_lab_and_kind() {
         use tauri::Manager;
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let open = |id: &str| terminal_window(t.handle().clone(), id.into(), ShellKind::Lab, Runtime::Docker, "SQLi\n lab".into());
         assert_eq!(open("../x").unwrap_err().to_string(), "invalid lab id `../x`");
         assert!(t.handle().webview_windows().is_empty());
@@ -594,10 +594,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_shell_for_a_lab_that_is_not_installed_starts_nothing() {
-        let t = crate::test_app::TestApp::new();
-        let window = crate::window::builder(t.handle(), "shell-lab-gone", "").build().unwrap();
-        let tools = crate::exec::fake::Tools::rules(&[]);
-        let events = crate::test_app::Sink::default();
+        let t = crate::testing::test_app::TestApp::new();
+        let window = crate::app::window::builder(t.handle(), "shell-lab-gone", "").build().unwrap();
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let events = crate::testing::test_app::Sink::default();
         let err = terminal_open(window, "gone".into(), ShellKind::Lab, Runtime::Docker, 80, 24, events.channel()).await.unwrap_err();
         assert_eq!(err.to_string(), "lab `gone` is not installed");
         assert!(events.messages().is_empty() && tools.calls().is_empty());
@@ -606,8 +606,8 @@ mod tests {
 
     #[test]
     fn unknown_sessions_are_ended_or_ignored() {
-        let t = crate::test_app::TestApp::new();
-        let window = crate::window::builder(t.handle(), "shell-lab-unknown", "").build().unwrap();
+        let t = crate::testing::test_app::TestApp::new();
+        let window = crate::app::window::builder(t.handle(), "shell-lab-unknown", "").build().unwrap();
         assert_eq!(terminal_write(window.clone(), u32::MAX, "x".into()).unwrap_err().to_string(), "the shell has ended");
         assert!(terminal_resize(window.clone(), u32::MAX, 80, 24).is_ok());
         assert!(terminal_close(window, u32::MAX).is_ok());
@@ -704,9 +704,9 @@ mod tests {
         drop(pair.slave);
         let writer = Box::new(Input::spawn(pair.master.take_writer().unwrap()));
         let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let label = format!("shell-test-{id}");
-        let view = crate::window::builder(t.handle(), &label, "").build().unwrap();
+        let view = crate::app::window::builder(t.handle(), &label, "").build().unwrap();
         with_sessions(|s| s.insert(id, Session { writer, master: pair.master, child, window: label.clone(), remote: None }));
         terminal_write(view.clone(), id, "hi\n".into()).unwrap();
         terminal_resize(view.clone(), id, 100, 30).unwrap();

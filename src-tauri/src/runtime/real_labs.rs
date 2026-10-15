@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{LabStatus, Place, Runtime, docker, exegol, launch, lifecycle, status};
-use crate::exec::run;
+use crate::platform::exec::run;
 
 /// What one lab must show once it is up.
 struct Expect {

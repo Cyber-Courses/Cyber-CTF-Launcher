@@ -60,7 +60,7 @@ fn update_at<T>(path: &Path, change: impl FnOnce(&mut Store) -> Result<T>) -> Re
 /// Writes the store to `path` (pretty JSON), atomically: a crash mid-write keeps the old file.
 fn save_to(path: &Path, store: &Store) -> Result<()> {
     let raw = serde_json::to_string_pretty(store).map_err(|e| Error::Invalid(e.to_string()))?;
-    crate::atomic_file::write(path, raw)?;
+    crate::platform::atomic_file::write(path, raw)?;
     Ok(())
 }
 

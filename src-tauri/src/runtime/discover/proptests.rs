@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use proptest::prelude::*;
 
 use super::*;
-use crate::proptest_support::config;
+use crate::testing::proptest_support::config;
 
 fn lab_id() -> impl Strategy<Value = String> {
     "[a-zA-Z0-9_-]{1,64}"

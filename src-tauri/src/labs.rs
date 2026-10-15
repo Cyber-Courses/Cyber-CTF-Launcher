@@ -15,6 +15,7 @@ use crate::error::{Error, Result};
 use crate::runtime::{self, Runtime, providers::Provider};
 
 mod offline;
+pub mod operations;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,7 +46,7 @@ pub(crate) fn validate_source(repository: &str, commit: &str) -> Result<()> {
 /// Extracts a GitHub tarball (single top-level `<repo>-<sha>/` folder) into
 /// `dest`, rejecting absolute paths, `..` and links.
 fn extract(tarball: &[u8], dest: &Path) -> Result<()> {
-    extract_within(tarball, dest, crate::http::MAX_LAB_UNPACKED)
+    extract_within(tarball, dest, crate::platform::http::MAX_LAB_UNPACKED)
 }
 
 /// [`extract`], refused before the files would add up to more than `max` bytes.
@@ -112,18 +113,18 @@ fn windows_name_problem(name: &str) -> Option<&'static str> {
 
 /// The lab's GitHub tarball at `commit`.
 async fn download(repository: &str, commit: &str) -> Result<Vec<u8>> {
-    fetch_archive(&format!("https://codeload.github.com/{repository}/tar.gz/{commit}"), crate::http::MAX_LAB_ARCHIVE).await
+    fetch_archive(&format!("https://codeload.github.com/{repository}/tar.gz/{commit}"), crate::platform::http::MAX_LAB_ARCHIVE).await
 }
 
 /// A lab archive at `url`, streamed with timeouts (a stalled transfer is given up) and refused
 /// past `max` bytes. It was read whole into memory with no limit and no timeout: a stalled
 /// GitHub transfer hung the launch forever.
 async fn fetch_archive(url: &str, max: u64) -> Result<Vec<u8>> {
-    let res = crate::http::download_client()?.get(url).send().await.map_err(|e| Error::Invalid(format!("download failed: {e}")))?;
+    let res = crate::platform::http::download_client()?.get(url).send().await.map_err(|e| Error::Invalid(format!("download failed: {e}")))?;
     if !res.status().is_success() {
         return Err(Error::Invalid(format!("download failed: HTTP {}", res.status())));
     }
-    crate::http::body_limited(res, max).await
+    crate::platform::http::body_limited(res, max).await
 }
 
 /// Downloads the lab into `<app data>/labs/<lab id>/` unless that exact commit is
@@ -364,7 +365,7 @@ pub async fn lab_launch(
     logs: Channel<String>,
 ) -> Result<()> {
     if let Some(image) = &attackbox_image
-        && !crate::exec::valid_image(image)
+        && !crate::platform::exec::valid_image(image)
     {
         return Err(Error::Invalid(format!("invalid attack-box image `{image}`")));
     }
@@ -569,8 +570,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_new_lab_version_is_installed_unless_the_old_one_still_runs() {
-        use crate::exec::fake::{Tools, ok};
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
         let tools = Tools::rules(&[]);
         let lines = std::sync::Mutex::new(Vec::<String>::new());
@@ -594,8 +595,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_installed_lab_launches_on_this_machines_docker() {
-        use crate::exec::fake::Tools;
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::Tools;
+        let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (".cyberctf-commit", SHA)]);
         let tools = Tools::rules(&[]);
         let launch = serde_json::json!({
@@ -611,8 +612,8 @@ mod tests {
     async fn a_launch_waits_for_the_lab_lock_before_installing_anything() {
         // Regression: the install (download, staging, swap) ran before the lock was taken, so
         // two installs of one lab shared its staging folder and a stop could run mid-swap.
-        use crate::exec::fake::Tools;
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::Tools;
+        let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (".cyberctf-commit", SHA)]);
         let tools = Tools::rules(&[]);
         let held = runtime::lock_lab(t.handle(), "invoice").await.unwrap();
@@ -628,14 +629,14 @@ mod tests {
 
     #[tokio::test]
     async fn a_launch_refuses_a_bad_attack_box_image_before_asking_the_backend() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, tauri::ipc::Channel::new(|_| Ok(()))).await;
         assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
     }
 
     #[tokio::test]
     async fn an_archive_download_is_limited_and_says_why_it_failed() {
-        use crate::http::tests::serve_once;
+        use crate::platform::http::tests::serve_once;
         let gz = tarball(&[("lab-abc/isoloom.yml", b"name: x")]);
         let mut ok = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", gz.len()).into_bytes();
         ok.extend_from_slice(&gz);
@@ -800,8 +801,8 @@ mod tests {
 
     #[tokio::test]
     async fn lab_ids_at_the_validation_boundaries_install_or_are_refused() {
-        use crate::exec::fake::Tools;
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::Tools;
+        let t = crate::testing::test_app::TestApp::new();
         let _tools = Tools::rules(&[]);
         let log = |_: String| {};
         let max = "A".repeat(63) + "_";

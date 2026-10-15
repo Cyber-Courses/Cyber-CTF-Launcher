@@ -90,8 +90,8 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
     detach(&mut cmd, true);
     // A UAC prompt it raises (Vagrant on Hyper-V) comes up for the app's window.
     #[cfg(windows)]
-    if let Some(hwnd) = crate::exec::owner_window() {
-        cmd.env(crate::exec::OWNER_WINDOW_ENV, hwnd.to_string());
+    if let Some(hwnd) = crate::platform::exec::owner_window() {
+        cmd.env(crate::platform::exec::OWNER_WINDOW_ENV, hwnd.to_string());
     }
     let mut child = match cmd.spawn() {
         // Windows: the job the app runs in forbids breaking away; start the worker inside it.
@@ -121,8 +121,8 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
 /// Writes the job for its worker and opens its fresh log, both owner-only: the job carries the
 /// launch token (the worker removes it when the job ends), the log what the tools printed.
 fn write_job(f: &Files, job: &Job) -> Result<std::fs::File> {
-    crate::private_fs::write(&f.job, serde_json::to_vec(job).map_err(|e| Error::Invalid(e.to_string()))?).map_err(Error::Io)?;
-    crate::private_fs::create(&f.log).map_err(Error::Io)
+    crate::platform::private_fs::write(&f.job, serde_json::to_vec(job).map_err(|e| Error::Invalid(e.to_string()))?).map_err(Error::Io)?;
+    crate::platform::private_fs::create(&f.log).map_err(Error::Io)
 }
 
 /// Removes the pidfile at `path` only while it still names the worker `pid`: a newer worker's
@@ -366,7 +366,7 @@ fn kill_files(f: &Files) {
         signal_group(worker.pid, libc::SIGTERM);
         #[cfg(windows)]
         {
-            let _ = crate::exec::headless_std(std::process::Command::new("taskkill").args(["/PID", &worker.pid.to_string(), "/T", "/F"])).status();
+            let _ = crate::platform::exec::headless_std(std::process::Command::new("taskkill").args(["/PID", &worker.pid.to_string(), "/T", "/F"])).status();
         }
     }
     remove_pidfile_of(&f.pid, worker.pid);
@@ -867,8 +867,8 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&f.log).unwrap(), "", "a fresh log");
         #[cfg(unix)]
         {
-            assert_eq!(crate::private_fs::tests::mode(&f.job), 0o600);
-            assert_eq!(crate::private_fs::tests::mode(&f.log), 0o600);
+            assert_eq!(crate::platform::private_fs::tests::mode(&f.job), 0o600);
+            assert_eq!(crate::platform::private_fs::tests::mode(&f.log), 0o600);
         }
         std::fs::remove_dir_all(dir).ok();
     }
@@ -883,7 +883,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn a_live_worker_is_listed_refuses_a_second_run_and_is_stopped() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let app = t.handle();
         let mut child = fake_worker_group();
         let job = Job::on_lab("lab-1", super::super::Op::Resume { runtime: crate::runtime::Runtime::Vm });
@@ -920,7 +920,7 @@ mod tests {
     async fn a_stop_waits_for_a_claimed_pidfile_to_name_its_worker() {
         // Regression: `kill_and_wait` returned at once while the pidfile was claimed but still
         // empty, so the worker spawned right after went on to take the lab and run its job.
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let app = t.handle();
         let f = files::of(app, "lab-1").unwrap();
         std::fs::write(&f.pid, "").unwrap();
@@ -940,7 +940,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_pidfile_left_empty_is_waited_for_only_briefly() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let f = files::of(t.handle(), "lab-2").unwrap();
         std::fs::write(&f.pid, "").unwrap();
         let waited = tokio::time::timeout(Duration::from_secs(10), kill_and_wait(t.handle(), "lab-2")).await;

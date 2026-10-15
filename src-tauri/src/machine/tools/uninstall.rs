@@ -87,7 +87,7 @@ pub async fn present(dep: Dependency) -> Option<bool> {
         return Some(true);
     }
     match presence_probe(dep) {
-        Some((program, args)) => Some(crate::exec::run_read(program, args, None).await.is_ok()),
+        Some((program, args)) => Some(crate::platform::exec::run_read(program, args, None).await.is_ok()),
         None if cfg!(target_os = "macos") && mac_app(dep).is_some() => Some(false),
         None => None,
     }
@@ -247,7 +247,7 @@ async fn virtualbox_dmg(brew: &str, on_line: &mut impl FnMut(String)) -> Result<
 /// How to remove `dep` on macOS: Homebrew's own packages, or the vendor's uninstaller.
 #[cfg(target_os = "macos")]
 fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
-    let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
+    let brew = crate::platform::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
     Ok(match dep {
         Dependency::Terraform => vec![step(brew, &["uninstall", "hashicorp/tap/terraform"])],
         Dependency::Qemu => vec![step(brew, &["uninstall", "qemu"])],
@@ -340,7 +340,7 @@ pub async fn uninstall_dependency(app: AppHandle, dependency: Dependency, logs: 
     #[cfg(target_os = "macos")]
     let dmg = match dependency {
         Dependency::Virtualbox => {
-            let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
+            let brew = crate::platform::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
             Some(virtualbox_dmg(&brew, &mut on_line).await?)
         }
         _ => None,
@@ -470,7 +470,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn every_macos_tool_has_a_way_out() {
-        if super::super::brew_bin().is_none() {
+        if crate::platform::brew_bin().is_none() {
             return; // CI without Homebrew: the brew-based plans can't be built.
         }
         for dep in [

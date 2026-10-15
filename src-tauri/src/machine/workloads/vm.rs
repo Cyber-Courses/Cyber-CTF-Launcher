@@ -10,8 +10,8 @@ use crate::AppHandle;
 
 use super::Workload;
 use crate::error::{Error, Result};
-use crate::exec::run_env_timed;
 use crate::machine::{labs_dir, selftest};
+use crate::platform::exec::run_env_timed;
 
 /// `vagrant global-status` talks to VirtualBox, which can be wedged: past this it is given up.
 const GLOBAL_STATUS_TIMEOUT: Duration = Duration::from_secs(30);
@@ -123,7 +123,7 @@ pub(super) async fn stop(app: &AppHandle, id: &str) -> Result<()> {
         return Err(Error::Invalid(format!("no VMs found for `{id}`")));
     }
     for dir in dirs {
-        crate::exec::Vagrant::of(&dir, &[]).run(&["destroy", "-f"]).await?;
+        crate::platform::exec::Vagrant::of(&dir, &[]).run(&["destroy", "-f"]).await?;
     }
     Ok(())
 }
@@ -180,8 +180,8 @@ mod tests {
 
     #[tokio::test]
     async fn stopping_a_lab_destroys_each_vagrant_folder_it_has() {
-        use crate::exec::fake::Tools;
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::Tools;
+        let t = crate::testing::test_app::TestApp::new();
         let lab = t.lab("goad", &[]);
         // Docker on one VM and one VM per machine both left something: each folder is destroyed.
         for sub in ["vagrant", "docker-vm"] {

@@ -36,7 +36,7 @@ fn hub_arch() -> &'static str {
 #[tauri::command]
 pub async fn image_download_size(image: String) -> Option<u64> {
     // Same guard as the attack box.
-    if !crate::exec::valid_image(&image) {
+    if !crate::platform::exec::valid_image(&image) {
         return None;
     }
     let (repo, tag) = hub_ref(&image)?;

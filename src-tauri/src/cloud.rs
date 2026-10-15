@@ -9,7 +9,7 @@ use tauri::ipc::Channel;
 use tokio::sync::oneshot;
 
 use crate::error::{Code, Error, Result};
-use crate::exec::{run_cli, stream};
+use crate::platform::exec::{run_cli, stream};
 
 /// Civil (year, month, day) for a Unix timestamp, UTC (Howard Hinnant's algorithm). Used to
 /// build Cost Explorer date ranges without a date-crate dependency.
@@ -318,7 +318,7 @@ pub async fn aws_login(profile: Option<String>, logs: Channel<String>) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exec::fake::{Tools, fail, ok};
+    use crate::platform::exec::fake::{Tools, fail, ok};
 
     fn sink() -> (Channel<String>, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
         let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -407,7 +407,8 @@ mod tests {
         // sign-in nobody finished kept the setup busy for good.
         // Its own cancel, so tests running at the same time can't end it.
         let (cancel, cancelled) = oneshot::channel();
-        let waiting = tokio::spawn(sign_in_within(Duration::from_secs(30), crate::exec::stream("sh", &["-c", "sleep 30"], None, &[], |_| {}), cancelled));
+        let waiting =
+            tokio::spawn(sign_in_within(Duration::from_secs(30), crate::platform::exec::stream("sh", &["-c", "sleep 30"], None, &[], |_| {}), cancelled));
         tokio::time::sleep(Duration::from_millis(100)).await;
         cancel.send(()).unwrap();
         let err = tokio::time::timeout(Duration::from_secs(5), waiting).await.expect("ended at once").unwrap().unwrap_err();

@@ -19,11 +19,11 @@ pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRunt
     let job_file = job_path.clone();
     // No window: this is a background process.
     context.config_mut().app.windows.clear();
-    let log_name = crate::logging::worker_log_name(&job.lab_id);
+    let log_name = crate::app::logging::worker_log_name(&job.lab_id);
     tauri::Builder::<crate::AppRuntime>::new()
-        .plugin(crate::logging::plugin(&log_name))
+        .plugin(crate::app::logging::plugin(&log_name))
         .setup(move |app| {
-            crate::logging::log_startup(app.handle(), &format!("deploy worker ({})", job.lab_id));
+            crate::app::logging::log_startup(app.handle(), &format!("deploy worker ({})", job.lab_id));
             crate::shared_folder::init(app.handle());
             crate::runtime::lab::registry::init(app.handle());
             // A background process, not an app: on macOS keep it out of the Dock, the app
@@ -42,7 +42,7 @@ pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRunt
             tauri::async_runtime::spawn(async move {
                 if let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
                     term.recv().await;
-                    crate::exec::kill_live_tools();
+                    crate::platform::exec::kill_live_tools();
                     let _ = std::fs::remove_file(&job_file);
                     std::process::exit(143);
                 }
@@ -96,7 +96,7 @@ fn open_main_app() {
 /// the verdict in the status file. Returns the process's exit code.
 async fn run_logged(app: &AppHandle, job: Job) -> i32 {
     let Ok(f) = files::of(app, &job.key()) else { return 2 };
-    let sink = std::sync::Mutex::new(crate::private_fs::append(&f.log).ok());
+    let sink = std::sync::Mutex::new(crate::platform::private_fs::append(&f.log).ok());
     let log = |line: String| {
         if let Ok(mut guard) = sink.lock()
             && let Some(file) = guard.as_mut()
@@ -211,8 +211,8 @@ mod tests {
     async fn an_attack_vm_job_never_takes_the_lab_lock() {
         // The attack VM runs beside the lab's own operation (a start may still be booting the
         // lab): its worker must not wait on, nor hold, the lab's lock.
-        let t = crate::test_app::TestApp::new();
-        let _tools = crate::exec::fake::Tools::rules(&[]);
+        let t = crate::testing::test_app::TestApp::new();
+        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
         t.lab("ad", &[]);
         let lock = crate::deploy_worker::lock_path(t.handle(), "ad").unwrap();
         // Another process holds the lab (a handle of its own stands in for it).
@@ -228,8 +228,8 @@ mod tests {
     #[tokio::test]
     async fn a_job_whose_lab_lock_cant_be_taken_fails_instead_of_running_unlocked() {
         // Regression: the worker logged "no lab lock" and ran the job anyway.
-        let t = crate::test_app::TestApp::new();
-        let tools = crate::exec::fake::Tools::rules(&[]);
+        let t = crate::testing::test_app::TestApp::new();
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
         t.lab("web", &[]);
         // A folder where the lock file goes: it can't be opened.
         std::fs::create_dir_all(crate::deploy_worker::lock_path(t.handle(), "web").unwrap()).unwrap();
@@ -244,8 +244,8 @@ mod tests {
     #[tokio::test]
     async fn a_run_logs_its_failure_and_leaves_its_verdict() {
         use crate::runtime::{Park, Runtime};
-        let t = crate::test_app::TestApp::new();
-        let _tools = crate::exec::fake::Tools::rules(&[]);
+        let t = crate::testing::test_app::TestApp::new();
+        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
         for op in [
             Op::Resume { runtime: Runtime::Vm },
             Op::Park { runtime: Runtime::Docker, mode: Park::Pause },
@@ -262,8 +262,8 @@ mod tests {
             // Only this user reads the log, and the folder of jobs and logs.
             #[cfg(unix)]
             {
-                assert_eq!(crate::private_fs::tests::mode(&f.log), 0o600);
-                assert_eq!(crate::private_fs::tests::mode(f.log.parent().unwrap()), 0o700);
+                assert_eq!(crate::platform::private_fs::tests::mode(&f.log), 0o600);
+                assert_eq!(crate::platform::private_fs::tests::mode(f.log.parent().unwrap()), 0o700);
             }
         }
     }

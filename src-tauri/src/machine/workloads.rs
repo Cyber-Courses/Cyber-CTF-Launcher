@@ -68,8 +68,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_machine_page_lists_and_stops_the_apps_containers_and_vms() {
-        use crate::exec::fake::{Tools, ok};
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
         let lab = t.lab("goad", &[]);
         let vagrant = crate::runtime::lab::vagrant_dir(&lab, crate::runtime::Runtime::Vm);
         std::fs::create_dir_all(&vagrant).unwrap();
@@ -101,8 +101,8 @@ mod tests {
     async fn an_installed_labs_containers_get_the_labs_own_stop() {
         // Regression: the Machine page ran its own `compose down` (no volumes, no lab lock), so
         // the next "fresh" start found the old database volume and the old pinned ports.
-        use crate::exec::fake::{Tools, ok};
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
         let lab = t.lab("sqli", &[]);
         let ports = lab.join(".cyberctf-ports.yml");
         std::fs::write(&ports, "services: {}\n").unwrap();
@@ -124,9 +124,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn real_docker_machine_page_stop_removes_the_labs_volumes_and_networks() {
-        use crate::exec::run;
+        use crate::platform::exec::run;
         let image = std::env::var("CYBERCTF_TEST_IMAGE").unwrap_or_else(|_| "python:3.11-alpine".into());
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let id = format!("e2e{}", rand::random::<u16>());
         let project = format!("cyberctf-{id}");
         let lab = t.lab(&id, &[]);
@@ -159,7 +159,7 @@ mod tests {
 
     #[tokio::test]
     async fn nothing_running_lists_nothing() {
-        let _tools = crate::exec::fake::Tools::rules(&[("docker ps", None)]);
+        let _tools = crate::platform::exec::fake::Tools::rules(&[("docker ps", None)]);
         assert!(super::docker::workloads().await.is_empty());
     }
 }

@@ -11,8 +11,8 @@ Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It
 - **Core (Rust, [`src-tauri/`](src-tauri/)):** everything privileged. Processes are spawned without a shell, lab ids are validated, and the UI never passes paths or command lines.
   - [`account/`](src-tauri/src/account/): Cyber Auth sign-in (`auth.rs`: authorization code + PKCE through the system browser, loopback redirect on `127.0.0.1:47290-47292/callback`; tokens in the OS keychain, refreshed automatically, never in the webview), CyberBackend GraphQL with the token attached on the Rust side (`api.rs`), and the agent that links the launcher to the website (`agent.rs`, `colocation.rs`).
   - [`labs.rs`](src-tauri/src/labs.rs): `lab_launch` calls `startLab`, then downloads `CyberCTF/*` at the pinned commit (full SHA only; archive paths checked), and starts the lab with `CTF_API_URL` and `CTF_LAUNCH_TOKEN`. The lab's `evidence` service exchanges the token for this player's evidence.
-  - [`machine/`](src-tauri/src/machine/): what this machine can run (`system/`: Docker engines, Vagrant, hypervisors, package manager), the setup self-tests (`selftest/`) and the workloads/storage the Machine page shows (`workloads/`, `storage.rs`).
-  - [`platform/`](src-tauri/src/platform/): the PATH a GUI launch is missing (`env_path.rs`) and one-click dependency installs (`install.rs`).
+  - [`machine/`](src-tauri/src/machine/): what this machine can run (`system/`: Docker engines, Vagrant, hypervisors, package manager), the setup self-tests (`selftest/`), the workloads/storage the Machine page shows (`workloads/`, `storage.rs`) and one-click dependency installs (`tools/`).
+  - [`platform/`](src-tauri/src/platform/): running tools without a shell (`exec/`), files only this user can read (`private_fs.rs`), whole-file writes (`atomic_file.rs`), HTTP clients with timeouts and a download size cap (`http.rs`), and the PATH a GUI launch is missing (`env_path.rs`).
   - [`runtime/`](src-tauri/src/runtime/): lab lifecycle, with logs streamed to the UI over a Tauri channel
     - `lab/`: the launcher's one door to Isoloom (Isoloom's crates, `isoloom-spec`, `-plan`, `-targets` and `-runtime`, are used nowhere else): the target's files (Compose, Vagrant, Terraform) are generated from the lab's `isoloom.yml` right before they run, then the launcher's own overrides applied (`overrides.rs`); Isoloom's paths and names (`names.rs`); the variables of Isoloom's Terraform modules from the player's hosts and accounts (`vars.rs`); and recording labs in Isoloom's registry, `~/.isoloom/status.yml` (`registry.rs`, a setting under Settings > Labs, on by default)
     - `launch.rs`, `lifecycle.rs`, `status.rs`: start, park/resume, stop and the auto-stop reaper for cloud labs, and what is running where
@@ -24,7 +24,8 @@ Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It
   - [`deploy_worker/`](src-tauri/src/deploy_worker/): launches, resumes, parks and provisioning runs in a detached worker process (`cyberctf-desktop deploy --job <file>`), so quitting the app never cuts a deploy short. A per-lab file lock keeps the app and the workers from running two operations on one lab at once.
   - [`lan_relay/`](src-tauri/src/lan_relay/): loopback relays that let Vagrant and ovftool reach a LAN ESXi host on macOS.
   - `terminal.rs`: the in-app attack box shell (a PTY streamed to xterm.js); `shared_folder.rs`: the folder shared with the attack box.
-  - `cloud.rs`: cloud account sign-in through each provider's CLI; [`exec/`](src-tauri/src/exec/), `http.rs` (HTTP clients with timeouts and a download size cap), `error.rs`, `config.rs`: crate-wide basics.
+  - `cloud.rs`: cloud account sign-in through each provider's CLI; `error.rs`: crate-wide errors.
+  - [`app/`](src-tauri/src/app/): the app shell (windows, menu, quitting, the log file, the service endpoints in `config.rs`); [`commands.rs`](src-tauri/src/commands.rs): the commands the webview invokes.
 
 The runtime layer knows nothing about CTFs: a lab is a directory with an `isoloom.yml` (its machines, networks, services and checks). The launcher generates the files for the target it runs on under the lab's `.isoloom/` folder.
 
@@ -34,7 +35,7 @@ Labs live in `<app data>/labs/<lab id>/`.
 
 A VM lab runs natively only where its boxes exist for the host architecture. On Apple Silicon, ARM boxes run natively on UTM/QEMU (Apple Hypervisor). x86-only boxes such as pfSense run there only under QEMU emulation, which is several times slower; heavy x86 labs should use a remote x86 host (ESXi, Proxmox).
 
-Hyper-V only takes management commands from an administrator (or a member of "Hyper-V Administrators"), and Vagrant's Hyper-V provider refuses to run otherwise. On Windows, Vagrant commands on Hyper-V machines run through a generated, hidden Windows PowerShell script ([`exec/elevate.rs`](src-tauri/src/exec/elevate.rs)); when the launcher itself may not manage Hyper-V, Windows first asks for administrator rights (a UAC prompt, raised for the app's window). Status reads are never elevated, and Vagrant refuses even those without the rights: so the Machine report shows Hyper-V as not ready for an account that may not manage it, and Settings > Hypervisor offers **Allow my account**, which adds the account to "Hyper-V Administrators" (one UAC prompt; it takes effect at the next Windows sign-in).
+Hyper-V only takes management commands from an administrator (or a member of "Hyper-V Administrators"), and Vagrant's Hyper-V provider refuses to run otherwise. On Windows, Vagrant commands on Hyper-V machines run through a generated, hidden Windows PowerShell script ([`platform/exec/elevate.rs`](src-tauri/src/platform/exec/elevate.rs)); when the launcher itself may not manage Hyper-V, Windows first asks for administrator rights (a UAC prompt, raised for the app's window). Status reads are never elevated, and Vagrant refuses even those without the rights: so the Machine report shows Hyper-V as not ready for an account that may not manage it, and Settings > Hypervisor offers **Allow my account**, which adds the account to "Hyper-V Administrators" (one UAC prompt; it takes effect at the next Windows sign-in).
 
 - Prompts: one per batch of Vagrant commands. A lab's own start (boot, then power off the setup machine), provisioning run, pause or shutdown, resume and stop are one batch each. A VM lab with an attack VM asks once more for the attack VM in each of these, and again for each retry of an attack VM start that hit Vagrant's machine lock. The VM self-test asks twice (boot and run a command, then delete the test VM), three times when it first deletes a test VM left from an earlier run. Started as administrator (or as a Hyper-V administrator), the launcher asks nothing.
 - Output streams as usual: the script writes it to a log the launcher follows. The environment the commands need (tokens included) goes through a file in the batch's own temp folder, read and deleted by the script, never on a command line.
@@ -53,7 +54,7 @@ Hyper-V only takes management commands from an administrator (or a member of "Hy
 
 ## Configuration
 
-Production endpoints are built in ([`config.rs`](src-tauri/src/config.rs)). Each can be overridden at build or run time, e.g. to test against a local cyber-auth:
+Production endpoints are built in ([`app/config.rs`](src-tauri/src/app/config.rs)). Each can be overridden at build or run time, e.g. to test against a local cyber-auth:
 
 | Variable | Default |
 |----------|---------|
@@ -87,7 +88,7 @@ cargo test -- --ignored --nocapture   # prints this machine's system report
 
 `.gitattributes` keeps every text file LF (Windows scripts CRLF) whatever `core.autocrlf` says; a checkout made before it may need `git add --renormalize .` once. The tests that syntax-check the Linux/macOS install scripts with `sh -n` skip that part where no `sh` is on PATH (Windows without Git's `usr\bin`); their other assertions still run.
 
-The TypeScript types of the commands' arguments and results ([`src/lib/tauri/generated/`](src/lib/tauri/generated/)) are generated from the Rust structs by [ts-rs](https://github.com/Aleph-Alpha/ts-rs): `cargo test` rewrites them, and CI fails when the committed ones differ. A command taking or returning a new struct or enum derives `ts_rs::TS` and is listed in [`ts_bindings.rs`](src-tauri/src/ts_bindings.rs).
+The TypeScript types of the commands' arguments and results ([`src/lib/tauri/generated/`](src/lib/tauri/generated/)) are generated from the Rust structs by [ts-rs](https://github.com/Aleph-Alpha/ts-rs): `cargo test` rewrites them, and CI fails when the committed ones differ. A command taking or returning a new struct or enum derives `ts_rs::TS` and is listed in [`testing/ts_bindings.rs`](src-tauri/src/testing/ts_bindings.rs).
 
 ### Branches
 

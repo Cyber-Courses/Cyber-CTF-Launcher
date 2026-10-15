@@ -18,7 +18,7 @@ pub(super) async fn terraform_host(app: &AppHandle, state: &Path) -> Result<Opti
 /// The SSH target of a lab VM, from `vagrant ssh-config` in its vagrant folder; `what` names it
 /// in the error ("lab VM", "lab host").
 pub(super) async fn vagrant_host(vagrant: &Path, env: &[(String, String)], what: &str) -> Result<ssh::Target> {
-    let out = crate::exec::run_env("vagrant", &["ssh-config"], Some(vagrant), env).await?;
+    let out = crate::platform::exec::run_env("vagrant", &["ssh-config"], Some(vagrant), env).await?;
     ssh::parse_ssh_config(&out).ok_or_else(|| Error::Invalid(format!("couldn't read the {what}'s SSH settings")))
 }
 

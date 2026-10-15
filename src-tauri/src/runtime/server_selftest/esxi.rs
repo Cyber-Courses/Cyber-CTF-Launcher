@@ -48,7 +48,7 @@ pub(super) async fn run(r: &Reporter, conn: &server::Connection, work: &Path) ->
 
     let _ = r
         .step("ssh", "Run a command in the VM", async {
-            let out = crate::exec::run_env("vagrant", &["ssh", "-c", "echo cyberctf-ok"], Some(work), &conn.env).await?;
+            let out = crate::platform::exec::run_env("vagrant", &["ssh", "-c", "echo cyberctf-ok"], Some(work), &conn.env).await?;
             if out.contains("cyberctf-ok") {
                 Ok(((), Some("command ran in the VM".into())))
             } else {

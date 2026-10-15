@@ -6,7 +6,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::error::Result;
-use crate::exec::{run_env, run_read, stream as exec_stream, stream_stdin as exec_stream_stdin};
+use crate::platform::exec::{run_env, run_read, stream as exec_stream, stream_stdin as exec_stream_stdin};
 
 // One compose project per lab, so labs never collide and can be cleaned up by name.
 pub fn project(id: &str) -> String {
@@ -110,10 +110,11 @@ impl PsEntry {
 pub(super) async fn remove_one_off(project: &str, service: &str) {
     let p = format!("label=com.docker.compose.project={project}");
     let s = format!("label=com.docker.compose.service={service}");
-    if let Ok(ids) = crate::exec::run("docker", &["ps", "-aq", "--filter", &p, "--filter", &s, "--filter", "label=com.docker.compose.oneoff=True"], None).await
+    if let Ok(ids) =
+        crate::platform::exec::run("docker", &["ps", "-aq", "--filter", &p, "--filter", &s, "--filter", "label=com.docker.compose.oneoff=True"], None).await
         && let Some(args) = rm_args(&ids)
     {
-        let _ = crate::exec::run("docker", &args, None).await;
+        let _ = crate::platform::exec::run("docker", &args, None).await;
     }
 }
 
@@ -132,10 +133,10 @@ fn rm_args(ids: &str) -> Option<Vec<&str>> {
 /// leaves those, so a check runner still going kept a removed lab "running").
 pub(super) async fn remove_all_containers(project: &str) {
     let filter = format!("label=com.docker.compose.project={project}");
-    if let Ok(ids) = crate::exec::run("docker", &["ps", "-aq", "--filter", &filter], None).await
+    if let Ok(ids) = crate::platform::exec::run("docker", &["ps", "-aq", "--filter", &filter], None).await
         && let Some(args) = rm_args(&ids)
     {
-        let _ = crate::exec::run("docker", &args, None).await;
+        let _ = crate::platform::exec::run("docker", &args, None).await;
     }
 }
 

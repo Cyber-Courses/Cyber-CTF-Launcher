@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::config;
+use crate::app::config;
 use crate::error::{Error, Result};
 
 /// The first free loopback port registered on the OAuth client.

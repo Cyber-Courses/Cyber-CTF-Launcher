@@ -14,7 +14,7 @@ use crate::AppHandle;
 use serde::Serialize;
 
 use crate::error::Result;
-use crate::exec::run;
+use crate::platform::exec::run;
 use owned::{Owned, OwnedBox};
 
 /// `docker image inspect` format: the image's id and its size in bytes.
@@ -132,8 +132,10 @@ pub(crate) async fn claim_lab(app: &AppHandle, dir: &Path, id: &str, before: &ow
 /// The images to list: the recorded ones, and of `extra_images` (the attack-box images the UI
 /// knows about) those of the attack box's own repository, whatever image they name now.
 fn image_candidates(owned: &Owned, extra_images: &[String]) -> Vec<(String, Option<String>)> {
-    let launcher =
-        extra_images.iter().filter(|i| crate::exec::valid_image(i) && crate::exec::image_repository(i) == ATTACK_BOX_REPOSITORY).map(|i| (i.clone(), None));
+    let launcher = extra_images
+        .iter()
+        .filter(|i| crate::platform::exec::valid_image(i) && crate::platform::exec::image_repository(i) == ATTACK_BOX_REPOSITORY)
+        .map(|i| (i.clone(), None));
     owned.images.iter().map(|i| (i.reference.clone(), Some(i.id.clone()))).chain(launcher).collect()
 }
 
@@ -279,7 +281,7 @@ async fn forget_gone(store: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exec::fake::{Reply, Tools, fail, ok};
+    use crate::platform::exec::fake::{Reply, Tools, fail, ok};
 
     #[test]
     fn reads_boxes_from_vagrantfiles() {
@@ -406,7 +408,7 @@ mod tests {
     async fn an_image_present_before_any_lab_ran_is_never_removed() {
         // Regression: Clean up removed every image an installed lab names, by name: a
         // developer's own postgres:16 went with it.
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("web", &[("isoloom.yml", SPEC)]);
         let tools = docker(&[("nginx:1.27", "sha256:nginx", 1000), ("postgres:16", "sha256:postgres", 4000)], &["nginx:1.27"], "");
         crate::runtime::start(t.handle(), &dir, "web", crate::runtime::Runtime::Docker, None, None, &[], |_| {}).await.unwrap();
@@ -419,7 +421,7 @@ mod tests {
 
     #[tokio::test]
     async fn clean_up_removes_only_the_apps_downloads_and_forgets_what_went() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let store = owned::path(t.handle()).unwrap();
         let home = t.data().join("vagrant-home");
         let alpine = owned_box("generic/alpine319", "virtualbox", "4.3.12");
@@ -464,7 +466,7 @@ mod tests {
         assert_eq!(owned.boxes.len(), 1);
         drop(tools);
         // Docker down and Vagrant gone: nothing can be told, so nothing is forgotten.
-        let _down = Tools::rules(&[("docker", crate::exec::fake::fail("Cannot connect to the Docker daemon")), ("vagrant", None)]);
+        let _down = Tools::rules(&[("docker", crate::platform::exec::fake::fail("Cannot connect to the Docker daemon")), ("vagrant", None)]);
         clean(&store, &[], Some(&home), true).await.unwrap();
         assert_eq!(owned::load(&store), owned, "the record survives a clean-up the tools couldn't answer");
     }
@@ -474,7 +476,7 @@ mod tests {
         // Regression: each lab and target kept its own copy of the provider plugins (several
         // hundred MB for AWS), long after the lab was gone, and the Storage view didn't count them.
         // The shared cache is the app's alone (in its data folder): listed and cleaned with it.
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let _tools = Tools::rules(&[]);
         let store = owned::path(t.handle()).unwrap();
         let aws = t.data().join(crate::runtime::TERRAFORM_PLUGINS).join("registry.terraform.io/hashicorp/aws/5.0.0/darwin_arm64");
@@ -492,7 +494,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_download_recorded_during_a_clean_up_is_kept() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let store = owned::path(t.handle()).unwrap();
         let _tools = docker(&[("nginx:1.27", "sha256:nginx", 1000)], &[], "");
         let recorded = || owned::OwnedImage { reference: "nginx:1.27".into(), id: "sha256:nginx".into() };
@@ -510,7 +512,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cyberctf-e2e-{which}-{}", rand::random::<u32>()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("Dockerfile"), format!("FROM scratch\nLABEL cyberctf.e2e=storage cyberctf.e2e.which={which}\n")).unwrap();
-        crate::exec::run("docker", &["build", "-q", "-t", tag, "."], Some(&dir)).await.unwrap();
+        crate::platform::exec::run("docker", &["build", "-q", "-t", tag, "."], Some(&dir)).await.unwrap();
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -527,10 +529,10 @@ mod tests {
         build_throwaway(apps, "app").await;
         owned::claim(&store, &before, &[apps.to_string(), mine.to_string()], &[]).await;
         let freed = clean(&store, &[], None, true).await.unwrap();
-        let exists = |tag: &'static str| async move { crate::exec::run("docker", &["image", "inspect", tag], None).await.is_ok() };
+        let exists = |tag: &'static str| async move { crate::platform::exec::run("docker", &["image", "inspect", tag], None).await.is_ok() };
         let (mine_left, apps_left) = (exists(mine).await, exists(apps).await);
-        let _ = crate::exec::run("docker", &["image", "rm", mine], None).await;
-        let _ = crate::exec::run("docker", &["image", "rm", apps], None).await;
+        let _ = crate::platform::exec::run("docker", &["image", "rm", mine], None).await;
+        let _ = crate::platform::exec::run("docker", &["image", "rm", apps], None).await;
         std::fs::remove_dir_all(store.parent().unwrap()).ok();
         assert!(mine_left, "the player's image stays");
         assert!(!apps_left, "the app's image went");
@@ -540,7 +542,7 @@ mod tests {
     #[test]
     fn a_vm_labs_boxes_include_its_attack_vms() {
         // The attack VM comes up with a VM lab's start: its box is that start's download too.
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("ad", &[]);
         for (folder, bx) in [(crate::runtime::lab::out(&dir).join("vagrant"), "bento/debian-12"), (crate::runtime::attack_vm_dir(&dir), "kalilinux/rolling")] {
             std::fs::create_dir_all(&folder).unwrap();

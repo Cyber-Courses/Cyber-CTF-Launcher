@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn an_operation_in_this_process_is_listed_while_it_runs() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         // The in-process registry is process-wide: this test's own lab id.
         let id = "operations-test-pause";
         let listed = || wait(active_operations(t.handle().clone())).into_iter().find(|o| o.lab_id == id);
@@ -158,7 +158,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_running_worker_is_listed_at_its_step_and_its_log_read_back() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let id = "operations-test-worker";
         let dir = t.data().join("deploys");
         std::fs::create_dir_all(&dir).unwrap();
@@ -186,7 +186,7 @@ mod tests {
     fn a_stale_pidfile_lists_no_operation_and_is_swept() {
         // A worker that died (or finished before its pidfile was removed): not an operation,
         // its pidfile cleared on the way, its log still there to read.
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let id = "operations-test-stale";
         let dir = t.data().join("deploys");
         std::fs::create_dir_all(&dir).unwrap();
@@ -202,7 +202,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_live_worker_with_an_unreadable_job_file_stays_in_the_operations_list() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let id = "operations-test-truncated-job";
         let dir = t.data().join("deploys");
         std::fs::create_dir_all(&dir).unwrap();
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn a_deploy_log_is_read_for_a_valid_lab_id_only() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         assert_eq!(wait(lab_deploy_log(t.handle().clone(), "never-deployed".into())).unwrap(), "");
         assert_eq!(wait(lab_deploy_log(t.handle().clone(), "../x".into())).unwrap_err(), "invalid lab id `../x`");
     }

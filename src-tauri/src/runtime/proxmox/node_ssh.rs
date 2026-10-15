@@ -24,7 +24,7 @@ pub async fn authorize_launcher_key(h: &HostProfile, password: &str, identity: &
     ];
     let args = authorize_args(h, identity, public);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    crate::exec::run_env_timed("ssh", &refs, None, &env, AUTHORIZE_TIMEOUT).await.map(|_| ())
+    crate::platform::exec::run_env_timed("ssh", &refs, None, &env, AUTHORIZE_TIMEOUT).await.map(|_| ())
 }
 
 /// The most letting the key in may take: a node that stops answering must not hang the launch.

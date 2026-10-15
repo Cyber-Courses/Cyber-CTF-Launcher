@@ -5,7 +5,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::proptest_support::config;
+use crate::testing::proptest_support::config;
 
 /// A query value percent-encoded as a browser sends it.
 fn encoded(v: &str) -> String {

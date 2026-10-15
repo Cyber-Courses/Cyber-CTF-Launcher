@@ -4,7 +4,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::proptest_support::config;
+use crate::testing::proptest_support::config;
 
 /// Anything a user could paste, including URLs, flags, shell and control characters.
 fn pasted() -> impl Strategy<Value = String> {
@@ -148,7 +148,7 @@ proptest! {
         for a in args.iter().filter(|a| !a.is_empty()) {
             prop_assert!(!a.starts_with('-'), "{:?} accepted a flag: {:?}", provider, a);
             prop_assert!(!a.chars().any(|c| c.is_control() || c.is_whitespace()), "{:?} accepted {:?}", provider, a);
-            prop_assert!(crate::exec::shim::check_args("az", &[a]).is_ok(), "{:?} accepted a cmd.exe operator: {:?}", provider, a);
+            prop_assert!(crate::platform::exec::shim::check_args("az", &[a]).is_ok(), "{:?} accepted a cmd.exe operator: {:?}", provider, a);
             prop_assert!(!a.contains(['!', '(', ')']), "{:?} accepted {:?}", provider, a);
         }
         // The address of a server is never a URL or a `host:port`.

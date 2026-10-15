@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::exec::{CLI_TIMEOUT, run_cli, run_env_timed};
+use crate::platform::exec::{CLI_TIMEOUT, run_cli, run_env_timed};
 
 use super::budget::{budget_unverifiable_message, month_to_date_cost};
 use super::checks::{Check, TestResult};
@@ -290,7 +290,7 @@ fn token_outcome(cloud: &str, instances: &str, answer: std::result::Result<reqwe
 async fn test_token_api(cloud: &str, account_url: &str, instances: &str, token: &str) -> TestResult {
     let started = Instant::now();
     let mut checks: Vec<Check> = Vec::new();
-    let answer = match crate::http::api_client() {
+    let answer = match crate::platform::http::api_client() {
         Ok(client) => client.get(account_url).timeout(Duration::from_secs(15)).bearer_auth(token).send().await.map(|r| r.status()).map_err(|e| e.to_string()),
         Err(e) => Err(e.to_string()),
     };

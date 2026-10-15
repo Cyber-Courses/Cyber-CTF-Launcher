@@ -51,7 +51,7 @@ fn save_to(file: Option<&Path>, enabled: bool) -> Result<()> {
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    crate::atomic_file::write(file, serde_json::to_string_pretty(&Setting { enabled }).map_err(|e| Error::Invalid(e.to_string()))?)?;
+    crate::platform::atomic_file::write(file, serde_json::to_string_pretty(&Setting { enabled }).map_err(|e| Error::Invalid(e.to_string()))?)?;
     Ok(())
 }
 

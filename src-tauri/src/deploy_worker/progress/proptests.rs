@@ -4,7 +4,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::proptest_support::config;
+use crate::testing::proptest_support::config;
 
 /// Log text as the worker writes it: Vagrant action lines, progress chatter, the launcher's own
 /// lines and marks, non-ASCII.

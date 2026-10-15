@@ -13,7 +13,7 @@ use tauri::Manager;
 
 use crate::AppHandle;
 use crate::error::{Error, Result};
-use crate::exec::run_read;
+use crate::platform::exec::run_read;
 
 /// An image the app pulled: the reference it asked for, and the image that reference named then.
 /// The reference is untagged at clean-up only while it still names that image (one the player
@@ -62,7 +62,7 @@ pub fn update(store: &Path, change: impl FnOnce(&mut Owned)) -> Result<()> {
     let mut owned = load(store);
     change(&mut owned);
     let json = serde_json::to_vec_pretty(&owned).map_err(|e| Error::Invalid(e.to_string()))?;
-    crate::atomic_file::write(store, json)?;
+    crate::platform::atomic_file::write(store, json)?;
     Ok(())
 }
 
@@ -157,7 +157,7 @@ pub async fn tracked<T>(app: &AppHandle, images: &[String], boxes: &[String], op
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exec::fake::{Tools, fail, ok};
+    use crate::platform::exec::fake::{Tools, fail, ok};
 
     fn store() -> PathBuf {
         std::env::temp_dir().join(format!("cyberctf-owned-{}", rand::random::<u32>())).join("storage.json")

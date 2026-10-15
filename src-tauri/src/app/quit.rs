@@ -91,7 +91,7 @@ pub fn intercept(app: &AppHandle) -> bool {
     }
     *prompted = Some(Instant::now());
     let _ = app.emit("quit-blocked", runtime::active_deploys());
-    if let Some(w) = app.get_webview_window(crate::window::MAIN) {
+    if let Some(w) = app.get_webview_window(crate::app::window::MAIN) {
         let _ = w.set_focus();
     }
     true
@@ -114,7 +114,7 @@ mod tests {
     /// One test for both: they share the process-wide flags.
     #[test]
     fn a_background_finish_stays_open_once_relaunched_and_a_forced_quit_exits_at_once() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         // A deploy in flight holds the background finish (it looks again every 2 s).
         let deploy = runtime::DeployGuard::new("quit-test-linger", runtime::Action::Start);
         linger_quit(t.handle().clone());

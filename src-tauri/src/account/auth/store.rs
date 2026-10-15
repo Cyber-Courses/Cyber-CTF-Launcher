@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 #[cfg(not(debug_assertions))]
-use crate::config;
+use crate::app::config;
 use crate::error::{Error, Result};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -117,9 +117,9 @@ fn load_file(path: &std::path::Path) -> Option<Session> {
 #[cfg(debug_assertions)]
 fn save_file(path: &std::path::Path, raw: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
-        crate::private_fs::dir(dir)?;
+        crate::platform::private_fs::dir(dir)?;
     }
-    crate::atomic_file::write_private(path, raw)?;
+    crate::platform::atomic_file::write_private(path, raw)?;
     Ok(())
 }
 
@@ -318,8 +318,8 @@ mod tests {
         save_file(&path, &serde_json::to_string(&session).unwrap()).unwrap();
         #[cfg(unix)]
         {
-            assert_eq!(crate::private_fs::tests::mode(&path), 0o600);
-            assert_eq!(crate::private_fs::tests::mode(path.parent().unwrap()), 0o700);
+            assert_eq!(crate::platform::private_fs::tests::mode(&path), 0o600);
+            assert_eq!(crate::platform::private_fs::tests::mode(path.parent().unwrap()), 0o700);
         }
         let back = load_file(&path).unwrap();
         assert_eq!((back.access_token.as_str(), back.refresh_token.as_deref(), back.expires_at), ("a", Some("r"), 42));

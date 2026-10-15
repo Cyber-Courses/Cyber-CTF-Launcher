@@ -6,7 +6,7 @@ use std::path::Path;
 use proptest::prelude::*;
 
 use super::*;
-use crate::proptest_support::config;
+use crate::testing::proptest_support::config;
 
 /// A box name as Vagrant Cloud spells it (`owner/name`) or a plain name.
 fn box_name() -> impl Strategy<Value = String> {

@@ -60,10 +60,10 @@ pub fn keep(base: &Path, launch: &Value, user: &str) -> Result<()> {
     super::validate_source(&kept.repository, &kept.commit)?;
     let path = kept_path(base, &kept.lab_id);
     if let Some(dir) = path.parent() {
-        crate::private_fs::dir(dir)?;
+        crate::platform::private_fs::dir(dir)?;
     }
     let raw = serde_json::to_string(&kept).map_err(|e| Error::Invalid(e.to_string()))?;
-    crate::private_fs::write(&path, raw)?;
+    crate::platform::private_fs::write(&path, raw)?;
     Ok(())
 }
 
@@ -139,8 +139,8 @@ mod tests {
         assert!(raw.contains(ADA));
         #[cfg(unix)]
         {
-            assert_eq!(crate::private_fs::tests::mode(&path), 0o600);
-            assert_eq!(crate::private_fs::tests::mode(path.parent().unwrap()), 0o700);
+            assert_eq!(crate::platform::private_fs::tests::mode(&path), 0o600);
+            assert_eq!(crate::platform::private_fs::tests::mode(path.parent().unwrap()), 0o700);
         }
         std::fs::remove_dir_all(base).unwrap();
     }

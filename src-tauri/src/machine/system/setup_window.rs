@@ -3,8 +3,8 @@
 use crate::AppHandle;
 use tauri::{Emitter, Manager};
 
+use crate::app::window;
 use crate::error::{Error, Result};
-use crate::window;
 
 const LABEL: &str = "machine-setup";
 
@@ -54,8 +54,8 @@ mod tests {
     /// the open window is driven here.
     #[tokio::test]
     async fn an_open_setup_window_is_focused_and_moved_to_a_known_step_only() {
-        let t = crate::test_app::TestApp::new();
-        crate::window::builder(t.handle(), super::LABEL, super::page(None)).build().unwrap();
+        let t = crate::testing::test_app::TestApp::new();
+        crate::app::window::builder(t.handle(), super::LABEL, super::page(None)).build().unwrap();
         let steps = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let seen = steps.clone();
         t.handle().listen_any("machine-setup-step", move |e| seen.lock().unwrap().push(e.payload().to_string()));

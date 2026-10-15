@@ -4,7 +4,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::proptest_support::config;
+use crate::testing::proptest_support::config;
 
 /// Text of any size up to past the most that is kept, mixing one- and two-unit (UTF-16)
 /// characters so piece boundaries land everywhere.

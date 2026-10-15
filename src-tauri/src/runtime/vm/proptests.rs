@@ -4,7 +4,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::proptest_support::config;
+use crate::testing::proptest_support::config;
 
 /// A Vagrant machine name (no comma: machine-readable output is comma-separated).
 fn machine() -> impl Strategy<Value = String> {

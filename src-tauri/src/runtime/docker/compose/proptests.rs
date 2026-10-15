@@ -5,7 +5,7 @@ use proptest::prelude::*;
 use serde_json::{Value, json};
 
 use super::*;
-use crate::proptest_support::{config, json as any_json, json_ish_text};
+use crate::testing::proptest_support::{config, json as any_json, json_ish_text};
 
 /// One `docker compose ps` entry as Compose prints it (`v`), with the fields we expect back.
 #[derive(Debug, Clone)]

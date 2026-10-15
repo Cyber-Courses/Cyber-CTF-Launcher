@@ -82,7 +82,7 @@ pub(super) async fn check_qemu(spec: &lab::Spec, log: &mut impl FnMut(String)) -
     let host = std::env::consts::ARCH;
     for arch in emulated_arches(spec, host) {
         let bin = if arch == "x86_64" { "qemu-system-x86_64" } else { "qemu-system-aarch64" };
-        if crate::exec::run(bin, &["--version"], None).await.is_err() {
+        if crate::platform::exec::run(bin, &["--version"], None).await.is_err() {
             return Err(Error::Invalid(format!(
                 "This lab's machines are {arch}, and QEMU's {arch} emulator ({bin}) isn't installed. Reinstall QEMU from the Machine page."
             )));

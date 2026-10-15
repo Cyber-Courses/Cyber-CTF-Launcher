@@ -4,7 +4,7 @@ use std::path::Path;
 
 use super::compose;
 use crate::error::{Code, Error, Result};
-use crate::exec::{run, run_read};
+use crate::platform::exec::{run, run_read};
 
 /// Fails fast with a clear message when the Docker engine isn't reachable, instead of letting
 /// `compose up` (or the port/config probes) surface a raw "Cannot connect to the Docker daemon".
@@ -13,7 +13,7 @@ async fn ensure_docker_up() -> Result<()> {
     run_read("docker", &["info", "--format", "{{.ServerVersion}}"], None)
         .await
         .map(|_| ())
-        .map_err(|e| if crate::exec::docker_denied(&e) { crate::exec::docker_denied_error() } else { Error::coded(Code::DockerNotRunning) })
+        .map_err(|e| if crate::platform::exec::docker_denied(&e) { crate::platform::exec::docker_denied_error() } else { Error::coded(Code::DockerNotRunning) })
 }
 
 /// A host port is taken if we can't bind it on the loopback over its protocol (`udp`, else TCP):
@@ -354,7 +354,7 @@ mod tests {
     fn nothing_the_app_runs_listens_beyond_the_loopback() {
         // Regression (#230): the port check bound 0.0.0.0, and Windows Firewall asked the player
         // whether Cyber CTF may accept connections from public networks, mid-deploy.
-        for src in crate::source_scan::crate_sources() {
+        for src in crate::testing::source_scan::crate_sources() {
             for needle in ["\"0.0.0.0\"", "UNSPECIFIED", "\"::\"", "\"[::]"] {
                 let binds = src.code.lines().filter(|l| l.contains("bind") && l.contains(needle)).collect::<Vec<_>>();
                 assert!(binds.is_empty(), "{} binds beyond the loopback: {binds:?}", src.path.display());

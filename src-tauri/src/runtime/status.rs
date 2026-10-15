@@ -265,8 +265,8 @@ mod tests {
         // Regression: a failed website launch asked only whether the lab ran *here* (local Docker
         // and Vagrant), so a lab up on a server host or cloud account read as absent, and the
         // teardown of the failed start destroyed it.
-        use crate::exec::fake::Tools;
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::Tools;
+        let t = crate::testing::test_app::TestApp::new();
         let app = t.handle();
         let _tools = Tools::rules(&[]);
         let dir = t.lab("present", &[]);
@@ -289,8 +289,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_lab_status_is_read_where_the_lab_runs() {
-        use crate::exec::fake::{Tools, ok};
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
         let app = t.handle();
         let dir = t.lab("web", &[]);
         let _tools = Tools::rules(&[
@@ -318,7 +318,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_lab_with_nothing_up_is_not_running_here() {
-        use crate::exec::fake::Tools;
+        use crate::platform::exec::fake::Tools;
         let dir = std::env::temp_dir().join(format!("cyberctf-status-here-{}", rand::random::<u32>()));
         let vagrant = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
         std::fs::create_dir_all(&vagrant).unwrap();
@@ -331,8 +331,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_lab_marked_on_a_host_that_is_no_longer_saved_names_that_host() {
-        use crate::exec::fake::Tools;
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::Tools;
+        let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("web", &[]);
         std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "gone1\n").unwrap();
         let tools = Tools::rules(&[]);
@@ -348,7 +348,7 @@ mod tests {
 
     #[tokio::test]
     async fn running_here_is_false_when_neither_docker_nor_vagrant_answers() {
-        use crate::exec::fake::{Tools, fail};
+        use crate::platform::exec::fake::{Tools, fail};
         let dir = std::env::temp_dir().join(format!("cyberctf-status-down-{}", rand::random::<u32>()));
         let vagrant = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
         std::fs::create_dir_all(&vagrant).unwrap();

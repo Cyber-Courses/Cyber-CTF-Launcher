@@ -40,7 +40,7 @@ fn install_id_at(path: &std::path::Path) -> Result<String> {
         }
     }
     let id = random_hex();
-    crate::atomic_file::write(path, &id)?;
+    crate::platform::atomic_file::write(path, &id)?;
     Ok(id)
 }
 
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn this_machines_identity_is_its_install_id_name_and_arch() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let info = || serde_json::to_value(agent_info(t.handle().clone()).unwrap()).unwrap();
         let first = info();
         assert_eq!(first["installId"].as_str().unwrap().len(), 32);
@@ -562,7 +562,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_launch_onto_a_cloud_account_runs_only_once_confirmed_here() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let app = t.handle();
         let az = t.host("az1", "azure", json!({}));
         let claim = json!({ "target": az, "repository": "CyberCTF/web", "commit": "abc" });
@@ -590,7 +590,7 @@ mod tests {
         }
         // A lab that was never installed (its download failed) has nothing to tear down: the
         // failure isn't said to have left anything up.
-        let tools = crate::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
         tear_down(app, Some("gone"), Runtime::Docker).await.unwrap();
         tear_down(app, None, Runtime::Vm).await.unwrap();
         let err = undo_start(app, Some("gone"), Runtime::Docker, false, Error::Invalid("download failed: HTTP 404".into())).await;
@@ -611,7 +611,7 @@ mod tests {
         // account and launched again from the website after a new version was published, the
         // refusal ("still running on <host>. Stop it, then start it again") was followed by a
         // teardown that ran `terraform destroy` on their lab.
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let app = t.handle();
         let id = "agent-refused";
         let dir = t.lab(id, &[(".cyberctf-commit", "ffffffffffffffffffffffffffffffffffffffff"), (".isoloom/cloud-docker/aws/main.tf", "")]);
@@ -620,7 +620,7 @@ mod tests {
         let state = t.data().join("deployments").join(id).join("aws");
         std::fs::create_dir_all(&state).unwrap();
         std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
-        let tools = crate::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let claim = claim_of(id);
         assert!(present_before(app, &claim).await);
         let err = run_claimed(app, &claim, None, Runtime::Docker, false).await.unwrap_err();
@@ -634,11 +634,11 @@ mod tests {
     async fn a_failed_start_of_a_lab_that_was_already_there_is_not_torn_down() {
         // A start that fails on a lab something of which was there before (here, a lab up on a
         // Proxmox host whose start this time failed for another reason) stops nothing.
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let id = "agent-present";
         let dir = t.lab(id, &[]);
         server::mark_lab(&dir, Some("pve1")).unwrap();
-        let tools = crate::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let failure = Error::Invalid("the lab host didn't answer".into());
         let err = undo_start(t.handle(), Some(id), Runtime::Docker, crate::runtime::lab_present(t.handle(), id).await, failure).await;
         assert_eq!(err.to_string(), "the lab host didn't answer");
@@ -648,16 +648,16 @@ mod tests {
 
     #[tokio::test]
     async fn what_a_failed_start_brought_up_is_torn_down_and_a_failed_teardown_said() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let id = "agent-fresh";
         t.lab(id, &[]);
-        let tools = crate::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let err = undo_start(t.handle(), Some(id), Runtime::Docker, false, Error::Invalid("web is unhealthy".into())).await;
         assert_eq!(err.to_string(), "web is unhealthy");
         assert!(tools.called("down --volumes"), "torn down: {:?}", tools.calls());
         drop(tools);
         // The teardown fails too: the error says the lab may still be up.
-        let _tools = crate::exec::fake::Tools::rules(&[("down --volumes", crate::exec::fake::fail("daemon not responding"))]);
+        let _tools = crate::platform::exec::fake::Tools::rules(&[("down --volumes", crate::platform::exec::fake::fail("daemon not responding"))]);
         let err = undo_start(t.handle(), Some(id), Runtime::Docker, false, Error::Invalid("web is unhealthy".into())).await.to_string();
         assert!(err.starts_with("web is unhealthy Stopping what it had started failed too") && err.contains("daemon not responding"), "{err}");
     }

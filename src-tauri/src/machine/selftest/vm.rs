@@ -6,7 +6,7 @@ use std::time::Duration;
 use super::downloads::ensure_box;
 use super::{Reporter, arm};
 use crate::error::{Error, Result};
-use crate::exec::{Event, Step, Vagrant, run, within};
+use crate::platform::exec::{Event, Step, Vagrant, run, within};
 use crate::runtime::providers::{self, Provider};
 
 /// The test VM's address on its private lab network (VirtualBox's default host-only range):
@@ -101,7 +101,7 @@ fn vagrantfile(p: Provider, bx: &str, no_kvm: bool, ip: Option<&str>) -> String 
     }
     // With several virtual switches and none named, Vagrant would stop to ask which one.
     if p == Provider::Hyperv {
-        v.push_str(&crate::exec::hyperv_switch_line("  ", "config"));
+        v.push_str(&crate::platform::exec::hyperv_switch_line("  ", "config"));
     }
     // A readable name in the hypervisor's VM list instead of Vagrant's `<dir>_default_<timestamp>`.
     let settings = match p {
@@ -284,7 +284,7 @@ mod tests {
     #[tokio::test]
     async fn the_test_vm_takes_an_address_nothing_answers_on_yet() {
         // Regression: the test VM always took .250, so another VM there made the ping pass.
-        use crate::exec::fake::{Tools, fail, ok};
+        use crate::platform::exec::fake::{Tools, fail, ok};
         let _tools = Tools::new(|program, args| match (program, args.last().copied()) {
             ("ping", Some("192.168.56.250")) => ok("64 bytes from 192.168.56.250"),
             ("ping", _) => fail("Request timeout"),

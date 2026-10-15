@@ -154,8 +154,8 @@ mod tests {
         // Regression: the Cloud screen read the spend of an account added with stored keys through
         // the host CLI's default profile: another account's spend, or nothing, while the launch
         // budget gate read the stored keys.
-        use crate::exec::fake::{Tools, ok};
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
         let cli = t.host("aws-cli", "aws", serde_json::json!({ "useCliCreds": true, "awsProfile": "labs" }));
         let tools = Tools::rules(&[("ce get-cost-and-usage", ok("7.25\n"))]);
         assert_eq!(server_month_to_date_cost(t.handle().clone(), cli).await.unwrap(), 7.25);

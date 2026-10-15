@@ -10,7 +10,7 @@ use tokio::io::{AsyncRead, BufReader, ReadBuf};
 // Only the Unix test below uses `forward_lines` (it runs a real `sh`).
 #[cfg(unix)]
 use super::*;
-use crate::proptest_support::config;
+use crate::testing::proptest_support::config;
 
 /// A pipe that hands out its bytes in the given pieces, one per read, then ends.
 struct Pieces(std::collections::VecDeque<Vec<u8>>);

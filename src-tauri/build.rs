@@ -3,7 +3,7 @@
 //! capability grants (capabilities/*.json, through the sets in permissions/windows.toml).
 //! Without a manifest every window could call every command.
 
-/// Every command in `generate_handler!` (src/lib.rs); a test keeps the two lists in sync.
+/// Every command in `generate_handler!` (src/commands.rs); a test keeps the two lists in sync.
 const COMMANDS: &[&str] = &[
     "active_operations",
     "agent_info",

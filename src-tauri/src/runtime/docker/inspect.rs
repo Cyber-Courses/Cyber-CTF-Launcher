@@ -7,7 +7,7 @@ use std::path::Path;
 
 use super::compose::{self, PsEntry, Publisher};
 use crate::error::Result;
-use crate::exec::run_read;
+use crate::platform::exec::run_read;
 use crate::runtime::{Interface, LabStatus, Machine, Network, Port, Service};
 
 mod networks;
@@ -63,7 +63,7 @@ const ORACLE_DATABASE: &[&str] = &["xe", "free", "database", "db"];
 /// of the service name and image repository only: substrings took web apps for them
 /// (`wordpress` holds "rdp", `novnc` "vnc", `sftpgo` "ftp", `oracle-weblogic` "oracle").
 fn is_datastore(e: &PsEntry) -> bool {
-    let repository = crate::exec::image_repository(&e.image).to_ascii_lowercase();
+    let repository = crate::platform::exec::image_repository(&e.image).to_ascii_lowercase();
     let service = e.service.to_ascii_lowercase();
     let words = |text: &str| -> Vec<String> { text.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_string).collect() };
     let (image_words, all_words) = (words(&repository), words(&format!("{service} {repository}")));

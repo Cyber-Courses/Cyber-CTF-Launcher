@@ -8,7 +8,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use super::store::Session;
-use crate::config;
+use crate::app::config;
 use crate::error::{Error, Result};
 
 /// Lifetime assumed for an access token whose response doesn't say.
@@ -61,7 +61,7 @@ pub(super) async fn token_request(form: &[(&str, &str)]) -> Result<TokenResponse
 
 /// [`token_request`] to the cyber-auth at `base`.
 async fn token_request_at(base: &str, form: &[(&str, &str)]) -> Result<TokenResponse> {
-    let res = crate::http::api_client()?
+    let res = crate::platform::http::api_client()?
         .post(format!("{base}/oauth2/token"))
         .timeout(std::time::Duration::from_secs(30))
         .form(form)
@@ -103,7 +103,7 @@ mod tests {
     /// An outage of cyber-auth (no answer, a 5xx) is unreachable; a refusal (`invalid_grant`) is not.
     #[tokio::test]
     async fn an_auth_outage_is_unreachable_and_a_refusal_is_not() {
-        use crate::http::tests::serve_once;
+        use crate::platform::http::tests::serve_once;
         let base = serve_once(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 4\r\nConnection: close\r\n\r\ndown".to_vec()).await;
         let err = token_request_at(base.trim_end_matches('/'), &[]).await.err().unwrap();
         assert!(matches!(err, Error::Unreachable(_)), "{err}");

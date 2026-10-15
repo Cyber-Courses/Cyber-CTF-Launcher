@@ -6,7 +6,7 @@ use std::time::Duration;
 use serde::Serialize;
 use sysinfo::{Disks, System};
 
-use crate::exec::run_read;
+use crate::platform::exec::run_read;
 
 /// CPU usage needs two samples a moment apart.
 const CPU_SAMPLE_GAP: Duration = Duration::from_millis(220);
@@ -91,7 +91,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_metrics_describe_this_machine_and_its_running_containers() {
-        let tools = crate::exec::fake::Tools::rules(&[("docker ps", crate::exec::fake::ok("a1\nb2\n"))]);
+        let tools = crate::platform::exec::fake::Tools::rules(&[("docker ps", crate::platform::exec::fake::ok("a1\nb2\n"))]);
         let m = machine_metrics().await;
         assert!(m.cores > 0 && m.mem_total > 0 && m.mem_used <= m.mem_total, "{} {} {}", m.cores, m.mem_used, m.mem_total);
         assert!(m.disk_used <= m.disk_total);
@@ -99,7 +99,7 @@ mod tests {
         assert_eq!(m.containers, 2);
         drop(tools);
         // The engine down: none.
-        let _tools = crate::exec::fake::Tools::rules(&[("docker ps", crate::exec::fake::fail(DOCKER_DOWN))]);
+        let _tools = crate::platform::exec::fake::Tools::rules(&[("docker ps", crate::platform::exec::fake::fail(DOCKER_DOWN))]);
         assert_eq!(machine_metrics().await.containers, 0);
     }
 

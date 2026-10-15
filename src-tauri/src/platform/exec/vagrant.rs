@@ -166,7 +166,7 @@ fn only(outcomes: Vec<Outcome>) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exec::fake::{Tools, fail, ok};
+    use crate::platform::exec::fake::{Tools, fail, ok};
 
     fn dir() -> std::path::PathBuf {
         std::env::temp_dir()

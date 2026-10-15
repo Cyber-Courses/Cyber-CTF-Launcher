@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::exec::run_read;
+use crate::platform::exec::run_read;
 
 /// Vagrant provider ids (the value given to `vagrant up --provider`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
@@ -264,13 +264,13 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
         let unresponsive = provider == Provider::Virtualbox
             && hypervisor == Some(true)
             && matches!(
-                crate::exec::run_env_timed("VBoxManage", &["list", "runningvms"], None, &[], std::time::Duration::from_secs(8)).await,
+                crate::platform::exec::run_env_timed("VBoxManage", &["list", "runningvms"], None, &[], std::time::Duration::from_secs(8)).await,
                 Err(crate::error::Error::CommandFailed { ref stderr, .. }) if stderr.contains("timed out")
             );
 
         // Vagrant's Hyper-V provider refuses every command (status reads too) from an account
         // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
-        let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !crate::exec::may_manage_hyperv();
+        let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !crate::platform::exec::may_manage_hyperv();
 
         let reason = unavailable_reason(provider, vagrant_installed, unresponsive, hypervisor, plugin.as_deref(), plugin_installed, needs_admin);
 
@@ -283,7 +283,7 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
 /// can drive Hyper-V for it from the next sign-in on (#185).
 #[tauri::command]
 pub async fn hyperv_join_admins() -> crate::error::Result<()> {
-    crate::exec::join_hyperv_admins().await
+    crate::platform::exec::join_hyperv_admins().await
 }
 
 /// Why Hyper-V can't be used by this account yet, and the two ways out.

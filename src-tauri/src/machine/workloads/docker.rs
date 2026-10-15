@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use super::Workload;
 use crate::error::Result;
-use crate::exec::{run, run_read};
+use crate::platform::exec::{run, run_read};
 
 /// `123.4MiB` / `1.2GiB` / `512kB` → bytes.
 fn parse_size(s: &str) -> u64 {

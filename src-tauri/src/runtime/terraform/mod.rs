@@ -206,7 +206,7 @@ mod tests {
         // account to us-east-1 for their next lab: Terraform refreshed there, found nothing, and
         // the destroy "succeeded" while the instance kept billing in eu-west-3.
         let (module, state) = deployed(r#"{"region":"eu-west-3","env":{"AWS_REGION":"eu-west-3"}}"#);
-        let tools = crate::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let now = [pair("region", "us-east-1"), pair("auto_stop_hours", "4")];
         let env = [pair("AWS_REGION", "us-east-1"), pair("AWS_SECRET_ACCESS_KEY", "s3cret")];
         destroy(&module, &state, &now, &env, |_| {}).await.unwrap();
@@ -223,12 +223,15 @@ mod tests {
     #[tokio::test]
     async fn a_failed_destroy_keeps_everything_for_a_retry_and_a_second_stop_is_a_no_op() {
         let (module, state) = deployed("{}");
-        let failing = crate::exec::fake::Tools::rules(&[("terraform destroy", crate::exec::fake::fail("ExpiredToken: the security token is expired"))]);
+        let failing = crate::platform::exec::fake::Tools::rules(&[(
+            "terraform destroy",
+            crate::platform::exec::fake::fail("ExpiredToken: the security token is expired"),
+        )]);
         let err = destroy(&module, &state, &[], &[], |_| {}).await.unwrap_err();
         assert!(err.to_string().contains("ExpiredToken"), "{err}");
         assert!(state.join(STATE_FILE).is_file() && state.join(DATA_DIR).is_dir());
         drop(failing);
-        let tools = crate::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
         destroy(&module, &state, &[], &[], |_| {}).await.unwrap();
         // Idempotent: nothing left, nothing run.
         let runs = tools.calls().len();
@@ -243,7 +246,7 @@ mod tests {
         let (module, state) = (root.join("module"), root.join("state"));
         std::fs::create_dir_all(&module).unwrap();
         std::fs::write(module.join("main.tf"), "").unwrap();
-        let _tools = crate::exec::fake::Tools::rules(&[("terraform apply", crate::exec::fake::fail("quota"))]);
+        let _tools = crate::platform::exec::fake::Tools::rules(&[("terraform apply", crate::platform::exec::fake::fail("quota"))]);
         let vars = [pair("region", "eu-west-3"), pair("project", "labs-1"), pair("proxmox_password", "pw")];
         assert!(apply(&module, &state, &vars, &[pair("GOOGLE_PROJECT", "labs-1"), pair("LINODE_TOKEN", "tok")], |_| {}).await.is_err());
         let raw = std::fs::read_to_string(state.join(RUN_FILE)).unwrap();

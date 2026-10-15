@@ -5,7 +5,7 @@ use super::model::Park;
 use super::providers::Provider;
 use super::{LabStatus, Machine};
 use crate::error::Result;
-use crate::exec::{Event, Step, Vagrant, run, run_env_timed, run_read};
+use crate::platform::exec::{Event, Step, Vagrant, run, run_env_timed, run_read};
 
 /// A status read must never hang the status poll: a wedged VirtualBox (its global lock held by
 /// a stuck VBoxManage) would otherwise pile up one blocked `vagrant status` per poll tick.
@@ -34,7 +34,7 @@ fn has_controller(dir: &Path) -> bool {
 /// VMs, so there is no room for an attack VM: the controller, on the lab network already, stays
 /// on as the player's attack position.
 pub fn on_qemu(dir: &Path) -> bool {
-    crate::exec::machines_on(dir, Provider::Qemu.id())
+    crate::platform::exec::machines_on(dir, Provider::Qemu.id())
 }
 
 /// One Vagrant command of a lab operation, as a step of a batch (one UAC prompt for the whole
@@ -199,7 +199,7 @@ pub async fn resume(dir: &Path, env: &[(String, String)], mut log: impl FnMut(St
     // A status read is never elevated (it is polled): on a non-elevated Hyper-V it may fail,
     // and the machines' folders still tell the provider.
     let provider = status(dir, env).await.ok().and_then(|s| s.provider);
-    let hyperv = provider.as_deref() == Some(Provider::Hyperv.id()) || crate::exec::on_hyperv(dir);
+    let hyperv = provider.as_deref() == Some(Provider::Hyperv.id()) || crate::platform::exec::on_hyperv(dir);
     let mut parts = vec![Part::new(&resume_args(provider.as_deref()))];
     parts.extend(park_controller(dir, on_qemu(dir)));
     run_parts(&Vagrant::new(dir, env, hyperv), &parts, &mut log).await

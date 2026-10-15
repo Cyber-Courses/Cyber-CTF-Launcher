@@ -41,7 +41,7 @@ fn lab_dir_in(base: &Path, id: &str) -> Result<PathBuf> {
 pub(super) fn state_dir(app: &AppHandle, id: &str, target: &str) -> Result<PathBuf> {
     validate_id(id)?;
     let base = app_data(app)?;
-    crate::private_fs::dir(&base.join("deployments"))?;
+    crate::platform::private_fs::dir(&base.join("deployments"))?;
     Ok(state_dir_in(&base, id, target))
 }
 
@@ -279,12 +279,12 @@ mod tests {
 
     #[test]
     fn every_labs_state_sits_in_a_folder_only_this_user_opens() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let state = state_dir(t.handle(), "web-1", "aws").unwrap();
         assert_eq!(state, t.data().join("deployments").join("web-1").join("aws"));
         assert!(t.data().join("deployments").is_dir());
         #[cfg(unix)]
-        assert_eq!(crate::private_fs::tests::mode(&t.data().join("deployments")), 0o700);
+        assert_eq!(crate::platform::private_fs::tests::mode(&t.data().join("deployments")), 0o700);
         assert!(state_dir(t.handle(), "../x", "aws").is_err());
     }
 

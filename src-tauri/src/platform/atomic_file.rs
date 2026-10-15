@@ -73,9 +73,9 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&f).unwrap(), "{}");
         #[cfg(unix)]
         {
-            assert_eq!(crate::private_fs::tests::mode(&f), 0o600);
+            assert_eq!(crate::platform::private_fs::tests::mode(&f), 0o600);
             write(&dir.join("plain.json"), "{}").unwrap();
-            assert_ne!(crate::private_fs::tests::mode(&dir.join("plain.json")), 0o600, "a plain store keeps the usual mode");
+            assert_ne!(crate::platform::private_fs::tests::mode(&dir.join("plain.json")), 0o600, "a plain store keeps the usual mode");
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

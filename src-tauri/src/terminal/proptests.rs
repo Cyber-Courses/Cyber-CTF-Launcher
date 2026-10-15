@@ -4,7 +4,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::proptest_support::config;
+use crate::testing::proptest_support::config;
 
 /// Cut points into `len` bytes, sorted (repeats make empty reads).
 fn cuts(len: usize, raw: &[prop::sample::Index]) -> Vec<usize> {

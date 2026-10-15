@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use crate::error::{Error, Result};
-use crate::exec::{docker_denied, docker_denied_error, run, run_read};
+use crate::platform::exec::{docker_denied, docker_denied_error, run, run_read};
 
 /// How long each engine's context may take to answer before it counts as stopped.
 const ENGINE_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
@@ -135,7 +135,7 @@ async fn launch(engine: &str) -> Result<String> {
         ("macos", "orbstack") => run("open", &["-a", "OrbStack"], None).await,
         ("windows", "docker-desktop") => run("cmd", &["/C", "start", "", r"C:\Program Files\Docker\Docker\Docker Desktop.exe"], None).await,
         ("linux", "docker-engine") => run("pkexec", &["systemctl", "start", "docker"], None).await.map_err(|e| match e {
-            Error::ToolMissing { .. } => Error::Invalid(crate::platform::steps::NO_PKEXEC.into()),
+            Error::ToolMissing { .. } => Error::Invalid(crate::machine::tools::steps::NO_PKEXEC.into()),
             e => e,
         }),
         (_, "colima") => run("colima", &["start"], None).await,
@@ -178,7 +178,7 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    use crate::exec::fake::{Reply, Tools, fail, ok};
+    use crate::platform::exec::fake::{Reply, Tools, fail, ok};
 
     const DENIED: &str = "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock";
     const DOWN: &str = "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?";

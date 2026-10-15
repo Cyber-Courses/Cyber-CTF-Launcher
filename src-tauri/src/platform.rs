@@ -1,14 +1,16 @@
-//! OS plumbing: the PATH a GUI launch is missing, and one-click installs of dependencies.
+//! OS plumbing: running tools, files only this user can read, whole-file writes, HTTP clients
+//! with limits, the PATH a GUI launch is missing, the console's Ctrl+C on Windows, and the files a
+//! Store build saved before.
 
 use std::path::{Path, PathBuf};
 
+pub mod atomic_file;
 pub mod console;
 pub mod env_path;
-mod exit_codes;
-pub mod install;
-mod scripts;
-pub mod steps;
-pub mod uninstall;
+pub mod exec;
+pub mod http;
+pub mod msix_data;
+pub mod private_fs;
 
 /// The user's home folder (`USERPROFILE` on Windows, `HOME` elsewhere).
 pub fn home_dir() -> Option<PathBuf> {

@@ -12,7 +12,7 @@ use std::path::Path;
 use crate::AppHandle;
 use tauri::Manager;
 
-use crate::exec::run_read;
+use crate::platform::exec::run_read;
 
 /// The Compose project prefix every lab's containers carry (`cyberctf-<id>`).
 const PROJECT_PREFIX: &str = "cyberctf-";

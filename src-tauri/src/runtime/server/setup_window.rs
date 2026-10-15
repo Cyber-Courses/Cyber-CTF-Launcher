@@ -49,7 +49,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_setup_window_opens_at_its_page_and_an_unknown_host_is_refused() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let err = server_open_setup(t.handle().clone(), Some("../x".into()), None).await.unwrap_err();
         assert_eq!(err.to_string(), "unknown server host");
         assert!(t.handle().webview_windows().is_empty());

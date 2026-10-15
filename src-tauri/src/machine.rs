@@ -5,6 +5,7 @@ pub mod images;
 pub mod selftest;
 pub mod storage;
 pub mod system;
+pub mod tools;
 pub mod workloads;
 
 use std::path::PathBuf;

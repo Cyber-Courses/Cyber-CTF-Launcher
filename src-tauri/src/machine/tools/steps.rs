@@ -69,17 +69,17 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
         on_line(note.clone());
     }
     #[cfg(test)]
-    if let Some(answer) = crate::exec::fake::answer_step(&step.program, &step.args, on_line) {
+    if let Some(answer) = crate::platform::exec::fake::answer_step(&step.program, &step.args, on_line) {
         return answer;
     }
     let mut cmd = Command::new(&step.program);
     cmd.args(&step.args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     // Installers that need a console of their own (winget, an .msi) still get none here: their
     // output streams into the app's setup log instead of a window flashing on screen.
-    crate::exec::headless(&mut cmd);
+    crate::platform::exec::headless(&mut cmd);
     // In a group of its own, like every tool: a step whose output fails mid-way is ended with
     // what it started, not left installing unattended (#220).
-    let (mut child, group) = crate::exec::spawn_group(&mut cmd, true).map_err(|e| match e.kind() {
+    let (mut child, group) = crate::platform::exec::spawn_group(&mut cmd, true).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound if step.program == "pkexec" => Error::Invalid(NO_PKEXEC.into()),
         std::io::ErrorKind::NotFound => Error::Invalid(format!("{} is not available on this machine.", step.program)),
         _ => Error::Io(e),
@@ -94,7 +94,7 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
         }
         on_line(line);
     };
-    let forwarded = crate::exec::forward_lines(&mut child, 0, watch, |line| {
+    let forwarded = crate::platform::exec::forward_lines(&mut child, 0, watch, |line| {
         if step.program == "pkexec" && is_pkexec_error(line) {
             pkexec_error = Some(line.to_string());
         }
@@ -221,7 +221,7 @@ mod tests {
         assert!(started.is_err(), "cancelled while it ran");
         let pid: u32 = std::fs::read_to_string(&file).expect("the step started its child").trim().parse().unwrap();
         let _ = std::fs::remove_file(&file);
-        assert!(crate::exec::fake::gone(pid).await, "the step's child {pid} was left running");
+        assert!(crate::platform::exec::fake::gone(pid).await, "the step's child {pid} was left running");
     }
 
     #[tokio::test]

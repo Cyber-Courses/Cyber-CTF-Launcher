@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use super::state::STATE_FILE;
 use crate::error::{Error, Result};
-use crate::exec::{run_read, stream};
+use crate::platform::exec::{run_read, stream};
 
 /// The Terraform image for runs that can't use the host binary, pinned by the digest of its
 /// multi-arch index: a tag can be moved to another image, a digest can't. The tag stays for
@@ -356,7 +356,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("main.tf"), "").unwrap();
         let state = dir.join("state");
-        let _tools = crate::exec::fake::Tools::rules(&[("terraform version", None)]);
+        let _tools = crate::platform::exec::fake::Tools::rules(&[("terraform version", None)]);
         let err = prepare(&dir, &state).await.unwrap_err().to_string();
         assert_eq!(err, NOT_INSTALLED);
         assert!(!state.exists(), "refused before anything changed");
@@ -388,7 +388,8 @@ mod tests {
     async fn an_init_failure_reads_the_same_in_the_container_and_on_the_host() {
         // Regression: the container's `init` skipped `init_failure`, so an offline destroy read
         // differently depending on where Terraform ran.
-        let _tools = crate::exec::fake::Tools::rules(&[("init", crate::exec::fake::fail("dial tcp: lookup registry.terraform.io: no such host"))]);
+        let _tools =
+            crate::platform::exec::fake::Tools::rules(&[("init", crate::platform::exec::fake::fail("dial tcp: lookup registry.terraform.io: no such host"))]);
         for program in ["terraform", "docker"] {
             let err = init(program, &["init"], Path::new("."), &[], |_| {}).await.unwrap_err().to_string();
             assert!(err.starts_with("Couldn't download the Terraform provider plugins"), "{program}: {err}");

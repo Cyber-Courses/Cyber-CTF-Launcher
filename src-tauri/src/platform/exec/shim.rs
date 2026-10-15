@@ -72,9 +72,9 @@ mod tests {
         }
         // A tool that runs directly reports a missing binary at spawn time instead.
         assert!(!missing_behind_cmd("terraform", Some(9009)));
-        let err = crate::exec::exit_error("oci", &["iam", "region", "list"], Some(9009), "'oci' is not recognized".into());
+        let err = crate::platform::exec::exit_error("oci", &["iam", "region", "list"], Some(9009), "'oci' is not recognized".into());
         assert!(matches!(err, crate::error::Error::ToolMissing { tool: "oci" }), "{err:?}");
-        let err = crate::exec::exit_error("oci", &["iam"], Some(1), "ServiceError".into());
+        let err = crate::platform::exec::exit_error("oci", &["iam"], Some(1), "ServiceError".into());
         assert!(matches!(err, crate::error::Error::CommandFailed { .. }), "{err:?}");
     }
 
@@ -112,7 +112,7 @@ mod tests {
                         _ => continue,
                     }
                 };
-                calls.push((*tool, crate::source_scan::literal_list(list)));
+                calls.push((*tool, crate::testing::source_scan::literal_list(list)));
             }
         }
         calls
@@ -123,7 +123,7 @@ mod tests {
         // Regression (#219): the Machine page's Azure probe passed `"azure-cli"` (quotes
         // included) to az; the guard refused it on every OS, and az read as not installed.
         let mut checked = 0;
-        for src in crate::source_scan::crate_sources() {
+        for src in crate::testing::source_scan::crate_sources() {
             for (tool, args) in literal_calls(&src.code) {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 assert!(check_args(tool, &args).is_ok(), "{}: {tool} {args:?} would be refused", src.path.display());
@@ -147,10 +147,10 @@ mod tests {
     #[tokio::test]
     async fn a_refused_argument_never_reaches_the_tool() {
         // No fake rule matches: had the guard not refused it, this would try to spawn `az`.
-        let err = crate::exec::run("az", &["group", "create", "--name", "x&calc"], None).await.unwrap_err();
+        let err = crate::platform::exec::run("az", &["group", "create", "--name", "x&calc"], None).await.unwrap_err();
         assert!(err.to_string().contains("cmd.exe"), "{err}");
         let lines = std::cell::RefCell::new(Vec::new());
-        let err = crate::exec::stream("gcloud", &["projects", "create", "a|b"], None, &[], |l| lines.borrow_mut().push(l)).await.unwrap_err();
+        let err = crate::platform::exec::stream("gcloud", &["projects", "create", "a|b"], None, &[], |l| lines.borrow_mut().push(l)).await.unwrap_err();
         assert!(err.to_string().contains("cmd.exe"), "{err}");
         assert!(lines.borrow().is_empty());
     }

@@ -34,7 +34,7 @@ pub enum Dependency {
 /// The install steps on macOS: Homebrew formulae, or a cask whose installer the user finishes.
 #[cfg(target_os = "macos")]
 fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
-    let brew = super::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()))?;
+    let brew = crate::platform::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()))?;
     Ok(match dep {
         // Docker Desktop: download the app with brew, then open its installer; the user
         // finishes in Docker's own flow (includes the docker CLI + compose).
@@ -117,7 +117,7 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
     let root = |script: String| Step { program: "pkexec".into(), args: vec!["sh".into(), "-c".into(), script], note: None };
     Ok(match dep {
         Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
-        Dependency::Docker => vec![root(docker_script(crate::exec::login_name().as_deref()))],
+        Dependency::Docker => vec![root(docker_script(crate::platform::exec::login_name().as_deref()))],
         Dependency::Vagrant => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y vagrant"])],
         // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
         Dependency::Terraform => vec![root(TERRAFORM_SCRIPT.into())],
@@ -159,7 +159,7 @@ pub async fn install_dependency(app: crate::AppHandle, dependency: Dependency, l
     let before = uninstall::present(dependency).await;
     run_steps(&steps, &mut on_line).await?;
     // Windows: the installer wrote its folder to the registry PATH; pick it up before looking.
-    super::env_path::refresh();
+    crate::platform::env_path::refresh();
     // Remembered so Cleanup can offer to remove what Cyber CTF installed, and only that: a tool
     // that was already there is never recorded, and one whose installer was only opened (macOS
     // casks) or isn't found yet counts once a later check finds it.
@@ -287,8 +287,8 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    use crate::exec::fake::{Tools, fail, ok};
-    use crate::test_app::{Sink, TestApp};
+    use crate::platform::exec::fake::{Tools, fail, ok};
+    use crate::testing::test_app::{Sink, TestApp};
 
     /// A dependency this OS doesn't install (on macOS without Homebrew, none does).
     fn not_here() -> Dependency {

@@ -14,7 +14,7 @@ use super::model::Park;
 use super::providers::Provider;
 use super::{ssh, vm};
 use crate::error::{Error, Result};
-use crate::exec::{Vagrant, run_read};
+use crate::platform::exec::{Vagrant, run_read};
 
 /// The attacker's own Vagrant environment, inside the lab folder (removed with the lab).
 const DIR: &str = ".cyberctf-attack-vm";
@@ -115,7 +115,7 @@ fn vagrantfile_for(provider: Provider, lab: &str, box_name: &str, links: &[Link]
     let body = out.strip_suffix("  end\nend\n").unwrap_or(&out);
     format!(
         "{body}{}    m.vm.provider \"hyperv\" do |v|\n      v.vmname = \"{lab} · attacker\"\n      v.memory = 2048\n      v.cpus = 2\n    end\n  end\nend\n",
-        crate::exec::hyperv_switch_line("    ", "m")
+        crate::platform::exec::hyperv_switch_line("    ", "m")
     )
 }
 
@@ -507,7 +507,7 @@ mod tests {
     #[tokio::test]
     async fn a_start_that_fails_outright_is_not_retried_and_then_reads_as_not_running() {
         use super::super::providers::Provider;
-        use crate::exec::fake::{Tools, fail, ok};
+        use crate::platform::exec::fake::{Tools, fail, ok};
         let lab = temp_lab();
         std::fs::write(lab.join("Vagrantfile"), LAB).unwrap();
         let tools = Tools::rules(&[

@@ -12,7 +12,7 @@ use std::time::Duration;
 use super::docker::IMAGE;
 use super::vm::pick_box;
 use crate::error::Result;
-use crate::exec::{run, run_env_timed, stream};
+use crate::platform::exec::{run, run_env_timed, stream};
 use crate::runtime::providers::Provider;
 
 static DOCKER_DL: AtomicBool = AtomicBool::new(false);

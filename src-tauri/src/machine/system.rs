@@ -8,7 +8,7 @@ pub mod wsl;
 
 use serde::Serialize;
 
-use crate::exec::{docker_denied, docker_denied_error, run_read};
+use crate::platform::exec::{docker_denied, docker_denied_error, run_read};
 use crate::runtime::providers::{self, ProviderStatus};
 
 #[derive(Serialize, ts_rs::TS)]
@@ -191,11 +191,11 @@ async fn package_manager_version() -> Option<String> {
     }
     #[cfg(target_os = "windows")]
     {
-        crate::exec::run("winget", &["--version"], None).await.ok()
+        crate::platform::exec::run("winget", &["--version"], None).await.ok()
     }
     #[cfg(target_os = "linux")]
     {
-        crate::exec::run("apt-get", &["--version"], None).await.ok()
+        crate::platform::exec::run("apt-get", &["--version"], None).await.ok()
     }
 }
 
@@ -223,7 +223,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "depends on the host's installed tools"]
     async fn prints_this_machines_report() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let report = super::system_check(t.handle().clone()).await;
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
     }
@@ -235,7 +235,7 @@ mod tests {
         assert_eq!(super::azure_version("not json"), None);
         assert_eq!(super::azure_version("{}"), None);
         // The probe's arguments must pass the cmd.exe guard, or `az` reads as missing everywhere.
-        assert!(crate::exec::shim::check_args("az", &["version", "--output", "json"]).is_ok());
+        assert!(crate::platform::exec::shim::check_args("az", &["version", "--output", "json"]).is_ok());
     }
 
     #[test]

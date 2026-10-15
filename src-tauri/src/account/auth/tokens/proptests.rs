@@ -5,7 +5,7 @@ use proptest::prelude::*;
 use serde_json::{Value, json};
 
 use super::*;
-use crate::proptest_support::{config, json as any_json};
+use crate::testing::proptest_support::{config, json as any_json};
 
 fn b64(v: &impl serde::Serialize) -> String {
     URL_SAFE_NO_PAD.encode(serde_json::to_vec(v).unwrap())

@@ -5,10 +5,10 @@ use super::{
     start_on_docker,
 };
 use super::{server, warn_if_low_memory, welcome};
-use crate::exec::fake::{Tools, fail, ok};
+use crate::platform::exec::fake::{Tools, fail, ok};
 use crate::runtime::paths::{local_vm, mark_parked, parked};
 use crate::runtime::{Park, start};
-use crate::test_app::TestApp;
+use crate::testing::test_app::TestApp;
 
 const RUNNING: &str = r#"{"Service":"web","State":"running","Name":"cyberctf-web-web-1"}"#;
 const EXITED: &str = r#"{"Service":"web","State":"exited","Name":"cyberctf-web-web-1"}"#;
@@ -197,7 +197,7 @@ async fn an_aws_launch_checks_the_budget_and_a_gcp_launch_its_project() {
 
 /// A fake IP-lookup service answering `body` once.
 async fn resolver(body: &str) -> String {
-    crate::http::tests::serve_once(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).into_bytes()).await
+    crate::platform::http::tests::serve_once(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).into_bytes()).await
 }
 
 #[tokio::test]

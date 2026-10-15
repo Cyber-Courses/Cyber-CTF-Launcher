@@ -53,7 +53,7 @@ impl Files {
 /// The workers' folder, created if missing, owner-only (its jobs carry launch tokens).
 pub fn dir(app: &AppHandle) -> Result<PathBuf> {
     let d = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("deploys");
-    crate::private_fs::dir(&d).map_err(Error::Io)?;
+    crate::platform::private_fs::dir(&d).map_err(Error::Io)?;
     Ok(d)
 }
 
@@ -182,7 +182,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_log_so_far_needs_a_valid_id_and_is_empty_before_any_deploy() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         assert!(log_so_far(t.handle(), "../x").unwrap_err().to_string().starts_with("invalid lab id"));
         assert_eq!(log_so_far(t.handle(), "never-deployed").unwrap(), "");
         assert!(!last_deploy_failed(t.handle(), "never-deployed"));

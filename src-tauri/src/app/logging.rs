@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn the_log_folder_is_the_apps_own() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let dir = log_dir(t.handle()).unwrap();
         assert!(dir.is_absolute(), "{}", dir.display());
     }

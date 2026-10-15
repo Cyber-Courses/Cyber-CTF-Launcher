@@ -6,7 +6,7 @@ use std::path::Path;
 use proptest::prelude::*;
 
 use super::*;
-use crate::proptest_support::config;
+use crate::testing::proptest_support::config;
 
 /// A Ruby double-quoted string's value (the subset of escapes `vagrantfile` writes); None when
 /// it would interpolate (`#{`, `#@`, `#$`), i.e. run Ruby instead of naming a folder.

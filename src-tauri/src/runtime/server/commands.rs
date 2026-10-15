@@ -324,8 +324,8 @@ mod tests {
 
     #[tokio::test]
     async fn hosts_are_saved_listed_tested_and_removed_through_the_commands() {
-        use crate::exec::fake::{Tools, ok};
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
         let input = |id: Option<&str>| -> HostInput {
             serde_json::from_value(serde_json::json!({
@@ -371,7 +371,7 @@ mod tests {
         // Regression: the player moved an AWS account with a lab running in eu-west-3 to
         // us-east-1 for their next lab; Stop then destroyed in us-east-1, found nothing, and the
         // instance kept billing in eu-west-3.
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
         let azure = |id: Option<&str>, region: &str, subscription: &str, name: &str| -> HostInput {
             serde_json::from_value(
@@ -527,7 +527,7 @@ mod tests {
     fn a_deployment_left_by_an_uninstalled_lab_keeps_its_host() {
         // The lab's folder is gone (uninstalled) but its Terraform state still holds resources
         // on the account: only this host's credentials can destroy them, so it stays.
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
         let host = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
         let state = t.data().join("deployments").join("web").join("aws");
@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn removing_a_host_that_is_not_saved_changes_nothing() {
-        let t = crate::test_app::TestApp::new();
+        let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
         t.host("az1", "azure", serde_json::json!({}));
         server_remove(app(), "nope".into()).unwrap();

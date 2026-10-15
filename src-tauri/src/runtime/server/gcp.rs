@@ -11,7 +11,7 @@ use crate::AppHandle;
 use super::profile::{HostProfile, random_hex};
 use super::store::{find, load, update};
 use crate::error::{Error, Result};
-use crate::exec::{CLI_TIMEOUT, run_env_timed};
+use crate::platform::exec::{CLI_TIMEOUT, run_env_timed};
 
 /// How long creating the project, linking it to billing or enabling Compute Engine may take.
 const PROJECT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -145,8 +145,8 @@ fn last_error_line(e: &Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exec::fake::{Tools, fail, ok};
-    use crate::test_app::TestApp;
+    use crate::platform::exec::fake::{Tools, fail, ok};
+    use crate::testing::test_app::TestApp;
 
     /// A GCP account `gcp1` whose labs project is `project`, if any.
     fn account(t: &TestApp, project: Option<&str>) -> String {
@@ -203,7 +203,7 @@ mod tests {
     }
 
     /// What `project_state` makes of a `describe` answering `describe`.
-    async fn state_of(describe: Option<crate::exec::fake::Reply>) -> Result<Project> {
+    async fn state_of(describe: Option<crate::platform::exec::fake::Reply>) -> Result<Project> {
         let _tools = Tools::rules(&[("projects describe", describe)]);
         project_state("p").await
     }

@@ -452,7 +452,7 @@ fn topology_skips_lines_outside_a_machine_or_without_an_address() {
 async fn a_failed_setup_play_still_powers_the_controller_off_and_leads_with_ansible() {
     // The steps of a provisioning run go as one batch (one administrator prompt on Hyper-V):
     // the clean-up halt runs after the play failed, and the error is the play's.
-    use crate::exec::fake::{Tools, fail};
+    use crate::platform::exec::fake::{Tools, fail};
     let dir = temp_dir("provision");
     std::fs::write(dir.join("Vagrantfile"), CONTROLLED).unwrap();
     let tools = Tools::rules(&[("--provision-with ansible", fail("dc01: fatal: [dc01]: UNREACHABLE! timed out\nnon-zero exit status"))]);
@@ -475,7 +475,7 @@ async fn a_failed_setup_play_still_powers_the_controller_off_and_leads_with_ansi
 
 #[tokio::test]
 async fn a_start_powers_the_controller_off_and_a_failed_halt_only_says_so() {
-    use crate::exec::fake::{Tools, fail};
+    use crate::platform::exec::fake::{Tools, fail};
     let dir = temp_dir("start");
     std::fs::write(dir.join("Vagrantfile"), CONTROLLED).unwrap();
     let tools = Tools::rules(&[("vagrant halt", fail("locked"))]);
@@ -495,7 +495,7 @@ async fn a_start_powers_the_controller_off_and_a_failed_halt_only_says_so() {
 async fn reprovisioning_discards_an_aborted_saved_controller_first() {
     // Regression: the batched provisioning lost this, and an aborted-saved controller failed
     // `up` with "the machine is not mutable" again.
-    use crate::exec::fake::{Tools, ok};
+    use crate::platform::exec::fake::{Tools, ok};
     let dir = temp_dir("provision-aborted");
     let vf = "Vagrant.configure(\"2\") do |config|\n  config.vm.define \"isoloom-controller\" do |m|\n    m.vm.provider \"virtualbox\" do |v|\n      v.name = \"lab · ctl\"\n    end\n  end\nend\n";
     std::fs::write(dir.join("Vagrantfile"), vf).unwrap();

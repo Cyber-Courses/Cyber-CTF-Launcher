@@ -78,7 +78,7 @@ pub fn reveal_main(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_app::TestApp;
+    use crate::testing::test_app::TestApp;
 
     #[test]
     fn settings_open_once_in_their_own_window() {

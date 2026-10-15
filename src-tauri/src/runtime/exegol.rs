@@ -5,7 +5,7 @@
 use serde::Serialize;
 
 use crate::error::{Error, Result};
-use crate::exec::{run, run_read, stream};
+use crate::platform::exec::{run, run_read, stream};
 
 /// The file naming the default attack box, read by the webview (`src/lib/settings.ts`) too. The
 /// attack-box workflow's bump PR rewrites it after each smoke-tested publish.
@@ -214,7 +214,7 @@ fn end_session_script(tag: &str) -> Option<String> {
 /// an idle bash (and whatever it was running) until the box stopped.
 pub async fn end_session(container: &str, tag: &str) {
     if let Some(script) = end_session_script(tag) {
-        let _ = crate::exec::run_env_timed("docker", &["exec", container, "sh", "-c", &script], None, &[], std::time::Duration::from_secs(10)).await;
+        let _ = crate::platform::exec::run_env_timed("docker", &["exec", container, "sh", "-c", &script], None, &[], std::time::Duration::from_secs(10)).await;
     }
 }
 
@@ -227,8 +227,8 @@ pub fn end_session_blocking(container: &str, tag: &str) {
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
-        crate::exec::headless_std(&mut cmd);
-        let _ = crate::exec::status_within(&mut cmd, END_SESSION_TIMEOUT);
+        crate::platform::exec::headless_std(&mut cmd);
+        let _ = crate::platform::exec::status_within(&mut cmd, END_SESSION_TIMEOUT);
     }
 }
 
@@ -412,7 +412,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_attack_box_is_pulled_started_and_wired_to_every_lab_network() {
-        use crate::exec::fake::{Tools, fail, ok};
+        use crate::platform::exec::fake::{Tools, fail, ok};
         let tools = Tools::rules(&[("image inspect", fail("No such image")), ("network ls", ok(NETS))]);
         let mut log = Vec::new();
         super::start("web", "nwodtuhs/exegol:free", |l| log.push(l)).await.unwrap();
@@ -429,7 +429,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_half_wired_attack_box_is_torn_down() {
-        use crate::exec::fake::{Tools, fail, ok};
+        use crate::platform::exec::fake::{Tools, fail, ok};
         let tools = Tools::rules(&[("network ls", ok(NETS)), ("network connect", fail("no such network"))]);
         assert!(super::start("web", "img:1", |_| {}).await.is_err());
         assert!(tools.calls().iter().filter(|c| c.as_str() == "docker rm -f cyberctf-web-attacker").count() == 2, "{:?}", tools.calls());
@@ -442,7 +442,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_status_reports_the_address_on_the_main_lab_network() {
-        use crate::exec::fake::{Tools, ok};
+        use crate::platform::exec::fake::{Tools, ok};
         let _tools = Tools::rules(&[("network ls", ok(NETS)), ("docker inspect -f", ok("true\t10.0.0.9\n"))]);
         let s = super::status("web", "img:1").await;
         assert!(s.image_present && s.running);
@@ -452,7 +452,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_running_box_rejoins_the_lab_networks() {
-        use crate::exec::fake::{Tools, ok};
+        use crate::platform::exec::fake::{Tools, ok};
         let tools = Tools::rules(&[("{{.State.Running}}", ok("true\n")), ("network ls", ok(NETS))]);
         super::rejoin("web").await;
         assert!(tools.called("network connect cyberctf-web_default cyberctf-web-attacker"));
@@ -506,7 +506,7 @@ mod tests {
     fn the_default_image_is_the_cyber_ctf_box_pinned_by_digest() {
         let image = super::default_image();
         assert!(pinned(image), "the default attack box must be cyberctf/attack-box@sha256:<digest>, not {image}");
-        assert!(crate::exec::valid_image(image));
+        assert!(crate::platform::exec::valid_image(image));
         let file: serde_json::Value = serde_json::from_str(super::DEFAULT_IMAGE_FILE).unwrap();
         let previous = file["previous"].as_array().unwrap();
         assert!(previous.iter().all(|p| p.as_str() != Some(image)), "the default is not also a previous one");
@@ -543,7 +543,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_status_reads_odd_inspect_output_without_misreading_it() {
-        use crate::exec::fake::{Tools, fail, ok};
+        use crate::platform::exec::fake::{Tools, fail, ok};
         // Two addresses on the line, an extra tab, a second line: the first address of the
         // first line. Docker's "true" is exact: anything else is not running.
         assert_eq!(super::parse_probe("true\t10.0.0.5 10.0.0.6\n"), (true, "10.0.0.5".to_string()));
@@ -567,7 +567,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_pull_that_fails_starts_nothing() {
-        use crate::exec::fake::{Tools, fail, ok};
+        use crate::platform::exec::fake::{Tools, fail, ok};
         let tools = Tools::rules(&[("image inspect", fail("No such image")), ("docker pull", fail("manifest unknown")), ("network ls", ok(NETS))]);
         let err = super::start("web", "nwodtuhs/exegol:free", |_| {}).await.unwrap_err().to_string();
         assert!(err.contains("manifest unknown"), "{err}");
@@ -576,7 +576,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_main_lab_network_is_joined_first_however_docker_lists_them() {
-        use crate::exec::fake::{Tools, ok};
+        use crate::platform::exec::fake::{Tools, ok};
         // Windows line ends, blank lines, the main network last.
         let listed = "\r\ncyberctf-web_internal\r\n\r\ncyberctf-web_dmz\r\ncyberctf-web_default\r\n";
         let tools = Tools::rules(&[("network ls", ok(listed))]);

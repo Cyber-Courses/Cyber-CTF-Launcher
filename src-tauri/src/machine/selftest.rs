@@ -236,10 +236,11 @@ mod tests {
 
     #[tokio::test]
     async fn the_container_test_runs_every_step_then_cleans_up() {
-        use crate::exec::fake::{Tools, ok};
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
         // The lab's published port: a loopback server serving the test page.
-        let web = crate::http::tests::serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\ncyberctf-selftest-ok".to_vec()).await;
+        let web =
+            crate::platform::http::tests::serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\ncyberctf-selftest-ok".to_vec()).await;
         let addr = web.trim_start_matches("http://").trim_end_matches('/').to_string();
         let tools = Tools::new(move |_, args| match args {
             ["info", ..] => ok("27.3.1\n"),
@@ -259,8 +260,8 @@ mod tests {
     async fn a_second_test_of_a_kind_waits_for_the_first() {
         // Regression: the Machine window's and the onboarding's runs shared the test project and
         // tore each other's test lab down.
-        use crate::exec::fake::Tools;
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::Tools;
+        let t = crate::testing::test_app::TestApp::new();
         let tools = Tools::rules(&[]);
         let first = one_at_a_time(Kind::Docker).lock().await;
         let (channel, seen) = events();
@@ -272,8 +273,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_container_test_stops_at_its_step_and_still_cleans_up() {
-        use crate::exec::fake::{Tools, fail};
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::{Tools, fail};
+        let t = crate::testing::test_app::TestApp::new();
         let tools = Tools::rules(&[("docker info", fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"))]);
         let (channel, seen) = events();
         assert!(machine_selftest(t.handle().clone(), Kind::Docker, None, channel).await.is_err());
@@ -284,8 +285,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_vm_test_boots_pings_and_deletes_a_vm() {
-        use crate::exec::fake::{Tools, ok};
-        let t = crate::test_app::TestApp::new();
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
         let boxes = "generic/alpine319 (virtualbox, 4.3.12)\nbento/debian-12 (virtualbox, 1)\ngeneric/alpine319 (libvirt, 4.3.12)\nbento/debian-12 (parallels, 1)\nbento/debian-12 (vmware_desktop, 1)\ngeneric/alpine319 (qemu, 1)\ngeneric/alpine319 (hyperv, 1)\nutm/bookworm (utm, 1)\n";
         let tools = Tools::new(move |program, args| match (program, args) {
             ("vagrant", ["plugin", "list"]) => {
@@ -312,8 +313,8 @@ mod tests {
 
     #[tokio::test]
     async fn without_vagrant_the_vm_test_stops_at_once() {
-        let t = crate::test_app::TestApp::new();
-        let _tools = crate::exec::fake::Tools::rules(&[("vagrant", None)]);
+        let t = crate::testing::test_app::TestApp::new();
+        let _tools = crate::platform::exec::fake::Tools::rules(&[("vagrant", None)]);
         let (channel, seen) = events();
         assert!(machine_selftest(t.handle().clone(), Kind::Vm, None, channel).await.is_err());
         assert_eq!(states(&seen), ["vagrant:running", "vagrant:fail"]);

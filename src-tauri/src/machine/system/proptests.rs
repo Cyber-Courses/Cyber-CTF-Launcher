@@ -5,7 +5,7 @@ use proptest::prelude::*;
 use serde_json::json;
 
 use super::*;
-use crate::proptest_support::{config, json_ish_text};
+use crate::testing::proptest_support::{config, json_ish_text};
 
 proptest! {
     #![proptest_config(config())]

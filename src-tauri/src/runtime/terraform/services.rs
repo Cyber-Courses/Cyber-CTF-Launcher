@@ -13,7 +13,7 @@ use super::runner::{bounded, init, prepare, run_env};
 use super::state::{EXPIRES_AT, RUN_FILE, STATE_FILE, record_env, saved_env, saved_vars, with_saved};
 use super::{forget_state, recorded_deploy, with_env};
 use crate::error::Result;
-use crate::exec::stream;
+use crate::platform::exec::stream;
 
 /// Applies a lab's own module. `vars` are the launcher's variables (`TF_VAR_*`), `env` the
 /// cloud's credentials, `expires_at` when the lab auto-stops, `retries` how many more applies

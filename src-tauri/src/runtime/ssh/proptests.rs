@@ -176,7 +176,7 @@ fn token() -> impl Strategy<Value = String> {
 }
 
 proptest! {
-    #![proptest_config(crate::proptest_support::config())]
+    #![proptest_config(crate::testing::proptest_support::config())]
 
     #[test]
     fn sh_quote_splits_back_to_the_input(s in "[^\\x00]{0,64}") {

@@ -43,7 +43,7 @@ pub fn interrupt(pid: u32) -> bool {
     let Ok(exe) = std::env::current_exe() else { return false };
     let mut cmd = std::process::Command::new(exe);
     cmd.args(["interrupt", "--pid", &pid.to_string()]);
-    crate::exec::headless_std(&mut cmd).status().is_ok_and(|s| s.success())
+    crate::platform::exec::headless_std(&mut cmd).status().is_ok_and(|s| s.success())
 }
 
 #[cfg(test)]
@@ -84,7 +84,7 @@ mod tests {
         // `ping -t` runs until Ctrl+C, then prints its statistics and exits.
         let mut target = std::process::Command::new("ping")
             .args(["-t", "127.0.0.1"])
-            .creation_flags(crate::exec::CREATE_NO_WINDOW)
+            .creation_flags(crate::platform::exec::CREATE_NO_WINDOW)
             .stdout(std::process::Stdio::piped())
             .spawn()
             .unwrap();
@@ -92,7 +92,7 @@ mod tests {
         let helper = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "platform::console::tests::ctrl_c_helper", "--ignored", "--nocapture"])
             .env("CYBERCTF_CTRL_C_PID", target.id().to_string())
-            .creation_flags(crate::exec::CREATE_NO_WINDOW)
+            .creation_flags(crate::platform::exec::CREATE_NO_WINDOW)
             .output()
             .unwrap();
         assert!(helper.status.success(), "helper: {}", String::from_utf8_lossy(&helper.stdout));

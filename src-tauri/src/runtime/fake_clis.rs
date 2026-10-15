@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crate::test_app::TestApp;
+use crate::testing::test_app::TestApp;
 
 /// A folder of stand-in tools, put first on PATH while it lives.
 struct FakeBin {
@@ -133,7 +133,7 @@ async fn fake_clis_a_hung_cloud_cli_ends_the_test_in_its_time_limit() {
     let id = t.host("az1", "azure", serde_json::json!({ "username": "00000000-0000-0000-0000-000000000000" }));
     let started = Instant::now();
     let result = serde_json::to_value(crate::runtime::server::server_test(t.handle().clone(), id).await.unwrap()).unwrap();
-    assert!(started.elapsed() < crate::exec::CLI_TIMEOUT + Duration::from_secs(15), "{:?}", started.elapsed());
+    assert!(started.elapsed() < crate::platform::exec::CLI_TIMEOUT + Duration::from_secs(15), "{:?}", started.elapsed());
     assert_eq!(result["ok"], false);
     assert!(result["checks"].to_string().contains("timed out after 60s"), "{result}");
 }
