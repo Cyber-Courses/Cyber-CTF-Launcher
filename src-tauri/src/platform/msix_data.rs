@@ -13,8 +13,7 @@ const MIGRATED: &str = ".msix-data-migrated";
 /// [`merge_missing`] from `src` to `dst`, the first time only: skipped once `dst` has the
 /// marker, which is written after a merge that copied everything. A merge that failed on a file
 /// runs again next time (copying only what is still missing). No source, nothing to do.
-#[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn migrate_once(src: &Path, dst: &Path) {
+fn migrate_once(src: &Path, dst: &Path) {
     let marker = dst.join(MIGRATED);
     if marker.exists() || !src.is_dir() {
         return;
@@ -26,8 +25,7 @@ pub(crate) fn migrate_once(src: &Path, dst: &Path) {
 
 /// Copies every file under `src` that `dst` doesn't have yet (recursively). Errors on one file
 /// don't stop the others. Whether every file was there or copied.
-#[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn merge_missing(src: &Path, dst: &Path) -> bool {
+fn merge_missing(src: &Path, dst: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(src) else { return false };
     let mut all = true;
     for entry in entries {
@@ -49,21 +47,20 @@ pub(crate) fn merge_missing(src: &Path, dst: &Path) -> bool {
     all
 }
 
-/// Windows: brings over what an earlier, virtualized Store build saved. No-op when there is none.
+/// Windows: brings over what an earlier, virtualized Store build of the app `id` saved, into
+/// its local app data folder `local` and its app data folder `roaming` (each when known). No-op
+/// when there is none.
 #[cfg(windows)]
-pub(crate) fn migrate<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    use tauri::Manager;
-    let Some(local) = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from) else { return };
-    let Ok(packages) = std::fs::read_dir(local.join("Packages")) else { return };
-    let id = &app.config().identifier;
-    let paths = app.path();
+pub(crate) fn migrate(id: &str, local: Option<&Path>, roaming: Option<&Path>) {
+    let Some(appdata) = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from) else { return };
+    let Ok(packages) = std::fs::read_dir(appdata.join("Packages")) else { return };
     for family in packages.flatten().filter(|p| p.file_name().to_string_lossy().starts_with("F4K.CyberCTF_")) {
         let cache = family.path().join("LocalCache");
-        if let Ok(dst) = paths.app_local_data_dir() {
-            migrate_once(&cache.join("Local").join(id), &dst);
+        if let Some(dst) = local {
+            migrate_once(&cache.join("Local").join(id), dst);
         }
-        if let Ok(dst) = paths.app_data_dir() {
-            migrate_once(&cache.join("Roaming").join(id), &dst);
+        if let Some(dst) = roaming {
+            migrate_once(&cache.join("Roaming").join(id), dst);
         }
     }
 }

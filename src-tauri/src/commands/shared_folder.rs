@@ -18,5 +18,5 @@ pub fn shared_folder_set(enabled: bool, path: &str) -> Result<SharedFolderInfo> 
 /// Opens the shared folder in the system's file manager.
 #[tauri::command]
 pub fn shared_folder_open() -> Result<()> {
-    shared_folder::shared_folder_open()
+    shared_folder::shared_folder_open(crate::app::open_folder)
 }

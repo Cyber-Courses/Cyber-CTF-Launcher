@@ -33,6 +33,11 @@ impl TestApp {
         &self.data
     }
 
+    /// The app's folders, as the app shell resolves them.
+    pub fn dirs(&self) -> crate::platform::AppDirs {
+        crate::platform::AppDirs::from(self.handle())
+    }
+
     /// An installed lab's folder, created, with `files` in it.
     pub fn lab(&self, id: &str, files: &[(&str, &str)]) -> PathBuf {
         let dir = self.data.join("labs").join(id);

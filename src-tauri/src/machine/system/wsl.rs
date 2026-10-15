@@ -28,8 +28,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use serde::Serialize;
 
-use crate::AppHandle;
 use crate::error::{Error, Result};
+use crate::platform::AppDirs;
 
 /// Where WSL 2 stands on this machine.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
@@ -211,25 +211,20 @@ fn same_boot(a: u64, b: u64) -> bool {
     a.abs_diff(b) <= 30
 }
 
-fn mark_file(app: &AppHandle, name: &str) -> Option<std::path::PathBuf> {
-    use tauri::Manager;
-    app.path().app_data_dir().ok().map(|d| d.join(name))
-}
-
-fn mark(app: &AppHandle, name: &str, boot: u64) {
-    let Some(f) = mark_file(app, name) else { return };
+fn mark(dirs: &AppDirs, name: &str, boot: u64) {
+    let Some(f) = dirs.data_file(name) else { return };
     if let Some(dir) = f.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
     let _ = std::fs::write(f, boot.to_string());
 }
 
-fn marked_boot(app: &AppHandle, name: &str) -> Option<u64> {
-    std::fs::read_to_string(mark_file(app, name)?).ok()?.trim().parse().ok()
+fn marked_boot(dirs: &AppDirs, name: &str) -> Option<u64> {
+    std::fs::read_to_string(dirs.data_file(name)?).ok()?.trim().parse().ok()
 }
 
-fn unmark(app: &AppHandle, name: &str) {
-    if let Some(f) = mark_file(app, name) {
+fn unmark(dirs: &AppDirs, name: &str) {
+    if let Some(f) = dirs.data_file(name) {
         let _ = std::fs::remove_file(f);
     }
 }
@@ -237,17 +232,17 @@ fn unmark(app: &AppHandle, name: &str) {
 /// Remembers that "Turn on WSL 2" ran in this boot, so the check asks for the restart even
 /// after the app was closed and opened again before it. A new install starts over: the next
 /// restart is one to ask for again.
-pub fn mark_installed(app: &AppHandle) {
-    mark(app, INSTALL_MARK, sysinfo::System::boot_time());
-    unmark(app, RESTART_MARK);
+pub fn mark_installed(dirs: &AppDirs) {
+    mark(dirs, INSTALL_MARK, sysinfo::System::boot_time());
+    unmark(dirs, RESTART_MARK);
 }
 
 /// Whether "Turn on WSL 2" ran in boot `boot` (a mark from an earlier boot is removed).
-fn installed_this_boot(app: &AppHandle, boot: u64) -> bool {
-    match marked_boot(app, INSTALL_MARK) {
+fn installed_this_boot(dirs: &AppDirs, boot: u64) -> bool {
+    match marked_boot(dirs, INSTALL_MARK) {
         Some(marked) if same_boot(marked, boot) => true,
         Some(_) => {
-            unmark(app, INSTALL_MARK);
+            unmark(dirs, INSTALL_MARK);
             false
         }
         None => false,
@@ -255,34 +250,34 @@ fn installed_this_boot(app: &AppHandle, boot: u64) -> bool {
 }
 
 /// Whether Cyber CTF restarted Windows for WSL in a boot before `boot`.
-fn restarted_for_wsl(app: &AppHandle, boot: u64) -> bool {
-    marked_boot(app, RESTART_MARK).is_some_and(|marked| !same_boot(marked, boot))
+fn restarted_for_wsl(dirs: &AppDirs, boot: u64) -> bool {
+    marked_boot(dirs, RESTART_MARK).is_some_and(|marked| !same_boot(marked, boot))
 }
 
 /// What the check makes of `probes`, and what it remembers: once WSL 2 is ready, the restart
 /// done for it is forgotten.
-fn assess(app: &AppHandle, probes: &Probes) -> (WslState, bool) {
+fn assess(dirs: &AppDirs, probes: &Probes) -> (WslState, bool) {
     let state = classify(probes);
     if state == WslState::Ready {
-        unmark(app, RESTART_MARK);
+        unmark(dirs, RESTART_MARK);
     }
     (state, virtualization_off(probes, state))
 }
 
 /// Where WSL 2 stands on this machine: Windows only (`None` elsewhere).
 #[cfg_attr(not(windows), allow(clippy::unused_async, reason = "it awaits the probes on Windows"))]
-pub async fn report(app: &AppHandle) -> Option<WslReport> {
+pub async fn report(dirs: &AppDirs) -> Option<WslReport> {
     #[cfg(windows)]
     {
         let boot = sysinfo::System::boot_time();
-        let probes = windows::probe(installed_this_boot(app, boot), restarted_for_wsl(app, boot)).await;
-        let (state, virtualization_off) = assess(app, &probes);
+        let probes = windows::probe(installed_this_boot(dirs, boot), restarted_for_wsl(dirs, boot)).await;
+        let (state, virtualization_off) = assess(dirs, &probes);
         log::info!("WSL check: {probes:?} -> {state:?}");
         Some(WslReport { state, reopens_after_restart: windows::reopen_command().is_some(), virtualization_off })
     }
     #[cfg(not(windows))]
     {
-        let _ = app;
+        let _ = dirs;
         None
     }
 }
@@ -328,13 +323,13 @@ fn already_scheduled(e: &Error) -> bool {
 /// Asks Windows to restart in a few seconds, once per run of the app: a second ask while it
 /// counts down (another window, a remounted step) is the same restart. `RunOnce` is removed
 /// again only if this call wrote it and the restart couldn't be scheduled.
-async fn schedule_restart(app: &AppHandle, state: &AtomicU8, reason: &str, reopen: &(dyn Reopen + Sync)) -> Result<()> {
+async fn schedule_restart(dirs: &AppDirs, state: &AtomicU8, reason: &str, reopen: &(dyn Reopen + Sync)) -> Result<()> {
     if state.compare_exchange(IDLE, ASKING, Ordering::SeqCst, Ordering::SeqCst).is_err() {
         return Ok(());
     }
     let registered = reopen.register();
     let boot = sysinfo::System::boot_time();
-    mark(app, RESTART_MARK, boot);
+    mark(dirs, RESTART_MARK, boot);
     match crate::platform::exec::run("shutdown", &["/r", "/t", "5", "/c", reason], None).await {
         Ok(_) => {
             state.store(SCHEDULED, Ordering::SeqCst);
@@ -349,7 +344,7 @@ async fn schedule_restart(app: &AppHandle, state: &AtomicU8, reason: &str, reope
             if registered {
                 reopen.unregister();
             }
-            unmark(app, RESTART_MARK);
+            unmark(dirs, RESTART_MARK);
             state.store(IDLE, Ordering::SeqCst);
             Err(e)
         }
@@ -359,7 +354,7 @@ async fn schedule_restart(app: &AppHandle, state: &AtomicU8, reason: &str, reope
 /// Restarts Windows in a few seconds (`shutdown /r`), to finish turning WSL 2 on. Before that,
 /// asks Windows to open Cyber CTF once when the player signs back in (`RunOnce`). Windows only.
 #[cfg_attr(not(windows), allow(clippy::unused_async, reason = "it awaits the restart on Windows"))]
-pub async fn machine_restart(app: AppHandle, reason: String) -> Result<()> {
+pub async fn machine_restart(dirs: AppDirs, reason: String) -> Result<()> {
     let reason = self::reason(&reason)?;
     #[cfg(windows)]
     {
@@ -369,11 +364,11 @@ pub async fn machine_restart(app: AppHandle, reason: String) -> Result<()> {
             return Err(Error::Invalid("a test restarted without scripting shutdown".into()));
         }
         let reopen = windows::UserRunOnce(if cfg!(test) { None } else { windows::reopen_command() });
-        schedule_restart(&app, &RESTART, &reason, &reopen).await
+        schedule_restart(&dirs, &RESTART, &reason, &reopen).await
     }
     #[cfg(not(windows))]
     {
-        let _ = (app, reason);
+        let _ = (dirs, reason);
         Err(Error::Invalid("Restarting from Cyber CTF is only available on Windows.".into()))
     }
 }
@@ -748,37 +743,37 @@ mod tests {
     #[test]
     fn an_install_mark_counts_for_the_boot_it_was_made_in_only() {
         let t = TestApp::new();
-        assert!(!installed_this_boot(t.handle(), 1_000));
-        mark_installed(t.handle());
+        assert!(!installed_this_boot(&t.dirs(), 1_000));
+        mark_installed(&t.dirs());
         let boot = sysinfo::System::boot_time();
-        assert!(installed_this_boot(t.handle(), boot));
-        assert!(installed_this_boot(t.handle(), boot + 2), "the boot time jitters");
+        assert!(installed_this_boot(&t.dirs(), boot));
+        assert!(installed_this_boot(&t.dirs(), boot + 2), "the boot time jitters");
         // After a restart the mark is gone for good.
-        assert!(!installed_this_boot(t.handle(), boot + 600));
+        assert!(!installed_this_boot(&t.dirs(), boot + 600));
         assert!(!t.data().join(INSTALL_MARK).exists());
-        assert!(!installed_this_boot(t.handle(), boot));
+        assert!(!installed_this_boot(&t.dirs(), boot));
         std::fs::write(t.data().join(INSTALL_MARK), "garbage").unwrap();
-        assert!(!installed_this_boot(t.handle(), boot));
+        assert!(!installed_this_boot(&t.dirs(), boot));
         assert!(same_boot(10, 40) && !same_boot(10, 41));
     }
 
     #[test]
     fn a_restart_mark_counts_from_the_next_boot_until_wsl_is_ready_or_installed_again() {
         let t = TestApp::new();
-        mark(t.handle(), RESTART_MARK, 1_000);
+        mark(&t.dirs(), RESTART_MARK, 1_000);
         // Still counting down in the same boot: not restarted yet.
-        assert!(!restarted_for_wsl(t.handle(), 1_000));
-        assert!(restarted_for_wsl(t.handle(), 2_000));
+        assert!(!restarted_for_wsl(&t.dirs(), 1_000));
+        assert!(restarted_for_wsl(&t.dirs(), 2_000));
         // Not ready: remembered.
-        assert_eq!(assess(t.handle(), &Probes { restarted_for_wsl: true, ..firmware_off() }), (Unknown, true));
-        assert!(restarted_for_wsl(t.handle(), 2_000));
+        assert_eq!(assess(&t.dirs(), &Probes { restarted_for_wsl: true, ..firmware_off() }), (Unknown, true));
+        assert!(restarted_for_wsl(&t.dirs(), 2_000));
         // Ready: forgotten.
-        assert_eq!(assess(t.handle(), &win11_store_ready()), (Ready, false));
-        assert!(!restarted_for_wsl(t.handle(), 2_000));
+        assert_eq!(assess(&t.dirs(), &win11_store_ready()), (Ready, false));
+        assert!(!restarted_for_wsl(&t.dirs(), 2_000));
         // A new install forgets it too.
-        mark(t.handle(), RESTART_MARK, 1_000);
-        mark_installed(t.handle());
-        assert!(!restarted_for_wsl(t.handle(), 2_000));
+        mark(&t.dirs(), RESTART_MARK, 1_000);
+        mark_installed(&t.dirs());
+        assert!(!restarted_for_wsl(&t.dirs(), 2_000));
     }
 
     #[test]
@@ -836,13 +831,13 @@ mod tests {
         let t = TestApp::new();
         let tools = Tools::rules(&[("shutdown", ok(""))]);
         let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
-        schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
+        schedule_restart(&t.dirs(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
         assert_eq!(tools.calls(), [SHUTDOWN]);
         assert!(reopen.written());
-        assert_eq!(marked_boot(t.handle(), RESTART_MARK), Some(sysinfo::System::boot_time()));
+        assert_eq!(marked_boot(&t.dirs(), RESTART_MARK), Some(sysinfo::System::boot_time()));
         // The other window, or the remounted step, asks again during the countdown: the same
         // restart, no second shutdown, RunOnce left as it is.
-        schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
+        schedule_restart(&t.dirs(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
         assert_eq!(tools.calls().len(), 1);
         assert_eq!(reopen.writes.load(Ordering::SeqCst), 1);
         assert!(reopen.written());
@@ -855,8 +850,8 @@ mod tests {
         fn send<T: Send>(_: &T) {}
         let t = TestApp::new();
         let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
-        send(&schedule_restart(t.handle(), &state, "x", &reopen));
-        send(&machine_restart(t.handle().clone(), String::new()));
+        send(&schedule_restart(&t.dirs(), &state, "x", &reopen));
+        send(&machine_restart(t.dirs(), String::new()));
     }
 
     #[tokio::test]
@@ -864,10 +859,10 @@ mod tests {
         let t = TestApp::new();
         let _tools = Tools::rules(&[("shutdown", fail("A system shutdown has already been scheduled.(1190)"))]);
         let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
-        schedule_restart(t.handle(), &state, "x", &reopen).await.unwrap();
+        schedule_restart(&t.dirs(), &state, "x", &reopen).await.unwrap();
         assert!(reopen.written(), "the app still reopens after that restart");
         assert_eq!(state.load(Ordering::SeqCst), SCHEDULED);
-        assert!(marked_boot(t.handle(), RESTART_MARK).is_some());
+        assert!(marked_boot(&t.dirs(), RESTART_MARK).is_some());
     }
 
     #[tokio::test]
@@ -875,13 +870,13 @@ mod tests {
         let t = TestApp::new();
         let tools = Tools::rules(&[("shutdown", fail("Access is denied.(5)"))]);
         let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
-        let err = schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap_err();
+        let err = schedule_restart(&t.dirs(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap_err();
         assert!(err.to_string().contains("Access is denied"), "{err}");
         assert!(!reopen.written(), "RunOnce removed");
-        assert!(marked_boot(t.handle(), RESTART_MARK).is_none());
+        assert!(marked_boot(&t.dirs(), RESTART_MARK).is_none());
         drop(tools);
         let tools = Tools::rules(&[("shutdown", ok(""))]);
-        schedule_restart(t.handle(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
+        schedule_restart(&t.dirs(), &state, "Cyber CTF: finishing WSL 2", &reopen).await.unwrap();
         assert_eq!(tools.calls(), [SHUTDOWN]);
         assert!(reopen.written());
     }
@@ -900,10 +895,10 @@ mod tests {
         }
         let t = TestApp::new();
         let _tools = Tools::rules(&[("shutdown", fail("Access is denied.(5)"))]);
-        assert!(schedule_restart(t.handle(), &AtomicU8::new(IDLE), "x", &Untouchable).await.is_err());
+        assert!(schedule_restart(&t.dirs(), &AtomicU8::new(IDLE), "x", &Untouchable).await.is_err());
         let refused = FakeReopen { refuses: true, ..FakeReopen::default() };
         let _tools = Tools::rules(&[("shutdown", ok(""))]);
-        schedule_restart(t.handle(), &AtomicU8::new(IDLE), "x", &refused).await.unwrap();
+        schedule_restart(&t.dirs(), &AtomicU8::new(IDLE), "x", &refused).await.unwrap();
         assert!(!refused.written());
     }
 
@@ -912,16 +907,16 @@ mod tests {
     async fn restarting_is_refused_off_windows_and_the_check_has_no_wsl() {
         let t = TestApp::new();
         let tools = Tools::rules(&[]);
-        let err = machine_restart(t.handle().clone(), String::new()).await.unwrap_err();
+        let err = machine_restart(t.dirs(), String::new()).await.unwrap_err();
         assert_eq!(err.to_string(), "Restarting from Cyber CTF is only available on Windows.");
         assert_eq!(tools.calls(), [] as [&str; 0]);
-        assert!(report(t.handle()).await.is_none());
+        assert!(report(&t.dirs()).await.is_none());
     }
 
     #[tokio::test]
     async fn a_bad_restart_note_is_refused_whatever_the_os() {
         let t = TestApp::new();
-        let err = machine_restart(t.handle().clone(), "a\nb".into()).await.unwrap_err();
+        let err = machine_restart(t.dirs(), "a\nb".into()).await.unwrap_err();
         assert_eq!(err.to_string(), "The restart note must be one line of at most 200 characters.");
     }
 
@@ -930,7 +925,7 @@ mod tests {
     async fn the_restart_command_runs_shutdown_with_the_note() {
         let t = TestApp::new();
         let tools = Tools::rules(&[("shutdown", ok(""))]);
-        machine_restart(t.handle().clone(), "Cyber CTF: finishing WSL 2".into()).await.unwrap();
+        machine_restart(t.dirs(), "Cyber CTF: finishing WSL 2".into()).await.unwrap();
         assert_eq!(tools.calls(), [SHUTDOWN]);
         // The process-wide state: later asks in this test process are the same restart.
         RESTART.store(IDLE, Ordering::SeqCst);
@@ -940,7 +935,7 @@ mod tests {
     #[tokio::test]
     async fn a_test_never_restarts_for_real() {
         let t = TestApp::new();
-        assert!(machine_restart(t.handle().clone(), String::new()).await.is_err());
+        assert!(machine_restart(t.dirs(), String::new()).await.is_err());
     }
 
     /// The real probes on this Windows: they finish in time, read the registry, and give a state.
@@ -953,7 +948,7 @@ mod tests {
         assert!(started.elapsed() < std::time::Duration::from_secs(45));
         assert!(probes.reboot_pending.is_some() && probes.lxss_service.is_some() && probes.wsl_service.is_some(), "{probes:?}");
         let t = TestApp::new();
-        assert!(report(t.handle()).await.is_some());
+        assert!(report(&t.dirs()).await.is_some());
     }
 
     /// Removes the test's RunOnce value however the test ends.

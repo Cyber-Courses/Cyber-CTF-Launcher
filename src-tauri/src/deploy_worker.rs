@@ -21,11 +21,12 @@ mod worker;
 use crate::AppHandle;
 use serde::{Deserialize, Serialize};
 
-pub use files::{last_deploy_failed, log_so_far};
+pub use files::log_so_far;
 pub use process::{kill_and_wait, running, running_jobs};
 pub use worker::worker_main;
 
 use crate::error::{Code, Error, Result};
+use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
 use crate::runtime::{Park, Runtime};
 
@@ -173,7 +174,7 @@ pub async fn end_workers(app: &AppHandle, id: &str) {
 /// caller falls back to running the job in this process).
 fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> {
     let _one_at_a_time = STARTING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    if running(app).contains(&job.key()) {
+    if running(&AppDirs::from(app)).contains(&job.key()) {
         return Err(Error::coded(Code::AlreadyInProgress));
     }
     // Nothing begins while the lab stops: between ending its workers and taking its lock, a
@@ -189,14 +190,19 @@ fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> 
         return Err(Error::coded(Code::AlreadyInProgress));
     }
     // The pidfile is taken before the worker starts (another process may be racing for it too).
-    let pidfile = process::claim(&files::of(app, &job.key())?)?;
+    let pidfile = process::claim(&files::of(&AppDirs::from(app), &job.key())?)?;
     Ok(process::spawn(app, job, pidfile))
+}
+
+/// Whether the lab's last finished launch failed (see [`files::last_deploy_failed`]).
+pub fn last_deploy_failed(app: &AppHandle, lab_id: &str) -> bool {
+    files::last_deploy_failed(&AppDirs::from(app), lab_id)
 }
 
 /// The cross-process lock file of `lab` (see [`lock`]).
 pub fn lock_path(app: &AppHandle, lab: &str) -> Result<std::path::PathBuf> {
     crate::runtime::validate_id(lab)?;
-    Ok(lock::path_in(&files::dir(app)?, lab))
+    Ok(lock::path_in(&files::dir(&AppDirs::from(app))?, lab))
 }
 
 #[cfg(test)]
@@ -287,7 +293,7 @@ mod tests {
             let job = Job::on_lab("ad", op);
             let err = super::run_job(t.handle(), job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err().to_string();
             assert!(err.starts_with("This lab is stopping"), "{err}");
-            assert!(!super::files::of(t.handle(), &job.key()).unwrap().pid.exists(), "no worker was claimed");
+            assert!(!super::files::of(&t.dirs(), &job.key()).unwrap().pid.exists(), "no worker was claimed");
         }
         drop(stopping);
     }

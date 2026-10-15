@@ -6,11 +6,10 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::AppHandle;
-
 use super::Workload;
 use crate::error::{Error, Result};
 use crate::machine::{labs_dir, selftest};
+use crate::platform::AppDirs;
 use crate::platform::exec::run_env_timed;
 
 /// `vagrant global-status` talks to VirtualBox, which can be wedged: past this it is given up.
@@ -89,12 +88,12 @@ fn owner(home: &Path, labs: Option<&Path>, selftest_dir: Option<&Path>) -> Optio
 }
 
 /// Running local VMs from `vagrant global-status`, kept to the app's own folders.
-pub(super) async fn workloads(app: &AppHandle) -> Vec<Workload> {
+pub(super) async fn workloads(dirs: &AppDirs) -> Vec<Workload> {
     let Some(out) = global_status().await else {
         return Vec::new();
     };
-    let labs = labs_dir(app).ok();
-    let selftest_dir = selftest::work_dir(app, "vm").ok();
+    let labs = labs_dir(dirs).ok();
+    let selftest_dir = selftest::work_dir(dirs, "vm").ok();
     running_by_owner(&out, labs.as_deref(), selftest_dir.as_deref())
 }
 
@@ -110,19 +109,19 @@ fn running_by_owner(out: &str, labs: Option<&Path>, selftest_dir: Option<&Path>)
 }
 
 /// Destroys a lab's (or the self-test's) local VMs.
-pub(super) async fn stop(app: &AppHandle, id: &str) -> Result<()> {
+pub(super) async fn stop(dirs: &AppDirs, id: &str) -> Result<()> {
     // A lab's VMs: one per machine (.isoloom/vagrant) or Docker on one VM (.isoloom/docker-vm).
-    let dirs: Vec<PathBuf> = if id == "selftest" {
-        vec![selftest::work_dir(app, "vm")?]
+    let vagrant_dirs: Vec<PathBuf> = if id == "selftest" {
+        vec![selftest::work_dir(dirs, "vm")?]
     } else {
-        let out = crate::runtime::lab::out(&labs_dir(app)?.join(id));
+        let out = crate::runtime::lab::out(&labs_dir(dirs)?.join(id));
         vec![out.join("vagrant"), out.join("docker-vm")]
     };
-    let dirs: Vec<PathBuf> = dirs.into_iter().filter(|d| d.join("Vagrantfile").is_file()).collect();
-    if dirs.is_empty() {
+    let vagrant_dirs: Vec<PathBuf> = vagrant_dirs.into_iter().filter(|d| d.join("Vagrantfile").is_file()).collect();
+    if vagrant_dirs.is_empty() {
         return Err(Error::Invalid(format!("no VMs found for `{id}`")));
     }
-    for dir in dirs {
+    for dir in vagrant_dirs {
         crate::platform::exec::Vagrant::of(&dir, &[]).run(&["destroy", "-f"]).await?;
     }
     Ok(())
@@ -190,7 +189,7 @@ mod tests {
             std::fs::write(d.join("Vagrantfile"), "").unwrap();
         }
         let tools = Tools::rules(&[]);
-        super::stop(t.handle(), "goad").await.unwrap();
+        super::stop(&t.dirs(), "goad").await.unwrap();
         assert_eq!(tools.calls().iter().filter(|c| c.as_str() == "vagrant destroy -f").count(), 2, "{:?}", tools.calls());
     }
 

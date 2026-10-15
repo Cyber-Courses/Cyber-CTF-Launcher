@@ -4,15 +4,36 @@
 //! Automation prompt for driving Terminal.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::AppHandle;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::Serialize;
 
 use crate::error::{Error, Result};
-use crate::runtime::{Runtime, ShellKind, attack_vm_shell_target, end_shell_session, end_shell_session_blocking, shell_command_for};
+use crate::runtime::{Runtime, ShellKind, end_shell_session, end_shell_session_blocking};
+
+/// Where a lab's shells run, as the runtime knows it. The command adapter answers it over the
+/// app, so the shell itself never touches Tauri.
+pub trait ShellTargets {
+    /// The command line of lab `id`'s shell of `kind` on `runtime`, its processes marked `tag`,
+    /// and the attack box container they run in, if any.
+    fn command_line(&self, id: &str, kind: ShellKind, runtime: Runtime, tag: &str) -> impl Future<Output = Result<(String, Option<String>)>> + Send;
+
+    /// The folder and machine of lab `id`'s attack VM, for `vagrant ssh` there.
+    fn attack_vm(&self, id: &str) -> Result<(PathBuf, Option<&'static str>)>;
+}
+
+/// A shell's processes in the attack box: its container, the mark on them, and the async runtime
+/// the shell was opened on, which ends them once the shell is gone (without one, they are ended
+/// on the shell's reaper thread).
+struct Remote {
+    container: String,
+    tag: String,
+    tasks: Option<tokio::runtime::Handle>,
+}
 
 struct Session {
     /// Where its input goes: an [`Input`] (never the PTY itself, whose write can block).
@@ -22,19 +43,25 @@ struct Session {
     /// The window showing it: closing that window ends it (the page's own cleanup never runs
     /// when its webview is destroyed).
     window: String,
-    /// The attack box container and the mark on this shell's processes in it: killing
-    /// `docker exec` here leaves them running there.
-    remote: Option<(String, String)>,
+    /// Its processes in the attack box: killing `docker exec` here leaves them running there.
+    remote: Option<Remote>,
 }
 
 /// Kills a session's shell and reaps it, off the calling thread (sync commands run on the main
 /// thread): a killed child that is never waited on stays a zombie while the app runs.
 fn end(mut sess: Session) {
     let _ = sess.child.kill();
-    if let Some((container, tag)) = sess.remote.take() {
-        tauri::async_runtime::spawn(async move { end_shell_session(&container, &tag).await });
-    }
+    let unended = match sess.remote.take() {
+        Some(Remote { container, tag, tasks: Some(tasks) }) => {
+            tasks.spawn(async move { end_shell_session(&container, &tag).await });
+            None
+        }
+        other => other,
+    };
     std::thread::spawn(move || {
+        if let Some(Remote { container, tag, .. }) = unended {
+            end_shell_session_blocking(&container, &tag);
+        }
         let _ = sess.child.wait();
     });
 }
@@ -141,16 +168,16 @@ pub struct Shell {
 
 /// Starts `shell` in a pseudo-terminal for the window labelled `window`; its output goes to
 /// `send`, which answers false once nobody reads it. Returns the session.
-pub async fn open(app: &AppHandle, window: &str, shell: Shell, send: impl FnMut(TermEvent) -> bool + Send + 'static) -> Result<u32> {
+pub async fn open(targets: &impl ShellTargets, window: &str, shell: Shell, send: impl FnMut(TermEvent) -> bool + Send + 'static) -> Result<u32> {
     let Shell { id, kind, runtime, cols, rows } = shell;
     let session = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // Unique across app runs too, so a later run never ends an earlier run's shell.
     let tag = format!("{}-{session}", std::process::id());
-    let (line, container) = shell_command_for(app, &id, kind, runtime, &tag).await?;
-    let remote = container.map(|c| (c, tag));
+    let (line, container) = targets.command_line(&id, kind, runtime, &tag).await?;
+    let remote = container.map(|container| Remote { container, tag, tasks: tokio::runtime::Handle::try_current().ok() });
     // Windows has no `sh` for the attack VM's `cd … && vagrant ssh`: vagrant runs directly there,
     // in the attack VM's folder.
-    let direct = if cfg!(windows) && matches!(kind, ShellKind::AttackVm) { Some(attack_vm_shell_target(app, &id)?) } else { None };
+    let direct = if cfg!(windows) && matches!(kind, ShellKind::AttackVm) { Some(targets.attack_vm(&id)?) } else { None };
     let pair = native_pty_system().openpty(pty_size(cols, rows)).map_err(|e| Error::Invalid(format!("couldn't open a terminal: {e}")))?;
     let mut cmd = pty_command(&line, direct.as_ref().map(|(d, m)| (d.as_path(), *m)));
     cmd.env("TERM", "xterm-256color");
@@ -320,7 +347,7 @@ pub fn close_all() {
     let all: Vec<Session> = with_sessions(|s| s.drain().map(|(_, v)| v).collect());
     for mut sess in all {
         let _ = sess.child.kill();
-        if let Some((container, tag)) = sess.remote.take() {
+        if let Some(Remote { container, tag, .. }) = sess.remote.take() {
             end_shell_session_blocking(&container, &tag);
         }
     }

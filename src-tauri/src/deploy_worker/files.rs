@@ -2,11 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::AppHandle;
-use tauri::Manager;
-
 use super::process::{Worker, alive};
 use crate::error::{Error, Result};
+use crate::platform::AppDirs;
 
 /// A worker's files.
 pub struct Files {
@@ -51,15 +49,15 @@ impl Files {
 }
 
 /// The workers' folder, created if missing, owner-only (its jobs carry launch tokens).
-pub fn dir(app: &AppHandle) -> Result<PathBuf> {
-    let d = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("deploys");
+pub fn dir(dirs: &AppDirs) -> Result<PathBuf> {
+    let d = dirs.data()?.join("deploys");
     crate::platform::private_fs::dir(&d).map_err(Error::Io)?;
     Ok(d)
 }
 
 /// The files of `key`'s worker.
-pub fn of(app: &AppHandle, key: &str) -> Result<Files> {
-    Ok(Files::of(&dir(app)?, key))
+pub fn of(dirs: &AppDirs, key: &str) -> Result<Files> {
+    Ok(Files::of(&dir(dirs)?, key))
 }
 
 /// The worker a pidfile names: `<pid> <start time>` (or a bare `<pid>`, from older versions).
@@ -69,15 +67,15 @@ pub fn read_worker(path: &Path) -> Option<Worker> {
 
 /// Whether the lab's last finished launch failed (its worker wrote `error: …`). A run still in
 /// progress, none at all, or another operation that failed, isn't a failed launch.
-pub fn last_deploy_failed(app: &AppHandle, lab_id: &str) -> bool {
-    let Ok(f) = of(app, lab_id) else { return false };
+pub fn last_deploy_failed(dirs: &AppDirs, lab_id: &str) -> bool {
+    let Ok(f) = of(dirs, lab_id) else { return false };
     f.failed()
 }
 
 /// The log of a lab's latest deploy so far, for an app that (re)attaches to a running worker.
-pub fn log_so_far(app: &AppHandle, lab_id: &str) -> Result<String> {
+pub fn log_so_far(dirs: &AppDirs, lab_id: &str) -> Result<String> {
     crate::runtime::validate_id(lab_id)?;
-    let f = of(app, lab_id)?;
+    let f = of(dirs, lab_id)?;
     Ok(std::fs::read_to_string(&f.log).unwrap_or_default())
 }
 
@@ -183,14 +181,14 @@ pub(crate) mod tests {
     #[test]
     fn the_log_so_far_needs_a_valid_id_and_is_empty_before_any_deploy() {
         let t = crate::testing::test_app::TestApp::new();
-        assert!(log_so_far(t.handle(), "../x").unwrap_err().to_string().starts_with("invalid lab id"));
-        assert_eq!(log_so_far(t.handle(), "never-deployed").unwrap(), "");
-        assert!(!last_deploy_failed(t.handle(), "never-deployed"));
-        let f = of(t.handle(), "lab-1").unwrap();
+        assert!(log_so_far(&t.dirs(), "../x").unwrap_err().to_string().starts_with("invalid lab id"));
+        assert_eq!(log_so_far(&t.dirs(), "never-deployed").unwrap(), "");
+        assert!(!last_deploy_failed(&t.dirs(), "never-deployed"));
+        let f = of(&t.dirs(), "lab-1").unwrap();
         std::fs::write(&f.log, "line\n").unwrap();
         std::fs::write(&f.launch_status, "error: boom").unwrap();
-        assert_eq!(log_so_far(t.handle(), "lab-1").unwrap(), "line\n");
-        assert!(last_deploy_failed(t.handle(), "lab-1"));
-        assert!(!last_deploy_failed(t.handle(), "../x"), "a bad id is never a failed deploy");
+        assert_eq!(log_so_far(&t.dirs(), "lab-1").unwrap(), "line\n");
+        assert!(last_deploy_failed(&t.dirs(), "lab-1"));
+        assert!(!last_deploy_failed(&t.dirs(), "../x"), "a bad id is never a failed deploy");
     }
 }

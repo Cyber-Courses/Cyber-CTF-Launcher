@@ -124,7 +124,7 @@ fn open_main_app() {
 /// Runs the job, logging to its file (also this process's stdout/stderr, for panics), and leaves
 /// the verdict in the status file. Returns the process's exit code.
 async fn run_logged(app: &AppHandle, job: Job) -> i32 {
-    let Ok(f) = files::of(app, &job.key()) else { return 2 };
+    let Ok(f) = files::of(&crate::platform::AppDirs::from(app), &job.key()) else { return 2 };
     let sink = std::sync::Mutex::new(crate::platform::private_fs::append(&f.log).ok());
     let log = |line: String| {
         if let Ok(mut guard) = sink.lock()
@@ -263,7 +263,7 @@ mod tests {
         // A folder where the lock file goes: it can't be opened.
         std::fs::create_dir_all(crate::deploy_worker::lock_path(t.handle(), "web").unwrap()).unwrap();
         let job = Job::on_lab("web", Op::Resume { runtime: crate::runtime::Runtime::Docker });
-        let f = crate::deploy_worker::files::of(t.handle(), &job.key()).unwrap();
+        let f = crate::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
         assert_eq!(super::run_logged(t.handle(), job).await, 1);
         let status = std::fs::read_to_string(&f.status).unwrap();
         assert!(verdict(&status).unwrap_err().to_string().starts_with("Couldn't lock the lab"), "{status}");
@@ -283,7 +283,7 @@ mod tests {
             Op::Launch,
         ] {
             let job = Job::on_lab("gone", op);
-            let f = crate::deploy_worker::files::of(t.handle(), &job.key()).unwrap();
+            let f = crate::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
             assert_eq!(super::run_logged(t.handle(), job).await, 1);
             let status = std::fs::read_to_string(&f.status).unwrap();
             assert!(status.starts_with("error: "), "{status}");

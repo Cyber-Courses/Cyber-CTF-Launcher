@@ -113,10 +113,10 @@ fn save_to(file: Option<&Path>, enabled: bool, path: &str) -> Result<()> {
     Ok(())
 }
 
-/// Opens the folder in the system's file manager.
-pub fn shared_folder_open() -> Result<()> {
+/// Opens the folder with `open` (the system's file manager).
+pub fn shared_folder_open(open: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
     let path = current().ok_or_else(|| Error::Invalid("folder sharing is off".into()))?;
-    crate::platform::open_folder(&path)
+    open(&path)
 }
 
 #[cfg(test)]
@@ -208,7 +208,7 @@ mod tests {
         assert_eq!((shown.path.as_str(), shown.mount_point), (folder.display().to_string().as_str(), MOUNT_POINT));
         assert_eq!(shared_folder_get().path, folder.display().to_string());
         assert!(file.is_file() && !folder.exists(), "off: the folder isn't created");
-        assert_eq!(shared_folder_open().unwrap_err().to_string(), "folder sharing is off");
+        assert_eq!(shared_folder_open(|_| panic!("nothing to open")).unwrap_err().to_string(), "folder sharing is off");
         // A path that can't be shared is refused and the setting kept.
         assert_eq!(shared_folder_set(true, "relative/dir").err().unwrap().to_string(), "choose a full folder path");
         assert_eq!(shared_folder_get().path, folder.display().to_string());

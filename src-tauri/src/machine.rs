@@ -10,12 +10,10 @@ pub mod workloads;
 
 use std::path::PathBuf;
 
-use crate::AppHandle;
-use tauri::Manager;
-
-use crate::error::{Error, Result};
+use crate::error::Result;
+use crate::platform::AppDirs;
 
 /// Where installed labs live: `<app data>/labs/<lab id>/`.
-fn labs_dir(app: &AppHandle) -> Result<PathBuf> {
-    Ok(app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("labs"))
+fn labs_dir(dirs: &AppDirs) -> Result<PathBuf> {
+    Ok(dirs.data()?.join("labs"))
 }

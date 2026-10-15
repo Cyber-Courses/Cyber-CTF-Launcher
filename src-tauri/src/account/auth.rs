@@ -13,10 +13,7 @@ pub use scheme::deliver as deliver_link;
 
 use std::future::Future;
 
-use crate::AppHandle;
 use serde::Serialize;
-use tauri::ipc::Channel;
-use tauri_plugin_opener::OpenerExt;
 
 use crate::error::{Code, Error, Result};
 use crate::platform::config;
@@ -189,16 +186,14 @@ fn authorize_url(client_id: &str, redirect_uri: &str, state: &str, verifier: &st
     Ok(authorize)
 }
 
-/// Signs in through the system browser. `events` hears the sign-in link before the wait, and
-/// even when no browser could be opened: a browser that takes the link and shows nothing can't
-/// be detected, so the app offers the link to copy into one. `auth_login_cancel` (or another
-/// sign-in) ends the wait with [`Error::Cancelled`].
-pub async fn auth_login(app: AppHandle, events: Channel<String>) -> Result<AuthStatus> {
+/// Signs in through the system browser: `show` gets the sign-in link before the wait, to tell
+/// the page and open the browser. The page hears it even when no browser could be opened: a
+/// browser that takes the link and shows nothing can't be detected, so the app offers the link
+/// to copy into one. `auth_login_cancel` (or another sign-in) ends the wait with
+/// [`Error::Cancelled`].
+pub async fn auth_login(show: impl FnOnce(&url::Url)) -> Result<AuthStatus> {
     let open = |url: &url::Url| {
-        let _ = events.send(url.to_string());
-        if let Err(e) = app.opener().open_url(url.as_str(), None::<&str>) {
-            log::warn!("no browser opened for sign-in ({e}); the link is offered to copy");
-        }
+        show(url);
         Ok(())
     };
     if config::scheme_redirect() { login_by_link(open).await } else { login_by_loopback(open).await }

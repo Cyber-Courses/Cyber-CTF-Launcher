@@ -13,7 +13,14 @@ use crate::error::Result;
 /// Signs in through the system browser, the sign-in link sent on `events` (see [`auth::auth_login`]).
 #[tauri::command]
 pub async fn auth_login(app: AppHandle, events: Channel<String>) -> Result<AuthStatus> {
-    auth::auth_login(app, events).await
+    use tauri_plugin_opener::OpenerExt;
+    auth::auth_login(|url| {
+        let _ = events.send(url.to_string());
+        if let Err(e) = app.opener().open_url(url.as_str(), None::<&str>) {
+            log::warn!("no browser opened for sign-in ({e}); the link is offered to copy");
+        }
+    })
+    .await
 }
 
 /// Ends the sign-in waiting for the browser, if any.

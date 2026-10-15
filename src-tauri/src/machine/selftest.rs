@@ -15,13 +15,11 @@ mod vm;
 
 use std::path::PathBuf;
 
-use crate::AppHandle;
 use serde::Serialize;
-use tauri::Manager;
-use tauri::ipc::Channel;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::machine::storage::owned;
+use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
 
 use docker::IMAGE;
@@ -50,7 +48,8 @@ pub struct Event {
 /// Longest live output line shown under a running step, in characters.
 const PROGRESS_MAX: usize = 160;
 
-struct Reporter(Channel<Event>);
+/// Where a test's events go: the page that runs it.
+struct Reporter(Box<dyn Fn(Event) + Send + Sync>);
 
 impl Reporter {
     /// Live output for a step that is still running (shown as its detail line).
@@ -62,7 +61,7 @@ impl Reporter {
     }
 
     fn send(&self, step: &'static str, label: &'static str, state: &'static str, detail: Option<String>) {
-        let _ = self.0.send(Event { step, label, state, detail });
+        (self.0)(Event { step, label, state, detail });
     }
 
     /// Runs one step, reporting it; a failure stops the test with that step's error.
@@ -101,8 +100,8 @@ fn explain(raw: &str) -> String {
     format!("{hint} Details: {raw}")
 }
 
-pub(crate) fn work_dir(app: &AppHandle, kind: &str) -> Result<PathBuf> {
-    let dir = app.path().app_cache_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("selftest").join(kind);
+pub(crate) fn work_dir(dirs: &AppDirs, kind: &str) -> Result<PathBuf> {
+    let dir = dirs.cache()?.join("selftest").join(kind);
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
@@ -114,29 +113,29 @@ fn arm() -> bool {
 
 /// Runs `op`, a self-test of `kind`, recording what it downloaded as the app's (the test image,
 /// or the test box of whichever provider it used), for Storage to clean up.
-async fn tracked<T>(app: &AppHandle, kind: Kind, op: impl std::future::Future<Output = T>) -> T {
+async fn tracked<T>(dirs: &AppDirs, kind: Kind, op: impl std::future::Future<Output = T>) -> T {
     match kind {
-        Kind::Docker => owned::tracked(app, &[IMAGE.to_string()], &[], op).await,
+        Kind::Docker => owned::tracked(dirs.clone(), &[IMAGE.to_string()], &[], op).await,
         Kind::Vm => {
             let boxes: Vec<String> = vm::TEST_PROVIDERS.iter().flat_map(|p| candidate_boxes(*p, arm()).iter().map(ToString::to_string)).collect();
-            owned::tracked(app, &[], &boxes, op).await
+            owned::tracked(dirs.clone(), &[], &boxes, op).await
         }
     }
 }
 
 /// Starts the test downloads early (called when setup opens), recording what they download as
 /// the app's. Errors are ignored by the UI: the test itself retries and reports them.
-pub async fn machine_selftest_prefetch(app: AppHandle, kind: Kind, provider: Option<Provider>) -> Result<()> {
+pub async fn machine_selftest_prefetch(dirs: AppDirs, kind: Kind, provider: Option<Provider>) -> Result<()> {
     match kind {
-        Kind::Docker => owned::tracked(&app, &[IMAGE.to_string()], &[], downloads::ensure_image()).await.map(|_| ()),
+        Kind::Docker => owned::tracked(dirs, &[IMAGE.to_string()], &[], downloads::ensure_image()).await.map(|_| ()),
         Kind::Vm => {
             let Some(p) = vm::test_provider(provider).await else { return Ok(()) };
             let (bx, cached) = vm::pick_box(p, arm()).await;
             if cached {
                 return Ok(());
             }
-            let dir = work_dir(&app, "vm")?;
-            owned::tracked(&app, &[], &[bx.to_string()], downloads::ensure_box(&dir, p, bx, arm(), |_| {})).await.map(|_| ())
+            let dir = work_dir(&dirs, "vm")?;
+            owned::tracked(dirs, &[], &[bx.to_string()], downloads::ensure_box(&dir, p, bx, arm(), |_| {})).await.map(|_| ())
         }
     }
 }
@@ -153,14 +152,15 @@ fn one_at_a_time(kind: Kind) -> &'static tokio::sync::Mutex<()> {
     }
 }
 
-pub async fn machine_selftest(app: AppHandle, kind: Kind, provider: Option<Provider>, events: Channel<Event>) -> Result<()> {
+/// Runs the self-test of `kind` (on `provider`, for a VM), each step's event sent to `events`.
+pub async fn machine_selftest(dirs: AppDirs, kind: Kind, provider: Option<Provider>, events: impl Fn(Event) + Send + Sync + 'static) -> Result<()> {
     let _alone = one_at_a_time(kind).lock().await;
-    let r = Reporter(events);
+    let r = Reporter(Box::new(events));
     // Boxed: the steps of a test VM's run make a large future.
-    Box::pin(tracked(&app, kind, async {
+    Box::pin(tracked(&dirs, kind, async {
         match kind {
-            Kind::Docker => docker::run_test(&work_dir(&app, "docker")?, &r).await,
-            Kind::Vm => vm::run_test(&work_dir(&app, "vm")?, provider, &r).await,
+            Kind::Docker => docker::run_test(&work_dir(&dirs, "docker")?, &r).await,
+            Kind::Vm => vm::run_test(&work_dir(&dirs, "vm")?, provider, &r).await,
         }
     }))
     .await
@@ -169,12 +169,13 @@ pub async fn machine_selftest(app: AppHandle, kind: Kind, provider: Option<Provi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::Error;
     use crate::testing::test_app::Sink;
 
     /// A reporter whose events land in a sink.
     fn reporter() -> (Reporter, Sink) {
-        let sink = Sink::default();
-        (Reporter(sink.channel()), sink)
+        let (events, sink) = events();
+        (Reporter(Box::new(events)), sink)
     }
 
     fn states(seen: &Sink) -> Vec<String> {
@@ -217,10 +218,16 @@ mod tests {
         assert!(out.ends_with(raw));
     }
 
-    /// A channel whose events land in a sink, for the commands.
-    fn events() -> (Channel<Event>, Sink) {
+    /// Where events go to land in a sink, as the page's channel would take them.
+    fn events() -> (impl Fn(Event) + Send + Sync + 'static, Sink) {
         let sink = Sink::default();
-        (sink.channel(), sink)
+        let channel = sink.channel();
+        (
+            move |e| {
+                let _ = channel.send(e);
+            },
+            sink,
+        )
     }
 
     #[tokio::test]
@@ -238,11 +245,11 @@ mod tests {
             _ => ok(""),
         });
         let (channel, seen) = events();
-        machine_selftest(t.handle().clone(), Kind::Docker, None, channel).await.unwrap();
+        machine_selftest(t.dirs(), Kind::Docker, None, channel).await.unwrap();
         let done: Vec<String> = states(&seen).into_iter().filter(|s| !s.ends_with(":running")).collect();
         assert_eq!(done, ["engine:ok", "pull:ok", "start:ok", "network:ok", "port:ok", "cleanup:ok"]);
         assert!(tools.called("down -v --remove-orphans"));
-        machine_selftest_prefetch(t.handle().clone(), Kind::Docker, None).await.unwrap();
+        machine_selftest_prefetch(t.dirs(), Kind::Docker, None).await.unwrap();
     }
 
     #[tokio::test]
@@ -254,7 +261,7 @@ mod tests {
         let tools = Tools::rules(&[]);
         let first = one_at_a_time(Kind::Docker).lock().await;
         let (channel, seen) = events();
-        let second = tokio::time::timeout(std::time::Duration::from_millis(200), machine_selftest(t.handle().clone(), Kind::Docker, None, channel)).await;
+        let second = tokio::time::timeout(std::time::Duration::from_millis(200), machine_selftest(t.dirs(), Kind::Docker, None, channel)).await;
         assert!(second.is_err(), "it waits");
         assert!(tools.calls().is_empty() && seen.messages().is_empty());
         drop(first);
@@ -266,7 +273,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let tools = Tools::rules(&[("docker info", fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"))]);
         let (channel, seen) = events();
-        assert!(machine_selftest(t.handle().clone(), Kind::Docker, None, channel).await.is_err());
+        assert!(machine_selftest(t.dirs(), Kind::Docker, None, channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
         assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
         assert!(tools.called("down -v"), "the test lab is torn down even so");
@@ -287,7 +294,7 @@ mod tests {
             _ => ok(""),
         });
         let (channel, seen) = events();
-        let r = machine_selftest(t.handle().clone(), Kind::Vm, None, channel).await;
+        let r = machine_selftest(t.dirs(), Kind::Vm, None, channel).await;
         let done: Vec<String> = states(&seen).into_iter().filter(|s| !s.ends_with(":running")).collect();
         assert_eq!(&done[..2], ["vagrant:ok", "provider:ok"], "{done:?}");
         r.unwrap();
@@ -296,7 +303,7 @@ mod tests {
         assert_eq!(done.last().map(String::as_str), Some("cleanup:ok"));
         assert!(tools.called("vagrant up --provider") && tools.called("vagrant destroy -f"));
         // The box is there already: nothing to prefetch.
-        machine_selftest_prefetch(t.handle().clone(), Kind::Vm, None).await.unwrap();
+        machine_selftest_prefetch(t.dirs(), Kind::Vm, None).await.unwrap();
         assert!(!tools.called("box add"));
     }
 
@@ -305,7 +312,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let _tools = crate::platform::exec::fake::Tools::rules(&[("vagrant", None)]);
         let (channel, seen) = events();
-        assert!(machine_selftest(t.handle().clone(), Kind::Vm, None, channel).await.is_err());
+        assert!(machine_selftest(t.dirs(), Kind::Vm, None, channel).await.is_err());
         assert_eq!(states(&seen), ["vagrant:running", "vagrant:fail"]);
     }
 

@@ -1,5 +1,8 @@
 //! The in-app shell's commands: one pseudo-terminal per session, owned by its window.
 
+use std::future::Future;
+use std::path::PathBuf;
+
 use tauri::Manager;
 use tauri::ipc::Channel;
 
@@ -22,7 +25,20 @@ pub async fn terminal_open(
     events: Channel<TermEvent>,
 ) -> Result<u32> {
     let shell = terminal::Shell { id, kind, runtime, cols, rows };
-    terminal::open(window.app_handle(), window.label(), shell, move |e| events.send(e).is_ok()).await
+    terminal::open(&Targets(window.app_handle()), window.label(), shell, move |e| events.send(e).is_ok()).await
+}
+
+/// The runtime's answers about lab shells, for the app.
+struct Targets<'a>(&'a AppHandle);
+
+impl terminal::ShellTargets for Targets<'_> {
+    fn command_line(&self, id: &str, kind: ShellKind, runtime: Runtime, tag: &str) -> impl Future<Output = Result<(String, Option<String>)>> + Send {
+        crate::runtime::shell_command_for(self.0, id, kind, runtime, tag)
+    }
+
+    fn attack_vm(&self, id: &str) -> Result<(PathBuf, Option<&'static str>)> {
+        crate::runtime::attack_vm_shell_target(self.0, id)
+    }
 }
 
 /// Types `data` into session `session` of this window.

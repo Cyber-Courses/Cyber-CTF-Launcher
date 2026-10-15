@@ -9,10 +9,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 
-use crate::AppHandle;
 use crate::error::{Error, Result};
+use crate::platform::AppDirs;
 use crate::platform::exec::run_read;
 
 /// An image the app pulled: the reference it asked for, and the image that reference named then.
@@ -41,8 +40,8 @@ pub struct Owned {
 }
 
 /// The record's file.
-pub fn path(app: &AppHandle) -> Result<PathBuf> {
-    Ok(app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("storage.json"))
+pub fn path(dirs: &AppDirs) -> Result<PathBuf> {
+    Ok(dirs.data()?.join("storage.json"))
 }
 
 /// The record at `store`; empty when there is none yet (or it can't be read: nothing is then
@@ -144,11 +143,12 @@ pub async fn claim(store: &Path, before: &Before, images: &[String], boxes: &[St
 }
 
 /// Runs `op`, then records what it downloaded of `images` and `boxes` (see [`claim`]): for
-/// operations whose downloads are named up front.
-pub async fn tracked<T>(app: &AppHandle, images: &[String], boxes: &[String], op: impl Future<Output = T>) -> T {
+/// operations whose downloads are named up front. The record is in `dirs`' data folder.
+pub async fn tracked<T>(dirs: impl Into<AppDirs>, images: &[String], boxes: &[String], op: impl Future<Output = T>) -> T {
+    let dirs = dirs.into();
     let before = Before::take(!images.is_empty(), !boxes.is_empty()).await;
     let out = op.await;
-    if let Ok(store) = path(app) {
+    if let Ok(store) = path(&dirs) {
         claim(&store, &before, images, boxes).await;
     }
     out

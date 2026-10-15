@@ -6,10 +6,23 @@
 mod docker;
 mod vm;
 
-use crate::AppHandle;
+use std::future::Future;
+
 use serde::Serialize;
 
 use crate::error::{Error, Result};
+use crate::platform::AppDirs;
+use crate::runtime::Runtime;
+
+/// What stopping a workload needs from the labs' runtime: whether lab `id` is installed and runs
+/// here (in a VM or not), and the lab's own stop.
+pub trait LabRuntime {
+    /// How lab `id` runs here, when it is installed and running on this machine.
+    fn runtime_here(&self, id: &str, in_vm: bool) -> Option<Runtime>;
+
+    /// Stops lab `id`, running on `runtime`, as its page would.
+    fn stop_lab(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<()>> + Send;
+}
 
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -27,8 +40,9 @@ pub struct Workload {
     pub provider: Option<String>,
 }
 
-pub async fn machine_workloads(app: AppHandle) -> Vec<Workload> {
-    let (mut d, v) = tokio::join!(docker::workloads(), vm::workloads(&app));
+/// What the app runs on this machine: its labs' containers and local VMs.
+pub async fn machine_workloads(dirs: AppDirs) -> Vec<Workload> {
+    let (mut d, v) = tokio::join!(docker::workloads(), vm::workloads(&dirs));
     d.extend(v);
     d
 }
@@ -41,7 +55,7 @@ fn valid_id(id: &str) -> bool {
 /// lab page's: under its lock, with its volumes, pinned ports, networks and attack box or VM);
 /// anything else of the app's (a lab removed since, the self-test) goes by name: its containers
 /// (incl. its attack box), or its local VMs. The lab can be started again from its page.
-pub async fn machine_workload_stop(app: AppHandle, kind: String, id: String) -> Result<()> {
+pub async fn machine_workload_stop(labs: &impl LabRuntime, dirs: AppDirs, kind: String, id: String) -> Result<()> {
     if !valid_id(&id) {
         return Err(Error::Invalid(format!("invalid id `{id}`")));
     }
@@ -50,10 +64,10 @@ pub async fn machine_workload_stop(app: AppHandle, kind: String, id: String) -> 
         "vm" => true,
         _ => return Err(Error::Invalid(format!("unknown workload kind `{kind}`"))),
     };
-    if let Some(runtime) = crate::runtime::runtime_here(&app, &id, in_vm) {
-        return crate::runtime::stop_lab(&app, &id, runtime, |_| {}).await;
+    if let Some(runtime) = labs.runtime_here(&id, in_vm) {
+        return labs.stop_lab(&id, runtime).await;
     }
-    if in_vm { vm::stop(&app, &id).await } else { docker::stop(&id).await }
+    if in_vm { vm::stop(&dirs, &id).await } else { docker::stop(&id).await }
 }
 
 #[cfg(test)]
@@ -79,20 +93,24 @@ mod tests {
             ("global-status", ok(global)),
             ("ps -aq", ok("bbb\nccc\n")),
         ]);
-        let w = super::machine_workloads(t.handle().clone()).await;
+        let w = super::machine_workloads(t.dirs()).await;
         let ids: Vec<(&str, &str, u64)> = w.iter().map(|w| (w.id.as_str(), w.kind, w.mem_bytes)).collect();
         assert_eq!(ids, [("sqli", "docker", 10 * 1024 * 1024), ("goad", "vm", 0)]);
-        super::machine_workload_stop(t.handle().clone(), "docker".into(), "sqli".into()).await.unwrap();
+        super::machine_workload_stop(t.handle(), t.dirs(), "docker".into(), "sqli".into()).await.unwrap();
         assert!(tools.called("compose -p cyberctf-sqli down") && tools.called("docker rm -f bbb ccc"));
-        super::machine_workload_stop(t.handle().clone(), "vm".into(), "goad".into()).await.unwrap();
+        super::machine_workload_stop(t.handle(), t.dirs(), "vm".into(), "goad".into()).await.unwrap();
         assert!(tools.called("vagrant destroy --force"), "the lab's own stop: {:?}", tools.calls());
-        let err = super::machine_workload_stop(t.handle().clone(), "vm".into(), "other".into()).await.unwrap_err().to_string();
+        let err = super::machine_workload_stop(t.handle(), t.dirs(), "vm".into(), "other".into()).await.unwrap_err().to_string();
         assert_eq!(err, "no VMs found for `other`");
-        assert!(super::machine_workload_stop(t.handle().clone(), "vm".into(), "selftest".into()).await.is_err());
+        assert!(super::machine_workload_stop(t.handle(), t.dirs(), "vm".into(), "selftest".into()).await.is_err());
         assert!(
-            super::machine_workload_stop(t.handle().clone(), "tape".into(), "goad".into()).await.unwrap_err().to_string().starts_with("unknown workload kind")
+            super::machine_workload_stop(t.handle(), t.dirs(), "tape".into(), "goad".into())
+                .await
+                .unwrap_err()
+                .to_string()
+                .starts_with("unknown workload kind")
         );
-        assert!(super::machine_workload_stop(t.handle().clone(), "vm".into(), "../x".into()).await.is_err());
+        assert!(super::machine_workload_stop(t.handle(), t.dirs(), "vm".into(), "../x".into()).await.is_err());
     }
 
     #[tokio::test]
@@ -107,10 +125,11 @@ mod tests {
         let tools = Tools::rules(&[("network ls", ok("cyberctf-sqli_lab\n"))]);
         let held = crate::runtime::lock_lab(t.handle(), "sqli").await.unwrap();
         let waiting =
-            tokio::time::timeout(std::time::Duration::from_millis(300), super::machine_workload_stop(t.handle().clone(), "docker".into(), "sqli".into())).await;
+            tokio::time::timeout(std::time::Duration::from_millis(300), super::machine_workload_stop(t.handle(), t.dirs(), "docker".into(), "sqli".into()))
+                .await;
         assert!(waiting.is_err(), "it waits for the lab's operation in progress");
         drop(held);
-        super::machine_workload_stop(t.handle().clone(), "docker".into(), "sqli".into()).await.unwrap();
+        super::machine_workload_stop(t.handle(), t.dirs(), "docker".into(), "sqli".into()).await.unwrap();
         assert!(tools.called("down --volumes --remove-orphans") && tools.called("docker network rm cyberctf-sqli_lab"), "{:?}", tools.calls());
         assert!(!ports.exists(), "the next start picks its ports again");
     }
@@ -140,9 +159,9 @@ mod tests {
         std::fs::write(lab.join(".cyberctf-ports.yml"), "services: {}\n").unwrap();
         let file = compose.display().to_string();
         run("docker", &["compose", "-p", &project, "-f", &file, "up", "-d"], Some(&lab)).await.unwrap();
-        let listed = super::machine_workloads(t.handle().clone()).await;
+        let listed = super::machine_workloads(t.dirs()).await;
         assert!(listed.iter().any(|w| w.id == id && w.kind == "docker"), "{}", listed.iter().map(|w| w.id.as_str()).collect::<Vec<_>>().join(","));
-        super::machine_workload_stop(t.handle().clone(), "docker".into(), id.clone()).await.unwrap();
+        super::machine_workload_stop(t.handle(), t.dirs(), "docker".into(), id.clone()).await.unwrap();
         let label = format!("label=com.docker.compose.project={project}");
         let containers = run("docker", &["ps", "-aq", "--filter", &label], None).await.unwrap();
         let volumes = run("docker", &["volume", "ls", "-q", "--filter", &label], None).await.unwrap();

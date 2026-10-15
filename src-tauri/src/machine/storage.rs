@@ -10,10 +10,10 @@ pub(crate) mod owned;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::AppHandle;
 use serde::Serialize;
 
 use crate::error::Result;
+use crate::platform::AppDirs;
 use crate::platform::exec::run;
 use owned::{Owned, OwnedBox};
 
@@ -123,8 +123,8 @@ fn lab_boxes(dir: &Path) -> Vec<String> {
 
 /// Records as the app's what a lab start on this machine downloaded: the images its Compose file
 /// names and the boxes its Vagrantfiles name, that weren't here `before` it.
-pub(crate) async fn claim_lab(app: &AppHandle, dir: &Path, id: &str, before: &owned::Before) {
-    let Ok(store) = owned::path(app) else { return };
+pub(crate) async fn claim_lab(dirs: impl Into<AppDirs>, dir: &Path, id: &str, before: &owned::Before) {
+    let Ok(store) = owned::path(&dirs.into()) else { return };
     let images = if before.tracks_images() && crate::runtime::lab::compose_file(dir).is_file() { lab_images(dir, id).await } else { Vec::new() };
     owned::claim(&store, before, &images, &lab_boxes(dir)).await;
 }
@@ -219,16 +219,16 @@ impl Present {
 
 /// `extra_images`: the attack-box images the UI knows about; only those of the attack box's own
 /// repository count (see [`image_candidates`]), any other is the player's unless recorded.
-pub async fn machine_storage(app: AppHandle, extra_images: Vec<String>) -> Result<Storage> {
-    let store = owned::path(&app)?;
+pub async fn machine_storage(dirs: AppDirs, extra_images: Vec<String>) -> Result<Storage> {
+    let store = owned::path(&dirs)?;
     Ok(Present::find(&owned::load(&store), &extra_images, vagrant_home().as_deref(), &plugin_cache(&store)).await.storage())
 }
 
 /// Removes what `machine_storage` lists (see [`clean`]). Returns the bytes freed.
-pub async fn machine_storage_clean(app: AppHandle, extra_images: Vec<String>) -> Result<u64> {
+pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>) -> Result<u64> {
     // A lab operation running may still use the plugins its `init` linked: they stay then.
-    let busy = crate::runtime::active_deploys() > 0 || !crate::deploy_worker::running(&app).is_empty();
-    clean(&owned::path(&app)?, &extra_images, vagrant_home().as_deref(), !busy).await
+    let busy = crate::runtime::active_deploys() > 0 || !crate::deploy_worker::running(&dirs).is_empty();
+    clean(&owned::path(&dirs)?, &extra_images, vagrant_home().as_deref(), !busy).await
 }
 
 /// Removes the app's downloads recorded in `store` (and the attack box's of `extra_images`):
@@ -410,9 +410,9 @@ mod tests {
         let dir = t.lab("web", &[("isoloom.yml", SPEC)]);
         let tools = docker(&[("nginx:1.27", "sha256:nginx", 1000), ("postgres:16", "sha256:postgres", 4000)], &["nginx:1.27"], "");
         crate::runtime::start(t.handle(), &dir, "web", crate::runtime::Runtime::Docker, None, None, &[], |_| {}).await.unwrap();
-        let listed = machine_storage(t.handle().clone(), Vec::new()).await.unwrap();
+        let listed = machine_storage(t.dirs(), Vec::new()).await.unwrap();
         assert_eq!(listed.images.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("nginx:1.27", 1000)]);
-        machine_storage_clean(t.handle().clone(), Vec::new()).await.unwrap();
+        machine_storage_clean(t.dirs(), Vec::new()).await.unwrap();
         assert!(tools.called("docker image rm nginx:1.27"));
         assert!(!tools.called("image rm postgres"), "{:?}", tools.calls());
     }
@@ -420,7 +420,7 @@ mod tests {
     #[tokio::test]
     async fn clean_up_removes_only_the_apps_downloads_and_forgets_what_went() {
         let t = crate::testing::test_app::TestApp::new();
-        let store = owned::path(t.handle()).unwrap();
+        let store = owned::path(&t.dirs()).unwrap();
         let home = t.data().join("vagrant-home");
         let alpine = owned_box("generic/alpine319", "virtualbox", "4.3.12");
         download_box(&home, &alpine, None, 1000);
@@ -476,24 +476,24 @@ mod tests {
         // The shared cache is the app's alone (in its data folder): listed and cleaned with it.
         let t = crate::testing::test_app::TestApp::new();
         let _tools = Tools::rules(&[]);
-        let store = owned::path(t.handle()).unwrap();
+        let store = owned::path(&t.dirs()).unwrap();
         let aws = t.data().join(crate::runtime::TERRAFORM_PLUGINS).join("registry.terraform.io/hashicorp/aws/5.0.0/darwin_arm64");
         std::fs::create_dir_all(&aws).unwrap();
         std::fs::write(aws.join("terraform-provider-aws"), vec![0u8; 2048]).unwrap();
-        let s = machine_storage(t.handle().clone(), Vec::new()).await.unwrap();
+        let s = machine_storage(t.dirs(), Vec::new()).await.unwrap();
         assert_eq!(s.plugins.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("Terraform provider plugins", 2048)]);
         // A lab operation running: they stay. (`clean` itself: the command's "is a lab operation
         // running" is process-wide, and other tests run lab operations meanwhile.)
         assert_eq!(clean(&store, &[], None, false).await.unwrap(), 0);
         assert_eq!(clean(&store, &[], None, true).await.unwrap(), 2048);
-        assert!(machine_storage(t.handle().clone(), Vec::new()).await.unwrap().plugins.is_empty());
-        machine_storage_clean(t.handle().clone(), Vec::new()).await.unwrap();
+        assert!(machine_storage(t.dirs(), Vec::new()).await.unwrap().plugins.is_empty());
+        machine_storage_clean(t.dirs(), Vec::new()).await.unwrap();
     }
 
     #[tokio::test]
     async fn a_download_recorded_during_a_clean_up_is_kept() {
         let t = crate::testing::test_app::TestApp::new();
-        let store = owned::path(t.handle()).unwrap();
+        let store = owned::path(&t.dirs()).unwrap();
         let _tools = docker(&[("nginx:1.27", "sha256:nginx", 1000)], &[], "");
         let recorded = || owned::OwnedImage { reference: "nginx:1.27".into(), id: "sha256:nginx".into() };
         // Recorded after the clean-up looked (a worker's lab start): `forget_gone` reads it again.

@@ -175,7 +175,7 @@ fn plan(dep: Dependency) -> Result<Vec<Step>> {
 }
 
 /// Installs a dependency, streaming each command and its output to the UI.
-pub async fn install_dependency(app: crate::AppHandle, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
+pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
     let steps = plan(dependency).inspect_err(|e| on_line(e.to_string()))?;
     let before = uninstall::present(dependency).await;
     run_steps(&steps, &mut on_line).await?;
@@ -186,12 +186,12 @@ pub async fn install_dependency(app: crate::AppHandle, dependency: Dependency, m
     // casks) or isn't found yet counts once a later check finds it.
     if let Some(before) = before {
         let after = uninstall::present(dependency).await.unwrap_or(false);
-        uninstall::record_outcome(&app, dependency, uninstall::outcome(before, after));
+        uninstall::record_outcome(&dirs, dependency, uninstall::outcome(before, after));
     }
     // Its features start at the next restart: the check asks for one until then, even if the
     // app is reopened first.
     if dependency == Dependency::Wsl {
-        crate::machine::system::wsl::mark_installed(&app);
+        crate::machine::system::wsl::mark_installed(&dirs);
     }
     on_line("Done. Re-checking this machine…".into());
     Ok(())
@@ -320,10 +320,10 @@ mod tests {
         let t = TestApp::new();
         let tools = Tools::rules(&[]);
         let log = Sink::default();
-        let err = install_dependency(t.handle().clone(), not_here(), log.on_line()).await.unwrap_err();
+        let err = install_dependency(t.dirs(), not_here(), log.on_line()).await.unwrap_err();
         assert_eq!(log.lines(), [err.to_string()]);
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-        assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty());
+        assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
     }
 
     #[tokio::test]
@@ -332,21 +332,21 @@ mod tests {
         let t = TestApp::new();
         let tools = terraform_tools(Rc::new(Cell::new(false)), true);
         let log = Sink::default();
-        install_dependency(t.handle().clone(), Dependency::Terraform, log.on_line()).await.unwrap();
+        install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap();
         let lines = log.lines();
         assert_eq!(lines.first(), Some(&command_line(&steps[0])), "{lines:?}");
         assert!(lines.contains(&"Setting up terraform (1.9.8-1) ...".to_string()), "{lines:?}");
         assert_eq!(lines.last().map(String::as_str), Some("Done. Re-checking this machine…"));
         assert!(tools.called(&format!("{} {}", steps[0].program, steps[0].args.join(" "))));
-        let ours: Vec<_> = uninstall::installed_tools(t.handle().clone()).await.into_iter().map(|t| t.dependency).collect();
+        let ours: Vec<_> = uninstall::installed_tools(t.dirs()).await.into_iter().map(|t| t.dependency).collect();
         assert_eq!(ours, [Dependency::Terraform]);
 
         // Cleanup removes it, then forgets it: a second removal is refused.
         let log = Sink::default();
-        uninstall::uninstall_dependency(t.handle().clone(), Dependency::Terraform, log.on_line()).await.unwrap();
+        uninstall::uninstall_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap();
         assert_eq!(log.lines().last().map(String::as_str), Some("Removed."));
-        assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty());
-        let err = uninstall::uninstall_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().on_line()).await.unwrap_err();
+        assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
+        let err = uninstall::uninstall_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap_err();
         assert_eq!(err.to_string(), "Cyber CTF didn't install this tool, so it won't remove it.");
     }
 
@@ -357,8 +357,8 @@ mod tests {
         }
         let t = TestApp::new();
         let _tools = terraform_tools(Rc::new(Cell::new(true)), true);
-        install_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
-        assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty());
+        install_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
+        assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
     }
 
     #[tokio::test]
@@ -371,10 +371,10 @@ mod tests {
         // The step "works" but the tool isn't on PATH yet (an installer left open).
         let probe = present.clone();
         let _tools = Tools::new(move |program, _| if program == "terraform" && !probe.get() { fail("not found") } else { ok("") });
-        install_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
-        assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty(), "pending, not shown");
+        install_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
+        assert!(uninstall::installed_tools(t.dirs()).await.is_empty(), "pending, not shown");
         present.set(true);
-        let ours: Vec<_> = uninstall::installed_tools(t.handle().clone()).await.into_iter().map(|t| t.dependency).collect();
+        let ours: Vec<_> = uninstall::installed_tools(t.dirs()).await.into_iter().map(|t| t.dependency).collect();
         assert_eq!(ours, [Dependency::Terraform]);
     }
 
@@ -386,11 +386,11 @@ mod tests {
         let t = TestApp::new();
         let _tools = terraform_tools(Rc::new(Cell::new(false)), false);
         let log = Sink::default();
-        let err = install_dependency(t.handle().clone(), Dependency::Terraform, log.on_line()).await.unwrap_err();
+        let err = install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap_err();
         assert!(err.to_string().contains("exited with"), "{err}");
         assert!(log.lines().contains(&"E: Unable to locate package terraform".to_string()));
         assert!(!log.lines().iter().any(|l| l.starts_with("Done.")));
-        assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty());
+        assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
     }
 
     #[tokio::test]

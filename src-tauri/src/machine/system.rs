@@ -93,7 +93,7 @@ pub struct TargetReadiness {
     pub notes: Vec<String>,
 }
 
-pub async fn system_check(app: crate::AppHandle) -> SystemReport {
+pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
     // A tool installed since the last check (from the app or not) is found without a restart.
     crate::platform::env_path::refresh();
     let (docker, docker_compose, vagrant, daemon, aws, azure, gcloud, terraform) = tokio::join!(
@@ -107,7 +107,7 @@ pub async fn system_check(app: crate::AppHandle) -> SystemReport {
         probe("terraform", &["version"]),
     );
     let (vm_providers, docker_engines_running, ovftool, targets, wsl) =
-        tokio::join!(providers::detect(vagrant.installed), docker::running_engines(), probe("ovftool", &["--version"]), isoloom_targets(), wsl::report(&app));
+        tokio::join!(providers::detect(vagrant.installed), docker::running_engines(), probe("ovftool", &["--version"]), isoloom_targets(), wsl::report(&dirs));
     let docker_denied = daemon.as_ref().err().is_some_and(docker_denied);
     let docker_engine = match &daemon {
         Ok(os) => Some(docker::engine_in_use(os.trim()).await),
@@ -222,7 +222,7 @@ mod tests {
     #[ignore = "depends on the host's installed tools"]
     async fn prints_this_machines_report() {
         let t = crate::testing::test_app::TestApp::new();
-        let report = super::system_check(t.handle().clone()).await;
+        let report = super::system_check(t.dirs()).await;
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
     }
 

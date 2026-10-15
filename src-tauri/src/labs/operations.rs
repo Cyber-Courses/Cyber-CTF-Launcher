@@ -2,19 +2,19 @@
 //! workers and this process (a stop, or the fallback when no worker could start). A reloaded or
 //! relaunched window rehydrates its "starting" / "stopping" state from these.
 
-use crate::AppHandle;
 use serde::Serialize;
 
 use crate::deploy_worker::{self, Op};
+use crate::platform::AppDirs;
 use crate::runtime::{self, Action, Park};
 
 /// The labs currently starting or stopping. The UI reads this on load to rehydrate the "this lab
 /// is starting" state after a window reload: the deploy keeps running in this process even when
 /// the webview reloaded and lost its own in-memory deploy state.
-pub async fn deploying_labs(app: AppHandle) -> Vec<String> {
+pub async fn deploying_labs(dirs: AppDirs) -> Vec<String> {
     off_main(move || {
         // Worker keys with a dot are attack VM starts beside a lab, not the lab's own deploy.
-        let workers = deploy_worker::running(&app).into_iter().filter(|k| !k.contains('.'));
+        let workers = deploy_worker::running(&dirs).into_iter().filter(|k| !k.contains('.'));
         merge_unique(runtime::deploying_labs(), workers)
     })
     .await
@@ -75,8 +75,8 @@ fn in_app_op(action: Action) -> &'static str {
 
 /// Every lab operation in flight: the detached workers (with the step their log is at) and the
 /// in-process ones. A lab with a worker is listed once, as the worker's operation.
-pub async fn active_operations(app: AppHandle) -> Vec<ActiveOperation> {
-    off_main(move || merge_operations(deploy_worker::running_jobs(&app), runtime::active_actions())).await.unwrap_or_default()
+pub async fn active_operations(dirs: AppDirs) -> Vec<ActiveOperation> {
+    off_main(move || merge_operations(deploy_worker::running_jobs(&dirs), runtime::active_actions())).await.unwrap_or_default()
 }
 
 /// The workers' operations (with their step), then the in-process ones on other labs, by lab id.
@@ -99,8 +99,8 @@ fn merge_operations(jobs: Vec<(deploy_worker::Job, Option<String>)>, actions: Ve
 
 /// The log so far of a lab's deploy in its worker process, so a reloaded or relaunched app can
 /// re-attach to a deploy still in progress.
-pub async fn lab_deploy_log(app: AppHandle, id: String) -> std::result::Result<String, String> {
-    off_main(move || deploy_worker::log_so_far(&app, &id).map_err(|e| e.to_string())).await?
+pub async fn lab_deploy_log(dirs: AppDirs, id: String) -> std::result::Result<String, String> {
+    off_main(move || deploy_worker::log_so_far(&dirs, &id).map_err(|e| e.to_string())).await?
 }
 
 #[cfg(test)]
@@ -145,7 +145,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         // The in-process registry is process-wide: this test's own lab id.
         let id = "operations-test-pause";
-        let listed = || wait(active_operations(t.handle().clone())).into_iter().find(|o| o.lab_id == id);
+        let listed = || wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
         let guard = crate::runtime::DeployGuard::new(id, Action::Park);
         assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "pause", machine: None, step: None }));
         drop(guard);
@@ -168,15 +168,15 @@ mod tests {
         std::fs::write(dir.join(format!("{id}.pid")), deploy_worker::pidfile_line(worker.id())).unwrap();
         std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string(&deploy_worker::Job::on_lab(id, Op::Launch)).unwrap()).unwrap();
         std::fs::write(dir.join(format!("{id}.log")), log).unwrap();
-        let listed = || wait(active_operations(t.handle().clone())).into_iter().find(|o| o.lab_id == id);
+        let listed = || wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
         assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "launch", machine: None, step: Some("web: Booting VM...".into()) }));
-        assert!(wait(deploying_labs(t.handle().clone())).contains(&id.to_string()));
-        assert_eq!(wait(lab_deploy_log(t.handle().clone(), id.into())).unwrap(), log);
+        assert!(wait(deploying_labs(t.dirs())).contains(&id.to_string()));
+        assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), log);
         worker.kill().unwrap();
         worker.wait().unwrap();
         // Gone: no longer listed, its log still readable.
         assert_eq!(listed(), None);
-        assert_eq!(wait(lab_deploy_log(t.handle().clone(), id.into())).unwrap(), log);
+        assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), log);
     }
 
     #[test]
@@ -190,10 +190,10 @@ mod tests {
         std::fs::write(dir.join(format!("{id}.pid")), "4000000000 1").unwrap();
         std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string(&deploy_worker::Job::on_lab(id, Op::Launch)).unwrap()).unwrap();
         std::fs::write(dir.join(format!("{id}.log")), "Pulling images\n").unwrap();
-        assert!(wait(active_operations(t.handle().clone())).iter().all(|o| o.lab_id != id));
-        assert!(!wait(deploying_labs(t.handle().clone())).contains(&id.to_string()));
+        assert!(wait(active_operations(t.dirs())).iter().all(|o| o.lab_id != id));
+        assert!(!wait(deploying_labs(t.dirs())).contains(&id.to_string()));
         assert!(!dir.join(format!("{id}.pid")).exists(), "swept");
-        assert_eq!(wait(lab_deploy_log(t.handle().clone(), id.into())).unwrap(), "Pulling images\n");
+        assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), "Pulling images\n");
     }
 
     #[cfg(unix)]
@@ -211,8 +211,8 @@ mod tests {
         // Its job file cut short (a full disk, a crash while it was written).
         std::fs::write(dir.join(format!("{id}.json")), "{\"lab_id\":\"operations-test-trunc").unwrap();
         std::fs::write(dir.join(format!("{id}.log")), "==> web: Booting VM...\n").unwrap();
-        let deploying = wait(deploying_labs(t.handle().clone())).contains(&id.to_string());
-        let listed = wait(active_operations(t.handle().clone())).into_iter().find(|o| o.lab_id == id);
+        let deploying = wait(deploying_labs(t.dirs())).contains(&id.to_string());
+        let listed = wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
         worker.kill().unwrap();
         worker.wait().unwrap();
         assert!(deploying, "the lab page sees the worker");
@@ -223,8 +223,8 @@ mod tests {
     #[test]
     fn a_deploy_log_is_read_for_a_valid_lab_id_only() {
         let t = crate::testing::test_app::TestApp::new();
-        assert_eq!(wait(lab_deploy_log(t.handle().clone(), "never-deployed".into())).unwrap(), "");
-        assert_eq!(wait(lab_deploy_log(t.handle().clone(), "../x".into())).unwrap_err(), "invalid lab id `../x`");
+        assert_eq!(wait(lab_deploy_log(t.dirs(), "never-deployed".into())).unwrap(), "");
+        assert_eq!(wait(lab_deploy_log(t.dirs(), "../x".into())).unwrap_err(), "invalid lab id `../x`");
     }
 
     #[test]

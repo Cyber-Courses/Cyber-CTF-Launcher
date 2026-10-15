@@ -196,13 +196,10 @@
       "rs:runtime": 6
     },
     "rust/tauri-outside-adapters": {
-      "rs:account": 2,
-      "rs:deploy_worker": 4,
-      "rs:labs": 2,
-      "rs:machine": 10,
-      "rs:platform": 2,
-      "rs:runtime": 24,
-      "rs:terminal": 1
+      "rs:account": 1,
+      "rs:deploy_worker": 3,
+      "rs:labs": 1,
+      "rs:runtime": 24
     }
   },
   "clippy": {
@@ -342,9 +339,6 @@
     },
     "src-tauri/src/platform/exec/group.rs": {
       "#[cfg_attr(not(unix), allow(dead_code))]": 1
-    },
-    "src-tauri/src/platform/msix_data.rs": {
-      "#[cfg_attr(not(windows), allow(dead_code))]": 2
     },
     "src-tauri/src/platform/sys.rs": {
       "#![allow(unsafe_code, reason = \"the audited home of the launcher's calls into libc and Win32\")]": 1

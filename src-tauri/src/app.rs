@@ -17,6 +17,19 @@ use crate::{AppHandle, AppRuntime, account, commands, deploy_worker, platform, r
 
 type App = tauri::App<AppRuntime>;
 
+impl From<&AppHandle> for platform::AppDirs {
+    /// The app's folders, as Tauri resolves them for this app.
+    fn from(app: &AppHandle) -> platform::AppDirs {
+        let paths = app.path();
+        platform::AppDirs::new(paths.app_data_dir().ok(), paths.app_cache_dir().ok())
+    }
+}
+
+/// Opens folder `path` in the system's file manager (through the opener plugin).
+pub fn open_folder(path: &std::path::Path) -> crate::error::Result<()> {
+    tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| crate::error::Error::Invalid(format!("couldn't open {}: {e}", path.display())))
+}
+
 /// How often expired cloud labs are looked for and torn down.
 const REAP_EVERY: Duration = Duration::from_secs(300);
 
@@ -98,7 +111,10 @@ fn setup(app: &mut App) {
     logging::log_startup(app.handle(), "app");
     // Before anything reads its settings: what a virtualized Store build saved.
     #[cfg(windows)]
-    platform::msix_data::migrate(app.handle());
+    {
+        let paths = app.path();
+        platform::msix_data::migrate(&app.config().identifier, paths.app_local_data_dir().ok().as_deref(), paths.app_data_dir().ok().as_deref());
+    }
     // The window a UAC prompt (Vagrant on Hyper-V) is raised for, here and in deploy workers.
     #[cfg(windows)]
     if let Some(w) = app.get_webview_window("main")

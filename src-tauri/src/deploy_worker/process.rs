@@ -9,6 +9,7 @@ use crate::AppHandle;
 use super::Job;
 use super::files::{self, Files, read_worker};
 use crate::error::{Error, Result};
+use crate::platform::AppDirs;
 
 /// A worker process as its pidfile records it: its id and, when it could be read, its start
 /// time (seconds since the epoch, as the OS reports it). The start time tells the worker from
@@ -64,7 +65,7 @@ pub fn claim(f: &Files) -> Result<std::fs::File> {
 /// caller claimed (see [`claim`]). `Err` when it can't be started (the pidfile is then given
 /// back); the caller then deploys in-process as a fallback.
 pub fn spawn(app: &AppHandle, job: &Job, pidfile: std::fs::File) -> Result<Spawned> {
-    let f = files::of(app, &job.key())?;
+    let f = files::of(&AppDirs::from(app), &job.key())?;
     let path = f.pid.clone();
     let job_file = f.job.clone();
     let started = start(f, job, pidfile);
@@ -290,8 +291,8 @@ fn is_worker(cmdline: &str) -> bool {
 /// The keys (lab ids, and `<lab>.attack` for attack VM starts) whose worker is running right
 /// now: a pidfile naming a live process. A pidfile whose process is gone (the worker finished,
 /// or died) is removed on the way.
-pub fn running(app: &AppHandle) -> Vec<String> {
-    let Ok(d) = files::dir(app) else { return Vec::new() };
+pub fn running(dirs: &AppDirs) -> Vec<String> {
+    let Ok(d) = files::dir(dirs) else { return Vec::new() };
     running_in(&d)
 }
 
@@ -324,8 +325,8 @@ fn pidfile_key(path: &Path) -> Option<String> {
 }
 
 /// The jobs whose worker runs right now, each with the step its log is at (for the sidebar).
-pub fn running_jobs(app: &AppHandle) -> Vec<(Job, Option<String>)> {
-    let Ok(d) = files::dir(app) else { return Vec::new() };
+pub fn running_jobs(dirs: &AppDirs) -> Vec<(Job, Option<String>)> {
+    let Ok(d) = files::dir(dirs) else { return Vec::new() };
     jobs_in(&d)
 }
 
@@ -356,7 +357,7 @@ fn jobs_in(d: &Path) -> Vec<(Job, Option<String>)> {
 /// Stops the worker of `key` (a lab id, or its attack VM's key), with everything it started
 /// (its process group), if one runs.
 pub fn kill(app: &AppHandle, key: &str) {
-    let Ok(f) = files::of(app, key) else { return };
+    let Ok(f) = files::of(&AppDirs::from(app), key) else { return };
     kill_files(&f);
 }
 
@@ -418,7 +419,7 @@ fn launches_terraform(app: &AppHandle, f: &Files) -> bool {
 /// resources running (and billing). Interrupted, it stops cleanly with its state saved, the
 /// worker ends with it, and the destroy that follows sees everything.
 pub async fn kill_and_wait(app: &AppHandle, key: &str) {
-    let Ok(f) = files::of(app, key) else { return };
+    let Ok(f) = files::of(&AppDirs::from(app), key) else { return };
     let Some(worker) = claimed_worker(&f).await.filter(alive) else { return };
     if interrupt_terraform(worker.pid) && gone_within(&worker, TERRAFORM_GRACE_CHECKS).await {
         remove_pidfile_of(&f.pid, worker.pid);
@@ -882,12 +883,12 @@ mod tests {
         let app = t.handle();
         let mut child = fake_worker_group();
         let job = Job::on_lab("lab-1", super::super::Op::Resume { runtime: crate::runtime::Runtime::Vm });
-        let f = files::of(app, &job.key()).unwrap();
+        let f = files::of(&t.dirs(), &job.key()).unwrap();
         std::fs::write(&f.pid, pidfile_line(child.id())).unwrap();
         std::fs::write(&f.job, serde_json::to_vec(&job).unwrap()).unwrap();
         std::fs::write(&f.log, "Resuming the lab…\n").unwrap();
-        assert_eq!(running(app), ["lab-1"]);
-        let jobs = running_jobs(app);
+        assert_eq!(running(&t.dirs()), ["lab-1"]);
+        let jobs = running_jobs(&t.dirs());
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].0, job);
         // A second operation on the lab is refused while this one runs.
@@ -904,7 +905,7 @@ mod tests {
         let _ = bystander.kill();
         let _ = bystander.wait();
         assert!(!f.pid.exists());
-        assert_eq!(running(app), [] as [&str; 0]);
+        assert_eq!(running(&t.dirs()), [] as [&str; 0]);
         // Nothing left to stop.
         kill_and_wait(app, "lab-1").await;
         kill(app, "lab-2");
@@ -917,7 +918,7 @@ mod tests {
         // empty, so the worker spawned right after went on to take the lab and run its job.
         let t = crate::testing::test_app::TestApp::new();
         let app = t.handle();
-        let f = files::of(app, "lab-1").unwrap();
+        let f = files::of(&t.dirs(), "lab-1").unwrap();
         std::fs::write(&f.pid, "").unwrap();
         let mut child = fake_worker_group();
         let line = pidfile_line(child.id());
@@ -936,7 +937,7 @@ mod tests {
     #[tokio::test]
     async fn a_pidfile_left_empty_is_waited_for_only_briefly() {
         let t = crate::testing::test_app::TestApp::new();
-        let f = files::of(t.handle(), "lab-2").unwrap();
+        let f = files::of(&t.dirs(), "lab-2").unwrap();
         std::fs::write(&f.pid, "").unwrap();
         let waited = tokio::time::timeout(Duration::from_secs(10), kill_and_wait(t.handle(), "lab-2")).await;
         assert!(waited.is_ok());

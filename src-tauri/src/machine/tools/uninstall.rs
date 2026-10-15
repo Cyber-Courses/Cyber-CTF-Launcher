@@ -5,13 +5,12 @@
 
 use std::path::PathBuf;
 
-use crate::AppHandle;
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 
 use super::install::Dependency;
 use super::steps::{Step, run_steps, step};
 use crate::error::{Error, Result};
+use crate::platform::AppDirs;
 
 #[derive(Serialize, Deserialize, Clone, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -93,11 +92,11 @@ pub async fn present(dep: Dependency) -> Option<bool> {
 }
 
 /// Records the outcome of an install of `dependency`.
-pub fn record_outcome(app: &AppHandle, dependency: Dependency, outcome: Outcome) {
+pub fn record_outcome(dirs: &AppDirs, dependency: Dependency, outcome: Outcome) {
     match outcome {
         Outcome::NotOurs => {}
-        Outcome::Installed => update(app, |tools| remember(tools, dependency, false)),
-        Outcome::Pending => update(app, |tools| remember(tools, dependency, true)),
+        Outcome::Installed => update(dirs, |tools| remember(tools, dependency, false)),
+        Outcome::Pending => update(dirs, |tools| remember(tools, dependency, true)),
     }
 }
 
@@ -110,8 +109,8 @@ fn settle(tools: &mut Vec<InstalledTool>, found: &[Dependency], now: u64) {
 }
 
 /// Re-checks the installs that only opened an installer: run when the tools are listed.
-async fn confirm_pending(app: &AppHandle) {
-    let waiting: Vec<Dependency> = load(app).into_iter().filter(|t| t.pending).map(|t| t.dependency).collect();
+async fn confirm_pending(dirs: &AppDirs) {
+    let waiting: Vec<Dependency> = load(dirs).into_iter().filter(|t| t.pending).map(|t| t.dependency).collect();
     if waiting.is_empty() {
         return;
     }
@@ -122,17 +121,17 @@ async fn confirm_pending(app: &AppHandle) {
         }
     }
     let now = now_secs();
-    update(app, |tools| {
+    update(dirs, |tools| {
         settle(tools, &found, now);
     });
 }
 
-fn records_file(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_data_dir().ok().map(|d| d.join("installed-tools.json"))
+fn records_file(dirs: &AppDirs) -> Option<PathBuf> {
+    dirs.data_file("installed-tools.json")
 }
 
-fn load(app: &AppHandle) -> Vec<InstalledTool> {
-    records_file(app).map(|f| load_at(&f)).unwrap_or_default()
+fn load(dirs: &AppDirs) -> Vec<InstalledTool> {
+    records_file(dirs).map(|f| load_at(&f)).unwrap_or_default()
 }
 
 /// The records in `f`; none when it is missing or unreadable.
@@ -142,8 +141,8 @@ fn load_at(f: &std::path::Path) -> Vec<InstalledTool> {
 
 /// Written whole through a temporary file and a rename, so a crash mid-write can't leave a
 /// half file that reads as "nothing installed".
-fn save(app: &AppHandle, tools: &[InstalledTool]) {
-    if let Some(f) = records_file(app) {
+fn save(dirs: &AppDirs, tools: &[InstalledTool]) {
+    if let Some(f) = records_file(dirs) {
         save_at(&f, tools);
     }
 }
@@ -165,11 +164,11 @@ fn save_at(f: &std::path::Path, tools: &[InstalledTool]) {
 /// other's change.
 static RECORDS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn update(app: &AppHandle, f: impl FnOnce(&mut Vec<InstalledTool>)) {
+fn update(dirs: &AppDirs, f: impl FnOnce(&mut Vec<InstalledTool>)) {
     let _guard = RECORDS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let mut tools = load(app);
+    let mut tools = load(dirs);
     f(&mut tools);
-    save(app, &tools);
+    save(dirs, &tools);
 }
 
 /// `tools` with `dependency` recorded once, as installed now (or waiting for its installer).
@@ -187,9 +186,9 @@ fn confirmed(tools: Vec<InstalledTool>) -> Vec<InstalledTool> {
 
 /// The tools Cyber CTF installed on this machine (and hasn't removed since). Installs that only
 /// opened the vendor's installer count once the tool is found.
-pub async fn installed_tools(app: AppHandle) -> Vec<InstalledTool> {
-    confirm_pending(&app).await;
-    confirmed(load(&app))
+pub async fn installed_tools(dirs: AppDirs) -> Vec<InstalledTool> {
+    confirm_pending(&dirs).await;
+    confirmed(load(&dirs))
 }
 
 /// Runs a shell script with the OS admin prompt on macOS (the same dialog an installer shows).
@@ -323,8 +322,8 @@ fn plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
 }
 
 /// Removes a tool Cyber CTF installed, streaming the output, then forgets it.
-pub async fn uninstall_dependency(app: AppHandle, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
-    if !confirmed(load(&app)).iter().any(|t| t.dependency == dependency) {
+pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
+    if !confirmed(load(&dirs)).iter().any(|t| t.dependency == dependency) {
         return Err(Error::Invalid("Cyber CTF didn't install this tool, so it won't remove it.".into()));
     }
     #[cfg(target_os = "macos")]
@@ -338,7 +337,7 @@ pub async fn uninstall_dependency(app: AppHandle, dependency: Dependency, mut on
     #[cfg(not(target_os = "macos"))]
     let dmg: Option<String> = None;
     run_steps(&plan(dependency, dmg.as_deref())?, &mut on_line).await?;
-    update(&app, |tools| tools.retain(|t| t.dependency != dependency));
+    update(&dirs, |tools| tools.retain(|t| t.dependency != dependency));
     on_line("Removed.".into());
     Ok(())
 }
