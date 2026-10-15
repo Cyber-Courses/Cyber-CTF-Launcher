@@ -3,7 +3,6 @@
 
 use std::process::Stdio;
 
-use tauri::ipc::Channel;
 use tokio::process::Command;
 
 use super::exit_codes;
@@ -38,13 +37,6 @@ fn pkexec_refusal(stderr: &str) -> &'static str {
         "No password prompt could be shown (no polkit agent is running). Run the command above in a terminal instead."
     } else {
         "The password prompt was cancelled or the password was refused, so nothing was changed. Try again and enter your password."
-    }
-}
-
-/// Sends each line to the UI's log channel.
-pub fn channel_log(logs: Channel<String>) -> impl FnMut(String) {
-    move |line: String| {
-        let _ = logs.send(line);
     }
 }
 
@@ -231,19 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_log_sends_each_line_to_the_ui() {
-        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let sink = seen.clone();
-        let channel: Channel<String> = Channel::new(move |body| {
-            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
-                sink.lock().unwrap().push(serde_json::from_str::<String>(&json).unwrap());
-            }
-            Ok(())
-        });
-        let mut log = channel_log(channel);
-        log("one".into());
-        log("two".into());
-        assert_eq!(seen.lock().unwrap().as_slice(), ["one", "two"]);
+    fn a_command_line_reads_as_typed() {
         assert_eq!(command_line(&step("brew", &["install", "qemu"])), "$ brew install qemu");
     }
 }

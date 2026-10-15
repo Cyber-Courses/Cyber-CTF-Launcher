@@ -90,7 +90,6 @@ pub(super) async fn running_engines() -> Vec<&'static str> {
 
 /// Points the Docker CLI at another running engine (`docker context use`), as the player
 /// would in a terminal. Labs then run on it.
-#[tauri::command]
 pub async fn docker_use_engine(engine: String) -> Result<()> {
     let name = engine_contexts()
         .await
@@ -105,7 +104,6 @@ pub async fn docker_use_engine(engine: String) -> Result<()> {
 /// Starts an installed engine that isn't running, the way the player would (open the app or run
 /// its CLI), points Docker at it and waits until it answers. Docker Desktop and OrbStack take a
 /// while on first start, hence the generous wait.
-#[tauri::command]
 pub async fn docker_start_engine(engine: String) -> Result<()> {
     // Running already, but not for this account: starting it again can't help.
     if let Err(e) = daemon_os().await

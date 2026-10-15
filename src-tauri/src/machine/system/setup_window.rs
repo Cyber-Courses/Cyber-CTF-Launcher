@@ -21,8 +21,7 @@ fn page(step: Option<&str>) -> String {
 
 /// Opens the guided "set up this machine" flow in its own window (label `machine-setup`),
 /// mirroring the server setup window. Focuses it if already open, moved to `step`.
-#[tauri::command]
-pub async fn machine_open_setup(app: AppHandle, step: Option<String>) -> Result<()> {
+pub fn machine_open_setup(app: AppHandle, step: Option<String>) -> Result<()> {
     let step = step.filter(|s| STEPS.contains(&s.as_str()));
     if let Some(existing) = app.get_webview_window(LABEL) {
         if let Some(step) = &step {
@@ -59,9 +58,9 @@ mod tests {
         let steps = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let seen = steps.clone();
         t.handle().listen_any("machine-setup-step", move |e| seen.lock().unwrap().push(e.payload().to_string()));
-        super::machine_open_setup(t.handle().clone(), Some("docker-test".into())).await.unwrap();
-        super::machine_open_setup(t.handle().clone(), Some("../../settings".into())).await.unwrap();
-        super::machine_open_setup(t.handle().clone(), None).await.unwrap();
+        super::machine_open_setup(t.handle().clone(), Some("docker-test".into())).unwrap();
+        super::machine_open_setup(t.handle().clone(), Some("../../settings".into())).unwrap();
+        super::machine_open_setup(t.handle().clone(), None).unwrap();
         assert_eq!(*steps.lock().unwrap(), ["\"docker-test\""]);
         assert_eq!(t.handle().webview_windows().len(), 1);
     }

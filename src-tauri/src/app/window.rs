@@ -60,7 +60,6 @@ pub fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
 }
 
 /// Opens the Settings window. Used by the sidebar footer and the app-menu item.
-#[tauri::command]
 pub fn open_settings(app: AppHandle) -> std::result::Result<(), String> {
     open_settings_window(&app).map_err(|e| e.to_string())
 }

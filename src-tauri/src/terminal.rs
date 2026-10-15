@@ -126,18 +126,24 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
     PtySize { rows: rows.max(2), cols: cols.max(10), pixel_width: 0, pixel_height: 0 }
 }
 
-/// Starts the shell for a lab in a pseudo-terminal; output goes to `events`. Returns the session.
-#[tauri::command]
-pub async fn terminal_open(
-    window: crate::WebviewWindow,
-    id: String,
-    kind: ShellKind,
-    runtime: Runtime,
-    cols: u16,
-    rows: u16,
-    events: Channel<TermEvent>,
-) -> Result<u32> {
+/// The shell a window asks for: lab `id`'s, of `kind`, on `runtime`, at `cols` x `rows`.
+pub struct Shell {
+    /// The lab.
+    pub id: String,
+    /// The lab's own shell, the attack box's or the attack VM's.
+    pub kind: ShellKind,
+    /// Where the lab runs.
+    pub runtime: Runtime,
+    /// The terminal's width in characters.
+    pub cols: u16,
+    /// The terminal's height in lines.
+    pub rows: u16,
+}
+
+/// Starts `shell` in a pseudo-terminal; output goes to `events`. Returns the session.
+pub async fn terminal_open(window: crate::WebviewWindow, shell: Shell, events: Channel<TermEvent>) -> Result<u32> {
     use tauri::Manager;
+    let Shell { id, kind, runtime, cols, rows } = shell;
     let session = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // Unique across app runs too, so a later run never ends an earlier run's shell.
     let tag = format!("{}-{session}", std::process::id());
@@ -275,7 +281,6 @@ fn forward(reader: &mut dyn Read, mut send: impl FnMut(TermEvent) -> bool, exit:
 }
 
 /// Sends keystrokes (or pasted text) to the shell. Only the window showing it may.
-#[tauri::command]
 pub fn terminal_write(window: crate::WebviewWindow, session: u32, data: String) -> Result<()> {
     write_input(window.label(), session, data.as_bytes())
 }
@@ -290,7 +295,6 @@ fn write_input(window: &str, session: u32, data: &[u8]) -> Result<()> {
 }
 
 /// Follows the view's size, so full-screen tools (vim, less, htop) lay out right.
-#[tauri::command]
 pub fn terminal_resize(window: crate::WebviewWindow, session: u32, cols: u16, rows: u16) -> Result<()> {
     resize(window.label(), session, cols, rows)
 }
@@ -303,7 +307,6 @@ fn resize(window: &str, session: u32, cols: u16, rows: u16) -> Result<()> {
 }
 
 /// Ends the shell (the view was closed). Another window's shell is left alone.
-#[tauri::command]
 pub fn terminal_close(window: crate::WebviewWindow, session: u32) -> Result<()> {
     close(window.label(), session);
     Ok(())
@@ -357,7 +360,6 @@ fn shell_window(id: &str, kind: ShellKind, runtime: Runtime) -> (String, String)
 }
 
 /// Opens (or focuses) a lab's shell window.
-#[tauri::command]
 pub fn terminal_window(app: AppHandle, id: String, kind: ShellKind, runtime: Runtime, title: String) -> Result<()> {
     crate::runtime::validate_id(&id)?;
     let (label, page) = shell_window(&id, kind, runtime);
@@ -598,7 +600,8 @@ mod tests {
         let window = crate::app::window::builder(t.handle(), "shell-lab-gone", "").build().unwrap();
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let events = crate::testing::test_app::Sink::default();
-        let err = terminal_open(window, "gone".into(), ShellKind::Lab, Runtime::Docker, 80, 24, events.channel()).await.unwrap_err();
+        let shell = Shell { id: "gone".into(), kind: ShellKind::Lab, runtime: Runtime::Docker, cols: 80, rows: 24 };
+        let err = terminal_open(window, shell, events.channel()).await.unwrap_err();
         assert_eq!(err.to_string(), "lab `gone` is not installed");
         assert!(events.messages().is_empty() && tools.calls().is_empty());
         assert!(with_sessions(|s| !s.values().any(|v| v.window == "shell-lab-gone")));

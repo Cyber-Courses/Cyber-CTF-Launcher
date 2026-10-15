@@ -44,7 +44,6 @@ pub fn log_dir(app: &crate::AppHandle) -> crate::error::Result<PathBuf> {
 
 /// Opens the log folder in the system's file manager (Settings > About), so a player can send
 /// the files to support.
-#[tauri::command]
 pub fn open_log_folder(app: crate::AppHandle) -> crate::error::Result<()> {
     let dir = log_dir(&app)?;
     std::fs::create_dir_all(&dir)?;

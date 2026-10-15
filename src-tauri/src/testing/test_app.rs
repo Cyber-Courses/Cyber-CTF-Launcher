@@ -87,6 +87,12 @@ impl Sink {
         })
     }
 
+    /// A line callback whose lines land here, as a log channel's would.
+    pub fn on_line(&self) -> impl FnMut(String) + Send + 'static {
+        let sink = self.0.clone();
+        move |line| sink.lock().unwrap().push(serde_json::Value::String(line))
+    }
+
     /// Every message so far.
     pub fn messages(&self) -> Vec<serde_json::Value> {
         self.0.lock().unwrap().clone()

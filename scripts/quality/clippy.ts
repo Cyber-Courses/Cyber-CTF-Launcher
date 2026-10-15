@@ -6,7 +6,7 @@ import path from "node:path";
 
 import type { Finding } from "./model.ts";
 
-type Span = { file_name: string; line_start: number; is_primary: boolean; expansion?: { span: Span } | null };
+type Span = { file_name: string; line_start: number; column_start: number; is_primary: boolean; expansion?: { span: Span } | null };
 type Diagnostic = { level: string; message: string; rendered: string | null; code: { code: string } | null; spans: Span[] };
 type CargoMessage = { reason: string; message?: Diagnostic };
 
@@ -20,8 +20,8 @@ function ownSpan(spans: readonly Span[]): Span | undefined {
   return span;
 }
 
-/** The clippy and rustc warnings, deduplicated (the lib is checked as itself and as its tests),
- *  and the rendered errors. */
+/** The clippy and rustc warnings, deduplicated by place (the lib is checked as itself and as its
+ *  tests, where a future's size, say, can differ), and the rendered errors. */
 export function runClippy(root: string): { warnings: Finding[]; errors: string[] } {
   const args = ["clippy", "--manifest-path", path.join(CRATE, "Cargo.toml"), "--all-targets", "--message-format=json"];
   const run = spawnSync("cargo", args, { cwd: root, encoding: "utf8", maxBuffer: 1 << 30, stdio: ["ignore", "pipe", "inherit"] });
@@ -42,7 +42,7 @@ export function runClippy(root: string): { warnings: Finding[]; errors: string[]
       line: span.line_start,
       message: msg.message,
     };
-    warnings.set(`${finding.rule} ${file}:${String(span.line_start)} ${msg.message}`, finding);
+    warnings.set(`${finding.rule} ${file}:${String(span.line_start)}:${String(span.column_start)}`, finding);
   }
   if (run.status !== 0 && errors.length === 0) errors.push(`cargo clippy exited with ${String(run.status)}`);
   return { warnings: [...warnings.values()], errors };

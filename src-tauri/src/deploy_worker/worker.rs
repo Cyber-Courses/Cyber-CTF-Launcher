@@ -4,6 +4,7 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 use crate::AppHandle;
+use tauri::Manager as _;
 
 use super::progress::FAILED_MARK;
 use super::{Job, Op, execute, files};
@@ -24,7 +25,9 @@ pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRunt
         .plugin(crate::app::logging::plugin(&log_name))
         .setup(move |app| {
             crate::app::logging::log_startup(app.handle(), &format!("deploy worker ({})", job.lab_id));
-            crate::shared_folder::init(app.handle());
+            if let Ok(dir) = app.path().app_data_dir() {
+                crate::shared_folder::init(&dir);
+            }
             crate::runtime::lab::registry::init(app.handle());
             // A background process, not an app: on macOS keep it out of the Dock, the app
             // switcher and Apple Events aimed at "Cyber CTF".

@@ -271,6 +271,7 @@ fn assess(app: &AppHandle, probes: &Probes) -> (WslState, bool) {
 }
 
 /// Where WSL 2 stands on this machine: Windows only (`None` elsewhere).
+#[cfg_attr(not(windows), allow(clippy::unused_async, reason = "it awaits the probes on Windows"))]
 pub async fn report(app: &AppHandle) -> Option<WslReport> {
     #[cfg(windows)]
     {
@@ -358,7 +359,7 @@ async fn schedule_restart(app: &AppHandle, state: &AtomicU8, reason: &str, reope
 
 /// Restarts Windows in a few seconds (`shutdown /r`), to finish turning WSL 2 on. Before that,
 /// asks Windows to open Cyber CTF once when the player signs back in (`RunOnce`). Windows only.
-#[tauri::command]
+#[cfg_attr(not(windows), allow(clippy::unused_async, reason = "it awaits the restart on Windows"))]
 pub async fn machine_restart(app: AppHandle, reason: String) -> Result<()> {
     let reason = self::reason(&reason)?;
     #[cfg(windows)]

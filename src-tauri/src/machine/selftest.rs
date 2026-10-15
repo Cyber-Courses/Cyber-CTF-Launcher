@@ -129,7 +129,6 @@ async fn tracked<T>(app: &AppHandle, kind: Kind, op: impl std::future::Future<Ou
 
 /// Starts the test downloads early (called when setup opens), recording what they download as
 /// the app's. Errors are ignored by the UI: the test itself retries and reports them.
-#[tauri::command]
 pub async fn machine_selftest_prefetch(app: AppHandle, kind: Kind, provider: Option<Provider>) -> Result<()> {
     match kind {
         Kind::Docker => owned::tracked(&app, &[IMAGE.to_string()], &[], downloads::ensure_image()).await.map(|_| ()),
@@ -157,7 +156,6 @@ fn one_at_a_time(kind: Kind) -> &'static tokio::sync::Mutex<()> {
     }
 }
 
-#[tauri::command]
 pub async fn machine_selftest(app: AppHandle, kind: Kind, provider: Option<Provider>, events: Channel<Event>) -> Result<()> {
     let _alone = one_at_a_time(kind).lock().await;
     let r = Reporter(events);

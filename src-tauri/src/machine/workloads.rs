@@ -27,7 +27,6 @@ pub struct Workload {
     pub provider: Option<String>,
 }
 
-#[tauri::command]
 pub async fn machine_workloads(app: AppHandle) -> Vec<Workload> {
     let (mut d, v) = tokio::join!(docker::workloads(), vm::workloads(&app));
     d.extend(v);
@@ -42,7 +41,6 @@ fn valid_id(id: &str) -> bool {
 /// lab page's: under its lock, with its volumes, pinned ports, networks and attack box or VM);
 /// anything else of the app's (a lab removed since, the self-test) goes by name: its containers
 /// (incl. its attack box), or its local VMs. The lab can be started again from its page.
-#[tauri::command]
 pub async fn machine_workload_stop(app: AppHandle, kind: String, id: String) -> Result<()> {
     if !valid_id(&id) {
         return Err(Error::Invalid(format!("invalid id `{id}`")));

@@ -5,7 +5,6 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tauri::ipc::Channel;
 use tokio::sync::oneshot;
 
 use crate::error::{Code, Error, Result};
@@ -39,10 +38,9 @@ pub enum Cloud {
 /// Signs in to a cloud provider using its CLI. AWS uses SSO (needs a configured SSO
 /// profile); Azure and GCP open the browser. Streams the CLI output to the UI, until it ends,
 /// the player cancels it (`cloud_login_cancel`) or [`LOGIN_TIMEOUT`] passes.
-#[tauri::command]
-pub async fn cloud_login(provider: Cloud, logs: Channel<String>) -> Result<()> {
+pub async fn cloud_login(provider: Cloud, on_line: impl FnMut(String)) -> Result<()> {
     let (program, args) = login_command(&provider);
-    sign_in(program, args, logs).await
+    sign_in(program, args, on_line).await
 }
 
 /// How long a CLI sign-in waits for the player to finish it in the browser.
@@ -52,19 +50,15 @@ const LOGIN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 static SIGN_IN: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
 
 /// Cancels the CLI sign-in in progress (its CLI is stopped), if any.
-#[tauri::command]
 pub fn cloud_login_cancel() {
     if let Some(cancel) = SIGN_IN.lock().ok().and_then(|mut s| s.take()) {
         let _ = cancel.send(());
     }
 }
 
-/// Runs a CLI sign-in (`program args`), its lines on `logs`, until it ends, is cancelled, or
+/// Runs a CLI sign-in (`program args`), its lines to `on_line`, until it ends, is cancelled, or
 /// [`LOGIN_TIMEOUT`] passes. A new sign-in cancels the one before it.
-async fn sign_in(program: &'static str, args: &[&str], logs: Channel<String>) -> Result<()> {
-    let on_line = move |line: String| {
-        let _ = logs.send(line);
-    };
+async fn sign_in(program: &'static str, args: &[&str], mut on_line: impl FnMut(String)) -> Result<()> {
     on_line(format!("$ {program} {}", args.join(" ")));
     sign_in_within(LOGIN_TIMEOUT, stream(program, args, None, &[], on_line), cancellable()).await
 }
@@ -118,7 +112,6 @@ fn non_empty(out: String) -> Option<String> {
 /// The identity the host AWS CLI resolves (for the given profile, or the default chain),
 /// if any, so the cloud setup can show "signed in as …" and offer using the CLI instead of
 /// pasting keys. None when the CLI is missing or that profile has no usable credentials.
-#[tauri::command]
 pub async fn aws_cli_identity(profile: Option<String>) -> Option<String> {
     let args = with_profile(vec!["sts", "get-caller-identity", "--query", "Arn", "--output", "text"], profile.as_deref());
     run_cli("aws", &args).await.ok().and_then(non_empty)
@@ -136,14 +129,12 @@ pub(crate) fn month_period() -> String {
 /// This month's AWS spend so far in USD, as the AWS CLI's `profile` (or its default) sees it:
 /// the setup form's, before the account is saved (a saved account's is `server_month_to_date_cost`,
 /// with its own credentials). None when the CLI or Cost Explorer isn't available.
-#[tauri::command]
 pub async fn aws_month_to_date_cost(profile: Option<String>) -> Option<f64> {
     crate::runtime::server::cli_month_to_date_cost(profile).await.ok()
 }
 
 /// The AWS CLI profiles configured on this machine (`aws configure list-profiles`), so the
 /// user can pick one when they have several. Empty when the CLI is missing or has none.
-#[tauri::command]
 pub async fn aws_profiles() -> Vec<String> {
     run_cli("aws", &["configure", "list-profiles"]).await.ok().map(|s| lines(&s)).unwrap_or_default()
 }
@@ -165,7 +156,6 @@ pub struct AzureSubscription {
 
 /// The Azure subscriptions the signed-in account can see (`az account list`), so the user can
 /// pick one instead of pasting a GUID. Empty when the CLI is missing or not signed in.
-#[tauri::command]
 pub async fn azure_subscriptions() -> Vec<AzureSubscription> {
     run_cli("az", &["account", "list", "--query", "[].{name:name,id:id,isDefault:isDefault}", "--output", "json"])
         .await
@@ -207,8 +197,7 @@ pub struct OciConfig {
 
 /// Reads the OCI config (OCI_CLI_CONFIG_FILE, else ~/.oci/config) DEFAULT profile, so the setup
 /// can show whether it's configured and prefill the tenancy (as the compartment) and region.
-#[tauri::command]
-pub async fn oci_config() -> OciConfig {
+pub fn oci_config() -> OciConfig {
     read_oci_config(oci_config_path().as_deref())
 }
 
@@ -255,7 +244,6 @@ fn parse_oci_config(text: &str) -> OciConfig {
 /// An account whose sign-in expired (Workspace reauthentication) still shows as active in
 /// `auth list` while every call fails: it counts as signed out, so the UI offers to sign in
 /// again instead of showing an empty billing list.
-#[tauri::command]
 pub async fn gcp_account() -> Option<String> {
     let email = run_cli("gcloud", &["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"]).await.ok().and_then(non_empty)?;
     run_cli("gcloud", &["auth", "print-access-token", "--quiet"]).await.ok()?;
@@ -264,7 +252,6 @@ pub async fn gcp_account() -> Option<String> {
 
 /// The GCP billing accounts the signed-in user can see (`gcloud billing accounts list`), so they
 /// pick one for the per-lab projects. Empty when the CLI is missing or not signed in.
-#[tauri::command]
 pub async fn gcp_billing_accounts() -> Vec<GcpBillingAccount> {
     run_cli("gcloud", &["billing", "accounts", "list", "--format", "json"]).await.ok().map(|out| billing_accounts(&out)).unwrap_or_default()
 }
@@ -289,7 +276,6 @@ fn billing_accounts(out: &str) -> Vec<GcpBillingAccount> {
 
 /// The GCP organizations the signed-in user belongs to (`gcloud organizations list`). Empty for
 /// a personal / no-org account, so the user can create projects without a parent.
-#[tauri::command]
 pub async fn gcp_organizations() -> Vec<GcpOrganization> {
     run_cli("gcloud", &["organizations", "list", "--format", "json"]).await.ok().map(|out| organizations(&out)).unwrap_or_default()
 }
@@ -309,10 +295,9 @@ fn organizations(out: &str) -> Vec<GcpOrganization> {
 /// Signs in to AWS in the browser (`aws login`, AWS CLI >= 2.32.0): console credentials for
 /// root / IAM / federation, temporary credentials for up to 12 hours, no SSO setup needed.
 /// Streams the CLI output.
-#[tauri::command]
-pub async fn aws_login(profile: Option<String>, logs: Channel<String>) -> Result<()> {
+pub async fn aws_login(profile: Option<String>, on_line: impl FnMut(String)) -> Result<()> {
     let args = with_profile(vec!["login"], profile.as_deref());
-    sign_in("aws", &args, logs).await
+    sign_in("aws", &args, on_line).await
 }
 
 #[cfg(test)]
@@ -320,16 +305,10 @@ mod tests {
     use super::*;
     use crate::platform::exec::fake::{Tools, fail, ok};
 
-    fn sink() -> (Channel<String>, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    fn sink() -> (impl FnMut(String), std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
         let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let s = seen.clone();
-        let channel = Channel::new(move |body| {
-            if let tauri::ipc::InvokeResponseBody::Json(j) = body {
-                s.lock().unwrap().push(serde_json::from_str(&j).unwrap());
-            }
-            Ok(())
-        });
-        (channel, seen)
+        (move |line| s.lock().unwrap().push(line), seen)
     }
 
     #[tokio::test]
@@ -459,7 +438,7 @@ mod tests {
     #[tokio::test]
     async fn the_oci_config_command_reads_its_file_or_reports_none() {
         // The command reads the file the CLI would (tests don't touch the environment).
-        assert_eq!(oci_config().await, read_oci_config(oci_config_path().as_deref()));
+        assert_eq!(oci_config(), read_oci_config(oci_config_path().as_deref()));
         assert!(oci_config_path().is_some_and(|p| p.ends_with("config")));
         let dir = std::env::temp_dir().join(format!("cyberctf-oci-{}", rand::random::<u32>()));
         std::fs::create_dir_all(&dir).unwrap();

@@ -33,7 +33,6 @@ fn hub_arch() -> &'static str {
 }
 
 /// Compressed download size in bytes of `image` for this machine, from Docker Hub.
-#[tauri::command]
 pub async fn image_download_size(image: String) -> Option<u64> {
     // Same guard as the attack box.
     if !crate::platform::exec::valid_image(&image) {

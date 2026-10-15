@@ -8,10 +8,9 @@ use std::path::PathBuf;
 use crate::AppHandle;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
-use tauri::ipc::Channel;
 
 use super::install::Dependency;
-use super::steps::{Step, channel_log, run_steps, step};
+use super::steps::{Step, run_steps, step};
 use crate::error::{Error, Result};
 
 #[derive(Serialize, Deserialize, Clone, ts_rs::TS)]
@@ -188,7 +187,6 @@ fn confirmed(tools: Vec<InstalledTool>) -> Vec<InstalledTool> {
 
 /// The tools Cyber CTF installed on this machine (and hasn't removed since). Installs that only
 /// opened the vendor's installer count once the tool is found.
-#[tauri::command]
 pub async fn installed_tools(app: AppHandle) -> Vec<InstalledTool> {
     confirm_pending(&app).await;
     confirmed(load(&app))
@@ -331,12 +329,10 @@ fn plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
 }
 
 /// Removes a tool Cyber CTF installed, streaming the output, then forgets it.
-#[tauri::command]
-pub async fn uninstall_dependency(app: AppHandle, dependency: Dependency, logs: Channel<String>) -> Result<()> {
+pub async fn uninstall_dependency(app: AppHandle, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
     if !confirmed(load(&app)).iter().any(|t| t.dependency == dependency) {
         return Err(Error::Invalid("Cyber CTF didn't install this tool, so it won't remove it.".into()));
     }
-    let mut on_line = channel_log(logs);
     #[cfg(target_os = "macos")]
     let dmg = match dependency {
         Dependency::Virtualbox => {

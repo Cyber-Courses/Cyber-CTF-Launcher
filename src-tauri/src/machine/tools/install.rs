@@ -4,13 +4,12 @@
 //! letting the tool's own installer run).
 
 use serde::Deserialize;
-use tauri::ipc::Channel;
 
 #[cfg(target_os = "macos")]
 use super::scripts::fetch_and_open;
 #[cfg(target_os = "linux")]
 use super::scripts::{TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, awscli_script, azurecli_script, docker_script, gcloud_script};
-use super::steps::{Step, channel_log, command_line, run_step, run_steps, step};
+use super::steps::{Step, command_line, run_step, run_steps, step};
 use super::uninstall;
 use crate::error::{Error, Result};
 
@@ -152,9 +151,7 @@ fn plan(dep: Dependency) -> Result<Vec<Step>> {
 }
 
 /// Installs a dependency, streaming each command and its output to the UI.
-#[tauri::command]
-pub async fn install_dependency(app: crate::AppHandle, dependency: Dependency, logs: Channel<String>) -> Result<()> {
-    let mut on_line = channel_log(logs);
+pub async fn install_dependency(app: crate::AppHandle, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
     let steps = plan(dependency).inspect_err(|e| on_line(e.to_string()))?;
     let before = uninstall::present(dependency).await;
     run_steps(&steps, &mut on_line).await?;
@@ -185,12 +182,10 @@ fn valid_plugin(plugin: &str) -> bool {
 
 /// Installs a Vagrant plugin (userland, no admin), streaming the output. The plugin name
 /// is validated so it can never be anything but a `vagrant-*` / `vagrant_*` identifier.
-#[tauri::command]
-pub async fn install_vagrant_plugin(plugin: String, logs: Channel<String>) -> Result<()> {
+pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(String)) -> Result<()> {
     if !valid_plugin(&plugin) {
         return Err(Error::Invalid(format!("invalid plugin name `{plugin}`")));
     }
-    let mut on_line = channel_log(logs);
     let step = Step { program: "vagrant".into(), args: vec!["plugin".into(), "install".into(), plugin], note: None };
     on_line(command_line(&step));
     run_step(&step, &mut on_line).await?;
@@ -315,7 +310,7 @@ mod tests {
         let t = TestApp::new();
         let tools = Tools::rules(&[]);
         let log = Sink::default();
-        let err = install_dependency(t.handle().clone(), not_here(), log.channel()).await.unwrap_err();
+        let err = install_dependency(t.handle().clone(), not_here(), log.on_line()).await.unwrap_err();
         assert_eq!(log.lines(), [err.to_string()]);
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty());
@@ -327,7 +322,7 @@ mod tests {
         let t = TestApp::new();
         let tools = terraform_tools(Rc::new(Cell::new(false)), true);
         let log = Sink::default();
-        install_dependency(t.handle().clone(), Dependency::Terraform, log.channel()).await.unwrap();
+        install_dependency(t.handle().clone(), Dependency::Terraform, log.on_line()).await.unwrap();
         let lines = log.lines();
         assert_eq!(lines.first(), Some(&command_line(&steps[0])), "{lines:?}");
         assert!(lines.contains(&"Setting up terraform (1.9.8-1) ...".to_string()), "{lines:?}");
@@ -338,10 +333,10 @@ mod tests {
 
         // Cleanup removes it, then forgets it: a second removal is refused.
         let log = Sink::default();
-        uninstall::uninstall_dependency(t.handle().clone(), Dependency::Terraform, log.channel()).await.unwrap();
+        uninstall::uninstall_dependency(t.handle().clone(), Dependency::Terraform, log.on_line()).await.unwrap();
         assert_eq!(log.lines().last().map(String::as_str), Some("Removed."));
         assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty());
-        let err = uninstall::uninstall_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().channel()).await.unwrap_err();
+        let err = uninstall::uninstall_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().on_line()).await.unwrap_err();
         assert_eq!(err.to_string(), "Cyber CTF didn't install this tool, so it won't remove it.");
     }
 
@@ -352,7 +347,7 @@ mod tests {
         }
         let t = TestApp::new();
         let _tools = terraform_tools(Rc::new(Cell::new(true)), true);
-        install_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().channel()).await.unwrap();
+        install_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
         assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty());
     }
 
@@ -366,7 +361,7 @@ mod tests {
         // The step "works" but the tool isn't on PATH yet (an installer left open).
         let probe = present.clone();
         let _tools = Tools::new(move |program, _| if program == "terraform" && !probe.get() { fail("not found") } else { ok("") });
-        install_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().channel()).await.unwrap();
+        install_dependency(t.handle().clone(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
         assert!(uninstall::installed_tools(t.handle().clone()).await.is_empty(), "pending, not shown");
         present.set(true);
         let ours: Vec<_> = uninstall::installed_tools(t.handle().clone()).await.into_iter().map(|t| t.dependency).collect();
@@ -381,7 +376,7 @@ mod tests {
         let t = TestApp::new();
         let _tools = terraform_tools(Rc::new(Cell::new(false)), false);
         let log = Sink::default();
-        let err = install_dependency(t.handle().clone(), Dependency::Terraform, log.channel()).await.unwrap_err();
+        let err = install_dependency(t.handle().clone(), Dependency::Terraform, log.on_line()).await.unwrap_err();
         assert!(err.to_string().contains("exited with"), "{err}");
         assert!(log.lines().contains(&"E: Unable to locate package terraform".to_string()));
         assert!(!log.lines().iter().any(|l| l.starts_with("Done.")));
@@ -390,8 +385,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_invalid_plugin_is_refused_before_running_anything() {
-        let channel = Channel::new(|_| Ok(()));
-        let err = install_vagrant_plugin("rails".into(), channel).await.unwrap_err();
+        let err = install_vagrant_plugin("rails".into(), |_| {}).await.unwrap_err();
         assert_eq!(err.to_string(), "invalid plugin name `rails`");
     }
 }

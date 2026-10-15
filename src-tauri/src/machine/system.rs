@@ -94,7 +94,6 @@ pub struct TargetReadiness {
     pub notes: Vec<String>,
 }
 
-#[tauri::command]
 pub async fn system_check(app: crate::AppHandle) -> SystemReport {
     // A tool installed since the last check (from the app or not) is found without a restart.
     crate::platform::env_path::refresh();

@@ -1,35 +1,54 @@
 //! The commands the webview invokes, registered with Tauri; each window may call only those its
-//! capability grants (build.rs, capabilities/).
+//! capability grants (build.rs, capabilities/). Each is a thin adapter: it turns the webview's
+//! arguments and channels into the domain's types and calls the domain's function. The runtime's
+//! commands stay in `runtime/` until it moves to the Isothrum runner.
 
-use crate::{AppHandle, AppRuntime, account, app, cloud, labs, machine, runtime, shared_folder, terminal};
+mod account;
+mod app;
+mod cloud;
+mod labs;
+mod machine;
+mod shared_folder;
+mod terminal;
+
+use tauri::ipc::Channel;
+
+use crate::{AppRuntime, runtime};
+
+/// A line callback that sends each line on `logs` (a closed window drops them).
+fn lines(logs: Channel<String>) -> impl FnMut(String) + Send + 'static {
+    move |line| {
+        let _ = logs.send(line);
+    }
+}
 
 /// Registers every command the webview invokes.
 #[allow(clippy::too_many_lines, reason = "one line per command: a list, not logic")]
 pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntime> {
     builder.invoke_handler(tauri::generate_handler![
-        machine::system::system_check,
-        machine::images::image_download_size,
-        machine::system::docker::docker_use_engine,
-        machine::system::docker::docker_start_engine,
-        machine::system::metrics::machine_metrics,
-        machine::system::setup_window::machine_open_setup,
-        machine::system::wsl::machine_restart,
-        machine::selftest::machine_selftest,
-        machine::selftest::machine_selftest_prefetch,
-        machine::workloads::machine_workloads,
-        machine::workloads::machine_workload_stop,
-        machine::storage::machine_storage,
-        machine::storage::machine_storage_clean,
-        account::auth::auth_login,
-        account::auth::auth_login_cancel,
-        account::auth::auth_status,
-        account::auth::auth_logout,
-        account::api::api_query,
-        account::agent::agent_info,
-        account::agent::confirm_launch,
-        machine::tools::install::install_dependency,
-        machine::tools::uninstall::installed_tools,
-        machine::tools::uninstall::uninstall_dependency,
+        machine::system_check,
+        machine::image_download_size,
+        machine::docker_use_engine,
+        machine::docker_start_engine,
+        machine::machine_metrics,
+        machine::machine_open_setup,
+        machine::machine_restart,
+        machine::machine_selftest,
+        machine::machine_selftest_prefetch,
+        machine::machine_workloads,
+        machine::machine_workload_stop,
+        machine::machine_storage,
+        machine::machine_storage_clean,
+        account::auth_login,
+        account::auth_login_cancel,
+        account::auth_status,
+        account::auth_logout,
+        account::api_query,
+        account::agent_info,
+        account::confirm_launch,
+        machine::install_dependency,
+        machine::installed_tools,
+        machine::uninstall_dependency,
         cloud::cloud_login,
         cloud::cloud_login_cancel,
         cloud::aws_cli_identity,
@@ -42,7 +61,7 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         cloud::gcp_organizations,
         runtime::providers::hyperv_join_admins,
         cloud::oci_config,
-        machine::tools::install::install_vagrant_plugin,
+        machine::install_vagrant_plugin,
         labs::lab_launch,
         runtime::lab_stop,
         runtime::lab_park,
@@ -82,21 +101,15 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         runtime::server::server_month_to_date_cost,
         runtime::server_selftest::server_selftest,
         runtime::server::server_open_setup,
-        labs::operations::deploying_labs,
-        restart_app,
-        labs::operations::active_operations,
-        labs::operations::lab_deploy_log,
-        app::quit::linger_quit,
-        app::quit::force_quit,
-        app::window::open_settings,
-        app::logging::open_log_folder,
+        labs::deploying_labs,
+        app::restart_app,
+        labs::active_operations,
+        labs::lab_deploy_log,
+        app::linger_quit,
+        app::force_quit,
+        app::open_settings,
+        app::open_log_folder,
     ])
-}
-
-/// Relaunches the app, so an installed update applies without the player quitting by hand.
-#[tauri::command]
-fn restart_app(app: AppHandle) {
-    app.restart();
 }
 
 #[cfg(test)]

@@ -6,9 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use crate::AppHandle;
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 
 use crate::error::{Error, Result};
 
@@ -25,11 +23,10 @@ pub struct SharedFolder {
     pub path: Option<String>,
 }
 
-/// Points the setting at the app's data folder. Called at start by the app and the deploy worker.
-pub fn init(app: &AppHandle) {
-    if let Ok(dir) = app.path().app_data_dir() {
-        let _ = FILE.set(dir.join("shared-folder.json"));
-    }
+/// Points the setting at the app's data folder `data_dir`. Called at start by the app and the
+/// deploy worker.
+pub fn init(data_dir: &Path) {
+    let _ = FILE.set(data_dir.join("shared-folder.json"));
 }
 
 /// The suggested folder: `CyberCTF/shared` in the home folder.
@@ -84,7 +81,6 @@ pub struct SharedFolderInfo {
     pub mount_point: &'static str,
 }
 
-#[tauri::command]
 pub fn shared_folder_get() -> SharedFolderInfo {
     info(load())
 }
@@ -96,7 +92,6 @@ fn info(s: SharedFolder) -> SharedFolderInfo {
 }
 
 /// Turns sharing on or off and sets the folder (created now, so a wrong path shows at once).
-#[tauri::command]
 pub fn shared_folder_set(enabled: bool, path: String) -> Result<SharedFolderInfo> {
     save_to(FILE.get().map(PathBuf::as_path), enabled, &path)?;
     Ok(shared_folder_get())
@@ -119,7 +114,6 @@ fn save_to(file: Option<&Path>, enabled: bool, path: &str) -> Result<()> {
 }
 
 /// Opens the folder in the system's file manager.
-#[tauri::command]
 pub fn shared_folder_open() -> Result<()> {
     let path = current().ok_or_else(|| Error::Invalid("folder sharing is off".into()))?;
     crate::platform::open_folder(&path)

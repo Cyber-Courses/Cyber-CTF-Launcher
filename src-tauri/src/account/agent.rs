@@ -138,7 +138,6 @@ fn pending_confirmations() -> &'static Mutex<HashMap<String, oneshot::Sender<boo
 }
 
 /// The user's answer to a cloud-launch confirmation, from the UI.
-#[tauri::command]
 pub fn confirm_launch(session_id: String, approve: bool) {
     if let Ok(mut map) = pending_confirmations().lock()
         && let Some(tx) = map.remove(&session_id)
@@ -463,7 +462,6 @@ pub struct AgentInfo {
 }
 
 /// This machine's identity, for the UI ("running as ...").
-#[tauri::command]
 pub fn agent_info(app: AppHandle) -> Result<AgentInfo> {
     Ok(AgentInfo { install_id: install_id(&app)?, name: machine_name(), arch: arch(), capabilities: capabilities() })
 }

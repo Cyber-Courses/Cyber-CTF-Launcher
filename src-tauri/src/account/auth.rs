@@ -193,7 +193,6 @@ fn authorize_url(client_id: &str, redirect_uri: &str, state: &str, verifier: &st
 /// even when no browser could be opened: a browser that takes the link and shows nothing can't
 /// be detected, so the app offers the link to copy into one. `auth_login_cancel` (or another
 /// sign-in) ends the wait with [`Error::Cancelled`].
-#[tauri::command]
 pub async fn auth_login(app: AppHandle, events: Channel<String>) -> Result<AuthStatus> {
     let open = |url: &url::Url| {
         let _ = events.send(url.to_string());
@@ -206,7 +205,6 @@ pub async fn auth_login(app: AppHandle, events: Channel<String>) -> Result<AuthS
 }
 
 /// Ends the sign-in waiting for the browser, if any: it returns [`Error::Cancelled`].
-#[tauri::command]
 pub fn auth_login_cancel() {
     waiting::cancel();
 }
@@ -282,7 +280,6 @@ async fn keep_signed_in(session: Session) -> Result<()> {
 
 /// Async so the keychain is read off the UI thread: a locked GNOME keyring shows its unlock
 /// prompt and waits, which froze the window while this ran on the main thread.
-#[tauri::command]
 pub async fn auth_status() -> AuthStatus {
     status_from_read(store::read().await)
 }
@@ -296,7 +293,6 @@ fn status_from_read(read: std::result::Result<Option<Session>, String>) -> AuthS
     }
 }
 
-#[tauri::command]
 pub async fn auth_logout() {
     // After a refresh in flight: it would otherwise store its renewed session right after this
     // clear, and the player would be back in at the next call.

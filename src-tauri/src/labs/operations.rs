@@ -11,7 +11,6 @@ use crate::runtime::{self, Action, Park};
 /// The labs currently starting or stopping. The UI reads this on load to rehydrate the "this lab
 /// is starting" state after a window reload: the deploy keeps running in this process even when
 /// the webview reloaded and lost its own in-memory deploy state.
-#[tauri::command]
 pub async fn deploying_labs(app: AppHandle) -> Vec<String> {
     off_main(move || {
         // Worker keys with a dot are attack VM starts beside a lab, not the lab's own deploy.
@@ -76,7 +75,6 @@ fn in_app_op(action: Action) -> &'static str {
 
 /// Every lab operation in flight: the detached workers (with the step their log is at) and the
 /// in-process ones. A lab with a worker is listed once, as the worker's operation.
-#[tauri::command]
 pub async fn active_operations(app: AppHandle) -> Vec<ActiveOperation> {
     off_main(move || merge_operations(deploy_worker::running_jobs(&app), runtime::active_actions())).await.unwrap_or_default()
 }
@@ -101,7 +99,6 @@ fn merge_operations(jobs: Vec<(deploy_worker::Job, Option<String>)>, actions: Ve
 
 /// The log so far of a lab's deploy in its worker process, so a reloaded or relaunched app can
 /// re-attach to a deploy still in progress.
-#[tauri::command]
 pub async fn lab_deploy_log(app: AppHandle, id: String) -> std::result::Result<String, String> {
     off_main(move || deploy_worker::log_so_far(&app, &id).map_err(|e| e.to_string())).await?
 }

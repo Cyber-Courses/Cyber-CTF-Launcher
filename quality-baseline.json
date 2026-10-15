@@ -231,7 +231,6 @@
     "exception/without-reason": {
       "rs:account": 1,
       "rs:deploy_worker": 1,
-      "rs:labs": 1,
       "rs:platform": 2,
       "rs:runtime": 3,
       "ts:components": 1,
@@ -261,14 +260,12 @@
       "rs:runtime": 6
     },
     "rust/tauri-outside-adapters": {
-      "rs:account": 3,
-      "rs:cloud": 1,
+      "rs:account": 2,
       "rs:deploy_worker": 4,
       "rs:labs": 2,
-      "rs:machine": 15,
+      "rs:machine": 11,
       "rs:platform": 2,
       "rs:runtime": 24,
-      "rs:shared_folder": 1,
       "rs:terminal": 1
     }
   },
@@ -299,11 +296,11 @@
         "rs:cloud": 2,
         "rs:deploy_worker": 2,
         "rs:machine": 4,
-        "rs:runtime": 4
+        "rs:runtime": 5
       },
       "clippy/cast_possible_wrap": {
         "rs:cloud": 1,
-        "rs:machine": 14
+        "rs:machine": 15
       },
       "clippy/cast_sign_loss": {
         "rs:cloud": 2,
@@ -319,7 +316,8 @@
         "rs:runtime": 1
       },
       "clippy/default_trait_access": {
-        "rs:account": 3,
+        "rs:account": 1,
+        "rs:commands": 2,
         "rs:platform": 1,
         "rs:runtime": 4
       },
@@ -328,12 +326,12 @@
         "rs:app": 5,
         "rs:cloud": 2,
         "rs:deploy_worker": 2,
-        "rs:labs": 5,
-        "rs:lan_relay": 15,
-        "rs:machine": 17,
-        "rs:platform": 10,
+        "rs:labs": 6,
+        "rs:lan_relay": 17,
+        "rs:machine": 18,
+        "rs:platform": 12,
         "rs:root": 4,
-        "rs:runtime": 84,
+        "rs:runtime": 98,
         "rs:terminal": 1
       },
       "clippy/expect_used": {
@@ -345,7 +343,7 @@
         "rs:runtime": 3
       },
       "clippy/float_cmp": {
-        "rs:runtime": 1
+        "rs:runtime": 2
       },
       "clippy/fn_params_excessive_bools": {
         "rs:runtime": 1
@@ -386,9 +384,9 @@
         "rs:terminal": 2
       },
       "clippy/large_futures": {
-        "rs:app": 2,
-        "rs:machine": 7,
-        "rs:runtime": 16
+        "rs:app": 1,
+        "rs:machine": 6,
+        "rs:runtime": 15
       },
       "clippy/large_stack_arrays": {
         "rs:labs": 1,
@@ -424,11 +422,11 @@
         "rs:cloud": 1,
         "rs:commands": 1,
         "rs:deploy_worker": 2,
-        "rs:machine": 2,
+        "rs:machine": 3,
         "rs:platform": 1,
-        "rs:runtime": 7,
+        "rs:runtime": 8,
         "rs:shared_folder": 1,
-        "rs:terminal": 4,
+        "rs:terminal": 7,
         "rs:testing": 1
       },
       "clippy/needless_raw_string_hashes": {
@@ -473,8 +471,7 @@
       "clippy/too_many_arguments": {
         "rs:labs": 3,
         "rs:platform": 2,
-        "rs:runtime": 11,
-        "rs:terminal": 1
+        "rs:runtime": 11
       },
       "clippy/uninlined_format_args": {
         "rs:runtime": 2
@@ -488,9 +485,6 @@
       },
       "clippy/unreadable_literal": {
         "rs:cloud": 4
-      },
-      "clippy/unused_async": {
-        "rs:machine": 1
       },
       "clippy/unused_self": {
         "rs:platform": 2
@@ -522,15 +516,20 @@
     "src-tauri/src/commands.rs": {
       "#[allow(clippy::too_many_lines, reason = \"one line per command: a list, not logic\")]": 1
     },
+    "src-tauri/src/commands/labs.rs": {
+      "#[allow(clippy::too_many_arguments, reason = \"the webview sends each of the request's fields as an argument\")]": 1
+    },
+    "src-tauri/src/commands/terminal.rs": {
+      "#[allow(clippy::too_many_arguments, reason = \"the webview sends each of the shell's fields as an argument\")]": 1
+    },
     "src-tauri/src/deploy_worker/process.rs": {
       "#[cfg_attr(not(windows), allow(dead_code))]": 2,
       "#[cfg_attr(not(windows), allow(unused_variables))]": 1
     },
-    "src-tauri/src/labs.rs": {
-      "#[allow(clippy::too_many_arguments)]": 1
-    },
     "src-tauri/src/machine/system/wsl.rs": {
-      "#![cfg_attr(not(windows), allow(dead_code))]": 1
+      "#![cfg_attr(not(windows), allow(dead_code))]": 1,
+      "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the probes on Windows\"))]": 1,
+      "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the restart on Windows\"))]": 1
     },
     "src-tauri/src/platform/atomic_file.rs": {
       "#[cfg_attr(not(debug_assertions), allow(dead_code))]": 1,

@@ -26,7 +26,6 @@ pub struct MachineMetrics {
     pub containers: u32,
 }
 
-#[tauri::command]
 pub async fn machine_metrics() -> MachineMetrics {
     let mut sys = System::new();
     sys.refresh_cpu_usage();

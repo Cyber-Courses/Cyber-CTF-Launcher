@@ -347,40 +347,37 @@ async fn launch_spec(app: &AppHandle, lab_id: &str, offline: bool, logs: &Channe
     }
 }
 
-/// `attackbox_image` starts an attack box next to the lab on a server host (where the
-/// lab network isn't reachable from this machine). `default_ports` publishes a container lab's
-/// services on their own ports instead of random free ones. `offline` starts the installed lab
-/// without the backend when it can't be reached (no progress saved): the player's answer to a
-/// launch that failed with `Code::OfflineReady`.
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn lab_launch(
-    app: AppHandle,
-    lab_id: String,
-    provider: Option<Provider>,
-    host: Option<String>,
-    attackbox_image: Option<String>,
-    default_ports: Option<bool>,
-    offline: Option<bool>,
-    logs: Channel<String>,
-) -> Result<()> {
+/// What the player asked to start, and how.
+pub struct LaunchRequest {
+    /// The lab.
+    pub lab_id: String,
+    /// The Vagrant provider a VM lab runs on (this machine's default when None).
+    pub provider: Option<Provider>,
+    /// The saved server or cloud account it runs on (this machine when None).
+    pub host: Option<String>,
+    /// An attack box started next to the lab on a server host (where the lab network isn't
+    /// reachable from this machine).
+    pub attackbox_image: Option<String>,
+    /// A container lab's services published on their own ports instead of random free ones.
+    pub default_ports: bool,
+    /// The installed lab started without the backend when it can't be reached (no progress
+    /// saved): the player's answer to a launch that failed with `Code::OfflineReady`.
+    pub offline: bool,
+}
+
+/// Starts `request`'s lab: the backend's launch, then the deploy in a detached worker whose log
+/// this follows on `logs`.
+pub async fn lab_launch(app: AppHandle, request: LaunchRequest, logs: Channel<String>) -> Result<()> {
+    let LaunchRequest { lab_id, provider, host, attackbox_image, default_ports, offline } = request;
     if let Some(image) = &attackbox_image
         && !crate::platform::exec::valid_image(image)
     {
         return Err(Error::Invalid(format!("invalid attack-box image `{image}`")));
     }
-    let startlab = launch_spec(&app, &lab_id, offline.unwrap_or(false), &logs).await?;
+    let startlab = launch_spec(&app, &lab_id, offline, &logs).await?;
     // The deploy runs in a detached worker process, so quitting (or crashing) this app never
     // cuts a vagrant/docker/terraform run short; this command only follows the worker's log.
-    let job = crate::deploy_worker::Job {
-        lab_id,
-        op: crate::deploy_worker::Op::Launch,
-        launch: startlab,
-        provider,
-        host,
-        attackbox_image,
-        default_ports: default_ports.unwrap_or(false),
-    };
+    let job = crate::deploy_worker::Job { lab_id, op: crate::deploy_worker::Op::Launch, launch: startlab, provider, host, attackbox_image, default_ports };
     crate::deploy_worker::run_job(&app, job, logs).await
 }
 
@@ -630,7 +627,9 @@ mod tests {
     #[tokio::test]
     async fn a_launch_refuses_a_bad_attack_box_image_before_asking_the_backend() {
         let t = crate::testing::test_app::TestApp::new();
-        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, tauri::ipc::Channel::new(|_| Ok(()))).await;
+        let request =
+            LaunchRequest { lab_id: "invoice".into(), provider: None, host: None, attackbox_image: Some("-x".into()), default_ports: false, offline: false };
+        let err = lab_launch(t.handle().clone(), request, tauri::ipc::Channel::new(|_| Ok(()))).await;
         assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
     }
 

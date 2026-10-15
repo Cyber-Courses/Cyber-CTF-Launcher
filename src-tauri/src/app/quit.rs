@@ -29,7 +29,6 @@ const LINGER_CAP: Duration = Duration::from_secs(60 * 60);
 
 /// Quit by finishing in the background: the windows go away now; the process exits once the
 /// in-app deploys (the fallback when no worker could be started) are done.
-#[tauri::command]
 pub fn linger_quit(app: AppHandle) {
     for (_, w) in app.webview_windows() {
         let _ = w.hide();
@@ -52,7 +51,6 @@ pub fn linger_quit(app: AppHandle) {
 
 /// The user chose to quit anyway from the "a lab is still deploying" prompt: stop intercepting
 /// and exit.
-#[tauri::command]
 pub fn force_quit(app: AppHandle) {
     exit_now(&app);
 }

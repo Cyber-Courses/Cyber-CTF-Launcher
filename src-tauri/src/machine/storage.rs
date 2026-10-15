@@ -219,14 +219,12 @@ impl Present {
 
 /// `extra_images`: the attack-box images the UI knows about; only those of the attack box's own
 /// repository count (see [`image_candidates`]), any other is the player's unless recorded.
-#[tauri::command]
 pub async fn machine_storage(app: AppHandle, extra_images: Vec<String>) -> Result<Storage> {
     let store = owned::path(&app)?;
     Ok(Present::find(&owned::load(&store), &extra_images, vagrant_home().as_deref(), &plugin_cache(&store)).await.storage())
 }
 
 /// Removes what `machine_storage` lists (see [`clean`]). Returns the bytes freed.
-#[tauri::command]
 pub async fn machine_storage_clean(app: AppHandle, extra_images: Vec<String>) -> Result<u64> {
     // A lab operation running may still use the plugins its `init` linked: they stay then.
     let busy = crate::runtime::active_deploys() > 0 || !crate::deploy_worker::running(&app).is_empty();
