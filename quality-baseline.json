@@ -30,7 +30,7 @@
       "ts:app": 8,
       "ts:components": 54,
       "ts:features": 8,
-      "ts:features/account": 3,
+      "ts:features/account": 9,
       "ts:features/app": 10,
       "ts:features/cloud": 8,
       "ts:features/home": 13,
@@ -40,7 +40,7 @@
       "ts:features/onboarding": 9,
       "ts:features/servers": 59,
       "ts:features/settings": 28,
-      "ts:lib": 85,
+      "ts:lib": 79,
       "ts:scripts": 4,
       "ts:test": 3
     },
@@ -157,9 +157,9 @@
     },
     "eslint/@typescript-eslint/prefer-promise-reject-errors": {
       "ts:features": 1,
-      "ts:features/account": 1,
+      "ts:features/account": 2,
       "ts:features/labs": 1,
-      "ts:lib": 2
+      "ts:lib": 1
     },
     "eslint/@typescript-eslint/require-await": {
       "ts:components": 15,

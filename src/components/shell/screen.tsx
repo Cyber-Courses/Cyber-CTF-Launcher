@@ -11,7 +11,7 @@ import { WaitingForCheck } from "@/features/machine/waiting-for-check";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LIST_SCREEN } from "@/components/ui/screen-width";
 import { type AuthStatus, type SystemReport } from "@/lib/tauri";
-import { signIn } from "@/lib/sign-in";
+import { signIn } from "@/features/account/sign-in";
 import { useT } from "@/lib/i18n";
 import type { Tab } from "@/components/shell/shell-model";
 

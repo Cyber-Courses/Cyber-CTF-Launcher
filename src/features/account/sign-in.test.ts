@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { commands, installTauri, stream } from "@/test/tauri";
-import { cancelSignIn, signIn, useSignIn } from "@/lib/sign-in";
+import { cancelSignIn, signIn, useSignIn } from "@/features/account/sign-in";
 
 const SIGN_IN_CANCELLED = { code: "signInCancelled", message: "Sign-in cancelled." };
 import { act, renderHook } from "@testing-library/react";

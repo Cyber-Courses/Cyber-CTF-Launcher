@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
-import { cancelSignIn, signIn, useSignIn } from "@/lib/sign-in";
+import { cancelSignIn, signIn, useSignIn } from "@/features/account/sign-in";
 import { cn } from "@/lib/utils";
 
 export function initials(name: string | null, email: string | null): string {
@@ -20,7 +20,7 @@ export function initials(name: string | null, email: string | null): string {
 }
 
 /** Shared sign-in/out actions, so the sidebar, Settings and the onboarding drive the same auth
- *  state and the same sign-in (lib/sign-in): one at a time, its wait and failure shown in each. */
+ *  state and the same sign-in (features/account/sign-in): one at a time, its wait and failure shown in each. */
 export function useAuthActions(onChange: (status: AuthStatus) => void) {
   const { waiting, error } = useSignIn();
 
