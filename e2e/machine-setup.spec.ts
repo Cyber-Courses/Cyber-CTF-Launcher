@@ -8,6 +8,9 @@ import { test, expect, openApp, navButton, pageTitle, emitEvent, release } from 
 // (as if the player ran Homebrew's install command), `install=fail` fails the first install (see
 // src/lib/dev-mock/scenario.ts).
 
+/** How often the setup window checks the machine (src/app/machine-setup/page.tsx). */
+const CHECK_EVERY_MS = 5_000;
+
 const stepOf = (page: Page) => page.getByText(/^Step \d+ of \d+$/);
 const stepTitle = (page: Page) => page.getByRole("heading", { level: 3 });
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
@@ -75,7 +78,9 @@ test.describe("machine setup window", () => {
   });
 
   test("a fresh Mac: the package manager is detected, then each install streams and the next check has it", async ({ page, context }) => {
-    test.slow(); // The setup window checks the machine every 5 s; the package manager shows on the next one.
+    // The setup window checks the machine every few seconds, on the test's clock: it runs on its own
+    // like the real one, and the test skips it ahead to the next check instead of waiting for it.
+    await context.clock.install();
     await openApp(page, "&machine=fresh&hold=pm&os=macos&arch=arm64");
     await navButton(page, "Machine").click();
     const setup = await opens(context, () => page.getByRole("button", { name: "Set up this machine" }).click());
@@ -86,7 +91,8 @@ test.describe("machine setup window", () => {
     await expect(button(setup, "Continue")).toBeDisabled();
     // Homebrew installed (the setup window's own preview holds it): its next check has it.
     await release(setup, "pm");
-    await expect(button(setup, "Continue")).toBeEnabled({ timeout: 12_000 });
+    await context.clock.runFor(CHECK_EVERY_MS);
+    await expect(button(setup, "Continue")).toBeEnabled();
     await expect(setup.getByText("brew", { exact: true })).toBeVisible();
     await button(setup, "Continue").click();
 
