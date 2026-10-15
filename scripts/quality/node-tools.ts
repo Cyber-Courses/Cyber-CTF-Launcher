@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import type { Finding } from "./model.ts";
+import { type Finding, repoRelative } from "./model.ts";
 
 type Clone = { firstFile: { name: string; start: number }; secondFile: { name: string; start: number }; lines: number };
 type KnipIssue = { file: string } & Record<string, unknown>;
@@ -19,8 +19,6 @@ function runBin(root: string, pkg: string, bin: string, args: readonly string[])
   return run.stdout;
 }
 
-const relative = (root: string, file: string): string => path.relative(root, path.resolve(root, file)).split(path.sep).join("/");
-
 /** Each block of code found twice (at least 50 tokens over 5 lines), in the area of its first copy. */
 export function runJscpd(root: string): Finding[] {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), "jscpd-"));
@@ -30,9 +28,9 @@ export function runJscpd(root: string): Finding[] {
     const report = JSON.parse(fs.readFileSync(path.join(out, "jscpd-report.json"), "utf8")) as { duplicates: Clone[] };
     return report.duplicates.map((d) => ({
       rule: "dup/clone",
-      file: relative(root, d.firstFile.name),
+      file: repoRelative(root, d.firstFile.name),
       line: d.firstFile.start,
-      message: `${String(d.lines)} lines also at ${relative(root, d.secondFile.name)}:${String(d.secondFile.start)}`,
+      message: `${String(d.lines)} lines also at ${repoRelative(root, d.secondFile.name)}:${String(d.secondFile.start)}`,
     }));
   } finally {
     fs.rmSync(out, { recursive: true, force: true });

@@ -45,7 +45,9 @@ export function compare(now: Baseline, before: Baseline, platform: string): Diff
   return diff;
 }
 
-/** The rules whose total over every area rose: what moving code between areas can't explain. */
+/** The rules whose total over every area rose: what moving code between areas can't explain. A
+ *  platform's first clippy counts are recorded, not refused: there is nothing they could rise
+ *  above. */
 export function raisedTotals(now: Baseline, before: Baseline, platform: string): string[] {
   const raised: string[] = [];
   const check = (group: string, n: Counts, b: Counts): void => {
@@ -54,7 +56,8 @@ export function raisedTotals(now: Baseline, before: Baseline, platform: string):
     }
   };
   check("rule", now.rules, before.rules);
-  check("clippy", now.clippy[platform] ?? {}, before.clippy[platform] ?? {});
+  const clippyBefore = before.clippy[platform];
+  if (clippyBefore) check("clippy", now.clippy[platform] ?? {}, clippyBefore);
   const exceptions = (e: ExceptionCounts): number => Object.values(e).reduce<number>((sum, byText) => sum + total(byText), 0);
   if (exceptions(now.exceptions) > exceptions(before.exceptions))
     raised.push(`exceptions: ${String(exceptions(now.exceptions))} (baseline ${String(exceptions(before.exceptions))})`);

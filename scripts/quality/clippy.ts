@@ -4,7 +4,7 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
-import type { Finding } from "./model.ts";
+import { type Finding, repoRelative } from "./model.ts";
 
 type Span = { file_name: string; line_start: number; column_start: number; is_primary: boolean; expansion?: { span: Span } | null };
 type Diagnostic = { level: string; message: string; rendered: string | null; code: { code: string } | null; spans: Span[] };
@@ -26,7 +26,9 @@ function ownSpan(spans: readonly Span[]): Span | undefined {
 function findingOf(root: string, msg: Diagnostic): { key: string; finding: Finding } | null {
   const span = ownSpan(msg.spans);
   if (msg.level !== "warning" || !msg.code || !span) return null;
-  const file = path.isAbsolute(span.file_name) ? path.relative(root, span.file_name) : `${CRATE}/${span.file_name}`;
+  // Relative to the crate for its own files, with the platform's separator (`src\app.rs` on
+  // Windows, which used to count every Windows finding in `rs:root`).
+  const file = repoRelative(root, path.resolve(root, CRATE, span.file_name));
   if (file.startsWith("..")) return null;
   const finding = {
     rule: msg.code.code.replace(/^clippy::/, "clippy/").replace(/^(?!clippy\/)/, "rustc/"),

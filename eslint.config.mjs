@@ -11,7 +11,7 @@ import tseslint from "typescript-eslint";
 /** Every TypeScript file ESLint checks. */
 const CODE = ["src/**/*.{ts,tsx}", "scripts/**/*.ts"];
 /** Tests and their helpers. */
-const TESTS = ["src/**/*.test.{ts,tsx}", "src/test/**"];
+const TESTS = ["src/**/*.test.{ts,tsx}", "src/test/**", "scripts/**/*.test.ts"];
 /** Next.js entry points, which must be default exports. */
 const ENTRY_POINTS = ["src/app/**/{page,layout,error,global-error,not-found,loading}.tsx"];
 

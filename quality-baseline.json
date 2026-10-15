@@ -126,6 +126,107 @@
       "rustc/unsafe_code": {
         "rs:runtime": 2
       }
+    },
+    "win32": {
+      "clippy/assert_is_empty": {
+        "rs:runtime": 47
+      },
+      "clippy/case_sensitive_file_extension_comparisons": {
+        "rs:runtime": 1
+      },
+      "clippy/cast_lossless": {
+        "rs:runtime": 1
+      },
+      "clippy/cast_possible_truncation": {
+        "rs:runtime": 5
+      },
+      "clippy/checked_conversions": {
+        "rs:runtime": 1
+      },
+      "clippy/cognitive_complexity": {
+        "rs:runtime": 1
+      },
+      "clippy/default_trait_access": {
+        "rs:runtime": 4
+      },
+      "clippy/doc_markdown": {
+        "rs:runtime": 48
+      },
+      "clippy/expect_used": {
+        "rs:runtime": 3
+      },
+      "clippy/float_cmp": {
+        "rs:runtime": 2
+      },
+      "clippy/fn_params_excessive_bools": {
+        "rs:runtime": 1
+      },
+      "clippy/format_collect": {
+        "rs:runtime": 6
+      },
+      "clippy/format_push_string": {
+        "rs:runtime": 12
+      },
+      "clippy/if_not_else": {
+        "rs:runtime": 1
+      },
+      "clippy/ignore_without_reason": {
+        "rs:runtime": 3
+      },
+      "clippy/ip_constant": {
+        "rs:runtime": 1
+      },
+      "clippy/items_after_statements": {
+        "rs:runtime": 2
+      },
+      "clippy/large_futures": {
+        "rs:runtime": 12
+      },
+      "clippy/manual_let_else": {
+        "rs:runtime": 1
+      },
+      "clippy/manual_string_new": {
+        "rs:runtime": 1
+      },
+      "clippy/map_unwrap_or": {
+        "rs:runtime": 14
+      },
+      "clippy/match_same_arms": {
+        "rs:runtime": 2
+      },
+      "clippy/needless_pass_by_value": {
+        "rs:runtime": 8
+      },
+      "clippy/needless_raw_string_hashes": {
+        "rs:runtime": 1
+      },
+      "clippy/redundant_closure_for_method_calls": {
+        "rs:runtime": 16
+      },
+      "clippy/semicolon_if_nothing_returned": {
+        "rs:runtime": 4
+      },
+      "clippy/similar_names": {
+        "rs:runtime": 1
+      },
+      "clippy/single_match_else": {
+        "rs:runtime": 6
+      },
+      "clippy/stable_sort_primitive": {
+        "rs:runtime": 4
+      },
+      "clippy/too_many_arguments": {
+        "rs:runtime": 10
+      },
+      "clippy/uninlined_format_args": {
+        "rs:runtime": 2
+      },
+      "clippy/unnecessary_wraps": {
+        "rs:runtime": 2
+      },
+      "clippy/wildcard_imports": {
+        "rs:runtime": 7
+      }
     }
   },
   "exceptions": {

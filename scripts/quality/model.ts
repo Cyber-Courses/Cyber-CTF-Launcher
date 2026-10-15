@@ -2,6 +2,8 @@
 // belongs. A count is kept per rule and per area (a Rust domain module, a frontend feature), so
 // the fixing can be split by area and a violation can't hide behind a fix elsewhere.
 
+import path from "node:path";
+
 /** One violation: the rule it breaks, the repository-relative file (with `/`) and where. */
 export type Finding = { rule: string; file: string; line: number; message: string };
 
@@ -17,6 +19,20 @@ export type ExceptionCounts = Counts;
 /** What a run measures. Clippy's findings depend on the host (`cfg(windows)` code), so they are
  *  kept apart and compared with the baseline of the same platform. */
 export type Measure = { findings: Finding[]; clippy: Finding[]; exceptions: Exception[] };
+
+/** `file` without Windows' extended-length prefix, which jscpd's absolute names carry there and
+ *  `path` keeps as part of the path: `\\?\UNC\server\…` (a share, plainly `\\server\…`) or
+ *  `\\?\C:\…`. */
+const withoutExtendedPrefix = (file: string): string => file.replace(/^\\\\\?\\UNC\\/, "\\\\").replace(/^\\\\\?\\/, "");
+
+/** `file` (absolute, or relative to `root`) relative to the repository `root`, with `/`, as the
+ *  areas expect it. `paths` is the platform's path flavour, a parameter so the Windows one can be
+ *  tested anywhere. With the extended-length prefix left on, a Windows file landed outside the
+ *  repository (`//?/C:/…`) and counted in the wrong area. */
+export function repoRelative(root: string, file: string, paths: path.PlatformPath = path): string {
+  const plain = paths.sep === "\\" ? withoutExtendedPrefix(file) : file;
+  return paths.relative(root, paths.resolve(root, plain)).split(paths.sep).join("/");
+}
 
 /** The area a repository-relative file counts in: `rs:<top module>` for the Rust crate (`lib.rs`,
  *  `main.rs` and `error.rs` are `rs:root`), `ts:features/<feature>` or `ts:<folder>` for the
