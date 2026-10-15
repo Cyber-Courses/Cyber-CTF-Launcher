@@ -1,11 +1,11 @@
 import type { BrowserContext, Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, emitEvent } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, emitEvent, release } from "./fixtures";
 
 // The guided machine-setup window (`/machine-setup`), opened from the Machine page as the app opens
 // it (the dev mock's `machine_open_setup` opens a tab, with `?step=` for a "Fix" link). The mock's
 // one-click installs stream an installer's output and succeed, and the next system check reports
-// the tool installed; `pm=later` has the package manager show up after the first check (as if the
-// player ran Homebrew's install command), `install=fail` fails the first install (see
+// the tool installed; `hold=pm` keeps the package manager missing until the test lets it show up
+// (as if the player ran Homebrew's install command), `install=fail` fails the first install (see
 // src/lib/dev-mock/scenario.ts).
 
 const stepOf = (page: Page) => page.getByText(/^Step \d+ of \d+$/);
@@ -75,8 +75,8 @@ test.describe("machine setup window", () => {
   });
 
   test("a fresh Mac: the package manager is detected, then each install streams and the next check has it", async ({ page, context }) => {
-    test.slow(); // The setup window checks the machine every 5 s; the package manager shows on the second.
-    await openApp(page, "&machine=fresh&pm=later&os=macos&arch=arm64");
+    test.slow(); // The setup window checks the machine every 5 s; the package manager shows on the next one.
+    await openApp(page, "&machine=fresh&hold=pm&os=macos&arch=arm64");
     await navButton(page, "Machine").click();
     const setup = await opens(context, () => page.getByRole("button", { name: "Set up this machine" }).click());
 
@@ -84,6 +84,8 @@ test.describe("machine setup window", () => {
     await expect(stepTitle(setup)).toHaveText("Package manager");
     await expect(setup.getByText(/raw\.githubusercontent\.com\/Homebrew\/install/)).toBeVisible();
     await expect(button(setup, "Continue")).toBeDisabled();
+    // Homebrew installed (the setup window's own preview holds it): its next check has it.
+    await release(setup, "pm");
     await expect(button(setup, "Continue")).toBeEnabled({ timeout: 12_000 });
     await expect(setup.getByText("brew", { exact: true })).toBeVisible();
     await button(setup, "Continue").click();

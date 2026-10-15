@@ -1,5 +1,6 @@
 // Hosted labs in the browser preview (Cyber CTF runs them): a session goes from requested to
-// running on the next poll, with its public address.
+// running on the next poll, with its public address (with `hold=hosted`, on the first poll after
+// the test lets it).
 import { argText } from "@/lib/dev-mock/command";
 import { type BrowserHandler, type Live, slugOf } from "@/lib/dev-mock/live";
 import { answer } from "@/lib/dev-mock/sample";
@@ -29,6 +30,7 @@ export const hostedQuery: BrowserHandler = (args, { live }) => {
   if (op === "labSession") {
     const h = live.hosted;
     if (!h || h.id !== vars.id) return { labSession: null };
+    if (live.holds.isHeld("hosted")) return { labSession: h };
     // One poll later it runs, with its public address.
     live.hosted = { ...h, state: "RUNNING", endpoints: [{ port: 443, url: `https://${slugOf(h.labId)}-7f3a.labs.cyberctf.org` }] };
     return { labSession: live.hosted };

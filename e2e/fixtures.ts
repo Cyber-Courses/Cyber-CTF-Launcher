@@ -1,4 +1,5 @@
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
+import type { Holdable } from "../src/lib/dev-mock/holds";
 
 /** The six languages the launcher ships (src/lib/i18n). */
 export const LOCALES = ["en", "fr", "es", "de", "pt-BR", "ja"] as const;
@@ -66,6 +67,14 @@ export async function machineBackAndRetry(retry: Locator) {
   });
 }
 
+/** With `hold=<step>` (src/lib/dev-mock/holds.ts): lets the step the preview in `page` holds go
+ *  on. Until then, what the UI shows while the step lasts stays on screen for the test to see. */
+export async function release(page: Page, step: Holdable) {
+  await page.evaluate((s) => {
+    (window as unknown as { __CYBERCTF_MOCK_RELEASE__: (step: string) => void }).__CYBERCTF_MOCK_RELEASE__(s);
+  }, step);
+}
+
 /** The command palette's shortcut where the page thinks it runs: ⌘K on macOS, Ctrl+K elsewhere
  *  (by the user agent, which the "Desktop Chrome" device sets to Windows). */
 export async function paletteKey(page: Page) {
@@ -111,18 +120,27 @@ export function horizontalOverflow(page: Page) {
   });
 }
 
-/** How a forced command answers: an error (after `delay` ms), or a value. */
-export type Forced = { error: string; delay?: number } | { value: unknown; delay?: number };
+/** How a forced command answers: an error, or a value; after `delay` ms, and only once the test
+ *  lets it (`releaseForced`) when `held`. */
+export type Forced = ({ error: string } | { value: unknown }) & { delay?: number; held?: boolean };
 
 /**
  * Makes some Tauri commands fail (or answer `value`) on every page of the test, ahead of the dev
  * mock, which answers the rest: the mock installs its `invoke` on `__TAURI_INTERNALS__`, and this
- * wraps whatever is installed. Call before `openApp`.
+ * wraps whatever is installed. A `held` command stays in flight until the test calls
+ * `releaseForced`, so the UI's state while it runs can be checked without racing it. Call before
+ * `openApp`.
  */
 export async function forceCommands(page: Page, forced: Record<string, Forced>) {
   await page.addInitScript((forced: Record<string, Forced>) => {
     type Invoke = (cmd: string, args?: unknown, options?: unknown) => Promise<unknown>;
     let real: Invoke | null = null;
+    // The held commands' answers wait on these until the test releases them.
+    const gates = new Map(
+      Object.entries(forced)
+        .filter(([, f]) => f.held)
+        .map(([cmd]) => [cmd, Promise.withResolvers<void>()] as const),
+    );
     // Callbacks and window metadata, for what registers before the mock is installed (event
     // listeners on mount); the mock replaces them with its own.
     const callbacks = new Map<number, unknown>();
@@ -146,16 +164,29 @@ export async function forceCommands(page: Page, forced: Record<string, Forced>) 
           const f = forced[cmd];
           if (!f) return real?.(cmd, args, options);
           if (f.delay) await new Promise((r) => setTimeout(r, f.delay));
+          await gates.get(cmd)?.promise;
           if ("error" in f) throw f.error;
           return structuredClone(f.value);
         };
       },
     });
-    const w = window as unknown as { __TAURI_INTERNALS__: unknown; __CYBERCTF_MOCK__: boolean };
+    const w = window as unknown as { __TAURI_INTERNALS__: unknown; __CYBERCTF_MOCK__: boolean; __E2E_RELEASE_FORCED__: (cmd: string) => void };
     w.__TAURI_INTERNALS__ = internals;
+    w.__E2E_RELEASE_FORCED__ = (cmd) => {
+      const gate = gates.get(cmd);
+      if (!gate) throw new Error(`${cmd} isn't a held forced command`);
+      gate.resolve();
+    };
     // Lets the dev mock install itself over these internals.
     w.__CYBERCTF_MOCK__ = true;
   }, forced);
+}
+
+/** Lets a `held` forced command (see `forceCommands`) answer, in `page`. */
+export async function releaseForced(page: Page, cmd: string) {
+  await page.evaluate((c) => {
+    (window as unknown as { __E2E_RELEASE_FORCED__: (cmd: string) => void }).__E2E_RELEASE_FORCED__(c);
+  }, cmd);
 }
 
 /** Sends an app event (what the Rust core emits: `quit-blocked`, `deep-link://new-url`…) to the

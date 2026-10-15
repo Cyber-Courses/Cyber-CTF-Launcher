@@ -1,6 +1,7 @@
 // The browser preview's scenarios: the switches next to `?mock` in the URL, and the machine the
 // system check reports for them.
 import type { Provider, ProviderStatus, SystemReport } from "@/lib/tauri";
+import { type Holdable, isHoldable } from "@/lib/dev-mock/holds";
 import { report } from "@/lib/dev-mock/sample";
 
 /**
@@ -14,8 +15,10 @@ import { report } from "@/lib/dev-mock/sample";
  *    (`window.__CYBERCTF_MOCK_MACHINE_UP__()`), so no background re-check can answer before the
  *    test has seen the failure.
  *  - `launch=fail`: the first lab start of each page load fails, after a few lines of output.
- *  - `pm=later`: the package manager is missing from the first round of checks of each page load,
- *    then there (as if the player ran its install command while the setup window was open).
+ *  - `hold=<step>[,<step>…]`: each step waits, once reached, until the test lets it go on
+ *    (`window.__CYBERCTF_MOCK_RELEASE__(step)`): a lab start (`launch`), a re-run of provisioning
+ *    (`provision`), a hosted session coming up (`hosted`), the package manager showing up (`pm`).
+ *    See holds.ts.
  *  - `install=fail`: the first one-click install of each page load fails. Otherwise installs
  *    stream an installer's output and succeed: the next system check reports the tool installed.
  *  - `deploying=none`: no lab is deploying at load (GOAD Light otherwise is).
@@ -36,7 +39,8 @@ export type Scenario = {
   signedOut: boolean;
   checkDown: boolean;
   launchFails: boolean;
-  pmLater: boolean;
+  /** The steps a test holds (`hold=`), in the order given. */
+  held: Holdable[];
   installFails: boolean;
   noDeploying: boolean;
   noCloud: boolean;
@@ -54,7 +58,7 @@ export function scenarioFrom(search: string): Scenario {
     signedOut: q.get("auth") === "out",
     checkDown: q.get("check") === "down",
     launchFails: q.get("launch") === "fail",
-    pmLater: q.get("pm") === "later",
+    held: (q.get("hold") ?? "").split(",").filter(isHoldable),
     installFails: q.get("install") === "fail",
     noDeploying: q.get("deploying") === "none",
     noCloud: q.get("cloud") === "none",

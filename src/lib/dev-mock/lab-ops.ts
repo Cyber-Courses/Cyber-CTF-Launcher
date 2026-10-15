@@ -53,12 +53,16 @@ const vagrantUp = (slug: string, provider: string, hostName: string | null) => [
   ]),
 ];
 
-/** A container lab started here; with `launch=fail`, the first one fails on its port. */
+/** A container lab started here; with `launch=fail`, the first one fails on its port. With
+ *  `hold=launch`, it stays starting, its images pulled and its containers created but not started,
+ *  until the test lets it go on. */
 async function launchContainer(id: string, args: Args, live: Live) {
   const slug = slugOf(id);
   live.ops.set(id, "launch");
   try {
     for (const [n, line] of composeUp(slug).entries()) {
+      // Before the containers start: once one runs, the lab's status reads as running.
+      if (line.endsWith(" Starting")) await live.holds.passed("launch");
       if (live.launchFails && n === 8) {
         live.launchFails = false;
         await sleep(120);

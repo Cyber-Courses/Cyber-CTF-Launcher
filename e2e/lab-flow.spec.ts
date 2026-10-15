@@ -1,9 +1,10 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, breadcrumb } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, breadcrumb, release } from "./fixtures";
 
 // A lab from the catalogue to running and back, through the dev mock's lab operations: a start
 // streams a Docker Compose log and leaves the lab running, Stop & remove takes it down
-// (`launch=fail` makes the first start fail, see src/lib/dev-mock/scenario.ts).
+// (`launch=fail` makes the first start fail, `hold=launch` keeps it starting until the test lets
+// it end, see src/lib/dev-mock/scenario.ts).
 
 const row = (page: Page, title: string) => page.locator("main").getByRole("button", { name: `Open ${title}`, exact: true });
 const deployment = (page: Page) => page.locator("main").getByRole("heading", { level: 3, name: /^Deployment/ });
@@ -31,18 +32,19 @@ async function startHere(page: Page) {
 
 test.describe("lab flow", () => {
   test("search, open, start, watch the steps, open the shell, stop", async ({ page, context }) => {
-    await openApp(page);
+    await openApp(page, "&hold=launch");
     await openLab(page, "dashboard", "Exposed dashboard");
     await expect(page.locator("main")).toContainText("Not started");
 
     await startHere(page);
-    // Starting: the button waits, the deployment lists its steps as the log streams in.
-    // The header's button (the sidebar lists the starting lab too).
+    // Starting (held until the test has seen it): the button waits, the deployment lists its
+    // steps as the log streams in. The header's button (the sidebar lists the starting lab too).
     await expect(page.locator("main").getByRole("button", { name: /Starting…/ })).toBeDisabled();
     await expect(deployment(page)).toBeVisible();
     const steps = page.locator("main").getByRole("listitem");
     await expect(steps.getByRole("button", { name: /^Download the lab/ })).toBeVisible();
     await expect(steps.getByRole("button", { name: /^Get images/ })).toBeVisible();
+    await release(page, "launch");
 
     // Running: its network, with the lab's machine and the attack box.
     await expect(page.getByRole("button", { name: "Stop & remove" })).toBeEnabled();
@@ -56,7 +58,7 @@ test.describe("lab flow", () => {
 
     // The attack box shell opens in its own window (a tab here, answered by the mock's terminal).
     const [shell] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: "Open attacker shell" }).click()]);
-    await expect(shell).toHaveURL(/\/shell\?id=lab-kube&kind=lab&runtime=DOCKER&mock$/);
+    await expect(shell).toHaveURL(/\/shell\?id=lab-kube&kind=lab&runtime=DOCKER&mock&hold=launch$/);
     await expect(shell.getByText("attack box", { exact: true })).toBeVisible();
     await expect(shell.getByRole("button", { name: "System terminal" })).toBeVisible();
     const terminal = shell.locator(".xterm-rows");

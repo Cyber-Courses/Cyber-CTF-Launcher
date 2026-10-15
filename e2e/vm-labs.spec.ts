@@ -1,10 +1,11 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, release } from "./fixtures";
 
 // A VM lab (GOAD Light, x86 only) through the dev mock's Vagrant: started on this machine's
 // VirtualBox (an Intel Mac) or on a saved ESXi server, paused, shut down, resumed, provisioned
 // again on one machine, stopped. `deploying=none`: GOAD Light isn't already deploying at load, as
-// it otherwise is in the mock (see src/lib/dev-mock/scenario.ts).
+// it otherwise is in the mock; `hold=provision`: a re-run of provisioning stays in flight until the
+// test lets it end (see src/lib/dev-mock/scenario.ts).
 
 const main = (page: Page) => page.locator("main");
 const button = (page: Page, name: string) => main(page).getByRole("button", { name, exact: true });
@@ -30,7 +31,7 @@ async function startOn(page: Page, place: RegExp) {
 
 test.describe("VM labs", () => {
   test("on this machine: up, pause, resume, provision one machine again, stop", async ({ page }) => {
-    await openApp(page, "&deploying=none&os=macos&arch=x86_64");
+    await openApp(page, "&deploying=none&os=macos&arch=x86_64&hold=provision");
     await openGoad(page);
 
     // This machine is the default (VirtualBox is ready here); the ESXi server is offered too, the
@@ -62,8 +63,10 @@ test.describe("VM labs", () => {
 
     // Provision one machine again, from the Details panel.
     await main(page).getByRole("combobox", { name: "Machine to set up again" }).selectOption("srv02");
+    // Pause waits while it runs (held until the test has seen it), then comes back.
     await button(page, "Re-run setup").click();
     await expect(button(page, "Pause")).toBeDisabled();
+    await release(page, "provision");
     await expect(button(page, "Pause")).toBeEnabled();
     await button(page, "Show full log").click();
     await expect(main(page)).toContainText("srv02 : ok=41 changed=3");

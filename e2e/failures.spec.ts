@@ -1,4 +1,4 @@
-import { test, expect, openApp, navButton, pageTitle, forceCommands } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, forceCommands, releaseForced } from "./fixtures";
 
 // What the app shows when something fails: the catalogue API, a lab's start or removal, the
 // machine check. The dev mock answers everything else (Invoice portal API runs, GOAD Light
@@ -51,7 +51,7 @@ test.describe("failure states", () => {
   });
 
   test("a failed Stop & remove keeps the panels and says so under the header", async ({ page }) => {
-    await forceCommands(page, { lab_stop: { error: "Couldn't remove network lab-invoice_default: has active endpoints", delay: 1500 } });
+    await forceCommands(page, { lab_stop: { error: "Couldn't remove network lab-invoice_default: has active endpoints", held: true } });
     await openApp(page);
     await navButton(page, "Labs").click();
     await main(page).getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
@@ -63,9 +63,11 @@ test.describe("failure states", () => {
       .getByRole("button", { name: /Remove/ })
       .click();
 
-    // While it stops: the diagram stays (dimmed), the header says Stopping.
+    // While it stops (held until the test has seen it): the diagram stays (dimmed), the header
+    // says Stopping.
     await expect(main(page)).toContainText("Stopping");
     await expect(diagram).toBeVisible();
+    await releaseForced(page, "lab_stop");
     // Then the failure, under the header, in view.
     const notice = main(page).getByRole("alert").filter({ hasText: "Couldn’t stop and remove Invoice portal API" });
     await expect(notice).toBeVisible();

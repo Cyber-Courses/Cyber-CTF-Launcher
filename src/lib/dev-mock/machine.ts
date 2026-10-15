@@ -59,9 +59,9 @@ const systemCheck: BrowserHandler = async (_args, { sc, live }) => {
     await sleep(150);
     if (machineDown(live)) fail("docker info timed out after 20 s");
   }
-  const now = Date.now();
-  if (!live.firstCheckAt) live.firstCheckAt = now;
-  return withInstalls(scenarioReport(sc), live.installed, { pm: sc.pmLater ? now - live.firstCheckAt >= 1000 : null });
+  // `hold=pm`: missing until the test lets it show up.
+  const pm = sc.held.includes("pm") ? !live.holds.isHeld("pm") : null;
+  return withInstalls(scenarioReport(sc), live.installed, { pm });
 };
 
 /** A one-click install of `what` (a dependency or a Vagrant plugin). */

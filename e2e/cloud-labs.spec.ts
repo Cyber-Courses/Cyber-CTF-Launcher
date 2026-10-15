@@ -1,10 +1,11 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, release } from "./fixtures";
 
 // Cloud labs (EC2 SSRF, cloud services in the player's AWS account) and hosted labs (Blind orders,
 // run by Cyber CTF) through the dev mock: a cloud start streams a Terraform log and leaves outputs
-// and an auto-stop; a hosted session is requested, then runs on the next poll. `cloud=none`: no
-// cloud account saved yet (see src/lib/dev-mock/scenario.ts).
+// and an auto-stop; a hosted session is requested, then runs on the next poll (`hold=hosted`: the
+// first poll after the test lets it). `cloud=none`: no cloud account saved yet (see
+// src/lib/dev-mock/scenario.ts).
 
 const main = (page: Page) => page.locator("main");
 const button = (page: Page, name: string) => main(page).getByRole("button", { name, exact: true });
@@ -117,14 +118,16 @@ test.describe("cloud labs", () => {
 
 test.describe("hosted labs", () => {
   test("hosted by Cyber CTF: requested, running with its address, then stopped", async ({ page }) => {
-    await openApp(page);
+    await openApp(page, "&hold=hosted");
     await openLab(page, "blind", "Blind orders");
     await button(page, "Start lab").click();
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
     await where.getByRole("radio", { name: /Hosted by Cyber CTF/ }).click();
     await where.getByRole("button", { name: "Start", exact: true }).click();
 
+    // Requested, whatever the polls answer until the test has seen it.
     await expect(main(page)).toContainText("Asking Cyber CTF for an instance… This usually takes about 30 seconds.");
+    await release(page, "hosted");
     await expect(main(page)).toContainText("Running, hosted by Cyber CTF");
     await expect(main(page)).toContainText(/Expires in (1h 59m|2h 0m)\./);
     await expect(button(page, "Open")).toBeVisible();

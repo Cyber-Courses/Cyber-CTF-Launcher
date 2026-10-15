@@ -1,7 +1,9 @@
 // What the browser preview changes as it is used: labs started and stopped, where they run, the
-// sign-in, the failures still to come. And the statuses the labs report meanwhile.
+// sign-in, the failures still to come, the steps a test still holds. And the statuses the labs
+// report meanwhile.
 import type { LabStatus } from "@/lib/tauri";
 import { argText, send, sleep } from "@/lib/dev-mock/command";
+import { type Holds, holdsOf, isHoldable } from "@/lib/dev-mock/holds";
 import type { Host } from "@/lib/dev-mock/hosts";
 import { invoiceStatus, labs, stopped } from "@/lib/dev-mock/labs";
 import { answer } from "@/lib/dev-mock/sample";
@@ -36,8 +38,8 @@ export type Live = {
   /** Tools the one-click installs added (dependencies, Vagrant plugins). */
   installed: Set<string>;
   installFails: boolean;
-  /** When the first system check of the page load was asked (ms), for `pm=later`. */
-  firstCheckAt: number;
+  /** The steps the test holds (`hold=`) until it lets them go on. */
+  holds: Holds;
   /** VM and cloud labs started here: where they run. */
   placed: Map<string, Placement>;
   /** The hosted session, once one is requested. */
@@ -54,7 +56,7 @@ export function liveFrom(sc: Scenario): Live {
     ops: new Map(),
     installed: new Set(),
     installFails: sc.installFails,
-    firstCheckAt: 0,
+    holds: holdsOf(sc.held),
     placed: new Map(),
     hosted: null,
   };
@@ -73,7 +75,8 @@ export const labRuntime = (id: string) => labById(id)?.runtime.runtime;
 export const labArg = (args: Args, key: "id" | "labId" = "id") => argText(args?.[key]);
 
 /** An operation `op` on the lab `id`: in flight (as the core reports it) while its `lines`
- *  stream down the command's channel. */
+ *  stream down the command's channel, and then while the test holds it (`hold=launch`,
+ *  `hold=provision`). */
 export async function operation({ id, op, lines }: { id: string; op: Operation; lines: string[] }, args: Args, live: Live) {
   live.ops.set(id, op);
   try {
@@ -81,6 +84,7 @@ export async function operation({ id, op, lines }: { id: string; op: Operation; 
       send(args, line);
       await sleep(120);
     }
+    if (isHoldable(op)) await live.holds.passed(op);
   } finally {
     live.ops.delete(id);
   }
