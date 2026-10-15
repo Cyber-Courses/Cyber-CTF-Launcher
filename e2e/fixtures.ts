@@ -6,7 +6,7 @@ export const LOCALES = ["en", "fr", "es", "de", "pt-BR", "ja"] as const;
 export type Locale = (typeof LOCALES)[number];
 
 /** What a missing translation renders: the key itself, like "labs.list.search". */
-export const RAW_KEY = /^[a-z]+(\.[a-zA-Z]+)+$/;
+const RAW_KEY = /^[a-z]+(\.[a-zA-Z]+)+$/;
 
 type Fixtures = {
   /** The language the test starts in (localStorage `cyberctf.locale`, unless a page set one). */
@@ -78,6 +78,13 @@ export async function release(page: Page, step: Holdable, andClick?: Locator) {
   }, step);
 }
 
+/** Settles once the page's finite animations (entrances, fades, transitions) have ended: measured
+ *  mid-animation, a contrast or a position reads wrong. Looping ones, like a spinner's or a
+ *  pulsing dot's, never end: not waited for. */
+export async function animationsFinished(page: Page) {
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
+}
+
 /** The command palette's shortcut where the page thinks it runs: ⌘K on macOS, Ctrl+K elsewhere
  *  (by the user agent, which the "Desktop Chrome" device sets to Windows). */
 export async function paletteKey(page: Page) {
@@ -123,9 +130,9 @@ export function horizontalOverflow(page: Page) {
   });
 }
 
-/** How a forced command answers: an error, or a value; after `delay` ms, and only once the test
- *  lets it (`releaseForced`) when `held`. */
-export type Forced = ({ error: string } | { value: unknown }) & { delay?: number; held?: boolean };
+/** How a forced command answers: an error, or a value; only once the test lets it
+ *  (`releaseForced`) when `held`. */
+export type Forced = ({ error: string } | { value: unknown }) & { held?: boolean };
 
 /**
  * Makes some Tauri commands fail (or answer `value`) on every page of the test, ahead of the dev
@@ -166,7 +173,6 @@ export async function forceCommands(page: Page, forced: Record<string, Forced>) 
         return async (cmd: string, args?: unknown, options?: unknown) => {
           const f = forced[cmd];
           if (!f) return real?.(cmd, args, options);
-          if (f.delay) await new Promise((r) => setTimeout(r, f.delay));
           await gates.get(cmd)?.promise;
           if ("error" in f) throw f.error;
           return structuredClone(f.value);

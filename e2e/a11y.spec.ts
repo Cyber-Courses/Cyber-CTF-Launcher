@@ -1,6 +1,6 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, animationsFinished } from "./fixtures";
 
 // Accessibility, checked by axe on the main screens in both themes: text contrast (WCAG AA,
 // 4.5:1 for the small mono and faint text the launcher uses a lot) and every rule axe rates
@@ -41,15 +41,17 @@ for (const theme of ["dark", "light"] as const) {
         await navButton(page, tab).click();
         await expect(pageTitle(page)).toHaveText(heading);
         // Past the entrance animations (they start from a lighter state).
-        await page.waitForTimeout(600);
+        await animationsFinished(page);
         await check(tab);
       }
 
       // A running lab's page, with its diagram.
       await navButton(page, "Labs").click();
       await page.locator("main").getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
-      await expect(page.locator(".react-flow")).toBeVisible();
-      await page.waitForTimeout(600);
+      // The diagram fades in once laid out (it waits at opacity 0 till then, which no animation
+      // shows): fully in, and the rest of the page settled.
+      await expect(page.locator(".react-flow")).toHaveCSS("opacity", "1");
+      await animationsFinished(page);
       await check("lab page");
 
       // The run dialog, over a stopped lab.
@@ -57,7 +59,7 @@ for (const theme of ["dark", "light"] as const) {
       await page.locator("main").getByRole("button", { name: "Open Blind orders", exact: true }).click();
       await page.getByRole("button", { name: /Start lab/ }).click();
       await expect(page.getByRole("dialog")).toBeVisible();
-      await page.waitForTimeout(400);
+      await animationsFinished(page);
       await check("run dialog");
       await page.keyboard.press("Escape");
 
@@ -65,15 +67,7 @@ for (const theme of ["dark", "light"] as const) {
       await page.keyboard.press("Control+k");
       await expect(page.getByRole("combobox")).toBeFocused();
       // Measured once its fade-in is over: mid-animation, its text reads as low contrast.
-      // (Looping animations, like a spinner's, never finish: not waited for.)
-      await page.evaluate(() =>
-        Promise.all(
-          document
-            .getAnimations()
-            .filter((a) => a.effect?.getTiming().iterations !== Infinity)
-            .map((a) => a.finished.catch(() => {})),
-        ),
-      );
+      await animationsFinished(page);
       await check("palette");
 
       expect(found).toEqual([]);
@@ -86,7 +80,8 @@ for (const theme of ["dark", "light"] as const) {
       const found: string[] = [];
       for (let i = 0; i < (await tabs.count()); i++) {
         await tabs.nth(i).click();
-        await page.waitForTimeout(500);
+        await expect(tabs.nth(i)).toHaveAttribute("aria-current", "page");
+        await animationsFinished(page);
         found.push(...(await violations(page)).map((v) => `settings tab ${i}: ${v}`));
       }
       expect(found).toEqual([]);

@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, horizontalOverflow } from "./fixtures";
+import { test, expect, openApp, navButton, horizontalOverflow, animationsFinished } from "./fixtures";
 import deSettings from "../src/messages/de/settings.json";
 
 // The windows at their smallest (src-tauri: Settings 560x480, server setup 560x560) and a lab
@@ -54,15 +54,12 @@ test.describe("the server setup window at its minimum size", () => {
       const next = page.getByRole("button", { name: "Continue", exact: true });
       await expect(next).toBeInViewport({ ratio: 1 });
       // The next step too: its Continue sits in the same place (once the step's rise-in ends).
-      // Finite animations only: a spinner or a pulsing dot never ends.
-      const settled = () =>
-        page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity));
-      await settled();
+      await animationsFinished(page);
       const at = (await box(page, next)).y;
       await next.click();
       await expect(page.getByText("Step 2 of", { exact: false })).toBeVisible();
       await expect(next).toBeInViewport({ ratio: 1 });
-      await settled();
+      await animationsFinished(page);
       expect(Math.abs((await box(page, next)).y - at)).toBeLessThanOrEqual(1);
     });
   }

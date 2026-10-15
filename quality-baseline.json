@@ -6,9 +6,6 @@
     "exception/without-reason": {
       "rs:runtime": 3
     },
-    "knip/exports": {
-      "ts:e2e": 1
-    },
     "rust/file-over-400-loc": {
       "rs:runtime": 1
     },
