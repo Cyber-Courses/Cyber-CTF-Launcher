@@ -15,7 +15,7 @@ const CRATE = "src-tauri";
 
 /** The span in the crate's own sources a diagnostic points at, through macro expansions. */
 function ownSpan(spans: readonly Span[]): Span | undefined {
-  let span = spans.find((s) => s.is_primary) ?? spans[0];
+  let span = spans.find((s) => s.is_primary) ?? spans.at(0);
   while (span && path.isAbsolute(span.file_name) && span.expansion) span = span.expansion.span;
   return span;
 }

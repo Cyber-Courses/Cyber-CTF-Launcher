@@ -41,7 +41,6 @@
       "ts:features/servers": 59,
       "ts:features/settings": 28,
       "ts:lib": 79,
-      "ts:scripts": 4,
       "ts:test": 3
     },
     "eslint/@typescript-eslint/no-deprecated": {
@@ -64,9 +63,6 @@
       "ts:features/labs": 9,
       "ts:features/servers": 1,
       "ts:lib": 26
-    },
-    "eslint/@typescript-eslint/no-meaningless-void-operator": {
-      "ts:scripts": 4
     },
     "eslint/@typescript-eslint/no-misused-promises": {
       "ts:app": 3,
@@ -109,7 +105,6 @@
       "ts:features/servers": 16,
       "ts:features/settings": 9,
       "ts:lib": 14,
-      "ts:scripts": 7,
       "ts:test": 9
     },
     "eslint/@typescript-eslint/no-unnecessary-type-arguments": {

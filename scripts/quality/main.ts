@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { type Baseline, compare, raisedTotals, readBaseline, writeBaseline } from "./baseline.ts";
 import { runClippy, runMachete } from "./clippy.ts";
 import { eslintExceptions, lintedFiles, runEslint } from "./eslint.ts";
-import { type Finding, type Measure, areaOf, countExceptions, countFindings, sorted, total } from "./model.ts";
+import { type Finding, type Measure, areaOf, countExceptions, countFindings, sorted, sortedKeys, total } from "./model.ts";
 import { runJscpd, runKnip } from "./node-tools.ts";
 import { rustSources, scanRust } from "./rust-scan.ts";
 
@@ -38,7 +38,7 @@ async function measure(): Promise<{ measured: Measure; errors: string[] }> {
 
 function toBaseline(m: Measure, previous: Baseline): Baseline {
   const clippy = { ...previous.clippy, [process.platform]: sorted(countFindings(m.clippy)) };
-  return { rules: sorted(countFindings(m.findings)), clippy: sorted(clippy), exceptions: sorted(countExceptions(m.exceptions)) };
+  return { rules: sorted(countFindings(m.findings)), clippy: sortedKeys(clippy), exceptions: sorted(countExceptions(m.exceptions)) };
 }
 
 /** Each rule's total, and how much of it is outside `runtime/` (which moves to the runner). */
@@ -46,7 +46,7 @@ function summary(b: Baseline): string {
   const rows = [...Object.entries(b.rules), ...Object.entries(b.clippy[process.platform] ?? {})].sort(([a], [z]) => a.localeCompare(z));
   return rows
     .map(([rule, byArea]) => {
-      const runtime = byArea["rs:runtime"] ?? 0;
+      const runtime = byArea?.["rs:runtime"] ?? 0;
       return `  ${rule.padEnd(52)} ${String(total(byArea) - runtime).padStart(5)}${runtime ? `  (+${String(runtime)} in runtime/)` : ""}`;
     })
     .join("\n");
@@ -58,22 +58,27 @@ function list(m: Measure, prefix: string): void {
   for (const f of all) console.log(`${areaOf(f.file)}\t${f.rule}\t${f.file}:${String(f.line)}\t${f.message}`);
 }
 
+/** Prints each line, after `prefix`. */
+function printAll(print: (line: string) => void, lines: readonly string[], prefix = ""): void {
+  for (const line of lines) print(prefix + line);
+}
+
 async function main(args: readonly string[]): Promise<number> {
   const { measured, errors } = await measure();
   if (args[0] === "--list") list(measured, args[1] ?? "");
   const before = readBaseline(BASELINE);
   const now = toBaseline(measured, before);
   console.log(`Violations outside runtime/ (${process.platform}):\n${summary(now)}`);
-  errors.forEach((e) => void console.error(e));
+  printAll(console.error, errors);
   if (args.includes("--update")) {
     const raised = args.includes("--force") ? [] : raisedTotals(now, before, process.platform);
-    raised.forEach((r) => void console.error(`raised: ${r}`));
+    printAll(console.error, raised, "raised: ");
     if (raised.length === 0) writeBaseline(BASELINE, now);
     return errors.length > 0 || raised.length > 0 ? 1 : 0;
   }
   const diff = compare(now, before, process.platform);
-  diff.raised.forEach((r) => void console.error(`over the baseline: ${r}`));
-  diff.lowered.forEach((r) => void console.log(`under the baseline (lock it in with --update): ${r}`));
+  printAll(console.error, diff.raised, "over the baseline: ");
+  printAll(console.log, diff.lowered, "under the baseline (lock it in with --update): ");
   if (!before.clippy[process.platform]) console.log(`no clippy baseline for ${process.platform} yet: --update records one`);
   return errors.length > 0 || diff.raised.length > 0 ? 1 : 0;
 }

@@ -8,11 +8,11 @@ export type Finding = { rule: string; file: string; line: number; message: strin
 /** A local exception: an `#[allow]`/`#[expect]` or an `eslint-disable` line, as written. */
 export type Exception = { file: string; text: string; hasReason: boolean };
 
-/** Counts per rule, then per area. */
-export type Counts = Record<string, Record<string, number>>;
+/** Counts per rule, then per area (a missing one is zero). */
+export type Counts = Partial<Record<string, Partial<Record<string, number>>>>;
 
 /** Counts per file, then per exception text: each exception the review accepted. */
-export type ExceptionCounts = Record<string, Record<string, number>>;
+export type ExceptionCounts = Counts;
 
 /** What a run measures. Clippy's findings depend on the host (`cfg(windows)` code), so they are
  *  kept apart and compared with the baseline of the same platform. */
@@ -55,19 +55,13 @@ export function countExceptions(exceptions: readonly Exception[]): ExceptionCoun
   return counts;
 }
 
-/** `counts` with its keys sorted at both levels, so the baseline file diffs cleanly. */
-export function sorted<T>(counts: Record<string, Record<string, T>>): Record<string, Record<string, T>> {
-  const out: Record<string, Record<string, T>> = {};
-  for (const key of Object.keys(counts).sort()) {
-    const inner = counts[key];
-    out[key] = Object.fromEntries(
-      Object.keys(inner)
-        .sort()
-        .map((k) => [k, inner[k]]),
-    );
-  }
-  return out;
+/** `record` with its keys sorted, so the baseline file diffs cleanly. */
+export function sortedKeys<T>(record: Partial<Record<string, T>>): Partial<Record<string, T>> {
+  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)));
 }
 
+/** `counts` with its keys sorted at both levels. */
+export const sorted = (counts: Counts): Counts => sortedKeys(Object.fromEntries(Object.entries(counts).map(([key, inner]) => [key, sortedKeys(inner ?? {})])));
+
 /** The sum of a rule's counts over its areas. */
-export const total = (byArea: Record<string, number> | undefined): number => Object.values(byArea ?? {}).reduce((a, b) => a + b, 0);
+export const total = (byArea: Partial<Record<string, number>> | undefined): number => Object.values(byArea ?? {}).reduce<number>((a, b = 0) => a + b, 0);

@@ -6,7 +6,7 @@ import fs from "node:fs";
 
 import { type Counts, type ExceptionCounts, total } from "./model.ts";
 
-export type Baseline = { rules: Counts; clippy: Record<string, Counts>; exceptions: ExceptionCounts };
+export type Baseline = { rules: Counts; clippy: Partial<Record<string, Counts>>; exceptions: ExceptionCounts };
 
 /** A change against the baseline: what rose, and what fell (the baseline can be lowered). */
 export type Diff = { raised: string[]; lowered: string[] };
@@ -55,7 +55,7 @@ export function raisedTotals(now: Baseline, before: Baseline, platform: string):
   };
   check("rule", now.rules, before.rules);
   check("clippy", now.clippy[platform] ?? {}, before.clippy[platform] ?? {});
-  const exceptions = (e: ExceptionCounts): number => Object.values(e).reduce((sum, byText) => sum + total(byText), 0);
+  const exceptions = (e: ExceptionCounts): number => Object.values(e).reduce<number>((sum, byText) => sum + total(byText), 0);
   if (exceptions(now.exceptions) > exceptions(before.exceptions))
     raised.push(`exceptions: ${String(exceptions(now.exceptions))} (baseline ${String(exceptions(before.exceptions))})`);
   return raised;
