@@ -94,6 +94,15 @@ pub(crate) mod tests {
         std::fs::metadata(path).unwrap().permissions().mode() & 0o777
     }
 
+    /// Asserts the file at `path`, and its folder, are this user's only (on Unix; elsewhere the
+    /// profile's ACL is relied on).
+    pub(crate) fn assert_private_with_folder(path: &Path) {
+        #[cfg(unix)]
+        assert_eq!((mode(path), mode(path.parent().unwrap())), (0o600, 0o700), "{}", path.display());
+        #[cfg(not(unix))]
+        assert!(path.is_file(), "{}", path.display());
+    }
+
     fn temp(tag: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("cyberctf-private-{tag}-{}-{}", std::process::id(), rand::random::<u32>()))
     }

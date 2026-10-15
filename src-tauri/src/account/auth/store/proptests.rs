@@ -68,14 +68,13 @@ proptest! {
             asked.push(i);
             Some(piece.clone())
         });
-        match head.strip_prefix(CHUNKS_PREFIX) {
-            None => prop_assert_eq!(got, Some(head)),
-            Some(_) => {
-                // Only pieces 1..=MAX_CHUNKS are ever asked for, in order.
-                prop_assert!(asked.len() <= MAX_CHUNKS);
-                let n = asked.len();
-                prop_assert_eq!(asked, (1..=n).collect::<Vec<_>>());
-            }
+        if head.starts_with(CHUNKS_PREFIX) {
+            // Only pieces 1..=MAX_CHUNKS are ever asked for, in order.
+            prop_assert!(asked.len() <= MAX_CHUNKS);
+            let n = asked.len();
+            prop_assert_eq!(asked, (1..=n).collect::<Vec<_>>());
+        } else {
+            prop_assert_eq!(got, Some(head));
         }
     }
 }

@@ -4,13 +4,13 @@
 //! instead: every `tauri dev` rebuild is an unsigned, different binary, so the keychain
 //! re-prompts for access on each run ("...wants to use your confidential information").
 //! A file avoids that churn while developing. (A signed release build, with a stable code
-//! signature + keychain-access-group, prompts at most once.)
+//! signature + keychain-access-group, prompts at most once.) Both stores are built in every
+//! build, so each is checked and tested; `cfg!(debug_assertions)` picks one.
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(not(debug_assertions))]
-use crate::app::config;
 use crate::error::{Error, Result};
+use crate::platform::config;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub(super) struct Session {
@@ -22,31 +22,28 @@ pub(super) struct Session {
     pub email: Option<String>,
 }
 
-#[cfg(not(debug_assertions))]
+/// Whether this build keeps the session in a file (a dev build) rather than the keychain.
+const IN_A_FILE: bool = cfg!(debug_assertions);
+
 fn entry() -> Result<keyring::Entry> {
     entry_named("session")
 }
 
-#[cfg(not(debug_assertions))]
 fn entry_named(name: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new(config::KEYCHAIN_SERVICE, name).map_err(keychain_error)
+    keyring::Entry::new(config::KEYCHAIN_SERVICE, name).map_err(|e| keychain_error(&e))
 }
 
 /// The most a keychain entry holds here, in UTF-16 units: Windows' Credential Manager caps a
 /// credential at 2560 bytes (1280 UTF-16 units). A session (a JWT access token, a refresh token,
 /// the profile) can be longer, and saving it failed, so it was never kept. A longer session is
 /// split across `session.1`, `session.2`… with `session` holding how many there are.
-#[cfg_attr(debug_assertions, allow(dead_code))]
 const CHUNK_UNITS: usize = 1200;
 /// At most this many pieces (a session is a few KiB; some identity providers issue tokens of
 /// several KiB each). A longer one is refused at save, never half-saved and read as signed out.
-#[cfg_attr(debug_assertions, allow(dead_code))]
 const MAX_CHUNKS: usize = 32;
-#[cfg_attr(debug_assertions, allow(dead_code))]
 const CHUNKS_PREFIX: &str = "cyberctf-chunks:";
 
 /// What goes in the `session` entry and, for a long session, the pieces for `session.1`….
-#[cfg_attr(debug_assertions, allow(dead_code))]
 fn split_chunks(raw: &str) -> Result<(String, Vec<String>)> {
     if raw.encode_utf16().count() <= CHUNK_UNITS {
         return Ok((raw.to_string(), Vec::new()));
@@ -73,7 +70,6 @@ fn split_chunks(raw: &str) -> Result<(String, Vec<String>)> {
 
 /// The session's JSON from the `session` entry's value, reading the pieces with `piece(i)`
 /// (1-based) when it was split. None when a piece is missing.
-#[cfg_attr(debug_assertions, allow(dead_code))]
 fn join_chunks(head: String, mut piece: impl FnMut(usize) -> Option<String>) -> Option<String> {
     let Some(n) = head.strip_prefix(CHUNKS_PREFIX) else { return Some(head) };
     let n: usize = n.parse().ok().filter(|n| (1..=MAX_CHUNKS).contains(n))?;
@@ -82,15 +78,13 @@ fn join_chunks(head: String, mut piece: impl FnMut(usize) -> Option<String>) -> 
 
 /// The keychain failing is the common Linux case: no Secret Service (GNOME Keyring, KWallet)
 /// running, or it is locked. Say what to do; the raw error stays in parentheses for support.
-#[cfg(not(debug_assertions))]
-fn keychain_error(e: keyring::Error) -> Error {
+fn keychain_error(e: &keyring::Error) -> Error {
     Error::Invalid(format!(
         "Cyber CTF couldn't use the system keychain to keep your session. On Linux, start and unlock a keyring \
          (GNOME Keyring or KWallet) and sign in again. ({e})"
     ))
 }
 
-#[cfg(debug_assertions)]
 fn dev_session_path() -> Option<std::path::PathBuf> {
     // Unit tests never read or replace the developer's own session: theirs is per test run.
     if cfg!(test) {
@@ -100,21 +94,18 @@ fn dev_session_path() -> Option<std::path::PathBuf> {
 }
 
 /// The dev session file in the home folder.
-#[cfg(debug_assertions)]
 fn home_session_path() -> Option<std::path::PathBuf> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
     Some(std::path::PathBuf::from(home).join(".cyberctf").join("dev-session.json"))
 }
 
 /// The session kept in a dev session file, if it is there and parses.
-#[cfg(debug_assertions)]
 fn load_file(path: &std::path::Path) -> Option<Session> {
     std::fs::read_to_string(path).ok().and_then(|raw| serde_json::from_str(&raw).ok())
 }
 
 /// Writes the session to a dev session file, creating its folder: both this user's only (the
 /// file holds the session's tokens).
-#[cfg(debug_assertions)]
 fn save_file(path: &std::path::Path, raw: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
         crate::platform::private_fs::dir(dir)?;
@@ -126,36 +117,32 @@ fn save_file(path: &std::path::Path, raw: &str) -> Result<()> {
 /// The stored session: `Ok(None)` when there is none, `Err` when the keychain couldn't be read.
 /// Blocking (the Secret Service may show its unlock prompt and wait): call `read`.
 fn load_blocking() -> std::result::Result<Option<Session>, String> {
-    #[cfg(debug_assertions)]
-    {
-        let Some(path) = dev_session_path() else { return Ok(None) };
-        Ok(load_file(&path))
+    if IN_A_FILE { Ok(dev_session_path().and_then(|path| load_file(&path))) } else { load_keychain() }
+}
+
+/// The session in the keychain, unless the keychain failed a moment ago (see [`backoff`]).
+fn load_keychain() -> std::result::Result<Option<Session>, String> {
+    if let Some(why) = backoff::active() {
+        return Err(why);
     }
-    #[cfg(not(debug_assertions))]
-    {
-        if let Some(why) = backoff::active() {
-            return Err(why);
-        }
-        let piece = |i: usize| entry_named(&format!("session.{i}")).ok()?.get_password().ok();
-        let read = entry().map_err(|e| e.to_string()).and_then(|e| match e.get_password() {
-            Ok(head) => Ok(join_chunks(head, piece).and_then(|raw| serde_json::from_str(&raw).ok())),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(keychain_error(e).to_string()),
-        });
-        if let Err(why) = &read {
-            backoff::set(Some(why.clone()));
-        }
-        read
+    let piece = |i: usize| entry_named(&format!("session.{i}")).ok()?.get_password().ok();
+    let read = entry().map_err(|e| e.to_string()).and_then(|e| match e.get_password() {
+        Ok(head) => Ok(join_chunks(head, piece).and_then(|raw| serde_json::from_str(&raw).ok())),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(keychain_error(&e).to_string()),
+    });
+    if let Err(why) = &read {
+        backoff::set(Some(why.clone()));
     }
+    read
 }
 
 /// After the keychain fails (locked, its unlock prompt dismissed, no Secret Service), it isn't
 /// asked again for a minute: the background agent reads the session every few seconds, and each
 /// read would raise the unlock prompt again right after the player dismissed it. Signing in
 /// clears it.
-#[cfg(not(debug_assertions))]
 mod backoff {
-    use std::sync::Mutex;
+    use std::sync::{Mutex, PoisonError};
     use std::time::{Duration, Instant};
 
     static KEYCHAIN_BACKOFF: Mutex<Option<(Instant, String)>> = Mutex::new(None);
@@ -163,19 +150,20 @@ mod backoff {
 
     /// Why the keychain failed, while it isn't to be asked again.
     pub(super) fn active() -> Option<String> {
-        let guard = KEYCHAIN_BACKOFF.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = KEYCHAIN_BACKOFF.lock().unwrap_or_else(PoisonError::into_inner);
         guard.as_ref().filter(|(at, _)| at.elapsed() < KEYCHAIN_RETRY).map(|(_, why)| why.clone())
     }
 
     pub(super) fn set(why: Option<String>) {
-        *KEYCHAIN_BACKOFF.lock().unwrap_or_else(|e| e.into_inner()) = why.map(|w| (Instant::now(), w));
+        *KEYCHAIN_BACKOFF.lock().unwrap_or_else(PoisonError::into_inner) = why.map(|w| (Instant::now(), w));
     }
 }
 
 /// A fresh sign-in asks the keychain again, even right after it failed.
 pub(super) fn ask_keychain_again() {
-    #[cfg(not(debug_assertions))]
-    backoff::set(None);
+    if !IN_A_FILE {
+        backoff::set(None);
+    }
 }
 
 /// `load_blocking` on a blocking thread, never the UI thread or an async worker.
@@ -185,28 +173,23 @@ pub(super) async fn read() -> std::result::Result<Option<Session>, String> {
 
 fn save_blocking(session: &Session) -> Result<()> {
     let raw = serde_json::to_string(session).map_err(|e| Error::Invalid(e.to_string()))?;
-    #[cfg(debug_assertions)]
-    {
+    if IN_A_FILE {
         let path = dev_session_path().ok_or_else(|| Error::Invalid("no home directory".into()))?;
-        save_file(&path, &raw)
+        return save_file(&path, &raw);
     }
-    #[cfg(not(debug_assertions))]
-    {
-        // The pieces first, then the head naming them: a reader never sees a head whose pieces
-        // aren't there yet. Pieces left from a longer session before are removed.
-        let (head, parts) = split_chunks(&raw)?;
-        for (i, part) in parts.iter().enumerate() {
-            entry_named(&format!("session.{}", i + 1))?.set_password(part).map_err(keychain_error)?;
-        }
-        entry()?.set_password(&head).map_err(keychain_error)?;
-        clear_chunks_from(parts.len() + 1);
-        backoff::set(None);
-        Ok(())
+    // The pieces first, then the head naming them: a reader never sees a head whose pieces
+    // aren't there yet. Pieces left from a longer session before are removed.
+    let (head, parts) = split_chunks(&raw)?;
+    for (i, part) in parts.iter().enumerate() {
+        entry_named(&format!("session.{}", i + 1))?.set_password(part).map_err(|e| keychain_error(&e))?;
     }
+    entry()?.set_password(&head).map_err(|e| keychain_error(&e))?;
+    clear_chunks_from(parts.len() + 1);
+    backoff::set(None);
+    Ok(())
 }
 
 /// Removes the session pieces `session.<from>` and after.
-#[cfg(not(debug_assertions))]
 fn clear_chunks_from(from: usize) {
     for i in from..=MAX_CHUNKS {
         if let Ok(e) = entry_named(&format!("session.{i}")) {
@@ -221,19 +204,16 @@ pub(super) async fn store(session: Session) -> Result<()> {
 }
 
 fn clear_blocking() {
-    #[cfg(debug_assertions)]
-    {
+    if IN_A_FILE {
         if let Some(path) = dev_session_path() {
             let _ = std::fs::remove_file(path);
         }
+        return;
     }
-    #[cfg(not(debug_assertions))]
-    {
-        if let Ok(e) = entry() {
-            let _ = e.delete_credential();
-        }
-        clear_chunks_from(1);
+    if let Ok(e) = entry() {
+        let _ = e.delete_credential();
     }
+    clear_chunks_from(1);
 }
 
 /// Forgets the session, on a blocking thread.
@@ -305,7 +285,7 @@ mod chunk_tests {
     }
 }
 
-#[cfg(all(test, debug_assertions))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -316,11 +296,7 @@ mod tests {
         assert!(load_file(&path).is_none());
         let session = Session { access_token: "a".into(), refresh_token: Some("r".into()), expires_at: 42, name: Some("N".into()), email: None };
         save_file(&path, &serde_json::to_string(&session).unwrap()).unwrap();
-        #[cfg(unix)]
-        {
-            assert_eq!(crate::platform::private_fs::tests::mode(&path), 0o600);
-            assert_eq!(crate::platform::private_fs::tests::mode(path.parent().unwrap()), 0o700);
-        }
+        crate::platform::private_fs::tests::assert_private_with_folder(&path);
         let back = load_file(&path).unwrap();
         assert_eq!((back.access_token.as_str(), back.refresh_token.as_deref(), back.expires_at), ("a", Some("r"), 42));
         assert_eq!(back.name.as_deref(), Some("N"));

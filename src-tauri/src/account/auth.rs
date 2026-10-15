@@ -18,8 +18,8 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::app::config;
 use crate::error::{Code, Error, Result};
+use crate::platform::config;
 use store::Session;
 use tokens::{TokenResponse, code_challenge, now, random_b64, session_from, token_request};
 

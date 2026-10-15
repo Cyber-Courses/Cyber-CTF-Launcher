@@ -8,6 +8,7 @@
 //! co-location server, relay tunnel, terminal / noVNC) is Phase 2b.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -46,7 +47,10 @@ fn install_id_at(path: &std::path::Path) -> Result<String> {
 
 /// 16 random bytes as hex: install ids, co-location tokens and nonces.
 fn random_hex() -> String {
-    (0..16).map(|_| format!("{:02x}", rand::random::<u8>())).collect()
+    rand::random::<[u8; 16]>().iter().fold(String::with_capacity(32), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    })
 }
 
 /// A human label for this machine (editable server-side later). Not an identifier.
@@ -138,9 +142,9 @@ fn pending_confirmations() -> &'static Mutex<HashMap<String, oneshot::Sender<boo
 }
 
 /// The user's answer to a cloud-launch confirmation, from the UI.
-pub fn confirm_launch(session_id: String, approve: bool) {
+pub fn confirm_launch(session_id: &str, approve: bool) {
     if let Ok(mut map) = pending_confirmations().lock()
-        && let Some(tx) = map.remove(&session_id)
+        && let Some(tx) = map.remove(session_id)
     {
         let _ = tx.send(approve);
     }
@@ -195,7 +199,7 @@ fn pick_launch_host(claim: &Value, host_name: impl Fn(&str) -> Option<String>, d
 /// Running on a cloud account costs money, so a website launch onto one isn't auto-run: ask
 /// the user to confirm on this machine first (local and server targets still run unattended).
 async fn confirm_if_cloud(app: &AppHandle, session_id: &str, claim: &Value, host: Option<&str>) -> Result<()> {
-    let Some(id) = host.filter(|id| server::host_provider(app, id).is_some_and(|p| p.is_cloud())) else { return Ok(()) };
+    let Some(id) = host.filter(|id| server::host_provider(app, id).is_some_and(crate::runtime::providers::Provider::is_cloud)) else { return Ok(()) };
     let target = server::host_name(app, id).unwrap_or_else(|| id.to_string());
     let repo = claim["repository"].as_str().unwrap_or("");
     let commit = claim["commit"].as_str().unwrap_or("");
@@ -267,7 +271,14 @@ async fn present_before(app: &AppHandle, claim: &Value) -> bool {
 /// brought up, and only that (see [`undoes`]). Where the lab is reachable here, once running.
 async fn run_claimed(app: &AppHandle, claim: &Value, host: Option<&str>, runtime: Runtime, present_before: bool) -> Result<Option<String>> {
     let lab_id = claim["labId"].as_str();
-    match labs::run(app, claim.clone(), None, host, attack_image(host, runtime), false, |_line: String| {}).await {
+    match labs::run(
+        app,
+        claim.clone(),
+        &labs::Placement { host, attackbox_image: attack_image(host, runtime), ..labs::Placement::default() },
+        |_line: String| {},
+    )
+    .await
+    {
         Ok(url) => Ok(url),
         Err(e) => Err(undo_start(app, lab_id, runtime, present_before, e).await),
     }
@@ -407,7 +418,7 @@ fn spawn_heartbeat(app: AppHandle, current: std::sync::Arc<Mutex<Option<Registra
 /// the machine never shows online for) an account that isn't signed in here.
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let current: std::sync::Arc<Mutex<Option<Registration>>> = Default::default();
+        let current = std::sync::Arc::new(Mutex::new(None::<Registration>));
         spawn_heartbeat(app.clone(), current.clone());
         loop {
             let user = auth::signed_in_user().await;
@@ -462,8 +473,8 @@ pub struct AgentInfo {
 }
 
 /// This machine's identity, for the UI ("running as ...").
-pub fn agent_info(app: AppHandle) -> Result<AgentInfo> {
-    Ok(AgentInfo { install_id: install_id(&app)?, name: machine_name(), arch: arch(), capabilities: capabilities() })
+pub fn agent_info(app: &AppHandle) -> Result<AgentInfo> {
+    Ok(AgentInfo { install_id: install_id(app)?, name: machine_name(), arch: arch(), capabilities: capabilities() })
 }
 
 #[cfg(test)]
@@ -529,7 +540,7 @@ mod tests {
         assert_eq!(machine_name_from(None, Some("bob".into()), "windows"), "bob's PC");
         assert_eq!(machine_name_from(None, Some(" ".into()), "linux"), "Cyber CTF Linux");
         assert_eq!(machine_name_from(None, None, "freebsd"), "Cyber CTF freebsd");
-        assert!(!machine_name().is_empty());
+        assert_ne!(machine_name(), "");
         assert_eq!(capabilities(), vec!["docker".to_string()]);
         assert_eq!(arch(), std::env::consts::ARCH);
     }
@@ -549,7 +560,7 @@ mod tests {
     #[test]
     fn this_machines_identity_is_its_install_id_name_and_arch() {
         let t = crate::testing::test_app::TestApp::new();
-        let info = || serde_json::to_value(agent_info(t.handle().clone()).unwrap()).unwrap();
+        let info = || serde_json::to_value(agent_info(t.handle()).unwrap()).unwrap();
         let first = info();
         assert_eq!(first["installId"].as_str().unwrap().len(), 32);
         assert_eq!(info()["installId"], first["installId"], "kept");
@@ -573,7 +584,7 @@ mod tests {
             let answer = tokio::spawn(async move {
                 loop {
                     if pending_confirmations().lock().unwrap().contains_key(sid) {
-                        confirm_launch(sid.into(), approve);
+                        confirm_launch(sid, approve);
                         return;
                     }
                     tokio::task::yield_now().await;
@@ -581,9 +592,10 @@ mod tests {
             });
             let r = confirm_if_cloud(app, sid, &claim, Some(&az)).await;
             answer.await.unwrap();
-            match approve {
-                true => r.unwrap(),
-                false => assert_eq!(r.unwrap_err().to_string(), "Launch on Host az1 was not confirmed on this machine."),
+            if approve {
+                r.unwrap();
+            } else {
+                assert_eq!(r.unwrap_err().to_string(), "Launch on Host az1 was not confirmed on this machine.");
             }
         }
         // A lab that was never installed (its download failed) has nothing to tear down: the
@@ -593,7 +605,7 @@ mod tests {
         tear_down(app, None, Runtime::Vm).await.unwrap();
         let err = undo_start(app, Some("gone"), Runtime::Docker, false, Error::Invalid("download failed: HTTP 404".into())).await;
         assert_eq!(err.to_string(), "download failed: HTTP 404");
-        assert!(tools.calls().is_empty());
+        assert_eq!(tools.calls(), [] as [&str; 0]);
     }
 
     const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -671,9 +683,9 @@ mod tests {
     fn confirm_launch_answers_the_waiting_prompt_once() {
         let (tx, mut rx) = oneshot::channel();
         pending_confirmations().lock().unwrap().insert("s-confirm".into(), tx);
-        confirm_launch("s-other".into(), true);
+        confirm_launch("s-other", true);
         assert!(rx.try_recv().is_err());
-        confirm_launch("s-confirm".into(), true);
+        confirm_launch("s-confirm", true);
         assert!(rx.try_recv().unwrap());
         assert!(!pending_confirmations().lock().unwrap().contains_key("s-confirm"));
         let p = Progress::default();
@@ -701,8 +713,8 @@ mod tests {
     fn pending_launches_are_read_by_id() {
         let data = json!({ "myPendingLaunches": [{ "id": "s-1" }, { "other": 1 }, { "id": 7 }, { "id": "s-2" }] });
         assert_eq!(pending_ids(&data), ["s-1", "s-2"]);
-        assert!(pending_ids(&json!({ "myPendingLaunches": null })).is_empty());
-        assert!(pending_ids(&serde_json::Value::Null).is_empty());
+        assert_eq!(pending_ids(&json!({ "myPendingLaunches": null })), [] as [&str; 0]);
+        assert_eq!(pending_ids(&serde_json::Value::Null), [] as [&str; 0]);
     }
 
     #[tokio::test]

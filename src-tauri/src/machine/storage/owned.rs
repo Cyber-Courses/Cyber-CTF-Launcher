@@ -180,9 +180,8 @@ mod tests {
         // generic/alpine319.
         let mut listed = 0;
         let _tools = Tools::new(move |_, args| match args {
-            ["image", "ls", ..] => ok("sha256:postgres\n"),
+            ["image", "ls", ..] | [.., "postgres:16"] => ok("sha256:postgres\n"),
             [.., "nginx:1.27"] => ok("sha256:nginx\n"),
-            [.., "postgres:16"] => ok("sha256:postgres\n"),
             [.., "missing:1"] => fail("No such image"),
             ["box", "list"] => {
                 listed += 1;

@@ -5,7 +5,7 @@
  */
 export type ActiveOperation = { labId: string, 
 /**
- * "launch", "resume", "pause", "shutdown", "provision", "attack_vm" or "stop".
+ * `launch`, `resume`, `pause`, `shutdown`, `provision`, `attack_vm` or `stop`.
  */
 op: "launch" | "resume" | "pause" | "shutdown" | "provision" | "attack_vm" | "stop", 
 /**

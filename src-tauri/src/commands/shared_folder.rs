@@ -11,7 +11,7 @@ pub fn shared_folder_get() -> SharedFolderInfo {
 
 /// Turns sharing on or off and sets the folder.
 #[tauri::command]
-pub fn shared_folder_set(enabled: bool, path: String) -> Result<SharedFolderInfo> {
+pub fn shared_folder_set(enabled: bool, path: &str) -> Result<SharedFolderInfo> {
     shared_folder::shared_folder_set(enabled, path)
 }
 

@@ -23,7 +23,7 @@ pub struct LabFileLock(PathBuf);
 
 impl Drop for LabFileLock {
     fn drop(&mut self) {
-        let mut held = HELD.lock().unwrap_or_else(|e| e.into_inner());
+        let mut held = HELD.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let Some(map) = held.as_mut() else { return };
         if let Some((_, n)) = map.get_mut(&self.0) {
             *n -= 1;
@@ -38,7 +38,7 @@ impl Drop for LabFileLock {
 /// The failure of a lab lock that couldn't be taken (its file can't be opened or locked): the
 /// operation stops there rather than run unlocked.
 pub fn unavailable(e: std::io::Error) -> crate::error::Error {
-    crate::error::Error::Invalid(format!("Couldn't lock the lab: {e}"))
+    crate::error::Error::LockUnavailable(e)
 }
 
 /// The lock file of `lab` in the workers' folder `dir`.
@@ -49,7 +49,7 @@ pub fn path_in(dir: &Path, lab: &str) -> PathBuf {
 /// Takes the lock at `path` if no other process (or other handle) holds it; `None` when one
 /// does. Shared with a holder in this process.
 pub fn try_acquire(path: &Path) -> std::io::Result<Option<LabFileLock>> {
-    let mut held = HELD.lock().unwrap_or_else(|e| e.into_inner());
+    let mut held = HELD.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let map = held.get_or_insert_with(HashMap::new);
     if let Some((_, n)) = map.get_mut(path) {
         *n += 1;
@@ -79,7 +79,7 @@ pub async fn acquire(path: &Path) -> std::io::Result<LabFileLock> {
 /// Whether an operation holds the lock at `path` right now: one of this process, or another
 /// process's.
 pub fn held(path: &Path) -> bool {
-    if HELD.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|m| m.contains_key(path)) {
+    if HELD.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref().is_some_and(|m| m.contains_key(path)) {
         return true;
     }
     let Ok(file) = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(path) else { return false };

@@ -43,12 +43,12 @@ pub async fn api_query(operation: ApiOperation, variables: Option<Value>) -> Res
 /// This launcher as the website's agent sees it.
 #[tauri::command]
 pub fn agent_info(app: AppHandle) -> Result<AgentInfo> {
-    agent::agent_info(app)
+    agent::agent_info(&app)
 }
 
 /// The player's answer to a launch the website asked for.
 #[tauri::command]
-pub fn confirm_launch(session_id: String, approve: bool) {
+pub fn confirm_launch(session_id: &str, approve: bool) {
     agent::confirm_launch(session_id, approve);
 }
 
@@ -62,7 +62,7 @@ mod tests {
             .invoke_handler(tauri::generate_handler![super::api_query])
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
-        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default()).build().unwrap();
         let request = tauri::webview::InvokeRequest {
             cmd: "api_query".into(),
             callback: tauri::ipc::CallbackFn(0),
@@ -70,7 +70,7 @@ mod tests {
             // The app's own origin, which Tauri trusts: `http://tauri.localhost` on Windows.
             url: if cfg!(windows) { "http://tauri.localhost" } else { "tauri://localhost" }.parse().unwrap(),
             body: tauri::ipc::InvokeBody::Json(args),
-            headers: Default::default(),
+            headers: tauri::http::HeaderMap::default(),
             invoke_key: tauri::test::INVOKE_KEY.to_string(),
         };
         tauri::test::get_ipc_response(&webview, request)

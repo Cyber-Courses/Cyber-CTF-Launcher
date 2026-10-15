@@ -17,7 +17,7 @@ pub struct Step {
 }
 
 pub fn step(program: impl Into<String>, args: &[&str]) -> Step {
-    Step { program: program.into(), args: args.iter().map(|s| s.to_string()).collect(), note: None }
+    Step { program: program.into(), args: args.iter().map(ToString::to_string).collect(), note: None }
 }
 
 /// Without pkexec there is no graphical password prompt (Debian ships it apart from polkit).
@@ -188,16 +188,20 @@ mod tests {
     }
 
     #[test]
-    fn a_step_ends_by_its_programs_codes() {
-        let winget = |code: u32, installer| end_of("winget", false, Some(code as i32), installer);
+    fn a_winget_step_ends_by_winget_s_codes() {
+        let winget = |code: u32, installer| end_of("winget", false, Some(code.cast_signed()), installer);
         assert_eq!(end_of("winget", false, Some(0), None), End::Done(None));
         // Regression (#220): nothing to do, or a restart to finish, is a step done.
         assert!(matches!(winget(0x8A15_002B, None), End::Done(Some(note)) if note.starts_with("Already installed")));
         assert!(matches!(winget(0x8A15_0109, None), End::Done(Some(note)) if note.contains("Restart Windows")));
         assert!(matches!(winget(0x8A15_0006, Some(1602)), End::Failed(Some(why)) if why.contains("cancelled")));
         assert_eq!(winget(1, None), End::Failed(None));
+    }
+
+    #[test]
+    fn another_step_ends_by_its_own_codes() {
         // Only winget's codes are winget's: another program exiting with one just failed.
-        assert_eq!(end_of("sh", false, Some(0x8A15_002B_u32 as i32), None), End::Failed(None));
+        assert_eq!(end_of("sh", false, Some(0x8A15_002B_u32.cast_signed()), None), End::Failed(None));
         assert!(matches!(end_of("powershell", true, Some(1223), None), End::Failed(Some(why)) if why.starts_with("The removal was cancelled")));
         assert_eq!(end_of("pkexec", false, None, None), End::Failed(None), "killed by a signal");
     }

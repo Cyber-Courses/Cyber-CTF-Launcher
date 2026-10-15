@@ -95,12 +95,7 @@ fn denied_code(os: &str, user: Option<&str>) -> Code {
 pub fn login_name() -> Option<String> {
     #[cfg(unix)]
     {
-        // SAFETY: getpwuid returns a pointer into static storage (or null), read at once.
-        let from_passwd = unsafe {
-            let pw = libc::getpwuid(libc::getuid());
-            if pw.is_null() { None } else { std::ffi::CStr::from_ptr((*pw).pw_name).to_str().ok().map(str::to_string) }
-        };
-        from_passwd.or_else(|| std::env::var("USER").ok())
+        crate::platform::sys::login_name().or_else(|| std::env::var("USER").ok())
     }
     #[cfg(not(unix))]
     {

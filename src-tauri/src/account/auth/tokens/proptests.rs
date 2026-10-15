@@ -72,15 +72,12 @@ proptest! {
         let lifetime = expires_in.unwrap_or(DEFAULT_EXPIRES_IN);
         prop_assert!(s.expires_at >= before.saturating_add(lifetime));
         prop_assert!(s.expires_at <= now().saturating_add(lifetime));
-        match id {
-            Some((name, email)) => {
-                prop_assert_eq!(s.name, name);
-                prop_assert_eq!(s.email, email);
-            }
-            None => {
-                prop_assert_eq!(s.name, prev.as_ref().and_then(|p| p.name.clone()));
-                prop_assert_eq!(s.email, prev.as_ref().and_then(|p| p.email.clone()));
-            }
+        if let Some((name, email)) = id {
+            prop_assert_eq!(s.name, name);
+            prop_assert_eq!(s.email, email);
+        } else {
+            prop_assert_eq!(s.name, prev.as_ref().and_then(|p| p.name.clone()));
+            prop_assert_eq!(s.email, prev.as_ref().and_then(|p| p.email.clone()));
         }
     }
 

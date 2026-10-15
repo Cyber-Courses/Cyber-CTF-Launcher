@@ -38,26 +38,34 @@ fn is_this_machine(host: &str) -> bool {
 pub async fn start(host: String, port: u16) -> std::io::Result<Relay> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let local = listener.local_addr()?.port();
-    let task = tokio::spawn(async move {
-        loop {
-            let (mut inbound, _) = match listener.accept().await {
-                Ok(pair) => pair,
-                // A refused handshake or fd exhaustion must not end the relay while the tool is
-                // still pointed at it (nor spin hot): wait a moment and keep accepting.
-                Err(_) => {
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    continue;
-                }
-            };
-            let target = (host.clone(), port);
-            tokio::spawn(async move {
-                if let Ok(mut outbound) = TcpStream::connect(target).await {
-                    let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
-                }
-            });
+    let task = serve(listener, move |mut inbound| {
+        let target = (host.clone(), port);
+        async move {
+            if let Ok(mut outbound) = TcpStream::connect(target).await {
+                let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
+            }
         }
     });
     Ok(Relay { port: local, task })
+}
+
+/// Accepts connections on `listener` until the task is aborted, each served by `serve` on a task
+/// of its own. A refused handshake or fd exhaustion must not end a relay while a tool is still
+/// pointed at it (nor spin hot): it waits a moment and keeps accepting.
+fn serve<F, Fut>(listener: TcpListener, serve: F) -> JoinHandle<()>
+where
+    F: Fn(TcpStream) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(async move {
+        loop {
+            let Ok((inbound, _)) = listener.accept().await else {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                continue;
+            };
+            tokio::spawn(serve(inbound));
+        }
+    })
 }
 
 /// What a relayed run needs kept alive.
@@ -189,7 +197,7 @@ mod tests {
             }
         }
         // The launcher's name alone (no Isoloom name) still counts as the host.
-        let env = vec![("CYBERCTF_ESXI_HOSTNAME".to_string(), "".to_string())];
+        let env = vec![("CYBERCTF_ESXI_HOSTNAME".to_string(), String::new())];
         assert_eq!(prepare("vagrant", &env).await.env, env);
     }
 

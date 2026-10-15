@@ -1,16 +1,18 @@
-//! OS plumbing: running tools, files only this user can read, whole-file writes, HTTP clients
-//! with limits, the PATH a GUI launch is missing, the console's Ctrl+C on Windows, and the files a
-//! Store build saved before.
+//! OS plumbing: running tools, files only this user can read, whole-file writes, the service
+//! endpoints, HTTP clients with limits, the PATH a GUI launch is missing, the console's Ctrl+C on
+//! Windows, and the files a Store build saved before.
 
 use std::path::{Path, PathBuf};
 
 pub mod atomic_file;
+pub mod config;
 pub mod console;
 pub mod env_path;
 pub mod exec;
 pub mod http;
 pub mod msix_data;
 pub mod private_fs;
+pub mod sys;
 
 /// The user's home folder (`USERPROFILE` on Windows, `HOME` elsewhere).
 pub fn home_dir() -> Option<PathBuf> {

@@ -51,8 +51,8 @@ pub fn linger_quit(app: AppHandle) {
 
 /// The user chose to quit anyway from the "a lab is still deploying" prompt: stop intercepting
 /// and exit.
-pub fn force_quit(app: AppHandle) {
-    exit_now(&app);
+pub fn force_quit(app: &AppHandle) {
+    exit_now(app);
 }
 
 fn exit_now(app: &AppHandle) {
@@ -82,7 +82,7 @@ pub fn intercept(app: &AppHandle) -> bool {
         return false;
     }
     let visible = app.webview_windows().values().any(|w| w.is_visible().unwrap_or(false));
-    let mut prompted = QUIT_PROMPTED_AT.lock().unwrap_or_else(|e| e.into_inner());
+    let mut prompted = QUIT_PROMPTED_AT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if !should_prompt(visible, *prompted) {
         FORCE_QUIT.store(true, Ordering::SeqCst);
         return false;
@@ -126,7 +126,7 @@ mod tests {
 
         // Quit anyway: the quit guard lets go and the runtime is asked to exit (Tauri's mock
         // runtime has no exit to request: it panics there).
-        let exit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| force_quit(t.handle().clone())));
+        let exit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| force_quit(t.handle())));
         assert!(exit.is_err(), "the runtime was asked to exit");
         assert!(FORCE_QUIT.load(Ordering::SeqCst));
         let deploy = runtime::DeployGuard::new("quit-test-forced", runtime::Action::Start);

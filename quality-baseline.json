@@ -1,10 +1,6 @@
 {
   "rules": {
     "dup/clone": {
-      "rs:account": 1,
-      "rs:lan_relay": 1,
-      "rs:machine": 4,
-      "rs:platform": 4,
       "rs:runtime": 9,
       "ts:features": 1,
       "ts:features/home": 1,
@@ -178,9 +174,6 @@
       "ts:lib": 2
     },
     "exception/without-reason": {
-      "rs:account": 1,
-      "rs:deploy_worker": 1,
-      "rs:platform": 2,
       "rs:runtime": 3,
       "ts:features/machine": 2,
       "ts:features/servers": 4,
@@ -197,7 +190,6 @@
       "ts:lib": 1
     },
     "rust/file-over-400-loc": {
-      "rs:platform": 1,
       "rs:runtime": 1
     },
     "rust/mod-rs": {
@@ -207,7 +199,7 @@
       "rs:account": 2,
       "rs:deploy_worker": 4,
       "rs:labs": 2,
-      "rs:machine": 11,
+      "rs:machine": 10,
       "rs:platform": 2,
       "rs:runtime": 24,
       "rs:terminal": 1
@@ -216,74 +208,30 @@
   "clippy": {
     "darwin": {
       "clippy/assert_is_empty": {
-        "rs:account": 6,
-        "rs:app": 1,
-        "rs:cloud": 2,
-        "rs:deploy_worker": 11,
-        "rs:labs": 1,
-        "rs:machine": 5,
-        "rs:platform": 2,
-        "rs:runtime": 50,
-        "rs:terminal": 2,
-        "rs:testing": 1
+        "rs:runtime": 50
       },
       "clippy/case_sensitive_file_extension_comparisons": {
-        "rs:machine": 1,
         "rs:runtime": 1
       },
       "clippy/cast_lossless": {
-        "rs:app": 1,
-        "rs:machine": 1,
         "rs:runtime": 1
       },
       "clippy/cast_possible_truncation": {
-        "rs:cloud": 2,
-        "rs:deploy_worker": 2,
-        "rs:machine": 4,
         "rs:runtime": 5
-      },
-      "clippy/cast_possible_wrap": {
-        "rs:cloud": 1,
-        "rs:machine": 15
-      },
-      "clippy/cast_sign_loss": {
-        "rs:cloud": 2,
-        "rs:machine": 9,
-        "rs:platform": 1
       },
       "clippy/checked_conversions": {
         "rs:runtime": 1
       },
       "clippy/cognitive_complexity": {
-        "rs:machine": 1,
-        "rs:platform": 1,
         "rs:runtime": 1
       },
       "clippy/default_trait_access": {
-        "rs:account": 1,
-        "rs:commands": 2,
-        "rs:platform": 1,
         "rs:runtime": 4
       },
       "clippy/doc_markdown": {
-        "rs:account": 7,
-        "rs:app": 5,
-        "rs:cloud": 2,
-        "rs:deploy_worker": 2,
-        "rs:labs": 6,
-        "rs:lan_relay": 17,
-        "rs:machine": 18,
-        "rs:platform": 12,
-        "rs:root": 4,
-        "rs:runtime": 98,
-        "rs:terminal": 1
+        "rs:runtime": 52
       },
       "clippy/expect_used": {
-        "rs:app": 1,
-        "rs:deploy_worker": 1,
-        "rs:lan_relay": 2,
-        "rs:platform": 2,
-        "rs:root": 1,
         "rs:runtime": 3
       },
       "clippy/float_cmp": {
@@ -293,85 +241,40 @@
         "rs:runtime": 1
       },
       "clippy/format_collect": {
-        "rs:account": 1,
-        "rs:deploy_worker": 1,
-        "rs:machine": 3,
-        "rs:platform": 1,
-        "rs:runtime": 6,
-        "rs:testing": 1
+        "rs:runtime": 6
       },
       "clippy/format_push_string": {
-        "rs:deploy_worker": 1,
-        "rs:machine": 3,
-        "rs:platform": 8,
         "rs:runtime": 12
       },
       "clippy/if_not_else": {
         "rs:runtime": 1
       },
       "clippy/ignore_without_reason": {
-        "rs:machine": 2,
-        "rs:platform": 1,
         "rs:runtime": 5
-      },
-      "clippy/ignored_unit_patterns": {
-        "rs:deploy_worker": 4,
-        "rs:platform": 2,
-        "rs:terminal": 2
       },
       "clippy/ip_constant": {
         "rs:runtime": 1
       },
       "clippy/items_after_statements": {
-        "rs:machine": 2,
-        "rs:runtime": 2,
-        "rs:terminal": 2
+        "rs:runtime": 2
       },
       "clippy/large_futures": {
-        "rs:app": 1,
-        "rs:machine": 6,
         "rs:runtime": 15
       },
-      "clippy/large_stack_arrays": {
-        "rs:labs": 1,
-        "rs:terminal": 1
-      },
       "clippy/manual_let_else": {
-        "rs:lan_relay": 2,
         "rs:runtime": 1
       },
       "clippy/manual_string_new": {
-        "rs:lan_relay": 1,
         "rs:runtime": 1
       },
       "clippy/map_unwrap_or": {
-        "rs:account": 1,
-        "rs:app": 1,
-        "rs:cloud": 1,
-        "rs:lan_relay": 1,
-        "rs:machine": 4,
-        "rs:platform": 1,
         "rs:runtime": 14
       },
-      "clippy/match_bool": {
-        "rs:account": 1
-      },
       "clippy/match_same_arms": {
-        "rs:machine": 3,
         "rs:runtime": 2
       },
       "clippy/needless_pass_by_value": {
-        "rs:account": 2,
-        "rs:app": 5,
-        "rs:cloud": 1,
-        "rs:commands": 1,
-        "rs:deploy_worker": 2,
-        "rs:machine": 3,
-        "rs:platform": 1,
-        "rs:runtime": 8,
-        "rs:shared_folder": 1,
-        "rs:terminal": 7,
-        "rs:testing": 1
+        "rs:runtime": 8
       },
       "clippy/needless_raw_string_hashes": {
         "rs:runtime": 1
@@ -379,85 +282,44 @@
       "clippy/nonminimal_bool": {
         "rs:runtime": 1
       },
-      "clippy/option_option": {
-        "rs:platform": 1
-      },
-      "clippy/range_plus_one": {
-        "rs:terminal": 1
-      },
       "clippy/redundant_closure_for_method_calls": {
-        "rs:account": 2,
-        "rs:app": 2,
-        "rs:deploy_worker": 5,
-        "rs:machine": 2,
-        "rs:platform": 2,
-        "rs:runtime": 18,
-        "rs:terminal": 2
+        "rs:runtime": 18
       },
       "clippy/semicolon_if_nothing_returned": {
-        "rs:machine": 2,
-        "rs:platform": 4,
         "rs:runtime": 5
       },
       "clippy/similar_names": {
-        "rs:deploy_worker": 1,
         "rs:runtime": 1
       },
       "clippy/single_match_else": {
-        "rs:account": 3,
-        "rs:lan_relay": 2,
         "rs:runtime": 6
       },
       "clippy/stable_sort_primitive": {
-        "rs:deploy_worker": 1,
         "rs:runtime": 4
       },
       "clippy/too_many_arguments": {
-        "rs:labs": 3,
-        "rs:platform": 2,
         "rs:runtime": 11
       },
       "clippy/uninlined_format_args": {
         "rs:runtime": 2
       },
       "clippy/unnecessary_wraps": {
-        "rs:account": 1,
-        "rs:app": 1,
-        "rs:platform": 2,
-        "rs:runtime": 2,
-        "rs:terminal": 1
-      },
-      "clippy/unreadable_literal": {
-        "rs:cloud": 4
-      },
-      "clippy/unused_self": {
-        "rs:platform": 2
+        "rs:runtime": 2
       },
       "clippy/unwrap_used": {
-        "rs:root": 1,
         "rs:runtime": 9
-      },
-      "clippy/used_underscore_binding": {
-        "rs:deploy_worker": 1
       },
       "clippy/wildcard_imports": {
         "rs:runtime": 7
       },
       "rustc/unsafe_code": {
-        "rs:deploy_worker": 2,
-        "rs:platform": 5,
         "rs:runtime": 2
       }
     }
   },
   "exceptions": {
-    "src-tauri/src/account/auth/store.rs": {
-      "#[cfg_attr(debug_assertions, allow(dead_code))]": 5
-    },
-    "src-tauri/src/app/config.rs": {
-      "#[cfg_attr(debug_assertions, allow(dead_code))]": 1
-    },
     "src-tauri/src/commands.rs": {
+      "#![allow(clippy::needless_pass_by_value, reason = \"Tauri hands a command its arguments by value\")]": 1,
       "#[allow(clippy::too_many_lines, reason = \"one line per command: a list, not logic\")]": 1
     },
     "src-tauri/src/commands/labs.rs": {
@@ -466,26 +328,16 @@
     "src-tauri/src/commands/terminal.rs": {
       "#[allow(clippy::too_many_arguments, reason = \"the webview sends each of the shell's fields as an argument\")]": 1
     },
-    "src-tauri/src/deploy_worker/process.rs": {
-      "#[cfg_attr(not(windows), allow(dead_code))]": 2,
-      "#[cfg_attr(not(windows), allow(unused_variables))]": 1
-    },
     "src-tauri/src/machine/system/wsl.rs": {
       "#![cfg_attr(not(windows), allow(dead_code))]": 1,
       "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the probes on Windows\"))]": 1,
       "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the restart on Windows\"))]": 1
     },
-    "src-tauri/src/platform/atomic_file.rs": {
-      "#[cfg_attr(not(debug_assertions), allow(dead_code))]": 1,
-      "#[cfg_attr(not(unix), allow(unused_variables))]": 1
-    },
     "src-tauri/src/platform/console.rs": {
       "#[cfg_attr(not(windows), allow(dead_code))]": 1
     },
-    "src-tauri/src/platform/exec/elevate.rs": {
-      "#![cfg_attr(not(windows), allow(dead_code))]": 1
-    },
     "src-tauri/src/platform/exec/fake.rs": {
+      "#[allow(clippy::unnecessary_wraps, reason = \"a script answers an Option, None being a missing tool\")]": 2,
       "#[cfg_attr(not(windows), allow(dead_code))]": 1
     },
     "src-tauri/src/platform/exec/group.rs": {
@@ -493,6 +345,9 @@
     },
     "src-tauri/src/platform/msix_data.rs": {
       "#[cfg_attr(not(windows), allow(dead_code))]": 2
+    },
+    "src-tauri/src/platform/sys.rs": {
+      "#![allow(unsafe_code, reason = \"the audited home of the launcher's calls into libc and Win32\")]": 1
     },
     "src-tauri/src/runtime/docker/lifecycle.rs": {
       "#[allow(dead_code)]": 2

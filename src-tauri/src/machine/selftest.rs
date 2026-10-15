@@ -54,7 +54,7 @@ struct Reporter(Channel<Event>);
 
 impl Reporter {
     /// Live output for a step that is still running (shown as its detail line).
-    fn progress(&self, step: &'static str, label: &'static str, line: String) {
+    fn progress(&self, step: &'static str, label: &'static str, line: &str) {
         let line = line.trim();
         if !line.is_empty() {
             self.send(step, label, "running", Some(line.chars().take(PROGRESS_MAX).collect()));
@@ -68,16 +68,13 @@ impl Reporter {
     /// Runs one step, reporting it; a failure stops the test with that step's error.
     async fn step<T>(&self, step: &'static str, label: &'static str, fut: impl std::future::Future<Output = Result<(T, Option<String>)>>) -> Result<T> {
         self.send(step, label, "running", None);
-        match fut.await {
-            Ok((v, detail)) => {
-                self.send(step, label, "ok", detail);
-                Ok(v)
-            }
-            Err(e) => {
-                self.send(step, label, "fail", Some(explain(&e.to_string())));
-                Err(e)
-            }
-        }
+        let outcome = fut.await;
+        let (state, detail) = match &outcome {
+            Ok((_, detail)) => ("ok", detail.clone()),
+            Err(e) => ("fail", Some(explain(&e.to_string()))),
+        };
+        self.send(step, label, state, detail);
+        outcome.map(|(v, _)| v)
     }
 
     /// The closing clean-up step, reported only when the test itself passed (a failed test
@@ -121,7 +118,7 @@ async fn tracked<T>(app: &AppHandle, kind: Kind, op: impl std::future::Future<Ou
     match kind {
         Kind::Docker => owned::tracked(app, &[IMAGE.to_string()], &[], op).await,
         Kind::Vm => {
-            let boxes: Vec<String> = vm::TEST_PROVIDERS.iter().flat_map(|p| candidate_boxes(*p, arm()).iter().map(|b| b.to_string())).collect();
+            let boxes: Vec<String> = vm::TEST_PROVIDERS.iter().flat_map(|p| candidate_boxes(*p, arm()).iter().map(ToString::to_string)).collect();
             owned::tracked(app, &[], &boxes, op).await
         }
     }
@@ -159,35 +156,29 @@ fn one_at_a_time(kind: Kind) -> &'static tokio::sync::Mutex<()> {
 pub async fn machine_selftest(app: AppHandle, kind: Kind, provider: Option<Provider>, events: Channel<Event>) -> Result<()> {
     let _alone = one_at_a_time(kind).lock().await;
     let r = Reporter(events);
-    tracked(&app, kind, async {
+    // Boxed: the steps of a test VM's run make a large future.
+    Box::pin(tracked(&app, kind, async {
         match kind {
             Kind::Docker => docker::run_test(&work_dir(&app, "docker")?, &r).await,
             Kind::Vm => vm::run_test(&work_dir(&app, "vm")?, provider, &r).await,
         }
-    })
+    }))
     .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
+    use crate::testing::test_app::Sink;
 
-    /// A reporter whose events land in a list.
-    fn reporter() -> (Reporter, Arc<Mutex<Vec<serde_json::Value>>>) {
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let sink = seen.clone();
-        let channel = Channel::new(move |body| {
-            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
-                sink.lock().unwrap().push(serde_json::from_str(&json).unwrap());
-            }
-            Ok(())
-        });
-        (Reporter(channel), seen)
+    /// A reporter whose events land in a sink.
+    fn reporter() -> (Reporter, Sink) {
+        let sink = Sink::default();
+        (Reporter(sink.channel()), sink)
     }
 
-    fn states(seen: &Mutex<Vec<serde_json::Value>>) -> Vec<String> {
-        seen.lock().unwrap().iter().map(|e| format!("{}:{}", e["step"].as_str().unwrap(), e["state"].as_str().unwrap())).collect()
+    fn states(seen: &Sink) -> Vec<String> {
+        seen.messages().iter().map(|e| format!("{}:{}", e["step"].as_str().unwrap(), e["state"].as_str().unwrap())).collect()
     }
 
     #[tokio::test]
@@ -198,7 +189,7 @@ mod tests {
         let err = r.step::<()>("two", "Second", async { Err(Error::Invalid("Cannot connect to the Docker daemon".into())) }).await.unwrap_err();
         assert!(err.to_string().contains("Docker daemon"));
         assert_eq!(states(&seen), ["one:running", "one:ok", "two:running", "two:fail"]);
-        let events = seen.lock().unwrap();
+        let events = seen.messages();
         assert_eq!(events[1]["detail"], "fine");
         assert!(events[3]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
     }
@@ -206,13 +197,13 @@ mod tests {
     #[test]
     fn progress_lines_are_trimmed_and_short_and_cleanup_reports_only_after_a_pass() {
         let (r, seen) = reporter();
-        r.progress("box", "Box", "   ".into());
-        r.progress("box", "Box", format!("  {}  ", "x".repeat(500)));
+        r.progress("box", "Box", "   ");
+        r.progress("box", "Box", &format!("  {}  ", "x".repeat(500)));
         r.cleanup::<()>("Clean", &Ok(()), Ok(()), Some("kept".into()));
         r.cleanup::<()>("Clean", &Ok(()), Err(Error::Invalid("left over".into())), None);
         r.cleanup::<()>("Clean", &Err(Error::Invalid("x".into())), Ok(()), None);
         assert_eq!(states(&seen), ["box:running", "cleanup:ok", "cleanup:fail"]);
-        let events = seen.lock().unwrap();
+        let events = seen.messages();
         assert_eq!(events[0]["detail"].as_str().unwrap().chars().count(), PROGRESS_MAX);
         assert_eq!(events[2]["detail"], "left over");
         let _ = arm();
@@ -226,10 +217,10 @@ mod tests {
         assert!(out.ends_with(raw));
     }
 
-    /// A channel whose events land in a list, for the commands.
-    fn events() -> (Channel<Event>, Arc<Mutex<Vec<serde_json::Value>>>) {
-        let (r, seen) = reporter();
-        (r.0, seen)
+    /// A channel whose events land in a sink, for the commands.
+    fn events() -> (Channel<Event>, Sink) {
+        let sink = Sink::default();
+        (sink.channel(), sink)
     }
 
     #[tokio::test]
@@ -265,7 +256,7 @@ mod tests {
         let (channel, seen) = events();
         let second = tokio::time::timeout(std::time::Duration::from_millis(200), machine_selftest(t.handle().clone(), Kind::Docker, None, channel)).await;
         assert!(second.is_err(), "it waits");
-        assert!(tools.calls().is_empty() && seen.lock().unwrap().is_empty());
+        assert!(tools.calls().is_empty() && seen.messages().is_empty());
         drop(first);
     }
 
@@ -277,7 +268,7 @@ mod tests {
         let (channel, seen) = events();
         assert!(machine_selftest(t.handle().clone(), Kind::Docker, None, channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
-        assert!(seen.lock().unwrap()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
+        assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
         assert!(tools.called("down -v"), "the test lab is torn down even so");
     }
 

@@ -1,7 +1,7 @@
 //! The worker process itself: a headless Tauri app that runs one job and exits.
 
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::AppHandle;
 use tauri::Manager as _;
@@ -11,69 +11,95 @@ use super::{Job, Op, execute, files};
 
 /// The worker's entry point, in place of the app: a headless Tauri app on the same data dir
 /// (so lab, key and server paths resolve the same), the deploy, a status file, then exit.
-pub fn worker_main(job_path: PathBuf, mut context: tauri::Context<crate::AppRuntime>) {
-    let Some(job) = read_job(&job_path) else {
+///
+/// # Errors
+///
+/// When Tauri can't build the worker's app.
+pub fn worker_main(job_path: &Path, mut context: tauri::Context<crate::AppRuntime>) -> tauri::Result<()> {
+    let Some(job) = read_job(job_path) else {
         eprintln!("deploy worker: unreadable job file {}", job_path.display());
         std::process::exit(2);
     };
     #[cfg(unix)]
-    let job_file = job_path.clone();
+    let job_file = job_path.to_path_buf();
     // No window: this is a background process.
     context.config_mut().app.windows.clear();
     let log_name = crate::app::logging::worker_log_name(&job.lab_id);
-    tauri::Builder::<crate::AppRuntime>::new()
+    let app = tauri::Builder::<crate::AppRuntime>::new()
         .plugin(crate::app::logging::plugin(&log_name))
         .setup(move |app| {
-            crate::app::logging::log_startup(app.handle(), &format!("deploy worker ({})", job.lab_id));
-            if let Ok(dir) = app.path().app_data_dir() {
-                crate::shared_folder::init(&dir);
-            }
-            crate::runtime::lab::registry::init(app.handle());
-            // A background process, not an app: on macOS keep it out of the Dock, the app
-            // switcher and Apple Events aimed at "Cyber CTF".
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let code = run_logged(&handle, job).await;
-                handle.exit(code);
-            });
-            // Stopped (the app's Stop sends SIGTERM to the worker's process group): the tools it
-            // runs (status probes, and the vagrant/compose/terraform runs it streams) sit in
-            // groups of their own, out of that signal's reach; end them too before going.
+            start(app, job);
             #[cfg(unix)]
-            tauri::async_runtime::spawn(async move {
-                if let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-                    term.recv().await;
-                    crate::platform::exec::kill_live_tools();
-                    let _ = std::fs::remove_file(&job_file);
-                    std::process::exit(143);
-                }
-            });
+            end_tools_when_stopped(job_file);
             Ok(())
         })
         .build(context)
-        .expect("error while starting the deploy worker")
-        .run(|_app, event| {
-            // Only the deploy ends the worker (`handle.exit(code)` carries its code). A quit from
-            // outside (a script or tool quitting "Cyber CTF") reached it once and killed a deploy
-            // mid-way, orphaning vagrant with no status written.
-            if let tauri::RunEvent::ExitRequested { code: None, api, .. } = &event {
-                api.prevent_exit();
-            }
-            // macOS still lists the worker as a running "Cyber CTF": with the app itself closed,
-            // opening Cyber CTF (Dock, Finder, `open`) reached the worker, which has no window,
-            // and nothing opened. Hand such a request to the real app, and stay in the background
-            // (an AppleScript "activate" had turned the worker into a foreground app).
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = &event {
-                let _ = _app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
-                open_main_app();
-            }
-        });
+        .inspect_err(|e| log::error!("couldn't start the deploy worker: {e}"))?;
+    #[cfg(target_os = "macos")]
+    app.run(|app, event| {
+        keep_running(&event);
+        hand_reopen_to_the_app(app, &event);
+    });
+    #[cfg(not(target_os = "macos"))]
+    app.run(|_, event| keep_running(&event));
+    Ok(())
 }
 
-fn read_job(path: &std::path::Path) -> Option<Job> {
+/// The worker's start: its log and data folder, then the job, and an exit with its code.
+fn start(app: &mut tauri::App<crate::AppRuntime>, job: Job) {
+    crate::app::logging::log_startup(app.handle(), &format!("deploy worker ({})", job.lab_id));
+    if let Ok(dir) = app.path().app_data_dir() {
+        crate::shared_folder::init(&dir);
+    }
+    crate::runtime::lab::registry::init(app.handle());
+    // A background process, not an app: on macOS keep it out of the Dock, the app
+    // switcher and Apple Events aimed at "Cyber CTF".
+    #[cfg(target_os = "macos")]
+    app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
+    let handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        let code = run_logged(&handle, job).await;
+        handle.exit(code);
+    });
+}
+
+/// Stopped (the app's Stop sends SIGTERM to the worker's process group): the tools it runs
+/// (status probes, and the vagrant/compose/terraform runs it streams) sit in groups of their own,
+/// out of that signal's reach; end them too before going.
+#[cfg(unix)]
+fn end_tools_when_stopped(job_file: PathBuf) {
+    tauri::async_runtime::spawn(async move {
+        if let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            term.recv().await;
+            crate::platform::exec::kill_live_tools();
+            let _ = std::fs::remove_file(&job_file);
+            std::process::exit(143);
+        }
+    });
+}
+
+/// Only the deploy ends the worker (`handle.exit(code)` carries its code). A quit from outside
+/// (a script or tool quitting "Cyber CTF") reached it once and killed a deploy mid-way,
+/// orphaning vagrant with no status written.
+fn keep_running(event: &tauri::RunEvent) {
+    if let tauri::RunEvent::ExitRequested { code: None, api, .. } = event {
+        api.prevent_exit();
+    }
+}
+
+/// macOS still lists the worker as a running "Cyber CTF": with the app itself closed, opening
+/// Cyber CTF (Dock, Finder, `open`) reached the worker, which has no window, and nothing opened.
+/// Hand such a request to the real app, and stay in the background (an AppleScript "activate"
+/// had turned the worker into a foreground app).
+#[cfg(target_os = "macos")]
+fn hand_reopen_to_the_app(app: &AppHandle, event: &tauri::RunEvent) {
+    if let tauri::RunEvent::Reopen { .. } = event {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
+        open_main_app();
+    }
+}
+
+fn read_job(path: &Path) -> Option<Job> {
     std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok())
 }
 
@@ -263,11 +289,7 @@ mod tests {
             assert!(status.starts_with("error: "), "{status}");
             assert!(std::fs::read_to_string(&f.log).unwrap().starts_with("✗ "));
             // Only this user reads the log, and the folder of jobs and logs.
-            #[cfg(unix)]
-            {
-                assert_eq!(crate::platform::private_fs::tests::mode(&f.log), 0o600);
-                assert_eq!(crate::platform::private_fs::tests::mode(f.log.parent().unwrap()), 0o700);
-            }
+            crate::platform::private_fs::tests::assert_private_with_folder(&f.log);
         }
     }
 

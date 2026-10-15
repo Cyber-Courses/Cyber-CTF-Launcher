@@ -1,6 +1,8 @@
 //! Property tests for the worker's pidfile and `pgrep`'s output: any text reads without a panic,
 //! and what the app writes reads back the same.
 
+use std::fmt::Write as _;
+
 use proptest::prelude::*;
 
 use super::*;
@@ -32,9 +34,12 @@ proptest! {
 
     #[test]
     fn pgrep_ids_read_back(ids in proptest::collection::vec(any::<u32>(), 0..8), noise in proptest::collection::vec("[a-z -]{1,8}", 0..3)) {
-        let mut out: String = ids.iter().map(|p| format!("{p}\n")).collect();
+        let mut out = String::new();
+        for p in &ids {
+            let _ = writeln!(out, "{p}");
+        }
         for n in &noise {
-            out.push_str(&format!("{n}\n"));
+            let _ = writeln!(out, "{n}");
         }
         prop_assert_eq!(pids(&out), ids);
     }

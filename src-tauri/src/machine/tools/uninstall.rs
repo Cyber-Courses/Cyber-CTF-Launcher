@@ -30,7 +30,7 @@ pub struct InstalledTool {
 const PENDING_FOR_SECS: u64 = 24 * 3600;
 
 fn now_secs() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 /// What an install leaves on record, from whether the tool was there before and after it.
@@ -221,7 +221,9 @@ fn virtualbox_uninstall(dmg: &str) -> String {
 #[cfg(any(target_os = "macos", test))]
 fn virtualbox_dmg_from(out: &str) -> Result<String> {
     let path = out.trim();
-    if path.is_empty() || !path.ends_with(".dmg") || path.contains(['\'', '"', '\n']) {
+    // Homebrew names it `….dmg`, in lower case: anything else isn't its installer image.
+    let is_dmg = std::path::Path::new(path).extension().is_some_and(|e| e == "dmg");
+    if path.is_empty() || !is_dmg || path.contains(['\'', '"', '\n']) {
         return Err(Error::Invalid("Homebrew didn't say where VirtualBox's installer image is, so its uninstaller can't be run.".into()));
     }
     Ok(path.to_string())
@@ -274,19 +276,11 @@ fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>
 /// How to remove `dep` on Windows: its winget package.
 #[cfg(target_os = "windows")]
 fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
-    let id = match dep {
-        Dependency::Docker => "Docker.DockerDesktop",
-        Dependency::Vagrant => "Hashicorp.Vagrant",
-        Dependency::Terraform => "Hashicorp.Terraform",
-        Dependency::Virtualbox => "Oracle.VirtualBox",
-        Dependency::Qemu => "SoftwareFreedomConservancy.QEMU",
-        Dependency::Awscli => "Amazon.AWSCLI",
-        Dependency::Azurecli => "Microsoft.AzureCLI",
-        Dependency::Gcloud => "Google.CloudSDK",
-        Dependency::Wsl => return Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
-        Dependency::Utm | Dependency::Libvirt => return Err(Error::Invalid("Not installed on Windows.".into())),
-    };
-    Ok(vec![step("winget", &["uninstall", "-e", "--id", id])])
+    match (dep, super::install::winget_package(dep)) {
+        (_, Some(id)) => Ok(vec![step("winget", &["uninstall", "-e", "--id", id])]),
+        (Dependency::Wsl, None) => Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
+        (_, None) => Err(Error::Invalid("Not installed on Windows.".into())),
+    }
 }
 
 /// How to remove `dep` on Linux: its apt packages (as root through pkexec), or its folder.
@@ -469,17 +463,7 @@ mod tests {
         if crate::platform::brew_bin().is_none() {
             return; // CI without Homebrew: the brew-based plans can't be built.
         }
-        for dep in [
-            Dependency::Docker,
-            Dependency::Vagrant,
-            Dependency::Terraform,
-            Dependency::Virtualbox,
-            Dependency::Qemu,
-            Dependency::Utm,
-            Dependency::Awscli,
-            Dependency::Azurecli,
-            Dependency::Gcloud,
-        ] {
+        for dep in Dependency::ALL.into_iter().filter(|d| !matches!(d, Dependency::Wsl | Dependency::Libvirt)) {
             assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");
         }
         assert!(plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err() && plan(Dependency::Libvirt, Some("/x/VirtualBox.dmg")).is_err());
@@ -488,17 +472,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn every_linux_tool_has_a_way_out() {
-        for dep in [
-            Dependency::Docker,
-            Dependency::Vagrant,
-            Dependency::Terraform,
-            Dependency::Virtualbox,
-            Dependency::Qemu,
-            Dependency::Libvirt,
-            Dependency::Awscli,
-            Dependency::Azurecli,
-            Dependency::Gcloud,
-        ] {
+        for dep in Dependency::ALL.into_iter().filter(|d| !matches!(d, Dependency::Wsl | Dependency::Utm)) {
             assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");
         }
         assert!(plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err() && plan(Dependency::Utm, Some("/x/VirtualBox.dmg")).is_err());

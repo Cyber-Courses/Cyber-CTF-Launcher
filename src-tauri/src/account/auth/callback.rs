@@ -7,8 +7,8 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::app::config;
 use crate::error::{Error, Result};
+use crate::platform::config;
 
 /// The first free loopback port registered on the OAuth client.
 pub(super) async fn bind_loopback() -> Result<(TcpListener, u16)> {

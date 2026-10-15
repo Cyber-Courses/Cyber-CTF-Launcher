@@ -76,12 +76,12 @@ fn disk_holding(mounts: &[(&Path, (u64, u64))], path: &Path) -> Option<(u64, u64
 }
 
 async fn running_containers() -> u32 {
-    run_read("docker", &["ps", "--format", "{{.ID}}"], None).await.ok().map(|o| count_ids(&o)).unwrap_or(0)
+    run_read("docker", &["ps", "--format", "{{.ID}}"], None).await.ok().map_or(0, |o| count_ids(&o))
 }
 
 /// The container ids in `docker ps` output, one per non-empty line.
 fn count_ids(out: &str) -> u32 {
-    out.lines().filter(|l| !l.trim().is_empty()).count() as u32
+    u32::try_from(out.lines().filter(|l| !l.trim().is_empty()).count()).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]

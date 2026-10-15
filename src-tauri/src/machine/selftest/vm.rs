@@ -1,5 +1,6 @@
 //! The VM self-test: a real throwaway VM on a local hypervisor.
 
+use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Duration;
 
@@ -97,7 +98,7 @@ fn vagrantfile(p: Provider, bx: &str, no_kvm: bool, ip: Option<&str>) -> String 
         "Vagrant.configure(\"2\") do |config|\n  config.vm.box = \"{bx}\"\n  config.vm.hostname = \"cyberctf-selftest\"\n  config.vm.boot_timeout = 600\n  config.vm.synced_folder \".\", \"/vagrant\", disabled: true\n"
     );
     if let Some(ip) = ip.filter(|_| has_private_network(p)) {
-        v.push_str(&format!("  config.vm.network \"private_network\", ip: \"{ip}\"\n"));
+        let _ = writeln!(v, "  config.vm.network \"private_network\", ip: \"{ip}\"");
     }
     // With several virtual switches and none named, Vagrant would stop to ask which one.
     if p == Provider::Hyperv {
@@ -105,9 +106,8 @@ fn vagrantfile(p: Provider, bx: &str, no_kvm: bool, ip: Option<&str>) -> String 
     }
     // A readable name in the hypervisor's VM list instead of Vagrant's `<dir>_default_<timestamp>`.
     let settings = match p {
-        Provider::Virtualbox => format!("    h.name = \"{VM_NAME}\"\n    h.memory = 512\n"),
+        Provider::Virtualbox | Provider::Parallels => format!("    h.name = \"{VM_NAME}\"\n    h.memory = 512\n"),
         Provider::VmwareDesktop => format!("    h.vmx[\"displayName\"] = \"{VM_NAME}\"\n    h.memory = 512\n"),
-        Provider::Parallels => format!("    h.name = \"{VM_NAME}\"\n    h.memory = 512\n"),
         Provider::Libvirt => "    h.default_prefix = \"cyberctf-\"\n    h.memory = 512\n".to_string(),
         Provider::Hyperv => format!("    h.vmname = \"{VM_NAME}\"\n"),
         Provider::Utm => format!("    h.name = \"{VM_NAME}\"\n"),
@@ -117,7 +117,7 @@ fn vagrantfile(p: Provider, bx: &str, no_kvm: bool, ip: Option<&str>) -> String 
         _ => String::new(),
     };
     if !settings.is_empty() {
-        v.push_str(&format!("  config.vm.provider \"{}\" do |h|\n{settings}  end\n", p.id()));
+        let _ = writeln!(v, "  config.vm.provider \"{}\" do |h|\n{settings}  end", p.id());
     }
     v.push_str("end\n");
     v
@@ -181,7 +181,7 @@ async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<
     let arm = arm();
     let (bx, _) = pick_box(provider, arm).await;
     r.step("box", "Get a small test VM image", async {
-        let had = ensure_box(dir, provider, bx, arm, |l| r.progress("box", "Get a small test VM image", l)).await?;
+        let had = ensure_box(dir, provider, bx, arm, |l| r.progress("box", "Get a small test VM image", &l)).await?;
         Ok(((), Some(if had { format!("{bx} (ready)") } else { bx.to_string() })))
     })
     .await?;
@@ -232,7 +232,7 @@ async fn boot_and_exec(dir: &Path, provider: Provider, bx: &str, ip: Option<&'st
         let vagrant = Vagrant::new(dir, &[], provider == Provider::Hyperv);
         let batch = vagrant.batch(&steps, |e| {
             if let Event::Line(0, l) = e {
-                r.progress("boot", "Boot the test VM", l)
+                r.progress("boot", "Boot the test VM", &l);
             }
         });
         let mut outcomes = within("vagrant up / vagrant ssh", BOOT_LIMIT, batch).await?;
@@ -269,7 +269,7 @@ async fn network(provider: Provider, ip: Option<&'static str>, r: &Reporter) -> 
             .await?;
         }
         None if has_private_network(provider) => {
-            r.send("network", "VM reachable on a lab network", "skip", Some(format!("every test address ({}…) is taken on this machine", VM_IPS[0])))
+            r.send("network", "VM reachable on a lab network", "skip", Some(format!("every test address ({}…) is taken on this machine", VM_IPS[0])));
         }
         None => r.send("network", "VM reachable on a lab network", "skip", Some(format!("{} has no private networks", provider.id()))),
     }

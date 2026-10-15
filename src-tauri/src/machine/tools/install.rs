@@ -30,6 +30,24 @@ pub enum Dependency {
     Wsl,
 }
 
+#[cfg(test)]
+impl Dependency {
+    /// Every tool the app installs.
+    pub(super) const ALL: [Dependency; 11] = [
+        Dependency::Docker,
+        Dependency::Vagrant,
+        Dependency::Terraform,
+        Dependency::Virtualbox,
+        Dependency::Qemu,
+        Dependency::Utm,
+        Dependency::Libvirt,
+        Dependency::Awscli,
+        Dependency::Azurecli,
+        Dependency::Gcloud,
+        Dependency::Wsl,
+    ];
+}
+
 /// The install steps on macOS: Homebrew formulae, or a cask whose installer the user finishes.
 #[cfg(target_os = "macos")]
 fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
@@ -74,39 +92,45 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
     })
 }
 
-/// The install step on Windows: a winget package, or WSL's own elevated installer.
+/// The winget package of `dep`, when winget installs it on Windows.
 #[cfg(target_os = "windows")]
-fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
-    let id = match dep {
+pub(super) fn winget_package(dep: Dependency) -> Option<&'static str> {
+    Some(match dep {
         Dependency::Docker => "Docker.DockerDesktop",
         Dependency::Vagrant => "Hashicorp.Vagrant",
         Dependency::Terraform => "Hashicorp.Terraform",
-        Dependency::Virtualbox if std::env::consts::ARCH == "aarch64" => {
-            return Err(Error::Invalid("VirtualBox doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.".into()));
-        }
         Dependency::Virtualbox => "Oracle.VirtualBox",
         Dependency::Qemu => "SoftwareFreedomConservancy.QEMU",
-        Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
-        Dependency::Libvirt => return Err(Error::Invalid("libvirt is Linux-only; on Windows use Hyper-V or WSL.".into())),
         Dependency::Awscli => "Amazon.AWSCLI",
         Dependency::Azurecli => "Microsoft.AzureCLI",
         Dependency::Gcloud => "Google.CloudSDK",
+        Dependency::Utm | Dependency::Libvirt | Dependency::Wsl => return None,
+    })
+}
+
+/// The install step on Windows: a winget package, or WSL's own elevated installer.
+#[cfg(target_os = "windows")]
+fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
+    if dep == Dependency::Virtualbox && std::env::consts::ARCH == "aarch64" {
+        return Err(Error::Invalid("VirtualBox doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.".into()));
+    }
+    match (dep, winget_package(dep)) {
+        (_, Some(id)) => Ok(vec![step("winget", &["install", "-e", "--id", id, "--accept-source-agreements", "--accept-package-agreements"])]),
         // Turns on the WSL and Virtual Machine Platform features and installs the WSL 2 kernel.
         // Elevated through Windows' own UAC prompt; the features need a restart to take effect.
-        Dependency::Wsl => {
-            // `-PassThru` surfaces wsl.exe's own exit code (without it PowerShell exits 0
-            // whatever happened); a declined UAC prompt throws, reported as ERROR_CANCELLED.
-            return Ok(vec![step(
-                "powershell",
-                &[
-                    "-NoProfile",
-                    "-Command",
-                    "try { $p = Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait -PassThru; exit $p.ExitCode } catch { exit 1223 }",
-                ],
-            )]);
-        }
-    };
-    Ok(vec![step("winget", &["install", "-e", "--id", id, "--accept-source-agreements", "--accept-package-agreements"])])
+        // `-PassThru` surfaces wsl.exe's own exit code (without it PowerShell exits 0 whatever
+        // happened); a declined UAC prompt throws, reported as ERROR_CANCELLED.
+        (Dependency::Wsl, None) => Ok(vec![step(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-Command",
+                "try { $p = Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait -PassThru; exit $p.ExitCode } catch { exit 1223 }",
+            ],
+        )]),
+        (Dependency::Utm, None) => Err(Error::Invalid("UTM is only available on macOS.".into())),
+        (_, None) => Err(Error::Invalid("libvirt is Linux-only; on Windows use Hyper-V or WSL.".into())),
+    }
 }
 
 /// The install steps on Linux: apt and the vendors' installers, as root through pkexec.
@@ -197,20 +221,6 @@ pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(Stri
 mod tests {
     use super::*;
 
-    const ALL: [Dependency; 11] = [
-        Dependency::Docker,
-        Dependency::Vagrant,
-        Dependency::Terraform,
-        Dependency::Virtualbox,
-        Dependency::Qemu,
-        Dependency::Utm,
-        Dependency::Libvirt,
-        Dependency::Awscli,
-        Dependency::Azurecli,
-        Dependency::Gcloud,
-        Dependency::Wsl,
-    ];
-
     #[test]
     fn only_vagrant_plugin_names_are_installed() {
         assert!(valid_plugin("vagrant-vmware-esxi") && valid_plugin("vagrant_proxmox"));
@@ -221,7 +231,7 @@ mod tests {
     /// The plan for every dependency on this OS: the ones that install here have steps, the
     /// others say why not.
     fn plans() -> Vec<(Dependency, Result<Vec<Step>>)> {
-        ALL.into_iter().map(|d| (d, plan(d))).collect()
+        Dependency::ALL.into_iter().map(|d| (d, plan(d))).collect()
     }
 
     #[cfg(target_os = "macos")]

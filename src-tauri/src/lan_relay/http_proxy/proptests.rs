@@ -55,7 +55,7 @@ proptest! {
         for (got, want) in lines[1..].iter().zip(kept) {
             prop_assert_eq!(*got, want.as_str());
         }
-        let last_len = headers.iter().rev().find_map(|h| h.strip_prefix("Content-Length: ")).map(|v| v.parse::<usize>().unwrap()).unwrap_or(0);
+        let last_len = headers.iter().rev().find_map(|h| h.strip_prefix("Content-Length: ")).map_or(0, |v| v.parse::<usize>().unwrap());
         prop_assert_eq!(len, last_len);
     }
 

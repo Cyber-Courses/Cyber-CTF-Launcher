@@ -7,3 +7,5 @@ cognitive-complexity-threshold = 15
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
+# Product and protocol names are prose, not code: `doc_markdown` must not ask for backticks on them.
+doc-valid-idents = ["AppleScript", "CyberBackend", "CyberCTF", "ESXi", "HashiCorp", "KWallet", "OrbStack", "VirtualBox", "VMware", "WinRM", ".."]

@@ -1,5 +1,5 @@
 //! The Store (MSIX) build used to run with file-system write virtualization on, so what it wrote
-//! under AppData went to the package's private copy (`Packages\<family>\LocalCache\...`), where
+//! under `AppData` went to the package's private copy (`Packages\<family>\LocalCache\...`), where
 //! docker, vagrant, terraform and ssh can't see it. Virtualization is now off (packaging/msix/AppxManifest.xml);
 //! this brings the files saved before over to the real folders, once, never overwriting one.
 
@@ -20,7 +20,7 @@ pub(crate) fn migrate_once(src: &Path, dst: &Path) {
         return;
     }
     if merge_missing(src, dst) {
-        let _ = std::fs::create_dir_all(dst).and_then(|_| std::fs::write(&marker, b""));
+        let _ = std::fs::create_dir_all(dst).and_then(|()| std::fs::write(&marker, b""));
     }
 }
 

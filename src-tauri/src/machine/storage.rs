@@ -111,7 +111,7 @@ fn dir_size(path: &Path) -> u64 {
     if !meta.is_dir() {
         return 0;
     }
-    std::fs::read_dir(path).map(|it| it.flatten().map(|e| dir_size(&e.path())).sum()).unwrap_or(0)
+    std::fs::read_dir(path).map_or(0, |it| it.flatten().map(|e| dir_size(&e.path())).sum())
 }
 
 /// The boxes a lab's Vagrantfiles name: its generated ones (one VM per machine, or Docker in one
@@ -386,14 +386,14 @@ mod tests {
                     ok("")
                 }
                 ["image", "ls", "-q", "--no-trunc"] => {
-                    ok(images.iter().filter(|(n, _, _)| up || !pulled.contains(n)).map(|(_, id, _)| format!("{id}\n")).collect::<String>())
+                    ok(images.iter().filter(|(n, _, _)| up || !pulled.contains(n)).flat_map(|(_, id, _)| [*id, "\n"]).collect::<String>())
                 }
                 ["image", "inspect", "--format", format, reference] => match here(reference, up) {
                     Some((_, id, size)) if format.contains("Size") => ok(format!("{id}\t{size}\n")),
                     Some((_, id, _)) => ok(format!("{id}\n")),
                     None => fail("No such image"),
                 },
-                [.., "config", "--images"] => ok(images.iter().map(|(n, _, _)| format!("{n}\n")).collect::<String>()),
+                [.., "config", "--images"] => ok(images.iter().flat_map(|(n, _, _)| [*n, "\n"]).collect::<String>()),
                 ["box", "list"] => ok(boxes),
                 _ => ok(""),
             }
@@ -518,7 +518,7 @@ mod tests {
     /// operation used it too; the one the app pulled goes. Opt-in (needs Docker):
     /// `cargo test real_docker -- --ignored`.
     #[tokio::test]
-    #[ignore]
+    #[ignore = "needs Docker"]
     async fn real_docker_clean_up_keeps_the_players_image() {
         let (mine, apps) = ("cyberctf-e2e-player:1", "cyberctf-e2e-app:1");
         let store = std::env::temp_dir().join(format!("cyberctf-e2e-store-{}", rand::random::<u32>())).join("storage.json");
@@ -551,7 +551,7 @@ mod tests {
 
     #[test]
     fn a_missing_vagrantfile_names_no_boxes() {
-        assert!(vagrantfile_boxes(Path::new("/definitely/not/here/Vagrantfile")).is_empty());
+        assert_eq!(vagrantfile_boxes(Path::new("/definitely/not/here/Vagrantfile")), [] as [&str; 0]);
         assert_eq!(box_assignment("config.vm.box = \"unterminated"), None);
         assert_eq!(box_assignment("no box here"), None);
     }

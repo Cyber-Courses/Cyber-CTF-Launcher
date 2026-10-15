@@ -7,6 +7,7 @@
 //! don't see each other's.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::error::{Error, Result};
 
@@ -17,12 +18,22 @@ pub enum Reply {
     Fail(String),
 }
 
+/// A script's answer for a tool that printed `stdout`.
+#[allow(clippy::unnecessary_wraps, reason = "a script answers an Option, None being a missing tool")]
 pub fn ok(stdout: impl Into<String>) -> Option<Reply> {
     Some(Reply::Out(stdout.into()))
 }
 
+/// A script's answer for a tool that failed, printing `stderr`.
+#[allow(clippy::unnecessary_wraps, reason = "a script answers an Option, None being a missing tool")]
 pub fn fail(stderr: impl Into<String>) -> Option<Reply> {
     Some(Reply::Fail(stderr.into()))
+}
+
+/// What a scripted call got: the script's reply, or nothing (the tool is missing).
+enum Scripted {
+    Reply(Reply),
+    Missing,
 }
 
 type Script = Box<dyn FnMut(&str, &[&str]) -> Option<Reply>>;
@@ -35,17 +46,18 @@ struct State {
 }
 
 thread_local! {
-    static STATE: RefCell<Option<State>> = const { RefCell::new(None) };
+    static STATE: RefCell<Option<Rc<RefCell<State>>>> = const { RefCell::new(None) };
 }
 
 /// The scripted tools of the running test, until dropped. A call the script doesn't answer
 /// (`None`) is a missing tool.
-pub struct Tools;
+pub struct Tools(Rc<RefCell<State>>);
 
 impl Tools {
     pub fn new(script: impl FnMut(&str, &[&str]) -> Option<Reply> + 'static) -> Tools {
-        STATE.with(|s| *s.borrow_mut() = Some(State { script: Box::new(script), calls: Vec::new(), envs: Vec::new() }));
-        Tools
+        let state = Rc::new(RefCell::new(State { script: Box::new(script), calls: Vec::new(), envs: Vec::new() }));
+        STATE.with(|s| *s.borrow_mut() = Some(state.clone()));
+        Tools(state)
     }
 
     /// Tools answering by rule: the first rule whose text the call (`program arg arg…`) contains
@@ -63,7 +75,7 @@ impl Tools {
 
     /// Every call so far, as `program arg arg…`.
     pub fn calls(&self) -> Vec<String> {
-        STATE.with(|s| s.borrow().as_ref().map(|st| st.calls.clone()).unwrap_or_default())
+        self.0.borrow().calls.clone()
     }
 
     /// Whether a call containing `text` was made.
@@ -73,12 +85,9 @@ impl Tools {
 
     /// The value of `name` in the environment of the last call containing `text`.
     pub fn env_of(&self, text: &str, name: &str) -> Option<String> {
-        STATE.with(|s| {
-            let guard = s.borrow();
-            let st = guard.as_ref()?;
-            let at = st.calls.iter().rposition(|c| c.contains(text))?;
-            st.envs[at].iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.clone())
-        })
+        let st = self.0.borrow();
+        let at = st.calls.iter().rposition(|c| c.contains(text))?;
+        st.envs[at].iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.clone())
     }
 }
 
@@ -97,48 +106,56 @@ pub fn scripted() -> bool {
 /// The scripted answer to `program args`, when a test scripts the tools on this thread.
 pub(super) fn answer(program: &'static str, args: &[&str], env: &[(String, String)]) -> Option<Result<String>> {
     Some(match reply(program, args, env)? {
-        Some(Reply::Out(out)) => Ok(out),
-        Some(Reply::Fail(stderr)) => Err(super::failed(program, args, stderr)),
-        None => Err(Error::ToolMissing { tool: program }),
+        Scripted::Reply(Reply::Out(out)) => Ok(out),
+        Scripted::Reply(Reply::Fail(stderr)) => Err(super::failed(program, args, stderr)),
+        Scripted::Missing => Err(Error::ToolMissing { tool: program }),
     })
 }
 
 /// [`answer`] for a streamed tool: its output lines (stderr too, on a failure) go to `on_line`.
 pub(super) fn answer_stream(program: &'static str, args: &[&str], env: &[(String, String)], mut on_line: impl FnMut(String)) -> Option<Result<()>> {
-    let reply = reply(program, args, env)?;
-    if let Some(Reply::Out(text) | Reply::Fail(text)) = &reply {
-        text.lines().for_each(|l| on_line(l.to_string()));
-    }
-    Some(match reply {
-        Some(Reply::Out(_)) => Ok(()),
-        Some(Reply::Fail(stderr)) => Err(super::failed(program, args, stderr)),
-        None => Err(Error::ToolMissing { tool: program }),
-    })
+    let scripted = reply(program, args, env)?;
+    Some(scripted.streamed(&mut on_line, |stderr| super::failed(program, args, stderr), || Error::ToolMissing { tool: program }))
 }
 
 /// [`answer_stream`] for an install or removal step (`platform::steps`), whose program is any
 /// path: a missing tool and a failure say what `run_step` says for them.
 pub fn answer_step(program: &str, args: &[String], on_line: &mut impl FnMut(String)) -> Option<Result<()>> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let reply = reply(program, &args, &[])?;
-    if let Some(Reply::Out(text) | Reply::Fail(text)) = &reply {
-        text.lines().for_each(|l| on_line(l.to_string()));
-    }
-    Some(match reply {
-        Some(Reply::Out(_)) => Ok(()),
-        Some(Reply::Fail(_)) => Err(Error::Invalid(format!("`{program}` exited with exit status: 1"))),
-        None => Err(Error::Invalid(format!("{program} is not available on this machine."))),
-    })
+    let scripted = reply(program, &args, &[])?;
+    Some(scripted.streamed(
+        on_line,
+        |_| Error::Invalid(format!("`{program}` exited with exit status: 1")),
+        || Error::Invalid(format!("{program} is not available on this machine.")),
+    ))
 }
 
-fn reply(program: &str, args: &[&str], env: &[(String, String)]) -> Option<Option<Reply>> {
-    STATE.with(|s| {
-        let mut guard = s.borrow_mut();
-        let st = guard.as_mut()?;
-        st.calls.push(std::iter::once(program).chain(args.iter().copied()).collect::<Vec<_>>().join(" "));
-        st.envs.push(env.to_vec());
-        Some((st.script)(program, args))
-    })
+impl Scripted {
+    /// The scripted run as a stream: its output lines (stderr too, on a failure) go to
+    /// `on_line`, then its end; a failure as `failed` says it, a missing tool as `missing` does.
+    fn streamed(self, on_line: &mut impl FnMut(String), failed: impl FnOnce(String) -> Error, missing: impl FnOnce() -> Error) -> Result<()> {
+        match self {
+            Scripted::Reply(Reply::Out(text)) => {
+                text.lines().for_each(|l| on_line(l.to_string()));
+                Ok(())
+            }
+            Scripted::Reply(Reply::Fail(text)) => {
+                text.lines().for_each(|l| on_line(l.to_string()));
+                Err(failed(text))
+            }
+            Scripted::Missing => Err(missing()),
+        }
+    }
+}
+
+/// The script's answer to `program args`, recorded with its environment; None when no test
+/// scripts the tools on this thread.
+fn reply(program: &str, args: &[&str], env: &[(String, String)]) -> Option<Scripted> {
+    let state = STATE.with(|s| s.borrow().clone())?;
+    let mut st = state.borrow_mut();
+    st.calls.push(std::iter::once(program).chain(args.iter().copied()).collect::<Vec<_>>().join(" "));
+    st.envs.push(env.to_vec());
+    Some((st.script)(program, args).map_or(Scripted::Missing, Scripted::Reply))
 }
 
 /// Whether process `pid` is gone (or a zombie) within a few seconds.

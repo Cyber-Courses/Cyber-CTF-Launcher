@@ -7,7 +7,6 @@
 //! read the response, and answer the nonce once: the token is spent by the first answer, and the
 //! server ends then, when the lab stops, or after [`PROBE_TTL`], whichever comes first.
 
-use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -171,13 +170,10 @@ const PROBE_TTL: Duration = Duration::from_secs(if cfg!(test) { 2 } else { 10 * 
 async fn accept_until_spent(listener: TcpListener, probe: Arc<Probe>, ttl: Duration) {
     let accepting = async {
         loop {
-            let (mut socket, _addr): (_, SocketAddr) = match listener.accept().await {
-                Ok(pair) => pair,
+            let Ok((mut socket, _)) = listener.accept().await else {
                 // A persistent accept error (e.g. fd exhaustion) must not become a hot spin loop.
-                Err(_) => {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                    continue;
-                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
             };
             let probe = probe.clone();
             tokio::spawn(async move { answer(&mut socket, &probe).await });
@@ -340,7 +336,7 @@ mod tests {
         // Nothing sent: the server closes on its own, without an answer.
         let read = tokio::time::timeout(super::IO_TIMEOUT * 5, s.read_to_end(&mut out)).await;
         assert!(read.is_ok(), "still open after the timeout");
-        assert!(out.is_empty());
+        assert_eq!(out, b"");
         served.await.unwrap();
     }
 
@@ -436,6 +432,6 @@ mod tests {
         tokio::time::timeout(std::time::Duration::from_secs(5), super::accept_until_spent(listener, probe, std::time::Duration::from_millis(50)))
             .await
             .expect("the server outlived its time");
-        assert!(health(port, "tok").await.is_empty());
+        assert_eq!(health(port, "tok").await, "");
     }
 }

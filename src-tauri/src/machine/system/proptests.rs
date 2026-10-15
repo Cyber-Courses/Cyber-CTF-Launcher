@@ -22,7 +22,7 @@ proptest! {
 
     #[test]
     fn a_banner_of_blank_lines_is_skipped(blank in proptest::collection::vec("[ \t\r]{0,3}", 0..4), version in "[!-~][ -~]{0,20}[!-~]|[!-~]", rest in "(?s).{0,40}") {
-        let out = format!("{}{version}\n{rest}", blank.iter().map(|b| format!("{b}\n")).collect::<String>());
+        let out = format!("{}{version}\n{rest}", blank.iter().flat_map(|b| [b.as_str(), "\n"]).collect::<String>());
         prop_assert_eq!(first_line(&out), Some(version));
     }
 

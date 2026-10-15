@@ -12,16 +12,16 @@ use crate::platform::exec::{run_cli, stream};
 
 /// Civil (year, month, day) for a Unix timestamp, UTC (Howard Hinnant's algorithm). Used to
 /// build Cost Explorer date ranges without a date-crate dependency.
-fn ymd_from_secs(secs: i64) -> (i64, u32, u32) {
-    let z = secs.div_euclid(86400) + 719468;
-    let era = z.div_euclid(146097);
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+fn ymd_from_secs(secs: i64) -> (i64, i64, i64) {
+    let z = secs.div_euclid(86_400) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
     let y = yoe + era * 400;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
 }
@@ -105,7 +105,7 @@ fn with_profile<'a>(mut args: Vec<&'a str>, profile: Option<&'a str>) -> Vec<&'a
 }
 
 /// A CLI's one-line answer, trimmed; None when blank.
-fn non_empty(out: String) -> Option<String> {
+fn non_empty(out: &str) -> Option<String> {
     Some(out.trim().to_string()).filter(|s| !s.is_empty())
 }
 
@@ -114,13 +114,13 @@ fn non_empty(out: String) -> Option<String> {
 /// pasting keys. None when the CLI is missing or that profile has no usable credentials.
 pub async fn aws_cli_identity(profile: Option<String>) -> Option<String> {
     let args = with_profile(vec!["sts", "get-caller-identity", "--query", "Arn", "--output", "text"], profile.as_deref());
-    run_cli("aws", &args).await.ok().and_then(non_empty)
+    run_cli("aws", &args).await.ok().as_deref().and_then(non_empty)
 }
 
 /// The Cost Explorer time period for this month so far: Start = the 1st, End = tomorrow
 /// (End is exclusive, so tomorrow includes today's spend).
 pub(crate) fn month_period() -> String {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok().and_then(|d| i64::try_from(d.as_secs()).ok()).unwrap_or(0);
     let (y, m, _) = ymd_from_secs(now);
     let (ey, em, ed) = ymd_from_secs(now + 86400);
     format!("Start={y:04}-{m:02}-01,End={ey:04}-{em:02}-{ed:02}")
@@ -195,13 +195,13 @@ pub struct OciConfig {
     pub region: String,
 }
 
-/// Reads the OCI config (OCI_CLI_CONFIG_FILE, else ~/.oci/config) DEFAULT profile, so the setup
+/// Reads the OCI config (`OCI_CLI_CONFIG_FILE`, else ~/.oci/config) DEFAULT profile, so the setup
 /// can show whether it's configured and prefill the tenancy (as the compartment) and region.
 pub fn oci_config() -> OciConfig {
     read_oci_config(oci_config_path().as_deref())
 }
 
-/// OCI_CLI_CONFIG_FILE, else ~/.oci/config.
+/// `OCI_CLI_CONFIG_FILE`, else ~/.oci/config.
 fn oci_config_path() -> Option<std::path::PathBuf> {
     std::env::var_os("OCI_CLI_CONFIG_FILE")
         .map(std::path::PathBuf::from)
@@ -245,7 +245,7 @@ fn parse_oci_config(text: &str) -> OciConfig {
 /// `auth list` while every call fails: it counts as signed out, so the UI offers to sign in
 /// again instead of showing an empty billing list.
 pub async fn gcp_account() -> Option<String> {
-    let email = run_cli("gcloud", &["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"]).await.ok().and_then(non_empty)?;
+    let email = run_cli("gcloud", &["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"]).await.ok().as_deref().and_then(non_empty)?;
     run_cli("gcloud", &["auth", "print-access-token", "--quiet"]).await.ok()?;
     Some(email)
 }
@@ -349,7 +349,7 @@ mod tests {
             _ => fail("expired"),
         });
         assert_eq!(aws_cli_identity(None).await, None);
-        assert!(aws_profiles().await.is_empty());
+        assert_eq!(aws_profiles().await, [] as [&str; 0]);
         assert_eq!(aws_month_to_date_cost(None).await, None);
         assert!(azure_subscriptions().await.is_empty());
         assert_eq!(gcp_account().await, None, "an expired sign-in counts as signed out");
@@ -405,10 +405,10 @@ mod tests {
 
     #[test]
     fn cli_answers_are_trimmed_lines() {
-        assert_eq!(non_empty(" arn:aws:iam::1:user/a \n".into()).as_deref(), Some("arn:aws:iam::1:user/a"));
-        assert_eq!(non_empty("  \n".into()), None);
+        assert_eq!(non_empty(" arn:aws:iam::1:user/a \n").as_deref(), Some("arn:aws:iam::1:user/a"));
+        assert_eq!(non_empty("  \n"), None);
         assert_eq!(lines("default\n  work \n\n"), ["default", "work"]);
-        assert!(lines("").is_empty());
+        assert_eq!(lines(""), [] as [&str; 0]);
     }
 
     #[test]

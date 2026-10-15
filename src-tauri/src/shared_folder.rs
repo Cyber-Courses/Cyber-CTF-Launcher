@@ -92,8 +92,8 @@ fn info(s: SharedFolder) -> SharedFolderInfo {
 }
 
 /// Turns sharing on or off and sets the folder (created now, so a wrong path shows at once).
-pub fn shared_folder_set(enabled: bool, path: String) -> Result<SharedFolderInfo> {
-    save_to(FILE.get().map(PathBuf::as_path), enabled, &path)?;
+pub fn shared_folder_set(enabled: bool, path: &str) -> Result<SharedFolderInfo> {
+    save_to(FILE.get().map(PathBuf::as_path), enabled, path)?;
     Ok(shared_folder_get())
 }
 
@@ -203,14 +203,14 @@ mod tests {
         let file = root.join("shared-folder.json");
         assert!(FILE.set(file.clone()).is_ok(), "only this test points the setting at a file");
         let folder = root.join("loot");
-        let shown = shared_folder_set(false, folder.display().to_string()).unwrap();
+        let shown = shared_folder_set(false, &folder.display().to_string()).unwrap();
         assert!(!shown.enabled);
         assert_eq!((shown.path.as_str(), shown.mount_point), (folder.display().to_string().as_str(), MOUNT_POINT));
         assert_eq!(shared_folder_get().path, folder.display().to_string());
         assert!(file.is_file() && !folder.exists(), "off: the folder isn't created");
         assert_eq!(shared_folder_open().unwrap_err().to_string(), "folder sharing is off");
         // A path that can't be shared is refused and the setting kept.
-        assert_eq!(shared_folder_set(true, "relative/dir".into()).err().unwrap().to_string(), "choose a full folder path");
+        assert_eq!(shared_folder_set(true, "relative/dir").err().unwrap().to_string(), "choose a full folder path");
         assert_eq!(shared_folder_get().path, folder.display().to_string());
         assert!(current().is_none());
         std::fs::remove_dir_all(root).unwrap();

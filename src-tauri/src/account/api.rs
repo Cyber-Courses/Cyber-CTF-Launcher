@@ -5,8 +5,8 @@ use serde_json::{Value, json};
 
 use crate::account::api_operation::ApiOperation;
 use crate::account::auth;
-use crate::app::config;
 use crate::error::{Error, Result};
+use crate::platform::config;
 
 /// Runs a GraphQL operation as the logged-in player (anonymous if logged out
 /// and `require_login` is false). Returns `data`, or the first error message.

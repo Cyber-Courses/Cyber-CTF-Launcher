@@ -174,10 +174,9 @@ pub fn parse_cim(out: &str) -> (Option<Feature>, Option<Feature>, Option<bool>) 
         }
         let prefix = format!("feature:{name}=");
         match lines.iter().find_map(|l| l.strip_prefix(prefix.as_str())) {
-            None => Some(Feature::Absent),
+            None | Some("3") => Some(Feature::Absent),
             Some("1") => Some(Feature::Enabled),
             Some("2") => Some(Feature::Disabled),
-            Some("3") => Some(Feature::Absent),
             Some(_) => None,
         }
     };
@@ -320,7 +319,7 @@ trait Reopen {
     fn unregister(&self);
 }
 
-/// `shutdown.exe` refusing because one is already scheduled (ERROR_SHUTDOWN_IS_SCHEDULED, 1190:
+/// `shutdown.exe` refusing because one is already scheduled (`ERROR_SHUTDOWN_IS_SCHEDULED`, 1190:
 /// its message ends with the code in every language).
 fn already_scheduled(e: &Error) -> bool {
     matches!(e, Error::CommandFailed { stderr, .. } if stderr.contains("1190"))
@@ -405,11 +404,8 @@ mod windows {
     use std::time::Duration;
 
     use base64::Engine;
-    use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_SUCCESS};
-    use windows_sys::Win32::System::Registry::{
-        HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, REG_SZ, RRF_RT_ANY, RegCloseKey, RegDeleteKeyValueW, RegGetValueW, RegOpenKeyExW,
-        RegSetKeyValueW,
-    };
+
+    use crate::platform::sys::{Hive, delete_user_registry_value, registry_key_exists, registry_value_exists, set_user_registry_string};
 
     use super::{Probes, outcome, parse_cim};
 
@@ -447,13 +443,13 @@ exit 0
         Probes {
             status: outcome(&status).0,
             version: outcome(&version).0,
-            lxss_service: key_exists(HKEY_LOCAL_MACHINE, &format!(r"{services}\LxssManager")),
-            wsl_service: key_exists(HKEY_LOCAL_MACHINE, &format!(r"{services}\WslService")),
+            lxss_service: registry_key_exists(Hive::LocalMachine, &format!(r"{services}\LxssManager")),
+            wsl_service: registry_key_exists(Hive::LocalMachine, &format!(r"{services}\WslService")),
             vm_platform,
             wsl_feature,
             hypervisor,
-            reboot_pending: key_exists(HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"),
-            renames_pending: value_exists(HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager", "PendingFileRenameOperations"),
+            reboot_pending: registry_key_exists(Hive::LocalMachine, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"),
+            renames_pending: registry_value_exists(Hive::LocalMachine, r"SYSTEM\CurrentControlSet\Control\Session Manager", "PendingFileRenameOperations"),
             installed_this_boot,
             restarted_for_wsl,
         }
@@ -464,40 +460,6 @@ exit 0
     fn encode(script: &str) -> String {
         let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
         base64::engine::general_purpose::STANDARD.encode(bytes)
-    }
-
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(Some(0)).collect()
-    }
-
-    /// Whether a registry key exists. A key this account may not read still exists.
-    pub fn key_exists(root: HKEY, path: &str) -> Option<bool> {
-        let path = wide(path);
-        let mut key: HKEY = std::ptr::null_mut();
-        // SAFETY: a NUL-terminated key name; `key` receives the handle, closed right after.
-        let status = unsafe { RegOpenKeyExW(root, path.as_ptr(), 0, KEY_READ, &mut key) };
-        match status {
-            ERROR_SUCCESS => {
-                // SAFETY: the handle RegOpenKeyExW just opened.
-                unsafe { RegCloseKey(key) };
-                Some(true)
-            }
-            ERROR_ACCESS_DENIED => Some(true),
-            ERROR_FILE_NOT_FOUND => Some(false),
-            _ => None,
-        }
-    }
-
-    /// Whether a registry value exists (its data isn't read).
-    pub fn value_exists(root: HKEY, path: &str, name: &str) -> Option<bool> {
-        let (path, name) = (wide(path), wide(name));
-        // SAFETY: NUL-terminated names; no type or data asked for (all three pointers null).
-        let status = unsafe { RegGetValueW(root, path.as_ptr(), name.as_ptr(), RRF_RT_ANY, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) };
-        match status {
-            ERROR_SUCCESS | ERROR_MORE_DATA => Some(true),
-            ERROR_FILE_NOT_FOUND => Some(false),
-            _ => None,
-        }
     }
 
     const RUN_ONCE: &str = r"Software\Microsoft\Windows\CurrentVersion\RunOnce";
@@ -522,22 +484,16 @@ exit 0
     }
 
     pub(super) fn set_run_once(name: &str, line: &str) -> bool {
-        let (key, name, data) = (wide(RUN_ONCE), wide(name), wide(line));
-        let Ok(bytes) = u32::try_from(data.len() * 2) else { return false };
-        // SAFETY: NUL-terminated names; `data` is a NUL-terminated REG_SZ of `bytes` bytes.
-        let status = unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr(), REG_SZ, data.as_ptr().cast(), bytes) };
-        status == ERROR_SUCCESS
+        set_user_registry_string(RUN_ONCE, name, line)
     }
 
     pub(super) fn delete_run_once(name: &str) {
-        let (key, name) = (wide(RUN_ONCE), wide(name));
-        // SAFETY: NUL-terminated names.
-        unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr()) };
+        delete_user_registry_value(RUN_ONCE, name);
     }
 
     #[cfg(test)]
     pub(super) fn run_once_exists(name: &str) -> Option<bool> {
-        value_exists(HKEY_CURRENT_USER, RUN_ONCE, name)
+        registry_value_exists(Hive::CurrentUser, RUN_ONCE, name)
     }
 }
 
@@ -958,7 +914,7 @@ mod tests {
         let tools = Tools::rules(&[]);
         let err = machine_restart(t.handle().clone(), String::new()).await.unwrap_err();
         assert_eq!(err.to_string(), "Restarting from Cyber CTF is only available on Windows.");
-        assert!(tools.calls().is_empty());
+        assert_eq!(tools.calls(), [] as [&str; 0]);
         assert!(report(t.handle()).await.is_none());
     }
 

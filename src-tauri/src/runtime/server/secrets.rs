@@ -7,7 +7,7 @@ use crate::error::{Code, Error, Result};
 
 #[cfg(not(debug_assertions))]
 fn entry(id: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new(crate::app::config::KEYCHAIN_SERVICE, &format!("server:{id}")).map_err(|e| Error::Invalid(format!("keychain: {e}")))
+    keyring::Entry::new(crate::platform::config::KEYCHAIN_SERVICE, &format!("server:{id}")).map_err(|e| Error::Invalid(format!("keychain: {e}")))
 }
 
 #[cfg(debug_assertions)]

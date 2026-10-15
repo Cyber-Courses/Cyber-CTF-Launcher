@@ -53,8 +53,8 @@ impl TestApp {
             std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(serde_json::json!({ "hosts": [] }));
         let mut host =
             serde_json::json!({ "id": id, "name": format!("Host {id}"), "provider": provider, "host": "eu-west-1", "port": 443, "username": "acct" });
-        if let (Some(h), Some(e)) = (host.as_object_mut(), extra.as_object()) {
-            h.extend(e.clone());
+        if let (Some(h), serde_json::Value::Object(e)) = (host.as_object_mut(), extra) {
+            h.extend(e);
         }
         store["hosts"].as_array_mut().unwrap().push(host);
         std::fs::write(path, store.to_string()).unwrap();

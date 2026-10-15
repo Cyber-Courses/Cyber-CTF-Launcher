@@ -8,7 +8,7 @@
 //! rereads. `refresh` merges it back in before each check, so a tool installed from the app is
 //! found without restarting it.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 /// Dirs added even before they exist: a tool installed there while the app runs (the gcloud
@@ -56,7 +56,7 @@ fn extra_dirs() -> Vec<PathBuf> {
 }
 
 /// The Windows tool folders, from the environment `var` reads. None of these installers adds
-/// itself to PATH: VirtualBox (VBoxManage drives its VMs) says where it went in
+/// itself to PATH: VirtualBox (`VBoxManage` drives its VMs) says where it went in
 /// `VBOX_MSI_INSTALL_PATH`, and VMware Workstation puts `vmrun` under the 32-bit Program Files.
 fn windows_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
@@ -88,8 +88,8 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 
 /// `current` with each of `dirs` appended that it doesn't hold yet; None when nothing was added.
 /// Existing entries keep their order, so they keep priority.
-fn appended(current: Option<OsString>, dirs: impl IntoIterator<Item = PathBuf>) -> Option<OsString> {
-    let mut paths: Vec<PathBuf> = current.as_deref().map(|p| std::env::split_paths(p).collect()).unwrap_or_default();
+fn appended(current: Option<&OsStr>, dirs: impl IntoIterator<Item = PathBuf>) -> Option<OsString> {
+    let mut paths: Vec<PathBuf> = current.map(|p| std::env::split_paths(p).collect()).unwrap_or_default();
     let before = paths.len();
     for dir in dirs {
         if !dir.as_os_str().is_empty() && !paths.iter().any(|p| same_dir(p, &dir)) {
@@ -103,7 +103,7 @@ fn appended(current: Option<OsString>, dirs: impl IntoIterator<Item = PathBuf>) 
 }
 
 /// `current` with every existing extra dir appended (no duplicates).
-fn augmented(current: Option<OsString>) -> Option<OsString> {
+fn augmented(current: Option<&OsStr>) -> Option<OsString> {
     appended(current, extra_dirs().into_iter().filter(|d| d.is_dir()).chain(future_dirs()))
 }
 
@@ -112,66 +112,36 @@ fn augmented(current: Option<OsString>) -> Option<OsString> {
 /// from the app keeps it too. Cheap (two registry reads): call before each machine check.
 #[cfg(windows)]
 pub fn refresh() {
-    let registry = [registry::machine_path(), registry::user_path()].into_iter().flatten();
+    let registry = [machine_path(), user_path()].into_iter().flatten();
     let dirs: Vec<PathBuf> = registry.flat_map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).chain(extra_dirs()).filter(|d| d.is_dir()).collect();
-    if let Some(path) = appended(std::env::var_os("PATH"), dirs) {
+    if let Some(path) = appended(std::env::var_os("PATH").as_deref(), dirs) {
         log::info!("PATH refreshed from the registry");
-        // SAFETY: on Windows `set_var` is sound from any thread (std documents it as "always
-        // safe to call on Windows"): the environment block is guarded by the OS and std's lock.
-        // The data race that makes it unsafe is libc's getenv, on Unix only.
-        unsafe { std::env::set_var("PATH", path) };
+        crate::platform::sys::set_path(&path);
     }
 }
 
 #[cfg(not(windows))]
 pub fn refresh() {}
 
+/// The machine's `Path` in the registry, expanded.
 #[cfg(windows)]
-mod registry {
-    use std::ffi::OsString;
-    use std::os::windows::ffi::OsStringExt;
-    use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, ERROR_SUCCESS};
-    use windows_sys::Win32::System::Registry::{HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW};
+fn machine_path() -> Option<OsString> {
+    use crate::platform::sys::{Hive, registry_string};
+    registry_string(Hive::LocalMachine, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment", "Path")
+}
 
-    pub fn machine_path() -> Option<OsString> {
-        read(HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")
-    }
-
-    pub fn user_path() -> Option<OsString> {
-        read(HKEY_CURRENT_USER, "Environment")
-    }
-
-    /// The `Path` value under `key`, its %VARIABLES% expanded (RegGetValueW expands a
-    /// REG_EXPAND_SZ when asked for RRF_RT_REG_SZ). None if absent or unreadable.
-    fn read(root: HKEY, key: &str) -> Option<OsString> {
-        let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
-        let (key, name) = (wide(key), wide("Path"));
-        let mut buf: Vec<u16> = vec![0; 4096];
-        // An expanded value can outgrow the size first reported: grow and retry a few times.
-        for _ in 0..4 {
-            let mut bytes = u32::try_from(buf.len() * 2).ok()?;
-            // SAFETY: valid NUL-terminated key/value names; `buf` holds `bytes` bytes.
-            let status = unsafe { RegGetValueW(root, key.as_ptr(), name.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr().cast(), &mut bytes) };
-            match status {
-                ERROR_SUCCESS => {
-                    let units = (bytes as usize / 2).min(buf.len());
-                    let len = buf[..units].iter().position(|&c| c == 0).unwrap_or(units);
-                    return Some(OsString::from_wide(&buf[..len]));
-                }
-                ERROR_MORE_DATA => buf.resize((bytes as usize / 2).max(buf.len() * 2) + 1, 0),
-                _ => return None,
-            }
-        }
-        None
-    }
+/// This user's `Path` in the registry, expanded.
+#[cfg(windows)]
+fn user_path() -> Option<OsString> {
+    use crate::platform::sys::{Hive, registry_string};
+    registry_string(Hive::CurrentUser, "Environment", "Path")
 }
 
 /// Call first thing in `run()`, before any thread is spawned.
 pub fn augment() {
-    if let Some(path) = augmented(std::env::var_os("PATH")) {
-        // SAFETY: called at the very start of `run()`, while the process is still
-        // single-threaded (before Tauri, tokio or any plugin starts a thread).
-        unsafe { std::env::set_var("PATH", path) };
+    if let Some(path) = augmented(std::env::var_os("PATH").as_deref()) {
+        // At the very start of `run()`: no thread is started yet (Tauri, tokio, a plugin).
+        crate::platform::sys::set_path_at_startup(&path);
     }
 }
 
@@ -181,12 +151,11 @@ mod tests {
 
     /// On this machine, with the PATH a Finder-launched app gets, the tools labs need are
     /// found after `augment()` (opt-in: it changes the process PATH; run single-threaded):
-    ///   cargo test --lib finder_path_finds_tools -- --ignored --test-threads=1
+    ///   `cargo test --lib finder_path_finds_tools -- --ignored --test-threads=1`
     #[test]
-    #[ignore]
+    #[ignore = "changes the process PATH: run alone, with --test-threads=1"]
     fn finder_path_finds_tools() {
-        // SAFETY: opt-in test, run with --test-threads=1.
-        unsafe { std::env::set_var("PATH", "/usr/bin:/bin:/usr/sbin:/sbin") };
+        crate::platform::sys::set_path_at_startup(OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
         let found = |tool: &str| std::process::Command::new(tool).arg("--version").output().is_ok();
         assert!(!found("docker"), "docker should be missing on the bare Finder PATH");
         augment();
@@ -203,7 +172,7 @@ mod tests {
 
     #[test]
     fn appending_keeps_existing_entries_first_and_adds_each_new_dir_once() {
-        let out = appended(Some(joined(&["/a", "/b"])), ["/b", "/c", "/c", ""].map(PathBuf::from)).unwrap();
+        let out = appended(Some(&joined(&["/a", "/b"])), ["/b", "/c", "/c", ""].map(PathBuf::from)).unwrap();
         assert_eq!(std::env::split_paths(&out).collect::<Vec<_>>(), ["/a", "/b", "/c"].map(PathBuf::from));
     }
 
@@ -226,12 +195,12 @@ mod tests {
         assert!(has(r"C:\Program Files (x86)\VMware\VMware Workstation"), "{dirs:?}");
         // The installer's own answer comes first: a VirtualBox moved elsewhere wins.
         assert_eq!(dirs[0], PathBuf::from(r"D:\VBox\"));
-        assert!(windows_dirs(|_| None).is_empty());
+        assert_eq!(windows_dirs(|_| None), [] as [PathBuf; 0]);
     }
 
     #[test]
     fn nothing_new_means_no_change() {
-        assert_eq!(appended(Some(joined(&["/a"])), [PathBuf::from("/a")]), None);
+        assert_eq!(appended(Some(&joined(&["/a"])), [PathBuf::from("/a")]), None);
         assert_eq!(appended(None, []), None);
     }
 
@@ -240,7 +209,7 @@ mod tests {
     fn windows_entries_match_regardless_of_case_and_trailing_separator() {
         assert!(same_dir(Path::new(r"C:\Program Files\Vagrant\bin\"), Path::new(r"c:\program files\vagrant\BIN")));
         let current = joined(&[r"C:\Windows\system32", r"C:\Tools\"]);
-        assert_eq!(appended(Some(current), [PathBuf::from(r"c:\tools"), PathBuf::from(r"C:\WINDOWS\System32")]), None);
+        assert_eq!(appended(Some(&current), [PathBuf::from(r"c:\tools"), PathBuf::from(r"C:\WINDOWS\System32")]), None);
     }
 
     /// The registry PATH reads back expanded (the user Path is usually REG_EXPAND_SZ with
@@ -248,10 +217,10 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn the_registry_path_reads_back_expanded() {
-        let machine = registry::machine_path().expect("the machine PATH is readable");
+        let machine = machine_path().expect("the machine PATH is readable");
         let dirs: Vec<PathBuf> = std::env::split_paths(&machine).collect();
         assert!(dirs.iter().any(|d| d.to_string_lossy().to_lowercase().ends_with(r"\system32")), "{dirs:?}");
-        for value in [Some(machine), registry::user_path()].into_iter().flatten() {
+        for value in [Some(machine), user_path()].into_iter().flatten() {
             assert!(!value.to_string_lossy().contains('%'), "unexpanded: {value:?}");
         }
     }
@@ -262,7 +231,7 @@ mod tests {
     fn appends_existing_dirs_once_and_keeps_order() {
         let tmp = std::env::temp_dir();
         let current = std::env::join_paths([PathBuf::from("/usr/bin"), tmp.clone()]).unwrap();
-        let out = augmented(Some(current)).unwrap_or_default();
+        let out = augmented(Some(&current)).unwrap_or_default();
         let paths: Vec<PathBuf> = std::env::split_paths(&out).collect();
         if !paths.is_empty() {
             assert_eq!(paths[0], PathBuf::from("/usr/bin"));

@@ -1,8 +1,12 @@
 //! The app's secondary windows (Settings, machine setup, shells) and what they share: the
 //! macOS overlaid title bar, attaching to the main window, and fitting the screen.
 
-use crate::AppHandle;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+use crate::AppHandle;
+use crate::error::{Error, Result};
+use crate::runtime::{Runtime, ShellKind};
+use crate::terminal;
 
 /// The main window's label.
 pub const MAIN: &str = "main";
@@ -11,7 +15,7 @@ pub const MAIN: &str = "main";
 /// room for the menu bar and dock) when that is less, so a tall dialog fits its content on a big
 /// display and still opens fully on a small laptop screen, where its body scrolls instead.
 pub fn height_fitting(app: &AppHandle, wanted: f64) -> f64 {
-    let available = app.primary_monitor().ok().flatten().map(|m| m.size().height as f64 / m.scale_factor() - 80.0);
+    let available = app.primary_monitor().ok().flatten().map(|m| f64::from(m.size().height) / m.scale_factor() - 80.0);
     fit_height(wanted, available)
 }
 
@@ -59,9 +63,27 @@ pub fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Opens the Settings window. Used by the sidebar footer and the app-menu item.
-pub fn open_settings(app: AppHandle) -> std::result::Result<(), String> {
-    open_settings_window(&app).map_err(|e| e.to_string())
+/// Opens (or focuses) lab `id`'s shell window of `kind`, titled after `title`; closing it ends
+/// the shells it was showing.
+pub fn open_shell(app: &AppHandle, id: &str, kind: ShellKind, runtime: Runtime, title: &str) -> Result<()> {
+    crate::runtime::validate_id(id)?;
+    let (label, page) = terminal::shell_window(id, kind, runtime);
+    if focus_existing(app, &label) {
+        return Ok(());
+    }
+    let window = builder(app, &label, page)
+        .title(format!("{} · attack box", terminal::window_title(title)))
+        .inner_size(900.0, 560.0)
+        .min_inner_size(480.0, 280.0)
+        .resizable(true)
+        .build()
+        .map_err(|e| Error::Invalid(format!("could not open the shell window: {e}")))?;
+    window.on_window_event(move |e| {
+        if matches!(e, tauri::WindowEvent::Destroyed) {
+            terminal::close_window(&label);
+        }
+    });
+    Ok(())
 }
 
 /// Brings the main window back (it may be hidden while the app finishes in the background, or
@@ -83,13 +105,26 @@ mod tests {
     fn settings_open_once_in_their_own_window() {
         // Without the main window: attaching to it needs a real one (Tauri's mock has none).
         let t = TestApp::new();
-        open_settings(t.handle().clone()).unwrap();
+        open_settings_window(t.handle()).unwrap();
         let settings = t.handle().get_webview_window("settings").expect("the Settings window");
         assert!(settings.url().unwrap().as_str().ends_with("?window=settings"), "{}", settings.url().unwrap());
         // Asked again: the open one is focused, no second window.
-        open_settings(t.handle().clone()).unwrap();
+        open_settings_window(t.handle()).unwrap();
         assert_eq!(t.handle().webview_windows().len(), 1);
         assert!(focus_existing(t.handle(), "settings") && !focus_existing(t.handle(), "nope"));
+    }
+
+    #[test]
+    fn a_shell_window_opens_once_per_lab_and_kind() {
+        let t = TestApp::new();
+        let open = |id: &str| open_shell(t.handle(), id, ShellKind::Lab, Runtime::Docker, "SQLi\n lab");
+        assert_eq!(open("../x").unwrap_err().to_string(), "invalid lab id `../x`");
+        assert!(t.handle().webview_windows().is_empty());
+        open("sqli").unwrap();
+        let w = t.handle().get_webview_window("shell-lab-sqli").expect("the shell window");
+        assert!(w.url().unwrap().as_str().ends_with("shell?id=sqli&kind=lab&runtime=DOCKER"), "{}", w.url().unwrap());
+        open("sqli").unwrap();
+        assert_eq!(t.handle().webview_windows().len(), 1);
     }
 
     #[test]

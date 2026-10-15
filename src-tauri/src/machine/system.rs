@@ -3,7 +3,6 @@
 
 pub mod docker;
 pub mod metrics;
-pub mod setup_window;
 pub mod wsl;
 
 use serde::Serialize;
@@ -272,7 +271,7 @@ mod tests {
         let pm = super::pkg_manager(Some("Homebrew 4.6.3\nHomebrew/core\n".into()));
         assert!(pm.installed);
         assert_eq!(pm.version.as_deref(), Some("Homebrew 4.6.3"));
-        assert!(!pm.name.is_empty());
+        assert_ne!(pm.name, "");
         let empty = super::pkg_manager(Some(String::new()));
         assert!(empty.installed && empty.version.is_none());
         let missing = super::pkg_manager(None);

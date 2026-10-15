@@ -108,11 +108,19 @@ pub fn attack_key(lab_id: &str) -> String {
 /// be started), logging to `log`. A launch returns the lab's local URL.
 pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<Option<String>> {
     match job.op {
-        Op::Launch => crate::labs::run(app, job.launch, job.provider, job.host.as_deref(), job.attackbox_image.as_deref(), job.default_ports, log).await,
-        Op::Resume { runtime } => crate::runtime::resume_lab(app, &job.lab_id, runtime, log).await.map(|_| None),
-        Op::Park { runtime, mode } => crate::runtime::park_lab(app, &job.lab_id, runtime, mode, log).await.map(|_| None),
-        Op::Provision { runtime, machine } => crate::runtime::provision_lab(app, &job.lab_id, runtime, machine.as_deref(), log).await.map(|_| None),
-        Op::AttackVm { box_name } => crate::runtime::start_attack_vm(app, &job.lab_id, &box_name, log).await.map(|_| None),
+        Op::Launch => {
+            let placement = crate::labs::Placement {
+                provider: job.provider,
+                host: job.host.as_deref(),
+                attackbox_image: job.attackbox_image.as_deref(),
+                default_ports: job.default_ports,
+            };
+            crate::labs::run(app, job.launch, &placement, log).await
+        }
+        Op::Resume { runtime } => crate::runtime::resume_lab(app, &job.lab_id, runtime, log).await.map(|()| None),
+        Op::Park { runtime, mode } => crate::runtime::park_lab(app, &job.lab_id, runtime, mode, log).await.map(|()| None),
+        Op::Provision { runtime, machine } => crate::runtime::provision_lab(app, &job.lab_id, runtime, machine.as_deref(), log).await.map(|()| None),
+        Op::AttackVm { box_name } => crate::runtime::start_attack_vm(app, &job.lab_id, &box_name, log).await.map(|()| None),
     }
 }
 
@@ -154,7 +162,7 @@ static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// passed its checks before the mark has claimed its pidfile once `STARTING` is free, so it is
 /// found and ended here, and every later attack VM start is refused.
 pub async fn end_workers(app: &AppHandle, id: &str) {
-    drop(STARTING.lock().unwrap_or_else(|e| e.into_inner()));
+    drop(STARTING.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
     kill_and_wait(app, id).await;
     kill_and_wait(app, &attack_key(id)).await;
 }
@@ -164,7 +172,7 @@ pub async fn end_workers(app: &AppHandle, id: &str) {
 /// workers. `Err` when the lab is busy; `Ok(Err)` when the worker couldn't be started (the
 /// caller falls back to running the job in this process).
 fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> {
-    let _one_at_a_time = STARTING.lock().unwrap_or_else(|e| e.into_inner());
+    let _one_at_a_time = STARTING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if running(app).contains(&job.key()) {
         return Err(Error::coded(Code::AlreadyInProgress));
     }

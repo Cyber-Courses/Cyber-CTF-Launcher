@@ -43,7 +43,7 @@ fn merge_unique(mut ids: Vec<String>, more: impl IntoIterator<Item = String>) ->
 #[serde(rename_all = "camelCase")]
 pub struct ActiveOperation {
     lab_id: String,
-    /// "launch", "resume", "pause", "shutdown", "provision", "attack_vm" or "stop".
+    /// `launch`, `resume`, `pause`, `shutdown`, `provision`, `attack_vm` or `stop`.
     #[ts(type = r#""launch" | "resume" | "pause" | "shutdown" | "provision" | "attack_vm" | "stop""#)]
     op: &'static str,
     /// The machine a provisioning run targets, when one.
@@ -130,7 +130,7 @@ mod tests {
                 ActiveOperation { lab_id: "web".into(), op: "launch", machine: None, step: Some("Pulling images".into()) },
             ]
         );
-        assert!(merge_operations(Vec::new(), Vec::new()).is_empty());
+        assert_eq!(merge_operations(Vec::new(), Vec::new()), [] as [ActiveOperation; 0]);
         // Serialized for the sidebar in camelCase.
         assert_eq!(serde_json::to_value(&ops[0]).unwrap()["labId"], "ad");
     }

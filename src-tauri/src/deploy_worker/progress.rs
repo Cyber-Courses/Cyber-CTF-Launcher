@@ -145,8 +145,8 @@ mod tests {
         assert_eq!(last_step("Downloading CyberCTF/x@abc\nLab installed\n").as_deref(), Some("Lab installed"));
         assert_eq!(last_step("\n\n"), None);
         // Long lines are kept readable.
-        let long = format!("==> ws01: {}", "a".repeat(200));
-        let step = last_step(&long).unwrap();
+        let long_line = format!("==> ws01: {}", "a".repeat(200));
+        let step = last_step(&long_line).unwrap();
         assert!(step.ends_with('…'));
         assert_eq!(step.chars().count(), STEP_MAX);
     }
@@ -160,11 +160,12 @@ mod tests {
         // Megabytes of chatter before the step: only the end is read, and the line cut at the
         // start of that end doesn't count.
         let mut text = "==> dc01: Booting VM...\n".repeat(2);
-        text.push_str(&"x".repeat(3 * STEP_TAIL as usize));
+        let tail = usize::try_from(STEP_TAIL).unwrap();
+        text.push_str(&"x".repeat(3 * tail));
         text.push_str("\n==> dc01: Waiting for the VM to boot...\n  dc01: \n");
         std::fs::write(&log, &text).unwrap();
         assert_eq!(step_of(&log).as_deref(), Some("dc01: Waiting for the VM to boot..."));
-        std::fs::write(&log, [&"y".repeat(2 * STEP_TAIL as usize)[..], "\nPulling images\n"].concat()).unwrap();
+        std::fs::write(&log, [&"y".repeat(2 * tail)[..], "\nPulling images\n"].concat()).unwrap();
         assert_eq!(step_of(&log).as_deref(), Some("Pulling images"));
         // A log that isn't all UTF-8 (a tool's codepage) still has a step.
         std::fs::write(&log, b"Cr\xe9ation du r\xe9seau\n").unwrap();

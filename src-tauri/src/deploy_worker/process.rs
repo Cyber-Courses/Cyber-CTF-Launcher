@@ -87,7 +87,7 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
     let exe = std::env::current_exe().map_err(Error::Io)?;
     let mut cmd = std::process::Command::new(exe);
     cmd.arg("deploy").arg("--job").arg(&f.job).stdin(std::process::Stdio::null()).stdout(log.try_clone().map_err(Error::Io)?).stderr(log);
-    detach(&mut cmd, true);
+    detach(&mut cmd, AppJob::Leave);
     // A UAC prompt it raises (Vagrant on Hyper-V) comes up for the app's window.
     #[cfg(windows)]
     if let Some(hwnd) = crate::platform::exec::owner_window() {
@@ -97,7 +97,7 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
         // Windows: the job the app runs in forbids breaking away; start the worker inside it.
         Err(e) if cfg!(windows) && e.raw_os_error() == Some(ERROR_ACCESS_DENIED) => {
             log::warn!("deploy worker can't leave the app's job object; it ends if that job is closed");
-            detach(&mut cmd, false);
+            detach(&mut cmd, AppJob::Stay);
             cmd.spawn().map_err(Error::Io)?
         }
         spawned => spawned.map_err(Error::Io)?,
@@ -133,7 +133,7 @@ pub fn remove_pidfile_of(path: &Path, pid: u32) {
     }
 }
 
-/// What CreateProcess answers when the app's job object doesn't allow breaking away.
+/// What `CreateProcess` answers when the app's job object doesn't allow breaking away.
 const ERROR_ACCESS_DENIED: i32 = 5;
 
 /// Its own process group (and session leader on unix): closing the app's terminal or the app
@@ -142,22 +142,31 @@ const ERROR_ACCESS_DENIED: i32 = 5;
 /// On Windows, also out of the app's job object when `breakaway`: an app started by a launcher,
 /// a terminal or an installer can sit in a job that kills its whole tree when it closes, which
 /// would cut the deploy short.
-#[cfg_attr(not(windows), allow(unused_variables))]
-fn detach(cmd: &mut std::process::Command, breakaway: bool) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        cmd.process_group(0);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-        let flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
-        cmd.creation_flags(if breakaway { flags | CREATE_BREAKAWAY_FROM_JOB } else { flags });
-    }
+#[cfg(unix)]
+fn detach(cmd: &mut std::process::Command, _: AppJob) {
+    use std::os::unix::process::CommandExt;
+    cmd.process_group(0);
+}
+
+/// [`detach`] on Windows.
+#[cfg(windows)]
+fn detach(cmd: &mut std::process::Command, job: AppJob) {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+    let flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
+    cmd.creation_flags(match job {
+        AppJob::Leave => flags | CREATE_BREAKAWAY_FROM_JOB,
+        AppJob::Stay => flags,
+    });
+}
+
+/// Whether a detached process leaves the app's job object (Windows only, see [`detach`]).
+#[derive(Clone, Copy)]
+enum AppJob {
+    Leave,
+    Stay,
 }
 
 /// A process as the OS describes it right now.
@@ -201,14 +210,7 @@ pub(super) fn observe(pid: u32) -> Option<Observed> {
 /// be sent, or was refused (another user's process).
 #[cfg(unix)]
 fn exists(pid: u32) -> bool {
-    // A pid past i32 would name a process group once negative.
-    let Ok(pid) = libc::pid_t::try_from(pid) else { return false };
-    if pid <= 0 {
-        return false;
-    }
-    // SAFETY: kill with signal 0 only checks the process exists.
-    let sent = unsafe { libc::kill(pid, 0) } == 0;
-    sent || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    crate::platform::sys::process_exists(pid)
 }
 
 /// Elsewhere sysinfo reads one process at a time: what it misses is gone.
@@ -380,14 +382,7 @@ fn kill_files(f: &Files) {
 /// process of the user (`kill(-1)`) instead of the worker's group.
 #[cfg(unix)]
 fn signal_group(pid: u32, signal: libc::c_int) {
-    let Ok(group) = libc::pid_t::try_from(pid) else { return };
-    if group <= 1 {
-        return;
-    }
-    // SAFETY: plain syscall on a process group the worker leads (`process_group(0)` at spawn).
-    unsafe {
-        libc::killpg(group, signal);
-    }
+    crate::platform::sys::signal_group(pid, signal);
 }
 
 /// Half-second checks a Terraform run gets to stop on its own once interrupted: it finishes the
@@ -512,7 +507,7 @@ fn terraform_runs_under(root: u32) -> Vec<u32> {
     terraform_pids(&procs, root)
 }
 
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(any(windows, test))]
 struct Proc {
     pid: u32,
     parent: Option<u32>,
@@ -523,7 +518,7 @@ struct Proc {
 /// The Terraform runs below `root` in `procs`: `terraform.exe`, or a `docker run` of the
 /// hashicorp/terraform image. Not their own children (providers share their console, so the one
 /// Ctrl+C reaches them too).
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(any(windows, test))]
 fn terraform_pids(procs: &[Proc], root: u32) -> Vec<u32> {
     let is_terraform =
         |p: &Proc| p.name == "terraform.exe" || p.name == "terraform" || (p.name.starts_with("docker") && p.cmdline.contains("hashicorp/terraform"));
@@ -601,9 +596,9 @@ mod tests {
             p(301, 300, "cmd.exe", ""),
         ];
         let mut found = terraform_pids(&procs, 100);
-        found.sort();
+        found.sort_unstable();
         assert_eq!(found, [110, 120]);
-        assert!(terraform_pids(&procs, 999).is_empty());
+        assert_eq!(terraform_pids(&procs, 999), [] as [u32; 0]);
     }
 
     #[test]
@@ -645,7 +640,7 @@ mod tests {
     #[test]
     fn pgrep_output_reads_as_pids() {
         assert_eq!(pids("123\n 456\n\nnope\n"), [123, 456]);
-        assert!(pids("").is_empty());
+        assert_eq!(pids(""), [] as [u32; 0]);
     }
 
     #[cfg(unix)]
@@ -810,7 +805,7 @@ mod tests {
         let dir = crate::deploy_worker::files::tests::temp_dir("claimed");
         let f = Files::of(&dir, "lab-1");
         drop(claim(&f).unwrap());
-        assert!(running_in(&dir).is_empty());
+        assert_eq!(running_in(&dir), [] as [&str; 0]);
         assert!(f.pid.exists());
         std::fs::remove_dir_all(dir).ok();
     }
@@ -834,11 +829,11 @@ mod tests {
         std::fs::write(&f.pid, "4000000000").unwrap();
         std::fs::write(dir.join("lab-2.pid"), "garbage").unwrap();
         std::fs::write(dir.join("lab-3.log"), "not a pidfile").unwrap();
-        assert!(running_in(&dir).is_empty());
+        assert_eq!(running_in(&dir), [] as [&str; 0]);
         assert!(!f.pid.exists() && !dir.join("lab-2.pid").exists());
         assert!(dir.join("lab-3.log").exists());
-        assert!(jobs_in(&dir).is_empty());
-        assert!(running_in(&dir.join("missing")).is_empty());
+        assert_eq!(jobs_in(&dir), [] as [(Job, Option<String>); 0]);
+        assert_eq!(running_in(&dir.join("missing")), [] as [&str; 0]);
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -909,7 +904,7 @@ mod tests {
         let _ = bystander.kill();
         let _ = bystander.wait();
         assert!(!f.pid.exists());
-        assert!(running(app).is_empty());
+        assert_eq!(running(app), [] as [&str; 0]);
         // Nothing left to stop.
         kill_and_wait(app, "lab-1").await;
         kill(app, "lab-2");
@@ -976,7 +971,7 @@ mod tests {
             kill_files(&f);
             assert!(!f.pid.exists(), "{text}: the stale pidfile is dropped");
         }
-        assert!(running_in(&dir).is_empty());
+        assert_eq!(running_in(&dir), [] as [&str; 0]);
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -1007,7 +1002,7 @@ mod tests {
         let dir = crate::deploy_worker::files::tests::temp_dir("sweep-empty");
         std::fs::write(dir.join("lab-1.pid"), "").unwrap();
         std::fs::write(dir.join("lab-2.pid"), " \n").unwrap();
-        assert!(running_in(&dir).is_empty());
+        assert_eq!(running_in(&dir), [] as [&str; 0]);
         assert!(dir.join("lab-1.pid").exists());
         assert!(!dir.join("lab-2.pid").exists());
         std::fs::remove_dir_all(dir).ok();
@@ -1020,8 +1015,8 @@ mod tests {
         // This test process is alive, but not a worker: not listed at all.
         std::fs::write(&f.pid, std::process::id().to_string()).unwrap();
         std::fs::write(&f.job, "{not json").unwrap();
-        assert!(running_in(&dir).is_empty());
-        assert!(jobs_in(&dir).is_empty());
+        assert_eq!(running_in(&dir), [] as [&str; 0]);
+        assert_eq!(jobs_in(&dir), [] as [(Job, Option<String>); 0]);
         std::fs::remove_dir_all(dir).ok();
     }
 }

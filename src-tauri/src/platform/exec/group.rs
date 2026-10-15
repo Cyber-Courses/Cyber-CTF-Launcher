@@ -4,6 +4,11 @@
 
 use std::sync::Mutex;
 
+#[cfg(any(unix, windows))]
+use crate::platform::sys;
+#[cfg(windows)]
+use crate::platform::sys::Job;
+
 /// A tool still running: its process id and, on Windows, the job its tree runs in.
 struct Live {
     pid: u32,
@@ -12,7 +17,7 @@ struct Live {
     #[cfg_attr(not(unix), allow(dead_code))]
     stream: bool,
     #[cfg(windows)]
-    job: std::sync::Arc<job::Job>,
+    job: std::sync::Arc<Job>,
 }
 
 /// Tools still running, so they can be ended when the app (or a deploy worker being
@@ -38,7 +43,7 @@ impl GroupGuard {
         let pid = child.id();
         if let Some(p) = pid {
             #[cfg(windows)]
-            let Some(job) = child.raw_handle().and_then(job::Job::for_process) else { return GroupGuard(None) };
+            let Some(job) = child.raw_handle().and_then(Job::for_process) else { return GroupGuard(None) };
             if let Ok(mut live) = LIVE_GROUPS.lock() {
                 live.push(Live {
                     pid: p,
@@ -78,11 +83,9 @@ fn forget(pid: Option<u32>) -> Option<Live> {
 }
 
 fn kill(live: &Live) {
+    // The group was created by `process_group(0)` at spawn.
     #[cfg(unix)]
-    // SAFETY: plain syscall; the group was created by `process_group(0)` at spawn.
-    unsafe {
-        libc::killpg(live.pid as libc::pid_t, libc::SIGKILL);
-    }
+    sys::signal_group(live.pid, libc::SIGKILL);
     #[cfg(windows)]
     live.job.kill();
     #[cfg(not(any(unix, windows)))]
@@ -98,10 +101,7 @@ pub fn kill_live_tools() {
     for live in &groups {
         #[cfg(unix)]
         if live.stream {
-            // SAFETY: plain syscall on a group created by `process_group(0)` at spawn.
-            unsafe {
-                libc::killpg(live.pid as libc::pid_t, libc::SIGTERM);
-            }
+            sys::signal_group(live.pid, libc::SIGTERM);
             continue;
         }
         kill(live);
@@ -117,132 +117,13 @@ pub(super) const CREATE_SUSPENDED: u32 = 0x0000_0004;
 /// left suspended it would never end.
 #[cfg(windows)]
 pub(super) fn resume(child: &tokio::process::Child) -> std::io::Result<()> {
-    let resumed = child.id().is_some_and(job::resume_threads_of);
+    let resumed = child.id().is_some_and(sys::resume_threads_of);
     if resumed {
         return Ok(());
     }
     let err = std::io::Error::last_os_error();
     if let Some(pid) = child.id() {
-        job::terminate(pid);
+        sys::terminate(pid);
     }
     Err(err)
-}
-
-#[cfg(windows)]
-mod job {
-    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next};
-    use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_LIMIT_INFORMATION,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
-    };
-
-    /// A job object a tool's process (and every process it starts) runs in.
-    pub(super) struct Job(HANDLE);
-
-    // SAFETY: a job handle is a kernel handle, usable from any thread.
-    unsafe impl Send for Job {}
-    unsafe impl Sync for Job {}
-
-    impl Job {
-        /// A job ending its processes when closed, with `process` in it. `None` when Windows
-        /// refuses (the tool then runs as before, its tree not tracked).
-        pub(super) fn for_process(process: std::os::windows::io::RawHandle) -> Option<Job> {
-            // SAFETY: plain Win32 calls on handles owned here (`process` is the live child's).
-            unsafe {
-                let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-                if job.is_null() {
-                    return None;
-                }
-                let job = Job(job);
-                if !job.set_kill_on_close(true) || AssignProcessToJobObject(job.0, process) == 0 {
-                    return None;
-                }
-                Some(job)
-            }
-        }
-
-        fn set_kill_on_close(&self, on: bool) -> bool {
-            let info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
-                BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION {
-                    LimitFlags: if on { JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE } else { 0 },
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            // SAFETY: `info` is a valid, fully initialised struct of the size given.
-            unsafe {
-                SetInformationJobObject(
-                    self.0,
-                    JobObjectExtendedLimitInformation,
-                    &info as *const _ as *const core::ffi::c_void,
-                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-                ) != 0
-            }
-        }
-
-        /// Ends every process in the job.
-        pub(super) fn kill(&self) {
-            // SAFETY: a live job handle.
-            unsafe {
-                TerminateJobObject(self.0, 1);
-            }
-        }
-
-        /// The tool is done: closing the job no longer ends what it left running.
-        pub(super) fn release(&self) {
-            self.set_kill_on_close(false);
-        }
-    }
-
-    /// Resumes every thread of process `pid`; whether one was.
-    pub(super) fn resume_threads_of(pid: u32) -> bool {
-        use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
-        let mut resumed = false;
-        // SAFETY: a thread snapshot walked with a correctly sized entry; each thread handle is
-        // opened, used and closed here, and the snapshot is closed once done.
-        unsafe {
-            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-            if snapshot == INVALID_HANDLE_VALUE {
-                return false;
-            }
-            let mut entry: THREADENTRY32 = std::mem::zeroed();
-            entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
-            let mut more = Thread32First(snapshot, &mut entry) != 0;
-            while more {
-                if entry.th32OwnerProcessID == pid {
-                    let thread = OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID);
-                    if !thread.is_null() {
-                        resumed |= ResumeThread(thread) != u32::MAX;
-                        CloseHandle(thread);
-                    }
-                }
-                more = Thread32Next(snapshot, &mut entry) != 0;
-            }
-            CloseHandle(snapshot);
-        }
-        resumed
-    }
-
-    /// Ends process `pid` (one that couldn't be let run).
-    pub(super) fn terminate(pid: u32) {
-        use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess};
-        // SAFETY: a process handle opened, used and closed here.
-        unsafe {
-            let process = OpenProcess(PROCESS_TERMINATE, 0, pid);
-            if !process.is_null() {
-                TerminateProcess(process, 1);
-                CloseHandle(process);
-            }
-        }
-    }
-
-    impl Drop for Job {
-        fn drop(&mut self) {
-            // SAFETY: the handle is ours and closed once.
-            unsafe {
-                CloseHandle(self.0);
-            }
-        }
-    }
 }

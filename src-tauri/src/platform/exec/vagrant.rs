@@ -29,7 +29,7 @@ pub struct Step {
 
 impl Step {
     pub fn new(args: &[&str]) -> Step {
-        Step { args: args.iter().map(|a| a.to_string()).collect(), when: When::IfOk }
+        Step { args: args.iter().map(ToString::to_string).collect(), when: When::IfOk }
     }
 
     /// A step that runs even after an earlier one failed.
@@ -52,6 +52,19 @@ pub enum Event<'r> {
     Line(usize, String),
     /// Step `i` ended.
     End(usize, &'r Result<String>),
+}
+
+impl Event<'_> {
+    /// The event as a test reads it: `start 0`, `line 0 <text>`, `end 0 <result>`, the result as
+    /// `result` says it.
+    #[cfg(test)]
+    pub(super) fn describe(&self, result: impl Fn(&Result<String>) -> String) -> String {
+        match self {
+            Event::Start(i) => format!("start {i}"),
+            Event::Line(i, l) => format!("line {i} {l}"),
+            Event::End(i, r) => format!("end {i} {}", result(r)),
+        }
+    }
 }
 
 /// The environment variable naming the Hyper-V virtual switch a VM's first adapter goes on (set
@@ -103,7 +116,7 @@ impl<'a> Vagrant<'a> {
         let outcomes = self
             .batch(&[Step::new(args)], |e| {
                 if let Event::Line(_, l) = e {
-                    on_line(l)
+                    on_line(l);
                 }
             })
             .await?;
@@ -179,16 +192,7 @@ mod tests {
         let v = Vagrant::new(&d, &[], true);
         let steps = [Step::new(&["provision"]), Step::new(&["up"]), Step::new(&["reload"]), Step::new(&["halt", "x"]).always()];
         let mut events = Vec::new();
-        let outcomes = v
-            .batch(&steps, |e| {
-                events.push(match e {
-                    Event::Start(i) => format!("start {i}"),
-                    Event::Line(i, l) => format!("line {i} {l}"),
-                    Event::End(i, r) => format!("end {i} {}", r.is_ok()),
-                })
-            })
-            .await
-            .unwrap();
+        let outcomes = v.batch(&steps, |e| events.push(e.describe(|r| r.is_ok().to_string()))).await.unwrap();
         assert_eq!(tools.calls(), ["vagrant provision", "vagrant up", "vagrant halt x"]);
         assert!(matches!(&outcomes[0], Some(Ok(out)) if out == "p1\np2\n"));
         assert!(matches!(&outcomes[1], Some(Err(e)) if e.to_string().contains("boom")));

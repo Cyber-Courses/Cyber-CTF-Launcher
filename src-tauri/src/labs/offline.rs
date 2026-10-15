@@ -137,11 +137,7 @@ mod tests {
         let raw = std::fs::read_to_string(&path).unwrap();
         assert!(!raw.contains("secret-token") && !raw.contains("CTF_") && !raw.contains("https://api"), "{raw}");
         assert!(raw.contains(ADA));
-        #[cfg(unix)]
-        {
-            assert_eq!(crate::platform::private_fs::tests::mode(&path), 0o600);
-            assert_eq!(crate::platform::private_fs::tests::mode(path.parent().unwrap()), 0o700);
-        }
+        crate::platform::private_fs::tests::assert_private_with_folder(&path);
         std::fs::remove_dir_all(base).unwrap();
     }
 

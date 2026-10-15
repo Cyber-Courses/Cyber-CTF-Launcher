@@ -1,5 +1,5 @@
 //! A loopback HTTP forward proxy (plain HTTP only), for Vagrant's WinRM to Windows guests: the
-//! WinRM client (HTTPClient) follows `http_proxy` and sends absolute-URI requests. Each client
+//! WinRM client (`HTTPClient`) follows `http_proxy` and sends absolute-URI requests. Each client
 //! connection gets one connection to its target, which WinRM's Negotiate auth needs.
 //!
 //! Any local process can reach a loopback port, and through it the LAN that macOS keeps third
@@ -67,20 +67,10 @@ fn on_local_network(ip: std::net::IpAddr) -> bool {
 pub async fn start_http_proxy(targets: Targets) -> std::io::Result<Relay> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let local = listener.local_addr()?.port();
-    let task = tokio::spawn(async move {
-        loop {
-            let (inbound, _) = match listener.accept().await {
-                Ok(pair) => pair,
-                // As in `start`: one failed accept must not end the proxy ovftool still uses.
-                Err(_) => {
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    continue;
-                }
-            };
-            let targets = targets.clone();
-            tokio::spawn(async move {
-                let _ = proxy_connection(inbound, &targets).await;
-            });
+    let task = super::serve(listener, move |inbound| {
+        let targets = targets.clone();
+        async move {
+            let _ = proxy_connection(inbound, &targets).await;
         }
     });
     Ok(Relay { port: local, task })
@@ -177,57 +167,99 @@ async fn read_head<R: tokio::io::AsyncBufRead + Unpin>(reader: &mut R) -> std::i
     }
 }
 
-/// Answers 502 and closes, while the client's write half is still ours.
-async fn refuse(client_out: &mut Option<OwnedWriteHalf>) -> std::io::Result<()> {
-    if let Some(mut out) = client_out.take() {
-        out.write_all(BAD_GATEWAY).await?;
+/// The client's side of a proxied connection: its write half until its first request reaches
+/// an origin, then that origin's connection, whose pump writes the responses back to it.
+enum Peer {
+    Waiting(OwnedWriteHalf),
+    Connected(Upstream),
+}
+
+/// The one origin a client connection is proxied to.
+struct Upstream {
+    /// `host:port`.
+    target: String,
+    to_origin: OwnedWriteHalf,
+    /// Streams the origin's responses back to the client, in order (it pairs them with its
+    /// requests).
+    pump: JoinHandle<()>,
+}
+
+impl Upstream {
+    fn pump(target: String, origin: TcpStream, mut client: OwnedWriteHalf) -> Upstream {
+        let (mut from_origin, to_origin) = origin.into_split();
+        let pump = tokio::spawn(async move {
+            let _ = tokio::io::copy(&mut from_origin, &mut client).await;
+            let _ = client.shutdown().await;
+        });
+        Upstream { target, to_origin, pump }
     }
-    Ok(())
+}
+
+impl Peer {
+    /// Whether a request to `target` may go on this connection: one origin per connection.
+    fn may_send_to(&self, target: &str) -> bool {
+        match self {
+            Peer::Waiting(_) => true,
+            Peer::Connected(upstream) => upstream.target == target,
+        }
+    }
+
+    /// Answers 502 and closes, while the client's write half is still ours.
+    async fn refuse(self) -> std::io::Result<()> {
+        if let Peer::Waiting(mut client) = self {
+            client.write_all(BAD_GATEWAY).await?;
+        }
+        Ok(())
+    }
+
+    /// The client is done: lets the last response finish.
+    async fn finish(self) {
+        if let Peer::Connected(mut upstream) = self {
+            let _ = upstream.to_origin.shutdown().await;
+            let _ = upstream.pump.await;
+        }
+    }
+
+    /// The connection to `target`, connecting on the first request; the client is refused
+    /// when the origin can't be reached.
+    async fn connected(self, target: String) -> std::result::Result<Upstream, std::io::Result<()>> {
+        match self {
+            Peer::Connected(upstream) => Ok(upstream),
+            Peer::Waiting(client) => match TcpStream::connect(target.as_str()).await {
+                Ok(origin) => Ok(Upstream::pump(target, origin, client)),
+                Err(_) => Err(Peer::Waiting(client).refuse().await),
+            },
+        }
+    }
 }
 
 async fn proxy_connection(inbound: TcpStream, targets: &Targets) -> std::io::Result<()> {
     let (read_half, write_half) = inbound.into_split();
     let mut reader = BufReader::new(read_half);
-    // The client's write half, until the response pump takes it over.
-    let mut client_out = Some(write_half);
-    let mut upstream: Option<(String, OwnedWriteHalf, JoinHandle<()>)> = None;
+    let mut peer = Peer::Waiting(write_half);
     loop {
         let head = match read_head(&mut reader).await? {
             Head::Request(head) => head,
-            Head::TooLong => return refuse(&mut client_out).await,
+            Head::TooLong => return peer.refuse().await,
             Head::Closed => {
-                // Client done: let the last response finish.
-                if let Some((_, mut to_origin, pump)) = upstream {
-                    let _ = to_origin.shutdown().await;
-                    let _ = pump.await;
-                }
+                peer.finish().await;
                 return Ok(());
             }
         };
         let parsed = rewrite_head(head.trim_end());
-        let Some((target, rewritten, body_len)) = parsed.filter(|(t, ..)| targets.allows(t)).filter(|(t, ..)| upstream.as_ref().is_none_or(|(u, ..)| u == t))
-        else {
+        let Some((target, rewritten, body_len)) = parsed.filter(|(t, ..)| targets.allows(t) && peer.may_send_to(t)) else {
             // Malformed, a target it isn't for, or a second origin on one connection: refuse
             // and close.
-            return refuse(&mut client_out).await;
+            return peer.refuse().await;
         };
-        if upstream.is_none() {
-            let Ok(stream) = TcpStream::connect(target.as_str()).await else {
-                return refuse(&mut client_out).await;
-            };
-            let (mut from_origin, to_origin) = stream.into_split();
-            let mut out = client_out.take().expect("client write half until the first connect");
-            // Responses stream back in order; the client pairs them with its requests.
-            let pump = tokio::spawn(async move {
-                let _ = tokio::io::copy(&mut from_origin, &mut out).await;
-                let _ = out.shutdown().await;
-            });
-            upstream = Some((target, to_origin, pump));
-        }
-        let (_, to_origin, _) = upstream.as_mut().expect("connected above");
-        to_origin.write_all(rewritten.as_bytes()).await?;
+        let mut upstream = match peer.connected(target).await {
+            Ok(upstream) => upstream,
+            Err(refused) => return refused,
+        };
+        upstream.to_origin.write_all(rewritten.as_bytes()).await?;
         let mut body = (&mut reader).take(body_len as u64);
-        tokio::io::copy(&mut body, to_origin).await?;
+        tokio::io::copy(&mut body, &mut upstream.to_origin).await?;
+        peer = Peer::Connected(upstream);
     }
 }
 

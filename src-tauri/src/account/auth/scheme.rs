@@ -14,7 +14,7 @@ pub const REDIRECT_URI: &str = "cyberctf://auth/callback";
 static PENDING: Mutex<Option<(String, oneshot::Sender<url::Url>)>> = Mutex::new(None);
 
 fn pending() -> std::sync::MutexGuard<'static, Option<(String, oneshot::Sender<url::Url>)>> {
-    PENDING.lock().unwrap_or_else(|e| e.into_inner())
+    PENDING.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Waits for the link of the sign-in that sent `state`. A newer sign-in replaces it (the older

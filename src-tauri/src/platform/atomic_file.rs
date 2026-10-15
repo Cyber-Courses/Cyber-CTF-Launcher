@@ -7,18 +7,44 @@ use std::path::Path;
 
 /// Writes `contents` to `path` atomically (the parent folder is created when missing).
 pub fn write(path: &Path, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
-    write_as(path, contents.as_ref(), false)
+    write_as(path, contents.as_ref(), Access::Usual)
 }
 
 /// [`write`] for a file only this user may read (0600 on Unix, from the temporary file on), such
 /// as a session's tokens.
-#[cfg_attr(not(debug_assertions), allow(dead_code))]
 pub fn write_private(path: &Path, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
-    write_as(path, contents.as_ref(), true)
+    write_as(path, contents.as_ref(), Access::Private)
 }
 
-#[cfg_attr(not(unix), allow(unused_variables))]
-fn write_as(path: &Path, contents: &[u8], private: bool) -> std::io::Result<()> {
+/// Who may read a file written here.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Access {
+    /// As any file the app writes (the user's umask, the folder's ACL).
+    Usual,
+    /// This user only (0600 on Unix; on Windows the profile's ACL already keeps others out).
+    Private,
+}
+
+/// Options creating a new file, with `access`.
+#[cfg(unix)]
+fn create_new(access: Access) -> std::fs::OpenOptions {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    if access == Access::Private {
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    }
+    options
+}
+
+/// Options creating a new file (the folder's ACL decides who may read it).
+#[cfg(not(unix))]
+fn create_new(_: Access) -> std::fs::OpenOptions {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    options
+}
+
+fn write_as(path: &Path, contents: &[u8], access: Access) -> std::io::Result<()> {
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir)?;
     }
@@ -26,13 +52,7 @@ fn write_as(path: &Path, contents: &[u8], private: bool) -> std::io::Result<()> 
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let tmp = path.with_file_name(format!(".{name}.{}-{:08x}.tmp", std::process::id(), rand::random::<u32>()));
     let written = (|| {
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        if private {
-            std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-        }
-        let mut f = options.open(&tmp)?;
+        let mut f = create_new(access).open(&tmp)?;
         f.write_all(contents)?;
         f.sync_all()
     })();

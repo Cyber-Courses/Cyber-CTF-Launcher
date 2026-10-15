@@ -44,8 +44,8 @@ pub fn log_dir(app: &crate::AppHandle) -> crate::error::Result<PathBuf> {
 
 /// Opens the log folder in the system's file manager (Settings > About), so a player can send
 /// the files to support.
-pub fn open_log_folder(app: crate::AppHandle) -> crate::error::Result<()> {
-    let dir = log_dir(&app)?;
+pub fn open_log_folder(app: &crate::AppHandle) -> crate::error::Result<()> {
+    let dir = log_dir(app)?;
     std::fs::create_dir_all(&dir)?;
     crate::platform::open_folder(&dir)
 }
@@ -73,7 +73,7 @@ pub fn install_panic_hook() {
 /// The first lines of a session's log: which build, on what, from where. Enough to tell a Store
 /// install from an NSIS one, or an x64 build running under emulation on ARM.
 pub fn log_startup(app: &crate::AppHandle, role: &str) {
-    let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|e| format!("<unknown: {e}>"));
+    let exe = std::env::current_exe().map_or_else(|e| format!("<unknown: {e}>"), |p| p.display().to_string());
     log::info!(
         "Cyber CTF {} {role} starting: {} {} ({}), pid {}, exe {exe}",
         app.package_info().version,

@@ -26,15 +26,15 @@ async fn global_status() -> Option<String> {
     static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
     static LAST: Mutex<Option<String>> = Mutex::new(None);
 
-    if IN_FLIGHT.swap(true, Ordering::AcqRel) {
-        return LAST.lock().ok().and_then(|l| l.clone());
-    }
     // Cleared on drop too, so a cancelled scan doesn't block every later one.
     struct Done;
     impl Drop for Done {
         fn drop(&mut self) {
             IN_FLIGHT.store(false, Ordering::Release);
         }
+    }
+    if IN_FLIGHT.swap(true, Ordering::AcqRel) {
+        return LAST.lock().ok().and_then(|l| l.clone());
     }
     let _done = Done;
     // Timed: without a limit a polled call would hang and stack up one blocked process per tick.
@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(m[0], Machine { provider: "virtualbox".into(), home: "/data/labs/goad/.isoloom/vagrant".into(), state: "running".into() });
         assert_eq!(m[1].provider, "vmware_esxi");
         // Lines before the first machine are ignored.
-        assert!(machines("1,,state,running\n").is_empty());
+        assert_eq!(machines("1,,state,running\n"), [] as [Machine; 0]);
     }
 
     #[test]

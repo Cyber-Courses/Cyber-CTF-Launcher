@@ -4,12 +4,13 @@
 use tauri::ipc::Channel;
 
 use crate::AppHandle;
+use crate::app::setup_window;
 use crate::error::Result;
 use crate::machine::images;
 use crate::machine::selftest::{self, Event, Kind};
 use crate::machine::storage::{self, Storage};
 use crate::machine::system::metrics::{self, MachineMetrics};
-use crate::machine::system::{self, SystemReport, docker, setup_window, wsl};
+use crate::machine::system::{self, SystemReport, docker, wsl};
 use crate::machine::tools::install::{self, Dependency};
 use crate::machine::tools::uninstall::{self, InstalledTool};
 use crate::machine::workloads::{self, Workload};
@@ -32,7 +33,7 @@ pub async fn machine_metrics() -> MachineMetrics {
 /// Opens the machine setup window, at `step` when given.
 #[tauri::command]
 pub async fn machine_open_setup(app: AppHandle, step: Option<String>) -> Result<()> {
-    setup_window::machine_open_setup(app, step)
+    setup_window::open(&app, step.as_deref())
 }
 
 /// Restarts the computer, for `reason` (WSL's install finishing).
@@ -62,7 +63,7 @@ pub async fn image_download_size(image: String) -> Option<u64> {
 /// Runs the setup self-test of `kind`, its steps sent on `events` (see [`selftest::machine_selftest`]).
 #[tauri::command]
 pub async fn machine_selftest(app: AppHandle, kind: Kind, provider: Option<Provider>, events: Channel<Event>) -> Result<()> {
-    Box::pin(selftest::machine_selftest(app, kind, provider, events)).await
+    selftest::machine_selftest(app, kind, provider, events).await
 }
 
 /// Downloads what the self-test of `kind` needs ahead of it.
@@ -117,4 +118,22 @@ pub async fn installed_tools(app: AppHandle) -> Vec<InstalledTool> {
 #[tauri::command]
 pub async fn uninstall_dependency(app: AppHandle, dependency: Dependency, logs: Channel<String>) -> Result<()> {
     uninstall::uninstall_dependency(app, dependency, lines(logs)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use tauri::Manager;
+
+    use super::*;
+    use crate::testing::test_app::TestApp;
+
+    /// Opening a new window sizes it to the screen, which Tauri's mock runtime can't tell: the
+    /// open one is driven here.
+    #[tokio::test]
+    async fn the_open_setup_window_is_brought_forward() {
+        let t = TestApp::new();
+        crate::app::window::builder(t.handle(), "machine-setup", "machine-setup").build().unwrap();
+        machine_open_setup(t.handle().clone(), Some("docker".into())).await.unwrap();
+        assert_eq!(t.handle().webview_windows().len(), 1);
+    }
 }

@@ -157,12 +157,13 @@ const DOCKER_KEY_FINGERPRINT: &str = docker_key_fingerprint!();
 /// package manager.
 #[cfg(any(target_os = "linux", test))]
 pub fn docker_script(user: Option<&str>) -> String {
+    use std::fmt::Write as _;
     let mut s = format!(
         "{PRIVATE_WORKDIR}; {DOCKER_DIST}; if [ -n \"$dist\" ]; then {DOCKER_APT_REPO}; else echo 'No Docker apt repository for this system: running Docker'\\''s install script.'; {}; fi",
         fetch_into_workdir("https://get.docker.com", "sh"),
     );
     if let Some(u) = user.filter(|u| valid_user(u)) {
-        s.push_str(&format!("; usermod -aG docker {u}; echo 'Added {u} to the docker group: log out and back in (or restart) for it to apply.'"));
+        let _ = write!(s, "; usermod -aG docker {u}; echo 'Added {u} to the docker group: log out and back in (or restart) for it to apply.'");
     }
     s
 }
@@ -219,7 +220,7 @@ pub const AWS_CLI_KEY_FINGERPRINT: &str = "FB5DB77FD5C118B80511ADA8A6310ACC46724
 
 /// AWS CLI v2 from Amazon's official bundle, unpacked and installed from a private directory.
 /// The distro `awscli` package is v1, which has no `aws login` (the app needs v2 >= 2.32).
-/// `uname -m` is x86_64/aarch64, matching the URLs. The bundle must carry a valid signature
+/// `uname -m` is `x86_64` or `aarch64`, matching the URLs. The bundle must carry a valid signature
 /// (its `.sig`) by AWS's key, embedded here ([`AWS_CLI_KEY`]): gpgv, with only that key, must
 /// report it by its fingerprint. Then `unzip -t` checks the archive is whole before anything
 /// in it runs.

@@ -92,7 +92,7 @@ proptest! {
     #[test]
     fn text_lines_come_back_exactly(lines in proptest::collection::vec("[^\r\n]{0,30}", 0..8), crlf in any::<bool>(), raw in proptest::collection::vec(any::<prop::sample::Index>(), 0..10)) {
         let end = if crlf { "\r\n" } else { "\n" };
-        let text: String = lines.iter().map(|l| format!("{l}{end}")).collect();
+        let text: String = lines.iter().flat_map(|l| [l.as_str(), end]).collect();
         prop_assert_eq!(read_all(pieces(text.as_bytes(), &raw), 8), lines);
     }
 }

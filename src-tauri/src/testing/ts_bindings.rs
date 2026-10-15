@@ -7,6 +7,7 @@
 //! A command taking or returning a new struct or enum: derive `ts_rs::TS` on it (`#[ts(rename)]`
 //! when the frontend knows it by another name) and list it below. The types it uses come along.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
@@ -86,7 +87,10 @@ fn write_index(dir: &Path) {
     let mut names: Vec<String> =
         fs::read_dir(dir).unwrap().filter_map(|e| e.unwrap().path().file_stem().map(|s| s.to_string_lossy().into_owned())).filter(|n| n != "index").collect();
     names.sort();
-    let lines: String = names.iter().map(|n| format!("export type * from \"./{n}\";\n")).collect();
+    let lines = names.iter().fold(String::new(), |mut lines, n| {
+        let _ = writeln!(lines, "export type * from \"./{n}\";");
+        lines
+    });
     fs::write(dir.join("index.ts"), format!("{HEADER}{lines}")).unwrap();
 }
 

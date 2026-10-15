@@ -114,7 +114,7 @@ mod tests {
         assert_eq!(literal_list(r#"&["version", "--query", "\"azure-cli\""], None)"#), ["version", "--query", "\"azure-cli\""]);
         assert_eq!(literal_list(r##"vec!["a", &format!("{x}", "no"), b, r"c\d", r#"q"q"#]"##), ["a", r"c\d", r#"q"q"#]);
         assert_eq!(literal_list(r#"["x]y", "z"]; ["after"]"#), ["x]y", "z"]);
-        assert!(literal_list("no list here").is_empty());
+        assert_eq!(literal_list("no list here"), [] as [&str; 0]);
     }
 
     #[test]

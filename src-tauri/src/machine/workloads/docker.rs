@@ -6,25 +6,47 @@ use super::Workload;
 use crate::error::Result;
 use crate::platform::exec::{run, run_read};
 
-/// `123.4MiB` / `1.2GiB` / `512kB` → bytes.
+/// `123.4MiB` / `1.2GiB` / `512kB` → bytes (a fraction of a byte dropped), 0 when it isn't a
+/// size. Worked out in integers, so a size is exact and never wraps.
 fn parse_size(s: &str) -> u64 {
     let s = s.trim();
     let split = s.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(s.len());
     let (num, unit) = s.split_at(split);
-    let n: f64 = num.trim().parse().unwrap_or(0.0);
-    let mult = match unit.trim() {
-        "B" => 1.0,
-        "kB" | "KB" => 1e3,
-        "KiB" => 1024.0,
-        "MB" => 1e6,
-        "MiB" => 1024.0 * 1024.0,
-        "GB" => 1e9,
-        "GiB" => 1024.0 * 1024.0 * 1024.0,
-        "TB" => 1e12,
-        "TiB" => 1024f64.powi(4),
-        _ => 0.0,
-    };
-    (n * mult) as u64
+    let (Some(unit), Some((whole, fraction, scale))) = (unit_bytes(unit.trim()), decimal(num.trim())) else { return 0 };
+    let bytes = whole.saturating_mul(unit).saturating_add(fraction.saturating_mul(unit) / scale);
+    u64::try_from(bytes).unwrap_or(u64::MAX)
+}
+
+/// The bytes in one `unit` of `docker stats`.
+fn unit_bytes(unit: &str) -> Option<u128> {
+    Some(match unit {
+        "B" => 1,
+        "kB" | "KB" => 1_000,
+        "KiB" => 1 << 10,
+        "MB" => 1_000_000,
+        "MiB" => 1 << 20,
+        "GB" => 1_000_000_000,
+        "GiB" => 1 << 30,
+        "TB" => 1_000_000_000_000,
+        "TiB" => 1 << 40,
+        _ => return None,
+    })
+}
+
+/// A non-negative decimal (`1.25`, `.5`, `3.`) as its whole part and its fraction over a power
+/// of ten: `(1, 25, 100)`.
+fn decimal(num: &str) -> Option<(u128, u128, u128)> {
+    let (whole, fraction) = num.split_once('.').unwrap_or((num, ""));
+    let whole = whole.strip_prefix('+').unwrap_or(whole);
+    let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    if (whole.is_empty() && fraction.is_empty()) || !digits(whole) || !digits(fraction) {
+        return None;
+    }
+    // Past 20 digits a fraction adds nothing a byte count can hold (and its product stays in range).
+    let fraction = &fraction[..fraction.len().min(20)];
+    let value = |s: &str| if s.is_empty() { Some(0) } else { s.parse::<u128>().ok() };
+    let scale = 10u128.pow(u32::try_from(fraction.len()).ok()?);
+    Some((value(whole).unwrap_or(u128::MAX), value(fraction)?, scale))
 }
 
 /// Lab id from a container: its compose project (`cyberctf-<id>`) or, for the attack box
@@ -66,7 +88,7 @@ fn memory_by_container(stats: &str) -> BTreeMap<String, u64> {
 /// A container's memory: `docker ps` and `docker stats` may shorten ids differently, so either
 /// may be a prefix of the other.
 fn memory_of(container: &str, mem: &BTreeMap<String, u64>) -> u64 {
-    mem.iter().find(|(k, _)| container.starts_with(k.as_str()) || k.starts_with(container)).map(|(_, v)| *v).unwrap_or(0)
+    mem.iter().find(|(k, _)| container.starts_with(k.as_str()) || k.starts_with(container)).map_or(0, |(_, v)| *v)
 }
 
 pub(super) async fn workloads() -> Vec<Workload> {
@@ -92,7 +114,7 @@ fn workloads_from(by_lab: BTreeMap<String, Vec<String>>, mem: &BTreeMap<String, 
         .into_iter()
         .map(|(id, cids)| {
             let mem_bytes = cids.iter().map(|c| memory_of(c, mem)).sum();
-            Workload { id, kind: "docker", count: cids.len() as u32, mem_bytes, provider: None }
+            Workload { id, kind: "docker", count: u32::try_from(cids.len()).unwrap_or(u32::MAX), mem_bytes, provider: None }
         })
         .collect()
 }
@@ -146,7 +168,12 @@ mod tests {
     #[test]
     fn parses_docker_sizes() {
         assert_eq!(parse_size("512B"), 512);
-        assert_eq!(parse_size("1.5GiB"), (1.5 * 1024.0 * 1024.0 * 1024.0) as u64);
+        assert_eq!(parse_size("1.5GiB"), 3 * 512 * 1024 * 1024);
+        assert_eq!(parse_size("123.4MiB"), 129_394_278);
+        assert_eq!((parse_size(".5kB"), parse_size("3.MB"), parse_size("+2B")), (500, 3_000_000, 2));
+        for bad in [".", "1.2.3MB", "-1MB", "1.-2MB", "1e3B"] {
+            assert_eq!(parse_size(bad), 0, "{bad}");
+        }
         assert_eq!(parse_size(" 20MiB "), 20 * 1024 * 1024);
     }
 

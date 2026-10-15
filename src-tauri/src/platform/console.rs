@@ -19,22 +19,7 @@ pub fn interrupt_pid(args: impl IntoIterator<Item = String>) -> Option<u32> {
 /// Terraform and its providers). Whether it was sent. Run in a process of its own (see above).
 #[cfg(windows)]
 pub fn send_ctrl_c(pid: u32) -> bool {
-    use windows_sys::Win32::System::Console::{AttachConsole, CTRL_C_EVENT, FreeConsole, GenerateConsoleCtrlEvent, SetConsoleCtrlHandler};
-    // SAFETY: plain Win32 calls on this process's console; none takes pointers.
-    unsafe {
-        // A process attaches to one console at most: leave ours (if any) first.
-        FreeConsole();
-        if AttachConsole(pid) == 0 {
-            return false;
-        }
-        // The event reaches every process on the console, this one included: ignore it here.
-        SetConsoleCtrlHandler(None, 1);
-        let sent = GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0) != 0;
-        // Delivery is asynchronous: stay attached a moment, so the console outlives the event.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        FreeConsole();
-        sent
-    }
+    crate::platform::sys::send_ctrl_c(pid)
 }
 
 /// Asks the throwaway interrupter to Ctrl+C `pid`; whether it reported success.
@@ -51,7 +36,7 @@ mod tests {
     use super::*;
 
     fn args(a: &[&str]) -> Vec<String> {
-        a.iter().map(|s| s.to_string()).collect()
+        a.iter().map(ToString::to_string).collect()
     }
 
     #[test]

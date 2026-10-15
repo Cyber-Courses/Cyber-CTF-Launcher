@@ -1,10 +1,10 @@
 //! The app shell: starting the launcher (or a deploy worker), its plugins, windows, menu and
-//! quitting, the log file, and the service endpoints.
+//! quitting, and the log file.
 
-pub mod config;
 pub mod logging;
 pub mod menu;
 pub mod quit;
+pub mod setup_window;
 pub mod window;
 
 use std::path::PathBuf;
@@ -21,7 +21,11 @@ type App = tauri::App<AppRuntime>;
 const REAP_EVERY: Duration = Duration::from_secs(300);
 
 /// Runs the launcher, as the app or as a deploy worker (see `crate::run`).
-pub fn run() {
+///
+/// # Errors
+///
+/// When Tauri can't build the app (its embedded configuration is broken).
+pub fn run() -> tauri::Result<()> {
     // First: a panic anywhere after this lands in the log file, not in a stderr nobody sees.
     logging::install_panic_hook();
     // `cyberctf-desktop interrupt --pid <pid>` (Windows): Ctrl+C a deploy's Terraform so it stops
@@ -39,10 +43,11 @@ pub fn run() {
     // runs one lab's deploy headless and exits; the app that started it only follows its log, so
     // quitting the app never cuts a deploy short.
     if let Some(job) = worker_job(std::env::args()) {
-        deploy_worker::worker_main(job, context);
-        return;
+        return deploy_worker::worker_main(&job, context);
     }
-    commands::register(app_builder()).build(context).expect("error while building Cyber CTF").run(on_run_event);
+    let app = commands::register(app_builder()).build(context).inspect_err(|e| log::error!("couldn't build Cyber CTF: {e}"))?;
+    app.run(|app, event| on_run_event(app, &event));
+    Ok(())
 }
 
 /// The app: its plugins, window and menu events, and setup.
@@ -73,8 +78,11 @@ fn app_builder() -> tauri::Builder<AppRuntime> {
             }
         })
         .menu(menu::build)
-        .on_menu_event(menu::on_event)
-        .setup(setup)
+        .on_menu_event(|app, event| menu::on_event(app, &event))
+        .setup(|app| {
+            setup(app);
+            Ok(())
+        })
 }
 
 /// The job file when this process was started as a deploy worker (`<exe> deploy --job <file>`).
@@ -86,7 +94,7 @@ fn worker_job(args: impl IntoIterator<Item = String>) -> Option<PathBuf> {
     }
 }
 
-fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
+fn setup(app: &mut App) {
     logging::log_startup(app.handle(), "app");
     // Before anything reads its settings: what a virtualized Store build saved.
     #[cfg(windows)]
@@ -124,7 +132,6 @@ fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Bring your own compute: register this machine and run the player's labs on it.
     account::agent::spawn(app.handle().clone());
     spawn_reaper(app.handle().clone());
-    Ok(())
 }
 
 /// Timed teardown of expired cloud labs: once on startup, then every 5 minutes, so a forgotten
@@ -132,7 +139,7 @@ fn setup(app: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
 fn spawn_reaper(app: AppHandle) {
     tauri::async_runtime::spawn(every_pass(REAP_EVERY, move || {
         let app = app.clone();
-        async move { runtime::reap_expired_labs(&app).await }
+        async move { Box::pin(runtime::reap_expired_labs(&app)).await }
     }));
 }
 
@@ -152,10 +159,10 @@ where
     }
 }
 
-fn on_run_event(app: &AppHandle, event: RunEvent) {
+fn on_run_event(app: &AppHandle, event: &RunEvent) {
     // Cmd+Q, the Quit menu item and a system shutdown come through here, not the window close
     // event. Intercept the same way, so a deploy in progress isn't cut off.
-    if let RunEvent::ExitRequested { api, code, .. } = &event
+    if let RunEvent::ExitRequested { api, code, .. } = event
         && code.is_none()
         && quit::intercept(app)
     {
@@ -195,7 +202,7 @@ mod tests {
 
     #[test]
     fn only_deploy_job_arguments_make_a_worker() {
-        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let args = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
         assert_eq!(worker_job(args(&["app", "deploy", "--job", "/d/lab.json"])), Some("/d/lab.json".into()));
         assert_eq!(worker_job(args(&["app", "deploy", "--job", "/d/lab.json", "extra"])), Some("/d/lab.json".into()));
         assert_eq!(worker_job(args(&["app", "deploy", "--job"])), None);

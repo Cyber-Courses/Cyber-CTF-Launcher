@@ -120,7 +120,7 @@ mod tests {
     /// by `CYBERCTF_TEST_IMAGE`, default python:3.11-alpine, already local):
     /// `cargo test real_docker -- --ignored`.
     #[tokio::test]
-    #[ignore]
+    #[ignore = "needs Docker and a local test image"]
     async fn real_docker_machine_page_stop_removes_the_labs_volumes_and_networks() {
         use crate::platform::exec::run;
         let image = std::env::var("CYBERCTF_TEST_IMAGE").unwrap_or_else(|_| "python:3.11-alpine".into());

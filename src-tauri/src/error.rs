@@ -167,6 +167,10 @@ pub enum Error {
     ToolMissing { tool: &'static str },
     #[error("`{command}` failed: {stderr}")]
     CommandFailed { command: String, stderr: String },
+    /// A lab's lock couldn't be taken (its file can't be opened or locked): the operation stops
+    /// there rather than run unlocked.
+    #[error("Couldn't lock the lab: {0}")]
+    LockUnavailable(#[source] std::io::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -185,7 +189,7 @@ impl Error {
             Error::CommandFailed { command, stderr } => Code::CommandFailed { command: command.clone(), stderr: stderr.clone() },
             Error::Cancelled => Code::SignInCancelled,
             Error::Unreachable(detail) => Code::Unreachable { detail: detail.clone() },
-            Error::Invalid(_) | Error::Refused(_) | Error::Io(_) => Code::Other,
+            Error::Invalid(_) | Error::Refused(_) | Error::LockUnavailable(_) | Error::Io(_) => Code::Other,
         }
     }
 

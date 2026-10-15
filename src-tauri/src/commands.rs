@@ -2,6 +2,9 @@
 //! capability grants (build.rs, capabilities/). Each is a thin adapter: it turns the webview's
 //! arguments and channels into the domain's types and calls the domain's function. The runtime's
 //! commands stay in `runtime/` until it moves to the Isothrum runner.
+// Tauri builds a command's arguments from the webview's message and hands each over by value: an
+// app handle or a window can't be borrowed, so a command that only reads one still takes it.
+#![allow(clippy::needless_pass_by_value, reason = "Tauri hands a command its arguments by value")]
 
 mod account;
 mod app;

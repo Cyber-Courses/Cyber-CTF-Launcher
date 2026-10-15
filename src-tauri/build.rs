@@ -90,19 +90,20 @@ const COMMANDS: &[&str] = &[
     "uninstall_dependency",
 ];
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let attributes = tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(COMMANDS));
-    tauri_build::try_build(with_windows_manifest(attributes)).expect("tauri-build failed");
+    tauri_build::try_build(with_windows_manifest(attributes))?;
+    Ok(())
 }
 
 /// On Windows, tauri-build embeds the app manifest (Common Controls v6) in the app binary only,
-/// so the unit-test executable ran without it and failed to load (STATUS_ENTRYPOINT_NOT_FOUND:
-/// comctl32's TaskDialogIndirect needs v6). Embed the same manifest in every linked target.
+/// so the unit-test executable ran without it and failed to load (`STATUS_ENTRYPOINT_NOT_FOUND`:
+/// comctl32's `TaskDialogIndirect` needs v6). Embed the same manifest in every linked target.
 fn with_windows_manifest(attributes: tauri_build::Attributes) -> tauri_build::Attributes {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") || std::env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("msvc") {
         return attributes;
     }
-    let manifest = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("windows-app-manifest.xml");
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("windows-app-manifest.xml");
     println!("cargo:rerun-if-changed={}", manifest.display());
     println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
     println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());

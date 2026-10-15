@@ -20,6 +20,7 @@ use tokio::process::{Child, Command};
 pub use docker::login_name;
 pub use docker::{docker_denied, docker_denied_error, image_repository, valid_image};
 #[cfg(windows)]
+#[cfg(windows)]
 pub use elevate::{OWNER_WINDOW_ENV, owner_window, set_owner_window};
 pub use elevate::{join_hyperv_admins, may_manage_hyperv};
 pub(crate) use group::GroupGuard;
@@ -47,7 +48,7 @@ pub const CLI_TIMEOUT: Duration = Duration::from_secs(60);
 const STREAM_ERROR_LINES: usize = 10;
 
 /// How long a tool's pipes are still read once it has exited: its last lines are in them, but a
-/// process it left running (an ssh ControlMaster, a Terraform provider plugin) can hold them open
+/// process it left running (an ssh `ControlMaster`, a Terraform provider plugin) can hold them open
 /// for good, and waiting for them to close hung the run (and the lab's lock) forever.
 const DRAIN_AFTER_EXIT: Duration = Duration::from_secs(2);
 
@@ -198,6 +199,20 @@ pub async fn run_env_timed(program: &'static str, args: &[&str], cwd: Option<&Pa
     run_inner(program, args, cwd, env, Some(timeout)).await
 }
 
+/// `program args` reading `stdin`, with `env` added, in `cwd` when given, its output piped.
+/// Piped explicitly: `spawn` (unlike `output`) inherits the parent's stdio by default, and
+/// `wait_with_output` then returned an empty stdout although the tool printed plenty (every
+/// timed status probe read as "nothing running").
+fn piped_command(program: &str, args: &[&str], cwd: Option<&Path>, env: &[(String, String)], stdin: Stdio) -> Command {
+    let mut cmd = build(program, args);
+    cmd.stdin(stdin).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    cmd
+}
+
 async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env: &[(String, String)], timeout: Option<Duration>) -> Result<String> {
     shim::check_args(program, args)?;
     #[cfg(test)]
@@ -207,15 +222,7 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
     // Kept alive until the tool exits (see lan_relay).
     let relayed = crate::lan_relay::prepare(program, env).await;
     let env = relayed.env.as_slice();
-    let mut cmd = build(program, args);
-    // Piped explicitly: `spawn` (unlike `output`) inherits the parent's stdio by default, and
-    // `wait_with_output` then returned an empty stdout although the tool printed plenty (every
-    // timed status probe read as "nothing running").
-    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    cmd.envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-    if let Some(dir) = cwd {
-        cmd.current_dir(dir);
-    }
+    let mut cmd = piped_command(program, args, cwd, env, Stdio::null());
     // Its own group, so a timeout or cancellation ends the whole tree: `vagrant` is a wrapper
     // around `ruby` (an orphaned ruby per timed-out poll deadlocked on Vagrant's lock), and
     // `cmd /C az` around `python` (a cancelled `az login` left it running).
@@ -236,23 +243,27 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
 /// Like `run`, but adds `env` to the process environment and forwards every
 /// stdout/stderr line to `on_line` as it arrives.
 pub async fn stream(program: &'static str, args: &[&str], cwd: Option<&Path>, env: &[(String, String)], on_line: impl FnMut(String)) -> Result<()> {
-    stream_from(program, args, cwd, env, None, on_line).await
+    stream_from(program, args, cwd, Feed::Env(env), on_line).await
 }
 
 /// Like `stream`, with the file `stdin` as the command's standard input.
 pub async fn stream_stdin(program: &'static str, args: &[&str], cwd: Option<&Path>, stdin: &Path, on_line: impl FnMut(String)) -> Result<()> {
-    stream_from(program, args, cwd, &[], Some(stdin), on_line).await
+    stream_from(program, args, cwd, Feed::Stdin(stdin), on_line).await
 }
 
-async fn stream_from(
-    program: &'static str,
-    args: &[&str],
-    cwd: Option<&Path>,
-    env: &[(String, String)],
-    stdin: Option<&Path>,
-    on_line: impl FnMut(String),
-) -> Result<()> {
+/// What a streamed tool is given besides its arguments: more environment, or a file as its
+/// standard input.
+enum Feed<'a> {
+    Env(&'a [(String, String)]),
+    Stdin(&'a Path),
+}
+
+async fn stream_from(program: &'static str, args: &[&str], cwd: Option<&Path>, feed: Feed<'_>, on_line: impl FnMut(String)) -> Result<()> {
     shim::check_args(program, args)?;
+    let (env, stdin) = match feed {
+        Feed::Env(env) => (env, None),
+        Feed::Stdin(file) => (&[][..], Some(file)),
+    };
     #[cfg(test)]
     let mut on_line = on_line;
     #[cfg(test)]
@@ -262,16 +273,11 @@ async fn stream_from(
     }
     let relayed = crate::lan_relay::prepare(program, env).await;
     let env = relayed.env.as_slice();
-    let mut cmd = build(program, args);
     let input = match stdin {
         Some(f) => Stdio::from(std::fs::File::open(f)?),
         None => Stdio::null(),
     };
-    cmd.stdin(input).stdout(Stdio::piped()).stderr(Stdio::piped());
-    cmd.envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-    if let Some(dir) = cwd {
-        cmd.current_dir(dir);
-    }
+    let mut cmd = piped_command(program, args, cwd, env, input);
     // A cancellation ends the whole tree: `vagrant` is a wrapper whose `ruby` outlived the
     // wrapper killed alone, and kept Vagrant's lock. A deploy worker being stopped reaches it
     // through `kill_live_tools` (gently: SIGTERM), and Terraform's interrupt finds it as a group
@@ -296,7 +302,7 @@ async fn stream_from(
 /// last `keep` stderr lines.
 ///
 /// Lines are read as bytes and decoded lossily: tools print in the console's codepage
-/// (VBoxManage and Vagrant on a French Windows, WinRM output, a compose build's), and a line
+/// (`VBoxManage` and Vagrant on a French Windows, WinRM output, a compose build's), and a line
 /// that isn't UTF-8 once failed the stream, which dropped (and so killed) a `terraform apply`
 /// mid-run.
 pub async fn forward_lines(
@@ -305,8 +311,8 @@ pub async fn forward_lines(
     mut on_line: impl FnMut(String),
     mut on_stderr: impl FnMut(&str),
 ) -> Result<(ExitStatus, Vec<String>)> {
-    let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout"));
-    let mut stderr = BufReader::new(child.stderr.take().expect("piped stderr"));
+    let mut stdout = BufReader::new(piped(child.stdout.take(), "output")?);
+    let mut stderr = BufReader::new(piped(child.stderr.take(), "error output")?);
     // Kept across the loop: `read_until` is cancel safe only because a partial line stays here.
     let (mut out_buf, mut err_buf) = (Vec::new(), Vec::new());
     let (mut out_done, mut err_done) = (false, false);
@@ -338,14 +344,17 @@ pub async fn forward_lines(
     if !out_buf.is_empty() {
         on_line(take_line(&mut out_buf));
     }
-    if !err_buf.is_empty() {
-        tail.forward(take_line(&mut err_buf), &mut on_line, &mut on_stderr);
-    }
+    tail.flush(&mut err_buf, &mut on_line, &mut on_stderr);
     let status = match exited {
         Some(status) => status,
         None => child.wait().await?,
     };
     Ok((status, tail.lines.into()))
+}
+
+/// A child's stream, which the caller piped: an error, not a panic, if it didn't.
+fn piped<T>(stream: Option<T>, what: &str) -> Result<T> {
+    stream.ok_or_else(|| Error::Invalid(format!("the tool's {what} wasn't piped")))
 }
 
 /// A streamed tool's last stderr lines, kept for its error.
@@ -369,6 +378,13 @@ impl StderrTail {
             self.lines.push_back(line.clone());
         }
         on_line(line);
+    }
+
+    /// Forwards the stderr line half read into `buf`, if any: cut off, it is still a line.
+    fn flush(&mut self, buf: &mut Vec<u8>, on_line: &mut impl FnMut(String), on_stderr: &mut impl FnMut(&str)) {
+        if !buf.is_empty() {
+            self.forward(take_line(buf), on_line, on_stderr);
+        }
     }
 }
 
@@ -465,25 +481,37 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(10), "gave up in time");
     }
 
+    /// A tool that starts a long child of its own and writes its pid to `file`, then waits: the
+    /// program, its arguments, and how long it may run before it counts as stuck.
+    fn parent_of_a_child(file: &std::path::Path) -> (&'static str, Vec<String>, Duration) {
+        let path = file.display();
+        if cfg!(windows) {
+            let script = format!(
+                "$p = Start-Process -FilePath ping -ArgumentList '-n','120','127.0.0.1' -PassThru -NoNewWindow; Set-Content -Path '{path}' -Value $p.Id; Start-Sleep 120"
+            );
+            ("powershell", ["-NoProfile", "-NonInteractive", "-Command", &script].map(String::from).to_vec(), Duration::from_secs(10))
+        } else {
+            ("sh", vec!["-c".to_string(), format!("sleep 120 & echo $! > '{path}'; wait")], Duration::from_secs(2))
+        }
+    }
+
+    /// The child `parent_of_a_child` started, gone once its parent was ended.
+    async fn assert_child_gone(file: &std::path::Path) {
+        let pid: u32 = std::fs::read_to_string(file).expect("the tool started its child").trim().parse().unwrap();
+        let _ = std::fs::remove_file(file);
+        assert!(fake::gone(pid).await, "the tool's child {pid} was left running");
+    }
+
     #[tokio::test]
     async fn a_timed_out_tool_takes_what_it_started_with_it() {
         // Regression (Windows): a timeout killed the tool alone, and what it had started (a
         // wrapper's real program) ran on. A tool's whole tree ends with it now (a job object on
         // Windows, its process group on unix).
         let file = std::env::temp_dir().join(format!("cyberctf-tree-{}", rand::random::<u32>()));
-        let path = file.display().to_string();
-        let err = if cfg!(windows) {
-            let script = format!(
-                "$p = Start-Process -FilePath ping -ArgumentList '-n','120','127.0.0.1' -PassThru -NoNewWindow; Set-Content -Path '{path}' -Value $p.Id; Start-Sleep 120"
-            );
-            run_env_timed("powershell", &["-NoProfile", "-NonInteractive", "-Command", &script], None, &[], Duration::from_secs(10)).await
-        } else {
-            run_env_timed("sh", &["-c", &format!("sleep 120 & echo $! > '{path}'; wait")], None, &[], Duration::from_secs(2)).await
-        };
-        assert!(err.is_err(), "timed out");
-        let pid: u32 = std::fs::read_to_string(&file).expect("the tool started its child").trim().parse().unwrap();
-        let _ = std::fs::remove_file(&file);
-        assert!(fake::gone(pid).await, "the tool's child {pid} was left running");
+        let (program, args, limit) = parent_of_a_child(&file);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        assert!(run_env_timed(program, &args, None, &[], limit).await.is_err(), "timed out");
+        assert_child_gone(&file).await;
     }
 
     #[cfg(unix)]
@@ -506,7 +534,7 @@ mod tests {
     fn a_line_loses_its_ending_only() {
         let mut buf = b"a\r\r\n".to_vec();
         assert_eq!(take_line(&mut buf), "a\r");
-        assert!(buf.is_empty());
+        assert_eq!(buf, b"");
         assert_eq!(take_line(&mut b"last".to_vec()), "last");
         assert_eq!(take_line(&mut b"\n".to_vec()), "");
     }
@@ -516,20 +544,10 @@ mod tests {
         // A streamed `vagrant` is a wrapper around `ruby`: cancelled, the wrapper alone was
         // killed, and its ruby ran on holding Vagrant's lock. The tool's tree ends with it now.
         let file = std::env::temp_dir().join(format!("cyberctf-stream-tree-{}", rand::random::<u32>()));
-        let path = file.display().to_string();
-        let started = if cfg!(windows) {
-            let script = format!(
-                "$p = Start-Process -FilePath ping -ArgumentList '-n','120','127.0.0.1' -PassThru -NoNewWindow; Set-Content -Path '{path}' -Value $p.Id; Start-Sleep 120"
-            );
-            tokio::time::timeout(Duration::from_secs(10), stream("powershell", &["-NoProfile", "-NonInteractive", "-Command", &script], None, &[], |_| {}))
-                .await
-        } else {
-            tokio::time::timeout(Duration::from_secs(2), stream("sh", &["-c", &format!("sleep 120 & echo $! > '{path}'; wait")], None, &[], |_| {})).await
-        };
-        assert!(started.is_err(), "cancelled while it ran");
-        let pid: u32 = std::fs::read_to_string(&file).expect("the tool started its child").trim().parse().unwrap();
-        let _ = std::fs::remove_file(&file);
-        assert!(fake::gone(pid).await, "the tool's child {pid} was left running");
+        let (program, args, limit) = parent_of_a_child(&file);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        assert!(tokio::time::timeout(limit, stream(program, &args, None, &[], |_| {})).await.is_err(), "cancelled while it ran");
+        assert_child_gone(&file).await;
     }
 
     #[cfg(unix)]

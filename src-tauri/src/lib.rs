@@ -28,10 +28,10 @@ pub(crate) type WebviewWindow = tauri::WebviewWindow<AppRuntime>;
 /// Starts the launcher: the app with its windows, or, when started as `deploy --job <file>`, a
 /// headless deploy worker for one lab.
 ///
-/// # Panics
+/// # Errors
 ///
 /// When Tauri can't build the app (its embedded configuration is broken).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    app::run();
+pub fn run() -> tauri::Result<()> {
+    app::run()
 }

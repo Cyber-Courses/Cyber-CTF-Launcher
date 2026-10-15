@@ -80,7 +80,7 @@ mod tests {
         assert_eq!(size_for_arch(&v, "arm64"), None);
         assert_eq!(size_for_arch(&v, "riscv64"), None);
         assert_eq!(size_for_arch(&serde_json::json!({}), "amd64"), None);
-        assert!(!hub_arch().is_empty());
+        assert_ne!(hub_arch(), "");
         assert_eq!(hub_ref("a/b@sha256:abc").map(|r| r.1).as_deref(), Some("latest"));
     }
 

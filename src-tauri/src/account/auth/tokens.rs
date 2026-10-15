@@ -8,8 +8,8 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use super::store::Session;
-use crate::app::config;
 use crate::error::{Error, Result};
+use crate::platform::config;
 
 /// Lifetime assumed for an access token whose response doesn't say.
 const DEFAULT_EXPIRES_IN: u64 = 3600;
@@ -23,7 +23,7 @@ pub(super) struct TokenResponse {
 }
 
 pub(super) fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 pub(super) fn random_b64(bytes: usize) -> String {

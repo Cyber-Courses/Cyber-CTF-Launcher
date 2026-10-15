@@ -26,11 +26,11 @@ proptest! {
             prop_assert_eq!(installer_exit_code(&format!("{ws}{PREFIX}{ws}{v}{ws}{end}")), Some(code), "{}", v);
         }
         // A negative HRESULT as a signed number is the same code.
-        prop_assert_eq!(installer_exit_code(&format!("{PREFIX} {}", code as i32)), Some(code));
+        prop_assert_eq!(installer_exit_code(&format!("{PREFIX} {}", code.cast_signed())), Some(code));
     }
 
     #[test]
-    fn a_code_out_of_range_or_another_line_is_none(big in (u32::MAX as u64 + 1)..u64::MAX, word in "[a-zA-Z ]{1,20}") {
+    fn a_code_out_of_range_or_another_line_is_none(big in (u64::from(u32::MAX) + 1)..u64::MAX, word in "[a-zA-Z ]{1,20}") {
         prop_assert_eq!(installer_exit_code(&format!("{PREFIX} {big}")), None);
         prop_assert_eq!(installer_exit_code(&format!("{PREFIX} 0x{big:x}")), None);
         prop_assume!(!word.trim().is_empty());
@@ -41,14 +41,14 @@ proptest! {
     /// A summary is given only for codes known to mean something, and a cancelled installer is
     /// said as a cancel whatever winget's own code around it.
     #[test]
-    fn summaries_are_only_for_known_codes(code in prop_oneof![any::<i32>(), Just(WINGET_INSTALLER_FAILED as i32), Just(0x8A15_010C_u32 as i32)], installer in proptest::option::of(prop_oneof![any::<u32>(), Just(1223u32), Just(1602u32)]), removing in any::<bool>()) {
+    fn summaries_are_only_for_known_codes(code in prop_oneof![any::<i32>(), Just(WINGET_INSTALLER_FAILED.cast_signed()), Just(0x8A15_010C_u32.cast_signed())], installer in proptest::option::of(prop_oneof![any::<u32>(), Just(1223u32), Just(1602u32)]), removing in any::<bool>()) {
         let got = winget_failure(Some(code), installer, removing);
-        let cancelled = installer.is_some_and(installer_cancelled) && code as u32 == WINGET_INSTALLER_FAILED;
-        prop_assert_eq!(got.is_some(), cancelled || winget_summary(code as u32).is_some());
+        let cancelled = installer.is_some_and(installer_cancelled) && code.cast_unsigned() == WINGET_INSTALLER_FAILED;
+        prop_assert_eq!(got.is_some(), cancelled || winget_summary(code.cast_unsigned()).is_some());
         if cancelled {
             prop_assert!(got.unwrap().contains("cancelled"));
         }
         prop_assert_eq!(winget_failure(None, installer, removing), None);
-        prop_assert_eq!(installer_failure(Some(code), removing).is_some(), installer_cancelled(code as u32));
+        prop_assert_eq!(installer_failure(Some(code), removing).is_some(), installer_cancelled(code.cast_unsigned()));
     }
 }
