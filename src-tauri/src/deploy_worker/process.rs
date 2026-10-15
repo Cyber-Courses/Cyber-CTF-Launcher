@@ -396,8 +396,8 @@ fn signal_group(pid: u32, signal: libc::c_int) {
 /// is the orphaned-resource case this wait is here to avoid.
 const TERRAFORM_GRACE_CHECKS: u32 = 1200;
 
-/// Half-second checks a Terraform apply gets to end on its own on Windows, where no clean
-/// interrupt reaches it (twenty minutes, a whole lab's worth).
+/// Half-second checks a Terraform apply gets to end on its own on Windows when no Ctrl+C reached
+/// it (twenty minutes, a whole lab's worth).
 #[cfg(windows)]
 const TERRAFORM_APPLY_WAIT_CHECKS: u32 = 2400;
 
@@ -429,7 +429,7 @@ pub async fn kill_and_wait(app: &AppHandle, key: &str) {
         remove_pidfile_of(&f.pid, worker.pid);
         return;
     }
-    // Windows: the worker is detached (no console), so no Ctrl event reaches its Terraform, and
+    // Windows, when no Ctrl+C reached its Terraform (none found yet, or its console refused it):
     // `taskkill` mid-apply leaves what it was creating out of its state (the destroy that follows
     // then leaves those resources running, and billing). The apply is waited for instead, bounded,
     // so the destroy sees everything.

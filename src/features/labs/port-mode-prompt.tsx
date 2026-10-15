@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { AlertTriangle, Plug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,17 +31,8 @@ function Dialog({ title }: { title: string }) {
   const [mode, setMode] = useState<PortMode>("random");
   const [remember, setRemember] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useFocusTrap(ref);
-  useEffect(() => {
-    // Escape is the dialog's alone (the lab page goes back to the list on it).
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      answer(null);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  // Escape answers "no start".
+  useFocusTrap(ref, true, () => answer(null));
 
   const start = () => {
     if (remember) setPortMode(mode);

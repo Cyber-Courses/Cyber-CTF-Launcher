@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { authLogin, authLoginCancel, type AuthStatus } from "@/lib/tauri";
 import { describeError, errorCode } from "@/lib/errors";
+import { registerReset } from "@/lib/module-state";
 
 // The sign-in through the browser, one at a time for the whole window: the sidebar, Settings,
 // the onboarding and the lab pages all start it here and show the same wait, so a second click
@@ -76,8 +77,8 @@ export function useSignIn(): SignInState {
   );
 }
 
-/** Tests: no sign-in waiting, nothing failed. */
-export function resetSignIn() {
+// No sign-in waiting, nothing failed (see registerReset).
+registerReset(() => {
   running = null;
   set(IDLE);
-}
+});

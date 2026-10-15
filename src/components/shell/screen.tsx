@@ -7,10 +7,9 @@ import { MachineScreen } from "@/features/machine/machine-screen";
 import { ServerScreen } from "@/features/servers/servers-screen";
 import { CloudScreen } from "@/features/cloud/cloud-screen";
 import { SettingsScreen } from "@/features/settings/settings-screen";
-import { CheckFailed } from "@/features/machine/check-failed";
+import { WaitingForCheck } from "@/features/machine/waiting-for-check";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LIST_SCREEN } from "@/components/ui/screen-width";
-import { Spinner } from "@/components/ui/spinner";
 import { type AuthStatus, type SystemReport } from "@/lib/tauri";
 import { signIn } from "@/lib/sign-in";
 import { useT } from "@/lib/i18n";
@@ -72,16 +71,5 @@ function TabScreen({ tab, report, checkError, auth, openLab, onRefresh, onNaviga
   ) : (
     // Placeholder rows, not a bare spinner: the list's shape while the machine check answers.
     <LabsLoading />
-  );
-}
-
-/** Shown where the machine check is needed and hasn't answered: a retry when it failed. */
-function WaitingForCheck({ what, checkError, onRetry }: { what: string; checkError: string | null; onRetry: () => void | Promise<void> }) {
-  return checkError ? (
-    <CheckFailed error={checkError} onRetry={onRetry} />
-  ) : (
-    <p className="flex items-center gap-2.5 text-[0.8125rem] text-muted-foreground">
-      <Spinner className="size-3.5" /> {what}
-    </p>
   );
 }

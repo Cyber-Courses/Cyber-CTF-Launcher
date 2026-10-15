@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { machineSelftest, type SelfTestEvent } from "@/lib/tauri";
 import { getVmProvider, setLastTest } from "@/lib/settings";
 import { useNow } from "@/lib/use-now";
+import { registerReset } from "@/lib/module-state";
 
 export type SelfTestResult = "idle" | "running" | "ok" | "fail";
 
@@ -47,10 +48,10 @@ function addEvent(kind: Kind, e: SelfTestEvent) {
   changed(s);
 }
 
-/** Forgets the runs (tests start from a clean slate). */
-export function resetSelfTests() {
+// Forgets the runs (see registerReset).
+registerReset(() => {
   for (const s of Object.values(shared)) Object.assign(s, { result: "idle", events: {}, times: {}, run: null });
-}
+});
 
 /** Runs a setup self-test and follows it: the last event and the timing of each step, the run's
  *  timing and its result (also saved as the last test). Runs on mount when `auto`, unless a run

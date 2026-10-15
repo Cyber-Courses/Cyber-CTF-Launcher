@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { type Provider, type ServerHost } from "@/lib/tauri";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -23,19 +23,8 @@ const targetKey = (t: RunTarget) => (t.kind === "local" || t.kind === "hosted" ?
 export function RunOnDialog({ onClose, children, footer }: { onClose: () => void; children: React.ReactNode; footer: React.ReactNode }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    // Escape is the dialog's alone: stopped here, it doesn't also reach the lab page's own
-    // Escape (which goes back to the list) once the dialog has closed and focus left it.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  // Keep keyboard focus inside the dialog and restore it on close.
-  useFocusTrap(ref);
+  // Keep keyboard focus inside the dialog and restore it on close; Escape closes it.
+  useFocusTrap(ref, true, onClose);
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--scrim)] p-4 backdrop-blur-[0.125rem]"

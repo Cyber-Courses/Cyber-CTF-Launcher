@@ -8,6 +8,7 @@ import { sharedPoll, useSharedPoll } from "@/lib/shared-poll";
 import { translate } from "@/lib/i18n";
 import { structurallyEqual } from "@/lib/equal";
 import { describeError, errorCode, type ErrorCode } from "@/lib/errors";
+import { registerReset } from "@/lib/module-state";
 
 /**
  * The live state of lab start/stop, kept outside the React tree so it survives navigating
@@ -60,16 +61,16 @@ const pending = new Map<string, { lines: string[]; times: number[] }>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 const FLUSH_MS = 100;
 
-/** Adds the waiting log lines now (one update for all of them). */
-/** Forgets every run (tests start from a clean window: the store lives at module level). */
-export function resetDeployStore() {
+// Forgets every run (see registerReset).
+registerReset(() => {
   if (flushTimer !== null) clearTimeout(flushTimer);
   flushTimer = null;
   pending.clear();
   state = { runs: {} };
   emit();
-}
+});
 
+/** Adds the waiting log lines now (one update for all of them). */
 export function flushDeployLogs() {
   if (flushTimer !== null) clearTimeout(flushTimer);
   flushTimer = null;
