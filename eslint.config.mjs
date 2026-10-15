@@ -1,38 +1,108 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import sonarjs from "eslint-plugin-sonarjs";
+import tseslint from "typescript-eslint";
 
-// Rules at "warn" are counted by the quality ratchet (`pnpm quality`, quality-baseline.json): a
-// count may go down, never up. Rules at "error" fail outright.
+// The engineering standard. A rule at "error" fails the lint. A rule at "warn" is one the code
+// doesn't meet yet: the quality ratchet (`pnpm quality`, quality-baseline.json) counts it, and its
+// count may go down, never up; once it reaches zero the rule goes back to "error" here.
+
+/** Every TypeScript file ESLint checks. */
+const CODE = ["src/**/*.{ts,tsx}", "scripts/**/*.ts"];
+/** Tests and their helpers. */
+const TESTS = ["src/**/*.test.{ts,tsx}", "src/test/**"];
+/** Next.js entry points, which must be default exports. */
+const ENTRY_POINTS = ["src/app/**/{page,layout,error,global-error,not-found,loading}.tsx"];
+
+/** Rules the shipped code and the tests don't meet yet. */
+const RATCHETED = [
+  "@typescript-eslint/max-params",
+  "@typescript-eslint/no-base-to-string",
+  "@typescript-eslint/no-confusing-void-expression",
+  "@typescript-eslint/no-deprecated",
+  "@typescript-eslint/no-dynamic-delete",
+  "@typescript-eslint/no-invalid-void-type",
+  "@typescript-eslint/no-meaningless-void-operator",
+  "@typescript-eslint/no-misused-promises",
+  "@typescript-eslint/no-non-null-assertion",
+  "@typescript-eslint/no-redundant-type-constituents",
+  "@typescript-eslint/no-unnecessary-condition",
+  "@typescript-eslint/no-unnecessary-type-arguments",
+  "@typescript-eslint/no-unnecessary-type-assertion",
+  "@typescript-eslint/no-unnecessary-type-conversion",
+  "@typescript-eslint/no-unnecessary-type-parameters",
+  "@typescript-eslint/no-unsafe-return",
+  "@typescript-eslint/prefer-promise-reject-errors",
+  "@typescript-eslint/restrict-template-expressions",
+  "@typescript-eslint/use-unknown-in-catch-callback-variable",
+  "import/no-default-export",
+  "max-lines",
+  "max-lines-per-function",
+  "sonarjs/cognitive-complexity",
+];
+/** Rules only the tests don't meet yet. */
+const RATCHETED_IN_TESTS = [
+  "@typescript-eslint/no-extraneous-class",
+  "@typescript-eslint/no-floating-promises",
+  "@typescript-eslint/no-misused-spread",
+  "@typescript-eslint/no-unsafe-assignment",
+  "@typescript-eslint/no-unsafe-member-access",
+  "@typescript-eslint/only-throw-error",
+  "@typescript-eslint/require-await",
+  "@typescript-eslint/unbound-method",
+];
+
+/** A rule's level: "warn" while the ratchet counts it, else "error". */
+const level = (rule) => (RATCHETED.includes(rule) ? "warn" : "error");
+/** `rule` at its level, with `options`. */
+const rule = (name, ...options) => [name, [level(name), ...options]];
+/** typescript-eslint's strict-type-checked rules at their levels (eslint-config-next registers
+ *  the plugin); the ones it turns off stay off. */
+const strictTypeChecked = tseslint.configs.strictTypeChecked
+  .flatMap((config) => Object.entries(config.rules ?? {}))
+  .map(([name, setting]) => {
+    const [severity, ...options] = Array.isArray(setting) ? setting : [setting];
+    return severity === "off" ? [name, "off"] : rule(name, ...options);
+  });
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // A promise nobody awaits or catches fails silently (an unhandled rejection): flag it. `void`
-  // marks one left to run on purpose, its failure handled inside. Type-aware, so it reads the
-  // project's types (the lint takes a few seconds longer). Tests await what they check.
+  // Type-aware: the rules read the project's types (the lint takes longer). A promise nobody
+  // awaits or catches fails silently; `void` marks one left to run on purpose.
   {
-    files: ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
-    ignores: ["src/**/*.test.{ts,tsx}", "src/test/**"],
+    files: CODE,
+    plugins: { sonarjs },
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
-    rules: { "@typescript-eslint/no-floating-promises": ["error", { ignoreVoid: true }] },
+    rules: Object.fromEntries([
+      ...strictTypeChecked,
+      rule("@typescript-eslint/no-floating-promises", { ignoreVoid: true }),
+      rule("@typescript-eslint/no-explicit-any"),
+      rule("@typescript-eslint/max-params", { max: 5 }),
+      rule("sonarjs/no-commented-code"),
+    ]),
   },
-  { rules: { "@typescript-eslint/no-explicit-any": "warn" } },
-  // Size limits (engineering standard): functions at most 60 lines, components at most 200 and
-  // other modules at most 400 (blank lines and comments not counted, JSX counted). Tests are long
-  // by nature (one `describe` holds a file's cases) and not limited.
+  { files: CODE, ignores: ENTRY_POINTS, rules: Object.fromEntries([rule("import/no-default-export")]) },
+  // Size limits: functions at most 60 lines and cognitive complexity 15, components at most 200
+  // lines and other modules at most 400 (blank lines and comments not counted, JSX counted). Tests
+  // are long by nature (one `describe` holds a file's cases) and not limited.
   {
-    files: ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
-    ignores: ["src/**/*.test.{ts,tsx}", "src/test/**"],
-    rules: {
-      "max-lines": ["warn", { max: 400, skipBlankLines: true, skipComments: true }],
-      "max-lines-per-function": ["warn", { max: 60, skipBlankLines: true, skipComments: true }],
-    },
+    files: CODE,
+    ignores: TESTS,
+    rules: Object.fromEntries([
+      rule("max-lines", { max: 400, skipBlankLines: true, skipComments: true }),
+      rule("max-lines-per-function", { max: 60, skipBlankLines: true, skipComments: true }),
+      rule("sonarjs/cognitive-complexity", 15),
+    ]),
   },
   {
     files: ["src/**/*.tsx"],
-    ignores: ["src/**/*.test.tsx"],
-    rules: { "max-lines": ["warn", { max: 200, skipBlankLines: true, skipComments: true }] },
+    ignores: TESTS,
+    rules: Object.fromEntries([rule("max-lines", { max: 200, skipBlankLines: true, skipComments: true })]),
   },
+  // Configured above for the tests too: only the level changes.
+  { files: TESTS, rules: Object.fromEntries(RATCHETED_IN_TESTS.map((name) => [name, "warn"])) },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

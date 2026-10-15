@@ -16,6 +16,192 @@
       "ts:features/settings": 8,
       "ts:lib": 1
     },
+    "eslint/@typescript-eslint/max-params": {
+      "ts:lib": 2
+    },
+    "eslint/@typescript-eslint/no-base-to-string": {
+      "ts:features/hosted": 1,
+      "ts:features/labs": 1,
+      "ts:features/servers": 1,
+      "ts:features/settings": 1,
+      "ts:lib": 13,
+      "ts:test": 1
+    },
+    "eslint/@typescript-eslint/no-confusing-void-expression": {
+      "ts:app": 8,
+      "ts:components": 54,
+      "ts:features": 8,
+      "ts:features/account": 3,
+      "ts:features/app": 10,
+      "ts:features/cloud": 8,
+      "ts:features/home": 13,
+      "ts:features/hosted": 1,
+      "ts:features/labs": 123,
+      "ts:features/machine": 54,
+      "ts:features/onboarding": 9,
+      "ts:features/servers": 59,
+      "ts:features/settings": 28,
+      "ts:lib": 85,
+      "ts:scripts": 4,
+      "ts:test": 3
+    },
+    "eslint/@typescript-eslint/no-deprecated": {
+      "ts:components": 1,
+      "ts:features/labs": 1
+    },
+    "eslint/@typescript-eslint/no-dynamic-delete": {
+      "ts:lib": 1
+    },
+    "eslint/@typescript-eslint/no-extraneous-class": {
+      "ts:features/labs": 1,
+      "ts:lib": 1
+    },
+    "eslint/@typescript-eslint/no-floating-promises": {
+      "ts:components": 2,
+      "ts:features/labs": 3,
+      "ts:lib": 1
+    },
+    "eslint/@typescript-eslint/no-invalid-void-type": {
+      "ts:features/labs": 9,
+      "ts:features/servers": 1,
+      "ts:lib": 26
+    },
+    "eslint/@typescript-eslint/no-meaningless-void-operator": {
+      "ts:scripts": 4
+    },
+    "eslint/@typescript-eslint/no-misused-promises": {
+      "ts:app": 3,
+      "ts:components": 4,
+      "ts:features/account": 2,
+      "ts:features/cloud": 4,
+      "ts:features/home": 2,
+      "ts:features/labs": 7,
+      "ts:features/machine": 12,
+      "ts:features/onboarding": 1,
+      "ts:features/servers": 17,
+      "ts:features/settings": 12
+    },
+    "eslint/@typescript-eslint/no-misused-spread": {
+      "ts:components": 1
+    },
+    "eslint/@typescript-eslint/no-non-null-assertion": {
+      "ts:components": 19,
+      "ts:features": 3,
+      "ts:features/cloud": 4,
+      "ts:features/home": 2,
+      "ts:features/hosted": 1,
+      "ts:features/labs": 67,
+      "ts:features/machine": 16,
+      "ts:features/servers": 9,
+      "ts:features/settings": 5,
+      "ts:lib": 2
+    },
+    "eslint/@typescript-eslint/no-redundant-type-constituents": {
+      "ts:components": 3
+    },
+    "eslint/@typescript-eslint/no-unnecessary-condition": {
+      "ts:components": 9,
+      "ts:features": 4,
+      "ts:features/cloud": 7,
+      "ts:features/home": 8,
+      "ts:features/labs": 47,
+      "ts:features/machine": 35,
+      "ts:features/onboarding": 4,
+      "ts:features/servers": 16,
+      "ts:features/settings": 9,
+      "ts:lib": 14,
+      "ts:scripts": 7,
+      "ts:test": 9
+    },
+    "eslint/@typescript-eslint/no-unnecessary-type-arguments": {
+      "ts:features/labs": 1
+    },
+    "eslint/@typescript-eslint/no-unnecessary-type-assertion": {
+      "ts:features/labs": 17,
+      "ts:features/machine": 9,
+      "ts:features/servers": 7,
+      "ts:features/settings": 1
+    },
+    "eslint/@typescript-eslint/no-unnecessary-type-conversion": {
+      "ts:features/cloud": 1,
+      "ts:features/home": 1,
+      "ts:features/labs": 9,
+      "ts:lib": 1
+    },
+    "eslint/@typescript-eslint/no-unnecessary-type-parameters": {
+      "ts:lib": 2
+    },
+    "eslint/@typescript-eslint/no-unsafe-assignment": {
+      "ts:features/machine": 3,
+      "ts:features/servers": 2
+    },
+    "eslint/@typescript-eslint/no-unsafe-member-access": {
+      "ts:features/machine": 2,
+      "ts:features/servers": 1
+    },
+    "eslint/@typescript-eslint/no-unsafe-return": {
+      "ts:components": 6,
+      "ts:features/machine": 2,
+      "ts:features/servers": 1,
+      "ts:lib": 1
+    },
+    "eslint/@typescript-eslint/only-throw-error": {
+      "ts:features": 1,
+      "ts:features/account": 2,
+      "ts:features/cloud": 3,
+      "ts:features/labs": 10,
+      "ts:features/machine": 17,
+      "ts:features/onboarding": 2,
+      "ts:features/servers": 16,
+      "ts:features/settings": 13,
+      "ts:test": 1
+    },
+    "eslint/@typescript-eslint/prefer-promise-reject-errors": {
+      "ts:features": 1,
+      "ts:features/account": 1,
+      "ts:features/labs": 1,
+      "ts:lib": 2
+    },
+    "eslint/@typescript-eslint/require-await": {
+      "ts:components": 15,
+      "ts:features": 2,
+      "ts:features/labs": 9,
+      "ts:features/machine": 6,
+      "ts:features/onboarding": 3,
+      "ts:features/servers": 8,
+      "ts:features/settings": 6,
+      "ts:lib": 51,
+      "ts:test": 1
+    },
+    "eslint/@typescript-eslint/restrict-template-expressions": {
+      "ts:components": 11,
+      "ts:features/cloud": 1,
+      "ts:features/home": 2,
+      "ts:features/labs": 47,
+      "ts:features/machine": 1,
+      "ts:features/onboarding": 3,
+      "ts:features/servers": 1,
+      "ts:lib": 7,
+      "ts:test": 1
+    },
+    "eslint/@typescript-eslint/unbound-method": {
+      "ts:features/labs": 1,
+      "ts:test": 3
+    },
+    "eslint/@typescript-eslint/use-unknown-in-catch-callback-variable": {
+      "ts:app": 2,
+      "ts:components": 2,
+      "ts:features/cloud": 1,
+      "ts:features/hosted": 1,
+      "ts:features/labs": 5,
+      "ts:features/machine": 1,
+      "ts:features/servers": 3,
+      "ts:features/settings": 3,
+      "ts:lib": 3
+    },
+    "eslint/import/no-default-export": {
+      "ts:messages": 6
+    },
     "eslint/max-lines": {
       "ts:features/labs": 2,
       "ts:features/settings": 2,
@@ -35,6 +221,13 @@
       "ts:features/servers": 8,
       "ts:features/settings": 5,
       "ts:lib": 3
+    },
+    "eslint/sonarjs/cognitive-complexity": {
+      "ts:features/cloud": 1,
+      "ts:features/labs": 5,
+      "ts:features/machine": 5,
+      "ts:features/servers": 2,
+      "ts:lib": 2
     },
     "exception/without-reason": {
       "rs:account": 1,
@@ -95,10 +288,73 @@
   },
   "clippy": {
     "darwin": {
+      "clippy/assert_is_empty": {
+        "rs:account": 6,
+        "rs:cloud": 2,
+        "rs:config": 1,
+        "rs:deploy_worker": 11,
+        "rs:exec": 1,
+        "rs:machine": 5,
+        "rs:operations": 1,
+        "rs:platform": 1,
+        "rs:runtime": 50,
+        "rs:source_scan": 1,
+        "rs:terminal": 2
+      },
+      "clippy/case_sensitive_file_extension_comparisons": {
+        "rs:platform": 1,
+        "rs:runtime": 1
+      },
+      "clippy/cast_lossless": {
+        "rs:platform": 1,
+        "rs:runtime": 1,
+        "rs:window": 1
+      },
+      "clippy/cast_possible_truncation": {
+        "rs:cloud": 2,
+        "rs:deploy_worker": 2,
+        "rs:machine": 4,
+        "rs:runtime": 4
+      },
+      "clippy/cast_possible_wrap": {
+        "rs:cloud": 1,
+        "rs:platform": 14
+      },
+      "clippy/cast_sign_loss": {
+        "rs:cloud": 2,
+        "rs:exec": 1,
+        "rs:machine": 2,
+        "rs:platform": 7
+      },
+      "clippy/checked_conversions": {
+        "rs:runtime": 1
+      },
       "clippy/cognitive_complexity": {
         "rs:exec": 1,
         "rs:platform": 1,
         "rs:runtime": 1
+      },
+      "clippy/default_trait_access": {
+        "rs:account": 3,
+        "rs:exec": 1,
+        "rs:runtime": 4
+      },
+      "clippy/doc_markdown": {
+        "rs:account": 7,
+        "rs:cloud": 2,
+        "rs:config": 5,
+        "rs:deploy_worker": 2,
+        "rs:exec": 4,
+        "rs:http": 1,
+        "rs:labs": 4,
+        "rs:lan_relay": 15,
+        "rs:machine": 8,
+        "rs:msix_data": 1,
+        "rs:operations": 1,
+        "rs:platform": 13,
+        "rs:root": 4,
+        "rs:runtime": 84,
+        "rs:terminal": 1
       },
       "clippy/expect_used": {
         "rs:deploy_worker": 1,
@@ -107,15 +363,180 @@
         "rs:root": 2,
         "rs:runtime": 3
       },
+      "clippy/float_cmp": {
+        "rs:runtime": 1
+      },
+      "clippy/fn_params_excessive_bools": {
+        "rs:runtime": 1
+      },
+      "clippy/format_collect": {
+        "rs:account": 1,
+        "rs:deploy_worker": 1,
+        "rs:exec": 1,
+        "rs:machine": 3,
+        "rs:runtime": 6,
+        "rs:ts_bindings": 1
+      },
+      "clippy/format_push_string": {
+        "rs:deploy_worker": 1,
+        "rs:exec": 8,
+        "rs:machine": 2,
+        "rs:platform": 1,
+        "rs:runtime": 12
+      },
+      "clippy/if_not_else": {
+        "rs:runtime": 1
+      },
+      "clippy/ignore_without_reason": {
+        "rs:machine": 2,
+        "rs:platform": 1,
+        "rs:runtime": 5
+      },
+      "clippy/ignored_unit_patterns": {
+        "rs:deploy_worker": 4,
+        "rs:exec": 1,
+        "rs:msix_data": 1,
+        "rs:terminal": 2
+      },
+      "clippy/ip_constant": {
+        "rs:runtime": 1
+      },
+      "clippy/items_after_statements": {
+        "rs:machine": 2,
+        "rs:runtime": 2,
+        "rs:terminal": 2
+      },
+      "clippy/large_futures": {
+        "rs:machine": 7,
+        "rs:root": 2,
+        "rs:runtime": 16
+      },
+      "clippy/large_stack_arrays": {
+        "rs:labs": 1,
+        "rs:terminal": 1
+      },
+      "clippy/manual_let_else": {
+        "rs:lan_relay": 2,
+        "rs:runtime": 1
+      },
+      "clippy/manual_string_new": {
+        "rs:lan_relay": 1,
+        "rs:runtime": 1
+      },
+      "clippy/map_unwrap_or": {
+        "rs:account": 1,
+        "rs:cloud": 1,
+        "rs:exec": 1,
+        "rs:lan_relay": 1,
+        "rs:logging": 1,
+        "rs:machine": 3,
+        "rs:platform": 1,
+        "rs:runtime": 14
+      },
+      "clippy/match_bool": {
+        "rs:account": 1
+      },
+      "clippy/match_same_arms": {
+        "rs:machine": 3,
+        "rs:runtime": 2
+      },
+      "clippy/needless_pass_by_value": {
+        "rs:account": 2,
+        "rs:cloud": 1,
+        "rs:deploy_worker": 2,
+        "rs:logging": 1,
+        "rs:machine": 1,
+        "rs:menu": 1,
+        "rs:platform": 2,
+        "rs:quit": 1,
+        "rs:root": 2,
+        "rs:runtime": 7,
+        "rs:shared_folder": 1,
+        "rs:terminal": 4,
+        "rs:test_app": 1,
+        "rs:window": 1
+      },
+      "clippy/needless_raw_string_hashes": {
+        "rs:runtime": 1
+      },
+      "clippy/nonminimal_bool": {
+        "rs:runtime": 1
+      },
+      "clippy/option_option": {
+        "rs:exec": 1
+      },
+      "clippy/range_plus_one": {
+        "rs:terminal": 1
+      },
+      "clippy/redundant_closure_for_method_calls": {
+        "rs:account": 2,
+        "rs:deploy_worker": 5,
+        "rs:exec": 1,
+        "rs:machine": 1,
+        "rs:platform": 2,
+        "rs:quit": 1,
+        "rs:root": 1,
+        "rs:runtime": 18,
+        "rs:terminal": 2
+      },
+      "clippy/semicolon_if_nothing_returned": {
+        "rs:exec": 4,
+        "rs:machine": 2,
+        "rs:runtime": 5
+      },
+      "clippy/similar_names": {
+        "rs:deploy_worker": 1,
+        "rs:runtime": 1
+      },
+      "clippy/single_match_else": {
+        "rs:account": 3,
+        "rs:lan_relay": 2,
+        "rs:runtime": 6
+      },
+      "clippy/stable_sort_primitive": {
+        "rs:deploy_worker": 1,
+        "rs:runtime": 4
+      },
       "clippy/too_many_arguments": {
         "rs:exec": 2,
         "rs:labs": 3,
         "rs:runtime": 11,
         "rs:terminal": 1
       },
+      "clippy/uninlined_format_args": {
+        "rs:runtime": 2
+      },
+      "clippy/unnecessary_wraps": {
+        "rs:account": 1,
+        "rs:exec": 2,
+        "rs:root": 1,
+        "rs:runtime": 2,
+        "rs:terminal": 1
+      },
+      "clippy/unreadable_literal": {
+        "rs:cloud": 4
+      },
+      "clippy/unused_async": {
+        "rs:machine": 1
+      },
+      "clippy/unused_self": {
+        "rs:exec": 2
+      },
       "clippy/unwrap_used": {
         "rs:root": 1,
         "rs:runtime": 9
+      },
+      "clippy/used_underscore_binding": {
+        "rs:deploy_worker": 1
+      },
+      "clippy/wildcard_imports": {
+        "rs:runtime": 7
+      },
+      "rustc/unsafe_code": {
+        "rs:deploy_worker": 2,
+        "rs:exec": 3,
+        "rs:platform": 2,
+        "rs:runtime": 2
       }
     }
   },

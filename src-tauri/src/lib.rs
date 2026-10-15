@@ -1,3 +1,6 @@
+//! The Cyber CTF launcher: a Tauri app that installs, runs and stops CTF labs on the player's
+//! machine, servers and cloud accounts. `run` starts it, as the app or as a deploy worker.
+
 mod account;
 mod atomic_file;
 mod cloud;
@@ -47,6 +50,12 @@ type App = tauri::App<AppRuntime>;
 /// How often expired cloud labs are looked for and torn down.
 const REAP_EVERY: Duration = Duration::from_secs(300);
 
+/// Starts the launcher: the app with its windows, or, when started as `deploy --job <file>`, a
+/// headless deploy worker for one lab.
+///
+/// # Panics
+///
+/// When Tauri can't build the app (its embedded configuration is broken).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // First: a panic anywhere after this lands in the log file, not in a stderr nobody sees.
