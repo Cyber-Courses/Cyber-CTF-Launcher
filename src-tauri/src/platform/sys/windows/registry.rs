@@ -36,7 +36,8 @@ pub fn registry_string(hive: Hive, key: &str, name: &str) -> Option<OsString> {
     for _ in 0..4 {
         let mut bytes = u32::try_from(buf.len() * 2).ok()?;
         // SAFETY: valid NUL-terminated key/value names; `buf` holds `bytes` bytes.
-        let status = unsafe { RegGetValueW(hive.key(), key.as_ptr(), name.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr().cast(), &mut bytes) };
+        let status =
+            unsafe { RegGetValueW(hive.key(), key.as_ptr(), name.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr().cast(), &raw mut bytes) };
         let units = usize::try_from(bytes).ok()? / 2;
         match status {
             ERROR_SUCCESS => {
@@ -56,7 +57,7 @@ pub fn registry_key_exists(hive: Hive, path: &str) -> Option<bool> {
     let path = wide(OsStr::new(path));
     let mut key: HKEY = std::ptr::null_mut();
     // SAFETY: a NUL-terminated key name; `key` receives the handle, closed right after.
-    let status = unsafe { RegOpenKeyExW(hive.key(), path.as_ptr(), 0, KEY_READ, &mut key) };
+    let status = unsafe { RegOpenKeyExW(hive.key(), path.as_ptr(), 0, KEY_READ, &raw mut key) };
     match status {
         ERROR_SUCCESS => {
             // SAFETY: the handle RegOpenKeyExW just opened.

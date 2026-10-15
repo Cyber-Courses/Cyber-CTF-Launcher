@@ -139,7 +139,9 @@ impl<'a> Vagrant<'a> {
     pub async fn batch(&self, steps: &[Step], on_event: impl FnMut(Event<'_>)) -> Result<Vec<Outcome>> {
         #[cfg(windows)]
         if let Mode::Script { runas } = self.mode {
-            return elevate::batch(self.dir, self.env, steps, runas, on_event).await;
+            // Boxed: following the script's run is a large future, which every caller of a batch
+            // (a lab's launch, the VM self-test) would carry otherwise.
+            return Box::pin(elevate::batch(self.dir, self.env, steps, runas, on_event)).await;
         }
         Ok(self.batch_here(steps, on_event).await)
     }

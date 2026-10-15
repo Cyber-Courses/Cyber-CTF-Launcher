@@ -1,7 +1,9 @@
 //! The worker process itself: a headless Tauri app that runs one job and exits.
 
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 
 use crate::AppHandle;
 use tauri::Manager as _;

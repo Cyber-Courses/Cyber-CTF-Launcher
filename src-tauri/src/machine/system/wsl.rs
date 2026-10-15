@@ -950,7 +950,7 @@ mod tests {
         assert!(report(&t.dirs()).await.is_some());
     }
 
-    /// Removes the test's RunOnce value however the test ends.
+    /// Removes the test's `RunOnce` value however the test ends.
     #[cfg(windows)]
     struct RunOnceValue(String);
 

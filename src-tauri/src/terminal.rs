@@ -215,7 +215,7 @@ fn follow(session: u32, mut reader: Box<dyn Read + Send>, send: impl FnMut(TermE
     });
 }
 
-/// Windows: ConPTY keeps the output open until the pseudo-console is closed, not when the shell
+/// Windows: `ConPTY` keeps the output open until the pseudo-console is closed, not when the shell
 /// ends, so the reader would wait (and the view show a live shell) forever. Watch the shell
 /// itself; once it has ended, keep its code in `ended` and close its session, which ends the
 /// output. Stops when the session is closed some other way (the window went).
@@ -482,7 +482,7 @@ mod tests {
                     out.push_str(&data);
                 }
                 Ok(TermEvent::Exit { code }) => break code,
-                Err(_) => panic!("no Exit within 15 s; output so far: {out:?}"),
+                Err(e) => panic!("no Exit within 15 s ({e}); output so far: {out:?}"),
             }
         };
         assert!(out.contains("hi"), "{out:?}");

@@ -45,7 +45,8 @@ pub fn run() -> tauri::Result<()> {
     // cleanly, from a throwaway process (see platform::console). Nothing else of the app starts.
     #[cfg(windows)]
     if let Some(pid) = platform::console::interrupt_pid(std::env::args()) {
-        std::process::exit(if platform::console::send_ctrl_c(pid) { 0 } else { 1 });
+        // Exit code 0 when it was sent, else 1 (the app reads only whether it succeeded).
+        std::process::exit(i32::from(!platform::console::send_ctrl_c(pid)));
     }
     runtime::server::mark_started();
     // Before anything else: GUI launches don't get the shell PATH (docker, vagrant, ovftool).

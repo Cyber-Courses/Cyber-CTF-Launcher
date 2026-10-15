@@ -30,7 +30,7 @@ pub use vagrant::{Event, Step, Vagrant, hyperv_switch_line, machines_on, on_hype
 use crate::error::{Error, Result};
 
 /// On Windows, every child of a windowed app gets a console window of its own unless told not
-/// to: the status polls (docker, vagrant, VBoxManage) would flash one on screen every few
+/// to: the status polls (docker, vagrant, `VBoxManage`) would flash one on screen every few
 /// seconds. `CREATE_NO_WINDOW` keeps them headless; their output is piped anyway.
 #[cfg(windows)]
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;

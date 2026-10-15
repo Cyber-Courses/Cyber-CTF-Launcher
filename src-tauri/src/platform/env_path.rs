@@ -212,7 +212,7 @@ mod tests {
         assert_eq!(appended(Some(&current), [PathBuf::from(r"c:\tools"), PathBuf::from(r"C:\WINDOWS\System32")]), None);
     }
 
-    /// The registry PATH reads back expanded (the user Path is usually REG_EXPAND_SZ with
+    /// The registry PATH reads back expanded (the user Path is usually `REG_EXPAND_SZ` with
     /// %USERPROFILE%), and holds System32 on any Windows install.
     #[cfg(windows)]
     #[test]

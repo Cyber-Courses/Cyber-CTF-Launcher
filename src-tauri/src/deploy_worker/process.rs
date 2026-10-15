@@ -500,7 +500,7 @@ fn terraform_runs_under(root: u32) -> Vec<u32> {
         .iter()
         .map(|(pid, p)| Proc {
             pid: pid.as_u32(),
-            parent: p.parent().map(|p| p.as_u32()),
+            parent: p.parent().map(sysinfo::Pid::as_u32),
             name: p.name().to_string_lossy().to_lowercase(),
             cmdline: p.cmd().iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" "),
         })

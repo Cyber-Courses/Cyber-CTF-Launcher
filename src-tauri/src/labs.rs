@@ -518,6 +518,7 @@ mod tests {
     #[test]
     fn an_update_with_a_file_held_open_keeps_the_installed_lab_whole() {
         use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 1;
         let labs = std::env::temp_dir().join(format!("cyberctf-swap-{}", rand::random::<u32>()));
         let (dir, staging) = (labs.join("invoice"), labs.join(".invoice.staging"));
         for (d, v) in [(&dir, "old"), (&staging, "new")] {
@@ -525,7 +526,6 @@ mod tests {
             std::fs::write(d.join("a.txt"), v).unwrap();
             std::fs::write(d.join("sub").join("disk.vmdk"), v).unwrap();
         }
-        const FILE_SHARE_READ: u32 = 1;
         let held = std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(dir.join("sub").join("disk.vmdk")).unwrap();
 
         let err = swap_in(&staging, &dir).unwrap_err().to_string();
