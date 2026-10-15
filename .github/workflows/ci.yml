@@ -33,8 +33,8 @@ jobs:
       # The static export; it also generates the route types tsc checks against.
       - run: pnpm build
       - run: pnpm exec tsc --noEmit
-      - run: pnpm exec eslint src
-      - run: pnpm exec prettier --check "src/**/*.{ts,tsx,css}"
+      - run: pnpm exec eslint src scripts
+      - run: pnpm exec prettier --check "{src,scripts}/**/*.{ts,tsx,css}"
       - run: pnpm exec vitest run
 
   rust:
@@ -64,8 +64,10 @@ jobs:
       - name: Format
         if: startsWith(matrix.os, 'ubuntu')
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      # Lints at "deny" (Cargo.toml) fail here; those at "warn" are held to quality-baseline.json by
+      # the quality ratchet (`pnpm quality`, part of `pnpm check`).
       - name: Lint
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
       # The tests rewrite the TypeScript command types from the Rust structs (ts_bindings.rs):

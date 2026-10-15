@@ -12,10 +12,20 @@ rust-version = "1.90"
 name = "cyberctf_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-# Function length (#150): over clippy.toml's `too-many-lines-threshold` fails `cargo clippy -D
-# warnings`. File length is checked by a test (src/code_size.rs).
+# The engineering standard's lints (thresholds in clippy.toml). Everything is denied, so a plain
+# `cargo clippy` fails on it; a lint at "warn" is one the code doesn't meet yet, counted by the
+# quality ratchet (`pnpm quality`, quality-baseline.json): its count may go down, never up.
+[lints.rust]
+unused = { level = "deny", priority = -1 }
+
 [lints.clippy]
+all = { level = "deny", priority = -1 }
 too_many_lines = "warn"
+too_many_arguments = "warn"
+cognitive_complexity = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
 
 [build-dependencies]
 tauri-build = { version = "2.7.0", features = [] }

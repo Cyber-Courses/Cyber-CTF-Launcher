@@ -1,0 +1,228 @@
+{
+  "rules": {
+    "dup/clone": {
+      "rs:account": 1,
+      "rs:exec": 4,
+      "rs:lan_relay": 1,
+      "rs:machine": 2,
+      "rs:platform": 2,
+      "rs:runtime": 9,
+      "ts:components": 15,
+      "ts:features": 3,
+      "ts:features/home": 1,
+      "ts:features/labs": 22,
+      "ts:features/machine": 8,
+      "ts:features/servers": 8,
+      "ts:features/settings": 8,
+      "ts:lib": 1
+    },
+    "eslint/max-lines": {
+      "ts:features/labs": 2,
+      "ts:features/settings": 2,
+      "ts:lib": 1
+    },
+    "eslint/max-lines-per-function": {
+      "ts:app": 1,
+      "ts:components": 6,
+      "ts:features/account": 1,
+      "ts:features/app": 1,
+      "ts:features/cloud": 2,
+      "ts:features/home": 1,
+      "ts:features/hosted": 1,
+      "ts:features/labs": 10,
+      "ts:features/machine": 11,
+      "ts:features/onboarding": 2,
+      "ts:features/servers": 8,
+      "ts:features/settings": 5,
+      "ts:lib": 3
+    },
+    "exception/without-reason": {
+      "rs:account": 1,
+      "rs:atomic_file": 1,
+      "rs:deploy_worker": 1,
+      "rs:exec": 1,
+      "rs:labs": 1,
+      "rs:runtime": 3,
+      "ts:components": 1,
+      "ts:features/labs": 3,
+      "ts:features/machine": 2,
+      "ts:features/servers": 4,
+      "ts:lib": 1
+    },
+    "knip/exports": {
+      "ts:components": 1,
+      "ts:e2e": 1,
+      "ts:features/labs": 4,
+      "ts:features/machine": 1,
+      "ts:lib": 2,
+      "ts:test": 1
+    },
+    "knip/types": {
+      "ts:features/home": 1,
+      "ts:features/hosted": 1,
+      "ts:features/labs": 1,
+      "ts:lib": 1
+    },
+    "rust/file-over-400-loc": {
+      "rs:exec": 1,
+      "rs:runtime": 1
+    },
+    "rust/mod-rs": {
+      "rs:account": 2,
+      "rs:deploy_worker": 1,
+      "rs:exec": 1,
+      "rs:lan_relay": 1,
+      "rs:machine": 4,
+      "rs:platform": 1,
+      "rs:runtime": 6
+    },
+    "rust/tauri-outside-adapters": {
+      "rs:account": 3,
+      "rs:cloud": 1,
+      "rs:deploy_worker": 4,
+      "rs:labs": 1,
+      "rs:logging": 1,
+      "rs:machine": 12,
+      "rs:menu": 1,
+      "rs:msix_data": 1,
+      "rs:operations": 1,
+      "rs:platform": 4,
+      "rs:quit": 1,
+      "rs:runtime": 24,
+      "rs:shared_folder": 1,
+      "rs:terminal": 1,
+      "rs:window": 1
+    }
+  },
+  "clippy": {
+    "darwin": {
+      "clippy/cognitive_complexity": {
+        "rs:exec": 1,
+        "rs:platform": 1,
+        "rs:runtime": 1
+      },
+      "clippy/expect_used": {
+        "rs:deploy_worker": 1,
+        "rs:exec": 2,
+        "rs:lan_relay": 2,
+        "rs:root": 2,
+        "rs:runtime": 3
+      },
+      "clippy/too_many_arguments": {
+        "rs:exec": 2,
+        "rs:labs": 3,
+        "rs:runtime": 11,
+        "rs:terminal": 1
+      },
+      "clippy/unwrap_used": {
+        "rs:root": 1,
+        "rs:runtime": 9
+      }
+    }
+  },
+  "exceptions": {
+    "src-tauri/src/account/auth/store.rs": {
+      "#[cfg_attr(debug_assertions, allow(dead_code))]": 5
+    },
+    "src-tauri/src/atomic_file.rs": {
+      "#[cfg_attr(not(debug_assertions), allow(dead_code))]": 1,
+      "#[cfg_attr(not(unix), allow(unused_variables))]": 1
+    },
+    "src-tauri/src/config.rs": {
+      "#[cfg_attr(debug_assertions, allow(dead_code))]": 1
+    },
+    "src-tauri/src/deploy_worker/process.rs": {
+      "#[cfg_attr(not(windows), allow(dead_code))]": 2,
+      "#[cfg_attr(not(windows), allow(unused_variables))]": 1
+    },
+    "src-tauri/src/exec/elevate.rs": {
+      "#![cfg_attr(not(windows), allow(dead_code))]": 1
+    },
+    "src-tauri/src/exec/fake.rs": {
+      "#[cfg_attr(not(windows), allow(dead_code))]": 1
+    },
+    "src-tauri/src/exec/group.rs": {
+      "#[cfg_attr(not(unix), allow(dead_code))]": 1
+    },
+    "src-tauri/src/labs.rs": {
+      "#[allow(clippy::too_many_arguments)]": 1
+    },
+    "src-tauri/src/lib.rs": {
+      "#[allow(clippy::too_many_lines, reason = \"one line per command: a list, not logic\")]": 1
+    },
+    "src-tauri/src/machine/system/wsl.rs": {
+      "#![cfg_attr(not(windows), allow(dead_code))]": 1
+    },
+    "src-tauri/src/msix_data.rs": {
+      "#[cfg_attr(not(windows), allow(dead_code))]": 2
+    },
+    "src-tauri/src/platform/console.rs": {
+      "#[cfg_attr(not(windows), allow(dead_code))]": 1
+    },
+    "src-tauri/src/runtime/docker/lifecycle.rs": {
+      "#[allow(dead_code)]": 2
+    },
+    "src-tauri/src/runtime/exegol.rs": {
+      "#[cfg_attr(not(target_os = \"macos\"), allow(dead_code))]": 1,
+      "#[cfg_attr(not(windows), allow(dead_code))]": 5
+    },
+    "src-tauri/src/runtime/launch.rs": {
+      "#[allow(clippy::too_many_arguments)]": 2
+    },
+    "src-tauri/src/runtime/launch/on_host.rs": {
+      "#[allow(clippy::too_many_arguments)]": 1
+    },
+    "src-tauri/src/runtime/terraform/services.rs": {
+      "#[allow(clippy::too_many_arguments)]": 1
+    },
+    "src-tauri/src/terminal.rs": {
+      "#[cfg_attr(not(windows), allow(dead_code))]": 1
+    },
+    "src/app/layout.tsx": {
+      "eslint-disable-next-line @next/next/no-sync-scripts -- must run before first paint to avoid a flash of the wrong mode": 1
+    },
+    "src/components/app-shell.tsx": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect": 1
+    },
+    "src/features/cloud/account-row.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/labs/network-diagram/fit-width.tsx": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect": 1
+    },
+    "src/features/labs/network-diagram/index.tsx": {
+      "eslint-disable-next-line react-hooks/exhaustive-deps -- sig captures everything drawn": 1
+    },
+    "src/features/labs/open-lab.tsx": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect": 1
+    },
+    "src/features/labs/run-on-options.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 2,
+      "eslint-disable-next-line react-hooks/set-state-in-effect": 1
+    },
+    "src/features/machine/hypervisor-logo.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/machine/setup-steps/engine-step.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element": 2
+    },
+    "src/features/servers/host-setup/form.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/servers/host-setup/provider-step.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/servers/host-setup/use-cloud-accounts.ts": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect": 3
+    },
+    "src/features/servers/provider-glyph.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/servers/server-self-test.tsx": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect": 1
+    },
+    "src/lib/appearance.ts": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect": 1
+    }
+  }
+}

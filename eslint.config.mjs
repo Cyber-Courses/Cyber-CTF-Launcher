@@ -2,6 +2,8 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+// Rules at "warn" are counted by the quality ratchet (`pnpm quality`, quality-baseline.json): a
+// count may go down, never up. Rules at "error" fail outright.
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -9,30 +11,27 @@ const eslintConfig = defineConfig([
   // marks one left to run on purpose, its failure handled inside. Type-aware, so it reads the
   // project's types (the lint takes a few seconds longer). Tests await what they check.
   {
-    files: ["src/**/*.{ts,tsx}"],
+    files: ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
     ignores: ["src/**/*.test.{ts,tsx}", "src/test/**"],
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
     rules: { "@typescript-eslint/no-floating-promises": ["error", { ignoreVoid: true }] },
   },
-  // Size limits (#150): about 50 lines per function and 400 per file are the targets; these caps
-  // (blank lines and comments not counted, JSX counted) stop new code from growing past what the
-  // largest components are now. Tests are long by nature and not limited.
+  { rules: { "@typescript-eslint/no-explicit-any": "warn" } },
+  // Size limits (engineering standard): functions at most 60 lines, components at most 200 and
+  // other modules at most 400 (blank lines and comments not counted, JSX counted). Tests are long
+  // by nature (one `describe` holds a file's cases) and not limited.
   {
-    files: ["src/**/*.{ts,tsx}"],
+    files: ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
     ignores: ["src/**/*.test.{ts,tsx}", "src/test/**"],
     rules: {
-      "max-lines": ["error", { max: 400, skipBlankLines: true, skipComments: true }],
-      "max-lines-per-function": ["error", { max: 100, skipBlankLines: true, skipComments: true }],
+      "max-lines": ["warn", { max: 400, skipBlankLines: true, skipComments: true }],
+      "max-lines-per-function": ["warn", { max: 60, skipBlankLines: true, skipComments: true }],
     },
   },
-  // Still over the caps, to split in a follow-up (#150).
   {
-    files: [
-      "src/lib/dev-mock.ts",
-      "src/components/command-palette.tsx",
-      "src/features/cloud/account-row.tsx",
-    ],
-    rules: { "max-lines": "off", "max-lines-per-function": "off" },
+    files: ["src/**/*.tsx"],
+    ignores: ["src/**/*.test.tsx"],
+    rules: { "max-lines": ["warn", { max: 200, skipBlankLines: true, skipComments: true }] },
   },
   // Override default ignores of eslint-config-next.
   globalIgnores([

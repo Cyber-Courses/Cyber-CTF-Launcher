@@ -1,3 +1,9 @@
-# Function length (#150): about 50 lines of code per function (blank lines and comments are
-# not counted). `too_many_lines` is turned on in Cargo.toml.
-too-many-lines-threshold = 50
+# The engineering standard's limits: functions at most 60 lines of code (blank lines and comments
+# not counted), at most 5 parameters, cognitive complexity at most 15. Tests may unwrap, expect
+# and panic: a failed assertion is how they report.
+too-many-lines-threshold = 60
+too-many-arguments-threshold = 5
+cognitive-complexity-threshold = 15
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
