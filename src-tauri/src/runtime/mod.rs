@@ -35,6 +35,8 @@ pub mod providers;
 mod proxmox;
 #[cfg(test)]
 mod real_labs;
+#[cfg(test)]
+mod real_server_labs;
 mod reaper;
 mod remote;
 pub mod server;

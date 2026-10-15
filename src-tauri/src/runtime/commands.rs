@@ -98,7 +98,8 @@ pub async fn running_labs(app: AppHandle) -> Vec<String> {
 }
 
 /// Runs a lab's exploitability check: does the intended exploit path still work? Lets a
-/// learner who broke their box know to reset it. Local Docker labs only for now.
+/// learner who broke their box know to reset it. Local Docker labs, and Proxmox VM labs through
+/// the runner.
 #[tauri::command]
 pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<docker::Check> {
     let dir = lab_dir(&app, &id)?;
@@ -107,6 +108,10 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
             isothrum::DockerRun::new(&runner_home(&app)?, &dir, &id)?.check().await
         }
         Runtime::Docker if server::lab_connection(&app, &dir)?.is_none() => docker::check(&dir, &id).await,
+        // A Proxmox VM lab the runner runs: its checks over SSH, through the lab's router.
+        Runtime::Vm if server::lab_connection(&app, &dir)?.is_some_and(|c| super::launch::runner_runs(c.provider, runtime)) => {
+            isothrum::ServerRun::new(&runner_home(&app)?, &dir, &id)?.check().await
+        }
         _ => Ok(docker::Check { available: false, ok: false, output: String::new(), results: Vec::new() }),
     }
 }

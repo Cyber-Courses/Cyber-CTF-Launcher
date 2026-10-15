@@ -13,7 +13,7 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         RunnerError::ToolMissing { tool, .. } => Error::coded(Code::ToolMissing { tool }),
         RunnerError::ToolFailed { step, reason } => tool_failed(&step, &reason),
         RunnerError::Timeout { step, after_s } => Error::Invalid(format!(
-            "Docker didn't finish `{step}` within {} minutes, so it was stopped. Start the lab again; if it keeps happening, check Docker's resources.",
+            "The lab's `{step}` step didn't finish within {} minutes, so it was stopped. Start the lab again; if it keeps happening, check the resources of Docker or the server.",
             after_s.div_ceil(60)
         )),
         RunnerError::NotReady { detail, .. } => Error::Invalid(format!("The lab started, but didn't become ready: {detail}")),

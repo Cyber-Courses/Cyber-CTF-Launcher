@@ -177,6 +177,11 @@ pub(super) async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: 
     let result = match server::terraform_target(c.provider) {
         // Cloud services: destroyed on the account they run on.
         _ if runtime == Runtime::Cloud => cloud_services::destroy(app, dir, id, &c, log).await,
+        // A Proxmox VM lab the runner runs: destroyed with the params it was applied with.
+        Some(_) if super::launch::runner_runs(c.provider, runtime) => {
+            let mut log = log;
+            stop_server_run(app, dir, id, &c, &mut log).await
+        }
         Some(tf) => {
             let module = lab::terraform_to_destroy(dir, runtime, tf)?;
             terraform::destroy(&module, &state_dir(app, id, tf)?, &c.tf_vars, &c.tf_env, log).await
@@ -187,6 +192,14 @@ pub(super) async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: 
         forget_run(dir)?;
     }
     result
+}
+
+/// Destroys a Proxmox VM lab the runner runs (connection `c`, the server's as it is now).
+async fn stop_server_run(app: &AppHandle, dir: &Path, id: &str, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
+    let host = server::marked_host(dir).unwrap_or_default();
+    let run = isothrum::ServerRun::new(&runner_home(app)?, dir, id)?;
+    let place = super::launch::server_place(app, &host, c, &run).await?;
+    run.down(&place, log).await
 }
 
 /// Stops a lab that runs on this machine (its containers, a local VM, or its VMs) and, once it

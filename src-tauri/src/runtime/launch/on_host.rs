@@ -21,6 +21,15 @@ pub(super) async fn start_on_server(
     // Mark first, so a half-created lab can still be destroyed on the same host.
     server::mark_lab(dir, Some(host))?;
     log(format!("Running on server host {} ({})", conn.name, conn.provider.id()));
+    if runner_runs(conn.provider, runtime) {
+        lab::prepare(dir, lab::Target::Proxmox)?;
+        let run = isothrum::ServerRun::new(&runner_home(app)?, dir, id)?;
+        let place = server_place(app, host, &conn, &run).await?;
+        if place.jump.is_some() {
+            log("The lab bridge is internal to the node: reaching the lab's VMs through the node.".into());
+        }
+        return run.up(&place, env, log).await;
+    }
     match server::terraform_target(conn.provider) {
         Some(tf) => start_terraform(app, dir, id, runtime, host, tf, conn, env, log).await,
         // ESXi: the same Vagrantfiles as on this machine, with the vmware_esxi provider.
@@ -39,6 +48,32 @@ pub(super) async fn start_on_server(
             Ok(())
         }
     }
+}
+
+/// Whether the Isothrum runner runs a lab of `runtime` on a `provider` server: VM labs on Proxmox,
+/// behind the runner's switch (`isothrum::chosen`).
+pub(in crate::runtime) fn runner_runs(provider: Provider, runtime: Runtime) -> bool {
+    provider == Provider::Proxmox && runtime == Runtime::Vm && isothrum::chosen()
+}
+
+/// Where a runner's run goes on server `host` (connection `conn`): its variables, the node when
+/// its profile names none, and the node login SSH goes through first when the lab bridge is
+/// internal (the runner's key, the launcher's own, let in on the node).
+pub(in crate::runtime) async fn server_place(
+    app: &AppHandle,
+    host: &str,
+    conn: &server::Connection,
+    run: &isothrum::ServerRun,
+) -> Result<isothrum::ServerPlace> {
+    let public = run.public_key().await?;
+    let key = runner_home(app)?.join("ssh").join("id_ed25519");
+    Ok(isothrum::ServerPlace {
+        label: host.to_owned(),
+        name: conn.name.clone(),
+        vars: conn.tf_vars.clone(),
+        node: server::discovered_node(app, host).await?,
+        jump: server::proxmox_jump_for_host(app, host, &key, &public).await?,
+    })
 }
 
 /// Proxmox and the clouds: Isoloom's Terraform for the lab's target, applied with the host's

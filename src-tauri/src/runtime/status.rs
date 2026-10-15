@@ -55,6 +55,12 @@ fn with_parked(s: LabStatus, parked: Option<super::Park>) -> LabStatus {
 }
 
 async fn server_status(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, c: server::Connection) -> Result<LabStatus> {
+    if super::launch::runner_runs(c.provider, runtime) {
+        // The runner's view, from its own record and state: no SSH, no API call.
+        let place = isothrum::ServerPlace { name: c.name.clone(), ..isothrum::ServerPlace::default() };
+        let status = isothrum::ServerRun::new(&runner_home(app)?, dir, id)?.status(&place).await?;
+        return Ok(LabStatus { running: status.running && !crate::deploy_worker::last_deploy_failed(app, id), ..status });
+    }
     let tf = server::terraform_target(c.provider);
     let status = match tf {
         Some(tf) => terraform::status(&state_dir(app, id, tf)?),

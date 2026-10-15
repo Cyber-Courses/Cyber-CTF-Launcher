@@ -14,7 +14,10 @@
 mod attack_box;
 mod errors;
 mod progress;
+mod server;
 mod view;
+
+pub(crate) use server::{ServerPlace, ServerRun};
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -62,12 +65,7 @@ impl DockerRun {
     /// where to start: the lab's message, its host ports filled in. `env` is the launch's: the
     /// inputs the lab's slots take, and [`PORTS_ENV`].
     pub(crate) async fn up(&self, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-        let lab = self.lab()?;
-        let opts = start_options(env);
-        let (sink, lines) = progress::channel();
-        let run = progress::follow(log, lines, lab.up(&opts, &sink)).await.map_err(errors::from_runner)?;
-        run.message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
-        Ok(())
+        up_with(&self.lab()?, &start_options(env), log).await
     }
 
     /// Removes everything the run created: containers, networks, volumes, its pinned ports.
@@ -114,16 +112,28 @@ impl DockerRun {
 
     /// Runs the lab's checks; not available when it declares none (nothing runs then).
     pub(crate) async fn check(&self) -> Result<Check> {
-        let lab = self.lab()?;
-        if lab.manifest().checks.runners.is_empty() {
-            return Ok(view::no_checks());
-        }
-        let opts = RunOptions::new();
-        let mut output = Vec::new();
-        let (sink, lines) = progress::channel();
-        let report = progress::follow(&mut |l| output.push(l), lines, lab.check(&opts, &sink)).await.map_err(errors::from_runner)?;
-        Ok(view::check(&report, &output))
+        checks_of(&self.lab()?).await
     }
+}
+
+/// Brings `lab` up with `opts`, its events as `log`'s lines, then says where to start: its
+/// message, filled.
+async fn up_with(lab: &Lab<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
+    let (sink, lines) = progress::channel();
+    let run = progress::follow(log, lines, lab.up(opts, &sink)).await.map_err(errors::from_runner)?;
+    run.message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
+    Ok(())
+}
+
+/// Runs `lab`'s checks; not available when it declares none (nothing runs then).
+async fn checks_of(lab: &Lab<'_>) -> Result<Check> {
+    if lab.manifest().checks.runners.is_empty() {
+        return Ok(view::no_checks());
+    }
+    let mut output = Vec::new();
+    let (sink, lines) = progress::channel();
+    let report = progress::follow(&mut |l| output.push(l), lines, lab.check(&RunOptions::new(), &sink)).await.map_err(errors::from_runner)?;
+    Ok(view::check(&report, &output))
 }
 
 /// A start's options: the launch's values for the manifest's secret and input slots (a value no

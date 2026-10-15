@@ -30,6 +30,11 @@ pub fn docker_manifest(dir: &Path) -> PathBuf {
     out(dir).join("docker/run.json")
 }
 
+/// A VM lab's run manifest on a Proxmox server (`.isoloom[-<n>]/proxmox/run.json`).
+pub fn proxmox_manifest(dir: &Path) -> PathBuf {
+    out(dir).join("proxmox/run.json")
+}
+
 /// The Compose file's service running the lab's checks (profile `check`).
 pub const CHECK_SERVICE: &str = "isoloom-check";
 

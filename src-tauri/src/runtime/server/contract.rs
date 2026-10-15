@@ -220,6 +220,22 @@ pub async fn proxmox_jump_for_host(app: &AppHandle, id: &str, identity: &Path, p
     Ok(Some(proxmox::node_login(&host)))
 }
 
+/// The node a Proxmox host's labs go on when its profile names none: the server's first, as its
+/// Test connection picks it (Isoloom's module no longer assumes `pve`). None for another kind of
+/// host, or when the profile names its node (its variables carry it).
+pub async fn discovered_node(app: &AppHandle, id: &str) -> Result<Option<String>> {
+    let host = load_host(app, id)?;
+    if host.provider != Provider::Proxmox || host.node.as_deref().is_some_and(|n| !n.is_empty()) {
+        return Ok(None);
+    }
+    let secret = get_secret(id)?;
+    let session = proxmox::sign_in(&host, &secret)
+        .await
+        .map_err(|e| crate::error::Error::Invalid(format!("Couldn't sign in to the Proxmox server to find its node: {e}")))?;
+    let node = session.node(&host).await.map_err(|e| crate::error::Error::Invalid(format!("Couldn't list the Proxmox server's nodes: {e}")))?;
+    Ok(Some(node))
+}
+
 /// The connection a VM lab directory was started with, if it runs on a server host.
 pub fn lab_connection(app: &AppHandle, dir: &Path) -> Result<Option<Connection>> {
     marked_host(dir).map(|id| connection(app, &id)).transpose()
