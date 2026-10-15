@@ -25,7 +25,7 @@ pub(super) async fn start_on_server(
         Some(tf) => start_terraform(app, dir, id, runtime, host, tf, conn, env, log).await,
         // ESXi: the same Vagrantfiles as on this machine, with the vmware_esxi provider.
         None => {
-            let spec = lab::prepare(dir, lab::vagrant_target(runtime))?;
+            let prepared = lab::prepare(dir, lab::vagrant_target(runtime))?;
             let env: Vec<(String, String)> = env.iter().cloned().chain(conn.env).collect();
             let vagrant = lab::vagrant_dir(dir, runtime);
             // Switched here from a local (or other) provider: clear the stale state first, so the
@@ -33,9 +33,9 @@ pub(super) async fn start_on_server(
             vm::reconcile_provider(&vagrant, conn.provider, &env, log).await;
             vm::start(&vagrant, conn.provider, &env, &mut *log).await?;
             if runtime == Runtime::Docker {
-                attack_box::in_lab_vm_or_note(&vagrant, &spec, &env, log).await;
+                attack_box::in_lab_vm_or_note(&vagrant, &prepared.spec, &env, log).await;
             }
-            finish_vagrant(dir, &spec, runtime, log);
+            finish_vagrant(dir, &prepared, runtime, log);
             Ok(())
         }
     }
@@ -57,7 +57,7 @@ pub(super) async fn start_terraform(
 ) -> Result<()> {
     let provider = conn.provider;
     let (module, target) = lab::terraform(dir, runtime, tf)?;
-    let spec = lab::prepare(dir, target)?;
+    let prepared = lab::prepare(dir, target)?;
     // The launcher's key: Terraform copies the lab over SSH with it, and "Open shell"
     // reaches the attack box on the lab host.
     let (key, public) = ssh::ensure_key(app).await?;
@@ -69,7 +69,7 @@ pub(super) async fn start_terraform(
     }
     // Every cloud firewall opens SSH and the published ports to this machine's public IP only.
     let allowed_ip = if provider.is_cloud() { Some(public_ip().await?) } else { None };
-    let vars = lab::run_vars(&conn.tf_vars, lab::inputs_json(&spec, env), jump.is_some(), public, &key, allowed_ip.as_deref());
+    let vars = lab::run_vars(&conn.tf_vars, lab::inputs_json(&prepared.spec, env), jump.is_some(), public, &key, allowed_ip.as_deref());
     if provider == Provider::Aws {
         check_aws_budget(app, host, log).await?;
     }
@@ -92,9 +92,9 @@ pub(super) async fn start_terraform(
     if runtime == Runtime::Docker {
         // The lab is up at this point: a failing attack box is noted, not a failed deploy (the
         // lab still gets recorded and its welcome shown).
-        attack_box::on_terraform_host_or_note(app, id, &spec, env, log).await;
+        attack_box::on_terraform_host_or_note(app, id, &prepared.spec, env, log).await;
     }
-    welcome(dir, &spec, lab::vagrant_target(runtime), log);
+    welcome(dir, &prepared.lab, lab::vagrant_target(runtime), log);
     Ok(())
 }
 

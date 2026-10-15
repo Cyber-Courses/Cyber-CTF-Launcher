@@ -274,7 +274,7 @@ mod tests {
         // Regression: the scan keyed labs by their raw isoloom name, but their VMs are named
         // after the lab's instance (`minilab-2 · dc01`), so after a restart a VirtualBox or
         // Parallels lab was never found running.
-        const SPEC: &str = "version: 1\nname: minilab\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  dc01:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n";
+        const SPEC: &str = "version: 1\nname: minilab\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  dc01:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n";
         let labs = std::env::temp_dir().join(format!("cyberctf-discover-inst-{}", rand::random::<u32>()));
         for (id, instance) in [("goad-a", Some("1")), ("goad-b", Some("2")), ("twin-1", None), ("twin-2", None)] {
             let d = labs.join(id);

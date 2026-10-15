@@ -75,12 +75,12 @@ pub(super) fn emulated_arches(spec: &lab::Spec, host: &str) -> Vec<&'static str>
 
 /// A lab on QEMU: its networks must fit QEMU's two-VM links, and a machine built for another CPU
 /// needs that CPU's emulator (`qemu-system-x86_64` for an x86 lab on an Apple Silicon Mac).
-pub(super) async fn check_qemu(spec: &lab::Spec, log: &mut impl FnMut(String)) -> Result<()> {
-    if let Some(why) = lab::qemu_refusal(spec) {
+pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(String)) -> Result<()> {
+    if let Some(why) = lab::qemu_refusal(&prepared.lab) {
         return Err(Error::Invalid(format!("This lab can't run on QEMU yet: {why}. Run it on a server or in your cloud account.")));
     }
     let host = std::env::consts::ARCH;
-    for arch in emulated_arches(spec, host) {
+    for arch in emulated_arches(&prepared.spec, host) {
         let bin = if arch == "x86_64" { "qemu-system-x86_64" } else { "qemu-system-aarch64" };
         if crate::platform::exec::run(bin, &["--version"], None).await.is_err() {
             return Err(Error::Invalid(format!(

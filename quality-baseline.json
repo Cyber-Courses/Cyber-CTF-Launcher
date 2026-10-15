@@ -22,7 +22,7 @@
   "clippy": {
     "darwin": {
       "clippy/assert_is_empty": {
-        "rs:runtime": 48
+        "rs:runtime": 47
       },
       "clippy/case_sensitive_file_extension_comparisons": {
         "rs:runtime": 1

@@ -85,8 +85,7 @@ pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<V
     if runtime == Runtime::Cloud {
         return Ok(Vec::new());
     }
-    let spec = lab::instanced(&dir)?;
-    Ok(lab::tools(&spec, runtime == Runtime::Docker))
+    lab::tools(&dir, runtime == Runtime::Docker)
 }
 
 /// The ids of labs running on this machine right now, found by scanning Docker and Vagrant
@@ -185,7 +184,7 @@ mod tests {
     use crate::testing::test_app::TestApp;
     use tauri::ipc::{Channel, InvokeResponseBody};
 
-    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n";
+    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\n";
 
     /// Starts an installed lab on Docker the way a launch does, minus the worker and the token.
     async fn start_docker(t: &TestApp, id: &str, logs: Channel<String>) -> crate::error::Result<()> {

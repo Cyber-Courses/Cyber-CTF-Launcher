@@ -1,14 +1,14 @@
 //! Real labs through the launcher's local Docker paths, end to end: generate and start the lab,
 //! read its status, start the attack box beside it and reach a target from inside it, run the
-//! lab's checks, then stop it and assert nothing of it is left. Each lab runs through the
-//! launcher's own Docker code (`launch::start_on_docker`, `status::local_status`,
-//! `docker::check`, `lifecycle::stop_here`) and through the Isothrum runner (`isothrum`, the
-//! hidden developer switch's path), which also parks and resumes it, the attack box following.
+//! lab's checks, park and resume it (the attack box following), then stop it and assert nothing
+//! of it is left. Each lab runs through the launcher's own Docker code (`launch::start_on_docker`,
+//! `status::local_status`, `docker::{check, park, resume}`, `lifecycle::stop_here`) and through
+//! the Isothrum runner (`isothrum`, the hidden developer switch's path).
 //!
 //! Opt-in (they need Docker, a lab checkout and the attack-box image):
 //!
 //! ```text
-//! CYBERCTF_TEST_LAB=<invoice-portal-api checkout> \
+//! CYBERCTF_TEST_LAB=<invoice-portal-api, in Isoloom's current syntax> \
 //! CYBERCTF_TEST_HELLO_LAB=<isoloom checkout>/examples/hello-stack \
 //! CYBERCTF_TEST_SEGMENTED_LAB=<isoloom checkout>/examples/segmented \
 //! cargo test real_labs -- --ignored --nocapture --test-threads=1
@@ -42,10 +42,11 @@ struct Run {
 }
 
 impl Run {
-    async fn start(&self, log: &mut impl FnMut(String)) -> Result<()> {
+    async fn start(&self, env: &[(&str, &str)], log: &mut impl FnMut(String)) -> Result<()> {
+        let env: Vec<(String, String)> = env.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
         match self.via {
-            Via::Launcher => launch::start_on_docker(&self.dir, &self.id, &[], log).await,
-            Via::Runner => launch::start_docker_run(&self.home, &self.dir, &self.id, &[], log).await,
+            Via::Launcher => launch::start_on_docker(&self.dir, &self.id, &env, log).await,
+            Via::Runner => launch::start_docker_run(&self.home, &self.dir, &self.id, &env, log).await,
         }
     }
 
@@ -60,6 +61,28 @@ impl Run {
         match self.via {
             Via::Launcher => docker::check(&self.dir, &self.id).await,
             Via::Runner => isothrum::DockerRun::new(&self.home, &self.dir, &self.id)?.check().await,
+        }
+    }
+
+    /// Parks the lab (its containers stopped, kept), as the lab page's Shut down does.
+    async fn park(&self, log: &mut impl FnMut(String)) -> Result<()> {
+        match self.via {
+            Via::Launcher => {
+                docker::park(&self.dir, &self.id, log).await?;
+                super::paths::mark_parked(&self.dir, Some(super::Park::Shutdown))
+            }
+            Via::Runner => isothrum::DockerRun::new(&self.home, &self.dir, &self.id)?.park(log).await,
+        }
+    }
+
+    /// Starts the parked lab again, as it was.
+    async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
+        match self.via {
+            Via::Launcher => {
+                docker::resume(&self.dir, &self.id, log).await?;
+                super::paths::mark_parked(&self.dir, None)
+            }
+            Via::Runner => isothrum::DockerRun::new(&self.home, &self.dir, &self.id)?.resume(log).await,
         }
     }
 
@@ -89,6 +112,8 @@ struct Expect {
     body: &'static str,
     /// The target publishes a port on this machine (the lab's local URL).
     published: bool,
+    /// The launch's values (an empty one: the lab's development value).
+    env: &'static [(&'static str, &'static str)],
 }
 
 fn attack_box_image() -> String {
@@ -182,32 +207,26 @@ fn check_status(s: &LabStatus, e: &Expect, f: &mut Vec<String>) {
 /// The lab while it is up; every failure is collected so the lab is always stopped after.
 async fn exercise(r: &Run, e: &Expect, f: &mut Vec<String>) {
     let mut log = log(&r.id);
-    if let Err(err) = r.start(&mut log).await {
+    if let Err(err) = r.start(e.env, &mut log).await {
         check(false, format!("the lab starts: {err}"), f);
         return;
     }
     exercise_status(r, e, f).await;
     exercise_attack_box(&r.id, e, log, f).await;
     exercise_checks(r, f).await;
-    if r.via == Via::Runner {
-        exercise_park_and_resume(r, e, f).await;
-    }
+    exercise_park_and_resume(r, e, f).await;
 }
 
 /// Parked, the lab and its attack box stop and stay; resumed, both come back as they were, the
 /// lab at the same address and the attack box on its networks.
 async fn exercise_park_and_resume(r: &Run, e: &Expect, f: &mut Vec<String>) {
     let url = r.status().await.ok().and_then(|s| s.url);
-    let run = match isothrum::DockerRun::new(&r.home, &r.dir, &r.id) {
-        Ok(run) => run,
-        Err(err) => return check(false, format!("the runner opens the lab: {err}"), f),
-    };
-    let parked = run.park(&mut log(&r.id)).await;
+    let parked = r.park(&mut log(&r.id)).await;
     check(parked.is_ok(), format!("the lab parks ({:?})", parked.err()), f);
     let s = r.status().await;
     check(s.as_ref().is_ok_and(|s| !s.running && s.parked.is_some()), format!("parked, it reads as parked ({:?})", s.map(|s| (s.running, s.parked))), f);
     check(!exegol::status(&r.id, &attack_box_image()).await.running, "the attack box stopped with the lab".into(), f);
-    let resumed = run.resume(&mut log(&r.id)).await;
+    let resumed = r.resume(&mut log(&r.id)).await;
     check(resumed.is_ok(), format!("the lab resumes ({:?})", resumed.err()), f);
     let s = r.status().await;
     check(s.as_ref().is_ok_and(|s| s.running && s.url == url), format!("resumed, it runs at the same address ({url:?})"), f);
@@ -316,11 +335,12 @@ fn hello_stack() -> Expect {
         lab_var: "CYBERCTF_TEST_HELLO_LAB",
         target: "web",
         networks: &["app"],
-        services: &["80=web"],
+        services: &["web=web"],
         url: "http://web/",
         code: "200",
         body: "hello from isoloom",
         published: true,
+        env: &[],
     }
 }
 
@@ -336,6 +356,7 @@ fn segmented() -> Expect {
         code: "200",
         body: "web on the front network",
         published: false,
+        env: &[],
     }
 }
 
@@ -357,26 +378,33 @@ async fn real_labs_segmented_on_the_runner() {
     real_lab("segmented", Via::Runner, segmented()).await;
 }
 
-/// One network, two machines (a web API and its database), checks of its own (an HTTP probe
-/// and a script on the lab network).
+/// The invoice-portal-api CTF lab: one network, two machines (a web API and its database, which
+/// claims the player's evidence in a set-up job), checks of its own (an HTTP probe and a script).
+fn invoice_portal() -> Expect {
+    Expect {
+        lab_var: "CYBERCTF_TEST_LAB",
+        target: "web",
+        networks: &["lab"],
+        services: &["portal=web"],
+        url: "http://web/api/invoices/INV-20507",
+        code: "401",
+        body: "",
+        published: true,
+        // Its inputs, empty: no launch to claim the evidence from, so the development value.
+        env: &[("CTF_API_URL", ""), ("CTF_LAUNCH_TOKEN", "")],
+    }
+}
+
 #[tokio::test]
-#[ignore = "needs Docker, the invoice-portal-api lab (rewritten in Isoloom's current syntax) and the attack-box image"]
+#[ignore = "needs Docker, the invoice-portal-api lab (in Isoloom's current syntax) and the attack-box image"]
 async fn real_labs_supplier_portal() {
-    real_lab(
-        "invoice",
-        Via::Launcher,
-        Expect {
-            lab_var: "CYBERCTF_TEST_LAB",
-            target: "web",
-            networks: &["lab"],
-            services: &["portal=web"],
-            url: "http://web/api/invoices/INV-20507",
-            code: "401",
-            body: "",
-            published: true,
-        },
-    )
-    .await;
+    real_lab("invoice", Via::Launcher, invoice_portal()).await;
+}
+
+#[tokio::test]
+#[ignore = "needs Docker, the invoice-portal-api lab (in Isoloom's current syntax) and the attack-box image"]
+async fn real_labs_supplier_portal_on_the_runner() {
+    real_lab("invoice", Via::Runner, invoice_portal()).await;
 }
 
 /// The segmented lab through the launcher's own Docker code.

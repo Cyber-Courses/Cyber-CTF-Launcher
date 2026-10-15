@@ -191,9 +191,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_lab_without_checks_has_nothing_to_verify() {
-        let dir = lab(
-            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  box:\n    networks: { lab: 10 }\n    docker: { image: alpine:3, idle: true }\n",
-        );
+        let dir = lab("version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  box:\n    networks: { lab: 10 }\n    os: alpine\n");
         let c = check(&dir, "t").await.unwrap();
         assert!(!c.available && !c.ok && c.results.is_empty() && c.output.is_empty());
         std::fs::remove_dir_all(dir).unwrap();
@@ -202,7 +200,7 @@ mod tests {
     #[test]
     fn checks_a_runner_never_reported_fail() {
         let dir = lab(
-            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\n  - { tcp: \"web:80\" }\n",
+            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\n  - { tcp: \"web:80\" }\n",
         );
         let spec = crate::runtime::lab::spec(&dir).unwrap();
         let plan = crate::runtime::lab::checks::plan(&spec);

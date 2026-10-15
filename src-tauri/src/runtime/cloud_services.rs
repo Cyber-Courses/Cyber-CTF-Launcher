@@ -352,7 +352,7 @@ fn parse_session(out: &str) -> Vec<(String, String)> {
 /// Starts a cloud-services lab on the player's cloud account `host` (see the module).
 pub(super) async fn start(app: &AppHandle, dir: &Path, id: &str, host: Option<&str>, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     let host = host.ok_or_else(|| Error::Invalid(CLOUD_NEEDS_ACCOUNT.into()))?;
-    let spec = lab::prepare(dir, Target::CloudServices)?;
+    let spec = lab::prepare(dir, Target::CloudServices)?.spec;
     let cloud = of(&spec)?;
     let module = module_dir(dir, cloud)?;
     check_supported(cloud)?;
@@ -491,7 +491,7 @@ pub(super) async fn destroy(app: &AppHandle, dir: &Path, id: &str, conn: &server
     let tf = server::terraform_target(conn.provider).unwrap_or_default();
     let state = state_dir(app, id, tf)?;
     // The variable files again (a newer launcher, or a cleared output folder).
-    let spec = lab::prepare(dir, Target::CloudServices)?;
+    let spec = lab::prepare(dir, Target::CloudServices)?.spec;
     let cloud = of(&spec)?;
     let module = module_dir(dir, cloud)?;
     let (env, aws_files) = run_env(conn, &state, cloud).await?;
@@ -760,7 +760,7 @@ mod tests {
     #[test]
     fn prepare_generates_the_cloud_services_files() {
         let dir = lab(SPEC);
-        let s = lab::prepare(&dir, Target::CloudServices).unwrap();
+        let s = lab::prepare(&dir, Target::CloudServices).unwrap().spec;
         assert!(s.cloud.is_some());
         let tfvars: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(".isoloom/cloud-services/terraform.tfvars.json")).unwrap()).unwrap();
         // Fixed values only: the input is written at launch.
@@ -1033,7 +1033,7 @@ mod tests {
         assert_eq!(p.outputs, vec!["key", "secret", "app"]);
         assert!(
             preview(&spec(
-                "version: 1\nname: t\nnetworks: { lab: { cidr: 10.0.0.0/24 } }\nmachines:\n  web: { networks: { lab: 10 }, docker: { image: nginx } }\n"
+                "version: 1\nname: t\nnetworks: { lab: { cidr: 10.0.0.0/24 } }\nmachines:\n  web: { networks: { lab: 10 }, app: { image: nginx } }\n"
             ))
             .is_none()
         );
@@ -1115,7 +1115,8 @@ mod tests {
         assert_eq!(got, preview(&spec(SPEC)));
         assert_eq!(got.map(|p| p.provider).as_deref(), Some("aws"));
         // A lab that isn't a cloud-services one has no preview.
-        let docker = "version: 1\nname: web\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n";
+        let docker =
+            "version: 1\nname: web\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n";
         t.lab("web", &[("isoloom.yml", docker), (".cyberctf-commit", commit)]);
         assert_eq!(super::super::lab_cloud_preview(app(), "web".into(), "CyberCTF/web".into(), commit.into()).await.unwrap(), None);
         // Refused before anything is downloaded: a bad lab id, another owner, a short commit.

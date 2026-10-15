@@ -372,7 +372,7 @@ fn status_reads_the_network_diagram_from_the_labs_spec() {
     let lab = temp_dir("status-lab");
     std::fs::write(
         lab.join("isoloom.yml"),
-        "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n",
+        "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n",
     )
     .unwrap();
     let vagrant = lab.join(".isoloom").join("vagrant");
@@ -394,7 +394,7 @@ fn the_labs_topology_is_read_again_only_once_its_spec_changed() {
     let spec = lab.join("isoloom.yml");
     std::fs::write(
         &spec,
-        "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.31.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n",
+        "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.31.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n",
     )
     .unwrap();
     let written = std::fs::metadata(&spec).unwrap().modified().unwrap();
@@ -410,7 +410,7 @@ fn the_labs_topology_is_read_again_only_once_its_spec_changed() {
     std::fs::remove_file(&spec).unwrap();
     std::fs::write(
         lab.join("isoloom.yaml"),
-        "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.31.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n",
+        "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.31.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n",
     )
     .unwrap();
     assert!(super::status::lab_topology(&lab).is_some(), "isoloom.yaml read");

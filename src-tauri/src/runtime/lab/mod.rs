@@ -19,8 +19,6 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use isoloom_spec::model::Protocol;
-
 use super::{Interface, Network};
 use crate::error::{Error, Result};
 
@@ -37,53 +35,47 @@ pub use vars::{esxi_env, host_vars, run_vars};
 pub use isoloom_plan::checks;
 pub use isoloom_spec::model::{Arch, Spec, Target};
 pub use isoloom_spec::model::{CloudProvider, CloudServices};
-pub use isoloom_targets::StartPlan;
+pub use isoloom_targets::{Lab, StartPlan};
 
-/// The lab's spec, checked (fields and the files it names), with this machine's Isoloom
-/// defaults applied (its image table).
-pub fn spec(dir: &Path) -> Result<Spec> {
-    let spec = isoloom_spec::load(dir).map_err(|e| Error::Invalid(load_error(&e)))?;
-    let problems: Vec<String> = isoloom_spec::validate(&spec).into_iter().chain(isoloom_spec::validate_files(&spec, dir)).map(|p| p.to_string()).collect();
+/// The lab in `dir` as its author wrote it, checked (its fields, its lowered form's and the files
+/// it names), with this machine's Isoloom defaults' image table.
+pub fn lab(dir: &Path) -> Result<Lab> {
+    let source = isoloom_spec::load(dir).map_err(|e| Error::Invalid(load_error(&e)))?;
+    let lab = Lab::new(source).with_images(defaults(dir)?.images);
+    let problems: Vec<String> = lab.problems_with_files(dir).iter().map(|p| p.render(isoloom_spec::SPEC_FILE)).collect();
     if !problems.is_empty() {
         return Err(Error::Invalid(format!("this lab's isoloom.yml has mistakes:\n{}", problems.join("\n"))));
     }
-    Ok(defaults(dir)?.images.apply(&spec))
+    Ok(lab)
+}
+
+/// The lab's spec, checked, as the lab itself (every form of each machine, no target's own
+/// facts): what its checks, addresses and resources are read from.
+pub fn spec(dir: &Path) -> Result<Spec> {
+    Ok(lab(dir)?.spec())
 }
 
 /// A spec as written, unchecked (what a launch dialog previews): `isoloom.yml` in `dir`.
 pub fn load(dir: &Path) -> Result<Spec> {
-    isoloom_spec::load(dir).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
+    isoloom_spec::load(dir).map(|s| Lab::new(s).spec()).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
 }
 
 /// A spec from its text, unchecked.
 pub fn parse(text: &str) -> Result<Spec> {
-    isoloom_spec::parse(text).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
+    isoloom_spec::parse(text).map(|s| Lab::new(s).spec()).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
 }
 
-/// A spec this build can't read. A key or a value the YAML parser doesn't know means the lab
-/// uses a newer format than this launcher (labs adopt spec additions before every player has
-/// updated), so say what to do instead of showing only the parser's message. Only the YAML, or
-/// a normalization step reading a part of it (`common:`, `groups:`, a clone), can say that; a
-/// missing or unreadable file is the lab's own problem whatever its text.
+/// A spec this build can't read. A key the format doesn't have means the lab uses a newer format
+/// than this launcher (labs adopt spec additions before every player has updated), so say what
+/// to do instead of showing only Isoloom's problems. A missing or unreadable file, or a mistake
+/// of the lab's own, is shown as Isoloom words it.
 fn load_error(e: &isoloom_spec::LoadError) -> String {
-    use isoloom_spec::LoadError;
-    let parsed = match e {
-        LoadError::Yaml(y) => Some(y.to_string()),
-        LoadError::Expand { reason, .. } => Some(reason.clone()),
-        _ => None,
-    };
-    match parsed {
-        Some(text) if newer_format(&text) => {
-            format!("This lab needs a newer version of Cyber CTF. Update it (Settings > About), then start the lab again.\n(isoloom.yml: {e})")
-        }
-        _ => format!("this lab's isoloom.yml: {e}"),
+    let newer = matches!(e, isoloom_spec::LoadError::Invalid { problems, .. } if problems.iter().any(|p| p.code == isoloom_spec::syntax::Code::UnknownField));
+    if newer {
+        format!("This lab needs a newer version of Cyber CTF. Update it (Settings > About), then start the lab again.\n(isoloom.yml: {e})")
+    } else {
+        format!("this lab's isoloom.yml: {e}")
     }
-}
-
-/// Whether a YAML error is serde's for a key or an enum value the model doesn't have (the
-/// parser's error carries no kind, only its message).
-fn newer_format(yaml_error: &str) -> bool {
-    yaml_error.contains("unknown field") || yaml_error.contains("unknown variant")
 }
 
 /// This machine's Isoloom defaults for the lab: the user's `~/.isoloom/defaults.yml`, the
@@ -101,8 +93,8 @@ pub fn spec_files(dir: &Path) -> Vec<std::path::PathBuf> {
     own.chain([isoloom_spec::defaults::user_file()]).collect()
 }
 
-/// The spec as this lab's instance of it (what `prepare` generates from): its own name and
-/// Docker blocks when the lab has an instance number.
+/// The spec as this lab's instance of it: its own name and Docker blocks when the lab has an
+/// instance number.
 pub fn instanced(dir: &Path) -> Result<Spec> {
     as_instance(spec(dir)?, instance(dir))
 }
@@ -129,12 +121,12 @@ pub struct Observer {
     pub publish: Option<u16>,
 }
 
-/// The lab's observers at their addresses: the container ones when the lab runs as
-/// containers (`docker`), else the ones the spec writes.
-pub fn tools(spec: &Spec, docker: bool) -> Vec<Observer> {
-    let snapshot = isoloom_targets::resolved::resolve(spec);
+/// The observers of the lab in `dir` (as its instance), at their addresses: the container ones
+/// when the lab runs as containers (`docker`), else the ones the spec writes.
+pub fn tools(dir: &Path, docker: bool) -> Result<Vec<Observer>> {
+    let snapshot = isoloom_targets::resolved::resolve_with(&lab(dir)?, instance(dir));
     let key = if docker { "docker_addresses" } else { "addresses" };
-    snapshot["tools"]
+    Ok(snapshot["tools"]
         .as_object()
         .map(|tools| {
             tools
@@ -142,25 +134,41 @@ pub fn tools(spec: &Spec, docker: bool) -> Vec<Observer> {
                 .map(|(name, t)| Observer {
                     name: name.clone(),
                     image: t["image"].as_str().map(str::to_string),
-                    addresses: t[key]
-                        .as_object()
-                        .map(|a| a.iter().filter_map(|(net, ip)| ip.as_str().map(|ip| Interface { network: net.clone(), ip: ip.to_string() })).collect())
-                        .unwrap_or_default(),
+                    addresses: interfaces(&t[key]),
                     publish: t["publish"].as_u64().and_then(|p| u16::try_from(p).ok()),
                 })
                 .collect()
         })
+        .unwrap_or_default())
+}
+
+/// A snapshot's `{ network: address }` as interfaces.
+fn interfaces(addresses: &serde_json::Value) -> Vec<Interface> {
+    addresses
+        .as_object()
+        .map(|a| a.iter().filter_map(|(net, ip)| ip.as_str().map(|ip| Interface { network: net.clone(), ip: ip.to_string() })).collect())
         .unwrap_or_default()
 }
 
-/// Generates `target`'s files into the lab (overwriting the previous ones), and returns the
-/// spec as this lab's instance of it. Fails with Isoloom's own reason when the lab can't run
-/// there (e.g. Windows machines on a target without Windows images). Isoloom's defaults are
-/// applied to the files, then the launcher's own overrides (see `overrides`).
-pub fn prepare(dir: &Path, target: Target) -> Result<Spec> {
-    let spec = spec(dir)?;
+/// A lab ready to run on one target: its spec as written (what Isoloom resolves its message and
+/// refusals from) and as the target runs it, this lab's instance of it.
+#[derive(Debug)]
+pub struct Prepared {
+    /// The lab as its author wrote it (boxed: an authored spec is large, and a start holds it
+    /// across its awaits).
+    pub lab: Box<Lab>,
+    /// The spec as the target runs it.
+    pub spec: Spec,
+}
+
+/// Generates `target`'s files into the lab (overwriting the previous ones), and returns the lab
+/// ready to run there. Fails with Isoloom's own reason when the lab can't run there (e.g.
+/// Windows machines on a target without Windows images). Isoloom's defaults are applied to the
+/// files, then the launcher's own overrides (see `overrides`).
+pub fn prepare(dir: &Path, target: Target) -> Result<Prepared> {
+    let lab = lab(dir)?;
     let n = instance(dir);
-    let files = generate(&spec, target, n).map_err(|e| Error::Invalid(format!("this lab can't run there: {e}")))?;
+    let files = generate(&lab, target, n).map_err(|e| Error::Invalid(format!("this lab can't run there: {e}")))?;
     let files = isoloom_spec::defaults::apply_to_files(files, &defaults(dir)?);
     for f in overrides::apply(files, &launcher_overrides(dir, target)) {
         let path = dir.join(f.path);
@@ -169,18 +177,19 @@ pub fn prepare(dir: &Path, target: Target) -> Result<Spec> {
         }
         std::fs::write(path, f.contents)?;
     }
-    as_instance(spec, n)
+    let spec = as_instance(lab.for_target(target), n)?;
+    Ok(Prepared { lab: Box::new(lab), spec })
 }
 
-/// `target`'s files for `spec`, as Isoloom generates them: the plan rendered by the target's
+/// `target`'s files for `lab`, as Isoloom generates them: the plan rendered by the target's
 /// backend, its run manifest (`<target>/run.json`) when it has one, and the resolved snapshot;
-/// for instance `n`, the spec as that instance and everything under `.isoloom-<n>/`. Refused,
-/// with the backend's reason, when the spec's machines don't allow the target or the plan needs
+/// for instance `n`, the lab as that instance and everything under `.isoloom-<n>/`. Refused,
+/// with the backend's reason, when the lab's machines don't allow the target or the plan needs
 /// what the backend can't do.
-fn generate(spec: &Spec, target: Target, n: Option<u8>) -> std::result::Result<Vec<isoloom_targets::GeneratedFile>, isoloom_targets::GenerateError> {
+fn generate(lab: &Lab, target: Target, n: Option<u8>) -> std::result::Result<Vec<isoloom_targets::GeneratedFile>, isoloom_targets::GenerateError> {
     match n {
-        Some(n) => isoloom_targets::generate_instance(spec, target, n),
-        None => isoloom_targets::generate(spec, target),
+        Some(n) => isoloom_targets::generate_instance(lab, target, n),
+        None => isoloom_targets::generate(lab, target),
     }
 }
 
@@ -192,10 +201,10 @@ fn launcher_overrides(dir: &Path, target: Target) -> overrides::Overrides {
 }
 
 /// Each machine's lab interfaces and the lab's networks, from Isoloom's resolved snapshot of
-/// the spec: addresses are static (declared in the lab), so the diagram of a VM lab comes from
+/// the lab: addresses are static (declared in the lab), so the diagram of a VM lab comes from
 /// here, without reaching into the guests or reading the generated files.
-pub fn topology(spec: &Spec) -> (HashMap<String, Vec<Interface>>, Vec<Network>) {
-    let snapshot = isoloom_targets::resolved::resolve(spec);
+pub fn topology(lab: &Lab) -> (HashMap<String, Vec<Interface>>, Vec<Network>) {
+    let snapshot = isoloom_targets::resolved::resolve(lab);
     let networks: Vec<Network> = snapshot["networks"]
         .as_object()
         .map(|nets| {
@@ -209,38 +218,28 @@ pub fn topology(spec: &Spec) -> (HashMap<String, Vec<Interface>>, Vec<Network>) 
                 .collect()
         })
         .unwrap_or_default();
-    let mut ifaces: HashMap<String, Vec<Interface>> = HashMap::new();
-    if let Some(machines) = snapshot["machines"].as_object() {
-        for (name, m) in machines {
-            let list: Vec<Interface> = m["addresses"]
-                .as_object()
-                .map(|a| a.iter().filter_map(|(net, ip)| ip.as_str().map(|ip| Interface { network: net.clone(), ip: ip.to_string() })).collect())
-                .unwrap_or_default();
-            ifaces.insert(name.clone(), list);
-        }
-    }
+    let ifaces = snapshot["machines"]
+        .as_object()
+        .map(|machines| machines.iter().map(|(name, m)| (name.clone(), interfaces(&m["addresses"]))).collect())
+        .unwrap_or_default();
     (ifaces, networks)
 }
 
 /// The lab's `message:` (where to start, the first step) with its placeholders filled from
-/// the resolved spec (`spec` as `prepare` returned it); shown once the lab is up. None when
-/// the lab has none, or it names a value the spec doesn't have (the lab's own mistake, not
-/// worth failing a launch over).
-pub fn message(dir: &Path, spec: &Spec, target: Target) -> Option<String> {
-    message_at(dir, spec, target, &[])
+/// the resolved lab; shown once the lab is up. None when the lab has none, or it names a value
+/// the lab doesn't have (the lab's own mistake, not worth failing a launch over).
+pub fn message(dir: &Path, lab: &Lab, target: Target) -> Option<String> {
+    message_at(dir, lab, target, &[])
 }
 
-/// `message` with the host ports the lab really got: (machine, container port, protocol, host
-/// port), the protocol `tcp` or `udp`. A local container lab publishes on ports picked at its
-/// first start, not the `publish:` values its spec declares, so a
-/// `{{ machines.web.ports.0.publish }}` must say where it answers. Addresses are the ones
-/// machines have on `target` (their Docker blocks on the Compose targets).
-pub fn message_at(dir: &Path, spec: &Spec, target: Target, published: &[(String, u16, String, u16)]) -> Option<String> {
-    let text = spec.message.as_deref()?;
-    let snapshot = isoloom_targets::resolved::on_target(isoloom_targets::resolved::resolve_with(spec, instance(dir)), target);
-    let published: Vec<(String, u16, Protocol, u16)> =
-        published.iter().map(|(m, port, proto, host)| (m.clone(), *port, if proto == "udp" { Protocol::Udp } else { Protocol::Tcp }, *host)).collect();
-    let snapshot = isoloom_targets::resolved::with_published(snapshot, &published);
+/// `message` with the host ports the lab really got: (machine, port name, host port). A local
+/// container lab publishes on ports picked at its first start, not the `publish:` values its
+/// spec declares, so a `{{ machines.web.ports.site.url }}` must say where it answers. Addresses
+/// are the ones machines have on `target` (their Docker blocks on the Compose targets).
+pub fn message_at(dir: &Path, lab: &Lab, target: Target, published: &[(String, String, u16)]) -> Option<String> {
+    let text = lab.source().message.as_deref()?;
+    let snapshot = isoloom_targets::resolved::on_target(isoloom_targets::resolved::resolve_with(lab, instance(dir)), target);
+    let snapshot = isoloom_targets::resolved::with_published(snapshot, published);
     // A placeholder naming a value this run doesn't have (a port the lab never published on this
     // target, a port not pinned yet) fills as nothing: the player got `http://localhost:/`.
     if placeholders(text).any(|path| isoloom_targets::resolved::lookup(&snapshot, path).is_none_or(|v| v.is_null() || v.as_str() == Some(""))) {
@@ -260,8 +259,8 @@ pub fn memory_mb(spec: &Spec) -> u32 {
 }
 
 /// Why the lab's VMs can't run on Vagrant's QEMU provider (its networks), if they can't.
-pub fn qemu_refusal(spec: &Spec) -> Option<String> {
-    isoloom_targets::refusal_on(spec, Target::Vagrant, Some("qemu"))
+pub fn qemu_refusal(lab: &Lab) -> Option<String> {
+    isoloom_targets::refusal_on(lab, Target::Vagrant, Some("qemu"))
 }
 
 /// How the lab's containers start, from its Compose file's text (Isoloom's start plan).
@@ -292,20 +291,24 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn a_newer_spec_asks_for_an_update() {
-        use isoloom_spec::{LoadError, Stage};
-        let yaml = |text: &str| LoadError::Yaml(serde_yaml_ng::from_str::<isoloom_spec::Spec>(text).unwrap_err());
-        assert!(load_error(&yaml("version: 1\nname: t\nmachines: {}\nbogus: 1\n")).starts_with("This lab needs a newer version of Cyber CTF"));
-        assert!(load_error(&yaml("machines: 3\n")).starts_with("this lab's isoloom.yml:"));
-        // A part of the spec read by a normalization step (`common:`) says so too.
-        let expand = LoadError::Expand { stage: Stage::Groups, reason: "common: unknown field `sysctl`, expected one of `environment`".into() };
-        assert!(load_error(&expand).starts_with("This lab needs a newer version of Cyber CTF"));
+    fn a_newer_spec_asks_for_an_update_and_an_older_one_says_what_changed() {
+        // A key this Isoloom doesn't know: the lab is newer than the launcher.
+        let dir = lab("version: 1\nname: t\nmachines: {}\nbogus: 1\n");
+        let err = spec(&dir).unwrap_err().to_string();
+        assert!(err.starts_with("This lab needs a newer version of Cyber CTF"), "{err}");
+        std::fs::remove_dir_all(dir).unwrap();
+        // A key of the earlier format: Isoloom names its replacement, no update asked for.
+        let dir =
+            lab("version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx }\n");
+        let err = spec(&dir).unwrap_err().to_string();
+        assert!(err.starts_with("this lab's isoloom.yml:") && err.contains("removed-field") && err.contains("app: { image: nginx }"), "{err}");
+        std::fs::remove_dir_all(dir).unwrap();
         // The file's own problems never ask for an update, whatever their words.
-        let missing = LoadError::NotFound(PathBuf::from("/labs/unknown field"));
+        let missing = isoloom_spec::LoadError::NotFound(PathBuf::from("/labs/unknown field"));
         assert!(load_error(&missing).starts_with("this lab's isoloom.yml: no isoloom.yml in"), "{}", load_error(&missing));
     }
 
-    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_LAUNCH_TOKEN]\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: [{ port: 80, http: true }]\n    inputs: [CTF_LAUNCH_TOKEN]\n    docker: { image: nginx:1.27 }\n";
+    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_LAUNCH_TOKEN]\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    files: [{ path: /run/lab/token, input: CTF_LAUNCH_TOKEN }]\n    app: { image: nginx:1.27 }\n";
 
     fn lab(spec: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("cyberctf-isoloom-{}", rand::random::<u32>()));
@@ -319,7 +322,7 @@ mod tests {
         let dir = lab(SPEC);
         prepare(&dir, Target::Docker).unwrap();
         let compose = std::fs::read_to_string(compose_file(&dir)).unwrap();
-        assert!(compose.contains("isoloom.port.80"));
+        assert!(compose.contains("isoloom.port.web"), "{compose}");
         // Named after the launcher's project for the lab, not the spec.
         let project = super::super::docker::project(dir.file_name().unwrap().to_str().unwrap());
         assert!(compose.contains(&format!("\nname: {project}\n")), "{compose}");
@@ -331,10 +334,9 @@ mod tests {
     #[test]
     fn explains_a_target_the_lab_cant_use() {
         let dir = lab(SPEC);
-        // No `vm:` part: no VMs.
+        // An image's filesystem can't be reproduced on a fresh VM: no VMs.
         let err = prepare(&dir, Target::Vagrant).unwrap_err().to_string();
-        assert!(err.contains("can't run there"), "{err}");
-        assert!(matches!(generate(&spec(&dir).unwrap(), Target::Vagrant, None), Err(isoloom_targets::GenerateError::NotPossible(Target::Vagrant))));
+        assert!(err.starts_with("this lab can't run there: vagrant") && err.contains("machines.web.app.image"), "{err}");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -343,9 +345,9 @@ mod tests {
         // Every target either renders (with the snapshot) or refuses in Isoloom's words, named
         // after the target: what the player reads after "can't run there".
         let dir = lab(SPEC);
-        let spec = spec(&dir).unwrap();
+        let lab = super::lab(&dir).unwrap();
         for target in isoloom_targets::GENERATED_TARGETS {
-            match generate(&spec, *target, None) {
+            match generate(&lab, *target, None) {
                 Ok(files) => assert!(files.iter().any(|f| f.path == isoloom_targets::resolved::PATH), "{target:?}: the snapshot goes with every target"),
                 Err(e) => assert!(e.to_string().starts_with(target.id()), "{target:?}: {e}"),
             }
@@ -354,13 +356,13 @@ mod tests {
     }
 
     #[test]
-    fn the_snapshot_read_here_is_version_two() {
-        // `tools`, `topology` and `blocks_clear` read the resolved snapshot's v2 fields
+    fn the_snapshot_read_here_is_version_three() {
+        // `tools`, `topology` and `blocks_clear` read the resolved snapshot's v3 fields
         // (`networks.*.cidr`, `docker_cidr`, `internet`, `machines.*.addresses`, `tools`). A new
         // version changes or drops fields: this fails so they are read again.
-        assert_eq!(isoloom_targets::resolved::RESOLVED_VERSION, 2);
+        assert_eq!(isoloom_targets::resolved::RESOLVED_VERSION, 3);
         let dir = lab(SPEC);
-        assert_eq!(isoloom_targets::resolved::resolve(&spec(&dir).unwrap())["resolved_version"], 2);
+        assert_eq!(isoloom_targets::resolved::resolve(&super::lab(&dir).unwrap())["resolved_version"], 3);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -373,10 +375,12 @@ mod tests {
 
     #[test]
     fn lists_every_mistake_of_a_spec_that_parses() {
-        let dir = lab("version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  a:\n    networks: { lab: 10, nope: 11 }\n    docker: {}\n");
+        let dir = lab(
+            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  a:\n    networks: { lab: 10, nope: 11 }\n    app: { image: nginx }\n  b:\n    networks: { lab: 10 }\n    app: { image: nginx }\n",
+        );
         let err = spec(&dir).unwrap_err().to_string();
         assert!(err.starts_with("this lab's isoloom.yml has mistakes:\n"), "{err}");
-        assert!(err.contains("machines.a.networks.nope") && err.contains("machines.a.docker"), "{err}");
+        assert!(err.contains("machines.a.networks.nope") && err.contains("machines.b.networks.lab"), "{err}");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -422,25 +426,25 @@ mod tests {
     #[test]
     fn topology_and_message_come_from_the_resolved_spec() {
         let dir = lab(
-            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\n  back: { cidr: 10.31.0.0/24, internet: false }\nmachines:\n  web:\n    networks: { lab: 10, back: 10 }\n    ports: [{ port: 80, http: true, publish: 8080 }]\n    docker: { image: nginx:1.27 }\n  db:\n    networks: { back: 20 }\n    docker: { image: redis:7 }\nmessage: |\n  Start at http://localhost:{{ machines.web.ports.0.publish }}/ (web is {{ machines.web.addresses.lab }}).\n",
+            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\n  back: { cidr: 10.31.0.0/24, internet: false }\nmachines:\n  web:\n    networks: { lab: 10, back: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8080 } }\n    app: { image: nginx:1.27 }\n  db:\n    networks: { back: 20 }\n    app: { image: redis:7 }\nmessage: |\n  Start at http://localhost:{{ machines.web.ports.web.published }}/ (web is {{ machines.web.addresses.lab }}).\n",
         );
-        let spec = spec(&dir).unwrap();
-        let (ifaces, networks) = topology(&spec);
+        let lab = super::lab(&dir).unwrap();
+        let (ifaces, networks) = topology(&lab);
         assert_eq!(
             networks.iter().map(|n| (n.name.as_str(), n.subnet.as_str(), n.internal)).collect::<Vec<_>>(),
             [("lab", "10.30.0.0/24", false), ("back", "10.31.0.0/24", true)]
         );
         assert_eq!(ifaces["web"].iter().map(|i| (i.network.as_str(), i.ip.as_str())).collect::<Vec<_>>(), [("lab", "10.30.0.10"), ("back", "10.31.0.10")]);
         assert_eq!(ifaces["db"].len(), 1);
-        assert_eq!(message(&dir, &spec, Target::Vagrant).as_deref(), Some("Start at http://localhost:8080/ (web is 10.30.0.10)."));
-        // A UDP port of the same number is another service: it doesn't move the TCP one.
+        assert_eq!(message(&dir, &lab, Target::Vagrant).as_deref(), Some("Start at http://localhost:8080/ (web is 10.30.0.10)."));
+        // Another machine's or another port's host port doesn't move this one.
         assert_eq!(
-            message_at(&dir, &spec, Target::Docker, &[("web".into(), 80, "udp".into(), 40053)]).as_deref(),
+            message_at(&dir, &lab, Target::Docker, &[("db".into(), "web".into(), 40053)]).as_deref(),
             Some("Start at http://localhost:8080/ (web is 10.30.0.10).")
         );
         // Run locally, the lab answers on the port picked at its first start: the message says so.
         assert_eq!(
-            message_at(&dir, &spec, Target::Docker, &[("web".into(), 80, "tcp".into(), 46709)]).as_deref(),
+            message_at(&dir, &lab, Target::Docker, &[("web".into(), "web".into(), 46709)]).as_deref(),
             Some("Start at http://localhost:46709/ (web is 10.30.0.10).")
         );
         std::fs::remove_dir_all(dir).unwrap();
@@ -457,8 +461,9 @@ mod tests {
         assert_eq!(ensure_instance(&labs, &a, &[]).unwrap(), 1);
         assert_eq!(ensure_instance(&labs, &b, &[]).unwrap(), 2);
         assert_eq!(ensure_instance(&labs, &a, &[]).unwrap(), 1, "kept");
-        let spec = prepare(&b, Target::Docker).unwrap();
-        assert_eq!(spec.name, "t-2");
+        std::fs::write(b.join("isoloom.yml"), format!("{SPEC}message: 'web is {{{{ machines.web.addresses.lab }}}}'\n")).unwrap();
+        let prepared = prepare(&b, Target::Docker).unwrap();
+        assert_eq!(prepared.spec.name, "t-2");
         assert_eq!(compose_file(&b), b.join(".isoloom-2/docker/compose.yml"));
         let compose = std::fs::read_to_string(compose_file(&b)).unwrap();
         assert!(compose.contains("10.32.0.0/24"), "the Docker block moved: {compose}");
@@ -468,10 +473,8 @@ mod tests {
         assert!(!b.join(".isoloom").exists());
         assert_eq!(vagrant_dir(&b, Runtime::Vm), b.join(".isoloom-2/vagrant"));
         // Its message gives the address its container really has (the moved block), not the spec's.
-        let mut spec = spec;
-        spec.message = Some("web is {{ machines.web.addresses.lab }}".into());
-        assert_eq!(message(&b, &spec, Target::Docker).as_deref(), Some("web is 10.32.0.10"));
-        assert_eq!(message(&b, &spec, Target::Vagrant).as_deref(), Some("web is 10.30.0.10"));
+        assert_eq!(message(&b, &prepared.lab, Target::Docker).as_deref(), Some("web is 10.32.0.10"));
+        assert_eq!(message(&b, &prepared.lab, Target::Vagrant).as_deref(), Some("web is 10.30.0.10"));
         std::fs::remove_dir_all(labs).unwrap();
     }
 
@@ -546,14 +549,13 @@ mod tests {
     #[test]
     fn observers_come_with_their_addresses() {
         let dir = lab(&format!("{SPEC}tools:\n  shell: {{}}\n"));
-        let spec = spec(&dir).unwrap();
-        let found = tools(&spec, true);
+        let found = tools(&dir, true).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name, "shell");
         assert_eq!(found[0].image.as_deref(), Some("nicolaka/netshoot"));
         assert_eq!(found[0].addresses.len(), 1);
         assert_eq!(found[0].addresses[0].network, "lab");
-        assert!(tools(&spec, false)[0].addresses[0].ip.starts_with("10.30.0."));
+        assert!(tools(&dir, false).unwrap()[0].addresses[0].ip.starts_with("10.30.0."));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -570,7 +572,7 @@ mod tests {
     #[test]
     fn inputs_json_is_none_when_the_spec_declares_no_inputs() {
         let dir = lab(
-            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n",
+            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\n",
         );
         let spec = spec(&dir).unwrap();
         assert_eq!(inputs_json(&spec, &[("X".to_string(), "y".to_string())]), None);
@@ -659,16 +661,16 @@ mod tests {
     #[test]
     fn spec_mistakes_are_reported_as_mistakes_not_crashes() {
         let base =
-            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    docker: { image: nginx:1.27 }\n";
+            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n";
         let cases: [(&str, &str, &str); 7] = [
-            ("host out of the /24", &base.replace("lab: 10 }", "lab: 300 }"), "expected u8"),
+            ("host out of the /24", &base.replace("lab: 10 }", "lab: 300 }"), "machines.web.networks.lab"),
             ("host 0 off a bridged network", &base.replace("lab: 10 }", "lab: 0 }"), "asks for an address by DHCP"),
-            ("two machines at one address", &format!("{base}  db:\n    networks: {{ lab: 10 }}\n    docker: {{ image: redis:7 }}\n"), "already used by `web`"),
-            ("a port past 65535", &base.replace("docker:", "ports: [{ port: 70000, http: true }]\n    docker:"), "expected u16"),
+            ("two machines at one address", &format!("{base}  db:\n    networks: {{ lab: 10 }}\n    app: {{ image: redis:7 }}\n"), "already used by `web`"),
+            ("a port past 65535", &base.replace("    app:", "    ports: { web: { port: 70000, protocol: http } }\n    app:"), "expected a nonzero u16"),
             ("an IPv6 block", &base.replace("10.30.0.0/24", "'fd00::/64'"), "isn't a network address"),
             (
                 "a machine declared twice",
-                &format!("{base}  web:\n    networks: {{ lab: 11 }}\n    docker: {{ image: nginx:1.27 }}\n"),
+                &format!("{base}  web:\n    networks: {{ lab: 11 }}\n    app: {{ image: nginx:1.27 }}\n"),
                 "duplicate entry with key \"web\"",
             ),
             ("a name that isn't kebab-case", &base.replace("name: t", "name: \"Lab é 1\""), "use kebab-case"),
@@ -685,9 +687,9 @@ mod tests {
     #[test]
     fn a_spec_with_windows_line_endings_reads_like_any_other() {
         let dir = lab(&SPEC.replace('\n', "\r\n"));
-        let spec = spec(&dir).unwrap();
-        assert_eq!(spec.name, "t");
-        let (ifaces, networks) = topology(&spec);
+        let lab = super::lab(&dir).unwrap();
+        assert_eq!(lab.spec().name, "t");
+        let (ifaces, networks) = topology(&lab);
         assert_eq!(networks[0].subnet, "10.30.0.0/24");
         assert_eq!(ifaces["web"][0].ip, "10.30.0.10");
         std::fs::remove_dir_all(dir).unwrap();
@@ -704,33 +706,31 @@ mod tests {
     }
 
     #[test]
-    fn a_message_naming_a_value_the_lab_lacks_is_left_out() {
+    fn a_message_naming_a_value_the_lab_lacks_is_a_mistake_of_the_lab() {
         let dir = lab(&format!("{SPEC}message: 'go to {{{{ machines.nope.addresses.lab }}}}'\n"));
-        let spec = spec(&dir).unwrap();
-        assert_eq!(message(&dir, &spec, Target::Docker), None);
-        let mut spec = spec;
-        spec.message = Some("http://localhost:{{ machines.web.ports.0.publish }}/".into());
-        assert_eq!(message_at(&dir, &spec, Target::Docker, &[("web".into(), 80, "tcp".into(), 40001)]).as_deref(), Some("http://localhost:40001/"));
-        // Trailing blank lines of a block scalar are trimmed; inner ones kept.
-        spec.message = Some("line one\n\nline two\n\n\n".into());
-        assert_eq!(message(&dir, &spec, Target::Docker).as_deref(), Some("line one\n\nline two"));
+        let err = spec(&dir).unwrap_err().to_string();
+        assert!(err.contains("no machine named `nope`"), "{err}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_message_is_filled_with_the_host_port_its_lab_got_and_trimmed() {
+        let published = SPEC.replace("protocol: http }", "protocol: http, publish: 8080 }");
+        let dir = lab(&format!("{published}message: |\n  http://localhost:{{{{ machines.web.ports.web.published }}}}/\n\n  line two\n\n\n"));
+        let lab = super::lab(&dir).unwrap();
+        assert_eq!(message_at(&dir, &lab, Target::Docker, &[("web".into(), "web".into(), 40001)]).as_deref(), Some("http://localhost:40001/\n\nline two"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn a_message_with_an_unpublished_port_is_not_shown() {
-        // SPEC's web service declares no `publish:`. On a target that publishes nothing (a VM
-        // lab), or before any port was pinned, the placeholder names a value that is null, and
-        // the player is shown a broken link. The doc of `message` promises None for a value the
-        // spec doesn't have; `isoloom_targets::resolved::fill` fills a null with "" instead.
-        // Fails with: left: Some("http://localhost:/"), right: None.
-        // Suggested fix: in `message_at`, treat a null (or empty) substitution as missing
-        // (check the snapshot value before `fill`, or have isoloom-targets' `fill` fail on null).
-        let dir = lab(SPEC);
-        let mut spec = spec(&dir).unwrap();
-        spec.message = Some("http://localhost:{{ machines.web.ports.0.publish }}/".into());
-        assert_eq!(message(&dir, &spec, Target::Vagrant), None);
-        assert_eq!(message_at(&dir, &spec, Target::Docker, &[]), None);
+        // SPEC's web port declares no `publish:`: on a target that publishes nothing (a VM lab),
+        // or before any port was pinned, the placeholder names nothing, and the player would be
+        // shown a broken link.
+        let dir = lab(&format!("{SPEC}message: 'http://localhost:{{{{ machines.web.ports.web.published }}}}/'\n"));
+        let lab = super::lab(&dir).unwrap();
+        assert_eq!(message(&dir, &lab, Target::Vagrant), None);
+        assert_eq!(message_at(&dir, &lab, Target::Docker, &[]), None);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -752,8 +752,8 @@ mod tests {
     fn an_instance_at_the_maximum_still_generates_and_resolves() {
         let dir = lab(SPEC);
         std::fs::write(dir.join(INSTANCE_MARKER), "99").unwrap();
-        let spec = prepare(&dir, Target::Docker).unwrap();
-        assert_eq!(spec.name, "t-99");
+        let prepared = prepare(&dir, Target::Docker).unwrap();
+        assert_eq!(prepared.spec.name, "t-99");
         assert!(compose_file(&dir).starts_with(dir.join(".isoloom-99")));
         assert!(compose_file(&dir).is_file());
         std::fs::remove_dir_all(dir).unwrap();

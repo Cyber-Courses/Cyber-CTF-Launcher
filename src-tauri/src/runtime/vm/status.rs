@@ -43,7 +43,7 @@ pub(super) fn lab_topology(lab: &Path) -> Option<Topology> {
     if let Some((_, _, topology)) = cache.iter().find(|(dir, at, _)| dir == lab && *at == stamps) {
         return topology.clone();
     }
-    let topology = crate::runtime::lab::spec(lab).ok().map(|spec| crate::runtime::lab::topology(&spec));
+    let topology = crate::runtime::lab::lab(lab).ok().map(|l| crate::runtime::lab::topology(&l));
     cache.retain(|(dir, _, _)| dir != lab);
     cache.push((lab.to_path_buf(), stamps, topology.clone()));
     topology

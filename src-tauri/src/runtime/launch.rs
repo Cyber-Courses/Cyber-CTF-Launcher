@@ -164,26 +164,26 @@ async fn resumes_parked(dir: &Path, id: &str, runtime: Runtime, log: &mut impl F
 /// A container lab in a VM on this machine: Isoloom's docker-vm (Docker on one VM), with the
 /// attack box next to it inside the VM (the lab network isn't reachable from here).
 async fn start_docker_in_vm(dir: &Path, runtime: Runtime, provider: Provider, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-    let spec = lab::prepare(dir, lab::vagrant_target(runtime))?;
+    let prepared = lab::prepare(dir, lab::vagrant_target(runtime))?;
     mark_local_vm(dir, Some(provider))?;
     log(format!("Running in a {} VM on this machine", provider.id()));
     let vagrant = lab::vagrant_dir(dir, runtime);
     start_local_vm(&vagrant, provider, env, log).await?;
-    attack_box::in_lab_vm_or_note(&vagrant, &spec, env, log).await;
-    finish_vagrant(dir, &spec, runtime, log);
+    attack_box::in_lab_vm_or_note(&vagrant, &prepared.spec, env, log).await;
+    finish_vagrant(dir, &prepared, runtime, log);
     Ok(())
 }
 
 /// A VM lab on this machine, one VM per machine on `provider`, with the learner's attack VM.
 async fn start_vm_lab(dir: &Path, runtime: Runtime, provider: Provider, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-    let spec = lab::prepare(dir, lab::vagrant_target(runtime))?;
-    warn_if_low_memory(&spec, log);
+    let prepared = lab::prepare(dir, lab::vagrant_target(runtime))?;
+    warn_if_low_memory(&prepared.spec, log);
     if provider == Provider::Qemu {
-        check_qemu(&spec, log).await?;
+        check_qemu(&prepared, log).await?;
     }
     let vagrant = lab::vagrant_dir(dir, runtime);
     start_local_vm(&vagrant, provider, env, log).await?;
-    finish_vagrant(dir, &spec, runtime, log);
+    finish_vagrant(dir, &prepared, runtime, log);
     // The lab's networks are internal to the hypervisor, so the learner's attack VM (their own
     // box, chosen in Settings) goes beside it, on the same hypervisor. The lab is up at this
     // point: a failing attacker is noted, not a failed deploy.
@@ -200,13 +200,13 @@ async fn start_vm_lab(dir: &Path, runtime: Runtime, provider: Provider, env: &[(
 /// (no app handle), so the real-lab tests run exactly this.
 pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     recheck_instance(dir, id, log).await?;
-    let spec = lab::prepare(dir, lab::Target::Docker)?;
+    let prepared = lab::prepare(dir, lab::Target::Docker)?;
     mark_local_vm(dir, None)?;
     docker::start(dir, id, env, &mut *log).await?;
     exegol::rejoin(id).await;
     // Its ports here are the ones picked at its first start, not the spec's.
     let published = docker::published(dir, id, env).await;
-    if let Some(m) = lab::message_at(dir, &spec, lab::Target::Docker, &published) {
+    if let Some(m) = lab::message_at(dir, &prepared.lab, lab::Target::Docker, &named_ports(&prepared.spec, &published)) {
         log_lines(&m, log);
     }
     Ok(())
@@ -279,14 +279,26 @@ fn local_run(runtime: Runtime, provider: Option<Provider>) -> Result<LocalRun> {
 }
 
 /// The end of a Vagrant start (local or ESXi): the lab's welcome message.
-fn finish_vagrant(dir: &Path, spec: &lab::Spec, runtime: Runtime, log: &mut impl FnMut(String)) {
-    welcome(dir, spec, lab::vagrant_target(runtime), log);
+fn finish_vagrant(dir: &Path, prepared: &lab::Prepared, runtime: Runtime, log: &mut impl FnMut(String)) {
+    welcome(dir, &prepared.lab, lab::vagrant_target(runtime), log);
+}
+
+/// The host ports Compose published, as (machine, port name, host port): each (service, port,
+/// protocol, host port) under the name the lab gives that machine's port.
+fn named_ports(spec: &lab::Spec, published: &[(String, u16, String, u16)]) -> Vec<(String, String, u16)> {
+    published
+        .iter()
+        .filter_map(|(machine, port, protocol, host)| {
+            let declared = spec.machines.get(machine)?.ports.iter().find(|p| p.port == *port && p.protocol.id() == protocol)?;
+            Some((machine.clone(), declared.name.clone().unwrap_or_else(|| port.to_string()), *host))
+        })
+        .collect()
 }
 
 /// The lab's own words once it is up (`message:` in its spec, addresses filled in): where to
 /// start and what to do first, as the last lines of the deploy log.
-fn welcome(dir: &Path, spec: &lab::Spec, target: lab::Target, log: &mut impl FnMut(String)) {
-    if let Some(m) = lab::message(dir, spec, target) {
+fn welcome(dir: &Path, lab: &lab::Lab, target: lab::Target, log: &mut impl FnMut(String)) {
+    if let Some(m) = lab::message(dir, lab, target) {
         log_lines(&m, log);
     }
 }

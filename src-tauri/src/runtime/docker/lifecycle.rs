@@ -193,9 +193,16 @@ pub async fn park(dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<(
 pub async fn resume(dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
     ensure_docker_up().await?;
     let project = compose::project(id);
-    compose::stream(dir, &project, &["start"], &[], &mut log).await?;
+    compose::stream(dir, &project, &["start"], &resume_env(dir), &mut log).await?;
     crate::runtime::exegol::wake(id).await;
     Ok(())
+}
+
+/// A resume's environment: each of the lab's inputs, empty. Isoloom gives an input to a container
+/// as a Compose secret read from the environment on every start; a resume has no values (the
+/// launch's are gone), and an empty one keeps what the container was created with.
+fn resume_env(dir: &Path) -> Vec<(String, String)> {
+    crate::runtime::lab::spec(dir).map(|s| s.inputs.iter().map(|name| (name.clone(), String::new())).collect()).unwrap_or_default()
 }
 
 /// Networks of this lab that its current Compose file no longer defines (left by an older

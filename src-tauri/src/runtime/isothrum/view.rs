@@ -52,7 +52,7 @@ fn tcp_port(m: &MachineStatus, port: u16) -> Port {
 /// What a declared port serves: a web UI (`http`), else the port's own name (`mysql`, `ssh`), else
 /// its number.
 fn service(p: &isoloom_manifest::Port) -> Service {
-    let name = p.name.as_ref().map_or_else(|| p.port.to_string(), |n| n.as_str().to_owned());
+    let name = p.name.as_str().to_owned();
     Service { kind: if p.http { "web".into() } else { name.clone() }, name, ports: vec![p.port.get()] }
 }
 

@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use super::{Spec, spec};
+use super::{Lab, lab};
 use crate::error::{Error, Result};
 
 /// The lab's Isoloom instance number (see the module), when it has one.
@@ -32,10 +32,10 @@ pub fn ensure_instance(labs: &Path, dir: &Path, in_use: &[String]) -> Result<u8>
 /// its networks ("Pool overlaps").
 pub fn recheck_instance(labs: &Path, dir: &Path, in_use: &[String]) -> Result<u8> {
     // A lab without a readable spec can't start: nothing to place, nothing written.
-    let spec = spec(dir)?;
+    let lab = lab(dir)?;
     let _picking = lock_instances(labs)?;
     match instance(dir) {
-        Some(n) if blocks_clear(Some(&spec), n, &ranges(in_use)) => Ok(n),
+        Some(n) if blocks_clear(Some(&lab), n, &ranges(in_use)) => Ok(n),
         _ => pick_instance(labs, dir, in_use),
     }
 }
@@ -54,10 +54,10 @@ fn pick_instance(labs: &Path, dir: &Path, in_use: &[String]) -> Result<u8> {
     let taken: Vec<u8> = std::fs::read_dir(labs)
         .map(|entries| entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p != dir).filter_map(|p| instance(&p)).collect())
         .unwrap_or_default();
-    let spec = spec(dir).ok();
+    let lab = lab(dir).ok();
     let used = ranges(in_use);
     let n = (1..=isoloom_spec::instance::MAX)
-        .find(|n| !taken.contains(n) && blocks_clear(spec.as_ref(), *n, &used))
+        .find(|n| !taken.contains(n) && blocks_clear(lab.as_ref(), *n, &used))
         .ok_or_else(|| Error::Invalid("no free instance for this lab: 99 labs or networks already take its room on this machine".into()))?;
     crate::platform::atomic_file::write(&dir.join(INSTANCE_MARKER), n.to_string())?;
     Ok(n)
@@ -68,12 +68,14 @@ fn ranges(cidrs: &[String]) -> Vec<(u32, u32)> {
     cidrs.iter().filter_map(|c| ipv4_range(c)).collect()
 }
 
-/// Whether the Docker blocks of `spec` as instance `n` overlap none of `used`. A lab whose spec
-/// can't be read has no blocks to collide.
-fn blocks_clear(spec: Option<&Spec>, n: u8, used: &[(u32, u32)]) -> bool {
-    let Some(spec) = spec else { return true };
-    let Ok(as_n) = isoloom_spec::instance::apply(spec, n) else { return false };
-    let snapshot = isoloom_targets::resolved::resolve_with(&as_n, Some(n));
+/// Whether the Docker blocks of `lab` as instance `n` overlap none of `used`. A lab whose spec
+/// can't be read has no blocks to collide; one that can't be that instance doesn't fit it.
+fn blocks_clear(lab: Option<&Lab>, n: u8, used: &[(u32, u32)]) -> bool {
+    let Some(lab) = lab else { return true };
+    if isoloom_spec::instance::apply(&lab.spec(), n).is_err() {
+        return false;
+    }
+    let snapshot = isoloom_targets::resolved::resolve_with(lab, Some(n));
     snapshot["networks"]
         .as_object()
         .into_iter()

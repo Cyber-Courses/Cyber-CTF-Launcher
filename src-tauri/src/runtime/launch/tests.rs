@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
 use super::{
-    CLOUD_NEEDS_ACCOUNT, LocalRun, Provider, Runtime, budget_verdict, check_qemu, emulated_arches, local_run, log_lines, low_memory_warning, parse_ipv4,
-    start_on_docker,
+    CLOUD_NEEDS_ACCOUNT, LocalRun, Provider, Runtime, budget_verdict, emulated_arches, local_run, log_lines, low_memory_warning, parse_ipv4, start_on_docker,
 };
 use super::{server, warn_if_low_memory, welcome};
 use crate::platform::exec::fake::{Tools, fail, ok};
@@ -273,12 +272,12 @@ fn lab(spec: &str) -> PathBuf {
     dir
 }
 
-const CONTAINERS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\nmessage: |\n  Open the web at {{ machines.web.addresses.lab }}.\n  Then look around.\n";
+const CONTAINERS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\nmessage: |\n  Open the web at {{ machines.web.addresses.lab }}.\n  Then look around.\n";
 
 /// A VM lab that prepares: each machine installed by a script of the lab's (`setup.sh`).
-const VM_LAB: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  a:\n    networks: { lab: 10 }\n    resources: { memory_mb: 1024 }\n    vm: { os: debian@12, provision: [setup.sh] }\n  b:\n    arch: arm64\n    networks: { lab: 11 }\n    resources: { memory_mb: 2048 }\n    vm: { os: debian@12, provision: [setup.sh] }\n";
+const VM_LAB: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  a:\n    networks: { lab: 10 }\n    resources: { memory_mb: 1024 }\n    os: debian@12\n    app: { steps: [{ run: setup.sh }] }\n  b:\n    hardware: { arch: arm64 }\n    networks: { lab: 11 }\n    resources: { memory_mb: 2048 }\n    os: debian@12\n    app: { steps: [{ run: setup.sh }] }\n";
 
-const VMS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  a:\n    networks: { lab: 10 }\n    resources: { memory_mb: 1024 }\n    vm: { os: debian@12 }\n  b:\n    arch: arm64\n    networks: { lab: 11 }\n    resources: { memory_mb: 2048 }\n    vm: { os: debian@12 }\n";
+const VMS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  a:\n    networks: { lab: 10 }\n    resources: { memory_mb: 1024 }\n    os: debian@12\n  b:\n    hardware: { arch: arm64 }\n    networks: { lab: 11 }\n    resources: { memory_mb: 2048 }\n    os: debian@12\n";
 
 #[test]
 fn a_local_run_follows_the_runtime_and_the_hypervisor() {
@@ -332,22 +331,22 @@ fn qemu_emulates_only_the_vms_built_for_another_cpu() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-#[tokio::test]
-async fn a_lab_without_vms_needs_no_emulator() {
+#[test]
+fn a_lab_without_vms_needs_no_emulator() {
     let dir = lab(CONTAINERS);
     let spec = crate::runtime::lab::load(&dir).unwrap();
-    let mut lines = Vec::new();
-    check_qemu(&spec, &mut |l| lines.push(l)).await.unwrap();
-    assert!(lines.is_empty());
+    for host in ["x86_64", "aarch64"] {
+        assert!(emulated_arches(&spec, host).is_empty(), "{host}");
+    }
     std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn the_welcome_is_the_labs_message_line_by_line() {
     let dir = lab(CONTAINERS);
-    let spec = crate::runtime::lab::load(&dir).unwrap();
+    let lab = crate::runtime::lab::lab(&dir).unwrap();
     let mut lines = Vec::new();
-    welcome(&dir, &spec, crate::runtime::lab::Target::Vagrant, &mut |l| lines.push(l));
+    welcome(&dir, &lab, crate::runtime::lab::Target::Vagrant, &mut |l| lines.push(l));
     assert_eq!(lines, ["Open the web at 10.30.0.10.", "Then look around."]);
     let mut lines = Vec::new();
     log_lines("one\ntwo\n", &mut |l| lines.push(l));
