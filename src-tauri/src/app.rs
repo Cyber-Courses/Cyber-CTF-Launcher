@@ -127,7 +127,6 @@ fn setup(app: &mut App) {
         let _ = private_fs::dir(&dir);
         shared_folder::init(&dir);
     }
-    runtime::lab::registry::init(app.handle());
     // Linux and Windows dev builds: register cyberctf:// at runtime (installers do it otherwise).
     #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
     {

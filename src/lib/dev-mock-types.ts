@@ -36,8 +36,6 @@ export type Answers = {
   attack_vm_status: ExegolStatus;
   shared_folder_get: SharedFolder;
   shared_folder_set: SharedFolder;
-  isoloom_registry_get: boolean;
-  isoloom_registry_set: boolean;
   server_list: ServerList;
   server_capacity: HostCapacity | null;
   server_test: ServerTest;

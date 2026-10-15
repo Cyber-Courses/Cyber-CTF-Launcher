@@ -73,8 +73,7 @@
       "builtIn": "内蔵",
       "installedWithPlugin": "インストール済み · {plugin}",
       "pluginMissing": "プラグイン {plugin} がありません"
-    },
-    "targets": "ラボの実行先（Isoloom）"
+    }
   },
   "running": {
     "title": "実行中",

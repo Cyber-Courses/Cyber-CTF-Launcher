@@ -124,8 +124,8 @@ fn short_network_strips_only_this_labs_project_prefix() {
 #[test]
 fn declared_services_maps_isoloom_http_to_web_and_keeps_tcp_name() {
     let labels = [
-        ("isoloom.service.portal".to_string(), "http:80,443".to_string()),
-        ("isoloom.service.shell".to_string(), "tcp:22".to_string()),
+        ("isoloom.port.portal".to_string(), "http:80,443".to_string()),
+        ("isoloom.port.shell".to_string(), "tcp:22".to_string()),
         ("com.docker.compose.service".to_string(), "app".to_string()),
     ]
     .into();
@@ -144,7 +144,7 @@ fn declared_services_uses_the_declared_kind_for_cyberctf_labels() {
 
 #[test]
 fn declared_services_skips_malformed_ports_and_zero() {
-    let labels = [("isoloom.service.db".to_string(), "database:abc,0,5432".to_string())].into();
+    let labels = [("isoloom.port.db".to_string(), "database:abc,0,5432".to_string())].into();
     let s = declared_services(&labels);
     // Only the valid, non-zero port survives; bad ones are dropped, never guessed.
     assert_eq!(s[0].ports, vec![5432]);
@@ -292,7 +292,7 @@ fn open_goes_to_the_service_the_lab_declares_as_http() {
             {"Service":"metrics","Name":"p-metrics-1","Image":"acme/agent","State":"running","Publishers":[{"PublishedPort":3000,"TargetPort":3000,"Protocol":"tcp"}]}]"#,
     );
     assert_eq!(first_published_url(&entries).as_deref(), Some("http://127.0.0.1:2222"), "by name alone, the lowest port");
-    let declared = parse_inspect("p", "/p-portal-1\t\t{\"isoloom.service.site\":\"http:80\",\"isoloom.service.ssh\":\"tcp:22\"}\n");
+    let declared = parse_inspect("p", "/p-portal-1\t\t{\"isoloom.port.site\":\"http:80\",\"isoloom.port.ssh\":\"tcp:22\"}\n");
     assert_eq!(open_url(&entries, &declared).as_deref(), Some("http://127.0.0.1:8443"));
     // Nothing declared: the name-based pick.
     assert_eq!(open_url(&entries, &Default::default()).as_deref(), Some("http://127.0.0.1:2222"));
@@ -339,7 +339,7 @@ fn inspect_lines_with_missing_columns_or_odd_names_are_read_or_skipped() {
     assert!(m["cyberctf-x-a-1"].interfaces.is_empty() && m["cyberctf-x-a-1"].services.is_empty());
     assert_eq!(m["b"].interfaces[0].ip, "10.0.0.2");
     // A label value holding a tab or newline comes JSON-escaped, so the columns hold.
-    let out = "/c\tcyberctf-x_lab=10.0.0.3 \t{\"isoloom.service.app\":\"http:80\",\"note\":\"a\\tb\\nc\"}\n";
+    let out = "/c\tcyberctf-x_lab=10.0.0.3 \t{\"isoloom.port.app\":\"http:80\",\"note\":\"a\\tb\\nc\"}\n";
     let m = parse_inspect(&project, out);
     assert_eq!(m["c"].interfaces[0].ip, "10.0.0.3");
     assert_eq!(m["c"].services[0].kind, "web");
@@ -347,7 +347,7 @@ fn inspect_lines_with_missing_columns_or_odd_names_are_read_or_skipped() {
     let m = parse_inspect(&project, "/d\tcyberctf-x_a=b=10.0.0.4 \n");
     assert_eq!((m["d"].interfaces[0].network.as_str(), m["d"].interfaces[0].ip.as_str()), ("a", "b=10.0.0.4"));
     // Windows line endings: no carriage return in the labels JSON or the address.
-    let m = parse_inspect(&project, "/e\tcyberctf-x_lab=10.0.0.5 \t{\"isoloom.service.s\":\"tcp:22\"}\r\n");
+    let m = parse_inspect(&project, "/e\tcyberctf-x_lab=10.0.0.5 \t{\"isoloom.port.s\":\"tcp:22\"}\r\n");
     assert_eq!(m["e"].interfaces[0].ip, "10.0.0.5");
     assert_eq!(m["e"].services[0].ports, [22]);
 }
@@ -355,10 +355,10 @@ fn inspect_lines_with_missing_columns_or_odd_names_are_read_or_skipped() {
 #[test]
 fn declared_service_ports_at_the_boundaries() {
     let labels = [
-        ("isoloom.service.a".to_string(), "tcp:65535,65536,-1,+22, 80 ,".to_string()),
-        ("isoloom.service.".to_string(), "http:80".to_string()),
-        ("isoloom.service.b".to_string(), "".to_string()),
-        ("isoloom.service.c".to_string(), ":80".to_string()),
+        ("isoloom.port.a".to_string(), "tcp:65535,65536,-1,+22, 80 ,".to_string()),
+        ("isoloom.port.".to_string(), "http:80".to_string()),
+        ("isoloom.port.b".to_string(), "".to_string()),
+        ("isoloom.port.c".to_string(), ":80".to_string()),
     ]
     .into();
     let s = declared_services(&labels);

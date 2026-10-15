@@ -166,7 +166,7 @@ async fn install_with(app: &AppHandle, release: Release<'_>, log: &impl Fn(Strin
     // Docker's networks now, so a new lab's instance lands on blocks nothing else holds.
     let in_use = runtime::subnets_in_use(lab_id).await;
     if installed(&marker, commit) {
-        runtime::lab::ensure_instance(&labs, &dir, &in_use, &runtime::lab::registry_instances(&dir))?;
+        runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
         return Ok(dir);
     }
 
@@ -191,7 +191,7 @@ async fn install_with(app: &AppHandle, release: Release<'_>, log: &impl Fn(Strin
     runtime::clear_parked(&dir, lab_id, log).await;
     swap_in(&staging, &dir)?;
     // Its own room on this machine (networks, names), so it runs beside the other labs.
-    runtime::lab::ensure_instance(&labs, &dir, &in_use, &runtime::lab::registry_instances(&dir))?;
+    runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
     log("Lab installed".into());
     Ok(dir)
 }
@@ -574,7 +574,7 @@ mod tests {
         std::fs::remove_dir_all(dest).unwrap();
     }
 
-    const SPEC: &str = "version: 1\nname: invoice\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    services: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n";
+    const SPEC: &str = "version: 1\nname: invoice\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: [{ port: 80, http: true }]\n    docker: { image: nginx:1.27 }\n";
     const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
     #[tokio::test]

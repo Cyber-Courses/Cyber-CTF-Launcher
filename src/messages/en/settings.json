@@ -57,10 +57,6 @@
       "default": "Default"
     }
   },
-  "isoloomRegistry": {
-    "title": "Isoloom's lab list",
-    "description": "Records the labs you start in ~/.isoloom/status.yml, so the isoloom command line sees them (isoloom status, connect, exec). Labs work the same without it."
-  },
   "attackBox": {
     "title": "Attack box image",
     "description": "Runs on each lab’s network as your toolbox. The first launch of an image downloads it, which can take a while.",

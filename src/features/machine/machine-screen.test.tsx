@@ -468,7 +468,7 @@ describe("RunningNowPanel", () => {
 });
 
 describe("MachineDetails", () => {
-  it("lists tool versions, hypervisors and targets", () => {
+  it("lists tool versions and hypervisors", () => {
     const report: SystemReport = {
       ...readyReport(),
       os: "windows",
@@ -476,10 +476,6 @@ describe("MachineDetails", () => {
       dockerRunning: true,
       docker: { installed: true, version: "Docker version 27.3.1, build ce12230" },
       dockerCompose: { installed: true, version: "no number" },
-      targets: [
-        { target: "terraform", cloud: "aws", ready: false, summary: "AWS CLI missing", notes: [] },
-        { target: "docker", cloud: null, ready: true, summary: "Docker 27", notes: [] },
-      ],
     } as SystemReport;
     const hypervisors = [
       hv({ provider: "vmware_desktop", plugin: "vagrant-vmware-desktop", pluginInstalled: true }),
@@ -497,16 +493,13 @@ describe("MachineDetails", () => {
     expect(text()).toContain("VirtualBoxinstalled");
     expect(text()).toContain("UTMnot installed");
     expect(text()).toContain("Hyper-Vbuilt in");
-    expect(text()).toContain("terraform · aws");
-    expect(text()).toContain("Where labs can run (Isoloom)");
   });
 
-  it("shows a stopped engine and missing tools, without targets", () => {
+  it("shows a stopped engine and missing tools", () => {
     render(<MachineDetails report={freshReport("linux")} hypervisors={[]} hasHypervisor={false} />);
     expect(text()).toContain("Container enginenot running");
     expect(text()).toContain("Vagrantnot installed");
     expect(text()).toContain("aptnot installed");
-    expect(text()).not.toContain("Isoloom");
   });
 });
 

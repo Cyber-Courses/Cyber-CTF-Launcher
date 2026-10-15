@@ -57,10 +57,6 @@
       "default": "Por defecto"
     }
   },
-  "isoloomRegistry": {
-    "title": "Lista de labs de Isoloom",
-    "description": "Anota los labs que inicias en ~/.isoloom/status.yml, para que la línea de comandos de isoloom los vea (isoloom status, connect, exec). Los labs funcionan igual sin ello."
-  },
   "attackBox": {
     "title": "Imagen de la máquina de ataque",
     "description": "Se ejecuta en la red de cada lab como tu caja de herramientas. El primer lanzamiento de una imagen la descarga, lo que puede tardar un rato.",

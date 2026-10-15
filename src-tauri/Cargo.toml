@@ -60,7 +60,6 @@ match_same_arms = "warn"
 missing_panics_doc = "warn"
 needless_pass_by_value = "warn"
 needless_raw_string_hashes = "warn"
-nonminimal_bool = "warn"
 option_option = "warn"
 range_plus_one = "warn"
 redundant_closure_for_method_calls = "warn"
@@ -101,16 +100,15 @@ tar = "0.4.46"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 reqwest = { version = "0.13", features = ["json", "form"] }
 serde_yaml_ng = "0.10.0"
-# Labs describe themselves with an isoloom.yml; the launcher generates and runs their files.
-# Pinned to a commit of isoloom's v1 `main` until v1.0.0 is tagged; move to that tag then. Only
-# `src/runtime/lab/` calls these crates, each the layer it needs: the spec (`isoloom-spec`), the
-# check plan (`isoloom-plan`), the backends' registry and the resolved snapshot
-# (`isoloom-targets`), the host's readiness and the registry of running environments
-# (`isoloom-runtime`).
-isoloom-spec = { git = "https://github.com/isoloom/isoloom", rev = "ba771a3bb034fa6f95f56e8e087ff9133349dbf8" }
-isoloom-plan = { git = "https://github.com/isoloom/isoloom", rev = "ba771a3bb034fa6f95f56e8e087ff9133349dbf8" }
-isoloom-targets = { git = "https://github.com/isoloom/isoloom", rev = "ba771a3bb034fa6f95f56e8e087ff9133349dbf8" }
-isoloom-runtime = { git = "https://github.com/isoloom/isoloom", rev = "ba771a3bb034fa6f95f56e8e087ff9133349dbf8" }
+# Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
+# layered crates, pinned to a commit of Isoloom's local main (the same as Isothrum's, so the two
+# share one copy). Isoloom's `cargo xtask dev-link link` points them at the local checkout (a
+# git-ignored [patch]); the committed Cargo.lock keeps the pin. Only `src/runtime/lab/` calls
+# them: the spec (`isoloom-spec`), the check plan (`isoloom-plan`), the backends' registry and the
+# resolved snapshot (`isoloom-targets`).
+isoloom-spec = { git = "https://github.com/isoloom/isoloom", rev = "2201afe561d5dd9de91694caf1b245ed2bb79b57" }
+isoloom-plan = { git = "https://github.com/isoloom/isoloom", rev = "2201afe561d5dd9de91694caf1b245ed2bb79b57" }
+isoloom-targets = { git = "https://github.com/isoloom/isoloom", rev = "2201afe561d5dd9de91694caf1b245ed2bb79b57" }
 # The map type of the Isoloom crates' API (a cloud-services lab's outputs).
 indexmap = "2"
 portable-pty = "0.9"

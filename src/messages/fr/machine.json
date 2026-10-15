@@ -73,8 +73,7 @@
       "builtIn": "intégré",
       "installedWithPlugin": "installé · {plugin}",
       "pluginMissing": "plugin {plugin} manquant"
-    },
-    "targets": "Où les labs peuvent tourner (Isoloom)"
+    }
   },
   "running": {
     "title": "En cours",

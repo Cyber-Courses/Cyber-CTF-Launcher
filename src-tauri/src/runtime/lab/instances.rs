@@ -14,16 +14,15 @@ pub fn instance(dir: &Path) -> Option<u8> {
 }
 
 /// Gives the lab an instance number if it has none: the lowest one no other installed lab
-/// under `labs` holds, nor another environment in Isoloom's registry (one run with the CLI),
-/// whose Docker blocks overlap none of `in_use` (the subnets of the Docker networks already
-/// on this machine). An instance moves the spec's blocks by its number, so two labs with
+/// under `labs` holds, whose Docker blocks overlap none of `in_use` (the subnets of the Docker
+/// networks already on this machine). An instance moves the spec's blocks by its number, so two labs with
 /// different numbers can still land on one subnet; Docker would refuse the second. Returns
 /// the lab's number.
-pub fn ensure_instance(labs: &Path, dir: &Path, in_use: &[String], elsewhere: &[u8]) -> Result<u8> {
+pub fn ensure_instance(labs: &Path, dir: &Path, in_use: &[String]) -> Result<u8> {
     let _picking = lock_instances(labs)?;
     match instance(dir) {
         Some(n) => Ok(n),
-        None => pick_instance(labs, dir, in_use, elsewhere),
+        None => pick_instance(labs, dir, in_use),
     }
 }
 
@@ -31,13 +30,13 @@ pub fn ensure_instance(labs: &Path, dir: &Path, in_use: &[String], elsewhere: &[
 /// blocks overlap one of `in_use` now (picked while Docker was down and couldn't say what it
 /// had, or taken since), in which case it moves to a free one. Docker would otherwise refuse
 /// its networks ("Pool overlaps").
-pub fn recheck_instance(labs: &Path, dir: &Path, in_use: &[String], elsewhere: &[u8]) -> Result<u8> {
+pub fn recheck_instance(labs: &Path, dir: &Path, in_use: &[String]) -> Result<u8> {
     // A lab without a readable spec can't start: nothing to place, nothing written.
     let spec = spec(dir)?;
     let _picking = lock_instances(labs)?;
     match instance(dir) {
         Some(n) if blocks_clear(Some(&spec), n, &ranges(in_use)) => Ok(n),
-        _ => pick_instance(labs, dir, in_use, elsewhere),
+        _ => pick_instance(labs, dir, in_use),
     }
 }
 
@@ -51,11 +50,10 @@ fn lock_instances(labs: &Path) -> Result<std::fs::File> {
 }
 
 /// The lowest instance number free for lab `dir` (see [`ensure_instance`]), saved in its marker.
-fn pick_instance(labs: &Path, dir: &Path, in_use: &[String], elsewhere: &[u8]) -> Result<u8> {
-    let mut taken: Vec<u8> = std::fs::read_dir(labs)
+fn pick_instance(labs: &Path, dir: &Path, in_use: &[String]) -> Result<u8> {
+    let taken: Vec<u8> = std::fs::read_dir(labs)
         .map(|entries| entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p != dir).filter_map(|p| instance(&p)).collect())
         .unwrap_or_default();
-    taken.extend(elsewhere);
     let spec = spec(dir).ok();
     let used = ranges(in_use);
     let n = (1..=isoloom_spec::instance::MAX)

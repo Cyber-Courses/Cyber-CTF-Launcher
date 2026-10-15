@@ -94,7 +94,6 @@ pub(super) async fn start_terraform(
         // lab still gets recorded and its welcome shown).
         attack_box::on_terraform_host_or_note(app, id, &spec, env, log).await;
     }
-    registry::record(dir, &spec, target, provider.is_cloud().then_some(tf));
     welcome(dir, &spec, lab::vagrant_target(runtime), log);
     Ok(())
 }

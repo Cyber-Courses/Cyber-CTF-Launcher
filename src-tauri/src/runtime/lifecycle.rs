@@ -6,7 +6,6 @@ use std::path::Path;
 use crate::AppHandle;
 
 use super::inflight::{Action, DeployGuard, lock_lab};
-use super::lab::registry;
 use super::paths::{lab_dir, local_vm, mark_local_vm, mark_parked, parked, state_dir, vagrant_dirs};
 use super::{Park, Runtime, attack_vm, cloud_services, docker, lab, server, terraform, vm};
 use crate::error::{Error, Result};
@@ -91,10 +90,6 @@ pub(super) async fn resume_locked(app: &AppHandle, dir: &Path, id: &str, runtime
                 return Err(Error::Invalid("Nothing is left of this lab to resume (its stopped containers are gone). Start it again for a fresh copy.".into()));
             }
             docker::resume(dir, id, &mut *log).await?;
-            // Recorded again, with its Compose project (labs started before it was recorded).
-            if let Ok(spec) = lab::instanced(dir) {
-                registry::record_docker(dir, &spec, docker::project(id));
-            }
         }
         Runtime::Vm => {
             let vagrant = lab::vagrant_dir(dir, runtime);
@@ -209,11 +204,10 @@ pub(super) async fn stop_here(dir: &Path, id: &str, runtime: Runtime, mut log: i
     result
 }
 
-/// A stopped lab's markers: where it ran, its local VM, Isoloom's registry entry, parked.
+/// A stopped lab's markers: where it ran, its local VM, parked.
 fn forget_run(dir: &Path) -> Result<()> {
     server::mark_lab(dir, None)?;
     mark_local_vm(dir, None)?;
-    registry::forget(dir);
     mark_parked(dir, None)
 }
 

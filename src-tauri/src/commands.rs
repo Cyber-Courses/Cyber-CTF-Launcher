@@ -91,8 +91,6 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         shared_folder::shared_folder_get,
         shared_folder::shared_folder_set,
         shared_folder::shared_folder_open,
-        runtime::lab::registry::isoloom_registry_get,
-        runtime::lab::registry::isoloom_registry_set,
         runtime::server::server_list,
         runtime::server::server_save,
         runtime::server::server_remove,

@@ -358,7 +358,6 @@ pub(super) async fn start(app: &AppHandle, dir: &Path, id: &str, host: Option<&s
     check_supported(cloud)?;
     let conn = server::connection(app, host)?;
     check_account(cloud.provider, &conn)?;
-    check_requirements(&spec, log).await?;
     let state = state_dir(app, id, server::terraform_target(conn.provider).unwrap_or_default())?;
     if status(&spec, &state).running {
         return Err(Error::Refused("This lab is already running in your cloud account. Stop it before starting it again.".into()));
@@ -425,20 +424,6 @@ fn reserved_env(name: &str) -> bool {
 /// The region a run uses: the lab's own (`AWS_REGION` in `cloud.env`), else the account's.
 fn region_used<'a>(cloud: &'a CloudServices, conn: &'a server::Connection) -> Option<&'a str> {
     ["AWS_REGION", "AWS_DEFAULT_REGION"].iter().find_map(|k| cloud.env.get(*k)).map(String::as_str).or(conn.region.as_deref())
-}
-
-/// Refuses a lab whose module needs a tool this machine lacks (`cloud.requires`), naming it.
-async fn check_requirements(spec: &Spec, log: &mut impl FnMut(String)) -> Result<()> {
-    match lab::cloud_requirements(spec).await {
-        lab::Requirements::None => Ok(()),
-        lab::Requirements::Met(found) => {
-            log(format!("This lab's module needs {}: found.", found.join(", ")));
-            Ok(())
-        }
-        lab::Requirements::Missing(missing) => {
-            Err(Error::Invalid(format!("This lab's module needs what this machine lacks: {}. Install it, then start the lab again.", missing.join("; "))))
-        }
-    }
 }
 
 /// Refuses an account of another cloud than the lab's.
@@ -1003,20 +988,6 @@ mod tests {
         let (env, files) = run_env(&conn, &state, of(&s).unwrap()).await.unwrap();
         assert!(files.is_none());
         assert_eq!(env, [("ARM_SUBSCRIPTION_ID".to_string(), "sub".to_string()), ("AWS_REGION".to_string(), "us-east-1".to_string())]);
-    }
-
-    #[tokio::test]
-    async fn what_a_lab_needs_is_looked_for_here() {
-        let mut lines = Vec::new();
-        // Checked on every OS (Windows too: PATH with PATHEXT, commands in PowerShell).
-        check_requirements(&spec(&goat()), &mut |l| lines.push(l)).await.unwrap();
-        assert_eq!(lines, [format!("This lab's module needs {TOOL}: found.")]);
-        let missing = spec(&goat().replace(&format!("requires: [{TOOL}]"), "requires: [cyberctf-no-such-tool, \"exit 3\"]"));
-        let err = check_requirements(&missing, &mut |l| lines.push(l)).await.unwrap_err().to_string();
-        assert!(err.contains("`cyberctf-no-such-tool` isn't installed") && err.contains("`exit 3` failed"), "{err}");
-        lines.clear();
-        check_requirements(&spec(SPEC), &mut |l| lines.push(l)).await.unwrap();
-        assert!(lines.is_empty());
     }
 
     #[tokio::test]

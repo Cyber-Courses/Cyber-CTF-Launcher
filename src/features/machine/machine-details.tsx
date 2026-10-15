@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { Panel, PanelHeader } from "@/components/ui/panel";
+import { Panel } from "@/components/ui/panel";
 import { engineName } from "@/features/machine/setup-steps";
 import { providerLabel } from "@/features/machine/hypervisors";
 import { DetailRow } from "@/features/machine/machine-parts";
@@ -9,7 +9,7 @@ import { hypervisorDetail, versionNumber } from "@/features/machine/machine-stat
 import type { ProviderStatus, SystemReport, Tool } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
-/** Tool versions and Isoloom targets, folded away for people who want them. */
+/** Tool versions, folded away for people who want them. */
 export function MachineDetails({ report, hypervisors, hasHypervisor }: { report: SystemReport; hypervisors: ProviderStatus[]; hasHypervisor: boolean }) {
   const t = useT();
   const installed = t("machine.screen.detail.installed");
@@ -54,19 +54,6 @@ export function MachineDetails({ report, hypervisors, hasHypervisor }: { report:
         })}
         <DetailRow name={report.pkgManager.name} value={report.pkgManager.installed ? installed : notInstalled} bad={!report.pkgManager.installed} />
       </Panel>
-      {report.targets.length > 0 && (
-        <Panel className="mt-2.5">
-          <PanelHeader title={t("machine.screen.targets")} />
-          {report.targets.map((target) => (
-            <DetailRow
-              key={`${target.target}/${target.cloud ?? ""}`}
-              name={target.cloud ? `${target.target} · ${target.cloud}` : target.target}
-              value={target.summary}
-              bad={!target.ready}
-            />
-          ))}
-        </Panel>
-      )}
     </details>
   );
 }

@@ -72,7 +72,7 @@ proptest! {
             prop_assert!(s.ports.iter().all(|p| *p > 0));
         }
         let declared = labels.keys().filter(|k| {
-            k.strip_prefix("isoloom.service.").or_else(|| k.strip_prefix("cyberctf.service.")).is_some_and(|n| !n.trim().is_empty())
+            k.strip_prefix("isoloom.port.").or_else(|| k.strip_prefix("cyberctf.service.")).is_some_and(|n| !n.trim().is_empty())
         });
         prop_assert_eq!(services.len(), declared.count());
     }

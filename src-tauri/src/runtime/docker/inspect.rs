@@ -85,7 +85,7 @@ fn lowest_url(ports: impl Iterator<Item = u16>) -> Option<String> {
     ports.filter(|p| *p > 0).min().map(|port| format!("http://127.0.0.1:{port}"))
 }
 
-/// Where Open goes: a service the lab declares as HTTP (Isoloom's `isoloom.service.*` labels, in
+/// Where Open goes: a service the lab declares as HTTP (Isoloom's `isoloom.port.*` labels, in
 /// `declared` by container name) on its published port, else [`first_published_url`].
 fn open_url(entries: &[PsEntry], declared: &HashMap<String, Inspected>) -> Option<String> {
     let running = || entries.iter().filter(|e| e.state == "running");
@@ -160,14 +160,14 @@ fn parse_inspect(project: &str, out: &str) -> HashMap<String, Inspected> {
         .collect()
 }
 
-/// The services a lab declares on a container: Isoloom's `isoloom.service.<name>: "<http|tcp>:<port>"`
+/// The services a lab declares on a container: Isoloom's `isoloom.port.<name>: "<http|tcp|udp>:<port>"`
 /// (or the older `cyberctf.service.<name>: "<kind>:<ports>"`), ports comma-separated and optional.
 /// Malformed ports are skipped, never guessed.
 fn declared_services(labels: &HashMap<String, String>) -> Vec<Service> {
     let mut services: Vec<Service> = labels
         .iter()
         .filter_map(|(k, v)| {
-            let name = k.strip_prefix("isoloom.service.").or_else(|| k.strip_prefix("cyberctf.service."))?.trim();
+            let name = k.strip_prefix("isoloom.port.").or_else(|| k.strip_prefix("cyberctf.service."))?.trim();
             let (kind, ports) = v.split_once(':').unwrap_or((v, ""));
             // Isoloom says http or tcp: a web UI, or the service's own name (mysql, ssh...).
             let kind = match (k.starts_with("isoloom."), kind) {

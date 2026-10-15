@@ -24,7 +24,6 @@ export function freshReport(os = "macos"): SystemReport {
     ovftool: missing,
     cloudClis: { aws: missing, azure: missing, gcloud: missing },
     vmProviders: r.vmProviders.map((p) => ({ ...p, available: false, hypervisor: p.remote ? null : false, pluginInstalled: false, reason: "Not installed" })),
-    targets: [],
   };
 }
 

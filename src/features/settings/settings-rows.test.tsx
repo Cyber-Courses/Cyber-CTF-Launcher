@@ -9,7 +9,6 @@ import { AppearanceSection } from "@/features/settings/appearance-section";
 import { AttackBoxRows } from "@/features/settings/attack-box-rows";
 import { HypervisorRow } from "@/features/settings/hypervisor-row";
 import { InstalledToolsPanel } from "@/features/settings/installed-tools-panel";
-import { IsoloomRegistryRow } from "@/features/settings/isoloom-registry-row";
 import { LabPortsRow } from "@/features/settings/lab-ports-row";
 import { SharedFolderControl } from "@/features/settings/shared-folder";
 import { readOnboarded, markOnboarded } from "@/components/shell/onboarded-flag";
@@ -721,49 +720,6 @@ describe("AppearanceSection", () => {
     await user.selectOptions(screen.getByRole("combobox"), "system");
     expect(getLocalePreference()).toBe("system");
     expect(text()).toContain("Theme");
-  });
-});
-
-describe("IsoloomRegistryRow", () => {
-  it("renders nothing until the setting is read", () => {
-    installTauri({ isoloom_registry_get: () => new Promise(() => {}) });
-    const { container } = render(<IsoloomRegistryRow onSaved={() => {}} />);
-    expect(container.textContent).toBe("");
-  });
-
-  it("is on by default, and turns off and on again", async () => {
-    const calls = installTauri();
-    const onSaved = vi.fn();
-    const user = userEvent.setup();
-    render(<IsoloomRegistryRow onSaved={onSaved} />);
-    await flush();
-    expect(text()).toContain("~/.isoloom/status.yml");
-    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true");
-    await user.click(screen.getByRole("switch"));
-    await flush();
-    expect(calls.find((c) => c.cmd === "isoloom_registry_set")?.args).toEqual({ enabled: false });
-    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
-    await user.click(screen.getByRole("switch"));
-    await flush();
-    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true");
-    expect(onSaved).toHaveBeenCalledTimes(2);
-  });
-
-  it("shows a failed save and keeps the setting", async () => {
-    installTauri({
-      isoloom_registry_set: () => {
-        throw "settings aren't ready yet";
-      },
-    });
-    const onSaved = vi.fn();
-    const user = userEvent.setup();
-    render(<IsoloomRegistryRow onSaved={onSaved} />);
-    await flush();
-    await user.click(screen.getByRole("switch"));
-    await flush();
-    expect(text()).toContain("settings aren't ready yet");
-    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true");
-    expect(onSaved).not.toHaveBeenCalled();
   });
 });
 

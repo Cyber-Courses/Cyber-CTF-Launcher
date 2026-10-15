@@ -43,10 +43,6 @@ const report: SystemReport = {
     { provider: "vmware_esxi", remote: true, available: true, hypervisor: null, plugin: "vagrant-vmware-esxi", pluginInstalled: true, reason: null },
     { provider: "proxmox", remote: true, available: true, hypervisor: null, plugin: null, pluginInstalled: true, reason: null },
   ],
-  targets: [
-    { target: "docker", cloud: null, ready: true, summary: "Docker Desktop 27.3.1", notes: ["docker 27.3.1"] },
-    { target: "vagrant", cloud: null, ready: true, summary: "Vagrant 2.4.3 with VirtualBox", notes: ["vagrant 2.4.3"] },
-  ],
   wsl: null,
 };
 
@@ -114,7 +110,6 @@ const servers = (): ServerList => ({
 
 let cpu = 38;
 let sharedFolder = { enabled: false, path: "/Users/florian/cyberctf-share", mountPoint: "/workspace/share" };
-let isoloomRegistry = true;
 
 /** The app opens Settings and the server setup in their own windows; here, a browser tab. The
  *  preview's switches (see `Scenario`) go along, so the new tab shows the same machine. */
@@ -163,11 +158,6 @@ const machineCommands = {
   shared_folder_set: (args) => {
     sharedFolder = { ...sharedFolder, enabled: !!args?.enabled, path: String(args?.path ?? sharedFolder.path) };
     return sharedFolder;
-  },
-  isoloom_registry_get: () => isoloomRegistry,
-  isoloom_registry_set: (args) => {
-    isoloomRegistry = !!args?.enabled;
-    return isoloomRegistry;
   },
 } satisfies Handlers;
 
@@ -317,7 +307,6 @@ export function scenarioReport(sc: Scenario): SystemReport {
     terraform: sc.fresh ? notInstalled : report.terraform,
     cloudClis: sc.fresh ? { aws: notInstalled, azure: notInstalled, gcloud: notInstalled } : report.cloudClis,
     vmProviders: [...local, ...remote.map((p) => (sc.fresh ? { ...p, available: false, pluginInstalled: false } : p))],
-    targets: sc.fresh ? [] : report.targets,
   };
 }
 

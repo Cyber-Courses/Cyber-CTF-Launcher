@@ -7,7 +7,6 @@ use crate::AppHandle;
 use tauri::Manager;
 
 use super::inflight::{Action, DeployGuard};
-use super::lab::registry;
 use super::lifecycle::resume_locked;
 use super::paths::{
     deployment_states, forget_lab_host_keys, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, state_dir, vagrant_dirs,
@@ -194,7 +193,7 @@ async fn start_vm_lab(dir: &Path, runtime: Runtime, provider: Provider, env: &[(
 }
 
 /// A container lab on this machine's Docker: generate its Compose project, bring it up, plug a
-/// running attack box back into its networks, and record it for Isoloom. Takes the lab folder
+/// running attack box back into its networks, and say where it answers. Takes the lab folder
 /// (no app handle), so the real-lab tests run exactly this.
 pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     recheck_instance(dir, id, log).await?;
@@ -202,7 +201,6 @@ pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String
     mark_local_vm(dir, None)?;
     docker::start(dir, id, env, &mut *log).await?;
     exegol::rejoin(id).await;
-    registry::record_docker(dir, &spec, docker::project(id));
     // Its ports here are the ones picked at its first start, not the spec's.
     let published = docker::published(dir, id, env).await;
     if let Some(m) = lab::message_at(dir, &spec, lab::Target::Docker, &published) {
@@ -217,7 +215,7 @@ pub(super) async fn start_on_docker(dir: &Path, id: &str, env: &[(String, String
 async fn recheck_instance(dir: &Path, id: &str, log: &mut impl FnMut(String)) -> Result<()> {
     let Some(labs) = dir.parent() else { return Ok(()) };
     let before = lab::instance(dir);
-    let now = lab::recheck_instance(labs, dir, &docker::subnets_in_use(id).await, &lab::registry_instances(dir))?;
+    let now = lab::recheck_instance(labs, dir, &docker::subnets_in_use(id).await)?;
     if before.is_some_and(|b| b != now) {
         log(format!("Another Docker network took this lab's addresses: it moves to free ones (instance {now})."));
     }
@@ -257,9 +255,8 @@ fn local_run(runtime: Runtime, provider: Option<Provider>) -> Result<LocalRun> {
     }
 }
 
-/// The end of a Vagrant start (local or ESXi): the lab recorded, and its welcome message.
+/// The end of a Vagrant start (local or ESXi): the lab's welcome message.
 fn finish_vagrant(dir: &Path, spec: &lab::Spec, runtime: Runtime, log: &mut impl FnMut(String)) {
-    registry::record(dir, spec, lab::vagrant_target(runtime), None);
     welcome(dir, spec, lab::vagrant_target(runtime), log);
 }
 

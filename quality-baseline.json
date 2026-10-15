@@ -30,7 +30,7 @@
       "ts:features/machine": 54,
       "ts:features/onboarding": 9,
       "ts:features/servers": 59,
-      "ts:features/settings": 28,
+      "ts:features/settings": 27,
       "ts:lib": 79,
       "ts:test": 3
     },
@@ -109,7 +109,7 @@
       "ts:features/machine": 17,
       "ts:features/onboarding": 2,
       "ts:features/servers": 16,
-      "ts:features/settings": 13,
+      "ts:features/settings": 12,
       "ts:test": 1
     },
     "eslint/@typescript-eslint/prefer-promise-reject-errors": {
@@ -144,7 +144,7 @@
       "ts:features/hosted": 1,
       "ts:features/machine": 1,
       "ts:features/servers": 3,
-      "ts:features/settings": 3,
+      "ts:features/settings": 2,
       "ts:lib": 3
     },
     "eslint/import/no-default-export": {
@@ -199,13 +199,13 @@
       "rs:account": 1,
       "rs:deploy_worker": 3,
       "rs:labs": 1,
-      "rs:runtime": 24
+      "rs:runtime": 23
     }
   },
   "clippy": {
     "darwin": {
       "clippy/assert_is_empty": {
-        "rs:runtime": 50
+        "rs:runtime": 48
       },
       "clippy/case_sensitive_file_extension_comparisons": {
         "rs:runtime": 1
@@ -276,14 +276,11 @@
       "clippy/needless_raw_string_hashes": {
         "rs:runtime": 1
       },
-      "clippy/nonminimal_bool": {
-        "rs:runtime": 1
-      },
       "clippy/redundant_closure_for_method_calls": {
-        "rs:runtime": 18
+        "rs:runtime": 17
       },
       "clippy/semicolon_if_nothing_returned": {
-        "rs:runtime": 5
+        "rs:runtime": 4
       },
       "clippy/similar_names": {
         "rs:runtime": 1
@@ -295,7 +292,7 @@
         "rs:runtime": 4
       },
       "clippy/too_many_arguments": {
-        "rs:runtime": 11
+        "rs:runtime": 10
       },
       "clippy/uninlined_format_args": {
         "rs:runtime": 2

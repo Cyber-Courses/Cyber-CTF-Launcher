@@ -73,8 +73,7 @@
       "builtIn": "integriert",
       "installedWithPlugin": "installiert · {plugin}",
       "pluginMissing": "Plugin {plugin} fehlt"
-    },
-    "targets": "Wo Labs laufen können (Isoloom)"
+    }
   },
   "running": {
     "title": "Läuft gerade",

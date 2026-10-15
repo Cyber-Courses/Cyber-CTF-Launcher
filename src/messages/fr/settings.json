@@ -57,10 +57,6 @@
       "default": "Par défaut"
     }
   },
-  "isoloomRegistry": {
-    "title": "Liste des labs d'Isoloom",
-    "description": "Inscrit les labs que vous démarrez dans ~/.isoloom/status.yml, pour que la ligne de commande isoloom les voie (isoloom status, connect, exec). Les labs fonctionnent de la même façon sans."
-  },
   "attackBox": {
     "title": "Image de l'attack box",
     "description": "Tourne sur le réseau de chaque lab et sert de boîte à outils. Le premier lancement d'une image la télécharge, ce qui peut prendre un moment.",

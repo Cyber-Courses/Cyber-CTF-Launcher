@@ -46,7 +46,6 @@ export type * from "./ShellKind";
 export type * from "./Storage";
 export type * from "./StoredItem";
 export type * from "./SystemReport";
-export type * from "./TargetReadiness";
 export type * from "./TermEvent";
 export type * from "./Tool";
 export type * from "./Workload";

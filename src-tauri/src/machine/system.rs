@@ -71,26 +71,8 @@ pub struct SystemReport {
     /// this architecture: x86-only boxes (e.g. pfSense) cannot run on ARM hosts
     /// with a local hypervisor, but can on a remote x86 host.
     pub vm_providers: Vec<ProviderStatus>,
-    /// What Isoloom says this machine can run, target by target (`isoloom targets --host`):
-    /// the tools and credentials each one needs, found or missing.
-    pub targets: Vec<TargetReadiness>,
     /// Windows: whether WSL 2 is on, waits for a restart, or is missing (`None` elsewhere).
     pub wsl: Option<wsl::WslReport>,
-}
-
-/// One Isoloom target on this machine.
-#[derive(Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-pub struct TargetReadiness {
-    /// The target id: `docker`, `vagrant`, `proxmox`, `cloud-vm`, ...
-    pub target: String,
-    /// The cloud, for the cloud targets (`aws`, `azure`, ...).
-    pub cloud: Option<String>,
-    pub ready: bool,
-    /// One line: what was found, or what is missing.
-    pub summary: String,
-    /// Each thing found (plain) or missing (starts with `!`).
-    pub notes: Vec<String>,
 }
 
 pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
@@ -106,8 +88,8 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         probe("gcloud", &["--version"]),
         probe("terraform", &["version"]),
     );
-    let (vm_providers, docker_engines_running, ovftool, targets, wsl) =
-        tokio::join!(providers::detect(vagrant.installed), docker::running_engines(), probe("ovftool", &["--version"]), isoloom_targets(), wsl::report(&dirs));
+    let (vm_providers, docker_engines_running, ovftool, wsl) =
+        tokio::join!(providers::detect(vagrant.installed), docker::running_engines(), probe("ovftool", &["--version"]), wsl::report(&dirs));
     let docker_denied = daemon.as_ref().err().is_some_and(docker_denied);
     let docker_engine = match &daemon {
         Ok(os) => Some(docker::engine_in_use(os.trim()).await),
@@ -129,7 +111,6 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         ovftool,
         cloud_clis: CloudClis { aws, azure, gcloud },
         vm_providers,
-        targets,
         wsl,
     }
 }
@@ -195,24 +176,6 @@ async fn package_manager_version() -> Option<String> {
     {
         crate::platform::exec::run("apt-get", &["--version"], None).await.ok()
     }
-}
-
-/// Isoloom's own view of the host, off the async runtime (it runs the tools).
-async fn isoloom_targets() -> Vec<TargetReadiness> {
-    tokio::task::spawn_blocking(|| {
-        crate::runtime::lab::host_readiness()
-            .into_iter()
-            .map(|r| TargetReadiness {
-                target: r.target.id().to_string(),
-                cloud: r.cloud.clone(),
-                ready: r.ready,
-                summary: r.summary(),
-                notes: r.notes.clone(),
-            })
-            .collect()
-    })
-    .await
-    .unwrap_or_default()
 }
 
 #[cfg(test)]
