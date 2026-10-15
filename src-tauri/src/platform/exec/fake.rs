@@ -98,7 +98,7 @@ impl Drop for Tools {
 }
 
 /// Whether a test scripts the tools on this thread (so nothing real would run).
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(windows)]
 pub fn scripted() -> bool {
     STATE.with(|s| s.borrow().is_some())
 }

@@ -21,8 +21,7 @@
 //! Every probe is headless and timed, its whole process tree killed on a timeout: a hung
 //! `wsl.exe` costs the check a few seconds, never the setup.
 
-// Off Windows only the types (for the UI) and the tests use most of this.
-#![cfg_attr(not(windows), allow(dead_code))]
+#![cfg_attr(not(windows), allow(dead_code, reason = "off Windows only the UI's types and the tests use most of this"))]
 
 use std::sync::atomic::{AtomicU8, Ordering};
 

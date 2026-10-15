@@ -14,7 +14,7 @@ struct Live {
     pid: u32,
     /// A streamed tool (a `vagrant up`, a `compose up`, a `terraform apply`), stopped gently on
     /// the app's or worker's exit; a timed probe is just killed.
-    #[cfg_attr(not(unix), allow(dead_code))]
+    #[cfg_attr(not(unix), allow(dead_code, reason = "only unix stops a streamed tool gently, with SIGTERM"))]
     stream: bool,
     #[cfg(windows)]
     job: std::sync::Arc<Job>,

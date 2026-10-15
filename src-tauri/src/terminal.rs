@@ -266,7 +266,7 @@ fn pty_command(line: &str, direct: Option<(&std::path::Path, Option<&str>)>) -> 
 /// Windows has no `sh` and cmd.exe can't read POSIX quoting (`'…'\''…'`, which a jump host's
 /// `ProxyCommand` nests): the line's words, split back the way `sh` would, run directly. A line
 /// that needs a shell (an operator such as `&&`) still goes through cmd.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(any(windows, test))]
 pub(crate) fn windows_command(line: &str) -> CommandBuilder {
     const OPERATORS: [&str; 6] = ["&&", "||", ";", "|", "&", ">"];
     match shell_words::split(line) {
