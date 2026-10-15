@@ -16,13 +16,14 @@
 //!   launcher's own), so Vagrant doesn't stop to ask;
 //! - it runs each step, appending its stdout and stderr lines to a log file (UTF-8), framed by
 //!   marker lines carrying a random token (`start i`, `end i <exit code>`, `skip i`);
-//! - a watcher (a background job) ends the whole process tree when the batch folder gets a
-//!   `cancel` file (the caller gave up, or Vagrant asked a question nobody can answer), when the
-//!   launcher process is gone, or after [`DEADLINE`], and says why in a `reason` file.
+//! - a watcher (a runspace of the script's own process) ends the whole process tree when the
+//!   batch folder gets a `cancel` file (the caller gave up, or Vagrant asked a question nobody can
+//!   answer), when the launcher process is gone, or after [`DEADLINE`], and says why in a `reason`
+//!   file.
 //!
-//! The launcher follows that log as it grows ([`follow`]), turns it back into the same events a
-//! batch run step by step reports ([`Collector`]), and waits for the process. Declining the UAC
-//! prompt (`ERROR_CANCELLED`) gives a plain-language error ([`launch_error`]).
+//! The launcher follows that log as it grows ([`follow_batch`]), turns it back into the same events
+//! a batch run step by step reports, and waits for the process. Declining the UAC prompt
+//! (`ERROR_CANCELLED`) gives a plain-language error ([`launch_error`]).
 
 #[cfg(any(windows, test))]
 mod collect;
@@ -33,7 +34,7 @@ mod script;
 use std::path::Path;
 
 #[cfg(any(windows, test))]
-use self::collect::{Collector, WorkDir, follow, prompt};
+use self::collect::{WorkDir, follow_batch};
 #[cfg(any(windows, test))]
 use self::script::{Plan, env_json, forwarded_env, own_env, powershell_args, ps_quote, script};
 #[cfg(any(windows, test))]
@@ -209,7 +210,7 @@ struct Batch<'a> {
 /// Runs `batch` through `launch`, which starts PowerShell with the given arguments and resolves
 /// to its exit code once it ended.
 #[cfg(any(windows, test))]
-async fn run_script<L, F>(batch: &Batch<'_>, launch: L, mut on_event: impl FnMut(Event<'_>)) -> Result<Vec<Outcome>>
+async fn run_script<L, F>(batch: &Batch<'_>, launch: L, on_event: impl FnMut(Event<'_>)) -> Result<Vec<Outcome>>
 where
     L: FnOnce(Vec<String>) -> F,
     F: std::future::Future<Output = Result<u32>>,
@@ -220,17 +221,7 @@ where
     let marker = format!("##cyberctf-{:016x}##", rand::random::<u64>());
     let plan = Plan { batch, work: &work, marker: &marker, launcher: std::process::id() };
     let args = powershell_args(&script(&plan)?)?;
-    let mut collector = Collector::new(&marker, batch.steps);
-    let code = follow(&work.log(), launch(args), |l| {
-        if let Some(say) = prompt(l) {
-            work.stop(say);
-        }
-        collector.line(l, &mut on_event);
-    })
-    .await??;
-    let reason = std::fs::read_to_string(work.reason()).ok();
-    work.finished();
-    collector.finish(code, reason.as_deref())
+    follow_batch(&mut work, &marker, batch.steps, launch(args), on_event).await
 }
 
 /// Starts PowerShell (`exe`) with `args` as a plain child; its exit code once it ended.
@@ -281,8 +272,6 @@ fn powershell() -> std::path::PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
 
     #[test]
@@ -396,19 +385,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_question_vagrant_waits_on_ends_the_batch_with_a_plain_message() {
-        // Vagrant on Windows waits forever on its question: the launcher sees the line before it,
-        // and the watcher ends the run (the whole tree) instead of hanging.
+    async fn a_real_powershell_watcher_ends_the_whole_batch_stuck_on_a_question() {
+        // The generated watcher, run by a real PowerShell, ends the run's whole tree once asked
+        // (the step would wait a minute). How soon it is asked is proven on a fake clock
+        // (`collect::tests`); this proves it acts, so it asserts no time.
         let Some(ps) = powershell() else { return };
         let (program, step) = if cfg!(windows) {
             ("cmd.exe", Step::new(&["/c", "echo Please choose a switch to attach to your Hyper-V instance.& ping -n 60 127.0.0.1 >nul"]))
         } else {
             ("sh", Step::new(&["-c", "echo 'Please choose a switch to attach to your Hyper-V instance.'; sleep 60"]))
         };
-        let started = std::time::Instant::now();
         let (_, result) = real(ps, program, &std::env::temp_dir(), &[step]).await;
-        let err = result.unwrap_err().to_string();
+        let err = result.expect_err("the watcher ended the step before it finished").to_string();
         assert!(err.contains("which Hyper-V virtual switch"), "{err}");
-        assert!(started.elapsed() < Duration::from_secs(45), "ended in {:?}", started.elapsed());
     }
 }

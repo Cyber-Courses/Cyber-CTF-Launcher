@@ -17,6 +17,9 @@ pub(super) const MAX_COMMAND_LINE: usize = 32_000;
 /// of hours at most; past this, it is stuck.
 pub(super) const DEADLINE: Duration = Duration::from_secs(6 * 3600);
 
+/// How often the watcher looks for a reason to end the batch.
+pub(super) const WATCH_EVERY: Duration = Duration::from_millis(500);
+
 /// Refuses an argument Windows PowerShell 5.1 can't pass through to a native program intact:
 /// it drops empty ones, mangles embedded double quotes, and stops parsing at `--%`.
 fn check_arg(arg: &str) -> Result<()> {
@@ -95,7 +98,8 @@ pub(super) struct Plan<'a> {
     pub(super) launcher: u32,
 }
 
-/// The PowerShell script that runs a [`Plan`], logging with the marker lines of [`Collector`].
+/// The PowerShell script that runs a [`Plan`], logging with the marker lines the launcher reads
+/// back ([`super::collect`]).
 pub(super) fn script(p: &Plan) -> Result<String> {
     for arg in p.batch.steps.iter().flat_map(|s| &s.args) {
         check_arg(arg)?;
@@ -133,14 +137,17 @@ fn script_log(p: &Plan) -> String {
     s
 }
 
-/// The watcher: a background job (its own process) that ends this script's whole tree on cancel,
-/// when the launcher is gone, or at the deadline.
+/// The watcher, which ends this script's whole tree on cancel, when the launcher is gone, or at the
+/// deadline: a runspace of the script's own process, which runs on a thread of its own and starts
+/// at once. (A `Start-Job` is a PowerShell process of its own: it took from seconds to over a
+/// minute to start on a loaded machine, and the batch ran on, unwatched, meanwhile.)
 fn script_watcher(p: &Plan) -> String {
     let mut s = String::new();
     let _ = write!(
         s,
-        "$cyberctfWatch = Start-Job -ArgumentList $PID, {}, {}, {}, {} -ScriptBlock {{\n\
-         \x20 param($main, $launcherId, $cancel, $reason, $secs)\n\
+        "$cyberctfWatch = [powershell]::Create()\n\
+         [void]$cyberctfWatch.AddScript({{\n\
+         \x20 param($main, $launcherId, $cancel, $reason, $secs, $every)\n\
          \x20 $launcher = Get-Process -Id $launcherId -ErrorAction SilentlyContinue\n\
          \x20 $deadline = (Get-Date).AddSeconds($secs)\n\
          \x20 while ($true) {{\n\
@@ -153,13 +160,16 @@ fn script_watcher(p: &Plan) -> String {
          \x20     if ($IsLinux -or $IsMacOS) {{ Stop-Process -Id $main -Force }} else {{ & taskkill.exe /T /F /PID $main | Out-Null }}\n\
          \x20     return\n\
          \x20   }}\n\
-         \x20   Start-Sleep -Milliseconds 500\n\
+         \x20   Start-Sleep -Milliseconds $every\n\
          \x20 }}\n\
-         }}\n",
+         }})\n\
+         foreach ($cyberctfArg in @($PID, {}, {}, {}, {}, {})) {{ [void]$cyberctfWatch.AddArgument($cyberctfArg) }}\n\
+         $cyberctfWatching = $cyberctfWatch.BeginInvoke()\n",
         p.launcher,
         ps_path(&p.work.cancel()),
         ps_path(&p.work.reason()),
-        DEADLINE.as_secs()
+        DEADLINE.as_secs(),
+        WATCH_EVERY.as_millis()
     );
     s
 }
@@ -231,7 +241,7 @@ fn script_end(m: &str) -> String {
     let mut s = String::new();
     let _ = write!(
         s,
-        "}} catch {{\n  Write-CyberctfLine ({m} + ' error ' + $_.Exception.Message)\n  $cyberctfCode = 1\n}} finally {{\n  Stop-Job -Job $cyberctfWatch -ErrorAction SilentlyContinue\n  Remove-Job -Job $cyberctfWatch -Force -ErrorAction SilentlyContinue\n  $cyberctfLog.Close()\n}}\nexit $cyberctfCode\n"
+        "}} catch {{\n  Write-CyberctfLine ({m} + ' error ' + $_.Exception.Message)\n  $cyberctfCode = 1\n}} finally {{\n  try {{ $cyberctfWatch.Stop(); $cyberctfWatch.Dispose() }} catch {{}}\n  $cyberctfLog.Close()\n}}\nexit $cyberctfCode\n"
     );
     s
 }
@@ -348,7 +358,8 @@ mod tests {
         assert!(s.contains("  Invoke-CyberctfStep 0 $false @('up', '--provider', 'hyperv')\n"), "{s}");
         assert!(s.contains("  Invoke-CyberctfStep 1 $true @('halt', 'o''brien')\n"), "a clean-up step always runs: {s}");
         assert!(s.contains("[System.IO.File]::Open('C:\\Temp\\w"), "{s}");
-        assert!(s.contains("Start-Job -ArgumentList $PID, 77, 'C:\\Temp\\w") && s.contains("taskkill.exe /T /F /PID $main"), "the watcher: {s}");
+        assert!(s.contains("foreach ($cyberctfArg in @($PID, 77, 'C:\\Temp\\w") && s.contains("taskkill.exe /T /F /PID $main"), "the watcher: {s}");
+        assert!(s.contains("[powershell]::Create()") && !s.contains("Start-Job"), "the watcher starts at once, in the script's process: {s}");
         assert!(s.contains(&format!("$env:{HYPERV_SWITCH_ENV} = $pick.Name")), "{s}");
         assert!(s.trim_end().ends_with("exit $cyberctfCode"));
     }

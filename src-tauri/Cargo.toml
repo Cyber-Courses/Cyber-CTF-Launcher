@@ -139,6 +139,9 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [dev-dependencies]
+# Tokio's paused clock (`#[tokio::test(start_paused = true)]`): tests where time matters run on a
+# fake clock, in milliseconds, whatever the machine's load.
+tokio = { version = "1", features = ["test-util"] }
 # Property tests for the parsers of tool output and user input: never panic, round-trips,
 # quoting invariants.
 proptest = { version = "1", default-features = false, features = ["std"] }

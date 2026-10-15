@@ -24,7 +24,7 @@ Turn the shared folder off for this lab, then try again.",
 ];
 
 /// What to say instead of a question Vagrant asks on `line`, if it is one.
-pub(super) fn prompt(line: &str) -> Option<&'static str> {
+fn prompt(line: &str) -> Option<&'static str> {
     PROMPTS.iter().find(|(needle, _)| line.contains(needle)).map(|(_, say)| *say)
 }
 
@@ -42,7 +42,7 @@ fn stopped(reason: &str) -> String {
 const ERROR_LINES: usize = crate::platform::exec::STREAM_ERROR_LINES;
 
 /// Turns a batch's log back into its events and outcomes.
-pub(super) struct Collector<'s> {
+struct Collector<'s> {
     marker: String,
     steps: &'s [Step],
     current: usize,
@@ -55,7 +55,7 @@ pub(super) struct Collector<'s> {
 }
 
 impl<'s> Collector<'s> {
-    pub(super) fn new(marker: &str, steps: &'s [Step]) -> Collector<'s> {
+    fn new(marker: &str, steps: &'s [Step]) -> Collector<'s> {
         Collector {
             marker: format!("{marker} "),
             steps,
@@ -69,7 +69,7 @@ impl<'s> Collector<'s> {
         }
     }
 
-    pub(super) fn line(&mut self, line: &str, on_event: &mut impl FnMut(Event<'_>)) {
+    fn line(&mut self, line: &str, on_event: &mut impl FnMut(Event<'_>)) {
         let Some(rest) = line.strip_prefix(&self.marker) else {
             self.text.push_str(line);
             self.text.push('\n');
@@ -119,7 +119,7 @@ impl<'s> Collector<'s> {
     /// The outcomes, once the script exited with `exit_code`; `reason`: why the watcher ended it,
     /// if it did. A step that neither ended nor was skipped (the script was cut short) fails the
     /// whole batch: the steps after it never ran.
-    pub(super) fn finish(self, exit_code: u32, reason: Option<&str>) -> Result<Vec<Outcome>> {
+    fn finish(self, exit_code: u32, reason: Option<&str>) -> Result<Vec<Outcome>> {
         if let Some(e) = self.error {
             return Err(Error::Invalid(format!("the Vagrant batch failed: {e}")));
         }
@@ -134,12 +134,35 @@ impl<'s> Collector<'s> {
     }
 }
 
+/// Follows the log of a batch's script, started in `work` and running as `script` (its exit code
+/// once it ended): each line becomes the batch's events, and a question Vagrant would wait on
+/// forever asks the watcher to end the batch at once. The batch's outcomes.
+pub(super) async fn follow_batch(
+    work: &mut WorkDir,
+    marker: &str,
+    steps: &[Step],
+    script: impl std::future::Future<Output = Result<u32>>,
+    mut on_event: impl FnMut(Event<'_>),
+) -> Result<Vec<Outcome>> {
+    let mut collector = Collector::new(marker, steps);
+    let code = follow(&work.log(), script, |l| {
+        if let Some(say) = prompt(l) {
+            work.stop(say);
+        }
+        collector.line(l, &mut on_event);
+    })
+    .await??;
+    let reason = std::fs::read_to_string(work.reason()).ok();
+    work.finished();
+    collector.finish(code, reason.as_deref())
+}
+
 /// How often a followed log is read for new lines.
 const FOLLOW_EVERY: Duration = Duration::from_millis(200);
 
 /// Follows the log at `path` while `done` runs, handing each complete line (without its line
 /// ending) to `on_line`, then reads what was left once it finished. `done`'s output.
-pub(super) async fn follow<T>(path: &Path, done: impl std::future::Future<Output = T>, mut on_line: impl FnMut(&str)) -> std::io::Result<T> {
+async fn follow<T>(path: &Path, done: impl std::future::Future<Output = T>, mut on_line: impl FnMut(&str)) -> std::io::Result<T> {
     use tokio::io::AsyncReadExt;
     let mut file = tokio::fs::File::open(path).await?;
     let mut pending: Vec<u8> = Vec::new();
@@ -216,7 +239,7 @@ impl WorkDir {
     }
 
     /// The batch is over: the folder can go once dropped.
-    pub(super) fn finished(&mut self) {
+    fn finished(&mut self) {
         self.finished = true;
     }
 
@@ -227,7 +250,7 @@ impl WorkDir {
     }
 
     /// Asks the watcher to end the batch, saying `why` (kept when asked already).
-    pub(super) fn stop(&self, why: &str) {
+    fn stop(&self, why: &str) {
         if !self.cancel().exists() {
             let _ = std::fs::write(self.cancel(), why);
         }
@@ -257,6 +280,7 @@ impl Drop for WorkDir {
 
 #[cfg(test)]
 mod tests {
+    use super::super::script::WATCH_EVERY;
     use super::*;
 
     #[test]
@@ -337,6 +361,37 @@ mod tests {
         // Ended by the watcher: its reason is the error.
         let (_, timed) = collect(&steps, &["##m## start 0"], 1, Some("timeout"));
         assert!(timed.unwrap_err().to_string().contains("more than 6 hours"));
+    }
+
+    /// The batch's script as the test plays it: step 0 prints the line Vagrant prints before a
+    /// question it would wait on forever, then the watcher (polling as the real one does) waits
+    /// for the launcher to ask it to stop, writes why, and ends the script.
+    async fn a_script_stuck_on_a_question(log: &Path, cancel: &Path, reason: &Path) -> Result<u32> {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new().append(true).open(log)?;
+        f.write_all(b"##m## start 0\n    default: Please choose a switch to attach to your Hyper-V instance.\n")?;
+        while !cancel.exists() {
+            tokio::time::sleep(WATCH_EVERY).await;
+        }
+        std::fs::write(reason, std::fs::read_to_string(cancel)?)?;
+        Ok(1)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_question_vagrant_waits_on_ends_the_batch_at_once_with_a_plain_message() {
+        // Vagrant on Windows waits forever on its question: the launcher sees the line before it
+        // and asks the watcher to end the run. On a fake clock: within one read of the log and one
+        // look of the watcher, however loaded the machine.
+        let mut work = WorkDir::new().unwrap();
+        std::fs::File::create(work.log()).unwrap();
+        let (log, cancel, reason) = (work.log(), work.cancel(), work.reason());
+        let steps = [Step::new(&["up"])];
+        let started = tokio::time::Instant::now();
+        let result = follow_batch(&mut work, "##m##", &steps, a_script_stuck_on_a_question(&log, &cancel, &reason), |_| {}).await;
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("which Hyper-V virtual switch") && err.contains("ISOLOOM_HYPERV_SWITCH"), "{err}");
+        let ended = started.elapsed();
+        assert!(ended <= FOLLOW_EVERY + WATCH_EVERY, "ended {ended:?} after the question");
     }
 
     #[tokio::test]
