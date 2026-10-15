@@ -276,7 +276,7 @@ pub fn open_terminal(command: &str) -> Result<()> {
             // without a window, so give it that moment and fall through to the next one.
             std::thread::sleep(std::time::Duration::from_millis(1500));
             match child.try_wait() {
-                Ok(Some(status)) if !status.success() => continue,
+                Ok(Some(status)) if !status.success() => {}
                 _ => {
                     // Reaped when it closes, or each terminal opened stays a zombie while the
                     // app runs (Debian's gnome-terminal wrapper waits for its window).
