@@ -13,9 +13,16 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         RunnerError::ToolMissing { tool, .. } => Error::coded(Code::ToolMissing { tool }),
         RunnerError::ToolFailed { step, reason } => tool_failed(&step, &reason),
         RunnerError::Timeout { step, after_s } => Error::Invalid(format!(
-            "The lab's `{step}` step didn't finish within {} minutes, so it was stopped. Start the lab again; if it keeps happening, check the resources of Docker or the server.",
+            "The lab's `{step}` step didn't finish within {} minutes, so it was stopped. Start the lab again; if it keeps happening, check the resources of Docker, the hypervisor or the server.",
             after_s.div_ceil(60)
         )),
+        RunnerError::ToolTooOld { tool, found, required } => Error::Invalid(format!(
+            "This lab needs {} {required} or later, and this computer has {found}. Update it, then start the lab again.",
+            tool_name(&tool)
+        )),
+        RunnerError::Elevation { .. } => {
+            Error::Invalid("Hyper-V needs administrator rights, and the permission prompt was declined. Start the lab again and accept the prompt.".into())
+        }
         RunnerError::NotReady { detail, .. } => Error::Invalid(format!("The lab started, but didn't become ready: {detail}")),
         RunnerError::SecretMissing { name } => {
             Error::Invalid(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
@@ -31,7 +38,7 @@ fn by_code(e: &RunnerError) -> Error {
         ErrorCode::RunningElsewhere => Error::Refused("This lab is still running somewhere else. Stop it there before starting it here.".into()),
         ErrorCode::Locked => Error::coded(Code::AlreadyInProgress),
         ErrorCode::NothingToResume => {
-            Error::Invalid("Nothing is left of this lab to resume (its stopped containers are gone). Start it again for a fresh copy.".into())
+            Error::Invalid("Nothing is left of this lab to resume (its stopped containers or VMs are gone). Start it again for a fresh copy.".into())
         }
         ErrorCode::NotRunning => Error::Invalid("This lab isn't running. Start it first.".into()),
         ErrorCode::NotParkable => Error::Invalid("This lab can't be paused or shut down. Stop it instead.".into()),
@@ -40,6 +47,16 @@ fn by_code(e: &RunnerError) -> Error {
         )),
         ErrorCode::ManifestInvalid | ErrorCode::Unsupported => Error::Invalid(format!("Cyber CTF can't run this lab's generated files: {e}")),
         _ => Error::Invalid(e.to_string()),
+    }
+}
+
+/// A tool as the player knows it (`vagrant` is Vagrant).
+fn tool_name(tool: &str) -> String {
+    match tool {
+        "vagrant" => "Vagrant".into(),
+        "docker" => "Docker".into(),
+        "docker-compose" => "Docker Compose".into(),
+        other => format!("`{other}`"),
     }
 }
 
@@ -99,6 +116,15 @@ mod tests {
         assert!(said(RunnerError::NotRunning { run: "r".into() }).1.contains("Start it first"));
         assert!(said(RunnerError::Timeout { step: "up".into(), after_s: 1800 }).1.contains("within 30 minutes"));
         assert!(said(RunnerError::SecretMissing { name: "CTF_FLAG_MAIN".into() }).1.contains("`CTF_FLAG_MAIN`"));
+    }
+
+    #[test]
+    fn a_vm_labs_own_failures_say_what_to_do() {
+        let old = RunnerError::ToolTooOld { tool: "vagrant".into(), found: "2.3.8".into(), required: "2.4.0".into() };
+        assert_eq!(said(old).1, "This lab needs Vagrant 2.4.0 or later, and this computer has 2.3.8. Update it, then start the lab again.");
+        let declined = RunnerError::Elevation { reason: "the prompt was declined".into() };
+        assert!(said(declined).1.starts_with("Hyper-V needs administrator rights"));
+        assert!(said(RunnerError::Timeout { step: "up".into(), after_s: 21600 }).1.starts_with("The lab's `up` step didn't finish within 360 minutes"));
     }
 
     #[test]

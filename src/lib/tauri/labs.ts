@@ -73,6 +73,15 @@ export const labTools = (id: string, runtime: Runtime) => invoke<LabTool[]>("lab
 /** Runs a lab's exploitability check: is the intended exploit path still solvable? */
 export const labCheck = (id: string, runtime: Runtime) => invoke<LabCheck>("lab_check", { id, runtime });
 
+/** The path labs on this machine run through: the Isothrum runner, or the launcher's own code. */
+export type LabEngine = "isothrum" | "launcher";
+
+/** The path labs run through now (the player's choice, unless a developer build forces one). */
+export const labEngine = () => invoke<LabEngine>("lab_engine");
+
+/** Saves the path labs run through from their next start on. */
+export const setLabEngine = (engine: LabEngine) => invokeUnit("set_lab_engine", { engine });
+
 /** Status of a lab's attack box (Exegol) for the configured image. */
 export const exegolStatus = (id: string, image: string) => invoke<ExegolStatus>("exegol_status", { id, image });
 

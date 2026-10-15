@@ -11,6 +11,7 @@ import type {
   HostCapacity,
   InstalledTool,
   LabCheck,
+  LabEngine,
   LabStatus,
   LabTool,
   MachineMetrics,
@@ -36,6 +37,8 @@ type Answers = {
   attack_vm_status: ExegolStatus;
   shared_folder_get: SharedFolder;
   shared_folder_set: SharedFolder;
+  lab_engine: LabEngine;
+  set_lab_engine: null;
   server_list: ServerList;
   server_capacity: HostCapacity | null;
   server_test: ServerTest;

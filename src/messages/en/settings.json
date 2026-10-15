@@ -57,6 +57,15 @@
       "default": "Default"
     }
   },
+  "labEngine": {
+    "title": "Lab engine",
+    "launcher": "Labs run through Cyber CTF's own code, as they always have.",
+    "isothrum": "Labs run through the Isothrum runner: container labs on Docker and VM labs on your hypervisor, with their checks. Takes effect at each lab's next start.",
+    "options": {
+      "launcher": "Built-in",
+      "isothrum": "Isothrum runner"
+    }
+  },
   "attackBox": {
     "title": "Attack box image",
     "description": "Runs on each lab’s network as your toolbox. The first launch of an image downloads it, which can take a while.",

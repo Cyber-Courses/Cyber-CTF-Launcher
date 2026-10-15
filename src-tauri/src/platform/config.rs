@@ -32,11 +32,11 @@ pub fn scheme_redirect() -> bool {
     setting("CYBERCTF_REDIRECT", option_env!("CYBERCTF_REDIRECT"), "loopback") == "scheme"
 }
 
-/// Whether container labs on this machine's Docker run through the Isothrum runner
-/// (`CYBERCTF_RUNNER=isothrum`) rather than the launcher's own Docker code: a developer switch,
-/// hidden (no setting shows it) until the runner covers the VM modes too.
-pub fn isothrum_runner() -> bool {
-    setting("CYBERCTF_RUNNER", option_env!("CYBERCTF_RUNNER"), "launcher") == "isothrum"
+/// The path labs on this machine run through when a developer forces it (`CYBERCTF_RUNNER`:
+/// `isothrum` for the Isothrum runner, anything else for the launcher's own code), at run time or
+/// in the build; `None` leaves it to the player's choice in Settings > Labs.
+pub fn runner_override() -> Option<String> {
+    std::env::var("CYBERCTF_RUNNER").ok().filter(|v| !v.is_empty()).or_else(|| option_env!("CYBERCTF_RUNNER").map(str::to_owned))
 }
 
 /// The keychain service the session and the server secrets are kept under.

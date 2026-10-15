@@ -9,14 +9,15 @@ use std::time::{Duration, Instant};
 
 use crate::AppHandle;
 
-use super::paths::{lab_dir, local_vm, parked, runner_home, state_dir, vagrant_dirs};
+use super::paths::{lab_dir, local_vm, parked, runner_chosen, runner_home, state_dir, vagrant_dirs};
 use super::{AttackerAt, LabStatus, Place, Runtime, cloud_services, docker, isothrum, lab, remote, server, terraform, vm};
 use crate::error::Result;
 
 pub(super) async fn status(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
     let status = match (runtime, server::lab_connection(app, dir)?) {
         (Runtime::Cloud, c) => cloud_status(app, dir, id, c)?,
-        (Runtime::Docker, None) if local_vm(dir).is_none() && isothrum::chosen() => isothrum::DockerRun::new(&runner_home(app)?, dir, id)?.status().await?,
+        (Runtime::Docker, None) if local_vm(dir).is_none() && runner_chosen(app) => isothrum::LabRun::docker(&runner_home(app)?, dir, id)?.status().await?,
+        (Runtime::Vm, None) if runner_chosen(app) => isothrum::LabRun::vm(&runner_home(app)?, dir, id)?.status().await?,
         (_, None) => local_status(dir, id, runtime).await?,
         (_, Some(c)) => server_status(app, dir, id, runtime, c).await?,
     };
@@ -55,7 +56,7 @@ fn with_parked(s: LabStatus, parked: Option<super::Park>) -> LabStatus {
 }
 
 async fn server_status(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, c: server::Connection) -> Result<LabStatus> {
-    if super::launch::runner_runs(c.provider, runtime) {
+    if super::launch::runner_runs(app, c.provider, runtime) {
         // The runner's view, from its own record and state: no SSH, no API call.
         let place = isothrum::ServerPlace { name: c.name.clone(), ..isothrum::ServerPlace::default() };
         let status = isothrum::ServerRun::new(&runner_home(app)?, dir, id)?.status(&place).await?;

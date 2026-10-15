@@ -21,7 +21,7 @@ pub(super) async fn start_on_server(
     // Mark first, so a half-created lab can still be destroyed on the same host.
     server::mark_lab(dir, Some(host))?;
     log(format!("Running on server host {} ({})", conn.name, conn.provider.id()));
-    if runner_runs(conn.provider, runtime) {
+    if runner_runs(app, conn.provider, runtime) {
         lab::prepare(dir, lab::Target::Proxmox)?;
         let run = isothrum::ServerRun::new(&runner_home(app)?, dir, id)?;
         let place = server_place(app, host, &conn, &run).await?;
@@ -51,9 +51,9 @@ pub(super) async fn start_on_server(
 }
 
 /// Whether the Isothrum runner runs a lab of `runtime` on a `provider` server: VM labs on Proxmox,
-/// behind the runner's switch (`isothrum::chosen`).
-pub(in crate::runtime) fn runner_runs(provider: Provider, runtime: Runtime) -> bool {
-    provider == Provider::Proxmox && runtime == Runtime::Vm && isothrum::chosen()
+/// behind the runner's switch (Settings > Labs > Lab engine).
+pub(in crate::runtime) fn runner_runs(app: &AppHandle, provider: Provider, runtime: Runtime) -> bool {
+    provider == Provider::Proxmox && runtime == Runtime::Vm && crate::runtime::paths::runner_chosen(app)
 }
 
 /// Where a runner's run goes on server `host` (connection `conn`): its variables, the node when

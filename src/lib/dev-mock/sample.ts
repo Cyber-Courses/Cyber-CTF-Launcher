@@ -105,6 +105,7 @@ const servers = (): ServerList => ({
 
 let cpu = 38;
 let sharedFolder = { enabled: false, path: "/Users/florian/cyberctf-share", mountPoint: "/workspace/share" };
+let labEngine: "launcher" | "isothrum" = "launcher";
 
 /** The player, this install and the API. */
 const accountCommands = {
@@ -140,6 +141,11 @@ const machineCommands = {
   attack_vm_status: () => attackBox(),
   image_download_size: () => 4.1 * GB,
   installed_tools: () => [],
+  lab_engine: () => labEngine,
+  set_lab_engine: (args) => {
+    labEngine = args?.engine === "isothrum" ? "isothrum" : "launcher";
+    return null;
+  },
   shared_folder_get: () => sharedFolder,
   shared_folder_set: (args) => {
     sharedFolder = { ...sharedFolder, enabled: !!args?.enabled, path: argText(args?.path, sharedFolder.path) };

@@ -51,16 +51,16 @@ impl Fixture {
     }
 
     /// The lab's run, on a runner whose home is the fixture's root.
-    fn run(&self) -> DockerRun {
+    fn run(&self) -> LabRun {
         let config =
             RunnerConfig::new(&self.root).with_processes(Arc::clone(&self.fake) as Arc<dyn ProcessRunner>).with_ports(Arc::new(FakePorts::new([41873])));
-        DockerRun::with(config, &self.dir, "web").unwrap()
+        LabRun::with(config, &self.dir, "web", Kind::Docker).unwrap()
     }
 
     /// The lab's run, started with [`launch_env`] (the attack box's tools scripted by the caller).
-    async fn up(&self) -> DockerRun {
+    async fn up(&self) -> LabRun {
         let run = self.run();
-        run.up(&launch_env(), &mut |_| {}).await.unwrap();
+        run.up(&launch_env(), None, &mut |_| {}).await.unwrap();
         run
     }
 
@@ -132,7 +132,7 @@ async fn a_container_lab_goes_up_through_the_runner_as_cyberctf_lab_id() {
     let f = Fixture::new();
     let tools = Tools::rules(&[]);
     let mut log = Vec::new();
-    f.run().up(&launch_env(), &mut |l| log.push(l)).await.unwrap();
+    f.run().up(&launch_env(), None, &mut |l| log.push(l)).await.unwrap();
     let up = f.fake.last(" up --detach").unwrap();
     assert!(up.line().contains("--project-name cyberctf-web"), "{}", up.line());
     assert_eq!(up.env("CTF_LAUNCH_TOKEN"), Some("t0k"), "the launch's input reaches its slot");
@@ -168,7 +168,7 @@ async fn a_lab_parks_and_resumes_with_its_attack_box() {
     let f = Fixture::new();
     let tools = Tools::rules(&[]);
     let run = f.up().await;
-    run.park(&mut |_| {}).await.unwrap();
+    run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
     assert!(tools.called("docker stop -t 1 cyberctf-web-attacker"), "the attack box stops with the lab");
     assert!(f.fake.last("compose").is_some_and(|c| c.line().ends_with(" stop")));
     let parked = run.status().await.unwrap();
@@ -185,7 +185,7 @@ async fn a_parked_lab_whose_containers_are_gone_offers_a_fresh_start() {
     let f = Fixture::new();
     let _tools = Tools::rules(&[]);
     let run = f.up().await;
-    run.park(&mut |_| {}).await.unwrap();
+    run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
     paths::mark_parked(&f.dir, Some(Park::Shutdown)).unwrap();
     f.set(Containers::None);
     let err = run.resume(&mut |_| {}).await.unwrap_err().to_string();
@@ -198,7 +198,7 @@ async fn a_second_start_of_a_running_lab_is_refused_and_a_down_removes_it_all() 
     let f = Fixture::new();
     let tools = Tools::rules(&[]);
     let run = f.up().await;
-    let again = run.up(&launch_env(), &mut |_| {}).await.unwrap_err();
+    let again = run.up(&launch_env(), None, &mut |_| {}).await.unwrap_err();
     assert!(matches!(&again, Error::Refused(m) if m.starts_with("This lab is already running on this machine")), "{again}");
     run.down(&mut |_| {}).await.unwrap();
     assert!(tools.called("docker rm -f cyberctf-web-attacker"), "the attack box goes first, freeing the lab's networks");
@@ -213,7 +213,7 @@ async fn the_labs_checks_run_through_the_runner() {
     let run = f.run();
     let not_up = run.check().await.unwrap_err().to_string();
     assert!(not_up.contains("isn't running"), "{not_up}");
-    run.up(&launch_env(), &mut |_| {}).await.unwrap();
+    run.up(&launch_env(), None, &mut |_| {}).await.unwrap();
     let c = run.check().await.unwrap();
     assert!(c.available && c.ok, "{}", c.output);
     assert_eq!(c.results.iter().map(|r| (r.name.as_str(), r.ok)).collect::<Vec<_>>(), [("http://web/", true)]);
@@ -225,7 +225,7 @@ async fn a_lab_never_generated_reads_as_not_running() {
     let root = std::env::temp_dir().join(format!("cyberctf-isothrum-{}", rand::random::<u32>()));
     let dir = root.join("labs").join("web");
     std::fs::create_dir_all(&dir).unwrap();
-    let s = DockerRun::with(RunnerConfig::new(&root), &dir, "web").unwrap().status().await.unwrap();
+    let s = LabRun::with(RunnerConfig::new(&root), &dir, "web", Kind::Docker).unwrap().status().await.unwrap();
     assert!(!s.running && s.machines.is_empty());
     let _ = std::fs::remove_dir_all(root);
 }
@@ -250,11 +250,13 @@ fn the_deploy_log_shows_steps_tool_lines_and_warnings_only() {
 
 #[test]
 fn a_start_gives_the_launch_values_to_the_slots_and_resumes_a_parked_run() {
-    let opts = start_options(&[("CTF_FLAG_MAIN".into(), "flag{x}".into()), (PORTS_ENV.into(), "random".into())]);
+    let opts = start_options(&[("CTF_FLAG_MAIN".into(), "flag{x}".into()), (PORTS_ENV.into(), "random".into())], None);
     assert_eq!(opts.secrets.get("CTF_FLAG_MAIN").map(SecretValue::expose), Some("flag{x}"));
     assert!(opts.secrets.get(PORTS_ENV).is_none());
     assert!(opts.params.is_empty(), "random ports: no fixed publish");
     assert_eq!(opts.occupied, Occupied::ResumeParked);
-    let fixed = start_options(&[(PORTS_ENV.into(), "default".into())]);
+    let fixed = start_options(&[(PORTS_ENV.into(), "default".into())], None);
     assert_eq!(fixed.params.get("ISOLOOM_PUBLISH_FIXED").map(String::as_str), Some("1"));
+    assert_eq!(opts.provider, None);
+    assert_eq!(start_options(&[], Some("virtualbox")).provider.as_deref(), Some("virtualbox"), "a VM lab's hypervisor");
 }

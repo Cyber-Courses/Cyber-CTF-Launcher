@@ -6,7 +6,7 @@ use crate::AppHandle;
 use tauri::ipc::Channel;
 
 use super::lifecycle::stop_lab;
-use super::paths::{lab_dir, local_vm, runner_home, validate_id};
+use super::paths::{lab_dir, local_vm, runner_chosen, runner_home, validate_id};
 use super::shell::lab_shell_command;
 use super::{LabStatus, Park, Runtime, attack_vm, cloud_services, discover, docker, exegol, isothrum, lab, server, status};
 use crate::deploy_worker::{self, Job, Op};
@@ -104,16 +104,33 @@ pub async fn running_labs(app: AppHandle) -> Vec<String> {
 pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<docker::Check> {
     let dir = lab_dir(&app, &id)?;
     match runtime {
-        Runtime::Docker if server::lab_connection(&app, &dir)?.is_none() && local_vm(&dir).is_none() && isothrum::chosen() => {
-            isothrum::DockerRun::new(&runner_home(&app)?, &dir, &id)?.check().await
+        Runtime::Docker if server::lab_connection(&app, &dir)?.is_none() && local_vm(&dir).is_none() && runner_chosen(&app) => {
+            isothrum::LabRun::docker(&runner_home(&app)?, &dir, &id)?.check().await
+        }
+        Runtime::Vm if server::lab_connection(&app, &dir)?.is_none() && runner_chosen(&app) => {
+            isothrum::LabRun::vm(&runner_home(&app)?, &dir, &id)?.check().await
         }
         Runtime::Docker if server::lab_connection(&app, &dir)?.is_none() => docker::check(&dir, &id).await,
         // A Proxmox VM lab the runner runs: its checks over SSH, through the lab's router.
-        Runtime::Vm if server::lab_connection(&app, &dir)?.is_some_and(|c| super::launch::runner_runs(c.provider, runtime)) => {
+        Runtime::Vm if server::lab_connection(&app, &dir)?.is_some_and(|c| super::launch::runner_runs(&app, c.provider, runtime)) => {
             isothrum::ServerRun::new(&runner_home(&app)?, &dir, &id)?.check().await
         }
         _ => Ok(docker::Check { available: false, ok: false, output: String::new(), results: Vec::new() }),
     }
+}
+
+/// The path labs on this machine run through: `isothrum` (the Isothrum runner) or `launcher`
+/// (the launcher's own code), the player's choice unless a developer forces one.
+#[tauri::command]
+pub async fn lab_engine(app: AppHandle) -> String {
+    if runner_chosen(&app) { isothrum::RUNNER.into() } else { "launcher".into() }
+}
+
+/// Saves the path labs on this machine run through from now on (`isothrum` or `launcher`). A lab
+/// running already stays on the path it started on until it is stopped.
+#[tauri::command]
+pub async fn set_lab_engine(app: AppHandle, engine: String) -> Result<()> {
+    isothrum::save(&runner_home(&app)?, &engine)
 }
 
 /// Opens the attack box shell of a running lab in the system terminal.
@@ -180,8 +197,8 @@ pub async fn attack_vm_shell(app: AppHandle, id: String) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        attack_vm_shell, attack_vm_start, attack_vm_status, attack_vm_stop, lab_attack_shell, lab_check, lab_park, lab_provision, lab_resume, lab_status,
-        lab_stop, lab_tools, running_labs,
+        attack_vm_shell, attack_vm_start, attack_vm_status, attack_vm_stop, lab_attack_shell, lab_check, lab_engine, lab_park, lab_provision, lab_resume,
+        lab_status, lab_stop, lab_tools, running_labs, set_lab_engine,
     };
     use super::{channel_log, check_box, check_image, exegol_start, exegol_status, exegol_stop, valid_machine_name};
     use crate::platform::exec::fake::{Tools, ok};
@@ -222,6 +239,20 @@ mod tests {
         // A VM lab's status is its VMs'.
         t.lab("ad", &[]);
         assert!(!lab_status(app(), "ad".into(), Runtime::Vm).await.unwrap().running);
+    }
+
+    #[tokio::test]
+    async fn the_lab_engine_is_the_launchers_until_the_player_picks_the_runner() {
+        let t = TestApp::new();
+        let app = || t.handle().clone();
+        if crate::platform::config::runner_override().is_some() {
+            return; // A developer build forces the path: the setting has no say.
+        }
+        assert_eq!(lab_engine(app()).await, "launcher");
+        set_lab_engine(app(), "isothrum".into()).await.unwrap();
+        assert_eq!(lab_engine(app()).await, "isothrum");
+        set_lab_engine(app(), "anything else".into()).await.unwrap();
+        assert_eq!(lab_engine(app()).await, "launcher");
     }
 
     #[tokio::test]

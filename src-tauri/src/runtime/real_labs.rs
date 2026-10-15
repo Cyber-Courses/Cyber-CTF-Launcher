@@ -53,14 +53,14 @@ impl Run {
     async fn status(&self) -> Result<LabStatus> {
         match self.via {
             Via::Launcher => status::local_status(&self.dir, &self.id, Runtime::Docker).await,
-            Via::Runner => isothrum::DockerRun::new(&self.home, &self.dir, &self.id)?.status().await,
+            Via::Runner => isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.status().await,
         }
     }
 
     async fn check(&self) -> Result<docker::Check> {
         match self.via {
             Via::Launcher => docker::check(&self.dir, &self.id).await,
-            Via::Runner => isothrum::DockerRun::new(&self.home, &self.dir, &self.id)?.check().await,
+            Via::Runner => isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.check().await,
         }
     }
 
@@ -71,7 +71,7 @@ impl Run {
                 docker::park(&self.dir, &self.id, log).await?;
                 super::paths::mark_parked(&self.dir, Some(super::Park::Shutdown))
             }
-            Via::Runner => isothrum::DockerRun::new(&self.home, &self.dir, &self.id)?.park(log).await,
+            Via::Runner => isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.park(super::Park::Shutdown, log).await,
         }
     }
 
@@ -82,7 +82,7 @@ impl Run {
                 docker::resume(&self.dir, &self.id, log).await?;
                 super::paths::mark_parked(&self.dir, None)
             }
-            Via::Runner => isothrum::DockerRun::new(&self.home, &self.dir, &self.id)?.resume(log).await,
+            Via::Runner => isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.resume(log).await,
         }
     }
 
@@ -121,18 +121,34 @@ fn attack_box_image() -> String {
 }
 
 /// A fresh copy of the lab, as the launcher installs one: its own folder, nothing generated.
-fn install_copy(src: &Path, id: &str) -> PathBuf {
+/// Copied in Rust, not with `cp -R`, so the test runs on Windows too (R7).
+pub(super) fn install_copy(src: &Path, id: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("cyberctf-{id}"));
     let _ = std::fs::remove_dir_all(&dir);
-    let copied = std::process::Command::new("cp").arg("-R").arg(src).arg(&dir).status().expect("cp");
-    assert!(copied.success(), "copy {} to {}", src.display(), dir.display());
-    for generated in [".isoloom", ".git"] {
-        let _ = std::fs::remove_dir_all(dir.join(generated));
-    }
+    copy_tree(src, &dir).unwrap_or_else(|e| panic!("copy {} to {}: {e}", src.display(), dir.display()));
     dir
 }
 
-fn log(id: &str) -> impl FnMut(String) + use<> {
+/// `src` copied to `dst`, without its generated outputs, Vagrant's and Git's folders.
+fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if [".isoloom", ".git", ".vagrant"].iter().any(|skip| name == *skip) {
+            continue;
+        }
+        let (from, to) = (entry.path(), dst.join(&name));
+        if entry.file_type()?.is_dir() {
+            copy_tree(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn log(id: &str) -> impl FnMut(String) + use<> {
     let tag = id.to_string();
     move |l: String| println!("[{tag}] {l}")
 }
@@ -160,7 +176,7 @@ async fn leftovers(id: &str) -> Vec<String> {
     left
 }
 
-fn check(ok: bool, what: String, failures: &mut Vec<String>) {
+pub(super) fn check(ok: bool, what: String, failures: &mut Vec<String>) {
     if ok {
         println!("ok: {what}");
     } else {

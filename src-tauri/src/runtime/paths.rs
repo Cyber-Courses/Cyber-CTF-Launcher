@@ -25,6 +25,12 @@ pub(super) fn runner_home(app: &AppHandle) -> Result<PathBuf> {
     app_data(app)
 }
 
+/// Whether labs on this machine run through the Isothrum runner (Settings > Labs > Lab engine,
+/// saved in the app data folder; `CYBERCTF_RUNNER` forces one).
+pub(super) fn runner_chosen(app: &AppHandle) -> bool {
+    super::isothrum::chosen(runner_home(app).ok().as_deref())
+}
+
 /// An installed lab's folder.
 pub(super) fn lab_dir(app: &AppHandle, id: &str) -> Result<PathBuf> {
     validate_id(id)?;

@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::AppHandle;
 
 use super::inflight::{Action, DeployGuard, lock_lab};
-use super::paths::{lab_dir, local_vm, mark_local_vm, mark_parked, parked, runner_home, state_dir, vagrant_dirs};
+use super::paths::{lab_dir, local_vm, mark_local_vm, mark_parked, parked, runner_chosen, runner_home, state_dir, vagrant_dirs};
 use super::{Park, Runtime, attack_vm, cloud_services, docker, isothrum, lab, server, terraform, vm};
 use crate::error::{Error, Result};
 
@@ -24,13 +24,17 @@ async fn park(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mode: Par
             refuse_vm_shutdown(mode)?;
             vm::park(&lab::vagrant_dir(dir, runtime), mode, &[], &mut log).await?;
         }
-        Runtime::Docker if isothrum::chosen() => isothrum::DockerRun::new(&runner_home(app)?, dir, id)?.park(&mut log).await?,
+        Runtime::Docker if runner_chosen(app) => isothrum::LabRun::docker(&runner_home(app)?, dir, id)?.park(mode, &mut log).await?,
         Runtime::Docker => docker::park(dir, id, &mut log).await?,
         Runtime::Vm => {
             if let Err(e) = attack_vm::park(dir, mode, &mut log).await {
                 log(format!("The attack VM didn't park: {e}"));
             }
-            vm::park(&lab::vagrant_dir(dir, runtime), mode, &[], &mut log).await?;
+            if runner_chosen(app) {
+                isothrum::LabRun::vm(&runner_home(app)?, dir, id)?.park(mode, &mut log).await?;
+            } else {
+                vm::park(&lab::vagrant_dir(dir, runtime), mode, &[], &mut log).await?;
+            }
         }
         Runtime::Cloud => unreachable!("refused above"),
     }
@@ -82,7 +86,11 @@ pub(super) async fn resume_locked(app: &AppHandle, dir: &Path, id: &str, runtime
     log("Resuming the lab…".into());
     match runtime {
         Runtime::Docker if local_vm(dir).is_some() => vm::resume(&lab::vagrant_dir(dir, runtime), &[], &mut *log).await?,
-        Runtime::Docker if isothrum::chosen() => isothrum::DockerRun::new(&runner_home(app)?, dir, id)?.resume(&mut *log).await?,
+        Runtime::Docker if runner_chosen(app) => isothrum::LabRun::docker(&runner_home(app)?, dir, id)?.resume(&mut *log).await?,
+        Runtime::Vm if runner_chosen(app) => {
+            isothrum::LabRun::vm(&runner_home(app)?, dir, id)?.resume(&mut *log).await?;
+            resume_attack_vm(dir, &mut *log).await;
+        }
         Runtime::Docker => {
             // Its stopped containers pruned (or Docker reset): nothing to bring back. Say so and
             // drop the parked mark, so the page offers a fresh start instead of a resume that
@@ -102,15 +110,20 @@ pub(super) async fn resume_locked(app: &AppHandle, dir: &Path, id: &str, runtime
                 return Err(Error::Invalid("Nothing is left of this lab to resume: its virtual machines are gone. Start it again to build it fresh.".into()));
             }
             vm::resume(&vagrant, &[], &mut *log).await?;
-            if let Err(e) = attack_vm::resume(dir, &mut *log).await {
-                log(format!("The lab is back, but its attack VM didn't resume: {e}. Start it from the lab page."));
-            }
+            resume_attack_vm(dir, &mut *log).await;
         }
         Runtime::Cloud => unreachable!("refused above"),
     }
     mark_parked(dir, None)?;
     log("Lab resumed.".into());
     Ok(())
+}
+
+/// The attack VM back beside its resumed lab; best effort, as the lab is back either way.
+async fn resume_attack_vm(dir: &Path, log: &mut impl FnMut(String)) {
+    if let Err(e) = attack_vm::resume(dir, &mut *log).await {
+        log(format!("The lab is back, but its attack VM didn't resume: {e}. Start it from the lab page."));
+    }
 }
 
 /// Runs a VM lab's provisioners again on its running machines (one, or all): the repair for a
@@ -126,6 +139,13 @@ async fn provision(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mach
     let conn = server::lab_connection(app, dir)?;
     if conn.as_ref().is_some_and(|c| server::terraform_target(c.provider).is_some()) {
         return Err(Error::Invalid("Re-running provisioning isn't available for labs on Proxmox or a cloud yet.".into()));
+    }
+    if conn.is_none() && runner_chosen(app) {
+        let run = isothrum::LabRun::vm(&runner_home(app)?, dir, id)?;
+        log(provision_target(&run.status().await?, machine)?);
+        run.provision(machine, &mut log).await?;
+        log("Provisioning done.".into());
+        return Ok(());
     }
     let env: Vec<(String, String)> = conn.map(|c| c.env).unwrap_or_default();
     let vagrant = lab::vagrant_dir(dir, runtime);
@@ -169,8 +189,11 @@ pub(super) async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: 
     crate::account::colocation::retire(id);
     super::paths::forget_lab_host_keys(dir);
     let Some(c) = server::lab_connection(app, dir)? else {
-        if runtime == Runtime::Docker && local_vm(dir).is_none() && isothrum::chosen() {
+        if runtime == Runtime::Docker && local_vm(dir).is_none() && runner_chosen(app) {
             return stop_docker_run(&runner_home(app)?, dir, id, log).await;
+        }
+        if runtime == Runtime::Vm && runner_chosen(app) {
+            return stop_vm_run(&runner_home(app)?, dir, id, log).await;
         }
         return stop_here(dir, id, runtime, log).await;
     };
@@ -178,7 +201,7 @@ pub(super) async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: 
         // Cloud services: destroyed on the account they run on.
         _ if runtime == Runtime::Cloud => cloud_services::destroy(app, dir, id, &c, log).await,
         // A Proxmox VM lab the runner runs: destroyed with the params it was applied with.
-        Some(_) if super::launch::runner_runs(c.provider, runtime) => {
+        Some(_) if super::launch::runner_runs(app, c.provider, runtime) => {
             let mut log = log;
             stop_server_run(app, dir, id, &c, &mut log).await
         }
@@ -227,7 +250,17 @@ pub(super) async fn stop_here(dir: &Path, id: &str, runtime: Runtime, mut log: i
 /// Stops a container lab the Isothrum runner runs (runner home `home`) and, once it is gone,
 /// clears what marked it as running. Takes no app handle, so the real-lab tests run exactly this.
 pub(super) async fn stop_docker_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
-    isothrum::DockerRun::new(home, dir, id)?.down(&mut log).await?;
+    isothrum::LabRun::docker(home, dir, id)?.down(&mut log).await?;
+    forget_run(dir)
+}
+
+/// Stops a VM lab the Isothrum runner runs (runner home `home`), its attack VM with it, and once
+/// both are gone clears what marked it as running. The lab goes even when its attack VM couldn't;
+/// the lab then still reads as running, so Stop retries both. Takes no app handle, so the
+/// real-lab tests run exactly this.
+pub(super) async fn stop_vm_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
+    let attacker = attack_vm::stop(dir, &mut log).await;
+    isothrum::LabRun::vm(home, dir, id)?.down(&mut log).await.and(attacker)?;
     forget_run(dir)
 }
 

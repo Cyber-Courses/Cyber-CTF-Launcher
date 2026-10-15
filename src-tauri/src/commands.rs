@@ -74,6 +74,8 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         runtime::lab_cloud_preview,
         runtime::running_labs,
         runtime::lab_check,
+        runtime::lab_engine,
+        runtime::set_lab_engine,
         runtime::lab_tools,
         runtime::exegol_status,
         runtime::exegol_start,

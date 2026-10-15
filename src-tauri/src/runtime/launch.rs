@@ -9,7 +9,8 @@ use tauri::Manager;
 use super::inflight::{Action, DeployGuard};
 use super::lifecycle::resume_locked;
 use super::paths::{
-    deployment_states, forget_lab_host_keys, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, runner_home, state_dir, vagrant_dirs,
+    deployment_states, forget_lab_host_keys, local_vm, mark_local_vm, mark_parked, parked, record_host, record_runtime, runner_chosen, runner_home, state_dir,
+    vagrant_dirs,
 };
 use super::providers::Provider;
 use super::{Runtime, attack_box, attack_vm, cloud_services, docker, exegol, isothrum, lab, server, ssh, terraform, vm};
@@ -119,8 +120,11 @@ async fn start_here(
     log: &mut impl FnMut(String),
 ) -> Result<()> {
     server::mark_lab(dir, None)?;
-    if runtime == Runtime::Docker && provider.is_none_or(Provider::is_remote) && isothrum::chosen() {
+    if runtime == Runtime::Docker && provider.is_none_or(Provider::is_remote) && runner_chosen(app) {
         return start_with_runner(app, dir, id, env, log).await;
+    }
+    if let (Runtime::Vm, true, Ok(LocalRun::Vm(p))) = (runtime, runner_chosen(app), local_run(runtime, provider)) {
+        return start_vm_with_runner(app, dir, id, VmStart { provider: p, env }, log).await;
     }
     if resumes_parked(dir, id, runtime, log).await? {
         log("This lab is parked on this machine: resuming it as it was. Stop it first if you want a fresh copy.".into());
@@ -229,8 +233,47 @@ pub(super) async fn start_docker_run(home: &Path, dir: &Path, id: &str, env: &[(
     recheck_instance(dir, id, log).await?;
     lab::prepare(dir, lab::Target::Docker)?;
     mark_local_vm(dir, None)?;
-    isothrum::DockerRun::new(home, dir, id)?.up(env, log).await?;
+    isothrum::LabRun::docker(home, dir, id)?.up(env, None, log).await?;
     mark_parked(dir, None)
+}
+
+/// What a VM lab on this machine starts with: its hypervisor, and the launch's values.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct VmStart<'a> {
+    /// The local hypervisor (Vagrant provider).
+    pub(super) provider: Provider,
+    /// The launch's values: the inputs the lab's slots take, and the ports choice.
+    pub(super) env: &'a [(String, String)],
+}
+
+/// A VM lab on this machine through the Isothrum runner, its boxes recorded for Storage as on
+/// the launcher's own path.
+async fn start_vm_with_runner(app: &AppHandle, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+    let before = crate::machine::storage::owned::Before::take(false, true).await;
+    let started = start_vm_run(&runner_home(app)?, dir, id, start, log).await;
+    crate::machine::storage::claim_lab(app, dir, id, &before).await;
+    started
+}
+
+/// The runner's start of a VM lab (runner home `home`) on `provider`: its files generated (the
+/// run manifest with them), the memory warning and QEMU's emulator check, then up (a parked run
+/// is resumed as it was), then the learner's attack VM beside it, as on the launcher's own path.
+/// Takes no app handle, so the real-lab tests run exactly this.
+pub(super) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+    let VmStart { provider, env } = start;
+    let prepared = lab::prepare(dir, lab::Target::Vagrant)?;
+    warn_if_low_memory(&prepared.spec, log);
+    if provider == Provider::Qemu {
+        check_qemu(&prepared, log).await?;
+    }
+    isothrum::LabRun::vm(home, dir, id)?.up(env, Some(provider.id()), log).await?;
+    mark_parked(dir, None)?;
+    if let Some(b) = attack_box::attack_vm_box(env)
+        && let Err(e) = attack_vm::start(dir, &lab::vagrant_dir(dir, Runtime::Vm), provider, b, &mut *log).await
+    {
+        log(format!("The lab is running, but its attack VM didn't start: {e}. Start it from the lab page to retry."));
+    }
+    Ok(())
 }
 
 /// Checks the lab's instance against the networks Docker has now (an install with Docker down

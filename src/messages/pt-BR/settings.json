@@ -57,6 +57,15 @@
       "default": "Padrão"
     }
   },
+  "labEngine": {
+    "title": "Motor dos labs",
+    "launcher": "Os labs rodam pelo código do próprio Cyber CTF, como sempre.",
+    "isothrum": "Os labs rodam pelo runner do Isothrum: labs de contêiner no Docker e labs de VM no seu hipervisor, com as verificações. Vale a partir da próxima inicialização de cada lab.",
+    "options": {
+      "launcher": "Integrado",
+      "isothrum": "Runner do Isothrum"
+    }
+  },
   "attackBox": {
     "title": "Imagem da attack box",
     "description": "Roda na rede de cada lab como sua caixa de ferramentas. A primeira inicialização de uma imagem a baixa, o que pode demorar.",
