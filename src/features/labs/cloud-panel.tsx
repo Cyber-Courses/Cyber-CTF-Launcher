@@ -27,8 +27,12 @@ export function useCloudPreview(labId: string, rt: LabRuntimeInfo | null): Cloud
     if (!cloud || !repository || !commit) return;
     let alive = true;
     labCloudPreview(labId, repository, commit)
-      .then((p) => alive && setPreview(p))
-      .catch(() => alive && setPreview(null));
+      .then((p) => {
+        if (alive) setPreview(p);
+      })
+      .catch(() => {
+        if (alive) setPreview(null);
+      });
     return () => {
       alive = false;
     };
@@ -67,7 +71,9 @@ function OutputRow({ output }: { output: LabOutput }) {
         {output.sensitive && (
           <button
             type="button"
-            onClick={() => setShown((s) => !s)}
+            onClick={() => {
+              setShown((s) => !s);
+            }}
             className="text-faint transition-colors hover:text-foreground"
             aria-label={t(shown ? "labs.cloud.hide" : "labs.cloud.show", { name: output.name })}
           >

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { useLabActions } from "@/features/labs/use-lab-actions";
@@ -19,15 +19,14 @@ import type { LabStatus, Provider, SystemReport } from "@/lib/tauri";
  */
 export function useOpenLab(openLab: { slug: string | null; tick: number }, labs: Lab[] | null) {
   const [detailSlug, setDetailSlug] = useState<string | null>(() => openLab.slug);
-  const lastTick = useRef(openLab.tick);
-  useEffect(() => {
-    if (openLab.tick === lastTick.current) return;
-    // A slug that isn't in the catalogue yet: wait (don't consume the tick) until labs load.
-    if (openLab.slug && !labs?.some((l) => l.slug === openLab.slug)) return;
-    lastTick.current = openLab.tick;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+  // The nav tick last acted on, kept as state so a new one is acted on during render, once.
+  const [seenTick, setSeenTick] = useState(openLab.tick);
+  // A slug that isn't in the catalogue yet: wait (don't consume the tick) until labs load.
+  const waiting = openLab.slug && !labs?.some((l) => l.slug === openLab.slug);
+  if (openLab.tick !== seenTick && !waiting) {
+    setSeenTick(openLab.tick);
     setDetailSlug(openLab.slug);
-  }, [openLab, labs]);
+  }
   return [detailSlug, setDetailSlug] as const;
 }
 
@@ -77,7 +76,7 @@ export function OpenLab({
     <LabDetail
       lab={lab}
       status={status}
-      busy={!!runs[lab.id]?.busy}
+      busy={runs[lab.id]?.busy ?? false}
       logs={runs[lab.id]?.logs ?? []}
       times={runs[lab.id]?.times ?? []}
       runOp={runs[lab.id]?.op}

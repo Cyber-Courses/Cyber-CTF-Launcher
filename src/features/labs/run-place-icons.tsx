@@ -29,7 +29,7 @@ export function RunPlaceIcons({
         const label = t(`labs.places.${key}`);
         const inUse = running && status?.place === key;
         const hint = inUse
-          ? t("labs.row.runningOn", { where: status?.host ?? label })
+          ? t("labs.row.runningOn", { where: status.host ?? label })
           : available
             ? t("labs.row.canRunOn", { where: label })
             : t("labs.row.notAvailable", { where: label });

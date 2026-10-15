@@ -56,11 +56,17 @@ function useCatalogue(reloadKey: unknown) {
         setError(null);
         d.labs.forEach((l) => void refreshStatus(l));
       })
-      .catch((e) => alive && setError(describeError(e)));
+      .catch((e: unknown) => {
+        if (alive) setError(describeError(e));
+      });
     // Best effort: logged out (or a backend without the query) just shows no progress.
     apiQuery<{ myCompletedLabs: string[] }>("completedLabs")
-      .then((d) => alive && setCompleted(new Set(d.myCompletedLabs)))
-      .catch(() => alive && setCompleted(new Set()));
+      .then((d) => {
+        if (alive) setCompleted(new Set(d.myCompletedLabs));
+      })
+      .catch(() => {
+        if (alive) setCompleted(new Set());
+      });
     return () => {
       alive = false;
     };
@@ -73,9 +79,11 @@ function useCatalogue(reloadKey: unknown) {
  *  scan does not see keeps its probed status (remote labs, stopped labs). */
 export function mergeScan(statuses: Record<string, LabStatus>, scanRunning: Set<string>): Record<string, LabStatus> {
   if (scanRunning.size === 0) return statuses;
+  // Read as possibly missing: a lab the scan sees may have no status yet.
+  const known: Partial<Record<string, LabStatus>> = statuses;
   const next: Record<string, LabStatus> = { ...statuses };
   for (const id of scanRunning) {
-    const cur = next[id];
+    const cur = known[id];
     next[id] = cur
       ? { ...cur, running: true }
       : {
@@ -119,9 +127,9 @@ export function useLabs(reloadKey: unknown = 0) {
   return { labs, error, retry, statuses: mergedStatuses, completed, refreshStatus, probed };
 }
 
-const DIFFICULTY_KEYS = ["easy", "medium", "hard"] as const;
+const DIFFICULTY_KEYS: Partial<Record<number, "easy" | "medium" | "hard">> = { 1: "easy", 2: "medium", 3: "hard" };
 /** A difficulty's word (1 Easy, 2 Medium, 3 Hard), empty for none. */
 export const difficultyLabel = (t: T, level: number) => {
-  const key = DIFFICULTY_KEYS[level - 1];
+  const key = DIFFICULTY_KEYS[level];
   return key ? t(`labs.difficulty.${key}`) : "";
 };

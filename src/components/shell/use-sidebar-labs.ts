@@ -23,8 +23,12 @@ export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, A
     // A sign-in change starts a new read: the one in flight from before it must not land last.
     let alive = true;
     apiQuery<{ labs: SidebarLab[] }>("sidebarLabs")
-      .then((d) => alive && setLabs(d.labs))
-      .catch(() => alive && setLabs([]));
+      .then((d) => {
+        if (alive) setLabs(d.labs);
+      })
+      .catch(() => {
+        if (alive) setLabs([]);
+      });
     return () => {
       alive = false;
     };

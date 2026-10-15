@@ -7,6 +7,7 @@ import { answer } from "@/lib/dev-mock";
 import { readyReport } from "@/test/fixtures";
 import { installTauri, type Handler } from "@/test/tauri";
 import { flush } from "@/test/ui";
+import { rowTitles } from "@/features/labs/labs-test-kit";
 
 // The Labs list: what it shows for the catalogue and each filter, and what a row does.
 
@@ -20,12 +21,7 @@ const props = {
   onDetailChange: vi.fn(),
 };
 const idle: Record<string, Handler> = { deploying_labs: () => [], active_operations: () => [] };
-const titles = () =>
-  screen
-    .queryAllByRole("button")
-    .map((b) => b.getAttribute("aria-label") ?? "")
-    .filter((l) => l.startsWith("Open "))
-    .map((l) => l.slice(5));
+const titles = rowTitles;
 
 describe("Labs list", () => {
   it("pins running labs on top and sorts the rest by title, with a summary", async () => {

@@ -31,7 +31,7 @@ export function useSystemCheck() {
         setReport(r);
         setCheckError(null);
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         if (isLatest()) setCheckError(describeError(e));
       });
   }, [begin]);
@@ -40,7 +40,9 @@ export function useSystemCheck() {
       if (Date.now() - lastCheck.current > FOCUS_RECHECK_MS) void check();
     };
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+    };
   }, [check]);
   return { report, checkError, check };
 }

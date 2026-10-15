@@ -27,10 +27,17 @@ export function Toaster() {
     const on = (e: Event) => {
       const item = (e as CustomEvent<Toast>).detail;
       setItems((list) => [...list.slice(-2), item]);
-      setTimeout(() => setItems((list) => list.filter((x) => x.id !== item.id)), item.tone === "fail" ? 7000 : 4000);
+      setTimeout(
+        () => {
+          setItems((list) => list.filter((x) => x.id !== item.id));
+        },
+        item.tone === "fail" ? 7000 : 4000,
+      );
     };
     window.addEventListener(EVENT, on);
-    return () => window.removeEventListener(EVENT, on);
+    return () => {
+      window.removeEventListener(EVENT, on);
+    };
   }, []);
   // The live region stays mounted (empty when idle) so assistive tech is already watching it
   // when a toast arrives. It sits under modals (z-50): a toast never covers a dialog's buttons.
@@ -51,7 +58,9 @@ export function Toaster() {
           <button
             type="button"
             aria-label={t("ui.toast.dismiss")}
-            onClick={() => setItems((list) => list.filter((x) => x.id !== item.id))}
+            onClick={() => {
+              setItems((list) => list.filter((x) => x.id !== item.id));
+            }}
             className="-mr-1 grid size-6 place-items-center rounded-xs text-faint transition-colors hover:text-foreground"
           >
             <X className="size-3.5" />

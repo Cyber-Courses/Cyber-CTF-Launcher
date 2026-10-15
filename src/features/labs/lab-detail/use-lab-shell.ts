@@ -10,7 +10,9 @@ export function useLabShell(labId: string, title: string, inLab: boolean) {
   const [error, setError] = useState<string | null>(null);
   const open = () => {
     setError(null);
-    terminalWindow(labId, inLab ? "lab" : "attackVm", inLab ? "DOCKER" : "VM", title).catch((e) => setError(describeError(e)));
+    terminalWindow(labId, inLab ? "lab" : "attackVm", inLab ? "DOCKER" : "VM", title).catch((e: unknown) => {
+      setError(describeError(e));
+    });
   };
   return { open, error };
 }

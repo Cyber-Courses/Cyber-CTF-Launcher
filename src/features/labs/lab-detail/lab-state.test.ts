@@ -4,61 +4,18 @@ import {
   bindHost,
   deployPlacement,
   diagramAbove,
-  deriveLabState,
   headerMode,
   networkView,
   removing,
   publishedBinds,
   restartTarget,
-  type LabStateInput,
 } from "@/features/labs/lab-detail/lab-state";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import type { LabMachine, LabStatus, Provider, ServerHost } from "@/lib/tauri";
+import type { Provider, ServerHost } from "@/lib/tauri";
+import { deriveState as derive, labMachine as machine, labStatus as status } from "@/features/labs/labs-test-kit";
 
 const docker: LabRuntimeInfo = { runtime: "DOCKER", architectures: [], providers: [] };
 const vm: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox"] as Provider[] };
-
-const machine = (name: string, state = "running", p: Partial<LabMachine> = {}): LabMachine => ({
-  name,
-  state,
-  image: "",
-  ip: "",
-  ports: [],
-  interfaces: [],
-  services: [],
-  infra: false,
-  ...p,
-});
-const status = (p: Partial<LabStatus>): LabStatus => ({
-  running: false,
-  parked: null,
-  machines: [],
-  networks: [],
-  url: null,
-  host: null,
-  expiresAt: null,
-  place: null,
-  provider: null,
-  attacker: null,
-  outputs: [],
-  message: null,
-  reapError: null,
-  ...p,
-});
-const derive = (p: Partial<LabStateInput>) =>
-  deriveLabState({
-    status: undefined,
-    runtime: docker,
-    hostArch: "x86_64",
-    readyVms: [],
-    busy: false,
-    backendDeploying: false,
-    backendOp: undefined,
-    acting: null,
-    parkable: true,
-    provisionable: true,
-    ...p,
-  });
 
 describe("deriveLabState", () => {
   it("reads a lab never started as not started", () => {
@@ -243,18 +200,18 @@ describe("restartTarget", () => {
     expect(restartTarget(status({ host: "esxi-01" }), hosts, { kind: "local" }, null)).toEqual({ kind: "host", id: "h1" });
   });
   it("starts again in a VM here when its host isn't a saved one", () => {
-    expect(restartTarget(status({ host: "isoloom-host" }), hosts, { kind: "local-vm", provider: "qemu" as Provider }, "virtualbox" as Provider)).toEqual({
+    expect(restartTarget(status({ host: "isoloom-host" }), hosts, { kind: "local-vm", provider: "qemu" as Provider }, "virtualbox")).toEqual({
       kind: "local-vm",
       provider: "qemu",
     });
-    expect(restartTarget(status({ host: "isoloom-host" }), hosts, { kind: "local" }, "virtualbox" as Provider)).toEqual({
+    expect(restartTarget(status({ host: "isoloom-host" }), hosts, { kind: "local" }, "virtualbox")).toEqual({
       kind: "local-vm",
       provider: "virtualbox",
     });
     expect(restartTarget(status({ host: "isoloom-host" }), hosts, { kind: "local" }, null)).toEqual({ kind: "local" });
   });
   it("starts again here otherwise", () => {
-    expect(restartTarget(status({}), hosts, { kind: "host", id: "h1" }, "virtualbox" as Provider)).toEqual({ kind: "local" });
+    expect(restartTarget(status({}), hosts, { kind: "host", id: "h1" }, "virtualbox")).toEqual({ kind: "local" });
   });
 });
 

@@ -64,7 +64,9 @@ function useAttackBoxRun(refresh: () => void) {
       setBusy(true);
       setLog([first]);
       try {
-        await fn((line) => setLog((l) => [...l, line]));
+        await fn((line) => {
+          setLog((l) => [...l, line]);
+        });
       } catch (e) {
         setLog((l) => [...l, `✗ ${describeError(e)}`]);
       } finally {

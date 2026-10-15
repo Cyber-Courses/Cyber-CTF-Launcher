@@ -21,13 +21,14 @@ export interface ObjectiveActions {
 /** Which rows are open (the ones `initial` returns at first), and a toggle for one. */
 function useOpenRows(initial: () => string[]) {
   const [open, setOpen] = useState<Set<string>>(() => new Set(initial()));
-  const toggle = (key: string) =>
+  const toggle = (key: string) => {
     setOpen((s) => {
       const next = new Set(s);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
+  };
   return [open, toggle] as const;
 }
 
@@ -59,7 +60,7 @@ function ObjectivesProgress({ progress }: { progress: LabProgress }) {
           aria-valuemax={total}
           aria-valuenow={done}
         >
-          <div className="meter-fill h-full transition-[width] duration-500" style={{ width: `${pct}%` }} />
+          <div className="meter-fill h-full transition-[width] duration-500" style={{ width: `${String(pct)}%` }} />
         </div>
       )}
       {progress.completed && (
@@ -103,7 +104,9 @@ export function ObjectivesPanel({
             progress={progress}
             signedIn={signedIn}
             open={open.has(c.key)}
-            onToggle={() => toggle(c.key)}
+            onToggle={() => {
+              toggle(c.key);
+            }}
             actions={actions}
           />
         ))}

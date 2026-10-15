@@ -27,7 +27,7 @@ export function Segmented<T extends string | number | null>({
     if (to === null || options.length === 0) return;
     e.preventDefault();
     onChange(options[to].value);
-    e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')[to]?.focus();
+    Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')).at(to)?.focus();
   };
   return (
     <div
@@ -43,7 +43,9 @@ export function Segmented<T extends string | number | null>({
           role="radio"
           aria-checked={value === o.value}
           tabIndex={i === checked ? 0 : -1}
-          onClick={() => onChange(o.value)}
+          onClick={() => {
+            onChange(o.value);
+          }}
           className={cn(
             "h-7 rounded-[0.4375rem] px-3 text-[0.75rem] transition-colors",
             value === o.value ? "bg-glass-2 text-foreground shadow-[inset_0_0_0_1px_var(--input)]" : "text-muted-foreground hover:text-foreground",

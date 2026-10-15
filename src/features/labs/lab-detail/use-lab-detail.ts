@@ -40,14 +40,14 @@ export type LabDetailProps = {
   /** Whether a Docker engine answers on this machine (null = unknown). */
   dockerRunning?: boolean | null;
   onBack: () => void;
-  onStart: (target: RunTarget) => Promise<void> | void;
-  /** Resolves to the failure when the stop failed (Reset then doesn't start the lab again). */
-  onStop: () => Promise<string | null | void> | void;
+  onStart: (target: RunTarget) => Promise<void>;
+  /** Resolves to the failure (a string) when the stop failed: Reset then doesn't start the lab again. */
+  onStop: () => Promise<unknown>;
   /** Pause (state saved) or shut down (powered off), machines kept for `onResume`. */
-  onPark?: (mode: Park) => Promise<unknown> | void;
-  onResume?: () => Promise<unknown> | void;
+  onPark?: (mode: Park) => Promise<unknown>;
+  onResume?: () => Promise<unknown>;
   /** Re-run a VM lab's provisioners on one machine (null = all), in place. */
-  onProvision?: (machine: string | null) => Promise<unknown> | void;
+  onProvision?: (machine: string | null) => Promise<unknown>;
   /** False until the first checks (sign-in, the lab's status) are in: the page then shows a
    *  placeholder instead of a Start button that flips to Running a moment later. */
   ready?: boolean;
@@ -141,7 +141,10 @@ export function useLabDetail(p: LabDetailProps) {
   const objectives = useObjectives(lab.id, lab.question, t("labs.detail.objective"), p.loggedIn);
   const restart = () => restartTarget(status, run.hosts, run.runOn, run.localVm);
   const { resetting, reset } = useLabReset(p.onStop, p.onStart, restart, clearCheck);
-  const startOn = (target: RunTarget) => (target.kind === "hosted" ? hosted.launch() : void p.onStart(target));
+  const startOn = (target: RunTarget) => {
+    if (target.kind === "hosted") hosted.launch();
+    else void p.onStart(target);
+  };
   return { s, acting, act, provisionTarget, setProvisionTarget, run, preview, hosted, shell, box, check, tools, objectives, resetting, reset, startOn };
 }
 

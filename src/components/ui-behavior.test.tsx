@@ -17,6 +17,7 @@ import { Toaster, toast } from "@/components/ui/toaster";
 import { freshReport, readyReport, stoppedDockerReport } from "@/test/fixtures";
 import { installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
+import { must } from "@/components/test-support";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -121,7 +122,7 @@ describe("ShellHeader", () => {
 });
 
 describe("Toaster", () => {
-  it("shows the last three toasts, hides them after a while, and dismisses on click", async () => {
+  it("shows the last three toasts, hides them after a while, and dismisses on click", () => {
     vi.useFakeTimers();
     installTauri();
     render(<Toaster />);
@@ -140,7 +141,9 @@ describe("Toaster", () => {
     expect(titles("status")).toEqual(["two", "three"]);
     expect(titles("alert")).toEqual(["four"]);
     expect(screen.getByText("details")).toBeTruthy();
-    act(() => vi.advanceTimersByTime(4000));
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
     // An ordinary toast goes after 4 s, a failure stays 7 s.
     expect(titles("status")).toEqual([]);
     expect(titles("alert")).toEqual(["four"]);
@@ -153,7 +156,7 @@ describe("Toaster", () => {
   it("stays under modals (z-50) so a toast never covers a dialog's buttons", () => {
     installTauri();
     render(<Toaster />);
-    const region = document.querySelector<HTMLElement>("[aria-live=polite]")!;
+    const region = must(document.querySelector<HTMLElement>("[aria-live=polite]"), "the toasts' live region");
     expect(region.className).toContain("z-40");
     expect(region.className).not.toMatch(/z-\[?[5-9]\d/);
   });
@@ -173,9 +176,7 @@ describe("CopyValue", () => {
   it("says when the clipboard refuses", async () => {
     installTauri();
     const user = userEvent.setup();
-    clipboard(async () => {
-      throw new Error("no permission");
-    });
+    clipboard(() => Promise.reject(new Error("no permission")));
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     vi.spyOn(console, "warn").mockImplementation(() => {});
     render(
@@ -196,7 +197,16 @@ describe("RadioRow", () => {
     const Group = () => {
       const [value, setValue] = useState<string | null>(null);
       const row = (id: string, disabled = false) => (
-        <RadioRow key={id} selected={value === id} onSelect={() => setValue(id)} title={id} subtitle={`${id} subtitle`} disabled={disabled} />
+        <RadioRow
+          key={id}
+          selected={value === id}
+          onSelect={() => {
+            setValue(id);
+          }}
+          title={id}
+          subtitle={`${id} subtitle`}
+          disabled={disabled}
+        />
       );
       return (
         <>
@@ -284,10 +294,12 @@ describe("LogConsole", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("times a run, then folds away when it succeeds, and unfolds for the next run", async () => {
+  it("times a run, then folds away when it succeeds, and unfolds for the next run", () => {
     vi.useFakeTimers();
     const { rerender } = render(<LogConsole lines={["\n\nPulling", "", "", "", "Started"]} running title="Deploy" collapseOnDone />);
-    act(() => vi.advanceTimersByTime(1300));
+    act(() => {
+      vi.advanceTimersByTime(1300);
+    });
     expect(document.body.textContent).toContain("Deploy");
     expect(document.querySelector("pre")?.textContent).toBe("Pulling\n\nStarted");
     rerender(<LogConsole lines={["Pulling", "Started"]} running={false} title="Deploy" collapseOnDone />);
@@ -312,8 +324,8 @@ describe("small pieces", () => {
   it("Meter turns warm over 75% and fails over 90%, clamped", () => {
     const fill = (v: number) => {
       const { container, unmount } = render(<Meter value={v} />);
-      const el = container.firstElementChild!.firstElementChild as HTMLElement;
-      const out = [el.className.match(/meter-fill(-\w+)?/)![0], el.style.width];
+      const el = must(container.firstElementChild?.firstElementChild, "the meter's fill") as HTMLElement;
+      const out = [must(/meter-fill(-\w+)?/.exec(el.className), "a meter-fill class")[0], el.style.width];
       unmount();
       return out;
     };
@@ -357,11 +369,10 @@ describe("ErrorScreen", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     const user = userEvent.setup();
-    clipboard(async () => {
-      throw new Error("clipboard locked");
-    });
+    clipboard(() => Promise.reject(new Error("clipboard locked")));
     const reload = vi.fn();
-    vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, reload, pathname: "/", search: "" });
+    // The screen reads where it is (for the details) and reloads: a stub with just that.
+    vi.spyOn(window, "location", "get").mockReturnValue({ pathname: "/", search: "", reload } as Partial<Location> as Location);
     const err = new Error("");
     err.stack = undefined;
     render(

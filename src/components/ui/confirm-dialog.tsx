@@ -30,7 +30,9 @@ export function ConfirmDialog({
   return (
     <div
       className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-[var(--scrim)] p-4 backdrop-blur-[2px]"
-      onMouseDown={(e) => e.target === e.currentTarget && onCancel()}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
     >
       <div
         ref={ref}

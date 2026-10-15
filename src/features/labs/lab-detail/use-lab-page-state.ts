@@ -7,10 +7,13 @@ import type { ErrorCode } from "@/lib/errors";
 import { operationSeenAt, useActiveOperations, useDeployingLabs, useWorkerLog } from "@/lib/deploy-store";
 
 /** The failure a log ended on (its last ✗ line, without the mark), or null. */
-export function logFailure(lines: string[]): string | null {
+function logFailure(lines: string[]): string | null {
   const line = lines.findLast((l) => l.startsWith("✗"));
   return line ? line.replace(/^✗\s*/, "") : null;
 }
+
+/** When this window first saw the backend's operation `op` in flight on the lab (none: none). */
+const backendSince = (labId: string, op: LabOperation | undefined) => (op ? operationSeenAt(labId, op) : undefined);
 
 /**
  * The lab page's derived state (see deriveLabState), with what the backend reports in flight
@@ -70,7 +73,7 @@ export function useLabPageState(
     failureKind: state.deploying ? null : failureKind(failure, local ? runFailureCode : null),
     /** When the operation in flight (or the last one) began: this session's run, else when this
      *  window first saw the backend's. */
-    startedAt: local ? runStartedAt : backendOp ? operationSeenAt(labId, backendOp) : undefined,
+    startedAt: local ? runStartedAt : backendSince(labId, backendOp),
     /** The backend's step for the operation in flight, when there is no log to read steps from. */
     liveStep: !local && worker.lines.length === 0 ? (active?.step ?? null) : null,
   };

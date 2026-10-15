@@ -14,8 +14,12 @@ import { getPortMode, setPortMode } from "@/lib/settings";
 import type { LabCheck, LabStatus, ServerHost } from "@/lib/tauri";
 import { commands, installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
+import { must, startInAct } from "@/components/test-support";
+import { invoiceRowLab, rejectWith } from "@/features/labs/labs-test-kit";
 
-afterEach(() => setPortMode(null));
+afterEach(() => {
+  setPortMode(null);
+});
 
 // ---------------------------------------------------------------------------------------------
 describe("HostedSessionPanel", () => {
@@ -165,9 +169,9 @@ describe("RunOnPicker", () => {
     expect(screen.getByText("Cloud")).toBeTruthy();
     expect(screen.getByText(/billed to you · eu-west-3/)).toBeTruthy();
     // Proxmox is shown, disabled, saying why.
-    const pve = screen.getByText("homelab-pve").closest("[role=radio]")!;
+    const pve = must(screen.getByText("homelab-pve").closest<HTMLElement>("[role=radio]"), "Proxmox's option");
     expect(pve.getAttribute("aria-disabled") === "true" || pve.hasAttribute("disabled")).toBe(true);
-    expect(within(pve as HTMLElement).getByText("Not supported by this lab")).toBeTruthy();
+    expect(within(pve).getByText("Not supported by this lab")).toBeTruthy();
     await user.click(screen.getByText("esx-lab"));
     expect(onChange).toHaveBeenCalledWith({ kind: "host", id: "esx" } satisfies RunTarget);
   });
@@ -212,7 +216,7 @@ describe("RunOnDialog", () => {
     expect(onClose).not.toHaveBeenCalled();
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(1);
-    await user.pointer({ keys: "[MouseLeft]", target: screen.getByRole("dialog").parentElement! });
+    await user.pointer({ keys: "[MouseLeft]", target: must(screen.getByRole("dialog").parentElement, "the backdrop") });
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });
@@ -222,13 +226,10 @@ describe("PortModePrompt", () => {
   it("answers the recommended random ports by default", async () => {
     const user = userEvent.setup();
     render(<PortModePrompt />);
-    let answer: Promise<unknown>;
-    act(() => {
-      answer = askPortMode("Blind orders");
-    });
+    const answer = startInAct(() => askPortMode("Blind orders"));
     expect(screen.getByText("Which ports should Blind orders use?")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Start lab" }));
-    await expect(answer!).resolves.toBe("random");
+    await expect(answer).resolves.toBe("random");
     // Not remembered unless asked.
     expect(getPortMode()).toBeNull();
   });
@@ -236,24 +237,16 @@ describe("PortModePrompt", () => {
   it("cancels on Escape, on the backdrop, and when a second start asks again", async () => {
     const user = userEvent.setup();
     render(<PortModePrompt />);
-    let first: Promise<unknown>, second: Promise<unknown>;
-    act(() => {
-      first = askPortMode("A");
-    });
-    act(() => {
-      second = askPortMode("B");
-    });
-    await expect(first!).resolves.toBeNull();
+    const first = startInAct(() => askPortMode("A"));
+    const second = startInAct(() => askPortMode("B"));
+    await expect(first).resolves.toBeNull();
     expect(screen.getByText("Which ports should B use?")).toBeTruthy();
     await user.keyboard("{Escape}");
-    await expect(second!).resolves.toBeNull();
+    await expect(second).resolves.toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
-    let third: Promise<unknown>;
-    act(() => {
-      third = askPortMode("C");
-    });
-    await user.pointer({ keys: "[MouseLeft]", target: screen.getByRole("dialog").parentElement! });
-    await expect(third!).resolves.toBeNull();
+    const third = startInAct(() => askPortMode("C"));
+    await user.pointer({ keys: "[MouseLeft]", target: must(screen.getByRole("dialog").parentElement, "the backdrop") });
+    await expect(third).resolves.toBeNull();
   });
 });
 
@@ -274,7 +267,9 @@ describe("useLabCheck and HealthBanner", () => {
     expect(calls.find((c) => c.cmd === "lab_check")?.args).toEqual({ id: "lab-x", runtime: "DOCKER" });
     // The same incident: not checked again; cleared by hand.
     rerender({ downCount: 1, running: true });
-    act(() => result.current[1]());
+    act(() => {
+      result.current[1]();
+    });
     expect(result.current[0]).toBeNull();
     // A new incident after recovery is checked again.
     rerender({ downCount: 0, running: true });
@@ -285,9 +280,7 @@ describe("useLabCheck and HealthBanner", () => {
 
   it("reports a check that errors as not solvable", async () => {
     installTauri({
-      lab_check: () => {
-        throw "docker unreachable";
-      },
+      lab_check: () => rejectWith("docker unreachable"),
     });
     const { result } = renderHook(() => useLabCheck("lab-y", { running: true, downCount: 1, enabled: true }));
     await flush();
@@ -312,7 +305,9 @@ describe("useLabCheck and HealthBanner", () => {
     expect(result.current[0]).toBe("checking");
     rerender({ downCount: 2 });
     await flush();
-    await act(async () => answer({ available: true, ok: false, output: "", results: [] }));
+    act(() => {
+      answer({ available: true, ok: false, output: "", results: [] });
+    });
     await flush();
     expect(result.current[0]).not.toBe("checking");
   });
@@ -356,17 +351,7 @@ describe("useLabCheck and HealthBanner", () => {
 
 // ---------------------------------------------------------------------------------------------
 describe("LabRow", () => {
-  const lab: Lab = {
-    id: "lab-invoice",
-    slug: "invoice-portal-api",
-    title: "Invoice portal API",
-    description: "A billing portal",
-    question: null,
-    difficulty: 2,
-    category: "Web",
-    runtime: { runtime: "DOCKER", architectures: ["x86_64"], providers: [] },
-    skills: [],
-  };
+  const lab = invoiceRowLab;
   const vmLab: Lab = { ...lab, id: "lab-goad", title: "GOAD Light", runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox"] } };
   const running = (p: Partial<LabStatus> = {}): LabStatus =>
     ({

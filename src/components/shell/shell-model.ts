@@ -60,9 +60,9 @@ export function activeLabs(
   deploying: Set<string>,
   ops: Map<string, ActiveOperation>,
   runningIds: Set<string>,
-  statuses: Record<string, LabStatus>,
+  statuses: Partial<Record<string, LabStatus>>,
 ): ActiveLab[] {
-  const scanSaysRunning = (id: string) => runningIds.has(id) && (statuses[id] ? statuses[id].running : true);
+  const scanSaysRunning = (id: string) => runningIds.has(id) && (statuses[id]?.running ?? true);
   const active = (id: string) => deploying.has(id) || ops.has(id) || scanSaysRunning(id);
   const listed = new Set(labs.map((l) => l.id));
   const unlisted = [...new Set([...deploying, ...ops.keys(), ...runningIds])]

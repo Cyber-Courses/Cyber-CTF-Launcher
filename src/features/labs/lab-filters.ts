@@ -17,7 +17,7 @@ export const NO_FILTERS: LabFilters = { query: "", status: "all", runtime: "all"
 export function filterLabs(labs: Lab[], f: LabFilters, isRunning: (lab: Lab) => boolean, completed: Set<string>): Lab[] {
   const q = fold(f.query.trim());
   return labs.filter((l) => {
-    if (q && !fold(`${l.title} ${l.category} ${l.description ?? ""} ${(l.skills ?? []).map((s) => s.name).join(" ")}`).includes(q)) return false;
+    if (q && !fold(`${l.title} ${l.category} ${l.description ?? ""} ${l.skills.map((s) => s.name).join(" ")}`).includes(q)) return false;
     if (!runtimeMatches(l, f.runtime)) return false;
     if (f.difficulty && l.difficulty !== f.difficulty) return false;
     const running = isRunning(l);

@@ -14,8 +14,10 @@ import { RunOnDialog } from "@/features/labs/run-on";
 import { useEscapeBack } from "@/features/labs/lab-detail/use-escape-back";
 import { ServerSelfTest } from "@/features/servers/server-self-test";
 import { getPortMode } from "@/lib/settings";
+import type { ServerHost } from "@/lib/tauri";
 import { commands, installTauri, stream } from "@/test/tauri";
 import { flush } from "@/test/ui";
+import { must } from "@/components/test-support";
 
 describe("Markdown", () => {
   const doc = [
@@ -97,7 +99,7 @@ describe("ErrorScreen and ErrorBoundary", () => {
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Digest: abc123"));
   });
 
-  it("keeps a crash inside the boundary and clears it on a new key", async () => {
+  it("keeps a crash inside the boundary and clears it on a new key", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     function Boom({ explode }: { explode: boolean }): React.ReactNode {
       if (explode) throw new Error("step crashed");
@@ -128,13 +130,18 @@ describe("CommandPalette", () => {
     ];
     return { ran, cmds };
   };
-
-  it("filters as you type and runs the selection with Enter", async () => {
+  /** The palette open over `make()`'s commands, with its search field. */
+  const open = () => {
     const { ran, cmds } = make();
     const onClose = vi.fn();
     const user = userEvent.setup();
     render(<CommandPalette open onClose={onClose} commands={cmds} />);
-    const input = screen.getByRole("dialog").querySelector("input")!;
+    const input = must(screen.getByRole("dialog").querySelector("input"), "the search field");
+    return { ran, onClose, user, input };
+  };
+
+  it("filters as you type and runs the selection with Enter", async () => {
+    const { ran, onClose, user, input } = open();
     await user.type(input, "directory");
     expect(screen.queryByText("Servers")).toBeNull();
     await user.keyboard("{Enter}");
@@ -143,11 +150,7 @@ describe("CommandPalette", () => {
   });
 
   it("moves with the arrow keys, closes with Escape and says when nothing matches", async () => {
-    const { ran, cmds } = make();
-    const onClose = vi.fn();
-    const user = userEvent.setup();
-    render(<CommandPalette open onClose={onClose} commands={cmds} />);
-    const input = screen.getByRole("dialog").querySelector("input")!;
+    const { ran, onClose, user, input } = open();
     input.focus();
     // Down twice, then up: the second row. Up twice from there wraps to the last.
     await user.keyboard("{ArrowDown}{ArrowDown}{ArrowUp}{Enter}");
@@ -161,13 +164,10 @@ describe("CommandPalette", () => {
   });
 
   it("runs a command on click and closes on the backdrop", async () => {
-    const { ran, cmds } = make();
-    const onClose = vi.fn();
-    const user = userEvent.setup();
-    render(<CommandPalette open onClose={onClose} commands={cmds} />);
+    const { ran, onClose, user } = open();
     await user.click(screen.getByText("Servers"));
     expect(ran).toEqual(["servers"]);
-    await user.click(document.querySelector<HTMLElement>("[aria-modal=true]")!.parentElement!);
+    await user.click(must(document.querySelector<HTMLElement>("[aria-modal=true]")?.parentElement, "the backdrop"));
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
@@ -221,7 +221,7 @@ describe("ConfirmDialog", () => {
     await user.keyboard("{Escape}");
     expect(onCancel).toHaveBeenCalledTimes(1);
     const cancel = screen.getAllByRole("button").find((b) => b.textContent !== "Remove");
-    await user.click(cancel!);
+    await user.click(must(cancel, "a Cancel button"));
     expect(onCancel).toHaveBeenCalled();
   });
 });
@@ -261,6 +261,14 @@ describe("PortModePrompt", () => {
 });
 
 describe("ServerSelfTest", () => {
+  /** Runs the self-test of host `id` and lets it finish: its `onDone` spy. */
+  const selfTest = async (id: string, provider: ServerHost["provider"]) => {
+    const onDone = vi.fn();
+    render(<ServerSelfTest id={id} provider={provider} onDone={onDone} />);
+    await flush(30);
+    return onDone;
+  };
+
   it("shows each step as the host reports it, and the result", async () => {
     installTauri({
       server_selftest: (a) => {
@@ -273,10 +281,7 @@ describe("ServerSelfTest", () => {
         return null;
       },
     });
-    const onDone = vi.fn();
-    render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
-    await flush(30);
-    expect(onDone).toHaveBeenCalledWith("fail");
+    expect(await selfTest("pve", "proxmox")).toHaveBeenCalledWith("fail");
     expect(screen.getByText(/no space left on datastore/)).toBeTruthy();
   });
 
@@ -287,10 +292,7 @@ describe("ServerSelfTest", () => {
         return null;
       },
     });
-    const onDone = vi.fn();
-    render(<ServerSelfTest id="esxi" provider="vmware_esxi" onDone={onDone} />);
-    await flush(30);
-    expect(onDone).toHaveBeenCalledWith("ok");
+    expect(await selfTest("esxi", "vmware_esxi")).toHaveBeenCalledWith("ok");
   });
 
   it("fails when the command errors", async () => {
@@ -299,10 +301,7 @@ describe("ServerSelfTest", () => {
         throw new Error("host unreachable");
       },
     });
-    const onDone = vi.fn();
-    render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
-    await flush(30);
-    expect(onDone).toHaveBeenCalledWith("fail");
+    expect(await selfTest("pve", "proxmox")).toHaveBeenCalledWith("fail");
     expect(screen.getByText(/host unreachable/)).toBeTruthy();
     expect(commands(calls)).toContain("server_selftest");
   });
@@ -320,7 +319,14 @@ describe("Escape in a dialog", () => {
       return null;
     };
     window.addEventListener("keydown", seen);
-    return { onBack, seen, Page, done: () => window.removeEventListener("keydown", seen) };
+    return {
+      onBack,
+      seen,
+      Page,
+      done: () => {
+        window.removeEventListener("keydown", seen);
+      },
+    };
   };
 
   it("closes the run dialog without leaving the lab page", async () => {
@@ -332,7 +338,12 @@ describe("Escape in a dialog", () => {
         <>
           <Page />
           {open && (
-            <RunOnDialog onClose={() => setOpen(false)} footer={<button type="button">Start</button>}>
+            <RunOnDialog
+              onClose={() => {
+                setOpen(false);
+              }}
+              footer={<button type="button">Start</button>}
+            >
               <p>Where should it run?</p>
             </RunOnDialog>
           )}

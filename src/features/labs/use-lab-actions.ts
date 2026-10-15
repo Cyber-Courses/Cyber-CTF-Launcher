@@ -5,7 +5,7 @@ import { type ActiveOperation, type Park, type Provider } from "@/lib/tauri";
 import { getPortMode, type PortMode } from "@/lib/settings";
 import { askPortMode } from "@/features/labs/port-mode-prompt";
 import type { Lab } from "@/features/labs/use-labs";
-import { endDeploy, useDeploy } from "@/lib/deploy-store";
+import { endDeploy, useDeploy, type DeployRun } from "@/lib/deploy-store";
 import {
   cloudLaunch,
   localLaunch,
@@ -26,7 +26,8 @@ import {
  * UI reads each lab's run from `runs[labId]`. The operations themselves are in lab-operations.
  */
 export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) => Promise<void> | void) {
-  const { runs } = useDeploy();
+  // By lab id: none for a lab not run since the app started.
+  const { runs }: { runs: Partial<Record<string, DeployRun>> } = useDeploy();
 
   // An operation stays busy until the lab's status after it has been read: cleared earlier, the
   // page showed the old status's buttons (Shut down on a lab just shut down) for a few seconds,

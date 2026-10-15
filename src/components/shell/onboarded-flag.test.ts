@@ -29,7 +29,11 @@ describe("onboarded flag", () => {
     vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
       throw new Error("no storage");
     });
-    expect(() => markOnboarded()).not.toThrow();
-    expect(() => clearOnboarded()).not.toThrow();
+    expect(() => {
+      markOnboarded();
+    }).not.toThrow();
+    expect(() => {
+      clearOnboarded();
+    }).not.toThrow();
   });
 });

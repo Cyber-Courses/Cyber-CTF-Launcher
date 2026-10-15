@@ -6,42 +6,18 @@ import { Labs } from "@/features/labs/labs-screen";
 import { answer } from "@/lib/dev-mock";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { setPortMode } from "@/lib/settings";
-import type { LabMachine, LabStatus } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
 import { commands, installTauri, stream, type Handler } from "@/test/tauri";
 import { flush } from "@/test/ui";
+import { must } from "@/components/test-support";
+import { containerMachine, labStatus, rejectWith, rowTitles, startIn } from "@/features/labs/labs-test-kit";
 
 // The Labs screen as a player drives it: the real useLabs / useLabActions / deploy store behind
 // the list and the lab page, with only the Rust commands mocked. The component tests next to it
 // drive LabDetail with spied handlers; these check what the commands' answers do on screen.
 
-const machine = (name: string, state = "running", p: Partial<LabMachine> = {}): LabMachine => ({
-  name,
-  state,
-  image: "node:20",
-  ip: "10.42.0.3",
-  ports: [],
-  interfaces: [{ network: "default", ip: "10.42.0.3" }],
-  services: [],
-  infra: false,
-  ...p,
-});
-const status = (p: Partial<LabStatus> = {}): LabStatus => ({
-  running: false,
-  parked: null,
-  machines: [],
-  networks: [],
-  url: null,
-  host: null,
-  expiresAt: null,
-  place: null,
-  provider: null,
-  attacker: null,
-  outputs: [],
-  message: null,
-  reapError: null,
-  ...p,
-});
+const machine = containerMachine;
+const status = labStatus;
 
 // Nothing deploying (the dev mock reports GOAD mid-deploy), and no server: Start on a container
 // lab with no hosted run then starts here at once, without the "Where should it run?" dialog.
@@ -74,20 +50,17 @@ function renderLabs(slug: string | null, overrides: Record<string, Handler> = {}
   return { calls, onDetailChange, ...view };
 }
 
-const titles = () =>
-  screen
-    .queryAllByRole("button")
-    .map((b) => b.getAttribute("aria-label") ?? "")
-    .filter((l) => l.startsWith("Open "))
-    .map((l) => l.slice(5));
+const titles = rowTitles;
 
-afterEach(() => setPortMode(null));
+afterEach(() => {
+  setPortMode(null);
+});
 
 // The deploy store adds streamed log lines in batches (every FLUSH_MS, 100 ms): wait past one.
 const LOG_BATCH = 150;
 
 /** The lab page's Deployment panel (its steps, state pill and log). */
-const deployment = () => screen.getByRole("heading", { name: /^Deployment/ }).closest<HTMLElement>(".surface-panel")!;
+const deployment = () => must(screen.getByRole("heading", { name: /^Deployment/ }).closest<HTMLElement>(".surface-panel"), "the Deployment panel");
 
 describe("Labs catalogue, from the keyboard", () => {
   it("picks a filter with Tab and the arrow keys, and the list follows", async () => {
@@ -203,7 +176,7 @@ describe("Labs catalogue, from the keyboard", () => {
     const user = userEvent.setup();
     await flush(80);
     // The row's actions sit beside its open button (one row, two controls).
-    const row = screen.getByRole("button", { name: "Open EC2 SSRF" }).closest<HTMLElement>(".group")!;
+    const row = must(screen.getByRole("button", { name: "Open EC2 SSRF" }).closest<HTMLElement>(".group"), "the EC2 SSRF row");
     await user.click(within(row).getByRole("button", { name: /Connect/ }));
     expect(calls.find((c) => c.cmd === "server_open_setup")?.args).toMatchObject({ kind: "cloud" });
     // The click was the row button's: the lab page didn't open behind it.
@@ -214,6 +187,10 @@ describe("Labs catalogue, from the keyboard", () => {
 // "Exposed dashboard": a container lab with no hosted run and no VM option, so with no server
 // saved its Start starts here at once.
 const KUBE = "kube-dashboard-exposed";
+/** One saved server, an ESXi host, and no default one. */
+const officeEsxi: Record<string, Handler> = {
+  server_list: () => ({ default: null, hosts: [{ id: "esxi", name: "office-esxi", provider: "vmware_esxi", host: "10.0.4.12" }] }),
+};
 const kubeUp = () => status({ running: true, machines: [machine("dashboard")], url: "http://127.0.0.1:8443", place: "container", provider: "docker" });
 
 /** A lab_launch that streams `lines`, then waits for `release()`; `more()` streams further lines. */
@@ -229,7 +206,29 @@ function heldLaunch(...lines: string[]) {
       reject = rej;
     });
   };
-  return { handler, more: (...l: string[]) => stream(args, ...l), release: () => release(null), reject: (e: unknown) => reject(e) };
+  return {
+    handler,
+    more: (...l: string[]) => {
+      stream(args, ...l);
+    },
+    release: () => {
+      release(null);
+    },
+    reject: (e: unknown) => {
+      reject(e);
+    },
+  };
+}
+
+/** The kube lab's page, its launch held, once Start was double-clicked. */
+async function doubleClickStart() {
+  const launch = heldLaunch("Downloading CyberCTF/kube-dashboard-exposed@abc123");
+  const { calls } = renderLabs(KUBE, { lab_launch: launch.handler, lab_status: () => status() });
+  const user = userEvent.setup();
+  await flush(80);
+  await user.dblClick(screen.getByRole("button", { name: /Start lab/ }));
+  await flush();
+  return { launch, calls, user };
 }
 
 describe("Lab page, driven through the Labs screen", () => {
@@ -264,12 +263,7 @@ describe("Lab page, driven through the Labs screen", () => {
 
   it("launches once when Start is double-clicked", async () => {
     setPortMode("random");
-    const launch = heldLaunch("Downloading CyberCTF/kube-dashboard-exposed@abc123");
-    const { calls } = renderLabs(KUBE, { lab_launch: launch.handler, lab_status: () => status() });
-    const user = userEvent.setup();
-    await flush(80);
-    await user.dblClick(screen.getByRole("button", { name: /Start lab/ }));
-    await flush();
+    const { launch, calls } = await doubleClickStart();
     expect(commands(calls).filter((c) => c === "lab_launch")).toHaveLength(1);
     launch.release();
     await flush(80);
@@ -277,12 +271,7 @@ describe("Lab page, driven through the Labs screen", () => {
 
   it("asks for the ports first and launches once when Start is double-clicked before answering", async () => {
     // No port mode remembered: the first click asks; the second asks again and cancels the first.
-    const launch = heldLaunch("Downloading CyberCTF/kube-dashboard-exposed@abc123");
-    const { calls } = renderLabs(KUBE, { lab_launch: launch.handler, lab_status: () => status() });
-    const user = userEvent.setup();
-    await flush(80);
-    await user.dblClick(screen.getByRole("button", { name: /Start lab/ }));
-    await flush();
+    const { launch, calls, user } = await doubleClickStart();
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Start lab" }));
     await flush();
@@ -322,7 +311,7 @@ describe("Lab page, driven through the Labs screen", () => {
     const { calls } = renderLabs("invoice-portal-api", {
       lab_stop: (a) => {
         stream(a, "==> api: Stopping");
-        throw "docker: permission denied while trying to connect to the Docker daemon socket";
+        rejectWith("docker: permission denied while trying to connect to the Docker daemon socket");
       },
     });
     const user = userEvent.setup();
@@ -348,7 +337,12 @@ describe("Lab page, driven through the Labs screen", () => {
         a?.id === "lab-goad" ? (parked ? status({ parked: "pause", machines: [machine("DC01", "saved", { image: "" })], place: "local_vm" }) : vmUp) : status(),
       lab_park: (a) => {
         stream(a, "==> DC01: Saving state");
-        return new Promise<null>((r) => (release = () => r(null)));
+        return new Promise<null>(
+          (r) =>
+            (release = () => {
+              r(null);
+            }),
+        );
       },
     });
     const user = userEvent.setup();
@@ -439,7 +433,13 @@ describe("Lab page, driven through the Labs screen", () => {
     let release!: () => void;
     renderLabs(KUBE, {
       lab_status: (a) => (a?.id === "lab-kube" ? status({ machines: [machine("dashboard", "exited")] }) : status()),
-      lab_stop: () => new Promise<null>((r) => (release = () => r(null))),
+      lab_stop: () =>
+        new Promise<null>(
+          (r) =>
+            (release = () => {
+              r(null);
+            }),
+        ),
     });
     const user = userEvent.setup();
     await flush(80);
@@ -454,7 +454,7 @@ describe("Lab page, driven through the Labs screen", () => {
 
   it("closes the Where-should-it-run dialog with Escape and stays on the lab page", async () => {
     const { calls, onDetailChange } = renderLabs("goad-light", {
-      server_list: () => ({ default: null, hosts: [{ id: "esxi", name: "office-esxi", provider: "vmware_esxi", host: "10.0.4.12" }] }),
+      ...officeEsxi,
       lab_status: () => status(),
     });
     const user = userEvent.setup();
@@ -499,7 +499,7 @@ describe("Lab page, driven through the Labs screen", () => {
 
   it("starts a VM lab on the server picked in the dialog", async () => {
     const { calls } = renderLabs("goad-light", {
-      server_list: () => ({ default: null, hosts: [{ id: "esxi", name: "office-esxi", provider: "vmware_esxi", host: "10.0.4.12" }] }),
+      ...officeEsxi,
       server_test: () => ({ ok: true, reachable: true, authenticated: true, latencyMs: 4, message: null, checks: [] }),
       lab_status: () => status(),
     });
@@ -534,8 +534,7 @@ describe("Lab page, a hosted run", () => {
     const user = userEvent.setup();
     await flush(80);
     await user.click(screen.getByRole("button", { name: /Start lab/ }));
-    await user.click(within(screen.getByRole("dialog")).getByText("Hosted by Cyber CTF"));
-    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Start$/ }));
+    await startIn(user, "Hosted by Cyber CTF");
     await flush();
     expect(calls.filter((c) => String(c.args?.operation).includes("launchHosted"))).toHaveLength(1);
     expect(screen.getByRole("button", { name: /Start lab/ }).hasAttribute("disabled")).toBe(true);

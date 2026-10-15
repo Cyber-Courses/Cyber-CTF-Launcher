@@ -9,10 +9,12 @@ import type { Lab } from "@/features/labs/use-labs";
 import { getDeploySnapshot, SIGNED_OUT_EVENT } from "@/lib/deploy-store";
 import { setLocalePreference } from "@/lib/i18n";
 import type { CommandError } from "@/lib/errors";
-import { setAttackBox, setAttackImage, setAutoAttackBox, setPortMode, setVmProvider } from "@/lib/settings";
+import { setAttackBox, setAttackImage, setAutoAttackBox, setPortMode, setVmProvider, type PortMode } from "@/lib/settings";
 import { readyReport as armReport } from "@/test/fixtures";
 import { installTauri, rejects, type Call } from "@/test/tauri";
 import { flush } from "@/test/ui";
+import { must, startInAct } from "@/components/test-support";
+import { rejectWith } from "@/features/labs/labs-test-kit";
 
 const dockerLab: Lab = {
   id: "act-docker",
@@ -41,13 +43,32 @@ const launchArgs = (calls: Call[]) => {
 };
 // The dev mock's machine is an arm64 Mac; most tests here want an x86 one, where the VM labs run natively.
 const readyReport = () => ({ ...armReport(), arch: "x86_64" });
-const logsOf = (id: string) => getDeploySnapshot().runs[id]?.logs ?? [];
+const logsOf = (id: string) => {
+  const { runs } = getDeploySnapshot();
+  return id in runs ? runs[id].logs : [];
+};
 
 function setup(overrides: Parameters<typeof installTauri>[0] = {}) {
   const calls = installTauri(overrides);
   const refresh = vi.fn();
   const hook = renderHook(() => useLabActions(refresh));
   return { calls, refresh, hook };
+}
+
+/** Starts launching `lab` here (a dialog may then ask the player): the launch, to await once
+ *  answered. */
+function launching(hook: ReturnType<typeof setup>["hook"], lab: Lab, ports?: PortMode) {
+  return startInAct(() => hook.result.current.launch(lab, null, undefined, readyReport(), ports));
+}
+
+/** A launch of the Docker lab as `id` with no port mode remembered, once the ports are asked. */
+async function portsAsked(id: string) {
+  const { calls, hook } = setup();
+  const user = userEvent.setup();
+  render(<PortModePrompt />);
+  const done = launching(hook, { ...dockerLab, id });
+  await flush();
+  return { calls, user, done };
 }
 
 afterEach(() => {
@@ -85,14 +106,7 @@ describe("useLabActions: launch", () => {
   });
 
   it("asks for the ports and starts nothing when the player cancels", async () => {
-    const { calls, hook } = setup();
-    const user = userEvent.setup();
-    render(<PortModePrompt />);
-    let done!: Promise<unknown>;
-    act(() => {
-      done = hook.result.current.launch({ ...dockerLab, id: "act-cancel" }, null, undefined, readyReport());
-    });
-    await flush();
+    const { calls, user, done } = await portsAsked("act-cancel");
     expect(screen.getByText("Which ports should Invoice portal API use?")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await act(() => done);
@@ -106,13 +120,15 @@ describe("useLabActions: launch", () => {
     return {
       lab_launch: (args: Record<string, unknown> | undefined) => {
         asked.push(args?.offline);
-        if (!args?.offline) throw reason;
+        if (!args?.offline) rejectWith(reason);
         return null;
       },
     };
   }
 
-  it("offers an offline start when Cyber CTF can't be reached and the lab is installed, and starts it on yes", async () => {
+  /** A launch of `id` while Cyber CTF can't be reached and the lab is installed, once the
+   *  offline start is offered: the `offline` flags asked so far, and the launch to await. */
+  async function offlineOffered(id: string) {
     const offline: unknown[] = [];
     const { hook } = setup(
       unreachableBackend(
@@ -126,11 +142,13 @@ describe("useLabActions: launch", () => {
     );
     const user = userEvent.setup();
     render(<OfflineStartPrompt />);
-    let done!: Promise<unknown>;
-    act(() => {
-      done = hook.result.current.launch({ ...dockerLab, id: "act-offline" }, null, undefined, readyReport(), "random");
-    });
+    const done = launching(hook, { ...dockerLab, id }, "random");
     await flush();
+    return { offline, user, done };
+  }
+
+  it("offers an offline start when Cyber CTF can't be reached and the lab is installed, and starts it on yes", async () => {
+    const { offline, user, done } = await offlineOffered("act-offline");
     expect(screen.getByText("Start Invoice portal API offline?")).toBeTruthy();
     expect(screen.getByText(/progress and evidence aren't saved/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Start offline" }));
@@ -140,24 +158,7 @@ describe("useLabActions: launch", () => {
   });
 
   it("starts nothing offline when the player declines, and says why the launch failed", async () => {
-    const offline: unknown[] = [];
-    const { hook } = setup(
-      unreachableBackend(
-        {
-          code: "offlineReady",
-          args: { detail: "API unreachable: offline" },
-          message: "Cyber CTF can't be reached (API unreachable: offline). This lab is installed here, so it can start offline, without saving progress.",
-        },
-        offline,
-      ),
-    );
-    const user = userEvent.setup();
-    render(<OfflineStartPrompt />);
-    let done!: Promise<unknown>;
-    act(() => {
-      done = hook.result.current.launch({ ...dockerLab, id: "act-decline" }, null, undefined, readyReport(), "random");
-    });
-    await flush();
+    const { offline, user, done } = await offlineOffered("act-decline");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await act(() => done);
     expect(offline).toEqual([false]);
@@ -183,14 +184,7 @@ describe("useLabActions: launch", () => {
   });
 
   it("asks for the ports, remembers them, and starts on the lab's own ports", async () => {
-    const { calls, hook } = setup();
-    const user = userEvent.setup();
-    render(<PortModePrompt />);
-    let done!: Promise<unknown>;
-    act(() => {
-      done = hook.result.current.launch({ ...dockerLab, id: "act-docker-2" }, null, undefined, readyReport());
-    });
-    await flush();
+    const { calls, user, done } = await portsAsked("act-docker-2");
     await user.click(screen.getByText("The lab's default ports"));
     expect(screen.getByText(/may already be taken/)).toBeTruthy();
     await user.click(screen.getByRole("switch", { name: "Use this for every lab" }));
@@ -214,7 +208,7 @@ describe("useLabActions: launch", () => {
     setAttackImage("");
     const { calls, hook } = setup();
     await act(() => hook.result.current.launch({ ...dockerLab, id: "act-in-vm" }, null, "virtualbox", readyReport()));
-    const args = launchArgs(calls)!;
+    const args = must(launchArgs(calls), "the lab_launch call");
     expect(args.provider).toBe("virtualbox");
     expect(args.host).toBeNull();
     expect(typeof args.attackboxImage).toBe("string");
@@ -307,9 +301,7 @@ describe("useLabActions: launch", () => {
 
   it("puts a failed start on the log's last line and ends the run", async () => {
     const { hook } = setup({
-      lab_launch: () => {
-        throw "Port 8000 is already in use";
-      },
+      lab_launch: () => rejectWith("Port 8000 is already in use"),
     });
     await act(() => hook.result.current.launch({ ...dockerLab, id: "act-fail" }, null, undefined, readyReport(), "random"));
     expect(logsOf("act-fail")).toEqual(["✗ Port 8000 is already in use"]);
@@ -371,7 +363,7 @@ describe("useLabActions: operations on a built lab", () => {
     });
     await flush();
     expect(getDeploySnapshot().runs["act-settle"].busy).toBe(true);
-    expect(hook.result.current.runs["act-settle"].busy).toBe(true);
+    expect(hook.result.current.runs["act-settle"]?.busy).toBe(true);
     await act(async () => {
       release();
       await done;
@@ -382,8 +374,12 @@ describe("useLabActions: operations on a built lab", () => {
 
 describe("useLabActions: a failure the core knows by its code", () => {
   // Settings' port choice made, so a start here doesn't stop to ask.
-  beforeEach(() => setPortMode("random"));
-  afterEach(() => setLocalePreference("en"));
+  beforeEach(() => {
+    setPortMode("random");
+  });
+  afterEach(() => {
+    setLocalePreference("en");
+  });
 
   it("ends the log on the error in the player's language, with its code kept for the hints", async () => {
     setLocalePreference("fr");

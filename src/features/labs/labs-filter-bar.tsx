@@ -17,7 +17,9 @@ export function LabsFilterBar({ filters, onChange }: { filters: LabFilters; onCh
         <Input
           data-lab-search
           value={filters.query}
-          onChange={(e) => onChange({ query: e.target.value })}
+          onChange={(e) => {
+            onChange({ query: e.target.value });
+          }}
           placeholder={t("labs.list.search")}
           aria-label={t("labs.list.search")}
           className="pl-8.5"
@@ -26,7 +28,9 @@ export function LabsFilterBar({ filters, onChange }: { filters: LabFilters; onCh
       <Segmented<StatusFilter>
         label={t("labs.list.status")}
         value={filters.status}
-        onChange={(status) => onChange({ status })}
+        onChange={(status) => {
+          onChange({ status });
+        }}
         options={[
           { value: "all", label: t("labs.list.all") },
           { value: "todo", label: t("labs.list.todo") },
@@ -37,7 +41,9 @@ export function LabsFilterBar({ filters, onChange }: { filters: LabFilters; onCh
       <Segmented<RuntimeFilter>
         label={t("labs.list.runtime")}
         value={filters.runtime}
-        onChange={(runtime) => onChange({ runtime })}
+        onChange={(runtime) => {
+          onChange({ runtime });
+        }}
         options={[
           { value: "all", label: t("labs.list.anyRuntime") },
           { value: "DOCKER", label: t("labs.list.container") },
@@ -48,7 +54,9 @@ export function LabsFilterBar({ filters, onChange }: { filters: LabFilters; onCh
       <Segmented<number>
         label={t("labs.list.level")}
         value={filters.difficulty}
-        onChange={(difficulty) => onChange({ difficulty })}
+        onChange={(difficulty) => {
+          onChange({ difficulty });
+        }}
         options={[{ value: 0, label: t("labs.list.anyLevel") }, ...[1, 2, 3].map((d) => ({ value: d, label: difficultyLabel(t, d) }))]}
       />
     </div>

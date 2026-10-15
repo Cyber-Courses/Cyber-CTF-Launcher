@@ -27,7 +27,7 @@ function inline(text: string, k: string): ReactNode[] {
   INLINE.lastIndex = 0;
   while ((m = INLINE.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
-    out.push(span(m[0], `${k}-${i}`));
+    out.push(span(m[0], `${k}-${String(i)}`));
     last = m.index + m[0].length;
     i++;
   }
@@ -52,7 +52,9 @@ function span(t: string, key: string): ReactNode {
     );
   }
   if (t.startsWith("*")) return <em key={key}>{t.slice(1, -1)}</em>;
-  const mm = LINK.exec(t)!;
+  const mm = LINK.exec(t);
+  // INLINE only matches the forms above and links: a match is always one.
+  if (!mm) return t;
   const href = mm[2];
   if (!SAFE_URL.test(href)) return mm[1];
   return (
@@ -108,7 +110,7 @@ const heading: BlockReader = (lines, i, key) => {
   const h = HEADING.exec(lines[i]);
   if (!h) return null;
   const lvl = Math.min(h[1].length, 3);
-  const Tag = `h${lvl + 1}` as keyof JSX.IntrinsicElements;
+  const Tag = `h${String(lvl + 1)}` as keyof JSX.IntrinsicElements;
   return {
     node: (
       <Tag key={key} className={HEADING_CLASS[lvl - 1]}>
@@ -140,7 +142,8 @@ const quote: BlockReader = (lines, i, key) => {
   };
 };
 
-function list(marker: RegExp, ordered: boolean): BlockReader {
+/** A list block: the lines starting with `marker`, as a bullet (`ul`) or numbered (`ol`) list. */
+function list(marker: RegExp, kind: "ul" | "ol"): BlockReader {
   return (lines, i, key) => {
     if (!marker.test(lines[i])) return null;
     const { buf, next } = takeLines(
@@ -149,16 +152,17 @@ function list(marker: RegExp, ordered: boolean): BlockReader {
       (l) => marker.test(l),
       (l) => l.replace(marker, ""),
     );
-    const items = buf.map((it, j) => <li key={j}>{inline(it, `${key}-${j}`)}</li>);
-    const node = ordered ? (
-      <ol key={key} className="list-decimal space-y-1 pl-5">
-        {items}
-      </ol>
-    ) : (
-      <ul key={key} className="list-disc space-y-1 pl-5">
-        {items}
-      </ul>
-    );
+    const items = buf.map((it, j) => <li key={j}>{inline(it, `${key}-${String(j)}`)}</li>);
+    const node =
+      kind === "ol" ? (
+        <ol key={key} className="list-decimal space-y-1 pl-5">
+          {items}
+        </ol>
+      ) : (
+        <ul key={key} className="list-disc space-y-1 pl-5">
+          {items}
+        </ul>
+      );
     return { node, next };
   };
 }
@@ -166,7 +170,7 @@ function list(marker: RegExp, ordered: boolean): BlockReader {
 /** The lines up to the next blank line or other block. A heading ends the paragraph; any other
  *  line starting with "#" (`#hashtag`) is its text. Refusing them all left such a line in no
  *  block, and the parser spun forever. */
-const paragraph: BlockReader = (lines, i, key) => {
+const paragraph = (lines: string[], i: number, key: string): Block => {
   const { buf, next } = takeLines(
     lines,
     i,
@@ -182,7 +186,8 @@ const paragraph: BlockReader = (lines, i, key) => {
   };
 };
 
-const READERS: BlockReader[] = [fence, heading, rule, quote, list(BULLET, false), list(NUMBERED, true), paragraph];
+/** The block readers, tried in order; a line none of them takes starts a paragraph. */
+const READERS: BlockReader[] = [fence, heading, rule, quote, list(BULLET, "ul"), list(NUMBERED, "ol")];
 
 export function Markdown({ content, className }: { content: string; className?: string }) {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
@@ -193,8 +198,8 @@ export function Markdown({ content, className }: { content: string; className?: 
       i++;
       continue;
     }
-    const key = `b${blocks.length}`;
-    const block = READERS.reduce<Block | null>((found, read) => found ?? read(lines, i, key), null)!;
+    const key = `b${String(blocks.length)}`;
+    const block = READERS.reduce<Block | null>((found, read) => found ?? read(lines, i, key), null) ?? paragraph(lines, i, key);
     blocks.push(block.node);
     i = block.next;
   }

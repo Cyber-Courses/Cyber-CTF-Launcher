@@ -12,23 +12,9 @@ import { cloudNames } from "@/features/labs/lab-runtime";
 import { joinOr } from "@/features/labs/lab-readiness";
 import { serverOpenSetup, type CloudPreview } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
-import { useT } from "@/lib/i18n";
+import { useT, type T } from "@/lib/i18n";
 
-/** Start lab: with somewhere else to run it (servers, a VM here, hosted), asks where first in
- *  "Where should it run?"; otherwise starts here right away. A cloud lab always asks (which
- *  account, and what it costs), and with no account of its cloud offers to connect one. */
-export function StartLabButton({
-  lab,
-  run,
-  isDocker,
-  cloud = null,
-  loggedIn,
-  hostedLive,
-  busy,
-  dockerRunning,
-  onStart,
-  retry = false,
-}: {
+type StartLabProps = {
   lab: Lab;
   run: RunTargetChoice;
   isDocker: boolean;
@@ -42,7 +28,19 @@ export function StartLabButton({
   onStart: (target: RunTarget) => void;
   /** The last start failed: the same button, as Retry. */
   retry?: boolean;
-}) {
+};
+
+/** Why Start is greyed out (no runtime, signed out, a hosted session up), if it is. */
+function startHint(t: T, { runtime, loggedIn, hostedLive }: { runtime: boolean; loggedIn: boolean; hostedLive: boolean }): string | undefined {
+  if (!runtime) return t("labs.detail.noRuntime");
+  if (!loggedIn) return t("labs.detail.signInHint");
+  return hostedLive ? t("labs.detail.hostedLive") : undefined;
+}
+
+/** Start lab: with somewhere else to run it (servers, a VM here, hosted), asks where first in
+ *  "Where should it run?"; otherwise starts here right away. A cloud lab always asks (which
+ *  account, and what it costs), and with no account of its cloud offers to connect one. */
+export function StartLabButton({ lab, run, isDocker, cloud = null, loggedIn, hostedLive, busy, dockerRunning, onStart, retry = false }: StartLabProps) {
   const t = useT();
   const [choosing, setChoosing] = useState(false);
   const rt = lab.runtime;
@@ -51,20 +49,15 @@ export function StartLabButton({
     <div className="relative">
       <Button
         variant="primary"
-        onClick={() => (run.hasChoice ? setChoosing(true) : onStart({ kind: "local" }))}
+        onClick={() => {
+          if (run.hasChoice) setChoosing(true);
+          else onStart({ kind: "local" });
+        }}
         disabled={!loggedIn || !rt || hostedLive}
-        title={!rt ? t("labs.detail.noRuntime") : !loggedIn ? t("labs.detail.signInHint") : hostedLive ? t("labs.detail.hostedLive") : undefined}
+        title={startHint(t, { runtime: !!rt, loggedIn, hostedLive })}
         aria-haspopup={run.hasChoice ? "dialog" : undefined}
       >
-        {retry ? (
-          <>
-            <RotateCw className="size-3.5" /> {t("labs.detail.retry")}
-          </>
-        ) : (
-          <>
-            <Play className="size-3.5" /> {t("labs.detail.startLab")}
-          </>
-        )}
+        {retry ? <RotateCw className="size-3.5" /> : <Play className="size-3.5" />} {retry ? t("labs.detail.retry") : t("labs.detail.startLab")}
       </Button>
       {choosing && (
         <StartDialog
@@ -74,7 +67,9 @@ export function StartLabButton({
           cloud={cloud}
           busy={busy}
           dockerRunning={dockerRunning}
-          onClose={() => setChoosing(false)}
+          onClose={() => {
+            setChoosing(false);
+          }}
           onStart={(target) => {
             setChoosing(false);
             onStart(target);
@@ -96,53 +91,40 @@ function StartDialog({
   dockerRunning,
   onClose,
   onStart,
-}: {
-  lab: Lab;
-  run: RunTargetChoice;
-  isDocker: boolean;
-  cloud: { preview: CloudPreview | null } | null;
-  busy: boolean;
-  dockerRunning: boolean | null;
-  onClose: () => void;
-  onStart: (target: RunTarget) => void;
-}) {
+}: Pick<StartLabProps, "lab" | "run" | "isDocker" | "busy" | "dockerRunning" | "onStart"> & { cloud: StartLabProps["cloud"]; onClose: () => void }) {
   const t = useT();
-  const rt = lab.runtime;
+  const footer = (
+    <>
+      <Button variant="ghost" size="sm" onClick={onClose}>
+        {t("labs.detail.cancel")}
+      </Button>
+      <Button
+        variant="primary"
+        size="sm"
+        disabled={!!cloud && !run.pickedAccount}
+        onClick={() => {
+          onStart(run.chosen());
+        }}
+      >
+        <Play className="size-3.5" /> {t("labs.detail.start")}
+      </Button>
+    </>
+  );
   return (
-    <RunOnDialog
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            {t("labs.detail.cancel")}
-          </Button>
-          <Button variant="primary" size="sm" disabled={!!cloud && !run.pickedAccount} onClick={() => onStart(run.chosen())}>
-            <Play className="size-3.5" /> {t("labs.detail.start")}
-          </Button>
-        </>
-      }
-    >
+    <RunOnDialog onClose={onClose} footer={footer}>
       <RunOnPicker
         title={lab.title}
         hosts={run.hosts}
         hostOk={run.hostOk}
         localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
         localVm={run.localVm}
-        hosted={!!rt?.hosted}
+        hosted={!!lab.runtime?.hosted}
         dockerRunning={isDocker ? dockerRunning : null}
         value={run.runOn}
         onChange={run.setRunOn}
         disabled={busy}
         offerLocal={!cloud}
-        localExtra={
-          run.runOn.kind === "local" &&
-          isDocker && (
-            <div className="space-y-1.5">
-              <p className="section-label">{t("labs.detail.portsHere")}</p>
-              <PortChoice value={run.ports} onChange={run.setPorts} />
-            </div>
-          )
-        }
+        localExtra={run.runOn.kind === "local" && isDocker && <LocalPorts run={run} />}
       />
       {cloud && (
         <div className="mt-4">
@@ -153,11 +135,27 @@ function StartDialog({
   );
 }
 
+/** The host ports for a container lab started here. */
+function LocalPorts({ run }: { run: RunTargetChoice }) {
+  const t = useT();
+  return (
+    <div className="space-y-1.5">
+      <p className="section-label">{t("labs.detail.portsHere")}</p>
+      <PortChoice value={run.ports} onChange={run.setPorts} />
+    </div>
+  );
+}
+
 /** A cloud lab with no account of its cloud: connecting one is the next step. */
 function ConnectCloudButton({ providers }: { providers: readonly string[] }) {
   const t = useT();
   return (
-    <Button variant="primary" onClick={() => void serverOpenSetup(null, "cloud").catch(tell(t("labs.row.connectFailed")))}>
+    <Button
+      variant="primary"
+      onClick={() => {
+        serverOpenSetup(null, "cloud").catch(tell(t("labs.row.connectFailed")));
+      }}
+    >
       <Play className="size-3.5" /> {t("labs.detail.connectAccount", { clouds: joinOr(cloudNames(providers)) })}
     </Button>
   );

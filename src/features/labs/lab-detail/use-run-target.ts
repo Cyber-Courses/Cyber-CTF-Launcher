@@ -37,12 +37,18 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
   useEffect(() => {
     const isLatest = begin();
     serverList()
-      .then((l) => isLatest() && setServers({ hosts: l.hosts, defaultId: l.default }))
-      .catch(() => isLatest() && setServers(NO_SERVERS));
+      .then((l) => {
+        if (isLatest()) setServers({ hosts: l.hosts, defaultId: l.default });
+      })
+      .catch(() => {
+        if (isLatest()) setServers(NO_SERVERS);
+      });
   }, [begin, serversChanged]);
   // A server or cloud account added (or removed) in its setup window: the page follows at once,
   // instead of asking to "Connect an account" until it is left and opened again.
-  useTauriEvent(SERVER_CHANGED, () => setServersChanged((n) => n + 1));
+  useTauriEvent(SERVER_CHANGED, () => {
+    setServersChanged((n) => n + 1);
+  });
   const cloudAccounts = cloudAccountsFor(rt, hosts);
   // A server picked, then removed in its setup window: back to where Start points at first.
   const runOn = picked && (picked.kind !== "host" || hosts.some((h) => h.id === picked.id)) ? picked : initialTarget(rt, hosts, defaultId, localReady);
@@ -72,7 +78,7 @@ const NO_SERVERS = { hosts: [], defaultId: null };
  *  can't run the lab (`localReady`) and the host can; else here. */
 export function initialTarget(rt: LabRuntimeInfo | null, hosts: ServerHost[], defaultId: string | null, localReady: boolean): RunTarget {
   if (isCloudLab(rt)) {
-    const account = cloudAccountsFor(rt, hosts)[0];
+    const account = cloudAccountsFor(rt, hosts).at(0);
     return account ? { kind: "host", id: account.id } : { kind: "local" };
   }
   const def = hosts.find((h) => h.id === defaultId);

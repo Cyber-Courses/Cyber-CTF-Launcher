@@ -1,64 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  bindHost,
-  cloudView,
-  deployPlacement,
-  deriveLabState,
-  headerMode,
-  networkView,
-  publishedBinds,
-  restartTarget,
-  type LabStateInput,
-} from "@/features/labs/lab-detail/lab-state";
+import { bindHost, cloudView, deployPlacement, headerMode, networkView, publishedBinds, restartTarget } from "@/features/labs/lab-detail/lab-state";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import type { LabMachine, LabStatus, Provider } from "@/lib/tauri";
+import type { Provider } from "@/lib/tauri";
+import { deriveState as derive, labMachine as machine, labStatus as status } from "@/features/labs/labs-test-kit";
 
-const docker: LabRuntimeInfo = { runtime: "DOCKER", architectures: [], providers: [] };
 const vm: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi", "proxmox"] as Provider[] };
 const cloud: LabRuntimeInfo = { runtime: "CLOUD", architectures: [], providers: ["aws"] as Provider[] };
-
-const machine = (name: string, state = "running", p: Partial<LabMachine> = {}): LabMachine => ({
-  name,
-  state,
-  image: "",
-  ip: "",
-  ports: [],
-  interfaces: [],
-  services: [],
-  infra: false,
-  ...p,
-});
-const status = (p: Partial<LabStatus>): LabStatus => ({
-  running: false,
-  parked: null,
-  machines: [],
-  networks: [],
-  url: null,
-  host: null,
-  expiresAt: null,
-  place: null,
-  provider: null,
-  attacker: null,
-  outputs: [],
-  message: null,
-  reapError: null,
-  ...p,
-});
-const derive = (p: Partial<LabStateInput>) =>
-  deriveLabState({
-    status: undefined,
-    runtime: docker,
-    hostArch: "x86_64",
-    readyVms: [],
-    busy: false,
-    backendDeploying: false,
-    backendOp: undefined,
-    acting: null,
-    parkable: true,
-    provisionable: true,
-    ...p,
-  });
 
 // Inputs that contradict each other (a status that is both running and parked, a failed deploy
 // on a running lab) and a cloud lab, which has no machines to read from.

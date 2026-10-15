@@ -45,26 +45,38 @@ async function inWorker(): Promise<ELK> {
   const { default: ElkApi } = await import("elkjs/lib/elk-api.js");
   let elk: ELK | undefined;
   try {
-    await new Promise<void>((resolve, reject) => {
-      const slow = setTimeout(() => reject(new Error("the layout worker did not start")), READY_MS);
+    return await new Promise<ELK>((resolve, reject) => {
+      const slow = setTimeout(() => {
+        reject(new Error("the layout worker did not start"));
+      }, READY_MS);
       const settle = (f: () => void) => {
         clearTimeout(slow);
         f();
       };
-      elk = new ElkApi({
+      // The worker's messages come after this constructor returned: `api` is set by then.
+      const api: ELK = new ElkApi({
         workerFactory: () => {
           const worker = new Worker(new URL("./elk.worker.ts", import.meta.url));
-          worker.addEventListener("message", (e) => isReady(e.data) && settle(resolve));
-          worker.addEventListener("error", (e) => settle(() => reject(new Error(e.message || "the layout worker failed to load"))));
+          worker.addEventListener("message", (e) => {
+            if (isReady(e.data))
+              settle(() => {
+                resolve(api);
+              });
+          });
+          worker.addEventListener("error", (e) => {
+            settle(() => {
+              reject(new Error(e.message || "the layout worker failed to load"));
+            });
+          });
           return worker;
         },
       });
+      elk = api;
     });
   } catch (e) {
     elk?.terminateWorker();
     throw e;
   }
-  return elk!;
 }
 
 /** The main-thread engine, remembered for the session. */
@@ -88,22 +100,16 @@ function bounded(elk: ELK): Engine {
   return {
     layout: (graph) => {
       if (givenUp) return givenUp.then((e) => e.layout(graph));
-      return new Promise<ElkNode>((resolve, reject) => {
-        const slow = setTimeout(() => {
-          giveUp()
-            .then((e) => e.layout(graph))
-            .then(resolve, reject);
-        }, LAYOUT_MS);
-        elk.layout(graph).then(
-          (out) => {
-            clearTimeout(slow);
-            resolve(out);
-          },
-          (e) => {
-            clearTimeout(slow);
-            reject(e);
-          },
-        );
+      const work = elk.layout(graph);
+      let slow: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<void>((resolve) => {
+        slow = setTimeout(resolve, LAYOUT_MS);
+      })
+        .then(giveUp)
+        .then((e) => e.layout(graph));
+      // Whichever answers first: the worker, or the main thread once the worker is given up.
+      return Promise.race([work, late]).finally(() => {
+        clearTimeout(slow);
       });
     },
   };

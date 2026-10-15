@@ -46,46 +46,70 @@ export function failedMachineStep(failure: string): string | null {
   return m ? `m:${m[1]}` : null;
 }
 
+/** Which step a line goes to: its id and label. */
+type StepKey = { id: string; label: string };
+/** Places each line in a step, for one target; it keeps what earlier lines set (the machine, the
+ *  Docker phase). `last` is the step the previous line went to. */
+type Stepper = (line: string, last: Step | undefined) => StepKey;
+
+/** Vagrant: one step per machine, from the first `==> name:` line on; before it, the start. */
+function vagrantStepper(t: T): Stepper {
+  let machine: string | null = null;
+  return (l) => {
+    const m = /^\s*==>\s*([A-Za-z0-9_.-]+):/.exec(l);
+    if (m) machine = m[1];
+    if (machine) return { id: `m:${machine}`, label: machineLabel(machine) };
+    return { id: "prepare", label: isPrepLine(l) ? t("labs.deploy.steps.prepareMachine") : t("labs.deploy.steps.start") };
+  };
+}
+
+/** Terraform: set up, create the infrastructure, then the lab on its host; any other line stays
+ *  in the step before it. */
+function terraformStepper(t: T): Stepper {
+  return (l, last) => {
+    if (/Initializing|terraform init|Installing|Finding .* versions|Reusing previous/.test(l)) return { id: "tf-init", label: t("labs.deploy.steps.tfInit") };
+    if (/Creating\.\.\.|Creation complete|Still creating|Destroying|Apply complete|Plan:|will perform|Modif/.test(l))
+      return { id: "tf-apply", label: t("labs.deploy.steps.tfApply") };
+    if (/Waiting for the lab host|running:|install Docker|cloud-init|bootstrap|is ready|ready/i.test(l))
+      return { id: "tf-ready", label: t("labs.deploy.steps.tfReady") };
+    return { id: last?.id ?? "tf-init", label: last?.label ?? t("labs.deploy.steps.tfInit") };
+  };
+}
+
+/** Docker Compose: its phases, each from the first line that starts it; before them, preparing. */
+function dockerStepper(t: T): Stepper {
+  let phase: Phase | null = null;
+  return (l) => {
+    phase = DOCKER_PHASES.find((ph) => ph.match(l)) ?? phase;
+    if (phase) return { id: phase.id, label: t(`labs.deploy.phases.${phase.id}`) };
+    return { id: "prepare", label: t("labs.deploy.steps.prepareLab") };
+  };
+}
+
+/** An unknown target: every line in the step before it (preparing, at first). */
+const otherStepper =
+  (t: T): Stepper =>
+  (_l, last) => ({ id: last?.id ?? "prepare", label: last?.label ?? t("labs.deploy.steps.preparing") });
+
+const STEPPERS: Record<ReturnType<typeof detectTarget>, (t: T) => Stepper> = {
+  vagrant: vagrantStepper,
+  terraform: terraformStepper,
+  docker: dockerStepper,
+  unknown: otherStepper,
+};
+
 /** Builds the ordered step list from the timed log, per the detected target. */
 export function deriveSteps(t: T, timed: Timed[]): Step[] {
   const steps: Step[] = [];
-  const push = (id: string, label: string, row: Timed) => {
+  const stepOf = STEPPERS[detectTarget(timed.map((row) => row.line).join("\n"))](t);
+  for (const row of timed) {
+    const { id, label } = isDownloadLine(row.line) ? { id: "download", label: t("labs.deploy.steps.download") } : stepOf(row.line, steps.at(-1));
     let s = steps.find((x) => x.id === id);
     if (!s) {
       s = { id, label, rows: [] };
       steps.push(s);
     }
     s.rows.push(row);
-  };
-  const target = detectTarget(timed.map((row) => row.line).join("\n"));
-  let machine: string | null = null;
-  let docker: Phase | null = null;
-  for (const row of timed) {
-    const l = row.line;
-    if (isDownloadLine(l)) {
-      push("download", t("labs.deploy.steps.download"), row);
-      continue;
-    }
-    if (target === "vagrant") {
-      const m = l.match(/^\s*==>\s*([A-Za-z0-9_.-]+):/);
-      if (m) machine = m[1];
-      if (machine) push(`m:${machine}`, machineLabel(machine), row);
-      else push("prepare", isPrepLine(l) ? t("labs.deploy.steps.prepareMachine") : t("labs.deploy.steps.start"), row);
-    } else if (target === "terraform") {
-      if (/Initializing|terraform init|Installing|Finding .* versions|Reusing previous/.test(l)) push("tf-init", t("labs.deploy.steps.tfInit"), row);
-      else if (/Creating\.\.\.|Creation complete|Still creating|Destroying|Apply complete|Plan:|will perform|Modif/.test(l))
-        push("tf-apply", t("labs.deploy.steps.tfApply"), row);
-      else if (/Waiting for the lab host|running:|install Docker|cloud-init|bootstrap|is ready|ready/i.test(l))
-        push("tf-ready", t("labs.deploy.steps.tfReady"), row);
-      else push(steps.at(-1)?.id ?? "tf-init", steps.at(-1)?.label ?? t("labs.deploy.steps.tfInit"), row);
-    } else if (target === "docker") {
-      const p = DOCKER_PHASES.find((ph) => ph.match(l));
-      if (p) docker = p;
-      if (docker) push(docker.id, t(`labs.deploy.phases.${docker.id}`), row);
-      else push("prepare", t("labs.deploy.steps.prepareLab"), row);
-    } else {
-      push(steps.at(-1)?.id ?? "prepare", steps.at(-1)?.label ?? t("labs.deploy.steps.preparing"), row);
-    }
   }
   return steps;
 }

@@ -16,14 +16,17 @@ function stateWord(t: T, s: LabState): { tone: Tone; word: string; pulse?: boole
   const words: Record<Exclude<LabPhase, "operation">, { tone: Tone; word: string; pulse?: boolean }> = {
     running: { tone: "ok", word: t("labs.state.running") },
     // The one word for a start, as in the list, the sidebar and the deployment panel.
-    starting: { tone: "warn", word: OPERATION_STATUS.launch!, pulse: true },
+    starting: { tone: "warn", word: OPERATION_STATUS.launch ?? t("common.operation.status.launch"), pulse: true },
     failed: { tone: "fail", word: t("labs.state.failed") },
     paused: { tone: "muted", word: t("labs.state.paused") },
     shutDown: { tone: "muted", word: t("labs.state.shutDown") },
     interrupted: { tone: "warn", word: t("labs.state.interrupted") },
     notStarted: { tone: "muted", word: t("labs.state.notStarted") },
   };
-  return s.phase === "operation" ? { tone: "warn", word: OPERATION_STATUS[s.operation!]!, pulse: true } : words[s.phase];
+  // "operation" means an operation with a word of its own is in flight (see labState).
+  return s.phase === "operation"
+    ? { tone: "warn", word: (s.operation && OPERATION_STATUS[s.operation]) ?? t("labs.state.working"), pulse: true }
+    : words[s.phase];
 }
 
 /** Under the title: the status strip (state, where, runtime, level, category), the skills and
@@ -69,7 +72,7 @@ export function HeaderLead({ lab, state: s, status, hosted }: { lab: Lab; state:
           </span>
         ))}
       </StatusStrip>
-      {(lab.skills ?? []).length > 0 && (
+      {lab.skills.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {lab.skills.map((sk) => (
             <Badge key={sk.id}>{sk.name}</Badge>

@@ -15,8 +15,12 @@ export function LabBrief({ labId }: { labId: string }) {
   const [content, setContent] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     apiQuery<{ labs: { contentMd: string | null }[] }>("labBrief", { id: labId })
-      .then((d) => setContent(d.labs[0]?.contentMd ?? null))
-      .catch(() => setContent(null));
+      .then((d) => {
+        setContent(d.labs[0]?.contentMd ?? null);
+      })
+      .catch(() => {
+        setContent(null);
+      });
   }, [labId]);
   return (
     <Panel>

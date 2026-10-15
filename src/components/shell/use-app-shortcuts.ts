@@ -21,6 +21,8 @@ export function useAppShortcuts({ togglePalette, openSettings, findLab }: { togg
   });
   useEffect(() => {
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
   }, []);
 }

@@ -10,6 +10,7 @@ import { ServerScreen } from "@/features/servers/servers-screen";
 import { freshReport, readyReport } from "@/test/fixtures";
 import { commands, installTauri } from "@/test/tauri";
 import { clickEverything, flush } from "@/test/ui";
+import { must } from "@/components/test-support";
 
 const signedIn = { loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" };
 // Controls that leave the screen or open another window: pressed in their own tests.
@@ -116,7 +117,7 @@ describe("Labs", () => {
     render(<Labs {...props} />);
     await flush(50);
     expect(screen.getAllByText("Blind orders").length).toBeGreaterThan(0);
-    const search = document.querySelector<HTMLInputElement>("[data-lab-search]")!;
+    const search = must(document.querySelector<HTMLInputElement>("[data-lab-search]"), "the lab search");
     await user.type(search, "GOAD");
     await flush();
     expect(screen.queryAllByText("Blind orders").length).toBe(0);
@@ -160,7 +161,7 @@ describe("Labs", () => {
     await flush();
     const dialog = screen.queryByRole("dialog");
     if (dialog) {
-      const go = Array.from(dialog.parentElement!.querySelectorAll("button")).filter((b) => /start/i.test(b.textContent ?? ""));
+      const go = Array.from(must(dialog.parentElement, "the dialog's backdrop").querySelectorAll("button")).filter((b) => /start/i.test(b.textContent));
       await user.click(go[go.length - 1]);
     }
     await flush(80);
@@ -173,8 +174,8 @@ describe("Labs", () => {
     const onLogin = vi.fn(async () => {});
     render(<Labs {...props} loggedIn={false} onLogin={onLogin} openLab={{ slug: "s3-public-backup", tick: 1 }} />);
     await flush(50);
-    const signIn = screen.getAllByRole("button").find((b) => /sign in/i.test(b.textContent ?? ""));
-    await user.click(signIn!);
+    const signIn = screen.getAllByRole("button").find((b) => /sign in/i.test(b.textContent));
+    await user.click(must(signIn, "a Sign in button"));
     expect(onLogin).toHaveBeenCalled();
   });
 });

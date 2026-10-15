@@ -38,7 +38,7 @@ export function writeFitWidth(on: boolean) {
 export function useFitWidth() {
   const [fit, setFit] = useState(false);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read once on mount: localStorage doesn't exist during the static render
     setFit(readFitWidth());
   }, []);
   const set = (on: boolean) => {
@@ -89,7 +89,9 @@ export function FitWidthControls({
         className="aria-pressed:bg-glass-2 aria-pressed:text-foreground"
         aria-pressed={fit}
         title={t("diagram.view.fitWidthHint")}
-        onClick={() => onFit(!fit)}
+        onClick={() => {
+          onFit(!fit);
+        }}
       >
         {fit ? <Expand className="size-3" aria-hidden /> : <Shrink className="size-3" aria-hidden />} {t("diagram.view.fitWidth")}
       </Button>

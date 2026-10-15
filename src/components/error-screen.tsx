@@ -11,7 +11,7 @@ import { useT } from "@/lib/i18n";
 /** The error as text to paste into a bug report: message, window, agent, where the log files
  *  are (support asks for them next) and stack. Kept in English whatever the language: it is
  *  read by us, not shown in the app. */
-export function errorDetails(error: Error & { digest?: string }, logs: string | null = null): string {
+function errorDetails(error: Error & { digest?: string }, logs: string | null = null): string {
   return [
     `Error: ${error.message || String(error)}`,
     error.digest ? `Digest: ${error.digest}` : null,
@@ -22,6 +22,29 @@ export function errorDetails(error: Error & { digest?: string }, logs: string | 
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/** Logs the error once shown, and copies its details (with where the log files are) on demand. */
+function useErrorReport(error: Error & { digest?: string }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  const [logs, setLogs] = useState<string | null>(null);
+  useEffect(() => {
+    console.error(error);
+    logFrontendError("error screen", errorDetails(error));
+  }, [error]);
+  useEffect(() => {
+    void logFolder().then(setLogs);
+  }, []);
+  const copy = () => {
+    navigator.clipboard
+      .writeText(errorDetails(error, logs))
+      .then(() => {
+        setCopied(true);
+      })
+      .catch(tell(t("errors.clipboard")));
+  };
+  return { copied, copy };
 }
 
 /**
@@ -44,20 +67,7 @@ function ErrorPanel({
   const t = useT();
   const title = titleProp ?? t("shell.error.title");
   const description = descriptionProp ?? t("shell.error.description");
-  const [copied, setCopied] = useState(false);
-  const [logs, setLogs] = useState<string | null>(null);
-  useEffect(() => {
-    console.error(error);
-    logFrontendError("error screen", errorDetails(error));
-  }, [error]);
-  useEffect(() => {
-    void logFolder().then(setLogs);
-  }, []);
-  const copy = () =>
-    navigator.clipboard
-      .writeText(errorDetails(error, logs))
-      .then(() => setCopied(true))
-      .catch(tell(t("errors.clipboard")));
+  const { copied, copy } = useErrorReport(error);
 
   return (
     <div className={cn("surface-panel flex flex-col items-center rounded-panel px-6 py-9 text-center", className)}>
@@ -78,7 +88,13 @@ function ErrorPanel({
             <RotateCcw className="size-3.5" /> {t("shell.error.tryAgain")}
           </Button>
         )}
-        <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            window.location.reload();
+          }}
+        >
           <RefreshCw className="size-3.5" /> {t("shell.error.reload")}
         </Button>
         <Button variant="outline" size="sm" onClick={copy}>
@@ -116,7 +132,15 @@ export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: u
   render() {
     const { error } = this.state;
     if (!error) return this.props.children;
-    return <StepErrorPanel error={error} title={this.props.title} retry={() => this.setState({ error: null })} />;
+    return (
+      <StepErrorPanel
+        error={error}
+        title={this.props.title}
+        retry={() => {
+          this.setState({ error: null });
+        }}
+      />
+    );
   }
 }
 

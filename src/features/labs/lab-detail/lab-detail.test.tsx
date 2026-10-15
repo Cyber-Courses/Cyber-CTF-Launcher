@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
-import { act, render, screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab } from "@/features/labs/use-labs";
 import type { LabMachine, LabStatus } from "@/lib/tauri";
 import { installTauri } from "@/test/tauri";
+import { flush as flushUi } from "@/test/ui";
+import { containerMachine, upStatus } from "@/features/labs/labs-test-kit";
+import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
+import { must } from "@/components/test-support";
 
 const dockerLab: Lab = {
   id: "lab-invoice",
@@ -27,49 +31,16 @@ const vmLab: Lab = {
   runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi", "proxmox"] },
 };
 
-const machine = (name: string, state = "running", p: Partial<LabMachine> = {}): LabMachine => ({
-  name,
-  state,
-  image: "node:20",
-  ip: "10.42.0.3",
-  ports: [{ published: 8080, target: 8080 }],
-  interfaces: [{ network: "default", ip: "10.42.0.3" }],
-  services: [{ name: "api", kind: "web", ports: [8080] }],
-  infra: false,
-  ...p,
-});
-const status = (p: Partial<LabStatus>): LabStatus => ({
-  running: true,
-  parked: null,
-  machines: [machine("api"), machine("db", "running", { ip: "10.42.0.4", services: [{ name: "postgres", kind: "database", ports: [5432] }] })],
-  networks: [{ name: "default", subnet: "10.42.0.0/24", internal: false }],
-  url: "http://127.0.0.1:8080",
-  host: null,
-  expiresAt: null,
-  place: "container",
-  provider: "docker",
-  attacker: null,
-  outputs: [],
-  message: null,
-  reapError: null,
-  ...p,
-});
+const machine = (name: string, state = "running", p: Partial<LabMachine> = {}) =>
+  containerMachine(name, state, { ports: [{ published: 8080, target: 8080 }], services: [{ name: "api", kind: "web", ports: [8080] }], ...p });
+const status = (p: Partial<LabStatus>) =>
+  upStatus([machine("api"), machine("db", "running", { ip: "10.42.0.4", services: [{ name: "postgres", kind: "database", ports: [5432] }] })], p);
 
 // The dev mock reports GOAD mid-deploy; these tests want it settled.
 const idle = { deploying_labs: () => [], active_operations: () => [] };
 
-const flush = () =>
-  act(async () => {
-    await new Promise((r) => setTimeout(r, 30));
-  });
-
-function renderDetail(props: Partial<Parameters<typeof LabDetail>[0]> = {}) {
-  const handlers = { onBack: vi.fn(), onStart: vi.fn(), onStop: vi.fn(), onPark: vi.fn(), onResume: vi.fn(), onProvision: vi.fn(), onLogin: vi.fn() };
-  render(
-    <LabDetail lab={dockerLab} busy={false} logs={[]} times={[]} loggedIn hostArch="x86_64" readyVms={["virtualbox"]} dockerRunning {...handlers} {...props} />,
-  );
-  return handlers;
-}
+const flush = () => flushUi(30);
+const renderDetail = (props: Partial<Parameters<typeof LabDetail>[0]> = {}) => renderLabPage(dockerLab, props);
 
 describe("LabDetail", () => {
   it("offers to start a stopped Docker lab and starts it", async () => {
@@ -87,7 +58,7 @@ describe("LabDetail", () => {
     const dialog = await screen.findByRole("dialog");
     const confirm = within(dialog)
       .getAllByRole("button")
-      .filter((b) => /start/i.test(b.textContent ?? ""));
+      .filter((b) => /start/i.test(b.textContent));
     // Pick the lab's default ports, then the AWS account and back to this machine.
     await user.click(within(dialog).getByText("The lab's default ports"));
     await user.click(within(dialog).getByText("AWS sandbox"));
@@ -107,7 +78,7 @@ describe("LabDetail", () => {
     expect((await screen.findAllByText(/10\.42\.0\.3/, {}, { timeout: 10_000 })).length).toBeGreaterThan(0);
     // Every header action that doesn't leave the page.
     for (const b of screen.getAllByRole("button")) {
-      if (/stop|remove|delete/i.test(b.textContent ?? "")) {
+      if (/stop|remove|delete/i.test(b.textContent)) {
         await user.click(b);
         await flush();
         break;
@@ -130,17 +101,20 @@ describe("LabDetail", () => {
       addEventListener: (_: string, l: () => void) => listeners.add(l),
       removeEventListener: (_: string, l: () => void) => listeners.delete(l),
     }));
-    const resize = (to: boolean) =>
+    const resize = (to: boolean) => {
       act(() => {
         wide = to;
-        listeners.forEach((l) => l());
+        listeners.forEach((l) => {
+          l();
+        });
       });
+    };
     try {
       installTauri();
       renderDetail({ status: status({}) });
       await flush();
-      const card = () => document.querySelector(".hostcard")!;
-      const grid = () => document.querySelector(".grid")!;
+      const card = () => must(document.querySelector(".hostcard"), "the host card");
+      const grid = () => must(document.querySelector(".grid"), "the grid");
       // Narrow: in the main column, beside the rail.
       expect(grid().contains(card())).toBe(true);
       resize(true);
@@ -162,7 +136,7 @@ describe("LabDetail", () => {
     const h = renderDetail({ status: status({ machines: [machine("api"), machine("db", "exited", { ip: "" })] }) });
     await flush();
     expect(screen.getAllByText(/db/).length).toBeGreaterThan(0);
-    const reset = screen.queryAllByRole("button").find((b) => /reset|restart/i.test(b.textContent ?? ""));
+    const reset = screen.queryAllByRole("button").find((b) => /reset|restart/i.test(b.textContent));
     if (reset) {
       await user.click(reset);
       await flush();
@@ -210,7 +184,7 @@ describe("LabDetail", () => {
     const h = renderDetail({ lab: vmLab, status: status({ machines: vmMachines, place: "local_vm", provider: "virtualbox", url: null }) });
     await flush();
     expect(screen.getAllByText(/DC01/).length).toBeGreaterThan(0);
-    const pause = screen.queryAllByRole("button").find((b) => /pause|suspend/i.test(b.textContent ?? ""));
+    const pause = screen.queryAllByRole("button").find((b) => /pause|suspend/i.test(b.textContent));
     if (pause) {
       await user.click(pause);
       await flush();
@@ -226,7 +200,12 @@ describe("LabDetail", () => {
       status: status({ running: false, parked: "pause", machines: [], place: "local_vm", provider: "virtualbox", url: null }),
     });
     await flush();
-    await user.click(screen.getAllByRole("button").find((b) => /resume/i.test(b.textContent ?? ""))!);
+    await user.click(
+      must(
+        screen.getAllByRole("button").find((b) => /resume/i.test(b.textContent)),
+        "a Resume button",
+      ),
+    );
     await flush();
     expect(h.onResume).toHaveBeenCalled();
   });

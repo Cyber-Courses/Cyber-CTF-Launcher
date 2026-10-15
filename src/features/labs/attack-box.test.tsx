@@ -9,6 +9,7 @@ import type { ActiveOperation, ExegolStatus } from "@/lib/tauri";
 import { setAttackBox, setAttackImage, setAutoAttackBox } from "@/lib/settings";
 import { commands, installTauri, stream, type Call } from "@/test/tauri";
 import { flush } from "@/test/ui";
+import { rejectWith } from "@/features/labs/labs-test-kit";
 
 const box = (p: Partial<ExegolStatus> = {}): ExegolStatus => ({
   imagePresent: true,
@@ -37,14 +38,18 @@ describe("useAttackBox", () => {
     expect(calls.find((c) => c.cmd === "exegol_status")?.args).toEqual({ id: "ab-poll", image: "my/exegol:full" });
     expect(result.current.status?.ip).toBe("10.42.0.9");
     expect(result.current.name).toBe("my/exegol:full");
-    act(() => vi.advanceTimersByTime(5000));
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
     await flush();
     expect(count(calls, "exegol_status")).toBe(2);
     // The lab stops: no more reads, and the last status is dropped.
     rerender({ running: false });
     await flush();
     expect(result.current.status).toBeNull();
-    act(() => vi.advanceTimersByTime(15000));
+    act(() => {
+      vi.advanceTimersByTime(15000);
+    });
     await flush();
     expect(count(calls, "exegol_status")).toBe(2);
   });
@@ -107,9 +112,7 @@ describe("useAttackBox", () => {
         running = false;
         return null;
       },
-      exegol_start: () => {
-        throw "image pull failed";
-      },
+      exegol_start: () => rejectWith("image pull failed"),
     });
     const { result } = renderHook(() => useAttackBox("ab-stop", { running: true, local: true }));
     await flush();
@@ -134,7 +137,9 @@ describe("useAttackBox", () => {
     const { result } = renderHook(() => useAttackBox("ab-keep", { running: true, local: true }));
     await flush();
     fail = true;
-    act(() => vi.advanceTimersByTime(5000));
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
     await flush();
     expect(result.current.status?.running).toBe(true);
   });
@@ -143,7 +148,15 @@ describe("useAttackBox", () => {
 describe("startContainerAttackBox", () => {
   it("joins a start already under way instead of running a second one", async () => {
     let finish!: () => void;
-    const calls = installTauri({ exegol_start: () => new Promise<null>((r) => (finish = () => r(null))) });
+    const calls = installTauri({
+      exegol_start: () =>
+        new Promise<null>(
+          (r) =>
+            (finish = () => {
+              r(null);
+            }),
+        ),
+    });
     const a = startContainerAttackBox("ab-join");
     const b = startContainerAttackBox("ab-join");
     await flush();
@@ -164,7 +177,13 @@ describe("the attack VM's start", () => {
     let finish!: () => void;
     const calls = installTauri({
       attack_vm_status: () => box({ running: false }),
-      attack_vm_start: () => new Promise<null>((r) => (finish = () => r(null))),
+      attack_vm_start: () =>
+        new Promise<null>(
+          (r) =>
+            (finish = () => {
+              r(null);
+            }),
+        ),
     });
     const visit = () => renderHook(() => useAttackBox("ab-vm-twice", { running: true, local: true, kind: "vm" }));
     const first = visit();
@@ -192,9 +211,14 @@ describe("useAttackBoxAutoStart", () => {
   const op = (labId: string, o: ActiveOperation["op"]): [string, ActiveOperation] => [labId, { labId, op: o, machine: null, step: null }];
 
   function watch(calls: Call[], enabled = true) {
-    const hook = renderHook((p: { ops: Map<string, ActiveOperation> }) => useAttackBoxAutoStart(p.ops, enabled), {
-      initialProps: { ops: new Map([op("lab-a", "launch"), op("lab-b", "stop")]) },
-    });
+    const hook = renderHook(
+      (p: { ops: Map<string, ActiveOperation> }) => {
+        useAttackBoxAutoStart(p.ops, enabled);
+      },
+      {
+        initialProps: { ops: new Map([op("lab-a", "launch"), op("lab-b", "stop")]) },
+      },
+    );
     return { hook, calls };
   }
 

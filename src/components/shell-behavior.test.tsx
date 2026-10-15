@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { emit, listen } from "@tauri-apps/api/event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,25 +17,15 @@ import { SIGNED_OUT_EVENT } from "@/lib/deploy-store";
 import { readyReport } from "@/test/fixtures";
 import { commands, installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
+import { blockQuit, askLaunch, focusedPalette, openMainWindow } from "@/components/shell-test-kit";
+import { emitSettled, must, toastsShown } from "@/components/test-support";
+import { resetUpdater, updater } from "@/components/updater-double";
 
-// The updater plugin, as the banner sees it: `check()` answers what `pending` holds.
-const updater = vi.hoisted(() => ({
-  pending: null as null | { version: string; downloadAndInstall: () => Promise<void> },
-  fail: false,
-}));
-vi.mock("@tauri-apps/plugin-updater", () => ({
-  check: async () => {
-    if (updater.fail) throw new Error("offline");
-    return updater.pending;
-  },
-}));
+vi.mock("@tauri-apps/plugin-updater", () => import("@/components/updater-double"));
 
 const mockUserAgent = (ua: string) => vi.spyOn(navigator, "userAgent", "get").mockReturnValue(ua);
 
-beforeEach(() => {
-  updater.pending = null;
-  updater.fail = false;
-});
+beforeEach(resetUpdater);
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -45,10 +35,20 @@ afterEach(() => {
 const idleTauri = (overrides: Parameters<typeof installTauri>[0] = {}) => installTauri({ deploying_labs: () => [], ...overrides });
 
 describe("UpdateBanner", () => {
+  /** The banner, once its check answered, after the player clicked Update. */
+  const clickUpdate = async () => {
+    const user = userEvent.setup();
+    render(<UpdateBanner />);
+    await flush();
+    await user.click(screen.getByRole("button", { name: "Update" }));
+    await flush();
+    return user;
+  };
+
   it("waits for running deploys: installing would end them", async () => {
     let deploying = ["web-sqli"];
     idleTauri({ deploying_labs: () => deploying });
-    const downloadAndInstall = vi.fn(async () => {});
+    const downloadAndInstall = vi.fn(() => Promise.resolve());
     updater.pending = { version: "1.5.0", downloadAndInstall };
     render(<UpdateBanner />);
     await flush();
@@ -57,7 +57,7 @@ describe("UpdateBanner", () => {
     expect(button.hasAttribute("disabled")).toBe(true);
     // A deploy that starts after the last poll is still caught when Update is clicked.
     deploying = [];
-    await act(async () => window.dispatchEvent(new Event("focus")));
+    fireEvent(window, new Event("focus"));
     await flush();
     expect(button.hasAttribute("disabled")).toBe(false);
     deploying = ["web-sqli"];
@@ -80,7 +80,7 @@ describe("UpdateBanner", () => {
 
   it("offers the new version, installs it and relaunches", async () => {
     const calls = idleTauri({ restart_app: () => null });
-    const downloadAndInstall = vi.fn(async () => {});
+    const downloadAndInstall = vi.fn(() => Promise.resolve());
     updater.pending = { version: "1.5.0", downloadAndInstall };
     const user = userEvent.setup();
     render(<UpdateBanner />);
@@ -105,22 +105,17 @@ describe("UpdateBanner", () => {
     await user.click(screen.getByRole("button", { name: "Update" }));
     const busy = screen.getByRole("button", { name: "Updating…" });
     expect(busy.hasAttribute("disabled")).toBe(true);
-    await act(async () => finish());
+    finish();
+    await flush();
   });
 
   it("says when the update failed", async () => {
     idleTauri();
     updater.pending = {
       version: "1.5.0",
-      downloadAndInstall: async () => {
-        throw new Error("signature mismatch");
-      },
+      downloadAndInstall: () => Promise.reject(new Error("signature mismatch")),
     };
-    const user = userEvent.setup();
-    render(<UpdateBanner />);
-    await flush();
-    await user.click(screen.getByRole("button", { name: "Update" }));
-    await flush();
+    await clickUpdate();
     expect(screen.getByRole("status").textContent).toContain("Update failed");
     // Retry stays possible.
     expect(screen.getByRole("button", { name: "Update" })).toBeTruthy();
@@ -135,13 +130,9 @@ describe("UpdateBanner", () => {
         throw new Error("relaunch denied");
       },
     });
-    updater.pending = { version: "1.5.0", downloadAndInstall: async () => {} };
+    updater.pending = { version: "1.5.0", downloadAndInstall: () => Promise.resolve() };
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const user = userEvent.setup();
-    render(<UpdateBanner />);
-    await flush();
-    await user.click(screen.getByRole("button", { name: "Update" }));
-    await flush();
+    const user = await clickUpdate();
     expect(screen.getByRole("status").textContent).toContain("Update installed");
     expect(screen.getByRole("status").textContent).not.toContain("failed");
     await user.click(screen.getByRole("button", { name: "Restart now" }));
@@ -156,8 +147,7 @@ describe("QuitGuard", () => {
     render(<QuitGuard />);
     await flush();
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    await act(() => emit("quit-blocked", 3));
-    await flush();
+    await emitSettled("quit-blocked", 3);
     expect(screen.getByRole("alertdialog").textContent).toContain("3 labs are being worked on");
     // Focus moves into the dialog.
     expect(screen.getByRole("alertdialog").contains(document.activeElement)).toBe(true);
@@ -165,20 +155,14 @@ describe("QuitGuard", () => {
 
   it("reads a payload that isn't a count as one lab", async () => {
     installTauri();
-    render(<QuitGuard />);
-    await flush();
-    await act(() => emit("quit-blocked", null));
-    await flush();
+    await blockQuit(null);
     expect(screen.getByRole("alertdialog").textContent).toContain("A lab is being worked on");
   });
 
   it("keeps waiting: the dialog closes and nothing quits", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
-    render(<QuitGuard />);
-    await flush();
-    await act(() => emit("quit-blocked", 1));
-    await flush();
+    await blockQuit();
     await user.click(screen.getByRole("button", { name: "Keep waiting" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(commands(calls)).not.toContain("force_quit");
@@ -197,10 +181,7 @@ describe("QuitGuard", () => {
       },
     });
     const user = userEvent.setup();
-    render(<QuitGuard />);
-    await flush();
-    await act(() => emit("quit-blocked", 1));
-    await flush();
+    await blockQuit();
     await user.click(screen.getByRole("button", { name: label }));
     await flush();
     expect(calls).toBe(1);
@@ -210,10 +191,7 @@ describe("QuitGuard", () => {
   it("keeps Tab inside the dialog", async () => {
     installTauri();
     const user = userEvent.setup();
-    render(<QuitGuard />);
-    await flush();
-    await act(() => emit("quit-blocked", 1));
-    await flush();
+    await blockQuit();
     const buttons = within(screen.getByRole("alertdialog")).getAllByRole("button");
     // jsdom lays nothing out: every button reads as visible for the trap.
     buttons.forEach((b) => Object.defineProperty(b, "offsetParent", { get: () => document.body }));
@@ -337,12 +315,6 @@ describe("AppShell", () => {
     localStorage.setItem("cyberctf.onboarded", "1");
   });
 
-  const shell = async () => {
-    render(<AppShell />);
-    await screen.findByRole("navigation");
-    await flush(50);
-  };
-
   it("shows the onboarding on first launch", async () => {
     localStorage.removeItem("cyberctf.onboarded");
     installTauri();
@@ -354,19 +326,18 @@ describe("AppShell", () => {
   it("opens the palette with Ctrl+K, and closes it with Escape", async () => {
     installTauri();
     const user = userEvent.setup();
-    await shell();
+    await openMainWindow();
     expect(screen.queryByRole("dialog")).toBeNull();
     await user.keyboard("{Control>}k{/Control}");
-    const dialog = screen.getByRole("dialog");
     // The search field takes focus on the next animation frame: Escape is read inside the palette.
-    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    await focusedPalette();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("jumps to the lab search with /", async () => {
     installTauri();
-    await shell();
+    await openMainWindow();
     fireEvent.keyDown(window, { key: "/" });
     await flush(50);
     expect(document.querySelector("[data-lab-search]")).not.toBeNull();
@@ -374,7 +345,7 @@ describe("AppShell", () => {
 
   it("opens Settings with Ctrl+, on Windows and Linux", async () => {
     const calls = installTauri({ open_settings: () => null });
-    await shell();
+    await openMainWindow();
     fireEvent.keyDown(window, { key: ",", ctrlKey: true });
     await flush();
     expect(commands(calls)).toContain("open_settings");
@@ -383,7 +354,7 @@ describe("AppShell", () => {
   it("leaves Cmd+, to the macOS menu", async () => {
     mockUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)");
     const calls = installTauri({ open_settings: () => null });
-    await shell();
+    await openMainWindow();
     fireEvent.keyDown(window, { key: ",", metaKey: true });
     await flush();
     expect(commands(calls)).not.toContain("open_settings");
@@ -395,9 +366,8 @@ describe("AppShell", () => {
         throw new Error("window busy");
       },
     });
-    vi.spyOn(document, "hasFocus").mockReturnValue(true);
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    await shell();
+    toastsShown();
+    await openMainWindow();
     fireEvent.keyDown(window, { key: ",", ctrlKey: true });
     await flush();
     expect(document.body.textContent).toContain("window busy");
@@ -405,7 +375,7 @@ describe("AppShell", () => {
 
   it("switches screens when Settings asks, and ignores unknown ones", async () => {
     const calls = installTauri();
-    await shell();
+    await openMainWindow();
     await act(() => emit(NAVIGATE_EVENT, "server"));
     await flush(50);
     expect(commands(calls)).toContain("server_list");
@@ -416,7 +386,7 @@ describe("AppShell", () => {
 
   it("shows the onboarding again when Settings asks", async () => {
     installTauri();
-    await shell();
+    await openMainWindow();
     await act(() => emit(REPLAY_ONBOARDING_EVENT, null));
     await flush(50);
     expect(screen.queryByRole("navigation")).toBeNull();
@@ -446,10 +416,7 @@ describe("LaunchConfirm", () => {
   ])("%s answers the agent once, then closes", async (label, approve) => {
     const calls = installTauri({ confirm_launch: () => null });
     const user = userEvent.setup();
-    render(<LaunchConfirm />);
-    await flush();
-    await act(() => emit("launch-confirm", request));
-    await flush();
+    await askLaunch(request);
     const dialog = screen.getByRole("alertdialog");
     expect(dialog.textContent).toContain("AWS sandbox");
     expect(dialog.textContent).toContain("cyber-courses/lab-s3");
@@ -468,8 +435,7 @@ describe("LaunchConfirm", () => {
         throw new Error("agent gone");
       },
     });
-    vi.spyOn(document, "hasFocus").mockReturnValue(true);
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+    toastsShown();
     const user = userEvent.setup();
     render(
       <>
@@ -478,8 +444,7 @@ describe("LaunchConfirm", () => {
       </>,
     );
     await flush();
-    await act(() => emit("launch-confirm", request));
-    await flush();
+    await emitSettled("launch-confirm", request);
     await user.click(screen.getByRole("button", { name: "Decline" }));
     await flush();
     expect(document.body.textContent).toContain("agent gone");
@@ -495,7 +460,9 @@ describe("useAuthSession", () => {
       },
     });
     const { result } = renderHook(() => useAuthSession());
-    act(() => result.current.init());
+    act(() => {
+      result.current.init();
+    });
     await flush();
     expect(result.current.auth).toEqual({ loggedIn: false, name: null, email: null });
   });
@@ -504,7 +471,9 @@ describe("useAuthSession", () => {
     let status = { loggedIn: true, name: "Ada" as string | null, email: "ada@example.com" as string | null };
     const calls = installTauri({ auth_status: () => status });
     const { result } = renderHook(() => useAuthSession());
-    act(() => result.current.init());
+    act(() => {
+      result.current.init();
+    });
     await flush();
     expect(result.current.auth?.loggedIn).toBe(true);
     status = { loggedIn: false, name: null, email: null };
@@ -529,13 +498,19 @@ describe("useAuthSession", () => {
     const heard = vi.fn();
     await listen(AUTH_CHANGED_EVENT, heard);
     const { result } = renderHook(() => useAuthSession());
-    act(() => result.current.init());
+    act(() => {
+      result.current.init();
+    });
     await flush();
     fail = true;
-    act(() => result.current.reread());
+    act(() => {
+      result.current.reread();
+    });
     await flush();
     expect(result.current.auth?.name).toBe("Ada");
-    act(() => result.current.changed({ loggedIn: false, name: null, email: null }));
+    act(() => {
+      result.current.changed({ loggedIn: false, name: null, email: null });
+    });
     await flush();
     expect(result.current.auth?.loggedIn).toBe(false);
     expect(heard).toHaveBeenCalled();
@@ -543,21 +518,20 @@ describe("useAuthSession", () => {
 });
 
 describe("AppShell palette", () => {
+  const paletteField = () => must(screen.getByRole("dialog").querySelector("input"), "the palette's search field");
+
   it("runs a screen or an action from the palette", async () => {
-    localStorage.setItem("cyberctf.onboarded", "1");
     const calls = installTauri({ open_settings: () => null });
     const user = userEvent.setup();
-    render(<AppShell />);
-    await screen.findByRole("navigation");
-    await flush(80);
+    await openMainWindow(80);
     await user.click(screen.getByRole("button", { name: /find/i }));
-    await user.type(screen.getByRole("dialog").querySelector("input")!, "Cloud");
+    await user.type(paletteField(), "Cloud");
     await user.keyboard("{Enter}");
     await flush(50);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { current: "page" }).textContent).toContain("Cloud");
     await user.keyboard("{Control>}k{/Control}");
-    await user.type(screen.getByRole("dialog").querySelector("input")!, "settings");
+    await user.type(paletteField(), "settings");
     await user.keyboard("{Enter}");
     await flush();
     expect(commands(calls)).toContain("open_settings");

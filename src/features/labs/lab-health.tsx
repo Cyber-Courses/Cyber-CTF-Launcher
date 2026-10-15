@@ -26,8 +26,12 @@ export function useLabCheck(labId: string, { running, downCount, enabled }: { ru
     let alive = true;
     let finished = false;
     labCheck(labId, "DOCKER")
-      .then((c) => alive && setCheck(c))
-      .catch((e) => alive && setCheck({ available: true, ok: false, output: describeError(e), results: [] }))
+      .then((c) => {
+        if (alive) setCheck(c);
+      })
+      .catch((e: unknown) => {
+        if (alive) setCheck({ available: true, ok: false, output: describeError(e), results: [] });
+      })
       .finally(() => {
         finished = true;
       });
@@ -38,7 +42,12 @@ export function useLabCheck(labId: string, { running, downCount, enabled }: { ru
       if (!finished) done.current = false;
     };
   }, [labId, running, downCount, enabled]);
-  return [check, () => setCheck(null)] as const;
+  return [
+    check,
+    () => {
+      setCheck(null);
+    },
+  ] as const;
 }
 
 /** A container went down: say so, show the check, offer a clean restart. */
@@ -64,32 +73,7 @@ export function HealthBanner({
       <AlertTriangle className="size-4 shrink-0 text-warning" />
       <div className="min-w-0 flex-1 text-[0.8125rem]">
         <p className="text-foreground">{t("labs.health.down", { count: down.length, names: down.join(", ") })}</p>
-        {check === "checking" && (
-          <p className="mt-0.5 flex items-center gap-1.5 text-[0.75rem] text-muted-foreground">
-            <Spinner className="size-3" /> {t("labs.health.checking")}
-          </p>
-        )}
-        {check && check !== "checking" && check.available && (
-          <>
-            <p className="mt-0.5 flex items-center gap-1.5 text-[0.75rem] text-muted-foreground">
-              {check.ok ? <ShieldCheck className="size-3.5 text-success" /> : <ShieldAlert className="size-3.5 text-destructive" />}
-              {check.ok ? t("labs.health.solvable") : t("labs.health.unsolvable")}
-            </p>
-            {!check.ok && check.results.some((r) => !r.ok) && (
-              <ul className="mt-1 space-y-0.5 font-mono text-[0.6875rem] text-faint">
-                {check.results
-                  .filter((r) => !r.ok)
-                  .slice(0, 5)
-                  .map((r) => (
-                    <li key={`${r.from}/${r.name}`} className="truncate">
-                      {r.name}
-                      {r.reason ? `: ${r.reason}` : ""}
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </>
-        )}
+        <CheckNote check={check} />
       </div>
       {onResume && (
         <Button variant="outline" size="sm" onClick={onResume} disabled={busy || resetting} title={t("labs.health.startThemHint")}>
@@ -108,5 +92,36 @@ export function HealthBanner({
         )}
       </Button>
     </div>
+  );
+}
+
+/** What the solvability check says under the banner: running, or its answer with what fails. */
+function CheckNote({ check }: { check: CheckState }) {
+  const t = useT();
+  if (check === "checking")
+    return (
+      <p className="mt-0.5 flex items-center gap-1.5 text-[0.75rem] text-muted-foreground">
+        <Spinner className="size-3" /> {t("labs.health.checking")}
+      </p>
+    );
+  if (!check?.available) return null;
+  const failing = check.results.filter((r) => !r.ok);
+  return (
+    <>
+      <p className="mt-0.5 flex items-center gap-1.5 text-[0.75rem] text-muted-foreground">
+        {check.ok ? <ShieldCheck className="size-3.5 text-success" /> : <ShieldAlert className="size-3.5 text-destructive" />}
+        {check.ok ? t("labs.health.solvable") : t("labs.health.unsolvable")}
+      </p>
+      {!check.ok && failing.length > 0 && (
+        <ul className="mt-1 space-y-0.5 font-mono text-[0.6875rem] text-faint">
+          {failing.slice(0, 5).map((r) => (
+            <li key={`${r.from}/${r.name}`} className="truncate">
+              {r.name}
+              {r.reason ? `: ${r.reason}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }

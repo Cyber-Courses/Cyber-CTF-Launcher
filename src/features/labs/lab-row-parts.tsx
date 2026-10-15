@@ -1,25 +1,16 @@
 "use client";
 
-import { type ButtonHTMLAttributes } from "react";
-import { ExternalLink, LogIn, Wrench } from "lucide-react";
 import { difficultyLabel, type Lab } from "@/features/labs/use-labs";
 import { runtimeLabel } from "@/features/labs/lab-runtime";
 import type { RowPhase } from "@/features/labs/lab-row-state";
 import { RunPlaceIcons } from "@/features/labs/run-place-icons";
-import { machineOpenSetup, serverOpenSetup, type LabStatus } from "@/lib/tauri";
-import { Button } from "@/components/ui/button";
+import type { LabStatus } from "@/lib/tauri";
 import { LevelBadge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/ui/status-pill";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { openExternal, tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
-// The cells of a lab's list row (see LabRow): its dot, title, columns, action and the stop dialog.
-
-/** A row action: compact, drawn above the title's stretched click area (see LabRow). */
-function RowButton({ danger = false, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean }) {
-  return <Button size="xs" variant={danger ? "destructive" : "outline"} {...props} />;
-}
+// The cells of a lab's list row (see LabRow): its dot, title and columns (its action and the
+// stop dialog are in lab-row-actions).
 
 /** The status dot: busy or starting (pulsing), running, a failed start, solved (jewel) or idle,
  *  and its word. */
@@ -137,92 +128,5 @@ export function RowColumns({
         )}
       </span>
     </>
-  );
-}
-
-/** The row action: Open and Stop while it runs, Resume when parked, setup or sign-in when needed. */
-export function RowAction({
-  status,
-  running,
-  parked,
-  busy,
-  doing,
-  setup,
-  connectCloud,
-  loggedIn,
-  onLogin,
-  onStop,
-  onResume,
-}: {
-  status?: LabStatus;
-  running: boolean;
-  parked: LabStatus["parked"] | false;
-  busy: boolean;
-  /** The operation in flight, as a word, while busy. */
-  doing: string | null;
-  setup: string | null;
-  connectCloud: boolean;
-  loggedIn: boolean;
-  onLogin?: () => Promise<void>;
-  /** Asks to confirm the stop. */
-  onStop: () => void;
-  onResume?: () => void;
-}) {
-  const t = useT();
-  if (running)
-    return (
-      <>
-        {status?.url && (
-          <RowButton onClick={() => openExternal(status.url!)}>
-            <ExternalLink className="size-3" /> {t("labs.row.openButton")}
-          </RowButton>
-        )}
-        <RowButton danger onClick={onStop} disabled={busy}>
-          {doing ?? t("labs.row.stop")}
-        </RowButton>
-      </>
-    );
-  if (parked)
-    return (
-      <>
-        <span className="hidden font-mono text-[0.6875rem] text-faint @min-[30rem]:inline">
-          {parked === "pause" ? t("labs.row.paused") : t("labs.row.shutDown")}
-        </span>
-        {onResume && (
-          <RowButton onClick={onResume} disabled={busy} title={t("labs.row.resumeHint")}>
-            {doing ?? t("labs.row.resume")}
-          </RowButton>
-        )}
-      </>
-    );
-  if (setup && connectCloud)
-    return (
-      <RowButton onClick={() => serverOpenSetup(null, "cloud").catch(tell(t("labs.row.connectFailed")))} title={t("labs.row.connectHint", { setup })}>
-        <Wrench className="size-3" /> {t("labs.row.connect")}
-      </RowButton>
-    );
-  if (setup)
-    return (
-      <RowButton onClick={() => machineOpenSetup().catch(tell(t("labs.row.setupFailed")))} title={t("labs.row.setupHint", { setup })}>
-        <Wrench className="size-3" /> {t("labs.row.setUp")}
-      </RowButton>
-    );
-  if (!loggedIn && onLogin)
-    return (
-      <RowButton onClick={() => void onLogin().catch(tell(t("labs.row.signInFailed")))} title={t("labs.row.signInHint")}>
-        <LogIn className="size-3" /> {t("labs.row.signIn")}
-      </RowButton>
-    );
-  return null;
-}
-
-/** Stop deletes the lab's machines: asked first, as the lab's own page does. */
-export function StopDialog({ lab, status, onCancel, onConfirm }: { lab: Lab; status?: LabStatus; onCancel: () => void; onConfirm: () => void }) {
-  const t = useT();
-  return (
-    <ConfirmDialog title={t("labs.row.removeTitle", { title: lab.title })} confirmLabel={t("labs.row.remove")} onCancel={onCancel} onConfirm={onConfirm}>
-      {t(lab.runtime?.runtime === "CLOUD" ? "labs.row.removeBodyCloud" : "labs.row.removeBody")}
-      {!status?.host && status?.place !== "local_vm" && t("labs.row.removeKeep")}
-    </ConfirmDialog>
   );
 }

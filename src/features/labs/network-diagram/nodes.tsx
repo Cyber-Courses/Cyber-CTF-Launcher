@@ -129,7 +129,7 @@ function ServiceChip({ row, ip }: { row: ServiceRow; ip: string }) {
           type="source"
           position={Position.Right}
           className="topology-handle publish-handle"
-          style={{ top: `${((i + 1) * 100) / (published.length + 1)}%` }}
+          style={{ top: `${String(((i + 1) * 100) / (published.length + 1))}%` }}
         />
       ))}
       <div className="service-icon">
@@ -146,7 +146,7 @@ function ServiceChip({ row, ip }: { row: ServiceRow; ip: string }) {
           row.ports.map((p, i) => {
             const bind = p.target || p.published;
             return (
-              <CopyText key={i} text={`${ip}:${bind}`}>
+              <CopyText key={i} text={`${ip}:${String(bind)}`}>
                 <span className="door">
                   <DoorOpen size={12} />
                   <span className="mono">:{bind}</span>

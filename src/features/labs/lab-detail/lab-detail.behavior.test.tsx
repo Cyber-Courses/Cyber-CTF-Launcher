@@ -1,15 +1,18 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
-import type { Lab } from "@/features/labs/use-labs";
-import type { LabMachine, LabStatus } from "@/lib/tauri";
+import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
+import type { LabStatus } from "@/lib/tauri";
 import { commands, installTauri, type Handler } from "@/test/tauri";
+import { containerMachine, rejectWith, startIn, upStatus } from "@/features/labs/labs-test-kit";
+import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
 import { flush } from "@/test/ui";
 
 // Behavior of the lab page's actions: what each button calls, with what, and what it shows.
 
+const dockerRuntime: LabRuntimeInfo = { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws", "virtualbox"] };
 const dockerLab: Lab = {
   id: "lab-invoice",
   slug: "invoice-portal-api",
@@ -18,7 +21,7 @@ const dockerLab: Lab = {
   question: null,
   difficulty: 1,
   category: "Web",
-  runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws", "virtualbox"] },
+  runtime: dockerRuntime,
   skills: [],
 };
 const vmLab: Lab = {
@@ -29,33 +32,8 @@ const vmLab: Lab = {
   runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi"] },
 };
 
-const machine = (name: string, state = "running", p: Partial<LabMachine> = {}): LabMachine => ({
-  name,
-  state,
-  image: "node:20",
-  ip: "10.42.0.3",
-  ports: [],
-  interfaces: [{ network: "default", ip: "10.42.0.3" }],
-  services: [],
-  infra: false,
-  ...p,
-});
-const status = (p: Partial<LabStatus> = {}): LabStatus => ({
-  running: true,
-  parked: null,
-  machines: [machine("api")],
-  networks: [{ name: "default", subnet: "10.42.0.0/24", internal: false }],
-  url: "http://127.0.0.1:8080",
-  host: null,
-  expiresAt: null,
-  place: "container",
-  provider: "docker",
-  attacker: null,
-  outputs: [],
-  message: null,
-  reapError: null,
-  ...p,
-});
+const machine = containerMachine;
+const status = (p: Partial<LabStatus> = {}) => upStatus([machine("api")], p);
 const stopped = status({ running: false, machines: [], url: null, place: null, provider: null });
 const vmRunning = status({ machines: [machine("DC01", "running", { image: "" })], place: "local_vm", provider: "virtualbox", url: null });
 
@@ -66,21 +44,30 @@ const quiet: Record<string, Handler> = {
   server_list: () => ({ default: null, hosts: [] }),
 };
 
+// One saved server, an ESXi host, set as the default.
+const defaultEsx: Record<string, Handler> = {
+  server_list: () => ({ default: "esx", hosts: [{ id: "esx", name: "esx-lab", provider: "vmware_esxi", host: "10.0.0.2" }] }),
+};
+
+/** The page of `dockerLab` with nothing ready for a VM here, `props` over it: its handlers,
+ *  the asynchronous ones settling at once as the screen's do. */
 function renderDetail(props: Partial<Parameters<typeof LabDetail>[0]> = {}) {
-  const h = {
-    onBack: vi.fn(),
-    onStart: vi.fn(),
-    onStop: vi.fn(async () => {}),
-    onPark: vi.fn(async () => {}),
-    onResume: vi.fn(async () => {}),
-    onProvision: vi.fn(async () => {}),
-    onLogin: vi.fn(async () => {}),
-  };
-  render(<LabDetail lab={dockerLab} busy={false} logs={[]} times={[]} loggedIn hostArch="x86_64" readyVms={[]} dockerRunning {...h} {...props} />);
+  const settled = () => vi.fn(() => Promise.resolve());
+  const h = { onBack: vi.fn(), onStart: vi.fn(), onStop: settled(), onPark: settled(), onResume: settled(), onProvision: settled(), onLogin: settled() };
+  renderLabPage(dockerLab, { readyVms: [], ...h, ...props });
   return h;
 }
 
 describe("LabDetail: starting", () => {
+  /** The page of a stopped lab, `props` over it, once Start lab was clicked. */
+  const clickStart = async (props: Partial<Parameters<typeof LabDetail>[0]> = {}) => {
+    const user = userEvent.setup();
+    const h = renderDetail({ status: stopped, ...props });
+    await flush();
+    await user.click(screen.getByRole("button", { name: /Start lab/ }));
+    return { user, h };
+  };
+
   it("starts a Docker lab here at once when there is nowhere else to run it", async () => {
     installTauri(quiet);
     const user = userEvent.setup();
@@ -95,10 +82,7 @@ describe("LabDetail: starting", () => {
 
   it("asks where to run a container lab and starts it in a VM here", async () => {
     installTauri(quiet);
-    const user = userEvent.setup();
-    const h = renderDetail({ status: stopped, readyVms: ["virtualbox"] });
-    await flush();
-    await user.click(screen.getByRole("button", { name: /Start lab/ }));
+    const { user, h } = await clickStart({ readyVms: ["virtualbox"] });
     const dialog = screen.getByRole("dialog");
     // The port choice shows only for this machine's containers.
     expect(within(dialog).getByText("Ports on this machine")).toBeTruthy();
@@ -111,15 +95,11 @@ describe("LabDetail: starting", () => {
 
   it("passes the ports picked in the dialog for containers here, and Cancel starts nothing", async () => {
     installTauri(quiet);
-    const user = userEvent.setup();
-    const h = renderDetail({ status: stopped, readyVms: ["virtualbox"] });
-    await flush();
-    await user.click(screen.getByRole("button", { name: /Start lab/ }));
+    const { user, h } = await clickStart({ readyVms: ["virtualbox"] });
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     await user.click(screen.getByRole("button", { name: /Start lab/ }));
-    await user.click(within(screen.getByRole("dialog")).getByText("The lab's default ports"));
-    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Start$/ }));
+    await startIn(user, "The lab's default ports");
     expect(h.onStart).toHaveBeenCalledTimes(1);
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local", ports: "default" });
   });
@@ -127,12 +107,9 @@ describe("LabDetail: starting", () => {
   it("defaults a VM lab with no hypervisor here to the default server", async () => {
     installTauri({
       ...quiet,
-      server_list: () => ({ default: "esx", hosts: [{ id: "esx", name: "esx-lab", provider: "vmware_esxi", host: "10.0.0.2" }] }),
+      ...defaultEsx,
     });
-    const user = userEvent.setup();
-    const h = renderDetail({ lab: vmLab, status: stopped, readyVms: [] });
-    await flush();
-    await user.click(screen.getByRole("button", { name: /Start lab/ }));
+    const { user, h } = await clickStart({ lab: vmLab, readyVms: [] });
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).queryByText("Ports on this machine")).toBeNull();
     expect(within(dialog).getByText("On your system, in a VM")).toBeTruthy();
@@ -143,12 +120,9 @@ describe("LabDetail: starting", () => {
   it("keeps a VM lab here when a local hypervisor can run it, even with a default server", async () => {
     installTauri({
       ...quiet,
-      server_list: () => ({ default: "esx", hosts: [{ id: "esx", name: "esx-lab", provider: "vmware_esxi", host: "10.0.0.2" }] }),
+      ...defaultEsx,
     });
-    const user = userEvent.setup();
-    const h = renderDetail({ lab: vmLab, status: stopped, readyVms: ["virtualbox"] });
-    await flush();
-    await user.click(screen.getByRole("button", { name: /Start lab/ }));
+    const { user, h } = await clickStart({ lab: vmLab, readyVms: ["virtualbox"] });
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Start$/ }));
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local" });
   });
@@ -169,16 +143,12 @@ describe("LabDetail: starting", () => {
       api_query: (a) => {
         const q = String(a?.operation);
         if (q.includes("launchHosted")) return { requestLabLaunch: LAUNCHED };
-        if (q.includes("stopSession")) throw "backend down";
+        if (q.includes("stopSession")) rejectWith("backend down");
         return {};
       },
     });
-    const user = userEvent.setup();
-    const h = renderDetail({ lab: { ...dockerLab, runtime: { ...dockerLab.runtime!, hosted: true } }, status: stopped });
-    await flush();
-    await user.click(screen.getByRole("button", { name: /Start lab/ }));
-    await user.click(within(screen.getByRole("dialog")).getByText("Hosted by Cyber CTF"));
-    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Start$/ }));
+    const { user, h } = await clickStart({ lab: { ...dockerLab, runtime: { ...dockerRuntime, hosted: true } } });
+    await startIn(user, "Hosted by Cyber CTF");
     await flush();
     expect(h.onStart).not.toHaveBeenCalled();
     expect(calls.find((c) => String(c.args?.operation).includes("launchHosted"))?.args?.variables).toEqual({ labId: "lab-invoice" });
@@ -212,7 +182,7 @@ describe("LabDetail: starting", () => {
       api_query: (a) => (String(a?.operation).includes("activeSession") ? { myActiveLabSession: LAUNCHED } : {}),
     });
     const user = userEvent.setup();
-    renderDetail({ lab: { ...dockerLab, runtime: { ...dockerLab.runtime!, hosted: true } }, status: stopped });
+    renderDetail({ lab: { ...dockerLab, runtime: { ...dockerRuntime, hosted: true } }, status: stopped });
     await flush();
     expect(screen.getByText("Running, hosted by Cyber CTF")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /^\s*Stop$/ }));
@@ -250,7 +220,7 @@ describe("LabDetail: starting", () => {
 
   it("says containers run emulated on another CPU", async () => {
     installTauri(quiet);
-    renderDetail({ lab: { ...dockerLab, runtime: { ...dockerLab.runtime!, architectures: ["x86_64"] } }, status: stopped, hostArch: "arm64" });
+    renderDetail({ lab: { ...dockerLab, runtime: { ...dockerRuntime, architectures: ["x86_64"] } }, status: stopped, hostArch: "arm64" });
     await flush();
     expect(screen.getByText("Emulated on your CPU (slower than native).")).toBeTruthy();
   });
@@ -327,9 +297,7 @@ describe("LabDetail: a lab that is up", () => {
   it("opens the attack VM's shell for a local VM lab and shows why it failed", async () => {
     const calls = installTauri({
       ...quiet,
-      terminal_window: () => {
-        throw "no attack VM";
-      },
+      terminal_window: () => rejectWith("no attack VM"),
     });
     const user = userEvent.setup();
     renderDetail({ lab: vmLab, status: vmRunning });
@@ -358,10 +326,15 @@ describe("LabDetail: a lab that is up", () => {
     installTauri({ ...quiet, lab_check: () => ({ available: true, ok: false, output: "", results: [] }) });
     const user = userEvent.setup();
     const order: string[] = [];
-    const onStart = vi.fn(async () => void order.push("start"));
+    /** A handler that notes `what` ran, then settles. */
+    const noting = (what: string) => () => {
+      order.push(what);
+      return Promise.resolve();
+    };
+    const onStart = vi.fn(noting("start"));
     renderDetail({
       status: status({ machines: [machine("api"), machine("db", "exited")] }),
-      onStop: vi.fn(async () => void order.push("stop")),
+      onStop: vi.fn(noting("stop")),
       onStart,
     });
     await flush();

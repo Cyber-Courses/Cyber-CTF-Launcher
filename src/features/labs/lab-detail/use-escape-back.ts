@@ -13,6 +13,8 @@ export function useEscapeBack(onBack: () => void) {
       onBack();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
   }, [onBack]);
 }

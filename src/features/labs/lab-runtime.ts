@@ -52,7 +52,7 @@ export function localProviders(rt: LabRuntimeInfo, hostArch?: string): Provider[
  *  picking e.g. "parallels" on a VirtualBox machine fails at once with "prlctl was not found".
  *  With no machine report yet (`ready` undefined), the Settings preference, then the first one. */
 export function pickLocalHypervisor(local: Provider[], ready: Provider[] | undefined, preferred: Provider | null): Provider | null {
-  if (ready === undefined) return (preferred && local.includes(preferred) ? preferred : local[0]) ?? null;
+  if (ready === undefined) return (preferred && local.includes(preferred) ? preferred : local.at(0)) ?? null;
   return ready.find((p) => local.includes(p)) ?? null;
 }
 
@@ -111,4 +111,4 @@ export const cloudNames = (providers: readonly string[]): string[] => providers.
 
 /** The player's accounts a cloud lab can run on: of a cloud it lists. */
 export const cloudAccountsFor = (rt: LabRuntimeInfo | null | undefined, hosts: ServerHost[]) =>
-  isCloudLab(rt) ? hosts.filter((h) => CLOUDS.has(h.provider) && hostSupports(rt!, h)) : [];
+  rt && isCloudLab(rt) ? hosts.filter((h) => CLOUDS.has(h.provider) && hostSupports(rt, h)) : [];

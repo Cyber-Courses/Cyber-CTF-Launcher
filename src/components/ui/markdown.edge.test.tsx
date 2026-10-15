@@ -20,7 +20,7 @@ describe("Markdown: block edges", () => {
     // regex there instead), and accept up to six hashes as headings.
     for (const content of ["#### Deeper", "#hashtag", "#"]) {
       const { container, unmount } = render(<Markdown content={content} />);
-      expect(container.textContent?.length, content).toBeGreaterThan(0);
+      expect(container.textContent.length, content).toBeGreaterThan(0);
       unmount();
     }
   });

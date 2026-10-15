@@ -34,7 +34,9 @@ export function paletteCommands(
       icon: n.icon,
       keywords: title(n.id),
       group: t("shell.palette.groups.screens"),
-      run: () => navigate(n.id),
+      run: () => {
+        navigate(n.id);
+      },
     })),
     ...labs.map((l) => ({
       id: `lab-${l.slug}`,
@@ -43,7 +45,9 @@ export function paletteCommands(
       icon: FlaskConical,
       keywords: t("shell.palette.labKeywords", { category: l.category }),
       group: t("shell.palette.groups.labs"),
-      run: () => navigate("labs", l.slug),
+      run: () => {
+        navigate("labs", l.slug);
+      },
     })),
   ];
 }

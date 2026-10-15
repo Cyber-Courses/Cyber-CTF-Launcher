@@ -2,8 +2,12 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const installDevMock = vi.fn();
-vi.mock("@/lib/dev-mock", () => ({ installDevMock: () => installDevMock() }));
+const installDevMock = vi.fn<() => void>();
+vi.mock("@/lib/dev-mock", () => ({
+  installDevMock: () => {
+    installDevMock();
+  },
+}));
 
 /** A fresh copy of the gate: it decides on NODE_ENV, and installs the mock once, per module. */
 async function gate() {

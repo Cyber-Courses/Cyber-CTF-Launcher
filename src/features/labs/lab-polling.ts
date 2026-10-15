@@ -21,9 +21,9 @@ export const LAB_POLL_MS = 6000;
  */
 export function hotLabs<L extends { id: string }>(
   labs: L[],
-  { scanRunning, statuses, busy, watched }: { scanRunning: Set<string>; statuses: Record<string, LabStatus>; busy: Set<string>; watched: Set<string> },
+  { scanRunning, statuses, busy, watched }: { scanRunning: Set<string>; statuses: Partial<Record<string, LabStatus>>; busy: Set<string>; watched: Set<string> },
 ): L[] {
-  return labs.filter((l) => scanRunning.has(l.id) || busy.has(l.id) || watched.has(l.id) || !!statuses[l.id]?.running);
+  return labs.filter((l) => scanRunning.has(l.id) || busy.has(l.id) || watched.has(l.id) || (statuses[l.id]?.running ?? false));
 }
 
 // Every screen's catalogue (they can differ for a moment around a sign-in change), and the lab
@@ -97,7 +97,9 @@ export function useLabPolling(labs: Lab[] | null) {
   useEffect(() => {
     const off = labPoll.subscribe(() => {});
     window.addEventListener("focus", readAll);
-    const offVisibility = onVisibilityChange((visible) => visible && readAll());
+    const offVisibility = onVisibilityChange((visible) => {
+      if (visible) readAll();
+    });
     return () => {
       off();
       window.removeEventListener("focus", readAll);

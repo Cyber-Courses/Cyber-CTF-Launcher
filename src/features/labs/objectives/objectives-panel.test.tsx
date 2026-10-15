@@ -4,8 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab } from "@/features/labs/use-labs";
-import type { LabStatus } from "@/lib/tauri";
 import { installTauri, type Call, type Handler } from "@/test/tauri";
+import { flush as flushUi } from "@/test/ui";
+import { labStatus, rejectWith } from "@/features/labs/labs-test-kit";
 
 const lab: Lab = {
   id: "lab-goat",
@@ -18,21 +19,7 @@ const lab: Lab = {
   runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws"] },
   skills: [],
 };
-const stopped: LabStatus = {
-  running: false,
-  parked: null,
-  machines: [],
-  networks: [],
-  url: null,
-  host: null,
-  expiresAt: null,
-  place: null,
-  provider: null,
-  attacker: null,
-  outputs: [],
-  message: null,
-  reapError: null,
-};
+const stopped = labStatus();
 
 const OBJECTIVES = [
   { key: "find-dashboard", title: "Find the dashboard", prompt: "Which port does the dashboard use?", optional: false, points: null, hintCount: 2, steps: [] },
@@ -57,7 +44,7 @@ const HINTS: Record<string, string[]> = {
 const ANSWERS: Record<string, string> = { "find-dashboard": "8443", "read-secret": "s3cr3t", "service-account": "dashboard", namespace: "prod", main: "42" };
 
 /** A small CyberBackend: objectives, the player's progress, and the two mutations. */
-function backend({ objectives = OBJECTIVES as unknown[], signedIn = true, solved = [] as string[] } = {}) {
+function backend({ objectives = OBJECTIVES, signedIn = true, solved = [] as string[] } = {}) {
   const progress = { solved: [...solved], stepsOpened: [] as string[], hints: [] as { key: string; index: number; text: string }[] };
   const required = () => (objectives.length ? (objectives as { key: string; optional: boolean }[]).filter((o) => !o.optional).map((o) => o.key) : ["main"]);
   const summary = () => {
@@ -92,10 +79,7 @@ function backend({ objectives = OBJECTIVES as unknown[], signedIn = true, solved
   return api;
 }
 
-const flush = () =>
-  act(async () => {
-    await new Promise((r) => setTimeout(r, 30));
-  });
+const flush = () => flushUi(30);
 
 function renderLab(api: Handler, props: Partial<Parameters<typeof LabDetail>[0]> = {}): Call[] {
   const calls = installTauri({ lab_status: () => stopped, deploying_labs: () => [], active_operations: () => [], api_query: api });
@@ -145,7 +129,15 @@ describe("Objectives panel", () => {
   it("a longer list opens on the first challenge not solved yet, also when progress comes after the challenges", async () => {
     const four = [...OBJECTIVES, { key: "extra", title: "Extra", prompt: "One more.", optional: true, points: null, hintCount: 0, steps: [] }];
     const api = backend({ objectives: four, solved: ["find-dashboard"] });
-    renderLab((a) => (a?.operation === "labProgress" ? new Promise((r) => setTimeout(() => r(api(a)), 10)) : api(a)));
+    renderLab((a) =>
+      a?.operation === "labProgress"
+        ? new Promise((r) =>
+            setTimeout(() => {
+              r(api(a));
+            }, 10),
+          )
+        : api(a),
+    );
     // The challenges render on their own first (one act would commit both answers together).
     await act(async () => {});
     expect(screen.getByRole("heading", { name: "Objectives" })).toBeTruthy();
@@ -280,7 +272,7 @@ describe("Objectives panel", () => {
   it("says why a submit failed", async () => {
     const api = backend();
     renderLab((a) => {
-      if (a?.operation === "submitObjective") throw "API unreachable: timed out";
+      if (a?.operation === "submitObjective") rejectWith("API unreachable: timed out");
       return api(a);
     });
     await flush();
@@ -293,7 +285,7 @@ describe("Objectives panel", () => {
   it("an older backend without objectives keeps the plain question", async () => {
     renderLab((a) => {
       const q = String(a?.operation);
-      if (q === "labObjectives" || q === "labProgress") throw 'Cannot query field "objectives" on type "Lab".';
+      if (q === "labObjectives" || q === "labProgress") rejectWith('Cannot query field "objectives" on type "Lab".');
       return {};
     });
     await flush();

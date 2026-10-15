@@ -16,31 +16,33 @@ import { type T } from "@/lib/i18n";
 // The places "Where should it run?" offers, by group: this machine, Cyber CTF, servers, clouds.
 
 type Status = { tone: Tone; label: string; title?: string };
-export type Option = { target: RunTarget; title: string; subtitle: string; ok: boolean; why?: string; logo: React.ReactNode; status?: Status };
+type Option = { target: RunTarget; title: string; subtitle: string; ok: boolean; why?: string; logo: React.ReactNode; status?: Status };
 export type OptionGroup = { id: string; label: string; options: Option[] };
+/** Each host's test result, by id; none yet while it runs. */
+type HostChecks = Partial<Record<string, ServerTest>>;
 
-/** Each host's connection test, run once when the picker opens (like "Test" on the Servers page). */
-export function useHostChecks(hosts: ServerHost[]) {
-  const [checks, setChecks] = useState<Record<string, ServerTest | "testing">>({});
+/** Each host's connection test, run once when the picker opens (like "Test" on the Servers page).
+ *  A host without an answer yet is being tested. The answers are kept with the host list they
+ *  were asked for, so a new list starts over without a reset of its own. */
+export function useHostChecks(hosts: ServerHost[]): HostChecks {
+  const [answers, setAnswers] = useState<{ ids: string; checks: HostChecks }>({ ids: "", checks: {} });
   const ids = hosts.map((h) => h.id).join(",");
   useEffect(() => {
     let live = true;
-    const list = ids ? ids.split(",") : [];
-    // Marks every host "testing" before the async checks settle (one batch, not a cascade).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setChecks(Object.fromEntries(list.map((id) => [id, "testing" as const])));
-    for (const id of list) {
-      void testHost(id).then((r) => live && setChecks((c) => ({ ...c, [id]: r })));
+    for (const id of ids ? ids.split(",") : []) {
+      void testHost(id).then((r) => {
+        if (live) setAnswers((a) => ({ ids, checks: { ...(a.ids === ids ? a.checks : {}), [id]: r } }));
+      });
     }
     return () => {
       live = false;
     };
   }, [ids]);
-  return checks;
+  return answers.ids === ids ? answers.checks : {};
 }
 
-function hostStatus(t: T, check: ServerTest | "testing" | undefined): Status {
-  if (!check || check === "testing") return { tone: "muted", label: t("labs.runOn.checking") };
+function hostStatus(t: T, check: ServerTest | undefined): Status {
+  if (!check) return { tone: "muted", label: t("labs.runOn.checking") };
   if (check.ok) return { tone: "ok", label: t("labs.runOn.online"), title: check.message };
   return {
     tone: check.reachable ? "warn" : "fail",
@@ -103,8 +105,8 @@ const hostedOption = (t: T): Option => ({
 });
 
 /** A saved server or cloud account; one the lab can't run on says why, without a status. */
-function hostOption(t: T, h: ServerHost, ok: boolean, check: ServerTest | "testing" | undefined): Option {
-  const kind = KIND[h.provider]?.label ?? h.provider;
+function hostOption(t: T, h: ServerHost, ok: boolean, check: ServerTest | undefined): Option {
+  const kind = KIND[h.provider].label;
   const cloud = CLOUDS.has(h.provider);
   return {
     target: { kind: "host", id: h.id },
@@ -132,7 +134,7 @@ export function runOnGroups(
   }: {
     hosts: ServerHost[];
     hostOk: (h: ServerHost) => boolean;
-    checks: Record<string, ServerTest | "testing">;
+    checks: HostChecks;
     localNote: string;
     dockerRunning: boolean | null;
     localVm: Provider | null;

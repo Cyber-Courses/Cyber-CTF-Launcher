@@ -8,8 +8,12 @@ export function useSavedServers() {
   const [servers, setServers] = useState<ServerHost[]>([]);
   useEffect(() => {
     serverList()
-      .then((l) => setServers(l.hosts))
-      .catch(() => setServers([]));
+      .then((l) => {
+        setServers(l.hosts);
+      })
+      .catch(() => {
+        setServers([]);
+      });
   }, []);
   return servers;
 }

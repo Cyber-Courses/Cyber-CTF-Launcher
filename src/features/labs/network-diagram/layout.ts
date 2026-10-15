@@ -1,5 +1,5 @@
 import { type Edge } from "@xyflow/react";
-import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
+import type { ElkNode } from "elkjs/lib/elk-api";
 import { elkEngine } from "@/features/labs/network-diagram/elk-engine";
 import { zoneMinWidth } from "@/features/labs/network-diagram/frame";
 import { LinkData, MIN_ZOOM, Pt } from "@/features/labs/network-diagram/model";
@@ -37,7 +37,10 @@ const isHostPort = (id: string) => id.startsWith("hp-") || id.startsWith("up-");
 function portLanes(topo: Topology) {
   const lanes = new Map<string, number>();
   topo.edges.filter((e) => e.sourceHandle?.startsWith("pub-")).forEach((e) => lanes.set(e.source, (lanes.get(e.source) ?? 0) + 1));
-  const laneRoom = (id: string) => (lanes.has(id) ? LANE_GAP + lanes.get(id)! * LANE_STEP : 0);
+  const laneRoom = (id: string) => {
+    const n = lanes.get(id) ?? 0;
+    return n > 0 ? LANE_GAP + n * LANE_STEP : 0;
+  };
   return { lanes, laneRoom };
 }
 
@@ -98,7 +101,7 @@ function elkGraph(topo: Topology, size: Size, laneRoom: (id: string) => number):
           // Room for the label beside the bridge, reserved here so ELK keeps the pivots and the
           // other segments clear of it; the contents stay centred in a widened segment.
           "elk.nodeSize.constraints": "MINIMUM_SIZE",
-          "elk.nodeSize.minimum": `(${zoneMinWidth(z.data, size(z.members[0]).w)}, 0)`,
+          "elk.nodeSize.minimum": `(${String(zoneMinWidth(z.data, size(z.members[0]).w))}, 0)`,
           "elk.contentAlignment": "H_CENTER V_TOP",
         },
         children: z.members.map((id) => leaf(id, size, laneRoom)),
@@ -126,7 +129,7 @@ function readLayout(out: ElkNode, laneRoom: (id: string) => number) {
   walk(out);
   const routes = new Map<string, Pt[]>();
   const collect = (n: ElkNode) => {
-    (n.edges as ElkExtendedEdge[] | undefined)?.forEach((e) => {
+    n.edges?.forEach((e) => {
       const s = e.sections?.[0];
       if (s) routes.set(e.id, [s.startPoint, ...(s.bendPoints ?? []), s.endPoint]);
     });
@@ -160,8 +163,11 @@ function placePortTabs(topo: Topology, boxes: Map<string, Box>, size: Size, hand
     // Untangled: the lowest service takes the innermost lane, turns first and gets the leftmost
     // tab; higher ones go further out and lower, so no two links cross. Links from the card's
     // bottom (a port no service shows) come first, straight down on the left.
-    const fromBottom = items.filter((i) => !i.start);
-    const fromServices = items.filter((i) => i.start).sort((a, b) => b.start!.y - a.start!.y);
+    const fromBottom = items.filter((i) => !i.start).map(({ e }) => ({ e, start: undefined, lane: -1 }));
+    const fromServices = items
+      .flatMap(({ e, start }) => (start ? [{ e, start }] : []))
+      .sort((a, b) => b.start.y - a.start.y)
+      .map((it, lane) => ({ ...it, lane }));
     [...fromBottom, ...fromServices].forEach((it, k, all) => {
       const { w, h } = size(it.e.target);
       placed.push({
@@ -170,7 +176,7 @@ function placePortTabs(topo: Topology, boxes: Map<string, Box>, size: Size, hand
         w,
         h,
         start: it.start,
-        lane: it.start ? fromServices.indexOf(it) : -1,
+        lane: it.lane,
         x: m.x + m.w / 2 - w / 2 + (k - (all.length - 1) / 2) * PORT_TAB_SLOT,
       });
     });

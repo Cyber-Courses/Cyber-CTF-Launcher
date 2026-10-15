@@ -62,7 +62,7 @@ function declaredType(kind: string): ServiceType {
 }
 
 /** The handle id of a published port, on the right edge of its service's box. */
-export const publishHandle = (published: number) => `pub-${published}`;
+export const publishHandle = (published: number) => `pub-${String(published)}`;
 
 /** The card's service rows. Declared services (compose labels) each get a row with their
  *  ports. Container ports none of them claims are left out: they are the image's own EXPOSE
@@ -70,7 +70,7 @@ export const publishHandle = (published: number) => `pub-${published}`;
  *  not lab services, and listing them as "other ports" only sends the player to doors that
  *  aren't open. With nothing declared, one row: the image, its look, every port. */
 export function serviceRows(m: Machine, ports: Port[], fallback: ServiceType): ServiceRow[] {
-  const declared = m.services ?? [];
+  const declared = m.services;
   if (declared.length === 0) return [{ title: m.image || serviceLabel(fallback), type: fallback, label: serviceLabel(fallback), ports }];
   const byTarget = (n: number) => ports.find((p) => (p.target || p.published) === n) ?? { published: 0, target: n };
   return declared.map((d) => ({ title: d.name, type: declaredType(d.kind), label: d.kind || serviceLabel("service"), ports: d.ports.map(byTarget) }));

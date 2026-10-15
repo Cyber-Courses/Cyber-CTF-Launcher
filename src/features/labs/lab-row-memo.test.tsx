@@ -3,9 +3,9 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LabRow } from "@/features/labs/lab-row";
-import type { Lab } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
 import { installTauri } from "@/test/tauri";
+import { invoiceRowLab } from "@/features/labs/labs-test-kit";
 
 // LabRow is memoized (a list passes every row the same handlers, which take the lab), and its
 // title is the stretched button that opens it. A poll that changes nothing about a row must not
@@ -22,17 +22,7 @@ vi.mock("@/features/labs/lab-row-parts", async (orig) => {
   };
 });
 
-const lab: Lab = {
-  id: "lab-invoice",
-  slug: "invoice-portal-api",
-  title: "Invoice portal API",
-  description: "A billing portal",
-  question: null,
-  difficulty: 2,
-  category: "Web",
-  runtime: { runtime: "DOCKER", architectures: ["x86_64"], providers: [] },
-  skills: [],
-};
+const lab = invoiceRowLab;
 const status = {
   running: true,
   parked: null,

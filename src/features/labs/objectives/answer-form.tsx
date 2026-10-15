@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type SubmitEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -19,7 +19,7 @@ function useAnswer(objectiveKey: string, submit: (key: string, answer: string) =
   const [checking, setChecking] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
 
-  async function onSubmit(e: FormEvent) {
+  async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     if (!answer.trim() || checking) return;
     setChecking(true);
@@ -75,13 +75,20 @@ export function AnswerForm({
     );
 
   return (
-    <form onSubmit={onSubmit} className="space-y-2">
+    <form
+      onSubmit={(e) => {
+        void onSubmit(e);
+      }}
+      className="space-y-2"
+    >
       <div className="flex gap-2">
         <Input
           fieldSize="sm"
           mono
           value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
+          onChange={(e) => {
+            setAnswer(e.target.value);
+          }}
           maxLength={MAX_ANSWER}
           placeholder={t("labs.objectives.answerPlaceholder")}
           aria-label={t("labs.objectives.answerFor", { title })}

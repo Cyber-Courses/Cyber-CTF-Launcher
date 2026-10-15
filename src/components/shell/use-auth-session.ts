@@ -24,7 +24,9 @@ const SIGNED_OUT: AuthStatus = { loggedIn: false, name: null, email: null };
 export function useAuthSession() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   // An answer equal to the session known keeps it as is: nothing reading it re-renders.
-  const keep = useCallback((s: AuthStatus) => setAuth((prev) => (structurallyEqual(prev, s) ? prev : s)), []);
+  const keep = useCallback((s: AuthStatus) => {
+    setAuth((prev) => (structurallyEqual(prev, s) ? prev : s));
+  }, []);
 
   /** Reads the session again; a failure keeps the last one known. */
   const reread = useCallback(() => void authStatus().then(keep).catch(ignore("read again on the next sign-out event or launch")), [keep]);
@@ -61,7 +63,9 @@ export function useAuthSession() {
     () =>
       void authStatus()
         .then(setAuth)
-        .catch(() => setAuth(SIGNED_OUT)),
+        .catch(() => {
+          setAuth(SIGNED_OUT);
+        }),
     [],
   );
 

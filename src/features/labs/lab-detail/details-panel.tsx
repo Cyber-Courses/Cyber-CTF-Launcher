@@ -59,11 +59,11 @@ export function DetailsPanel({
           </div>
           <div className="space-y-1.5">
             {binds.map((b) => (
-              <div key={`${b.machine}:${b.target}`} className="flex items-center justify-between gap-3">
+              <div key={`${b.machine}:${String(b.target)}`} className="flex items-center justify-between gap-3">
                 <span className="min-w-0 truncate font-mono text-[0.75rem] text-muted-foreground">
                   {b.machine} :{b.target}
                 </span>
-                <CopyValue text={`http://${bindHost(url)}:${b.published}`} label={`:${b.published}`} />
+                <CopyValue text={`http://${bindHost(url)}:${String(b.published)}`} label={`:${String(b.published)}`} />
               </div>
             ))}
           </div>
@@ -90,7 +90,15 @@ function SetupSection({ target, onTarget, busy, running, onRun, machines }: Setu
     <div className="space-y-2.5 border-t border-border p-4">
       <p className="section-label">{t("labs.detail.setup")}</p>
       <p className="text-[0.75rem] leading-relaxed text-muted-foreground">{t("labs.detail.setupDescription")}</p>
-      <Select fieldSize="sm" aria-label={t("labs.detail.provisionTarget")} value={target} onChange={(e) => onTarget(e.target.value)} disabled={busy}>
+      <Select
+        fieldSize="sm"
+        aria-label={t("labs.detail.provisionTarget")}
+        value={target}
+        onChange={(e) => {
+          onTarget(e.target.value);
+        }}
+        disabled={busy}
+      >
         <option value="">{t("labs.detail.allMachines")}</option>
         {machines.map((name) => (
           <option key={name} value={name}>

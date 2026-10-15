@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-import { act, render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab } from "@/features/labs/use-labs";
-import type { LabStatus } from "@/lib/tauri";
 import { installTauri } from "@/test/tauri";
+import { flush as flushUi } from "@/test/ui";
+import { labStatus } from "@/features/labs/labs-test-kit";
+import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
 import type { CommandError } from "@/lib/errors";
 import { setLocalePreference } from "@/lib/i18n";
 
@@ -21,35 +23,9 @@ const goat: Lab = {
   skills: [],
 };
 
-const status = (p: Partial<LabStatus>): LabStatus => ({
-  running: false,
-  parked: null,
-  machines: [],
-  networks: [],
-  url: null,
-  host: null,
-  expiresAt: null,
-  place: null,
-  provider: null,
-  attacker: null,
-  outputs: [],
-  message: null,
-  reapError: null,
-  ...p,
-});
-
-const flush = () =>
-  act(async () => {
-    await new Promise((r) => setTimeout(r, 30));
-  });
-
-function renderGoat(props: Partial<Parameters<typeof LabDetail>[0]> = {}) {
-  const handlers = { onBack: vi.fn(), onStart: vi.fn(), onStop: vi.fn(), onPark: vi.fn(), onResume: vi.fn(), onProvision: vi.fn(), onLogin: vi.fn() };
-  render(
-    <LabDetail lab={goat} busy={false} logs={[]} times={[]} loggedIn hostArch="x86_64" readyVms={["virtualbox"]} dockerRunning {...handlers} {...props} />,
-  );
-  return handlers;
-}
+const status = labStatus;
+const flush = () => flushUi(30);
+const renderGoat = (props: Partial<Parameters<typeof LabDetail>[0]> = {}) => renderLabPage(goat, props);
 
 const idle = { deploying_labs: () => [], active_operations: () => [] };
 
@@ -71,7 +47,7 @@ describe("LabDetail, a cloud lab", () => {
     expect(within(dialog).getByText("It lets in your public IP only.")).toBeTruthy();
     const start = within(dialog)
       .getAllByRole("button")
-      .filter((b) => /^start$/i.test(b.textContent?.trim() ?? ""));
+      .filter((b) => /^start$/i.test(b.textContent.trim()));
     await user.click(start[0]);
     expect(h.onStart).toHaveBeenCalledWith({ kind: "host", id: "aws1" });
   });

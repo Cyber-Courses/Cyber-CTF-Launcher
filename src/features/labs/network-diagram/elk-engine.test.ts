@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { READY } from "@/features/labs/network-diagram/elk-ready";
 import { LAYOUT_MS, MAIN_THREAD_KEY, READY_MS } from "@/features/labs/network-diagram/elk-engine";
+import { must } from "@/components/test-support";
 
 // The worker and fallback tests run no ELK: the worker is a stub speaking elk-api's message
 // protocol, and the main-thread ELK is a stand-in. Both answer with a canned layout that says
@@ -32,18 +33,24 @@ let posted = 0;
 type Listener = (e: { data?: unknown; message?: string }) => void;
 type Message = { id: number; cmd: string; graph?: Graph };
 
-/** A browser worker speaking elk-api's protocol: says it is ready after `readyAfter` ms (never
- *  when null), then answers each message on the next tick (unless `answers` is off), a layout
+/** A browser worker speaking elk-api's protocol: says it is ready after `readyAfter` ms, then
+ *  answers each message on the next tick (unless `answers` is off), a layout
  *  with a canned one (or an error with `layoutFails`). */
-function worker({ readyAfter = 0 as number | null, answers = true, fails = false, layoutFails = false } = {}) {
+function worker({ readyAfter = 0, answers = true, fails = false, layoutFails = false } = {}) {
   return class {
     private listeners: Record<string, Listener[]> = {};
     onmessage: Listener | null = null;
     terminated = false;
     constructor(url: URL) {
       created.push(String(url));
-      if (fails) setTimeout(() => this.emit("error", { message: "" }), 0);
-      else if (readyAfter !== null) setTimeout(() => this.emit("message", { data: READY }), readyAfter);
+      if (fails)
+        setTimeout(() => {
+          this.emit("error", { message: "" });
+        }, 0);
+      else
+        setTimeout(() => {
+          this.emit("message", { data: READY });
+        }, readyAfter);
     }
     postMessage(m: Message) {
       posted++;
@@ -53,11 +60,13 @@ function worker({ readyAfter = 0 as number | null, answers = true, fails = false
           ? { id: m.id, data: null }
           : layoutFails
             ? { id: m.id, error: { message: "no such node" } }
-            : { id: m.id, data: canned(m.graph!, "worker") };
+            : { id: m.id, data: canned(must(m.graph, "the graph to lay out"), "worker") };
       setTimeout(() => this.onmessage?.({ data: answer }), 0);
     }
     private emit(type: string, e: { data?: unknown; message?: string }) {
-      (this.listeners[type] ?? []).forEach((f) => f(e));
+      (this.listeners[type] ?? []).forEach((f) => {
+        f(e);
+      });
       if (type === "message") this.onmessage?.(e);
     }
     addEventListener(type: string, f: Listener) {
@@ -69,11 +78,9 @@ function worker({ readyAfter = 0 as number | null, answers = true, fails = false
   };
 }
 
-/** A worker the webview refuses to create. */
-class RefusedWorker {
-  constructor() {
-    throw new Error("SecurityError");
-  }
+/** A worker the webview refuses to create (`new` on it throws). */
+function RefusedWorker(): never {
+  throw new Error("SecurityError");
 }
 
 /** A fresh engine module (a new page in the same session), with `Worker` set as given. The
@@ -100,7 +107,8 @@ async function laysOut(elkEngine: () => Promise<Engine>, by: string | undefined,
   const out = (await elkEngine()).layout(graph());
   if (tick) await vi.advanceTimersByTimeAsync(10);
   const laid = await out;
-  expect(laid.children![1].y).toBeGreaterThan(laid.children![0].y!);
+  const [a, b] = must(laid.children, "the laid-out nodes");
+  expect(b.y).toBeGreaterThan(must(a.y, "A's position"));
   expect(laid.by).toBe(by);
 }
 
@@ -198,7 +206,7 @@ describe("elkEngine", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(((await out) as Laid).by).toBe("main thread");
     const sent = posted;
-    await laysOut(async () => engine, "main thread");
+    await laysOut(() => Promise.resolve(engine), "main thread");
     await laysOut(elkEngine, "main thread");
     expect(posted).toBe(sent);
     expect(warned()).toEqual(["network diagram: ELK runs in a web worker", expect.stringContaining("main thread (the layout worker stopped answering)")]);

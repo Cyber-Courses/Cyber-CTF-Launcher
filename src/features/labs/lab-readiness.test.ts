@@ -52,7 +52,7 @@ describe("setupNeeded", () => {
 
 describe("setupNeeded: container labs and missing facts", () => {
   const dockerLab = { runtime: { runtime: "DOCKER", providers: ["docker"] } } as unknown as Lab;
-  const docker = (p: Partial<SystemReport>) => ({ ...report([]), ...p }) as SystemReport;
+  const docker = (p: Partial<SystemReport>) => ({ ...report([]), ...p });
 
   it("says what the container engine needs, in order", () => {
     expect(setupNeeded(dockerLab, docker({ docker: { installed: false, version: null } }), [])).toBe("Needs a container engine");

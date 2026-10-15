@@ -11,7 +11,7 @@ export const ZONE_LABEL = { left: 14, top: -15, h: 34 };
 /** The label's width: the name in 9px caps (≈ 6.4px a character, plus the "no internet" tag),
  *  the detail (subnet) in 9.5px mono (≈ 5.8px), and its padding. */
 export function zoneLabelWidth(data: Topology["zones"][number]["data"]) {
-  return Math.max(String(data.label).length * 6.4 + (data.isolated ? 92 : 0), String(data.detail ?? "").length * 5.8) + 22;
+  return Math.max(data.label.length * 6.4 + (data.isolated ? 92 : 0), (data.detail ?? "").length * 5.8) + 22;
 }
 
 /** Room kept between the label and the bridge, and between the bridge and the frame's right edge. */
@@ -30,8 +30,10 @@ export function zoneMinWidth(data: Topology["zones"][number]["data"], bridgeW: n
  * from the bridges; and the bounds of the final shapes. `boxes` and `routes` are adjusted in place.
  */
 export function frameLayout(topo: Topology, boxes: Map<string, Box>, routes: Map<string, Pt[]>, laid: Bounds): { zones: Node[]; bounds: Bounds } {
-  const zones: Node[] = topo.zones.map((z) => {
-    const b = boxes.get(z.id)!;
+  // ELK lays out every zone; one it didn't place has nothing to frame.
+  const zones: Node[] = topo.zones.flatMap((z) => {
+    const b = boxes.get(z.id);
+    if (!b) return [];
     const br = boxes.get(z.members[0]);
     // ELK already sized the segment for its label (zoneMinWidth); this only guards a layout that
     // came out narrower, widening evenly so its contents stay centred.
@@ -66,7 +68,7 @@ export function frameLayout(topo: Topology, boxes: Map<string, Box>, routes: Map
     };
     return {
       id: z.id,
-      type: "zone",
+      type: "zone" as const,
       position: { x, y: top },
       style: { width: w, height: b.y + b.h - top },
       data: { ...z.data, labelLeft: ZONE_LABEL.left, portW: side("w"), portE: side("e") },

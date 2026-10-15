@@ -7,6 +7,7 @@ import { NetworkDiagram } from "@/features/labs/network-diagram";
 import { GREY, type Machine } from "@/features/labs/network-diagram/model";
 import type { LabNetwork } from "@/lib/tauri";
 import { flush } from "@/test/ui";
+import { must } from "@/components/test-support";
 
 // jsdom never measures anything, so React Flow never reports its nodes initialised: pretend it
 // did, so the layout pass (ELK, then the frame) runs as in the app.
@@ -42,8 +43,7 @@ class SizedObserver {
     this.report();
   }
   report() {
-    if (this.el)
-      this.cb([{ target: this.el, contentRect: { width: shellWidth, height: 400 } } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
+    if (this.el) this.cb([{ target: this.el, contentRect: { width: shellWidth, height: 400 } } as unknown as ResizeObserverEntry], this);
   }
   unobserve() {}
   disconnect() {
@@ -51,11 +51,14 @@ class SizedObserver {
   }
 }
 /** The window resized: every observed element now reports `width`. */
-const resizeTo = (width: number) =>
+const resizeTo = (width: number) => {
   act(() => {
     shellWidth = width;
-    observed.forEach((o) => o.report());
+    observed.forEach((o) => {
+      o.report();
+    });
   });
+};
 
 beforeEach(() => {
   initialised.value = true;
@@ -135,7 +138,7 @@ describe("NetworkDiagram", () => {
       />,
     );
     await settle();
-    const states = Array.from(document.querySelectorAll(".running")).map((n) => n.textContent?.trim());
+    const states = Array.from(document.querySelectorAll(".running")).map((n) => n.textContent.trim());
     expect(states).toEqual(["paused", "off", "stopped", "restarting", "running"]);
     // No address yet: says so instead of a blank.
     expect(screen.getByText(/resolving/i)).toBeTruthy();
@@ -213,7 +216,7 @@ describe("NetworkDiagram", () => {
     shellWidth = 300;
     render(<NetworkDiagram machines={["a", "b", "c", "d"].map((n, i) => machine(n, { ports: [{ published: 8000 + i, target: 80 }] }))} />);
     await settle();
-    const scroller = document.querySelector<HTMLElement>(".topology-scroll")!;
+    const scroller = must(document.querySelector<HTMLElement>(".topology-scroll"), "the diagram's scroller");
     act(() => {
       scroller.scrollLeft = 120;
       scroller.dispatchEvent(new Event("scroll"));
@@ -225,9 +228,9 @@ describe("NetworkDiagram", () => {
     shellWidth = 300;
     render(<NetworkDiagram machines={["a", "b", "c", "d"].map((n, i) => machine(n, { ports: [{ published: 8000 + i, target: 80 }] }))} />);
     await settle();
-    const shell = document.querySelector<HTMLElement>(".topology-shell")!;
-    const canvas = document.querySelector<HTMLElement>(".topology-canvas")!;
-    const scroller = document.querySelector<HTMLElement>(".topology-scroll")!;
+    const shell = must(document.querySelector<HTMLElement>(".topology-shell"), "the diagram's shell");
+    const canvas = must(document.querySelector<HTMLElement>(".topology-canvas"), "the diagram's canvas");
+    const scroller = must(document.querySelector<HTMLElement>(".topology-scroll"), "the diagram's scroller");
     // Narrow: the canvas grows past the shell, which scrolls, with a fade on the right.
     const narrow = parseFloat(canvas.style.width);
     expect(narrow).toBeGreaterThan(300);
@@ -242,7 +245,7 @@ describe("NetworkDiagram", () => {
     // offset to 0 without a scroll event; the fades must still follow.
     scroller.scrollLeft = 0;
     resizeTo(narrow + 600);
-    expect(canvas.style.width).toBe(`${narrow + 600}px`);
+    expect(canvas.style.width).toBe(`${String(narrow + 600)}px`);
     expect(shell.getAttribute("data-more-left")).toBeNull();
     expect(shell.getAttribute("data-more-right")).toBeNull();
 

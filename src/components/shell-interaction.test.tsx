@@ -1,23 +1,19 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { emit } from "@tauri-apps/api/event";
 import { FlaskConical, Search } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AppShell } from "@/components/app-shell";
 import { CommandPalette, type Command } from "@/components/command-palette";
 import { UpdateBanner } from "@/components/update-banner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { LaunchConfirm } from "@/features/app/launch-confirm";
 import { QuitGuard } from "@/features/app/quit-guard";
 import { commands, installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
+import { blockQuit, askLaunch, focusedPalette, openMainWindow } from "@/components/shell-test-kit";
+import { emitSettled, must } from "@/components/test-support";
+import { resetUpdater, updater } from "@/components/updater-double";
 
-// The updater plugin: `check()` answers what `updater.pending` holds.
-const updater = vi.hoisted(() => ({
-  pending: null as null | { version: string; downloadAndInstall: () => Promise<void> },
-}));
-vi.mock("@tauri-apps/plugin-updater", () => ({ check: async () => updater.pending }));
+vi.mock("@tauri-apps/plugin-updater", () => import("@/components/updater-double"));
 
 // The deep-link plugin: the link the app was opened with, and the handler for links opened later.
 const links = vi.hoisted(() => ({
@@ -25,12 +21,12 @@ const links = vi.hoisted(() => ({
   onOpen: null as null | ((urls: string[]) => void),
 }));
 vi.mock("@tauri-apps/plugin-deep-link", () => ({
-  getCurrent: async () => links.launch,
-  onOpenUrl: async (fn: (urls: string[]) => void) => {
+  getCurrent: () => Promise.resolve(links.launch),
+  onOpenUrl: (fn: (urls: string[]) => void) => {
     links.onOpen = fn;
-    return () => {
+    return Promise.resolve(() => {
       if (links.onOpen === fn) links.onOpen = null;
-    };
+    });
   },
 }));
 
@@ -41,7 +37,7 @@ const onLinux = () => vi.spyOn(navigator, "userAgent", "get").mockReturnValue("M
 // element: give every element a layout parent, as in the real webview.
 let offsetParent: PropertyDescriptor | undefined;
 beforeEach(() => {
-  updater.pending = null;
+  resetUpdater();
   links.launch = null;
   offsetParent = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetParent");
   Object.defineProperty(HTMLElement.prototype, "offsetParent", { configurable: true, get: () => document.body });
@@ -52,14 +48,11 @@ afterEach(() => {
 });
 
 /** The main window, past the onboarding, once its first reads have settled. */
-async function shell() {
-  localStorage.setItem("cyberctf.onboarded", "1");
-  render(<AppShell />);
-  await screen.findByRole("navigation");
-  await flush(60);
-}
+const shell = () => openMainWindow(60);
 
-const current = () => screen.getByRole("button", { current: "page" }).textContent ?? "";
+const current = () => screen.getByRole("button", { current: "page" }).textContent;
+/** The open palette's search field. */
+const field = () => must(screen.getByRole("dialog").querySelector("input"), "the palette's search field");
 const crumbs = () => document.querySelector("[data-tauri-drag-region].h-12")?.textContent ?? "";
 
 describe("deep links into the main window", () => {
@@ -79,7 +72,9 @@ describe("deep links into the main window", () => {
     await shell();
     await user.click(screen.getByRole("button", { name: /^cloud/i }));
     expect(current()).toContain("Cloud");
-    await act(async () => links.onOpen?.(["cyberctf://labs/sqli-blind-orders"]));
+    act(() => {
+      links.onOpen?.(["cyberctf://labs/sqli-blind-orders"]);
+    });
     await flush(80);
     expect(current()).toContain("Labs");
     expect(crumbs()).toContain("Blind orders");
@@ -88,7 +83,9 @@ describe("deep links into the main window", () => {
   it("ignores links that aren't lab links, and never starts anything", async () => {
     const calls = installTauri();
     await shell();
-    await act(async () => links.onOpen?.(["cyberctf://settings/x", "cyberctf://labs/Bad_Slug", "https://cyberctf.com/labs/goad-light"]));
+    act(() => {
+      links.onOpen?.(["cyberctf://settings/x", "cyberctf://labs/Bad_Slug", "https://cyberctf.com/labs/goad-light"]);
+    });
     await flush(50);
     expect(current()).toContain("Overview");
     // A web page can show a lab, never start one.
@@ -97,26 +94,43 @@ describe("deep links into the main window", () => {
 });
 
 describe("CommandPalette keyboard", () => {
-  const cmds = (run = vi.fn()): Command[] => [
-    { id: "find", label: "Find a lab", hint: "/", icon: Search, keywords: "labs search", group: "Actions", run: () => run("find") },
-    { id: "go-home", label: "Go to Overview", icon: Search, group: "Screens", run: () => run("home") },
-    { id: "go-cloud", label: "Go to Cloud", icon: Search, group: "Screens", run: () => run("cloud") },
-    { id: "lab-a", label: "Blind orders", hint: "Web", icon: FlaskConical, keywords: "lab web", group: "Labs", run: () => run("lab-a") },
-    { id: "lab-b", label: "GOAD Light", hint: "Active Directory", icon: FlaskConical, keywords: "lab ad", group: "Labs", run: () => run("lab-b") },
-  ];
+  /** The commands, each telling `run` its name when it runs. */
+  const cmds = (run = vi.fn<(name: string) => void>()): Command[] =>
+    [
+      { id: "find", label: "Find a lab", hint: "/", icon: Search, keywords: "labs search", group: "Actions", name: "find" },
+      { id: "go-home", label: "Go to Overview", icon: Search, group: "Screens", name: "home" },
+      { id: "go-cloud", label: "Go to Cloud", icon: Search, group: "Screens", name: "cloud" },
+      { id: "lab-a", label: "Blind orders", hint: "Web", icon: FlaskConical, keywords: "lab web", group: "Labs", name: "lab-a" },
+      { id: "lab-b", label: "GOAD Light", hint: "Active Directory", icon: FlaskConical, keywords: "lab ad", group: "Labs", name: "lab-b" },
+    ].map(({ name, ...c }) => ({
+      ...c,
+      run: () => {
+        run(name);
+      },
+    }));
   const active = () => document.querySelector("[data-active=true]")?.textContent ?? "";
-  const field = () => screen.getByRole("dialog").querySelector("input")!;
+  /** The palette open over `cmds`, with spies for what runs and for closing it. */
+  const open = () => {
+    const run = vi.fn<(name: string) => void>();
+    const onClose = vi.fn();
+    render(<CommandPalette open onClose={onClose} commands={cmds(run)} />);
+    return { run, onClose };
+  };
 
   it("focuses its search field and selects the first command on open", async () => {
     render(<CommandPalette open onClose={vi.fn()} commands={cmds()} />);
-    await waitFor(() => expect(document.activeElement).toBe(field()));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field());
+    });
     expect(active()).toContain("Find a lab");
   });
 
   it("wraps from the first command to the last with ArrowUp", async () => {
     const user = userEvent.setup();
     render(<CommandPalette open onClose={vi.fn()} commands={cmds()} />);
-    await waitFor(() => expect(document.activeElement).toBe(field()));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field());
+    });
     await user.keyboard("{ArrowUp}");
     expect(active()).toContain("GOAD Light");
     await user.keyboard("{ArrowDown}");
@@ -124,11 +138,11 @@ describe("CommandPalette keyboard", () => {
   });
 
   it("keeps the selection in range when typing narrows the list, so Enter runs the one left", async () => {
-    const run = vi.fn();
-    const onClose = vi.fn();
     const user = userEvent.setup();
-    render(<CommandPalette open onClose={onClose} commands={cmds(run)} />);
-    await waitFor(() => expect(document.activeElement).toBe(field()));
+    const { run, onClose } = open();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field());
+    });
     // Down to the last row, then a query only one command matches.
     for (let i = 0; i < 4; i++) await user.keyboard("{ArrowDown}");
     expect(active()).toContain("GOAD Light");
@@ -150,16 +164,14 @@ describe("CommandPalette keyboard", () => {
 
   it("titles each group once, above its first command", () => {
     render(<CommandPalette open onClose={vi.fn()} commands={cmds()} />);
-    const text = screen.getByRole("dialog").textContent ?? "";
+    const text = screen.getByRole("dialog").textContent;
     expect(text.match(/Screens/g)).toHaveLength(1);
     expect(text.match(/Labs/g)).toHaveLength(1);
   });
 
   it("does nothing on Enter when no command matches", async () => {
-    const run = vi.fn();
-    const onClose = vi.fn();
     const user = userEvent.setup();
-    render(<CommandPalette open onClose={onClose} commands={cmds(run)} />);
+    const { run, onClose } = open();
     await user.type(field(), "zzzz");
     await user.keyboard("{Enter}");
     expect(run).not.toHaveBeenCalled();
@@ -169,9 +181,10 @@ describe("CommandPalette keyboard", () => {
 
   it("keeps the focus in the search field: Tab doesn't leave the palette, and Enter runs the picked result", async () => {
     // A combobox over a listbox: the results are options picked with the arrows, never focused.
-    const run = vi.fn();
-    render(<CommandPalette open onClose={vi.fn()} commands={cmds(run)} />);
-    await waitFor(() => expect(document.activeElement).toBe(field()));
+    const { run } = open();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field());
+    });
     fireEvent.keyDown(field(), { key: "Tab" });
     expect(document.activeElement).toBe(field());
     fireEvent.keyDown(field(), { key: "Tab", shiftKey: true });
@@ -186,8 +199,7 @@ describe("CommandPalette keyboard", () => {
   // (command-palette.tsx onKey): `if (e.nativeEvent.isComposing || e.keyCode === 229) return;`
   // before the Enter branch.
   it("Enter confirming an IME composition in the search field runs a command", () => {
-    const run = vi.fn();
-    render(<CommandPalette open onClose={vi.fn()} commands={cmds(run)} />);
+    const { run } = open();
     fireEvent.keyDown(field(), { key: "Enter", isComposing: true, keyCode: 229 });
     expect(run).not.toHaveBeenCalled();
   });
@@ -200,8 +212,7 @@ describe("AppShell shortcuts", () => {
     const user = userEvent.setup();
     await shell();
     await user.keyboard("{Control>}k{/Control}");
-    const dialog = screen.getByRole("dialog");
-    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    await focusedPalette();
     await user.keyboard("cl");
     await user.keyboard("{Control>}k{/Control}");
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -213,11 +224,11 @@ describe("AppShell shortcuts", () => {
     const user = userEvent.setup();
     await shell();
     await user.keyboard("{Control>}k{/Control}");
-    await waitFor(() => expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true));
+    await focusedPalette();
     await user.keyboard("cloud");
     await user.keyboard("{Escape}");
     await user.keyboard("{Control>}k{/Control}");
-    expect(screen.getByRole("dialog").querySelector("input")!.value).toBe("");
+    expect(field().value).toBe("");
   });
 
   it("types / into the palette's field instead of jumping to the lab search", async () => {
@@ -225,8 +236,10 @@ describe("AppShell shortcuts", () => {
     const user = userEvent.setup();
     await shell();
     await user.click(screen.getByRole("button", { name: /find/i }));
-    const input = screen.getByRole("dialog").querySelector("input")!;
-    await waitFor(() => expect(document.activeElement).toBe(input));
+    const input = field();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(input);
+    });
     await user.keyboard("/");
     await flush(30);
     expect(input.value).toBe("/");
@@ -250,7 +263,7 @@ describe("AppShell shortcuts", () => {
     await shell();
     const find = screen.getByRole("button", { name: /find/i });
     await user.click(find);
-    await waitFor(() => expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true));
+    await focusedPalette();
     await user.keyboard("{Escape}");
     expect(document.activeElement).toBe(find);
   });
@@ -260,7 +273,7 @@ describe("AppShell shortcuts", () => {
     await shell();
     const unnamed = screen
       .getAllByRole("button")
-      .filter((b) => !(b.textContent ?? "").trim() && !b.getAttribute("aria-label") && !b.getAttribute("title") && !b.getAttribute("aria-labelledby"));
+      .filter((b) => !b.textContent.trim() && !b.getAttribute("aria-label") && !b.getAttribute("title") && !b.getAttribute("aria-labelledby"));
     expect(unnamed.map((b) => b.outerHTML.slice(0, 120))).toEqual([]);
   });
 
@@ -273,11 +286,10 @@ describe("AppShell shortcuts", () => {
   it("/ switches the screen behind the quit guard while the dialog has the focus", async () => {
     installTauri();
     await shell();
-    await act(() => emit("quit-blocked", 1));
-    await flush();
+    await emitSettled("quit-blocked", 1);
     const dialog = screen.getByRole("alertdialog");
     expect(dialog.contains(document.activeElement)).toBe(true);
-    fireEvent.keyDown(document.activeElement!, { key: "/" });
+    fireEvent.keyDown(must(document.activeElement, "the focused element"), { key: "/" });
     await flush(50);
     expect(current()).toContain("Overview");
     expect(dialog.contains(document.activeElement)).toBe(true);
@@ -287,8 +299,7 @@ describe("AppShell shortcuts", () => {
     onLinux();
     installTauri();
     await shell();
-    await act(() => emit("quit-blocked", 1));
-    await flush();
+    await emitSettled("quit-blocked", 1);
     const dialog = screen.getByRole("alertdialog");
     // A click on the page behind, or a dialog that didn't take the focus: it's on the body.
     (document.activeElement as HTMLElement | null)?.blur();
@@ -306,8 +317,7 @@ describe("AppShell shortcuts", () => {
     await shell();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(screen.getByRole("dialog")).toBeTruthy();
-    await act(() => emit("quit-blocked", 1));
-    await flush();
+    await emitSettled("quit-blocked", 1);
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("alertdialog")).toBeTruthy();
@@ -335,12 +345,8 @@ describe("AppShell shortcuts", () => {
 describe("QuitGuard", () => {
   it("shows the latest count when another quit is blocked while it is open", async () => {
     installTauri();
-    render(<QuitGuard />);
-    await flush();
-    await act(() => emit("quit-blocked", 1));
-    await flush();
-    await act(() => emit("quit-blocked", 2));
-    await flush();
+    await blockQuit();
+    await emitSettled("quit-blocked", 2);
     expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
     expect(screen.getByRole("alertdialog").textContent).toContain("2 labs are being worked on");
   });
@@ -357,8 +363,7 @@ describe("QuitGuard", () => {
     await flush();
     const behind = screen.getByRole("button", { name: "Behind" });
     behind.focus();
-    await act(() => emit("quit-blocked", 1));
-    await flush();
+    await emitSettled("quit-blocked", 1);
     expect(document.activeElement?.textContent).toBe("Keep waiting");
     await user.keyboard("{Enter}");
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -369,10 +374,7 @@ describe("QuitGuard", () => {
     let release: () => void = () => {};
     const calls = installTauri({ linger_quit: () => new Promise<void>((r) => (release = r)) });
     const user = userEvent.setup();
-    render(<QuitGuard />);
-    await flush();
-    await act(() => emit("quit-blocked", 1));
-    await flush();
+    await blockQuit();
     await user.click(screen.getByRole("button", { name: "Finish in background" }));
     await user.click(screen.getByRole("button", { name: "Finish in background" }));
     expect(screen.getByRole("button", { name: "Quit anyway" }).hasAttribute("disabled")).toBe(true);
@@ -387,10 +389,7 @@ describe("QuitGuard", () => {
   it("Escape doesn't dismiss the quit guard (keep waiting)", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
-    render(<QuitGuard />);
-    await flush();
-    await act(() => emit("quit-blocked", 1));
-    await flush();
+    await blockQuit();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(commands(calls)).not.toContain("force_quit");
@@ -403,10 +402,7 @@ describe("LaunchConfirm keyboard", () => {
   it("puts the focus on Decline first, so Enter after a misclick never starts billable resources", async () => {
     const calls = installTauri({ confirm_launch: () => null });
     const user = userEvent.setup();
-    render(<LaunchConfirm />);
-    await flush();
-    await act(() => emit("launch-confirm", request));
-    await flush();
+    await askLaunch(request);
     expect(document.activeElement?.textContent).toBe("Decline");
     await user.keyboard("{Enter}");
     await flush();
@@ -419,10 +415,7 @@ describe("LaunchConfirm keyboard", () => {
   it("Escape doesn't decline the cloud launch confirmation", async () => {
     const calls = installTauri({ confirm_launch: () => null });
     const user = userEvent.setup();
-    render(<LaunchConfirm />);
-    await flush();
-    await act(() => emit("launch-confirm", request));
-    await flush();
+    await askLaunch(request);
     await user.keyboard("{Escape}");
     await flush();
     expect(calls.filter((c) => c.cmd === "confirm_launch").map((c) => c.args)).toEqual([{ sessionId: "sess-1", approve: false }]);
@@ -469,9 +462,7 @@ describe("UpdateBanner retry", () => {
     let tries = 0;
     updater.pending = {
       version: "9.9.9",
-      downloadAndInstall: async () => {
-        if (++tries === 1) throw new Error("signature mismatch");
-      },
+      downloadAndInstall: () => (++tries === 1 ? Promise.reject(new Error("signature mismatch")) : Promise.resolve()),
     };
     // No lab deploying: an update waits for deploys to finish.
     const calls = installTauri({ restart_app: () => null, deploying_labs: () => [] });

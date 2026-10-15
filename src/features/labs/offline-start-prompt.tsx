@@ -20,8 +20,12 @@ export function OfflineStartPrompt() {
       key={asked.id}
       title={t("labs.offline.question", { title: asked.question })}
       confirmLabel={t("labs.offline.start")}
-      onConfirm={() => answer(true)}
-      onCancel={() => answer(false)}
+      onConfirm={() => {
+        answer(true);
+      }}
+      onCancel={() => {
+        answer(false);
+      }}
     >
       {t("labs.offline.body")}
     </ConfirmDialog>

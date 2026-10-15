@@ -7,6 +7,18 @@ import { cn } from "@/lib/utils";
 import { formatElapsed } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 
+type LogConsoleProps = {
+  lines: string[];
+  running?: boolean;
+  title?: string;
+  /** Fold to its header once the run succeeds (it stays open on failure). */
+  collapseOnDone?: boolean;
+  className?: string;
+};
+
+/** Whether the log ends on a failure: a last line starting with ✗. */
+const endsFailed = (lines: string[]) => lines.at(-1)?.trimStart().startsWith("✗") ?? false;
+
 /**
  * Auto-scrolling terminal for streamed command output: black body, and a header with a
  * title, a live elapsed timer, and a collapse toggle. The timer ticks while `running` and
@@ -14,20 +26,7 @@ import { useT } from "@/lib/i18n";
  * line starting with ✗). The timer restarts each time `running` turns on, so a parent can
  * keep it mounted across runs.
  */
-export function LogConsole({
-  lines,
-  running = false,
-  title: titleProp,
-  collapseOnDone = false,
-  className,
-}: {
-  lines: string[];
-  running?: boolean;
-  title?: string;
-  /** Fold to its header once the run succeeds (it stays open on failure). */
-  collapseOnDone?: boolean;
-  className?: string;
-}) {
+export function LogConsole({ lines, running = false, title: titleProp, collapseOnDone = false, className }: LogConsoleProps) {
   const t = useT();
   const title = titleProp ?? t("ui.log.output");
   const pre = useRef<HTMLPreElement>(null);
@@ -51,18 +50,20 @@ export function LogConsole({
     if (running) {
       setRun((r) => r + 1);
       setOpen(true);
-    } else if (collapseOnDone && !(lines.at(-1)?.trimStart().startsWith("✗") ?? false)) setOpen(false);
+    } else if (collapseOnDone && !endsFailed(lines)) setOpen(false);
   }
 
   if (lines.length === 0) return null;
 
-  const failed = !running && (lines.at(-1)?.trimStart().startsWith("✗") ?? false);
+  const failed = !running && endsFailed(lines);
 
   return (
     <div className={cn("surface-log overflow-hidden rounded-control", className)}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setOpen((o) => !o);
+        }}
         className="flex h-9 w-full items-center gap-2 border-b border-border px-3 text-left transition-colors hover:bg-accent"
       >
         {running ? (
@@ -108,7 +109,9 @@ function RunClock({ ticking, lines }: { ticking: boolean; lines: number }) {
       touch();
       setStartAt((s) => s ?? Date.now());
     }, 0);
-    return () => clearTimeout(first);
+    return () => {
+      clearTimeout(first);
+    };
   }, [active, lines, touch]);
   const elapsed = startAt === null ? 0 : Math.max(0, now - startAt);
   return <span className="ml-auto font-mono text-[0.6875rem] tabular-nums text-faint">{formatElapsed(elapsed)}</span>;

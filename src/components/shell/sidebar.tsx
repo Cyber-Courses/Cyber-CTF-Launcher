@@ -11,20 +11,7 @@ import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 import { NAV, type ActiveLab, type Tab } from "@/components/shell/shell-model";
 
-/** The main window's left column: brand, the find button, the screens, the labs running now,
- *  Settings and the account. */
-export function Sidebar({
-  tab,
-  isMac,
-  version,
-  labCount,
-  activeLabs,
-  auth,
-  onFind,
-  onNavigate,
-  onOpenSettings,
-  onAuthChange,
-}: {
+type SidebarProps = {
   tab: Tab;
   isMac: boolean;
   version: string | null;
@@ -35,31 +22,16 @@ export function Sidebar({
   onNavigate: (tab: Tab, slug?: string) => void;
   onOpenSettings: () => void;
   onAuthChange: (status: AuthStatus) => void;
-}) {
+};
+
+/** The main window's left column: brand, the find button, the screens, the labs running now,
+ *  Settings and the account. */
+export function Sidebar({ tab, isMac, version, labCount, activeLabs, auth, onFind, onNavigate, onOpenSettings, onAuthChange }: SidebarProps) {
   const t = useT();
   const title = (id: Tab) => t(`shell.tabs.${id}`);
   return (
     <aside className="flex w-[14.5rem] shrink-0 flex-col border-r border-border bg-card">
-      {/* macOS titlebar band (traffic lights) inside the column, so the divider runs to the top.
-          Linux and Windows keep their own title bar, so there it would only be a blank strip. */}
-      {isMac && <div data-tauri-drag-region className="h-10 shrink-0" />}
-      <div data-tauri-drag-region className={`flex items-center gap-2.5 px-3.5 pb-3 ${isMac ? "" : "pt-4"}`}>
-        <CtfMark className="pointer-events-none size-[1.35rem]" />
-        <span className="pointer-events-none text-[0.875rem] font-semibold tracking-tight">Cyber CTF</span>
-        {version && <span className="pointer-events-none ml-auto font-mono text-[0.625rem] text-faint">v{version}</span>}
-      </div>
-
-      <button
-        type="button"
-        onClick={onFind}
-        className="mx-2.5 mb-2.5 flex h-8 items-center justify-between rounded-sm bg-glass px-2.5 text-[0.75rem] text-faint shadow-[inset_0_0_0_1px_var(--border)] transition-colors hover:text-muted-foreground"
-      >
-        <span className="flex items-center gap-2">
-          <Search className="size-3.5" /> {t("shell.sidebar.find")}
-        </span>
-        <kbd className="kbd">{isMac ? "⌘K" : "Ctrl K"}</kbd>
-      </button>
-
+      <SidebarTop isMac={isMac} version={version} onFind={onFind} />
       <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5">
         {NAV.map((n) => (
           <div key={n.id}>
@@ -105,6 +77,34 @@ export function Sidebar({
   );
 }
 
+/** The column's top: the titlebar band, the brand with the version, and the find button. */
+function SidebarTop({ isMac, version, onFind }: { isMac: boolean; version: string | null; onFind: () => void }) {
+  const t = useT();
+  return (
+    <>
+      {/* macOS titlebar band (traffic lights) inside the column, so the divider runs to the top.
+          Linux and Windows keep their own title bar, so there it would only be a blank strip. */}
+      {isMac && <div data-tauri-drag-region className="h-10 shrink-0" />}
+      <div data-tauri-drag-region className={`flex items-center gap-2.5 px-3.5 pb-3 ${isMac ? "" : "pt-4"}`}>
+        <CtfMark className="pointer-events-none size-[1.35rem]" />
+        <span className="pointer-events-none text-[0.875rem] font-semibold tracking-tight">Cyber CTF</span>
+        {version && <span className="pointer-events-none ml-auto font-mono text-[0.625rem] text-faint">v{version}</span>}
+      </div>
+
+      <button
+        type="button"
+        onClick={onFind}
+        className="mx-2.5 mb-2.5 flex h-8 items-center justify-between rounded-sm bg-glass px-2.5 text-[0.75rem] text-faint shadow-[inset_0_0_0_1px_var(--border)] transition-colors hover:text-muted-foreground"
+      >
+        <span className="flex items-center gap-2">
+          <Search className="size-3.5" /> {t("shell.sidebar.find")}
+        </span>
+        <kbd className="kbd">{isMac ? "⌘K" : "Ctrl K"}</kbd>
+      </button>
+    </>
+  );
+}
+
 /** One sidebar entry: 2rem high, icon then label (and a note on the right); the current one sits
  *  on a glass fill. Memoized: the shell re-renders on every poll that changes anything. */
 const NavItem = memo(function NavItem({
@@ -129,7 +129,9 @@ const NavItem = memo(function NavItem({
   return (
     <button
       type="button"
-      onClick={() => onSelect(id)}
+      onClick={() => {
+        onSelect(id);
+      }}
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-8 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-[0.8125rem] transition-colors",
@@ -164,7 +166,9 @@ const ActiveLabItem = memo(function ActiveLabItem({ lab, onNavigate }: { lab: Ac
     <button
       type="button"
       // No slug (a lab the catalogue, unreachable, doesn't list): the Labs screen, which says why.
-      onClick={() => onNavigate("labs", lab.slug || undefined)}
+      onClick={() => {
+        onNavigate("labs", lab.slug || undefined);
+      }}
       className="flex w-full items-start gap-2.5 rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-glass"
     >
       <StatusDot tone={op ? "warn" : "ok"} pulse={!!op} className="mt-[0.4rem]" />

@@ -10,7 +10,12 @@ let installing: Promise<void> | undefined;
 /** Loads and installs the mock once per page (React's dev double effects call it twice). The
  *  branch is decided at build time: in production neither it nor the import exists. */
 const installMock =
-  process.env.NODE_ENV === "production" ? () => Promise.resolve() : () => (installing ??= import("@/lib/dev-mock").then((m) => m.installDevMock()));
+  process.env.NODE_ENV === "production"
+    ? () => Promise.resolve()
+    : () =>
+        (installing ??= import("@/lib/dev-mock").then((m) => {
+          m.installDevMock();
+        }));
 
 /** Renders its children; in development, only once the mock is installed (when `?mock` asks for
  *  it), so their first Tauri call already goes to it. In production it is a plain pass-through. */
@@ -20,8 +25,10 @@ export function DevMockGate({ children }: { children: ReactNode }) {
     if (process.env.NODE_ENV === "production") return;
     let live = true;
     installMock().then(
-      () => live && setReady(true),
-      (e) => {
+      () => {
+        if (live) setReady(true);
+      },
+      (e: unknown) => {
         console.error("dev mock failed to load", e);
         if (live) setReady(true);
       },

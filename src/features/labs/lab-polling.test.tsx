@@ -2,6 +2,9 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Lab } from "@/features/labs/use-labs";
+// The polling's constant and pure picker, from the module as first loaded (each test still runs
+// a fresh copy of its state through `fresh()`).
+import { hotLabs, LAB_POLL_MS } from "@/features/labs/lab-polling";
 import type { LabStatus } from "@/lib/tauri";
 
 // The machine as the mocked backend sees it: what the scan finds running here, and the labs
@@ -10,13 +13,13 @@ const world = { scan: [] as string[], remote: new Set<string>(), ops: [] as { la
 const statusReads: string[] = [];
 const status = (running: boolean) => ({ running, parked: null, machines: [], networks: [], url: null }) as unknown as LabStatus;
 vi.mock("@/lib/tauri", () => ({
-  labStatus: async (id: string) => {
+  labStatus: (id: string) => {
     statusReads.push(id);
-    return status(world.scan.includes(id) || world.remote.has(id));
+    return Promise.resolve(status(world.scan.includes(id) || world.remote.has(id)));
   },
-  runningLabs: async () => [...world.scan],
-  activeOperations: async () => world.ops,
-  deployingLabs: async () => [],
+  runningLabs: () => Promise.resolve([...world.scan]),
+  activeOperations: () => Promise.resolve(world.ops),
+  deployingLabs: () => Promise.resolve([]),
 }));
 
 const lab = (id: string) => ({ id, slug: id, title: id, runtime: { runtime: "DOCKER", architectures: [], providers: [] } }) as unknown as Lab;
@@ -39,6 +42,13 @@ async function fresh() {
 const advance = (ms = 0) => act(() => vi.advanceTimersByTimeAsync(ms));
 /** The labs read since the last call, sorted. */
 const taken = () => statusReads.splice(0).sort();
+/** The next poll reads `ids` once more (their final word); the one after, nothing. */
+async function lastReads(...ids: string[]) {
+  await advance(LAB_POLL_MS);
+  expect(taken()).toEqual(ids);
+  await advance(LAB_POLL_MS);
+  expect(taken()).toEqual([]);
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -53,8 +63,7 @@ afterEach(() => {
 });
 
 describe("hotLabs", () => {
-  it("picks the labs that can change on their own, and the open one", async () => {
-    const { hotLabs } = await fresh();
+  it("picks the labs that can change on their own, and the open one", () => {
     const picked = hotLabs([...labs, lab("e"), lab("f")], {
       scanRunning: new Set(["a"]),
       statuses: { b: status(true), c: status(false) },
@@ -67,10 +76,12 @@ describe("hotLabs", () => {
 
 describe("useLabPolling", () => {
   it("reads only the running, busy and open labs on each poll", async () => {
-    const { useLabPolling, useWatchLab, LAB_POLL_MS, getLabState, beginDeploy, endDeploy } = await fresh();
+    const { useLabPolling, useWatchLab, getLabState, beginDeploy, endDeploy } = await fresh();
     world.scan = ["a"];
     world.remote = new Set(["b"]);
-    const shell = renderHook(() => useLabPolling(labs));
+    const shell = renderHook(() => {
+      useLabPolling(labs);
+    });
     await advance();
     // The first scan finds `a`: read it. The rest were read on the catalogue's load (not here).
     expect(taken()).toEqual(["a"]);
@@ -87,7 +98,9 @@ describe("useLabPolling", () => {
     expect(taken()).toEqual(["a", "b"]);
 
     // A lab page open on `c`: read while it is, then once more after it closes.
-    const page = renderHook(() => useWatchLab("c"));
+    const page = renderHook(() => {
+      useWatchLab("c");
+    });
     await advance(LAB_POLL_MS);
     expect(taken()).toEqual(["a", "b", "c"]);
     page.unmount();
@@ -109,8 +122,10 @@ describe("useLabPolling", () => {
   });
 
   it("reads a lab as soon as the scan sees it start or stop", async () => {
-    const { useLabPolling, LAB_POLL_MS, getLabState } = await fresh();
-    const shell = renderHook(() => useLabPolling(labs));
+    const { useLabPolling, getLabState } = await fresh();
+    const shell = renderHook(() => {
+      useLabPolling(labs);
+    });
     await advance();
     expect(taken()).toEqual([]);
     // Started from the website: the scan sees it, and it is read right after the scan.
@@ -124,28 +139,33 @@ describe("useLabPolling", () => {
     await advance(LAB_POLL_MS);
     expect(taken()).toEqual(["c"]);
     expect(getLabState().statuses.c.running).toBe(false);
-    await advance(LAB_POLL_MS);
-    expect(taken()).toEqual(["c"]);
-    await advance(LAB_POLL_MS);
-    expect(taken()).toEqual([]);
+    await lastReads("c");
     shell.unmount();
   });
 
   it("is one poll for every screen, paused while the window is hidden", async () => {
-    const { useLabPolling, LAB_POLL_MS } = await fresh();
+    const { useLabPolling } = await fresh();
     world.scan = ["a"];
-    const home = renderHook(() => useLabPolling(labs));
-    const sidebar = renderHook(() => useLabPolling(labs));
+    const home = renderHook(() => {
+      useLabPolling(labs);
+    });
+    const sidebar = renderHook(() => {
+      useLabPolling(labs);
+    });
     await advance();
     taken();
     await advance(LAB_POLL_MS);
     // Two screens, one read.
     expect(taken()).toEqual(["a"]);
-    act(() => setHidden(true));
+    act(() => {
+      setHidden(true);
+    });
     await advance(LAB_POLL_MS * 5);
     expect(taken()).toEqual([]);
     // Back: every lab read at once (they may have changed meanwhile).
-    act(() => setHidden(false));
+    act(() => {
+      setHidden(false);
+    });
     await advance();
     expect(taken()).toEqual(["a", "b", "c", "d"]);
     home.unmount();
@@ -155,8 +175,10 @@ describe("useLabPolling", () => {
   });
 
   it("reads every lab on focus, at most once per poll interval", async () => {
-    const { useLabPolling, LAB_POLL_MS } = await fresh();
-    const shell = renderHook(() => useLabPolling(labs));
+    const { useLabPolling } = await fresh();
+    const shell = renderHook(() => {
+      useLabPolling(labs);
+    });
     await advance();
     act(() => {
       window.dispatchEvent(new Event("focus"));
@@ -179,27 +201,32 @@ describe("useLabPolling", () => {
   });
 
   it("counts a lab page open twice until both close", async () => {
-    const { useLabPolling, useWatchLab, LAB_POLL_MS } = await fresh();
-    const shell = renderHook(() => useLabPolling(labs));
-    const one = renderHook(() => useWatchLab("c"));
-    const two = renderHook(() => useWatchLab("c"));
+    const { useLabPolling, useWatchLab } = await fresh();
+    const shell = renderHook(() => {
+      useLabPolling(labs);
+    });
+    const one = renderHook(() => {
+      useWatchLab("c");
+    });
+    const two = renderHook(() => {
+      useWatchLab("c");
+    });
     await advance(LAB_POLL_MS);
     taken();
     one.unmount();
     await advance(LAB_POLL_MS);
     expect(taken()).toEqual(["c"]);
     two.unmount();
-    await advance(LAB_POLL_MS);
-    expect(taken()).toEqual(["c"]);
-    await advance(LAB_POLL_MS);
-    expect(taken()).toEqual([]);
+    await lastReads("c");
     shell.unmount();
   });
 
   it("starts without a catalogue, and keeps scanning", async () => {
     const { useLabPolling, getLabState } = await fresh();
     world.scan = ["a"];
-    const shell = renderHook(() => useLabPolling(null));
+    const shell = renderHook(() => {
+      useLabPolling(null);
+    });
     await advance();
     expect(taken()).toEqual([]);
     expect(getLabState().scanRunning.has("a")).toBe(true);

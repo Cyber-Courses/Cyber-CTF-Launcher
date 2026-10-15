@@ -36,7 +36,7 @@ export function setupNeeded(lab: Lab, report: SystemReport | null, servers: Serv
 /** What a cloud lab is missing: an account of its cloud, then Terraform. */
 function cloudSetupNeeded(lab: Lab, report: SystemReport, servers: ServerHost[]): string | null {
   if (cloudAccountsFor(lab.runtime, servers).length === 0)
-    return translate("labs.readiness.needsCloudAccount", { clouds: joinOr(cloudNames(lab.runtime!.providers)) });
+    return translate("labs.readiness.needsCloudAccount", { clouds: joinOr(cloudNames(lab.runtime?.providers ?? [])) });
   if (!report.terraform.installed) return translate("labs.readiness.needsTerraform");
   return null;
 }

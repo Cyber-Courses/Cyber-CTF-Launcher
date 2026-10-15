@@ -79,6 +79,30 @@ function labPhase({
   return interrupted ? "interrupted" : "notStarted";
 }
 
+/** What is in flight on a lab being deployed: the button this page clicked, else what the backend
+ *  reports (a reload loses the former), else a stop when a built lab is being worked on, a launch
+ *  if not. */
+function operationInFlight(i: LabStateInput, running: boolean): LabOperation {
+  const ours = i.busy ? i.runOp : undefined;
+  return i.acting ?? i.backendOp ?? ours ?? (i.busy && (running || i.status?.parked) ? "stop" : "launch");
+}
+
+/** Whether a lab that isn't up left something behind. Only machines that actually exist count: a
+ *  VM lab's status lists every declared machine, including ones Vagrant reports as `not_created`,
+ *  nothing to clean up (counting them showed "Stop & clean up" on a lab never started). Cloud
+ *  services have no machines to count, but the account still recorded (a start that failed or was
+ *  cut off) means services may be left behind there, billing. */
+function leftovers(status: LabStatus | undefined, isCloud: boolean): boolean {
+  if (isCloud) return !!status?.provider;
+  return (status?.machines ?? []).some((m) => m.state !== "not_created");
+}
+
+/** The engine or hypervisor the status says the lab runs on, by name. */
+function engineName(status: LabStatus | undefined): string | null {
+  if (!status?.provider) return null;
+  return status.provider === "docker" ? "Docker" : (PROVIDER_LABELS[status.provider] ?? status.provider);
+}
+
 export function deriveLabState(i: LabStateInput) {
   const { status, runtime: rt } = i;
   const machines = status?.machines ?? [];
@@ -94,22 +118,12 @@ export function deriveLabState(i: LabStateInput) {
   const starting = deploying && !running;
   // Parked by the launcher: its stopped machines are expected, and come back on Resume.
   const parked = !running && !deploying ? (status?.parked ?? null) : null;
-  // What is in flight on this lab: the button this page clicked, else what the backend reports
-  // (a reload loses the former), else a stop when a built lab is being worked on, a launch if not.
-  const operation: LabOperation | null = deploying
-    ? (i.acting ?? i.backendOp ?? (i.busy ? i.runOp : undefined) ?? (i.busy && (running || status?.parked) ? "stop" : "launch"))
-    : null;
+  const operation = deploying ? operationInFlight(i, running) : null;
   const tearingDown = operation === "stop" || operation === "shutdown" || operation === "pause";
   // Infrastructure exists but nothing is deploying and the lab isn't fully up: a run was cut off
   // (a crash or a restart mid-start). Offer to clean it up rather than a Start that would collide.
-  // Only machines that actually exist count as leftovers: a VM lab's status lists every declared
-  // machine, including ones Vagrant reports as `not_created`, and those are nothing to clean up
-  // (counting them showed "Stop & clean up" on a lab that was never started).
-  // Cloud services: no machines to count, but the account still recorded (a start that failed or
-  // was cut off) means services may be left behind there, billing.
   const isCloud = rt?.runtime === "CLOUD";
-  const leftovers = isCloud ? !!status?.provider : machines.some((m) => m.state !== "not_created");
-  const interrupted = !deploying && !running && !parked && leftovers;
+  const interrupted = !deploying && !running && !parked && leftovers(status, isCloud);
   // Machines that went down while the lab runs. Not while it's starting or stopping: machines
   // come up one after another then (a web server waits for its database), and that's normal.
   // The controller is powered off by design once the lab is built: never "down".
@@ -120,7 +134,7 @@ export function deriveLabState(i: LabStateInput) {
   const { canPause, canShutdown, canProvision } = labControls(i, { isDocker, isCloud, remote });
   // Where it actually runs: "on this machine" alone is misleading for a VM lab (which hypervisor
   // do I open?), so name the engine or hypervisor the status reports.
-  const engine = status?.provider ? (status.provider === "docker" ? "Docker" : (PROVIDER_LABELS[status.provider] ?? status.provider)) : null;
+  const engine = engineName(status);
 
   const phase = labPhase({ operation, running, starting, parked, interrupted, failed: !!i.startFailed && !deploying });
 
@@ -158,7 +172,7 @@ export function publishedBinds(machines: LabMachine[]) {
       .filter((p) => p.published > 0)
       .map((p) => ({ machine: m.name, target: p.target, published: p.published }))
       .filter((b) => {
-        const k = `${b.machine}:${b.target}:${b.published}`;
+        const k = `${b.machine}:${String(b.target)}:${String(b.published)}`;
         return !seen.has(k) && !!seen.add(k);
       }),
   );

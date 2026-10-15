@@ -95,8 +95,10 @@ export function SignInBanner({ onLogin }: { onLogin: () => Promise<void> }) {
 /** What a row of the list reads besides its lab. The handlers keep their identity across
  *  renders (the rows are memoized). */
 export type RowContext = {
-  statuses: Record<string, LabStatus>;
-  runs: Record<string, DeployRun>;
+  /** By lab id: none for a lab not asked yet. */
+  statuses: Partial<Record<string, LabStatus>>;
+  /** By lab id: none for a lab not run since the app started. */
+  runs: Partial<Record<string, DeployRun>>;
   completed: Set<string>;
   deploying: Set<string>;
   report: SystemReport | null | undefined;
@@ -114,11 +116,11 @@ export type RowContext = {
  *  machine is missing to run it. Values and the context's stable handlers only, so the memoized
  *  row skips a render that changes nothing for its lab. */
 export function catalogueRowProps(lab: Lab, c: RowContext): ComponentProps<typeof LabRow> {
-  const running = !!c.statuses[lab.id]?.running;
+  const running = c.statuses[lab.id]?.running ?? false;
   return {
     lab,
     status: c.statuses[lab.id],
-    busy: !!c.runs[lab.id]?.busy,
+    busy: c.runs[lab.id]?.busy ?? false,
     operation: c.runs[lab.id]?.op,
     loggedIn: c.loggedIn,
     onLogin: c.onLogin,
@@ -165,7 +167,7 @@ export function LabsCatalogue({ labs, filtered, running, rest, ctx }: { labs: La
       )}
       {rest.length > 0 && (
         <Panel>
-          {running.length > 0 && <PanelHeader title={t("labs.list.allLabs")} meta={`${rest.length}`} />}
+          {running.length > 0 && <PanelHeader title={t("labs.list.allLabs")} meta={String(rest.length)} />}
           <div>{rest.map(row)}</div>
         </Panel>
       )}

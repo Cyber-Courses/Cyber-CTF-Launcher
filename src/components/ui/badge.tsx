@@ -36,7 +36,7 @@ export function Badge({
 }
 
 /** Lab level: beginner (green), intermediate (amber), advanced (red). Darker in Light. */
-export function LevelBadge({ level, children }: { level: 1 | 2 | 3 | number; children: React.ReactNode }) {
+export function LevelBadge({ level, children }: { level: number; children: React.ReactNode }) {
   const tone = level === 1 ? "text-success" : level === 2 ? "text-warning" : "text-destructive";
   return (
     <span className={cn("inline-flex rounded-full px-2 py-0.5 font-mono text-[0.625rem] font-medium shadow-[inset_0_0_0_1px_var(--input)]", tone)}>

@@ -3,23 +3,7 @@
 import { useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-/**
- * One option in a pick-one list (rows inside a bordered box). `compact` is the dense form
- * used in popovers; a disabled row stays visible and says why through `subtitle`/`hint`.
- * Inside a RadioList the group is one Tab stop (the selected row); arrow keys move the choice.
- */
-export function RadioRow({
-  selected,
-  onSelect,
-  title,
-  subtitle,
-  disabled,
-  hint,
-  compact,
-  leading,
-  trailing,
-  children,
-}: {
+type RadioRowProps = {
   selected: boolean;
   onSelect: () => void;
   title: ReactNode;
@@ -33,8 +17,17 @@ export function RadioRow({
   /** Right-aligned extra (e.g. a status pill). */
   trailing?: ReactNode;
   children?: ReactNode;
-}) {
-  const pick = () => !disabled && onSelect();
+};
+
+/**
+ * One option in a pick-one list (rows inside a bordered box). `compact` is the dense form
+ * used in popovers; a disabled row stays visible and says why through `subtitle`/`hint`.
+ * Inside a RadioList the group is one Tab stop (the selected row); arrow keys move the choice.
+ */
+export function RadioRow({ selected, onSelect, title, subtitle, disabled, hint, compact, leading, trailing, children }: RadioRowProps) {
+  const pick = () => {
+    if (!disabled) onSelect();
+  };
   return (
     <div
       role="radio"

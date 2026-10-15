@@ -58,32 +58,37 @@ export function AttackBoxPanel({
         </KeyValue>
       )}
       <div className="space-y-3 border-t border-border p-4">
-        <p className="text-[0.75rem] leading-relaxed text-muted-foreground">
-          {remote
-            ? t("labs.attackBox.remoteHint")
-            : controller
-              ? t("labs.attackBox.controllerHint")
-              : vm
-                ? t("labs.attackBox.vmHint")
-                : t("labs.attackBox.containerHint")}
-        </p>
+        <p className="text-[0.75rem] leading-relaxed text-muted-foreground">{t(boxHint({ remote, controller, vm }))}</p>
         {onShell && shellReady && (
           <Button variant="primary" size="sm" className="w-full" onClick={onShell}>
             <Terminal className="size-3.5" /> {t("labs.attackBox.openShell")}
           </Button>
         )}
-        {!remote && !controller && status && !status.imagePresent && !status.running && (
-          <p className="flex items-start gap-2 text-[0.75rem] text-muted-foreground">
-            <StatusDot tone="warn" className="mt-1.5 shrink-0" />
-            <span>{t.rich("labs.attackBox.firstDownload", { name: (s) => <span className="font-mono text-foreground">{s}</span> }, { name })}</span>
-          </p>
-        )}
+        {!remote && !controller && status && !status.imagePresent && !status.running && <FirstDownload name={name} />}
         {running && !remote && !controller && <BoxControls box={box} />}
         {(busy || log.some((l) => l.startsWith("✗"))) && log.length > 0 && (
           <LogConsole lines={log} running={busy} title={vm ? t("labs.attackBox.attackVm") : t("labs.attackBox.attackBox")} />
         )}
       </div>
     </Panel>
+  );
+}
+
+/** What the box is for here: on the lab's server, the lab's own controller, a VM or a container. */
+function boxHint({ remote, controller, vm }: { remote: boolean; controller: boolean; vm: boolean }) {
+  if (remote) return "labs.attackBox.remoteHint";
+  if (controller) return "labs.attackBox.controllerHint";
+  return vm ? "labs.attackBox.vmHint" : "labs.attackBox.containerHint";
+}
+
+/** The box's image isn't here yet: its first start downloads it. */
+function FirstDownload({ name }: { name: string }) {
+  const t = useT();
+  return (
+    <p className="flex items-start gap-2 text-[0.75rem] text-muted-foreground">
+      <StatusDot tone="warn" className="mt-1.5 shrink-0" />
+      <span>{t.rich("labs.attackBox.firstDownload", { name: (s) => <span className="font-mono text-foreground">{s}</span> }, { name })}</span>
+    </p>
   );
 }
 
@@ -114,11 +119,27 @@ function BoxControls({ box }: { box: AttackBox }) {
   return (
     <div className="space-y-2">
       {status?.running ? (
-        <Button variant="outline" size="sm" className="w-full" onClick={() => box.stop()} disabled={busy}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => {
+            void box.stop();
+          }}
+          disabled={busy}
+        >
           <Square className="size-3.5" /> {busy ? t("labs.attackBox.working") : t("labs.attackBox.stop")}
         </Button>
       ) : (
-        <Button variant="outline" size="sm" className="w-full" onClick={() => box.start()} disabled={busy}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => {
+            void box.start();
+          }}
+          disabled={busy}
+        >
           {busy ? <Spinner className="size-3.5" /> : <Play className="size-3.5" />} {t("labs.attackBox.start")}
         </Button>
       )}

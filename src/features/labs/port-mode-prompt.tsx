@@ -32,7 +32,9 @@ function Dialog({ title }: { title: string }) {
   const [remember, setRemember] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   // Escape answers "no start".
-  useFocusTrap(ref, true, () => answer(null));
+  useFocusTrap(ref, true, () => {
+    answer(null);
+  });
 
   const start = () => {
     if (remember) setPortMode(mode);
@@ -42,7 +44,9 @@ function Dialog({ title }: { title: string }) {
   return (
     <div
       className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-[var(--scrim)] p-4 backdrop-blur-[2px]"
-      onMouseDown={(e) => e.target === e.currentTarget && answer(null)}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) answer(null);
+      }}
     >
       <div
         ref={ref}
@@ -52,17 +56,7 @@ function Dialog({ title }: { title: string }) {
         aria-labelledby="ports-title"
         className="surface-glass w-full max-w-[30rem] rounded-[1rem] p-5 outline-none"
       >
-        <div className="flex items-start gap-3">
-          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-control bg-jewel/10 text-jewel-text shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--jewel)_30%,transparent)]">
-            <Plug className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <p id="ports-title" className="text-[0.9375rem] font-medium text-foreground">
-              {t("labs.ports.question", { title })}
-            </p>
-            <p className="mt-1 text-[0.8125rem] leading-relaxed text-muted-foreground">{t("labs.ports.where")}</p>
-          </div>
-        </div>
+        <DialogHeading title={title} />
 
         <PortChoice value={mode} onChange={setMode} className="mt-4" />
 
@@ -74,13 +68,37 @@ function Dialog({ title }: { title: string }) {
         </label>
 
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={() => answer(null)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              answer(null);
+            }}
+          >
             {t("labs.ports.cancel")}
           </Button>
           <Button size="sm" onClick={start}>
             {t("labs.ports.startLab")}
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** The question: which ports the lab named `title` should use here. */
+function DialogHeading({ title }: { title: string }) {
+  const t = useT();
+  return (
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-control bg-jewel/10 text-jewel-text shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--jewel)_30%,transparent)]">
+        <Plug className="size-4" />
+      </span>
+      <div className="min-w-0">
+        <p id="ports-title" className="text-[0.9375rem] font-medium text-foreground">
+          {t("labs.ports.question", { title })}
+        </p>
+        <p className="mt-1 text-[0.8125rem] leading-relaxed text-muted-foreground">{t("labs.ports.where")}</p>
       </div>
     </div>
   );
@@ -93,7 +111,9 @@ export function PortChoice({ value, onChange, className }: { value: PortMode; on
     <RadioList label={t("labs.ports.hostPorts")} className={className}>
       <RadioRow
         selected={value === "random"}
-        onSelect={() => onChange("random")}
+        onSelect={() => {
+          onChange("random");
+        }}
         title={
           <>
             {t("labs.ports.random")} <Badge>{t("labs.ports.recommended")}</Badge>
@@ -101,7 +121,14 @@ export function PortChoice({ value, onChange, className }: { value: PortMode; on
         }
         subtitle={t("labs.ports.randomHint")}
       />
-      <RadioRow selected={value === "default"} onSelect={() => onChange("default")} title={t("labs.ports.default")} subtitle={t("labs.ports.defaultHint")}>
+      <RadioRow
+        selected={value === "default"}
+        onSelect={() => {
+          onChange("default");
+        }}
+        title={t("labs.ports.default")}
+        subtitle={t("labs.ports.defaultHint")}
+      >
         {value === "default" && (
           <p className="mt-2 flex items-start gap-2 rounded-control bg-warning/10 px-2.5 py-2 text-[0.75rem] leading-relaxed text-warning shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--warning)_30%,transparent)]">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />

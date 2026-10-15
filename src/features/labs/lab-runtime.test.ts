@@ -39,8 +39,8 @@ describe("readyHypervisors", () => {
     expect(readyHypervisors(report, null)).toEqual(["virtualbox", "qemu"]);
   });
   it("puts the preferred one first when it is ready", () => {
-    expect(readyHypervisors(report, "qemu" as Provider)).toEqual(["qemu", "virtualbox"]);
-    expect(readyHypervisors(report, "parallels" as Provider)).toEqual(["virtualbox", "qemu"]);
+    expect(readyHypervisors(report, "qemu")).toEqual(["qemu", "virtualbox"]);
+    expect(readyHypervisors(report, "parallels")).toEqual(["virtualbox", "qemu"]);
   });
   it("is empty without Vagrant", () => {
     expect(readyHypervisors({ ...report, vagrant: { installed: false } }, null)).toEqual([]);
@@ -76,8 +76,8 @@ describe("pickLocalHypervisor", () => {
     expect(pickLocalHypervisor(local, ["qemu"] as Provider[], null)).toBeNull();
   });
   it("falls back to the preference, then the first one, before the report is in", () => {
-    expect(pickLocalHypervisor(local, undefined, "virtualbox" as Provider)).toBe("virtualbox");
-    expect(pickLocalHypervisor(local, undefined, "qemu" as Provider)).toBe("parallels");
+    expect(pickLocalHypervisor(local, undefined, "virtualbox")).toBe("virtualbox");
+    expect(pickLocalHypervisor(local, undefined, "qemu")).toBe("parallels");
     expect(pickLocalHypervisor([], undefined, null)).toBeNull();
   });
 });

@@ -18,6 +18,7 @@ import {
   type Challenge,
 } from "@/features/labs/objectives/objectives";
 import { installTauri } from "@/test/tauri";
+import { rejectWith } from "@/features/labs/labs-test-kit";
 
 const challenge = (key: string, p: Partial<Challenge> = {}): Challenge => ({
   key,
@@ -135,9 +136,7 @@ describe("objectives API", () => {
 
   it("passes a backend refusal on", async () => {
     installTauri({
-      api_query: () => {
-        throw "Requires login";
-      },
+      api_query: () => rejectWith("Requires login"),
     });
     await expect(submitObjective("lab-1", "a", "x")).rejects.toBe("Requires login");
   });

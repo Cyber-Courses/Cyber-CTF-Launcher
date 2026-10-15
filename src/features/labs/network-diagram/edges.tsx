@@ -5,19 +5,22 @@ import { GREY, LinkData, Pt } from "@/features/labs/network-diagram/model";
 
 // Links between diagram nodes: ELK's orthogonal routes, drawn with rounded corners.
 
+/** A point as SVG path coordinates. */
+const xy = (p: Pt) => `${String(p.x)} ${String(p.y)}`;
+
 /** An orthogonal polyline with rounded corners (the network-diagram look). */
 function roundedPath(pts: Pt[], r = 8) {
   if (pts.length < 2) return "";
-  let d = `M ${pts[0].x} ${pts[0].y}`;
+  let d = `M ${xy(pts[0])}`;
   for (let i = 1; i < pts.length - 1; i++) {
     const [a, b, c] = [pts[i - 1], pts[i], pts[i + 1]];
     const rad = Math.min(r, Math.hypot(b.x - a.x, b.y - a.y) / 2, Math.hypot(c.x - b.x, c.y - b.y) / 2);
     const into = { x: b.x - Math.sign(b.x - a.x) * rad, y: b.y - Math.sign(b.y - a.y) * rad };
     const out = { x: b.x + Math.sign(c.x - b.x) * rad, y: b.y + Math.sign(c.y - b.y) * rad };
-    d += ` L ${into.x} ${into.y} Q ${b.x} ${b.y} ${out.x} ${out.y}`;
+    d += ` L ${xy(into)} Q ${xy(b)} ${xy(out)}`;
   }
   const last = pts[pts.length - 1];
-  return `${d} L ${last.x} ${last.y}`;
+  return `${d} L ${xy(last)}`;
 }
 
 /** Midpoint of the longest segment: where a label sits without hiding a corner. */
@@ -63,7 +66,7 @@ function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targ
       <BaseEdge id={id} path={path} style={style} />
       {data?.label && (
         <EdgeLabelRenderer>
-          <div className="edge-label" style={{ transform: `translate(-50%, -50%) translate(${at.x}px,${at.y}px)` }}>
+          <div className="edge-label" style={{ transform: `translate(-50%, -50%) translate(${String(at.x)}px,${String(at.y)}px)` }}>
             {data.label}
           </div>
         </EdgeLabelRenderer>

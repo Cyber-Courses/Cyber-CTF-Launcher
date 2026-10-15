@@ -5,6 +5,7 @@ import { PORT_TAB_SLOT, layout } from "@/features/labs/network-diagram/layout";
 import { topology } from "@/features/labs/network-diagram/topology";
 import { BRIDGE, type Attacker, type Machine, type Pt } from "@/features/labs/network-diagram/model";
 import { labCommands } from "@/lib/dev-mock-labs";
+import { must } from "@/components/test-support";
 
 const machine = (name: string, ip: string, published: number[]): Machine => ({
   name,
@@ -32,7 +33,9 @@ describe("published port tabs", () => {
       .map(([, b]) => b.x + b.w / 2)
       .sort((a, b) => a - b);
     expect(centres).toHaveLength(6);
-    centres.slice(1).forEach((c, i) => expect(c - centres[i]).toBeGreaterThanOrEqual(PORT_TAB_SLOT));
+    centres.slice(1).forEach((c, i) => {
+      expect(c - centres[i]).toBeGreaterThanOrEqual(PORT_TAB_SLOT);
+    });
   });
 });
 
@@ -77,11 +80,12 @@ describe("published port links", () => {
       (id) => (id.startsWith("hp-") ? { w: 2, h: 2 } : { w: 220, h: 140 }),
       (_node, handle) => handles[handle],
     );
-    const web = [...boxes.entries()].find(
-      ([id]) => !id.startsWith("hp-") && !id.startsWith("zone") && !id.startsWith("bridge") && boxes.get(id)!.h === 140,
-    )![1];
-    const portal = routes.get("e-hp-web-8080")!;
-    const db = routes.get("e-hp-web-3307")!;
+    const [, web] = must(
+      [...boxes.entries()].find(([id, box]) => !id.startsWith("hp-") && !id.startsWith("zone") && !id.startsWith("bridge") && box.h === 140),
+      "the web card",
+    );
+    const portal = must(routes.get("e-hp-web-8080"), "the portal's route");
+    const db = must(routes.get("e-hp-web-3307"), "the db's route");
     expect(portal[0]).toEqual({ x: web.x + 220, y: web.y + 70 });
     expect(db[0]).toEqual({ x: web.x + 220, y: web.y + 115 });
     for (const s1 of segments(portal)) for (const s2 of segments(db)) expect(cross(s1, s2)).toBe(false);
@@ -93,10 +97,10 @@ describe("published port links", () => {
 type Rect = { id: string; x: number; y: number; w: number; h: number };
 type Net = { name: string; subnet: string; internal: boolean };
 
-const net = (name: string, internal = true): Net => ({ name, subnet: `10.${name.length}.0.0/24`, internal });
+const net = (name: string, internal = true): Net => ({ name, subnet: `10.${String(name.length)}.0.0/24`, internal });
 const on = (name: string, nets: string[], published: number[] = []): Machine => ({
-  ...machine(name, `10.0.0.${name.length}`, published),
-  interfaces: nets.map((n, i) => ({ network: n, ip: `10.${i}.0.${name.length}` })),
+  ...machine(name, `10.0.0.${String(name.length)}`, published),
+  interfaces: nets.map((n, i) => ({ network: n, ip: `10.${String(i)}.0.${String(name.length)}` })),
 });
 
 /** Measured sizes as the cards come out: taller with each interface and service row. */
@@ -104,7 +108,10 @@ const sized = (topo: ReturnType<typeof topology>) => (id: string) => {
   if (id.startsWith("hp-") || id.startsWith("up-")) return { w: 2, h: 2 };
   if (id.startsWith("bridge-")) return { w: BRIDGE.w, h: BRIDGE.h };
   if (id === "__attacker") return { w: 120, h: 64 };
-  const data = topo.nodes.find((n) => n.id === id)!.data as { ifaces: unknown[]; rows: unknown[] };
+  const data = must(
+    topo.nodes.find((n) => n.id === id),
+    `the node ${id}`,
+  ).data as { ifaces: unknown[]; rows: unknown[] };
   return { w: 188, h: 70 + 14 * data.ifaces.length + 34 * data.rows.length };
 };
 
@@ -116,7 +123,7 @@ async function drawn(machines: Machine[], networks: Net[], attacker: Attacker = 
   const topo = topology(machines, networks, attacker);
   const { boxes, routes, bounds } = await layout(topo, sized(topo));
   const { zones } = frameLayout(topo, boxes, routes, bounds);
-  const rect = (id: string): Rect => ({ id, ...boxes.get(id)! });
+  const rect = (id: string): Rect => ({ id, ...must(boxes.get(id), `the box of ${id}`) });
   const frames = zones.map((z) => ({ id: z.id, x: z.position.x, y: z.position.y, w: Number(z.style?.width), h: Number(z.style?.height) }));
   const labels = topo.zones.map((z, i) => ({
     id: `label-${z.id}`,

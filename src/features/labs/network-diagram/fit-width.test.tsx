@@ -6,6 +6,7 @@ import { NetworkDiagram } from "@/features/labs/network-diagram";
 import { FIT_WIDTH_KEY, fitShellSize, readFitWidth, writeFitWidth } from "@/features/labs/network-diagram/fit-width";
 import type { Machine } from "@/features/labs/network-diagram/model";
 import { flush } from "@/test/ui";
+import { must } from "@/components/test-support";
 
 // As in diagram.test.tsx: jsdom measures nothing, so pretend React Flow did, and report a fixed
 // width for every observed element (the shell).
@@ -18,7 +19,7 @@ let shellWidth = 300;
 class SizedObserver {
   constructor(private cb: ResizeObserverCallback) {}
   observe(el: Element) {
-    this.cb([{ target: el, contentRect: { width: shellWidth, height: 400 } } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
+    this.cb([{ target: el, contentRect: { width: shellWidth, height: 400 } } as unknown as ResizeObserverEntry], this);
   }
   unobserve() {}
   disconnect() {}
@@ -28,9 +29,9 @@ const machine = (name: string, i: number): Machine => ({
   name,
   state: "running",
   image: `${name}:latest`,
-  ip: `10.42.0.${i + 2}`,
+  ip: `10.42.0.${String(i + 2)}`,
   ports: [{ published: 8000 + i, target: 80 }],
-  interfaces: [{ network: "default", ip: `10.42.0.${i + 2}` }],
+  interfaces: [{ network: "default", ip: `10.42.0.${String(i + 2)}` }],
   services: [],
   infra: false,
 });
@@ -39,8 +40,8 @@ const wideLab = ["a", "b", "c", "d"].map(machine);
 const settle = async () => {
   for (let i = 0; i < 10; i++) await flush(20);
 };
-const shell = () => document.querySelector<HTMLElement>(".topology-shell")!;
-const canvasWidth = () => parseFloat(document.querySelector<HTMLElement>(".topology-canvas")!.style.width);
+const shell = () => must(document.querySelector<HTMLElement>(".topology-shell"), "the diagram's shell");
+const canvasWidth = () => parseFloat(must(document.querySelector<HTMLElement>(".topology-canvas"), "the diagram's canvas").style.width);
 
 beforeEach(() => {
   localStorage.clear();
@@ -53,11 +54,13 @@ beforeEach(() => {
     },
   );
 });
-const scrollBy = HTMLElement.prototype.scrollBy;
+// A test stubs the elements' scrollBy: put back what jsdom had (if anything) after each.
+const scrollBy = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollBy");
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  HTMLElement.prototype.scrollBy = scrollBy;
+  if (scrollBy) Object.defineProperty(HTMLElement.prototype, "scrollBy", scrollBy);
+  else delete (HTMLElement.prototype as { scrollBy?: unknown }).scrollBy;
 });
 
 describe("fitShellSize", () => {
@@ -92,7 +95,9 @@ describe("the remembered choice", () => {
       throw new Error("QuotaExceededError");
     });
     expect(readFitWidth()).toBe(false);
-    expect(() => writeFitWidth(true)).not.toThrow();
+    expect(() => {
+      writeFitWidth(true);
+    }).not.toThrow();
   });
 });
 

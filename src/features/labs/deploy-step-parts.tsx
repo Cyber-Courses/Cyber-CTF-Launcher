@@ -82,6 +82,7 @@ export function StepItem({
   onToggle: () => void;
 }) {
   const rows = p.rows;
+  const latest = rows.at(-1)?.line;
   return (
     <li>
       <button
@@ -97,8 +98,8 @@ export function StepItem({
       </button>
       {/* While a phase is running, show its latest line inline (e.g. which container is
           still "Waiting"), so the long "Wait until healthy" step isn't a blank spinner. */}
-      {state === "running" && !expanded && rows.at(-1)?.line && (
-        <div className="-mt-1 truncate px-4 pb-2 pl-12 font-mono text-[0.6875rem] text-faint">{rows.at(-1)!.line.trim()}</div>
+      {state === "running" && !expanded && latest && (
+        <div className="-mt-1 truncate px-4 pb-2 pl-12 font-mono text-[0.6875rem] text-faint">{latest.trim()}</div>
       )}
       {expanded && (
         <div className="px-4 pb-2.5 pl-12">

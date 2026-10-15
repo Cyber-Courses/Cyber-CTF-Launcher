@@ -36,14 +36,21 @@ function useChallenges(labId: string, question: string | null, title: string) {
   useEffect(() => {
     let alive = true;
     loadObjectives(labId)
-      .then((objectives) => alive && setLoaded({ labId, challenges: challengesFor(objectives, question, title) }))
-      .catch(() => alive && setLoaded({ labId, challenges: "unavailable" }));
+      .then((objectives) => {
+        if (alive) setLoaded({ labId, challenges: challengesFor(objectives, question, title) });
+      })
+      .catch(() => {
+        if (alive) setLoaded({ labId, challenges: "unavailable" });
+      });
     return () => {
       alive = false;
     };
   }, [labId, question, title]);
   return loaded?.labId === labId ? loaded.challenges : undefined;
 }
+
+/** What a progress answer is kept with: the lab and the sign-in it was read under. */
+const progressKeyOf = (labId: string, loggedIn: boolean) => `${labId}:${String(loggedIn)}`;
 
 /** The player's progress as last read or updated, kept with the lab and sign-in (`key`) it is
  *  for; `refresh` reads it again. */
@@ -52,19 +59,28 @@ function useStoredProgress(labId: string, loggedIn: boolean) {
 
   const refresh = useCallback(async () => {
     if (!loggedIn) return;
-    const key = `${labId}:${loggedIn}`;
+    const key = progressKeyOf(labId, loggedIn);
     await loadProgress(labId)
-      .then((progress) => setStored({ key, progress }))
-      .catch(() => setStored((s) => (s?.key === key ? s : { key, progress: null })));
+      .then((progress) => {
+        setStored({ key, progress });
+      })
+      .catch(() => {
+        setStored((s) => (s?.key === key ? s : { key, progress: null }));
+      });
   }, [labId, loggedIn]);
 
   useEffect(() => {
     let alive = true;
+    const key = progressKeyOf(labId, loggedIn);
     if (loggedIn)
       loadProgress(labId)
-        .then((progress) => alive && setStored({ key: `${labId}:${loggedIn}`, progress }))
+        .then((progress) => {
+          if (alive) setStored({ key, progress });
+        })
         // Unreadable: counted as read (nothing solved, or what this page recorded since) rather than waited for.
-        .catch(() => alive && setStored((s) => (s?.key === `${labId}:${loggedIn}` ? s : { key: `${labId}:${loggedIn}`, progress: null })));
+        .catch(() => {
+          if (alive) setStored((s) => (s?.key === key ? s : { key, progress: null }));
+        });
     return () => {
       alive = false;
     };
@@ -94,15 +110,16 @@ export function objectivesState(
  */
 export function useObjectives(labId: string, question: string | null, title: string, loggedIn: boolean) {
   const challenges = useChallenges(labId, question, title);
-  const progressKey = `${labId}:${loggedIn}`;
+  const progressKey = progressKeyOf(labId, loggedIn);
   const { stored, setStored, refresh } = useStoredProgress(labId, loggedIn);
   const list = useMemo(() => (Array.isArray(challenges) ? challenges : []), [challenges]);
   const progress = (stored?.key === progressKey ? stored.progress : null) ?? emptyProgress(list);
 
   // Each update starts from the latest progress for this lab (or nothing yet).
   const update = useCallback(
-    (change: (p: LabProgress) => LabProgress) =>
-      setStored((s) => ({ key: progressKey, progress: change((s?.key === progressKey ? s.progress : null) ?? emptyProgress(list)) })),
+    (change: (p: LabProgress) => LabProgress) => {
+      setStored((s) => ({ key: progressKey, progress: change((s?.key === progressKey ? s.progress : null) ?? emptyProgress(list)) }));
+    },
     [progressKey, list, setStored],
   );
 

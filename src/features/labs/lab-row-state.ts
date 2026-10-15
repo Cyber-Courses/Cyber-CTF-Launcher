@@ -48,7 +48,7 @@ export function rowFacts({
   const running = status?.running ?? false;
   return {
     // Emulated only where it actually runs here: containers always, VMs with an emulator ready.
-    emulated: !native && (rt?.runtime !== "VM" || emulates),
+    emulated: !native && (rt.runtime !== "VM" || emulates),
     running,
     parked: !running && (status?.parked ?? null),
   };
@@ -56,9 +56,10 @@ export function rowFacts({
 
 /** The ids of labs running now (the scan or their status says so) that the catalogue doesn't
  *  list: all of them while it can't be loaded. They still run, and still count. */
-export function runningUnlisted(labs: Lab[] | null, statuses: Record<string, LabStatus>): string[] {
+export function runningUnlisted(labs: Lab[] | null, statuses: Partial<Record<string, LabStatus>>): string[] {
   const listed = new Set((labs ?? []).map((l) => l.id));
-  return Object.keys(statuses)
-    .filter((id) => statuses[id].running && !listed.has(id))
+  return Object.entries(statuses)
+    .filter(([id, s]) => (s?.running ?? false) && !listed.has(id))
+    .map(([id]) => id)
     .sort();
 }

@@ -73,7 +73,7 @@ describe("DeploySteps", () => {
     expect(screen.queryByRole("button", { name: /Show full log/ })).toBeNull();
   });
 
-  it("starts over on a new run, and ticks the running step's time on its own", async () => {
+  it("starts over on a new run, and ticks the running step's time on its own", () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
     const { rerender } = render(<DeploySteps lines={["Container api Creating"]} times={at(1)} busy ready={false} />);

@@ -21,14 +21,22 @@ import {
   serviceRows,
   serviceType,
   uniquePorts,
+  type ZoneData,
 } from "@/features/labs/network-diagram/model";
 
 // The lab as a graph (zones, machines, links), before layout.
 
-export type Topology = { nodes: Node[]; edges: Edge<LinkData>[]; zones: { id: string; members: string[]; data: Record<string, unknown> }[] };
+export type Topology = { nodes: Node[]; edges: Edge<LinkData>[]; zones: { id: string; members: string[]; data: ZoneData }[] };
 
 /** The graph as it is built: nodes and edges in drawing order, and each network's members. */
 type Graph = { nodes: Node[]; edges: Edge<LinkData>[]; members: Map<string, string[]> };
+
+/** A network's members, as a list kept in the graph (made when the network has none yet). */
+function membersOf(g: Graph, network: string): string[] {
+  const list = g.members.get(network) ?? [];
+  g.members.set(network, list);
+  return list;
+}
 
 /**
  * Networks: as reported, plus any a machine names that wasn't (best effort), or a single
@@ -39,11 +47,13 @@ type Graph = { nodes: Node[]; edges: Edge<LinkData>[]; members: Map<string, stri
 function labNetworks(machines: Machine[], networks: LabNetwork[]) {
   const nets = new Map<string, LabNetwork>(networks.map((n) => [n.name, { ...n }]));
   const ifacesOf = (m: Machine): LabInterface[] => {
-    if (m.interfaces?.length) return m.interfaces;
+    if (m.interfaces.length) return m.interfaces;
     const fallback = nets.keys().next().value ?? "default";
     return [{ network: fallback, ip: m.ip }];
   };
-  machines.forEach((m) => ifacesOf(m).forEach((i) => nets.has(i.network) || nets.set(i.network, { name: i.network, subnet: "", internal: false })));
+  machines.forEach((m) => {
+    ifacesOf(m).forEach((i) => nets.has(i.network) || nets.set(i.network, { name: i.network, subnet: "", internal: false }));
+  });
   if (nets.size === 0) nets.set("default", { name: "default", subnet: "", internal: false });
   for (const n of nets.values()) {
     if (!n.subnet) {
@@ -66,7 +76,7 @@ function networkDistance(entry: string, machines: Machine[], ifacesOf: (m: Machi
         const on = ifacesOf(m).map((i) => i.network);
         if (!on.includes(net)) continue;
         for (const other of on.filter((o) => !dist.has(o))) {
-          dist.set(other, dist.get(net)! + 1);
+          dist.set(other, (dist.get(net) ?? 0) + 1);
           next.push(other);
         }
       }
@@ -108,7 +118,7 @@ function addBridges(g: Graph, ordered: LabNetwork[]) {
 /** The attack box is a host on the lab network like the others (one attack box can be attached
  *  to several running labs at once), first in its zone so it reads leftmost. */
 function addAttacker(g: Graph, attacker: NonNullable<Attacker>, entry: string) {
-  const atkOn = !!attacker.running;
+  const atkOn = attacker.running;
   g.nodes.push({
     id: "__attacker",
     type: "attacker",
@@ -119,7 +129,7 @@ function addAttacker(g: Graph, attacker: NonNullable<Attacker>, entry: string) {
       running: atkOn,
     },
   });
-  g.members.get(entry)!.push("__attacker");
+  membersOf(g, entry).push("__attacker");
   g.edges.push(link("e-attach", `bridge-${entry}`, "__attacker", atkOn ? attack : IDLE, { animated: atkOn }));
 }
 
@@ -145,12 +155,12 @@ function addMachine(g: Graph, m: Machine, ifaces: LabInterface[], d: (net: strin
     } satisfies ComputerData,
   });
   if (ifaces.length === 1) {
-    g.members.get(ifaces[0].network)!.push(id);
+    membersOf(g, ifaces[0].network).push(id);
     g.edges.push(link(`e-${ifaces[0].network}-${m.name}`, `bridge-${ifaces[0].network}`, id, GREY));
   } else {
     const near = Math.min(...ifaces.map((i) => d(i.network)));
     // Two NICs on one network are two links: the second id gets its interface's index.
-    const taken = (edgeId: string, n: number) => (g.edges.some((e) => e.id === edgeId) ? `${edgeId}-${n}` : edgeId);
+    const taken = (edgeId: string, n: number) => (g.edges.some((e) => e.id === edgeId) ? `${edgeId}-${String(n)}` : edgeId);
     ifaces.forEach((i, n) =>
       g.edges.push(
         d(i.network) === near
@@ -167,7 +177,7 @@ function addHostPorts(g: Graph, m: Machine, id: string, type: ReturnType<typeof 
   uniquePorts(m.ports)
     .filter((p) => p.published > 0)
     .forEach((p) => {
-      const hp = `hp-${m.name}-${p.published}`;
+      const hp = `hp-${m.name}-${String(p.published)}`;
       g.nodes.push({
         id: hp,
         type: "hostport",
@@ -199,11 +209,15 @@ export function topology(machines: Machine[], networks: LabNetwork[], attacker: 
   // No attack box at all (VM labs) draws none.
   if (attacker) addAttacker(g, attacker, entry);
   // The provisioning controller is plumbing, not a target: it has no place on the map.
-  machines.filter((m) => !m.infra).forEach((m) => addMachine(g, m, ifacesOf(m), d));
+  machines
+    .filter((m) => !m.infra)
+    .forEach((m) => {
+      addMachine(g, m, ifacesOf(m), d);
+    });
 
   const zones: Topology["zones"] = ordered.map((n) => ({
     id: `zone-${n.name}`,
-    members: g.members.get(n.name)!,
+    members: membersOf(g, n.name),
     data: { label: translate("diagram.zone.network", { name: netLabel(n.name) }).toUpperCase(), detail: n.subnet, isolated: n.internal },
   }));
   return { nodes: g.nodes, edges: g.edges, zones };

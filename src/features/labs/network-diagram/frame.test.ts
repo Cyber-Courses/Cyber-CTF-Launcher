@@ -4,6 +4,7 @@ import { ZONE_LABEL, frameLayout, zoneLabelWidth } from "@/features/labs/network
 import { layout } from "@/features/labs/network-diagram/layout";
 import { topology } from "@/features/labs/network-diagram/topology";
 import type { Machine } from "@/features/labs/network-diagram/model";
+import { must } from "@/components/test-support";
 
 const machine = (name: string, ip: string, network = "default"): Machine => ({
   name,
@@ -31,7 +32,11 @@ describe("frameLayout", () => {
     expect(zones.length).toBeGreaterThan(0);
     expect(zones).toHaveLength(topo.zones.length);
     for (const zone of zones) {
-      const bridge = laid.boxes.get(topo.zones.find((z) => z.id === zone.id)!.members[0])!;
+      const members = must(
+        topo.zones.find((z) => z.id === zone.id),
+        `the ${zone.id} zone`,
+      ).members;
+      const bridge = must(laid.boxes.get(members[0]), "the zone's bridge");
       const width = Number(zone.style?.width);
       expect(bridge.x + bridge.w / 2).toBeCloseTo(zone.position.x + width / 2);
       expect(zone.position.y).toBeCloseTo(bridge.y + bridge.h / 2);
@@ -45,14 +50,16 @@ describe("frameLayout", () => {
     );
     const [zone] = zones;
     const z = topo.zones[0];
-    const bridge = laid.boxes.get(z.members[0])!;
+    const bridge = must(laid.boxes.get(z.members[0]), "the zone's bridge");
     const labelEnd = zone.position.x + ZONE_LABEL.left + zoneLabelWidth(z.data);
     expect(bridge.x + bridge.w / 2).toBeGreaterThan(zone.position.x + Number(zone.style?.width) / 2);
     expect(bridge.x).toBeGreaterThan(labelEnd);
     expect(bridge.x + bridge.w).toBeLessThanOrEqual(zone.position.x + Number(zone.style?.width));
     // Its links still leave from its centre.
-    const bus = topo.edges.filter((e) => e.source === z.members[0]).map((e) => laid.routes.get(e.id)![0]);
-    bus.forEach((p) => expect(p.x).toBeCloseTo(bridge.x + bridge.w / 2));
+    const bus = topo.edges.filter((e) => e.source === z.members[0]).map((e) => must(laid.routes.get(e.id), `the route of ${e.id}`)[0]);
+    bus.forEach((p) => {
+      expect(p.x).toBeCloseTo(bridge.x + bridge.w / 2);
+    });
   });
 
   it("widens the bounds to the widest zone", async () => {
@@ -68,7 +75,7 @@ describe("frameLayout", () => {
     const uplinks = topo.edges.filter((e) => e.source.startsWith("up-"));
     expect(uplinks.length).toBeGreaterThan(0);
     for (const e of uplinks) {
-      const [from, to] = laid.routes.get(e.id)!;
+      const [from, to] = must(laid.routes.get(e.id), `the route of ${e.id}`);
       expect(from.x).toBe(to.x);
       expect(from.y).toBeLessThan(to.y);
     }

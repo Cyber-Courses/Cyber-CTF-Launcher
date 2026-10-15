@@ -55,7 +55,7 @@ const step = (s: RawStep): ObjectiveStep => ({ key: s.key, title: s.title ?? s.k
 /** The lab's challenges as the backend lists them (empty for a lab without objectives). */
 export async function loadObjectives(labId: string): Promise<Challenge[]> {
   const d = await apiQuery<{ labs?: { id?: string; objectives?: RawChallenge[] | null }[] }>("labObjectives", { id: labId });
-  const lab = d?.labs?.find((l) => l.id === labId);
+  const lab = d.labs?.find((l) => l.id === labId);
   return (lab?.objectives ?? []).map((c) => ({
     ...step(c),
     optional: !!c.optional,
@@ -67,7 +67,7 @@ export async function loadObjectives(labId: string): Promise<Challenge[]> {
 /** The player's progress on the lab; null when signed out. */
 export async function loadProgress(labId: string): Promise<LabProgress | null> {
   const d = await apiQuery<{ labs?: { id?: string; myProgress?: Partial<LabProgress> | null }[] }>("labProgress", { id: labId });
-  const lab = d?.labs?.find((l) => l.id === labId);
+  const lab = d.labs?.find((l) => l.id === labId);
   const p = lab?.myProgress;
   if (!p) return null;
   return {

@@ -28,7 +28,9 @@ export function RunOnDialog({ onClose, children, footer }: { onClose: () => void
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--scrim)] p-4 backdrop-blur-[0.125rem]"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
         ref={ref}
@@ -110,7 +112,9 @@ function OptionList({ group: g, value, onChange, disabled }: { group: OptionGrou
           <RadioRow
             key={targetKey(o.target)}
             selected={targetKey(value) === targetKey(o.target)}
-            onSelect={() => onChange(o.target)}
+            onSelect={() => {
+              onChange(o.target);
+            }}
             disabled={disabled || !o.ok}
             hint={o.ok ? o.status?.title : o.why}
             title={o.title}

@@ -10,6 +10,9 @@ import { ANCHOR, type Bounds } from "@/features/labs/network-diagram/model";
 import { nodeTypes } from "@/features/labs/network-diagram/nodes";
 import type { Topology } from "@/features/labs/network-diagram/topology";
 
+/** The edges before the first layout: none (the layout routes them). */
+const NO_EDGES: Edge[] = [];
+
 /** A published port's tab over the card's bottom edge, `left` px from the shell's left. */
 export type Tab = { id: string; port: number; left: number };
 
@@ -56,7 +59,7 @@ function useElkLayout(topo: Topology, setNodes: (nodes: Node[]) => void, setEdge
         onSize(final.w, final.h + (final.docked ? 26 : 50));
         setReady(true);
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         console.warn("network diagram layout failed", e);
         if (live) setReady(true);
       });
@@ -82,7 +85,7 @@ export function Flow({
   height: number;
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(topo.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(NO_EDGES);
   const { setViewport } = useReactFlow();
   const { ready, bounds } = useElkLayout(topo, setNodes, setEdges, onSize);
 
@@ -99,7 +102,7 @@ export function Flow({
       ready && view
         ? nodes
             .filter((n) => n.type === "hostport")
-            .map((n) => ({ id: n.id, port: Number((n.data as { port: number }).port), left: (n.position.x + ANCHOR / 2) * view.zoom + view.x }))
+            .map((n) => ({ id: n.id, port: (n.data as { port: number }).port, left: (n.position.x + ANCHOR / 2) * view.zoom + view.x }))
         : [],
     );
   }, [ready, view, nodes, onTabs]);

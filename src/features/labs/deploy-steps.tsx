@@ -5,7 +5,7 @@ import { PanelHeader } from "@/components/ui/panel";
 import { StatusDot, StatusPill } from "@/components/ui/status-pill";
 import { formatDuration } from "@/lib/format";
 import type { ActiveOperation } from "@/lib/tauri";
-import { deriveSteps, failedMachineStep, type Timed } from "@/features/labs/deploy-log";
+import { deriveSteps, failedMachineStep, type Step, type Timed } from "@/features/labs/deploy-log";
 import { LiveDuration, RawLog, StepItem, StepMark } from "@/features/labs/deploy-step-parts";
 import { OPERATION_STATUS } from "@/lib/deploy-store";
 import { useT, type T } from "@/lib/i18n";
@@ -35,7 +35,7 @@ function operationText(t: T, operation: Operation): OperationText | undefined {
  */
 function useDeployTimeline(lines: string[], times: number[], busy: boolean, operation: Operation, startedAt: number | undefined) {
   const t = useT();
-  const timed = useMemo<Timed[]>(() => lines.map((line, i) => ({ line, at: times[i] ?? times.at(-1) ?? 0 })), [lines, times]);
+  const timed = useMemo<Timed[]>(() => lines.map((line, i) => ({ line, at: times.at(i) ?? times.at(-1) ?? 0 })), [lines, times]);
   const derived = useMemo(() => {
     const failed = timed.find((row) => row.line.startsWith("✗"));
     const done = timed.find((row) => row.line.startsWith("✓"));
@@ -45,7 +45,8 @@ function useDeployTimeline(lines: string[], times: number[], busy: boolean, oper
     const named = failed ? failedMachineStep(failed.line) : null;
     const failedStep = failed ? (named && steps.some((s) => s.id === named) ? named : lastSeen) : null;
     // From when the run began, when known: a run that failed on its first line otherwise read 0.0s.
-    const start = startedAt !== undefined ? Math.min(startedAt, timed[0]?.at ?? startedAt) : timed[0]?.at;
+    const first = timed.at(0)?.at;
+    const start = startedAt !== undefined ? Math.min(startedAt, first ?? startedAt) : first;
     return { timed, failed, done, start, op, steps, lastSeen, failedStep };
   }, [t, timed, operation, startedAt]);
   const { done, failed } = derived;
@@ -106,7 +107,10 @@ function DeployHeader({
 
 /** A launch's or a provisioning run's word while it runs: the one word a start has everywhere. */
 const busyWord = (t: T, operation: Operation) =>
-  operation === "provision" ? t("common.operation.label.provision").replace(/…$/, "") : OPERATION_STATUS.launch!;
+  operation === "provision" ? t("common.operation.label.provision").replace(/…$/, "") : (OPERATION_STATUS.launch ?? t("common.operation.status.launch"));
+
+/** When a step's last line came: a step holds at least the line that made it. */
+const lastAt = (step: Step) => step.rows[step.rows.length - 1].at;
 
 /** The steps, then Ready once done; before the first step shows, the step the backend reports
  *  (a run with no log here) or a pending Preparing row. */
@@ -117,9 +121,9 @@ function StepList({ timeline: tl, busy, liveStep }: { timeline: ReturnType<typeo
   return (
     <ul className="py-1 empty:hidden">
       {steps.map((p, i) => {
-        const next = steps[i + 1]?.rows[0]?.at;
+        const next = steps.at(i + 1)?.rows[0].at;
         const state = p.id === tl.failedStep ? "fail" : p.id === tl.lastSeen && busy ? "running" : "ok";
-        const to = next ?? (state === "running" ? null : (done?.at ?? failed?.at ?? p.rows.at(-1)!.at));
+        const to = next ?? (state === "running" ? null : (done?.at ?? failed?.at ?? lastAt(p)));
         const expanded = open === p.id;
         return (
           <StepItem
@@ -129,9 +133,11 @@ function StepList({ timeline: tl, busy, liveStep }: { timeline: ReturnType<typeo
             // The first step from the run's start: what happened before its first line is its own.
             from={i === 0 && tl.start !== undefined ? Math.min(tl.start, p.rows[0].at) : p.rows[0].at}
             to={to}
-            origin={tl.start!}
+            origin={tl.start ?? p.rows[0].at}
             expanded={expanded}
-            onToggle={() => setOpen(expanded ? null : p.id)}
+            onToggle={() => {
+              setOpen(expanded ? null : p.id);
+            }}
           />
         );
       })}
@@ -187,7 +193,9 @@ export function DeploySteps({
 }) {
   const timeline = useDeployTimeline(lines, times, busy, operation, startedAt);
   const [showLog, setShowLog] = useState(false);
-  const toggleLog = useCallback(() => setShowLog((v) => !v), []);
+  const toggleLog = useCallback(() => {
+    setShowLog((v) => !v);
+  }, []);
   const { failed, timed, start } = timeline;
   return (
     <div>
@@ -199,7 +207,7 @@ export function DeploySteps({
           <span className="min-w-0 break-words">{failed.line.replace(/^✗\s*/, "")}</span>
         </p>
       )}
-      {timed.length > 0 && <RawLog timed={timed} origin={start!} shown={showLog} onToggle={toggleLog} />}
+      {timed.length > 0 && <RawLog timed={timed} origin={start ?? timed[0].at} shown={showLog} onToggle={toggleLog} />}
     </div>
   );
 }

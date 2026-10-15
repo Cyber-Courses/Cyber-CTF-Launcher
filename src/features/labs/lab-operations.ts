@@ -28,7 +28,7 @@ export type LaunchReport = {
 /** Runs `launch`; when it fails because Cyber CTF can't be reached and the lab, installed here,
  *  can start without it (the `offlineReady` code, labs/offline.rs), asks the player (the lab
  *  `title`) and, on yes, runs it again offline. */
-export async function launchOrOfferOffline(title: string, launch: (offline: boolean) => Promise<void>) {
+async function launchOrOfferOffline(title: string, launch: (offline: boolean) => Promise<void>) {
   try {
     await launch(false);
   } catch (e) {
@@ -49,7 +49,9 @@ export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: Op
   let refused = false;
   beginDeploy(lab.id, op);
   try {
-    await body((line) => appendDeployLog(lab.id, line), lab.runtime);
+    await body((line) => {
+      appendDeployLog(lab.id, line);
+    }, lab.runtime);
     return null;
   } catch (e) {
     // The backend's answer to an operation started while another one runs on the lab
@@ -103,11 +105,11 @@ function localHypervisor(rt: LabRuntimeInfo, remote: boolean, vmProvider: Provid
   const local = localProviders(rt, report?.arch);
   const foreign = vm && !!report?.arch && !runsNatively(rt, report.arch);
   const inLocalVm = !vm && !remote && !!vmProvider;
-  const provider = inLocalVm ? vmProvider! : vm && !remote ? pickLocalHypervisor(local, ready, preferred) : null;
+  const provider = inLocalVm ? vmProvider : vm && !remote ? pickLocalHypervisor(local, ready, preferred) : null;
   // x86 VMs (Windows AD labs) boot on an Apple Silicon Mac only under QEMU's emulation; say
   // so up front instead of failing deep in Vagrant.
   if (!remote && foreign && provider === null) {
-    throw new Error(translate("labs.actions.foreignCpu", { archs: rt.architectures.join(", "), arch: report!.arch ?? "" }));
+    throw new Error(translate("labs.actions.foreignCpu", { archs: rt.architectures.join(", "), arch: report.arch ?? "" }));
   }
   if (vm && !remote && provider === null) {
     throw new Error(translate("labs.actions.noHypervisor", { providers: local.join(", ") || translate("labs.actions.none") }));
@@ -131,7 +133,7 @@ export const localLaunch =
     // Remotely or inside a local VM: the container attack box image. A VM lab here: the
     // attack VM's Vagrant box, when Settings start the attack box with each lab.
     const attackbox = remote || inLocalVm ? getAttackImage() : vm && getAutoAttackBox() ? getAttackBox() : null;
-    await launchOrOfferOffline(lab.title, (offline) => labLaunch(lab.id, provider, remote ? host! : null, attackbox, ports === "default", log, offline));
+    await launchOrOfferOffline(lab.title, (offline) => labLaunch(lab.id, provider, host ?? null, attackbox, ports === "default", log, offline));
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);
     void notify(

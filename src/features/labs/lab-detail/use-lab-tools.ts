@@ -11,8 +11,12 @@ export function useLabTools(labId: string, running: boolean, isDocker: boolean):
     if (!running) return;
     let alive = true;
     labTools(labId, isDocker ? "DOCKER" : "VM")
-      .then((found) => alive && setTools(found))
-      .catch(() => alive && setTools([]));
+      .then((found) => {
+        if (alive) setTools(found);
+      })
+      .catch(() => {
+        if (alive) setTools([]);
+      });
     return () => {
       alive = false;
     };

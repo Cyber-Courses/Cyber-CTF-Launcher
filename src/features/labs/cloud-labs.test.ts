@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { cloudView, deriveLabState, type LabStateInput } from "@/features/labs/lab-detail/lab-state";
+import { cloudView, type LabStateInput } from "@/features/labs/lab-detail/lab-state";
+import { deriveState, labStatus } from "@/features/labs/labs-test-kit";
 import { runtimeWord } from "@/features/labs/lab-detail/labels";
 import { initialTarget } from "@/features/labs/lab-detail/use-run-target";
 import { costEstimate } from "@/features/labs/cloud-panel";
@@ -8,7 +9,7 @@ import { filterLabs, NO_FILTERS } from "@/features/labs/lab-filters";
 import { needsCloudAccount, setupNeeded } from "@/features/labs/lab-readiness";
 import { cloudAccountsFor, cloudNames, isCloudLab, localProviders, runPlaces, runtimeLabel } from "@/features/labs/lab-runtime";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
-import type { LabStatus, ServerHost, SystemReport } from "@/lib/tauri";
+import type { ServerHost, SystemReport } from "@/lib/tauri";
 import { setLocalePreference, translate } from "@/lib/i18n";
 
 const rt = (runtime: LabRuntimeInfo["runtime"], providers: string[]) => ({ runtime, providers, architectures: [] }) as unknown as LabRuntimeInfo;
@@ -18,36 +19,8 @@ const lab = (runtime: LabRuntimeInfo, title = "Lab") =>
 const host = (id: string, provider: string) => ({ id, name: id, provider }) as unknown as ServerHost;
 const report = (terraform: boolean) =>
   ({ docker: { installed: false }, dockerRunning: false, vmProviders: [], terraform: { installed: terraform } }) as unknown as SystemReport;
-const status = (p: Partial<LabStatus>): LabStatus => ({
-  running: false,
-  parked: null,
-  machines: [],
-  networks: [],
-  url: null,
-  host: null,
-  expiresAt: null,
-  place: null,
-  provider: null,
-  attacker: null,
-  outputs: [],
-  message: null,
-  reapError: null,
-  ...p,
-});
-const derive = (p: Partial<LabStateInput>) =>
-  deriveLabState({
-    status: undefined,
-    runtime: cloud,
-    hostArch: "x86_64",
-    readyVms: [],
-    busy: false,
-    backendDeploying: false,
-    backendOp: undefined,
-    acting: null,
-    parkable: true,
-    provisionable: true,
-    ...p,
-  });
+const status = labStatus;
+const derive = (p: Partial<LabStateInput>) => deriveState({ runtime: cloud, ...p });
 
 describe("cloud labs", () => {
   it("run in a cloud account only, never here", () => {
