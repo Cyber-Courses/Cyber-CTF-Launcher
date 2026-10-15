@@ -96,15 +96,19 @@ serde_yaml_ng = "0.10.0"
 # git-ignored [patch]); the committed Cargo.lock keeps the pin. Only `src/runtime/lab/` calls
 # them: the spec (`isoloom-spec`), the check plan (`isoloom-plan`), the backends' registry and the
 # resolved snapshot (`isoloom-targets`).
-isoloom-spec = { git = "https://github.com/isoloom/isoloom", rev = "7b93fef661618a674307b8fdad9f053ab86c1485" }
-isoloom-plan = { git = "https://github.com/isoloom/isoloom", rev = "7b93fef661618a674307b8fdad9f053ab86c1485" }
-isoloom-targets = { git = "https://github.com/isoloom/isoloom", rev = "7b93fef661618a674307b8fdad9f053ab86c1485" }
+isoloom-spec = { git = "https://github.com/isoloom/isoloom", rev = "ea217edb692210467b463fda9dc110275d9a985d" }
+isoloom-plan = { git = "https://github.com/isoloom/isoloom", rev = "ea217edb692210467b463fda9dc110275d9a985d" }
+isoloom-targets = { git = "https://github.com/isoloom/isoloom", rev = "ea217edb692210467b463fda9dc110275d9a985d" }
+# The Compose backend's start plan and the check runners' names, which the launcher's own Docker
+# path reads from the generated files (`isoloom-compose`, `isoloom-render`).
+isoloom-compose = { git = "https://github.com/isoloom/isoloom", rev = "ea217edb692210467b463fda9dc110275d9a985d" }
+isoloom-render = { git = "https://github.com/isoloom/isoloom", rev = "ea217edb692210467b463fda9dc110275d9a985d" }
 # The run manifest's types, shared with the Isothrum runner: what `runtime/isothrum` reads of a run.
-isoloom-manifest = { git = "https://github.com/isoloom/isoloom", rev = "7b93fef661618a674307b8fdad9f053ab86c1485" }
+isoloom-manifest = { git = "https://github.com/isoloom/isoloom", rev = "ea217edb692210467b463fda9dc110275d9a985d" }
 # The Isothrum runner: executes the run manifest Isoloom writes (`runtime/isothrum`, local Docker
 # behind the hidden developer flag `CYBERCTF_RUNNER=isothrum`). Pinned to a commit of Isothrum's
 # local main, like Isoloom's crates.
-isothrum-runner = { git = "https://github.com/isoloom/isothrum", rev = "5ec348c11846f2fe646e73c99b8cfaf7ca9b73f3" }
+isothrum-runner = { git = "https://github.com/isoloom/isothrum", rev = "d714009057eb18e15d448f25c91dd6da965a6933" }
 # The map type of the Isoloom crates' API (a cloud-services lab's outputs).
 indexmap = "2"
 portable-pty = "0.9"
@@ -138,4 +142,4 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 # Tauri's mock runtime, so code taking an app handle runs in unit tests (see `AppRuntime`).
 tauri = { version = "2.12.0", features = ["test"] }
 # The runner's test doubles (scripted processes, host ports and clock), for `runtime/isothrum`'s.
-isothrum-runner = { git = "https://github.com/isoloom/isothrum", rev = "5ec348c11846f2fe646e73c99b8cfaf7ca9b73f3", features = ["fake"] }
+isothrum-runner = { git = "https://github.com/isoloom/isothrum", rev = "d714009057eb18e15d448f25c91dd6da965a6933", features = ["fake"] }

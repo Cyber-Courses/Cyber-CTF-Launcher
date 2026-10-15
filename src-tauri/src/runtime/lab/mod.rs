@@ -35,7 +35,8 @@ pub use vars::{esxi_env, host_vars, run_vars};
 pub use isoloom_plan::checks;
 pub use isoloom_spec::model::{Arch, Spec, Target};
 pub use isoloom_spec::model::{CloudProvider, CloudServices};
-pub use isoloom_targets::{Lab, StartPlan};
+pub use isoloom_compose::StartPlan;
+pub use isoloom_targets::Lab;
 
 /// The lab in `dir` as its author wrote it, checked (its fields, its lowered form's and the files
 /// it names), with this machine's Isoloom defaults' image table.
@@ -186,7 +187,7 @@ pub fn prepare(dir: &Path, target: Target) -> Result<Prepared> {
 /// for instance `n`, the lab as that instance and everything under `.isoloom-<n>/`. Refused,
 /// with the backend's reason, when the lab's machines don't allow the target or the plan needs
 /// what the backend can't do.
-fn generate(lab: &Lab, target: Target, n: Option<u8>) -> std::result::Result<Vec<isoloom_targets::GeneratedFile>, isoloom_targets::GenerateError> {
+fn generate(lab: &Lab, target: Target, n: Option<u8>) -> isoloom_targets::Result<Vec<isoloom_targets::GeneratedFile>> {
     match n {
         Some(n) => isoloom_targets::generate_instance(lab, target, n),
         None => isoloom_targets::generate(lab, target),
@@ -239,7 +240,11 @@ pub fn message(dir: &Path, lab: &Lab, target: Target) -> Option<String> {
 pub fn message_at(dir: &Path, lab: &Lab, target: Target, published: &[(String, String, u16)]) -> Option<String> {
     let text = lab.source().message.as_deref()?;
     let snapshot = isoloom_targets::resolved::on_target(isoloom_targets::resolved::resolve_with(lab, instance(dir)), target);
-    let snapshot = isoloom_targets::resolved::with_published(snapshot, published);
+    let published: Vec<isoloom_targets::resolved::HostPort> = published
+        .iter()
+        .map(|(machine, port, host)| isoloom_targets::resolved::HostPort { machine: machine.clone(), port: port.clone(), host: *host })
+        .collect();
+    let snapshot = isoloom_targets::resolved::with_published(snapshot, &published);
     // A placeholder naming a value this run doesn't have (a port the lab never published on this
     // target, a port not pinned yet) fills as nothing: the player got `http://localhost:/`.
     if placeholders(text).any(|path| isoloom_targets::resolved::lookup(&snapshot, path).is_none_or(|v| v.is_null() || v.as_str() == Some(""))) {
@@ -265,13 +270,13 @@ pub fn qemu_refusal(lab: &Lab) -> Option<String> {
 
 /// How the lab's containers start, from its Compose file's text (Isoloom's start plan).
 pub fn start_plan(compose: &str) -> Option<StartPlan> {
-    isoloom_targets::start_plan(compose).ok()
+    isoloom_compose::start_plan(compose).ok()
 }
 
 /// The check runner Isoloom writes for `machine`'s `exec` checks (under the Compose file's
 /// `checks/`).
 pub fn exec_runner(machine: &str) -> String {
-    isoloom_targets::exec_runner(machine)
+    isoloom_render::container::exec_runner(machine)
 }
 
 /// The lab's inputs found in `env`, as the JSON object Terraform's `inputs` variable takes.
@@ -346,7 +351,7 @@ mod tests {
         // after the target: what the player reads after "can't run there".
         let dir = lab(SPEC);
         let lab = super::lab(&dir).unwrap();
-        for target in isoloom_targets::GENERATED_TARGETS {
+        for target in Target::ALL.iter().filter(|t| isoloom_targets::backend(**t).is_some()) {
             match generate(&lab, *target, None) {
                 Ok(files) => assert!(files.iter().any(|f| f.path == isoloom_targets::resolved::PATH), "{target:?}: the snapshot goes with every target"),
                 Err(e) => assert!(e.to_string().starts_with(target.id()), "{target:?}: {e}"),
