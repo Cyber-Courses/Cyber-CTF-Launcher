@@ -11,14 +11,11 @@ import { report } from "@/lib/dev-mock/sample";
  *  - `machine=fresh`: nothing installed yet (no package manager, engine, Vagrant or hypervisor).
  *  - `onboarding`: the first-run onboarding shows (on every load with the switch).
  *  - `auth=out`: signed out until "Sign in" is used.
- *  - `check=down`: every system check fails until the test brings the machine back
- *    (`window.__CYBERCTF_MOCK_MACHINE_UP__()`), so no background re-check can answer before the
- *    test has seen the failure.
  *  - `launch=fail`: the first lab start of each page load fails, after a few lines of output.
  *  - `hold=<step>[,<step>…]`: each step waits, once reached, until the test lets it go on
  *    (`window.__CYBERCTF_MOCK_RELEASE__(step)`): a lab start (`launch`), a re-run of provisioning
- *    (`provision`), a hosted session coming up (`hosted`), the package manager showing up (`pm`).
- *    See holds.ts.
+ *    (`provision`), a hosted session coming up (`hosted`), the machine coming back after failed
+ *    system checks (`check`), the package manager showing up (`pm`). See holds.ts.
  *  - `install=fail`: the first one-click install of each page load fails. Otherwise installs
  *    stream an installer's output and succeed: the next system check reports the tool installed.
  *  - `deploying=none`: no lab is deploying at load (GOAD Light otherwise is).
@@ -37,7 +34,6 @@ export type Scenario = {
   fresh: boolean;
   onboarding: boolean;
   signedOut: boolean;
-  checkDown: boolean;
   launchFails: boolean;
   /** The steps a test holds (`hold=`), in the order given. */
   held: Holdable[];
@@ -56,7 +52,6 @@ export function scenarioFrom(search: string): Scenario {
     fresh: q.get("machine") === "fresh",
     onboarding: q.has("onboarding"),
     signedOut: q.get("auth") === "out",
-    checkDown: q.get("check") === "down",
     launchFails: q.get("launch") === "fail",
     held: (q.get("hold") ?? "").split(",").filter(isHoldable),
     installFails: q.get("install") === "fail",

@@ -58,20 +58,23 @@ export async function openApp(page: Page, query = "") {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 }
 
-/** With `check=down` (src/lib/dev-mock/scenario.ts): brings the machine back and presses `retry` in one
- *  go, inside the page, so no background re-check can answer in between. */
-export async function machineBackAndRetry(retry: Locator) {
-  await retry.evaluate((button: HTMLElement) => {
-    (window as unknown as { __CYBERCTF_MOCK_MACHINE_UP__: () => void }).__CYBERCTF_MOCK_MACHINE_UP__();
-    button.click();
-  });
-}
+/** What the dev mock adds to the window for a test (src/lib/dev-mock/index.ts). */
+type MockWindow = { __CYBERCTF_MOCK_RELEASE__: (step: string) => void };
 
 /** With `hold=<step>` (src/lib/dev-mock/holds.ts): lets the step the preview in `page` holds go
- *  on. Until then, what the UI shows while the step lasts stays on screen for the test to see. */
-export async function release(page: Page, step: Holdable) {
+ *  on. Until then, what the UI shows while the step lasts stays on screen for the test to see.
+ *  With `andClick`, also presses that button in the same go, inside the page, so nothing the page
+ *  runs on its own (a poll, a background re-check) sees the step go on before the click does. */
+export async function release(page: Page, step: Holdable, andClick?: Locator) {
+  if (andClick) {
+    await andClick.evaluate((button: HTMLElement, s) => {
+      (window as unknown as MockWindow).__CYBERCTF_MOCK_RELEASE__(s);
+      button.click();
+    }, step);
+    return;
+  }
   await page.evaluate((s) => {
-    (window as unknown as { __CYBERCTF_MOCK_RELEASE__: (step: string) => void }).__CYBERCTF_MOCK_RELEASE__(s);
+    (window as unknown as MockWindow).__CYBERCTF_MOCK_RELEASE__(s);
   }, step);
 }
 

@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, navButton, pageTitle, machineBackAndRetry } from "./fixtures";
+import { test, expect, navButton, pageTitle, release } from "./fixtures";
 
 // The first-run onboarding, on each machine the dev mock can report (`?mock&onboarding` plus the
 // scenario switches `os`, `arch` and `machine`, see src/lib/dev-mock/scenario.ts).
@@ -161,14 +161,14 @@ test.describe("onboarding", () => {
   });
 
   test("a failed machine check during onboarding says so, and Try again recovers", async ({ page }) => {
-    // Every check fails (the shell's, the onboarding's at mount and its polls) until the machine
-    // comes back with the Try again.
-    await page.goto("/?mock&onboarding&check=down");
+    // Every check fails (`hold=check`: the shell's, the onboarding's at mount and its polls) until
+    // the machine comes back with the Try again.
+    await page.goto("/?mock&onboarding&hold=check");
     await page.getByRole("button", { name: "Get started" }).click();
     await forward(page).click();
     await expect(page.getByText("Couldn’t check this machine")).toBeVisible();
     await expect(page.getByText("docker info timed out after 20 s")).toBeVisible();
-    await machineBackAndRetry(page.getByRole("button", { name: "Try again" }));
+    await release(page, "check", page.getByRole("button", { name: "Try again" }));
     await expect(page.getByRole("heading", { level: 1, name: "Package manager" })).toBeVisible();
     await expect(forward(page)).toBeEnabled();
   });

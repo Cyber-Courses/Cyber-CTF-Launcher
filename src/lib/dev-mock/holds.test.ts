@@ -15,7 +15,7 @@ const settled = (p: Promise<void>) =>
 
 describe("the steps a test holds in the preview", () => {
   it("are read from the URL, leaving out names nothing can hold", () => {
-    expect(scenarioFrom("?mock&hold=provision,nope,hosted").held).toEqual(["provision", "hosted"]);
+    expect(scenarioFrom("?mock&hold=provision,nope,hosted,check").held).toEqual(["provision", "hosted", "check"]);
     expect(scenarioFrom("?mock").held).toEqual([]);
   });
 

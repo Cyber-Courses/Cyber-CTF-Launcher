@@ -18,9 +18,9 @@ import type { Args } from "@/lib/dev-mock/types";
 export { answer } from "@/lib/dev-mock/sample";
 export { scenarioFrom, scenarioReport } from "@/lib/dev-mock/scenario";
 
-/** What the preview adds to the window: whether it is installed, how a test brings the machine
- *  back under `check=down`, and how it lets a step it holds (`hold=`) go on. */
-type MockWindow = { __CYBERCTF_MOCK__?: boolean; __CYBERCTF_MOCK_MACHINE_UP__?: () => void; __CYBERCTF_MOCK_RELEASE__?: (step: string) => void };
+/** What the preview adds to the window: whether it is installed, and how a test lets a step it
+ *  holds (`hold=`) go on. */
+type MockWindow = { __CYBERCTF_MOCK__?: boolean; __CYBERCTF_MOCK_RELEASE__?: (step: string) => void };
 
 /** Installs the mock when running in a plain browser with ?mock in the URL. */
 export function installDevMock() {
@@ -34,9 +34,6 @@ export function installDevMock() {
   mockIPC((cmd, args) => browserAnswer(cmd, args as Args, { sc, live }));
   joinEventBus();
   own.__CYBERCTF_MOCK__ = true;
-  own.__CYBERCTF_MOCK_MACHINE_UP__ = () => {
-    live.checkDown = false;
-  };
   own.__CYBERCTF_MOCK_RELEASE__ = live.holds.release;
   if (sc.onboarding) clearOnboarded();
   else markOnboarded();

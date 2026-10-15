@@ -30,8 +30,6 @@ type Operation = "launch" | "stop" | "pause" | "shutdown" | "resume" | "provisio
 export type Live = {
   running: Set<string>;
   signedIn: boolean;
-  /** System checks fail (`check=down`) until the test brings the machine back. */
-  checkDown: boolean;
   launchFails: boolean;
   /** The operations in flight on each lab, as the core reports them. */
   ops: Map<string, Operation>;
@@ -51,7 +49,6 @@ export function liveFrom(sc: Scenario): Live {
   return {
     running: new Set(answer("running_labs", undefined) as string[]),
     signedIn: !sc.signedOut,
-    checkDown: sc.checkDown,
     launchFails: sc.launchFails,
     ops: new Map(),
     installed: new Set(),

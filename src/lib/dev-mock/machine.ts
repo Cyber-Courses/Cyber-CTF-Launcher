@@ -1,6 +1,6 @@
-// This machine in the browser preview: its system check (down until the test brings it back with
-// `check=down`), the one-click installs (an installer's output, then the tool reported installed;
-// the first fails with `install=fail`), the self-tests and the setup window.
+// This machine in the browser preview: its system check (down until the test lets it come back,
+// with `hold=check`), the one-click installs (an installer's output, then the tool reported
+// installed; the first fails with `install=fail`), the self-tests and the setup window.
 import type { SystemReport } from "@/lib/tauri";
 import { argText, fail, send, sleep } from "@/lib/dev-mock/command";
 import type { BrowserHandler, Live } from "@/lib/dev-mock/live";
@@ -49,8 +49,8 @@ const SELFTEST_STEPS: Partial<Record<string, string[]>> = {
   vm: ["vagrant", "provider", "hypervisor", "box", "boot", "exec", "network", "cleanup"],
 };
 
-/** Whether the machine is down now (`check=down`, until the test brings it back). */
-const machineDown = (live: Live) => live.checkDown;
+/** Whether the machine is down now (`hold=check`, until the test lets it come back). */
+const machineDown = (live: Live) => live.holds.isHeld("check");
 
 // Decided when the answer is given: a check in flight when the machine comes back answers like
 // the next one, so no failure lands after the test's retry.
