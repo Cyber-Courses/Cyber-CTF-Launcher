@@ -380,7 +380,8 @@ async fn real_labs_segmented_on_the_runner() {
 
 /// The invoice-portal-api CTF lab: one network, two machines (a web API and its database, which
 /// claims the player's evidence in a set-up job), checks of its own (an HTTP probe and a script).
-fn invoice_portal() -> Expect {
+/// `env`: its inputs at launch.
+fn invoice_portal(env: &'static [(&'static str, &'static str)]) -> Expect {
     Expect {
         lab_var: "CYBERCTF_TEST_LAB",
         target: "web",
@@ -390,21 +391,23 @@ fn invoice_portal() -> Expect {
         code: "401",
         body: "",
         published: true,
-        // Its inputs, empty: no launch to claim the evidence from, so the development value.
-        env: &[("CTF_API_URL", ""), ("CTF_LAUNCH_TOKEN", "")],
+        env,
     }
 }
 
 #[tokio::test]
 #[ignore = "needs Docker, the invoice-portal-api lab (in Isoloom's current syntax) and the attack-box image"]
 async fn real_labs_supplier_portal() {
-    real_lab("invoice", Via::Launcher, invoice_portal()).await;
+    // The launcher's own path runs Compose without the manifest: Compose refuses the lab's inputs
+    // unset, so they are given, empty (no launch to claim the evidence from: the development value).
+    real_lab("invoice", Via::Launcher, invoice_portal(&[("CTF_API_URL", ""), ("CTF_LAUNCH_TOKEN", "")])).await;
 }
 
 #[tokio::test]
 #[ignore = "needs Docker, the invoice-portal-api lab (in Isoloom's current syntax) and the attack-box image"]
 async fn real_labs_supplier_portal_on_the_runner() {
-    real_lab("invoice", Via::Runner, invoice_portal()).await;
+    // Launched without its inputs: the runner delivers each slot's manifest default.
+    real_lab("invoice", Via::Runner, invoice_portal(&[])).await;
 }
 
 /// The segmented lab through the launcher's own Docker code.

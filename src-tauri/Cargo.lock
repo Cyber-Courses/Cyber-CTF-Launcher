@@ -2267,7 +2267,7 @@ dependencies = [
 [[package]]
 name = "isoloom-ansible"
 version = "0.10.1"
-source = "git+https://github.com/isoloom/isoloom?rev=e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9#e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9"
+source = "git+https://github.com/isoloom/isoloom?rev=7b93fef661618a674307b8fdad9f053ab86c1485#7b93fef661618a674307b8fdad9f053ab86c1485"
 dependencies = [
  "isoloom-plan",
  "isoloom-render",
@@ -2279,7 +2279,7 @@ dependencies = [
 [[package]]
 name = "isoloom-compose"
 version = "0.10.1"
-source = "git+https://github.com/isoloom/isoloom?rev=e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9#e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9"
+source = "git+https://github.com/isoloom/isoloom?rev=7b93fef661618a674307b8fdad9f053ab86c1485#7b93fef661618a674307b8fdad9f053ab86c1485"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-manifest",
@@ -2294,7 +2294,7 @@ dependencies = [
 [[package]]
 name = "isoloom-kubernetes"
 version = "0.10.1"
-source = "git+https://github.com/isoloom/isoloom?rev=e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9#e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9"
+source = "git+https://github.com/isoloom/isoloom?rev=7b93fef661618a674307b8fdad9f053ab86c1485#7b93fef661618a674307b8fdad9f053ab86c1485"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-plan",
@@ -2309,7 +2309,7 @@ dependencies = [
 [[package]]
 name = "isoloom-manifest"
 version = "0.10.1"
-source = "git+https://github.com/isoloom/isoloom?rev=e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9#e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9"
+source = "git+https://github.com/isoloom/isoloom?rev=7b93fef661618a674307b8fdad9f053ab86c1485#7b93fef661618a674307b8fdad9f053ab86c1485"
 dependencies = [
  "schemars 1.2.2",
  "serde",
@@ -2321,7 +2321,7 @@ dependencies = [
 [[package]]
 name = "isoloom-plan"
 version = "0.10.1"
-source = "git+https://github.com/isoloom/isoloom?rev=e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9#e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9"
+source = "git+https://github.com/isoloom/isoloom?rev=7b93fef661618a674307b8fdad9f053ab86c1485#7b93fef661618a674307b8fdad9f053ab86c1485"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-spec",
@@ -2331,7 +2331,7 @@ dependencies = [
 [[package]]
 name = "isoloom-render"
 version = "0.10.1"
-source = "git+https://github.com/isoloom/isoloom?rev=e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9#e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9"
+source = "git+https://github.com/isoloom/isoloom?rev=7b93fef661618a674307b8fdad9f053ab86c1485#7b93fef661618a674307b8fdad9f053ab86c1485"
 dependencies = [
  "hcl-rs",
  "indexmap 2.14.2",
@@ -2344,7 +2344,7 @@ dependencies = [
 [[package]]
 name = "isoloom-spec"
 version = "0.10.1"
-source = "git+https://github.com/isoloom/isoloom?rev=e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9#e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9"
+source = "git+https://github.com/isoloom/isoloom?rev=7b93fef661618a674307b8fdad9f053ab86c1485#7b93fef661618a674307b8fdad9f053ab86c1485"
 dependencies = [
  "indexmap 2.14.2",
  "saphyr-parser",
@@ -2359,7 +2359,7 @@ dependencies = [
 [[package]]
 name = "isoloom-targets"
 version = "0.10.1"
-source = "git+https://github.com/isoloom/isoloom?rev=e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9#e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9"
+source = "git+https://github.com/isoloom/isoloom?rev=7b93fef661618a674307b8fdad9f053ab86c1485#7b93fef661618a674307b8fdad9f053ab86c1485"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-ansible",
@@ -2378,7 +2378,7 @@ dependencies = [
 [[package]]
 name = "isoloom-terraform"
 version = "0.10.1"
-source = "git+https://github.com/isoloom/isoloom?rev=e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9#e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9"
+source = "git+https://github.com/isoloom/isoloom?rev=7b93fef661618a674307b8fdad9f053ab86c1485#7b93fef661618a674307b8fdad9f053ab86c1485"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-plan",
@@ -2391,7 +2391,7 @@ dependencies = [
 [[package]]
 name = "isoloom-vagrant"
 version = "0.10.1"
-source = "git+https://github.com/isoloom/isoloom?rev=e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9#e9a9dd663d75bf48718e5a1aa9271f64a94f9bc9"
+source = "git+https://github.com/isoloom/isoloom?rev=7b93fef661618a674307b8fdad9f053ab86c1485#7b93fef661618a674307b8fdad9f053ab86c1485"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-plan",
@@ -2403,7 +2403,7 @@ dependencies = [
 [[package]]
 name = "isothrum-runner"
 version = "0.1.0"
-source = "git+https://github.com/isoloom/isothrum?rev=55f27e33a1b207a7670c0d61ef0fc5f9c18cf700#55f27e33a1b207a7670c0d61ef0fc5f9c18cf700"
+source = "git+https://github.com/isoloom/isothrum?rev=5ec348c11846f2fe646e73c99b8cfaf7ca9b73f3#5ec348c11846f2fe646e73c99b8cfaf7ca9b73f3"
 dependencies = [
  "isoloom-manifest",
  "process-wrap",
