@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Checks the app's JSON files and the Microsoft Store listing before they ship.
 
-- Every `src/messages/**/*.json` and `store/listings/*.json` parses.
+- Every `src/messages/**/*.json` and `packaging/store/listings/*.json` parses.
 - Each Store listing keeps Partner Center's limits (a submission over them is refused at release
   time, after the build): at most 7 search terms of at most 30 characters, features of at most
   200 characters (20 at most), a short description of at most 270 characters, a description of
@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-STORE = ROOT / "store"
+STORE = ROOT / "packaging" / "store"
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 errors: list[str] = []
@@ -135,7 +135,7 @@ def main() -> int:
 
     listings = sorted((STORE / "listings").glob("*.json"))
     if not listings:
-        fail("store/listings", "no listings found")
+        fail("packaging/store/listings", "no listings found")
     for path in listings:
         data = load_json(path)
         if data is None:

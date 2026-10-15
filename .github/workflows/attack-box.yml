@@ -1,8 +1,8 @@
 name: Attack box image
 
-# Builds cyberctf/attack-box (attack-box/Dockerfile) for amd64 and arm64 on native runners and
+# Builds cyberctf/attack-box (images/attack-box/Dockerfile) for amd64 and arm64 on native runners and
 # publishes one multi-arch tag to Docker Hub. Rebuilt weekly because Kali is a rolling release.
-# Every run first builds the image locally and smoke-tests it (attack-box/smoke-test.sh), on pull
+# Every run first builds the image locally and smoke-tests it (images/attack-box/smoke-test.sh), on pull
 # requests too; only a push to main, the weekly run or a manual run publishes, and only once the
 # smoke test passed on both architectures, so a broken Kali update never reaches players.
 # The launcher doesn't follow `latest`: its default is the image pinned by digest in
@@ -11,10 +11,10 @@ name: Attack box image
 # and CI workflows are dispatched on that PR, since a GITHUB_TOKEN PR starts no runs by itself).
 on:
   pull_request:
-    paths: ["attack-box/**", ".github/workflows/attack-box.yml"]
+    paths: ["images/attack-box/**", ".github/workflows/attack-box.yml"]
   push:
     branches: [main]
-    paths: ["attack-box/**", ".github/workflows/attack-box.yml"]
+    paths: ["images/attack-box/**", ".github/workflows/attack-box.yml"]
   schedule:
     - cron: "0 4 * * 1"
   workflow_dispatch:
@@ -56,9 +56,9 @@ jobs:
           df -h / /mnt || true
       # No registry, no secrets: a plain local build, so pull requests from forks run it too.
       - name: Build
-        run: docker build --pull -t attack-box:smoke attack-box
+        run: docker build --pull -t attack-box:smoke images/attack-box
       - name: Smoke test
-        run: attack-box/smoke-test.sh attack-box:smoke
+        run: images/attack-box/smoke-test.sh attack-box:smoke
 
   build:
     needs: smoke
@@ -82,7 +82,7 @@ jobs:
       - id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
-          context: attack-box
+          context: images/attack-box
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
       - run: |
@@ -151,7 +151,7 @@ jobs:
           PINNED: ${{ env.IMAGE }}@${{ needs.publish.outputs.digest }}
         run: |
           docker pull -q "$PINNED"
-          attack-box/smoke-test.sh "$PINNED"
+          images/attack-box/smoke-test.sh "$PINNED"
 
   # A PR moving the launcher's default attack box to the digest just published and verified.
   bump:

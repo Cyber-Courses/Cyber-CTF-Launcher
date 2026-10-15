@@ -12,9 +12,9 @@ on:
       - "**/*.tf"
       - "**/*.hcl"
       - "**/*.sh"
-      - "attack-box/**"
+      - "images/attack-box/**"
       - "src/messages/**"
-      - "store/**"
+      - "packaging/store/**"
   push:
     branches: [main, dev]
   workflow_dispatch:
@@ -97,7 +97,7 @@ jobs:
       - run: |
           set -euo pipefail
           shellcheck --version
-          mapfile -t scripts < <(git ls-files '*.sh' '*.bash' 'attack-box/bashrc.cyberctf')
+          mapfile -t scripts < <(git ls-files '*.sh' '*.bash' 'images/attack-box/bashrc.cyberctf')
           printf '%s\n' "${scripts[@]}"
           shellcheck --severity=warning --external-sources "${scripts[@]}"
 

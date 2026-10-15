@@ -1,5 +1,5 @@
 # Sends a release to the Microsoft Store through the Partner Center submission API: the package
-# (an x64 + Arm64 .msixbundle) and the whole listing, every language in store/listings/ with its
+# (an x64 + Arm64 .msixbundle) and the whole listing, every language in packaging/store/listings/ with its
 # texts, screenshots, logos and trailer. Partner Center then shows a new submission:
 #   -Commit $true   submits it for certification (release pipeline);
 #   -Commit $false  leaves it as a draft to review and submit by hand in Partner Center.
@@ -8,7 +8,7 @@
 # API reference: https://learn.microsoft.com/windows/uwp/monetize/manage-app-submissions
 param(
   [Parameter(Mandatory)] [string] $Package,     # path to the .msixbundle
-  [Parameter(Mandatory)] [string] $StoreDir,    # the repo's store/ folder
+  [Parameter(Mandatory)] [string] $StoreDir,    # the repo's packaging/store/ folder
   [bool] $Commit = $false
 )
 $ErrorActionPreference = "Stop"

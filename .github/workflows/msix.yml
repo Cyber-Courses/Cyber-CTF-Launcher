@@ -8,7 +8,7 @@ name: MSIX (Microsoft Store)
 # - When "submit" is true: also creates + commits a Store submission for the package.
 #
 # Prereqs:
-#   - src-tauri/msix/AppxManifest.xml carries the real Identity from Partner Center.
+#   - packaging/msix/AppxManifest.xml carries the real Identity from Partner Center.
 #   - For submit: repo secrets STORE_TENANT_ID, STORE_SELLER_ID, STORE_CLIENT_ID,
 #     STORE_CLIENT_SECRET, and the Azure AD app associated in Partner Center (Manager role).
 #   - The listing must have passed certification once manually (the API cannot complete
@@ -134,10 +134,10 @@ jobs:
           }
 
           # Per-language strings (the app description in English and French).
-          Copy-Item -Recurse "src-tauri\msix\Strings" "$layout\Strings"
+          Copy-Item -Recurse "packaging\msix\Strings" "$layout\Strings"
 
           # Manifest with the build version substituted in.
-          $manifest = Get-Content "src-tauri\msix\AppxManifest.xml" -Raw
+          $manifest = Get-Content "packaging\msix\AppxManifest.xml" -Raw
           $manifest = $manifest.Replace("__VERSION__", "${{ steps.ver.outputs.version }}")
           $manifest = $manifest.Replace('ProcessorArchitecture="x64"', 'ProcessorArchitecture="${{ matrix.arch }}"')
           Set-Content -Path "$layout\AppxManifest.xml" -Value $manifest -Encoding utf8
@@ -271,7 +271,7 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
           sparse-checkout: |
-            store
+            packaging/store
             .github/scripts
 
       - if: ${{ !inputs.check_only }}
@@ -280,7 +280,7 @@ jobs:
           name: CyberCTF-msixbundle
           path: pkg
 
-      # Package and listing together (texts, screenshots, logos, trailers from store/), through the
+      # Package and listing together (texts, screenshots, logos, trailers from packaging/store/), through the
       # Partner Center submission API.
       - name: Submit package and listing
         if: ${{ !inputs.check_only }}
@@ -289,7 +289,7 @@ jobs:
           STORE_TENANT_ID: ${{ secrets.STORE_TENANT_ID }}
           STORE_CLIENT_ID: ${{ secrets.STORE_CLIENT_ID }}
           STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}
-        run: ./.github/scripts/store-submit.ps1 -Package pkg/CyberCTF.msixbundle -StoreDir store -Commit $${{ inputs.commit && 'true' || 'false' }}
+        run: ./.github/scripts/store-submit.ps1 -Package pkg/CyberCTF.msixbundle -StoreDir packaging/store -Commit $${{ inputs.commit && 'true' || 'false' }}
 
   # Sends the submission that is open in Partner Center (a draft left by a release, or edited by
   # hand) for certification.

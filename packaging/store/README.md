@@ -10,7 +10,7 @@ Everything the Store shows for Cyber CTF lives here and goes out with each relea
 - `trailers/<lang>/`: `trailer.mp4` (1920×1080, H.264, <60 s) and its `thumbnail.png` (1920×1080).
 
 The package itself (x64 + Arm64 `.msixbundle`) declares the app's languages and description from
-`src-tauri/msix/` (manifest + `Strings/<lang>/Resources.resw`).
+`packaging/msix/` (manifest + `Strings/<lang>/Resources.resw`).
 
 Update `releaseNotes` in each listing before tagging a release. Set the repository variable
 `STORE_AUTO_SUBMIT=false` to have a release leave its Store submission as a draft to review in

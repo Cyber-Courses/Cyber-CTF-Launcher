@@ -1,6 +1,6 @@
 //! The Store (MSIX) build used to run with file-system write virtualization on, so what it wrote
 //! under AppData went to the package's private copy (`Packages\<family>\LocalCache\...`), where
-//! docker, vagrant, terraform and ssh can't see it. Virtualization is now off (AppxManifest.xml);
+//! docker, vagrant, terraform and ssh can't see it. Virtualization is now off (packaging/msix/AppxManifest.xml);
 //! this brings the files saved before over to the real folders, once, never overwriting one.
 
 use std::path::Path;
