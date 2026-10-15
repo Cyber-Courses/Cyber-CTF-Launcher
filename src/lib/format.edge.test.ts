@@ -6,8 +6,12 @@ import { setLocalePreference } from "@/lib/i18n";
 // Boundary values of the shared formatters: the exact tick where each form changes, the far
 // ends (a day-long elapsed, a clock that went backwards) and inputs that are not numbers.
 describe("format: boundaries", () => {
-  beforeEach(() => setLocalePreference("en"));
-  afterEach(() => setLocalePreference("system"));
+  beforeEach(() => {
+    setLocalePreference("en");
+  });
+  afterEach(() => {
+    setLocalePreference("system");
+  });
 
   it("switches from tenths to whole seconds at exactly 10 s, and to m:ss at exactly 60 s", () => {
     expect(formatDuration(0)).toBe("0.0s");

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { invokeStreaming } from "@/lib/tauri/stream";
+import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
 import type { AzureSubscription, CloudLoginProvider, GcpBillingAccount, GcpOrganization, OciConfig, Provider } from "@/lib/tauri/generated";
 
 export type { AzureSubscription, CloudLoginProvider, GcpBillingAccount, GcpOrganization, OciConfig };
@@ -11,7 +11,7 @@ export type CloudProvider = Extract<Provider, "aws" | "azure" | "gcp" | "digital
 export const cloudLogin = (provider: CloudLoginProvider, onLog: (line: string) => void) => invokeStreaming("cloud_login", { provider }, onLog);
 
 /** Cancels the CLI sign-in in progress (`cloudLogin` or `awsLogin`), which then rejects. */
-export const cloudLoginCancel = () => invoke<void>("cloud_login_cancel");
+export const cloudLoginCancel = () => invokeUnit("cloud_login_cancel");
 
 // --- AWS ---
 

@@ -4,6 +4,9 @@ import type { MessageKey } from "@/lib/i18n";
 
 // What the Overview shows, as pure functions of the labs, their statuses and this machine.
 
+/** The labs' statuses, by id: none for a lab not read yet. */
+type Statuses = Partial<Record<string, LabStatus>>;
+
 /** "Good morning / afternoon / evening" from the local hour. */
 export const greetingKey = (hour: number): MessageKey =>
   hour < 12 ? "home.greeting.morning" : hour < 18 ? "home.greeting.afternoon" : "home.greeting.evening";
@@ -25,16 +28,16 @@ export function heroStatus(
 }
 
 /** The labs running now. */
-export const runningLabs = (labs: Lab[], statuses: Record<string, LabStatus>) => labs.filter((l) => statuses[l.id]?.running);
+export const runningLabs = (labs: Lab[], statuses: Statuses) => labs.filter((l) => statuses[l.id]?.running);
 
 /** The running labs' own containers: the engine's total also counts the player's other projects. */
-export const labContainerCount = (running: Lab[], statuses: Record<string, LabStatus>) =>
+export const labContainerCount = (running: Lab[], statuses: Statuses) =>
   running
     .filter((l) => l.runtime?.runtime === "DOCKER" && (statuses[l.id]?.place ?? "container") === "container")
     .reduce((n, l) => n + (statuses[l.id]?.machines.length ?? 0), 0);
 
 /** "Jump back in": recently launched labs, most recent first, not already running. */
-export function recentLabs(labs: Lab[], statuses: Record<string, LabStatus>, lastRun: (id: string) => number | null, max = 3) {
+export function recentLabs(labs: Lab[], statuses: Statuses, lastRun: (id: string) => number | null, max = 3) {
   return labs
     .map((lab) => ({ lab, ts: lastRun(lab.id) }))
     .filter((r): r is { lab: Lab; ts: number } => r.ts !== null && !statuses[r.lab.id]?.running)

@@ -17,40 +17,25 @@ const ENTRY_POINTS = ["src/app/**/{page,layout,error,global-error,not-found,load
 
 /** Rules the shipped code and the tests don't meet yet. */
 const RATCHETED = [
-  "@typescript-eslint/max-params",
   "@typescript-eslint/no-base-to-string",
   "@typescript-eslint/no-confusing-void-expression",
-  "@typescript-eslint/no-deprecated",
-  "@typescript-eslint/no-dynamic-delete",
   "@typescript-eslint/no-invalid-void-type",
-  "@typescript-eslint/no-meaningless-void-operator",
   "@typescript-eslint/no-misused-promises",
   "@typescript-eslint/no-non-null-assertion",
-  "@typescript-eslint/no-redundant-type-constituents",
   "@typescript-eslint/no-unnecessary-condition",
-  "@typescript-eslint/no-unnecessary-type-arguments",
   "@typescript-eslint/no-unnecessary-type-assertion",
-  "@typescript-eslint/no-unnecessary-type-conversion",
-  "@typescript-eslint/no-unnecessary-type-parameters",
   "@typescript-eslint/no-unsafe-return",
-  "@typescript-eslint/prefer-promise-reject-errors",
   "@typescript-eslint/restrict-template-expressions",
   "@typescript-eslint/use-unknown-in-catch-callback-variable",
-  "import/no-default-export",
-  "max-lines",
   "max-lines-per-function",
   "sonarjs/cognitive-complexity",
 ];
 /** Rules only the tests don't meet yet. */
 const RATCHETED_IN_TESTS = [
-  "@typescript-eslint/no-extraneous-class",
-  "@typescript-eslint/no-floating-promises",
-  "@typescript-eslint/no-misused-spread",
   "@typescript-eslint/no-unsafe-assignment",
   "@typescript-eslint/no-unsafe-member-access",
   "@typescript-eslint/only-throw-error",
   "@typescript-eslint/require-await",
-  "@typescript-eslint/unbound-method",
 ];
 
 /** A rule's level: "warn" while the ratchet counts it, else "error". */

@@ -4,7 +4,7 @@ import { ZONE_LABEL, frameLayout, zoneLabelWidth } from "@/features/labs/network
 import { PORT_TAB_SLOT, layout } from "@/features/labs/network-diagram/layout";
 import { topology } from "@/features/labs/network-diagram/topology";
 import { BRIDGE, type Attacker, type Machine, type Pt } from "@/features/labs/network-diagram/model";
-import { labCommands } from "@/lib/dev-mock-labs";
+import { labCommands } from "@/lib/dev-mock/labs";
 import { must } from "@/components/test-support";
 
 const machine = (name: string, ip: string, published: number[]): Machine => ({

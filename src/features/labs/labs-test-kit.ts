@@ -6,8 +6,11 @@ import { screen, within } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
 import { deriveLabState, type LabStateInput } from "@/features/labs/lab-detail/lab-state";
 import type { Lab } from "@/features/labs/use-labs";
-import { stopped } from "@/lib/dev-mock-labs";
+import { stopped } from "@/lib/dev-mock/labs";
 import type { LabMachine, LabStatus } from "@/lib/tauri";
+
+// Fails a mocked Tauri command as the Rust core does (shared by every test).
+export { rejectWith } from "@/test/tauri";
 
 /** A catalogue lab `id` (its slug and title too): a level 1 Web lab in Docker, `p` over it. */
 export const testLab = (id: string, p: Partial<Lab> = {}): Lab => ({
@@ -67,12 +70,6 @@ export const deriveState = (p: Partial<LabStateInput>) =>
     provisionable: true,
     ...p,
   });
-
-/** Fails a mocked Tauri command as the Rust core does: its invoke rejects with `reason` as sent
- *  (the error's message, a plain string), never with an `Error`. */
-export function rejectWith(reason: unknown): never {
-  throw reason;
-}
 
 /** A Docker lab up on this machine: `machines` on its default network (10.42.0.0/24), served on
  *  port 8080, `p` over it. */

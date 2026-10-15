@@ -8,6 +8,7 @@ import { HomeScreen } from "@/features/home/home-screen";
 import { JumpBackPanel } from "@/features/home/jump-back-panel";
 import { MachineSummaryPanel } from "@/features/home/machine-summary-panel";
 import type { Lab } from "@/features/labs/use-labs";
+import { must } from "@/components/test-support";
 import { Toaster } from "@/components/ui/toaster";
 import type { AuthStatus } from "@/lib/tauri";
 import { freshReport, readyReport } from "@/test/fixtures";
@@ -32,6 +33,15 @@ const lab = (id: string, slug: string, title: string, over: Partial<Lab> = {}) =
   }) as unknown as Lab;
 
 afterEach(() => vi.restoreAllMocks());
+
+/** The Overview, signed in on a ready machine, once its first reads answered. */
+async function renderHome() {
+  const onNavigate = vi.fn();
+  const user = userEvent.setup();
+  render(<HomeScreen report={readyReport()} auth={signedIn} onNavigate={onNavigate} />);
+  await flush(80);
+  return { onNavigate, user };
+}
 
 describe("HomeScreen", () => {
   it("greets the player by first name and lists what runs", async () => {
@@ -100,10 +110,7 @@ describe("HomeScreen", () => {
     installTauri({
       machine_metrics: () => ({ cpu: 10, memUsed: 3 * GB, memTotal: 6 * GB, diskUsed: 0, diskTotal: 0, uptimeSecs: 1, cores: 2, containers: 0 }),
     });
-    const onNavigate = vi.fn();
-    const user = userEvent.setup();
-    render(<HomeScreen report={readyReport()} auth={signedIn} onNavigate={onNavigate} />);
-    await flush(80);
+    const { onNavigate, user } = await renderHome();
     expect(document.body.textContent).toContain("6.0");
     await user.click(screen.getByRole("button", { name: /cloud/i }));
     await user.click(screen.getByRole("button", { name: /server/i }));
@@ -142,11 +149,8 @@ describe("HomeScreen", () => {
       lab_status: (a) => (a?.id === "lab-kube" ? parked : { ...parked, parked: null, place: null }),
       running_labs: () => [],
     });
-    const onNavigate = vi.fn();
-    const user = userEvent.setup();
-    render(<HomeScreen report={readyReport()} auth={signedIn} onNavigate={onNavigate} />);
-    await flush(80);
-    const panel = screen.getByText(/jump back in/i).closest("section, div")!.parentElement!;
+    const { onNavigate, user } = await renderHome();
+    const panel = must(must(screen.getByText(/jump back in/i).closest("section, div"), "the Jump back in panel").parentElement, "its parent");
     await user.click(within(panel).getAllByText("Exposed dashboard")[0]);
     expect(onNavigate).toHaveBeenCalledWith("labs", "kube-dashboard-exposed");
     await user.click(within(panel).getByRole("button", { name: /resume/i }));
@@ -227,7 +231,7 @@ describe("JumpBackPanel", () => {
       />,
     );
     expect(document.body.textContent).toMatch(/alpha.*2 h/);
-    const [resumeA, busyB] = screen.getAllByRole("button").filter((x) => !x.textContent?.match(/Alpha|Beta/));
+    const [resumeA, busyB] = screen.getAllByRole("button").filter((x) => !/Alpha|Beta/.test(x.textContent));
     expect(busyB.hasAttribute("disabled")).toBe(true);
     await user.click(resumeA);
     expect(onStart).toHaveBeenCalledWith(a);

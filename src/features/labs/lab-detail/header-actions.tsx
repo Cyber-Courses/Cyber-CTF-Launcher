@@ -7,7 +7,7 @@ import { StartTimer } from "@/features/labs/lab-timers";
 import type { HeaderMode, LabAction, LabState } from "@/features/labs/lab-detail/lab-state";
 import { ParkedActions, RunningActions } from "@/features/labs/lab-detail/up-actions";
 import { tell } from "@/lib/failure";
-import { OPERATION_STATUS } from "@/lib/deploy-store";
+import { OPERATION_STATUS } from "@/features/labs/runs/operations";
 import { useT } from "@/lib/i18n";
 
 type HeaderActionsProps = {

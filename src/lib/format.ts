@@ -18,7 +18,7 @@ export function formatDuration(ms: number) {
 export function formatElapsed(ms: number) {
   // A missing or garbled time reads as none, never NaN:NaN.
   const s = Number.isFinite(ms) ? Math.max(0, Math.floor(ms / 1000)) : 0;
-  return s < 60 ? translate("common.units.seconds", { n: s }) : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return s < 60 ? translate("common.units.seconds", { n: s }) : `${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, "0")}`;
 }
 
 /** "just now", "5 min ago", "3 h ago", "yesterday", "4 days ago". */

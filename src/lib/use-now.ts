@@ -10,9 +10,15 @@ export function useNow(ms: number, enabled = true) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!enabled) return;
-    const timer = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, ms);
+    return () => {
+      clearInterval(timer);
+    };
   }, [ms, enabled]);
-  const touch = useCallback(() => setNow(Date.now()), []);
+  const touch = useCallback(() => {
+    setNow(Date.now());
+  }, []);
   return [now, touch] as const;
 }

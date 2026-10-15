@@ -17,5 +17,4 @@ import servers from "./ja/servers.json";
 import settings from "./ja/settings.json";
 import errors from "./ja/errors.json";
 
-const messages = { common, shell, ui, account, app, cloud, home, hosted, labs, diagram, machine, onboarding, servers, settings, errors };
-export default messages;
+export const messages = { common, shell, ui, account, app, cloud, home, hosted, labs, diagram, machine, onboarding, servers, settings, errors };

@@ -4,7 +4,8 @@ import { useState } from "react";
 import { deriveLabState, type LabOperation, type LabStateInput } from "@/features/labs/lab-detail/lab-state";
 import { failureKind } from "@/features/labs/failure-hints";
 import type { ErrorCode } from "@/lib/errors";
-import { operationSeenAt, useActiveOperations, useDeployingLabs, useWorkerLog } from "@/lib/deploy-store";
+import { operationSeenAt, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
+import { useWorkerLog } from "@/features/labs/runs/worker-log";
 
 /** The failure a log ended on (its last ✗ line, without the mark), or null. */
 function logFailure(lines: string[]): string | null {

@@ -4,7 +4,7 @@ import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
 // Cloud labs (EC2 SSRF, cloud services in the player's AWS account) and hosted labs (Blind orders,
 // run by Cyber CTF) through the dev mock: a cloud start streams a Terraform log and leaves outputs
 // and an auto-stop; a hosted session is requested, then runs on the next poll. `cloud=none`: no
-// cloud account saved yet (see src/lib/dev-mock.ts).
+// cloud account saved yet (see src/lib/dev-mock/scenario.ts).
 
 const main = (page: Page) => page.locator("main");
 const button = (page: Page, name: string) => main(page).getByRole("button", { name, exact: true });

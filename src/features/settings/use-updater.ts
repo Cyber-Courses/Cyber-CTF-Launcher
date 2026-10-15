@@ -17,7 +17,7 @@ export function useUpdater() {
   const [upd, setUpd] = useState<UpdateState>({ phase: "idle" });
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
 
-  async function checkUpdates() {
+  async function checkNow() {
     setUpd({ phase: "checking" });
     try {
       const u = await check();
@@ -28,7 +28,7 @@ export function useUpdater() {
     setCheckedAt(Date.now());
   }
 
-  async function install() {
+  async function installNow() {
     if (!("update" in upd)) return;
     const { update } = upd;
     // Installing quits the deploy workers too: asked again now, as the polled set can be a few
@@ -46,5 +46,12 @@ export function useUpdater() {
     await restartApp().catch(tell(translate("settings.about.restartFailed")));
   }
 
+  // Click handlers: each step says how it went in `upd`, so nothing is left to reject to.
+  const checkUpdates = () => {
+    void checkNow();
+  };
+  const install = () => {
+    void installNow();
+  };
   return { upd, checkedAt, checkUpdates, install };
 }

@@ -4,7 +4,7 @@ import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
 // A VM lab (GOAD Light, x86 only) through the dev mock's Vagrant: started on this machine's
 // VirtualBox (an Intel Mac) or on a saved ESXi server, paused, shut down, resumed, provisioned
 // again on one machine, stopped. `deploying=none`: GOAD Light isn't already deploying at load, as
-// it otherwise is in the mock (see src/lib/dev-mock.ts).
+// it otherwise is in the mock (see src/lib/dev-mock/scenario.ts).
 
 const main = (page: Page) => page.locator("main");
 const button = (page: Page, name: string) => main(page).getByRole("button", { name, exact: true });

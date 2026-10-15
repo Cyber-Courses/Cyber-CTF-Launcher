@@ -25,10 +25,10 @@ const streams =
   };
 
 // Commands the browser dev mock leaves unanswered (null), with a plausible answer for tests.
-const DEFAULTS: Record<string, Handler> = {
+const DEFAULTS: Partial<Record<string, Handler>> = {
   installed_tools: () => [{ dependency: "vagrant", at: Math.floor(Date.now() / 1000) - 3600 }],
   shared_folder_get: () => ({ enabled: false, path: "/Users/player/CyberCTF", mountPoint: "/shared" }),
-  shared_folder_set: (a) => ({ enabled: !!a?.enabled, path: String(a?.path ?? ""), mountPoint: "/shared" }),
+  shared_folder_set: (a) => ({ enabled: !!a?.enabled, path: typeof a?.path === "string" ? a.path : "", mountPoint: "/shared" }),
   oci_config: () => ({ configured: false, tenancy: "", region: "" }),
   azure_subscriptions: () => [{ name: "Pay-As-You-Go", id: "sub-1", isDefault: true }],
   gcp_billing_accounts: () => [{ id: "billing-1", name: "My billing", open: true }],
@@ -59,7 +59,7 @@ const DEFAULTS: Record<string, Handler> = {
  * per-test `overrides`. A handler that throws rejects the invoke, like a failed Rust command.
  * Returns the list of calls made, for assertions.
  */
-export function installTauri(overrides: Record<string, Handler> = {}): Call[] {
+export function installTauri(overrides: Partial<Record<string, Handler>> = {}): Call[] {
   const calls: Call[] = [];
   mockWindows("main");
   mockIPC(
@@ -74,12 +74,17 @@ export function installTauri(overrides: Record<string, Handler> = {}): Call[] {
   return calls;
 }
 
+/** Fails a mocked Tauri command as the Rust core does: its invoke rejects with `reason` as sent
+ *  (the error's code and message, or a plain string), never with an `Error`. */
+export function rejectWith(reason: unknown): never {
+  throw reason;
+}
+
 /** A command that fails as the Rust core does: rejected with its error's code and message. */
 export const rejects =
   (error: CommandError): Handler =>
-  () => {
-    throw error;
-  };
+  () =>
+    rejectWith(error);
 
 /** The names of the commands invoked, in order. */
 export const commands = (calls: Call[]) => calls.map((c) => c.cmd);

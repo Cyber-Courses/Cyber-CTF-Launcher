@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 // Development only: ?mock in a plain browser answers the Tauri commands with sample data
-// (src/lib/dev-mock.ts). It is imported dynamically behind the NODE_ENV check, so a production
+// (src/lib/dev-mock/). It is imported dynamically behind the NODE_ENV check, so a production
 // build leaves the mock and its data out of the bundle altogether.
 
 let installing: Promise<void> | undefined;

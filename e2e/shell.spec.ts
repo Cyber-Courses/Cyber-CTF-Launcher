@@ -3,7 +3,7 @@ import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
 
 // The attack box shell window (`/shell`, xterm.js), opened from a running lab's page and answered
 // by the dev mock's stand-in shell: it echoes, answers `id`, `whoami`, `hostname` and `ip -br a`,
-// and ends on `exit` (see src/lib/dev-mock.ts).
+// and ends on `exit` (see src/lib/dev-mock/terminal.ts).
 
 /** Types a command line in the terminal and runs it. */
 async function run(shell: Page, line: string) {

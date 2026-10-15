@@ -37,13 +37,24 @@ export function JumpBackPanel({
           <TypeIcon>
             <RotateCcw className="size-3.5" />
           </TypeIcon>
-          <button onClick={() => onOpen(lab)} className="min-w-0 flex-1 text-left">
+          <button
+            onClick={() => {
+              onOpen(lab);
+            }}
+            className="min-w-0 flex-1 text-left"
+          >
             <span className="block truncate font-medium text-foreground">{lab.title}</span>
             <span className="block truncate font-mono text-[0.6875rem] text-faint">
               {t("home.jumpBack.lastRun", { slug: lab.slug, ago: formatAgo(ts, now) })}
             </span>
           </button>
-          <Button size="xs" onClick={() => onStart(lab)} disabled={isBusy(lab) || !canStart(lab)}>
+          <Button
+            size="xs"
+            onClick={() => {
+              onStart(lab);
+            }}
+            disabled={isBusy(lab) || !canStart(lab)}
+          >
             {isBusy(lab) ? (
               <Spinner className="size-3" />
             ) : (

@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // UI end-to-end tests: the frontend in a plain browser, with the Tauri commands answered by the
-// dev mock (src/lib/dev-mock.ts, `?mock` in the URL). The mock is development only (a production
+// dev mock (src/lib/dev-mock/, `?mock` in the URL). The mock is development only (a production
 // build never loads it), so the tests run against `next dev`, not the static export.
 const PORT = Number(process.env.E2E_PORT ?? 3210);
 const CI = !!process.env.CI;

@@ -6,7 +6,7 @@ import { test, expect, openApp, navButton, pageTitle, emitEvent } from "./fixtur
 // one-click installs stream an installer's output and succeed, and the next system check reports
 // the tool installed; `pm=later` has the package manager show up after the first check (as if the
 // player ran Homebrew's install command), `install=fail` fails the first install (see
-// src/lib/dev-mock.ts).
+// src/lib/dev-mock/scenario.ts).
 
 const stepOf = (page: Page) => page.getByText(/^Step \d+ of \d+$/);
 const stepTitle = (page: Page) => page.getByRole("heading", { level: 3 });

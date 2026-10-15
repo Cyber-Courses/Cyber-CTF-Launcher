@@ -17,5 +17,4 @@ import servers from "./de/servers.json";
 import settings from "./de/settings.json";
 import errors from "./de/errors.json";
 
-const messages = { common, shell, ui, account, app, cloud, home, hosted, labs, diagram, machine, onboarding, servers, settings, errors };
-export default messages;
+export const messages = { common, shell, ui, account, app, cloud, home, hosted, labs, diagram, machine, onboarding, servers, settings, errors };

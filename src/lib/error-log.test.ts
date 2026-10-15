@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const logError = vi.fn<(message: string) => Promise<void>>(async () => {});
 const logWarn = vi.fn<(message: string) => Promise<void>>(async () => {});
 vi.mock("@tauri-apps/plugin-log", () => ({ error: (message: string) => logError(message), warn: (message: string) => logWarn(message) }));
-vi.mock("@tauri-apps/api/path", () => ({ appLogDir: async () => "/logs/org.cyberctf.desktop" }));
+vi.mock("@tauri-apps/api/path", () => ({ appLogDir: () => Promise.resolve("/logs/org.cyberctf.desktop") }));
 
 const { describeError, installErrorLogging, logFolder, logFrontendError } = await import("@/lib/error-log");
 const { tell, warn } = await import("@/lib/failure");
@@ -43,14 +43,18 @@ describe("logFrontendError", () => {
     expect(logError).toHaveBeenCalledWith(expect.stringMatching(/^\[uncaught\] \/.*: bad thing$/));
   });
 
-  it("never throws, even when the log command fails", async () => {
+  it("never throws, even when the log command fails", () => {
     (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     logError.mockRejectedValueOnce(new Error("no log plugin"));
-    expect(() => logFrontendError("x", "y")).not.toThrow();
+    expect(() => {
+      logFrontendError("x", "y");
+    }).not.toThrow();
     logError.mockImplementationOnce(() => {
       throw new Error("sync failure");
     });
-    expect(() => logFrontendError("x", "y")).not.toThrow();
+    expect(() => {
+      logFrontendError("x", "y");
+    }).not.toThrow();
   });
 
   it("logs uncaught errors and unhandled rejections, installed once", () => {

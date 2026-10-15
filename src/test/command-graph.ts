@@ -8,7 +8,7 @@ import ts from "typescript";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
 const BINDINGS = path.join(SRC, "lib/tauri");
-const INVOKERS = new Set(["invoke", "invokeStreaming"]);
+const INVOKERS = new Set(["invoke", "invokeUnit", "invokeStreaming"]);
 
 const parse = (file: string) => ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
 const isBinding = (file: string) => file.startsWith(BINDINGS + path.sep) && !file.includes(".test.");
@@ -24,7 +24,7 @@ function resolve(from: string, spec: string): string | null {
 /** The command names passed as a string literal to `invoke`/`invokeStreaming` under `node`. */
 function invokedIn(node: ts.Node, out = new Set<string>()): Set<string> {
   if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && INVOKERS.has(node.expression.text)) {
-    const first = node.arguments[0];
+    const first = node.arguments.at(0);
     if (first && ts.isStringLiteralLike(first)) out.add(first.text);
   }
   ts.forEachChild(node, (child) => void invokedIn(child, out));
@@ -39,12 +39,14 @@ function declared(node: ts.Node): [string, ts.Node][] {
 }
 
 /** Each binding wrapper's name and the commands it invokes. */
-export function bindingCommands(): Map<string, Set<string>> {
+function bindingCommands(): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
   for (const name of fs.readdirSync(BINDINGS)) {
     const file = path.join(BINDINGS, name);
     if (!isBinding(file) || !/\.tsx?$/.test(name)) continue;
-    parse(file).forEachChild((node) => declared(node).forEach(([fn, body]) => out.set(fn, invokedIn(body))));
+    parse(file).forEachChild((node) => {
+      declared(node).forEach(([fn, body]) => out.set(fn, invokedIn(body)));
+    });
   }
   return out;
 }
@@ -72,11 +74,16 @@ export function commandsFrom(entries: string[]): Set<string> {
       if (!(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) || !node.moduleSpecifier) return;
       const target = resolve(file, (node.moduleSpecifier as ts.StringLiteral).text);
       if (!target) return;
-      if (!isBinding(target)) return walk(target);
+      if (!isBinding(target)) {
+        walk(target);
+        return;
+      }
       importedNames(node, bindings).forEach((n) => bindings.get(n)?.forEach((c) => found.add(c)));
     });
   };
-  entries.forEach((e) => walk(path.join(SRC, e)));
+  entries.forEach((e) => {
+    walk(path.join(SRC, e));
+  });
   return found;
 }
 

@@ -19,33 +19,40 @@ export function initials(name: string | null, email: string | null): string {
   return src.slice(0, 2).toUpperCase();
 }
 
+/** Signs in through the browser (one sign-in at a time, see sign-in.ts) and reports the new
+ *  status; a failure stays in the sign-in's state as `error`, and is shown from there. */
+async function signInAndReport(onChange: (status: AuthStatus) => void) {
+  try {
+    const status = await signIn();
+    if (status) onChange(status);
+  } catch {
+    // Kept in the sign-in's state as `error`.
+  }
+}
+
+/** Signs out. The local auth state is always cleared, even if the backend's sign-out fails, so
+ *  the UI can't get stuck "signed in" with no way out. */
+async function signOut(onChange: (status: AuthStatus) => void) {
+  try {
+    await authLogout();
+  } catch (e) {
+    // The click handler has no one to reject to: log it rather than leave it unhandled.
+    warn("sign out")(e);
+  } finally {
+    onChange({ loggedIn: false, name: null, email: null });
+  }
+}
+
 /** Shared sign-in/out actions, so the sidebar, Settings and the onboarding drive the same auth
  *  state and the same sign-in (features/account/sign-in): one at a time, its wait and failure shown in each. */
 export function useAuthActions(onChange: (status: AuthStatus) => void) {
   const { waiting, error } = useSignIn();
-
-  async function login() {
-    try {
-      const status = await signIn();
-      if (status) onChange(status);
-    } catch {
-      // Kept in the sign-in's state as `error`, and shown from there.
-    }
-  }
-
-  async function logout() {
-    // Always clear local auth state, even if the backend logout call fails, so the UI can't get
-    // stuck "signed in" with no way out.
-    try {
-      await authLogout();
-    } catch (e) {
-      // The click handler has no one to reject to: log it rather than leave it unhandled.
-      warn("sign out")(e);
-    } finally {
-      onChange({ loggedIn: false, name: null, email: null });
-    }
-  }
-
+  const login = () => {
+    void signInAndReport(onChange);
+  };
+  const logout = () => {
+    void signOut(onChange);
+  };
   return { login, logout, busy: waiting, error };
 }
 
@@ -68,6 +75,35 @@ export function SignInHelp({ className }: { className?: string }) {
   );
 }
 
+/** Signed out: Sign in (with its wait and failure), and Settings. */
+function SignedOut({ onSettings, onChange }: { onSettings?: () => void; onChange: (status: AuthStatus) => void }) {
+  const t = useT();
+  const { login, busy, error } = useAuthActions(onChange);
+  return (
+    <div className="space-y-2">
+      {error && <p className="text-[0.75rem] text-destructive">{error}</p>}
+      <Button size="sm" className="w-full" onClick={login} disabled={busy}>
+        {busy ? (
+          <>
+            <Spinner className="size-3.5" /> {t("account.waitingForBrowser")}
+          </>
+        ) : (
+          t("account.signIn")
+        )}
+      </Button>
+      <SignInHelp />
+      {onSettings && (
+        <button
+          onClick={onSettings}
+          className="flex w-full items-center justify-center gap-1.5 text-[0.75rem] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Cog className="size-3.5" /> {t("account.settings")}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function Account({
   status,
   onChange,
@@ -82,36 +118,11 @@ export function Account({
   onSettings?: () => void;
 }) {
   const t = useT();
-  const { login, logout, busy, error } = useAuthActions(onChange);
+  const { logout } = useAuthActions(onChange);
   const iconBtn = "grid size-7 shrink-0 place-items-center rounded-xs text-faint transition-colors hover:bg-glass hover:text-foreground";
 
   if (!status) return null;
-
-  if (!status.loggedIn) {
-    return (
-      <div className="space-y-2">
-        {error && <p className="text-[0.75rem] text-destructive">{error}</p>}
-        <Button size="sm" className="w-full" onClick={login} disabled={busy}>
-          {busy ? (
-            <>
-              <Spinner className="size-3.5" /> {t("account.waitingForBrowser")}
-            </>
-          ) : (
-            t("account.signIn")
-          )}
-        </Button>
-        <SignInHelp />
-        {onSettings && (
-          <button
-            onClick={onSettings}
-            className="flex w-full items-center justify-center gap-1.5 text-[0.75rem] text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <Cog className="size-3.5" /> {t("account.settings")}
-          </button>
-        )}
-      </div>
-    );
-  }
+  if (!status.loggedIn) return <SignedOut onSettings={onSettings} onChange={onChange} />;
 
   return (
     <div className="flex items-center gap-2.5 px-1">

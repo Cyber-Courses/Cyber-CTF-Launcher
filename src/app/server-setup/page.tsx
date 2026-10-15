@@ -33,10 +33,14 @@ function Setup() {
         const h = l.hosts.find((x) => x.id === id);
         setInitial(h ? { ...h, password: null } : { ...empty });
       })
-      .catch(() => setInitial({ ...empty }));
+      .catch(() => {
+        setInitial({ ...empty });
+      });
   }, [id, empty]);
 
-  const close = () => getCurrentWindow().close().catch(warn("closing the window"));
+  const close = () => {
+    getCurrentWindow().close().catch(warn("closing the window"));
+  };
 
   const cloud = id ? !!initial && isCloud(initial.provider) : params.get("kind") === "cloud";
 
@@ -61,7 +65,9 @@ function Setup() {
                 initial={initial}
                 report={report}
                 onRefresh={check}
-                onSaved={() => emit(SERVER_CHANGED).catch(warn("telling the main window a server changed"))}
+                onSaved={() => {
+                  emit(SERVER_CHANGED).catch(warn("telling the main window a server changed"));
+                }}
                 onDone={close}
               />
             </div>

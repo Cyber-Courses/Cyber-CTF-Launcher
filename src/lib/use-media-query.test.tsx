@@ -21,7 +21,9 @@ describe("useMediaQuery", () => {
     expect(result.current).toBe(false);
     act(() => {
       matches = true;
-      listeners.forEach((l) => l());
+      listeners.forEach((l) => {
+        l();
+      });
     });
     expect(result.current).toBe(true);
     unmount();

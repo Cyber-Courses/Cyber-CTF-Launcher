@@ -92,7 +92,9 @@ export function useSavedFlash(): [boolean, () => void] {
     () => {
       setSaved(true);
       if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setSaved(false), 1600);
+      timer.current = setTimeout(() => {
+        setSaved(false);
+      }, 1600);
     },
   ];
 }

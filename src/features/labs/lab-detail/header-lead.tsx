@@ -7,7 +7,7 @@ import { AutoStop } from "@/features/labs/lab-timers";
 import { runtimeWord, thisMachine } from "@/features/labs/lab-detail/labels";
 import type { LabPhase, LabState } from "@/features/labs/lab-detail/lab-state";
 import { difficultyLabel, type Lab } from "@/features/labs/use-labs";
-import { OPERATION_STATUS } from "@/lib/deploy-store";
+import { OPERATION_STATUS } from "@/features/labs/runs/operations";
 import type { LabStatus } from "@/lib/tauri";
 import { useT, type T } from "@/lib/i18n";
 

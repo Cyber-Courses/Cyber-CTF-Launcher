@@ -12,7 +12,11 @@ export function createAsk<Question, Answer>(dismissed: Answer) {
   let current: Asked | null = null;
   let asked = 0;
   const listeners = new Set<() => void>();
-  const emit = () => listeners.forEach((l) => l());
+  const emit = () => {
+    listeners.forEach((l) => {
+      l();
+    });
+  };
   const subscribe = (l: () => void) => {
     listeners.add(l);
     return () => listeners.delete(l);

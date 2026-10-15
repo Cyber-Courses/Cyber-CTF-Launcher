@@ -1,4 +1,4 @@
-// The dev mock's types (development only, see dev-mock.ts): what each command it answers returns,
+// The dev mock's types (development only, see index.ts): what each command it answers returns,
 // as the typed wrappers in lib/tauri declare it with the types generated from the Rust structs.
 // A fixture that drifts from the core (a field renamed, added or made optional) then fails
 // `pnpm typecheck` instead of crashing the preview and the end-to-end tests.
@@ -22,7 +22,7 @@ import type {
   Workload,
 } from "@/lib/tauri";
 
-export type Answers = {
+type Answers = {
   auth_status: AuthStatus;
   auth_login: AuthStatus;
   agent_info: AgentInfo;

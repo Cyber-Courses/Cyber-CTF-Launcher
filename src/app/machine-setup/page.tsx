@@ -42,16 +42,23 @@ export default function MachineSetupWindow() {
     },
   });
   // Try again: one check now; it starts the poll again once it answers.
-  const retry = () =>
+  const retry = () => {
     systemCheck().then(
       (r) => {
         setReport(r);
         setCheckError(null);
       },
-      (e) => setCheckError(describeError(e)),
+      (e: unknown) => {
+        setCheckError(describeError(e));
+      },
     );
-  useTauriEvent<string>("machine-setup-step", (step) => setStartAt({ step, nonce: Date.now() }));
-  const close = () => getCurrentWindow().close().catch(warn("closing the window"));
+  };
+  useTauriEvent("machine-setup-step", (step) => {
+    if (typeof step === "string") setStartAt({ step, nonce: Date.now() });
+  });
+  const close = () => {
+    getCurrentWindow().close().catch(warn("closing the window"));
+  };
 
   return (
     <>

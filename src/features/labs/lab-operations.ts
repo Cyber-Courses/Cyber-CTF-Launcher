@@ -3,8 +3,9 @@ import { getAttackBox, getAttackImage, getAutoAttackBox, getVmProvider, type Por
 import { notify } from "@/lib/notify";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import { localProviders, pickLocalHypervisor, readyHypervisors, runsNatively } from "@/features/labs/lab-runtime";
-import { setLastRun } from "@/lib/last-run";
-import { appendDeployLog, beginDeploy, failDeploy, getDeploySnapshot, noteSignedOut, restoreDeploy } from "@/lib/deploy-store";
+import { setLastRun } from "@/features/labs/runs/last-run";
+import { appendDeployLog, beginDeploy, failDeploy, getDeploySnapshot, restoreDeploy } from "@/features/labs/runs/deploy-runs";
+import { noteSignedOut } from "@/features/account/signed-out";
 import { describeError, errorCode, isSignedOut } from "@/lib/errors";
 import { noteStopped } from "@/features/labs/lab-store";
 import { tell } from "@/lib/failure";
@@ -86,7 +87,7 @@ export const cloudLaunch =
   (lab: Lab, host: string | null | undefined): OperationBody =>
   async (log) => {
     if (!host) throw new Error(translate("labs.actions.pickCloudAccount"));
-    await labLaunch(lab.id, null, host, null, false, log);
+    await labLaunch({ labId: lab.id, provider: null, host, attackboxImage: null, defaultPorts: false }, log);
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);
     void notify(translate("labs.actions.labReady"), translate("labs.actions.readyInCloud", { title: lab.title }));
@@ -133,7 +134,9 @@ export const localLaunch =
     // Remotely or inside a local VM: the container attack box image. A VM lab here: the
     // attack VM's Vagrant box, when Settings start the attack box with each lab.
     const attackbox = remote || inLocalVm ? getAttackImage() : vm && getAutoAttackBox() ? getAttackBox() : null;
-    await launchOrOfferOffline(lab.title, (offline) => labLaunch(lab.id, provider, host ?? null, attackbox, ports === "default", log, offline));
+    await launchOrOfferOffline(lab.title, (offline) =>
+      labLaunch({ labId: lab.id, provider, host: host ?? null, attackboxImage: attackbox, defaultPorts: ports === "default", offline }, log),
+    );
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);
     void notify(

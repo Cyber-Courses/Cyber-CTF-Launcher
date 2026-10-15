@@ -1,12 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import de from "@/messages/de";
-import en from "@/messages/en";
-import es from "@/messages/es";
-import fr from "@/messages/fr";
-import ja from "@/messages/ja";
-import ptBR from "@/messages/pt-BR";
+import { CATALOGS } from "@/messages";
 
 /**
  * The launcher's language: English (the source of truth), French, Spanish, German, Brazilian
@@ -33,7 +28,7 @@ export const LOCALE_NAMES: Record<Locale, string> = {
   ja: "日本語",
 };
 
-type Messages = typeof en;
+type Messages = (typeof CATALOGS)["en"];
 // "a.b.c" for every leaf (string, or a { one, other } plural) of the English messages.
 type Leaf = string | { one: string; other: string };
 type Paths<T, P extends string = ""> = {
@@ -42,7 +37,6 @@ type Paths<T, P extends string = ""> = {
 export type MessageKey = Paths<Messages>;
 export type Vars = Record<string, string | number>;
 
-const CATALOGS: Record<Locale, unknown> = { en, fr, es, de, "pt-BR": ptBR, ja };
 const KEY = "cyberctf.locale";
 const listeners = new Set<() => void>();
 let current: Locale | null = null;
@@ -60,7 +54,7 @@ function fromSystem(tag: string | undefined): Locale | null {
 /** The system's language, when we have it; English otherwise. */
 function systemLocale(): Locale {
   if (typeof navigator === "undefined") return "en";
-  for (const l of navigator.languages ?? [navigator.language]) {
+  for (const l of navigator.languages.length > 0 ? navigator.languages : [navigator.language]) {
     const match = fromSystem(l);
     if (match) return match;
   }
@@ -88,7 +82,9 @@ export function getLocale(): Locale {
 function apply(next: Locale) {
   current = next;
   if (typeof document !== "undefined") document.documentElement.lang = next;
-  listeners.forEach((l) => l());
+  listeners.forEach((l) => {
+    l();
+  });
 }
 
 export function setLocalePreference(pref: Locale | "system") {
@@ -137,8 +133,11 @@ export function translate(key: MessageKey, vars?: Vars): string {
   return resolve(getLocale(), key, vars);
 }
 
+/** How each tag of a message's markup renders; a tag without one shows as its text. */
+type RichTags = Partial<Record<string, (chunks: string) => React.ReactNode>>;
+
 /** Splits `<tag>text</tag>` markup into React nodes. */
-function rich(text: string, tags: Record<string, (chunks: string) => React.ReactNode>): React.ReactNode[] {
+function rich(text: string, tags: RichTags): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   const re = /<(\w+)>(.*?)<\/\1>/g;
   let last = 0;
@@ -154,7 +153,7 @@ function rich(text: string, tags: Record<string, (chunks: string) => React.React
 }
 
 export type T = ((key: MessageKey, vars?: Vars) => string) & {
-  rich: (key: MessageKey, tags: Record<string, (chunks: string) => React.ReactNode>, vars?: Vars) => React.ReactNode[];
+  rich: (key: MessageKey, tags: RichTags, vars?: Vars) => React.ReactNode[];
   locale: Locale;
 };
 

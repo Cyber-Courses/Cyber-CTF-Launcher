@@ -100,7 +100,6 @@ permissions = [
   "allow-image-download-size",
   "allow-install-vagrant-plugin",
   "allow-installed-tools",
-  "allow-lab-deploy-log",
   "allow-lab-status",
   "allow-machine-selftest",
   "allow-machine-storage",

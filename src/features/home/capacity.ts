@@ -2,7 +2,7 @@
 
 import { translate } from "@/lib/i18n";
 
-export type RamLevel = "ok" | "tight" | "low";
+type RamLevel = "ok" | "tight" | "low";
 
 export interface Capacity {
   level: RamLevel;

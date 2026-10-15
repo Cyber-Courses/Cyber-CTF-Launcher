@@ -6,7 +6,8 @@ import { OfflineStartPrompt } from "@/features/labs/offline-start-prompt";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import type { Lab } from "@/features/labs/use-labs";
-import { getDeploySnapshot, SIGNED_OUT_EVENT } from "@/lib/deploy-store";
+import { getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
+import { SIGNED_OUT_EVENT } from "@/features/account/signed-out";
 import { setLocalePreference } from "@/lib/i18n";
 import type { CommandError } from "@/lib/errors";
 import { setAttackBox, setAttackImage, setAutoAttackBox, setPortMode, setVmProvider, type PortMode } from "@/lib/settings";
@@ -44,8 +45,7 @@ const launchArgs = (calls: Call[]) => {
 // The dev mock's machine is an arm64 Mac; most tests here want an x86 one, where the VM labs run natively.
 const readyReport = () => ({ ...armReport(), arch: "x86_64" });
 const logsOf = (id: string) => {
-  const { runs } = getDeploySnapshot();
-  return id in runs ? runs[id].logs : [];
+  return getDeploySnapshot().runs[id]?.logs ?? [];
 };
 
 function setup(overrides: Parameters<typeof installTauri>[0] = {}) {
@@ -94,7 +94,7 @@ describe("useLabActions: launch", () => {
     expect(launchArgs(calls)).toEqual({ labId: "act-docker", provider: null, host: null, attackboxImage: null, defaultPorts: true });
     expect(logsOf("act-docker")).toEqual(["==> api: Creating", "✓ Lab ready", "✓ Lab is running"]);
     expect(refresh).toHaveBeenCalledWith(dockerLab, { fresh: true });
-    expect(getDeploySnapshot().runs["act-docker"].busy).toBe(false);
+    expect(getDeploySnapshot().runs["act-docker"]?.busy).toBe(false);
     expect(localStorage.getItem("cyberctf.lastrun.act-docker")).not.toBeNull();
   });
 
@@ -305,7 +305,7 @@ describe("useLabActions: launch", () => {
     });
     await act(() => hook.result.current.launch({ ...dockerLab, id: "act-fail" }, null, undefined, readyReport(), "random"));
     expect(logsOf("act-fail")).toEqual(["✗ Port 8000 is already in use"]);
-    expect(getDeploySnapshot().runs["act-fail"].busy).toBe(false);
+    expect(getDeploySnapshot().runs["act-fail"]?.busy).toBe(false);
   });
 
   it("does nothing for a lab without a runtime", async () => {
@@ -323,7 +323,7 @@ describe("useLabActions: operations on a built lab", () => {
     await act(() => hook.result.current.stop(vmLab));
     expect(calls.find((c) => c.cmd === "lab_stop")?.args).toMatchObject({ id: "act-vm", runtime: "VM" });
     expect(logsOf("act-vm")).toEqual(["==> api: Stopping", "✓ Lab stopped"]);
-    expect(getDeploySnapshot().runs["act-vm"].op).toBe("stop");
+    expect(getDeploySnapshot().runs["act-vm"]?.op).toBe("stop");
     expect(refresh).toHaveBeenCalledWith(vmLab, { fresh: true });
   });
 
@@ -362,13 +362,13 @@ describe("useLabActions: operations on a built lab", () => {
       done = hook.result.current.stop({ ...vmLab, id: "act-settle" });
     });
     await flush();
-    expect(getDeploySnapshot().runs["act-settle"].busy).toBe(true);
+    expect(getDeploySnapshot().runs["act-settle"]?.busy).toBe(true);
     expect(hook.result.current.runs["act-settle"]?.busy).toBe(true);
     await act(async () => {
       release();
       await done;
     });
-    expect(getDeploySnapshot().runs["act-settle"].busy).toBe(false);
+    expect(getDeploySnapshot().runs["act-settle"]?.busy).toBe(false);
   });
 });
 
@@ -386,8 +386,8 @@ describe("useLabActions: a failure the core knows by its code", () => {
     const { hook } = setup({ lab_launch: rejects({ code: "portInUse", args: { port: 8080 }, message: "Host port 8080 is already in use on this machine" }) });
     await act(() => hook.result.current.launch({ ...dockerLab, id: "act-port-fr" }, null, undefined, readyReport()));
     const run = getDeploySnapshot().runs["act-port-fr"];
-    expect(run.logs.at(-1)).toMatch(/^✗ Le port 8080 de l'hôte est déjà utilisé/);
-    expect(run.failureCode).toBe("portInUse");
+    expect(run?.logs.at(-1)).toMatch(/^✗ Le port 8080 de l'hôte est déjà utilisé/);
+    expect(run?.failureCode).toBe("portInUse");
   });
 
   it("tells the shell the session is gone from a signed-out error's code", async () => {

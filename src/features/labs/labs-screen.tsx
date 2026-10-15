@@ -13,7 +13,7 @@ import { runningUnlisted } from "@/features/labs/lab-row-state";
 import { OpenLab, OpenLabLoading, useDetailTitle, useOpenLab } from "@/features/labs/open-lab";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { useLabActions } from "@/features/labs/use-lab-actions";
-import { useDeployingLabs } from "@/lib/deploy-store";
+import { useDeployingLabs } from "@/features/labs/runs/operations";
 import type { LabStatus, SystemReport } from "@/lib/tauri";
 import { useSavedServers } from "@/features/labs/use-saved-servers";
 import { getVmProvider } from "@/lib/settings";

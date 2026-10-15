@@ -7,7 +7,7 @@ import { structurallyEqual } from "@/lib/equal";
 
 /**
  * What this machine knows about the labs, kept outside the React tree and shared by every
- * screen (as deploy-store is for runs): each lab's last status, which labs were asked at least
+ * screen (as runs/deploy-runs is for runs): each lab's last status, which labs were asked at least
  * once, what the infrastructure scan sees running, and the catalogue last loaded. A lab page
  * opened again renders at once from it instead of waiting on a fresh probe (seconds on a busy
  * machine), and two screens mounted at once read and refresh the same state.

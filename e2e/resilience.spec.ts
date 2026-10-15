@@ -6,7 +6,7 @@ import { test, expect, openApp, navButton, pageTitle, horizontalOverflow, palett
 
 test.describe("a failed machine check", () => {
   test("is said where the report is needed, and Try again recovers", async ({ page }) => {
-    // Every check fails (`check=down`, src/lib/dev-mock.ts) until the machine comes back with the
+    // Every check fails (`check=down`, src/lib/dev-mock/scenario.ts) until the machine comes back with the
     // Try again.
     await openApp(page, "&check=down");
     await expect(page.locator("main > [data-tauri-drag-region]")).toContainText("machine check failed");

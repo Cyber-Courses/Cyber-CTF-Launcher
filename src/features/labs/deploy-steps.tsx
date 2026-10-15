@@ -7,7 +7,7 @@ import { formatDuration } from "@/lib/format";
 import type { ActiveOperation } from "@/lib/tauri";
 import { deriveSteps, failedMachineStep, type Step, type Timed } from "@/features/labs/deploy-log";
 import { LiveDuration, RawLog, StepItem, StepMark } from "@/features/labs/deploy-step-parts";
-import { OPERATION_STATUS } from "@/lib/deploy-store";
+import { OPERATION_STATUS } from "@/features/labs/runs/operations";
 import { useT, type T } from "@/lib/i18n";
 
 type Operation = ActiveOperation["op"];

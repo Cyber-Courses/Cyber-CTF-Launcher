@@ -8,11 +8,13 @@ import { MachineSetup } from "@/features/machine/machine-setup";
 import { Labs } from "@/features/labs/labs-screen";
 import type { Lab } from "@/features/labs/use-labs";
 import { useLabActions } from "@/features/labs/use-lab-actions";
+import { must } from "@/components/test-support";
 import { Toaster } from "@/components/ui/toaster";
-import { getDeploySnapshot, noteOperations, operationSeenAt, runFailure, startFailed } from "@/lib/deploy-store";
+import { getDeploySnapshot, runFailure, startFailed } from "@/features/labs/runs/deploy-runs";
+import { noteOperations, operationSeenAt } from "@/features/labs/runs/operations";
 import type { AuthStatus, LabStatus } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
-import { commands, installTauri } from "@/test/tauri";
+import { commands, installTauri, rejectWith } from "@/test/tauri";
 import { answer } from "@/lib/dev-mock";
 import { button, flush } from "@/test/ui";
 
@@ -142,7 +144,10 @@ describe("a start that failed", () => {
     expect(document.body.textContent).not.toContain("Not started");
     expect(screen.getByRole("button", { name: /^\s*Retry$/ })).toBeTruthy();
     // Under the header: what failed, the error and what to do about it.
-    const notice = screen.getAllByRole("alert").find((a) => a.textContent?.includes("Couldn’t start Blind orders"))!;
+    const notice = must(
+      screen.getAllByRole("alert").find((a) => a.textContent.includes("Couldn’t start Blind orders")),
+      "Couldn’t start Blind orders",
+    );
     expect(notice.textContent).toContain(PORT_CLASH);
     expect(notice.textContent).toContain("Start it on random ports instead.");
     // Timed from when it began, not from its one line: 1.5s, not 0.0s.
@@ -154,7 +159,7 @@ describe("a start that failed", () => {
 
     // Dismissed, the notice goes; the header still says so.
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(screen.queryAllByRole("alert").some((a) => a.textContent?.includes("Couldn’t start"))).toBe(false);
+    expect(screen.queryAllByRole("alert").some((a) => a.textContent.includes("Couldn’t start"))).toBe(false);
     expect(document.body.textContent).toContain("Failed to start");
   });
 
@@ -168,7 +173,7 @@ describe("a start that failed", () => {
   });
 
   it("marks the row, from the run in the store", async () => {
-    installTauri({ ...idle, lab_launch: () => Promise.reject(PORT_CLASH) });
+    installTauri({ ...idle, lab_launch: () => rejectWith(PORT_CLASH) });
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     let actions: ReturnType<typeof useLabActions> | null = null;
@@ -183,7 +188,7 @@ describe("a start that failed", () => {
       </>,
     );
     await act(async () => {
-      await actions!.launch(blind, null, undefined, null, "default");
+      await must(actions, "the lab actions").launch(blind, null, undefined, null, "default");
     });
     const run = getDeploySnapshot().runs[blind.id];
     expect(startFailed(run)).toBe(true);
@@ -239,7 +244,10 @@ describe("a Stop & remove that failed", () => {
       />,
     );
     await flush();
-    const notice = screen.getAllByRole("alert").find((a) => a.textContent?.includes("Couldn’t stop and remove Blind orders"))!;
+    const notice = must(
+      screen.getAllByRole("alert").find((a) => a.textContent.includes("Couldn’t stop and remove Blind orders")),
+      "Couldn’t stop and remove Blind orders",
+    );
     expect(notice.textContent).toContain("has active endpoints");
     expect(notice.textContent).toContain("Part of the lab is still up.");
     // Back to running, not dimmed; still not a failed start.

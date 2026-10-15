@@ -19,7 +19,9 @@ export function startOnce(key: string, start: (log: Log) => Promise<void>, onLog
   const entry: Start = { run: Promise.resolve(), lines: [], listeners: new Set([onLog]) };
   const log = (line: string) => {
     entry.lines.push(line);
-    entry.listeners.forEach((l) => l(line));
+    entry.listeners.forEach((l) => {
+      l(line);
+    });
   };
   entry.run = start(log).finally(() => starting.delete(key));
   starting.set(key, entry);

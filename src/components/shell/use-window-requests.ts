@@ -13,10 +13,10 @@ import { useTauriEvent } from "@/lib/use-tauri-event";
  */
 export function useWindowRequests({ navigate, replayOnboarding }: { navigate: (tab: Tab) => void; replayOnboarding: () => void }, enabled: boolean) {
   const toFront = () => void getCurrentWindow().setFocus().catch(ignore("the window manager keeps focus where it is"));
-  useTauriEvent<string>(
+  useTauriEvent(
     NAVIGATE_EVENT,
     (screen) => {
-      if (isNavTab(screen)) navigate(screen);
+      if (typeof screen === "string" && isNavTab(screen)) navigate(screen);
       toFront();
     },
     enabled,

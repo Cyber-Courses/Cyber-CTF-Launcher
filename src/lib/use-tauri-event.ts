@@ -6,18 +6,22 @@ import { ignore } from "@/lib/failure";
 
 /**
  * Calls `handler` with the payload of each Tauri `event` while mounted and `enabled`. The latest
- * `handler` is used without listening again.
+ * `handler` is used without listening again. The payload is whatever the emitter sent (the Rust
+ * side or another window): the handler reads it as it must be, and ignores anything else.
  */
-export function useTauriEvent<T = unknown>(event: string, handler: (payload: T) => void, enabled = true) {
+export function useTauriEvent(event: string, handler: (payload: unknown) => void, enabled = true) {
   const latest = useRef(handler);
   useEffect(() => {
     latest.current = handler;
   });
   useEffect(() => {
     if (!enabled) return;
-    const off = listen<T>(event, (e) => latest.current(e.payload));
+    const off = listen(event, (e) => {
+      latest.current(e.payload);
+    });
     return () => {
-      off.then((f) => f()).catch(ignore("the listener was never set up"));
+      // Tauri's unlisten answers a promise (its type says void): chained, so its failure is caught.
+      off.then((unlisten) => Promise.resolve().then(unlisten)).catch(ignore("the listener was never set up"));
     };
   }, [event, enabled]);
 }

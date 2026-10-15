@@ -34,7 +34,7 @@ async function fresh() {
   vi.resetModules();
   const polling = await import("@/features/labs/lab-polling");
   const store = await import("@/features/labs/lab-store");
-  const deploy = await import("@/lib/deploy-store");
+  const deploy = await import("@/features/labs/runs/deploy-runs");
   return { ...polling, ...store, ...deploy };
 }
 

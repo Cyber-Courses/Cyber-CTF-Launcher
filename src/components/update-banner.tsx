@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { Button } from "@/components/ui/button";
 import { deployingLabs, restartApp } from "@/lib/tauri";
-import { useDeployingLabs } from "@/lib/deploy-store";
+import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { cn } from "@/lib/utils";
 import { ignore, tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";

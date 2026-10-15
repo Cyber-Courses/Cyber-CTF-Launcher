@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { SettingsScreen } from "@/features/settings/settings-screen";
 import { getPortMode } from "@/lib/settings";
 import { readyReport } from "@/test/fixtures";
-import { installTauri } from "@/test/tauri";
+import { installTauri, rejectWith } from "@/test/tauri";
 import { clickEverything, flush } from "@/test/ui";
 
 const signedIn = { loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" };
@@ -53,13 +53,13 @@ describe("SettingsScreen", () => {
   it("still opens when the version, the machine check and the agent can't be read", async () => {
     installTauri({
       "plugin:app|version": () => {
-        throw "no version";
+        rejectWith("no version");
       },
       system_check: () => {
-        throw "check failed";
+        rejectWith("check failed");
       },
       agent_info: () => {
-        throw "not registered";
+        rejectWith("not registered");
       },
     });
     render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
@@ -95,7 +95,7 @@ describe("SettingsScreen", () => {
     render(<SettingsScreen auth={{ loggedIn: false, name: null, email: null }} onAuthChange={onAuthChange} onNavigate={vi.fn()} />);
     await flush();
     const user = userEvent.setup();
-    const signIn = screen.queryAllByRole("button").find((b) => /sign in|log in/i.test(b.textContent ?? ""));
+    const signIn = screen.queryAllByRole("button").find((b) => /sign in|log in/i.test(b.textContent));
     if (signIn) {
       await user.click(signIn);
       await flush();

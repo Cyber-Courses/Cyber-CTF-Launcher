@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import { runningLabs, type LabStatus } from "@/lib/tauri";
-import { activeOperationsNow, deployingLabsNow, getDeploySnapshot } from "@/lib/deploy-store";
+import { activeOperationsNow, deployingLabsNow } from "@/features/labs/runs/operations";
+import { getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
 import { getLabState, refreshStatus, setScanRunning } from "@/features/labs/lab-store";
 import { sharedPoll } from "@/lib/shared-poll";
 import { onVisibilityChange } from "@/lib/visibility";
@@ -44,7 +45,7 @@ function allLabs(): Lab[] {
 
 function busyIds(): Set<string> {
   const busy = new Set<string>([...activeOperationsNow().keys(), ...deployingLabsNow()]);
-  for (const [id, run] of Object.entries(getDeploySnapshot().runs)) if (run.busy) busy.add(id);
+  for (const [id, run] of Object.entries(getDeploySnapshot().runs)) if (run?.busy) busy.add(id);
   return busy;
 }
 

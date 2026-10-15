@@ -21,6 +21,8 @@ export function useEscape(onEscape: () => void, active = true) {
       latest.current();
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+    };
   }, [active]);
 }

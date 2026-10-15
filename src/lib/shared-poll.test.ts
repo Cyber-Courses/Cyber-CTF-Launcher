@@ -29,7 +29,7 @@ afterEach(() => {
 
 describe("sharedPoll", () => {
   it("starts with the first subscriber, is shared by the rest, and stops with the last", async () => {
-    const read = vi.fn(async () => [1]);
+    const read = vi.fn(() => Promise.resolve([1]));
     const poll = sharedPoll({ read, ms: 1000, initial: [] as number[] });
     // Nobody reads it: nothing is polled.
     await vi.advanceTimersByTimeAsync(5000);
@@ -72,7 +72,7 @@ describe("sharedPoll", () => {
 
   it("publishes an answer only when it changes, keeping the same object", async () => {
     let n = 0;
-    const read = vi.fn(async () => new Set(n++ < 2 ? ["a"] : ["a", "b"]));
+    const read = vi.fn(() => Promise.resolve(new Set(n++ < 2 ? ["a"] : ["a", "b"])));
     const poll = sharedPoll({ read, ms: 1000, initial: new Set<string>() });
     const cb = vi.fn();
     const off = poll.subscribe(cb);
@@ -93,7 +93,7 @@ describe("sharedPoll", () => {
   });
 
   it("takes a comparator of its own", async () => {
-    const read = vi.fn(async () => ({ at: Date.now(), value: 1 }));
+    const read = vi.fn(() => Promise.resolve({ at: Date.now(), value: 1 }));
     const poll = sharedPoll({ read, ms: 1000, initial: { at: 0, value: 0 }, equal: (a, b) => a.value === b.value });
     const cb = vi.fn();
     const off = poll.subscribe(cb);
@@ -150,7 +150,7 @@ describe("sharedPoll", () => {
   });
 
   it("pauses while the window is hidden and reads at once when it shows", async () => {
-    const read = vi.fn(async () => 1);
+    const read = vi.fn(() => Promise.resolve(1));
     const poll = sharedPoll({ read, ms: 1000, initial: 0 });
     const off = poll.subscribe(() => {});
     await vi.advanceTimersByTimeAsync(0);
@@ -167,7 +167,7 @@ describe("sharedPoll", () => {
 
   it("starts paused in a hidden window, and stops listening once nobody reads it", async () => {
     setHidden(true);
-    const read = vi.fn(async () => 1);
+    const read = vi.fn(() => Promise.resolve(1));
     const poll = sharedPoll({ read, ms: 1000, initial: 0 });
     const off = poll.subscribe(() => {});
     await vi.advanceTimersByTimeAsync(5000);
@@ -179,7 +179,7 @@ describe("sharedPoll", () => {
 
   it("goes on in a hidden window at the pace `hiddenMs` gives for the current answer", async () => {
     let busy = false;
-    const read = vi.fn(async () => (busy ? ["op"] : []));
+    const read = vi.fn(() => Promise.resolve(busy ? ["op"] : []));
     const poll = sharedPoll({ read, ms: 1000, initial: [] as string[], hiddenMs: (v) => (v.length > 0 ? 1000 : 10_000) });
     setHidden(true);
     // Hidden from the start, it still reads.
@@ -198,9 +198,7 @@ describe("sharedPoll", () => {
 
   it("reads on focus when asked, and hands failures to onError", async () => {
     const onError = vi.fn();
-    const read = vi.fn(async () => {
-      throw new Error("down");
-    });
+    const read = vi.fn(() => Promise.reject(new Error("down")));
     const poll = sharedPoll({ read, ms: 60_000, initial: 0, onFocus: true, onError });
     const off = poll.subscribe(() => {});
     window.dispatchEvent(new Event("focus"));
@@ -225,7 +223,7 @@ describe("sharedPoll", () => {
 
   it("feeds a hook that re-renders only on a change", async () => {
     let value = 1;
-    const poll = sharedPoll({ read: async () => ({ value }), ms: 1000, initial: { value: 0 } });
+    const poll = sharedPoll({ read: () => Promise.resolve({ value }), ms: 1000, initial: { value: 0 } });
     let renders = 0;
     const { result, unmount } = renderHook(() => {
       renders++;

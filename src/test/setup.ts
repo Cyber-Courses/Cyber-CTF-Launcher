@@ -1,6 +1,11 @@
 import { afterEach, vi } from "vitest";
 import { resetModuleState } from "@/lib/module-state";
 
+/** Sets `target[key]` to `value` where the DOM (jsdom) lacks it; keeps what it has. */
+function polyfill<T extends object, K extends keyof T>(target: T, key: K, value: T[K]) {
+  if (!(key in target)) target[key] = value;
+}
+
 // Shared setup for every test file. Node-environment tests skip the DOM half.
 if (typeof window !== "undefined") {
   const { cleanup } = await import("@testing-library/react");
@@ -16,28 +21,26 @@ if (typeof window !== "undefined") {
     disconnect() {}
   }
   // Assigned, not `vi.stubGlobal`: a test's `vi.unstubAllGlobals()` must not take them away.
-  globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
-  if (!window.matchMedia) {
-    window.matchMedia = (query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      addListener: () => {},
-      removeListener: () => {},
-      dispatchEvent: () => false,
-    });
-  }
-  Element.prototype.scrollIntoView ??= () => {};
-  HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+  polyfill(globalThis, "ResizeObserver", ResizeObserverStub as unknown as typeof ResizeObserver);
+  polyfill(window, "matchMedia", (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  }));
+  polyfill(Element.prototype, "scrollIntoView", () => {});
+  polyfill(HTMLDialogElement.prototype, "showModal", function (this: HTMLDialogElement) {
     this.open = true;
-  };
-  HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+  });
+  polyfill(HTMLDialogElement.prototype, "close", function (this: HTMLDialogElement) {
     this.open = false;
-  };
+  });
 
-  afterEach(async () => {
+  afterEach(() => {
     cleanup();
     clearMocks();
     // Shared polls, the deploy store and self-test runs live at module level: each test starts clean.

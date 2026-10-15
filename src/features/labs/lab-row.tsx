@@ -7,7 +7,7 @@ import { rowFacts, rowPhase, type RowPhase } from "@/features/labs/lab-row-state
 import { RowColumns, RowDot, RowTitle } from "@/features/labs/lab-row-parts";
 import { RowAction, StopDialog } from "@/features/labs/lab-row-actions";
 import type { LabStatus } from "@/lib/tauri";
-import { OPERATION_STATUS } from "@/lib/deploy-store";
+import { OPERATION_STATUS } from "@/features/labs/runs/operations";
 import { useT } from "@/lib/i18n";
 
 // Home imports it from here, beside the row it feeds.

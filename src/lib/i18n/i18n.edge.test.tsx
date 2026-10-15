@@ -3,14 +3,8 @@ import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LOCALES, getLocale, getLocalePreference, setLocalePreference, translate, useT, type Locale } from "@/lib/i18n";
-import de from "@/messages/de";
-import en from "@/messages/en";
-import es from "@/messages/es";
-import fr from "@/messages/fr";
-import ja from "@/messages/ja";
-import ptBR from "@/messages/pt-BR";
-
-const CATALOGS: Record<Locale, unknown> = { en, fr, es, de, "pt-BR": ptBR, ja };
+import { must } from "@/components/test-support";
+import { CATALOGS } from "@/messages";
 
 /** Every { one, other } plural of a message tree, by path. */
 function plurals(node: unknown, prefix = ""): [string, { one: string; other: string }][] {
@@ -21,15 +15,17 @@ function plurals(node: unknown, prefix = ""): [string, { one: string; other: str
 }
 
 describe("i18n: plurals in every language", () => {
-  afterEach(() => setLocalePreference("system"));
+  afterEach(() => {
+    setLocalePreference("system");
+  });
 
   it("picks a form for 0, 1 and many in every language, never falling back to the key", () => {
     for (const locale of LOCALES) {
       setLocalePreference(locale);
       for (const count of [0, 1, 2, 21, 1000]) {
         const text = translate("labs.list.labCount", { count });
-        expect(text, `${locale} ${count}`).not.toBe("labs.list.labCount");
-        expect(text, `${locale} ${count}`).toContain(String(count));
+        expect(text, `${locale} ${String(count)}`).not.toBe("labs.list.labCount");
+        expect(text, `${locale} ${String(count)}`).toContain(String(count));
       }
     }
   });
@@ -39,7 +35,10 @@ describe("i18n: plurals in every language", () => {
     const zero: Record<Locale, "one" | "other"> = { en: "other", fr: "one", es: "other", de: "other", "pt-BR": "one", ja: "other" };
     for (const locale of LOCALES) {
       setLocalePreference(locale);
-      const forms = plurals(CATALOGS[locale]).find(([p]) => p === "labs.list.labCount")![1];
+      const [, forms] = must(
+        plurals(CATALOGS[locale]).find(([p]) => p === "labs.list.labCount"),
+        `${locale} labs.list.labCount`,
+      );
       expect(translate("labs.list.labCount", { count: 0 }), locale).toBe(forms[zero[locale]].replace("{count}", "0"));
     }
   });
@@ -73,7 +72,9 @@ describe("i18n: plurals in every language", () => {
 });
 
 describe("i18n: placeholders", () => {
-  afterEach(() => setLocalePreference("system"));
+  afterEach(() => {
+    setLocalePreference("system");
+  });
 
   it("writes out a zero, keeps $-patterns in values literal, and ignores extra variables", () => {
     setLocalePreference("en");
@@ -122,7 +123,9 @@ describe("i18n: the system language", () => {
 });
 
 describe("i18n: rich text markup", () => {
-  afterEach(() => setLocalePreference("system"));
+  afterEach(() => {
+    setLocalePreference("system");
+  });
 
   // A key that is not in the catalogue comes back as itself, which lets the markup splitter be
   // fed arbitrary text without a message to hold it (the missing-key warning is silenced).
@@ -137,7 +140,7 @@ describe("i18n: rich text markup", () => {
   it("hands a nested tag's raw text to the outer renderer, and leaves an unclosed tag as text", () => {
     const a = vi.fn((s: string) => s);
     const b = vi.fn((s: string) => s);
-    richOf("<a><b>x</b></a>", { a, b });
+    expect(richOf("<a><b>x</b></a>", { a, b })).toHaveLength(1);
     expect(a).toHaveBeenCalledWith("<b>x</b>");
     expect(b).not.toHaveBeenCalled();
     expect(richOf("<a>x", { a })).toEqual(["<a>x"]);

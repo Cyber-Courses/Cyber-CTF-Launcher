@@ -5,7 +5,7 @@ import { type ActiveOperation, type Park, type Provider } from "@/lib/tauri";
 import { getPortMode, type PortMode } from "@/lib/settings";
 import { askPortMode } from "@/features/labs/port-mode-prompt";
 import type { Lab } from "@/features/labs/use-labs";
-import { endDeploy, useDeploy, type DeployRun } from "@/lib/deploy-store";
+import { endDeploy, useDeploy, type DeployRun } from "@/features/labs/runs/deploy-runs";
 import {
   cloudLaunch,
   localLaunch,
@@ -20,7 +20,7 @@ import {
 
 /**
  * Start/stop actions for labs, shared across screens. The busy lab, its streamed log lines
- * and which lab they belong to live in a module store (deploy-store), so a deploy started
+ * and which lab they belong to live in a module store (runs/deploy-runs), so a deploy started
  * here keeps streaming and stays visible even after the labs screen unmounts (e.g. the user
  * opens Settings) and comes back. Keyed per lab, so two deploys at once keep separate logs; the
  * UI reads each lab's run from `runs[labId]`. The operations themselves are in lab-operations.

@@ -28,7 +28,9 @@ const listeners = new Set<() => void>();
 
 function set(next: SignInState) {
   state = next;
-  listeners.forEach((l) => l());
+  listeners.forEach((l) => {
+    l();
+  });
 }
 
 /**
@@ -38,7 +40,9 @@ function set(next: SignInState) {
 export function signIn(): Promise<AuthStatus | null> {
   if (running) return running;
   set({ ...IDLE, waiting: true });
-  running = authLogin((url) => set({ ...state, url }))
+  running = authLogin((url) => {
+    set({ ...state, url });
+  })
     .then(
       (status) => {
         set(IDLE);

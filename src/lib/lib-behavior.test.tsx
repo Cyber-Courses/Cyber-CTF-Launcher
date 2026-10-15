@@ -5,26 +5,17 @@ import { useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { closeIfSettings, showInMainWindow } from "@/lib/app-events";
 import { useAppearance, useAppearanceSync } from "@/lib/appearance";
-import {
-  appendDeployLog,
-  getDeploySnapshot,
-  operationLabel,
-  OPERATION_STATUS,
-  SIGNED_OUT_EVENT,
-  useActiveOperations,
-  useDeployingLabs,
-  useWorkerLog,
-} from "@/lib/deploy-store";
 import { LOCALES, getLocale, getLocalePreference, setLocalePreference, translate, useFormat, useLocale, useT, type Locale } from "@/lib/i18n";
 import { isMac, useIsMac } from "@/lib/platform";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { usePoll } from "@/lib/use-poll";
-import type { ActiveOperation } from "@/lib/tauri";
 import { commands, installTauri } from "@/test/tauri";
-import { flush } from "@/test/ui";
+import { flush, settle } from "@/test/ui";
 
 afterEach(() => {
-  act(() => setLocalePreference("en"));
+  act(() => {
+    setLocalePreference("en");
+  });
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
@@ -124,72 +115,13 @@ describe("i18n", () => {
     ja: { number: "1,234.5", relative: "昨日" },
   };
   it.each(LOCALES)("formats numbers, dates and relative times in %s", (locale) => {
-    act(() => setLocalePreference(locale));
+    act(() => {
+      setLocalePreference(locale);
+    });
     const { result } = renderHook(() => useFormat());
     expect(result.current.number(1234.5).replace(/\s/g, " ")).toBe(expected[locale].number);
     expect(result.current.relative(-1, "day")).toBe(expected[locale].relative);
     expect(result.current.date(new Date(Date.UTC(2026, 9, 11, 12)), { year: "numeric", timeZone: "UTC" })).toMatch(/2026/);
-  });
-});
-
-describe("deploy-store", () => {
-  const op = (o: ActiveOperation["op"], machine: string | null = null): ActiveOperation => ({ labId: "l", op: o, machine, step: null });
-
-  it("names every operation", () => {
-    expect((["launch", "resume", "pause", "shutdown", "provision", "attack_vm", "stop"] as const).map((o) => operationLabel(op(o)))).toEqual([
-      "Starting…",
-      "Resuming…",
-      "Pausing…",
-      "Shutting down…",
-      "Provisioning…",
-      "Starting the attack VM…",
-      "Stopping…",
-    ]);
-    expect(operationLabel(op("provision", "isoloom-DC01"))).toContain("DC01");
-    expect(operationLabel(op("provision", "isoloom-DC01"))).not.toContain("isoloom");
-  });
-
-  it("names the status shown while an operation runs, in the current language", () => {
-    expect([OPERATION_STATUS.launch, OPERATION_STATUS.resume, OPERATION_STATUS.pause, OPERATION_STATUS.shutdown, OPERATION_STATUS.stop].every(Boolean)).toBe(
-      true,
-    );
-    const en = OPERATION_STATUS.launch;
-    setLocalePreference("de");
-    expect(OPERATION_STATUS.launch).not.toBe(en);
-  });
-
-  it("keeps log lines, and reads no sign-out from them", () => {
-    const heard = vi.fn();
-    window.addEventListener(SIGNED_OUT_EVENT, heard);
-    appendDeployLog("lab-x", "Downloading");
-    appendDeployLog("lab-x", "✗ You're signed out. Sign in again.");
-    expect(heard).not.toHaveBeenCalled();
-    window.removeEventListener(SIGNED_OUT_EVENT, heard);
-    // The lines are kept; whether the lab is busy stays begin/end's to say.
-    expect(getDeploySnapshot().runs["lab-x"].logs).toHaveLength(2);
-    expect(getDeploySnapshot().runs["lab-x"].busy).toBe(false);
-  });
-
-  it("polls the labs deploying and the operations in flight", async () => {
-    installTauri();
-    const deploying = renderHook(() => useDeployingLabs());
-    const ops = renderHook(() => useActiveOperations());
-    await flush();
-    expect([...deploying.result.current]).toEqual(["lab-goad"]);
-    expect(ops.result.current.get("lab-goad")?.step).toContain("SRV02");
-  });
-
-  it("follows a worker's log only while active, skipping blank lines", async () => {
-    const calls = installTauri({ lab_deploy_log: () => "line 1\n\nline 2\n" });
-    const { result, rerender } = renderHook(({ active }) => useWorkerLog("lab-goad", active, 1000), { initialProps: { active: false } });
-    await flush();
-    expect(result.current.lines).toEqual([]);
-    expect(commands(calls)).not.toContain("lab_deploy_log");
-    rerender({ active: true });
-    await flush();
-    expect(result.current.lines).toEqual(["line 1", "line 2"]);
-    expect(result.current.times).toHaveLength(2);
-    expect(calls.find((c) => c.cmd === "lab_deploy_log")?.args).toMatchObject({ id: "lab-goad" });
   });
 });
 
@@ -204,16 +136,24 @@ describe("usePoll", () => {
     await act(() => vi.advanceTimersByTimeAsync(1000));
     // Still reading: the tick is skipped.
     expect(read).toHaveBeenCalledTimes(1);
-    await act(async () => resolve(7));
+    await settle(() => {
+      resolve(7);
+    });
     expect(onValue).toHaveBeenCalledWith(7);
     window.dispatchEvent(new Event("focus"));
     expect(read).toHaveBeenCalledTimes(2);
-    await act(async () => resolve(8));
-    act(() => result.current());
+    await settle(() => {
+      resolve(8);
+    });
+    act(() => {
+      result.current();
+    });
     expect(read).toHaveBeenCalledTimes(3);
     unmount();
     // A read answering after unmount is dropped.
-    await act(async () => resolve(9));
+    await settle(() => {
+      resolve(9);
+    });
     expect(onValue).not.toHaveBeenCalledWith(9);
     await act(() => vi.advanceTimersByTimeAsync(5000));
     expect(read).toHaveBeenCalledTimes(3);
@@ -221,9 +161,7 @@ describe("usePoll", () => {
 
   it("hands failures to onError, and does nothing while disabled", async () => {
     const onError = vi.fn();
-    const read = vi.fn(async () => {
-      throw new Error("down");
-    });
+    const read = vi.fn(() => Promise.reject(new Error("down")));
     const { rerender } = renderHook(({ enabled }) => usePoll(read, 1000, { onValue: vi.fn(), onError, enabled }), { initialProps: { enabled: false } });
     await flush();
     expect(read).not.toHaveBeenCalled();
@@ -259,8 +197,9 @@ describe("useFocusTrap", () => {
       </div>
     );
   }
-  const visible = () =>
+  const visible = () => {
     document.querySelectorAll("button").forEach((b) => Object.defineProperty(b, "offsetParent", { get: () => document.body, configurable: true }));
+  };
 
   it("focuses the dialog itself when it has nothing focusable, and holds Tab there", () => {
     render(<Dialog active empty />);
@@ -309,7 +248,9 @@ describe("appearance", () => {
   it("applies and saves the chosen look, and follows another window", () => {
     const { result } = renderHook(() => useAppearance());
     expect(result.current[0]).toBe("dark");
-    act(() => result.current[1]("light"));
+    act(() => {
+      result.current[1]("light");
+    });
     expect(document.documentElement.classList.contains("light")).toBe(true);
     expect(localStorage.getItem("cyberctf.appearance")).toBe("light");
     act(() => {
@@ -322,15 +263,25 @@ describe("appearance", () => {
       window.dispatchEvent(new StorageEvent("storage", { key: "unrelated", newValue: "light" }));
     });
     expect(result.current[0]).toBe("black");
-    act(() => result.current[1]("dark"));
+    act(() => {
+      result.current[1]("dark");
+    });
     expect(document.documentElement.classList.contains("black")).toBe(false);
+    // A value it never wrote (another version, a hand edit) reads as the default.
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "cyberctf.appearance", newValue: "nonsense" }));
+    });
+    expect(result.current[0]).toBe("dark");
   });
 
-  it("sets the window frame's theme inside the app", async () => {
+  it("reads the saved look, and sets the window frame's theme inside the app", async () => {
     const calls = installTauri();
     localStorage.setItem("cyberctf.appearance", "light");
-    renderHook(() => useAppearanceSync());
-    renderHook(() => useAppearance());
+    renderHook(() => {
+      useAppearanceSync();
+    });
+    const { result } = renderHook(() => useAppearance());
+    expect(result.current[0]).toBe("light");
     await flush(50);
     expect(calls.some((c) => c.cmd === "plugin:window|set_theme" && c.args?.value === "light")).toBe(true);
   });
@@ -340,7 +291,9 @@ describe("app events", () => {
   it("asks the main window to switch screens, and closes only the Settings window", async () => {
     const calls = installTauri();
     const heard = vi.fn();
-    await listen("cyberctf:navigate", (e) => heard(e.payload));
+    await listen("cyberctf:navigate", (e) => {
+      heard(e.payload);
+    });
     showInMainWindow("machine");
     await flush();
     expect(heard).toHaveBeenCalledWith("machine");

@@ -18,7 +18,7 @@ import { budgetedAccounts, cloudAccounts, isOverBudget, labsOnAccounts } from "@
 import { useHostTests, useServerList } from "@/features/servers/use-server-list";
 import { ignore } from "@/lib/failure";
 import { useLabActions } from "@/features/labs/use-lab-actions";
-import { getDeploySnapshot } from "@/lib/deploy-store";
+import { getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
 import { useT } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";
 

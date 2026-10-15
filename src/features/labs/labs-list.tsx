@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LabRow } from "@/features/labs/lab-row";
 import { needsCloudAccount, setupNeeded } from "@/features/labs/lab-readiness";
 import type { Lab } from "@/features/labs/use-labs";
-import { startFailed, type DeployRun } from "@/lib/deploy-store";
+import { startFailed, type DeployRun } from "@/features/labs/runs/deploy-runs";
 import type { LabStatus, ServerHost, SystemReport } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
 import { prettyLabId } from "@/lib/format";

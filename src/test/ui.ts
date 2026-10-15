@@ -7,14 +7,22 @@ export const flush = (ms = 20) =>
     await new Promise((r) => setTimeout(r, ms));
   });
 
+/** Runs `fn` (resolving a pending read, say) and lets what it settles land, with the renders it
+ *  causes. */
+export const settle = (fn: () => void) =>
+  act(() => {
+    fn();
+    return Promise.resolve();
+  });
+
 /** The first button whose text or accessible name matches `name`. */
 export function button(name: RegExp): HTMLElement {
   // A menu's items are buttons too, to click.
   const all = () => [...screen.queryAllByRole("button"), ...screen.queryAllByRole("menuitem")];
-  const found = all().find((b) => name.test(b.textContent ?? "") || name.test(b.getAttribute("aria-label") ?? ""));
+  const found = all().find((b) => name.test(b.textContent) || name.test(b.getAttribute("aria-label") ?? ""));
   if (!found)
     throw new Error(
-      `no button matching ${name}: ${all()
+      `no button matching ${String(name)}: ${all()
         .map((b) => b.textContent)
         .join(" | ")}`,
     );
@@ -46,7 +54,7 @@ export async function clickEverything(user: UserEvent, { skip, max = 40 }: { ski
       const key = `${el.getAttribute("role") ?? el.tagName}:${el.textContent}:${el.getAttribute("aria-label") ?? ""}`;
       if (seen.has(key)) return false;
       if (el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true") return false;
-      if (skip && (skip.test((el.textContent ?? "").trim()) || skip.test(el.getAttribute("aria-label") ?? ""))) return false;
+      if (skip && (skip.test(el.textContent.trim()) || skip.test(el.getAttribute("aria-label") ?? ""))) return false;
       return true;
     });
     if (!next) return;

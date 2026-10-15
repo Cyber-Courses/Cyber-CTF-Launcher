@@ -5,7 +5,7 @@ import { warn } from "@/lib/failure";
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** The lab slug in a `cyberctf://labs/<slug>` link, or null for anything else. */
-export function labSlugFrom(url: string): string | null {
+function labSlugFrom(url: string): string | null {
   try {
     const u = new URL(url);
     if (u.protocol !== "cyberctf:" || u.hostname !== "labs") return null;

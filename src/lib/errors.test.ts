@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { commandError, describeError, errorCode, isSignedOut, type CommandError } from "@/lib/errors";
 import { setLocalePreference } from "@/lib/i18n";
-import en from "@/messages/en";
+import { messages as en } from "@/messages/en";
 
 const signedOut: CommandError = { code: "signedOut", message: "You're signed out. Sign in again to continue." };
 const port: CommandError = { code: "portInUse", args: { port: 8080 }, message: "Host port 8080 is already in use" };
 
 describe("command errors", () => {
-  afterEach(() => setLocalePreference("en"));
+  afterEach(() => {
+    setLocalePreference("en");
+  });
 
   it("are read from what a command rejects with, and nothing else", () => {
     expect(commandError(port)).toBe(port);

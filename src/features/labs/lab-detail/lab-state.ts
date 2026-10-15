@@ -2,7 +2,7 @@ import type { RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { EMULATORS, runsNatively } from "@/features/labs/lab-runtime";
 import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
-import { OPERATION_STATUS } from "@/lib/deploy-store";
+import { OPERATION_STATUS } from "@/features/labs/runs/operations";
 import type { ActiveOperation, LabMachine, LabStatus, Provider, ServerHost } from "@/lib/tauri";
 
 // What the lab page shows, derived from the lab's status and what is in flight on it.

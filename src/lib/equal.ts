@@ -6,21 +6,25 @@
 export function structurallyEqual(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
-  if (a instanceof Set || b instanceof Set) {
-    if (!(a instanceof Set && b instanceof Set) || a.size !== b.size) return false;
-    for (const v of a) if (!b.has(v)) return false;
-    return true;
-  }
-  if (a instanceof Map || b instanceof Map) {
-    if (!(a instanceof Map && b instanceof Map) || a.size !== b.size) return false;
-    for (const [k, v] of a) if (!b.has(k) || !structurallyEqual(v, b.get(k))) return false;
-    return true;
-  }
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!(Array.isArray(a) && Array.isArray(b)) || a.length !== b.length) return false;
-    return a.every((v, i) => structurallyEqual(v, b[i]));
-  }
-  const ka = Object.keys(a);
-  if (ka.length !== Object.keys(b).length) return false;
-  return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && structurallyEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+  if (a instanceof Set || b instanceof Set) return a instanceof Set && b instanceof Set && setsEqual(a, b);
+  if (a instanceof Map || b instanceof Map) return a instanceof Map && b instanceof Map && mapsEqual(a, b);
+  if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && arraysEqual(a, b);
+  return recordsEqual(a as Record<string, unknown>, b as Record<string, unknown>);
+}
+
+function setsEqual(a: ReadonlySet<unknown>, b: ReadonlySet<unknown>): boolean {
+  return a.size === b.size && [...a].every((v) => b.has(v));
+}
+
+function mapsEqual(a: ReadonlyMap<unknown, unknown>, b: ReadonlyMap<unknown, unknown>): boolean {
+  return a.size === b.size && [...a].every(([k, v]) => b.has(k) && structurallyEqual(v, b.get(k)));
+}
+
+function arraysEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((v, i) => structurallyEqual(v, b[i]));
+}
+
+function recordsEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => Object.prototype.hasOwnProperty.call(b, k) && structurallyEqual(a[k], b[k]));
 }

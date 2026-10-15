@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@tauri-apps/plugin-deep-link", () => ({ getCurrent: async () => null, onOpenUrl: async () => () => {} }));
+vi.mock("@tauri-apps/plugin-deep-link", () => ({ getCurrent: () => Promise.resolve(null), onOpenUrl: () => Promise.resolve(() => {}) }));
 
 const { firstLabSlug, takeLaunchLink } = await import("@/lib/deep-link");
 

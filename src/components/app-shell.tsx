@@ -22,7 +22,7 @@ import { Onboarding } from "@/features/onboarding/onboarding";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { OfflineStartPrompt } from "@/features/labs/offline-start-prompt";
 import { useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
-import { useActiveOperations } from "@/lib/deploy-store";
+import { useActiveOperations } from "@/features/labs/runs/operations";
 import { useAppearanceSync } from "@/lib/appearance";
 import { useT } from "@/lib/i18n";
 

@@ -37,8 +37,8 @@ export function MachineSummaryPanel({
           "…"
         )}
       </KeyValue>
-      <KeyValue k={t("home.machine.containers")}>{metrics ? `${metrics.containers}` : dockerReady ? "0" : t("home.machine.none")}</KeyValue>
-      <KeyValue k={t("home.machine.cores")}>{metrics ? `${metrics.cores}` : "…"}</KeyValue>
+      <KeyValue k={t("home.machine.containers")}>{metrics ? String(metrics.containers) : dockerReady ? "0" : t("home.machine.none")}</KeyValue>
+      <KeyValue k={t("home.machine.cores")}>{metrics ? String(metrics.cores) : "…"}</KeyValue>
     </Panel>
   );
 }

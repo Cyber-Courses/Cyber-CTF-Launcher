@@ -17,7 +17,7 @@ const WINDOWS: Record<string, string[]> = {
     "components/shell/use-system-check.ts",
     "components/shell/use-auth-session.ts",
     "components/shell/use-sidebar-labs.ts",
-    "lib/deploy-store.ts",
+    "features/labs/runs/operations.ts",
     "lib/appearance.ts",
     "lib/deep-link.ts",
     "features/labs/attack-box-auto.ts",

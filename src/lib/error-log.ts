@@ -6,7 +6,9 @@ export function describeError(err: unknown): string {
   if (err instanceof Error) return err.stack && err.stack.includes(err.message) ? err.stack : `${err.message}\n${err.stack ?? ""}`.trim();
   if (typeof err === "string") return err;
   try {
-    return JSON.stringify(err) ?? String(err);
+    // `undefined`, functions and symbols have no JSON: `stringify` returns undefined for them.
+    const json = JSON.stringify(err) as unknown;
+    return typeof json === "string" ? json : String(err);
   } catch {
     return String(err);
   }
@@ -56,6 +58,10 @@ let installed = false;
 export function installErrorLogging(): void {
   if (installed || typeof window === "undefined") return;
   installed = true;
-  window.addEventListener("error", (e) => logFrontendError("uncaught", e.error ?? e.message));
-  window.addEventListener("unhandledrejection", (e) => logFrontendError("unhandled rejection", e.reason));
+  window.addEventListener("error", (e) => {
+    logFrontendError("uncaught", e.error ?? e.message);
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    logFrontendError("unhandled rejection", e.reason);
+  });
 }

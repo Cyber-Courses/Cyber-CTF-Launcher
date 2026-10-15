@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { invokeStreaming } from "@/lib/tauri/stream";
+import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
 import type * as Generated from "@/lib/tauri/generated";
 import type { HostCapacity, Provider, SelfTestEvent, ServerCheck, ServerCheckState, ServerTest } from "@/lib/tauri/generated";
 
@@ -18,8 +18,8 @@ export type ServerList = Omit<Generated.ServerList, "hosts"> & { hosts: ServerHo
 
 export const serverList = () => invoke<ServerList>("server_list");
 export const serverSave = (input: ServerHostInput) => invoke<ServerHost>("server_save", { input });
-export const serverRemove = (id: string) => invoke<void>("server_remove", { id });
-export const serverSetDefault = (id: string | null) => invoke<void>("server_set_default", { id });
+export const serverRemove = (id: string) => invokeUnit("server_remove", { id });
+export const serverSetDefault = (id: string | null) => invokeUnit("server_set_default", { id });
 export const serverTest = (id: string) => invoke<ServerTest>("server_test", { id });
 /** The launcher's SSH public key; token-auth Proxmox hosts must authorize it for SSH. */
 export const serverPublicKey = () => invoke<string>("server_public_key");
@@ -31,8 +31,8 @@ export const serverMonthToDateCost = (id: string) => invoke<number>("server_mont
 /** A host's hardware headroom (Proxmox only; null otherwise or on failure). */
 export const serverCapacity = (id: string) => invoke<HostCapacity | null>("server_capacity", { id });
 /** Real-VM self-test: provisions a throwaway VM on the host, checks it, then destroys it. */
-export const serverSelftest = (id: string, onEvent: (e: SelfTestEvent) => void) => invokeStreaming<SelfTestEvent>("server_selftest", { id }, onEvent, "events");
+export const serverSelftest = (id: string, onEvent: (e: SelfTestEvent) => void) => invokeStreaming("server_selftest", { id }, onEvent, "events");
 /** Opens (or focuses) the setup window, for a new host or to edit `id`. */
-export const serverOpenSetup = (id: string | null, kind: "server" | "cloud" = "server") => invoke<void>("server_open_setup", { id, kind });
+export const serverOpenSetup = (id: string | null, kind: "server" | "cloud" = "server") => invokeUnit("server_open_setup", { id, kind });
 /** Emitted by the setup window after a save; the main window reloads its host list. */
 export const SERVER_CHANGED = "server:changed";

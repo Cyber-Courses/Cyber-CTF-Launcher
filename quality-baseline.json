@@ -2,92 +2,40 @@
   "rules": {
     "dup/clone": {
       "rs:runtime": 9,
-      "ts:features": 1,
-      "ts:features/home": 1,
       "ts:features/machine": 8,
-      "ts:features/servers": 8,
-      "ts:features/settings": 8,
-      "ts:lib": 1
-    },
-    "eslint/@typescript-eslint/max-params": {
-      "ts:lib": 2
+      "ts:features/servers": 8
     },
     "eslint/@typescript-eslint/no-base-to-string": {
-      "ts:features/hosted": 1,
-      "ts:features/servers": 1,
-      "ts:features/settings": 1,
-      "ts:lib": 13,
-      "ts:test": 1
+      "ts:features/servers": 1
     },
     "eslint/@typescript-eslint/no-confusing-void-expression": {
-      "ts:app": 8,
-      "ts:features": 8,
-      "ts:features/account": 9,
-      "ts:features/app": 10,
       "ts:features/cloud": 8,
-      "ts:features/home": 13,
-      "ts:features/hosted": 1,
       "ts:features/machine": 54,
       "ts:features/onboarding": 9,
-      "ts:features/servers": 59,
-      "ts:features/settings": 27,
-      "ts:lib": 79,
-      "ts:test": 3
-    },
-    "eslint/@typescript-eslint/no-dynamic-delete": {
-      "ts:lib": 1
-    },
-    "eslint/@typescript-eslint/no-extraneous-class": {
-      "ts:lib": 1
-    },
-    "eslint/@typescript-eslint/no-floating-promises": {
-      "ts:lib": 1
+      "ts:features/servers": 59
     },
     "eslint/@typescript-eslint/no-invalid-void-type": {
-      "ts:features/servers": 1,
-      "ts:lib": 26
+      "ts:features/servers": 1
     },
     "eslint/@typescript-eslint/no-misused-promises": {
-      "ts:app": 3,
-      "ts:features/account": 2,
       "ts:features/cloud": 4,
-      "ts:features/home": 2,
       "ts:features/machine": 12,
-      "ts:features/onboarding": 1,
-      "ts:features/servers": 17,
-      "ts:features/settings": 12
+      "ts:features/servers": 17
     },
     "eslint/@typescript-eslint/no-non-null-assertion": {
-      "ts:features": 3,
       "ts:features/cloud": 4,
-      "ts:features/home": 2,
-      "ts:features/hosted": 1,
       "ts:features/machine": 16,
-      "ts:features/servers": 9,
-      "ts:features/settings": 5,
-      "ts:lib": 2
+      "ts:features/servers": 9
     },
     "eslint/@typescript-eslint/no-unnecessary-condition": {
-      "ts:features": 4,
-      "ts:features/cloud": 6,
-      "ts:features/home": 7,
+      "ts:features/cloud": 5,
       "ts:features/machine": 35,
       "ts:features/onboarding": 4,
-      "ts:features/servers": 16,
-      "ts:features/settings": 9,
-      "ts:lib": 14,
-      "ts:test": 9
+      "ts:features/servers": 16
     },
     "eslint/@typescript-eslint/no-unnecessary-type-assertion": {
       "ts:features/machine": 9,
-      "ts:features/servers": 7,
-      "ts:features/settings": 1
-    },
-    "eslint/@typescript-eslint/no-unnecessary-type-conversion": {
-      "ts:lib": 1
-    },
-    "eslint/@typescript-eslint/no-unnecessary-type-parameters": {
-      "ts:lib": 2
+      "ts:features/servers": 7
     },
     "eslint/@typescript-eslint/no-unsafe-assignment": {
       "ts:features/machine": 3,
@@ -99,95 +47,48 @@
     },
     "eslint/@typescript-eslint/no-unsafe-return": {
       "ts:features/machine": 2,
-      "ts:features/servers": 1,
-      "ts:lib": 1
+      "ts:features/servers": 1
     },
     "eslint/@typescript-eslint/only-throw-error": {
-      "ts:features": 1,
-      "ts:features/account": 2,
       "ts:features/cloud": 3,
       "ts:features/machine": 17,
       "ts:features/onboarding": 2,
-      "ts:features/servers": 16,
-      "ts:features/settings": 12,
-      "ts:test": 1
-    },
-    "eslint/@typescript-eslint/prefer-promise-reject-errors": {
-      "ts:features": 1,
-      "ts:features/account": 2,
-      "ts:lib": 1
+      "ts:features/servers": 16
     },
     "eslint/@typescript-eslint/require-await": {
-      "ts:features": 2,
       "ts:features/machine": 6,
       "ts:features/onboarding": 3,
-      "ts:features/servers": 8,
-      "ts:features/settings": 6,
-      "ts:lib": 51,
-      "ts:test": 1
+      "ts:features/servers": 8
     },
     "eslint/@typescript-eslint/restrict-template-expressions": {
       "ts:features/cloud": 1,
-      "ts:features/home": 2,
       "ts:features/machine": 1,
       "ts:features/onboarding": 3,
-      "ts:features/servers": 1,
-      "ts:lib": 7,
-      "ts:test": 1
-    },
-    "eslint/@typescript-eslint/unbound-method": {
-      "ts:test": 3
+      "ts:features/servers": 1
     },
     "eslint/@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "ts:app": 2,
       "ts:features/cloud": 1,
-      "ts:features/hosted": 1,
       "ts:features/machine": 1,
-      "ts:features/servers": 3,
-      "ts:features/settings": 2,
-      "ts:lib": 3
-    },
-    "eslint/import/no-default-export": {
-      "ts:messages": 6
-    },
-    "eslint/max-lines": {
-      "ts:features/settings": 2,
-      "ts:lib": 1
+      "ts:features/servers": 3
     },
     "eslint/max-lines-per-function": {
-      "ts:app": 1,
-      "ts:features/account": 1,
-      "ts:features/app": 1,
       "ts:features/cloud": 2,
-      "ts:features/home": 1,
-      "ts:features/hosted": 1,
       "ts:features/machine": 11,
       "ts:features/onboarding": 2,
-      "ts:features/servers": 8,
-      "ts:features/settings": 5,
-      "ts:lib": 3
+      "ts:features/servers": 8
     },
     "eslint/sonarjs/cognitive-complexity": {
       "ts:features/cloud": 1,
       "ts:features/machine": 5,
-      "ts:features/servers": 2,
-      "ts:lib": 2
+      "ts:features/servers": 2
     },
     "exception/without-reason": {
       "rs:runtime": 3,
       "ts:features/machine": 2,
-      "ts:features/servers": 4,
-      "ts:lib": 1
+      "ts:features/servers": 4
     },
     "knip/exports": {
-      "ts:e2e": 1,
-      "ts:lib": 2,
-      "ts:test": 1
-    },
-    "knip/types": {
-      "ts:features/home": 1,
-      "ts:features/hosted": 1,
-      "ts:lib": 1
+      "ts:e2e": 1
     },
     "rust/file-over-400-loc": {
       "rs:runtime": 1
@@ -395,7 +296,7 @@
       "eslint-disable-next-line react-hooks/set-state-in-effect": 1
     },
     "src/lib/appearance.ts": {
-      "eslint-disable-next-line react-hooks/set-state-in-effect": 1
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage isn't readable during a server render, so the saved choice can only arrive after mount": 1
     }
   }
 }

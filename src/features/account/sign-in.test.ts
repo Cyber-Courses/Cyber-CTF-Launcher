@@ -1,24 +1,31 @@
 // @vitest-environment jsdom
+import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { commands, installTauri, stream } from "@/test/tauri";
+import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
 import { cancelSignIn, signIn, useSignIn } from "@/features/account/sign-in";
 
 const SIGN_IN_CANCELLED = { code: "signInCancelled", message: "Sign-in cancelled." };
-import { act, renderHook } from "@testing-library/react";
 
 const ada = { loggedIn: true, name: "Ada", email: "ada@example.com" };
+
+/** Whether an outcome is a failure the command rejects with (as the core does), not a status. */
+const isFailure = (o: unknown) => o instanceof Error || typeof o === "string" || (typeof o === "object" && o !== null && "code" in o);
 
 /** An `auth_login` that gives its link, then waits for `finish` (a status, or an error to throw). */
 function pendingLogin() {
   let finish: (outcome: unknown) => void = () => {};
   const handler = (args: Record<string, unknown> | undefined) => {
     stream(args, "https://auth.example/oauth2/authorize?state=s1");
-    return new Promise(
-      (resolve, reject) =>
-        (finish = (o) => (o instanceof Error || typeof o === "string" || (typeof o === "object" && o !== null && "code" in o) ? reject(o) : resolve(o))),
-    );
+    return new Promise<unknown>((resolve) => {
+      finish = resolve;
+    }).then((o) => (isFailure(o) ? rejectWith(o) : o));
   };
-  return { handler, finish: (o: unknown) => finish(o) };
+  return {
+    handler,
+    finish: (o: unknown) => {
+      finish(o);
+    },
+  };
 }
 
 describe("signIn", () => {
@@ -38,7 +45,12 @@ describe("signIn", () => {
 
   it("ends a cancelled sign-in quietly, as null", async () => {
     const login = pendingLogin();
-    const calls = installTauri({ auth_login: login.handler, auth_login_cancel: () => login.finish(SIGN_IN_CANCELLED) });
+    const calls = installTauri({
+      auth_login: login.handler,
+      auth_login_cancel: () => {
+        login.finish(SIGN_IN_CANCELLED);
+      },
+    });
     const signingIn = signIn();
     await cancelSignIn();
     expect(await signingIn).toBeNull();

@@ -31,6 +31,97 @@ export interface PollOptions<T> {
 
 const IGNORE = ignore("polled again in a moment");
 
+type PollCallbacks<T> = Pick<PollOptions<T>, "onValue" | "onError" | "equal"> & { read: () => Promise<T> };
+type PollTiming = Required<Pick<PollOptions<unknown>, "serial" | "onFocus" | "background" | "leading">> & { ms: number };
+
+/** The reads of one run of a poll, each answer delivered only if it is the newest read started
+ *  and, with `equal`, new. `latest` gives the current read and callbacks; nothing is delivered
+ *  once `stop`ped. */
+function pollReads<T>(latest: () => PollCallbacks<T>, { serial }: Pick<PollTiming, "serial">) {
+  let alive = true;
+  let reading = 0;
+  // Reads are numbered: only the newest one started may deliver, so a slow read can't land
+  // after a newer one with older news.
+  let started = 0;
+  let landed = 0;
+  let last: { value: T } | null = null;
+  const deliver = (mine: number, v: T) => {
+    if (!alive || mine < landed) return;
+    landed = mine;
+    const { equal, onValue } = latest();
+    if (equal && last && equal(last.value, v)) return;
+    last = { value: v };
+    onValue(v);
+  };
+  const read = () => {
+    const mine = ++started;
+    reading++;
+    latest()
+      .read()
+      .then(
+        (v) => {
+          deliver(mine, v);
+        },
+        (e: unknown) => {
+          if (alive) (latest().onError ?? IGNORE)(e);
+        },
+      )
+      .finally(() => {
+        reading--;
+      });
+  };
+  return {
+    /** A tick of the timer: skipped while a read is in flight when `serial`, so slow reads don't stack. */
+    tick: () => {
+      if (!serial || reading === 0) read();
+    },
+    /** A read asked for (`readNow`, the window showing again): always starts. */
+    now: read,
+    stop: () => {
+      alive = false;
+    },
+  };
+}
+
+/** One run of a poll, until `stop`: its reads every `ms`, paused while the window is hidden
+ *  (unless `background`) and read again when it shows, and on focus with `onFocus`. */
+function startPoll<T>(latest: () => PollCallbacks<T>, { ms, serial, onFocus, background, leading }: PollTiming) {
+  const reads = pollReads(latest, { serial });
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const { tick } = reads;
+  const run = () => {
+    if (timer === undefined) timer = setInterval(tick, ms);
+  };
+  const pause = () => {
+    clearInterval(timer);
+    timer = undefined;
+  };
+  if (background || isVisible()) {
+    if (leading) tick();
+    run();
+  }
+  const offVisibility = background
+    ? () => {}
+    : onVisibilityChange((visible) => {
+        if (!visible) {
+          pause();
+          return;
+        }
+        reads.now();
+        run();
+      });
+  if (onFocus) window.addEventListener("focus", tick);
+  return {
+    readNow: reads.now,
+    stop: () => {
+      reads.stop();
+      pause();
+      offVisibility();
+      if (onFocus) window.removeEventListener("focus", tick);
+    },
+  };
+}
+
 /**
  * Reads `read()` now and then every `ms` while enabled and the window is visible. The latest
  * `read` and callbacks are used on each tick without restarting the poll. Returns a function
@@ -41,7 +132,7 @@ export function usePoll<T>(
   ms: number,
   { onValue, onError, serial = true, onFocus = false, enabled = true, restartKey, equal, background = false, leading = true }: PollOptions<T>,
 ) {
-  const latest = useRef({ read, onValue, onError, equal });
+  const latest = useRef<PollCallbacks<T>>({ read, onValue, onError, equal });
   useEffect(() => {
     latest.current = { read, onValue, onError, equal };
   });
@@ -49,66 +140,17 @@ export function usePoll<T>(
 
   useEffect(() => {
     if (!enabled) return;
-    let alive = true;
-    let reading = 0;
-    // Reads are numbered: only the newest one started may deliver, so a slow read can't land
-    // after a newer one with older news.
-    let started = 0;
-    let landed = 0;
-    let last: { value: T } | null = null;
-    let timer: ReturnType<typeof setInterval> | undefined;
-    const readOnce = (force: boolean) => {
-      if (serial && reading > 0 && !force) return;
-      const mine = ++started;
-      reading++;
-      latest.current
-        .read()
-        .then(
-          (v) => {
-            if (!alive || mine < landed) return;
-            landed = mine;
-            const eq = latest.current.equal;
-            if (eq && last && eq(last.value, v)) return;
-            last = { value: v };
-            latest.current.onValue(v);
-          },
-          (e) => alive && (latest.current.onError ?? IGNORE)(e),
-        )
-        .finally(() => {
-          reading--;
-        });
-    };
-    const tick = () => readOnce(false);
-    const run = () => {
-      if (timer === undefined) timer = setInterval(tick, ms);
-    };
-    const pause = () => {
-      clearInterval(timer);
-      timer = undefined;
-    };
-    now.current = () => readOnce(true);
-    if (background || isVisible()) {
-      if (leading) tick();
-      run();
-    }
-    const offVisibility = background
-      ? () => {}
-      : onVisibilityChange((visible) => {
-          if (!visible) return pause();
-          readOnce(true);
-          run();
-        });
-    if (onFocus) window.addEventListener("focus", tick);
+    const poll = startPoll(() => latest.current, { ms, serial, onFocus, background, leading });
+    now.current = poll.readNow;
     return () => {
-      alive = false;
       now.current = () => {};
-      pause();
-      offVisibility();
-      if (onFocus) window.removeEventListener("focus", tick);
+      poll.stop();
     };
   }, [ms, serial, onFocus, enabled, restartKey, background, leading]);
 
-  return useCallback(() => now.current(), []);
+  return useCallback(() => {
+    now.current();
+  }, []);
 }
 
 /** `usePoll` keeping the latest answer as state: `[value, readNow]`. An answer equal to the
@@ -116,6 +158,11 @@ export function usePoll<T>(
  *  same thing again re-renders nothing. */
 export function usePolled<T>(read: () => Promise<T>, ms: number, initial: T, { equal = structurallyEqual, ...options }: Omit<PollOptions<T>, "onValue"> = {}) {
   const [value, setValue] = useState<T>(initial);
-  const readNow = usePoll(read, ms, { ...options, onValue: (v) => setValue((prev) => (equal(prev, v) ? prev : v)) });
+  const readNow = usePoll(read, ms, {
+    ...options,
+    onValue: (v) => {
+      setValue((prev) => (equal(prev, v) ? prev : v));
+    },
+  });
   return [value, readNow] as const;
 }

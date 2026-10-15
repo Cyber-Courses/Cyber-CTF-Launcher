@@ -11,11 +11,12 @@ import { getLabState, noteStopped, refreshStatus, setScanRunning } from "@/featu
 import { useAttackBox } from "@/features/labs/use-attack-box";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
-import { beginDeploy, appendDeployLog, endDeploy, getDeploySnapshot } from "@/lib/deploy-store";
+import { beginDeploy, appendDeployLog, endDeploy, getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
 import { setLocalePreference, translate } from "@/lib/i18n";
 import type { LabCheck, LabStatus } from "@/lib/tauri";
-import { commands, installTauri, rejects } from "@/test/tauri";
-import { button, flush } from "@/test/ui";
+import { commands, installTauri, rejects, rejectWith } from "@/test/tauri";
+import { button, flush, settle } from "@/test/ui";
+import { deferred } from "@/test/deferred";
 
 // Regression tests for polling and state races on the frontend: each failed before its fix.
 
@@ -47,17 +48,6 @@ const status = (p: Partial<LabStatus> = {}): LabStatus => ({
   reapError: null,
   ...p,
 });
-
-/** A promise and the functions settling it, for a reply the test decides when to give. */
-function deferred<T>() {
-  let resolve!: (v: T) => void;
-  let reject!: (e: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
 
 /** Advances fake time and lets the promises it releases settle. */
 const advance = (ms: number) =>
@@ -185,8 +175,8 @@ describe("lab page actions during a worker operation", () => {
     await act(async () => {
       await result.current.park(lab("lab-r"), "pause");
     });
-    expect(getDeploySnapshot().runs["lab-r"].logs).toEqual(["✓ Lab is running"]);
-    expect(getDeploySnapshot().runs["lab-r"].busy).toBe(false);
+    expect(getDeploySnapshot().runs["lab-r"]?.logs).toEqual(["✓ Lab is running"]);
+    expect(getDeploySnapshot().runs["lab-r"]?.busy).toBe(false);
   });
 });
 
@@ -195,7 +185,7 @@ describe("reset", () => {
     installTauri({ lab_status: () => status() });
     const user = userEvent.setup();
     const onStart = vi.fn();
-    const onStop = vi.fn(async () => "vagrant destroy failed");
+    const onStop = vi.fn(() => Promise.resolve("vagrant destroy failed"));
     render(
       <LabDetail
         lab={lab("lab-s")}
@@ -226,7 +216,7 @@ describe("reset", () => {
   it("stop resolves to its failure", async () => {
     installTauri({
       lab_stop: () => {
-        throw "vagrant destroy failed";
+        rejectWith("vagrant destroy failed");
       },
       lab_status: () => status(),
     });
@@ -252,7 +242,7 @@ describe("cloud launch confirmation", () => {
     await advance(CONFIRM_WINDOW_MS);
     expect(screen.queryByText(translate("app.launchConfirm.approve"))).toBeNull();
     expect(screen.getByText(translate("app.launchConfirm.expired"))).toBeTruthy();
-    await act(async () => {
+    await settle(() => {
       button(new RegExp(translate("app.launchConfirm.close"))).click();
     });
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -297,6 +287,6 @@ describe("a stale scan after a local stop", () => {
     const { result } = renderHook(() => useLabs("stale-scan"));
     await flush(50);
     expect(commands(calls)).toContain("running_labs");
-    expect(result.current.statuses["lab-e"]?.running).toBe(false);
+    expect(result.current.statuses["lab-e"].running).toBe(false);
   });
 });

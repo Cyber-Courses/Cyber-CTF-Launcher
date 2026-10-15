@@ -2,6 +2,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useHostedLabs, type HostedSession, type HostedState } from "@/features/hosted/use-hosted-labs";
+import { must } from "@/components/test-support";
 import { installTauri, type Call } from "@/test/tauri";
 
 const session = (state: HostedState, over: Partial<HostedSession> = {}): HostedSession => ({
@@ -17,7 +18,8 @@ const session = (state: HostedState, over: Partial<HostedSession> = {}): HostedS
 
 type Api = (operation: string, variables: Record<string, unknown> | undefined) => unknown;
 /** Answers `api_query` with `api`, by the operation's name. */
-const withApi = (api: Api): Call[] => installTauri({ api_query: (a) => api(String(a?.operation ?? ""), a?.variables as Record<string, unknown> | undefined) });
+const withApi = (api: Api): Call[] =>
+  installTauri({ api_query: (a) => api(typeof a?.operation === "string" ? a.operation : "", a?.variables as Record<string, unknown> | undefined) });
 const queries = (calls: Call[], word: string) => calls.filter((c) => c.cmd === "api_query" && String(c.args?.operation).includes(word));
 
 /** Lets the mocked invokes resolve and React apply what they set, `ms` of fake time later. */
@@ -109,7 +111,7 @@ describe("useHostedLabs", () => {
     ];
     withApi((q) => {
       if (q.includes("activeSession")) return { myActiveLabSession: session("PULLING") };
-      return answers.shift()!();
+      return must(answers.shift(), "a poll answer")();
     });
     const { result } = renderHook(() => useHostedLabs());
     await advance();

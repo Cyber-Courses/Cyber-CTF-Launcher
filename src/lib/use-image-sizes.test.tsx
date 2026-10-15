@@ -30,7 +30,7 @@ describe("useImageSizes", () => {
   });
 
   it("loads the sizes of images added later and keeps the earlier ones", async () => {
-    imageDownloadSize.mockImplementation(async (image) => image.length);
+    imageDownloadSize.mockImplementation((image) => Promise.resolve(image.length));
     const { result, rerender } = renderHook(({ images }) => useImageSizes(images), { initialProps: { images: ["img-c"] } });
     await act(async () => {});
     rerender({ images: ["img-c", "img-dddd"] });

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { authStatus, type AuthStatus } from "@/lib/tauri";
 import { AUTH_CHANGED_EVENT } from "@/lib/app-events";
-import { SIGNED_OUT_EVENT } from "@/lib/deploy-store";
+import { SIGNED_OUT_EVENT } from "@/features/account/signed-out";
 import { ignore, warn } from "@/lib/failure";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 import { usePoll } from "@/lib/use-poll";

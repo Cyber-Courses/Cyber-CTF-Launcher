@@ -7,34 +7,58 @@ import { Button } from "@/components/ui/button";
 import { KeyValue } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
 import { openLogFolder, restartApp, type AgentInfo, type SystemReport } from "@/lib/tauri";
-import { useDeployingLabs } from "@/lib/deploy-store";
+import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { getAttackBox, getAttackImage, getVmProvider } from "@/lib/settings";
 import { Row, Section } from "@/features/settings/settings-layout";
 import { clearOnboarded } from "@/components/shell/onboarded-flag";
 import { diagnosticsText } from "@/features/settings/diagnostics";
 import { useUpdater, type UpdateState } from "@/features/settings/use-updater";
-import { tell } from "@/lib/failure";
+import { ignore, tell } from "@/lib/failure";
 import { emit } from "@tauri-apps/api/event";
 import { closeIfSettings, REPLAY_ONBOARDING_EVENT } from "@/lib/app-events";
 import { useFormat, useT } from "@/lib/i18n";
 
 /* ------------------------------------------------------------------ about */
 
-export function AboutSection({ version, report, agent }: { version: string | null; report: SystemReport | null; agent: AgentInfo | null }) {
+/** Copies the diagnostics for a bug report; they stay in English: they go to support. */
+function DiagnosticsRow({ version, report, agent }: { version: string | null; report: SystemReport | null; agent: AgentInfo | null }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
-
-  // Diagnostics stay in English: they go to support with a bug report.
-  async function copyDiagnostics() {
+  const copy = () => {
     const text = diagnosticsText(version, report, agent, { attackImage: getAttackImage(), attackBox: getAttackBox(), vmProvider: getVmProvider() });
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      /* clipboard unavailable */
-    }
-  }
+    // Inside the chain, so a webview without the clipboard API fails here too, quietly.
+    Promise.resolve()
+      .then(() => navigator.clipboard.writeText(text))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => {
+          setCopied(false);
+        }, 1600);
+      }, ignore("the clipboard is unavailable"));
+  };
+  return (
+    <Row
+      title={t("settings.about.diagnostics")}
+      description={t("settings.about.diagnosticsDescription")}
+      control={
+        <Button variant="outline" size="xs" onClick={copy}>
+          {copied ? (
+            <>
+              <Check className="size-3.5 text-success" /> {t("settings.about.copied")}
+            </>
+          ) : (
+            <>
+              <Copy className="size-3.5" /> {t("settings.about.copy")}
+            </>
+          )}
+        </Button>
+      }
+    />
+  );
+}
+
+export function AboutSection({ version, report, agent }: { version: string | null; report: SystemReport | null; agent: AgentInfo | null }) {
+  const t = useT();
 
   // The onboarding shows in the main window: it is asked to show it again (a reload here only
   // reloaded the Settings window, which never shows it).
@@ -54,28 +78,18 @@ export function AboutSection({ version, report, agent }: { version: string | nul
       )}
       {agent && <KeyValue k={t("settings.about.installId")}>{agent.installId}</KeyValue>}
       <UpdatesRow />
-      <Row
-        title={t("settings.about.diagnostics")}
-        description={t("settings.about.diagnosticsDescription")}
-        control={
-          <Button variant="outline" size="xs" onClick={copyDiagnostics}>
-            {copied ? (
-              <>
-                <Check className="size-3.5 text-success" /> {t("settings.about.copied")}
-              </>
-            ) : (
-              <>
-                <Copy className="size-3.5" /> {t("settings.about.copy")}
-              </>
-            )}
-          </Button>
-        }
-      />
+      <DiagnosticsRow version={version} report={report} agent={agent} />
       <Row
         title={t("settings.about.logs")}
         description={t("settings.about.logsDescription")}
         control={
-          <Button variant="outline" size="xs" onClick={() => openLogFolder().catch(tell(t("settings.about.logsFailed")))}>
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => {
+              openLogFolder().catch(tell(t("settings.about.logsFailed")));
+            }}
+          >
             <FolderOpen className="size-3.5" /> {t("settings.about.openLogs")}
           </Button>
         }
@@ -121,7 +135,12 @@ function UpdatesRow() {
             )}
           </Button>
         ) : upd.phase === "installed" ? (
-          <Button size="xs" onClick={() => restartApp().catch(tell(t("settings.about.restartFailed")))}>
+          <Button
+            size="xs"
+            onClick={() => {
+              restartApp().catch(tell(t("settings.about.restartFailed")));
+            }}
+          >
             {t("settings.about.restartNow")}
           </Button>
         ) : (

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { failureHintKey, failureKind, failureTitleKey } from "@/features/labs/failure-hints";
-import { runFailure, startFailed } from "@/lib/deploy-store";
+import { runFailure, startFailed } from "@/features/labs/runs/deploy-runs";
 
 describe("failureKind", () => {
   it("recognises the backend's errors that have a known fix", () => {

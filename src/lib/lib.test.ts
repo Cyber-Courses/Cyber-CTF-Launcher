@@ -2,7 +2,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatAgo, formatBytes, formatDuration, formatElapsed, prettyLabId } from "@/lib/format";
 import { setLocalePreference } from "@/lib/i18n";
-import { getLastRun, setLastRun } from "@/lib/last-run";
 import {
   ATTACK_PRESETS,
   ATTACK_VM_PRESETS,
@@ -28,8 +27,12 @@ import { cn } from "@/lib/utils";
 import { isMac } from "@/lib/platform";
 
 describe("format", () => {
-  beforeEach(() => setLocalePreference("en"));
-  afterEach(() => setLocalePreference("system"));
+  beforeEach(() => {
+    setLocalePreference("en");
+  });
+  afterEach(() => {
+    setLocalePreference("system");
+  });
 
   it("formats a running step's time", () => {
     expect(formatDuration(400)).toBe("0.4s");
@@ -180,7 +183,6 @@ describe("settings", () => {
     expect(getLastTest("vm")).toBeNull();
     expect(getAutoAttackBox()).toBe(true);
     expect(getPortMode()).toBeNull();
-    expect(getLastRun("x")).toBeNull();
     expect(() => {
       setAttackImage("x");
       setAttackBox("x");
@@ -190,7 +192,6 @@ describe("settings", () => {
       setAutoAttackBox(false);
       setPortMode("random");
       setPortMode(null);
-      setLastRun("x");
     }).not.toThrow();
     get.mockRestore();
     set.mockRestore();
@@ -200,16 +201,6 @@ describe("settings", () => {
   it("describes every preset in the current language", () => {
     for (const p of [...ATTACK_PRESETS, ...ATTACK_VM_PRESETS]) expect(p.note.length).toBeGreaterThan(0);
     for (const p of ATTACK_PRESETS) if (p.terms !== undefined) expect(typeof p.terms).toBe("string");
-  });
-});
-
-describe("last run", () => {
-  it("stores when a lab was last launched", () => {
-    expect(getLastRun("lab")).toBeNull();
-    vi.spyOn(Date, "now").mockReturnValue(42);
-    setLastRun("lab");
-    vi.restoreAllMocks();
-    expect(getLastRun("lab")).toBe(42);
   });
 });
 

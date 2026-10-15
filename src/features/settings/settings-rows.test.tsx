@@ -12,11 +12,13 @@ import { InstalledToolsPanel } from "@/features/settings/installed-tools-panel";
 import { LabPortsRow } from "@/features/settings/lab-ports-row";
 import { SharedFolderControl } from "@/features/settings/shared-folder";
 import { readOnboarded, markOnboarded } from "@/components/shell/onboarded-flag";
+import { must } from "@/components/test-support";
+import { openCustomImage, toggleFailingSharedFolder } from "@/features/settings/settings-test-kit";
 import { getLocalePreference, setLocalePreference } from "@/lib/i18n";
 import { getAttackBox, getAttackImage, getAutoAttackBox, getPortMode, getVmProvider, setAttackBox, setAttackImage, setVmProvider } from "@/lib/settings";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
-import { installTauri, stream } from "@/test/tauri";
+import { installTauri, stream, rejectWith } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 // A plain function, not a `vi.fn`: a spy's bookkeeping on a rejected answer fails the test.
@@ -28,8 +30,28 @@ vi.mock("@tauri-apps/plugin-updater", () => ({
   },
 }));
 
-const text = () => document.body.textContent ?? "";
-const radioWith = (s: string) => screen.getAllByRole("radio").find((r) => r.textContent?.includes(s))!;
+const text = () => document.body.textContent;
+const radioWith = (s: string) =>
+  must(
+    screen.getAllByRole("radio").find((r) => r.textContent.includes(s)),
+    `a radio with ${s}`,
+  );
+
+/** The About section (no report or agent) after Check for updates, once the check answered. */
+async function checkForUpdates() {
+  const user = userEvent.setup();
+  render(<AboutSection version="1.4.0" report={null} agent={null} />);
+  await user.click(button(/check for updates/i));
+  await flush();
+  return user;
+}
+
+/** A clipboard that takes what is copied, to read back. */
+function stubClipboard() {
+  const writeText = vi.fn<(s: string) => Promise<void>>(() => Promise.resolve());
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  return writeText;
+}
 
 describe("AboutSection", () => {
   beforeEach(() => {
@@ -55,24 +77,16 @@ describe("AboutSection", () => {
 
   it("says when the app is up to date, with the time of the check", async () => {
     installTauri();
-    updater.answer = async () => null;
-    const user = userEvent.setup();
-    render(<AboutSection version="1.4.0" report={null} agent={null} />);
-    await user.click(button(/check for updates/i));
-    await flush();
+    updater.answer = () => Promise.resolve(null);
+    await checkForUpdates();
     expect(updater.calls).toBe(1);
     expect(text()).toMatch(/latest version, checked at/);
   });
 
   it("says when the update server can't be reached", async () => {
     installTauri();
-    updater.answer = async () => {
-      throw new Error("offline");
-    };
-    const user = userEvent.setup();
-    render(<AboutSection version="1.4.0" report={null} agent={null} />);
-    await user.click(button(/check for updates/i));
-    await flush();
+    updater.answer = () => Promise.reject(new Error("offline"));
+    await checkForUpdates();
     expect(text()).toMatch(/Couldn’t reach the update server/);
     // Retry stays possible.
     expect(button(/check for updates/i).hasAttribute("disabled")).toBe(false);
@@ -81,11 +95,8 @@ describe("AboutSection", () => {
   it("holds an update back while a lab is deploying", async () => {
     installTauri({ deploying_labs: () => ["web-sqli"] });
     const downloadAndInstall = vi.fn(async () => {});
-    updater.answer = async () => ({ version: "1.5.0", downloadAndInstall });
-    const user = userEvent.setup();
-    render(<AboutSection version="1.4.0" report={null} agent={null} />);
-    await user.click(button(/check for updates/i));
-    await flush();
+    updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall });
+    await checkForUpdates();
     expect(text()).toContain("Wait until your labs finish deploying");
     expect(button(/install update/i).hasAttribute("disabled")).toBe(true);
     expect(downloadAndInstall).not.toHaveBeenCalled();
@@ -94,11 +105,8 @@ describe("AboutSection", () => {
   it("installs an available update and restarts", async () => {
     const calls = installTauri({ deploying_labs: () => [] });
     const downloadAndInstall = vi.fn(async () => {});
-    updater.answer = async () => ({ version: "1.5.0", downloadAndInstall });
-    const user = userEvent.setup();
-    render(<AboutSection version="1.4.0" report={null} agent={null} />);
-    await user.click(button(/check for updates/i));
-    await flush();
+    updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall });
+    const user = await checkForUpdates();
     expect(text()).toContain("Version 1.5.0 is available.");
     expect(text()).toContain("Update available");
     await user.click(button(/install update/i));
@@ -114,16 +122,8 @@ describe("AboutSection", () => {
 
   it("offers the update again when its install fails", async () => {
     const calls = installTauri({ deploying_labs: () => [] });
-    updater.answer = async () => ({
-      version: "1.5.0",
-      downloadAndInstall: async () => {
-        throw new Error("bad signature");
-      },
-    });
-    const user = userEvent.setup();
-    render(<AboutSection version="1.4.0" report={null} agent={null} />);
-    await user.click(button(/check for updates/i));
-    await flush();
+    updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall: () => Promise.reject(new Error("bad signature")) });
+    const user = await checkForUpdates();
     await user.click(button(/install update/i));
     await flush();
     expect(text()).toContain("Version 1.5.0 is available.");
@@ -133,9 +133,9 @@ describe("AboutSection", () => {
 
   it("copies English diagnostics for a bug report", async () => {
     installTauri();
-    const writeText = vi.fn<(s: string) => Promise<void>>(async () => {});
+    // After the user: user-event puts in a clipboard of its own.
     const user = userEvent.setup();
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const writeText = stubClipboard();
     setAttackImage("kalilinux/kali-rolling");
     setVmProvider("virtualbox");
     const report: SystemReport = { ...readyReport(), dockerEngine: null };
@@ -156,9 +156,9 @@ describe("AboutSection", () => {
 
   it("copies what it knows on a machine without a report or sign-in", async () => {
     installTauri();
-    const writeText = vi.fn<(s: string) => Promise<void>>(async () => {});
+    // After the user: user-event puts in a clipboard of its own.
     const user = userEvent.setup();
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const writeText = stubClipboard();
     render(<AboutSection version={null} report={null} agent={null} />);
     await user.click(button(/^\s*copy$/i));
     await flush();
@@ -171,9 +171,9 @@ describe("AboutSection", () => {
 
   it("describes a stopped or missing Docker and no hypervisor in the diagnostics", async () => {
     installTauri();
-    const writeText = vi.fn<(s: string) => Promise<void>>(async () => {});
+    // After the user: user-event puts in a clipboard of its own.
     const user = userEvent.setup();
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const writeText = stubClipboard();
     const base = readyReport();
     const stopped: SystemReport = {
       ...base,
@@ -198,7 +198,7 @@ describe("AboutSection", () => {
   it("stays quiet when the clipboard is unavailable", async () => {
     installTauri();
     const user = userEvent.setup();
-    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn(async () => Promise.reject(new Error("denied"))) }, configurable: true });
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn(() => Promise.reject(new Error("denied"))) }, configurable: true });
     render(<AboutSection version="1" report={null} agent={null} />);
     await user.click(button(/^\s*copy$/i));
     await flush();
@@ -221,8 +221,16 @@ describe("AboutSection", () => {
 
 /* ------------------------------------------------------------------ hypervisor */
 
-const hv = (over: Partial<ProviderStatus>): ProviderStatus =>
-  ({ provider: "virtualbox", remote: false, available: true, hypervisor: true, plugin: null, pluginInstalled: true, reason: null, ...over }) as ProviderStatus;
+const hv = (over: Partial<ProviderStatus>): ProviderStatus => ({
+  provider: "virtualbox",
+  remote: false,
+  available: true,
+  hypervisor: true,
+  plugin: null,
+  pluginInstalled: true,
+  reason: null,
+  ...over,
+});
 const withProviders = (vmProviders: ProviderStatus[], over: Partial<SystemReport> = {}): SystemReport => ({ ...readyReport(), vmProviders, ...over });
 
 describe("HypervisorRow", () => {
@@ -325,7 +333,7 @@ describe("HypervisorRow", () => {
     installTauri({
       // As the core rejects: the error's code and its message.
       hyperv_join_admins: () => {
-        throw { code: "other", message: "The Windows permission prompt was declined" };
+        rejectWith({ code: "other", message: "The Windows permission prompt was declined" });
       },
     });
     const user = userEvent.setup();
@@ -338,7 +346,7 @@ describe("HypervisorRow", () => {
   it("shows a failed add-on install in the log", async () => {
     installTauri({
       install_vagrant_plugin: () => {
-        throw "gem install failed";
+        rejectWith("gem install failed");
       },
     });
     const user = userEvent.setup();
@@ -391,15 +399,9 @@ describe("AttackBoxRows", () => {
   });
 
   it("saves a custom image only when it changed", async () => {
-    installTauri();
-    const onSaved = vi.fn();
-    const user = userEvent.setup();
-    render(<AttackBoxRows onSaved={onSaved} />);
-    await flush();
-    await user.click(screen.getByRole("radio", { name: /custom image/i }));
-    const save = () => screen.getAllByRole("button", { name: /^save$/i })[0];
+    const { user, onSaved, field, save } = await openCustomImage();
     expect(save().hasAttribute("disabled")).toBe(true);
-    await user.type(screen.getByPlaceholderText("registry/image:tag"), "  ghcr.io/me/box:1  ");
+    await user.type(field(), "  ghcr.io/me/box:1  ");
     await user.click(save());
     expect(getAttackImage()).toBe("ghcr.io/me/box:1");
     expect(onSaved).toHaveBeenCalledOnce();
@@ -495,7 +497,7 @@ describe("SharedFolderControl", () => {
     const calls = installTauri({
       shared_folder_get: () => ({ enabled: true, path: "/p", mountPoint: "/shared" }),
       shared_folder_open: () => {
-        if (fail) throw "folder is gone";
+        if (fail) rejectWith("folder is gone");
         return null;
       },
     });
@@ -513,16 +515,7 @@ describe("SharedFolderControl", () => {
   });
 
   it("shows a failed save and keeps the old state", async () => {
-    installTauri({
-      shared_folder_set: () => {
-        throw "permission denied";
-      },
-    });
-    const user = userEvent.setup();
-    render(<SharedFolderControl />);
-    await flush();
-    await user.click(screen.getByRole("switch"));
-    await flush();
+    await toggleFailingSharedFolder();
     expect(text()).toContain("permission denied");
     expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
   });
@@ -544,7 +537,7 @@ describe("InstalledToolsPanel", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     installTauri({
       installed_tools: () => {
-        throw "no state file";
+        rejectWith("no state file");
       },
     });
     const { container } = render(<InstalledToolsPanel />);
@@ -578,7 +571,7 @@ describe("InstalledToolsPanel", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(calls.map((c) => c.cmd)).not.toContain("uninstall_dependency");
     await user.click(screen.getAllByRole("button", { name: /remove/i })[0]);
-    await user.click(screen.getAllByRole("button", { name: /^remove$/i }).at(-1)!);
+    await user.click(must(screen.getAllByRole("button", { name: /^remove$/i }).at(-1), "the confirming Remove"));
     await flush();
     expect(calls.find((c) => c.cmd === "uninstall_dependency")?.args).toMatchObject({ dependency: "vagrant" });
     expect(text()).toContain("Removing Vagrant…");
@@ -592,7 +585,7 @@ describe("InstalledToolsPanel", () => {
     installTauri({
       installed_tools: () => [{ dependency: "docker", at: Math.floor(Date.now() / 1000) }],
       uninstall_dependency: () => {
-        throw "apt is locked";
+        rejectWith("apt is locked");
       },
     });
     const user = userEvent.setup();
@@ -600,7 +593,7 @@ describe("InstalledToolsPanel", () => {
     await flush();
     expect(text()).toContain("Docker Engine");
     await user.click(screen.getByRole("button", { name: /remove/i }));
-    await user.click(screen.getAllByRole("button", { name: /^remove$/i }).at(-1)!);
+    await user.click(must(screen.getAllByRole("button", { name: /^remove$/i }).at(-1), "the confirming Remove"));
     await flush();
     expect(text()).toContain("✗ apt is locked");
     expect(text()).toContain("Docker Engine");
@@ -669,7 +662,7 @@ describe("AccountSection", () => {
     let fail = true;
     installTauri({
       auth_login: () => {
-        if (fail) throw "browser closed";
+        if (fail) rejectWith("browser closed");
         return { loggedIn: true, name: "Ada", email: null };
       },
     });
@@ -691,7 +684,9 @@ describe("AccountSection", () => {
 
 describe("AppearanceSection", () => {
   afterEach(() => {
-    act(() => setLocalePreference("system"));
+    act(() => {
+      setLocalePreference("system");
+    });
   });
 
   it("switches the theme and says it saved", async () => {

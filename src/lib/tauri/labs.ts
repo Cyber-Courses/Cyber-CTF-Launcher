@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { invokeStreaming } from "@/lib/tauri/stream";
+import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
 import type {
   ActiveOperation,
   CloudPreview,
@@ -84,22 +84,24 @@ export const exegolStop = (id: string, onLog: (line: string) => void) => invokeS
 export const attackVmStatus = (id: string, boxName: string) => invoke<ExegolStatus>("attack_vm_status", { id, boxName });
 export const attackVmStart = (id: string, boxName: string, onLog: (line: string) => void) => invokeStreaming("attack_vm_start", { id, boxName }, onLog);
 export const attackVmStop = (id: string, onLog: (line: string) => void) => invokeStreaming("attack_vm_stop", { id }, onLog);
-export const attackVmShell = (id: string) => invoke<void>("attack_vm_shell", { id });
+export const attackVmShell = (id: string) => invokeUnit("attack_vm_shell", { id });
 
 /** Opens the attack box shell wherever the lab runs (local container, or SSH to a remote lab host). */
-export const labAttackShell = (id: string, runtime: Runtime) => invoke<void>("lab_attack_shell", { id, runtime });
-/** `defaultPorts`: a container lab here publishes its services on their own ports, not random ones.
- *  `offline`: start the installed lab without Cyber CTF when it can't be reached (no progress
- *  saved), after a launch failed with the `offlineReady` code. */
-export const labLaunch = (
-  labId: string,
-  provider: Provider | null,
-  host: string | null,
-  attackboxImage: string | null,
-  defaultPorts: boolean,
-  onLog: (line: string) => void,
-  offline = false,
-) => invokeStreaming("lab_launch", { labId, provider, host, attackboxImage, defaultPorts, offline }, onLog);
+export const labAttackShell = (id: string, runtime: Runtime) => invokeUnit("lab_attack_shell", { id, runtime });
+/** Where and how a lab starts. `defaultPorts`: a container lab here publishes its services on
+ *  their own ports, not random ones. `offline`: start the installed lab without Cyber CTF when it
+ *  can't be reached (no progress saved), after a launch failed with the `offlineReady` code. */
+export type LabLaunch = {
+  labId: string;
+  provider: Provider | null;
+  host: string | null;
+  attackboxImage: string | null;
+  defaultPorts: boolean;
+  offline?: boolean;
+};
+
+export const labLaunch = ({ offline = false, ...launch }: LabLaunch, onLog: (line: string) => void) =>
+  invokeStreaming("lab_launch", { ...launch, offline }, onLog);
 
 /** The lab ids currently starting or stopping in the backend. Read on load to rehydrate the
  *  "starting" state after a window reload, which loses the in-memory deploy store. */
@@ -114,21 +116,23 @@ export const labDeployLog = (id: string) => invoke<string>("lab_deploy_log", { i
 
 /** Quit by finishing in the background: hides the windows and exits once the in-app deploys
  *  (the fallback when no worker could be started) are done. */
-export const lingerQuit = () => invoke<void>("linger_quit");
+export const lingerQuit = () => invokeUnit("linger_quit");
 
 /** Quit the app even though a deploy is in progress (the user confirmed from the warning). */
-export const forceQuit = () => invoke<void>("force_quit");
+export const forceQuit = () => invokeUnit("force_quit");
 
 /** Opens (or focuses) the shell window for a lab. */
-export const terminalWindow = (id: string, kind: ShellKind, runtime: Runtime, title: string) => invoke<void>("terminal_window", { id, kind, runtime, title });
+export const terminalWindow = (id: string, kind: ShellKind, runtime: Runtime, title: string) => invokeUnit("terminal_window", { id, kind, runtime, title });
+
+/** The shell a terminal opens, and its size in cells. */
+export type TerminalSpec = { id: string; kind: ShellKind; runtime: Runtime; cols: number; rows: number };
 
 /** Starts the shell in a pseudo-terminal; returns the session that write/resize/close take. */
-export const terminalOpen = (id: string, kind: ShellKind, runtime: Runtime, cols: number, rows: number, onEvent: (e: TermEvent) => void) =>
-  invokeStreaming<TermEvent, number>("terminal_open", { id, kind, runtime, cols, rows }, onEvent, "events");
-export const terminalWrite = (session: number, data: string) => invoke<void>("terminal_write", { session, data });
-export const terminalResize = (session: number, cols: number, rows: number) => invoke<void>("terminal_resize", { session, cols, rows });
-export const terminalClose = (session: number) => invoke<void>("terminal_close", { session });
+export const terminalOpen = (spec: TerminalSpec, onEvent: (e: TermEvent) => void) => invokeStreaming<number>("terminal_open", spec, onEvent, "events");
+export const terminalWrite = (session: number, data: string) => invokeUnit("terminal_write", { session, data });
+export const terminalResize = (session: number, cols: number, rows: number) => invokeUnit("terminal_resize", { session, cols, rows });
+export const terminalClose = (session: number) => invokeUnit("terminal_close", { session });
 
 export const sharedFolderGet = () => invoke<SharedFolder>("shared_folder_get");
 export const sharedFolderSet = (enabled: boolean, path: string) => invoke<SharedFolder>("shared_folder_set", { enabled, path });
-export const sharedFolderOpen = () => invoke<void>("shared_folder_open");
+export const sharedFolderOpen = () => invokeUnit("shared_folder_open");

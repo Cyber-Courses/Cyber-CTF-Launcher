@@ -16,12 +16,15 @@ import { useT } from "@/lib/i18n";
 export function QuitGuard() {
   const t = useT();
   const [count, setCount] = useState<number | null>(null);
-  const [quitting, setQuitting] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useTauriEvent<number>("quit-blocked", (n) => setCount(typeof n === "number" ? n : 1));
+  useTauriEvent("quit-blocked", (n) => {
+    setCount(typeof n === "number" ? n : 1);
+  });
   // Escape is "keep waiting", the choice that changes nothing.
-  useFocusTrap(ref, count !== null, () => setCount(null));
+  useFocusTrap(ref, count !== null, () => {
+    setCount(null);
+  });
 
   if (count === null) return null;
 
@@ -46,33 +49,37 @@ export function QuitGuard() {
             <p className="mt-1 text-[0.8125rem] leading-relaxed text-muted-foreground">{t("app.quitGuard.body", { count })}</p>
           </div>
         </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setCount(null)}>
-            {t("app.quitGuard.keepWaiting")}
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={quitting}
-            onClick={() => {
-              setQuitting(true);
-              void forceQuit().catch(() => setQuitting(false));
-            }}
-          >
-            {t("app.quitGuard.quitAnyway")}
-          </Button>
-          <Button
-            size="sm"
-            disabled={quitting}
-            onClick={() => {
-              setQuitting(true);
-              void lingerQuit().catch(() => setQuitting(false));
-            }}
-          >
-            {t("app.quitGuard.finishInBackground")}
-          </Button>
-        </div>
+        <QuitChoices
+          onKeepWaiting={() => {
+            setCount(null);
+          }}
+        />
       </div>
+    </div>
+  );
+}
+
+/** Keep waiting, quit anyway (the deploys are cut off), or finish in the background. */
+function QuitChoices({ onKeepWaiting }: { onKeepWaiting: () => void }) {
+  const t = useT();
+  const [quitting, setQuitting] = useState(false);
+  const quit = (how: () => Promise<void>) => () => {
+    setQuitting(true);
+    how().catch(() => {
+      setQuitting(false);
+    });
+  };
+  return (
+    <div className="mt-5 flex justify-end gap-2">
+      <Button variant="ghost" size="sm" onClick={onKeepWaiting}>
+        {t("app.quitGuard.keepWaiting")}
+      </Button>
+      <Button variant="destructive" size="sm" disabled={quitting} onClick={quit(forceQuit)}>
+        {t("app.quitGuard.quitAnyway")}
+      </Button>
+      <Button size="sm" disabled={quitting} onClick={quit(lingerQuit)}>
+        {t("app.quitGuard.finishInBackground")}
+      </Button>
     </div>
   );
 }

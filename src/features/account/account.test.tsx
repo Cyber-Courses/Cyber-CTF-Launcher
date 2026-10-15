@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { Account, initials } from "@/features/account/account";
 import { setLocalePreference } from "@/lib/i18n";
-import { commands, installTauri, rejects, stream } from "@/test/tauri";
+import { commands, installTauri, rejects, rejectWith, stream } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 const signedOut = { loggedIn: false, name: null, email: null };
@@ -28,7 +28,13 @@ describe("Account", () => {
   it("signs in through the browser, busy meanwhile", async () => {
     let finish: () => void = () => {};
     const calls = installTauri({
-      auth_login: () => new Promise((r) => (finish = () => r({ loggedIn: true, name: "Ada", email: "ada@example.com" }))),
+      auth_login: () =>
+        new Promise(
+          (r) =>
+            (finish = () => {
+              r({ loggedIn: true, name: "Ada", email: "ada@example.com" });
+            }),
+        ),
     });
     const onChange = vi.fn();
     const user = userEvent.setup();
@@ -47,9 +53,13 @@ describe("Account", () => {
     const calls = installTauri({
       auth_login: (args) => {
         stream(args, "https://auth.example/oauth2/authorize?state=s1");
-        return new Promise((_, reject) => (cancel = () => reject({ code: "signInCancelled", message: "Sign-in cancelled." })));
+        return new Promise<void>((resolve) => {
+          cancel = resolve;
+        }).then(() => rejectWith({ code: "signInCancelled", message: "Sign-in cancelled." }));
       },
-      auth_login_cancel: () => cancel(),
+      auth_login_cancel: () => {
+        cancel();
+      },
     });
     const onChange = vi.fn();
     const user = userEvent.setup();
@@ -73,9 +83,7 @@ describe("Account", () => {
 
   it("shows why the sign-in failed", async () => {
     installTauri({
-      auth_login: () => {
-        throw "browser closed";
-      },
+      auth_login: () => rejectWith("browser closed"),
     });
     const onChange = vi.fn();
     const user = userEvent.setup();
@@ -127,9 +135,7 @@ describe("Account", () => {
   it("signs out locally even when the backend sign-out fails, without an unhandled rejection", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const calls = installTauri({
-      auth_logout: () => {
-        throw "keychain locked";
-      },
+      auth_logout: () => rejectWith("keychain locked"),
     });
     const onChange = vi.fn();
     const user = userEvent.setup();

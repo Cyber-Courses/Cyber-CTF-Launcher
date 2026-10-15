@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { test, expect, navButton, pageTitle, machineBackAndRetry } from "./fixtures";
 
 // The first-run onboarding, on each machine the dev mock can report (`?mock&onboarding` plus the
-// scenario switches `os`, `arch` and `machine`, see src/lib/dev-mock.ts).
+// scenario switches `os`, `arch` and `machine`, see src/lib/dev-mock/scenario.ts).
 
 /** The step position line under the mark: "3 / 10 · Package manager". */
 const progress = (page: Page) => page.getByText(/^\d+ \/ \d+ · /);

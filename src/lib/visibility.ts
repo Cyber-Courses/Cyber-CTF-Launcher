@@ -12,7 +12,11 @@ export function isVisible(): boolean {
 /** Calls `cb` with the new visibility each time it changes; returns an unsubscribe. */
 export function onVisibilityChange(cb: (visible: boolean) => void): () => void {
   if (typeof document === "undefined") return () => {};
-  const listener = () => cb(isVisible());
+  const listener = () => {
+    cb(isVisible());
+  };
   document.addEventListener("visibilitychange", listener);
-  return () => document.removeEventListener("visibilitychange", listener);
+  return () => {
+    document.removeEventListener("visibilitychange", listener);
+  };
 }

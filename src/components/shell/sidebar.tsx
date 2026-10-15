@@ -5,7 +5,7 @@ import { Cog, type LucideIcon, Search } from "lucide-react";
 import { Account } from "@/features/account/account";
 import { CtfMark } from "@/components/brand/mark";
 import { StatusDot } from "@/components/ui/status-pill";
-import { operationLabel } from "@/lib/deploy-store";
+import { operationLabel } from "@/features/labs/runs/operations";
 import type { AuthStatus } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";

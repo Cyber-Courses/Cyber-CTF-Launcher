@@ -3,7 +3,7 @@ import { test, expect, openApp, navButton, pageTitle, emitEvent } from "./fixtur
 // What the Rust core tells the main window, through the dev mock's event delivery: a
 // `cyberctf://labs/<slug>` link (the deep-link plugin's `deep-link://new-url`, or the one the app
 // was opened with: `link=` in the URL), the quit guard (`quit-blocked`), and a website launch onto
-// a cloud account waiting for the player's approval (`launch-confirm`). See src/lib/dev-mock.ts.
+// a cloud account waiting for the player's approval (`launch-confirm`). See src/lib/dev-mock/scenario.ts.
 
 const DEEP_LINK = "deep-link://new-url";
 

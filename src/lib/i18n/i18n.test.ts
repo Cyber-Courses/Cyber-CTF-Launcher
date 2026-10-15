@@ -1,23 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import de from "@/messages/de";
-import en from "@/messages/en";
-import es from "@/messages/es";
-import fr from "@/messages/fr";
-import ja from "@/messages/ja";
-import ptBR from "@/messages/pt-BR";
+import { CATALOGS } from "@/messages";
 
-const OTHERS = { fr, es, de, "pt-BR": ptBR, ja };
+const { en, ...OTHERS } = CATALOGS;
 
 /** Every leaf path of a message tree ({ one, other } plurals count as one leaf). */
 function leaves(node: unknown, prefix = ""): string[] {
   if (typeof node === "string") return [prefix];
+  if (typeof node !== "object" || node === null) return [];
   const o = node as Record<string, unknown>;
-  if (o && typeof o.one === "string" && typeof o.other === "string") return [prefix];
-  return Object.entries(o ?? {}).flatMap(([k, v]) => leaves(v, prefix ? `${prefix}.${k}` : k));
+  if (typeof o.one === "string" && typeof o.other === "string") return [prefix];
+  return Object.entries(o).flatMap(([k, v]) => leaves(v, prefix ? `${prefix}.${k}` : k));
 }
-const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}|<(\w+)>/g)].map((m) => m[1] ?? m[2]).sort();
-const at = (tree: unknown, path: string) => path.split(".").reduce<unknown>((n, p) => (n as Record<string, unknown>)?.[p], tree);
+const placeholders = (s: string) => (s.match(/\{\w+\}|<\w+>/g) ?? []).map((p) => p.replace(/[{}<>]/g, "")).sort();
+const at = (tree: unknown, path: string) => path.split(".").reduce<unknown>((n, p) => (n as Record<string, unknown> | undefined)?.[p], tree);
 const texts = (v: unknown): string[] => (typeof v === "string" ? [v] : Object.values(v as Record<string, string>));
 
 describe("messages", () => {

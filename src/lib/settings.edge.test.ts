@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { getLastRun, setLastRun } from "@/lib/last-run";
 import { DEFAULT_ATTACK_IMAGE, getAttackImage, getAutoAttackBox, getLastTest, getPortMode, setAttackImage, setLastTest } from "@/lib/settings";
 
 // What each getter does with a value that is in storage but not one it wrote: an older
@@ -49,25 +48,5 @@ describe("settings: stray values in storage", () => {
     expect(getPortMode()).toBeNull();
     localStorage.setItem("cyberctf.labs.ports", "random");
     expect(getPortMode()).toBe("random");
-  });
-});
-
-describe("last run: stray values in storage", () => {
-  it("reads an empty value as never run, and keeps labs' times apart", () => {
-    localStorage.setItem("cyberctf.lastrun.a", "");
-    expect(getLastRun("a")).toBeNull();
-    vi.spyOn(Date, "now").mockReturnValueOnce(5).mockReturnValueOnce(9);
-    setLastRun("a");
-    setLastRun("b");
-    vi.restoreAllMocks();
-    expect([getLastRun("a"), getLastRun("b")]).toEqual([5, 9]);
-  });
-
-  it("a non-numeric last-run value comes back as null", () => {
-    // `Number("garbage")` is NaN, which is not null: recentLabs then keeps the lab (NaN
-    // compares false against every time, so its place in the sort is arbitrary) and the row's
-    // "launched … ago" prints "NaN days ago". Suggested fix: `Number.isFinite(n) ? n : null`.
-    localStorage.setItem("cyberctf.lastrun.x", "garbage");
-    expect(getLastRun("x")).toBeNull();
   });
 });

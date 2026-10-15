@@ -11,20 +11,10 @@ import { SERVER_CHANGED, type ServerList, type ServerTest, type SystemReport } f
 import { readyReport } from "@/test/fixtures";
 import { installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
+import { deferred } from "@/test/deferred";
 
 // Async answers applied in the order they arrive let an older, slower one overwrite a newer one.
 // Each hook here keeps only the newest request's answer (useLatest).
-
-/** A promise settled by hand, to answer requests in any order. */
-function deferred<T>() {
-  let resolve!: (v: T) => void;
-  let reject!: (e: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
 
 /** Each call to a command answers with the next of `answers`, settled by the test. */
 function queue<T>(count: number) {
@@ -50,8 +40,12 @@ describe("late answers", () => {
     const { result } = renderHook(() => useSystemCheck());
     act(() => void result.current.check());
     act(() => void result.current.check());
-    await settle(() => answers[1].resolve(readyReport()));
-    await settle(() => answers[0].reject({ code: "dockerNotRunning", message: "Docker isn't running." }));
+    await settle(() => {
+      answers[1].resolve(readyReport());
+    });
+    await settle(() => {
+      answers[0].reject({ code: "dockerNotRunning", message: "Docker isn't running." });
+    });
     expect(result.current.checkError).toBeNull();
     expect(result.current.report?.dockerRunning).toBe(true);
   });
@@ -61,8 +55,12 @@ describe("late answers", () => {
     installTauri({ server_list: handler });
     const { result } = renderHook(() => useServerList());
     await act(() => emit(SERVER_CHANGED));
-    await settle(() => answers[1].resolve({ default: null, hosts: [] }));
-    await settle(() => answers[0].resolve({ default: "old", hosts: [{ id: "old" } as ServerList["hosts"][number]] }));
+    await settle(() => {
+      answers[1].resolve({ default: null, hosts: [] });
+    });
+    await settle(() => {
+      answers[0].resolve({ default: "old", hosts: [{ id: "old" } as ServerList["hosts"][number]] });
+    });
     expect(result.current.list).toEqual({ default: null, hosts: [] });
   });
 
@@ -73,8 +71,12 @@ describe("late answers", () => {
     act(() => void result.current.test("pve"));
     act(() => void result.current.test("pve"));
     const test = (ok: boolean) => ({ ok, reachable: ok, authenticated: ok, latencyMs: 3, message: ok ? "Connected" : "timed out", checks: [] });
-    await settle(() => answers[1].resolve(test(true)));
-    await settle(() => answers[0].resolve(test(false)));
+    await settle(() => {
+      answers[1].resolve(test(true));
+    });
+    await settle(() => {
+      answers[0].resolve(test(false));
+    });
     expect(result.current.tests.pve).toMatchObject({ ok: true, message: "Connected" });
   });
 
@@ -96,7 +98,9 @@ describe("late answers", () => {
     await act(() => result.current.launch("lab"));
     expect(result.current.session?.id).toBe("s1");
     await act(() => result.current.stop());
-    await settle(() => active.resolve({ myActiveLabSession: running }));
+    await settle(() => {
+      active.resolve({ myActiveLabSession: running });
+    });
     expect(result.current.session).toBeNull();
   });
 
@@ -135,7 +139,9 @@ describe("late answers", () => {
     const rt: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "proxmox", "vmware_esxi"] };
     const { result, rerender } = renderHook(({ ready }) => useRunTarget(rt, ready, "x86_64"), { initialProps: { ready: [] as never[] } });
     await flush();
-    act(() => result.current.setRunOn({ kind: "host", id: "esxi" }));
+    act(() => {
+      result.current.setRunOn({ kind: "host", id: "esxi" });
+    });
     // A server saved in its window, and the machine report arriving with a ready hypervisor.
     await act(() => emit(SERVER_CHANGED));
     rerender({ ready: ["virtualbox"] as never[] });

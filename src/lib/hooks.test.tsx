@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { act, render, renderHook, screen } from "@testing-library/react";
 import { emit } from "@tauri-apps/api/event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useAppearance } from "@/lib/appearance";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ignore, openExternal, tell, warn } from "@/lib/failure";
 import { getLocale, getLocalePreference, LOCALE_NAMES, LOCALES, setLocalePreference, translate, useFormat, useLocale, useT } from "@/lib/i18n";
 import { notify } from "@/lib/notify";
@@ -11,10 +10,12 @@ import { usePoll, usePolled } from "@/lib/use-poll";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 import { Toaster } from "@/components/ui/toaster";
 import { commands, installTauri } from "@/test/tauri";
-import { flush } from "@/test/ui";
+import { flush, settle } from "@/test/ui";
 
 describe("i18n", () => {
-  afterEach(() => setLocalePreference("system"));
+  afterEach(() => {
+    setLocalePreference("system");
+  });
 
   it("translates, interpolates and falls back to the key", () => {
     setLocalePreference("en");
@@ -76,7 +77,9 @@ describe("i18n", () => {
     render(<Probe />);
     expect(screen.getByText(/en Start lab 1,234.5 1970 yesterday/)).toBeTruthy();
     expect(document.querySelector("em")).not.toBeNull();
-    act(() => setLocalePreference("de"));
+    act(() => {
+      setLocalePreference("de");
+    });
     expect(screen.getByText(/^de /)).toBeTruthy();
     act(() => {
       window.dispatchEvent(new StorageEvent("storage", { key: "cyberctf.locale", newValue: "ja" }));
@@ -93,7 +96,7 @@ describe("i18n", () => {
     setLocalePreference("en");
     const { result } = renderHook(() => useT());
     const nodes = result.current.rich("machine.setup.title", {});
-    expect(nodes.join("")).not.toContain("<");
+    expect(nodes.filter((n) => typeof n === "string" && n.includes("<"))).toEqual([]);
   });
 });
 
@@ -105,8 +108,10 @@ function stubNotification(answer: NotificationPermission) {
     "Notification",
     class {
       static permission = "default";
-      static requestPermission = async () => answer;
+      static requestPermission = () => Promise.resolve(answer);
+      readonly title: string;
       constructor(title: string, o?: { body?: string }) {
+        this.title = title;
         sent.push({ title, body: o?.body });
       }
     },
@@ -130,7 +135,9 @@ describe("failure helpers", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
     render(<Toaster />);
-    act(() => tell("Couldn't stop the lab")("docker is not running"));
+    act(() => {
+      tell("Couldn't stop the lab")("docker is not running");
+    });
     expect(await screen.findByText("Couldn't stop the lab")).toBeTruthy();
     focus.mockRestore();
   });
@@ -175,52 +182,21 @@ describe("failure helpers", () => {
   });
 });
 
-describe("appearance", () => {
-  beforeEach(() => document.documentElement.classList.remove("black", "light"));
-
-  it("defaults to dark, applies a choice and follows other windows", () => {
-    const { result } = renderHook(() => useAppearance());
-    expect(result.current[0]).toBe("dark");
-    act(() => result.current[1]("light"));
-    expect(result.current[0]).toBe("light");
-    expect(document.documentElement.classList.contains("light")).toBe(true);
-    expect(localStorage.getItem("cyberctf.appearance")).toBe("light");
-    act(() => {
-      window.dispatchEvent(new StorageEvent("storage", { key: "cyberctf.appearance", newValue: "black" }));
-    });
-    expect(result.current[0]).toBe("black");
-    expect(document.documentElement.classList.contains("black")).toBe(true);
-    act(() => {
-      window.dispatchEvent(new StorageEvent("storage", { key: "cyberctf.appearance", newValue: "nonsense" }));
-    });
-    expect(result.current[0]).toBe("dark");
-    expect(document.documentElement.classList.contains("black")).toBe(false);
-  });
-
-  it("reads the saved appearance and sets the window theme in the app", async () => {
-    const calls = installTauri();
-    localStorage.setItem("cyberctf.appearance", "black");
-    const { result } = renderHook(() => useAppearance());
-    expect(result.current[0]).toBe("black");
-    act(() => result.current[1]("light"));
-    await flush();
-    expect(commands(calls).some((c) => c.includes("theme"))).toBe(true);
-  });
-});
-
 describe("timers", () => {
   afterEach(() => vi.useRealTimers());
 
   it("usePoll reads now, then on every tick, and on demand", async () => {
     vi.useFakeTimers();
-    const read = vi.fn(async () => 1);
+    const read = vi.fn(() => Promise.resolve(1));
     const onValue = vi.fn();
     const { result, unmount } = renderHook(() => usePoll(read, 1000, { onValue, onFocus: true }));
     await act(async () => {});
     expect(read).toHaveBeenCalledTimes(1);
     await act(() => vi.advanceTimersByTimeAsync(2000));
     expect(read).toHaveBeenCalledTimes(3);
-    await act(async () => result.current());
+    await settle(() => {
+      result.current();
+    });
     expect(read).toHaveBeenCalledTimes(4);
     act(() => {
       window.dispatchEvent(new Event("focus"));
@@ -230,7 +206,9 @@ describe("timers", () => {
     expect(onValue).toHaveBeenCalledWith(1);
     unmount();
     // Stopped: no more reads, and a late "read now" is a no-op.
-    act(() => result.current());
+    act(() => {
+      result.current();
+    });
     vi.advanceTimersByTime(5000);
     expect(read).toHaveBeenCalledTimes(5);
   });
@@ -238,25 +216,35 @@ describe("timers", () => {
   it("usePoll skips overlapping reads when serial, and reports errors", async () => {
     vi.useFakeTimers();
     let resolve: () => void = () => {};
-    const read = vi.fn(() => new Promise<number>((_, reject) => (resolve = () => reject(new Error("down")))));
+    const read = vi.fn(
+      () =>
+        new Promise<number>(
+          (_, reject) =>
+            (resolve = () => {
+              reject(new Error("down"));
+            }),
+        ),
+    );
     const onError = vi.fn();
     renderHook(() => usePoll(read, 100, { onValue: vi.fn(), onError, serial: true }));
-    await act(async () => {
+    await settle(() => {
       vi.advanceTimersByTime(350);
     });
     expect(read).toHaveBeenCalledTimes(1);
-    await act(async () => resolve());
+    await settle(() => {
+      resolve();
+    });
     expect(onError).toHaveBeenCalled();
   });
 
   it("usePoll does nothing while disabled", () => {
-    const read = vi.fn(async () => 1);
+    const read = vi.fn(() => Promise.resolve(1));
     renderHook(() => usePoll(read, 100, { onValue: vi.fn(), enabled: false }));
     expect(read).not.toHaveBeenCalled();
   });
 
   it("usePolled keeps the latest answer", async () => {
-    const { result } = renderHook(() => usePolled(async () => "fresh", 10_000, "initial"));
+    const { result } = renderHook(() => usePolled(() => Promise.resolve("fresh"), 10_000, "initial"));
     expect(result.current[0]).toBe("initial");
     await flush();
     expect(result.current[0]).toBe("fresh");
@@ -272,7 +260,9 @@ describe("timers", () => {
     });
     expect(result.current[0]).toBe(1500);
     vi.setSystemTime(9000);
-    act(() => result.current[1]());
+    act(() => {
+      result.current[1]();
+    });
     expect(result.current[0]).toBe(9000);
   });
 
@@ -292,7 +282,12 @@ describe("useTauriEvent", () => {
     installTauri();
     const first = vi.fn();
     const second = vi.fn();
-    const { rerender, unmount } = renderHook(({ h, on }) => useTauriEvent<string>("navigate", h, on), { initialProps: { h: first, on: true } });
+    const { rerender, unmount } = renderHook(
+      ({ h, on }) => {
+        useTauriEvent("navigate", h, on);
+      },
+      { initialProps: { h: first, on: true } },
+    );
     await flush();
     await act(() => emit("navigate", "labs"));
     expect(first).toHaveBeenCalledWith("labs");

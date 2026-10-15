@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import * as tauri from "@/lib/tauri";
-import { invokeStreaming } from "@/lib/tauri/stream";
+import { invokeStreaming } from "@/lib/tauri/invoke";
 import { installTauri, stream } from "@/test/tauri";
 
 // The typed wrappers are one-liners over `invoke`: each must call its snake_case Rust command.
@@ -64,7 +64,7 @@ describe("Tauri bindings", () => {
       },
     });
     const events: unknown[] = [];
-    const out = await invokeStreaming<{ step: number }, number>("custom_cmd", { id: "x" }, (e) => events.push(e), "events");
+    const out = await invokeStreaming<number>("custom_cmd", { id: "x" }, (e: { step: number }) => events.push(e), "events");
     expect(out).toBe(7);
     expect(events).toEqual([{ step: 1 }, { step: 2 }]);
     expect(Object.keys(calls[0].args ?? {})).toEqual(["id", "events"]);

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiQuery, machineWorkloads, type ActiveOperation } from "@/lib/tauri";
-import { useDeployingLabs } from "@/lib/deploy-store";
+import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { useLabState } from "@/features/labs/lab-store";
 import { usePolled } from "@/lib/use-poll";
 import { activeLabs, type SidebarLab } from "@/components/shell/shell-model";

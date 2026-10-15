@@ -13,7 +13,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { LaunchConfirm } from "@/features/app/launch-confirm";
 import { QuitGuard } from "@/features/app/quit-guard";
 import { AUTH_CHANGED_EVENT, NAVIGATE_EVENT, REPLAY_ONBOARDING_EVENT } from "@/lib/app-events";
-import { SIGNED_OUT_EVENT } from "@/lib/deploy-store";
+import { SIGNED_OUT_EVENT } from "@/features/account/signed-out";
 import { readyReport } from "@/test/fixtures";
 import { commands, installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";

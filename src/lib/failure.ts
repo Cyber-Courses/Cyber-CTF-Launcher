@@ -13,7 +13,9 @@ import { describeError } from "@/lib/errors";
  * - `tell(title)`: the player asked for this and it didn't happen; tell them (an in-app toast
  *   while the window has focus, an OS notification otherwise), and log it.
  */
-export const ignore = (why: string) => (e: unknown) => console.debug(`ignored (${why}):`, e);
+export const ignore = (why: string) => (e: unknown) => {
+  console.debug(`ignored (${why}):`, e);
+};
 
 export const warn = (what: string) => (e: unknown) => {
   console.warn(`${what}:`, e);
@@ -29,5 +31,7 @@ export const tell = (title: string) => (e: unknown) => {
 
 /** Opens a link in the player's browser; when that fails, says so with the link to open by hand. */
 export function openExternal(url: string) {
-  openUrl(url).catch((e) => tell(translate("errors.browser"))(`${url} (${describeError(e)})`));
+  openUrl(url).catch((e: unknown) => {
+    tell(translate("errors.browser"))(`${url} (${describeError(e)})`);
+  });
 }

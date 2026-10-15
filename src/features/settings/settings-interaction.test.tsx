@@ -3,23 +3,26 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppearanceSection } from "@/features/settings/appearance-section";
-import { AttackBoxRows } from "@/features/settings/attack-box-rows";
 import { InstalledToolsPanel } from "@/features/settings/installed-tools-panel";
 import { SettingsScreen } from "@/features/settings/settings-screen";
 import { SharedFolderControl } from "@/features/settings/shared-folder";
+import { must } from "@/components/test-support";
+import { openCustomImage, renderInstalledTools, toggleFailingSharedFolder } from "@/features/settings/settings-test-kit";
 import { getLocalePreference, setLocalePreference } from "@/lib/i18n";
 import { DEFAULT_ATTACK_IMAGE, getAttackImage } from "@/lib/settings";
-import { installTauri, stream } from "@/test/tauri";
+import { installTauri, stream, rejectWith } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 // Settings driven the way a player does: with the mouse and the keyboard, across the rail's
 // sections. Complements settings-rows.test.tsx, which covers each row on its own.
 
-const text = () => document.body.textContent ?? "";
+const text = () => document.body.textContent;
 const signedIn = { loggedIn: true, name: "Ada", email: "ada@example.com" };
 
 afterEach(() => {
-  act(() => setLocalePreference("system"));
+  act(() => {
+    setLocalePreference("system");
+  });
   document.documentElement.classList.remove("light", "black");
   vi.restoreAllMocks();
 });
@@ -87,22 +90,10 @@ describe("Settings: appearance", () => {
 
 describe("Settings: shared folder", () => {
   it("clears an earlier error once a save works", async () => {
-    let fail = true;
-    installTauri({
-      shared_folder_set: (a) => {
-        if (fail) throw "permission denied";
-        return { enabled: !!a?.enabled, path: String(a?.path ?? ""), mountPoint: "/shared" };
-      },
-    });
-    const user = userEvent.setup();
-    render(<SharedFolderControl />);
-    await flush();
-    await user.click(screen.getByRole("switch"));
-    await flush();
+    const { save, toggle } = await toggleFailingSharedFolder();
     expect(text()).toContain("permission denied");
-    fail = false;
-    await user.click(screen.getByRole("switch"));
-    await flush();
+    save.fail = false;
+    await toggle();
     expect(text()).not.toContain("permission denied");
     expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true");
   });
@@ -121,7 +112,7 @@ describe("Settings: shared folder", () => {
     installTauri({
       shared_folder_get: () => ({ enabled: true, path: "/Users/player/CyberCTF", mountPoint: "/shared" }),
       "plugin:dialog|open": () => {
-        throw "dialog not allowed";
+        rejectWith("dialog not allowed");
       },
     });
     const user = userEvent.setup();
@@ -135,17 +126,12 @@ describe("Settings: shared folder", () => {
 
 describe("Settings: attack box image", () => {
   it("can't save a custom image made only of spaces, and saves a real one with Enter", async () => {
-    installTauri();
-    const onSaved = vi.fn();
-    const user = userEvent.setup();
-    render(<AttackBoxRows onSaved={onSaved} />);
-    await flush();
-    await user.click(screen.getByRole("radio", { name: /custom image/i }));
-    const input = screen.getByPlaceholderText("registry/image:tag");
+    const { user, onSaved, field, save } = await openCustomImage();
+    const input = field();
     // The field takes the focus as it opens, so the player can type at once.
     expect(document.activeElement).toBe(input);
     await user.type(input, "   ");
-    expect(screen.getAllByRole("button", { name: /^save$/i })[0].hasAttribute("disabled")).toBe(true);
+    expect(save().hasAttribute("disabled")).toBe(true);
     await user.type(input, "{Enter}");
     expect(getAttackImage()).toBe(DEFAULT_ATTACK_IMAGE);
     await user.clear(input);
@@ -155,13 +141,12 @@ describe("Settings: attack box image", () => {
   });
 
   it("goes back to a preset after a custom image, selecting only that preset", async () => {
-    installTauri();
-    const user = userEvent.setup();
-    render(<AttackBoxRows onSaved={vi.fn()} />);
-    await flush();
-    await user.click(screen.getByRole("radio", { name: /custom image/i }));
-    await user.type(screen.getByPlaceholderText("registry/image:tag"), "ghcr.io/me/box:2{Enter}");
-    const kali = screen.getAllByRole("radio").find((r) => r.textContent?.includes("kalilinux/kali-rolling"))!;
+    const { user, field } = await openCustomImage();
+    await user.type(field(), "ghcr.io/me/box:2{Enter}");
+    const kali = must(
+      screen.getAllByRole("radio").find((r) => r.textContent.includes("kalilinux/kali-rolling")),
+      "the Kali preset",
+    );
     await user.click(kali);
     expect(getAttackImage()).toBe("kalilinux/kali-rolling");
     expect(kali.getAttribute("aria-checked")).toBe("true");
@@ -174,14 +159,10 @@ describe("Settings: attack box image", () => {
   // later, when the attack box starts beside a lab. Suggested fix: check the same rule before
   // enabling Save, and say what is wrong under the field.
   it("refuses a custom image name the core can't run", async () => {
-    installTauri();
-    const user = userEvent.setup();
-    render(<AttackBoxRows onSaved={vi.fn()} />);
-    await flush();
-    await user.click(screen.getByRole("radio", { name: /custom image/i }));
-    await user.type(screen.getByPlaceholderText("registry/image:tag"), "kali linux:latest");
-    expect(screen.getAllByRole("button", { name: /^save$/i })[0].hasAttribute("disabled")).toBe(true);
-    await user.type(screen.getByPlaceholderText("registry/image:tag"), "{Enter}");
+    const { user, field, save } = await openCustomImage();
+    await user.type(field(), "kali linux:latest");
+    expect(save().hasAttribute("disabled")).toBe(true);
+    await user.type(field(), "{Enter}");
     expect(getAttackImage()).toBe(DEFAULT_ATTACK_IMAGE);
   });
 });
@@ -193,11 +174,8 @@ describe("Settings: removing tools Cyber CTF installed", () => {
   ];
 
   it("cancels the removal on Escape, with nothing uninstalled", async () => {
-    const calls = installTauri({ installed_tools: tools });
-    const user = userEvent.setup();
-    render(<InstalledToolsPanel />);
-    await flush();
-    await user.click(screen.getAllByRole("button", { name: /remove/i })[0]);
+    const { calls, user, askToRemove } = await renderInstalledTools({ installed_tools: tools });
+    await askToRemove();
     expect(screen.getByRole("alertdialog")).toBeTruthy();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -205,11 +183,8 @@ describe("Settings: removing tools Cyber CTF installed", () => {
   });
 
   it("puts the focus on Cancel when the confirmation opens, so Enter keeps the tool", async () => {
-    const calls = installTauri({ installed_tools: tools });
-    const user = userEvent.setup();
-    render(<InstalledToolsPanel />);
-    await flush();
-    await user.click(screen.getAllByRole("button", { name: /remove/i })[0]);
+    const { calls, user, askToRemove } = await renderInstalledTools({ installed_tools: tools });
+    await askToRemove();
     const dialog = screen.getByRole("alertdialog");
     // jsdom has no layout (offsetParent is always null), so the trap can only fall back to the
     // dialog itself; pressing Enter must still never confirm.

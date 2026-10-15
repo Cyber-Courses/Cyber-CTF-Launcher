@@ -58,7 +58,7 @@ export function useAppearance(): [Appearance, (mode: Appearance) => void] {
   useEffect(() => {
     // Read once on mount (localStorage isn't available during render).
     const current = getAppearance();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage isn't readable during a server render, so the saved choice can only arrive after mount
     setMode(current);
     // public/appearance.js set the page's colours before paint; the window frame follows here.
     applyWindowTheme(current);
@@ -69,7 +69,9 @@ export function useAppearance(): [Appearance, (mode: Appearance) => void] {
       setMode(next);
     };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
   return [
     mode,

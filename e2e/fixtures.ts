@@ -50,14 +50,14 @@ export const test = base.extend<Fixtures>({
 export { expect };
 
 /** Opens the main window with the mock and waits for the shell. `query` adds the mock's
- *  scenario switches (src/lib/dev-mock.ts, `Scenario`), e.g. "&launch=fail". */
+ *  scenario switches (src/lib/dev-mock/scenario.ts, `Scenario`), e.g. "&launch=fail". */
 export async function openApp(page: Page, query = "") {
   await page.goto(`/?mock${query}`);
   await expect(page.locator("aside nav")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 }
 
-/** With `check=down` (src/lib/dev-mock.ts): brings the machine back and presses `retry` in one
+/** With `check=down` (src/lib/dev-mock/scenario.ts): brings the machine back and presses `retry` in one
  *  go, inside the page, so no background re-check can answer in between. */
 export async function machineBackAndRetry(retry: Locator) {
   await retry.evaluate((button: HTMLElement) => {
@@ -159,7 +159,7 @@ export async function forceCommands(page: Page, forced: Record<string, Forced>) 
 }
 
 /** Sends an app event (what the Rust core emits: `quit-blocked`, `deep-link://new-url`…) to the
- *  windows of the test's context, through the dev mock's event bus (src/lib/dev-mock.ts). */
+ *  windows of the test's context, through the dev mock's event bus (src/lib/dev-mock/events.ts). */
 export function emitEvent(page: Page, event: string, payload: unknown) {
   return page.evaluate(
     ([event, payload]) => {

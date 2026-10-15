@@ -43,19 +43,25 @@ describe("useTerminalSession", () => {
     let send: (e: TermEvent) => void = () => {};
     installTauri({
       terminal_open: (args) => {
-        send = (e) => stream(args, e);
+        send = (e) => {
+          stream(args, e);
+        };
         return 7;
       },
       terminal_close: () => null,
     });
     const host = { current: document.createElement("div") };
     const setState = vi.fn();
-    const { unmount } = renderHook(() => useTerminalSession(host, { id: "lab", kind: "lab", runtime: "DOCKER", attempt: 0 }, setState));
+    const { unmount } = renderHook(() => {
+      useTerminalSession(host, { id: "lab", kind: "lab", runtime: "DOCKER", attempt: 0 }, setState);
+    });
     await flush();
     send({ kind: "data", data: "$ " });
     expect(terms[0].writes).toEqual(["$ "]);
     unmount();
-    expect(() => send({ kind: "data", data: "late output" })).not.toThrow();
+    expect(() => {
+      send({ kind: "data", data: "late output" });
+    }).not.toThrow();
     send({ kind: "exit", code: 0 });
     expect(terms[0].writes).toEqual(["$ "]);
     expect(setState).not.toHaveBeenCalledWith({ kind: "ended", code: 0 });

@@ -3,7 +3,7 @@ import { test, expect, openApp, navButton, pageTitle, breadcrumb } from "./fixtu
 
 // A lab from the catalogue to running and back, through the dev mock's lab operations: a start
 // streams a Docker Compose log and leaves the lab running, Stop & remove takes it down
-// (`launch=fail` makes the first start fail, see src/lib/dev-mock.ts).
+// (`launch=fail` makes the first start fail, see src/lib/dev-mock/scenario.ts).
 
 const row = (page: Page, title: string) => page.locator("main").getByRole("button", { name: `Open ${title}`, exact: true });
 const deployment = (page: Page) => page.locator("main").getByRole("heading", { level: 3, name: /^Deployment/ });
