@@ -34,6 +34,8 @@ mod paths;
 pub mod providers;
 mod proxmox;
 #[cfg(test)]
+mod real_flag_labs;
+#[cfg(test)]
 mod real_labs;
 #[cfg(test)]
 mod real_server_labs;

@@ -25,7 +25,7 @@ use crate::platform::exec::run;
 
 /// Which of the launcher's paths runs the lab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Via {
+pub(super) enum Via {
     /// The launcher's own Docker code.
     Launcher,
     /// The Isothrum runner, from the run manifest Isoloom writes.
@@ -33,24 +33,24 @@ enum Via {
 }
 
 /// One lab installed for a test, and the path it runs through.
-struct Run {
-    dir: PathBuf,
-    id: String,
-    via: Via,
+pub(super) struct Run {
+    pub(super) dir: PathBuf,
+    pub(super) id: String,
+    pub(super) via: Via,
     /// The runner's home (its runs under `runs/`), for [`Via::Runner`].
-    home: PathBuf,
+    pub(super) home: PathBuf,
 }
 
 impl Run {
-    async fn start(&self, env: &[(&str, &str)], log: &mut impl FnMut(String)) -> Result<()> {
-        let env: Vec<(String, String)> = env.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+    /// Starts the lab with the launch's values `env`.
+    pub(super) async fn start(&self, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
         match self.via {
-            Via::Launcher => launch::start_on_docker(&self.dir, &self.id, &env, log).await,
-            Via::Runner => launch::start_docker_run(&self.home, &self.dir, &self.id, &env, log).await,
+            Via::Launcher => launch::start_on_docker(&self.dir, &self.id, env, log).await,
+            Via::Runner => launch::start_docker_run(&self.home, &self.dir, &self.id, env, log).await,
         }
     }
 
-    async fn status(&self) -> Result<LabStatus> {
+    pub(super) async fn status(&self) -> Result<LabStatus> {
         match self.via {
             Via::Launcher => status::local_status(&self.dir, &self.id, Runtime::Docker).await,
             Via::Runner => isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.status().await,
@@ -65,7 +65,7 @@ impl Run {
     }
 
     /// Parks the lab (its containers stopped, kept), as the lab page's Shut down does.
-    async fn park(&self, log: &mut impl FnMut(String)) -> Result<()> {
+    pub(super) async fn park(&self, log: &mut impl FnMut(String)) -> Result<()> {
         match self.via {
             Via::Launcher => {
                 docker::park(&self.dir, &self.id, log).await?;
@@ -76,7 +76,7 @@ impl Run {
     }
 
     /// Starts the parked lab again, as it was.
-    async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
+    pub(super) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
         match self.via {
             Via::Launcher => {
                 docker::resume(&self.dir, &self.id, log).await?;
@@ -86,7 +86,7 @@ impl Run {
         }
     }
 
-    async fn stop(&self, log: impl FnMut(String)) -> Result<()> {
+    pub(super) async fn stop(&self, log: impl FnMut(String)) -> Result<()> {
         match self.via {
             Via::Launcher => lifecycle::stop_here(&self.dir, &self.id, Runtime::Docker, log).await,
             Via::Runner => lifecycle::stop_docker_run(&self.home, &self.dir, &self.id, log).await,
@@ -160,7 +160,7 @@ async fn docker_lines(args: &[&str]) -> Vec<String> {
 /// Everything of the lab Docker still holds: the project's containers (one-off `run`
 /// containers included: they carry the project label too) and networks, the attack box and
 /// its own network (not Compose's, so found by name).
-async fn leftovers(id: &str) -> Vec<String> {
+pub(super) async fn leftovers(id: &str) -> Vec<String> {
     let label = format!("label=com.docker.compose.project={}", docker::project(id));
     let attacker = format!("name=^{}$", exegol::container(id));
     let attack_net = format!("name=^cyberctf-{id}-attack$");
@@ -223,7 +223,8 @@ fn check_status(s: &LabStatus, e: &Expect, f: &mut Vec<String>) {
 /// The lab while it is up; every failure is collected so the lab is always stopped after.
 async fn exercise(r: &Run, e: &Expect, f: &mut Vec<String>) {
     let mut log = log(&r.id);
-    if let Err(err) = r.start(e.env, &mut log).await {
+    let env: Vec<(String, String)> = e.env.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+    if let Err(err) = r.start(&env, &mut log).await {
         check(false, format!("the lab starts: {err}"), f);
         return;
     }

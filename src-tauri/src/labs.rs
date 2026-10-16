@@ -308,12 +308,22 @@ pub(crate) async fn run(app: &AppHandle, launch_json: serde_json::Value, placeme
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
 }
 
+/// The backend's operation starting a lab for the signed-in player: what to download and run,
+/// and the launch's values (the evidence claim, the player's flags).
+const START_LAB: &str = "mutation ($id: ID!) { startLab(labId: $id) { labId runtime repository commit env { name value } } }";
+
 /// The backend's `startLab` answer for `lab_id`: what to download and run, and the launch's values.
 async fn start_lab(lab_id: &str) -> Result<serde_json::Value> {
-    let data =
-        api::graphql("mutation ($id: ID!) { startLab(labId: $id) { labId runtime repository commit env { name value } } }", json!({ "id": lab_id }), true)
-            .await?;
+    let data = api::graphql(START_LAB, json!({ "id": lab_id }), true).await?;
     Ok(data["startLab"].clone())
+}
+
+/// The values a launch of `lab_id` gives the lab, as the backend at `base` answers player
+/// `token`'s `startLab` (no extras): for the real-lab tests, against a local test backend.
+#[cfg(test)]
+pub(crate) async fn launch_values_at(base: &str, token: &str, lab_id: &str) -> Result<Vec<(String, String)>> {
+    let data = api::send(base, Some(token.to_owned()), START_LAB, json!({ "id": lab_id })).await?;
+    Ok(launch_env(parse_launch(data["startLab"].clone())?.env, None, false))
 }
 
 /// The launch spec for `lab_id`: the backend's answer (whose source is kept for a later offline

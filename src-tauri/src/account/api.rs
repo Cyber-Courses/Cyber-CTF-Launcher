@@ -21,8 +21,8 @@ pub async fn graphql(query: &str, variables: Value, require_login: bool) -> Resu
 
 /// Posts a GraphQL operation to the API at `base`, with the access token when there is one.
 /// Bounded: a backend that accepts the connection and never answers must not hang the agent
-/// loop or a UI call forever.
-async fn send(base: &str, token: Option<String>, query: &str, variables: Value) -> Result<Value> {
+/// loop or a UI call forever. The real-lab tests call a local test backend through it.
+pub(crate) async fn send(base: &str, token: Option<String>, query: &str, variables: Value) -> Result<Value> {
     let mut req = crate::platform::http::api_client()?
         .post(format!("{base}/graphql"))
         .timeout(std::time::Duration::from_secs(30))
