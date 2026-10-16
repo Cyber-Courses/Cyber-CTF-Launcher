@@ -91,9 +91,45 @@ const COMMANDS: &[&str] = &[
 ];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    emit_engine_versions()?;
     let attributes = tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(COMMANDS));
     tauri_build::try_build(with_windows_manifest(attributes))?;
     Ok(())
+}
+
+/// Records the Isoloom and Isothrum versions this launcher bundles, read from the pinned entries
+/// in Cargo.lock, as compile-time env vars the `version` module exposes. The catalogue query uses
+/// them so only labs this launcher can generate (Isoloom) and run (Isothrum) are shown.
+fn emit_engine_versions() -> Result<(), Box<dyn std::error::Error>> {
+    let lock = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock");
+    println!("cargo:rerun-if-changed={}", lock.display());
+    let text = std::fs::read_to_string(&lock)?;
+    let isoloom = locked_version(&text, "isoloom-spec").ok_or("isoloom-spec not found in Cargo.lock")?;
+    let isothrum = locked_version(&text, "isothrum-runner").ok_or("isothrum-runner not found in Cargo.lock")?;
+    println!("cargo:rustc-env=CYBERCTF_ISOLOOM_VERSION={isoloom}");
+    println!("cargo:rustc-env=CYBERCTF_ISOTHRUM_VERSION={isothrum}");
+    Ok(())
+}
+
+/// The version of package `name` in a Cargo.lock: the `version = "..."` of the `[[package]]`
+/// block whose `name = "..."` matches. Returns None when the package is absent.
+fn locked_version(lock: &str, name: &str) -> Option<String> {
+    let needle = format!("name = \"{name}\"");
+    let mut after_name = false;
+    for line in lock.lines() {
+        let line = line.trim();
+        if line == needle {
+            after_name = true;
+        } else if after_name {
+            if let Some(rest) = line.strip_prefix("version = ") {
+                return Some(rest.trim_matches('"').to_owned());
+            }
+            if line == "[[package]]" {
+                after_name = false;
+            }
+        }
+    }
+    None
 }
 
 /// On Windows, tauri-build embeds the app manifest (Common Controls v6) in the app binary only,

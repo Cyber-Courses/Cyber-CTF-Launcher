@@ -6,6 +6,14 @@ use serde::Deserialize;
 
 const SESSION_FIELDS: &str = "id labId target state endpoints { port url } message expiresAt";
 
+/// A lab-catalogue query that returns only labs this launcher can run: it asks CyberBackend's
+/// `compatibleLabs` for the bundled Isoloom and Isothrum versions, aliased back to `labs` so the
+/// response shape is unchanged. `fields` is the selection set each list needs.
+fn catalogue(fields: &str) -> String {
+    let (isoloom, isothrum) = (crate::version::ISOLOOM, crate::version::ISOTHRUM);
+    format!("query {{ labs: compatibleLabs(isoloom: \"{isoloom}\", isothrum: \"{isothrum}\") {{ {fields} }} }}")
+}
+
 /// One allowed operation, by the name the frontend sends (`"labs"`, `"labBrief"`, ...).
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -42,9 +50,11 @@ impl ApiOperation {
     /// The GraphQL document the operation runs.
     pub fn document(self) -> String {
         match self {
-            Self::Labs => "{ labs(sort: [{ title: ASC }]) { id slug title description question difficulty category runtime { runtime architectures providers hosted repository commit } skills { id name } } }".into(),
-            Self::LabTitles => "{ labs { id title } }".into(),
-            Self::SidebarLabs => "{ labs(sort: [{ title: ASC }]) { id slug title category } }".into(),
+            Self::Labs => catalogue(
+                "id slug title description question difficulty category runtime { runtime architectures providers hosted repository commit } skills { id name }",
+            ),
+            Self::LabTitles => catalogue("id title"),
+            Self::SidebarLabs => catalogue("id slug title category"),
             Self::LabBrief => "query($id: ID!) { labs(where: { id: { eq: $id } }) { contentMd } }".into(),
             Self::CompletedLabs => "{ myCompletedLabs }".into(),
             Self::ActiveSession => format!("query {{ myActiveLabSession {{ {SESSION_FIELDS} }} }}"),
@@ -92,6 +102,18 @@ mod tests {
         assert!(launch.starts_with("mutation ($labId: ID!) { requestLabLaunch(labId: $labId, target: \"hosted\") { id labId"), "{launch}");
         assert!(ApiOperation::ActiveSession.document().contains("myActiveLabSession { id labId target state endpoints { port url } message expiresAt }"));
         assert!(ApiOperation::LabSession.document().contains("labSession(id: $id)"));
+    }
+
+    #[test]
+    fn the_catalogue_lists_only_labs_this_launcher_can_run() {
+        let labs = ApiOperation::Labs.document();
+        assert!(labs.contains("labs: compatibleLabs("), "{labs}");
+        assert!(labs.contains(&format!("isoloom: \"{}\"", crate::version::ISOLOOM)), "{labs}");
+        assert!(labs.contains(&format!("isothrum: \"{}\"", crate::version::ISOTHRUM)), "{labs}");
+        assert!(labs.contains("runtime { runtime architectures providers hosted repository commit }"), "{labs}");
+        // The sidebar and running-now lists filter the same way, keeping the `labs` response key.
+        assert!(ApiOperation::SidebarLabs.document().contains("labs: compatibleLabs("));
+        assert!(ApiOperation::LabTitles.document().contains("labs: compatibleLabs("));
     }
 
     #[test]

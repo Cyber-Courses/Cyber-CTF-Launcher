@@ -16,6 +16,7 @@ mod shared_folder;
 mod terminal;
 #[cfg(test)]
 mod testing;
+mod version;
 
 /// The Tauri runtime the app runs on: the real webview, or Tauri's mock in unit tests, so code
 /// that takes an app handle (paths under the app data folder, the commands) runs there too.
