@@ -43,7 +43,7 @@
         "rs:runtime": 4
       },
       "clippy/doc_markdown": {
-        "rs:runtime": 48
+        "rs:runtime": 47
       },
       "clippy/expect_used": {
         "rs:runtime": 3
@@ -82,7 +82,7 @@
         "rs:runtime": 1
       },
       "clippy/map_unwrap_or": {
-        "rs:runtime": 14
+        "rs:runtime": 13
       },
       "clippy/match_same_arms": {
         "rs:runtime": 2
@@ -94,7 +94,7 @@
         "rs:runtime": 1
       },
       "clippy/redundant_closure_for_method_calls": {
-        "rs:runtime": 16
+        "rs:runtime": 14
       },
       "clippy/semicolon_if_nothing_returned": {
         "rs:runtime": 4

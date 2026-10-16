@@ -180,6 +180,22 @@ async fn a_lab_parks_and_resumes_with_its_attack_box() {
     assert!(run.status().await.unwrap().running);
 }
 
+/// A resume has no launch values (they aren't kept), so each input slot gets its default, empty,
+/// which Compose reads as "keep the file the container was created with": the player's value
+/// survives a park, and nothing else is ever written in its place.
+#[tokio::test]
+async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
+    let f = Fixture::new();
+    let _tools = Tools::rules(&[]);
+    let run = f.up().await;
+    assert_eq!(f.fake.last(" up --detach").and_then(|c| c.env("CTF_LAUNCH_TOKEN").map(str::to_owned)).as_deref(), Some("t0k"));
+    run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
+    run.resume(&mut |_| {}).await.unwrap();
+    let start = f.fake.last(" start").unwrap();
+    assert!(start.line().ends_with(" start"), "{}", start.line());
+    assert_eq!(start.env("CTF_LAUNCH_TOKEN"), Some(""), "the slot's default, which keeps the file");
+}
+
 #[tokio::test]
 async fn a_parked_lab_whose_containers_are_gone_offers_a_fresh_start() {
     let f = Fixture::new();

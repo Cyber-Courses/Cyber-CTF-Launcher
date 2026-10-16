@@ -31,6 +31,26 @@ async fn a_container_lab_starts_on_this_machines_docker() {
     assert_eq!(local_vm(&dir), None);
 }
 
+/// The launcher's own Docker path gives the lab's inputs to Compose: each value the launch
+/// carries (the player's flags among them), and every other input the lab declares, empty.
+/// Regression: Compose refuses to start a container whose secret's variable is unset, so a lab
+/// declaring a flag the backend doesn't issue for it, or any input at an offline start, never
+/// started. The values become files in the container, never its environment.
+#[tokio::test]
+async fn a_container_labs_inputs_reach_compose_as_files_and_the_ungiven_ones_empty() {
+    let t = TestApp::new();
+    let dir = t.lab("web", &[("isoloom.yml", FLAGS)]);
+    let tools = Tools::rules(&[]);
+    let env = [("CTF_FLAG_MAIN".to_string(), "FLAG{p1-main}".to_string())];
+    let (r, _) = start_here(&t, "web", Runtime::Docker, None, &env).await;
+    r.unwrap();
+    assert_eq!(tools.env_of("up -d", "CTF_FLAG_MAIN").as_deref(), Some("FLAG{p1-main}"), "{:?}", tools.calls());
+    assert_eq!(tools.env_of("up -d", "CTF_FLAG_SSRF_TO_METADATA").as_deref(), Some(""), "a declared input the launch didn't give");
+    let compose = std::fs::read_to_string(crate::runtime::lab::compose_file(&dir)).unwrap();
+    assert!(compose.contains("environment: CTF_FLAG_MAIN") && compose.contains("target: /ctf/flag"), "{compose}");
+    assert!(!compose.contains("${CTF_FLAG_MAIN"), "a flag is never in the container's environment: {compose}");
+}
+
 /// The attack box shell pins the lab host's key with the lab: a start brings new hosts (maybe at
 /// another lab's old address), so the old pins go.
 #[tokio::test]
@@ -273,6 +293,10 @@ fn lab(spec: &str) -> PathBuf {
 }
 
 const CONTAINERS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\nmessage: |\n  Open the web at {{ machines.web.addresses.lab }}.\n  Then look around.\n";
+
+/// A container lab taking two of the player's flags (objectives `main` and `ssrf-to-metadata`),
+/// each as a file.
+const FLAGS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_FLAG_MAIN, CTF_FLAG_SSRF_TO_METADATA]\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    files:\n      - { path: /ctf/flag, input: CTF_FLAG_MAIN, mode: \"0444\" }\n      - { path: /ctf/ssrf-flag, input: CTF_FLAG_SSRF_TO_METADATA }\n    app: { image: nginx:1.27 }\n";
 
 /// A VM lab that prepares: each machine installed by a script of the lab's (`setup.sh`).
 const VM_LAB: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  a:\n    networks: { lab: 10 }\n    resources: { memory_mb: 1024 }\n    os: debian@12\n    app: { steps: [{ run: setup.sh }] }\n  b:\n    hardware: { arch: arm64 }\n    networks: { lab: 11 }\n    resources: { memory_mb: 2048 }\n    os: debian@12\n    app: { steps: [{ run: setup.sh }] }\n";

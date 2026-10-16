@@ -14,8 +14,11 @@ use crate::account::api;
 use crate::error::{Error, Result};
 use crate::runtime::{self, Runtime, providers::Provider};
 
+mod launch_env;
 mod offline;
 pub mod operations;
+
+use launch_env::{EnvVar, launch_env};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,12 +46,6 @@ pub(crate) struct Placement<'a> {
     pub host: Option<&'a str>,
     pub attackbox_image: Option<&'a str>,
     pub default_ports: bool,
-}
-
-#[derive(Deserialize)]
-struct EnvVar {
-    name: String,
-    value: String,
 }
 
 /// Only CyberCTF repositories at a full commit SHA are downloaded; the API
@@ -286,17 +283,6 @@ fn in_use(e: std::io::Error, dir: &Path) -> Error {
     }
 }
 
-/// The environment a launch runs with: only the evidence claim's two variables from the
-/// backend, then the attack-box image and the default-ports switch when asked for.
-fn launch_env(env: Vec<EnvVar>, attackbox_image: Option<&str>, default_ports: bool) -> Vec<(String, String)> {
-    env.into_iter()
-        .filter(|v| v.name == "CTF_API_URL" || v.name == "CTF_LAUNCH_TOKEN")
-        .map(|v| (v.name, v.value))
-        .chain(attackbox_image.map(|i| ("CYBERCTF_ATTACKBOX_IMAGE".to_string(), i.to_string())))
-        .chain(default_ports.then(|| (runtime::PORTS_ENV.to_string(), "default".to_string())))
-        .collect()
-}
-
 /// A `startLab` / `claimLaunch` payload.
 fn parse_launch(launch_json: serde_json::Value) -> Result<Launch> {
     serde_json::from_value(launch_json).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))
@@ -322,7 +308,7 @@ pub(crate) async fn run(app: &AppHandle, launch_json: serde_json::Value, placeme
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
 }
 
-/// The backend's `startLab` answer for `lab_id`: what to download and run, and the evidence claim.
+/// The backend's `startLab` answer for `lab_id`: what to download and run, and the launch's values.
 async fn start_lab(lab_id: &str) -> Result<serde_json::Value> {
     let data =
         api::graphql("mutation ($id: ID!) { startLab(labId: $id) { labId runtime repository commit env { name value } } }", json!({ "id": lab_id }), true)
@@ -449,15 +435,6 @@ mod tests {
         let err = extract(&tarball(&[("lab-abc/ok.txt", b"x"), ("lab-abc/notes ", b"y")]), &dir).unwrap_err().to_string();
         let _ = std::fs::remove_dir_all(&dir);
         assert!(err.contains("can't be installed on Windows") && err.contains("ending in a space"), "{err}");
-    }
-
-    #[test]
-    fn a_launch_passes_only_the_evidence_variables_and_the_asked_extras() {
-        let env = |pairs: &[(&str, &str)]| pairs.iter().map(|(n, v)| EnvVar { name: n.to_string(), value: v.to_string() }).collect::<Vec<_>>();
-        let backend = env(&[("CTF_API_URL", "https://api"), ("PATH", "/evil"), ("CTF_LAUNCH_TOKEN", "t0k")]);
-        assert_eq!(launch_env(backend, None, false), [("CTF_API_URL".to_string(), "https://api".to_string()), ("CTF_LAUNCH_TOKEN".into(), "t0k".into())]);
-        let extras = launch_env(env(&[]), Some("ghcr.io/x/box:1"), true);
-        assert_eq!(extras, [("CYBERCTF_ATTACKBOX_IMAGE".to_string(), "ghcr.io/x/box:1".to_string()), (runtime::PORTS_ENV.to_string(), "default".to_string())]);
     }
 
     #[test]

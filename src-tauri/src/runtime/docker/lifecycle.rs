@@ -77,7 +77,7 @@ async fn published_host_ports(dir: &Path, project: &str, env: &[(String, String)
 }
 
 /// Set (to "default") in a launch's env when the player chose the lab's default ports: each
-/// service is published on its own container port (CTFd on 8000) instead of a random free one.
+/// service is published on its own container port (`CTFd` on 8000) instead of a random free one.
 pub const PORTS_ENV: &str = "CYBERCTF_PORTS";
 
 /// Pins the lab's ephemeral host ports (see `compose::PORTS_FILE`), so a shut down / resume keeps
@@ -127,6 +127,7 @@ pub async fn published(dir: &Path, id: &str, env: &[(String, String)]) -> Vec<(S
 pub async fn start(dir: &Path, id: &str, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
     // A stopped engine otherwise surfaces as a raw daemon-connection error much later.
     ensure_docker_up().await?;
+    let env = &start_env(dir, env);
     let project = compose::project(id);
     if !has_containers(dir, &project).await {
         pin_ports(dir, &project, env).await;
@@ -171,13 +172,13 @@ pub(crate) fn explain_pool_overlap(e: Error) -> Error {
 /// services to wait for, when some are one-shot jobs), then each job attached, in order.
 fn start_steps(plan: &crate::runtime::lab::StartPlan) -> Vec<Vec<String>> {
     let up = ["up", "-d", "--pull", "missing", "--wait", "--wait-timeout", "600"];
-    let mut first: Vec<String> = up.iter().map(|s| s.to_string()).collect();
+    let mut first: Vec<String> = up.iter().map(ToString::to_string).collect();
     if plan.jobs.is_empty() {
         return vec![first];
     }
     first.extend(plan.wait.iter().cloned());
     let mut steps = vec![first];
-    steps.extend(plan.jobs.iter().map(|job| ["up", "--no-deps", "--exit-code-from", job, job].iter().map(|s| s.to_string()).collect()));
+    steps.extend(plan.jobs.iter().map(|job| ["up", "--no-deps", "--exit-code-from", job, job].iter().map(ToString::to_string).collect()));
     steps
 }
 
@@ -196,6 +197,16 @@ pub async fn resume(dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result
     compose::stream(dir, &project, &["start"], &resume_env(dir), &mut log).await?;
     crate::runtime::exegol::wake(id).await;
     Ok(())
+}
+
+/// A start's environment: the launch's values `env`, then every other input the lab declares,
+/// empty. Isoloom gives an input to a container as a Compose secret read from the environment,
+/// and Compose refuses to create or start a container whose secret's variable is unset: a flag
+/// the backend doesn't issue for this lab, or any input at an offline start (which has none).
+/// Empty, the container gets no file, and the lab uses its development value.
+fn start_env(dir: &Path, env: &[(String, String)]) -> Vec<(String, String)> {
+    let ungiven = resume_env(dir).into_iter().filter(|(name, _)| !env.iter().any(|(k, _)| k == name));
+    env.iter().cloned().chain(ungiven).collect()
 }
 
 /// A resume's environment: each of the lab's inputs, empty. Isoloom gives an input to a container
@@ -225,7 +236,7 @@ fn stale_networks(config: &str, project: &str, listed: &str) -> Vec<String> {
         .and_then(|v| {
             v.get("networks")
                 .and_then(|n| n.as_object())
-                .map(|n| n.iter().map(|(k, v)| v["name"].as_str().map(str::to_string).unwrap_or_else(|| format!("{project}_{k}"))).collect())
+                .map(|n| n.iter().map(|(k, v)| v["name"].as_str().map_or_else(|| format!("{project}_{k}"), str::to_string)).collect())
         })
         .unwrap_or_default();
     listed.lines().map(str::trim).filter(|n| !n.is_empty() && !wanted.iter().any(|w| w == n)).map(str::to_string).collect()
