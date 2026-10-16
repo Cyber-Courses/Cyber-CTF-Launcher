@@ -84,7 +84,7 @@ async fn fake_clis_the_reaper_destroys_where_the_lab_was_created_and_is_not_held
     let t = TestApp::new();
     let (dir, state) = deployed_on_aws(&t, "e2e-reap", "eu-west-3");
     let started = Instant::now();
-    crate::runtime::reap_expired_labs(t.handle()).await;
+    Box::pin(crate::runtime::reap_expired_labs(t.handle())).await;
     assert!(started.elapsed() < Duration::from_secs(20), "held by the leftover: {:?}", started.elapsed());
     assert_eq!(std::fs::read_to_string(seen).unwrap().trim(), "eu-west-3 eu-west-3", "the account now says us-east-1");
     assert!(!state.join("terraform.tfstate").exists() && crate::runtime::server::marked_host(&dir).is_none());
@@ -97,12 +97,12 @@ async fn fake_clis_a_failing_auto_stop_is_recorded_until_the_credentials_work() 
     terraform(&bin, "echo 'Error: ExpiredToken: The security token included in the request is expired' >&2; exit 1");
     let t = TestApp::new();
     let (_, state) = deployed_on_aws(&t, "e2e-reap-fail", "eu-west-3");
-    crate::runtime::reap_expired_labs(t.handle()).await;
+    Box::pin(crate::runtime::reap_expired_labs(t.handle())).await;
     let shown = crate::runtime::reaper::last_failure(t.handle(), "e2e-reap-fail").expect("recorded").message;
     assert!(shown.contains("ExpiredToken"), "{shown}");
     assert!(state.join("terraform.tfstate").is_file());
     terraform(&bin, "echo destroyed");
-    crate::runtime::reap_expired_labs(t.handle()).await;
+    Box::pin(crate::runtime::reap_expired_labs(t.handle())).await;
     assert_eq!(crate::runtime::reaper::last_failure(t.handle(), "e2e-reap-fail"), None);
     assert!(!state.join("terraform.tfstate").exists());
 }

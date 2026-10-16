@@ -113,7 +113,7 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
         Runtime::Docker if server::lab_connection(&app, &dir)?.is_none() => docker::check(&dir, &id).await,
         // A server VM lab the runner runs: on Proxmox, its checks over SSH through the lab's
         // router; on ESXi, from its controller, as on this machine.
-        Runtime::Vm if let Some(c) = server::lab_connection(&app, &dir)?.filter(|c| super::launch::runner_runs(&app, c.provider, runtime)) => {
+        Runtime::Vm if let Some(c) = server::lab_connection(&app, &dir)?.filter(|c| super::launch::runner_runs(&app, &dir, c.provider, runtime)) => {
             if c.provider == super::providers::Provider::VmwareEsxi {
                 super::launch::esxi_run(&app, &dir, &id, &c)?.check().await
             } else {
@@ -131,11 +131,15 @@ pub async fn lab_engine(app: AppHandle) -> String {
     if runner_chosen(&app) { isothrum::RUNNER.into() } else { "launcher".into() }
 }
 
-/// Saves the path labs on this machine run through from now on (`isothrum` or `launcher`). A lab
-/// running already stays on the path it started on until it is stopped.
+/// Saves the path labs on this machine run through from now on (`isothrum` or `launcher`). The
+/// runner takes over the Proxmox and cloud labs the launcher's own path started, when it runs
+/// their kind (`reaper::hand_to_runner`); one it can't take stays on the launcher's path until it
+/// is stopped.
 #[tauri::command]
 pub async fn set_lab_engine(app: AppHandle, engine: String) -> Result<()> {
-    isothrum::save(&runner_home(&app)?, &engine)
+    isothrum::save(&runner_home(&app)?, &engine)?;
+    super::reaper::hand_to_runner(&app).await;
+    Ok(())
 }
 
 /// Opens the attack box shell of a running lab in the system terminal.

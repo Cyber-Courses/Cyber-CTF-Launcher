@@ -38,7 +38,7 @@ pub(super) fn lab_dir(app: &AppHandle, id: &str) -> Result<PathBuf> {
 }
 
 /// [`lab_dir`] under the app data folder `base` (the id already validated).
-fn lab_dir_in(base: &Path, id: &str) -> Result<PathBuf> {
+pub(super) fn lab_dir_in(base: &Path, id: &str) -> Result<PathBuf> {
     let dir = base.join("labs").join(id);
     if !dir.is_dir() {
         return Err(Error::Invalid(format!("lab `{id}` is not installed")));
@@ -57,7 +57,7 @@ pub(super) fn state_dir(app: &AppHandle, id: &str, target: &str) -> Result<PathB
 }
 
 /// [`state_dir`] under the app data folder `base`.
-fn state_dir_in(base: &Path, id: &str, target: &str) -> PathBuf {
+pub(super) fn state_dir_in(base: &Path, id: &str, target: &str) -> PathBuf {
     base.join("deployments").join(id).join(target)
 }
 

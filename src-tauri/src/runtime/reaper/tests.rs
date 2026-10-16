@@ -228,3 +228,40 @@ async fn the_reaper_skips_an_expired_leftover_whose_host_was_removed() {
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
     assert!(state.join("terraform.tfstate").is_file());
 }
+
+/// A Proxmox VM lab the launcher's own path started on server `pve-1`, before the runner was
+/// the lab engine.
+fn proxmox_lab_of_the_launcher(t: &TestApp) -> PathBuf {
+    let spec = "version: 1\nname: pve\nnetworks:\n  lab: { cidr: 10.31.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n    app: { steps: [{ run: web.sh }] }\n";
+    let dir = t.lab("pve", &[("isoloom.yml", spec), ("web.sh", "true\n")]);
+    server::mark_lab(&dir, Some("pve-1")).unwrap();
+    let state = t.data().join("deployments/pve/proxmox");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"10.10.0.254"}},"resources":[{}]}"#).unwrap();
+    std::fs::write(state.join("run.json"), r#"{"proxmox_endpoint":"https://10.0.0.5:8006/","node":"pve-lab"}"#).unwrap();
+    std::fs::write(state.join("runtime"), "VM").unwrap();
+    std::fs::write(state.join("host"), "pve-1").unwrap();
+    dir
+}
+
+#[tokio::test]
+async fn a_lab_the_launcher_started_stays_its_own_until_the_runner_takes_it_over() {
+    let t = TestApp::new();
+    let dir = proxmox_lab_of_the_launcher(&t);
+    isothrum::save(t.data(), isothrum::RUNNER).unwrap();
+    let runs = || super::super::launch::runner_runs(t.handle(), &dir, Provider::Proxmox, Runtime::Vm);
+    assert!(!runs(), "its state is the launcher's: stopping it through the runner would remove nothing");
+    hand_to_runner(t.handle()).await;
+    assert!(runs(), "handed over: the runner runs it now");
+    assert!(t.data().join("runs/cyberctf-pve/terraform.tfstate").is_file());
+    assert_eq!(std::fs::read_to_string(t.data().join("deployments/pve/proxmox/imported")).unwrap(), "cyberctf-pve");
+}
+
+#[tokio::test]
+async fn nothing_is_handed_over_while_the_launcher_is_the_lab_engine() {
+    let t = TestApp::new();
+    proxmox_lab_of_the_launcher(&t);
+    reap_expired_labs(t.handle()).await;
+    assert!(t.data().join("deployments/pve/proxmox/terraform.tfstate").is_file());
+    assert!(!t.data().join("runs/cyberctf-pve").exists());
+}

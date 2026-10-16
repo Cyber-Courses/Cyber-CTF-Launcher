@@ -72,9 +72,6 @@
       "clippy/items_after_statements": {
         "rs:runtime": 2
       },
-      "clippy/large_futures": {
-        "rs:runtime": 15
-      },
       "clippy/manual_let_else": {
         "rs:runtime": 1
       },

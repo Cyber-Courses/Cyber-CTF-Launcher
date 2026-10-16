@@ -142,7 +142,7 @@ async fn provision(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mach
     }
     let runner = match &conn {
         None if runner_chosen(app) => Some(isothrum::LabRun::vm(&runner_home(app)?, dir, id)?),
-        Some(c) if super::launch::runner_runs(app, c.provider, runtime) => Some(super::launch::esxi_run(app, dir, id, c)?),
+        Some(c) if super::launch::runner_runs(app, dir, c.provider, runtime) => Some(super::launch::esxi_run(app, dir, id, c)?),
         _ => None,
     };
     if let Some(run) = runner {
@@ -205,12 +205,12 @@ pub(super) async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: 
         // Cloud services: destroyed on the account they run on.
         _ if runtime == Runtime::Cloud => cloud_services::destroy(app, dir, id, &c, log).await,
         // A Proxmox VM lab the runner runs: destroyed with the params it was applied with.
-        Some(_) if super::launch::runner_runs(app, c.provider, runtime) => {
+        Some(_) if super::launch::runner_runs(app, dir, c.provider, runtime) => {
             let mut log = log;
             stop_server_run(app, dir, id, &c, &mut log).await
         }
         // An ESXi VM lab the runner runs: its VMs destroyed on the host.
-        None if super::launch::runner_runs(app, c.provider, runtime) => {
+        None if super::launch::runner_runs(app, dir, c.provider, runtime) => {
             let mut log = log;
             stop_esxi_run(app, dir, id, &c, &mut log).await
         }

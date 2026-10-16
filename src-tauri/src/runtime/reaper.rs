@@ -18,8 +18,9 @@ use tauri::Manager;
 
 use super::inflight::try_lock_lab;
 use super::lifecycle::stop_locked;
-use super::paths::{deployed_ids, deployment_states, lab_dir, recorded_host, recorded_runtime};
-use super::{Runtime, cloud_services, lab, server, terraform};
+use super::paths::{deployed_ids, deployment_states, lab_dir, recorded_host, recorded_runtime, runner_chosen};
+use super::providers::Provider;
+use super::{Runtime, cloud_services, isothrum, lab, server, terraform};
 use crate::error::{Code, Error, Result, Wire};
 
 /// Beside a state: the last reap that failed on it (JSON: the stop time it was reaping, why).
@@ -95,19 +96,21 @@ enum Reaped {
 }
 
 /// Destroys every expired deployment (see the module). A failure is recorded and surfaced; the
-/// next sweep retries it.
+/// next sweep retries it. When the runner is the lab engine, the launcher's own deployments of
+/// the labs it runs are handed to it first ([`hand_to_runner`]).
 pub async fn reap_expired_labs(app: &AppHandle) {
+    hand_to_runner(app).await;
     let Ok(base) = app.path().app_data_dir() else {
         log::warn!("auto-stop: no app data folder, so no expired lab can be found");
         return;
     };
     for (id, target, state) in expired_states(&base) {
-        match within(REAP_TIMEOUT, reap(app, &id, &target, &state)).await {
+        match Box::pin(within(REAP_TIMEOUT, reap(app, &id, &target, &state))).await {
             Ok(Reaped::Destroyed) => forget_failure(&state),
             Ok(Reaped::Skipped) => {}
             Err(failure) => {
                 if record_failure(&id, &state, &failure) {
-                    notify(app, &failure_message(&id, &failure));
+                    notify(app, "Auto-stop failed", &failure_message(&id, &failure));
                 }
             }
         }
@@ -254,11 +257,53 @@ pub fn last_failure(app: &AppHandle, id: &str) -> Option<Wire> {
         .find_map(|(_, state)| last_failure_at(&state, terraform::expires_at(&state)).filter(|_| terraform::expired(&state)))
 }
 
-/// A system notification, when the app has the notification plugin (not in unit tests).
-fn notify(app: &AppHandle, body: &str) {
+/// Hands the labs the launcher started on its own Terraform path to the Isothrum runner, when it
+/// is the lab engine (`isothrum::import_all`): at the start of every sweep (so at app start, and
+/// before the runner's reaper looks), and when the player picks the runner. A lab that can't be
+/// handed over stays the launcher's, stopped and reaped as before, and the player is told why
+/// once per new reason.
+pub(super) async fn hand_to_runner(app: &AppHandle) {
+    if !runner_chosen(app) {
+        return;
+    }
+    let Ok(base) = app.path().app_data_dir() else { return };
+    let runner = match isothrum::import_runner(&base) {
+        Ok(runner) => runner,
+        Err(e) => {
+            log::warn!("the launcher's own deployments can't be handed to the runner: {e}");
+            return;
+        }
+    };
+    let lock = |id: &str| try_lock_lab(app, id).ok().flatten();
+    for (d, outcome) in isothrum::import_all(&runner, &base, super::launch::runner_runs_on, lock).await {
+        match outcome {
+            isothrum::Outcome::Imported => log::info!("lab {}'s deployment on {} is the Isothrum runner's now", d.id, d.provider.id()),
+            isothrum::Outcome::Left(why) => log::debug!("lab {}'s deployment on {} stays as it is: {why:?}", d.id, d.provider.id()),
+            isothrum::Outcome::Failed { error, new } => {
+                let message = handover_message(&d.id, d.provider, &error);
+                log::warn!("{message}");
+                if new {
+                    notify(app, "Lab engine", &message);
+                }
+            }
+        }
+    }
+}
+
+/// What the player is told about lab `id`'s deployment on `provider` the runner couldn't take.
+fn handover_message(id: &str, provider: Provider, why: &impl std::fmt::Display) -> String {
+    let place = if provider.is_cloud() { format!("your {} account", provider.id().to_uppercase()) } else { "your Proxmox server".into() };
+    format!(
+        "Lab {id}, running in {place}, couldn't be handed over to the Isothrum runner: {why}. It stays with the launcher's own engine until you stop it, so Stop and the auto-stop still remove it."
+    )
+}
+
+/// A system notification titled `title`, when the app has the notification plugin (not in unit
+/// tests).
+fn notify(app: &AppHandle, title: &str, body: &str) {
     use tauri_plugin_notification::NotificationExt;
     if app.try_state::<tauri_plugin_notification::Notification<crate::AppRuntime>>().is_some() {
-        let _ = app.notification().builder().title("Auto-stop failed").body(body).show();
+        let _ = app.notification().builder().title(title).body(body).show();
     }
 }
 

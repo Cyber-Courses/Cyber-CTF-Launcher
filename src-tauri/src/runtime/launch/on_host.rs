@@ -21,12 +21,12 @@ pub(super) async fn start_on_server(
     // Mark first, so a half-created lab can still be destroyed on the same host.
     server::mark_lab(dir, Some(host))?;
     log(format!("Running on server host {} ({})", conn.name, conn.provider.id()));
-    if runner_runs(app, conn.provider, runtime) && conn.provider == Provider::VmwareEsxi {
+    if runner_runs(app, dir, conn.provider, runtime) && conn.provider == Provider::VmwareEsxi {
         lab::prepare(dir, lab::Target::Vagrant)?;
         esxi_run(app, dir, id, &conn)?.up(env, Some(Provider::VmwareEsxi.id()), log).await?;
         return mark_parked(dir, None);
     }
-    if runner_runs(app, conn.provider, runtime) {
+    if runner_runs(app, dir, conn.provider, runtime) {
         lab::prepare(dir, lab::Target::Proxmox)?;
         let run = isothrum::ServerRun::new(&runner_home(app)?, dir, id)?;
         let place = server_place(app, host, &conn, &run).await?;
@@ -55,10 +55,22 @@ pub(super) async fn start_on_server(
     }
 }
 
-/// Whether the Isothrum runner runs a lab of `runtime` on a `provider` server: VM labs on Proxmox
-/// (Terraform) and on ESXi (Vagrant), behind the runner's switch (Settings > Labs > Lab engine).
-pub(in crate::runtime) fn runner_runs(app: &AppHandle, provider: Provider, runtime: Runtime) -> bool {
-    matches!(provider, Provider::Proxmox | Provider::VmwareEsxi) && runtime == Runtime::Vm && crate::runtime::paths::runner_chosen(app)
+/// Whether the Isothrum runner runs labs of `runtime` on `provider` servers: VM labs on Proxmox
+/// (Terraform) and on ESXi (Vagrant).
+pub(in crate::runtime) fn runner_runs_on(provider: Provider, runtime: Runtime) -> bool {
+    matches!(provider, Provider::Proxmox | Provider::VmwareEsxi) && runtime == Runtime::Vm
+}
+
+/// Whether the Isothrum runner runs lab `dir` of `runtime` on a `provider` server: a kind it runs
+/// ([`runner_runs_on`]), behind the runner's switch (Settings > Labs > Lab engine), unless the
+/// launcher's own path still holds a deployment of the lab there (started before the switch and
+/// not handed over to the runner): that one stays the launcher's until it is stopped.
+pub(in crate::runtime) fn runner_runs(app: &AppHandle, dir: &Path, provider: Provider, runtime: Runtime) -> bool {
+    let left = || {
+        let id = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        runner_home(app).is_ok_and(|base| isothrum::left_on_launcher(&base, id, provider))
+    };
+    runner_runs_on(provider, runtime) && crate::runtime::paths::runner_chosen(app) && !left()
 }
 
 /// The runner's run of VM lab `id` (in `dir`) on the ESXi server it is marked for, with that
