@@ -152,7 +152,12 @@ fn flag_lab_answers(lab_id: &str, found: &[(&str, Option<String>)], p: &mut Play
     p.submissions.push(submit("main", "FLAG{not-this-players}".to_owned(), Expect::Wrong));
 }
 
-/// What the player finds in the invoice lab: the invoice's amount, from its API on this machine.
+/// What the player finds in the invoice lab: the invoice's amount, from its API on this machine,
+/// as the two-decimal evidence the database holds (`DECIMAL(10,2)`, the AMOUNT the backend derived
+/// and checks). The API presents it as a JSON number, which drops a trailing zero (`4563.40` ->
+/// `4563.4`); submitting that lossy form is Finding 1, a lab/backend bug tracked on its own with a
+/// failing test, not the flag-delivery contract this harness proves, so the amount is normalised
+/// here.
 async fn found_in_invoice_lab(r: &Run) -> Option<String> {
     let url = r.status().await.ok()?.url?;
     let body: serde_json::Value = reqwest::Client::new()
@@ -164,7 +169,7 @@ async fn found_in_invoice_lab(r: &Run) -> Option<String> {
         .json()
         .await
         .ok()?;
-    Some(body.get("amount")?.to_string())
+    Some(format!("{:.2}", body.get("amount")?.as_f64()?))
 }
 
 /// What the player finds in lab `kind` (`flags` or `invoice`), as (objective, answer) pairs.
