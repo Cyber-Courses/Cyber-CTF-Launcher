@@ -3,7 +3,7 @@
 //! manifest's note for it), what its tool prints, and what the runner warns about are shown;
 //! state moves, outputs and the final result or error are not (the caller says how it ended).
 
-use isothrum_runner::{Event, EventKind, Events, ReadyState, StepState};
+use isothrum_runner::{Event, EventKind, Events, ReadyState, StepState, WarningCode};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 /// An operation's event sink, and the lines it sends: the sink crosses threads (the runner's
@@ -49,19 +49,21 @@ pub(super) fn line(kind: &EventKind) -> Option<String> {
         EventKind::Step { state: StepState::Running, note: Some(note), .. } => Some(note.clone()),
         EventKind::Log { line, .. } => Some(line.clone()),
         EventKind::Ready { state: ReadyState::Waiting, detail, .. } if !detail.is_empty() => Some(format!("Waiting for the lab to be ready: {detail}")),
-        EventKind::Warning { code, message } => warning(code, message),
+        EventKind::Warning { code, message } => warning(*code, message),
         _ => None,
     }
 }
 
 /// What the player reads for one of the runner's warnings (its codes; its message otherwise).
-fn warning(code: &str, message: &str) -> Option<String> {
+fn warning(code: WarningCode, message: &str) -> Option<String> {
     match code {
-        "leftovers_removed" => Some("Clearing a previous, stopped run…".into()),
-        "recovering" => Some("Docker kept something of an earlier run: clearing it, then starting again…".into()),
-        "hook_failed" => Some(format!("The lab is fine, but its attack box didn't follow: {}", message.split_once(": ").map_or(message, |(_, why)| why))),
+        WarningCode::LeftoversRemoved => Some("Clearing a previous, stopped run…".into()),
+        WarningCode::Recovering => Some("Docker kept something of an earlier run: clearing it, then starting again…".into()),
+        WarningCode::HookFailed => {
+            Some(format!("The lab is fine, but its attack box didn't follow: {}", message.split_once(": ").map_or(message, |(_, why)| why)))
+        }
         // A best-effort step (an old network left in place): nothing the player can act on.
-        "step_tolerated" => None,
+        WarningCode::StepTolerated => None,
         _ => Some(message.to_owned()),
     }
 }

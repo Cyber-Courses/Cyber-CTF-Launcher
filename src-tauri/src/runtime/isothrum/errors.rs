@@ -2,7 +2,7 @@
 //! with a stable code; the launcher's wording (and the codes its UI knows) is decided here, from
 //! that code, the same as the launcher's own Docker path says it.
 
-use isothrum_runner::{ErrorCode, RunnerError};
+use isothrum_runner::{Error as RunnerError, ErrorCode};
 
 use crate::error::{Code, Error};
 

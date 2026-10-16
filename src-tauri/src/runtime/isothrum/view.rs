@@ -36,7 +36,7 @@ fn machine(manifest: &Manifest, m: &MachineStatus) -> Machine {
         state: state_word(&m.state),
         image: String::new(),
         ip: interfaces.first().map(|i| i.ip.clone()).unwrap_or_default(),
-        ports: declared.iter().filter(|p| p.protocol == Protocol::Tcp).map(|p| tcp_port(m, p.port.get())).collect(),
+        ports: declared.iter().filter(|p| p.kind.transport() == Protocol::Tcp).map(|p| tcp_port(m, p.port.get())).collect(),
         interfaces,
         services: declared.iter().map(service).collect(),
         infra: m.role != Role::Target,
@@ -53,7 +53,7 @@ fn tcp_port(m: &MachineStatus, port: u16) -> Port {
 /// its number.
 fn service(p: &isoloom_manifest::Port) -> Service {
     let name = p.name.as_str().to_owned();
-    Service { kind: if p.http { "web".into() } else { name.clone() }, name, ports: vec![p.port.get()] }
+    Service { kind: if p.kind.http() { "web".into() } else { name.clone() }, name, ports: vec![p.port.get()] }
 }
 
 /// A machine's state as the lab page reads it (`running` is what counts as up).

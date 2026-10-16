@@ -70,8 +70,8 @@ pub fn parse(text: &str) -> Result<Spec> {
 /// than this launcher (labs adopt spec additions before every player has updated), so say what
 /// to do instead of showing only Isoloom's problems. A missing or unreadable file, or a mistake
 /// of the lab's own, is shown as Isoloom words it.
-fn load_error(e: &isoloom_spec::LoadError) -> String {
-    let newer = matches!(e, isoloom_spec::LoadError::Invalid { problems, .. } if problems.iter().any(|p| p.code == isoloom_spec::syntax::Code::UnknownField));
+fn load_error(e: &isoloom_spec::Error) -> String {
+    let newer = matches!(e, isoloom_spec::Error::Invalid { problems, .. } if problems.iter().any(|p| p.code == isoloom_spec::syntax::Code::UnknownField));
     if newer {
         format!("This lab needs a newer version of Cyber CTF. Update it (Settings > About), then start the lab again.\n(isoloom.yml: {e})")
     } else {
@@ -83,7 +83,8 @@ fn load_error(e: &isoloom_spec::LoadError) -> String {
 /// lab's own `isoloom.defaults.yml`, then `ISOLOOM_*` in the environment (the same hierarchy
 /// the `isoloom` CLI reads), so a user's image table or cloud regions hold here too.
 fn defaults(dir: &Path) -> Result<isoloom_spec::defaults::Defaults> {
-    isoloom_spec::defaults::load(dir, None, &[]).map(|r| r.defaults).map_err(|e| Error::Invalid(format!("this machine's Isoloom defaults: {e}")))
+    let sources = isoloom_spec::defaults::Sources { project: dir, images_file: None, profile: None, sets: &[], host: host() };
+    isoloom_spec::defaults::load(&sources).map(|r| r.defaults).map_err(|e| Error::Invalid(format!("this machine's Isoloom defaults: {e}")))
 }
 
 /// The files [`spec`] reads for the lab in `dir`: its spec (either name Isoloom accepts), its
@@ -91,7 +92,12 @@ fn defaults(dir: &Path) -> Result<isoloom_spec::defaults::Defaults> {
 /// them). What a cache of a spec watches.
 pub fn spec_files(dir: &Path) -> Vec<std::path::PathBuf> {
     let own = isoloom_spec::SPEC_FILES.iter().copied().chain(["isoloom.defaults.yml", INSTANCE_MARKER]).map(|f| dir.join(f));
-    own.chain([isoloom_spec::defaults::user_file()]).collect()
+    own.chain([isoloom_spec::defaults::user_file(&host())]).collect()
+}
+
+/// This machine as Isoloom reads it: its home and the `ISOLOOM_*` variables.
+fn host() -> isoloom_spec::host::Host {
+    isoloom_spec::host::Host::new(std::env::vars_os())
 }
 
 /// The spec as this lab's instance of it: its own name and Docker blocks when the lab has an
@@ -309,7 +315,7 @@ mod tests {
         assert!(err.starts_with("this lab's isoloom.yml:") && err.contains("removed-field") && err.contains("app: { image: nginx }"), "{err}");
         std::fs::remove_dir_all(dir).unwrap();
         // The file's own problems never ask for an update, whatever their words.
-        let missing = isoloom_spec::LoadError::NotFound(PathBuf::from("/labs/unknown field"));
+        let missing = isoloom_spec::Error::NotFound(PathBuf::from("/labs/unknown field"));
         assert!(load_error(&missing).starts_with("this lab's isoloom.yml: no isoloom.yml in"), "{}", load_error(&missing));
     }
 
