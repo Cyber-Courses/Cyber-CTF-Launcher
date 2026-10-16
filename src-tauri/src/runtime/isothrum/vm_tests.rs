@@ -79,13 +79,10 @@ fn answer(states: &Mutex<BTreeMap<String, String>>, call: &Call) -> Reply {
             set(&mut s, vms, "running");
             Reply::ok("")
         }
-        ("vagrant", ["halt", vm]) => {
-            set(&mut s, &[vm], "poweroff");
-            Reply::ok("")
-        }
-        ("vagrant", [verb @ ("halt" | "suspend")]) => {
+        // Every running VM, or the ones named (a pause suspends only the lab's own VMs).
+        ("vagrant", [verb @ ("halt" | "suspend"), vms @ ..]) => {
             let to = if *verb == "halt" { "poweroff" } else { "saved" };
-            s.values_mut().filter(|v| *v == "running").for_each(|v| *v = to.into());
+            s.iter_mut().filter(|(vm, v)| *v == "running" && (vms.is_empty() || vms.contains(&vm.as_str()))).for_each(|(_, v)| *v = to.into());
             Reply::ok("")
         }
         ("vagrant", ["destroy", "--force"]) => {
