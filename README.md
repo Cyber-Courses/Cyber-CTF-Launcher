@@ -1,6 +1,25 @@
 # Cyber CTF Desktop
 
-Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It runs **Docker labs** (Docker Compose) and **VM labs** (Vagrant, on any supported hypervisor) on the player's machine, and labs on the player's own servers (ESXi, Proxmox) and cloud accounts. This app replaced the earlier Electron launcher in this repository.
+Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It runs CTF labs on the player's own machine, servers and cloud accounts, using [Isoloom](https://www.isoloom.com) to read each lab and convert it to the right infrastructure files, and the [Isothrum](https://github.com/isoloom/isothrum) runner to run them. This app replaced the earlier Electron launcher in this repository.
+
+## Where labs run
+
+A lab describes itself once as an `isoloom.yml` (its machines, networks, services and checks). The launcher uses Isoloom to read that spec and convert it to each target's native files (Compose, Vagrant, Terraform) under the lab's `.isoloom/` folder, then runs them in one of three modes:
+
+| Mode | What runs the lab |
+|------|-------------------|
+| **Local** | Docker on the player's machine (Docker Compose), or VMs through Vagrant on any local hypervisor (VirtualBox, VMware Desktop, Hyper-V, Parallels, libvirt, QEMU, UTM). Containers can also run inside a local VM (`docker-vm`). |
+| **Server** | The player's own **Proxmox** or **VMware ESXi** server, through Vagrant or Terraform. |
+| **Cloud** | The player's own **AWS, Azure, GCP, DigitalOcean, Linode or Oracle Cloud** account, through Terraform with that provider's CLI credentials. |
+
+### Lab engine
+
+Two engines run a lab's generated files, chosen under **Settings > Labs > Lab engine**:
+
+- **Built-in** (the default): the launcher's own lifecycle code, which runs every mode above.
+- **Isothrum runner**: the shared Isothrum runner, which executes the versioned run manifest Isoloom writes alongside the generated files. It currently drives local Docker labs, local VM labs, and **Proxmox** and **ESXi** server labs; `docker-vm` and the cloud modes stay on the launcher's own code whichever engine is selected. The developer environment variable `CYBERCTF_RUNNER` (`isothrum` or `launcher`) forces one regardless of the setting.
+
+**Proven vs. generated.** Local labs (Docker and VMs) and server labs (Proxmox and ESXi) are proven by real runs. The cloud modes are **generated and validated** — the Terraform each cloud produces passes its official validator — but have not been run end to end on a paid account, so treat cloud runs as generate-and-validate-proven until exercised with real credentials.
 
 ## Architecture
 
@@ -14,7 +33,8 @@ Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It
   - [`machine/`](src-tauri/src/machine/): what this machine can run (`system/`: Docker engines, Vagrant, hypervisors, package manager), the setup self-tests (`selftest/`), the workloads/storage the Machine page shows (`workloads/`, `storage.rs`) and one-click dependency installs (`tools/`).
   - [`platform/`](src-tauri/src/platform/): running tools without a shell (`exec/`), files only this user can read (`private_fs.rs`), whole-file writes (`atomic_file.rs`), HTTP clients with timeouts and a download size cap (`http.rs`), and the PATH a GUI launch is missing (`env_path.rs`).
   - [`runtime/`](src-tauri/src/runtime/): lab lifecycle, with logs streamed to the UI over a Tauri channel
-    - `lab/`: the launcher's one door to Isoloom (Isoloom's crates, `isoloom-spec`, `-plan`, `-targets` and `-runtime`, are used nowhere else): the target's files (Compose, Vagrant, Terraform) are generated from the lab's `isoloom.yml` right before they run, then the launcher's own overrides applied (`overrides.rs`); Isoloom's paths and names (`names.rs`); the variables of Isoloom's Terraform modules from the player's hosts and accounts (`vars.rs`); and recording labs in Isoloom's registry, `~/.isoloom/status.yml` (`registry.rs`, a setting under Settings > Labs, on by default)
+    - `lab/`: the launcher's one door to Isoloom (its crates — `isoloom-spec`, `-plan`, `-targets`, `-compose`, `-render` and the run-manifest types `isoloom-manifest` — are used nowhere else): the target's files (Compose, Vagrant, Terraform) are generated from the lab's `isoloom.yml` right before they run, then the launcher's own overrides applied (`overrides.rs`); Isoloom's paths and names (`names.rs`); the variables of Isoloom's Terraform modules from the player's hosts and accounts (`vars.rs`); and each lab's instance numbering (`instances.rs`)
+    - `isothrum.rs` + `isothrum/`: the Isothrum runner path (`isothrum-runner`) — when the Isothrum runner is the lab engine, the launcher hands it local Docker labs, local VM labs and Proxmox/ESXi server labs, and it executes the run manifest Isoloom wrote; its runs live under the app data folder's `runs/`, never in the lab folder
     - `launch.rs`, `lifecycle.rs`, `status.rs`: start, park/resume, stop and the auto-stop reaper for cloud labs, and what is running where
     - `docker/`: `docker compose -p cyberctf-<lab>`; stop removes volumes, so every start is a clean lab; status reports machines, interfaces, networks and declared services
     - `vm.rs` + `vm/`: `vagrant up --provider <p>`; stop destroys the VMs
