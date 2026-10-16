@@ -2407,7 +2407,7 @@ dependencies = [
 [[package]]
 name = "isothrum-runner"
 version = "0.1.0"
-source = "git+https://github.com/isoloom/isothrum?rev=cbc532938ff50c4c421128a7296d3dbeae439d51#cbc532938ff50c4c421128a7296d3dbeae439d51"
+source = "git+https://github.com/isoloom/isothrum?rev=000f08c41481ad655624127d1ac6cd064638a86e#000f08c41481ad655624127d1ac6cd064638a86e"
 dependencies = [
  "isoloom-manifest",
  "process-wrap",

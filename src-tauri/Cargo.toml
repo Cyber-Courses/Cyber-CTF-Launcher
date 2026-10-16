@@ -108,7 +108,7 @@ isoloom-manifest = { git = "https://github.com/isoloom/isoloom", rev = "f52860ce
 # The Isothrum runner: executes the run manifest Isoloom writes (`runtime/isothrum`, local Docker
 # behind the hidden developer flag `CYBERCTF_RUNNER=isothrum`). Pinned to a commit of Isothrum's
 # local main, like Isoloom's crates.
-isothrum-runner = { git = "https://github.com/isoloom/isothrum", rev = "cbc532938ff50c4c421128a7296d3dbeae439d51" }
+isothrum-runner = { git = "https://github.com/isoloom/isothrum", rev = "000f08c41481ad655624127d1ac6cd064638a86e" }
 # The map type of the Isoloom crates' API (a cloud-services lab's outputs).
 indexmap = "2"
 portable-pty = "0.9"
@@ -142,4 +142,4 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 # Tauri's mock runtime, so code taking an app handle runs in unit tests (see `AppRuntime`).
 tauri = { version = "2.12.0", features = ["test"] }
 # The runner's test doubles (scripted processes, host ports and clock), for `runtime/isothrum`'s.
-isothrum-runner = { git = "https://github.com/isoloom/isothrum", rev = "cbc532938ff50c4c421128a7296d3dbeae439d51", features = ["fake"] }
+isothrum-runner = { git = "https://github.com/isoloom/isothrum", rev = "000f08c41481ad655624127d1ac6cd064638a86e", features = ["fake"] }
