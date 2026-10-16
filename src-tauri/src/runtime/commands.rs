@@ -111,9 +111,14 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
             isothrum::LabRun::vm(&runner_home(&app)?, &dir, &id)?.check().await
         }
         Runtime::Docker if server::lab_connection(&app, &dir)?.is_none() => docker::check(&dir, &id).await,
-        // A Proxmox VM lab the runner runs: its checks over SSH, through the lab's router.
-        Runtime::Vm if server::lab_connection(&app, &dir)?.is_some_and(|c| super::launch::runner_runs(&app, c.provider, runtime)) => {
-            isothrum::ServerRun::new(&runner_home(&app)?, &dir, &id)?.check().await
+        // A server VM lab the runner runs: on Proxmox, its checks over SSH through the lab's
+        // router; on ESXi, from its controller, as on this machine.
+        Runtime::Vm if let Some(c) = server::lab_connection(&app, &dir)?.filter(|c| super::launch::runner_runs(&app, c.provider, runtime)) => {
+            if c.provider == super::providers::Provider::VmwareEsxi {
+                super::launch::esxi_run(&app, &dir, &id, &c)?.check().await
+            } else {
+                isothrum::ServerRun::new(&runner_home(&app)?, &dir, &id)?.check().await
+            }
         }
         _ => Ok(docker::Check { available: false, ok: false, output: String::new(), results: Vec::new() }),
     }

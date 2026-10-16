@@ -140,8 +140,12 @@ async fn provision(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mach
     if conn.as_ref().is_some_and(|c| server::terraform_target(c.provider).is_some()) {
         return Err(Error::Invalid("Re-running provisioning isn't available for labs on Proxmox or a cloud yet.".into()));
     }
-    if conn.is_none() && runner_chosen(app) {
-        let run = isothrum::LabRun::vm(&runner_home(app)?, dir, id)?;
+    let runner = match &conn {
+        None if runner_chosen(app) => Some(isothrum::LabRun::vm(&runner_home(app)?, dir, id)?),
+        Some(c) if super::launch::runner_runs(app, c.provider, runtime) => Some(super::launch::esxi_run(app, dir, id, c)?),
+        _ => None,
+    };
+    if let Some(run) = runner {
         log(provision_target(&run.status().await?, machine)?);
         run.provision(machine, &mut log).await?;
         log("Provisioning done.".into());
@@ -205,6 +209,11 @@ pub(super) async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: 
             let mut log = log;
             stop_server_run(app, dir, id, &c, &mut log).await
         }
+        // An ESXi VM lab the runner runs: its VMs destroyed on the host.
+        None if super::launch::runner_runs(app, c.provider, runtime) => {
+            let mut log = log;
+            stop_esxi_run(app, dir, id, &c, &mut log).await
+        }
         Some(tf) => {
             let module = lab::terraform_to_destroy(dir, runtime, tf)?;
             terraform::destroy(&module, &state_dir(app, id, tf)?, &c.tf_vars, &c.tf_env, log).await
@@ -223,6 +232,11 @@ async fn stop_server_run(app: &AppHandle, dir: &Path, id: &str, c: &server::Conn
     let run = isothrum::ServerRun::new(&runner_home(app)?, dir, id)?;
     let place = super::launch::server_place(app, &host, c, &run).await?;
     run.down(&place, log).await
+}
+
+/// Destroys an ESXi VM lab the runner runs (connection `c`, the server's as it is now).
+async fn stop_esxi_run(app: &AppHandle, dir: &Path, id: &str, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
+    super::launch::esxi_run(app, dir, id, c)?.down(log).await
 }
 
 /// Stops a lab that runs on this machine (its containers, a local VM, or its VMs) and, once it

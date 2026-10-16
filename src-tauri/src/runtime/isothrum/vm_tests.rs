@@ -42,6 +42,15 @@ impl Fixture {
         LabRun::with(config, &self.dir, "web", Kind::Vm).unwrap()
     }
 
+    /// The lab on an ESXi host, `place`, run from a Linux host (no relay: the runner's own tests
+    /// cover macOS's).
+    fn esxi_run(&self, place: EsxiPlace) -> LabRun {
+        let mut config =
+            RunnerConfig::new(&self.root).with_processes(Arc::clone(&self.fake) as Arc<dyn ProcessRunner>).with_ports(Arc::new(FakePorts::new([])));
+        config.host = isothrum_runner::isoloom_manifest::HostOs::Linux;
+        LabRun::with(config, &self.dir, "web", Kind::Vm).unwrap().on(place)
+    }
+
     fn state(&self, vm: &str) -> String {
         self.states.lock().unwrap_or_else(PoisonError::into_inner).get(vm).cloned().unwrap_or_else(|| "not_created".into())
     }
@@ -87,6 +96,9 @@ fn answer(states: &Mutex<BTreeMap<String, String>>, call: &Call) -> Reply {
             Reply::ok("isoloom-check: PASS http://web/\nisoloom-check: END 1 passed, 0 failed")
         }
         ("vagrant", ["ssh", ..]) => Reply::fail(1, ""),
+        // ESXi: its plugin, and each VM at the address its VMware Tools report.
+        ("vagrant", ["plugin", "list", ..]) => Reply::ok("1,,plugin-name,vagrant-vmware-esxi"),
+        ("vagrant", ["ssh-config", vm]) => Reply::ok(&format!("Host {vm}\n  HostName 172.16.1.53\n  User vagrant\n")),
         _ => Reply::ok(""),
     }
 }
@@ -130,4 +142,63 @@ async fn a_vm_lab_is_checked_parked_resumed_reprovisioned_and_stopped() {
     run.down(&mut |_| {}).await.unwrap();
     assert_eq!(f.state("web"), "not_created");
     assert!(!run.status().await.unwrap().running);
+}
+
+/// An ESXi server's settings as the launcher keeps them for a lab (`lab::esxi_env`'s names, and
+/// the launcher's own).
+fn esxi_env() -> Vec<(String, String)> {
+    [
+        ("CYBERCTF_REMOTE_HOST", "172.16.1.20"),
+        ("CYBERCTF_ESXI_PASSWORD", "pw"),
+        ("ESXI_HOSTNAME", "172.16.1.20"),
+        ("ESXI_HOSTPORT", "22"),
+        ("ESXI_USERNAME", "root"),
+        ("ESXI_PASSWORD", "pw"),
+        ("ESXI_DATASTORE", "datastore1"),
+        ("ESXI_VIRTUAL_NETWORK", "VM Network"),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v.to_owned()))
+    .collect()
+}
+
+#[test]
+fn an_esxi_place_takes_the_hosts_settings_as_params_and_its_password_as_the_connection() {
+    let place = EsxiPlace::from_env("esxi-lab", &esxi_env());
+    assert_eq!(place.label, "esxi-lab");
+    let names: Vec<&str> = place.params.iter().map(|(k, _)| k.as_str()).collect();
+    assert_eq!(names, ["ESXI_HOSTNAME", "ESXI_HOSTPORT", "ESXI_USERNAME", "ESXI_DATASTORE", "ESXI_VIRTUAL_NETWORK"]);
+    assert_eq!(place.connection().get("ESXI_PASSWORD").map(SecretValue::expose), Some("pw"));
+    assert!(!format!("{place:?}").contains("pw\""), "never shown: {place:?}");
+    // A server with no datastore or network set: those params are left to their defaults.
+    let bare: Vec<(String, String)> = esxi_env().into_iter().filter(|(k, _)| k != "ESXI_DATASTORE" && k != "ESXI_VIRTUAL_NETWORK").collect();
+    assert_eq!(EsxiPlace::from_env("esxi-lab", &bare).params.len(), 3);
+}
+
+#[tokio::test]
+async fn a_vm_lab_runs_on_an_esxi_host_through_the_runner() {
+    let f = Fixture::new();
+    let run = f.esxi_run(EsxiPlace::from_env("esxi-lab", &esxi_env()));
+    let mut log = Vec::new();
+    run.up(&[("CTF_FLAG_MAIN".into(), "flag{v}".into())], Some("vmware_esxi"), &mut |l| log.push(l)).await.unwrap();
+    let up = f.fake.last("vagrant up --provider vmware_esxi").unwrap();
+    for (name, value) in [("ESXI_HOSTNAME", "172.16.1.20"), ("ESXI_DATASTORE", "datastore1"), ("ESXI_VIRTUAL_NETWORK", "VM Network"), ("ESXI_PASSWORD", "pw")] {
+        assert_eq!(up.env(name), Some(value), "{name}");
+    }
+    assert_eq!(up.env("CYBERCTF_ESXI_PASSWORD"), None, "only what the manifest's slots take");
+    let s = run.status().await.unwrap();
+    assert!(s.running, "{:?}", s.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>());
+    assert_eq!(s.url.as_deref(), Some("http://172.16.1.53:80/"), "ESXi forwards nothing: the VM's own address");
+    let c = run.check().await.unwrap();
+    assert!(c.available && c.ok, "{}", c.output);
+    run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
+    assert_eq!(f.state("web"), "poweroff");
+    run.resume(&mut |_| {}).await.unwrap();
+    assert_eq!(f.state("web"), "running");
+    run.down(&mut |_| {}).await.unwrap();
+    assert_eq!(f.state("web"), "not_created");
+    // The password reached every Vagrant command, the status reads and the park included.
+    for call in f.fake.calls().iter().filter(|c| c.program == "vagrant" && c.args != ["--version"]) {
+        assert_eq!(call.env("ESXI_PASSWORD"), Some("pw"), "{}", call.line());
+    }
 }

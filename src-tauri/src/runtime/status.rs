@@ -56,6 +56,12 @@ fn with_parked(s: LabStatus, parked: Option<super::Park>) -> LabStatus {
 }
 
 async fn server_status(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, c: server::Connection) -> Result<LabStatus> {
+    if super::launch::runner_runs(app, c.provider, runtime) && c.provider == super::providers::Provider::VmwareEsxi {
+        // The runner's view: Vagrant's states on the host, each VM at its own address.
+        let status = super::launch::esxi_run(app, dir, id, &c)?.status().await?;
+        let status = LabStatus { running: status.running && !crate::deploy_worker::last_deploy_failed(app, id), ..status };
+        return Ok(on_server(status, c.name, c.provider));
+    }
     if super::launch::runner_runs(app, c.provider, runtime) {
         // The runner's view, from its own record and state: no SSH, no API call.
         let place = isothrum::ServerPlace { name: c.name.clone(), ..isothrum::ServerPlace::default() };

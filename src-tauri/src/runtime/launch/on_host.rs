@@ -21,6 +21,11 @@ pub(super) async fn start_on_server(
     // Mark first, so a half-created lab can still be destroyed on the same host.
     server::mark_lab(dir, Some(host))?;
     log(format!("Running on server host {} ({})", conn.name, conn.provider.id()));
+    if runner_runs(app, conn.provider, runtime) && conn.provider == Provider::VmwareEsxi {
+        lab::prepare(dir, lab::Target::Vagrant)?;
+        esxi_run(app, dir, id, &conn)?.up(env, Some(Provider::VmwareEsxi.id()), log).await?;
+        return mark_parked(dir, None);
+    }
     if runner_runs(app, conn.provider, runtime) {
         lab::prepare(dir, lab::Target::Proxmox)?;
         let run = isothrum::ServerRun::new(&runner_home(app)?, dir, id)?;
@@ -50,10 +55,17 @@ pub(super) async fn start_on_server(
     }
 }
 
-/// Whether the Isothrum runner runs a lab of `runtime` on a `provider` server: VM labs on Proxmox,
-/// behind the runner's switch (Settings > Labs > Lab engine).
+/// Whether the Isothrum runner runs a lab of `runtime` on a `provider` server: VM labs on Proxmox
+/// (Terraform) and on ESXi (Vagrant), behind the runner's switch (Settings > Labs > Lab engine).
 pub(in crate::runtime) fn runner_runs(app: &AppHandle, provider: Provider, runtime: Runtime) -> bool {
-    provider == Provider::Proxmox && runtime == Runtime::Vm && crate::runtime::paths::runner_chosen(app)
+    matches!(provider, Provider::Proxmox | Provider::VmwareEsxi) && runtime == Runtime::Vm && crate::runtime::paths::runner_chosen(app)
+}
+
+/// The runner's run of VM lab `id` (in `dir`) on the ESXi server it is marked for, with that
+/// server's connection `c`: its settings as params, its password as the run's connection.
+pub(in crate::runtime) fn esxi_run(app: &AppHandle, dir: &Path, id: &str, c: &server::Connection) -> Result<isothrum::LabRun> {
+    let host = server::marked_host(dir).unwrap_or_default();
+    isothrum::LabRun::on_esxi(&runner_home(app)?, dir, id, isothrum::EsxiPlace::from_env(&host, &c.env))
 }
 
 /// Where a runner's run goes on server `host` (connection `conn`): its variables, the node when

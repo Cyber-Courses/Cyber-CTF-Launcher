@@ -95,7 +95,7 @@ impl ServerRun {
 
     /// Runs the lab's checks over SSH; not available when it declares none.
     pub(crate) async fn check(&self) -> Result<Check> {
-        super::checks_of(&self.lab()?).await
+        super::checks_of(&self.lab()?, &RunOptions::new()).await
     }
 }
 

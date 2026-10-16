@@ -26,7 +26,7 @@ use on_host::start_on_server;
 #[cfg(test)]
 use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from};
 pub(super) use on_host::{check_aws_budget, public_ip};
-pub(super) use on_host::{runner_runs, server_place};
+pub(super) use on_host::{esxi_run, runner_runs, server_place};
 
 /// Starts an installed lab; `env` is passed to the runtime (evidence claim, attack box).
 ///
