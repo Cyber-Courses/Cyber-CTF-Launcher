@@ -168,7 +168,7 @@ async fn resumes_parked(dir: &Path, id: &str, runtime: Runtime, log: &mut impl F
 
 /// A container lab in a VM on this machine: Isoloom's docker-vm (Docker on one VM), with the
 /// attack box next to it inside the VM (the lab network isn't reachable from here).
-async fn start_docker_in_vm(dir: &Path, runtime: Runtime, provider: Provider, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+pub(super) async fn start_docker_in_vm(dir: &Path, runtime: Runtime, provider: Provider, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     let prepared = lab::prepare(dir, lab::vagrant_target(runtime))?;
     mark_local_vm(dir, Some(provider))?;
     log(format!("Running in a {} VM on this machine", provider.id()));

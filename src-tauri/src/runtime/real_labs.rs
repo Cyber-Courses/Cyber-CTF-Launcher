@@ -57,7 +57,7 @@ impl Run {
         }
     }
 
-    async fn check(&self) -> Result<docker::Check> {
+    pub(super) async fn check(&self) -> Result<docker::Check> {
         match self.via {
             Via::Launcher => docker::check(&self.dir, &self.id).await,
             Via::Runner => isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.check().await,
