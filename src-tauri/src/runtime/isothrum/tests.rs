@@ -246,6 +246,21 @@ async fn a_lab_never_generated_reads_as_not_running() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[tokio::test]
+async fn tearing_down_a_lab_never_generated_is_a_clean_no_op() {
+    // A start that fails before generation (for example, a lab the bundled engine can't read)
+    // leaves no run manifest. Stopping it must not error on the missing run.json: it created
+    // nothing, so there is nothing to remove, as the launcher's own Docker path tolerates.
+    let root = std::env::temp_dir().join(format!("cyberctf-isothrum-{}", rand::random::<u32>()));
+    let dir = root.join("labs").join("web");
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = LabRun::with(RunnerConfig::new(&root), &dir, "web", Kind::Docker).unwrap();
+    let mut lines = Vec::new();
+    run.down(&mut |l| lines.push(l)).await.unwrap();
+    assert_eq!(lines, ["Nothing to remove: the run has no files."]);
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[test]
 fn the_deploy_log_shows_steps_tool_lines_and_warnings_only() {
     let step = |state, note: Option<&str>| EventKind::Step { step: "up".into(), state, note: note.map(Into::into) };

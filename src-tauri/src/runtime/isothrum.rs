@@ -191,6 +191,14 @@ impl LabRun {
     /// Removes everything the run created: containers, networks, volumes, its pinned ports; or
     /// its VMs and Vagrant's record of them.
     pub(crate) async fn down(&self, log: &mut impl FnMut(String)) -> Result<()> {
+        // A run whose manifest was never written (a start that failed before generation) created
+        // nothing, so there is nothing to remove: a clean no-op, as the launcher's own Docker path
+        // tolerates "no resource to remove". Without this, tearing down a failed launch errors on
+        // the missing run.json.
+        if !self.manifest().exists() {
+            log("Nothing to remove: the run has no files.".into());
+            return Ok(());
+        }
         let lab = self.lab()?;
         let opts = self.placed(RunOptions::new());
         let (sink, lines) = progress::channel();
