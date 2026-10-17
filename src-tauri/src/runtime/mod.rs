@@ -34,6 +34,8 @@ mod paths;
 pub mod providers;
 mod proxmox;
 #[cfg(test)]
+mod real_cloud_labs;
+#[cfg(test)]
 mod real_corpus_labs;
 #[cfg(test)]
 mod real_docker_vm_labs;
