@@ -118,7 +118,8 @@ jobs:
       - run: |
           set -euo pipefail
           shellcheck --version
-          mapfile -t scripts < <(git ls-files '*.sh' '*.bash' 'images/attack-box/bashrc.cyberctf')
+          # Real scripts only; test fixtures under testdata/ are sample inputs, not scripts to lint.
+          mapfile -t scripts < <(git ls-files '*.sh' '*.bash' 'images/attack-box/bashrc.cyberctf' ':(exclude)*/testdata/*')
           printf '%s\n' "${scripts[@]}"
           shellcheck --severity=warning --external-sources "${scripts[@]}"
 
