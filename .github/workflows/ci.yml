@@ -30,6 +30,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Tauri's JS packages and Rust crates must share a major/minor, or `tauri build` refuses. That
+      # check otherwise only runs at release time (release.yml, on a tag, after a long build), so run
+      # it here to catch drift on every push. Reads the resolved versions; a few milliseconds.
+      - run: pnpm check:tauri
       # The static export; it also generates the route types tsc checks against.
       - run: pnpm build
       - run: pnpm exec tsc --noEmit
