@@ -19,7 +19,7 @@ test.describe("attack box shell", () => {
     await expect(pageTitle(page)).toHaveText("Invoice portal API");
 
     const [shell] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: "Open attacker shell" }).click()]);
-    await expect(shell).toHaveURL(/\/shell\?id=lab-invoice&kind=lab&runtime=DOCKER&mock$/);
+    await expect(shell).toHaveURL(/\/shell\?id=lab-invoice&runtime=DOCKER&mock$/);
     await expect(shell.getByText("attack box", { exact: true })).toBeVisible();
     const terminal = shell.locator(".xterm-rows");
     await expect(terminal).toContainText("Connected to the attack box (dev mock).");

@@ -82,7 +82,7 @@ export const terminalHandlers: Record<string, BrowserHandler> = {
     return null;
   },
   terminal_window: (args) => {
-    const q = new URLSearchParams({ id: argText(args?.id), kind: argText(args?.kind), runtime: argText(args?.runtime) });
+    const q = new URLSearchParams({ id: argText(args?.id), runtime: argText(args?.runtime) });
     openWindow(`/shell?${q.toString()}`);
     return null;
   },

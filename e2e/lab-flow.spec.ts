@@ -58,7 +58,7 @@ test.describe("lab flow", () => {
 
     // The attack box shell opens in its own window (a tab here, answered by the mock's terminal).
     const [shell] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: "Open attacker shell" }).click()]);
-    await expect(shell).toHaveURL(/\/shell\?id=lab-kube&kind=lab&runtime=DOCKER&mock&hold=launch$/);
+    await expect(shell).toHaveURL(/\/shell\?id=lab-kube&runtime=DOCKER&mock&hold=launch$/);
     await expect(shell.getByText("attack box", { exact: true })).toBeVisible();
     await expect(shell.getByRole("button", { name: "System terminal" })).toBeVisible();
     const terminal = shell.locator(".xterm-rows");
