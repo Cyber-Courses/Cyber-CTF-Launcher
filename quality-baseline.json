@@ -1,7 +1,7 @@
 {
   "rules": {
     "dup/clone": {
-      "rs:runtime": 5
+      "rs:runtime": 4
     },
     "exception/without-reason": {
       "rs:runtime": 1
@@ -13,31 +13,25 @@
       "rs:account": 1,
       "rs:deploy_worker": 3,
       "rs:labs": 1,
-      "rs:runtime": 22
+      "rs:runtime": 20
     }
   },
   "clippy": {
     "darwin": {
       "clippy/assert_is_empty": {
-        "rs:runtime": 27
-      },
-      "clippy/case_sensitive_file_extension_comparisons": {
-        "rs:runtime": 1
+        "rs:runtime": 23
       },
       "clippy/cast_possible_truncation": {
-        "rs:runtime": 1
-      },
-      "clippy/cognitive_complexity": {
         "rs:runtime": 1
       },
       "clippy/default_trait_access": {
         "rs:runtime": 4
       },
       "clippy/doc_markdown": {
-        "rs:runtime": 35
+        "rs:runtime": 31
       },
       "clippy/expect_used": {
-        "rs:runtime": 3
+        "rs:runtime": 1
       },
       "clippy/float_cmp": {
         "rs:runtime": 2
@@ -48,16 +42,10 @@
       "clippy/format_collect": {
         "rs:runtime": 2
       },
-      "clippy/format_push_string": {
-        "rs:runtime": 3
-      },
       "clippy/if_not_else": {
         "rs:runtime": 1
       },
       "clippy/ignore_without_reason": {
-        "rs:runtime": 1
-      },
-      "clippy/ip_constant": {
         "rs:runtime": 1
       },
       "clippy/items_after_statements": {
@@ -70,7 +58,7 @@
         "rs:runtime": 1
       },
       "clippy/map_unwrap_or": {
-        "rs:runtime": 7
+        "rs:runtime": 5
       },
       "clippy/match_same_arms": {
         "rs:runtime": 2
@@ -78,20 +66,17 @@
       "clippy/needless_pass_by_value": {
         "rs:runtime": 8
       },
-      "clippy/needless_raw_string_hashes": {
-        "rs:runtime": 1
-      },
       "clippy/redundant_closure_for_method_calls": {
-        "rs:runtime": 11
+        "rs:runtime": 9
       },
       "clippy/semicolon_if_nothing_returned": {
-        "rs:runtime": 4
+        "rs:runtime": 1
       },
       "clippy/similar_names": {
         "rs:runtime": 1
       },
       "clippy/single_match_else": {
-        "rs:runtime": 4
+        "rs:runtime": 3
       },
       "clippy/stable_sort_primitive": {
         "rs:runtime": 3
@@ -348,10 +333,6 @@
     },
     "src-tauri/src/platform/sys.rs": {
       "#![allow(unsafe_code, reason = \"the audited home of the launcher's calls into libc and Win32\")]": 1
-    },
-    "src-tauri/src/runtime/exegol.rs": {
-      "#[cfg_attr(not(target_os = \"macos\"), allow(dead_code))]": 1,
-      "#[cfg_attr(not(windows), allow(dead_code))]": 5
     },
     "src-tauri/src/runtime/launch.rs": {
       "#[allow(clippy::too_many_arguments)]": 2
