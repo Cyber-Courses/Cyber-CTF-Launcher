@@ -53,6 +53,14 @@ on:
         description: "Submit for certification (false: leave a draft to review in Partner Center)"
         type: boolean
         default: true
+    secrets:
+      # Partner Center (Store submission API) Azure AD app credentials; nothing else is needed.
+      STORE_TENANT_ID:
+        required: true
+      STORE_CLIENT_ID:
+        required: true
+      STORE_CLIENT_SECRET:
+        required: true
 
 permissions:
   contents: read

@@ -10,8 +10,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Least privilege at the top: only the jobs that write to the GitHub Release (release, publish)
+# raise themselves to contents: write below. prepare creates the draft with the cyber-ctf-creator
+# App token (not GITHUB_TOKEN), and the distribute/store reusable-workflow calls stay read-only.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # The draft release, made once before the builds: each platform job only uploads to it.
@@ -52,6 +55,9 @@ jobs:
 
   release:
     needs: prepare
+    # Uploads the built installers to the GitHub Release (tauri-action + the DMG re-upload).
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -183,6 +189,9 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Takes the draft release live (gh release edit).
+    permissions:
+      contents: write
     steps:
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -194,7 +203,10 @@ jobs:
     uses: ./.github/workflows/distribute.yml
     with:
       tag: ${{ github.ref_name }}
-    secrets: inherit
+    # Only the cyber-ctf-creator App credentials, not every repo secret.
+    secrets:
+      APP_ID_GENERATOR: ${{ secrets.APP_ID_GENERATOR }}
+      APP_PRIVATE_KEY_GENERATOR: ${{ secrets.APP_PRIVATE_KEY_GENERATOR }}
 
   # Windows: the same release to the Microsoft Store (MSIX, signed by the Store). Its own job, so
   # a Store hiccup (a submission still in certification blocks a new one) never holds back
@@ -206,4 +218,8 @@ jobs:
       tag: ${{ github.ref_name }}
       # Repo variable STORE_AUTO_SUBMIT=false: leave the Store submission as a draft to review.
       commit: ${{ vars.STORE_AUTO_SUBMIT != 'false' }}
-    secrets: inherit
+    # Only the Partner Center credentials, not every repo secret.
+    secrets:
+      STORE_TENANT_ID: ${{ secrets.STORE_TENANT_ID }}
+      STORE_CLIENT_ID: ${{ secrets.STORE_CLIENT_ID }}
+      STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}

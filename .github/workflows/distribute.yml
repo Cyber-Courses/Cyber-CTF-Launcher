@@ -15,11 +15,22 @@ on:
       tag:
         type: string
         required: true
+    secrets:
+      # The cyber-ctf-creator GitHub App credentials used to mint the cross-repo token below.
+      APP_ID_GENERATOR:
+        required: true
+      APP_PRIVATE_KEY_GENERATOR:
+        required: true
   workflow_dispatch:
     inputs:
       tag:
         description: "Release tag, e.g. v0.3.7"
         required: true
+
+# Reads from this repo (gh release download with GITHUB_TOKEN); every cross-repo write goes
+# through the cyber-ctf-creator App token, not GITHUB_TOKEN.
+permissions:
+  contents: read
 
 jobs:
   distribute:
