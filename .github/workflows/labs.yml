@@ -54,11 +54,18 @@ jobs:
         run: |
           set -euo pipefail
           git clone --depth 1 https://github.com/CyberCTF/invoice-portal-api "$RUNNER_TEMP/invoice-portal-api"
-          rev=$(grep -A2 '^name = "isoloom-spec"$' src-tauri/Cargo.lock | sed -n 's/^source = "git+.*#\([0-9a-f]\{40\}\)"$/\1/p')
-          test -n "$rev" || { echo "::error::no isoloom-spec git rev in src-tauri/Cargo.lock"; exit 1; }
-          echo "Isoloom at $rev"
+          # The launcher bundles a published Isoloom (registry crate), so match its version tag; a
+          # git-pinned Isoloom (its commit) is still honoured if the lock ever carries one again.
+          block=$(grep -A2 '^name = "isoloom-spec"$' src-tauri/Cargo.lock)
+          ref=$(sed -n 's/^source = "git+.*#\([0-9a-f]\{40\}\)"$/\1/p' <<<"$block")
+          if [ -z "$ref" ]; then
+            ver=$(sed -n 's/^version = "\(.*\)"$/\1/p' <<<"$block")
+            test -n "$ver" || { echo "::error::no isoloom-spec git rev or version in src-tauri/Cargo.lock"; exit 1; }
+            ref="v$ver"
+          fi
+          echo "Isoloom at $ref"
           git init -q "$RUNNER_TEMP/isoloom"
-          git -C "$RUNNER_TEMP/isoloom" fetch -q --depth 1 https://github.com/isoloom/isoloom "$rev"
+          git -C "$RUNNER_TEMP/isoloom" fetch -q --depth 1 https://github.com/isoloom/isoloom "$ref"
           git -C "$RUNNER_TEMP/isoloom" checkout -q FETCH_HEAD
       - uses: ./.github/actions/apt-deps
       - uses: ./.github/actions/setup-rust
