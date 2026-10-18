@@ -94,6 +94,10 @@ pub(super) fn split_target(uri: &str) -> Option<(String, String)> {
     } else {
         format!("{authority}:80")
     };
+    // An authority with no host (e.g. "http://:80/") is not a target the connect can take.
+    if authority.starts_with(':') {
+        return None;
+    }
     Some((authority, path))
 }
 
@@ -316,6 +320,7 @@ mod tests {
         assert_eq!(split_target("http://[fd00::7]:5985/x").unwrap(), ("[fd00::7]:5985".into(), "/x".into()));
         assert!(split_target("https://host/").is_none());
         assert!(split_target("http:///path").is_none());
+        assert!(split_target("http://:80/x").is_none());
     }
 
     /// The proxy of an ESXi host at 10.0.0.5.
