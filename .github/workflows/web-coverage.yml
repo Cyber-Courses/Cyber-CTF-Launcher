@@ -28,6 +28,7 @@ jobs:
       - name: Coverage summary
         if: always()
         run: |
+          set -euo pipefail
           if [ ! -f coverage/coverage-summary.json ]; then
             echo "No coverage summary (the tests did not finish)." >> "$GITHUB_STEP_SUMMARY"
             exit 0

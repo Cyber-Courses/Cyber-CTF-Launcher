@@ -68,6 +68,7 @@ jobs:
       - name: Generated TypeScript types are committed
         if: startsWith(matrix.os, 'ubuntu')
         run: |
+          set -euo pipefail
           if [ -n "$(git status --porcelain -- src/lib/tauri/generated)" ]; then
             git status --short -- src/lib/tauri/generated
             git diff -- src/lib/tauri/generated

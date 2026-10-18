@@ -78,6 +78,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
       - run: |
+          set -euo pipefail
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
@@ -107,6 +108,7 @@ jobs:
       # One tag for both architectures: latest, plus the build date to pin or roll back.
       - working-directory: /tmp/digests
         run: |
+          set -euo pipefail
           # One argument per digest file: the split is the point.
           # shellcheck disable=SC2046
           docker buildx imagetools create \
@@ -116,6 +118,7 @@ jobs:
       # The multi-arch index just pushed: what the launcher pins.
       - id: digest
         run: |
+          set -euo pipefail
           digest=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest}}' | jq -er .digest)
           [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::unexpected digest '$digest'"; exit 1; }
           echo "Published $IMAGE@$digest"
@@ -137,6 +140,7 @@ jobs:
         env:
           PINNED: ${{ env.IMAGE }}@${{ needs.publish.outputs.digest }}
         run: |
+          set -euo pipefail
           docker pull -q "$PINNED"
           images/attack-box/smoke-test.sh "$PINNED"
 
@@ -162,6 +166,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PINNED: ${{ env.IMAGE }}@${{ needs.publish.outputs.digest }}
         run: |
+          set -euo pipefail
           current=$(jq -er .image "$FILE")
           if [ "$current" = "$PINNED" ]; then
             echo "The launcher already pins $PINNED"

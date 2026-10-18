@@ -34,6 +34,7 @@ jobs:
       # workflow's bump PR changes it, and dispatches this workflow on that PR).
       - name: Pinned attack box
         run: |
+          set -euo pipefail
           image=$(jq -er .image src-tauri/attack-box-image.json)
           echo "Attack box: $image"
           echo "ATTACK_BOX=$image" >> "$GITHUB_ENV"
@@ -68,6 +69,7 @@ jobs:
       - name: Wait for the attack box image
         timeout-minutes: 6
         run: |
+          set -euo pipefail
           pid=$(cat "$RUNNER_TEMP/pull.pid")
           while kill -0 "$pid" 2>/dev/null; do sleep 5; done
           cat "$RUNNER_TEMP/pull.log"
