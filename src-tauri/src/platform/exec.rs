@@ -409,22 +409,48 @@ mod tests {
     }
 
     /// A tool that starts a long child of its own and writes its pid to `file`, then waits: the
-    /// program, its arguments, and how long it may run before it counts as stuck.
-    fn parent_of_a_child(file: &std::path::Path) -> (&'static str, Vec<String>, Duration) {
+    /// program and its arguments. The child outlives the tool unless the tool's whole tree is
+    /// ended with it, which is what the tree tests check.
+    fn parent_of_a_child(file: &std::path::Path) -> (&'static str, Vec<String>) {
         let path = file.display();
         if cfg!(windows) {
             let script = format!(
                 "$p = Start-Process -FilePath ping -ArgumentList '-n','120','127.0.0.1' -PassThru -NoNewWindow; Set-Content -Path '{path}' -Value $p.Id; Start-Sleep 120"
             );
-            ("powershell", ["-NoProfile", "-NonInteractive", "-Command", &script].map(String::from).to_vec(), Duration::from_secs(10))
+            ("powershell", ["-NoProfile", "-NonInteractive", "-Command", &script].map(String::from).to_vec())
         } else {
-            ("sh", vec!["-c".to_string(), format!("sleep 120 & echo $! > '{path}'; wait")], Duration::from_secs(2))
+            ("sh", vec!["-c".to_string(), format!("sleep 120 & echo $! > '{path}'; wait")])
         }
     }
 
-    /// The child `parent_of_a_child` started, gone once its parent was ended.
-    async fn assert_child_gone(file: &std::path::Path) {
-        let pid: u32 = std::fs::read_to_string(file).expect("the tool started its child").trim().parse().unwrap();
+    /// The pid `parent_of_a_child` wrote once its child was up, waited for rather than read once:
+    /// a tool's first line may not have run yet on a loaded runner, and reading the file too early
+    /// (before the tool was cancelled) was the race that made these tests flaky under CI load.
+    /// Bounded (~15s), so a tool that never starts its child fails loudly instead of hanging.
+    async fn wait_for_child_pid(file: &std::path::Path) -> u32 {
+        for _ in 0..300 {
+            if let Some(pid) = std::fs::read_to_string(file).ok().and_then(|t| t.trim().parse::<u32>().ok()) {
+                return pid;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        panic!("the tool never started its child (no pid at {})", file.display());
+    }
+
+    /// Runs `tool` (a tool's future that starts the child whose pid lands in `file`) until that
+    /// child is up, then cancels it by dropping it and asserts its whole tree — the child included
+    /// — went with it. Waiting for the child first means it is always known-started before the tool
+    /// is ended: no read-before-write race, whatever the runner's load.
+    async fn assert_cancel_takes_the_tree(file: &std::path::Path, tool: impl std::future::Future) {
+        let pid = {
+            tokio::pin!(tool);
+            tokio::select! {
+                _ = &mut tool => panic!("the tool ended before it started its child"),
+                pid = wait_for_child_pid(file) => pid,
+            }
+            // `tool` is dropped as this block ends: `kill_on_drop` and the armed `GroupGuard` end
+            // its whole tree (its process group on unix, its job object on Windows).
+        };
         let _ = std::fs::remove_file(file);
         assert!(fake::gone(pid).await, "the tool's child {pid} was left running");
     }
@@ -433,12 +459,15 @@ mod tests {
     async fn a_timed_out_tool_takes_what_it_started_with_it() {
         // Regression (Windows): a timeout killed the tool alone, and what it had started (a
         // wrapper's real program) ran on. A tool's whole tree ends with it now (a job object on
-        // Windows, its process group on unix).
+        // Windows, its process group on unix). The timed path's tree-kill is its `GroupGuard`
+        // dropped on give-up; the error of a timeout itself is `a_timed_out_tool_is_an_error...`.
+        // The generous limit is a safety net only: the child is confirmed up and the tool is
+        // cancelled long before it, so the test never waits on wall-clock and can't race.
         let file = std::env::temp_dir().join(format!("cyberctf-tree-{}", rand::random::<u32>()));
-        let (program, args, limit) = parent_of_a_child(&file);
+        let (program, args) = parent_of_a_child(&file);
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        assert!(run_env_timed(program, &args, None, &[], limit).await.is_err(), "timed out");
-        assert_child_gone(&file).await;
+        let timed = run_env_timed(program, &args, None, &[], Duration::from_secs(120));
+        assert_cancel_takes_the_tree(&file, timed).await;
     }
 
     #[cfg(unix)]
@@ -470,11 +499,12 @@ mod tests {
     async fn a_cancelled_stream_takes_what_it_started_with_it() {
         // A streamed `vagrant` is a wrapper around `ruby`: cancelled, the wrapper alone was
         // killed, and its ruby ran on holding Vagrant's lock. The tool's tree ends with it now.
+        // The child is waited for before the stream is cancelled (dropped), so a loaded runner
+        // can't read the pid file before the tool wrote it.
         let file = std::env::temp_dir().join(format!("cyberctf-stream-tree-{}", rand::random::<u32>()));
-        let (program, args, limit) = parent_of_a_child(&file);
+        let (program, args) = parent_of_a_child(&file);
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        assert!(tokio::time::timeout(limit, stream(program, &args, None, &[], |_| {})).await.is_err(), "cancelled while it ran");
-        assert_child_gone(&file).await;
+        assert_cancel_takes_the_tree(&file, stream(program, &args, None, &[], |_| {})).await;
     }
 
     #[cfg(unix)]
