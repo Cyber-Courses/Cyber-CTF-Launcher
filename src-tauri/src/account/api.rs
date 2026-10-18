@@ -1,0 +1,136 @@
+//! CyberBackend access. The access token is attached here, on the Rust side, so it
+//! never reaches the webview.
+
+use serde_json::{Value, json};
+
+use crate::account::api_operation::ApiOperation;
+use crate::account::auth;
+use crate::error::{Error, Result};
+use crate::platform::config;
+
+/// Runs a GraphQL operation as the logged-in player (anonymous if logged out
+/// and `require_login` is false). Returns `data`, or the first error message.
+pub async fn graphql(query: &str, variables: Value, require_login: bool) -> Result<Value> {
+    let token = match auth::access_token().await {
+        Ok(t) => Some(t),
+        Err(e) if require_login => return Err(e),
+        Err(_) => None,
+    };
+    send(&config::api_url(), token, query, variables).await
+}
+
+/// Posts a GraphQL operation to the API at `base`, with the access token when there is one.
+/// Bounded: a backend that accepts the connection and never answers must not hang the agent
+/// loop or a UI call forever. The real-lab tests call a local test backend through it.
+pub(crate) async fn send(base: &str, token: Option<String>, query: &str, variables: Value) -> Result<Value> {
+    let mut req = crate::platform::http::api_client()?
+        .post(format!("{base}/graphql"))
+        .timeout(std::time::Duration::from_secs(30))
+        .json(&json!({ "query": query, "variables": variables }));
+    if let Some(t) = token {
+        req = req.bearer_auth(t);
+    }
+    let res = req.send().await.map_err(|e| Error::Unreachable(format!("API unreachable: {e}")))?;
+    let status = res.status();
+    let text = res.text().await.map_err(|e| Error::Unreachable(format!("API response interrupted: {e}")))?;
+    parse_response(status, &text)
+}
+
+/// A GraphQL response body as its `data`, or the first error message, or (for a body that
+/// isn't JSON) the HTTP status and the start of the body. A body that isn't JSON came from
+/// something other than the API (a platform error page, a captive portal): unreachable, unless it
+/// is a 4xx, a refusal (a gateway or firewall blocking the call) that must not read as an outage.
+fn parse_response(status: reqwest::StatusCode, text: &str) -> Result<Value> {
+    // Platform errors (e.g. a timed-out cold start) are not GraphQL JSON.
+    let body: Value = serde_json::from_str(text).map_err(|_| {
+        let excerpt: String = text.chars().take(160).collect();
+        let message = format!("API error (HTTP {status}): {excerpt}");
+        if status.is_client_error() { Error::Invalid(message) } else { Error::Unreachable(message) }
+    })?;
+    if let Some(message) = body.pointer("/errors/0/message").and_then(Value::as_str) {
+        return Err(Error::Invalid(message.to_string()));
+    }
+    Ok(body.get("data").cloned().unwrap_or(Value::Null))
+}
+
+/// Runs one of the allowed CyberBackend operations for the webview (see [`ApiOperation`]).
+pub async fn api_query(operation: ApiOperation, variables: Option<Value>) -> Result<Value> {
+    graphql(&operation.document(), variables.unwrap_or(Value::Null), false).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_response;
+    use reqwest::StatusCode;
+    use serde_json::json;
+
+    #[test]
+    fn a_response_gives_its_data_or_its_first_error() {
+        assert_eq!(parse_response(StatusCode::OK, r#"{"data":{"me":{"id":"1"}}}"#).unwrap(), json!({ "me": { "id": "1" } }));
+        assert_eq!(parse_response(StatusCode::OK, r#"{"other":1}"#).unwrap(), serde_json::Value::Null);
+        let err = parse_response(StatusCode::OK, r#"{"errors":[{"message":"nope"},{"message":"two"}],"data":null}"#).unwrap_err();
+        assert_eq!(err.to_string(), "nope");
+    }
+
+    #[test]
+    fn errors_without_a_text_message_fall_through_to_the_data() {
+        // GraphQL requires a message on every error; a body breaking that (a number, an empty
+        // list, `errors` not a list) is read for its data rather than refused outright.
+        assert_eq!(parse_response(StatusCode::OK, r#"{"errors":[{"message":5}],"data":{"a":1}}"#).unwrap(), json!({ "a": 1 }));
+        assert_eq!(parse_response(StatusCode::OK, r#"{"errors":[],"data":null}"#).unwrap(), serde_json::Value::Null);
+        assert_eq!(parse_response(StatusCode::OK, r#"{"errors":"down"}"#).unwrap(), serde_json::Value::Null);
+        // An empty message is still the error.
+        assert_eq!(parse_response(StatusCode::OK, r#"{"errors":[{"message":""}]}"#).unwrap_err().to_string(), "");
+        // A JSON body that isn't an object (a bare string from a proxy) is data of nothing.
+        assert_eq!(parse_response(StatusCode::OK, r#""ok""#).unwrap(), serde_json::Value::Null);
+        // The excerpt counts characters, so a multi-byte body is never cut inside one.
+        let err = parse_response(StatusCode::BAD_GATEWAY, &"\u{e9}".repeat(200)).unwrap_err().to_string();
+        assert!(err.ends_with(&"\u{e9}".repeat(160)) && !err.ends_with(&"\u{e9}".repeat(161)), "{err}");
+    }
+
+    #[test]
+    fn a_non_json_body_names_the_status_and_an_excerpt() {
+        let long = "x".repeat(500);
+        let err = parse_response(StatusCode::BAD_GATEWAY, &format!("<html>{long}")).unwrap_err();
+        // Not the API answering: unreachable, unlike a refusal in GraphQL's own errors.
+        assert!(matches!(err, crate::error::Error::Unreachable(_)), "{err}");
+        assert!(matches!(parse_response(StatusCode::OK, r#"{"errors":[{"message":"no"}]}"#).unwrap_err(), crate::error::Error::Invalid(_)));
+        // A captive portal's page is no answer of the API; a firewall's 403 page is a refusal.
+        assert!(matches!(parse_response(StatusCode::OK, "<html>login</html>").unwrap_err(), crate::error::Error::Unreachable(_)));
+        assert!(matches!(parse_response(StatusCode::FORBIDDEN, "<html>blocked</html>").unwrap_err(), crate::error::Error::Invalid(_)));
+        let err = err.to_string();
+        assert!(err.starts_with("API error (HTTP 502 Bad Gateway): <html>xx"), "{err}");
+        assert!(err.len() < 220);
+    }
+
+    #[tokio::test]
+    async fn an_operation_is_posted_with_the_token_and_its_data_read_back() {
+        use crate::platform::http::tests::serve_once;
+        let body = r#"{"data":{"me":{"id":"1"}}}"#;
+        let base = serve_once(
+            format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).into_bytes(),
+        )
+        .await;
+        let data = super::send(base.trim_end_matches('/'), Some("tok".into()), "{ me { id } }", serde_json::Value::Null).await.unwrap();
+        assert_eq!(data, json!({ "me": { "id": "1" } }));
+        let base = serve_once(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 4\r\nConnection: close\r\n\r\ndown".to_vec()).await;
+        let err = super::send(base.trim_end_matches('/'), None, "{ x }", serde_json::Value::Null).await.unwrap_err().to_string();
+        assert_eq!(err, "API error (HTTP 502 Bad Gateway): down");
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
+        let err = super::send(&format!("http://{closed}"), None, "{ x }", serde_json::Value::Null).await.unwrap_err().to_string();
+        assert!(err.starts_with("API unreachable: "), "{err}");
+        let err = super::send(&format!("http://{closed}"), None, "{ x }", serde_json::Value::Null).await.unwrap_err();
+        assert!(matches!(err, crate::error::Error::Unreachable(_)), "{err}");
+    }
+
+    /// Hits the real CyberBackend anonymously: `cargo test -- --ignored`.
+    #[tokio::test]
+    #[ignore = "network"]
+    async fn queries_the_api_anonymously() {
+        let data = super::graphql("{ challenges { id } me { authId } }", serde_json::Value::Null, false).await.unwrap();
+        assert!(data["challenges"].is_array());
+        assert!(data["me"].is_null());
+        let err = super::graphql("mutation { startLab(labId: \"x\") { labId } }", serde_json::Value::Null, true).await.unwrap_err();
+        assert_eq!(err.code(), crate::error::Code::SignedOut);
+    }
+}

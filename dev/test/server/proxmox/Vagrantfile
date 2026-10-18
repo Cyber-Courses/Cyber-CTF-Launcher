@@ -1,0 +1,78 @@
+# A throwaway Proxmox VE 8 host for testing the launcher's Server flow.
+# Proxmox installed on Debian 12 (the official "Install Proxmox VE on Debian 12" path),
+# nested virtualization on, reachable from this machine at https://192.168.56.10:8006.
+#
+#   PVE_ROOT_PASSWORD=... vagrant up          # stage 1: Proxmox kernel
+#   vagrant reload
+#   PVE_ROOT_PASSWORD=... vagrant provision --provision-with pve   # stage 2: Proxmox VE
+#   vagrant provision --provision-with net                         # stage 3: vmbr0 + DHCP for lab VMs
+#
+# Then add a host in the launcher: 192.168.56.10, root@pam, node "pve", storage "local",
+# bridge "vmbr0".
+
+IP = "192.168.56.10"
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "debian/bookworm64"
+  config.vm.hostname = "pve"
+  config.vm.network "private_network", ip: IP
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "cyberctf-pve-test"
+    vb.cpus = 4
+    vb.memory = 8192
+    vb.customize ["modifyvm", :id, "--nested-hw-virt", "on"]
+  end
+
+  config.vm.provision "kernel", type: "shell", inline: <<~SH
+    set -eux
+    # Proxmox needs the hostname to resolve to the reachable IP, not 127.0.1.1.
+    sed -i '/127.0.1.1/d' /etc/hosts
+    grep -q "#{IP} pve" /etc/hosts || echo "#{IP} pve.local pve" >> /etc/hosts
+    echo "deb [arch=amd64] http://download.proxmox.com/debian/pve bookworm pve-no-subscription" > /etc/apt/sources.list.d/pve-install-repo.list
+    wget -q https://enterprise.proxmox.com/debian/proxmox-release-bookworm.gpg -O /etc/apt/trusted.gpg.d/proxmox-release-bookworm.gpg
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get -y full-upgrade
+    apt-get -y install proxmox-default-kernel
+  SH
+
+  config.vm.provision "pve", type: "shell", run: "never", env: { "PVE_ROOT_PASSWORD" => ENV["PVE_ROOT_PASSWORD"] }, inline: <<~SH
+    set -eu
+    test -n "$PVE_ROOT_PASSWORD"
+    export DEBIAN_FRONTEND=noninteractive
+    echo "postfix postfix/main_mailer_type select Local only" | debconf-set-selections
+    apt-get -y install proxmox-ve postfix open-iscsi chrony
+    apt-get -y remove linux-image-amd64 'linux-image-6.1*' os-prober || true
+    update-grub
+    echo "root:$PVE_ROOT_PASSWORD" | chpasswd
+    # Like a stock Proxmox install: root may SSH in with its password (Terraform uploads
+    # cloud-init snippets to the node over SSH).
+    printf 'PermitRootLogin yes\nPasswordAuthentication yes\n' > /etc/ssh/sshd_config.d/10-pve-root.conf
+    systemctl reload ssh
+    # VM disks: a directory storage for images and cloud-init snippets.
+    pvesm status | grep -q '^local ' && pvesm set local --content iso,vztmpl,backup,images,snippets,import || true
+    systemctl is-active pveproxy
+  SH
+
+  # Lab VMs: vmbr0 = an internal bridge (10.10.10.0/24) NATed out through eth0, with DHCP,
+  # like a server LAN. Storage for disks is the "local" directory storage.
+  config.vm.provision "net", type: "shell", run: "never", inline: <<~SH
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get -y install dnsmasq
+    if ! grep -q vmbr0 /etc/network/interfaces; then
+      printf '%s\n' '' 'auto vmbr0' 'iface vmbr0 inet static' '    address 10.10.10.1/24' \
+        '    bridge-ports none' '    bridge-stp off' '    bridge-fd 0' \
+        '    post-up echo 1 > /proc/sys/net/ipv4/ip_forward' \
+        '    post-up iptables -t nat -A POSTROUTING -s 10.10.10.0/24 -o eth0 -j MASQUERADE' \
+        '    post-down iptables -t nat -D POSTROUTING -s 10.10.10.0/24 -o eth0 -j MASQUERADE' \
+        >> /etc/network/interfaces
+    fi
+    printf '%s\n' 'interface=vmbr0' 'bind-interfaces' 'dhcp-range=10.10.10.100,10.10.10.200,12h' \
+      'dhcp-option=option:router,10.10.10.1' 'dhcp-option=option:dns-server,1.1.1.1' > /etc/dnsmasq.d/vmbr0.conf
+    ifreload -a
+    systemctl restart dnsmasq
+    ip -br a show vmbr0
+  SH
+end

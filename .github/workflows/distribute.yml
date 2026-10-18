@@ -1,0 +1,58 @@
+name: Distribute
+
+# Pushes a release to the package channels so nobody bumps them by hand:
+# the Homebrew cask (Cyber-Courses/homebrew-tap) and the apt repository (Cyber-Courses/apt,
+# which signs with its own key). The website's download links already follow the latest
+# release on their own. Cross-repo writes use the org's cyber-ctf-creator GitHub App.
+# Release calls this after publishing a tag build; a release published by hand also
+# triggers it, and workflow_dispatch re-runs it for any tag.
+
+on:
+  release:
+    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v0.3.7"
+        required: true
+
+jobs:
+  distribute:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        id: app
+        with:
+          app-id: ${{ secrets.APP_ID_GENERATOR }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY_GENERATOR }}
+          owner: Cyber-Courses
+          repositories: homebrew-tap,apt
+
+      - name: Bump the Homebrew cask
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "*_${version}_universal.dmg" --output app.dmg
+          sha=$(sha256sum app.dmg | cut -d' ' -f1)
+          git clone -q "https://x-access-token:${GH_TOKEN}@github.com/Cyber-Courses/homebrew-tap.git" tap
+          cd tap
+          sed -i -E "s/^  version \".*\"/  version \"${version}\"/; s/^  sha256 \".*\"/  sha256 \"${sha}\"/" Casks/cyberctf.rb
+          git diff --quiet && { echo "Cask already at ${version}"; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -qam "cyberctf ${version}"
+          git push -q
+
+      - name: Publish to the apt repository
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: gh workflow run publish.yml --repo Cyber-Courses/apt -f tag="$TAG"

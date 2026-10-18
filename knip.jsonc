@@ -1,0 +1,7 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // The quality ratchet runs it by path from node_modules (scripts/quality/node-tools.ts).
+  "ignoreDependencies": ["jscpd"],
+  // Loaded by a <script> tag in src/app/layout.tsx, which knip doesn't read.
+  "ignore": ["public/appearance.js"],
+}

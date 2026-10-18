@@ -1,0 +1,24 @@
+{
+  "launchConfirm": {
+    "label": "Confirm a cloud lab launch",
+    "title": "Run this lab on your cloud account?",
+    "body": "A launch from the website wants to run on <target>{target}</target>. This starts billable resources on your account (they auto-stop later). Only approve a launch you started.",
+    "repo": "repo: {repo}",
+    "commit": "commit: {commit}",
+    "failed": "Couldn't send your answer to Cyber CTF",
+    "decline": "Decline",
+    "approve": "Run on my cloud",
+    "expired": "This request expired: the launch wasn't started. Launch it again from the website if you still want it.",
+    "close": "Close"
+  },
+  "quitGuard": {
+    "title": "A lab is still deploying",
+    "body": {
+      "one": "A lab is being worked on inside the app. Quitting now can leave machines half-created, and a lab on a cloud account keeps billing until it is torn down. Let it finish in the background (the app closes by itself when it is done), keep waiting, or quit anyway. Quitting a second time also quits anyway.",
+      "other": "{count} labs are being worked on inside the app. Quitting now can leave machines half-created, and a lab on a cloud account keeps billing until it is torn down. Let it finish in the background (the app closes by itself when it is done), keep waiting, or quit anyway. Quitting a second time also quits anyway."
+    },
+    "keepWaiting": "Keep waiting",
+    "quitAnyway": "Quit anyway",
+    "finishInBackground": "Finish in background"
+  }
+}

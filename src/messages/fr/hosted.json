@@ -1,0 +1,4 @@
+{
+  "slowStart": "Ce lab hébergé met plus de temps que prévu à démarrer. Il peut encore arriver sous peu ; sinon, arrêtez-le et réessayez.",
+  "stopFailed": "Impossible d'arrêter le lab hébergé : {error}"
+}

@@ -1,0 +1,180 @@
+{
+  "appearance": {
+    "title": "Apariencia",
+    "description": "El aspecto del launcher y el idioma que usa. Se guarda en este ordenador.",
+    "theme": "Tema",
+    "themes": {
+      "dark": "Oscuro",
+      "black": "Negro",
+      "light": "Claro"
+    },
+    "themeDescriptions": {
+      "dark": "Oscuro usa grises neutros profundos, descansa la vista.",
+      "black": "Negro usa negro puro, para pantallas OLED.",
+      "light": "Claro usa tonos cálidos de papel, para entornos luminosos."
+    },
+    "language": "Idioma",
+    "languageDescription": "El idioma del launcher. Sistema sigue el de tu ordenador.",
+    "languageSystem": "Sistema"
+  },
+  "tabs": {
+    "label": "Secciones de ajustes",
+    "account": "Cuenta",
+    "appearance": "Apariencia",
+    "labs": "Labs",
+    "maintenance": "Mantenimiento",
+    "about": "Acerca de"
+  },
+  "saved": "Guardado",
+  "account": {
+    "title": "Cuenta",
+    "description": "Al iniciar sesión se registra esta máquina, para que los labs que lances desde el sitio web se ejecuten aquí.",
+    "checking": "Comprobando…",
+    "signedIn": "Sesión iniciada",
+    "signOut": "Cerrar sesión",
+    "thisMachine": "Esta máquina",
+    "online": "En línea",
+    "offline": "Sin conexión",
+    "runs": "ejecuta {list}",
+    "registering": "Registrando…",
+    "notSignedIn": "Sin sesión iniciada",
+    "signInHint": "Inicia sesión con tu cuenta Cyber para sincronizar labs y ejecutarlos desde cualquier dispositivo.",
+    "waitingBrowser": "Esperando al navegador…",
+    "signIn": "Iniciar sesión"
+  },
+  "labs": {
+    "title": "Labs",
+    "description": "Cómo se inician los labs en esta máquina. Se guarda solo en este ordenador."
+  },
+  "labPorts": {
+    "title": "Puertos de los labs",
+    "default": "Cada servicio en su propio puerto, como CTFd en el 8000. El inicio se detiene si otro lab o app ya ocupa uno.",
+    "random": "Cada servicio en un puerto libre aleatorio. Nunca choca con otro lab o app.",
+    "ask": "Pregunta antes de iniciar cada lab de contenedores en esta máquina: puertos libres aleatorios o los del propio lab.",
+    "options": {
+      "ask": "Preguntar",
+      "random": "Aleatorio",
+      "default": "Por defecto"
+    }
+  },
+  "attackBox": {
+    "title": "Imagen de la máquina de ataque",
+    "description": "Se ejecuta en la red de cada lab como tu caja de herramientas. El primer lanzamiento de una imagen la descarga, lo que puede tardar un rato.",
+    "default": "Por defecto",
+    "largeDownload": "Descarga grande",
+    "pinned": "fijada",
+    "presets": {
+      "cyberctf": "Kali con su conjunto de herramientas estándar, lista para usar",
+      "kali": "Base oficial de Kali, añade herramientas según las necesites",
+      "parrot": "Herramientas de Parrot Security",
+      "exegolFree": "Exegol Community: kit completo, actualizado después de Full; para aprendizaje y uso personal",
+      "exegolFull": "El kit de Exegol más reciente; requiere un plan Exegol Pro, Team o Enterprise"
+    },
+    "terms": {
+      "nonCommercial": "Uso no comercial",
+      "paidPlan": "Plan de pago"
+    },
+    "customImage": "Imagen personalizada",
+    "customImageNote": "Cualquier imagen de Docker o tag de registro.",
+    "save": "Guardar",
+    "autoStart": "Iniciar la máquina de ataque con el lab",
+    "autoStartDescription": "La inicia en cuanto un lab está activo en esta máquina: el contenedor en un lab de contenedores, la VM junto a un lab de VM. Aun así puedes iniciarla o detenerla desde el lab.",
+    "invalidImage": "Usa un nombre de imagen simple como registry/name:tag: solo letras, cifras y . _ - / : @, sin guion al principio."
+  },
+  "attackVm": {
+    "title": "VM de ataque para labs de VM",
+    "description": "Las redes de un lab de VM viven dentro del hipervisor, así que tu atacante es una VM junto a él: este box de Vagrant, conectado a cada red del lab, con internet para instalar herramientas. El primer inicio descarga el box.",
+    "label": "Box de la VM de ataque",
+    "presets": {
+      "kali": "Box oficial de Kali; tiene internet, añade herramientas sobre la marcha",
+      "debian12": "Una base limpia sobre la que montar tus propias herramientas"
+    },
+    "customBox": "Box personalizado",
+    "customBoxNote": "Cualquier box de Vagrant Cloud (owner/name) creado para tu hipervisor."
+  },
+  "hypervisor": {
+    "title": "Hipervisor para labs de VM",
+    "checking": "Comprobando hipervisores…",
+    "setupLink": "Configura uno en la página Máquina",
+    "noneInstalled": "Todavía no hay ningún hipervisor instalado en esta máquina.",
+    "current": "Los labs de VM y la prueba de VM se ejecutan en {name}.",
+    "noneReady": "Ninguno de los hipervisores instalados puede ejecutar labs de VM todavía. Instala su complemento de Vagrant abajo.",
+    "automatic": "Automático",
+    "automaticNote": "Usa {name}, el primer hipervisor listo.",
+    "readyPlugin": "Listo · complemento de Vagrant {plugin}",
+    "readyBuiltIn": "Listo · integrado en Vagrant",
+    "needsPlugin": "Instalado · necesita el complemento de Vagrant {plugin}",
+    "notReady": "Instalado · no está listo para labs de VM",
+    "installing": "Instalando…",
+    "installAddon": "Instalar complemento",
+    "logInstalling": "Instalando el complemento de Vagrant {plugin}…",
+    "logInstalled": "✓ Instalado",
+    "logTitle": "Complemento de Vagrant",
+    "allowHyperv": "Permitir mi cuenta",
+    "allowingHyperv": "Permitiendo…",
+    "logAllowingHyperv": "Añadiendo tu cuenta a Administradores de Hyper-V (Windows pide permiso)…",
+    "logHypervAllowed": "✓ Listo. Cierra la sesión de Windows y vuelve a iniciarla; después, vuelve a comprobar."
+  },
+  "cleanup": {
+    "title": "Limpieza",
+    "description": "Elimina todo lo que siga en ejecución en esta máquina (un lab sobrante o bloqueado), recupera disco de imágenes descargadas y boxes de VM, y quita las herramientas que instaló Cyber CTF."
+  },
+  "installedTools": {
+    "title": "Herramientas instaladas por Cyber CTF",
+    "count": {
+      "one": "{count} instalada",
+      "other": "{count} instaladas"
+    },
+    "intro": "Instaladas durante la configuración. Quita las que ya no necesites; las herramientas que ya tenías no aparecen.",
+    "installedAgo": "instalada {ago}",
+    "remove": "Quitar",
+    "removing": "Quitando…",
+    "logRemoving": "Quitando {name}…",
+    "confirmTitle": "¿Quitar {name}?",
+    "confirmBody": "Los labs que necesitan {name} no se iniciarán hasta que vuelva a instalarse (la configuración puede reinstalarlo). Tus labs y ajustes se conservan."
+  },
+  "about": {
+    "title": "Acerca de",
+    "description": "Versión, actualizaciones y qué enviarnos cuando algo falla.",
+    "version": "Versión",
+    "system": "Sistema",
+    "installId": "ID de instalación",
+    "updates": "Actualizaciones",
+    "updateAvailable": "Actualización disponible",
+    "status": {
+      "checking": "Buscando actualizaciones…",
+      "latest": "Tienes la última versión.",
+      "latestAt": "Tienes la última versión, comprobado a las {time}.",
+      "error": "No se pudo conectar con el servidor de actualizaciones. Revisa tu conexión y vuelve a intentarlo.",
+      "available": "La versión {version} está disponible.",
+      "installing": "Descargando e instalando {version}…",
+      "installed": "La versión {version} está instalada. Reiniciando Cyber CTF…",
+      "idle": "Las actualizaciones se instalan automáticamente cuando las aceptas desde el aviso."
+    },
+    "installing": "Instalando…",
+    "installUpdate": "Instalar actualización",
+    "restartNow": "Reiniciar ahora",
+    "checking": "Comprobando…",
+    "checkUpdates": "Buscar actualizaciones",
+    "restartFailed": "No se pudo reiniciar Cyber CTF",
+    "replayFailed": "No se pudo repetir la configuración",
+    "diagnostics": "Diagnóstico",
+    "diagnosticsDescription": "Copia tu versión, sistema operativo y estado de configuración, para un informe de error o una solicitud de soporte.",
+    "copied": "Copiado",
+    "copy": "Copiar",
+    "logs": "Archivos de registro",
+    "logsDescription": "Lo que Cyber CTF anotó mientras se ejecutaba. Envíalos con un informe de error o una solicitud de soporte.",
+    "openLogs": "Abrir carpeta",
+    "logsFailed": "No se pudo abrir la carpeta de registros",
+    "firstRun": "Configuración inicial",
+    "firstRunDescription": "Vuelve a recorrer la bienvenida. Tus ajustes y labs se conservan.",
+    "replay": "Repetir"
+  },
+  "sharedFolder": {
+    "title": "Carpeta compartida",
+    "description": "Una carpeta de este ordenador que tu máquina de ataque ve en {mount}: entran herramientas, sale el botín. Se mantiene cuando se elimina un lab.",
+    "pick": "Carpeta para compartir con la máquina de ataque",
+    "change": "Cambiar…",
+    "open": "Abrir la carpeta"
+  }
+}

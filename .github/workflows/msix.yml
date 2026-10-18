@@ -1,0 +1,352 @@
+name: MSIX (Microsoft Store)
+
+# Builds an unsigned MSIX of the Cyber CTF launcher for the Microsoft Store (the Store
+# signs it at distribution, so no code-signing cert is needed here) and optionally
+# submits it to the Store via the Microsoft Store Developer CLI (msstore).
+#
+# - Always: builds the MSIX and uploads it as a downloadable artifact.
+# - When "submit" is true: also creates + commits a Store submission for the package.
+#
+# Prereqs:
+#   - packaging/msix/AppxManifest.xml carries the real Identity from Partner Center.
+#   - For submit: repo secrets STORE_TENANT_ID, STORE_SELLER_ID, STORE_CLIENT_ID,
+#     STORE_CLIENT_SECRET, and the Azure AD app associated in Partner Center (Manager role).
+#   - The listing must have passed certification once manually (the API cannot complete
+#     the very first submission on an incomplete listing).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "MSIX version (4 parts, last must be .0, higher than the published package)"
+        required: true
+        default: "1.1.0.0"
+      submit:
+        description: "Also submit to the Microsoft Store"
+        type: boolean
+        default: false
+      check_only:
+        description: "Only ask the Store whether a submission is in progress (no build, no submit)"
+        type: boolean
+        default: false
+      commit:
+        description: "With submit: send it for certification (otherwise it stays a draft to review)"
+        type: boolean
+        default: false
+      commit_pending:
+        description: "Only send the draft already open in Partner Center for certification (no build)"
+        type: boolean
+        default: false
+      discard_pending:
+        description: "Only delete the submission open in Partner Center (a refused or unwanted draft)"
+        type: boolean
+        default: false
+  # Every published release (release.yml): app version X.Y.Z ships as MSIX X.Y.Z.0. (Until 0.3.16
+  # it was (X+1).Y.Z.0; the app moved to 1.4.0 so both numbers match.)
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v0.3.11"
+        type: string
+        required: true
+      commit:
+        description: "Submit for certification (false: leave a draft to review in Partner Center)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  # Store ID from Partner Center > Product Identity (public; used as the product id).
+  STORE_PRODUCT_ID: "9P9L4WZ0N8ZJ"
+
+jobs:
+  # One MSIX per architecture, each built natively; the bundle job below joins them so the Store
+  # gives every PC its own (Windows on Arm gets the Arm64 build, not x64 under emulation).
+  msix:
+    if: ${{ !inputs.check_only && !inputs.commit_pending && !inputs.discard_pending }}
+    strategy:
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: MSIX version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.tag }}" ]; then
+            # The same number as everywhere else (1.4.0 ships as 1.4.0.0).
+            IFS=. read -r major minor patch <<< "${TAG#v}"
+            echo "version=${major}.${minor}.${patch}.0" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          TAG: ${{ inputs.tag }}
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch, 2026-10
+        with:
+          toolchain: stable
+
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Compile the release binary with the frontend embedded, without producing the
+      # NSIS/MSI bundles (we only need the raw .exe for the MSIX payload).
+      - name: Build Tauri binary
+        run: pnpm tauri build --no-bundle
+
+      - name: Assemble MSIX layout
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $layout = "$env:RUNNER_TEMP\msix"
+          New-Item -ItemType Directory -Force -Path "$layout\Assets" | Out-Null
+
+          # App payload: the release binary, renamed to match the manifest Executable.
+          Copy-Item "src-tauri\target\release\cyberctf-desktop.exe" "$layout\CyberCTF.exe"
+
+          # Tile / logo assets referenced by the manifest.
+          $icons = "src-tauri\icons"
+          foreach ($a in @("StoreLogo.png","Square44x44Logo.png","Square71x71Logo.png","Square150x150Logo.png")) {
+            Copy-Item "$icons\$a" "$layout\Assets\$a"
+          }
+
+          # Per-language strings (the app description in English and French).
+          Copy-Item -Recurse "packaging\msix\Strings" "$layout\Strings"
+
+          # Manifest with the build version substituted in.
+          $manifest = Get-Content "packaging\msix\AppxManifest.xml" -Raw
+          $manifest = $manifest.Replace("__VERSION__", "${{ steps.ver.outputs.version }}")
+          $manifest = $manifest.Replace('ProcessorArchitecture="x64"', 'ProcessorArchitecture="${{ matrix.arch }}"')
+          Set-Content -Path "$layout\AppxManifest.xml" -Value $manifest -Encoding utf8
+
+          Write-Host "Layout contents:"
+          Get-ChildItem -Recurse $layout | Select-Object FullName
+
+      - name: Pack MSIX
+        shell: pwsh
+        env:
+          # The SDK's own tools for this runner (Arm64 runners have arm64 builds of them).
+          SDK_ARCH: ${{ matrix.arch }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $sdk = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Directory |
+                 Where-Object { Test-Path "$($_.FullName)\$env:SDK_ARCH\makeappx.exe" } |
+                 Sort-Object Name -Descending | Select-Object -First 1
+          $bin = "$($sdk.FullName)\$env:SDK_ARCH"
+          $layout = "$env:RUNNER_TEMP\msix"
+          Write-Host "Using SDK bin $bin"
+          # Generate resources.pri: without it the Store reads no languages/resources from
+          # the package and the submission commit fails validation.
+          Push-Location $layout
+          & "$bin\makepri.exe" createconfig /cf priconfig.xml /dq en-US_fr-FR_es-ES_de-DE_pt-BR_ja-JP /o
+          & "$bin\makepri.exe" new /pr $layout /cf priconfig.xml /mn "$layout\AppxManifest.xml" /of "$layout\resources.pri" /o
+          Remove-Item priconfig.xml -Force
+          Pop-Location
+          & "$bin\makeappx.exe" pack /o /d $layout /p "$env:RUNNER_TEMP\CyberCTF_${{ matrix.arch }}.msix"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: CyberCTF-msix-${{ matrix.arch }}
+          path: ${{ runner.temp }}/CyberCTF_${{ matrix.arch }}.msix
+          if-no-files-found: error
+
+  bundle:
+    needs: msix
+    runs-on: windows-latest
+    steps:
+      - name: MSIX version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.tag }}" ]; then
+            # The same number as everywhere else (1.4.0 ships as 1.4.0.0).
+            IFS=. read -r major minor patch <<< "${TAG#v}"
+            echo "version=${major}.${minor}.${patch}.0" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          TAG: ${{ inputs.tag }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: CyberCTF-msix-*
+          merge-multiple: true
+          path: packages
+
+      - name: Bundle x64 + Arm64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $sdk = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Directory |
+                 Where-Object { Test-Path "$($_.FullName)\x64\makeappx.exe" } |
+                 Sort-Object Name -Descending | Select-Object -First 1
+          Get-ChildItem packages
+          & "$($sdk.FullName)\x64\makeappx.exe" bundle /o /bv ${{ steps.ver.outputs.version }} /d packages /p "$env:RUNNER_TEMP\CyberCTF.msixbundle"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: CyberCTF-msixbundle
+          path: ${{ runner.temp }}/CyberCTF.msixbundle
+          if-no-files-found: error
+
+  submit:
+    needs: bundle
+    if: ${{ !cancelled() && (inputs.check_only || ((inputs.tag != '' || inputs.submit) && needs.bundle.result == 'success')) }}
+    runs-on: windows-latest
+    # One submission at a time; a newer release waits its turn (only the latest waiting one is
+    # kept), it isn't cancelled mid-submit.
+    concurrency:
+      group: microsoft-store
+      cancel-in-progress: false
+    timeout-minutes: 350
+    steps:
+      # The Store takes one submission at a time: a new one is refused while the last is still in
+      # certification. Ask Partner Center first, and wait (up to ~5.5 h) while one is going
+      # through; a submission stuck in a state only a person can resolve (an uncommitted draft,
+      # failed certification) stops the job with what to do in Partner Center.
+      - name: Wait for the Store to be free
+        shell: pwsh
+        env:
+          STORE_TENANT_ID: ${{ secrets.STORE_TENANT_ID }}
+          STORE_CLIENT_ID: ${{ secrets.STORE_CLIENT_ID }}
+          STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $api = "https://manage.devcenter.microsoft.com/v1.0/my/applications/$env:STORE_PRODUCT_ID"
+          $inProgress = @("CommitStarted", "PreProcessing", "Certification", "Release", "PendingPublication", "Publishing")
+          $deadline = (Get-Date).AddMinutes(330)
+          while ($true) {
+            # A fresh token each round: they last an hour and certification can take longer.
+            $token = (Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$env:STORE_TENANT_ID/oauth2/token" -Body @{
+              grant_type = "client_credentials"; client_id = $env:STORE_CLIENT_ID; client_secret = $env:STORE_CLIENT_SECRET
+              resource = "https://manage.devcenter.microsoft.com"
+            }).access_token
+            $headers = @{ Authorization = "Bearer $token" }
+            $pending = (Invoke-RestMethod -Uri $api -Headers $headers).pendingApplicationSubmission
+            if (-not $pending) { Write-Host "No submission in progress."; break }
+            if ("${{ inputs.check_only }}" -eq "true") {
+              $status = (Invoke-RestMethod -Uri "$api/submissions/$($pending.id)/status" -Headers $headers).status
+              Write-Host "Submission $($pending.id) is '$status'."; break
+            }
+            $status = (Invoke-RestMethod -Uri "$api/submissions/$($pending.id)/status" -Headers $headers).status
+            if ($status -notin $inProgress) {
+              Write-Host "::error::Submission $($pending.id) is '$status' in Partner Center. Finish or delete it there (Cyber CTF > the pending submission), then re-run this job."
+              exit 1
+            }
+            if ((Get-Date) -gt $deadline) {
+              Write-Host "::error::Submission $($pending.id) is still '$status' after ~5.5 h. Re-run this job once it's published."
+              exit 1
+            }
+            Write-Host "Submission $($pending.id) is '$status'; checking again in 10 minutes."
+            Start-Sleep -Seconds 600
+          }
+
+      - if: ${{ !inputs.check_only }}
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          sparse-checkout: |
+            packaging/store
+            .github/scripts
+
+      - if: ${{ !inputs.check_only }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: CyberCTF-msixbundle
+          path: pkg
+
+      # Package and listing together (texts, screenshots, logos, trailers from packaging/store/), through the
+      # Partner Center submission API.
+      - name: Submit package and listing
+        if: ${{ !inputs.check_only }}
+        shell: pwsh
+        env:
+          STORE_TENANT_ID: ${{ secrets.STORE_TENANT_ID }}
+          STORE_CLIENT_ID: ${{ secrets.STORE_CLIENT_ID }}
+          STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}
+        run: ./.github/scripts/store-submit.ps1 -Package pkg/CyberCTF.msixbundle -StoreDir packaging/store -Commit $${{ inputs.commit && 'true' || 'false' }}
+
+  # Sends the submission that is open in Partner Center (a draft left by a release, or edited by
+  # hand) for certification.
+  commit-pending:
+    if: ${{ inputs.commit_pending }}
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        env:
+          STORE_TENANT_ID: ${{ secrets.STORE_TENANT_ID }}
+          STORE_CLIENT_ID: ${{ secrets.STORE_CLIENT_ID }}
+          STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $api = "https://manage.devcenter.microsoft.com/v1.0/my/applications/$env:STORE_PRODUCT_ID"
+          function Get-StoreHeaders {
+            $token = (Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$env:STORE_TENANT_ID/oauth2/token" -Body @{
+                grant_type = "client_credentials"; client_id = $env:STORE_CLIENT_ID; client_secret = $env:STORE_CLIENT_SECRET
+                resource = "https://manage.devcenter.microsoft.com"
+              }).access_token
+            return @{ Authorization = "Bearer $token" }
+          }
+          $pending = (Invoke-RestMethod -Uri $api -Headers (Get-StoreHeaders)).pendingApplicationSubmission
+          if (-not $pending) { Write-Host "::error::No open submission in Partner Center."; exit 1 }
+          $id = $pending.id
+          Write-Host "Submitting $id for certification"
+          Invoke-RestMethod -Method Post -Uri "$api/submissions/$id/commit" -Headers (Get-StoreHeaders) -ContentType "application/json" | Out-Null
+          do {
+            Start-Sleep -Seconds 20
+            $status = Invoke-RestMethod -Uri "$api/submissions/$id/status" -Headers (Get-StoreHeaders)
+            Write-Host "Status: $($status.status)"
+          } while ($status.status -eq "CommitStarted")
+          if ($status.status -eq "CommitFailed") {
+            Write-Host "::error::The Store refused submission $($id): $($status.statusDetails | ConvertTo-Json -Depth 10)"
+            exit 1
+          }
+          Write-Host "Submission $id is in certification ($($status.status))."
+
+  # Deletes the submission open in Partner Center, so the next release can create its own.
+  discard-pending:
+    if: ${{ inputs.discard_pending }}
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        env:
+          STORE_TENANT_ID: ${{ secrets.STORE_TENANT_ID }}
+          STORE_CLIENT_ID: ${{ secrets.STORE_CLIENT_ID }}
+          STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $api = "https://manage.devcenter.microsoft.com/v1.0/my/applications/$env:STORE_PRODUCT_ID"
+          $token = (Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$env:STORE_TENANT_ID/oauth2/token" -Body @{
+              grant_type = "client_credentials"; client_id = $env:STORE_CLIENT_ID; client_secret = $env:STORE_CLIENT_SECRET
+              resource = "https://manage.devcenter.microsoft.com"
+            }).access_token
+          $headers = @{ Authorization = "Bearer $token" }
+          $pending = (Invoke-RestMethod -Uri $api -Headers $headers).pendingApplicationSubmission
+          if (-not $pending) { Write-Host "No open submission."; exit 0 }
+          Invoke-RestMethod -Method Delete -Uri "$api/submissions/$($pending.id)" -Headers $headers | Out-Null
+          Write-Host "Deleted submission $($pending.id)."

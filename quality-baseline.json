@@ -1,0 +1,405 @@
+{
+  "rules": {
+    "dup/clone": {
+      "rs:runtime": 5
+    },
+    "exception/without-reason": {
+      "rs:runtime": 1
+    },
+    "rust/mod-rs": {
+      "rs:runtime": 6
+    },
+    "rust/tauri-outside-adapters": {
+      "rs:account": 1,
+      "rs:deploy_worker": 3,
+      "rs:labs": 1,
+      "rs:runtime": 22
+    }
+  },
+  "clippy": {
+    "darwin": {
+      "clippy/assert_is_empty": {
+        "rs:runtime": 27
+      },
+      "clippy/case_sensitive_file_extension_comparisons": {
+        "rs:runtime": 1
+      },
+      "clippy/cast_possible_truncation": {
+        "rs:runtime": 1
+      },
+      "clippy/cognitive_complexity": {
+        "rs:runtime": 1
+      },
+      "clippy/default_trait_access": {
+        "rs:runtime": 4
+      },
+      "clippy/doc_markdown": {
+        "rs:runtime": 35
+      },
+      "clippy/expect_used": {
+        "rs:runtime": 3
+      },
+      "clippy/float_cmp": {
+        "rs:runtime": 2
+      },
+      "clippy/fn_params_excessive_bools": {
+        "rs:runtime": 1
+      },
+      "clippy/format_collect": {
+        "rs:runtime": 2
+      },
+      "clippy/format_push_string": {
+        "rs:runtime": 3
+      },
+      "clippy/if_not_else": {
+        "rs:runtime": 1
+      },
+      "clippy/ignore_without_reason": {
+        "rs:runtime": 1
+      },
+      "clippy/ip_constant": {
+        "rs:runtime": 1
+      },
+      "clippy/items_after_statements": {
+        "rs:runtime": 2
+      },
+      "clippy/manual_let_else": {
+        "rs:runtime": 1
+      },
+      "clippy/manual_string_new": {
+        "rs:runtime": 1
+      },
+      "clippy/map_unwrap_or": {
+        "rs:runtime": 7
+      },
+      "clippy/match_same_arms": {
+        "rs:runtime": 2
+      },
+      "clippy/needless_pass_by_value": {
+        "rs:runtime": 8
+      },
+      "clippy/needless_raw_string_hashes": {
+        "rs:runtime": 1
+      },
+      "clippy/redundant_closure_for_method_calls": {
+        "rs:runtime": 11
+      },
+      "clippy/semicolon_if_nothing_returned": {
+        "rs:runtime": 4
+      },
+      "clippy/similar_names": {
+        "rs:runtime": 1
+      },
+      "clippy/single_match_else": {
+        "rs:runtime": 4
+      },
+      "clippy/stable_sort_primitive": {
+        "rs:runtime": 3
+      },
+      "clippy/too_many_arguments": {
+        "rs:runtime": 8
+      },
+      "clippy/uninlined_format_args": {
+        "rs:runtime": 2
+      },
+      "clippy/unnecessary_wraps": {
+        "rs:runtime": 2
+      },
+      "clippy/unwrap_used": {
+        "rs:runtime": 9
+      },
+      "clippy/wildcard_imports": {
+        "rs:runtime": 7
+      },
+      "rustc/unsafe_code": {
+        "rs:runtime": 2
+      }
+    },
+    "linux": {
+      "clippy/assert_is_empty": {
+        "rs:runtime": 47
+      },
+      "clippy/case_sensitive_file_extension_comparisons": {
+        "rs:runtime": 1
+      },
+      "clippy/cast_lossless": {
+        "rs:runtime": 1
+      },
+      "clippy/cast_possible_truncation": {
+        "rs:runtime": 5
+      },
+      "clippy/checked_conversions": {
+        "rs:runtime": 1
+      },
+      "clippy/cognitive_complexity": {
+        "rs:runtime": 1
+      },
+      "clippy/default_trait_access": {
+        "rs:runtime": 4
+      },
+      "clippy/doc_markdown": {
+        "rs:runtime": 48
+      },
+      "clippy/expect_used": {
+        "rs:runtime": 3
+      },
+      "clippy/float_cmp": {
+        "rs:runtime": 2
+      },
+      "clippy/fn_params_excessive_bools": {
+        "rs:runtime": 1
+      },
+      "clippy/format_collect": {
+        "rs:runtime": 6
+      },
+      "clippy/format_push_string": {
+        "rs:runtime": 12
+      },
+      "clippy/if_not_else": {
+        "rs:runtime": 1
+      },
+      "clippy/ignore_without_reason": {
+        "rs:runtime": 3
+      },
+      "clippy/ip_constant": {
+        "rs:runtime": 1
+      },
+      "clippy/items_after_statements": {
+        "rs:runtime": 2
+      },
+      "clippy/large_futures": {
+        "rs:runtime": 15
+      },
+      "clippy/manual_let_else": {
+        "rs:runtime": 1
+      },
+      "clippy/manual_string_new": {
+        "rs:runtime": 1
+      },
+      "clippy/map_unwrap_or": {
+        "rs:runtime": 14
+      },
+      "clippy/match_same_arms": {
+        "rs:runtime": 2
+      },
+      "clippy/needless_pass_by_value": {
+        "rs:runtime": 8
+      },
+      "clippy/needless_raw_string_hashes": {
+        "rs:runtime": 1
+      },
+      "clippy/redundant_closure_for_method_calls": {
+        "rs:runtime": 16
+      },
+      "clippy/semicolon_if_nothing_returned": {
+        "rs:runtime": 4
+      },
+      "clippy/similar_names": {
+        "rs:runtime": 1
+      },
+      "clippy/single_match_else": {
+        "rs:runtime": 6
+      },
+      "clippy/stable_sort_primitive": {
+        "rs:runtime": 4
+      },
+      "clippy/too_many_arguments": {
+        "rs:runtime": 10
+      },
+      "clippy/uninlined_format_args": {
+        "rs:runtime": 2
+      },
+      "clippy/unnecessary_wraps": {
+        "rs:runtime": 2
+      },
+      "clippy/unwrap_used": {
+        "rs:runtime": 9
+      },
+      "clippy/wildcard_imports": {
+        "rs:runtime": 7
+      },
+      "rustc/unsafe_code": {
+        "rs:runtime": 2
+      }
+    },
+    "win32": {
+      "clippy/assert_is_empty": {
+        "rs:runtime": 47
+      },
+      "clippy/case_sensitive_file_extension_comparisons": {
+        "rs:runtime": 1
+      },
+      "clippy/cast_lossless": {
+        "rs:runtime": 1
+      },
+      "clippy/cast_possible_truncation": {
+        "rs:runtime": 5
+      },
+      "clippy/checked_conversions": {
+        "rs:runtime": 1
+      },
+      "clippy/cognitive_complexity": {
+        "rs:runtime": 1
+      },
+      "clippy/default_trait_access": {
+        "rs:runtime": 4
+      },
+      "clippy/doc_markdown": {
+        "rs:runtime": 48
+      },
+      "clippy/expect_used": {
+        "rs:runtime": 3
+      },
+      "clippy/float_cmp": {
+        "rs:runtime": 2
+      },
+      "clippy/fn_params_excessive_bools": {
+        "rs:runtime": 1
+      },
+      "clippy/format_collect": {
+        "rs:runtime": 6
+      },
+      "clippy/format_push_string": {
+        "rs:runtime": 12
+      },
+      "clippy/if_not_else": {
+        "rs:runtime": 1
+      },
+      "clippy/ignore_without_reason": {
+        "rs:runtime": 3
+      },
+      "clippy/ip_constant": {
+        "rs:runtime": 1
+      },
+      "clippy/items_after_statements": {
+        "rs:runtime": 2
+      },
+      "clippy/large_futures": {
+        "rs:runtime": 12
+      },
+      "clippy/manual_let_else": {
+        "rs:runtime": 1
+      },
+      "clippy/manual_string_new": {
+        "rs:runtime": 1
+      },
+      "clippy/map_unwrap_or": {
+        "rs:runtime": 14
+      },
+      "clippy/match_same_arms": {
+        "rs:runtime": 2
+      },
+      "clippy/needless_pass_by_value": {
+        "rs:runtime": 8
+      },
+      "clippy/needless_raw_string_hashes": {
+        "rs:runtime": 1
+      },
+      "clippy/redundant_closure_for_method_calls": {
+        "rs:runtime": 16
+      },
+      "clippy/semicolon_if_nothing_returned": {
+        "rs:runtime": 4
+      },
+      "clippy/similar_names": {
+        "rs:runtime": 1
+      },
+      "clippy/single_match_else": {
+        "rs:runtime": 6
+      },
+      "clippy/stable_sort_primitive": {
+        "rs:runtime": 4
+      },
+      "clippy/too_many_arguments": {
+        "rs:runtime": 10
+      },
+      "clippy/uninlined_format_args": {
+        "rs:runtime": 2
+      },
+      "clippy/unnecessary_wraps": {
+        "rs:runtime": 2
+      },
+      "clippy/wildcard_imports": {
+        "rs:runtime": 7
+      }
+    }
+  },
+  "exceptions": {
+    "src-tauri/src/commands.rs": {
+      "#![allow(clippy::needless_pass_by_value, reason = \"Tauri hands a command its arguments by value\")]": 1,
+      "#[allow(clippy::too_many_lines, reason = \"one line per command: a list, not logic\")]": 1
+    },
+    "src-tauri/src/commands/labs.rs": {
+      "#[allow(clippy::too_many_arguments, reason = \"the webview sends each of the request's fields as an argument\")]": 1
+    },
+    "src-tauri/src/commands/terminal.rs": {
+      "#[allow(clippy::too_many_arguments, reason = \"the webview sends each of the shell's fields as an argument\")]": 1
+    },
+    "src-tauri/src/machine/system/wsl.rs": {
+      "#![cfg_attr(not(windows), allow(dead_code, reason = \"off Windows only the UI's types and the tests use most of this\"))]": 1,
+      "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the probes on Windows\"))]": 1,
+      "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the restart on Windows\"))]": 1
+    },
+    "src-tauri/src/platform/exec/fake.rs": {
+      "#[allow(clippy::unnecessary_wraps, reason = \"a script answers an Option, None being a missing tool\")]": 2
+    },
+    "src-tauri/src/platform/exec/group.rs": {
+      "#[cfg_attr(not(unix), allow(dead_code, reason = \"only unix stops a streamed tool gently, with SIGTERM\"))]": 1
+    },
+    "src-tauri/src/platform/sys.rs": {
+      "#![allow(unsafe_code, reason = \"the audited home of the launcher's calls into libc and Win32\")]": 1
+    },
+    "src-tauri/src/runtime/exegol.rs": {
+      "#[cfg_attr(not(target_os = \"macos\"), allow(dead_code))]": 1,
+      "#[cfg_attr(not(windows), allow(dead_code))]": 5
+    },
+    "src-tauri/src/runtime/launch.rs": {
+      "#[allow(clippy::too_many_arguments)]": 2
+    },
+    "src/app/layout.tsx": {
+      "eslint-disable-next-line @next/next/no-sync-scripts -- must run before first paint to avoid a flash of the wrong mode": 1
+    },
+    "src/components/command-palette.tsx": {
+      "eslint-disable-next-line @typescript-eslint/no-deprecated -- WebKit (the macOS webview) sends the Enter that ends a composition with isComposing false; keyCode 229 is its only mark": 1
+    },
+    "src/components/shell/use-shell-setup.ts": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- read once on mount: the window marker and localStorage don't exist during the static render": 1
+    },
+    "src/features/cloud/account-row.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/labs/network-diagram/fit-width.tsx": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- read once on mount: localStorage doesn't exist during the static render": 1
+    },
+    "src/features/labs/network-diagram/index.tsx": {
+      "eslint-disable-next-line react-hooks/exhaustive-deps -- sig captures everything drawn": 1
+    },
+    "src/features/labs/run-on-options.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 2
+    },
+    "src/features/machine/hypervisor-logo.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/machine/setup-steps/engine-step.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 2
+    },
+    "src/features/servers/host-setup/form.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/servers/host-setup/provider-step.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/servers/host-setup/use-cloud-accounts.ts": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its \"checking\" state at once": 3
+    },
+    "src/features/servers/provider-glyph.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
+    "src/features/servers/server-self-test.tsx": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- the start lives in the module's run, which only this effect starts or finds": 1
+    },
+    "src/lib/appearance.ts": {
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage isn't readable during a server render, so the saved choice can only arrive after mount": 1
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "skip": "Passer la configuration",
+  "back": "Retour",
+  "continue": "Continuer",
+  "checking": "Analyse de cette machine…",
+  "stepFailed": "Impossible de charger cette étape",
+  "stepNames": {
+    "welcome": "Bienvenue",
+    "signin": "Connexion",
+    "pkgmgr": "Gestionnaire de paquets",
+    "virtualization": "Virtualisation",
+    "docker": "Moteur de conteneurs",
+    "dockerTest": "Test conteneurs",
+    "attack": "Machine d'attaque",
+    "vm": "Machines virtuelles (facultatif)",
+    "vagrant": "Vagrant (facultatif)",
+    "vmTest": "Test VM (facultatif)",
+    "done": "Terminé"
+  },
+  "welcome": {
+    "title": "Bienvenue dans Cyber <em>CTF</em>",
+    "description": "Lancez des labs de sécurité réalistes et isolés sur votre machine, votre propre serveur ou le cloud, depuis l'application ou directement depuis le site web.",
+    "labsTitle": "Labs conteneurs et VM",
+    "labsDescription": "Des conteneurs Docker et de vraies machines virtuelles, chaque lab sur son propre réseau isolé.",
+    "whereTitle": "Là où vous voulez",
+    "whereDescription": "Sur cette machine, votre propre serveur (Proxmox, ESXi) ou votre compte cloud (AWS, Azure, Google Cloud et d'autres), qui s'arrête tout seul quand vous avez terminé.",
+    "targetsTitle": "De vraies cibles",
+    "targetsDescription": "Exploitez des systèmes réellement vulnérables depuis une machine d'attaque branchée sur le réseau du lab.",
+    "launchTitle": "Lancez depuis n'importe où",
+    "launchDescription": "Démarrez un lab depuis le site web, même sur votre téléphone ; il tourne sur la machine de votre choix.",
+    "start": "Commencer"
+  },
+  "signin": {
+    "title": "Connexion",
+    "description": "Connectez votre compte Cyber CTF pour enregistrer cette machine et lancer des labs depuis n'importe quel appareil.",
+    "signedIn": "Connecté",
+    "signedInAs": "Connecté en tant que {name}",
+    "waiting": "En attente du navigateur… (jusqu'à 5 minutes)",
+    "button": "Se connecter avec le navigateur",
+    "hint": "Ouvre <mono>cyberauth.co</mono> dans votre navigateur. Les labs fonctionnent aussi sans compte : vous pourrez vous connecter plus tard depuis les Réglages.",
+    "skip": "Passer pour l'instant"
+  },
+  "done": {
+    "title": "Tout est <em>prêt</em>",
+    "description": "Vous pourrez modifier tout cela plus tard dans Réglages ou Cette machine.",
+    "account": "Compte",
+    "notSignedIn": "Non connecté (connectez-vous plus tard depuis les Réglages)",
+    "browse": "Parcourir les labs"
+  }
+}

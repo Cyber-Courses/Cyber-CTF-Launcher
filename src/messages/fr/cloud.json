@@ -1,0 +1,67 @@
+{
+  "screen": {
+    "title": "Cloud",
+    "lead": "Des instances jetables dans votre propre compte, à vos frais, arrêtées automatiquement.",
+    "setUp": "Configurer un fournisseur cloud",
+    "overOne": "{name} a dépassé son budget mensuel. Les nouveaux labs y sont bloqués jusqu'à ce que vous augmentiez le budget ou jusqu'au mois prochain.",
+    "overMany": "{count} comptes ont dépassé leur budget mensuel. Les nouveaux labs y sont bloqués jusqu'à ce que vous augmentiez le budget ou jusqu'au mois prochain.",
+    "runningNow": "En cours",
+    "billingWhileRunning": "facturés tant qu'ils tournent",
+    "autoStops": "arrêt auto à {time}",
+    "stop": "Arrêter",
+    "loading": "Chargement…",
+    "accounts": "Comptes",
+    "billedOnly": "facturé uniquement pendant qu'un lab tourne",
+    "notConnected": "non connecté",
+    "connect": "Connecter",
+    "budgetGuard": "Garde-fou budgétaire · {name}",
+    "ofLimit": "sur {limit}",
+    "overBudget": "Budget dépassé",
+    "autoStopAfter": "arrêt auto après {hours} h",
+    "noAutoStop": "pas d'arrêt auto"
+  },
+  "firstRun": {
+    "title": "Lancez des labs dans votre propre compte cloud",
+    "body": "Une instance jetable par lab, détruite quand vous l'arrêtez. Fonctionne sur AWS, Azure ou Google Cloud.",
+    "steps": {
+      "connect": { "title": "Connectez un compte", "body": "Des clés d'accès ou vos identifiants de la CLI AWS, et une région." },
+      "pick": { "title": "Choisissez-le sur un lab", "body": "Terraform crée une instance, joignable en SSH depuis votre IP." },
+      "stop": { "title": "Attaquez, puis arrêtez", "body": "Arrêter détruit l'instance, la facturation s'arrête donc avec elle." }
+    }
+  },
+  "account": {
+    "apiToken": "jeton d'API",
+    "apiKey": "clé d'API",
+    "cliSignIn": "connexion CLI",
+    "cliProfile": "CLI · {profile}",
+    "cliCredentials": "identifiants CLI",
+    "accessKeys": "clés d'accès",
+    "autoStop": "arrêt auto {hours} h",
+    "noAutoStop": "pas d'arrêt auto",
+    "budget": "budget {amount}/mois",
+    "spentThisMonth": "{amount} ce mois-ci",
+    "status": {
+      "testing": "Test en cours…",
+      "notTested": "Non testé",
+      "connected": "Connecté",
+      "needsAttention": "À vérifier",
+      "failed": "Échec",
+      "overBudget": "Budget dépassé"
+    },
+    "removeConfirm": "Supprimer ?",
+    "remove": "Supprimer",
+    "cancel": "Annuler",
+    "test": "Tester",
+    "edit": "Modifier",
+    "installed": "installé",
+    "notInstalled": "non installé"
+  },
+  "tools": {
+    "install": "Installer",
+    "installing": "Installation…",
+    "pulled": "téléchargée",
+    "notPulled": "non téléchargée",
+    "pull": "Télécharger",
+    "pulling": "Téléchargement…"
+  }
+}

@@ -1,0 +1,5 @@
+# actionlint (lint-infra.yml). GitHub's hosted Windows on Arm runner, which older actionlint
+# releases don't list yet.
+self-hosted-runner:
+  labels:
+    - windows-11-arm

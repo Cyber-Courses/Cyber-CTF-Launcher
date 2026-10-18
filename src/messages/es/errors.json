@@ -1,0 +1,38 @@
+{
+  "clipboard": "No se pudo copiar al portapapeles",
+  "browser": "No se pudo abrir tu navegador",
+  "codes": {
+    "signedOut": "Has cerrado sesión. Vuelve a iniciar sesión para continuar.",
+    "sessionExpired": "Tu sesión ha caducado: has cerrado sesión. Vuelve a iniciar sesión para continuar.",
+    "loginTimeout": "El inicio de sesión no terminó en {minutes} minutos, así que se canceló. Inténtalo de nuevo.",
+    "noBrowser": "No se abrió ningún navegador para iniciar sesión. Configura un navegador web predeterminado para esta cuenta e inténtalo de nuevo.",
+    "alreadyInProgress": "Ya hay otra operación en curso en este lab; espera a que termine.",
+    "noPasswordStored": "No hay ninguna contraseña guardada para este host. Edítalo e introduce una.",
+    "portInUse": "El puerto {port} del host ya está en uso en esta máquina (lo ocupa otro lab u otra aplicación). Detén lo que lo usa o inicia el lab con puertos aleatorios.",
+    "dockerNotRunning": "Docker no se está ejecutando. Inicia tu motor de contenedores (Docker Desktop, o el servicio docker en Linux) y vuelve a iniciar el lab.",
+    "dockerDenied": "Docker se está ejecutando, pero tu cuenta aún no puede usarlo. Añádete al grupo docker en una terminal (sudo usermod -aG docker {user}), luego cierra la sesión y vuelve a entrar.",
+    "dockerDeniedWindows": "Docker se está ejecutando, pero tu cuenta aún no puede usarlo. Añádete al grupo docker-users (en una terminal como administrador: net localgroup docker-users \"{user}\" /add), luego cierra la sesión y vuelve a entrar.",
+    "toolMissing": "{tool} no está instalado o no está en el PATH.",
+    "commandFailed": "{command} falló: {stderr}",
+    "signInCancelled": "Inicio de sesión cancelado.",
+    "unreachable": "No se puede conectar con Cyber CTF ({detail}). Comprueba tu conexión e inténtalo de nuevo.",
+    "offlineReady": "No se puede conectar con Cyber CTF ({detail}). Este lab está instalado aquí, así que puede iniciarse sin conexión, sin guardar el progreso.",
+    "placementLockedHost": {
+      "one": "{count} lab sigue en este host: detenlo antes de cambiar su {fields}.",
+      "other": "{count} labs siguen en este host: detenlos antes de cambiar su {fields}."
+    },
+    "placementLockedAccount": {
+      "one": "{count} lab sigue en esta cuenta: detenlo antes de cambiar su {fields}.",
+      "other": "{count} labs siguen en esta cuenta: detenlos antes de cambiar su {fields}."
+    },
+    "hostHasLabs": {
+      "one": "{count} lab sigue ejecutándose en este host. Detenlo antes de quitar el host.",
+      "other": "{count} labs siguen ejecutándose en este host. Detenlos antes de quitar el host."
+    },
+    "reapNoHost": "No hay ninguna cuenta registrada para él, así que el launcher no puede destruirlo. Elimina sus recursos en la consola de tu nube.",
+    "reapLabGone": "Los archivos del lab ya no están ({detail}). Vuelve a instalar el lab y detenlo, o elimina sus recursos en la consola de tu nube.",
+    "reapAccount": "La cuenta {account} no se puede usar ({detail}). Corrige la cuenta en Ajustes y luego detén el lab.",
+    "reapDestroy": "Falló su destrucción en {account}: {detail}",
+    "reapTimedOut": "La destrucción no terminó en {minutes} minutos. Detén el lab para reintentarlo."
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "title": "Cyber CTF",
+  "shortDescription": "Praxisnahe Cybersecurity-Labs auf deinem eigenen Rechner, Server oder in der Cloud. Starte ein Lab mit einem Klick, erhalte eine Attack box in seinem Netzwerk und übe echte Angriffe gefahrlos.",
+  "description": "Cyber CTF ist der Desktop-Launcher für praxisnahe Cybersecurity-Labs. Wähle ein Lab, klicke auf Starten, und eine absichtlich verwundbare Umgebung baut sich von selbst auf, mit deiner eigenen Attack box bereits im Lab-Netzwerk. Übe Web-Angriffe, Active Directory, Container und Cloud-Fehlkonfigurationen an echten Systemen und reiche dann ein, was du gefunden hast.\n\nFühre Labs aus, wo es dir passt:\n- Auf diesem Computer, als Container (Docker Desktop) oder als virtuelle Maschinen (VirtualBox oder VMware Workstation)\n- Auf deinem eigenen Server: Proxmox VE oder VMware ESXi, für größere Labs mit mehreren Maschinen\n- In deinem eigenen Cloud-Konto: AWS, Microsoft Azure oder Google Cloud, automatisch gestoppt, damit du nur zahlst, während du übst\n\nJedes Lab kommt mit einer Live-Netzwerkkarte seiner Maschinen, Dienste und veröffentlichten Ports sowie einer Attack box, die du mit einem Klick direkt in der App öffnest. Labs, die du auf www.cyberctf.org startest, öffnen sich direkt im Launcher, und dein Fortschritt folgt deinem Cyber-CTF-Konto.\n\nGemacht für Studierende, Security-Profis und alle, die Ethical Hacking lernen. Greife nur die Labs an, die Cyber CTF für dich aufbaut.\n\nVoraussetzungen: Docker Desktop für Container-Labs; VirtualBox oder VMware Workstation für VM-Labs auf diesem Computer. Der Launcher hilft dir, Fehlendes zu installieren.",
+  "releaseNotes": "- Microsoft-Store-Version: Container-, VM- und Server-Labs starten jetzt (Docker, Vagrant und Terraform konnten die Lab-Dateien nicht lesen)\n- Ein Lab kann nicht mehr an zwei Orten gleichzeitig gestartet werden, und ein anderswo noch laufendes Cloud-Lab wird nie vergessen (keine Überraschungsrechnungen mehr)\n- Stoppen, Pausieren und Starten kommen sich beim selben Lab nicht mehr in die Quere, auch nicht über den Hintergrundprozess\n- Das Stoppen eines Labs betrifft kein anderes Lab mit ähnlichem Namen mehr\n- VM-Labs werden nach einem Neustart der App wieder erkannt\n- Windows: Die Shell der Attack-Box-VM öffnet sich, und das Stoppen eines Labs betrifft nie ein fremdes Programm\n- Downloads und Serververbindungen hängen nicht mehr endlos\n- Zuverlässigere Anmeldung und sicherere Tool-Installationen unter Linux\n- Viele kleinere Korrekturen, gefunden durch eine deutlich größere Testsuite",
+  "features": [
+    "Hunderte Praxis-Labs: Web, Active Directory, Container und Cloud",
+    "Start mit einem Klick: Das Lab baut sich auf deinem Rechner von selbst auf",
+    "Attack box im Lab-Netzwerk, mit integriertem Terminal",
+    "Live-Netzwerkkarte mit Maschinen, Diensten und Ports",
+    "Labs als Container oder virtuelle Maschinen auf diesem Computer ausführen",
+    "Nutze deinen eigenen Proxmox-VE- oder VMware-ESXi-Server für größere Labs",
+    "Labs in deinem eigenen AWS-, Azure- oder Google-Cloud-Konto ausführen",
+    "Cloud-Labs stoppen automatisch, um die Kosten niedrig zu halten",
+    "Labs von www.cyberctf.org direkt in der App starten",
+    "Fortschritt mit deinem Cyber-CTF-Konto synchronisiert",
+    "Designs Dunkel, Schwarz und Hell, in 6 Sprachen"
+  ],
+  "keywords": [
+    "Cybersicherheit",
+    "CTF",
+    "Ethical Hacking",
+    "Penetrationstest",
+    "Hacking-Labs",
+    "Active Directory",
+    "IT-Sicherheit"
+  ],
+  "copyrightAndTrademarkInfo": "© 2026 Cyber CTF",
+  "websiteUrl": "https://www.cyberctf.org",
+  "privacyPolicy": "https://www.cyberctf.org/privacy",
+  "supportContact": "https://www.cyberctf.org/contact",
+  "screenshots": [
+    {
+      "file": "screenshot-1.png",
+      "caption": "Deine Labs, was gerade läuft und der Zustand deines Rechners auf einen Blick"
+    },
+    {
+      "file": "screenshot-2.png",
+      "caption": "Eine Live-Karte jedes Labs: Maschinen, Dienste, Ports und deine Attack box"
+    },
+    {
+      "file": "screenshot-3.png",
+      "caption": "Durchsuche Praxis-Labs nach Skill, Schwierigkeit und Ausführungsort"
+    },
+    {
+      "file": "screenshot-4.png",
+      "caption": "Führe größere Labs auf deinem eigenen Proxmox-VE- oder VMware-ESXi-Server aus"
+    },
+    {
+      "file": "screenshot-5.png",
+      "caption": "Oder in deinem eigenen AWS-, Azure- oder Google-Cloud-Konto, automatisch gestoppt"
+    }
+  ],
+  "poster": "poster.png",
+  "trailer": {
+    "title": "Cyber CTF",
+    "video": "trailer.mp4",
+    "thumbnail": "thumbnail.png"
+  }
+}

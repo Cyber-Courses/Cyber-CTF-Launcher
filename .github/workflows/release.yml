@@ -1,0 +1,216 @@
+name: Release
+
+# Builds the Cyber CTF desktop launcher for macOS (universal), Windows and Linux (x64 + arm64) and
+# publishes the installers to a GitHub Release. Trigger by pushing a tag like `v0.1.0`
+# (or run manually). A tag build is published and sent to Homebrew + apt once every
+# platform is green; a manual run stays a draft.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # The draft release, made once before the builds: each platform job only uploads to it.
+  # Created with the org's cyber-ctf-creator app: on v0.3.8 GITHUB_TOKEN was refused creating it
+  # ("Resource not accessible by integration") on every attempt, while uploading to an existing
+  # draft and publishing it still worked.
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        id: app
+        with:
+          app-id: ${{ secrets.APP_ID_GENERATOR }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY_GENERATOR }}
+          owner: Cyber-Courses
+          repositories: Cyber-CTF-Launcher
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./src-tauri/tauri.conf.json").version')
+          tag="${{ github.ref_type == 'tag' && github.ref_name || '' }}"
+          tag="${tag:-v$version}"
+          for attempt in 1 2 3 4 5; do
+            if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+              echo "Release $tag exists."; exit 0
+            fi
+            if gh release create "$tag" --repo "${{ github.repository }}" --draft --target "${{ github.sha }}" \
+                --title "Cyber CTF v$version" --notes "Download the installer for your platform below."; then
+              exit 0
+            fi
+            echo "Creating $tag failed (attempt $attempt); retrying."
+            sleep $((attempt * 15))
+          done
+          exit 1
+
+  release:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+            rust-targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            args: ""
+            rust-targets: ""
+          - platform: ubuntu-22.04-arm
+            args: ""
+            rust-targets: ""
+          - platform: windows-latest
+            args: ""
+            rust-targets: ""
+          # Windows on Arm (Snapdragon PCs), built natively on GitHub's Arm runner.
+          - platform: windows-11-arm
+            args: ""
+            rust-targets: ""
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install Linux build dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libxdo-dev build-essential curl wget file libssl-dev
+
+      # Version comes from package.json "packageManager"; do not also set `version` here.
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch, 2026-10
+        with:
+          toolchain: stable
+          targets: ${{ matrix.rust-targets }}
+
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Windows Authenticode via Azure Artifact Signing (formerly Trusted Signing). Tauri runs
+      # signCommand on the app binary and the NSIS installer. Skipped (unsigned build) until the
+      # AZURE_* secrets exist; the Store MSIX is signed by Microsoft either way.
+      - name: Set up Authenticode signing (Windows)
+        if: startsWith(matrix.platform, 'windows') && env.AZURE_CLIENT_ID != ''
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+        run: |
+          set -euo pipefail
+          cargo install trusted-signing-cli --locked
+          # JavaScript in single quotes: its ${...} are template literals, not shell expansions.
+          # shellcheck disable=SC2016
+          node -e '
+            const fs = require("fs"), p = "src-tauri/tauri.conf.json", c = JSON.parse(fs.readFileSync(p, "utf8"));
+            const e = process.env;
+            c.bundle.windows = { ...c.bundle.windows, signCommand:
+              `trusted-signing-cli -e ${e.AZURE_SIGNING_ENDPOINT} -a ${e.AZURE_SIGNING_ACCOUNT} -c ${e.AZURE_SIGNING_PROFILE} -d CyberCTF %1` };
+            fs.writeFileSync(p, JSON.stringify(c, null, 2));
+          '
+
+      # Notarization uses an App Store Connect API key. GitHub secrets can only hold
+      # text, so the .p8 is stored base64-encoded and written to a file here; the path
+      # and key id are exported for the tauri-action step below. macOS only.
+      - name: Prepare notarization API key (macOS)
+        if: matrix.platform == 'macos-latest' && env.APPLE_API_KEY_P8 != ''
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          echo "$APPLE_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/apple_api_key.p8"
+          echo "APPLE_API_KEY=$APPLE_API_KEY_ID" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/apple_api_key.p8" >> "$GITHUB_ENV"
+
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater artifact signing (set) - produces the signed .sig + latest.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS code signing: Developer ID Application cert (.p12) imported by tauri-action.
+          # Empty secrets = unsigned build. APPLE_API_KEY / APPLE_API_KEY_PATH come from the
+          # GITHUB_ENV set in the step above (notarization), so they are not listed here.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # Read by trusted-signing-cli (Windows signCommand); unused elsewhere.
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          releaseName: "Cyber CTF v__VERSION__"
+          releaseBody: "Download the installer for your platform below."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      # tauri-action notarizes + staples the .app but ships the DMG wrapper un-notarized.
+      # Notarize + staple the DMG itself and replace it on the release so a downloaded
+      # DMG opens with no Gatekeeper warning. macOS + tag builds only.
+      - name: Notarize + staple the DMG (macOS)
+        if: matrix.platform == 'macos-latest' && github.ref_type == 'tag' && env.APPLE_API_KEY_PATH != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          # Tauri names the DMG itself (no odd characters); take the one there is.
+          # shellcheck disable=SC2012
+          dmg=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          echo "Notarizing $dmg"
+          xcrun notarytool submit "$dmg" \
+            --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+          xcrun stapler staple "$dmg"
+          spctl -a -vvv -t open --context context:primary-signature "$dmg"
+          gh release upload "${{ github.ref_name }}" "$dmg" --clobber --repo "${{ github.repository }}"
+
+  # Every platform built (and the DMG is notarized): take the draft live, then ship it to
+  # Homebrew and apt. Tag builds only; a manual run stays a draft to review.
+  publish:
+    needs: release
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --draft=false --latest --repo "${{ github.repository }}"
+
+  # Called directly: a release published with GITHUB_TOKEN fires no release event.
+  distribute:
+    needs: publish
+    uses: ./.github/workflows/distribute.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
+
+  # Windows: the same release to the Microsoft Store (MSIX, signed by the Store). Its own job, so
+  # a Store hiccup (a submission still in certification blocks a new one) never holds back
+  # GitHub, Homebrew or apt.
+  store:
+    needs: publish
+    uses: ./.github/workflows/msix.yml
+    with:
+      tag: ${{ github.ref_name }}
+      # Repo variable STORE_AUTO_SUBMIT=false: leave the Store submission as a draft to review.
+      commit: ${{ vars.STORE_AUTO_SUBMIT != 'false' }}
+    secrets: inherit

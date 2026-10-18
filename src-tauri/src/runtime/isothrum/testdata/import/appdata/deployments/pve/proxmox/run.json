@@ -1,0 +1,1 @@
+{"ssh_public_key":"ssh-ed25519 AAAA launcher","proxmox_endpoint":"https://10.0.0.5:8006/","proxmox_ssh_address":"10.0.0.5","node":"pve-lab","datastore":"local-lvm","uplink_bridge":"vmbr1"}

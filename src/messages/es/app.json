@@ -1,0 +1,24 @@
+{
+  "launchConfirm": {
+    "label": "Confirmar el lanzamiento de un lab en la nube",
+    "title": "¿Ejecutar este lab en tu cuenta en la nube?",
+    "body": "Un lanzamiento desde el sitio web quiere ejecutarse en <target>{target}</target>. Esto inicia recursos facturables en tu cuenta (se detienen solos más tarde). Aprueba solo un lanzamiento que hayas iniciado tú.",
+    "repo": "repo: {repo}",
+    "commit": "commit: {commit}",
+    "failed": "No se pudo enviar tu respuesta a Cyber CTF",
+    "decline": "Rechazar",
+    "approve": "Ejecutar en mi nube",
+    "expired": "Esta solicitud caducó: el lanzamiento no se inició. Vuelve a lanzarlo desde el sitio web si todavía lo quieres.",
+    "close": "Cerrar"
+  },
+  "quitGuard": {
+    "title": "Un lab aún se está desplegando",
+    "body": {
+      "one": "Se está trabajando en un lab dentro de la app. Salir ahora puede dejar máquinas a medio crear, y un lab en una cuenta en la nube sigue facturando hasta que se elimina. Deja que termine en segundo plano (la app se cierra sola al acabar), sigue esperando o sal de todos modos. Salir por segunda vez también sale de todos modos.",
+      "other": "Se está trabajando en {count} labs dentro de la app. Salir ahora puede dejar máquinas a medio crear, y un lab en una cuenta en la nube sigue facturando hasta que se elimina. Deja que terminen en segundo plano (la app se cierra sola al acabar), sigue esperando o sal de todos modos. Salir por segunda vez también sale de todos modos."
+    },
+    "keepWaiting": "Seguir esperando",
+    "quitAnyway": "Salir de todos modos",
+    "finishInBackground": "Terminar en segundo plano"
+  }
+}

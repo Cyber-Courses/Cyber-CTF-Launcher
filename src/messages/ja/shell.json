@@ -1,0 +1,83 @@
+{
+  "tabs": {
+    "home": "概要",
+    "labs": "ラボ",
+    "machine": "マシン",
+    "setup": "セットアップ",
+    "server": "サーバー",
+    "cloud": "クラウド",
+    "events": "イベント",
+    "settings": "設定"
+  },
+  "sidebar": {
+    "find": "検索…",
+    "soon": "近日公開",
+    "running": "実行中",
+    "labRunning": "実行中"
+  },
+  "header": {
+    "thisMachine": "このマシン",
+    "dockerNotRunning": "Docker が起動していません",
+    "checkFailed": "マシンの確認に失敗しました",
+    "checking": "確認中…"
+  },
+  "palette": {
+    "label": "コマンドメニュー",
+    "placeholder": "ラボ、画面、操作を検索…",
+    "noResults": "結果がありません",
+    "findLab": "ラボを探す",
+    "findLabKeywords": "labs search ctf ラボ 検索 探す",
+    "openSettings": "設定を開く",
+    "openSettingsKeywords": "settings preferences appearance theme 設定 環境設定 外観 テーマ",
+    "goTo": "{screen} に移動",
+    "labKeywords": "lab ラボ {category}",
+    "groups": {
+      "actions": "操作",
+      "screens": "画面",
+      "labs": "ラボ"
+    }
+  },
+  "screen": {
+    "checkFailed": "このマシンを確認できませんでした",
+    "tryAgain": "再試行",
+    "checking": "このマシンを確認中…",
+    "loading": "読み込み中…",
+    "comingSoon": "{title} は準備中です",
+    "eventsDescription": "Cyber CTF がラボをホストするライブ CTF イベントに参加できます。マシンで何かを実行する必要はなく、参加者一人ひとりにイベント期間中専用のラボが用意されます。"
+  },
+  "failures": {
+    "openSettings": "設定を開けませんでした",
+    "restart": "Cyber CTF を再起動できませんでした"
+  },
+  "update": {
+    "installed": "アップデートをインストールしました。Cyber CTF を再起動しています…",
+    "failed": "アップデートに失敗しました。しばらくしてから再試行してください。",
+    "available": "バージョン <version>{version}</version> が利用可能です。",
+    "restartNow": "今すぐ再起動",
+    "updating": "アップデート中…",
+    "update": "アップデート",
+    "waitForDeploys": "アップデートすると Cyber CTF が再起動します。ラボのデプロイが終わるまでお待ちください。"
+  },
+  "error": {
+    "title": "問題が発生しました",
+    "description": "Cyber CTF で予期しないエラーが発生しました。ラボは実行を続けています。再試行し、再発する場合は詳細をコピーして私たちに送ってください。",
+    "stepDescription": "このステップで予期しないエラーが発生しました。再試行するか、前のステップに戻ってください。解決しない場合は詳細をコピーして私たちに送ってください。",
+    "unknown": "不明なエラー",
+    "tryAgain": "再試行",
+    "reload": "再読み込み",
+    "copied": "コピーしました",
+    "copyDetails": "詳細をコピー"
+  },
+  "terminal": {
+    "connecting": "接続中…",
+    "open": "アタックボックス",
+    "ended": "セッション終了",
+    "failed": "接続できませんでした",
+    "systemTerminal": "システムターミナル",
+    "systemTerminalHint": "このシェルを普段使っているターミナルアプリで開きます",
+    "shellEnded": "シェルが終了しました。",
+    "shellEndedWithCode": "シェルが終了しました（終了コード {code}）。",
+    "reconnect": "再接続",
+    "close": "閉じる"
+  }
+}

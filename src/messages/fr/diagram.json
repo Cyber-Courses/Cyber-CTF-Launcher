@@ -1,0 +1,51 @@
+{
+  "host": {
+    "yourMachine": "Votre machine",
+    "serverSub": "serveur · hôte docker",
+    "host": "hôte",
+    "online": "en ligne",
+    "portTab": "Publié sur cette machine. Cliquez pour copier {url}"
+  },
+  "copy": {
+    "title": "Copier {text}",
+    "failed": "Impossible de copier dans le presse-papiers"
+  },
+  "lab": "lab",
+  "bridge": "bridge {name}",
+  "zone": {
+    "network": "réseau {name}",
+    "noInternet": "sans internet"
+  },
+  "attacker": {
+    "you": "VOUS",
+    "kicker": "ATTAQUANT",
+    "label": "Attack box",
+    "attached": "connectée",
+    "notAttached": "non connectée"
+  },
+  "published": "publié",
+  "computer": {
+    "resolving": "résolution…",
+    "noPorts": "aucun port"
+  },
+  "states": {
+    "running": "actif",
+    "paused": "en pause",
+    "off": "éteint",
+    "stopped": "arrêté"
+  },
+  "services": {
+    "database": "base de données",
+    "web": "web / api",
+    "cache": "cache",
+    "worker": "worker",
+    "ssh": "ssh",
+    "service": "service"
+  },
+  "view": {
+    "fitWidth": "Ajuster à la largeur",
+    "fitWidthHint": "Réduire le schéma à la largeur de la carte, ou l'afficher à taille lisible",
+    "scrollMore": "Faire défiler pour la suite",
+    "scrollMoreHint": "Faire défiler le schéma pour voir la suite"
+  }
+}

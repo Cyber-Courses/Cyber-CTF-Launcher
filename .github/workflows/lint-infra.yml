@@ -1,0 +1,111 @@
+name: Lint infrastructure
+
+# Static checks of the files around the app: the workflows (actionlint, with shellcheck on their
+# run: scripts), the Terraform templates the launcher writes at run time, the repo's shell
+# scripts, and the JSON the app and the Microsoft Store listing ship (with Partner Center's
+# limits, which otherwise only fail at release time).
+
+on:
+  pull_request:
+    paths:
+      - ".github/**"
+      - "**/*.tf"
+      - "**/*.hcl"
+      - "**/*.sh"
+      - "images/attack-box/**"
+      - "src/messages/**"
+      - "packaging/store/**"
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: lint-infra-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install actionlint
+        # The download script at the v1.7.7 tag's commit (a tag can be moved, a commit can't).
+        run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/03d0035246f3e81f36aed592ffb4bebf33a03106/scripts/download-actionlint.bash) 1.7.7
+      # shellcheck is on the runner image; actionlint runs it on every run: script.
+      - run: ./actionlint -color
+      # Every action is pinned to a full commit SHA (a tag or branch can be moved to new code,
+      # which then runs with this repo's secrets), with its version in a comment for updates.
+      - name: Actions pinned to commit SHAs
+        run: |
+          set -euo pipefail
+          if grep -nE '^\s*(- )?uses:' .github/workflows/*.yml \
+            | grep -vE 'uses: \./' \
+            | grep -vE 'uses: [^@[:space:]]+@[0-9a-f]{40} # \S'; then
+            echo "::error::pin these actions to a full commit SHA, with the version in a comment (uses: owner/repo@<sha> # vX.Y.Z)"
+            exit 1
+          fi
+
+  terraform:
+    runs-on: ubuntu-latest
+    env:
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugins
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_wrapper: false
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .terraform-plugins
+          key: terraform-plugins-${{ hashFiles('**/*.tf', '**/terraform.lock.hcl', '**/.terraform.lock.hcl') }}
+      - name: Format
+        run: |
+          set -euo pipefail
+          git ls-files '*.tf' | xargs -r dirname | sort -u | while read -r dir; do
+            echo "terraform fmt -check $dir"
+            terraform fmt -check -diff "$dir"
+          done
+      - name: Init and validate
+        run: |
+          set -euo pipefail
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          git ls-files '*.tf' | xargs -r dirname | sort -u | while read -r dir; do
+            echo "::group::terraform validate $dir"
+            # A copy, so nothing lands in the repo. The launcher ships its lock file as
+            # terraform.lock.hcl (no dot, see server_selftest/proxmox.rs): use it as the lock.
+            work=$(mktemp -d)
+            cp "$dir"/*.tf "$work"/
+            for lock in "$dir/terraform.lock.hcl" "$dir/.terraform.lock.hcl"; do
+              if [ -f "$lock" ]; then cp "$lock" "$work/.terraform.lock.hcl"; fi
+            done
+            lockfile=()
+            if [ -f "$work/.terraform.lock.hcl" ]; then lockfile=(-lockfile=readonly); fi
+            terraform -chdir="$work" init -backend=false -input=false -no-color "${lockfile[@]}"
+            terraform -chdir="$work" validate -no-color
+            echo "::endgroup::"
+          done
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # Warnings and errors fail; style notes (info) don't. Intentional exceptions are marked
+      # in the scripts with `# shellcheck disable=...` and a reason.
+      - run: |
+          set -euo pipefail
+          shellcheck --version
+          mapfile -t scripts < <(git ls-files '*.sh' '*.bash' 'images/attack-box/bashrc.cyberctf')
+          printf '%s\n' "${scripts[@]}"
+          shellcheck --severity=warning --external-sources "${scripts[@]}"
+
+  json-and-store:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - run: python3 .github/scripts/check-store-listings.py

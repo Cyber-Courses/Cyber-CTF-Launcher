@@ -1,0 +1,93 @@
+{
+  "greeting": {
+    "morning": "Bom dia",
+    "afternoon": "Boa tarde",
+    "evening": "Boa noite"
+  },
+  "title": {
+    "named": "{greeting}, <em>{name}.</em>",
+    "plain": "{greeting}.",
+    "welcome": "Bem-vindo ao Cyber <em>CTF.</em>"
+  },
+  "status": {
+    "checking": "Verificando esta máquina…",
+    "setUpDocker": "Configure o Docker para começar a rodar labs.",
+    "running": {
+      "one": "{count} lab rodando nesta máquina.",
+      "other": "{count} labs rodando nesta máquina."
+    },
+    "ready": "Esta máquina está pronta. Escolha um lab para atacar.",
+    "checkFailed": "Não foi possível verificar esta máquina."
+  },
+  "actions": {
+    "setUp": "Configurar esta máquina",
+    "setUpFailed": "Não foi possível abrir a configuração da máquina",
+    "browse": "Ver labs"
+  },
+  "stats": {
+    "cpu": "CPU",
+    "memory": "Memória",
+    "disk": "Disco",
+    "cores": "{cores} núcleos",
+    "usage": "{used}/{total} GB",
+    "unavailable": "indisponível"
+  },
+  "capacity": {
+    "total": "{total} GB",
+    "cloud": "Nuvem",
+    "server": "Servidor",
+    "ok": {
+      "title": "Pronta para labs",
+      "detail": "RAM de sobra para labs de contêiner e a maioria dos labs de VM."
+    },
+    "tight": {
+      "title": "Suficiente para labs de contêiner",
+      "detail": "Labs pesados com várias VMs ou a imagem completa do Exegol podem ficar lentos aqui."
+    },
+    "low": {
+      "title": "Pouca RAM para labs",
+      "detail": "Os labs podem ter dificuldade nesta máquina. Para labs mais pesados, rode-os na nuvem ou num servidor."
+    }
+  },
+  "running": {
+    "title": "Rodando agora",
+    "labs": {
+      "one": "{count} lab",
+      "other": "{count} labs"
+    },
+    "containers": {
+      "one": "{count} contêiner",
+      "other": "{count} contêineres"
+    },
+    "empty": "Nada rodando. Inicie um lab pela página dele.",
+    "noDetails": "rodando · sem detalhes enquanto o catálogo estiver inacessível"
+  },
+  "deploy": {
+    "inProgress": "Em andamento",
+    "view": "Ver",
+    "running": "rodando"
+  },
+  "machine": {
+    "title": "Esta máquina",
+    "open": "Abrir",
+    "dockerEngine": "Engine do Docker",
+    "running": "Rodando",
+    "stopped": "Parado",
+    "containers": "Contêineres",
+    "none": "nenhum",
+    "cores": "Núcleos"
+  },
+  "jumpBack": {
+    "title": "Continue de onde parou",
+    "meta": "iniciados recentemente",
+    "lastRun": "{slug} · última execução {ago}",
+    "resume": "Retomar"
+  },
+  "labs": {
+    "title": "Labs",
+    "all": "Todos os labs",
+    "loading": "Carregando labs…",
+    "empty": "Nenhum lab publicado ainda."
+  },
+  "signInHint": "Entre (canto inferior esquerdo) para que os labs iniciados pelo site rodem aqui."
+}

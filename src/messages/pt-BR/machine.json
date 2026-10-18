@@ -1,0 +1,340 @@
+{
+  "errors": {
+    "openSetup": "Não foi possível abrir a configuração da máquina",
+    "copy": "Não foi possível copiar para a área de transferência",
+    "switchEngine": "Não foi possível trocar a engine do Docker"
+  },
+  "screen": {
+    "title": "Máquina",
+    "lead": "O que este computador consegue rodar e o que está rodando agora.",
+    "needsSetup": {
+      "one": "{count} tipo de lab requer configuração",
+      "other": "{count} tipos de lab requerem configuração"
+    },
+    "readyForLabs": "Pronta para labs",
+    "uptime": "ligada há {uptime}",
+    "setUp": "Configurar esta máquina",
+    "viewLabel": "Visualização da máquina",
+    "viewHealth": "Saúde",
+    "viewSetup": "Configuração",
+    "cpu": "CPU",
+    "cores": {
+      "one": "{count} núcleo",
+      "other": "{count} núcleos"
+    },
+    "memory": "Memória",
+    "disk": "Disco",
+    "lowDisk": {
+      "title": "Pouco espaço em disco",
+      "meta": "{free} livres",
+      "body": "Só {free} livres. Só a attack box ocupa cerca de 3,4 GB, e cada imagem de lab acrescenta mais. Libere espaço antes de iniciar um lab."
+    },
+    "engines": "Engines",
+    "enginesMeta": "usadas pelos seus labs",
+    "test": "Testar",
+    "hideTest": "Ocultar teste",
+    "fix": "Corrigir",
+    "useServer": "Usar um servidor",
+    "notTestedYet": "ainda não testado",
+    "tested": "testado {ago}",
+    "lastTestFailed": "último teste falhou {ago}",
+    "freeHintDocker": "Labs de contêiner pedem cerca de {want} de memória livre; {free} livres agora.",
+    "freeHintVm": "Labs de VM pedem cerca de {want} de memória livre; {free} livres agora.",
+    "containerLabs": "Labs de contêiner",
+    "vmLabs": "Labs de VM",
+    "status": {
+      "ready": "Pronto",
+      "testFailed": "Teste falhou",
+      "noPermission": "Sem permissão",
+      "engineStopped": "Engine parada",
+      "needsSetup": "Requer configuração",
+      "notOnThisMachine": "Não nesta máquina"
+    },
+    "docker": {
+      "denied": "O Docker está rodando, mas este usuário não pode usá-lo: adicione-se ao grupo docker, depois saia da sessão e entre de novo.",
+      "stopped": "Uma engine de contêineres está instalada, mas não está rodando. Inicie-a para rodar labs.",
+      "noEngineLinux": "Ainda não há engine de contêineres. Docker Engine, Docker Desktop ou Colima funcionam.",
+      "noEngineMacos": "Ainda não há engine de contêineres. Docker Desktop, OrbStack ou Colima funcionam.",
+      "noEngineWindows": "Ainda não há engine de contêineres. O Docker Desktop funciona."
+    },
+    "vm": {
+      "notApplicable": "Nenhum hypervisor local roda nesta máquina. Os labs de VM podem rodar num servidor.",
+      "automatic": " (automático, mude em Configurações)",
+      "vagrantMissing": "Falta o Vagrant ou o plugin Vagrant do hypervisor.",
+      "needHypervisor": "Necessário para labs de Active Directory, Windows e com vários hosts. Instale um hypervisor."
+    },
+    "details": "Detalhes",
+    "detail": {
+      "containerEngine": "Engine de contêineres",
+      "installed": "instalado",
+      "notInstalled": "não instalado",
+      "running": "rodando",
+      "notRunning": "parado",
+      "builtIn": "integrado",
+      "installedWithPlugin": "instalado · {plugin}",
+      "pluginMissing": "falta o plugin {plugin}"
+    }
+  },
+  "running": {
+    "title": "Rodando agora",
+    "inUse": "{size} em uso",
+    "empty": "Nada rodando.",
+    "setupTest": "Teste de configuração",
+    "containers": {
+      "one": "{count} contêiner",
+      "other": "{count} contêineres"
+    },
+    "vms": {
+      "one": "{count} VM",
+      "other": "{count} VMs"
+    },
+    "stopping": "Parando…",
+    "stop": "Parar"
+  },
+  "downloads": {
+    "title": "Downloads",
+    "cleanUp": "Limpar",
+    "total": "{size} de downloads de labs",
+    "empty": "Nenhum download de lab ainda",
+    "containerImages": {
+      "one": "{count} imagem de contêiner",
+      "other": "{count} imagens de contêiner"
+    },
+    "vmImages": {
+      "one": "{count} imagem de VM",
+      "other": "{count} imagens de VM"
+    },
+    "confirm": "Remover {size}? Os labs baixam de novo o que precisarem na próxima inicialização. O que estiver em uso é mantido.",
+    "cancel": "Cancelar",
+    "removing": "Removendo…",
+    "remove": "Remover",
+    "freed": "{size} liberados.",
+    "nothingFreed": "Nada pôde ser removido (tudo em uso)."
+  },
+  "selfTest": {
+    "containerTitle": "Teste de lab de contêiner",
+    "vmTitle": "Teste de lab de VM",
+    "machineDockerDescription": "Dois contêineres numa rede de lab, depois removidos.",
+    "machineVmDescription": "Inicia uma VM de teste real, verifica-a e depois a apaga.",
+    "testing": "Testando",
+    "passed": "Passou",
+    "failed": "Falhou",
+    "runAgain": "Rodar de novo",
+    "retry": "Tentar de novo",
+    "run": "Rodar teste",
+    "skipped": "pulado",
+    "docker": {
+      "engine": "A engine de contêineres responde",
+      "pull": "Baixar uma imagem de teste",
+      "start": "Iniciar um lab de teste com dois contêineres",
+      "network": "Os contêineres se comunicam",
+      "port": "Porta do lab acessível a partir desta máquina",
+      "cleanup": "Limpar"
+    },
+    "vm": {
+      "vagrant": "O Vagrant está instalado",
+      "provider": "Um hypervisor está pronto",
+      "hypervisor": "O hypervisor responde",
+      "box": "Obter uma pequena imagem de VM de teste",
+      "boot": "Iniciar a VM de teste",
+      "exec": "Rodar um comando dentro da VM",
+      "network": "VM acessível numa rede de lab",
+      "cleanup": "Apagar a VM de teste"
+    }
+  },
+  "checklist": {
+    "title": "Configuração guiada",
+    "done": "{done} de {total} concluídos",
+    "open": "Abrir configuração guiada",
+    "test": "Testar",
+    "add": "Adicionar",
+    "setUp": "Configurar",
+    "notInstalled": "não instalado",
+    "restartNeeded": "reinício necessário",
+    "notChecked": "não verificado",
+    "running": "rodando",
+    "stopped": "parado",
+    "passed": "passou",
+    "failed": "falhou",
+    "notTested": "não testado",
+    "cantRunHere": " · não roda aqui",
+    "optional": "opcional",
+    "installed": "instalado",
+    "pluginMissing": "falta o plugin {plugin}"
+  },
+  "setup": {
+    "checking": "Verificando esta máquina…",
+    "title": "Configurar esta <em>máquina</em>",
+    "lead": "Deixe o {os} pronto para rodar labs, um passo de cada vez.",
+    "stepOf": "Etapa {current} de {total}",
+    "stepFailed": "Não foi possível carregar esta etapa",
+    "back": "Voltar",
+    "done": "Concluir",
+    "readyTitle": "Tudo configurado",
+    "readyDescription": "Você pode rodar este guia de novo quando quiser pela página Máquina."
+  },
+  "steps": {
+    "aPackageManager": "um gerenciador de pacotes",
+    "macLocalNetwork": "O macOS pode pedir para deixar o Cyber CTF encontrar dispositivos na sua rede local e mostrar notificações (lab pronto, falhas): escolha Permitir, os labs precisam da primeira.",
+    "macTerminal": "O shell dele abre no Terminal: na primeira vez, o macOS pede para deixar o Cyber CTF controlar o Terminal; escolha OK.",
+    "macInstallerVm": "O instalador abre na própria janela e pede sua senha; o VirtualBox também pode precisar de aprovação em Ajustes do Sistema > Privacidade e Segurança.",
+    "macInstaller": "O instalador abre na própria janela e pede sua senha.",
+    "pkgmgr": {
+      "title": "Gerenciador de pacotes",
+      "description": "O Cyber CTF instala todo o resto para você pelo {pm}, o gerenciador de pacotes do seu sistema. Ele só precisa ser configurado uma vez."
+    },
+    "virtualization": {
+      "title": "Ativar a virtualização (WSL 2)",
+      "description": "O Docker Desktop roda contêineres Linux pelo WSL 2. Ative-o uma vez; é a etapa que a maioria das pessoas esquece no Windows."
+    },
+    "docker": {
+      "title": "Engine de contêineres",
+      "descriptionWindows": "Os labs de contêiner precisam de uma engine compatível com Docker (no Windows, ela roda sobre o WSL 2). Escolha a que preferir.",
+      "description": "Os labs de contêiner precisam de uma engine compatível com Docker. Escolha a que preferir, todas funcionam."
+    },
+    "attack": {
+      "title": "Máquina de ataque",
+      "description": "A máquina de onde você ataca os labs: um contêiner que inicia ao lado de cada lab, na rede dele. Escolha um conjunto de ferramentas; você pode mudá-lo depois em Configurações."
+    },
+    "vm": {
+      "title": "Máquinas virtuais",
+      "description": "Labs feitos de VMs completas (domínios Active Directory, hosts Windows, roteadores, redes com vários hosts) precisam de um hypervisor, o que você preferir. Você também pode adicionar um depois pela página Máquina."
+    },
+    "vagrant": {
+      "title": "Provisionamento",
+      "description": "O Cyber CTF cria e inicia as máquinas virtuais de cada lab com o Vagrant, uma ferramenta gratuita, no seu hypervisor. A maioria dos hypervisors também precisa de um pequeno complemento (plugin) para ele."
+    },
+    "dockerTest": {
+      "title": "Testar labs de contêiner",
+      "description": "Inicia um pequeno lab com dois contêineres, verifica se funciona e depois o apaga. Cerca de 2 MB para baixar."
+    },
+    "vmTest": {
+      "title": "Testar labs de VM",
+      "description": "Inicia uma VM de teste real, verifica se funciona e depois a apaga. Leva alguns minutos; a primeira execução baixa uma pequena imagem de VM (fica em cache depois)."
+    },
+    "next": {
+      "done": "Já fiz isso",
+      "skip": "Pular por enquanto",
+      "continue": "Continuar",
+      "restartLater": "Vou reiniciar depois"
+    }
+  },
+  "body": {
+    "installed": "Instalado",
+    "installLog": "Instalar",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "pkgmgr": {
+      "macRun": "Rode isto no Terminal e depois volte; a detecção é automática:",
+      "winget": "Instalador de Aplicativo (winget)",
+      "wingetHint": "Instale-o pela Microsoft Store e depois volte.",
+      "get": "Obter",
+      "linux": "Instale o gerenciador de pacotes da sua distribuição para usar as instalações com um clique.",
+      "linuxNamed": "Instale o gerenciador de pacotes da sua distribuição ({name}) para usar as instalações com um clique.",
+      "intelMac": "Este é um Mac Intel. O Homebrew não fornece mais pacotes pré-compilados para ele, então as instalações podem compilar do código-fonte e levar vários minutos a mais."
+    },
+    "wsl": {
+      "intro": "O Cyber CTF ativa o WSL 2 para você. O Windows pede permissão uma vez (o aviso de administrador de sempre) e depois precisa reiniciar.",
+      "log": "Ativando o WSL 2. Aceite o aviso do Windows para continuar…",
+      "turningOn": "Ativando o WSL 2…",
+      "turnOn": "Ativar o WSL 2",
+      "restart": "O WSL 2 está ativado. Reinicie o Windows para concluir a ativação.",
+      "byHand": "Fazer manualmente",
+      "step1": "Abra o <b>PowerShell</b> como Administrador (clique com o botão direito e depois em “Executar como administrador”).",
+      "step2": "Rode isto e reinicie quando terminar:",
+      "step3": "Se o Docker depois disser que a virtualização está desativada: abra “Ativar ou desativar recursos do Windows” e ative <b>Plataforma de Máquina Virtual</b> e <b>Subsistema do Windows para Linux</b>, e confirme que a virtualização está ativada na BIOS/UEFI.",
+      "guide": "Guia de instalação do WSL da Microsoft",
+      "readyTitle": "WSL 2",
+      "readyDetail": "Ativado e funcionando",
+      "restartNow": "Reiniciar agora",
+      "restarting": "Reiniciando em alguns segundos…",
+      "confirmTitle": "Reiniciar o Windows agora?",
+      "confirmBody": "O Windows reinicia em alguns segundos e os apps abertos fecham sem salvar: salve seu trabalho antes.",
+      "reopens": "O Cyber CTF abre de novo quando você entrar novamente. A configuração recomeça pela primeira etapa, e o que já foi feito aparece como concluído.",
+      "reopenByHand": "Depois de entrar novamente, abra o Cyber CTF de novo. A configuração recomeça pela primeira etapa, e o que já foi feito aparece como concluído.",
+      "restartReason": "Cyber CTF: reiniciando para concluir a ativação do WSL 2.",
+      "restartFailed": "Não foi possível reiniciar o Windows",
+      "unknown": "O Cyber CTF não conseguiu saber se o WSL 2 está ativado. Se você já o ativou e reiniciou, continue.",
+      "recheck": "Verificar de novo",
+      "firmware": "O WSL 2 está ativado, mas o Windows continua sem executar um hipervisor depois do reinício. A virtualização provavelmente está desligada no firmware do seu PC: ative Intel VT-x ou AMD-V (SVM) nas configurações da BIOS/UEFI e reinicie. Reiniciar de novo por aqui não resolve."
+    },
+    "dockerTestDescription": "busybox, dois contêineres numa rede de lab.",
+    "vmTestDescription": "Inicia, roda um comando, faz ping numa rede de lab e apaga.",
+    "nothingToTest": "Nada para testar ainda",
+    "noEngine": "Nenhuma engine de contêineres está rodando. Volte para configurar uma ou pule por enquanto.",
+    "noHypervisor": "Nenhum hypervisor está instalado. Volte para instalar um ou pule por enquanto.",
+    "outcome": {
+      "containerLabs": "Labs de contêiner",
+      "vmLabs": "Labs de VM",
+      "ready": "Testado e pronto para rodar.",
+      "failed": "O teste falhou. Volte para rodá-lo de novo.",
+      "engineRunning": "Engine rodando, não testada.",
+      "setUpEngine": "Configure uma engine de contêineres para rodá-los.",
+      "notTested": "Não testado.",
+      "installHypervisor": "Instale um hypervisor para rodá-los."
+    }
+  },
+  "engine": {
+    "notes": {
+      "dockerDesktop": "O app oficial. O mais fácil de configurar.",
+      "dockerEngine": "O daemon nativo, sem app de desktop.",
+      "orbstack": "Rápido e leve na memória. Gratuito para uso pessoal.",
+      "colima": "Código aberto, só linha de comando."
+    },
+    "otherRunning": "{engine} está rodando, mas o Docker usa {current} no momento.",
+    "anotherEngine": "outra engine",
+    "switching": "Trocando…",
+    "use": "Usar {engine}",
+    "starting": "Iniciando {engine}… a primeira inicialização pode levar um minuto.",
+    "notRunning": "{engine} está instalado, mas não está rodando.",
+    "get": "Obter {name}",
+    "startingButton": "Iniciando…",
+    "start": "Iniciar {engine}",
+    "canInstall": "O Cyber CTF pode instalar {name} para você.",
+    "installLog": "Instalando a engine de contêineres…",
+    "installing": "Instalando…",
+    "install": "Instalar {name}",
+    "recheck": "Verificar de novo",
+    "installThenRecheck": "Instale {engine}, inicie-o e depois verifique de novo.",
+    "finishDockerDesktop": "Conclua no instalador do Docker, abra o Docker Desktop e depois clique em Verificar de novo.",
+    "finishOther": "Conclua a instalação de {engine}, inicie-o e depois clique em Verificar de novo.",
+    "windowsReboot": "Pode ser preciso reiniciar depois de ativar o WSL. Se o Docker disser que a virtualização está desativada, volte uma etapa.",
+    "linuxPostInstall": "Depois que o Docker Engine for instalado, permita que seu usuário o rode e inicie o serviço:",
+    "linuxRelog": "Depois saia da sessão e entre de novo.",
+    "trademarks": "Docker e o logotipo do Docker são marcas registradas da Docker, Inc. Os nomes das outras engines pertencem aos respectivos donos. O Cyber CTF não é afiliado a nenhum deles."
+  },
+  "vm": {
+    "noHypervisor": "Nenhum hypervisor local se aplica a esta máquina. Você pode rodar labs de VM num Servidor (ESXi / Proxmox).",
+    "cantRunHere": "Instalado, mas não roda aqui.",
+    "installedHere": "Instalado nesta máquina.",
+    "canInstall": "O Cyber CTF pode instalá-lo para você.",
+    "vendorSite": "Instale-o pelo site do fabricante.",
+    "canInstallNamed": "O Cyber CTF pode instalar {name} para você.",
+    "installLog": "Instalando {name}…",
+    "installing": "Instalando…",
+    "install": "Instalar {name}",
+    "installThenRecheck": "Instale {name} e depois verifique de novo.",
+    "get": "Obter {name}",
+    "recheck": "Verificar de novo",
+    "trademarks": "VirtualBox é uma marca registrada da Oracle. QEMU e os nomes de outros hypervisors pertencem aos respectivos donos. O Cyber CTF não é afiliado a nenhum deles.",
+    "vagrantNothing": "Nenhum hypervisor local se aplica a esta máquina, então não há nada para o Vagrant controlar aqui. Os labs de VM podem rodar num Servidor.",
+    "vagrantDetail": "Cria e inicia as VMs do lab.",
+    "installVagrantLog": "Instalando o Vagrant…",
+    "installVagrant": "Instalar o Vagrant",
+    "pluginTitle": "Complemento {name} para o Vagrant",
+    "pluginLater": "{plugin}, depois que o Vagrant estiver instalado.",
+    "pluginLog": "Instalando o plugin Vagrant {plugin}…",
+    "installPlugin": "Instalar plugin",
+    "utilityDetail": "O serviço auxiliar da HashiCorp com o qual o plugin VMware se comunica. Instale-o uma vez.",
+    "getUtility": "Obter"
+  },
+  "attack": {
+    "download": "{size} para baixar",
+    "largeDownload": "download grande",
+    "custom": "Usando uma imagem personalizada das Configurações: <mono>{image}</mono>",
+    "autoStart": "Iniciá-la com cada lab",
+    "autoStartHint": "Caso contrário, inicie-a pela página do lab quando precisar.",
+    "needsEngine": "Ela roda na sua engine de contêineres, então funciona assim que uma estiver configurada.",
+    "firstStart": "A imagem é baixada na primeira vez que um lab a inicia."
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "skip": "Pular configuração",
+  "back": "Voltar",
+  "continue": "Continuar",
+  "checking": "Verificando esta máquina…",
+  "stepFailed": "Não foi possível carregar esta etapa",
+  "stepNames": {
+    "welcome": "Boas-vindas",
+    "signin": "Entrar",
+    "pkgmgr": "Gerenciador de pacotes",
+    "virtualization": "Virtualização",
+    "docker": "Engine de contêineres",
+    "dockerTest": "Teste de contêiner",
+    "attack": "Attack box",
+    "vm": "Máquinas virtuais (opcional)",
+    "vagrant": "Vagrant (opcional)",
+    "vmTest": "Teste de VM (opcional)",
+    "done": "Pronto"
+  },
+  "welcome": {
+    "title": "Bem-vindo ao Cyber <em>CTF</em>",
+    "description": "Rode labs de segurança realistas e isolados na sua máquina, no seu próprio servidor ou na nuvem, iniciados pelo app ou direto pelo site.",
+    "labsTitle": "Labs de contêiner e VM",
+    "labsDescription": "Contêineres Docker e máquinas virtuais completas, cada lab na sua própria rede isolada.",
+    "whereTitle": "Rode onde quiser",
+    "whereDescription": "Nesta máquina, no seu próprio servidor (Proxmox, ESXi) ou na sua conta de nuvem (AWS, Azure, Google Cloud e outras), que se desliga sozinha quando você termina.",
+    "targetsTitle": "Alvos reais",
+    "targetsDescription": "Explore sistemas realmente vulneráveis a partir de uma attack box ligada à rede do lab.",
+    "launchTitle": "Inicie de qualquer lugar",
+    "launchDescription": "Inicie um lab pelo site, até pelo celular; ele roda na máquina que você escolher.",
+    "start": "Começar"
+  },
+  "signin": {
+    "title": "Entrar",
+    "description": "Conecte sua conta Cyber CTF para registrar esta máquina e iniciar labs de qualquer dispositivo.",
+    "signedIn": "Conectado",
+    "signedInAs": "Conectado como {name}",
+    "waiting": "Aguardando o navegador… (até 5 minutos)",
+    "button": "Entrar pelo navegador",
+    "hint": "Abre <mono>cyberauth.co</mono> no seu navegador. Os labs também funcionam sem conta: você pode entrar depois pelas Configurações.",
+    "skip": "Pular por enquanto"
+  },
+  "done": {
+    "title": "Tudo <em>pronto</em>",
+    "description": "Você pode mudar tudo isso depois em Configurações ou Esta máquina.",
+    "account": "Conta",
+    "notSignedIn": "Não conectado (entre depois pelas Configurações)",
+    "browse": "Ver labs"
+  }
+}

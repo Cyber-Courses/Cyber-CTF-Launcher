@@ -1,0 +1,60 @@
+{
+  "title": "Cyber CTF",
+  "shortDescription": "Hands-on cybersecurity labs on your own machine, server or cloud. Start a lab in one click, get an attack box on its network and practice real attacks safely.",
+  "description": "Cyber CTF is the desktop launcher for hands-on cybersecurity labs. Pick a lab, press Start, and a deliberately vulnerable environment builds itself, with your own attack box already on the lab network. Practice web attacks, Active Directory, containers and cloud misconfigurations on real systems, then submit what you find.\n\nRun labs where it suits you:\n- On this computer, as containers (Docker Desktop) or as virtual machines (VirtualBox or VMware Workstation)\n- On your own server: Proxmox VE or VMware ESXi, for bigger multi-machine labs\n- In your own cloud account: AWS, Microsoft Azure or Google Cloud, stopped automatically so you only pay while you practice\n\nEvery lab comes with a live network map of its machines, services and published ports, and an attack box you open in one click, right inside the app. Labs launched from www.cyberctf.org open straight in the launcher, and your progress follows your Cyber CTF account.\n\nBuilt for students, security professionals and anyone learning ethical hacking. Only attack the labs Cyber CTF builds for you.\n\nRequirements: Docker Desktop for container labs; VirtualBox or VMware Workstation for VM labs on this computer. The launcher helps you install what's missing.",
+  "releaseNotes": "- Microsoft Store version: container, VM and server labs now start (Docker, Vagrant and Terraform couldn't read the lab files)\n- A lab can no longer be started in two places at once, and a cloud lab still running elsewhere is never forgotten (no more surprise bills)\n- Stop, pause and launch can no longer collide on the same lab, even from the background worker\n- Stopping one lab no longer touches another lab with a similar name\n- VM labs are recognised again after restarting the app\n- Windows: the attack VM shell opens, and stopping a lab never touches an unrelated program\n- Downloads and server connections no longer hang forever\n- More reliable sign-in, and safer tool installs on Linux\n- Many smaller fixes found by a much larger test suite",
+  "features": [
+    "Hundreds of hands-on labs: web, Active Directory, containers and cloud",
+    "One-click start: the lab builds itself on your machine",
+    "Attack box on the lab network, with a built-in terminal",
+    "Live network map of machines, services and ports",
+    "Run labs as containers or virtual machines on this computer",
+    "Use your own Proxmox VE or VMware ESXi server for bigger labs",
+    "Run labs in your own AWS, Azure or Google Cloud account",
+    "Cloud labs stop automatically to keep costs down",
+    "Launch labs from www.cyberctf.org straight into the app",
+    "Progress synced with your Cyber CTF account",
+    "Dark, Black and Light themes, in 6 languages"
+  ],
+  "keywords": [
+    "cybersecurity",
+    "CTF",
+    "ethical hacking",
+    "penetration testing",
+    "hacking labs",
+    "Active Directory",
+    "cybersecurity training"
+  ],
+  "copyrightAndTrademarkInfo": "© 2026 Cyber CTF",
+  "websiteUrl": "https://www.cyberctf.org",
+  "privacyPolicy": "https://www.cyberctf.org/privacy",
+  "supportContact": "https://www.cyberctf.org/contact",
+  "screenshots": [
+    {
+      "file": "screenshot-1.png",
+      "caption": "Your labs, what's running and your machine's health at a glance"
+    },
+    {
+      "file": "screenshot-2.png",
+      "caption": "A live map of every lab: machines, services, ports and your attack box"
+    },
+    {
+      "file": "screenshot-3.png",
+      "caption": "Search hands-on labs by skill, difficulty and where they can run"
+    },
+    {
+      "file": "screenshot-4.png",
+      "caption": "Run bigger labs on your own Proxmox VE or VMware ESXi server"
+    },
+    {
+      "file": "screenshot-5.png",
+      "caption": "Or in your own AWS, Azure or Google Cloud account, stopped automatically"
+    }
+  ],
+  "poster": "poster.png",
+  "trailer": {
+    "title": "Cyber CTF",
+    "video": "trailer.mp4",
+    "thumbnail": "thumbnail.png"
+  }
+}

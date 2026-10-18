@@ -1,0 +1,140 @@
+//! Live machine health, polled by the Machine screen.
+
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use serde::Serialize;
+use sysinfo::{Disks, System};
+
+use crate::platform::exec::run_read;
+
+/// CPU usage needs two samples a moment apart.
+const CPU_SAMPLE_GAP: Duration = Duration::from_millis(220);
+
+#[derive(Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MachineMetrics {
+    /// Overall CPU usage, 0-100.
+    pub cpu: f32,
+    pub mem_used: u64,
+    pub mem_total: u64,
+    pub disk_used: u64,
+    pub disk_total: u64,
+    pub uptime_secs: u64,
+    pub cores: usize,
+    /// Running Docker containers right now (0 when the engine is down).
+    pub containers: u32,
+}
+
+pub async fn machine_metrics() -> MachineMetrics {
+    let mut sys = System::new();
+    sys.refresh_cpu_usage();
+    tokio::time::sleep(CPU_SAMPLE_GAP).await;
+    sys.refresh_cpu_usage();
+    sys.refresh_memory();
+
+    // Listing the disks asks the OS for every volume (slow on Windows with network drives): off
+    // the async threads, which serve every other command meanwhile.
+    let (disk_used, disk_total) = tokio::task::spawn_blocking(system_disk).await.unwrap_or((0, 0));
+    MachineMetrics {
+        cpu: sys.global_cpu_usage(),
+        mem_used: sys.used_memory(),
+        mem_total: sys.total_memory(),
+        disk_used,
+        disk_total,
+        uptime_secs: System::uptime(),
+        cores: sys.cpus().len(),
+        containers: running_containers().await,
+    }
+}
+
+/// (used, total) bytes of the system disk (`/`, or `C:\` on Windows, which has no `/` mount and
+/// whose largest disk is often a second, data one), else of the largest one.
+fn system_disk() -> (u64, u64) {
+    let disks = Disks::new_with_refreshed_list();
+    let mounts: Vec<(&Path, (u64, u64))> = disks.iter().map(|d| (d.mount_point(), (d.total_space(), d.available_space()))).collect();
+    let (total, available) = disk_holding(&mounts, &system_root()).or_else(|| mounts.iter().map(|(_, s)| *s).max_by_key(|(total, _)| *total)).unwrap_or((0, 0));
+    (total.saturating_sub(available), total)
+}
+
+fn system_root() -> PathBuf {
+    if cfg!(windows) {
+        let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_owned());
+        PathBuf::from(format!("{drive}\\"))
+    } else {
+        PathBuf::from("/")
+    }
+}
+
+/// The (total, available) of the mount holding `path`: the longest mount point it starts with.
+/// Drive letters compare regardless of case (`c:\` and `C:\`).
+fn disk_holding(mounts: &[(&Path, (u64, u64))], path: &Path) -> Option<(u64, u64)> {
+    // Component-wise (`/mnt/data2` is not under `/mnt/data`).
+    let key = |p: &Path| if cfg!(windows) { PathBuf::from(p.to_string_lossy().to_lowercase()) } else { p.to_path_buf() };
+    let path = key(path);
+    mounts.iter().filter(|(m, _)| path.starts_with(key(m))).max_by_key(|(m, _)| m.as_os_str().len()).map(|(_, s)| *s)
+}
+
+async fn running_containers() -> u32 {
+    run_read("docker", &["ps", "--format", "{{.ID}}"], None).await.ok().map_or(0, |o| count_ids(&o))
+}
+
+/// The container ids in `docker ps` output, one per non-empty line.
+fn count_ids(out: &str) -> u32 {
+    u32::try_from(out.lines().filter(|l| !l.trim().is_empty()).count()).unwrap_or(u32::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn the_metrics_describe_this_machine_and_its_running_containers() {
+        let tools = crate::platform::exec::fake::Tools::rules(&[("docker ps", crate::platform::exec::fake::ok("a1\nb2\n"))]);
+        let m = machine_metrics().await;
+        assert!(m.cores > 0 && m.mem_total > 0 && m.mem_used <= m.mem_total, "{} {} {}", m.cores, m.mem_used, m.mem_total);
+        assert!(m.disk_used <= m.disk_total);
+        assert!((0.0..=100.0).contains(&m.cpu), "{}", m.cpu);
+        assert_eq!(m.containers, 2);
+        drop(tools);
+        // The engine down: none.
+        let _tools = crate::platform::exec::fake::Tools::rules(&[("docker ps", crate::platform::exec::fake::fail(DOCKER_DOWN))]);
+        assert_eq!(machine_metrics().await.containers, 0);
+    }
+
+    const DOCKER_DOWN: &str = "Cannot connect to the Docker daemon";
+
+    #[test]
+    fn counts_one_container_per_non_empty_line() {
+        assert_eq!(count_ids("abc\n\n def \n"), 2);
+        assert_eq!(count_ids(""), 0);
+    }
+
+    #[test]
+    fn the_disk_is_the_longest_mount_holding_the_path() {
+        let (root, data) = ((100, 40), (900, 800));
+        if cfg!(windows) {
+            // The second disk is bigger: it must not win over the system drive.
+            let mounts = [(Path::new(r"D:\"), data), (Path::new(r"C:\"), root)];
+            assert_eq!(disk_holding(&mounts, Path::new(r"c:\")), Some(root));
+            assert_eq!(disk_holding(&mounts, Path::new(r"D:\CyberCTF\labs")), Some(data));
+            assert_eq!(disk_holding(&mounts, Path::new(r"E:\")), None);
+        } else {
+            let mounts = [(Path::new("/"), root), (Path::new("/mnt/data"), data)];
+            assert_eq!(disk_holding(&mounts, Path::new("/")), Some(root));
+            assert_eq!(disk_holding(&mounts, Path::new("/mnt/data/labs")), Some(data));
+            assert_eq!(disk_holding(&mounts, Path::new("/home/p")), Some(root));
+            assert_eq!(disk_holding(&mounts, Path::new("/mnt/data2")), Some(root));
+        }
+    }
+
+    #[test]
+    fn the_system_disk_is_used_out_of_total() {
+        let (used, total) = system_disk();
+        assert!(used <= total);
+        let m = MachineMetrics { cpu: 1.5, mem_used: 1, mem_total: 2, disk_used: used, disk_total: total, uptime_secs: 3, cores: 4, containers: 0 };
+        let v = serde_json::to_value(&m).unwrap();
+        assert_eq!(v["memTotal"], 2);
+        assert_eq!(v["uptimeSecs"], 3);
+    }
+}

@@ -1,0 +1,83 @@
+{
+  "tabs": {
+    "home": "Overview",
+    "labs": "Labs",
+    "machine": "Machine",
+    "setup": "Setup",
+    "server": "Servers",
+    "cloud": "Cloud",
+    "events": "Events",
+    "settings": "Settings"
+  },
+  "sidebar": {
+    "find": "Find…",
+    "soon": "Soon",
+    "running": "Running",
+    "labRunning": "running"
+  },
+  "header": {
+    "thisMachine": "This machine",
+    "dockerNotRunning": "Docker not running",
+    "checkFailed": "machine check failed",
+    "checking": "checking…"
+  },
+  "palette": {
+    "label": "Command menu",
+    "placeholder": "Search labs, screens, actions…",
+    "noResults": "No results",
+    "findLab": "Find a lab",
+    "findLabKeywords": "labs search ctf",
+    "openSettings": "Open Settings",
+    "openSettingsKeywords": "settings preferences appearance theme",
+    "goTo": "Go to {screen}",
+    "labKeywords": "lab {category}",
+    "groups": {
+      "actions": "Actions",
+      "screens": "Screens",
+      "labs": "Labs"
+    }
+  },
+  "screen": {
+    "checkFailed": "Couldn’t check this machine",
+    "tryAgain": "Try again",
+    "checking": "Checking this machine…",
+    "loading": "Loading…",
+    "comingSoon": "{title} is on the way",
+    "eventsDescription": "Join live CTF events where labs are hosted by Cyber CTF: nothing to run on your machine, each participant gets their own lab for the event's duration."
+  },
+  "failures": {
+    "openSettings": "Couldn't open Settings",
+    "restart": "Couldn't restart Cyber CTF"
+  },
+  "update": {
+    "installed": "Update installed. Restarting Cyber CTF…",
+    "failed": "Update failed. Try again later.",
+    "available": "Version <version>{version}</version> is available.",
+    "restartNow": "Restart now",
+    "updating": "Updating…",
+    "update": "Update",
+    "waitForDeploys": "Updating restarts Cyber CTF. Wait until your labs finish deploying."
+  },
+  "error": {
+    "title": "Something went wrong",
+    "description": "Cyber CTF hit an unexpected error. Your labs keep running. Try again, and if it happens again, copy the details and send them to us.",
+    "stepDescription": "This step hit an unexpected error. Try again, or go back a step. If it keeps happening, copy the details and send them to us.",
+    "unknown": "Unknown error",
+    "tryAgain": "Try again",
+    "reload": "Reload",
+    "copied": "Copied",
+    "copyDetails": "Copy details"
+  },
+  "terminal": {
+    "connecting": "connecting…",
+    "open": "attack box",
+    "ended": "session ended",
+    "failed": "couldn't connect",
+    "systemTerminal": "System terminal",
+    "systemTerminalHint": "Open this shell in your own terminal app",
+    "shellEnded": "The shell ended.",
+    "shellEndedWithCode": "The shell ended (exit {code}).",
+    "reconnect": "Reconnect",
+    "close": "Close"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "skip": "Skip setup",
+  "back": "Back",
+  "continue": "Continue",
+  "checking": "Checking this machine…",
+  "stepFailed": "This step couldn’t load",
+  "stepNames": {
+    "welcome": "Welcome",
+    "signin": "Sign in",
+    "pkgmgr": "Package manager",
+    "virtualization": "Virtualization",
+    "docker": "Container engine",
+    "dockerTest": "Container test",
+    "attack": "Attack box",
+    "vm": "Virtual machines (optional)",
+    "vagrant": "Vagrant (optional)",
+    "vmTest": "VM test (optional)",
+    "done": "Done"
+  },
+  "welcome": {
+    "title": "Welcome to Cyber <em>CTF</em>",
+    "description": "Run realistic, isolated security labs on your machine, your own server or the cloud, launched from the app or straight from the website.",
+    "labsTitle": "Container & VM labs",
+    "labsDescription": "Docker containers and full virtual machines, each lab on its own isolated network.",
+    "whereTitle": "Run it where you want",
+    "whereDescription": "On this machine, your own server (Proxmox, ESXi) or your cloud account (AWS, Azure, Google Cloud and more), which stops itself when you're done.",
+    "targetsTitle": "Real targets",
+    "targetsDescription": "Exploit genuinely vulnerable systems from an attack box plugged into the lab network.",
+    "launchTitle": "Launch from anywhere",
+    "launchDescription": "Start a lab from the website, even on your phone; it runs on the machine you pick.",
+    "start": "Get started"
+  },
+  "signin": {
+    "title": "Sign in",
+    "description": "Connect your Cyber CTF account to register this machine and launch labs from any device.",
+    "signedIn": "Signed in",
+    "signedInAs": "Signed in as {name}",
+    "waiting": "Waiting for the browser… (up to 5 minutes)",
+    "button": "Sign in with your browser",
+    "hint": "Opens <mono>cyberauth.co</mono> in your browser. Labs run without an account too: you can sign in later from Settings.",
+    "skip": "Skip for now"
+  },
+  "done": {
+    "title": "You’re all <em>set</em>",
+    "description": "You can change any of this later in Settings or This machine.",
+    "account": "Account",
+    "notSignedIn": "Not signed in (sign in later from Settings)",
+    "browse": "Browse labs"
+  }
+}

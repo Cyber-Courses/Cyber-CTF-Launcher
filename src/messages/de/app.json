@@ -1,0 +1,24 @@
+{
+  "launchConfirm": {
+    "label": "Start eines Cloud-Labs bestätigen",
+    "title": "Dieses Lab in deinem Cloud-Konto ausführen?",
+    "body": "Ein Start von der Website soll auf <target>{target}</target> laufen. Dabei werden kostenpflichtige Ressourcen in deinem Konto gestartet (sie stoppen später automatisch). Bestätige nur einen Start, den du selbst ausgelöst hast.",
+    "repo": "Repo: {repo}",
+    "commit": "Commit: {commit}",
+    "failed": "Deine Antwort konnte nicht an Cyber CTF gesendet werden",
+    "decline": "Ablehnen",
+    "approve": "In meiner Cloud ausführen",
+    "expired": "Diese Anfrage ist abgelaufen: Der Start wurde nicht ausgeführt. Starte ihn erneut über die Website, wenn du ihn noch willst.",
+    "close": "Schließen"
+  },
+  "quitGuard": {
+    "title": "Ein Lab wird noch bereitgestellt",
+    "body": {
+      "one": "In der App wird gerade an einem Lab gearbeitet. Wenn du jetzt beendest, können halb erstellte Maschinen zurückbleiben, und ein Lab in einem Cloud-Konto verursacht Kosten, bis es abgebaut ist. Lass es im Hintergrund fertig laufen (die App schließt sich danach von selbst), warte weiter oder beende trotzdem. Ein zweites Beenden beendet ebenfalls sofort.",
+      "other": "In der App wird gerade an {count} Labs gearbeitet. Wenn du jetzt beendest, können halb erstellte Maschinen zurückbleiben, und ein Lab in einem Cloud-Konto verursacht Kosten, bis es abgebaut ist. Lass sie im Hintergrund fertig laufen (die App schließt sich danach von selbst), warte weiter oder beende trotzdem. Ein zweites Beenden beendet ebenfalls sofort."
+    },
+    "keepWaiting": "Weiter warten",
+    "quitAnyway": "Trotzdem beenden",
+    "finishInBackground": "Im Hintergrund abschließen"
+  }
+}

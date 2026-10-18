@@ -1,0 +1,48 @@
+{
+  "operation": {
+    "status": {
+      "launch": "Starting",
+      "resume": "Resuming",
+      "pause": "Pausing",
+      "shutdown": "Shutting down",
+      "stop": "Stopping"
+    },
+    "label": {
+      "resume": "Resuming…",
+      "pause": "Pausing…",
+      "shutdown": "Shutting down…",
+      "provision": "Provisioning…",
+      "provisionMachine": "Provisioning {machine}…",
+      "attackVm": "Starting the attack VM…",
+      "stop": "Stopping…"
+    }
+  },
+  "time": {
+    "justNow": "just now",
+    "minutesAgo": "{count} min ago",
+    "hoursAgo": "{count} h ago",
+    "yesterday": "yesterday",
+    "daysAgo": "{count} days ago"
+  },
+  "units": {
+    "seconds": "{n}s",
+    "gigabytes": "{n} GB",
+    "gigabytesOf": "{used}/{total} GB",
+    "megabytes": "{n} MB",
+    "kilobytes": "{n} kB",
+    "uptimeDays": "{days}d {hours}h",
+    "uptimeHours": "{hours}h {minutes}m",
+    "uptimeMinutes": "{minutes}m"
+  },
+  "attackPresets": {
+    "cyberctf": "Kali with its standard toolset, ready to use",
+    "kali": "Official Kali base, add tools as needed",
+    "parrot": "Parrot Security toolset",
+    "exegolFree": "Exegol Community: full toolkit, updated after Full; for learning and personal use",
+    "exegolFreeTerms": "Non-commercial use",
+    "exegolFull": "The latest Exegol toolkit; needs an Exegol Pro, Team or Enterprise plan",
+    "exegolFullTerms": "Paid plan",
+    "kaliVm": "Official Kali box; it has the internet, add tools as you go",
+    "debianVm": "A plain base to build your own toolset on"
+  }
+}

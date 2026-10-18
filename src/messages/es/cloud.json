@@ -1,0 +1,67 @@
+{
+  "screen": {
+    "title": "Nube",
+    "lead": "Instancias desechables en tu propia cuenta, facturadas a ti y detenidas automáticamente.",
+    "setUp": "Configurar proveedor de nube",
+    "overOne": "{name} ha superado su presupuesto mensual. Los nuevos labs ahí quedan bloqueados hasta que subas el presupuesto o empiece el próximo mes.",
+    "overMany": "{count} cuentas han superado su presupuesto mensual. Los nuevos labs ahí quedan bloqueados hasta que subas el presupuesto o empiece el próximo mes.",
+    "runningNow": "En ejecución",
+    "billingWhileRunning": "se facturan mientras se ejecutan",
+    "autoStops": "se detiene {time}",
+    "stop": "Detener",
+    "loading": "Cargando…",
+    "accounts": "Cuentas",
+    "billedOnly": "se factura solo mientras un lab se ejecuta",
+    "notConnected": "no conectada",
+    "connect": "Conectar",
+    "budgetGuard": "Control de presupuesto · {name}",
+    "ofLimit": "de {limit}",
+    "overBudget": "Presupuesto superado",
+    "autoStopAfter": "parada automática tras {hours} h",
+    "noAutoStop": "sin parada automática"
+  },
+  "firstRun": {
+    "title": "Ejecuta labs en tu propia cuenta en la nube",
+    "body": "Una instancia desechable por lab, destruida al detenerlo. Funciona en AWS, Azure o Google Cloud.",
+    "steps": {
+      "connect": { "title": "Conecta una cuenta", "body": "Claves de acceso o tus credenciales de AWS CLI, y una región." },
+      "pick": { "title": "Elígela en un lab", "body": "Terraform crea una instancia, accesible por SSH desde tu IP." },
+      "stop": { "title": "Ataca y luego Detén", "body": "Detener destruye la instancia, así que la facturación se detiene con ella." }
+    }
+  },
+  "account": {
+    "apiToken": "Token de API",
+    "apiKey": "Clave de API",
+    "cliSignIn": "Inicio de sesión CLI",
+    "cliProfile": "CLI · {profile}",
+    "cliCredentials": "Credenciales CLI",
+    "accessKeys": "claves de acceso",
+    "autoStop": "parada auto. {hours}h",
+    "noAutoStop": "sin parada automática",
+    "budget": "presupuesto {amount}/mes",
+    "spentThisMonth": "{amount} este mes",
+    "status": {
+      "testing": "Probando…",
+      "notTested": "Sin probar",
+      "connected": "Conectada",
+      "needsAttention": "Requiere atención",
+      "failed": "Error",
+      "overBudget": "Presupuesto superado"
+    },
+    "removeConfirm": "¿Eliminar?",
+    "remove": "Eliminar",
+    "cancel": "Cancelar",
+    "test": "Probar",
+    "edit": "Editar",
+    "installed": "instalado",
+    "notInstalled": "no instalado"
+  },
+  "tools": {
+    "install": "Instalar",
+    "installing": "Instalando…",
+    "pulled": "descargada",
+    "notPulled": "sin descargar",
+    "pull": "Descargar",
+    "pulling": "Descargando…"
+  }
+}

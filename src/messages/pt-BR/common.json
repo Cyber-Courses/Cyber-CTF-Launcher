@@ -1,0 +1,48 @@
+{
+  "operation": {
+    "status": {
+      "launch": "Iniciando",
+      "resume": "Retomando",
+      "pause": "Pausando",
+      "shutdown": "Desligando",
+      "stop": "Parando"
+    },
+    "label": {
+      "resume": "Retomando…",
+      "pause": "Pausando…",
+      "shutdown": "Desligando…",
+      "provision": "Provisionando…",
+      "provisionMachine": "Provisionando {machine}…",
+      "attackVm": "Iniciando a VM de ataque…",
+      "stop": "Parando…"
+    }
+  },
+  "time": {
+    "justNow": "agora mesmo",
+    "minutesAgo": "há {count} min",
+    "hoursAgo": "há {count} h",
+    "yesterday": "ontem",
+    "daysAgo": "há {count} dias"
+  },
+  "units": {
+    "seconds": "{n}s",
+    "gigabytes": "{n} GB",
+    "gigabytesOf": "{used}/{total} GB",
+    "megabytes": "{n} MB",
+    "kilobytes": "{n} kB",
+    "uptimeDays": "{days}d {hours}h",
+    "uptimeHours": "{hours}h {minutes}min",
+    "uptimeMinutes": "{minutes}min"
+  },
+  "attackPresets": {
+    "cyberctf": "Kali com o conjunto de ferramentas padrão, pronto para usar",
+    "kali": "Base oficial do Kali, adicione ferramentas conforme precisar",
+    "parrot": "Conjunto de ferramentas do Parrot Security",
+    "exegolFree": "Exegol Community: kit completo, atualizado depois do Full; para aprendizado e uso pessoal",
+    "exegolFreeTerms": "Uso não comercial",
+    "exegolFull": "O kit Exegol mais recente; requer um plano Exegol Pro, Team ou Enterprise",
+    "exegolFullTerms": "Plano pago",
+    "kaliVm": "Box oficial do Kali; tem acesso à internet, adicione ferramentas conforme avança",
+    "debianVm": "Uma base limpa para montar seu próprio conjunto de ferramentas"
+  }
+}

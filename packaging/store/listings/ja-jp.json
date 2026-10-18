@@ -1,0 +1,60 @@
+{
+  "title": "Cyber CTF",
+  "shortDescription": "自分のマシン、サーバー、クラウドで動く実践的なサイバーセキュリティラボ。ワンクリックでラボを起動し、そのネットワーク上のアタックボックスから、本物の攻撃を安全に練習できます。",
+  "description": "Cyber CTF は、実践的なサイバーセキュリティラボのためのデスクトップランチャーです。ラボを選んで「起動」を押すだけで、意図的に脆弱にした環境が自動で構築され、ラボのネットワーク上にはあなた専用のアタックボックスがすでに用意されています。Web 攻撃、Active Directory、コンテナ、クラウドの設定ミスを実際のシステムで練習し、見つけたものを提出しましょう。\n\nラボは好きな場所で実行できます：\n- このコンピューター上で、コンテナ（Docker Desktop）または仮想マシン（VirtualBox または VMware Workstation）として\n- 自分のサーバー上で：Proxmox VE または VMware ESXi を使い、より大規模な複数マシンのラボを\n- 自分のクラウドアカウント上で：AWS、Microsoft Azure、Google Cloud。自動で停止するため、料金は練習している間だけです\n\nどのラボにも、マシン、サービス、公開ポートを示すライブのネットワークマップと、アプリ内からワンクリックで開けるアタックボックスが付属します。www.cyberctf.org から起動したラボはそのままランチャーで開き、進捗は Cyber CTF アカウントに同期されます。\n\n学生、セキュリティ専門家、エシカルハッキングを学ぶすべての人のために作られています。攻撃してよいのは、Cyber CTF が用意したラボだけです。\n\n動作要件：コンテナラボには Docker Desktop、このコンピューター上の VM ラボには VirtualBox または VMware Workstation が必要です。足りないものはランチャーがインストールをお手伝いします。",
+  "releaseNotes": "- Microsoft Store 版：コンテナ、VM、サーバーのラボが起動するようになりました（Docker、Vagrant、Terraform がラボのファイルを読み込めませんでした）\n- ラボを2か所で同時に起動できなくなり、別の場所で動いているクラウドラボが忘れられることもなくなりました（予期しない請求を防止）\n- 同じラボでの停止、一時停止、起動がバックグラウンド処理を含めて衝突しなくなりました\n- ラボを停止しても、名前の似た別のラボに影響しなくなりました\n- アプリ再起動後に VM ラボが再び認識されるようになりました\n- Windows：攻撃用 VM のシェルが開くようになり、ラボの停止が無関係なプログラムに影響することはなくなりました\n- ダウンロードとサーバー接続が無期限に止まらなくなりました\n- サインインの信頼性が向上し、Linux でのツールのインストールがより安全になりました\n- 大幅に拡充したテストで見つかった多数の細かな修正",
+  "features": [
+    "数百の実践的なラボ：Web、Active Directory、コンテナ、クラウド",
+    "ワンクリックで起動：ラボがあなたのマシン上に自動で構築されます",
+    "ラボのネットワーク上のアタックボックスと内蔵ターミナル",
+    "マシン、サービス、ポートを示すライブのネットワークマップ",
+    "このコンピューター上でラボをコンテナまたは仮想マシンとして実行",
+    "大規模なラボには自分の Proxmox VE または VMware ESXi サーバーを使用",
+    "自分の AWS、Azure、Google Cloud アカウントでラボを実行",
+    "クラウドラボは自動で停止し、コストを抑えます",
+    "www.cyberctf.org からラボを起動し、そのままアプリで開けます",
+    "進捗は Cyber CTF アカウントと同期",
+    "ダーク、ブラック、ライトのテーマ。6 言語に対応"
+  ],
+  "keywords": [
+    "サイバーセキュリティ",
+    "CTF",
+    "エシカルハッキング",
+    "ペネトレーションテスト",
+    "ハッキングラボ",
+    "Active Directory",
+    "セキュリティ学習"
+  ],
+  "copyrightAndTrademarkInfo": "© 2026 Cyber CTF",
+  "websiteUrl": "https://www.cyberctf.org",
+  "privacyPolicy": "https://www.cyberctf.org/privacy",
+  "supportContact": "https://www.cyberctf.org/contact",
+  "screenshots": [
+    {
+      "file": "screenshot-1.png",
+      "caption": "ラボ、実行中のもの、マシンの状態をひと目で確認"
+    },
+    {
+      "file": "screenshot-2.png",
+      "caption": "すべてのラボのライブマップ：マシン、サービス、ポート、アタックボックス"
+    },
+    {
+      "file": "screenshot-3.png",
+      "caption": "スキル、難易度、実行場所で実践的なラボを検索"
+    },
+    {
+      "file": "screenshot-4.png",
+      "caption": "自分の Proxmox VE または VMware ESXi サーバーで大規模なラボを実行"
+    },
+    {
+      "file": "screenshot-5.png",
+      "caption": "または自分の AWS、Azure、Google Cloud アカウントで。自動で停止します"
+    }
+  ],
+  "poster": "poster.png",
+  "trailer": {
+    "title": "Cyber CTF",
+    "video": "trailer.mp4",
+    "thumbnail": "thumbnail.png"
+  }
+}

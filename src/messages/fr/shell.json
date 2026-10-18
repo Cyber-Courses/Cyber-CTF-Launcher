@@ -1,0 +1,83 @@
+{
+  "tabs": {
+    "home": "Vue d'ensemble",
+    "labs": "Labs",
+    "machine": "Machine",
+    "setup": "Configuration",
+    "server": "Serveurs",
+    "cloud": "Cloud",
+    "events": "Événements",
+    "settings": "Réglages"
+  },
+  "sidebar": {
+    "find": "Rechercher…",
+    "soon": "Bientôt",
+    "running": "En cours",
+    "labRunning": "en cours"
+  },
+  "header": {
+    "thisMachine": "Cette machine",
+    "dockerNotRunning": "Docker n'est pas lancé",
+    "checkFailed": "échec de la vérification",
+    "checking": "vérification…"
+  },
+  "palette": {
+    "label": "Menu des commandes",
+    "placeholder": "Rechercher des labs, écrans, actions…",
+    "noResults": "Aucun résultat",
+    "findLab": "Trouver un lab",
+    "findLabKeywords": "labs search ctf recherche chercher",
+    "openSettings": "Ouvrir les réglages",
+    "openSettingsKeywords": "settings réglages préférences apparence thème",
+    "goTo": "Aller à {screen}",
+    "labKeywords": "lab {category}",
+    "groups": {
+      "actions": "Actions",
+      "screens": "Écrans",
+      "labs": "Labs"
+    }
+  },
+  "screen": {
+    "checkFailed": "Impossible de vérifier cette machine",
+    "tryAgain": "Réessayer",
+    "checking": "Vérification de cette machine…",
+    "loading": "Chargement…",
+    "comingSoon": "{title} arrive bientôt",
+    "eventsDescription": "Participez à des événements CTF en direct dont les labs sont hébergés par Cyber CTF : rien à lancer sur votre machine, chaque participant a son propre lab pendant toute la durée de l'événement."
+  },
+  "failures": {
+    "openSettings": "Impossible d'ouvrir les réglages",
+    "restart": "Impossible de redémarrer Cyber CTF"
+  },
+  "update": {
+    "installed": "Mise à jour installée. Redémarrage de Cyber CTF…",
+    "failed": "Échec de la mise à jour. Réessayez plus tard.",
+    "available": "La version <version>{version}</version> est disponible.",
+    "restartNow": "Redémarrer",
+    "updating": "Mise à jour…",
+    "update": "Mettre à jour",
+    "waitForDeploys": "La mise à jour redémarre Cyber CTF. Attendez la fin du déploiement de vos labs."
+  },
+  "error": {
+    "title": "Une erreur est survenue",
+    "description": "Cyber CTF a rencontré une erreur inattendue. Vos labs continuent de tourner. Réessayez, et si cela se reproduit, copiez les détails et envoyez-les-nous.",
+    "stepDescription": "Cette étape a rencontré une erreur inattendue. Réessayez, ou revenez à l'étape précédente. Si cela continue, copiez les détails et envoyez-les-nous.",
+    "unknown": "Erreur inconnue",
+    "tryAgain": "Réessayer",
+    "reload": "Recharger",
+    "copied": "Copié",
+    "copyDetails": "Copier les détails"
+  },
+  "terminal": {
+    "connecting": "connexion…",
+    "open": "attack box",
+    "ended": "session terminée",
+    "failed": "connexion impossible",
+    "systemTerminal": "Terminal système",
+    "systemTerminalHint": "Ouvrir ce shell dans votre propre application de terminal",
+    "shellEnded": "Le shell s'est terminé.",
+    "shellEndedWithCode": "Le shell s'est terminé (code {code}).",
+    "reconnect": "Reconnecter",
+    "close": "Fermer"
+  }
+}

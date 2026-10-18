@@ -1,0 +1,400 @@
+{
+  "$schema": "https://www.isoloom.com/schema/run-manifest/v0.json",
+  "manifest_version": 0,
+  "generator": {
+    "name": "isoloom",
+    "version": "0.10.1"
+  },
+  "environment": {
+    "name": "solo-web",
+    "instance": null,
+    "message": null
+  },
+  "target": "cloud-vm",
+  "cloud": "aws",
+  "driver": "terraform",
+  "hosts": [
+    "linux",
+    "macos",
+    "windows"
+  ],
+  "tools": [
+    {
+      "name": "terraform",
+      "probe": [
+        "terraform",
+        "version"
+      ],
+      "min_version": "1.11.0"
+    },
+    {
+      "name": "ssh",
+      "probe": [
+        "ssh",
+        "-V"
+      ]
+    }
+  ],
+  "identity": {
+    "terraform": {
+      "module": ".",
+      "state": "runner"
+    }
+  },
+  "params": [
+    {
+      "name": "region",
+      "description": "Where the lab runs.",
+      "set_by": "embedder",
+      "deliver": [
+        {
+          "via": "tf_var",
+          "var": "region"
+        }
+      ],
+      "default": "eu-west-3"
+    },
+    {
+      "name": "allowed_cidr",
+      "description": "Who may reach the machines (SSH and the published ports).",
+      "set_by": "embedder",
+      "deliver": [
+        {
+          "via": "tf_var",
+          "var": "allowed_cidr"
+        }
+      ],
+      "required": true
+    },
+    {
+      "name": "AWS_PROFILE",
+      "description": "The AWS CLI profile Terraform signs in with.",
+      "default": "",
+      "set_by": "embedder",
+      "deliver": [
+        {
+          "via": "env",
+          "var": "AWS_PROFILE",
+          "steps": [
+            "*"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ISOLOOM_DERIVED",
+      "description": "0: the checks derived from the spec (reachability, no internet) are skipped.",
+      "default": "1",
+      "values": [
+        "0",
+        "1"
+      ],
+      "set_by": "embedder",
+      "deliver": [
+        {
+          "via": "env",
+          "var": "ISOLOOM_DERIVED",
+          "steps": [
+            "check-networks"
+          ]
+        }
+      ]
+    }
+  ],
+  "secrets": [
+    {
+      "name": "AWS_ACCESS_KEY_ID",
+      "kind": "connection",
+      "required": false,
+      "sensitive": true,
+      "deliver": [
+        {
+          "via": "env",
+          "var": "AWS_ACCESS_KEY_ID",
+          "steps": [
+            "*"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AWS_SECRET_ACCESS_KEY",
+      "kind": "connection",
+      "required": false,
+      "sensitive": true,
+      "deliver": [
+        {
+          "via": "env",
+          "var": "AWS_SECRET_ACCESS_KEY",
+          "steps": [
+            "*"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AWS_SESSION_TOKEN",
+      "kind": "connection",
+      "required": false,
+      "sensitive": true,
+      "deliver": [
+        {
+          "via": "env",
+          "var": "AWS_SESSION_TOKEN",
+          "steps": [
+            "*"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "FLAG",
+      "kind": "input",
+      "required": false,
+      "sensitive": true,
+      "machines": [
+        "web"
+      ],
+      "default": "",
+      "deliver": [
+        {
+          "via": "guest",
+          "machine": "web",
+          "transport": "ssh"
+        }
+      ]
+    }
+  ],
+  "networks": [
+    {
+      "name": "app",
+      "cidr": "10.80.0.0/24",
+      "internet": true
+    }
+  ],
+  "machines": [
+    {
+      "name": "web",
+      "role": "target",
+      "os": "debian-12",
+      "arch": "amd64",
+      "addresses": {
+        "app": "10.80.0.10"
+      },
+      "ports": [
+        {
+          "name": "web",
+          "port": 80,
+          "protocol": "tcp",
+          "http": true,
+          "publish": {
+            "mode": "fixed",
+            "preferred": 8080,
+            "address": "${outputs.address_web}"
+          }
+        }
+      ]
+    }
+  ],
+  "lifecycle": {
+    "up": [
+      {
+        "id": "clear-lock",
+        "action": "terraform.clear_lock"
+      },
+      {
+        "id": "init",
+        "note": "Preparing Terraform and its providers\u2026",
+        "argv": [
+          "terraform",
+          "init",
+          "-input=false",
+          "-no-color",
+          "-backend-config=path=${run.state_dir}/terraform.tfstate"
+        ],
+        "env": {
+          "TF_DATA_DIR": "${run.state_dir}/.terraform",
+          "TF_INPUT": "0",
+          "TF_IN_AUTOMATION": "1",
+          "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
+        },
+        "timeout_s": 600
+      },
+      {
+        "id": "apply",
+        "note": "Creating the lab's VMs on the server\u2026",
+        "argv": [
+          "terraform",
+          "apply",
+          "-auto-approve",
+          "-input=false",
+          "-no-color"
+        ],
+        "env": {
+          "TF_DATA_DIR": "${run.state_dir}/.terraform",
+          "TF_INPUT": "0",
+          "TF_IN_AUTOMATION": "1",
+          "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
+        },
+        "timeout_s": 3600
+      }
+    ],
+    "down": [
+      {
+        "id": "clear-lock",
+        "action": "terraform.clear_lock"
+      },
+      {
+        "id": "init",
+        "note": "Preparing Terraform and its providers\u2026",
+        "argv": [
+          "terraform",
+          "init",
+          "-input=false",
+          "-no-color",
+          "-backend-config=path=${run.state_dir}/terraform.tfstate"
+        ],
+        "env": {
+          "TF_DATA_DIR": "${run.state_dir}/.terraform",
+          "TF_INPUT": "0",
+          "TF_IN_AUTOMATION": "1",
+          "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
+        },
+        "timeout_s": 600
+      },
+      {
+        "id": "destroy",
+        "note": "Removing the lab from the server\u2026",
+        "argv": [
+          "terraform",
+          "destroy",
+          "-auto-approve",
+          "-input=false",
+          "-no-color",
+          "-refresh=false"
+        ],
+        "env": {
+          "TF_DATA_DIR": "${run.state_dir}/.terraform",
+          "TF_INPUT": "0",
+          "TF_IN_AUTOMATION": "1",
+          "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
+        },
+        "timeout_s": 1800
+      }
+    ],
+    "status": {
+      "id": "state",
+      "action": "terraform.read_state"
+    }
+  },
+  "ready": [
+    {
+      "kind": "step_ok",
+      "step": "apply",
+      "means": "the VMs exist; each sets itself up from its user data"
+    },
+    {
+      "kind": "ready_file",
+      "host": "${outputs.address_web}",
+      "user": "${outputs.ssh_user}",
+      "path": "${outputs.ready_file}",
+      "log": "/var/log/cloud-init-output.log",
+      "grammar": "isoloom-ready/1",
+      "timeout_s": 2400,
+      "unreachable_timeout_s": 600,
+      "interval_s": 10
+    }
+  ],
+  "outputs": [
+    {
+      "name": "ip",
+      "description": "The entry machine's public address.",
+      "role": "address",
+      "sensitive": false,
+      "from": {
+        "kind": "terraform_output",
+        "name": "ip"
+      }
+    },
+    {
+      "name": "ssh_user",
+      "description": "The user the machines let in with the runner's key.",
+      "role": "info",
+      "sensitive": false,
+      "from": {
+        "kind": "terraform_output",
+        "name": "ssh_user"
+      }
+    },
+    {
+      "name": "ready_file",
+      "description": "Where each Linux machine's set-up says how far it got (isoloom-ready/1).",
+      "role": "info",
+      "sensitive": false,
+      "from": {
+        "kind": "terraform_output",
+        "name": "ready_file"
+      }
+    },
+    {
+      "name": "address_web",
+      "description": "web's public address.",
+      "role": "address",
+      "sensitive": false,
+      "from": {
+        "kind": "terraform_output",
+        "name": "address_web"
+      }
+    },
+    {
+      "name": "web_web",
+      "description": "web's web (port 80).",
+      "role": "entry",
+      "sensitive": false,
+      "format": "http://${outputs.address_web}:${value}/",
+      "from": {
+        "kind": "published_port",
+        "machine": "web",
+        "port": "web"
+      }
+    }
+  ],
+  "checks": {
+    "protocol": "isoloom-check/1",
+    "setup": [],
+    "runners": [
+      {
+        "id": "networks",
+        "from": "from web",
+        "checks": [
+          {
+            "name": "checks/web-answers.sh",
+            "kind": "script",
+            "wait_s": 0,
+            "derived": false
+          }
+        ],
+        "step": {
+          "id": "check-networks",
+          "action": "ssh.run",
+          "with": {
+            "command": "ISOLOOM_DERIVED=${params.ISOLOOM_DERIVED} sh -s",
+            "host": "${outputs.address_web}",
+            "user": "${outputs.ssh_user}"
+          },
+          "stdin": "checks/networks.sh",
+          "timeout_s": 75
+        }
+      }
+    ],
+    "teardown": []
+  },
+  "recovery": {
+    "apply_retries": 1
+  },
+  "expiry": {
+    "tf_var": "expires_at",
+    "unit": "unix_seconds",
+    "default_minutes": 240
+  }
+}

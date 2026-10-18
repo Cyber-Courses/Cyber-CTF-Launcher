@@ -1,0 +1,38 @@
+{
+  "clipboard": "Impossible de copier dans le presse-papiers",
+  "browser": "Impossible d'ouvrir votre navigateur",
+  "codes": {
+    "signedOut": "Vous êtes déconnecté. Reconnectez-vous pour continuer.",
+    "sessionExpired": "Votre session a expiré : vous êtes déconnecté. Reconnectez-vous pour continuer.",
+    "loginTimeout": "La connexion n'a pas été terminée en {minutes} minutes, elle a donc été annulée. Réessayez.",
+    "noBrowser": "Aucun navigateur ne s'est ouvert pour la connexion. Définissez un navigateur web par défaut pour ce compte, puis réessayez.",
+    "alreadyInProgress": "Une autre opération sur ce lab est déjà en cours ; attendez qu'elle se termine.",
+    "noPasswordStored": "Aucun mot de passe n'est enregistré pour cet hôte. Modifiez-le et saisissez-en un.",
+    "portInUse": "Le port {port} de l'hôte est déjà utilisé sur cette machine (par un autre lab ou une application). Arrêtez ce qui l'utilise, ou démarrez le lab avec des ports aléatoires.",
+    "dockerNotRunning": "Docker ne tourne pas. Démarrez votre moteur de conteneurs (Docker Desktop, ou le service docker sous Linux), puis démarrez à nouveau le lab.",
+    "dockerDenied": "Docker tourne, mais votre compte ne peut pas encore l'utiliser. Ajoutez-vous au groupe docker dans un terminal (sudo usermod -aG docker {user}), puis déconnectez-vous et reconnectez-vous.",
+    "dockerDeniedWindows": "Docker tourne, mais votre compte ne peut pas encore l'utiliser. Ajoutez-vous au groupe docker-users (dans un terminal lancé en administrateur : net localgroup docker-users \"{user}\" /add), puis déconnectez-vous et reconnectez-vous.",
+    "toolMissing": "{tool} n'est pas installé, ou n'est pas dans le PATH.",
+    "commandFailed": "{command} a échoué : {stderr}",
+    "signInCancelled": "Connexion annulée.",
+    "unreachable": "Impossible de joindre Cyber CTF ({detail}). Vérifiez votre connexion, puis réessayez.",
+    "offlineReady": "Impossible de joindre Cyber CTF ({detail}). Ce lab est installé ici : il peut démarrer hors ligne, sans enregistrer la progression.",
+    "placementLockedHost": {
+      "one": "{count} lab est encore sur cet hôte : arrêtez-le avant de changer son ou ses {fields}.",
+      "other": "{count} labs sont encore sur cet hôte : arrêtez-les avant de changer son ou ses {fields}."
+    },
+    "placementLockedAccount": {
+      "one": "{count} lab est encore sur ce compte : arrêtez-le avant de changer son ou ses {fields}.",
+      "other": "{count} labs sont encore sur ce compte : arrêtez-les avant de changer son ou ses {fields}."
+    },
+    "hostHasLabs": {
+      "one": "{count} lab tourne encore sur cet hôte. Arrêtez-le avant de supprimer l'hôte.",
+      "other": "{count} labs tournent encore sur cet hôte. Arrêtez-les avant de supprimer l'hôte."
+    },
+    "reapNoHost": "Aucun compte n'est enregistré pour lui, le launcher ne peut donc pas le détruire. Supprimez ses ressources dans la console de votre cloud.",
+    "reapLabGone": "Les fichiers du lab ont disparu ({detail}). Réinstallez le lab, puis arrêtez-le, ou supprimez ses ressources dans la console de votre cloud.",
+    "reapAccount": "Le compte {account} n'est pas utilisable ({detail}). Corrigez le compte dans les Réglages, puis arrêtez le lab.",
+    "reapDestroy": "Sa destruction sur {account} a échoué : {detail}",
+    "reapTimedOut": "La destruction ne s'est pas terminée en {minutes} minutes. Arrêtez le lab pour réessayer."
+  }
+}

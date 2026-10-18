@@ -1,0 +1,93 @@
+{
+  "greeting": {
+    "morning": "Good morning",
+    "afternoon": "Good afternoon",
+    "evening": "Good evening"
+  },
+  "title": {
+    "named": "{greeting}, <em>{name}.</em>",
+    "plain": "{greeting}.",
+    "welcome": "Welcome to Cyber <em>CTF.</em>"
+  },
+  "status": {
+    "checking": "Checking this machine…",
+    "setUpDocker": "Set up Docker to start running labs.",
+    "running": {
+      "one": "1 lab running on this machine.",
+      "other": "{count} labs running on this machine."
+    },
+    "ready": "This machine is ready. Pick a lab to attack.",
+    "checkFailed": "Couldn’t check this machine."
+  },
+  "actions": {
+    "setUp": "Set up this machine",
+    "setUpFailed": "Couldn't open machine setup",
+    "browse": "Browse labs"
+  },
+  "stats": {
+    "cpu": "CPU",
+    "memory": "Memory",
+    "disk": "Disk",
+    "cores": "{cores} cores",
+    "usage": "{used}/{total} GB",
+    "unavailable": "unavailable"
+  },
+  "capacity": {
+    "total": "{total} GB",
+    "cloud": "Cloud",
+    "server": "Server",
+    "ok": {
+      "title": "Ready for labs",
+      "detail": "Plenty of RAM for container labs and most VM labs."
+    },
+    "tight": {
+      "title": "Enough for container labs",
+      "detail": "Heavy multi-VM labs or the full Exegol image may run slowly here."
+    },
+    "low": {
+      "title": "Low on RAM for labs",
+      "detail": "Labs may struggle on this machine. For heavier labs, run them in the cloud or on a server."
+    }
+  },
+  "running": {
+    "title": "Running now",
+    "labs": {
+      "one": "1 lab",
+      "other": "{count} labs"
+    },
+    "containers": {
+      "one": "1 container",
+      "other": "{count} containers"
+    },
+    "empty": "Nothing running. Start a lab from its page.",
+    "noDetails": "running · no details while the catalogue can’t be reached"
+  },
+  "deploy": {
+    "inProgress": "In progress",
+    "view": "View",
+    "running": "running"
+  },
+  "machine": {
+    "title": "This machine",
+    "open": "Open",
+    "dockerEngine": "Docker engine",
+    "running": "Running",
+    "stopped": "Stopped",
+    "containers": "Containers",
+    "none": "none",
+    "cores": "Cores"
+  },
+  "jumpBack": {
+    "title": "Jump back in",
+    "meta": "recently launched",
+    "lastRun": "{slug} · last run {ago}",
+    "resume": "Resume"
+  },
+  "labs": {
+    "title": "Labs",
+    "all": "All labs",
+    "loading": "Loading labs…",
+    "empty": "No labs published yet."
+  },
+  "signInHint": "Sign in (bottom-left) so labs launched from the website run here."
+}

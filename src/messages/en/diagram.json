@@ -1,0 +1,51 @@
+{
+  "host": {
+    "yourMachine": "Your machine",
+    "serverSub": "server · docker host",
+    "host": "host",
+    "online": "online",
+    "portTab": "Published on this machine. Click to copy {url}"
+  },
+  "copy": {
+    "title": "Copy {text}",
+    "failed": "Couldn't copy to the clipboard"
+  },
+  "lab": "lab",
+  "bridge": "{name} bridge",
+  "zone": {
+    "network": "{name} network",
+    "noInternet": "no internet"
+  },
+  "attacker": {
+    "you": "YOU",
+    "kicker": "ATTACKER",
+    "label": "Attack box",
+    "attached": "attached",
+    "notAttached": "not attached"
+  },
+  "published": "published",
+  "computer": {
+    "resolving": "resolving…",
+    "noPorts": "no ports"
+  },
+  "states": {
+    "running": "running",
+    "paused": "paused",
+    "off": "off",
+    "stopped": "stopped"
+  },
+  "services": {
+    "database": "database",
+    "web": "web / api",
+    "cache": "cache",
+    "worker": "worker",
+    "ssh": "ssh",
+    "service": "service"
+  },
+  "view": {
+    "fitWidth": "Fit to width",
+    "fitWidthHint": "Shrink the diagram to fit the card, or show it at its readable size",
+    "scrollMore": "Scroll for more",
+    "scrollMoreHint": "Scroll the diagram to see the rest"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "operation": {
+    "status": {
+      "launch": "起動中",
+      "resume": "再開中",
+      "pause": "一時停止中",
+      "shutdown": "シャットダウン中",
+      "stop": "停止中"
+    },
+    "label": {
+      "resume": "再開中…",
+      "pause": "一時停止中…",
+      "shutdown": "シャットダウン中…",
+      "provision": "プロビジョニング中…",
+      "provisionMachine": "{machine} をプロビジョニング中…",
+      "attackVm": "攻撃用 VM を起動中…",
+      "stop": "停止中…"
+    }
+  },
+  "time": {
+    "justNow": "たった今",
+    "minutesAgo": "{count} 分前",
+    "hoursAgo": "{count} 時間前",
+    "yesterday": "昨日",
+    "daysAgo": "{count} 日前"
+  },
+  "units": {
+    "seconds": "{n}秒",
+    "gigabytes": "{n} GB",
+    "gigabytesOf": "{used}/{total} GB",
+    "megabytes": "{n} MB",
+    "kilobytes": "{n} kB",
+    "uptimeDays": "{days}日 {hours}時間",
+    "uptimeHours": "{hours}時間 {minutes}分",
+    "uptimeMinutes": "{minutes}分"
+  },
+  "attackPresets": {
+    "cyberctf": "標準ツール一式入りの Kali、すぐに使えます",
+    "kali": "公式 Kali ベース、必要に応じてツールを追加",
+    "parrot": "Parrot Security のツール一式",
+    "exegolFree": "Exegol Community：フルツールキット、Full より後に更新。学習・個人利用向け",
+    "exegolFreeTerms": "非商用利用",
+    "exegolFull": "最新の Exegol ツールキット。Exegol Pro、Team、Enterprise プランが必要です",
+    "exegolFullTerms": "有料プラン",
+    "kaliVm": "公式 Kali Box。インターネットに接続でき、ツールは随時追加できます",
+    "debianVm": "独自のツール環境を構築するためのシンプルなベース"
+  }
+}

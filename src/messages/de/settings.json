@@ -1,0 +1,180 @@
+{
+  "appearance": {
+    "title": "Darstellung",
+    "description": "Wie der Launcher aussieht und welche Sprache er spricht. Auf diesem Computer gespeichert.",
+    "theme": "Design",
+    "themes": {
+      "dark": "Dunkel",
+      "black": "Schwarz",
+      "light": "Hell"
+    },
+    "themeDescriptions": {
+      "dark": "Dunkel nutzt tiefe, neutrale Grautöne, angenehm für die Augen.",
+      "black": "Schwarz nutzt echtes Schwarz, für OLED-Bildschirme.",
+      "light": "Hell nutzt warme Papiertöne, für helle Räume."
+    },
+    "language": "Sprache",
+    "languageDescription": "Die Sprache des Launchers. System folgt der deines Computers.",
+    "languageSystem": "System"
+  },
+  "tabs": {
+    "label": "Bereiche der Einstellungen",
+    "account": "Konto",
+    "appearance": "Darstellung",
+    "labs": "Labs",
+    "maintenance": "Wartung",
+    "about": "Info"
+  },
+  "saved": "Gespeichert",
+  "account": {
+    "title": "Konto",
+    "description": "Die Anmeldung registriert diesen Rechner, damit Labs, die du auf der Website startest, hier laufen.",
+    "checking": "Wird geprüft…",
+    "signedIn": "Angemeldet",
+    "signOut": "Abmelden",
+    "thisMachine": "Dieser Rechner",
+    "online": "Online",
+    "offline": "Offline",
+    "runs": "führt {list} aus",
+    "registering": "Wird registriert…",
+    "notSignedIn": "Nicht angemeldet",
+    "signInHint": "Melde dich mit deinem Cyber-Konto an, um Labs zu synchronisieren und von jedem Gerät aus zu starten.",
+    "waitingBrowser": "Warte auf den Browser…",
+    "signIn": "Anmelden"
+  },
+  "labs": {
+    "title": "Labs",
+    "description": "Wie Labs auf diesem Rechner starten. Nur auf diesem Computer gespeichert."
+  },
+  "labPorts": {
+    "title": "Lab-Ports",
+    "default": "Jeder Dienst auf seinem eigenen Port, etwa CTFd auf 8000. Ein Start bricht ab, wenn ein anderes Lab oder eine App einen davon schon belegt.",
+    "random": "Jeder Dienst auf einem freien, zufälligen Port. Nie belegt durch ein anderes Lab oder eine App.",
+    "ask": "Fragt vor jedem Start eines Container-Labs auf diesem Rechner: zufällige freie Ports oder die des Labs.",
+    "options": {
+      "ask": "Fragen",
+      "random": "Zufällig",
+      "default": "Standard"
+    }
+  },
+  "attackBox": {
+    "title": "Image der Attack box",
+    "description": "Läuft im Netzwerk jedes Labs als deine Werkzeugkiste. Beim ersten Start eines Images wird es heruntergeladen, das kann dauern.",
+    "default": "Standard",
+    "largeDownload": "Großer Download",
+    "pinned": "fixiert",
+    "presets": {
+      "cyberctf": "Kali mit dem Standard-Toolset, sofort einsatzbereit",
+      "kali": "Offizielle Kali-Basis, Tools nach Bedarf ergänzen",
+      "parrot": "Parrot-Security-Toolset",
+      "exegolFree": "Exegol Community: komplettes Toolkit, nach Full aktualisiert; zum Lernen und für den privaten Gebrauch",
+      "exegolFull": "Das neueste Exegol-Toolkit; erfordert einen Exegol-Plan Pro, Team oder Enterprise"
+    },
+    "terms": {
+      "nonCommercial": "Nicht kommerzielle Nutzung",
+      "paidPlan": "Kostenpflichtiger Plan"
+    },
+    "customImage": "Eigenes Image",
+    "customImageNote": "Ein beliebiges Docker-Image oder Registry-Tag.",
+    "save": "Speichern",
+    "autoStart": "Attack box mit dem Lab starten",
+    "autoStartDescription": "Startet sie, sobald ein Lab auf diesem Rechner läuft: den Container bei einem Container-Lab, die VM neben einem VM-Lab. Du kannst sie weiterhin im Lab starten oder stoppen.",
+    "invalidImage": "Verwende einen einfachen Image-Namen wie registry/name:tag: nur Buchstaben, Ziffern und . _ - / : @, nicht mit einem Bindestrich am Anfang."
+  },
+  "attackVm": {
+    "title": "Angriffs-VM für VM-Labs",
+    "description": "Die Netzwerke eines VM-Labs liegen im Hypervisor, daher ist dein Angreifer eine VM daneben: diese Vagrant-Box, verbunden mit jedem Lab-Netzwerk, mit Internet zum Installieren von Tools. Der erste Start lädt die Box herunter.",
+    "label": "Box der Angriffs-VM",
+    "presets": {
+      "kali": "Offizielle Kali-Box mit Internetzugang, Tools nach und nach ergänzen",
+      "debian12": "Eine schlichte Basis für dein eigenes Toolset"
+    },
+    "customBox": "Eigene Box",
+    "customBoxNote": "Eine beliebige Vagrant-Cloud-Box (owner/name), gebaut für deinen Hypervisor."
+  },
+  "hypervisor": {
+    "title": "Hypervisor für VM-Labs",
+    "checking": "Hypervisoren werden geprüft…",
+    "setupLink": "Richte einen auf der Seite Rechner ein",
+    "noneInstalled": "Auf diesem Rechner ist noch kein Hypervisor installiert.",
+    "current": "VM-Labs und der VM-Test laufen auf {name}.",
+    "noneReady": "Keiner der installierten Hypervisoren kann bisher VM-Labs ausführen. Installiere unten seine Vagrant-Erweiterung.",
+    "automatic": "Automatisch",
+    "automaticNote": "Nutzt {name}, den ersten bereiten Hypervisor.",
+    "readyPlugin": "Bereit · Vagrant-Erweiterung {plugin}",
+    "readyBuiltIn": "Bereit · in Vagrant integriert",
+    "needsPlugin": "Installiert · braucht die Vagrant-Erweiterung {plugin}",
+    "notReady": "Installiert · nicht bereit für VM-Labs",
+    "installing": "Wird installiert…",
+    "installAddon": "Erweiterung installieren",
+    "logInstalling": "Vagrant-Erweiterung {plugin} wird installiert…",
+    "logInstalled": "✓ Installiert",
+    "logTitle": "Vagrant-Erweiterung",
+    "allowHyperv": "Mein Konto zulassen",
+    "allowingHyperv": "Wird zugelassen…",
+    "logAllowingHyperv": "Ihr Konto wird zu den Hyper-V-Administratoren hinzugefügt (Windows fragt nach der Berechtigung)…",
+    "logHypervAllowed": "✓ Erledigt. Melden Sie sich bei Windows ab und wieder an, dann erneut prüfen."
+  },
+  "cleanup": {
+    "title": "Aufräumen",
+    "description": "Baue alles ab, was noch auf diesem Rechner läuft (ein übrig gebliebenes oder hängendes Lab), gib Speicherplatz von heruntergeladenen Images und VM-Boxen frei und entferne Tools, die Cyber CTF installiert hat."
+  },
+  "installedTools": {
+    "title": "Von Cyber CTF installierte Tools",
+    "count": {
+      "one": "{count} installiert",
+      "other": "{count} installiert"
+    },
+    "intro": "Bei der Einrichtung installiert. Entferne die, die du nicht mehr brauchst; Tools, die du vorher schon hattest, sind nicht aufgeführt.",
+    "installedAgo": "installiert {ago}",
+    "remove": "Entfernen",
+    "removing": "Wird entfernt…",
+    "logRemoving": "{name} wird entfernt…",
+    "confirmTitle": "{name} entfernen?",
+    "confirmBody": "Labs, die {name} brauchen, starten erst wieder, wenn es neu installiert ist (die Einrichtung kann es erneut installieren). Deine Labs und Einstellungen bleiben erhalten."
+  },
+  "about": {
+    "title": "Info",
+    "description": "Version, Updates und was du uns schicken solltest, wenn etwas kaputtgeht.",
+    "version": "Version",
+    "system": "System",
+    "installId": "Installations-ID",
+    "updates": "Updates",
+    "updateAvailable": "Update verfügbar",
+    "status": {
+      "checking": "Suche nach Updates…",
+      "latest": "Du hast die neueste Version.",
+      "latestAt": "Du hast die neueste Version, geprüft um {time}.",
+      "error": "Der Update-Server ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut.",
+      "available": "Version {version} ist verfügbar.",
+      "installing": "{version} wird heruntergeladen und installiert…",
+      "installed": "Version {version} ist installiert. Cyber CTF wird neu gestartet…",
+      "idle": "Updates werden automatisch installiert, wenn du sie im Banner bestätigst."
+    },
+    "installing": "Wird installiert…",
+    "installUpdate": "Update installieren",
+    "restartNow": "Jetzt neu starten",
+    "checking": "Wird geprüft…",
+    "checkUpdates": "Nach Updates suchen",
+    "restartFailed": "Cyber CTF konnte nicht neu gestartet werden",
+    "replayFailed": "Die Einrichtung konnte nicht erneut gestartet werden",
+    "diagnostics": "Diagnose",
+    "diagnosticsDescription": "Kopiert deine Version, dein Betriebssystem und den Einrichtungsstatus, für einen Fehlerbericht oder eine Supportanfrage.",
+    "copied": "Kopiert",
+    "copy": "Kopieren",
+    "logs": "Protokolldateien",
+    "logsDescription": "Was Cyber CTF während der Ausführung aufgezeichnet hat. Schick sie mit einem Fehlerbericht oder einer Supportanfrage mit.",
+    "openLogs": "Ordner öffnen",
+    "logsFailed": "Der Protokollordner konnte nicht geöffnet werden",
+    "firstRun": "Ersteinrichtung",
+    "firstRunDescription": "Das Onboarding noch einmal durchlaufen. Deine Einstellungen und Labs bleiben erhalten.",
+    "replay": "Wiederholen"
+  },
+  "sharedFolder": {
+    "title": "Geteilter Ordner",
+    "description": "Ein Ordner auf diesem Computer, den deine Attack box unter {mount} sieht: Tools rein, Beute raus. Er bleibt erhalten, wenn ein Lab entfernt wird.",
+    "pick": "Mit der Attack box geteilter Ordner",
+    "change": "Ändern…",
+    "open": "Ordner öffnen"
+  }
+}

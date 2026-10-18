@@ -1,0 +1,8 @@
+# shellcheck shell=bash
+
+# --- Cyber CTF -------------------------------------------------------------------------
+# Kali's prompt rewrites the terminal title on every prompt ("root@attacker: /"), which
+# overrides the title the launcher gives the window. Keep Kali's prompt, drop its title
+# escape, and set one stable title instead: the same on macOS, Linux and Windows.
+PS1=${PS1#*'\a\]'}
+PROMPT_COMMAND='printf "\033]0;Cyber CTF attack box\007"'

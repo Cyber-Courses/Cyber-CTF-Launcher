@@ -1,0 +1,4 @@
+{
+  "slowStart": "Este lab alojado está tardando más de lo esperado en iniciarse. Puede que arranque en breve; si no, detenlo y vuelve a intentarlo.",
+  "stopFailed": "No se pudo detener el lab alojado: {error}"
+}

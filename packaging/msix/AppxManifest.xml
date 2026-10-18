@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest for the Microsoft Store build of the Cyber CTF launcher.
+  Identity Name / Publisher MUST match Partner Center > Product Identity exactly,
+  or the Store rejects the upload. __VERSION__ is substituted at build time
+  (see .github/workflows/msix.yml); the fourth segment must stay .0 and the
+  version must be higher than the currently published package.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  IgnorableNamespaces="uap rescap desktop6">
+
+  <Identity
+    Name="F4K.CyberCTF"
+    Publisher="CN=EDDB085D-5E79-40C9-8A6B-3F5C06626CE3"
+    Version="__VERSION__"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Cyber CTF</DisplayName>
+    <PublisherDisplayName>F4K</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <!-- The app writes files that other programs read: docker compose files, Vagrantfiles,
+         Terraform state, SSH known_hosts. Left virtualized, those writes land in the package's
+         private copy of AppData and docker, vagrant, terraform and ssh can't find them. -->
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <!-- Likewise for the registry: the one-time RunOnce that reopens the app after the restart
+         finishing WSL 2 (and what the tools it runs write under HKCU) must reach the real hive,
+         not the package's private copy, which Windows never reads at sign-in. -->
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <!-- The languages the app speaks; the Store lists them on the product page. Each has its strings
+       in Strings/<lang>/Resources.resw (indexed into resources.pri at build time). -->
+  <Resources>
+    <Resource Language="en-us" />
+    <Resource Language="fr-fr" />
+    <Resource Language="es-es" />
+    <Resource Language="de-de" />
+    <Resource Language="pt-br" />
+    <Resource Language="ja-jp" />
+  </Resources>
+
+  <Applications>
+    <Application Id="CyberCTF" Executable="CyberCTF.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Cyber CTF"
+        Description="ms-resource:AppDescription"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Square71x71Logo="Assets\Square71x71Logo.png" />
+      </uap:VisualElements>
+      <!-- cyberctf:// links (the website's lab launch, the sign-in page's way back to the app).
+           The NSIS installer registers the scheme in the registry; a Store package can only
+           declare it here, and the link then arrives as the app's argument the same way. -->
+      <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="cyberctf">
+            <uap:DisplayName>Cyber CTF</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <!-- Needed for FileSystemWriteVirtualization and RegistryWriteVirtualization (above). -->
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+</Package>

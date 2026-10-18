@@ -1,0 +1,67 @@
+{
+  "screen": {
+    "title": "Nuvem",
+    "lead": "Instâncias descartáveis na sua própria conta, cobradas de você, paradas automaticamente.",
+    "setUp": "Configurar provedor de nuvem",
+    "overOne": "{name} passou do orçamento mensal. Novos labs nela ficam bloqueados até você aumentar o orçamento ou até o próximo mês.",
+    "overMany": "{count} contas passaram do orçamento mensal. Novos labs nelas ficam bloqueados até você aumentar o orçamento ou até o próximo mês.",
+    "runningNow": "Rodando agora",
+    "billingWhileRunning": "cobrados enquanto rodam",
+    "autoStops": "para sozinho {time}",
+    "stop": "Parar",
+    "loading": "Carregando…",
+    "accounts": "Contas",
+    "billedOnly": "cobrado só enquanto um lab roda",
+    "notConnected": "não conectada",
+    "connect": "Conectar",
+    "budgetGuard": "Limite de orçamento · {name}",
+    "ofLimit": "de {limit}",
+    "overBudget": "Acima do orçamento",
+    "autoStopAfter": "parada automática após {hours} h",
+    "noAutoStop": "sem parada automática"
+  },
+  "firstRun": {
+    "title": "Rode labs na sua própria conta de nuvem",
+    "body": "Uma instância descartável por lab, destruída quando você a para. Roda na AWS, Azure ou Google Cloud.",
+    "steps": {
+      "connect": { "title": "Conecte uma conta", "body": "Chaves de acesso ou suas credenciais da AWS CLI, e uma região." },
+      "pick": { "title": "Escolha-a num lab", "body": "O Terraform cria uma instância, acessível por SSH a partir do seu IP." },
+      "stop": { "title": "Ataque e depois pare", "body": "Parar destrói a instância, então a cobrança para junto." }
+    }
+  },
+  "account": {
+    "apiToken": "Token de API",
+    "apiKey": "Chave de API",
+    "cliSignIn": "Login pela CLI",
+    "cliProfile": "CLI · {profile}",
+    "cliCredentials": "Credenciais da CLI",
+    "accessKeys": "chaves de acesso",
+    "autoStop": "parada automática {hours}h",
+    "noAutoStop": "sem parada automática",
+    "budget": "orçamento {amount}/mês",
+    "spentThisMonth": "{amount} este mês",
+    "status": {
+      "testing": "Testando…",
+      "notTested": "Não testada",
+      "connected": "Conectada",
+      "needsAttention": "Requer atenção",
+      "failed": "Falhou",
+      "overBudget": "Acima do orçamento"
+    },
+    "removeConfirm": "Remover?",
+    "remove": "Remover",
+    "cancel": "Cancelar",
+    "test": "Testar",
+    "edit": "Editar",
+    "installed": "instalado",
+    "notInstalled": "não instalado"
+  },
+  "tools": {
+    "install": "Instalar",
+    "installing": "Instalando…",
+    "pulled": "baixada",
+    "notPulled": "não baixada",
+    "pull": "Baixar",
+    "pulling": "Baixando…"
+  }
+}

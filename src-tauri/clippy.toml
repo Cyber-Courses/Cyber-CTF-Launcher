@@ -1,0 +1,11 @@
+# The engineering standard's limits: functions at most 60 lines of code (blank lines and comments
+# not counted), at most 5 parameters, cognitive complexity at most 15. Tests may unwrap, expect
+# and panic: a failed assertion is how they report.
+too-many-lines-threshold = 60
+too-many-arguments-threshold = 5
+cognitive-complexity-threshold = 15
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+# Product and protocol names are prose, not code: `doc_markdown` must not ask for backticks on them.
+doc-valid-idents = ["AppleScript", "CyberBackend", "CyberCTF", "ESXi", "HashiCorp", "KWallet", "OrbStack", "VirtualBox", "VMware", "WinRM", ".."]

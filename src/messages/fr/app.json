@@ -1,0 +1,24 @@
+{
+  "launchConfirm": {
+    "label": "Confirmer le lancement d'un lab dans le cloud",
+    "title": "Lancer ce lab sur votre compte cloud ?",
+    "body": "Un lancement depuis le site web veut s'exécuter sur <target>{target}</target>. Cela crée des ressources facturables sur votre compte (elles s'arrêtent automatiquement plus tard). N'approuvez qu'un lancement que vous avez initié.",
+    "repo": "dépôt : {repo}",
+    "commit": "commit : {commit}",
+    "failed": "Impossible d'envoyer votre réponse à Cyber CTF",
+    "decline": "Refuser",
+    "approve": "Lancer sur mon cloud",
+    "expired": "Cette demande a expiré : le lancement n'a pas eu lieu. Relancez-le depuis le site si vous le voulez toujours.",
+    "close": "Fermer"
+  },
+  "quitGuard": {
+    "title": "Un lab est encore en déploiement",
+    "body": {
+      "one": "Un lab est en cours de traitement dans l'application. Quitter maintenant peut laisser des machines à moitié créées, et un lab sur un compte cloud reste facturé tant qu'il n'est pas détruit. Laissez-le se terminer en arrière-plan (l'application se ferme d'elle-même une fois le travail fini), continuez d'attendre, ou quittez quand même. Quitter une seconde fois quitte aussi quand même.",
+      "other": "{count} labs sont en cours de traitement dans l'application. Quitter maintenant peut laisser des machines à moitié créées, et un lab sur un compte cloud reste facturé tant qu'il n'est pas détruit. Laissez-les se terminer en arrière-plan (l'application se ferme d'elle-même une fois le travail fini), continuez d'attendre, ou quittez quand même. Quitter une seconde fois quitte aussi quand même."
+    },
+    "keepWaiting": "Continuer d'attendre",
+    "quitAnyway": "Quitter quand même",
+    "finishInBackground": "Terminer en arrière-plan"
+  }
+}

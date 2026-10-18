@@ -1,0 +1,67 @@
+{
+  "screen": {
+    "title": "Cloud",
+    "lead": "Wegwerf-Instanzen in deinem eigenen Konto, auf deine Rechnung, automatisch gestoppt.",
+    "setUp": "Cloud-Anbieter einrichten",
+    "overOne": "{name} hat das Monatsbudget überschritten. Neue Labs dort sind gesperrt, bis du das Budget erhöhst oder der nächste Monat beginnt.",
+    "overMany": "{count} Konten haben ihr Monatsbudget überschritten. Neue Labs dort sind gesperrt, bis du das Budget erhöhst oder der nächste Monat beginnt.",
+    "runningNow": "Läuft gerade",
+    "billingWhileRunning": "kostenpflichtig, solange sie laufen",
+    "autoStops": "stoppt automatisch {time}",
+    "stop": "Stoppen",
+    "loading": "Wird geladen…",
+    "accounts": "Konten",
+    "billedOnly": "nur kostenpflichtig, während ein Lab läuft",
+    "notConnected": "nicht verbunden",
+    "connect": "Verbinden",
+    "budgetGuard": "Budgetschutz · {name}",
+    "ofLimit": "von {limit}",
+    "overBudget": "Budget überschritten",
+    "autoStopAfter": "Auto-Stopp nach {hours} h",
+    "noAutoStop": "kein Auto-Stopp"
+  },
+  "firstRun": {
+    "title": "Labs in deinem eigenen Cloud-Konto ausführen",
+    "body": "Eine Wegwerf-Instanz pro Lab, gelöscht, wenn du sie stoppst. Läuft auf AWS, Azure oder Google Cloud.",
+    "steps": {
+      "connect": { "title": "Konto verbinden", "body": "Zugriffsschlüssel oder deine AWS-CLI-Anmeldedaten, dazu eine Region." },
+      "pick": { "title": "Im Lab auswählen", "body": "Terraform erstellt eine Instanz, per SSH von deiner IP erreichbar." },
+      "stop": { "title": "Angreifen, dann stoppen", "body": "Stoppen löscht die Instanz, damit enden auch die Kosten." }
+    }
+  },
+  "account": {
+    "apiToken": "API-Token",
+    "apiKey": "API-Schlüssel",
+    "cliSignIn": "CLI-Anmeldung",
+    "cliProfile": "CLI · {profile}",
+    "cliCredentials": "CLI-Anmeldedaten",
+    "accessKeys": "Zugriffsschlüssel",
+    "autoStop": "Auto-Stopp {hours} h",
+    "noAutoStop": "kein Auto-Stopp",
+    "budget": "Budget {amount}/Monat",
+    "spentThisMonth": "{amount} diesen Monat",
+    "status": {
+      "testing": "Wird getestet…",
+      "notTested": "Nicht getestet",
+      "connected": "Verbunden",
+      "needsAttention": "Prüfen nötig",
+      "failed": "Fehlgeschlagen",
+      "overBudget": "Budget überschritten"
+    },
+    "removeConfirm": "Entfernen?",
+    "remove": "Entfernen",
+    "cancel": "Abbrechen",
+    "test": "Testen",
+    "edit": "Bearbeiten",
+    "installed": "installiert",
+    "notInstalled": "nicht installiert"
+  },
+  "tools": {
+    "install": "Installieren",
+    "installing": "Wird installiert…",
+    "pulled": "geladen",
+    "notPulled": "nicht geladen",
+    "pull": "Laden",
+    "pulling": "Wird geladen…"
+  }
+}

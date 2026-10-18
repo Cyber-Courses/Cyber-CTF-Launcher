@@ -1,0 +1,67 @@
+{
+  "screen": {
+    "title": "クラウド",
+    "lead": "自分のアカウント上の使い捨てインスタンス。料金は自分に請求され、自動で停止します。",
+    "setUp": "クラウドプロバイダーをセットアップ",
+    "overOne": "{name} は月間予算を超えています。予算を引き上げるか翌月になるまで、新しいラボは起動できません。",
+    "overMany": "{count} 件のアカウントが月間予算を超えています。予算を引き上げるか翌月になるまで、新しいラボは起動できません。",
+    "runningNow": "実行中",
+    "billingWhileRunning": "実行中は課金されます",
+    "autoStops": "{time} に自動停止",
+    "stop": "停止",
+    "loading": "読み込み中…",
+    "accounts": "アカウント",
+    "billedOnly": "ラボの実行中のみ課金",
+    "notConnected": "未接続",
+    "connect": "接続",
+    "budgetGuard": "予算ガード · {name}",
+    "ofLimit": "/ {limit}",
+    "overBudget": "予算超過",
+    "autoStopAfter": "{hours} 時間後に自動停止",
+    "noAutoStop": "自動停止なし"
+  },
+  "firstRun": {
+    "title": "自分のクラウドアカウントでラボを実行",
+    "body": "ラボごとに使い捨てインスタンスを 1 つ作成し、停止すると削除されます。AWS、Azure、Google Cloud で実行できます。",
+    "steps": {
+      "connect": { "title": "アカウントを接続", "body": "アクセスキーまたは AWS CLI の認証情報と、リージョンを指定します。" },
+      "pick": { "title": "ラボで選択", "body": "Terraform がインスタンスを 1 つ作成し、あなたの IP から SSH で接続できます。" },
+      "stop": { "title": "攻撃して停止", "body": "停止するとインスタンスが削除され、課金も止まります。" }
+    }
+  },
+  "account": {
+    "apiToken": "API トークン",
+    "apiKey": "API キー",
+    "cliSignIn": "CLI サインイン",
+    "cliProfile": "CLI · {profile}",
+    "cliCredentials": "CLI 認証情報",
+    "accessKeys": "アクセスキー",
+    "autoStop": "{hours}時間で自動停止",
+    "noAutoStop": "自動停止なし",
+    "budget": "予算 {amount}/月",
+    "spentThisMonth": "今月 {amount}",
+    "status": {
+      "testing": "テスト中…",
+      "notTested": "未テスト",
+      "connected": "接続済み",
+      "needsAttention": "要確認",
+      "failed": "失敗",
+      "overBudget": "予算超過"
+    },
+    "removeConfirm": "削除しますか？",
+    "remove": "削除",
+    "cancel": "キャンセル",
+    "test": "テスト",
+    "edit": "編集",
+    "installed": "インストール済み",
+    "notInstalled": "未インストール"
+  },
+  "tools": {
+    "install": "インストール",
+    "installing": "インストール中…",
+    "pulled": "取得済み",
+    "notPulled": "未取得",
+    "pull": "取得",
+    "pulling": "取得中…"
+  }
+}

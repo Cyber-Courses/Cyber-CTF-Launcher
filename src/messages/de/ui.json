@@ -1,0 +1,26 @@
+{
+  "confirm": {
+    "cancel": "Abbrechen"
+  },
+  "copy": {
+    "title": "{text} kopieren"
+  },
+  "log": {
+    "output": "Ausgabe",
+    "running": "{title}…",
+    "failed": "{title} fehlgeschlagen",
+    "done": "{title} · fertig"
+  },
+  "toast": {
+    "dismiss": "Schließen"
+  },
+  "spinner": {
+    "loading": "Wird geladen"
+  },
+  "choice": {
+    "inUse": "in Gebrauch",
+    "running": "läuft",
+    "installed": "installiert",
+    "recommended": "empfohlen"
+  }
+}

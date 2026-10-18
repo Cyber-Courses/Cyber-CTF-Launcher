@@ -1,0 +1,50 @@
+{
+  "skip": "セットアップをスキップ",
+  "back": "戻る",
+  "continue": "続行",
+  "checking": "このマシンを確認中…",
+  "stepFailed": "このステップを読み込めませんでした",
+  "stepNames": {
+    "welcome": "ようこそ",
+    "signin": "サインイン",
+    "pkgmgr": "パッケージマネージャー",
+    "virtualization": "仮想化",
+    "docker": "コンテナエンジン",
+    "dockerTest": "コンテナのテスト",
+    "attack": "アタックボックス",
+    "vm": "仮想マシン（任意）",
+    "vagrant": "Vagrant（任意）",
+    "vmTest": "VM のテスト（任意）",
+    "done": "完了"
+  },
+  "welcome": {
+    "title": "Cyber <em>CTF</em> へようこそ",
+    "description": "リアルで隔離されたセキュリティラボを、このマシン、自分のサーバー、またはクラウドで実行できます。起動はアプリからでも Web サイトからでも可能です。",
+    "labsTitle": "コンテナと VM のラボ",
+    "labsDescription": "Docker コンテナと完全な仮想マシン。各ラボはそれぞれ隔離されたネットワーク上で動作します。",
+    "whereTitle": "好きな場所で実行",
+    "whereDescription": "このマシン、自分のサーバー（Proxmox、ESXi）、またはクラウドアカウント（AWS、Azure、Google Cloud など）で実行でき、使い終わると自動で停止します。",
+    "targetsTitle": "本物のターゲット",
+    "targetsDescription": "ラボのネットワークに接続されたアタックボックスから、実際に脆弱なシステムを攻略します。",
+    "launchTitle": "どこからでも起動",
+    "launchDescription": "Web サイトからラボを起動できます。スマートフォンからでも OK。ラボは選んだマシンで実行されます。",
+    "start": "はじめる"
+  },
+  "signin": {
+    "title": "サインイン",
+    "description": "Cyber CTF アカウントを接続すると、このマシンを登録して、どのデバイスからでもラボを起動できます。",
+    "signedIn": "サインイン済み",
+    "signedInAs": "{name} としてサインイン済み",
+    "waiting": "ブラウザを待機中…（最大 5 分）",
+    "button": "ブラウザでサインイン",
+    "hint": "ブラウザで <mono>cyberauth.co</mono> を開きます。アカウントなしでもラボは動きます。あとで設定からサインインできます。",
+    "skip": "今はスキップ"
+  },
+  "done": {
+    "title": "<em>準備完了</em>です",
+    "description": "これらの設定は後から「設定」または「このマシン」でいつでも変更できます。",
+    "account": "アカウント",
+    "notSignedIn": "未サインイン（あとで設定からサインインできます）",
+    "browse": "ラボを見る"
+  }
+}

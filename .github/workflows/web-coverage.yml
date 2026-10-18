@@ -1,0 +1,56 @@
+name: Web coverage
+
+# Every pull request and push to main or dev: the frontend unit and component tests with coverage over
+# all of src (vitest.config.mts). The thresholds there fail the job when coverage drops; the
+# totals land in the run's summary.
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: web-coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Tests with coverage
+        run: pnpm exec vitest run --coverage
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ ! -f coverage/coverage-summary.json ]; then
+            echo "No coverage summary (the tests did not finish)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # JavaScript in single quotes: its ${...} are template literals, not shell expansions.
+          # The floors are read from the `thresholds` block of vitest.config.mts.
+          # shellcheck disable=SC2016
+          node -e '
+            const fs = require("fs");
+            const t = require("./coverage/coverage-summary.json").total;
+            const block = (fs.readFileSync("vitest.config.mts", "utf8").match(/thresholds:\s*\{([^}]*)\}/) || [])[1] || "";
+            const floor = Object.fromEntries([...block.matchAll(/(\w+):\s*([\d.]+)/g)].map((m) => [m[1], Number(m[2])]));
+            const gap = (k) => (k in floor ? `${floor[k]}% | ${(t[k].pct - floor[k] >= 0 ? "+" : "") + (t[k].pct - floor[k]).toFixed(2)}` : "- | -");
+            const row = (k) => `| ${k[0].toUpperCase() + k.slice(1)} | ${t[k].pct}% | ${t[k].covered} / ${t[k].total} | ${gap(k)} |`;
+            console.log(["### Frontend coverage", "", "| Metric | Covered | Count | Floor | Gap |", "| --- | --- | --- | --- | --- |", ...["lines", "statements", "functions", "branches"].map(row)].join("\n"));
+          ' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: web-coverage
+          path: coverage/coverage-summary.json
+          if-no-files-found: ignore

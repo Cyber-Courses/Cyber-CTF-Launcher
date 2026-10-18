@@ -1,0 +1,83 @@
+{
+  "tabs": {
+    "home": "Resumen",
+    "labs": "Labs",
+    "machine": "Máquina",
+    "setup": "Configuración",
+    "server": "Servidores",
+    "cloud": "Nube",
+    "events": "Eventos",
+    "settings": "Ajustes"
+  },
+  "sidebar": {
+    "find": "Buscar…",
+    "soon": "Pronto",
+    "running": "En ejecución",
+    "labRunning": "en ejecución"
+  },
+  "header": {
+    "thisMachine": "Esta máquina",
+    "dockerNotRunning": "Docker no está en ejecución",
+    "checkFailed": "falló la comprobación",
+    "checking": "comprobando…"
+  },
+  "palette": {
+    "label": "Menú de comandos",
+    "placeholder": "Buscar labs, pantallas, acciones…",
+    "noResults": "Sin resultados",
+    "findLab": "Buscar un lab",
+    "findLabKeywords": "labs search ctf buscar búsqueda",
+    "openSettings": "Abrir Ajustes",
+    "openSettingsKeywords": "settings ajustes preferencias configuración apariencia tema",
+    "goTo": "Ir a {screen}",
+    "labKeywords": "lab {category}",
+    "groups": {
+      "actions": "Acciones",
+      "screens": "Pantallas",
+      "labs": "Labs"
+    }
+  },
+  "screen": {
+    "checkFailed": "No se pudo comprobar esta máquina",
+    "tryAgain": "Reintentar",
+    "checking": "Comprobando esta máquina…",
+    "loading": "Cargando…",
+    "comingSoon": "{title} llegará pronto",
+    "eventsDescription": "Únete a eventos CTF en directo cuyos labs aloja Cyber CTF: no tienes que ejecutar nada en tu máquina, cada participante tiene su propio lab durante todo el evento."
+  },
+  "failures": {
+    "openSettings": "No se pudieron abrir los Ajustes",
+    "restart": "No se pudo reiniciar Cyber CTF"
+  },
+  "update": {
+    "installed": "Actualización instalada. Reiniciando Cyber CTF…",
+    "failed": "Error al actualizar. Inténtalo más tarde.",
+    "available": "La versión <version>{version}</version> está disponible.",
+    "restartNow": "Reiniciar",
+    "updating": "Actualizando…",
+    "update": "Actualizar",
+    "waitForDeploys": "La actualización reinicia Cyber CTF. Espera a que tus labs terminen de desplegarse."
+  },
+  "error": {
+    "title": "Algo salió mal",
+    "description": "Cyber CTF encontró un error inesperado. Tus labs siguen en ejecución. Vuelve a intentarlo y, si se repite, copia los detalles y envíanoslos.",
+    "stepDescription": "Este paso encontró un error inesperado. Vuelve a intentarlo o retrocede un paso. Si sigue ocurriendo, copia los detalles y envíanoslos.",
+    "unknown": "Error desconocido",
+    "tryAgain": "Reintentar",
+    "reload": "Recargar",
+    "copied": "Copiado",
+    "copyDetails": "Copiar detalles"
+  },
+  "terminal": {
+    "connecting": "conectando…",
+    "open": "máquina de ataque",
+    "ended": "sesión finalizada",
+    "failed": "no se pudo conectar",
+    "systemTerminal": "Terminal del sistema",
+    "systemTerminalHint": "Abrir esta shell en tu propia app de terminal",
+    "shellEnded": "La shell ha terminado.",
+    "shellEndedWithCode": "La shell ha terminado (código {code}).",
+    "reconnect": "Reconectar",
+    "close": "Cerrar"
+  }
+}

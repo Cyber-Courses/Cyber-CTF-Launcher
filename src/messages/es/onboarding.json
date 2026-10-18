@@ -1,0 +1,50 @@
+{
+  "skip": "Omitir configuración",
+  "back": "Atrás",
+  "continue": "Continuar",
+  "checking": "Comprobando esta máquina…",
+  "stepFailed": "No se pudo cargar este paso",
+  "stepNames": {
+    "welcome": "Bienvenida",
+    "signin": "Iniciar sesión",
+    "pkgmgr": "Gestor de paquetes",
+    "virtualization": "Virtualización",
+    "docker": "Motor de contenedores",
+    "dockerTest": "Prueba de contenedores",
+    "attack": "Máquina de ataque",
+    "vm": "Máquinas virtuales (opcional)",
+    "vagrant": "Vagrant (opcional)",
+    "vmTest": "Prueba de VM (opcional)",
+    "done": "Listo"
+  },
+  "welcome": {
+    "title": "Te damos la bienvenida a Cyber <em>CTF</em>",
+    "description": "Ejecuta labs de seguridad realistas y aislados en tu máquina, en tu propio servidor o en la nube, lanzados desde la app o directamente desde el sitio web.",
+    "labsTitle": "Labs de contenedores y VM",
+    "labsDescription": "Contenedores Docker y máquinas virtuales completas, cada lab en su propia red aislada.",
+    "whereTitle": "Ejecútalo donde quieras",
+    "whereDescription": "En esta máquina, en tu propio servidor (Proxmox, ESXi) o en tu cuenta en la nube (AWS, Azure, Google Cloud y más), que se detiene sola cuando terminas.",
+    "targetsTitle": "Objetivos reales",
+    "targetsDescription": "Explota sistemas realmente vulnerables desde una máquina de ataque conectada a la red del lab.",
+    "launchTitle": "Lanza desde cualquier lugar",
+    "launchDescription": "Inicia un lab desde el sitio web, incluso desde tu móvil; se ejecuta en la máquina que elijas.",
+    "start": "Empezar"
+  },
+  "signin": {
+    "title": "Iniciar sesión",
+    "description": "Conecta tu cuenta de Cyber CTF para registrar esta máquina y lanzar labs desde cualquier dispositivo.",
+    "signedIn": "Sesión iniciada",
+    "signedInAs": "Sesión iniciada como {name}",
+    "waiting": "Esperando al navegador… (hasta 5 minutos)",
+    "button": "Iniciar sesión con tu navegador",
+    "hint": "Abre <mono>cyberauth.co</mono> en tu navegador. Los labs también funcionan sin cuenta: puedes iniciar sesión más tarde desde Ajustes.",
+    "skip": "Omitir por ahora"
+  },
+  "done": {
+    "title": "Todo <em>listo</em>",
+    "description": "Puedes cambiar todo esto más tarde en Ajustes o en Esta máquina.",
+    "account": "Cuenta",
+    "notSignedIn": "Sin iniciar sesión (inicia sesión más tarde desde Ajustes)",
+    "browse": "Explorar labs"
+  }
+}

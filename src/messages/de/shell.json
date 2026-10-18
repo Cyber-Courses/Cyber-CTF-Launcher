@@ -1,0 +1,83 @@
+{
+  "tabs": {
+    "home": "Übersicht",
+    "labs": "Labs",
+    "machine": "Rechner",
+    "setup": "Einrichtung",
+    "server": "Server",
+    "cloud": "Cloud",
+    "events": "Events",
+    "settings": "Einstellungen"
+  },
+  "sidebar": {
+    "find": "Suchen…",
+    "soon": "Bald",
+    "running": "Läuft",
+    "labRunning": "läuft"
+  },
+  "header": {
+    "thisMachine": "Dieser Rechner",
+    "dockerNotRunning": "Docker läuft nicht",
+    "checkFailed": "Rechnerprüfung fehlgeschlagen",
+    "checking": "wird geprüft…"
+  },
+  "palette": {
+    "label": "Befehlsmenü",
+    "placeholder": "Labs, Ansichten, Aktionen suchen…",
+    "noResults": "Keine Ergebnisse",
+    "findLab": "Lab suchen",
+    "findLabKeywords": "labs suche suchen ctf search",
+    "openSettings": "Einstellungen öffnen",
+    "openSettingsKeywords": "einstellungen optionen darstellung design theme settings",
+    "goTo": "Zu {screen} wechseln",
+    "labKeywords": "lab {category}",
+    "groups": {
+      "actions": "Aktionen",
+      "screens": "Ansichten",
+      "labs": "Labs"
+    }
+  },
+  "screen": {
+    "checkFailed": "Dieser Rechner konnte nicht geprüft werden",
+    "tryAgain": "Erneut versuchen",
+    "checking": "Dieser Rechner wird geprüft…",
+    "loading": "Wird geladen…",
+    "comingSoon": "{title} kommt bald",
+    "eventsDescription": "Nimm an Live-CTF-Events teil, deren Labs von Cyber CTF gehostet werden: Auf deinem Rechner läuft nichts, jede Person bekommt für die Dauer des Events ihr eigenes Lab."
+  },
+  "failures": {
+    "openSettings": "Einstellungen konnten nicht geöffnet werden",
+    "restart": "Cyber CTF konnte nicht neu gestartet werden"
+  },
+  "update": {
+    "installed": "Update installiert. Cyber CTF wird neu gestartet…",
+    "failed": "Update fehlgeschlagen. Versuche es später erneut.",
+    "available": "Version <version>{version}</version> ist verfügbar.",
+    "restartNow": "Jetzt neu starten",
+    "updating": "Wird aktualisiert…",
+    "update": "Aktualisieren",
+    "waitForDeploys": "Das Update startet Cyber CTF neu. Warte, bis deine Labs fertig bereitgestellt sind."
+  },
+  "error": {
+    "title": "Etwas ist schiefgelaufen",
+    "description": "In Cyber CTF ist ein unerwarteter Fehler aufgetreten. Deine Labs laufen weiter. Versuche es erneut; wenn es wieder passiert, kopiere die Details und schick sie uns.",
+    "stepDescription": "In diesem Schritt ist ein unerwarteter Fehler aufgetreten. Versuche es erneut oder geh einen Schritt zurück. Wenn es weiter passiert, kopiere die Details und schick sie uns.",
+    "unknown": "Unbekannter Fehler",
+    "tryAgain": "Erneut versuchen",
+    "reload": "Neu laden",
+    "copied": "Kopiert",
+    "copyDetails": "Details kopieren"
+  },
+  "terminal": {
+    "connecting": "verbinde…",
+    "open": "Attack box",
+    "ended": "Sitzung beendet",
+    "failed": "Verbindung fehlgeschlagen",
+    "systemTerminal": "System-Terminal",
+    "systemTerminalHint": "Diese Shell in deiner eigenen Terminal-App öffnen",
+    "shellEnded": "Die Shell wurde beendet.",
+    "shellEndedWithCode": "Die Shell wurde beendet (Exit-Code {code}).",
+    "reconnect": "Neu verbinden",
+    "close": "Schließen"
+  }
+}

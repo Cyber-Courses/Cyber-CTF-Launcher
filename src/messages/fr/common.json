@@ -1,0 +1,48 @@
+{
+  "operation": {
+    "status": {
+      "launch": "Démarrage",
+      "resume": "Reprise",
+      "pause": "Mise en pause",
+      "shutdown": "Extinction",
+      "stop": "Arrêt"
+    },
+    "label": {
+      "resume": "Reprise…",
+      "pause": "Mise en pause…",
+      "shutdown": "Extinction…",
+      "provision": "Provisionnement…",
+      "provisionMachine": "Provisionnement de {machine}…",
+      "attackVm": "Démarrage de la VM d'attaque…",
+      "stop": "Arrêt…"
+    }
+  },
+  "time": {
+    "justNow": "à l'instant",
+    "minutesAgo": "il y a {count} min",
+    "hoursAgo": "il y a {count} h",
+    "yesterday": "hier",
+    "daysAgo": "il y a {count} jours"
+  },
+  "units": {
+    "seconds": "{n} s",
+    "gigabytes": "{n} Go",
+    "gigabytesOf": "{used}/{total} Go",
+    "megabytes": "{n} Mo",
+    "kilobytes": "{n} ko",
+    "uptimeDays": "{days} j {hours} h",
+    "uptimeHours": "{hours} h {minutes} min",
+    "uptimeMinutes": "{minutes} min"
+  },
+  "attackPresets": {
+    "cyberctf": "Kali avec ses outils standard, prêt à l'emploi",
+    "kali": "Base Kali officielle, ajoutez des outils selon vos besoins",
+    "parrot": "Les outils de Parrot Security",
+    "exegolFree": "Exegol Community : boîte à outils complète, mise à jour après Full ; pour l'apprentissage et l'usage personnel",
+    "exegolFreeTerms": "Usage non commercial",
+    "exegolFull": "La boîte à outils Exegol la plus récente ; nécessite une offre Exegol Pro, Team ou Enterprise",
+    "exegolFullTerms": "Offre payante",
+    "kaliVm": "Box Kali officielle ; elle a accès à Internet, ajoutez des outils au fur et à mesure",
+    "debianVm": "Une base vierge pour construire vos propres outils"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "host": {
+    "yourMachine": "Sua máquina",
+    "serverSub": "servidor · host docker",
+    "host": "host",
+    "online": "online",
+    "portTab": "Publicada nesta máquina. Clique para copiar {url}"
+  },
+  "copy": {
+    "title": "Copiar {text}",
+    "failed": "Não foi possível copiar para a área de transferência"
+  },
+  "lab": "lab",
+  "bridge": "bridge {name}",
+  "zone": {
+    "network": "rede {name}",
+    "noInternet": "sem internet"
+  },
+  "attacker": {
+    "you": "VOCÊ",
+    "kicker": "ATACANTE",
+    "label": "Attack box",
+    "attached": "conectada",
+    "notAttached": "não conectada"
+  },
+  "published": "publicada",
+  "computer": {
+    "resolving": "resolvendo…",
+    "noPorts": "sem portas"
+  },
+  "states": {
+    "running": "rodando",
+    "paused": "pausada",
+    "off": "desligada",
+    "stopped": "parada"
+  },
+  "services": {
+    "database": "banco de dados",
+    "web": "web / api",
+    "cache": "cache",
+    "worker": "worker",
+    "ssh": "ssh",
+    "service": "serviço"
+  },
+  "view": {
+    "fitWidth": "Ajustar à largura",
+    "fitWidthHint": "Reduzir o diagrama à largura do cartão, ou mostrá-lo em tamanho legível",
+    "scrollMore": "Role para ver mais",
+    "scrollMoreHint": "Rolar o diagrama para ver o resto"
+  }
+}

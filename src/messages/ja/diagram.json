@@ -1,0 +1,51 @@
+{
+  "host": {
+    "yourMachine": "あなたのマシン",
+    "serverSub": "サーバー · Docker ホスト",
+    "host": "ホスト",
+    "online": "オンライン",
+    "portTab": "このマシンで公開中。クリックして {url} をコピー"
+  },
+  "copy": {
+    "title": "{text} をコピー",
+    "failed": "クリップボードにコピーできませんでした"
+  },
+  "lab": "ラボ",
+  "bridge": "{name} ブリッジ",
+  "zone": {
+    "network": "{name} ネットワーク",
+    "noInternet": "インターネットなし"
+  },
+  "attacker": {
+    "you": "あなた",
+    "kicker": "攻撃者",
+    "label": "アタックボックス",
+    "attached": "接続済み",
+    "notAttached": "未接続"
+  },
+  "published": "公開中",
+  "computer": {
+    "resolving": "解決中…",
+    "noPorts": "ポートなし"
+  },
+  "states": {
+    "running": "実行中",
+    "paused": "一時停止",
+    "off": "オフ",
+    "stopped": "停止"
+  },
+  "services": {
+    "database": "データベース",
+    "web": "Web / API",
+    "cache": "キャッシュ",
+    "worker": "ワーカー",
+    "ssh": "SSH",
+    "service": "サービス"
+  },
+  "view": {
+    "fitWidth": "幅に合わせる",
+    "fitWidthHint": "図をカードの幅に収まるよう縮小するか、読みやすいサイズで表示します",
+    "scrollMore": "スクロールで続きを表示",
+    "scrollMoreHint": "図をスクロールして残りを表示します"
+  }
+}

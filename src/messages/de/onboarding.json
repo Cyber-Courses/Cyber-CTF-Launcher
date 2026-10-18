@@ -1,0 +1,50 @@
+{
+  "skip": "Einrichtung überspringen",
+  "back": "Zurück",
+  "continue": "Weiter",
+  "checking": "Dieser Rechner wird geprüft…",
+  "stepFailed": "Dieser Schritt konnte nicht geladen werden",
+  "stepNames": {
+    "welcome": "Willkommen",
+    "signin": "Anmelden",
+    "pkgmgr": "Paketmanager",
+    "virtualization": "Virtualisierung",
+    "docker": "Container-Engine",
+    "dockerTest": "Container-Test",
+    "attack": "Attack box",
+    "vm": "Virtuelle Maschinen (optional)",
+    "vagrant": "Vagrant (optional)",
+    "vmTest": "VM-Test (optional)",
+    "done": "Fertig"
+  },
+  "welcome": {
+    "title": "Willkommen bei Cyber <em>CTF</em>",
+    "description": "Führe realistische, isolierte Security-Labs auf deinem Rechner, deinem eigenen Server oder in der Cloud aus, gestartet aus der App oder direkt von der Website.",
+    "labsTitle": "Container- und VM-Labs",
+    "labsDescription": "Docker-Container und vollständige virtuelle Maschinen, jedes Lab in seinem eigenen isolierten Netzwerk.",
+    "whereTitle": "Läuft, wo du willst",
+    "whereDescription": "Auf diesem Rechner, deinem eigenen Server (Proxmox, ESXi) oder in deinem Cloud-Konto (AWS, Azure, Google Cloud und mehr), das sich selbst stoppt, wenn du fertig bist.",
+    "targetsTitle": "Echte Ziele",
+    "targetsDescription": "Nutze wirklich verwundbare Systeme aus, von einer Attack box im Lab-Netzwerk aus.",
+    "launchTitle": "Von überall starten",
+    "launchDescription": "Starte ein Lab von der Website, sogar vom Handy; es läuft auf dem Rechner deiner Wahl.",
+    "start": "Los geht's"
+  },
+  "signin": {
+    "title": "Anmelden",
+    "description": "Verbinde dein Cyber-CTF-Konto, um diesen Rechner zu registrieren und Labs von jedem Gerät aus zu starten.",
+    "signedIn": "Angemeldet",
+    "signedInAs": "Angemeldet als {name}",
+    "waiting": "Warte auf den Browser… (bis zu 5 Minuten)",
+    "button": "Im Browser anmelden",
+    "hint": "Öffnet <mono>cyberauth.co</mono> in deinem Browser. Labs laufen auch ohne Konto: Du kannst dich später in den Einstellungen anmelden.",
+    "skip": "Vorerst überspringen"
+  },
+  "done": {
+    "title": "Alles <em>bereit</em>",
+    "description": "Du kannst das alles später unter Einstellungen oder Dieser Rechner ändern.",
+    "account": "Konto",
+    "notSignedIn": "Nicht angemeldet (später in den Einstellungen anmelden)",
+    "browse": "Labs durchsuchen"
+  }
+}

@@ -1,0 +1,180 @@
+{
+  "appearance": {
+    "title": "Appearance",
+    "description": "How the launcher looks and which language it speaks. Saved on this computer.",
+    "theme": "Theme",
+    "themes": {
+      "dark": "Dark",
+      "black": "Black",
+      "light": "Light"
+    },
+    "themeDescriptions": {
+      "dark": "Dark uses deep neutral greys, easy on the eyes.",
+      "black": "Black uses true black, for OLED screens.",
+      "light": "Light uses warm paper tones, for bright rooms."
+    },
+    "language": "Language",
+    "languageDescription": "The launcher's language. System follows your computer's.",
+    "languageSystem": "System"
+  },
+  "tabs": {
+    "label": "Settings sections",
+    "account": "Account",
+    "appearance": "Appearance",
+    "labs": "Labs",
+    "maintenance": "Maintenance",
+    "about": "About"
+  },
+  "saved": "Saved",
+  "account": {
+    "title": "Account",
+    "description": "Signing in registers this machine, so labs you launch from the website run here.",
+    "checking": "Checking…",
+    "signedIn": "Signed in",
+    "signOut": "Sign out",
+    "thisMachine": "This machine",
+    "online": "Online",
+    "offline": "Offline",
+    "runs": "runs {list}",
+    "registering": "Registering…",
+    "notSignedIn": "Not signed in",
+    "signInHint": "Sign in with your Cyber account to sync labs and run them from any device.",
+    "waitingBrowser": "Waiting for the browser…",
+    "signIn": "Sign in"
+  },
+  "labs": {
+    "title": "Labs",
+    "description": "How labs start on this machine. Saved on this computer only."
+  },
+  "labPorts": {
+    "title": "Lab ports",
+    "default": "Each service on its own port, like CTFd on 8000. A start stops when another lab or app already holds one.",
+    "random": "Each service on a free random port. Never collides with another lab or app.",
+    "ask": "Asks before each container lab starts on this machine: random free ports, or the lab's own.",
+    "options": {
+      "ask": "Ask",
+      "random": "Random",
+      "default": "Default"
+    }
+  },
+  "attackBox": {
+    "title": "Attack box image",
+    "description": "Runs on each lab’s network as your toolbox. The first launch of an image downloads it, which can take a while.",
+    "default": "Default",
+    "largeDownload": "Large download",
+    "pinned": "pinned",
+    "presets": {
+      "cyberctf": "Kali with its standard toolset, ready to use",
+      "kali": "Official Kali base, add tools as needed",
+      "parrot": "Parrot Security toolset",
+      "exegolFree": "Exegol Community: full toolkit, updated after Full; for learning and personal use",
+      "exegolFull": "The latest Exegol toolkit; needs an Exegol Pro, Team or Enterprise plan"
+    },
+    "terms": {
+      "nonCommercial": "Non-commercial use",
+      "paidPlan": "Paid plan"
+    },
+    "customImage": "Custom image",
+    "customImageNote": "Any Docker image or registry tag.",
+    "save": "Save",
+    "autoStart": "Start the attack box with the lab",
+    "autoStartDescription": "Starts it as soon as a lab is up on this machine: the container on a container lab, the VM beside a VM lab. You can still start or stop it from the lab.",
+    "invalidImage": "Use a plain image name such as registry/name:tag: letters, digits and . _ - / : @ only, not starting with a dash."
+  },
+  "attackVm": {
+    "title": "Attack VM for VM labs",
+    "description": "A VM lab’s networks live inside the hypervisor, so your attacker is a VM beside it: this Vagrant box, plugged into every lab network, with the internet to install tools. The first start downloads the box.",
+    "label": "Attack VM box",
+    "presets": {
+      "kali": "Official Kali box; it has the internet, add tools as you go",
+      "debian12": "A plain base to build your own toolset on"
+    },
+    "customBox": "Custom box",
+    "customBoxNote": "Any Vagrant Cloud box (owner/name) built for your hypervisor."
+  },
+  "hypervisor": {
+    "title": "Hypervisor for VM labs",
+    "checking": "Checking hypervisors…",
+    "setupLink": "Set one up on the Machine page",
+    "noneInstalled": "No hypervisor is installed on this machine yet.",
+    "current": "VM labs and the VM test run on {name}.",
+    "noneReady": "None of the installed hypervisors can run VM labs yet. Install its Vagrant add-on below.",
+    "automatic": "Automatic",
+    "automaticNote": "Uses {name}, the first ready hypervisor.",
+    "readyPlugin": "Ready · Vagrant add-on {plugin}",
+    "readyBuiltIn": "Ready · built into Vagrant",
+    "needsPlugin": "Installed · needs the Vagrant add-on {plugin}",
+    "notReady": "Installed · not ready for VM labs",
+    "installing": "Installing…",
+    "installAddon": "Install add-on",
+    "logInstalling": "Installing the Vagrant add-on {plugin}…",
+    "logInstalled": "✓ Installed",
+    "logTitle": "Vagrant add-on",
+    "allowHyperv": "Allow my account",
+    "allowingHyperv": "Allowing…",
+    "logAllowingHyperv": "Adding your account to Hyper-V Administrators (Windows asks for permission)…",
+    "logHypervAllowed": "✓ Done. Sign out of Windows and back in, then re-check."
+  },
+  "cleanup": {
+    "title": "Cleanup",
+    "description": "Tear down anything still running on this machine (a leftover or stuck lab), reclaim disk from downloaded images and VM boxes, and remove tools Cyber CTF installed."
+  },
+  "installedTools": {
+    "title": "Tools Cyber CTF installed",
+    "count": {
+      "one": "{count} installed",
+      "other": "{count} installed"
+    },
+    "intro": "Installed during setup. Remove the ones you no longer need; tools you had before aren't listed.",
+    "installedAgo": "installed {ago}",
+    "remove": "Remove",
+    "removing": "Removing…",
+    "logRemoving": "Removing {name}…",
+    "confirmTitle": "Remove {name}?",
+    "confirmBody": "Labs that need {name} won't start until it's installed again (setup can reinstall it). Your labs and settings are kept."
+  },
+  "about": {
+    "title": "About",
+    "description": "Version, updates and what to send us when something breaks.",
+    "version": "Version",
+    "system": "System",
+    "installId": "Install ID",
+    "updates": "Updates",
+    "updateAvailable": "Update available",
+    "status": {
+      "checking": "Checking for updates…",
+      "latest": "You’re on the latest version.",
+      "latestAt": "You’re on the latest version, checked at {time}.",
+      "error": "Couldn’t reach the update server. Check your connection and try again.",
+      "available": "Version {version} is available.",
+      "installing": "Downloading and installing {version}…",
+      "installed": "Version {version} is installed. Restarting Cyber CTF…",
+      "idle": "Updates install automatically when you accept them from the banner."
+    },
+    "installing": "Installing…",
+    "installUpdate": "Install update",
+    "restartNow": "Restart now",
+    "checking": "Checking…",
+    "checkUpdates": "Check for updates",
+    "restartFailed": "Couldn't restart Cyber CTF",
+    "replayFailed": "Couldn't replay the setup",
+    "diagnostics": "Diagnostics",
+    "diagnosticsDescription": "Copies your version, OS and setup status, for a bug report or a support request.",
+    "copied": "Copied",
+    "copy": "Copy",
+    "logs": "Log files",
+    "logsDescription": "What Cyber CTF wrote while it ran. Send them with a bug report or a support request.",
+    "openLogs": "Open folder",
+    "logsFailed": "Couldn't open the log folder",
+    "firstRun": "First-run setup",
+    "firstRunDescription": "Walk through the onboarding again. Your settings and labs are kept.",
+    "replay": "Replay"
+  },
+  "sharedFolder": {
+    "title": "Shared folder",
+    "description": "A folder on this computer that your attack box sees at {mount}: tools in, loot out. It stays when a lab is removed.",
+    "pick": "Folder to share with the attack box",
+    "change": "Change…",
+    "open": "Open the folder"
+  }
+}

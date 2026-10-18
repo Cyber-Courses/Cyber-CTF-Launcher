@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Cyber CTF app icon (source for `pnpm tauri icon src-tauri/icons/icon.svg`): the glass
+       emerald up-chevron on a dark, jewel-tinted tile with a 12% white edge. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#11261f"/>
+      <stop offset="1" stop-color="#070d0b"/>
+    </linearGradient>
+    <radialGradient id="lift" cx="0.5" cy="0.12" r="0.75">
+      <stop offset="0" stop-color="#10b981" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#10b981" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="a" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d1fae5"/>
+      <stop offset=".55" stop-color="#3ee0a3"/>
+      <stop offset="1" stop-color="#047857"/>
+    </linearGradient>
+    <linearGradient id="b" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#022c1e"/>
+    </linearGradient>
+    <linearGradient id="h" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".7"/>
+      <stop offset=".35" stop-color="#fff" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="e" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".9"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity=".15"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="f" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="22"/></filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#lift)"/>
+  <rect x="104" y="104" width="816" height="816" rx="181" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="8"/>
+  <svg x="222" y="262" width="580" height="530" viewBox="-20 -60 462.29 440">
+    <path d="M164.97,82.45L7.02,227.48c-6.36,5.84-8.65,14.89-5.84,23.05l19.62,56.95c4.68,13.59,21.05,18.96,32.87,10.77l133.3-92.3c14.54-10.07,33.81-10.07,48.35,0l133.3,92.3c11.82,8.18,28.19,2.82,32.87-10.77l19.62-56.95c2.81-8.16.52-17.21-5.84-23.05l-157.95-145.03c-26.11-23.97-66.23-23.97-92.34,0Z" fill="#10b981" opacity=".5" filter="url(#f)" transform="translate(0 30)"/>
+    <path d="M164.97,82.45L7.02,227.48c-6.36,5.84-8.65,14.89-5.84,23.05l19.62,56.95c4.68,13.59,21.05,18.96,32.87,10.77l133.3-92.3c14.54-10.07,33.81-10.07,48.35,0l133.3,92.3c11.82,8.18,28.19,2.82,32.87-10.77l19.62-56.95c2.81-8.16.52-17.21-5.84-23.05l-157.95-145.03c-26.11-23.97-66.23-23.97-92.34,0Z" fill="url(#b)"/>
+    <path d="M164.97,17.98L7.02,163.02c-6.36,5.84-8.65,14.89-5.84,23.05l19.62,56.95c4.68,13.59,21.05,18.96,32.87,10.77l133.3-92.3c14.54-10.07,33.81-10.07,48.35,0l133.3,92.3c11.82,8.18,28.19,2.82,32.87-10.77l19.62-56.95c2.81-8.16.52-17.21-5.84-23.05L257.31,17.98c-26.11-23.97-66.23-23.97-92.34,0Z" fill="url(#a)" opacity=".93"/>
+    <path d="M164.97,17.98L7.02,163.02c-6.36,5.84-8.65,14.89-5.84,23.05l19.62,56.95c4.68,13.59,21.05,18.96,32.87,10.77l133.3-92.3c14.54-10.07,33.81-10.07,48.35,0l133.3,92.3c11.82,8.18,28.19,2.82,32.87-10.77l19.62-56.95c2.81-8.16.52-17.21-5.84-23.05L257.31,17.98c-26.11-23.97-66.23-23.97-92.34,0Z" fill="url(#h)"/>
+    <path d="M164.97,17.98L7.02,163.02c-6.36,5.84-8.65,14.89-5.84,23.05l19.62,56.95c4.68,13.59,21.05,18.96,32.87,10.77l133.3-92.3c14.54-10.07,33.81-10.07,48.35,0l133.3,92.3c11.82,8.18,28.19,2.82,32.87-10.77l19.62-56.95c2.81-8.16.52-17.21-5.84-23.05L257.31,17.98c-26.11-23.97-66.23-23.97-92.34,0Z" fill="none" stroke="url(#e)" stroke-width="3"/>
+    <path d="M164.97,82.45L7.02,227.48c-6.36,5.84-8.65,14.89-5.84,23.05l19.62,56.95c4.68,13.59,21.05,18.96,32.87,10.77l133.3-92.3c14.54-10.07,33.81-10.07,48.35,0l133.3,92.3c11.82,8.18,28.19,2.82,32.87-10.77l19.62-56.95c2.81-8.16.52-17.21-5.84-23.05l-157.95-145.03c-26.11-23.97-66.23-23.97-92.34,0Z" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="2"/>
+  </svg>
+</svg>

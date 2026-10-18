@@ -1,0 +1,12 @@
+{
+  "waitingForBrowser": "Aguardando o navegador…",
+  "signIn": "Entrar",
+  "settings": "Configurações",
+  "online": "Online: os labs que você inicia pelo site rodam nesta máquina",
+  "signedIn": "Conectado",
+  "signedInKeychain": "conectado · keychain",
+  "signOut": "Sair",
+  "didntOpen": "O navegador não abriu?",
+  "copyLink": "Copiar o link de login",
+  "cancel": "Cancelar"
+}

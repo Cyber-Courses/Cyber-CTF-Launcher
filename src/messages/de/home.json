@@ -1,0 +1,93 @@
+{
+  "greeting": {
+    "morning": "Guten Morgen",
+    "afternoon": "Guten Tag",
+    "evening": "Guten Abend"
+  },
+  "title": {
+    "named": "{greeting}, <em>{name}.</em>",
+    "plain": "{greeting}.",
+    "welcome": "Willkommen bei Cyber <em>CTF.</em>"
+  },
+  "status": {
+    "checking": "Dieser Rechner wird geprüft…",
+    "setUpDocker": "Richte Docker ein, um Labs auszuführen.",
+    "running": {
+      "one": "1 Lab läuft auf diesem Rechner.",
+      "other": "{count} Labs laufen auf diesem Rechner."
+    },
+    "ready": "Dieser Rechner ist bereit. Wähle ein Lab zum Angreifen.",
+    "checkFailed": "Dieser Rechner konnte nicht geprüft werden."
+  },
+  "actions": {
+    "setUp": "Diesen Rechner einrichten",
+    "setUpFailed": "Rechner-Einrichtung konnte nicht geöffnet werden",
+    "browse": "Labs durchsuchen"
+  },
+  "stats": {
+    "cpu": "CPU",
+    "memory": "Arbeitsspeicher",
+    "disk": "Festplatte",
+    "cores": "{cores} Kerne",
+    "usage": "{used}/{total} GB",
+    "unavailable": "nicht verfügbar"
+  },
+  "capacity": {
+    "total": "{total} GB",
+    "cloud": "Cloud",
+    "server": "Server",
+    "ok": {
+      "title": "Bereit für Labs",
+      "detail": "Genug RAM für Container-Labs und die meisten VM-Labs."
+    },
+    "tight": {
+      "title": "Genug für Container-Labs",
+      "detail": "Schwere Multi-VM-Labs oder das volle Exegol-Image laufen hier eventuell langsam."
+    },
+    "low": {
+      "title": "Wenig RAM für Labs",
+      "detail": "Labs könnten auf diesem Rechner Probleme haben. Führe schwerere Labs in der Cloud oder auf einem Server aus."
+    }
+  },
+  "running": {
+    "title": "Läuft gerade",
+    "labs": {
+      "one": "1 Lab",
+      "other": "{count} Labs"
+    },
+    "containers": {
+      "one": "1 Container",
+      "other": "{count} Container"
+    },
+    "empty": "Nichts läuft. Starte ein Lab auf seiner Seite.",
+    "noDetails": "läuft · keine Details, solange der Katalog nicht erreichbar ist"
+  },
+  "deploy": {
+    "inProgress": "In Arbeit",
+    "view": "Ansehen",
+    "running": "läuft"
+  },
+  "machine": {
+    "title": "Dieser Rechner",
+    "open": "Öffnen",
+    "dockerEngine": "Docker Engine",
+    "running": "Läuft",
+    "stopped": "Gestoppt",
+    "containers": "Container",
+    "none": "keine",
+    "cores": "Kerne"
+  },
+  "jumpBack": {
+    "title": "Weitermachen",
+    "meta": "kürzlich gestartet",
+    "lastRun": "{slug} · zuletzt {ago}",
+    "resume": "Fortsetzen"
+  },
+  "labs": {
+    "title": "Labs",
+    "all": "Alle Labs",
+    "loading": "Labs werden geladen…",
+    "empty": "Noch keine Labs veröffentlicht."
+  },
+  "signInHint": "Melde dich an (unten links), damit Labs, die du auf der Website startest, hier laufen."
+}

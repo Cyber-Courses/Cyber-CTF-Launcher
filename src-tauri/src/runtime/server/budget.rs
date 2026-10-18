@@ -1,0 +1,254 @@
+//! What an AWS account has cost this month (Cost Explorer), and the budget check run before a
+//! cloud launch. AWS-only: the other clouds have no cost read yet, and never persist a limit.
+
+use crate::AppHandle;
+
+use super::cloud_checks::{aws_cmd, last_line};
+use super::contract::terraform_env;
+use super::profile::HostProfile;
+use super::secrets::host_secret;
+use super::store::load_host;
+use crate::error::{Error, Result};
+use crate::runtime::providers::Provider;
+
+/// This month's spend so far (USD) on the saved AWS account `id`, with its own credentials (its
+/// stored keys, or its CLI profile): the figure the Cloud screen shows is the one the launch
+/// budget gate checks, never another account's (the CLI's default profile's).
+#[tauri::command]
+pub async fn server_month_to_date_cost(app: AppHandle, id: String) -> Result<f64> {
+    let host = load_host(&app, &id)?;
+    if host.provider != Provider::Aws {
+        return Err(Error::Invalid("only AWS accounts report their spend".into()));
+    }
+    month_to_date_cost(&host, &host_secret(&host)?).await
+}
+
+/// This month's AWS spend as the AWS CLI's `profile` (or its default) sees it: the setup form's,
+/// before an account in CLI mode is saved.
+pub async fn cli_month_to_date_cost(profile: Option<String>) -> Result<f64> {
+    month_to_date_cost(&cli_account(profile), "").await
+}
+
+/// An AWS account signed in through the CLI's `profile`. Cost Explorer answers in us-east-1
+/// whatever the account's region.
+fn cli_account(profile: Option<String>) -> HostProfile {
+    HostProfile {
+        id: String::new(),
+        name: String::new(),
+        provider: Provider::Aws,
+        host: "us-east-1".into(),
+        port: super::profile::default_port(Provider::Aws),
+        username: String::new(),
+        datastore: None,
+        network: None,
+        node: None,
+        insecure_tls: false,
+        auto_stop_hours: None,
+        use_cli_creds: true,
+        aws_profile: profile,
+        monthly_limit: None,
+        gcp_project: None,
+    }
+}
+
+/// This month's AWS spend so far (USD) for a host, via Cost Explorer.
+pub(super) async fn month_to_date_cost(h: &HostProfile, password: &str) -> Result<f64> {
+    let env = terraform_env(h, password);
+    let period = crate::cloud::month_period();
+    let out = aws_cmd(h, &env, &cost_args(&period)).await?;
+    parse_spend(&out)
+}
+
+/// `aws ce get-cost-and-usage` for `period`, printing just the amount.
+fn cost_args(period: &str) -> [&str; 12] {
+    [
+        "ce",
+        "get-cost-and-usage",
+        "--time-period",
+        period,
+        "--granularity",
+        "MONTHLY",
+        "--metrics",
+        "UnblendedCost",
+        "--query",
+        "ResultsByTime[0].Total.UnblendedCost.Amount",
+        "--output",
+        "text",
+    ]
+}
+
+/// Cost Explorer's amount (text output) as a number.
+fn parse_spend(out: &str) -> Result<f64> {
+    // `f64::from_str` takes "NaN" and "inf" too; neither is a spend this check can act on.
+    out.trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite())
+        .ok_or_else(|| Error::Invalid(format!("couldn't read the spend figure from Cost Explorer: {:?}", out.trim())))
+}
+
+/// The budget check for a launch. Blocks only when the spend is readable and over the limit;
+/// when it can't be read (`Unverifiable`) the caller warns and launches anyway (best effort).
+pub enum BudgetCheck {
+    /// No budget set, under it, or not an AWS account.
+    Ok,
+    /// At or over the monthly budget: (spent, limit) in USD.
+    Over(f64, f64),
+    /// A budget is set but this month's spend couldn't be read (Cost Explorer off, no
+    /// `ce:GetCostAndUsage`, Docker/CLI missing, transient error). Carries why.
+    Unverifiable(String),
+}
+
+/// Checks an account against its monthly budget before a launch.
+pub async fn check_budget(app: &AppHandle, id: &str) -> BudgetCheck {
+    let Ok(host) = load_host(app, id) else { return BudgetCheck::Ok };
+    let Some(limit) = budget_limit(&host) else { return BudgetCheck::Ok };
+    let Ok(password) = host_secret(&host) else {
+        return BudgetCheck::Unverifiable("No stored credentials for this account. Re-enter its access keys, then launch again.".into());
+    };
+    verdict(limit, month_to_date_cost(&host, &password).await)
+}
+
+/// The monthly limit a launch is checked against: AWS accounts with a positive limit only.
+fn budget_limit(host: &HostProfile) -> Option<f64> {
+    if host.provider != Provider::Aws {
+        return None;
+    }
+    host.monthly_limit.filter(|v| *v > 0.0)
+}
+
+/// This month's spend (or why it couldn't be read) against `limit`.
+fn verdict(limit: f64, spent: Result<f64>) -> BudgetCheck {
+    match spent {
+        Ok(spent) if spent.is_nan() => BudgetCheck::Unverifiable(budget_unverifiable_message("the spend figure isn't a number")),
+        Ok(spent) if spent >= limit => BudgetCheck::Over(spent, limit),
+        Ok(_) => BudgetCheck::Ok,
+        Err(e) => BudgetCheck::Unverifiable(budget_unverifiable_message(&e.to_string())),
+    }
+}
+
+/// Turns a Cost Explorer failure into actionable guidance. An expired / missing sign-in is the
+/// common case (and the launch would fail on it too), so it gets a "reauthenticate" message
+/// rather than the misleading "enable Cost Explorer".
+pub(super) fn budget_unverifiable_message(err: &str) -> String {
+    let lower = err.to_lowercase();
+    let auth = ["expired", "aws login", "invalidclienttokenid", "unable to locate credentials", "sso", "not logged in", "tokenrefresh", "credentials"]
+        .iter()
+        .any(|m| lower.contains(m));
+    if auth {
+        "the AWS session has expired or isn't signed in.".into()
+    } else if lower.contains("cost explorer") || lower.contains("not enabled") {
+        "Cost Explorer isn't enabled on this account (enable it in the AWS Billing console).".into()
+    } else {
+        format!("couldn't read this month's spend ({}).", last_line(err))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::server::profile::tests::profile;
+
+    #[tokio::test]
+    async fn an_accounts_spend_is_read_with_its_own_keys_not_the_clis_default() {
+        // Regression: the Cloud screen read the spend of an account added with stored keys through
+        // the host CLI's default profile: another account's spend, or nothing, while the launch
+        // budget gate read the stored keys.
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
+        let cli = t.host("aws-cli", "aws", serde_json::json!({ "useCliCreds": true, "awsProfile": "labs" }));
+        let tools = Tools::rules(&[("ce get-cost-and-usage", ok("7.25\n"))]);
+        assert_eq!(server_month_to_date_cost(t.handle().clone(), cli).await.unwrap(), 7.25);
+        assert!(tools.called("aws ce get-cost-and-usage"), "{:?}", tools.calls());
+        assert_eq!(tools.env_of("ce get-cost-and-usage", "AWS_PROFILE").as_deref(), Some("labs"));
+        // Not an AWS account, or not saved: no figure.
+        let az = t.host("az1", "azure", serde_json::json!({}));
+        assert_eq!(server_month_to_date_cost(t.handle().clone(), az).await.unwrap_err().to_string(), "only AWS accounts report their spend");
+        assert!(server_month_to_date_cost(t.handle().clone(), "nope".into()).await.is_err());
+        // The setup form's figure, for a profile not saved yet.
+        assert_eq!(cli_month_to_date_cost(None).await.unwrap(), 7.25);
+    }
+
+    #[test]
+    fn stored_keys_reach_cost_explorer_in_the_cli_container() {
+        let keys = HostProfile { host: "eu-west-3".into(), username: "AKIAIOSFODNN7EXAMPLE".into(), ..profile(Provider::Aws) };
+        let env = terraform_env(&keys, "secret");
+        assert!(env.contains(&("AWS_ACCESS_KEY_ID".to_string(), "AKIAIOSFODNN7EXAMPLE".to_string())));
+        assert!(cli_account(Some("p".into())).use_cli_creds && cli_account(None).aws_profile.is_none());
+    }
+
+    #[test]
+    fn spend_figures_parse_or_say_what_came_back() {
+        assert_eq!(parse_spend("12.5\n").unwrap(), 12.5);
+        assert_eq!(parse_spend(" 0 ").unwrap(), 0.0);
+        assert_eq!(parse_spend("None\n").unwrap_err().to_string(), "couldn't read the spend figure from Cost Explorer: \"None\"");
+    }
+
+    #[test]
+    fn spend_figures_in_exponent_or_signed_form_parse_and_localized_ones_do_not() {
+        assert_eq!(parse_spend("1.5e2").unwrap(), 150.0);
+        assert_eq!(parse_spend("-0.0").unwrap(), 0.0);
+        assert_eq!(parse_spend("\n  7\n").unwrap(), 7.0);
+        for bad in ["", "12,5", "$12.5", "12.5 USD"] {
+            assert!(parse_spend(bad).is_err(), "{bad:?}");
+        }
+        // An infinite spend is over any limit.
+        assert!(matches!(verdict(40.0, Ok(f64::INFINITY)), BudgetCheck::Over(..)));
+    }
+
+    #[test]
+    fn a_spend_that_is_not_a_number_is_unverifiable_not_under_budget() {
+        // `f64::from_str` accepts "NaN", "inf" and "infinity" (any case). A NaN is not a readable
+        // spend: the launch should warn (Unverifiable), not read as under budget. Fix: refuse a
+        // parsed value that isn't finite (`.filter(f64::is_finite)`), and in `verdict` treat NaN
+        // as unverifiable.
+        assert!(parse_spend("NaN").is_err());
+        assert!(matches!(verdict(40.0, Ok(f64::NAN)), BudgetCheck::Unverifiable(_)));
+    }
+
+    #[test]
+    fn cost_explorer_is_asked_for_this_period_only() {
+        let args = cost_args("Start=2026-10-01,End=2026-10-11");
+        assert_eq!(args[..4], ["ce", "get-cost-and-usage", "--time-period", "Start=2026-10-01,End=2026-10-11"]);
+        assert_eq!(args[args.len() - 2..], ["--output", "text"]);
+    }
+
+    #[test]
+    fn only_aws_accounts_with_a_positive_limit_are_checked() {
+        assert_eq!(budget_limit(&HostProfile { monthly_limit: Some(40.0), ..profile(Provider::Aws) }), Some(40.0));
+        assert_eq!(budget_limit(&HostProfile { monthly_limit: Some(0.0), ..profile(Provider::Aws) }), None);
+        assert_eq!(budget_limit(&profile(Provider::Aws)), None);
+        assert_eq!(budget_limit(&HostProfile { monthly_limit: Some(40.0), ..profile(Provider::Azure) }), None);
+    }
+
+    #[test]
+    fn the_verdict_blocks_only_a_readable_spend_over_the_limit() {
+        assert!(matches!(verdict(40.0, Ok(40.0)), BudgetCheck::Over(s, l) if s == 40.0 && l == 40.0));
+        assert!(matches!(verdict(40.0, Ok(39.99)), BudgetCheck::Ok));
+        match verdict(40.0, Err(Error::Invalid("Cost Explorer is not enabled".into()))) {
+            BudgetCheck::Unverifiable(why) => assert!(why.contains("Cost Explorer isn't enabled"), "{why}"),
+            _ => panic!("should be unverifiable"),
+        }
+    }
+
+    #[test]
+    fn budget_message_calls_out_an_expired_session_first() {
+        // Auth-shaped failures win, whatever else is in the text.
+        for err in ["The security token included in the request is expired", "Unable to locate credentials", "Error loading SSO Token", "InvalidClientTokenId"]
+        {
+            assert_eq!(budget_unverifiable_message(err), "the AWS session has expired or isn't signed in.", "{err}");
+        }
+    }
+
+    #[test]
+    fn budget_message_explains_cost_explorer_when_disabled() {
+        let msg = budget_unverifiable_message("Cost Explorer is not enabled for this account");
+        assert!(msg.contains("Cost Explorer isn't enabled"), "{msg}");
+    }
+
+    #[test]
+    fn budget_message_falls_back_to_the_last_line() {
+        let msg = budget_unverifiable_message("something odd\nthe real reason here");
+        assert!(msg.contains("the real reason here"), "{msg}");
+    }
+}

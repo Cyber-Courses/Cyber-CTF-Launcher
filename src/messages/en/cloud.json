@@ -1,0 +1,67 @@
+{
+  "screen": {
+    "title": "Cloud",
+    "lead": "Throwaway instances in your own account, billed to you, stopped automatically.",
+    "setUp": "Set up cloud provider",
+    "overOne": "{name} is over its monthly budget. New labs there are blocked until you raise the budget or next month.",
+    "overMany": "{count} accounts are over their monthly budget. New labs there are blocked until you raise the budget or next month.",
+    "runningNow": "Running now",
+    "billingWhileRunning": "billing while they run",
+    "autoStops": "auto-stops {time}",
+    "stop": "Stop",
+    "loading": "Loading…",
+    "accounts": "Accounts",
+    "billedOnly": "billed only while a lab runs",
+    "notConnected": "not connected",
+    "connect": "Connect",
+    "budgetGuard": "Budget guard · {name}",
+    "ofLimit": "of {limit}",
+    "overBudget": "Over budget",
+    "autoStopAfter": "auto-stop after {hours} h",
+    "noAutoStop": "no auto-stop"
+  },
+  "firstRun": {
+    "title": "Run labs in your own cloud account",
+    "body": "One throwaway instance per lab, destroyed when you stop it. Runs on AWS, Azure or Google Cloud.",
+    "steps": {
+      "connect": { "title": "Connect an account", "body": "Access keys or your AWS CLI credentials, and a region." },
+      "pick": { "title": "Pick it on a lab", "body": "Terraform creates one instance, reachable over SSH from your IP." },
+      "stop": { "title": "Attack, then Stop", "body": "Stop destroys the instance, so billing stops with it." }
+    }
+  },
+  "account": {
+    "apiToken": "API token",
+    "apiKey": "API key",
+    "cliSignIn": "CLI sign-in",
+    "cliProfile": "CLI · {profile}",
+    "cliCredentials": "CLI credentials",
+    "accessKeys": "access keys",
+    "autoStop": "auto-stop {hours}h",
+    "noAutoStop": "no auto-stop",
+    "budget": "budget {amount}/mo",
+    "spentThisMonth": "{amount} this month",
+    "status": {
+      "testing": "Testing…",
+      "notTested": "Not tested",
+      "connected": "Connected",
+      "needsAttention": "Needs attention",
+      "failed": "Failed",
+      "overBudget": "Over budget"
+    },
+    "removeConfirm": "Remove?",
+    "remove": "Remove",
+    "cancel": "Cancel",
+    "test": "Test",
+    "edit": "Edit",
+    "installed": "installed",
+    "notInstalled": "not installed"
+  },
+  "tools": {
+    "install": "Install",
+    "installing": "Installing…",
+    "pulled": "pulled",
+    "notPulled": "not pulled",
+    "pull": "Pull",
+    "pulling": "Pulling…"
+  }
+}

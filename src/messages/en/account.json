@@ -1,0 +1,12 @@
+{
+  "waitingForBrowser": "Waiting for the browser…",
+  "signIn": "Sign in",
+  "settings": "Settings",
+  "online": "Online: labs you launch from the website run on this machine",
+  "signedIn": "Signed in",
+  "signedInKeychain": "signed in · keychain",
+  "signOut": "Sign out",
+  "didntOpen": "Browser didn't open?",
+  "copyLink": "Copy the sign-in link",
+  "cancel": "Cancel"
+}

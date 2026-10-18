@@ -1,0 +1,26 @@
+{
+  "confirm": {
+    "cancel": "キャンセル"
+  },
+  "copy": {
+    "title": "{text} をコピー"
+  },
+  "log": {
+    "output": "出力",
+    "running": "{title}…",
+    "failed": "{title} に失敗しました",
+    "done": "{title} · 完了"
+  },
+  "toast": {
+    "dismiss": "閉じる"
+  },
+  "spinner": {
+    "loading": "読み込み中"
+  },
+  "choice": {
+    "inUse": "使用中",
+    "running": "実行中",
+    "installed": "インストール済み",
+    "recommended": "おすすめ"
+  }
+}

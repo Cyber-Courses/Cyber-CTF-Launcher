@@ -1,0 +1,138 @@
+[package]
+name = "cyberctf-desktop"
+version = "1.5.0"
+description = "CyberCTF desktop launcher: runs Docker and VM labs locally"
+authors = ["Cyber-Courses"]
+license = ""
+repository = "https://github.com/Cyber-Courses/Cyber-CTF-Launcher"
+edition = "2024"
+rust-version = "1.90"
+
+[lib]
+name = "cyberctf_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# The engineering standard's lints (thresholds in clippy.toml): clippy's default groups and
+# `pedantic` are denied, so a plain `cargo clippy` fails on them. A lint at "warn" is one the code
+# doesn't meet yet: the quality ratchet (`pnpm quality`, quality-baseline.json) counts it, and its
+# count may go down, never up. Once a count reaches zero on every platform (macOS, Windows, Linux),
+# the lint moves to "deny" (a pedantic one by leaving this list: the group is denied). The ones left
+# here are counted only in runtime/, which moves to the Isothrum runner.
+[lints.rust]
+unused = { level = "deny", priority = -1 }
+missing_docs = "deny"
+# Calls into libc and Win32 need `unsafe`: outside runtime/ they all sit in `platform::sys`, the one
+# audited module allowed it; runtime/'s own go there as it moves to the Isothrum runner.
+unsafe_code = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+too_many_lines = "deny"
+panic = "deny"
+too_many_arguments = "warn"
+cognitive_complexity = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+assert_is_empty = "warn"
+case_sensitive_file_extension_comparisons = "warn"
+cast_lossless = "warn"
+cast_possible_truncation = "warn"
+checked_conversions = "warn"
+default_trait_access = "warn"
+doc_markdown = "warn"
+float_cmp = "warn"
+fn_params_excessive_bools = "warn"
+format_collect = "warn"
+format_push_string = "warn"
+if_not_else = "warn"
+ignore_without_reason = "warn"
+ip_constant = "warn"
+items_after_statements = "warn"
+large_futures = "warn"
+manual_let_else = "warn"
+manual_string_new = "warn"
+map_unwrap_or = "warn"
+match_same_arms = "warn"
+needless_pass_by_value = "warn"
+needless_raw_string_hashes = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+similar_names = "warn"
+single_match_else = "warn"
+stable_sort_primitive = "warn"
+uninlined_format_args = "warn"
+unnecessary_wraps = "warn"
+wildcard_imports = "warn"
+
+[build-dependencies]
+tauri-build = { version = "2.7.0", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+sysinfo = "0.33"
+log = "0.4"
+tauri = { version = "2.12.0", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-deep-link = "2"
+tokio = { version = "1", features = ["process", "io-util", "macros", "rt-multi-thread", "time", "net", "signal", "sync"] }
+thiserror = "2"
+sha2 = "0.11.0"
+base64 = "0.23.1"
+rand = "0.10.3"
+url = "2.5.8"
+flate2 = "1.1.10"
+tar = "0.4.46"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+reqwest = { version = "0.13", features = ["json", "form"] }
+serde_yaml_ng = "0.10.0"
+# Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
+# layered crates, the published crates.io 1.0 line (1.0.0). Only `src/runtime/lab/` calls them:
+# the spec (`isoloom-spec`), the check plan (`isoloom-plan`), the backends' registry and the
+# resolved snapshot (`isoloom-targets`).
+isoloom-spec = "1.0.0"
+isoloom-targets = "1.0.0"
+# The Compose backend's start plan and the check runners' names, which the launcher's own Docker
+# path reads from the generated files (`isoloom-compose`, `isoloom-render`).
+# The run manifest's types, shared with the Isothrum runner: what `runtime/isothrum` reads of a run.
+isoloom-manifest = "1.0.0"
+# The Isothrum runner: executes the run manifest Isoloom writes (`runtime/isothrum`, local Docker
+# behind the hidden developer flag `CYBERCTF_RUNNER=isothrum`). The published crates.io 1.0.0.
+isothrum-runner = "1.0.0"
+# The map type of the Isoloom crates' API (a cloud-services lab's outputs).
+portable-pty = "0.9"
+tauri-plugin-dialog = "2"
+# The TypeScript types of the commands' arguments and results, derived from these structs
+# (see `ts_bindings.rs`).
+ts-rs = "12"
+# A POSIX shell-word splitter: the in-app terminal on Windows (no `sh`, and cmd.exe can't read
+# POSIX quoting) runs its `sh_quote`d command lines' words directly; tests check `sh_quote`
+# round-trips through it.
+shell-words = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# Job objects: a timed tool's whole process tree ends with it on Windows. Shell (and Registry, which
+# its SHELLEXECUTEINFOW needs): the UAC-elevated Vagrant for Hyper-V.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell"] }
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+
+[dev-dependencies]
+# Tokio's paused clock (`#[tokio::test(start_paused = true)]`): tests where time matters run on a
+# fake clock, in milliseconds, whatever the machine's load.
+tokio = { version = "1", features = ["test-util"] }
+# Property tests for the parsers of tool output and user input: never panic, round-trips,
+# quoting invariants.
+proptest = { version = "1", default-features = false, features = ["std"] }
+# Tauri's mock runtime, so code taking an app handle runs in unit tests (see `AppRuntime`).
+tauri = { version = "2.12.0", features = ["test"] }
+# The runner's test doubles (scripted processes, host ports and clock), for `runtime/isothrum`'s.
+isothrum-runner = { version = "1.0.0", features = ["fake"] }

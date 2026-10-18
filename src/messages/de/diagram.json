@@ -1,0 +1,51 @@
+{
+  "host": {
+    "yourMachine": "Dein Rechner",
+    "serverSub": "Server · Docker-Host",
+    "host": "Host",
+    "online": "online",
+    "portTab": "Auf diesem Rechner veröffentlicht. Klicken, um {url} zu kopieren"
+  },
+  "copy": {
+    "title": "{text} kopieren",
+    "failed": "Kopieren in die Zwischenablage fehlgeschlagen"
+  },
+  "lab": "Lab",
+  "bridge": "Bridge {name}",
+  "zone": {
+    "network": "Netzwerk {name}",
+    "noInternet": "kein Internet"
+  },
+  "attacker": {
+    "you": "DU",
+    "kicker": "ANGREIFER",
+    "label": "Attack box",
+    "attached": "verbunden",
+    "notAttached": "nicht verbunden"
+  },
+  "published": "veröffentlicht",
+  "computer": {
+    "resolving": "wird aufgelöst…",
+    "noPorts": "keine Ports"
+  },
+  "states": {
+    "running": "läuft",
+    "paused": "pausiert",
+    "off": "aus",
+    "stopped": "gestoppt"
+  },
+  "services": {
+    "database": "Datenbank",
+    "web": "Web / API",
+    "cache": "Cache",
+    "worker": "Worker",
+    "ssh": "SSH",
+    "service": "Dienst"
+  },
+  "view": {
+    "fitWidth": "An Breite anpassen",
+    "fitWidthHint": "Das Diagramm auf die Kartenbreite verkleinern oder in lesbarer Größe zeigen",
+    "scrollMore": "Mehr per Scrollen",
+    "scrollMoreHint": "Das Diagramm scrollen, um den Rest zu sehen"
+  }
+}

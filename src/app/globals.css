@@ -1,0 +1,502 @@
+@import "tailwindcss";
+@import "./topology.css";
+
+/*
+ * Cyber design system ("Lit from within") at launcher density. Same tokens as the Cyber
+ * websites (cyber-design-system/tokens.css), product jewel = Cyber CTF emerald.
+ *
+ * Modes: Dark is the default (bare :root). Black (true #000, OLED) and Light (Paper) are a
+ * class on <html>, set from Settings > Appearance (src/lib/appearance.ts).
+ *
+ * Components use the semantic (shadcn) names: bg-card, text-muted-foreground, border...
+ * plus the system's own: card-2, glass, edge, faint, jewel*, you (the player's attacker).
+ * Never hard-code a hex value or a Tailwind palette class in a component: add a token here.
+ */
+:root {
+  /* Surfaces */
+  --background: #09090b;
+  --surface: #0d0d10;
+  --card: #111114;
+  --card-2: #17171b;
+  --popover: #17171b;
+  --muted: #17171b;
+  --secondary: #17171b;
+
+  /* Ink */
+  --foreground: #f4f4f6;
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --secondary-foreground: var(--foreground);
+  --accent-foreground: var(--foreground);
+  --muted-foreground: #a0a0ab;
+  --faint: #84848f;
+
+  /* Fills and lines */
+  --accent: rgb(255 255 255 / 0.06);
+  --glass: rgb(255 255 255 / 0.035);
+  --glass-2: rgb(255 255 255 / 0.06);
+  --border: rgb(255 255 255 / 0.075);
+  --input: rgb(255 255 255 / 0.12);
+  --border-strong: var(--input);
+  --edge: rgb(255 255 255 / 0.16);
+  /* Cables in diagrams. */
+  --edge-line: rgb(255 255 255 / 0.24);
+  --log: rgb(0 0 0 / 0.28);
+  --scrim: rgb(0 0 0 / 0.5);
+
+  /* Status (never the product colour) */
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --destructive: #f87171;
+
+  /* Product jewel: Cyber CTF emerald */
+  --jewel: #34d399;
+  --jewel-text: #6ee7b7;
+  --jewel-top: #3ee0a3;
+  --jewel-bottom: #059669;
+  --jewel-solid: #10b981;
+  --jewel-on: #022c1e;
+  --jewel-rgb: 16 185 129;
+  --mark-top: #34d399;
+  --mark-base: #0b7a5a;
+
+  /* "You": the player's attacker in diagrams (amethyst reads as you, not as a status) */
+  --you: #a78bfa;
+  --you-text: #c4b5fd;
+
+  /* Categorical hues for diagram service types (data, not status) */
+  --hue-sky: #7dd3fc;
+  --hue-amber: #fcd34d;
+  --hue-mint: #6ee7b7;
+  --hue-violet: #c4b5fd;
+  --hue-grey: #a0a0ab;
+
+  /* Family jewels for cross-links */
+  --emerald: #34d399;
+  --amethyst: #a78bfa;
+  --sapphire: #60a5fa;
+
+  --primary: var(--jewel-solid);
+  --primary-foreground: var(--jewel-on);
+  --ring: var(--jewel);
+  --link: var(--jewel-text);
+
+  --shadow-xl: 0 2.5rem 6rem -1.5rem rgb(0 0 0 / 0.8), 0 0 0 1px var(--border);
+  --shadow-pop: 0 1rem 2.5rem -0.75rem rgb(0 0 0 / 0.7), 0 0 0 1px var(--border);
+
+  --radius: 0.75rem;
+  color-scheme: dark;
+}
+
+:root.black {
+  --background: #000000;
+  --surface: #030304;
+  --card: #0a0a0b;
+  --card-2: #111113;
+  --popover: #111113;
+  --muted: #111113;
+  --secondary: #111113;
+  --accent: rgb(255 255 255 / 0.055);
+  --glass: rgb(255 255 255 / 0.03);
+  --glass-2: rgb(255 255 255 / 0.055);
+  --border: rgb(255 255 255 / 0.07);
+  --input: rgb(255 255 255 / 0.11);
+  --log: rgb(255 255 255 / 0.02);
+}
+
+:root.light {
+  --background: #fafaf9;
+  --surface: #f4f4f2;
+  --card: #ffffff;
+  --card-2: #f6f6f4;
+  --popover: #ffffff;
+  --muted: #f1f1ef;
+  --secondary: #f1f1ef;
+  --foreground: #0c0c10;
+  --muted-foreground: #5c5c66;
+  --faint: #686872;
+  --accent: rgb(16 16 24 / 0.05);
+  --glass: rgb(255 255 255 / 0.7);
+  --glass-2: rgb(16 16 24 / 0.045);
+  --border: rgb(16 16 24 / 0.08);
+  --input: rgb(16 16 24 / 0.13);
+  --edge: #ffffff;
+  --edge-line: rgb(16 16 24 / 0.28);
+  --log: var(--surface);
+  --scrim: rgb(12 12 16 / 0.25);
+  --success: #15803d;
+  --warning: #b45309;
+  --destructive: #dc2626;
+  --jewel-text: #047857;
+  --mark-base: #064e3b;
+  --you: #7c3aed;
+  --you-text: #6d28d9;
+  --hue-sky: #0284c7;
+  --hue-amber: #b45309;
+  --hue-mint: #047857;
+  --hue-violet: #6d28d9;
+  --hue-grey: #5c5c66;
+  --shadow-xl: 0 2rem 4rem -1.5rem rgb(30 20 60 / 0.22), 0 0 0 1px var(--border);
+  --shadow-pop: 0 1rem 2rem -0.75rem rgb(30 20 60 / 0.2), 0 0 0 1px var(--border);
+  color-scheme: light;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-heading: var(--font-newsreader), "Iowan Old Style", Georgia, serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-card-2: var(--card-2);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-glass: var(--glass);
+  --color-glass-2: var(--glass-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-edge: var(--edge);
+  --color-ring: var(--ring);
+  --color-link: var(--link);
+  --color-jewel: var(--jewel);
+  --color-jewel-text: var(--jewel-text);
+  --color-jewel-solid: var(--jewel-solid);
+  --color-jewel-on: var(--jewel-on);
+  --color-you: var(--you);
+  --color-you-text: var(--you-text);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  /* Radius scale of the family (sm .5, md .75, lg 1.25, xl 1.75) plus two app-density steps:
+     controls (nav items, inputs, small tiles) and panels. */
+  --radius-xs: 0.3125rem;
+  --radius-sm: 0.5rem;
+  --radius-control: 0.625rem;
+  --radius-md: 0.75rem;
+  --radius-panel: 0.875rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.75rem;
+}
+
+@layer base {
+  /* An app window, not a page: the document never scrolls (only the panes inside do), so
+     nothing can push the shell up under the titlebar, and no rubber-band bounce. The body is
+     pinned to the window: anything taller inside it can't make the document scrollable (on the
+     root, `overflow: clip` still counts as `hidden`, which a focus or scrollIntoView scrolls). */
+  html,
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  body {
+    position: fixed;
+    inset: 0;
+  }
+  html {
+    background: var(--background);
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: rgb(var(--jewel-rgb) / 0.3);
+  }
+  /* A visible focus ring on everything you can reach by keyboard. Inputs draw their own. */
+  :where(button, a, summary, [role="button"], [role="tab"], [role="radio"], [role="switch"], [tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  /* Quiet scrollbars, in the surface colours. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--input) transparent;
+  }
+}
+
+/* ---------------------------------------------------------------- type */
+
+/* Page titles: Newsreader 350, tight, at most one italic word in the jewel. */
+.page-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: 350;
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-optical-sizing: auto;
+  text-wrap: balance;
+}
+.page-title em,
+.serif-title em {
+  font-style: italic;
+  font-weight: 300;
+  color: var(--jewel-text);
+  padding-right: 0.04em;
+}
+/* Smaller serif titles: empty states, stat values, the budget figure. */
+.serif-title {
+  font-family: var(--font-heading);
+  font-weight: 350;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  font-optical-sizing: auto;
+}
+/* Eyebrow: mono, faint, with a short hairline before it. */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font: 500 0.75rem var(--font-mono);
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+.eyebrow::before {
+  content: "";
+  width: 1.25rem;
+  height: 1px;
+  background: var(--input);
+}
+/* Small caps label for groups (sidebar "Running", palette groups). */
+.section-label {
+  font: 500 0.625rem var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+}
+
+/* ---------------------------------------------------------------- surfaces */
+
+/* The default container: a vertical gradient with a lit top edge. No flat grey cards. */
+.surface-panel {
+  background: linear-gradient(180deg, var(--card-2), var(--card));
+  box-shadow:
+    inset 0 1px 0 var(--glass-2),
+    0 0 0 1px var(--border);
+}
+:root.light .surface-panel {
+  box-shadow:
+    inset 0 1px 0 #ffffff,
+    0 0 0 1px var(--border),
+    0 0.75rem 1.5rem -1.25rem rgb(30 20 60 / 0.18);
+}
+/* Floating things: popovers, dialogs, the command menu, toasts. */
+.surface-glass {
+  background: color-mix(in oklab, var(--card-2) 90%, transparent);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow:
+    var(--shadow-xl),
+    inset 0 1px 0 var(--glass-2);
+}
+:root.light .surface-glass {
+  background: color-mix(in oklab, var(--popover) 92%, transparent);
+}
+/* Inset well: log output, code, terminal-like text. */
+.surface-log {
+  background: var(--log);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+/* The dotted canvas behind the network diagram. */
+.dotted-canvas {
+  background-color: var(--surface);
+  background-image: radial-gradient(var(--input) 1px, transparent 1px);
+  background-size: 1.1rem 1.1rem;
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.btn-jewel {
+  color: var(--jewel-on);
+  background: linear-gradient(180deg, var(--jewel-top), var(--jewel-bottom));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.28),
+    0 0 0 1px rgb(var(--jewel-rgb) / 0.6),
+    0 0.5rem 1.25rem -0.5rem rgb(var(--jewel-rgb) / 0.7);
+}
+.btn-jewel:hover {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.32),
+    0 0 0 1px rgb(var(--jewel-rgb) / 0.8),
+    0 0.75rem 1.75rem -0.5rem rgb(var(--jewel-rgb) / 0.85);
+}
+.btn-glass {
+  color: var(--foreground);
+  background: var(--glass);
+  box-shadow:
+    inset 0 1px 0 var(--glass-2),
+    0 0 0 1px var(--input);
+}
+.btn-glass:hover {
+  background: var(--glass-2);
+}
+:root.light .btn-glass {
+  background: #ffffff;
+  box-shadow:
+    0 1px 0 rgb(16 16 24 / 0.04),
+    0 0 0 1px var(--input);
+}
+:root.light .btn-glass:hover {
+  background: var(--surface);
+}
+.btn-inverted {
+  color: #0c0c10;
+  background: linear-gradient(180deg, #ffffff, #e7e7ec);
+  box-shadow:
+    inset 0 1px 0 #ffffff,
+    0 0 0 1px rgb(255 255 255 / 0.2),
+    0 0.5rem 1.5rem -0.5rem rgb(0 0 0 / 0.6);
+}
+:root.light .btn-inverted {
+  color: #ffffff;
+  background: linear-gradient(180deg, #2a2a33, #0c0c10);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.15),
+    0 0 0 1px #0c0c10;
+}
+.btn-stop {
+  color: var(--destructive);
+  background: var(--glass);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--destructive) 40%, transparent);
+}
+.btn-stop:hover {
+  background: color-mix(in oklab, var(--destructive) 10%, transparent);
+}
+
+/* ---------------------------------------------------------------- data and status */
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.dot-ok {
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 18%, transparent);
+}
+.dot-warn {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--warning) 15%, transparent);
+}
+.dot-fail {
+  background: var(--destructive);
+}
+.dot-idle {
+  background: var(--faint);
+}
+.dot-jewel {
+  background: var(--jewel);
+}
+.dot-you {
+  background: var(--you);
+}
+@keyframes dot-pulse {
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+.dot-pulse {
+  animation: dot-pulse 2s infinite;
+}
+/* Usage bars: the jewel by default, warm when nearly full. */
+.meter-fill {
+  background: linear-gradient(90deg, var(--jewel-bottom), var(--jewel));
+}
+.meter-fill-warn {
+  background: linear-gradient(90deg, color-mix(in oklab, var(--warning) 70%, #000), var(--warning));
+}
+.meter-fill-fail {
+  background: var(--destructive);
+}
+/* Keyboard hint. */
+.kbd {
+  font: 0.625rem var(--font-mono);
+  color: var(--muted-foreground);
+}
+
+/* ---------------------------------------------------------------- motion */
+
+/* Every entrance starts from a visible state (never opacity 0 above the fold). */
+@keyframes rise-in {
+  from {
+    opacity: 0.6;
+    transform: translateY(0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-rise-in {
+  animation: rise-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0.4;
+    transform: translateY(-0.25rem) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.14s ease-out;
+}
+
+/* Flowing dashed edges for the lab network diagram. */
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+.animate-dash {
+  stroke-dasharray: 4 5;
+  animation: dash-flow 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* The switch knob stays white in every mode. */
+.switch-thumb {
+  background: #ffffff;
+}
+
+/* Account avatar: the family gradient (emerald to sapphire). */
+.avatar {
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--emerald), var(--sapphire));
+}
+
+/* A white tile behind third-party logos that need one (VirtualBox, QEMU...), in every mode. */
+.logo-tile {
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgb(16 16 24 / 0.08);
+}

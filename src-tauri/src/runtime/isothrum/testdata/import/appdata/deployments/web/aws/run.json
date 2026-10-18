@@ -1,0 +1,1 @@
+{"ssh_public_key":"ssh-ed25519 AAAA launcher","ssh_private_key_file":"/k/id_ed25519","allowed_cidr":"203.0.113.7/32","region":"eu-west-3","expires_at":4102444800,"env":{"AWS_REGION":"eu-west-3"}}

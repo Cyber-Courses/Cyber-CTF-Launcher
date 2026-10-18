@@ -1,0 +1,93 @@
+{
+  "greeting": {
+    "morning": "おはようございます",
+    "afternoon": "こんにちは",
+    "evening": "こんばんは"
+  },
+  "title": {
+    "named": "{greeting}、<em>{name} さん。</em>",
+    "plain": "{greeting}。",
+    "welcome": "Cyber <em>CTF</em> へようこそ。"
+  },
+  "status": {
+    "checking": "このマシンを確認中…",
+    "setUpDocker": "ラボを実行するには Docker をセットアップしてください。",
+    "running": {
+      "one": "このマシンで 1 件のラボが実行中です。",
+      "other": "このマシンで {count} 件のラボが実行中です。"
+    },
+    "ready": "このマシンの準備ができました。攻撃するラボを選びましょう。",
+    "checkFailed": "このマシンを確認できませんでした。"
+  },
+  "actions": {
+    "setUp": "このマシンをセットアップ",
+    "setUpFailed": "マシンのセットアップを開けませんでした",
+    "browse": "ラボを見る"
+  },
+  "stats": {
+    "cpu": "CPU",
+    "memory": "メモリ",
+    "disk": "ディスク",
+    "cores": "{cores} コア",
+    "usage": "{used}/{total} GB",
+    "unavailable": "取得できません"
+  },
+  "capacity": {
+    "total": "{total} GB",
+    "cloud": "クラウド",
+    "server": "サーバー",
+    "ok": {
+      "title": "ラボの準備完了",
+      "detail": "コンテナラボやほとんどの VM ラボに十分な RAM があります。"
+    },
+    "tight": {
+      "title": "コンテナラボには十分です",
+      "detail": "複数 VM の重いラボやフル版の Exegol イメージは動作が遅くなる可能性があります。"
+    },
+    "low": {
+      "title": "ラボには RAM が不足しています",
+      "detail": "このマシンではラボが不安定になる可能性があります。重いラボはクラウドまたはサーバーで実行してください。"
+    }
+  },
+  "running": {
+    "title": "実行中",
+    "labs": {
+      "one": "1 件のラボ",
+      "other": "{count} 件のラボ"
+    },
+    "containers": {
+      "one": "1 個のコンテナ",
+      "other": "{count} 個のコンテナ"
+    },
+    "empty": "実行中のものはありません。ラボのページから起動してください。",
+    "noDetails": "実行中 · カタログに接続できるまで詳細は表示できません"
+  },
+  "deploy": {
+    "inProgress": "進行中",
+    "view": "表示",
+    "running": "実行中"
+  },
+  "machine": {
+    "title": "このマシン",
+    "open": "開く",
+    "dockerEngine": "Docker Engine",
+    "running": "実行中",
+    "stopped": "停止",
+    "containers": "コンテナ",
+    "none": "なし",
+    "cores": "コア"
+  },
+  "jumpBack": {
+    "title": "続きから再開",
+    "meta": "最近起動したラボ",
+    "lastRun": "{slug} · 前回の実行 {ago}",
+    "resume": "再開"
+  },
+  "labs": {
+    "title": "ラボ",
+    "all": "すべてのラボ",
+    "loading": "ラボを読み込み中…",
+    "empty": "公開されているラボはまだありません。"
+  },
+  "signInHint": "Web サイトから起動したラボをここで実行するには、サインイン（左下）してください。"
+}
