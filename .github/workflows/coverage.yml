@@ -17,8 +17,10 @@ permissions:
   contents: read
 
 env:
-  # Line coverage floor in percent: 1 point under main (83.51% at e2a52fd).
-  RUST_LINES_FLOOR: "82.5"
+  # Line coverage floor in percent: ~1 point under main. Raised from 82.5 once new tests for the
+  # Docker network diagram, the VM self-test downloads and the runner-error mapping lifted the
+  # core's line coverage (measured locally 83.24% -> 83.62%; CI/linux runs a touch higher).
+  RUST_LINES_FLOOR: "82.7"
 
 jobs:
   rust-coverage:

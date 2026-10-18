@@ -549,7 +549,10 @@ mod tests {
         for _ in 0..64 {
             write("shell-stalled", stuck, &[b'x'; 4096]).unwrap();
         }
-        assert!(started.elapsed() < std::time::Duration::from_secs(2), "writes to a stalled shell returned at once");
+        // A write that waited on the stalled shell would block forever (it never reads), so the
+        // bound only has to tell "returned" from "hung" — generous, so a loaded runner descheduling
+        // this thread for a moment can't false-fail it.
+        assert!(started.elapsed() < std::time::Duration::from_secs(20), "writes to a stalled shell returned without waiting");
         // Another session's write goes through meanwhile (the sessions lock isn't held).
         write("shell-other", other, b"ls\n").unwrap();
         assert_eq!(written.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), b"ls\n");

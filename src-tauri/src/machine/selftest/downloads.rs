@@ -93,4 +93,39 @@ mod tests {
         drop(first);
         assert!(Busy::try_take(&FLAG).is_some());
     }
+
+    #[tokio::test]
+    async fn ensure_image_pulls_only_when_the_test_image_is_missing() {
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        // Already local: `image inspect` answers, so nothing is pulled and it reports "was there".
+        let present = Tools::rules(&[("image inspect", ok("sha256:abc"))]);
+        assert!(ensure_image().await.unwrap(), "already local");
+        assert!(!present.called("pull"), "nothing pulled: {:?}", present.calls());
+        drop(present);
+        // Missing: `image inspect` fails, the image is pulled quietly, and this call did the pull.
+        let pulled = Tools::rules(&[("image inspect", fail("Error: No such image")), ("pull", ok(""))]);
+        assert!(!ensure_image().await.unwrap(), "pulled now, not already there");
+        assert!(pulled.called("pull -q"), "{:?}", pulled.calls());
+        drop(pulled);
+        // The pull itself fails (a wedged engine): surfaced as an error, not a false "ready".
+        let _failed = Tools::rules(&[("image inspect", fail("Error: No such image")), ("pull", fail("timed out"))]);
+        assert!(ensure_image().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn ensure_box_adds_a_missing_box_and_forwards_its_progress() {
+        use crate::platform::exec::fake::{Tools, ok};
+        let dir = std::env::temp_dir().join(format!("cyberctf-dl-box-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // `box list` shows nothing, so the box is added once; the lines Vagrant prints, and the
+        // "Downloading …" notice, reach on_line.
+        let tools = Tools::rules(&[("box list", ok("")), ("box add", ok("Progress: 10%\nProgress: 100%"))]);
+        let mut lines = Vec::new();
+        let was_there = ensure_box(&dir, Provider::Virtualbox, "bento/ubuntu-24.04", false, |l| lines.push(l)).await.unwrap();
+        assert!(!was_there, "it had to be downloaded");
+        assert!(tools.called("box add bento/ubuntu-24.04 --provider virtualbox"), "{:?}", tools.calls());
+        assert!(lines.iter().any(|l| l.contains("Downloading bento/ubuntu-24.04 for")), "the notice: {lines:?}");
+        assert!(lines.iter().any(|l| l == "Progress: 100%"), "the streamed lines: {lines:?}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

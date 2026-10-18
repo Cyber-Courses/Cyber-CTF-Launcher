@@ -258,6 +258,14 @@ pub(crate) fn pidfile_line(pid: u32) -> String {
     Worker { pid, started: observe(pid).map(|o| o.started) }.line()
 }
 
+/// Whether `pid` now presents as a live worker — it has exec'd and its command line shows
+/// `deploy --job`. A test that stands a real process in for a worker polls this until it is true
+/// instead of sleeping a fixed time for the exec, which raced and flaked on a loaded runner.
+#[cfg(all(test, unix))]
+pub(crate) fn observed_as_worker(pid: u32) -> bool {
+    observe(pid).is_some_and(|o| !o.zombie && is_worker(&o.cmdline))
+}
+
 /// [`alive`] from what the OS said about the process (`None`: no such process) and this app's
 /// executable name.
 fn is_live_worker(worker: &Worker, seen: Option<&Observed>, this_exe: Option<&str>) -> bool {

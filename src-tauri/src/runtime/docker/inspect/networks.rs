@@ -80,3 +80,84 @@ pub(super) fn parse_networks(project: &str, out: &str) -> Vec<Network> {
     nets.sort_by(|a, b| a.name.cmp(&b.name));
     nets
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::exec::fake::{Tools, fail, ok};
+
+    #[test]
+    fn parse_networks_takes_the_ipv4_subnet_strips_the_project_and_sorts() {
+        // `<name>\t<subnet(s)>\t<internal>`, as `docker network inspect -f` prints it. An IPv6
+        // range alongside the IPv4 one is skipped; the project prefix is stripped from the name;
+        // `internal` is true only for the literal "true"; the rows come back sorted by name.
+        let out = "cyberctf-web_dmz\tfd00::/64 10.30.0.0/24\ttrue\n\
+                   cyberctf-web_default\t172.20.0.0/16\tfalse\n";
+        let nets = parse_networks("cyberctf-web", out);
+        assert_eq!(nets.iter().map(|n| n.name.as_str()).collect::<Vec<_>>(), ["default", "dmz"]);
+        let dmz = nets.iter().find(|n| n.name == "dmz").unwrap();
+        assert_eq!(dmz.subnet, "10.30.0.0/24");
+        assert!(dmz.internal);
+        let default = nets.iter().find(|n| n.name == "default").unwrap();
+        assert_eq!(default.subnet, "172.20.0.0/16");
+        assert!(!default.internal);
+    }
+
+    #[test]
+    fn parse_networks_keeps_an_ipv6_only_network_and_tolerates_missing_columns() {
+        // No IPv4 range: fall back to whatever subnet there is (the first). A row with no subnet
+        // and no internal column is still a network; a row with no name is dropped entirely.
+        let out = "cyberctf-x_v6\tfd00:dead::/48\t\n\
+                   cyberctf-x_bare\t\t\n\
+                   \t172.18.0.0/16\tfalse\n";
+        let nets = parse_networks("cyberctf-x", out);
+        assert_eq!(nets.iter().map(|n| n.name.as_str()).collect::<Vec<_>>(), ["bare", "v6"]);
+        assert_eq!(nets.iter().find(|n| n.name == "v6").unwrap().subnet, "fd00:dead::/48");
+        let bare = nets.iter().find(|n| n.name == "bare").unwrap();
+        assert_eq!(bare.subnet, "");
+        assert!(!bare.internal);
+        assert!(parse_networks("cyberctf-x", "").is_empty());
+    }
+
+    #[tokio::test]
+    async fn lab_networks_lists_then_inspects_and_parses() {
+        // `network ls` names the lab's networks; `network inspect` gives each one's subnet and
+        // isolation, which `parse_networks` turns into the diagram's segments.
+        let _tools = Tools::rules(&[
+            ("network ls", ok("cyberctf-mini_lab\ncyberctf-mini_wan\n")),
+            ("network inspect", ok("cyberctf-mini_lab\t10.10.0.0/24\ttrue\ncyberctf-mini_wan\t10.11.0.0/24\tfalse\n")),
+        ]);
+        let nets = lab_networks("mini").await;
+        assert_eq!(nets.iter().map(|n| (n.name.as_str(), n.internal)).collect::<Vec<_>>(), [("lab", true), ("wan", false)]);
+    }
+
+    #[tokio::test]
+    async fn lab_networks_is_empty_when_docker_lists_none_or_cannot_say() {
+        // No networks listed: no inspect call, no networks.
+        let listed_none = Tools::rules(&[("network ls", ok("\n"))]);
+        assert!(lab_networks("mini").await.is_empty());
+        assert!(!listed_none.called("network inspect"), "nothing to inspect");
+        drop(listed_none);
+        // Docker can't even list (daemon down): still empty, never a panic.
+        let _down = Tools::rules(&[("network", fail("Cannot connect to the Docker daemon"))]);
+        assert!(lab_networks("mini").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn subnets_in_use_excludes_our_own_and_skips_ipv6() {
+        // `network ls` lists every network with its compose project; ours (by exact project) are
+        // excluded, then the rest are inspected and only their IPv4 subnets kept.
+        let _tools = Tools::rules(&[
+            ("network ls", ok("bridge\t\ncyberctf-web_lab\tcyberctf-web\ncyberctf-other_lab\tcyberctf-other\n")),
+            ("network inspect", ok("172.17.0.0/16 fd00::/64\n10.9.0.0/24\n")),
+        ]);
+        let subnets = subnets_in_use("web").await;
+        assert_eq!(subnets, ["172.17.0.0/16", "10.9.0.0/24"]);
+    }
+
+    #[tokio::test]
+    async fn subnets_in_use_is_empty_when_docker_cannot_list() {
+        let _down = Tools::rules(&[("network ls", fail("Cannot connect to the Docker daemon"))]);
+        assert!(subnets_in_use("web").await.is_empty());
+    }
+}

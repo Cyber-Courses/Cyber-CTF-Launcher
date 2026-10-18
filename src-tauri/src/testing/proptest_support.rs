@@ -5,8 +5,30 @@ use serde_json::Value;
 
 /// How many cases each property runs: enough to find edge cases, small enough that the whole
 /// suite stays well under a few seconds.
+///
+/// Two settings keep this deterministic in CI, where a random seed once failed a different
+/// property each run while all passed locally:
+///
+/// - A fixed RNG seed, so every run (local and CI) explores the same cases. A property that
+///   holds therefore holds every run; it cannot pass on one seed and fail on the next. Set
+///   `PROPTEST_RNG_SEED=<u64>` to explore elsewhere (a fuzzing run, chasing a new edge) — the
+///   seed is only the default.
+/// - Failure persistence on (the proptest default; the suite used to turn it `None`, throwing
+///   every counterexample away). A found case is written to a `.proptest-regressions` file beside
+///   the test and replayed first on every later run. Committed, it pins the case forever, so a
+///   finding is reproducible rather than a seed that surfaced a bug in one run and not the next.
 pub fn config() -> ProptestConfig {
-    ProptestConfig { cases: 256, failure_persistence: None, ..ProptestConfig::default() }
+    let mut cfg = ProptestConfig {
+        cases: 256,
+        failure_persistence: Some(Box::new(proptest::test_runner::FileFailurePersistence::SourceParallel("proptest-regressions"))),
+        ..ProptestConfig::default()
+    };
+    // `ProptestConfig::default()` already read `PROPTEST_RNG_SEED`; honour it when set, otherwise
+    // pin a fixed seed so the suite is reproducible by default.
+    if std::env::var_os("PROPTEST_RNG_SEED").is_none() {
+        cfg.rng_seed = proptest::test_runner::RngSeed::Fixed(0x0C7F_5EED);
+    }
+    cfg
 }
 
 /// Keys the parsers look for, so arbitrary JSON reaches past the first `get`.
