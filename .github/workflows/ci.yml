@@ -56,8 +56,9 @@ jobs:
       - name: Format
         if: startsWith(matrix.os, 'ubuntu')
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
-      # Lints at "deny" (Cargo.toml) fail here; those at "warn" are held to quality-baseline.json by
-      # the quality ratchet (`pnpm quality`, part of `pnpm check`).
+      # Lints at "deny" (Cargo.toml) fail here. Warn-level lints are held to quality-baseline.json
+      # by the quality ratchet (`pnpm quality`), which runs locally as part of `pnpm check`; CI does
+      # not run it (it needs the clippy JSON and the Node tooling together in one job).
       - name: Lint
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
       - name: Test

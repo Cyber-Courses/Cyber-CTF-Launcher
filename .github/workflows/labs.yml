@@ -45,10 +45,13 @@ jobs:
           set -euo pipefail
           nohup docker pull -q "$ATTACK_BOX" > "$RUNNER_TEMP/pull.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/pull.pid"
-      # Isoloom's example at the commit the launcher builds against (the isoloom-spec rev locked in
-      # Cargo.lock), not its HEAD: an upstream change can't break or pass this run on its own.
+      # Two labs. Isoloom's example is fetched at the exact isoloom-spec rev locked in Cargo.lock
+      # (not its HEAD), so an upstream Isoloom change can't flip this run. invoice-portal-api is
+      # cloned at its default-branch HEAD and is NOT pinned: a push to that repo changes what the
+      # scheduled/push runs test. Pin it to a tag or commit here if that ever needs to be reproducible.
       - name: Fetch the labs
         run: |
+          set -euo pipefail
           git clone --depth 1 https://github.com/CyberCTF/invoice-portal-api "$RUNNER_TEMP/invoice-portal-api"
           rev=$(grep -A2 '^name = "isoloom-spec"$' src-tauri/Cargo.lock | sed -n 's/^source = "git+.*#\([0-9a-f]\{40\}\)"$/\1/p')
           test -n "$rev" || { echo "::error::no isoloom-spec git rev in src-tauri/Cargo.lock"; exit 1; }

@@ -9,8 +9,8 @@ name: MSIX (Microsoft Store)
 #
 # Prereqs:
 #   - packaging/msix/AppxManifest.xml carries the real Identity from Partner Center.
-#   - For submit: repo secrets STORE_TENANT_ID, STORE_SELLER_ID, STORE_CLIENT_ID,
-#     STORE_CLIENT_SECRET, and the Azure AD app associated in Partner Center (Manager role).
+#   - For submit: repo secrets STORE_TENANT_ID, STORE_CLIENT_ID, STORE_CLIENT_SECRET, and the
+#     Azure AD app associated in Partner Center (Manager role).
 #   - The listing must have passed certification once manually (the API cannot complete
 #     the very first submission on an incomplete listing).
 
