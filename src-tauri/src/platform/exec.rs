@@ -61,6 +61,15 @@ pub fn headless(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
+/// [`headless`] for a synchronous `std::process::Command`: keeps the short Windows-only helpers
+/// (the Ctrl+C interrupter, `taskkill`) off the screen. Windows only, because every caller is.
+#[cfg(windows)]
+pub fn headless_std(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
 /// Builds the Command: headless, Windows batch-wrapper tools routed through `cmd /C` so they
 /// resolve, and Docker kept on the engine the user picked.
 fn build(program: &str, args: &[&str]) -> Command {

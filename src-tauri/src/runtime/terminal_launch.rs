@@ -9,7 +9,9 @@ use isothrum_runner::ShellCommand;
 use crate::error::{Error, Result};
 
 /// The POSIX command line that runs `command` in its folder: `cd <cwd> && exec <program> <args>`
-/// (the `exec` so leaving the shell ends it, no extra process in between).
+/// (the `exec` so leaving the shell ends it, no extra process in between). Unix terminals only
+/// (Windows uses [`windows_line`]); the tests exercise it on every platform.
+#[cfg(any(unix, test))]
 fn command_line(command: &ShellCommand) -> String {
     let mut words = vec![command.program.clone()];
     words.extend(command.args.iter().cloned());
@@ -38,6 +40,7 @@ fn applescript_string(s: &str) -> String {
 /// (`exec`), so leaving the box ends the session. `DOCKER_CLI_HINTS=false` drops Docker's
 /// "What's next" ad on exit.
 pub fn open_terminal(command: &ShellCommand) -> Result<()> {
+    #[cfg(unix)]
     let line = command_line(command);
     #[cfg(target_os = "macos")]
     {
