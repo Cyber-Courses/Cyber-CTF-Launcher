@@ -53,6 +53,12 @@ jobs:
         run: |
           set -euo pipefail
           version="${TAG#v}"
+          # TAG is a maintainer-pushed tag, but guard the value spliced into the sed replacement
+          # below so a stray slash or regex metacharacter can't corrupt Casks/cyberctf.rb.
+          if [[ ! "$version" =~ ^[0-9A-Za-z.+_-]+$ ]]; then
+            echo "::error::refusing to bump the cask with version '$version' (tag '$TAG')"
+            exit 1
+          fi
           gh release download "$TAG" --repo "${{ github.repository }}" --pattern "*_${version}_universal.dmg" --output app.dmg
           sha=$(sha256sum app.dmg | cut -d' ' -f1)
           git clone -q "https://x-access-token:${GH_TOKEN}@github.com/Cyber-Courses/homebrew-tap.git" tap

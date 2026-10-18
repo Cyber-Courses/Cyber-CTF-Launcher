@@ -91,17 +91,26 @@ jobs:
       - name: MSIX version
         id: ver
         shell: bash
-        run: |
-          set -euo pipefail
-          if [ -n "${{ inputs.tag }}" ]; then
-            # The same number as everywhere else (1.4.0 ships as 1.4.0.0).
-            IFS=. read -r major minor patch <<< "${TAG#v}"
-            echo "version=${major}.${minor}.${patch}.0" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          fi
         env:
           TAG: ${{ inputs.tag }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TAG" ]; then
+            # The same number as everywhere else (1.4.0 ships as 1.4.0.0).
+            IFS=. read -r major minor patch <<< "${TAG#v}"
+            version="${major}.${minor}.${patch}.0"
+          else
+            version="$INPUT_VERSION"
+          fi
+          # Validate before it reaches $GITHUB_OUTPUT, the manifest and makeappx: four numeric
+          # parts, last is 0. Rejects free-text that could inject a step output or break out of the
+          # PowerShell that consumes it.
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.0$ ]]; then
+            echo "::error::MSIX version '$version' must be X.Y.Z.0 (four numeric parts, last 0)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/setup-node-pnpm
 
@@ -117,6 +126,9 @@ jobs:
 
       - name: Assemble MSIX layout
         shell: pwsh
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          ARCH: ${{ matrix.arch }}
         run: |
           $ErrorActionPreference = "Stop"
           $layout = "$env:RUNNER_TEMP\msix"
@@ -136,8 +148,8 @@ jobs:
 
           # Manifest with the build version substituted in.
           $manifest = Get-Content "packaging\msix\AppxManifest.xml" -Raw
-          $manifest = $manifest.Replace("__VERSION__", "${{ steps.ver.outputs.version }}")
-          $manifest = $manifest.Replace('ProcessorArchitecture="x64"', 'ProcessorArchitecture="${{ matrix.arch }}"')
+          $manifest = $manifest.Replace("__VERSION__", $env:VERSION)
+          $manifest = $manifest.Replace('ProcessorArchitecture="x64"', 'ProcessorArchitecture="' + $env:ARCH + '"')
           Set-Content -Path "$layout\AppxManifest.xml" -Value $manifest -Encoding utf8
 
           Write-Host "Layout contents:"
@@ -179,17 +191,26 @@ jobs:
       - name: MSIX version
         id: ver
         shell: bash
-        run: |
-          set -euo pipefail
-          if [ -n "${{ inputs.tag }}" ]; then
-            # The same number as everywhere else (1.4.0 ships as 1.4.0.0).
-            IFS=. read -r major minor patch <<< "${TAG#v}"
-            echo "version=${major}.${minor}.${patch}.0" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          fi
         env:
           TAG: ${{ inputs.tag }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TAG" ]; then
+            # The same number as everywhere else (1.4.0 ships as 1.4.0.0).
+            IFS=. read -r major minor patch <<< "${TAG#v}"
+            version="${major}.${minor}.${patch}.0"
+          else
+            version="$INPUT_VERSION"
+          fi
+          # Validate before it reaches $GITHUB_OUTPUT, the manifest and makeappx: four numeric
+          # parts, last is 0. Rejects free-text that could inject a step output or break out of the
+          # PowerShell that consumes it.
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.0$ ]]; then
+            echo "::error::MSIX version '$version' must be X.Y.Z.0 (four numeric parts, last 0)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -199,13 +220,15 @@ jobs:
 
       - name: Bundle x64 + Arm64
         shell: pwsh
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           $ErrorActionPreference = "Stop"
           $sdk = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Directory |
                  Where-Object { Test-Path "$($_.FullName)\x64\makeappx.exe" } |
                  Sort-Object Name -Descending | Select-Object -First 1
           Get-ChildItem packages
-          & "$($sdk.FullName)\x64\makeappx.exe" bundle /o /bv ${{ steps.ver.outputs.version }} /d packages /p "$env:RUNNER_TEMP\CyberCTF.msixbundle"
+          & "$($sdk.FullName)\x64\makeappx.exe" bundle /o /bv $env:VERSION /d packages /p "$env:RUNNER_TEMP\CyberCTF.msixbundle"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

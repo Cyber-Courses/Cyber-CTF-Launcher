@@ -35,11 +35,11 @@ jobs:
           repositories: Cyber-CTF-Launcher
       - env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          REF_NAME: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: |
           set -euo pipefail
           version=$(node -p 'require("./src-tauri/tauri.conf.json").version')
-          tag="${{ github.ref_type == 'tag' && github.ref_name || '' }}"
-          tag="${tag:-v$version}"
+          tag="${REF_NAME:-v$version}"
           for attempt in 1 2 3 4 5; do
             if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
               echo "Release $tag exists."; exit 0
@@ -170,6 +170,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           # Tauri names the DMG itself (no odd characters); take the one there is.
@@ -180,7 +181,7 @@ jobs:
             --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
           xcrun stapler staple "$dmg"
           spctl -a -vvv -t open --context context:primary-signature "$dmg"
-          gh release upload "${{ github.ref_name }}" "$dmg" --clobber --repo "${{ github.repository }}"
+          gh release upload "$TAG" "$dmg" --clobber --repo "${{ github.repository }}"
 
   # Every platform built (and the DMG is notarized): take the draft live, then ship it to
   # Homebrew and apt. Tag builds only; a manual run stays a draft to review.
@@ -195,7 +196,8 @@ jobs:
     steps:
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${{ github.ref_name }}" --draft=false --latest --repo "${{ github.repository }}"
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --draft=false --latest --repo "${{ github.repository }}"
 
   # Called directly: a release published with GITHUB_TOKEN fires no release event.
   distribute:
