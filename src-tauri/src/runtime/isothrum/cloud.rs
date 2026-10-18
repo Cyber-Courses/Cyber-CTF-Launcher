@@ -236,6 +236,27 @@ mod tests {
     }
 
     #[test]
+    fn connection_secrets_for_a_destroy_are_the_credentials_without_the_parameters() {
+        // The same split a destroy relies on: every account var is a connection secret except the
+        // region/profile parameters, which the runner replays from the applied params instead.
+        let tf_env: Vec<(String, String)> = [
+            ("AWS_ACCESS_KEY_ID", "AKIA"),
+            ("AWS_SECRET_ACCESS_KEY", "sk"),
+            ("AWS_PROFILE", "labs"),
+            ("AWS_REGION", "us-east-1"),
+            ("AWS_DEFAULT_REGION", "us-east-1"),
+        ]
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect();
+        let secrets = connection_secrets(&tf_env);
+        assert_eq!(secrets.get("AWS_ACCESS_KEY_ID").map(SecretValue::expose), Some("AKIA"));
+        assert_eq!(secrets.get("AWS_SECRET_ACCESS_KEY").map(SecretValue::expose), Some("sk"));
+        assert!(secrets.get("AWS_PROFILE").is_none(), "the profile is a parameter, not a credential");
+        assert!(secrets.get("AWS_REGION").is_none() && secrets.get("AWS_DEFAULT_REGION").is_none(), "the region is a parameter");
+    }
+
+    #[test]
     fn a_destroy_sets_no_firewall_or_expiry_and_leaves_the_runner_to_replay_the_rest() {
         let place = CloudPlace { region: Some("eu-west-3".to_owned()), tf_env: vec![("AWS_ACCESS_KEY_ID".to_owned(), "k".to_owned())], ..Default::default() };
         let opts = place.options(&[]);

@@ -128,6 +128,27 @@ mod tests {
     }
 
     #[test]
+    fn the_remaining_runner_failures_each_get_their_wording() {
+        // A run recorded elsewhere is a refusal (the last verdict stays), worded as what to do.
+        let elsewhere = from_runner(RunnerError::RunningElsewhere { run: "r".into(), recorded: "A".into(), asked: "B".into() });
+        assert!(matches!(elsewhere, Error::Refused(_)));
+        assert!(elsewhere.to_string().contains("still running somewhere else"), "{elsewhere}");
+        // A lab with no park steps, and files the runner can't run, are plain messages.
+        assert!(said(RunnerError::NotParkable { run: "r".into(), mode: "pause" }).1.contains("can't be paused or shut down"));
+        assert!(said(RunnerError::Unsupported { what: "driver vagrant".into() }).1.contains("can't run this lab's generated files"));
+        // A ready condition that never held keeps its detail.
+        assert!(said(RunnerError::NotReady { condition: "tcp 127.0.0.1:8080".into(), detail: "connection refused".into() }).1.contains("didn't become ready: connection refused"));
+        // `tool_name` turns the runner's short id into the player's name (Docker, Docker Compose),
+        // and quotes an unknown one verbatim.
+        let docker = said(RunnerError::ToolTooOld { tool: "docker".into(), found: "20".into(), required: "24".into() }).1;
+        assert!(docker.starts_with("This lab needs Docker 24 or later"), "{docker}");
+        let compose = said(RunnerError::ToolTooOld { tool: "docker-compose".into(), found: "1".into(), required: "2".into() }).1;
+        assert!(compose.contains("Docker Compose 2 or later"), "{compose}");
+        let other = said(RunnerError::ToolTooOld { tool: "qemu".into(), found: "6".into(), required: "8".into() }).1;
+        assert!(other.contains("`qemu` 8 or later"), "{other}");
+    }
+
+    #[test]
     fn anything_else_keeps_the_runners_words() {
         let e = RunnerError::Unbound { at: "lifecycle.up.up".into(), placeholder: "params.X".into() };
         let text = e.to_string();
