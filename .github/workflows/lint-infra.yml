@@ -33,16 +33,34 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install actionlint
-        # The download script at the v1.7.7 tag's commit (a tag can be moved, a commit can't).
-        run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/03d0035246f3e81f36aed592ffb4bebf33a03106/scripts/download-actionlint.bash) 1.7.7
+        # Download the pinned release tarball and verify its sha256 before running it, so a moved or
+        # compromised release asset can't run unverified in CI. Bump ACTIONLINT_VERSION and both
+        # checksums together (from the release's actionlint_<version>_checksums.txt).
+        env:
+          ACTIONLINT_VERSION: "1.7.7"
+          ACTIONLINT_SHA256_AMD64: "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+          ACTIONLINT_SHA256_ARM64: "401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0"
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) arch=amd64; sha=$ACTIONLINT_SHA256_AMD64 ;;
+            aarch64 | arm64) arch=arm64; sha=$ACTIONLINT_SHA256_ARM64 ;;
+            *) echo "::error::unsupported architecture $(uname -m)"; exit 1 ;;
+          esac
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_${arch}.tar.gz"
+          curl -fsSL -o "$tarball" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${sha}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" actionlint
+          ./actionlint --version
       # shellcheck is on the runner image; actionlint runs it on every run: script.
       - run: ./actionlint -color
       # Every action is pinned to a full commit SHA (a tag or branch can be moved to new code,
       # which then runs with this repo's secrets), with its version in a comment for updates.
+      # Covers the composite actions under .github/actions/ as well as the workflows.
       - name: Actions pinned to commit SHAs
         run: |
           set -euo pipefail
-          if grep -nE '^\s*(- )?uses:' .github/workflows/*.yml \
+          if grep -nE '^\s*(- )?uses:' .github/workflows/*.yml .github/actions/*/action.yml \
             | grep -vE 'uses: \./' \
             | grep -vE 'uses: [^@[:space:]]+@[0-9a-f]{40} # \S'; then
             echo "::error::pin these actions to a full commit SHA, with the version in a comment (uses: owner/repo@<sha> # vX.Y.Z)"
