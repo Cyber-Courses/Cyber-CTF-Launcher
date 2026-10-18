@@ -86,6 +86,7 @@ jobs:
         env:
           CYBERCTF_TEST_LAB: ${{ runner.temp }}/invoice-portal-api
           CYBERCTF_TEST_SEGMENTED_LAB: ${{ runner.temp }}/isoloom/examples/segmented
+          CYBERCTF_TEST_HELLO_LAB: ${{ runner.temp }}/isoloom/examples/hello-stack
           CYBERCTF_TEST_ATTACK_BOX: ${{ env.ATTACK_BOX }}
           ISOLOOM_HOME: ${{ runner.temp }}/isoloom-home
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib real_labs -- --ignored --nocapture --test-threads=1
