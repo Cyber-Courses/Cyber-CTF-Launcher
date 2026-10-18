@@ -36,26 +36,37 @@ jobs:
           tool: cargo-llvm-cov
       - name: Coverage
         run: |
-          set -o pipefail
-          cargo llvm-cov --manifest-path src-tauri/Cargo.toml --summary-only --fail-under-lines "$RUST_LINES_FLOOR" 2>&1 | tee coverage.txt
+          set -euo pipefail
+          # Collect once, then report from the same data twice (no re-run): a JSON summary the
+          # step below parses by field (robust to the text format), and the human table + floor gate.
+          cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml
+          cargo llvm-cov report --manifest-path src-tauri/Cargo.toml --summary-only --json --output-path coverage.json
+          cargo llvm-cov report --manifest-path src-tauri/Cargo.toml --summary-only --fail-under-lines "$RUST_LINES_FLOOR" | tee coverage.txt
       - name: Summary
         if: always()
         run: |
-          # TOTAL row: Filename, then regions (3 columns), functions (3), lines (3): $10 is the line cover.
-          lines=$(awk '/^TOTAL/ { sub(/%/, "", $10); print $10 }' coverage.txt)
+          set -euo pipefail
+          # The line-coverage percent from the JSON totals, not a text column.
+          lines=""
+          if [ -f coverage.json ]; then
+            lines=$(jq -r '.data[0].totals.lines.percent // empty' coverage.json 2>/dev/null || true)
+          fi
           {
             echo '## Rust line coverage'
             echo
             if [ -n "$lines" ]; then
+              lines=$(printf '%.2f' "$lines")
               gap=$(awk -v l="$lines" -v f="$RUST_LINES_FLOOR" 'BEGIN { printf "%+.2f", l - f }')
               echo "| Metric | Covered | Floor | Gap |"
               echo "| --- | --- | --- | --- |"
               echo "| Lines | ${lines}% | ${RUST_LINES_FLOOR}% | ${gap} |"
             else
-              echo "No TOTAL row (the tests did not finish)."
+              echo "No coverage totals (the tests did not finish)."
             fi
             echo
-            echo '```'
-            sed -n '/^Filename/,$p' coverage.txt
-            echo '```'
+            if [ -f coverage.txt ]; then
+              echo '```'
+              sed -n '/^Filename/,$p' coverage.txt
+              echo '```'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
