@@ -14,7 +14,7 @@ mod files;
 pub(crate) mod lock;
 mod process;
 #[cfg(all(test, unix))]
-pub(crate) use process::pidfile_line;
+pub(crate) use process::{observed_as_worker, pidfile_line};
 mod progress;
 mod worker;
 

@@ -139,6 +139,20 @@ mod tests {
         tauri::async_runtime::block_on(answer)
     }
 
+    /// Waits (bounded) for the stand-in process `pid` to have exec'd into a recognisable worker,
+    /// rather than sleeping a fixed time for it: on a loaded runner the exec took longer than the
+    /// sleep, the process read as not a worker, and these tests flaked under CI.
+    #[cfg(unix)]
+    fn wait_until_worker(pid: u32) {
+        for _ in 0..400 {
+            if deploy_worker::observed_as_worker(pid) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        panic!("the stand-in process {pid} never looked like a worker");
+    }
+
     #[test]
     fn an_operation_in_this_process_is_listed_while_it_runs() {
         let t = crate::testing::test_app::TestApp::new();
@@ -160,9 +174,8 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         // A process whose command line reads like a worker's (`… deploy --job …`).
         let mut worker = std::process::Command::new("sh").args(["-c", "sleep 20; :", "deploy", "--job", "x"]).spawn().unwrap();
-        // Seen as the worker it stands for only once it has exec'd.
-        let _ = deploy_worker::pidfile_line(worker.id());
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        // Seen as the worker it stands for only once it has exec'd: wait for that, don't guess.
+        wait_until_worker(worker.id());
         let log = "Pulling images\n==> web: Booting VM...\n";
         std::fs::write(dir.join(format!("{id}.pid")), deploy_worker::pidfile_line(worker.id())).unwrap();
         std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string(&deploy_worker::Job::on_lab(id, Op::Launch)).unwrap()).unwrap();
@@ -203,9 +216,8 @@ mod tests {
         let dir = t.data().join("deploys");
         std::fs::create_dir_all(&dir).unwrap();
         let mut worker = std::process::Command::new("sh").args(["-c", "sleep 20; :", "deploy", "--job", "x"]).spawn().unwrap();
-        // Seen as the worker it stands for only once it has exec'd.
-        let _ = deploy_worker::pidfile_line(worker.id());
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        // Seen as the worker it stands for only once it has exec'd: wait for that, don't guess.
+        wait_until_worker(worker.id());
         std::fs::write(dir.join(format!("{id}.pid")), deploy_worker::pidfile_line(worker.id())).unwrap();
         // Its job file cut short (a full disk, a crash while it was written).
         std::fs::write(dir.join(format!("{id}.json")), "{\"lab_id\":\"operations-test-trunc").unwrap();
