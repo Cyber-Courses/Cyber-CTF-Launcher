@@ -81,4 +81,4 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-console.log(`Tauri version consistency OK (${checked} JS package(s) checked against their Rust crates).`);
+console.log(`Tauri version consistency OK (${String(checked)} JS package(s) checked against their Rust crates).`);
