@@ -10,6 +10,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+concurrency:
+  # One release per tag/ref at a time; never cancel one mid-upload.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 # Least privilege at the top: only the jobs that write to the GitHub Release (release, publish)
 # raise themselves to contents: write below. prepare creates the draft with the cyber-ctf-creator
 # App token (not GITHUB_TOKEN), and the distribute/store reusable-workflow calls stay read-only.
@@ -17,11 +22,26 @@ permissions:
   contents: read
 
 jobs:
+  # The Tauri JS/Rust version guard. ci.yml runs it on push/PR, but tags don't trigger ci.yml, so
+  # a tag with JS↔Rust drift would otherwise only fail inside tauri-action after the 5-platform
+  # build. Lockfile-only (reads pnpm-lock.yaml + Cargo.lock in seconds, no Rust toolchain); the
+  # draft and the build matrix both wait on it.
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/setup-node-pnpm
+        with:
+          install: "false"
+      - run: pnpm check:tauri
+
   # The draft release, made once before the builds: each platform job only uploads to it.
   # Created with the org's cyber-ctf-creator app: on v0.3.8 GITHUB_TOKEN was refused creating it
   # ("Resource not accessible by integration") on every attempt, while uploading to an existing
   # draft and publishing it still worked.
   prepare:
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -54,7 +74,7 @@ jobs:
           exit 1
 
   release:
-    needs: prepare
+    needs: [preflight, prepare]
     # Uploads the built installers to the GitHub Release (tauri-action + the DMG re-upload).
     permissions:
       contents: write
@@ -182,6 +202,12 @@ jobs:
           xcrun stapler staple "$dmg"
           spctl -a -vvv -t open --context context:primary-signature "$dmg"
           gh release upload "$TAG" "$dmg" --clobber --repo "${{ github.repository }}"
+
+      # The runner is ephemeral, but don't leave the notarization key on disk any longer than needed.
+      - name: Remove the notarization API key (macOS)
+        if: always() && matrix.platform == 'macos-latest'
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/apple_api_key.p8"
 
   # Every platform built (and the DMG is notarized): take the draft live, then ship it to
   # Homebrew and apt. Tag builds only; a manual run stays a draft to review.

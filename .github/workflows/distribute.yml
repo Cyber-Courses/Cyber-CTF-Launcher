@@ -32,6 +32,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # One distribution per ref at a time; don't cancel a Homebrew/apt push mid-flight.
+  group: distribute-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   distribute:
     runs-on: ubuntu-latest
