@@ -1,0 +1,20 @@
+name: Node and pnpm
+description: >-
+  Set up pnpm and Node 22 (with the pnpm cache) and, by default, install the frozen lockfile.
+  Shared by the web/e2e/coverage/release/msix jobs. The pinned action SHAs live here.
+inputs:
+  install:
+    description: Run `pnpm install --frozen-lockfile` (set to "false" for lockfile-only jobs).
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: 22
+        cache: pnpm
+    - if: inputs.install == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile

@@ -39,13 +39,10 @@ jobs:
           echo "ATTACK_BOX=$image" >> "$GITHUB_ENV"
       # The attack box is a large image (~14 GB unpacked): Docker keeps its data on the runner's
       # big scratch disk, and the pull runs while the launcher compiles.
-      - name: Docker on the scratch disk, attack box pull
+      - uses: ./.github/actions/scratch-disk-docker
+      - name: Pull the attack box in the background
         run: |
-          sudo systemctl stop docker docker.socket
-          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl start docker
-          docker info --format '{{.DockerRootDir}}'
-          df -h / /mnt
+          set -euo pipefail
           nohup docker pull -q "$ATTACK_BOX" > "$RUNNER_TEMP/pull.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/pull.pid"
       # Isoloom's example at the commit the launcher builds against (the isoloom-spec rev locked in
@@ -59,20 +56,10 @@ jobs:
           git init -q "$RUNNER_TEMP/isoloom"
           git -C "$RUNNER_TEMP/isoloom" fetch -q --depth 1 https://github.com/isoloom/isoloom "$rev"
           git -C "$RUNNER_TEMP/isoloom" checkout -q FETCH_HEAD
-      - name: Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libxdo-dev build-essential libssl-dev
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch, 2026-10
+      - uses: ./.github/actions/apt-deps
+      - uses: ./.github/actions/setup-rust
         with:
-          toolchain: stable
-      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: "src-tauri -> target"
-          key: labs
-      # Tests don't need the real frontend, but the app embeds ../out at compile time.
-      - name: Placeholder frontend
-        run: mkdir -p out && echo '<!doctype html>' > out/index.html
+          cache-key: labs
       - name: Build the tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib --no-run
       - name: Wait for the attack box image

@@ -24,6 +24,7 @@ on:
 jobs:
   distribute:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       TAG: ${{ inputs.tag || github.event.release.tag_name }}
     steps:

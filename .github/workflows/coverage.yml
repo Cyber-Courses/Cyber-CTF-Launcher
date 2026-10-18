@@ -22,26 +22,18 @@ env:
 
 jobs:
   rust-coverage:
+    # ubuntu-22.04 to match the glibc floor the ci/release Linux builds use.
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libxdo-dev build-essential libssl-dev
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch, 2026-10
+      - uses: ./.github/actions/apt-deps
+      - uses: ./.github/actions/setup-rust
         with:
-          toolchain: stable
           components: llvm-tools-preview
-      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: "src-tauri -> target"
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-llvm-cov
-      # Tests don't need the real frontend, but the app embeds ../out at compile time.
-      - name: Placeholder frontend
-        run: mkdir -p out && echo '<!doctype html>' > out/index.html
       - name: Coverage
         run: |
           set -o pipefail

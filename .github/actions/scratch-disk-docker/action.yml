@@ -1,0 +1,17 @@
+name: Docker on the scratch disk
+description: >-
+  Move Docker's data-root onto the runner's large /mnt scratch disk, so the big attack-box image
+  (~14 GB unpacked) fits. Shared by labs and attack-box. A no-op on runners without /mnt.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        if sudo test -d /mnt; then
+          sudo systemctl stop docker docker.socket
+          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+        fi
+        docker info --format '{{.DockerRootDir}}'
+        df -h / /mnt || true

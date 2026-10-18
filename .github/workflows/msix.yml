@@ -74,6 +74,7 @@ jobs:
           - runner: windows-11-arm
             arch: arm64
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -94,23 +95,12 @@ jobs:
         env:
           TAG: ${{ inputs.tag }}
 
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: ./.github/actions/setup-node-pnpm
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: ./.github/actions/setup-rust
         with:
-          node-version: 22
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch, 2026-10
-        with:
-          toolchain: stable
-
-      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: "src-tauri -> target"
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
+          # msix builds the real frontend via `tauri build`, so no placeholder.
+          placeholder-frontend: "false"
 
       # Compile the release binary with the frontend embedded, without producing the
       # NSIS/MSI bundles (we only need the raw .exe for the MSIX payload).
@@ -176,6 +166,7 @@ jobs:
   bundle:
     needs: msix
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - name: MSIX version
         id: ver
@@ -296,6 +287,7 @@ jobs:
   commit-pending:
     if: ${{ inputs.commit_pending }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - shell: pwsh
         env:
@@ -332,6 +324,7 @@ jobs:
   discard-pending:
     if: ${{ inputs.discard_pending }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - shell: pwsh
         env:

@@ -22,14 +22,10 @@ permissions:
 jobs:
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-node-pnpm
       # Tauri's JS packages and Rust crates must share a major/minor, or `tauri build` refuses. That
       # check otherwise only runs at release time (release.yml, on a tag, after a long build), so run
       # it here to catch drift on every push. Reads the resolved versions; a few milliseconds.
@@ -45,26 +41,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Linux on ubuntu-22.04 to compile and test on the same glibc floor the shipped installers
+        # target (release.yml builds the Linux binaries on 22.04); macOS/Windows on latest.
         os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Linux build dependencies
-        if: startsWith(matrix.os, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libxdo-dev build-essential libssl-dev
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch, 2026-10
+      - if: startsWith(matrix.os, 'ubuntu')
+        uses: ./.github/actions/apt-deps
+      - uses: ./.github/actions/setup-rust
         with:
-          toolchain: stable
           components: rustfmt, clippy
-      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: "src-tauri -> target"
-      # Tests don't need the real frontend, but the app embeds ../out at compile time.
-      - name: Placeholder frontend
-        shell: bash
-        run: mkdir -p out && echo '<!doctype html>' > out/index.html
       - name: Format
         if: startsWith(matrix.os, 'ubuntu')
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check

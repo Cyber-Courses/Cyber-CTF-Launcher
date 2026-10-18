@@ -1,0 +1,49 @@
+name: Rust toolchain
+description: >-
+  Install the pinned stable Rust toolchain, restore the shared cargo cache and (by default) write
+  a placeholder frontend the crate can embed at compile time. Shared by the Rust jobs
+  (ci, coverage, labs, package-smoke, release, msix). The pinned action SHAs live here.
+inputs:
+  targets:
+    description: Comma-separated rustup targets to add (empty = none).
+    required: false
+    default: ""
+  components:
+    description: Comma-separated rustup components to add (e.g. "rustfmt, clippy").
+    required: false
+    default: ""
+  cache-workspaces:
+    description: swatinem/rust-cache `workspaces` value.
+    required: false
+    default: "src-tauri -> target"
+  cache-key:
+    description: An extra swatinem/rust-cache `key` (empty = none).
+    required: false
+    default: ""
+  cache-shared-key:
+    description: An extra swatinem/rust-cache `shared-key` (empty = none).
+    required: false
+    default: ""
+  placeholder-frontend:
+    description: >-
+      Create out/index.html so the crate can embed ../out when the tests don't need the real
+      frontend. Set to "false" for jobs that build the real bundle (release, msix, package-smoke).
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch, 2026-10
+      with:
+        toolchain: stable
+        targets: ${{ inputs.targets }}
+        components: ${{ inputs.components }}
+    - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        workspaces: ${{ inputs.cache-workspaces }}
+        key: ${{ inputs.cache-key }}
+        shared-key: ${{ inputs.cache-shared-key }}
+    # Tests don't need the real frontend, but the app embeds ../out at compile time.
+    - if: inputs.placeholder-frontend == 'true'
+      shell: bash
+      run: mkdir -p out && echo '<!doctype html>' > out/index.html
