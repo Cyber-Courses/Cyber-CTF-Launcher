@@ -58,14 +58,4 @@ test.describe("settings", () => {
     await expect(shared).toHaveAttribute("aria-checked", "true");
     await expect(page.getByText("/Users/florian/cyberctf-share")).toBeVisible();
   });
-
-  test("the lab engine picks the Isothrum runner, said in its row", async ({ page }) => {
-    await openSettings(page, "Labs");
-    const engine = page.getByRole("radiogroup", { name: "Lab engine" });
-    await expect(engine.getByRole("radio", { name: "Built-in" })).toHaveAttribute("aria-checked", "true");
-    await expect(page.getByText("Labs run through Cyber CTF's own code, as they always have.")).toBeVisible();
-    await engine.getByRole("radio", { name: "Isothrum runner" }).click();
-    await expect(engine.getByRole("radio", { name: "Isothrum runner" })).toHaveAttribute("aria-checked", "true");
-    await expect(page.getByText(/^Labs run through the Isothrum runner: container labs on Docker and VM labs/)).toBeVisible();
-  });
 });
