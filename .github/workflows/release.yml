@@ -158,6 +158,24 @@ jobs:
           echo "APPLE_API_KEY=$APPLE_API_KEY_ID" >> "$GITHUB_ENV"
           echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/apple_api_key.p8" >> "$GITHUB_ENV"
 
+      # macOS Developer ID signing cert. Exported only when the cert secret exists (like the
+      # notarization key above), so an absent cert yields an unsigned build rather than a failed
+      # `security import` on an empty value. tauri-action reads these from the job env.
+      - name: Set up macOS code signing
+        if: matrix.platform == 'macos-latest' && env.APPLE_CERTIFICATE != ''
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          {
+            printf 'APPLE_CERTIFICATE<<_EOF_\n%s\n_EOF_\n' "$APPLE_CERTIFICATE"
+            printf 'APPLE_CERTIFICATE_PASSWORD<<_EOF_\n%s\n_EOF_\n' "$APPLE_CERTIFICATE_PASSWORD"
+            printf 'APPLE_SIGNING_IDENTITY<<_EOF_\n%s\n_EOF_\n' "$APPLE_SIGNING_IDENTITY"
+          } >> "$GITHUB_ENV"
+
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -166,10 +184,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # macOS code signing: Developer ID Application cert (.p12) imported by tauri-action.
           # Empty secrets = unsigned build. APPLE_API_KEY / APPLE_API_KEY_PATH come from the
-          # GITHUB_ENV set in the step above (notarization), so they are not listed here.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # The notarization key and the signing cert come from the GITHUB_ENV set in the steps
+          # above (exported only when their secrets exist), so they are not listed here; an absent
+          # cert simply yields an unsigned build. APPLE_API_ISSUER is harmless when empty (it is
+          # only used alongside the key, which is itself absent then).
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           # Read by trusted-signing-cli (Windows signCommand); unused elsewhere.
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
