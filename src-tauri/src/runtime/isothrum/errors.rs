@@ -137,7 +137,11 @@ mod tests {
         assert!(said(RunnerError::NotParkable { run: "r".into(), mode: "pause" }).1.contains("can't be paused or shut down"));
         assert!(said(RunnerError::Unsupported { what: "driver vagrant".into() }).1.contains("can't run this lab's generated files"));
         // A ready condition that never held keeps its detail.
-        assert!(said(RunnerError::NotReady { condition: "tcp 127.0.0.1:8080".into(), detail: "connection refused".into() }).1.contains("didn't become ready: connection refused"));
+        assert!(
+            said(RunnerError::NotReady { condition: "tcp 127.0.0.1:8080".into(), detail: "connection refused".into() })
+                .1
+                .contains("didn't become ready: connection refused")
+        );
         // `tool_name` turns the runner's short id into the player's name (Docker, Docker Compose),
         // and quotes an unknown one verbatim.
         let docker = said(RunnerError::ToolTooOld { tool: "docker".into(), found: "20".into(), required: "24".into() }).1;
