@@ -2435,9 +2435,9 @@ dependencies = [
 
 [[package]]
 name = "isothrum-runner"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d07224a3ee273473a2e9f35764f0819f0f9ab62bc4a0fed423c9b1c16c56e9ff"
+checksum = "c6e47aa184f4d51622f16932956eb90473d1e20bfd655b18a30a4381b68d60fd"
 dependencies = [
  "flate2",
  "isoloom-manifest",
