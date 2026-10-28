@@ -49,14 +49,19 @@ fn decimal(num: &str) -> Option<(u128, u128, u128)> {
     Some((value(whole).unwrap_or(u128::MAX), value(fraction)?, scale))
 }
 
-/// Lab id from a container: its compose project (`cyberctf-<id>`) or, for the attack box
-/// (`docker run`, no project), its name `cyberctf-<id>-attacker`.
+/// Lab id from a container: its compose project (`cyberctf-<id>`) or, for the on-demand attack
+/// box (a `docker run` with no compose project), its name `cyberctf-<id>-isoloom-access` (older
+/// boxes: `-attacker`, `-exegol`).
 fn lab_of(name: &str, project: &str) -> Option<String> {
     if let Some(id) = project.strip_prefix("cyberctf-") {
         return Some(id.to_string());
     }
     let rest = name.strip_prefix("cyberctf-")?;
-    let id = rest.strip_suffix("-attacker").or_else(|| rest.strip_suffix("-exegol")).unwrap_or(rest);
+    // The on-demand attack box runs as a bare `docker run` named `<project>-isoloom-access` with no
+    // compose project, so strip that suffix to group it under its lab. Without it the box surfaces
+    // as a separate id `<id>-isoloom-access`, which the sidebar, finding no such lab, shows by its
+    // prettified id. `-attacker`/`-exegol` are older attack-box names.
+    let id = rest.strip_suffix("-isoloom-access").or_else(|| rest.strip_suffix("-attacker")).or_else(|| rest.strip_suffix("-exegol")).unwrap_or(rest);
     Some(id.to_string())
 }
 
@@ -167,6 +172,9 @@ mod tests {
     fn maps_containers_to_labs() {
         assert_eq!(lab_of("cyberctf-sqli-web-1", "cyberctf-sqli").as_deref(), Some("sqli"));
         assert_eq!(lab_of("cyberctf-sqli-attacker", "").as_deref(), Some("sqli"));
+        // The on-demand attack box (`<project>-isoloom-access`, a bare docker run with no project)
+        // groups under its lab, instead of a phantom `sqli-isoloom-access` the sidebar names by id.
+        assert_eq!(lab_of("cyberctf-sqli-isoloom-access", "").as_deref(), Some("sqli"));
         assert_eq!(lab_of("postgres", ""), None);
     }
 
