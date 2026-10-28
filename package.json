@@ -1,6 +1,6 @@
 {
   "name": "cyber-ctf-desktop",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "private": true,
   "engines": {
     "node": "^22.12.0 || ^24.0.0 || ^25.0.0 || >=26.0.0"
