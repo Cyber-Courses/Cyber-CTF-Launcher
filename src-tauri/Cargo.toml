@@ -1,6 +1,6 @@
 [package]
 name = "cyberctf-desktop"
-version = "1.5.1"
+version = "1.5.2"
 description = "CyberCTF desktop launcher: runs Docker and VM labs locally"
 authors = ["Cyber-Courses"]
 license = ""
@@ -91,15 +91,15 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 reqwest = { version = "0.13", features = ["json", "form"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
-# layered crates, the published crates.io 1.0 line (1.0.0). Only `src/runtime/lab/` calls them:
+# layered crates, the published crates.io 1.0 line (1.0.2). Only `src/runtime/lab/` calls them:
 # the spec (`isoloom-spec`), the check plan (`isoloom-plan`), the backends' registry and the
 # resolved snapshot (`isoloom-targets`).
-isoloom-spec = "1.0.1"
-isoloom-targets = "1.0.1"
+isoloom-spec = "1.0.2"
+isoloom-targets = "1.0.2"
 # The Compose backend's start plan and the check runners' names, which the launcher's own Docker
 # path reads from the generated files (`isoloom-compose`, `isoloom-render`).
 # The run manifest's types, shared with the Isothrum runner: what `runtime/isothrum` reads of a run.
-isoloom-manifest = "1.0.1"
+isoloom-manifest = "1.0.2"
 # The Isothrum runner: executes the run manifest Isoloom writes (`runtime/isothrum`, local Docker
 # behind the hidden developer flag `CYBERCTF_RUNNER=isothrum`). The published crates.io 1.0.0.
 isothrum-runner = "1.0.1"

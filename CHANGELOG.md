@@ -4,6 +4,16 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] — 2026-10-28
+
+### Changed
+
+- Bundles Isoloom 1.0.2. A lab may now publish a pre-built Docker image it also
+  builds (the Compose build+image combo): the launcher uses the published image
+  when it can pull it and only builds locally when it cannot, so those labs start
+  without a local build. Also brings libvirt boxes for Windows Server 2016/2019,
+  so those Windows VM labs deploy on vagrant-libvirt (KVM).
+
 ## [1.5.0] — 2026-10-18
 
 First public release: a thin desktop shell over the Isothrum runner.
