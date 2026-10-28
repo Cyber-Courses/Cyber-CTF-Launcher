@@ -14,7 +14,10 @@ runs:
     - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: 22
-        cache: pnpm
+        # Only cache the pnpm store when we actually install: a lockfile-only job (install:false)
+        # never populates the store, so setup-node's cache-save post-step fails ("path does not
+        # exist") and takes the whole job down with it. No install, no cache.
+        cache: ${{ inputs.install == 'true' && 'pnpm' || '' }}
     - if: inputs.install == 'true'
       shell: bash
       run: pnpm install --frozen-lockfile
