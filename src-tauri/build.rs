@@ -100,6 +100,15 @@ fn emit_engine_versions() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed={}", lock.display());
     let text = std::fs::read_to_string(&lock)?;
     let isoloom = locked_version(&text, "isoloom-spec").ok_or("isoloom-spec not found in Cargo.lock")?;
+    // Every bundled isoloom-* crate must be the same version. The backends (isoloom-compose,
+    // isoloom-plan, isoloom-render, ...) come in transitively at `^1.0`, so bumping the direct deps
+    // alone leaves them a patch behind: a split-brain engine that advertises `isoloom-spec`'s
+    // version but generates with an older backend (which once silently dropped the build+image pull
+    // step, so the launcher built labs it should have pulled). Make that skew a hard build error.
+    let skew: Vec<String> = isoloom_versions(&text).into_iter().filter(|(_, v)| *v != isoloom).map(|(n, v)| format!("{n} {v}")).collect();
+    if !skew.is_empty() {
+        return Err(format!("bundled Isoloom crates disagree with isoloom-spec {isoloom}: {}. Realign the lockfile (cargo update -p <crate>) so the whole engine is one version.", skew.join(", ")).into());
+    }
     let isothrum = locked_version(&text, "isothrum-runner").ok_or("isothrum-runner not found in Cargo.lock")?;
     println!("cargo:rustc-env=CYBERCTF_ISOLOOM_VERSION={isoloom}");
     println!("cargo:rustc-env=CYBERCTF_ISOTHRUM_VERSION={isothrum}");
@@ -125,6 +134,27 @@ fn locked_version(lock: &str, name: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Every `isoloom-*` package in a Cargo.lock, as (name, version). Used to assert the bundled
+/// engine is one coherent version (see `emit_engine_versions`): `version` directly follows `name`
+/// in each `[[package]]` block.
+fn isoloom_versions(lock: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut name: Option<String> = None;
+    for line in lock.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("name = ") {
+            let n = rest.trim_matches('"');
+            name = n.starts_with("isoloom-").then(|| n.to_owned());
+        } else if let (Some(n), Some(rest)) = (name.as_deref(), line.strip_prefix("version = ")) {
+            out.push((n.to_owned(), rest.trim_matches('"').to_owned()));
+            name = None;
+        } else if line == "[[package]]" {
+            name = None;
+        }
+    }
+    out
 }
 
 /// On Windows, tauri-build embeds the app manifest (Common Controls v6) in the app binary only,
