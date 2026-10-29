@@ -8,7 +8,7 @@
     "noBrowser": "No se abrió ningún navegador para iniciar sesión. Configura un navegador web predeterminado para esta cuenta e inténtalo de nuevo.",
     "alreadyInProgress": "Ya hay otra operación en curso en este lab; espera a que termine.",
     "noPasswordStored": "No hay ninguna contraseña guardada para este host. Edítalo e introduce una.",
-    "portInUse": "El puerto {port} del host ya está en uso en esta máquina (lo ocupa otro lab u otra aplicación). Detén lo que lo usa o inicia el lab con puertos aleatorios.",
+    "portInUse": "El puerto {port} del host ya está en uso en esta máquina (lo ocupa otro lab u otra aplicación). Detén lo que lo usa. Si el lab no necesita ese puerto en concreto, puedes iniciarlo con puertos aleatorios.",
     "dockerNotRunning": "Docker no se está ejecutando. Inicia tu motor de contenedores (Docker Desktop, o el servicio docker en Linux) y vuelve a iniciar el lab.",
     "dockerDenied": "Docker se está ejecutando, pero tu cuenta aún no puede usarlo. Añádete al grupo docker en una terminal (sudo usermod -aG docker {user}), luego cierra la sesión y vuelve a entrar.",
     "dockerDeniedWindows": "Docker se está ejecutando, pero tu cuenta aún no puede usarlo. Añádete al grupo docker-users (en una terminal como administrador: net localgroup docker-users \"{user}\" /add), luego cierra la sesión y vuelve a entrar.",

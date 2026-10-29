@@ -420,7 +420,7 @@
     "stillUp": "Parte del lab sigue en marcha. Vuelve a intentarlo; el registro de despliegue indica qué falló.",
     "dismiss": "Descartar",
     "hint": {
-      "ports": "Un puerto que publica este lab ya está ocupado en esta máquina. Inícialo con puertos aleatorios.",
+      "ports": "Un puerto que publica este lab ya está ocupado en esta máquina. Detén lo que lo usa, o inícialo con puertos aleatorios si el lab no necesita ese puerto en concreto.",
       "docker": "Docker no está en marcha. Inicia tu motor de contenedores y vuelve a intentarlo.",
       "dockerAccess": "Tu cuenta aún no puede usar Docker: añádela al grupo docker, cierra la sesión y vuelve a entrar, y reinténtalo.",
       "signedOut": "Tu sesión terminó. Vuelve a iniciar sesión y reinténtalo.",

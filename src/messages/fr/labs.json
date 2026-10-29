@@ -420,7 +420,7 @@
     "stillUp": "Une partie du lab tourne encore. Réessayez ; le journal de déploiement indique ce qui a échoué.",
     "dismiss": "Masquer",
     "hint": {
-      "ports": "Un port que publie ce lab est déjà pris sur cette machine. Démarrez-le plutôt sur des ports aléatoires.",
+      "ports": "Un port que publie ce lab est déjà pris sur cette machine. Arrêtez ce qui l'utilise, ou démarrez-le sur des ports aléatoires si le lab n'a pas besoin de ce port précis.",
       "docker": "Docker ne tourne pas. Démarrez votre moteur de conteneurs, puis réessayez.",
       "dockerAccess": "Votre compte ne peut pas encore utiliser Docker : ajoutez-le au groupe docker, déconnectez-vous puis reconnectez-vous, et réessayez.",
       "signedOut": "Votre session a expiré. Reconnectez-vous, puis réessayez.",

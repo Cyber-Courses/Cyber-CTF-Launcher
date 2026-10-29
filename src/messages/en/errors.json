@@ -8,7 +8,7 @@
     "noBrowser": "No browser opened for sign-in. Set a default web browser for this account and try again.",
     "alreadyInProgress": "Another operation on this lab is already in progress; wait for it to finish.",
     "noPasswordStored": "No password is stored for this host. Edit it and enter one.",
-    "portInUse": "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever uses it, or start the lab with random ports.",
+    "portInUse": "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever uses it. If the lab doesn't need that exact port, you can start it with random ports.",
     "dockerNotRunning": "Docker isn't running. Start your container engine (Docker Desktop, or the docker service on Linux), then start the lab again.",
     "dockerDenied": "Docker is running, but your account can't use it yet. Add yourself to the docker group in a terminal (sudo usermod -aG docker {user}), then log out and back in.",
     "dockerDeniedWindows": "Docker is running, but your account can't use it yet. Add yourself to the docker-users group (in a terminal run as administrator: net localgroup docker-users \"{user}\" /add), then sign out and back in.",

@@ -420,7 +420,7 @@
     "stillUp": "Part of the lab is still up. Try again; the deployment log says what failed.",
     "dismiss": "Dismiss",
     "hint": {
-      "ports": "A port this lab publishes is taken on this machine. Start it on random ports instead.",
+      "ports": "A port this lab publishes is taken on this machine. Stop whatever uses it, or start it with random ports if the lab doesn't need that exact port.",
       "docker": "Docker isn’t running. Start your container engine, then retry.",
       "dockerAccess": "Your account can’t use Docker yet: add it to the docker group, log out and back in, then retry.",
       "signedOut": "Your session ended. Sign in again, then retry.",

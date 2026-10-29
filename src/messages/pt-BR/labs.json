@@ -420,7 +420,7 @@
     "stillUp": "Parte do lab ainda está rodando. Tente de novo; o log de implantação mostra o que falhou.",
     "dismiss": "Dispensar",
     "hint": {
-      "ports": "Uma porta que este lab publica já está em uso nesta máquina. Inicie-o com portas aleatórias.",
+      "ports": "Uma porta que este lab publica já está em uso nesta máquina. Pare o que a usa, ou inicie-o com portas aleatórias se o lab não precisar exatamente dessa porta.",
       "docker": "O Docker não está rodando. Inicie seu mecanismo de contêineres e tente de novo.",
       "dockerAccess": "Sua conta ainda não pode usar o Docker: adicione-a ao grupo docker, saia e entre de novo e tente novamente.",
       "signedOut": "Sua sessão terminou. Entre novamente e tente de novo.",

@@ -420,7 +420,7 @@
     "stillUp": "Ein Teil des Labs läuft noch. Versuche es erneut; das Bereitstellungsprotokoll zeigt, was fehlgeschlagen ist.",
     "dismiss": "Ausblenden",
     "hint": {
-      "ports": "Ein Port, den dieses Lab veröffentlicht, ist auf diesem Rechner belegt. Starte es stattdessen mit zufälligen Ports.",
+      "ports": "Ein Port, den dieses Lab veröffentlicht, ist auf diesem Rechner belegt. Beende, was ihn nutzt, oder starte es mit zufälligen Ports, wenn das Lab nicht genau diesen Port braucht.",
       "docker": "Docker läuft nicht. Starte deine Container-Engine und versuche es dann erneut.",
       "dockerAccess": "Dein Konto kann Docker noch nicht nutzen: Füge es der Gruppe docker hinzu, melde dich ab und wieder an und versuche es dann erneut.",
       "signedOut": "Deine Sitzung ist abgelaufen. Melde dich erneut an und versuche es dann noch einmal.",
