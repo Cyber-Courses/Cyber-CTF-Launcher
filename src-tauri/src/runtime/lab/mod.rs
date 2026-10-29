@@ -70,7 +70,14 @@ pub(crate) fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
             continue;
         }
         let (from, to) = (entry.path(), dst.join(&name));
-        if entry.file_type()?.is_dir() {
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            // Skip symlinks, as the GitHub-tarball install does (its extract takes only files and
+            // dirs): a published lab never relies on one, and following it could fail the copy
+            // (a dangling link) or escape the tree.
+            continue;
+        }
+        if kind.is_dir() {
             copy_tree(&from, &to)?;
         } else {
             std::fs::copy(&from, &to)?;
