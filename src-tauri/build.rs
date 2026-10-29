@@ -40,6 +40,7 @@ const COMMANDS: &[&str] = &[
     "lab_cloud_preview",
     "lab_deploy_log",
     "lab_launch",
+    "lab_launch_local",
     "lab_park",
     "lab_provision",
     "lab_resume",

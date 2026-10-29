@@ -58,6 +58,27 @@ pub fn parse(text: &str) -> Result<Spec> {
     isoloom_spec::parse(text).map(|s| Lab::new(s).spec()).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
 }
 
+/// Copies a lab checkout `src` into `dst`, leaving out generated output and VCS/VM state
+/// (`.isoloom`, `.git`, `.vagrant`). Used to install a lab imported from a local directory, and in
+/// tests to stage a corpus lab. Copied in Rust, not with `cp -R`, so it runs on Windows too.
+pub(crate) fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if [".isoloom", ".git", ".vagrant"].iter().any(|skip| name == **skip) {
+            continue;
+        }
+        let (from, to) = (entry.path(), dst.join(&name));
+        if entry.file_type()?.is_dir() {
+            copy_tree(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
 /// A spec this build can't read. A key the format doesn't have means the lab uses a newer format
 /// than this launcher (labs adopt spec additions before every player has updated), so say what
 /// to do instead of showing only Isoloom's problems. A missing or unreadable file, or a mistake

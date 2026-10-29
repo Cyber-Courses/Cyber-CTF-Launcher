@@ -79,27 +79,8 @@ struct Expect {
 pub(super) fn install_copy(src: &Path, id: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("cyberctf-{id}"));
     let _ = std::fs::remove_dir_all(&dir);
-    copy_tree(src, &dir).unwrap_or_else(|e| panic!("copy {} to {}: {e}", src.display(), dir.display()));
+    super::lab::copy_tree(src, &dir).unwrap_or_else(|e| panic!("copy {} to {}: {e}", src.display(), dir.display()));
     dir
-}
-
-/// `src` copied to `dst`, without its generated outputs, Vagrant's and Git's folders.
-fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        if [".isoloom", ".git", ".vagrant"].iter().any(|skip| name == *skip) {
-            continue;
-        }
-        let (from, to) = (entry.path(), dst.join(&name));
-        if entry.file_type()?.is_dir() {
-            copy_tree(&from, &to)?;
-        } else {
-            std::fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
 }
 
 pub(super) fn log(id: &str) -> impl FnMut(String) + use<> {

@@ -43,6 +43,9 @@ pub enum Op {
     Park { runtime: Runtime, mode: Park },
     /// Run the provisioners again on one machine (or all).
     Provision { runtime: Runtime, machine: Option<String> },
+    /// Launch a lab imported from a local directory (not the backend): the directory is copied in
+    /// and run as a Docker lab with development inputs. `src` is the folder the player picked.
+    LaunchLocal { src: String },
 }
 
 /// What a worker needs: the lab, the operation, and for a launch the `startLab` payload and
@@ -111,6 +114,7 @@ pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<
         Op::Resume { runtime } => crate::runtime::resume_lab(app, &job.lab_id, runtime, log).await.map(|()| None),
         Op::Park { runtime, mode } => crate::runtime::park_lab(app, &job.lab_id, runtime, mode, log).await.map(|()| None),
         Op::Provision { runtime, machine } => crate::runtime::provision_lab(app, &job.lab_id, runtime, machine.as_deref(), log).await.map(|()| None),
+        Op::LaunchLocal { src } => crate::labs::run_local(app, &job.lab_id, std::path::Path::new(&src), log).await,
     }
 }
 

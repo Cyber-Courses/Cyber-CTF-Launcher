@@ -26,6 +26,13 @@ pub async fn lab_launch(
     labs::lab_launch(app, request, logs).await
 }
 
+/// Imports and starts a lab from a local directory `path` (an unpublished lab), the deploy's log
+/// sent on `logs` (see [`labs::lab_launch_local`]).
+#[tauri::command]
+pub async fn lab_launch_local(app: AppHandle, path: String, logs: Channel<String>) -> Result<()> {
+    labs::lab_launch_local(app, path, logs).await
+}
+
 /// The labs a deploy worker is running an operation on.
 #[tauri::command]
 pub async fn deploying_labs(app: AppHandle) -> Vec<String> {

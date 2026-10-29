@@ -123,11 +123,31 @@
   },
   "deploy": {
     "ops": {
-      "resume": { "busy": "Reanudando", "step": "Recuperar las máquinas", "done": "Reanudado" },
-      "pause": { "busy": "Pausando", "step": "Guardar el estado de las máquinas", "done": "En pausa" },
-      "shutdown": { "busy": "Apagando", "step": "Apagar las máquinas", "done": "Apagado" },
-      "stop": { "busy": "Deteniendo", "step": "Eliminar las máquinas", "done": "Eliminado" },
-      "attack_vm": { "busy": "Iniciando", "step": "Iniciar la VM de ataque", "done": "Iniciada" }
+      "resume": {
+        "busy": "Reanudando",
+        "step": "Recuperar las máquinas",
+        "done": "Reanudado"
+      },
+      "pause": {
+        "busy": "Pausando",
+        "step": "Guardar el estado de las máquinas",
+        "done": "En pausa"
+      },
+      "shutdown": {
+        "busy": "Apagando",
+        "step": "Apagar las máquinas",
+        "done": "Apagado"
+      },
+      "stop": {
+        "busy": "Deteniendo",
+        "step": "Eliminar las máquinas",
+        "done": "Eliminado"
+      },
+      "attack_vm": {
+        "busy": "Iniciando",
+        "step": "Iniciar la VM de ataque",
+        "done": "Iniciada"
+      }
     },
     "phases": {
       "images": "Obtener imágenes",
@@ -413,5 +433,12 @@
     "question": "¿Iniciar {title} sin conexión?",
     "body": "No se puede contactar con Cyber CTF ahora mismo. Este lab está instalado en esta máquina, así que puede iniciarse sin él, pero tu progreso y tus evidencias no se guardan hasta que lo inicies de nuevo con conexión.",
     "start": "Iniciar sin conexión"
+  },
+  "import": {
+    "button": "Importar un lab",
+    "importing": "Importando…",
+    "pick": "Elegir una carpeta de lab",
+    "started": "Lab importado e iniciándose",
+    "failed": "No se pudo importar ese lab"
   }
 }

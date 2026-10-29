@@ -123,11 +123,31 @@
   },
   "deploy": {
     "ops": {
-      "resume": { "busy": "Retomando", "step": "Trazer as máquinas de volta", "done": "Retomado" },
-      "pause": { "busy": "Pausando", "step": "Salvar o estado das máquinas", "done": "Pausado" },
-      "shutdown": { "busy": "Desligando", "step": "Desligar as máquinas", "done": "Desligado" },
-      "stop": { "busy": "Parando", "step": "Remover as máquinas", "done": "Removido" },
-      "attack_vm": { "busy": "Iniciando", "step": "Iniciar a VM de ataque", "done": "Iniciada" }
+      "resume": {
+        "busy": "Retomando",
+        "step": "Trazer as máquinas de volta",
+        "done": "Retomado"
+      },
+      "pause": {
+        "busy": "Pausando",
+        "step": "Salvar o estado das máquinas",
+        "done": "Pausado"
+      },
+      "shutdown": {
+        "busy": "Desligando",
+        "step": "Desligar as máquinas",
+        "done": "Desligado"
+      },
+      "stop": {
+        "busy": "Parando",
+        "step": "Remover as máquinas",
+        "done": "Removido"
+      },
+      "attack_vm": {
+        "busy": "Iniciando",
+        "step": "Iniciar a VM de ataque",
+        "done": "Iniciada"
+      }
     },
     "phases": {
       "images": "Obter as imagens",
@@ -413,5 +433,12 @@
     "question": "Iniciar {title} offline?",
     "body": "Não foi possível acessar o Cyber CTF agora. Este lab está instalado nesta máquina, então pode iniciar sem ele, mas seu progresso e suas evidências não são salvos até você iniciá-lo novamente online.",
     "start": "Iniciar offline"
+  },
+  "import": {
+    "button": "Importar um lab",
+    "importing": "Importando…",
+    "pick": "Escolher uma pasta de lab",
+    "started": "Lab importado e iniciando",
+    "failed": "Não foi possível importar esse lab"
   }
 }

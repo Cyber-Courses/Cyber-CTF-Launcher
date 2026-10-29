@@ -123,11 +123,31 @@
   },
   "deploy": {
     "ops": {
-      "resume": { "busy": "Wird fortgesetzt", "step": "Maschinen zurückholen", "done": "Fortgesetzt" },
-      "pause": { "busy": "Wird pausiert", "step": "Zustand der Maschinen sichern", "done": "Pausiert" },
-      "shutdown": { "busy": "Fährt herunter", "step": "Maschinen ausschalten", "done": "Heruntergefahren" },
-      "stop": { "busy": "Wird gestoppt", "step": "Maschinen entfernen", "done": "Entfernt" },
-      "attack_vm": { "busy": "Startet", "step": "Angriffs-VM starten", "done": "Gestartet" }
+      "resume": {
+        "busy": "Wird fortgesetzt",
+        "step": "Maschinen zurückholen",
+        "done": "Fortgesetzt"
+      },
+      "pause": {
+        "busy": "Wird pausiert",
+        "step": "Zustand der Maschinen sichern",
+        "done": "Pausiert"
+      },
+      "shutdown": {
+        "busy": "Fährt herunter",
+        "step": "Maschinen ausschalten",
+        "done": "Heruntergefahren"
+      },
+      "stop": {
+        "busy": "Wird gestoppt",
+        "step": "Maschinen entfernen",
+        "done": "Entfernt"
+      },
+      "attack_vm": {
+        "busy": "Startet",
+        "step": "Angriffs-VM starten",
+        "done": "Gestartet"
+      }
     },
     "phases": {
       "images": "Images holen",
@@ -413,5 +433,12 @@
     "question": "{title} offline starten?",
     "body": "Cyber CTF ist gerade nicht erreichbar. Dieses Lab ist auf diesem Rechner installiert und kann ohne starten, aber dein Fortschritt und deine Nachweise werden erst gespeichert, wenn du es wieder online startest.",
     "start": "Offline starten"
+  },
+  "import": {
+    "button": "Lab importieren",
+    "importing": "Wird importiert…",
+    "pick": "Lab-Ordner auswählen",
+    "started": "Lab importiert und wird gestartet",
+    "failed": "Dieses Lab konnte nicht importiert werden"
   }
 }

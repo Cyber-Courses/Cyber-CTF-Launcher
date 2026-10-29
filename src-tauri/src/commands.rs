@@ -66,6 +66,7 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         cloud::oci_config,
         machine::install_vagrant_plugin,
         labs::lab_launch,
+        labs::lab_launch_local,
         runtime::lab_stop,
         runtime::lab_park,
         runtime::lab_resume,

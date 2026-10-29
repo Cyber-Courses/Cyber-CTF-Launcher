@@ -8,6 +8,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusDot } from "@/components/ui/status-pill";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ImportLab } from "@/features/labs/import-lab";
 import { LabRow } from "@/features/labs/lab-row";
 import { needsCloudAccount, setupNeeded } from "@/features/labs/lab-readiness";
 import type { Lab } from "@/features/labs/use-labs";
@@ -59,6 +60,7 @@ export function LabsHeader({
   return (
     <PageHeader
       title={t("labs.list.title")}
+      actions={<ImportLab />}
       lead={
         labs ? (
           <span className="font-mono text-[0.75rem] tabular-nums">

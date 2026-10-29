@@ -123,11 +123,31 @@
   },
   "deploy": {
     "ops": {
-      "resume": { "busy": "Resuming", "step": "Bring the machines back", "done": "Resumed" },
-      "pause": { "busy": "Pausing", "step": "Save the machines' state", "done": "Paused" },
-      "shutdown": { "busy": "Shutting down", "step": "Power the machines off", "done": "Shut down" },
-      "stop": { "busy": "Stopping", "step": "Remove the machines", "done": "Removed" },
-      "attack_vm": { "busy": "Starting", "step": "Start the attack VM", "done": "Started" }
+      "resume": {
+        "busy": "Resuming",
+        "step": "Bring the machines back",
+        "done": "Resumed"
+      },
+      "pause": {
+        "busy": "Pausing",
+        "step": "Save the machines' state",
+        "done": "Paused"
+      },
+      "shutdown": {
+        "busy": "Shutting down",
+        "step": "Power the machines off",
+        "done": "Shut down"
+      },
+      "stop": {
+        "busy": "Stopping",
+        "step": "Remove the machines",
+        "done": "Removed"
+      },
+      "attack_vm": {
+        "busy": "Starting",
+        "step": "Start the attack VM",
+        "done": "Started"
+      }
     },
     "phases": {
       "images": "Get images",
@@ -413,5 +433,12 @@
     "question": "Start {title} offline?",
     "body": "Cyber CTF can't be reached right now. This lab is installed on this machine, so it can start without it, but your progress and evidence aren't saved until you start it again online.",
     "start": "Start offline"
+  },
+  "import": {
+    "button": "Import a lab",
+    "importing": "Importing…",
+    "pick": "Choose a lab folder",
+    "started": "Lab imported and starting",
+    "failed": "Couldn't import that lab"
   }
 }

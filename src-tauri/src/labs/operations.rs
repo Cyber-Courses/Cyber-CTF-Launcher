@@ -55,7 +55,7 @@ pub struct ActiveOperation {
 /// The sidebar's name for a worker's operation, and the machine it targets when one.
 fn worker_op(op: &Op) -> (&'static str, Option<String>) {
     match op {
-        Op::Launch => ("launch", None),
+        Op::Launch | Op::LaunchLocal { .. } => ("launch", None),
         Op::Resume { .. } => ("resume", None),
         Op::Park { mode: Park::Pause, .. } => ("pause", None),
         Op::Park { mode: Park::Shutdown, .. } => ("shutdown", None),

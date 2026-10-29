@@ -383,6 +383,66 @@ pub async fn lab_launch(app: AppHandle, request: LaunchRequest, logs: Channel<St
     crate::deploy_worker::run_job(&app, job, logs).await
 }
 
+/// A stable lab id for a lab imported from the local directory `src`: `local-<slug>` of the lab's
+/// own name (its folder name when the spec has none), so the ordinary lifecycle commands act on it
+/// by id. Errors when `src` is not a lab folder.
+fn local_id(src: &Path) -> Result<String> {
+    let spec = runtime::lab::load(src).map_err(|e| Error::Invalid(format!("not a lab folder ({}): {e}", src.display())))?;
+    let base = if spec.name.is_empty() { src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default() } else { spec.name };
+    let slug: String = base.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c.to_ascii_lowercase() } else { '-' }).collect();
+    let slug = slug.trim_matches('-');
+    let slug = if slug.is_empty() { "lab" } else { slug };
+    let id = format!("local-{}", &slug[..slug.len().min(56)]);
+    runtime::validate_id(&id)?;
+    Ok(id)
+}
+
+/// Installs the lab from the local directory `src` into `<app data>/labs/<lab id>/` by copying it
+/// (no download): an imported lab. The rest is the ordinary install — its own instance room, any
+/// parked copy cleared first — so the lifecycle commands then drive it like any installed lab.
+async fn install_local(app: &AppHandle, lab_id: &str, src: &Path, log: &impl Fn(String)) -> Result<PathBuf> {
+    runtime::validate_id(lab_id)?;
+    runtime::lab::load(src).map_err(|e| Error::Invalid(format!("not a lab folder ({}): {e}", src.display())))?;
+    let labs = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("labs");
+    let dir = labs.join(lab_id);
+    let in_use = runtime::subnets_in_use(lab_id).await;
+    // Re-importing while the previous copy runs here would pull its files out from under the
+    // containers; stop it first.
+    if dir.exists() && runtime::running_here(&dir, lab_id).await {
+        return Err(Error::Refused(format!("{lab_id} is running; stop it before importing it again")));
+    }
+    log(format!("Importing {lab_id} from {}", src.display()));
+    let staging = dir.with_file_name(format!(".{lab_id}.staging"));
+    let _ = std::fs::remove_dir_all(&staging);
+    runtime::lab::copy_tree(src, &staging)?;
+    runtime::clear_parked(&dir, lab_id, log).await;
+    swap_in(&staging, &dir)?;
+    runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
+    log("Lab imported".into());
+    Ok(dir)
+}
+
+/// Installs and starts the lab in the local directory `src` as a Docker lab with development
+/// inputs (no backend, no flags): an imported custom lab, for running one not published yet.
+/// Returns its local URL.
+pub(crate) async fn run_local(app: &AppHandle, lab_id: &str, src: &Path, log: impl Fn(String)) -> Result<Option<String>> {
+    runtime::validate_id(lab_id)?;
+    let _lock = runtime::lock_lab(app, lab_id).await?;
+    let dir = install_local(app, lab_id, src, &log).await?;
+    runtime::start_locked(app, &dir, lab_id, Runtime::Docker, None, None, &[], log).await?;
+    Ok(runtime::primary_url(&dir, lab_id, Runtime::Docker).await)
+}
+
+/// Imports a lab from the local directory `src` and starts it, bypassing the catalogue and the
+/// backend: for running a lab that is not published (a lab author's own, a lab under test). The
+/// deploy runs in a detached worker, its log on `logs`.
+pub async fn lab_launch_local(app: AppHandle, src: String, logs: Channel<String>) -> Result<()> {
+    let src = PathBuf::from(src);
+    let lab_id = local_id(&src)?;
+    let job = crate::deploy_worker::Job::on_lab(&lab_id, crate::deploy_worker::Op::LaunchLocal { src: src.to_string_lossy().into_owned() });
+    crate::deploy_worker::run_job(&app, job, logs).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,6 +682,18 @@ mod tests {
             LaunchRequest { lab_id: "invoice".into(), provider: None, host: None, attackbox_image: Some("-x".into()), default_ports: false, offline: false };
         let err = lab_launch(t.handle().clone(), request, tauri::ipc::Channel::new(|_| Ok(()))).await;
         assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
+    }
+
+    #[tokio::test]
+    async fn importing_a_folder_without_a_lab_is_refused() {
+        let t = crate::testing::test_app::TestApp::new();
+        let dir = std::env::temp_dir().join(format!("cyberctf-notalab-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // No isoloom.yml: lab_launch_local refuses before it ever reaches the runner.
+        let err = lab_launch_local(t.handle().clone(), dir.to_string_lossy().into_owned(), tauri::ipc::Channel::new(|_| Ok(()))).await;
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.is_err(), "a folder with no isoloom.yml is not a lab");
     }
 
     #[tokio::test]

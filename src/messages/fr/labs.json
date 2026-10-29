@@ -123,11 +123,31 @@
   },
   "deploy": {
     "ops": {
-      "resume": { "busy": "Reprise", "step": "Relancer les machines", "done": "Repris" },
-      "pause": { "busy": "Mise en pause", "step": "Enregistrer l’état des machines", "done": "En pause" },
-      "shutdown": { "busy": "Extinction", "step": "Éteindre les machines", "done": "Éteint" },
-      "stop": { "busy": "Arrêt", "step": "Supprimer les machines", "done": "Supprimé" },
-      "attack_vm": { "busy": "Démarrage", "step": "Démarrer la VM d’attaque", "done": "Démarrée" }
+      "resume": {
+        "busy": "Reprise",
+        "step": "Relancer les machines",
+        "done": "Repris"
+      },
+      "pause": {
+        "busy": "Mise en pause",
+        "step": "Enregistrer l’état des machines",
+        "done": "En pause"
+      },
+      "shutdown": {
+        "busy": "Extinction",
+        "step": "Éteindre les machines",
+        "done": "Éteint"
+      },
+      "stop": {
+        "busy": "Arrêt",
+        "step": "Supprimer les machines",
+        "done": "Supprimé"
+      },
+      "attack_vm": {
+        "busy": "Démarrage",
+        "step": "Démarrer la VM d’attaque",
+        "done": "Démarrée"
+      }
     },
     "phases": {
       "images": "Récupérer les images",
@@ -413,5 +433,12 @@
     "question": "Démarrer {title} hors ligne ?",
     "body": "Cyber CTF est injoignable pour le moment. Ce lab est installé sur cette machine : il peut démarrer sans, mais votre progression et vos preuves ne sont pas enregistrées tant que vous ne le relancez pas en ligne.",
     "start": "Démarrer hors ligne"
+  },
+  "import": {
+    "button": "Importer un lab",
+    "importing": "Importation…",
+    "pick": "Choisir un dossier de lab",
+    "started": "Lab importé et en cours de démarrage",
+    "failed": "Impossible d'importer ce lab"
   }
 }

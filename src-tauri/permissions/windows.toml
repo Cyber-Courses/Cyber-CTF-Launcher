@@ -39,6 +39,7 @@ permissions = [
   "allow-lab-cloud-preview",
   "allow-lab-deploy-log",
   "allow-lab-launch",
+  "allow-lab-launch-local",
   "allow-lab-park",
   "allow-lab-provision",
   "allow-lab-resume",

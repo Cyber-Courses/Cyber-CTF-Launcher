@@ -103,6 +103,11 @@ export type LabLaunch = {
 export const labLaunch = ({ offline = false, ...launch }: LabLaunch, onLog: (line: string) => void) =>
   invokeStreaming("lab_launch", { ...launch, offline }, onLog);
 
+/** Imports and starts a lab from a local directory `path` (an unpublished lab, bypassing the
+ *  catalogue and the backend); the deploy's log is streamed to `onLog`. The lab then appears in
+ *  the running labs by its derived `local-<name>` id, driven by the ordinary lifecycle commands. */
+export const labLaunchLocal = (path: string, onLog: (line: string) => void) => invokeStreaming("lab_launch_local", { path }, onLog);
+
 /** The lab ids currently starting or stopping in the backend. Read on load to rehydrate the
  *  "starting" state after a window reload, which loses the in-memory deploy store. */
 export const deployingLabs = () => invoke<string[]>("deploying_labs");
