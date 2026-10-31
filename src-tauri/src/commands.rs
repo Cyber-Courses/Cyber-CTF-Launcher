@@ -11,6 +11,8 @@ mod app;
 mod cloud;
 mod labs;
 mod machine;
+#[cfg(test)]
+mod real_launch_labs;
 mod shared_folder;
 mod terminal;
 

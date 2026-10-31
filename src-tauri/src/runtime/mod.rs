@@ -37,7 +37,7 @@ mod real_docker_vm_labs;
 #[cfg(test)]
 mod real_flag_labs;
 #[cfg(test)]
-mod real_labs;
+pub(crate) mod real_labs;
 #[cfg(test)]
 mod real_server_labs;
 #[cfg(test)]

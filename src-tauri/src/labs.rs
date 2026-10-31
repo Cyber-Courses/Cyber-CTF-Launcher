@@ -386,7 +386,7 @@ pub async fn lab_launch(app: AppHandle, request: LaunchRequest, logs: Channel<St
 /// A stable lab id for a lab imported from the local directory `src`: `local-<slug>` of the lab's
 /// own name (its folder name when the spec has none), so the ordinary lifecycle commands act on it
 /// by id. Errors when `src` is not a lab folder.
-fn local_id(src: &Path) -> Result<String> {
+pub(crate) fn local_id(src: &Path) -> Result<String> {
     let spec = runtime::lab::load(src).map_err(|e| Error::Invalid(format!("not a lab folder ({}): {e}", src.display())))?;
     let base = if spec.name.is_empty() { src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default() } else { spec.name };
     let slug: String = base.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c.to_ascii_lowercase() } else { '-' }).collect();

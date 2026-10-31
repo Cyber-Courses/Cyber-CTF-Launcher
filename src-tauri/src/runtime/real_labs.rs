@@ -83,7 +83,7 @@ pub(super) fn install_copy(src: &Path, id: &str) -> PathBuf {
     dir
 }
 
-pub(super) fn log(id: &str) -> impl FnMut(String) + use<> {
+pub(crate) fn log(id: &str) -> impl FnMut(String) + use<> {
     let tag = id.to_string();
     move |l: String| println!("[{tag}] {l}")
 }
@@ -94,7 +94,7 @@ async fn docker_lines(args: &[&str]) -> Vec<String> {
 
 /// Everything of the lab Docker still holds: the project's containers (one-off `run` containers
 /// and the on-demand attack box included: they carry the project label too) and networks.
-pub(super) async fn leftovers(id: &str) -> Vec<String> {
+pub(crate) async fn leftovers(id: &str) -> Vec<String> {
     let label = format!("label=com.docker.compose.project={}", docker::project(id));
     let mut left = Vec::new();
     for (what, args) in [
@@ -106,7 +106,7 @@ pub(super) async fn leftovers(id: &str) -> Vec<String> {
     left
 }
 
-pub(super) fn check(ok: bool, what: String, failures: &mut Vec<String>) {
+pub(crate) fn check(ok: bool, what: String, failures: &mut Vec<String>) {
     if ok {
         println!("ok: {what}");
     } else {
