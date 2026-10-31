@@ -8,5 +8,10 @@
   "signOut": "Cerrar sesión",
   "didntOpen": "¿No se abrió el navegador?",
   "copyLink": "Copiar el enlace de inicio de sesión",
-  "cancel": "Cancelar"
+  "cancel": "Cancelar",
+  "waitingForCode": "Esperando a que apruebes el código…",
+  "useCode": "Usar un código",
+  "enterCode": "En cualquier dispositivo, abre {url} e introduce este código:",
+  "copyCode": "Copiar el código",
+  "copyCodeLink": "Copiar el enlace con el código"
 }

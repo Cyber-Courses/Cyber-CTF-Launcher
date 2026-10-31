@@ -7,7 +7,7 @@ use crate::AppHandle;
 use crate::account::agent::{self, AgentInfo};
 use crate::account::api;
 use crate::account::api_operation::ApiOperation;
-use crate::account::auth::{self, AuthStatus};
+use crate::account::auth::{self, AuthStatus, DeviceCode};
 use crate::error::Result;
 
 /// Signs in through the system browser, the sign-in link sent on `events` (see [`auth::auth_login`]).
@@ -23,7 +23,17 @@ pub async fn auth_login(app: AppHandle, events: Channel<String>) -> Result<AuthS
     .await
 }
 
-/// Ends the sign-in waiting for the browser, if any.
+/// Signs in with a code entered on any device, the code sent on `events` (see
+/// [`auth::auth_login_device`]).
+#[tauri::command]
+pub async fn auth_login_device(events: Channel<DeviceCode>) -> Result<AuthStatus> {
+    auth::auth_login_device(|code| {
+        let _ = events.send(code);
+    })
+    .await
+}
+
+/// Ends the sign-in waiting for the browser (or for a code's approval), if any.
 #[tauri::command]
 pub fn auth_login_cancel() {
     auth::auth_login_cancel();

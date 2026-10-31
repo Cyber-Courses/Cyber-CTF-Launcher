@@ -9,6 +9,35 @@ import { button, flush } from "@/test/ui";
 
 const signedOut = { loggedIn: false, name: null, email: null };
 
+/** An `auth_login` that gives its link, then waits until `cancel` ends it as cancelled. */
+function cancellableLogin() {
+  let cancel: () => void = () => {};
+  const handler = (args: Record<string, unknown> | undefined) => {
+    stream(args, "https://auth.example/oauth2/authorize?state=s1");
+    return new Promise<void>((resolve) => {
+      cancel = resolve;
+    }).then(() => rejectWith({ code: "signInCancelled", message: "Sign-in cancelled." }));
+  };
+  return {
+    handler,
+    cancel: () => {
+      cancel();
+    },
+  };
+}
+
+/** Renders the signed-out account with a clipboard to copy into, and presses Sign in. */
+async function startSignIn() {
+  const onChange = vi.fn();
+  const user = userEvent.setup();
+  const writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  render(<Account status={signedOut} onChange={onChange} />);
+  await user.click(button(/^sign in$/i));
+  await flush();
+  return { onChange, user, writeText };
+}
+
 describe("initials", () => {
   it("takes the first letters of a name, else of the email", () => {
     expect(initials("Florian Amette", null)).toBe("FA");
@@ -49,25 +78,9 @@ describe("Account", () => {
   });
 
   it("while waiting, offers the sign-in link to copy and a Cancel that ends it quietly", async () => {
-    let cancel: () => void = () => {};
-    const calls = installTauri({
-      auth_login: (args) => {
-        stream(args, "https://auth.example/oauth2/authorize?state=s1");
-        return new Promise<void>((resolve) => {
-          cancel = resolve;
-        }).then(() => rejectWith({ code: "signInCancelled", message: "Sign-in cancelled." }));
-      },
-      auth_login_cancel: () => {
-        cancel();
-      },
-    });
-    const onChange = vi.fn();
-    const user = userEvent.setup();
-    const writeText = vi.fn(() => Promise.resolve());
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
-    render(<Account status={signedOut} onChange={onChange} />);
-    await user.click(button(/^sign in$/i));
-    await flush();
+    const login = cancellableLogin();
+    const calls = installTauri({ auth_login: login.handler, auth_login_cancel: login.cancel });
+    const { onChange, user, writeText } = await startSignIn();
     expect(screen.getByText("Browser didn't open?")).toBeTruthy();
     await user.click(button(/copy the sign-in link/i));
     expect(writeText).toHaveBeenCalledWith("https://auth.example/oauth2/authorize?state=s1");
@@ -79,6 +92,42 @@ describe("Account", () => {
     expect(screen.queryByText(/cancelled/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /^cancel$/i })).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("switches to a code entered on another device when the browser can't be used", async () => {
+    let approve: () => void = () => {};
+    const login = cancellableLogin();
+    const calls = installTauri({
+      auth_login: login.handler,
+      auth_login_device: (args) => {
+        // The core ends the browser sign-in waiting as soon as one with a code starts.
+        login.cancel();
+        stream(args, {
+          userCode: "WDJB-MJHT",
+          verificationUri: "https://auth.example/device",
+          verificationUriComplete: "https://auth.example/device?user_code=WDJB-MJHT",
+          expiresIn: 900,
+        });
+        return new Promise((resolve) => {
+          approve = () => {
+            resolve({ loggedIn: true, name: "Ada", email: "ada@example.com" });
+          };
+        });
+      },
+    });
+    const { onChange, user, writeText } = await startSignIn();
+    await user.click(button(/use a code instead/i));
+    await flush();
+    expect(screen.getByText("On any device, open https://auth.example/device and enter this code:")).toBeTruthy();
+    expect(screen.getByText("WDJB-MJHT")).toBeTruthy();
+    expect(screen.getByText("Waiting for you to approve the code…")).toBeTruthy();
+    await user.click(button(/copy the link with the code/i));
+    expect(writeText).toHaveBeenCalledWith("https://auth.example/device?user_code=WDJB-MJHT");
+    approve();
+    await flush();
+    expect(commands(calls)).toEqual(expect.arrayContaining(["auth_login", "auth_login_device"]));
+    // The sidebar's sign-in reports the session the code brought.
+    expect(onChange).toHaveBeenCalledWith({ loggedIn: true, name: "Ada", email: "ada@example.com" });
   });
 
   it("shows why the sign-in failed", async () => {

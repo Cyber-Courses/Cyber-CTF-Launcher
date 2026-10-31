@@ -10,6 +10,7 @@ import { machineHandlers } from "@/lib/dev-mock/machine";
 import { answer } from "@/lib/dev-mock/sample";
 import { terminalHandlers } from "@/lib/dev-mock/terminal";
 import type { Args } from "@/lib/dev-mock/types";
+import type { DeviceCode } from "@/lib/tauri";
 
 /** The sign-in, which `auth=out` starts without. */
 const accountHandlers: Record<string, BrowserHandler> = {
@@ -20,6 +21,14 @@ const accountHandlers: Record<string, BrowserHandler> = {
     await sleep(400);
     live.signedIn = true;
     return answer("auth_login", args);
+  },
+  auth_login_device: async (args, { live }) => {
+    // The code the "Use a code instead" fallback shows, approved a moment later.
+    const code: DeviceCode = { userCode: "WDJB-MJHT", verificationUri: "https://www.cyberauth.co/device", verificationUriComplete: null, expiresIn: 900 };
+    send(args, code, "events");
+    await sleep(1500);
+    live.signedIn = true;
+    return answer("auth_login_device", args);
   },
   agent_info: (args, { sc }) => ({ ...(answer("agent_info", args) as object), arch: sc.arch }),
   api_query: hostedQuery,

@@ -34,6 +34,7 @@ fn export(dir: &Path) {
         account::agent::AgentInfo,
         account::api_operation::ApiOperation,
         account::auth::AuthStatus,
+        account::auth::DeviceCode,
         cloud::AzureSubscription,
         cloud::Cloud,
         cloud::GcpBillingAccount,

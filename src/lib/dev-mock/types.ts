@@ -26,6 +26,7 @@ import type {
 type Answers = {
   auth_status: AuthStatus;
   auth_login: AuthStatus;
+  auth_login_device: AuthStatus;
   agent_info: AgentInfo;
   system_check: SystemReport;
   machine_metrics: MachineMetrics;

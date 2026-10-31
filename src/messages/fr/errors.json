@@ -15,6 +15,8 @@
     "toolMissing": "{tool} n'est pas installé, ou n'est pas dans le PATH.",
     "commandFailed": "{command} a échoué : {stderr}",
     "signInCancelled": "Connexion annulée.",
+    "signInDenied": "La connexion a été refusée sur Cyber Auth, vous êtes donc toujours déconnecté. Reconnectez-vous et autorisez Cyber CTF pour continuer.",
+    "signInCodeUnavailable": "La connexion avec un code n'est pas encore disponible. Copiez plutôt le lien de connexion dans n'importe quel navigateur, sur cette machine ou une autre.",
     "unreachable": "Impossible de joindre Cyber CTF ({detail}). Vérifiez votre connexion, puis réessayez.",
     "offlineReady": "Impossible de joindre Cyber CTF ({detail}). Ce lab est installé ici : il peut démarrer hors ligne, sans enregistrer la progression.",
     "placementLockedHost": {

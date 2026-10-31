@@ -82,7 +82,7 @@ function AgentLine({ agent }: { agent: AgentInfo }) {
 /** Not signed in: why (a failed sign-in, the keychain), and Sign in with its wait. */
 function SignedOut({ auth, onAuthChange }: { auth: AuthStatus; onAuthChange: (s: AuthStatus) => void }) {
   const t = useT();
-  const { login, busy, error } = useAuthActions(onAuthChange);
+  const { login, busy, withCode, error } = useAuthActions(onAuthChange);
   const problem = error ?? auth.keychainError;
   return (
     <Row
@@ -102,7 +102,7 @@ function SignedOut({ auth, onAuthChange }: { auth: AuthStatus; onAuthChange: (s:
         <Button size="sm" onClick={login} disabled={busy}>
           {busy ? (
             <>
-              <Spinner className="size-3.5" /> {t("settings.account.waitingBrowser")}
+              <Spinner className="size-3.5" /> {withCode ? t("account.waitingForCode") : t("settings.account.waitingBrowser")}
             </>
           ) : (
             t("settings.account.signIn")

@@ -13,6 +13,7 @@ const COMMANDS: &[&str] = &[
     "attack_box_status",
     "auth_login",
     "auth_login_cancel",
+    "auth_login_device",
     "auth_logout",
     "auth_status",
     "aws_cli_identity",

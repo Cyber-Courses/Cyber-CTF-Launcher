@@ -7,6 +7,7 @@ import { StatusDot } from "@/components/ui/status-pill";
 import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { SignInHelp } from "@/features/account/account";
+import { useSignIn } from "@/features/account/sign-in";
 import { SetupOutcome, type MachineSetupState } from "@/features/machine/setup-steps";
 import { Feature, StepActions, StepFooter, StepHeader, SummaryRow } from "@/features/onboarding/onboarding-parts";
 import type { AuthStatus, SystemReport } from "@/lib/tauri";
@@ -89,11 +90,12 @@ function SignedInPanel({ auth }: { auth: AuthStatus }) {
 /** The sign-in button (waiting while the browser is out), its help, and why the last one failed. */
 function SignInPanel({ loggingIn, loginError, onLogin }: { loggingIn: boolean; loginError: string | null; onLogin: () => void }) {
   const t = useT();
+  const withCode = useSignIn().code !== null;
   return (
     <Panel className="px-5 py-5 text-center">
       <Button variant="outline" size="lg" className="w-full" onClick={onLogin} disabled={loggingIn}>
         {loggingIn ? <Spinner className="size-4" /> : <Icon name="user" className="size-4" />}{" "}
-        {loggingIn ? t("onboarding.signin.waiting") : t("onboarding.signin.button")}
+        {loggingIn ? t(withCode ? "account.waitingForCode" : "onboarding.signin.waiting") : t("onboarding.signin.button")}
       </Button>
       <SignInHelp className="mt-2.5" />
       <p className="mt-2.5 text-[0.75rem] text-muted-foreground">
