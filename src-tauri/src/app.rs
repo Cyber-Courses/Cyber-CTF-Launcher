@@ -106,6 +106,8 @@ fn app_builder() -> tauri::Builder<AppRuntime> {
         .on_menu_event(|app, event| menu::on_event(app, &event))
         .setup(|app| {
             setup(app);
+            #[cfg(feature = "wdio")]
+            wdio_seed(app.handle());
             Ok(())
         })
 }
@@ -117,6 +119,20 @@ fn worker_job(args: impl IntoIterator<Item = String>) -> Option<PathBuf> {
         [_, deploy, flag, job, ..] if deploy == "deploy" && flag == "--job" => Some(PathBuf::from(job)),
         _ => None,
     }
+}
+
+/// Under the `wdio` feature only: if `CYBERCTF_WDIO_SEED_LAB` names a lab folder, import and start
+/// it on launch, so a GUI e2e has a running lab without the native import picker or a sign-in.
+#[cfg(feature = "wdio")]
+fn wdio_seed(handle: &crate::AppHandle) {
+    let Some(path) = std::env::var_os("CYBERCTF_WDIO_SEED_LAB") else { return };
+    let handle = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        let src = std::path::PathBuf::from(path);
+        if let Ok(id) = crate::labs::local_id(&src) {
+            let _ = crate::labs::run_local(&handle, &id, &src, |_| {}).await;
+        }
+    });
 }
 
 fn setup(app: &mut App) {
