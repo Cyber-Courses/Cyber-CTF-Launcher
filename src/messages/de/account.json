@@ -8,5 +8,10 @@
   "signOut": "Abmelden",
   "didntOpen": "Browser nicht geöffnet?",
   "copyLink": "Anmeldelink kopieren",
-  "cancel": "Abbrechen"
+  "cancel": "Abbrechen",
+  "waitingForCode": "Warte auf die Bestätigung des Codes…",
+  "useCode": "Stattdessen einen Code verwenden",
+  "enterCode": "Öffne auf einem beliebigen Gerät {url} und gib diesen Code ein:",
+  "copyCode": "Code kopieren",
+  "copyCodeLink": "Link mit dem Code kopieren"
 }

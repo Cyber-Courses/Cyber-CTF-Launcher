@@ -15,6 +15,8 @@
     "toolMissing": "`{tool}` is not installed or not on PATH",
     "commandFailed": "`{command}` failed: {stderr}",
     "signInCancelled": "Sign-in cancelled.",
+    "signInDenied": "Sign-in was declined at Cyber Auth, so you're still signed out. Sign in again and allow Cyber CTF to continue.",
+    "signInCodeUnavailable": "Signing in with a code isn't available yet. Copy the sign-in link into any browser instead, on this machine or another.",
     "unreachable": "Cyber CTF can't be reached ({detail}). Check your connection and try again.",
     "offlineReady": "Cyber CTF can't be reached ({detail}). This lab is installed here, so it can start offline, without saving progress.",
     "placementLockedHost": {

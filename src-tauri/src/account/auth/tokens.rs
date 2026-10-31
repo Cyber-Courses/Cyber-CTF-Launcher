@@ -60,25 +60,37 @@ pub(super) async fn token_request(form: &[(&str, &str)]) -> Result<TokenResponse
 }
 
 /// [`token_request`] to the cyber-auth at `base`.
-async fn token_request_at(base: &str, form: &[(&str, &str)]) -> Result<TokenResponse> {
+pub(super) async fn token_request_at(base: &str, form: &[(&str, &str)]) -> Result<TokenResponse> {
+    post_form(&format!("{base}/oauth2/token"), "token request", form).await?.map_err(|r| Error::Invalid(format!("token request rejected: {}", r.body)))
+}
+
+/// An OAuth endpoint's refusal (RFC 6749 §5.2): its `error` code, and the body as sent.
+#[derive(Debug)]
+pub(super) struct Refusal {
+    pub error: String,
+    pub body: String,
+}
+
+/// POSTs `form` to an OAuth endpoint: its JSON answer, or its refusal (a 4xx). An outage (no
+/// answer, a 5xx) is [`Error::Unreachable`]: unlike a refusal, trying again later may work.
+pub(super) async fn post_form<T: serde::de::DeserializeOwned>(url: &str, what: &str, form: &[(&str, &str)]) -> Result<std::result::Result<T, Refusal>> {
     let res = crate::platform::http::api_client()?
-        .post(format!("{base}/oauth2/token"))
+        .post(url)
         .timeout(std::time::Duration::from_secs(30))
         .form(form)
         .send()
         .await
-        .map_err(|e| Error::Unreachable(format!("token request failed: {e}")))?;
-    if !res.status().is_success() {
-        let status = res.status();
-        let body = res.text().await.unwrap_or_default();
-        // A server error is an outage, not a refusal of the tokens.
-        return Err(if status.is_server_error() {
-            Error::Unreachable(format!("token request failed: HTTP {status}"))
-        } else {
-            Error::Invalid(format!("token request rejected: {body}"))
-        });
+        .map_err(|e| Error::Unreachable(format!("{what} failed: {e}")))?;
+    let status = res.status();
+    if status.is_server_error() {
+        return Err(Error::Unreachable(format!("{what} failed: HTTP {status}")));
     }
-    res.json().await.map_err(|e| Error::Invalid(format!("invalid token response: {e}")))
+    if !status.is_success() {
+        let body = res.text().await.unwrap_or_default();
+        let error = serde_json::from_str::<serde_json::Value>(&body).ok().and_then(|v| v.get("error")?.as_str().map(str::to_string)).unwrap_or_default();
+        return Ok(Err(Refusal { error, body }));
+    }
+    res.json().await.map(Ok).map_err(|e| Error::Invalid(format!("invalid {what} response: {e}")))
 }
 
 pub(super) fn session_from(tokens: TokenResponse, previous: Option<&Session>) -> Session {

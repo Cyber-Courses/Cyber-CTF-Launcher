@@ -15,6 +15,8 @@
     "toolMissing": "{tool} no está instalado o no está en el PATH.",
     "commandFailed": "{command} falló: {stderr}",
     "signInCancelled": "Inicio de sesión cancelado.",
+    "signInDenied": "El inicio de sesión se rechazó en Cyber Auth, así que sigues sin sesión. Vuelve a iniciar sesión y permite Cyber CTF para continuar.",
+    "signInCodeUnavailable": "Iniciar sesión con un código aún no está disponible. Copia el enlace de inicio de sesión en cualquier navegador, en esta máquina u otra.",
     "unreachable": "No se puede conectar con Cyber CTF ({detail}). Comprueba tu conexión e inténtalo de nuevo.",
     "offlineReady": "No se puede conectar con Cyber CTF ({detail}). Este lab está instalado aquí, así que puede iniciarse sin conexión, sin guardar el progreso.",
     "placementLockedHost": {

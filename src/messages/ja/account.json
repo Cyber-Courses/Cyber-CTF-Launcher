@@ -8,5 +8,10 @@
   "signOut": "サインアウト",
   "didntOpen": "ブラウザが開きませんか？",
   "copyLink": "サインインリンクをコピー",
-  "cancel": "キャンセル"
+  "cancel": "キャンセル",
+  "waitingForCode": "コードの承認を待機中…",
+  "useCode": "代わりにコードを使う",
+  "enterCode": "任意のデバイスで {url} を開き、次のコードを入力してください：",
+  "copyCode": "コードをコピー",
+  "copyCodeLink": "コード付きリンクをコピー"
 }

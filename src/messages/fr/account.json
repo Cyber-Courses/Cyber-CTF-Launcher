@@ -8,5 +8,10 @@
   "signOut": "Se déconnecter",
   "didntOpen": "Le navigateur ne s'est pas ouvert ?",
   "copyLink": "Copier le lien de connexion",
-  "cancel": "Annuler"
+  "cancel": "Annuler",
+  "waitingForCode": "En attente de la validation du code…",
+  "useCode": "Utiliser un code",
+  "enterCode": "Sur n'importe quel appareil, ouvrez {url} et saisissez ce code :",
+  "copyCode": "Copier le code",
+  "copyCodeLink": "Copier le lien avec le code"
 }

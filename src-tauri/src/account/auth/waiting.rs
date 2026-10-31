@@ -13,9 +13,9 @@ use crate::error::{Code, Error, Result};
 
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// The sign-in not finished within [`LOGIN_TIMEOUT`].
-fn login_timed_out() -> Error {
-    Error::coded(Code::LoginTimeout { minutes: LOGIN_TIMEOUT.as_secs() / 60 })
+/// The sign-in not finished within `timeout`.
+fn login_timed_out(timeout: Duration) -> Error {
+    Error::coded(Code::LoginTimeout { minutes: u64::try_from(timeout.as_millis().div_ceil(60_000)).unwrap_or(u64::MAX) })
 }
 
 /// The sign-in waiting now: its number, and the sender that cancels it.
@@ -87,7 +87,8 @@ impl Waiting {
         self.run_within(LOGIN_TIMEOUT, wait).await
     }
 
-    async fn run_within<T>(mut self, timeout: Duration, wait: impl Future<Output = Result<T>>) -> Result<T> {
+    /// [`Waiting::run`] with its own timeout (a device code's lifetime).
+    pub(super) async fn run_within<T>(mut self, timeout: Duration, wait: impl Future<Output = Result<T>>) -> Result<T> {
         // A sender dropped without a word (disarmed, or this sign-in is done) is no cancel.
         let cancelled = async {
             if (&mut self.cancelled).await.is_err() {
@@ -95,7 +96,7 @@ impl Waiting {
             }
         };
         tokio::select! {
-            done = tokio::time::timeout(timeout, wait) => done.unwrap_or_else(|_| Err(login_timed_out())),
+            done = tokio::time::timeout(timeout, wait) => done.unwrap_or_else(|_| Err(login_timed_out(timeout))),
             () = cancelled => Err(Error::Cancelled),
         }
     }
@@ -165,6 +166,8 @@ pub(super) mod tests {
     async fn a_wait_past_the_timeout_says_so() {
         let _serial = ONE_AT_A_TIME.lock().await;
         let err = begin().run_within(Duration::from_millis(10), std::future::pending::<Result<()>>()).await.unwrap_err();
-        assert_eq!(err.code(), Code::LoginTimeout { minutes: 5 });
+        // Rounded up: a wait of less than a minute isn't "0 minutes".
+        assert_eq!(err.code(), Code::LoginTimeout { minutes: 1 });
+        assert_eq!(login_timed_out(LOGIN_TIMEOUT).code(), Code::LoginTimeout { minutes: 5 });
     }
 }

@@ -28,6 +28,11 @@ pub enum Code {
     },
     /// The player cancelled the sign-in (or started another one): not a failure to show.
     SignInCancelled,
+    /// The player declined the sign-in at cyber-auth (its consent screen, or the code's page).
+    SignInDenied,
+    /// cyber-auth doesn't let the launcher sign in with a code (the device grant isn't enabled
+    /// on its OAuth client): the browser sign-in still works.
+    SignInCodeUnavailable,
     /// CyberBackend or the sign-in service couldn't be reached (no network, an outage, an
     /// answer that isn't the API's): trying again later may work. `detail` is the technical why.
     Unreachable {
@@ -104,12 +109,16 @@ impl Code {
             Code::AlreadyInProgress => "Another operation on this lab is already in progress; wait for it to finish.".into(),
             Code::NoPasswordStored => "No password is stored for this host. Edit it and enter one.".into(),
             Code::SignInCancelled => "Sign-in cancelled.".into(),
+            Code::SignInDenied => "Sign-in was declined at Cyber Auth, so you're still signed out. Sign in again and allow Cyber CTF to continue.".into(),
+            Code::SignInCodeUnavailable => {
+                "Signing in with a code isn't available yet. Copy the sign-in link into any browser instead, on this machine or another.".into()
+            }
             Code::Unreachable { detail } => format!("Cyber CTF can't be reached ({detail}). Check your connection and try again."),
             Code::OfflineReady { detail } => {
                 format!("Cyber CTF can't be reached ({detail}). This lab is installed here, so it can start offline, without saving progress.")
             }
             Code::PortInUse { port } => format!(
-                "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever uses it, or start the lab with random ports."
+                "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever uses it. If the lab doesn't need that exact port, you can start it with random ports."
             ),
             Code::DockerNotRunning => {
                 "Docker isn't running. Start your container engine (Docker Desktop, or the docker service on Linux), then start the lab again.".into()

@@ -8,5 +8,10 @@
   "signOut": "Sair",
   "didntOpen": "O navegador não abriu?",
   "copyLink": "Copiar o link de login",
-  "cancel": "Cancelar"
+  "cancel": "Cancelar",
+  "waitingForCode": "Aguardando a aprovação do código…",
+  "useCode": "Usar um código",
+  "enterCode": "Em qualquer dispositivo, abra {url} e digite este código:",
+  "copyCode": "Copiar o código",
+  "copyCodeLink": "Copiar o link com o código"
 }

@@ -68,6 +68,8 @@ describe("command errors", () => {
         "reapTimedOut",
         "sessionExpired",
         "signInCancelled",
+        "signInCodeUnavailable",
+        "signInDenied",
         "signedOut",
         "toolMissing",
         "unreachable",

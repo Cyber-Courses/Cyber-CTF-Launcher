@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
-import { cancelSignIn, signIn, useSignIn } from "@/features/account/sign-in";
+import { commands, installTauri, rejects, rejectWith, stream } from "@/test/tauri";
+import { cancelSignIn, signIn, signInWithCode, useSignIn } from "@/features/account/sign-in";
 
 const SIGN_IN_CANCELLED = { code: "signInCancelled", message: "Sign-in cancelled." };
 
@@ -37,7 +37,7 @@ describe("signIn", () => {
     expect(second).toBe(first);
     await Promise.resolve();
     const { result } = renderHook(() => useSignIn());
-    expect(result.current).toEqual({ waiting: true, url: "https://auth.example/oauth2/authorize?state=s1", error: null });
+    expect(result.current).toEqual({ waiting: true, url: "https://auth.example/oauth2/authorize?state=s1", code: null, error: null });
     login.finish(ada);
     expect(await first).toEqual(ada);
     expect(commands(calls).filter((c) => c === "auth_login")).toHaveLength(1);
@@ -56,7 +56,7 @@ describe("signIn", () => {
     expect(await signingIn).toBeNull();
     expect(commands(calls)).toContain("auth_login_cancel");
     const { result } = renderHook(() => useSignIn());
-    expect(result.current).toEqual({ waiting: false, url: null, error: null });
+    expect(result.current).toEqual({ waiting: false, url: null, code: null, error: null });
   });
 
   it("keeps why a sign-in failed, until the next one", async () => {
@@ -69,5 +69,43 @@ describe("signIn", () => {
     expect(result.current.error).toMatch(/within 5 minutes/);
     act(() => void signIn());
     expect(result.current.error).toBeNull();
+  });
+
+  it("switches a waiting browser sign-in to a code, and its caller gets the code's outcome", async () => {
+    const login = pendingLogin();
+    const code = { userCode: "WDJB-MJHT", verificationUri: "https://auth.example/device", verificationUriComplete: null, expiresIn: 900 };
+    let approve: () => void = () => {};
+    installTauri({
+      auth_login: login.handler,
+      auth_login_device: (args) => {
+        // The core ends the browser sign-in waiting as soon as one with a code starts.
+        login.finish(SIGN_IN_CANCELLED);
+        stream(args, code);
+        return new Promise((resolve) => {
+          approve = () => {
+            resolve(ada);
+          };
+        });
+      },
+    });
+    const browser = signIn();
+    await Promise.resolve();
+    const withCode = signInWithCode();
+    expect(signInWithCode()).toBe(withCode);
+    await Promise.resolve();
+    const { result } = renderHook(() => useSignIn());
+    expect(result.current).toEqual({ waiting: true, url: null, code, error: null });
+    approve();
+    expect(await withCode).toEqual(ada);
+    expect(await browser).toEqual(ada);
+    expect(result.current).toEqual({ waiting: false, url: null, code: null, error: null });
+  });
+
+  it("says why a sign-in with a code isn't available", async () => {
+    installTauri({ auth_login_device: rejects({ code: "signInCodeUnavailable", message: "Signing in with a code isn't available yet." }) });
+    await expect(signInWithCode()).rejects.toMatchObject({ code: "signInCodeUnavailable" });
+    const { result } = renderHook(() => useSignIn());
+    expect(result.current.error).toMatch(/with a code isn't available/);
+    expect(result.current.waiting).toBe(false);
   });
 });

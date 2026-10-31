@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::platform::config;
 
 /// The first free loopback port registered on the OAuth client.
@@ -59,6 +59,10 @@ fn request_url(request: &str) -> Option<url::Url> {
 pub(super) fn outcome(url: &url::Url) -> Result<(String, String)> {
     let param = |k: &str| url.query_pairs().find(|(key, _)| key == k).map(|(_, v)| v.into_owned());
     if let Some(error) = param("error") {
+        // The player said no on cyber-auth's consent screen: not a failure of the app.
+        if error == "access_denied" {
+            return Err(Error::coded(Code::SignInDenied));
+        }
         return Err(Error::Invalid(format!("login failed: {error}")));
     }
     match (param("code"), param("state")) {
@@ -154,7 +158,9 @@ mod tests {
         assert_eq!(url.path(), "/callback");
         assert_eq!(outcome(&url).unwrap(), ("abc".to_string(), "xyz".to_string()));
         let denied = request_url("GET /callback?error=access_denied&state=xyz HTTP/1.1").unwrap();
-        assert_eq!(outcome(&denied).unwrap_err().to_string(), "login failed: access_denied");
+        assert_eq!(outcome(&denied).unwrap_err().code(), Code::SignInDenied);
+        let failed = request_url("GET /callback?error=server_error&state=xyz HTTP/1.1").unwrap();
+        assert_eq!(outcome(&failed).unwrap_err().to_string(), "login failed: server_error");
         let bare = request_url("GET /callback HTTP/1.1").unwrap();
         assert_eq!(outcome(&bare).unwrap_err().to_string(), "login callback without code");
         assert_eq!(request_url("GET /favicon.ico HTTP/1.1").unwrap().path(), "/favicon.ico");
@@ -240,7 +246,7 @@ mod tests {
         assert!(!state_matches(&url, "s%31"), "compared decoded, not as typed");
         // An error wins over a code that comes with it.
         let both = request_url("GET /callback?code=c&error=access_denied&state=s1 HTTP/1.1").unwrap();
-        assert_eq!(outcome(&both).unwrap_err().to_string(), "login failed: access_denied");
+        assert_eq!(outcome(&both).unwrap_err().code(), Code::SignInDenied);
     }
 
     #[tokio::test]

@@ -46,6 +46,7 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         machine::machine_storage_clean,
         account::auth_login,
         account::auth_login_cancel,
+        account::auth_login_device,
         account::auth_status,
         account::auth_logout,
         account::api_query,
@@ -138,6 +139,7 @@ mod tests {
     /// called by name from a test.
     const NOT_UNIT_TESTED: &[(&str, &str)] = &[
         ("auth_login", "opens the system browser and waits for cyber-auth's redirect; authorize_url and the callback are tested"),
+        ("auth_login_device", "polls cyber-auth's device endpoint; login_by_device_at is tested against a local cyber-auth"),
         ("restart_app", "restarts this very process"),
         ("open_log_folder", "opens the system's file manager; log_dir is tested"),
     ];

@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
-import { cancelSignIn, signIn, useSignIn } from "@/features/account/sign-in";
+import { cancelSignIn, signIn, signInWithCode, useSignIn } from "@/features/account/sign-in";
 import { cn } from "@/lib/utils";
 
 export function initials(name: string | null, email: string | null): string {
@@ -46,31 +46,53 @@ async function signOut(onChange: (status: AuthStatus) => void) {
 /** Shared sign-in/out actions, so the sidebar, Settings and the onboarding drive the same auth
  *  state and the same sign-in (features/account/sign-in): one at a time, its wait and failure shown in each. */
 export function useAuthActions(onChange: (status: AuthStatus) => void) {
-  const { waiting, error } = useSignIn();
+  const { waiting, code, error } = useSignIn();
   const login = () => {
     void signInAndReport(onChange);
   };
   const logout = () => {
     void signOut(onChange);
   };
-  return { login, logout, busy: waiting, error };
+  return { login, logout, busy: waiting, withCode: code !== null, error };
 }
 
 /** Under a sign-in's spinner: the sign-in link to copy into a browser when none showed it (a
- *  broken default browser accepts the link and does nothing), and Cancel. */
+ *  broken default browser accepts the link and does nothing), a code to enter on another device
+ *  instead (a machine whose browser can't be used), and Cancel. */
 export function SignInHelp({ className }: { className?: string }) {
   const t = useT();
-  const { waiting, url } = useSignIn();
-  // Once the link came: the backend's wait is registered by then, so Cancel always reaches it.
-  if (!waiting || !url) return null;
+  const { waiting, url, code } = useSignIn();
+  // Once the link or the code came: the backend's wait is registered by then, so Cancel always reaches it.
+  if (!waiting || (!url && !code)) return null;
+  const cancel = (
+    <Button variant="ghost" size="xs" onClick={() => void cancelSignIn().catch(warn("cancel sign-in"))}>
+      {t("account.cancel")}
+    </Button>
+  );
+  if (code) {
+    const page = code.verificationUriComplete ?? code.verificationUri;
+    return (
+      <div className={cn("flex flex-col items-center gap-1 text-[0.75rem] text-muted-foreground", className)}>
+        <span>{t("account.enterCode", { url: code.verificationUri })}</span>
+        <CopyValue text={code.userCode} title={t("account.copyCode")} className="font-mono text-[0.9375rem] font-semibold tracking-widest text-foreground" />
+        <span className="flex flex-wrap items-center justify-center gap-x-2">
+          <CopyValue text={page} label={t("account.copyCodeLink")} title={t("account.copyCodeLink")} />
+          {cancel}
+        </span>
+      </div>
+    );
+  }
   return (
     <div className={cn("flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[0.75rem] text-muted-foreground", className)}>
       <span className="flex items-center gap-1.5">
-        {t("account.didntOpen")} <CopyValue text={url} label={t("account.copyLink")} title={t("account.copyLink")} />
+        {t("account.didntOpen")} <CopyValue text={url ?? ""} label={t("account.copyLink")} title={t("account.copyLink")} />
       </span>
-      <Button variant="ghost" size="xs" onClick={() => void cancelSignIn().catch(warn("cancel sign-in"))}>
-        {t("account.cancel")}
+      {/* Shown only while a browser sign-in waits: whoever started it gets this one's outcome, and
+          a failure stays in the sign-in's state as `error`. */}
+      <Button variant="ghost" size="xs" onClick={() => void signInWithCode().catch(warn("sign in with a code"))}>
+        {t("account.useCode")}
       </Button>
+      {cancel}
     </div>
   );
 }
@@ -78,14 +100,14 @@ export function SignInHelp({ className }: { className?: string }) {
 /** Signed out: Sign in (with its wait and failure), and Settings. */
 function SignedOut({ onSettings, onChange }: { onSettings?: () => void; onChange: (status: AuthStatus) => void }) {
   const t = useT();
-  const { login, busy, error } = useAuthActions(onChange);
+  const { login, busy, withCode, error } = useAuthActions(onChange);
   return (
     <div className="space-y-2">
       {error && <p className="text-[0.75rem] text-destructive">{error}</p>}
       <Button size="sm" className="w-full" onClick={login} disabled={busy}>
         {busy ? (
           <>
-            <Spinner className="size-3.5" /> {t("account.waitingForBrowser")}
+            <Spinner className="size-3.5" /> {t(withCode ? "account.waitingForCode" : "account.waitingForBrowser")}
           </>
         ) : (
           t("account.signIn")

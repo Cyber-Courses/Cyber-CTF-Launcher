@@ -8,5 +8,10 @@
   "signOut": "Sign out",
   "didntOpen": "Browser didn't open?",
   "copyLink": "Copy the sign-in link",
-  "cancel": "Cancel"
+  "cancel": "Cancel",
+  "waitingForCode": "Waiting for you to approve the code…",
+  "useCode": "Use a code instead",
+  "enterCode": "On any device, open {url} and enter this code:",
+  "copyCode": "Copy the code",
+  "copyCodeLink": "Copy the link with the code"
 }

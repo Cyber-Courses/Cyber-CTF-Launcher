@@ -15,6 +15,8 @@
     "toolMissing": "{tool} ist nicht installiert oder nicht im PATH.",
     "commandFailed": "{command} ist fehlgeschlagen: {stderr}",
     "signInCancelled": "Anmeldung abgebrochen.",
+    "signInDenied": "Die Anmeldung wurde bei Cyber Auth abgelehnt, du bist also weiterhin abgemeldet. Melde dich erneut an und erlaube Cyber CTF, um fortzufahren.",
+    "signInCodeUnavailable": "Die Anmeldung mit einem Code ist noch nicht verfügbar. Kopiere stattdessen den Anmeldelink in einen beliebigen Browser, auf diesem oder einem anderen Rechner.",
     "unreachable": "Cyber CTF ist nicht erreichbar ({detail}). Prüfe deine Verbindung und versuche es erneut.",
     "offlineReady": "Cyber CTF ist nicht erreichbar ({detail}). Dieses Lab ist hier installiert und kann daher offline starten, ohne den Fortschritt zu speichern.",
     "placementLockedHost": {

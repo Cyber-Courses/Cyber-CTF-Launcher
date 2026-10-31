@@ -110,6 +110,7 @@ let sharedFolder = { enabled: false, path: "/Users/florian/cyberctf-share", moun
 const accountCommands = {
   auth_status: () => ({ loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" }),
   auth_login: () => ({ loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" }),
+  auth_login_device: () => ({ loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" }),
   agent_info: () => ({ installId: "c0ffee", name: "florian-mbp", arch: "arm64", capabilities: ["docker", "vagrant"] }),
   api_query: apiQuery,
 } satisfies Handlers;

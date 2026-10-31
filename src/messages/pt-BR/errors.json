@@ -15,6 +15,8 @@
     "toolMissing": "{tool} não está instalado ou não está no PATH.",
     "commandFailed": "{command} falhou: {stderr}",
     "signInCancelled": "Login cancelado.",
+    "signInDenied": "O login foi recusado no Cyber Auth, então você continua desconectado. Entre de novo e permita o Cyber CTF para continuar.",
+    "signInCodeUnavailable": "Entrar com um código ainda não está disponível. Copie o link de login em qualquer navegador, nesta máquina ou em outra.",
     "unreachable": "Não foi possível acessar o Cyber CTF ({detail}). Verifique sua conexão e tente de novo.",
     "offlineReady": "Não foi possível acessar o Cyber CTF ({detail}). Este lab está instalado aqui, então pode iniciar offline, sem salvar o progresso.",
     "placementLockedHost": {

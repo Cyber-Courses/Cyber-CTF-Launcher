@@ -1,14 +1,19 @@
 //! Login with cyber-auth: OAuth authorization code + PKCE (RFC 7636) through the
 //! system browser, back to the app by a `cyberctf://` link or a loopback redirect (RFC 8252,
-//! see `config::scheme_redirect`). Tokens live in the OS keychain and never reach the webview;
-//! API calls go through `api.rs`.
+//! see `config::scheme_redirect`); or, when that browser can't be used, with a code entered on
+//! any device (RFC 8628, see `device`). Tokens live in the OS keychain and never reach the
+//! webview; API calls go through `api.rs`.
 
 mod callback;
+mod device;
 mod scheme;
 mod store;
+#[cfg(test)]
+mod testing;
 mod tokens;
 mod waiting;
 
+pub use device::DeviceCode;
 pub use scheme::deliver as deliver_link;
 
 use std::future::Future;
@@ -18,7 +23,7 @@ use serde::Serialize;
 use crate::error::{Code, Error, Result};
 use crate::platform::config;
 use store::Session;
-use tokens::{TokenResponse, code_challenge, now, random_b64, session_from, token_request};
+use tokens::{TokenResponse, code_challenge, now, random_b64, session_from, token_request, token_request_at};
 
 const SCOPES: &str = "openid profile email offline_access";
 /// An access token this close to expiry is refreshed before use.
@@ -111,8 +116,12 @@ pub async fn access_token() -> Result<String> {
 
 /// Exchanges a refresh token at cyber-auth.
 async fn refresh_tokens(refresh: String) -> Result<TokenResponse> {
-    let (client_id, api) = (config::client_id(), config::api_url());
-    token_request(&[("grant_type", "refresh_token"), ("refresh_token", &refresh), ("client_id", &client_id), ("resource", &api)]).await
+    refresh_tokens_at(&config::auth_base(), &config::client_id(), &config::api_url(), &refresh).await
+}
+
+/// [`refresh_tokens`] at the cyber-auth at `base`.
+async fn refresh_tokens_at(base: &str, client_id: &str, api: &str, refresh: &str) -> Result<TokenResponse> {
+    token_request_at(base, &[("grant_type", "refresh_token"), ("refresh_token", refresh), ("client_id", client_id), ("resource", api)]).await
 }
 
 /// [`access_token`], an expired session renewed by `renew` (given its refresh token).
@@ -246,15 +255,51 @@ async fn login_by_link(open: impl FnOnce(&url::Url) -> Result<()>) -> Result<Aut
 
 /// Exchanges the redirect's code for tokens and keeps the session.
 async fn finish_login(code: String, redirect_uri: &str, client_id: &str, verifier: &str, api: &str) -> Result<AuthStatus> {
-    let tokens = token_request(&[
+    keep_tokens(token_request(&code_exchange_form(&code, redirect_uri, client_id, verifier, api)).await?).await
+}
+
+/// The token request that exchanges an authorization code (RFC 6749 §4.1.3, with the PKCE
+/// verifier of RFC 7636 §4.5).
+fn code_exchange_form<'a>(code: &'a str, redirect_uri: &'a str, client_id: &'a str, verifier: &'a str, api: &'a str) -> [(&'static str, &'a str); 6] {
+    [
         ("grant_type", "authorization_code"),
-        ("code", &code),
+        ("code", code),
         ("redirect_uri", redirect_uri),
         ("client_id", client_id),
         ("code_verifier", verifier),
         ("resource", api),
-    ])
-    .await?;
+    ]
+}
+
+/// Signs in with a code: `show` gets the code and where to enter it, then the player approves
+/// it on cyberauth.co from any device. `auth_login_cancel` (or another sign-in) ends the wait
+/// with [`Error::Cancelled`].
+pub async fn auth_login_device(show: impl FnOnce(DeviceCode)) -> Result<AuthStatus> {
+    login_by_device_at(&config::auth_base(), show, tokio::time::sleep).await
+}
+
+/// [`auth_login_device`] at the cyber-auth at `base`, waiting between polls with `sleep`.
+async fn login_by_device_at<S, F>(base: &str, show: impl FnOnce(DeviceCode), sleep: S) -> Result<AuthStatus>
+where
+    S: Fn(std::time::Duration) -> F,
+    F: Future<Output = ()>,
+{
+    // Begun before the request, so a browser sign-in still waiting ends now: one sign-in at a time.
+    let wait = waiting::begin();
+    let disarm = wait.disarm();
+    let (client_id, api) = (config::client_id(), config::api_url());
+    let grant = device::request(base, &client_id, &api).await?;
+    show(grant.shown());
+    wait.run_within(grant.lifetime(), async {
+        let tokens = device::poll(base, &client_id, &api, &grant, sleep).await?;
+        disarm.now();
+        keep_tokens(tokens).await
+    })
+    .await
+}
+
+/// Keeps a new sign-in's tokens as the session.
+async fn keep_tokens(tokens: TokenResponse) -> Result<AuthStatus> {
     let session = session_from(tokens, None);
     let (name, email) = (session.name.clone(), session.email.clone());
     store::ask_keychain_again();
@@ -475,6 +520,99 @@ mod tests {
         let Err(err) = login.await.unwrap() else { panic!("a cancelled sign-in went through") };
         assert!(matches!(err, Error::Cancelled));
         assert_eq!(err.code(), Code::SignInCancelled);
+    }
+
+    /// A token response with an ID token naming Ada.
+    fn ada_tokens() -> &'static str {
+        // {"sub":"u1","name":"Ada","email":"ada@example.com"}
+        r#"{"access_token":"at1","refresh_token":"rt1","expires_in":3600,"id_token":"h.eyJzdWIiOiJ1MSIsIm5hbWUiOiJBZGEiLCJlbWFpbCI6ImFkYUBleGFtcGxlLmNvbSJ9.s"}"#
+    }
+
+    #[tokio::test]
+    async fn the_code_exchange_sends_the_pkce_verifier_and_reads_who_signed_in() {
+        let (base, requests) = testing::serve(vec![(200, ada_tokens())]).await;
+        let form = code_exchange_form("code-1", "http://127.0.0.1:47290/callback", "client", "verifier", "https://api.example");
+        let session = session_from(token_request_at(&base, &form).await.unwrap(), None);
+        assert_eq!((session.access_token.as_str(), session.refresh_token.as_deref()), ("at1", Some("rt1")));
+        assert_eq!((session.name.as_deref(), session.email.as_deref()), (Some("Ada"), Some("ada@example.com")));
+        assert!(session.expires_at > now() + 3500);
+        let sent = &requests.lock().unwrap()[0];
+        assert_eq!(sent.path, "/oauth2/token");
+        assert_eq!(sent.form["grant_type"], "authorization_code");
+        assert_eq!(sent.form["code"], "code-1");
+        assert_eq!(sent.form["code_verifier"], "verifier");
+        assert_eq!(sent.form["redirect_uri"], "http://127.0.0.1:47290/callback");
+        assert_eq!(sent.form["client_id"], "client");
+        assert_eq!(sent.form["resource"], "https://api.example");
+        assert!(!sent.form.contains_key("client_secret"), "the launcher is a public client");
+    }
+
+    /// An expired access token is renewed with the refresh token, and the rotated refresh token
+    /// is the one kept; a refused refresh token signs the player out.
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn an_expired_token_is_refreshed_silently_and_a_refused_refresh_signs_out() {
+        let _serial = ONE_AT_A_TIME.lock().await;
+        store::store(expiring()).await.unwrap();
+        let (base, requests) = testing::serve(vec![(200, r#"{"access_token":"at2","refresh_token":"r2","expires_in":3600}"#)]).await;
+        let renew = |refresh: String| async move { refresh_tokens_at(&base, "client", "https://api.example", &refresh).await };
+        assert_eq!(access_token_renewed_by(renew).await.unwrap(), "at2");
+        let sent = requests.lock().unwrap()[0].clone();
+        assert_eq!(sent.form["grant_type"], "refresh_token");
+        assert_eq!(sent.form["refresh_token"], "r1");
+        assert_eq!(sent.form["resource"], "https://api.example");
+        let kept = store::read().await.unwrap().unwrap();
+        assert_eq!(kept.refresh_token.as_deref(), Some("r2"));
+        // The profile carries over a refresh without an ID token.
+        assert_eq!(kept.email.as_deref(), Some("ada@example.com"));
+
+        store::store(expiring()).await.unwrap();
+        let (base, _) = testing::serve(vec![(400, r#"{"error":"invalid_grant"}"#)]).await;
+        let renew = |refresh: String| async move { refresh_tokens_at(&base, "client", "api", &refresh).await };
+        assert!(access_token_renewed_by(renew).await.is_err());
+        assert!(store::read().await.unwrap().is_none(), "a refused refresh token was kept");
+
+        // An outage keeps the session: a blip near expiry doesn't sign the player out.
+        store::store(expiring()).await.unwrap();
+        let (base, _) = testing::serve(vec![(503, "{}")]).await;
+        let renew = |refresh: String| async move { refresh_tokens_at(&base, "client", "api", &refresh).await };
+        assert!(matches!(access_token_renewed_by(renew).await.unwrap_err(), Error::Unreachable(_)));
+        assert!(store::read().await.unwrap().is_some());
+        auth_logout().await;
+    }
+
+    const DEVICE_GRANT: &str =
+        r#"{"device_code":"dev-1","user_code":"WDJB-MJHT","verification_uri":"https://auth.example/device","expires_in":600,"interval":0}"#;
+
+    /// Signing in with a code: the code is shown, then the approved sign-in is kept like a browser one.
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn a_sign_in_with_a_code_shows_it_then_keeps_the_session() {
+        let _serial = ONE_AT_A_TIME.lock().await;
+        let _one_sign_in = waiting::tests::ONE_AT_A_TIME.lock().await;
+        let (base, _) = testing::serve(vec![(200, DEVICE_GRANT), (400, r#"{"error":"authorization_pending"}"#), (200, ada_tokens())]).await;
+        let shown = std::sync::Mutex::new(None);
+        let status = login_by_device_at(&base, |code| *shown.lock().unwrap() = Some(code.clone()), |_| std::future::ready(())).await.unwrap();
+        let status = serde_json::to_value(status).unwrap();
+        assert_eq!(status, serde_json::json!({ "loggedIn": true, "name": "Ada", "email": "ada@example.com" }));
+        let shown = serde_json::to_value(shown.into_inner().unwrap().unwrap()).unwrap();
+        assert_eq!(shown["userCode"], "WDJB-MJHT");
+        assert_eq!(shown["verificationUri"], "https://auth.example/device");
+        assert_eq!(access_token().await.unwrap(), "at1");
+        auth_logout().await;
+    }
+
+    /// Cancel ends a sign-in with a code waiting for its approval, as cancelled.
+    #[tokio::test]
+    async fn a_sign_in_with_a_code_can_be_cancelled() {
+        let _one_sign_in = waiting::tests::ONE_AT_A_TIME.lock().await;
+        let (base, _) = testing::serve(vec![(200, DEVICE_GRANT)]).await;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut login = tokio::spawn(async move { login_by_device_at(&base, move |code| tx.send(code).unwrap(), |_| std::future::pending::<()>()).await });
+        rx.await.unwrap();
+        assert!(still_waiting(&mut login).await);
+        auth_login_cancel();
+        assert!(matches!(login.await.unwrap(), Err(Error::Cancelled)));
     }
 
     #[test]
