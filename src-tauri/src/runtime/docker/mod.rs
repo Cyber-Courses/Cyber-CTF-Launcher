@@ -13,7 +13,7 @@ mod inspect;
 mod lifecycle;
 
 pub use check::{Check, CheckResult};
-pub use compose::project;
+pub use compose::{attack_box_names, project};
 pub use inspect::{primary_url, status, subnets_in_use};
 pub(crate) use lifecycle::explain_pool_overlap;
 pub use lifecycle::{PORTS_ENV, stop};

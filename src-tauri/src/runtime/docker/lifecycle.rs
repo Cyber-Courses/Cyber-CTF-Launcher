@@ -24,9 +24,14 @@ pub(crate) fn explain_pool_overlap(e: Error) -> Error {
 /// Removes containers, networks and volumes: the next start is a clean lab.
 pub async fn stop(dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
     let project = compose::project(id);
-    // The attack box starts with the lab and is plugged into the lab network, but it is not a
     let down = compose::stream(dir, &project, &["down", "--volumes", "--remove-orphans"], &[], &mut log).await;
     compose::remove_all_containers(&project).await;
+    // The attack box starts with the lab on the lab network, but it is a bare container with no
+    // Compose project, so `down --remove-orphans` and the project-label removals never take it out.
+    // Remove it by name, or it is left running and still read as this lab by the workload scan.
+    for name in compose::attack_box_names(&project) {
+        let _ = run("docker", &["rm", "-f", &name], None).await;
+    }
     // Belt and braces: whatever network of this lab is still around (something else plugged into
     // it, or Compose gave up), unplug everything from it and remove it, so nothing holds the subnet.
     let filter = format!("label=com.docker.compose.project={project}");

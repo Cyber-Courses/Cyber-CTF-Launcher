@@ -58,7 +58,7 @@ use ts_rs::TS;
 // A glob, so each command's generated `__cmd__*` macro is re-exported with it: `lib.rs`
 // registers them as `runtime::<command>`.
 pub use commands::*;
-pub use docker::{PORTS_ENV, project as compose_project, subnets_in_use};
+pub use docker::{PORTS_ENV, attack_box_names, project as compose_project, subnets_in_use};
 /// For tests elsewhere that need an operation in flight.
 #[cfg(test)]
 pub(crate) use inflight::DeployGuard;

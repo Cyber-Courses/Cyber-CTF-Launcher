@@ -129,11 +129,16 @@ fn project_filter(id: &str) -> String {
     format!("label=com.docker.compose.project={}", crate::runtime::compose_project(id))
 }
 
-/// Removes a lab's containers, its on-demand attack box (a Compose service of the project)
-/// included.
+/// Removes a lab's containers, its on-demand attack box included.
 pub(super) async fn stop(id: &str) -> Result<()> {
     let project = crate::runtime::compose_project(id);
     let _ = run("docker", &["compose", "-p", &project, "down", "-t", "5", "--volumes", "--remove-orphans"], None).await;
+    // The attack box has no Compose project, so `down` and the project-label sweep below never
+    // catch it; remove it by name, or it is left running and still read as this lab by the scan.
+    let names = crate::runtime::attack_box_names(&project);
+    let mut reap = vec!["rm", "-f"];
+    reap.extend(names.iter().map(String::as_str));
+    let _ = run("docker", &reap, None).await;
     // Whatever of this exact project is left.
     let left = run("docker", &["ps", "-aq", "--filter", &project_filter(id)], None).await.unwrap_or_default();
     let ids: Vec<&str> = left.split_whitespace().collect();

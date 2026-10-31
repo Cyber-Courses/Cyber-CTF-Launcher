@@ -56,7 +56,7 @@ proptest! {
         id in lab_id(),
         decoy in proptest::option::of(lab_id()),
         prefix in proptest::collection::vec("[A-Za-z0-9 ._-]{1,10}", 0..4),
-        layout in prop_oneof![Just(".isoloom/vagrant/.vagrant/machines/dc01/vmware_desktop/abc"), Just(".isoloom-x/y"), Just(".cyberctf-attack-vm/.vagrant/m")],
+        layout in prop_oneof![Just(".isoloom/vagrant/.vagrant/machines/dc01/vmware_desktop/abc"), Just(".isoloom-x/y")],
         windows in any::<bool>(),
     ) {
         let mut segs: Vec<String> = vec![if windows { "C:".into() } else { String::new() }];
@@ -69,6 +69,22 @@ proptest! {
         prop_assert_eq!(id_after_labs(&path), Some(id.clone()));
         let listing = format!("Total running VMs: 1\n{path}\n");
         prop_assert_eq!(lab_ids_from_vmrun(&listing), vec![id]);
+    }
+
+    /// The attack VM (`labs/<id>/.cyberctf-attack-vm/...`) runs beside the lab; on its own it names
+    /// no running lab (as the VM-name scan excludes `· attacker`).
+    #[test]
+    fn an_attack_vm_alone_names_no_running_lab(
+        id in lab_id(),
+        prefix in proptest::collection::vec("[A-Za-z0-9 ._-]{1,10}", 0..3),
+        windows in any::<bool>(),
+    ) {
+        let mut segs: Vec<String> = vec![if windows { "C:".into() } else { String::new() }];
+        segs.extend(prefix);
+        segs.extend(["labs".to_string(), id, ".cyberctf-attack-vm/.vagrant/m".to_string(), "vm.vmx".to_string()]);
+        let path = segs.join(if windows { "\\" } else { "/" });
+        let listing = format!("Total running VMs: 1\n{path}\n");
+        prop_assert!(lab_ids_from_vmrun(&listing).is_empty(), "{:?}", path);
     }
 
     #[test]

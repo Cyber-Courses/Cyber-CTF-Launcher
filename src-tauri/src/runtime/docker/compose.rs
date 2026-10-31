@@ -13,6 +13,13 @@ pub fn project(id: &str) -> String {
     format!("cyberctf-{id}")
 }
 
+/// The names the on-demand attack box can carry for `project`: the current ad-hoc name and the
+/// older ones. The box is a bare `docker run` with no Compose project, so tearing a lab down by
+/// its project label never removes it — it has to go by name.
+pub fn attack_box_names(project: &str) -> [String; 3] {
+    [format!("{project}-isoloom-access"), format!("{project}-attacker"), format!("{project}-exegol")]
+}
+
 /// The host ports picked at the lab's first start, pinned over the ephemeral ones Isoloom's
 /// Compose file asks for (Docker picks a new ephemeral port each time a container starts, so a
 /// resumed lab moved to another address). In the lab folder, outside the generated files.
@@ -143,7 +150,7 @@ pub(super) fn serving_services_from_config(json: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_ps, project, serving_services_from_config};
+    use super::{attack_box_names, parse_ps, project, serving_services_from_config};
 
     #[test]
     fn serving_services_are_those_that_publish_a_port() {
@@ -243,5 +250,12 @@ mod tests {
         let long = "a".repeat(64);
         assert_eq!(project(&long), format!("cyberctf-{long}"));
         assert_eq!(project("Up_Per"), "cyberctf-Up_Per");
+    }
+
+    #[test]
+    fn attack_box_names_cover_the_current_and_older_names() {
+        // Tearing a lab down removes these by name: the box is a bare container with no project
+        // label, so a project-label removal never catches it.
+        assert_eq!(attack_box_names("cyberctf-sqli"), ["cyberctf-sqli-isoloom-access", "cyberctf-sqli-attacker", "cyberctf-sqli-exegol"].map(String::from));
     }
 }

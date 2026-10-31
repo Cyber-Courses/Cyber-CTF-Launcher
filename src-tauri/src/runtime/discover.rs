@@ -121,7 +121,14 @@ pub(crate) fn vbox_vm_names(out: &str) -> Vec<String> {
 pub(crate) fn lab_ids_from_vmrun(out: &str) -> Vec<String> {
     let mut ids = BTreeSet::new();
     for line in out.lines() {
-        if let Some(id) = id_after_labs(line.trim()) {
+        let line = line.trim();
+        // The attack VM (under `labs/<id>/.cyberctf-attack-vm/`) runs beside the lab; on its own it
+        // does not mean the lab's targets are up, so — as the VM-name scan does for `· attacker` —
+        // it is not counted.
+        if line.replace('\\', "/").contains("/.cyberctf-attack-vm/") {
+            continue;
+        }
+        if let Some(id) = id_after_labs(line) {
             ids.insert(id);
         }
     }
@@ -136,7 +143,9 @@ fn id_after_labs(path: &str) -> Option<String> {
     let path = path.replace('\\', "/");
     let segments: Vec<&str> = path.split('/').collect();
     let under_labs = |i: usize| segments.get(i) == Some(&"labs") && segments.get(i + 1).is_some_and(|id| is_lab_id(id));
-    let lab_layout = |i: usize| segments.get(i + 2).is_some_and(|d| d.starts_with(".isoloom") || *d == ".cyberctf-attack-vm");
+    // A target VM's own layout (`.isoloom/...`). The attack VM's `.cyberctf-attack-vm/...` is
+    // filtered out before here, so it is not a layout a lab-is-running path can match on.
+    let lab_layout = |i: usize| segments.get(i + 2).is_some_and(|d| d.starts_with(".isoloom"));
     let at = (0..segments.len()).rev().find(|&i| under_labs(i) && lab_layout(i)).or_else(|| (0..segments.len()).rev().find(|&i| under_labs(i)))?;
     Some(segments[at + 1].to_string())
 }
@@ -250,6 +259,19 @@ mod tests {
         let out = "Total running VMs: 1\n/Users/x/Library/App/labs/goad-light/.isoloom/vagrant/.vagrant/machines/dc01/vmware_desktop/x.vmx\n";
         assert_eq!(super::lab_ids_from_vmrun(out), vec!["goad-light".to_string()]);
         assert_eq!(super::lab_ids_from_vmrun("Total running VMs: 0\n"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_running_attack_vm_alone_does_not_mean_the_vmware_lab_runs() {
+        // The attack VM is under `labs/<id>/.cyberctf-attack-vm/`; like the VM-name scan's
+        // `· attacker` exclusion, it is not counted on its own (it runs beside the lab).
+        let attacker = "Total running VMs: 1\n/Users/x/labs/goad-light/.cyberctf-attack-vm/.vagrant/machines/attacker/vmware_desktop/x.vmx\n";
+        assert_eq!(super::lab_ids_from_vmrun(attacker), Vec::<String>::new());
+        // A target VM up alongside it: the lab runs, counted once from the target.
+        let both = "Total running VMs: 2\n\
+                    /Users/x/labs/goad-light/.cyberctf-attack-vm/.vagrant/machines/attacker/vmware_desktop/x.vmx\n\
+                    /Users/x/labs/goad-light/.isoloom/vagrant/.vagrant/machines/dc01/vmware_desktop/y.vmx\n";
+        assert_eq!(super::lab_ids_from_vmrun(both), vec!["goad-light".to_string()]);
     }
 
     #[test]
