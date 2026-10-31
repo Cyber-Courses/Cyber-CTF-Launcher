@@ -149,7 +149,7 @@ describe("a start that failed", () => {
       "Couldn’t start Blind orders",
     );
     expect(notice.textContent).toContain(PORT_CLASH);
-    expect(notice.textContent).toContain("Start it on random ports instead.");
+    expect(notice.textContent).toContain("start it with random ports if the lab doesn't need that exact port.");
     // Timed from when it began, not from its one line: 1.5s, not 0.0s.
     expect(document.body.textContent).toContain("1.5s");
     expect(document.body.textContent).not.toContain("0.0s");

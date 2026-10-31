@@ -109,7 +109,7 @@ impl Code {
                 format!("Cyber CTF can't be reached ({detail}). This lab is installed here, so it can start offline, without saving progress.")
             }
             Code::PortInUse { port } => format!(
-                "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever uses it, or start the lab with random ports."
+                "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever uses it. If the lab doesn't need that exact port, you can start it with random ports."
             ),
             Code::DockerNotRunning => {
                 "Docker isn't running. Start your container engine (Docker Desktop, or the docker service on Linux), then start the lab again.".into()
