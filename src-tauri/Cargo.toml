@@ -68,6 +68,11 @@ wildcard_imports = "warn"
 [build-dependencies]
 tauri-build = { version = "2.7.0", features = [] }
 
+[features]
+# WebdriverIO e2e: compile the embedded W3C WebDriver server into the app. Off in release builds;
+# the GUI e2e rig builds with `--features wdio`.
+wdio = ["dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver"]
+
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -79,6 +84,10 @@ tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-deep-link = "2"
+# WebdriverIO e2e, behind the `wdio` feature only (not built in release): the Execute/mocking plugin
+# the @wdio/tauri-service checks for, and the embedded WebDriver server the `embedded` provider needs.
+tauri-plugin-wdio = { version = "1", optional = true }
+tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 tokio = { version = "1", features = ["process", "io-util", "macros", "rt-multi-thread", "time", "net", "signal", "sync"] }
 thiserror = "2"
 sha2 = "0.11.0"

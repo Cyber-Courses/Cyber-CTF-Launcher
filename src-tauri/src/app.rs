@@ -66,21 +66,32 @@ pub fn run() -> tauri::Result<()> {
 
 /// The app: its plugins, window and menu events, and setup.
 fn app_builder() -> tauri::Builder<AppRuntime> {
-    tauri::Builder::<AppRuntime>::new()
-        // First: a cyberctf:// link opened while the app runs goes to that window
-        // (Windows/Linux would otherwise start a second instance).
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // The windows may be hidden (finishing in the background) or minimized: bring the
-            // main one back, and keep the app open instead of exiting once its deploys end.
+    let mut builder = tauri::Builder::<AppRuntime>::new();
+    // First: a cyberctf:// link opened while the app runs goes to that window (Windows/Linux would
+    // otherwise start a second instance). Off during a GUI e2e run (TAURI_WEBDRIVER_PORT set), so a
+    // test instance runs beside an installed app and parallel runs don't collide.
+    if std::env::var_os("TAURI_WEBDRIVER_PORT").is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // The windows may be hidden (finishing in the background) or minimized: bring the main
+            // one back, and keep the app open instead of exiting once its deploys end.
             quit::stop_lingering();
             window::reveal_main(app);
-        }))
+        }));
+    }
+    builder = builder
         .plugin(logging::plugin(logging::APP_LOG))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_notification::init());
+    // WebdriverIO e2e: the embedded W3C WebDriver server and the plugin @wdio/tauri-service checks
+    // for. Behind the `wdio` feature, so a release build carries neither.
+    #[cfg(feature = "wdio")]
+    {
+        builder = builder.plugin(tauri_plugin_wdio::init()).plugin(tauri_plugin_wdio_webdriver::init());
+    }
+    builder
         // Quitting mid-deploy can leave resources running (a cloud apply keeps billing). Hold the
         // window open and let the frontend confirm; the red-button close is handled here, Cmd+Q /
         // app exit in `on_run_event`.
