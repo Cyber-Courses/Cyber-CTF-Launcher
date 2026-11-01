@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
-import frSettings from "../src/messages/fr/settings.json";
-import jaSettings from "../src/messages/ja/settings.json";
+import frSettings from "../../src/messages/fr/settings.json";
+import jaSettings from "../../src/messages/ja/settings.json";
 
 const html = (page: Page) => page.locator("html");
 

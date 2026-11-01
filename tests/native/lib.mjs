@@ -11,7 +11,7 @@ import { existsSync } from "node:fs";
 export function appBinary() {
   if (process.env.APP_BIN) return process.env.APP_BIN;
   const ext = process.platform === "win32" ? ".exe" : "";
-  return fileURLToPath(new URL(`../src-tauri/target/debug/cyberctf-desktop${ext}`, import.meta.url));
+  return fileURLToPath(new URL(`../../src-tauri/target/debug/cyberctf-desktop${ext}`, import.meta.url));
 }
 
 /** The port the embedded WebDriver server listens on (override with TAURI_WEBDRIVER_PORT). */

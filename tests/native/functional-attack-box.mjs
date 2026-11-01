@@ -8,7 +8,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 const LAB = process.env.CYBERCTF_TEST_LOCAL_LAB;
 const PORT = 4445;
-const BIN = new URL("../src-tauri/target/debug/cyberctf-desktop", import.meta.url).pathname;
+const BIN = new URL("../../src-tauri/target/debug/cyberctf-desktop", import.meta.url).pathname;
 const text = (b) => b.$("[data-wdio-attack]").getText().catch(() => "");
 
 const proc = spawn(BIN, [], { env: { ...process.env, TAURI_WEBDRIVER_PORT: String(PORT) }, stdio: ["ignore", "pipe", "pipe"] });

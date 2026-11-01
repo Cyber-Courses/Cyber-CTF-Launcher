@@ -10,7 +10,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 const PORT = 4445;
 // CYBERCTF_BIN overrides the path (needed on Windows, where the binary is cyberctf-desktop.exe).
-const BIN = process.env.CYBERCTF_BIN || new URL("../src-tauri/target/debug/cyberctf-desktop", import.meta.url).pathname;
+const BIN = process.env.CYBERCTF_BIN || new URL("../../src-tauri/target/debug/cyberctf-desktop", import.meta.url).pathname;
 const WANT = process.env.CYBERCTF_EXPECT_LAB || "solo-web";
 
 const proc = spawn(BIN, [], { env: { ...process.env, TAURI_WEBDRIVER_PORT: String(PORT) }, stdio: ["ignore", "pipe", "pipe"] });

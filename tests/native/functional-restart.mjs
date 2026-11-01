@@ -6,7 +6,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { existsSync } from "node:fs";
 const LAB = process.env.CYBERCTF_TEST_LOCAL_LAB;
 const PORT = Number(process.env.TAURI_WEBDRIVER_PORT || 4445);
-const BIN = process.env.APP_BIN || new URL("../src-tauri/target/debug/cyberctf-desktop", import.meta.url).pathname;
+const BIN = process.env.APP_BIN || new URL("../../src-tauri/target/debug/cyberctf-desktop", import.meta.url).pathname;
 if (!LAB || !existsSync(LAB)) { console.log("no lab"); process.exit(2); }
 async function launchApp(seed) {
   const env = { ...process.env, TAURI_WEBDRIVER_PORT: String(PORT) };

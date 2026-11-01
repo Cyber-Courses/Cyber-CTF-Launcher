@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
-import frSettings from "../src/messages/fr/settings.json";
-import frShell from "../src/messages/fr/shell.json";
+import frSettings from "../../src/messages/fr/settings.json";
+import frShell from "../../src/messages/fr/shell.json";
 
 // Settings are kept on this machine (localStorage): each one picked in the Settings window is
 // still there after a reload, and the main window starts with it.

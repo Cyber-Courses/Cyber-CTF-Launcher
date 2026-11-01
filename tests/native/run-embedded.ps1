@@ -1,7 +1,7 @@
 # Launch the (wdio-feature) app on Windows so its embedded WebDriver server listens, then run the
 # smoke. Must run in an interactive desktop session; the app must be built with `--features wdio`.
 $ErrorActionPreference = "Continue"
-$here = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$here = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 $bin = if ($env:APP_BIN) { $env:APP_BIN } else { "$here\src-tauri\target\debug\cyberctf-desktop.exe" }
 if (!(Test-Path $bin)) { "app binary not found: $bin"; exit 2 }
 if (-not $env:TAURI_WEBDRIVER_PORT) { $env:TAURI_WEBDRIVER_PORT = "4445" }
@@ -18,7 +18,7 @@ try {
     Get-Content "$env:TEMP\cyberctf-app.err" -Tail 15 -ErrorAction SilentlyContinue
     $rc = 3
   } else {
-    node "$here\e2e-native\smoke-embedded.mjs"
+    node "$here\tests\native\smoke-embedded.mjs"
     $rc = $LASTEXITCODE
   }
 } finally {

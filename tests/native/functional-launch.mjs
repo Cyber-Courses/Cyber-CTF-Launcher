@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 
 const LAB = process.env.CYBERCTF_TEST_LOCAL_LAB;
 const PORT = Number(process.env.TAURI_WEBDRIVER_PORT || 4445);
-const BIN = process.env.APP_BIN || new URL("../src-tauri/target/debug/cyberctf-desktop", import.meta.url).pathname;
+const BIN = process.env.APP_BIN || new URL("../../src-tauri/target/debug/cyberctf-desktop", import.meta.url).pathname;
 if (!LAB || !existsSync(LAB)) { console.log(`no lab at CYBERCTF_TEST_LOCAL_LAB=${LAB}`); process.exit(2); }
 
 const proc = spawn(BIN, [], { env: { ...process.env, TAURI_WEBDRIVER_PORT: String(PORT), CYBERCTF_WDIO_SEED_LAB: LAB }, stdio: ["ignore","pipe","pipe"] });
