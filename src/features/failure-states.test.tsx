@@ -89,6 +89,14 @@ function renderDetail(props: Partial<Parameters<typeof LabDetail>[0]> = {}) {
 
 afterEach(() => vi.restoreAllMocks());
 
+/** The Overview rendered and settled, with one lab running here, shown under `title`. */
+async function overviewRunningOne(title: string) {
+  render(<HomeScreen report={readyReport()} auth={signedIn} onNavigate={vi.fn()} />);
+  await flush(80);
+  expect(document.body.textContent).toContain("1 lab running on this machine.");
+  expect(screen.getByText(title)).toBeTruthy();
+}
+
 describe("the catalogue can't be reached while labs run", () => {
   it("keeps the running lab on the Overview by its id, and offers Retry instead of loading forever", async () => {
     let down = true;
@@ -100,11 +108,8 @@ describe("the catalogue can't be reached while labs run", () => {
       },
     });
     const user = userEvent.setup();
-    render(<HomeScreen report={readyReport()} auth={signedIn} onNavigate={vi.fn()} />);
     // The scan (running_labs) sees lab-invoice; no catalogue says what it is.
-    await flush(80);
-    expect(document.body.textContent).toContain("1 lab running on this machine.");
-    expect(screen.getByText("Invoice")).toBeTruthy();
+    await overviewRunningOne("Invoice");
     expect(document.body.textContent).toContain("no details while the catalogue can’t be reached");
     expect(document.body.textContent).not.toContain("Nothing running");
     expect(document.body.textContent).not.toContain("Loading labs…");
@@ -321,5 +326,21 @@ describe("the machine check failed", () => {
     await user.click(screen.getByRole("button", { name: /Try again/ }));
     await flush();
     expect(retry).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("a lab imported from a folder, with the catalogue loaded", () => {
+  it("is listed on the Overview as imported, not as a catalogue outage", async () => {
+    const LOCAL = "local-invoice-portal-api";
+    installTauri({
+      ...idle,
+      // The scan sees the imported lab, the only one running; the catalogue (up) doesn't list it.
+      running_labs: () => [LOCAL],
+      lab_status: (a) => answer("lab_status", { ...(a ?? {}), id: a?.id === LOCAL ? "lab-invoice" : "none" }),
+    });
+    await overviewRunningOne("Local Invoice Portal Api");
+    expect(document.body.textContent).toContain("imported from a folder");
+    expect(document.body.textContent).not.toContain("no details while the catalogue can’t be reached");
+    expect(document.body.textContent).not.toContain("Can’t reach the lab catalogue");
   });
 });

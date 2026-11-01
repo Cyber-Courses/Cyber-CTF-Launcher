@@ -60,7 +60,8 @@
       "other": "{count} contêineres"
     },
     "empty": "Nada rodando. Inicie um lab pela página dele.",
-    "noDetails": "rodando · sem detalhes enquanto o catálogo estiver inacessível"
+    "noDetails": "rodando · sem detalhes enquanto o catálogo estiver inacessível",
+    "imported": "rodando · importado de uma pasta · pare em Máquina"
   },
   "deploy": {
     "inProgress": "Em andamento",

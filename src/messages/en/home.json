@@ -60,7 +60,8 @@
       "other": "{count} containers"
     },
     "empty": "Nothing running. Start a lab from its page.",
-    "noDetails": "running · no details while the catalogue can’t be reached"
+    "noDetails": "running · no details while the catalogue can’t be reached",
+    "imported": "running · imported from a folder · stop it from Machine"
   },
   "deploy": {
     "inProgress": "In progress",

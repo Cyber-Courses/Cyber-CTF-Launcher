@@ -60,7 +60,8 @@
       "other": "{count} contenedores"
     },
     "empty": "Nada en ejecución. Inicia un lab desde su página.",
-    "noDetails": "en ejecución · sin detalles mientras no se pueda acceder al catálogo"
+    "noDetails": "en ejecución · sin detalles mientras no se pueda acceder al catálogo",
+    "imported": "en ejecución · importado desde una carpeta · detenlo desde Máquina"
   },
   "deploy": {
     "inProgress": "En curso",
