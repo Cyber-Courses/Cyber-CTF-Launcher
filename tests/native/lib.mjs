@@ -188,6 +188,79 @@ export function localLabName(lab) {
     .slice(0, 56);
 }
 
+/**
+ * Invoke a Tauri command directly, the way the UI does, and resolve with its result. Needed for
+ * paths with no local-lab UI button (park/resume, re-import): the webview's `invoke` returns a
+ * promise, which the classic wry WebDriver cannot await, so the call parks its outcome on a window
+ * global that we poll. `streaming` adds the `logs: __CHANNEL__:<cb>` argument that the streaming
+ * commands (lab_stop/park/resume/launch…) require; a plain command (lab_status) omits it.
+ */
+export async function invokeCmd(b, cmd, args = {}, { streaming = false, timeoutMs = 150000 } = {}) {
+  await b.execute(
+    (c, a, stream) => {
+      window.__inv = "pending";
+      const internals = window.__TAURI_INTERNALS__;
+      const full = stream ? { ...a, logs: `__CHANNEL__:${internals.transformCallback(() => {})}` } : a;
+      internals.invoke(c, full).then(
+        (v) => (window.__inv = { ok: v === undefined ? null : v }),
+        (e) => {
+          let m;
+          try {
+            m = typeof e === "string" ? e : e && e.message ? e.message : JSON.stringify(e);
+          } catch {
+            m = String(e);
+          }
+          window.__inv = { err: m };
+        },
+      );
+    },
+    cmd,
+    args,
+    streaming,
+  );
+  const deadline = Date.now() + timeoutMs;
+  let r = "pending";
+  while (r === "pending" && Date.now() < deadline) {
+    await sleep(1000);
+    r = await b.execute(() => window.__inv).catch(() => "pending");
+  }
+  if (r === "pending") throw new Error(`${cmd}: timed out after ${timeoutMs}ms`);
+  if (r && r.err) throw new Error(`${cmd}: ${r.err}`);
+  return r ? r.ok : null;
+}
+
+/**
+ * Invoke a streaming lab command, retrying while the per-lab lock is still held by another
+ * operation (the "another operation … is already in progress" refusal): a launch holds the lock
+ * briefly after the lab already shows running, and the real UI gates its buttons on that, so a
+ * direct invoke waits the same way instead of racing it.
+ */
+export async function invokeWhenIdle(b, cmd, args, timeoutMs = 240000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      return await invokeCmd(b, cmd, args, { streaming: true });
+    } catch (e) {
+      if (Date.now() < deadline && /already in progress/i.test(e.message)) {
+        await sleep(2000);
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+/** Wait until lab `id` is no longer mid-deploy (its launch worker has finished), so a lifecycle
+ *  command won't race the launch for the per-lab lock. Polls the app's own deploying-labs list. */
+export async function waitSettled(b, id, timeoutMs = 240000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const busy = await invokeCmd(b, "deploying_labs").catch(() => null);
+    if (!Array.isArray(busy) || !busy.includes(id)) return;
+    await sleep(2000);
+  }
+}
+
 /** Stop the app process. */
 export function stopApp(proc) {
   if (proc && proc.exitCode === null) {

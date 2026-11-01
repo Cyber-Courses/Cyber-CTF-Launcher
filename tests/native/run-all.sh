@@ -240,6 +240,9 @@ run_mjs fail-badlab
 SIGNED_OUT_HOME=$(mktemp -d "${TMPDIR:-/tmp}/cyberctf-signedout.XXXXXX")
 HOME="$SIGNED_OUT_HOME" run_case fail-signedout node tests/native/functional-fail-signedout.mjs
 rm -rf "$SIGNED_OUT_HOME"
+# Setup/UI scenarios that need neither Docker nor a lab.
+run_mjs onboarding
+run_mjs setup-screens
 if [ "$DOCKER_OK" -eq 1 ]; then
   run_mjs fail-docker
   # Nothing of the lab up before launch, so a pass proves a real start and not a leftover.
@@ -255,8 +258,14 @@ if [ "$DOCKER_OK" -eq 1 ]; then
   run_mjs attack-box
   cleanup_lab
   run_mjs stop-with-box
+  cleanup_lab
+  run_mjs park-resume
+  cleanup_lab
+  run_mjs reimport-running
+  cleanup_lab
+  run_mjs attack-on-stopped
 else
-  for c in fail-docker launch restart stop launch-ui attack-box kill-mid-deploy stop-with-box; do skip "$c" "docker is not running"; done
+  for c in fail-docker launch restart stop launch-ui attack-box kill-mid-deploy stop-with-box park-resume reimport-running attack-on-stopped; do skip "$c" "docker is not running"; done
 fi
 vm_scan
 cleanup_lab final
