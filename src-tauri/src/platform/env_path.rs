@@ -45,6 +45,8 @@ fn extra_dirs() -> Vec<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         dirs.push("/Applications/Docker.app/Contents/Resources/bin".into());
+        // utmctl, which the running-labs scan asks for UTM's started VMs, ships inside UTM.
+        dirs.push("/Applications/UTM.app/Contents/MacOS".into());
         // ovftool, which vagrant-vmware-esxi needs, ships inside VMware Fusion.
         dirs.push("/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool".into());
         dirs.push("/Applications/VMware Fusion.app/Contents/Library".into());
@@ -196,6 +198,22 @@ mod tests {
         // The installer's own answer comes first: a VirtualBox moved elsewhere wins.
         assert_eq!(dirs[0], PathBuf::from(r"D:\VBox\"));
         assert_eq!(windows_dirs(|_| None), [] as [PathBuf; 0]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_finds_the_tools_that_ship_inside_app_bundles() {
+        // Regression: the running-labs scan asks `utmctl` by name, and UTM keeps it inside its
+        // bundle, so a Finder-launched app never found it and no UTM lab ever showed as running.
+        // Docker's CLI and Fusion's ovftool live inside their bundles the same way.
+        let dirs = extra_dirs();
+        for bundled in [
+            "/Applications/UTM.app/Contents/MacOS",
+            "/Applications/Docker.app/Contents/Resources/bin",
+            "/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool",
+        ] {
+            assert!(dirs.iter().any(|d| d == Path::new(bundled)), "{bundled} missing from {dirs:?}");
+        }
     }
 
     #[test]
