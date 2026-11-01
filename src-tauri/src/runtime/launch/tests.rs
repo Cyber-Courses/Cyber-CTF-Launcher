@@ -112,10 +112,7 @@ fn only_internet_addresses_are_public() {
 }
 
 fn lab(spec: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("cyberctf-launch-{}", rand::random::<u32>()));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("isoloom.yml"), spec).unwrap();
-    dir
+    crate::runtime::test_support::write_lab(spec)
 }
 
 const CONTAINERS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\nmessage: |\n  Open the web at {{ machines.web.addresses.lab }}.\n  Then look around.\n";

@@ -32,17 +32,11 @@ async fn global_status() -> Option<String> {
     static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
     static LAST: Mutex<Option<String>> = Mutex::new(None);
 
-    // Cleared on drop too, so a cancelled scan doesn't block every later one.
-    struct Done;
-    impl Drop for Done {
-        fn drop(&mut self) {
-            IN_FLIGHT.store(false, Ordering::Release);
-        }
-    }
     if IN_FLIGHT.swap(true, Ordering::AcqRel) {
         return LAST.lock().ok().and_then(|l| l.clone());
     }
-    let _done = Done;
+    // Cleared on drop too, so a cancelled scan doesn't block every later one.
+    let _done = crate::platform::ResetOnDrop(&IN_FLIGHT);
     // Timed: without a limit a polled call would hang and stack up one blocked process per tick.
     let out = run_env_timed("vagrant", &["global-status", "--prune", "--machine-readable"], None, &[], GLOBAL_STATUS_TIMEOUT).await.ok();
     if let (Some(o), Ok(mut last)) = (&out, LAST.lock()) {

@@ -17,6 +17,17 @@ pub mod msix_data;
 pub mod private_fs;
 pub mod sys;
 
+/// Resets an in-flight flag to `false` when dropped, so a single-flight scan frees the next one
+/// whether it returns normally or is cancelled. The flag is borrowed, so one guard serves every
+/// such scan (the running-labs probe, the VM global-status probe) without each re-declaring it.
+pub struct ResetOnDrop(pub &'static std::sync::atomic::AtomicBool);
+
+impl Drop for ResetOnDrop {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
 /// The app's own folders, as the OS names them: its data (labs, records, marks) and its cache
 /// (the self-tests' scratch folders). Each is known once the OS said where it is; what can do
 /// without one (a mark, a record) skips its file when it isn't. The app shell resolves them.

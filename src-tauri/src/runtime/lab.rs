@@ -265,10 +265,7 @@ mod tests {
     const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_LAUNCH_TOKEN]\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    files: [{ path: /run/lab/token, input: CTF_LAUNCH_TOKEN }]\n    app: { image: nginx:1.27 }\n";
 
     fn lab(spec: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("cyberctf-isoloom-{}", rand::random::<u32>()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("isoloom.yml"), spec).unwrap();
-        dir
+        crate::runtime::test_support::write_lab(spec)
     }
 
     #[test]

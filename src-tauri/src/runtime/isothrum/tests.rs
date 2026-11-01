@@ -127,6 +127,17 @@ fn launch_env() -> Vec<(String, String)> {
     vec![("CTF_LAUNCH_TOKEN".into(), "t0k".into()), (PORTS_ENV.into(), "default".into())]
 }
 
+/// A fixture whose lab is up and then parked with `Park::Shutdown`, the launcher tools scripted
+/// empty — the shared start of the park/resume tests. The caller keeps the `Fixture` and the
+/// `Tools` guard, which hold the lab's folder and the fake tools for the rest of the test.
+async fn up_then_parked() -> (Fixture, LabRun, Tools) {
+    let f = Fixture::new();
+    let tools = Tools::rules(&[]);
+    let run = f.up().await;
+    run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
+    (f, run, tools)
+}
+
 #[tokio::test]
 async fn a_container_lab_goes_up_through_the_runner_as_cyberctf_lab_id() {
     let f = Fixture::new();
@@ -164,10 +175,7 @@ async fn the_lab_page_reads_the_runners_status() {
 
 #[tokio::test]
 async fn a_lab_parks_and_resumes() {
-    let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
-    let run = f.up().await;
-    run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
+    let (f, run, _tools) = up_then_parked().await;
     assert!(f.fake.last("compose").is_some_and(|c| c.line().ends_with(" stop")));
     let parked = run.status().await.unwrap();
     assert_eq!((parked.running, parked.parked), (false, Some(Park::Shutdown)));
@@ -195,10 +203,7 @@ async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
 
 #[tokio::test]
 async fn a_parked_lab_whose_containers_are_gone_offers_a_fresh_start() {
-    let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
-    let run = f.up().await;
-    run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
+    let (f, run, _tools) = up_then_parked().await;
     paths::mark_parked(&f.dir, Some(Park::Shutdown)).unwrap();
     f.set(Containers::None);
     let err = run.resume(&mut |_| {}).await.unwrap_err().to_string();

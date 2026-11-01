@@ -165,6 +165,12 @@ pub(crate) mod tests {
         env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str())
     }
 
+    /// A bare profile: the common port and username, with no storage, network or node set — the
+    /// shape the env-building tests use to check the optional Proxmox/ESXi fields are left out.
+    pub fn bare_profile(provider: Provider) -> HostProfile {
+        HostProfile { port: 8006, username: "root".into(), datastore: None, network: None, node: None, ..profile(provider) }
+    }
+
     #[test]
     fn default_ports_per_provider() {
         assert_eq!(default_port(Provider::Proxmox), 8006);

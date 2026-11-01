@@ -234,12 +234,7 @@ pub fn lab_connection(app: &AppHandle, dir: &Path) -> Result<Option<Connection>>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::server::profile::tests::{get, profile as full_profile};
-
-    /// A bare profile: no storage, network or node set.
-    fn profile(provider: Provider) -> HostProfile {
-        HostProfile { port: 8006, username: "root".into(), datastore: None, network: None, node: None, ..full_profile(provider) }
-    }
+    use crate::runtime::server::profile::tests::{bare_profile as profile, get, profile as full_profile};
 
     #[test]
     fn a_connection_gathers_env_vars_and_terraform_env() {

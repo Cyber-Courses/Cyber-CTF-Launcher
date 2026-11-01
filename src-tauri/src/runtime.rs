@@ -112,16 +112,7 @@ pub(crate) mod test_support {
 
     /// A machine in `state`, with nothing else known about it.
     pub(crate) fn machine(name: &str, state: &str) -> Machine {
-        Machine {
-            name: name.to_string(),
-            state: state.to_string(),
-            image: String::new(),
-            ip: String::new(),
-            ports: Vec::new(),
-            interfaces: Vec::new(),
-            services: Vec::new(),
-            infra: false,
-        }
+        Machine::named(name.to_string(), state.to_string(), false)
     }
 
     /// A lab status with these running machines and nothing else set.
@@ -141,5 +132,13 @@ pub(crate) mod test_support {
             message: None,
             reap_error: None,
         }
+    }
+
+    /// A temp lab folder holding `spec` as its `isoloom.yml`, for tests that load a lab from disk.
+    pub(crate) fn write_lab(spec: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("cyberctf-lab-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("isoloom.yml"), spec).unwrap();
+        dir
     }
 }

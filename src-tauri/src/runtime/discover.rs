@@ -232,13 +232,7 @@ pub async fn running_lab_ids(app: &AppHandle) -> Vec<String> {
     if IN_FLIGHT.swap(true, Ordering::AcqRel) {
         return LAST.lock().map(|l| l.clone()).unwrap_or_default();
     }
-    struct Done;
-    impl Drop for Done {
-        fn drop(&mut self) {
-            IN_FLIGHT.store(false, Ordering::Release);
-        }
-    }
-    let _done = Done;
+    let _done = crate::platform::ResetOnDrop(&IN_FLIGHT);
     let ids = scan(app).await;
     if let Ok(mut last) = LAST.lock() {
         last.clone_from(&ids);

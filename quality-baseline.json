@@ -1,8 +1,5 @@
 {
   "rules": {
-    "dup/clone": {
-      "rs:runtime": 4
-    },
     "rust/tauri-outside-adapters": {
       "rs:account": 1,
       "rs:deploy_worker": 3,
@@ -12,9 +9,6 @@
   },
   "clippy": {
     "darwin": {
-      "clippy/items_after_statements": {
-        "rs:runtime": 2
-      },
       "clippy/needless_pass_by_value": {
         "rs:runtime": 5
       }
