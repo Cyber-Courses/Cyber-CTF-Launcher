@@ -1,4 +1,11 @@
 //! Local lab VMs running on this machine, from `vagrant global-status`.
+//!
+//! This reads Vagrant's cached state, which can say "running" for a VM that a crash or a host
+//! reboot has actually stopped, so the "running now" count it feeds may over-report until Vagrant
+//! next refreshes. The effect is cosmetic only: the count and the per-lab Stop button are the
+//! harm, and that Stop merely runs `vagrant destroy -f` (a no-op on an already-down VM); nothing
+//! here drives automatic cleanup. The live, never-cached "which labs are up" answer is
+//! [`crate::runtime::discover`], asked of each hypervisor directly.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -114,8 +121,13 @@ pub(super) async fn stop(dirs: &AppDirs, id: &str) -> Result<()> {
     let vagrant_dirs: Vec<PathBuf> = if id == "selftest" {
         vec![selftest::work_dir(dirs, "vm")?]
     } else {
-        let out = crate::runtime::lab::out(&labs_dir(dirs)?.join(id));
-        vec![out.join("vagrant"), out.join("docker-vm")]
+        let lab = labs_dir(dirs)?.join(id);
+        let out = crate::runtime::lab::out(&lab);
+        // The attack VM too: it is a Vagrant project of its own beside `.isoloom`
+        // (`<lab>/.cyberctf-attack-vm`), so a lab stopped here when its own stop didn't run (an
+        // orphan cleaned from the Running-now panel) does not leave its attack box behind. The
+        // Vagrantfile filter below skips it when there is none.
+        vec![out.join("vagrant"), out.join("docker-vm"), lab.join(".cyberctf-attack-vm")]
     };
     let vagrant_dirs: Vec<PathBuf> = vagrant_dirs.into_iter().filter(|d| d.join("Vagrantfile").is_file()).collect();
     if vagrant_dirs.is_empty() {
@@ -188,9 +200,13 @@ mod tests {
             std::fs::create_dir_all(&d).unwrap();
             std::fs::write(d.join("Vagrantfile"), "").unwrap();
         }
+        // And the attack VM beside `.isoloom`: its project is destroyed with the lab's.
+        let attack = lab.join(".cyberctf-attack-vm");
+        std::fs::create_dir_all(&attack).unwrap();
+        std::fs::write(attack.join("Vagrantfile"), "").unwrap();
         let tools = Tools::rules(&[]);
         super::stop(&t.dirs(), "goad").await.unwrap();
-        assert_eq!(tools.calls().iter().filter(|c| c.as_str() == "vagrant destroy -f").count(), 2, "{:?}", tools.calls());
+        assert_eq!(tools.calls().iter().filter(|c| c.as_str() == "vagrant destroy -f").count(), 3, "{:?}", tools.calls());
     }
 
     #[test]

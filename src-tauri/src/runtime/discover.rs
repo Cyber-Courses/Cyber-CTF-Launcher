@@ -1,11 +1,16 @@
 //! Finding labs that are actually running on this machine, by asking the engines themselves:
-//! Docker for its running containers, and the hypervisors (VirtualBox, Parallels, VMware, libvirt
-//! and Hyper-V) for their running VMs. Never a cache or a marker: Vagrant's global index, for one,
-//! keeps saying "running" long after the VMs are gone. Each lab is deployed under a predictable
-//! name, a Compose project `cyberctf-<id>` or VMs named for the lab (`<lab> · <machine>` on
+//! Docker for its running containers, and the hypervisors (VirtualBox, Parallels, VMware, UTM,
+//! libvirt and Hyper-V) for their running VMs. Never a cache or a marker: Vagrant's global index,
+//! for one, keeps saying "running" long after the VMs are gone. Each lab is deployed under a
+//! predictable name, a Compose project `cyberctf-<id>` or VMs named for the lab (`<lab> · <machine>` on
 //! VirtualBox/VMware/Parallels/UTM, `<lab>_<machine>` on libvirt, `<lab>-<machine>` on Hyper-V),
 //! so one scan recovers which labs are up even after a crash or restart, when the in-memory
 //! "deploying" set and the status cache are gone.
+//!
+//! Not covered: VMs that vagrant-qemu runs directly, with no libvirt and no registry to list them
+//! (a bare `qemu-system` process per VM). They would have to be found by scanning the process table
+//! for a `qemu-system` whose disk path is under `labs/<id>/.isoloom/`, which the engine's own source
+//! does not guarantee (the vagrant-qemu gem spawns it), so it is left out rather than guessed at.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -147,6 +152,33 @@ pub(crate) fn vbox_vm_names(out: &str) -> Vec<String> {
         .collect()
 }
 
+/// Names of the started VMs from `utmctl list` (`<uuid>  <status>  <name>`, under a `UUID Status
+/// Name` header). Only `started` VMs count. A UTM VM's name is the lab's `<lab> · <machine>` label
+/// (as VirtualBox's and Parallels's), so it carries spaces and the ` · ` and is taken whole as the
+/// line's remainder after the two leading columns, never split on its own spaces.
+pub(crate) fn utm_running_vm_names(out: &str) -> Vec<String> {
+    out.lines()
+        .filter_map(|line| {
+            let (uuid, rest) = split_lead(line)?;
+            // The header row (and any line without the two leading columns) is not a VM.
+            if uuid.eq_ignore_ascii_case("uuid") {
+                return None;
+            }
+            let (status, name) = split_lead(rest)?;
+            let name = name.trim();
+            (status.eq_ignore_ascii_case("started") && !name.is_empty()).then(|| name.to_string())
+        })
+        .collect()
+}
+
+/// The first whitespace-delimited token of `s` and the rest after it, each with its own leading
+/// whitespace trimmed: reads `utmctl`'s space-padded columns without collapsing a VM name's spaces.
+fn split_lead(s: &str) -> Option<(&str, &str)> {
+    let s = s.trim_start();
+    let end = s.find(char::is_whitespace)?;
+    Some((&s[..end], s[end..].trim_start()))
+}
+
 /// Lab ids from `vmrun list` (one running `.vmx` path per line after a count header): a lab's
 /// VM lives under `.../labs/<id>/...`.
 pub(crate) fn lab_ids_from_vmrun(out: &str) -> Vec<String> {
@@ -243,6 +275,18 @@ async fn vm_lab_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
     if by_name.is_empty() {
         return ids;
     }
+    // The two name-based families, each its own helper so this stays small as hypervisors are
+    // added: the ` · ` label (VirtualBox, Parallels, UTM) and the `<sep>` prefix (libvirt, Hyper-V).
+    ids.extend(middot_vm_ids(by_name).await);
+    ids.extend(prefixed_vm_ids(by_name).await);
+    ids
+}
+
+/// Lab ids from the hypervisors that name a VM `<lab> · <machine>`: VirtualBox, Parallels and UTM.
+/// Each may be absent, which contributes nothing. `by_name` is assumed non-empty (the caller skips
+/// these when no lab is installed, since the match is by the installed labs' names).
+async fn middot_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
     match run_read("VBoxManage", &["list", "runningvms"], None).await {
         Ok(out) => {
             let names = vbox_vm_names(&out);
@@ -254,6 +298,19 @@ async fn vm_lab_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
     if let Ok(out) = run_read("prlctl", &["list", "--running", "--no-header", "-o", "name"], None).await {
         ids.extend(lab_ids_from_vm_names(out.lines().map(str::trim), by_name));
     }
+    // UTM (macOS): a started VM carries the same `<lab> · <machine>` label. `utmctl list` prints
+    // UUID/Status/Name; the started ones match the labs by name.
+    if let Ok(out) = run_read("utmctl", &["list"], None).await {
+        let names = utm_running_vm_names(&out);
+        ids.extend(lab_ids_from_vm_names(names.iter().map(String::as_str), by_name));
+    }
+    ids
+}
+
+/// Lab ids from the hypervisors that name a VM `<lab><sep><machine>`: libvirt (`_`) and Hyper-V
+/// (`-`). Each may be absent, which contributes nothing. `by_name` is assumed non-empty.
+async fn prefixed_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
     // libvirt/KVM, and QEMU through libvirt: a running domain is `<lab>_<machine>` (vagrant-libvirt's
     // `default_prefix`). Ask both the default URI (a user session, or `$LIBVIRT_DEFAULT_URI`) and
     // the system instance, since vagrant-libvirt deploys to `qemu:///system` by default, which a
@@ -309,6 +366,41 @@ mod tests {
         assert_eq!(names.len(), 4);
         // Two VMs of one lab collapse to one id; a box import and an unknown lab's VM are ignored.
         assert_eq!(super::lab_ids_from_vm_names(names.iter().map(String::as_str), &by_name), vec!["bf08e551".to_string()]);
+    }
+
+    #[test]
+    fn utmctl_lists_only_started_vms_keeping_each_name_whole() {
+        // `utmctl list` columns are space-padded; a name carries its own spaces and the ` · `, so it
+        // must come back whole (not collapsed, not cut at its first space). Only `started` counts.
+        let out = "UUID                                 Status   Name\n\
+                   11111111-1111-1111-1111-111111111111 started  minilab · dc01\n\
+                   22222222-2222-2222-2222-222222222222 stopped  minilab · ws01\n\
+                   33333333-3333-3333-3333-333333333333 paused   minilab · router\n\
+                   44444444-4444-4444-4444-444444444444 started  other box\n";
+        assert_eq!(super::utm_running_vm_names(out), vec!["minilab · dc01".to_string(), "other box".to_string()]);
+        // No VMs, or only the header, is empty (not a panic).
+        assert_eq!(super::utm_running_vm_names("UUID Status Name\n"), Vec::<String>::new());
+        assert_eq!(super::utm_running_vm_names(""), Vec::<String>::new());
+    }
+
+    #[test]
+    fn utm_started_vms_map_back_to_installed_labs_and_a_lone_attacker_does_not_count() {
+        // The full UTM path: utmctl output, through the name reader, through the ` · ` matcher.
+        let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
+        let out = "UUID  Status  Name\n\
+                   a started  minilab · dc01\n\
+                   b started  minilab · ws01\n\
+                   c stopped  minilab · router\n\
+                   d started  minilab · attacker\n\
+                   e started  elsewhere · box\n";
+        let names = super::utm_running_vm_names(out);
+        assert_eq!(names, ["minilab · dc01", "minilab · ws01", "minilab · attacker", "elsewhere · box"]);
+        // Two target VMs of the lab are up: the lab runs (once), the foreign VM and the attacker aside.
+        assert_eq!(super::lab_ids_from_vm_names(names.iter().map(String::as_str), &by_name), vec!["mid".to_string()]);
+        // Only its attacker started: not the lab running.
+        let only_attacker = "UUID  Status  Name\nx started  minilab · attacker\n";
+        let names = super::utm_running_vm_names(only_attacker);
+        assert_eq!(super::lab_ids_from_vm_names(names.iter().map(String::as_str), &by_name), Vec::<String>::new());
     }
 
     #[test]

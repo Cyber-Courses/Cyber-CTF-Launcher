@@ -27,6 +27,7 @@ proptest! {
                 prop_assert!(is_lab_id(&id), "{:?}", id);
             }
             let _ = vbox_vm_names(text);
+            let _ = utm_running_vm_names(text);
             let _ = isoloom_name(text);
             if let Some(id) = id_after_labs(text) {
                 prop_assert!(is_lab_id(&id), "{:?}", id);
