@@ -157,8 +157,10 @@ run_case() {
 }
 run_mjs() { run_case "$1" node "tests/native/functional-$1.mjs"; }
 
-# UTM on a Mac: a started VM named `<lab name> · <machine>` is what the running-labs scan looks for;
-# an empty QEMU VM is enough, it boots to its firmware and shows as started.
+# UTM on a Mac: a started VM named `<lab> · <machine>` is what the running-labs scan looks for, where
+# `<lab>` is the installed lab's VM-name prefix: its isoloom name plus `-<instance>` when the lab holds
+# an instance number (`.cyberctf-instance`, 1 and up), the plain name otherwise. An empty QEMU VM
+# is enough, it boots to its firmware and shows as started.
 UTM_VM_ID=""
 UTMCTL=/Applications/UTM.app/Contents/MacOS/utmctl
 drop_utm_vm() {
@@ -177,9 +179,16 @@ vm_scan() {
   fi
   [ -x "$UTMCTL" ] || { skip vm-scan "UTM is not installed"; return; }
   [ -d "$LABS_DIR/$LAB_ID" ] || { skip vm-scan "the lab is not installed under $LABS_DIR (the launch scenario imports it)"; return; }
-  local arch vm
+  local arch vm prefix instance
   arch=$(uname -m | sed 's/^arm64$/aarch64/')
-  vm="$LAB_NAME · dc01"
+  prefix="$LAB_NAME"
+  instance=$(tr -d '[:space:]' < "$LABS_DIR/$LAB_ID/.cyberctf-instance" 2>/dev/null)
+  case "$instance" in
+    ''|*[!0-9]*|0) ;;
+    *) prefix="$LAB_NAME-$instance" ;;
+  esac
+  vm="$prefix · dc01"
+  say "UTM fixture VM: $vm"
   UTM_VM_ID=$(osascript \
     -e 'tell application "UTM"' \
     -e "set vm to make new virtual machine with properties {backend:qemu, configuration:{name:\"$vm\", architecture:\"$arch\", memory:256, cpu cores:1}}" \
@@ -190,9 +199,8 @@ vm_scan() {
     "$UTMCTL" status "$UTM_VM_ID" 2>/dev/null | grep -q started && break
     sleep 2
   done
-  # A dead Docker socket, so only the hypervisor probe can report the lab (its containers may
-  # still be up from the scenarios before).
-  CYBERCTF_EXPECT_LAB="$LAB_ID" DOCKER_HOST="unix:///nonexistent/docker.sock" run_case vm-scan node tests/native/functional-vm-scan.mjs
+  # The script makes Docker unreachable for the app, so only the hypervisor probe can report the lab.
+  CYBERCTF_EXPECT_LAB="$LAB_ID" run_case vm-scan node tests/native/functional-vm-scan.mjs
   drop_utm_vm
 }
 
@@ -234,6 +242,8 @@ HOME="$SIGNED_OUT_HOME" run_case fail-signedout node tests/native/functional-fai
 rm -rf "$SIGNED_OUT_HOME"
 if [ "$DOCKER_OK" -eq 1 ]; then
   run_mjs fail-docker
+  # Nothing of the lab up before launch, so a pass proves a real start and not a leftover.
+  cleanup_lab
   run_mjs launch
   run_mjs restart
   run_mjs stop
