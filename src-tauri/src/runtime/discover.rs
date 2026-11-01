@@ -1,8 +1,9 @@
 //! Finding labs that are actually running on this machine, by asking the engines themselves:
-//! Docker for its running containers, and the hypervisors (VirtualBox, Parallels, VMware) for
-//! their running VMs. Never a cache or a marker: Vagrant's global index, for one, keeps saying
-//! "running" long after the VMs are gone. Each lab is deployed under a predictable name, a
-//! Compose project `cyberctf-<id>` or VMs named `<lab> · <machine>` (the lab's isoloom name),
+//! Docker for its running containers, and the hypervisors (VirtualBox, Parallels, VMware, libvirt
+//! and Hyper-V) for their running VMs. Never a cache or a marker: Vagrant's global index, for one,
+//! keeps saying "running" long after the VMs are gone. Each lab is deployed under a predictable
+//! name, a Compose project `cyberctf-<id>` or VMs named for the lab (`<lab> · <machine>` on
+//! VirtualBox/VMware/Parallels/UTM, `<lab>_<machine>` on libvirt, `<lab>-<machine>` on Hyper-V),
 //! so one scan recovers which labs are up even after a crash or restart, when the in-memory
 //! "deploying" set and the status cache are gone.
 
@@ -104,6 +105,36 @@ pub(crate) fn lab_ids_from_vm_names<'a>(names: impl Iterator<Item = &'a str>, by
     ids.into_iter().collect()
 }
 
+/// The lab ids of running VMs named `<lab><sep><machine>`, for the labs in `by_name`: libvirt
+/// domains (`<lab>_<machine>`, from vagrant-libvirt's `default_prefix`) and Hyper-V/ESXi VMs
+/// (`<lab>-<machine>`). Unlike the ` · ` separator, `_` and `-` can occur inside a lab's own name,
+/// so a lab is matched as a prefix, not by splitting: the longest installed name that leaves a
+/// non-empty machine wins. As with ` · attacker`, a lone attacker VM does not mean the lab is up.
+pub(crate) fn lab_ids_from_prefixed_vm_names<'a>(names: impl Iterator<Item = &'a str>, by_name: &HashMap<String, String>, sep: char) -> Vec<String> {
+    let mut ids = BTreeSet::new();
+    for name in names {
+        let name = name.trim();
+        // The most specific (longest) installed name that prefixes this VM and leaves a machine.
+        // Longest first matters when one lab's name is another's with a `<sep>` tail (`goad` and
+        // `goad-light`): `goad-light-dc01` is read as goad-light's dc01, not goad's `light-dc01`.
+        let best = by_name
+            .iter()
+            .filter_map(|(lab, id)| {
+                let machine = name.strip_prefix(lab.as_str())?.strip_prefix(sep)?;
+                (!machine.is_empty()).then_some((lab.len(), id, machine))
+            })
+            .max_by_key(|&(len, _, _)| len);
+        // On that most-specific reading, a lone attacker VM (`<lab><sep>attacker`) runs beside the
+        // lab and does not mean it is up: so `goad-light-attacker` counts for neither lab.
+        if let Some((_, id, machine)) = best
+            && machine != "attacker"
+        {
+            ids.insert(id.clone());
+        }
+    }
+    ids.into_iter().collect()
+}
+
 /// VM names from `VBoxManage list runningvms` (`"<name>" {<uuid>}` per line).
 pub(crate) fn vbox_vm_names(out: &str) -> Vec<String> {
     out.lines()
@@ -192,27 +223,53 @@ async fn scan(app: &AppHandle) -> Vec<String> {
         Ok(out) => ids.extend(lab_ids_from_docker_projects(&out)),
         Err(e) => log::warn!("running-labs scan: docker ps failed: {e}"),
     }
-    // Hypervisors: their running VMs, named after the installed labs. Each hypervisor may simply
-    // not be installed; that is not a problem for the scan.
+    // Hypervisors: their running VMs, named after the installed labs.
     let by_name = app.path().app_data_dir().map(|d| lab_names(&d.join("labs"))).unwrap_or_default();
-    if !by_name.is_empty() {
-        match run_read("VBoxManage", &["list", "runningvms"], None).await {
-            Ok(out) => {
-                let names = vbox_vm_names(&out);
-                ids.extend(lab_ids_from_vm_names(names.iter().map(String::as_str), &by_name));
-            }
-            Err(e) if e.to_string().contains("timed out") => log::warn!("running-labs scan: VirtualBox isn't responding ({e})"),
-            Err(_) => {}
-        }
-        if let Ok(out) = run_read("prlctl", &["list", "--running", "--no-header", "-o", "name"], None).await {
-            ids.extend(lab_ids_from_vm_names(out.lines().map(str::trim), &by_name));
-        }
-    }
+    ids.extend(vm_lab_ids(&by_name).await);
+    let ids: Vec<String> = ids.into_iter().collect();
+    log::debug!("running-labs scan: {} running lab(s) {:?}", ids.len(), ids);
+    ids
+}
+
+/// The ids of labs whose VMs a hypervisor reports running. Each hypervisor may simply not be
+/// installed, which contributes nothing; this is split off [`scan`] so neither grows unwieldy as
+/// hypervisors are added. VMware reads the `.vmx` path, so it needs no names; the rest match the
+/// installed labs' VM-name prefixes, so they are skipped when nothing is installed.
+async fn vm_lab_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
     if let Ok(out) = run_read("vmrun", &["list"], None).await {
         ids.extend(lab_ids_from_vmrun(&out));
     }
-    let ids: Vec<String> = ids.into_iter().collect();
-    log::debug!("running-labs scan: {} running lab(s) {:?}", ids.len(), ids);
+    if by_name.is_empty() {
+        return ids;
+    }
+    match run_read("VBoxManage", &["list", "runningvms"], None).await {
+        Ok(out) => {
+            let names = vbox_vm_names(&out);
+            ids.extend(lab_ids_from_vm_names(names.iter().map(String::as_str), by_name));
+        }
+        Err(e) if e.to_string().contains("timed out") => log::warn!("running-labs scan: VirtualBox isn't responding ({e})"),
+        Err(_) => {}
+    }
+    if let Ok(out) = run_read("prlctl", &["list", "--running", "--no-header", "-o", "name"], None).await {
+        ids.extend(lab_ids_from_vm_names(out.lines().map(str::trim), by_name));
+    }
+    // libvirt/KVM, and QEMU through libvirt: a running domain is `<lab>_<machine>` (vagrant-libvirt's
+    // `default_prefix`). Ask both the default URI (a user session, or `$LIBVIRT_DEFAULT_URI`) and
+    // the system instance, since vagrant-libvirt deploys to `qemu:///system` by default, which a
+    // plain user `virsh` does not read.
+    for args in [["list", "--name", "--state-running"].as_slice(), ["-c", "qemu:///system", "list", "--name", "--state-running"].as_slice()] {
+        if let Ok(out) = run_read("virsh", args, None).await {
+            ids.extend(lab_ids_from_prefixed_vm_names(out.lines(), by_name, '_'));
+        }
+    }
+    // Hyper-V (Windows only; elsewhere the command isn't there and the probe just contributes
+    // nothing): a VM is `<lab>-<machine>` (Hyper-V allows no `·`). The running ones by name.
+    if let Ok(out) =
+        run_read("powershell", &["-NoProfile", "-Command", "Get-VM | Where-Object { $_.State -eq 'Running' } | ForEach-Object { $_.Name }"], None).await
+    {
+        ids.extend(lab_ids_from_prefixed_vm_names(out.lines(), by_name, '-'));
+    }
     ids
 }
 
@@ -339,6 +396,32 @@ mod tests {
         assert_eq!(super::lab_ids_from_vm_names(names.into_iter(), &by_name), ["goad".to_string()]);
         assert_eq!(super::lab_ids_from_vm_names(["minilab-1 · attacker"].into_iter(), &by_name), Vec::<String>::new());
         assert_eq!(super::lab_ids_from_vm_names(["minilab-1 · "].into_iter(), &by_name), ["goad".to_string()], "an empty machine name still names the lab");
+    }
+
+    #[test]
+    fn libvirt_domains_name_their_lab_by_the_underscore_prefix() {
+        // vagrant-libvirt names a running domain `<lab>_<machine>` (its default_prefix). The lab is
+        // matched as a prefix, so a name carrying its own `-` reads whole.
+        let by_name: HashMap<String, String> = [("minilab".to_string(), "id1".to_string()), ("goad-light".to_string(), "id2".to_string())].into();
+        let domains = ["minilab_dc01", "goad-light_dc01", "goad-light_ws01", "unknown_x"];
+        // Two machines of goad-light collapse to one id; an unknown domain is ignored.
+        assert_eq!(super::lab_ids_from_prefixed_vm_names(domains.into_iter(), &by_name, '_'), vec!["id1".to_string(), "id2".to_string()]);
+        // The attacker domain on its own does not mean the lab runs.
+        assert_eq!(super::lab_ids_from_prefixed_vm_names(["minilab_attacker"].into_iter(), &by_name, '_'), Vec::<String>::new());
+    }
+
+    #[test]
+    fn hyperv_vms_name_their_lab_by_the_dash_prefix_longest_first() {
+        // Hyper-V allows no `·`, so a VM is `<lab>-<machine>`; the `-` also joins a kebab lab name,
+        // so the longest installed name that leaves a machine wins.
+        let by_name: HashMap<String, String> = [("goad".to_string(), "g".to_string()), ("goad-light".to_string(), "gl".to_string())].into();
+        assert_eq!(super::lab_ids_from_prefixed_vm_names(["goad-light-dc01"].into_iter(), &by_name, '-'), vec!["gl".to_string()]);
+        assert_eq!(super::lab_ids_from_prefixed_vm_names(["goad-ws01"].into_iter(), &by_name, '-'), vec!["g".to_string()]);
+        // goad-light's attacker, read most-specifically, is goad-light's attacker: it counts for
+        // neither goad-light nor (as `light-attacker`) goad.
+        assert_eq!(super::lab_ids_from_prefixed_vm_names(["goad-light-attacker"].into_iter(), &by_name, '-'), Vec::<String>::new());
+        // A bare lab name (no machine) and a foreign VM do not count.
+        assert_eq!(super::lab_ids_from_prefixed_vm_names(["other-vm", "goad"].into_iter(), &by_name, '-'), Vec::<String>::new());
     }
 
     #[test]

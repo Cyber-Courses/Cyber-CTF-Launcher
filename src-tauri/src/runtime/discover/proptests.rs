@@ -137,4 +137,32 @@ proptest! {
             prop_assert!(names.iter().any(|n| n.split_once(VM_NAME_SEP).is_some_and(|(l, m)| l == name && m != "attacker")));
         }
     }
+
+    /// libvirt (`_`) and Hyper-V (`-`) names, shaped `<lab><sep><machine>`, never panic on whatever
+    /// the hypervisor lists and never invent a lab: only ids of installed labs come back, sorted
+    /// and unique.
+    #[test]
+    fn prefixed_vm_names_never_invent_a_lab(
+        labs in proptest::collection::hash_map("[a-z0-9-]{1,10}", lab_id(), 0..4),
+        names in proptest::collection::vec(prop_oneof!["[a-z0-9_-]{0,20}", "\\PC{0,16}"], 0..8),
+        sep in prop_oneof![Just('_'), Just('-')],
+    ) {
+        let by_name: HashMap<String, String> = labs.clone();
+        let got = lab_ids_from_prefixed_vm_names(names.iter().map(String::as_str), &by_name, sep);
+        prop_assert!(got.windows(2).all(|w| w[0] < w[1]), "sorted and unique");
+        for id in &got {
+            prop_assert!(by_name.values().any(|v| v == id), "{:?}", id);
+        }
+    }
+
+    /// An installed lab's attacker VM alone (`<lab><sep>attacker`) never marks the lab running,
+    /// whichever separator and however the lab name itself is shaped.
+    #[test]
+    fn a_prefixed_attacker_vm_alone_names_no_running_lab(
+        name in "[a-z0-9-]{1,10}", id in lab_id(), sep in prop_oneof![Just('_'), Just('-')],
+    ) {
+        let by_name: HashMap<String, String> = [(name.clone(), id)].into();
+        let vm = format!("{name}{sep}attacker");
+        prop_assert!(lab_ids_from_prefixed_vm_names([vm.as_str()].into_iter(), &by_name, sep).is_empty(), "{:?}", vm);
+    }
 }
