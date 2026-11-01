@@ -2,6 +2,7 @@
 //! print, what comes back is a plausible lab id (never a stray token) and real listings read back.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 use proptest::prelude::*;
 
@@ -90,7 +91,10 @@ proptest! {
 
     #[test]
     fn vbox_names_read_back(names in proptest::collection::vec("[^\"\n\r]{0,20}", 0..5), uuid in "[0-9a-f-]{36}") {
-        let out: String = names.iter().map(|n| format!("\"{n}\" {{{uuid}}}\n")).collect();
+        let out: String = names.iter().fold(String::new(), |mut out, n| {
+            let _ = writeln!(out, "\"{n}\" {{{uuid}}}");
+            out
+        });
         prop_assert_eq!(vbox_vm_names(&out), names);
     }
 

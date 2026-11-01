@@ -2,7 +2,7 @@
 //! first on PATH: real processes through the real `exec` code (spawn, stream, timeouts), no
 //! cloud. They change the process's PATH, so they are opt-in and run alone:
 //!
-//!   cargo test fake_clis -- --ignored --test-threads=1
+//!   cargo test `fake_clis` -- --ignored --test-threads=1
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

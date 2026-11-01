@@ -266,7 +266,7 @@ mod tests {
         assert!(serde_json::from_str::<Runtime>("\"HOSTED\"").is_err());
     }
 
-    /// isoloom #127: an input inside a string at any depth (CloudGoat's allow-list), the lab's own
+    /// isoloom #127: an input inside a string at any depth (`CloudGoat`'s allow-list), the lab's own
     /// environment, more applies, and what a lab needs here.
     const GOAT_TEMPLATE: &str = "version: 1\nname: goat\ninputs: [PLAYER_IP]\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { cg_whitelist: [\"{{ inputs.PLAYER_IP }}/32\"], tag: \"lab-{{ inputs.PLAYER_IP }}-{{ inputs.PLAYER_IP }}\", region: us-east-1 }\n  env: { AWS_REGION: us-east-1 }\n  apply_retries: 1\n  requires: [{TOOL}]\n";
 

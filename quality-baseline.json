@@ -18,17 +18,8 @@
   },
   "clippy": {
     "darwin": {
-      "clippy/assert_is_empty": {
-        "rs:runtime": 23
-      },
       "clippy/cast_possible_truncation": {
         "rs:runtime": 1
-      },
-      "clippy/default_trait_access": {
-        "rs:runtime": 4
-      },
-      "clippy/doc_markdown": {
-        "rs:runtime": 11
       },
       "clippy/expect_used": {
         "rs:runtime": 1
@@ -39,20 +30,8 @@
       "clippy/fn_params_excessive_bools": {
         "rs:runtime": 1
       },
-      "clippy/format_collect": {
-        "rs:runtime": 2
-      },
-      "clippy/ignore_without_reason": {
-        "rs:runtime": 1
-      },
       "clippy/items_after_statements": {
         "rs:runtime": 2
-      },
-      "clippy/manual_let_else": {
-        "rs:runtime": 1
-      },
-      "clippy/manual_string_new": {
-        "rs:runtime": 1
       },
       "clippy/match_same_arms": {
         "rs:runtime": 2
@@ -60,26 +39,8 @@
       "clippy/needless_pass_by_value": {
         "rs:runtime": 8
       },
-      "clippy/redundant_closure_for_method_calls": {
-        "rs:runtime": 1
-      },
-      "clippy/semicolon_if_nothing_returned": {
-        "rs:runtime": 1
-      },
-      "clippy/similar_names": {
-        "rs:runtime": 1
-      },
-      "clippy/single_match_else": {
-        "rs:runtime": 1
-      },
-      "clippy/stable_sort_primitive": {
-        "rs:runtime": 3
-      },
       "clippy/too_many_arguments": {
         "rs:runtime": 8
-      },
-      "clippy/uninlined_format_args": {
-        "rs:runtime": 2
       },
       "clippy/unnecessary_wraps": {
         "rs:runtime": 2

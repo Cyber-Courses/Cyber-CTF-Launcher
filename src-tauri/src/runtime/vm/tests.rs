@@ -275,7 +275,7 @@ fn the_labs_topology_is_read_again_only_once_its_spec_changed() {
 #[test]
 fn vm_names_come_from_the_vagrantfile_on_disk() {
     let dir = temp_dir("names");
-    assert!(super::vm_names(&dir).is_empty());
+    assert_eq!(super::vm_names(&dir), Vec::<String>::new());
     std::fs::write(dir.join("Vagrantfile"), "v.name = \"b\"\nv.name = \"a\"\nv.name = \"a\"\nv.name = \"\"\nv.name\n").unwrap();
     assert_eq!(super::vm_names(&dir), ["a", "b"]);
     std::fs::remove_dir_all(dir).unwrap();
@@ -358,9 +358,9 @@ fn vagrantfile_values_with_windows_line_endings_and_single_quotes() {
     // Isoloom writes double quotes; a hand-edited file with single quotes yields no names (never
     // a wrong one), and CRLF endings don't leak into a name.
     assert_eq!(vm_names_from("  v.name = \"lab · a\"\r\n  v.guest_name = \"lab-b\"\r\n"), ["lab · a", "lab-b"]);
-    assert!(vm_names_from("  v.name = 'lab · a'\n").is_empty());
+    assert_eq!(vm_names_from("  v.name = 'lab · a'\n"), Vec::<String>::new());
     // A commented-out name line is not a name; a name line without quotes is skipped.
-    assert!(vm_names_from("  # v.name = \"old\"\n  v.name = name_var\n").is_empty());
+    assert_eq!(vm_names_from("  # v.name = \"old\"\n  v.name = name_var\n"), Vec::<String>::new());
     // The first quoted string after `=` is the name, whatever follows on the line.
     assert_eq!(vm_names_from("v.vmx[\"displayName\"] = \"lab · c\" # was \"other\"\n"), ["lab · c"]);
 }

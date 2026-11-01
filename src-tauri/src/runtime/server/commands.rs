@@ -357,7 +357,7 @@ mod tests {
         assert!(server_remove(app(), saved.id.clone()).unwrap_err().to_string().starts_with("1 lab still running"));
         std::fs::remove_file(lab.join(HOST_MARKER)).unwrap();
         server_remove(app(), saved.id.clone()).unwrap();
-        assert!(server_list(app()).unwrap().hosts.is_empty());
+        assert_eq!(server_list(app()).unwrap().hosts, Vec::<HostProfile>::new());
         // The launcher's key, made once.
         let ssh = t.data().join("ssh");
         std::fs::create_dir_all(&ssh).unwrap();
@@ -541,7 +541,7 @@ mod tests {
         // Destroyed (its state gone): free to remove.
         std::fs::remove_file(state.join("terraform.tfstate")).unwrap();
         server_remove(app(), host).unwrap();
-        assert!(server_list(app()).unwrap().hosts.is_empty());
+        assert_eq!(server_list(app()).unwrap().hosts, Vec::<HostProfile>::new());
     }
 
     #[test]
@@ -557,13 +557,13 @@ mod tests {
         std::fs::write(lab.join(HOST_MARKER), "nope").unwrap();
         assert_eq!(server_running_labs(app()).get("nope"), Some(&1));
         server_remove(app(), "az1".into()).unwrap();
-        assert!(server_list(app()).unwrap().hosts.is_empty());
+        assert_eq!(server_list(app()).unwrap().hosts, Vec::<HostProfile>::new());
     }
 
     #[test]
     fn markers_are_read_from_each_lab_folder() {
         let labs = std::env::temp_dir().join(format!("cyberctf-markers-{}", rand::random::<u32>()));
-        assert!(markers_in(&labs).is_empty());
+        assert_eq!(markers_in(&labs), Vec::<String>::new());
         for (lab, marker) in [("a", Some("pve1\n")), ("b", Some("pve1")), ("c", None), ("d", Some(""))] {
             std::fs::create_dir_all(labs.join(lab)).unwrap();
             if let Some(m) = marker {
@@ -593,7 +593,7 @@ mod tests {
 
     #[test]
     fn running_labs_count_per_host_and_skip_blank_markers() {
-        let markers: Vec<String> = ["ab", "cd", "ab", ""].iter().map(|s| s.to_string()).collect();
+        let markers: Vec<String> = ["ab", "cd", "ab", ""].iter().map(ToString::to_string).collect();
         let counts = count_by_host(&markers);
         assert_eq!(counts.get("ab"), Some(&2));
         assert_eq!(counts.get("cd"), Some(&1));

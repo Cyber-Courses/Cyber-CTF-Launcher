@@ -37,16 +37,13 @@ proptest! {
 
     #[test]
     fn clean_trims_and_bounds(value in pasted(), max in 1usize..64) {
-        match clean(&value, "field", max) {
-            Ok(v) => {
-                prop_assert_eq!(v.as_str(), value.trim());
-                prop_assert!(!v.is_empty() && v.len() <= max);
-                prop_assert!(!v.chars().any(char::is_control));
-            }
-            Err(_) => {
-                let t = value.trim();
-                prop_assert!(t.is_empty() || t.len() > max || t.chars().any(char::is_control));
-            }
+        if let Ok(v) = clean(&value, "field", max) {
+            prop_assert_eq!(v.as_str(), value.trim());
+            prop_assert!(!v.is_empty() && v.len() <= max);
+            prop_assert!(!v.chars().any(char::is_control));
+        } else {
+            let t = value.trim();
+            prop_assert!(t.is_empty() || t.len() > max || t.chars().any(char::is_control));
         }
     }
 

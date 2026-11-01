@@ -329,7 +329,7 @@ mod tests {
         assert!(err.contains("parked on a server host"), "{err}");
         let err = provision_lab(t.handle(), "web", Runtime::Vm, None, |_| {}).await.unwrap_err().to_string();
         assert!(err.contains("Proxmox or a cloud"), "{err}");
-        assert!(tools.calls().is_empty());
+        assert_eq!(tools.calls(), Vec::<String>::new());
         // Stopping it destroys it with Terraform there: with no state, nothing is left to destroy,
         // and the lab no longer reads as running there.
         stop_lab(t.handle(), "web", Runtime::Docker, |_| {}).await.unwrap();
@@ -391,7 +391,7 @@ mod tests {
         assert!(err.starts_with("A cloud lab can't be paused"), "{err}");
         let err = resume_lab(t.handle(), "goat", Runtime::Cloud, |_| {}).await.unwrap_err().to_string();
         assert!(err.starts_with("A cloud lab can't be paused"), "{err}");
-        assert!(tools.calls().is_empty());
+        assert_eq!(tools.calls(), Vec::<String>::new());
     }
 
     #[tokio::test]

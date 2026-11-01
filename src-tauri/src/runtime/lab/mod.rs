@@ -384,7 +384,7 @@ mod tests {
             .map(|h| h.join().unwrap())
             .collect();
         let mut unique = picks.clone();
-        unique.sort();
+        unique.sort_unstable();
         unique.dedup();
         assert_eq!(unique.len(), picks.len(), "{picks:?}");
         std::fs::remove_dir_all(labs).unwrap();

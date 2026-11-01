@@ -247,7 +247,7 @@ mod tests {
         assert_eq!((c.provider, c.name.as_str()), (Provider::Proxmox, "Lab"));
         assert_eq!(get(&c.env, "CYBERCTF_PROXMOX_PASSWORD"), Some("pw"));
         assert_eq!(get(&c.tf_vars, "proxmox_password"), Some("pw"));
-        assert!(c.tf_env.is_empty());
+        assert_eq!(c.tf_env, Vec::<(String, String)>::new());
         let c = connection_for(&HostProfile { host: "eu-west-3".into(), username: "AKIAEXAMPLE".into(), ..full_profile(Provider::Aws) }, "key");
         assert_eq!(get(&c.tf_env, "AWS_SECRET_ACCESS_KEY"), Some("key"));
         assert_eq!(get(&c.tf_vars, "region"), Some("eu-west-3"));
@@ -397,6 +397,6 @@ mod tests {
         h.username = "sub-id".into();
         assert_eq!(get(&terraform_env(&h, ""), "ARM_SUBSCRIPTION_ID"), Some("sub-id"));
         h.provider = Provider::Gcp;
-        assert!(terraform_env(&h, "").is_empty());
+        assert_eq!(terraform_env(&h, ""), Vec::<(String, String)>::new());
     }
 }

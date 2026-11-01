@@ -143,7 +143,7 @@ fn an_aws_budget_blocks_only_when_it_is_known_to_be_over() {
     assert!(budget_verdict(server::BudgetCheck::Ok, &mut |l| lines.push(l)).is_ok());
     let err = budget_verdict(server::BudgetCheck::Over(51.5, 50.0), &mut |l| lines.push(l)).unwrap_err().to_string();
     assert!(err.contains("$51.50 of $50.00"), "{err}");
-    assert!(lines.is_empty());
+    assert_eq!(lines, Vec::<String>::new());
     assert!(budget_verdict(server::BudgetCheck::Unverifiable("Cost Explorer is off.".into()), &mut |l| lines.push(l)).is_ok());
     assert_eq!(lines, ["Monthly budget not checked: Cost Explorer is off. Launching anyway; the lab still auto-stops."]);
 }
@@ -167,13 +167,13 @@ fn qemu_emulates_only_the_vms_built_for_another_cpu() {
     assert_eq!(emulated_arches(&spec, "x86_64"), ["aarch64"]);
     assert_eq!(emulated_arches(&spec, "aarch64"), ["x86_64"]);
     let mut both = emulated_arches(&spec, "riscv64");
-    both.sort();
+    both.sort_unstable();
     assert_eq!(both, ["aarch64", "x86_64"]);
     std::fs::remove_dir_all(dir).unwrap();
     // Containers have no CPU of their own to emulate.
     let dir = lab(CONTAINERS);
     let spec = crate::runtime::lab::load(&dir).unwrap();
-    assert!(emulated_arches(&spec, "riscv64").is_empty());
+    assert_eq!(emulated_arches(&spec, "riscv64"), Vec::<&str>::new());
     std::fs::remove_dir_all(dir).unwrap();
 }
 

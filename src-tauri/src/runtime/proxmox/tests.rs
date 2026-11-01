@@ -62,7 +62,7 @@ fn internal_bridges_have_no_ports() {
 #[test]
 fn storage_problems_name_the_fix() {
     let ok = json!([{"storage": "local", "content": "iso,vztmpl,snippets,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]);
-    assert!(storage_problems(&ok, "local-lvm").is_empty());
+    assert_eq!(storage_problems(&ok, "local-lvm"), Vec::<String>::new());
     let stock = json!([{"storage": "local", "content": "iso,vztmpl,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]);
     let p = storage_problems(&stock, "local-lvm");
     assert_eq!(p.len(), 1);
@@ -72,10 +72,10 @@ fn storage_problems_name_the_fix() {
 }
 
 /// "Test connection" against a real host (opt-in):
-///   CYBERCTF_TEST_PVE_HOST=... CYBERCTF_TEST_PVE_PASSWORD=... [CYBERCTF_TEST_PVE_TOKEN_ID=user@realm!name CYBERCTF_TEST_PVE_TOKEN_SECRET=...
-///   CYBERCTF_TEST_SSH_KEY=<key authorized on the node>] cargo test proxmox_live_test -- --ignored --nocapture
+///   `CYBERCTF_TEST_PVE_HOST`=... `CYBERCTF_TEST_PVE_PASSWORD`=... [`CYBERCTF_TEST_PVE_TOKEN_ID=user@realm!name` `CYBERCTF_TEST_PVE_TOKEN_SECRET`=...
+///   `CYBERCTF_TEST_SSH_KEY`=<key authorized on the node>] cargo test `proxmox_live_test` -- --ignored --nocapture
 #[tokio::test]
-#[ignore]
+#[ignore = "opt-in: connects to a real Proxmox host set via CYBERCTF_TEST_PVE_* env vars"]
 async fn proxmox_live_test() {
     let var = |k: &str| std::env::var(k).ok();
     let address = var("CYBERCTF_TEST_PVE_HOST").expect("CYBERCTF_TEST_PVE_HOST");
@@ -169,7 +169,7 @@ fn the_outcome_lists_every_problem() {
 fn storage_needs_each_content_once() {
     // The VM disks on `local` too: still one check per (storage, content).
     let all = json!([{"storage": "local", "content": "iso, snippets, images"}]);
-    assert!(storage_problems(&all, "local").is_empty());
+    assert_eq!(storage_problems(&all, "local"), Vec::<String>::new());
     assert_eq!(storage_content(&json!([{"storage": "x"}]), "x"), Some(vec![String::new()]));
     assert_eq!(storage_content(&json!({}), "x"), None);
 }

@@ -125,7 +125,7 @@ mod tests {
                         s.hosts.push(HostProfile { id: format!("h{i}"), ..profile(Provider::Proxmox) });
                         Ok(())
                     })
-                    .unwrap()
+                    .unwrap();
                 })
             })
             .collect();

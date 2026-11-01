@@ -339,8 +339,8 @@ mod tests {
         // Built-in-only output, trailing detail lines, blank lines, and non-plugin noise.
         let out = "\nvagrant-vmware-desktop (3.0.4, global)\n  - Version Constraint: > 0\nvagrant-qemu (0.3.3)\nsomething-else (1.0.0)\n\n";
         assert_eq!(parse_plugins(out), vec!["vagrant-vmware-desktop", "vagrant-qemu"]);
-        assert!(parse_plugins("").is_empty());
-        assert!(parse_plugins("No plugins installed.\n").is_empty());
+        assert_eq!(parse_plugins(""), Vec::<String>::new());
+        assert_eq!(parse_plugins("No plugins installed.\n"), Vec::<String>::new());
     }
 
     #[test]
@@ -390,11 +390,11 @@ mod tests {
         assert_eq!(Provider::Hyperv.plugin(), None);
         // Each non-builtin local/remote-hypervisor provider names a plugin.
         for p in [Provider::VmwareDesktop, Provider::Parallels, Provider::Libvirt, Provider::Qemu, Provider::Utm, Provider::VmwareEsxi, Provider::Proxmox] {
-            assert!(p.plugin().is_some(), "{:?}", p);
+            assert!(p.plugin().is_some(), "{p:?}");
         }
         // Cloud providers are not Vagrant providers, so no plugin.
         for p in [Provider::Aws, Provider::Azure, Provider::Gcp, Provider::DigitalOcean, Provider::Linode, Provider::Oci] {
-            assert_eq!(p.plugin(), None, "{:?}", p);
+            assert_eq!(p.plugin(), None, "{p:?}");
         }
     }
 
@@ -419,7 +419,7 @@ mod tests {
         ];
         let mut ids: Vec<&str> = all.iter().map(|p| p.id()).collect();
         let count = ids.len();
-        ids.sort();
+        ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), count, "provider ids must be unique");
         // id() is the serde wire name, and it round-trips back to the same provider.

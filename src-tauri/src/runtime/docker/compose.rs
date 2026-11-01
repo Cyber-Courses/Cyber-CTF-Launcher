@@ -164,8 +164,8 @@ mod tests {
         names.sort();
         // init (no `ports`) and worker (empty `ports`) are one-shot/background, not serving.
         assert_eq!(names, vec!["db", "web"]);
-        assert!(serving_services_from_config("{}").is_empty());
-        assert!(serving_services_from_config("garbage").is_empty());
+        assert_eq!(serving_services_from_config("{}"), Vec::<String>::new());
+        assert_eq!(serving_services_from_config("garbage"), Vec::<String>::new());
     }
 
     #[test]
