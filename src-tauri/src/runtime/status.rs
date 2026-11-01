@@ -10,7 +10,7 @@ use super::paths::{lab_dir, local_vm, parked, runner_home, vagrant_dirs};
 use super::{LabStatus, Place, Runtime, docker, isothrum, server, vm};
 use crate::error::Result;
 
-pub(super) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
+pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
     let status = match (runtime, server::lab_connection(dirs, dir)?) {
         // On a server host or cloud account: the runner's view.
         (_, Some(c)) => server_status(dirs, dir, id, runtime, c).await?,

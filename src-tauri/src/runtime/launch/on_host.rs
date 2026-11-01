@@ -41,7 +41,7 @@ pub(in crate::runtime) fn runner_runs_on(provider: Provider, runtime: Runtime) -
 
 /// The runner's run of VM lab `id` (in `dir`) on the ESXi server it is marked for, with that
 /// server's connection `c`: its settings as params, its password as the run's connection.
-pub(in crate::runtime) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection) -> Result<isothrum::LabRun> {
+pub(crate) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection) -> Result<isothrum::LabRun> {
     let host = server::marked_host(dir).unwrap_or_default();
     isothrum::LabRun::on_esxi(&runner_home(dirs)?, dir, id, runtime, isothrum::EsxiPlace::from_env(&host, &c.env))
 }

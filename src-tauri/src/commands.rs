@@ -1,7 +1,7 @@
 //! The commands the webview invokes, registered with Tauri; each window may call only those its
 //! capability grants (build.rs, capabilities/). Each is a thin adapter: it turns the webview's
-//! arguments and channels into the domain's types and calls the domain's function. The runtime's
-//! commands stay in `runtime/` until it moves to the Isothrum runner.
+//! arguments and channels into the domain's types and calls the domain's function. The lab and
+//! server-host commands live here too (`labs`, `server`, `setup_window`), alongside the rest.
 // Tauri builds a command's arguments from the webview's message and hands each over by value: an
 // app handle or a window can't be borrowed, so a command that only reads one still takes it.
 #![allow(clippy::needless_pass_by_value, reason = "Tauri hands a command its arguments by value")]
@@ -9,16 +9,18 @@
 mod account;
 mod app;
 mod cloud;
-mod labs;
+pub(crate) mod labs;
 mod machine;
 #[cfg(test)]
 mod real_launch_labs;
+pub(crate) mod server;
+mod setup_window;
 mod shared_folder;
 mod terminal;
 
 use tauri::ipc::Channel;
 
-use crate::{AppRuntime, runtime};
+use crate::AppRuntime;
 
 /// A line callback that sends each line on `logs` (a closed window drops them).
 fn lines(logs: Channel<String>) -> impl FnMut(String) + Send + 'static {
@@ -65,25 +67,25 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         cloud::gcp_account,
         cloud::gcp_billing_accounts,
         cloud::gcp_organizations,
-        runtime::providers::hyperv_join_admins,
+        machine::hyperv_join_admins,
         cloud::oci_config,
         machine::install_vagrant_plugin,
         labs::lab_launch,
         labs::lab_launch_local,
-        runtime::lab_stop,
-        runtime::lab_park,
-        runtime::lab_resume,
-        runtime::lab_provision,
-        runtime::lab_status,
-        runtime::lab_cloud_preview,
-        runtime::running_labs,
-        runtime::run_tiers,
-        runtime::lab_check,
-        runtime::lab_tools,
-        runtime::attack_box_status,
-        runtime::attack_box_attach,
-        runtime::attack_box_detach,
-        runtime::lab_attack_shell,
+        labs::lab_stop,
+        labs::lab_park,
+        labs::lab_resume,
+        labs::lab_provision,
+        labs::lab_status,
+        labs::lab_cloud_preview,
+        labs::running_labs,
+        labs::run_tiers,
+        labs::lab_check,
+        labs::lab_tools,
+        labs::attack_box_status,
+        labs::attack_box_attach,
+        labs::attack_box_detach,
+        labs::lab_attack_shell,
         terminal::terminal_open,
         terminal::terminal_write,
         terminal::terminal_resize,
@@ -92,17 +94,17 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         shared_folder::shared_folder_get,
         shared_folder::shared_folder_set,
         shared_folder::shared_folder_open,
-        runtime::server::server_list,
-        runtime::server::server_save,
-        runtime::server::server_remove,
-        runtime::server::server_set_default,
-        runtime::server::server_test,
-        runtime::server::server_public_key,
-        runtime::server::server_running_labs,
-        runtime::server::server_capacity,
-        runtime::server::server_month_to_date_cost,
-        runtime::server_selftest::server_selftest,
-        runtime::server::server_open_setup,
+        server::server_list,
+        server::server_save,
+        server::server_remove,
+        server::server_set_default,
+        server::server_test,
+        server::server_public_key,
+        server::server_running_labs,
+        server::server_capacity,
+        server::server_month_to_date_cost,
+        server::server_selftest,
+        setup_window::server_open_setup,
         labs::deploying_labs,
         app::restart_app,
         labs::active_operations,

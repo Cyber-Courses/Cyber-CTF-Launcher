@@ -281,13 +281,6 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
     statuses
 }
 
-/// Adds this Windows account to "Hyper-V Administrators" (one administrator prompt), so Vagrant
-/// can drive Hyper-V for it from the next sign-in on (#185).
-#[tauri::command]
-pub async fn hyperv_join_admins() -> crate::error::Result<()> {
-    crate::platform::exec::join_hyperv_admins().await
-}
-
 /// Why Hyper-V can't be used by this account yet, and the two ways out.
 pub const HYPERV_NEEDS_ADMIN: &str = "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators: \
 choose Allow my account (then sign out of Windows and back in), or run Cyber CTF as administrator";
@@ -519,13 +512,5 @@ mod tests {
         let v = serde_json::to_value(s).unwrap();
         assert_eq!(v["provider"], "virtualbox");
         assert_eq!(v["pluginInstalled"], true);
-    }
-
-    #[tokio::test]
-    async fn joining_hyperv_administrators_is_windows_only() {
-        if !cfg!(windows) {
-            let err = hyperv_join_admins().await.unwrap_err();
-            assert!(err.to_string().contains("only on Windows"), "{err}");
-        }
     }
 }

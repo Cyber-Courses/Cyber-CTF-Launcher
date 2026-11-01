@@ -12,9 +12,10 @@
 //! cargo test --lib -- --ignored --nocapture --test-threads=1 real_launch_labs
 //! ```
 
+use super::labs::{lab_check, lab_status};
 use crate::labs::{local_id, run_local};
 use crate::runtime::real_labs::{check, leftovers, log};
-use crate::runtime::{LabStatus, Park, Runtime, lab_check, lab_status, park_lab, resume_lab, stop_lab};
+use crate::runtime::{LabStatus, Park, Runtime, park_lab, resume_lab, stop_lab};
 
 /// Every non-infra machine of a running lab is up.
 fn up(s: &LabStatus) -> bool {

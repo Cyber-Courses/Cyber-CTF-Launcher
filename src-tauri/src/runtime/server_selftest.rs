@@ -19,10 +19,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::AppHandle;
 use crate::platform::AppDirs;
-use tauri::Manager;
-use tauri::ipc::Channel;
 
 use super::providers::Provider;
 use super::server;
@@ -32,11 +29,16 @@ use crate::machine::selftest::Event;
 /// Step labels shared by both hosts.
 const PREPARE: &str = "Prepare a test VM definition";
 
-struct Reporter(Channel<Event>);
+struct Reporter(Box<dyn Fn(Event) + Send + Sync>);
 
 impl Reporter {
+    /// A reporter that hands each event to `sink` (the command wraps the webview's channel in one).
+    fn new(sink: impl Fn(Event) + Send + Sync + 'static) -> Reporter {
+        Reporter(Box::new(sink))
+    }
+
     fn send(&self, step: &'static str, label: &'static str, state: &'static str, detail: Option<String>) {
-        let _ = self.0.send(Event { step, label, state, detail });
+        (self.0)(Event { step, label, state, detail });
     }
 
     /// A line of a tool's output as the running step's detail (trimmed, at most 160 chars).
@@ -63,26 +65,25 @@ impl Reporter {
     }
 }
 
-fn work_dir(app: &AppHandle, id: &str) -> Result<PathBuf> {
-    Ok(app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("selftest").join("server").join(id))
+fn work_dir(dirs: &AppDirs, id: &str) -> Result<PathBuf> {
+    Ok(dirs.data()?.join("selftest").join("server").join(id))
 }
 
-/// Runs a real-VM self-test against host `id`, streaming step events.
-#[tauri::command]
-pub async fn server_selftest(app: AppHandle, id: String, events: Channel<Event>) -> Result<()> {
-    let r = Reporter(events);
-    let dirs = AppDirs::from(&app);
+/// Runs a real-VM self-test against host `id`, streaming each step to `sink` (the
+/// `server_selftest` command wraps the webview's channel in one).
+pub(crate) async fn run(dirs: &AppDirs, id: &str, sink: impl Fn(Event) + Send + Sync + 'static) -> Result<()> {
+    let r = Reporter::new(sink);
     // `connect` resolves the host and its secret, which proves the profile and keychain are
     // usable before anything is created on the host.
     let conn = r
         .step("connect", "Reach the host", async {
-            let c = server::connection(&dirs, &id)?;
+            let c = server::connection(dirs, id)?;
             let name = c.name.clone();
             Ok((c, Some(name)))
         })
         .await?;
 
-    let work = work_dir(&app, &id)?;
+    let work = work_dir(dirs, id)?;
     // A folder still there is a previous run whose VM couldn't be removed: its state is the only
     // way to find that VM, so destroy it from there before anything else, and keep the folder
     // when that fails too.
@@ -105,7 +106,7 @@ pub async fn server_selftest(app: AppHandle, id: String, events: Channel<Event>)
     }
 
     let ran = match conn.provider {
-        Provider::Proxmox => proxmox::run(&dirs, &id, &r, &conn, &work).await,
+        Provider::Proxmox => proxmox::run(dirs, id, &r, &conn, &work).await,
         Provider::VmwareEsxi => esxi::run(&r, &conn, &work).await,
         Provider::Aws => Ran::nothing(Error::Invalid("the VM test is for server hosts; AWS labs are billed, so it isn't run as a test".into())),
         _ => Ran::nothing(Error::Invalid("the VM test runs only on a Proxmox or ESXi host".into())),
@@ -185,8 +186,6 @@ mod tests {
         assert_eq!(err.to_string(), "no answer on 127.0.0.1:0");
     }
 
-    /// A reporter whose events land in the returned list, as the JSON the UI would get.
-
     #[tokio::test]
     async fn retry_until_stops_at_the_first_success() {
         let tries = std::sync::atomic::AtomicU32::new(0);
@@ -223,42 +222,5 @@ mod tests {
         std::fs::create_dir_all(&work).unwrap();
         assert_eq!(finish(&work, Ran::nothing(Error::Invalid("boom".into()))).unwrap_err().to_string(), "boom");
         assert!(!work.exists());
-    }
-
-    /// Each event's step and state, as the UI gets them.
-    fn steps(events: &crate::testing::test_app::Sink) -> Vec<(String, String)> {
-        events.messages().iter().map(|e| (e["step"].as_str().unwrap().to_string(), e["state"].as_str().unwrap().to_string())).collect()
-    }
-
-    #[tokio::test]
-    async fn the_vm_test_runs_on_proxmox_and_esxi_hosts_only() {
-        let t = crate::testing::test_app::TestApp::new();
-        let tools = crate::platform::exec::fake::Tools::rules(&[]);
-        let app = || t.handle().clone();
-        let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
-
-        // No such host: the first step fails and nothing else runs.
-        let events = crate::testing::test_app::Sink::default();
-        assert!(server_selftest(app(), "nohost".into(), events.channel()).await.is_err());
-        assert_eq!(steps(&events), [pair("connect", "running"), pair("connect", "fail")]);
-
-        // A cloud account: reached, then refused.
-        t.host("az1", "azure", serde_json::json!({}));
-        let events = crate::testing::test_app::Sink::default();
-        let err = server_selftest(app(), "az1".into(), events.channel()).await.unwrap_err();
-        assert_eq!(err.to_string(), "the VM test runs only on a Proxmox or ESXi host");
-        assert_eq!(steps(&events), [pair("connect", "running"), pair("connect", "ok")]);
-        assert_eq!(events.messages()[1]["detail"], "Host az1");
-
-        // AWS is billed: never a test. A folder a previous run left is cleared first.
-        t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
-        let work = work_dir(t.handle(), "aws1").unwrap();
-        std::fs::create_dir_all(&work).unwrap();
-        let events = crate::testing::test_app::Sink::default();
-        let err = server_selftest(app(), "aws1".into(), events.channel()).await.unwrap_err();
-        assert!(err.to_string().contains("AWS labs are billed"), "{err}");
-        assert!(steps(&events).contains(&pair("prepare", "ok")), "{:?}", steps(&events));
-        assert!(!work.exists());
-        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
     }
 }

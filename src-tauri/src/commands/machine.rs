@@ -139,6 +139,13 @@ pub async fn uninstall_dependency(app: AppHandle, dependency: Dependency, logs: 
     uninstall::uninstall_dependency(AppDirs::from(&app), dependency, lines(logs)).await
 }
 
+/// Adds this Windows account to "Hyper-V Administrators" (one administrator prompt), so Vagrant
+/// can drive Hyper-V for it from the next sign-in on (#185).
+#[tauri::command]
+pub async fn hyperv_join_admins() -> Result<()> {
+    crate::platform::exec::join_hyperv_admins().await
+}
+
 #[cfg(test)]
 mod tests {
     use tauri::Manager;
@@ -154,5 +161,13 @@ mod tests {
         crate::app::window::builder(t.handle(), "machine-setup", "machine-setup").build().unwrap();
         machine_open_setup(t.handle().clone(), Some("docker".into())).await.unwrap();
         assert_eq!(t.handle().webview_windows().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn joining_hyperv_administrators_is_windows_only() {
+        if !cfg!(windows) {
+            let err = hyperv_join_admins().await.unwrap_err();
+            assert!(err.to_string().contains("only on Windows"), "{err}");
+        }
     }
 }

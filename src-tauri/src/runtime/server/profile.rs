@@ -59,7 +59,7 @@ pub struct HostProfile {
 impl HostProfile {
     /// Whether the keychain holds a secret for this host. AWS in CLI mode, Azure, GCP and OCI
     /// sign in through their own CLI / config, so the launcher keeps nothing for them.
-    pub(super) fn keeps_secret(&self) -> bool {
+    pub(crate) fn keeps_secret(&self) -> bool {
         !self.use_cli_creds && kind(self.provider).is_some_and(|k| k.secret != Secret::None)
     }
 
@@ -88,7 +88,7 @@ impl HostProfile {
     /// What says where this host's labs are (its provider, address or region, port, Proxmox node,
     /// the account labs are created in, an AWS CLI profile), never a renewable credential: while
     /// labs are deployed on it, a stop must still find them where they were created.
-    pub(super) fn placement(&self) -> Vec<(&'static str, String)> {
+    pub(crate) fn placement(&self) -> Vec<(&'static str, String)> {
         let mut fields = vec![
             ("provider", self.provider.id().to_string()),
             ("address or region", self.host.clone()),
@@ -131,7 +131,7 @@ pub(super) fn random_hex(bytes: usize) -> String {
 }
 
 /// A new host id: 16 hex characters.
-pub(super) fn new_id() -> String {
+pub(crate) fn new_id() -> String {
     random_hex(8)
 }
 

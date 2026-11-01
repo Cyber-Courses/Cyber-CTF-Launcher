@@ -1,26 +1,31 @@
-//! The Server screen's Tauri commands: list, save, remove and test hosts, and what each row
-//! shows (running labs, capacity).
+//! The Server screen's Tauri commands: list, save, remove and test hosts, what each row shows
+//! (running labs, capacity), an AWS account's month-to-date spend, and the host self-test. Each is
+//! a thin adapter over the `crate::runtime::server` domain; the filesystem-only helpers that read
+//! each lab's host marker (which need the app's data folder) live here with them.
 
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use crate::AppHandle;
-use crate::platform::AppDirs;
 use serde::Serialize;
 use tauri::Manager;
+use tauri::ipc::Channel;
 
-use super::HOST_MARKER;
-use super::checks::{Check, TestResult};
-use super::gcp;
-use super::input::{HostInput, valid_id};
-use super::profile::{HostProfile, new_id};
-use super::reachability::test_host;
-use super::secrets::{delete_secret, get_secret, host_secret, set_secret};
-use super::store::{Store, find, load, load_host, update};
+use crate::AppHandle;
 use crate::error::{Code, Error, Result};
+use crate::machine::selftest::Event;
+use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
+use crate::runtime::server::HOST_MARKER;
+use crate::runtime::server::budget::month_to_date_cost;
+use crate::runtime::server::checks::{Check, TestResult};
+use crate::runtime::server::gcp;
+use crate::runtime::server::input::{HostInput, valid_id};
+use crate::runtime::server::profile::{HostProfile, new_id};
+use crate::runtime::server::reachability::test_host;
+use crate::runtime::server::secrets::{delete_secret, get_secret, host_secret, set_secret};
+use crate::runtime::server::store::{Store, find, load, load_host, update};
 
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -309,6 +314,28 @@ async fn proxmox_capacity(h: &HostProfile, password: &str) -> Option<HostCapacit
 /// A Proxmox node's `/status` as the row's capacity (None when a figure is missing).
 fn capacity_from(d: &serde_json::Value) -> Option<HostCapacity> {
     Some(HostCapacity { cores: d["cpuinfo"]["cpus"].as_u64()?, mem_total: d["memory"]["total"].as_u64()?, mem_free: d["memory"]["free"].as_u64()? })
+}
+
+/// This month's spend so far (USD) on the saved AWS account `id`, with its own credentials (its
+/// stored keys, or its CLI profile): the figure the Cloud screen shows is the one the launch
+/// budget gate checks, never another account's (the CLI's default profile's).
+#[tauri::command]
+pub async fn server_month_to_date_cost(app: AppHandle, id: String) -> Result<f64> {
+    let host = load_host(&AppDirs::from(&app), &id)?;
+    if host.provider != Provider::Aws {
+        return Err(Error::Invalid("only AWS accounts report their spend".into()));
+    }
+    month_to_date_cost(&host, &host_secret(&host)?).await
+}
+
+/// Runs a real-VM self-test against host `id`, streaming step events (see
+/// [`crate::runtime::server_selftest::run`]).
+#[tauri::command]
+pub async fn server_selftest(app: AppHandle, id: String, events: Channel<Event>) -> Result<()> {
+    crate::runtime::server_selftest::run(&AppDirs::from(&app), &id, move |e| {
+        let _ = events.send(e);
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -600,5 +627,62 @@ mod tests {
         assert_eq!(counts.get("ab"), Some(&2));
         assert_eq!(counts.get("cd"), Some(&1));
         assert_eq!(counts.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn an_accounts_spend_is_read_with_its_own_keys_not_the_clis_default() {
+        // Regression: the Cloud screen read the spend of an account added with stored keys through
+        // the host CLI's default profile: another account's spend, or nothing, while the launch
+        // budget gate read the stored keys.
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
+        let cli = t.host("aws-cli", "aws", serde_json::json!({ "useCliCreds": true, "awsProfile": "labs" }));
+        let tools = Tools::rules(&[("ce get-cost-and-usage", ok("7.25\n"))]);
+        assert_eq!(server_month_to_date_cost(t.handle().clone(), cli).await.unwrap(), 7.25);
+        assert!(tools.called("aws ce get-cost-and-usage"), "{:?}", tools.calls());
+        assert_eq!(tools.env_of("ce get-cost-and-usage", "AWS_PROFILE").as_deref(), Some("labs"));
+        // Not an AWS account, or not saved: no figure.
+        let az = t.host("az1", "azure", serde_json::json!({}));
+        assert_eq!(server_month_to_date_cost(t.handle().clone(), az).await.unwrap_err().to_string(), "only AWS accounts report their spend");
+        assert!(server_month_to_date_cost(t.handle().clone(), "nope".into()).await.is_err());
+        // The setup form's figure, for a profile not saved yet.
+        assert_eq!(crate::runtime::server::cli_month_to_date_cost(None).await.unwrap(), 7.25);
+    }
+
+    /// Each self-test event's step and state, as the UI gets them.
+    fn steps(events: &crate::testing::test_app::Sink) -> Vec<(String, String)> {
+        events.messages().iter().map(|e| (e["step"].as_str().unwrap().to_string(), e["state"].as_str().unwrap().to_string())).collect()
+    }
+
+    #[tokio::test]
+    async fn the_vm_test_runs_on_proxmox_and_esxi_hosts_only() {
+        let t = crate::testing::test_app::TestApp::new();
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let app = || t.handle().clone();
+        let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
+
+        // No such host: the first step fails and nothing else runs.
+        let events = crate::testing::test_app::Sink::default();
+        assert!(server_selftest(app(), "nohost".into(), events.channel()).await.is_err());
+        assert_eq!(steps(&events), [pair("connect", "running"), pair("connect", "fail")]);
+
+        // A cloud account: reached, then refused.
+        t.host("az1", "azure", serde_json::json!({}));
+        let events = crate::testing::test_app::Sink::default();
+        let err = server_selftest(app(), "az1".into(), events.channel()).await.unwrap_err();
+        assert_eq!(err.to_string(), "the VM test runs only on a Proxmox or ESXi host");
+        assert_eq!(steps(&events), [pair("connect", "running"), pair("connect", "ok")]);
+        assert_eq!(events.messages()[1]["detail"], "Host az1");
+
+        // AWS is billed: never a test. A folder a previous run left is cleared first.
+        t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
+        let work = t.data().join("selftest").join("server").join("aws1");
+        std::fs::create_dir_all(&work).unwrap();
+        let events = crate::testing::test_app::Sink::default();
+        let err = server_selftest(app(), "aws1".into(), events.channel()).await.unwrap_err();
+        assert!(err.to_string().contains("AWS labs are billed"), "{err}");
+        assert!(steps(&events).contains(&pair("prepare", "ok")), "{:?}", steps(&events));
+        assert!(!work.exists());
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
     }
 }

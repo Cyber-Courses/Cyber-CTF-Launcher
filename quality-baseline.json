@@ -4,15 +4,11 @@
       "rs:account": 1,
       "rs:deploy_worker": 3,
       "rs:labs": 1,
-      "rs:runtime": 7
+      "rs:runtime": 1
     }
   },
   "clippy": {
-    "darwin": {
-      "clippy/needless_pass_by_value": {
-        "rs:runtime": 5
-      }
-    },
+    "darwin": {},
     "linux": {
       "clippy/assert_is_empty": {
         "rs:runtime": 47

@@ -8,29 +8,30 @@
 //! - `lifecycle`: park, resume, provision and stop; `reaper`: the auto-stop of expired cloud labs.
 //! - `status`: what a lab looks like right now, wherever it runs.
 //! - `terminal_launch`: opening the OS terminal on the attack box shell the runner builds.
-//! - `commands`: the Tauri commands over all of the above.
+//!
+//! The Tauri commands over all of the above are thin adapters in `crate::commands` (lab commands
+//! in `commands::labs`, server-host commands in `commands::server`).
 //! - `inflight`, `paths`, `remote`: the per-lab lock and in-flight registry, a lab's files and
 //!   markers, and SSH to a lab host.
 //! - `isothrum`: a container lab on this machine's Docker through the Isothrum runner, behind a
 //!   hidden developer switch (`CYBERCTF_RUNNER=isothrum`).
 
-mod cloud_services;
-mod commands;
-mod discover;
+pub(crate) mod cloud_services;
+pub(crate) mod discover;
 pub(crate) use discover::is_lab_id;
-mod docker;
+pub(crate) mod docker;
 #[cfg(test)]
 #[cfg(unix)]
 mod fake_clis;
 mod inflight;
-mod isothrum;
+pub(crate) mod isothrum;
 pub mod lab;
-mod launch;
+pub(crate) mod launch;
 mod lifecycle;
 mod model;
-mod paths;
+pub(crate) mod paths;
 pub mod providers;
-mod proxmox;
+pub(crate) mod proxmox;
 #[cfg(test)]
 mod real_corpus_labs;
 #[cfg(test)]
@@ -46,19 +47,16 @@ mod real_vm_labs;
 mod reaper;
 pub mod server;
 pub mod server_selftest;
-mod ssh;
-mod status;
-mod terminal_launch;
-mod terraform;
-mod tiers;
+pub(crate) mod ssh;
+pub(crate) mod status;
+pub(crate) mod terminal_launch;
+pub(crate) mod terraform;
+pub(crate) mod tiers;
 mod vm;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-// A glob, so each command's generated `__cmd__*` macro is re-exported with it: `lib.rs`
-// registers them as `runtime::<command>`.
-pub use commands::*;
 pub use docker::{PORTS_ENV, attack_box_names, project as compose_project, subnets_in_use};
 /// For tests elsewhere that need an operation in flight.
 #[cfg(test)]

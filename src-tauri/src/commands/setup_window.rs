@@ -3,8 +3,8 @@
 use crate::AppHandle;
 use tauri::Manager;
 
-use super::input::valid_id;
 use crate::error::{Error, Result};
+use crate::runtime::server::input::valid_id;
 
 const LABEL: &str = "server-setup";
 

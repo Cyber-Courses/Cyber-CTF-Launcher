@@ -13,7 +13,7 @@ use crate::runtime::providers::Provider;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(6);
 
-pub(super) async fn test_host(h: &HostProfile, password: &str) -> TestResult {
+pub(crate) async fn test_host(h: &HostProfile, password: &str) -> TestResult {
     match h.provider {
         Provider::Aws => test_aws(h, password).await,
         Provider::Azure => test_azure(h).await,

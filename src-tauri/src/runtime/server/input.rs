@@ -14,9 +14,9 @@ use crate::runtime::providers::Provider;
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "ServerHostInput")]
 pub struct HostInput {
-    pub(super) id: Option<String>,
+    pub(crate) id: Option<String>,
     name: String,
-    pub(super) provider: Provider,
+    pub(crate) provider: Provider,
     host: String,
     port: Option<u16>,
     username: String,
@@ -25,7 +25,7 @@ pub struct HostInput {
     node: Option<String>,
     insecure_tls: Option<bool>,
     auto_stop_hours: Option<u32>,
-    pub(super) password: Option<String>,
+    pub(crate) password: Option<String>,
     #[serde(default)]
     #[ts(optional = nullable)]
     use_cli_creds: Option<bool>,
@@ -38,7 +38,7 @@ pub struct HostInput {
 }
 
 /// The connection fields of an input, checked: what `HostInput::into_profile` builds on.
-pub(super) struct Checked {
+pub(crate) struct Checked {
     pub host: String,
     pub username: String,
     /// AWS through the AWS CLI's own credentials (no stored keys).
@@ -52,7 +52,7 @@ fn require(ok: bool, message: &str) -> Result<()> {
 impl HostInput {
     /// Checks the connection fields against the provider (address or region, account,
     /// credentials shape), from its row in the table of kinds (see `kind`).
-    pub(super) fn check(&self) -> Result<Checked> {
+    pub(crate) fn check(&self) -> Result<Checked> {
         let kind = kind(self.provider).ok_or_else(|| Error::Invalid("a host must be ESXi, Proxmox, AWS, Azure, GCP, DigitalOcean, Linode or OCI".into()))?;
         let host = clean(&self.host, "host", 253)?;
         // AWS can connect with the AWS CLI's own credentials instead of stored keys.
@@ -85,7 +85,7 @@ impl HostInput {
 
     /// The profile to save under `id`. `gcp_project` is the labs project kept from the previous
     /// save, if any.
-    pub(super) fn into_profile(self, id: String, checked: Checked, gcp_project: Option<String>) -> Result<HostProfile> {
+    pub(crate) fn into_profile(self, id: String, checked: Checked, gcp_project: Option<String>) -> Result<HostProfile> {
         let Checked { host, username, use_cli } = checked;
         let provider = self.provider;
         Ok(HostProfile {
@@ -145,7 +145,7 @@ fn valid_host(host: &str) -> bool {
 }
 
 /// A host id as `new_id` makes it (any case).
-pub(super) fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 32 && id.chars().all(|c| c.is_ascii_hexdigit())
 }
 

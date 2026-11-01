@@ -16,12 +16,12 @@ pub fn validate_id(id: &str) -> Result<()> {
 }
 
 /// The Isothrum runner's home: the app data folder, its runs kept under `runs/` beside `labs/`.
-pub(super) fn runner_home(dirs: &AppDirs) -> Result<PathBuf> {
+pub(crate) fn runner_home(dirs: &AppDirs) -> Result<PathBuf> {
     Ok(dirs.data()?.to_path_buf())
 }
 
 /// An installed lab's folder.
-pub(super) fn lab_dir(dirs: &AppDirs, id: &str) -> Result<PathBuf> {
+pub(crate) fn lab_dir(dirs: &AppDirs, id: &str) -> Result<PathBuf> {
     validate_id(id)?;
     lab_dir_in(dirs.data()?, id)
 }
@@ -37,14 +37,14 @@ pub(super) fn lab_dir_in(base: &Path, id: &str) -> Result<PathBuf> {
 
 /// The ids with a Terraform deployment under the app data folder `base` (valid ids only): the
 /// labs the expired-lab reaper looks at.
-pub(super) fn deployed_ids(base: &Path) -> Vec<String> {
+pub(crate) fn deployed_ids(base: &Path) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(base.join("deployments")) else { return Vec::new() };
     entries.flatten().filter_map(|e| e.file_name().into_string().ok()).filter(|id| validate_id(id).is_ok()).collect()
 }
 
 /// Every Terraform state folder of lab `id` under the app data folder `base`, by target
 /// (`aws`, `proxmox`, …): the current deployment's and any left from an earlier one elsewhere.
-pub(super) fn deployment_states(base: &Path, id: &str) -> Vec<(String, PathBuf)> {
+pub(crate) fn deployment_states(base: &Path, id: &str) -> Vec<(String, PathBuf)> {
     let Ok(entries) = std::fs::read_dir(base.join("deployments").join(id)) else { return Vec::new() };
     let mut out: Vec<(String, PathBuf)> =
         entries.flatten().filter(|e| e.path().is_dir()).filter_map(|e| Some((e.file_name().into_string().ok()?, e.path()))).collect();
@@ -80,7 +80,7 @@ pub(super) fn recorded_runtime(state: &Path) -> Runtime {
 const HOST_FILE: &str = "host";
 
 /// The host recorded with a Terraform state, if any (states from older versions have none).
-pub(super) fn recorded_host(state: &Path) -> Option<String> {
+pub(crate) fn recorded_host(state: &Path) -> Option<String> {
     std::fs::read_to_string(state.join(HOST_FILE)).ok().map(|h| h.trim().to_string()).filter(|h| !h.is_empty())
 }
 
@@ -104,7 +104,7 @@ pub(super) fn mark_local_vm(dir: &Path, provider: Option<Provider>) -> Result<()
 }
 
 /// The hypervisor a container lab runs on in a local VM, if it does.
-pub(super) fn local_vm(dir: &Path) -> Option<String> {
+pub(crate) fn local_vm(dir: &Path) -> Option<String> {
     std::fs::read_to_string(dir.join(LOCAL_VM_MARKER)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 

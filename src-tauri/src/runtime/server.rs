@@ -10,28 +10,24 @@
 //! - `kind`: each kind of host in one table (what its fields mean, its checks, its Terraform).
 //! - `profile`, `input`: a saved host and the setup form that makes one.
 //! - `store`, `secrets`: where profiles and their secrets are kept.
-//! - `commands`, `setup_window`: the Server screen's Tauri commands.
 //! - `checks`, `reachability`, `cloud_checks`, `budget`: "Test connection" and the spend limit.
 //! - `contract`: what a launch is given to reach its host; `gcp`: the GCP labs project.
 
-mod budget;
-mod checks;
+pub(crate) mod budget;
+pub(crate) mod checks;
 mod cloud_checks;
-mod commands;
 mod contract;
 pub mod gcp;
-mod input;
+pub(crate) mod input;
 mod kind;
-mod profile;
-mod reachability;
-mod secrets;
-mod setup_window;
-mod store;
+pub(crate) mod profile;
+pub(crate) mod reachability;
+pub(crate) mod secrets;
+pub(crate) mod store;
 
 // What the rest of the app uses, at the paths it always had. The globs carry each command's
 // generated `__cmd__*` macros along with it (lib.rs registers the commands by this path).
 pub use budget::*;
-pub use commands::*;
 pub use contract::{
     Connection, connection, default_host, discovered_node, host_name, host_provider, lab_connection, launch_targets, mark_lab, marked_host,
     proxmox_jump_for_host,
@@ -45,7 +41,6 @@ pub use profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile, terraform_provider, terr
 pub fn size_var(provider: crate::runtime::providers::Provider) -> Option<&'static str> {
     kind::kind(provider).and_then(|k| k.size_var)
 }
-pub use setup_window::*;
 /// For the generated TypeScript types (`ts_bindings`).
 #[cfg(test)]
 pub(crate) use {checks::TestResult, input::HostInput};

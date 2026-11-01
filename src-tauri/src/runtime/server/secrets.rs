@@ -60,7 +60,7 @@ fn found(secret: Option<String>) -> Result<String> {
     secret.ok_or_else(|| Error::coded(Code::NoPasswordStored))
 }
 
-pub(super) fn get_secret(id: &str) -> Result<String> {
+pub(crate) fn get_secret(id: &str) -> Result<String> {
     #[cfg(debug_assertions)]
     let secret = dev_file::read().remove(id);
     #[cfg(not(debug_assertions))]
@@ -68,7 +68,7 @@ pub(super) fn get_secret(id: &str) -> Result<String> {
     found(secret)
 }
 
-pub(super) fn set_secret(id: &str, secret: &str) -> Result<()> {
+pub(crate) fn set_secret(id: &str, secret: &str) -> Result<()> {
     #[cfg(debug_assertions)]
     {
         let mut map = dev_file::read();
@@ -81,7 +81,7 @@ pub(super) fn set_secret(id: &str, secret: &str) -> Result<()> {
     }
 }
 
-pub(super) fn delete_secret(id: &str) {
+pub(crate) fn delete_secret(id: &str) {
     #[cfg(debug_assertions)]
     {
         let mut map = dev_file::read();
@@ -99,7 +99,7 @@ pub(super) fn delete_secret(id: &str) {
 
 /// The secret a host connects with: empty for hosts that sign in through their own CLI (see
 /// `HostProfile::keeps_secret`), else the stored one.
-pub(super) fn host_secret(host: &HostProfile) -> Result<String> {
+pub(crate) fn host_secret(host: &HostProfile) -> Result<String> {
     if host.keeps_secret() { get_secret(&host.id) } else { Ok(String::new()) }
 }
 

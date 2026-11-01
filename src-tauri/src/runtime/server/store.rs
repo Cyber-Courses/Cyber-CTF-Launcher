@@ -12,7 +12,7 @@ use crate::platform::AppDirs;
 const STORE_FILE: &str = "server.json";
 
 #[derive(Default, Serialize, Deserialize)]
-pub(super) struct Store {
+pub(crate) struct Store {
     /// The server VM labs run on when none is picked (never a cloud account).
     pub default: Option<String>,
     pub hosts: Vec<HostProfile>,
@@ -24,7 +24,7 @@ fn store_path(dirs: &AppDirs) -> Result<PathBuf> {
     Ok(dir.join(STORE_FILE))
 }
 
-pub(super) fn load(dirs: &AppDirs) -> Result<Store> {
+pub(crate) fn load(dirs: &AppDirs) -> Result<Store> {
     load_from(&store_path(dirs)?)
 }
 
@@ -44,7 +44,7 @@ static WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Reloads the store, applies `change` and saves it, all under the store lock. Nothing is saved
 /// when `change` fails.
-pub(super) fn update<T>(dirs: &AppDirs, change: impl FnOnce(&mut Store) -> Result<T>) -> Result<T> {
+pub(crate) fn update<T>(dirs: &AppDirs, change: impl FnOnce(&mut Store) -> Result<T>) -> Result<T> {
     update_at(&store_path(dirs)?, change)
 }
 
@@ -63,7 +63,7 @@ fn save_to(path: &Path, store: &Store) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn find(store: &Store, id: &str) -> Result<HostProfile> {
+pub(crate) fn find(store: &Store, id: &str) -> Result<HostProfile> {
     store.hosts.iter().find(|h| h.id == id).cloned().ok_or_else(|| Error::Invalid(format!("server host `{id}` not found")))
 }
 
@@ -73,7 +73,7 @@ pub(super) fn saved_host(dirs: &AppDirs, id: &str) -> Option<HostProfile> {
 }
 
 /// A saved host by id, with the reason when it can't be had.
-pub(super) fn load_host(dirs: &AppDirs, id: &str) -> Result<HostProfile> {
+pub(crate) fn load_host(dirs: &AppDirs, id: &str) -> Result<HostProfile> {
     find(&load(dirs)?, id)
 }
 

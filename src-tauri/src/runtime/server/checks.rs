@@ -11,9 +11,9 @@ use ts_rs::TS;
 #[ts(rename = "ServerTest")]
 pub struct TestResult {
     /// Everything checked passed: the host looks usable for labs.
-    pub(super) ok: bool,
+    pub(crate) ok: bool,
     /// Host:port accepted a TCP connection.
-    pub(super) reachable: bool,
+    pub(crate) reachable: bool,
     /// Credentials verified (Proxmox API login). None when not checked (ESXi: SSH auth
     /// is only exercised by Vagrant itself).
     pub(super) authenticated: Option<bool>,
@@ -22,7 +22,7 @@ pub struct TestResult {
     /// The individual pre-flight checks (cloud accounts only; empty for servers). The UI shows
     /// these as a checklist so a failure points at the exact thing to fix.
     #[serde(default)]
-    pub(super) checks: Vec<Check>,
+    pub(crate) checks: Vec<Check>,
 }
 
 /// One named pre-flight check in a cloud account test (e.g. "Credentials", "Terraform").
