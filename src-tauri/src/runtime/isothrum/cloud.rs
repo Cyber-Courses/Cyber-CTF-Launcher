@@ -96,7 +96,7 @@ impl CloudRun {
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
         let processes = SystemProcesses::for_host(|var| std::env::var(var).ok(), crate::platform::home_dir().as_deref());
         let config = RunnerConfig::new(home).with_processes(Arc::new(processes));
-        let manifest = lab::terraform(dir, runtime, cloud)?.0.join("run.json");
+        let manifest = lab::terraform(dir, runtime, cloud).0.join("run.json");
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
         Ok(CloudRun { runner: Runner::new(config).map_err(errors::from_runner)?, manifest, name })
     }

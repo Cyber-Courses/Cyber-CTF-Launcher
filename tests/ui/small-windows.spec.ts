@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { test, expect, openApp, navButton, horizontalOverflow, animationsFinished } from "./fixtures";
-import deSettings from "../src/messages/de/settings.json";
+import deSettings from "../../src/messages/de/settings.json";
 
 // The windows at their smallest (src-tauri: Settings 560x480, server setup 560x560) and a lab
 // wider than its card: nothing folds into a column a word wide, and the primary buttons stay in

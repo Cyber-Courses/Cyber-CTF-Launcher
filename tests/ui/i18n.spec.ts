@@ -1,10 +1,10 @@
 import { test, expect, LOCALES, openApp, navButton, pageTitle, rawKeys } from "./fixtures";
-import en from "../src/messages/en/shell.json";
-import fr from "../src/messages/fr/shell.json";
-import es from "../src/messages/es/shell.json";
-import de from "../src/messages/de/shell.json";
-import ptBR from "../src/messages/pt-BR/shell.json";
-import ja from "../src/messages/ja/shell.json";
+import en from "../../src/messages/en/shell.json";
+import fr from "../../src/messages/fr/shell.json";
+import es from "../../src/messages/es/shell.json";
+import de from "../../src/messages/de/shell.json";
+import ptBR from "../../src/messages/pt-BR/shell.json";
+import ja from "../../src/messages/ja/shell.json";
 
 const SHELL = { en, fr, es, de, "pt-BR": ptBR, ja };
 

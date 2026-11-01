@@ -18,7 +18,7 @@
 //! - Every module may take `expires_at` (Unix seconds, for its tags) and `region`: passed as
 //!   `TF_VAR_*`, which Terraform ignores for a module that doesn't declare them.
 //! - On AWS, Terraform also gets shared credentials and config files of its own (see
-//!   `AwsFiles`): labs that name a profile (CloudGoat's `profile = var.profile`, and
+//!   `AwsFiles`): labs that name a profile (`CloudGoat`'s `profile = var.profile`, and
 //!   `--profile` in its local-exec commands) find the picked account's keys under it, since an
 //!   explicitly set profile beats the environment's keys in the AWS provider.
 //! - `cloud.env` goes into Terraform's environment, over the account's own (a lab's
@@ -29,15 +29,13 @@
 //! - What the lab exposes is its outputs (`cloud.outputs`), read from the state; its message
 //!   names them (`{{ cloud.outputs.NAME }}`). Stop destroys everything: nothing is parked.
 
-use std::path::Path;
-
 use crate::AppHandle;
 
 use super::lab::{CloudProvider, CloudServices, Spec, Target};
 use super::launch::{CLOUD_NEEDS_ACCOUNT, check_aws_budget, public_ip};
 use super::paths::lab_dir;
 use super::providers::Provider;
-use super::{Runtime, isothrum, lab, server};
+use super::{LabRef, Runtime, isothrum, lab, server};
 use crate::error::{Error, Result};
 
 /// The launch-time input the launcher fills with this machine's public IP as a /32.
@@ -87,7 +85,10 @@ pub fn cost_line(hourly_usd: Option<f64>, auto_stop_hours: u32) -> String {
 /// policy — the account is of the lab's cloud, the GCP labs project, the AWS budget, this machine's
 /// public IP where the lab asks for it — and the runner runs the module, keeps the state and the
 /// expiry, and ends what it costs on a stop or the auto-stop.
-pub(super) async fn start(app: &AppHandle, dir: &Path, id: &str, host: Option<&str>, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+pub(super) async fn start(app: &AppHandle, lab: LabRef<'_>, host: Option<&str>, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+    // A cloud-services lab always runs as `Runtime::Cloud`, so only the lab's folder and id are
+    // read from the reference here.
+    let LabRef { dir, id, .. } = lab;
     let host = host.ok_or_else(|| Error::Invalid(CLOUD_NEEDS_ACCOUNT.into()))?;
     let spec = lab::prepare(dir, Target::CloudServices)?.spec;
     let cloud = of(&spec)?;
@@ -141,7 +142,7 @@ fn check_supported(cloud: &CloudServices) -> Result<()> {
 
 /// The environment variables a lab's `cloud.env` may not set (Isoloom refuses only its scripts'
 /// and the shell's own names): the cloud accounts' credentials and sign-in (every `AWS_*` but
-/// the region, `ARM_*`, `AZURE_*`, `GOOGLE_*`, `CLOUDSDK_*`, `OCI_*`, the DigitalOcean and Linode
+/// the region, `ARM_*`, `AZURE_*`, `GOOGLE_*`, `CLOUDSDK_*`, `OCI_*`, the `DigitalOcean` and Linode
 /// tokens) and Terraform's own (`TF_*`: `TF_VAR_*` would beat the launcher's variables,
 /// `TF_CLI_ARGS*` change what an apply or destroy does, `TF_LOG*` write files). The launcher
 /// sets those from the picked account; a lab may still pick its region (`AWS_REGION`).
@@ -266,7 +267,7 @@ mod tests {
         assert!(serde_json::from_str::<Runtime>("\"HOSTED\"").is_err());
     }
 
-    /// isoloom #127: an input inside a string at any depth (CloudGoat's allow-list), the lab's own
+    /// isoloom #127: an input inside a string at any depth (`CloudGoat`'s allow-list), the lab's own
     /// environment, more applies, and what a lab needs here.
     const GOAT_TEMPLATE: &str = "version: 1\nname: goat\ninputs: [PLAYER_IP]\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { cg_whitelist: [\"{{ inputs.PLAYER_IP }}/32\"], tag: \"lab-{{ inputs.PLAYER_IP }}-{{ inputs.PLAYER_IP }}\", region: us-east-1 }\n  env: { AWS_REGION: us-east-1 }\n  apply_retries: 1\n  requires: [{TOOL}]\n";
 

@@ -10,7 +10,7 @@
 #
 # Steps, in order: prereqs, install, versions, format, types, lint, quality, unit-web (with the
 # coverage floors), unit-rust, coverage-rust (when cargo-llvm-cov is installed), e2e-mock
-# (Playwright against the dev mock), e2e-native (e2e-native/run-all.sh, which documents its knobs).
+# (Playwright against the dev mock), e2e-native (tests/native/run-all.sh, which documents its knobs).
 # docs/release-check.md says what each step proves and what stays manual.
 set -uo pipefail
 
@@ -107,8 +107,8 @@ e2e_mock() {
 }
 step e2e-mock e2e_mock
 case "$(uname -s)" in
-  Darwin | Linux) step e2e-native e2e-native/run-all.sh ;;
-  *) skip e2e-native "run e2e-native/run-embedded.ps1 on Windows" ;;
+  Darwin | Linux) step e2e-native tests/native/run-all.sh ;;
+  *) skip e2e-native "run tests/native/run-embedded.ps1 on Windows" ;;
 esac
 
 printf '\n==== release check\n'

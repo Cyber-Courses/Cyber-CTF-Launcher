@@ -77,7 +77,7 @@ fn runtime_from_tag(tag: &str) -> Runtime {
 
 /// The runtime recorded at start; containers when nothing (readable) was.
 pub(super) fn recorded_runtime(state: &Path) -> Runtime {
-    std::fs::read_to_string(state.join(RUNTIME_FILE)).map(|t| runtime_from_tag(&t)).unwrap_or(Runtime::Docker)
+    std::fs::read_to_string(state.join(RUNTIME_FILE)).map_or(Runtime::Docker, |t| runtime_from_tag(&t))
 }
 
 /// Next to a lab's Terraform state: the host (server or cloud account id) it was applied on, so
@@ -105,7 +105,7 @@ fn set_marker(dir: &Path, name: &str, value: Option<&str>) -> Result<()> {
 pub const LOCAL_VM_MARKER: &str = ".cyberctf-local-vm";
 
 pub(super) fn mark_local_vm(dir: &Path, provider: Option<Provider>) -> Result<()> {
-    set_marker(dir, LOCAL_VM_MARKER, provider.map(|p| p.id()))
+    set_marker(dir, LOCAL_VM_MARKER, provider.map(super::providers::Provider::id))
 }
 
 /// The hypervisor a container lab runs on in a local VM, if it does.
@@ -133,7 +133,7 @@ pub(super) fn forget_lab_host_keys(dir: &Path) {
 const PARKED_MARKER: &str = ".cyberctf-parked";
 
 pub(super) fn mark_parked(dir: &Path, mode: Option<Park>) -> Result<()> {
-    set_marker(dir, PARKED_MARKER, mode.map(|m| m.id()))
+    set_marker(dir, PARKED_MARKER, mode.map(super::model::Park::id))
 }
 
 pub(super) fn parked(dir: &Path) -> Option<Park> {

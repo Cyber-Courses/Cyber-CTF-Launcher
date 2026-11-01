@@ -159,21 +159,21 @@ fn count_by_host(markers: &[String]) -> HashMap<String, u32> {
 /// How many labs still have something on host `id`: marked as running there, or a Terraform
 /// state left there that holds resources.
 fn labs_on(app: &AppHandle, id: &str) -> usize {
-    let left = app.path().app_data_dir().map(|base| leftovers_on(&base, id)).unwrap_or(0);
+    let left = app.path().app_data_dir().map_or(0, |base| leftovers_on(&base, id));
     lab_markers(app).iter().filter(|m| *m == id).count() + left
 }
 
 #[tauri::command]
-pub fn server_remove(app: AppHandle, id: String) -> Result<()> {
+pub fn server_remove(app: AppHandle, id: &str) -> Result<()> {
     // Don't strand running labs: this host holds the credentials and state needed to stop and
     // destroy its labs. Removing it mid-run would leave them unstoppable from the app, and a
     // cloud lab would keep billing with no way left to tear it down.
-    no_labs_running(labs_on(&app, &id))?;
+    no_labs_running(labs_on(&app, id))?;
     update(&app, |store| {
-        remove_host(store, &id);
+        remove_host(store, id);
         Ok(())
     })?;
-    delete_secret(&id);
+    delete_secret(id);
     Ok(())
 }
 
@@ -354,10 +354,10 @@ mod tests {
         let lab = t.lab("web", &[]);
         std::fs::write(lab.join(HOST_MARKER), &saved.id).unwrap();
         assert_eq!(server_running_labs(app()).get(&saved.id), Some(&1));
-        assert!(server_remove(app(), saved.id.clone()).unwrap_err().to_string().starts_with("1 lab still running"));
+        assert!(server_remove(app(), &saved.id).unwrap_err().to_string().starts_with("1 lab still running"));
         std::fs::remove_file(lab.join(HOST_MARKER)).unwrap();
-        server_remove(app(), saved.id.clone()).unwrap();
-        assert!(server_list(app()).unwrap().hosts.is_empty());
+        server_remove(app(), &saved.id).unwrap();
+        assert_eq!(server_list(app()).unwrap().hosts, Vec::<HostProfile>::new());
         // The launcher's key, made once.
         let ssh = t.data().join("ssh");
         std::fs::create_dir_all(&ssh).unwrap();
@@ -534,14 +534,14 @@ mod tests {
         std::fs::create_dir_all(&state).unwrap();
         std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{},"resources":[{"type":"aws_instance"}]}"#).unwrap();
         std::fs::write(state.join("host"), "aws1\n").unwrap();
-        let err = server_remove(app(), host.clone()).unwrap_err().to_string();
+        let err = server_remove(app(), &host).unwrap_err().to_string();
         assert_eq!(err, "1 lab still running on this host. Stop it before removing the host.");
         assert_eq!(server_list(app()).unwrap().hosts.len(), 1);
         assert!(server_running_labs(app()).is_empty(), "no installed lab is marked as running there");
         // Destroyed (its state gone): free to remove.
         std::fs::remove_file(state.join("terraform.tfstate")).unwrap();
-        server_remove(app(), host).unwrap();
-        assert!(server_list(app()).unwrap().hosts.is_empty());
+        server_remove(app(), &host).unwrap();
+        assert_eq!(server_list(app()).unwrap().hosts, Vec::<HostProfile>::new());
     }
 
     #[test]
@@ -549,21 +549,21 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
         t.host("az1", "azure", serde_json::json!({}));
-        server_remove(app(), "nope".into()).unwrap();
+        server_remove(app(), "nope").unwrap();
         let list = server_list(app()).unwrap();
         assert_eq!(list.hosts.iter().map(|h| h.id.as_str()).collect::<Vec<_>>(), ["az1"]);
         // A marker of a lab on a host that was never saved blocks nothing else.
         let lab = t.lab("web", &[]);
         std::fs::write(lab.join(HOST_MARKER), "nope").unwrap();
         assert_eq!(server_running_labs(app()).get("nope"), Some(&1));
-        server_remove(app(), "az1".into()).unwrap();
-        assert!(server_list(app()).unwrap().hosts.is_empty());
+        server_remove(app(), "az1").unwrap();
+        assert_eq!(server_list(app()).unwrap().hosts, Vec::<HostProfile>::new());
     }
 
     #[test]
     fn markers_are_read_from_each_lab_folder() {
         let labs = std::env::temp_dir().join(format!("cyberctf-markers-{}", rand::random::<u32>()));
-        assert!(markers_in(&labs).is_empty());
+        assert_eq!(markers_in(&labs), Vec::<String>::new());
         for (lab, marker) in [("a", Some("pve1\n")), ("b", Some("pve1")), ("c", None), ("d", Some(""))] {
             std::fs::create_dir_all(labs.join(lab)).unwrap();
             if let Some(m) = marker {
@@ -593,7 +593,7 @@ mod tests {
 
     #[test]
     fn running_labs_count_per_host_and_skip_blank_markers() {
-        let markers: Vec<String> = ["ab", "cd", "ab", ""].iter().map(|s| s.to_string()).collect();
+        let markers: Vec<String> = ["ab", "cd", "ab", ""].iter().map(ToString::to_string).collect();
         let counts = count_by_host(&markers);
         assert_eq!(counts.get("ab"), Some(&2));
         assert_eq!(counts.get("cd"), Some(&1));

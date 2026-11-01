@@ -1,6 +1,6 @@
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
-import type { Holdable } from "../src/lib/dev-mock/holds";
-import type { CommandError } from "../src/lib/tauri/generated/CommandError";
+import type { Holdable } from "../../src/lib/dev-mock/holds";
+import type { CommandError } from "../../src/lib/tauri/generated/CommandError";
 
 /** The six languages the launcher ships (src/lib/i18n). */
 export const LOCALES = ["en", "fr", "es", "de", "pt-BR", "ja"] as const;

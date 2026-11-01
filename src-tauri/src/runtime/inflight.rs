@@ -33,7 +33,7 @@ fn in_flight() -> &'static Mutex<HashMap<String, (Action, usize)>> {
 
 /// Total start/stop operations in flight, across all labs.
 pub fn active_deploys() -> usize {
-    in_flight().lock().map(|m| m.values().map(|(_, n)| n).sum()).unwrap_or(0)
+    in_flight().lock().map_or(0, |m| m.values().map(|(_, n)| n).sum())
 }
 
 /// The labs being started right now (in this process), deduplicated.
@@ -97,7 +97,9 @@ pub(crate) struct LabLock {
 /// This process's lock on lab `id`.
 fn process_lock(id: &str) -> Arc<tokio::sync::Mutex<()>> {
     static LOCKS: OnceLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> = OnceLock::new();
-    let mut map = LOCKS.get_or_init(|| Mutex::new(HashMap::new())).lock().expect("lab lock registry");
+    // A poisoned registry (a panic while holding it) still hands back the map: the per-lab locks
+    // inside are what guards the real work, and losing the registry would wedge every lab.
+    let mut map = LOCKS.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     map.entry(id.to_string()).or_default().clone()
 }
 

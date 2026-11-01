@@ -1,7 +1,7 @@
 // Shared helpers for the native GUI e2e: launch the real app (built with `--features wdio`) so its
 // embedded WebDriver server comes up, connect a WebdriverIO session to it, drive the shell, and
 // tear everything down. macOS, Linux and Windows. Every script goes through here, so every script
-// honours APP_BIN (or CYBERCTF_BIN) and TAURI_WEBDRIVER_PORT; e2e-native/run-all.sh sets both.
+// honours APP_BIN (or CYBERCTF_BIN) and TAURI_WEBDRIVER_PORT; tests/native/run-all.sh sets both.
 import { remote } from "webdriverio";
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -13,7 +13,7 @@ export function appBinary() {
   const given = process.env.APP_BIN || process.env.CYBERCTF_BIN;
   if (given) return given;
   const ext = process.platform === "win32" ? ".exe" : "";
-  return fileURLToPath(new URL(`../src-tauri/target/debug/cyberctf-desktop${ext}`, import.meta.url));
+  return fileURLToPath(new URL(`../../src-tauri/target/debug/cyberctf-desktop${ext}`, import.meta.url));
 }
 
 /** The port the embedded WebDriver server listens on (override with TAURI_WEBDRIVER_PORT). */

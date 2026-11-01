@@ -129,9 +129,8 @@ async fn inspect_containers(dir: &Path, id: &str, names: &[String]) -> HashMap<S
     let mut args: Vec<&str> =
         vec!["inspect", "-f", "{{.Name}}\t{{range $k, $v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}\t{{json .Config.Labels}}"];
     args.extend(names.iter().map(String::as_str));
-    let out = match run_read("docker", &args, Some(dir)).await {
-        Ok(out) => out,
-        Err(_) => return HashMap::new(),
+    let Ok(out) = run_read("docker", &args, Some(dir)).await else {
+        return HashMap::new();
     };
     parse_inspect(&compose::project(id), &out)
 }

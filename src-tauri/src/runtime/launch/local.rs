@@ -1,7 +1,7 @@
 //! Getting this machine ready for a local start: the lab's slot cleared, enough memory, QEMU
 //! for emulated machines, and a local VM start with one recovery from leftover state.
 
-use super::*;
+use super::{Error, Result, lab};
 
 /// Warns (without blocking) when the host likely can't fit all of a one-VM-per-machine lab's
 /// memory, so an out-of-memory failure mid-boot isn't a surprise. Not used for a container lab

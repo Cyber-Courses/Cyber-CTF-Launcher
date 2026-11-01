@@ -19,7 +19,8 @@ mod commands;
 mod discover;
 pub(crate) use discover::is_lab_id;
 mod docker;
-#[cfg(all(test, unix))]
+#[cfg(test)]
+#[cfg(unix)]
 mod fake_clis;
 mod inflight;
 mod isothrum;
@@ -89,6 +90,19 @@ pub enum Runtime {
     /// Cloud services (Isoloom's `cloud-services`): a Terraform module of the lab's own,
     /// applied into the player's cloud account. See `cloud_services`.
     Cloud,
+}
+
+/// An installed lab the runtime starts, parks or stops: its folder, its id, and how it runs.
+/// These three identify and classify a lab everywhere it is driven, so the launch and lifecycle
+/// paths pass them as one value instead of repeating them as separate arguments.
+#[derive(Clone, Copy)]
+pub(in crate::runtime) struct LabRef<'a> {
+    /// The lab's installed folder.
+    pub(in crate::runtime) dir: &'a std::path::Path,
+    /// The lab's id (its folder name).
+    pub(in crate::runtime) id: &'a str,
+    /// How the lab runs (container, VM, or cloud services).
+    pub(in crate::runtime) runtime: Runtime,
 }
 
 /// Builders shared by the runtime's unit tests.

@@ -34,12 +34,12 @@ pub enum Provider {
     /// The player's Google Cloud project (Terraform, a lab's Isoloom cloud-docker module). Like
     /// AWS and Azure: not a Vagrant provider, never detected locally, not in `ALL`.
     Gcp,
-    /// The player's DigitalOcean account (Terraform, a lab's Isoloom cloud-docker module).
+    /// The player's `DigitalOcean` account (Terraform, a lab's Isoloom cloud-docker module).
     /// Authenticated with an API token; not a Vagrant provider, never detected, not in `ALL`.
     #[serde(rename = "digitalocean")]
     DigitalOcean,
     /// The player's Linode account (Terraform, a lab's Isoloom cloud-docker module). Like
-    /// DigitalOcean: API-token auth, not a Vagrant provider, never detected, not in `ALL`.
+    /// `DigitalOcean`: API-token auth, not a Vagrant provider, never detected, not in `ALL`.
     Linode,
     /// The player's Oracle Cloud tenancy (Terraform, a lab's Isoloom cloud-docker module). Authenticated
     /// with an API signing key in ~/.oci/config; not a Vagrant provider, never detected, not in `ALL`.
@@ -118,7 +118,15 @@ impl Provider {
     /// Vagrant plugin required, if the provider is not built in.
     fn plugin(self) -> Option<&'static str> {
         match self {
-            Provider::Virtualbox | Provider::Hyperv => None,
+            // Built-in hypervisors and the clouds (not Vagrant providers): no plugin.
+            Provider::Virtualbox
+            | Provider::Hyperv
+            | Provider::Aws
+            | Provider::Azure
+            | Provider::Gcp
+            | Provider::DigitalOcean
+            | Provider::Linode
+            | Provider::Oci => None,
             Provider::VmwareDesktop => Some("vagrant-vmware-desktop"),
             Provider::Parallels => Some("vagrant-parallels"),
             Provider::Libvirt => Some("vagrant-libvirt"),
@@ -126,7 +134,6 @@ impl Provider {
             Provider::Utm => Some("vagrant_utm"),
             Provider::VmwareEsxi => Some("vagrant-vmware-esxi"),
             Provider::Proxmox => Some("vagrant-proxmox"),
-            Provider::Aws | Provider::Azure | Provider::Gcp | Provider::DigitalOcean | Provider::Linode | Provider::Oci => None,
         }
     }
 
@@ -172,7 +179,7 @@ const UTM_APP: &str = "/Applications/UTM.app";
 
 /// Whether the Hyper-V feature is on: its Virtual Machine Management service is installed with it.
 fn hyperv_enabled() -> bool {
-    let root = std::env::var_os("SystemRoot").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("C:\\Windows"));
+    let root = std::env::var_os("SystemRoot").map_or_else(|| std::path::PathBuf::from("C:\\Windows"), std::path::PathBuf::from);
     root.join("System32").join("vmms.exe").is_file()
 }
 
@@ -221,9 +228,8 @@ pub fn parse_plugins(out: &str) -> Vec<String> {
 
 async fn tool_present(program: &'static str, args: &[&str]) -> bool {
     match run_read(program, args, None).await {
-        Ok(_) => true,
         // vmrun without arguments prints usage and exits non-zero, but it exists.
-        Err(crate::error::Error::CommandFailed { .. }) => true,
+        Ok(_) | Err(crate::error::Error::CommandFailed { .. }) => true,
         Err(_) => false,
     }
 }
@@ -267,7 +273,8 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
         // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
         let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !crate::platform::exec::may_manage_hyperv();
 
-        let reason = unavailable_reason(provider, vagrant_installed, unresponsive, hypervisor, plugin.as_deref(), plugin_installed, needs_admin);
+        let reason =
+            unavailable_reason(provider, vagrant_installed, Detection { unresponsive, hypervisor, plugin: plugin.as_deref(), plugin_installed, needs_admin });
 
         statuses.push(ProviderStatus { provider, remote: provider.is_remote(), available: reason.is_none(), hypervisor, plugin, plugin_installed, reason });
     }
@@ -285,16 +292,28 @@ pub async fn hyperv_join_admins() -> crate::error::Result<()> {
 pub const HYPERV_NEEDS_ADMIN: &str = "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators: \
 choose Allow my account (then sign out of Windows and back in), or run Cyber CTF as administrator";
 
-/// Why a provider can't be used here (None: it can), from what `detect` found out about it.
-fn unavailable_reason(
-    provider: Provider,
-    vagrant_installed: bool,
+/// What `detect` found out about one provider: the per-provider facts `unavailable_reason` reads
+/// to name the first layer that is missing (the hypervisor, its plugin, an admin right). Grouped
+/// so the check reads one value rather than a handful of flags that always travel together;
+/// whether Vagrant is installed at all is global, so it stays a separate argument.
+#[derive(Clone, Copy)]
+struct Detection<'a> {
+    /// Whether the hypervisor's background service is wedged (a probe call timed out).
     unresponsive: bool,
+    /// Whether the hypervisor is installed; `None` when there is nothing local to probe.
     hypervisor: Option<bool>,
-    plugin: Option<&str>,
+    /// The Vagrant plugin this provider needs, if it is not built in.
+    plugin: Option<&'a str>,
+    /// Whether that plugin is installed.
     plugin_installed: bool,
+    /// Whether this account may not manage Hyper-V (Hyper-V only).
     needs_admin: bool,
-) -> Option<String> {
+}
+
+/// Why a provider can't be used here (None: it can), from whether Vagrant is installed and what
+/// `detect` found out about the provider.
+fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: Detection<'_>) -> Option<String> {
+    let Detection { unresponsive, hypervisor, plugin, plugin_installed, needs_admin } = detection;
     if !vagrant_installed {
         Some("Vagrant is not installed".to_string())
     } else if unresponsive {
@@ -339,8 +358,8 @@ mod tests {
         // Built-in-only output, trailing detail lines, blank lines, and non-plugin noise.
         let out = "\nvagrant-vmware-desktop (3.0.4, global)\n  - Version Constraint: > 0\nvagrant-qemu (0.3.3)\nsomething-else (1.0.0)\n\n";
         assert_eq!(parse_plugins(out), vec!["vagrant-vmware-desktop", "vagrant-qemu"]);
-        assert!(parse_plugins("").is_empty());
-        assert!(parse_plugins("No plugins installed.\n").is_empty());
+        assert_eq!(parse_plugins(""), Vec::<String>::new());
+        assert_eq!(parse_plugins("No plugins installed.\n"), Vec::<String>::new());
     }
 
     #[test]
@@ -390,11 +409,11 @@ mod tests {
         assert_eq!(Provider::Hyperv.plugin(), None);
         // Each non-builtin local/remote-hypervisor provider names a plugin.
         for p in [Provider::VmwareDesktop, Provider::Parallels, Provider::Libvirt, Provider::Qemu, Provider::Utm, Provider::VmwareEsxi, Provider::Proxmox] {
-            assert!(p.plugin().is_some(), "{:?}", p);
+            assert!(p.plugin().is_some(), "{p:?}");
         }
         // Cloud providers are not Vagrant providers, so no plugin.
         for p in [Provider::Aws, Provider::Azure, Provider::Gcp, Provider::DigitalOcean, Provider::Linode, Provider::Oci] {
-            assert_eq!(p.plugin(), None, "{:?}", p);
+            assert_eq!(p.plugin(), None, "{p:?}");
         }
     }
 
@@ -419,7 +438,7 @@ mod tests {
         ];
         let mut ids: Vec<&str> = all.iter().map(|p| p.id()).collect();
         let count = ids.len();
-        ids.sort();
+        ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), count, "provider ids must be unique");
         // id() is the serde wire name, and it round-trips back to the same provider.
@@ -464,10 +483,13 @@ mod tests {
 
     #[test]
     fn the_first_missing_layer_is_the_reason() {
-        let r = |p, vagrant, stuck, hv, plugin, installed| unavailable_reason(p, vagrant, stuck, hv, plugin, installed, false);
-        assert_eq!(unavailable_reason(Provider::Hyperv, true, false, Some(true), None, true, true).as_deref(), Some(HYPERV_NEEDS_ADMIN));
+        let r = |p, vagrant, stuck, hv, plugin, installed| {
+            unavailable_reason(p, vagrant, Detection { unresponsive: stuck, hypervisor: hv, plugin, plugin_installed: installed, needs_admin: false })
+        };
+        let hyperv = |needs_admin| Detection { unresponsive: false, hypervisor: Some(true), plugin: None, plugin_installed: true, needs_admin };
+        assert_eq!(unavailable_reason(Provider::Hyperv, true, hyperv(true)).as_deref(), Some(HYPERV_NEEDS_ADMIN));
         assert!(HYPERV_NEEDS_ADMIN.contains("Hyper-V Administrators") && HYPERV_NEEDS_ADMIN.contains("Allow my account"));
-        assert_eq!(unavailable_reason(Provider::Hyperv, true, false, Some(true), None, true, false), None);
+        assert_eq!(unavailable_reason(Provider::Hyperv, true, hyperv(false)), None);
         assert_eq!(r(Provider::Virtualbox, false, true, Some(false), None, false).as_deref(), Some("Vagrant is not installed"));
         assert!(r(Provider::Virtualbox, true, true, Some(true), None, true).unwrap().contains("isn't responding"));
         assert_eq!(r(Provider::Virtualbox, true, false, Some(false), None, true).as_deref(), Some("`VBoxManage` was not found"));

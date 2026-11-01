@@ -86,8 +86,8 @@ pub struct Kind {
     pub terraform_env: fn(&HostProfile, &str) -> Vec<(String, String)>,
 }
 
-const fn shape(valid: fn(&str) -> bool, message: &'static str) -> Option<Shape> {
-    Some(Shape { valid, message })
+const fn shape(valid: fn(&str) -> bool, message: &'static str) -> Shape {
+    Shape { valid, message }
 }
 
 /// Every kind of host the launcher runs labs on.
@@ -113,7 +113,7 @@ pub const KINDS: [Kind; 8] = [
         host: HostField::Address,
         region: None,
         account: AccountField::Login,
-        account_shape: shape(|u| u.contains('@'), "Proxmox users include a realm, e.g. root@pam"),
+        account_shape: Some(shape(|u| u.contains('@'), "Proxmox users include a realm, e.g. root@pam")),
         size_var: None,
         secret: Secret::Password,
         terraform_env: no_env,
@@ -124,9 +124,9 @@ pub const KINDS: [Kind; 8] = [
         terraform: Some("aws"),
         default_port: 443,
         host: HostField::Region,
-        region: shape(valid_region, "region must be an AWS region id, e.g. eu-west-3"),
+        region: Some(shape(valid_region, "region must be an AWS region id, e.g. eu-west-3")),
         account: AccountField::AccessKeyId,
-        account_shape: shape(valid_access_key_id, "access key id looks wrong; an IAM user's key starts with AKIA..."),
+        account_shape: Some(shape(valid_access_key_id, "access key id looks wrong; an IAM user's key starts with AKIA...")),
         size_var: Some("instance_type"),
         secret: Secret::AccessKey,
         terraform_env: aws_env,
@@ -137,9 +137,9 @@ pub const KINDS: [Kind; 8] = [
         terraform: Some("azure"),
         default_port: 443,
         host: HostField::Region,
-        region: shape(valid_azure_location, "region must be an Azure location, e.g. westeurope"),
+        region: Some(shape(valid_azure_location, "region must be an Azure location, e.g. westeurope")),
         account: AccountField::Subscription,
-        account_shape: shape(valid_subscription, "subscription must be a GUID (see `az account show`)"),
+        account_shape: Some(shape(valid_subscription, "subscription must be a GUID (see `az account show`)")),
         size_var: Some("size"),
         secret: Secret::None,
         terraform_env: azure_env,
@@ -150,9 +150,9 @@ pub const KINDS: [Kind; 8] = [
         terraform: Some("gcp"),
         default_port: 443,
         host: HostField::Region,
-        region: shape(valid_gcp_region, "region must be a GCP region id, e.g. europe-west1"),
+        region: Some(shape(valid_gcp_region, "region must be a GCP region id, e.g. europe-west1")),
         account: AccountField::BillingAccount,
-        account_shape: shape(valid_billing_account, "billing account must look like 0X0X0X-0X0X0X-0X0X0X (see `gcloud billing accounts list`)"),
+        account_shape: Some(shape(valid_billing_account, "billing account must look like 0X0X0X-0X0X0X-0X0X0X (see `gcloud billing accounts list`)")),
         size_var: Some("machine_type"),
         secret: Secret::None,
         // The google provider uses gcloud's ADC; the project comes as a variable (see `gcp`).
@@ -164,7 +164,7 @@ pub const KINDS: [Kind; 8] = [
         terraform: Some("digitalocean"),
         default_port: 443,
         host: HostField::Region,
-        region: shape(valid_do_region, "region must be a DigitalOcean region slug, e.g. fra1 or nyc3"),
+        region: Some(shape(valid_do_region, "region must be a DigitalOcean region slug, e.g. fra1 or nyc3")),
         account: AccountField::Unused,
         account_shape: None,
         size_var: Some("size"),
@@ -177,7 +177,7 @@ pub const KINDS: [Kind; 8] = [
         terraform: Some("linode"),
         default_port: 443,
         host: HostField::Region,
-        region: shape(valid_linode_region, "region must be a Linode region slug, e.g. eu-central or us-east"),
+        region: Some(shape(valid_linode_region, "region must be a Linode region slug, e.g. eu-central or us-east")),
         account: AccountField::Unused,
         account_shape: None,
         size_var: Some("type"),
@@ -190,9 +190,9 @@ pub const KINDS: [Kind; 8] = [
         terraform: Some("oci"),
         default_port: 443,
         host: HostField::Region,
-        region: shape(valid_oci_region, "region must be an OCI region id, e.g. eu-frankfurt-1"),
+        region: Some(shape(valid_oci_region, "region must be an OCI region id, e.g. eu-frankfurt-1")),
         account: AccountField::Compartment,
-        account_shape: shape(valid_ocid, "compartment must be an OCID (ocid1.compartment... or the tenancy OCID)"),
+        account_shape: Some(shape(valid_ocid, "compartment must be an OCID (ocid1.compartment... or the tenancy OCID)")),
         size_var: Some("instance_type"),
         secret: Secret::None,
         terraform_env: no_env,

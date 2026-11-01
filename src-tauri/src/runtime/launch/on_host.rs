@@ -1,17 +1,10 @@
 //! Starting a lab on a server host: ESXi through Vagrant, Proxmox and the clouds through
 //! Terraform, with the AWS budget check and this machine's public IP for the firewall rules.
 
-use super::*;
+use super::{AppHandle, Error, LabRef, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, runner_home, server};
 
-pub(super) async fn start_on_server(
-    app: &AppHandle,
-    dir: &Path,
-    id: &str,
-    runtime: Runtime,
-    host: &str,
-    env: &[(String, String)],
-    log: &mut impl FnMut(String),
-) -> Result<()> {
+pub(super) async fn start_on_server(app: &AppHandle, lab: LabRef<'_>, host: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+    let LabRef { dir, id, runtime } = lab;
     // GCP labs run in the account's labs project: make sure it exists (one free billing slot).
     if server::connection(app, host)?.provider == Provider::Gcp {
         log("Checking the Cyber CTF labs project on Google Cloud…".into());
@@ -31,7 +24,7 @@ pub(super) async fn start_on_server(
         esxi_run(app, dir, id, runtime, &conn)?.up(env, Some(Provider::VmwareEsxi.id()), log).await?;
         return mark_parked(dir, None);
     }
-    lab::prepare(dir, lab::terraform(dir, runtime, "proxmox")?.1)?;
+    lab::prepare(dir, lab::terraform(dir, runtime, "proxmox").1)?;
     let run = isothrum::ServerRun::new(&runner_home(app)?, dir, id, runtime)?;
     let place = server_place(app, host, &conn, &run).await?;
     if place.jump.is_some() {
@@ -94,7 +87,7 @@ pub(super) async fn start_cloud_run(app: &AppHandle, start: CloudStart<'_>, log:
     let cloud = server::terraform_target(conn.provider).ok_or_else(|| Error::Invalid("this account's cloud runs no Terraform labs".into()))?;
     // Generate the lab's module for this cloud (a cloud a lab can't run on has no module, and the
     // run surfaces that when the directory is missing).
-    let (_, target) = lab::terraform(dir, runtime, cloud)?;
+    let (_, target) = lab::terraform(dir, runtime, cloud);
     lab::prepare(dir, target)?;
     if conn.provider == Provider::Aws {
         check_aws_budget(app, host, log).await?;
@@ -177,12 +170,12 @@ pub(super) async fn public_ip_from(resolvers: &[&str]) -> Result<String> {
 
 /// One resolver's answer: a public IPv4 address, or what went wrong.
 async fn ask_ip(client: &reqwest::Client, url: &str) -> std::result::Result<std::net::Ipv4Addr, String> {
-    let resp = client.get(url).send().await.and_then(|r| r.error_for_status()).map_err(|e| e.to_string())?;
+    let resp = client.get(url).send().await.and_then(reqwest::Response::error_for_status).map_err(|e| e.to_string())?;
     // An address is a few bytes: a page (a captive portal) is no answer.
     let body = crate::platform::http::body_limited(resp, 256).await.map_err(|e| e.to_string())?;
     let ip = parse_ipv4(&String::from_utf8_lossy(&body)).ok_or("an unexpected answer")?;
     let ip: std::net::Ipv4Addr = ip.parse().map_err(|_| "an unexpected answer")?;
-    if !is_public_ipv4(ip) { Err(format!("{ip}, not a public address")) } else { Ok(ip) }
+    if is_public_ipv4(ip) { Ok(ip) } else { Err(format!("{ip}, not a public address")) }
 }
 
 /// The verdict on the resolvers' answers (in the order of `resolvers`).

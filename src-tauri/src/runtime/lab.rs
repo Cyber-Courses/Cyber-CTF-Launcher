@@ -384,7 +384,7 @@ mod tests {
             .map(|h| h.join().unwrap())
             .collect();
         let mut unique = picks.clone();
-        unique.sort();
+        unique.sort_unstable();
         unique.dedup();
         assert_eq!(unique.len(), picks.len(), "{picks:?}");
         std::fs::remove_dir_all(labs).unwrap();
@@ -423,13 +423,13 @@ mod tests {
     #[test]
     fn picks_the_module_for_each_run() {
         let d = Path::new("/l");
-        assert_eq!(terraform(d, Runtime::Docker, "aws").unwrap(), (PathBuf::from("/l/.isoloom/cloud-docker/aws"), Target::CloudDocker));
-        assert_eq!(terraform(d, Runtime::Docker, "proxmox").unwrap().0, PathBuf::from("/l/.isoloom/docker-vm/proxmox"));
-        assert_eq!(terraform(d, Runtime::Vm, "proxmox").unwrap().1, Target::Proxmox);
-        assert_eq!(terraform(d, Runtime::Vm, "aws").unwrap(), (PathBuf::from("/l/.isoloom/cloud-vm/aws"), Target::CloudVm));
+        assert_eq!(terraform(d, Runtime::Docker, "aws"), (PathBuf::from("/l/.isoloom/cloud-docker/aws"), Target::CloudDocker));
+        assert_eq!(terraform(d, Runtime::Docker, "proxmox").0, PathBuf::from("/l/.isoloom/docker-vm/proxmox"));
+        assert_eq!(terraform(d, Runtime::Vm, "proxmox").1, Target::Proxmox);
+        assert_eq!(terraform(d, Runtime::Vm, "aws"), (PathBuf::from("/l/.isoloom/cloud-vm/aws"), Target::CloudVm));
         // Every cloud now has a cloud-vm module, not only AWS.
-        assert_eq!(terraform(d, Runtime::Vm, "azure").unwrap(), (PathBuf::from("/l/.isoloom/cloud-vm/azure"), Target::CloudVm));
-        assert_eq!(terraform(d, Runtime::Vm, "oci").unwrap(), (PathBuf::from("/l/.isoloom/cloud-vm/oci"), Target::CloudVm));
+        assert_eq!(terraform(d, Runtime::Vm, "azure"), (PathBuf::from("/l/.isoloom/cloud-vm/azure"), Target::CloudVm));
+        assert_eq!(terraform(d, Runtime::Vm, "oci"), (PathBuf::from("/l/.isoloom/cloud-vm/oci"), Target::CloudVm));
     }
 
     #[test]

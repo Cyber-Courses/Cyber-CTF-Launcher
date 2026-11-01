@@ -1,6 +1,6 @@
 //! The Docker networks a lab sits on, and the subnets other networks already use.
 
-use super::*;
+use super::{Network, compose, run_read, strip_project};
 
 /// The names of the lab's Docker networks (Compose labels them with the project). Empty when
 /// Docker can't say.
@@ -158,6 +158,6 @@ mod tests {
     #[tokio::test]
     async fn subnets_in_use_is_empty_when_docker_cannot_list() {
         let _down = Tools::rules(&[("network ls", fail("Cannot connect to the Docker daemon"))]);
-        assert!(subnets_in_use("web").await.is_empty());
+        assert_eq!(subnets_in_use("web").await, Vec::<String>::new());
     }
 }

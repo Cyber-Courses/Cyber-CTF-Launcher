@@ -1,6 +1,6 @@
 //! A VM lab's status from `vagrant status`, and its network topology from the Vagrantfile.
 
-use super::*;
+use super::{CONTROLLER, LabStatus, Machine, Path, PathBuf, Result, STATUS_TIMEOUT, run_env_timed};
 
 // `vagrant status --machine-readable` lines: timestamp,target,type,data...
 pub(super) fn parse_status(out: &str) -> Vec<Machine> {
@@ -39,7 +39,7 @@ type Cached = (PathBuf, Vec<Option<std::time::SystemTime>>, Option<Topology>);
 pub(super) fn lab_topology(lab: &Path) -> Option<Topology> {
     static CACHE: std::sync::Mutex<Vec<Cached>> = std::sync::Mutex::new(Vec::new());
     let stamps = topology_stamps(lab);
-    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut cache = CACHE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some((_, _, topology)) = cache.iter().find(|(dir, at, _)| dir == lab && *at == stamps) {
         return topology.clone();
     }

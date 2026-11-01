@@ -26,7 +26,7 @@ the end of this page have been done for what the release changes.
 | `unit-rust` | `cargo test` | the Rust tests that need no real tool (external tools are scripted through `platform/exec/fake.rs`) |
 | `coverage-rust` | `cargo llvm-cov` | the Rust line floor `coverage.yml` enforces; skipped when `cargo-llvm-cov` is not installed |
 | `e2e-mock` | `playwright test` | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n |
-| `e2e-native` | `e2e-native/run-all.sh` | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove |
+| `e2e-native` | `tests/native/run-all.sh` | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove |
 
 Next allows one dev server per checkout (its dev lock), so when one already serves port 3000
 (`pnpm tauri dev`, or the native runner's), the `e2e-mock` step runs Playwright against it
@@ -38,7 +38,7 @@ last one is the reason to run the gate.
 
 ## The native layer
 
-`e2e-native/run-all.sh` builds the app with `--features wdio` (the embedded W3C WebDriver
+`tests/native/run-all.sh` builds the app with `--features wdio` (the embedded W3C WebDriver
 server, never in a release build), serves the frontend a debug build loads (`tauri.conf.json`'s
 `devUrl`, port 3000; a release build embeds `out/` and needs none), checks out the fixture lab
 (the Supplier Portal API lab, under `dev/test/server/.state/labs`), and runs the scenarios in an
@@ -59,14 +59,14 @@ order that leaves nothing behind:
 | `kill-mid-deploy` | killed mid-deploy, the app reopens coherently |
 | `vm-scan` | on a Mac with UTM: a started VM named `<lab> · <machine>` is matched to the installed lab by the running-labs scan (the fixture VM is created and deleted by the runner) |
 
-Each scenario writes `e2e-native/.state/logs/<name>.log`. Knobs: `APP_BIN`,
+Each scenario writes `tests/native/.state/logs/<name>.log`. Knobs: `APP_BIN`,
 `TAURI_WEBDRIVER_PORT`, `DEV_URL_PORT`, `CYBERCTF_TEST_LOCAL_LAB`, `CASE_TIMEOUT`, `ONLY`,
 `SKIP_BUILD`, `KEEP` (leave the lab running), `STRICT` (a skip fails the run). The scenarios share
-`e2e-native/lib.mjs`; a new one is a short `.mjs` beside them plus a line in `run-all.sh`.
+`tests/native/lib.mjs`; a new one is a short `.mjs` beside them plus a line in `run-all.sh`.
 
 On Linux the VM scan is skipped: start a libvirt domain named `<lab>_<machine>` (or a Hyper-V VM
 `<lab>-<machine>`) yourself and run `functional-vm-scan.mjs` with `CYBERCTF_EXPECT_LAB=<lab id>`.
-On Windows, `e2e-native/run-embedded.ps1` runs the smoke; the scenarios take `APP_BIN` there too.
+On Windows, `tests/native/run-embedded.ps1` runs the smoke; the scenarios take `APP_BIN` there too.
 
 Why a debug build needs the dev server: Tauri's `generate_context!` loads `devUrl` in a debug
 build and the static export only in a release build, so a debug app started by hand shows a blank

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # The native GUI e2e layer, end to end, on this machine (macOS or Linux): build the app with its
 # embedded WebDriver server, serve the frontend a debug build loads, prepare the fixtures (a local
-# lab to import; on a Mac, a UTM VM named for it), run every e2e-native scenario in an order that
+# lab to import; on a Mac, a UTM VM named for it), run every native scenario in an order that
 # leaves nothing behind, and print one verdict per scenario. This is the layer CI does not run
 # (it needs a desktop session, a real Docker engine and, for the VM scan, a hypervisor), so it is
 # part of dev/release-check.sh, the gate before a release.
 #
-#   e2e-native/run-all.sh                          # everything this machine can run
-#   ONLY="smoke fail-offline" e2e-native/run-all.sh
-#   SKIP_BUILD=1 KEEP=1 e2e-native/run-all.sh      # reuse the binary; leave the lab running
+#   tests/native/run-all.sh                          # everything this machine can run
+#   ONLY="smoke fail-offline" tests/native/run-all.sh
+#   SKIP_BUILD=1 KEEP=1 tests/native/run-all.sh      # reuse the binary; leave the lab running
 #
 # Knobs:
 #   APP_BIN                 the app to drive (default: the wdio debug build, built here)
@@ -19,12 +19,12 @@
 #                           Supplier Portal API lab under dev/test/server/.state/labs)
 #   CASE_TIMEOUT            seconds per scenario (900: the first import builds the lab's images)
 #   STRICT=1                a skipped scenario fails the run
-# Windows: e2e-native/run-embedded.ps1 runs the smoke; the scenarios take APP_BIN there too.
+# Windows: tests/native/run-embedded.ps1 runs the smoke; the scenarios take APP_BIN there too.
 set -uo pipefail
 
-HERE=$(cd "$(dirname "$0")/.." && pwd)
+HERE=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$HERE" || exit 2
-NATIVE_STATE="$HERE/e2e-native/.state"
+NATIVE_STATE="$HERE/tests/native/.state"
 LOGS="$NATIVE_STATE/logs"
 mkdir -p "$LOGS"
 # GUI-installed tools are not always on a shell's PATH.
@@ -155,7 +155,7 @@ run_case() {
     record "$name" FAIL $((SECONDS - start)) "$log (exit $rc)"
   fi
 }
-run_mjs() { run_case "$1" node "e2e-native/functional-$1.mjs"; }
+run_mjs() { run_case "$1" node "tests/native/functional-$1.mjs"; }
 
 # UTM on a Mac: a started VM named `<lab name> · <machine>` is what the running-labs scan looks for;
 # an empty QEMU VM is enough, it boots to its firmware and shows as started.
@@ -192,7 +192,7 @@ vm_scan() {
   done
   # A dead Docker socket, so only the hypervisor probe can report the lab (its containers may
   # still be up from the scenarios before).
-  CYBERCTF_EXPECT_LAB="$LAB_ID" DOCKER_HOST="unix:///nonexistent/docker.sock" run_case vm-scan node e2e-native/functional-vm-scan.mjs
+  CYBERCTF_EXPECT_LAB="$LAB_ID" DOCKER_HOST="unix:///nonexistent/docker.sock" run_case vm-scan node tests/native/functional-vm-scan.mjs
   drop_utm_vm
 }
 
@@ -226,11 +226,11 @@ say "lab: $CYBERCTF_TEST_LOCAL_LAB ($LAB_NAME, id $LAB_ID)"
 # lab installed), then cleanup. A scenario that imports the lab itself (the launch hook, the attack
 # box) or must catch its deploy under way starts from a stopped lab: importing a running one is
 # refused, which is a different scenario.
-run_case smoke e2e-native/run-embedded.sh
+run_case smoke tests/native/run-embedded.sh
 run_mjs fail-offline
 run_mjs fail-badlab
 SIGNED_OUT_HOME=$(mktemp -d "${TMPDIR:-/tmp}/cyberctf-signedout.XXXXXX")
-HOME="$SIGNED_OUT_HOME" run_case fail-signedout node e2e-native/functional-fail-signedout.mjs
+HOME="$SIGNED_OUT_HOME" run_case fail-signedout node tests/native/functional-fail-signedout.mjs
 rm -rf "$SIGNED_OUT_HOME"
 if [ "$DOCKER_OK" -eq 1 ]; then
   run_mjs fail-docker

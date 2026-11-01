@@ -55,7 +55,7 @@ impl ServerRun {
         let config = RunnerConfig::new(home).with_processes(Arc::new(processes));
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
         // VM labs use the per-machine Proxmox module; container labs use docker-vm on one VM there.
-        let manifest = lab::terraform(dir, runtime, "proxmox")?.0.join("run.json");
+        let manifest = lab::terraform(dir, runtime, "proxmox").0.join("run.json");
         Ok(ServerRun { runner: Runner::new(config).map_err(errors::from_runner)?, manifest, name })
     }
 

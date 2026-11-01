@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use isoloom_spec::Target;
 
 use super::instance;
-use crate::error::Result;
 use crate::runtime::Runtime;
 
 /// Where the lab's generated files are: `.isoloom-<n>/` for an instance, else `.isoloom/`.
@@ -57,9 +56,9 @@ pub fn vagrant_target(runtime: Runtime) -> Target {
 
 /// The Terraform module and its Isoloom target for a server or cloud (`tf` is the launcher's
 /// Terraform target: `proxmox`, `aws`, `azure`, `gcp`, `digitalocean`, `linode`, `oci`).
-pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> Result<(PathBuf, Target)> {
+pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> (PathBuf, Target) {
     let out = out(dir);
-    Ok(match (runtime, tf) {
+    match (runtime, tf) {
         (Runtime::Docker, "proxmox") => (out.join("docker-vm/proxmox"), Target::DockerVm),
         (Runtime::Vm, "proxmox") => (out.join("proxmox"), Target::Proxmox),
         (Runtime::Docker, cloud) => (out.join("cloud-docker").join(cloud), Target::CloudDocker),
@@ -68,7 +67,7 @@ pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> Result<(PathBuf, Tar
         (Runtime::Vm, cloud) => (out.join("cloud-vm").join(cloud), Target::CloudVm),
         // Isoloom's variables for the lab's own module (see `cloud_services`).
         (Runtime::Cloud, _) => (out.join("cloud-services"), Target::CloudServices),
-    })
+    }
 }
 
 /// The machine Isoloom adds to run a lab's `provision:` playbooks (and its checks on VMs).

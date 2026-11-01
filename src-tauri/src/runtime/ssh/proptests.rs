@@ -119,7 +119,7 @@ fn known_hosts_as_ssh_reads_it(option: &str) -> String {
     percent_expand(&words[0], "", "").expect("only %% in a path")
 }
 
-/// Checks `-o` words as ssh reads them: the fixed options, then the known_hosts file.
+/// Checks `-o` words as ssh reads them: the fixed options, then the `known_hosts` file.
 fn check_options(opts: &[String], batch: bool, known_hosts: &str) {
     let fixed: &[&str] = if batch { &["BatchMode=yes", "ConnectTimeout=10", "ServerAliveInterval=15", "ServerAliveCountMax=3"] } else { &[] };
     assert_eq!(&opts[..fixed.len()], fixed);
@@ -144,7 +144,7 @@ fn take_options(words: &[String]) -> (Vec<String>, Vec<String>) {
     (opts, rest)
 }
 
-/// The ProxyCommand as ssh runs it: `%` tokens expanded, then split as `sh -c` does on unix, or
+/// The `ProxyCommand` as ssh runs it: `%` tokens expanded, then split as `sh -c` does on unix, or
 /// as a Windows command line by Windows' OpenSSH (`windows`).
 fn proxy_words(proxy: &str, windows: bool) -> Vec<String> {
     let cmd = proxy.strip_prefix("ProxyCommand=").expect("a ProxyCommand option");
@@ -152,7 +152,7 @@ fn proxy_words(proxy: &str, windows: bool) -> Vec<String> {
     if windows { windows_argv_split(&expanded) } else { shell_words::split(&expanded).expect("the ProxyCommand is valid shell") }
 }
 
-/// Checks a ProxyCommand built for Windows' ssh (`windows`) or a unix one, read the way that ssh runs it.
+/// Checks a `ProxyCommand` built for Windows' ssh (`windows`) or a unix one, read the way that ssh runs it.
 fn check_proxy(proxy: &str, windows: bool, identity: &str, known_hosts: &str, jump: &str) {
     let words = proxy_words(proxy, windows);
     let (opts, rest) = take_options(&words);

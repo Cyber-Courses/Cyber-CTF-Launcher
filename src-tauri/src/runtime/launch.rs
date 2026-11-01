@@ -9,7 +9,7 @@ use tauri::Manager;
 use super::inflight::{Action, DeployGuard};
 use super::paths::{deployment_states, forget_lab_host_keys, mark_local_vm, mark_parked, parked, runner_home, vagrant_dirs};
 use super::providers::Provider;
-use super::{Runtime, cloud_services, docker, isothrum, lab, server, terraform, vm};
+use super::{LabRef, Runtime, cloud_services, docker, isothrum, lab, server, terraform, vm};
 use crate::error::{Error, Result};
 
 mod local;
@@ -33,7 +33,10 @@ pub(super) use on_host::{esxi_run, runner_runs_on, server_place};
 /// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
 ///
 /// The caller holds the lab lock (`lock_lab`): a launch holds it from the download on.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the launch entry point carries the whole launch specification — the lab (dir, id), its runtime, a local provider or a server host, the launch inputs and a log sink — which has no smaller cohesive grouping"
+)]
 pub(crate) async fn start_locked(
     app: &AppHandle,
     dir: &Path,
@@ -59,18 +62,19 @@ pub(crate) async fn start_locked(
     if parked(dir).is_none() {
         forget_lab_host_keys(dir);
     }
+    let lab = LabRef { dir, id, runtime };
     if runtime == Runtime::Cloud {
-        return cloud_services::start(app, dir, id, host, env, &mut log).await;
+        return cloud_services::start(app, lab, host, env, &mut log).await;
     }
     match host {
-        None => start_here(app, dir, id, runtime, provider, env, &mut log).await,
-        Some(host) => start_on_server(app, dir, id, runtime, host, env, &mut log).await,
+        None => start_here(app, lab, provider, env, &mut log).await,
+        Some(host) => start_on_server(app, lab, host, env, &mut log).await,
     }
 }
 
 /// [`start_locked`] under the lab lock, for tests that start an installed lab directly.
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "mirrors start_locked's full launch specification so tests start a lab by the same parameters")]
 pub(crate) async fn start(
     app: &AppHandle,
     dir: &Path,
@@ -106,15 +110,8 @@ fn deployed_elsewhere(base: &Path, dir: &Path, id: &str, host: Option<&str>) -> 
     (terraform || vagrant).then_some(marked)
 }
 
-async fn start_here(
-    app: &AppHandle,
-    dir: &Path,
-    id: &str,
-    runtime: Runtime,
-    provider: Option<Provider>,
-    env: &[(String, String)],
-    log: &mut impl FnMut(String),
-) -> Result<()> {
+async fn start_here(app: &AppHandle, lab: LabRef<'_>, provider: Option<Provider>, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+    let LabRef { dir, id, runtime } = lab;
     server::mark_lab(dir, None)?;
     // Every lab on this machine runs through the Isothrum runner. A parked run is resumed as it
     // was and leftovers are cleared first (the runner's `Occupied::ResumeParked`); the runner

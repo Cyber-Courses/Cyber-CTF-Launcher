@@ -254,7 +254,7 @@ mod tests {
         let t = TestApp::new();
         t.lab("web", &[("isoloom.yml", SPEC)]);
         let _tools = Tools::rules(&[]);
-        assert!(running_labs(t.handle().clone()).await.is_empty());
+        assert_eq!(running_labs(t.handle().clone()).await, Vec::<String>::new());
     }
 
     #[tokio::test]

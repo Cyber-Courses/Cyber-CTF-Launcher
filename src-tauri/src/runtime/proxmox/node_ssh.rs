@@ -1,7 +1,7 @@
 //! SSH to the Proxmox node: its login, and letting the launcher's key in so labs on an internal
 //! bridge can be reached through it.
 
-use super::*;
+use super::{HostProfile, ssh, token_user};
 
 /// The node's SSH login (`user@host`) for going through it.
 pub fn node_login(h: &HostProfile) -> String {

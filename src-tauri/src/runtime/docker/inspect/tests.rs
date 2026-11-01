@@ -21,10 +21,10 @@ fn network_listings_skip_blanks_and_ipv6() {
 #[test]
 fn a_serving_container_that_died_still_shows_on_the_diagram() {
     let entries = parse_ps(r#"[{"Service":"web","State":"exited","Name":"p-web-1"},{"Service":"db","State":"running","Name":"p-db-1","Health":"unhealthy"}]"#);
-    let status = build_status(entries, Default::default(), Vec::new(), &["web".into()]);
+    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()]);
     assert!(status.running);
-    let states: Vec<(&str, &str)> = status.machines.iter().map(|m| (m.name.as_str(), m.state.as_str())).collect();
-    assert_eq!(states, [("db", "unhealthy"), ("web", "exited")]);
+    let machine_states: Vec<(&str, &str)> = status.machines.iter().map(|m| (m.name.as_str(), m.state.as_str())).collect();
+    assert_eq!(machine_states, [("db", "unhealthy"), ("web", "exited")]);
     assert_eq!(status.provider.as_deref(), Some("docker"));
 }
 
@@ -200,8 +200,8 @@ fn reads_the_services_a_lab_declares_and_nothing_else() {
     assert_eq!(got, vec![("jobs", "worker", vec![]), ("ssh", "ssh", vec![22]), ("web", "web", vec![80, 443])]);
     assert_eq!(m["cyberctf-x-app-1"].interfaces[0].ip, "172.20.0.2");
     // No labels, null labels: no services (never inferred).
-    assert!(parse_inspect(&super::compose::project("x"), "/a\t\tnull\n")["a"].services.is_empty());
-    assert!(declared_services(&[("cyberctf.service.db".to_string(), "database:abc".to_string())].into()).first().unwrap().ports.is_empty());
+    assert_eq!(parse_inspect(&super::compose::project("x"), "/a\t\tnull\n")["a"].services, Vec::<crate::runtime::model::Service>::new());
+    assert_eq!(declared_services(&[("cyberctf.service.db".to_string(), "database:abc".to_string())].into()).first().unwrap().ports, Vec::<u16>::new());
 }
 
 #[test]
@@ -259,7 +259,7 @@ fn open_goes_to_the_service_the_lab_declares_as_http() {
     let declared = parse_inspect("p", "/p-portal-1\t\t{\"isoloom.port.site\":\"http:80\",\"isoloom.port.ssh\":\"tcp:22\"}\n");
     assert_eq!(open_url(&entries, &declared).as_deref(), Some("http://127.0.0.1:8443"));
     // Nothing declared: the name-based pick.
-    assert_eq!(open_url(&entries, &Default::default()).as_deref(), Some("http://127.0.0.1:2222"));
+    assert_eq!(open_url(&entries, &std::collections::HashMap::default()).as_deref(), Some("http://127.0.0.1:2222"));
 }
 
 #[test]
@@ -321,7 +321,7 @@ fn declared_service_ports_at_the_boundaries() {
     let labels = [
         ("isoloom.port.a".to_string(), "tcp:65535,65536,-1,+22, 80 ,".to_string()),
         ("isoloom.port.".to_string(), "http:80".to_string()),
-        ("isoloom.port.b".to_string(), "".to_string()),
+        ("isoloom.port.b".to_string(), String::new()),
         ("isoloom.port.c".to_string(), ":80".to_string()),
     ]
     .into();
@@ -340,9 +340,9 @@ fn a_down_serving_service_is_listed_once_even_with_several_containers() {
     let entries = parse_ps(
         r#"[{"Service":"web","State":"exited","Name":"p-web-1"},{"Service":"web","State":"exited","Name":"p-web-2"},{"Service":"db","State":"running","Name":"p-db-1"}]"#,
     );
-    let status = build_status(entries, Default::default(), Vec::new(), &["web".into()]);
+    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()]);
     assert_eq!(status.machines.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["db", "web"]);
     let entries = parse_ps(r#"[{"Service":"web","State":"exited","Name":"p-web-1"},{"Service":"web","State":"running","Name":"p-web-2"}]"#);
-    let status = build_status(entries, Default::default(), Vec::new(), &["web".into()]);
+    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()]);
     assert_eq!(status.machines.iter().map(|m| (m.name.as_str(), m.state.as_str())).collect::<Vec<_>>(), [("web", "running")]);
 }

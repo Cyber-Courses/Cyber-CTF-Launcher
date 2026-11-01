@@ -49,7 +49,7 @@ async fn gcloud(args: &[&str], limit: Duration) -> Result<String> {
 }
 
 /// Whether the saved project `p` is active or gone. Gone only when gcloud says so plainly: it is
-/// being deleted, or NOT_FOUND. "No permission (or it may not exist)" is also what another
+/// being deleted, or `NOT_FOUND`. "No permission (or it may not exist)" is also what another
 /// signed-in Google account gets: an error that says to check the sign-in, never a new project.
 async fn project_state(p: &str) -> Result<Project> {
     match gcloud(&["projects", "describe", p, "--format", "value(lifecycleState)"], CLI_TIMEOUT).await {

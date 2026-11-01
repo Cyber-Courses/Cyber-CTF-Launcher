@@ -39,7 +39,7 @@ impl Reporter {
     }
 
     /// A line of a tool's output as the running step's detail (trimmed, at most 160 chars).
-    fn progress(&self, step: &'static str, label: &'static str, line: String) {
+    fn progress(&self, step: &'static str, label: &'static str, line: &str) {
         let line = line.trim();
         if !line.is_empty() {
             self.send(step, label, "running", Some(line.chars().take(160).collect()));
@@ -87,7 +87,7 @@ pub async fn server_selftest(app: AppHandle, id: String, events: Channel<Event>)
     if work.exists() {
         let left = r
             .step("prepare", PREPARE, async {
-                r.progress("prepare", PREPARE, "Removing the VM a previous test left on the host…".into());
+                r.progress("prepare", PREPARE, "Removing the VM a previous test left on the host…");
                 match conn.provider {
                     Provider::Proxmox => proxmox::leftover(&r, &conn, &work),
                     Provider::VmwareEsxi => esxi::leftover(&r, &conn, &work),

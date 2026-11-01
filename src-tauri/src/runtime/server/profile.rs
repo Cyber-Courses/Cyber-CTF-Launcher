@@ -1,6 +1,8 @@
 //! A saved server host or cloud account (non-secret settings only) and the per-provider
 //! defaults that go with it.
 
+use std::fmt::Write as _;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -122,7 +124,10 @@ pub fn terraform_provider(target: &str) -> Option<Provider> {
 
 /// `bytes` random bytes as lowercase hex (host ids, GCP project suffixes).
 pub(super) fn random_hex(bytes: usize) -> String {
-    (0..bytes).map(|_| format!("{:02x}", rand::random::<u8>())).collect()
+    (0..bytes).fold(String::new(), |mut out, _| {
+        let _ = write!(out, "{:02x}", rand::random::<u8>());
+        out
+    })
 }
 
 /// A new host id: 16 hex characters.
