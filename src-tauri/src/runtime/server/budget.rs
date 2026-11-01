@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn the_verdict_blocks_only_a_readable_spend_over_the_limit() {
-        assert!(matches!(verdict(40.0, Ok(40.0)), BudgetCheck::Over(s, l) if s == 40.0 && l == 40.0));
+        assert!(matches!(verdict(40.0, Ok(40.0)), BudgetCheck::Over(s, l) if (s - 40.0).abs() < f64::EPSILON && (l - 40.0).abs() < f64::EPSILON));
         assert!(matches!(verdict(40.0, Ok(39.99)), BudgetCheck::Ok));
         match verdict(40.0, Err(Error::Invalid("Cost Explorer is not enabled".into()))) {
             BudgetCheck::Unverifiable(why) => assert!(why.contains("Cost Explorer isn't enabled"), "{why}"),

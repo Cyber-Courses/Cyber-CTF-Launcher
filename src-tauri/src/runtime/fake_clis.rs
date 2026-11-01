@@ -3,6 +3,10 @@
 //! cloud. They change the process's PATH, so they are opt-in and run alone:
 //!
 //!   cargo test `fake_clis` -- --ignored --test-threads=1
+#![allow(
+    unsafe_code,
+    reason = "set_var, to put the stand-in tools first on PATH, is unsafe in edition 2024; these tests run alone (--test-threads=1, see above) so nothing else reads the environment meanwhile"
+)]
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

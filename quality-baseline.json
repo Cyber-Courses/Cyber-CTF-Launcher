@@ -6,9 +6,6 @@
     "exception/without-reason": {
       "rs:runtime": 1
     },
-    "rust/mod-rs": {
-      "rs:runtime": 6
-    },
     "rust/tauri-outside-adapters": {
       "rs:account": 1,
       "rs:deploy_worker": 3,
@@ -18,22 +15,10 @@
   },
   "clippy": {
     "darwin": {
-      "clippy/cast_possible_truncation": {
-        "rs:runtime": 1
-      },
-      "clippy/expect_used": {
-        "rs:runtime": 1
-      },
-      "clippy/float_cmp": {
-        "rs:runtime": 2
-      },
       "clippy/fn_params_excessive_bools": {
         "rs:runtime": 1
       },
       "clippy/items_after_statements": {
-        "rs:runtime": 2
-      },
-      "clippy/match_same_arms": {
         "rs:runtime": 2
       },
       "clippy/needless_pass_by_value": {
@@ -43,12 +28,6 @@
         "rs:runtime": 8
       },
       "clippy/unnecessary_wraps": {
-        "rs:runtime": 2
-      },
-      "clippy/unwrap_used": {
-        "rs:runtime": 9
-      },
-      "rustc/unsafe_code": {
         "rs:runtime": 2
       }
     },

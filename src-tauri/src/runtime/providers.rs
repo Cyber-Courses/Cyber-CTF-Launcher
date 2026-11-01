@@ -118,7 +118,15 @@ impl Provider {
     /// Vagrant plugin required, if the provider is not built in.
     fn plugin(self) -> Option<&'static str> {
         match self {
-            Provider::Virtualbox | Provider::Hyperv => None,
+            // Built-in hypervisors and the clouds (not Vagrant providers): no plugin.
+            Provider::Virtualbox
+            | Provider::Hyperv
+            | Provider::Aws
+            | Provider::Azure
+            | Provider::Gcp
+            | Provider::DigitalOcean
+            | Provider::Linode
+            | Provider::Oci => None,
             Provider::VmwareDesktop => Some("vagrant-vmware-desktop"),
             Provider::Parallels => Some("vagrant-parallels"),
             Provider::Libvirt => Some("vagrant-libvirt"),
@@ -126,7 +134,6 @@ impl Provider {
             Provider::Utm => Some("vagrant_utm"),
             Provider::VmwareEsxi => Some("vagrant-vmware-esxi"),
             Provider::Proxmox => Some("vagrant-proxmox"),
-            Provider::Aws | Provider::Azure | Provider::Gcp | Provider::DigitalOcean | Provider::Linode | Provider::Oci => None,
         }
     }
 
@@ -221,9 +228,8 @@ pub fn parse_plugins(out: &str) -> Vec<String> {
 
 async fn tool_present(program: &'static str, args: &[&str]) -> bool {
     match run_read(program, args, None).await {
-        Ok(_) => true,
         // vmrun without arguments prints usage and exits non-zero, but it exists.
-        Err(crate::error::Error::CommandFailed { .. }) => true,
+        Ok(_) | Err(crate::error::Error::CommandFailed { .. }) => true,
         Err(_) => false,
     }
 }

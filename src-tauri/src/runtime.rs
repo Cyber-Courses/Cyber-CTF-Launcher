@@ -19,7 +19,8 @@ mod commands;
 mod discover;
 pub(crate) use discover::is_lab_id;
 mod docker;
-#[cfg(all(test, unix))]
+#[cfg(test)]
+#[cfg(unix)]
 mod fake_clis;
 mod inflight;
 mod isothrum;
