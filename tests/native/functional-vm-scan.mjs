@@ -4,8 +4,10 @@
 // for a UTM VM, `<name>_<machine>` for a libvirt domain (on qemu:///system) or `<name>-<machine>` for
 // a Hyper-V VM, where `<name>` is the lab's isoloom name. Drives the real `running_labs` command, so
 // it exercises the actual discover scan: the utmctl/virsh/Get-VM probe and the name matcher.
+// Docker is made unreachable for the app (deadDockerEnv), so only the hypervisor probe can report the
+// lab: its containers may still be up from the scenarios before.
 // Proven green on jarvis (libvirt), karen (Hyper-V) and a Mac with UTM.
-import { finish, launchApp, connect, sleep } from "./lib.mjs";
+import { connect, deadDockerEnv, finish, launchApp, sleep } from "./lib.mjs";
 
 const WANT = process.env.CYBERCTF_EXPECT_LAB || "solo-web";
 
@@ -13,7 +15,7 @@ let rc = 1;
 let proc;
 let b;
 try {
-  proc = await launchApp();
+  proc = await launchApp({ env: deadDockerEnv() });
   b = await connect();
   // The scan is debounced and each hypervisor probe waits out its own timeout, so poll a few times.
   for (let attempt = 0; attempt < 8 && rc !== 0; attempt++) {

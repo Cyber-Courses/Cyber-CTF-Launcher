@@ -13,20 +13,20 @@ the end of this page have been done for what the release changes.
 
 ## What each step proves
 
-| Step | Command | What it catches |
-| --- | --- | --- |
-| `prereqs` | tool presence | the machine can run the gate at all (Node from `.nvmrc`, pnpm, cargo, cargo-machete, Docker) |
-| `install` | `pnpm install --frozen-lockfile` | the lockfile and `package.json` agree |
-| `versions` | `pnpm check:tauri` | Tauri JS plugins and Rust crates drifted apart (fails `tauri build` otherwise) |
-| `format` | prettier, `cargo fmt --check` | formatting |
-| `types` | `pnpm typecheck` | TypeScript, including the generated command bindings |
-| `lint` | `pnpm lint` | ESLint |
-| `quality` | `pnpm quality` | the ratchet in `quality-baseline.json`: clippy, ESLint warnings, duplication, dead code, module conventions, unused crates (`cargo machete`) |
-| `unit-web` | `vitest run --coverage` | the frontend's unit and component tests, with the coverage floors in `vitest.config.mts` |
-| `unit-rust` | `cargo test` | the Rust tests that need no real tool (external tools are scripted through `platform/exec/fake.rs`) |
-| `coverage-rust` | `cargo llvm-cov` | the Rust line floor `coverage.yml` enforces; skipped when `cargo-llvm-cov` is not installed |
-| `e2e-mock` | `playwright test` | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n |
-| `e2e-native` | `tests/native/run-all.sh` | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove |
+| Step            | Command                          | What it catches                                                                                                                                                 |
+| --------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prereqs`       | tool presence                    | the machine can run the gate at all (Node from `.nvmrc`, pnpm, cargo, cargo-machete, Docker)                                                                    |
+| `install`       | `pnpm install --frozen-lockfile` | the lockfile and `package.json` agree                                                                                                                           |
+| `versions`      | `pnpm check:tauri`               | Tauri JS plugins and Rust crates drifted apart (fails `tauri build` otherwise)                                                                                  |
+| `format`        | prettier, `cargo fmt --check`    | formatting                                                                                                                                                      |
+| `types`         | `pnpm typecheck`                 | TypeScript, including the generated command bindings                                                                                                            |
+| `lint`          | `pnpm lint`                      | ESLint                                                                                                                                                          |
+| `quality`       | `pnpm quality`                   | the ratchet in `quality-baseline.json`: clippy, ESLint warnings, duplication, dead code, module conventions, unused crates (`cargo machete`)                    |
+| `unit-web`      | `vitest run --coverage`          | the frontend's unit and component tests, with the coverage floors in `vitest.config.mts`                                                                        |
+| `unit-rust`     | `cargo test`                     | the Rust tests that need no real tool (external tools are scripted through `platform/exec/fake.rs`)                                                             |
+| `coverage-rust` | `cargo llvm-cov`                 | the Rust line floor `coverage.yml` enforces; skipped when `cargo-llvm-cov` is not installed                                                                     |
+| `e2e-mock`      | `playwright test`                | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n |
+| `e2e-native`    | `tests/native/run-all.sh`        | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                          |
 
 Next allows one dev server per checkout (its dev lock), so when one already serves port 3000
 (`pnpm tauri dev`, or the native runner's), the `e2e-mock` step runs Playwright against it
@@ -44,20 +44,20 @@ server, never in a release build), serves the frontend a debug build loads (`tau
 (the Supplier Portal API lab, under `dev/test/server/.state/labs`), and runs the scenarios in an
 order that leaves nothing behind:
 
-| Scenario | Proves |
-| --- | --- |
-| `smoke` | the app boots and its shell renders |
-| `fail-offline` | with the backend unreachable (`CYBERBACKEND_URL` dead), the catalogue degrades and the app stays usable |
-| `fail-badlab` | a folder that is not a lab is refused without a crash or a phantom running lab |
-| `fail-signedout` | signed out (an empty `HOME`, where a debug build keeps its session), the app is usable and asks to sign in |
-| `fail-docker` | with a dead `DOCKER_HOST`, the engine shows as not running and no lab starts |
-| `launch` | the seeded local lab reaches "running on this machine" on the Overview |
-| `restart` | after the app is killed and reopened without the seed, the running-labs scan finds the lab again |
-| `stop` | Stop in Machine > Running now stops and clears it |
-| `launch-ui` | the real import path (`__wdio_launch_local__`) reaches running |
-| `attack-box` | the attack box attaches, gets an address, opens a shell and detaches |
-| `kill-mid-deploy` | killed mid-deploy, the app reopens coherently |
-| `vm-scan` | on a Mac with UTM: a started VM named `<lab> · <machine>` is matched to the installed lab by the running-labs scan (the fixture VM is created and deleted by the runner) |
+| Scenario          | Proves                                                                                                                                                                                                                                                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `smoke`           | the app boots and its shell renders                                                                                                                                                                                                                                                                                                |
+| `fail-offline`    | with the backend unreachable (`CYBERBACKEND_URL` dead), the catalogue degrades and the app stays usable                                                                                                                                                                                                                            |
+| `fail-badlab`     | a folder that is not a lab is refused without a crash or a phantom running lab                                                                                                                                                                                                                                                     |
+| `fail-signedout`  | signed out (an empty `HOME`, where a debug build keeps its session), the app is usable and asks to sign in                                                                                                                                                                                                                         |
+| `fail-docker`     | with Docker unreachable (a dead `DOCKER_HOST` and a `DOCKER_CONFIG` naming no current context, since the app follows the user's Docker context over an inherited `DOCKER_HOST`), the header says Docker is not running, the seed lab's start fails and nothing runs                                                                |
+| `launch`          | the seeded local lab reaches "running on this machine" on the Overview                                                                                                                                                                                                                                                             |
+| `restart`         | after the app is killed and reopened without the seed, the running-labs scan finds the lab again                                                                                                                                                                                                                                   |
+| `stop`            | Stop in Machine > Running now stops and clears it                                                                                                                                                                                                                                                                                  |
+| `launch-ui`       | the real import path (`__wdio_launch_local__`) reaches running                                                                                                                                                                                                                                                                     |
+| `attack-box`      | the attack box attaches, gets an address, opens a shell and detaches                                                                                                                                                                                                                                                               |
+| `kill-mid-deploy` | killed mid-deploy, the app reopens coherently                                                                                                                                                                                                                                                                                      |
+| `vm-scan`         | on a Mac with UTM: a started VM named `<lab> · <machine>` is matched to the installed lab by the running-labs scan; `<lab>` is the lab's isoloom name plus `-<instance>` when it holds an instance number (the fixture VM is created and deleted by the runner; Docker is made unreachable so only the hypervisor probe can match) |
 
 Each scenario writes `tests/native/.state/logs/<name>.log`. Knobs: `APP_BIN`,
 `TAURI_WEBDRIVER_PORT`, `DEV_URL_PORT`, `CYBERCTF_TEST_LOCAL_LAB`, `CASE_TIMEOUT`, `ONLY`,
@@ -65,7 +65,9 @@ Each scenario writes `tests/native/.state/logs/<name>.log`. Knobs: `APP_BIN`,
 `tests/native/lib.mjs`; a new one is a short `.mjs` beside them plus a line in `run-all.sh`.
 
 On Linux the VM scan is skipped: start a libvirt domain named `<lab>_<machine>` (or a Hyper-V VM
-`<lab>-<machine>`) yourself and run `functional-vm-scan.mjs` with `CYBERCTF_EXPECT_LAB=<lab id>`.
+`<lab>-<machine>`) yourself, `<lab>` being the installed lab's isoloom name plus `-<instance>` when
+`labs/<id>/.cyberctf-instance` holds a number, and run `functional-vm-scan.mjs` with
+`CYBERCTF_EXPECT_LAB=<lab id>`.
 On Windows, `tests/native/run-embedded.ps1` runs the smoke; the scenarios take `APP_BIN` there too.
 
 Why a debug build needs the dev server: Tauri's `generate_context!` loads `devUrl` in a debug

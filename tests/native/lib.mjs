@@ -6,7 +6,9 @@ import { remote } from "webdriverio";
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /** Path to the app binary: APP_BIN, else CYBERCTF_BIN, else the debug build. */
 export function appBinary() {
@@ -18,6 +20,19 @@ export function appBinary() {
 
 /** The port the embedded WebDriver server listens on (override with TAURI_WEBDRIVER_PORT). */
 export const PORT = Number(process.env.TAURI_WEBDRIVER_PORT || 4445);
+
+/**
+ * An environment in which the app cannot reach any Docker engine: a dead `DOCKER_HOST` and a
+ * `DOCKER_CONFIG` whose config.json names no current context. The second half matters: the app
+ * deliberately follows the user's Docker context (`docker context use`, what Docker Desktop sets)
+ * over an inherited `DOCKER_HOST`, so on a machine with a context the dead socket alone is ignored
+ * and the real engine answers. Fresh folder per call.
+ */
+export function deadDockerEnv() {
+  const dir = mkdtempSync(join(tmpdir(), "cyberctf-nodocker-"));
+  writeFileSync(join(dir, "config.json"), "{}\n");
+  return { DOCKER_HOST: "unix:///nonexistent/docker.sock", DOCKER_CONFIG: dir };
+}
 
 /** A lab shows as running on the Overview. */
 export const LAB_RUNNING = /\blab[s]? running on this machine\b/i;
@@ -124,7 +139,11 @@ export async function goTo(b, tab) {
 }
 
 /** The main pane's text, empty when it can't be read. */
-export const mainText = (b) => b.$("main").getText().catch(() => "");
+export const mainText = (b) =>
+  b
+    .$("main")
+    .getText()
+    .catch(() => "");
 
 /** Whether the Overview says a lab runs on this machine (and not "Nothing running"). */
 export async function labRunning(b) {
