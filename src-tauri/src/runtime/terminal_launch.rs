@@ -150,7 +150,7 @@ fn clear_old_scripts(dir: &std::path::Path, ttl: std::time::Duration) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
-        if !(name.starts_with(SCRIPT_PREFIX) && name.ends_with(".cmd")) {
+        if !(name.starts_with(SCRIPT_PREFIX) && std::path::Path::new(&name).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("cmd"))) {
             continue;
         }
         let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age >= ttl);
