@@ -4,7 +4,7 @@ One command runs every layer of tests the launcher has, including the one CI can
 prints one verdict per step:
 
 ```sh
-dev/release-check.sh          # or: pnpm release-check
+scripts/release-check.sh          # or: pnpm release-check
 ```
 
 It keeps going after a failure, so a single run lists everything that is wrong. `ONLY="…"` and
@@ -41,7 +41,7 @@ last one is the reason to run the gate.
 `tests/native/run-all.sh` builds the app with `--features wdio` (the embedded W3C WebDriver
 server, never in a release build), serves the frontend a debug build loads (`tauri.conf.json`'s
 `devUrl`, port 3000; a release build embeds `out/` and needs none), checks out the fixture lab
-(the Supplier Portal API lab, under `dev/test/server/.state/labs`), and runs the scenarios in an
+(the Supplier Portal API lab, under `tests/server/.state/labs`), and runs the scenarios in an
 order that leaves nothing behind:
 
 | Scenario          | Proves                                                                                                                                                                                                                                                                                                                             |
@@ -83,9 +83,9 @@ and re-applies it on every wait tick (a reload drops it).
 
 Not in the gate, run when the release touches them:
 
-- `dev/test/windows/smoke.ps1`: the NSIS installer on Windows (paths with spaces, second
+- `tests/windows/smoke.ps1`: the NSIS installer on Windows (paths with spaces, second
   instance, corrupt settings, read-only data folder, uninstall keeps data).
-- `dev/test/server/`: a real lab on Proxmox, ESXi and a local VM through `deploy/vagrant`
+- `tests/server/`: a real lab on Proxmox, ESXi and a local VM through `deploy/vagrant`
   (throwaway hosts, see its README).
 - The ignored Rust tests that need real tools: `cargo test -- --ignored real_vm_labs`,
   `real_server_labs`, `real_docker_vm_labs`, `real_flag_labs`, `fake_clis` (cloud reaper and hung

@@ -4,7 +4,7 @@
 # lab to import; on a Mac, a UTM VM named for it), run every native scenario in an order that
 # leaves nothing behind, and print one verdict per scenario. This is the layer CI does not run
 # (it needs a desktop session, a real Docker engine and, for the VM scan, a hypervisor), so it is
-# part of dev/release-check.sh, the gate before a release.
+# part of scripts/release-check.sh, the gate before a release.
 #
 #   tests/native/run-all.sh                          # everything this machine can run
 #   ONLY="smoke fail-offline" tests/native/run-all.sh
@@ -16,7 +16,7 @@
 #   DEV_URL_PORT            where a DEBUG build loads its frontend from (3000, tauri.conf.json's
 #                           devUrl); a `next dev` already listening there is reused
 #   CYBERCTF_TEST_LOCAL_LAB the lab folder the scenarios import (default: a checkout of the
-#                           Supplier Portal API lab under dev/test/server/.state/labs)
+#                           Supplier Portal API lab under tests/server/.state/labs)
 #   CASE_TIMEOUT            seconds per scenario (900: the first import builds the lab's images)
 #   STRICT=1                a skipped scenario fails the run
 # Windows: tests/native/run-embedded.ps1 runs the smoke; the scenarios take APP_BIN there too.
@@ -95,9 +95,9 @@ esac
 DOCKER_OK=1
 docker info >/dev/null 2>&1 || DOCKER_OK=0
 if [ -z "${CYBERCTF_TEST_LOCAL_LAB:-}" ]; then
-  # The same lab the server tests deploy, checked out under dev/test/server/.state (ignored).
-  SERVER_TEST="$HERE/dev/test/server"
-  # shellcheck source=dev/test/server/lib.sh
+  # The same lab the server tests deploy, checked out under tests/server/.state (ignored).
+  SERVER_TEST="$HERE/tests/server"
+  # shellcheck source=tests/server/lib.sh
   . "$SERVER_TEST/lib.sh"
   CYBERCTF_TEST_LOCAL_LAB=$(lab_dir) || fail_now "could not check out the fixture lab"
 fi

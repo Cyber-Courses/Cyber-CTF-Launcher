@@ -1,7 +1,7 @@
 # shellcheck shell=sh
 # Shared helpers for the test servers (sourced, POSIX sh).
 # Everything machine-specific (passwords, keys, lab checkouts, Terraform state) lives in
-# dev/test/server/.state/, which git ignores.
+# tests/server/.state/, which git ignores.
 
 # Callers set SERVER_TEST (this folder) before sourcing:
 #   SERVER_TEST=$(cd "$(dirname "$0")/.." && pwd); . "$SERVER_TEST/lib.sh"

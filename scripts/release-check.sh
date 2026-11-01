@@ -4,9 +4,9 @@
 # developer machine, with one line per step at the end. Steps keep going after a failure so one
 # run reports everything that is wrong.
 #
-#   dev/release-check.sh                    # the whole gate
-#   ONLY="unit-web e2e-mock" dev/release-check.sh
-#   SKIP="e2e-native" dev/release-check.sh  # what CI covers, without the native layer
+#   scripts/release-check.sh                    # the whole gate
+#   ONLY="unit-web e2e-mock" scripts/release-check.sh
+#   SKIP="e2e-native" scripts/release-check.sh  # what CI covers, without the native layer
 #
 # Steps, in order: prereqs, install, versions, format, types, lint, quality, unit-web (with the
 # coverage floors), unit-rust, coverage-rust (when cargo-llvm-cov is installed), e2e-mock
