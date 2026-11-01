@@ -102,12 +102,12 @@ async fn fake_clis_a_failing_auto_stop_is_recorded_until_the_credentials_work() 
     let t = TestApp::new();
     let (_, state) = deployed_on_aws(&t, "e2e-reap-fail", "eu-west-3");
     Box::pin(crate::runtime::reap_expired_labs(t.handle())).await;
-    let shown = crate::runtime::reaper::last_failure(t.handle(), "e2e-reap-fail").expect("recorded").message;
+    let shown = crate::runtime::reaper::last_failure(&t.dirs(), "e2e-reap-fail").expect("recorded").message;
     assert!(shown.contains("ExpiredToken"), "{shown}");
     assert!(state.join("terraform.tfstate").is_file());
     terraform(&bin, "echo destroyed");
     Box::pin(crate::runtime::reap_expired_labs(t.handle())).await;
-    assert_eq!(crate::runtime::reaper::last_failure(t.handle(), "e2e-reap-fail"), None);
+    assert_eq!(crate::runtime::reaper::last_failure(&t.dirs(), "e2e-reap-fail"), None);
     assert!(!state.join("terraform.tfstate").exists());
 }
 
@@ -122,7 +122,7 @@ async fn fake_clis_an_unreachable_gcloud_never_replaces_the_labs_project() {
     );
     let t = TestApp::new();
     let id = t.host("gcp1", "gcp", serde_json::json!({ "username": "0X0X0X-0X0X0X-0X0X0X", "gcpProject": "cyberctf-labs-aaaaaa" }));
-    let err = crate::runtime::server::gcp::labs_project(t.handle(), &id).await.unwrap_err().to_string();
+    let err = crate::runtime::server::gcp::labs_project(&t.dirs(), &id).await.unwrap_err().to_string();
     assert!(err.contains("network unreachable"), "{err}");
     assert!(!created.exists(), "no new project");
 }

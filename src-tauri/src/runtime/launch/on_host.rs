@@ -1,32 +1,32 @@
 //! Starting a lab on a server host: ESXi through Vagrant, Proxmox and the clouds through
 //! Terraform, with the AWS budget check and this machine's public IP for the firewall rules.
 
-use super::{AppHandle, Error, LabRef, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, runner_home, server};
+use super::{AppDirs, Error, LabRef, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, runner_home, server};
 
-pub(super) async fn start_on_server(app: &AppHandle, lab: LabRef<'_>, host: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+pub(super) async fn start_on_server(dirs: &AppDirs, lab: LabRef<'_>, host: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     // GCP labs run in the account's labs project: make sure it exists (one free billing slot).
-    if server::connection(app, host)?.provider == Provider::Gcp {
+    if server::connection(dirs, host)?.provider == Provider::Gcp {
         log("Checking the Cyber CTF labs project on Google Cloud…".into());
-        server::gcp::labs_project(app, host).await?;
+        server::gcp::labs_project(dirs, host).await?;
     }
-    let conn = server::connection(app, host)?;
+    let conn = server::connection(dirs, host)?;
     // Mark first, so a half-created lab can still be destroyed on the same host.
     server::mark_lab(dir, Some(host))?;
     log(format!("Running on server host {} ({})", conn.name, conn.provider.id()));
     // Every server lab runs through the Isothrum runner: a cloud account, an ESXi host (Vagrant),
     // or a Proxmox server (Terraform). The runner keeps the state, the slot and the connection.
     if conn.provider.is_cloud() {
-        return start_cloud_run(app, CloudStart { dir, id, runtime, host, conn, env }, log).await;
+        return start_cloud_run(dirs, CloudStart { dir, id, runtime, host, conn, env }, log).await;
     }
     if conn.provider == Provider::VmwareEsxi {
         lab::prepare(dir, lab::vagrant_target(runtime))?;
-        esxi_run(app, dir, id, runtime, &conn)?.up(env, Some(Provider::VmwareEsxi.id()), log).await?;
+        esxi_run(dirs, dir, id, runtime, &conn)?.up(env, Some(Provider::VmwareEsxi.id()), log).await?;
         return mark_parked(dir, None);
     }
     lab::prepare(dir, lab::terraform(dir, runtime, "proxmox").1)?;
-    let run = isothrum::ServerRun::new(&runner_home(app)?, dir, id, runtime)?;
-    let place = server_place(app, host, &conn, &run).await?;
+    let run = isothrum::ServerRun::new(&runner_home(dirs)?, dir, id, runtime)?;
+    let place = server_place(dirs, host, &conn, &run).await?;
     if place.jump.is_some() {
         log("The lab bridge is internal to the node: reaching the lab's VMs through the node.".into());
     }
@@ -41,28 +41,28 @@ pub(in crate::runtime) fn runner_runs_on(provider: Provider, runtime: Runtime) -
 
 /// The runner's run of VM lab `id` (in `dir`) on the ESXi server it is marked for, with that
 /// server's connection `c`: its settings as params, its password as the run's connection.
-pub(in crate::runtime) fn esxi_run(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection) -> Result<isothrum::LabRun> {
+pub(in crate::runtime) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection) -> Result<isothrum::LabRun> {
     let host = server::marked_host(dir).unwrap_or_default();
-    isothrum::LabRun::on_esxi(&runner_home(app)?, dir, id, runtime, isothrum::EsxiPlace::from_env(&host, &c.env))
+    isothrum::LabRun::on_esxi(&runner_home(dirs)?, dir, id, runtime, isothrum::EsxiPlace::from_env(&host, &c.env))
 }
 
 /// Where a runner's run goes on server `host` (connection `conn`): its variables, the node when
 /// its profile names none, and the node login SSH goes through first when the lab bridge is
 /// internal (the runner's key, the launcher's own, let in on the node).
 pub(in crate::runtime) async fn server_place(
-    app: &AppHandle,
+    dirs: &AppDirs,
     host: &str,
     conn: &server::Connection,
     run: &isothrum::ServerRun,
 ) -> Result<isothrum::ServerPlace> {
     let public = run.public_key().await?;
-    let key = runner_home(app)?.join("ssh").join("id_ed25519");
+    let key = runner_home(dirs)?.join("ssh").join("id_ed25519");
     Ok(isothrum::ServerPlace {
         label: host.to_owned(),
         name: conn.name.clone(),
         vars: conn.tf_vars.clone(),
-        node: server::discovered_node(app, host).await?,
-        jump: server::proxmox_jump_for_host(app, host, &key, &public).await?,
+        node: server::discovered_node(dirs, host).await?,
+        jump: server::proxmox_jump_for_host(dirs, host, &key, &public).await?,
     })
 }
 
@@ -82,7 +82,7 @@ pub(in crate::runtime) struct CloudStart<'a> {
 /// firewall, the GCP labs project (done in [`start_on_server`]), the account's credentials — and
 /// the runner does the work: it delivers the lab over SSH, applies the egress seal, reads the
 /// module's `ssh_user` output and keeps the Terraform state and the run's expiry.
-pub(super) async fn start_cloud_run(app: &AppHandle, start: CloudStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+pub(super) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let CloudStart { dir, id, runtime, host, conn, env } = start;
     let cloud = server::terraform_target(conn.provider).ok_or_else(|| Error::Invalid("this account's cloud runs no Terraform labs".into()))?;
     // Generate the lab's module for this cloud (a cloud a lab can't run on has no module, and the
@@ -90,13 +90,13 @@ pub(super) async fn start_cloud_run(app: &AppHandle, start: CloudStart<'_>, log:
     let (_, target) = lab::terraform(dir, runtime, cloud);
     lab::prepare(dir, target)?;
     if conn.provider == Provider::Aws {
-        check_aws_budget(app, host, log).await?;
+        check_aws_budget(dirs, host, log).await?;
     }
     log(format!("This lab runs in your {} account and is billed there until you stop it.", conn.provider.id().to_uppercase()));
     // The firewall opens the lab's SSH and published ports to this machine's public IP only.
     let allowed = public_ip().await?;
     let place = cloud_place(host, &conn, &allowed);
-    let run = isothrum::CloudRun::new(&runner_home(app)?, dir, id, runtime, cloud)?;
+    let run = isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, runtime, cloud)?;
     run.up(&place, env, log).await?;
     mark_parked(dir, None)
 }
@@ -117,8 +117,8 @@ pub(in crate::runtime) fn cloud_place(host: &str, conn: &server::Connection, all
 
 /// Stops before spending if this AWS account is over its monthly budget, or if a budget is set
 /// and the spend is over it; if the spend can't be read, warns and lets the launch go on.
-pub(in crate::runtime) async fn check_aws_budget(app: &AppHandle, host: &str, log: &mut impl FnMut(String)) -> Result<()> {
-    budget_verdict(server::check_budget(app, host).await, log)
+pub(in crate::runtime) async fn check_aws_budget(dirs: &AppDirs, host: &str, log: &mut impl FnMut(String)) -> Result<()> {
+    budget_verdict(server::check_budget(dirs, host).await, log)
 }
 
 /// What a budget check means for the launch: refused over budget, a note when unverifiable.

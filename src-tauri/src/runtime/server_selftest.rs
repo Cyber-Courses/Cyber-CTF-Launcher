@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::AppHandle;
+use crate::platform::AppDirs;
 use tauri::Manager;
 use tauri::ipc::Channel;
 
@@ -70,11 +71,12 @@ fn work_dir(app: &AppHandle, id: &str) -> Result<PathBuf> {
 #[tauri::command]
 pub async fn server_selftest(app: AppHandle, id: String, events: Channel<Event>) -> Result<()> {
     let r = Reporter(events);
+    let dirs = AppDirs::from(&app);
     // `connect` resolves the host and its secret, which proves the profile and keychain are
     // usable before anything is created on the host.
     let conn = r
         .step("connect", "Reach the host", async {
-            let c = server::connection(&app, &id)?;
+            let c = server::connection(&dirs, &id)?;
             let name = c.name.clone();
             Ok((c, Some(name)))
         })
@@ -103,7 +105,7 @@ pub async fn server_selftest(app: AppHandle, id: String, events: Channel<Event>)
     }
 
     let ran = match conn.provider {
-        Provider::Proxmox => proxmox::run(&app, &id, &r, &conn, &work).await,
+        Provider::Proxmox => proxmox::run(&dirs, &id, &r, &conn, &work).await,
         Provider::VmwareEsxi => esxi::run(&r, &conn, &work).await,
         Provider::Aws => Ran::nothing(Error::Invalid("the VM test is for server hosts; AWS labs are billed, so it isn't run as a test".into())),
         _ => Ran::nothing(Error::Invalid("the VM test runs only on a Proxmox or ESXi host".into())),

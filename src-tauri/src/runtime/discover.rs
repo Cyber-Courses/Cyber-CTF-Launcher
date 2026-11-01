@@ -15,9 +15,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
-use crate::AppHandle;
-use tauri::Manager;
-
+use crate::platform::AppDirs;
 use crate::platform::exec::run_read;
 
 /// The Compose project prefix every lab's containers carry (`cyberctf-<id>`).
@@ -221,7 +219,7 @@ pub(crate) fn is_lab_id(id: &str) -> bool {
 /// The ids of labs running on this machine right now, asked of Docker and of each hypervisor.
 /// Best effort: an engine that is absent or errors simply contributes nothing. Read-only and
 /// timed (never hangs the caller), so it is safe to poll.
-pub async fn running_lab_ids(app: &AppHandle) -> Vec<String> {
+pub async fn running_lab_ids(dirs: &AppDirs) -> Vec<String> {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, Ordering};
     // One scan at a time: the UI polls every few seconds, and a wedged hypervisor makes each
@@ -233,14 +231,14 @@ pub async fn running_lab_ids(app: &AppHandle) -> Vec<String> {
         return LAST.lock().map(|l| l.clone()).unwrap_or_default();
     }
     let _done = crate::platform::ResetOnDrop(&IN_FLIGHT);
-    let ids = scan(app).await;
+    let ids = scan(dirs).await;
     if let Ok(mut last) = LAST.lock() {
         last.clone_from(&ids);
     }
     ids
 }
 
-async fn scan(app: &AppHandle) -> Vec<String> {
+async fn scan(dirs: &AppDirs) -> Vec<String> {
     let mut ids = BTreeSet::new();
     // Docker: the Compose project of every running container. A failure here is worth a warning
     // (the engine is missing or broken); an empty result is simply "nothing running".
@@ -249,7 +247,7 @@ async fn scan(app: &AppHandle) -> Vec<String> {
         Err(e) => log::warn!("running-labs scan: docker ps failed: {e}"),
     }
     // Hypervisors: their running VMs, named after the installed labs.
-    let by_name = app.path().app_data_dir().map(|d| lab_names(&d.join("labs"))).unwrap_or_default();
+    let by_name = dirs.data().map(|d| lab_names(&d.join("labs"))).unwrap_or_default();
     ids.extend(vm_lab_ids(&by_name).await);
     let ids: Vec<String> = ids.into_iter().collect();
     log::debug!("running-labs scan: {} running lab(s) {:?}", ids.len(), ids);

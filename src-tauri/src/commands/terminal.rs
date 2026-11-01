@@ -7,6 +7,7 @@ use tauri::ipc::Channel;
 
 use crate::app::window;
 use crate::error::Result;
+use crate::platform::AppDirs;
 use crate::runtime::{Runtime, ShellCommand};
 use crate::terminal::{self, TermEvent};
 use crate::{AppHandle, WebviewWindow};
@@ -24,7 +25,7 @@ struct Targets<'a>(&'a AppHandle);
 
 impl terminal::ShellTargets for Targets<'_> {
     fn command(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<ShellCommand>> + Send {
-        let command = crate::runtime::box_shell_command(self.0, id, runtime);
+        let command = crate::runtime::box_shell_command(&AppDirs::from(self.0), id, runtime);
         async move { command }
     }
 }

@@ -2,6 +2,7 @@
 //! cloud launch. AWS-only: the other clouds have no cost read yet, and never persist a limit.
 
 use crate::AppHandle;
+use crate::platform::AppDirs;
 
 use super::cloud_checks::{aws_cmd, last_line};
 use super::contract::terraform_env;
@@ -16,7 +17,7 @@ use crate::runtime::providers::Provider;
 /// budget gate checks, never another account's (the CLI's default profile's).
 #[tauri::command]
 pub async fn server_month_to_date_cost(app: AppHandle, id: String) -> Result<f64> {
-    let host = load_host(&app, &id)?;
+    let host = load_host(&AppDirs::from(&app), &id)?;
     if host.provider != Provider::Aws {
         return Err(Error::Invalid("only AWS accounts report their spend".into()));
     }
@@ -100,8 +101,8 @@ pub enum BudgetCheck {
 }
 
 /// Checks an account against its monthly budget before a launch.
-pub async fn check_budget(app: &AppHandle, id: &str) -> BudgetCheck {
-    let Ok(host) = load_host(app, id) else { return BudgetCheck::Ok };
+pub async fn check_budget(dirs: &AppDirs, id: &str) -> BudgetCheck {
+    let Ok(host) = load_host(dirs, id) else { return BudgetCheck::Ok };
     let Some(limit) = budget_limit(&host) else { return BudgetCheck::Ok };
     let Ok(password) = host_secret(&host) else {
         return BudgetCheck::Unverifiable("No stored credentials for this account. Re-enter its access keys, then launch again.".into());

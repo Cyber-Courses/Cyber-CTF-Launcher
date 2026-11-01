@@ -4,7 +4,7 @@
       "rs:account": 1,
       "rs:deploy_worker": 3,
       "rs:labs": 1,
-      "rs:runtime": 20
+      "rs:runtime": 7
     }
   },
   "clippy": {

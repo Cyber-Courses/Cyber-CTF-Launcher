@@ -28,6 +28,7 @@ async fn a_local_lab_launches_and_tears_down_through_the_commands() {
     let src = std::path::PathBuf::from(src);
     let t = crate::testing::test_app::TestApp::new();
     let app = t.handle().clone();
+    let dirs = crate::platform::AppDirs::from(&app);
     let id = local_id(&src).expect("a lab folder with an isoloom.yml");
     let mut f = Vec::new();
 
@@ -38,9 +39,9 @@ async fn a_local_lab_launches_and_tears_down_through_the_commands() {
         check(s.as_ref().is_ok_and(up), format!("{id}: lab_status reports it up ({})", s.as_ref().err().map(ToString::to_string).unwrap_or_default()), &mut f);
         let c = lab_check(app.clone(), id.clone(), Runtime::Docker).await;
         check(c.as_ref().is_ok_and(|c| c.available && c.ok && !c.results.is_empty()), format!("{id}: lab_check passes ({c:?})"), &mut f);
-        let parked = park_lab(&app, &id, Runtime::Docker, Park::Shutdown, log(&id)).await;
+        let parked = park_lab(&dirs, &id, Runtime::Docker, Park::Shutdown, log(&id)).await;
         check(parked.is_ok(), format!("{id}: it parks ({:?})", parked.err()), &mut f);
-        let resumed = resume_lab(&app, &id, Runtime::Docker, log(&id)).await;
+        let resumed = resume_lab(&dirs, &id, Runtime::Docker, log(&id)).await;
         check(resumed.is_ok(), format!("{id}: it resumes ({:?})", resumed.err()), &mut f);
         let again = lab_status(app.clone(), id.clone(), Runtime::Docker).await;
         check(
@@ -50,7 +51,7 @@ async fn a_local_lab_launches_and_tears_down_through_the_commands() {
         );
     }
 
-    let stopped = stop_lab(&app, &id, Runtime::Docker, log(&id)).await;
+    let stopped = stop_lab(&dirs, &id, Runtime::Docker, log(&id)).await;
     check(stopped.is_ok(), format!("{id}: it stops ({:?})", stopped.err()), &mut f);
     let left = leftovers(&id).await;
     check(left.is_empty(), format!("{id}: nothing of it is left ({left:?})"), &mut f);

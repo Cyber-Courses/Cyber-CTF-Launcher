@@ -13,6 +13,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use crate::AppHandle;
+use crate::platform::AppDirs;
 use serde_json::{Value, json};
 use tauri::{Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
@@ -92,7 +93,7 @@ fn capabilities() -> Vec<String> {
 async fn register(app: &AppHandle) -> Result<String> {
     let data = api::graphql(
         "mutation ($i: ID!, $n: String!, $c: [String!]!, $a: String, $t: [LaunchTargetInput!]) { registerLauncher(installId: $i, name: $n, capabilities: $c, arch: $a, targets: $t) { id } }",
-        json!({ "i": install_id(app)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(app) }),
+        json!({ "i": install_id(app)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(&AppDirs::from(app)) }),
         true,
     )
     .await?;
@@ -103,7 +104,7 @@ async fn register(app: &AppHandle) -> Result<String> {
 async fn heartbeat(app: &AppHandle, agent_id: &str) -> Result<()> {
     api::graphql(
         "mutation ($id: ID!, $t: [LaunchTargetInput!]) { launcherHeartbeat(agentId: $id, targets: $t) { id } }",
-        json!({ "id": agent_id, "t": server::launch_targets(app) }),
+        json!({ "id": agent_id, "t": server::launch_targets(&AppDirs::from(app)) }),
         true,
     )
     .await
@@ -181,7 +182,8 @@ async fn await_answer(rx: oneshot::Receiver<bool>, wait: Duration) -> bool {
 /// Where a claimed launch runs: the target picked on the website (one of this launcher's hosts
 /// or cloud accounts); else VM labs go to the default server host and Docker labs run here.
 fn launch_host(app: &AppHandle, claim: &Value) -> Result<Option<String>> {
-    pick_launch_host(claim, |target| server::host_name(app, target), || server::default_host(app))
+    let dirs = AppDirs::from(app);
+    pick_launch_host(claim, |target| server::host_name(&dirs, target), || server::default_host(&dirs))
 }
 
 /// `launch_host` given how to name a host (`None` when it isn't set up) and the default host.
@@ -199,8 +201,9 @@ fn pick_launch_host(claim: &Value, host_name: impl Fn(&str) -> Option<String>, d
 /// Running on a cloud account costs money, so a website launch onto one isn't auto-run: ask
 /// the user to confirm on this machine first (local and server targets still run unattended).
 async fn confirm_if_cloud(app: &AppHandle, session_id: &str, claim: &Value, host: Option<&str>) -> Result<()> {
-    let Some(id) = host.filter(|id| server::host_provider(app, id).is_some_and(crate::runtime::providers::Provider::is_cloud)) else { return Ok(()) };
-    let target = server::host_name(app, id).unwrap_or_else(|| id.to_string());
+    let dirs = AppDirs::from(app);
+    let Some(id) = host.filter(|id| server::host_provider(&dirs, id).is_some_and(crate::runtime::providers::Provider::is_cloud)) else { return Ok(()) };
+    let target = server::host_name(&dirs, id).unwrap_or_else(|| id.to_string());
     let repo = claim["repository"].as_str().unwrap_or("");
     let commit = claim["commit"].as_str().unwrap_or("");
     if confirm_cloud_launch(app, session_id, repo, commit, &target).await {
@@ -228,8 +231,9 @@ fn attack_image(host: Option<&str>, runtime: Runtime) -> Option<&'static str> {
 /// Stops a claimed lab that must not keep running under a failed session. A lab that never got
 /// installed (its download failed) has nothing to stop.
 async fn tear_down(app: &AppHandle, lab_id: Option<&str>, runtime: Runtime) -> Result<()> {
-    match lab_id.filter(|id| crate::runtime::lab_installed(app, id)) {
-        Some(id) => crate::runtime::stop_lab(app, id, runtime, |_line: String| {}).await,
+    let dirs = AppDirs::from(app);
+    match lab_id.filter(|id| crate::runtime::lab_installed(&dirs, id)) {
+        Some(id) => crate::runtime::stop_lab(&dirs, id, runtime, |_line: String| {}).await,
         None => Ok(()),
     }
 }
@@ -262,7 +266,7 @@ fn undoes(failure: &Error, present_before: bool) -> bool {
 /// Whether something of the claimed lab exists before its start (see `runtime::lab_present`).
 async fn present_before(app: &AppHandle, claim: &Value) -> bool {
     match claim["labId"].as_str() {
-        Some(id) => crate::runtime::lab_present(app, id).await,
+        Some(id) => crate::runtime::lab_present(&AppDirs::from(app), id).await,
         None => false,
     }
 }
@@ -288,7 +292,7 @@ async fn run_claimed(app: &AppHandle, claim: &Value, host: Option<&str>, runtime
 /// endpoint + one-time token/nonce so the website can verify co-location before trusting the
 /// 127.0.0.1 URL (the endpoint ends once it answered, when the lab stops, or after a while). The relay path for a remote/headless agent is the next step.
 async fn report_running(app: &AppHandle, session_id: &str, lab_id: Option<&str>, host: Option<&str>, url: Option<&str>) -> Result<()> {
-    let running_on = running_message(host.and_then(|h| server::host_name(app, h)));
+    let running_on = running_message(host.and_then(|h| server::host_name(&AppDirs::from(app), h)));
     let token = random_hex();
     let nonce = random_hex();
     let control_url = colocation::serve(lab_id, token.clone(), nonce.clone()).await.ok().map(|port| format!("http://127.0.0.1:{port}"));
@@ -650,7 +654,7 @@ mod tests {
         server::mark_lab(&dir, Some("pve1")).unwrap();
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let failure = Error::Invalid("the lab host didn't answer".into());
-        let err = undo_start(t.handle(), Some(id), Runtime::Docker, crate::runtime::lab_present(t.handle(), id).await, failure).await;
+        let err = undo_start(t.handle(), Some(id), Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id).await, failure).await;
         assert_eq!(err.to_string(), "the lab host didn't answer");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert_eq!(server::marked_host(&dir).as_deref(), Some("pve1"));

@@ -29,7 +29,7 @@
 //! - What the lab exposes is its outputs (`cloud.outputs`), read from the state; its message
 //!   names them (`{{ cloud.outputs.NAME }}`). Stop destroys everything: nothing is parked.
 
-use crate::AppHandle;
+use crate::platform::AppDirs;
 
 use super::lab::{CloudProvider, CloudServices, Spec, Target};
 use super::launch::{CLOUD_NEEDS_ACCOUNT, check_aws_budget, public_ip};
@@ -85,7 +85,7 @@ pub fn cost_line(hourly_usd: Option<f64>, auto_stop_hours: u32) -> String {
 /// policy — the account is of the lab's cloud, the GCP labs project, the AWS budget, this machine's
 /// public IP where the lab asks for it — and the runner runs the module, keeps the state and the
 /// expiry, and ends what it costs on a stop or the auto-stop.
-pub(super) async fn start(app: &AppHandle, lab: LabRef<'_>, host: Option<&str>, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+pub(super) async fn start(dirs: &AppDirs, lab: LabRef<'_>, host: Option<&str>, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     // A cloud-services lab always runs as `Runtime::Cloud`, so only the lab's folder and id are
     // read from the reference here.
     let LabRef { dir, id, .. } = lab;
@@ -93,14 +93,14 @@ pub(super) async fn start(app: &AppHandle, lab: LabRef<'_>, host: Option<&str>, 
     let spec = lab::prepare(dir, Target::CloudServices)?.spec;
     let cloud = of(&spec)?;
     check_supported(cloud)?;
-    let conn = server::connection(app, host)?;
+    let conn = server::connection(dirs, host)?;
     check_account(cloud.provider, &conn)?;
-    let conn = ready_account(app, host, conn, log).await?;
+    let conn = ready_account(dirs, host, conn, log).await?;
     // Mark first, so a half-created lab can still be destroyed with the same account.
     server::mark_lab(dir, Some(host))?;
     log(format!("Running in your {} account {} ({})", conn.provider.id().to_uppercase(), conn.name, region_used(cloud, &conn).unwrap_or("default region")));
     if conn.provider == Provider::Aws {
-        check_aws_budget(app, host, log).await?;
+        check_aws_budget(dirs, host, log).await?;
     }
     let hours = auto_stop_hours(&conn);
     log(cost_line(cloud.hourly_usd, hours));
@@ -118,7 +118,7 @@ pub(super) async fn start(app: &AppHandle, lab: LabRef<'_>, host: Option<&str>, 
         ..isothrum::CloudPlace::default()
     };
     let cloud_tf = server::terraform_target(conn.provider).unwrap_or_default();
-    isothrum::CloudRun::new(&super::paths::runner_home(app)?, dir, id, Runtime::Cloud, cloud_tf)?.up(&place, &inputs, log).await
+    isothrum::CloudRun::new(&super::paths::runner_home(dirs)?, dir, id, Runtime::Cloud, cloud_tf)?.up(&place, &inputs, log).await
 }
 
 /// Refuses a lab using what this launcher doesn't run yet: set-up steps on this machine before
@@ -170,13 +170,13 @@ fn check_account(cloud: CloudProvider, conn: &server::Connection) -> Result<()> 
 
 /// The account ready to run labs in: on GCP, its labs project made sure of (one free billing
 /// slot), and the connection read again with it.
-async fn ready_account(app: &AppHandle, host: &str, conn: server::Connection, log: &mut impl FnMut(String)) -> Result<server::Connection> {
+async fn ready_account(dirs: &AppDirs, host: &str, conn: server::Connection, log: &mut impl FnMut(String)) -> Result<server::Connection> {
     if conn.provider != Provider::Gcp {
         return Ok(conn);
     }
     log("Checking the Cyber CTF labs project on Google Cloud…".into());
-    server::gcp::labs_project(app, host).await?;
-    server::connection(app, host)
+    server::gcp::labs_project(dirs, host).await?;
+    server::connection(dirs, host)
 }
 
 /// The account's auto-stop, in hours (0: none).
@@ -228,10 +228,10 @@ pub fn preview(spec: &Spec) -> Option<Preview> {
 
 /// [`Preview`] of a lab at a commit: the installed copy when it is that commit, else its
 /// `isoloom.yml` from GitHub (CyberCTF repositories at a full SHA only).
-pub async fn preview_at(app: &AppHandle, lab_id: &str, repository: &str, commit: &str) -> Result<Option<Preview>> {
+pub async fn preview_at(dirs: &AppDirs, lab_id: &str, repository: &str, commit: &str) -> Result<Option<Preview>> {
     super::validate_id(lab_id)?;
     crate::labs::validate_source(repository, commit)?;
-    if let Ok(dir) = lab_dir(app, lab_id)
+    if let Ok(dir) = lab_dir(dirs, lab_id)
         && std::fs::read_to_string(dir.join(".cyberctf-commit")).is_ok_and(|c| c.trim() == commit)
         && let Ok(spec) = lab::load(&dir)
     {
@@ -298,7 +298,7 @@ mod tests {
         );
         let tools = Tools::rules(&[]);
         // No such account: had it been read first, that would be the error.
-        let err = super::super::start(t.handle(), &dir, "goat", Runtime::Cloud, None, Some("no-such-account"), &[], |_| {}).await.unwrap_err().to_string();
+        let err = super::super::start(&t.dirs(), &dir, "goat", Runtime::Cloud, None, Some("no-such-account"), &[], |_| {}).await.unwrap_err().to_string();
         assert!(err.contains("set-up steps on this machine"), "{err}");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert!(!t.data().join("deployments/goat").exists());

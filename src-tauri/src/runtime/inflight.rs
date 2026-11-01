@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::AppHandle;
 use crate::deploy_worker::lock;
 use crate::error::Result;
+use crate::platform::AppDirs;
 use tokio::sync::OwnedMutexGuard;
 
 /// What is in flight for a lab: a start (provisioning) or a stop (teardown). Told apart so the
@@ -111,8 +111,8 @@ fn process_lock(id: &str) -> Arc<tokio::sync::Mutex<()>> {
 /// uses the `_locked` variant of an operation. A lock that can't be taken fails the operation:
 /// carrying on without it is what the lock is there to prevent (Terraform's own state lock is
 /// cleared on the assumption that this one is held).
-pub(crate) async fn lock_lab(app: &AppHandle, id: &str) -> Result<LabLock> {
-    lock_lab_at(Some(&crate::deploy_worker::lock_path(app, id)?), id).await
+pub(crate) async fn lock_lab(dirs: &AppDirs, id: &str) -> Result<LabLock> {
+    lock_lab_at(Some(&crate::deploy_worker::lock_path(dirs, id)?), id).await
 }
 
 /// [`lock_lab`] with its lock file at `file` (`None`: this process's lock only).
@@ -127,8 +127,8 @@ async fn lock_lab_at(file: Option<&Path>, id: &str) -> Result<LabLock> {
 
 /// [`lock_lab`] without waiting: `None` while another operation (of this process or another)
 /// holds the lab.
-pub(super) fn try_lock_lab(app: &AppHandle, id: &str) -> Result<Option<LabLock>> {
-    try_lock_lab_at(Some(&crate::deploy_worker::lock_path(app, id)?), id)
+pub(super) fn try_lock_lab(dirs: &AppDirs, id: &str) -> Result<Option<LabLock>> {
+    try_lock_lab_at(Some(&crate::deploy_worker::lock_path(dirs, id)?), id)
 }
 
 /// [`try_lock_lab`] with its lock file at `file` (`None`: this process's lock only).

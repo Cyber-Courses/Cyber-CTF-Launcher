@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use crate::AppHandle;
+use crate::platform::AppDirs;
 
 use super::profile::{HostProfile, random_hex};
 use super::store::{find, load, update};
@@ -29,17 +29,17 @@ enum Project {
 /// who can't see it, timed out) is an error, never "gone": a new project then would leave the
 /// labs running in the old one (stopped against the new one, they'd keep billing) and use up a
 /// billing slot each time.
-pub async fn labs_project(app: &AppHandle, id: &str) -> Result<String> {
+pub async fn labs_project(dirs: &AppDirs, id: &str) -> Result<String> {
     // One at a time: two launches (or a test and a launch) at once each saw no project yet and
     // created one, and the last to save won. The second waits, then finds the first's project.
     static CREATING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _one_at_a_time = CREATING.lock().await;
     // Read fresh under the lock, and only this host's field is written back (the rest of the
     // store may have been edited meanwhile).
-    let host = find(&load(app)?, id)?;
+    let host = find(&load(dirs)?, id)?;
     match host.gcp_project.as_deref() {
         Some(p) if project_state(p).await? == Project::Active => Ok(p.to_string()),
-        _ => create_project(app, &host).await,
+        _ => create_project(dirs, &host).await,
     }
 }
 
@@ -69,7 +69,7 @@ async fn project_state(p: &str) -> Result<Project> {
 /// Creates a labs project linked to the account's billing account, with Compute Engine enabled,
 /// and saves it as the account's only then. A project whose setup fails is deleted; when even
 /// that fails, the error names it, to delete by hand (it is never saved half set up).
-async fn create_project(app: &AppHandle, host: &HostProfile) -> Result<String> {
+async fn create_project(dirs: &AppDirs, host: &HostProfile) -> Result<String> {
     let project = format!("cyberctf-labs-{}", random_hex(3));
     let org = host.gcp_org().map(|o| format!("--organization={o}"));
     gcloud(&create_args(&project, org.as_deref()), PROJECT_TIMEOUT)
@@ -78,7 +78,7 @@ async fn create_project(app: &AppHandle, host: &HostProfile) -> Result<String> {
     if let Err(why) = set_up(&project, host.cloud_account().unwrap_or_default()).await {
         return Err(discard(&project, why).await);
     }
-    save_project(app, &host.id, &project)?;
+    save_project(dirs, &host.id, &project)?;
     Ok(project)
 }
 
@@ -104,8 +104,8 @@ async fn discard(project: &str, why: String) -> Error {
 }
 
 /// Saves `project` as host `id`'s labs project (only that field: the store may have changed).
-fn save_project(app: &AppHandle, id: &str, project: &str) -> Result<()> {
-    update(app, |store| {
+fn save_project(dirs: &AppDirs, id: &str, project: &str) -> Result<()> {
+    update(dirs, |store| {
         if let Some(h) = store.hosts.iter_mut().find(|h| h.id == id) {
             h.gcp_project = Some(project.to_string());
         }
@@ -154,7 +154,7 @@ mod tests {
     }
 
     fn saved_project(t: &TestApp) -> Option<String> {
-        find(&load(t.handle()).unwrap(), "gcp1").unwrap().gcp_project
+        find(&load(&t.dirs()).unwrap(), "gcp1").unwrap().gcp_project
     }
 
     #[tokio::test]
@@ -171,7 +171,7 @@ mod tests {
             "timed out after 60s (the tool or its backend may be stuck)",
         ] {
             let tools = Tools::rules(&[("projects describe", fail(stderr))]);
-            let err = labs_project(t.handle(), &id).await.unwrap_err().to_string();
+            let err = labs_project(&t.dirs(), &id).await.unwrap_err().to_string();
             assert!(err.starts_with("couldn't check the Cyber CTF labs project cyberctf-labs-aaaaaa:"), "{err}");
             assert!(!tools.called("projects create"), "{:?}", tools.calls());
             assert_eq!(saved_project(&t).as_deref(), Some("cyberctf-labs-aaaaaa"));
@@ -183,11 +183,11 @@ mod tests {
         let t = TestApp::new();
         let id = account(&t, Some("cyberctf-labs-aaaaaa"));
         let tools = Tools::rules(&[("projects describe", ok("ACTIVE\n"))]);
-        assert_eq!(labs_project(t.handle(), &id).await.unwrap(), "cyberctf-labs-aaaaaa");
+        assert_eq!(labs_project(&t.dirs(), &id).await.unwrap(), "cyberctf-labs-aaaaaa");
         assert!(!tools.called("projects create") && !tools.called("services enable"));
         drop(tools);
         let tools = Tools::rules(&[("projects describe", fail("ERROR: NOT_FOUND: project not found"))]);
-        let made = labs_project(t.handle(), &id).await.unwrap();
+        let made = labs_project(&t.dirs(), &id).await.unwrap();
         assert!(made.starts_with("cyberctf-labs-") && made != "cyberctf-labs-aaaaaa", "{made}");
         assert!(tools.called("billing projects link") && tools.called("--billing-account 0X0X0X-0X0X0X-0X0X0X"));
         assert!(tools.called(&format!("services enable compute.googleapis.com --project {made}")));
@@ -216,13 +216,13 @@ mod tests {
         let id = account(&t, None);
         for (step, stderr) in [("services enable", "ERROR: quota exceeded"), ("billing projects link", "Cloud billing quota exceeded")] {
             let tools = Tools::rules(&[(step, fail(stderr))]);
-            assert!(labs_project(t.handle(), &id).await.is_err());
+            assert!(labs_project(&t.dirs(), &id).await.is_err());
             assert!(tools.called("projects delete"), "{step}: {:?}", tools.calls());
             assert_eq!(saved_project(&t), None);
         }
         // Not even deletable: the error names it, to delete by hand.
         let _tools = Tools::rules(&[("services enable", fail("quota")), ("projects delete", fail("permission denied"))]);
-        let err = labs_project(t.handle(), &id).await.unwrap_err().to_string();
+        let err = labs_project(&t.dirs(), &id).await.unwrap_err().to_string();
         assert!(err.contains("couldn't be deleted either: delete it in the Google Cloud console"), "{err}");
         assert_eq!(saved_project(&t), None);
     }

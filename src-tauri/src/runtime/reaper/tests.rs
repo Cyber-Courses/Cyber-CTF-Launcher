@@ -10,8 +10,8 @@ fn a_recorded_reap_failure_is_read_back_for_the_lab_page() {
     let dir = t.data().join(REAP_ERRORS);
     let wire = Wire { code: Code::Other, message: "the token has expired".into() };
     record_failure(&dir, "web", &wire, "Auto-stop couldn't destroy web: the token has expired").unwrap();
-    assert_eq!(last_failure(t.handle(), "web"), Some(wire));
-    assert_eq!(last_failure(t.handle(), "other"), None, "a lab that never failed has nothing");
+    assert_eq!(last_failure(&t.dirs(), "web"), Some(wire));
+    assert_eq!(last_failure(&t.dirs(), "other"), None, "a lab that never failed has nothing");
 }
 
 #[test]
@@ -32,7 +32,7 @@ fn a_lab_id_must_be_a_plain_name_to_be_a_record_file() {
     assert!(valid_id("goad-light_2") && valid_id("web"));
     assert!(!valid_id("") && !valid_id("../x") && !valid_id(&"a".repeat(65)));
     let t = TestApp::new();
-    assert_eq!(last_failure(t.handle(), "../secrets"), None, "a path is never read as a record");
+    assert_eq!(last_failure(&t.dirs(), "../secrets"), None, "a path is never read as a record");
 }
 
 #[tokio::test]

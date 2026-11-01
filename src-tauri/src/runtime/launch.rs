@@ -3,8 +3,7 @@
 
 use std::path::Path;
 
-use crate::AppHandle;
-use tauri::Manager;
+use crate::platform::AppDirs;
 
 use super::inflight::{Action, DeployGuard};
 use super::paths::{deployment_states, forget_lab_host_keys, mark_local_vm, mark_parked, parked, runner_home, vagrant_dirs};
@@ -38,7 +37,7 @@ pub(super) use on_host::{esxi_run, runner_runs_on, server_place};
     reason = "the launch entry point carries the whole launch specification — the lab (dir, id), its runtime, a local provider or a server host, the launch inputs and a log sink — which has no smaller cohesive grouping"
 )]
 pub(crate) async fn start_locked(
-    app: &AppHandle,
+    dirs: &AppDirs,
     dir: &Path,
     id: &str,
     runtime: Runtime,
@@ -51,10 +50,10 @@ pub(crate) async fn start_locked(
     // A lab runs in one place: starting it here (or on another host) while its deployment is
     // still up elsewhere would drop the marker naming that host, and with it the way to stop
     // it (a cloud lab would keep billing).
-    if let Ok(base) = app.path().app_data_dir()
-        && let Some(other) = deployed_elsewhere(&base, dir, id, host)
+    if let Ok(base) = dirs.data()
+        && let Some(other) = deployed_elsewhere(base, dir, id, host)
     {
-        let name = server::host_name(app, &other).unwrap_or(other);
+        let name = server::host_name(dirs, &other).unwrap_or(other);
         return Err(Error::Refused(format!("This lab is still running on {name}. Stop it there before starting it somewhere else.")));
     }
     // New hosts may come up at the addresses of others: no key pinned before counts. A parked
@@ -64,11 +63,11 @@ pub(crate) async fn start_locked(
     }
     let lab = LabRef { dir, id, runtime };
     if runtime == Runtime::Cloud {
-        return cloud_services::start(app, lab, host, env, &mut log).await;
+        return cloud_services::start(dirs, lab, host, env, &mut log).await;
     }
     match host {
-        None => start_here(app, lab, provider, env, &mut log).await,
-        Some(host) => start_on_server(app, lab, host, env, &mut log).await,
+        None => start_here(dirs, lab, provider, env, &mut log).await,
+        Some(host) => start_on_server(dirs, lab, host, env, &mut log).await,
     }
 }
 
@@ -76,7 +75,7 @@ pub(crate) async fn start_locked(
 #[cfg(test)]
 #[allow(clippy::too_many_arguments, reason = "mirrors start_locked's full launch specification so tests start a lab by the same parameters")]
 pub(crate) async fn start(
-    app: &AppHandle,
+    dirs: &AppDirs,
     dir: &Path,
     id: &str,
     runtime: Runtime,
@@ -85,16 +84,16 @@ pub(crate) async fn start(
     env: &[(String, String)],
     log: impl FnMut(String),
 ) -> Result<()> {
-    let _lock = super::inflight::lock_lab(app, id).await?;
-    start_locked(app, dir, id, runtime, provider, host, env, log).await
+    let _lock = super::inflight::lock_lab(dirs, id).await?;
+    start_locked(dirs, dir, id, runtime, provider, host, env, log).await
 }
 
 /// The name of the server host lab `id` (folder `dir`) is deployed on, if something of it is
 /// still there: its folder must stay as it is (Vagrant's record of its machines, the module its
 /// Terraform state was applied from) until it is stopped there.
-pub fn deployed_on_server(app: &AppHandle, dir: &Path, id: &str) -> Option<String> {
-    let host = deployed_elsewhere(&app.path().app_data_dir().ok()?, dir, id, None)?;
-    Some(server::host_name(app, &host).unwrap_or(host))
+pub fn deployed_on_server(dirs: &AppDirs, dir: &Path, id: &str) -> Option<String> {
+    let host = deployed_elsewhere(dirs.data().ok()?, dir, id, None)?;
+    Some(server::host_name(dirs, &host).unwrap_or(host))
 }
 
 /// The server host lab `id` (folder `dir`, app data folder `base`) is still deployed on, when
@@ -110,25 +109,25 @@ fn deployed_elsewhere(base: &Path, dir: &Path, id: &str, host: Option<&str>) -> 
     (terraform || vagrant).then_some(marked)
 }
 
-async fn start_here(app: &AppHandle, lab: LabRef<'_>, provider: Option<Provider>, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+async fn start_here(dirs: &AppDirs, lab: LabRef<'_>, provider: Option<Provider>, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     server::mark_lab(dir, None)?;
     // Every lab on this machine runs through the Isothrum runner. A parked run is resumed as it
     // was and leftovers are cleared first (the runner's `Occupied::ResumeParked`); the runner
     // wrappers record the lab's downloads for Storage.
     match local_run(runtime, provider)? {
-        LocalRun::Docker => start_with_runner(app, dir, id, env, log).await,
-        LocalRun::DockerInVm(p) => start_docker_in_vm_with_runner(app, dir, id, VmStart { provider: p, env }, log).await,
-        LocalRun::Vm(p) => start_vm_with_runner(app, dir, id, VmStart { provider: p, env }, log).await,
+        LocalRun::Docker => start_with_runner(dirs, dir, id, env, log).await,
+        LocalRun::DockerInVm(p) => start_docker_in_vm_with_runner(dirs, dir, id, VmStart { provider: p, env }, log).await,
+        LocalRun::Vm(p) => start_vm_with_runner(dirs, dir, id, VmStart { provider: p, env }, log).await,
     }
 }
 
 /// A container lab in a VM on this machine through the Isothrum runner, its boxes recorded for
 /// Storage as on the launcher's own path.
-async fn start_docker_in_vm_with_runner(app: &AppHandle, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+async fn start_docker_in_vm_with_runner(dirs: &AppDirs, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let before = crate::machine::storage::owned::Before::take(false, true).await;
-    let started = start_docker_in_vm_run(&runner_home(app)?, dir, id, start, log).await;
-    crate::machine::storage::claim_lab(app, dir, id, &before).await;
+    let started = start_docker_in_vm_run(&runner_home(dirs)?, dir, id, start, log).await;
+    crate::machine::storage::claim_lab(dirs.clone(), dir, id, &before).await;
     started
 }
 
@@ -147,10 +146,10 @@ pub(super) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
 
 /// A container lab on this machine's Docker through the Isothrum runner (see `isothrum`), its
 /// downloads recorded for Storage as on the launcher's own path.
-async fn start_with_runner(app: &AppHandle, dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+async fn start_with_runner(dirs: &AppDirs, dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     let before = crate::machine::storage::owned::Before::take(true, false).await;
-    let started = start_docker_run(&runner_home(app)?, dir, id, env, log).await;
-    crate::machine::storage::claim_lab(app, dir, id, &before).await;
+    let started = start_docker_run(&runner_home(dirs)?, dir, id, env, log).await;
+    crate::machine::storage::claim_lab(dirs.clone(), dir, id, &before).await;
     started
 }
 
@@ -176,10 +175,10 @@ pub(super) struct VmStart<'a> {
 
 /// A VM lab on this machine through the Isothrum runner, its boxes recorded for Storage as on
 /// the launcher's own path.
-async fn start_vm_with_runner(app: &AppHandle, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+async fn start_vm_with_runner(dirs: &AppDirs, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let before = crate::machine::storage::owned::Before::take(false, true).await;
-    let started = start_vm_run(&runner_home(app)?, dir, id, start, log).await;
-    crate::machine::storage::claim_lab(app, dir, id, &before).await;
+    let started = start_vm_run(&runner_home(dirs)?, dir, id, start, log).await;
+    crate::machine::storage::claim_lab(dirs.clone(), dir, id, &before).await;
     started
 }
 

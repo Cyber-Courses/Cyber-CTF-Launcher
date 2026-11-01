@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use crate::AppHandle;
+use crate::platform::AppDirs;
 
 use super::{Ran, Reporter};
 use crate::runtime::server;
@@ -13,10 +13,10 @@ use crate::runtime::server;
 /// Nothing is created connection-only, so there is never a VM left to remove.
 pub(super) fn leftover(_r: &Reporter, _conn: &server::Connection, _work: &Path) {}
 
-pub(super) async fn run(app: &AppHandle, id: &str, r: &Reporter, _conn: &server::Connection, _work: &Path) -> Ran {
+pub(super) async fn run(dirs: &AppDirs, id: &str, r: &Reporter, _conn: &server::Connection, _work: &Path) -> Ran {
     let result = r
         .step("node", "Reach the Proxmox node over the API", async {
-            match server::discovered_node(app, id).await {
+            match server::discovered_node(dirs, id).await {
                 Ok(Some(node)) => Ok(((), Some(format!("node {node}")))),
                 Ok(None) => Ok(((), Some("the API answered".into()))),
                 Err(e) => Err(e),

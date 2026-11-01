@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::AppHandle;
+use crate::platform::AppDirs;
 use serde::Deserialize;
 use serde_json::json;
 use tauri::Manager;
@@ -172,7 +173,7 @@ async fn install_with(app: &AppHandle, release: Release<'_>, log: &impl Fn(Strin
     // Same on a server host: the folder holds Vagrant's record of its ESXi machines (and the
     // module its Terraform state was applied from), which the swap would delete.
     if dir.exists() {
-        let on_server = runtime::deployed_on_server(app, &dir, lab_id);
+        let on_server = runtime::deployed_on_server(&AppDirs::from(app), &dir, lab_id);
         // Running here, or VMs Vagrant still tracks here (a launch that failed on one machine, a
         // VM powered off by hand): the swap would delete its record and orphan them.
         let here = on_server.is_none() && (runtime::running_here(&dir, lab_id).await || runtime::vms_recorded_here(&dir));
@@ -298,12 +299,13 @@ pub(crate) async fn run(app: &AppHandle, launch_json: serde_json::Value, placeme
     // The lab is this launch's from the download on: two installs of one lab share its staging
     // folder, and a stop must not run while the new version is swapped in. Shared with the
     // deploy worker's own hold on it (same process), so a worker runs on.
-    let _lock = runtime::lock_lab(app, &launch.lab_id).await?;
+    let dirs = AppDirs::from(app);
+    let _lock = runtime::lock_lab(&dirs, &launch.lab_id).await?;
     let release = Release { lab_id: &launch.lab_id, repository: &launch.repository, commit: &launch.commit };
     let dir = install(app, release, &log).await?;
     // Fixed names for every lab; the evidence itself is never in the environment.
     let env = launch_env(launch.env, placement.attackbox_image, placement.default_ports);
-    runtime::start_locked(app, &dir, &launch.lab_id, launch.runtime, placement.provider, placement.host, &env, log).await?;
+    runtime::start_locked(&dirs, &dir, &launch.lab_id, launch.runtime, placement.provider, placement.host, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
 }
@@ -411,7 +413,7 @@ async fn install_local(app: &AppHandle, lab_id: &str, src: &Path, log: &impl Fn(
     // the machines and the module its state was applied from), or machines Vagrant still tracks
     // here. Stop it first.
     if dir.exists() {
-        if let Some(host) = runtime::deployed_on_server(app, &dir, lab_id) {
+        if let Some(host) = runtime::deployed_on_server(&AppDirs::from(app), &dir, lab_id) {
             return Err(Error::Refused(format!("{lab_id} is still running on {host}; stop it before importing it again")));
         }
         if runtime::running_here(&dir, lab_id).await || runtime::vms_recorded_here(&dir) {
@@ -434,9 +436,10 @@ async fn install_local(app: &AppHandle, lab_id: &str, src: &Path, log: &impl Fn(
 /// Returns its local URL.
 pub(crate) async fn run_local(app: &AppHandle, lab_id: &str, src: &Path, log: impl Fn(String)) -> Result<Option<String>> {
     runtime::validate_id(lab_id)?;
-    let _lock = runtime::lock_lab(app, lab_id).await?;
+    let dirs = AppDirs::from(app);
+    let _lock = runtime::lock_lab(&dirs, lab_id).await?;
     let dir = install_local(app, lab_id, src, &log).await?;
-    runtime::start_locked(app, &dir, lab_id, Runtime::Docker, None, None, &[], log).await?;
+    runtime::start_locked(&dirs, &dir, lab_id, Runtime::Docker, None, None, &[], log).await?;
     Ok(runtime::primary_url(&dir, lab_id, Runtime::Docker).await)
 }
 
@@ -670,7 +673,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (".cyberctf-commit", SHA)]);
         let tools = Tools::rules(&[]);
-        let held = runtime::lock_lab(t.handle(), "invoice").await.unwrap();
+        let held = runtime::lock_lab(&t.dirs(), "invoice").await.unwrap();
         let launch = serde_json::json!({ "labId": "invoice", "runtime": "DOCKER", "repository": "CyberCTF/invoice", "commit": SHA, "env": [] });
         let waiting = tokio::time::timeout(std::time::Duration::from_millis(300), run(t.handle(), launch.clone(), &Placement::default(), |_| {})).await;
         assert!(waiting.is_err(), "the launch waits while another operation holds the lab");

@@ -360,8 +360,8 @@ fn jobs_in(d: &Path) -> Vec<(Job, Option<String>)> {
 
 /// Stops the worker of `key` (a lab id, or its attack VM's key), with everything it started
 /// (its process group), if one runs.
-pub fn kill(app: &AppHandle, key: &str) {
-    let Ok(f) = files::of(&AppDirs::from(app), key) else { return };
+pub fn kill(dirs: &AppDirs, key: &str) {
+    let Ok(f) = files::of(dirs, key) else { return };
     kill_files(&f);
 }
 
@@ -410,9 +410,9 @@ fn terraform_launch(job: &Job, host_provider: Option<crate::runtime::providers::
 
 /// [`terraform_launch`] for the job a worker's files describe.
 #[cfg(windows)]
-fn launches_terraform(app: &AppHandle, f: &Files) -> bool {
+fn launches_terraform(dirs: &AppDirs, f: &Files) -> bool {
     let Some(job) = std::fs::read(&f.job).ok().and_then(|b| serde_json::from_slice::<Job>(&b).ok()) else { return false };
-    let provider = job.host.as_deref().and_then(|h| crate::runtime::server::host_provider(app, h));
+    let provider = job.host.as_deref().and_then(|h| crate::runtime::server::host_provider(dirs, h));
     terraform_launch(&job, provider)
 }
 
@@ -422,8 +422,8 @@ fn launches_terraform(app: &AppHandle, f: &Files) -> bool {
 /// Terraform never records what it was creating, and the destroy that follows leaves those
 /// resources running (and billing). Interrupted, it stops cleanly with its state saved, the
 /// worker ends with it, and the destroy that follows sees everything.
-pub async fn kill_and_wait(app: &AppHandle, key: &str) {
-    let Ok(f) = files::of(&AppDirs::from(app), key) else { return };
+pub async fn kill_and_wait(dirs: &AppDirs, key: &str) {
+    let Ok(f) = files::of(dirs, key) else { return };
     let Some(worker) = claimed_worker(&f).await.filter(alive) else { return };
     if interrupt_terraform(worker.pid) && gone_within(&worker, TERRAFORM_GRACE_CHECKS).await {
         remove_pidfile_of(&f.pid, worker.pid);
@@ -434,14 +434,14 @@ pub async fn kill_and_wait(app: &AppHandle, key: &str) {
     // then leaves those resources running, and billing). The apply is waited for instead, bounded,
     // so the destroy sees everything.
     #[cfg(windows)]
-    if launches_terraform(app, &f) {
+    if launches_terraform(dirs, &f) {
         log::info!("stop of {key}: waiting for its Terraform apply to end before tearing down");
         if gone_within(&worker, TERRAFORM_APPLY_WAIT_CHECKS).await {
             remove_pidfile_of(&f.pid, worker.pid);
             return;
         }
     }
-    kill(app, key);
+    kill(dirs, key);
     if gone_within(&worker, 40).await {
         return;
     }
@@ -902,7 +902,7 @@ mod tests {
         // -<pid>` signalled every process of the user), and drops its pidfile.
         let mut bystander = std::process::Command::new("sleep").arg("30").spawn().unwrap();
         let waiter = std::thread::spawn(move || child.wait());
-        kill_and_wait(app, "lab-1").await;
+        kill_and_wait(&t.dirs(), "lab-1").await;
         let status = waiter.join().unwrap().unwrap();
         assert!(!status.success(), "the worker was signalled");
         assert!(bystander.try_wait().unwrap().is_none(), "a process outside its group is left alone");
@@ -911,8 +911,8 @@ mod tests {
         assert!(!f.pid.exists());
         assert_eq!(running(&t.dirs()), [] as [&str; 0]);
         // Nothing left to stop.
-        kill_and_wait(app, "lab-1").await;
-        kill(app, "lab-2");
+        kill_and_wait(&t.dirs(), "lab-1").await;
+        kill(&t.dirs(), "lab-2");
     }
 
     #[cfg(unix)]
@@ -921,7 +921,6 @@ mod tests {
         // Regression: `kill_and_wait` returned at once while the pidfile was claimed but still
         // empty, so the worker spawned right after went on to take the lab and run its job.
         let t = crate::testing::test_app::TestApp::new();
-        let app = t.handle();
         let f = files::of(&t.dirs(), "lab-1").unwrap();
         std::fs::write(&f.pid, "").unwrap();
         let mut child = fake_worker_group();
@@ -932,7 +931,7 @@ mod tests {
             std::fs::write(&pid, line).unwrap();
         });
         let waiter = std::thread::spawn(move || child.wait());
-        kill_and_wait(app, "lab-1").await;
+        kill_and_wait(&t.dirs(), "lab-1").await;
         spawner.join().unwrap();
         assert!(!waiter.join().unwrap().unwrap().success(), "the worker was found and stopped");
         assert!(!f.pid.exists());
@@ -943,7 +942,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let f = files::of(&t.dirs(), "lab-2").unwrap();
         std::fs::write(&f.pid, "").unwrap();
-        let waited = tokio::time::timeout(Duration::from_secs(10), kill_and_wait(t.handle(), "lab-2")).await;
+        let waited = tokio::time::timeout(Duration::from_secs(10), kill_and_wait(&t.dirs(), "lab-2")).await;
         assert!(waited.is_ok());
     }
 

@@ -3,6 +3,7 @@
 //! over a channel.
 
 use crate::AppHandle;
+use crate::platform::AppDirs;
 use tauri::ipc::Channel;
 
 use std::path::Path;
@@ -31,21 +32,21 @@ fn valid_machine_name(m: &str) -> bool {
 
 #[tauri::command]
 pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
-    stop_lab(&app, &id, runtime, channel_log(logs)).await
+    stop_lab(&AppDirs::from(&app), &id, runtime, channel_log(logs)).await
 }
 
 /// Pauses (state saved) or shuts down (powered off) a lab on this machine, keeping its machines
 /// so it resumes as it was. Runs detached (a worker), like every lab operation.
 #[tauri::command]
 pub async fn lab_park(app: AppHandle, id: String, runtime: Runtime, mode: Park, logs: Channel<String>) -> Result<()> {
-    lab_dir(&app, &id)?;
+    lab_dir(&AppDirs::from(&app), &id)?;
     deploy_worker::run_job(&app, Job::on_lab(&id, Op::Park { runtime, mode }), logs).await
 }
 
 /// Runs a VM lab's provisioners again, on one machine (`machine`) or all of them.
 #[tauri::command]
 pub async fn lab_provision(app: AppHandle, id: String, runtime: Runtime, machine: Option<String>, logs: Channel<String>) -> Result<()> {
-    lab_dir(&app, &id)?;
+    lab_dir(&AppDirs::from(&app), &id)?;
     if let Some(m) = &machine
         && !valid_machine_name(m)
     {
@@ -57,28 +58,29 @@ pub async fn lab_provision(app: AppHandle, id: String, runtime: Runtime, machine
 /// Brings a parked lab back (or the machines of a lab that went down).
 #[tauri::command]
 pub async fn lab_resume(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
-    lab_dir(&app, &id)?;
+    lab_dir(&AppDirs::from(&app), &id)?;
     deploy_worker::run_job(&app, Job::on_lab(&id, Op::Resume { runtime }), logs).await
 }
 
 #[tauri::command]
 pub async fn lab_status(app: AppHandle, id: String, runtime: Runtime) -> Result<LabStatus> {
-    let dir = lab_dir(&app, &id)?;
-    status::status(&app, &dir, &id, runtime).await
+    let dirs = AppDirs::from(&app);
+    let dir = lab_dir(&dirs, &id)?;
+    status::status(&dirs, &dir, &id, runtime).await
 }
 
 /// Before a cloud-services lab starts: its cloud, its cost estimate, what it asks for at launch
 /// and what it exposes, from its spec at the catalogue's pinned commit. None for other labs.
 #[tauri::command]
 pub async fn lab_cloud_preview(app: AppHandle, id: String, repository: String, commit: String) -> Result<Option<cloud_services::Preview>> {
-    cloud_services::preview_at(&app, &id, &repository, &commit).await
+    cloud_services::preview_at(&AppDirs::from(&app), &id, &repository, &commit).await
 }
 
 /// The observers a lab puts beside itself (`tools:` in its spec), at their addresses where it
 /// runs (container addresses for a container lab, wherever its Compose file runs).
 #[tauri::command]
 pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<Vec<lab::Observer>> {
-    let dir = lab_dir(&app, &id)?;
+    let dir = lab_dir(&AppDirs::from(&app), &id)?;
     if runtime == Runtime::Cloud {
         return Ok(Vec::new());
     }
@@ -91,7 +93,7 @@ pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<V
 /// and a lab whose per-lab status probe is momentarily failing still shows as running.
 #[tauri::command]
 pub async fn running_labs(app: AppHandle) -> Vec<String> {
-    discover::running_lab_ids(&app).await
+    discover::running_lab_ids(&AppDirs::from(&app)).await
 }
 
 /// How far each launch path has been proven, from Isoloom's tier evidence: the Beta/Experimental
@@ -106,12 +108,13 @@ pub fn run_tiers() -> Vec<super::RunTier> {
 /// the runner.
 #[tauri::command]
 pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<docker::Check> {
-    let dir = lab_dir(&app, &id)?;
-    let home = || runner_home(&app);
-    match server::lab_connection(&app, &dir)? {
+    let dirs = AppDirs::from(&app);
+    let dir = lab_dir(&dirs, &id)?;
+    let home = || runner_home(&dirs);
+    match server::lab_connection(&dirs, &dir)? {
         // On a server host or cloud account: checks run through the runner (Proxmox over SSH via
         // the lab's router; ESXi from its controller; a cloud over SSH to the lab).
-        Some(c) if c.provider == super::providers::Provider::VmwareEsxi => super::launch::esxi_run(&app, &dir, &id, runtime, &c)?.check().await,
+        Some(c) if c.provider == super::providers::Provider::VmwareEsxi => super::launch::esxi_run(&dirs, &dir, &id, runtime, &c)?.check().await,
         Some(c) if c.provider.is_cloud() => {
             let cloud = server::terraform_target(c.provider).unwrap_or_default();
             let place = isothrum::CloudPlace { region: c.region.clone(), tf_env: c.tf_env.clone(), ..Default::default() };
@@ -129,11 +132,11 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
 /// The local run of lab `id`, or `None` when the lab runs on a server host or cloud account (no
 /// attack box on this machine then — the learner works from what the lab gives them). Mirrors the
 /// local dispatch of [`lab_check`].
-fn local_run(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<isothrum::LabRun>> {
-    if server::lab_connection(app, dir)?.is_some() {
+fn local_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<isothrum::LabRun>> {
+    if server::lab_connection(dirs, dir)?.is_some() {
         return Ok(None);
     }
-    let home = runner_home(app)?;
+    let home = runner_home(dirs)?;
     Ok(match runtime {
         Runtime::Docker if local_vm(dir).is_some() => Some(isothrum::LabRun::docker_in_vm(&home, dir, id)?),
         Runtime::Docker => Some(isothrum::LabRun::docker(&home, dir, id)?),
@@ -143,8 +146,8 @@ fn local_run(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime) -> Result<
 }
 
 /// The lab's run with an attack box on this machine, or an error when the lab has none here.
-fn with_attack_box(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime) -> Result<isothrum::LabRun> {
-    local_run(app, dir, id, runtime)?.ok_or_else(|| {
+fn with_attack_box(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<isothrum::LabRun> {
+    local_run(dirs, dir, id, runtime)?.ok_or_else(|| {
         Error::Invalid(
             "The attack box for a lab on a server or in a cloud account is reached through the lab itself, not from here. Work from what the lab gives you."
                 .into(),
@@ -154,9 +157,9 @@ fn with_attack_box(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime) -> R
 
 /// The command the runner builds to open a shell into lab `id`'s attack box (the in-app terminal
 /// and the system terminal both run it).
-pub fn box_shell_command(app: &AppHandle, id: &str, runtime: Runtime) -> Result<isothrum_runner::ShellCommand> {
-    let dir = lab_dir(app, id)?;
-    with_attack_box(app, &dir, id, runtime)?.shell_command()
+pub fn box_shell_command(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<isothrum_runner::ShellCommand> {
+    let dir = lab_dir(dirs, id)?;
+    with_attack_box(dirs, &dir, id, runtime)?.shell_command()
 }
 
 /// The attack box's status for the lab detail view: the lab's on-demand access machine as the
@@ -166,8 +169,9 @@ pub fn box_shell_command(app: &AppHandle, id: &str, runtime: Runtime) -> Result<
 #[tauri::command]
 pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime, network: Option<String>) -> Result<isothrum::AttackStatus> {
     Box::pin(async move {
-        let dir = lab_dir(&app, &id)?;
-        match local_run(&app, &dir, &id, runtime)? {
+        let dirs = AppDirs::from(&app);
+        let dir = lab_dir(&dirs, &id)?;
+        match local_run(&dirs, &dir, &id, runtime)? {
             Some(run) => run.attack_status(network.as_deref()).await,
             None => Ok(isothrum::AttackStatus::default()),
         }
@@ -189,9 +193,10 @@ pub struct AttachPick {
 pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pick: AttachPick, logs: Channel<String>) -> Result<()> {
     Box::pin(async move {
         let AttachPick { network, image } = pick;
-        let dir = lab_dir(&app, &id)?;
+        let dirs = AppDirs::from(&app);
+        let dir = lab_dir(&dirs, &id)?;
         check_image(&image)?;
-        let run = with_attack_box(&app, &dir, &id, runtime)?;
+        let run = with_attack_box(&dirs, &dir, &id, runtime)?;
         // Boxed: the runner's attach future is large, and tracking it adds to it.
         Box::pin(crate::machine::storage::owned::tracked(
             &app,
@@ -208,8 +213,9 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
 #[tauri::command]
 pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
     Box::pin(async move {
-        let dir = lab_dir(&app, &id)?;
-        with_attack_box(&app, &dir, &id, runtime)?.detach(&mut channel_log(logs)).await
+        let dirs = AppDirs::from(&app);
+        let dir = lab_dir(&dirs, &id)?;
+        with_attack_box(&dirs, &dir, &id, runtime)?.detach(&mut channel_log(logs)).await
     })
     .await
 }
@@ -218,8 +224,9 @@ pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, log
 /// builds (it alone knows the Compose project and files, the Vagrant define).
 #[tauri::command]
 pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> Result<()> {
-    let dir = lab_dir(&app, &id)?;
-    let shell = with_attack_box(&app, &dir, &id, runtime)?.shell_command()?;
+    let dirs = AppDirs::from(&app);
+    let dir = lab_dir(&dirs, &id)?;
+    let shell = with_attack_box(&dirs, &dir, &id, runtime)?.shell_command()?;
     terminal_launch::open_terminal_async(shell).await
 }
 
@@ -239,8 +246,9 @@ mod tests {
 
     /// Starts an installed lab on Docker the way a launch does, minus the worker and the token.
     async fn start_docker(t: &TestApp, id: &str, logs: Channel<String>) -> crate::error::Result<()> {
-        let dir = super::lab_dir(t.handle(), id)?;
-        crate::runtime::start(t.handle(), &dir, id, Runtime::Docker, None, None, &[], super::channel_log(logs)).await
+        let dirs = t.dirs();
+        let dir = super::lab_dir(&dirs, id)?;
+        crate::runtime::start(&dirs, &dir, id, Runtime::Docker, None, None, &[], super::channel_log(logs)).await
     }
 
     fn sink() -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {

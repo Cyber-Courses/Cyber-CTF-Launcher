@@ -9,21 +9,19 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use crate::AppHandle;
-use tauri::Manager;
-
 use crate::error::{Error, Result};
+use crate::platform::AppDirs;
 use crate::platform::exec::run;
 
-fn ssh_dir(app: &AppHandle) -> Result<PathBuf> {
-    let dir = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("ssh");
+fn ssh_dir(dirs: &AppDirs) -> Result<PathBuf> {
+    let dir = dirs.data()?.join("ssh");
     std::fs::create_dir_all(&dir)?;
     let _ = std::fs::remove_file(dir.join(SHARED_KNOWN_HOSTS));
     Ok(dir)
 }
 
-/// The launcher's key path once `ensure_key` has run, for code without an `AppHandle`
-/// (the Terraform driver waiting on a lab host it just installed the key on).
+/// The launcher's key path once `ensure_key` has run, for code with no handle on the app's
+/// folders (the Terraform driver waiting on a lab host it just installed the key on).
 static LAUNCHER_KEY: OnceLock<PathBuf> = OnceLock::new();
 
 pub fn launcher_key() -> Option<PathBuf> {
@@ -36,8 +34,8 @@ pub fn set_launcher_key_for_test(key: PathBuf) {
 }
 
 /// The launcher's private key, created on first use. Returns (key path, public key line).
-pub async fn ensure_key(app: &AppHandle) -> Result<(PathBuf, String)> {
-    let key = ssh_dir(app)?.join("id_ed25519");
+pub async fn ensure_key(dirs: &AppDirs) -> Result<(PathBuf, String)> {
+    let key = ssh_dir(dirs)?.join("id_ed25519");
     if !key.is_file() {
         let path = key.to_string_lossy().to_string();
         run("ssh-keygen", &["-q", "-t", "ed25519", "-N", "", "-C", "cyberctf-launcher", "-f", &path], None).await?;
@@ -286,7 +284,7 @@ mod tests {
         let shared = t.data().join("ssh").join(SHARED_KNOWN_HOSTS);
         std::fs::create_dir_all(shared.parent().unwrap()).unwrap();
         std::fs::write(&shared, "10.0.0.5 ssh-ed25519 AAAAold\n").unwrap();
-        let dir = ssh_dir(t.handle()).unwrap();
+        let dir = ssh_dir(&t.dirs()).unwrap();
         assert!(!shared.exists());
         assert_eq!(node_known_hosts(&dir.join("id_ed25519")), dir.join("nodes_known_hosts"));
     }

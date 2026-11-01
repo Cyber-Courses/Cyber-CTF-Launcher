@@ -4,28 +4,28 @@
 
 use std::path::Path;
 
-use crate::AppHandle;
+use crate::platform::AppDirs;
 
 use super::paths::{lab_dir, local_vm, parked, runner_home, vagrant_dirs};
 use super::{LabStatus, Place, Runtime, docker, isothrum, server, vm};
 use crate::error::Result;
 
-pub(super) async fn status(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
-    let status = match (runtime, server::lab_connection(app, dir)?) {
+pub(super) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
+    let status = match (runtime, server::lab_connection(dirs, dir)?) {
         // On a server host or cloud account: the runner's view.
-        (_, Some(c)) => server_status(app, dir, id, runtime, c).await?,
+        (_, Some(c)) => server_status(dirs, dir, id, runtime, c).await?,
         // Cloud-services labs run only on an account; nothing of them on this machine.
         (Runtime::Cloud, None) => LabStatus::default(),
         // On this machine, through the runner: a container lab on Docker or in one local VM, or a
         // VM lab. Parked = the launcher parked it and it is still down.
         (Runtime::Docker, None) if local_vm(dir).is_some() => {
-            with_parked(isothrum::LabRun::docker_in_vm(&runner_home(app)?, dir, id)?.status().await?, parked(dir))
+            with_parked(isothrum::LabRun::docker_in_vm(&runner_home(dirs)?, dir, id)?.status().await?, parked(dir))
         }
-        (Runtime::Docker, None) => with_parked(isothrum::LabRun::docker(&runner_home(app)?, dir, id)?.status().await?, parked(dir)),
-        (Runtime::Vm, None) => with_parked(isothrum::LabRun::vm(&runner_home(app)?, dir, id)?.status().await?, parked(dir)),
+        (Runtime::Docker, None) => with_parked(isothrum::LabRun::docker(&runner_home(dirs)?, dir, id)?.status().await?, parked(dir)),
+        (Runtime::Vm, None) => with_parked(isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?.status().await?, parked(dir)),
     };
     // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
-    Ok(LabStatus { reap_error: super::reaper::last_failure(app, id), ..status })
+    Ok(LabStatus { reap_error: super::reaper::last_failure(dirs, id), ..status })
 }
 
 /// Parked = the launcher parked it (`parked`) and it is still down; a lab someone started again
@@ -34,25 +34,25 @@ fn with_parked(s: LabStatus, parked: Option<super::Park>) -> LabStatus {
     LabStatus { parked: parked.filter(|_| !s.running), ..s }
 }
 
-async fn server_status(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, c: server::Connection) -> Result<LabStatus> {
+async fn server_status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: server::Connection) -> Result<LabStatus> {
     // A setup step that failed can leave a lab's machines up but the lab not ready: not running.
-    let failed = crate::deploy_worker::last_deploy_failed(app, id);
+    let failed = crate::deploy_worker::last_deploy_failed(dirs, id);
     let seen = |s: LabStatus| LabStatus { running: s.running && !failed, ..s };
     // ESXi (Vagrant on the host): the runner's view, Vagrant's states, each VM at its own address.
     if c.provider == super::providers::Provider::VmwareEsxi {
-        let status = super::launch::esxi_run(app, dir, id, runtime, &c)?.status().await?;
+        let status = super::launch::esxi_run(dirs, dir, id, runtime, &c)?.status().await?;
         return Ok(on_server(seen(status), c.name, c.provider));
     }
     // A cloud account (cloud-vm, cloud-docker, cloud-services): the runner's view from its record.
     if c.provider.is_cloud() {
         let cloud = server::terraform_target(c.provider).unwrap_or_default();
-        let status = isothrum::CloudRun::new(&runner_home(app)?, dir, id, runtime, cloud)?.status().await?;
+        let status = isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, runtime, cloud)?.status().await?;
         return Ok(on_server(seen(status), c.name, c.provider));
     }
     // A Proxmox server: the runner's view from its own record and state (no SSH, no API call);
     // `ServerRun::status` fills the host and provider.
     let place = isothrum::ServerPlace { name: c.name.clone(), ..isothrum::ServerPlace::default() };
-    let status = isothrum::ServerRun::new(&runner_home(app)?, dir, id, runtime)?.status(&place).await?;
+    let status = isothrum::ServerRun::new(&runner_home(dirs)?, dir, id, runtime)?.status(&place).await?;
     Ok(seen(status))
 }
 
@@ -87,14 +87,14 @@ pub fn vms_recorded_here(dir: &Path) -> bool {
 /// brought up by it, and must not be torn down with what it did bring up. A leftover (a state
 /// left on another account, stopped VMs the start clears) doesn't count: a failed start tears
 /// down its own deployment as before. False when it isn't installed.
-pub async fn lab_present(app: &AppHandle, id: &str) -> bool {
-    let Ok(dir) = lab_dir(app, id) else { return false };
+pub async fn lab_present(dirs: &AppDirs, id: &str) -> bool {
+    let Ok(dir) = lab_dir(dirs, id) else { return false };
     server::marked_host(&dir).is_some_and(|h| !h.is_empty()) || parked(&dir).is_some() || running_here(&dir, id).await
 }
 
 /// Whether lab `id` is installed here.
-pub fn lab_installed(app: &AppHandle, id: &str) -> bool {
-    lab_dir(app, id).is_ok()
+pub fn lab_installed(dirs: &AppDirs, id: &str) -> bool {
+    lab_dir(dirs, id).is_ok()
 }
 
 /// Where a running lab is reachable on this machine (its first published port). None for
@@ -151,24 +151,24 @@ mod tests {
         // teardown of the failed start destroyed it.
         use crate::platform::exec::fake::Tools;
         let t = crate::testing::test_app::TestApp::new();
-        let app = t.handle();
+        let dirs = t.dirs();
         let _tools = Tools::rules(&[]);
         let dir = t.lab("present", &[]);
-        assert!(!super::lab_present(app, "present").await, "installed, nothing of it up");
+        assert!(!super::lab_present(&dirs, "present").await, "installed, nothing of it up");
         // Marked as running on a host.
         crate::runtime::server::mark_lab(&dir, Some("pve1")).unwrap();
-        assert!(super::lab_present(app, "present").await);
+        assert!(super::lab_present(&dirs, "present").await);
         crate::runtime::server::mark_lab(&dir, None).unwrap();
         // A Terraform state left on another account isn't this lab being up: a failed start on
         // another account still tears down what it created there.
         let state = t.data().join("deployments/present/aws");
         std::fs::create_dir_all(&state).unwrap();
         std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[{"type":"aws_instance"}]}"#).unwrap();
-        assert!(!super::lab_present(app, "present").await);
-        assert!(super::lab_installed(app, "present") && !super::lab_installed(app, "gone"));
+        assert!(!super::lab_present(&dirs, "present").await);
+        assert!(super::lab_installed(&dirs, "present") && !super::lab_installed(&dirs, "gone"));
         // Parked here.
         crate::runtime::paths::mark_parked(&dir, Some(crate::runtime::Park::Pause)).unwrap();
-        assert!(super::lab_present(app, "present").await);
+        assert!(super::lab_present(&dirs, "present").await);
     }
 
     #[tokio::test]
@@ -192,7 +192,7 @@ mod tests {
         std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "gone1\n").unwrap();
         let tools = Tools::rules(&[]);
         for runtime in [Runtime::Docker, Runtime::Vm, Runtime::Cloud] {
-            let err = super::status(t.handle(), &dir, "web", runtime).await.err().expect("refused").to_string();
+            let err = super::status(&t.dirs(), &dir, "web", runtime).await.err().expect("refused").to_string();
             assert_eq!(err, "server host `gone1` not found", "{runtime:?}");
         }
         // Refused before anything local or remote is probed; the marker alone never makes it

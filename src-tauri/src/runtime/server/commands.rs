@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crate::AppHandle;
+use crate::platform::AppDirs;
 use serde::Serialize;
 use tauri::Manager;
 
@@ -31,7 +32,7 @@ pub struct HostList {
 
 #[tauri::command]
 pub fn server_list(app: AppHandle) -> Result<HostList> {
-    let store = load(&app)?;
+    let store = load(&AppDirs::from(&app))?;
     Ok(HostList { default: store.default, hosts: store.hosts })
 }
 
@@ -41,7 +42,7 @@ pub fn server_list(app: AppHandle) -> Result<HostList> {
 pub fn server_save(app: AppHandle, mut input: HostInput) -> Result<HostProfile> {
     let checked = input.check()?;
     let deployed = input.id.as_deref().map_or(0, |id| labs_on(&app, id));
-    update(&app, |store| {
+    update(&AppDirs::from(&app), |store| {
         let id = save_id(store, input.id.take())?;
         let gcp_project = kept_gcp_project(store, &id, input.provider, &checked.username);
         let password = input.password.take();
@@ -169,7 +170,7 @@ pub fn server_remove(app: AppHandle, id: &str) -> Result<()> {
     // destroy its labs. Removing it mid-run would leave them unstoppable from the app, and a
     // cloud lab would keep billing with no way left to tear it down.
     no_labs_running(labs_on(&app, id))?;
-    update(&app, |store| {
+    update(&AppDirs::from(&app), |store| {
         remove_host(store, id);
         Ok(())
     })?;
@@ -197,7 +198,7 @@ fn remove_host(store: &mut Store, id: &str) {
 /// Sets (or clears, with None) the host VM labs run on by default.
 #[tauri::command]
 pub fn server_set_default(app: AppHandle, id: Option<String>) -> Result<()> {
-    update(&app, |store| set_default_host(store, id))
+    update(&AppDirs::from(&app), |store| set_default_host(store, id))
 }
 
 /// `server_set_default` on a loaded store.
@@ -225,12 +226,13 @@ fn launched_recently() -> bool {
 
 #[tauri::command]
 pub async fn server_test(app: AppHandle, id: String) -> Result<TestResult> {
-    let host = load_host(&app, &id)?;
+    let dirs = AppDirs::from(&app);
+    let host = load_host(&dirs, &id)?;
     // CLI-credential hosts keep no secret; the CLI resolves its own credentials.
     let password = host_secret(&host)?;
     // Token hosts SSH with the launcher's key: make sure it exists before checking it.
     if host.provider == Provider::Proxmox && crate::runtime::proxmox::is_token(&host.username) {
-        crate::runtime::ssh::ensure_key(&app).await?;
+        crate::runtime::ssh::ensure_key(&dirs).await?;
     }
     let mut result = test_host(&host, &password).await;
     // macOS answers the app's first connection to a LAN host after a launch with "no route to
@@ -250,7 +252,7 @@ pub async fn server_test(app: AppHandle, id: String) -> Result<TestResult> {
     }
     // GCP: the labs project (created on the first test), which needs a free billing slot.
     if host.provider == Provider::Gcp && result.ok {
-        match gcp::labs_project(&app, &id).await {
+        match gcp::labs_project(&dirs, &id).await {
             Ok(p) => result.checks.push(Check::ok("Labs project", format!("Labs run in the project {p}."))),
             Err(e) => {
                 result.checks.push(Check::fail("Labs project", e.to_string()));
@@ -266,7 +268,7 @@ pub async fn server_test(app: AppHandle, id: String) -> Result<TestResult> {
 /// over SSH; the setup form shows it for those hosts.
 #[tauri::command]
 pub async fn server_public_key(app: AppHandle) -> Result<String> {
-    Ok(crate::runtime::ssh::ensure_key(&app).await?.1)
+    Ok(crate::runtime::ssh::ensure_key(&AppDirs::from(&app)).await?.1)
 }
 
 /// How many installed labs are currently running on each host, keyed by host id (see
@@ -289,7 +291,7 @@ pub struct HostCapacity {
 /// providers or if anything fails, so the UI just omits it rather than showing an error.
 #[tauri::command]
 pub async fn server_capacity(app: AppHandle, id: String) -> Option<HostCapacity> {
-    let host = load_host(&app, &id).ok()?;
+    let host = load_host(&AppDirs::from(&app), &id).ok()?;
     if host.provider != Provider::Proxmox {
         return None;
     }

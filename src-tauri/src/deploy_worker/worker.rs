@@ -159,7 +159,7 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
 
 /// The cross-process lock of lab `id`, waited for.
 async fn hold_lab(app: &AppHandle, id: &str) -> crate::error::Result<super::lock::LabFileLock> {
-    super::lock::acquire(&super::lock_path(app, id)?).await.map_err(super::lock::unavailable)
+    super::lock::acquire(&super::lock_path(&crate::platform::AppDirs::from(app), id)?).await.map_err(super::lock::unavailable)
 }
 
 /// The end of a run: the failure in the log, the verdict in the status file (and, for a
@@ -251,7 +251,7 @@ mod tests {
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         t.lab("web", &[]);
         // A folder where the lock file goes: it can't be opened.
-        std::fs::create_dir_all(crate::deploy_worker::lock_path(t.handle(), "web").unwrap()).unwrap();
+        std::fs::create_dir_all(crate::deploy_worker::lock_path(&t.dirs(), "web").unwrap()).unwrap();
         let job = Job::on_lab("web", Op::Resume { runtime: crate::runtime::Runtime::Docker });
         let f = crate::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
         assert_eq!(super::run_logged(t.handle(), job).await, 1);

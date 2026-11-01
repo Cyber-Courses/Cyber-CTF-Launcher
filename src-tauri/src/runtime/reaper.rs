@@ -25,6 +25,7 @@ use super::inflight::try_lock_lab;
 use super::providers::Provider;
 use super::{isothrum, server};
 use crate::error::Wire;
+use crate::platform::AppDirs;
 
 /// Folder under the app data dir: one reap-error record per lab id the last sweep couldn't
 /// destroy (`{message, error}`). A later sweep that destroys the lab clears it.
@@ -42,9 +43,10 @@ pub async fn reap_expired_labs(app: &AppHandle) {
 /// this ends what they cost. A failure is logged, kept for the lab's page and notified once; a
 /// lab destroyed (or no longer expired) has its record cleared.
 async fn reap_runner_clouds(app: &AppHandle) {
-    let Ok(home) = super::paths::runner_home(app) else { return };
-    let Ok(base) = app.path().app_data_dir() else { return };
-    let account = |host: &str| server::connection(app, host).ok().map(|c| c.tf_env);
+    let dirs = AppDirs::from(app);
+    let Ok(home) = super::paths::runner_home(&dirs) else { return };
+    let Ok(base) = dirs.data() else { return };
+    let account = |host: &str| server::connection(&dirs, host).ok().map(|c| c.tf_env);
     let failures = isothrum::reap_expired_clouds(&home, std::time::SystemTime::now(), account).await;
     // The labs that failed last time, read before clearing: a lab that fails again isn't
     // re-notified, and a lab destroyed this time (no new record) has its record go.
@@ -86,11 +88,11 @@ fn valid_id(id: &str) -> bool {
 
 /// Why the auto-stop couldn't destroy cloud lab `id` the last time it tried, while the lab is
 /// still billing: the lab page shows it, so a lab billing past its auto-stop never looks stopped.
-pub fn last_failure(app: &AppHandle, id: &str) -> Option<Wire> {
+pub fn last_failure(dirs: &AppDirs, id: &str) -> Option<Wire> {
     if !valid_id(id) {
         return None;
     }
-    let base = app.path().app_data_dir().ok()?;
+    let base = dirs.data().ok()?;
     let record: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(base.join(REAP_ERRORS).join(id)).ok()?).ok()?;
     serde_json::from_value(record["error"].clone()).ok()
 }
@@ -100,16 +102,17 @@ pub fn last_failure(app: &AppHandle, id: &str) -> Option<Wire> {
 /// before the runner's reaper looks). A lab that can't be handed over stays the launcher's,
 /// stopped and reaped as before, and the player is told why once per new reason.
 pub(super) async fn hand_to_runner(app: &AppHandle) {
-    let Ok(base) = app.path().app_data_dir() else { return };
-    let runner = match isothrum::import_runner(&base) {
+    let dirs = AppDirs::from(app);
+    let Ok(base) = dirs.data() else { return };
+    let runner = match isothrum::import_runner(base) {
         Ok(runner) => runner,
         Err(e) => {
             log::warn!("the launcher's own deployments can't be handed to the runner: {e}");
             return;
         }
     };
-    let lock = |id: &str| try_lock_lab(app, id).ok().flatten();
-    for (d, outcome) in isothrum::import_all(&runner, &base, super::launch::runner_runs_on, lock).await {
+    let lock = |id: &str| try_lock_lab(&dirs, id).ok().flatten();
+    for (d, outcome) in isothrum::import_all(&runner, base, super::launch::runner_runs_on, lock).await {
         match outcome {
             isothrum::Outcome::Imported => log::info!("lab {}'s deployment on {} is the Isothrum runner's now", d.id, d.provider.id()),
             isothrum::Outcome::Left(why) => log::debug!("lab {}'s deployment on {} stays as it is: {why:?}", d.id, d.provider.id()),

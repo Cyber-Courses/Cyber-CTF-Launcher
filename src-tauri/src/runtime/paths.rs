@@ -3,8 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::AppHandle;
-use tauri::Manager;
+use crate::platform::AppDirs;
 
 use super::Runtime;
 use super::model::Park;
@@ -16,19 +15,15 @@ pub fn validate_id(id: &str) -> Result<()> {
     if ok { Ok(()) } else { Err(Error::Invalid(format!("invalid lab id `{id}`"))) }
 }
 
-fn app_data(app: &AppHandle) -> Result<PathBuf> {
-    app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))
-}
-
 /// The Isothrum runner's home: the app data folder, its runs kept under `runs/` beside `labs/`.
-pub(super) fn runner_home(app: &AppHandle) -> Result<PathBuf> {
-    app_data(app)
+pub(super) fn runner_home(dirs: &AppDirs) -> Result<PathBuf> {
+    Ok(dirs.data()?.to_path_buf())
 }
 
 /// An installed lab's folder.
-pub(super) fn lab_dir(app: &AppHandle, id: &str) -> Result<PathBuf> {
+pub(super) fn lab_dir(dirs: &AppDirs, id: &str) -> Result<PathBuf> {
     validate_id(id)?;
-    lab_dir_in(&app_data(app)?, id)
+    lab_dir_in(dirs.data()?, id)
 }
 
 /// [`lab_dir`] under the app data folder `base` (the id already validated).

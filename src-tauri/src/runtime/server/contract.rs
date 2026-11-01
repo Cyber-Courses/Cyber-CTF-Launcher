@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use crate::AppHandle;
+use crate::platform::AppDirs;
 
 use super::HOST_MARKER;
 use super::kind::kind;
@@ -123,8 +123,8 @@ pub struct Connection {
     pub auto_stop_hours: Option<u32>,
 }
 
-pub fn connection(app: &AppHandle, id: &str) -> Result<Connection> {
-    let host = load_host(app, id)?;
+pub fn connection(dirs: &AppDirs, id: &str) -> Result<Connection> {
+    let host = load_host(dirs, id)?;
     // CLI-credential hosts keep no secret; Terraform uses the CLI's own sign-in.
     let password = host_secret(&host)?;
     Ok(connection_for(&host, &password))
@@ -145,8 +145,8 @@ fn connection_for(host: &HostProfile, password: &str) -> Connection {
 
 /// The player's hosts and cloud accounts as launch targets for the website
 /// (`{ id, name, provider }`), reported by the launcher agent.
-pub fn launch_targets(app: &AppHandle) -> Vec<serde_json::Value> {
-    load(app).map(|s| targets_of(&s)).unwrap_or_default()
+pub fn launch_targets(dirs: &AppDirs) -> Vec<serde_json::Value> {
+    load(dirs).map(|s| targets_of(&s)).unwrap_or_default()
 }
 
 /// `launch_targets` of a loaded store.
@@ -155,18 +155,18 @@ fn targets_of(store: &Store) -> Vec<serde_json::Value> {
 }
 
 /// A host's display name, if it exists.
-pub fn host_name(app: &AppHandle, id: &str) -> Option<String> {
-    saved_host(app, id).map(|h| h.name)
+pub fn host_name(dirs: &AppDirs, id: &str) -> Option<String> {
+    saved_host(dirs, id).map(|h| h.name)
 }
 
 /// A host's provider, if it exists.
-pub fn host_provider(app: &AppHandle, id: &str) -> Option<Provider> {
-    saved_host(app, id).map(|h| h.provider)
+pub fn host_provider(dirs: &AppDirs, id: &str) -> Option<Provider> {
+    saved_host(dirs, id).map(|h| h.provider)
 }
 
 /// The host marked as default, if any (used for VM labs launched from the website).
-pub fn default_host(app: &AppHandle) -> Option<String> {
-    default_of(load(app).ok()?)
+pub fn default_host(dirs: &AppDirs) -> Option<String> {
+    default_of(load(dirs).ok()?)
 }
 
 /// `default_host` of a loaded store.
@@ -195,8 +195,8 @@ pub fn marked_host(dir: &Path) -> Option<String> {
 }
 
 /// `proxmox_jump` for a saved host id.
-pub async fn proxmox_jump_for_host(app: &AppHandle, id: &str, identity: &Path, public: &str) -> Result<Option<String>> {
-    let host = load_host(app, id)?;
+pub async fn proxmox_jump_for_host(dirs: &AppDirs, id: &str, identity: &Path, public: &str) -> Result<Option<String>> {
+    let host = load_host(dirs, id)?;
     if host.provider != Provider::Proxmox {
         return Ok(None);
     }
@@ -213,8 +213,8 @@ pub async fn proxmox_jump_for_host(app: &AppHandle, id: &str, identity: &Path, p
 /// The node a Proxmox host's labs go on when its profile names none: the server's first, as its
 /// Test connection picks it (Isoloom's module no longer assumes `pve`). None for another kind of
 /// host, or when the profile names its node (its variables carry it).
-pub async fn discovered_node(app: &AppHandle, id: &str) -> Result<Option<String>> {
-    let host = load_host(app, id)?;
+pub async fn discovered_node(dirs: &AppDirs, id: &str) -> Result<Option<String>> {
+    let host = load_host(dirs, id)?;
     if host.provider != Provider::Proxmox || host.node.as_deref().is_some_and(|n| !n.is_empty()) {
         return Ok(None);
     }
@@ -227,8 +227,8 @@ pub async fn discovered_node(app: &AppHandle, id: &str) -> Result<Option<String>
 }
 
 /// The connection a VM lab directory was started with, if it runs on a server host.
-pub fn lab_connection(app: &AppHandle, dir: &Path) -> Result<Option<Connection>> {
-    marked_host(dir).map(|id| connection(app, &id)).transpose()
+pub fn lab_connection(dirs: &AppDirs, dir: &Path) -> Result<Option<Connection>> {
+    marked_host(dir).map(|id| connection(dirs, &id)).transpose()
 }
 
 #[cfg(test)]

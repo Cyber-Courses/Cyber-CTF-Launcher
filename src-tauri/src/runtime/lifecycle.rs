@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use crate::AppHandle;
+use crate::platform::AppDirs;
 
 use super::inflight::{Action, DeployGuard, lock_lab};
 use super::paths::{lab_dir, local_vm, mark_local_vm, mark_parked, parked, runner_home, vagrant_dirs};
@@ -12,22 +12,22 @@ use crate::error::{Error, Result};
 
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
 /// that took an hour to build comes back in seconds (paused) or a boot (shut down), not a rebuild.
-async fn park(app: &AppHandle, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
+async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
-    let _lock = lock_lab(app, id).await?;
+    let _lock = lock_lab(dirs, id).await?;
     let _deploy = DeployGuard::new(id, Action::Park);
     refuse_cloud_park(runtime)?;
-    if server::lab_connection(app, dir)?.is_some() {
+    if server::lab_connection(dirs, dir)?.is_some() {
         return Err(Error::Invalid("Pausing a lab on a server host isn't available yet. Stop it instead.".into()));
     }
     match runtime {
         // A container lab in one local VM is paused (its state saved), never shut down.
         Runtime::Docker if local_vm(dir).is_some() => {
             refuse_vm_shutdown(mode)?;
-            isothrum::LabRun::docker_in_vm(&runner_home(app)?, dir, id)?.park(mode, &mut log).await?;
+            isothrum::LabRun::docker_in_vm(&runner_home(dirs)?, dir, id)?.park(mode, &mut log).await?;
         }
-        Runtime::Docker => isothrum::LabRun::docker(&runner_home(app)?, dir, id)?.park(mode, &mut log).await?,
-        Runtime::Vm => isothrum::LabRun::vm(&runner_home(app)?, dir, id)?.park(mode, &mut log).await?,
+        Runtime::Docker => isothrum::LabRun::docker(&runner_home(dirs)?, dir, id)?.park(mode, &mut log).await?,
+        Runtime::Vm => isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?.park(mode, &mut log).await?,
         Runtime::Cloud => unreachable!("refused above"),
     }
     mark_parked(dir, Some(mode))?;
@@ -61,27 +61,27 @@ fn parked_message(mode: Park) -> &'static str {
 }
 
 /// Brings a parked lab back, as it was.
-async fn resume(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mut log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(app, id).await?;
+async fn resume(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, mut log: impl FnMut(String)) -> Result<()> {
+    let _lock = lock_lab(dirs, id).await?;
     let _deploy = DeployGuard::new(id, Action::Start);
-    resume_locked(app, dir, id, runtime, &mut log).await
+    resume_locked(dirs, dir, id, runtime, &mut log).await
 }
 
 /// The body of `resume`, for a caller already holding the lab lock (a start on a parked lab).
 /// Also the repair for a lab some machines of which went down (powered off by hand, or a cut
 /// resume): the machines already up are left alone, the others come back.
-pub(super) async fn resume_locked(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, log: &mut impl FnMut(String)) -> Result<()> {
+pub(super) async fn resume_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: &mut impl FnMut(String)) -> Result<()> {
     refuse_cloud_park(runtime)?;
-    if server::lab_connection(app, dir)?.is_some() {
+    if server::lab_connection(dirs, dir)?.is_some() {
         return Err(Error::Invalid("This lab was parked on a server host; resuming there isn't available yet.".into()));
     }
     log("Resuming the lab…".into());
     // The runner resumes a parked run as it was; when nothing is left of it, it drops the parked
     // mark and reports `NothingToResume`, so the page offers a fresh start.
     match runtime {
-        Runtime::Docker if local_vm(dir).is_some() => isothrum::LabRun::docker_in_vm(&runner_home(app)?, dir, id)?.resume(&mut *log).await?,
-        Runtime::Docker => isothrum::LabRun::docker(&runner_home(app)?, dir, id)?.resume(&mut *log).await?,
-        Runtime::Vm => isothrum::LabRun::vm(&runner_home(app)?, dir, id)?.resume(&mut *log).await?,
+        Runtime::Docker if local_vm(dir).is_some() => isothrum::LabRun::docker_in_vm(&runner_home(dirs)?, dir, id)?.resume(&mut *log).await?,
+        Runtime::Docker => isothrum::LabRun::docker(&runner_home(dirs)?, dir, id)?.resume(&mut *log).await?,
+        Runtime::Vm => isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?.resume(&mut *log).await?,
         Runtime::Cloud => unreachable!("refused above"),
     }
     mark_parked(dir, None)?;
@@ -93,18 +93,18 @@ pub(super) async fn resume_locked(app: &AppHandle, dir: &Path, id: &str, runtime
 /// machine whose provisioning was cut short, without rebuilding the lab. Inputs the lab declared
 /// (`isoloom.yml` `inputs`) were given at launch and aren't kept, so a lab that provisions from
 /// them gets none here; the labs so far declare none.
-async fn provision(app: &AppHandle, lab: LabRef<'_>, machine: Option<&str>, mut log: impl FnMut(String)) -> Result<()> {
+async fn provision(dirs: &AppDirs, lab: LabRef<'_>, machine: Option<&str>, mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     if runtime != Runtime::Vm {
         return Err(Error::Invalid("Container labs aren't provisioned in place: use Reset for a clean copy.".into()));
     }
-    let _lock = lock_lab(app, id).await?;
+    let _lock = lock_lab(dirs, id).await?;
     let _deploy = DeployGuard::new(id, Action::Start);
     // Through the runner: a VM lab on this machine, or on an ESXi host. Proxmox and the clouds
     // aren't re-provisioned in place yet.
-    let run = match server::lab_connection(app, dir)? {
-        None => isothrum::LabRun::vm(&runner_home(app)?, dir, id)?,
-        Some(c) if c.provider == super::providers::Provider::VmwareEsxi => super::launch::esxi_run(app, dir, id, runtime, &c)?,
+    let run = match server::lab_connection(dirs, dir)? {
+        None => isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?,
+        Some(c) if c.provider == super::providers::Provider::VmwareEsxi => super::launch::esxi_run(dirs, dir, id, runtime, &c)?,
         Some(_) => return Err(Error::Invalid("Re-running provisioning isn't available for labs on Proxmox or a cloud yet.".into())),
     };
     log(provision_target(&run.status().await?, machine)?);
@@ -131,15 +131,15 @@ fn provision_target(status: &super::LabStatus, machine: Option<&str>) -> Result<
 }
 
 /// Stops a lab wherever it runs, destroying remote VMs so the next start is clean.
-async fn stop(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(app, id).await?;
-    stop_locked(app, dir, id, runtime, log).await
+async fn stop(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+    let _lock = lock_lab(dirs, id).await?;
+    stop_locked(dirs, dir, id, runtime, log).await
 }
 
 /// The body of `stop`, assuming the caller already holds the lab lock. The reaper uses this so
 /// it can re-check expiry under the same lock before tearing a lab down (the lock is not
 /// reentrant, so it must not call `stop`, which would deadlock).
-pub(super) async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+pub(super) async fn stop_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
     let _deploy = DeployGuard::new(id, Action::Stop);
     // The website's co-location check for this lab has nothing left to vouch for, and its hosts'
     // keys go with its hosts.
@@ -147,11 +147,11 @@ pub(super) async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: 
     super::paths::forget_lab_host_keys(dir);
     // On this machine, through the runner: a container lab on Docker or in one local VM, or a VM
     // lab (its attack VM goes with it). Cloud-services have a host, so they never reach here.
-    let Some(c) = server::lab_connection(app, dir)? else {
+    let Some(c) = server::lab_connection(dirs, dir)? else {
         return match runtime {
-            Runtime::Docker if local_vm(dir).is_some() => stop_docker_in_vm_run(&runner_home(app)?, dir, id, log).await,
-            Runtime::Docker => stop_docker_run(&runner_home(app)?, dir, id, log).await,
-            Runtime::Vm => stop_vm_run(&runner_home(app)?, dir, id, log).await,
+            Runtime::Docker if local_vm(dir).is_some() => stop_docker_in_vm_run(&runner_home(dirs)?, dir, id, log).await,
+            Runtime::Docker => stop_docker_run(&runner_home(dirs)?, dir, id, log).await,
+            Runtime::Vm => stop_vm_run(&runner_home(dirs)?, dir, id, log).await,
             Runtime::Cloud => stop_here(dir, id, runtime, log).await,
         };
     };
@@ -160,11 +160,11 @@ pub(super) async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: 
     let mut log = log;
     let lab = LabRef { dir, id, runtime };
     let result = if c.provider == super::providers::Provider::VmwareEsxi {
-        stop_esxi_run(app, lab, &c, &mut log).await
+        stop_esxi_run(dirs, lab, &c, &mut log).await
     } else if c.provider.is_cloud() {
-        stop_cloud_run(app, CloudStop { dir, id, runtime, conn: &c }, &mut log).await
+        stop_cloud_run(dirs, CloudStop { dir, id, runtime, conn: &c }, &mut log).await
     } else {
-        stop_server_run(app, lab, &c, &mut log).await
+        stop_server_run(dirs, lab, &c, &mut log).await
     };
     if result.is_ok() {
         forget_run(dir)?;
@@ -180,18 +180,18 @@ pub(super) async fn stop_docker_in_vm_run(home: &std::path::Path, dir: &Path, id
 }
 
 /// Destroys a Proxmox lab the runner runs (connection `c`, the server's as it is now).
-async fn stop_server_run(app: &AppHandle, lab: LabRef<'_>, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
+async fn stop_server_run(dirs: &AppDirs, lab: LabRef<'_>, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     let host = server::marked_host(dir).unwrap_or_default();
-    let run = isothrum::ServerRun::new(&runner_home(app)?, dir, id, runtime)?;
-    let place = super::launch::server_place(app, &host, c, &run).await?;
+    let run = isothrum::ServerRun::new(&runner_home(dirs)?, dir, id, runtime)?;
+    let place = super::launch::server_place(dirs, &host, c, &run).await?;
     run.down(&place, log).await
 }
 
 /// Destroys an ESXi lab the runner runs (connection `c`, the server's as it is now).
-async fn stop_esxi_run(app: &AppHandle, lab: LabRef<'_>, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
+async fn stop_esxi_run(dirs: &AppDirs, lab: LabRef<'_>, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
-    super::launch::esxi_run(app, dir, id, runtime, c)?.down(log).await
+    super::launch::esxi_run(dirs, dir, id, runtime, c)?.down(log).await
 }
 
 /// A cloud VM lab to tear down: the lab (folder, id, runtime) and the account it ran on.
@@ -204,12 +204,12 @@ struct CloudStop<'a> {
 
 /// Destroys a cloud VM lab in its account (as it is now), through the runner, which replays the
 /// recorded parameters with the account's credentials.
-async fn stop_cloud_run(app: &AppHandle, stop: CloudStop<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+async fn stop_cloud_run(dirs: &AppDirs, stop: CloudStop<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let CloudStop { dir, id, runtime, conn: c } = stop;
     let cloud = server::terraform_target(c.provider).unwrap_or_default();
     let label = server::marked_host(dir).unwrap_or_default();
     let place = isothrum::CloudPlace { label, region: c.region.clone(), tf_env: c.tf_env.clone(), ..isothrum::CloudPlace::default() };
-    isothrum::CloudRun::new(&runner_home(app)?, dir, id, runtime, cloud)?.down(&place, log).await
+    isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, runtime, cloud)?.down(&place, log).await
 }
 
 /// Stops a lab that runs on this machine (its containers, a local VM, or its VMs) and, once it
@@ -274,26 +274,26 @@ pub async fn clear_parked(dir: &Path, id: &str, log: &impl Fn(String)) {
 
 // The bodies of the lab operations the deploy worker runs (`deploy_worker::execute`), by lab id.
 
-pub async fn park_lab(app: &AppHandle, id: &str, runtime: Runtime, mode: Park, log: impl FnMut(String)) -> Result<()> {
-    let dir = lab_dir(app, id)?;
-    park(app, LabRef { dir: &dir, id, runtime }, mode, log).await
+pub async fn park_lab(dirs: &AppDirs, id: &str, runtime: Runtime, mode: Park, log: impl FnMut(String)) -> Result<()> {
+    let dir = lab_dir(dirs, id)?;
+    park(dirs, LabRef { dir: &dir, id, runtime }, mode, log).await
 }
 
-pub async fn resume_lab(app: &AppHandle, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
-    resume(app, &lab_dir(app, id)?, id, runtime, log).await
+pub async fn resume_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+    resume(dirs, &lab_dir(dirs, id)?, id, runtime, log).await
 }
 
-pub async fn provision_lab(app: &AppHandle, id: &str, runtime: Runtime, machine: Option<&str>, log: impl FnMut(String)) -> Result<()> {
-    let dir = lab_dir(app, id)?;
-    provision(app, LabRef { dir: &dir, id, runtime }, machine, log).await
+pub async fn provision_lab(dirs: &AppDirs, id: &str, runtime: Runtime, machine: Option<&str>, log: impl FnMut(String)) -> Result<()> {
+    let dir = lab_dir(dirs, id)?;
+    provision(dirs, LabRef { dir: &dir, id, runtime }, machine, log).await
 }
 
 /// How lab `id` runs on this machine, for a Stop of what the Machine page found of it there
 /// (`in_vm`: its VMs, else its containers). `None` when it isn't an installed lab that runs here
 /// (removed since, the self-test, or marked as running on a server host): its leftovers then go
 /// by name.
-pub fn runtime_here(app: &AppHandle, id: &str, in_vm: bool) -> Option<Runtime> {
-    let dir = lab_dir(app, id).ok()?;
+pub fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
+    let dir = lab_dir(dirs, id).ok()?;
     if server::marked_host(&dir).is_some_and(|h| !h.is_empty()) {
         return None;
     }
@@ -306,11 +306,11 @@ pub fn runtime_here(app: &AppHandle, id: &str, in_vm: bool) -> Option<Runtime> {
 /// no attack VM may start. A deploy still running in its worker (and an attack VM start beside
 /// it) is ended first, so the teardown never races a `vagrant up` or `compose up` that would
 /// recreate what it removes; then the lab is torn down under its lock.
-pub async fn stop_lab(app: &AppHandle, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
-    let dir = lab_dir(app, id)?;
+pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+    let dir = lab_dir(dirs, id)?;
     let _stopping = DeployGuard::new(id, Action::Stop);
-    crate::deploy_worker::end_workers(app, id).await;
-    stop(app, &dir, id, runtime, log).await
+    crate::deploy_worker::end_workers(dirs, id).await;
+    stop(dirs, &dir, id, runtime, log).await
 }
 
 #[cfg(test)]
@@ -330,16 +330,16 @@ mod tests {
         let host = t.host("az1", "azure", serde_json::json!({}));
         server::mark_lab(&dir, Some(&host)).unwrap();
         let tools = Tools::rules(&[]);
-        let err = park_lab(t.handle(), "web", Runtime::Docker, Park::Pause, |_| {}).await.unwrap_err().to_string();
+        let err = park_lab(&t.dirs(), "web", Runtime::Docker, Park::Pause, |_| {}).await.unwrap_err().to_string();
         assert!(err.starts_with("Pausing a lab on a server host"), "{err}");
-        let err = resume_lab(t.handle(), "web", Runtime::Docker, |_| {}).await.unwrap_err().to_string();
+        let err = resume_lab(&t.dirs(), "web", Runtime::Docker, |_| {}).await.unwrap_err().to_string();
         assert!(err.contains("parked on a server host"), "{err}");
-        let err = provision_lab(t.handle(), "web", Runtime::Vm, None, |_| {}).await.unwrap_err().to_string();
+        let err = provision_lab(&t.dirs(), "web", Runtime::Vm, None, |_| {}).await.unwrap_err().to_string();
         assert!(err.contains("Proxmox or a cloud"), "{err}");
         assert_eq!(tools.calls(), Vec::<String>::new());
         // Stopping it destroys it with Terraform there: with no state, nothing is left to destroy,
         // and the lab no longer reads as running there.
-        stop_lab(t.handle(), "web", Runtime::Docker, |_| {}).await.unwrap();
+        stop_lab(&t.dirs(), "web", Runtime::Docker, |_| {}).await.unwrap();
         assert!(!dir.join(server::HOST_MARKER).exists());
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
     }
@@ -390,13 +390,13 @@ mod tests {
         let dir = t.lab("goat", &[]);
         mark_parked(&dir, Some(Park::Pause)).unwrap();
         let tools = Tools::rules(&[]);
-        stop_lab(t.handle(), "goat", Runtime::Cloud, |_| {}).await.unwrap();
+        stop_lab(&t.dirs(), "goat", Runtime::Cloud, |_| {}).await.unwrap();
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert_eq!(parked(&dir), None);
         // Parking or resuming it is refused on the runtime alone.
-        let err = park_lab(t.handle(), "goat", Runtime::Cloud, Park::Pause, |_| {}).await.unwrap_err().to_string();
+        let err = park_lab(&t.dirs(), "goat", Runtime::Cloud, Park::Pause, |_| {}).await.unwrap_err().to_string();
         assert!(err.starts_with("A cloud lab can't be paused"), "{err}");
-        let err = resume_lab(t.handle(), "goat", Runtime::Cloud, |_| {}).await.unwrap_err().to_string();
+        let err = resume_lab(&t.dirs(), "goat", Runtime::Cloud, |_| {}).await.unwrap_err().to_string();
         assert!(err.starts_with("A cloud lab can't be paused"), "{err}");
         assert_eq!(tools.calls(), Vec::<String>::new());
     }

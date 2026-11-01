@@ -111,9 +111,11 @@ pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<
             };
             crate::labs::run(app, job.launch, &placement, log).await
         }
-        Op::Resume { runtime } => crate::runtime::resume_lab(app, &job.lab_id, runtime, log).await.map(|()| None),
-        Op::Park { runtime, mode } => crate::runtime::park_lab(app, &job.lab_id, runtime, mode, log).await.map(|()| None),
-        Op::Provision { runtime, machine } => crate::runtime::provision_lab(app, &job.lab_id, runtime, machine.as_deref(), log).await.map(|()| None),
+        Op::Resume { runtime } => crate::runtime::resume_lab(&AppDirs::from(app), &job.lab_id, runtime, log).await.map(|()| None),
+        Op::Park { runtime, mode } => crate::runtime::park_lab(&AppDirs::from(app), &job.lab_id, runtime, mode, log).await.map(|()| None),
+        Op::Provision { runtime, machine } => {
+            crate::runtime::provision_lab(&AppDirs::from(app), &job.lab_id, runtime, machine.as_deref(), log).await.map(|()| None)
+        }
         Op::LaunchLocal { src } => crate::labs::run_local(app, &job.lab_id, std::path::Path::new(&src), log).await,
     }
 }
@@ -154,9 +156,9 @@ static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Ends the worker of lab `id`, waiting until it is gone. Called by a stop already marked as
 /// stopping (see `runtime::stopping`): a start that passed its checks before the mark has claimed
 /// its pidfile once `STARTING` is free, so it is found and ended here.
-pub async fn end_workers(app: &AppHandle, id: &str) {
+pub async fn end_workers(dirs: &AppDirs, id: &str) {
     drop(STARTING.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
-    kill_and_wait(app, id).await;
+    kill_and_wait(dirs, id).await;
 }
 
 /// Checks that nothing else runs on the job's key and starts its worker, as one step: two
@@ -175,7 +177,7 @@ fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> 
     }
     // An operation of the app itself (a stop, the expiry reaper) holds the lab: the worker
     // would only wait for it, then act on what it left.
-    if lock::held(&lock_path(app, &job.lab_id)?) {
+    if lock::held(&lock_path(&AppDirs::from(app), &job.lab_id)?) {
         return Err(Error::coded(Code::AlreadyInProgress));
     }
     // The pidfile is taken before the worker starts (another process may be racing for it too).
@@ -184,14 +186,14 @@ fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> 
 }
 
 /// Whether the lab's last finished launch failed (see [`files::last_deploy_failed`]).
-pub fn last_deploy_failed(app: &AppHandle, lab_id: &str) -> bool {
-    files::last_deploy_failed(&AppDirs::from(app), lab_id)
+pub fn last_deploy_failed(dirs: &AppDirs, lab_id: &str) -> bool {
+    files::last_deploy_failed(dirs, lab_id)
 }
 
 /// The cross-process lock file of `lab` (see [`lock`]).
-pub fn lock_path(app: &AppHandle, lab: &str) -> Result<std::path::PathBuf> {
+pub fn lock_path(dirs: &AppDirs, lab: &str) -> Result<std::path::PathBuf> {
     crate::runtime::validate_id(lab)?;
-    Ok(lock::path_in(&files::dir(&AppDirs::from(app))?, lab))
+    Ok(lock::path_in(&files::dir(dirs)?, lab))
 }
 
 #[cfg(test)]

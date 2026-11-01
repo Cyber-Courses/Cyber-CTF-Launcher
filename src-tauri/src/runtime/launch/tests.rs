@@ -10,7 +10,7 @@ use crate::testing::test_app::TestApp;
 async fn start_here(t: &TestApp, id: &str, runtime: Runtime, provider: Option<Provider>, env: &[(String, String)]) -> (crate::error::Result<()>, Vec<String>) {
     let dir = t.data().join("labs").join(id);
     let mut log = Vec::new();
-    let r = start(t.handle(), &dir, id, runtime, provider, None, env, |l| log.push(l)).await;
+    let r = start(&t.dirs(), &dir, id, runtime, provider, None, env, |l| log.push(l)).await;
     (r, log)
 }
 
@@ -29,7 +29,7 @@ async fn a_lab_on_qemu_is_checked_for_its_emulator() {
 async fn start_on(t: &TestApp, id: &str, runtime: Runtime, host: &str) -> (crate::error::Result<()>, Vec<String>) {
     let dir = t.data().join("labs").join(id);
     let mut log = Vec::new();
-    let r = start(t.handle(), &dir, id, runtime, None, Some(host), &[], |l| log.push(l)).await;
+    let r = start(&t.dirs(), &dir, id, runtime, None, Some(host), &[], |l| log.push(l)).await;
     (r, log)
 }
 
