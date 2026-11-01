@@ -406,10 +406,17 @@ async fn install_local(app: &AppHandle, lab_id: &str, src: &Path, log: &impl Fn(
     let labs = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("labs");
     let dir = labs.join(lab_id);
     let in_use = runtime::subnets_in_use(lab_id).await;
-    // Re-importing while the previous copy runs here would pull its files out from under the
-    // containers; stop it first.
-    if dir.exists() && runtime::running_here(&dir, lab_id).await {
-        return Err(Error::Refused(format!("{lab_id} is running; stop it before importing it again")));
+    // Re-importing while the previous copy is up would pull its files out from under it, as an
+    // update would: running here, deployed on a server host (its folder holds Vagrant's record of
+    // the machines and the module its state was applied from), or machines Vagrant still tracks
+    // here. Stop it first.
+    if dir.exists() {
+        if let Some(host) = runtime::deployed_on_server(app, &dir, lab_id) {
+            return Err(Error::Refused(format!("{lab_id} is still running on {host}; stop it before importing it again")));
+        }
+        if runtime::running_here(&dir, lab_id).await || runtime::vms_recorded_here(&dir) {
+            return Err(Error::Refused(format!("{lab_id} is running (or its machines still exist here); stop it before importing it again")));
+        }
     }
     log(format!("Importing {lab_id} from {}", src.display()));
     let staging = dir.with_file_name(format!(".{lab_id}.staging"));
@@ -694,6 +701,38 @@ mod tests {
         let err = lab_launch_local(t.handle().clone(), dir.to_string_lossy().into_owned(), tauri::ipc::Channel::new(|_| Ok(()))).await;
         let _ = std::fs::remove_dir_all(&dir);
         assert!(err.is_err(), "a folder with no isoloom.yml is not a lab");
+    }
+
+    #[tokio::test]
+    async fn re_importing_a_lab_that_is_up_elsewhere_or_has_machines_recorded_is_refused() {
+        // Regression: the import only asked whether the lab ran here (its containers), unlike an
+        // update, so a copy deployed on a server host or with machines Vagrant still tracked was
+        // swapped out from under them and their record lost.
+        use crate::platform::exec::fake::Tools;
+        let t = crate::testing::test_app::TestApp::new();
+        let src = std::env::temp_dir().join(format!("cyberctf-import-src-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("isoloom.yml"), SPEC).unwrap();
+        let _tools = Tools::rules(&[]);
+        let log = |_: String| {};
+        let dir = install_local(t.handle(), "local-invoice", &src, &log).await.unwrap();
+        // Machines Vagrant still tracks here (a VM launch that failed on one machine).
+        let vagrant = runtime::lab::vagrant_dir(&dir, Runtime::Vm);
+        let machine = vagrant.join(".vagrant").join("machines").join("web").join("virtualbox");
+        std::fs::create_dir_all(&machine).unwrap();
+        std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
+        std::fs::write(machine.join("id"), "vm-1").unwrap();
+        let err = install_local(t.handle(), "local-invoice", &src, &log).await.unwrap_err();
+        assert!(matches!(err, Error::Refused(_)), "{err:?}");
+        assert!(err.to_string().contains("machines still exist here"), "{err}");
+        // Deployed on a server host, with something of it still there: the host is named.
+        runtime::server::mark_lab(&dir, Some("esxi1")).unwrap();
+        let err = install_local(t.handle(), "local-invoice", &src, &log).await.unwrap_err();
+        assert!(matches!(err, Error::Refused(_)), "{err:?}");
+        assert!(err.to_string().contains("still running on esxi1"), "{err}");
+        // Refused before anything was staged: the installed copy and its record are untouched.
+        assert!(machine.join("id").is_file() && !dir.with_file_name(".local-invoice.staging").exists());
+        let _ = std::fs::remove_dir_all(&src);
     }
 
     #[tokio::test]

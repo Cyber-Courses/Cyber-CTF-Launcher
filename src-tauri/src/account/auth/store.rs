@@ -76,6 +76,14 @@ fn join_chunks(head: String, mut piece: impl FnMut(usize) -> Option<String>) -> 
     (1..=n).map(&mut piece).collect()
 }
 
+/// The session a keychain `head` holds: joined from its pieces (`piece(i)`, 1-based) when it was
+/// split, then parsed. None when a piece is missing or the text isn't a session (another app's
+/// entry, a save cut short): that reads as signed out, never as a keychain error, and the next
+/// sign-in writes over it.
+fn decode(head: String, piece: impl FnMut(usize) -> Option<String>) -> Option<Session> {
+    join_chunks(head, piece).and_then(|raw| serde_json::from_str(&raw).ok())
+}
+
 /// The keychain failing is the common Linux case: no Secret Service (GNOME Keyring, KWallet)
 /// running, or it is locked. Say what to do; the raw error stays in parentheses for support.
 fn keychain_error(e: &keyring::Error) -> Error {
@@ -85,7 +93,7 @@ fn keychain_error(e: &keyring::Error) -> Error {
     ))
 }
 
-fn dev_session_path() -> Option<std::path::PathBuf> {
+pub(super) fn dev_session_path() -> Option<std::path::PathBuf> {
     // Unit tests never read or replace the developer's own session: theirs is per test run.
     if cfg!(test) {
         return Some(std::env::temp_dir().join(format!("cyberctf-test-session-{}", std::process::id())).join("dev-session.json"));
@@ -127,7 +135,7 @@ fn load_keychain() -> std::result::Result<Option<Session>, String> {
     }
     let piece = |i: usize| entry_named(&format!("session.{i}")).ok()?.get_password().ok();
     let read = entry().map_err(|e| e.to_string()).and_then(|e| match e.get_password() {
-        Ok(head) => Ok(join_chunks(head, piece).and_then(|raw| serde_json::from_str(&raw).ok())),
+        Ok(head) => Ok(decode(head, piece)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(keychain_error(&e).to_string()),
     });
@@ -312,6 +320,22 @@ mod tests {
             assert_ne!(dev_session_path(), Some(p));
         }
         ask_keychain_again();
+    }
+
+    #[test]
+    fn a_corrupt_keychain_session_reads_as_no_session_not_as_an_error() {
+        // The entry holds text that isn't a session (another app's, a save cut short), a session
+        // with a field of the wrong type, or names pieces one of which is gone: no session, so the
+        // app shows signed out without a keychain error, and a fresh sign-in replaces it.
+        assert!(decode("not json".into(), |_| None).is_none());
+        assert!(decode(r#"{"access_token":42,"expires_at":1}"#.into(), |_| None).is_none());
+        let long = Session { access_token: "x".repeat(3000), refresh_token: Some("r".into()), expires_at: 42, name: None, email: None };
+        let (head, parts) = split_chunks(&serde_json::to_string(&long).unwrap()).unwrap();
+        assert!(parts.len() >= 2);
+        assert!(decode(head.clone(), |i| (i != 2).then(|| parts[i - 1].clone())).is_none(), "a missing piece");
+        assert!(decode(head.clone(), |i| parts.get(i - 1).map(|p| p.replace('x', "\""))).is_none(), "a garbled piece");
+        let back = decode(head, |i| parts.get(i - 1).cloned()).unwrap();
+        assert_eq!((back.access_token.len(), back.refresh_token.as_deref(), back.expires_at), (3000, Some("r"), 42));
     }
 }
 

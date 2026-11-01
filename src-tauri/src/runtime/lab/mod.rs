@@ -511,6 +511,22 @@ mod tests {
     }
 
     #[test]
+    fn a_spec_with_a_field_this_build_does_not_know_asks_for_a_newer_launcher() {
+        // Labs adopt spec additions before every player has updated: a top-level key this build's
+        // Isoloom doesn't have means a newer format, so the player is told to update rather than
+        // shown a mistake of the lab's. A mistake of the lab's own stays Isoloom's words.
+        let dir = lab(&format!("{SPEC}observability:\n  traces: true\n"));
+        let err = super::lab(&dir).unwrap_err().to_string();
+        assert!(err.starts_with("This lab needs a newer version of Cyber CTF. Update it (Settings > About), then start the lab again."), "{err}");
+        assert!(err.contains("isoloom.yml:"), "{err}");
+        std::fs::remove_dir_all(dir).unwrap();
+        let dir = lab(&SPEC.replace("10.30.0.0/24", "not-a-cidr"));
+        let err = super::lab(&dir).unwrap_err().to_string();
+        assert!(!err.contains("newer version"), "{err}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn prepare_replaces_the_previous_files_but_keeps_other_ones_in_the_output_folder() {
         let dir = lab(SPEC);
         prepare(&dir, Target::Docker).unwrap();

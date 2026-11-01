@@ -198,6 +198,28 @@ pub fn lock_path(app: &AppHandle, lab: &str) -> Result<std::path::PathBuf> {
 mod tests {
     use super::{Job, Op};
 
+    /// No worker process could be started (here its job file can't be written; a binary that
+    /// can't be run is the same path): the job still runs, inside the app, and the log says so.
+    /// What comes back is the job's own outcome, never the failure to start a worker.
+    #[tokio::test]
+    async fn a_job_runs_inside_the_app_when_no_worker_can_be_started() {
+        let t = crate::testing::test_app::TestApp::new();
+        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let src = std::env::temp_dir().join(format!("cyberctf-notalab-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&src).unwrap();
+        let job = Job::on_lab("local-mini", Op::LaunchLocal { src: src.to_string_lossy().into_owned() });
+        // A folder where the worker's job file goes: writing the job fails, so no worker starts.
+        std::fs::create_dir_all(super::files::of(&t.dirs(), &job.key()).unwrap().job).unwrap();
+        let sink = crate::testing::test_app::Sink::default();
+        let err = super::run_job(t.handle(), job, sink.channel()).await.unwrap_err().to_string();
+        let lines = sink.lines();
+        assert!(lines[0].starts_with("Running inside the app (a background worker couldn't be started: "), "{lines:?}");
+        assert!(lines[0].ends_with("Keep the app open until it finishes."), "{lines:?}");
+        // The job ran here: its own verdict (the folder is no lab), not a failure to start it.
+        assert!(err.starts_with("not a lab folder"), "{err}");
+        let _ = std::fs::remove_dir_all(&src);
+    }
+
     #[test]
     fn job_files_from_before_operations_existed_still_read_as_launches() {
         let old = r#"{"lab_id":"lab-1","launch":{"labId":"lab-1"},"provider":null,"host":null,"attackbox_image":null}"#;

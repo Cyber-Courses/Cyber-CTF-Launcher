@@ -226,4 +226,26 @@ mod tests {
         assert!(!kept_path(&base, "web").exists());
         let _ = std::fs::remove_dir_all(base);
     }
+
+    #[test]
+    fn a_corrupt_kept_answer_reads_as_never_started_online() {
+        // The kept file is cut short or isn't JSON (a crash mid-write, an edit by hand): it is as
+        // if nothing was kept, so the player hears the lab was never started online here, not a
+        // parse error, and the next online start writes a fresh one.
+        let base = base();
+        install(&base, "web", SHA);
+        for corrupt in ["{\"labId\":\"web\",\"runtime\":", "not json", ""] {
+            let path = kept_path(&base, "web");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, corrupt).unwrap();
+            let offered = instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err();
+            assert_eq!(offered.code(), Code::Unreachable { detail: "API unreachable: connection refused".into() }, "{corrupt:?}");
+            let err = instead_of(unreachable(), &base, "web", Some(ADA), true).unwrap_err().to_string();
+            assert!(err.contains("never started on this machine while online with this account"), "{corrupt:?}: {err}");
+        }
+        // Written over by the next online start, it reads again.
+        keep(&base, &start_lab_answer("web"), ADA).unwrap();
+        assert!(instead_of(unreachable(), &base, "web", Some(ADA), true).is_ok());
+        std::fs::remove_dir_all(base).unwrap();
+    }
 }

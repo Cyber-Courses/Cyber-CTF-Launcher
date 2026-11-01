@@ -123,6 +123,28 @@ mod tests {
         assert!(matches!(err, crate::error::Error::Unreachable(_)), "{err}");
     }
 
+    /// A backend refusing the call (401: the token isn't accepted, 403: not allowed) is a refusal
+    /// the app shows as the call's own error (`other`), whether it answers in GraphQL's words or
+    /// with a bare page, never an outage to retry. A 503 page is the outage: unreachable.
+    #[tokio::test]
+    async fn a_refused_call_is_invalid_and_an_outage_is_unreachable() {
+        use crate::error::{Code, Error};
+        use crate::platform::http::tests::serve_once;
+        let response = |status: &str, body: &str| {
+            format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).into_bytes()
+        };
+        let call = |base: String| async move { super::send(base.trim_end_matches('/'), Some("stale".into()), "{ me { id } }", serde_json::Value::Null).await };
+        let err = call(serve_once(response("401 Unauthorized", r#"{"errors":[{"message":"Unauthorized"}]}"#)).await).await.unwrap_err();
+        assert!(matches!(err, Error::Invalid(_)), "{err:?}");
+        assert_eq!((err.code(), err.to_string()), (Code::Other, "Unauthorized".to_string()));
+        let err = call(serve_once(response("403 Forbidden", "<html>blocked by the gateway</html>")).await).await.unwrap_err();
+        assert!(matches!(err, Error::Invalid(_)), "{err:?}");
+        assert_eq!(err.to_string(), "API error (HTTP 403 Forbidden): <html>blocked by the gateway</html>");
+        let err = call(serve_once(response("503 Service Unavailable", "Service Unavailable")).await).await.unwrap_err();
+        assert!(matches!(err, Error::Unreachable(_)), "{err:?}");
+        assert_eq!(err.code(), Code::Unreachable { detail: "API error (HTTP 503 Service Unavailable): Service Unavailable".into() });
+    }
+
     /// Hits the real CyberBackend anonymously: `cargo test -- --ignored`.
     #[tokio::test]
     #[ignore = "network"]
