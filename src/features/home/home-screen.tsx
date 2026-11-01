@@ -168,7 +168,7 @@ export function HomeScreen({ report, checkError = null, onRetryCheck, auth, onNa
         <RunningPanel running={runningCount} containers={o.labContainers}>
           {o.running.map(labRow)}
           {o.unlisted.map((id) => (
-            <UnlistedRunningRow key={id} id={id} />
+            <UnlistedRunningRow key={id} id={id} imported={o.labs !== null} />
           ))}
         </RunningPanel>
         <SecondColumn ops={o.activeOps} labs={o.labs ?? []} report={report} metrics={metrics} openLab={openLab} onMachine={onNavigate} />

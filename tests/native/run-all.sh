@@ -253,8 +253,10 @@ if [ "$DOCKER_OK" -eq 1 ]; then
   run_mjs kill-mid-deploy
   cleanup_lab
   run_mjs attack-box
+  cleanup_lab
+  run_mjs stop-with-box
 else
-  for c in fail-docker launch restart stop launch-ui attack-box kill-mid-deploy; do skip "$c" "docker is not running"; done
+  for c in fail-docker launch restart stop launch-ui attack-box kill-mid-deploy stop-with-box; do skip "$c" "docker is not running"; done
 fi
 vm_scan
 cleanup_lab final

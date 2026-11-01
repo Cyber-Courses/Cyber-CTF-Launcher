@@ -85,6 +85,9 @@ export async function connect() {
 export async function prepare(b, storage = {}) {
   await b.execute((items) => {
     try {
+      // The webview's storage outlives the app: a hook an earlier scenario set (the attack-box
+      // panel's lab, say) would otherwise mount again in this one, in every window.
+      for (const k of Object.keys(localStorage)) if (k.startsWith("__wdio_")) localStorage.removeItem(k);
       localStorage.setItem("cyberctf.onboarded", "1");
       localStorage.setItem("cyberctf.locale", "en");
       for (const [k, v] of Object.entries(items)) localStorage.setItem(k, v);

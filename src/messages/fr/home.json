@@ -60,7 +60,8 @@
       "other": "{count} conteneurs"
     },
     "empty": "Rien ne tourne. Lancez un lab depuis sa page.",
-    "noDetails": "en cours · pas de détails tant que le catalogue est injoignable"
+    "noDetails": "en cours · pas de détails tant que le catalogue est injoignable",
+    "imported": "en cours · importé depuis un dossier · à arrêter depuis Machine"
   },
   "deploy": {
     "inProgress": "En cours",

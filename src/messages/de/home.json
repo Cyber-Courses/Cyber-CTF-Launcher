@@ -60,7 +60,8 @@
       "other": "{count} Container"
     },
     "empty": "Nichts läuft. Starte ein Lab auf seiner Seite.",
-    "noDetails": "läuft · keine Details, solange der Katalog nicht erreichbar ist"
+    "noDetails": "läuft · keine Details, solange der Katalog nicht erreichbar ist",
+    "imported": "läuft · aus einem Ordner importiert · Stopp unter Rechner"
   },
   "deploy": {
     "inProgress": "In Arbeit",

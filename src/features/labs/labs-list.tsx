@@ -177,9 +177,11 @@ export function LabsCatalogue({ labs, filtered, running, rest, ctx }: { labs: La
   );
 }
 
-/** A lab running here that the catalogue doesn't list (it can't be reached): its id made
- *  readable, so a running lab never vanishes from the Overview with the catalogue. */
-export function UnlistedRunningRow({ id, title }: { id: string; title?: string }) {
+/** A lab running here that the catalogue doesn't list: its id made readable, so a running lab
+ *  never vanishes from the Overview. Why there are no details depends on the catalogue: while it
+ *  can't be reached, any lab is unlisted; once it is loaded, an unlisted lab is one installed
+ *  outside it (imported from a folder), which Machine > Running now stops. */
+export function UnlistedRunningRow({ id, title, imported = false }: { id: string; title?: string; imported?: boolean }) {
   const t = useT();
   return (
     <div className="grid h-13 grid-cols-[auto_minmax(0,1fr)] items-center gap-3.5 border-t border-border px-4 text-[0.8125rem] first:border-t-0">
@@ -189,7 +191,7 @@ export function UnlistedRunningRow({ id, title }: { id: string; title?: string }
       <span className="min-w-0">
         <span className="block truncate font-medium text-foreground">{title ?? prettyLabId(id)}</span>
         <span className="block truncate font-mono text-[0.6875rem] text-faint">
-          {id} · {t("home.running.noDetails")}
+          {id} · {t(imported ? "home.running.imported" : "home.running.noDetails")}
         </span>
       </span>
     </div>
