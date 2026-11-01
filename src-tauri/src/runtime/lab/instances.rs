@@ -52,7 +52,7 @@ fn lock_instances(labs: &Path) -> Result<std::fs::File> {
 /// The lowest instance number free for lab `dir` (see [`ensure_instance`]), saved in its marker.
 fn pick_instance(labs: &Path, dir: &Path, in_use: &[String]) -> Result<u8> {
     let taken: Vec<u8> = std::fs::read_dir(labs)
-        .map(|entries| entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p != dir).filter_map(|p| instance(&p)).collect())
+        .map(|entries| entries.filter_map(std::result::Result::ok).map(|e| e.path()).filter(|p| p != dir).filter_map(|p| instance(&p)).collect())
         .unwrap_or_default();
     let lab = lab(dir).ok();
     let used = ranges(in_use);

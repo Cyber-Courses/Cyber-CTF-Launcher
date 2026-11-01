@@ -28,7 +28,7 @@
         "rs:runtime": 4
       },
       "clippy/doc_markdown": {
-        "rs:runtime": 31
+        "rs:runtime": 11
       },
       "clippy/expect_used": {
         "rs:runtime": 1
@@ -42,9 +42,6 @@
       "clippy/format_collect": {
         "rs:runtime": 2
       },
-      "clippy/if_not_else": {
-        "rs:runtime": 1
-      },
       "clippy/ignore_without_reason": {
         "rs:runtime": 1
       },
@@ -57,9 +54,6 @@
       "clippy/manual_string_new": {
         "rs:runtime": 1
       },
-      "clippy/map_unwrap_or": {
-        "rs:runtime": 5
-      },
       "clippy/match_same_arms": {
         "rs:runtime": 2
       },
@@ -67,7 +61,7 @@
         "rs:runtime": 8
       },
       "clippy/redundant_closure_for_method_calls": {
-        "rs:runtime": 9
+        "rs:runtime": 1
       },
       "clippy/semicolon_if_nothing_returned": {
         "rs:runtime": 1
@@ -76,7 +70,7 @@
         "rs:runtime": 1
       },
       "clippy/single_match_else": {
-        "rs:runtime": 3
+        "rs:runtime": 1
       },
       "clippy/stable_sort_primitive": {
         "rs:runtime": 3
@@ -92,9 +86,6 @@
       },
       "clippy/unwrap_used": {
         "rs:runtime": 9
-      },
-      "clippy/wildcard_imports": {
-        "rs:runtime": 7
       },
       "rustc/unsafe_code": {
         "rs:runtime": 2

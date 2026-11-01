@@ -186,12 +186,12 @@ fn valid_org_id(s: &str) -> bool {
     s.is_empty() || (s.len() <= 32 && s.chars().all(|c| c.is_ascii_digit()))
 }
 
-/// A DigitalOcean region slug, e.g. "fra1", "nyc3" (lowercase letters then digits).
+/// A `DigitalOcean` region slug, e.g. "fra1", "nyc3" (lowercase letters then digits).
 pub(super) fn valid_do_region(s: &str) -> bool {
     (3..=8).contains(&s.len()) && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
 }
 
-/// A DigitalOcean / Linode API token: the "dop_v1_..." form or a hex PAT. Loose length/charset check.
+/// A `DigitalOcean` / Linode API token: the "`dop_v1`_..." form or a hex PAT. Loose length/charset check.
 fn valid_do_token(s: &str) -> bool {
     (40..=200).contains(&s.len()) && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }

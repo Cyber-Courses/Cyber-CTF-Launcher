@@ -48,13 +48,12 @@ fn cloud_vars(h: &HostProfile) -> Vec<(String, String)> {
     // GCP: the account's labs project (see `gcp`), else a project per lab from the billing
     // account (the module creates and deletes it).
     if h.provider == Provider::Gcp {
-        match &h.gcp_project {
-            Some(p) => vars.push(("project".into(), p.clone())),
-            None => {
-                vars.push(("billing_account".into(), h.cloud_account().unwrap_or_default().to_string()));
-                if let Some(org) = h.gcp_org() {
-                    vars.push(("org_id".into(), org.to_string()));
-                }
+        if let Some(p) = &h.gcp_project {
+            vars.push(("project".into(), p.clone()));
+        } else {
+            vars.push(("billing_account".into(), h.cloud_account().unwrap_or_default().to_string()));
+            if let Some(org) = h.gcp_org() {
+                vars.push(("org_id".into(), org.to_string()));
             }
         }
     }

@@ -6,7 +6,7 @@ use crate::error::Result;
 use crate::platform::exec::{Vagrant, run, run_env_timed};
 
 /// A status read must never hang the status poll: a wedged VirtualBox (its global lock held by
-/// a stuck VBoxManage) would otherwise pile up one blocked `vagrant status` per poll tick.
+/// a stuck `VBoxManage`) would otherwise pile up one blocked `vagrant status` per poll tick.
 const STATUS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
 
 /// Isoloom's provisioning controller: the machine that runs Ansible against the others. Not a

@@ -33,7 +33,7 @@ fn in_flight() -> &'static Mutex<HashMap<String, (Action, usize)>> {
 
 /// Total start/stop operations in flight, across all labs.
 pub fn active_deploys() -> usize {
-    in_flight().lock().map(|m| m.values().map(|(_, n)| n).sum()).unwrap_or(0)
+    in_flight().lock().map_or(0, |m| m.values().map(|(_, n)| n).sum())
 }
 
 /// The labs being started right now (in this process), deduplicated.

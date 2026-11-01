@@ -22,7 +22,7 @@ fn ssh_dir(app: &AppHandle) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// The launcher's key path once `ensure_key` has run, for code without an AppHandle
+/// The launcher's key path once `ensure_key` has run, for code without an `AppHandle`
 /// (the Terraform driver waiting on a lab host it just installed the key on).
 static LAUNCHER_KEY: OnceLock<PathBuf> = OnceLock::new();
 
@@ -108,7 +108,7 @@ fn plain_word(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "=.,_/:@+-".contains(c))
 }
 
-/// A word of the ProxyCommand ssh runs: ssh hands it to `sh -c` on unix, but Windows' OpenSSH
+/// A word of the `ProxyCommand` ssh runs: ssh hands it to `sh -c` on unix, but Windows' OpenSSH
 /// starts it as a plain Windows command line, where a single quote is a plain character (the
 /// key's path then arrived wrapped in quotes and ssh couldn't open it). There a word is quoted
 /// the way the C runtime splits a command line back ([`windows_quote`]).
@@ -157,7 +157,7 @@ impl Target {
         Ok(())
     }
 
-    /// `-o ProxyCommand=…` through the jump host, with the same key and known_hosts, quoted for
+    /// `-o ProxyCommand=…` through the jump host, with the same key and `known_hosts`, quoted for
     /// this OS's ssh.
     fn proxy_option(&self, known_hosts: &Path) -> Result<Option<String>> {
         self.proxy_command(known_hosts, cfg!(windows))
@@ -203,7 +203,7 @@ pub fn node_known_hosts(identity: &Path) -> PathBuf {
     identity.with_file_name("nodes_known_hosts")
 }
 
-/// The known_hosts every attack box shell once shared. Its keys of lab hosts long gone refused
+/// The `known_hosts` every attack box shell once shared. Its keys of lab hosts long gone refused
 /// the shell to any new lab host at a recycled address: removed (nothing writes it any more).
 const SHARED_KNOWN_HOSTS: &str = "known_hosts";
 

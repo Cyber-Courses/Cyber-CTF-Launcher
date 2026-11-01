@@ -159,7 +159,7 @@ fn count_by_host(markers: &[String]) -> HashMap<String, u32> {
 /// How many labs still have something on host `id`: marked as running there, or a Terraform
 /// state left there that holds resources.
 fn labs_on(app: &AppHandle, id: &str) -> usize {
-    let left = app.path().app_data_dir().map(|base| leftovers_on(&base, id)).unwrap_or(0);
+    let left = app.path().app_data_dir().map_or(0, |base| leftovers_on(&base, id));
     lab_markers(app).iter().filter(|m| *m == id).count() + left
 }
 

@@ -1,6 +1,6 @@
 //! The Docker networks a lab sits on, and the subnets other networks already use.
 
-use super::*;
+use super::{Network, compose, run_read, strip_project};
 
 /// The names of the lab's Docker networks (Compose labels them with the project). Empty when
 /// Docker can't say.

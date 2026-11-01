@@ -34,12 +34,12 @@ pub enum Provider {
     /// The player's Google Cloud project (Terraform, a lab's Isoloom cloud-docker module). Like
     /// AWS and Azure: not a Vagrant provider, never detected locally, not in `ALL`.
     Gcp,
-    /// The player's DigitalOcean account (Terraform, a lab's Isoloom cloud-docker module).
+    /// The player's `DigitalOcean` account (Terraform, a lab's Isoloom cloud-docker module).
     /// Authenticated with an API token; not a Vagrant provider, never detected, not in `ALL`.
     #[serde(rename = "digitalocean")]
     DigitalOcean,
     /// The player's Linode account (Terraform, a lab's Isoloom cloud-docker module). Like
-    /// DigitalOcean: API-token auth, not a Vagrant provider, never detected, not in `ALL`.
+    /// `DigitalOcean`: API-token auth, not a Vagrant provider, never detected, not in `ALL`.
     Linode,
     /// The player's Oracle Cloud tenancy (Terraform, a lab's Isoloom cloud-docker module). Authenticated
     /// with an API signing key in ~/.oci/config; not a Vagrant provider, never detected, not in `ALL`.
@@ -172,7 +172,7 @@ const UTM_APP: &str = "/Applications/UTM.app";
 
 /// Whether the Hyper-V feature is on: its Virtual Machine Management service is installed with it.
 fn hyperv_enabled() -> bool {
-    let root = std::env::var_os("SystemRoot").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("C:\\Windows"));
+    let root = std::env::var_os("SystemRoot").map_or_else(|| std::path::PathBuf::from("C:\\Windows"), std::path::PathBuf::from);
     root.join("System32").join("vmms.exe").is_file()
 }
 

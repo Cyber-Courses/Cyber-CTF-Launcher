@@ -1,7 +1,7 @@
 //! Clearing what a crashed or interrupted VM lab left behind: Vagrant state recorded on another
 //! provider, and orphaned VirtualBox/Parallels VMs and folders.
 
-use super::*;
+use super::{HashSet, Path, PathBuf, run};
 
 /// Whether Vagrant still tracks a created machine of this folder (on any provider): it writes
 /// `.vagrant/machines/<name>/<provider>/id` when the machine is created and removes it when it
@@ -54,7 +54,7 @@ pub(in crate::runtime) fn vm_names_from(text: &str) -> Vec<String> {
 /// VirtualBox's default machine folder (where VM directories live), parsed from
 /// `VBoxManage list systemproperties`; falls back to `VirtualBox VMs` in the home folder
 /// (`USERPROFILE` on Windows, where `HOME` is usually unset: leftover folders were then never
-/// found, and the next import failed with VERR_ALREADY_EXISTS).
+/// found, and the next import failed with `VERR_ALREADY_EXISTS`).
 async fn vbox_machine_folder() -> Option<PathBuf> {
     let listed = run("VBoxManage", &["list", "systemproperties"], None).await.ok();
     machine_folder(listed.as_deref(), crate::platform::home_dir())
@@ -115,7 +115,7 @@ pub(super) fn ours_in_prlctl<'a>(out: &'a str, wanted: &HashSet<String>) -> Vec<
 /// Removes VirtualBox VMs and leftover machine folders that belong to this lab (name matches one
 /// of `wanted` EXACTLY) but that `vagrant destroy` can't reach: a VM a failed import half-created
 /// and never registered with Vagrant, or an orphaned folder that makes the next import fail with
-/// VERR_ALREADY_EXISTS. Exact-match only — a lossy match could delete an unrelated VM (e.g. a
+/// `VERR_ALREADY_EXISTS`. Exact-match only — a lossy match could delete an unrelated VM (e.g. a
 /// user's own "lab-dc01" vs this lab's "lab · dc01"), which `unregistervm --delete` can't undo.
 pub(in crate::runtime) async fn recover_virtualbox(wanted: &HashSet<String>, log: &mut impl FnMut(String)) {
     // Registered VMs of ours that are still around: power off and delete (removes their files).

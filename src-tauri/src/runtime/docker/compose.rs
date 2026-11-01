@@ -39,7 +39,7 @@ fn args(dir: &Path, project: &str, rest: &[&str]) -> Vec<String> {
             a.extend(["-f".into(), PORTS_FILE.into()]);
         }
     }
-    a.extend(rest.iter().map(|s| s.to_string()));
+    a.extend(rest.iter().map(std::string::ToString::to_string));
     a
 }
 

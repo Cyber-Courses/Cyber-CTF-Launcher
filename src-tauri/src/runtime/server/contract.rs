@@ -96,12 +96,12 @@ pub(super) fn azure_env(h: &HostProfile, _: &str) -> Vec<(String, String)> {
     vec![pair("ARM_SUBSCRIPTION_ID", &h.username)]
 }
 
-/// The digitalocean provider reads DIGITALOCEAN_TOKEN (the stored API token).
+/// The digitalocean provider reads `DIGITALOCEAN_TOKEN` (the stored API token).
 pub(super) fn digitalocean_env(_: &HostProfile, token: &str) -> Vec<(String, String)> {
     vec![pair("DIGITALOCEAN_TOKEN", token)]
 }
 
-/// The linode provider reads LINODE_TOKEN (the stored API token).
+/// The linode provider reads `LINODE_TOKEN` (the stored API token).
 pub(super) fn linode_env(_: &HostProfile, token: &str) -> Vec<(String, String)> {
     vec![pair("LINODE_TOKEN", token)]
 }

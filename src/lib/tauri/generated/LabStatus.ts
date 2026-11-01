@@ -36,7 +36,7 @@ expiresAt: number | null,
 place: LabPlace | null, 
 /**
  * The engine or hypervisor it runs on: "docker", or a Vagrant provider id ("virtualbox",
- * "vmware_desktop", "parallels", ...), or a server/cloud provider. "On this machine" alone
+ * "`vmware_desktop`", "parallels", ...), or a server/cloud provider. "On this machine" alone
  * is misleading for a VM lab: this says which hypervisor to look in.
  */
 provider: string | null, 

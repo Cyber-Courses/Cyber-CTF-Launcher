@@ -48,12 +48,11 @@ pub(crate) fn isoloom_name(yaml: &str) -> Option<String> {
         let v = l.strip_prefix("name:")?.trim();
         // As the YAML parser (and so the VM names) reads it: a quoted value whole, a bare one up
         // to a comment.
-        let v = match v.chars().next() {
-            Some(q @ ('"' | '\'')) => v[1..].split(q).next().unwrap_or_default(),
-            _ => {
-                let cut = [" #", "\t#"].iter().filter_map(|m| v.find(m)).min().unwrap_or(v.len());
-                v[..cut].trim()
-            }
+        let v = if let Some(q @ ('"' | '\'')) = v.chars().next() {
+            v[1..].split(q).next().unwrap_or_default()
+        } else {
+            let cut = [" #", "\t#"].iter().filter_map(|m| v.find(m)).min().unwrap_or(v.len());
+            v[..cut].trim()
         };
         (!v.is_empty()).then(|| v.to_string())
     })

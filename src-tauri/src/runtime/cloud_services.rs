@@ -18,7 +18,7 @@
 //! - Every module may take `expires_at` (Unix seconds, for its tags) and `region`: passed as
 //!   `TF_VAR_*`, which Terraform ignores for a module that doesn't declare them.
 //! - On AWS, Terraform also gets shared credentials and config files of its own (see
-//!   `AwsFiles`): labs that name a profile (CloudGoat's `profile = var.profile`, and
+//!   `AwsFiles`): labs that name a profile (`CloudGoat`'s `profile = var.profile`, and
 //!   `--profile` in its local-exec commands) find the picked account's keys under it, since an
 //!   explicitly set profile beats the environment's keys in the AWS provider.
 //! - `cloud.env` goes into Terraform's environment, over the account's own (a lab's
@@ -141,7 +141,7 @@ fn check_supported(cloud: &CloudServices) -> Result<()> {
 
 /// The environment variables a lab's `cloud.env` may not set (Isoloom refuses only its scripts'
 /// and the shell's own names): the cloud accounts' credentials and sign-in (every `AWS_*` but
-/// the region, `ARM_*`, `AZURE_*`, `GOOGLE_*`, `CLOUDSDK_*`, `OCI_*`, the DigitalOcean and Linode
+/// the region, `ARM_*`, `AZURE_*`, `GOOGLE_*`, `CLOUDSDK_*`, `OCI_*`, the `DigitalOcean` and Linode
 /// tokens) and Terraform's own (`TF_*`: `TF_VAR_*` would beat the launcher's variables,
 /// `TF_CLI_ARGS*` change what an apply or destroy does, `TF_LOG*` write files). The launcher
 /// sets those from the picked account; a lab may still pick its region (`AWS_REGION`).

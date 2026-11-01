@@ -285,7 +285,7 @@ fn token_outcome(cloud: &str, instances: &str, answer: std::result::Result<reqwe
     }
 }
 
-/// A token-authenticated cloud (DigitalOcean, Linode): the API token is valid when its
+/// A token-authenticated cloud (`DigitalOcean`, Linode): the API token is valid when its
 /// `account` endpoint returns 2xx. `instances` is what labs run as there.
 async fn test_token_api(cloud: &str, account_url: &str, instances: &str, token: &str) -> TestResult {
     let started = Instant::now();

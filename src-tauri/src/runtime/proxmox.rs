@@ -38,7 +38,7 @@ pub fn is_token(username: &str) -> bool {
 
 /// The user a token belongs to (`root@pam!cyberctf` -> `root@pam`).
 pub fn token_user(username: &str) -> &str {
-    username.split_once('!').map(|(u, _)| u).unwrap_or(username)
+    username.split_once('!').map_or(username, |(u, _)| u)
 }
 
 /// The `api_token` value the Terraform provider takes.
@@ -133,7 +133,7 @@ pub async fn sign_in(h: &HostProfile, secret: &str) -> Result<Session, SignInErr
 
 /// Turns a reqwest error into one readable line, calling out the usual self-signed case.
 pub fn describe(e: &reqwest::Error) -> String {
-    let detail = std::iter::successors(Some(e as &dyn std::error::Error), |e| e.source()).map(|e| e.to_string()).collect::<Vec<_>>().join(": ");
+    let detail = std::iter::successors(Some(e as &dyn std::error::Error), |e| e.source()).map(std::string::ToString::to_string).collect::<Vec<_>>().join(": ");
     if detail.to_lowercase().contains("certificate") {
         "the host's TLS certificate isn't trusted. Proxmox uses a self-signed certificate by default: turn on \"Self-signed certificate\" for this host, or install a trusted one".into()
     } else {
@@ -179,7 +179,7 @@ fn pick_node(nodes: &Value, configured: Option<&str>) -> Result<String, CallErro
     match configured.filter(|n| !n.is_empty()) {
         Some(n) if names.contains(&n) => Ok(n.to_string()),
         Some(n) => Err(CallError::Other(format!("there is no node \"{n}\" on this host (found: {})", names.join(", ")))),
-        None => names.first().map(|n| n.to_string()).ok_or_else(|| CallError::Other("this user can't see any node".into())),
+        None => names.first().map(std::string::ToString::to_string).ok_or_else(|| CallError::Other("this user can't see any node".into())),
     }
 }
 
