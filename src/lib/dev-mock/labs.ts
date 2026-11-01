@@ -85,6 +85,22 @@ export const labs = [
   },
 ];
 
+/** Labs the catalogue lists only under a switch (scenario.ts): a VM lab built for arm64 too, so
+ *  an Apple Silicon Mac can run one on UTM (`catalogue=arm64vm`); GOAD Light is x86 only. */
+export const extraLabs = [
+  {
+    id: "lab-router",
+    slug: "edge-router",
+    title: "Edge router",
+    description: "A branch office router with a management interface left on the WAN side.",
+    question: null,
+    difficulty: 2,
+    category: "Network",
+    runtime: { runtime: "VM", architectures: ["arm64", "x86_64"], providers: ["utm", "virtualbox", "vmware_esxi", "proxmox"], hosted: false },
+    skills: [{ id: "s6", name: "Routing" }],
+  },
+];
+
 // A wide topology on purpose (three networks, two pivots), so the lab page's diagram can be
 // checked at every window width: the public network, then the billing back end behind the API,
 // then the finance network behind the billing worker.

@@ -1,11 +1,11 @@
 // What the browser preview changes as it is used: labs started and stopped, where they run, the
-// sign-in, the failures still to come, the steps a test still holds. And the statuses the labs
-// report meanwhile.
+// failures still to come, the steps a test still holds. And the statuses the labs report
+// meanwhile. (The sign-in is shared by the preview's tabs: session.ts.)
 import type { LabStatus } from "@/lib/tauri";
 import { argText, send, sleep } from "@/lib/dev-mock/command";
 import { type Holds, holdsOf, isHoldable } from "@/lib/dev-mock/holds";
 import type { Host } from "@/lib/dev-mock/hosts";
-import { invoiceStatus, labs, stopped } from "@/lib/dev-mock/labs";
+import { extraLabs, invoiceStatus, labs, stopped } from "@/lib/dev-mock/labs";
 import { answer } from "@/lib/dev-mock/sample";
 import type { Scenario } from "@/lib/dev-mock/scenario";
 import type { Args } from "@/lib/dev-mock/types";
@@ -29,7 +29,6 @@ type Operation = "launch" | "stop" | "pause" | "shutdown" | "resume" | "provisio
 
 export type Live = {
   running: Set<string>;
-  signedIn: boolean;
   launchFails: boolean;
   /** The operations in flight on each lab, as the core reports them. */
   ops: Map<string, Operation>;
@@ -48,7 +47,6 @@ export type Live = {
 export function liveFrom(sc: Scenario): Live {
   return {
     running: new Set(answer("running_labs", undefined) as string[]),
-    signedIn: !sc.signedOut,
     launchFails: sc.launchFails,
     ops: new Map(),
     installed: new Set(),
@@ -62,8 +60,8 @@ export function liveFrom(sc: Scenario): Live {
 /** What a browser handler sees: the scenario, and the state it changes. */
 export type Context = { sc: Scenario; live: Live };
 
-/** A lab of the catalogue, by id. */
-const labById = (id: string) => labs.find((l) => l.id === id);
+/** A lab of the catalogue (with those a switch adds to it), by id. */
+const labById = (id: string) => [...labs, ...extraLabs].find((l) => l.id === id);
 /** A lab's slug (its id for one the catalogue doesn't have). */
 export const slugOf = (id: string) => labById(id)?.slug ?? id;
 /** How a lab runs: DOCKER, VM or CLOUD. */

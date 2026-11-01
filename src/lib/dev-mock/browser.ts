@@ -8,27 +8,32 @@ import { labHandlers } from "@/lib/dev-mock/lab-ops";
 import type { BrowserHandler, Context } from "@/lib/dev-mock/live";
 import { machineHandlers } from "@/lib/dev-mock/machine";
 import { answer } from "@/lib/dev-mock/sample";
+import { isSignedIn, setSignedIn } from "@/lib/dev-mock/session";
 import { terminalHandlers } from "@/lib/dev-mock/terminal";
 import type { Args } from "@/lib/dev-mock/types";
 import type { DeviceCode } from "@/lib/tauri";
 
-/** The sign-in, which `auth=out` starts without. */
+/** The sign-in, which `auth=out` starts without; shared by the preview's tabs (session.ts). */
 const accountHandlers: Record<string, BrowserHandler> = {
-  auth_status: (args, { live }) => (live.signedIn ? answer("auth_status", args) : { loggedIn: false, name: null, email: null }),
-  auth_login: async (args, { live }) => {
+  auth_status: (args, { sc }) => (isSignedIn(sc) ? answer("auth_status", args) : { loggedIn: false, name: null, email: null }),
+  auth_login: async (args) => {
     // The link the "Copy the sign-in link" fallback offers.
     send(args, "https://www.cyberauth.co/api/auth/oauth2/authorize?client_id=dev-mock", "events");
     await sleep(400);
-    live.signedIn = true;
+    setSignedIn(true);
     return answer("auth_login", args);
   },
-  auth_login_device: async (args, { live }) => {
+  auth_login_device: async (args) => {
     // The code the "Use a code instead" fallback shows, approved a moment later.
     const code: DeviceCode = { userCode: "WDJB-MJHT", verificationUri: "https://www.cyberauth.co/device", verificationUriComplete: null, expiresIn: 900 };
     send(args, code, "events");
     await sleep(1500);
-    live.signedIn = true;
+    setSignedIn(true);
     return answer("auth_login_device", args);
+  },
+  auth_logout: () => {
+    setSignedIn(false);
+    return null;
   },
   agent_info: (args, { sc }) => ({ ...(answer("agent_info", args) as object), arch: sc.arch }),
   api_query: hostedQuery,

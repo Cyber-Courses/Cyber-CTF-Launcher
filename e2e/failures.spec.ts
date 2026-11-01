@@ -42,7 +42,9 @@ test.describe("failure states", () => {
     await expect(main(page)).not.toContainText("Not started");
     await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Retry with random ports" })).toBeVisible();
-    await expect(main(page).getByRole("alert").filter({ hasText: "Couldn’t start Blind orders" })).toContainText("Start it on random ports instead.");
+    await expect(main(page).getByRole("alert").filter({ hasText: "Couldn’t start Blind orders" })).toContainText(
+      "Stop whatever uses it, or start it with random ports if the lab doesn't need that exact port.",
+    );
 
     // The list says it too.
     await navButton(page, "Labs").click();
