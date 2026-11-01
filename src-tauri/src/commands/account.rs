@@ -9,6 +9,7 @@ use crate::account::api;
 use crate::account::api_operation::ApiOperation;
 use crate::account::auth::{self, AuthStatus, DeviceCode};
 use crate::error::Result;
+use crate::platform::AppDirs;
 
 /// Signs in through the system browser, the sign-in link sent on `events` (see [`auth::auth_login`]).
 #[tauri::command]
@@ -60,7 +61,7 @@ pub async fn api_query(operation: ApiOperation, variables: Option<Value>) -> Res
 /// This launcher as the website's agent sees it.
 #[tauri::command]
 pub fn agent_info(app: AppHandle) -> Result<AgentInfo> {
-    agent::agent_info(&app)
+    agent::agent_info(&AppDirs::from(&app))
 }
 
 /// The player's answer to a launch the website asked for.

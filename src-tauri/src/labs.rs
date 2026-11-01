@@ -4,14 +4,12 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::AppHandle;
 use crate::platform::AppDirs;
 use serde::Deserialize;
 use serde_json::json;
-use tauri::Manager;
-use tauri::ipc::Channel;
 
 use crate::account::api;
+use crate::app::deploy_worker::{Job, Op};
 use crate::error::{Error, Result};
 use crate::runtime::{self, Runtime, providers::Provider};
 
@@ -146,19 +144,19 @@ async fn fetch_archive(url: &str, max: u64) -> Result<Vec<u8>> {
 /// Downloads the lab into `<app data>/labs/<lab id>/` unless that exact commit is
 /// already installed. Extracts next to it, then swaps, so a failed download
 /// never leaves a half-installed lab.
-async fn install(app: &AppHandle, release: Release<'_>, log: &impl Fn(String)) -> Result<PathBuf> {
-    install_with(app, release, log, || download(release.repository, release.commit)).await
+async fn install(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String)) -> Result<PathBuf> {
+    install_with(dirs, release, log, || download(release.repository, release.commit)).await
 }
 
 /// [`install`], the archive fetched by `fetch` (when the commit isn't installed yet).
-async fn install_with(app: &AppHandle, release: Release<'_>, log: &impl Fn(String), fetch: impl AsyncFnOnce() -> Result<Vec<u8>>) -> Result<PathBuf> {
+async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String), fetch: impl AsyncFnOnce() -> Result<Vec<u8>>) -> Result<PathBuf> {
     let Release { lab_id, repository, commit } = release;
     // The lab id comes from the backend and is used to build paths (join, remove_dir_all, rename).
     // Validate it like every other id so a hostile/buggy response can't escape the labs dir with
     // `..` or an absolute path. Reachable unattended through the agent, so this is the guard.
     runtime::validate_id(lab_id)?;
     validate_source(repository, commit)?;
-    let labs = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("labs");
+    let labs = dirs.data()?.join("labs");
     let dir = labs.join(lab_id);
     let marker = dir.join(".cyberctf-commit");
     // Docker's networks now, so a new lab's instance lands on blocks nothing else holds.
@@ -173,7 +171,7 @@ async fn install_with(app: &AppHandle, release: Release<'_>, log: &impl Fn(Strin
     // Same on a server host: the folder holds Vagrant's record of its ESXi machines (and the
     // module its Terraform state was applied from), which the swap would delete.
     if dir.exists() {
-        let on_server = runtime::deployed_on_server(&AppDirs::from(app), &dir, lab_id);
+        let on_server = runtime::deployed_on_server(dirs, &dir, lab_id);
         // Running here, or VMs Vagrant still tracks here (a launch that failed on one machine, a
         // VM powered off by hand): the swap would delete its record and orphan them.
         let here = on_server.is_none() && (runtime::running_here(&dir, lab_id).await || runtime::vms_recorded_here(&dir));
@@ -293,19 +291,18 @@ fn parse_launch(launch_json: serde_json::Value) -> Result<Launch> {
 /// `{ labId, runtime, repository, commit, env }`). Shared by the manual launch command
 /// and the agent's claim loop (bring your own compute).
 /// It runs where `placement` says.
-pub(crate) async fn run(app: &AppHandle, launch_json: serde_json::Value, placement: &Placement<'_>, log: impl Fn(String)) -> Result<Option<String>> {
+pub(crate) async fn run(dirs: &AppDirs, launch_json: serde_json::Value, placement: &Placement<'_>, log: impl Fn(String)) -> Result<Option<String>> {
     let launch = parse_launch(launch_json)?;
     runtime::validate_id(&launch.lab_id)?;
     // The lab is this launch's from the download on: two installs of one lab share its staging
     // folder, and a stop must not run while the new version is swapped in. Shared with the
     // deploy worker's own hold on it (same process), so a worker runs on.
-    let dirs = AppDirs::from(app);
-    let _lock = runtime::lock_lab(&dirs, &launch.lab_id).await?;
+    let _lock = runtime::lock_lab(dirs, &launch.lab_id).await?;
     let release = Release { lab_id: &launch.lab_id, repository: &launch.repository, commit: &launch.commit };
-    let dir = install(app, release, &log).await?;
+    let dir = install(dirs, release, &log).await?;
     // Fixed names for every lab; the evidence itself is never in the environment.
     let env = launch_env(launch.env, placement.attackbox_image, placement.default_ports);
-    runtime::start_locked(&dirs, &dir, &launch.lab_id, launch.runtime, placement.provider, placement.host, &env, log).await?;
+    runtime::start_locked(dirs, &dir, &launch.lab_id, launch.runtime, placement.provider, placement.host, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
 }
@@ -331,21 +328,21 @@ pub(crate) async fn launch_values_at(base: &str, token: &str, lab_id: &str) -> R
 /// The launch spec for `lab_id`: the backend's answer (whose source is kept for a later offline
 /// start), or, when the backend can't be reached and the player asked for it (`offline`), the
 /// installed lab's (see `offline`).
-async fn launch_spec(app: &AppHandle, lab_id: &str, offline: bool, logs: &Channel<String>) -> Result<serde_json::Value> {
-    let base = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?;
+async fn launch_spec(dirs: &AppDirs, lab_id: &str, offline: bool, log: &impl Fn(String)) -> Result<serde_json::Value> {
+    let base = dirs.data()?;
     let user = crate::account::auth::signed_in_user().await;
     match start_lab(lab_id).await {
         Ok(answer) => {
             if let Some(user) = &user
-                && let Err(e) = offline::keep(&base, &answer, user)
+                && let Err(e) = offline::keep(base, &answer, user)
             {
                 log::warn!("couldn't keep {lab_id}'s launch for an offline start: {e}");
             }
             Ok(answer)
         }
         Err(failed) => {
-            let spec = offline::instead_of(failed, &base, lab_id, user.as_deref(), offline)?;
-            let _ = logs.send(offline::STARTING_OFFLINE.into());
+            let spec = offline::instead_of(failed, base, lab_id, user.as_deref(), offline)?;
+            log(offline::STARTING_OFFLINE.into());
             Ok(spec)
         }
     }
@@ -369,20 +366,20 @@ pub struct LaunchRequest {
     pub offline: bool,
 }
 
-/// Starts `request`'s lab: the backend's launch, then the deploy in a detached worker whose log
-/// this follows on `logs`.
-pub async fn lab_launch(app: AppHandle, request: LaunchRequest, logs: Channel<String>) -> Result<()> {
+/// Prepares `request`'s launch: validates the attack-box image, resolves the `startLab` spec (the
+/// backend's, kept for a later offline start, or the installed lab's when the backend can't be
+/// reached and the player asked), and returns the job to run. The deploy itself runs in a detached
+/// worker, started by the command layer (so quitting the app never cuts a run short); `log`
+/// carries the one "starting offline" line the preparation may emit.
+pub(crate) async fn launch_job(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<Job> {
     let LaunchRequest { lab_id, provider, host, attackbox_image, default_ports, offline } = request;
     if let Some(image) = &attackbox_image
         && !crate::platform::exec::valid_image(image)
     {
         return Err(Error::Invalid(format!("invalid attack-box image `{image}`")));
     }
-    let startlab = launch_spec(&app, &lab_id, offline, &logs).await?;
-    // The deploy runs in a detached worker process, so quitting (or crashing) this app never
-    // cuts a vagrant/docker/terraform run short; this command only follows the worker's log.
-    let job = crate::deploy_worker::Job { lab_id, op: crate::deploy_worker::Op::Launch, launch: startlab, provider, host, attackbox_image, default_ports };
-    crate::deploy_worker::run_job(&app, job, logs).await
+    let startlab = launch_spec(dirs, &lab_id, offline, log).await?;
+    Ok(Job { lab_id, op: Op::Launch, launch: startlab, provider, host, attackbox_image, default_ports })
 }
 
 /// A stable lab id for a lab imported from the local directory `src`: `local-<slug>` of the lab's
@@ -402,10 +399,10 @@ pub(crate) fn local_id(src: &Path) -> Result<String> {
 /// Installs the lab from the local directory `src` into `<app data>/labs/<lab id>/` by copying it
 /// (no download): an imported lab. The rest is the ordinary install — its own instance room, any
 /// parked copy cleared first — so the lifecycle commands then drive it like any installed lab.
-async fn install_local(app: &AppHandle, lab_id: &str, src: &Path, log: &impl Fn(String)) -> Result<PathBuf> {
+async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(String)) -> Result<PathBuf> {
     runtime::validate_id(lab_id)?;
     runtime::lab::load(src).map_err(|e| Error::Invalid(format!("not a lab folder ({}): {e}", src.display())))?;
-    let labs = app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("labs");
+    let labs = dirs.data()?.join("labs");
     let dir = labs.join(lab_id);
     let in_use = runtime::subnets_in_use(lab_id).await;
     // Re-importing while the previous copy is up would pull its files out from under it, as an
@@ -413,7 +410,7 @@ async fn install_local(app: &AppHandle, lab_id: &str, src: &Path, log: &impl Fn(
     // the machines and the module its state was applied from), or machines Vagrant still tracks
     // here. Stop it first.
     if dir.exists() {
-        if let Some(host) = runtime::deployed_on_server(&AppDirs::from(app), &dir, lab_id) {
+        if let Some(host) = runtime::deployed_on_server(dirs, &dir, lab_id) {
             return Err(Error::Refused(format!("{lab_id} is still running on {host}; stop it before importing it again")));
         }
         if runtime::running_here(&dir, lab_id).await || runtime::vms_recorded_here(&dir) {
@@ -434,23 +431,12 @@ async fn install_local(app: &AppHandle, lab_id: &str, src: &Path, log: &impl Fn(
 /// Installs and starts the lab in the local directory `src` as a Docker lab with development
 /// inputs (no backend, no flags): an imported custom lab, for running one not published yet.
 /// Returns its local URL.
-pub(crate) async fn run_local(app: &AppHandle, lab_id: &str, src: &Path, log: impl Fn(String)) -> Result<Option<String>> {
+pub(crate) async fn run_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: impl Fn(String)) -> Result<Option<String>> {
     runtime::validate_id(lab_id)?;
-    let dirs = AppDirs::from(app);
-    let _lock = runtime::lock_lab(&dirs, lab_id).await?;
-    let dir = install_local(app, lab_id, src, &log).await?;
-    runtime::start_locked(&dirs, &dir, lab_id, Runtime::Docker, None, None, &[], log).await?;
+    let _lock = runtime::lock_lab(dirs, lab_id).await?;
+    let dir = install_local(dirs, lab_id, src, &log).await?;
+    runtime::start_locked(dirs, &dir, lab_id, Runtime::Docker, None, None, &[], log).await?;
     Ok(runtime::primary_url(&dir, lab_id, Runtime::Docker).await)
-}
-
-/// Imports a lab from the local directory `src` and starts it, bypassing the catalogue and the
-/// backend: for running a lab that is not published (a lab author's own, a lab under test). The
-/// deploy runs in a detached worker, its log on `logs`.
-pub async fn lab_launch_local(app: AppHandle, src: String, logs: Channel<String>) -> Result<()> {
-    let src = PathBuf::from(src);
-    let lab_id = local_id(&src)?;
-    let job = crate::deploy_worker::Job::on_lab(&lab_id, crate::deploy_worker::Op::LaunchLocal { src: src.to_string_lossy().into_owned() });
-    crate::deploy_worker::run_job(&app, job, logs).await
 }
 
 #[cfg(test)]
@@ -643,26 +629,26 @@ mod tests {
         let lines = std::sync::Mutex::new(Vec::<String>::new());
         let log = |l: String| lines.lock().unwrap().push(l);
         let dir =
-            install_with(t.handle(), Release { lab_id: "invoice", repository: "CyberCTF/invoice", commit: SHA }, &log, async || Ok(gz.clone())).await.unwrap();
+            install_with(&t.dirs(), Release { lab_id: "invoice", repository: "CyberCTF/invoice", commit: SHA }, &log, async || Ok(gz.clone())).await.unwrap();
         assert_eq!(dir, t.data().join("labs").join("invoice"));
         assert!(installed(&dir.join(".cyberctf-commit"), SHA) && dir.join("isoloom.yml").is_file());
         assert_eq!(lines.lock().unwrap().as_slice(), ["Downloading CyberCTF/invoice@0123456789ab", "Lab installed"]);
         // The same commit again: nothing downloaded.
-        install_with(t.handle(), Release { lab_id: "invoice", repository: "CyberCTF/invoice", commit: SHA }, &log, async || panic!("no download"))
+        install_with(&t.dirs(), Release { lab_id: "invoice", repository: "CyberCTF/invoice", commit: SHA }, &log, async || panic!("no download"))
             .await
             .unwrap();
         drop(tools);
         // A newer commit while the old one runs here: refused, the running copy left alone.
         let _tools = Tools::rules(&[("ps --all", ok(r#"{"Service":"web","State":"running"}"#))]);
         let newer = "1123456789abcdef0123456789abcdef01234567";
-        let err = install_with(t.handle(), Release { lab_id: "invoice", repository: "CyberCTF/invoice", commit: newer }, &log, async || panic!("no download"))
+        let err = install_with(&t.dirs(), Release { lab_id: "invoice", repository: "CyberCTF/invoice", commit: newer }, &log, async || panic!("no download"))
             .await
             .unwrap_err()
             .to_string();
         assert!(err.starts_with("A new version of this lab is out, but it is still running here"), "{err}");
         // Ids and sources are checked before anything else.
-        assert!(install_with(t.handle(), Release { lab_id: "../x", repository: "CyberCTF/invoice", commit: SHA }, &log, async || panic!()).await.is_err());
-        assert!(install_with(t.handle(), Release { lab_id: "invoice", repository: "evil/lab", commit: SHA }, &log, async || panic!()).await.is_err());
+        assert!(install_with(&t.dirs(), Release { lab_id: "../x", repository: "CyberCTF/invoice", commit: SHA }, &log, async || panic!()).await.is_err());
+        assert!(install_with(&t.dirs(), Release { lab_id: "invoice", repository: "evil/lab", commit: SHA }, &log, async || panic!()).await.is_err());
     }
 
     #[tokio::test]
@@ -675,7 +661,7 @@ mod tests {
         let tools = Tools::rules(&[]);
         let held = runtime::lock_lab(&t.dirs(), "invoice").await.unwrap();
         let launch = serde_json::json!({ "labId": "invoice", "runtime": "DOCKER", "repository": "CyberCTF/invoice", "commit": SHA, "env": [] });
-        let waiting = tokio::time::timeout(std::time::Duration::from_millis(300), run(t.handle(), launch.clone(), &Placement::default(), |_| {})).await;
+        let waiting = tokio::time::timeout(std::time::Duration::from_millis(300), run(&t.dirs(), launch.clone(), &Placement::default(), |_| {})).await;
         assert!(waiting.is_err(), "the launch waits while another operation holds the lab");
         assert!(tools.calls().is_empty(), "nothing of the install ran meanwhile: {:?}", tools.calls());
         assert!(!dir.join(runtime::lab::INSTANCE_MARKER).exists());
@@ -690,18 +676,18 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let request =
             LaunchRequest { lab_id: "invoice".into(), provider: None, host: None, attackbox_image: Some("-x".into()), default_ports: false, offline: false };
-        let err = lab_launch(t.handle().clone(), request, tauri::ipc::Channel::new(|_| Ok(()))).await;
+        let err = launch_job(&t.dirs(), request, &|_: String| {}).await;
         assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
     }
 
-    #[tokio::test]
-    async fn importing_a_folder_without_a_lab_is_refused() {
-        let t = crate::testing::test_app::TestApp::new();
+    #[test]
+    fn a_folder_without_a_lab_has_no_local_id() {
+        // The lab id of a local import comes from its spec; a folder with no isoloom.yml is not a
+        // lab, so `lab_launch_local` (the command) refuses before it ever reaches the runner.
         let dir = std::env::temp_dir().join(format!("cyberctf-notalab-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        // No isoloom.yml: lab_launch_local refuses before it ever reaches the runner.
-        let err = lab_launch_local(t.handle().clone(), dir.to_string_lossy().into_owned(), tauri::ipc::Channel::new(|_| Ok(()))).await;
+        let err = local_id(&dir);
         let _ = std::fs::remove_dir_all(&dir);
         assert!(err.is_err(), "a folder with no isoloom.yml is not a lab");
     }
@@ -718,19 +704,19 @@ mod tests {
         std::fs::write(src.join("isoloom.yml"), SPEC).unwrap();
         let _tools = Tools::rules(&[]);
         let log = |_: String| {};
-        let dir = install_local(t.handle(), "local-invoice", &src, &log).await.unwrap();
+        let dir = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap();
         // Machines Vagrant still tracks here (a VM launch that failed on one machine).
         let vagrant = runtime::lab::vagrant_dir(&dir, Runtime::Vm);
         let machine = vagrant.join(".vagrant").join("machines").join("web").join("virtualbox");
         std::fs::create_dir_all(&machine).unwrap();
         std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
         std::fs::write(machine.join("id"), "vm-1").unwrap();
-        let err = install_local(t.handle(), "local-invoice", &src, &log).await.unwrap_err();
+        let err = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap_err();
         assert!(matches!(err, Error::Refused(_)), "{err:?}");
         assert!(err.to_string().contains("machines still exist here"), "{err}");
         // Deployed on a server host, with something of it still there: the host is named.
         runtime::server::mark_lab(&dir, Some("esxi1")).unwrap();
-        let err = install_local(t.handle(), "local-invoice", &src, &log).await.unwrap_err();
+        let err = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap_err();
         assert!(matches!(err, Error::Refused(_)), "{err:?}");
         assert!(err.to_string().contains("still running on esxi1"), "{err}");
         // Refused before anything was staged: the installed copy and its record are untouched.
@@ -913,11 +899,11 @@ mod tests {
         let log = |_: String| {};
         let max = "A".repeat(63) + "_";
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
-        let dir = install_with(t.handle(), Release { lab_id: &max, repository: "CyberCTF/invoice", commit: SHA }, &log, async || Ok(gz.clone())).await.unwrap();
+        let dir = install_with(&t.dirs(), Release { lab_id: &max, repository: "CyberCTF/invoice", commit: SHA }, &log, async || Ok(gz.clone())).await.unwrap();
         assert_eq!(dir.file_name().unwrap().to_str().unwrap(), max);
         for bad in ["", &"a".repeat(65), "é", "a b", "a/b", ".", "a.b", "..", "a\u{0}b"] {
             let bad = bad.to_string();
-            let err = install_with(t.handle(), Release { lab_id: &bad, repository: "CyberCTF/invoice", commit: SHA }, &log, async || {
+            let err = install_with(&t.dirs(), Release { lab_id: &bad, repository: "CyberCTF/invoice", commit: SHA }, &log, async || {
                 panic!("no download for {bad:?}")
             })
             .await
@@ -926,7 +912,7 @@ mod tests {
             assert!(err.starts_with("invalid lab id"), "{bad:?}: {err}");
         }
         // "-" and "_" alone pass the rule (a folder of that name is harmless).
-        let dir = install_with(t.handle(), Release { lab_id: "-", repository: "CyberCTF/invoice", commit: SHA }, &log, async || Ok(gz.clone())).await.unwrap();
+        let dir = install_with(&t.dirs(), Release { lab_id: "-", repository: "CyberCTF/invoice", commit: SHA }, &log, async || Ok(gz.clone())).await.unwrap();
         assert_eq!(dir, t.data().join("labs").join("-"));
     }
 }

@@ -111,7 +111,7 @@ pub(crate) mod tests {
     }
 
     /// A fresh folder under the temp dir for one test.
-    pub(in crate::deploy_worker) fn temp_dir(tag: &str) -> PathBuf {
+    pub(in crate::app::deploy_worker) fn temp_dir(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("cyberctf-{tag}-{}-{}", std::process::id(), rand::random::<u32>()));
         std::fs::create_dir_all(&d).unwrap();
         d

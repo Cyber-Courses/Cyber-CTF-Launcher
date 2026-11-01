@@ -36,7 +36,7 @@ fn with_parked(s: LabStatus, parked: Option<super::Park>) -> LabStatus {
 
 async fn server_status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: server::Connection) -> Result<LabStatus> {
     // A setup step that failed can leave a lab's machines up but the lab not ready: not running.
-    let failed = crate::deploy_worker::last_deploy_failed(dirs, id);
+    let failed = crate::app::deploy_worker::last_deploy_failed(dirs, id);
     let seen = |s: LabStatus| LabStatus { running: s.running && !failed, ..s };
     // ESXi (Vagrant on the host): the runner's view, Vagrant's states, each VM at its own address.
     if c.provider == super::providers::Provider::VmwareEsxi {

@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 
-use crate::deploy_worker::{self, Op};
+use crate::app::deploy_worker::{self, Op};
 use crate::platform::AppDirs;
 use crate::runtime::{self, Action, Park};
 

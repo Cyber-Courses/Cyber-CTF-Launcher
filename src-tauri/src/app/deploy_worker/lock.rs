@@ -103,7 +103,7 @@ pub(crate) mod tests {
     }
 
     fn lock_file(tag: &str) -> (PathBuf, PathBuf) {
-        let dir = crate::deploy_worker::files::tests::temp_dir(tag);
+        let dir = crate::app::deploy_worker::files::tests::temp_dir(tag);
         (path_in(&dir, "lab-1"), dir)
     }
 
@@ -179,7 +179,7 @@ pub(crate) mod tests {
 
     #[test]
     fn locks_of_two_labs_are_independent_and_an_empty_lock_file_is_left_behind() {
-        let dir = crate::deploy_worker::files::tests::temp_dir("lock-two");
+        let dir = crate::app::deploy_worker::files::tests::temp_dir("lock-two");
         let (a, b) = (path_in(&dir, "lab-a"), path_in(&dir, "lab-b"));
         let _a = try_acquire(&a).unwrap().unwrap();
         assert!(!held(&b));

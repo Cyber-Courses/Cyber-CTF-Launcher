@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::deploy_worker::lock;
+use crate::app::deploy_worker::lock;
 use crate::error::Result;
 use crate::platform::AppDirs;
 use tokio::sync::OwnedMutexGuard;
@@ -90,7 +90,7 @@ impl Drop for DeployGuard {
 /// A lab held for one operation: this process's own lock on it, and the lock across processes
 /// (see `deploy_worker::lock`).
 pub(crate) struct LabLock {
-    _file: Option<crate::deploy_worker::lock::LabFileLock>,
+    _file: Option<crate::app::deploy_worker::lock::LabFileLock>,
     _here: OwnedMutexGuard<()>,
 }
 
@@ -112,7 +112,7 @@ fn process_lock(id: &str) -> Arc<tokio::sync::Mutex<()>> {
 /// carrying on without it is what the lock is there to prevent (Terraform's own state lock is
 /// cleared on the assumption that this one is held).
 pub(crate) async fn lock_lab(dirs: &AppDirs, id: &str) -> Result<LabLock> {
-    lock_lab_at(Some(&crate::deploy_worker::lock_path(dirs, id)?), id).await
+    lock_lab_at(Some(&crate::app::deploy_worker::lock_path(dirs, id)?), id).await
 }
 
 /// [`lock_lab`] with its lock file at `file` (`None`: this process's lock only).
@@ -128,7 +128,7 @@ async fn lock_lab_at(file: Option<&Path>, id: &str) -> Result<LabLock> {
 /// [`lock_lab`] without waiting: `None` while another operation (of this process or another)
 /// holds the lab.
 pub(super) fn try_lock_lab(dirs: &AppDirs, id: &str) -> Result<Option<LabLock>> {
-    try_lock_lab_at(Some(&crate::deploy_worker::lock_path(dirs, id)?), id)
+    try_lock_lab_at(Some(&crate::app::deploy_worker::lock_path(dirs, id)?), id)
 }
 
 /// [`try_lock_lab`] with its lock file at `file` (`None`: this process's lock only).
@@ -300,16 +300,16 @@ mod tests {
         drop(worker);
         let mut held = None;
         assert!(
-            crate::deploy_worker::lock::tests::eventually(|| {
+            crate::app::deploy_worker::lock::tests::eventually(|| {
                 held = try_lock(Some(&file), "inflight-test-other");
                 held.is_some()
             }),
             "free once the worker is gone"
         );
         // Held here now: a worker can't take it.
-        assert!(crate::deploy_worker::lock::held(&file));
+        assert!(crate::app::deploy_worker::lock::held(&file));
         drop(held);
-        assert!(crate::deploy_worker::lock::tests::eventually(|| !crate::deploy_worker::lock::held(&file)));
+        assert!(crate::app::deploy_worker::lock::tests::eventually(|| !crate::app::deploy_worker::lock::held(&file)));
         std::fs::remove_dir_all(dir).ok();
     }
 }

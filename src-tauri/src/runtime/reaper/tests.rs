@@ -40,6 +40,6 @@ async fn a_sweep_of_a_fresh_app_destroys_nothing_and_records_nothing() {
     // No launcher deployment to hand over, no cloud run past its auto-stop: a clean no-op. The
     // runner-backed destroy of an expired cloud lab is covered by the fake-CLI and real-lab tests.
     let t = TestApp::new();
-    reap_expired_labs(t.handle()).await;
+    reap_expired_labs(&t.dirs(), &|_: &str, _: &str| {}).await;
     assert!(failed_last_time(&t.data().join(REAP_ERRORS)).is_empty());
 }

@@ -197,9 +197,9 @@ fn status_line<T>(result: &crate::error::Result<T>) -> (String, i32) {
 #[cfg(test)]
 mod tests {
     use super::{conclude, read_job, status_line};
-    use crate::deploy_worker::files::Files;
-    use crate::deploy_worker::progress::verdict;
-    use crate::deploy_worker::{Job, Op};
+    use crate::app::deploy_worker::files::Files;
+    use crate::app::deploy_worker::progress::verdict;
+    use crate::app::deploy_worker::{Job, Op};
     use crate::error::{Code, Error};
 
     #[test]
@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn a_job_file_reads_back_or_is_refused() {
-        let dir = crate::deploy_worker::files::tests::temp_dir("job");
+        let dir = crate::app::deploy_worker::files::tests::temp_dir("job");
         let path = dir.join("lab-1.json");
         assert!(read_job(&path).is_none());
         let job = Job::on_lab("lab-1", Op::Provision { runtime: crate::runtime::Runtime::Vm, machine: Some("dc01".into()) });
@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn a_job_file_with_a_byte_order_mark_or_trailing_text_is_refused() {
         // Hand-edited or half-overwritten job files: the worker exits rather than guessing.
-        let dir = crate::deploy_worker::files::tests::temp_dir("job-odd");
+        let dir = crate::app::deploy_worker::files::tests::temp_dir("job-odd");
         let path = dir.join("lab-1.json");
         let job = Job::on_lab("lab-1", Op::Resume { runtime: crate::runtime::Runtime::Vm });
         let json = serde_json::to_string(&job).unwrap();
@@ -251,9 +251,9 @@ mod tests {
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         t.lab("web", &[]);
         // A folder where the lock file goes: it can't be opened.
-        std::fs::create_dir_all(crate::deploy_worker::lock_path(&t.dirs(), "web").unwrap()).unwrap();
+        std::fs::create_dir_all(crate::app::deploy_worker::lock_path(&t.dirs(), "web").unwrap()).unwrap();
         let job = Job::on_lab("web", Op::Resume { runtime: crate::runtime::Runtime::Docker });
-        let f = crate::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
+        let f = crate::app::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
         assert_eq!(super::run_logged(t.handle(), job).await, 1);
         let status = std::fs::read_to_string(&f.status).unwrap();
         assert!(verdict(&status).unwrap_err().to_string().starts_with("Couldn't lock the lab"), "{status}");
@@ -272,7 +272,7 @@ mod tests {
             Op::Launch,
         ] {
             let job = Job::on_lab("gone", op);
-            let f = crate::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
+            let f = crate::app::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
             assert_eq!(super::run_logged(t.handle(), job).await, 1);
             let status = std::fs::read_to_string(&f.status).unwrap();
             assert!(status.starts_with("error: "), "{status}");
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn concluding_writes_the_verdict_and_drops_the_pidfile() {
-        let dir = crate::deploy_worker::files::tests::temp_dir("conclude");
+        let dir = crate::app::deploy_worker::files::tests::temp_dir("conclude");
         let f = Files::of(&dir, "lab-1");
         std::fs::write(&f.pid, std::process::id().to_string()).unwrap();
         std::fs::write(&f.job, "{}").unwrap();

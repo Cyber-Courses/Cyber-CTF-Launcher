@@ -1,6 +1,7 @@
 //! The app shell: starting the launcher (or a deploy worker), its plugins, windows, menu and
 //! quitting, and the log file.
 
+pub(crate) mod deploy_worker;
 pub mod logging;
 pub mod menu;
 pub mod quit;
@@ -10,10 +11,10 @@ pub mod window;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use tauri::{Manager, RunEvent, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
 use crate::platform::{exec, private_fs};
-use crate::{AppHandle, AppRuntime, account, commands, deploy_worker, platform, runtime, shared_folder, terminal};
+use crate::{AppHandle, AppRuntime, account, commands, platform, runtime, shared_folder, terminal};
 
 type App = tauri::App<AppRuntime>;
 
@@ -130,7 +131,7 @@ fn wdio_seed(handle: &crate::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let src = std::path::PathBuf::from(path);
         if let Ok(id) = crate::labs::local_id(&src) {
-            let _ = crate::labs::run_local(&handle, &id, &src, |_| {}).await;
+            let _ = crate::labs::run_local(&platform::AppDirs::from(&handle), &id, &src, |_| {}).await;
         }
     });
 }
@@ -172,9 +173,33 @@ fn setup(app: &mut App) {
             }
         });
     }
-    // Bring your own compute: register this machine and run the player's labs on it.
-    account::agent::spawn(app.handle().clone());
+    // Bring your own compute: register this machine and run the player's labs on it. The agent is
+    // domain code; the app shell gives it the data folder and the two effects it reaches the
+    // player through (the cloud-launch prompt, a system notification).
+    let agent = account::agent::Deps::new(platform::AppDirs::from(app.handle()), agent_prompt(app.handle()), agent_notify(app.handle()));
+    tauri::async_runtime::spawn(account::agent::run(agent));
     spawn_reaper(app.handle().clone());
+}
+
+/// The background agent's cloud-launch prompt: an event the webview renders as a confirmation,
+/// with the window brought forward so the player sees it.
+fn agent_prompt(handle: &AppHandle) -> std::sync::Arc<account::agent::PromptCloudLaunch> {
+    let handle = handle.clone();
+    std::sync::Arc::new(move |session_id: &str, repository: &str, commit: &str, target: &str| {
+        let _ = handle.emit("launch-confirm", serde_json::json!({ "sessionId": session_id, "repository": repository, "commit": commit, "target": target }));
+        if let Some(w) = handle.get_webview_window("main") {
+            let _ = w.set_focus();
+        }
+    })
+}
+
+/// The background agent's system notification (a website launch started on this machine).
+fn agent_notify(handle: &AppHandle) -> std::sync::Arc<account::agent::Notify> {
+    let handle = handle.clone();
+    std::sync::Arc::new(move |title: &str, body: &str| {
+        use tauri_plugin_notification::NotificationExt;
+        let _ = handle.notification().builder().title(title).body(body).show();
+    })
 }
 
 /// Timed teardown of expired cloud labs: once on startup, then every 5 minutes, so a forgotten
@@ -182,8 +207,21 @@ fn setup(app: &mut App) {
 fn spawn_reaper(app: AppHandle) {
     tauri::async_runtime::spawn(every_pass(REAP_EVERY, move || {
         let app = app.clone();
-        async move { Box::pin(runtime::reap_expired_labs(&app)).await }
+        async move {
+            let dirs = platform::AppDirs::from(&app);
+            let report = move |title: &str, body: &str| reap_notify(&app, title, body);
+            Box::pin(runtime::reap_expired_labs(&dirs, &report)).await;
+        }
     }));
+}
+
+/// A system notification for the auto-stop reaper, when the app has the notification plugin (not
+/// in unit tests). The reaper's domain logic stays tauri-free and reaches the player through this.
+fn reap_notify(app: &AppHandle, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    if app.try_state::<tauri_plugin_notification::Notification<AppRuntime>>().is_some() {
+        let _ = app.notification().builder().title(title).body(body).show();
+    }
 }
 
 /// Runs `pass` now, then again `every` after each one ends, each pass on a task of its own: a

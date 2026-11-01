@@ -198,9 +198,9 @@ mod tests {
     }
 
     fn spawned(tag: &str) -> (std::path::PathBuf, Spawned) {
-        let dir = crate::deploy_worker::files::tests::temp_dir(tag);
-        let files = crate::deploy_worker::files::Files::of(&dir, "lab-1");
-        (dir, Spawned { files, worker: crate::deploy_worker::process::Worker { pid: 4_000_000_000, started: None } })
+        let dir = crate::app::deploy_worker::files::tests::temp_dir(tag);
+        let files = crate::app::deploy_worker::files::Files::of(&dir, "lab-1");
+        (dir, Spawned { files, worker: crate::app::deploy_worker::process::Worker { pid: 4_000_000_000, started: None } })
     }
 
     #[tokio::test]
@@ -225,7 +225,7 @@ mod tests {
         let (dir, s) = spawned("tail-race");
         std::fs::write(&s.files.log, "one\n").unwrap();
         let mut lines = Vec::new();
-        let files = crate::deploy_worker::files::Files::of(&dir, "lab-1");
+        let files = crate::app::deploy_worker::files::Files::of(&dir, "lab-1");
         tail(&s, |l| {
             if l == "one" {
                 use std::io::Write as _;

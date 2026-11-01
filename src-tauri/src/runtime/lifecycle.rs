@@ -309,7 +309,7 @@ pub fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
 pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
     let dir = lab_dir(dirs, id)?;
     let _stopping = DeployGuard::new(id, Action::Stop);
-    crate::deploy_worker::end_workers(dirs, id).await;
+    crate::app::deploy_worker::end_workers(dirs, id).await;
     stop(dirs, &dir, id, runtime, log).await
 }
 

@@ -1,12 +1,5 @@
 {
-  "rules": {
-    "rust/tauri-outside-adapters": {
-      "rs:account": 1,
-      "rs:deploy_worker": 3,
-      "rs:labs": 1,
-      "rs:runtime": 1
-    }
-  },
+  "rules": {},
   "clippy": {
     "darwin": {},
     "linux": {

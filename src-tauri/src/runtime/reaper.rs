@@ -18,14 +18,16 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::AppHandle;
-use tauri::Manager;
-
 use super::inflight::try_lock_lab;
 use super::providers::Provider;
 use super::{isothrum, server};
 use crate::error::Wire;
 use crate::platform::AppDirs;
+
+/// How the reaper tells the player a lab needs attention (a failed auto-stop, a deployment the
+/// runner couldn't take). The app shell supplies a system notification; unit tests a no-op. This
+/// is the only thing the reaper reaches the UI for, so it stays domain and tauri-free.
+pub type Report = dyn Fn(&str, &str) + Send + Sync;
 
 /// Folder under the app data dir: one reap-error record per lab id the last sweep couldn't
 /// destroy (`{message, error}`). A later sweep that destroys the lab clears it.
@@ -33,20 +35,19 @@ const REAP_ERRORS: &str = "reap-errors";
 
 /// Destroys every cloud lab the runner records as past its auto-stop (see the module), handing the
 /// launcher's own pre-runner deployments to the runner first.
-pub async fn reap_expired_labs(app: &AppHandle) {
-    hand_to_runner(app).await;
-    reap_runner_clouds(app).await;
+pub async fn reap_expired_labs(dirs: &AppDirs, report: &Report) {
+    hand_to_runner(dirs, report).await;
+    reap_runner_clouds(dirs, report).await;
 }
 
 /// Destroys the cloud labs (cloud-vm, cloud-docker, cloud-services) the runner records as past
 /// their auto-stop, with the account each was created on. The runner keeps their state and expiry;
 /// this ends what they cost. A failure is logged, kept for the lab's page and notified once; a
 /// lab destroyed (or no longer expired) has its record cleared.
-async fn reap_runner_clouds(app: &AppHandle) {
-    let dirs = AppDirs::from(app);
-    let Ok(home) = super::paths::runner_home(&dirs) else { return };
+async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
+    let Ok(home) = super::paths::runner_home(dirs) else { return };
     let Ok(base) = dirs.data() else { return };
-    let account = |host: &str| server::connection(&dirs, host).ok().map(|c| c.tf_env);
+    let account = |host: &str| server::connection(dirs, host).ok().map(|c| c.tf_env);
     let failures = isothrum::reap_expired_clouds(&home, std::time::SystemTime::now(), account).await;
     // The labs that failed last time, read before clearing: a lab that fails again isn't
     // re-notified, and a lab destroyed this time (no new record) has its record go.
@@ -61,7 +62,7 @@ async fn reap_runner_clouds(app: &AppHandle) {
             log::warn!("auto-stop: couldn't record the failure for {id}: {w}");
         }
         if !prior.contains(&id) {
-            notify(app, "Auto-stop failed", &message);
+            report("Auto-stop failed", &message);
         }
     }
 }
@@ -101,8 +102,7 @@ pub fn last_failure(dirs: &AppDirs, id: &str) -> Option<Wire> {
 /// Isothrum runner ([`isothrum::import_all`]): at the start of every sweep (so at app start, and
 /// before the runner's reaper looks). A lab that can't be handed over stays the launcher's,
 /// stopped and reaped as before, and the player is told why once per new reason.
-pub(super) async fn hand_to_runner(app: &AppHandle) {
-    let dirs = AppDirs::from(app);
+pub(super) async fn hand_to_runner(dirs: &AppDirs, report: &Report) {
     let Ok(base) = dirs.data() else { return };
     let runner = match isothrum::import_runner(base) {
         Ok(runner) => runner,
@@ -111,7 +111,7 @@ pub(super) async fn hand_to_runner(app: &AppHandle) {
             return;
         }
     };
-    let lock = |id: &str| try_lock_lab(&dirs, id).ok().flatten();
+    let lock = |id: &str| try_lock_lab(dirs, id).ok().flatten();
     for (d, outcome) in isothrum::import_all(&runner, base, super::launch::runner_runs_on, lock).await {
         match outcome {
             isothrum::Outcome::Imported => log::info!("lab {}'s deployment on {} is the Isothrum runner's now", d.id, d.provider.id()),
@@ -120,7 +120,7 @@ pub(super) async fn hand_to_runner(app: &AppHandle) {
                 let message = handover_message(&d.id, d.provider, &error);
                 log::warn!("{message}");
                 if new {
-                    notify(app, "Lab engine", &message);
+                    report("Lab engine", &message);
                 }
             }
         }
@@ -133,15 +133,6 @@ fn handover_message(id: &str, provider: Provider, why: &impl std::fmt::Display) 
     format!(
         "Lab {id}, running in {place}, couldn't be handed over to the Isothrum runner: {why}. It stays with the launcher's own engine until you stop it, so Stop and the auto-stop still remove it."
     )
-}
-
-/// A system notification titled `title`, when the app has the notification plugin (not in unit
-/// tests).
-fn notify(app: &AppHandle, title: &str, body: &str) {
-    use tauri_plugin_notification::NotificationExt;
-    if app.try_state::<tauri_plugin_notification::Notification<crate::AppRuntime>>().is_some() {
-        let _ = app.notification().builder().title(title).body(body).show();
-    }
 }
 
 #[cfg(test)]

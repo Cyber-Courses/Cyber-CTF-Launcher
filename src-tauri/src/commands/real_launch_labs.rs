@@ -33,7 +33,7 @@ async fn a_local_lab_launches_and_tears_down_through_the_commands() {
     let id = local_id(&src).expect("a lab folder with an isoloom.yml");
     let mut f = Vec::new();
 
-    let started = run_local(&app, &id, &src, |l: String| println!("[{id}] {l}")).await;
+    let started = run_local(&dirs, &id, &src, |l: String| println!("[{id}] {l}")).await;
     check(started.is_ok(), format!("{id}: it imports and starts ({:?})", started.as_ref().err()), &mut f);
     if started.is_ok() {
         let s = lab_status(app.clone(), id.clone(), Runtime::Docker).await;

@@ -109,14 +109,14 @@ pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<
                 attackbox_image: job.attackbox_image.as_deref(),
                 default_ports: job.default_ports,
             };
-            crate::labs::run(app, job.launch, &placement, log).await
+            crate::labs::run(&AppDirs::from(app), job.launch, &placement, log).await
         }
         Op::Resume { runtime } => crate::runtime::resume_lab(&AppDirs::from(app), &job.lab_id, runtime, log).await.map(|()| None),
         Op::Park { runtime, mode } => crate::runtime::park_lab(&AppDirs::from(app), &job.lab_id, runtime, mode, log).await.map(|()| None),
         Op::Provision { runtime, machine } => {
             crate::runtime::provision_lab(&AppDirs::from(app), &job.lab_id, runtime, machine.as_deref(), log).await.map(|()| None)
         }
-        Op::LaunchLocal { src } => crate::labs::run_local(app, &job.lab_id, std::path::Path::new(&src), log).await,
+        Op::LaunchLocal { src } => crate::labs::run_local(&AppDirs::from(app), &job.lab_id, std::path::Path::new(&src), log).await,
     }
 }
 

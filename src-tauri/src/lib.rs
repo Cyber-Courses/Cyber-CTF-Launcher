@@ -5,7 +5,6 @@ mod account;
 mod app;
 mod cloud;
 mod commands;
-mod deploy_worker;
 mod error;
 mod labs;
 mod lan_relay;

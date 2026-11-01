@@ -3,12 +3,12 @@
 //! validates what the UI passes (ids, images, boxes, machine names), turns channels into log
 //! sinks, and calls the runtime domain (`crate::runtime`).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tauri::ipc::Channel;
 
 use crate::AppHandle;
-use crate::deploy_worker::{self, Job, Op};
+use crate::app::deploy_worker::{self, Job, Op};
 use crate::error::{Error, Result};
 use crate::labs::operations::{self, ActiveOperation};
 use crate::labs::{self, LaunchRequest};
@@ -17,7 +17,7 @@ use crate::runtime::paths::{lab_dir, local_vm, runner_home};
 use crate::runtime::providers::Provider;
 use crate::runtime::{LabStatus, Park, Runtime, cloud_services, discover, docker, isothrum, lab, server, status, stop_lab, terminal_launch};
 
-/// Starts a lab, the deploy's log sent on `logs` (see [`labs::lab_launch`]).
+/// Starts a lab, the deploy's log sent on `logs` (see [`labs::launch_job`]).
 #[tauri::command]
 #[allow(clippy::too_many_arguments, reason = "the webview sends each of the request's fields as an argument")]
 pub async fn lab_launch(
@@ -31,14 +31,21 @@ pub async fn lab_launch(
     logs: Channel<String>,
 ) -> Result<()> {
     let request = LaunchRequest { lab_id, provider, host, attackbox_image, default_ports: default_ports.unwrap_or(false), offline: offline.unwrap_or(false) };
-    labs::lab_launch(app, request, logs).await
+    // The deploy runs in a detached worker process, so quitting (or crashing) the app never cuts a
+    // vagrant/docker/terraform run short; this command only follows the worker's log.
+    let job = labs::launch_job(&AppDirs::from(&app), request, &channel_log(logs.clone())).await?;
+    deploy_worker::run_job(&app, job, logs).await
 }
 
 /// Imports and starts a lab from a local directory `path` (an unpublished lab), the deploy's log
-/// sent on `logs` (see [`labs::lab_launch_local`]).
+/// sent on `logs` (see [`labs::local_id`]).
 #[tauri::command]
 pub async fn lab_launch_local(app: AppHandle, path: String, logs: Channel<String>) -> Result<()> {
-    labs::lab_launch_local(app, path, logs).await
+    let src = PathBuf::from(path);
+    let lab_id = labs::local_id(&src)?;
+    // Detached worker, like every lab operation; this command only follows its log.
+    let job = Job::on_lab(&lab_id, Op::LaunchLocal { src: src.to_string_lossy().into_owned() });
+    deploy_worker::run_job(&app, job, logs).await
 }
 
 /// The labs a deploy worker is running an operation on.
@@ -279,8 +286,8 @@ pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> R
 mod tests {
     use super::{AttachPick, channel_log, check_image, valid_machine_name};
     use super::{
-        attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_park, lab_provision, lab_resume, lab_status, lab_stop,
-        lab_tools, running_labs,
+        attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_launch, lab_launch_local, lab_park, lab_provision,
+        lab_resume, lab_status, lab_stop, lab_tools, running_labs,
     };
     use crate::platform::exec::fake::Tools;
     use crate::runtime::{Park, Runtime, server};
@@ -462,5 +469,30 @@ mod tests {
     fn image_errors_name_what_was_wrong() {
         assert!(check_image("kalilinux/kali-rolling").is_ok());
         assert_eq!(check_image("-x").unwrap_err().to_string(), "invalid attack-box image `-x`");
+    }
+
+    #[tokio::test]
+    async fn lab_launch_refuses_a_bad_attack_box_image_before_asking_the_backend() {
+        // The launch is prepared (image checked, spec resolved) here and run in a detached worker;
+        // a bad attack-box image is refused before the backend is ever asked, so nothing streams.
+        let t = TestApp::new();
+        let s = sink();
+        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, channel(s.clone())).await;
+        assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
+        assert!(s.lock().unwrap().is_empty(), "the backend was never asked");
+    }
+
+    #[tokio::test]
+    async fn lab_launch_local_refuses_a_folder_without_a_lab() {
+        let t = TestApp::new();
+        let dir = std::env::temp_dir().join(format!("cyberctf-notalab-cmd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let s = sink();
+        // No isoloom.yml: there is no local id, so the command refuses before it reaches a worker.
+        let err = lab_launch_local(t.handle().clone(), dir.to_string_lossy().into_owned(), channel(s.clone())).await;
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.is_err(), "a folder with no isoloom.yml is not a lab");
+        assert!(s.lock().unwrap().is_empty(), "nothing ran");
     }
 }

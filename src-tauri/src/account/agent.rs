@@ -9,14 +9,11 @@
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use crate::AppHandle;
 use crate::platform::AppDirs;
 use serde_json::{Value, json};
-use tauri::{Emitter, Manager};
-use tauri_plugin_notification::NotificationExt;
 use tokio::sync::oneshot;
 
 use crate::account::api;
@@ -26,11 +23,42 @@ use crate::error::{Error, Result};
 use crate::labs;
 use crate::runtime::{Runtime, server};
 
+/// The prompt that asks the player to confirm a launch onto a cloud account (session id,
+/// repository, commit, target). The app shell shows it in the webview and brings the window
+/// forward; unit tests do nothing.
+pub type PromptCloudLaunch = dyn Fn(&str, &str, &str, &str) + Send + Sync;
+
+/// A system notification for the player (title, body), shown when a website launch starts here.
+pub type Notify = dyn Fn(&str, &str) + Send + Sync;
+
+/// The app the background agent runs inside: its data folder, and the two things it reaches the
+/// player through — a prompt to confirm a launch onto a cloud account and a system notification
+/// when a website launch starts here. The app shell builds it from the `AppHandle` (see
+/// `crate::app`); unit tests build one with no-op effects. Keeping the effects behind closures is
+/// what lets this module stay domain code, free of `tauri`.
+#[derive(Clone)]
+pub struct Deps {
+    dirs: AppDirs,
+    prompt_cloud_launch: Arc<PromptCloudLaunch>,
+    notify: Arc<Notify>,
+}
+
+impl Deps {
+    /// The agent's dependencies: the data folder, the cloud-launch prompt, and the notification.
+    pub fn new(dirs: AppDirs, prompt_cloud_launch: Arc<PromptCloudLaunch>, notify: Arc<Notify>) -> Deps {
+        Deps { dirs, prompt_cloud_launch, notify }
+    }
+
+    fn dirs(&self) -> &AppDirs {
+        &self.dirs
+    }
+}
+
 /// A stable identifier for this installation, generated once and kept in the app data
 /// dir. It is the merge key for the agent, so reinstalling re-registers the same machine
 /// and two machines never collide even when they share a display name.
-fn install_id(app: &AppHandle) -> Result<String> {
-    install_id_at(&app.path().app_data_dir().map_err(|e| Error::Invalid(e.to_string()))?.join("install-id"))
+fn install_id(dirs: &AppDirs) -> Result<String> {
+    install_id_at(&dirs.data()?.join("install-id"))
 }
 
 /// The install id kept at `path`, generated and written there the first time.
@@ -90,10 +118,10 @@ fn capabilities() -> Vec<String> {
 }
 
 /// Upserts this machine as the player's launcher agent and returns the server agent id.
-async fn register(app: &AppHandle) -> Result<String> {
+async fn register(dirs: &AppDirs) -> Result<String> {
     let data = api::graphql(
         "mutation ($i: ID!, $n: String!, $c: [String!]!, $a: String, $t: [LaunchTargetInput!]) { registerLauncher(installId: $i, name: $n, capabilities: $c, arch: $a, targets: $t) { id } }",
-        json!({ "i": install_id(app)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(&AppDirs::from(app)) }),
+        json!({ "i": install_id(dirs)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(dirs) }),
         true,
     )
     .await?;
@@ -101,10 +129,10 @@ async fn register(app: &AppHandle) -> Result<String> {
 }
 
 /// Keep-alive, re-reporting the targets so hosts added since registering show on the website.
-async fn heartbeat(app: &AppHandle, agent_id: &str) -> Result<()> {
+async fn heartbeat(dirs: &AppDirs, agent_id: &str) -> Result<()> {
     api::graphql(
         "mutation ($id: ID!, $t: [LaunchTargetInput!]) { launcherHeartbeat(agentId: $id, targets: $t) { id } }",
-        json!({ "id": agent_id, "t": server::launch_targets(&AppDirs::from(app)) }),
+        json!({ "id": agent_id, "t": server::launch_targets(dirs) }),
         true,
     )
     .await
@@ -154,15 +182,12 @@ pub fn confirm_launch(session_id: &str, approve: bool) {
 /// Asks the user to confirm a website launch that would run on one of their cloud accounts
 /// (it costs money), by emitting an event the UI shows as a prompt and waiting for the answer.
 /// A timeout counts as a decline, so a missed prompt doesn't hang the session or spend money.
-async fn confirm_cloud_launch(app: &AppHandle, session_id: &str, repo: &str, commit: &str, target: &str) -> bool {
+async fn confirm_cloud_launch(deps: &Deps, session_id: &str, repo: &str, commit: &str, target: &str) -> bool {
     let (tx, rx) = oneshot::channel();
     if let Ok(mut map) = pending_confirmations().lock() {
         map.insert(session_id.to_string(), tx);
     }
-    let _ = app.emit("launch-confirm", json!({ "sessionId": session_id, "repository": repo, "commit": commit, "target": target }));
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.set_focus();
-    }
+    (deps.prompt_cloud_launch)(session_id, repo, commit, target);
     let approved = await_answer(rx, CONFIRM_WAIT).await;
     if let Ok(mut map) = pending_confirmations().lock() {
         map.remove(session_id);
@@ -181,9 +206,8 @@ async fn await_answer(rx: oneshot::Receiver<bool>, wait: Duration) -> bool {
 
 /// Where a claimed launch runs: the target picked on the website (one of this launcher's hosts
 /// or cloud accounts); else VM labs go to the default server host and Docker labs run here.
-fn launch_host(app: &AppHandle, claim: &Value) -> Result<Option<String>> {
-    let dirs = AppDirs::from(app);
-    pick_launch_host(claim, |target| server::host_name(&dirs, target), || server::default_host(&dirs))
+fn launch_host(dirs: &AppDirs, claim: &Value) -> Result<Option<String>> {
+    pick_launch_host(claim, |target| server::host_name(dirs, target), || server::default_host(dirs))
 }
 
 /// `launch_host` given how to name a host (`None` when it isn't set up) and the default host.
@@ -200,13 +224,13 @@ fn pick_launch_host(claim: &Value, host_name: impl Fn(&str) -> Option<String>, d
 
 /// Running on a cloud account costs money, so a website launch onto one isn't auto-run: ask
 /// the user to confirm on this machine first (local and server targets still run unattended).
-async fn confirm_if_cloud(app: &AppHandle, session_id: &str, claim: &Value, host: Option<&str>) -> Result<()> {
-    let dirs = AppDirs::from(app);
-    let Some(id) = host.filter(|id| server::host_provider(&dirs, id).is_some_and(crate::runtime::providers::Provider::is_cloud)) else { return Ok(()) };
-    let target = server::host_name(&dirs, id).unwrap_or_else(|| id.to_string());
+async fn confirm_if_cloud(deps: &Deps, session_id: &str, claim: &Value, host: Option<&str>) -> Result<()> {
+    let dirs = deps.dirs();
+    let Some(id) = host.filter(|id| server::host_provider(dirs, id).is_some_and(crate::runtime::providers::Provider::is_cloud)) else { return Ok(()) };
+    let target = server::host_name(dirs, id).unwrap_or_else(|| id.to_string());
     let repo = claim["repository"].as_str().unwrap_or("");
     let commit = claim["commit"].as_str().unwrap_or("");
-    if confirm_cloud_launch(app, session_id, repo, commit, &target).await {
+    if confirm_cloud_launch(deps, session_id, repo, commit, &target).await {
         Ok(())
     } else {
         Err(Error::Invalid(format!("Launch on {target} was not confirmed on this machine.")))
@@ -230,10 +254,9 @@ fn attack_image(host: Option<&str>, runtime: Runtime) -> Option<&'static str> {
 
 /// Stops a claimed lab that must not keep running under a failed session. A lab that never got
 /// installed (its download failed) has nothing to stop.
-async fn tear_down(app: &AppHandle, lab_id: Option<&str>, runtime: Runtime) -> Result<()> {
-    let dirs = AppDirs::from(app);
-    match lab_id.filter(|id| crate::runtime::lab_installed(&dirs, id)) {
-        Some(id) => crate::runtime::stop_lab(&dirs, id, runtime, |_line: String| {}).await,
+async fn tear_down(dirs: &AppDirs, lab_id: Option<&str>, runtime: Runtime) -> Result<()> {
+    match lab_id.filter(|id| crate::runtime::lab_installed(dirs, id)) {
+        Some(id) => crate::runtime::stop_lab(dirs, id, runtime, |_line: String| {}).await,
         None => Ok(()),
     }
 }
@@ -241,11 +264,11 @@ async fn tear_down(app: &AppHandle, lab_id: Option<&str>, runtime: Runtime) -> R
 /// `failure`, after tearing down what the failed start brought up, when it must be (see
 /// [`undoes`]). A teardown that fails too is said with it: the lab may still be running (and,
 /// on a cloud account, billing), and the website and the log must say so.
-async fn undo_start(app: &AppHandle, lab_id: Option<&str>, runtime: Runtime, present_before: bool, failure: Error) -> Error {
+async fn undo_start(dirs: &AppDirs, lab_id: Option<&str>, runtime: Runtime, present_before: bool, failure: Error) -> Error {
     if !undoes(&failure, present_before) {
         return failure;
     }
-    match tear_down(app, lab_id, runtime).await {
+    match tear_down(dirs, lab_id, runtime).await {
         Ok(()) => failure,
         Err(e) => {
             log::warn!("stopping what a failed launch of {lab_id:?} started: {e}");
@@ -264,19 +287,19 @@ fn undoes(failure: &Error, present_before: bool) -> bool {
 }
 
 /// Whether something of the claimed lab exists before its start (see `runtime::lab_present`).
-async fn present_before(app: &AppHandle, claim: &Value) -> bool {
+async fn present_before(dirs: &AppDirs, claim: &Value) -> bool {
     match claim["labId"].as_str() {
-        Some(id) => crate::runtime::lab_present(&AppDirs::from(app), id).await,
+        Some(id) => crate::runtime::lab_present(dirs, id).await,
         None => false,
     }
 }
 
 /// Starts a claimed lab on `host` (None: this machine). A failure tears down what this start
 /// brought up, and only that (see [`undoes`]). Where the lab is reachable here, once running.
-async fn run_claimed(app: &AppHandle, claim: &Value, host: Option<&str>, runtime: Runtime, present_before: bool) -> Result<Option<String>> {
+async fn run_claimed(dirs: &AppDirs, claim: &Value, host: Option<&str>, runtime: Runtime, present_before: bool) -> Result<Option<String>> {
     let lab_id = claim["labId"].as_str();
     match labs::run(
-        app,
+        dirs,
         claim.clone(),
         &labs::Placement { host, attackbox_image: attack_image(host, runtime), ..labs::Placement::default() },
         |_line: String| {},
@@ -284,15 +307,15 @@ async fn run_claimed(app: &AppHandle, claim: &Value, host: Option<&str>, runtime
     .await
     {
         Ok(url) => Ok(url),
-        Err(e) => Err(undo_start(app, lab_id, runtime, present_before, e).await),
+        Err(e) => Err(undo_start(dirs, lab_id, runtime, present_before, e).await),
     }
 }
 
 /// Tells the backend the lab runs: where its target is reachable, plus a loopback control
 /// endpoint + one-time token/nonce so the website can verify co-location before trusting the
 /// 127.0.0.1 URL (the endpoint ends once it answered, when the lab stops, or after a while). The relay path for a remote/headless agent is the next step.
-async fn report_running(app: &AppHandle, session_id: &str, lab_id: Option<&str>, host: Option<&str>, url: Option<&str>) -> Result<()> {
-    let running_on = running_message(host.and_then(|h| server::host_name(&AppDirs::from(app), h)));
+async fn report_running(dirs: &AppDirs, session_id: &str, lab_id: Option<&str>, host: Option<&str>, url: Option<&str>) -> Result<()> {
+    let running_on = running_message(host.and_then(|h| server::host_name(dirs, h)));
     let token = random_hex();
     let nonce = random_hex();
     let control_url = colocation::serve(lab_id, token.clone(), nonce.clone()).await.ok().map(|port| format!("http://127.0.0.1:{port}"));
@@ -306,7 +329,7 @@ fn running_message(host_name: Option<String>) -> String {
 }
 
 /// Claims one pending session and runs its lab on this machine.
-async fn claim_and_run(app: &AppHandle, session_id: &str) -> Result<()> {
+async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
     let data = api::graphql(
         "mutation ($id: ID!) { claimLaunch(sessionId: $id) { labId runtime repository commit target env { name value } } }",
         json!({ "id": session_id }),
@@ -315,28 +338,28 @@ async fn claim_and_run(app: &AppHandle, session_id: &str) -> Result<()> {
     .await?;
     let claim = &data["claimLaunch"];
     update_state(session_id, "PULLING", Progress { message: Some("Preparing the lab on your machine"), ..Default::default() }).await?;
-    let host = launch_host(app, claim)?;
-    confirm_if_cloud(app, session_id, claim, host.as_deref()).await?;
+    let host = launch_host(deps.dirs(), claim)?;
+    confirm_if_cloud(deps, session_id, claim, host.as_deref()).await?;
     let runtime = claim_runtime(claim);
     // Anything this start brought up before failing (one unhealthy service, say) is torn down, or
     // it would keep running under a FAILED session and every later launch of it would be refused.
-    let present = present_before(app, claim).await;
-    let url = run_claimed(app, claim, host.as_deref(), runtime, present).await?;
+    let present = present_before(deps.dirs(), claim).await;
+    let url = run_claimed(deps.dirs(), claim, host.as_deref(), runtime, present).await?;
     // The lab is actually running now. If reporting back to the backend fails, tear down what
     // this start brought up before returning the error, so we don't leave infra running under a
     // session the poller will mark FAILED.
-    if let Err(e) = report_running(app, session_id, claim["labId"].as_str(), host.as_deref(), url.as_deref()).await {
-        return Err(undo_start(app, claim["labId"].as_str(), runtime, present, e).await);
+    if let Err(e) = report_running(deps.dirs(), session_id, claim["labId"].as_str(), host.as_deref(), url.as_deref()).await {
+        return Err(undo_start(deps.dirs(), claim["labId"].as_str(), runtime, present, e).await);
     }
     // A lab launched from the website just started here: let the player know on this machine.
-    let _ = app.notification().builder().title("Lab running").body("A lab launched from the website is now running on this machine.").show();
+    (deps.notify)("Lab running", "A lab launched from the website is now running on this machine.");
     Ok(())
 }
 
 /// Picks up and runs every pending launch aimed at this agent.
-async fn poll_once(app: &AppHandle, agent_id: &str) -> Result<()> {
+async fn poll_once(deps: &Deps, agent_id: &str) -> Result<()> {
     let data = api::graphql("query ($a: ID) { myPendingLaunches(agentId: $a) { id } }", json!({ "a": agent_id }), true).await?;
-    claim_each(pending_ids(&data), |sid| async move { claim_and_run(app, &sid).await }, report_failed).await;
+    claim_each(pending_ids(&data), |sid| async move { claim_and_run(deps, &sid).await }, report_failed).await;
     Ok(())
 }
 
@@ -403,67 +426,78 @@ fn agent_id_of(current: &Mutex<Option<Registration>>) -> Option<String> {
 /// can block for a long time (a cloud launch waits on terraform apply, up to tens of minutes),
 /// and the machine must keep reporting that it's online for the whole launch, not drop offline
 /// while busy.
-fn spawn_heartbeat(app: AppHandle, current: std::sync::Arc<Mutex<Option<Registration>>>) {
+fn spawn_heartbeat(dirs: AppDirs, current: Arc<Mutex<Option<Registration>>>) {
     tokio::spawn(async move {
         loop {
             if let Some(agent_id) = agent_id_of(&current)
                 && auth::access_token().await.is_ok()
             {
-                let _ = heartbeat(&app, &agent_id).await;
+                let _ = heartbeat(&dirs, &agent_id).await;
             }
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
     });
 }
 
-/// Starts the background agent: waits for login, registers, then heartbeats (~30s) and
+/// Runs the background agent: waits for login, registers, then heartbeats (~30s) and
 /// polls for launches (~6s) for as long as the app runs. Signing out forgets the agent, and
 /// signing in as another account registers again, so launches are never polled for (and
-/// the machine never shows online for) an account that isn't signed in here.
-pub fn spawn(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        let current = std::sync::Arc::new(Mutex::new(None::<Registration>));
-        spawn_heartbeat(app.clone(), current.clone());
-        loop {
-            let user = auth::signed_in_user().await;
-            let registered = current.lock().ok().and_then(|r| r.clone());
-            match next_step(registered.as_ref(), user.as_deref()) {
-                Next::SignedOut => {
-                    if let Ok(mut r) = current.lock() {
-                        *r = None;
-                    }
-                    tokio::time::sleep(Duration::from_secs(5)).await;
+/// the machine never shows online for) an account that isn't signed in here. The app shell spawns
+/// this on its runtime (see `crate::app`), with the effects (`Deps`) the agent reaches the player
+/// through, so this loop itself is free of `tauri`.
+pub async fn run(deps: Deps) {
+    let current = Arc::new(Mutex::new(None::<Registration>));
+    spawn_heartbeat(deps.dirs().clone(), current.clone());
+    loop {
+        let user = auth::signed_in_user().await;
+        let registered = current.lock().ok().and_then(|r| r.clone());
+        match next_step(registered.as_ref(), user.as_deref()) {
+            Next::SignedOut => {
+                if let Ok(mut r) = current.lock() {
+                    *r = None;
+                }
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+            Next::Register => {
+                // No token yet, or registering failed: wait and start the cycle over.
+                if register_step(&deps, &current, user).await {
                     continue;
                 }
-                Next::Register => {
-                    if auth::access_token().await.is_err() {
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        continue;
-                    }
-                    match register(&app).await {
-                        Ok(agent_id) => {
-                            log::info!("launcher agent online: {agent_id}");
-                            if let Ok(mut r) = current.lock() {
-                                *r = Some(Registration { user: user.unwrap_or_default(), agent_id });
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("registerLauncher failed, retrying: {e}");
-                            tokio::time::sleep(Duration::from_secs(15)).await;
-                            continue;
-                        }
-                    }
-                }
-                Next::Run => {}
             }
-            if let Some(agent_id) = agent_id_of(&current)
-                && auth::access_token().await.is_ok()
-            {
-                let _ = poll_once(&app, &agent_id).await;
-            }
-            tokio::time::sleep(Duration::from_secs(6)).await;
+            Next::Run => {}
         }
-    });
+        if let Some(agent_id) = agent_id_of(&current)
+            && auth::access_token().await.is_ok()
+        {
+            let _ = poll_once(&deps, &agent_id).await;
+        }
+        tokio::time::sleep(Duration::from_secs(6)).await;
+    }
+}
+
+/// Registers this machine for `user`, keeping its agent id in `current`. Returns whether the loop
+/// should wait and start over — there was no access token yet, or `registerLauncher` failed — so a
+/// poll is never made for an account this machine isn't registered as.
+async fn register_step(deps: &Deps, current: &Mutex<Option<Registration>>, user: Option<String>) -> bool {
+    if auth::access_token().await.is_err() {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        return true;
+    }
+    match register(deps.dirs()).await {
+        Ok(agent_id) => {
+            log::info!("launcher agent online: {agent_id}");
+            if let Ok(mut r) = current.lock() {
+                *r = Some(Registration { user: user.unwrap_or_default(), agent_id });
+            }
+            false
+        }
+        Err(e) => {
+            log::warn!("registerLauncher failed, retrying: {e}");
+            tokio::time::sleep(Duration::from_secs(15)).await;
+            true
+        }
+    }
 }
 
 /// This machine's launcher-agent identity, for the UI ("running as ...").
@@ -477,13 +511,19 @@ pub struct AgentInfo {
 }
 
 /// This machine's identity, for the UI ("running as ...").
-pub fn agent_info(app: &AppHandle) -> Result<AgentInfo> {
-    Ok(AgentInfo { install_id: install_id(app)?, name: machine_name(), arch: arch(), capabilities: capabilities() })
+pub fn agent_info(dirs: &AppDirs) -> Result<AgentInfo> {
+    Ok(AgentInfo { install_id: install_id(dirs)?, name: machine_name(), arch: arch(), capabilities: capabilities() })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The agent's dependencies against a test app: its data folder, with no-op effects (the
+    /// webview prompt and the system notification have nothing to show in unit tests).
+    fn test_deps(t: &crate::testing::test_app::TestApp) -> Deps {
+        Deps::new(t.dirs(), Arc::new(|_: &str, _: &str, _: &str, _: &str| {}), Arc::new(|_: &str, _: &str| {}))
+    }
 
     #[test]
     fn the_agent_registers_again_for_another_account_and_forgets_it_on_sign_out() {
@@ -564,7 +604,7 @@ mod tests {
     #[test]
     fn this_machines_identity_is_its_install_id_name_and_arch() {
         let t = crate::testing::test_app::TestApp::new();
-        let info = || serde_json::to_value(agent_info(t.handle()).unwrap()).unwrap();
+        let info = || serde_json::to_value(agent_info(&t.dirs()).unwrap()).unwrap();
         let first = info();
         assert_eq!(first["installId"].as_str().unwrap().len(), 32);
         assert_eq!(info()["installId"], first["installId"], "kept");
@@ -576,13 +616,14 @@ mod tests {
     #[tokio::test]
     async fn a_launch_onto_a_cloud_account_runs_only_once_confirmed_here() {
         let t = crate::testing::test_app::TestApp::new();
-        let app = t.handle();
+        let dirs = t.dirs();
+        let deps = test_deps(&t);
         let az = t.host("az1", "azure", json!({}));
         let claim = json!({ "target": az, "repository": "CyberCTF/web", "commit": "abc" });
-        assert_eq!(launch_host(app, &claim).unwrap().as_deref(), Some("az1"));
-        assert_eq!(launch_host(app, &json!({ "runtime": "VM" })).unwrap(), None, "no default server host");
+        assert_eq!(launch_host(&dirs, &claim).unwrap().as_deref(), Some("az1"));
+        assert_eq!(launch_host(&dirs, &json!({ "runtime": "VM" })).unwrap(), None, "no default server host");
         // Not a cloud (here, or no host): no question asked.
-        confirm_if_cloud(app, "s-local", &claim, None).await.unwrap();
+        confirm_if_cloud(&deps, "s-local", &claim, None).await.unwrap();
         // A cloud account: the answer from the UI decides.
         for (sid, approve) in [("s-cloud-yes", true), ("s-cloud-no", false)] {
             let answer = tokio::spawn(async move {
@@ -594,7 +635,7 @@ mod tests {
                     tokio::task::yield_now().await;
                 }
             });
-            let r = confirm_if_cloud(app, sid, &claim, Some(&az)).await;
+            let r = confirm_if_cloud(&deps, sid, &claim, Some(&az)).await;
             answer.await.unwrap();
             if approve {
                 r.unwrap();
@@ -605,9 +646,9 @@ mod tests {
         // A lab that was never installed (its download failed) has nothing to tear down: the
         // failure isn't said to have left anything up.
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
-        tear_down(app, Some("gone"), Runtime::Docker).await.unwrap();
-        tear_down(app, None, Runtime::Vm).await.unwrap();
-        let err = undo_start(app, Some("gone"), Runtime::Docker, false, Error::Invalid("download failed: HTTP 404".into())).await;
+        tear_down(&dirs, Some("gone"), Runtime::Docker).await.unwrap();
+        tear_down(&dirs, None, Runtime::Vm).await.unwrap();
+        let err = undo_start(&dirs, Some("gone"), Runtime::Docker, false, Error::Invalid("download failed: HTTP 404".into())).await;
         assert_eq!(err.to_string(), "download failed: HTTP 404");
         assert_eq!(tools.calls(), [] as [&str; 0]);
     }
@@ -626,7 +667,7 @@ mod tests {
         // refusal ("still running on <host>. Stop it, then start it again") was followed by a
         // teardown that ran `terraform destroy` on their lab.
         let t = crate::testing::test_app::TestApp::new();
-        let app = t.handle();
+        let dirs = t.dirs();
         let id = "agent-refused";
         let dir = t.lab(id, &[(".cyberctf-commit", "ffffffffffffffffffffffffffffffffffffffff"), (".isoloom/cloud-docker/aws/main.tf", "")]);
         let aws = t.host("aws1", "aws", json!({ "useCliCreds": true }));
@@ -636,8 +677,8 @@ mod tests {
         std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let claim = claim_of(id);
-        assert!(present_before(app, &claim).await);
-        let err = run_claimed(app, &claim, None, Runtime::Docker, false).await.unwrap_err();
+        assert!(present_before(&dirs, &claim).await);
+        let err = run_claimed(&dirs, &claim, None, Runtime::Docker, false).await.unwrap_err();
         assert!(matches!(err, Error::Refused(_)) && err.to_string().contains("still running on Host aws1"), "{err}");
         assert!(!tools.called("terraform"), "nothing torn down: {:?}", tools.calls());
         assert!(state.join("terraform.tfstate").is_file());
@@ -654,7 +695,7 @@ mod tests {
         server::mark_lab(&dir, Some("pve1")).unwrap();
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let failure = Error::Invalid("the lab host didn't answer".into());
-        let err = undo_start(t.handle(), Some(id), Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id).await, failure).await;
+        let err = undo_start(&t.dirs(), Some(id), Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id).await, failure).await;
         assert_eq!(err.to_string(), "the lab host didn't answer");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert_eq!(server::marked_host(&dir).as_deref(), Some("pve1"));

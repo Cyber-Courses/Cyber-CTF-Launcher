@@ -227,7 +227,7 @@ pub async fn machine_storage(dirs: AppDirs, extra_images: Vec<String>) -> Result
 /// Removes what `machine_storage` lists (see [`clean`]). Returns the bytes freed.
 pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>) -> Result<u64> {
     // A lab operation running may still use the plugins its `init` linked: they stay then.
-    let busy = crate::runtime::active_deploys() > 0 || !crate::deploy_worker::running(&dirs).is_empty();
+    let busy = crate::runtime::active_deploys() > 0 || !crate::app::deploy_worker::running(&dirs).is_empty();
     clean(&owned::path(&dirs)?, &extra_images, vagrant_home().as_deref(), !busy).await
 }
 
