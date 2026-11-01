@@ -29,15 +29,13 @@
 //! - What the lab exposes is its outputs (`cloud.outputs`), read from the state; its message
 //!   names them (`{{ cloud.outputs.NAME }}`). Stop destroys everything: nothing is parked.
 
-use std::path::Path;
-
 use crate::AppHandle;
 
 use super::lab::{CloudProvider, CloudServices, Spec, Target};
 use super::launch::{CLOUD_NEEDS_ACCOUNT, check_aws_budget, public_ip};
 use super::paths::lab_dir;
 use super::providers::Provider;
-use super::{Runtime, isothrum, lab, server};
+use super::{LabRef, Runtime, isothrum, lab, server};
 use crate::error::{Error, Result};
 
 /// The launch-time input the launcher fills with this machine's public IP as a /32.
@@ -87,7 +85,10 @@ pub fn cost_line(hourly_usd: Option<f64>, auto_stop_hours: u32) -> String {
 /// policy — the account is of the lab's cloud, the GCP labs project, the AWS budget, this machine's
 /// public IP where the lab asks for it — and the runner runs the module, keeps the state and the
 /// expiry, and ends what it costs on a stop or the auto-stop.
-pub(super) async fn start(app: &AppHandle, dir: &Path, id: &str, host: Option<&str>, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+pub(super) async fn start(app: &AppHandle, lab: LabRef<'_>, host: Option<&str>, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+    // A cloud-services lab always runs as `Runtime::Cloud`, so only the lab's folder and id are
+    // read from the reference here.
+    let LabRef { dir, id, .. } = lab;
     let host = host.ok_or_else(|| Error::Invalid(CLOUD_NEEDS_ACCOUNT.into()))?;
     let spec = lab::prepare(dir, Target::CloudServices)?.spec;
     let cloud = of(&spec)?;

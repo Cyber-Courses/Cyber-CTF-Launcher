@@ -92,6 +92,19 @@ pub enum Runtime {
     Cloud,
 }
 
+/// An installed lab the runtime starts, parks or stops: its folder, its id, and how it runs.
+/// These three identify and classify a lab everywhere it is driven, so the launch and lifecycle
+/// paths pass them as one value instead of repeating them as separate arguments.
+#[derive(Clone, Copy)]
+pub(in crate::runtime) struct LabRef<'a> {
+    /// The lab's installed folder.
+    pub(in crate::runtime) dir: &'a std::path::Path,
+    /// The lab's id (its folder name).
+    pub(in crate::runtime) id: &'a str,
+    /// How the lab runs (container, VM, or cloud services).
+    pub(in crate::runtime) runtime: Runtime,
+}
+
 /// Builders shared by the runtime's unit tests.
 #[cfg(test)]
 pub(crate) mod test_support {

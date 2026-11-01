@@ -96,10 +96,10 @@ impl HostInput {
             host,
             port: self.port.filter(|p| *p > 0).unwrap_or(default_port(provider)),
             username,
-            datastore: clean_opt(self.datastore, "datastore")?,
-            network: clean_opt(self.network, "network")?,
+            datastore: clean_opt(self.datastore.as_deref(), "datastore")?,
+            network: clean_opt(self.network.as_deref(), "network")?,
             // Proxmox uses `node`; GCP reuses it for the optional organization id.
-            node: if matches!(provider, Provider::Proxmox | Provider::Gcp) { clean_opt(self.node, "node")? } else { None },
+            node: if matches!(provider, Provider::Proxmox | Provider::Gcp) { clean_opt(self.node.as_deref(), "node")? } else { None },
             insecure_tls: provider == Provider::Proxmox && self.insecure_tls.unwrap_or(false),
             auto_stop_hours: if provider.is_cloud() {
                 match self.auto_stop_hours.unwrap_or(DEFAULT_AUTO_STOP_HOURS) {
@@ -110,7 +110,7 @@ impl HostInput {
                 None
             },
             use_cli_creds: use_cli,
-            aws_profile: if use_cli { clean_opt(self.aws_profile, "profile")? } else { None },
+            aws_profile: if use_cli { clean_opt(self.aws_profile.as_deref(), "profile")? } else { None },
             // Budget enforcement is AWS-only (the other clouds have no cost read yet), so don't
             // persist a limit that would silently do nothing on Azure/GCP.
             monthly_limit: if provider == Provider::Aws { self.monthly_limit.filter(|v| *v > 0.0) } else { None },
@@ -128,8 +128,8 @@ pub(super) fn clean(value: &str, field: &str, max: usize) -> Result<String> {
     Ok(v.to_string())
 }
 
-pub(super) fn clean_opt(value: Option<String>, field: &str) -> Result<Option<String>> {
-    match value.as_deref().map(str::trim) {
+pub(super) fn clean_opt(value: Option<&str>, field: &str) -> Result<Option<String>> {
+    match value.map(str::trim) {
         None | Some("") => Ok(None),
         Some(v) => clean(v, field, 128).map(Some),
     }
@@ -358,9 +358,9 @@ mod tests {
     #[test]
     fn clean_opt_maps_blank_to_none() {
         assert_eq!(clean_opt(None, "x").unwrap(), None);
-        assert_eq!(clean_opt(Some("  ".to_string()), "x").unwrap(), None);
-        assert_eq!(clean_opt(Some(" vmbr1 ".to_string()), "x").unwrap(), Some("vmbr1".to_string()));
-        assert!(clean_opt(Some("bad\tvalue".to_string()), "x").is_err());
+        assert_eq!(clean_opt(Some("  "), "x").unwrap(), None);
+        assert_eq!(clean_opt(Some(" vmbr1 "), "x").unwrap(), Some("vmbr1".to_string()));
+        assert!(clean_opt(Some("bad\tvalue"), "x").is_err());
     }
 
     #[test]

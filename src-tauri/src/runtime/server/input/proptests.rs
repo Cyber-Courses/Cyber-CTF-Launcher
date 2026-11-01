@@ -49,7 +49,7 @@ proptest! {
 
     #[test]
     fn clean_opt_maps_blank_to_none(value in proptest::option::of(pasted())) {
-        match clean_opt(value.clone(), "field") {
+        match clean_opt(value.as_deref(), "field") {
             Ok(None) => prop_assert!(value.as_deref().is_none_or(|v| v.trim().is_empty())),
             Ok(Some(v)) => prop_assert_eq!(Some(v.as_str()), value.as_deref().map(str::trim)),
             Err(_) => prop_assert!(value.is_some()),

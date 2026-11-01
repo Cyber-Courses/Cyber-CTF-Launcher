@@ -193,7 +193,7 @@ async fn import_one(runner: &Runner, base: &Path, d: &Deployment) -> Result<Outc
 fn manifest_of(base: &Path, d: &Deployment) -> Result<PathBuf, ImportError> {
     let dir = lab_dir_in(base, &d.id).map_err(ImportError::LabGone)?;
     let tf = server::terraform_target(d.provider).unwrap_or_default();
-    let (module, target) = lab::terraform(&dir, d.runtime, tf).map_err(ImportError::Generate)?;
+    let (module, target) = lab::terraform(&dir, d.runtime, tf);
     let manifest = module.join("run.json");
     if !manifest.is_file() {
         lab::prepare(&dir, target).map_err(ImportError::Generate)?;

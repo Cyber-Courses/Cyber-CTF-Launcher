@@ -7,12 +7,13 @@ use crate::AppHandle;
 
 use super::inflight::{Action, DeployGuard, lock_lab};
 use super::paths::{lab_dir, local_vm, mark_local_vm, mark_parked, parked, runner_home, vagrant_dirs};
-use super::{Park, Runtime, docker, isothrum, lab, server, vm};
+use super::{LabRef, Park, Runtime, docker, isothrum, lab, server, vm};
 use crate::error::{Error, Result};
 
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
 /// that took an hour to build comes back in seconds (paused) or a boot (shut down), not a rebuild.
-async fn park(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
+async fn park(app: &AppHandle, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
+    let LabRef { dir, id, runtime } = lab;
     let _lock = lock_lab(app, id).await?;
     let _deploy = DeployGuard::new(id, Action::Park);
     refuse_cloud_park(runtime)?;
@@ -92,7 +93,8 @@ pub(super) async fn resume_locked(app: &AppHandle, dir: &Path, id: &str, runtime
 /// machine whose provisioning was cut short, without rebuilding the lab. Inputs the lab declared
 /// (`isoloom.yml` `inputs`) were given at launch and aren't kept, so a lab that provisions from
 /// them gets none here; the labs so far declare none.
-async fn provision(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, machine: Option<&str>, mut log: impl FnMut(String)) -> Result<()> {
+async fn provision(app: &AppHandle, lab: LabRef<'_>, machine: Option<&str>, mut log: impl FnMut(String)) -> Result<()> {
+    let LabRef { dir, id, runtime } = lab;
     if runtime != Runtime::Vm {
         return Err(Error::Invalid("Container labs aren't provisioned in place: use Reset for a clean copy.".into()));
     }
@@ -156,12 +158,13 @@ pub(super) async fn stop_locked(app: &AppHandle, dir: &Path, id: &str, runtime: 
     // On a server host or cloud account: destroyed through the runner, which replays the
     // parameters it was applied with; the connection given here is the one that works now.
     let mut log = log;
+    let lab = LabRef { dir, id, runtime };
     let result = if c.provider == super::providers::Provider::VmwareEsxi {
-        stop_esxi_run(app, dir, id, runtime, &c, &mut log).await
+        stop_esxi_run(app, lab, &c, &mut log).await
     } else if c.provider.is_cloud() {
         stop_cloud_run(app, CloudStop { dir, id, runtime, conn: &c }, &mut log).await
     } else {
-        stop_server_run(app, dir, id, runtime, &c, &mut log).await
+        stop_server_run(app, lab, &c, &mut log).await
     };
     if result.is_ok() {
         forget_run(dir)?;
@@ -177,7 +180,8 @@ pub(super) async fn stop_docker_in_vm_run(home: &std::path::Path, dir: &Path, id
 }
 
 /// Destroys a Proxmox lab the runner runs (connection `c`, the server's as it is now).
-async fn stop_server_run(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
+async fn stop_server_run(app: &AppHandle, lab: LabRef<'_>, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
+    let LabRef { dir, id, runtime } = lab;
     let host = server::marked_host(dir).unwrap_or_default();
     let run = isothrum::ServerRun::new(&runner_home(app)?, dir, id, runtime)?;
     let place = super::launch::server_place(app, &host, c, &run).await?;
@@ -185,7 +189,8 @@ async fn stop_server_run(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime
 }
 
 /// Destroys an ESXi lab the runner runs (connection `c`, the server's as it is now).
-async fn stop_esxi_run(app: &AppHandle, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
+async fn stop_esxi_run(app: &AppHandle, lab: LabRef<'_>, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
+    let LabRef { dir, id, runtime } = lab;
     super::launch::esxi_run(app, dir, id, runtime, c)?.down(log).await
 }
 
@@ -270,7 +275,8 @@ pub async fn clear_parked(dir: &Path, id: &str, log: &impl Fn(String)) {
 // The bodies of the lab operations the deploy worker runs (`deploy_worker::execute`), by lab id.
 
 pub async fn park_lab(app: &AppHandle, id: &str, runtime: Runtime, mode: Park, log: impl FnMut(String)) -> Result<()> {
-    park(app, &lab_dir(app, id)?, id, runtime, mode, log).await
+    let dir = lab_dir(app, id)?;
+    park(app, LabRef { dir: &dir, id, runtime }, mode, log).await
 }
 
 pub async fn resume_lab(app: &AppHandle, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
@@ -278,7 +284,8 @@ pub async fn resume_lab(app: &AppHandle, id: &str, runtime: Runtime, log: impl F
 }
 
 pub async fn provision_lab(app: &AppHandle, id: &str, runtime: Runtime, machine: Option<&str>, log: impl FnMut(String)) -> Result<()> {
-    provision(app, &lab_dir(app, id)?, id, runtime, machine, log).await
+    let dir = lab_dir(app, id)?;
+    provision(app, LabRef { dir: &dir, id, runtime }, machine, log).await
 }
 
 /// How lab `id` runs on this machine, for a Stop of what the Machine page found of it there

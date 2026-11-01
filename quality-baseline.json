@@ -3,9 +3,6 @@
     "dup/clone": {
       "rs:runtime": 4
     },
-    "exception/without-reason": {
-      "rs:runtime": 1
-    },
     "rust/tauri-outside-adapters": {
       "rs:account": 1,
       "rs:deploy_worker": 3,
@@ -15,20 +12,11 @@
   },
   "clippy": {
     "darwin": {
-      "clippy/fn_params_excessive_bools": {
-        "rs:runtime": 1
-      },
       "clippy/items_after_statements": {
         "rs:runtime": 2
       },
       "clippy/needless_pass_by_value": {
-        "rs:runtime": 8
-      },
-      "clippy/too_many_arguments": {
-        "rs:runtime": 8
-      },
-      "clippy/unnecessary_wraps": {
-        "rs:runtime": 2
+        "rs:runtime": 5
       }
     },
     "linux": {
@@ -266,7 +254,7 @@
       "#![allow(unsafe_code, reason = \"the audited home of the launcher's calls into libc and Win32\")]": 1
     },
     "src-tauri/src/runtime/launch.rs": {
-      "#[allow(clippy::too_many_arguments)]": 2
+      "#[allow(clippy::too_many_arguments, reason = \"mirrors start_locked's full launch specification so tests start a lab by the same parameters\")]": 1
     },
     "src/app/layout.tsx": {
       "eslint-disable-next-line @next/next/no-sync-scripts -- must run before first paint to avoid a flash of the wrong mode": 1
