@@ -539,6 +539,19 @@ mod tests {
         assert_eq!(stream_failure(&["no space left".into()], "exit status: 1"), "no space left (exited with exit status: 1)");
     }
 
+    /// A tool that exits non-zero and prints nothing (a `docker` whose daemon just went away)
+    /// must still leave the player something to read: the command it ran, with its (empty)
+    /// stderr after it, in the same shape as a failure that explained itself.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_tool_failing_without_a_word_still_names_its_command() {
+        let err = run_read("sh", &["-c", "exit 3"], None).await.unwrap_err();
+        assert!(matches!(err, Error::CommandFailed { ref command, ref stderr } if command == "sh -c exit 3" && stderr.is_empty()), "{err:?}");
+        assert_eq!(err.to_string(), "`sh -c exit 3` failed: ");
+        assert_eq!(err.code(), crate::error::Code::CommandFailed { command: "sh -c exit 3".into(), stderr: String::new() });
+        assert!(!timed_out(&err));
+    }
+
     #[test]
     fn a_missing_tool_is_named() {
         let err = spawn_error("vagrant")(std::io::Error::from(std::io::ErrorKind::NotFound));

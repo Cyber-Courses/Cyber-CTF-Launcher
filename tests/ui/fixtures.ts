@@ -1,5 +1,6 @@
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 import type { Holdable } from "../../src/lib/dev-mock/holds";
+import type { CommandError } from "../../src/lib/tauri/generated/CommandError";
 
 /** The six languages the launcher ships (src/lib/i18n). */
 export const LOCALES = ["en", "fr", "es", "de", "pt-BR", "ja"] as const;
@@ -130,16 +131,16 @@ export function horizontalOverflow(page: Page) {
   });
 }
 
-/** How a forced command answers: an error, or a value; only once the test lets it
- *  (`releaseForced`) when `held`. */
-export type Forced = ({ error: string } | { value: unknown }) & { held?: boolean };
+/** How a forced command answers: an error (the Rust core's, with its code, or plain text as a
+ *  tool's), or a value; only once the test lets it (`releaseForced`) when `held`. */
+export type Forced = ({ error: string | CommandError } | { value: unknown }) & { held?: boolean };
 
 /**
  * Makes some Tauri commands fail (or answer `value`) on every page of the test, ahead of the dev
  * mock, which answers the rest: the mock installs its `invoke` on `__TAURI_INTERNALS__`, and this
  * wraps whatever is installed. A `held` command stays in flight until the test calls
  * `releaseForced`, so the UI's state while it runs can be checked without racing it. Call before
- * `openApp`.
+ * `openApp`; `reforce` changes the forced commands later, while the test runs.
  */
 export async function forceCommands(page: Page, forced: Record<string, Forced>) {
   await page.addInitScript((forced: Record<string, Forced>) => {
@@ -179,12 +180,30 @@ export async function forceCommands(page: Page, forced: Record<string, Forced>) 
         };
       },
     });
-    const w = window as unknown as { __TAURI_INTERNALS__: unknown; __CYBERCTF_MOCK__: boolean; __E2E_RELEASE_FORCED__: (cmd: string) => void };
+    const w = window as unknown as {
+      __TAURI_INTERNALS__: unknown;
+      __CYBERCTF_MOCK__: boolean;
+      __E2E_RELEASE_FORCED__: (cmd: string) => void;
+      __E2E_REFORCE__: (changes: Record<string, Forced | null>) => void;
+    };
     w.__TAURI_INTERNALS__ = internals;
     w.__E2E_RELEASE_FORCED__ = (cmd) => {
       const gate = gates.get(cmd);
       if (!gate) throw new Error(`${cmd} isn't a held forced command`);
       gate.resolve();
+    };
+    // Forcings changed while the test runs: the next invoke of each command answers the new way
+    // (null: the mock answers it again).
+    w.__E2E_REFORCE__ = (changes) => {
+      for (const [cmd, f] of Object.entries(changes)) {
+        if (f === null) {
+          delete forced[cmd];
+          gates.delete(cmd);
+        } else {
+          forced[cmd] = f;
+          if (f.held) gates.set(cmd, Promise.withResolvers<void>());
+        }
+      }
     };
     // Lets the dev mock install itself over these internals.
     w.__CYBERCTF_MOCK__ = true;
@@ -196,6 +215,16 @@ export async function releaseForced(page: Page, cmd: string) {
   await page.evaluate((c) => {
     (window as unknown as { __E2E_RELEASE_FORCED__: (cmd: string) => void }).__E2E_RELEASE_FORCED__(c);
   }, cmd);
+}
+
+/** Changes the forced commands of `page` (see `forceCommands`, which must have run for it) while
+ *  the test runs: a command's new answer, or null to let the mock answer it again. For what a
+ *  forcing in place since the page loaded can't say: a start that fails once and then goes
+ *  through, a session that is gone only after the start that found out. */
+export async function reforce(page: Page, changes: Record<string, Forced | null>) {
+  await page.evaluate((c) => {
+    (window as unknown as { __E2E_REFORCE__: (changes: Record<string, Forced | null>) => void }).__E2E_REFORCE__(c);
+  }, changes);
 }
 
 /** Sends an app event (what the Rust core emits: `quit-blocked`, `deep-link://new-url`…) to the

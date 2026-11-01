@@ -242,6 +242,33 @@ mod tests {
         let v = serde_json::to_value(super::Tool { installed: true, version: Some("1".into()) }).unwrap();
         assert_eq!(v, serde_json::json!({ "installed": true, "version": "1" }));
     }
+
+    /// A tool whose probe fails (a wedged daemon, a tool refusing `--version`; a timed-out probe
+    /// is the same failure) or that isn't installed reads as not installed with no version, and
+    /// the check runs on: a report is always produced, never an error for one tool.
+    #[tokio::test]
+    async fn a_probe_that_fails_or_finds_no_tool_reads_as_not_installed() {
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let _tools = Tools::new(|program, _| match program {
+            "docker" => fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"),
+            "vagrant" | "az" => None,
+            _ => ok("Terraform v1.9.8\n"),
+        });
+        let failing = super::probe("docker", &["--version"]).await;
+        assert!(!failing.installed && failing.version.is_none());
+        let missing = super::probe("vagrant", &["--version"]).await;
+        assert!(!missing.installed && missing.version.is_none());
+        let found = super::probe("terraform", &["version"]).await;
+        assert_eq!((found.installed, found.version.as_deref()), (true, Some("Terraform v1.9.8")));
+        let az = super::probe_azure().await;
+        assert!(!az.installed && az.version.is_none());
+        // The whole check, with Docker down and Vagrant missing: the report says so for them.
+        let t = crate::testing::test_app::TestApp::new();
+        let report = super::system_check(t.dirs()).await;
+        assert!(!report.docker.installed && !report.docker_running && !report.docker_denied);
+        assert!(!report.vagrant.installed && !report.cloud_clis.azure.installed);
+        assert!(report.terraform.installed);
+    }
 }
 
 #[cfg(test)]

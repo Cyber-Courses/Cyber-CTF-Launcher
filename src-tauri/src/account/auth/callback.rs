@@ -290,6 +290,29 @@ mod tests {
         assert!(page.contains("Sign-in didn't finish"));
         assert!(task.await.unwrap().is_err());
     }
+
+    /// Every loopback port registered on the OAuth client is taken (another launcher, another
+    /// app): the sign-in fails naming the problem, instead of listening on a port cyber-auth would
+    /// never redirect to. Freed, the first free one is taken again.
+    #[tokio::test]
+    async fn sign_in_fails_plainly_when_every_callback_port_is_busy() {
+        // The browser sign-in test binds one of these ports while it runs.
+        let _serial = crate::account::auth::waiting::tests::ONE_AT_A_TIME.lock().await;
+        let mut held = Vec::new();
+        for port in config::REDIRECT_PORTS {
+            // One something else already holds is busy all the same.
+            if let Ok(listener) = TcpListener::bind(("127.0.0.1", port)).await {
+                held.push(listener);
+            }
+        }
+        let err = bind_loopback().await.unwrap_err();
+        assert!(matches!(err, Error::Invalid(_)), "{err:?}");
+        assert_eq!(err.to_string(), "no free login callback port (47290-47292)");
+        drop(held);
+        let (listener, port) = bind_loopback().await.unwrap();
+        assert!(config::REDIRECT_PORTS.contains(&port));
+        assert_eq!(listener.local_addr().unwrap().port(), port);
+    }
 }
 
 #[cfg(test)]

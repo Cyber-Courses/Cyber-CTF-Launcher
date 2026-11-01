@@ -2,71 +2,98 @@
 // attack-box panel (WdioAttack), let it attach the attack box, see it running with an address,
 // open the attacker shell, then Stop it and watch it detach. Drives the same useAttackBox /
 // AttackBoxPanel / useLabShell the catalogue lab page uses.
-import { remote } from "webdriverio";
-import { spawn } from "node:child_process";
-import { setTimeout as sleep } from "node:timers/promises";
+import { existsSync } from "node:fs";
+import { finish, forceVisible, goTo, mainText, openApp, sleep, waitAwake, waitForLab } from "./lib.mjs";
 
 const LAB = process.env.CYBERCTF_TEST_LOCAL_LAB;
-const PORT = 4445;
-const BIN = new URL("../../src-tauri/target/debug/cyberctf-desktop", import.meta.url).pathname;
+if (!LAB || !existsSync(LAB)) {
+  console.log(`no lab at CYBERCTF_TEST_LOCAL_LAB=${LAB}`);
+  process.exit(2);
+}
 const text = (b) => b.$("[data-wdio-attack]").getText().catch(() => "");
 
-const proc = spawn(BIN, [], { env: { ...process.env, TAURI_WEBDRIVER_PORT: String(PORT) }, stdio: ["ignore", "pipe", "pipe"] });
-for (let i = 0; i < 60; i++) { try { if ((await fetch(`http://127.0.0.1:${PORT}/status`)).ok) break; } catch {} await sleep(1000); }
-const b = await remote({ hostname: "127.0.0.1", port: PORT, path: "/", logLevel: "error", capabilities: { browserName: "wry", "wdio:enforceWebDriverClassic": true } });
 let rc = 0;
+let proc;
+let b;
 try {
   // 1. Launch the local lab through the real import path and wait until it runs here.
-  await b.execute((p) => { try { localStorage.setItem("cyberctf.onboarded", "1"); localStorage.setItem("cyberctf.locale", "en"); localStorage.setItem("__wdio_launch_local__", p); } catch {} }, LAB);
-  await b.refresh();
-  await b.$("aside nav").waitForExist({ timeout: 25000 });
-  await (await b.$("aside nav").$("button*=Overview")).click();
-  await b.waitUntil(async () => /\blab[s]? running on this machine\b/i.test(await b.$("main").getText().catch(() => "")) && !/Nothing running/i.test(await b.$("main").getText().catch(() => "")), { timeout: 220000, interval: 4000, timeoutMsg: "lab never ran" });
+  ({ proc, b } = await openApp({ storage: { __wdio_launch_local__: LAB } }));
+  await goTo(b, "Overview");
+  await waitForLab(b, 220000, "lab never ran");
 
   // 2. Read the running lab's id off the Overview. The page also carries container names
-  //    (`<id>-isoloom-<role>…`), so strip any `-isoloom-*` suffix to get the bare lab id.
-  const main = await b.$("main").getText();
-  const raw = (main.match(/\blocal-[a-z0-9_-]+/i) || [])[0];
+  //    (`<id>-isoloom-<role>…`), so strip any `-isoloom-*` suffix to get the bare lab id. No word
+  //    boundary before `local-`: getText() glues the id to the title before it ("…Apilocal-…").
+  const main = await mainText(b);
+  const raw = (main.match(/local-[a-z0-9_-]+/) || [])[0];
   const id = raw && raw.split("-isoloom-")[0];
   if (!id) throw new Error(`no local lab id on the Overview:\n${main.slice(0, 400)}`);
 
   // 3. Mount the real attack-box panel for that lab (same panel the lab page shows).
-  await b.execute((v) => { try { localStorage.setItem("__wdio_attack__", v); } catch {} }, id);
+  await b.execute((v) => {
+    try {
+      localStorage.setItem("__wdio_attack__", v);
+    } catch {
+      /* storage unavailable */
+    }
+  }, id);
   await b.refresh();
   await b.$("[data-wdio-attack]").waitForExist({ timeout: 25000 });
-  // A headless window can report hidden, which pauses the status poll; force it visible and nudge.
-  await b.execute(() => {
-    try {
-      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
-      Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
-      document.dispatchEvent(new Event("visibilitychange"));
-      window.dispatchEvent(new Event("focus"));
-    } catch {}
-  });
+  // The reload dropped the visibility override; the panel's status poll needs it back.
+  await forceVisible(b);
 
   // 4. The panel auto-attaches the box; wait until it reports it up. The "Stop attack box" control
   //    shows only when the runner reports the box running, so it is the definitive up signal.
   try {
-    await b.waitUntil(async () => /Stop attack box/.test(await text(b)), { timeout: 90000, interval: 3000 });
+    await waitAwake(b, async () => /Stop attack box/.test(await text(b)), { timeout: 90000, interval: 3000, timeoutMsg: "the panel never showed the box running" });
   } catch (e) {
     const vis = await b.execute(() => document.visibilityState).catch(() => "?");
     await b.execute((v) => {
       window.__diag = "pending";
       const inv = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
-      if (!inv) { window.__diag = "no-invoke"; return; }
+      if (!inv) {
+        window.__diag = "no-invoke";
+        return;
+      }
       Promise.all([
-        inv("attack_box_status", { id: v, runtime: "DOCKER", network: null }).then((s) => ["box", s], (x) => ["box-err", String(x)]),
-        inv("lab_status", { id: v, runtime: "DOCKER" }).then((s) => ["lab", s], (x) => ["lab-err", String(x)]),
-      ]).then((r) => { window.__diag = JSON.stringify(r); }, (x) => { window.__diag = "ERR " + x; });
+        inv("attack_box_status", { id: v, runtime: "DOCKER", network: null }).then(
+          (s) => ["box", s],
+          (x) => ["box-err", String(x)],
+        ),
+        inv("lab_status", { id: v, runtime: "DOCKER" }).then(
+          (s) => ["lab", s],
+          (x) => ["lab-err", String(x)],
+        ),
+      ]).then(
+        (r) => {
+          window.__diag = JSON.stringify(r);
+        },
+        (x) => {
+          window.__diag = "ERR " + x;
+        },
+      );
     }, id);
-    let raw = "pending";
-    for (let i = 0; i < 30 && raw === "pending"; i++) { await sleep(500); raw = await b.execute(() => window.__diag).catch(() => "pending"); }
-    console.log(`DIAG id=${id} visibility=${vis} panel=${JSON.stringify((await text(b)).slice(0, 300))} invoke=${raw}`);
+    let diag = "pending";
+    for (let i = 0; i < 30 && diag === "pending"; i++) {
+      await sleep(500);
+      diag = await b.execute(() => window.__diag).catch(() => "pending");
+    }
+    console.log(`DIAG id=${id} visibility=${vis} panel=${JSON.stringify((await text(b)).slice(0, 300))} invoke=${diag}`);
     throw e;
   }
-  let ip = "(no ip shown)", pt = "";
+  let ip = "(no ip shown)";
+  let pt = "";
   // getText() can glue the address to its label ("Address10.61.136.2"), so no leading word boundary.
-  for (let i = 0; i < 10; i++) { pt = await text(b); const m = pt.match(/\d{1,3}(?:\.\d{1,3}){3}/); if (m) { ip = m[0]; break; } await sleep(1500); }
+  for (let i = 0; i < 10; i++) {
+    await forceVisible(b);
+    pt = await text(b);
+    const m = pt.match(/\d{1,3}(?:\.\d{1,3}){3}/);
+    if (m) {
+      ip = m[0];
+      break;
+    }
+    await sleep(1500);
+  }
   console.log(`ATTACK_UP box running on the lab network, address ${ip}` + (ip === "(no ip shown)" ? ` | panel=${JSON.stringify(pt.replace(/\s+/g, " ").slice(0, 220))}` : ""));
 
   // 5. The "Open attacker shell" button appears once the box is up; click it. A `*=` partial-text
@@ -94,11 +121,19 @@ try {
   const stopBtn = await b.$("[data-wdio-attack]").$("button*=Stop attack box");
   await stopBtn.waitForClickable({ timeout: 20000 });
   await stopBtn.click();
-  await b.waitUntil(async () => { const t = await text(b); return /not started|Start attack box/.test(t) && !/Address/.test(t); }, { timeout: 60000, interval: 2000, timeoutMsg: "attack box never detached" });
+  await waitAwake(
+    b,
+    async () => {
+      const t = await text(b);
+      return /not started|Start attack box/.test(t) && !/Address/.test(t);
+    },
+    { timeout: 60000, interval: 2000, timeoutMsg: "attack box never detached" },
+  );
   console.log("ATTACK_BOX_OK attached, ran with an address, opened a shell, then detached");
 } catch (e) {
   console.log("ATTACK_BOX_FAIL", e.message);
   rc = 1;
+} finally {
+  await finish(b, proc);
 }
-finally { await b.deleteSession().catch(() => {}); try { proc.kill("SIGKILL"); } catch {} }
 process.exit(rc);

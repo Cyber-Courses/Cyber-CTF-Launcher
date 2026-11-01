@@ -127,10 +127,15 @@ pub(super) async fn stop(dirs: &AppDirs, id: &str) -> Result<()> {
     if vagrant_dirs.is_empty() {
         return Err(Error::Invalid(format!("no VMs found for `{id}`")));
     }
+    // Every folder is attempted even after one fails (a lab's own destroy failing must not leave
+    // its attack VM behind); the first failure is what the stop reports once all were tried.
+    let mut first_failure = None;
     for dir in vagrant_dirs {
-        crate::platform::exec::Vagrant::of(&dir, &[]).run(&["destroy", "-f"]).await?;
+        if let Err(e) = crate::platform::exec::Vagrant::of(&dir, &[]).run(&["destroy", "-f"]).await {
+            first_failure.get_or_insert(e);
+        }
     }
-    Ok(())
+    first_failure.map_or(Ok(()), Err)
 }
 
 #[cfg(test)]
@@ -223,5 +228,31 @@ mod tests {
         assert_eq!((w[0].id.as_str(), w[0].count, w[0].provider.as_deref()), ("goad", 2, Some("virtualbox")));
         assert_eq!((w[1].id.as_str(), w[1].count, w[1].kind), ("selftest", 1, "vm"));
         assert!(running_by_owner(&out, None, None).is_empty());
+    }
+
+    /// The first `vagrant destroy -f` failing (a locked VirtualBox, a VM half-removed by hand)
+    /// used to end the stop there, leaving the other folders, the attack VM's included, running.
+    /// Each folder is still attempted, and the stop reports that first failure once all were.
+    #[tokio::test]
+    async fn a_failed_destroy_still_destroys_the_other_folders_and_is_reported() {
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let t = crate::testing::test_app::TestApp::new();
+        let lab = t.lab("goad", &[]);
+        let out = crate::runtime::lab::out(&lab);
+        for d in [out.join("vagrant"), out.join("docker-vm"), lab.join(".cyberctf-attack-vm")] {
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("Vagrantfile"), "").unwrap();
+        }
+        let mut destroys = 0;
+        let tools = Tools::new(move |_, args| {
+            if args.first() != Some(&"destroy") {
+                return ok("");
+            }
+            destroys += 1;
+            if destroys == 1 { fail("VBoxManage: error: The object is not ready") } else { ok("") }
+        });
+        let err = super::stop(&t.dirs(), "goad").await.unwrap_err().to_string();
+        assert!(err.contains("The object is not ready"), "{err}");
+        assert_eq!(tools.calls().iter().filter(|c| c.as_str() == "vagrant destroy -f").count(), 3, "{:?}", tools.calls());
     }
 }

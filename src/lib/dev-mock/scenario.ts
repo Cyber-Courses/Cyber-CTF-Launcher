@@ -1,5 +1,6 @@
 // The browser preview's scenarios: the switches next to `?mock` in the URL, and the machine the
 // system check reports for them.
+import type { CommandError } from "@/lib/errors";
 import type { Provider, ProviderStatus, SystemReport } from "@/lib/tauri";
 import { type Holdable, isHoldable } from "@/lib/dev-mock/holds";
 import { report } from "@/lib/dev-mock/sample";
@@ -9,8 +10,13 @@ import { report } from "@/lib/dev-mock/sample";
  * them; `answer` (sample.ts) stays the plain sample data the component tests build on):
  *  - `os=macos|windows|linux`, `arch=arm64|x86_64`: the machine the system check reports.
  *  - `machine=fresh`: nothing installed yet (no package manager, engine, Vagrant or hypervisor).
+ *  - `docker=stopped|denied`: the container engine is installed but stopped, or running yet
+ *    refusing this account (the report carries the hint, with its code, as the core sends it).
+ *  - `catalogue=arm64vm`: the catalogue also has a VM lab built for arm64 (Edge router), so an
+ *    Apple Silicon Mac can run one on UTM.
  *  - `onboarding`: the first-run onboarding shows (on every load with the switch).
- *  - `auth=out`: signed out until "Sign in" is used.
+ *  - `auth=out`: signed out until "Sign in" is used, in any of the preview's tabs (a sign-in or
+ *    sign-out is kept in the browser's storage, as the saved servers are; see session.ts).
  *  - `launch=fail`: the first lab start of each page load fails, after a few lines of output.
  *  - `hold=<step>[,<step>…]`: each step waits, once reached, until the test lets it go on
  *    (`window.__CYBERCTF_MOCK_RELEASE__(step)`): a lab start (`launch`), a re-run of provisioning
@@ -32,6 +38,10 @@ export type Scenario = {
   os: "macos" | "windows" | "linux";
   arch: "arm64" | "x86_64";
   fresh: boolean;
+  /** The container engine: running, installed but stopped, or refusing this account. */
+  docker: "running" | "stopped" | "denied";
+  /** With `arm64vm`, the catalogue also lists the VM lab built for arm64 (labs.ts `extraLabs`). */
+  catalogue: "default" | "arm64vm";
   onboarding: boolean;
   signedOut: boolean;
   launchFails: boolean;
@@ -46,10 +56,13 @@ export type Scenario = {
 export function scenarioFrom(search: string): Scenario {
   const q = new URLSearchParams(search);
   const os = q.get("os");
+  const docker = q.get("docker");
   return {
     os: os === "windows" || os === "linux" ? os : "macos",
     arch: q.get("arch") === "x86_64" ? "x86_64" : "arm64",
     fresh: q.get("machine") === "fresh",
+    docker: docker === "stopped" || docker === "denied" ? docker : "running",
+    catalogue: q.get("catalogue") === "arm64vm" ? "arm64vm" : "default",
     onboarding: q.has("onboarding"),
     signedOut: q.get("auth") === "out",
     launchFails: q.get("launch") === "fail",
@@ -107,6 +120,25 @@ function fresh(ready: SystemReport): SystemReport {
   };
 }
 
+/** `ready` with its container engine installed but not answering: stopped, or (`denied`) running
+ *  yet refusing this account, with the hint the core sends (a coded error: the group to join on
+ *  Linux and macOS, the Windows one on Windows). */
+function engineDown(ready: SystemReport, docker: Exclude<Scenario["docker"], "running">): SystemReport {
+  const denied = docker === "denied";
+  const hint: CommandError =
+    ready.os === "windows"
+      ? { code: "dockerDeniedWindows", args: { user: "florian" }, message: "docker: permission denied (add florian to the docker-users group)" }
+      : { code: "dockerDenied", args: { user: "florian" }, message: "docker: permission denied (add florian to the docker group)" };
+  return {
+    ...ready,
+    dockerRunning: false,
+    dockerEngine: null,
+    dockerEnginesRunning: [],
+    dockerDenied: denied,
+    dockerDeniedHint: denied ? hint : null,
+  };
+}
+
 /** The system check's answer for a scenario. */
 export function scenarioReport(sc: Scenario): SystemReport {
   const appleSilicon = !sc.fresh && sc.os === "macos" && sc.arch === "arm64";
@@ -124,5 +156,6 @@ export function scenarioReport(sc: Scenario): SystemReport {
     dockerEnginesRunning: [engine],
     vmProviders: [...local, ...report.vmProviders.filter((p) => p.remote)],
   };
-  return sc.fresh ? fresh(ready) : ready;
+  if (sc.fresh) return fresh(ready);
+  return sc.docker === "running" ? ready : engineDown(ready, sc.docker);
 }

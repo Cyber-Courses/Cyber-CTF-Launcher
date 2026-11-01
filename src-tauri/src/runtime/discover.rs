@@ -327,6 +327,32 @@ async fn prefixed_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> 
 mod tests {
     use std::collections::HashMap;
 
+    /// The UTM probe end to end with a scripted `utmctl`: its started VMs reach the installed labs
+    /// through the name reader and the ` · ` matcher, from the VM probes down. A `utmctl` that
+    /// fails (UTM not running) or isn't installed contributes nothing, without failing the scan.
+    #[tokio::test]
+    async fn a_scripted_utmctl_maps_started_vms_to_labs_and_a_failing_one_contributes_nothing() {
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
+        let listing = "UUID  Status  Name\na started  minilab · dc01\nb started  minilab · ws01\nc stopped  minilab · router\n";
+        let tools = Tools::new(move |program, _| match program {
+            "utmctl" => ok(listing),
+            _ => None,
+        });
+        let found = std::collections::BTreeSet::from(["mid".to_string()]);
+        assert_eq!(super::middot_vm_ids(&by_name).await, found);
+        assert_eq!(super::vm_lab_ids(&by_name).await, found);
+        assert!(tools.called("utmctl list"), "{:?}", tools.calls());
+        drop(tools);
+        let tools = Tools::new(|program, _| match program {
+            "utmctl" => fail("Error: UTM is not running"),
+            _ => None,
+        });
+        assert!(super::middot_vm_ids(&by_name).await.is_empty());
+        assert!(super::vm_lab_ids(&by_name).await.is_empty());
+        assert!(tools.called("utmctl list"), "{:?}", tools.calls());
+    }
+
     #[test]
     fn docker_projects_keep_only_cyberctf_labs_stripped_and_unique() {
         let out = "cyberctf-invoice-portal-api\n\ncyberctf-invoice-portal-api\nother-project\ncyberctf-goad-light\n";

@@ -226,4 +226,33 @@ mod tests {
         assert_eq!(parse_size("7 parsecs"), 0);
         assert!(containers_by_lab("lonely-line\n").is_empty());
     }
+
+    /// Stopping a lab while the Docker daemon is down: every docker call fails, yet the stop
+    /// returns Ok (there is nothing of the lab to leave half-done), having tried each cleanup in
+    /// its order. Only a leftover the daemon lists but can't remove is a failure worth showing.
+    #[tokio::test]
+    async fn stopping_a_lab_while_the_daemon_is_down_is_not_an_error() {
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let tools = Tools::new(|_, _| fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"));
+        super::stop("sqli").await.unwrap();
+        assert_eq!(
+            tools.calls(),
+            [
+                "docker compose -p cyberctf-sqli down -t 5 --volumes --remove-orphans",
+                "docker rm -f cyberctf-sqli-isoloom-access cyberctf-sqli-attacker cyberctf-sqli-exegol",
+                "docker ps -aq --filter label=com.docker.compose.project=cyberctf-sqli",
+            ]
+        );
+        drop(tools);
+        // The daemon answers and still lists two containers of this project that it then can't
+        // remove: that is the error the player sees.
+        let tools = Tools::new(|_, args| match args.first() {
+            Some(&"ps") => ok("aaa111\nbbb222\n"),
+            Some(&"rm") if args.len() == 4 => fail("permission denied"),
+            _ => ok(""),
+        });
+        let err = super::stop("sqli").await.unwrap_err().to_string();
+        assert!(err.starts_with("`docker rm -f aaa111 bbb222` failed: permission denied"), "{err}");
+        assert_eq!(tools.calls().len(), 4, "{:?}", tools.calls());
+    }
 }

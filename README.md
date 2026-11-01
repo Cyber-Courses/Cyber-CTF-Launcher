@@ -120,7 +120,12 @@ pnpm format             # Prettier (src/) + rustfmt (src-tauri/)
 pnpm check              # formatting, types, lint, clippy
 cd src-tauri && cargo test
 cargo test -- --ignored --nocapture   # prints this machine's system report
+pnpm e2e                # the frontend in Chromium against the dev mock (Playwright)
+pnpm e2e:native         # the real app through its embedded WebDriver, with Docker and UTM
+pnpm release-check      # every layer, one verdict per step: the gate before a release
 ```
+
+[`docs/release-check.md`](docs/release-check.md) says what each layer proves, how the native scenarios are set up, and what stays manual.
 
 `.gitattributes` keeps every text file LF (Windows scripts CRLF) whatever `core.autocrlf` says; a checkout made before it may need `git add --renormalize .` once. The tests that syntax-check the Linux/macOS install scripts with `sh -n` skip that part where no `sh` is on PATH (Windows without Git's `usr\bin`); their other assertions still run.
 

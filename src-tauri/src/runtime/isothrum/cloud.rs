@@ -187,8 +187,11 @@ where
             continue;
         };
         // The account removed or unreadable: left for a later sweep rather than reported as a
-        // destroy failure (it may come back).
-        let Some(tf_env) = account(host) else { continue };
+        // destroy failure (it may come back). Said in the log, so a lab billing on is not silent.
+        let Some(tf_env) = account(host) else {
+            log::warn!("auto-stop: {name} is past its stop time, but its account {host} can't be used now; left for a later sweep");
+            continue;
+        };
         let open = runner.open(&record.manifest, Some(record.name.clone())).map(|r| r.with_connection(connection_secrets(&tf_env)));
         let sink = progress::silent();
         let outcome = match open {
@@ -205,6 +208,40 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A cloud run the runner lists as expired, as it records one: `cyberctf-<lab>`, started on
+    /// account `host`, its stop time long past. Its manifest is not there (the lab's files gone).
+    fn expired_record(home: &Path, lab: &str, host: &str) {
+        let name = format!("cyberctf-{lab}");
+        let dir = home.join("runs").join(&name);
+        std::fs::create_dir_all(&dir).unwrap();
+        let record = serde_json::json!({
+            "version": 0, "name": name, "manifest": home.join(lab).join("run.json"), "manifest_sha256": "ab".repeat(32),
+            "target": "cloud-docker", "driver": "terraform", "cloud": "aws", "host_label": host, "state": "ready", "params": {}, "expires_at": 1
+        });
+        std::fs::write(dir.join("record.json"), record.to_string()).unwrap();
+    }
+
+    /// An expired run whose account was removed since is left for a later sweep (the account may
+    /// come back), neither destroyed nor reported, and the sweep goes on: the other expired run is
+    /// still reaped (here its destroy fails, its lab's files being gone, so it is the one reported).
+    #[tokio::test]
+    async fn an_expired_run_whose_account_is_gone_is_skipped_and_the_others_still_swept() {
+        let home = std::env::temp_dir().join(format!("cyberctf-reap-{}", rand::random::<u32>()));
+        expired_record(&home, "orphan", "gone1");
+        expired_record(&home, "web", "aws1");
+        let asked = std::sync::Mutex::new(Vec::new());
+        let account = |host: &str| {
+            asked.lock().unwrap().push(host.to_string());
+            (host == "aws1").then(|| vec![("AWS_ACCESS_KEY_ID".to_string(), "AKIA".to_string())])
+        };
+        let failed = reap_expired(&home, SystemTime::now(), account).await;
+        assert_eq!(asked.into_inner().unwrap(), ["gone1", "aws1"], "every expired run's account is looked up");
+        let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["cyberctf-web"], "{failed:?}");
+        assert!(home.join("runs").join("cyberctf-orphan").join("record.json").is_file(), "the skipped run keeps its record");
+        std::fs::remove_dir_all(home).unwrap();
+    }
 
     fn place() -> CloudPlace {
         CloudPlace {

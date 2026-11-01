@@ -615,6 +615,59 @@ mod tests {
         assert!(matches!(login.await.unwrap(), Err(Error::Cancelled)));
     }
 
+    /// The stored session is corrupt (the file or keychain entry holds something that isn't a
+    /// session): the app shows signed out with no keychain error, and a call needing the account
+    /// says signed out rather than failing with a parse error.
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn a_corrupt_stored_session_reads_as_signed_out_without_an_error() {
+        let _serial = ONE_AT_A_TIME.lock().await;
+        let path = store::dev_session_path().unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "{\"access_token\":").unwrap();
+        let status = serde_json::to_value(auth_status().await).unwrap();
+        assert_eq!(status["loggedIn"], false);
+        assert!(status.get("keychainError").is_none(), "{status}");
+        assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
+        assert_eq!(signed_in_user().await, None);
+        auth_logout().await;
+    }
+
+    /// An access token past its margin with no refresh token kept (a sign-in that was given
+    /// none): the call says the session expired, asks cyber-auth for nothing, and leaves the
+    /// session as it is for the next sign-in to replace.
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn an_expired_session_without_a_refresh_token_says_session_expired() {
+        let _serial = ONE_AT_A_TIME.lock().await;
+        store::store(Session { refresh_token: None, expires_at: now() + 10, ..session() }).await.unwrap();
+        let renew = |_: String| -> std::future::Ready<Result<TokenResponse>> { panic!("there is no refresh token to send") };
+        let err = access_token_renewed_by(renew).await.unwrap_err();
+        assert_eq!(err.code(), Code::SessionExpired);
+        assert!(store::read().await.unwrap().is_some(), "the session was dropped");
+        auth_logout().await;
+    }
+
+    /// CyberBackend refusing a call (401: the token isn't accepted, 403: not allowed) is that
+    /// call's failure, in GraphQL's words: it never signs the player out. Only cyber-auth refusing
+    /// the refresh token does that, so the session is still there for the next call.
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn a_backend_refusal_keeps_the_session() {
+        let _serial = ONE_AT_A_TIME.lock().await;
+        store::store(Session { expires_at: now() + 3600, ..session() }).await.unwrap();
+        for status in ["401 Unauthorized", "403 Forbidden"] {
+            let body = r#"{"errors":[{"message":"not allowed"}]}"#;
+            let response = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+            let base = crate::platform::http::tests::serve_once(response.into_bytes()).await;
+            let token = access_token().await.unwrap();
+            let err = crate::account::api::send(base.trim_end_matches('/'), Some(token), "{ me { id } }", serde_json::Value::Null).await.unwrap_err();
+            assert_eq!((err.code(), err.to_string()), (Code::Other, "not allowed".to_string()), "{status}");
+            assert_eq!(access_token().await.unwrap(), "tok", "{status}: the session was dropped");
+        }
+        auth_logout().await;
+    }
+
     #[test]
     fn the_signed_in_user_is_the_tokens_subject_else_the_email() {
         use base64::Engine;
