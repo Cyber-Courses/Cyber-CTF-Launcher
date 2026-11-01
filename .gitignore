@@ -46,3 +46,6 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# native GUI e2e: logs and fixtures of e2e-native/run-all.sh
+/e2e-native/.state/

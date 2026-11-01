@@ -6,7 +6,7 @@ import { useT } from "@/lib/i18n";
 import { tell } from "@/lib/failure";
 import { notify } from "@/lib/notify";
 
-/** GUI e2e only: when `window.__WDIO_LAUNCH_LOCAL__` holds a lab-folder path, start that local lab
+/** GUI e2e only: when the `__wdio_launch_local__` localStorage key holds a lab-folder path, start that local lab
  *  exactly as the Import button does (the same `labLaunchLocal`, toasts and all), so an e2e can
  *  drive the local launch and its success/failure UI without the native folder picker. Inert unless
  *  a test sets the flag, which the shipped app never does. */

@@ -16,7 +16,10 @@
     "check": "pnpm check:tauri && prettier --check \"{src,scripts}/**/*.{ts,tsx,css}\" && pnpm typecheck && cargo fmt --manifest-path src-tauri/Cargo.toml --check && pnpm quality && vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
     "quality": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/quality/main.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "e2e": "playwright test",
+    "e2e:native": "e2e-native/run-all.sh",
+    "release-check": "dev/release-check.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",
