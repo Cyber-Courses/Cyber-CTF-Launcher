@@ -132,17 +132,23 @@ export async function labRunning(b) {
   return LAB_RUNNING.test(t) && !/Nothing running/i.test(t);
 }
 
-/** Wait until a lab shows as running on the Overview, keeping the page's polls awake meanwhile. */
-export function waitForLab(b, timeout = 220000, timeoutMsg = "lab not shown running") {
+/** `b.waitUntil(cond)` that keeps the page's polls awake: the visibility override is re-applied on
+ *  every tick, since a reload drops it and a covered window reports hidden again. */
+export function waitAwake(b, cond, { timeout, interval = 4000, timeoutMsg }) {
   let ticks = 0;
   return b.waitUntil(
     async () => {
       if ((await forceVisible(b)) && ticks > 0) console.log("visibility override re-applied (the page reloaded)");
       ticks += 1;
-      return labRunning(b);
+      return cond();
     },
-    { timeout, interval: 4000, timeoutMsg },
+    { timeout, interval, timeoutMsg },
   );
+}
+
+/** Wait until a lab shows as running on the Overview. */
+export function waitForLab(b, timeout = 220000, timeoutMsg = "lab not shown running") {
+  return waitAwake(b, () => labRunning(b), { timeout, timeoutMsg });
 }
 
 /**

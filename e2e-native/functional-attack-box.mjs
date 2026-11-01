@@ -3,7 +3,7 @@
 // open the attacker shell, then Stop it and watch it detach. Drives the same useAttackBox /
 // AttackBoxPanel / useLabShell the catalogue lab page uses.
 import { existsSync } from "node:fs";
-import { finish, forceVisible, goTo, mainText, openApp, sleep, waitForLab } from "./lib.mjs";
+import { finish, forceVisible, goTo, mainText, openApp, sleep, waitAwake, waitForLab } from "./lib.mjs";
 
 const LAB = process.env.CYBERCTF_TEST_LOCAL_LAB;
 if (!LAB || !existsSync(LAB)) {
@@ -45,7 +45,7 @@ try {
   // 4. The panel auto-attaches the box; wait until it reports it up. The "Stop attack box" control
   //    shows only when the runner reports the box running, so it is the definitive up signal.
   try {
-    await b.waitUntil(async () => /Stop attack box/.test(await text(b)), { timeout: 90000, interval: 3000 });
+    await waitAwake(b, async () => /Stop attack box/.test(await text(b)), { timeout: 90000, interval: 3000, timeoutMsg: "the panel never showed the box running" });
   } catch (e) {
     const vis = await b.execute(() => document.visibilityState).catch(() => "?");
     await b.execute((v) => {
@@ -85,6 +85,7 @@ try {
   let pt = "";
   // getText() can glue the address to its label ("Address10.61.136.2"), so no leading word boundary.
   for (let i = 0; i < 10; i++) {
+    await forceVisible(b);
     pt = await text(b);
     const m = pt.match(/\d{1,3}(?:\.\d{1,3}){3}/);
     if (m) {
@@ -120,7 +121,8 @@ try {
   const stopBtn = await b.$("[data-wdio-attack]").$("button*=Stop attack box");
   await stopBtn.waitForClickable({ timeout: 20000 });
   await stopBtn.click();
-  await b.waitUntil(
+  await waitAwake(
+    b,
     async () => {
       const t = await text(b);
       return /not started|Start attack box/.test(t) && !/Address/.test(t);

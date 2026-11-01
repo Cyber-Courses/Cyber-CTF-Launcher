@@ -197,8 +197,9 @@ vm_scan() {
 }
 
 # What a run leaves behind: the imported lab's containers (its Compose project and attack box).
+# `cleanup_lab final` is the run's last word and honours KEEP; between scenarios it always runs.
 cleanup_lab() {
-  [ -n "${KEEP:-}" ] && return 0
+  [ "${1:-}" = final ] && [ -n "${KEEP:-}" ] && return 0
   [ "$DOCKER_OK" -eq 1 ] || return 0
   if docker compose ls -q 2>/dev/null | grep -qx "cyberctf-$LAB_ID"; then
     say "cleanup: docker compose -p cyberctf-$LAB_ID down"
@@ -221,8 +222,10 @@ say "app: $APP_BIN"
 say "lab: $CYBERCTF_TEST_LOCAL_LAB ($LAB_NAME, id $LAB_ID)"
 [ "$DOCKER_OK" -eq 1 ] || say "docker is not answering: the scenarios that run a lab are skipped"
 
-# Order: the ones that need nothing, then the Docker ones (import, restart, stop, re-import, attack
-# box, kill mid-deploy), then the VM scan (the import left the lab installed), then cleanup.
+# Order: the ones that need nothing, then the Docker ones, then the VM scan (the import left the
+# lab installed), then cleanup. A scenario that imports the lab itself (the launch hook, the attack
+# box) or must catch its deploy under way starts from a stopped lab: importing a running one is
+# refused, which is a different scenario.
 run_case smoke e2e-native/run-embedded.sh
 run_mjs fail-offline
 run_mjs fail-badlab
@@ -234,14 +237,17 @@ if [ "$DOCKER_OK" -eq 1 ]; then
   run_mjs launch
   run_mjs restart
   run_mjs stop
+  cleanup_lab
   run_mjs launch-ui
-  run_mjs attack-box
+  cleanup_lab
   run_mjs kill-mid-deploy
+  cleanup_lab
+  run_mjs attack-box
 else
   for c in fail-docker launch restart stop launch-ui attack-box kill-mid-deploy; do skip "$c" "docker is not running"; done
 fi
 vm_scan
-cleanup_lab
+cleanup_lab final
 
 say "results"
 printf '   %s\n' "${RESULTS[@]}"
