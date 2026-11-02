@@ -11,9 +11,9 @@ import {
   type SystemReport,
 } from "@/lib/tauri";
 import { hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
+import { useRunLog } from "@/features/servers/host-setup/use-run-log";
 import { ignore, tell } from "@/lib/failure";
 import { translate } from "@/lib/i18n";
-import { describeError } from "@/lib/errors";
 
 /** Starts each self-test's download in the background as soon as the machine can run it. */
 function usePrefetch(report: SystemReport | null) {
@@ -39,7 +39,7 @@ function useInstalls(onRefresh: () => void) {
   const [installerOpened, setInstallerOpened] = useState(false);
   // "Turn on WSL 2" finished here: Windows needs a restart, whatever the last check said.
   const [wslTurnedOn, setWslTurnedOn] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
+  const { lines, run: runLog } = useRunLog();
   // What the log is about (an install id or a plugin): each step shows only its own.
   const [logsFor, setLogsFor] = useState<string | null>(null);
 
@@ -47,13 +47,7 @@ function useInstalls(onRefresh: () => void) {
   async function run(id: string, first: string, task: (onLog: (line: string) => void) => Promise<void>) {
     setInstalling(id);
     setLogsFor(id);
-    setLogs([first]);
-    const append = (line: string) => {
-      setLogs((l) => [...l, line]);
-    };
-    await task(append).catch((e: unknown) => {
-      append(`✗ ${describeError(e)}`);
-    });
+    await runLog(first, task);
     setInstalling(null);
     onRefresh();
   }
@@ -69,7 +63,7 @@ function useInstalls(onRefresh: () => void) {
   const installPlugin = (plugin: string) => {
     void run(plugin, translate("machine.vm.pluginLog", { plugin }), (onLog) => installVagrantPlugin(plugin, onLog));
   };
-  return { installing, installerOpened, wslTurnedOn, logs, logsFor, install, installPlugin };
+  return { installing, installerOpened, wslTurnedOn, logs: lines ?? [], logsFor, install, installPlugin };
 }
 
 /** Windows counts down to the restart that finishes WSL 2: kept with the flow, not the step, so a

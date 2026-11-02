@@ -7,10 +7,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LogConsole } from "@/components/ui/log-console";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { installedTools, uninstallDependency, type Dependency, type InstalledTool } from "@/lib/tauri";
+import { useRunLog } from "@/features/servers/host-setup/use-run-log";
 import { formatAgo } from "@/lib/format";
 import { warn } from "@/lib/failure";
 import { translate, useT } from "@/lib/i18n";
-import { describeError } from "@/lib/errors";
 
 const NAMES: Record<Dependency, string> = {
   docker: "Docker",
@@ -36,7 +36,7 @@ function toolName(dep: Dependency): string {
 function useInstalledTools() {
   const [tools, setTools] = useState<InstalledTool[]>([]);
   const [removing, setRemoving] = useState<Dependency | null>(null);
-  const [log, setLog] = useState<string[]>([]);
+  const { lines, run } = useRunLog();
 
   const load = useCallback(() => {
     installedTools().then(setTools).catch(warn("reading the tools Cyber CTF installed"));
@@ -45,22 +45,14 @@ function useInstalledTools() {
 
   const uninstall = async (dep: Dependency) => {
     setRemoving(dep);
-    setLog([translate("settings.installedTools.logRemoving", { name: toolName(dep) })]);
-    try {
-      await uninstallDependency(dep, (line) => {
-        setLog((l) => [...l, line]);
-      });
-    } catch (e) {
-      setLog((l) => [...l, `✗ ${describeError(e)}`]);
-    } finally {
-      setRemoving(null);
-      load();
-    }
+    await run(translate("settings.installedTools.logRemoving", { name: toolName(dep) }), (onLog) => uninstallDependency(dep, onLog));
+    setRemoving(null);
+    load();
   };
   const remove = (dep: Dependency) => {
     void uninstall(dep);
   };
-  return { tools, removing, log, remove };
+  return { tools, removing, log: lines ?? [], remove };
 }
 
 /** One installed tool: when setup installed it, and Remove. */

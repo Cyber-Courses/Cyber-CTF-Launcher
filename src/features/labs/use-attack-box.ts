@@ -9,7 +9,7 @@ import { ignore } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
 import { structurallyEqual } from "@/lib/equal";
 import { useLatest } from "@/lib/use-latest";
-import { describeError } from "@/lib/errors";
+import { useRunLog } from "@/features/servers/host-setup/use-run-log";
 
 /** The box image the learner chose for this lab's runtime: a Vagrant box beside a VM lab, a
  *  container image beside a container lab. The runner takes either as its attach image. */
@@ -58,25 +58,17 @@ function useAttackBoxStatus(labId: string, runtime: Runtime, active: boolean, lo
 /** An attach or detach of the box, with its streamed log; the status is read again after it. */
 function useAttackBoxRun(refresh: () => void) {
   const [busy, setBusy] = useState(false);
-  const [log, setLog] = useState<string[]>([]);
+  const { lines, run: runLog } = useRunLog();
   const run = useCallback(
     async (fn: (onLog: (l: string) => void) => Promise<void>, first: string) => {
       setBusy(true);
-      setLog([first]);
-      try {
-        await fn((line) => {
-          setLog((l) => [...l, line]);
-        });
-      } catch (e) {
-        setLog((l) => [...l, `✗ ${describeError(e)}`]);
-      } finally {
-        setBusy(false);
-        refresh();
-      }
+      await runLog(first, fn);
+      setBusy(false);
+      refresh();
     },
-    [refresh],
+    [runLog, refresh],
   );
-  return { busy, log, run };
+  return { busy, log: lines ?? [], run };
 }
 
 /** Attaches the box with the lab when Settings say so, once per run of the lab. Only a lab that is
