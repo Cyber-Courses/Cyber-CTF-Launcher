@@ -39,7 +39,6 @@
     "registering": "Registrando…",
     "notSignedIn": "Sin sesión iniciada",
     "signInHint": "Inicia sesión con tu cuenta Cyber para sincronizar labs y ejecutarlos desde cualquier dispositivo.",
-    "waitingBrowser": "Esperando al navegador…",
     "signIn": "Iniciar sesión"
   },
   "labs": {

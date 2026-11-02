@@ -20,6 +20,10 @@ pub(super) struct Session {
     pub expires_at: u64,
     pub name: Option<String>,
     pub email: Option<String>,
+    /// The account's picture (the ID token's `picture` claim); none for a session kept before
+    /// the launcher read it, or an account without one.
+    #[serde(default)]
+    pub picture: Option<String>,
 }
 
 /// Whether this build keeps the session in a file (a dev build) rather than the keychain.
@@ -302,7 +306,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cyberctf-session-{}", rand::random::<u64>()));
         let path = dir.join("nested").join("dev-session.json");
         assert!(load_file(&path).is_none());
-        let session = Session { access_token: "a".into(), refresh_token: Some("r".into()), expires_at: 42, name: Some("N".into()), email: None };
+        let session = Session { access_token: "a".into(), refresh_token: Some("r".into()), expires_at: 42, name: Some("N".into()), email: None, picture: None };
         save_file(&path, &serde_json::to_string(&session).unwrap()).unwrap();
         crate::platform::private_fs::tests::assert_private_with_folder(&path);
         let back = load_file(&path).unwrap();
@@ -329,7 +333,7 @@ mod tests {
         // app shows signed out without a keychain error, and a fresh sign-in replaces it.
         assert!(decode("not json".into(), |_| None).is_none());
         assert!(decode(r#"{"access_token":42,"expires_at":1}"#.into(), |_| None).is_none());
-        let long = Session { access_token: "x".repeat(3000), refresh_token: Some("r".into()), expires_at: 42, name: None, email: None };
+        let long = Session { access_token: "x".repeat(3000), refresh_token: Some("r".into()), expires_at: 42, name: None, email: None, picture: None };
         let (head, parts) = split_chunks(&serde_json::to_string(&long).unwrap()).unwrap();
         assert!(parts.len() >= 2);
         assert!(decode(head.clone(), |i| (i != 2).then(|| parts[i - 1].clone())).is_none(), "a missing piece");

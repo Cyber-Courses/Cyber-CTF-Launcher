@@ -35,7 +35,6 @@
     "description": "Connectez votre compte Cyber CTF pour enregistrer cette machine et lancer des labs depuis n'importe quel appareil.",
     "signedIn": "Connecté",
     "signedInAs": "Connecté en tant que {name}",
-    "waiting": "En attente du navigateur… (jusqu'à 5 minutes)",
     "button": "Se connecter avec le navigateur",
     "hint": "Ouvre <mono>cyberauth.co</mono> dans votre navigateur. Les labs fonctionnent aussi sans compte : vous pourrez vous connecter plus tard depuis les Réglages.",
     "skip": "Passer pour l'instant"

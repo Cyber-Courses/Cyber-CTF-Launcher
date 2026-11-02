@@ -63,7 +63,7 @@ export function OpenLab({
   status: LabStatus | undefined;
   actions: ReturnType<typeof useLabActions>;
   loggedIn: boolean;
-  onLogin?: () => Promise<void>;
+  onLogin?: () => Promise<boolean>;
   hostArch: string;
   readyVms: Provider[];
   report?: SystemReport | null;

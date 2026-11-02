@@ -77,7 +77,7 @@ export function LabsHeader({
 }
 
 /** Signed out: one sign-in prompt above the list, instead of a Sign in button on every row. */
-export function SignInBanner({ onLogin }: { onLogin: () => Promise<void> }) {
+export function SignInBanner({ onLogin }: { onLogin: () => Promise<boolean> }) {
   const t = useT();
   return (
     <Panel>
@@ -106,7 +106,7 @@ export type RowContext = {
   report: SystemReport | null | undefined;
   servers: ServerHost[];
   loggedIn: boolean;
-  onLogin?: () => Promise<void>;
+  onLogin?: () => Promise<boolean>;
   hostArch: string;
   emulates: boolean;
   onOpen: (lab: Lab) => void;

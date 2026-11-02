@@ -24,7 +24,7 @@ type HeaderActionsProps = {
   /** Asks to confirm, then stops and removes the lab. */
   onRemove: () => void;
   onStop: () => Promise<unknown>;
-  onLogin?: () => Promise<void>;
+  onLogin?: () => Promise<boolean>;
   /** When the start in flight began, for its timer. */
   startedAt?: number;
 };
@@ -99,7 +99,7 @@ function StartingButton({ operation, startedAt }: { operation: LabState["operati
 }
 
 /** Logged out: say so on the button and log in from it, rather than a greyed-out Start. */
-function SignInButton({ onLogin }: { onLogin?: () => Promise<void> }) {
+function SignInButton({ onLogin }: { onLogin?: () => Promise<boolean> }) {
   const t = useT();
   return (
     <Button

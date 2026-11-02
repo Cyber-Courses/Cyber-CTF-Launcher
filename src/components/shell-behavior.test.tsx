@@ -10,6 +10,7 @@ import { SettingsWindowView, isSettingsWindow } from "@/components/shell/setting
 import { useSystemCheck } from "@/components/shell/use-system-check";
 import { useAuthSession } from "@/components/shell/use-auth-session";
 import { Toaster } from "@/components/ui/toaster";
+import type { AuthStatus } from "@/lib/tauri";
 import { LaunchConfirm } from "@/features/app/launch-confirm";
 import { QuitGuard } from "@/features/app/quit-guard";
 import { AUTH_CHANGED_EVENT, NAVIGATE_EVENT, REPLAY_ONBOARDING_EVENT } from "@/lib/app-events";
@@ -485,6 +486,27 @@ describe("useAuthSession", () => {
     await act(() => emit(AUTH_CHANGED_EVENT, null));
     await flush();
     expect(calls.filter((c) => c.cmd === "auth_status").length).toBe(before + 2);
+  });
+
+  it("says once, as a toast, when a re-read finds the session expired under the app", async () => {
+    let status: AuthStatus = { loggedIn: true, name: "Ada", email: "ada@example.com" };
+    installTauri({ auth_status: () => status });
+    render(<Toaster />);
+    const { result } = renderHook(() => useAuthSession());
+    act(() => {
+      result.current.init();
+    });
+    await flush();
+    status = { loggedIn: false, name: null, email: null, sessionExpired: true };
+    fireEvent(window, new Event(SIGNED_OUT_EVENT));
+    await flush();
+    expect(result.current.auth?.sessionExpired).toBe(true);
+    expect(screen.getByRole("status").textContent).toContain("Signed out");
+    expect(screen.getByRole("status").textContent).toContain("Your session expired. Sign in again to continue.");
+    // Read again, still expired: not said twice.
+    fireEvent(window, new Event(SIGNED_OUT_EVENT));
+    await flush();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
   });
 
   it("keeps the last session when a re-read fails, and tells other windows of a change", async () => {

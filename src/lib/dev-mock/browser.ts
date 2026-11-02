@@ -8,26 +8,62 @@ import { labHandlers } from "@/lib/dev-mock/lab-ops";
 import type { BrowserHandler, Context } from "@/lib/dev-mock/live";
 import { machineHandlers } from "@/lib/dev-mock/machine";
 import { answer } from "@/lib/dev-mock/sample";
-import { isSignedIn, setSignedIn } from "@/lib/dev-mock/session";
+import { isSignedIn, sessionExpired, setSignedIn } from "@/lib/dev-mock/session";
 import { terminalHandlers } from "@/lib/dev-mock/terminal";
 import type { Args } from "@/lib/dev-mock/types";
 import type { DeviceCode } from "@/lib/tauri";
+import type { CommandError } from "@/lib/tauri/generated";
+
+/** Ends the sign-in waiting, if one is (as the core's `auth_login_cancel`, or a sign-in with a
+ *  code starting over a browser one): it rejects as cancelled. */
+let cancelSignIn: (() => void) | null = null;
+
+/** Settles once the `login` hold lets the sign-in through, or rejects as cancelled: taken at the
+ *  start of a sign-in, so a cancel during its first moments isn't lost. */
+function signInFinished(live: Context["live"]): Promise<void> {
+  cancelSignIn?.();
+  const finished = new Promise<void>((resolve, reject) => {
+    cancelSignIn = () => {
+      cancelSignIn = null;
+      reject(cancelled());
+    };
+    void live.holds.passed("login").then(() => {
+      cancelSignIn = null;
+      resolve();
+    });
+  });
+  // Rejected before it is awaited (a cancel during the sleep): not an unhandled rejection.
+  finished.catch(() => {});
+  return finished;
+}
+
+/** The core's `signInCancelled`: an Error (for the promise) that reads as a command error (its code). */
+const cancelled = (): Error & CommandError => Object.assign(new Error("Sign-in cancelled."), { code: "signInCancelled" as const });
 
 /** The sign-in, which `auth=out` starts without; shared by the preview's tabs (session.ts). */
 const accountHandlers: Record<string, BrowserHandler> = {
-  auth_status: (args, { sc }) => (isSignedIn(sc) ? answer("auth_status", args) : { loggedIn: false, name: null, email: null }),
-  auth_login: async (args) => {
+  auth_status: (args, { sc }) =>
+    isSignedIn(sc) ? answer("auth_status", args) : { loggedIn: false, name: null, email: null, ...(sessionExpired(sc) && { sessionExpired: true }) },
+  auth_login: async (args, { live }) => {
     // The link the "Copy the sign-in link" fallback offers.
+    const finished = signInFinished(live);
     send(args, "https://www.cyberauth.co/api/auth/oauth2/authorize?client_id=dev-mock", "events");
     await sleep(400);
+    await finished;
     setSignedIn(true);
     return answer("auth_login", args);
   },
-  auth_login_device: async (args) => {
+  auth_login_cancel: () => {
+    cancelSignIn?.();
+    return null;
+  },
+  auth_login_device: async (args, { live }) => {
     // The code the "Use a code instead" fallback shows, approved a moment later.
     const code: DeviceCode = { userCode: "WDJB-MJHT", verificationUri: "https://www.cyberauth.co/device", verificationUriComplete: null, expiresIn: 900 };
+    const finished = signInFinished(live);
     send(args, code, "events");
     await sleep(1500);
+    await finished;
     setSignedIn(true);
     return answer("auth_login_device", args);
   },

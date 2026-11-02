@@ -106,11 +106,19 @@ const servers = (): ServerList => ({
 let cpu = 38;
 let sharedFolder = { enabled: false, path: "/Users/florian/cyberctf-share", mountPoint: "/workspace/share" };
 
+/** The sample account's picture: drawn here, so the preview shows one without a CDN. */
+const PICTURE =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#1d1d22"/><circle cx="32" cy="25" r="11" fill="#5ad4a4"/><path d="M12 58c2-13 10-19 20-19s18 6 20 19z" fill="#5ad4a4"/></svg>',
+  );
+const player = () => ({ loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org", picture: PICTURE });
+
 /** The player, this install and the API. */
 const accountCommands = {
-  auth_status: () => ({ loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" }),
-  auth_login: () => ({ loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" }),
-  auth_login_device: () => ({ loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" }),
+  auth_status: player,
+  auth_login: player,
+  auth_login_device: player,
   agent_info: () => ({ installId: "c0ffee", name: "florian-mbp", arch: "arm64", capabilities: ["docker", "vagrant"] }),
   api_query: apiQuery,
 } satisfies Handlers;

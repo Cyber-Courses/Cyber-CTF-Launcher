@@ -39,7 +39,6 @@
     "registering": "Registering…",
     "notSignedIn": "Not signed in",
     "signInHint": "Sign in with your Cyber account to sync labs and run them from any device.",
-    "waitingBrowser": "Waiting for the browser…",
     "signIn": "Sign in"
   },
   "labs": {

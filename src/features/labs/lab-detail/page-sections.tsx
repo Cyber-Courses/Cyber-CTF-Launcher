@@ -18,6 +18,7 @@ import { ObserversPanel } from "@/features/labs/lab-detail/observers-panel";
 import { StartLabButton } from "@/features/labs/lab-detail/start-lab-button";
 import type { LabDetailProps, LabPage } from "@/features/labs/lab-detail/use-lab-detail";
 import { ObjectivesLoading, ObjectivesPanel } from "@/features/labs/objectives/objectives-panel";
+import { useStartAfterSignIn } from "@/features/labs/lab-detail/use-start-after-sign-in";
 import { useT } from "@/lib/i18n";
 
 // The sections of a lab's page: the header's actions, the notices under it, the deployment and
@@ -27,6 +28,7 @@ import { useT } from "@/lib/i18n";
 export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: HeaderMode; page: LabPage; props: LabDetailProps; onRemove: () => void }) {
   const t = useT();
   const { s, acting, act } = page;
+  const afterSignIn = useStartAfterSignIn(page, p);
   if (mode === "start" || mode === "failed")
     return (
       <>
@@ -43,6 +45,10 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
           </Button>
         )}
         <StartLabButton
+          // Remounted when a sign-in from this header went through: the "where" question opens
+          // at once when there is one (see useStartAfterSignIn).
+          key={afterSignIn.tick}
+          chooseAtOnce={afterSignIn.tick > 0}
           retry={mode === "failed"}
           lab={p.lab}
           run={page.run}
@@ -69,7 +75,7 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
       onAct={(what) => void act(what)}
       onRemove={onRemove}
       onStop={p.onStop}
-      onLogin={p.onLogin}
+      onLogin={afterSignIn.login}
       startedAt={s.startedAt}
     />
   );

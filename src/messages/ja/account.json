@@ -1,17 +1,22 @@
 {
-  "waitingForBrowser": "ブラウザを待機中…",
   "signIn": "サインイン",
   "settings": "設定",
   "online": "オンライン：Web サイトから起動したラボはこのマシンで実行されます",
   "signedIn": "サインイン済み",
   "signedInKeychain": "サインイン済み · キーチェーン",
   "signOut": "サインアウト",
-  "didntOpen": "ブラウザが開きませんか？",
   "copyLink": "サインインリンクをコピー",
   "cancel": "キャンセル",
-  "waitingForCode": "コードの承認を待機中…",
   "useCode": "代わりにコードを使う",
-  "enterCode": "任意のデバイスで {url} を開き、次のコードを入力してください：",
+  "enterCode": "任意のデバイスで {url} を開き、このコードを入力してください。",
   "copyCode": "コードをコピー",
-  "copyCodeLink": "コード付きリンクをコピー"
+  "copyCodeLink": "コード付きリンクをコピー",
+  "signedInToast": "{name} としてサインインしました",
+  "browserTitle": "ブラウザで続行してください",
+  "browserBody": "cyberauth.co でサインインすると、完了後にランチャーが自動的に戻ります。",
+  "codeTitle": "コードでサインイン",
+  "codeExpires": "有効期限まで {time}",
+  "codeExpired": "コードの有効期限が切れました。キャンセルしてやり直してください。",
+  "sessionExpiredTitle": "サインアウトしました",
+  "sessionExpired": "セッションの有効期限が切れました。続行するには再度サインインしてください。"
 }

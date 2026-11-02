@@ -35,11 +35,39 @@ pub struct AuthStatus {
     logged_in: bool,
     name: Option<String>,
     email: Option<String>,
+    /// The account's picture, when it has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    picture: Option<String>,
     /// Why the session couldn't be read (the keychain is locked, its prompt was dismissed, or
     /// there is no Secret Service), when that is why the player shows as signed out.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     keychain_error: Option<String>,
+    /// Signed out because the session expired (cyber-auth refused its refresh token), not by
+    /// the player: said until the next sign-in, so the app can tell them why.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    session_expired: Option<bool>,
+}
+
+impl AuthStatus {
+    fn signed_out() -> Self {
+        AuthStatus { logged_in: false, name: None, email: None, picture: None, keychain_error: None, session_expired: None }
+    }
+}
+
+/// Whether the last session ended because cyber-auth refused its refresh token (see
+/// `access_token_renewed_by`): the player was signed out under the app, and is told so until
+/// they sign in or out themselves.
+static EXPIRED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn expired() -> bool {
+    EXPIRED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn set_expired(expired: bool) {
+    EXPIRED.store(expired, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// The session, or the error a call needing the account returns: signed out, or why the
@@ -151,6 +179,7 @@ where
             // near expiry doesn't log the user out and stop the background agent.
             if e.to_string().contains("invalid_grant") {
                 store::clear().await;
+                set_expired(true);
             }
             return Err(e);
         }
@@ -301,12 +330,13 @@ where
 /// Keeps a new sign-in's tokens as the session.
 async fn keep_tokens(tokens: TokenResponse) -> Result<AuthStatus> {
     let session = session_from(tokens, None);
-    let (name, email) = (session.name.clone(), session.email.clone());
+    let (name, email, picture) = (session.name.clone(), session.email.clone(), session.picture.clone());
     store::ask_keychain_again();
     // Signed in at cyber-auth, but the session can't be kept: say so, so the app doesn't look
     // like the login was never accepted.
     keep_signed_in(session).await.map_err(|e| Error::Invalid(format!("You signed in, but the session wasn't saved. {e}")))?;
-    Ok(AuthStatus { logged_in: true, name, email, keychain_error: None })
+    set_expired(false);
+    Ok(AuthStatus { logged_in: true, name, email, picture, keychain_error: None, session_expired: None })
 }
 
 /// Keeps a new sign-in's session, after any refresh in flight (whose renewed session, maybe
@@ -321,15 +351,16 @@ async fn keep_signed_in(session: Session) -> Result<()> {
 /// Async so the keychain is read off the UI thread: a locked GNOME keyring shows its unlock
 /// prompt and waits, which froze the window while this ran on the main thread.
 pub async fn auth_status() -> AuthStatus {
-    status_from_read(store::read().await)
+    status_from_read(store::read().await, expired())
 }
 
-/// What the app shows for a session read: signed in as someone, signed out, or why the keychain failed.
-fn status_from_read(read: std::result::Result<Option<Session>, String>) -> AuthStatus {
+/// What the app shows for a session read: signed in as someone, signed out (and whether the
+/// session expired under the app, see `EXPIRED`), or why the keychain failed.
+fn status_from_read(read: std::result::Result<Option<Session>, String>, expired: bool) -> AuthStatus {
     match read {
-        Ok(Some(s)) => AuthStatus { logged_in: true, name: s.name, email: s.email, keychain_error: None },
-        Ok(None) => AuthStatus { logged_in: false, name: None, email: None, keychain_error: None },
-        Err(why) => AuthStatus { logged_in: false, name: None, email: None, keychain_error: Some(why) },
+        Ok(Some(s)) => AuthStatus { logged_in: true, name: s.name, email: s.email, picture: s.picture, keychain_error: None, session_expired: None },
+        Ok(None) => AuthStatus { session_expired: expired.then_some(true), ..AuthStatus::signed_out() },
+        Err(why) => AuthStatus { keychain_error: Some(why), ..AuthStatus::signed_out() },
     }
 }
 
@@ -338,6 +369,8 @@ pub async fn auth_logout() {
     // clear, and the player would be back in at the next call.
     let _no_refresh = SESSION_WRITE.lock().await;
     set_unsaved(None);
+    // Signed out on purpose: not an expiry to explain.
+    set_expired(false);
     store::clear().await;
 }
 
@@ -359,14 +392,21 @@ mod tests {
 
     #[test]
     fn a_token_near_expiry_is_not_fresh() {
-        let session = |expires_at| Session { access_token: "a".into(), refresh_token: None, expires_at, name: None, email: None };
+        let session = |expires_at| Session { access_token: "a".into(), refresh_token: None, expires_at, name: None, email: None, picture: None };
         assert!(fresh(&session(now() + 3600)));
         assert!(!fresh(&session(now() + 30)));
         assert!(!fresh(&session(0)));
     }
 
     fn session() -> Session {
-        Session { access_token: "tok".into(), refresh_token: None, expires_at: 1, name: Some("Ada".into()), email: Some("ada@example.com".into()) }
+        Session {
+            access_token: "tok".into(),
+            refresh_token: None,
+            expires_at: 1,
+            name: Some("Ada".into()),
+            email: Some("ada@example.com".into()),
+            picture: None,
+        }
     }
 
     #[test]
@@ -379,14 +419,22 @@ mod tests {
     #[test]
     fn the_status_shows_who_is_signed_in_or_why_not() {
         let json = |s: AuthStatus| serde_json::to_value(s).unwrap();
-        let signed_in = json(status_from_read(Ok(Some(session()))));
+        let signed_in = json(status_from_read(Ok(Some(session())), false));
         assert_eq!(signed_in, serde_json::json!({ "loggedIn": true, "name": "Ada", "email": "ada@example.com" }));
-        let out = json(status_from_read(Ok(None)));
-        assert_eq!(out["loggedIn"], false);
-        assert!(out.get("keychainError").is_none());
-        let failed = json(status_from_read(Err("no Secret Service".into())));
+        let with_picture = json(status_from_read(Ok(Some(Session { picture: Some("https://cdn.example/a.png".into()), ..session() })), true));
+        assert_eq!(with_picture["picture"], "https://cdn.example/a.png");
+        // Signed in: whatever ended an earlier session is over.
+        assert!(with_picture.get("sessionExpired").is_none());
+        let out = json(status_from_read(Ok(None), false));
+        assert_eq!(out, serde_json::json!({ "loggedIn": false, "name": null, "email": null }));
+        let expired = json(status_from_read(Ok(None), true));
+        assert_eq!(expired["loggedIn"], false);
+        assert_eq!(expired["sessionExpired"], true);
+        let failed = json(status_from_read(Err("no Secret Service".into()), true));
         assert_eq!(failed["keychainError"], "no Secret Service");
         assert_eq!(failed["loggedIn"], false);
+        // Unreadable, not expired: the keychain is the reason given.
+        assert!(failed.get("sessionExpired").is_none());
     }
 
     /// The dev session store and `UNSAVED` are shared: the tests over them run one at a time.
@@ -571,6 +619,12 @@ mod tests {
         let renew = |refresh: String| async move { refresh_tokens_at(&base, "client", "api", &refresh).await };
         assert!(access_token_renewed_by(renew).await.is_err());
         assert!(store::read().await.unwrap().is_none(), "a refused refresh token was kept");
+        // Signed out under the app: the status says the session expired, until a sign-out on purpose.
+        let status = serde_json::to_value(auth_status().await).unwrap();
+        assert_eq!(status["loggedIn"], false);
+        assert_eq!(status["sessionExpired"], true);
+        auth_logout().await;
+        assert!(serde_json::to_value(auth_status().await).unwrap().get("sessionExpired").is_none());
 
         // An outage keeps the session: a blip near expiry doesn't sign the player out.
         store::store(expiring()).await.unwrap();
@@ -678,6 +732,7 @@ mod tests {
             expires_at: 0,
             name: None,
             email: email.map(str::to_string),
+            picture: None,
         };
         assert_eq!(user_of(&session(jwt(r#"{"sub":"u1"}"#), Some("a@x"))), "u1");
         assert_eq!(user_of(&session(jwt(r#"{"sub":"u2"}"#), Some("a@x"))), "u2");

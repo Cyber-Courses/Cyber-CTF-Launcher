@@ -39,7 +39,6 @@
     "registering": "登録中…",
     "notSignedIn": "未サインイン",
     "signInHint": "Cyber アカウントでサインインすると、ラボを同期してどのデバイスからでも実行できます。",
-    "waitingBrowser": "ブラウザを待機中…",
     "signIn": "サインイン"
   },
   "labs": {

@@ -28,6 +28,9 @@ type StartLabProps = {
   onStart: (target: RunTarget) => void;
   /** The last start failed: the same button, as Retry. */
   retry?: boolean;
+  /** Open "Where should it run?" at once (the player pressed "Sign in to start" and is signed in
+   *  now: the question is the next step of what they asked for, see `useStartAfterSignIn`). */
+  chooseAtOnce?: boolean;
 };
 
 /** Why Start is greyed out (no runtime, signed out, a hosted session up), if it is. */
@@ -40,9 +43,21 @@ function startHint(t: T, { runtime, loggedIn, hostedLive }: { runtime: boolean; 
 /** Start lab: with somewhere else to run it (servers, a VM here, hosted), asks where first in
  *  "Where should it run?"; otherwise starts here right away. A cloud lab always asks (which
  *  account, and what it costs), and with no account of its cloud offers to connect one. */
-export function StartLabButton({ lab, run, isDocker, cloud = null, loggedIn, hostedLive, busy, dockerRunning, onStart, retry = false }: StartLabProps) {
+export function StartLabButton({
+  lab,
+  run,
+  isDocker,
+  cloud = null,
+  loggedIn,
+  hostedLive,
+  busy,
+  dockerRunning,
+  onStart,
+  retry = false,
+  chooseAtOnce = false,
+}: StartLabProps) {
   const t = useT();
-  const [choosing, setChoosing] = useState(false);
+  const [choosing, setChoosing] = useState(chooseAtOnce);
   const rt = lab.runtime;
   if (cloud && run.cloudAccounts.length === 0) return <ConnectCloudButton providers={rt?.providers ?? []} />;
   return (

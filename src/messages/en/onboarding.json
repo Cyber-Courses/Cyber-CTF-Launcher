@@ -35,7 +35,6 @@
     "description": "Connect your Cyber CTF account to register this machine and launch labs from any device.",
     "signedIn": "Signed in",
     "signedInAs": "Signed in as {name}",
-    "waiting": "Waiting for the browser… (up to 5 minutes)",
     "button": "Sign in with your browser",
     "hint": "Opens <mono>cyberauth.co</mono> in your browser. Labs run without an account too: you can sign in later from Settings.",
     "skip": "Skip for now"

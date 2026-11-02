@@ -26,7 +26,9 @@ type RowActionProps = {
   setup: string | null;
   connectCloud: boolean;
   loggedIn: boolean;
-  onLogin?: () => Promise<void>;
+  onLogin?: () => Promise<boolean>;
+  /** Once the sign-in the row started went through: go on with what the row is for. */
+  onSignedIn?: () => void;
   /** Asks to confirm the stop. */
   onStop: () => void;
   onResume?: () => void;
@@ -38,12 +40,16 @@ export function RowAction(p: RowActionProps) {
   if (p.running) return <RunningActions url={p.status?.url ?? null} busy={p.busy} doing={p.doing} onStop={p.onStop} />;
   if (p.parked) return <ParkedActions parked={p.parked} busy={p.busy} doing={p.doing} onResume={p.onResume} />;
   if (p.setup) return <SetupAction setup={p.setup} connectCloud={p.connectCloud} />;
-  const { onLogin } = p;
+  const { onLogin, onSignedIn } = p;
   if (!p.loggedIn && onLogin)
     return (
       <RowButton
         onClick={() => {
-          onLogin().catch(tell(t("labs.row.signInFailed")));
+          onLogin()
+            .then((signedIn) => {
+              if (signedIn) onSignedIn?.();
+            })
+            .catch(tell(t("labs.row.signInFailed")));
         }}
         title={t("labs.row.signInHint")}
       >

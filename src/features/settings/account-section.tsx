@@ -1,7 +1,7 @@
 "use client";
 
 import { LogOut } from "lucide-react";
-import { initials, SignInHelp, useAuthActions } from "@/features/account/account";
+import { Avatar, signedOutReason, SignInWait, useAuthActions } from "@/features/account/account";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -39,9 +39,7 @@ function SignedIn({ auth, agent, onAuthChange }: { auth: AuthStatus; agent: Agen
   return (
     <>
       <div className="flex items-center gap-3.5 px-4 py-3.5">
-        <span className="avatar flex size-10 shrink-0 items-center justify-center rounded-full text-[0.8125rem] font-semibold">
-          {initials(auth.name, auth.email)}
-        </span>
+        <Avatar status={auth} className="size-10 text-[0.8125rem]" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[0.8125rem] font-medium text-foreground">{auth.name ?? t("settings.account.signedIn")}</p>
           {auth.email && <p className="truncate font-mono text-[0.6875rem] text-faint">{auth.email}</p>}
@@ -79,11 +77,12 @@ function AgentLine({ agent }: { agent: AgentInfo }) {
   );
 }
 
-/** Not signed in: why (a failed sign-in, the keychain), and Sign in with its wait. */
+/** Not signed in: why (a failed sign-in, an expired session, the keychain), and Sign in, or
+ *  the sign-in's wait while it runs. */
 function SignedOut({ auth, onAuthChange }: { auth: AuthStatus; onAuthChange: (s: AuthStatus) => void }) {
   const t = useT();
-  const { login, busy, withCode, error } = useAuthActions(onAuthChange);
-  const problem = error ?? auth.keychainError;
+  const { login, busy, error } = useAuthActions(onAuthChange);
+  const problem = error ?? signedOutReason(t, auth);
   return (
     <Row
       title={
@@ -94,20 +93,16 @@ function SignedOut({ auth, onAuthChange }: { auth: AuthStatus; onAuthChange: (s:
       }
       description={
         <>
-          {problem ? <span className="text-destructive">{problem}</span> : t("settings.account.signInHint")}
-          <SignInHelp className="mt-1.5 justify-start" />
+          {problem ? <span className={error ? "text-destructive" : "text-warning"}>{problem}</span> : t("settings.account.signInHint")}
+          {busy && <SignInWait className="mt-2.5 max-w-[26rem]" />}
         </>
       }
       control={
-        <Button size="sm" onClick={login} disabled={busy}>
-          {busy ? (
-            <>
-              <Spinner className="size-3.5" /> {withCode ? t("account.waitingForCode") : t("settings.account.waitingBrowser")}
-            </>
-          ) : (
-            t("settings.account.signIn")
-          )}
-        </Button>
+        busy ? undefined : (
+          <Button size="sm" onClick={login}>
+            {t("settings.account.signIn")}
+          </Button>
+        )
       }
     />
   );

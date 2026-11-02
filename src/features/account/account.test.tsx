@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { Account, initials } from "@/features/account/account";
+import { Account, Avatar, initials } from "@/features/account/account";
+import { Toaster } from "@/components/ui/toaster";
 import { setLocalePreference } from "@/lib/i18n";
 import { commands, installTauri, rejects, rejectWith, stream } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
@@ -67,21 +68,30 @@ describe("Account", () => {
     });
     const onChange = vi.fn();
     const user = userEvent.setup();
-    render(<Account status={signedOut} onChange={onChange} />);
+    render(
+      <>
+        <Account status={signedOut} onChange={onChange} />
+        <Toaster />
+      </>,
+    );
     await user.click(button(/^sign in$/i));
-    expect(screen.getByText("Waiting for the browser…")).toBeTruthy();
-    expect(button(/waiting/i).hasAttribute("disabled")).toBe(true);
+    // The wait takes the button's place, from the first moment (the link isn't in yet: no way out to show).
+    expect(screen.getByText("Continue in your browser")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^sign in$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull();
     finish();
     await flush();
     expect(commands(calls)).toContain("auth_login");
     expect(onChange).toHaveBeenCalledWith({ loggedIn: true, name: "Ada", email: "ada@example.com" });
+    // Said once, wherever the sign-in was started from.
+    expect(screen.getByText("Signed in as Ada")).toBeTruthy();
   });
 
   it("while waiting, offers the sign-in link to copy and a Cancel that ends it quietly", async () => {
     const login = cancellableLogin();
     const calls = installTauri({ auth_login: login.handler, auth_login_cancel: login.cancel });
     const { onChange, user, writeText } = await startSignIn();
-    expect(screen.getByText("Browser didn't open?")).toBeTruthy();
+    expect(screen.getByText("Continue in your browser")).toBeTruthy();
     await user.click(button(/copy the sign-in link/i));
     expect(writeText).toHaveBeenCalledWith("https://auth.example/oauth2/authorize?state=s1");
     await user.click(button(/^cancel$/i));
@@ -118,9 +128,10 @@ describe("Account", () => {
     const { onChange, user, writeText } = await startSignIn();
     await user.click(button(/use a code instead/i));
     await flush();
-    expect(screen.getByText("On any device, open https://auth.example/device and enter this code:")).toBeTruthy();
+    expect(screen.getByText("Enter it at https://auth.example/device on any device.")).toBeTruthy();
     expect(screen.getByText("WDJB-MJHT")).toBeTruthy();
-    expect(screen.getByText("Waiting for you to approve the code…")).toBeTruthy();
+    expect(screen.getByText("Sign in with a code")).toBeTruthy();
+    expect(screen.getByText("Expires in 15:00")).toBeTruthy();
     await user.click(button(/copy the link with the code/i));
     expect(writeText).toHaveBeenCalledWith("https://auth.example/device?user_code=WDJB-MJHT");
     approve();
@@ -172,6 +183,49 @@ describe("Account", () => {
     expect(screen.getByText("AL")).toBeTruthy();
     expect(screen.getByText("signed in · keychain")).toBeTruthy();
     expect(screen.getByTitle(/Online/)).toBeTruthy();
+  });
+
+  it("says why the player is signed out when it wasn't their doing", () => {
+    const { rerender } = render(<Account status={{ ...signedOut, sessionExpired: true }} onChange={vi.fn()} />);
+    expect(screen.getByText("Your session expired. Sign in again to continue.")).toBeTruthy();
+    rerender(<Account status={{ ...signedOut, keychainError: "the keychain is locked" }} onChange={vi.fn()} />);
+    expect(screen.getByText("the keychain is locked")).toBeTruthy();
+    expect(screen.queryByText(/session expired/)).toBeNull();
+    rerender(<Account status={signedOut} onChange={vi.fn()} />);
+    expect(screen.queryByText(/session expired|keychain/)).toBeNull();
+  });
+
+  it("shows the account's picture over the initials, and the initials alone when it can't load", () => {
+    const ada = { loggedIn: true, name: "Ada Lovelace", email: null, picture: "https://cdn.example/ada.png" };
+    const { container } = render(<Account status={ada} onChange={vi.fn()} />);
+    const img = container.querySelector("img");
+    if (!img) throw new Error("no picture shown");
+    expect(img.getAttribute("src")).toBe("https://cdn.example/ada.png");
+    expect(screen.getByText("AL")).toBeTruthy();
+    fireEvent.error(img);
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByText("AL")).toBeTruthy();
+    // No picture: initials only, no empty image.
+    const { container: plain } = render(<Avatar status={{ name: null, email: "ada@example.com" }} />);
+    expect(plain.querySelector("img")).toBeNull();
+    expect(plain.textContent).toBe("AD");
+  });
+
+  it("says when the code ran out", async () => {
+    const login = cancellableLogin();
+    installTauri({
+      auth_login: login.handler,
+      auth_login_device: (args) => {
+        login.cancel();
+        stream(args, { userCode: "AAAA-BBBB", verificationUri: "https://auth.example/device", verificationUriComplete: null, expiresIn: 0 });
+        return new Promise(() => {});
+      },
+    });
+    const { user } = await startSignIn();
+    await user.click(button(/use a code instead/i));
+    // The countdown ticks once a second.
+    await flush(1100);
+    expect(screen.getByText("The code expired. Cancel and start again.")).toBeTruthy();
   });
 
   it("names a player with no name as signed in", () => {
