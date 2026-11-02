@@ -17,11 +17,11 @@ use crate::error::{Code, Error, Result};
 use crate::machine::selftest::Event;
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
-use crate::runtime::server::HOST_MARKER;
 use crate::runtime::server::budget::month_to_date_cost;
 use crate::runtime::server::checks::{Check, TestResult};
 use crate::runtime::server::gcp;
 use crate::runtime::server::input::{HostInput, valid_id};
+use crate::runtime::server::marked_host;
 use crate::runtime::server::profile::{HostProfile, new_id};
 use crate::runtime::server::reachability::test_host;
 use crate::runtime::server::secrets::{delete_secret, get_secret, host_secret, set_secret};
@@ -137,7 +137,7 @@ fn lab_markers(app: &AppHandle) -> Vec<String> {
 /// `lab_markers` for the labs folder `labs`.
 fn markers_in(labs: &Path) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(labs) else { return Vec::new() };
-    entries.flatten().filter_map(|e| std::fs::read_to_string(e.path().join(HOST_MARKER)).ok()).map(|id| id.trim().to_string()).collect()
+    entries.flatten().filter_map(|e| marked_host(&e.path())).collect()
 }
 
 /// Terraform deployments still holding resources on host `id` (under the app data folder
@@ -147,7 +147,7 @@ fn leftovers_on(base: &Path, id: &str) -> usize {
     let paths = crate::runtime::paths::deployed_ids(base);
     paths
         .iter()
-        .filter(|lab| std::fs::read_to_string(base.join("labs").join(lab).join(HOST_MARKER)).map(|h| h.trim().to_string()).ok().as_deref() != Some(id))
+        .filter(|lab| marked_host(&base.join("labs").join(lab)).as_deref() != Some(id))
         .flat_map(|lab| crate::runtime::paths::deployment_states(base, lab))
         .filter(|(_, state)| crate::runtime::paths::recorded_host(state).as_deref() == Some(id) && crate::runtime::terraform::deployed(state))
         .count()
@@ -341,6 +341,7 @@ pub async fn server_selftest(app: AppHandle, id: String, events: Channel<Event>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::server::HOST_MARKER;
     use crate::runtime::server::profile::tests::profile;
 
     fn host(id: &str, provider: Provider) -> HostProfile {
