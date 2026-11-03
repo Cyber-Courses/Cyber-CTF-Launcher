@@ -37,7 +37,7 @@ describe("signIn", () => {
     expect(second).toBe(first);
     await Promise.resolve();
     const { result } = renderHook(() => useSignIn());
-    expect(result.current).toEqual({ waiting: true, url: "https://auth.example/oauth2/authorize?state=s1", code: null, error: null });
+    expect(result.current).toEqual({ waiting: true, url: "https://auth.example/oauth2/authorize?state=s1", code: null, codeExpiresAt: null, error: null });
     login.finish(ada);
     expect(await first).toEqual(ada);
     expect(commands(calls).filter((c) => c === "auth_login")).toHaveLength(1);
@@ -56,7 +56,7 @@ describe("signIn", () => {
     expect(await signingIn).toBeNull();
     expect(commands(calls)).toContain("auth_login_cancel");
     const { result } = renderHook(() => useSignIn());
-    expect(result.current).toEqual({ waiting: false, url: null, code: null, error: null });
+    expect(result.current).toEqual({ waiting: false, url: null, code: null, codeExpiresAt: null, error: null });
   });
 
   it("keeps why a sign-in failed, until the next one", async () => {
@@ -94,11 +94,13 @@ describe("signIn", () => {
     expect(signInWithCode()).toBe(withCode);
     await Promise.resolve();
     const { result } = renderHook(() => useSignIn());
-    expect(result.current).toEqual({ waiting: true, url: null, code, error: null });
+    expect(result.current).toEqual({ waiting: true, url: null, code, codeExpiresAt: expect.any(Number) as number, error: null });
+    // The countdown: the code's lifetime from the moment it came.
+    expect(result.current.codeExpiresAt).toBeGreaterThan(Date.now() + 899_000);
     approve();
     expect(await withCode).toEqual(ada);
     expect(await browser).toEqual(ada);
-    expect(result.current).toEqual({ waiting: false, url: null, code: null, error: null });
+    expect(result.current).toEqual({ waiting: false, url: null, code: null, codeExpiresAt: null, error: null });
   });
 
   it("says why a sign-in with a code isn't available", async () => {

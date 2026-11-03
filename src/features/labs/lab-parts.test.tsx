@@ -488,10 +488,19 @@ describe("LabRow", () => {
   it("signs a signed-out player in from the row", async () => {
     installTauri();
     const user = userEvent.setup();
-    const onLogin = vi.fn(async () => {});
-    renderRow({ loggedIn: false, onLogin });
+    const onLogin = vi.fn(() => Promise.resolve(true));
+    const h = renderRow({ loggedIn: false, onLogin });
     await user.click(screen.getByRole("button", { name: /Sign in/ }));
     expect(onLogin).toHaveBeenCalled();
+    // Signed in: the lab's page opens (starting happens there), as the row is for.
+    await flush();
+    expect(h.onOpen).toHaveBeenCalledWith(lab);
+    // A sign-in that didn't go through (cancelled) opens nothing.
+    h.onOpen.mockClear();
+    onLogin.mockResolvedValueOnce(false);
+    await user.click(screen.getByRole("button", { name: /Sign in/ }));
+    await flush();
+    expect(h.onOpen).not.toHaveBeenCalled();
   });
 
   it("opens the lab from the row's title with a click, Enter or Space", async () => {

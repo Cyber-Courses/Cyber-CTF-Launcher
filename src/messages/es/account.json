@@ -1,17 +1,22 @@
 {
-  "waitingForBrowser": "Esperando al navegador…",
   "signIn": "Iniciar sesión",
   "settings": "Ajustes",
   "online": "En línea: los labs que lances desde el sitio web se ejecutan en esta máquina",
   "signedIn": "Sesión iniciada",
   "signedInKeychain": "sesión iniciada · llavero",
   "signOut": "Cerrar sesión",
-  "didntOpen": "¿No se abrió el navegador?",
   "copyLink": "Copiar el enlace de inicio de sesión",
   "cancel": "Cancelar",
-  "waitingForCode": "Esperando a que apruebes el código…",
   "useCode": "Usar un código",
-  "enterCode": "En cualquier dispositivo, abre {url} e introduce este código:",
+  "enterCode": "Introdúcelo en {url} desde cualquier dispositivo.",
   "copyCode": "Copiar el código",
-  "copyCodeLink": "Copiar el enlace con el código"
+  "copyCodeLink": "Copiar el enlace con el código",
+  "signedInToast": "Sesión iniciada como {name}",
+  "browserTitle": "Continúa en tu navegador",
+  "browserBody": "Inicia sesión en cyberauth.co; el launcher vuelve por sí solo cuando termines.",
+  "codeTitle": "Iniciar sesión con un código",
+  "codeExpires": "Caduca en {time}",
+  "codeExpired": "El código caducó. Cancela y vuelve a empezar.",
+  "sessionExpiredTitle": "Sesión cerrada",
+  "sessionExpired": "Tu sesión caducó. Inicia sesión de nuevo para continuar."
 }

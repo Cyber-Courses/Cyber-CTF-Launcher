@@ -41,10 +41,12 @@ type ScreenProps = {
 function TabScreen({ tab, report, checkError, auth, openLab, onRefresh, onNavigate, onAuthChange, onLabChange }: ScreenProps): ReactNode {
   const t = useT();
   const waiting = (what: string) => <WaitingForCheck what={what} checkError={checkError} onRetry={onRefresh} />;
-  // A cancelled sign-in (null) changes nothing.
+  // A cancelled sign-in (null) changes nothing. Resolves with whether the player is signed in
+  // now, so what asked for the sign-in (a lab's Start, a row) can go on with what it was doing.
   const login = async () => {
     const status = await signIn();
     if (status) onAuthChange(status);
+    return !!status?.loggedIn;
   };
   if (tab === "home")
     return <HomeScreen report={report} checkError={checkError} onRetryCheck={onRefresh} auth={auth} onNavigate={onNavigate} onLogin={login} />;

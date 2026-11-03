@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
@@ -53,7 +53,15 @@ const defaultEsx: Record<string, Handler> = {
  *  the asynchronous ones settling at once as the screen's do. */
 function renderDetail(props: Partial<Parameters<typeof LabDetail>[0]> = {}) {
   const settled = () => vi.fn(() => Promise.resolve());
-  const h = { onBack: vi.fn(), onStart: vi.fn(), onStop: settled(), onPark: settled(), onResume: settled(), onProvision: settled(), onLogin: settled() };
+  const h = {
+    onBack: vi.fn(),
+    onStart: vi.fn(),
+    onStop: settled(),
+    onPark: settled(),
+    onResume: settled(),
+    onProvision: settled(),
+    onLogin: vi.fn(() => Promise.resolve(true)),
+  };
   renderLabPage(dockerLab, { readyVms: [], ...h, ...props });
   return h;
 }
@@ -200,7 +208,7 @@ describe("LabDetail: starting", () => {
     expect(start.getAttribute("title")).toBe("No runtime for this lab yet");
   });
 
-  it("signs a signed-out player in from the header, or greys Start without a way to", async () => {
+  it("signs a signed-out player in from the header, then starts the lab here when there is nowhere else", async () => {
     installTauri(quiet);
     const user = userEvent.setup();
     const h = renderDetail({ loggedIn: false, status: stopped });
@@ -208,6 +216,51 @@ describe("LabDetail: starting", () => {
     await user.click(screen.getByRole("button", { name: /Sign in to start/ }));
     expect(h.onLogin).toHaveBeenCalled();
     expect(screen.getByText("Sign in to run labs on this machine.")).toBeTruthy();
+    // Signed in: the start the player asked for goes on by itself.
+    await flush();
+    expect(h.onStart).toHaveBeenCalledWith({ kind: "local" });
+  });
+
+  it("a sign-in from the header that was cancelled, or a lab that is busy, starts nothing", async () => {
+    installTauri(quiet);
+    const user = userEvent.setup();
+    const h = renderDetail({ loggedIn: false, status: stopped, onLogin: vi.fn(() => Promise.resolve(false)) });
+    await flush();
+    await user.click(screen.getByRole("button", { name: /Sign in to start/ }));
+    await flush();
+    expect(h.onStart).not.toHaveBeenCalled();
+  });
+
+  it("asks where to run once a sign-in from the header went through, when there is a choice", async () => {
+    installTauri(quiet);
+    const user = userEvent.setup();
+    const onLogin = vi.fn(() => Promise.resolve(true));
+    const onStart = vi.fn();
+    const page = (loggedIn: boolean) => (
+      <LabDetail
+        lab={dockerLab}
+        status={stopped}
+        busy={false}
+        logs={[]}
+        times={[]}
+        loggedIn={loggedIn}
+        hostArch="x86_64"
+        readyVms={["virtualbox"]}
+        dockerRunning
+        onBack={vi.fn()}
+        onStart={onStart}
+        onStop={vi.fn(() => Promise.resolve())}
+        onLogin={onLogin}
+      />
+    );
+    const { rerender } = render(page(false));
+    await flush();
+    await user.click(screen.getByRole("button", { name: /Sign in to start/ }));
+    // The shell learns of the sign-in and the page re-renders signed in.
+    rerender(page(true));
+    await flush();
+    expect(onStart).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Where should the lab run?" })).toBeTruthy();
   });
 
   it("explains where a lab can run and when it runs emulated", async () => {

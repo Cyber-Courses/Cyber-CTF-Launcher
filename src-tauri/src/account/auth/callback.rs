@@ -20,8 +20,10 @@ pub(super) async fn bind_loopback() -> Result<(TcpListener, u16)> {
     Err(Error::Invalid("no free login callback port (47290-47292)".into()))
 }
 
-/// The page the browser shows once Cyber Auth sends the player back: the family look (the launcher's
-/// dark tokens, light when the browser is), the app mark, and a button back to the app.
+/// The page the browser shows once Cyber Auth sends the player back. The launcher reveals its own
+/// window right after, so the page closes its tab where the browser allows it; where it can't,
+/// it shows how the sign-in went, in the launcher's look (its dark tokens, Paper when the
+/// browser is light).
 fn login_page(ok: bool) -> String {
     const TEMPLATE: &str = include_str!("login-page.html");
     const LOGO: &str = include_str!("../../../../public/logo-mark.svg");
@@ -29,24 +31,12 @@ fn login_page(ok: bool) -> String {
     const CROSS: &str = r#"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>"#;
     // The SVG file starts with an XML prolog, which can't sit inside HTML.
     let logo = LOGO.find("<svg").map_or("", |i| &LOGO[i..]);
-    let (state, icon, title, body, button) = if ok {
-        (
-            "ok",
-            CHECK,
-            "You're signed in",
-            "Cyber CTF is connected to your account. Labs you launch from the website now run on this machine.",
-            "Return to Cyber CTF",
-        )
+    let (state, icon, title, body) = if ok {
+        ("ok", CHECK, "You're signed in", "Cyber CTF is connected to your account and back in front.")
     } else {
-        ("error", CROSS, "Sign-in didn't finish", "It was cancelled or the link expired. Go back to Cyber CTF and press Sign in again.", "Back to Cyber CTF")
+        ("error", CROSS, "Sign-in didn't finish", "It was cancelled or the link expired. Back in Cyber CTF, press Sign in again.")
     };
-    TEMPLATE
-        .replace("__STATE__", state)
-        .replace("__LOGO__", logo)
-        .replace("__ICON__", icon)
-        .replace("__TITLE__", title)
-        .replace("__BODY__", body)
-        .replace("__BUTTON__", button)
+    TEMPLATE.replace("__STATE__", state).replace("__LOGO__", logo).replace("__ICON__", icon).replace("__TITLE__", title).replace("__BODY__", body)
 }
 
 /// The redirect's URL, from the raw request's target (`GET /callback?code=… HTTP/1.1`).
@@ -170,6 +160,9 @@ mod tests {
     fn the_login_page_says_how_it_went() {
         let ok = login_page(true);
         assert!(ok.contains("You're signed in") && !ok.contains("__"), "placeholders left in the page");
+        // The launcher reveals itself: the page's first move is to close its tab, and it offers no
+        // way back that would make the browser ask about opening the app.
+        assert!(ok.contains("window.close()") && !ok.contains("cyberctf://") && !ok.contains("<button"));
         assert!(login_page(false).contains("Sign-in didn't finish"));
         assert!(html_response("hi").ends_with("Content-Length: 2\r\nConnection: close\r\n\r\nhi"));
     }

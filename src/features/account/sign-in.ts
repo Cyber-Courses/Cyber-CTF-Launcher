@@ -2,7 +2,9 @@
 
 import { useSyncExternalStore } from "react";
 import { authLogin, authLoginCancel, authLoginDevice, type AuthStatus, type DeviceCode } from "@/lib/tauri";
+import { toast } from "@/components/ui/toaster";
 import { describeError, errorCode } from "@/lib/errors";
+import { translate } from "@/lib/i18n";
 import { registerReset } from "@/lib/module-state";
 
 // The sign-in, one at a time for the whole window: the sidebar, Settings, the onboarding and the
@@ -18,11 +20,13 @@ export type SignInState = {
   url: string | null;
   /** The code to enter on another device, once a sign-in with a code got one. */
   code: DeviceCode | null;
+  /** When the code stops being accepted (`Date.now()` terms), for its countdown. */
+  codeExpiresAt: number | null;
   /** Why the last sign-in failed (not a cancel). */
   error: string | null;
 };
 
-const IDLE: SignInState = { waiting: false, url: null, code: null, error: null };
+const IDLE: SignInState = { waiting: false, url: null, code: null, codeExpiresAt: null, error: null };
 
 let state: SignInState = IDLE;
 let running: Promise<AuthStatus | null> | null = null;
@@ -38,6 +42,13 @@ function set(next: SignInState) {
   });
 }
 
+/** Signed in: said once, wherever the sign-in was started from (the window came back to the
+ *  front by itself, and this is what it has to show for it). */
+function announce(status: AuthStatus) {
+  if (!status.loggedIn) return;
+  toast(status.name ? translate("account.signedInToast", { name: status.name }) : translate("account.signedIn"), translate("account.online"));
+}
+
 /** Starts a sign-in (`start` gets a setter for what it streams back), replacing the state. */
 function run(withCode: boolean, start: (update: (part: Partial<SignInState>) => void) => Promise<AuthStatus>): Promise<AuthStatus | null> {
   const gen = ++generation;
@@ -49,7 +60,10 @@ function run(withCode: boolean, start: (update: (part: Partial<SignInState>) => 
   const signingIn: Promise<AuthStatus | null> = start(update)
     .then(
       (status) => {
-        if (current()) set(IDLE);
+        if (current()) {
+          set(IDLE);
+          announce(status);
+        }
         return status;
       },
       (e: unknown) => {
@@ -92,7 +106,7 @@ export function signInWithCode(): Promise<AuthStatus | null> {
   if (running && runningWithCode) return running;
   return run(true, (update) =>
     authLoginDevice((code) => {
-      update({ code });
+      update({ code, codeExpiresAt: Date.now() + code.expiresIn * 1000 });
     }),
   );
 }

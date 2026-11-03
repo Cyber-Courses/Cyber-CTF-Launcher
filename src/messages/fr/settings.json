@@ -39,7 +39,6 @@
     "registering": "Enregistrement…",
     "notSignedIn": "Non connecté",
     "signInHint": "Connectez-vous avec votre compte Cyber pour synchroniser vos labs et les lancer depuis n'importe quel appareil.",
-    "waitingBrowser": "En attente du navigateur…",
     "signIn": "Se connecter"
   },
   "labs": {

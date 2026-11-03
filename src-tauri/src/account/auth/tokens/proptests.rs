@@ -42,9 +42,9 @@ proptest! {
         let token = format!("{header}.{}.{sig}", b64(&claims));
         let want = claims.get(&name).and_then(Value::as_str).map(str::to_string);
         prop_assert_eq!(jwt_claim(&token, &name), want);
-        let (n, e) = id_token_profile(&token);
-        prop_assert_eq!(n, claims.get("name").and_then(Value::as_str).map(str::to_string));
-        prop_assert_eq!(e, claims.get("email").and_then(Value::as_str).map(str::to_string));
+        let profile = id_token_profile(&token);
+        prop_assert_eq!(profile.name, claims.get("name").and_then(Value::as_str).map(str::to_string));
+        prop_assert_eq!(profile.email, claims.get("email").and_then(Value::as_str).map(str::to_string));
         // An opaque token (no dot) has no claims.
         prop_assert_eq!(jwt_claim(&header, &name), None);
     }
@@ -63,7 +63,7 @@ proptest! {
             if let Some(e) = email { c["email"] = json!(e); }
             format!("h.{}.s", b64(&c))
         });
-        let prev = previous.as_ref().map(|(r, n, e)| Session { access_token: "old".into(), refresh_token: r.clone(), expires_at: 1, name: n.clone(), email: e.clone() });
+        let prev = previous.as_ref().map(|(r, n, e)| Session { access_token: "old".into(), refresh_token: r.clone(), expires_at: 1, name: n.clone(), email: e.clone(), picture: None });
         let before = now();
         let s = session_from(TokenResponse { access_token: access.clone(), refresh_token: refresh.clone(), expires_in, id_token }, prev.as_ref());
         prop_assert_eq!(&s.access_token, &access);

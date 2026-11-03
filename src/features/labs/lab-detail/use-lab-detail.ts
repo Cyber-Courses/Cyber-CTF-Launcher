@@ -33,7 +33,7 @@ export type LabDetailProps = {
   runFailureCode?: ErrorCode | null;
   loggedIn: boolean;
   /** Logged out: the start button logs in instead of being greyed out. */
-  onLogin?: () => Promise<void>;
+  onLogin?: () => Promise<boolean>;
   hostArch: string;
   /** Local hypervisors ready on this machine (Vagrant + hypervisor), for "in a VM". */
   readyVms?: Provider[];

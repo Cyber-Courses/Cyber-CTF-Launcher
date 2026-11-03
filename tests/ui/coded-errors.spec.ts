@@ -142,12 +142,16 @@ test.describe("coded errors", () => {
     await expect(main(page)).toContainText("Sign in to start labs");
     await expect(main(page)).toContainText("6 in the catalogue · 1 running on this machine");
 
-    // Signing in again, from the lab's own header: the session is back, and the start goes through.
+    // Signing in again, from the lab's own header: the session is back, and the start the player
+    // asked for goes on by itself (where to run asked first, as Retry would), and goes through.
     await reforce(page, { auth_status: null, lab_launch: null });
     await main(page).getByRole("button", { name: "Open Blind orders", exact: true }).click();
     await button(page, "Sign in to start").click();
     await expect(sidebar(page)).toContainText("Florian");
-    await startHere(page, "Retry");
+    const where = page.getByRole("dialog", { name: "Where should the lab run?" });
+    await expect(where.getByRole("radio", { name: /This machine On your system/ })).toHaveAttribute("aria-checked", "true");
+    await where.getByRole("button", { name: "Start", exact: true }).click();
+    await expect(where).toBeHidden();
     await expect(button(page, "Stop & remove")).toBeEnabled();
   });
 

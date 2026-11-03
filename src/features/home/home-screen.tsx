@@ -31,7 +31,7 @@ type HomeProps = {
   auth: AuthStatus | null;
   onNavigate: (tab: Tab, slug?: string) => void;
   /** Signs in from a lab row (signed out). */
-  onLogin?: () => Promise<void>;
+  onLogin?: () => Promise<boolean>;
 };
 
 /** The labs as the Overview shows them: the catalogue, what runs and deploys, what to jump back
@@ -70,7 +70,7 @@ type OverviewLabs = ReturnType<typeof useOverviewLabs>;
  *  handlers on every render, so the memoized rows re-render only when their lab changes. */
 function useRowContext(
   o: OverviewLabs,
-  { report, loggedIn, onLogin, openLab }: { report: SystemReport | null; loggedIn: boolean; onLogin?: () => Promise<void>; openLab: (slug: string) => void },
+  { report, loggedIn, onLogin, openLab }: { report: SystemReport | null; loggedIn: boolean; onLogin?: () => Promise<boolean>; openLab: (slug: string) => void },
 ): RowContext {
   const { stop, resume } = o.actions;
   const onOpen = useStableCallback((lab: Lab) => {
@@ -78,7 +78,7 @@ function useRowContext(
   });
   const onStop = useStableCallback((lab: Lab) => void stop(lab));
   const onResume = useStableCallback((lab: Lab) => void resume(lab));
-  const login = useStableCallback(() => onLogin?.() ?? Promise.resolve());
+  const login = useStableCallback(() => onLogin?.() ?? Promise.resolve(false));
   return {
     statuses: o.statuses,
     runs: o.actions.runs,

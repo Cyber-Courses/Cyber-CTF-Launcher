@@ -158,9 +158,10 @@ describe("Onboarding: sign-in", () => {
     await flush();
     expect(screen.getByRole("alert").textContent).toContain("no browser could be opened");
     await user.click(button(/sign in with your browser/i));
-    // Waiting for the browser again: the old reason is gone and the button is busy.
+    // Waiting for the browser again: the old reason is gone, the wait is shown in place of the button.
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(button(/waiting for the browser/i).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Continue in your browser")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /sign in with your browser/i })).toBeNull();
     finish();
     await flush();
     expect(text()).toContain("Signed in as Ada");

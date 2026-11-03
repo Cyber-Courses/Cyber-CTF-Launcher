@@ -104,7 +104,7 @@ describe("Labs", () => {
   const props = {
     loggedIn: true,
     authReady: true,
-    onLogin: vi.fn(async () => {}),
+    onLogin: vi.fn(() => Promise.resolve(true)),
     hostArch: "x86_64",
     report: readyReport(),
     openLab: { slug: null, tick: 0 },
@@ -171,7 +171,7 @@ describe("Labs", () => {
   it("asks a signed-out player to sign in", async () => {
     installTauri({ auth_status: () => ({ loggedIn: false, name: null, email: null }) });
     const user = userEvent.setup();
-    const onLogin = vi.fn(async () => {});
+    const onLogin = vi.fn(() => Promise.resolve(true));
     render(<Labs {...props} loggedIn={false} onLogin={onLogin} openLab={{ slug: "s3-public-backup", tick: 1 }} />);
     await flush(50);
     const signIn = screen.getAllByRole("button").find((b) => /sign in/i.test(b.textContent));

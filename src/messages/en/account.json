@@ -1,17 +1,22 @@
 {
-  "waitingForBrowser": "Waiting for the browser…",
   "signIn": "Sign in",
   "settings": "Settings",
   "online": "Online: labs you launch from the website run on this machine",
   "signedIn": "Signed in",
   "signedInKeychain": "signed in · keychain",
   "signOut": "Sign out",
-  "didntOpen": "Browser didn't open?",
   "copyLink": "Copy the sign-in link",
   "cancel": "Cancel",
-  "waitingForCode": "Waiting for you to approve the code…",
   "useCode": "Use a code instead",
-  "enterCode": "On any device, open {url} and enter this code:",
+  "enterCode": "Enter it at {url} on any device.",
   "copyCode": "Copy the code",
-  "copyCodeLink": "Copy the link with the code"
+  "copyCodeLink": "Copy the link with the code",
+  "signedInToast": "Signed in as {name}",
+  "browserTitle": "Continue in your browser",
+  "browserBody": "Sign in on cyberauth.co; the launcher comes back by itself once you're done.",
+  "codeTitle": "Sign in with a code",
+  "codeExpires": "Expires in {time}",
+  "codeExpired": "The code expired. Cancel and start again.",
+  "sessionExpiredTitle": "Signed out",
+  "sessionExpired": "Your session expired. Sign in again to continue."
 }

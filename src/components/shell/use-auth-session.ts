@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { authStatus, type AuthStatus } from "@/lib/tauri";
 import { AUTH_CHANGED_EVENT } from "@/lib/app-events";
@@ -9,6 +9,8 @@ import { ignore, warn } from "@/lib/failure";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 import { usePoll } from "@/lib/use-poll";
 import { structurallyEqual } from "@/lib/equal";
+import { toast } from "@/components/ui/toaster";
+import { translate } from "@/lib/i18n";
 
 const SIGNED_IN_POLL_MS = 30_000;
 const SIGNED_OUT: AuthStatus = { loggedIn: false, name: null, email: null };
@@ -23,8 +25,17 @@ const SIGNED_OUT: AuthStatus = { loggedIn: false, name: null, email: null };
  */
 export function useAuthSession() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
+  // The session as last rendered, to notice it going away under the app (a re-read that comes
+  // back signed out with the session expired, after one signed in).
+  const last = useRef<AuthStatus | null>(null);
+  useEffect(() => {
+    last.current = auth;
+  }, [auth]);
   // An answer equal to the session known keeps it as is: nothing reading it re-renders.
   const keep = useCallback((s: AuthStatus) => {
+    // Signed out under the app, not by the player: said once here (the sidebar and Settings
+    // keep saying why until the next sign-in).
+    if (last.current?.loggedIn && !s.loggedIn && s.sessionExpired) toast(translate("account.sessionExpiredTitle"), translate("account.sessionExpired"), "warn");
     setAuth((prev) => (structurallyEqual(prev, s) ? prev : s));
   }, []);
 

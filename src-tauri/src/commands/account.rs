@@ -8,30 +8,36 @@ use crate::account::agent::{self, AgentInfo};
 use crate::account::api;
 use crate::account::api_operation::ApiOperation;
 use crate::account::auth::{self, AuthStatus, DeviceCode};
+use crate::app::window;
 use crate::error::Result;
 use crate::platform::AppDirs;
 
 /// Signs in through the system browser, the sign-in link sent on `events` (see [`auth::auth_login`]).
+/// Once through, the app comes forward from the browser: the player is back where they started.
 #[tauri::command]
 pub async fn auth_login(app: AppHandle, events: Channel<String>) -> Result<AuthStatus> {
     use tauri_plugin_opener::OpenerExt;
-    auth::auth_login(|url| {
+    let status = auth::auth_login(|url| {
         let _ = events.send(url.to_string());
         if let Err(e) = app.opener().open_url(url.as_str(), None::<&str>) {
             log::warn!("no browser opened for sign-in ({e}); the link is offered to copy");
         }
     })
-    .await
+    .await?;
+    window::reveal_main(&app);
+    Ok(status)
 }
 
 /// Signs in with a code entered on any device, the code sent on `events` (see
-/// [`auth::auth_login_device`]).
+/// [`auth::auth_login_device`]). Once approved, the app comes forward like after a browser sign-in.
 #[tauri::command]
-pub async fn auth_login_device(events: Channel<DeviceCode>) -> Result<AuthStatus> {
-    auth::auth_login_device(|code| {
+pub async fn auth_login_device(app: AppHandle, events: Channel<DeviceCode>) -> Result<AuthStatus> {
+    let status = auth::auth_login_device(|code| {
         let _ = events.send(code);
     })
-    .await
+    .await?;
+    window::reveal_main(&app);
+    Ok(status)
 }
 
 /// Ends the sign-in waiting for the browser (or for a code's approval), if any.

@@ -40,7 +40,7 @@ type LabsProps = {
   /** False until the sign-in state is known (the lab page waits for it). */
   authReady?: boolean;
   /** Logs in from a lab (a logged-out Start). */
-  onLogin?: () => Promise<void>;
+  onLogin?: () => Promise<boolean>;
   hostArch: string;
   report?: SystemReport | null;
   openLab: { slug: string | null; tick: number };
@@ -107,7 +107,7 @@ function LabsView(props: ViewProps) {
   });
   const onStop = useStableCallback((lab: Lab) => void actions.stop(lab));
   const onResume = useStableCallback((lab: Lab) => void actions.resume(lab));
-  const login = useStableCallback(() => onLogin?.() ?? Promise.resolve());
+  const login = useStableCallback(() => onLogin?.() ?? Promise.resolve(false));
 
   if (v.error) return <LabsUnreachable statuses={statuses} labs={labs} onRetry={onRetry} />;
   if (v.detailSlug && !detail && !labs) return <OpenLabLoading />;

@@ -17,11 +17,13 @@ import { report } from "@/lib/dev-mock/sample";
  *  - `onboarding`: the first-run onboarding shows (on every load with the switch).
  *  - `auth=out`: signed out until "Sign in" is used, in any of the preview's tabs (a sign-in or
  *    sign-out is kept in the browser's storage, as the saved servers are; see session.ts).
+ *    `auth=expired`: the same, signed out because the session expired under the app.
  *  - `launch=fail`: the first lab start of each page load fails, after a few lines of output.
  *  - `hold=<step>[,<step>…]`: each step waits, once reached, until the test lets it go on
  *    (`window.__CYBERCTF_MOCK_RELEASE__(step)`): a lab start (`launch`), a re-run of provisioning
  *    (`provision`), a hosted session coming up (`hosted`), the machine coming back after failed
- *    system checks (`check`), the package manager showing up (`pm`). See holds.ts.
+ *    system checks (`check`), the package manager showing up (`pm`), a sign-in finishing in
+ *    the browser or by the code (`login`). See holds.ts.
  *  - `install=fail`: the first one-click install of each page load fails. Otherwise installs
  *    stream an installer's output and succeed: the next system check reports the tool installed.
  *  - `deploying=none`: no lab is deploying at load (GOAD Light otherwise is).
@@ -44,6 +46,8 @@ export type Scenario = {
   catalogue: "default" | "arm64vm";
   onboarding: boolean;
   signedOut: boolean;
+  /** Signed out because the session expired (cyber-auth refused its refresh token). */
+  sessionExpired: boolean;
   launchFails: boolean;
   /** The steps a test holds (`hold=`), in the order given. */
   held: Holdable[];
@@ -64,7 +68,8 @@ export function scenarioFrom(search: string): Scenario {
     docker: docker === "stopped" || docker === "denied" ? docker : "running",
     catalogue: q.get("catalogue") === "arm64vm" ? "arm64vm" : "default",
     onboarding: q.has("onboarding"),
-    signedOut: q.get("auth") === "out",
+    signedOut: q.get("auth") === "out" || q.get("auth") === "expired",
+    sessionExpired: q.get("auth") === "expired",
     launchFails: q.get("launch") === "fail",
     held: (q.get("hold") ?? "").split(",").filter(isHoldable),
     installFails: q.get("install") === "fail",

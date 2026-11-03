@@ -14,7 +14,7 @@ import { rowTitles } from "@/features/labs/labs-test-kit";
 const props = {
   loggedIn: true,
   authReady: true,
-  onLogin: vi.fn(async () => {}),
+  onLogin: vi.fn(() => Promise.resolve(true)),
   hostArch: "x86_64",
   report: { ...readyReport(), arch: "x86_64" },
   openLab: { slug: null, tick: 0 },
@@ -99,7 +99,7 @@ describe("Labs list", () => {
 
   it("signed out: one sign-in banner above the list, no Sign in per row, no solved count", async () => {
     installTauri(idle);
-    const onLogin = vi.fn(async () => {});
+    const onLogin = vi.fn(() => Promise.resolve(true));
     const user = userEvent.setup();
     render(<Labs {...props} loggedIn={false} onLogin={onLogin} />);
     await flush(80);

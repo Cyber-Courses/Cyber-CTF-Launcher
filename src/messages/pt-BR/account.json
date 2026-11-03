@@ -1,17 +1,22 @@
 {
-  "waitingForBrowser": "Aguardando o navegador…",
   "signIn": "Entrar",
   "settings": "Configurações",
   "online": "Online: os labs que você inicia pelo site rodam nesta máquina",
   "signedIn": "Conectado",
   "signedInKeychain": "conectado · keychain",
   "signOut": "Sair",
-  "didntOpen": "O navegador não abriu?",
   "copyLink": "Copiar o link de login",
   "cancel": "Cancelar",
-  "waitingForCode": "Aguardando a aprovação do código…",
   "useCode": "Usar um código",
-  "enterCode": "Em qualquer dispositivo, abra {url} e digite este código:",
+  "enterCode": "Digite-o em {url}, em qualquer dispositivo.",
   "copyCode": "Copiar o código",
-  "copyCodeLink": "Copiar o link com o código"
+  "copyCodeLink": "Copiar o link com o código",
+  "signedInToast": "Conectado como {name}",
+  "browserTitle": "Continue no seu navegador",
+  "browserBody": "Entre em cyberauth.co; o launcher volta sozinho quando você terminar.",
+  "codeTitle": "Entrar com um código",
+  "codeExpires": "Expira em {time}",
+  "codeExpired": "O código expirou. Cancele e comece de novo.",
+  "sessionExpiredTitle": "Desconectado",
+  "sessionExpired": "Sua sessão expirou. Entre novamente para continuar."
 }

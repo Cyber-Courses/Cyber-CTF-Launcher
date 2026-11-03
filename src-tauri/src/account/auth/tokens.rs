@@ -36,15 +36,23 @@ pub fn code_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
+/// What the app shows of the account: the ID token's display claims.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Profile {
+    name: Option<String>,
+    email: Option<String>,
+    /// The account's picture, an `https:` URL (anything else is dropped: the webview shows it).
+    picture: Option<String>,
+}
+
 /// Display claims from the ID token. It comes straight from the token endpoint
 /// over TLS, so its signature is not re-verified here; it is never used for
 /// authorization (the API verifies the access token itself).
-fn id_token_profile(id_token: &str) -> (Option<String>, Option<String>) {
+fn id_token_profile(id_token: &str) -> Profile {
     let claims = id_token.split('.').nth(1).and_then(|p| URL_SAFE_NO_PAD.decode(p).ok()).and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok());
-    match claims {
-        Some(c) => (c.get("name").and_then(|v| v.as_str()).map(str::to_string), c.get("email").and_then(|v| v.as_str()).map(str::to_string)),
-        None => (None, None),
-    }
+    let Some(c) = claims else { return Profile::default() };
+    let string = |name: &str| c.get(name).and_then(|v| v.as_str()).map(str::to_string);
+    Profile { name: string("name"), email: string("email"), picture: string("picture").filter(|url| url.starts_with("https://")) }
 }
 
 /// A string claim of a JWT's payload (unverified: used to tell accounts apart locally, never
@@ -94,17 +102,22 @@ pub(super) async fn post_form<T: serde::de::DeserializeOwned>(url: &str, what: &
 }
 
 pub(super) fn session_from(tokens: TokenResponse, previous: Option<&Session>) -> Session {
-    let (name, email) = match tokens.id_token.as_deref() {
+    let profile = match tokens.id_token.as_deref() {
         Some(t) => id_token_profile(t),
-        None => (previous.and_then(|p| p.name.clone()), previous.and_then(|p| p.email.clone())),
+        None => Profile {
+            name: previous.and_then(|p| p.name.clone()),
+            email: previous.and_then(|p| p.email.clone()),
+            picture: previous.and_then(|p| p.picture.clone()),
+        },
     };
     Session {
         access_token: tokens.access_token,
         // Refresh tokens may rotate; keep the old one if none is returned.
         refresh_token: tokens.refresh_token.or_else(|| previous.and_then(|p| p.refresh_token.clone())),
         expires_at: now().saturating_add(tokens.expires_in.unwrap_or(DEFAULT_EXPIRES_IN)),
-        name,
-        email,
+        name: profile.name,
+        email: profile.email,
+        picture: profile.picture,
     }
 }
 
@@ -152,6 +165,7 @@ mod tests {
             expires_at: 0,
             name: name.map(str::to_string),
             email: email.map(str::to_string),
+            picture: None,
         }
     }
 
@@ -206,7 +220,7 @@ mod tests {
         assert_eq!(jwt_claim("h..s", "sub"), None);
         assert_eq!(jwt_claim(&format!("a.{}", URL_SAFE_NO_PAD.encode(br#"{"sub":"u"}"#)), "sub").as_deref(), Some("u"));
         assert_eq!(jwt_claim(&jwt(URL_SAFE_NO_PAD.encode(b"[1,2]")), "sub"), None);
-        assert_eq!(id_token_profile(&jwt(URL_SAFE_NO_PAD.encode(br#"{"name":1,"email":["x"]}"#))), (None, None));
+        assert_eq!(id_token_profile(&jwt(URL_SAFE_NO_PAD.encode(br#"{"name":1,"email":["x"]}"#))), Profile::default());
     }
 
     #[test]
@@ -220,11 +234,29 @@ mod tests {
 
     #[test]
     fn reads_display_claims_from_id_token() {
-        let payload = URL_SAFE_NO_PAD.encode(br#"{"sub":"u1","name":"Camille","email":"c@cyberctf.fr"}"#);
-        let (name, email) = id_token_profile(&format!("h.{payload}.s"));
-        assert_eq!(name.as_deref(), Some("Camille"));
-        assert_eq!(email.as_deref(), Some("c@cyberctf.fr"));
-        assert_eq!(id_token_profile("garbage"), (None, None));
+        let payload = URL_SAFE_NO_PAD.encode(br#"{"sub":"u1","name":"Camille","email":"c@cyberctf.fr","picture":"https://cdn.example/c.png"}"#);
+        let profile = id_token_profile(&format!("h.{payload}.s"));
+        assert_eq!(profile.name.as_deref(), Some("Camille"));
+        assert_eq!(profile.email.as_deref(), Some("c@cyberctf.fr"));
+        assert_eq!(profile.picture.as_deref(), Some("https://cdn.example/c.png"));
+        assert_eq!(id_token_profile("garbage"), Profile::default());
+    }
+
+    /// The picture is shown by the webview, so only an `https:` URL is kept: a `javascript:` or
+    /// `data:` claim from a compromised identity provider is dropped, never rendered.
+    #[test]
+    fn only_an_https_picture_is_kept_and_it_follows_the_session_across_a_refresh() {
+        let jwt = |claims: &[u8]| format!("h.{}.s", URL_SAFE_NO_PAD.encode(claims));
+        assert_eq!(id_token_profile(&jwt(br#"{"picture":"data:image/svg+xml,<svg/>"}"#)).picture, None);
+        assert_eq!(id_token_profile(&jwt(br#"{"picture":"http://cdn.example/c.png"}"#)).picture, None);
+        let first = session_from(tokens("a", None, Some(&jwt(br#"{"name":"Noor","picture":"https://cdn.example/n.png"}"#)), None), None);
+        assert_eq!(first.picture.as_deref(), Some("https://cdn.example/n.png"));
+        // A refresh answers with no ID token: the picture carries over like the name.
+        let renewed = session_from(tokens("b", None, None, None), Some(&first));
+        assert_eq!(renewed.picture.as_deref(), Some("https://cdn.example/n.png"));
+        // An old session kept before the picture existed still reads.
+        let old: Session = serde_json::from_str(r#"{"access_token":"a","refresh_token":null,"expires_at":1,"name":null,"email":null}"#).unwrap();
+        assert_eq!(old.picture, None);
     }
 }
 

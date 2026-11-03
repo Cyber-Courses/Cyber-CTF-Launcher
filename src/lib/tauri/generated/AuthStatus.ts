@@ -2,7 +2,16 @@
 
 export type AuthStatus = { loggedIn: boolean, name: string | null, email: string | null, 
 /**
+ * The account's picture, when it has one.
+ */
+picture?: string, 
+/**
  * Why the session couldn't be read (the keychain is locked, its prompt was dismissed, or
  * there is no Secret Service), when that is why the player shows as signed out.
  */
-keychainError?: string, };
+keychainError?: string, 
+/**
+ * Signed out because the session expired (cyber-auth refused its refresh token), not by
+ * the player: said until the next sign-in, so the app can tell them why.
+ */
+sessionExpired?: boolean, };

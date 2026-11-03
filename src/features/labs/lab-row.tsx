@@ -30,7 +30,7 @@ type LabRowProps = {
   operation?: string;
   loggedIn: boolean;
   /** Logged out: the start button logs in instead of being greyed out. */
-  onLogin?: () => Promise<void>;
+  onLogin?: () => Promise<boolean>;
   hostArch: string;
   /** An emulator (QEMU) is ready here, so a VM lab built for another CPU can run, slowly. */
   emulates?: boolean;
@@ -138,6 +138,10 @@ function RowLine(props: LabRowProps & { onAskStop: () => void }) {
           connectCloud={props.connectCloud ?? false}
           loggedIn={props.loggedIn}
           onLogin={props.onLogin}
+          // The player wanted this lab: once signed in, its page (where it starts) opens.
+          onSignedIn={() => {
+            props.onOpen(lab);
+          }}
           onStop={props.onAskStop}
           onResume={
             onResume &&

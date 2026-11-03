@@ -21,7 +21,7 @@ fn text() -> impl Strategy<Value = String> {
 /// A session as it is saved: its JSON, so it never starts with the pieces marker.
 fn session_json() -> impl Strategy<Value = String> {
     (text(), proptest::option::of(text()), any::<u64>(), proptest::option::of("\\PC{0,40}")).prop_map(|(access, refresh, expires_at, name)| {
-        serde_json::to_string(&Session { access_token: access, refresh_token: refresh, expires_at, name, email: None }).unwrap()
+        serde_json::to_string(&Session { access_token: access, refresh_token: refresh, expires_at, name, email: None, picture: None }).unwrap()
     })
 }
 

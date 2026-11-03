@@ -37,7 +37,7 @@ function renderLabs(slug: string | null, overrides: Record<string, Handler> = {}
       <Labs
         loggedIn
         authReady
-        onLogin={vi.fn(async () => {})}
+        onLogin={vi.fn(() => Promise.resolve(true))}
         hostArch="x86_64"
         report={{ ...readyReport(), arch: "x86_64" }}
         openLab={{ slug, tick: 0 }}
