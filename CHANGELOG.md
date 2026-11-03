@@ -4,6 +4,20 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-11-03
+
+### Changed
+
+- **A smoother sign-in.** Signing in now brings the launcher back to the front
+  once the browser step is done and resumes whatever asked you to sign in, with
+  a real waiting state while it completes. An expired session is called out
+  plainly, your account picture is shown once you are in, and the sign-in page
+  matches the launcher's own look; the browser tab it opens closes itself.
+
+### Security
+
+- Updated Next.js to 16.4.3.
+
 ## [1.5.3] — 2026-10-28
 
 ### Fixed
