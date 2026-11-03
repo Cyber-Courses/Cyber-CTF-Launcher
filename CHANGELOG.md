@@ -4,6 +4,28 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] — 2026-11-03
+
+### Added
+
+- **A lab now shows what it needs to run.** The pre-launch panel gains a "Needs" line with the
+  minimum CPU, memory and disk, as a range from the lab's lightest form (its machines as
+  containers) to its heaviest (one VM per machine). It is read from the lab's own spec, so it is
+  right for each lab.
+
+### Fixed
+
+- **UTM no longer opens on its own.** The running-labs scan asked `utmctl` on every pass, and on
+  macOS that launches the UTM app when it isn't already open. It now asks only when UTM is already
+  running.
+- **Installing QEMU on an Apple Silicon Mac no longer fails** with "unknown or unsupported macOS
+  version". Homebrew is updated first, which an older Homebrew on a newer macOS needs before it can
+  install anything.
+
+### Changed
+
+- Bundles Isoloom 1.0.3 (per-target resource sizing, behind the new requirements line).
+
 ## [1.6.0] — 2026-11-03
 
 ### Changed
