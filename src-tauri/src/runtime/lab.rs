@@ -251,6 +251,64 @@ pub fn memory_mb(spec: &Spec) -> u32 {
     isoloom_spec::totals(spec).memory_mb
 }
 
+/// A size the lab's machines add up to: CPUs, memory and disk.
+#[derive(serde::Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabResources")]
+pub struct Resources {
+    pub cpus: u32,
+    pub memory_mb: u32,
+    pub disk_gb: u32,
+}
+
+impl From<isoloom_spec::Totals> for Resources {
+    fn from(t: isoloom_spec::Totals) -> Self {
+        Resources { cpus: t.cpus, memory_mb: t.memory_mb, disk_gb: t.disk_gb }
+    }
+}
+
+/// What a lab needs to run, as a range across the ways it runs: the lightest form (its machines
+/// as containers) to the heaviest (one VM per machine). `min == max` when a lab has a single form.
+#[derive(serde::Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabRequirements")]
+pub struct Requirements {
+    pub min: Resources,
+    pub max: Resources,
+}
+
+/// The lab's minimum-to-run requirements, sized per target it can run on (a container reserves
+/// less than a VM) and reported as the lightest-to-heaviest range. `None` for a spec with no
+/// machines (cloud services), which has no footprint of its own to size.
+pub fn requirements(spec: &Spec) -> Option<Requirements> {
+    let mut sizes: Vec<isoloom_spec::Totals> =
+        isoloom_spec::effective(spec).into_iter().map(|t| isoloom_spec::totals_for(spec, t)).filter(|t| t.machines > 0).collect();
+    sizes.sort_by_key(|t| t.memory_mb);
+    Some(Requirements { min: (*sizes.first()?).into(), max: (*sizes.last()?).into() })
+}
+
+/// A lab's spec at a commit: the installed copy when it is that commit, else its `isoloom.yml`
+/// fetched from GitHub (CyberCTF repositories at a full SHA only). The one way the launcher reads
+/// a catalogue lab's spec before it is installed.
+pub async fn spec_at(dirs: &crate::platform::AppDirs, lab_id: &str, repository: &str, commit: &str) -> Result<Spec> {
+    crate::runtime::paths::validate_id(lab_id)?;
+    crate::labs::validate_source(repository, commit)?;
+    if let Ok(dir) = crate::runtime::paths::lab_dir(dirs, lab_id)
+        && std::fs::read_to_string(dir.join(".cyberctf-commit")).is_ok_and(|c| c.trim() == commit)
+        && let Ok(spec) = load(&dir)
+    {
+        return Ok(spec);
+    }
+    let url = format!("https://raw.githubusercontent.com/{repository}/{commit}/isoloom.yml");
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().map_err(|e| Error::Invalid(e.to_string()))?;
+    let res = client.get(&url).send().await.map_err(|e| Error::Invalid(format!("couldn't read the lab's spec: {e}")))?;
+    if !res.status().is_success() {
+        return Err(Error::Invalid(format!("couldn't read the lab's spec: HTTP {}", res.status())));
+    }
+    let text = res.text().await.map_err(|e| Error::Invalid(format!("couldn't read the lab's spec: {e}")))?;
+    parse(&text)
+}
+
 /// Why the lab's VMs can't run on Vagrant's QEMU provider (its networks), if they can't.
 pub fn qemu_refusal(lab: &Lab) -> Option<String> {
     isoloom_targets::refusal_on(lab, Target::Vagrant, Some("qemu"))
@@ -289,6 +347,22 @@ mod tests {
         let err = prepare(&dir, Target::Vagrant).unwrap_err().to_string();
         assert!(err.starts_with("this lab can't run there: vagrant") && err.contains("machines.web.app.image"), "{err}");
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn requirements_size_a_single_form_lab_as_one_value() {
+        // SPEC's web machine is a container only (app.image), so every form it runs is a Docker
+        // one: all container-sized, and the lightest-to-heaviest range collapses to one value.
+        let r = requirements(&parse(SPEC).unwrap()).expect("a lab with a machine has requirements");
+        assert_eq!(r.min, r.max);
+        assert_eq!(r.min.memory_mb, isoloom_spec::CONTAINER_MEMORY_MB);
+    }
+
+    #[test]
+    fn a_cloud_services_lab_has_no_machine_footprint() {
+        let spec = parse("version: 1\nname: t\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { region: us-east-1 }\n  outputs: { app: app_url }\n")
+            .unwrap();
+        assert!(requirements(&spec).is_none());
     }
 
     #[test]

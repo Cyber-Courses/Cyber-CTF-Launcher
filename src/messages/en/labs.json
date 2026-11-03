@@ -328,6 +328,8 @@
     "objective": "Objective",
     "evidence": "evidence",
     "whereItRuns": "Where it runs",
+    "systemRequirements": "Needs",
+    "requirementsSummary": "{cpu} vCPU · {ram} GB RAM · {disk} GB disk",
     "notAvailable": "Not available for this lab",
     "na": "n/a",
     "emulatedContainers": "Emulated on your CPU (slower than native).",

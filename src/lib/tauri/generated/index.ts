@@ -25,6 +25,8 @@ export type * from "./LabNetwork";
 export type * from "./LabOutput";
 export type * from "./LabPlace";
 export type * from "./LabPort";
+export type * from "./LabRequirements";
+export type * from "./LabResources";
 export type * from "./LabService";
 export type * from "./LabStatus";
 export type * from "./LabTool";

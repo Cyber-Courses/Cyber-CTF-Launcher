@@ -35,7 +35,7 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
       )}
 
       {!s.running && rt && (
-        <WhereItRunsPanel runtime={rt} hostArch={p.hostArch} native={s.native} emulates={s.emulates} isDocker={s.isDocker} meta={meta} cost={cost} />
+        <WhereItRunsPanel labId={lab.id} runtime={rt} hostArch={p.hostArch} native={s.native} emulates={s.emulates} isDocker={s.isDocker} meta={meta} cost={cost} />
       )}
 
       {s.running && (

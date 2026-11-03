@@ -33,7 +33,6 @@ use crate::platform::AppDirs;
 
 use super::lab::{CloudProvider, CloudServices, Spec, Target};
 use super::launch::{CLOUD_NEEDS_ACCOUNT, check_aws_budget, public_ip};
-use super::paths::lab_dir;
 use super::providers::Provider;
 use super::{LabRef, Runtime, isothrum, lab, server};
 use crate::error::{Error, Result};
@@ -229,23 +228,7 @@ pub fn preview(spec: &Spec) -> Option<Preview> {
 /// [`Preview`] of a lab at a commit: the installed copy when it is that commit, else its
 /// `isoloom.yml` from GitHub (CyberCTF repositories at a full SHA only).
 pub async fn preview_at(dirs: &AppDirs, lab_id: &str, repository: &str, commit: &str) -> Result<Option<Preview>> {
-    super::validate_id(lab_id)?;
-    crate::labs::validate_source(repository, commit)?;
-    if let Ok(dir) = lab_dir(dirs, lab_id)
-        && std::fs::read_to_string(dir.join(".cyberctf-commit")).is_ok_and(|c| c.trim() == commit)
-        && let Ok(spec) = lab::load(&dir)
-    {
-        return Ok(preview(&spec));
-    }
-    let url = format!("https://raw.githubusercontent.com/{repository}/{commit}/isoloom.yml");
-    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().map_err(|e| Error::Invalid(e.to_string()))?;
-    let res = client.get(&url).send().await.map_err(|e| Error::Invalid(format!("couldn't read the lab's spec: {e}")))?;
-    if !res.status().is_success() {
-        return Err(Error::Invalid(format!("couldn't read the lab's spec: HTTP {}", res.status())));
-    }
-    let text = res.text().await.map_err(|e| Error::Invalid(format!("couldn't read the lab's spec: {e}")))?;
-    let spec = lab::parse(&text)?;
-    Ok(preview(&spec))
+    Ok(preview(&lab::spec_at(dirs, lab_id, repository, commit).await?))
 }
 
 #[cfg(test)]

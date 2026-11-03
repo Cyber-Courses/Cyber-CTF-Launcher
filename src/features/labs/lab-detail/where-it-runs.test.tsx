@@ -16,7 +16,7 @@ const x86Vm: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], provid
 
 describe("WhereItRunsPanel", () => {
   it("marks the places the lab can't run as not available", () => {
-    render(<WhereItRunsPanel runtime={x86Vm} hostArch="x86_64" native emulates={false} isDocker={false} meta="VM lab" />);
+    render(<WhereItRunsPanel labId="lab-x" runtime={x86Vm} hostArch="x86_64" native emulates={false} isDocker={false} meta="VM lab" />);
     expect(screen.getByText("VM on this machine")).toBeTruthy();
     // A VM lab on VirtualBox only: no container, no server, no cloud, no hosted run.
     const unavailable = screen.getAllByTitle("Not available for this lab");
@@ -31,16 +31,25 @@ describe("WhereItRunsPanel", () => {
   });
 
   it("says an x86 VM lab runs emulated with QEMU on an Apple Silicon Mac that has it", () => {
-    render(<WhereItRunsPanel runtime={x86Vm} hostArch="arm64" native={false} emulates isDocker={false} meta="VM lab" />);
+    render(<WhereItRunsPanel labId="lab-x" runtime={x86Vm} hostArch="arm64" native={false} emulates isDocker={false} meta="VM lab" />);
     expect(screen.getByText(/Emulated with QEMU, many times slower than native/)).toBeTruthy();
     // QEMU makes "VM on this machine" a place it can run.
     expect(screen.getByText("VM on this machine").closest("[title]")).toBeNull();
   });
 
   it("says a foreign-CPU VM lab needs QEMU when none is installed", () => {
-    render(<WhereItRunsPanel runtime={x86Vm} hostArch="arm64" native={false} emulates={false} isDocker={false} meta="VM lab" />);
+    render(<WhereItRunsPanel labId="lab-x" runtime={x86Vm} hostArch="arm64" native={false} emulates={false} isDocker={false} meta="VM lab" />);
     expect(screen.getByText(/Built for another CPU: install QEMU/)).toBeTruthy();
     expect(screen.getByText("VM on this machine").closest("[title]")?.getAttribute("title")).toBe("Not available for this lab");
+  });
+
+  it("shows the lab's minimum-to-run requirements from its spec", async () => {
+    installTauri();
+    const vm: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox"], repository: "CyberCTF/x", commit: "a".repeat(40) };
+    render(<WhereItRunsPanel labId="lab-x" runtime={vm} hostArch="x86_64" native emulates={false} isDocker={false} meta="VM lab" />);
+    await flush();
+    expect(screen.getByText("Needs")).toBeTruthy();
+    expect(screen.getByText("2 vCPU · 1 GB RAM · 20 GB disk")).toBeTruthy();
   });
 });
 

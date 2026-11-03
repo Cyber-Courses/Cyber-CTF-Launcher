@@ -58,6 +58,8 @@ fn export(dir: &Path) {
         runtime::Preview,
         runtime::Runtime,
         runtime::lab::Observer,
+        runtime::lab::Requirements,
+        runtime::lab::Resources,
         runtime::providers::Provider,
         crate::commands::server::HostCapacity,
         runtime::server::HostInput,

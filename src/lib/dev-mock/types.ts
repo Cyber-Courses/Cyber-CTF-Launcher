@@ -11,6 +11,7 @@ import type {
   HostCapacity,
   InstalledTool,
   LabCheck,
+  LabRequirements,
   LabStatus,
   RunTier,
   LabTool,
@@ -46,6 +47,7 @@ type Answers = {
   aws_profiles: string[];
   lab_status: LabStatus;
   lab_cloud_preview: CloudPreview | null;
+  lab_requirements: LabRequirements | null;
   running_labs: string[];
   deploying_labs: string[];
   active_operations: ActiveOperation[];

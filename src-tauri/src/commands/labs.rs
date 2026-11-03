@@ -128,6 +128,15 @@ pub async fn lab_cloud_preview(app: AppHandle, id: String, repository: String, c
     cloud_services::preview_at(&AppDirs::from(&app), &id, &repository, &commit).await
 }
 
+/// A lab's minimum-to-run system requirements (CPU, memory, disk), as a lightest-to-heaviest
+/// range over the ways it runs, from its spec at the catalogue's pinned commit. None for a lab
+/// with no machines of its own (cloud services).
+#[tauri::command]
+pub async fn lab_requirements(app: AppHandle, id: String, repository: String, commit: String) -> Result<Option<lab::Requirements>> {
+    let spec = lab::spec_at(&AppDirs::from(&app), &id, &repository, &commit).await?;
+    Ok(lab::requirements(&spec))
+}
+
 /// The observers a lab puts beside itself (`tools:` in its spec), at their addresses where it
 /// runs (container addresses for a container lab, wherever its Compose file runs).
 #[tauri::command]

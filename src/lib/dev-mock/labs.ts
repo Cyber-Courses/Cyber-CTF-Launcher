@@ -229,6 +229,10 @@ export const labCommands = {
   lab_status: (args) => (args?.id === "lab-invoice" ? invoiceStatus : stopped),
   lab_cloud_preview: (args) =>
     args?.id === "lab-goat" ? { provider: "aws", hourlyUsd: 0.02, inputs: ["PLAYER_CIDR"], allowList: true, outputs: ["access_key_id", "secret_key"] } : null,
+  lab_requirements: (args) =>
+    args?.id === "lab-goad"
+      ? { min: { cpus: 4, memoryMb: 2560, diskGb: 25 }, max: { cpus: 6, memoryMb: 12288, diskGb: 120 } }
+      : { min: { cpus: 2, memoryMb: 1024, diskGb: 20 }, max: { cpus: 2, memoryMb: 1024, diskGb: 20 } },
   running_labs: () => ["lab-invoice"],
   deploying_labs: () => ["lab-goad"],
   active_operations: () => [{ labId: "lab-goad", op: "launch", machine: "SRV02", step: "Configure SRV02 (ansible 41/88)" }],
