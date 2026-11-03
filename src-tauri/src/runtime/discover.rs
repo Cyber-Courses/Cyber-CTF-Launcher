@@ -289,9 +289,13 @@ async fn middot_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
     if let Ok(out) = run_read("prlctl", &["list", "--running", "--no-header", "-o", "name"], None).await {
         ids.extend(lab_ids_from_vm_names(out.lines().map(str::trim), by_name));
     }
-    // UTM (macOS): a started VM carries the same `<lab> · <machine>` label. `utmctl list` prints
-    // UUID/Status/Name; the started ones match the labs by name.
-    if let Ok(out) = run_read("utmctl", &["list"], None).await {
+    // UTM (macOS): a started VM carries the same `<lab> · <machine>` label. Only ask utmctl when
+    // UTM is already running: `utmctl list` launches UTM.app otherwise, popping the app open on
+    // every running-labs scan. `pgrep -x UTM` is a read-only check that cannot launch it (and on
+    // Linux/Windows it finds nothing, so utmctl is skipped there too).
+    if run_read("pgrep", &["-x", "UTM"], None).await.is_ok()
+        && let Ok(out) = run_read("utmctl", &["list"], None).await
+    {
         let names = utm_running_vm_names(&out);
         ids.extend(lab_ids_from_vm_names(names.iter().map(String::as_str), by_name));
     }
@@ -325,15 +329,17 @@ async fn prefixed_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> 
 mod tests {
     use std::collections::HashMap;
 
-    /// The UTM probe end to end with a scripted `utmctl`: its started VMs reach the installed labs
-    /// through the name reader and the ` · ` matcher, from the VM probes down. A `utmctl` that
-    /// fails (UTM not running) or isn't installed contributes nothing, without failing the scan.
+    /// The UTM probe end to end with a scripted `utmctl`, once `pgrep` reports UTM running: its
+    /// started VMs reach the installed labs through the name reader and the ` · ` matcher. A
+    /// `utmctl` that fails (UTM quit between the check and the call) contributes nothing, without
+    /// failing the scan.
     #[tokio::test]
     async fn a_scripted_utmctl_maps_started_vms_to_labs_and_a_failing_one_contributes_nothing() {
         use crate::platform::exec::fake::{Tools, fail, ok};
         let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
         let listing = "UUID  Status  Name\na started  minilab · dc01\nb started  minilab · ws01\nc stopped  minilab · router\n";
         let tools = Tools::new(move |program, _| match program {
+            "pgrep" => ok("4242"),
             "utmctl" => ok(listing),
             _ => None,
         });
@@ -343,12 +349,29 @@ mod tests {
         assert!(tools.called("utmctl list"), "{:?}", tools.calls());
         drop(tools);
         let tools = Tools::new(|program, _| match program {
+            "pgrep" => ok("4242"),
             "utmctl" => fail("Error: UTM is not running"),
             _ => None,
         });
         assert!(super::middot_vm_ids(&by_name).await.is_empty());
         assert!(super::vm_lab_ids(&by_name).await.is_empty());
         assert!(tools.called("utmctl list"), "{:?}", tools.calls());
+    }
+
+    /// The fix for UTM popping open on every scan: when `pgrep` reports UTM is not running,
+    /// `utmctl` is never called, since calling it would launch UTM.app.
+    #[tokio::test]
+    async fn utmctl_is_not_called_when_utm_is_not_running() {
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
+        let tools = Tools::new(|program, _| match program {
+            "pgrep" => fail("no matching process"),
+            // Scripted so that, were it ever reached, it would map a VM: the point is that it is not.
+            "utmctl" => ok("UUID  Status  Name\na started  minilab · dc01\n"),
+            _ => None,
+        });
+        assert!(super::middot_vm_ids(&by_name).await.is_empty());
+        assert!(!tools.called("utmctl list"), "utmctl must not run when UTM is down: {:?}", tools.calls());
     }
 
     #[test]
