@@ -62,7 +62,17 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
         Dependency::Terraform => vec![step(brew.clone(), &["install", "hashicorp/tap/terraform"])],
         Dependency::Virtualbox => vec![fetch_and_open(&brew, "virtualbox", "VirtualBox")],
         // QEMU is a brew formula (no admin); UTM is a cask with its own installer.
-        Dependency::Qemu => vec![step(brew.clone(), &["install", "qemu"])],
+        // `brew update` first: an outdated Homebrew on a newer macOS can't even start the install
+        // ("unknown or unsupported macOS version: :dunno" — it has no bottle rule for the OS).
+        // Updating Homebrew teaches it the OS, and it's quick when Homebrew is already current.
+        Dependency::Qemu => vec![
+            Step {
+                program: brew.clone(),
+                args: vec!["update".into()],
+                note: Some("Updating Homebrew first (an outdated Homebrew can't install on a newer macOS).".into()),
+            },
+            step(brew.clone(), &["install", "qemu"]),
+        ],
         Dependency::Utm => vec![fetch_and_open(&brew, "utm", "UTM")],
         Dependency::Libvirt => return Err(Error::Invalid("libvirt isn't used on macOS; use QEMU or UTM instead.".into())),
         Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
