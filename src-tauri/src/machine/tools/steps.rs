@@ -40,6 +40,40 @@ fn pkexec_refusal(stderr: &str) -> &'static str {
     }
 }
 
+/// A Homebrew that can't update because a lock file is owned by another user (usually left by a
+/// `sudo brew`), or a stale lock it thinks another update holds.
+const BREW_LOCKED: &str = "Homebrew can't update because a lock file is owned by another user (this happens after running brew with sudo). Open the Terminal app and run: sudo chown -R $(whoami) \"$(brew --prefix)/var/homebrew\". Then try the install again here.";
+/// A Homebrew too old to know this macOS ("unknown or unsupported macOS version: :dunno").
+const BREW_OUTDATED: &str =
+    "Homebrew is out of date for this version of macOS, so it can't install this. Open the Terminal app and run: brew update. Then try the install again here.";
+/// A source build Homebrew refuses because the installed Xcode is older than it needs.
+const BREW_XCODE_OUTDATED: &str = "Homebrew needs a newer Xcode than the one installed to build this. Update Xcode from the App Store (or delete /Applications/Xcode.app to use the lighter Command Line Tools). Then try the install again here.";
+
+/// A broken-Homebrew condition read from brew's own error output, with how to fix it. These are
+/// the player's environment to repair (an outdated Homebrew or Xcode, a lock owned by root), not
+/// something the installer can mend on its own, so the step says what to do instead of just its
+/// exit code.
+fn brew_trouble(line: &str) -> Option<&'static str> {
+    // A lock brew can't take: a root-owned or stale update lock (often after a `sudo brew`).
+    if (line.contains("homebrew/locks") && line.contains("Permission denied")) || (line.contains("brew update") && line.contains("already running")) {
+        Some(BREW_LOCKED)
+    // Homebrew too old to recognise this macOS, so it has no bottle rule and refuses outright.
+    } else if line.contains("unknown or unsupported macOS version") {
+        Some(BREW_OUTDATED)
+    // A build from source blocked by an Xcode older than Homebrew needs.
+    } else if line.contains("is too outdated") || line.contains("Please update to Xcode") {
+        Some(BREW_XCODE_OUTDATED)
+    } else {
+        None
+    }
+}
+
+/// Whether this step drives Homebrew (directly, or through a shell line that calls it), so its
+/// output is worth reading for a broken-Homebrew cause. apt, winget and pkexec never are.
+fn is_brew_step(step: &Step) -> bool {
+    step.program.contains("brew") || step.args.iter().any(|a| a.contains("brew"))
+}
+
 /// Runs `steps` in order, each announced as `$ program args` unless it has its own note.
 pub async fn run_steps(steps: &[Step], on_line: &mut impl FnMut(String)) -> Result<()> {
     for step in steps {
@@ -80,6 +114,10 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
     let mut pkexec_error: Option<String> = None;
     // The exit code of the installer winget ran, which says whether the player cancelled it.
     let mut installer_code: Option<u32> = None;
+    // A broken-Homebrew cause recognised in brew's output: the first one seen (an update's lock
+    // error comes before the install error it leads to, so it wins), shown only if the step fails.
+    let brew = is_brew_step(step);
+    let mut brew_help: Option<&'static str> = None;
     let watch = |line: String| {
         if step.program == "winget" {
             installer_code = exit_codes::installer_exit_code(&line).or(installer_code);
@@ -89,6 +127,9 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
     let forwarded = crate::platform::exec::forward_lines(&mut child, 0, watch, |line| {
         if step.program == "pkexec" && is_pkexec_error(line) {
             pkexec_error = Some(line.to_string());
+        }
+        if brew && brew_help.is_none() {
+            brew_help = brew_trouble(line);
         }
     })
     .await;
@@ -110,9 +151,15 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
             }
             Ok(())
         }
-        // A known code reads as what happened; the raw codes follow it (and are in the log).
-        End::Failed(Some(why)) => Err(Error::Invalid(format!("{why} (`{}` exited with {status})", step.program))),
-        End::Failed(None) => Err(Error::Invalid(format!("`{}` exited with {status}", step.program))),
+        // A recognised broken-Homebrew cause reads as the fix for it; the raw brew lines stay in
+        // the log. Otherwise a known code reads as what happened, with the raw codes after it.
+        End::Failed(why) => Err(Error::Invalid(match brew_help {
+            Some(help) => help.to_string(),
+            None => match why {
+                Some(why) => format!("{why} (`{}` exited with {status})", step.program),
+                None => format!("`{}` exited with {status}", step.program),
+            },
+        })),
     }
 }
 
@@ -218,6 +265,37 @@ mod tests {
         let pid: u32 = std::fs::read_to_string(&file).expect("the step started its child").trim().parse().unwrap();
         let _ = std::fs::remove_file(&file);
         assert!(crate::platform::exec::fake::gone(pid).await, "the step's child {pid} was left running");
+    }
+
+    #[test]
+    fn brew_trouble_names_a_broken_homebrew_and_its_fix() {
+        assert_eq!(brew_trouble("/opt/homebrew/var/homebrew/locks/update: Permission denied"), Some(BREW_LOCKED));
+        assert_eq!(brew_trouble("Error: Another `brew update` process is already running."), Some(BREW_LOCKED));
+        assert_eq!(brew_trouble("Error: unknown or unsupported macOS version: :dunno"), Some(BREW_OUTDATED));
+        assert_eq!(brew_trouble("Error: Your Xcode (26.6) at /Applications/Xcode.app is too outdated."), Some(BREW_XCODE_OUTDATED));
+        assert_eq!(brew_trouble("Please update to Xcode 27.0 (or delete it)."), Some(BREW_XCODE_OUTDATED));
+        // Ordinary brew progress isn't a fault.
+        assert_eq!(brew_trouble("==> Fetching qemu"), None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_failing_brew_step_surfaces_the_homebrew_fix_not_the_exit_code() {
+        // A brew install (its command line mentions brew) that dies on an outdated Xcode reports
+        // the fix, not the bare exit code; the raw brew line is still streamed to the log.
+        let mut lines = Vec::new();
+        let s = step("sh", &["-c", "echo 'Error: Your Xcode (26.6) is too outdated.' >&2; exit 1  # brew install qemu"]);
+        let err = run_step(&s, &mut |l| lines.push(l)).await.unwrap_err();
+        assert_eq!(err.to_string(), BREW_XCODE_OUTDATED);
+        assert!(lines.iter().any(|l| l.contains("is too outdated")), "the raw brew output is still shown: {lines:?}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_non_brew_step_is_not_read_for_homebrew_trouble() {
+        // The same words from apt or a lab are not reinterpreted: only brew steps are read.
+        let err = run_step(&step("sh", &["-c", "echo 'is too outdated' >&2; exit 1"]), &mut |_| {}).await.unwrap_err();
+        assert_eq!(err.to_string(), "`sh` exited with exit status: 1");
     }
 
     #[tokio::test]

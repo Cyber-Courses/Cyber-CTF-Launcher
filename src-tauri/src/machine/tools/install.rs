@@ -62,17 +62,20 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
         Dependency::Terraform => vec![step(brew.clone(), &["install", "hashicorp/tap/terraform"])],
         Dependency::Virtualbox => vec![fetch_and_open(&brew, "virtualbox", "VirtualBox")],
         // QEMU is a brew formula (no admin); UTM is a cask with its own installer.
-        // `brew update` first: an outdated Homebrew on a newer macOS can't even start the install
-        // ("unknown or unsupported macOS version: :dunno" — it has no bottle rule for the OS).
-        // Updating Homebrew teaches it the OS, and it's quick when Homebrew is already current.
-        Dependency::Qemu => vec![
-            Step {
-                program: brew.clone(),
-                args: vec!["update".into()],
-                note: Some("Updating Homebrew first (an outdated Homebrew can't install on a newer macOS).".into()),
-            },
-            step(brew.clone(), &["install", "qemu"]),
-        ],
+        // Update Homebrew first so an outdated one learns this macOS (it otherwise refuses every
+        // install with "unknown or unsupported macOS version: :dunno"), but never let that update
+        // block the install: it runs best-effort, then the install runs with auto-update off. A
+        // Mac whose Homebrew is already current installs even when its update lock is stuck, and a
+        // real problem (an outdated Homebrew or Xcode, a root-owned lock) surfaces from the install
+        // with a readable fix rather than a raw brew error (see steps::brew_trouble).
+        Dependency::Qemu => vec![Step {
+            program: "sh".into(),
+            args: vec![
+                "-c".into(),
+                format!("'{brew}' update || echo 'Homebrew was not updated; continuing with the install.'\nHOMEBREW_NO_AUTO_UPDATE=1 '{brew}' install qemu"),
+            ],
+            note: Some("Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into()),
+        }],
         Dependency::Utm => vec![fetch_and_open(&brew, "utm", "UTM")],
         Dependency::Libvirt => return Err(Error::Invalid("libvirt isn't used on macOS; use QEMU or UTM instead.".into())),
         Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
@@ -260,6 +263,13 @@ mod tests {
         let azure = plan(Dependency::Azurecli).unwrap();
         assert_eq!(azure.len(), 3);
         assert!(azure[2].note.is_some() && azure[2].args.contains(&"azure-cli-preview".to_string()));
+        // QEMU is one shell step: a best-effort Homebrew update that never aborts the install
+        // (`|| …`), then the install itself. It must not be a second, fatal `brew update` step.
+        let qemu = plan(Dependency::Qemu).unwrap();
+        assert_eq!(qemu.len(), 1);
+        assert_eq!(qemu[0].program, "sh");
+        let script = qemu[0].args.join(" ");
+        assert!(script.contains("update ||") && script.contains("install qemu"), "{script}");
     }
 
     #[cfg(target_os = "linux")]
