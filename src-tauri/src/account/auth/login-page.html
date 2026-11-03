@@ -4,45 +4,69 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__ · Cyber CTF</title>
+<script>
+  // The launcher brings itself to the front once the sign-in is done, so this tab has nothing
+  // left to say: it closes itself where the browser lets a page do that (a tab with a single
+  // history entry, the usual case when the player was already signed in on cyberauth.co). Where
+  // it can't, the page below stays, with a hint.
+  try { window.close(); } catch (e) {}
+</script>
 <style>
+  /* The launcher's tokens (src/app/globals.css): Dark by default, Paper when the browser is light. */
   :root {
-    --background: #000; --card: #0a0a0a; --foreground: #ededed; --muted: #a1a1a1;
-    --border: #262626; --accent: #7c5cf0; --accent-hover: #8a6cf4; --ok: #22c55e; --error: #ef4444;
+    --background: #09090b; --card: #111114; --card-2: #17171b;
+    --foreground: #f4f4f6; --muted-foreground: #a0a0ab; --faint: #84848f;
+    --glass-2: rgb(255 255 255 / 0.06); --border: rgb(255 255 255 / 0.075);
+    --jewel: #34d399; --jewel-text: #6ee7b7; --jewel-rgb: 16 185 129;
+    --destructive: #f87171;
+    --radius-panel: 0.875rem;
     color-scheme: dark;
   }
   @media (prefers-color-scheme: light) {
-    :root { --background: #fafafa; --card: #fff; --foreground: #171717; --muted: #666;
-      --border: #e5e5e5; color-scheme: light; }
+    :root {
+      --background: #fafaf9; --card: #ffffff; --card-2: #f6f6f4;
+      --foreground: #0c0c10; --muted-foreground: #5c5c66; --faint: #686872;
+      --glass-2: #ffffff; --border: rgb(16 16 24 / 0.08);
+      --jewel-text: #059669;
+      color-scheme: light;
+    }
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 1rem;
     background: var(--background); color: var(--foreground);
-    font: 400 0.9375rem/1.55 Geist, "Geist Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font: 400 0.875rem/1.5 Geist, "Geist Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
   }
   main {
-    width: 100%; max-width: 26rem; padding: 2rem; text-align: center;
-    background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem;
+    width: 100%; max-width: 22rem; padding: 1.75rem 1.5rem 1.5rem; text-align: center;
+    border-radius: var(--radius-panel);
+    background: linear-gradient(180deg, var(--card-2), var(--card));
+    box-shadow: inset 0 1px 0 var(--glass-2), 0 0 0 1px var(--border);
   }
-  .brand { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; letter-spacing: -0.01em; }
-  .brand svg { width: 1.75rem; height: 1.75rem; }
+  .brand {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font-size: 0.8125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--muted-foreground);
+  }
+  .brand svg { width: 1.25rem; height: 1.25rem; }
   .status {
-    margin: 1.75rem auto 1rem; width: 2.75rem; height: 2.75rem; border-radius: 999px;
-    display: grid; place-items: center; border: 1px solid var(--border);
+    margin: 1.5rem auto 1rem; width: 2.5rem; height: 2.5rem; border-radius: 999px;
+    display: grid; place-items: center;
   }
-  .status svg { width: 1.25rem; height: 1.25rem; }
-  .ok .status { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); background: color-mix(in srgb, var(--ok) 8%, transparent); }
-  .error .status { color: var(--error); border-color: color-mix(in srgb, var(--error) 35%, transparent); background: color-mix(in srgb, var(--error) 8%, transparent); }
-  h1 { margin: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; }
-  p { margin: 0.5rem 0 0; color: var(--muted); }
-  button {
-    margin-top: 1.5rem; width: 100%; padding: 0.625rem 1rem; border: 0; border-radius: 0.5rem;
-    background: var(--accent); color: #fff; font: inherit; font-weight: 500; cursor: pointer;
+  .status svg { width: 1.125rem; height: 1.125rem; }
+  .ok .status {
+    color: var(--jewel-text);
+    background: rgb(var(--jewel-rgb) / 0.12);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 0 0 1px rgb(var(--jewel-rgb) / 0.35);
   }
-  button:hover { background: var(--accent-hover); }
-  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .hint { margin-top: 0.875rem; font-size: 0.8125rem; }
+  .error .status {
+    color: var(--destructive);
+    background: color-mix(in oklab, var(--destructive) 10%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--destructive) 40%, transparent);
+  }
+  h1 { margin: 0; font-size: 1.125rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.3; }
+  p { margin: 0.375rem 0 0; color: var(--muted-foreground); text-wrap: balance; }
+  .hint { margin-top: 1.25rem; font-size: 0.75rem; color: var(--faint); }
 </style>
 </head>
 <body class="__STATE__">
@@ -51,16 +75,7 @@
   <div class="status" aria-hidden="true">__ICON__</div>
   <h1>__TITLE__</h1>
   <p>__BODY__</p>
-  <button id="back" type="button">__BUTTON__</button>
   <p class="hint">You can close this tab.</p>
 </main>
-<script>
-  // The cyberctf:// scheme brings the running app to the front. window.close() only works for a
-  // tab a script opened, so closing is best effort; the hint covers the rest.
-  document.getElementById("back").addEventListener("click", function () {
-    location.href = "cyberctf://";
-    setTimeout(function () { window.open("", "_self"); window.close(); }, 300);
-  });
-</script>
 </body>
 </html>
