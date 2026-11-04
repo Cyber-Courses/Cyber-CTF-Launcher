@@ -62,6 +62,11 @@ pub fn parse(text: &str) -> Result<Spec> {
 /// (`.isoloom`, `.git`, `.vagrant`). Used to install a lab imported from a local directory, and in
 /// tests to stage a corpus lab. Copied in Rust, not with `cp -R`, so it runs on Windows too.
 pub(crate) fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
+    copy_tree_rooted(src, dst, src)
+}
+
+/// [`copy_tree`], carrying the tree root so a symlink's target can be judged against it.
+fn copy_tree_rooted(src: &Path, dst: &Path, root: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
@@ -72,13 +77,19 @@ pub(crate) fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
         let (from, to) = (entry.path(), dst.join(&name));
         let kind = entry.file_type()?;
         if kind.is_symlink() {
-            // Skip symlinks, as the GitHub-tarball install does (its extract takes only files and
-            // dirs): a published lab never relies on one, and following it could fail the copy
-            // (a dangling link) or escape the tree.
+            // Recreate an internal symlink a lab relies on (e.g. client/src/contracts ->
+            // ../../contracts); leave out one that is absolute or escapes the tree, as the
+            // GitHub-tarball install does, so a link can never point outside the copy. The link
+            // is recreated, not followed, so a dangling one is harmless.
+            let link = std::fs::read_link(&from)?;
+            let rel = from.strip_prefix(root).unwrap_or(from.as_path());
+            if crate::labs::symlink_target_within_tree(rel, &link) {
+                crate::labs::recreate_symlink(&link, &to)?;
+            }
             continue;
         }
         if kind.is_dir() {
-            copy_tree(&from, &to)?;
+            copy_tree_rooted(&from, &to, root)?;
         } else {
             std::fs::copy(&from, &to)?;
         }

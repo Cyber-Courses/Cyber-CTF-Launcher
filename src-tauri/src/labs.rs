@@ -70,7 +70,9 @@ fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
     for entry in archive.entries()? {
         let mut entry = entry?;
         let kind = entry.header().entry_type();
-        if !(kind.is_file() || kind.is_dir()) {
+        let is_symlink = kind.is_symlink();
+        if !(kind.is_file() || kind.is_dir() || is_symlink) {
+            // Hard links, fifos and devices are not part of a lab's source: left out.
             continue;
         }
         unpacked = unpacked.saturating_add(entry.size());
@@ -95,7 +97,18 @@ fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
             return Err(Error::Invalid(format!("this lab can't be installed on Windows: its archive holds {}, {why}", path.display())));
         }
         let target = dest.join(&relative);
-        if kind.is_dir() {
+        if is_symlink {
+            // A lab may rely on an internal symlink (e.g. client/src/contracts -> ../../contracts):
+            // recreate one that stays inside the tree, leave out one that is absolute or climbs out
+            // of it, so a link can never point outside the extracted lab.
+            let link = entry.link_name()?.map(std::borrow::Cow::into_owned).unwrap_or_default();
+            if symlink_target_within_tree(&relative, &link) {
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                recreate_symlink(&link, &target)?;
+            }
+        } else if kind.is_dir() {
             std::fs::create_dir_all(&target)?;
         } else {
             if let Some(parent) = target.parent() {
@@ -104,6 +117,44 @@ fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
             entry.unpack(&target)?;
         }
     }
+    Ok(())
+}
+
+/// Lexically, does a symlink at `link_rel` (its path relative to the tree root) that points at
+/// `target` resolve to a location still inside the tree? An absolute target, or one that climbs
+/// above the root with `..`, is rejected, so an internal relative link is kept while one that would
+/// escape the extracted lab is left out. Purely lexical: it never touches the file system.
+pub(crate) fn symlink_target_within_tree(link_rel: &Path, target: &Path) -> bool {
+    use std::path::Component;
+    if target.is_absolute() {
+        return false;
+    }
+    // Depth of the link's own folder below the root; each `..` in the target climbs one level, and
+    // climbing above the root (depth already 0) means the target escapes the tree.
+    let mut depth: usize = link_rel.parent().map_or(0, |p| p.components().filter(|c| matches!(c, Component::Normal(_))).count());
+    for c in target.components() {
+        match c {
+            Component::ParentDir => match depth.checked_sub(1) {
+                Some(d) => depth = d,
+                None => return false,
+            },
+            Component::Normal(_) => depth += 1,
+            Component::CurDir => {}
+            // A root or prefix component means an absolute/Windows-rooted target: rejected.
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// Recreates a symlink to `target` at `at`. Off Unix the link is left out (a published lab builds
+/// its image on Linux, where the symlink is what matters), the same as before this was added.
+#[cfg(unix)]
+pub(crate) fn recreate_symlink(target: &Path, at: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, at)
+}
+#[cfg(not(unix))]
+pub(crate) fn recreate_symlink(_target: &Path, _at: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
@@ -614,6 +665,37 @@ mod tests {
         extract(&gz, &dest).unwrap();
         assert!(dest.join("docs").is_dir());
         assert!(std::fs::symlink_metadata(dest.join("passwd")).is_err());
+        std::fs::remove_dir_all(dest).unwrap();
+    }
+
+    #[test]
+    fn an_internal_symlink_is_recreated_a_tree_escaping_one_is_not() {
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
+        let mut dir = tar::Header::new_gnu();
+        dir.set_entry_type(tar::EntryType::Directory);
+        dir.set_size(0);
+        dir.set_mode(0o755);
+        builder.append_data(&mut dir.clone(), "lab-abc/", &[][..]).unwrap();
+        builder.append_data(&mut dir, "lab-abc/contracts/", &[][..]).unwrap();
+        // An internal relative link, like a lab's `client/src/contracts -> ../../contracts`: kept.
+        let mut inside = tar::Header::new_gnu();
+        inside.set_entry_type(tar::EntryType::Symlink);
+        inside.set_size(0);
+        builder.append_link(&mut inside, "lab-abc/here", "contracts").unwrap();
+        // A relative link that climbs out of the tree: left out, so nothing points outside.
+        let mut out = tar::Header::new_gnu();
+        out.set_entry_type(tar::EntryType::Symlink);
+        out.set_size(0);
+        builder.append_link(&mut out, "lab-abc/escape", "../../../outside").unwrap();
+        let gz = builder.into_inner().unwrap().finish().unwrap();
+        let dest = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+        extract(&gz, &dest).unwrap();
+        if cfg!(unix) {
+            let here = std::fs::symlink_metadata(dest.join("here"));
+            assert!(here.is_ok_and(|m| m.file_type().is_symlink()), "the internal link is recreated");
+            assert_eq!(std::fs::read_link(dest.join("here")).unwrap(), std::path::Path::new("contracts"));
+        }
+        assert!(std::fs::symlink_metadata(dest.join("escape")).is_err(), "the escaping link is left out");
         std::fs::remove_dir_all(dest).unwrap();
     }
 

@@ -122,9 +122,16 @@ proptest! {
         walk(&root, &mut all);
         let outside: Vec<&PathBuf> = all.iter().filter(|p| !p.starts_with(&dest) && **p != root.join("box")).collect();
         let links: Vec<&PathBuf> = all.iter().filter(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink())).collect();
+        // A symlink may be recreated, but only one that stays inside the tree; none may be absolute
+        // or climb out of the destination.
+        let escaping: Vec<&&PathBuf> = links.iter().filter(|p| {
+            let target = std::fs::read_link(p).unwrap_or_default();
+            let rel = p.strip_prefix(&dest).unwrap_or(p.as_path());
+            !symlink_target_within_tree(rel, &target)
+        }).collect();
         let _ = std::fs::remove_dir_all(&root);
         prop_assert!(outside.is_empty(), "written outside: {:?}", outside);
-        prop_assert!(links.is_empty(), "links made: {:?}", links);
+        prop_assert!(escaping.is_empty(), "links escaping dest: {:?}", escaping);
     }
 
     #[test]
