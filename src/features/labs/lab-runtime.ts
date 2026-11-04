@@ -20,6 +20,15 @@ const isLocal = (p: string) => !SERVERS.has(p) && !CLOUDS.has(p) && p !== "hoste
 /** Whether the lab is built for this CPU (no architectures listed = any). */
 export const runsNatively = (rt: LabRuntimeInfo, hostArch: string) => !rt.architectures.length || rt.architectures.includes(hostArch);
 
+/** The ways a lab can run: the backend's capability flags when present, else derived from the
+ *  single runtime kind so this is correct before a backend that records them. A dual-form lab has
+ *  more than one true (e.g. docker and vm), and the launcher offers a place for each. */
+export const ways = (rt: LabRuntimeInfo) => ({
+  docker: rt.docker ?? rt.runtime === "DOCKER",
+  vm: rt.vm ?? rt.runtime === "VM",
+  cloud: rt.cloud ?? rt.runtime === "CLOUD",
+});
+
 /** Whether an emulator (QEMU) is ready on this machine: Vagrant, the hypervisor and its plugin. */
 export const emulatorReady = (report: SystemReport | null | undefined) =>
   !!report?.vagrant.installed && report.vmProviders.some((p) => EMULATORS.includes(p.provider) && !p.remote && p.available && p.hypervisor !== false);
@@ -41,9 +50,11 @@ export function readyHypervisors(
  *  a VM lab built for another CPU, which only an emulator can run (whatever the lab lists: its
  *  list names the hypervisors of its own CPU). */
 export function localProviders(rt: LabRuntimeInfo, hostArch?: string): Provider[] {
-  // Cloud services run in the player's cloud account only.
-  if (rt.runtime === "CLOUD") return [];
-  if (rt.runtime === "VM" && hostArch && !runsNatively(rt, hostArch)) return [...EMULATORS];
+  const w = ways(rt);
+  // Cloud services (no container or VM edition) run in the player's cloud account only.
+  if (w.cloud && !w.docker && !w.vm) return [];
+  // A VM edition built for another CPU runs here only emulated (whatever hypervisors it lists).
+  if (w.vm && hostArch && !runsNatively(rt, hostArch)) return [...EMULATORS];
   return rt.providers.filter((p: string) => isLocal(p));
 }
 
@@ -57,8 +68,13 @@ export function pickLocalHypervisor(local: Provider[], ready: Provider[] | undef
 }
 
 /** Whether a saved server or cloud account can run the lab. */
-export const hostSupports = (rt: LabRuntimeInfo | null, h: ServerHost) =>
-  !!rt?.providers.includes(h.provider) && !(rt.runtime === "VM" && VM_CLOUDS_NOT_YET.has(h.provider));
+export const hostSupports = (rt: LabRuntimeInfo | null, h: ServerHost) => {
+  if (!rt?.providers.includes(h.provider)) return false;
+  const w = ways(rt);
+  // A not-yet-supported VM cloud is blocked only for a VM-only lab; one that also runs as
+  // containers still runs there via cloud-docker.
+  return !(w.vm && !w.docker && VM_CLOUDS_NOT_YET.has(h.provider));
+};
 
 type PlaceKey = NonNullable<LabStatus["place"]> | "hosted";
 
@@ -68,13 +84,16 @@ type PlaceKey = NonNullable<LabStatus["place"]> | "hosted";
  *  emulated, so "VM on this machine" needs `emulates` (QEMU ready); containers run emulated
  *  anyway. */
 export function runPlaces(rt: LabRuntimeInfo, hostArch?: string, emulates = false): { key: PlaceKey; icon: LucideIcon; available: boolean }[] {
-  if (rt.runtime === "CLOUD") return cloudPlaces();
+  const w = ways(rt);
+  // Cloud services (no container or VM edition) run in the player's cloud account only.
+  if (w.cloud && !w.docker && !w.vm) return cloudPlaces();
   const local = rt.providers.some((p: string) => isLocal(p));
-  const vm = rt.runtime === "VM";
+  // The VM edition built for another CPU runs here only emulated (containers run emulated anyway).
+  const vmForeignCpu = w.vm && !!hostArch && !runsNatively(rt, hostArch);
   return [
-    { key: "container", icon: Container, available: !vm },
-    { key: "local_vm", icon: Monitor, available: (vm || local) && (!(vm && hostArch && !runsNatively(rt, hostArch)) || emulates) },
-    { key: "server", icon: Server, available: rt.providers.some((p) => SERVERS.has(p)) },
+    { key: "container", icon: Container, available: w.docker },
+    { key: "local_vm", icon: Monitor, available: (w.vm || (w.docker && local)) && (!vmForeignCpu || emulates) },
+    { key: "server", icon: Server, available: (w.vm || w.docker) && rt.providers.some((p) => SERVERS.has(p)) },
     { key: "cloud", icon: Cloud, available: rt.providers.some((p) => CLOUDS.has(p)) },
     { key: "hosted", icon: Globe, available: rt.hosted ?? false },
   ];
