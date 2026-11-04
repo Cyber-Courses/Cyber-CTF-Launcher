@@ -145,6 +145,7 @@ mod tests {
         ("auth_login_device", "polls cyber-auth's device endpoint; login_by_device_at is tested against a local cyber-auth"),
         ("restart_app", "restarts this very process"),
         ("open_log_folder", "opens the system's file manager; log_dir is tested"),
+        ("lab_requirements", "fetches the spec at the pinned commit (spec_at downloads it); its sizing, lab::requirements, is unit-tested"),
     ];
 
     /// Whether `code` calls `name(…)` (not `other_name(…)`), or invokes it through Tauri's IPC
