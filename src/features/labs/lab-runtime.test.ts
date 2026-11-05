@@ -92,6 +92,9 @@ describe("hostSupports", () => {
     expect(hostSupports(rt({ providers: ["aws", "azure"] as Provider[] }), host("aws"))).toBe(true);
     expect(hostSupports(rt({ providers: ["aws", "azure"] as Provider[] }), host("azure"))).toBe(false);
   });
+  it("allows a dual-form lab on a not-yet-VM cloud: it runs there as containers", () => {
+    expect(hostSupports(rt({ runtime: "DOCKER", docker: true, vm: true, providers: ["azure"] as Provider[] }), host("azure"))).toBe(true);
+  });
 });
 
 describe("runPlaces", () => {
@@ -108,5 +111,11 @@ describe("runPlaces", () => {
     const lab = rt({ architectures: ["x86_64"], providers: ["virtualbox", "proxmox"] as Provider[] });
     expect(available(runPlaces(lab, "arm64"))).toEqual(["server"]);
     expect(available(runPlaces(lab, "arm64", true))).toEqual(["local_vm", "server"]);
+  });
+  it("offers both container and VM for a dual-form lab (docker + vm flags)", () => {
+    // `runtime` stays the published primary; the flags say it runs both ways, so every place its
+    // providers allow is offered.
+    const lab = rt({ runtime: "DOCKER", docker: true, vm: true, providers: ["virtualbox", "proxmox", "aws"] as Provider[] });
+    expect(available(runPlaces(lab))).toEqual(["container", "local_vm", "server", "cloud"]);
   });
 });

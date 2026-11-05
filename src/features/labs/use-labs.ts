@@ -13,6 +13,11 @@ export interface LabRuntimeInfo {
   providers: Provider[];
   /** Cyber CTF can run it for the player (hosted provider + a prepared snapshot). */
   hosted?: boolean;
+  /** The ways the lab can run, from the backend's capability flags. Absent on an older backend,
+   *  where the places are derived from `runtime` instead. */
+  docker?: boolean;
+  vm?: boolean;
+  cloud?: boolean;
   /** Its source at the pinned commit, for a cloud lab's cost estimate before it starts. */
   repository?: string;
   commit?: string;

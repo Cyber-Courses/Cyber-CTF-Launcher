@@ -51,7 +51,7 @@ impl ApiOperation {
     pub fn document(self) -> String {
         match self {
             Self::Labs => catalogue(
-                "id slug title description question difficulty category runtime { runtime architectures providers hosted repository commit } skills { id name }",
+                "id slug title description question difficulty category runtime { runtime architectures providers hosted repository commit docker vm cloud } skills { id name }",
             ),
             Self::LabTitles => catalogue("id title"),
             Self::SidebarLabs => catalogue("id slug title category"),
@@ -110,7 +110,7 @@ mod tests {
         assert!(labs.contains("labs: compatibleLabs("), "{labs}");
         assert!(labs.contains(&format!("isoloom: \"{}\"", crate::version::ISOLOOM)), "{labs}");
         assert!(labs.contains(&format!("isothrum: \"{}\"", crate::version::ISOTHRUM)), "{labs}");
-        assert!(labs.contains("runtime { runtime architectures providers hosted repository commit }"), "{labs}");
+        assert!(labs.contains("runtime { runtime architectures providers hosted repository commit docker vm cloud }"), "{labs}");
         // The sidebar and running-now lists filter the same way, keeping the `labs` response key.
         assert!(ApiOperation::SidebarLabs.document().contains("labs: compatibleLabs("));
         assert!(ApiOperation::LabTitles.document().contains("labs: compatibleLabs("));
