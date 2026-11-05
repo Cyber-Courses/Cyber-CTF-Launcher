@@ -27,7 +27,7 @@ const lab = (id: string, slug: string, title: string, over: Partial<Lab> = {}) =
     question: null,
     difficulty: 1,
     category: "Web",
-    runtime: { runtime: "DOCKER", architectures: [], providers: ["docker"], hosted: false },
+    runtime: { runtime: "DOCKER", architectures: [], providers: ["docker"] },
     skills: [],
     ...over,
   }) as unknown as Lab;

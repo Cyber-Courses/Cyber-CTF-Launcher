@@ -1,11 +1,9 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, release } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
 
-// Cloud labs (EC2 SSRF, cloud services in the player's AWS account) and hosted labs (Blind orders,
-// run by Cyber CTF) through the dev mock: a cloud start streams a Terraform log and leaves outputs
-// and an auto-stop; a hosted session is requested, then runs on the next poll (`hold=hosted`: the
-// first poll after the test lets it). `cloud=none`: no cloud account saved yet (see
-// src/lib/dev-mock/scenario.ts).
+// Cloud labs (EC2 SSRF, cloud services in the player's AWS account) through the dev mock: a cloud
+// start streams a Terraform log and leaves outputs and an auto-stop. `cloud=none`: no cloud
+// account saved yet (see src/lib/dev-mock/scenario.ts).
 
 const main = (page: Page) => page.locator("main");
 const button = (page: Page, name: string) => main(page).getByRole("button", { name, exact: true });
@@ -113,46 +111,5 @@ test.describe("cloud labs", () => {
     await button(page, "Stop & remove").click();
     await page.getByRole("alertdialog", { name: "Remove EC2 SSRF?" }).getByRole("button", { name: "Remove" }).click();
     await expect(button(page, "Start lab")).toBeEnabled();
-  });
-});
-
-test.describe("hosted labs", () => {
-  test("hosted by Cyber CTF: requested, running with its address, then stopped", async ({ page }) => {
-    await openApp(page, "&hold=hosted");
-    await openLab(page, "blind", "Blind orders");
-    await button(page, "Start lab").click();
-    const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await where.getByRole("radio", { name: /Hosted by Cyber CTF/ }).click();
-    await where.getByRole("button", { name: "Start", exact: true }).click();
-
-    // Requested, whatever the polls answer until the test has seen it.
-    await expect(main(page)).toContainText("Asking Cyber CTF for an instance… This usually takes about 30 seconds.");
-    await release(page, "hosted");
-    await expect(main(page)).toContainText("Running, hosted by Cyber CTF");
-    await expect(main(page)).toContainText(/Expires in (1h 59m|2h 0m)\./);
-    await expect(button(page, "Open")).toBeVisible();
-    // One run at a time: Start waits for the hosted one to end.
-    await expect(button(page, "Start lab")).toBeDisabled();
-
-    await button(page, "Stop").click();
-    await expect(main(page)).not.toContainText("Running, hosted by Cyber CTF");
-    await expect(button(page, "Start lab")).toBeEnabled();
-  });
-
-  // BUG: while the lab runs hosted by Cyber CTF, its page's status line still says "Not started"
-  // (and the side rail "Where it runs", the attack box "starts with the lab"), right above the
-  // "Running, hosted by Cyber CTF" panel. The status line comes from deriveLabState (lab-state.ts),
-  // which only knows the local/server/cloud status, not the hosted session (use-hosted-run.ts).
-  // Fix (lab-detail/index.tsx + header-lead.tsx): pass `hosted.live` to HeaderLead and say
-  // "Running · hosted by Cyber CTF" when it is, as the Overview's running list would.
-  test("a lab running hosted doesn't read as not started", async ({ page }) => {
-    await openApp(page);
-    await openLab(page, "blind", "Blind orders");
-    await button(page, "Start lab").click();
-    const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await where.getByRole("radio", { name: /Hosted by Cyber CTF/ }).click();
-    await where.getByRole("button", { name: "Start", exact: true }).click();
-    await expect(main(page)).toContainText("Running, hosted by Cyber CTF");
-    await expect(main(page)).not.toContainText("Not started");
   });
 });

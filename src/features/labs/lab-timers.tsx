@@ -15,7 +15,7 @@ export function StartTimer({ from }: { from?: number }) {
 }
 
 /** "3h 58m", "58m": a time left, in hours and minutes. */
-export function hoursMinutes(t: T, h: number, m: number): string {
+function hoursMinutes(t: T, h: number, m: number): string {
   return h > 0 ? t("labs.duration.hm", { h, m }) : t("labs.duration.m", { m });
 }
 

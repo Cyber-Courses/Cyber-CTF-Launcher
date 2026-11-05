@@ -11,9 +11,9 @@ import { useLatest } from "@/lib/use-latest";
 
 /**
  * Where a lab starts, picked in "Where should it run?": this machine or one of the player's
- * server hosts (Docker labs through their deploy/ layer), a VM here for a container lab, or
- * hosted by Cyber CTF. VM labs default to the default host; Docker labs to here; a cloud lab
- * to the first of the player's accounts on a cloud it runs on (never a default host: a server).
+ * server hosts (Docker labs through their deploy/ layer), or a VM here for a container lab.
+ * VM labs default to the default host; Docker labs to here; a cloud lab to the first of the
+ * player's accounts on a cloud it runs on (never a default host: a server).
  */
 export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], hostArch: string) {
   const isCloud = isCloudLab(rt);
@@ -64,9 +64,9 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
     /** A cloud lab: the player's accounts it can run on, and the one picked. */
     cloudAccounts,
     pickedAccount: runOn.kind === "host" ? cloudAccounts.find((h) => h.id === runOn.id) : undefined,
-    /** With servers saved (or a VM here, or hosted), Start asks where to run first; a cloud lab
-     *  always asks (which account, and what it costs there). */
-    hasChoice: isCloud || hosts.length > 0 || localVm !== null || !!rt?.hosted,
+    /** With servers saved (or a VM here), Start asks where to run first; a cloud lab always asks
+     *  (which account, and what it costs there). */
+    hasChoice: isCloud || hosts.length > 0 || localVm !== null,
     /** The target picked, with the host ports for a container lab here. */
     chosen: (): RunTarget => (runOn.kind === "local" && isDocker ? { kind: "local", ports } : runOn),
   };

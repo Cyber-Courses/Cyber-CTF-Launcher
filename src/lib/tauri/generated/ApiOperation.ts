@@ -3,4 +3,4 @@
 /**
  * One allowed operation, by the name the frontend sends (`"labs"`, `"labBrief"`, ...).
  */
-export type ApiOperation = "labs" | "labTitles" | "sidebarLabs" | "labBrief" | "completedLabs" | "activeSession" | "launchHosted" | "labSession" | "stopSession" | "labObjectives" | "labProgress" | "submitObjective" | "openObjectiveHelp";
+export type ApiOperation = "labs" | "labTitles" | "sidebarLabs" | "labBrief" | "completedLabs" | "labObjectives" | "labProgress" | "submitObjective" | "openObjectiveHelp";

@@ -45,7 +45,7 @@ test.describe("coded errors", () => {
 
     await expect(main(page)).toContainText("Failed to start");
     await expect(notice(page)).toContainText(
-      "Host port 8000 is already in use on this machine (another lab or app holds it). Stop whatever uses it. If the lab doesn't need that exact port, you can start it with random ports.",
+      "Host port 8000 is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again.",
     );
     await expect(notice(page)).toContainText(
       "A port this lab publishes is taken on this machine. Stop whatever uses it, or start it with random ports if the lab doesn't need that exact port.",

@@ -15,7 +15,7 @@ export const labs = [
     question: "What is the total amount of invoice INV-2041?",
     difficulty: 1,
     category: "Web",
-    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker", "aws"], hosted: false },
+    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker", "aws"] },
     skills: [
       { id: "s1", name: "API keys" },
       { id: "s2", name: "IDOR" },
@@ -29,7 +29,7 @@ export const labs = [
     question: "Which account holds the NTLM hash you recovered?",
     difficulty: 3,
     category: "Active Directory",
-    runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi", "proxmox"], hosted: false },
+    runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi", "proxmox"] },
     skills: [{ id: "s3", name: "Kerberoasting" }],
   },
   {
@@ -40,7 +40,7 @@ export const labs = [
     question: null,
     difficulty: 2,
     category: "Web",
-    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker"], hosted: true },
+    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker"] },
     skills: [{ id: "s4", name: "SQL injection" }],
   },
   {
@@ -51,7 +51,7 @@ export const labs = [
     question: null,
     difficulty: 2,
     category: "Containers",
-    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker"], hosted: false },
+    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker"] },
     skills: [],
   },
   {
@@ -62,7 +62,7 @@ export const labs = [
     question: null,
     difficulty: 1,
     category: "Cloud",
-    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws"], hosted: false },
+    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws"] },
     skills: [],
   },
   {
@@ -77,7 +77,6 @@ export const labs = [
       runtime: "CLOUD",
       architectures: [],
       providers: ["aws"],
-      hosted: false,
       repository: "CyberCTF/cloudgoat-ec2-ssrf",
       commit: "0123456789abcdef0123456789abcdef01234567",
     },
@@ -96,7 +95,7 @@ export const extraLabs = [
     question: null,
     difficulty: 2,
     category: "Network",
-    runtime: { runtime: "VM", architectures: ["arm64", "x86_64"], providers: ["utm", "virtualbox", "vmware_esxi", "proxmox"], hosted: false },
+    runtime: { runtime: "VM", architectures: ["arm64", "x86_64"], providers: ["utm", "virtualbox", "vmware_esxi", "proxmox"] },
     skills: [{ id: "s6", name: "Routing" }],
   },
 ];

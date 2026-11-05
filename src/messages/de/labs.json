@@ -23,8 +23,7 @@
     "container": "Container auf diesem Rechner",
     "local_vm": "VM auf diesem Rechner",
     "server": "Dein Server",
-    "cloud": "Dein Cloud-Konto",
-    "hosted": "Gehostet von Cyber CTF"
+    "cloud": "Dein Cloud-Konto"
   },
   "timers": {
     "autoStop": "Stoppt automatisch um {time} · in {left}"
@@ -33,27 +32,6 @@
     "title": "Briefing",
     "loading": "Briefing wird geladen…",
     "empty": "Für dieses Lab gibt es noch kein Briefing. Starte es und leg los."
-  },
-  "hosted": {
-    "stages": {
-      "REQUESTED": "Instanz bei Cyber CTF anfragen",
-      "CLAIMED": "Deine Instanz wird vorbereitet",
-      "PULLING": "Lab wird gestartet"
-    },
-    "expiresIn": "Läuft ab in {left}.",
-    "running": "Läuft, gehostet von Cyber CTF",
-    "runningHint": "Öffne es im Browser und greif es mit deinen eigenen Tools an.",
-    "failed": "Das gehostete Lab konnte nicht gestartet werden",
-    "slow": "Das dauert länger als erwartet",
-    "tryAgain": "Versuche es gleich noch einmal.",
-    "expired": "Die gehostete Sitzung ist abgelaufen.",
-    "ended": "Die gehostete Sitzung wurde beendet.",
-    "starting": "Startet",
-    "waiting": "{stage}… Das dauert meist etwa 30 Sekunden.",
-    "open": "Öffnen",
-    "openPort": ":{port} öffnen",
-    "dismiss": "Schließen",
-    "stop": "Stoppen"
   },
   "health": {
     "down": {
@@ -97,8 +75,6 @@
     "inVmSubtitle": "{provider} · von deinem System isoliert",
     "ready": "Bereit",
     "readyHint": "Hypervisor in den Einstellungen gewählt",
-    "hostedTitle": "Gehostet von Cyber CTF",
-    "hostedSubtitle": "Keine Installation · öffnet sich im Browser",
     "available": "Verfügbar",
     "servers": "Server",
     "cloud": "Cloud",
@@ -312,7 +288,6 @@
     "signInToStart": "Zum Starten anmelden",
     "noRuntime": "Noch keine Laufzeit für dieses Lab",
     "signInHint": "Melde dich an, um Labs zu starten",
-    "hostedLive": "Es läuft gerade gehostet bei Cyber CTF; stoppe es zuerst",
     "startLab": "Lab starten",
     "cancel": "Abbrechen",
     "start": "Starten",

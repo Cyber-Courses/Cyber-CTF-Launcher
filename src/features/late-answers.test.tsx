@@ -3,7 +3,6 @@ import { act, renderHook } from "@testing-library/react";
 import { emit } from "@tauri-apps/api/event";
 import { afterEach, describe, expect, it } from "vitest";
 import { useSystemCheck } from "@/components/shell/use-system-check";
-import { useHostedLabs, type HostedSession } from "@/features/hosted/use-hosted-labs";
 import { useRunTarget } from "@/features/labs/lab-detail/use-run-target";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { useHostTests, useServerList } from "@/features/servers/use-server-list";
@@ -78,60 +77,6 @@ describe("late answers", () => {
       answers[0].resolve(test(false));
     });
     expect(result.current.tests.pve).toMatchObject({ ok: true, message: "Connected" });
-  });
-
-  it("the hosted session read on mount doesn't bring back one the player just stopped", async () => {
-    const active = deferred<unknown>();
-    const running: HostedSession = {
-      id: "s1",
-      labId: "lab",
-      target: "hosted",
-      state: "RUNNING",
-      endpoints: [],
-      message: null,
-      expiresAt: "2026-10-11T12:00:00Z",
-    };
-    installTauri({
-      api_query: (a) => (a?.operation === "activeSession" ? active.promise : a?.operation === "launchHosted" ? { requestLabLaunch: running } : {}),
-    });
-    const { result } = renderHook(() => useHostedLabs());
-    await act(() => result.current.launch("lab"));
-    expect(result.current.session?.id).toBe("s1");
-    await act(() => result.current.stop());
-    await settle(() => {
-      active.resolve({ myActiveLabSession: running });
-    });
-    expect(result.current.session).toBeNull();
-  });
-
-  it("stops the session a launch makes when the player stopped while it was requested", async () => {
-    const launched = deferred<unknown>();
-    const running: HostedSession = {
-      id: "s2",
-      labId: "lab",
-      target: "hosted",
-      state: "REQUESTED",
-      endpoints: [],
-      message: null,
-      expiresAt: "2026-10-11T12:00:00Z",
-    };
-    const calls = installTauri({
-      api_query: (a) => (a?.operation === "launchHosted" ? launched.promise : a?.operation === "activeSession" ? { myActiveLabSession: null } : {}),
-    });
-    const { result } = renderHook(() => useHostedLabs());
-    await flush();
-    let launching!: Promise<void>;
-    act(() => {
-      launching = result.current.launch("lab");
-    });
-    await act(() => result.current.stop());
-    await act(async () => {
-      launched.resolve({ requestLabLaunch: running });
-      await launching;
-      await flush(5);
-    });
-    expect(result.current.session).toBeNull();
-    expect(calls.filter((c) => c.cmd === "api_query" && c.args?.operation === "stopSession").map((c) => c.args?.variables)).toEqual([{ id: "s2" }]);
   });
 
   it("keeps the target the player picked when the server list is read again", async () => {

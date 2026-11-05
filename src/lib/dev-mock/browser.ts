@@ -3,7 +3,7 @@
 import { fail, send, sleep } from "@/lib/dev-mock/command";
 import { eventHandlers } from "@/lib/dev-mock/events";
 import { type Host, hostsOf, saveError, saveHosts } from "@/lib/dev-mock/hosts";
-import { hostedQuery } from "@/lib/dev-mock/hosted";
+import { catalogueQuery } from "@/lib/dev-mock/catalogue";
 import { labHandlers } from "@/lib/dev-mock/lab-ops";
 import type { BrowserHandler, Context } from "@/lib/dev-mock/live";
 import { machineHandlers } from "@/lib/dev-mock/machine";
@@ -72,7 +72,7 @@ const accountHandlers: Record<string, BrowserHandler> = {
     return null;
   },
   agent_info: (args, { sc }) => ({ ...(answer("agent_info", args) as object), arch: sc.arch }),
-  api_query: hostedQuery,
+  api_query: catalogueQuery,
 };
 
 /** The saved servers and cloud accounts, kept across the preview's tabs. */

@@ -4,8 +4,6 @@
 
 use serde::Deserialize;
 
-const SESSION_FIELDS: &str = "id labId target state endpoints { port url } message expiresAt";
-
 /// A lab-catalogue query that returns only labs this launcher can run: it asks CyberBackend's
 /// `compatibleLabs` for the bundled Isoloom and Isothrum versions, aliased back to `labs` so the
 /// response shape is unchanged. `fields` is the selection set each list needs.
@@ -28,14 +26,6 @@ pub enum ApiOperation {
     LabBrief,
     /// The labs this player has solved.
     CompletedLabs,
-    /// The player's active lab session, any target.
-    ActiveSession,
-    /// Launch a lab on Cyber CTF's hosting (`$labId`).
-    LaunchHosted,
-    /// One lab session (`$id`).
-    LabSession,
-    /// Stop a lab session (`$id`).
-    StopSession,
     /// One lab's objectives: its challenges and their steps (`$id`).
     LabObjectives,
     /// The player's progress on one lab's objectives (`$id`).
@@ -51,16 +41,12 @@ impl ApiOperation {
     pub fn document(self) -> String {
         match self {
             Self::Labs => catalogue(
-                "id slug title description question difficulty category runtime { runtime architectures providers hosted repository commit docker vm cloud } skills { id name }",
+                "id slug title description question difficulty category runtime { runtime architectures providers repository commit docker vm cloud } skills { id name }",
             ),
             Self::LabTitles => catalogue("id title"),
             Self::SidebarLabs => catalogue("id slug title category"),
             Self::LabBrief => "query($id: ID!) { labs(where: { id: { eq: $id } }) { contentMd } }".into(),
             Self::CompletedLabs => "{ myCompletedLabs }".into(),
-            Self::ActiveSession => format!("query {{ myActiveLabSession {{ {SESSION_FIELDS} }} }}"),
-            Self::LaunchHosted => format!("mutation ($labId: ID!) {{ requestLabLaunch(labId: $labId, target: \"hosted\") {{ {SESSION_FIELDS} }} }}"),
-            Self::LabSession => format!("query ($id: ID!) {{ labSession(id: $id) {{ {SESSION_FIELDS} }} }}"),
-            Self::StopSession => "mutation ($id: ID!) { stopLabSession(sessionId: $id) { id state } }".into(),
             Self::LabObjectives => "query($id: ID!) { labs(where: { id: { eq: $id } }) { id objectives { key title prompt optional points hintCount steps { key title prompt hintCount } } } }".into(),
             Self::LabProgress => "query($id: ID!) { labs(where: { id: { eq: $id } }) { id myProgress { solved stepsOpened hints { key index text } requiredSolved requiredTotal completed } } }".into(),
             Self::SubmitObjective => "mutation($labId: ID!, $key: String!, $answer: String!) { submitObjective(labId: $labId, key: $key, answer: $answer) { correct alreadySolved labCompleted } }".into(),
@@ -81,8 +67,6 @@ mod tests {
     fn the_frontend_names_map_to_their_operations() {
         assert_eq!(parse("labs").unwrap(), ApiOperation::Labs);
         assert_eq!(parse("labBrief").unwrap(), ApiOperation::LabBrief);
-        assert_eq!(parse("launchHosted").unwrap(), ApiOperation::LaunchHosted);
-        assert_eq!(parse("stopSession").unwrap(), ApiOperation::StopSession);
         assert_eq!(parse("labObjectives").unwrap(), ApiOperation::LabObjectives);
         assert_eq!(parse("labProgress").unwrap(), ApiOperation::LabProgress);
         assert_eq!(parse("submitObjective").unwrap(), ApiOperation::SubmitObjective);
@@ -97,20 +81,12 @@ mod tests {
     }
 
     #[test]
-    fn session_operations_ask_for_the_session_fields() {
-        let launch = ApiOperation::LaunchHosted.document();
-        assert!(launch.starts_with("mutation ($labId: ID!) { requestLabLaunch(labId: $labId, target: \"hosted\") { id labId"), "{launch}");
-        assert!(ApiOperation::ActiveSession.document().contains("myActiveLabSession { id labId target state endpoints { port url } message expiresAt }"));
-        assert!(ApiOperation::LabSession.document().contains("labSession(id: $id)"));
-    }
-
-    #[test]
     fn the_catalogue_lists_only_labs_this_launcher_can_run() {
         let labs = ApiOperation::Labs.document();
         assert!(labs.contains("labs: compatibleLabs("), "{labs}");
         assert!(labs.contains(&format!("isoloom: \"{}\"", crate::version::ISOLOOM)), "{labs}");
         assert!(labs.contains(&format!("isothrum: \"{}\"", crate::version::ISOTHRUM)), "{labs}");
-        assert!(labs.contains("runtime { runtime architectures providers hosted repository commit docker vm cloud }"), "{labs}");
+        assert!(labs.contains("runtime { runtime architectures providers repository commit docker vm cloud }"), "{labs}");
         // The sidebar and running-now lists filter the same way, keeping the `labs` response key.
         assert!(ApiOperation::SidebarLabs.document().contains("labs: compatibleLabs("));
         assert!(ApiOperation::LabTitles.document().contains("labs: compatibleLabs("));

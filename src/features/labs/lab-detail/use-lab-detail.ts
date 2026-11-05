@@ -9,7 +9,6 @@ import type { Lab } from "@/features/labs/use-labs";
 import { useCloudPreview } from "@/features/labs/cloud-panel";
 import { removing, restartTarget } from "@/features/labs/lab-detail/lab-state";
 import { useObjectives } from "@/features/labs/objectives/use-objectives";
-import { useHostedRun } from "@/features/labs/lab-detail/use-hosted-run";
 import { useLabPageState } from "@/features/labs/lab-detail/use-lab-page-state";
 import { useLabShell } from "@/features/labs/lab-detail/use-lab-shell";
 import { useLabTools } from "@/features/labs/lab-detail/use-lab-tools";
@@ -136,7 +135,6 @@ export function useLabDetail(p: LabDetailProps) {
   });
   const run = useRunTarget(rt, readyVms, p.hostArch);
   const preview = useCloudPreview(lab.id, rt);
-  const hosted = useHostedRun(lab.id);
   const shell = useLabShell(lab.id, lab.title, s.isDocker ? "DOCKER" : "VM");
   const box = useShownBox(useLabAttackBox(lab.id, s), removing(s));
   const [check, clearCheck] = useLabCheck(lab.id, { running: s.running, downCount: s.down.length, enabled: s.isDocker });
@@ -144,11 +142,8 @@ export function useLabDetail(p: LabDetailProps) {
   const objectives = useObjectives(lab.id, lab.question, t("labs.detail.objective"), p.loggedIn);
   const restart = () => restartTarget(status, run.hosts, run.runOn, run.localVm);
   const { resetting, reset } = useLabReset(p.onStop, p.onStart, restart, clearCheck);
-  const startOn = (target: RunTarget) => {
-    if (target.kind === "hosted") hosted.launch();
-    else void p.onStart(target);
-  };
-  return { s, acting, act, provisionTarget, setProvisionTarget, run, preview, hosted, shell, box, check, tools, objectives, resetting, reset, startOn };
+  const startOn = (target: RunTarget) => void p.onStart(target);
+  return { s, acting, act, provisionTarget, setProvisionTarget, run, preview, shell, box, check, tools, objectives, resetting, reset, startOn };
 }
 
 export type LabPage = ReturnType<typeof useLabDetail>;

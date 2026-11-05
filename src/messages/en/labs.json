@@ -23,8 +23,7 @@
     "container": "Container on this machine",
     "local_vm": "VM on this machine",
     "server": "Your server",
-    "cloud": "Your cloud account",
-    "hosted": "Hosted by Cyber CTF"
+    "cloud": "Your cloud account"
   },
   "timers": {
     "autoStop": "Auto-stops at {time} · in {left}"
@@ -33,27 +32,6 @@
     "title": "Brief",
     "loading": "Loading the brief…",
     "empty": "No briefing for this lab yet. Start it and dig in."
-  },
-  "hosted": {
-    "stages": {
-      "REQUESTED": "Asking Cyber CTF for an instance",
-      "CLAIMED": "Preparing your instance",
-      "PULLING": "Starting the lab"
-    },
-    "expiresIn": "Expires in {left}.",
-    "running": "Running, hosted by Cyber CTF",
-    "runningHint": "Open it in your browser and attack it with your own tools.",
-    "failed": "Couldn’t start the hosted lab",
-    "slow": "This is taking longer than expected",
-    "tryAgain": "Try again in a moment.",
-    "expired": "The hosted session expired.",
-    "ended": "The hosted session ended.",
-    "starting": "Starting",
-    "waiting": "{stage}… This usually takes about 30 seconds.",
-    "open": "Open",
-    "openPort": "Open :{port}",
-    "dismiss": "Dismiss",
-    "stop": "Stop"
   },
   "health": {
     "down": {
@@ -97,8 +75,6 @@
     "inVmSubtitle": "{provider} · isolated from your system",
     "ready": "Ready",
     "readyHint": "Hypervisor chosen in Settings",
-    "hostedTitle": "Hosted by Cyber CTF",
-    "hostedSubtitle": "Nothing to install · opens in your browser",
     "available": "Available",
     "servers": "Servers",
     "cloud": "Cloud",
@@ -310,7 +286,6 @@
     "signInToStart": "Sign in to start",
     "noRuntime": "No runtime for this lab yet",
     "signInHint": "Sign in to start labs",
-    "hostedLive": "It's running hosted by Cyber CTF; stop it first",
     "startLab": "Start lab",
     "cancel": "Cancel",
     "start": "Start",

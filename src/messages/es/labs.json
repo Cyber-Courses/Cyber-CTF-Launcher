@@ -23,8 +23,7 @@
     "container": "Contenedor en esta máquina",
     "local_vm": "VM en esta máquina",
     "server": "Tu servidor",
-    "cloud": "Tu cuenta en la nube",
-    "hosted": "Alojado por Cyber CTF"
+    "cloud": "Tu cuenta en la nube"
   },
   "timers": {
     "autoStop": "Se detiene a las {time} · en {left}"
@@ -33,27 +32,6 @@
     "title": "Briefing",
     "loading": "Cargando el briefing…",
     "empty": "Este lab aún no tiene briefing. Inícialo y ponte manos a la obra."
-  },
-  "hosted": {
-    "stages": {
-      "REQUESTED": "Solicitando una instancia a Cyber CTF",
-      "CLAIMED": "Preparando tu instancia",
-      "PULLING": "Iniciando el lab"
-    },
-    "expiresIn": "Caduca en {left}.",
-    "running": "En ejecución, alojado por Cyber CTF",
-    "runningHint": "Ábrelo en tu navegador y atácalo con tus propias herramientas.",
-    "failed": "No se pudo iniciar el lab alojado",
-    "slow": "Esto está tardando más de lo esperado",
-    "tryAgain": "Vuelve a intentarlo en un momento.",
-    "expired": "La sesión alojada ha caducado.",
-    "ended": "La sesión alojada ha terminado.",
-    "starting": "Iniciando",
-    "waiting": "{stage}… Esto suele tardar unos 30 segundos.",
-    "open": "Abrir",
-    "openPort": "Abrir :{port}",
-    "dismiss": "Descartar",
-    "stop": "Detener"
   },
   "health": {
     "down": {
@@ -97,8 +75,6 @@
     "inVmSubtitle": "{provider} · aislado de tu sistema",
     "ready": "Listo",
     "readyHint": "Hipervisor elegido en Ajustes",
-    "hostedTitle": "Alojado por Cyber CTF",
-    "hostedSubtitle": "Nada que instalar · se abre en tu navegador",
     "available": "Disponible",
     "servers": "Servidores",
     "cloud": "Nube",
@@ -312,7 +288,6 @@
     "signInToStart": "Inicia sesión para empezar",
     "noRuntime": "Aún no hay entorno para este lab",
     "signInHint": "Inicia sesión para iniciar labs",
-    "hostedLive": "Se está ejecutando alojado por Cyber CTF; detenlo primero",
     "startLab": "Iniciar lab",
     "cancel": "Cancelar",
     "start": "Iniciar",

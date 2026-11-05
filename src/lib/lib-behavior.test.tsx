@@ -56,7 +56,7 @@ describe("i18n", () => {
   });
 
   it("keeps a placeholder it has no value for", () => {
-    expect(translate("hosted.stopFailed", {})).toBe("Couldn't stop the hosted lab: {error}");
+    expect(translate("errors.codes.portInUse", {})).toContain("{port}");
   });
 
   it.each([

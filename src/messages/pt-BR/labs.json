@@ -23,8 +23,7 @@
     "container": "Contêiner nesta máquina",
     "local_vm": "VM nesta máquina",
     "server": "Seu servidor",
-    "cloud": "Sua conta de nuvem",
-    "hosted": "Hospedado pelo Cyber CTF"
+    "cloud": "Sua conta de nuvem"
   },
   "timers": {
     "autoStop": "Para sozinho às {time} · em {left}"
@@ -33,27 +32,6 @@
     "title": "Briefing",
     "loading": "Carregando o briefing…",
     "empty": "Este lab ainda não tem briefing. Inicie-o e mãos à obra."
-  },
-  "hosted": {
-    "stages": {
-      "REQUESTED": "Pedindo uma instância ao Cyber CTF",
-      "CLAIMED": "Preparando sua instância",
-      "PULLING": "Iniciando o lab"
-    },
-    "expiresIn": "Expira em {left}.",
-    "running": "Rodando, hospedado pelo Cyber CTF",
-    "runningHint": "Abra-o no navegador e ataque-o com suas próprias ferramentas.",
-    "failed": "Não foi possível iniciar o lab hospedado",
-    "slow": "Isso está demorando mais que o esperado",
-    "tryAgain": "Tente de novo daqui a pouco.",
-    "expired": "A sessão hospedada expirou.",
-    "ended": "A sessão hospedada terminou.",
-    "starting": "Iniciando",
-    "waiting": "{stage}… Isso costuma levar uns 30 segundos.",
-    "open": "Abrir",
-    "openPort": "Abrir :{port}",
-    "dismiss": "Dispensar",
-    "stop": "Parar"
   },
   "health": {
     "down": {
@@ -97,8 +75,6 @@
     "inVmSubtitle": "{provider} · isolada do seu sistema",
     "ready": "Pronta",
     "readyHint": "Hypervisor escolhido em Configurações",
-    "hostedTitle": "Hospedado pelo Cyber CTF",
-    "hostedSubtitle": "Nada para instalar · abre no navegador",
     "available": "Disponível",
     "servers": "Servidores",
     "cloud": "Nuvem",
@@ -312,7 +288,6 @@
     "signInToStart": "Entre para iniciar",
     "noRuntime": "Ainda não há runtime para este lab",
     "signInHint": "Entre para iniciar labs",
-    "hostedLive": "Ele está rodando hospedado pelo Cyber CTF; pare-o primeiro",
     "startLab": "Iniciar lab",
     "cancel": "Cancelar",
     "start": "Iniciar",

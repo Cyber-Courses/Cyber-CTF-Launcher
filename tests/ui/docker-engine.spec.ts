@@ -49,8 +49,6 @@ async function expectEngineStoppedInDialog(page: Page) {
   const here = where.getByRole("radio", { name: /This machine On your system/ });
   await expect(here).toContainText("Engine stopped");
   await expect(here).toHaveAttribute("aria-checked", "true");
-  // Hosted by Cyber CTF needs nothing here.
-  await expect(where.getByRole("radio", { name: /Hosted by Cyber CTF/ })).toContainText("Available");
   await where.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(where).toBeHidden();
 }

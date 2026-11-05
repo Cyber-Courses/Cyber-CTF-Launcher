@@ -13,17 +13,6 @@ import type { Args } from "@/lib/dev-mock/types";
 /** Where a VM or cloud lab started in the preview runs, and whether it is parked. */
 type Placement = { provider: string; host: Host | null; parked: "pause" | "shutdown" | null; startedAt: number };
 
-/** A hosted session (Cyber CTF runs the lab), as CyberBackend reports it. */
-type Session = {
-  id: string;
-  labId: string;
-  target: "hosted";
-  state: string;
-  endpoints: { port: number; url: string }[];
-  message: null;
-  expiresAt: string;
-};
-
 /** An operation the core reports in flight on a lab. */
 type Operation = "launch" | "stop" | "pause" | "shutdown" | "resume" | "provision";
 
@@ -39,8 +28,6 @@ export type Live = {
   holds: Holds;
   /** VM and cloud labs started here: where they run. */
   placed: Map<string, Placement>;
-  /** The hosted session, once one is requested. */
-  hosted: Session | null;
 };
 
 /** The preview's state at load, as the scenario sets it. */
@@ -53,7 +40,6 @@ export function liveFrom(sc: Scenario): Live {
     installFails: sc.installFails,
     holds: holdsOf(sc.held),
     placed: new Map(),
-    hosted: null,
   };
 }
 

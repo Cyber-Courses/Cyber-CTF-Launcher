@@ -94,7 +94,7 @@ function LabHeader({ page, props, onRemove }: { page: LabPage; props: LabDetailP
       // Opened from the list (whose row is gone now): the focus starts here, not on <body>.
       focusTitle
       title={lab.title}
-      lead={<HeaderLead lab={lab} state={page.s} status={status} hosted={page.hosted.live} />}
+      lead={<HeaderLead lab={lab} state={page.s} status={status} />}
       actions={<LabHeaderActions mode={mode} page={page} props={props} onRemove={onRemove} />}
     />
   );

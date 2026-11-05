@@ -8,7 +8,6 @@ import account from "./de/account.json";
 import app from "./de/app.json";
 import cloud from "./de/cloud.json";
 import home from "./de/home.json";
-import hosted from "./de/hosted.json";
 import labs from "./de/labs.json";
 import diagram from "./de/diagram.json";
 import machine from "./de/machine.json";
@@ -17,4 +16,4 @@ import servers from "./de/servers.json";
 import settings from "./de/settings.json";
 import errors from "./de/errors.json";
 
-export const messages = { common, shell, ui, account, app, cloud, home, hosted, labs, diagram, machine, onboarding, servers, settings, errors };
+export const messages = { common, shell, ui, account, app, cloud, home, labs, diagram, machine, onboarding, servers, settings, errors };

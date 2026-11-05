@@ -63,8 +63,6 @@ function candidatesFor(target: RunTarget, provider?: Provider): string[] {
       return ["docker"];
     case "local-vm":
       return [`docker-vm/${target.provider}`, `vagrant/${target.provider}`];
-    case "hosted":
-      return [];
     case "host":
       if (!provider) return [];
       if (CLOUDS.has(provider)) return [`cloud-vm/${provider}`, `cloud-docker/${provider}`];
@@ -102,13 +100,6 @@ function hostStatus(t: T, check: ServerTest | undefined): Status {
     title: check.message,
   };
 }
-
-const CyberCtfLogo = () => (
-  <TypeIcon>
-    {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
-    <img src="/logo-mark.svg" alt="Cyber CTF" className="size-4 object-contain" draggable={false} />
-  </TypeIcon>
-);
 
 const DockerLogo = () => (
   <TypeIcon>
@@ -149,15 +140,6 @@ function localOptions(t: T, tiers: RunTier[], localNote: string, dockerRunning: 
   return local;
 }
 
-const hostedOption = (t: T): Option => ({
-  target: { kind: "hosted" },
-  title: t("labs.runOn.hostedTitle"),
-  subtitle: t("labs.runOn.hostedSubtitle"),
-  ok: true,
-  logo: <CyberCtfLogo />,
-  status: { tone: "ok", label: t("labs.runOn.available") },
-});
-
 /** A saved server or cloud account; one the lab can't run on says why, without a status. */
 function hostOption(t: T, tiers: RunTier[], h: ServerHost, ok: boolean, check: ServerTest | undefined): Option {
   const kind = KIND[h.provider].label;
@@ -184,7 +166,6 @@ export function runOnGroups(
     localNote,
     dockerRunning,
     localVm,
-    hosted,
     offerLocal,
     tiers,
   }: {
@@ -194,7 +175,6 @@ export function runOnGroups(
     localNote: string;
     dockerRunning: boolean | null;
     localVm: Provider | null;
-    hosted: boolean;
     offerLocal: boolean;
     tiers: RunTier[];
   },
@@ -202,7 +182,6 @@ export function runOnGroups(
   const forHost = (h: ServerHost) => hostOption(t, tiers, h, hostOk(h), checks[h.id]);
   const groups: OptionGroup[] = [
     { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localOptions(t, tiers, localNote, dockerRunning, localVm) : [] },
-    { id: "hosted", label: "Cyber CTF", options: hosted ? [hostedOption(t)] : [] },
     { id: "servers", label: t("labs.runOn.servers"), options: hosts.filter((h) => !CLOUDS.has(h.provider)).map(forHost) },
     { id: "cloud", label: t("labs.runOn.cloud"), options: hosts.filter((h) => CLOUDS.has(h.provider)).map(forHost) },
   ];

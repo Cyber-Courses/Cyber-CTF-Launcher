@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONFIRM_WINDOW_MS, LaunchConfirm } from "@/features/app/launch-confirm";
-import { useHostedLabs, type HostedSession } from "@/features/hosted/use-hosted-labs";
 import { LabDetail } from "@/features/labs/lab-detail";
 import { useLabCheck } from "@/features/labs/lab-health";
 import { getLabState, noteStopped, refreshStatus, setScanRunning } from "@/features/labs/lab-store";
@@ -12,7 +11,7 @@ import { useAttackBox } from "@/features/labs/use-attack-box";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { beginDeploy, appendDeployLog, endDeploy, getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
-import { setLocalePreference, translate } from "@/lib/i18n";
+import { translate } from "@/lib/i18n";
 import type { LabCheck, LabStatus } from "@/lib/tauri";
 import { commands, installTauri, rejects, rejectWith } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
@@ -57,56 +56,6 @@ const advance = (ms: number) =>
 
 afterEach(() => {
   vi.useRealTimers();
-});
-
-describe("hosted lab poll", () => {
-  const session: HostedSession = {
-    id: "sess-1",
-    labId: "lab-h",
-    target: "hosted",
-    state: "REQUESTED",
-    endpoints: [],
-    message: null,
-    expiresAt: "2030-01-01T00:00:00Z",
-  };
-
-  it("keeps polling after a failed read and a null answer", async () => {
-    vi.useFakeTimers();
-    const replies: (() => unknown)[] = [
-      () => {
-        throw new Error("network down");
-      },
-      () => ({ labSession: null }),
-      () => ({ labSession: { ...session, state: "RUNNING", endpoints: [{ port: 80, url: "https://lab.example" }] } }),
-    ];
-    installTauri({
-      api_query: (a) =>
-        String(a?.operation).includes("activeSession") ? { myActiveLabSession: session } : (replies.shift() ?? (() => ({ labSession: null })))(),
-    });
-    const { result } = renderHook(() => useHostedLabs());
-    await advance(0);
-    expect(result.current.session?.state).toBe("REQUESTED");
-    await advance(2500);
-    await advance(2500);
-    await advance(2500);
-    expect(result.current.session?.state).toBe("RUNNING");
-  });
-
-  it("gives up with a message once the start deadline passes, even when every read fails", async () => {
-    vi.useFakeTimers();
-    setLocalePreference("en");
-    installTauri({
-      api_query: (a) => {
-        if (String(a?.operation).includes("activeSession")) return { myActiveLabSession: session };
-        throw new Error("backend unreachable");
-      },
-    });
-    const { result } = renderHook(() => useHostedLabs());
-    await advance(0);
-    for (let i = 0; i < 245; i++) await advance(2500);
-    expect(result.current.error).toBe(translate("hosted.slowStart"));
-    setLocalePreference("system");
-  });
 });
 
 describe("lab health check", () => {

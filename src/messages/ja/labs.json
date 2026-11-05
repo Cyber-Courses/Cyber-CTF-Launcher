@@ -23,8 +23,7 @@
     "container": "このマシン上のコンテナ",
     "local_vm": "このマシン上の VM",
     "server": "あなたのサーバー",
-    "cloud": "あなたのクラウドアカウント",
-    "hosted": "Cyber CTF がホスト"
+    "cloud": "あなたのクラウドアカウント"
   },
   "timers": {
     "autoStop": "{time} に自動停止 · 残り {left}"
@@ -33,27 +32,6 @@
     "title": "概要",
     "loading": "概要を読み込み中…",
     "empty": "このラボの概要はまだありません。起動して調べてみましょう。"
-  },
-  "hosted": {
-    "stages": {
-      "REQUESTED": "Cyber CTF にインスタンスを要求中",
-      "CLAIMED": "インスタンスを準備中",
-      "PULLING": "ラボを起動中"
-    },
-    "expiresIn": "残り {left} で期限切れになります。",
-    "running": "実行中（Cyber CTF がホスト）",
-    "runningHint": "ブラウザで開き、自分のツールで攻撃してください。",
-    "failed": "ホスト型ラボを起動できませんでした",
-    "slow": "想定より時間がかかっています",
-    "tryAgain": "しばらくしてから再試行してください。",
-    "expired": "ホスト型セッションの期限が切れました。",
-    "ended": "ホスト型セッションが終了しました。",
-    "starting": "起動中",
-    "waiting": "{stage}… 通常 30 秒ほどかかります。",
-    "open": "開く",
-    "openPort": ":{port} を開く",
-    "dismiss": "閉じる",
-    "stop": "停止"
   },
   "health": {
     "down": {
@@ -97,8 +75,6 @@
     "inVmSubtitle": "{provider} · システムから隔離",
     "ready": "準備完了",
     "readyHint": "ハイパーバイザーは「設定」で選択済み",
-    "hostedTitle": "Cyber CTF がホスト",
-    "hostedSubtitle": "インストール不要 · ブラウザで開きます",
     "available": "利用可能",
     "servers": "サーバー",
     "cloud": "クラウド",
@@ -312,7 +288,6 @@
     "signInToStart": "サインインして起動",
     "noRuntime": "このラボにはまだランタイムがありません",
     "signInHint": "ラボを起動するにはサインインしてください",
-    "hostedLive": "Cyber CTF のホスト環境で実行中です。先に停止してください",
     "startLab": "ラボを起動",
     "cancel": "キャンセル",
     "start": "起動",

@@ -44,7 +44,7 @@ test.describe("onboarding", () => {
       await page.getByRole("button", { name: "Get started" }).click();
       await expect(progress(page)).toHaveText(`2 / ${total} · Sign in`);
       // The step says so (and so does the sign-in's toast, for a moment).
-    await expect(page.getByText("Signed in as Florian Amette").first()).toBeVisible();
+      await expect(page.getByText("Signed in as Florian Amette").first()).toBeVisible();
       await forward(page).click();
 
       for (let n = 2; n < total - 1; n++) {
