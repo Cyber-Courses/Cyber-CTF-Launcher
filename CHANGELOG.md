@@ -4,7 +4,7 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.8.2] — 2026-11-05
 
 ### Added
 
@@ -12,6 +12,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   heartbeat, the launcher now reports its own version and the machine's OS (e.g. `macos 15.1`,
   `windows 11`), so an outdated launcher can be spotted. The OS falls back to its family alone
   (`linux`) when its version can't be read.
+
+### Removed
+
+- **"Hosted by Cyber CTF" is gone.** Running a lab hosted by Cyber CTF is no longer offered as a
+  place to run it; a lab runs on your own machine, on a server, or in your cloud account.
 
 ## [1.8.1] — 2026-11-05
 
