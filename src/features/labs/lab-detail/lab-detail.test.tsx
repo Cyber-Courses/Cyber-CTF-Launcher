@@ -19,7 +19,7 @@ const dockerLab: Lab = {
   question: "What is the total amount of invoice INV-2041?",
   difficulty: 1,
   category: "Web",
-  runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws"], hosted: true },
+  runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws"] },
   skills: [{ id: "s1", name: "API keys" }],
 };
 const vmLab: Lab = {
@@ -53,7 +53,7 @@ describe("LabDetail", () => {
     // Esc on the page goes back to the list.
     await user.keyboard("{Escape}");
     expect(h.onBack).toHaveBeenCalledTimes(1);
-    // With servers and hosted runs to choose from, Start asks where first.
+    // With servers to choose from, Start asks where first.
     await user.click(screen.getByRole("button", { name: /start lab/i }));
     const dialog = await screen.findByRole("dialog");
     const confirm = within(dialog)

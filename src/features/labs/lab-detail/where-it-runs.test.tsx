@@ -18,14 +18,9 @@ describe("WhereItRunsPanel", () => {
   it("marks the places the lab can't run as not available", () => {
     render(<WhereItRunsPanel labId="lab-x" runtime={x86Vm} hostArch="x86_64" native emulates={false} isDocker={false} meta="VM lab" />);
     expect(screen.getByText("VM on this machine")).toBeTruthy();
-    // A VM lab on VirtualBox only: no container, no server, no cloud, no hosted run.
+    // A VM lab on VirtualBox only: no container, no server, no cloud.
     const unavailable = screen.getAllByTitle("Not available for this lab");
-    expect(unavailable.map((row) => row.textContent)).toEqual([
-      "Container on this machinen/a",
-      "Your servern/a",
-      "Your cloud accountn/a",
-      "Hosted by Cyber CTFn/a",
-    ]);
+    expect(unavailable.map((row) => row.textContent)).toEqual(["Container on this machinen/a", "Your servern/a", "Your cloud accountn/a"]);
     expect(screen.getByText("VM on this machine").closest("[title]")).toBeNull();
     expect(document.body.textContent).not.toContain("Emulated");
   });
@@ -68,7 +63,6 @@ describe("RunOnPicker", () => {
         localNote="VirtualBox"
         dockerRunning={null}
         localVm={null}
-        hosted={false}
         value={{ kind: "local" }}
         onChange={vi.fn()}
         disabled={false}

@@ -21,8 +21,6 @@ type StartLabProps = {
   /** A cloud lab: its cost and inputs (`preview`, once read). Null for the other labs. */
   cloud?: { preview: CloudPreview | null } | null;
   loggedIn: boolean;
-  /** A hosted session of this lab is up: one run at a time. */
-  hostedLive: boolean;
   busy: boolean;
   dockerRunning: boolean | null;
   onStart: (target: RunTarget) => void;
@@ -33,14 +31,14 @@ type StartLabProps = {
   chooseAtOnce?: boolean;
 };
 
-/** Why Start is greyed out (no runtime, signed out, a hosted session up), if it is. */
-function startHint(t: T, { runtime, loggedIn, hostedLive }: { runtime: boolean; loggedIn: boolean; hostedLive: boolean }): string | undefined {
+/** Why Start is greyed out (no runtime, signed out), if it is. */
+function startHint(t: T, { runtime, loggedIn }: { runtime: boolean; loggedIn: boolean }): string | undefined {
   if (!runtime) return t("labs.detail.noRuntime");
   if (!loggedIn) return t("labs.detail.signInHint");
-  return hostedLive ? t("labs.detail.hostedLive") : undefined;
+  return undefined;
 }
 
-/** Start lab: with somewhere else to run it (servers, a VM here, hosted), asks where first in
+/** Start lab: with somewhere else to run it (servers, a VM here), asks where first in
  *  "Where should it run?"; otherwise starts here right away. A cloud lab always asks (which
  *  account, and what it costs), and with no account of its cloud offers to connect one. */
 export function StartLabButton({
@@ -49,7 +47,6 @@ export function StartLabButton({
   isDocker,
   cloud = null,
   loggedIn,
-  hostedLive,
   busy,
   dockerRunning,
   onStart,
@@ -68,8 +65,8 @@ export function StartLabButton({
           if (run.hasChoice) setChoosing(true);
           else onStart({ kind: "local" });
         }}
-        disabled={!loggedIn || !rt || hostedLive}
-        title={startHint(t, { runtime: !!rt, loggedIn, hostedLive })}
+        disabled={!loggedIn || !rt}
+        title={startHint(t, { runtime: !!rt, loggedIn })}
         aria-haspopup={run.hasChoice ? "dialog" : undefined}
       >
         {retry ? <RotateCw className="size-3.5" /> : <Play className="size-3.5" />} {retry ? t("labs.detail.retry") : t("labs.detail.startLab")}
@@ -133,7 +130,6 @@ function StartDialog({
         hostOk={run.hostOk}
         localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
         localVm={run.localVm}
-        hosted={!!lab.runtime?.hosted}
         dockerRunning={isDocker ? dockerRunning : null}
         value={run.runOn}
         onChange={run.setRunOn}

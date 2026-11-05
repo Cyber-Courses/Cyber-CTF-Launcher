@@ -100,12 +100,7 @@ describe("hostSupports", () => {
 describe("runPlaces", () => {
   const available = (places: ReturnType<typeof runPlaces>) => places.filter((p) => p.available).map((p) => p.key);
   it("lists a container lab's places", () => {
-    expect(available(runPlaces(rt({ runtime: "DOCKER", providers: ["docker", "aws"] as Provider[], hosted: true })))).toEqual([
-      "container",
-      "local_vm",
-      "cloud",
-      "hosted",
-    ]);
+    expect(available(runPlaces(rt({ runtime: "DOCKER", providers: ["docker", "aws"] as Provider[] })))).toEqual(["container", "local_vm", "cloud"]);
   });
   it("offers a foreign-CPU VM lab here only with an emulator", () => {
     const lab = rt({ architectures: ["x86_64"], providers: ["virtualbox", "proxmox"] as Provider[] });

@@ -21,7 +21,7 @@ import { report } from "@/lib/dev-mock/sample";
  *  - `launch=fail`: the first lab start of each page load fails, after a few lines of output.
  *  - `hold=<step>[,<step>…]`: each step waits, once reached, until the test lets it go on
  *    (`window.__CYBERCTF_MOCK_RELEASE__(step)`): a lab start (`launch`), a re-run of provisioning
- *    (`provision`), a hosted session coming up (`hosted`), the machine coming back after failed
+ *    (`provision`), the machine coming back after failed
  *    system checks (`check`), the package manager showing up (`pm`), a sign-in finishing in
  *    the browser or by the code (`login`). See holds.ts.
  *  - `install=fail`: the first one-click install of each page load fails. Otherwise installs
@@ -31,8 +31,8 @@ import { report } from "@/lib/dev-mock/sample";
  *  - `link=<url>`: the app was opened with this link (`cyberctf://labs/<slug>`).
  * Labs started or stopped here stay so until a reload: Docker labs stream a Compose log, VM labs
  * a Vagrant log (on this machine's hypervisor or a saved server; pause, shut down, resume and
- * re-run provisioning work), cloud labs a Terraform log (outputs and an auto-stop), hosted labs
- * go from requested to running on the next poll. The attack box shell is a stand-in that answers
+ * re-run provisioning work), and cloud labs a Terraform log (outputs and an auto-stop). The
+ * attack box shell is a stand-in that answers
  * `id`, `whoami`, `hostname`, `ip -br a`, and ends on `exit`. Events emitted in one tab (Settings asking
  * the main window to show the onboarding again, a server saved in the setup) reach the others.
  */

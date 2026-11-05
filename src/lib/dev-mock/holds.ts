@@ -8,14 +8,13 @@
  *  - `launch`: a lab start stays in flight before the lab runs (a container lab's containers
  *    created, not started; a VM lab's machines up, not reported running yet);
  *  - `provision`: a re-run of a VM lab's provisioning, likewise;
- *  - `hosted`: a hosted session stays requested, however often it is polled;
  *  - `check`: every system check fails, as on a machine whose engine doesn't answer, until the
  *    machine comes back (once released; a check in flight then answers like the next one);
  *  - `pm`: the package manager stays missing from the system check (as if the player ran its
  *    install command while the setup window was open, once released);
  *  - `login`: a sign-in waits for the browser (or the code's approval) until released, as the
  *    core does for the player. */
-const HOLDABLE = ["launch", "provision", "hosted", "check", "pm", "login"] as const;
+const HOLDABLE = ["launch", "provision", "check", "pm", "login"] as const;
 
 /** A step a test can hold. */
 export type Holdable = (typeof HOLDABLE)[number];

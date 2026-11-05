@@ -3,8 +3,6 @@ import type { ComponentProps } from "react";
 import { act, render, renderHook, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HostedSession } from "@/features/hosted/use-hosted-labs";
-import { HostedSessionPanel } from "@/features/labs/hosted-session-panel";
 import { HealthBanner, useLabCheck } from "@/features/labs/lab-health";
 import { LabRow } from "@/features/labs/lab-row";
 import { askPortMode, PortModePrompt } from "@/features/labs/port-mode-prompt";
@@ -19,100 +17,6 @@ import { invoiceRowLab, rejectWith } from "@/features/labs/labs-test-kit";
 
 afterEach(() => {
   setPortMode(null);
-});
-
-// ---------------------------------------------------------------------------------------------
-describe("HostedSessionPanel", () => {
-  const session = (p: Partial<HostedSession> = {}): HostedSession => ({
-    id: "s1",
-    labId: "lab-invoice",
-    target: "hosted",
-    state: "RUNNING",
-    endpoints: [{ port: 8080, url: "https://s1.labs.cyberctf.org" }],
-    message: null,
-    expiresAt: new Date(Date.now() + 90 * 60_000 + 30_000).toISOString(),
-    ...p,
-  });
-
-  it("opens a running session's single URL and stops it", async () => {
-    const calls = installTauri();
-    const user = userEvent.setup();
-    const onStop = vi.fn();
-    render(<HostedSessionPanel session={session()} starting={false} error={null} onStop={onStop} />);
-    expect(screen.getByText("Running, hosted by Cyber CTF")).toBeTruthy();
-    expect(screen.getByText(/Expires in 1h 30m\./)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: /^Open/ }));
-    await flush();
-    expect(calls.find((c) => c.cmd.includes("opener"))?.args).toMatchObject({ url: "https://s1.labs.cyberctf.org" });
-    await user.click(screen.getByRole("button", { name: /Stop/ }));
-    expect(onStop).toHaveBeenCalled();
-  });
-
-  it("names each port when a session has several, and no expiry once it has passed", () => {
-    installTauri();
-    render(
-      <HostedSessionPanel
-        session={session({
-          endpoints: [
-            { port: 80, url: "https://a" },
-            { port: 8000, url: "https://b" },
-          ],
-          expiresAt: new Date(Date.now() - 1000).toISOString(),
-        })}
-        starting={false}
-        error={null}
-        onStop={vi.fn()}
-      />,
-    );
-    expect(screen.getByRole("button", { name: /Open :80$/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Open :8000/ })).toBeTruthy();
-    expect(screen.queryByText(/Expires in/)).toBeNull();
-  });
-
-  it.each([
-    ["REQUESTED", "Asking Cyber CTF for an instance… This usually takes about 30 seconds."],
-    ["CLAIMED", "Preparing your instance… This usually takes about 30 seconds."],
-    ["PULLING", "Starting the lab… This usually takes about 30 seconds."],
-  ] as const)("shows the %s stage while it comes up", (state, text) => {
-    render(<HostedSessionPanel session={session({ state, endpoints: [] })} starting={false} error={null} onStop={vi.fn()} />);
-    expect(screen.getByText(text)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Stop/ })).toBeTruthy();
-  });
-
-  it("shows the request on its way before a session exists, without buttons", () => {
-    const { rerender } = render(<HostedSessionPanel session={null} starting error={null} onStop={vi.fn()} />);
-    expect(screen.getByText(/Asking Cyber CTF for an instance/)).toBeTruthy();
-    expect(screen.queryByRole("button")).toBeNull();
-    rerender(<HostedSessionPanel session={null} starting={false} error={null} onStop={vi.fn()} />);
-    expect(screen.getByText(/^\s*Starting…/)).toBeTruthy();
-  });
-
-  it("shows a failed session with the backend's message, dismissable", async () => {
-    const user = userEvent.setup();
-    const onStop = vi.fn();
-    render(<HostedSessionPanel session={session({ state: "FAILED", message: "No capacity" })} starting={false} error={null} onStop={onStop} />);
-    expect(screen.getByText("Couldn’t start the hosted lab")).toBeTruthy();
-    expect(screen.getByText("No capacity")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(onStop).toHaveBeenCalled();
-  });
-
-  it("shows a failed request's error, or asks to try again", () => {
-    const { rerender } = render(<HostedSessionPanel session={null} starting={false} error="Error: not signed in" onStop={vi.fn()} />);
-    expect(screen.getByText("This is taking longer than expected")).toBeTruthy();
-    expect(screen.getByText("Error: not signed in")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Dismiss" })).toBeTruthy();
-    rerender(<HostedSessionPanel session={session({ state: "FAILED", message: null })} starting={false} error={null} onStop={vi.fn()} />);
-    expect(screen.getByText("Try again in a moment.")).toBeTruthy();
-  });
-
-  it("says when a session ended or expired", () => {
-    const { rerender } = render(<HostedSessionPanel session={session({ state: "STOPPED" })} starting={false} error={null} onStop={vi.fn()} />);
-    expect(screen.getByText("The hosted session ended.")).toBeTruthy();
-    rerender(<HostedSessionPanel session={session({ state: "EXPIRED" })} starting={false} error={null} onStop={vi.fn()} />);
-    expect(screen.getByText("The hosted session expired.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Dismiss" })).toBeTruthy();
-  });
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -135,7 +39,6 @@ describe("RunOnPicker", () => {
         localNote="On your system, as containers"
         dockerRunning
         localVm={null}
-        hosted={false}
         value={{ kind: "local" }}
         onChange={onChange}
         disabled={false}
@@ -176,18 +79,16 @@ describe("RunOnPicker", () => {
     expect(onChange).toHaveBeenCalledWith({ kind: "host", id: "esx" } satisfies RunTarget);
   });
 
-  it("offers a VM here and hosted runs, and warns when the engine is stopped", async () => {
+  it("offers a VM here, and warns when the engine is stopped", async () => {
     installTauri();
     const user = userEvent.setup();
-    const onChange = renderPicker({ hosts: [], dockerRunning: false, localVm: "virtualbox", hosted: true, localExtra: <p>ports here</p> });
+    const onChange = renderPicker({ hosts: [], dockerRunning: false, localVm: "virtualbox", localExtra: <p>ports here</p> });
     expect(screen.getByText("Engine stopped")).toBeTruthy();
     expect(screen.getByText("This machine, in a VM")).toBeTruthy();
     expect(screen.getByText("VirtualBox · isolated from your system")).toBeTruthy();
     expect(screen.getByText("ports here")).toBeTruthy();
     await user.click(screen.getByText("This machine, in a VM"));
     expect(onChange).toHaveBeenLastCalledWith({ kind: "local-vm", provider: "virtualbox" });
-    await user.click(screen.getByText("Hosted by Cyber CTF"));
-    expect(onChange).toHaveBeenLastCalledWith({ kind: "hosted" });
     expect(screen.queryByText("Servers")).toBeNull();
   });
 

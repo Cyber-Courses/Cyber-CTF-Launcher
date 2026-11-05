@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Shuffle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-pill";
-import { HostedSessionPanel } from "@/features/labs/hosted-session-panel";
 import { HealthBanner } from "@/features/labs/lab-health";
 import { CloudNotePanel, CloudPanel } from "@/features/labs/cloud-panel";
 import { DeploymentPanel } from "@/features/labs/lab-detail/deployment-panel";
@@ -59,8 +58,6 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
           isDocker={s.isDocker}
           cloud={s.isCloud ? { preview: page.preview } : null}
           loggedIn={p.loggedIn}
-          // Also while the hosted launch request is on its way: a second click sent it twice.
-          hostedLive={page.hosted.live || page.hosted.starting}
           busy={p.busy}
           dockerRunning={p.dockerRunning ?? null}
           onStart={page.startOn}
@@ -85,11 +82,10 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
   );
 }
 
-/** Under the header: the last operation's failure, a shell that failed to open, the hosted
- *  session, and the health banner (a container went down: say so, check it, offer a clean
- *  restart). */
+/** Under the header: the last operation's failure, a shell that failed to open, and the health
+ *  banner (a container went down: say so, check it, offer a clean restart). */
 export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetailProps }) {
-  const { s, shell, hosted, act } = page;
+  const { s, shell, act } = page;
   // Dismissed for this failure only: the next one shows again.
   const failure = s.failure && s.failedOp ? { op: s.failedOp, message: s.failure, key: `${s.failedOp}|${String(s.startedAt ?? "")}|${s.failure}` } : null;
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -117,7 +113,6 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
           <StatusDot tone="fail" /> {shell.error}
         </p>
       )}
-      {hosted.shown && <HostedSessionPanel session={hosted.session} starting={hosted.starting} error={hosted.error} onStop={hosted.stop} />}
       {s.running && s.down.length > 0 && (
         <HealthBanner
           down={s.down.map((m) => m.name)}

@@ -23,8 +23,7 @@
     "container": "Conteneur sur cette machine",
     "local_vm": "VM sur cette machine",
     "server": "Votre serveur",
-    "cloud": "Votre compte cloud",
-    "hosted": "Hébergé par Cyber CTF"
+    "cloud": "Votre compte cloud"
   },
   "timers": {
     "autoStop": "Arrêt auto à {time} · dans {left}"
@@ -33,27 +32,6 @@
     "title": "Brief",
     "loading": "Chargement du brief…",
     "empty": "Pas encore de brief pour ce lab. Démarrez-le et plongez dedans."
-  },
-  "hosted": {
-    "stages": {
-      "REQUESTED": "Demande d’une instance à Cyber CTF",
-      "CLAIMED": "Préparation de votre instance",
-      "PULLING": "Démarrage du lab"
-    },
-    "expiresIn": "Expire dans {left}.",
-    "running": "En cours, hébergé par Cyber CTF",
-    "runningHint": "Ouvrez-le dans votre navigateur et attaquez-le avec vos propres outils.",
-    "failed": "Impossible de démarrer le lab hébergé",
-    "slow": "Cela prend plus de temps que prévu",
-    "tryAgain": "Réessayez dans un instant.",
-    "expired": "La session hébergée a expiré.",
-    "ended": "La session hébergée est terminée.",
-    "starting": "Démarrage",
-    "waiting": "{stage}… Cela prend généralement environ 30 secondes.",
-    "open": "Ouvrir",
-    "openPort": "Ouvrir :{port}",
-    "dismiss": "Fermer",
-    "stop": "Arrêter"
   },
   "health": {
     "down": {
@@ -97,8 +75,6 @@
     "inVmSubtitle": "{provider} · isolé de votre système",
     "ready": "Prêt",
     "readyHint": "Hyperviseur choisi dans les Réglages",
-    "hostedTitle": "Hébergé par Cyber CTF",
-    "hostedSubtitle": "Rien à installer · s’ouvre dans votre navigateur",
     "available": "Disponible",
     "servers": "Serveurs",
     "cloud": "Cloud",
@@ -312,7 +288,6 @@
     "signInToStart": "Se connecter pour démarrer",
     "noRuntime": "Pas encore d’environnement pour ce lab",
     "signInHint": "Connectez-vous pour démarrer des labs",
-    "hostedLive": "Il tourne, hébergé par Cyber CTF ; arrêtez-le d’abord",
     "startLab": "Démarrer le lab",
     "cancel": "Annuler",
     "start": "Démarrer",

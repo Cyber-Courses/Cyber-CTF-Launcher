@@ -3,14 +3,13 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Labs } from "@/features/labs/labs-screen";
-import { answer } from "@/lib/dev-mock";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { setPortMode } from "@/lib/settings";
 import { readyReport } from "@/test/fixtures";
 import { commands, installTauri, stream, type Handler } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must } from "@/components/test-support";
-import { containerMachine, labStatus, rejectWith, rowTitles, startIn } from "@/features/labs/labs-test-kit";
+import { containerMachine, labStatus, rejectWith, rowTitles } from "@/features/labs/labs-test-kit";
 
 // The Labs screen as a player drives it: the real useLabs / useLabActions / deploy store behind
 // the list and the lab page, with only the Rust commands mocked. The component tests next to it
@@ -20,7 +19,7 @@ const machine = containerMachine;
 const status = labStatus;
 
 // Nothing deploying (the dev mock reports GOAD mid-deploy), and no server: Start on a container
-// lab with no hosted run then starts here at once, without the "Where should it run?" dialog.
+// lab then starts here at once, without the "Where should it run?" dialog.
 const settled: Record<string, Handler> = {
   // The dev mock opens a browser tab for it; jsdom has none.
   server_open_setup: () => null,
@@ -184,8 +183,8 @@ describe("Labs catalogue, from the keyboard", () => {
   });
 });
 
-// "Exposed dashboard": a container lab with no hosted run and no VM option, so with no server
-// saved its Start starts here at once.
+// "Exposed dashboard": a container lab with no VM option, so with no server saved its Start
+// starts here at once.
 const KUBE = "kube-dashboard-exposed";
 /** One saved server, an ESXi host, and no default one. */
 const officeEsxi: Record<string, Handler> = {
@@ -512,31 +511,5 @@ describe("Lab page, driven through the Labs screen", () => {
     await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
     await flush(80);
     expect(calls.find((c) => c.cmd === "lab_launch")?.args).toMatchObject({ labId: "lab-goad", host: "esxi" });
-  });
-});
-
-describe("Lab page, a hosted run", () => {
-  it("Start stays enabled while a hosted launch request is on its way, so it can be sent twice", async () => {
-    // StartLabButton (lab-detail/start-lab-button.tsx:52) is disabled by `hostedLive`, which is
-    // only true once the backend answered with a session. While `requestLabLaunch` is in flight
-    // (useHostedRun's `starting`), Start is enabled: a second click opens the dialog again and
-    // sends a second launchHosted (or starts the lab here beside the hosted one on its way).
-    // Suggested fix: pass `hostedLive={hosted.live || hosted.starting}` from LabDetail (index.tsx)
-    // or a separate `hostedStarting` prop that disables Start with a "Starting hosted…" title.
-    const { calls } = renderLabs("sqli-blind-orders", {
-      lab_status: () => status(),
-      api_query: (a) => {
-        const op = String(a?.operation);
-        if (op.includes("launchHosted")) return new Promise(() => {});
-        return answer("api_query", a);
-      },
-    });
-    const user = userEvent.setup();
-    await flush(80);
-    await user.click(screen.getByRole("button", { name: /Start lab/ }));
-    await startIn(user, "Hosted by Cyber CTF");
-    await flush();
-    expect(calls.filter((c) => String(c.args?.operation).includes("launchHosted"))).toHaveLength(1);
-    expect(screen.getByRole("button", { name: /Start lab/ }).hasAttribute("disabled")).toBe(true);
   });
 });

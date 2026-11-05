@@ -1,4 +1,4 @@
-import { Cloud, Container, Globe, Monitor, Server, type LucideIcon } from "lucide-react";
+import { Cloud, Container, Monitor, Server, type LucideIcon } from "lucide-react";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabStatus, Provider, ServerHost, SystemReport } from "@/lib/tauri";
 
@@ -14,7 +14,8 @@ const VM_CLOUDS_NOT_YET = new Set(["azure", "gcp", "digitalocean", "linode", "oc
  *  an Apple Silicon Mac. */
 export const EMULATORS: readonly Provider[] = ["qemu"];
 
-// providers also carries "hosted" (not a launcher Provider), so compare as strings.
+// providers may still carry "hosted" (not a launcher Provider and no longer offered), so keep it
+// out of the local hypervisors; compare as strings.
 const isLocal = (p: string) => !SERVERS.has(p) && !CLOUDS.has(p) && p !== "hosted";
 
 /** Whether the lab is built for this CPU (no architectures listed = any). */
@@ -76,7 +77,7 @@ export const hostSupports = (rt: LabRuntimeInfo | null, h: ServerHost) => {
   return !(w.vm && !w.docker && VM_CLOUDS_NOT_YET.has(h.provider));
 };
 
-type PlaceKey = NonNullable<LabStatus["place"]> | "hosted";
+type PlaceKey = NonNullable<LabStatus["place"]>;
 
 /** Every place a lab could run, and whether this one can (its runtime here, then its providers).
  *  Its words are `labs.places.<key>`.
@@ -95,7 +96,6 @@ export function runPlaces(rt: LabRuntimeInfo, hostArch?: string, emulates = fals
     { key: "local_vm", icon: Monitor, available: (w.vm || (w.docker && local)) && (!vmForeignCpu || emulates) },
     { key: "server", icon: Server, available: (w.vm || w.docker) && rt.providers.some((p) => SERVERS.has(p)) },
     { key: "cloud", icon: Cloud, available: rt.providers.some((p) => CLOUDS.has(p)) },
-    { key: "hosted", icon: Globe, available: rt.hosted ?? false },
   ];
 }
 
@@ -106,7 +106,6 @@ function cloudPlaces(): { key: PlaceKey; icon: LucideIcon; available: boolean }[
     { key: "local_vm", icon: Monitor, available: false },
     { key: "server", icon: Server, available: false },
     { key: "cloud", icon: Cloud, available: true },
-    { key: "hosted", icon: Globe, available: false },
   ];
 }
 

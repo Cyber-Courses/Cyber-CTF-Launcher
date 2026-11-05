@@ -9,12 +9,11 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { PortMode } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
 
-/** Where a lab starts: this machine (Docker, or a VM on a local hypervisor), a saved host, or
- *  hosted by Cyber CTF. `ports` on this machine: chosen in the dialog (container labs), else
- *  asked at the start. */
-export type RunTarget = { kind: "local"; ports?: PortMode } | { kind: "local-vm"; provider: Provider } | { kind: "host"; id: string } | { kind: "hosted" };
+/** Where a lab starts: this machine (Docker, or a VM on a local hypervisor), or a saved host.
+ *  `ports` on this machine: chosen in the dialog (container labs), else asked at the start. */
+export type RunTarget = { kind: "local"; ports?: PortMode } | { kind: "local-vm"; provider: Provider } | { kind: "host"; id: string };
 
-const targetKey = (t: RunTarget) => (t.kind === "local" || t.kind === "hosted" ? t.kind : t.kind === "local-vm" ? `vm:${t.provider}` : `host:${t.id}`);
+const targetKey = (t: RunTarget) => (t.kind === "local" ? t.kind : t.kind === "local-vm" ? `vm:${t.provider}` : `host:${t.id}`);
 
 /**
  * A centered dialog over the page (Escape or a click on the backdrop closes it). The body
@@ -59,7 +58,6 @@ export function RunOnPicker({
   localNote,
   dockerRunning,
   localVm,
-  hosted,
   value,
   onChange,
   disabled,
@@ -74,8 +72,6 @@ export function RunOnPicker({
   dockerRunning: boolean | null;
   /** The local hypervisor this (container) lab can run a VM on: Settings' choice, else the first ready. */
   localVm: Provider | null;
-  /** Cyber CTF can run this lab for the player (no install, a public URL). */
-  hosted: boolean;
   value: RunTarget;
   onChange: (t: RunTarget) => void;
   disabled: boolean;
@@ -87,7 +83,7 @@ export function RunOnPicker({
   const t = useT();
   const checks = useHostChecks(hosts);
   const tiers = useRunTiers();
-  const groups = runOnGroups(t, { hosts, hostOk, checks, localNote, dockerRunning, localVm, hosted, offerLocal, tiers });
+  const groups = runOnGroups(t, { hosts, hostOk, checks, localNote, dockerRunning, localVm, offerLocal, tiers });
   return (
     <div className="space-y-4">
       <div>

@@ -55,7 +55,7 @@
       "eslint-disable-next-line react-hooks/exhaustive-deps -- sig captures everything drawn": 1
     },
     "src/features/labs/run-on-options.tsx": {
-      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 2
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
     },
     "src/features/machine/hypervisor-logo.tsx": {
       "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
