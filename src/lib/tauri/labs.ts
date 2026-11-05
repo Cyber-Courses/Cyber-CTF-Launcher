@@ -55,7 +55,8 @@ export type {
 export const labCloudPreview = (id: string, repository: string, commit: string) => invoke<CloudPreview | null>("lab_cloud_preview", { id, repository, commit });
 
 /** A lab's minimum-to-run requirements (CPU/RAM/disk) as a lightest-to-heaviest range; null for a lab with no machines of its own. */
-export const labRequirements = (id: string, repository: string, commit: string) => invoke<LabRequirements | null>("lab_requirements", { id, repository, commit });
+export const labRequirements = (id: string, repository: string, commit: string) =>
+  invoke<LabRequirements | null>("lab_requirements", { id, repository, commit });
 
 export const labStop = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeStreaming("lab_stop", { id, runtime }, onLog);
 

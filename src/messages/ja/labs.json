@@ -278,6 +278,8 @@
     "readyInCloud": "{title} はクラウドアカウントで実行中です。"
   },
   "detail": {
+    "systemRequirements": "必要環境",
+    "requirementsSummary": "{cpu} vCPU · {ram} GB RAM · {disk} GB ディスク",
     "yourServer": "あなたのサーバー",
     "aVmHere": "このマシン上の VM",
     "thisMachine": "このマシン",
