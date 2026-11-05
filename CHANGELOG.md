@@ -4,6 +4,17 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] — 2026-11-05
+
+### Fixed
+
+- **A port clash now names what is holding the port.** When a lab can't start because a host
+  port is already taken, the message says which program holds it and its process id, so you can
+  stop that program and start the lab again.
+- **"Retry with random ports" no longer appears for a lab run as a VM on this machine.** A VM
+  forwards the lab's fixed ports to this machine, so random ports can't move them; freeing the
+  port is the fix. The button also no longer quietly turns a VM start into a plain container one.
+
 ## [1.8.0] — 2026-11-05
 
 ### Added
