@@ -14,7 +14,6 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
   const t = useT();
   const { s, box, shell, acting, act } = page;
   const { lab, status, busy } = p;
-  const rt = lab.runtime;
   return (
     <aside className="h-fit min-w-0 space-y-5 lg:sticky lg:top-2">
       {/* A backend without the objectives API: the lab's question, as before. */}
@@ -34,8 +33,17 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
         </Dimmed>
       )}
 
-      {!s.running && rt && (
-        <WhereItRunsPanel labId={lab.id} runtime={rt} hostArch={p.hostArch} native={s.native} emulates={s.emulates} isDocker={s.isDocker} meta={meta} cost={cost} />
+      {!s.running && lab.runtime && (
+        <WhereItRunsPanel
+          labId={lab.id}
+          runtime={lab.runtime}
+          hostArch={p.hostArch}
+          native={s.native}
+          emulates={s.emulates}
+          isDocker={s.isDocker}
+          meta={meta}
+          cost={cost}
+        />
       )}
 
       {s.running && (
