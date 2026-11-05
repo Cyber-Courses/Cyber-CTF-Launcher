@@ -131,6 +131,10 @@ export function deriveLabState(i: LabStateInput) {
   const down = deploying || !running ? [] : machines.filter((m) => !m.infra && m.state !== "running");
   const isDocker = rt?.runtime !== "VM" && !isCloud;
   const remote = !!status?.host;
+  // Where it actually ran, as the backend reports it (its marker survives a failed start, so this
+  // is right even for a launch that failed): a dual-form lab is DOCKER-kind but can run as a VM
+  // here, and "container" is the only place whose host ports can be swapped for random ones.
+  const place = status?.place ?? null;
   const { canPause, canShutdown, canProvision } = labControls(i, { isDocker, isCloud, remote });
   // Where it actually runs: "on this machine" alone is misleading for a VM lab (which hypervisor
   // do I open?), so name the engine or hypervisor the status reports.
@@ -152,6 +156,7 @@ export function deriveLabState(i: LabStateInput) {
     isDocker,
     isCloud,
     remote,
+    place,
     canPause,
     canShutdown,
     canProvision,

@@ -9,7 +9,8 @@ use crate::error::{Code, Error};
 /// The launcher's error for a runner's failure.
 pub(super) fn from_runner(e: RunnerError) -> Error {
     match e {
-        RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port }),
+        // The holder is filled in later, on the launch path, where an async lookup can run.
+        RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port, holder: None }),
         RunnerError::ToolMissing { tool, .. } => Error::coded(Code::ToolMissing { tool }),
         RunnerError::ToolFailed { step, reason } => tool_failed(&step, &reason),
         RunnerError::Timeout { step, after_s } => Error::Invalid(format!(
@@ -85,7 +86,7 @@ mod tests {
 
     #[test]
     fn a_taken_port_and_a_missing_tool_keep_the_codes_the_ui_knows() {
-        assert_eq!(said(RunnerError::PortInUse { port: 8080, protocol: "tcp" }).0, Code::PortInUse { port: 8080 });
+        assert_eq!(said(RunnerError::PortInUse { port: 8080, protocol: "tcp" }).0, Code::PortInUse { port: 8080, holder: None });
         assert_eq!(said(RunnerError::ToolMissing { step: "tools".into(), tool: "docker".into() }).0, Code::ToolMissing { tool: "docker".into() });
         assert_eq!(said(RunnerError::Locked { run: "cyberctf-web".into() }).0, Code::AlreadyInProgress);
     }

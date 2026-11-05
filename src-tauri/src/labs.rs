@@ -647,15 +647,22 @@ mod tests {
         assert!(err.contains("still running on ESXi lab"), "{err}");
     }
 
-    #[test]
-    fn links_and_the_top_level_folder_entry_are_skipped() {
+    /// A gzip tar builder with the lab's top folder `lab-abc/` and one `subdir/` already in it, so
+    /// a symlink test adds only the link it exercises.
+    fn tarball_with_dir(subdir: &str) -> tar::Builder<flate2::write::GzEncoder<Vec<u8>>> {
         let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
         let mut dir = tar::Header::new_gnu();
         dir.set_entry_type(tar::EntryType::Directory);
         dir.set_size(0);
         dir.set_mode(0o755);
         builder.append_data(&mut dir.clone(), "lab-abc/", &[][..]).unwrap();
-        builder.append_data(&mut dir, "lab-abc/docs/", &[][..]).unwrap();
+        builder.append_data(&mut dir, format!("lab-abc/{subdir}/"), &[][..]).unwrap();
+        builder
+    }
+
+    #[test]
+    fn links_and_the_top_level_folder_entry_are_skipped() {
+        let mut builder = tarball_with_dir("docs");
         let mut link = tar::Header::new_gnu();
         link.set_entry_type(tar::EntryType::Symlink);
         link.set_size(0);
@@ -670,13 +677,7 @@ mod tests {
 
     #[test]
     fn an_internal_symlink_is_recreated_a_tree_escaping_one_is_not() {
-        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
-        let mut dir = tar::Header::new_gnu();
-        dir.set_entry_type(tar::EntryType::Directory);
-        dir.set_size(0);
-        dir.set_mode(0o755);
-        builder.append_data(&mut dir.clone(), "lab-abc/", &[][..]).unwrap();
-        builder.append_data(&mut dir, "lab-abc/contracts/", &[][..]).unwrap();
+        let mut builder = tarball_with_dir("contracts");
         // An internal relative link, like a lab's `client/src/contracts -> ../../contracts`: kept.
         let mut inside = tar::Header::new_gnu();
         inside.set_entry_type(tar::EntryType::Symlink);

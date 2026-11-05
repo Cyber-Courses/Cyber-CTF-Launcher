@@ -31,6 +31,8 @@ export type LabDetailProps = {
   runStartedAt?: number;
   /** The code of the error this session's last run failed with. */
   runFailureCode?: ErrorCode | null;
+  /** For a port clash, what the backend found holding the host port. */
+  runFailureHolder?: string | null;
   loggedIn: boolean;
   /** Logged out: the start button logs in instead of being greyed out. */
   onLogin?: () => Promise<boolean>;
@@ -130,6 +132,7 @@ export function useLabDetail(p: LabDetailProps) {
     runOp: p.runOp,
     runStartedAt: p.runStartedAt,
     runFailureCode: p.runFailureCode,
+    runFailureHolder: p.runFailureHolder,
   });
   const run = useRunTarget(rt, readyVms, p.hostArch);
   const preview = useCloudPreview(lab.id, rt);

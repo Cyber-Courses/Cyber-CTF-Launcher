@@ -35,7 +35,9 @@ type Paths<T, P extends string = ""> = {
   [K in keyof T & string]: T[K] extends Leaf ? `${P}${K}` : Paths<T[K], `${P}${K}.`>;
 }[keyof T & string];
 export type MessageKey = Paths<Messages>;
-export type Vars = Record<string, string | number>;
+// A value may be absent (an optional arg like a port clash's `holder`): it is only substituted
+// where the message names it, so a message that doesn't reference it is unaffected.
+export type Vars = Record<string, string | number | null | undefined>;
 
 const KEY = "cyberctf.locale";
 const listeners = new Set<() => void>();

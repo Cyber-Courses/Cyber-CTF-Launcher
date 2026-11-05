@@ -421,8 +421,10 @@
     },
     "stillUp": "Ein Teil des Labs läuft noch. Versuche es erneut; das Bereitstellungsprotokoll zeigt, was fehlgeschlagen ist.",
     "dismiss": "Ausblenden",
+    "portHeldBy": "Belegt von {holder} – beende es und starte das Lab dann erneut.",
     "hint": {
       "ports": "Ein Port, den dieses Lab veröffentlicht, ist auf diesem Rechner belegt. Beende, was ihn nutzt, oder starte es mit zufälligen Ports, wenn das Lab nicht genau diesen Port braucht.",
+      "portsVm": "Ein Port, den dieses Lab auf diesen Rechner weiterleitet, ist belegt. Gib ihn frei (beende die App oder das Lab, das ihn nutzt), und starte das Lab dann erneut.",
       "docker": "Docker läuft nicht. Starte deine Container-Engine und versuche es dann erneut.",
       "dockerAccess": "Dein Konto kann Docker noch nicht nutzen: Füge es der Gruppe docker hinzu, melde dich ab und wieder an und versuche es dann erneut.",
       "signedOut": "Deine Sitzung ist abgelaufen. Melde dich erneut an und versuche es dann noch einmal.",
