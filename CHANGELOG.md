@@ -13,6 +13,38 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   `windows 11`), so an outdated launcher can be spotted. The OS falls back to its family alone
   (`linux`) when its version can't be read.
 
+## [1.8.1] — 2026-11-05
+
+### Fixed
+
+- **A port clash now names what is holding the port.** When a lab can't start because a host
+  port is already taken, the message says which program holds it and its process id, so you can
+  stop that program and start the lab again.
+- **"Retry with random ports" no longer appears for a lab run as a VM on this machine.** A VM
+  forwards the lab's fixed ports to this machine, so random ports can't move them; freeing the
+  port is the fix. The button also no longer quietly turns a VM start into a plain container one.
+
+## [1.8.0] — 2026-11-05
+
+### Added
+
+- **A lab can be run more than one way, and you choose.** When a lab's spec describes both a
+  container form and a VM form, the launcher now offers a place for each — as containers, as one
+  VM per machine locally, on a server, or in the cloud — instead of only the single way it was
+  published with.
+
+### Fixed
+
+- **The system-requirements line works on every platform.** The `lab_requirements` command was
+  missing from the app's permission manifest, so the pre-launch "Needs" panel could fail to load;
+  it is now granted. French, Spanish, German, Portuguese (Brazil) and Japanese also gain the
+  requirements strings that were English-only.
+
+### Changed
+
+- Bundles Isoloom 1.0.4: a lab's `setup:` step now runs with the project mounted at the same path
+  on every target, so one spec sets a dual-form lab up identically as a container or a VM.
+
 ## [1.7.0] — 2026-11-03
 
 ### Added

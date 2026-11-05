@@ -13,6 +13,7 @@ use crate::error::{Error, Result};
 
 mod local;
 mod on_host;
+mod port_holder;
 
 use local::{check_qemu, warn_if_low_memory};
 #[cfg(test)]
@@ -116,10 +117,16 @@ async fn start_here(dirs: &AppDirs, lab: LabRef<'_>, provider: Option<Provider>,
     // Every lab on this machine runs through the Isothrum runner. A parked run is resumed as it
     // was and leftovers are cleared first (the runner's `Occupied::ResumeParked`); the runner
     // wrappers record the lab's downloads for Storage.
-    match local_run(runtime, provider)? {
+    let started = match local_run(runtime, provider)? {
         LocalRun::Docker => start_with_runner(dirs, dir, id, env, log).await,
         LocalRun::DockerInVm(p) => start_docker_in_vm_with_runner(dirs, dir, id, VmStart { provider: p, env }, log).await,
         LocalRun::Vm(p) => start_vm_with_runner(dirs, dir, id, VmStart { provider: p, env }, log).await,
+    };
+    // A clash is on a host port either form binds here, so name what holds it: the player can
+    // then stop it and start again, rather than guess what "port 8080 is taken" means.
+    match started {
+        Err(e) => Err(port_holder::with_holder(e).await),
+        ok => ok,
     }
 }
 

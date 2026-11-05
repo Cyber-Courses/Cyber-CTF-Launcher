@@ -31,6 +31,7 @@ export function useLabPageState(
     runOp,
     runStartedAt,
     runFailureCode,
+    runFailureHolder,
     ...input
   }: Omit<LabStateInput, "backendDeploying" | "backendOp" | "startFailed" | "runOp"> & {
     logs: string[];
@@ -39,6 +40,7 @@ export function useLabPageState(
     runOp?: string;
     runStartedAt?: number;
     runFailureCode?: ErrorCode | null;
+    runFailureHolder?: string | null;
   },
 ) {
   // Labs the backend is still deploying, so a window reload recovers the "starting" state.
@@ -72,6 +74,8 @@ export function useLabPageState(
     failedOp: state.deploying ? null : failedOp,
     /** What kind of failure it is, for a hint: by this session's error code, else its words. */
     failureKind: state.deploying ? null : failureKind(failure, local ? runFailureCode : null),
+    /** For a port clash this session saw, what holds the host port (so the notice can name it). */
+    failureHolder: state.deploying || !local ? null : (runFailureHolder ?? null),
     /** When the operation in flight (or the last one) began: this session's run, else when this
      *  window first saw the backend's. */
     startedAt: local ? runStartedAt : backendSince(labId, backendOp),

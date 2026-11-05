@@ -23,7 +23,7 @@ export const runsNatively = (rt: LabRuntimeInfo, hostArch: string) => !rt.archit
 /** The ways a lab can run: the backend's capability flags when present, else derived from the
  *  single runtime kind so this is correct before a backend that records them. A dual-form lab has
  *  more than one true (e.g. docker and vm), and the launcher offers a place for each. */
-export const ways = (rt: LabRuntimeInfo) => ({
+const ways = (rt: LabRuntimeInfo) => ({
   docker: rt.docker ?? rt.runtime === "DOCKER",
   vm: rt.vm ?? rt.runtime === "VM",
   cloud: rt.cloud ?? rt.runtime === "CLOUD",

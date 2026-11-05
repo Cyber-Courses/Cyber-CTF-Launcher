@@ -22,9 +22,13 @@ pub enum Code {
     AlreadyInProgress,
     /// A server host saved without its password.
     NoPasswordStored,
-    /// A host port a container lab publishes is taken.
+    /// A host port is taken: one a container lab publishes, or one a local VM forwards. `holder`
+    /// is a short description of what holds it ("nginx (pid 4123)"), filled in on the failure
+    /// path when it can be found, so the player knows what to stop.
     PortInUse {
         port: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        holder: Option<String>,
     },
     /// The player cancelled the sign-in (or started another one): not a failure to show.
     SignInCancelled,
@@ -117,9 +121,14 @@ impl Code {
             Code::OfflineReady { detail } => {
                 format!("Cyber CTF can't be reached ({detail}). This lab is installed here, so it can start offline, without saving progress.")
             }
-            Code::PortInUse { port } => format!(
-                "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever uses it. If the lab doesn't need that exact port, you can start it with random ports."
-            ),
+            Code::PortInUse { port, holder: Some(holder) } => {
+                format!("Host port {port} is already in use on this machine, held by {holder}. Stop it, then start the lab again.")
+            }
+            Code::PortInUse { port, holder: None } => {
+                format!(
+                    "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again."
+                )
+            }
             Code::DockerNotRunning => {
                 "Docker isn't running. Start your container engine (Docker Desktop, or the docker service on Linux), then start the lab again.".into()
             }
@@ -263,8 +272,18 @@ mod tests {
             (Error::from(std::io::Error::new(std::io::ErrorKind::NotFound, "no such file")), json!({ "code": "other", "message": "no such file" })),
             (Error::coded(Code::SignedOut), json!({ "code": "signedOut", "message": "You're signed out. Sign in again to continue." })),
             (
-                Error::coded(Code::PortInUse { port: 8080 }),
-                json!({ "code": "portInUse", "args": { "port": 8080 }, "message": Code::PortInUse { port: 8080 }.message() }),
+                Error::coded(Code::PortInUse { port: 8080, holder: None }),
+                json!({ "code": "portInUse", "args": { "port": 8080 }, "message": Code::PortInUse { port: 8080, holder: None }.message() }),
+            ),
+            (
+                // With the holder found, it travels in the args (for the player-facing notice) and
+                // in the English message.
+                Error::coded(Code::PortInUse { port: 8080, holder: Some("nginx (pid 4123)".into()) }),
+                json!({
+                    "code": "portInUse",
+                    "args": { "port": 8080, "holder": "nginx (pid 4123)" },
+                    "message": "Host port 8080 is already in use on this machine, held by nginx (pid 4123). Stop it, then start the lab again."
+                }),
             ),
         ];
         for (error, wire) in cases {
@@ -310,7 +329,7 @@ mod tests {
             Code::OfflineReady { detail: "API unreachable: timed out".into() },
             Code::AlreadyInProgress,
             Code::NoPasswordStored,
-            Code::PortInUse { port: 443 },
+            Code::PortInUse { port: 443, holder: None },
             Code::DockerNotRunning,
             Code::DockerDenied { user: "player".into() },
             Code::DockerDeniedWindows { user: "Ada Lovelace".into() },

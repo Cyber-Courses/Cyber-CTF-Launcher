@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { describeError, errorCode, type ErrorCode } from "@/lib/errors";
+import { commandError, describeError, errorCode, type ErrorCode } from "@/lib/errors";
 import { registerReset } from "@/lib/module-state";
 
 // The live state of lab start/stop, kept outside the React tree so it survives navigating away
@@ -26,6 +26,8 @@ export type DeployRun = {
   startedAt?: number;
   /** The code of the error it failed with (its ✗ line is in the player's language). */
   failureCode?: ErrorCode | null;
+  /** For a port clash, what holds the host port ("nginx (pid 4123)"), when the backend found it. */
+  failureHolder?: string | null;
 };
 /** Every lab with a run in flight or just finished, keyed by lab id (none for a lab without
  *  one). A single global slot would cross-contaminate: with two deploys running, the second's
@@ -92,7 +94,13 @@ export function failDeploy(labId: string, e: unknown) {
   appendDeployLog(labId, `✗ ${describeError(e)}`);
   flushDeployLogs();
   const prev = state.runs[labId];
-  if (prev) setRun(labId, { ...prev, failureCode: errorCode(e) });
+  if (prev) setRun(labId, { ...prev, failureCode: errorCode(e), failureHolder: portHolder(e) });
+}
+
+/** What holds the clashing host port, from a port-clash error's args; null for any other error. */
+function portHolder(e: unknown): string | null {
+  const ce = commandError(e);
+  return ce && ce.code === "portInUse" && "args" in ce ? (ce.args.holder ?? null) : null;
 }
 
 /** The failure that ended a lab's run (its ✗ line, without the mark), once the run is over;

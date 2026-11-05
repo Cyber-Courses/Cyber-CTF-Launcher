@@ -23,7 +23,7 @@ import { button, flush } from "@/test/ui";
 
 const signedIn: AuthStatus = { loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" };
 const API_DOWN = "error sending request for url (https://api.cyberctf.org/graphql): connection refused";
-const PORT_CLASH = "Host port 8080 is already in use on this machine (another lab or app holds it). Stop whatever uses it, or start the lab with random ports.";
+const PORT_CLASH = "Host port 8080 is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again.";
 
 const blind: Lab = {
   id: "lab-sqli",
@@ -166,6 +166,33 @@ describe("a start that failed", () => {
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryAllByRole("alert").some((a) => a.textContent.includes("Couldn’t start"))).toBe(false);
     expect(document.body.textContent).toContain("Failed to start");
+  });
+
+  it("offers no random-ports retry when the clash was a VM here (its forwarded ports are fixed)", async () => {
+    // A dual-form lab (DOCKER-kind, but run as a VM on this machine): its Vagrantfile forwards the
+    // lab's fixed host ports, so "random ports" can't help and would silently switch the run to a
+    // plain container. Only plain Retry (after the port is freed) is offered.
+    installTauri({ ...idle, lab_status: () => ({ ...stopped, place: "local_vm" }) });
+    renderDetail({
+      status: { ...stopped, place: "local_vm" },
+      logs: [`✗ ${PORT_CLASH}`],
+      times: [10],
+      runOp: "launch",
+      runFailureCode: "portInUse",
+      runFailureHolder: "nginx (pid 4123)",
+    });
+    await flush();
+    expect(document.body.textContent).toContain("Failed to start");
+    expect(screen.getByRole("button", { name: /^\s*Retry$/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /random ports/ })).toBeNull();
+    const notice = must(
+      screen.getAllByRole("alert").find((a) => a.textContent.includes("Couldn’t start")),
+      "the failure notice",
+    );
+    // It names what holds the port, and the fix is to free it (not random ports, which a VM can't use).
+    expect(notice.textContent).toContain("nginx (pid 4123)");
+    expect(notice.textContent).toContain("Free it");
+    expect(notice.textContent).not.toContain("random ports");
   });
 
   it("offers no port retry for another cause, and a failed stop is not a failed start", async () => {

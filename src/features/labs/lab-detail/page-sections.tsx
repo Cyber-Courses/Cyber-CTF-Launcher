@@ -32,8 +32,12 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
   if (mode === "start" || mode === "failed")
     return (
       <>
-        {/* A port taken here: the same start on random free ports is the fix, one click away. */}
-        {mode === "failed" && s.isDocker && s.failureKind === "ports" && (
+        {/* A port taken by a container started here: the same start on random free ports is the
+            fix, one click away. Not for a VM here (its Vagrantfile forwards the lab's fixed host
+            ports, with no random option) nor a server run (its ports aren't on this machine):
+            there, freeing the port is the only fix, and this button would wrongly switch the run
+            to a plain container. */}
+        {mode === "failed" && s.isDocker && s.failureKind === "ports" && !s.remote && s.place !== "local_vm" && (
           <Button
             variant="outline"
             onClick={() => {
@@ -97,6 +101,10 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
           op={failure.op}
           message={failure.message}
           kind={s.failureKind}
+          holder={s.failureHolder}
+          // Random free ports fix a container clash here, but not a VM here (fixed forwarded ports)
+          // nor a server run: there the hint is to free the port, not to randomise it.
+          canRandomPorts={s.isDocker && !s.remote && s.place !== "local_vm"}
           stillUp={failure.op === "stop" && s.running}
           onDismiss={() => {
             setDismissed(failure.key);

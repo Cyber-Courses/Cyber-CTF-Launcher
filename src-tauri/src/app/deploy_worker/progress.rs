@@ -180,7 +180,7 @@ mod tests {
         assert!(format!("{err:?}").contains("Docker isn't running"));
         // The worker's error keeps its code across the process boundary.
         let err = verdict(r#"error: {"code":"portInUse","args":{"port":8080},"message":"Host port 8080 is taken"}"#).unwrap_err();
-        assert_eq!(err.code(), crate::error::Code::PortInUse { port: 8080 });
+        assert_eq!(err.code(), crate::error::Code::PortInUse { port: 8080, holder: None });
         assert_eq!(err.to_string(), "Host port 8080 is taken");
         // A bare message is still an error, kept whole.
         assert!(verdict("something else").is_err());

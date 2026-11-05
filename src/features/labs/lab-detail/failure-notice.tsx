@@ -18,6 +18,8 @@ export function FailureNotice({
   op,
   message,
   kind,
+  holder = null,
+  canRandomPorts = true,
   stillUp,
   onDismiss,
 }: {
@@ -27,6 +29,11 @@ export function FailureNotice({
   message: string;
   /** What kind of failure it is, when it has a known fix. */
   kind: FailureKind | null;
+  /** For a port clash, what holds the host port ("nginx (pid 4123)"), when the backend found it. */
+  holder?: string | null;
+  /** Whether random host ports are an option for this clash (a container here): false for a VM
+   *  here (its forwarded ports are fixed) or a server run, where freeing the port is the only fix. */
+  canRandomPorts?: boolean;
   /** The lab still runs (a stop that failed). */
   stillUp: boolean;
   onDismiss: () => void;
@@ -34,6 +41,9 @@ export function FailureNotice({
   const t = useT();
   const key = failureTitleKey(op);
   if (!key) return null;
+  // The port-clash hint depends on where it ran: a VM here forwards fixed ports, so "random ports"
+  // can't help; freeing the port is the only fix.
+  const hintKey = kind === "ports" && !canRandomPorts ? "labs.failure.hint.portsVm" : kind ? failureHintKey(kind) : null;
   return (
     <CalloutRow
       tone="fail"
@@ -45,7 +55,8 @@ export function FailureNotice({
       }
     >
       <span className="block break-words font-mono text-[0.6875rem]">{message}</span>
-      {kind && <span className="mt-1 block text-foreground">{t(failureHintKey(kind))}</span>}
+      {kind === "ports" && holder && <span className="mt-1 block text-foreground">{t("labs.failure.portHeldBy", { holder })}</span>}
+      {hintKey && <span className="mt-1 block text-foreground">{t(hintKey)}</span>}
       {stillUp && <span className="mt-1 block">{t("labs.failure.stillUp")}</span>}
     </CalloutRow>
   );
