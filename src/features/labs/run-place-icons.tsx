@@ -25,7 +25,9 @@ export function RunPlaceIcons({
   return (
     // Above a lab row's stretched title (see LabRow), so each icon's hint shows on hover.
     <span className="relative z-[1] inline-flex items-center gap-1">
-      {runPlaces(runtime, hostArch, emulates).map(({ key, icon: Icon, available }) => {
+      {runPlaces(runtime, hostArch, emulates).map(({ key, icon: Icon, state }) => {
+        // The row's compact strip keeps its two looks: a place the lab supports, or not.
+        const available = state !== "unsupported";
         const label = t(`labs.places.${key}`);
         const inUse = running && status?.place === key;
         const hint = inUse

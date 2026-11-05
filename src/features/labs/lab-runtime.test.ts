@@ -98,7 +98,9 @@ describe("hostSupports", () => {
 });
 
 describe("runPlaces", () => {
-  const available = (places: ReturnType<typeof runPlaces>) => places.filter((p) => p.available).map((p) => p.key);
+  // The places the lab supports at all (ready or configurable), as before the tri-state.
+  const available = (places: ReturnType<typeof runPlaces>) => places.filter((p) => p.state !== "unsupported").map((p) => p.key);
+  const stateOf = (places: ReturnType<typeof runPlaces>, key: string) => places.find((p) => p.key === key)?.state;
   it("lists a container lab's places", () => {
     expect(available(runPlaces(rt({ runtime: "DOCKER", providers: ["docker", "aws"] as Provider[] })))).toEqual(["container", "local_vm", "cloud"]);
   });
@@ -112,5 +114,22 @@ describe("runPlaces", () => {
     // providers allow is offered.
     const lab = rt({ runtime: "DOCKER", docker: true, vm: true, providers: ["virtualbox", "proxmox", "aws"] as Provider[] });
     expect(available(runPlaces(lab))).toEqual(["container", "local_vm", "server", "cloud"]);
+  });
+  it("marks a supported place configurable until the launcher is set up for it, then ready", () => {
+    const lab = rt({ runtime: "DOCKER", docker: true, vm: true, providers: ["virtualbox", "proxmox", "aws"] as Provider[] });
+    // Nothing set up: a container runs now; the VM, server and cloud it supports are configurable.
+    const bare = runPlaces(lab);
+    expect(stateOf(bare, "container")).toBe("ready");
+    expect(stateOf(bare, "local_vm")).toBe("configurable");
+    expect(stateOf(bare, "server")).toBe("configurable");
+    expect(stateOf(bare, "cloud")).toBe("configurable");
+    // A ready hypervisor, a Proxmox server and an AWS account: those places turn ready.
+    const setUp = runPlaces(lab, undefined, false, { readyVms: ["virtualbox"] as Provider[], hosts: [host("proxmox"), host("aws")] });
+    expect(stateOf(setUp, "local_vm")).toBe("ready");
+    expect(stateOf(setUp, "server")).toBe("ready");
+    expect(stateOf(setUp, "cloud")).toBe("ready");
+    // A place the lab doesn't support stays unsupported, whatever the setup.
+    const localOnly = rt({ runtime: "DOCKER", docker: true, providers: ["virtualbox"] as Provider[] });
+    expect(stateOf(runPlaces(localOnly, undefined, false, { hosts: [host("proxmox")] }), "server")).toBe("unsupported");
   });
 });

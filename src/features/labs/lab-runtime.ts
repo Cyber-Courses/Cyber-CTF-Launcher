@@ -79,33 +79,65 @@ export const hostSupports = (rt: LabRuntimeInfo | null, h: ServerHost) => {
 
 type PlaceKey = NonNullable<LabStatus["place"]>;
 
-/** Every place a lab could run, and whether this one can (its runtime here, then its providers).
- *  Its words are `labs.places.<key>`.
+/** A place's state: runnable now (`ready`), supported by the lab but not set up in the launcher
+ *  yet (`configurable` — install a hypervisor, connect a server or a cloud account), or not a
+ *  thing this lab can run as at all (`unsupported`). */
+export type PlaceState = "ready" | "configurable" | "unsupported";
+
+/** What the launcher is set up with, so a place the lab supports but the launcher can't reach yet
+ *  reads as `configurable`, not `ready`: the local hypervisors ready here, and the saved servers
+ *  and cloud accounts. */
+export type LauncherSetup = { readyVms?: Provider[]; hosts?: ServerHost[] };
+
+const placeState = (supported: boolean, configured: boolean): PlaceState => (supported ? (configured ? "ready" : "configurable") : "unsupported");
+
+const cloudConfigured = (rt: LabRuntimeInfo, hosts: ServerHost[]) => hosts.some((h) => CLOUDS.has(h.provider) && hostSupports(rt, h));
+
+/** Every place a lab could run, and its state (see [`PlaceState`]). Its words are
+ *  `labs.places.<key>`. `setup` is what the launcher has ready, used to tell a place that can run
+ *  now from one the lab supports but the launcher isn't configured for.
  *  A VM lab built for another CPU (x86 Windows on Apple Silicon) runs on this machine only
  *  emulated, so "VM on this machine" needs `emulates` (QEMU ready); containers run emulated
  *  anyway. */
-export function runPlaces(rt: LabRuntimeInfo, hostArch?: string, emulates = false): { key: PlaceKey; icon: LucideIcon; available: boolean }[] {
+export function runPlaces(
+  rt: LabRuntimeInfo,
+  hostArch?: string,
+  emulates = false,
+  setup: LauncherSetup = {},
+): { key: PlaceKey; icon: LucideIcon; state: PlaceState }[] {
+  const { readyVms = [], hosts = [] } = setup;
   const w = ways(rt);
   // Cloud services (no container or VM edition) run in the player's cloud account only.
-  if (w.cloud && !w.docker && !w.vm) return cloudPlaces();
+  if (w.cloud && !w.docker && !w.vm) return cloudPlaces(rt, hosts);
   const local = rt.providers.some((p: string) => isLocal(p));
   // The VM edition built for another CPU runs here only emulated (containers run emulated anyway).
   const vmForeignCpu = w.vm && !!hostArch && !runsNatively(rt, hostArch);
+  const localVmSupported = (w.vm || (w.docker && local)) && (!vmForeignCpu || emulates);
+  const localVmReady = readyVms.some((p) => localProviders(rt, hostArch).includes(p));
+  const serverSupported = (w.vm || w.docker) && rt.providers.some((p) => SERVERS.has(p));
+  const serverReady = hosts.some((h) => SERVERS.has(h.provider) && hostSupports(rt, h));
   return [
-    { key: "container", icon: Container, available: w.docker },
-    { key: "local_vm", icon: Monitor, available: (w.vm || (w.docker && local)) && (!vmForeignCpu || emulates) },
-    { key: "server", icon: Server, available: (w.vm || w.docker) && rt.providers.some((p) => SERVERS.has(p)) },
-    { key: "cloud", icon: Cloud, available: rt.providers.some((p) => CLOUDS.has(p)) },
+    { key: "container", icon: Container, state: placeState(w.docker, true) },
+    { key: "local_vm", icon: Monitor, state: placeState(localVmSupported, localVmReady) },
+    { key: "server", icon: Server, state: placeState(serverSupported, serverReady) },
+    {
+      key: "cloud",
+      icon: Cloud,
+      state: placeState(
+        rt.providers.some((p) => CLOUDS.has(p)),
+        cloudConfigured(rt, hosts),
+      ),
+    },
   ];
 }
 
-/** Cloud services: the player's cloud account, nowhere else. */
-function cloudPlaces(): { key: PlaceKey; icon: LucideIcon; available: boolean }[] {
+/** Cloud services: the player's cloud account, nowhere else (configurable until one is connected). */
+function cloudPlaces(rt: LabRuntimeInfo, hosts: ServerHost[]): { key: PlaceKey; icon: LucideIcon; state: PlaceState }[] {
   return [
-    { key: "container", icon: Container, available: false },
-    { key: "local_vm", icon: Monitor, available: false },
-    { key: "server", icon: Server, available: false },
-    { key: "cloud", icon: Cloud, available: true },
+    { key: "container", icon: Container, state: "unsupported" },
+    { key: "local_vm", icon: Monitor, state: "unsupported" },
+    { key: "server", icon: Server, state: "unsupported" },
+    { key: "cloud", icon: Cloud, state: placeState(true, cloudConfigured(rt, hosts)) },
   ];
 }
 

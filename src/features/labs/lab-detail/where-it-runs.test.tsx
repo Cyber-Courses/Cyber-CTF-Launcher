@@ -15,25 +15,44 @@ import { flush } from "@/test/ui";
 const x86Vm: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox"] };
 
 describe("WhereItRunsPanel", () => {
-  it("marks the places the lab can't run as not available", () => {
-    render(<WhereItRunsPanel labId="lab-x" runtime={x86Vm} hostArch="x86_64" native emulates={false} isDocker={false} meta="VM lab" />);
+  it("marks the places the lab can't run as not available", async () => {
+    installTauri();
+    render(
+      <WhereItRunsPanel labId="lab-x" runtime={x86Vm} hostArch="x86_64" readyVms={["virtualbox"]} native emulates={false} isDocker={false} meta="VM lab" />,
+    );
+    await flush();
     expect(screen.getByText("VM on this machine")).toBeTruthy();
     // A VM lab on VirtualBox only: no container, no server, no cloud.
     const unavailable = screen.getAllByTitle("Not available for this lab");
     expect(unavailable.map((row) => row.textContent)).toEqual(["Container on this machinen/a", "Your servern/a", "Your cloud accountn/a"]);
+    // A hypervisor is ready, so "VM on this machine" runs now: not marked, no hint.
     expect(screen.getByText("VM on this machine").closest("[title]")).toBeNull();
     expect(document.body.textContent).not.toContain("Emulated");
   });
 
-  it("says an x86 VM lab runs emulated with QEMU on an Apple Silicon Mac that has it", () => {
-    render(<WhereItRunsPanel labId="lab-x" runtime={x86Vm} hostArch="arm64" native={false} emulates isDocker={false} meta="VM lab" />);
+  it("marks a supported place the launcher isn't set up for as configurable, with what to do", async () => {
+    installTauri();
+    // No hypervisor ready: the VM this lab supports here is amber and says to install one.
+    render(<WhereItRunsPanel labId="lab-x" runtime={x86Vm} hostArch="x86_64" readyVms={[]} native emulates={false} isDocker={false} meta="VM lab" />);
+    await flush();
+    const vmRow = screen.getByText("VM on this machine").closest("[title]");
+    expect(vmRow?.getAttribute("title")).toBe("Install a hypervisor");
+    expect(vmRow?.textContent).toContain("Install a hypervisor");
+  });
+
+  it("says an x86 VM lab runs emulated with QEMU on an Apple Silicon Mac that has it", async () => {
+    installTauri();
+    render(<WhereItRunsPanel labId="lab-x" runtime={x86Vm} hostArch="arm64" readyVms={["qemu"]} native={false} emulates isDocker={false} meta="VM lab" />);
+    await flush();
     expect(screen.getByText(/Emulated with QEMU, many times slower than native/)).toBeTruthy();
     // QEMU makes "VM on this machine" a place it can run.
     expect(screen.getByText("VM on this machine").closest("[title]")).toBeNull();
   });
 
-  it("says a foreign-CPU VM lab needs QEMU when none is installed", () => {
-    render(<WhereItRunsPanel labId="lab-x" runtime={x86Vm} hostArch="arm64" native={false} emulates={false} isDocker={false} meta="VM lab" />);
+  it("says a foreign-CPU VM lab needs QEMU when none is installed", async () => {
+    installTauri();
+    render(<WhereItRunsPanel labId="lab-x" runtime={x86Vm} hostArch="arm64" readyVms={[]} native={false} emulates={false} isDocker={false} meta="VM lab" />);
+    await flush();
     expect(screen.getByText(/Built for another CPU: install QEMU/)).toBeTruthy();
     expect(screen.getByText("VM on this machine").closest("[title]")?.getAttribute("title")).toBe("Not available for this lab");
   });
@@ -41,7 +60,7 @@ describe("WhereItRunsPanel", () => {
   it("shows the lab's minimum-to-run requirements from its spec", async () => {
     installTauri();
     const vm: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox"], repository: "CyberCTF/x", commit: "a".repeat(40) };
-    render(<WhereItRunsPanel labId="lab-x" runtime={vm} hostArch="x86_64" native emulates={false} isDocker={false} meta="VM lab" />);
+    render(<WhereItRunsPanel labId="lab-x" runtime={vm} hostArch="x86_64" readyVms={["virtualbox"]} native emulates={false} isDocker={false} meta="VM lab" />);
     await flush();
     expect(screen.getByText("Needs")).toBeTruthy();
     expect(screen.getByText("2 vCPU · 1 GB RAM · 20 GB disk")).toBeTruthy();

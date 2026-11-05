@@ -4,6 +4,23 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.3] — 2026-11-05
+
+### Added
+
+- **"Where it runs" shows what you could set up.** A place the lab supports but your launcher
+  isn't configured for — a server with none connected, a cloud account with none connected, or a
+  VM with no local hypervisor installed — now shows in amber with a short hint ("Connect a
+  server", "Connect an account", "Install a hypervisor"), distinct from a place the lab can't run
+  on at all.
+
+### Changed
+
+- Bundles Isoloom 1.0.5 and Isothrum 1.0.3: a lab run as a VM on this machine now gets a free
+  host port picked for each published port instead of its own fixed number, so a lab that
+  publishes a privileged port (80/443) starts as a VM without administrator rights and two labs
+  that publish the same port no longer collide.
+
 ## [1.8.2] — 2026-11-05
 
 ### Added

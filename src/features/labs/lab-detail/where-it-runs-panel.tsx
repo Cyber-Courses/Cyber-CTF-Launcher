@@ -6,9 +6,41 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-pill";
 import { runPlaces } from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { labRequirements, type LabRequirements } from "@/lib/tauri";
+import { labRequirements, serverList, SERVER_CHANGED, type LabRequirements, type Provider, type ServerHost } from "@/lib/tauri";
+import { useTauriEvent } from "@/lib/use-tauri-event";
 import { cn } from "@/lib/utils";
-import { useT, type T } from "@/lib/i18n";
+import { useT, type MessageKey, type T } from "@/lib/i18n";
+
+/** What a place the lab supports but the launcher isn't set up for yet tells the player to do. */
+const SETUP_HINT: Partial<Record<string, MessageKey>> = {
+  local_vm: "labs.detail.installHypervisor",
+  server: "labs.detail.connectServer",
+  cloud: "labs.detail.connectAccount",
+};
+
+/** The launcher's saved servers and cloud accounts, kept fresh when one is added or removed, so a
+ *  place the lab supports reads as ready once its server or account is connected. */
+function useSavedHosts(): ServerHost[] {
+  const [hosts, setHosts] = useState<ServerHost[]>([]);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    serverList()
+      .then((l) => {
+        if (alive) setHosts(l.hosts);
+      })
+      .catch(() => {
+        if (alive) setHosts([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [tick]);
+  useTauriEvent(SERVER_CHANGED, () => {
+    setTick((n) => n + 1);
+  });
+  return hosts;
+}
 
 /** A lab's minimum-to-run requirements, read from its spec at the catalogue's commit (null until
  *  read, or when the lab has no machines of its own). */
@@ -45,12 +77,34 @@ function requirementsSummary(t: T, r: LabRequirements): string {
   });
 }
 
+/** One place in the panel: ready (green), configurable (amber, with what to set up), or
+ *  unsupported by the lab at all (faint, "n/a"). */
+function PlaceRow({ place, t }: { place: ReturnType<typeof runPlaces>[number]; t: T }) {
+  const { key, icon: Icon, state } = place;
+  const ready = state === "ready";
+  // Supported by the lab, but the launcher isn't set up for it yet: amber, with what to do.
+  const configurable = state === "configurable";
+  const hint = configurable ? SETUP_HINT[key] : undefined;
+  return (
+    <div
+      className="flex items-center gap-2.5 border-t border-border px-4 py-2 text-[0.8125rem] first:border-t-0"
+      title={state === "unsupported" ? t("labs.detail.notAvailable") : hint ? t(hint) : undefined}
+    >
+      <Icon className={cn("size-3.5 shrink-0", ready ? "text-jewel-text" : configurable ? "text-warning" : "text-faint opacity-50")} />
+      <span className={ready ? "text-foreground" : configurable ? "text-warning" : "text-faint"}>{t(`labs.places.${key}`)}</span>
+      {hint && <span className="ml-auto font-mono text-[0.6875rem] text-warning">{t(hint)}</span>}
+      {state === "unsupported" && <span className="ml-auto font-mono text-[0.6875rem] text-faint">{t("labs.detail.na")}</span>}
+    </div>
+  );
+}
+
 /** Before it runs, the aside would otherwise be empty for a VM lab: say what the lab is and
  *  where it can run, and what it needs, so the page reads as complete at rest. */
 export function WhereItRunsPanel({
   labId,
   runtime,
   hostArch,
+  readyVms,
   native,
   emulates,
   isDocker,
@@ -60,6 +114,8 @@ export function WhereItRunsPanel({
   labId: string;
   runtime: LabRuntimeInfo;
   hostArch: string;
+  /** The local hypervisors ready on this machine, so "VM here" reads as ready, not "install one". */
+  readyVms: Provider[];
   native: boolean;
   emulates: boolean;
   isDocker: boolean;
@@ -69,20 +125,13 @@ export function WhereItRunsPanel({
 }) {
   const t = useT();
   const requirements = useLabRequirements(labId, runtime);
+  const hosts = useSavedHosts();
   return (
     <Panel>
       <PanelHeader title={t("labs.detail.whereItRuns")} meta={meta} />
       <div>
-        {runPlaces(runtime, hostArch, emulates).map(({ key, icon: Icon, available }) => (
-          <div
-            key={key}
-            className="flex items-center gap-2.5 border-t border-border px-4 py-2 text-[0.8125rem] first:border-t-0"
-            title={available ? undefined : t("labs.detail.notAvailable")}
-          >
-            <Icon className={cn("size-3.5 shrink-0", available ? "text-jewel-text" : "text-faint opacity-50")} />
-            <span className={available ? "text-foreground" : "text-faint"}>{t(`labs.places.${key}`)}</span>
-            {!available && <span className="ml-auto font-mono text-[0.6875rem] text-faint">{t("labs.detail.na")}</span>}
-          </div>
+        {runPlaces(runtime, hostArch, emulates, { readyVms, hosts }).map((place) => (
+          <PlaceRow key={place.key} place={place} t={t} />
         ))}
         {requirements && (
           <div className="flex items-center gap-2.5 border-t border-border px-4 py-2 text-[0.8125rem]">

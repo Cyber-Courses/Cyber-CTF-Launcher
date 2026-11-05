@@ -26,7 +26,7 @@ describe("cloud labs", () => {
   it("run in a cloud account only, never here", () => {
     expect(
       runPlaces(cloud, "arm64")
-        .filter((p) => p.available)
+        .filter((p) => p.state !== "unsupported")
         .map((p) => p.key),
     ).toEqual(["cloud"]);
     expect(localProviders(cloud, "arm64")).toEqual([]);
