@@ -4,6 +4,27 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] — 2026-11-05
+
+### Added
+
+- **A lab can be run more than one way, and you choose.** When a lab's spec describes both a
+  container form and a VM form, the launcher now offers a place for each — as containers, as one
+  VM per machine locally, on a server, or in the cloud — instead of only the single way it was
+  published with.
+
+### Fixed
+
+- **The system-requirements line works on every platform.** The `lab_requirements` command was
+  missing from the app's permission manifest, so the pre-launch "Needs" panel could fail to load;
+  it is now granted. French, Spanish, German, Portuguese (Brazil) and Japanese also gain the
+  requirements strings that were English-only.
+
+### Changed
+
+- Bundles Isoloom 1.0.4: a lab's `setup:` step now runs with the project mounted at the same path
+  on every target, so one spec sets a dual-form lab up identically as a container or a VM.
+
 ## [1.7.0] — 2026-11-03
 
 ### Added
