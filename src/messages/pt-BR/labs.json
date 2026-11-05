@@ -278,6 +278,8 @@
     "readyInCloud": "{title} está rodando na sua conta de nuvem."
   },
   "detail": {
+    "systemRequirements": "Requer",
+    "requirementsSummary": "{cpu} vCPU · {ram} GB de RAM · {disk} GB de disco",
     "yourServer": "seu servidor",
     "aVmHere": "uma VM nesta máquina",
     "thisMachine": "esta máquina",
