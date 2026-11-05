@@ -4,6 +4,15 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The website can tell which launcher each machine runs.** When it registers and on every
+  heartbeat, the launcher now reports its own version and the machine's OS (e.g. `macos 15.1`,
+  `windows 11`), so an outdated launcher can be spotted. The OS falls back to its family alone
+  (`linux`) when its version can't be read.
+
 ## [1.7.0] — 2026-11-03
 
 ### Added

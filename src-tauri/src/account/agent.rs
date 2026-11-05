@@ -112,6 +112,29 @@ fn arch() -> &'static str {
     std::env::consts::ARCH
 }
 
+/// The launcher app's own version (semver), reported so the website can tell which build each
+/// machine runs. The crate version is the app's, bumped with `tauri.conf.json` and `package.json`
+/// at each release (as the About menu shows it).
+fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+/// This machine's OS as the website shows it: `"macos 15.1"`, `"windows 11"`, `"linux 24.04"`, or
+/// the family alone when the version can't be read.
+fn os_label() -> String {
+    os_label_from(std::env::consts::OS, sysinfo::System::os_version().as_deref())
+}
+
+/// The OS label from its family and the version the OS reports, lowercased; only the version's
+/// first word is kept (Windows reports `"11 (22631)"`, the build in brackets).
+fn os_label_from(family: &str, version: Option<&str>) -> String {
+    let family = family.trim().to_lowercase();
+    match version.and_then(|v| v.split_whitespace().next()) {
+        Some(v) => format!("{family} {}", v.to_lowercase()),
+        None => family,
+    }
+}
+
 /// What this machine can run. Docker for now; VM providers are detected later.
 fn capabilities() -> Vec<String> {
     vec!["docker".to_string()]
@@ -120,19 +143,20 @@ fn capabilities() -> Vec<String> {
 /// Upserts this machine as the player's launcher agent and returns the server agent id.
 async fn register(dirs: &AppDirs) -> Result<String> {
     let data = api::graphql(
-        "mutation ($i: ID!, $n: String!, $c: [String!]!, $a: String, $t: [LaunchTargetInput!]) { registerLauncher(installId: $i, name: $n, capabilities: $c, arch: $a, targets: $t) { id } }",
-        json!({ "i": install_id(dirs)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(dirs) }),
+        "mutation ($i: ID!, $n: String!, $c: [String!]!, $a: String, $t: [LaunchTargetInput!], $v: String, $o: String) { registerLauncher(installId: $i, name: $n, capabilities: $c, arch: $a, targets: $t, version: $v, os: $o) { id } }",
+        json!({ "i": install_id(dirs)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(dirs), "v": app_version(), "o": os_label() }),
         true,
     )
     .await?;
     data["registerLauncher"]["id"].as_str().map(String::from).ok_or_else(|| Error::Invalid("registerLauncher returned no id".into()))
 }
 
-/// Keep-alive, re-reporting the targets so hosts added since registering show on the website.
+/// Keep-alive, re-reporting the targets so hosts added since registering show on the website, and
+/// the app version and OS, so an update installed since registering shows too.
 async fn heartbeat(dirs: &AppDirs, agent_id: &str) -> Result<()> {
     api::graphql(
-        "mutation ($id: ID!, $t: [LaunchTargetInput!]) { launcherHeartbeat(agentId: $id, targets: $t) { id } }",
-        json!({ "id": agent_id, "t": server::launch_targets(dirs) }),
+        "mutation ($id: ID!, $t: [LaunchTargetInput!], $v: String, $o: String) { launcherHeartbeat(agentId: $id, targets: $t, version: $v, os: $o) { id } }",
+        json!({ "id": agent_id, "t": server::launch_targets(dirs), "v": app_version(), "o": os_label() }),
         true,
     )
     .await
@@ -611,6 +635,17 @@ mod tests {
         let info = first;
         assert_eq!(info["arch"], arch());
         assert_eq!(info["capabilities"], json!(["docker"]));
+    }
+
+    #[test]
+    fn this_machine_reports_the_app_version_and_its_os_family_and_version() {
+        assert_eq!(app_version(), env!("CARGO_PKG_VERSION"));
+        assert_eq!(os_label_from("macos", Some("15.1")), "macos 15.1");
+        assert_eq!(os_label_from("windows", Some("11 (22631)")), "windows 11", "the build is dropped");
+        assert_eq!(os_label_from("Linux", Some("24.04")), "linux 24.04", "lowercased");
+        assert_eq!(os_label_from("linux", None), "linux", "the family alone without a version");
+        assert_eq!(os_label_from("linux", Some("  ")), "linux", "a blank version is none");
+        assert!(os_label().starts_with(std::env::consts::OS));
     }
 
     #[tokio::test]
