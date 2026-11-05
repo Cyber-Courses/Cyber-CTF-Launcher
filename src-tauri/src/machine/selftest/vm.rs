@@ -58,6 +58,19 @@ pub(crate) fn candidate_boxes(p: Provider, arm: bool) -> &'static [&'static str]
     }
 }
 
+/// The Vagrant box provider a box is added and listed under for `p`. QEMU is the exception: the
+/// vagrant-qemu plugin boots a libvirt-format box's qcow2 directly, so its box is stored as
+/// `libvirt`, never `qemu`. `generic/alpine319`'s own "qemu" box is a libvirt image mislabeled
+/// (`box add --provider qemu` fetches it and then rejects it), while its `libvirt` box bakes in
+/// the vagrant user and key, so the test VM gets SSH without cloud-init (which vagrant-qemu does
+/// not seed). This mirrors the Isoloom engine, which runs its QEMU labs from libvirt boxes too.
+pub(crate) fn box_provider(p: Provider) -> &'static str {
+    match p {
+        Provider::Qemu => "libvirt",
+        _ => p.id(),
+    }
+}
+
 /// Providers whose Vagrant plugin can put the VM on a static private network.
 fn has_private_network(p: Provider) -> bool {
     matches!(p, Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels | Provider::Libvirt)
@@ -68,7 +81,7 @@ fn has_private_network(p: Provider) -> bool {
 pub(super) async fn pick_box(p: Provider, arm: bool) -> (&'static str, bool) {
     let candidates = candidate_boxes(p, arm);
     let list = run("vagrant", &["box", "list"], None).await.unwrap_or_default();
-    match candidates.iter().find(|c| box_listed(&list, c, p.id(), arm)) {
+    match candidates.iter().find(|c| box_listed(&list, c, box_provider(p), arm)) {
         Some(c) => (c, true),
         None => (candidates[0], false),
     }
@@ -381,5 +394,9 @@ mod tests {
         assert_eq!(candidate_boxes(Provider::Utm, true), ["utm/bookworm"]);
         assert_eq!(candidate_boxes(Provider::Qemu, true), ["generic/alpine319"]);
         assert!(has_private_network(Provider::Libvirt) && !has_private_network(Provider::Qemu) && !has_private_network(Provider::Hyperv));
+        // QEMU stores and lists its box as libvirt (vagrant-qemu boots a libvirt box); others use their own id.
+        assert_eq!(box_provider(Provider::Qemu), "libvirt");
+        assert_eq!(box_provider(Provider::Virtualbox), "virtualbox");
+        assert_eq!(box_provider(Provider::Libvirt), "libvirt");
     }
 }

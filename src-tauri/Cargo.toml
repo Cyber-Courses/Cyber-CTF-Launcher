@@ -1,6 +1,6 @@
 [package]
 name = "cyberctf-desktop"
-version = "1.8.3"
+version = "1.8.4"
 description = "CyberCTF desktop launcher: runs Docker and VM labs locally"
 authors = ["Cyber-Courses"]
 license = ""

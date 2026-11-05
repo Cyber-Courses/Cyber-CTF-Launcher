@@ -4,6 +4,17 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.4] — 2026-11-05
+
+### Fixed
+
+- **The VM self-test now boots on QEMU.** It fetched its test box with `vagrant box add --provider
+  qemu`, but `generic/alpine319`'s qemu box is a libvirt image mislabeled, so the add failed
+  ("Provider of box: libvirt"). The test now adds and lists the box under the libvirt provider for
+  QEMU: the vagrant-qemu plugin boots a libvirt box's disk directly, and that box bakes in the
+  vagrant user, so the VM comes up with working SSH without cloud-init (which vagrant-qemu does not
+  seed). This mirrors how the Isoloom engine runs its QEMU labs.
+
 ## [1.8.3] — 2026-11-05
 
 ### Added

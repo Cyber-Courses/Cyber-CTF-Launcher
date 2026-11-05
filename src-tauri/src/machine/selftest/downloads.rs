@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use super::docker::IMAGE;
-use super::vm::pick_box;
+use super::vm::{box_provider, pick_box};
 use crate::error::Result;
 use crate::platform::exec::{run, run_env_timed, stream};
 use crate::runtime::providers::Provider;
@@ -64,7 +64,7 @@ pub(super) async fn ensure_box(dir: &Path, p: Provider, bx: &'static str, arm: b
         }
         if let Some(_busy) = Busy::try_take(&VM_DL) {
             on_line(format!("Downloading {bx} for {}, once…", p.id()));
-            stream("vagrant", &["box", "add", bx, "--provider", p.id(), "--force"], Some(dir), &[], |l| {
+            stream("vagrant", &["box", "add", bx, "--provider", box_provider(p), "--force"], Some(dir), &[], |l| {
                 if let Ok(mut last) = VM_DL_LINE.lock() {
                     last.clone_from(&l);
                 }
