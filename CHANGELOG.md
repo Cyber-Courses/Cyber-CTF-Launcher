@@ -4,6 +4,14 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.6] — 2026-11-06
+
+### Fixed
+
+- **A container lab runs as a VM on QEMU and Hyper-V, not only VirtualBox/VMware/libvirt.** Bundles
+  Isoloom 1.0.7: the docker-in-VM helper box is now `generic/debian12`, which has a build for every
+  local hypervisor, so "VM on this machine" works on a QEMU-only (or Hyper-V) machine.
+
 ## [1.8.5] — 2026-11-06
 
 ### Fixed
