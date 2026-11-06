@@ -4,6 +4,14 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.7] — 2026-11-06
+
+### Fixed
+
+- **"VM on this machine" is no longer offered for a container lab on a Hyper-V-only machine.**
+  Running a container lab in a VM (docker-in-VM) is not supported on Hyper-V, so offering it there
+  only failed at launch; the place now reads as unavailable where Hyper-V is the only hypervisor.
+
 ## [1.8.6] — 2026-11-06
 
 ### Fixed

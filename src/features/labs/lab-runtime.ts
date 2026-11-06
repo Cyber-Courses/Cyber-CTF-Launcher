@@ -14,10 +14,11 @@ const VM_CLOUDS_NOT_YET = new Set(["azure", "gcp", "digitalocean", "linode", "oc
  *  an Apple Silicon Mac. */
 export const EMULATORS: readonly Provider[] = ["qemu"];
 
-/** Every local hypervisor the launcher supports. A container lab runs as docker-in-VM inside a
- *  generic helper VM, so any of these can host it, independent of the lab's own (native-VM)
- *  provider list. */
-const LOCAL_HYPERVISORS: readonly Provider[] = ["virtualbox", "vmware_desktop", "hyperv", "parallels", "libvirt", "qemu", "utm"];
+/** The local hypervisors a container lab can run on as docker-in-VM (inside a generic helper VM),
+ *  independent of the lab's own (native-VM) provider list. Hyper-V is left out: the engine's
+ *  docker-vm has no Hyper-V block (it needs elevation and a named switch), so offering it would
+ *  only fail at launch with "provider hyperv isn't one of this run's providers". */
+const LOCAL_HYPERVISORS: readonly Provider[] = ["virtualbox", "vmware_desktop", "parallels", "libvirt", "qemu", "utm"];
 
 // providers may still carry "hosted" (not a launcher Provider and no longer offered), so keep it
 // out of the local hypervisors; compare as strings.
