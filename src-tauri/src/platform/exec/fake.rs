@@ -11,11 +11,20 @@ use std::rc::Rc;
 
 use crate::error::{Error, Result};
 
-/// A scripted tool's answer: its stdout (each line streamed, for `stream`), or its failure.
+/// A scripted tool's answer: its stdout (each line streamed, for `stream`), its failure, or a
+/// hang (never returns), so a `within(...)` timeout wrapper around a tool can be tested.
 #[derive(Clone)]
 pub enum Reply {
     Out(String),
     Fail(String),
+    Hang,
+}
+
+/// What the exec layer should do for a scripted call: answer now, or pend forever (a wedged
+/// tool), so a timeout wrapper around it is given something to give up on.
+pub(super) enum FakeOutcome<T> {
+    Done(Result<T>),
+    Hang,
 }
 
 /// A script's answer for a tool that printed `stdout`.
@@ -104,18 +113,21 @@ pub fn scripted() -> bool {
 }
 
 /// The scripted answer to `program args`, when a test scripts the tools on this thread.
-pub(super) fn answer(program: &'static str, args: &[&str], env: &[(String, String)]) -> Option<Result<String>> {
+pub(super) fn answer(program: &'static str, args: &[&str], env: &[(String, String)]) -> Option<FakeOutcome<String>> {
     Some(match reply(program, args, env)? {
-        Scripted::Reply(Reply::Out(out)) => Ok(out),
-        Scripted::Reply(Reply::Fail(stderr)) => Err(super::failed(program, args, stderr)),
-        Scripted::Missing => Err(Error::ToolMissing { tool: program }),
+        Scripted::Reply(Reply::Out(out)) => FakeOutcome::Done(Ok(out)),
+        Scripted::Reply(Reply::Fail(stderr)) => FakeOutcome::Done(Err(super::failed(program, args, stderr))),
+        Scripted::Reply(Reply::Hang) => FakeOutcome::Hang,
+        Scripted::Missing => FakeOutcome::Done(Err(Error::ToolMissing { tool: program })),
     })
 }
 
 /// [`answer`] for a streamed tool: its output lines (stderr too, on a failure) go to `on_line`.
-pub(super) fn answer_stream(program: &'static str, args: &[&str], env: &[(String, String)], mut on_line: impl FnMut(String)) -> Option<Result<()>> {
-    let scripted = reply(program, args, env)?;
-    Some(scripted.streamed(&mut on_line, |stderr| super::failed(program, args, stderr), || Error::ToolMissing { tool: program }))
+pub(super) fn answer_stream(program: &'static str, args: &[&str], env: &[(String, String)], mut on_line: impl FnMut(String)) -> Option<FakeOutcome<()>> {
+    Some(match reply(program, args, env)? {
+        Scripted::Reply(Reply::Hang) => FakeOutcome::Hang,
+        scripted => FakeOutcome::Done(scripted.streamed(&mut on_line, |stderr| super::failed(program, args, stderr), || Error::ToolMissing { tool: program })),
+    })
 }
 
 /// [`answer_stream`] for an install or removal step (`platform::steps`), whose program is any
@@ -143,6 +155,9 @@ impl Scripted {
                 text.lines().for_each(|l| on_line(l.to_string()));
                 Err(failed(text))
             }
+            // A hang is intercepted before this point by `answer`/`answer_stream`; a step script
+            // (which streams through here) never uses one, so treat it as a plain failure.
+            Scripted::Reply(Reply::Hang) => Err(failed(String::new())),
             Scripted::Missing => Err(missing()),
         }
     }
