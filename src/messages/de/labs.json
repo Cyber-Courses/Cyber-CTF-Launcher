@@ -95,7 +95,7 @@
     "randomHint": "Ein freier Port pro Dienst, etwa :64645. Nie belegt.",
     "default": "Standard-Ports des Labs",
     "defaultHint": "Jeder Dienst auf seinem eigenen Port, etwa CTFd auf :8000.",
-    "defaultWarning": "Diese Ports sind vielleicht schon von einem anderen Lab oder einer App belegt (etwa einem lokalen Webserver auf 8000 oder 3000). Das zeigt sich erst, wenn das Lab heruntergeladen ist: Der Start bricht dann ab und nennt den belegten Port. Zwei Dienste mit demselben Port im Lab: Der zweite bekommt einen zufälligen."
+    "defaultWarning": "Ein Port ist vielleicht schon von einer anderen App belegt; der Start bricht dann ab und nennt, was ihn benutzt."
   },
   "deploy": {
     "ops": {
@@ -334,7 +334,7 @@
     "cloudServicesTitle": "Cloud-Dienste",
     "cloudLeftover": "Ein früherer Start hat Cloud-Dienste in deinem Konto zurückgelassen. Stoppe das Lab, um sie zu entfernen, und starte es dann neu.",
     "cloudIdle": "Starte das Lab, um seine Cloud-Dienste in deinem Konto anzulegen. Stoppe es, wenn du fertig bist: Das entfernt sie und beendet ihre Kosten.",
-    "connectAccount": "Konto bei {clouds} verbinden",
+    "connectAccountOn": "Konto bei {clouds} verbinden",
     "estimatedCost": "Geschätzte Kosten",
     "removeBodyCloud": "Seine Cloud-Dienste werden in deinem Konto gelöscht, damit enden ihre Kosten. Der nächste Start legt sie von Grund auf neu an.",
     "retry": "Erneut versuchen",

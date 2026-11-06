@@ -26,7 +26,7 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
   const [ports, setPorts] = useState<PortMode>(() => getPortMode() ?? "random");
   // A container lab can also run in a VM here: on the hypervisor chosen in Settings (readyVms
   // lists it first), else the first ready one its deploy/ supports. One option, not a catalogue.
-  const localVm = isDocker ? (readyVms.find((p) => rt?.providers.includes(p)) ?? null) : null;
+  const localVm = isDocker && rt ? (readyVms.find((p) => localProviders(rt, hostArch).includes(p)) ?? null) : null;
   const hostOk = useCallback((h: ServerHost) => hostSupports(rt, h), [rt]);
   // Prefer this machine when a local hypervisor can run the lab; fall back to the default server
   // only when none can. A default server shouldn't silently capture every VM lab.

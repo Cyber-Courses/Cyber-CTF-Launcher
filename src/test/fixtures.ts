@@ -6,6 +6,16 @@ const missing = { installed: false, version: null };
 /** A machine with Docker, Vagrant and VirtualBox ready (the dev mock's report). */
 export const readyReport = (): SystemReport => structuredClone(answer("system_check", undefined) as SystemReport);
 
+/** Docker ready, but no local hypervisor: a container lab starts here without the "Where should it
+ *  run?" choice (no VM-here option, which any ready hypervisor would offer). */
+export function dockerOnlyReport(): SystemReport {
+  const r = readyReport();
+  return {
+    ...r,
+    vmProviders: r.vmProviders.map((p) => ({ ...p, available: false, hypervisor: p.remote ? null : false, pluginInstalled: false, reason: "Not installed" })),
+  };
+}
+
 /** A fresh machine: nothing installed yet. */
 export function freshReport(os = "macos"): SystemReport {
   const r = readyReport();

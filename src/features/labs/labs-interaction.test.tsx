@@ -5,8 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Labs } from "@/features/labs/labs-screen";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { setPortMode } from "@/lib/settings";
-import { readyReport } from "@/test/fixtures";
+import { dockerOnlyReport, readyReport } from "@/test/fixtures";
 import { commands, installTauri, stream, type Handler } from "@/test/tauri";
+import type { SystemReport } from "@/lib/tauri";
 import { flush } from "@/test/ui";
 import { must } from "@/components/test-support";
 import { containerMachine, labStatus, rejectWith, rowTitles } from "@/features/labs/labs-test-kit";
@@ -28,7 +29,7 @@ const settled: Record<string, Handler> = {
   server_list: () => ({ default: null, hosts: [] }),
 };
 
-function renderLabs(slug: string | null, overrides: Record<string, Handler> = {}) {
+function renderLabs(slug: string | null, overrides: Record<string, Handler> = {}, report: SystemReport = { ...readyReport(), arch: "x86_64" }) {
   const calls = installTauri({ ...settled, ...overrides });
   const onDetailChange = vi.fn();
   const view = render(
@@ -38,7 +39,7 @@ function renderLabs(slug: string | null, overrides: Record<string, Handler> = {}
         authReady
         onLogin={vi.fn(() => Promise.resolve(true))}
         hostArch="x86_64"
-        report={{ ...readyReport(), arch: "x86_64" }}
+        report={report}
         openLab={{ slug, tick: 0 }}
         onDetailChange={onDetailChange}
       />
@@ -222,7 +223,7 @@ function heldLaunch(...lines: string[]) {
 /** The kube lab's page, its launch held, once Start was double-clicked. */
 async function doubleClickStart() {
   const launch = heldLaunch("Downloading CyberCTF/kube-dashboard-exposed@abc123");
-  const { calls } = renderLabs(KUBE, { lab_launch: launch.handler, lab_status: () => status() });
+  const { calls } = renderLabs(KUBE, { lab_launch: launch.handler, lab_status: () => status() }, { ...dockerOnlyReport(), arch: "x86_64" });
   const user = userEvent.setup();
   await flush(80);
   await user.dblClick(screen.getByRole("button", { name: /Start lab/ }));
@@ -235,7 +236,11 @@ describe("Lab page, driven through the Labs screen", () => {
     setPortMode("random");
     const launch = heldLaunch("Downloading CyberCTF/kube-dashboard-exposed@abc123", " Network cyberctf-kube_default Creating");
     let up = false;
-    renderLabs(KUBE, { lab_launch: launch.handler, lab_status: (a) => (a?.id === "lab-kube" && up ? kubeUp() : status()) });
+    renderLabs(
+      KUBE,
+      { lab_launch: launch.handler, lab_status: (a) => (a?.id === "lab-kube" && up ? kubeUp() : status()) },
+      { ...dockerOnlyReport(), arch: "x86_64" },
+    );
     const user = userEvent.setup();
     await flush(80);
     await user.click(screen.getByRole("button", { name: /Start lab/ }));
@@ -287,7 +292,7 @@ describe("Lab page, driven through the Labs screen", () => {
       " Container kube-dashboard-1 Creating",
       " Container kube-dashboard-1 Starting",
     );
-    renderLabs(KUBE, { lab_launch: launch.handler, lab_status: () => status() });
+    renderLabs(KUBE, { lab_launch: launch.handler, lab_status: () => status() }, { ...dockerOnlyReport(), arch: "x86_64" });
     const user = userEvent.setup();
     await flush(80);
     await user.click(screen.getByRole("button", { name: /Start lab/ }));

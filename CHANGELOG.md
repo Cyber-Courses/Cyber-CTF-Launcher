@@ -4,6 +4,26 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.5] — 2026-11-06
+
+### Fixed
+
+- **A container lab whose ports are all fixed starts with "the lab's default ports".** Choosing
+  that option passed `ISOLOOM_PUBLISH_FIXED`, which an all-fixed lab's manifest did not declare, so
+  the start failed with "isn't a param of this manifest". Bundles Isoloom 1.0.6, which declares it
+  for any lab that publishes a port.
+- **A cloud lab delivers its launch values to the containers.** A cloud start failed with
+  `CTF_LAUNCH_TOKEN ... is not set`; Isoloom 1.0.6 now has the cloud VM accept the forwarded values.
+- **"VM on this machine" is offered on any ready hypervisor.** A container lab runs as docker-in-VM
+  inside a generic helper VM, so it no longer needs its own provider list to include the hypervisor
+  you have ready (e.g. QEMU): the place reads as ready and the launch targets it.
+
+### Changed
+
+- **"Where it runs" colours only the icon** of a place you could set up (the label and hint stay
+  neutral), the "default ports" warning is one line, and the "connect an account" hint no longer
+  shows a literal `{clouds}`.
+
 ## [1.8.4] — 2026-11-05
 
 ### Fixed

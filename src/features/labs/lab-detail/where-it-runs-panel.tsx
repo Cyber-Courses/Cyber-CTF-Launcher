@@ -91,8 +91,8 @@ function PlaceRow({ place, t }: { place: ReturnType<typeof runPlaces>[number]; t
       title={state === "unsupported" ? t("labs.detail.notAvailable") : hint ? t(hint) : undefined}
     >
       <Icon className={cn("size-3.5 shrink-0", ready ? "text-jewel-text" : configurable ? "text-warning" : "text-faint opacity-50")} />
-      <span className={ready ? "text-foreground" : configurable ? "text-warning" : "text-faint"}>{t(`labs.places.${key}`)}</span>
-      {hint && <span className="ml-auto font-mono text-[0.6875rem] text-warning">{t(hint)}</span>}
+      <span className={state === "unsupported" ? "text-faint" : "text-foreground"}>{t(`labs.places.${key}`)}</span>
+      {hint && <span className="ml-auto font-mono text-[0.6875rem] text-muted-foreground">{t(hint)}</span>}
       {state === "unsupported" && <span className="ml-auto font-mono text-[0.6875rem] text-faint">{t("labs.detail.na")}</span>}
     </div>
   );

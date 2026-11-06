@@ -95,7 +95,7 @@
     "randomHint": "Un port libre par service, comme :64645. Aucune collision.",
     "default": "Les ports par défaut du lab",
     "defaultHint": "Chaque service sur son propre port, comme CTFd sur :8000.",
-    "defaultWarning": "Ces ports sont peut-être déjà pris par un autre lab ou une autre application (un serveur web local sur 8000 ou 3000, par exemple). On ne le sait qu’une fois le lab téléchargé : le démarrage s’arrête alors et indique le port occupé. Deux services sur le même port dans le lab : le second reçoit un port aléatoire."
+    "defaultWarning": "Un port est peut-être déjà pris par une autre application ; le démarrage s’arrête alors et indique ce qui l’occupe."
   },
   "deploy": {
     "ops": {
@@ -334,7 +334,7 @@
     "cloudServicesTitle": "Services cloud",
     "cloudLeftover": "Un démarrage précédent a laissé des services cloud dans votre compte. Arrêtez le lab pour les supprimer, puis relancez-le.",
     "cloudIdle": "Démarrez le lab pour créer ses services cloud dans votre compte. Arrêtez-le quand vous avez fini : cela les supprime et met fin à leur coût.",
-    "connectAccount": "Connecter un compte {clouds}",
+    "connectAccountOn": "Connecter un compte {clouds}",
     "estimatedCost": "Coût estimé",
     "removeBodyCloud": "Ses services cloud sont détruits dans votre compte, ce qui met fin à leur coût. Le prochain démarrage les recrée de zéro.",
     "retry": "Réessayer",

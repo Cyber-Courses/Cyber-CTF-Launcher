@@ -14,6 +14,11 @@ const VM_CLOUDS_NOT_YET = new Set(["azure", "gcp", "digitalocean", "linode", "oc
  *  an Apple Silicon Mac. */
 export const EMULATORS: readonly Provider[] = ["qemu"];
 
+/** Every local hypervisor the launcher supports. A container lab runs as docker-in-VM inside a
+ *  generic helper VM, so any of these can host it, independent of the lab's own (native-VM)
+ *  provider list. */
+const LOCAL_HYPERVISORS: readonly Provider[] = ["virtualbox", "vmware_desktop", "hyperv", "parallels", "libvirt", "qemu", "utm"];
+
 // providers may still carry "hosted" (not a launcher Provider and no longer offered), so keep it
 // out of the local hypervisors; compare as strings.
 const isLocal = (p: string) => !SERVERS.has(p) && !CLOUDS.has(p) && p !== "hosted";
@@ -56,6 +61,9 @@ export function localProviders(rt: LabRuntimeInfo, hostArch?: string): Provider[
   if (w.cloud && !w.docker && !w.vm) return [];
   // A VM edition built for another CPU runs here only emulated (whatever hypervisors it lists).
   if (w.vm && hostArch && !runsNatively(rt, hostArch)) return [...EMULATORS];
+  // A container lab runs as docker-in-VM inside a generic helper VM, so any local hypervisor can
+  // host it, not only the lab's own (native-VM) providers.
+  if (w.docker) return [...LOCAL_HYPERVISORS];
   return rt.providers.filter((p: string) => isLocal(p));
 }
 

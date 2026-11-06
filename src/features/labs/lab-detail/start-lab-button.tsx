@@ -167,7 +167,7 @@ function ConnectCloudButton({ providers }: { providers: readonly string[] }) {
         serverOpenSetup(null, "cloud").catch(tell(t("labs.row.connectFailed")));
       }}
     >
-      <Play className="size-3.5" /> {t("labs.detail.connectAccount", { clouds: joinOr(cloudNames(providers)) })}
+      <Play className="size-3.5" /> {t("labs.detail.connectAccountOn", { clouds: joinOr(cloudNames(providers)) })}
     </Button>
   );
 }

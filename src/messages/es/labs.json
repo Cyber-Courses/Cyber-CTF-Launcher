@@ -95,7 +95,7 @@
     "randomHint": "Un puerto libre por servicio, como :64645. Nunca choca.",
     "default": "Los puertos por defecto del lab",
     "defaultHint": "Cada servicio en su propio puerto, como CTFd en :8000.",
-    "defaultWarning": "Puede que otro lab o app ya ocupe estos puertos (por ejemplo, un servidor web local en el 8000 o el 3000). Eso solo se sabe una vez descargado el lab: entonces el inicio se detiene e indica el puerto ocupado. Si dos servicios usan el mismo puerto dentro del lab, el segundo recibe uno aleatorio."
+    "defaultWarning": "Puede que otra app ya ocupe un puerto; entonces el inicio se detiene e indica qué lo ocupa."
   },
   "deploy": {
     "ops": {
@@ -334,7 +334,7 @@
     "cloudServicesTitle": "Servicios en la nube",
     "cloudLeftover": "Un inicio anterior dejó servicios en la nube en tu cuenta. Detén el lab para eliminarlos y vuelve a iniciarlo.",
     "cloudIdle": "Inicia el lab para crear sus servicios en la nube en tu cuenta. Detenlo cuando termines: eso los elimina y pone fin a su coste.",
-    "connectAccount": "Conectar una cuenta de {clouds}",
+    "connectAccountOn": "Conectar una cuenta de {clouds}",
     "estimatedCost": "Coste estimado",
     "removeBodyCloud": "Sus servicios en la nube se destruyen en tu cuenta, lo que pone fin a su coste. El próximo inicio los vuelve a crear desde cero.",
     "retry": "Reintentar",

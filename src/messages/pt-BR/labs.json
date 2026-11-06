@@ -95,7 +95,7 @@
     "randomHint": "Uma porta livre por serviço, como :64645. Nunca há conflito.",
     "default": "As portas padrão do lab",
     "defaultHint": "Cada serviço na sua própria porta, como o CTFd em :8000.",
-    "defaultWarning": "Essas portas podem já estar em uso por outro lab ou app (um servidor web local na 8000 ou 3000, por exemplo). Isso só se sabe depois que o lab é baixado: a inicialização então para e indica a porta em uso. Se dois serviços usarem a mesma porta dentro do lab, o segundo recebe uma aleatória."
+    "defaultWarning": "Uma porta pode já estar em uso por outro app; a inicialização então para e indica o que a está usando."
   },
   "deploy": {
     "ops": {
@@ -334,7 +334,7 @@
     "cloudServicesTitle": "Serviços de nuvem",
     "cloudLeftover": "Um início anterior deixou serviços de nuvem na sua conta. Pare o lab para removê-los e inicie de novo.",
     "cloudIdle": "Inicie o lab para criar seus serviços de nuvem na sua conta. Pare-o quando terminar: isso os remove e encerra o custo deles.",
-    "connectAccount": "Conectar uma conta {clouds}",
+    "connectAccountOn": "Conectar uma conta {clouds}",
     "estimatedCost": "Custo estimado",
     "removeBodyCloud": "Seus serviços de nuvem são destruídos na sua conta, o que encerra o custo deles. O próximo início os cria de novo do zero.",
     "retry": "Tentar novamente",
