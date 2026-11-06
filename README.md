@@ -1,6 +1,6 @@
 # Cyber CTF Desktop
 
-Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It runs CTF labs on the player's own machine, servers and cloud accounts, using [Isoloom](https://www.isoloom.com) to read each lab and convert it to the right infrastructure files, and the [Isothrum](https://github.com/isoloom/isothrum) runner to run them. This app replaced the earlier Electron launcher in this repository.
+Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It runs CTF labs on the player's own machine, servers and cloud accounts, using [Isoloom](https://www.isoloom.com) to read each lab and convert it to the right infrastructure files, and the [Isothrum](https://github.com/Isothrum/isothrum) runner to run them. This app replaced the earlier Electron launcher in this repository.
 
 ## Where labs run
 
