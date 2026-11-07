@@ -58,6 +58,8 @@ export function RunOnPicker({
   localNote,
   dockerRunning,
   localVm,
+  localVms = [],
+  onPickVm = () => {},
   value,
   onChange,
   disabled,
@@ -72,6 +74,10 @@ export function RunOnPicker({
   dockerRunning: boolean | null;
   /** The local hypervisor this (container) lab can run a VM on: Settings' choice, else the first ready. */
   localVm: Provider | null;
+  /** Every ready hypervisor it can run a VM on: with several, the VM option carries a switch. */
+  localVms?: Provider[];
+  /** The switch's pick (saved as Settings' choice by the caller). */
+  onPickVm?: (p: Provider) => void;
   value: RunTarget;
   onChange: (t: RunTarget) => void;
   disabled: boolean;
@@ -83,7 +89,7 @@ export function RunOnPicker({
   const t = useT();
   const checks = useHostChecks(hosts);
   const tiers = useRunTiers();
-  const groups = runOnGroups(t, { hosts, hostOk, checks, localNote, dockerRunning, localVm, offerLocal, tiers });
+  const groups = runOnGroups(t, { hosts, hostOk, checks, localNote, dockerRunning, vm: { localVm, localVms, onPickVm }, offerLocal, tiers });
   return (
     <div className="space-y-4">
       <div>
@@ -135,7 +141,18 @@ function OptionList({ group: g, value, onChange, disabled }: { group: OptionGrou
                 </span>
               )
             }
-          />
+          >
+            {/* A switch inside the row picks within the option, never another option. */}
+            {o.extra && (
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+              >
+                {o.extra}
+              </div>
+            )}
+          </RadioRow>
         ))}
       </RadioList>
     </div>

@@ -8,6 +8,7 @@ import { TypeIcon } from "@/components/ui/type-icon";
 import { KIND } from "@/features/servers/host-setup/constants";
 import { ProviderGlyph } from "@/features/servers/provider-glyph";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
+import { Segmented } from "@/components/ui/segmented";
 import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
 import { CLOUDS } from "@/features/labs/lab-runtime";
 import type { RunTarget } from "@/features/labs/run-on";
@@ -18,7 +19,17 @@ import { type T } from "@/lib/i18n";
 type Status = { tone: Tone; label: string; title?: string };
 /** A maturity badge on a launch path (Beta / Experimental), with the evidence as its tooltip. */
 type RunBadge = { kind: Exclude<Badge, "none">; title: string };
-type Option = { target: RunTarget; title: string; subtitle: string; ok: boolean; why?: string; logo: React.ReactNode; status?: Status; badge?: RunBadge };
+type Option = {
+  target: RunTarget;
+  title: string;
+  subtitle: string;
+  ok: boolean;
+  why?: string;
+  logo: React.ReactNode;
+  status?: Status;
+  badge?: RunBadge;
+  extra?: React.ReactNode;
+};
 export type OptionGroup = { id: string; label: string; options: Option[] };
 /** Each host's test result, by id; none yet while it runs. */
 type HostChecks = Partial<Record<string, ServerTest>>;
@@ -108,8 +119,10 @@ const DockerLogo = () => (
   </TypeIcon>
 );
 
-/** This machine (with its Docker engine's state, for a container lab), and a VM on `localVm`. */
-function localOptions(t: T, tiers: RunTier[], localNote: string, dockerRunning: boolean | null, localVm: Provider | null): Option[] {
+/** This machine (with its Docker engine's state, for a container lab), and a VM on `localVm`,
+ *  with a switch to the other ready hypervisors (`localVms`) when there are several. */
+function localOptions(t: T, tiers: RunTier[], localNote: string, dockerRunning: boolean | null, vm: LocalVm): Option[] {
+  const { localVm, localVms, onPickVm } = vm;
   const local: Option[] = [
     {
       target: { kind: "local" },
@@ -135,10 +148,22 @@ function localOptions(t: T, tiers: RunTier[], localNote: string, dockerRunning: 
       badge: badgeFor(tiers, candidatesFor({ kind: "local-vm", provider: localVm })),
       logo: <HypervisorLogo provider={localVm} />,
       status: { tone: "ok", label: t("labs.runOn.ready"), title: t("labs.runOn.readyHint") },
+      extra: localVms.length > 1 && (
+        <Segmented
+          label={t("labs.runOn.pickHypervisor")}
+          className="mt-2"
+          value={localVm}
+          onChange={onPickVm}
+          options={localVms.map((p) => ({ value: p, label: PROVIDER_LABELS[p] ?? p }))}
+        />
+      ),
     });
   }
   return local;
 }
+
+/** The hypervisor a (container) lab's VM runs on here, the others ready for it, and the switch. */
+export type LocalVm = { localVm: Provider | null; localVms: Provider[]; onPickVm: (p: Provider) => void };
 
 /** A saved server or cloud account; one the lab can't run on says why, without a status. */
 function hostOption(t: T, tiers: RunTier[], h: ServerHost, ok: boolean, check: ServerTest | undefined): Option {
@@ -165,7 +190,7 @@ export function runOnGroups(
     checks,
     localNote,
     dockerRunning,
-    localVm,
+    vm,
     offerLocal,
     tiers,
   }: {
@@ -174,14 +199,14 @@ export function runOnGroups(
     checks: HostChecks;
     localNote: string;
     dockerRunning: boolean | null;
-    localVm: Provider | null;
+    vm: LocalVm;
     offerLocal: boolean;
     tiers: RunTier[];
   },
 ): OptionGroup[] {
   const forHost = (h: ServerHost) => hostOption(t, tiers, h, hostOk(h), checks[h.id]);
   const groups: OptionGroup[] = [
-    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localOptions(t, tiers, localNote, dockerRunning, localVm) : [] },
+    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localOptions(t, tiers, localNote, dockerRunning, vm) : [] },
     { id: "servers", label: t("labs.runOn.servers"), options: hosts.filter((h) => !CLOUDS.has(h.provider)).map(forHost) },
     { id: "cloud", label: t("labs.runOn.cloud"), options: hosts.filter((h) => CLOUDS.has(h.provider)).map(forHost) },
   ];

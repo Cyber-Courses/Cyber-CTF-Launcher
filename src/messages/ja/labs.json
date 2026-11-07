@@ -75,6 +75,7 @@
     "inVmSubtitle": "{provider} · システムから隔離",
     "ready": "準備完了",
     "readyHint": "ハイパーバイザーは「設定」で選択済み",
+    "pickHypervisor": "ハイパーバイザー",
     "available": "利用可能",
     "servers": "サーバー",
     "cloud": "クラウド",

@@ -149,6 +149,10 @@ export function setAttackBox(box: string) {
 
 const VM_PROVIDER_KEY = "cyberctf.vm.provider";
 
+/** Sent on `window` when the hypervisor choice changes (Settings, the Machine setup, or the
+ *  switch in "Where should it run?"), so the header and the lab page follow at once. */
+export const VM_PROVIDER_CHANGED = "cyberctf:vm-provider";
+
 /** The hypervisor VM labs (and the VM test) run on, when several are installed. Null = automatic. */
 export function getVmProvider(): Provider | null {
   try {
@@ -165,6 +169,7 @@ export function setVmProvider(provider: Provider | null) {
   } catch {
     /* ignore */
   }
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(VM_PROVIDER_CHANGED));
 }
 
 /** An image name the core will run (exegol.rs `valid_image`): plain ASCII name characters, no

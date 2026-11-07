@@ -92,6 +92,22 @@ describe("RunOnPicker", () => {
     expect(screen.queryByText("Servers")).toBeNull();
   });
 
+  it("switches the VM's hypervisor inside the one in-VM option when several are ready", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    const onPickVm = vi.fn();
+    const onChange = renderPicker({ hosts: [], dockerRunning: true, localVm: "utm", localVms: ["utm", "qemu"], onPickVm });
+    // One option, not one per hypervisor; the switch names them.
+    expect(screen.getAllByText("This machine, in a VM").length).toBe(1);
+    expect(screen.getByText("UTM · isolated from your system")).toBeTruthy();
+    const group = screen.getByRole("radiogroup", { name: "Hypervisor" });
+    expect(within(group).getByRole("radio", { name: "UTM" }).getAttribute("aria-checked")).toBe("true");
+    await user.click(within(group).getByRole("radio", { name: "QEMU" }));
+    expect(onPickVm).toHaveBeenCalledWith("qemu");
+    // The switch picks a hypervisor, not another option.
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("badges a cloud with no real-run evidence as Beta, and leaves a proven one (AWS) unbadged", async () => {
     // The badge is data-driven from Isoloom's tier evidence (the dev mock mirrors it): Azure is
     // validated-only, AWS has real runs.

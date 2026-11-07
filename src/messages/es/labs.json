@@ -75,6 +75,7 @@
     "inVmSubtitle": "{provider} · aislado de tu sistema",
     "ready": "Listo",
     "readyHint": "Hipervisor elegido en Ajustes",
+    "pickHypervisor": "Hipervisor",
     "available": "Disponible",
     "servers": "Servidores",
     "cloud": "Nube",

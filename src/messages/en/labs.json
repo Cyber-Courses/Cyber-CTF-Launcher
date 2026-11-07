@@ -75,6 +75,7 @@
     "inVmSubtitle": "{provider} · isolated from your system",
     "ready": "Ready",
     "readyHint": "Hypervisor chosen in Settings",
+    "pickHypervisor": "Hypervisor",
     "available": "Available",
     "servers": "Servers",
     "cloud": "Cloud",

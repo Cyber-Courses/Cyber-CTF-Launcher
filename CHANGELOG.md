@@ -16,6 +16,15 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 - **Setup checks the versions of UTM and its Vagrant plugin, not only their presence.** A
   `vagrant_utm` older than 0.2.0 reads as not installed, so setup installs it again (which
   updates it), and a UTM older than 4.6.5 (the oldest the plugin drives) is named as too old.
+- **A UTM start is tried once more on UTM's passing "Application isn't running (-600)".** UTM
+  answers that to a VM customization right after an import now and then, while it runs and
+  answers everything else; the half-created VM is removed and the start runs again, instead of
+  failing the lab on a one-off.
+- **Switching the hypervisor is one click.** The hypervisor chosen in Settings never reached the
+  header, which named the first ready one (QEMU before UTM), and the Machine setup's pick wasn't
+  saved as the choice at all. Both follow the choice now, and "Where should it run?" carries a
+  switch inside its "in a VM" option when several hypervisors are ready; its pick is saved as
+  the choice.
 
 ## [1.8.8] — 2026-11-07
 

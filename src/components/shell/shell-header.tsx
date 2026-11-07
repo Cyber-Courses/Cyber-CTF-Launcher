@@ -4,12 +4,14 @@ import { StatusDot } from "@/components/ui/status-pill";
 import type { SystemReport } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 import { engineSummary } from "@/components/shell/shell-model";
+import { useVmProvider } from "@/lib/use-vm-provider";
 
 /** The main column's top bar (drags the window): the breadcrumb, then the container engine and
  *  hypervisor this machine runs labs on. */
 export function ShellHeader({ crumbs, report, checkError }: { crumbs: string[]; report: SystemReport | null; checkError: string | null }) {
   const t = useT();
-  const summary = report ? engineSummary(report) : null;
+  const preferred = useVmProvider();
+  const summary = report ? engineSummary(report, preferred) : null;
   return (
     <div data-tauri-drag-region className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-6 text-[0.8125rem] text-faint">
       {crumbs.map((c, i) =>
