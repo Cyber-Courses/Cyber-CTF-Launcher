@@ -268,6 +268,28 @@ else
   for c in fail-docker launch restart stop launch-ui attack-box kill-mid-deploy stop-with-box park-resume reimport-running attack-on-stopped; do skip "$c" "docker is not running"; done
 fi
 vm_scan
+# A catalogue container lab in a VM on UTM through the real "Where should it run?" dialog (needs
+# the app signed in, UTM and its Vagrant plugin): the docker-in-VM path end to end, from the UI.
+vm_launch() {
+  wanted launch-vm || return 0
+  [ "$OS" = Darwin ] || { skip launch-vm "the VM launch runs on UTM (macOS); elsewhere run functional-launch-vm.mjs with CYBERCTF_TEST_VM_PROVIDER"; return; }
+  [ -x "$UTMCTL" ] || { skip launch-vm "UTM is not installed"; return; }
+  command -v vagrant >/dev/null && vagrant plugin list 2>/dev/null | grep -q '^vagrant_utm ' || { skip launch-vm "Vagrant with the vagrant_utm plugin is not installed"; return; }
+  # Not through run_case: the scenario skips itself (exit 2) when the app isn't signed in or the
+  # lab isn't in this account's catalogue, and it bounds its own wait (15 min for the VM to come up).
+  local log="$LOGS/launch-vm.log" start=$SECONDS rc
+  say launch-vm
+  stale_apps
+  node tests/native/functional-launch-vm.mjs > "$log" 2>&1
+  rc=$?
+  sed 's/^/   /' < <(tail -n 4 "$log")
+  case $rc in
+    0) record launch-vm ok $((SECONDS - start)) "$log" ;;
+    2) SKIPPED=$((SKIPPED + 1)); record launch-vm skip $((SECONDS - start)) "$(grep -m1 '^LAUNCH_VM_SKIP' "$log" | cut -c16-)" ;;
+    *) FAILED=$((FAILED + 1)); record launch-vm FAIL $((SECONDS - start)) "$log (exit $rc)" ;;
+  esac
+}
+vm_launch
 cleanup_lab final
 
 say "results"
