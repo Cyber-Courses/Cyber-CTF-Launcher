@@ -25,8 +25,10 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   Linux image (the SSM public parameter; a well-formed unknown id when that can't be read), and
   an answer AWS only gives once the request is authorized counts as the permission passing.
 - **"Connect" on the Cloud page's Azure and Google Cloud rows opens the setup on that provider.**
-  It opened "Set up cloud provider" with Amazon Web Services picked whatever row was clicked; the
-  row's provider is now picked at the first step.
+  It opened "Set up cloud provider" at "Choose a cloud provider" with Amazon Web Services picked
+  whatever row was clicked. The click is the choice: the setup now skips that step and opens on
+  the row's provider, at its tools and sign-in. "Set up cloud provider" at the top keeps the full
+  flow.
 - **A lab on UTM waits for UTM to be open and answering before `vagrant up`.** Vagrant's UTM
   plugin reads the VM's state and its forwarded ports from the UTM app through Apple events, and
   a UTM not running yet, or one macOS doesn't let Cyber CTF control, failed the start mid-way

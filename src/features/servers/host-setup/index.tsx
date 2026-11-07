@@ -16,12 +16,15 @@ import { useT } from "@/lib/i18n";
 
 export function HostSetupPage({
   initial,
+  providerChosen = false,
   report,
   onRefresh,
   onSaved,
   onDone,
 }: {
   initial: ServerHostInput;
+  /** A new cloud account opened on its provider already chosen: the setup skips choosing it. */
+  providerChosen?: boolean;
   report: SystemReport | null;
   onRefresh: () => void;
   /** After every save, so the main window's host list can refresh. */
@@ -30,7 +33,7 @@ export function HostSetupPage({
   onDone: () => void;
 }) {
   const t = useT();
-  const s = useHostSetup({ initial, report, onRefresh, onSaved, onDone });
+  const s = useHostSetup({ initial, providerChosen, report, onRefresh, onSaved, onDone });
   const { i, cloud, steps, key, title } = s;
   return (
     <>

@@ -29,12 +29,14 @@ const isCliAuthCloud = (p: RemoteProvider) => p === "azure" || p === "gcp";
 
 /**
  * The ordered steps for this setup. Editing skips choosing the provider or hypervisor and
- * installing the tools; only AWS asks how to connect (CLI or access keys).
+ * installing the tools; a cloud setup opened on a chosen provider (`providerChosen`, the Cloud
+ * page's Connect rows) skips choosing it too; only AWS asks how to connect (CLI or access keys).
  */
-export function setupSteps(provider: RemoteProvider, editing: boolean): StepKey[] {
+export function setupSteps(provider: RemoteProvider, editing: boolean, providerChosen = false): StepKey[] {
   if (!isCloud(provider)) return editing ? ["connection", "placement", "test"] : ["hypervisor", "tools", "connection", "placement", "test"];
   const account: StepKey[] = provider === "aws" ? ["account"] : [];
-  return [...(editing ? [] : (["provider", "tools"] as StepKey[])), ...account, "credentials", "options", "test"];
+  const choose: StepKey[] = editing ? [] : providerChosen ? ["tools"] : ["provider", "tools"];
+  return [...choose, ...account, "credentials", "options", "test"];
 }
 
 /** Where a new account's labs run by default, per cloud. */
@@ -76,12 +78,13 @@ export function withProvider(s: ServerHostInput, id: CloudProvider): ServerHostI
   };
 }
 
-/** The form a new setup starts from, as its window's query names it: a server, a new cloud
- *  account, or one on the cloud `provider` named (the Cloud page's Connect rows open the setup
- *  with that provider picked at its first step). An unknown provider starts as a plain new account. */
-export function startingForm(kind: string | null, provider: string | null): ServerHostInput {
-  if (kind !== "cloud") return { ...EMPTY_HOST };
-  return provider !== null && isCloud(provider as RemoteProvider) ? withProvider(EMPTY_CLOUD, provider as CloudProvider) : { ...EMPTY_CLOUD };
+/** What a new setup starts from, as its window's query names it: a server, a new cloud account,
+ *  or one on the cloud `provider` named (the Cloud page's Connect rows), whose setup then skips
+ *  choosing the provider (`providerChosen`). An unknown provider starts as a plain new account. */
+export function startingSetup(kind: string | null, provider: string | null): { form: ServerHostInput; providerChosen: boolean } {
+  if (kind !== "cloud") return { form: { ...EMPTY_HOST }, providerChosen: false };
+  if (provider !== null && isCloud(provider as RemoteProvider)) return { form: withProvider(EMPTY_CLOUD, provider as CloudProvider), providerChosen: true };
+  return { form: { ...EMPTY_CLOUD }, providerChosen: false };
 }
 
 /** Whether the connection / credentials step has what it needs to go on. `secretKept`: a saved
