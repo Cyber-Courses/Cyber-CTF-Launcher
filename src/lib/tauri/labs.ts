@@ -96,7 +96,9 @@ export const attackBoxDetach = (id: string, runtime: Runtime, onLog: (line: stri
 export const labAttackShell = (id: string, runtime: Runtime) => invokeUnit("lab_attack_shell", { id, runtime });
 /** Where and how a lab starts. `defaultPorts`: a container lab here publishes its services on
  *  their own ports, not random ones. `offline`: start the installed lab without Cyber CTF when it
- *  can't be reached (no progress saved), after a launch failed with the `offlineReady` code. */
+ *  can't be reached (no progress saved), after a launch failed with the `offlineReady` code.
+ *  `perMachineVm`: a container lab whose spec has VM recipes too runs here as one VM per machine
+ *  (the form of a VM lab) on `provider`, instead of as containers. */
 export type LabLaunch = {
   labId: string;
   provider: Provider | null;
@@ -104,10 +106,11 @@ export type LabLaunch = {
   attackboxImage: string | null;
   defaultPorts: boolean;
   offline?: boolean;
+  perMachineVm?: boolean;
 };
 
-export const labLaunch = ({ offline = false, ...launch }: LabLaunch, onLog: (line: string) => void) =>
-  invokeStreaming("lab_launch", { ...launch, offline }, onLog);
+export const labLaunch = ({ offline = false, perMachineVm = false, ...launch }: LabLaunch, onLog: (line: string) => void) =>
+  invokeStreaming("lab_launch", { ...launch, offline, perMachineVm }, onLog);
 
 /** Imports and starts a lab from a local directory `path` (an unpublished lab, bypassing the
  *  catalogue and the backend); the deploy's log is streamed to `onLog`. The lab then appears in

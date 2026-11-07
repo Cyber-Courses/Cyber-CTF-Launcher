@@ -41,6 +41,8 @@ mod real_flag_labs;
 #[cfg(test)]
 pub(crate) mod real_labs;
 #[cfg(test)]
+mod real_per_machine_labs;
+#[cfg(test)]
 mod real_server_labs;
 #[cfg(test)]
 mod real_vm_labs;

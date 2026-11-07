@@ -46,12 +46,24 @@ pub(super) fn emulated_arches(spec: &lab::Spec, host: &str) -> Vec<&'static str>
     emulated
 }
 
-/// A lab on QEMU: its networks must fit QEMU's two-VM links, and a machine built for another CPU
-/// needs that CPU's emulator (`qemu-system-x86_64` for an x86 lab on an Apple Silicon Mac).
-pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(String)) -> Result<()> {
-    if let Some(why) = lab::qemu_refusal(&prepared.lab) {
-        return Err(Error::Invalid(format!("This lab can't run on QEMU yet: {why}. Run it on a server or in your cloud account.")));
+/// A lab's VMs on `provider`: Isoloom's own refusal of the pair, if it has one, before any VM
+/// is created. QEMU links a VM on one network only; UTM's Vagrant plugin gives a VM no private
+/// network, so a lab with a network (every lab) can't run as VMs on UTM; a TPM runs on
+/// VirtualBox, libvirt and Hyper-V only.
+pub(super) fn check_provider(prepared: &lab::Prepared, provider: super::Provider) -> Result<()> {
+    match lab::vagrant_refusal(&prepared.lab, provider.id()) {
+        Some(why) => Err(Error::Invalid(format!(
+            "This lab can't run on {} yet: {why}. Run it on another hypervisor, a server or in your cloud account.",
+            provider.label()
+        ))),
+        None => Ok(()),
     }
+}
+
+/// A lab on QEMU: a machine built for another CPU needs that CPU's emulator
+/// (`qemu-system-x86_64` for an x86 lab on an Apple Silicon Mac). Its networks' fit (QEMU's
+/// two-VM links) is [`check_provider`]'s.
+pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(String)) -> Result<()> {
     let host = std::env::consts::ARCH;
     for arch in emulated_arches(&prepared.spec, host) {
         let bin = if arch == "x86_64" { "qemu-system-x86_64" } else { "qemu-system-aarch64" };

@@ -79,6 +79,27 @@ impl Provider {
         }
     }
 
+    /// The provider's name as the player reads it ("VirtualBox", "QEMU").
+    pub fn label(self) -> &'static str {
+        match self {
+            Provider::Virtualbox => "VirtualBox",
+            Provider::VmwareDesktop => "VMware",
+            Provider::Hyperv => "Hyper-V",
+            Provider::Parallels => "Parallels",
+            Provider::Libvirt => "libvirt",
+            Provider::Qemu => "QEMU",
+            Provider::Utm => "UTM",
+            Provider::VmwareEsxi => "VMware ESXi",
+            Provider::Proxmox => "Proxmox",
+            Provider::Aws => "AWS",
+            Provider::Azure => "Azure",
+            Provider::Gcp => "Google Cloud",
+            Provider::DigitalOcean => "DigitalOcean",
+            Provider::Linode => "Linode",
+            Provider::Oci => "Oracle Cloud",
+        }
+    }
+
     /// Remote providers run VMs on another host and need connection settings.
     pub fn is_remote(self) -> bool {
         matches!(

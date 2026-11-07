@@ -9,9 +9,21 @@ use crate::runtime::{Park, start};
 use crate::testing::test_app::TestApp;
 
 async fn start_here(t: &TestApp, id: &str, runtime: Runtime, provider: Option<Provider>, env: &[(String, String)]) -> (crate::error::Result<()>, Vec<String>) {
+    start_here_as(t, id, runtime, provider, false, env).await
+}
+
+/// A start on this machine, `per_machine_vm` picking the per-machine VM form for a container lab.
+async fn start_here_as(
+    t: &TestApp,
+    id: &str,
+    runtime: Runtime,
+    provider: Option<Provider>,
+    per_machine_vm: bool,
+    env: &[(String, String)],
+) -> (crate::error::Result<()>, Vec<String>) {
     let dir = t.data().join("labs").join(id);
     let mut log = Vec::new();
-    let r = start(&t.dirs(), &dir, id, runtime, provider, None, env, |l| log.push(l)).await;
+    let r = start(&t.dirs(), &dir, id, runtime, provider, None, per_machine_vm, env, |l| log.push(l)).await;
     (r, log)
 }
 
@@ -30,7 +42,7 @@ async fn a_lab_on_qemu_is_checked_for_its_emulator() {
 async fn start_on(t: &TestApp, id: &str, runtime: Runtime, host: &str) -> (crate::error::Result<()>, Vec<String>) {
     let dir = t.data().join("labs").join(id);
     let mut log = Vec::new();
-    let r = start(&t.dirs(), &dir, id, runtime, None, Some(host), &[], |l| log.push(l)).await;
+    let r = start(&t.dirs(), &dir, id, runtime, None, Some(host), false, &[], |l| log.push(l)).await;
     (r, log)
 }
 
@@ -125,14 +137,103 @@ const VMS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }
 
 #[test]
 fn a_local_run_follows_the_runtime_and_the_hypervisor() {
-    assert_eq!(local_run(Runtime::Docker, None).unwrap(), LocalRun::Docker);
-    assert_eq!(local_run(Runtime::Docker, Some(Provider::Virtualbox)).unwrap(), LocalRun::DockerInVm(Provider::Virtualbox));
+    assert_eq!(local_run(Runtime::Docker, None, false).unwrap(), LocalRun::Docker);
+    assert_eq!(local_run(Runtime::Docker, Some(Provider::Virtualbox), false).unwrap(), LocalRun::DockerInVm(Provider::Virtualbox));
     // A server provider is never a local VM: the containers run on this machine's Docker.
-    assert_eq!(local_run(Runtime::Docker, Some(Provider::Proxmox)).unwrap(), LocalRun::Docker);
-    assert_eq!(local_run(Runtime::Vm, Some(Provider::Qemu)).unwrap(), LocalRun::Vm(Provider::Qemu));
-    assert_eq!(local_run(Runtime::Vm, None).unwrap_err().to_string(), "VM labs need a provider");
-    assert_eq!(local_run(Runtime::Vm, Some(Provider::VmwareEsxi)).unwrap_err().to_string(), "pick a server host to run on ESXi or Proxmox");
-    assert_eq!(local_run(Runtime::Cloud, None).unwrap_err().to_string(), CLOUD_NEEDS_ACCOUNT);
+    assert_eq!(local_run(Runtime::Docker, Some(Provider::Proxmox), false).unwrap(), LocalRun::Docker);
+    assert_eq!(local_run(Runtime::Vm, Some(Provider::Qemu), false).unwrap(), LocalRun::Vm(Provider::Qemu));
+    assert_eq!(local_run(Runtime::Vm, None, false).unwrap_err().to_string(), "VM labs need a provider");
+    assert_eq!(local_run(Runtime::Vm, Some(Provider::VmwareEsxi), false).unwrap_err().to_string(), "pick a server host to run on ESXi or Proxmox");
+    assert_eq!(local_run(Runtime::Cloud, None, false).unwrap_err().to_string(), CLOUD_NEEDS_ACCOUNT);
+}
+
+#[test]
+fn a_container_lab_picked_as_one_vm_per_machine_runs_as_a_vm_lab() {
+    // The override: the VM form on the hypervisor, as a VM lab would run.
+    assert_eq!(local_run(Runtime::Docker, Some(Provider::Qemu), true).unwrap(), LocalRun::Vm(Provider::Qemu));
+    // It needs a hypervisor on this machine: none, or a server's, is refused (never silently
+    // containers, which is not what was picked).
+    assert_eq!(local_run(Runtime::Docker, None, true).unwrap_err().to_string(), "One VM per machine needs a hypervisor on this machine");
+    assert!(local_run(Runtime::Docker, Some(Provider::Proxmox), true).is_err());
+    // A VM lab is already that form; a cloud lab has no machines to be VMs.
+    assert_eq!(local_run(Runtime::Vm, Some(Provider::Virtualbox), true).unwrap(), LocalRun::Vm(Provider::Virtualbox));
+    assert_eq!(local_run(Runtime::Cloud, None, true).unwrap_err().to_string(), CLOUD_NEEDS_ACCOUNT);
+}
+
+/// A lab with both forms: each machine has a container recipe (`app.image`) and the VM one
+/// (`os`, `app.steps`), like `supplier-portal-api`. One machine is built for the other CPU
+/// whatever this host is, so QEMU's emulator check always has something to check (as `VM_LAB`).
+const BOTH_FORMS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    resources: { memory_mb: 1024 }\n    app: { image: nginx:1.27, steps: [{ run: setup.sh }] }\n  db:\n    os: debian@12\n    hardware: { arch: arm64 }\n    networks: { lab: 11 }\n    resources: { memory_mb: 1024 }\n    app: { image: mysql:8.0, steps: [{ run: setup.sh }] }\n";
+
+#[tokio::test]
+async fn a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_follows() {
+    use crate::runtime::lab::{Target, vagrant_dir};
+    use crate::runtime::paths::{PER_MACHINE_MARKER, local_runtime, per_machine_vm};
+    let t = TestApp::new();
+    let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
+    // QEMU with no emulator for the other CPU: the start stops at the emulator check, after the
+    // VM form's files are generated and the form is recorded, before any VM is created.
+    let _tools = Tools::rules(&[("qemu-system", None)]);
+    let (r, _) = start_here_as(&t, "both", Runtime::Docker, Some(Provider::Qemu), true, &[]).await;
+    let err = r.unwrap_err().to_string();
+    assert!(err.contains("emulator"), "{err}");
+    // The vagrant target's files (one VM per machine), not docker-vm's, and the form marked.
+    assert!(vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile").is_file(), "the vagrant target was generated");
+    assert!(!vagrant_dir(&dir, Runtime::Docker).join("Vagrantfile").exists(), "not docker-vm");
+    assert!(per_machine_vm(&dir) && dir.join(PER_MACHINE_MARKER).is_file());
+    assert_eq!(crate::runtime::paths::local_vm(&dir), None, "no docker-vm mark");
+    // The webview keeps calling the lab a container lab: here it is a VM lab.
+    assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Vm);
+    assert_eq!(crate::runtime::runtime_here(&t.dirs(), "both", false), Some(Runtime::Vm));
+    assert_eq!(crate::runtime::primary_url(&dir, "both", Runtime::Docker).await, None, "a VM lab has no loopback URL");
+    // Stopping it as a container lab goes to its VM run (the vagrant target's manifest) and
+    // forgets the form. The manifest is removed first, so the runner has nothing to destroy and
+    // no real `vagrant` runs here.
+    let manifest = vagrant_dir(&dir, Runtime::Vm).join("run.json");
+    assert!(manifest.is_file(), "the VM run's manifest was written");
+    std::fs::remove_file(&manifest).unwrap();
+    let mut log = Vec::new();
+    crate::runtime::stop_lab(&t.dirs(), "both", Runtime::Docker, |l| log.push(l)).await.unwrap();
+    assert_eq!(log, ["Nothing to remove: the run has no files."], "the VM run, not a Docker one");
+    assert!(!per_machine_vm(&dir));
+    assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Docker);
+    let _ = Target::Vagrant;
+}
+
+#[tokio::test]
+async fn a_plain_container_start_forgets_an_earlier_per_machine_form() {
+    use crate::runtime::paths::{mark_per_machine_vm, per_machine_vm};
+    let t = TestApp::new();
+    // The same dual-form lab, started as containers this time. Its `setup.sh` is missing, so the
+    // start stops at the spec check (the lab's files are looked at before anything is
+    // generated or run), after the form was decided: no container is ever started here.
+    let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS)]);
+    mark_per_machine_vm(&dir, true).unwrap();
+    let tools = Tools::rules(&[]);
+    let (r, _) = start_here(&t, "both", Runtime::Docker, None, &[]).await;
+    let err = r.unwrap_err().to_string();
+    assert!(err.contains("isoloom.yml has mistakes") && err.contains("setup.sh"), "{err}");
+    assert!(!per_machine_vm(&dir), "started as containers: the lab is a container lab again");
+    assert!(!tools.calls().iter().any(|c| c.starts_with("docker compose")), "{:?}", tools.calls());
+}
+
+#[tokio::test]
+async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
+    use crate::runtime::paths::per_machine_vm;
+    let t = TestApp::new();
+    let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
+    t.host("pve1", "proxmox", serde_json::json!({}));
+    let tools = Tools::rules(&[]);
+    let mut log = Vec::new();
+    let err = start(&t.dirs(), &dir, "both", Runtime::Docker, None, Some("pve1"), true, &[], |l| log.push(l)).await.unwrap_err().to_string();
+    assert_eq!(err, super::PER_MACHINE_HERE_ONLY);
+    assert!(tools.calls().is_empty() && !per_machine_vm(&dir), "{:?}", tools.calls());
+    // UTM: Isoloom refuses the vagrant target there (vagrant_utm gives a VM no private network),
+    // so the start is refused with its reason, before UTM is even opened.
+    let (r, _) = start_here_as(&t, "both", Runtime::Docker, Some(Provider::Utm), true, &[]).await;
+    let err = r.unwrap_err().to_string();
+    assert!(err.starts_with("This lab can't run on UTM yet: ") && err.contains("vagrant_utm"), "{err}");
+    assert!(!tools.called("open"), "{:?}", tools.calls());
 }
 
 #[test]

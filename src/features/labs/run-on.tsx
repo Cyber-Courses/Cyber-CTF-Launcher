@@ -4,16 +4,32 @@ import { useRef } from "react";
 import { type Provider, type ServerHost } from "@/lib/tauri";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
 import { StatusPill } from "@/components/ui/status-pill";
-import { runOnGroups, useHostChecks, useRunTiers, type OptionGroup } from "@/features/labs/run-on-options";
+import { runOnGroups, useHostChecks, useRunTiers, type OptionGroup, type PerMachineVm } from "@/features/labs/run-on-options";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { PortMode } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
 
-/** Where a lab starts: this machine (Docker, or a VM on a local hypervisor), or a saved host.
+/** Where a lab starts: this machine (Docker; a container lab in one VM on a local hypervisor;
+ *  or, for a lab with VM recipes too, one VM per machine there), or a saved host.
  *  `ports` on this machine: chosen in the dialog (container labs), else asked at the start. */
-export type RunTarget = { kind: "local"; ports?: PortMode } | { kind: "local-vm"; provider: Provider } | { kind: "host"; id: string };
+export type RunTarget =
+  | { kind: "local"; ports?: PortMode }
+  | { kind: "local-vm"; provider: Provider }
+  | { kind: "local-vms"; provider: Provider }
+  | { kind: "host"; id: string };
 
-const targetKey = (t: RunTarget) => (t.kind === "local" ? t.kind : t.kind === "local-vm" ? `vm:${t.provider}` : `host:${t.id}`);
+const targetKey = (t: RunTarget) => {
+  switch (t.kind) {
+    case "local":
+      return t.kind;
+    case "local-vm":
+      return `vm:${t.provider}`;
+    case "local-vms":
+      return `vms:${t.provider}`;
+    case "host":
+      return `host:${t.id}`;
+  }
+};
 
 /**
  * A centered dialog over the page (Escape or a click on the backdrop closes it). The body
@@ -60,6 +76,7 @@ export function RunOnPicker({
   localVm,
   localVms = [],
   onPickVm = () => {},
+  perMachine = null,
   value,
   onChange,
   disabled,
@@ -78,6 +95,9 @@ export function RunOnPicker({
   localVms?: Provider[];
   /** The switch's pick (saved as Settings' choice by the caller). */
   onPickVm?: (p: Provider) => void;
+  /** A lab with VM recipes too: the per-machine VM form here (the hypervisor it runs on, the
+   *  others ready for it, the switch); null when the lab or this machine can't. */
+  perMachine?: PerMachineVm | null;
   value: RunTarget;
   onChange: (t: RunTarget) => void;
   disabled: boolean;
@@ -89,7 +109,7 @@ export function RunOnPicker({
   const t = useT();
   const checks = useHostChecks(hosts);
   const tiers = useRunTiers();
-  const groups = runOnGroups(t, { hosts, hostOk, checks, localNote, dockerRunning, vm: { localVm, localVms, onPickVm }, offerLocal, tiers });
+  const groups = runOnGroups(t, { hosts, hostOk, checks, localNote, dockerRunning, vm: { localVm, localVms, onPickVm, perMachine }, offerLocal, tiers });
   return (
     <div className="space-y-4">
       <div>

@@ -13,7 +13,7 @@ use crate::error::{Error, Result};
 use crate::labs::operations::{self, ActiveOperation};
 use crate::labs::{self, LaunchRequest};
 use crate::platform::AppDirs;
-use crate::runtime::paths::{lab_dir, local_vm, runner_home};
+use crate::runtime::paths::{lab_dir, local_runtime, local_vm, runner_home};
 use crate::runtime::providers::Provider;
 use crate::runtime::{LabStatus, Park, Runtime, cloud_services, discover, docker, isothrum, lab, server, status, stop_lab, terminal_launch};
 
@@ -28,9 +28,18 @@ pub async fn lab_launch(
     attackbox_image: Option<String>,
     default_ports: Option<bool>,
     offline: Option<bool>,
+    per_machine_vm: Option<bool>,
     logs: Channel<String>,
 ) -> Result<()> {
-    let request = LaunchRequest { lab_id, provider, host, attackbox_image, default_ports: default_ports.unwrap_or(false), offline: offline.unwrap_or(false) };
+    let request = LaunchRequest {
+        lab_id,
+        provider,
+        host,
+        attackbox_image,
+        default_ports: default_ports.unwrap_or(false),
+        offline: offline.unwrap_or(false),
+        per_machine_vm: per_machine_vm.unwrap_or(false),
+    };
     // The deploy runs in a detached worker process, so quitting (or crashing) the app never cuts a
     // vagrant/docker/terraform run short; this command only follows the worker's log.
     let job = labs::launch_job(&AppDirs::from(&app), request, &channel_log(logs.clone())).await?;
@@ -182,11 +191,13 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
             isothrum::CloudRun::new(&home()?, &dir, &id, runtime, cloud)?.check(&place).await
         }
         Some(_) => isothrum::ServerRun::new(&home()?, &dir, &id, runtime)?.check().await,
-        // On this machine, through the runner.
-        None if runtime == Runtime::Docker && local_vm(&dir).is_some() => isothrum::LabRun::docker_in_vm(&home()?, &dir, &id)?.check().await,
-        None if runtime == Runtime::Docker => isothrum::LabRun::docker(&home()?, &dir, &id)?.check().await,
-        None if runtime == Runtime::Vm => isothrum::LabRun::vm(&home()?, &dir, &id)?.check().await,
-        None => Ok(docker::Check { available: false, ok: false, output: String::new(), results: Vec::new() }),
+        // On this machine, through the runner, in the form it was started in.
+        None => match local_runtime(&dir, runtime) {
+            Runtime::Docker if local_vm(&dir).is_some() => isothrum::LabRun::docker_in_vm(&home()?, &dir, &id)?.check().await,
+            Runtime::Docker => isothrum::LabRun::docker(&home()?, &dir, &id)?.check().await,
+            Runtime::Vm => isothrum::LabRun::vm(&home()?, &dir, &id)?.check().await,
+            Runtime::Cloud => Ok(docker::Check { available: false, ok: false, output: String::new(), results: Vec::new() }),
+        },
     }
 }
 
@@ -198,7 +209,7 @@ fn local_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<O
         return Ok(None);
     }
     let home = runner_home(dirs)?;
-    Ok(match runtime {
+    Ok(match local_runtime(dir, runtime) {
         Runtime::Docker if local_vm(dir).is_some() => Some(isothrum::LabRun::docker_in_vm(&home, dir, id)?),
         Runtime::Docker => Some(isothrum::LabRun::docker(&home, dir, id)?),
         Runtime::Vm => Some(isothrum::LabRun::vm(&home, dir, id)?),
@@ -309,7 +320,7 @@ mod tests {
     async fn start_docker(t: &TestApp, id: &str, logs: Channel<String>) -> crate::error::Result<()> {
         let dirs = t.dirs();
         let dir = super::lab_dir(&dirs, id)?;
-        crate::runtime::start(&dirs, &dir, id, Runtime::Docker, None, None, &[], super::channel_log(logs)).await
+        crate::runtime::start(&dirs, &dir, id, Runtime::Docker, None, None, false, &[], super::channel_log(logs)).await
     }
 
     fn sink() -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {
@@ -486,7 +497,7 @@ mod tests {
         // a bad attack-box image is refused before the backend is ever asked, so nothing streams.
         let t = TestApp::new();
         let s = sink();
-        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, channel(s.clone())).await;
+        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, None, channel(s.clone())).await;
         assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
         assert!(s.lock().unwrap().is_empty(), "the backend was never asked");
     }

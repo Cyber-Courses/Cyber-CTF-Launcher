@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { cloudAccountsFor, hostSupports, isCloudLab, localProviders } from "@/features/labs/lab-runtime";
+import { cloudAccountsFor, hostSupports, isCloudLab, localProviders, perMachineProviders } from "@/features/labs/lab-runtime";
 import type { RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { getPortMode, setVmProvider, type PortMode } from "@/lib/settings";
@@ -35,6 +35,17 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
     setSwitched(p);
     setRunOn({ kind: "local-vm", provider: p });
   };
+  // A container lab whose spec has VM recipes too can also run here as one VM per machine, like
+  // a VM lab (Isoloom's vagrant target), on a ready hypervisor that form runs on (not UTM). The
+  // same switch state: picking a hypervisor in either VM option is the one Settings' choice.
+  const perMachineVms = isDocker && rt ? readyVms.filter((p) => perMachineProviders(rt, hostArch).includes(p)) : [];
+  const perMachineVm = (switched && perMachineVms.includes(switched) ? switched : perMachineVms.at(0)) ?? null;
+  const pickPerMachineVm = (p: Provider) => {
+    setVmProvider(p);
+    setSwitched(p);
+    setRunOn({ kind: "local-vms", provider: p });
+  };
+  const perMachine = perMachineVm ? { provider: perMachineVm, providers: perMachineVms, onPick: pickPerMachineVm } : null;
   const hostOk = useCallback((h: ServerHost) => hostSupports(rt, h), [rt]);
   // Prefer this machine when a local hypervisor can run the lab; fall back to the default server
   // only when none can. A default server shouldn't silently capture every VM lab.
@@ -71,12 +82,15 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
     localVm,
     localVms,
     pickVm,
+    /** The per-machine VM form here, for a lab with VM recipes too (null: not this lab, or no
+     *  ready hypervisor can run it). */
+    perMachine,
     /** A cloud lab: the player's accounts it can run on, and the one picked. */
     cloudAccounts,
     pickedAccount: runOn.kind === "host" ? cloudAccounts.find((h) => h.id === runOn.id) : undefined,
     /** With servers saved (or a VM here), Start asks where to run first; a cloud lab always asks
      *  (which account, and what it costs there). */
-    hasChoice: isCloud || hosts.length > 0 || localVm !== null,
+    hasChoice: isCloud || hosts.length > 0 || localVm !== null || perMachine !== null,
     /** The target picked, with the host ports for a container lab here. */
     chosen: (): RunTarget => (runOn.kind === "local" && isDocker ? { kind: "local", ports } : runOn),
   };

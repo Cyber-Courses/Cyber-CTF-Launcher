@@ -93,9 +93,19 @@ export const cloudLaunch =
     void notify(translate("labs.actions.labReady"), translate("labs.actions.readyInCloud", { title: lab.title }));
   };
 
-/** The hypervisor a lab starts on here (a VM lab, or a container lab in a local VM), null for
- *  one on a server or in Docker here. Throws when a VM lab can't run here. */
-function localHypervisor(rt: LabRuntimeInfo, remote: boolean, vmProvider: Provider | undefined, report: LaunchReport | undefined): Provider | null {
+/** The hypervisor a lab starts on here (a VM lab, a container lab in a local VM, or one run as
+ *  one VM per machine), null for one on a server or in Docker here. Throws when a VM lab can't
+ *  run here. */
+function localHypervisor(
+  rt: LabRuntimeInfo,
+  remote: boolean,
+  vmProvider: Provider | undefined,
+  report: LaunchReport | undefined,
+  perMachineVm = false,
+): Provider | null {
+  // The per-machine form runs on the hypervisor picked for it ("Where should it run?" offers
+  // only the ready ones that form runs on).
+  if (perMachineVm && vmProvider && !remote) return vmProvider;
   const vm = rt.runtime === "VM";
   const preferred = getVmProvider();
   // Hypervisors ready on this machine (Vagrant + the tool), the Settings default first;
@@ -118,24 +128,42 @@ function localHypervisor(rt: LabRuntimeInfo, remote: boolean, vmProvider: Provid
   return provider;
 }
 
-/** A VM or container lab: on the server `host` (omitted: a VM lab's default server, when it
- *  supports its hypervisor), here in Docker or on a local hypervisor, or in a VM here on
- *  `vmProvider`. `ports` = the host ports of a container lab here. */
+/** A VM here for a container lab: the hypervisor, and whether as one VM per machine (its VM
+ *  recipes, as a VM lab runs) rather than its containers inside one helper VM. */
+export type LocalVmPick = { provider: Provider; perMachine?: boolean };
+
+/** Where a (non-cloud) lab starts: on the server `host` (omitted: a VM lab's default server,
+ *  when it supports its hypervisor); here in Docker or on a local hypervisor; in a VM here on
+ *  `vmProvider`; or (`perMachineVm`, a container lab with VM recipes) as one VM per machine on
+ *  `vmProvider`. `ports` = the host ports of a container lab here; `report` = the machine report. */
+export type LocalWhere = {
+  host?: string | null;
+  vmProvider?: Provider;
+  report?: LaunchReport;
+  ports: PortMode | null;
+  perMachineVm?: boolean;
+};
+
+/** A VM or container lab, started where `where` says. */
 export const localLaunch =
-  (lab: Lab, host: string | null | undefined, vmProvider: Provider | undefined, report: LaunchReport | undefined, ports: PortMode | null): OperationBody =>
+  (lab: Lab, where: LocalWhere): OperationBody =>
   async (log, rt) => {
-    const vm = rt.runtime === "VM";
-    if (vm && host === undefined) host = await defaultHostFor(lab);
+    const { vmProvider, report, ports, perMachineVm = false } = where;
+    let { host } = where;
+    // Run as one VM per machine, the lab is a VM lab here: its machines are VMs on `vmProvider`.
+    const asVms = perMachineVm && !!vmProvider && host == null;
+    const vm = rt.runtime === "VM" || asVms;
+    if (vm && !asVms && host === undefined) host = await defaultHostFor(lab);
     // Docker labs go to a server host only when one is picked explicitly.
     const remote = host != null;
     const inLocalVm = !vm && !remote && !!vmProvider;
-    const provider = localHypervisor(rt, remote, vmProvider, report);
+    const provider = localHypervisor(rt, remote, vmProvider, report, asVms);
     // The lab network isn't reachable from here, so an attack box goes next to the lab.
     // Remotely or inside a local VM: the container attack box image. A VM lab here: the
     // attack VM's Vagrant box, when Settings start the attack box with each lab.
     const attackbox = remote || inLocalVm ? getAttackImage() : vm && getAutoAttackBox() ? getAttackBox() : null;
     await launchOrOfferOffline(lab.title, (offline) =>
-      labLaunch({ labId: lab.id, provider, host: host ?? null, attackboxImage: attackbox, defaultPorts: ports === "default", offline }, log),
+      labLaunch({ labId: lab.id, provider, host: host ?? null, attackboxImage: attackbox, defaultPorts: ports === "default", offline, perMachineVm: asVms }, log),
     );
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);

@@ -132,6 +132,7 @@ function StartDialog({
         localVm={run.localVm}
         localVms={run.localVms}
         onPickVm={run.pickVm}
+        perMachine={run.perMachine}
         dockerRunning={isDocker ? dockerRunning : null}
         value={run.runOn}
         onChange={run.setRunOn}

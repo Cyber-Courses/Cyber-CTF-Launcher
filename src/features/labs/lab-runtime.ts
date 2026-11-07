@@ -36,6 +36,27 @@ const ways = (rt: LabRuntimeInfo) => ({
   cloud: rt.cloud ?? rt.runtime === "CLOUD",
 });
 
+/** Whether the lab has both forms: a container recipe and a VM recipe per machine (the backend's
+ *  `docker` and `vm` flags). Such a lab can run here as containers, as containers in one helper VM
+ *  (docker-vm), or as one VM per machine like a VM lab (Isoloom's vagrant target). */
+export const hasBothForms = (rt: LabRuntimeInfo) => {
+  const w = ways(rt);
+  return w.docker && w.vm;
+};
+
+/** The local hypervisors Isoloom refuses the per-machine VM form on: UTM's Vagrant plugin gives
+ *  a VM no private network, so a lab's machines couldn't reach each other. */
+export const NO_PER_MACHINE_VM: readonly Provider[] = ["utm"];
+
+/** The hypervisors on this machine that can run a dual-form lab as one VM per machine: every
+ *  local one but those Isoloom refuses the form on (`NO_PER_MACHINE_VM`); for a lab whose VMs
+ *  are built for another CPU, the emulator only. Empty for a lab with a single form. */
+export function perMachineProviders(rt: LabRuntimeInfo, hostArch?: string): Provider[] {
+  if (!hasBothForms(rt)) return [];
+  if (hostArch && !runsNatively(rt, hostArch)) return EMULATORS.filter((p) => !NO_PER_MACHINE_VM.includes(p));
+  return LOCAL_HYPERVISORS.filter((p) => !NO_PER_MACHINE_VM.includes(p));
+}
+
 /** Whether an emulator (QEMU) is ready on this machine: Vagrant, the hypervisor and its plugin. */
 export const emulatorReady = (report: SystemReport | null | undefined) =>
   !!report?.vagrant.installed && report.vmProviders.some((p) => EMULATORS.includes(p.provider) && !p.remote && p.available && p.hypervisor !== false);

@@ -6,12 +6,14 @@ use std::path::Path;
 
 use crate::platform::AppDirs;
 
-use super::paths::{lab_dir, local_vm, parked, runner_home, vagrant_dirs};
+use super::paths::{lab_dir, local_runtime, local_vm, parked, runner_home, vagrant_dirs};
 use super::{LabStatus, Place, Runtime, docker, isothrum, server, vm};
 use crate::error::Result;
 
 pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
-    let status = match (runtime, server::lab_connection(dirs, dir)?) {
+    // On this machine, in the form it was started in (a container lab run as one VM per machine
+    // reads as a VM lab); on a host, as the catalogue says.
+    let status = match (local_runtime(dir, runtime), server::lab_connection(dirs, dir)?) {
         // On a server host or cloud account: the runner's view.
         (_, Some(c)) => server_status(dirs, dir, id, runtime, c).await?,
         // Cloud-services labs run only on an account; nothing of them on this machine.
@@ -109,7 +111,7 @@ pub fn lab_installed(dirs: &AppDirs, id: &str) -> bool {
 /// Where a running lab is reachable on this machine (its first published port). None for
 /// VM labs (their address is discovered differently) or when nothing is published.
 pub async fn primary_url(dir: &Path, id: &str, runtime: Runtime) -> Option<String> {
-    match runtime {
+    match local_runtime(dir, runtime) {
         Runtime::Docker if !dir.join(server::HOST_MARKER).exists() && local_vm(dir).is_none() => docker::primary_url(dir, id).await,
         _ => None,
     }

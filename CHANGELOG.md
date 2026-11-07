@@ -6,6 +6,16 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A lab with both forms can run here as one VM per machine.** A container lab whose Isoloom
+  spec also has a VM recipe per machine (the backend's `docker` and `vm` flags both set, e.g.
+  `supplier-portal-api`) gets a third place in "Where should it run?": "This machine, one VM per
+  machine", next to its containers and the one helper VM. It runs through Isoloom's vagrant
+  target like a VM lab, on a ready hypervisor that form runs on (not UTM: its Vagrant plugin gives
+  a VM no private network, and Isoloom refuses it there); status, stop, pause, shut down and
+  provisioning follow the form the lab was started in, whatever the catalogue calls it.
+
 ### Fixed
 
 - **A lab on UTM waits for UTM to be open and answering before `vagrant up`.** Vagrant's UTM

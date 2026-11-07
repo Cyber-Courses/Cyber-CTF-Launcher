@@ -108,6 +108,28 @@ pub(crate) fn local_vm(dir: &Path) -> Option<String> {
     std::fs::read_to_string(dir.join(LOCAL_VM_MARKER)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
+/// Marks a container lab as started as one VM per machine on this machine (Isoloom's vagrant
+/// target, the form of a VM lab): the player's pick in "Where should it run?" for a lab whose
+/// spec has VM recipes too. Status, stop, park, provisioning and the attack box then follow the
+/// VM form (see [`local_runtime`]), whatever the catalogue calls the lab.
+pub const PER_MACHINE_MARKER: &str = ".cyberctf-per-machine-vm";
+
+pub(super) fn mark_per_machine_vm(dir: &Path, on: bool) -> Result<()> {
+    set_marker(dir, PER_MACHINE_MARKER, on.then_some("vm"))
+}
+
+/// Whether a container lab runs (or ran last) as one VM per machine on this machine.
+pub(crate) fn per_machine_vm(dir: &Path) -> bool {
+    dir.join(PER_MACHINE_MARKER).is_file()
+}
+
+/// The form lab `dir` runs in on this machine: `VM` for a container lab started as one VM per
+/// machine ([`PER_MACHINE_MARKER`]), else its own `runtime`. Every operation on a lab here goes
+/// through this, so the webview can keep naming the lab by its catalogue runtime.
+pub(crate) fn local_runtime(dir: &Path, runtime: Runtime) -> Runtime {
+    if runtime == Runtime::Docker && per_machine_vm(dir) { Runtime::Vm } else { runtime }
+}
+
 /// The host keys of a lab's own hosts that Vagrant runs (a lab VM here, a lab host on ESXi), for
 /// its attack box shell. Kept with the lab, not shared: another lab later given the same address
 /// (DHCP, a recycled IP) has another key, and a shared pin refused every shell to it.
@@ -156,6 +178,27 @@ mod tests {
         assert_eq!(local_vm(&dir).as_deref(), Some("virtualbox"));
         mark_local_vm(&dir, None).unwrap();
         assert_eq!(local_vm(&dir), None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_container_lab_started_as_vms_runs_as_a_vm_lab_here() {
+        use super::{local_runtime, mark_per_machine_vm, per_machine_vm};
+        let dir = temp_dir("cyberctf-permachine");
+        assert!(!per_machine_vm(&dir));
+        // Without the mark, every runtime is its own.
+        for rt in [Runtime::Docker, Runtime::Vm, Runtime::Cloud] {
+            assert_eq!(local_runtime(&dir, rt), rt);
+        }
+        mark_per_machine_vm(&dir, true).unwrap();
+        assert!(per_machine_vm(&dir));
+        // A container lab follows the VM form; a VM lab already does, a cloud lab never.
+        assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Vm);
+        assert_eq!(local_runtime(&dir, Runtime::Vm), Runtime::Vm);
+        assert_eq!(local_runtime(&dir, Runtime::Cloud), Runtime::Cloud);
+        mark_per_machine_vm(&dir, false).unwrap();
+        assert!(!per_machine_vm(&dir));
+        assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Docker);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::inflight::{Action, DeployGuard, lock_lab};
-use super::paths::{lab_dir, local_vm, mark_local_vm, mark_parked, parked, runner_home, vagrant_dirs};
+use super::paths::{lab_dir, local_runtime, local_vm, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm, runner_home, vagrant_dirs};
 use super::{LabRef, Park, Runtime, docker, isothrum, lab, server, vm};
 use crate::error::{Error, Result};
 
@@ -20,7 +20,8 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
     if server::lab_connection(dirs, dir)?.is_some() {
         return Err(Error::Invalid("Pausing a lab on a server host isn't available yet. Stop it instead.".into()));
     }
-    match runtime {
+    // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
+    match local_runtime(dir, runtime) {
         // A container lab in one local VM is paused (its state saved), never shut down.
         Runtime::Docker if local_vm(dir).is_some() => {
             refuse_vm_shutdown(mode)?;
@@ -78,7 +79,7 @@ pub(super) async fn resume_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime:
     log("Resuming the lab…".into());
     // The runner resumes a parked run as it was; when nothing is left of it, it drops the parked
     // mark and reports `NothingToResume`, so the page offers a fresh start.
-    match runtime {
+    match local_runtime(dir, runtime) {
         Runtime::Docker if local_vm(dir).is_some() => isothrum::LabRun::docker_in_vm(&runner_home(dirs)?, dir, id)?.resume(&mut *log).await?,
         Runtime::Docker => isothrum::LabRun::docker(&runner_home(dirs)?, dir, id)?.resume(&mut *log).await?,
         Runtime::Vm => isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?.resume(&mut *log).await?,
@@ -95,6 +96,8 @@ pub(super) async fn resume_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime:
 /// them gets none here; the labs so far declare none.
 async fn provision(dirs: &AppDirs, lab: LabRef<'_>, machine: Option<&str>, mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
+    // A container lab run as one VM per machine has VMs to provision, like a VM lab.
+    let runtime = local_runtime(dir, runtime);
     if runtime != Runtime::Vm {
         return Err(Error::Invalid("Container labs aren't provisioned in place: use Reset for a clean copy.".into()));
     }
@@ -148,7 +151,7 @@ pub(super) async fn stop_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: R
     // On this machine, through the runner: a container lab on Docker or in one local VM, or a VM
     // lab (its attack VM goes with it). Cloud-services have a host, so they never reach here.
     let Some(c) = server::lab_connection(dirs, dir)? else {
-        return match runtime {
+        return match local_runtime(dir, runtime) {
             Runtime::Docker if local_vm(dir).is_some() => stop_docker_in_vm_run(&runner_home(dirs)?, dir, id, log).await,
             Runtime::Docker => stop_docker_run(&runner_home(dirs)?, dir, id, log).await,
             Runtime::Vm => stop_vm_run(&runner_home(dirs)?, dir, id, log).await,
@@ -216,6 +219,7 @@ async fn stop_cloud_run(dirs: &AppDirs, stop: CloudStop<'_>, log: &mut impl FnMu
 /// is gone, clears what marked it as running. Takes the lab folder (no app handle), so the
 /// real-lab tests run exactly this.
 pub(super) async fn stop_here(dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+    let runtime = local_runtime(dir, runtime);
     let result = match runtime {
         Runtime::Docker if local_vm(dir).is_some() => vm::stop(&lab::vagrant_dir(dir, runtime), &[], log).await,
         Runtime::Docker => docker::stop(dir, id, log).await,
@@ -246,10 +250,11 @@ pub(super) async fn stop_vm_run(home: &std::path::Path, dir: &Path, id: &str, mu
     forget_run(dir)
 }
 
-/// A stopped lab's markers: where it ran, its local VM, parked.
+/// A stopped lab's markers: where it ran, its local VM, its per-machine form, parked.
 fn forget_run(dir: &Path) -> Result<()> {
     server::mark_lab(dir, None)?;
     mark_local_vm(dir, None)?;
+    mark_per_machine_vm(dir, false)?;
     mark_parked(dir, None)
 }
 
@@ -297,7 +302,9 @@ pub fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
     if server::marked_host(&dir).is_some_and(|h| !h.is_empty()) {
         return None;
     }
-    Some(if in_vm && local_vm(&dir).is_none() { Runtime::Vm } else { Runtime::Docker })
+    // Its VMs are its machines (a VM lab, or a container lab run as one VM per machine), unless
+    // the one VM is the helper a container lab runs inside.
+    Some(if per_machine_vm(&dir) || (in_vm && local_vm(&dir).is_none()) { Runtime::Vm } else { Runtime::Docker })
 }
 
 /// Stops lab `id` wherever it runs: the one Stop of the lab page, the Machine page and the

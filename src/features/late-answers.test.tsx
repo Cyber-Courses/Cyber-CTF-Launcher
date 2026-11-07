@@ -6,7 +6,7 @@ import { useSystemCheck } from "@/components/shell/use-system-check";
 import { useRunTarget } from "@/features/labs/lab-detail/use-run-target";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { useHostTests, useServerList } from "@/features/servers/use-server-list";
-import { SERVER_CHANGED, type ServerList, type ServerTest, type SystemReport } from "@/lib/tauri";
+import { SERVER_CHANGED, type Provider, type ServerList, type ServerTest, type SystemReport } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
 import { installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
@@ -92,5 +92,24 @@ describe("late answers", () => {
     rerender({ ready: ["virtualbox"] as never[] });
     await flush();
     expect(result.current.runOn).toEqual({ kind: "host", id: "esxi" });
+  });
+
+  it("offers one VM per machine for a lab with both forms, on a ready hypervisor that isn't UTM", async () => {
+    installTauri();
+    const both: LabRuntimeInfo = { runtime: "DOCKER", architectures: [], providers: ["virtualbox"], docker: true, vm: true };
+    const { result, rerender } = renderHook(({ ready }) => useRunTarget(both, ready, "aarch64"), { initialProps: { ready: ["utm"] as Provider[] } });
+    await flush();
+    // UTM alone: the helper VM, but no per-machine place (Isoloom refuses the form on UTM).
+    expect(result.current.localVm).toBe("utm");
+    expect(result.current.perMachine).toBeNull();
+    rerender({ ready: ["utm", "qemu"] });
+    await flush();
+    expect(result.current.perMachine).toMatchObject({ provider: "qemu", providers: ["qemu"] });
+    expect(result.current.hasChoice).toBe(true);
+    act(() => {
+      result.current.perMachine?.onPick("qemu");
+    });
+    expect(result.current.runOn).toEqual({ kind: "local-vms", provider: "qemu" });
+    expect(result.current.chosen()).toEqual({ kind: "local-vms", provider: "qemu" });
   });
 });

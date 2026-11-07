@@ -198,6 +198,8 @@ export function bindHost(url: string | null | undefined): string {
 export function restartTarget(status: LabStatus | undefined, hosts: ServerHost[], runOn: RunTarget, localVm: Provider | null): RunTarget {
   const host = hosts.find((h) => h.name === status?.host);
   if (host) return { kind: "host", id: host.id };
+  // One VM per machine: the status alone can't tell it from one helper VM, so the pick stands.
+  if (status?.host && runOn.kind === "local-vms") return runOn;
   const vm = status?.host ? (runOn.kind === "local-vm" ? runOn.provider : localVm) : null;
   return vm ? { kind: "local-vm", provider: vm } : { kind: "local" };
 }
