@@ -60,4 +60,3 @@ export function candidatesFor(target: RunTarget, provider?: Provider): string[] 
       return [`cloud-vm/${provider}`, `vagrant/${provider}`];
   }
 }
-

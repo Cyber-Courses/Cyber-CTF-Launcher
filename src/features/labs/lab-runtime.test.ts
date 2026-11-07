@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { emulatorReady, hasBothForms, hostSupports, localProviders, perMachineProviders, pickLocalHypervisor, readyHypervisors, runPlaces, runsNatively } from "@/features/labs/lab-runtime";
+import {
+  emulatorReady,
+  hasBothForms,
+  hostSupports,
+  localProviders,
+  perMachineProviders,
+  pickLocalHypervisor,
+  readyHypervisors,
+  runPlaces,
+  runsNatively,
+} from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { Provider, ServerHost, SystemReport } from "@/lib/tauri";
 

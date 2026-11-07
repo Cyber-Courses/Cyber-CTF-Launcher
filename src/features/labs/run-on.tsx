@@ -13,10 +13,7 @@ import { useT } from "@/lib/i18n";
  *  or, for a lab with VM recipes too, one VM per machine there), or a saved host.
  *  `ports` on this machine: chosen in the dialog (container labs), else asked at the start. */
 export type RunTarget =
-  | { kind: "local"; ports?: PortMode }
-  | { kind: "local-vm"; provider: Provider }
-  | { kind: "local-vms"; provider: Provider }
-  | { kind: "host"; id: string };
+  { kind: "local"; ports?: PortMode } | { kind: "local-vm"; provider: Provider } | { kind: "local-vms"; provider: Provider } | { kind: "host"; id: string };
 
 const targetKey = (t: RunTarget) => {
   switch (t.kind) {

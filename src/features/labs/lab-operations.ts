@@ -163,7 +163,10 @@ export const localLaunch =
     // attack VM's Vagrant box, when Settings start the attack box with each lab.
     const attackbox = remote || inLocalVm ? getAttackImage() : vm && getAutoAttackBox() ? getAttackBox() : null;
     await launchOrOfferOffline(lab.title, (offline) =>
-      labLaunch({ labId: lab.id, provider, host: host ?? null, attackboxImage: attackbox, defaultPorts: ports === "default", offline, perMachineVm: asVms }, log),
+      labLaunch(
+        { labId: lab.id, provider, host: host ?? null, attackboxImage: attackbox, defaultPorts: ports === "default", offline, perMachineVm: asVms },
+        log,
+      ),
     );
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);
