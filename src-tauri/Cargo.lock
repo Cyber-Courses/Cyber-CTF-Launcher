@@ -906,6 +906,7 @@ dependencies = [
  "isoloom-manifest",
  "isoloom-spec",
  "isoloom-targets",
+ "isothrum-machine",
  "isothrum-runner",
  "keyring",
  "libc",
@@ -2570,6 +2571,20 @@ dependencies = [
  "isoloom-render",
  "isoloom-spec",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "isothrum-machine"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "620850a1d06d7e3bc8581c19dc5cd82acc371753e3be92a3d07e9e79ed0d95f4"
+dependencies = [
+ "isothrum-runner",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

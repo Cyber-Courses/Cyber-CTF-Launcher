@@ -112,6 +112,12 @@ isoloom-manifest = "1.0.7"
 # The Isothrum runner: executes the run manifest Isoloom writes (`runtime/isothrum`, local Docker
 # behind the hidden developer flag `CYBERCTF_RUNNER=isothrum`). The published crates.io 1.0.3.
 isothrum-runner = "1.0.3"
+# The shared machine-setup domain. The launcher shares only the owned-downloads record format and
+# its parser/loader with the Isothrum desktop app through this crate (`storage::{Owned, …, load}`),
+# all present in the published 1.0.3. Its self-test, provider detection and system-check stay
+# launcher-side: they carry app-specific text, `Wire` error codes and the full WSL probe the shared
+# crate deliberately doesn't.
+isothrum-machine = "1.0.3"
 # The map type of the Isoloom crates' API (a cloud-services lab's outputs).
 portable-pty = "0.9"
 tauri-plugin-dialog = "2"
