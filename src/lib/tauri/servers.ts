@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
 import type * as Generated from "@/lib/tauri/generated";
 import type { HostCapacity, Provider, SelfTestEvent, ServerCheck, ServerCheckState, ServerTest } from "@/lib/tauri/generated";
+import type { CloudProvider } from "@/lib/tauri/cloud";
 
 export type { HostCapacity, ServerCheck, ServerCheckState, ServerTest };
 
@@ -32,7 +33,9 @@ export const serverMonthToDateCost = (id: string) => invoke<number>("server_mont
 export const serverCapacity = (id: string) => invoke<HostCapacity | null>("server_capacity", { id });
 /** Real-VM self-test: provisions a throwaway VM on the host, checks it, then destroys it. */
 export const serverSelftest = (id: string, onEvent: (e: SelfTestEvent) => void) => invokeStreaming("server_selftest", { id }, onEvent, "events");
-/** Opens (or focuses) the setup window, for a new host or to edit `id`. */
-export const serverOpenSetup = (id: string | null, kind: "server" | "cloud" = "server") => invokeUnit("server_open_setup", { id, kind });
+/** Opens (or focuses) the setup window, for a new host or to edit `id`. A new cloud account's
+ *  setup opens on `provider` when one is named (the Cloud page's Connect rows). */
+export const serverOpenSetup = (id: string | null, kind: "server" | "cloud" = "server", provider: CloudProvider | null = null) =>
+  invokeUnit("server_open_setup", provider ? { id, kind, provider } : { id, kind });
 /** Emitted by the setup window after a save; the main window reloads its host list. */
 export const SERVER_CHANGED = "server:changed";

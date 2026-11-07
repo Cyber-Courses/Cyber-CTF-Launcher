@@ -5,7 +5,7 @@ import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import { budgetedAccounts, cloudAccounts, isOverBudget, labsOnAccounts } from "@/features/cloud/cloud-model";
 import { useHostTests, useServerList } from "@/features/servers/use-server-list";
-import { serverMonthToDateCost, serverOpenSetup, serverRemove, type ServerHost } from "@/lib/tauri";
+import { serverMonthToDateCost, serverOpenSetup, serverRemove, type CloudProvider, type ServerHost } from "@/lib/tauri";
 import { getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
 import { ignore } from "@/lib/failure";
 import { describeError } from "@/lib/errors";
@@ -59,8 +59,9 @@ export function useCloudPage() {
     over: (hosts ?? []).filter((h) => isOverBudget(h, spend[h.id])),
     budgeted: budgetedAccounts(hosts ?? []),
     isBusy: (l: Lab) => !!runs[l.id]?.busy,
-    openSetup: (id: string | null = null) => {
-      serverOpenSetup(id, "cloud").catch(fail);
+    /** The cloud setup: editing account `id`, or a new account, on `provider` when one is named. */
+    openSetup: (id: string | null = null, provider: CloudProvider | null = null) => {
+      serverOpenSetup(id, "cloud", provider).catch(fail);
     },
     remove: (id: string) => {
       serverRemove(id).then(reload, fail);

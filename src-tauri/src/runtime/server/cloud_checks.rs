@@ -108,20 +108,83 @@ fn aws_credentials(r: Result<String>) -> First<String> {
     }
 }
 
-/// AWS `ec2 run-instances --dry-run`: it passes only on `DryRunOperation` (how AWS says "would
-/// have succeeded"), fails on `UnauthorizedOperation`, and anything else (throttling, an expired
-/// token, no default VPC, the network) is a warning with the reason, never a green line.
+/// The SSM public parameter naming the latest Amazon Linux 2023 image (x86_64, for the probe's
+/// `t3.micro`) in the account's region: a real, public image the dry run is checked against.
+const LATEST_AMAZON_LINUX: &str = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64";
+
+/// A well-formed image id no account has: AWS answers it with `InvalidAMIID.NotFound`, which it
+/// only says once the request is authorized. Used when the public parameter can't be read
+/// (`ssm:GetParameter` denied, SSM unreachable). Not a 17-character made-up id: AWS reads those
+/// as malformed before it looks at the permission at all.
+const UNKNOWN_IMAGE: &str = "ami-12345678";
+
+/// The image the launch probe dry-runs: the one SSM printed when it is an image id, else the
+/// unknown well-formed one.
+fn probe_image(latest: Result<String>) -> String {
+    match latest {
+        Ok(out) if out.trim().starts_with("ami-") && out.trim().len() > 4 && !out.trim().contains(char::is_whitespace) => out.trim().to_string(),
+        _ => UNKNOWN_IMAGE.to_string(),
+    }
+}
+
+/// The error code of a failed AWS CLI call: `Code` in "An error occurred (Code) when calling…".
+fn aws_error_code(stderr: &str) -> Option<&str> {
+    let start = stderr.find("An error occurred (")? + "An error occurred (".len();
+    let end = stderr[start..].find(')')?;
+    Some(&stderr[start..start + end])
+}
+
+/// Whether EC2 raises this error before it authorizes the request, so it says nothing about
+/// `ec2:RunInstances`: bad or expired credentials, throttling, a malformed or missing parameter,
+/// AWS itself, an account not yet usable. Every other code comes after authorization.
+fn before_authorization(code: &str) -> bool {
+    const BEFORE: &[&str] = &[
+        "AuthFailure",
+        "ExpiredToken",
+        "InvalidClientTokenId",
+        "SignatureDoesNotMatch",
+        "IncompleteSignature",
+        "RequestExpired",
+        "RequestLimitExceeded",
+        "Throttling",
+        "ServiceUnavailable",
+        "InternalError",
+        "InternalFailure",
+        "Unavailable",
+        "ValidationError",
+        "MissingParameter",
+        "InvalidParameter",
+        "UnknownParameter",
+        "OptInRequired",
+        "PendingVerification",
+        "AccessDenied",
+        "Blocked",
+    ];
+    BEFORE.iter().any(|b| code.starts_with(b)) || code.ends_with(".Malformed")
+}
+
+/// AWS `ec2 run-instances --dry-run` against the probe image: `DryRunOperation` (how AWS says
+/// "would have succeeded") passes; so does any error AWS only raises once the request is
+/// authorized (`InvalidAMIID.NotFound` for the unknown image, no default VPC, …), since the
+/// permission was checked first. `UnauthorizedOperation` fails. An error raised before
+/// authorization (throttling, an expired token, a malformed parameter, the network) is a warning
+/// with the reason, never a green line.
 fn launch_permission(dry: &Result<String>, arn: &str) -> Check {
+    const NAME: &str = "Launch permission";
+    let unconfirmed = |why: String| Check::warn(NAME, format!("Couldn't confirm EC2 launches are allowed: {why}"));
     match dry {
-        Err(Error::CommandFailed { stderr, .. }) if stderr.contains("DryRunOperation") => Check::ok("Launch permission", "Able to launch EC2 instances."),
-        Err(Error::CommandFailed { stderr, .. }) if stderr.contains("UnauthorizedOperation") => {
-            Check::fail("Launch permission", format!("{arn} can't launch EC2 (ec2:RunInstances is denied). Add EC2 permissions to it."))
-        }
-        Err(Error::CommandFailed { stderr, .. }) => {
-            Check::warn("Launch permission", format!("Couldn't confirm EC2 launches are allowed: {}", last_line(stderr)))
-        }
-        Err(e) => Check::warn("Launch permission", format!("Couldn't confirm EC2 launches are allowed: {e}")),
-        Ok(_) => Check::warn("Launch permission", "Couldn't confirm EC2 launches are allowed: the dry run gave no answer."),
+        Err(Error::CommandFailed { stderr, .. }) => match aws_error_code(stderr) {
+            Some("DryRunOperation") => Check::ok(NAME, "Able to launch EC2 instances."),
+            Some("UnauthorizedOperation") => Check::fail(NAME, format!("{arn} can't launch EC2 (ec2:RunInstances is denied). Add EC2 permissions to it.")),
+            Some(code) if before_authorization(code) => unconfirmed(last_line(stderr).to_string()),
+            Some(code) => Check::ok(
+                NAME,
+                format!("Able to launch EC2 instances (ec2:RunInstances is allowed; the dry run then stopped at {code}, about its probe image, not a lab's)."),
+            ),
+            None => unconfirmed(last_line(stderr).to_string()),
+        },
+        Err(e) => unconfirmed(e.to_string()),
+        Ok(_) => unconfirmed("the dry run gave no answer.".to_string()),
     }
 }
 
@@ -137,8 +200,8 @@ fn budget_outcome(limit: f64, spent: Result<f64>) -> Check {
 }
 
 /// AWS: a checklist run before launch. Verifies the credentials (`sts get-caller-identity`), that
-/// the identity can launch EC2 (`ec2 run-instances --dry-run`, which creates nothing), Terraform,
-/// and the monthly budget when one is set.
+/// the identity can launch EC2 (`ec2 run-instances --dry-run` against the region's latest Amazon
+/// Linux image, which creates nothing), Terraform, and the monthly budget when one is set.
 pub(super) async fn test_aws(h: &HostProfile, password: &str) -> TestResult {
     let started = Instant::now();
     let env = terraform_env(h, password);
@@ -151,10 +214,10 @@ pub(super) async fn test_aws(h: &HostProfile, password: &str) -> TestResult {
         Err(done) => return done,
     };
 
-    // 2) Launch permission. A dry run creates nothing; it only checks ec2:RunInstances.
-    let dry =
-        aws_cmd(h, &env, &["ec2", "run-instances", "--dry-run", "--instance-type", "t3.micro", "--image-id", "ami-00000000000000000", "--output", "text"])
-            .await;
+    // 2) Launch permission. A dry run creates nothing; it checks ec2:RunInstances against a real
+    //    public image of the region (a made-up id is refused before the permission is looked at).
+    let image = probe_image(aws_cmd(h, &env, &["ssm", "get-parameter", "--name", LATEST_AMAZON_LINUX, "--query", "Parameter.Value", "--output", "text"]).await);
+    let dry = aws_cmd(h, &env, &["ec2", "run-instances", "--dry-run", "--instance-type", "t3.micro", "--image-id", &image, "--output", "text"]).await;
     checks.push(launch_permission(&dry, &arn));
 
     // 3) Terraform.
@@ -345,6 +408,7 @@ pub(super) async fn test_oci(h: &HostProfile) -> TestResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::exec::fake::{Reply, Tools, fail, ok};
     use crate::runtime::providers::Provider;
     use crate::runtime::server::checks::CheckState;
     use crate::runtime::server::profile::tests::profile;
@@ -454,30 +518,155 @@ mod tests {
 
     #[test]
     fn only_an_unauthorized_dry_run_denies_launching() {
-        let denied = Err(failed("An error occurred (UnauthorizedOperation) when calling RunInstances"));
+        let denied = Err(failed("An error occurred (UnauthorizedOperation) when calling the RunInstances operation: You are not authorized"));
         let c = launch_permission(&denied, "arn:x");
         assert_eq!(c.state, CheckState::Fail);
         assert!(c.detail.starts_with("arn:x can't launch EC2"), "{}", c.detail);
-        // DryRunOperation is how AWS says "would have succeeded", and the only pass.
-        assert_eq!(launch_permission(&Err(failed("(DryRunOperation) Request would have succeeded")), "arn:x").state, CheckState::Ok);
+        // DryRunOperation is how AWS says "would have succeeded".
+        let c = launch_permission(
+            &Err(failed("An error occurred (DryRunOperation) when calling the RunInstances operation: Request would have succeeded")),
+            "arn:x",
+        );
+        assert_eq!((c.state, c.detail.as_str()), (CheckState::Ok, "Able to launch EC2 instances."));
     }
 
     #[test]
-    fn a_dry_run_that_failed_otherwise_is_a_warning_with_its_reason_not_a_pass() {
-        // Regression: any error but UnauthorizedOperation (throttling, an expired token, no
-        // default VPC, the network) showed a green "Able to launch EC2".
+    fn an_error_aws_raises_after_authorizing_the_dry_run_passes_the_permission_check() {
+        // Regression: the probe used a made-up image id, which AWS refuses as malformed before it
+        // looks at the permission, so every signed-in account read "Needs attention". The unknown
+        // well-formed image (NotFound) and anything else past authorization mean the permission
+        // itself passed.
+        for stderr in [
+            "An error occurred (InvalidAMIID.NotFound) when calling the RunInstances operation: The image id '[ami-12345678]' does not exist",
+            "An error occurred (VPCIdNotSpecified) when calling the RunInstances operation: No default VPC for this user",
+            "An error occurred (InstanceLimitExceeded) when calling the RunInstances operation: You have requested more vCPU capacity than your current limit",
+        ] {
+            let c = launch_permission(&Err(failed(stderr)), "arn:x");
+            assert_eq!(c.state, CheckState::Ok, "{stderr}");
+            assert!(c.detail.starts_with("Able to launch EC2 instances (ec2:RunInstances is allowed; the dry run then stopped at "), "{}", c.detail);
+        }
+        let c = launch_permission(&Err(failed("x\nAn error occurred (VPCIdNotSpecified) when calling the RunInstances operation: No default VPC")), "arn:x");
+        assert!(c.detail.contains("stopped at VPCIdNotSpecified,"), "{}", c.detail);
+    }
+
+    #[test]
+    fn a_dry_run_that_failed_before_authorization_is_a_warning_with_its_reason_not_a_pass() {
+        // Throttling, an expired token, a malformed id, AWS itself: none says whether the
+        // permission is there.
         for stderr in [
             "An error occurred (RequestLimitExceeded) when calling the RunInstances operation",
             "An error occurred (ExpiredToken) when calling the RunInstances operation: The security token included in the request is expired",
-            "An error occurred (VPCIdNotSpecified) when calling the RunInstances operation: No default VPC for this user",
+            "An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: \"ami-00000000000000000\" (expecting \"ami-...\")",
+            "An error occurred (InvalidParameterValue) when calling the RunInstances operation: Value (t3.micro) for parameter instanceType is invalid",
+            "An error occurred (InternalError) when calling the RunInstances operation: An internal error has occurred",
         ] {
             let c = launch_permission(&Err(failed(stderr)), "arn:x");
             assert_eq!(c.state, CheckState::Warn, "{stderr}");
             assert_eq!(c.detail, format!("Couldn't confirm EC2 launches are allowed: {stderr}"));
         }
+        // No AWS error code at all: the CLI or the network, quoted.
+        let c = launch_permission(&Err(failed("Could not connect to the endpoint URL: \"https://ec2.eu-west-3.amazonaws.com/\"")), "arn:x");
+        assert_eq!(c.state, CheckState::Warn);
+        assert!(c.detail.ends_with("Could not connect to the endpoint URL: \"https://ec2.eu-west-3.amazonaws.com/\""), "{}", c.detail);
         let timed_out = launch_permission(&Err(missing()), "arn:x");
         assert_eq!(timed_out.state, CheckState::Warn);
         assert_eq!(launch_permission(&Ok(String::new()), "arn:x").state, CheckState::Warn);
+    }
+
+    #[test]
+    fn the_probe_image_is_the_one_ssm_printed_else_the_unknown_well_formed_one() {
+        assert_eq!(probe_image(Ok("ami-07dcdf1066ae9dad3\n".into())), "ami-07dcdf1066ae9dad3");
+        assert_eq!(probe_image(Ok(String::new())), UNKNOWN_IMAGE);
+        assert_eq!(probe_image(Ok("None\n".into())), UNKNOWN_IMAGE);
+        assert_eq!(probe_image(Ok("ami-1 ami-2".into())), UNKNOWN_IMAGE);
+        assert_eq!(probe_image(Err(failed("An error occurred (AccessDeniedException) when calling the GetParameter operation"))), UNKNOWN_IMAGE);
+        assert_eq!(probe_image(Err(missing())), UNKNOWN_IMAGE);
+        assert_eq!(aws_error_code("x\nAn error occurred (InvalidAMIID.NotFound) when calling"), Some("InvalidAMIID.NotFound"));
+        assert_eq!(aws_error_code("An error occurred (broken"), None);
+        assert_eq!(aws_error_code("timed out"), None);
+    }
+
+    /// The AWS checklist on scripted tools: `dry` answers the dry run, `latest` the SSM lookup.
+    async fn aws_checklist(latest: Option<Reply>, dry: Option<Reply>) -> (Tools, TestResult) {
+        let tools = Tools::rules(&[
+            ("sts get-caller-identity", ok("arn:aws:iam::1:user/me\n")),
+            ("ssm get-parameter", latest),
+            ("ec2 run-instances", dry),
+            ("terraform version", ok("Terraform v1.9")),
+        ]);
+        let result = test_aws(&profile(Provider::Aws), "s3cret").await;
+        (tools, result)
+    }
+
+    fn launch_check(result: &TestResult) -> &Check {
+        result.checks.iter().find(|c| c.name == "Launch permission").expect("a launch permission check")
+    }
+
+    /// The AWS checklist against the real account the host's AWS CLI is signed in to (its default
+    /// profile, `CYBERCTF_TEST_AWS_REGION` or eu-west-3), as the Cloud page's Test runs it: the
+    /// launch permission must come back confirmed, not "couldn't confirm". Creates nothing.
+    /// `cargo test --lib -- --ignored --nocapture the_real_aws_account_test_confirms_the_launch_permission`
+    #[tokio::test]
+    #[ignore = "needs the AWS CLI signed in to a real account"]
+    async fn the_real_aws_account_test_confirms_the_launch_permission() {
+        let h = HostProfile {
+            use_cli_creds: true,
+            host: std::env::var("CYBERCTF_TEST_AWS_REGION").unwrap_or_else(|_| "eu-west-3".into()),
+            datastore: None,
+            network: None,
+            node: None,
+            ..profile(Provider::Aws)
+        };
+        let result = test_aws(&h, "").await;
+        for c in &result.checks {
+            println!("{:?} {}: {}", c.state, c.name, c.detail);
+        }
+        let launch = launch_check(&result);
+        assert_eq!((launch.state, launch.detail.as_str()), (CheckState::Ok, "Able to launch EC2 instances."));
+    }
+
+    #[tokio::test]
+    async fn the_launch_probe_dry_runs_the_latest_amazon_linux_image_of_the_region() {
+        let dry = fail("An error occurred (DryRunOperation) when calling the RunInstances operation: Request would have succeeded, but DryRun flag is set.");
+        let (tools, result) = aws_checklist(ok("ami-07dcdf1066ae9dad3\n"), dry).await;
+        assert!(result.ok, "{:?}", result.checks);
+        assert_eq!((launch_check(&result).state, launch_check(&result).detail.as_str()), (CheckState::Ok, "Able to launch EC2 instances."));
+        assert!(tools.called(&format!("ssm get-parameter --name {LATEST_AMAZON_LINUX} --query Parameter.Value --output text")), "{:?}", tools.calls());
+        assert!(tools.called("ec2 run-instances --dry-run --instance-type t3.micro --image-id ami-07dcdf1066ae9dad3 --output text"), "{:?}", tools.calls());
+        // The probe runs with the account's own keys and region, like every other call.
+        assert_eq!(tools.env_of("ec2 run-instances", "AWS_REGION").as_deref(), Some("10.0.0.5"));
+        assert_eq!(tools.env_of("ssm get-parameter", "AWS_SECRET_ACCESS_KEY").as_deref(), Some("s3cret"));
+    }
+
+    #[tokio::test]
+    async fn the_launch_probe_falls_back_to_an_unknown_image_when_the_parameter_cant_be_read() {
+        let denied = fail(
+            "An error occurred (AccessDeniedException) when calling the GetParameter operation: User: arn:aws:iam::1:user/me is not authorized to perform: ssm:GetParameter",
+        );
+        let not_found = fail("An error occurred (InvalidAMIID.NotFound) when calling the RunInstances operation: The image id '[ami-12345678]' does not exist");
+        let (tools, result) = aws_checklist(denied, not_found).await;
+        assert!(result.ok, "{:?}", result.checks);
+        assert_eq!(launch_check(&result).state, CheckState::Ok);
+        assert!(tools.called(&format!("--image-id {UNKNOWN_IMAGE} ")), "{:?}", tools.calls());
+    }
+
+    #[tokio::test]
+    async fn a_denied_dry_run_fails_the_checklist_with_the_identity() {
+        let denied =
+            fail("An error occurred (UnauthorizedOperation) when calling the RunInstances operation: You are not authorized to perform this operation.");
+        let (_tools, result) = aws_checklist(ok("ami-07dcdf1066ae9dad3\n"), denied).await;
+        assert!(!result.ok);
+        let c = launch_check(&result);
+        assert_eq!(c.state, CheckState::Fail);
+        assert_eq!(c.detail, "arn:aws:iam::1:user/me can't launch EC2 (ec2:RunInstances is denied). Add EC2 permissions to it.");
+    }
+
+    #[tokio::test]
+    async fn a_throttled_dry_run_leaves_the_checklist_passing_with_a_warning() {
+        let throttled = fail("An error occurred (RequestLimitExceeded) when calling the RunInstances operation: Request limit exceeded.");
+        let (_tools, result) = aws_checklist(ok("ami-07dcdf1066ae9dad3\n"), throttled).await;
+        assert_eq!(launch_check(&result).state, CheckState::Warn);
+        assert!(launch_check(&result).detail.ends_with("Request limit exceeded."), "{}", launch_check(&result).detail);
     }
 
     #[test]

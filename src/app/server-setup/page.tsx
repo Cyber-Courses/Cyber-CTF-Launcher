@@ -1,11 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { HostSetupPage, SetupTrademarks, EMPTY_CLOUD, EMPTY_HOST } from "@/features/servers/host-setup";
-import { isCloud } from "@/features/servers/host-setup/setup-model";
+import { HostSetupPage, SetupTrademarks } from "@/features/servers/host-setup";
+import { isCloud, startingForm } from "@/features/servers/host-setup/setup-model";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/toaster";
 import { SERVER_CHANGED, serverList, systemCheck, type ServerHostInput, type SystemReport } from "@/lib/tauri";
@@ -18,8 +18,9 @@ function Setup() {
   const t = useT();
   const params = useSearchParams();
   const id = params.get("id");
-  const empty = params.get("kind") === "cloud" ? EMPTY_CLOUD : EMPTY_HOST;
-  const [initial, setInitial] = useState<ServerHostInput | null>(id ? null : { ...empty });
+  // A new setup starts from the kind (and cloud provider) the query names; editing loads the host.
+  const empty = useMemo(() => startingForm(params.get("kind"), params.get("provider")), [params]);
+  const [initial, setInitial] = useState<ServerHostInput | null>(id ? null : empty);
   const [report, setReport] = useState<SystemReport | null>(null);
 
   const check = () => {

@@ -9,7 +9,7 @@ import { Spinner } from "@/components/ui/spinner";
 import type { Lab } from "@/features/labs/use-labs";
 import { AccountRow, LogoTile } from "@/features/cloud/account-row";
 import { MAIN_PROVIDERS, isOverBudget } from "@/features/cloud/cloud-model";
-import type { LabStatus, ServerHost, ServerTest } from "@/lib/tauri";
+import type { CloudProvider, LabStatus, ServerHost, ServerTest } from "@/lib/tauri";
 import { useFormat, useT } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
 
@@ -62,7 +62,8 @@ export function RunningCloudLabs({
   );
 }
 
-/** The connected accounts, then a "connect" row for each main provider not connected yet. */
+/** The connected accounts, then a "connect" row for each main provider not connected yet;
+ *  `onConnect` opens the setup on that row's provider. */
 export function AccountsPanel({
   accounts,
   tests,
@@ -70,7 +71,7 @@ export function AccountsPanel({
   onTest,
   onEdit,
   onRemove,
-  onSetup,
+  onConnect,
 }: {
   accounts: ServerHost[];
   tests: Partial<Record<string, ServerTest | "testing">>;
@@ -78,7 +79,7 @@ export function AccountsPanel({
   onTest: (id: string) => void;
   onEdit: (id: string) => void;
   onRemove: (id: string) => void;
-  onSetup: () => void;
+  onConnect: (provider: CloudProvider) => void;
 }) {
   const t = useT();
   return (
@@ -103,21 +104,32 @@ export function AccountsPanel({
       ))}
       {/* The main providers not connected yet, one click from their setup. */}
       {MAIN_PROVIDERS.filter((p) => !accounts.some((h) => h.provider === p.id)).map((p) => (
-        <div
-          key={p.id}
-          className="grid min-h-[3.25rem] grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3.5 border-t border-border px-4 py-2.5 transition-colors hover:bg-glass"
-        >
-          <LogoTile provider={p.id} />
-          <div className="min-w-0">
-            <p className="truncate text-[0.8125rem] font-medium text-foreground">{p.label}</p>
-            <p className="truncate font-mono text-[0.6875rem] text-faint">{t("cloud.screen.notConnected")}</p>
-          </div>
-          <Button variant="outline" size="xs" onClick={onSetup}>
-            {t("cloud.screen.connect")}
-          </Button>
-        </div>
+        <ConnectRow key={p.id} provider={p.id} label={p.label} onConnect={onConnect} />
       ))}
     </Panel>
+  );
+}
+
+/** A main provider not connected yet: its name, and Connect, which opens the setup on it. */
+function ConnectRow({ provider, label, onConnect }: { provider: CloudProvider; label: string; onConnect: (provider: CloudProvider) => void }) {
+  const t = useT();
+  return (
+    <div className="grid min-h-[3.25rem] grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3.5 border-t border-border px-4 py-2.5 transition-colors hover:bg-glass">
+      <LogoTile provider={provider} />
+      <div className="min-w-0">
+        <p className="truncate text-[0.8125rem] font-medium text-foreground">{label}</p>
+        <p className="truncate font-mono text-[0.6875rem] text-faint">{t("cloud.screen.notConnected")}</p>
+      </div>
+      <Button
+        variant="outline"
+        size="xs"
+        onClick={() => {
+          onConnect(provider);
+        }}
+      >
+        {t("cloud.screen.connect")}
+      </Button>
+    </div>
   );
 }
 

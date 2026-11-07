@@ -26,7 +26,7 @@ pub struct TestResult {
 }
 
 /// One named pre-flight check in a cloud account test (e.g. "Credentials", "Terraform").
-#[derive(Serialize, Clone, TS)]
+#[derive(Debug, Serialize, Clone, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "ServerCheck")]
 pub struct Check {

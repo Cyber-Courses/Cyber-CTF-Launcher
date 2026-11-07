@@ -182,7 +182,8 @@ const appCommands = {
     return null;
   },
   server_open_setup: (args) => {
-    const id = args?.id ? `?id=${encodeURIComponent(argText(args.id))}` : args?.kind === "cloud" ? "?kind=cloud" : "";
+    const provider = args?.provider ? `&provider=${encodeURIComponent(argText(args.provider))}` : "";
+    const id = args?.id ? `?id=${encodeURIComponent(argText(args.id))}` : args?.kind === "cloud" ? `?kind=cloud${provider}` : "";
     openWindow(`/server-setup${id}`);
     return null;
   },

@@ -76,7 +76,9 @@ function Accounts({ page, onSetup }: { page: CloudPage; onSetup: () => void }) {
       onTest={page.test}
       onEdit={page.openSetup}
       onRemove={page.remove}
-      onSetup={onSetup}
+      onConnect={(provider) => {
+        page.openSetup(null, provider);
+      }}
     />
   );
 }

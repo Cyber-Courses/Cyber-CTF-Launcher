@@ -5,6 +5,8 @@ import {
   CLOUD_DEFAULT_NAME,
   CLOUD_META,
   DO_REGIONS,
+  EMPTY_CLOUD,
+  EMPTY_HOST,
   GCP_REGIONS,
   KIND,
   LINODE_REGIONS,
@@ -72,6 +74,14 @@ export function withProvider(s: ServerHostInput, id: CloudProvider): ServerHostI
     // Budget is AWS-only; don't carry one typed on AWS over to Azure/GCP.
     monthlyLimit: id === "aws" ? s.monthlyLimit : null,
   };
+}
+
+/** The form a new setup starts from, as its window's query names it: a server, a new cloud
+ *  account, or one on the cloud `provider` named (the Cloud page's Connect rows open the setup
+ *  with that provider picked at its first step). An unknown provider starts as a plain new account. */
+export function startingForm(kind: string | null, provider: string | null): ServerHostInput {
+  if (kind !== "cloud") return { ...EMPTY_HOST };
+  return provider !== null && isCloud(provider as RemoteProvider) ? withProvider(EMPTY_CLOUD, provider as CloudProvider) : { ...EMPTY_CLOUD };
 }
 
 /** Whether the connection / credentials step has what it needs to go on. `secretKept`: a saved

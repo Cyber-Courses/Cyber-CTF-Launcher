@@ -11,6 +11,7 @@ import {
   saveName,
   setupSteps,
   setupTitle,
+  startingForm,
   withProvider,
 } from "@/features/servers/host-setup/setup-model";
 
@@ -38,6 +39,24 @@ describe("setupSteps", () => {
     expect(setupSteps("azure", false)).toEqual(["provider", "tools", "credentials", "options", "test"]);
     expect(setupSteps("aws", true)).toEqual(["account", "credentials", "options", "test"]);
     expect(setupSteps("oci", true)).toEqual(["credentials", "options", "test"]);
+  });
+});
+
+describe("startingForm", () => {
+  it("starts a server, a cloud account, or the named cloud's account", () => {
+    expect(startingForm(null, null)).toEqual(EMPTY_HOST);
+    expect(startingForm("server", "azure")).toEqual(EMPTY_HOST);
+    expect(startingForm("cloud", null)).toEqual(EMPTY_CLOUD);
+    const azure = startingForm("cloud", "azure");
+    expect(azure).toMatchObject({ provider: "azure", host: DEFAULT_REGION.azure, useCliCreds: false, name: "Azure" });
+    expect(startingForm("cloud", "gcp").provider).toBe("gcp");
+  });
+
+  it("starts a plain new account on a provider it doesn't know", () => {
+    expect(startingForm("cloud", "proxmox")).toEqual(EMPTY_CLOUD);
+    expect(startingForm("cloud", "")).toEqual(EMPTY_CLOUD);
+    // A fresh copy each time: the window keeps its own form.
+    expect(startingForm("cloud", null)).not.toBe(EMPTY_CLOUD);
   });
 });
 
