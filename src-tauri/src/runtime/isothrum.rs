@@ -34,6 +34,18 @@ use std::sync::Arc;
 use isothrum_runner::{Occupied, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, SystemProcesses};
 
 use super::docker::{Check, PORTS_ENV};
+
+/// How long an operation the player asked for waits for the run's lock: the page's own status
+/// checks (a few seconds each, every so often) hold it too, and a Pause clicked while one runs
+/// must wait for it, not fail with "another operation is in progress".
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+/// Between two tries for the lock.
+const LOCK_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Whether `e` is the run's lock held by another operation, with time left to wait for it.
+fn lock_held(e: &isothrum_runner::Error, deadline: std::time::Instant) -> bool {
+    e.code() == isothrum_runner::ErrorCode::Locked && std::time::Instant::now() < deadline
+}
 use super::{LabStatus, Park, Place, Runtime, lab, paths};
 use crate::error::Result;
 
@@ -191,8 +203,14 @@ impl LabRun {
         }
         let lab = self.lab()?;
         let opts = self.placed(RunOptions::new());
-        let (sink, lines) = progress::channel();
-        progress::follow(log, lines, lab.down(&opts, &sink)).await.map_err(errors::from_runner)
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            let (sink, lines) = progress::channel();
+            match progress::follow(&mut *log, lines, lab.down(&opts, &sink)).await {
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+                r => return r.map(|_| ()).map_err(errors::from_runner),
+            }
+        }
     }
 
     /// Parks the lab, keeping what it created: Docker only stops containers, so both of the
@@ -206,8 +224,14 @@ impl LabRun {
             (Kind::Vm | Kind::DockerVm, Park::Pause) => isothrum_runner::Park::Pause,
             _ => isothrum_runner::Park::Shutdown,
         };
-        let (sink, lines) = progress::channel();
-        progress::follow(log, lines, lab.park(mode, &sink)).await.map_err(errors::from_runner)
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            let (sink, lines) = progress::channel();
+            match progress::follow(&mut *log, lines, lab.park(mode, &sink)).await {
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+                r => return r.map(|_| ()).map_err(errors::from_runner),
+            }
+        }
     }
 
     /// Starts the parked lab again. When nothing is left of it, the launcher's parked mark goes
@@ -215,8 +239,15 @@ impl LabRun {
     pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
         let lab = self.lab()?;
         let opts = self.placed(RunOptions::new());
-        let (sink, lines) = progress::channel();
-        match progress::follow(log, lines, lab.resume(&opts, &sink)).await {
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        let outcome = loop {
+            let (sink, lines) = progress::channel();
+            match progress::follow(&mut *log, lines, lab.resume(&opts, &sink)).await {
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+                r => break r,
+            }
+        };
+        match outcome {
             Ok(_) => Ok(()),
             Err(e) if e.code() == isothrum_runner::ErrorCode::NothingToResume => {
                 paths::mark_parked(&self.dir, None)?;
@@ -243,8 +274,14 @@ impl LabRun {
     pub(crate) async fn provision(&self, machine: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let lab = self.lab()?;
         let opts = self.placed(RunOptions::new());
-        let (sink, lines) = progress::channel();
-        progress::follow(log, lines, lab.provision(machine, &opts, &sink)).await.map_err(errors::from_runner)
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            let (sink, lines) = progress::channel();
+            match progress::follow(&mut *log, lines, lab.provision(machine, &opts, &sink)).await {
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+                r => return r.map(|_| ()).map_err(errors::from_runner),
+            }
+        }
     }
 
     /// Runs the lab's checks; not available when it declares none (nothing runs then).
@@ -258,10 +295,12 @@ impl LabRun {
     pub(crate) async fn attach(&self, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let lab = self.lab()?;
         let mut tried_again = false;
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
         loop {
             let (sink, lines) = progress::channel();
             match progress::follow(&mut *log, lines, lab.attach(None, network, image, &sink)).await {
                 Ok(_) => return Ok(()),
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
                 Err(e) if self.kind == Kind::DockerVm && !tried_again && e.to_string().contains("(-600)") => {
                     log(UTM_TRANSIENT_RETRY.into());
                     tried_again = true;
@@ -274,8 +313,14 @@ impl LabRun {
     /// Takes the attack box back out of the running lab, leaving the rest of the lab up.
     pub(crate) async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
         let lab = self.lab()?;
-        let (sink, lines) = progress::channel();
-        progress::follow(log, lines, lab.detach(None, &sink)).await.map_err(errors::from_runner)
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            let (sink, lines) = progress::channel();
+            match progress::follow(&mut *log, lines, lab.detach(None, &sink)).await {
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+                r => return r.map(|_| ()).map_err(errors::from_runner),
+            }
+        }
     }
 
     /// The attack box's status: its access machine as the runner reports it, its address on

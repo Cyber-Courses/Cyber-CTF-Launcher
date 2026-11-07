@@ -59,6 +59,10 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   the retry succeeded the page read it as plain Docker: not running, no machines, "Shut down"
   offered, the attack box refusing. Each attempt marks it again; the page and the Deployment
   panel now also say "a VM on this machine" for such a lab, whatever the picker last held.
+- **Pause, Resume, Stop and the attack box wait for the lab's own checks instead of failing.**
+  The page's periodic status check holds the run for a few seconds, and a Pause clicked meanwhile
+  failed with "Another operation on this lab is already in progress". The player's operations now
+  wait up to a minute for the run to be free.
 - **Switching the hypervisor is one click.** The hypervisor chosen in Settings never reached the
   header, which named the first ready one (QEMU before UTM), and the Machine setup's pick wasn't
   saved as the choice at all. Both follow the choice now, and "Where should it run?" carries a
