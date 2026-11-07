@@ -19,12 +19,12 @@ async function openLab(page: Page, search: string, title: string) {
   await expect(breadcrumb(page)).toHaveText(title);
 }
 
-/** Start lab, then Start in "Where should it run?" (this machine, random ports). */
+/** Start lab, then Start in "Where should it run?" (this machine's containers, not its VM; random ports). */
 async function startHere(page: Page) {
   await page.getByRole("button", { name: "Start lab" }).click();
   const where = page.getByRole("dialog", { name: "Where should the lab run?" });
   await expect(where).toBeVisible();
-  await expect(where.getByRole("radio", { name: /This machine/ })).toHaveAttribute("aria-checked", "true");
+  await expect(where.getByRole("radio", { name: /This machine On your system/ })).toHaveAttribute("aria-checked", "true");
   await expect(where.getByRole("radio", { name: /Random ports/ })).toHaveAttribute("aria-checked", "true");
   await where.getByRole("button", { name: "Start", exact: true }).click();
   await expect(where).toBeHidden();
