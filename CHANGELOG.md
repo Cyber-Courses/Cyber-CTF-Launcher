@@ -4,6 +4,19 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A lab on UTM waits for UTM to be open and answering before `vagrant up`.** Vagrant's UTM
+  plugin reads the VM's state and its forwarded ports from the UTM app through Apple events, and
+  a UTM not running yet, or one macOS doesn't let Cyber CTF control, failed the start mid-way
+  with "Application isn't running (-600)". UTM is now opened first and waited for; an Automation
+  refusal is named with its way out.
+- **Setup checks the versions of UTM and its Vagrant plugin, not only their presence.** A
+  `vagrant_utm` older than 0.2.0 reads as not installed, so setup installs it again (which
+  updates it), and a UTM older than 4.6.5 (the oldest the plugin drives) is named as too old.
+
 ## [1.8.8] — 2026-11-07
 
 ### Fixed

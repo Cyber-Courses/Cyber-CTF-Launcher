@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
 use super::{CLOUD_NEEDS_ACCOUNT, LocalRun, Provider, Runtime, budget_verdict, emulated_arches, local_run, low_memory_warning, parse_ipv4};
 use super::{server, warn_if_low_memory};
 use crate::platform::exec::fake::Tools;
@@ -250,4 +251,24 @@ fn resolver_answers_must_be_one_ipv4() {
     assert_eq!(parse_ipv4("2001:db8::1"), None);
     assert_eq!(parse_ipv4("<html>blocked</html>"), None);
     assert_eq!(parse_ipv4(""), None);
+}
+
+#[test]
+fn an_automation_refusal_is_told_apart_from_a_utm_still_opening() {
+    // macOS refusing this app Apple events (no wait fixes it) against a UTM not answering yet.
+    assert!(utm_not_allowed("54:63: execution error: Not authorized to send Apple events to UTM. (-1743)"));
+    assert!(utm_not_allowed("UTM got an error: (-1743)"));
+    assert!(!utm_not_allowed("execution error: UTM got an error: Application isn't running. (-600)"));
+    assert!(!utm_not_allowed(""));
+    assert!(UTM_NOT_ALLOWED.contains("Automation"));
+}
+
+/// The real UTM, opened cold: run by hand before a release with UTM quit (`osascript -e 'tell
+/// application "UTM" to quit'`), so the wait covers its launch.
+#[tokio::test]
+#[ignore = "opens the real UTM (macOS, UTM installed)"]
+async fn utm_is_opened_and_answers_before_a_vm_starts() {
+    let mut lines = Vec::new();
+    check_utm(&mut |l| lines.push(l)).await.unwrap();
+    println!("said: {lines:?}");
 }

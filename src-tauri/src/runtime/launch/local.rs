@@ -1,5 +1,8 @@
 //! Getting this machine ready for a local start: the lab's slot cleared, enough memory, QEMU
-//! for emulated machines, and a local VM start with one recovery from leftover state.
+//! for emulated machines, UTM open and answering, and a local VM start with one recovery from
+//! leftover state.
+
+use std::time::Duration;
 
 use super::{Error, Result, lab};
 
@@ -62,4 +65,52 @@ pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(St
         ));
     }
     Ok(())
+}
+
+/// How long UTM may take to open and answer Apple events.
+const UTM_WAIT: Duration = Duration::from_secs(60);
+
+/// What UTM is asked, once it runs: its name, the cheapest Apple event it answers.
+const UTM_PROBE: &str = "tell application \"UTM\" to get name";
+
+/// Why UTM refused the probe when macOS doesn't let this app drive it, with the way out.
+pub(super) const UTM_NOT_ALLOWED: &str =
+    "macOS doesn't let Cyber CTF control UTM: allow it under System Settings › Privacy & Security › Automation, then start the lab again.";
+
+/// A lab on UTM: Vagrant's UTM plugin drives UTM through Apple events (`osascript`, `utmctl`),
+/// reading the VM's state and its forwarded ports from the app, so a UTM that isn't running when
+/// `vagrant up` asks, or that this app may not control, fails that read mid-start ("Application
+/// isn't running (-600)", "Not authorized to send Apple events (-1743)"). UTM is opened first, in
+/// the background (its first-launch dialogs then face the player instead of failing a launch from
+/// behind), and waited for until it answers; the automation refusal is named with its way out.
+pub(super) async fn check_utm(log: &mut impl FnMut(String)) -> Result<()> {
+    if crate::platform::exec::run("open", &["-g", "-a", "UTM"], None).await.is_err() {
+        return Err(Error::Invalid("UTM isn't installed (no UTM app): install it from the Machine page.".into()));
+    }
+    let started = std::time::Instant::now();
+    let mut said = false;
+    loop {
+        let probe = crate::platform::exec::run_env_timed("osascript", &["-e", UTM_PROBE], None, &[], Duration::from_secs(15)).await;
+        match probe {
+            Ok(_) => return Ok(()),
+            Err(Error::CommandFailed { stderr, .. }) if utm_not_allowed(&stderr) => return Err(Error::Invalid(UTM_NOT_ALLOWED.into())),
+            Err(e) if started.elapsed() >= UTM_WAIT => {
+                return Err(Error::Invalid(format!("UTM didn't answer within {} s ({e}): open UTM, then start the lab again.", UTM_WAIT.as_secs())));
+            }
+            Err(_) => {
+                if !said {
+                    log("Opening UTM and waiting for it to answer…".into());
+                    said = true;
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
+    }
+}
+
+/// Whether `osascript`'s complaint is macOS refusing this app Apple events to UTM (the
+/// Automation permission), which no wait fixes: `Not authorized to send Apple events to UTM.
+/// (-1743)`.
+pub(super) fn utm_not_allowed(stderr: &str) -> bool {
+    stderr.contains("-1743") || stderr.contains("Not authorized to send Apple events")
 }

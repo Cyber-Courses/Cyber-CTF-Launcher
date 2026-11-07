@@ -137,6 +137,37 @@ impl Provider {
         }
     }
 
+    /// The oldest version of that plugin the launcher drives labs with: `vagrant_utm` below 0.2.0
+    /// lacks the UTM 5 driver or the fixes labs are tested on, and `vagrant plugin install`
+    /// (which setup offers again for an old one) updates it.
+    fn plugin_minimum(self) -> Option<&'static str> {
+        match self {
+            Provider::Utm => Some("0.2.0"),
+            _ => None,
+        }
+    }
+
+    /// The hypervisor's name and the oldest version its plugin drives: `vagrant_utm` refuses a
+    /// UTM before 4.6.5 (no import of a box, no registry for its shared folders).
+    fn hypervisor_minimum(self) -> Option<(&'static str, &'static str)> {
+        match self {
+            Provider::Utm => Some(("UTM", "4.6.5")),
+            _ => None,
+        }
+    }
+
+    /// The hypervisor's own version, when it is installed and says it: UTM's app bundle
+    /// (`CFBundleShortVersionString`); the others aren't held to a version yet.
+    async fn hypervisor_version(self) -> Option<String> {
+        if self != Provider::Utm {
+            return None;
+        }
+        let plist = format!("{UTM_APP}/Contents/Info.plist");
+        let out = run_read("defaults", &["read", &plist, "CFBundleShortVersionString"], None).await.ok()?;
+        let version = out.trim().to_string();
+        (!version.is_empty()).then_some(version)
+    }
+
     /// Local tool that proves the hypervisor itself is installed.
     fn probe(self) -> Option<(&'static str, &'static [&'static str])> {
         match self {
@@ -211,19 +242,58 @@ pub struct ProviderStatus {
     pub hypervisor: Option<bool>,
     /// The Vagrant plugin this provider needs, if it is not built in.
     pub plugin: Option<String>,
-    /// Whether that plugin is present (true when the provider is built in).
+    /// Whether that plugin is present at a version the launcher drives (true when the provider is
+    /// built in): an older one reads as not installed, so setup installs it again, which updates it.
     pub plugin_installed: bool,
     /// Why it is not available (missing plugin, missing hypervisor, wrong OS).
     pub reason: Option<String>,
 }
 
-/// Plugin names from `vagrant plugin list` lines like `vagrant-libvirt (0.12.2, global)`.
-pub fn parse_plugins(out: &str) -> Vec<String> {
+/// Each plugin of `vagrant plugin list` with its version, from lines like `vagrant-libvirt
+/// (0.12.2, global)`; `None` for a line that names no version (a wrapped or cut line).
+pub fn parse_plugin_versions(out: &str) -> Vec<(String, Option<String>)> {
     out.lines()
-        .filter_map(|l| l.split_whitespace().next())
-        .filter(|name| name.starts_with("vagrant-") || name.starts_with("vagrant_"))
-        .map(str::to_string)
+        .filter_map(|l| {
+            let mut words = l.split_whitespace();
+            let name = words.next().filter(|name| name.starts_with("vagrant-") || name.starts_with("vagrant_"))?;
+            let version = words
+                .next()
+                .map(|w| w.trim_matches(|c: char| matches!(c, '(' | ')' | ',')).to_string())
+                .filter(|v| v.starts_with(|c: char| c.is_ascii_digit()));
+            Some((name.to_string(), version))
+        })
         .collect()
+}
+
+/// Whether version `found` is `min` or later: dot-separated numbers compared in turn, a missing
+/// one as 0 (`4.7` reads as `4.7.0`) and a part that doesn't start with a digit (`beta`) as 0.
+pub fn version_at_least(found: &str, min: &str) -> bool {
+    let numbers = |v: &str| -> Vec<u64> {
+        v.trim().split('.').map(|part| part.chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0)).collect()
+    };
+    let (found, min) = (numbers(found), numbers(min));
+    for i in 0..found.len().max(min.len()) {
+        let (a, b) = (found.get(i).copied().unwrap_or(0), min.get(i).copied().unwrap_or(0));
+        if a != b {
+            return a > b;
+        }
+    }
+    true
+}
+
+/// The version `installed` of `provider`'s plugin when it is older than the one the launcher
+/// drives (`plugin_minimum`), with that minimum; `None` when it is recent enough, unknown, or
+/// the plugin has no minimum.
+fn plugin_too_old(provider: Provider, installed: Option<&str>) -> Option<(&str, &'static str)> {
+    let (version, min) = installed.zip(provider.plugin_minimum())?;
+    (!version_at_least(version, min)).then_some((version, min))
+}
+
+/// The version `installed` of `provider`'s hypervisor when it is older than the one its plugin
+/// drives (`hypervisor_minimum`), with the hypervisor's name and that minimum.
+fn hypervisor_too_old(provider: Provider, installed: Option<&str>) -> Option<(&'static str, &str, &'static str)> {
+    let (version, (name, min)) = installed.zip(provider.hypervisor_minimum())?;
+    (!version_at_least(version, min)).then_some((name, version, min))
 }
 
 async fn tool_present(program: &'static str, args: &[&str]) -> bool {
@@ -234,9 +304,10 @@ async fn tool_present(program: &'static str, args: &[&str]) -> bool {
     }
 }
 
-/// The Vagrant plugins installed (none when `vagrant plugin list` fails).
-async fn installed_plugins() -> Vec<String> {
-    run_read("vagrant", &["plugin", "list"], None).await.map(|o| parse_plugins(&o)).unwrap_or_default()
+/// The Vagrant plugins installed, each with its version when it says one (none when `vagrant
+/// plugin list` fails).
+async fn installed_plugins() -> Vec<(String, Option<String>)> {
+    run_read("vagrant", &["plugin", "list"], None).await.map(|o| parse_plugin_versions(&o)).unwrap_or_default()
 }
 
 pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
@@ -252,12 +323,17 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
         // The hypervisor layer (the VM software itself).
         let hypervisor = provider.hypervisor_installed().await;
 
-        // The Vagrant layer (the plugin that drives this provider).
+        // The Vagrant layer (the plugin that drives this provider): present, and not older than
+        // the one the launcher drives labs with.
         let plugin = provider.plugin().map(str::to_string);
+        let found = plugin.as_deref().and_then(|p| plugins.iter().find(|(name, _)| name == p));
+        let plugin_version = found.and_then(|(_, version)| version.clone());
         let plugin_installed = match &plugin {
             None => true, // built in to Vagrant (virtualbox, hyperv)
-            Some(p) => vagrant_installed && plugins.iter().any(|i| i == p),
+            Some(_) => vagrant_installed && found.is_some() && plugin_too_old(provider, plugin_version.as_deref()).is_none(),
         };
+        // The hypervisor's own version, where its plugin is particular about it (UTM).
+        let hypervisor_version = if hypervisor == Some(true) { provider.hypervisor_version().await } else { None };
 
         // Installed is not the same as working: `VBoxManage --version` never talks to VirtualBox's
         // service (VBoxSVC), which can wedge so that every real call hangs (a deploy then sits on
@@ -273,8 +349,16 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
         // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
         let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !crate::platform::exec::may_manage_hyperv();
 
-        let reason =
-            unavailable_reason(provider, vagrant_installed, Detection { unresponsive, hypervisor, plugin: plugin.as_deref(), plugin_installed, needs_admin });
+        let detection = Detection {
+            unresponsive,
+            hypervisor,
+            hypervisor_version: hypervisor_version.as_deref(),
+            plugin: plugin.as_deref(),
+            plugin_installed,
+            plugin_version: plugin_version.as_deref(),
+            needs_admin,
+        };
+        let reason = unavailable_reason(provider, vagrant_installed, detection);
 
         statuses.push(ProviderStatus { provider, remote: provider.is_remote(), available: reason.is_none(), hypervisor, plugin, plugin_installed, reason });
     }
@@ -295,10 +379,14 @@ struct Detection<'a> {
     unresponsive: bool,
     /// Whether the hypervisor is installed; `None` when there is nothing local to probe.
     hypervisor: Option<bool>,
+    /// The hypervisor's version, when it is installed and held to one (UTM).
+    hypervisor_version: Option<&'a str>,
     /// The Vagrant plugin this provider needs, if it is not built in.
     plugin: Option<&'a str>,
-    /// Whether that plugin is installed.
+    /// Whether that plugin is installed, at a version the launcher drives.
     plugin_installed: bool,
+    /// That plugin's installed version, when it is present and says one.
+    plugin_version: Option<&'a str>,
     /// Whether this account may not manage Hyper-V (Hyper-V only).
     needs_admin: bool,
 }
@@ -306,7 +394,7 @@ struct Detection<'a> {
 /// Why a provider can't be used here (None: it can), from whether Vagrant is installed and what
 /// `detect` found out about the provider.
 fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: Detection<'_>) -> Option<String> {
-    let Detection { unresponsive, hypervisor, plugin, plugin_installed, needs_admin } = detection;
+    let Detection { unresponsive, hypervisor, hypervisor_version, plugin, plugin_installed, plugin_version, needs_admin } = detection;
     if !vagrant_installed {
         Some("Vagrant is not installed".to_string())
     } else if unresponsive {
@@ -322,6 +410,10 @@ fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: De
         provider.probe().map(|(program, _)| format!("`{program}` was not found")).or_else(|| Some("not installed".to_string()))
     } else if let Some(why) = (provider == Provider::Libvirt).then(kvm_problem).flatten() {
         Some(why)
+    } else if let Some((name, version, min)) = hypervisor_too_old(provider, hypervisor_version) {
+        Some(format!("{name} {version} is too old: {min} or later is needed. Update {name}, then re-check"))
+    } else if let Some((version, min)) = plugin_too_old(provider, plugin_version) {
+        plugin.map(|p| format!("Vagrant plugin `{p}` {version} is too old: {min} or later is needed. Install it again to update it"))
     } else if !plugin_installed {
         plugin.map(|p| format!("Vagrant plugin `{p}` is not installed"))
     } else {
@@ -333,10 +425,72 @@ fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: De
 mod tests {
     use super::*;
 
+    /// The plugin names alone, as the checks before versions mattered read them.
+    fn parse_plugins(out: &str) -> Vec<String> {
+        parse_plugin_versions(out).into_iter().map(|(name, _)| name).collect()
+    }
+
     #[test]
     fn parses_vagrant_plugin_list() {
         let out = "vagrant-libvirt (0.12.2, global)\nvagrant_utm (0.1.3, global)\nvagrant-vmware-esxi (2.5.5, global)\n  - Version Constraint: > 0\n";
         assert_eq!(parse_plugins(out), vec!["vagrant-libvirt", "vagrant_utm", "vagrant-vmware-esxi"]);
+    }
+
+    #[test]
+    fn plugin_versions_are_read_and_a_missing_one_is_none() {
+        let out = "vagrant-libvirt (0.12.2, global)\nvagrant_utm (0.2.0, global)\n  - Version Constraint: > 0\nvagrant-vmware-esxi\nvagrant-qemu (0.7.0)\n";
+        assert_eq!(
+            parse_plugin_versions(out),
+            [
+                ("vagrant-libvirt".to_string(), Some("0.12.2".to_string())),
+                ("vagrant_utm".to_string(), Some("0.2.0".to_string())),
+                ("vagrant-vmware-esxi".to_string(), None),
+                ("vagrant-qemu".to_string(), Some("0.7.0".to_string())),
+            ]
+        );
+    }
+
+    #[test]
+    fn versions_compare_number_by_number() {
+        assert!(version_at_least("0.2.0", "0.2.0"));
+        assert!(version_at_least("0.10.0", "0.2.0"), "10 > 2, not \"1\" < \"2\"");
+        assert!(version_at_least("4.7", "4.6.5"), "a missing part reads as 0");
+        assert!(version_at_least("5.0.6", "4.6.5"));
+        assert!(!version_at_least("0.1.6", "0.2.0"));
+        assert!(!version_at_least("4.5.1", "4.6.5"));
+        assert!(!version_at_least("0.2.0.beta", "0.2.0.1"), "a word reads as 0");
+        assert!(version_at_least("", "0") && !version_at_least("", "0.1"));
+    }
+
+    #[test]
+    fn an_old_utm_plugin_or_utm_reads_as_too_old_and_says_what_to_do() {
+        let detection = |hypervisor_version, plugin_version, plugin_installed| Detection {
+            unresponsive: false,
+            hypervisor: Some(true),
+            hypervisor_version,
+            plugin: Some("vagrant_utm"),
+            plugin_installed,
+            plugin_version,
+            needs_admin: false,
+        };
+        // The plugin the failure was seen with: setup installs it again, which updates it.
+        assert_eq!(plugin_too_old(Provider::Utm, Some("0.1.6")), Some(("0.1.6", "0.2.0")));
+        assert_eq!(
+            unavailable_reason(Provider::Utm, true, detection(Some("4.7.5"), Some("0.1.6"), false)).as_deref(),
+            Some("Vagrant plugin `vagrant_utm` 0.1.6 is too old: 0.2.0 or later is needed. Install it again to update it")
+        );
+        // A UTM the plugin refuses, said before the plugin (updating the plugin wouldn't help).
+        assert_eq!(
+            unavailable_reason(Provider::Utm, true, detection(Some("4.5.1"), Some("0.1.6"), false)).as_deref(),
+            Some("UTM 4.5.1 is too old: 4.6.5 or later is needed. Update UTM, then re-check")
+        );
+        // Recent enough, or no version to judge: nothing stands in the way.
+        assert_eq!(unavailable_reason(Provider::Utm, true, detection(Some("4.7.5"), Some("0.2.0"), true)), None);
+        assert_eq!(unavailable_reason(Provider::Utm, true, detection(None, None, true)), None);
+        assert_eq!(plugin_too_old(Provider::Utm, None), None);
+        // Other providers aren't held to a version.
+        assert_eq!(plugin_too_old(Provider::Qemu, Some("0.1.0")), None);
+        assert_eq!(hypervisor_too_old(Provider::Virtualbox, Some("6.0")), None);
     }
 
     #[test]
@@ -477,9 +631,29 @@ mod tests {
     #[test]
     fn the_first_missing_layer_is_the_reason() {
         let r = |p, vagrant, stuck, hv, plugin, installed| {
-            unavailable_reason(p, vagrant, Detection { unresponsive: stuck, hypervisor: hv, plugin, plugin_installed: installed, needs_admin: false })
+            unavailable_reason(
+                p,
+                vagrant,
+                Detection {
+                    unresponsive: stuck,
+                    hypervisor: hv,
+                    hypervisor_version: None,
+                    plugin,
+                    plugin_installed: installed,
+                    plugin_version: None,
+                    needs_admin: false,
+                },
+            )
         };
-        let hyperv = |needs_admin| Detection { unresponsive: false, hypervisor: Some(true), plugin: None, plugin_installed: true, needs_admin };
+        let hyperv = |needs_admin| Detection {
+            unresponsive: false,
+            hypervisor: Some(true),
+            hypervisor_version: None,
+            plugin: None,
+            plugin_installed: true,
+            plugin_version: None,
+            needs_admin,
+        };
         assert_eq!(unavailable_reason(Provider::Hyperv, true, hyperv(true)).as_deref(), Some(HYPERV_NEEDS_ADMIN));
         assert!(HYPERV_NEEDS_ADMIN.contains("Hyper-V Administrators") && HYPERV_NEEDS_ADMIN.contains("Allow my account"));
         assert_eq!(unavailable_reason(Provider::Hyperv, true, hyperv(false)), None);

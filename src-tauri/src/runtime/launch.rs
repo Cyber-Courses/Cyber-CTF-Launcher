@@ -15,7 +15,7 @@ mod local;
 mod on_host;
 mod port_holder;
 
-use local::{check_qemu, warn_if_low_memory};
+use local::{check_qemu, check_utm, warn_if_low_memory};
 #[cfg(test)]
 use local::{emulated_arches, low_memory_warning};
 pub(crate) use on_host::esxi_run;
@@ -148,6 +148,9 @@ pub(super) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
     lab::prepare(dir, lab::vagrant_target(Runtime::Docker))?;
     mark_local_vm(dir, Some(provider))?;
     log(format!("Running in a {} VM on this machine", provider.id()));
+    if provider == Provider::Utm {
+        check_utm(log).await?;
+    }
     match isothrum::LabRun::docker_in_vm(home, dir, id)?.up(env, Some(provider.id()), log).await {
         Ok(()) => mark_parked(dir, None),
         Err(e) => {
@@ -212,6 +215,9 @@ pub(super) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmSta
     warn_if_low_memory(&prepared.spec, log);
     if provider == Provider::Qemu {
         check_qemu(&prepared, log).await?;
+    }
+    if provider == Provider::Utm {
+        check_utm(log).await?;
     }
     isothrum::LabRun::vm(home, dir, id)?.up(env, Some(provider.id()), log).await?;
     mark_parked(dir, None)
