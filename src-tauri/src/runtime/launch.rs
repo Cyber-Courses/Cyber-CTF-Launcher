@@ -148,8 +148,20 @@ pub(super) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
     lab::prepare(dir, lab::vagrant_target(Runtime::Docker))?;
     mark_local_vm(dir, Some(provider))?;
     log(format!("Running in a {} VM on this machine", provider.id()));
-    isothrum::LabRun::docker_in_vm(home, dir, id)?.up(env, Some(provider.id()), log).await?;
-    mark_parked(dir, None)
+    match isothrum::LabRun::docker_in_vm(home, dir, id)?.up(env, Some(provider.id()), log).await {
+        Ok(()) => mark_parked(dir, None),
+        Err(e) => {
+            // A failed start can leave a half-created helper VM holding host ports (e.g. the QEMU
+            // SSH forward), and that lingering VM trips the next launch with a port-collision
+            // error. Destroy it before surfacing the failure; the teardown is best-effort, so its
+            // own error is logged, never allowed to mask the start's.
+            log("Start failed: removing the half-created VM so the next launch starts clean".into());
+            if let Err(teardown) = super::lifecycle::stop_docker_in_vm_run(home, dir, id, &mut *log).await {
+                log(format!("Could not fully remove the failed VM: {teardown}"));
+            }
+            Err(e)
+        }
+    }
 }
 
 /// A container lab on this machine's Docker through the Isothrum runner (see `isothrum`), its
