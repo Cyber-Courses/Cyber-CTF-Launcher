@@ -24,8 +24,19 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
         (Runtime::Docker, None) => with_parked(isothrum::LabRun::docker(&runner_home(dirs)?, dir, id)?.status().await?, parked(dir)),
         (Runtime::Vm, None) => with_parked(isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?.status().await?, parked(dir)),
     };
+    // A setup step that failed can leave a lab's machines up but the lab not ready: not running,
+    // wherever it runs. This used to be masked for server and cloud hosts only, so a local Docker,
+    // docker-in-VM or VM lab whose launch failed stayed "running" and showed a healthy diagram.
+    let status = unless_launch_failed(dirs, id, status);
     // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
     Ok(LabStatus { reap_error: super::reaper::last_failure(dirs, id), ..status })
+}
+
+/// A lab whose last launch failed is not running, even if its machines stayed up: a failed setup
+/// step leaves it unusable, and showing it running with a healthy diagram misleads.
+fn unless_launch_failed(dirs: &AppDirs, id: &str, s: LabStatus) -> LabStatus {
+    let failed = crate::app::deploy_worker::last_deploy_failed(dirs, id);
+    LabStatus { running: s.running && !failed, ..s }
 }
 
 /// Parked = the launcher parked it (`parked`) and it is still down; a lab someone started again
@@ -35,25 +46,23 @@ fn with_parked(s: LabStatus, parked: Option<super::Park>) -> LabStatus {
 }
 
 async fn server_status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: server::Connection) -> Result<LabStatus> {
-    // A setup step that failed can leave a lab's machines up but the lab not ready: not running.
-    let failed = crate::app::deploy_worker::last_deploy_failed(dirs, id);
-    let seen = |s: LabStatus| LabStatus { running: s.running && !failed, ..s };
+    // The failed-launch masking is applied by `status`, uniformly, so it is not repeated here.
     // ESXi (Vagrant on the host): the runner's view, Vagrant's states, each VM at its own address.
     if c.provider == super::providers::Provider::VmwareEsxi {
         let status = super::launch::esxi_run(dirs, dir, id, runtime, &c)?.status().await?;
-        return Ok(on_server(seen(status), c.name, c.provider));
+        return Ok(on_server(status, c.name, c.provider));
     }
     // A cloud account (cloud-vm, cloud-docker, cloud-services): the runner's view from its record.
     if c.provider.is_cloud() {
         let cloud = server::terraform_target(c.provider).unwrap_or_default();
         let status = isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, runtime, cloud)?.status().await?;
-        return Ok(on_server(seen(status), c.name, c.provider));
+        return Ok(on_server(status, c.name, c.provider));
     }
     // A Proxmox server: the runner's view from its own record and state (no SSH, no API call);
     // `ServerRun::status` fills the host and provider.
     let place = isothrum::ServerPlace { name: c.name.clone(), ..isothrum::ServerPlace::default() };
     let status = isothrum::ServerRun::new(&runner_home(dirs)?, dir, id, runtime)?.status(&place).await?;
-    Ok(seen(status))
+    Ok(status)
 }
 
 /// A lab's status as running on the server host `name` (a cloud account, or a server).
@@ -213,6 +222,18 @@ mod tests {
         assert!(!super::running_here(&dir, "t").await);
         assert!(tools.called("docker compose") && tools.called("vagrant status"), "{:?}", tools.calls());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_launch_reads_as_not_running_even_with_machines_up() {
+        let t = crate::testing::test_app::TestApp::new();
+        // Nothing failed yet: a lab with machines up stays running.
+        assert!(super::unless_launch_failed(&t.dirs(), "lab-x", status_with(true, &["web"])).running);
+        // Its last launch failed and left machines up: not running, so the page shows "failed"
+        // and no healthy diagram. Regression: only server and cloud labs used to be masked, so a
+        // local Docker, docker-in-VM or VM lab read as running after a failed launch.
+        crate::app::deploy_worker::mark_launch_failed_for_test(&t.dirs(), "lab-x");
+        assert!(!super::unless_launch_failed(&t.dirs(), "lab-x", status_with(true, &["web"])).running);
     }
 
     #[test]

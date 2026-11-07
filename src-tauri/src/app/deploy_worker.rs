@@ -190,6 +190,14 @@ pub fn last_deploy_failed(dirs: &AppDirs, lab_id: &str) -> bool {
     files::last_deploy_failed(dirs, lab_id)
 }
 
+/// Records a failed launch for `lab_id`, so tests of code that reacts to a failed deploy can set
+/// one up (the `files` module is private).
+#[cfg(test)]
+pub(crate) fn mark_launch_failed_for_test(dirs: &AppDirs, lab_id: &str) {
+    let f = files::of(dirs, lab_id).expect("a valid lab id");
+    std::fs::write(&f.launch_status, "error: test").expect("write the launch status");
+}
+
 /// The cross-process lock file of `lab` (see [`lock`]).
 pub fn lock_path(dirs: &AppDirs, lab: &str) -> Result<std::path::PathBuf> {
     crate::runtime::validate_id(lab)?;
