@@ -54,6 +54,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   answers that to a VM customization right after an import now and then, while it runs and
   answers everything else; the half-created VM is removed and the start runs again, instead of
   failing the lab on a one-off.
+- **A container lab in a VM stays known as such after a retried start.** Removing the
+  half-created VM of a failed first attempt also forgot that the lab runs in a local VM, so once
+  the retry succeeded the page read it as plain Docker: not running, no machines, "Shut down"
+  offered, the attack box refusing. Each attempt marks it again; the page and the Deployment
+  panel now also say "a VM on this machine" for such a lab, whatever the picker last held.
 - **Switching the hypervisor is one click.** The hypervisor chosen in Settings never reached the
   header, which named the first ready one (QEMU before UTM), and the Machine setup's pick wasn't
   saved as the choice at all. Both follow the choice now, and "Where should it run?" carries a

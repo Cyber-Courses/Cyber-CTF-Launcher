@@ -139,7 +139,7 @@ export function LabDeployment({ page, props: p }: { page: LabPage; props: LabDet
       times={s.shownTimes}
       busy={s.deploying}
       ready={s.running && !s.tearingDown}
-      where={deployDestination(t, p.status, run.runOn, run.hosts, s.engine)}
+      where={deployDestination(t, p.status, run.runOn, run.hosts, s.engine, s.isDocker && s.place === "local_vm")}
       operation={s.operation ?? s.lastOperation}
       startedAt={s.startedAt}
       liveStep={s.liveStep}

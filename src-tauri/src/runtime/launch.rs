@@ -166,6 +166,10 @@ pub(super) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
     let run = isothrum::LabRun::docker_in_vm(home, dir, id)?;
     let mut tried_again = false;
     loop {
+        // Marked before every attempt: the teardown of a failed one forgets the marker with the
+        // rest of the run, and without it status, stop and the attack box would read the lab
+        // as plain Docker on this machine once the next attempt succeeds.
+        mark_local_vm(dir, Some(provider))?;
         let Err(e) = run.up(env, Some(provider.id()), log).await else {
             return mark_parked(dir, None);
         };
