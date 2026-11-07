@@ -8,6 +8,14 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
+- **A container lab running in a VM on this machine gets a working attack box.** "Start attack
+  box" on a lab in its helper VM (Isoloom's docker-vm, UTM included) now stands the box up as a
+  container inside that VM, on the lab's network there, through the Isothrum runner (which
+  refused it before: "hot-adding an ad-hoc access VM … isn't supported"); the panel shows its
+  address, "Open shell" goes through the VM into it (`vagrant ssh … docker exec …`, with the run's
+  state folder, which the in-app and system terminals now pass on), and Stop takes it out. On
+  UTM, a hot-add that met UTM's passing "Application isn't running (-600)" is tried once more,
+  as a start is.
 - **A lab with both forms can run here as one VM per machine.** A container lab whose Isoloom
   spec also has a VM recipe per machine (the backend's `docker` and `vm` flags both set, e.g.
   `supplier-portal-api`) gets a third place in "Where should it run?": "This machine, one VM per
@@ -18,6 +26,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Fixed
 
+- **"Start attack box" no longer says a running lab on UTM isn't running.** The runner read
+  UTM's `started` VM state as unknown, so the box's start found no running target and failed with
+  "This lab isn't running. Start it first." two seconds after the lab came up; with the runner's
+  fix (`started` reads as running) and a container read in the VM that is tried once more when
+  it misses, the box starts on the running lab.
 - **The AWS account test confirms the launch permission instead of warning on every account.**
   Its dry run of `ec2 run-instances` used a made-up image id, which AWS refuses as malformed
   before it looks at the permission at all, so a properly signed-in account read "Needs

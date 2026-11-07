@@ -35,9 +35,13 @@ fn networks(status: &Status) -> Vec<String> {
     status.networks.iter().map(|n| n.name.clone()).collect()
 }
 
-/// A shell command as one line, for the lab page (the player can also run it in their terminal).
+/// A shell command as one line the player can paste in their terminal: the variables it needs
+/// first (`VAR=value`, as a shell takes them), then the program and its arguments, each quoted
+/// where it must be.
 pub(super) fn display(cmd: &ShellCommand) -> String {
-    std::iter::once(cmd.program.as_str()).chain(cmd.args.iter().map(String::as_str)).collect::<Vec<_>>().join(" ")
+    let words: Vec<String> =
+        cmd.env.iter().map(|(k, v)| format!("{k}={v}")).chain(std::iter::once(cmd.program.clone())).chain(cmd.args.iter().cloned()).collect();
+    shell_words::join(&words)
 }
 
 /// The attack box's status from the run's status: up when the access machine runs, its address on
@@ -53,4 +57,24 @@ pub(super) fn status_of(status: &Status, network: Option<&str>, shell_cmd: Strin
         .unwrap_or_default();
     let ip = addresses.and_then(|a| a.get(&on)).cloned().unwrap_or_default();
     AttackStatus { running, ip: if running { ip } else { String::new() }, lab_network: on, networks: networks(status), shell_cmd }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_shell_line_is_pasteable_with_the_variables_it_needs() {
+        let plain = ShellCommand { program: "docker".into(), args: ["compose", "exec", "kali", "bash"].map(String::from).to_vec(), cwd: None, env: Vec::new() };
+        assert_eq!(display(&plain), "docker compose exec kali bash");
+        let in_vm = ShellCommand {
+            program: "vagrant".into(),
+            args: ["ssh", "default", "-c", "sudo docker exec -it 'x-isoloom-access' sh"].map(String::from).to_vec(),
+            cwd: None,
+            env: vec![("VAGRANT_DOTFILE_PATH".into(), "/runs/x y/vagrant".into())],
+        };
+        let line = display(&in_vm);
+        assert!(line.starts_with("'VAGRANT_DOTFILE_PATH=/runs/x y/vagrant' vagrant ssh default -c "), "{line}");
+        assert_eq!(shell_words::split(&line).unwrap().last().map(String::as_str), Some("sudo docker exec -it 'x-isoloom-access' sh"), "{line}");
+    }
 }

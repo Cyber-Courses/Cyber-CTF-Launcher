@@ -209,12 +209,16 @@ fn watch_exit(session: u32, ended: std::sync::Arc<Mutex<Option<u32>>>) {
 }
 
 /// What the pseudo-terminal runs: the runner's command (`docker`/`vagrant`) with its arguments,
-/// in the run's folder — the same program the system terminal would run, no shell wrapping.
+/// in the run's folder, with the variables it needs (a Vagrant run's state folder) — the same
+/// program the system terminal would run, no shell wrapping.
 fn pty_command(command: &ShellCommand) -> CommandBuilder {
     let mut c = CommandBuilder::new(&command.program);
     c.args(&command.args);
     if let Some(cwd) = &command.cwd {
         c.cwd(cwd);
+    }
+    for (name, value) in &command.env {
+        c.env(name, value);
     }
     c
 }
@@ -428,11 +432,17 @@ mod tests {
         // The runner builds the command (program + args + the run's folder); the PTY runs it as
         // is, no shell wrapping, on every platform.
         let dir = std::env::temp_dir();
-        let c = pty_command(&ShellCommand { program: "vagrant".into(), args: vec!["ssh".into(), "isoloom-controller".into()], cwd: Some(dir.clone()) });
+        let env = vec![("VAGRANT_DOTFILE_PATH".to_owned(), "/runs/x/vagrant".to_owned())];
+        let c = pty_command(&ShellCommand { program: "vagrant".into(), args: vec!["ssh".into(), "isoloom-controller".into()], cwd: Some(dir.clone()), env });
         assert_eq!(argv(&c), ["vagrant", "ssh", "isoloom-controller"]);
         assert_eq!(c.get_cwd().map(std::path::PathBuf::from), Some(dir));
-        let d =
-            pty_command(&ShellCommand { program: "docker".into(), args: ["compose", "exec", "kali", "bash"].iter().map(|s| (*s).into()).collect(), cwd: None });
+        assert_eq!(c.get_env("VAGRANT_DOTFILE_PATH").map(|v| v.to_string_lossy().into_owned()).as_deref(), Some("/runs/x/vagrant"), "Vagrant finds the VM");
+        let d = pty_command(&ShellCommand {
+            program: "docker".into(),
+            args: ["compose", "exec", "kali", "bash"].iter().map(|s| (*s).into()).collect(),
+            cwd: None,
+            env: Vec::new(),
+        });
         assert_eq!(argv(&d), ["docker", "compose", "exec", "kali", "bash"]);
     }
 
