@@ -2,7 +2,7 @@ name: CI
 
 # Every pull request and push to main or dev: the frontend (build, types, lint, format, tests) and the
 # Rust core (format, lint, tests) on Linux, macOS and Windows, so platform-specific code is at
-# least compiled and tested on its own platform.
+# least compiled and tested on its own platform. The Linux Rust leg also runs the quality ratchet.
 
 on:
   pull_request:
@@ -57,10 +57,22 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       # Lints at "deny" (Cargo.toml) fail here. Warn-level lints are held to quality-baseline.json
-      # by the quality ratchet (`pnpm quality`), which runs locally as part of `pnpm check`; CI does
-      # not run it (it needs the clippy JSON and the Node tooling together in one job).
+      # by the quality ratchet, the Quality step below.
       - name: Lint
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
+      # The quality ratchet (`pnpm quality`, also part of `pnpm check`): clippy as JSON, ESLint, the
+      # source scans, jscpd, knip and cargo machete, held to quality-baseline.json; a count above the
+      # baseline fails. It needs the clippy toolchain and the Node tooling together, so it runs on
+      # the Linux leg here, after Lint: its clippy run replays the diagnostics already cached above.
+      - if: startsWith(matrix.os, 'ubuntu')
+        uses: ./.github/actions/setup-node-pnpm
+      - if: startsWith(matrix.os, 'ubuntu')
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-machete
+      - name: Quality
+        if: startsWith(matrix.os, 'ubuntu')
+        run: pnpm quality
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
       # The tests rewrite the TypeScript command types from the Rust structs (ts_bindings.rs):
