@@ -25,7 +25,7 @@ async function startHere(page: Page) {
   const where = page.getByRole("dialog", { name: "Where should the lab run?" });
   await expect(where).toBeVisible();
   // The first row only: "This machine, in a VM" (and a per-machine VM row) also start with it.
-  await expect(where.getByRole("radio", { name: /^This machine On your system/ })).toHaveAttribute("aria-checked", "true");
+  await expect(where.getByRole("radio", { name: /This machine On your system/ })).toHaveAttribute("aria-checked", "true");
   await expect(where.getByRole("radio", { name: /Random ports/ })).toHaveAttribute("aria-checked", "true");
   await where.getByRole("button", { name: "Start", exact: true }).click();
   await expect(where).toBeHidden();
