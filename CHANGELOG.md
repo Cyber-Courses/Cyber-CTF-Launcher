@@ -4,6 +4,19 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.8] — 2026-11-07
+
+### Fixed
+
+- **A lab whose launch failed no longer shows as running.** A failed launch can leave a lab's
+  machines up; the page then showed the "Running" badge and a full, healthy topology diagram even
+  though the deployment had failed. A failed launch now reads as not running for local labs too (it
+  was masked only for server and cloud labs), so the page shows "Failed to start", no diagram, and
+  routes to the Stop & clean up path.
+- **QEMU docker-in-VM labs no longer collide on the helper VM's SSH port.** Bundles Isoloom 1.0.8
+  and the Isothrum runner 1.0.4: the QEMU helper VM's SSH forward takes a free host port picked
+  ahead of time, and the cloud-docker `AcceptEnv` drop-in directory is created before it is written.
+
 ## [1.8.7] — 2026-11-06
 
 ### Fixed

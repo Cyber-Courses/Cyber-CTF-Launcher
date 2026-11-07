@@ -1,6 +1,6 @@
 [package]
 name = "cyberctf-desktop"
-version = "1.8.7"
+version = "1.8.8"
 description = "CyberCTF desktop launcher: runs Docker and VM labs locally"
 authors = ["Cyber-Courses"]
 license = ""
@@ -100,24 +100,24 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 reqwest = { version = "0.13", features = ["json", "form"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
-# layered crates, the published crates.io 1.0 line (1.0.4). Only `src/runtime/lab/` calls them:
+# layered crates, the published crates.io 1.0 line (1.0.8). Only `src/runtime/lab/` calls them:
 # the spec (`isoloom-spec`), the check plan (`isoloom-plan`), the backends' registry and the
 # resolved snapshot (`isoloom-targets`).
-isoloom-spec = "1.0.7"
-isoloom-targets = "1.0.7"
+isoloom-spec = "1.0.8"
+isoloom-targets = "1.0.8"
 # The Compose backend's start plan and the check runners' names, which the launcher's own Docker
 # path reads from the generated files (`isoloom-compose`, `isoloom-render`).
 # The run manifest's types, shared with the Isothrum runner: what `runtime/isothrum` reads of a run.
-isoloom-manifest = "1.0.7"
+isoloom-manifest = "1.0.8"
 # The Isothrum runner: executes the run manifest Isoloom writes (`runtime/isothrum`, local Docker
-# behind the hidden developer flag `CYBERCTF_RUNNER=isothrum`). The published crates.io 1.0.3.
-isothrum-runner = "1.0.3"
+# behind the hidden developer flag `CYBERCTF_RUNNER=isothrum`). The published crates.io 1.0.4.
+isothrum-runner = "1.0.4"
 # The shared machine-setup domain. The launcher shares only the owned-downloads record format and
 # its parser/loader with the Isothrum desktop app through this crate (`storage::{Owned, …, load}`),
-# all present in the published 1.0.3. Its self-test, provider detection and system-check stay
+# all present in the published 1.0.4. Its self-test, provider detection and system-check stay
 # launcher-side: they carry app-specific text, `Wire` error codes and the full WSL probe the shared
 # crate deliberately doesn't.
-isothrum-machine = "1.0.3"
+isothrum-machine = "1.0.4"
 # The map type of the Isoloom crates' API (a cloud-services lab's outputs).
 portable-pty = "0.9"
 tauri-plugin-dialog = "2"
@@ -150,4 +150,4 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 # Tauri's mock runtime, so code taking an app handle runs in unit tests (see `AppRuntime`).
 tauri = { version = "2.12.0", features = ["test"] }
 # The runner's test doubles (scripted processes, host ports and clock), for `runtime/isothrum`'s.
-isothrum-runner = { version = "1.0.3", features = ["fake"] }
+isothrum-runner = { version = "1.0.4", features = ["fake"] }
