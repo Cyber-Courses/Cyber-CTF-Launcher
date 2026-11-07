@@ -14,7 +14,7 @@ import { SetupChecklist } from "@/features/machine/setup-checklist";
 import { StepRow } from "@/features/machine/step-row";
 import { formatAgo, formatBytes, formatBytesOf, formatUptime } from "@/lib/format";
 import { LOCALES, setLocalePreference } from "@/lib/i18n";
-import { getLastTest, setAttackImage, setLastTest, type LastTest } from "@/lib/settings";
+import { getLastTest, setAttackImage, setLastTest, setVmProvider, type LastTest } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
 import { freshReport, hypervisorStatus as hv, readyReport, stoppedDockerReport } from "@/test/fixtures";
@@ -553,6 +553,19 @@ describe("SetupChecklist", () => {
     expect(onFix).toHaveBeenLastCalledWith("docker-test");
     await user.click(screen.getAllByRole("button", { name: /^add$/i })[0]);
     expect(onFix).toHaveBeenLastCalledWith("vm");
+  });
+
+  it("names the hypervisor chosen in Settings, not the first installed one", () => {
+    installTauri();
+    const report: SystemReport = { ...readyReport(), vmProviders: [hv({ provider: "qemu" }), hv({ provider: "utm" })] };
+    setVmProvider("utm");
+    const r = render(<SetupChecklist report={report} last={{ docker: null, vm: null }} onFix={vi.fn()} />);
+    expect(text()).toMatch(/Virtual machines\s*UTM/);
+    r.unmount();
+    // No choice: the first one that can run labs.
+    setVmProvider(null);
+    render(<SetupChecklist report={report} last={{ docker: null, vm: null }} onFix={vi.fn()} />);
+    expect(text()).toMatch(/Virtual machines\s*QEMU/);
   });
 
   it("names a running engine it has no logo for, a stopped engine, a blocked hypervisor and a missing plugin", () => {

@@ -63,6 +63,8 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   The page's periodic status check holds the run for a few seconds, and a Pause clicked meanwhile
   failed with "Another operation on this lab is already in progress". The player's operations now
   wait up to a minute for the run to be free.
+- **The Machine page's Setup summary names the hypervisor chosen in Settings.** It named the
+  first installed one (QEMU) while the header, the Health view and the labs used UTM.
 - **Switching the hypervisor is one click.** The hypervisor chosen in Settings never reached the
   header, which named the first ready one (QEMU before UTM), and the Machine setup's pick wasn't
   saved as the choice at all. Both follow the choice now, and "Where should it run?" carries a
