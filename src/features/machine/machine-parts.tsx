@@ -131,9 +131,10 @@ const STATUS_TEXT: Record<Tone, string> = {
   muted: "text-muted-foreground",
 };
 
-/** One lab type as a provider row: logo tile, name over mono detail, status (dot + word) and
- *  the one action that matters on the right; the self-test opens inline below it. */
-export function LabTypeRow({
+/** One provider (a container engine, a hypervisor) as a row: logo tile, name over mono detail,
+ *  status (dot + word) and the one action that matters on the right; the lab type's self-test
+ *  opens inline below the provider labs use. */
+export function ProviderRow({
   kind,
   icon,
   title,

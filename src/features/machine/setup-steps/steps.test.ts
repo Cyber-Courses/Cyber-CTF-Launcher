@@ -132,13 +132,10 @@ describe("machine steps: per OS", () => {
     expect(pathSteps("docker", bareReport({ os: "linux" }))).toEqual(["pkgmgr", "docker", "docker-test", "attack"]);
     expect(pathSteps("docker", bareReport({ os: "windows" }))).toEqual(["pkgmgr", "virtualization", "docker", "docker-test", "attack"]);
     expect(pathSteps("vm", bareReport({ os: "windows" }))).toEqual(["pkgmgr", "vm", "vagrant", "vm-test"]);
-    expect(pathSteps("cloud", bareReport({ os: "macos" }))).toEqual(["pkgmgr", "cloud"]);
-    // No path shows another's steps: a cloud-only learner never meets Docker.
-    for (const step of pathSteps("docker", null)) if (step !== "pkgmgr") expect(pathSteps("cloud", null)).not.toContain(step);
-    // Every path once, the shared step once, for the checklist; a chosen few for the onboarding.
-    expect(machineSteps(bareReport({ os: "linux" }))).toEqual(["pkgmgr", "docker", "docker-test", "attack", "vm", "vagrant", "vm-test", "cloud"]);
-    expect(machineSteps(null, ["docker", "vm"])).not.toContain("cloud");
-    expect(machineSteps(null, [])).toEqual(["pkgmgr"]);
+    // No path shows another's steps: a learner after VM labs never meets Docker.
+    for (const step of pathSteps("docker", null)) if (step !== "pkgmgr") expect(pathSteps("vm", null)).not.toContain(step);
+    // Every path once, the shared step once: what the onboarding walks.
+    expect(machineSteps(bareReport({ os: "linux" }))).toEqual(["pkgmgr", "docker", "docker-test", "attack", "vm", "vagrant", "vm-test"]);
   });
 
   it("knows which path a step opens, shared steps with the first", () => {
@@ -146,23 +143,11 @@ describe("machine steps: per OS", () => {
     expect(pathOf("virtualization")).toBe("docker");
     expect(pathOf("pkgmgr")).toBe("docker");
     expect(pathOf("vagrant")).toBe("vm");
-    expect(pathOf("cloud")).toBe("cloud");
     expect(pathOf("nope")).toBeNull();
   });
 
   it("nothing can continue before the machine report is in", () => {
     for (const step of ALL) expect(canContinue(step, null, setup()), step).toBe(false);
-  });
-
-  it("the cloud step is optional: Skip for now without Terraform, Continue with it", () => {
-    const missing = bareReport({ terraform: { installed: false, version: null } });
-    const present = bareReport({ terraform: { installed: true, version: "1.9.8" } });
-    expect(nextLabel("cloud", missing, t)).toBe("machine.steps.next.skip");
-    expect(nextLabel("cloud", present, t)).toBe("machine.steps.next.continue");
-    expect(canContinue("cloud", missing, setup())).toBe(true);
-    expect(nextVariant("cloud", missing, setup())).toBe("secondary");
-    expect(nextVariant("cloud", present, setup())).toBe("primary");
-    expect(stepMeta("cloud", present, t).title).toBe("machine.steps.cloud.title");
   });
 
   it("the package manager step waits for it; the test and attack steps never block", () => {

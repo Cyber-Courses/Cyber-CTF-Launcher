@@ -1,16 +1,17 @@
-import { Cloud, Container, Cpu, Crosshair, FlaskConical, Package, Server, type LucideIcon } from "lucide-react";
+import { Container, Cpu, Crosshair, FlaskConical, Package, Server, type LucideIcon } from "lucide-react";
 import { type SystemReport, type WslState } from "@/lib/tauri";
 import { translate, type MessageKey, type Vars } from "@/lib/i18n";
 import { cantRun, INSTALLABLE, usableHypervisors } from "@/features/machine/hypervisors";
 import { ENGINES, Engine } from "@/features/machine/setup-steps/engines";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 
-export type MachineStep = "pkgmgr" | "virtualization" | "docker" | "docker-test" | "attack" | "vm" | "vagrant" | "vm-test" | "cloud";
+export type MachineStep = "pkgmgr" | "virtualization" | "docker" | "docker-test" | "attack" | "vm" | "vagrant" | "vm-test";
 
-/** One lab type's path through the guided setup: container labs, VM labs or cloud labs. Each
- *  lists only what that type needs; a learner who only wants cloud labs never sees Docker. */
-export type SetupPath = "docker" | "vm" | "cloud";
-export const PATHS: SetupPath[] = ["docker", "vm", "cloud"];
+/** One lab type's path through the guided setup, for the providers this machine can have: a
+ *  container engine, or a hypervisor for VM labs. Each lists only what that type needs. Cloud
+ *  accounts and servers are added from their own pages. */
+export type SetupPath = "docker" | "vm";
+export const PATHS: SetupPath[] = ["docker", "vm"];
 
 /** Translates a message: `useT()`'s `t` in a component (re-renders on a language change),
  *  `translate` (the current language) elsewhere. */
@@ -26,18 +27,15 @@ function ownSteps(path: SetupPath, report: SystemReport | null): MachineStep[] {
       return [...(report?.os === "windows" ? (["virtualization"] as const) : []), "docker", "docker-test", "attack"];
     case "vm":
       return ["vm", "vagrant", "vm-test"];
-    case "cloud":
-      return ["cloud"];
   }
 }
 
 /** The steps of one path, in order: the shared ones, then its own. */
 export const pathSteps = (path: SetupPath, report: SystemReport | null): MachineStep[] => [...SHARED, ...ownSteps(path, report)];
 
-/** The steps of `paths` (every path by default), each once, in path order: what the Machine
- *  page's checklist lists, and what the onboarding walks (without the cloud path). */
-export function machineSteps(report: SystemReport | null, paths: SetupPath[] = PATHS): MachineStep[] {
-  return [...SHARED, ...paths.flatMap((p) => ownSteps(p, report))];
+/** Every path's steps, each once, in path order: what the onboarding walks. */
+export function machineSteps(report: SystemReport | null): MachineStep[] {
+  return [...SHARED, ...PATHS.flatMap((p) => ownSteps(p, report))];
 }
 
 /** The path a step belongs to (a shared step counts with the first path); none for an unknown step. */
@@ -104,12 +102,6 @@ export function stepMeta(step: MachineStep, report: SystemReport | null, t: Tr =
         title: t("machine.steps.vagrant.title"),
         description: withMac(t("machine.steps.vagrant.description"), "machine.steps.macInstaller"),
       };
-    case "cloud":
-      return {
-        icon: Cloud,
-        title: t("machine.steps.cloud.title"),
-        description: t("machine.steps.cloud.description"),
-      };
     case "docker-test":
       return {
         icon: FlaskConical,
@@ -144,8 +136,6 @@ function nextKind(step: MachineStep, report: SystemReport | null, setup?: Pick<M
   // A hypervisor is optional (VM labs can run on a server): with none set up, the VM steps
   // can be passed by.
   if ((step === "vm" || step === "vagrant" || step === "vm-test") && !hasHypervisor(report)) return "skip";
-  // Cloud labs are optional too: the account lives on the Cloud page, Terraform can come later.
-  if (step === "cloud" && !report?.terraform.installed) return "skip";
   return "continue";
 }
 

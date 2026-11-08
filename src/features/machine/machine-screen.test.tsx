@@ -3,18 +3,18 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DownloadsPanel } from "@/features/machine/downloads-panel";
-import { DockerLabRow, VmLabRow } from "@/features/machine/lab-type-rows";
 import { MachineDetails } from "@/features/machine/machine-details";
 import { CalloutRow, StatCard } from "@/features/machine/machine-parts";
 import { MachineScreen } from "@/features/machine/machine-screen";
+import { EngineRows } from "@/features/machine/engine-rows";
+import { HypervisorRows } from "@/features/machine/hypervisor-rows";
 import { vmSetup } from "@/features/machine/machine-status";
 import { RunningNowPanel } from "@/features/machine/running-now-panel";
 import { SelfTest } from "@/features/machine/self-test";
-import { SetupChecklist } from "@/features/machine/setup-checklist";
 import { StepRow } from "@/features/machine/step-row";
 import { formatAgo, formatBytes, formatBytesOf, formatUptime } from "@/lib/format";
 import { LOCALES, setLocalePreference } from "@/lib/i18n";
-import { getLastTest, setAttackImage, setLastTest, setVmProvider, type LastTest } from "@/lib/settings";
+import { getLastTest, setAttackImage, setLastTest, type LastTest } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
 import { freshReport, hypervisorStatus as hv, readyReport, stoppedDockerReport } from "@/test/fixtures";
@@ -222,65 +222,81 @@ describe("SelfTest", () => {
   });
 });
 
-/* ------------------------------------------------------------------ lab type rows */
+/* ------------------------------------------------------------------ provider rows */
 
-describe("DockerLabRow", () => {
+describe("EngineRows", () => {
   const base = { now: Date.now(), memFree: 16 * GB, testing: false, onToggleTest: vi.fn(), onTestDone: vi.fn(), onFix: vi.fn() };
 
-  it("shows a ready engine, its last test, and opens the test", async () => {
+  it("lists this OS's engines: the one in use with its last test and the test, the others to add", async () => {
     installTauri();
     const onToggleTest = vi.fn();
+    const onFix = vi.fn();
     const user = userEvent.setup();
-    render(<DockerLabRow {...base} onToggleTest={onToggleTest} report={readyReport()} last={{ result: "ok", at: base.now - 3_600_000 }} />);
-    expect(text()).toContain("Ready");
-    expect(text()).toContain("Docker Desktop · tested 1 h ago");
+    render(<EngineRows {...base} onToggleTest={onToggleTest} onFix={onFix} report={readyReport()} last={{ result: "ok", at: base.now - 3_600_000 }} />);
+    // The ready Mac: Docker Desktop in use; OrbStack and Colima not set up.
+    expect(text()).toMatch(/Docker Desktop.*tested 1 h ago.*Ready/);
+    expect(text()).toContain("OrbStack");
+    expect(text()).toContain("Colima");
+    expect(screen.getAllByText("Not set up")).toHaveLength(2);
     await user.click(button(/^test$/i));
     expect(onToggleTest).toHaveBeenCalledOnce();
+    await user.click(screen.getAllByRole("button", { name: /^add$/i })[0]);
+    expect(onFix).toHaveBeenCalledWith("docker");
   });
 
-  it("shows a failed last test and a low-memory hint", () => {
+  it("shows a failed last test and a low-memory hint on the engine in use, and names one without a tile", () => {
     installTauri();
-    render(<DockerLabRow {...base} memFree={GB} report={{ ...readyReport(), dockerEngine: null }} last={{ result: "fail", at: Date.now() }} />);
-    expect(text()).toContain("Test failed");
-    expect(text()).toContain("Docker · last test failed just now");
+    render(<EngineRows {...base} memFree={GB} report={{ ...readyReport(), dockerEngine: "podman" }} last={{ result: "fail", at: Date.now() }} />);
+    expect(text()).toMatch(/Podman.*last test failed just now.*Test failed/);
     expect(text()).toContain("Container labs want about 2.0 GB of free memory; 1.0 GB free now.");
   });
 
-  it("explains a denied, stopped or missing engine per OS, with a fix", async () => {
+  it("marks another running engine, with the way to switch", async () => {
     installTauri();
     const onFix = vi.fn();
     const user = userEvent.setup();
-    const { unmount } = render(<DockerLabRow {...base} report={stoppedDockerReport()} last={null} />);
-    expect(text()).toContain("No permission");
+    render(<EngineRows {...base} onFix={onFix} report={{ ...readyReport(), dockerEnginesRunning: ["docker-desktop", "orbstack"] }} last={null} />);
+    expect(text()).toContain("Running. Labs use Docker Desktop; switch in the setup.");
+    await user.click(button(/^fix$/i));
+    expect(onFix).toHaveBeenCalledWith("docker");
+  });
+
+  it("explains a denied or stopped engine on the OS's default, and offers every engine on a fresh machine", async () => {
+    installTauri();
+    const onFix = vi.fn();
+    const user = userEvent.setup();
+    const { unmount } = render(<EngineRows {...base} report={stoppedDockerReport()} last={null} />);
+    expect(text()).toMatch(/Docker Engine.*No permission/);
     expect(text()).toContain("sudo usermod -aG docker player");
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^fix$/i })).toBeNull();
     unmount();
     // Said in the player's language, from the hint's code (not the core's English sentence).
     act(() => {
       setLocalePreference("fr");
     });
-    const fr = render(<DockerLabRow {...base} report={stoppedDockerReport()} last={null} />);
+    const fr = render(<EngineRows {...base} report={stoppedDockerReport()} last={null} />);
     expect(text()).toContain("Ajoutez-vous au groupe docker dans un terminal (sudo usermod -aG docker player)");
     fr.unmount();
     act(() => {
       setLocalePreference("en");
     });
-    const denied = render(<DockerLabRow {...base} report={{ ...stoppedDockerReport(), dockerDeniedHint: null }} last={null} />);
+    const denied = render(<EngineRows {...base} report={{ ...stoppedDockerReport(), dockerDeniedHint: null }} last={null} />);
     expect(text()).toContain("add yourself to the docker group");
     denied.unmount();
-    const stopped = render(<DockerLabRow {...base} onFix={onFix} report={{ ...readyReport(), dockerRunning: false }} last={null} />);
-    expect(text()).toContain("Engine stopped");
-    await user.click(button(/fix/i));
+    const stopped = render(<EngineRows {...base} onFix={onFix} report={{ ...readyReport(), dockerRunning: false }} last={null} />);
+    expect(text()).toMatch(/Docker Desktop.*Engine stopped/);
+    await user.click(button(/^fix$/i));
     expect(onFix).toHaveBeenCalledWith("docker");
     stopped.unmount();
-    for (const [os, msg] of [
-      ["linux", /Docker Engine, Docker Desktop or Colima/],
-      ["macos", /OrbStack/],
-      ["windows", /Docker Desktop works\./],
+    for (const [os, names] of [
+      ["linux", ["Docker Desktop", "Docker Engine", "Colima"]],
+      ["macos", ["Docker Desktop", "OrbStack", "Colima"]],
+      ["windows", ["Docker Desktop"]],
     ] as const) {
-      const r = render(<DockerLabRow {...base} report={freshReport(os)} last={null} />);
-      expect(text()).toContain("Needs setup");
-      expect(text()).toMatch(msg);
+      const r = render(<EngineRows {...base} report={freshReport(os)} last={null} />);
+      for (const name of names) expect(text(), os).toContain(name);
+      expect(screen.getAllByText("Not set up"), os).toHaveLength(names.length);
+      expect(screen.queryByText("Ready")).toBeNull();
       r.unmount();
     }
   });
@@ -288,7 +304,7 @@ describe("DockerLabRow", () => {
   it("shows the self-test inline and reports when it finishes", async () => {
     installTauri();
     const onTestDone = vi.fn();
-    render(<DockerLabRow {...base} testing onTestDone={onTestDone} report={readyReport()} last={null} />);
+    render(<EngineRows {...base} testing onTestDone={onTestDone} report={readyReport()} last={null} />);
     await flush();
     expect(text()).toContain("Hide test");
     expect(text()).toContain("not tested yet");
@@ -296,24 +312,24 @@ describe("DockerLabRow", () => {
   });
 });
 
-describe("VmLabRow", () => {
+describe("HypervisorRows", () => {
   const base = { now: Date.now(), memFree: 16 * GB, testing: false, onToggleTest: vi.fn(), onTestDone: vi.fn(), onFix: vi.fn(), onUseServer: vi.fn() };
-  const row = (report: SystemReport, last: LastTest | null = null, over: Partial<typeof base> = {}) => (
-    <VmLabRow {...base} {...over} report={report} last={last} vm={vmSetup(report, null, last)} />
+  const rows = (report: SystemReport, last: LastTest | null = null, over: Partial<typeof base> = {}) => (
+    <HypervisorRows {...base} {...over} report={report} last={last} vm={vmSetup(report, null, last)} />
   );
 
-  it("shows a ready hypervisor, picked automatically among several", () => {
+  it("shows the hypervisor labs run on, picked automatically among several, and the other one installed", () => {
     installTauri();
-    render(row({ ...readyReport(), os: "linux", vmProviders: [hv({}), hv({ provider: "vmware_desktop" })] }, { result: "ok", at: Date.now() }));
-    expect(text()).toContain("Ready");
-    expect(text()).toContain("VirtualBox (automatic, change in Settings) · tested just now");
+    render(rows({ ...readyReport(), os: "linux", vmProviders: [hv({}), hv({ provider: "vmware_desktop" })] }, { result: "ok", at: Date.now() }));
+    expect(text()).toMatch(/VirtualBox.*\(automatic, change in Settings\) · tested just now.*Ready/);
+    expect(text()).toMatch(/VMware Workstation.*Labs run on VirtualBox; change it in Settings\..*Installed/);
   });
 
   it("offers a server beside the test when memory is short", async () => {
     installTauri();
     const onUseServer = vi.fn();
     const user = userEvent.setup();
-    render(row({ ...readyReport(), vmProviders: [hv({})] }, { result: "fail", at: Date.now() }, { memFree: 2 * GB, onUseServer }));
+    render(rows({ ...readyReport(), vmProviders: [hv({})] }, { result: "fail", at: Date.now() }, { memFree: 2 * GB, onUseServer }));
     expect(text()).toContain("Test failed");
     expect(text()).toContain("VM labs want about 8.0 GB");
     await user.click(button(/use a server/i));
@@ -325,7 +341,7 @@ describe("VmLabRow", () => {
     installTauri();
     const onUseServer = vi.fn();
     const user = userEvent.setup();
-    render(row({ ...readyReport(), vmProviders: [hv({ provider: "proxmox", remote: true })] }, null, { onUseServer }));
+    render(rows({ ...readyReport(), vmProviders: [hv({ provider: "proxmox", remote: true })] }, null, { onUseServer }));
     expect(text()).toContain("Not on this machine");
     await user.click(button(/use a server/i));
     expect(onUseServer).toHaveBeenCalledOnce();
@@ -333,23 +349,34 @@ describe("VmLabRow", () => {
 
   it("explains a blocked hypervisor", () => {
     installTauri();
-    render(row({ ...readyReport(), vmProviders: [hv({ provider: "libvirt", available: false, reason: "no /dev/kvm" })] }));
-    expect(text()).toContain("No /dev/kvm.");
+    render(rows({ ...readyReport(), vmProviders: [hv({ provider: "libvirt", available: false, reason: "no /dev/kvm" })] }));
+    expect(text()).toMatch(/libvirt \(KVM\).*No \/dev\/kvm\..*Can't run here/);
     expect(button(/use a server/i)).toBeTruthy();
   });
 
-  it("fixes a missing Vagrant or a missing hypervisor at the right step", async () => {
+  it("fixes a missing Vagrant at its step, and adds a hypervisor not installed at its own", async () => {
     installTauri();
     const onFix = vi.fn();
     const user = userEvent.setup();
-    const r = render(row({ ...readyReport(), vagrant: { installed: false, version: null }, vmProviders: [hv({ available: false })] }, null, { onFix }));
+    const r = render(rows({ ...readyReport(), vagrant: { installed: false, version: null }, vmProviders: [hv({ available: false })] }, null, { onFix }));
     expect(text()).toContain("Vagrant or the hypervisor's Vagrant plugin is missing.");
-    await user.click(button(/fix/i));
+    await user.click(button(/^fix$/i));
     expect(onFix).toHaveBeenLastCalledWith("vagrant");
     r.unmount();
-    render(row({ ...readyReport(), os: "linux", vmProviders: [hv({ hypervisor: false, available: false })] }, null, { onFix }));
-    expect(text()).toContain("Install a hypervisor.");
-    await user.click(button(/fix/i));
+    render(
+      rows(
+        {
+          ...readyReport(),
+          os: "linux",
+          vmProviders: [hv({ hypervisor: false, available: false }), hv({ provider: "vmware_desktop", hypervisor: false, available: false })],
+        },
+        null,
+        { onFix },
+      ),
+    );
+    expect(text()).toMatch(/VirtualBox.*Cyber CTF can install it for you\..*Not installed/);
+    expect(text()).toMatch(/VMware Workstation.*Install it from the vendor's site\./);
+    await user.click(screen.getAllByRole("button", { name: /^add$/i })[0]);
     expect(onFix).toHaveBeenLastCalledWith("vm");
   });
 });
@@ -519,85 +546,6 @@ describe("MachineDetails", () => {
   });
 });
 
-/* ------------------------------------------------------------------ setup checklist */
-
-describe("SetupChecklist", () => {
-  it("marks every step of a ready, tested machine done", async () => {
-    const calls = installTauri();
-    const user = userEvent.setup();
-    const ok = { result: "ok" as const, at: Date.now() };
-    render(<SetupChecklist report={readyReport()} last={{ docker: ok, vm: ok }} onFix={vi.fn()} />);
-    expect(text()).toContain("8 of 8 done");
-    // Grouped by path, the shared package manager first.
-    expect(text()).toMatch(/Package manager.*Container labs.*VM labs.*Cloud labs/);
-    expect(text()).toContain("Docker Desktop");
-    expect(text()).toContain("Cyber CTF");
-    expect(screen.getAllByRole("button")).toHaveLength(1);
-    await user.click(button(/open guided setup/i));
-    await flush();
-    expect(calls.find((c) => c.cmd === "machine_open_setup")?.args).toEqual({ step: null });
-  });
-
-  it("lists what a fresh Windows PC still needs, with the right action per step", async () => {
-    installTauri();
-    setAttackImage("ghcr.io/me/box");
-    const onFix = vi.fn();
-    const user = userEvent.setup();
-    render(<SetupChecklist report={freshReport("windows")} last={{ docker: null, vm: { result: "fail", at: Date.now() } }} onFix={onFix} />);
-    expect(text()).toContain("1 of 9 done");
-    expect(text()).toContain("not checked");
-    expect(text()).toContain("ghcr.io/me/box");
-    expect(text()).toContain("failed");
-    expect(text()).toContain("optional");
-    await user.click(screen.getAllByRole("button", { name: /^set up$/i })[0]);
-    expect(onFix).toHaveBeenLastCalledWith("pkgmgr");
-    await user.click(screen.getAllByRole("button", { name: /^test$/i })[0]);
-    expect(onFix).toHaveBeenLastCalledWith("docker-test");
-    await user.click(screen.getAllByRole("button", { name: /^add$/i })[0]);
-    expect(onFix).toHaveBeenLastCalledWith("vm");
-  });
-
-  it("names the hypervisor chosen in Settings, not the first installed one", () => {
-    installTauri();
-    const report: SystemReport = { ...readyReport(), vmProviders: [hv({ provider: "qemu" }), hv({ provider: "utm" })] };
-    setVmProvider("utm");
-    const r = render(<SetupChecklist report={report} last={{ docker: null, vm: null }} onFix={vi.fn()} />);
-    expect(text()).toMatch(/Virtual machines\s*UTM/);
-    r.unmount();
-    // No choice: the first one that can run labs.
-    setVmProvider(null);
-    render(<SetupChecklist report={report} last={{ docker: null, vm: null }} onFix={vi.fn()} />);
-    expect(text()).toMatch(/Virtual machines\s*QEMU/);
-  });
-
-  it("names a running engine it has no logo for, a stopped engine, a blocked hypervisor and a missing plugin", () => {
-    installTauri();
-    const report: SystemReport = {
-      ...readyReport(),
-      os: "linux",
-      dockerEngine: null,
-      vmProviders: [hv({ provider: "libvirt", available: false, reason: "no /dev/kvm", plugin: "vagrant-libvirt", pluginInstalled: true })],
-    };
-    const r = render(<SetupChecklist report={report} last={{ docker: null, vm: null }} onFix={vi.fn()} />);
-    expect(text()).toContain("running");
-    expect(text()).toContain("libvirt (KVM) · can't run here");
-    r.unmount();
-    render(
-      <SetupChecklist
-        report={{
-          ...readyReport(),
-          dockerRunning: false,
-          vmProviders: [hv({ provider: "qemu", available: false, plugin: "vagrant-qemu", pluginInstalled: false })],
-        }}
-        last={{ docker: null, vm: null }}
-        onFix={vi.fn()}
-      />,
-    );
-    expect(text()).toContain("stopped");
-    expect(text()).toContain("plugin vagrant-qemu missing");
-  });
-});
-
 /* ------------------------------------------------------------------ the screen */
 
 describe("MachineScreen", () => {
@@ -614,7 +562,10 @@ describe("MachineScreen", () => {
     // Compact, so it fits the card's corner in every language.
     expect(text()).toContain("8.0/32 GB");
     expect(text()).not.toContain("Low disk space");
-    expect(screen.queryByRole("button", { name: /set up this machine/i })).toBeNull();
+    // The providers, each its own row; "Add a provider" opens the setup on its choice.
+    expect(text()).toContain("Providers");
+    expect(text()).toMatch(/Docker Desktop.*OrbStack.*Colima.*VirtualBox/);
+    expect(screen.getByRole("button", { name: /add a provider/i })).toBeTruthy();
   });
 
   it("warns about low disk space and counts what needs setup", async () => {
@@ -626,12 +577,17 @@ describe("MachineScreen", () => {
     expect(text()).toContain("10 GB free");
     expect(text()).toContain("2 lab types need setup");
     expect(text()).toContain("Linux x86_64");
-    await user.click(button(/set up this machine/i));
+    await user.click(button(/add a provider/i));
     await flush();
     expect(calls.find((c) => c.cmd === "machine_open_setup")?.args).toEqual({ step: null });
-    await user.click(screen.getAllByRole("button", { name: /^fix$/i })[0]);
+    // A row's Add opens the setup at that provider's step.
+    await user.click(screen.getAllByRole("button", { name: /^add$/i })[0]);
     await flush();
     expect(calls.filter((c) => c.cmd === "machine_open_setup").at(-1)?.args).toEqual({ step: "docker" });
+    const adds = screen.getAllByRole("button", { name: /^add$/i });
+    await user.click(adds[adds.length - 1]);
+    await flush();
+    expect(calls.filter((c) => c.cmd === "machine_open_setup").at(-1)?.args).toEqual({ step: "vm" });
   });
 
   it("names an unknown OS as-is and counts one lab type", async () => {
@@ -640,18 +596,6 @@ describe("MachineScreen", () => {
     await flush(50);
     expect(text()).toContain("freebsd arm64");
     expect(text()).toContain("1 lab type needs setup");
-  });
-
-  it("switches to the setup checklist and back", async () => {
-    installTauri();
-    const user = userEvent.setup();
-    render(<MachineScreen report={readyReport()} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
-    await flush(50);
-    await user.click(screen.getByRole("radio", { name: "Setup" }));
-    expect(text()).toContain("Guided setup");
-    expect(text()).not.toContain("Running now");
-    await user.click(screen.getByRole("radio", { name: "Health" }));
-    expect(text()).toContain("Running now");
   });
 
   it("re-reads the machine when the window regains focus, with the latest callback", () => {

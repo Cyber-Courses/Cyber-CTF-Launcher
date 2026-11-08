@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Toaster } from "@/components/ui/toaster";
@@ -224,18 +224,10 @@ describe("Machine page", () => {
       </>,
     );
     await flush(50);
-    await user.click(button(/set up this machine/i));
+    await user.click(button(/add a provider/i));
     await flush();
     expect(text()).toContain("Couldn't open machine setup");
     expect(text()).toContain("window label already exists");
-  });
-
-  it("names the Health and Setup views as one radio group", async () => {
-    installTauri();
-    render(<MachineScreen report={readyReport()} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
-    await flush(50);
-    const group = screen.getByRole("radiogroup", { name: "Machine view" });
-    expect(within(group).getByRole("radio", { name: "Health" }).getAttribute("aria-checked")).toBe("true");
   });
 });
 

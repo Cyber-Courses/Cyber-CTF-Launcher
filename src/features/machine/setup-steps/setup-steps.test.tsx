@@ -3,7 +3,6 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MachineSetup } from "@/features/machine/machine-setup";
-import { SetupChecklist } from "@/features/machine/setup-checklist";
 import { MachineStepBody, SetupOutcome, useMachineSetup, type MachineStep, type MachineSetupState } from "@/features/machine/setup-steps";
 import { wslState } from "@/features/machine/setup-steps/steps";
 import { getAttackImage, getAutoAttackBox, setAttackImage } from "@/lib/settings";
@@ -277,21 +276,6 @@ describe("WSL step, restarting once", () => {
     expect(text()).not.toContain("couldn’t tell");
     expect(screen.queryByRole("button", { name: /restart now/i })).toBeNull();
     expect(button(/i’ve done this/i)).toBeTruthy();
-  });
-});
-
-describe("guided setup checklist, WSL line", () => {
-  // A fresh Windows machine: only the attack machine (a default) is done besides WSL.
-  it.each([
-    ["ready", "WSL 2", 2],
-    ["needsReboot", "restart needed", 1],
-    ["missing", "not installed", 1],
-    [null, "not checked", 1],
-  ] as const)("%s reads as %s", (state, meta, done) => {
-    installTauri();
-    render(<SetupChecklist report={windows(state)} last={{ docker: null, vm: null }} onFix={vi.fn()} />);
-    expect(text()).toContain(`Enable virtualization (WSL 2)${meta}`);
-    expect(text()).toContain(`${String(done)} of 9 done`);
   });
 });
 

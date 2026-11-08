@@ -2,6 +2,8 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { listen } from "@tauri-apps/api/event";
+import { NAVIGATE_EVENT } from "@/lib/app-events";
 import { MachineSetup } from "@/features/machine/machine-setup";
 import { machineSteps } from "@/features/machine/setup-steps";
 import { Onboarding } from "@/features/onboarding/onboarding";
@@ -108,33 +110,26 @@ describe("MachineSetup window", () => {
     expect(text()).toContain("Step 2 of 5");
     expect(text()).toContain("Virtual machines");
     expect(text()).not.toContain("Container engine");
-    rerender(<MachineSetup report={report} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "cloud", nonce: 2 }} />);
-    expect(text()).toContain("Step 2 of 3");
-    expect(text()).not.toContain("Container engine");
-    expect(text()).not.toContain("Virtual machines");
   });
 
-  it("the cloud path begins at its own first step, none skipped, and installs Terraform", async () => {
-    const calls = installTauri();
+  it("offers the local providers only: cloud accounts go to the Cloud page, and the window closes", async () => {
+    installTauri();
     const user = userEvent.setup();
-    const report = { ...freshReport("macos"), pkgManager: { name: "brew", installed: true, version: "4.4" } };
-    render(<MachineSetup report={report} onRefresh={vi.fn()} onClose={vi.fn()} />);
+    const onClose = vi.fn();
+    // What the main window hears: the request to show a screen.
+    const shown: unknown[] = [];
+    await listen(NAVIGATE_EVENT, (e) => shown.push(e.payload));
+    render(<MachineSetup report={freshReport("macos")} onRefresh={vi.fn()} onClose={onClose} />);
     await flush();
-    expect(pathButton("Cloud labs").textContent).toMatch(/set up/i);
-    await user.click(pathButton("Cloud labs"));
-    await flush();
-    // Homebrew is in: straight to the cloud step, step 2 of its path (the summary counted), with
-    // the one step before it done, not skipped.
-    expect(text()).toContain("Step 2 of 3");
+    expect(text()).toContain("Container labs");
+    expect(text()).toContain("VM labs");
     expect(text()).toContain("Cloud labs");
-    expect(text()).not.toMatch(/skipped|nothing to test/i);
-    expect(document.querySelectorAll(".meter-fill")).toHaveLength(2);
-    await user.click(button(/install terraform/i));
+    // No path to walk here: the main window shows its Cloud page instead.
+    expect(screen.getAllByRole("button", { name: /^set up$/i })).toHaveLength(2);
+    await user.click(button(/open the cloud page/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "terraform" });
-    await user.click(button(/connect a cloud account/i));
-    await flush();
-    expect(calls.find((c) => c.cmd === "server_open_setup")?.args).toMatchObject({ kind: "cloud" });
+    expect(shown).toEqual(["cloud"]);
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   for (const [name, report] of MACHINES) {

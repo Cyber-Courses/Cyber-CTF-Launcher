@@ -1,9 +1,8 @@
 "use client";
 
-import { TriangleAlert, Wrench } from "lucide-react";
+import { Plus, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader, StatusStrip } from "@/components/ui/page-header";
-import { Segmented } from "@/components/ui/segmented";
 import { StatusDot } from "@/components/ui/status-pill";
 import type { MachineMetrics, SystemReport } from "@/lib/tauri";
 import { CalloutRow, StatCard } from "@/features/machine/machine-parts";
@@ -12,24 +11,11 @@ import { formatBytes, formatBytesOf, formatUptime } from "@/lib/format";
 import { useOpenSetup } from "@/features/machine/use-open-setup";
 import { useT } from "@/lib/i18n";
 
-// The sections of the Machine page: its header and the live usage of the Health view.
+// The sections of the Machine page: its header and its live usage.
 
-export type MachineView = "health" | "setup";
-
-/** Title, readiness strip (setup left, OS, uptime), the Set up button and the Health/Setup switch. */
-export function MachineHeader({
-  report,
-  m,
-  needsSetup,
-  view,
-  onView,
-}: {
-  report: SystemReport;
-  m: MachineMetrics | null;
-  needsSetup: number;
-  view: MachineView;
-  onView: (view: MachineView) => void;
-}) {
+/** Title, readiness strip (setup left, OS, uptime) and "Add a provider", which opens the guided
+ *  setup on its choice of provider (as the Servers page's "Add server" opens the server setup). */
+export function MachineHeader({ report, m, needsSetup }: { report: SystemReport; m: MachineMetrics | null; needsSetup: number }) {
   const t = useT();
   const openSetup = useOpenSetup();
   return (
@@ -42,27 +28,15 @@ export function MachineHeader({
         </>
       }
       actions={
-        <>
-          {needsSetup > 0 && (
-            <Button
-              size="sm"
-              onClick={() => {
-                openSetup();
-              }}
-            >
-              <Wrench className="size-3.5" /> {t("machine.screen.setUp")}
-            </Button>
-          )}
-          <Segmented
-            label={t("machine.screen.viewLabel")}
-            value={view}
-            onChange={onView}
-            options={[
-              { value: "health", label: t("machine.screen.viewHealth") },
-              { value: "setup", label: t("machine.screen.viewSetup") },
-            ]}
-          />
-        </>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            openSetup();
+          }}
+        >
+          <Plus className="size-3.5" /> {t("machine.screen.addProvider")}
+        </Button>
       }
     />
   );

@@ -5,11 +5,11 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import type { MachineMetrics, SystemReport } from "@/lib/tauri";
 import { getLastTest, getVmProvider, type LastTest } from "@/lib/settings";
 import type { LabKind } from "@/features/machine/machine-parts";
-import { DockerLabRow, VmLabRow } from "@/features/machine/lab-type-rows";
+import { EngineRows } from "@/features/machine/engine-rows";
+import { HypervisorRows } from "@/features/machine/hypervisor-rows";
 import { MachineDetails } from "@/features/machine/machine-details";
-import { LowDiskCallout, MachineHeader, UsageCards, type MachineView } from "@/features/machine/machine-sections";
+import { LowDiskCallout, MachineHeader, UsageCards } from "@/features/machine/machine-sections";
 import { dockerState, setupCount, usage, vmSetup } from "@/features/machine/machine-status";
-import { SetupChecklist } from "@/features/machine/setup-checklist";
 import { DownloadsPanel } from "@/features/machine/downloads-panel";
 import { RunningNowPanel } from "@/features/machine/running-now-panel";
 import { useMachineMetrics } from "@/features/machine/use-machine-metrics";
@@ -46,27 +46,22 @@ export function MachineScreen({
   useRefreshOnFocus(onRefresh);
   // Live usage (the stat cards show meters; the Overview keeps the sparkline history).
   const { metrics: m } = useMachineMetrics(2500, { serial: true });
-  // Health (usage, engines, what runs) or Setup (the guided steps, done or not).
-  const [view, setView] = useState<MachineView>("health");
   const tests = useLabTests();
   const vm = vmSetup(report, getVmProvider(), tests.last.vm);
   const needsSetup = setupCount(dockerState(report, tests.last.docker), vm.state);
+  // A row's Fix or Test opens the guided setup at that step (the header's button, at its choice).
   const fix = useOpenSetup();
 
   return (
     <div className="space-y-5">
-      <MachineHeader report={report} m={m} needsSetup={needsSetup} view={view} onView={setView} />
-      {view === "setup" ? (
-        <SetupChecklist report={report} last={tests.last} onFix={fix} />
-      ) : (
-        <HealthView report={report} m={m} vm={vm} tests={tests} onFix={fix} onNavigate={onNavigate} />
-      )}
+      <MachineHeader report={report} m={m} needsSetup={needsSetup} />
+      <MachineBody report={report} m={m} vm={vm} tests={tests} onFix={fix} onNavigate={onNavigate} />
     </div>
   );
 }
 
-/** The Health view: usage, what can run here, what runs now, the downloads, and the details. */
-function HealthView({
+/** Usage, the providers this machine has, what runs now, the downloads, and the details. */
+function MachineBody({
   report,
   m,
   vm,
@@ -99,11 +94,11 @@ function HealthView({
     <>
       <UsageCards m={m} />
       <LowDiskCallout m={m} />
-      {/* What can run */}
+      {/* The providers: each container engine and hypervisor, installed or not. */}
       <Panel>
-        <PanelHeader title={t("machine.screen.engines")} meta={t("machine.screen.enginesMeta")} />
-        <DockerLabRow {...rowProps("docker")} />
-        <VmLabRow
+        <PanelHeader title={t("machine.screen.providers")} meta={t("machine.screen.providersMeta")} />
+        <EngineRows {...rowProps("docker")} />
+        <HypervisorRows
           {...rowProps("vm")}
           vm={vm}
           onUseServer={() => {

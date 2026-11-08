@@ -8,7 +8,10 @@ import type { SystemReport } from "@/lib/tauri";
 import type { LastTest } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
 
-/** What both lab type rows take. */
+/** A row's tone once its provider runs labs: the last test passed or failed. */
+export const TESTED_TONE = { ready: "ok", testFailed: "fail" } as const;
+
+/** What every provider row takes. */
 export type RowProps = {
   report: SystemReport;
   last: LastTest | null;
@@ -32,18 +35,18 @@ export function TestButton({ testing, onClick }: { testing: boolean; onClick: ()
   );
 }
 
-/** Opens the setup window at `step`. */
-export function FixButton({ step, onFix }: { step: string; onFix: (step: string) => void }) {
+/** Opens the setup window at `step`: Fix for a provider that should work, Add for one not here. */
+export function FixButton({ step, onFix, add = false }: { step: string; onFix: (step: string) => void; add?: boolean }) {
   const t = useT();
   return (
     <Button
-      variant="outline"
+      variant={add ? "ghost" : "outline"}
       size="xs"
       onClick={() => {
         onFix(step);
       }}
     >
-      {t("machine.screen.fix")}
+      {add ? t("machine.screen.add") : t("machine.screen.fix")}
     </Button>
   );
 }

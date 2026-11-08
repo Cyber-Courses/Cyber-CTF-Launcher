@@ -4,7 +4,7 @@ import type { SystemReport } from "@/lib/tauri";
 // Pure: no Tauri runtime needed (settings read localStorage inside a try, none here).
 vi.mock("@/lib/tauri", () => ({}));
 
-const { firstPending, pathProgress, stepLine } = await import("@/features/machine/setup-steps/step-status");
+const { firstPending, pathProgress, stepDone } = await import("@/features/machine/setup-steps/step-status");
 
 const ok = { result: "ok" as const, at: 1 };
 const fail = { result: "fail" as const, at: 1 };
@@ -50,7 +50,7 @@ describe("where a path stands", () => {
   });
 
   it("a fresh machine starts every path at the package manager, Windows' container path then needs WSL 2", () => {
-    for (const path of ["docker", "vm", "cloud"] as const) expect(firstPending(path, fresh(), none, null), path).toBe("pkgmgr");
+    for (const path of ["docker", "vm"] as const) expect(firstPending(path, fresh(), none, null), path).toBe("pkgmgr");
     const windows = fresh({ os: "windows", pkgManager: { name: "winget", installed: true, version: "1.9" }, wsl: null });
     expect(firstPending("docker", windows, none, null)).toBe("virtualization");
     expect(pathProgress("docker", windows, none, null)).toEqual({ done: 2, total: 5 });
@@ -64,11 +64,20 @@ describe("where a path stands", () => {
     expect(firstPending("vm", ready(), { ...none, vm: ok }, null)).toBeNull();
   });
 
-  it("the cloud path is Terraform: done once it is installed, optional either way", () => {
-    expect(firstPending("cloud", ready(), none, null)).toBeNull();
-    const missing = ready({ terraform: { installed: false, version: null } });
-    expect(firstPending("cloud", missing, none, null)).toBe("cloud");
-    expect(stepLine("cloud", missing, none, null)).toEqual({ done: false, optional: true, meta: "not installed" });
-    expect(stepLine("cloud", ready(), none, null).meta).toBe("1.9.8");
+  it("a hypervisor that can't run here, or one whose plugin is missing, leaves its step to do", () => {
+    const stuck = {
+      provider: "libvirt",
+      remote: false,
+      hypervisor: true,
+      available: false,
+      plugin: "vagrant-libvirt",
+      pluginInstalled: true,
+      reason: "no /dev/kvm",
+    };
+    expect(stepDone("vm", ready({ vmProviders: [stuck] } as Partial<SystemReport>), none, null)).toBe(false);
+    const noPlugin = { ...stuck, available: true, pluginInstalled: false, reason: null };
+    expect(stepDone("vm", ready({ vmProviders: [noPlugin] } as Partial<SystemReport>), none, null)).toBe(true);
+    expect(stepDone("vagrant", ready({ vmProviders: [noPlugin] } as Partial<SystemReport>), none, null)).toBe(false);
+    expect(stepDone("attack", fresh(), none, null)).toBe(true);
   });
 });

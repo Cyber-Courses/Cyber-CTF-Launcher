@@ -15,7 +15,6 @@
     "vm": "仮想マシン（任意）",
     "vagrant": "Vagrant（任意）",
     "vmTest": "VM のテスト（任意）",
-    "cloud": "クラウドラボ（任意）",
     "done": "完了"
   },
   "welcome": {

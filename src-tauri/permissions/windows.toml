@@ -153,7 +153,7 @@ permissions = [
 
 [[set]]
 identifier = "machine-setup-window"
-description = "The machine setup window: the container engine, hypervisor tools, self-test, shared folder, and the way to the cloud account setup."
+description = "The machine setup window: the container engine, hypervisor tools, self-test and shared folder."
 permissions = [
   "allow-docker-start-engine",
   "allow-docker-use-engine",
@@ -163,7 +163,6 @@ permissions = [
   "allow-machine-restart",
   "allow-machine-selftest",
   "allow-machine-selftest-prefetch",
-  "allow-server-open-setup",
   "allow-shared-folder-get",
   "allow-shared-folder-open",
   "allow-shared-folder-set",

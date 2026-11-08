@@ -78,11 +78,11 @@ for (const locale of LOCALES) {
         await expectTranslated(page, tab);
       }
 
-      // Machine, Setup view.
+      // Machine: the providers, and the way to add one.
       await navButton(page, shell.tabs.machine).click();
-      await page.getByRole("radiogroup", { name: machine.screen.viewLabel }).getByRole("radio", { name: machine.screen.viewSetup }).click();
-      await expect(page.locator("main")).toContainText(machine.checklist.title);
-      await expectTranslated(page, "Machine setup");
+      await expect(page.locator("main")).toContainText(machine.screen.providers);
+      await expect(page.getByRole("button", { name: machine.screen.addProvider })).toBeVisible();
+      await expectTranslated(page, "Machine providers");
 
       // A running container lab, a deploying VM lab, a cloud lab, a stopped one.
       await navButton(page, shell.tabs.labs).click();

@@ -24,16 +24,18 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Changed
 
-- **The guided machine setup is one path per lab type, and starts from where the machine
-  stands.** "Set up this machine" opens on a choice: container labs, VM labs or cloud labs, each
-  with how far along this machine is. A path lists only its own steps (a learner who only wants
-  cloud labs never sees Docker), and opens at the first one still to do, read from the machine
-  check and the last self-tests: a machine whose engine is installed and tested goes straight
-  past the Docker steps to its summary, instead of walking them again. The cloud path is new
-  (Terraform on this machine, then the account on the Cloud page) and begins at its own first
-  step, none shown as skipped. The Machine page's checklist groups its rows the same way, and a
-  Fix or Test there still opens its step directly. The first-run onboarding keeps the container
-  and VM steps.
+- **The Machine page lists its providers, and "Add a provider" opens a guided setup per lab
+  type that starts from where the machine stands.** The Health/Setup switch and the setup
+  checklist are gone: the page shows this machine's health and each container engine and
+  hypervisor it has or could have as a row (in use with its last test, running, installed,
+  stopped, unable to run here, or not set up), with the same Fix, Add and Test actions. "Add a
+  provider", in the header as the Servers page's "Add server", opens the guided setup on a choice
+  of the providers this machine can have, a container engine or a hypervisor for VMs, each row
+  saying how far along the machine is. A path lists only its own steps and opens at the first one
+  still to do, read from the machine check and the last self-tests: a machine whose engine is
+  installed and tested goes straight past the Docker steps to its summary, instead of walking
+  them again. Cloud accounts are connected on the Cloud page: the setup's cloud row takes you
+  there instead of walking steps of its own. A row's Fix or Test still opens its step directly.
 
 ### Fixed
 

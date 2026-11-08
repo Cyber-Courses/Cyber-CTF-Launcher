@@ -13,10 +13,7 @@
     },
     "readyForLabs": "ラボの準備完了",
     "uptime": "稼働時間 {uptime}",
-    "setUp": "このマシンをセットアップ",
-    "viewLabel": "マシンの表示",
-    "viewHealth": "状態",
-    "viewSetup": "セットアップ",
+    "addProvider": "プロバイダーを追加",
     "cpu": "CPU",
     "cores": {
       "one": "{count} コア",
@@ -29,39 +26,43 @@
       "meta": "空き {free}",
       "body": "空き容量は {free} のみです。アタックボックスだけで約 3.4 GB あり、ラボのイメージごとにさらに増えます。ラボを起動する前に空き容量を確保してください。"
     },
-    "engines": "エンジン",
-    "enginesMeta": "ラボで使用",
+    "providers": "プロバイダー",
+    "providersMeta": "このマシンでラボを実行するもの",
     "test": "テスト",
     "hideTest": "テストを隠す",
     "fix": "修正",
+    "add": "追加",
     "useServer": "サーバーを使う",
     "notTestedYet": "未テスト",
     "tested": "{ago} にテスト済み",
     "lastTestFailed": "{ago} の前回のテストは失敗",
     "freeHintDocker": "コンテナラボには約 {want} の空きメモリが必要です。現在の空き：{free}。",
     "freeHintVm": "VM ラボには約 {want} の空きメモリが必要です。現在の空き：{free}。",
-    "containerLabs": "コンテナラボ",
-    "vmLabs": "VM ラボ",
     "status": {
       "ready": "準備完了",
       "testFailed": "テスト失敗",
       "noPermission": "権限なし",
       "engineStopped": "エンジン停止中",
       "needsSetup": "セットアップが必要",
-      "notOnThisMachine": "このマシンでは利用不可"
+      "notOnThisMachine": "このマシンでは利用不可",
+      "running": "実行中",
+      "installed": "インストール済み",
+      "notInstalled": "未インストール",
+      "notSetUp": "未セットアップ",
+      "cantRunHere": "このマシンでは実行不可"
     },
     "docker": {
       "denied": "Docker は起動していますが、このユーザーには使用権限がない可能性があります。自分を docker グループに追加し、一度ログアウトしてから再ログインしてください。",
-      "stopped": "コンテナエンジンはインストールされていますが、起動していません。ラボを実行するには起動してください。",
-      "noEngineLinux": "コンテナエンジンがまだありません。Docker Engine、Docker Desktop、Colima のいずれでも動作します。",
-      "noEngineMacos": "コンテナエンジンがまだありません。Docker Desktop、OrbStack、Colima のいずれでも動作します。",
-      "noEngineWindows": "コンテナエンジンがまだありません。Docker Desktop で動作します。"
+      "stopped": "コンテナエンジンはインストールされていますが、起動していません。ラボを実行するには起動してください。"
+    },
+    "engine": {
+      "runningIdle": "実行中。ラボは {engine} を使用しています。セットアップで切り替えられます。"
     },
     "vm": {
       "notApplicable": "このマシンで動作するローカルのハイパーバイザーはありません。VM ラボは代わりにサーバーで実行できます。",
       "automatic": "（自動選択、「設定」で変更可能）",
       "vagrantMissing": "Vagrant またはハイパーバイザー用の Vagrant プラグインがありません。",
-      "needHypervisor": "Active Directory、Windows、複数ホストのラボに必要です。ハイパーバイザーをインストールしてください。"
+      "installedIdle": "ラボは {provider} で実行されます。「設定」で変更できます。"
     },
     "details": "詳細",
     "detail": {
@@ -142,26 +143,6 @@
       "cleanup": "テスト用 VM を削除"
     }
   },
-  "checklist": {
-    "title": "ガイド付きセットアップ",
-    "done": "{done} / {total} 完了",
-    "open": "ガイド付きセットアップを開く",
-    "test": "テスト",
-    "add": "追加",
-    "setUp": "セットアップ",
-    "notInstalled": "未インストール",
-    "restartNeeded": "再起動が必要",
-    "notChecked": "未確認",
-    "running": "実行中",
-    "stopped": "停止",
-    "passed": "成功",
-    "failed": "失敗",
-    "notTested": "未テスト",
-    "cantRunHere": " · ここでは実行不可",
-    "optional": "任意",
-    "installed": "インストール済み",
-    "pluginMissing": "プラグイン {plugin} がありません"
-  },
   "setup": {
     "checking": "このマシンを確認中…",
     "title": "この<em>マシン</em>をセットアップ",
@@ -180,9 +161,12 @@
       "cloud": "クラウドラボ",
       "dockerNote": "このマシン上の Docker コンテナと、その隣で動く攻撃ボックス。",
       "vmNote": "ハイパーバイザー上の完全な仮想マシン：ドメイン、Windows ホスト、複数ホストのネットワーク。",
-      "cloudNote": "自分のクラウドアカウント上のラボ。Terraform でこのマシンから作成します。",
+      "cloudNote": "自分のクラウドアカウント（AWS、Azure、Google Cloud など）上のラボ。「クラウド」ページで接続します。",
       "ready": "準備完了",
-      "review": "確認"
+      "review": "確認",
+      "progress": "{done} / {total} 完了",
+      "setUp": "セットアップ",
+      "openCloud": "「クラウド」ページを開く"
     }
   },
   "steps": {
@@ -215,10 +199,6 @@
     "vagrant": {
       "title": "プロビジョニング",
       "description": "Cyber CTF は、無料ツールの Vagrant を使って、ハイパーバイザー上に各ラボの仮想マシンを作成・起動します。ほとんどのハイパーバイザーでは、そのための小さなアドオン（プラグイン）も必要です。"
-    },
-    "cloud": {
-      "title": "クラウドラボ",
-      "description": "自分のクラウドアカウント（AWS、Azure、Google Cloud など）上のラボは、無料ツールの Terraform を使ってこのマシンから作成されます。ここでインストールしてから、「クラウド」ページでアカウントを接続してください。クラウドのコマンドラインツールはそこでインストールされます。"
     },
     "dockerTest": {
       "title": "コンテナラボをテスト",
@@ -287,10 +267,7 @@
       "engineRunning": "エンジンは実行中ですが、未テストです。",
       "setUpEngine": "実行するにはコンテナエンジンをセットアップしてください。",
       "notTested": "未テストです。",
-      "installHypervisor": "実行するにはハイパーバイザーをインストールしてください。",
-      "cloudLabs": "クラウドラボ",
-      "terraformReady": "Terraform はインストール済みです。実行するには「クラウド」ページでアカウントを接続してください。",
-      "installTerraform": "実行するには Terraform をインストールしてください。"
+      "installHypervisor": "実行するにはハイパーバイザーをインストールしてください。"
     }
   },
   "engine": {
@@ -355,13 +332,5 @@
     "autoStartHint": "オフの場合は、必要なときにラボのページから起動します。",
     "needsEngine": "コンテナエンジン上で動作するため、エンジンをセットアップすると使えるようになります。",
     "firstStart": "イメージは、ラボが初めて起動するときにダウンロードされます。"
-  },
-  "cloud": {
-    "terraformDetail": "クラウドアカウント内に各ラボを作成します。",
-    "installLog": "Terraform をインストール中…",
-    "installTerraform": "Terraform をインストール",
-    "connectHint": "クラウドアカウントは「クラウド」ページでサインインします。クラウドのツールもそこでインストールされます。",
-    "connect": "クラウドアカウントを接続",
-    "connectFailed": "クラウドのセットアップを開けませんでした"
   }
 }

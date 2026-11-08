@@ -22,8 +22,8 @@ export async function renderMachineScreen() {
   await flush(50);
 }
 
-/** Presses Test on the first lab type of the Engines panel. */
+/** Presses Test on the first provider of the Providers panel (the engine labs use). */
 export async function pressFirstTest(user: ReturnType<typeof userEvent.setup>) {
-  const engines = must(screen.getByText("Engines").closest("section, div")?.parentElement, "the Engines panel");
+  const engines = must(screen.getByText("Providers").closest("section, div")?.parentElement, "the Providers panel");
   await user.click(within(engines).getAllByRole("button", { name: /^test$/i })[0]);
 }

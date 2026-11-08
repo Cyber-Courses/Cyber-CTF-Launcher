@@ -13,10 +13,7 @@
     },
     "readyForLabs": "Prêt pour les labs",
     "uptime": "allumé depuis {uptime}",
-    "setUp": "Configurer cette machine",
-    "viewLabel": "Vue de la machine",
-    "viewHealth": "État",
-    "viewSetup": "Configuration",
+    "addProvider": "Ajouter un fournisseur",
     "cpu": "CPU",
     "cores": {
       "one": "{count} cœur",
@@ -29,39 +26,43 @@
       "meta": "{free} libres",
       "body": "Seulement {free} libres. La machine d'attaque à elle seule fait environ 3,4 Go, et chaque image de lab en ajoute. Libérez de l'espace avant de lancer un lab."
     },
-    "engines": "Moteurs",
-    "enginesMeta": "utilisés par vos labs",
+    "providers": "Fournisseurs",
+    "providersMeta": "ce qui exécute les labs sur cette machine",
     "test": "Tester",
     "hideTest": "Masquer le test",
     "fix": "Corriger",
+    "add": "Ajouter",
     "useServer": "Utiliser un serveur",
     "notTestedYet": "pas encore testé",
     "tested": "testé {ago}",
     "lastTestFailed": "dernier test échoué {ago}",
     "freeHintDocker": "Les labs conteneurs demandent environ {want} de mémoire libre ; {free} libres actuellement.",
     "freeHintVm": "Les labs VM demandent environ {want} de mémoire libre ; {free} libres actuellement.",
-    "containerLabs": "Labs conteneurs",
-    "vmLabs": "Labs VM",
     "status": {
       "ready": "Prêt",
       "testFailed": "Test échoué",
       "noPermission": "Accès refusé",
       "engineStopped": "Moteur arrêté",
       "needsSetup": "À configurer",
-      "notOnThisMachine": "Indisponible sur cette machine"
+      "notOnThisMachine": "Indisponible sur cette machine",
+      "running": "En marche",
+      "installed": "Installé",
+      "notInstalled": "Non installé",
+      "notSetUp": "Non configuré",
+      "cantRunHere": "Ne peut pas tourner ici"
     },
     "docker": {
       "denied": "Docker tourne, mais cet utilisateur n'a pas le droit de l'utiliser : ajoutez-vous au groupe docker, puis déconnectez-vous et reconnectez-vous.",
-      "stopped": "Un moteur de conteneurs est installé mais ne tourne pas. Démarrez-le pour lancer des labs.",
-      "noEngineLinux": "Aucun moteur de conteneurs pour l'instant. Docker Engine, Docker Desktop ou Colima conviennent tous.",
-      "noEngineMacos": "Aucun moteur de conteneurs pour l'instant. Docker Desktop, OrbStack ou Colima conviennent tous.",
-      "noEngineWindows": "Aucun moteur de conteneurs pour l'instant. Docker Desktop convient."
+      "stopped": "Un moteur de conteneurs est installé mais ne tourne pas. Démarrez-le pour lancer des labs."
+    },
+    "engine": {
+      "runningIdle": "En marche. Les labs utilisent {engine} ; changez dans la configuration."
     },
     "vm": {
       "notApplicable": "Aucun hyperviseur local ne fonctionne sur cette machine. Les labs VM peuvent tourner sur un serveur à la place.",
       "automatic": " (automatique, modifiable dans Réglages)",
       "vagrantMissing": "Vagrant ou le plugin Vagrant de l'hyperviseur est manquant.",
-      "needHypervisor": "Nécessaire pour les labs Active Directory, Windows et multi-machines. Installez un hyperviseur."
+      "installedIdle": "Les labs tournent sur {provider} ; changez-le dans Réglages."
     },
     "details": "Détails",
     "detail": {
@@ -142,26 +143,6 @@
       "cleanup": "Supprimer la VM de test"
     }
   },
-  "checklist": {
-    "title": "Configuration guidée",
-    "done": "{done} sur {total} terminées",
-    "open": "Ouvrir la configuration guidée",
-    "test": "Tester",
-    "add": "Ajouter",
-    "setUp": "Configurer",
-    "notInstalled": "non installé",
-    "restartNeeded": "redémarrage requis",
-    "notChecked": "non vérifié",
-    "running": "en marche",
-    "stopped": "arrêté",
-    "passed": "réussi",
-    "failed": "échoué",
-    "notTested": "non testé",
-    "cantRunHere": " · ne peut pas tourner ici",
-    "optional": "facultatif",
-    "installed": "installé",
-    "pluginMissing": "plugin {plugin} manquant"
-  },
   "setup": {
     "checking": "Analyse de cette machine…",
     "title": "Configurer cette <em>machine</em>",
@@ -180,9 +161,12 @@
       "cloud": "Labs cloud",
       "dockerNote": "Des conteneurs Docker sur cette machine, avec la machine d'attaque à côté.",
       "vmNote": "Des machines virtuelles complètes sur un hyperviseur : domaines, hôtes Windows, réseaux multi-machines.",
-      "cloudNote": "Des labs sur votre propre compte cloud, créés depuis cette machine avec Terraform.",
+      "cloudNote": "Des labs sur votre propre compte cloud (AWS, Azure, Google Cloud et d'autres) : connectez-le depuis la page Cloud.",
       "ready": "prêt",
-      "review": "Revoir"
+      "review": "Revoir",
+      "progress": "{done} sur {total} terminées",
+      "setUp": "Configurer",
+      "openCloud": "Ouvrir la page Cloud"
     }
   },
   "steps": {
@@ -215,10 +199,6 @@
     "vagrant": {
       "title": "Provisionnement",
       "description": "Cyber CTF crée et démarre les machines virtuelles de chaque lab avec Vagrant, un outil gratuit, sur votre hyperviseur. La plupart des hyperviseurs ont aussi besoin d'un petit module (plugin) pour cela."
-    },
-    "cloud": {
-      "title": "Labs cloud",
-      "description": "Les labs sur votre propre compte cloud (AWS, Azure, Google Cloud et d'autres) sont créés depuis cette machine avec Terraform, un outil gratuit. Installez-le ici, puis connectez un compte depuis la page Cloud ; l'outil en ligne de commande du cloud s'y installe."
     },
     "dockerTest": {
       "title": "Tester les labs conteneurs",
@@ -287,10 +267,7 @@
       "engineRunning": "Moteur en marche, non testé.",
       "setUpEngine": "Configurez un moteur de conteneurs pour les exécuter.",
       "notTested": "Non testés.",
-      "installHypervisor": "Installez un hyperviseur pour les exécuter.",
-      "cloudLabs": "Labs cloud",
-      "terraformReady": "Terraform est installé. Connectez un compte depuis la page Cloud pour les exécuter.",
-      "installTerraform": "Installez Terraform pour les exécuter."
+      "installHypervisor": "Installez un hyperviseur pour les exécuter."
     }
   },
   "engine": {
@@ -355,13 +332,5 @@
     "autoStartHint": "Sinon, lancez-la depuis la page du lab quand vous en avez besoin.",
     "needsEngine": "Elle tourne sur votre moteur de conteneurs, elle fonctionnera donc une fois celui-ci configuré.",
     "firstStart": "L'image est téléchargée la première fois qu'un lab la démarre."
-  },
-  "cloud": {
-    "terraformDetail": "Crée chaque lab dans votre compte cloud.",
-    "installLog": "Installation de Terraform…",
-    "installTerraform": "Installer Terraform",
-    "connectHint": "Votre compte cloud se connecte depuis la page Cloud ; l'outil du cloud s'y installe aussi.",
-    "connect": "Connecter un compte cloud",
-    "connectFailed": "Impossible d'ouvrir la configuration cloud"
   }
 }

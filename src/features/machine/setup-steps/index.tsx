@@ -10,11 +10,10 @@ import { SelfTest, type SelfTestResult } from "@/features/machine/self-test";
 import { getLastTest } from "@/lib/settings";
 import { type SystemReport } from "@/lib/tauri";
 import { AttackStep } from "@/features/machine/setup-steps/attack-step";
-import { CloudStep } from "@/features/machine/setup-steps/cloud-step";
 import { EngineStep } from "@/features/machine/setup-steps/engine-step";
 import { Outcome, Skipped } from "@/features/machine/setup-steps/parts";
 import { PackageManagerStep } from "@/features/machine/setup-steps/pkgmgr-step";
-import { MachineStep, type SetupPath, hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
+import { MachineStep, PATHS, type SetupPath, hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 import { VagrantStep, VmStep } from "@/features/machine/setup-steps/vm-steps";
 import { WslStep } from "@/features/machine/setup-steps/wsl-step";
@@ -39,8 +38,6 @@ export function MachineStepBody({ step, report, setup }: { step: MachineStep; re
       return <DockerTestStep report={report} setup={setup} />;
     case "vm-test":
       return <VmTestStep report={report} setup={setup} />;
-    case "cloud":
-      return <CloudStep report={report} setup={setup} />;
   }
 }
 
@@ -80,8 +77,8 @@ function VmTestStep({ report, setup }: { report: SystemReport; setup: MachineSet
 const testResult = (run: SelfTestResult, kind: "docker" | "vm") => (run === "idle" ? (getLastTest(kind)?.result ?? "idle") : run);
 
 /** End-of-setup summary: what this machine can run, from the test results. One row per path in
- *  `paths` (the window shows the path just walked; the onboarding, container and VM labs). */
-export function SetupOutcome({ report, setup, paths = ["docker", "vm"] }: { report: SystemReport | null; setup: MachineSetupState; paths?: SetupPath[] }) {
+ *  `paths` (the window shows the path just walked; the onboarding, both). */
+export function SetupOutcome({ report, setup, paths = PATHS }: { report: SystemReport | null; setup: MachineSetupState; paths?: SetupPath[] }) {
   const t = useT();
   const dockerTest = testResult(setup.dockerTest, "docker");
   const vmTest = testResult(setup.vmTest, "vm");
@@ -118,13 +115,6 @@ export function SetupOutcome({ report, setup, paths = ["docker", "vm"] }: { repo
           }
         />
       )}
-      {has("cloud") && (
-        <Outcome
-          title={t("machine.body.outcome.cloudLabs")}
-          ok={!!report?.terraform.installed}
-          detail={report?.terraform.installed ? t("machine.body.outcome.terraformReady") : t("machine.body.outcome.installTerraform")}
-        />
-      )}
     </div>
   );
 }
@@ -142,7 +132,7 @@ export {
   type MachineStep,
   type SetupPath,
 } from "@/features/machine/setup-steps/steps";
-export { firstPending, pathProgress, stepLine, type LastTests } from "@/features/machine/setup-steps/step-status";
+export { firstPending, pathProgress, type LastTests } from "@/features/machine/setup-steps/step-status";
 export { PathChooser } from "@/features/machine/setup-steps/path-step";
 export { useMachineSetup, type MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 export { EngineMark } from "@/features/machine/setup-steps/engine-step";
