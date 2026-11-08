@@ -29,6 +29,7 @@ export function RunningActions({
   state: s,
   url,
   locked,
+  parkLocked = locked,
   acting,
   resetting,
   onAct,
@@ -38,6 +39,9 @@ export function RunningActions({
   url: string | null | undefined;
   /** Every action waits for the operation in flight. */
   locked: boolean;
+  /** Pause and Shut down also wait for an attack box being added or removed: parking the lab
+   *  under it would halt the VMs the attach is still working in. */
+  parkLocked?: boolean;
   acting: LabAction | null;
   resetting: boolean;
   onAct: (what: LabAction) => void;
@@ -57,8 +61,8 @@ export function RunningActions({
           <ExternalLink className="size-3.5" /> {t("labs.detail.openInBrowser")}
         </Button>
       )}
-      {s.canPause && <ParkButton key="pause" what="pause" icon={Pause} locked={locked} acting={acting} onAct={onAct} />}
-      {s.canShutdown && <ParkButton key="shutdown" what="shutdown" icon={Power} locked={locked} acting={acting} onAct={onAct} />}
+      {s.canPause && <ParkButton key="pause" what="pause" icon={Pause} locked={parkLocked} acting={acting} onAct={onAct} />}
+      {s.canShutdown && <ParkButton key="shutdown" what="shutdown" icon={Power} locked={parkLocked} acting={acting} onAct={onAct} />}
       <Tip key="remove" text={t("labs.detail.removeHint")}>
         <Button variant="destructive" onClick={onRemove} disabled={locked}>
           {s.operation === "stop" && !resetting ? (

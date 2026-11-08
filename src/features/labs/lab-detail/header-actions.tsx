@@ -18,6 +18,8 @@ type HeaderActionsProps = {
   /** An operation the backend reports in flight on the lab (one started before a window reload,
    *  so not this session's `busy`): every action waits for it. */
   deploying?: boolean;
+  /** An attack box is being added or removed: Pause and Shut down wait for it. */
+  boxBusy?: boolean;
   acting: LabAction | null;
   resetting: boolean;
   onAct: (what: LabAction) => void;
@@ -39,6 +41,7 @@ export function HeaderActions({
   url,
   busy,
   deploying = false,
+  boxBusy = false,
   acting,
   resetting,
   onAct,
@@ -51,7 +54,7 @@ export function HeaderActions({
   const locked = busy || deploying;
   switch (mode) {
     case "running":
-      return <RunningActions state={s} url={url} locked={locked} acting={acting} resetting={resetting} onAct={onAct} onRemove={onRemove} />;
+      return <RunningActions state={s} url={url} locked={locked} parkLocked={locked || boxBusy} acting={acting} resetting={resetting} onAct={onAct} onRemove={onRemove} />;
     case "parked":
       return <ParkedActions locked={locked} busy={busy} onAct={onAct} onRemove={onRemove} />;
     case "stopping":

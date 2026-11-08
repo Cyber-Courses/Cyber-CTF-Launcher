@@ -71,6 +71,7 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
       url={p.status?.url}
       busy={p.busy}
       deploying={s.deploying}
+      boxBusy={page.box.busy}
       acting={acting}
       resetting={page.resetting}
       onAct={(what) => void act(what)}
