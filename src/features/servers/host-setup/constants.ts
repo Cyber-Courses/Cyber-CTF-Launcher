@@ -112,7 +112,7 @@ export const OCI_REGIONS: [string, string][] = [
   ["ca-toronto-1", "Toronto"],
 ];
 
-export type StepKey = "provider" | "hypervisor" | "tools" | "connection" | "placement" | "account" | "credentials" | "options" | "test";
+export type StepKey = "provider" | "hypervisor" | "tools" | "server" | "connection" | "placement" | "account" | "credentials" | "options" | "test";
 /** A cloud host's default name: the provider's short name (the user can rename it). */
 export const CLOUD_DEFAULT_NAME: Record<CloudProvider, string> = {
   aws: "AWS",

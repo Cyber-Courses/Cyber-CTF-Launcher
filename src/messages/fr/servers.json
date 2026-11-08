@@ -123,9 +123,12 @@
       "get": "Obtenir",
       "terraformProxmox": "Pilote l'API Proxmox. Installez-le pour lancer des labs Proxmox."
     },
+    "server": {
+      "title": "Votre serveur {kind}",
+      "description": "Où se trouve le serveur. La façon dont le launcher s'y connecte vient ensuite."
+    },
     "connection": {
       "title": "Connexion à {kind}",
-      "descriptionProxmox": "Le launcher se connecte à l'API Proxmox.",
       "descriptionSsh": "Le launcher pilote l'hôte via SSH.",
       "name": "Nom",
       "namePlaceholderProxmox": "Proxmox du garage",
@@ -135,7 +138,6 @@
       "apiPort": "Port de l'API",
       "sshPort": "Port SSH",
       "username": "Nom d'utilisateur",
-      "usernameHint": "root@pam, ou un ID de jeton d'API comme root@pam!name",
       "tokenSecret": "Secret du jeton",
       "password": "Mot de passe",
       "keychainHint": "Stocké dans le trousseau de votre système",
@@ -144,7 +146,22 @@
       "authorizeKeyBody": "Les hôtes à jeton utilisent cette clé via SSH pour envoyer le snippet cloud-init. Ajoutez-la au fichier <code>~/.ssh/authorized_keys</code> de l'utilisateur du jeton sur le nœud Proxmox.",
       "loadingKey": "Chargement de la clé publique du launcher…",
       "copied": "Copié",
-      "copy": "Copier"
+      "copy": "Copier",
+      "descriptionSignIn": "Choisissez comment le launcher se connecte au nœud Proxmox.",
+      "method": "Méthode de connexion",
+      "methodSshKey": "Clé SSH",
+      "methodToken": "Jeton d'API",
+      "methodPassword": "Mot de passe",
+      "sshKeyPath": "Clé privée",
+      "sshKeyPathHint": "Seul son chemin est enregistré, jamais la clé elle-même",
+      "sshKeyChoose": "Choisir…",
+      "sshKeyPick": "Choisissez votre clé privée SSH",
+      "sshUser": "Utilisateur SSH",
+      "sshKeyNoteTitle": "Ce que le launcher fait de votre clé",
+      "sshKeyNoteBody": "À l'enregistrement, il se connecte au nœud en SSH avec cette clé, crée un jeton d'API pour lui-même avec <code>pveum user token add</code> et ajoute sa propre clé publique au <code>~/.ssh/authorized_keys</code> de l'utilisateur. Rien d'autre ne s'exécute sur le nœud ; les labs utilisent ensuite ce jeton.",
+      "tokenId": "ID du jeton",
+      "tokenIdHint": "user@realm!name, p. ex. root@pam!cyberctf",
+      "usernameHintPassword": "user@realm, p. ex. root@pam"
     },
     "placement": {
       "title": "Emplacement",
@@ -265,7 +282,8 @@
     "test": {
       "title": "Test de connexion",
       "description": "Enregistré. Voici ce que le launcher a pu vérifier depuis cette machine.",
-      "testing": "Test de la connexion…"
+      "testing": "Test de la connexion…",
+      "checks": "Ce qui a été vérifié"
     }
   }
 }

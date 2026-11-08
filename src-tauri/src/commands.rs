@@ -97,6 +97,8 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         shared_folder::shared_folder_open,
         server::server_list,
         server::server_save,
+        server::server_save_ssh_key,
+        server::server_default_ssh_key,
         server::server_remove,
         server::server_set_default,
         server::server_test,

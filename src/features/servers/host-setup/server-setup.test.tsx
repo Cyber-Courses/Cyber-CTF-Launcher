@@ -9,7 +9,16 @@ import { freshReport, readyReport } from "@/test/fixtures";
 import { installTauri } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
-/** An existing host being edited: connection, placement, test. */
+/** From a new Proxmox setup's first step (its address filled) to its sign-in step. */
+async function toSignIn(user: ReturnType<typeof userEvent.setup>) {
+  for (let n = 0; n < 3; n++) await go(user, /^continue$/i);
+  expect(heading()).toBe("Connect to Proxmox VE");
+}
+
+/** The sign-in method choice named `name`. */
+const radio = (name: string) => screen.getByRole("radio", { name });
+
+/** An existing host being edited: server, connection, placement, test. */
 const editing = (patch: Partial<ServerHostInput>): ServerHostInput => ({
   ...EMPTY_HOST,
   id: "pve",
@@ -53,19 +62,23 @@ describe("server connection step", () => {
     await renderSetup(editing({ port: 8007 }));
     fireEvent.change(field("8006"), { target: { value: "" } });
     await go(user, /^continue$/i);
+    await go(user, /^continue$/i);
     await go(user, /save and test/i);
     expect(argsOf(calls, "server_save")[0]).toMatchObject({ input: { port: null } });
   });
 
   it("shows the launcher's SSH key for a Proxmox API token, and copies it", async () => {
     const calls = installTauri();
+    const user = userEvent.setup();
     const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     await renderSetup(editing({}));
-    expect(screen.getByText("Password")).toBeTruthy();
+    await go(user, /^continue$/i);
+    expect(radio("Password").getAttribute("aria-checked")).toBe("true");
     expect(argsOf(calls, "server_public_key")).toEqual([]);
-    fireEvent.change(field("root@pam"), { target: { value: "root@pam!ci" } });
+    await user.click(radio("API token"));
     await flush();
+    expect(screen.getByText("Token id")).toBeTruthy();
     expect(screen.getByText("Token secret")).toBeTruthy();
     expect(screen.getByText("ssh-ed25519 AAAAC3Nza cyberctf")).toBeTruthy();
     // A plain click: user-event would swap in its own clipboard.
@@ -84,6 +97,8 @@ describe("server connection step", () => {
     });
     installTauri();
     await renderSetup(editing({ username: "root@pam!ci" }));
+    fireEvent.click(button(/^continue$/i));
+    await flush(30);
     fireEvent.click(button(/^\s*copy$/i));
     await flush();
     expect(button(/^\s*copy$/i)).toBeTruthy();
@@ -92,6 +107,8 @@ describe("server connection step", () => {
   it("waits for the key, with Copy disabled", async () => {
     installTauri({ server_public_key: () => new Promise(() => {}) });
     await renderSetup(editing({ username: "root@pam!ci" }));
+    fireEvent.click(button(/^continue$/i));
+    await flush(30);
     expect(screen.getByText("Loading the launcher's public key…")).toBeTruthy();
     expect(button(/^\s*copy$/i).hasAttribute("disabled")).toBe(true);
   });
@@ -103,6 +120,7 @@ describe("server connection step", () => {
     const user = userEvent.setup();
     await renderSetup(editing({}));
     await go(user, /^continue$/i);
+    await go(user, /^continue$/i);
     expect(screen.getByText("Bridge")).toBeTruthy();
     await user.click(screen.getByRole("switch"));
     await go(user, /save and test/i);
@@ -110,6 +128,100 @@ describe("server connection step", () => {
     expect(screen.getByText("duplicate name")).toBeTruthy();
     await go(user, /^\s*back$/i);
     expect(heading()).toBe("Connect to Proxmox VE");
+  });
+});
+
+describe("Proxmox server and sign-in steps", () => {
+  it("asks for the server first, then signs in with the first usual SSH key and makes the token on save", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    await renderSetup({ ...EMPTY_HOST });
+    await go(user, /^continue$/i);
+    await go(user, /^continue$/i);
+    expect(heading()).toBe("Your Proxmox VE server");
+    expect(screen.getByText("API port")).toBeTruthy();
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(button(/^continue$/i).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(field("192.168.1.20 or pve.lan"), { target: { value: "10.0.0.50" } });
+    await go(user, /^continue$/i);
+    expect(heading()).toBe("Connect to Proxmox VE");
+    expect(radio("SSH key").getAttribute("aria-checked")).toBe("true");
+    expect(field("~/.ssh/id_ed25519").value).toBe("/Users/me/.ssh/id_ed25519");
+    expect(field("root").value).toBe("root");
+    expect(field("22").value).toBe("22");
+    expect(screen.queryByText("Token secret")).toBeNull();
+    expect(screen.getByText(/pveum user token add/)).toBeTruthy();
+    await go(user, /^continue$/i);
+    await go(user, /save and test/i);
+    expect(argsOf(calls, "server_save")).toEqual([]);
+    expect(argsOf(calls, "server_save_ssh_key")[0]).toMatchObject({
+      input: { provider: "proxmox", host: "10.0.0.50", username: "", password: null, sshKey: { path: "/Users/me/.ssh/id_ed25519", user: "root", port: 22 } },
+    });
+    expect(argsOf(calls, "server_test")[0]).toEqual({ id: "new-host" });
+  });
+
+  it("needs a key, a user and a port, and picks the key with the file dialog", async () => {
+    const calls = installTauri({ server_default_ssh_key: () => null, "plugin:dialog|open": () => "/Users/me/keys/pve" });
+    const user = userEvent.setup();
+    await renderSetup(editing({ id: null }));
+    await toSignIn(user);
+    expect(field("~/.ssh/id_ed25519").value).toBe("");
+    expect(button(/^continue$/i).hasAttribute("disabled")).toBe(true);
+    await go(user, /choose/i);
+    expect(field("~/.ssh/id_ed25519").value).toBe("/Users/me/keys/pve");
+    expect(button(/^continue$/i).hasAttribute("disabled")).toBe(false);
+    fireEvent.change(field("root"), { target: { value: " " } });
+    expect(button(/^continue$/i).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(field("root"), { target: { value: "admin" } });
+    fireEvent.change(field("22"), { target: { value: "" } });
+    expect(button(/^continue$/i).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(field("22"), { target: { value: "2222" } });
+    await go(user, /^continue$/i);
+    await go(user, /save and test/i);
+    expect(argsOf(calls, "server_save_ssh_key")[0]).toMatchObject({ input: { sshKey: { path: "/Users/me/keys/pve", user: "admin", port: 2222 } } });
+  });
+
+  it("shows each method's own fields, and a password or token save sends no key", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    await renderSetup(editing({ id: null, username: "" }));
+    await toSignIn(user);
+    await user.click(radio("Password"));
+    expect(screen.getByText("Username")).toBeTruthy();
+    expect(input("input[type=password]")).toBeTruthy();
+    expect(screen.queryByText("Private key")).toBeNull();
+    expect(screen.queryByText("Loading the launcher's public key…")).toBeNull();
+    await user.click(radio("API token"));
+    expect(screen.getByText("Token id")).toBeTruthy();
+    fireEvent.change(field("root@pam!cyberctf"), { target: { value: "root@pam!ci" } });
+    fireEvent.change(input("input[type=password]"), { target: { value: "s3cret" } });
+    await go(user, /^continue$/i);
+    await go(user, /save and test/i);
+    expect(argsOf(calls, "server_save_ssh_key")).toEqual([]);
+    expect(argsOf(calls, "server_save")[0]).toMatchObject({ input: { username: "root@pam!ci", password: "s3cret", sshKey: null } });
+  });
+
+  it("reopens a setup made with an SSH key on that key, and lists each checked part", async () => {
+    const parts = [
+      { name: "SSH with your key", state: "ok", detail: "Signed in to root@10.0.0.50:22." },
+      { name: "API token", state: "ok", detail: "Made the API token root@pam!cyberctf-0a1b2c3d." },
+      { name: "Launcher key", state: "ok", detail: "The launcher's key is in root's authorized_keys." },
+      { name: "Proxmox API", state: "fail", detail: "Bridge vmbr9 doesn't exist." },
+    ];
+    installTauri({
+      server_test: () => ({ ok: false, reachable: true, authenticated: true, latencyMs: 3, message: "Bridge vmbr9 doesn't exist.", checks: parts }),
+    });
+    const user = userEvent.setup();
+    await renderSetup(editing({ username: "root@pam!cyberctf-0a1b2c3d", sshKey: { path: "/Users/me/keys/pve", user: "root", port: 22 } }));
+    await go(user, /^continue$/i);
+    expect(radio("SSH key").getAttribute("aria-checked")).toBe("true");
+    expect(field("~/.ssh/id_ed25519").value).toBe("/Users/me/keys/pve");
+    await go(user, /^continue$/i);
+    await go(user, /save and test/i);
+    const list = screen.getByRole("list", { name: "What was checked" });
+    expect(list.textContent).toContain("SSH with your key");
+    expect(list.textContent).toContain("Launcher key");
+    expect(list.querySelectorAll("li")).toHaveLength(4);
   });
 });
 

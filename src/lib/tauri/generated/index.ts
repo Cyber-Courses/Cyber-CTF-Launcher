@@ -47,6 +47,7 @@ export type * from "./ServerHostInput";
 export type * from "./ServerList";
 export type * from "./ServerTest";
 export type * from "./SharedFolder";
+export type * from "./SshKeySignIn";
 export type * from "./Storage";
 export type * from "./StoredItem";
 export type * from "./SystemReport";

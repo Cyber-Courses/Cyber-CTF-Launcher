@@ -42,7 +42,8 @@ describe("HostSetupPage", () => {
     const h = renderSetup({ ...EMPTY_HOST });
     const titles = await walk(user, { explore: false });
     expect(titles.length).toBeGreaterThan(2);
-    expect(commands(calls)).toContain("server_save");
+    // A new Proxmox server signs in with the SSH key, which makes the launcher's token.
+    expect(commands(calls)).toContain("server_save_ssh_key");
     expect(h.onSaved).toHaveBeenCalled();
   });
 

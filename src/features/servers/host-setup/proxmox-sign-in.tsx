@@ -1,0 +1,117 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { KeyRound, Network } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
+import { KIND } from "@/features/servers/host-setup/constants";
+import { Field, Input, Note, Step } from "@/features/servers/host-setup/form";
+import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav";
+import type { SignIn } from "@/features/servers/host-setup/setup-model";
+import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
+import { warn } from "@/lib/failure";
+import { useT } from "@/lib/i18n";
+
+// Proxmox's sign-in step: SSH key (the launcher then makes its own API token on the node), API
+// token, or user and password.
+
+/** Proxmox's second connection step: how the launcher signs in, SSH key first. */
+export function ProxmoxSignIn({ s, signInFields, authorizeKey }: { s: HostSetup; signInFields: ReactNode; authorizeKey: ReactNode }) {
+  const t = useT();
+  const { signInMethod, setSignInMethod, connectionOk, next, back } = s;
+  const methods: { value: SignIn; label: string }[] = [
+    { value: "sshKey", label: t("servers.setup.connection.methodSshKey") },
+    { value: "token", label: t("servers.setup.connection.methodToken") },
+    { value: "password", label: t("servers.setup.connection.methodPassword") },
+  ];
+  return (
+    <Step
+      icon={Network}
+      title={t("servers.setup.connection.title", { kind: KIND.proxmox.label })}
+      description={t("servers.setup.connection.descriptionSignIn")}
+    >
+      <Segmented label={t("servers.setup.connection.method")} value={signInMethod} onChange={setSignInMethod} options={methods} className="self-start" />
+      {signInMethod === "sshKey" ? <SshKeyFields s={s} /> : signInFields}
+      {signInMethod === "token" && authorizeKey}
+      <BackNav onBack={back}>
+        <ContinueButton onClick={next} disabled={!connectionOk} />
+      </BackNav>
+    </Step>
+  );
+}
+
+/** The player's private key (picked or typed: its path only), the SSH user and port, and what
+ *  the launcher will do with them on save. */
+function SshKeyFields({ s }: { s: HostSetup }) {
+  const t = useT();
+  const { sshKey, setSshKey } = s;
+  const pick = () => {
+    open({ multiple: false, directory: false, defaultPath: sshKey.path || undefined, title: t("servers.setup.connection.sshKeyPick") })
+      .then((path) => {
+        if (typeof path === "string") setSshKey("path", path);
+      })
+      .catch(warn("choosing an SSH key"));
+  };
+  return (
+    <>
+      <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+        <Field label={t("servers.setup.connection.sshKeyPath")} hint={t("servers.setup.connection.sshKeyPathHint")}>
+          <Input
+            value={sshKey.path}
+            onChange={(e) => {
+              setSshKey("path", e.target.value);
+            }}
+            placeholder="~/.ssh/id_ed25519"
+          />
+        </Field>
+        <div className="sm:pt-[1.3rem]">
+          <Button variant="outline" onClick={pick}>
+            {t("servers.setup.connection.sshKeyChoose")}
+          </Button>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_6.875rem]">
+        <Field label={t("servers.setup.connection.sshUser")}>
+          <Input
+            value={sshKey.user}
+            onChange={(e) => {
+              setSshKey("user", e.target.value);
+            }}
+            placeholder="root"
+          />
+        </Field>
+        <Field label={t("servers.setup.connection.sshPort")}>
+          <Input
+            type="number"
+            min={1}
+            max={65535}
+            value={Number.isNaN(sshKey.port) ? "" : sshKey.port}
+            onChange={(e) => {
+              setSshKey("port", e.target.value ? Number(e.target.value) : Number.NaN);
+            }}
+            placeholder="22"
+          />
+        </Field>
+      </div>
+      <SshKeyNote />
+    </>
+  );
+}
+
+/** What saving with an SSH key does on the node, said before it happens. */
+function SshKeyNote() {
+  const t = useT();
+  return (
+    <Note className="mt-3">
+      <div className="flex items-center gap-1.5 text-[0.8125rem] font-medium">
+        <KeyRound className="size-3.5 text-muted-foreground" /> {t("servers.setup.connection.sshKeyNoteTitle")}
+      </div>
+      <p className="mt-1 text-[0.75rem] text-muted-foreground">
+        {t.rich("servers.setup.connection.sshKeyNoteBody", {
+          code: (c) => <code className="mx-1 rounded-xs bg-glass-2 px-1 py-0.5 font-mono">{c}</code>,
+        })}
+      </p>
+    </Note>
+  );
+}

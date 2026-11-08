@@ -1,4 +1,4 @@
-import type { CloudClis, CloudProvider, Dependency, RemoteProvider, ServerHostInput, ServerTest, SystemReport } from "@/lib/tauri";
+import type { CloudClis, CloudProvider, Dependency, RemoteProvider, ServerHostInput, ServerTest, SshKeySignIn, SystemReport } from "@/lib/tauri";
 import {
   AWS_REGIONS,
   AZURE_LOCATIONS,
@@ -31,9 +31,13 @@ const isCliAuthCloud = (p: RemoteProvider) => p === "azure" || p === "gcp";
  * The ordered steps for this setup. Editing skips choosing the provider or hypervisor and
  * installing the tools; a cloud setup opened on a chosen provider (`providerChosen`, the Cloud
  * page's Connect rows) skips choosing it too; only AWS asks how to connect (CLI or access keys).
+ * Proxmox describes the server first, then picks how to sign in to it.
  */
 export function setupSteps(provider: RemoteProvider, editing: boolean, providerChosen = false): StepKey[] {
-  if (!isCloud(provider)) return editing ? ["connection", "placement", "test"] : ["hypervisor", "tools", "connection", "placement", "test"];
+  if (!isCloud(provider)) {
+    const connect: StepKey[] = provider === "proxmox" ? ["server", "connection"] : ["connection"];
+    return editing ? [...connect, "placement", "test"] : ["hypervisor", "tools", ...connect, "placement", "test"];
+  }
   const account: StepKey[] = provider === "aws" ? ["account"] : [];
   const choose: StepKey[] = editing ? [] : providerChosen ? ["tools"] : ["provider", "tools"];
   return [...choose, ...account, "credentials", "options", "test"];
@@ -87,9 +91,48 @@ export function startingSetup(kind: string | null, provider: string | null): { f
   return { form: { ...EMPTY_CLOUD }, providerChosen: false };
 }
 
+/** How the launcher signs in to a Proxmox node: with the player's SSH key (it then makes its own
+ *  API token there), an API token, or a user and password. */
+export type SignIn = "sshKey" | "token" | "password";
+
+/** A saved host's sign-in; a new Proxmox setup starts on the SSH key. */
+export function initialSignIn(v: ServerHostInput): SignIn {
+  if (v.sshKey) return "sshKey";
+  if (v.username.includes("!")) return "token";
+  return v.id === null && v.provider === "proxmox" ? "sshKey" : "password";
+}
+
+/** The SSH key sign-in a setup starts from: the saved one, else root on port 22, its key to pick. */
+export function initialSshKey(v: ServerHostInput): SshKeySignIn {
+  return v.sshKey ?? { path: "", user: "root", port: 22 };
+}
+
+/** A port a field may hold: empty (the default) or a whole TCP port number. */
+const portOk = (port: number | null | undefined) => port == null || (Number.isInteger(port) && port >= 1 && port <= 65535);
+
+/** Whether the Server step (Proxmox: its name, address and API port) has what it needs. */
+export function serverReady(v: ServerHostInput): boolean {
+  return v.host.trim() !== "" && portOk(v.port);
+}
+
+/** Whether a Proxmox SSH key sign-in names a key, a user and a port. */
+export function sshKeyReady(k: SshKeySignIn): boolean {
+  return k.path.trim() !== "" && k.user.trim() !== "" && portOk(k.port);
+}
+
+/** What a save sends: an SSH key sign-in (`sshKey` mode) or none; the token is made from it. */
+export function savePayload(v: ServerHostInput, signIn: SignIn, key: SshKeySignIn): ServerHostInput {
+  const named = { ...v, name: saveName(v) };
+  if (v.provider === "proxmox" && signIn === "sshKey")
+    return { ...named, username: "", password: null, sshKey: { ...key, path: key.path.trim(), user: key.user.trim() } };
+  return { ...named, sshKey: null };
+}
+
 /** Whether the connection / credentials step has what it needs to go on. `secretKept`: a saved
- *  secret stays when the field is left empty (see `keepsSecret`). */
-export function connectionReady(v: ServerHostInput, secretKept: boolean): boolean {
+ *  secret stays when the field is left empty (see `keepsSecret`). `key`: the Proxmox SSH key
+ *  sign-in, when that is how it signs in. */
+export function connectionReady(v: ServerHostInput, secretKept: boolean, key: SshKeySignIn | null = null): boolean {
+  if (v.provider === "proxmox" && key) return serverReady(v) && sshKeyReady(key);
   const host = v.host.trim() !== "";
   const user = v.username.trim() !== "";
   const secret = secretKept || (v.password ?? "") !== "";
@@ -98,8 +141,7 @@ export function connectionReady(v: ServerHostInput, secretKept: boolean): boolea
   if (isCloud(v.provider) && v.useCliCreds) return host;
   // A server's port: empty (its default) or a whole number a TCP port can be (the field took 0
   // or 70000 and went on).
-  const port = v.port == null || (Number.isInteger(v.port) && v.port >= 1 && v.port <= 65535);
-  return host && user && secret && port;
+  return host && user && secret && portOk(v.port);
 }
 
 /** Whether an edited host or account has a saved secret to keep: one that signed in with the

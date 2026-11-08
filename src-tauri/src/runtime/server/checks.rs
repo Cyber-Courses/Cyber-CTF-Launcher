@@ -92,7 +92,21 @@ impl TestResult {
         TestResult { ok: false, reachable: false, authenticated: None, latency_ms: None, message, checks: Vec::new() }
     }
 
-    /// A server that answered (checks are cloud-only).
+    /// A server set up with an SSH key: the setup's own checks (`before`), then this result as
+    /// the API's check. Ok only when every one is; the message is the first failure's.
+    pub(crate) fn with_sign_in_checks(mut self, before: Vec<Check>) -> Self {
+        let api = if self.ok { Check::ok("Proxmox API", self.message.clone()) } else { Check::fail("Proxmox API", self.message.clone()) };
+        let mut checks = before;
+        checks.push(api);
+        if let Some(failed) = checks.iter().find(|c| c.state == CheckState::Fail) {
+            self.ok = false;
+            self.message.clone_from(&failed.detail);
+        }
+        self.checks = checks;
+        self
+    }
+
+    /// A server that answered (checks are cloud-only, and an SSH-key Proxmox setup's).
     pub(super) fn reached(ok: bool, authenticated: Option<bool>, latency_ms: Option<u64>, message: impl Into<String>) -> Self {
         TestResult { ok, reachable: true, authenticated, latency_ms, message: message.into(), checks: Vec::new() }
     }
@@ -130,6 +144,19 @@ mod tests {
         assert_ne!(r.authenticated, Some(true));
         let r = TestResult::unreachable_checks(Vec::new());
         assert!(!r.ok && r.message.is_empty());
+    }
+
+    #[test]
+    fn an_ssh_key_setup_lists_each_part_before_the_api() {
+        let api = TestResult::reached(true, Some(true), Some(4), "Connected to pve");
+        let r = api.with_sign_in_checks(vec![Check::ok("SSH with your key", "signed in"), Check::ok("API token", "made")]);
+        assert!(r.ok && r.message == "Connected to pve");
+        assert_eq!(r.checks.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["SSH with your key", "API token", "Proxmox API"]);
+        // A failed part fails the test and says why, even when the API answers.
+        let r = TestResult::reached(true, Some(true), None, "ok").with_sign_in_checks(vec![Check::fail("SSH with your key", "denied")]);
+        assert!(!r.ok && r.message == "denied");
+        let r = TestResult::reached(false, Some(false), None, "rejected").with_sign_in_checks(vec![Check::ok("SSH with your key", "fine")]);
+        assert!(!r.ok && r.message == "rejected" && r.checks[1].state == CheckState::Fail);
     }
 
     #[test]

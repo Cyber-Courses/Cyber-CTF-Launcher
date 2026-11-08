@@ -123,9 +123,12 @@
       "get": "Obtener",
       "terraformProxmox": "Controla la API de Proxmox. Instálalo para ejecutar labs en Proxmox."
     },
+    "server": {
+      "title": "Tu servidor {kind}",
+      "description": "Dónde está el servidor. Cómo inicia sesión el launcher viene después."
+    },
     "connection": {
       "title": "Conectar con {kind}",
-      "descriptionProxmox": "El launcher inicia sesión en la API de Proxmox.",
       "descriptionSsh": "El launcher controla el host por SSH.",
       "name": "Nombre",
       "namePlaceholderProxmox": "Proxmox del garaje",
@@ -135,7 +138,6 @@
       "apiPort": "Puerto de la API",
       "sshPort": "Puerto SSH",
       "username": "Usuario",
-      "usernameHint": "root@pam, o un id de token de API como root@pam!name",
       "tokenSecret": "Secreto del token",
       "password": "Contraseña",
       "keychainHint": "Se guarda en el llavero de tu sistema",
@@ -144,7 +146,22 @@
       "authorizeKeyBody": "Los hosts con token usan esta clave por SSH para subir el fragmento de cloud-init. Añádela al <code>~/.ssh/authorized_keys</code> del usuario del token en el nodo Proxmox.",
       "loadingKey": "Cargando la clave pública del launcher…",
       "copied": "Copiado",
-      "copy": "Copiar"
+      "copy": "Copiar",
+      "descriptionSignIn": "Elige cómo inicia sesión el launcher en el nodo Proxmox.",
+      "method": "Método de inicio de sesión",
+      "methodSshKey": "Clave SSH",
+      "methodToken": "Token de API",
+      "methodPassword": "Contraseña",
+      "sshKeyPath": "Clave privada",
+      "sshKeyPathHint": "Solo se guarda su ruta, nunca la clave",
+      "sshKeyChoose": "Elegir…",
+      "sshKeyPick": "Elige tu clave privada SSH",
+      "sshUser": "Usuario SSH",
+      "sshKeyNoteTitle": "Qué hace el launcher con tu clave",
+      "sshKeyNoteBody": "Al guardar, inicia sesión en el nodo por SSH con esta clave, crea un token de API para sí mismo con <code>pveum user token add</code> y añade su propia clave pública a <code>~/.ssh/authorized_keys</code> del usuario. No se ejecuta nada más en el nodo; los labs usan luego ese token.",
+      "tokenId": "ID del token",
+      "tokenIdHint": "user@realm!name, p. ej. root@pam!cyberctf",
+      "usernameHintPassword": "user@realm, p. ej. root@pam"
     },
     "placement": {
       "title": "Ubicación",
@@ -265,7 +282,8 @@
     "test": {
       "title": "Prueba de conexión",
       "description": "Guardado. Esto es lo que el launcher ha podido comprobar desde esta máquina.",
-      "testing": "Probando la conexión…"
+      "testing": "Probando la conexión…",
+      "checks": "Qué se comprobó"
     }
   }
 }

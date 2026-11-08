@@ -123,9 +123,12 @@
       "get": "Holen",
       "terraformProxmox": "Steuert die Proxmox-API. Installiere es, um Proxmox-Labs auszuführen."
     },
+    "server": {
+      "title": "Dein {kind}-Server",
+      "description": "Wo der Server steht. Wie sich der Launcher anmeldet, kommt als Nächstes."
+    },
     "connection": {
       "title": "Mit {kind} verbinden",
-      "descriptionProxmox": "Der Launcher meldet sich bei der Proxmox-API an.",
       "descriptionSsh": "Der Launcher steuert den Host über SSH.",
       "name": "Name",
       "namePlaceholderProxmox": "Proxmox im Keller",
@@ -135,7 +138,6 @@
       "apiPort": "API-Port",
       "sshPort": "SSH-Port",
       "username": "Benutzername",
-      "usernameHint": "root@pam oder eine API-Token-ID wie root@pam!name",
       "tokenSecret": "Token-Secret",
       "password": "Passwort",
       "keychainHint": "Im Schlüsselbund deines Systems gespeichert",
@@ -144,7 +146,22 @@
       "authorizeKeyBody": "Hosts mit Token nutzen diesen Schlüssel über SSH, um das cloud-init-Snippet hochzuladen. Füge ihn auf dem Proxmox-Node in <code>~/.ssh/authorized_keys</code> des Token-Benutzers ein.",
       "loadingKey": "Öffentlicher Schlüssel des Launchers wird geladen…",
       "copied": "Kopiert",
-      "copy": "Kopieren"
+      "copy": "Kopieren",
+      "descriptionSignIn": "Wähle, wie sich der Launcher beim Proxmox-Knoten anmeldet.",
+      "method": "Anmeldemethode",
+      "methodSshKey": "SSH-Schlüssel",
+      "methodToken": "API-Token",
+      "methodPassword": "Passwort",
+      "sshKeyPath": "Privater Schlüssel",
+      "sshKeyPathHint": "Nur der Pfad wird gespeichert, nie der Schlüssel selbst",
+      "sshKeyChoose": "Auswählen…",
+      "sshKeyPick": "Wähle deinen privaten SSH-Schlüssel",
+      "sshUser": "SSH-Benutzer",
+      "sshKeyNoteTitle": "Was der Launcher mit deinem Schlüssel macht",
+      "sshKeyNoteBody": "Beim Speichern meldet er sich mit diesem Schlüssel per SSH am Knoten an, erstellt mit <code>pveum user token add</code> ein API-Token für sich und trägt seinen eigenen öffentlichen Schlüssel in <code>~/.ssh/authorized_keys</code> des Benutzers ein. Sonst läuft nichts auf dem Knoten; Labs nutzen danach dieses Token.",
+      "tokenId": "Token-ID",
+      "tokenIdHint": "user@realm!name, z. B. root@pam!cyberctf",
+      "usernameHintPassword": "user@realm, z. B. root@pam"
     },
     "placement": {
       "title": "Platzierung",
@@ -265,7 +282,8 @@
     "test": {
       "title": "Verbindungstest",
       "description": "Gespeichert. Das konnte der Launcher von diesem Rechner aus prüfen.",
-      "testing": "Verbindung wird getestet…"
+      "testing": "Verbindung wird getestet…",
+      "checks": "Was geprüft wurde"
     }
   }
 }

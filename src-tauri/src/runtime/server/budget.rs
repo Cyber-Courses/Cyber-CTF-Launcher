@@ -36,6 +36,7 @@ fn cli_account(profile: Option<String>) -> HostProfile {
         aws_profile: profile,
         monthly_limit: None,
         gcp_project: None,
+        ssh_key: None,
     }
 }
 

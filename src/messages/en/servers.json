@@ -123,9 +123,12 @@
       "get": "Get",
       "terraformProxmox": "Drives the Proxmox API. Install it to run Proxmox labs."
     },
+    "server": {
+      "title": "Your {kind} server",
+      "description": "Where the server is. How the launcher signs in to it comes next."
+    },
     "connection": {
       "title": "Connect to {kind}",
-      "descriptionProxmox": "The launcher signs in to the Proxmox API.",
       "descriptionSsh": "The launcher drives the host over SSH.",
       "name": "Name",
       "namePlaceholderProxmox": "Garage Proxmox",
@@ -135,7 +138,6 @@
       "apiPort": "API port",
       "sshPort": "SSH port",
       "username": "Username",
-      "usernameHint": "root@pam, or an API token id like root@pam!name",
       "tokenSecret": "Token secret",
       "password": "Password",
       "keychainHint": "Stored in your OS keychain",
@@ -144,7 +146,22 @@
       "authorizeKeyBody": "Token hosts use this key over SSH to upload the cloud-init snippet. Add it to the token user's <code>~/.ssh/authorized_keys</code> on the Proxmox node.",
       "loadingKey": "Loading the launcher's public key…",
       "copied": "Copied",
-      "copy": "Copy"
+      "copy": "Copy",
+      "descriptionSignIn": "Choose how the launcher signs in to the Proxmox node.",
+      "method": "Sign-in method",
+      "methodSshKey": "SSH key",
+      "methodToken": "API token",
+      "methodPassword": "Password",
+      "sshKeyPath": "Private key",
+      "sshKeyPathHint": "Only its path is saved, never the key itself",
+      "sshKeyChoose": "Choose…",
+      "sshKeyPick": "Choose your SSH private key",
+      "sshUser": "SSH user",
+      "sshKeyNoteTitle": "What the launcher does with your key",
+      "sshKeyNoteBody": "When you save, it signs in to the node over SSH with this key, creates an API token for itself with <code>pveum user token add</code> and adds its own public key to the user's <code>~/.ssh/authorized_keys</code>. Nothing else runs on the node; labs then use that token.",
+      "tokenId": "Token id",
+      "tokenIdHint": "user@realm!name, e.g. root@pam!cyberctf",
+      "usernameHintPassword": "user@realm, e.g. root@pam"
     },
     "placement": {
       "title": "Placement",
@@ -265,7 +282,8 @@
     "test": {
       "title": "Connection test",
       "description": "Saved. Here's what the launcher could check from this machine.",
-      "testing": "Testing the connection…"
+      "testing": "Testing the connection…",
+      "checks": "What was checked"
     }
   }
 }

@@ -8,7 +8,11 @@ import {
   connectionReady,
   isCloud,
   machineTools,
+  initialSignIn,
+  initialSshKey,
+  savePayload,
   saveName,
+  serverReady,
   setupSteps,
   setupTitle,
   startingSetup,
@@ -29,8 +33,10 @@ const report = (patch: Partial<SystemReport> = {}) =>
   }) as SystemReport;
 
 describe("setupSteps", () => {
-  it("walks a server through hypervisor, tools, connection and placement", () => {
-    expect(setupSteps("proxmox", false)).toEqual(["hypervisor", "tools", "connection", "placement", "test"]);
+  it("walks a server through hypervisor, tools, connection and placement; Proxmox describes the server before signing in", () => {
+    expect(setupSteps("proxmox", false)).toEqual(["hypervisor", "tools", "server", "connection", "placement", "test"]);
+    expect(setupSteps("proxmox", true)).toEqual(["server", "connection", "placement", "test"]);
+    expect(setupSteps("vmware_esxi", false)).toEqual(["hypervisor", "tools", "connection", "placement", "test"]);
     expect(setupSteps("vmware_esxi", true)).toEqual(["connection", "placement", "test"]);
   });
 
@@ -42,7 +48,51 @@ describe("setupSteps", () => {
     // Opened on a chosen provider (a Connect row): no choosing, straight to its tools.
     expect(setupSteps("azure", false, true)).toEqual(["tools", "credentials", "options", "test"]);
     expect(setupSteps("aws", false, true)).toEqual(["tools", "account", "credentials", "options", "test"]);
-    expect(setupSteps("proxmox", false, true)).toEqual(["hypervisor", "tools", "connection", "placement", "test"]);
+    expect(setupSteps("proxmox", false, true)).toEqual(["hypervisor", "tools", "server", "connection", "placement", "test"]);
+  });
+});
+
+describe("Proxmox sign-in", () => {
+  const key = { path: " /Users/me/.ssh/id_ed25519 ", user: " root ", port: 22 };
+
+  it("opens a new setup on the SSH key, a saved one on how it signs in", () => {
+    expect(initialSignIn(form({}))).toBe("sshKey");
+    expect(initialSignIn(form({ provider: "vmware_esxi" }))).toBe("password");
+    expect(initialSignIn(form({ id: "a", username: "root@pam" }))).toBe("password");
+    expect(initialSignIn(form({ id: "a", username: "root@pam!ci" }))).toBe("token");
+    expect(initialSignIn(form({ id: "a", username: "root@pam!cyberctf-1", sshKey: key }))).toBe("sshKey");
+    expect(initialSshKey(form({}))).toEqual({ path: "", user: "root", port: 22 });
+    expect(initialSshKey(form({ sshKey: key }))).toBe(key);
+  });
+
+  it("needs the address and a valid API port on the server step", () => {
+    expect(serverReady(form({ host: "10.0.0.50" }))).toBe(true);
+    expect(serverReady(form({ host: " " }))).toBe(false);
+    expect(serverReady(form({ host: "pve", port: 70000 }))).toBe(false);
+  });
+
+  it("needs a key, a user and a port to sign in with a key; no password", () => {
+    const v = form({ host: "10.0.0.50" });
+    expect(connectionReady(v, false, key)).toBe(true);
+    expect(connectionReady(v, false, { ...key, path: " " })).toBe(false);
+    expect(connectionReady(v, false, { ...key, user: "" })).toBe(false);
+    expect(connectionReady(v, false, { ...key, port: Number.NaN })).toBe(false);
+    expect(connectionReady(v, false, { ...key, port: 0 })).toBe(false);
+    // Without a key it is the usual user and password.
+    expect(connectionReady(v, false)).toBe(false);
+  });
+
+  it("sends the key with a key save, and none with a password or token one", () => {
+    const v = form({ host: "10.0.0.50", username: "root@pam", password: "pw" });
+    expect(savePayload(v, "sshKey", key)).toMatchObject({
+      name: "10.0.0.50",
+      username: "",
+      password: null,
+      sshKey: { path: "/Users/me/.ssh/id_ed25519", user: "root", port: 22 },
+    });
+    expect(savePayload(v, "password", key)).toMatchObject({ username: "root@pam", password: "pw", sshKey: null });
+    expect(savePayload(v, "token", key).sshKey).toBeNull();
+    expect(savePayload({ ...v, provider: "vmware_esxi" }, "sshKey", key).sshKey).toBeNull();
   });
 });
 
@@ -187,7 +237,7 @@ describe("withProvider: edges", () => {
 
 describe("setupSteps: edges", () => {
   it("editing skips choosing and the tools for every provider, and only AWS keeps its account step", () => {
-    expect(setupSteps("proxmox", true)).toEqual(["connection", "placement", "test"]);
+    expect(setupSteps("proxmox", true)).toEqual(["server", "connection", "placement", "test"]);
     expect(setupSteps("oci", true)).toEqual(["credentials", "options", "test"]);
     expect(setupSteps("aws", true)).toEqual(["account", "credentials", "options", "test"]);
     expect(setupSteps("oci", false)).toEqual(["provider", "tools", "credentials", "options", "test"]);

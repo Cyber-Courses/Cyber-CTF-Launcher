@@ -86,6 +86,13 @@ const serverHandlers: Record<string, BrowserHandler> = {
     saveHosts([...hostsOf(sc).filter((h) => h.id !== saved.id), saved]);
     return saved;
   },
+  // The preview's node "makes" the launcher's token: saved as a token setup that keeps its key.
+  server_save_ssh_key: (args, { sc }) => {
+    const input = (args?.input ?? {}) as Host;
+    const saved = { ...input, id: input.id ?? `host-${String(Date.now())}`, username: "root@pam!cyberctf-preview", password: undefined };
+    saveHosts([...hostsOf(sc).filter((h) => h.id !== saved.id), saved]);
+    return saved;
+  },
 };
 
 /** The window and the link the app was opened with. */

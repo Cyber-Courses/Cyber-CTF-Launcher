@@ -17,7 +17,17 @@ mod dev_file {
 
     use crate::error::{Error, Result};
 
+    #[cfg(test)]
+    thread_local! {
+        /// A test's own secrets file (see `use_test_file`), so it never writes the player's.
+        pub(super) static TEST_FILE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+    }
+
     fn path() -> Result<PathBuf> {
+        #[cfg(test)]
+        if let Some(file) = TEST_FILE.with(|f| f.borrow().clone()) {
+            return Ok(file);
+        }
         let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).ok_or_else(|| Error::Invalid("no home directory".into()))?;
         Ok(file_in(&PathBuf::from(home)))
     }
@@ -53,6 +63,12 @@ mod dev_file {
         }
         Ok(())
     }
+}
+
+/// Keeps this thread's secrets in `file` instead of the player's (a test that saves one).
+#[cfg(all(test, debug_assertions))]
+pub(crate) fn use_test_file(file: std::path::PathBuf) {
+    dev_file::TEST_FILE.with(|f| *f.borrow_mut() = Some(file));
 }
 
 /// The secret stored for `id`, or the reason there is none.

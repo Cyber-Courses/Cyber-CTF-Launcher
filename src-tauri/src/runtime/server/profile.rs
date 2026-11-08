@@ -54,6 +54,23 @@ pub struct HostProfile {
     /// GCP: the project every lab of this account runs in (created once, see `gcp`).
     #[serde(default)]
     pub gcp_project: Option<String>,
+    /// Proxmox set up with an SSH key the player has: which key, user and port the launcher
+    /// signed in to the node with to make its API token (see `proxmox::ssh_key`). The setup then
+    /// runs like a token one (`username` is the token id, the keychain its secret). None for
+    /// password and token setups.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub ssh_key: Option<SshKeySignIn>,
+}
+
+/// Signing in to a Proxmox node over SSH with the player's own key: its private key's path
+/// (never its contents), the SSH user and port.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SshKeySignIn {
+    pub path: String,
+    pub user: String,
+    pub port: u16,
 }
 
 impl HostProfile {
@@ -144,6 +161,7 @@ pub(crate) mod tests {
     pub fn profile(provider: Provider) -> HostProfile {
         HostProfile {
             gcp_project: None,
+            ssh_key: None,
             id: "ab12".into(),
             name: "Lab".into(),
             provider,
@@ -228,5 +246,11 @@ pub(crate) mod tests {
         assert_eq!(m.datastore, None);
         assert!(!m.insecure_tls);
         assert_eq!(m.monthly_limit, None);
+        assert_eq!(m.ssh_key, None, "password and token profiles saved before SSH-key sign-in load as they were");
+        // An SSH-key profile keeps its key's path, user and port.
+        let key = SshKeySignIn { path: "/Users/me/.ssh/id_ed25519".into(), user: "root".into(), port: 22 };
+        let p = HostProfile { username: "root@pam!cyberctf-0a1b2c3d".into(), ssh_key: Some(key), ..profile(Provider::Proxmox) };
+        let back: HostProfile = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back, p);
     }
 }

@@ -5,7 +5,7 @@ use serde::Deserialize;
 use ts_rs::TS;
 
 use super::kind::{AccountField, Secret, kind};
-use super::profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile, default_port};
+use super::profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile, SshKeySignIn, default_port};
 use crate::error::{Error, Result};
 use crate::runtime::providers::Provider;
 
@@ -35,6 +35,11 @@ pub struct HostInput {
     #[serde(default)]
     #[ts(optional = nullable)]
     monthly_limit: Option<f64>,
+    /// Proxmox: sign in to the node over SSH with this key to make the launcher's API token
+    /// (`server_save_ssh_key`); `username` and `password` are then the token's.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    ssh_key: Option<SshKeySignIn>,
 }
 
 /// The connection fields of an input, checked: what `HostInput::into_profile` builds on.
@@ -50,6 +55,25 @@ fn require(ok: bool, message: &str) -> Result<()> {
 }
 
 impl HostInput {
+    /// The SSH key sign-in this Proxmox input asks for, checked: an existing private key file
+    /// (not its `.pub`), a plain user name and a port.
+    pub(crate) fn ssh_key(&self) -> Result<SshKeySignIn> {
+        let key =
+            self.ssh_key.as_ref().filter(|_| self.provider == Provider::Proxmox).ok_or_else(|| Error::Invalid("choose the SSH key to sign in with".into()))?;
+        checked_ssh_key(key)
+    }
+
+    /// Drops any SSH key sign-in: a password or token save keeps none.
+    pub(crate) fn without_ssh_key(&mut self) {
+        self.ssh_key = None;
+    }
+
+    /// Signs in as `username` with `password` (an SSH-key setup's token, once made).
+    pub(crate) fn sign_in_as(&mut self, username: String, password: Option<String>) {
+        self.username = username;
+        self.password = password;
+    }
+
     /// Checks the connection fields against the provider (address or region, account,
     /// credentials shape), from its row in the table of kinds (see `kind`).
     pub(crate) fn check(&self) -> Result<Checked> {
@@ -114,11 +138,32 @@ impl HostInput {
             // Budget enforcement is AWS-only (the other clouds have no cost read yet), so don't
             // persist a limit that would silently do nothing on Azure/GCP.
             monthly_limit: if provider == Provider::Aws { self.monthly_limit.filter(|v| *v > 0.0) } else { None },
+            ssh_key: if provider == Provider::Proxmox { self.ssh_key.as_ref().map(checked_ssh_key).transpose()? } else { None },
         })
     }
 }
 
 // --- field shapes ---------------------------------------------------------
+
+/// An SSH key sign-in as the form gave it, checked (see `HostInput::ssh_key`).
+fn checked_ssh_key(key: &SshKeySignIn) -> Result<SshKeySignIn> {
+    let path = key.path.trim();
+    require(!path.is_empty() && path.len() <= 1024 && !path.chars().any(char::is_control), "choose the SSH key to sign in with")?;
+    require(std::path::Path::new(path).is_absolute(), "the SSH key must be a full path")?;
+    let public = std::path::Path::new(path).extension().is_some_and(|e| e.eq_ignore_ascii_case("pub"));
+    require(!public, "choose the private key, not its .pub file")?;
+    require(std::path::Path::new(path).is_file(), &format!("there is no SSH key at {path}"))?;
+    let user = key.user.trim();
+    require(valid_ssh_user(user), "the SSH user must be a plain user name, e.g. root")?;
+    require(key.port > 0, "the SSH port must be between 1 and 65535")?;
+    Ok(SshKeySignIn { path: path.to_string(), user: user.to_string(), port: key.port })
+}
+
+/// A Unix user name we put on an ssh command line and in a `pveum` call: letters, digits,
+/// `.`, `_` and `-`, not starting with `-`.
+fn valid_ssh_user(user: &str) -> bool {
+    !user.is_empty() && user.len() <= 32 && !user.starts_with('-') && user.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+}
 
 pub(super) fn clean(value: &str, field: &str, max: usize) -> Result<String> {
     let v = value.trim();
@@ -232,6 +277,48 @@ mod tests {
 
     fn error(i: &HostInput) -> String {
         i.check().err().map(|e| e.to_string()).unwrap_or_default()
+    }
+
+    #[test]
+    fn an_ssh_key_sign_in_needs_a_private_key_a_plain_user_and_a_port() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-sshkey-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let key = dir.join("id_ed25519");
+        std::fs::write(&key, "not read").unwrap();
+        std::fs::write(dir.join("id_ed25519.pub"), "ssh-ed25519 AAAA").unwrap();
+        let with = |path: &str, user: &str, port: u16| {
+            input(
+                serde_json::json!({ "name": "P", "provider": "proxmox", "host": "10.0.0.50", "username": "", "sshKey": { "path": path, "user": user, "port": port } }),
+            )
+        };
+        let path = key.display().to_string();
+        let ok = with(&path, " root ", 22).ssh_key().unwrap();
+        assert_eq!(ok, SshKeySignIn { path: path.clone(), user: "root".into(), port: 22 });
+        let err = |i: HostInput| i.ssh_key().unwrap_err().to_string();
+        assert_eq!(err(with(&format!("{path}.pub"), "root", 22)), "choose the private key, not its .pub file");
+        assert_eq!(err(with("id_ed25519", "root", 22)), "the SSH key must be a full path");
+        assert!(err(with(&dir.join("nope").display().to_string(), "root", 22)).starts_with("there is no SSH key at "));
+        assert_eq!(err(with(&path, "-oProxyCommand=x", 22)), "the SSH user must be a plain user name, e.g. root");
+        assert_eq!(err(with(&path, "root; rm", 22)), "the SSH user must be a plain user name, e.g. root");
+        assert_eq!(err(with(&path, "root", 0)), "the SSH port must be between 1 and 65535");
+        // Only Proxmox signs in this way, and a save without a key asks for one.
+        let esxi = input(
+            serde_json::json!({ "name": "E", "provider": "vmware_esxi", "host": "10.0.0.5", "username": "root", "sshKey": { "path": path, "user": "root", "port": 22 } }),
+        );
+        assert_eq!(err(esxi), "choose the SSH key to sign in with");
+        // The profile keeps the checked sign-in; a password or token save drops it.
+        let mut i = with(&path, "root", 2222);
+        i.sign_in_as("root@pam!cyberctf-0a1b2c3d".into(), Some("secret".into()));
+        let checked = i.check().unwrap();
+        let mut j = with(&path, "root", 2222);
+        let profile = i.into_profile("ab12".into(), checked, None).unwrap();
+        assert_eq!(profile.username, "root@pam!cyberctf-0a1b2c3d");
+        assert_eq!(profile.ssh_key.map(|k| k.port), Some(2222));
+        j.sign_in_as("root@pam".into(), Some("pw".into()));
+        j.without_ssh_key();
+        let checked = j.check().unwrap();
+        assert_eq!(j.into_profile("ab12".into(), checked, None).unwrap().ssh_key, None);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

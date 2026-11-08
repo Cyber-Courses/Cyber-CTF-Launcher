@@ -3,7 +3,7 @@
 //! a thin adapter over the `crate::runtime::server` domain; the filesystem-only helpers that read
 //! each lab's host marker (which need the app's data folder) live here with them.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -17,6 +17,8 @@ use crate::error::{Code, Error, Result};
 use crate::machine::selftest::Event;
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
+use crate::runtime::proxmox::ssh_key;
+use crate::runtime::server::SshKeySignIn;
 use crate::runtime::server::budget::month_to_date_cost;
 use crate::runtime::server::checks::{Check, TestResult};
 use crate::runtime::server::gcp;
@@ -42,12 +44,52 @@ pub fn server_list(app: AppHandle) -> Result<HostList> {
 }
 
 /// Creates or updates a host. The first host saved becomes the default. A host labs are still
-/// deployed on keeps its place (see `keeps_placement`).
+/// deployed on keeps its place (see `keeps_placement`). A password or token save keeps no SSH
+/// key sign-in (see `server_save_ssh_key`).
 #[tauri::command]
 pub fn server_save(app: AppHandle, mut input: HostInput) -> Result<HostProfile> {
+    input.without_ssh_key();
+    save(&app, input)
+}
+
+/// Saves a Proxmox host set up with the player's SSH key: signs in to the node with it, makes the
+/// launcher's API token there and lets the launcher's key in (`proxmox::ssh_key`), then saves the
+/// host as a token setup (the token's secret in the keychain) that remembers which key it used.
+/// Nothing is saved when any of that fails.
+#[tauri::command]
+pub async fn server_save_ssh_key(app: AppHandle, mut input: HostInput) -> Result<HostProfile> {
+    let dirs = AppDirs::from(&app);
+    let key = input.ssh_key()?;
+    // The address and the rest are checked before anything happens on the node.
+    input.sign_in_as(format!("{}@pam", key.user), None);
     let checked = input.check()?;
-    let deployed = input.id.as_deref().map_or(0, |id| labs_on(&app, id));
-    update(&AppDirs::from(&app), |store| {
+    let (launcher, public) = crate::runtime::ssh::ensure_key(&dirs).await?;
+    let known_hosts = crate::runtime::ssh::node_known_hosts(&launcher);
+    let made = ssh_key::bootstrap(&checked.host, &key, &known_hosts, &public).await.map_err(|f| Error::Invalid(f.to_string()))?;
+    input.sign_in_as(made.token_id.clone(), Some(made.secret));
+    let profile = save(&app, input)?;
+    let added = if made.key_added { "added to" } else { "already in" };
+    let note = format!("Made the API token {} on the node with your key; the launcher's key was {added} {}'s authorized_keys.", made.token_id, key.user);
+    MADE_WITH_KEY.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(profile.id.clone(), note);
+    Ok(profile)
+}
+
+/// What the last SSH-key setup of each host made, by host id, for its Test connection.
+static MADE_WITH_KEY: std::sync::Mutex<BTreeMap<String, String>> = std::sync::Mutex::new(BTreeMap::new());
+
+/// The SSH key the setup offers first: the first of `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa`
+/// that exists (its path only).
+#[tauri::command]
+pub fn server_default_ssh_key(app: AppHandle) -> Option<String> {
+    let home = app.path().home_dir().ok()?;
+    ssh_key::default_key(&home).map(|p| p.display().to_string())
+}
+
+/// Saves a checked form: under its id, its secret in the keychain.
+fn save(app: &AppHandle, mut input: HostInput) -> Result<HostProfile> {
+    let checked = input.check()?;
+    let deployed = input.id.as_deref().map_or(0, |id| labs_on(app, id));
+    update(&AppDirs::from(app), |store| {
         let id = save_id(store, input.id.take())?;
         let gcp_project = kept_gcp_project(store, &id, input.provider, &checked.username);
         let password = input.password.take();
@@ -65,6 +107,31 @@ pub fn server_save(app: AppHandle, mut input: HostInput) -> Result<HostProfile> 
         put_host(store, profile.clone());
         Ok(profile)
     })
+}
+
+/// "Test connection" of a host set up with an SSH key: each part of the setup, checked again
+/// (SSH with the player's key, the launcher's key in `authorized_keys` — added back if it went),
+/// before the API's own answer with the token.
+async fn ssh_key_checks(dirs: &AppDirs, host: &HostProfile, key: &SshKeySignIn) -> Vec<Check> {
+    let mut checks = Vec::new();
+    let login = format!("{}@{}:{}", key.user, host.host, key.port);
+    let authorized = match crate::runtime::ssh::ensure_key(dirs).await {
+        Ok((launcher, public)) => ssh_key::authorize(&host.host, key, &crate::runtime::ssh::node_known_hosts(&launcher), &public).await,
+        Err(e) => Err(ssh_key::Failure { part: ssh_key::Part::Key, detail: format!("the launcher's own key isn't ready: {e}") }),
+    };
+    match &authorized {
+        Err(f) if f.part == ssh_key::Part::Ssh => checks.push(Check::fail("SSH with your key", f.to_string())),
+        _ => checks.push(Check::ok("SSH with your key", format!("Signed in to {login} with {}.", key.path))),
+    }
+    let made = MADE_WITH_KEY.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&host.id).cloned();
+    checks.push(Check::ok("API token", made.unwrap_or_else(|| format!("Signs in with the token {}, made on the node with your key.", host.username))));
+    checks.push(match authorized {
+        Ok(true) => Check::ok("Launcher key", format!("Added the launcher's key to {}'s authorized_keys.", key.user)),
+        Ok(false) => Check::ok("Launcher key", format!("The launcher's key is in {}'s authorized_keys.", key.user)),
+        Err(f) if f.part == ssh_key::Part::Ssh => Check::fail("Launcher key", "Not checked: SSH with your key failed."),
+        Err(f) => Check::fail("Launcher key", f.to_string()),
+    });
+    checks
 }
 
 /// Refuses to move a host (another provider, region or address, port, node, or the account labs
@@ -255,6 +322,10 @@ pub async fn server_test(app: AppHandle, id: String) -> Result<TestResult> {
             }
         }
     }
+    // Set up with an SSH key: each part of that setup, then the API's answer with the token.
+    if let Some(key) = host.ssh_key.clone().filter(|_| host.provider == Provider::Proxmox) {
+        result = result.with_sign_in_checks(ssh_key_checks(&dirs, &host, &key).await);
+    }
     // GCP: the labs project (created on the first test), which needs a free billing slot.
     if host.provider == Provider::Gcp && result.ok {
         match gcp::labs_project(&dirs, &id).await {
@@ -394,6 +465,78 @@ mod tests {
         std::fs::write(ssh.join("id_ed25519"), "k").unwrap();
         std::fs::write(ssh.join("id_ed25519.pub"), "ssh-ed25519 AAAA cyberctf-launcher\n").unwrap();
         assert_eq!(server_public_key(app()).await.unwrap(), "ssh-ed25519 AAAA cyberctf-launcher");
+    }
+
+    /// A Proxmox form signing in with the SSH key at `key`.
+    fn ssh_key_input(key: &Path) -> HostInput {
+        serde_json::from_value(serde_json::json!({
+            "id": null, "name": "Garage", "provider": "proxmox", "host": "10.0.0.50", "port": 8006, "username": "",
+            "datastore": null, "network": null, "node": null, "insecureTls": true, "autoStopHours": null, "password": null,
+            "sshKey": { "path": key.display().to_string(), "user": "root", "port": 22 }
+        }))
+        .unwrap()
+    }
+
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup() {
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let t = crate::testing::test_app::TestApp::new();
+        let app = || t.handle().clone();
+        crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
+        // The launcher's key, already made; the player's own key (never read, only its path used).
+        let ssh = t.data().join("ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        std::fs::write(ssh.join("id_ed25519"), "k").unwrap();
+        std::fs::write(ssh.join("id_ed25519.pub"), "ssh-ed25519 AAAA cyberctf-launcher\n").unwrap();
+        let mine = t.data().join("my_key");
+        std::fs::write(&mine, "PRIVATE KEY CONTENTS").unwrap();
+
+        // The node refuses the key: nothing is saved, and the message says which part failed.
+        let tools = Tools::rules(&[("authorized_keys", fail("root@10.0.0.50: Permission denied (publickey)."))]);
+        let err = server_save_ssh_key(app(), ssh_key_input(&mine)).await.unwrap_err().to_string();
+        assert!(err.starts_with("Couldn't sign in to the node over SSH with your key"), "{err}");
+        assert!(!tools.called("pveum"), "no token is made when SSH fails");
+        assert!(server_list(app()).unwrap().hosts.is_empty());
+        drop(tools);
+
+        let name = ssh_key::token_name("ssh-ed25519 AAAA cyberctf-launcher");
+        let answer = format!(r#"{{"full-tokenid":"root@pam!{name}","info":{{"privsep":"0"}},"value":"6f1d2c3b-aaaa-bbbb-cccc-0123456789ab"}}"#);
+        let tools = Tools::rules(&[("authorized_keys", ok("added")), ("pveum user token", ok(answer))]);
+        let saved = server_save_ssh_key(app(), ssh_key_input(&mine)).await.unwrap();
+        assert_eq!(saved.username, format!("root@pam!{name}"), "a token setup from here on");
+        assert!(crate::runtime::proxmox::is_token(&saved.username));
+        assert_eq!(saved.ssh_key.as_ref().map(|k| k.path.clone()), Some(mine.display().to_string()));
+        assert_eq!(get_secret(&saved.id).unwrap(), "6f1d2c3b-aaaa-bbbb-cccc-0123456789ab", "the token's secret is in the keychain");
+        assert_eq!(tools.calls().len(), 2);
+        assert!(tools.calls().iter().all(|c| !c.contains("PRIVATE KEY CONTENTS")), "the key's contents are never passed on");
+        drop(tools);
+
+        // Its test checks each part again (the key already there now), and only those commands.
+        let tools = Tools::rules(&[("authorized_keys", ok("present"))]);
+        let host = load_host(&t.dirs(), &saved.id).unwrap();
+        let checks = ssh_key_checks(&t.dirs(), &host, host.ssh_key.as_ref().unwrap()).await;
+        let names: Vec<&str> = checks.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["SSH with your key", "API token", "Launcher key"]);
+        assert!(checks.iter().all(|c| c.state == crate::runtime::server::checks::CheckState::Ok), "{checks:?}");
+        assert!(checks[1].detail.contains(&name) && checks[2].detail.contains("is in root's authorized_keys"), "{checks:?}");
+        assert_eq!(tools.calls().len(), 1);
+        drop(tools);
+
+        // A password save of the same host drops the SSH key sign-in.
+        let password: HostInput = serde_json::from_value(serde_json::json!({
+            "id": saved.id, "name": "Garage", "provider": "proxmox", "host": "10.0.0.50", "port": 8006, "username": "root@pam",
+            "datastore": null, "network": null, "node": null, "insecureTls": true, "autoStopHours": null, "password": "pw",
+            "sshKey": { "path": mine.display().to_string(), "user": "root", "port": 22 }
+        }))
+        .unwrap();
+        let resaved = server_save(app(), password).unwrap();
+        assert_eq!((resaved.ssh_key, resaved.username.as_str()), (None, "root@pam"));
+        assert_eq!(get_secret(&saved.id).unwrap(), "pw");
+        // The default key offered is one of the usual ones, when the player has one.
+        if let Some(path) = server_default_ssh_key(app()) {
+            assert!(["id_ed25519", "id_ecdsa", "id_rsa"].iter().any(|n| path.ends_with(n)), "{path}");
+        }
     }
 
     #[test]

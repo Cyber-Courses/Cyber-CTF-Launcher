@@ -1,12 +1,27 @@
-import { useState } from "react";
-import { serverSave, type CloudProvider, type RemoteProvider, type ServerHost, type ServerHostInput, type ServerTest, type SystemReport } from "@/lib/tauri";
+import { useEffect, useState } from "react";
+import {
+  serverDefaultSshKey,
+  serverSave,
+  serverSaveSshKey,
+  type CloudProvider,
+  type RemoteProvider,
+  type ServerHost,
+  type ServerHostInput,
+  type ServerTest,
+  type SshKeySignIn,
+  type SystemReport,
+} from "@/lib/tauri";
 import {
   connectionReady,
+  initialSignIn,
+  initialSshKey,
   keepsSecret,
+  savePayload,
+  serverReady,
+  type SignIn,
   isCloud,
   machineTools,
   providerTraits,
-  saveName,
   setupSteps,
   setupTitle,
   withProvider,
@@ -45,7 +60,9 @@ export function useHostSetup({ initial, providerChosen, report, onRefresh, onSav
   const accounts = useCloudAccounts(v, form.setV, editing, cloudProvider);
   const stepper = useSteps(v.provider, editing, providerChosen);
   const tools = useToolInstall(onRefresh);
-  const saving = useSaveAndTest(v, onSaved, stepper.next);
+  const signIn = useSignIn(initial);
+  const payload = savePayload(v, signIn.signInMethod, signIn.sshKey);
+  const saving = useSaveAndTest(payload, onSaved, stepper.next);
   const title = setupTitle({ saved: saving.saved, test: saving.test, editing, cloud: traits.cloud, initialName: initial.name });
 
   return {
@@ -58,7 +75,9 @@ export function useHostSetup({ initial, providerChosen, report, onRefresh, onSav
     ...traits,
     ...accounts,
     ...stepper,
-    connectionOk: connectionReady(v, keepsSecret(initial, v)),
+    ...signIn,
+    serverOk: serverReady(v),
+    connectionOk: connectionReady(v, keepsSecret(initial, v), v.provider === "proxmox" && signIn.signInMethod === "sshKey" ? signIn.sshKey : null),
     secretKept: keepsSecret(initial, v),
     ...tools,
     ...machineTools(v.provider, report),
@@ -83,6 +102,29 @@ function useHostForm(initial: ServerHostInput) {
     setV((s) => withProvider(s, id));
   };
   return { v, setV, set, text, pickProvider };
+}
+
+/** How a Proxmox setup signs in, and its SSH key sign-in (the first usual key offered when none
+ *  is picked yet). */
+function useSignIn(initial: ServerHostInput) {
+  const [signInMethod, setSignInMethod] = useState<SignIn>(() => initialSignIn(initial));
+  const [sshKey, setSshKeyState] = useState<SshKeySignIn>(() => initialSshKey(initial));
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (touched || initial.sshKey) return;
+    serverDefaultSshKey()
+      .then((path) => {
+        if (path) setSshKeyState((k) => (k.path === "" ? { ...k, path } : k));
+      })
+      .catch(() => {
+        // No default key: the player picks one.
+      });
+  }, [touched, initial.sshKey]);
+  const setSshKey = <K extends keyof SshKeySignIn>(k: K, value: SshKeySignIn[K]) => {
+    setTouched(true);
+    setSshKeyState((s) => ({ ...s, [k]: value }));
+  };
+  return { signInMethod, setSignInMethod, sshKey, setSshKey };
 }
 
 /** The steps this setup takes, and where the player is among them. */
@@ -121,7 +163,8 @@ function useToolInstall(onRefresh: () => void) {
   };
 }
 
-/** Saving the host, then moving to the Test step (`next`) and testing the saved host. */
+/** Saving the host (`v`, as `savePayload` builds it: with an SSH key sign-in, through the node
+ *  bootstrap), then moving to the Test step (`next`) and testing the saved host. */
 function useSaveAndTest(v: ServerHostInput, onSaved: (h: ServerHost) => void, next: () => void) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,7 +181,7 @@ function useSaveAndTest(v: ServerHostInput, onSaved: (h: ServerHost) => void, ne
     setSaving(true);
     setError(null);
     try {
-      const h = await serverSave({ ...v, name: saveName(v) });
+      const h = await (v.sshKey ? serverSaveSshKey(v) : serverSave(v));
       setSaved(h);
       onSaved(h);
       next();

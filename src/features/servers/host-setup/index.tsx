@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils";
 import { HypervisorStep } from "@/features/servers/host-setup/hypervisor-step";
 import { ToolsStep } from "@/features/servers/host-setup/tools-step";
-import { ConnectionStep } from "@/features/servers/host-setup/connection-step";
+import { ConnectionStep, ServerStep } from "@/features/servers/host-setup/connection-step";
 import { PlacementStep } from "@/features/servers/host-setup/placement-step";
 import { AccountStep } from "@/features/servers/host-setup/account-step";
 import { CredentialsStep } from "@/features/servers/host-setup/credentials-step";
@@ -54,6 +54,8 @@ export function HostSetupPage({
         {key === "hypervisor" && <HypervisorStep s={s} />}
 
         {key === "tools" && <ToolsStep s={s} />}
+
+        {key === "server" && <ServerStep s={s} />}
 
         {key === "connection" && <ConnectionStep s={s} />}
 

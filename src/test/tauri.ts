@@ -35,6 +35,12 @@ const DEFAULTS: Partial<Record<string, Handler>> = {
   gcp_organizations: () => [],
   gcp_account: () => "player@example.com",
   server_save: (a) => ({ ...(a?.input as object), id: (a?.input as { id?: string } | undefined)?.id ?? "new-host", password: undefined }),
+  // The node made the launcher's token: saved as a token setup that remembers the key.
+  server_save_ssh_key: (a) => {
+    const input = a?.input as { id?: string | null } | undefined;
+    return { ...(input as object), id: input?.id ?? "new-host", username: "root@pam!cyberctf-0a1b2c3d", password: undefined };
+  },
+  server_default_ssh_key: () => "/Users/me/.ssh/id_ed25519",
   server_public_key: () => "ssh-ed25519 AAAAC3Nza cyberctf",
   machine_storage_clean: () => 1_000_000_000,
   lab_launch: streams("==> api: Creating", "✓ Lab ready"),

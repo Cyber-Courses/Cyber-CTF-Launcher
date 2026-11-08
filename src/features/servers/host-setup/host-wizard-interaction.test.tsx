@@ -20,7 +20,7 @@ import { button, flush } from "@/test/ui";
 const password = () => input("input[type=password]");
 const disabled = (name: RegExp) => button(name).hasAttribute("disabled");
 
-/** A saved Proxmox host opened for editing: connection, placement, test. */
+/** A saved Proxmox host opened for editing: server, connection (on its password), placement, test. */
 const editingServer = (patch: Partial<ServerHostInput> = {}): ServerHostInput => ({
   ...EMPTY_HOST,
   id: "pve",
@@ -30,14 +30,15 @@ const editingServer = (patch: Partial<ServerHostInput> = {}): ServerHostInput =>
   ...patch,
 });
 
-/** A new Proxmox host, past the hypervisor and tools steps (Terraform is installed). */
-async function newProxmoxAtConnection(user: User) {
+/** A new Proxmox host, past the hypervisor and tools steps (Terraform is installed), on the
+ *  Server step. */
+async function newProxmoxAtServer(user: User) {
   const report = readyReport();
   report.terraform = { installed: true, version: "1.9.0" };
   const handlers = await renderSetup({ ...EMPTY_HOST }, report);
   await go(user, /^continue$/i);
   await go(user, /^continue$/i);
-  expect(heading()).toBe("Connect to Proxmox VE");
+  expect(heading()).toBe("Your Proxmox VE server");
   return handlers;
 }
 
@@ -46,38 +47,49 @@ afterEach(() => {
 });
 
 describe("server setup: validation and saving", () => {
-  it("keeps Continue off until the address, user and password are all filled, and a blank address does not count", async () => {
+  it("keeps Continue off until the address, then the user and password, are filled, and a blank address does not count", async () => {
     installTauri();
     const user = userEvent.setup();
-    await newProxmoxAtConnection(user);
+    await newProxmoxAtServer(user);
     expect(disabled(/^continue$/i)).toBe(true);
     // Spaces only: the core would get an empty host.
     fireEvent.change(field("192.168.1.20 or pve.lan"), { target: { value: "   " } });
-    fireEvent.change(field("root@pam"), { target: { value: "root@pam" } });
-    fireEvent.change(password(), { target: { value: "s3cret" } });
     expect(disabled(/^continue$/i)).toBe(true);
     fireEvent.change(field("192.168.1.20 or pve.lan"), { target: { value: "pve.lan" } });
+    expect(disabled(/^continue$/i)).toBe(false);
+    await go(user, /^continue$/i);
+    expect(heading()).toBe("Connect to Proxmox VE");
+    await user.click(screen.getByRole("radio", { name: "Password" }));
+    expect(disabled(/^continue$/i)).toBe(true);
+    fireEvent.change(field("root@pam"), { target: { value: "root@pam" } });
+    fireEvent.change(password(), { target: { value: "s3cret" } });
     expect(disabled(/^continue$/i)).toBe(false);
     // Clearing the password again turns Continue back off.
     fireEvent.change(password(), { target: { value: "" } });
     expect(disabled(/^continue$/i)).toBe(true);
   });
 
-  it("goes back from the connection step to the tools and keeps what was typed", async () => {
+  it("goes back from the server and sign-in steps and keeps what was typed", async () => {
     installTauri();
     const user = userEvent.setup();
-    await newProxmoxAtConnection(user);
+    await newProxmoxAtServer(user);
     fireEvent.change(field("192.168.1.20 or pve.lan"), { target: { value: "pve.lan" } });
     await go(user, /back/i);
-    expect(heading()).not.toBe("Connect to Proxmox VE");
+    expect(heading()).toBe("Tools on this machine");
     await go(user, /^continue$/i);
     expect(field("192.168.1.20 or pve.lan").value).toBe("pve.lan");
+    await go(user, /^continue$/i);
+    fireEvent.change(field("root"), { target: { value: "admin" } });
+    await go(user, /back/i);
+    await go(user, /^continue$/i);
+    expect(field("root").value).toBe("admin");
   });
 
   it("saves an edited server without a password, so the core keeps the one in the keychain", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
     await renderSetup(editingServer());
+    await go(user, /^continue$/i);
     expect(password().placeholder).toBe("Leave empty to keep");
     expect(disabled(/^continue$/i)).toBe(false);
     // Typed then erased: still "keep", never an empty string that would overwrite the secret.
@@ -93,6 +105,7 @@ describe("server setup: validation and saving", () => {
     const user = userEvent.setup();
     await renderSetup(editingServer({ name: "" }));
     await go(user, /^continue$/i);
+    await go(user, /^continue$/i);
     await go(user, /save and test/i);
     expect(argsOf(calls, "server_save")[0]).toMatchObject({ input: { name: "192.168.1.20" } });
   });
@@ -102,6 +115,7 @@ describe("server setup: validation and saving", () => {
     const calls = installTauri({ server_save: () => new Promise((r) => (finish = r)) });
     const user = userEvent.setup();
     await renderSetup(editingServer());
+    await go(user, /^continue$/i);
     await go(user, /^continue$/i);
     await user.click(button(/save and test/i));
     await user.click(button(/save and test/i));
@@ -121,6 +135,7 @@ describe("server setup: validation and saving", () => {
     });
     const user = userEvent.setup();
     await renderSetup(editingServer());
+    await go(user, /^continue$/i);
     await go(user, /^continue$/i);
     await go(user, /save and test/i);
     expect(screen.getByText("enter the host's password")).toBeTruthy();
@@ -143,6 +158,7 @@ describe("server setup: validation and saving", () => {
     });
     const user = userEvent.setup();
     await renderSetup(editingServer());
+    await go(user, /^continue$/i);
     await go(user, /^continue$/i);
     await go(user, /save and test/i);
     expect(screen.getByText("no route to host")).toBeTruthy();

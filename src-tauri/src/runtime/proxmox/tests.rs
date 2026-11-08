@@ -16,6 +16,7 @@ fn recognises_token_ids() {
 fn host(addr: &str, network: Option<&str>) -> HostProfile {
     HostProfile {
         gcp_project: None,
+        ssh_key: None,
         id: "t".into(),
         name: "t".into(),
         provider: crate::runtime::providers::Provider::Proxmox,

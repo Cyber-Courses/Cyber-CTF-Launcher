@@ -123,9 +123,12 @@
       "get": "Obter",
       "terraformProxmox": "Controla a API do Proxmox. Instale-o para rodar labs no Proxmox."
     },
+    "server": {
+      "title": "Seu servidor {kind}",
+      "description": "Onde o servidor está. Como o launcher entra nele vem a seguir."
+    },
     "connection": {
       "title": "Conectar ao {kind}",
-      "descriptionProxmox": "O launcher entra na API do Proxmox.",
       "descriptionSsh": "O launcher controla o host por SSH.",
       "name": "Nome",
       "namePlaceholderProxmox": "Proxmox da garagem",
@@ -135,7 +138,6 @@
       "apiPort": "Porta da API",
       "sshPort": "Porta SSH",
       "username": "Usuário",
-      "usernameHint": "root@pam ou um ID de token de API como root@pam!nome",
       "tokenSecret": "Segredo do token",
       "password": "Senha",
       "keychainHint": "Guardada no keychain do seu sistema",
@@ -144,7 +146,22 @@
       "authorizeKeyBody": "Hosts com token usam esta chave por SSH para enviar o snippet cloud-init. Adicione-a ao <code>~/.ssh/authorized_keys</code> do usuário do token no nó Proxmox.",
       "loadingKey": "Carregando a chave pública do launcher…",
       "copied": "Copiado",
-      "copy": "Copiar"
+      "copy": "Copiar",
+      "descriptionSignIn": "Escolha como o launcher entra no nó Proxmox.",
+      "method": "Método de login",
+      "methodSshKey": "Chave SSH",
+      "methodToken": "Token de API",
+      "methodPassword": "Senha",
+      "sshKeyPath": "Chave privada",
+      "sshKeyPathHint": "Só o caminho é salvo, nunca a chave em si",
+      "sshKeyChoose": "Escolher…",
+      "sshKeyPick": "Escolha sua chave privada SSH",
+      "sshUser": "Usuário SSH",
+      "sshKeyNoteTitle": "O que o launcher faz com sua chave",
+      "sshKeyNoteBody": "Ao salvar, ele entra no nó por SSH com esta chave, cria um token de API para si com <code>pveum user token add</code> e adiciona a própria chave pública ao <code>~/.ssh/authorized_keys</code> do usuário. Nada mais é executado no nó; os labs passam a usar esse token.",
+      "tokenId": "ID do token",
+      "tokenIdHint": "user@realm!name, ex.: root@pam!cyberctf",
+      "usernameHintPassword": "user@realm, ex.: root@pam"
     },
     "placement": {
       "title": "Posicionamento",
@@ -265,7 +282,8 @@
     "test": {
       "title": "Teste de conexão",
       "description": "Salvo. Veja o que o launcher conseguiu verificar a partir desta máquina.",
-      "testing": "Testando a conexão…"
+      "testing": "Testando a conexão…",
+      "checks": "O que foi verificado"
     }
   }
 }

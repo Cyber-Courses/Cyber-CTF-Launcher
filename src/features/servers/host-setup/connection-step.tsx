@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy, KeyRound, Network } from "lucide-react";
+import { Check, Copy, KeyRound, Network, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCopy } from "@/components/ui/copy-value";
 import { KIND } from "@/features/servers/host-setup/constants";
@@ -9,28 +9,39 @@ import { Field, Input, Note, Step } from "@/features/servers/host-setup/form";
 import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav";
 import { SecretInput } from "@/features/servers/host-setup/credentials-parts";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
+import { ProxmoxSignIn } from "@/features/servers/host-setup/proxmox-sign-in";
 import { serverPublicKey } from "@/lib/tauri/servers";
-import type { ServerHostInput } from "@/lib/tauri";
 import { warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
-/** Proxmox accepts an API token id (user@realm!name) in the username field; in that mode the
- *  "password" is the token secret and SSH uses the launcher's key, which must be authorized on
- *  the node, so the step shows it. */
-const signsInWithToken = (v: ServerHostInput) => v.provider === "proxmox" && v.username.includes("!");
+/** Proxmox's first connection step: the server itself (name, address, API port). */
+export function ServerStep({ s }: { s: HostSetup }) {
+  const t = useT();
+  const { v, serverOk, next, back } = s;
+  return (
+    <Step icon={Server} title={t("servers.setup.server.title", { kind: KIND[v.provider].label })} description={t("servers.setup.server.description")}>
+      <AddressFields s={s} />
+      <BackNav onBack={back}>
+        <ContinueButton onClick={next} disabled={!serverOk} />
+      </BackNav>
+    </Step>
+  );
+}
 
+/** How the launcher signs in: Proxmox picks a method (`ProxmoxSignIn`); ESXi takes its address
+ *  and SSH login here. */
 export function ConnectionStep({ s }: { s: HostSetup }) {
   const t = useT();
   const { v, connectionOk, next, back } = s;
+  if (v.provider === "proxmox") return <ProxmoxSignIn s={s} signInFields={<SignInFields s={s} />} authorizeKey={<AuthorizeKeyNote />} />;
   return (
     <Step
       icon={Network}
       title={t("servers.setup.connection.title", { kind: KIND[v.provider].label })}
-      description={v.provider === "proxmox" ? t("servers.setup.connection.descriptionProxmox") : t("servers.setup.connection.descriptionSsh")}
+      description={t("servers.setup.connection.descriptionSsh")}
     >
       <AddressFields s={s} />
       <SignInFields s={s} />
-      {signsInWithToken(v) && <AuthorizeKeyNote />}
       <BackNav onBack={back}>
         <ContinueButton onClick={next} disabled={!connectionOk} />
       </BackNav>
@@ -71,15 +82,20 @@ function AddressFields({ s }: { s: HostSetup }) {
   );
 }
 
-/** The user (or API token id) and its password (or token secret), kept in the keychain. */
+/** The user (or, on Proxmox signing in with one, the API token id) and its password (or token
+ *  secret), kept in the keychain. */
 function SignInFields({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, kind, text } = s;
-  const isToken = signsInWithToken(v);
+  const { v, kind, text, signInMethod } = s;
+  const proxmox = v.provider === "proxmox";
+  const isToken = proxmox && signInMethod === "token";
   return (
-    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-      <Field label={t("servers.setup.connection.username")} hint={v.provider === "proxmox" ? t("servers.setup.connection.usernameHint") : undefined}>
-        <Input {...text("username")} placeholder={kind.user} />
+    <div className={proxmox ? "mt-4 grid gap-3 sm:grid-cols-2" : "mt-3 grid gap-3 sm:grid-cols-2"}>
+      <Field
+        label={isToken ? t("servers.setup.connection.tokenId") : t("servers.setup.connection.username")}
+        hint={proxmox ? (isToken ? t("servers.setup.connection.tokenIdHint") : t("servers.setup.connection.usernameHintPassword")) : undefined}
+      >
+        <Input {...text("username")} placeholder={isToken ? "root@pam!cyberctf" : kind.user} />
       </Field>
       <Field
         label={isToken ? t("servers.setup.connection.tokenSecret") : t("servers.setup.connection.password")}

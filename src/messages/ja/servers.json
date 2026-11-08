@@ -123,9 +123,12 @@
       "get": "入手",
       "terraformProxmox": "Proxmox API を操作します。Proxmox ラボを実行するにはインストールしてください。"
     },
+    "server": {
+      "title": "{kind} サーバー",
+      "description": "サーバーの場所です。ランチャーのサインイン方法は次で選びます。"
+    },
     "connection": {
       "title": "{kind} に接続",
-      "descriptionProxmox": "ランチャーは Proxmox API にサインインします。",
       "descriptionSsh": "ランチャーは SSH 経由でホストを操作します。",
       "name": "名前",
       "namePlaceholderProxmox": "自宅の Proxmox",
@@ -135,7 +138,6 @@
       "apiPort": "API ポート",
       "sshPort": "SSH ポート",
       "username": "ユーザー名",
-      "usernameHint": "root@pam、または root@pam!name のような API トークン ID",
       "tokenSecret": "トークンシークレット",
       "password": "パスワード",
       "keychainHint": "OS のキーチェーンに保存されます",
@@ -144,7 +146,22 @@
       "authorizeKeyBody": "トークン認証のホストでは、cloud-init スニペットのアップロードに SSH 経由でこの鍵を使います。Proxmox ノード上のトークンユーザーの <code>~/.ssh/authorized_keys</code> に追加してください。",
       "loadingKey": "ランチャーの公開鍵を読み込み中…",
       "copied": "コピーしました",
-      "copy": "コピー"
+      "copy": "コピー",
+      "descriptionSignIn": "ランチャーが Proxmox ノードにサインインする方法を選んでください。",
+      "method": "サインイン方法",
+      "methodSshKey": "SSH 鍵",
+      "methodToken": "API トークン",
+      "methodPassword": "パスワード",
+      "sshKeyPath": "秘密鍵",
+      "sshKeyPathHint": "保存されるのはパスだけで、鍵そのものは保存されません",
+      "sshKeyChoose": "選択…",
+      "sshKeyPick": "SSH 秘密鍵を選択",
+      "sshUser": "SSH ユーザー",
+      "sshKeyNoteTitle": "ランチャーがこの鍵で行うこと",
+      "sshKeyNoteBody": "保存すると、この鍵で SSH 経由でノードにサインインし、<code>pveum user token add</code> で自分用の API トークンを作成し、自分の公開鍵をユーザーの <code>~/.ssh/authorized_keys</code> に追加します。ノード上でそれ以外は実行しません。ラボはその後このトークンを使います。",
+      "tokenId": "トークン ID",
+      "tokenIdHint": "user@realm!name(例: root@pam!cyberctf)",
+      "usernameHintPassword": "user@realm(例: root@pam)"
     },
     "placement": {
       "title": "配置",
@@ -265,7 +282,8 @@
     "test": {
       "title": "接続テスト",
       "description": "保存しました。ランチャーがこのマシンから確認できた内容は以下のとおりです。",
-      "testing": "接続をテスト中…"
+      "testing": "接続をテスト中…",
+      "checks": "確認した項目"
     }
   }
 }

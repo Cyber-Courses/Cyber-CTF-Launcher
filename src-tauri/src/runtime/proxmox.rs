@@ -15,6 +15,7 @@ use super::ssh;
 
 mod check;
 mod node_ssh;
+pub mod ssh_key;
 
 pub use check::{bridge_is_internal, test};
 #[cfg(test)]
