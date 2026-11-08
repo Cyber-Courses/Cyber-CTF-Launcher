@@ -33,6 +33,7 @@
     "hideTest": "Ocultar prueba",
     "fix": "Arreglar",
     "useServer": "Usar un servidor",
+    "useDefault": "Usar por defecto",
     "notTestedYet": "aún sin probar",
     "tested": "probado {ago}",
     "lastTestFailed": "la última prueba falló {ago}",
@@ -53,12 +54,12 @@
       "stopped": "Hay un motor de contenedores instalado pero no está en ejecución. Inícialo para ejecutar labs."
     },
     "engine": {
-      "runningIdle": "En ejecución. Los labs usan {engine}; cámbialo en la configuración."
+      "runningIdle": "Los labs usan {engine} por defecto."
     },
     "vm": {
       "automatic": " (automático, cámbialo en Ajustes)",
       "vagrantMissing": "Falta Vagrant o el plugin de Vagrant del hipervisor.",
-      "installedIdle": "Los labs se ejecutan en {provider}; cámbialo en Ajustes."
+      "installedIdle": "Los labs se ejecutan en {provider} por defecto."
     },
     "details": "Detalles",
     "detail": {

@@ -33,6 +33,7 @@
     "hideTest": "Ocultar teste",
     "fix": "Corrigir",
     "useServer": "Usar um servidor",
+    "useDefault": "Usar por padrão",
     "notTestedYet": "ainda não testado",
     "tested": "testado {ago}",
     "lastTestFailed": "último teste falhou {ago}",
@@ -53,12 +54,12 @@
       "stopped": "Uma engine de contêineres está instalada, mas não está rodando. Inicie-a para rodar labs."
     },
     "engine": {
-      "runningIdle": "Rodando. Os labs usam {engine}; troque na configuração."
+      "runningIdle": "Os labs usam {engine} por padrão."
     },
     "vm": {
       "automatic": " (automático, mude em Configurações)",
       "vagrantMissing": "Falta o Vagrant ou o plugin Vagrant do hypervisor.",
-      "installedIdle": "Os labs rodam em {provider}; mude em Configurações."
+      "installedIdle": "Os labs rodam em {provider} por padrão."
     },
     "details": "Detalhes",
     "detail": {

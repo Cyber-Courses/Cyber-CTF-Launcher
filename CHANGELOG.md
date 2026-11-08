@@ -30,8 +30,12 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   hypervisor found on it as a row, each with its own state (the machine check now asks every
   Docker CLI context in turn with `docker --context <c> info`, so Docker Desktop, OrbStack,
   Colima, Docker Engine or Podman side by side each read running or stopped, not only the one
-  the CLI points at; the current engine and the hypervisor labs run on are marked), with the
-  same Fix and Test actions. Only what is installed is listed, in the Providers panel and in
+  the CLI points at; the current engine and the hypervisor labs run on are marked). Every
+  running engine and every ready hypervisor has its own Test: the container test runs on that
+  engine's Docker context, the VM test on that hypervisor, and each row keeps its own last
+  result ("tested 5 min ago", or failed and why), the lab type's own readiness following only
+  the engine or hypervisor labs run on. "Use by default" on a row points Docker at that engine
+  or makes that hypervisor the Settings choice. Only what is installed is listed, in the Providers panel and in
   Details alike: nothing for the engines and hypervisors this machine lacks. Adding one is what
   "Add a provider" is for: in the header as the Servers page's "Add server", it opens the guided
   setup on a choice of the providers this machine can have, a container engine or a hypervisor

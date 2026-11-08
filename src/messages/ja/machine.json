@@ -33,6 +33,7 @@
     "hideTest": "テストを隠す",
     "fix": "修正",
     "useServer": "サーバーを使う",
+    "useDefault": "既定にする",
     "notTestedYet": "未テスト",
     "tested": "{ago} にテスト済み",
     "lastTestFailed": "{ago} の前回のテストは失敗",
@@ -53,12 +54,12 @@
       "stopped": "コンテナエンジンはインストールされていますが、起動していません。ラボを実行するには起動してください。"
     },
     "engine": {
-      "runningIdle": "実行中。ラボは {engine} を使用しています。セットアップで切り替えられます。"
+      "runningIdle": "ラボは既定で {engine} を使用します。"
     },
     "vm": {
       "automatic": "（自動選択、「設定」で変更可能）",
       "vagrantMissing": "Vagrant またはハイパーバイザー用の Vagrant プラグインがありません。",
-      "installedIdle": "ラボは {provider} で実行されます。「設定」で変更できます。"
+      "installedIdle": "ラボは既定で {provider} で実行されます。"
     },
     "details": "詳細",
     "detail": {

@@ -74,8 +74,10 @@ export const hypervJoinAdmins = () => invokeUnit("hyperv_join_admins");
 export const installVagrantPlugin = (plugin: string, onLog: (line: string) => void) => invokeStreaming("install_vagrant_plugin", { plugin }, onLog);
 
 /** Runs a setup self-test: `docker` boots a throwaway two-container lab, `vm` checks the hypervisor + Vagrant. */
-export const machineSelftest = (kind: SelfTestKind, provider: Provider | null, onEvent: (e: SelfTestEvent) => void) =>
-  invokeStreaming("machine_selftest", { kind, provider }, onEvent, "events");
+/** Runs a setup self-test: on `provider` for a VM, on the Docker CLI `context` (one engine among
+ *  several; null for the current one) for containers. */
+export const machineSelftest = (kind: SelfTestKind, provider: Provider | null, onEvent: (e: SelfTestEvent) => void, context: string | null = null) =>
+  invokeStreaming("machine_selftest", { kind, provider, context }, onEvent, "events");
 
 /** Starts a self-test's download (test image / VM box) in the background, so the test itself is quick. */
 export const machineSelftestPrefetch = (kind: SelfTestKind, provider: Provider | null) => invokeUnit("machine_selftest_prefetch", { kind, provider });

@@ -170,6 +170,11 @@ pub async fn run_read(program: &'static str, args: &[&str], cwd: Option<&Path>) 
     run_inner(program, args, cwd, &[], Some(STATUS_TIMEOUT)).await
 }
 
+/// `run_read` with extra environment variables (a Docker context to probe, say).
+pub async fn run_read_env(program: &'static str, args: &[&str], cwd: Option<&Path>, env: &[(String, String)]) -> Result<String> {
+    run_inner(program, args, cwd, env, Some(STATUS_TIMEOUT)).await
+}
+
 /// `run` given up after [`CLI_TIMEOUT`], for a cloud CLI.
 pub async fn run_cli(program: &'static str, args: &[&str]) -> Result<String> {
     run_inner(program, args, None, &[], Some(CLI_TIMEOUT)).await

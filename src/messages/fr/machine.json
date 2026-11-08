@@ -33,6 +33,7 @@
     "hideTest": "Masquer le test",
     "fix": "Corriger",
     "useServer": "Utiliser un serveur",
+    "useDefault": "Utiliser par défaut",
     "notTestedYet": "pas encore testé",
     "tested": "testé {ago}",
     "lastTestFailed": "dernier test échoué {ago}",
@@ -53,12 +54,12 @@
       "stopped": "Un moteur de conteneurs est installé mais ne tourne pas. Démarrez-le pour lancer des labs."
     },
     "engine": {
-      "runningIdle": "En marche. Les labs utilisent {engine} ; changez dans la configuration."
+      "runningIdle": "Les labs utilisent {engine} par défaut."
     },
     "vm": {
       "automatic": " (automatique, modifiable dans Réglages)",
       "vagrantMissing": "Vagrant ou le plugin Vagrant de l'hyperviseur est manquant.",
-      "installedIdle": "Les labs tournent sur {provider} ; changez-le dans Réglages."
+      "installedIdle": "Les labs tournent sur {provider} par défaut."
     },
     "details": "Détails",
     "detail": {

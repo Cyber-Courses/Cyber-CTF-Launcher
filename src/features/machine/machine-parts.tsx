@@ -5,7 +5,7 @@ import { Panel } from "@/components/ui/panel";
 import { Meter } from "@/components/ui/meter";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SelfTest } from "@/features/machine/self-test";
+import { SelfTest, type SelfTestTarget } from "@/features/machine/self-test";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 import { StatusDot, type Tone } from "@/components/ui/status-pill";
@@ -160,6 +160,7 @@ export function ProviderRow({
   actions,
   testing,
   onTestDone,
+  target,
 }: {
   kind: LabKind;
   icon: ReactNode;
@@ -173,6 +174,8 @@ export function ProviderRow({
   actions: ReactNode;
   testing: boolean;
   onTestDone: () => void;
+  /** Which engine or hypervisor the inline test is of (this row's), and how its result is kept. */
+  target?: SelfTestTarget;
 }) {
   const t = useT();
   return (
@@ -197,6 +200,7 @@ export function ProviderRow({
             title={kind === "docker" ? t("machine.selfTest.containerTitle") : t("machine.selfTest.vmTitle")}
             description={kind === "docker" ? t("machine.selfTest.machineDockerDescription") : t("machine.selfTest.machineVmDescription")}
             auto
+            target={target}
             onResult={(r) => {
               if (r === "ok" || r === "fail") onTestDone();
             }}

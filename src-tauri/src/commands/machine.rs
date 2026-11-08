@@ -64,10 +64,11 @@ pub async fn image_download_size(image: String) -> Option<u64> {
     images::image_download_size(image).await
 }
 
-/// Runs the setup self-test of `kind`, its steps sent on `events` (see [`selftest::machine_selftest`]).
+/// Runs the setup self-test of `kind`, its steps sent on `events` (see [`selftest::machine_selftest`]):
+/// on `provider` for a VM, on the Docker CLI `context` (one engine among several) for containers.
 #[tauri::command]
-pub async fn machine_selftest(app: AppHandle, kind: Kind, provider: Option<Provider>, events: Channel<Event>) -> Result<()> {
-    selftest::machine_selftest(AppDirs::from(&app), kind, provider, move |e| {
+pub async fn machine_selftest(app: AppHandle, kind: Kind, provider: Option<Provider>, context: Option<String>, events: Channel<Event>) -> Result<()> {
+    selftest::machine_selftest(AppDirs::from(&app), kind, provider, context, move |e| {
         let _ = events.send(e);
     })
     .await

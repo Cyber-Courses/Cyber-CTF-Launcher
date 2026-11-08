@@ -4,12 +4,12 @@ import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-pill";
 import { StepRow } from "@/features/machine/step-row";
-import { useSelfTest, type SelfTestResult, type Span } from "@/features/machine/use-self-test";
+import { useSelfTest, type SelfTestResult, type SelfTestTarget, type Span } from "@/features/machine/use-self-test";
 import { type SelfTestEvent } from "@/lib/tauri";
 import { formatElapsed } from "@/lib/format";
 import { useT, type MessageKey } from "@/lib/i18n";
 
-export type { SelfTestResult } from "@/features/machine/use-self-test";
+export type { SelfTestResult, SelfTestTarget } from "@/features/machine/use-self-test";
 
 /** The steps each test reports, so the list shows up front instead of growing as it runs. */
 const PLAN: Record<"docker" | "vm", { step: string; label: MessageKey }[]> = {
@@ -33,22 +33,25 @@ const PLAN: Record<"docker" | "vm", { step: string; label: MessageKey }[]> = {
   ],
 };
 
-/** A runnable setup self-test with a live checklist. Runs on mount when `auto`, unless a run of
- *  this kind is already going (it then shows that one). */
+/** A runnable setup self-test with a live checklist, of what labs use or of one `target` engine
+ *  or hypervisor. Runs on mount when `auto`, unless a run of this kind and target is already
+ *  going (it then shows that one). */
 export function SelfTest({
   kind,
   title,
   description,
   auto,
   onResult,
+  target,
 }: {
   kind: "docker" | "vm";
   title: string;
   description: string;
   auto?: boolean;
   onResult?: (r: SelfTestResult) => void;
+  target?: SelfTestTarget;
 }) {
-  const { events, result, run, times, now, runTest } = useSelfTest(kind, auto, onResult);
+  const { events, result, run, times, now, runTest } = useSelfTest(kind, auto, onResult, target);
   const passed = PLAN[kind].filter(({ step }) => events[step]?.state === "ok").length;
   return (
     <div className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">

@@ -33,6 +33,7 @@
     "hideTest": "Hide test",
     "fix": "Fix",
     "useServer": "Use a server",
+    "useDefault": "Use by default",
     "notTestedYet": "not tested yet",
     "tested": "tested {ago}",
     "lastTestFailed": "last test failed {ago}",
@@ -53,12 +54,12 @@
       "stopped": "A container engine is installed but not running. Start it to run labs."
     },
     "engine": {
-      "runningIdle": "Running. Labs use {engine}; switch in the setup."
+      "runningIdle": "Labs use {engine} by default."
     },
     "vm": {
       "automatic": " (automatic, change in Settings)",
       "vagrantMissing": "Vagrant or the hypervisor's Vagrant plugin is missing.",
-      "installedIdle": "Labs run on {provider}; change it in Settings."
+      "installedIdle": "Labs run on {provider} by default."
     },
     "details": "Details",
     "detail": {

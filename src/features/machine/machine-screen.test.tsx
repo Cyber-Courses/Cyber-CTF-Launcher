@@ -14,7 +14,7 @@ import { SelfTest } from "@/features/machine/self-test";
 import { StepRow } from "@/features/machine/step-row";
 import { formatAgo, formatBytes, formatBytesOf, formatUptime } from "@/lib/format";
 import { LOCALES, setLocalePreference } from "@/lib/i18n";
-import { getLastTest, setAttackImage, setLastTest, setVmProvider, type LastTest } from "@/lib/settings";
+import { getLastTest, getVmProvider, setAttackImage, setLastTest, setVmProvider, type LastTest } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
 import { freshReport, hypervisorStatus as hv, readyReport, stoppedDockerReport } from "@/test/fixtures";
@@ -25,6 +25,8 @@ import { must } from "@/components/test-support";
 
 const GB = 1e9;
 const text = () => document.body.textContent;
+/** A self-test event as the core streams it (the label as the step's name). */
+const ev = (step: string, state: SelfTestEvent["state"], detail?: string): SelfTestEvent => ({ step, label: step, state, detail: detail ?? null });
 const metrics = (over: Record<string, number> = {}) => ({
   cpu: 40,
   memUsed: 8 * GB,
@@ -142,8 +144,6 @@ describe("machine parts", () => {
 /* ------------------------------------------------------------------ self-test */
 
 describe("SelfTest", () => {
-  const ev = (step: string, state: SelfTestEvent["state"], detail?: string): SelfTestEvent => ({ step, label: step, state, detail: detail ?? null });
-
   it("runs on demand, ticks its steps and records a pass", async () => {
     const calls = installTauri({
       machine_selftest: (a) => {
@@ -226,14 +226,15 @@ describe("SelfTest", () => {
 /* ------------------------------------------------------------------ provider rows */
 
 describe("EngineRows", () => {
-  const base = { now: Date.now(), memFree: 16 * GB, testing: false, onToggleTest: vi.fn(), onTestDone: vi.fn(), onFix: vi.fn() };
+  const base = { now: Date.now(), memFree: 16 * GB, testing: null, onToggleTest: vi.fn(), onTestDone: vi.fn(), onFix: vi.fn(), onRefresh: vi.fn() };
   type Engine = SystemReport["dockerEngines"][number];
   const found = (engine: Engine["engine"], over: Partial<Engine> = {}): Engine => ({ engine, context: engine, running: true, current: false, ...over });
 
-  it("lists every engine found, each with its own state, the current one marked with its last test", async () => {
-    installTauri();
+  it("lists every engine found, each with its own state and test, the current one marked with the labs' last test", async () => {
+    const calls = installTauri();
     const onToggleTest = vi.fn();
     const onFix = vi.fn();
+    const onRefresh = vi.fn();
     const user = userEvent.setup();
     const report: SystemReport = {
       ...readyReport(),
@@ -241,20 +242,62 @@ describe("EngineRows", () => {
       dockerEnginesRunning: ["orbstack", "docker-desktop"],
       dockerEngines: [found("orbstack", { current: true }), found("docker-desktop", { context: "desktop-linux" }), found("colima", { running: false })],
     };
-    render(<EngineRows {...base} onToggleTest={onToggleTest} onFix={onFix} report={report} last={{ result: "ok", at: base.now - 3_600_000 }} />);
+    // Docker Desktop's own last test, failed: shown on its row with why, not counted against the labs.
+    setLastTest("docker", "fail", { provider: "docker-desktop", primary: false, why: "pull timed out" });
+    render(
+      <EngineRows
+        {...base}
+        onToggleTest={onToggleTest}
+        onFix={onFix}
+        onRefresh={onRefresh}
+        report={report}
+        last={{ result: "ok", at: base.now - 3_600_000 }}
+      />,
+    );
     // Three rows, in the check's order: the current one, another running, one stopped.
     expect(text()).toMatch(
-      /OrbStack.*current.*tested 1 h ago.*Ready.*Docker Desktop.*Running\. Labs use OrbStack; switch in the setup\..*Running.*Colima.*Engine stopped/,
+      /OrbStack.*current.*tested 1 h ago.*Ready.*Docker Desktop.*Labs use OrbStack by default\. · last test failed just now · pull timed out.*Running.*Colima.*Engine stopped/,
     );
     expect(screen.getAllByText("current")).toHaveLength(1);
     // Not installed here: not a row (Add a provider covers it).
     expect(text()).not.toContain("Podman");
-    await user.click(button(/^test$/i));
-    expect(onToggleTest).toHaveBeenCalledOnce();
-    // The other engines' Fix opens the engine step, which switches to or starts them.
-    expect(screen.getAllByRole("button", { name: /^fix$/i })).toHaveLength(2);
-    await user.click(screen.getAllByRole("button", { name: /^fix$/i })[1]);
+    // Every running engine has its own test; the stopped one its fix.
+    const tests = screen.getAllByRole("button", { name: /^test$/i });
+    expect(tests).toHaveLength(2);
+    await user.click(tests[0]);
+    expect(onToggleTest).toHaveBeenLastCalledWith("docker:orbstack");
+    await user.click(tests[1]);
+    expect(onToggleTest).toHaveBeenLastCalledWith("docker:docker-desktop");
+    await user.click(button(/^fix$/i));
     expect(onFix).toHaveBeenCalledWith("docker");
+    // The other running engine can become the one labs use: Docker is pointed at it, the machine re-read.
+    await user.click(button(/use by default/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "docker_use_engine")?.args).toEqual({ engine: "docker-desktop" });
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("runs another engine's test on its own Docker context and keeps the result under that engine", async () => {
+    const calls = installTauri({
+      machine_selftest: (a) => {
+        stream(a, ev("engine", "ok"), ev("pull", "fail", "toomanyrequests: rate limit"));
+        rejectWith("pull failed");
+      },
+    });
+    const onTestDone = vi.fn();
+    const report: SystemReport = {
+      ...readyReport(),
+      dockerEnginesRunning: ["docker-desktop", "orbstack"],
+      dockerEngines: [found("docker-desktop", { context: "desktop-linux", current: true }), found("orbstack")],
+    };
+    render(<EngineRows {...base} testing="docker:orbstack" onTestDone={onTestDone} report={report} last={null} />);
+    await flush();
+    expect(calls.find((c) => c.cmd === "machine_selftest")?.args).toMatchObject({ kind: "docker", provider: null, context: "orbstack" });
+    expect(onTestDone).toHaveBeenCalledOnce();
+    expect(getLastTest("docker", "orbstack")).toMatchObject({ result: "fail", why: "toomanyrequests: rate limit" });
+    // OrbStack isn't what labs run on: the container labs' own last test is untouched.
+    expect(getLastTest("docker")).toBeNull();
+    expect(text()).toContain("Hide test");
   });
 
   it("shows a failed last test and a low-memory hint on the current engine, and names one without a tile", () => {
@@ -312,7 +355,7 @@ describe("EngineRows", () => {
   it("shows the self-test inline and reports when it finishes", async () => {
     installTauri();
     const onTestDone = vi.fn();
-    render(<EngineRows {...base} testing onTestDone={onTestDone} report={readyReport()} last={null} />);
+    render(<EngineRows {...base} testing="docker:docker-desktop" onTestDone={onTestDone} report={readyReport()} last={null} />);
     await flush();
     expect(text()).toContain("Hide test");
     expect(text()).toContain("not tested yet");
@@ -321,7 +364,16 @@ describe("EngineRows", () => {
 });
 
 describe("HypervisorRows", () => {
-  const base = { now: Date.now(), memFree: 16 * GB, testing: false, onToggleTest: vi.fn(), onTestDone: vi.fn(), onFix: vi.fn(), onUseServer: vi.fn() };
+  const base = {
+    now: Date.now(),
+    memFree: 16 * GB,
+    testing: null,
+    onToggleTest: vi.fn(),
+    onTestDone: vi.fn(),
+    onFix: vi.fn(),
+    onRefresh: vi.fn(),
+    onUseServer: vi.fn(),
+  };
   const rows = (report: SystemReport, last: LastTest | null = null, over: Partial<typeof base> = {}) => (
     <HypervisorRows {...base} {...over} report={report} last={last} vm={vmSetup(report, null, last)} />
   );
@@ -341,11 +393,46 @@ describe("HypervisorRows", () => {
     render(rows(report, { result: "ok", at: Date.now() }));
     // Picked automatically among the ready ones, and marked; the others each as they stand.
     expect(text()).toMatch(/VirtualBox.*default.*\(automatic, change in Settings\) · tested just now.*Ready/);
-    expect(text()).toMatch(/VMware Workstation.*Labs run on VirtualBox; change it in Settings\..*Installed/);
+    expect(text()).toMatch(/VMware Workstation.*Labs run on VirtualBox by default\. · not tested yet.*Installed/);
     expect(text()).toMatch(/libvirt \(KVM\).*No \/dev\/kvm\..*Can't run here/);
     expect(screen.getAllByText("default")).toHaveLength(1);
     // Not installed: not a row (Add a provider covers it).
     expect(text()).not.toContain("QEMU");
+    // Every ready hypervisor has its own test (not the blocked one); the other can become the default.
+    expect(screen.getAllByRole("button", { name: /^test$/i })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /use by default/i })).toHaveLength(1);
+  });
+
+  it("tests each hypervisor on its own, keeps its result on its row, and makes it the default from the row", async () => {
+    const calls = installTauri({
+      machine_selftest: (a) => {
+        stream(a, ev("vagrant", "ok"), ev("provider", "fail", "no box for vmware_desktop"));
+        rejectWith("provider check failed");
+      },
+    });
+    const onToggleTest = vi.fn();
+    const onTestDone = vi.fn();
+    const user = userEvent.setup();
+    const report = { ...readyReport(), os: "linux", vmProviders: [hv({}), hv({ provider: "vmware_desktop" })] };
+    const r = render(rows(report, null, { onToggleTest }));
+    const tests = screen.getAllByRole("button", { name: /^test$/i });
+    await user.click(tests[1]);
+    expect(onToggleTest).toHaveBeenLastCalledWith("vm:vmware_desktop");
+    r.unmount();
+    // Open: the VM test runs on that hypervisor, and its failure stays with its row (the page
+    // re-reads the rows when a test ends; here, a re-render).
+    const open = () => rows(report, null, { testing: "vm:vmware_desktop", onTestDone });
+    const opened = render(open());
+    await flush();
+    expect(calls.find((c) => c.cmd === "machine_selftest")?.args).toMatchObject({ kind: "vm", provider: "vmware_desktop" });
+    expect(onTestDone).toHaveBeenCalledOnce();
+    expect(getLastTest("vm", "vmware_desktop")).toMatchObject({ result: "fail", why: "no box for vmware_desktop" });
+    expect(getLastTest("vm")).toBeNull();
+    opened.rerender(open());
+    expect(text()).toMatch(/VMware Workstation.*last test failed just now · no box for vmware_desktop/);
+    // And from the row, the Settings choice.
+    await user.click(button(/use by default/i));
+    expect(getVmProvider()).toBe("vmware_desktop");
   });
 
   it("marks the hypervisor chosen in Settings, not the first installed one", () => {
@@ -353,7 +440,9 @@ describe("HypervisorRows", () => {
     setVmProvider("vmware_desktop");
     const report = { ...readyReport(), os: "linux", vmProviders: [hv({}), hv({ provider: "vmware_desktop" })] };
     render(<HypervisorRows {...base} report={report} last={null} vm={vmSetup(report, "vmware_desktop", null)} />);
-    expect(text()).toMatch(/VirtualBox.*Labs run on VMware Workstation.*Installed.*VMware Workstation.*default.*not tested yet.*Ready/);
+    expect(text()).toMatch(
+      /VirtualBox.*Labs run on VMware Workstation by default\. · not tested yet.*Installed.*VMware Workstation.*default.*not tested yet.*Ready/,
+    );
   });
 
   it("offers a server beside the test when memory is short", async () => {

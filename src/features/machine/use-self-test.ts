@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { machineSelftest, type SelfTestEvent } from "@/lib/tauri";
+import { machineSelftest, type Provider, type SelfTestEvent } from "@/lib/tauri";
 import { getVmProvider, setLastTest } from "@/lib/settings";
 import { useNow } from "@/lib/use-now";
 import { registerReset } from "@/lib/module-state";
@@ -13,9 +13,20 @@ export type Span = { start: number; end?: number };
 
 type Kind = "docker" | "vm";
 
-/** One kind's latest run, shared by every view of it: a view hidden and shown again, or a setup
- *  step left and come back to, shows the same run instead of starting a second one (for the VM
- *  test, another VM boot of minutes). */
+/** Which engine or hypervisor a test is of (the Machine page tests each of its rows), and how
+ *  it is recorded. Without one, the test runs on what labs use (the setup window's). */
+export type SelfTestTarget = {
+  /** The provider the result is kept under: an engine id, or a hypervisor. */
+  provider?: string | null;
+  /** The Docker CLI context to run a container test on (one engine among several). */
+  context?: string | null;
+  /** Whether this is the engine or hypervisor labs run on: its result is the lab type's too. */
+  primary?: boolean;
+};
+
+/** One run per kind and target, shared by every view of it: a view hidden and shown again, or a
+ *  setup step left and come back to, shows the same run instead of starting a second one (for
+ *  the VM test, another VM boot of minutes). */
 type Shared = {
   result: SelfTestResult;
   /** Each step's last event, by step (none for a step not reached). */
@@ -25,10 +36,16 @@ type Shared = {
   run: Span | null;
   listeners: Set<() => void>;
 };
-const shared: Record<Kind, Shared> = {
-  docker: { result: "idle", events: {}, times: {}, run: null, listeners: new Set() },
-  vm: { result: "idle", events: {}, times: {}, run: null, listeners: new Set() },
-};
+const shared = new Map<string, Shared>();
+const runKey = (kind: Kind, target: SelfTestTarget) => `${kind}:${target.provider ?? ""}`;
+function store(key: string): Shared {
+  let s = shared.get(key);
+  if (!s) {
+    s = { result: "idle", events: {}, times: {}, run: null, listeners: new Set() };
+    shared.set(key, s);
+  }
+  return s;
+}
 const changed = (s: Shared) => {
   s.listeners.forEach((l) => {
     l();
@@ -36,34 +53,61 @@ const changed = (s: Shared) => {
 };
 
 /** The store's writes, outside any component (its state belongs to the app, not one view). */
-function setRunResult(kind: Kind, r: SelfTestResult) {
-  const s = shared[kind];
+function setRunResult(s: Shared, r: SelfTestResult) {
   if (r !== "running" && s.run) s.run = { ...s.run, end: Date.now() };
   s.result = r;
   changed(s);
 }
-function beginRun(kind: Kind) {
-  Object.assign(shared[kind], { events: {}, times: {}, run: { start: Date.now() } });
+function beginRun(s: Shared) {
+  Object.assign(s, { events: {}, times: {}, run: { start: Date.now() } });
 }
-function addEvent(kind: Kind, e: SelfTestEvent) {
-  const s = shared[kind];
+function addEvent(s: Shared, e: SelfTestEvent) {
   const at = Date.now();
   const t = s.times[e.step] ?? { start: at };
   s.events = { ...s.events, [e.step]: e };
   s.times = { ...s.times, [e.step]: e.state === "running" ? t : { ...t, end: t.end ?? at } };
   changed(s);
 }
+/** Why a run failed: its failing step's detail, else that step's label. */
+function failure(s: Shared): string | null {
+  const failed = Object.values(s.events).find((e) => e?.state === "fail");
+  return failed ? (failed.detail ?? failed.label) : null;
+}
+
+/** One run of the test on `target`, its events into `s`: the result, saved as the last test of
+ *  the target's provider and, for the one labs run on, of the kind. */
+async function perform(kind: Kind, s: Shared, { provider = null, context = null, primary = true }: SelfTestTarget): Promise<SelfTestResult> {
+  // A VM test runs on the hypervisor asked for, else the one chosen in Settings.
+  const hypervisor = kind === "vm" ? ((provider as Provider | null) ?? getVmProvider()) : null;
+  try {
+    await machineSelftest(
+      kind,
+      hypervisor,
+      (e) => {
+        addEvent(s, e);
+      },
+      kind === "docker" ? context : null,
+    );
+    setLastTest(kind, "ok", { provider, primary });
+    return "ok";
+  } catch {
+    setLastTest(kind, "fail", { provider, primary, why: failure(s) });
+    return "fail";
+  }
+}
 
 // Forgets the runs (see registerReset).
 registerReset(() => {
-  for (const s of Object.values(shared)) Object.assign(s, { result: "idle", events: {}, times: {}, run: null });
+  for (const s of shared.values()) Object.assign(s, { result: "idle", events: {}, times: {}, run: null });
 });
 
 /** Runs a setup self-test and follows it: the last event and the timing of each step, the run's
- *  timing and its result (also saved as the last test). Runs on mount when `auto`, unless a run
- *  of this kind is already going (it then shows that one). */
-export function useSelfTest(kind: Kind, auto: boolean | undefined, onResult: ((r: SelfTestResult) => void) | undefined) {
-  const s = shared[kind];
+ *  timing and its result (also saved as the last test, of the target's provider and, for the one
+ *  labs run on, of the kind). Runs on mount when `auto`, unless a run of this kind and target is
+ *  already going (it then shows that one). */
+export function useSelfTest(kind: Kind, auto: boolean | undefined, onResult: ((r: SelfTestResult) => void) | undefined, target: SelfTestTarget = {}) {
+  const { provider = null, context = null, primary = true } = target;
+  const s = store(runKey(kind, target));
   const [, rerender] = useState(0);
   useEffect(() => {
     const l = () => {
@@ -85,28 +129,19 @@ export function useSelfTest(kind: Kind, auto: boolean | undefined, onResult: ((r
   });
   const report = useCallback(
     (r: SelfTestResult) => {
-      setRunResult(kind, r);
+      setRunResult(s, r);
       onResultRef.current?.(r);
     },
-    [kind],
+    [s],
   );
 
   const runTest = useCallback(async () => {
-    if (shared[kind].result === "running") return;
-    beginRun(kind);
+    if (s.result === "running") return;
+    beginRun(s);
     touchNow();
     report("running");
-    try {
-      await machineSelftest(kind, kind === "vm" ? getVmProvider() : null, (e) => {
-        addEvent(kind, e);
-      });
-      setLastTest(kind, "ok");
-      report("ok");
-    } catch {
-      setLastTest(kind, "fail");
-      report("fail");
-    }
-  }, [kind, report, touchNow]);
+    report(await perform(kind, s, { provider, context, primary }));
+  }, [kind, provider, context, primary, report, s, touchNow]);
 
   useEffect(() => {
     if (started.current) return;

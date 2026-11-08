@@ -6,7 +6,7 @@ use std::time::Duration;
 use super::Reporter;
 use super::downloads::ensure_image;
 use crate::error::{Error, Result};
-use crate::platform::exec::run_env_timed;
+use crate::platform::exec::{run_env_timed, run_read_env};
 
 const PROJECT: &str = "cyberctf-selftest";
 pub(crate) const IMAGE: &str = "busybox:1.36";
@@ -37,36 +37,44 @@ const START_LIMIT: Duration = Duration::from_secs(180);
 const PROBE_LIMIT: Duration = Duration::from_secs(20);
 const DOWN_LIMIT: Duration = Duration::from_secs(60);
 
-async fn compose(dir: &Path, rest: &[&str], limit: Duration) -> Result<String> {
-    let mut args = vec!["compose", "-p", PROJECT, "-f", "docker-compose.yml"];
-    args.extend_from_slice(rest);
-    run_env_timed("docker", &args, Some(dir), &[], limit).await
+/// The environment every Docker call of the test gets: `DOCKER_CONTEXT` when the test is of one
+/// engine among several (the Machine page's rows), else nothing, for the CLI's current one.
+pub(super) fn env_for(context: Option<&str>) -> Vec<(String, String)> {
+    context.map(|c| vec![("DOCKER_CONTEXT".to_string(), c.to_string())]).unwrap_or_default()
 }
 
-pub(super) async fn run_test(dir: &Path, r: &Reporter) -> Result<()> {
+async fn compose(dir: &Path, env: &[(String, String)], rest: &[&str], limit: Duration) -> Result<String> {
+    let mut args = vec!["compose", "-p", PROJECT, "-f", "docker-compose.yml"];
+    args.extend_from_slice(rest);
+    run_env_timed("docker", &args, Some(dir), env, limit).await
+}
+
+/// The test, on the engine behind `context` (the CLI's current one when none is named).
+pub(super) async fn run_test(dir: &Path, context: Option<&str>, r: &Reporter) -> Result<()> {
     std::fs::write(dir.join("docker-compose.yml"), compose_file())?;
-    let res = steps(dir, r).await;
+    let env = env_for(context);
+    let res = steps(dir, &env, r).await;
     // Always tear the test lab down, even after a failed step.
-    let down = compose(dir, &["down", "-v", "--remove-orphans", "-t", "0"], DOWN_LIMIT).await;
+    let down = compose(dir, &env, &["down", "-v", "--remove-orphans", "-t", "0"], DOWN_LIMIT).await;
     r.cleanup("Clean up", &res, down, None);
     res
 }
 
-async fn steps(dir: &Path, r: &Reporter) -> Result<()> {
+async fn steps(dir: &Path, env: &[(String, String)], r: &Reporter) -> Result<()> {
     r.step("engine", "Container engine answers", async {
-        let v = crate::platform::exec::run_read("docker", &["info", "--format", "{{.ServerVersion}}"], None).await?;
+        let v = run_read_env("docker", &["info", "--format", "{{.ServerVersion}}"], None, env).await?;
         Ok(((), Some(format!("Docker {}", v.trim()))))
     })
     .await?;
 
     r.step("pull", "Download a test image", async {
-        let had = ensure_image().await?;
+        let had = ensure_image(env).await?;
         Ok(((), Some(if had { format!("{IMAGE} (ready)") } else { IMAGE.to_string() })))
     })
     .await?;
 
     r.step("start", "Start a two-container test lab", async {
-        compose(dir, &["up", "-d", "--quiet-pull"], START_LIMIT).await?;
+        compose(dir, env, &["up", "-d", "--quiet-pull"], START_LIMIT).await?;
         Ok(((), None))
     })
     .await?;
@@ -74,7 +82,7 @@ async fn steps(dir: &Path, r: &Reporter) -> Result<()> {
     r.step("network", "Containers reach each other", async {
         let mut last = String::new();
         for _ in 0..ANSWER_TRIES {
-            match compose(dir, &["exec", "-T", "probe", "wget", "-qO-", "-T", "2", "http://web"], PROBE_LIMIT).await {
+            match compose(dir, env, &["exec", "-T", "probe", "wget", "-qO-", "-T", "2", "http://web"], PROBE_LIMIT).await {
                 Ok(out) if out.contains(MARKER) => return Ok(((), Some("probe → web on the lab network".into()))),
                 Ok(out) => last = out,
                 Err(e) => last = e.to_string(),
@@ -86,7 +94,7 @@ async fn steps(dir: &Path, r: &Reporter) -> Result<()> {
     .await?;
 
     r.step("port", "Lab port reachable from this machine", async {
-        let addr = compose(dir, &["port", "web", "80"], PROBE_LIMIT).await?;
+        let addr = compose(dir, env, &["port", "web", "80"], PROBE_LIMIT).await?;
         let url = format!("http://{}", addr.trim());
         let client = reqwest::Client::builder().timeout(Duration::from_secs(3)).build().map_err(|e| Error::Invalid(e.to_string()))?;
         let mut last = String::new();
@@ -131,5 +139,11 @@ mod tests {
         assert!(command[2].contains(&format!("echo {} > /www/index.html", super::MARKER)) && command[2].ends_with("httpd -f -p 80 -h /www"), "{}", command[2]);
         assert_eq!(web["ports"][0].as_str(), Some("127.0.0.1::80"));
         assert_eq!(doc["services"]["probe"]["command"][0].as_str(), Some("sleep"));
+    }
+
+    #[test]
+    fn a_named_context_becomes_the_docker_cli_environment_and_none_leaves_it_alone() {
+        assert_eq!(super::env_for(Some("orbstack")), [("DOCKER_CONTEXT".to_string(), "orbstack".to_string())]);
+        assert!(super::env_for(None).is_empty());
     }
 }

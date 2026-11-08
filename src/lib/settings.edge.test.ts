@@ -11,8 +11,22 @@ describe("settings: stray values in storage", () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     setLastTest("vm", "fail");
     vi.restoreAllMocks();
-    expect(getLastTest("vm")).toEqual({ result: "fail", at: 1_700_000_000_000 });
+    expect(getLastTest("vm")).toEqual({ result: "fail", at: 1_700_000_000_000, why: null });
     expect(getLastTest("docker")).toBeNull();
+  });
+
+  it("keeps a provider's own test apart from the kind's, which only the one labs run on writes", () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    // Another hypervisor's test: its own record, the VM labs' untouched.
+    setLastTest("vm", "fail", { provider: "vmware_desktop", primary: false, why: "no box for vmware_desktop" });
+    expect(getLastTest("vm", "vmware_desktop")).toEqual({ result: "fail", at: 1_700_000_000_000, why: "no box for vmware_desktop" });
+    expect(getLastTest("vm")).toBeNull();
+    expect(getLastTest("vm", "qemu")).toBeNull();
+    // The default hypervisor's test: its own record and the VM labs' both; a pass keeps no why.
+    setLastTest("vm", "ok", { provider: "qemu", why: "stale" });
+    expect(getLastTest("vm", "qemu")).toEqual({ result: "ok", at: 1_700_000_000_000, why: null });
+    expect(getLastTest("vm")).toEqual({ result: "ok", at: 1_700_000_000_000, why: null });
+    vi.restoreAllMocks();
   });
 
   it("a self-test record of the wrong shape is no result", () => {

@@ -12,7 +12,7 @@ use std::time::Duration;
 use super::docker::IMAGE;
 use super::vm::{box_provider, pick_box};
 use crate::error::Result;
-use crate::platform::exec::{run, run_env_timed, stream, within};
+use crate::platform::exec::{run_env, run_env_timed, stream, within};
 use crate::runtime::providers::Provider;
 
 static DOCKER_DL: AtomicBool = AtomicBool::new(false);
@@ -41,16 +41,17 @@ impl Drop for Busy {
     }
 }
 
-/// Makes sure the test image is local. Returns whether it already was (or a background
-/// download finished it) rather than being pulled now.
-pub(super) async fn ensure_image() -> Result<bool> {
+/// Makes sure the test image is local on the engine `env` points Docker at (`DOCKER_CONTEXT`,
+/// or none for the CLI's current one). Returns whether it already was (or a background download
+/// finished it) rather than being pulled now.
+pub(super) async fn ensure_image(env: &[(String, String)]) -> Result<bool> {
     let mut waited = false;
     loop {
-        if run("docker", &["image", "inspect", IMAGE], None).await.is_ok() {
+        if run_env("docker", &["image", "inspect", IMAGE], None, env).await.is_ok() {
             return Ok(true);
         }
         if let Some(_busy) = Busy::try_take(&DOCKER_DL) {
-            run_env_timed("docker", &["pull", "-q", IMAGE], None, &[], PULL_LIMIT).await?;
+            run_env_timed("docker", &["pull", "-q", IMAGE], None, env, PULL_LIMIT).await?;
             return Ok(waited);
         }
         waited = true;
@@ -114,17 +115,21 @@ mod tests {
         use crate::platform::exec::fake::{Tools, fail, ok};
         // Already local: `image inspect` answers, so nothing is pulled and it reports "was there".
         let present = Tools::rules(&[("image inspect", ok("sha256:abc"))]);
-        assert!(ensure_image().await.unwrap(), "already local");
+        assert!(ensure_image(&[]).await.unwrap(), "already local");
         assert!(!present.called("pull"), "nothing pulled: {:?}", present.calls());
         drop(present);
         // Missing: `image inspect` fails, the image is pulled quietly, and this call did the pull.
         let pulled = Tools::rules(&[("image inspect", fail("Error: No such image")), ("pull", ok(""))]);
-        assert!(!ensure_image().await.unwrap(), "pulled now, not already there");
+        let ctx = [("DOCKER_CONTEXT".to_string(), "orbstack".to_string())];
+        assert!(!ensure_image(&ctx).await.unwrap(), "pulled now, not already there");
         assert!(pulled.called("pull -q"), "{:?}", pulled.calls());
+        // On the engine asked for: the context rides along on the inspect and the pull.
+        assert_eq!(pulled.env_of("image inspect", "DOCKER_CONTEXT").as_deref(), Some("orbstack"));
+        assert_eq!(pulled.env_of("pull -q", "DOCKER_CONTEXT").as_deref(), Some("orbstack"));
         drop(pulled);
         // The pull itself fails (a wedged engine): surfaced as an error, not a false "ready".
         let _failed = Tools::rules(&[("image inspect", fail("Error: No such image")), ("pull", fail("timed out"))]);
-        assert!(ensure_image().await.is_err());
+        assert!(ensure_image(&[]).await.is_err());
     }
 
     #[tokio::test]

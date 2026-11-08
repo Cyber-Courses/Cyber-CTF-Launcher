@@ -18,12 +18,18 @@ export type RowProps = {
   now: number;
   /** Free memory now (null until the first metrics read). */
   memFree: number | null;
-  testing: boolean;
-  onToggleTest: () => void;
+  /** The row whose test is open inline (`kind:provider`), if any. */
+  testing: string | null;
+  onToggleTest: (row: string) => void;
   onTestDone: () => void;
   /** Opens the setup window at a step. */
   onFix: (step: string) => void;
+  /** Reads the machine again (after Docker was pointed at another engine). */
+  onRefresh: () => void | Promise<void>;
 };
+
+/** The key of a row's inline test. */
+export const testKey = (kind: LabKind, provider: string) => `${kind}:${provider}`;
 
 /** Opens or hides a lab type's self-test inline. */
 export function TestButton({ testing, onClick }: { testing: boolean; onClick: () => void }) {
@@ -51,12 +57,27 @@ export function FixButton({ step, onFix }: { step: string; onFix: (step: string)
   );
 }
 
-/** The last test: never run, passed, or failed, and how long ago. */
+/** The last test: never run, passed, or failed (and why), and how long ago. */
 export function TestLine({ test, now }: { test: LastTest | null; now: number }) {
   const t = useT();
   if (!test) return <span>{t("machine.screen.notTestedYet")}</span>;
   if (test.result === "ok") return <span>{t("machine.screen.tested", { ago: formatAgo(test.at, now) })}</span>;
-  return <span className="text-destructive">{t("machine.screen.lastTestFailed", { ago: formatAgo(test.at, now) })}</span>;
+  return (
+    <span className="text-destructive">
+      {t("machine.screen.lastTestFailed", { ago: formatAgo(test.at, now) })}
+      {test.why ? ` · ${test.why}` : ""}
+    </span>
+  );
+}
+
+/** Makes this row's engine or hypervisor the one labs run on. */
+export function UseDefaultButton({ onClick }: { onClick: () => void }) {
+  const t = useT();
+  return (
+    <Button variant="ghost" size="xs" onClick={onClick}>
+      {t("machine.screen.useDefault")}
+    </Button>
+  );
 }
 
 /** Whether free memory (null before the first read) is short for a lab type. */

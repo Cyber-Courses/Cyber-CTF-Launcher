@@ -187,15 +187,22 @@ export function validImage(image: string): boolean {
 
 const TEST_KEY = "cyberctf.selftest.";
 
-/** The last setup self-test result per kind, so the Machine page can show "tested 2 days ago". */
+/** The last setup self-test result, per kind and per provider (an engine, a hypervisor), so the
+ *  Machine page can show "tested 2 days ago" on each row; a failed one keeps why. */
 export interface LastTest {
   result: "ok" | "fail";
   at: number;
+  /** The failing step's detail, for a failed test. */
+  why?: string | null;
 }
 
-export function getLastTest(kind: "docker" | "vm"): LastTest | null {
+/** The key of a kind's record, or of one provider's. */
+const testKey = (kind: "docker" | "vm", provider?: string | null) => (provider ? `${TEST_KEY}${kind}.${provider}` : TEST_KEY + kind);
+
+/** The last test of `kind` (the one labs run on), or of one `provider` of that kind. */
+export function getLastTest(kind: "docker" | "vm", provider?: string | null): LastTest | null {
   try {
-    const raw = localStorage.getItem(TEST_KEY + kind);
+    const raw = localStorage.getItem(testKey(kind, provider));
     const v: unknown = raw ? JSON.parse(raw) : null;
     // Only a record of the right shape: anything else (an older format, a hand edit) is none.
     const ok = !!v && typeof v === "object" && ["ok", "fail"].includes((v as LastTest).result) && Number.isFinite((v as LastTest).at);
@@ -205,9 +212,18 @@ export function getLastTest(kind: "docker" | "vm"): LastTest | null {
   }
 }
 
-export function setLastTest(kind: "docker" | "vm", result: "ok" | "fail") {
+/** Records a test: under its `provider` when one is named, and as the kind's own unless
+ *  `primary` is false (a test of an engine or hypervisor labs don't run on says nothing about
+ *  the lab type's readiness). */
+export function setLastTest(
+  kind: "docker" | "vm",
+  result: "ok" | "fail",
+  { provider = null, primary = true, why = null }: { provider?: string | null; primary?: boolean; why?: string | null } = {},
+) {
   try {
-    localStorage.setItem(TEST_KEY + kind, JSON.stringify({ result, at: Date.now() }));
+    const record = JSON.stringify({ result, at: Date.now(), why: result === "fail" ? why : null });
+    if (provider) localStorage.setItem(testKey(kind, provider), record);
+    if (primary) localStorage.setItem(testKey(kind), record);
   } catch {
     /* ignore */
   }

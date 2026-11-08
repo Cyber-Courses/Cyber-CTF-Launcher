@@ -127,7 +127,7 @@ async fn tracked<T>(dirs: &AppDirs, kind: Kind, op: impl std::future::Future<Out
 /// the app's. Errors are ignored by the UI: the test itself retries and reports them.
 pub async fn machine_selftest_prefetch(dirs: AppDirs, kind: Kind, provider: Option<Provider>) -> Result<()> {
     match kind {
-        Kind::Docker => owned::tracked(dirs, &[IMAGE.to_string()], &[], downloads::ensure_image()).await.map(|_| ()),
+        Kind::Docker => owned::tracked(dirs, &[IMAGE.to_string()], &[], downloads::ensure_image(&[])).await.map(|_| ()),
         Kind::Vm => {
             let Some(p) = vm::test_provider(provider).await else { return Ok(()) };
             let (bx, cached) = vm::pick_box(p, arm()).await;
@@ -152,14 +152,22 @@ fn one_at_a_time(kind: Kind) -> &'static tokio::sync::Mutex<()> {
     }
 }
 
-/// Runs the self-test of `kind` (on `provider`, for a VM), each step's event sent to `events`.
-pub async fn machine_selftest(dirs: AppDirs, kind: Kind, provider: Option<Provider>, events: impl Fn(Event) + Send + Sync + 'static) -> Result<()> {
+/// Runs the self-test of `kind`: on `provider`, for a VM; on the engine behind the Docker CLI
+/// `context`, for containers (the CLI's current one when none is named). Each step's event is
+/// sent to `events`.
+pub async fn machine_selftest(
+    dirs: AppDirs,
+    kind: Kind,
+    provider: Option<Provider>,
+    context: Option<String>,
+    events: impl Fn(Event) + Send + Sync + 'static,
+) -> Result<()> {
     let _alone = one_at_a_time(kind).lock().await;
     let r = Reporter(Box::new(events));
     // Boxed: the steps of a test VM's run make a large future.
     Box::pin(tracked(&dirs, kind, async {
         match kind {
-            Kind::Docker => docker::run_test(&work_dir(&dirs, "docker")?, &r).await,
+            Kind::Docker => docker::run_test(&work_dir(&dirs, "docker")?, context.as_deref(), &r).await,
             Kind::Vm => vm::run_test(&work_dir(&dirs, "vm")?, provider, &r).await,
         }
     }))
@@ -245,11 +253,30 @@ mod tests {
             _ => ok(""),
         });
         let (channel, seen) = events();
-        machine_selftest(t.dirs(), Kind::Docker, None, channel).await.unwrap();
+        machine_selftest(t.dirs(), Kind::Docker, None, None, channel).await.unwrap();
         let done: Vec<String> = states(&seen).into_iter().filter(|s| !s.ends_with(":running")).collect();
         assert_eq!(done, ["engine:ok", "pull:ok", "start:ok", "network:ok", "port:ok", "cleanup:ok"]);
         assert!(tools.called("down -v --remove-orphans"));
+        // The CLI's current engine: no context forced on the calls.
+        assert_eq!(tools.env_of("compose", "DOCKER_CONTEXT"), None);
         machine_selftest_prefetch(t.dirs(), Kind::Docker, None).await.unwrap();
+    }
+
+    /// The Machine page tests one engine among several: every Docker call of the run, the
+    /// probe, the pull, compose and the clean-up, goes to that engine's context.
+    #[tokio::test]
+    async fn the_container_test_runs_on_the_engine_asked_for() {
+        use crate::platform::exec::fake::{Tools, fail};
+        let t = crate::testing::test_app::TestApp::new();
+        let tools = Tools::rules(&[("image inspect", fail("No such image")), ("pull", fail("timed out"))]);
+        let (channel, seen) = events();
+        assert!(machine_selftest(t.dirs(), Kind::Docker, None, Some("orbstack".into()), channel).await.is_err());
+        assert_eq!(states(&seen), ["engine:running", "engine:ok", "pull:running", "pull:fail"]);
+        // (`image inspect busybox`, the test's own: the storage bookkeeping after the run inspects
+        // the image on the CLI's engine, as Storage reads it.)
+        for call in ["docker info", "image inspect busybox", "pull -q", "down -v"] {
+            assert_eq!(tools.env_of(call, "DOCKER_CONTEXT").as_deref(), Some("orbstack"), "{call}: {:?}", tools.calls());
+        }
     }
 
     #[tokio::test]
@@ -261,7 +288,7 @@ mod tests {
         let tools = Tools::rules(&[]);
         let first = one_at_a_time(Kind::Docker).lock().await;
         let (channel, seen) = events();
-        let second = tokio::time::timeout(std::time::Duration::from_millis(200), machine_selftest(t.dirs(), Kind::Docker, None, channel)).await;
+        let second = tokio::time::timeout(std::time::Duration::from_millis(200), machine_selftest(t.dirs(), Kind::Docker, None, None, channel)).await;
         assert!(second.is_err(), "it waits");
         assert!(tools.calls().is_empty() && seen.messages().is_empty());
         drop(first);
@@ -273,7 +300,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let tools = Tools::rules(&[("docker info", fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"))]);
         let (channel, seen) = events();
-        assert!(machine_selftest(t.dirs(), Kind::Docker, None, channel).await.is_err());
+        assert!(machine_selftest(t.dirs(), Kind::Docker, None, None, channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
         assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
         assert!(tools.called("down -v"), "the test lab is torn down even so");
@@ -294,7 +321,7 @@ mod tests {
             _ => ok(""),
         });
         let (channel, seen) = events();
-        let r = machine_selftest(t.dirs(), Kind::Vm, None, channel).await;
+        let r = machine_selftest(t.dirs(), Kind::Vm, None, None, channel).await;
         let done: Vec<String> = states(&seen).into_iter().filter(|s| !s.ends_with(":running")).collect();
         assert_eq!(&done[..2], ["vagrant:ok", "provider:ok"], "{done:?}");
         r.unwrap();
@@ -312,7 +339,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let _tools = crate::platform::exec::fake::Tools::rules(&[("vagrant", None)]);
         let (channel, seen) = events();
-        assert!(machine_selftest(t.dirs(), Kind::Vm, None, channel).await.is_err());
+        assert!(machine_selftest(t.dirs(), Kind::Vm, None, None, channel).await.is_err());
         assert_eq!(states(&seen), ["vagrant:running", "vagrant:fail"]);
     }
 
