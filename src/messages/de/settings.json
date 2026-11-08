@@ -175,5 +175,11 @@
     "pick": "Mit der Attack box geteilter Ordner",
     "change": "Ändern…",
     "open": "Ordner öffnen"
+  },
+  "launchDefaults": {
+    "title": "Gemerkte Startauswahl",
+    "remembered": "Eine Container-Engine oder VM-Form ist für diesen Rechner gemerkt.",
+    "asked": "Der Startdialog fragt jedes Mal.",
+    "reset": "Erneut fragen"
   }
 }

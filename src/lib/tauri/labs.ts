@@ -25,6 +25,7 @@ import type {
   SharedFolder,
   TermEvent,
 } from "@/lib/tauri/generated";
+import type { DockerEngine } from "@/lib/tauri/machine";
 
 export type {
   ActiveOperation,
@@ -107,6 +108,9 @@ export type LabLaunch = {
   defaultPorts: boolean;
   offline?: boolean;
   perMachineVm?: boolean;
+  /** The container engine a lab here runs on, when the player chose one other than the current
+   *  context. Null/omitted: the current context, as before. */
+  dockerEngine?: DockerEngine | null;
 };
 
 export const labLaunch = ({ offline = false, perMachineVm = false, ...launch }: LabLaunch, onLog: (line: string) => void) =>

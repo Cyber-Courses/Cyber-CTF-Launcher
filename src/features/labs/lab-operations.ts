@@ -1,4 +1,4 @@
-import { serverList, labLaunch, labPark, labProvision, labResume, labStop, type ActiveOperation, type Park, type Provider } from "@/lib/tauri";
+import { serverList, labLaunch, labPark, labProvision, labResume, labStop, type ActiveOperation, type DockerEngine, type Park, type Provider } from "@/lib/tauri";
 import { getAttackBox, getAttackImage, getAutoAttackBox, getVmProvider, type PortMode } from "@/lib/settings";
 import { notify } from "@/lib/notify";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
@@ -142,13 +142,15 @@ export type LocalWhere = {
   report?: LaunchReport;
   ports: PortMode | null;
   perMachineVm?: boolean;
+  /** The container engine a lab here runs on (null: the current context). */
+  engine?: DockerEngine | null;
 };
 
 /** A VM or container lab, started where `where` says. */
 export const localLaunch =
   (lab: Lab, where: LocalWhere): OperationBody =>
   async (log, rt) => {
-    const { vmProvider, report, ports, perMachineVm = false } = where;
+    const { vmProvider, report, ports, perMachineVm = false, engine } = where;
     let { host } = where;
     // Run as one VM per machine, the lab is a VM lab here: its machines are VMs on `vmProvider`.
     const asVms = perMachineVm && !!vmProvider && host == null;
@@ -164,7 +166,17 @@ export const localLaunch =
     const attackbox = remote || inLocalVm ? getAttackImage() : vm && getAutoAttackBox() ? getAttackBox() : null;
     await launchOrOfferOffline(lab.title, (offline) =>
       labLaunch(
-        { labId: lab.id, provider, host: host ?? null, attackboxImage: attackbox, defaultPorts: ports === "default", offline, perMachineVm: asVms },
+        {
+          labId: lab.id,
+          provider,
+          host: host ?? null,
+          attackboxImage: attackbox,
+          defaultPorts: ports === "default",
+          offline,
+          perMachineVm: asVms,
+          // The chosen engine pins a plain container lab here; never for a VM form or a server.
+          dockerEngine: vm || remote ? null : (engine ?? null),
+        },
         log,
       ),
     );

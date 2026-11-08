@@ -220,7 +220,7 @@ describe("a start that failed", () => {
       </>,
     );
     await act(async () => {
-      await must(actions, "the lab actions").launch(blind, null, undefined, null, "default");
+      await must(actions, "the lab actions").launch(blind, null, undefined, null, { ports: "default" });
     });
     const run = getDeploySnapshot().runs[blind.id];
     expect(startFailed(run)).toBe(true);

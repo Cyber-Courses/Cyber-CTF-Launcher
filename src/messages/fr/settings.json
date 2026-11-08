@@ -175,5 +175,11 @@
     "pick": "Dossier à partager avec l'attack box",
     "change": "Changer…",
     "open": "Ouvrir le dossier"
+  },
+  "launchDefaults": {
+    "title": "Choix de lancement mémorisés",
+    "remembered": "Un moteur de conteneurs ou une forme de VM est mémorisé pour cette machine.",
+    "asked": "La boîte de dialogue de lancement demande à chaque fois.",
+    "reset": "Redemander"
   }
 }

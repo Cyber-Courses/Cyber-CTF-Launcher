@@ -97,7 +97,7 @@ export function OpenLab({
           target.kind === "host" ? target.id : null,
           target.kind === "local-vm" || target.kind === "local-vms" ? { provider: target.provider, perMachine: target.kind === "local-vms" } : undefined,
           report,
-          target.kind === "local" ? target.ports : undefined,
+          target.kind === "local" ? { ports: target.ports, engine: target.engine } : undefined,
         )
       }
       onStop={() => stop(lab)}

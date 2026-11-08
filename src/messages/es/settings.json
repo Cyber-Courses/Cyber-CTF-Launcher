@@ -175,5 +175,11 @@
     "pick": "Carpeta para compartir con la máquina de ataque",
     "change": "Cambiar…",
     "open": "Abrir la carpeta"
+  },
+  "launchDefaults": {
+    "title": "Opciones de inicio recordadas",
+    "remembered": "Se recuerda un motor de contenedores o una forma de VM para esta máquina.",
+    "asked": "El diálogo de inicio pregunta cada vez.",
+    "reset": "Volver a preguntar"
   }
 }

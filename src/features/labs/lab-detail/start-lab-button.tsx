@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Play, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PortChoice } from "@/features/labs/port-mode-prompt";
+import { PortsStep, RememberToggle } from "@/features/labs/lab-detail/ports-step";
 import { RunOnDialog, RunOnPicker, type RunTarget } from "@/features/labs/run-on";
 import type { RunTargetChoice } from "@/features/labs/lab-detail/use-run-target";
 import type { Lab } from "@/features/labs/use-labs";
@@ -63,7 +63,9 @@ export function StartLabButton({
         variant="primary"
         onClick={() => {
           if (run.hasChoice) setChoosing(true);
-          else onStart({ kind: "local" });
+          // Nothing to ask: run here at once, carrying a remembered engine (ports are asked/saved
+          // in the launch path as before).
+          else onStart(run.chosenEngine ? { kind: "local", engine: run.chosenEngine } : { kind: "local" });
         }}
         disabled={!loggedIn || !rt}
         title={startHint(t, { runtime: !!rt, loggedIn })}
@@ -113,25 +115,28 @@ function StartDialog({
       {run.step === "ports" ? (
         <PortsStep title={lab.title} run={run} />
       ) : (
-        <RunOnPicker
-          title={lab.title}
-          hosts={run.hosts}
-          hostOk={run.hostOk}
-          localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
-          localVm={run.localVm}
-          localVms={run.localVms}
-          onPickVm={run.pickVm}
-          perMachine={run.perMachine}
-          dockerRunning={isDocker ? dockerRunning : null}
-          engine={run.engine}
-          value={run.runOn}
-          onChange={run.setRunOn}
-          disabled={busy}
-          offerLocal={!cloud}
-          offerContainers={isDocker}
-          step={run.step}
-          onPickPlatform={run.pickPlatform}
-        />
+        <>
+          <RunOnPicker
+            title={lab.title}
+            hosts={run.hosts}
+            hostOk={run.hostOk}
+            localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
+            localVm={run.localVm}
+            localVms={run.localVms}
+            onPickVm={run.pickVm}
+            perMachine={run.perMachine}
+            dockerRunning={isDocker ? dockerRunning : null}
+            engine={run.engine}
+            value={run.runOn}
+            onChange={run.setRunOn}
+            disabled={busy}
+            offerLocal={!cloud}
+            offerContainers={isDocker}
+            step={run.step}
+            onPickPlatform={run.pickPlatform}
+          />
+          {run.step === "vmForms" && <RememberToggle run={run} />}
+        </>
       )}
       {cloud && (
         <div className="mt-4">
@@ -161,26 +166,13 @@ function StartFooter({ run, cloudGated, onClose, onStart }: { run: RunTargetChoi
         size="sm"
         disabled={cloudGated && !run.pickedAccount}
         onClick={() => {
+          run.commitChoice();
           onStart(run.chosen());
         }}
       >
         <Play className="size-3.5" /> {t("labs.detail.start")}
       </Button>
     </>
-  );
-}
-
-/** Step 2 for Containers: the host ports this machine publishes the lab's services on. */
-function PortsStep({ title, run }: { title: string; run: RunTargetChoice }) {
-  const t = useT();
-  return (
-    <div className="space-y-4">
-      <div>
-        <p className="serif-title text-[1.5rem] text-foreground">{t("labs.detail.portsHere")}</p>
-        <p className="mt-1 text-[0.8125rem] text-muted-foreground">{title}</p>
-      </div>
-      <PortChoice value={run.ports} onChange={run.setPorts} />
-    </div>
   );
 }
 

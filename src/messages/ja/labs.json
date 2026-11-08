@@ -91,7 +91,9 @@
     "cloud": "クラウド",
     "notSupported": "このラボは非対応",
     "beta": "ベータ",
-    "experimental": "実験的"
+    "experimental": "実験的",
+    "engine": "コンテナエンジン",
+    "rememberChoice": "次回から確認しない"
   },
   "ports": {
     "question": "{title} はどのポートを使いますか？",

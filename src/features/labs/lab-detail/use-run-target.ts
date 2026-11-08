@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { cloudAccountsFor, hostSupports, isCloudLab, localProviders, perMachineProviders } from "@/features/labs/lab-runtime";
 import type { PickerStep, Platform, RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { getPortMode, setVmProvider, type PortMode } from "@/lib/settings";
+import { getDockerEngine, getLocalVmForm, getPortMode, setDockerEngine, setLocalVmForm, setPortMode, setVmProvider, type PortMode } from "@/lib/settings";
 import { SERVER_CHANGED, serverList, type DockerEngine, type Provider, type ServerHost } from "@/lib/tauri";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 import { useLatest } from "@/lib/use-latest";
@@ -18,9 +18,10 @@ import { useLatest } from "@/lib/use-latest";
 export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], hostArch: string, dockerEngine: DockerEngine | null = null, dockerEnginesRunning: DockerEngine[] = []) {
   const isCloud = isCloudLab(rt);
   const isDocker = rt?.runtime !== "VM" && !isCloud;
-  // The container engines that answer here (several can run side by side) and the one a lab here
-  // will use — the current context when it answers, else the first. Only for a container lab.
-  const { engine, engines } = resolveEngines(isDocker, dockerEngine, dockerEnginesRunning);
+  // The container engines that answer here and the one a lab here runs on (see useEngineChoice).
+  const { engine, engines, chosenEngine, pickEngine } = useEngineChoice(isDocker, dockerEngine, dockerEnginesRunning);
+  // "Don't ask again": checked, Start saves the choice so next time skips the step (below).
+  const [remember, setRemember] = useState(false);
   const [{ hosts, defaultId }, setServers] = useState<{ hosts: ServerHost[]; defaultId: string | null }>(NO_SERVERS);
   // The player's own pick, kept over what Start points at first (a server list read late, or
   // the machine report arriving, must not reset it).
@@ -55,8 +56,14 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
   const cloudAccounts = cloudAccountsFor(rt, hosts);
   // A server picked, then removed in its setup window: back to where Start points at first.
   const runOn = picked && (picked.kind !== "host" || hosts.some((h) => h.id === picked.id)) ? picked : initialTarget(rt, hosts, defaultId, localReady);
-  // The picker's two steps and the moves between them, over the VM forms This machine offers.
-  const steps = usePickerSteps(runOn, setRunOn, vmFormTargets(isCloud, isDocker, localVm, perMachineVm));
+  // Saved launch choices ("don't ask again") skip step 2: a remembered port mode skips the
+  // Containers step; a remembered VM form (still available here) goes straight to that form.
+  const skip = { ports: isDocker && getPortMode() !== null, vmForm: savedForm(isDocker, localVm, perMachineVm) };
+  const steps = usePickerSteps(runOn, setRunOn, vmFormTargets(isCloud, isDocker, localVm, perMachineVm), skip);
+  // Start, with "don't ask again" checked, saves what was chosen so the step is skipped next time.
+  const commitChoice = () => {
+    if (remember) saveLaunchChoice(runOn, ports, engine, engines.length);
+  };
 
   return {
     hosts,
@@ -71,31 +78,70 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
     localVms,
     pickVm,
     /** The container engine a lab here will run on (null: none answers, or not a container lab),
-     *  and every engine that answers, for the Containers row and (later) its switch. */
+     *  every engine that answers (for the Containers step's switch when more than one), and the
+     *  switch's pick. `chosenEngine` is null when the lab follows the current context. */
     engine,
     engines,
+    pickEngine,
+    chosenEngine,
+    /** "Don't ask again" in the step: checked, Start saves the choice (`commitChoice`). */
+    remember,
+    setRemember,
+    commitChoice,
     /** The per-machine VM form here, for a lab with VM recipes too (null: not this lab, or no
      *  ready hypervisor can run it). */
     perMachine,
     /** A cloud lab: the player's accounts it can run on, and the one picked. */
     cloudAccounts,
     pickedAccount: runOn.kind === "host" ? cloudAccounts.find((h) => h.id === runOn.id) : undefined,
-    /** With servers saved (or a VM here), Start asks where to run first; a cloud lab always asks
-     *  (which account, and what it costs there). */
-    hasChoice: isCloud || hosts.length > 0 || localVm !== null || perMachine !== null,
-    /** The target picked, with the host ports for a container lab here. */
-    chosen: (): RunTarget => (runOn.kind === "local" && isDocker ? { kind: "local", ports } : runOn),
+    /** With servers saved, a VM here, several container engines not yet settled, or a cloud lab,
+     *  Start asks first; otherwise it runs here at once (carrying any saved engine). */
+    hasChoice: isCloud || hosts.length > 0 || localVm !== null || perMachine !== null || (engines.length > 1 && getDockerEngine() === null),
+    /** The target picked, with the host ports and chosen engine for a container lab here. */
+    chosen: (): RunTarget => (runOn.kind === "local" && isDocker ? { kind: "local", ports, engine: chosenEngine ?? undefined } : runOn),
   };
 }
 
 const NO_SERVERS = { hosts: [], defaultId: null };
 
-/** The container engines that answer here and the one a lab will use (the current context when it
- *  answers, else the first). Empty for a VM or cloud lab. */
-function resolveEngines(isDocker: boolean, current: DockerEngine | null, running: DockerEngine[]): { engine: DockerEngine | null; engines: DockerEngine[] } {
+/** `e` when it is one of the container engines that answer here, else null. */
+function runningOf(e: DockerEngine | null, engines: DockerEngine[]): DockerEngine | null {
+  return e && engines.includes(e) ? e : null;
+}
+
+/** The container engines that answer here and the one a lab runs on: the dialog's switch pick,
+ *  else the saved choice, else the current context, else the first. `chosenEngine` is what the
+ *  launch records (null = follow the current context, as before). Empty for a VM/cloud lab. */
+function useEngineChoice(isDocker: boolean, current: DockerEngine | null, running: DockerEngine[]) {
   const engines = isDocker ? running : [];
-  const engine = (current && engines.includes(current) ? current : engines.at(0)) ?? null;
-  return { engine, engines };
+  const [picked, setPicked] = useState<DockerEngine | null>(null);
+  const saved = isDocker ? getDockerEngine() : null;
+  const chosenEngine = runningOf(picked, engines) ?? runningOf(saved, engines) ?? null;
+  const engine = chosenEngine ?? runningOf(current, engines) ?? engines.at(0) ?? null;
+  return { engine, engines, chosenEngine, pickEngine: setPicked };
+}
+
+/** Saves the step's choice for next time: engine (when there was one to choose) and ports for the
+ *  Containers step, else the VM form. */
+function saveLaunchChoice(runOn: RunTarget, ports: PortMode, engine: DockerEngine | null, engineCount: number) {
+  if (runOn.kind === "local") {
+    setPortMode(ports);
+    if (engineCount > 1) setDockerEngine(engine);
+  } else if (runOn.kind === "local-vm") {
+    setLocalVmForm("vm");
+  } else if (runOn.kind === "local-vms") {
+    setLocalVmForm("vms");
+  }
+}
+
+/** The saved VM form's target when it is still available here (its remembered hypervisor ready),
+ *  else null: the form step then starts straight at it ("don't ask again"). */
+function savedForm(isDocker: boolean, localVm: Provider | null, perMachineVm: Provider | null): RunTarget | null {
+  if (!isDocker) return null;
+  const form = getLocalVmForm();
+  if (form === "vm" && localVm) return { kind: "local-vm", provider: localVm };
+  if (form === "vms" && perMachineVm) return { kind: "local-vms", provider: perMachineVm };
+  return null;
 }
 
 /** This machine's VM forms for a container lab: the helper VM (`localVm`, with every ready
@@ -139,7 +185,7 @@ function vmFormTargets(isCloud: boolean, isDocker: boolean, localVm: Provider | 
 /** The picker's steps. Step 1 picks a place: a host or a lone VM form starts straight away; picking
  *  Containers opens the host-ports step; picking In a VM with two VM forms opens the VM-forms step.
  *  `resetSteps` (dialog open/close) and `back` (the footer) return to the places. */
-function usePickerSteps(runOn: RunTarget, setRunOn: (t: RunTarget) => void, vmForms: RunTarget[]) {
+function usePickerSteps(runOn: RunTarget, setRunOn: (t: RunTarget) => void, vmForms: RunTarget[], skip: { ports: boolean; vmForm: RunTarget | null }) {
   const [step, setStep] = useState<PickerStep>("platform");
   const toPlatform = () => {
     setStep("platform");
@@ -151,13 +197,18 @@ function usePickerSteps(runOn: RunTarget, setRunOn: (t: RunTarget) => void, vmFo
       return;
     }
     if (p.kind === "containers") {
-      // The host ports are their own step; the place is settled here.
+      // The host ports (and engine) are their own step, unless remembered: then start at once.
       setRunOn({ kind: "local" });
-      setStep("ports");
+      setStep(skip.ports ? "platform" : "ports");
       return;
     }
-    // "In a VM": two forms open the VM-forms step (keeping a VM form selected); one starts at once.
+    // "In a VM": two forms open the VM-forms step (unless remembered); one starts at once.
     if (vmForms.length >= 2) {
+      if (skip.vmForm) {
+        setRunOn(skip.vmForm);
+        setStep("platform");
+        return;
+      }
       if (runOn.kind !== "local-vm" && runOn.kind !== "local-vms") setRunOn(vmForms[0]);
       setStep("vmForms");
     } else {

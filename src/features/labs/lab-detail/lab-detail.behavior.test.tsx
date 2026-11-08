@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
@@ -9,7 +9,14 @@ import { commands, installTauri, type Handler } from "@/test/tauri";
 import { containerMachine, rejectWith, startIn, upStatus } from "@/features/labs/labs-test-kit";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
 import { flush } from "@/test/ui";
-import { setAutoAttackBox } from "@/lib/settings";
+import { getDockerEngine, setAutoAttackBox, setDockerEngine, setLocalVmForm, setPortMode, setVmProvider } from "@/lib/settings";
+
+afterEach(() => {
+  setPortMode(null);
+  setDockerEngine(null);
+  setLocalVmForm(null);
+  setVmProvider(null);
+});
 
 // Behavior of the lab page's actions: what each button calls, with what, and what it shows.
 
@@ -165,6 +172,33 @@ describe("LabDetail: starting", () => {
     expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
     expect(within(dialog).getByText("Container")).toBeTruthy();
     expect(within(dialog).queryByText("One VM per machine")).toBeNull();
+  });
+
+  it("picks a container engine when several answer, remembers it, and starts on it", async () => {
+    installTauri(quiet);
+    const { user, h } = await clickStart({ dockerEngine: "docker-desktop", dockerEnginesRunning: ["docker-desktop", "orbstack"] });
+    const dialog = screen.getByRole("dialog");
+    // Two engines answer, so the dialog opens even with nowhere else to run; Containers leads to
+    // the step with the engine switch above the ports.
+    await user.click(within(dialog).getByText("Container"));
+    const engines = within(dialog).getByRole("radiogroup", { name: "Container engine" });
+    expect(within(engines).getByRole("radio", { name: "Docker Desktop" })).toBeTruthy();
+    await user.click(within(engines).getByRole("radio", { name: "OrbStack" }));
+    await user.click(within(dialog).getByRole("switch", { name: "Don't ask again" }));
+    await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
+    expect(h.onStart).toHaveBeenCalledWith({ kind: "local", ports: "random", engine: "orbstack" });
+    // Remembered: the choice is saved for next time.
+    expect(getDockerEngine()).toBe("orbstack");
+  });
+
+  it("starts straight on a remembered engine without opening the dialog", async () => {
+    installTauri(quiet);
+    setDockerEngine("orbstack");
+    const { h } = await clickStart({ dockerEngine: "docker-desktop", dockerEnginesRunning: ["docker-desktop", "orbstack"] });
+    // The engine is settled (remembered) and there is nowhere else to run, so Start runs here at
+    // once on that engine; no dialog.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(h.onStart).toHaveBeenCalledWith({ kind: "local", engine: "orbstack" });
   });
 
   it("defaults a VM lab with no hypervisor here to the default server", async () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { type ActiveOperation, type Park } from "@/lib/tauri";
+import { type ActiveOperation, type DockerEngine, type Park } from "@/lib/tauri";
 import { getPortMode, type PortMode } from "@/lib/settings";
 import { askPortMode } from "@/features/labs/port-mode-prompt";
 import type { Lab } from "@/features/labs/use-labs";
@@ -52,7 +52,7 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
    * `chosenPorts` = the host ports for a container lab here, already chosen ("Where should it run?").
    */
   const launch = useCallback(
-    async (lab: Lab, host?: string | null, vm?: LocalVmPick, report?: LaunchReport, chosenPorts?: PortMode) => {
+    async (lab: Lab, host?: string | null, vm?: LocalVmPick, report?: LaunchReport, here?: { ports?: PortMode; engine?: DockerEngine | null }) => {
       if (!lab.runtime) return;
       if (lab.runtime.runtime === "CLOUD") {
         await operate(lab, "launch", cloudLaunch(lab, host));
@@ -61,9 +61,9 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
       // A container lab on this machine publishes its services here: on random free ports or
       // on the lab's own, the player's call (asked unless Settings remember it). Cancel = no start.
       const containersHere = lab.runtime.runtime !== "VM" && host == null && !vm;
-      const ports = containersHere ? (chosenPorts ?? getPortMode() ?? (await askPortMode(lab.title))) : null;
+      const ports = containersHere ? (here?.ports ?? getPortMode() ?? (await askPortMode(lab.title))) : null;
       if (containersHere && !ports) return;
-      await operate(lab, "launch", localLaunch(lab, { host, vmProvider: vm?.provider, report, ports, perMachineVm: vm?.perMachine ?? false }));
+      await operate(lab, "launch", localLaunch(lab, { host, vmProvider: vm?.provider, report, ports, perMachineVm: vm?.perMachine ?? false, engine: here?.engine }));
     },
     [operate],
   );

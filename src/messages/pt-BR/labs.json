@@ -91,7 +91,9 @@
     "cloud": "Nuvem",
     "notSupported": "Não suportado por este lab",
     "beta": "Beta",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "engine": "Motor de contêineres",
+    "rememberChoice": "Não perguntar de novo"
   },
   "ports": {
     "question": "Quais portas {title} deve usar?",

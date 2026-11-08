@@ -60,7 +60,7 @@ function setup(overrides: Parameters<typeof installTauri>[0] = {}) {
 /** Starts launching `lab` here (a dialog may then ask the player): the launch, to await once
  *  answered. */
 function launching(hook: ReturnType<typeof setup>["hook"], lab: Lab, ports?: PortMode) {
-  return startInAct(() => hook.result.current.launch(lab, null, undefined, readyReport(), ports));
+  return startInAct(() => hook.result.current.launch(lab, null, undefined, readyReport(), { ports }));
 }
 
 /** A launch of the Docker lab as `id` with no port mode remembered, once the ports are asked. */
@@ -92,7 +92,7 @@ describe("useLabActions: launch", () => {
 
   it("starts a container lab here on the ports chosen in the dialog, without an attack box image", async () => {
     const { calls, refresh, hook } = setup();
-    await act(() => hook.result.current.launch(dockerLab, null, undefined, readyReport(), "default"));
+    await act(() => hook.result.current.launch(dockerLab, null, undefined, readyReport(), { ports: "default" }));
     expect(launchArgs(calls)).toEqual({ labId: "act-docker", provider: null, host: null, attackboxImage: null, defaultPorts: true });
     expect(logsOf("act-docker")).toEqual(["==> api: Creating", "✓ Lab ready", "✓ Lab is running"]);
     expect(refresh).toHaveBeenCalledWith(dockerLab, { fresh: true });
@@ -179,7 +179,7 @@ describe("useLabActions: launch", () => {
       const offline: unknown[] = [];
       const { hook } = setup(unreachableBackend(reason, offline));
       render(<OfflineStartPrompt />);
-      await act(() => hook.result.current.launch({ ...dockerLab, id: "act-refused" }, null, undefined, readyReport(), "random"));
+      await act(() => hook.result.current.launch({ ...dockerLab, id: "act-refused" }, null, undefined, readyReport(), { ports: "random" }));
       expect(screen.queryByRole("alertdialog")).toBeNull();
       expect(offline).toEqual([false]);
     }
@@ -322,7 +322,7 @@ describe("useLabActions: launch", () => {
     const { hook } = setup({
       lab_launch: () => rejectWith("Port 8000 is already in use"),
     });
-    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-fail" }, null, undefined, readyReport(), "random"));
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-fail" }, null, undefined, readyReport(), { ports: "random" }));
     expect(logsOf("act-fail")).toEqual(["✗ Port 8000 is already in use"]);
     expect(getDeploySnapshot().runs["act-fail"]?.busy).toBe(false);
   });

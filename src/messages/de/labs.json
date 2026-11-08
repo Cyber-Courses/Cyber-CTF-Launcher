@@ -91,7 +91,9 @@
     "cloud": "Cloud",
     "notSupported": "Von diesem Lab nicht unterstützt",
     "beta": "Beta",
-    "experimental": "Experimentell"
+    "experimental": "Experimentell",
+    "engine": "Container-Engine",
+    "rememberChoice": "Nicht mehr fragen"
   },
   "ports": {
     "question": "Welche Ports soll {title} verwenden?",

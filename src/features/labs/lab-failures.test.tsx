@@ -107,7 +107,7 @@ describe("an operation the backend refused", () => {
   it("says another operation is still running, as a refusal and not a failed start", async () => {
     installTauri({ ...idle, lab_launch: rejects({ code: "alreadyInProgress", message: "lab-sqli: a launch is already in progress" }) });
     const actions = renderActions();
-    await act(() => actions().launch(blind, null, undefined, null, "default"));
+    await act(() => actions().launch(blind, null, undefined, null, { ports: "default" }));
     expect(alerts().join("\n")).toContain("Another operation is still running on this lab");
     expect(alerts().join("\n")).not.toContain("Couldn’t start");
     // Nothing ran, so no run is left behind reading as a failed deploy.

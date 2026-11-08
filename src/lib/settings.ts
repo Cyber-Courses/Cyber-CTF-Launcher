@@ -1,4 +1,4 @@
-import type { Provider } from "@/lib/tauri";
+import type { DockerEngine, Provider } from "@/lib/tauri";
 import { translate } from "@/lib/i18n";
 import defaultAttackBox from "../../src-tauri/attack-box-image.json";
 
@@ -273,4 +273,58 @@ export function setPortMode(mode: PortMode | null) {
   } catch {
     /* ignore */
   }
+}
+
+const DOCKER_ENGINE_KEY = "cyberctf.docker.engine";
+const LOCAL_VM_FORM_KEY = "cyberctf.labs.vmForm";
+
+/** Sent on `window` when a saved launch choice (engine, ports, VM form, hypervisor) changes, so
+ *  Settings and the lab page follow at once. */
+export const LAUNCH_CHOICE_CHANGED = "cyberctf:launch-choice";
+
+function emitLaunchChoice() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(LAUNCH_CHOICE_CHANGED));
+}
+
+/** The container engine a lab here runs on, saved by "don't ask again". Null: follow the current
+ *  Docker context (what the CLI uses). */
+export function getDockerEngine(): DockerEngine | null {
+  try {
+    return (localStorage.getItem(DOCKER_ENGINE_KEY) as DockerEngine | null) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setDockerEngine(engine: DockerEngine | null) {
+  try {
+    if (engine) localStorage.setItem(DOCKER_ENGINE_KEY, engine);
+    else localStorage.removeItem(DOCKER_ENGINE_KEY);
+  } catch {
+    /* ignore */
+  }
+  emitLaunchChoice();
+}
+
+/** For a dual-form lab here, the VM form saved by "don't ask again": `vm` = one helper VM,
+ *  `vms` = one VM per machine. Null: ask which (the form step). */
+export type LocalVmForm = "vm" | "vms";
+
+export function getLocalVmForm(): LocalVmForm | null {
+  try {
+    const v = localStorage.getItem(LOCAL_VM_FORM_KEY);
+    return v === "vm" || v === "vms" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setLocalVmForm(form: LocalVmForm | null) {
+  try {
+    if (form) localStorage.setItem(LOCAL_VM_FORM_KEY, form);
+    else localStorage.removeItem(LOCAL_VM_FORM_KEY);
+  } catch {
+    /* ignore */
+  }
+  emitLaunchChoice();
 }

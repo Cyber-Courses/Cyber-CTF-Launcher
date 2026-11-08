@@ -175,5 +175,11 @@
     "pick": "Pasta a compartilhar com a attack box",
     "change": "Alterar…",
     "open": "Abrir a pasta"
+  },
+  "launchDefaults": {
+    "title": "Escolhas de inicialização lembradas",
+    "remembered": "Um motor de contêineres ou forma de VM está lembrado para esta máquina.",
+    "asked": "A caixa de diálogo de inicialização pergunta sempre.",
+    "reset": "Perguntar de novo"
   }
 }

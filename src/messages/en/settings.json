@@ -175,5 +175,11 @@
     "pick": "Folder to share with the attack box",
     "change": "Change…",
     "open": "Open the folder"
+  },
+  "launchDefaults": {
+    "title": "Remembered launch choices",
+    "remembered": "A container engine or VM form is remembered for this machine.",
+    "asked": "The launch dialog asks each time.",
+    "reset": "Ask again"
   }
 }
