@@ -52,18 +52,18 @@
     "passed": "Teste de VM passou",
     "steps": {
       "connect": "Acessar o host",
-      "prepare": "Preparar a definição de uma VM de teste",
-      "create": "Criar e iniciar a VM no host",
       "ssh": "O SSH responde na VM",
       "command": "Rodar um comando na VM",
-      "cleanup": "Destruir a VM de teste",
       "prepareLab": "Preparar o lab de teste",
       "image": "Baixar a imagem de nuvem do Debian",
       "network": "Criar a rede do lab de teste",
       "vm": "Iniciar as VMs de teste",
       "uplink": "O roteador do lab recebe um endereço no uplink (DHCP e internet)",
-      "cleanupLab": "Remover tudo o que o teste criou"
-    }
+      "cleanupLab": "Remover tudo o que o teste criou",
+      "esxiSsh": "Alcançar o host ESXi por SSH"
+    },
+    "incomplete": "Teste de VM incompleto: parou antes de “{step}”",
+    "notRun": "Essa etapa nunca foi executada, então o teste não pode passar. Esta versão do app talvez ainda não a execute: atualize o app e teste de novo."
   },
   "setup": {
     "loading": "Carregando…",

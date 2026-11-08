@@ -297,7 +297,7 @@ describe("Proxmox server and sign-in steps", () => {
 describe("Proxmox VM test after the connection test", () => {
   it("runs a real test lab once the connection test passes, step by step, and again with Test again", async () => {
     const calls = installTauri({
-      server_selftest: (a) =>
+      server_selftest: (a) => {
         stream(
           a,
           { step: "connect", label: "Reach the host", state: "ok", detail: "homelab" },
@@ -310,7 +310,9 @@ describe("Proxmox VM test after the connection test", () => {
               "The test VM got no address on bridge vmbr1: the bridge has no DHCP server reachable from the VMs (or no internet). Use an uplink bridge with DHCP and internet.",
           },
           { step: "cleanup", label: "Cleanup", state: "ok", detail: "Nothing of the test is left on the server." },
-        ),
+        );
+        return null;
+      },
     });
     const user = userEvent.setup();
     await renderSetup(editing({}));

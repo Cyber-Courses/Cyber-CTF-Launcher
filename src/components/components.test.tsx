@@ -288,7 +288,7 @@ describe("ServerSelfTest", () => {
   it("passes on ESXi when every step passes", async () => {
     installTauri({
       server_selftest: (a) => {
-        stream(a, { step: "connect", label: "Connect", state: "ok", detail: null });
+        stream(a, { step: "connect", label: "Connect", state: "ok", detail: null }, { step: "ssh", label: "SSH", state: "ok", detail: null });
         return null;
       },
     });

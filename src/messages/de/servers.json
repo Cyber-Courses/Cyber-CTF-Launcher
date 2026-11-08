@@ -52,18 +52,18 @@
     "passed": "VM-Test bestanden",
     "steps": {
       "connect": "Host erreichen",
-      "prepare": "Test-VM-Definition vorbereiten",
-      "create": "VM auf dem Host erstellen und booten",
       "ssh": "SSH antwortet auf der VM",
       "command": "Befehl in der VM ausführen",
-      "cleanup": "Test-VM löschen",
       "prepareLab": "Test-Lab vorbereiten",
       "image": "Debian-Cloud-Image herunterladen",
       "network": "Lab-Netz des Tests anlegen",
       "vm": "Test-VMs starten",
       "uplink": "Der Router des Labs bekommt eine Adresse am Uplink (DHCP und Internet)",
-      "cleanupLab": "Alles entfernen, was der Test angelegt hat"
-    }
+      "cleanupLab": "Alles entfernen, was der Test angelegt hat",
+      "esxiSsh": "ESXi-Host per SSH erreichen"
+    },
+    "incomplete": "VM-Test unvollständig: angehalten vor „{step}“",
+    "notRun": "Dieser Schritt lief nie, daher kann der Test nicht bestehen. Diese App-Version führt ihn eventuell noch nicht aus: Aktualisiere die App und teste erneut."
   },
   "setup": {
     "loading": "Wird geladen…",

@@ -52,18 +52,18 @@
     "passed": "VM test passed",
     "steps": {
       "connect": "Reach the host",
-      "prepare": "Prepare a test VM definition",
-      "create": "Create and boot the VM on the host",
       "ssh": "SSH answers on the VM",
       "command": "Run a command in the VM",
-      "cleanup": "Destroy the test VM",
       "prepareLab": "Prepare the test lab",
       "image": "Download the Debian cloud image",
       "network": "Create the test's lab network",
       "vm": "Start the test VMs",
       "uplink": "The lab's router gets an address on the uplink (DHCP and internet)",
-      "cleanupLab": "Remove everything the test created"
-    }
+      "cleanupLab": "Remove everything the test created",
+      "esxiSsh": "Reach the ESXi host over SSH"
+    },
+    "incomplete": "VM test incomplete: stopped before “{step}”",
+    "notRun": "That step never ran, so the test can't pass. This version of the app may not run it yet: update the app and test again."
   },
   "setup": {
     "loading": "Loading…",

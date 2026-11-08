@@ -5,7 +5,7 @@ import { emit } from "@tauri-apps/api/event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ServerScreen } from "@/features/servers/servers-screen";
 import { HostRow, type HostView } from "@/features/servers/host-row";
-import { ServerSelfTest } from "@/features/servers/server-self-test";
+import { SELFTEST_PLAN, ServerSelfTest, selfTestOutcome } from "@/features/servers/server-self-test";
 import { loadVmTests } from "@/features/servers/vm-tests";
 import { answer } from "@/lib/dev-mock";
 import type { ServerHost, ServerList, ServerTest } from "@/lib/tauri";
@@ -229,7 +229,7 @@ describe("ServerScreen", () => {
   it("runs a VM test from the menu, remembers its result and tests the host again", async () => {
     const calls = installTauri({
       server_selftest: (a) => {
-        stream(a, { step: "connect", state: "ok" }, { step: "vm", state: "ok", detail: "vm 9001" }, { step: "cleanup", state: "ok" });
+        stream(a, ...SELFTEST_PLAN.proxmox.map((p) => ({ step: p.step, state: "ok", detail: p.step === "vm" ? "vm 9001" : null })));
         return null;
       },
     });
@@ -329,27 +329,59 @@ describe("HostRow", () => {
 });
 
 describe("ServerSelfTest", () => {
-  it("plans the ESXi steps and reports a failed step", async () => {
+  it("plans the ESXi steps it runs and reports a failed step", async () => {
     installTauri({
       server_selftest: (a) => {
-        stream(
-          a,
-          { step: "connect", state: "ok" },
-          { step: "up", state: "running" },
-          { step: "up", state: "fail", detail: "datastore full" },
-          { step: "ssh", state: "skip" },
-        );
+        stream(a, { step: "connect", state: "ok" }, { step: "ssh", state: "running" }, { step: "ssh", state: "fail", detail: "no answer on 10.0.0.9:22" });
         return null;
       },
     });
     const onDone = vi.fn();
     render(<ServerSelfTest id="esxi" provider="vmware_esxi" onDone={onDone} />);
     await flush(30);
-    expect(screen.getByText("Run a command in the VM")).toBeTruthy();
-    expect(screen.queryByText("VM reports a network address")).toBeNull();
+    expect(screen.getByText("Reach the ESXi host over SSH")).toBeTruthy();
+    expect(screen.queryByText("Start the test VMs")).toBeNull();
     expect(screen.getByText("VM test failed")).toBeTruthy();
-    expect(screen.getByText("datastore full")).toBeTruthy();
+    expect(screen.getByText("no answer on 10.0.0.9:22")).toBeTruthy();
     expect(onDone).toHaveBeenCalledWith("fail");
+  });
+
+  it("never reports a step not run as passed: the test stops before it, never green", async () => {
+    // What an app whose core predates the real Proxmox test answered: the host reached, then done.
+    installTauri({
+      server_selftest: (a) => {
+        stream(a, { step: "connect", label: "Reach the host", state: "ok", detail: "homelab" });
+        return null;
+      },
+    });
+    const onDone = vi.fn();
+    render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
+    await flush(30);
+    expect(screen.queryByText("VM test passed")).toBeNull();
+    expect(screen.getByText("VM test incomplete: stopped before “Prepare the test lab”")).toBeTruthy();
+    expect(screen.getByText(/That step never ran, so the test can't pass/)).toBeTruthy();
+    expect(onDone).toHaveBeenCalledWith("fail");
+  });
+
+  it("passes only when every listed step passed", () => {
+    const plan = SELFTEST_PLAN.proxmox;
+    const ok = Object.fromEntries(plan.map((p) => [p.step, { state: "ok" }]));
+    expect(selfTestOutcome(plan, ok, false, null)).toEqual({ kind: "passed" });
+    expect(selfTestOutcome(plan, ok, true, null)).toEqual({ kind: "running" });
+    // One listed step missing, skipped or still running: incomplete, before that step.
+    for (const state of [undefined, "skip", "running"]) {
+      const states = { ...ok, uplink: state ? { state } : undefined };
+      expect(selfTestOutcome(plan, states, false, null)).toMatchObject({ kind: "incomplete", before: { step: "uplink" }, why: null });
+    }
+    expect(selfTestOutcome(plan, {}, false, "terraform not found")).toMatchObject({
+      kind: "incomplete",
+      before: { step: "connect" },
+      why: "terraform not found",
+    });
+    // A failure anywhere fails it, a step the plan doesn't list included; an error after every step too.
+    expect(selfTestOutcome(plan, { ...ok, cleanup: { state: "fail" } }, false, null)).toEqual({ kind: "failed" });
+    expect(selfTestOutcome(plan, { ...ok, node: { state: "fail" } }, false, null)).toEqual({ kind: "failed" });
+    expect(selfTestOutcome(plan, ok, false, "kept")).toEqual({ kind: "failed" });
   });
 
   it("shows the error when the test can't run", async () => {
@@ -360,7 +392,7 @@ describe("ServerSelfTest", () => {
     render(<ServerSelfTest id="pve" provider="proxmox" onDone={onDone} />);
     await flush(30);
     expect(screen.getByText("terraform not found")).toBeTruthy();
-    expect(screen.getByText("VM test failed")).toBeTruthy();
+    expect(screen.getByText("VM test incomplete: stopped before “Reach the host”")).toBeTruthy();
     expect(onDone).toHaveBeenCalledWith("fail");
   });
 
@@ -389,6 +421,9 @@ describe("ServerSelfTest", () => {
     expect(selftest).toHaveBeenCalledTimes(1);
     // The step that passed before this view opened is shown again.
     expect(screen.getByText("Running a real VM on the host…")).toBeTruthy();
+    act(() => {
+      stream(args, ...SELFTEST_PLAN.proxmox.slice(1).map((p) => ({ step: p.step, label: p.step, state: "ok", detail: null })));
+    });
     finish();
     await flush();
     expect(onDone).toHaveBeenCalledTimes(1);
