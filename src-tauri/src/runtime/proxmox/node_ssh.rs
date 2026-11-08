@@ -59,6 +59,12 @@ pub(super) fn write_askpass(identity: &std::path::Path) -> crate::error::Result<
 pub(super) fn authorize_args(h: &HostProfile, identity: &std::path::Path, public: &str) -> Vec<String> {
     let key = ssh::sh_quote(public.trim());
     let command = format!("umask 077; mkdir -p ~/.ssh; grep -qxF {key} ~/.ssh/authorized_keys 2>/dev/null || echo {key} >> ~/.ssh/authorized_keys");
+    password_ssh_args(h, identity, &command)
+}
+
+/// The `ssh` arguments that run `command` on the node, signing in by password (through the
+/// askpass helper next to `identity`).
+pub(super) fn password_ssh_args(h: &HostProfile, identity: &std::path::Path, command: &str) -> Vec<String> {
     let known_hosts = ssh::node_known_hosts(identity).display().to_string();
     let password_auth =
         ["PreferredAuthentications=password,keyboard-interactive".to_string(), "NumberOfPasswordPrompts=1".to_string(), "ConnectTimeout=10".to_string()];
@@ -68,8 +74,57 @@ pub(super) fn authorize_args(h: &HostProfile, identity: &std::path::Path, public
     }
     // `--`: the login comes from the host profile, so it can never be read as an ssh option
     // (a host such as `-oProxyCommand=...`).
-    args.extend(["--".into(), node_login(h), command]);
+    args.extend(["--".into(), node_login(h), command.to_string()]);
     args
+}
+
+/// Whether the node's `/etc/network/interfaces` sources the SDN configuration (`interfaces.d/*`
+/// or `interfaces.d/sdn`): read-only, it changes nothing on the node.
+pub(super) const SDN_SOURCE_CHECK: &str =
+    r"grep -Eq '^[[:space:]]*source[[:space:]]+/etc/network/interfaces\.d/(\*|sdn)([[:space:]]|$)' /etc/network/interfaces";
+
+/// What's wrong, and Proxmox's documented fix, when the node doesn't source its SDN config.
+pub(super) const SDN_MISSING: &str = "The node's /etc/network/interfaces doesn't load the SDN configuration, so a lab's network (an SDN vnet bridge) is never created and its VMs fail to start with \"bridge ... does not exist\". On the node, add this line at the end of /etc/network/interfaces:\n  source /etc/network/interfaces.d/*\nthen run: ifreload -a";
+
+/// The problem a launch would hit when the node doesn't source its SDN config (checked over SSH:
+/// the launcher's key on token setups, the password otherwise). A token setup whose SSH fails is
+/// reported by `ssh_key_problem` already.
+pub(super) async fn sdn_problem(h: &HostProfile, password: &str) -> Option<String> {
+    let Some(identity) = ssh::launcher_key() else {
+        return Some("The launcher's SSH key isn't ready yet; test again.".into());
+    };
+    let known_hosts = ssh::node_known_hosts(&identity);
+    let timeout = std::time::Duration::from_secs(30);
+    let token = super::is_token(&h.username);
+    let checked = if token {
+        ssh::Target::direct(&h.host, ssh_user(&h.username), identity.clone()).exec_timed(&known_hosts, SDN_SOURCE_CHECK, timeout).await
+    } else {
+        let askpass = match write_askpass(&identity) {
+            Ok(a) => a,
+            Err(e) => return Some(format!("Couldn't check the node's network configuration over SSH ({e}).")),
+        };
+        let env = vec![
+            ("SSH_ASKPASS".to_string(), askpass.display().to_string()),
+            ("SSH_ASKPASS_REQUIRE".to_string(), "force".to_string()),
+            ("DISPLAY".to_string(), ":0".to_string()),
+            ("CYBERCTF_SSH_PASSWORD".to_string(), password.to_string()),
+        ];
+        let args = password_ssh_args(h, &identity, SDN_SOURCE_CHECK);
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        crate::platform::exec::run_env_timed("ssh", &refs, None, &env, timeout).await
+    };
+    sdn_outcome(checked, (!token).then(|| node_login(h)))
+}
+
+/// `sdn_problem` from what the check over SSH gave: grep found no directive (it fails without a
+/// word), or SSH itself failed, reported for a password setup (`password_login`, the login it
+/// tried) and left to `ssh_key_problem` for a token one.
+pub(super) fn sdn_outcome(checked: crate::error::Result<String>, password_login: Option<String>) -> Option<String> {
+    match (checked, password_login) {
+        (Err(crate::error::Error::CommandFailed { stderr, .. }), _) if stderr.trim().is_empty() => Some(SDN_MISSING.into()),
+        (Err(e), Some(login)) => Some(format!("Couldn't check the node's network configuration over SSH as {login} ({e}).")),
+        (Ok(_), _) | (Err(_), None) => None,
+    }
 }
 
 /// The SSH user for the snippet upload: the token's user without its realm.

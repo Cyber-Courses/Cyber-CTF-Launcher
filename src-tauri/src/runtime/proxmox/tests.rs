@@ -238,3 +238,66 @@ async fn an_unreachable_host_fails_to_sign_in() {
     h.username = "root@pam!t".into();
     assert!(matches!(sign_in(&h, "pw").await, Err(SignInError::Failed(_))));
 }
+
+/// The SDN check is a read-only grep that finds `source /etc/network/interfaces.d/*` (or `/sdn`)
+/// and nothing else.
+#[cfg(unix)]
+#[test]
+fn the_sdn_check_finds_only_a_real_source_directive() {
+    let dir = std::env::temp_dir().join(format!("cyberctf-sdn-{}", rand::random::<u32>()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("interfaces");
+    let has_directive = |body: &str| {
+        std::fs::write(&file, body).unwrap();
+        let command = format!("{}{}", SDN_SOURCE_CHECK.strip_suffix("/etc/network/interfaces").unwrap(), file.display());
+        std::process::Command::new("sh").args(["-c", &command]).status().unwrap().success()
+    };
+    let base = "auto lo\niface lo inet loopback\n\nauto vmbr0\niface vmbr0 inet static\n";
+    assert!(has_directive(&format!("{base}\nsource /etc/network/interfaces.d/*\n")));
+    assert!(has_directive(&format!("{base}  source  /etc/network/interfaces.d/sdn\n")));
+    assert!(!has_directive(base), "the stock PVE file without the directive");
+    assert!(!has_directive(&format!("{base}# source /etc/network/interfaces.d/*\n")), "commented out");
+    assert!(!has_directive(&format!("{base}source /etc/network/interfaces.d/other\n")));
+    assert!(SDN_SOURCE_CHECK.starts_with("grep -Eq ") && !SDN_SOURCE_CHECK.contains(';'), "one read-only command");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_missing_sdn_directive_is_reported_with_its_fix() {
+    use crate::error::Error;
+    let grep_found_nothing = || Err(Error::CommandFailed { command: "ssh".into(), stderr: String::new() });
+    let missing = sdn_outcome(grep_found_nothing(), None).unwrap();
+    assert_eq!(missing, SDN_MISSING);
+    assert!(missing.contains("source /etc/network/interfaces.d/*") && missing.contains("ifreload -a"), "{missing}");
+    assert_eq!(sdn_outcome(Ok(String::new()), Some("root@pve".into())), None);
+    // SSH itself failing: a token setup's SSH problem is reported elsewhere; a password one's here.
+    let refused = || Err(Error::CommandFailed { command: "ssh".into(), stderr: "Permission denied".into() });
+    assert_eq!(sdn_outcome(refused(), None), None);
+    assert!(
+        sdn_outcome(refused(), Some("root@pve.lan".into())).unwrap().starts_with("Couldn't check the node's network configuration over SSH as root@pve.lan")
+    );
+}
+
+#[tokio::test]
+async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
+    use crate::platform::exec::fake::{Tools, fail, ok};
+    let dir = std::env::temp_dir().join(format!("cyberctf-sdn-key-{}", rand::random::<u32>()));
+    ssh::set_launcher_key_for_test(dir.join("id_ed25519"));
+    let key = ssh::launcher_key().unwrap();
+    std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+    // A token setup: the launcher's key, as the token's user.
+    let token = HostProfile { username: "root@pam!cyberctf-0a1b2c3d".into(), ..host("10.0.0.50", None) };
+    let tools = Tools::rules(&[("/etc/network/interfaces", fail(""))]);
+    assert_eq!(sdn_problem(&token, "secret").await.as_deref(), Some(SDN_MISSING));
+    let call = tools.calls().pop().unwrap();
+    assert!(call.starts_with("ssh -i ") && call.contains(" root@10.0.0.50 ") && call.ends_with(SDN_SOURCE_CHECK), "{call}");
+    drop(tools);
+    let tools = Tools::rules(&[("/etc/network/interfaces", ok(""))]);
+    assert_eq!(sdn_problem(&token, "secret").await, None);
+    drop(tools);
+    // A password setup: the password, through the askpass helper.
+    let tools = Tools::rules(&[("/etc/network/interfaces", fail(""))]);
+    assert_eq!(sdn_problem(&host("10.0.0.50", None), "pw").await.as_deref(), Some(SDN_MISSING));
+    assert_eq!(tools.env_of("/etc/network/interfaces", "CYBERCTF_SSH_PASSWORD").as_deref(), Some("pw"));
+    assert!(tools.calls().pop().unwrap().contains("PreferredAuthentications=password"));
+}

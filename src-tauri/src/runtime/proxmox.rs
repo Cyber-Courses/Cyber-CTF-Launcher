@@ -20,10 +20,10 @@ pub mod ssh_key;
 pub use check::{bridge_is_internal, test};
 #[cfg(test)]
 use check::{bridge_problem, node_report, outcome, sign_in_report, storage_content, storage_problems};
-use node_ssh::ssh_key_problem;
 #[cfg(test)]
-use node_ssh::{askpass_script, authorize_args, write_askpass};
+use node_ssh::{SDN_MISSING, SDN_SOURCE_CHECK, askpass_script, authorize_args, sdn_outcome, write_askpass};
 pub use node_ssh::{authorize_launcher_key, node_login, ssh_user};
+use node_ssh::{sdn_problem, ssh_key_problem};
 
 const TIMEOUT: Duration = Duration::from_secs(8);
 

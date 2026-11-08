@@ -1,8 +1,9 @@
 //! "Test connection" for a Proxmox host: sign-in, node, storages, the lab bridge and, for a
-//! token setup, the launcher's SSH key, each problem with its fix.
+//! token setup, the launcher's SSH key, and the node's SDN config, each problem with its fix.
 
 use super::{
-    CallError, HostProfile, IMAGE_STORAGE, SNIPPET_STORAGE, SignInError, Value, find_iface, has_no_ports, is_token, lab_bridge, sign_in, ssh_key_problem,
+    CallError, HostProfile, IMAGE_STORAGE, SNIPPET_STORAGE, SignInError, Value, find_iface, has_no_ports, is_token, lab_bridge, sdn_problem, sign_in,
+    ssh_key_problem,
 };
 
 /// The outcome of "Test connection" for a Proxmox host.
@@ -71,6 +72,8 @@ pub async fn test(h: &HostProfile, secret: &str) -> Report {
     {
         problems.push(problem);
     }
+    // Lab networks are SDN vnets: the node must source its SDN config, or their bridges never exist.
+    problems.extend(sdn_problem(h, secret).await);
     outcome(&node, &bridge, &problems)
 }
 

@@ -302,8 +302,9 @@ pub async fn server_test(app: AppHandle, id: String) -> Result<TestResult> {
     let host = load_host(&dirs, &id)?;
     // CLI-credential hosts keep no secret; the CLI resolves its own credentials.
     let password = host_secret(&host)?;
-    // Token hosts SSH with the launcher's key: make sure it exists before checking it.
-    if host.provider == Provider::Proxmox && crate::runtime::proxmox::is_token(&host.username) {
+    // Proxmox is checked over SSH too (the launcher's key on token hosts, the password next to
+    // it otherwise): make sure the key exists first.
+    if host.provider == Provider::Proxmox {
         crate::runtime::ssh::ensure_key(&dirs).await?;
     }
     let mut result = test_host(&host, &password).await;
