@@ -136,10 +136,10 @@ export function vmFormOptions(t: T, tiers: RunTier[], vm: LocalVm): Option[] {
  *  (`offerContainers`), the note/engine state for the Containers row, and the VM-form data. */
 export type LocalRows = LocalVm & { offerContainers: boolean; localNote: string; dockerRunning: boolean | null };
 
-/** Step 1's rows for "This machine": up to two, each its own kind of run here. Containers (Docker
- *  logo, the engine's state) when the lab has a container form, and In a VM (the hypervisor's
- *  logo) when a VM form is ready here. */
-function localPlatformRows(t: T, tiers: RunTier[], local: LocalRows): Option[] {
+/** Step 1's rows for "This machine": up to two, each its own kind of run here. Container (the
+ *  engine's state) when the lab has a container form, and VM (the hypervisor's logo) when a VM form
+ *  is ready here. No tier badges here: a place is a place, not a form being compared (step 2). */
+function localPlatformRows(t: T, local: LocalRows): Option[] {
   const { offerContainers, localNote, dockerRunning } = local;
   const rows: Option[] = [];
   if (offerContainers) {
@@ -148,21 +148,20 @@ function localPlatformRows(t: T, tiers: RunTier[], local: LocalRows): Option[] {
       title: t("labs.runOn.formContainers"),
       subtitle: localNote,
       ok: true,
-      badge: badgeFor(tiers, candidatesFor({ kind: "local" })),
       logo: <DockerLogo />,
       status: engineStatus(t, dockerRunning),
     });
   }
-  const vm = localVmRow(t, tiers, local);
+  const vm = localVmRow(t, local);
   if (vm) rows.push(vm);
   return rows;
 }
 
-/** The "In a VM" row, or null when no VM form is ready here. A VM lab runs its own VMs as
+/** The "VM" row, or null when no VM form is ready here. A VM lab runs its own VMs as
  *  `{ kind: "local" }`; a container lab runs a helper VM (`local-vm`) and, when dual-form, one VM
  *  per machine (`local-vms`). One VM form: the row starts it, its hypervisor switch inline. Two:
  *  the row opens step 2, where each form carries its own switch. */
-function localVmRow(t: T, tiers: RunTier[], local: LocalRows): Option | null {
+function localVmRow(t: T, local: LocalRows): Option | null {
   const { offerContainers, localNote, localVm, localVms, onPickVm, perMachine } = local;
   if (!offerContainers) {
     return {
@@ -170,7 +169,6 @@ function localVmRow(t: T, tiers: RunTier[], local: LocalRows): Option | null {
       title: t("labs.runOn.inAVm"),
       subtitle: localNote,
       ok: true,
-      badge: badgeFor(tiers, candidatesFor({ kind: "local" })),
       logo: <HypervisorLogo provider={null} />,
     };
   }
@@ -181,7 +179,6 @@ function localVmRow(t: T, tiers: RunTier[], local: LocalRows): Option | null {
     title: t("labs.runOn.inAVm"),
     subtitle: twoForms ? t("labs.runOn.vmForms") : t("labs.runOn.inVmSubtitle", { provider: PROVIDER_LABELS[localVm] ?? localVm }),
     ok: true,
-    badge: badgeFor(tiers, candidatesFor({ kind: "local-vm", provider: localVm })),
     logo: <HypervisorLogo provider={localVm} />,
     status: { tone: "ok", label: t("labs.runOn.ready"), title: t("labs.runOn.readyHint") },
     extra: twoForms ? undefined : hypervisorSwitch(t, localVm, localVms, onPickVm),
@@ -235,7 +232,7 @@ export function platformGroups(
 ): OptionGroup[] {
   const forHost = (h: ServerHost) => hostOption(t, tiers, h, hostOk(h), checks[h.id]);
   const groups: OptionGroup[] = [
-    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localPlatformRows(t, tiers, local) : [] },
+    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localPlatformRows(t, local) : [] },
     { id: "servers", label: t("labs.runOn.servers"), options: hosts.filter((h) => !CLOUDS.has(h.provider)).map(forHost) },
     { id: "cloud", label: t("labs.runOn.cloud"), options: hosts.filter((h) => CLOUDS.has(h.provider)).map(forHost) },
   ];

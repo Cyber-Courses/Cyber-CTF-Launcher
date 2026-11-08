@@ -64,7 +64,7 @@
     "formContainers": "コンテナ",
     "formInVm": "VM 内",
     "formPerMachine": "マシンごとに 1 台の VM",
-    "inAVm": "VM 内",
+    "inAVm": "VM",
     "vmForms": "VM 内、またはマシンごとに 1 台",
     "back": "戻る",
     "checking": "確認中…",

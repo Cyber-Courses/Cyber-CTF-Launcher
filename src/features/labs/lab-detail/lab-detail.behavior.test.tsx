@@ -105,10 +105,10 @@ describe("LabDetail: starting", () => {
     const { user, h } = await clickStart({ readyVms: ["virtualbox"] });
     const dialog = screen.getByRole("dialog");
     // Two rows: Containers and In a VM. The port choice is NOT on this step.
-    expect(within(dialog).getByText("Containers")).toBeTruthy();
-    expect(within(dialog).getByText("In a VM")).toBeTruthy();
+    expect(within(dialog).getByText("Container")).toBeTruthy();
+    expect(within(dialog).getByText("VM")).toBeTruthy();
     expect(within(dialog).queryByText("Ports on this machine")).toBeNull();
-    await user.click(within(dialog).getByText("In a VM"));
+    await user.click(within(dialog).getByText("VM"));
     await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local-vm", provider: "virtualbox" });
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -120,14 +120,14 @@ describe("LabDetail: starting", () => {
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
     expect(within(dialog).queryByText("Ports on this machine")).toBeNull();
-    await user.click(within(dialog).getByText("Containers"));
+    await user.click(within(dialog).getByText("Container"));
     // The ports step: the choice is here, not with the places.
     expect(within(dialog).getByText("Ports on this machine")).toBeTruthy();
     expect(within(dialog).getByText("The lab's default ports")).toBeTruthy();
-    expect(within(dialog).queryByText("In a VM")).toBeNull();
+    expect(within(dialog).queryByText("VM")).toBeNull();
     await user.click(within(dialog).getByRole("button", { name: "Back" }));
     expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
-    expect(within(dialog).getByText("In a VM")).toBeTruthy();
+    expect(within(dialog).getByText("VM")).toBeTruthy();
     expect(within(dialog).queryByText("Ports on this machine")).toBeNull();
   });
 
@@ -138,7 +138,7 @@ describe("LabDetail: starting", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     await user.click(screen.getByRole("button", { name: /Start lab/ }));
     // Containers takes a step to its ports, then the lab's default ports.
-    await user.click(within(screen.getByRole("dialog")).getByText("Containers"));
+    await user.click(within(screen.getByRole("dialog")).getByText("Container"));
     await startIn(user, "The lab's default ports");
     expect(h.onStart).toHaveBeenCalledTimes(1);
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local", ports: "default" });
@@ -151,19 +151,19 @@ describe("LabDetail: starting", () => {
     const dialog = screen.getByRole("dialog");
     // Step 1: two rows; the VM forms are a step in.
     expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
-    expect(within(dialog).getByText("Containers")).toBeTruthy();
-    expect(within(dialog).getByText("In a VM")).toBeTruthy();
+    expect(within(dialog).getByText("Container")).toBeTruthy();
+    expect(within(dialog).getByText("VM")).toBeTruthy();
     expect(within(dialog).queryByText("One VM per machine")).toBeNull();
-    await user.click(within(dialog).getByText("In a VM"));
+    await user.click(within(dialog).getByText("VM"));
     // Step 2: only the two VM forms, no Containers.
     expect(within(dialog).getByText("How should it run?")).toBeTruthy();
     expect(within(dialog).getByText("In one VM")).toBeTruthy();
     expect(within(dialog).getByText("One VM per machine")).toBeTruthy();
-    expect(within(dialog).queryByText("Containers")).toBeNull();
+    expect(within(dialog).queryByText("Container")).toBeNull();
     // Back returns to the places.
     await user.click(within(dialog).getByRole("button", { name: "Back" }));
     expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
-    expect(within(dialog).getByText("Containers")).toBeTruthy();
+    expect(within(dialog).getByText("Container")).toBeTruthy();
     expect(within(dialog).queryByText("One VM per machine")).toBeNull();
   });
 

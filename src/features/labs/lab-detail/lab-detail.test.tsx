@@ -58,7 +58,7 @@ describe("LabDetail", () => {
     const dialog = await screen.findByRole("dialog");
     // Try the AWS account, then Containers on this machine with the lab's default ports.
     await user.click(within(dialog).getByText("AWS sandbox"));
-    await user.click(within(dialog).getByText("Containers"));
+    await user.click(within(dialog).getByText("Container"));
     await user.click(within(dialog).getByText("The lab's default ports"));
     const confirm = within(dialog)
       .getAllByRole("button")

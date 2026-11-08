@@ -87,13 +87,13 @@ describe("RunOnPicker", () => {
     const user = userEvent.setup();
     const { onChange, onPickPlatform } = renderPicker({ hosts: [], dockerRunning: false, localVm: "virtualbox" });
     // Two rows under This machine, each its own kind of run here: no misleading Docker logo on the VM one.
-    expect(screen.getByText("Containers")).toBeTruthy();
+    expect(screen.getByText("Container")).toBeTruthy();
     expect(screen.getByText("Engine stopped")).toBeTruthy();
-    expect(screen.getByText("In a VM")).toBeTruthy();
+    expect(screen.getByText("VM")).toBeTruthy();
     expect(screen.getByText("VirtualBox · isolated from your system")).toBeTruthy();
-    await user.click(screen.getByText("Containers"));
+    await user.click(screen.getByText("Container"));
     expect(onPickPlatform).toHaveBeenLastCalledWith({ kind: "containers" } satisfies Platform);
-    await user.click(screen.getByText("In a VM"));
+    await user.click(screen.getByText("VM"));
     expect(onPickPlatform).toHaveBeenLastCalledWith({ kind: "vm" } satisfies Platform);
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.queryByText("Servers")).toBeNull();
@@ -104,7 +104,7 @@ describe("RunOnPicker", () => {
     const user = userEvent.setup();
     const onPickVm = vi.fn();
     const { onChange, onPickPlatform } = renderPicker({ hosts: [], dockerRunning: true, localVm: "utm", localVms: ["utm", "qemu"], onPickVm });
-    expect(screen.getByText("In a VM")).toBeTruthy();
+    expect(screen.getByText("VM")).toBeTruthy();
     expect(screen.getByText("UTM · isolated from your system")).toBeTruthy();
     const group = screen.getByRole("radiogroup", { name: "Hypervisor" });
     expect(within(group).getByRole("radio", { name: "UTM" }).getAttribute("aria-checked")).toBe("true");
@@ -126,10 +126,10 @@ describe("RunOnPicker", () => {
       perMachine: { provider: "qemu", providers: ["qemu", "virtualbox"], onPick: vi.fn() },
     });
     // Two VM forms: the row says so and carries no inline switch (the forms carry their own in step 2).
-    expect(screen.getByText("In a VM")).toBeTruthy();
+    expect(screen.getByText("VM")).toBeTruthy();
     expect(screen.getByText("In one VM, or one per machine")).toBeTruthy();
     expect(screen.queryByRole("radiogroup", { name: "Hypervisor" })).toBeNull();
-    await user.click(screen.getByText("In a VM"));
+    await user.click(screen.getByText("VM"));
     expect(onPickPlatform).toHaveBeenLastCalledWith({ kind: "vm" } satisfies Platform);
   });
 
@@ -147,7 +147,7 @@ describe("RunOnPicker", () => {
     });
     expect(screen.getByText("How should it run?")).toBeTruthy();
     // No Containers on the form step: it is a leaf on step 1. Only the VM forms here.
-    expect(screen.queryByText("Containers")).toBeNull();
+    expect(screen.queryByText("Container")).toBeNull();
     expect(screen.getByText("In one VM")).toBeTruthy();
     expect(screen.getByText("One VM per machine")).toBeTruthy();
     expect(screen.getByText("QEMU · a full VM for each machine, as on a server")).toBeTruthy();
@@ -165,8 +165,8 @@ describe("RunOnPicker", () => {
   it("shows no In a VM row for a container lab with no ready hypervisor", () => {
     installTauri();
     const { onPickPlatform } = renderPicker({ hosts: [], dockerRunning: true, localVm: null });
-    expect(screen.getByText("Containers")).toBeTruthy();
-    expect(screen.queryByText("In a VM")).toBeNull();
+    expect(screen.getByText("Container")).toBeTruthy();
+    expect(screen.queryByText("VM")).toBeNull();
     expect(onPickPlatform).not.toHaveBeenCalled();
   });
 
@@ -194,10 +194,10 @@ describe("RunOnPicker", () => {
     const user = userEvent.setup();
     const { onPickPlatform } = renderPicker({ hosts: [], offerContainers: false, dockerRunning: null, disabled: true });
     // A VM lab runs here only as VMs: one row, no Containers and no engine status.
-    expect(screen.queryByText("Containers")).toBeNull();
+    expect(screen.queryByText("Container")).toBeNull();
     expect(screen.queryByText("Running")).toBeNull();
     expect(screen.queryByText("Engine stopped")).toBeNull();
-    await user.click(screen.getByText("In a VM"));
+    await user.click(screen.getByText("VM"));
     expect(onPickPlatform).not.toHaveBeenCalled();
   });
 });
