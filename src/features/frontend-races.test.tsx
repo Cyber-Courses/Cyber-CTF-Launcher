@@ -203,7 +203,7 @@ describe("attack box poll", () => {
   it("doesn't stack status reads while one is in flight", async () => {
     vi.useFakeTimers();
     const calls = installTauri({ attack_box_status: () => new Promise(() => {}) });
-    renderHook(() => useAttackBox("lab-a", { running: true, local: true, runtime: "VM" }));
+    renderHook(() => useAttackBox("lab-a", { running: true, reachable: true, runtime: "VM" }));
     await advance(0);
     await advance(5000 * 4);
     expect(commands(calls).filter((c) => c === "attack_box_status")).toHaveLength(1);

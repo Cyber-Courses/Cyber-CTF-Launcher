@@ -146,6 +146,32 @@ impl CloudRun {
         }
         super::checks_of(&self.running()?, &place.options(&[])).await
     }
+
+    /// Hot-adds the learner's attack box into the running lab: a container in the VM the account
+    /// runs its containers in, on `network` (the only one otherwise), from `image`. A VM lab
+    /// there has no VM to put it in: the runner refuses.
+    pub(crate) async fn attach(&self, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
+        super::attach_into(&self.running()?, network, image, log).await
+    }
+
+    /// Takes the attack box back out of the running lab, leaving the rest of it up.
+    pub(crate) async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
+        super::detach_from(&self.running()?, log).await
+    }
+
+    /// The attack box as the lab page shows it (nothing before the lab's files exist).
+    pub(crate) async fn attack_status(&self, network: Option<&str>) -> Result<super::AttackStatus> {
+        if !self.manifest.is_file() {
+            return Ok(super::AttackStatus::default());
+        }
+        super::attack_status_in(&self.running()?, network, false).await
+    }
+
+    /// The command that opens a shell into the attack box: `ssh -t` to the lab's VM, then into
+    /// the box, as the runner builds it.
+    pub(crate) fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
+        self.running()?.shell_command(None).map_err(errors::from_runner)
+    }
 }
 
 /// The account's credentials as the run's connection secrets, for a destroy (a value no manifest

@@ -201,30 +201,74 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
     }
 }
 
-/// The local run of lab `id`, or `None` when the lab runs on a server host or cloud account (no
-/// attack box on this machine then — the learner works from what the lab gives them). Mirrors the
-/// local dispatch of [`lab_check`].
-fn local_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<isothrum::LabRun>> {
-    if server::lab_connection(dirs, dir)?.is_some() {
-        return Ok(None);
+/// The run that holds lab `id`'s attack box, wherever the lab runs: on this machine, in the form
+/// it was started in; on a cloud account or a Proxmox server, a container in the VM the lab's
+/// containers run in (the runner refuses a VM lab there: it has no such VM). Mirrors the dispatch
+/// of [`lab_check`].
+enum BoxRun {
+    Local(isothrum::LabRun),
+    Cloud(isothrum::CloudRun),
+    Server(isothrum::ServerRun),
+}
+
+impl BoxRun {
+    async fn attach(&self, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
+        match self {
+            BoxRun::Local(r) => r.attach(network, image, log).await,
+            BoxRun::Cloud(r) => r.attach(network, image, log).await,
+            BoxRun::Server(r) => r.attach(network, image, log).await,
+        }
     }
+
+    async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
+        match self {
+            BoxRun::Local(r) => r.detach(log).await,
+            BoxRun::Cloud(r) => r.detach(log).await,
+            BoxRun::Server(r) => r.detach(log).await,
+        }
+    }
+
+    async fn attack_status(&self, network: Option<&str>) -> Result<isothrum::AttackStatus> {
+        match self {
+            BoxRun::Local(r) => r.attack_status(network).await,
+            BoxRun::Cloud(r) => r.attack_status(network).await,
+            BoxRun::Server(r) => r.attack_status(network).await,
+        }
+    }
+
+    fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
+        match self {
+            BoxRun::Local(r) => r.shell_command(),
+            BoxRun::Cloud(r) => r.shell_command(),
+            BoxRun::Server(r) => r.shell_command(),
+        }
+    }
+}
+
+/// The run holding lab `id`'s attack box, or `None` where the launcher reaches none: a lab on an
+/// ESXi host, or a cloud-only lab started on this machine.
+fn box_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<BoxRun>> {
     let home = runner_home(dirs)?;
-    Ok(match local_runtime(dir, runtime) {
-        Runtime::Docker if local_vm(dir).is_some() => Some(isothrum::LabRun::docker_in_vm(&home, dir, id)?),
-        Runtime::Docker => Some(isothrum::LabRun::docker(&home, dir, id)?),
-        Runtime::Vm => Some(isothrum::LabRun::vm(&home, dir, id)?),
-        Runtime::Cloud => None,
+    Ok(match server::lab_connection(dirs, dir)? {
+        Some(c) if c.provider == Provider::VmwareEsxi => None,
+        Some(c) if c.provider.is_cloud() => {
+            let cloud = server::terraform_target(c.provider).unwrap_or_default();
+            Some(BoxRun::Cloud(isothrum::CloudRun::new(&home, dir, id, runtime, cloud)?))
+        }
+        Some(_) => Some(BoxRun::Server(isothrum::ServerRun::new(&home, dir, id, runtime)?)),
+        None => match local_runtime(dir, runtime) {
+            Runtime::Docker if local_vm(dir).is_some() => Some(BoxRun::Local(isothrum::LabRun::docker_in_vm(&home, dir, id)?)),
+            Runtime::Docker => Some(BoxRun::Local(isothrum::LabRun::docker(&home, dir, id)?)),
+            Runtime::Vm => Some(BoxRun::Local(isothrum::LabRun::vm(&home, dir, id)?)),
+            Runtime::Cloud => None,
+        },
     })
 }
 
-/// The lab's run with an attack box on this machine, or an error when the lab has none here.
-fn with_attack_box(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<isothrum::LabRun> {
-    local_run(dirs, dir, id, runtime)?.ok_or_else(|| {
-        Error::Invalid(
-            "The attack box for a lab on a server or in a cloud account is reached through the lab itself, not from here. Work from what the lab gives you."
-                .into(),
-        )
-    })
+/// The run holding the lab's attack box, or an error when the launcher reaches none for it.
+fn with_attack_box(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<BoxRun> {
+    box_run(dirs, dir, id, runtime)?
+        .ok_or_else(|| Error::Invalid("This lab has no attack box the launcher can reach. Work from what the lab gives you.".into()))
 }
 
 /// The command the runner builds to open a shell into lab `id`'s attack box (the in-app terminal
@@ -243,7 +287,7 @@ pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime, net
     Box::pin(async move {
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
-        match local_run(&dirs, &dir, &id, runtime)? {
+        match box_run(&dirs, &dir, &id, runtime)? {
             Some(run) => run.attack_status(network.as_deref()).await,
             None => Ok(isothrum::AttackStatus::default()),
         }
@@ -272,9 +316,15 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
             check_image(image)?;
         }
         let run = with_attack_box(&dirs, &dir, &id, runtime)?;
+        let mut log = channel_log(logs);
+        let attach = run.attach(network.as_deref(), image.as_deref(), &mut log);
+        // An image pulled on this machine is the app's to account for; one pulled in a lab's VM
+        // on a server or in a cloud account isn't here at all.
+        if !matches!(run, BoxRun::Local(_)) {
+            return Box::pin(attach).await;
+        }
         // Boxed: the runner's attach future is large, and tracking it adds to it.
-        Box::pin(crate::machine::storage::owned::tracked(&app, image.as_slice(), &[], run.attach(network.as_deref(), image.as_deref(), &mut channel_log(logs))))
-            .await
+        Box::pin(crate::machine::storage::owned::tracked(&app, image.as_slice(), &[], attach)).await
     })
     .await
 }
@@ -400,7 +450,8 @@ mod tests {
         t.lab("web", &[("isoloom.yml", SPEC)]);
         let st = attack_box_status(t.handle().clone(), "web".into(), Runtime::Docker, None).await.unwrap();
         assert!(!st.running && st.ip.is_empty() && st.networks.is_empty());
-        // A lab on a server host has no attack box here: status is empty, attach/detach refuse.
+        // A lab in a cloud account goes to the runner too (its box is a container in the lab's VM
+        // there): before its files exist the box reads as down and attach/detach fail, nothing run.
         let dir = t.lab("srv", &[]);
         server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
         let s = sink();

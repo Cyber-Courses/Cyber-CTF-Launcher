@@ -23,6 +23,8 @@ labNetwork: string,
 networks: Array<string>, 
 /**
  * The command line that opens a shell in the box (shown so the player can also run it).
+ * Empty when the runner makes no box for the run: a VM lab on a server or in a cloud
+ * account (a container lab there gets one, in the VM its containers run in).
  */
 shellCmd: string, 
 /**

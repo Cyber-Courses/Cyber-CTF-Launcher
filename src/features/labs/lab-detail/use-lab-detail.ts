@@ -57,7 +57,8 @@ export type LabDetailProps = {
 type PageState = ReturnType<typeof useLabPageState>;
 
 /** The attack box: a container on a local container lab's networks, the learner's own VM beside
- *  a local VM lab; a remote container lab's runs next to it on its host.
+ *  a local VM lab; on a server or in a cloud account, a container in the VM the lab's containers
+ *  run in (a VM lab there has none yet).
  *  Not while the lab itself is starting, resuming or stopping: a resume brings the attack VM
  *  back on its own, and a second `vagrant up` in its folder at the same time would collide.
  *  A failed deploy can leave the VMs up (a provisioning step broke): the lab then reads as
@@ -67,7 +68,7 @@ function useLabAttackBox(labId: string, s: PageState) {
   return useAttackBox(labId, {
     running: s.running && !s.isCloud,
     holding: s.deploying,
-    local: !s.remote && !s.isCloud,
+    reachable: !s.isCloud && (!s.remote || s.isDocker),
     runtime: s.isDocker ? "DOCKER" : "VM",
     failed: s.deployFailed,
   });

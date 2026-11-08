@@ -22,10 +22,10 @@ const boxImage = (pickedBox: boolean) => (pickedBox ? getAttackBoxChoice() : get
 const attach = (labId: string, runtime: Runtime, network: string | null, pickedBox: boolean, onLog: (line: string) => void) =>
   startOnce(`attach:${labId}`, (log) => attackBoxAttach(labId, runtime, network, boxImage(pickedBox), log), onLog);
 
-/** The attack box's last status: read now and polled every 5 s while the lab is up here
- *  (`active` and `local`), dropped when the lab starts or ends an operation. `network` is the one
- *  the box should report its address on (null: its first). */
-function useAttackBoxStatus(labId: string, runtime: Runtime, active: boolean, local: boolean, network: string | null) {
+/** The attack box's last status: read now and polled every 5 s while the lab is up where the
+ *  launcher reaches its box (`active` and `reachable`), dropped when the lab starts or ends an
+ *  operation. `network` is the one the box should report its address on (null: its first). */
+function useAttackBoxStatus(labId: string, runtime: Runtime, active: boolean, reachable: boolean, network: string | null) {
   const [status, setStatus] = useState<AttackStatus | null>(null);
   // A status read before an operation says nothing about after it (a detach takes the box out),
   // so drop it: the auto-attach then waits for a fresh read instead of acting on it.
@@ -48,12 +48,12 @@ function useAttackBoxStatus(labId: string, runtime: Runtime, active: boolean, lo
   // A failed read (the runner busy or slow, an emulated lab) says nothing about the box: keep what
   // was last seen rather than flip it to "not started".
   const refresh = useCallback(() => void read().catch(ignore("the box's status is read again in a moment")), [read]);
-  // Polled while the lab is up here, one read at a time, paused while the window is hidden.
-  usePoll(read, 5000, { enabled: active && local, restartKey: read, onValue: () => {}, onError: ignore("the box's status is read again in a moment") });
+  // Polled while the lab is up, one read at a time, paused while the window is hidden.
+  usePoll(read, 5000, { enabled: active && reachable, restartKey: read, onValue: () => {}, onError: ignore("the box's status is read again in a moment") });
   useEffect(() => {
     // A read still in flight belongs to the run that just ended: ignore it.
-    if (!active || !local) begin();
-  }, [active, local, begin]);
+    if (!active || !reachable) begin();
+  }, [active, reachable, begin]);
   return { status, setStatus, refresh };
 }
 
@@ -78,7 +78,7 @@ function useAttackBoxRun(refresh: () => void) {
  *  the lab status still shows just after one ends. A box seen running counts as attached, so
  *  taking it out by hand doesn't bring it back. Never beside a lab whose last deploy failed. */
 function useAutoStart(
-  { running, holding, active, local, failed }: { running: boolean; holding: boolean; active: boolean; local: boolean; failed: boolean },
+  { running, holding, active, reachable, failed }: { running: boolean; holding: boolean; active: boolean; reachable: boolean; failed: boolean },
   status: AttackStatus | null,
   busy: boolean,
   start: () => Promise<void>,
@@ -96,15 +96,16 @@ function useAutoStart(
       autoStarted.current = true;
       return;
     }
-    if (!autoStart || !local || busy || failed || autoStarted.current) return;
+    if (!autoStart || !reachable || busy || failed || autoStarted.current) return;
     autoStarted.current = true;
     void start();
-  }, [running, holding, active, autoStart, local, status, busy, failed, start]);
+  }, [running, holding, active, autoStart, reachable, status, busy, failed, start]);
 }
 
 /**
- * The lab's attack box: polled while a lab is up on this machine (so running / IP stay
- * current), attached and detached through the runner with a streamed log, and attached with the
+ * The lab's attack box: polled while the lab is up where the launcher reaches its box
+ * (`reachable`: on this machine, or a container lab on a server or in a cloud account, whose box
+ * is a container in the lab's VM there), so running / IP stay current, attached and detached through the runner with a streamed log, and attached with the
  * lab when the Settings preference is on (once per run). `runtime` is the lab's declared one; what
  * the box is here comes from its status (`vm`: a VM beside a lab running as VMs on this machine,
  * a container lab run as one VM per machine included; `pickedBox`: the lab's own attack VM, booted
@@ -117,15 +118,15 @@ export function useAttackBox(
   {
     running,
     holding = false,
-    local,
+    reachable,
     runtime = "DOCKER",
     failed = false,
-  }: { running: boolean; holding?: boolean; local: boolean; runtime?: Runtime; failed?: boolean },
+  }: { running: boolean; holding?: boolean; reachable: boolean; runtime?: Runtime; failed?: boolean },
 ) {
   const active = running && !holding;
   // The lab network the box joins: the learner's pick, or the only one (null = the runner's choice).
   const [network, setNetwork] = useState<string | null>(null);
-  const { status, setStatus, refresh } = useAttackBoxStatus(labId, runtime, active, local, network);
+  const { status, setStatus, refresh } = useAttackBoxStatus(labId, runtime, active, reachable, network);
   const { busy, log, run } = useAttackBoxRun(refresh);
   // Until the status says, the lab's declared runtime stands in: a VM lab's box is a VM.
   const vm = status?.vm ?? runtime === "VM";
@@ -147,7 +148,7 @@ export function useAttackBox(
       }, translate("labs.attackBox.removing")),
     [run, labId, runtime, setStatus],
   );
-  useAutoStart({ running, holding, active, local, failed }, status, busy, start);
+  useAutoStart({ running, holding, active, reachable, failed }, status, busy, start);
 
   return { status, busy, log, start, stop, vm, name, networks: status?.networks ?? [], network, setNetwork };
 }

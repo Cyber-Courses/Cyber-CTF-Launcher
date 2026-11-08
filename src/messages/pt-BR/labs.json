@@ -234,7 +234,7 @@
     "notStarted": "não iniciada",
     "startsWithLab": "inicia com o lab",
     "address": "Endereço",
-    "remoteHint": "Sua máquina na rede do lab. Abra o shell dela para atacar os alvos; a conexão é por SSH.",
+    "remoteHint": "Um contêiner na VM do laboratório, no servidor ou na conta de nuvem, na rede do laboratório. Abra o shell dele para atacar os alvos; ele se conecta por SSH.",
     "vmHint": "Sua máquina na rede do lab, como uma VM ao lado das do lab, com internet para instalar ferramentas: sua imagem de attack box rodando nela, ou a própria VM de ataque do lab. Abra o shell dela para atacar os alvos; a conexão é por SSH.",
     "containerHint": "Sua máquina na rede do lab. Abra o shell dela para atacar os alvos de dentro do lab.",
     "openShell": "Abrir shell do atacante",

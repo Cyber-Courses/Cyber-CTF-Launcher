@@ -10,9 +10,10 @@ import { Spinner } from "@/components/ui/spinner";
 import type { AttackBox } from "@/features/labs/use-attack-box";
 import { useT } from "@/lib/i18n";
 
-/** The attack box card in the lab page's side rail. `host` is the server a remote lab runs on.
- *  Beside a VM lab here the box is the lab's on-demand attack VM, on every local hypervisor
- *  (QEMU included: Isoloom reserves its place on the lab network up front). */
+/** The attack box card in the lab page's side rail. `host` is the server or cloud account a
+ *  remote lab runs on: there the box is a container in the VM the lab's containers run in, shown
+ *  as the runner reports it, started and stopped as here. Beside a VM lab here the box is the
+ *  lab's on-demand attack VM, on every local hypervisor (QEMU included). */
 export function AttackBoxPanel({
   box,
   running,
@@ -29,7 +30,7 @@ export function AttackBoxPanel({
   const t = useT();
   const remote = host !== null;
   const { status, busy, log, name, vm } = box;
-  const tone = (remote && running) || status?.running ? "ok" : busy ? "warn" : "muted";
+  const tone = status?.running ? "ok" : busy ? "warn" : "muted";
   return (
     <Panel>
       <PanelHeader
@@ -46,7 +47,7 @@ export function AttackBoxPanel({
         }
       />
       <KeyValue k={t("labs.attackBox.status")}>
-        <BoxState running={running} remote={remote} host={host} up={!!status?.running} busy={busy} />
+        <BoxState running={running} host={host} up={!!status?.running} busy={busy} />
       </KeyValue>
       {status?.running && status.ip && (
         <KeyValue k={t("labs.attackBox.address")}>
@@ -60,7 +61,7 @@ export function AttackBoxPanel({
             <Terminal className="size-3.5" /> {t("labs.attackBox.openShell")}
           </Button>
         )}
-        {running && !remote && <BoxControls box={box} />}
+        {running && <BoxControls box={box} />}
         {(busy || log.some((l) => l.startsWith("✗"))) && log.length > 0 && (
           <LogConsole lines={log} running={busy} title={vm ? t("labs.attackBox.attackVm") : t("labs.attackBox.attackBox")} />
         )}
@@ -69,21 +70,21 @@ export function AttackBoxPanel({
   );
 }
 
-/** What the box is for here: on the lab's server, a VM or a container. */
+/** What the box is: a container in the lab's VM on its server or cloud account, a VM or a
+ *  container here. */
 function boxHint({ remote, vm }: { remote: boolean; vm: boolean }) {
   if (remote) return "labs.attackBox.remoteHint";
   return vm ? "labs.attackBox.vmHint" : "labs.attackBox.containerHint";
 }
 
-/** Where the box stands: on the lab's server, running, starting, not started (or it starts with
- *  the lab). */
-function BoxState({ running, remote, host, up, busy }: { running: boolean; remote: boolean; host: string | null; up: boolean; busy: boolean }) {
+/** Where the box stands, as the runner reports it: running (on the lab's server or cloud
+ *  account, for a remote lab), starting, not started (or it starts with the lab). */
+function BoxState({ running, host, up, busy }: { running: boolean; host: string | null; up: boolean; busy: boolean }) {
   const t = useT();
-  if (remote && running) return <>{t("labs.attackBox.runningOn", { host: host ?? "" })}</>;
   if (up)
     return (
       <span className="inline-flex items-center gap-1.5">
-        <Crosshair className="size-3.5 text-you-text" /> {t("labs.attackBox.running")}
+        <Crosshair className="size-3.5 text-you-text" /> {host ? t("labs.attackBox.runningOn", { host }) : t("labs.attackBox.running")}
       </span>
     );
   if (busy)
@@ -95,7 +96,7 @@ function BoxState({ running, remote, host, up, busy }: { running: boolean; remot
   return <span className="text-muted-foreground">{running ? t("labs.attackBox.notStarted") : t("labs.attackBox.startsWithLab")}</span>;
 }
 
-/** Start or stop a box on this machine by hand, picking which lab network it joins when the lab
+/** Start or stop the box by hand, picking which lab network it joins when the lab
  *  has more than one. */
 function BoxControls({ box }: { box: AttackBox }) {
   const t = useT();

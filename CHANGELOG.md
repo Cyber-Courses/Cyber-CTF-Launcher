@@ -6,6 +6,22 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The attack box for a container lab on a cloud account or a Proxmox server.** A container lab
+  started in AWS, Azure, Google Cloud, DigitalOcean or Linode (`cloud-docker`), or on a Proxmox
+  server, runs its containers in one VM there; its attack box is now a container in that VM, on
+  the lab network next to the targets, made by the runner over SSH (the cloud firewall only lets
+  your machine reach the VM's SSH and published ports, so the lab's internal machines are reachable
+  only from inside). The lab page reads and polls the box's real state, starts it with the attack
+  box image from Settings (and with the lab when Settings say so, from any page), stops it, shows
+  its address on the lab network, and offers "Open attacker shell" only once the box runs: `ssh -t`
+  to the VM, then into the box. The page no longer shows a remote container lab's box as "running"
+  just because the lab is.
+  **Still unsupported:** a VM lab on a cloud account (`cloud-vm`) or on a Proxmox server has no
+  VM to put the box in; its page keeps saying it has no attacker yet. A lab on an ESXi host is
+  unchanged.
+
 ### Changed
 
 - **The guided machine setup is one path per lab type, and starts from where the machine

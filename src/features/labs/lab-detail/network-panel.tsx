@@ -25,11 +25,12 @@ function DiagramSkeleton({ host, docked }: { host: string | null; docked: boolea
   );
 }
 
-/** The attack box as the diagram draws it. A server or cloud lab runs its attack box on the lab
- *  host, which only that host's report sees; a local one reports itself. */
+/** The attack box as the diagram draws it: as the runner reports it, wherever the lab runs; a
+ *  remote lab whose box the launcher doesn't read falls back on its host's report. */
 function diagramAttacker(status: LabStatus, remote: boolean, box: AttackStatus | null): Attacker {
-  if (remote) return status.attacker ? { running: true, ip: status.attacker.ip, labNetwork: status.attacker.labNetwork } : null;
-  return box ? { running: box.running, ip: box.ip, labNetwork: box.labNetwork } : null;
+  if (box) return { running: box.running, ip: box.ip, labNetwork: box.labNetwork };
+  if (remote && status.attacker) return { running: true, ip: status.attacker.ip, labNetwork: status.attacker.labNetwork };
+  return null;
 }
 
 /** The lab's network: its diagram, or a note saying why there is none yet (see networkView). */

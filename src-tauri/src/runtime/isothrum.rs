@@ -316,15 +316,7 @@ impl LabRun {
 
     /// Takes the attack box back out of the running lab, leaving the rest of the lab up.
     pub(crate) async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        let lab = self.lab()?;
-        let deadline = std::time::Instant::now() + LOCK_WAIT;
-        loop {
-            let (sink, lines) = progress::channel();
-            match progress::follow(&mut *log, lines, lab.detach(None, &sink)).await {
-                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-                r => return r.map_err(errors::from_runner),
-            }
-        }
+        detach_from(&self.lab()?, log).await
     }
 
     /// The attack box's status: its access machine as the runner reports it, its address on
@@ -335,10 +327,7 @@ impl LabRun {
         if !self.manifest().is_file() {
             return Ok(AttackStatus { vm, ..AttackStatus::default() });
         }
-        let lab = self.lab()?;
-        let status = lab.status().await.map_err(errors::from_runner)?;
-        let shell = lab.shell_command(None).ok().map(|c| attack_box::display(&c)).unwrap_or_default();
-        Ok(attack_box::status_of(&status, network, shell, vm))
+        attack_status_in(&self.lab()?, network, vm).await
     }
 
     /// The command that opens a shell into the attack box: the runner builds it (it alone knows
@@ -346,6 +335,41 @@ impl LabRun {
     pub(crate) fn shell_command(&self) -> Result<ShellCommand> {
         self.lab()?.shell_command(None).map_err(errors::from_runner)
     }
+}
+
+/// Hot-adds the attack box into `lab` (on `network`, from `image`), waiting out another
+/// operation's hold on the run: what a lab on a server or in a cloud account does.
+async fn attach_into(lab: &Running<'_>, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
+    let deadline = std::time::Instant::now() + LOCK_WAIT;
+    loop {
+        let (sink, lines) = progress::channel();
+        match progress::follow(&mut *log, lines, lab.attach(None, network, image, &sink)).await {
+            Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+            r => return r.map(drop).map_err(errors::from_runner),
+        }
+    }
+}
+
+/// Takes the attack box back out of `lab`, leaving the rest up, waiting out another operation's
+/// hold on the run.
+async fn detach_from(lab: &Running<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+    let deadline = std::time::Instant::now() + LOCK_WAIT;
+    loop {
+        let (sink, lines) = progress::channel();
+        match progress::follow(&mut *log, lines, lab.detach(None, &sink)).await {
+            Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+            r => return r.map_err(errors::from_runner),
+        }
+    }
+}
+
+/// The attack box of `lab` as its page shows it: its access machine as the runner reports it,
+/// its address on `network` (or the only one), the lab's networks and the shell into it (none
+/// when the runner can't make a box for the run). `vm`: the box is a VM beside a lab of VMs here.
+async fn attack_status_in(lab: &Running<'_>, network: Option<&str>, vm: bool) -> Result<AttackStatus> {
+    let status = lab.status().await.map_err(errors::from_runner)?;
+    let shell = lab.shell_command(None).ok().map(|c| attack_box::display(&c)).unwrap_or_default();
+    Ok(attack_box::status_of(&status, network, shell, vm))
 }
 
 /// Brings `lab` up with `opts`, its events as `log`'s lines, then says where to start: its

@@ -24,6 +24,8 @@ pub struct AttackStatus {
     /// without asking). Known before the box is up, so the page can offer the choice.
     pub networks: Vec<String>,
     /// The command line that opens a shell in the box (shown so the player can also run it).
+    /// Empty when the runner makes no box for the run: a VM lab on a server or in a cloud
+    /// account (a container lab there gets one, in the VM its containers run in).
     pub shell_cmd: String,
     /// Whether the box is a VM here: beside a lab running as VMs on this machine (the lab's own
     /// attack VM, or the one the runner adds to the running lab).

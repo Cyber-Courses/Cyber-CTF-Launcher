@@ -9,6 +9,7 @@ import { commands, installTauri, type Handler } from "@/test/tauri";
 import { containerMachine, rejectWith, startIn, upStatus } from "@/features/labs/labs-test-kit";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
 import { flush } from "@/test/ui";
+import { setAutoAttackBox } from "@/lib/settings";
 
 // Behavior of the lab page's actions: what each button calls, with what, and what it shows.
 
@@ -43,6 +44,17 @@ const quiet: Record<string, Handler> = {
   active_operations: () => [],
   server_list: () => ({ default: null, hosts: [] }),
 };
+
+/** A container lab's attack box in its VM on a server, as the runner reports it. */
+const remoteBox = (up: boolean) => ({
+  running: up,
+  ip: up ? "10.30.0.77" : "",
+  labNetwork: up ? "lab" : "",
+  networks: ["lab"],
+  shellCmd: "ssh -t isoloom@10.0.0.9 sudo docker exec -it x sh",
+  vm: false,
+  pickedBox: false,
+});
 
 // One saved server, an ESXi host, set as the default.
 const defaultEsx: Record<string, Handler> = {
@@ -324,8 +336,20 @@ describe("LabDetail: a lab that is up", () => {
     expect(screen.getByText("no attack VM")).toBeTruthy();
   });
 
-  it("opens the lab's own shell for a container lab on a server", async () => {
-    const calls = installTauri(quiet);
+  it("reads a container lab's box on a server: no shell before the box runs", async () => {
+    const calls = installTauri({ ...quiet, attack_box_status: () => remoteBox(false) });
+    setAutoAttackBox(false);
+    renderDetail({ status: status({ place: "server", host: "aws-1", url: null }) });
+    await flush();
+    expect(calls.find((c) => c.cmd === "attack_box_status")?.args).toMatchObject({ runtime: "DOCKER" });
+    // The lab running says nothing of its box: no "running on" and no shell before it runs.
+    expect(screen.queryByText("running on aws-1")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open attacker shell/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Start attack box/ })).toBeTruthy();
+  });
+
+  it("opens the shell into a container lab's box on a server once the box runs", async () => {
+    const calls = installTauri({ ...quiet, attack_box_status: () => remoteBox(true) });
     const user = userEvent.setup();
     renderDetail({ status: status({ place: "server", host: "aws-1", url: null }) });
     await flush();
@@ -333,9 +357,9 @@ describe("LabDetail: a lab that is up", () => {
     await user.click(screen.getByRole("button", { name: /Open attacker shell/ }));
     await flush();
     expect(calls.find((c) => c.cmd === "terminal_window")?.args).toMatchObject({ runtime: "DOCKER" });
+    expect(commands(calls)).not.toContain("attack_box_attach");
     // No shut down or pause for a lab on a server.
     expect(screen.queryByRole("button", { name: /Shut down/ })).toBeNull();
-    expect(commands(calls)).not.toContain("attack_box_status");
   });
 
   it("offers no attacker shell on a server or cloud account until the lab is up", async () => {
