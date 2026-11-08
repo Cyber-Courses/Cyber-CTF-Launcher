@@ -9,7 +9,7 @@ use super::inflight::{Action, DeployGuard, lock_lab};
 use super::paths::{
     lab_dir, local_runtime, local_vm, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm, runner_home, vagrant_dirs,
 };
-use super::{LabRef, Park, Runtime, docker, isothrum, lab, server, vm};
+use super::{LabRef, Park, Runtime, docker, isothrum, server, vm};
 use crate::error::{Error, Result};
 
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
@@ -157,7 +157,8 @@ pub(super) async fn stop_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: R
             Runtime::Docker if local_vm(dir).is_some() => stop_docker_in_vm_run(&runner_home(dirs)?, dir, id, log).await,
             Runtime::Docker => stop_docker_run(&runner_home(dirs)?, dir, id, log).await,
             Runtime::Vm => stop_vm_run(&runner_home(dirs)?, dir, id, log).await,
-            Runtime::Cloud => stop_here(dir, id, runtime, log).await,
+            // Cloud services run on a cloud account only: nothing of them here, the marks cleared.
+            Runtime::Cloud => forget_run(dir),
         };
     };
     // On a server host or cloud account: destroyed through the runner, which replays the
@@ -216,26 +217,6 @@ async fn stop_cloud_run(dirs: &AppDirs, stop: CloudStop<'_>, log: &mut impl FnMu
     let place = isothrum::CloudPlace { label, region: c.region.clone(), tf_env: c.tf_env.clone(), ..isothrum::CloudPlace::default() };
     // In the form it was started in: a container lab started as one VM per machine is cloud-vm.
     isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, local_runtime(dir, runtime), cloud)?.down(&place, log).await
-}
-
-/// Stops a lab that runs on this machine (its containers, a local VM, or its VMs) and, once it
-/// is gone, clears what marked it as running. Takes the lab folder (no app handle), so the
-/// real-lab tests run exactly this.
-pub(super) async fn stop_here(dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
-    let runtime = local_runtime(dir, runtime);
-    let result = match runtime {
-        Runtime::Docker if local_vm(dir).is_some() => vm::stop(&lab::vagrant_dir(dir, runtime), &[], log).await,
-        Runtime::Docker => docker::stop(dir, id, log).await,
-        // The on-demand attack box is part of the run (a machine of the manifest), so it goes
-        // with the lab's VMs here.
-        Runtime::Vm => vm::stop(&lab::vagrant_dir(dir, runtime), &[], log).await,
-        // Cloud services run on a cloud account only: nothing of them here.
-        Runtime::Cloud => Ok(()),
-    };
-    if result.is_ok() {
-        forget_run(dir)?;
-    }
-    result
 }
 
 /// Stops a container lab the Isothrum runner runs (runner home `home`) and, once it is gone,
