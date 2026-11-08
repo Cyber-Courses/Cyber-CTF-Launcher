@@ -142,7 +142,7 @@ describe("settings", () => {
     vi.spyOn(Date, "now").mockReturnValue(1234);
     setLastTest("docker", "ok");
     vi.restoreAllMocks();
-    expect(getLastTest("docker")).toEqual({ result: "ok", at: 1234 });
+    expect(getLastTest("docker")).toEqual({ result: "ok", at: 1234, why: null });
     expect(getLastTest("vm")).toBeNull();
     localStorage.setItem("cyberctf.selftest.vm", "{not json");
     expect(getLastTest("vm")).toBeNull();
