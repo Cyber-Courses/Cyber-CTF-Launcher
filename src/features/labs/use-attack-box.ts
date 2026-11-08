@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { attackBoxAttach, attackBoxDetach, attackBoxStatus, type AttackStatus, type Runtime } from "@/lib/tauri";
 import { startOnce } from "@/lib/start-once";
-import { attackImageLabel, getAttackBox, getAttackImage, getAutoAttackBox } from "@/lib/settings";
+import { attackImageLabel, getAttackBoxChoice, getAttackImage, getAutoAttackBox } from "@/lib/settings";
 import { translate } from "@/lib/i18n";
 import { ignore } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
@@ -11,9 +11,10 @@ import { structurallyEqual } from "@/lib/equal";
 import { useLatest } from "@/lib/use-latest";
 import { useRunLog } from "@/features/servers/host-setup/use-run-log";
 
-/** The box image the learner chose for this lab's runtime: a Vagrant box beside a VM lab, a
- *  container image beside a container lab. The runner takes either as its attach image. */
-const boxImage = (runtime: Runtime) => (runtime === "VM" ? getAttackBox() : getAttackImage());
+/** The box image the learner chose for this lab's runtime: a Vagrant box beside a VM lab (null
+ *  until they pick one: the lab's own default box for this machine's CPU runs), a container image
+ *  beside a container lab. The runner takes either as its attach image. */
+const boxImage = (runtime: Runtime) => (runtime === "VM" ? getAttackBoxChoice() : getAttackImage());
 
 /** Attaches the attack box onto `network` (null: the only one), or joins the attach already under
  *  way: a second attach would race the first on the same run. */
@@ -124,8 +125,8 @@ export function useAttackBox(
   const { status, setStatus, refresh } = useAttackBoxStatus(labId, runtime, active, local, network);
   const { busy, log, run } = useAttackBoxRun(refresh);
   const vm = runtime === "VM";
-  // The image or box in use, for the panel's label.
-  const name = vm ? getAttackBox() : attackImageLabel(getAttackImage());
+  // The image or box in use, for the panel's label: the lab's own default box until one is picked.
+  const name = vm ? (getAttackBoxChoice() ?? translate("labs.attackBox.defaultBox")) : attackImageLabel(getAttackImage());
 
   const start = useCallback(() => run((l) => attach(labId, runtime, network, l), translate("labs.attackBox.attaching")), [run, labId, runtime, network]);
   const stop = useCallback(

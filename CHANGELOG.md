@@ -8,6 +8,17 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
+- **A VM lab on this machine gets an attack VM, on QEMU too.** "Start attack box" on a lab
+  running as VMs on a local hypervisor now adds an attack VM to the running lab through the
+  Isothrum runner, as GNS3 adds a node to a live topology (the runner writes its definition into
+  the run's state and boots it alone, through the hook every Vagrantfile Isoloom 1.0.9 writes;
+  a spec's own `access` machine is used when it declares one): the panel shows its address on
+  the lab network, "Open shell" is `vagrant ssh` into it, Stop destroys it alone with the lab left
+  up. Until a box is picked in Settings, the lab's default box for this machine's CPU runs (Kali
+  on x86, the Debian cloud image on an Apple Silicon Mac, where Kali's box has no build and
+  emulated it is far too slow). On QEMU the lab's controller is no longer offered as the attacker
+  in its place.
+
 - **A container lab running in a VM on this machine gets a working attack box.** "Start attack
   box" on a lab in its helper VM (Isoloom's docker-vm, UTM included) now stands the box up as a
   container inside that VM, on the lab's network there, through the Isothrum runner (which

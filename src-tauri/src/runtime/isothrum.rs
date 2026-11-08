@@ -127,6 +127,10 @@ impl LabRun {
     }
 
     /// VM lab `id`, installed in `dir`, on the runner whose home is `home`, with this host's tools.
+    /// Its attack box is a VM beside the lab's on the same hypervisor, QEMU included: the spec's own
+    /// access machine when it declares one, else a node the runner adds to the running environment
+    /// as GNS3 adds one to a live topology, through the hook every Isoloom Vagrantfile carries (see
+    /// [`LabRun::attach`]).
     pub(crate) fn vm(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
         LabRun::with(host_config(home), dir, id, Kind::Vm)
     }
@@ -208,7 +212,7 @@ impl LabRun {
             let (sink, lines) = progress::channel();
             match progress::follow(&mut *log, lines, lab.down(&opts, &sink)).await {
                 Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-                r => return r.map(|_| ()).map_err(errors::from_runner),
+                r => return r.map_err(errors::from_runner),
             }
         }
     }
@@ -229,7 +233,7 @@ impl LabRun {
             let (sink, lines) = progress::channel();
             match progress::follow(&mut *log, lines, lab.park(mode, &sink)).await {
                 Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-                r => return r.map(|_| ()).map_err(errors::from_runner),
+                r => return r.map_err(errors::from_runner),
             }
         }
     }
@@ -279,7 +283,7 @@ impl LabRun {
             let (sink, lines) = progress::channel();
             match progress::follow(&mut *log, lines, lab.provision(machine, &opts, &sink)).await {
                 Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-                r => return r.map(|_| ()).map_err(errors::from_runner),
+                r => return r.map_err(errors::from_runner),
             }
         }
     }
@@ -318,7 +322,7 @@ impl LabRun {
             let (sink, lines) = progress::channel();
             match progress::follow(&mut *log, lines, lab.detach(None, &sink)).await {
                 Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-                r => return r.map(|_| ()).map_err(errors::from_runner),
+                r => return r.map_err(errors::from_runner),
             }
         }
     }

@@ -217,9 +217,9 @@
   },
   "attackBox": {
     "network": "Network",
-    "attacker": "Attacker",
     "attackVm": "Attack VM",
     "attackBox": "Attack box",
+    "defaultBox": "this machine's default box",
     "status": "Status",
     "runningOn": "running on {host}",
     "running": "running",
@@ -228,7 +228,6 @@
     "startsWithLab": "starts with the lab",
     "address": "Address",
     "remoteHint": "Your machine on the lab network. Open its shell to attack the targets; it connects over SSH.",
-    "controllerHint": "On QEMU the lab network links only the lab's two VMs, so its controller (Debian, on the lab network, with the internet) is your attacker. Open its shell and install your tools with apt.",
     "vmHint": "Your own VM beside the lab, on every lab network, with the internet to install tools. Open its shell to attack the targets; it connects over SSH.",
     "containerHint": "Your machine on the lab network. Open its shell to attack the targets from inside the lab.",
     "openShell": "Open attacker shell",

@@ -82,7 +82,7 @@
   },
   "attackVm": {
     "title": "VM de ataque para labs de VM",
-    "description": "Las redes de un lab de VM viven dentro del hipervisor, así que tu atacante es una VM junto a él: este box de Vagrant, conectado a cada red del lab, con internet para instalar herramientas. El primer inicio descarga el box.",
+    "description": "Las redes de un lab de VM viven dentro del hipervisor, así que tu atacante es una VM junto a él: este box de Vagrant, conectado a cada red del lab, con internet para instalar herramientas. El primer inicio descarga el box. Hasta que elijas uno, el lab arranca su box por defecto para la CPU de esta máquina: Kali en x86, la imagen cloud de Debian en Arm (el box de Kali no tiene versión Arm).",
     "label": "Box de la VM de ataque",
     "presets": {
       "kali": "Box oficial de Kali; tiene internet, añade herramientas sobre la marcha",

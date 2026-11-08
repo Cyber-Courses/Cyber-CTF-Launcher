@@ -252,11 +252,12 @@ pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime, net
 }
 
 /// The learner's pick for an attach: which lab network to join (none: the only one), with which
-/// box image. One argument so the command stays within Tauri's argument count.
+/// box image (none: the lab's own default; a VM lab's Vagrantfile picks its box for this
+/// machine's CPU). One argument so the command stays within Tauri's argument count.
 #[derive(serde::Deserialize)]
 pub struct AttachPick {
     network: Option<String>,
-    image: String,
+    image: Option<String>,
 }
 
 /// Hot-adds the attack box into the running lab, on the only network or the one the learner
@@ -267,16 +268,13 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
         let AttachPick { network, image } = pick;
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
-        check_image(&image)?;
+        if let Some(image) = &image {
+            check_image(image)?;
+        }
         let run = with_attack_box(&dirs, &dir, &id, runtime)?;
         // Boxed: the runner's attach future is large, and tracking it adds to it.
-        Box::pin(crate::machine::storage::owned::tracked(
-            &app,
-            std::slice::from_ref(&image),
-            &[],
-            run.attach(network.as_deref(), Some(&image), &mut channel_log(logs)),
-        ))
-        .await
+        Box::pin(crate::machine::storage::owned::tracked(&app, image.as_slice(), &[], run.attach(network.as_deref(), image.as_deref(), &mut channel_log(logs))))
+            .await
     })
     .await
 }
@@ -367,9 +365,15 @@ mod tests {
         assert!(lab_attack_shell(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(attack_box_status(app(), "gone".into(), Runtime::Docker, None).await.is_err());
         assert!(
-            attack_box_attach(app(), "gone".into(), Runtime::Docker, AttachPick { network: None, image: "kalilinux/kali-rolling".into() }, channel(s.clone()))
-                .await
-                .is_err()
+            attack_box_attach(
+                app(),
+                "gone".into(),
+                Runtime::Docker,
+                AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()) },
+                channel(s.clone())
+            )
+            .await
+            .is_err()
         );
         assert!(attack_box_detach(app(), "gone".into(), Runtime::Docker, channel(s.clone())).await.is_err());
         // Installed, but a machine name or image that could reach a command line is refused.
@@ -377,7 +381,7 @@ mod tests {
         let err = lab_provision(app(), "ad".into(), Runtime::Vm, Some("a;rm".into()), channel(s.clone())).await.unwrap_err().to_string();
         assert_eq!(err, "invalid machine name `a;rm`");
         assert_eq!(
-            attack_box_attach(app(), "ad".into(), Runtime::Vm, AttachPick { network: None, image: "-x/y z".into() }, channel(s.clone()))
+            attack_box_attach(app(), "ad".into(), Runtime::Vm, AttachPick { network: None, image: Some("-x/y z".into()) }, channel(s.clone()))
                 .await
                 .unwrap_err()
                 .to_string(),
@@ -406,7 +410,7 @@ mod tests {
                 t.handle().clone(),
                 "srv".into(),
                 Runtime::Docker,
-                AttachPick { network: None, image: "kalilinux/kali-rolling".into() },
+                AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()) },
                 channel(s.clone())
             )
             .await
@@ -447,17 +451,22 @@ mod tests {
                 t.handle().clone(),
                 "a b".into(),
                 Runtime::Docker,
-                AttachPick { network: None, image: "kalilinux/kali-rolling".into() },
+                AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()) },
                 channel(sink.clone())
             )
             .await
             .is_err()
         );
-        let bad_image =
-            attack_box_attach(t.handle().clone(), "web".into(), Runtime::Docker, AttachPick { network: None, image: "x;y".into() }, channel(sink.clone()))
-                .await
-                .unwrap_err()
-                .to_string();
+        let bad_image = attack_box_attach(
+            t.handle().clone(),
+            "web".into(),
+            Runtime::Docker,
+            AttachPick { network: None, image: Some("x;y".into()) },
+            channel(sink.clone()),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
         assert_eq!(bad_image, "invalid attack-box image `x;y`");
         assert!(sink.lock().unwrap().is_empty(), "nothing ran");
     }

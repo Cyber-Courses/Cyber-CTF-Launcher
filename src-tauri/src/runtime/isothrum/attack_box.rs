@@ -1,8 +1,10 @@
-//! The learner's attack box as the runner sees it: the lab's on-demand access machine. The
-//! launcher never runs it — it asks the runner to hot-add it onto a chosen lab network (with the
-//! box image the learner picked), to take it out again, to report it, and to build the shell
-//! command into it. Status, networks and the shell come from the run, so the lab page treats the
-//! box like any other machine.
+//! The learner's attack box as the runner sees it: the lab's on-demand access machine, or the
+//! box the runner stands up itself (a container beside a container lab's, a VM added to a VM
+//! lab's running environment, `isoloom-access` either way). The launcher never runs it — it asks
+//! the runner to hot-add it onto a chosen lab network (with the box image the learner picked, else
+//! the lab's default), to take it out again, to report it, and to build the shell command into
+//! it. Status, networks and the shell come from the run, so the lab page treats the box like any
+//! other machine.
 
 use isoloom_manifest::Role;
 use isothrum_runner::{MachineState, MachineStatus, ShellCommand, Status};
@@ -62,6 +64,33 @@ pub(super) fn status_of(status: &Status, network: Option<&str>, shell_cmd: Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A VM lab's status as the runner reports it: its web VM, and the attack VM the runner added
+    /// in `state` at its address on the lab network (absent: none added yet).
+    fn vm_lab(state: &str) -> Status {
+        serde_json::from_value(serde_json::json!({
+            "state": "ready",
+            "provider": "qemu",
+            "machines": [
+                { "name": "web", "role": "target", "state": "running", "addresses": { "lab": "10.61.0.10" }, "published": [] },
+                { "name": "isoloom-access", "role": "access", "state": state, "addresses": { "lab": "10.61.0.252" }, "published": [] }
+            ],
+            "networks": [{ "name": "lab", "cidr": "10.61.0.0/24", "internet": false, "native": "isoloom-t-lab" }],
+            "outputs": [],
+            "message": null
+        }))
+        .expect("a run status")
+    }
+
+    #[test]
+    fn a_vm_labs_attack_vm_is_the_runs_access_machine_down_until_hot_added() {
+        let shell = "VAGRANT_DOTFILE_PATH=/runs/t/vagrant vagrant ssh isoloom-access".to_owned();
+        let down = status_of(&vm_lab("absent"), None, shell.clone());
+        assert_eq!((down.running, down.ip.as_str(), down.networks.as_slice()), (false, "", ["lab".to_owned()].as_slice()));
+        assert_eq!(down.shell_cmd, shell, "the shell command is known before the box is up");
+        let up = status_of(&vm_lab("running"), None, shell);
+        assert_eq!((up.running, up.ip.as_str(), up.lab_network.as_str()), (true, "10.61.0.252", "lab"));
+    }
 
     #[test]
     fn the_shell_line_is_pasteable_with_the_variables_it_needs() {

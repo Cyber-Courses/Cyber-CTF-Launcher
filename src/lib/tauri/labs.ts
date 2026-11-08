@@ -86,7 +86,7 @@ export const labCheck = (id: string, runtime: Runtime) => invoke<LabCheck>("lab_
 export const attackBoxStatus = (id: string, runtime: Runtime, network: string | null) => invoke<AttackStatus>("attack_box_status", { id, runtime, network });
 
 /** Hot-adds the attack box into the running lab, on `network` (null: the only one), with `image`. */
-export const attackBoxAttach = (id: string, runtime: Runtime, network: string | null, image: string, onLog: (line: string) => void) =>
+export const attackBoxAttach = (id: string, runtime: Runtime, network: string | null, image: string | null, onLog: (line: string) => void) =>
   invokeStreaming("attack_box_attach", { id, runtime, pick: { network, image } }, onLog);
 
 /** Takes the attack box back out of the running lab. */
