@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PROXMOX_NODE } from "@/lib/dev-mock/proxmox-sample";
 import type { ServerHostInput, ServerTest, SystemReport } from "@/lib/tauri";
 import { EMPTY_CLOUD, EMPTY_HOST } from "@/features/servers/host-setup/constants";
 import {
@@ -99,20 +100,7 @@ describe("Proxmox sign-in", () => {
 });
 
 describe("Proxmox placement and a made token", () => {
-  const node = {
-    name: "pve",
-    diskStorages: ["local", "local-lvm"],
-    imageStorages: ["local"],
-    snippetStorages: ["local"],
-    bridges: [
-      { name: "vmbr0", cidr: "192.168.150.10/24" },
-      { name: "vmbr1", cidr: "10.0.0.50/24" },
-    ],
-    defaultDisk: "local-lvm",
-    defaultImage: "local",
-    defaultSnippet: "local",
-    defaultBridge: "vmbr1",
-  };
+  const node = PROXMOX_NODE;
   const placement = { nodes: [node, { ...node, name: "pve2", diskStorages: ["ssd"], defaultDisk: "ssd" }] };
 
   it("fills an empty placement with the node's defaults, keeps a valid choice, replaces an unknown one", () => {

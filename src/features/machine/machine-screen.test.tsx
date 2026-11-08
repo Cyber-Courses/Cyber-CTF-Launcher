@@ -225,16 +225,19 @@ describe("SelfTest", () => {
 
 /* ------------------------------------------------------------------ provider rows */
 
+/** What every provider row takes besides the report: now, free memory, no test open, spies. */
+const rowCallbacks = () => ({
+  now: Date.now(),
+  memFree: 16 * GB,
+  testing: null as string | null,
+  onToggleTest: vi.fn(),
+  onTestDone: vi.fn(),
+  onFix: vi.fn(),
+  onRefresh: vi.fn(),
+});
+
 describe("EngineRows", () => {
-  const base = {
-    now: Date.now(),
-    memFree: 16 * GB,
-    testing: null as string | null,
-    onToggleTest: vi.fn(),
-    onTestDone: vi.fn(),
-    onFix: vi.fn(),
-    onRefresh: vi.fn(),
-  };
+  const base = rowCallbacks();
   type Engine = SystemReport["dockerEngines"][number];
   const found = (engine: Engine["engine"], over: Partial<Engine> = {}): Engine => ({ engine, context: engine, running: true, current: false, ...over });
 
@@ -372,16 +375,7 @@ describe("EngineRows", () => {
 });
 
 describe("HypervisorRows", () => {
-  const base = {
-    now: Date.now(),
-    memFree: 16 * GB,
-    testing: null as string | null,
-    onToggleTest: vi.fn(),
-    onTestDone: vi.fn(),
-    onFix: vi.fn(),
-    onRefresh: vi.fn(),
-    onUseServer: vi.fn(),
-  };
+  const base = { ...rowCallbacks(), onUseServer: vi.fn() };
   const rows = (report: SystemReport, last: LastTest | null = null, over: Partial<typeof base> = {}) => (
     <HypervisorRows {...base} {...over} report={report} last={last} vm={vmSetup(report, null, last)} />
   );

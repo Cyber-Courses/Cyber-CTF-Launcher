@@ -5,7 +5,7 @@ import { Panel } from "@/components/ui/panel";
 import { Meter } from "@/components/ui/meter";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SelfTest, type SelfTestTarget } from "@/features/machine/self-test";
+import { SelfTest, type SelfTestResult, type SelfTestTarget } from "@/features/machine/self-test";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 import { StatusDot, type Tone } from "@/components/ui/status-pill";
@@ -177,7 +177,6 @@ export function ProviderRow({
   /** Which engine or hypervisor the inline test is of (this row's), and how its result is kept. */
   target?: SelfTestTarget;
 }) {
-  const t = useT();
   return (
     <div className="border-t border-border first:border-t-0">
       <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 px-4 py-3">
@@ -195,11 +194,8 @@ export function ProviderRow({
       </div>
       {testing && (
         <div className="px-4 pb-4">
-          <SelfTest
+          <MachineSelfTest
             kind={kind}
-            title={kind === "docker" ? t("machine.selfTest.containerTitle") : t("machine.selfTest.vmTitle")}
-            description={kind === "docker" ? t("machine.selfTest.machineDockerDescription") : t("machine.selfTest.machineVmDescription")}
-            auto
             target={target}
             onResult={(r) => {
               if (r === "ok" || r === "fail") onTestDone();
@@ -208,5 +204,20 @@ export function ProviderRow({
         </div>
       )}
     </div>
+  );
+}
+
+/** A lab type's self-test on this machine, run at once on `target`. */
+export function MachineSelfTest({ kind, target, onResult }: { kind: LabKind; target?: SelfTestTarget; onResult: (r: SelfTestResult) => void }) {
+  const t = useT();
+  return (
+    <SelfTest
+      kind={kind}
+      title={kind === "docker" ? t("machine.selfTest.containerTitle") : t("machine.selfTest.vmTitle")}
+      description={kind === "docker" ? t("machine.selfTest.machineDockerDescription") : t("machine.selfTest.machineVmDescription")}
+      auto
+      target={target}
+      onResult={onResult}
+    />
   );
 }

@@ -11,11 +11,12 @@
 //! The runner keeps the Terraform state, the run's slot on the server, and the applied params a
 //! destroy replays.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
-use isothrum_runner::{RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, SystemProcesses};
+use isothrum_runner::{RunName, RunOptions, RunnerConfig, SecretValue, Secrets, SystemProcesses};
 
+use super::opened::OpenedRun;
 use super::{errors, progress, view};
 use crate::error::Result;
 use crate::runtime::docker::Check;
@@ -42,9 +43,15 @@ pub(crate) struct ServerPlace {
 
 /// One VM lab on a Proxmox server, run by the runner.
 pub(crate) struct ServerRun {
-    runner: Runner,
-    manifest: PathBuf,
-    name: RunName,
+    run: OpenedRun,
+}
+
+/// The run's attack box and its opening are [`OpenedRun`]'s, shared with the other remote place.
+impl std::ops::Deref for ServerRun {
+    type Target = OpenedRun;
+    fn deref(&self) -> &OpenedRun {
+        &self.run
+    }
 }
 
 impl ServerRun {
@@ -56,12 +63,7 @@ impl ServerRun {
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
         // VM labs use the per-machine Proxmox module; container labs use docker-vm on one VM there.
         let manifest = lab::terraform(dir, runtime, "proxmox").0.join("run.json");
-        Ok(ServerRun { runner: Runner::new(config).map_err(errors::from_runner)?, manifest, name })
-    }
-
-    /// The lab's manifest, opened under the run's name.
-    fn lab(&self) -> Result<Running<'_>> {
-        self.runner.open(&self.manifest, Some(self.name.clone())).map_err(errors::from_runner)
+        Ok(ServerRun { run: OpenedRun::new(config, manifest, name)? })
     }
 
     /// The runner's SSH public key (the launcher's own), made when there is none: what the node
@@ -73,13 +75,13 @@ impl ServerRun {
     /// Brings the lab up on `place` from its generated files, and says where to start. `env` is
     /// the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &ServerPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-        super::up_with(&self.lab()?, &options(place, env), log).await
+        super::up_with(&self.running()?, &options(place, env), log).await
     }
 
     /// Removes everything the run created on the server, with the params it was applied with
     /// (the connection is `place`'s, the one that works now).
     pub(crate) async fn down(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
-        let lab = self.lab()?;
+        let lab = self.running()?;
         let (sink, lines) = progress::channel();
         progress::follow(log, lines, lab.down(&options(place, &[]), &sink)).await.map_err(errors::from_runner)
     }
@@ -89,7 +91,7 @@ impl ServerRun {
         if !self.manifest.is_file() {
             return Ok(LabStatus { place: Some(Place::Server), ..LabStatus::default() });
         }
-        let lab = self.lab()?;
+        let lab = self.running()?;
         let status = lab.status().await.map_err(errors::from_runner)?;
         let shown = view::lab_status(lab.manifest(), &status, None);
         Ok(LabStatus { place: Some(Place::Server), host: Some(place.name.clone()), provider: Some("proxmox".into()), ..shown })
@@ -97,33 +99,7 @@ impl ServerRun {
 
     /// Runs the lab's checks over SSH; not available when it declares none.
     pub(crate) async fn check(&self) -> Result<Check> {
-        super::checks_of(&self.lab()?, &RunOptions::new()).await
-    }
-
-    /// Hot-adds the learner's attack box into the running lab: a container in the VM the server
-    /// runs its containers in, on `network` (the only one otherwise), from `image`. A VM lab
-    /// there has no VM to put it in: the runner refuses.
-    pub(crate) async fn attach(&self, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-        super::attach_into(&self.lab()?, network, image, log).await
-    }
-
-    /// Takes the attack box back out of the running lab, leaving the rest of it up.
-    pub(crate) async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        super::detach_from(&self.lab()?, log).await
-    }
-
-    /// The attack box as the lab page shows it (nothing before the lab's files exist).
-    pub(crate) async fn attack_status(&self, network: Option<&str>) -> Result<super::AttackStatus> {
-        if !self.manifest.is_file() {
-            return Ok(super::AttackStatus::default());
-        }
-        super::attack_status_in(&self.lab()?, network, false).await
-    }
-
-    /// The command that opens a shell into the attack box: `ssh -t` to the lab's VM, then into
-    /// the box, as the runner builds it.
-    pub(crate) fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
-        self.lab()?.shell_command(None).map_err(errors::from_runner)
+        super::checks_of(&self.running()?, &RunOptions::new()).await
     }
 }
 

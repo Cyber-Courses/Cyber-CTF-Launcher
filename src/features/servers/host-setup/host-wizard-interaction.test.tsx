@@ -30,6 +30,14 @@ const editingServer = (patch: Partial<ServerHostInput> = {}): ServerHostInput =>
   ...patch,
 });
 
+/** Opens the saved server's setup and walks to its last step, then saves and tests it. */
+async function saveAndTestEdited(user: User) {
+  await renderSetup(editingServer());
+  await go(user, /^continue$/i);
+  await go(user, /^continue$/i);
+  await go(user, /save and test/i);
+}
+
 /** A new Proxmox host, past the hypervisor and tools steps (Terraform is installed), on the
  *  Server step. */
 async function newProxmoxAtServer(user: User) {
@@ -134,10 +142,7 @@ describe("server setup: validation and saving", () => {
       },
     });
     const user = userEvent.setup();
-    await renderSetup(editingServer());
-    await go(user, /^continue$/i);
-    await go(user, /^continue$/i);
-    await go(user, /save and test/i);
+    await saveAndTestEdited(user);
     expect(screen.getByText("enter the host's password")).toBeTruthy();
     expect(heading()).not.toBe("Connection test");
     fail = false;
@@ -157,10 +162,7 @@ describe("server setup: validation and saving", () => {
       },
     });
     const user = userEvent.setup();
-    await renderSetup(editingServer());
-    await go(user, /^continue$/i);
-    await go(user, /^continue$/i);
-    await go(user, /save and test/i);
+    await saveAndTestEdited(user);
     expect(screen.getByText("no route to host")).toBeTruthy();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/not connected/i);
     await user.click(button(/test again/i));

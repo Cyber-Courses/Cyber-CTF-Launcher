@@ -19,6 +19,7 @@ mod attack_box;
 mod cloud;
 mod errors;
 mod import;
+mod opened;
 mod progress;
 mod server;
 mod view;

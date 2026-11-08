@@ -32,7 +32,7 @@ export type RowProps = {
 export const testKey = (kind: LabKind, provider: string) => `${kind}:${provider}`;
 
 /** Opens or hides a lab type's self-test inline. */
-export function TestButton({ testing, onClick }: { testing: boolean; onClick: () => void }) {
+function TestButton({ testing, onClick }: { testing: boolean; onClick: () => void }) {
   const t = useT();
   return (
     <Button variant="outline" size="xs" onClick={onClick}>
@@ -40,6 +40,21 @@ export function TestButton({ testing, onClick }: { testing: boolean; onClick: ()
     </Button>
   );
 }
+
+/** A row's own Test button: opens or hides its inline test. */
+export function RowTestButton({ row, id }: { row: RowProps; id: string }) {
+  return (
+    <TestButton
+      testing={row.testing === id}
+      onClick={() => {
+        row.onToggleTest(id);
+      }}
+    />
+  );
+}
+
+/** What a provider row takes for its inline test: open or not, and who hears it end. */
+export const rowTest = (row: RowProps, id: string) => ({ testing: row.testing === id, onTestDone: row.onTestDone });
 
 /** Opens the setup window at `step`. */
 export function FixButton({ step, onFix }: { step: string; onFix: (step: string) => void }) {

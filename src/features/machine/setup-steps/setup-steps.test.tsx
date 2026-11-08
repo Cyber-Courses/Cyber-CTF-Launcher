@@ -10,7 +10,7 @@ import type { SystemReport, WslState } from "@/lib/tauri";
 import { freshReport, hypervisorStatus as hv, readyReport } from "@/test/fixtures";
 import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
-import { radioWith } from "@/features/machine/machine-test-kit";
+import { installDockerDesktop, radioWith } from "@/features/machine/machine-test-kit";
 
 const text = () => document.body.textContent;
 
@@ -348,9 +348,7 @@ describe("engine step", () => {
   it("installs the recommended engine, then asks to finish in its installer", async () => {
     const { calls, onRefresh, user } = freshMacEngineStep();
     expect(text()).toContain("Cyber CTF can install Docker Desktop for you.");
-    await user.click(button(/install docker desktop/i));
-    await flush();
-    expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "docker" });
+    await installDockerDesktop(user, calls);
     expect(text()).toContain("Finish in Docker’s installer");
     await user.click(button(/re-check/i));
     expect(onRefresh).toHaveBeenCalledTimes(2);

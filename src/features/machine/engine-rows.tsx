@@ -6,7 +6,17 @@ import { EngineMark, engineName } from "@/features/machine/setup-steps";
 import { ENGINES, enginesFor } from "@/features/machine/setup-steps/engines";
 import { ProviderRow } from "@/features/machine/machine-parts";
 import { dockerState, type DockerState } from "@/features/machine/machine-status";
-import { FixButton, TESTED_TONE, TestButton, TestLine, UseDefaultButton, testKey, useFreeHint, type RowProps } from "@/features/machine/lab-row-parts";
+import {
+  FixButton,
+  TESTED_TONE,
+  RowTestButton,
+  TestLine,
+  UseDefaultButton,
+  testKey,
+  useFreeHint,
+  rowTest,
+  type RowProps,
+} from "@/features/machine/lab-row-parts";
 import { getLastTest } from "@/lib/settings";
 import { dockerUseEngine, type DockerEngine, type EngineStatus, type SystemReport } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
@@ -68,20 +78,8 @@ function CurrentEngineRow({ engine, state, ...row }: RowProps & { engine: Engine
       status={t(`machine.screen.status.${STATUS[state]}`)}
       detail={ready ? <TestLine test={last} now={now} /> : notRunningDetail(t, report, state)}
       hint={ready ? freeHint : undefined}
-      actions={
-        ready ? (
-          <TestButton
-            testing={row.testing === key}
-            onClick={() => {
-              row.onToggleTest(key);
-            }}
-          />
-        ) : (
-          state !== "denied" && <FixButton step="docker" onFix={row.onFix} />
-        )
-      }
-      testing={row.testing === key}
-      onTestDone={row.onTestDone}
+      actions={ready ? <RowTestButton row={row} id={key} /> : state !== "denied" && <FixButton step="docker" onFix={row.onFix} />}
+      {...rowTest(row, key)}
       target={{ provider: engine.engine, context: engine.context, primary: true }}
     />
   );
@@ -129,16 +127,10 @@ function OtherEngineRow({ engine, ...row }: RowProps & { engine: EngineStatus })
       actions={
         <>
           <UseDefaultButton onClick={useByDefault} />
-          <TestButton
-            testing={row.testing === key}
-            onClick={() => {
-              row.onToggleTest(key);
-            }}
-          />
+          <RowTestButton row={row} id={key} />
         </>
       }
-      testing={row.testing === key}
-      onTestDone={row.onTestDone}
+      {...rowTest(row, key)}
       target={{ provider: engine.engine, context: engine.context, primary: false }}
     />
   );

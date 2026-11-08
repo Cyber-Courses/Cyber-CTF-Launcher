@@ -13,6 +13,7 @@ import { terminalHandlers } from "@/lib/dev-mock/terminal";
 import type { Args } from "@/lib/dev-mock/types";
 import type { DeviceCode } from "@/lib/tauri";
 import type { CommandError } from "@/lib/tauri/generated";
+import { PROXMOX_PLACEMENT } from "@/lib/dev-mock/proxmox-sample";
 
 /** Ends the sign-in waiting, if one is (as the core's `auth_login_cancel`, or a sign-in with a
  *  code starting over a browser one): it rejects as cancelled. */
@@ -87,24 +88,7 @@ const serverHandlers: Record<string, BrowserHandler> = {
     return saved;
   },
   // A Proxmox server's placement, as a one-node home server lists it.
-  server_proxmox_placement: () => ({
-    nodes: [
-      {
-        name: "pve",
-        diskStorages: ["local", "local-lvm"],
-        imageStorages: ["local"],
-        snippetStorages: ["local"],
-        bridges: [
-          { name: "vmbr0", cidr: "192.168.150.10/24" },
-          { name: "vmbr1", cidr: "10.0.0.50/24" },
-        ],
-        defaultDisk: "local-lvm",
-        defaultImage: "local",
-        defaultSnippet: "local",
-        defaultBridge: "vmbr1",
-      },
-    ],
-  }),
+  server_proxmox_placement: () => PROXMOX_PLACEMENT,
   // The preview's node "makes" the launcher's token: saved as a token setup that keeps its key.
   server_save_ssh_key: (args, { sc }) => {
     const input = (args?.input ?? {}) as Host;

@@ -9,12 +9,13 @@
 //! run's record and the expiry a destroy replays; it reads the module's `ssh_user` output and
 //! waits on the project delivery, so a cloud lab now actually comes up, is sealed and checked.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use isothrum_runner::{RunName, RunOptions, Runner, RunnerConfig, SecretValue, Secrets, SystemProcesses};
 
+use super::opened::OpenedRun;
 use super::{errors, progress, view};
 use crate::error::{Error, Result};
 use crate::runtime::docker::Check;
@@ -85,9 +86,15 @@ impl CloudPlace {
 
 /// One cloud VM lab, run by the runner.
 pub(crate) struct CloudRun {
-    runner: Runner,
-    manifest: PathBuf,
-    name: RunName,
+    run: OpenedRun,
+}
+
+/// The run's attack box and its opening are [`OpenedRun`]'s, shared with the other remote place.
+impl std::ops::Deref for CloudRun {
+    type Target = OpenedRun;
+    fn deref(&self) -> &OpenedRun {
+        &self.run
+    }
 }
 
 impl CloudRun {
@@ -98,12 +105,7 @@ impl CloudRun {
         let config = RunnerConfig::new(home).with_processes(Arc::new(processes));
         let manifest = lab::terraform(dir, runtime, cloud).0.join("run.json");
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
-        Ok(CloudRun { runner: Runner::new(config).map_err(errors::from_runner)?, manifest, name })
-    }
-
-    /// The lab's manifest, opened under the run's name.
-    fn running(&self) -> Result<isothrum_runner::Running<'_>> {
-        self.runner.open(&self.manifest, Some(self.name.clone())).map_err(errors::from_runner)
+        Ok(CloudRun { run: OpenedRun::new(config, manifest, name)? })
     }
 
     /// Brings the lab up in the account `place` from its generated module, and says where to
@@ -145,32 +147,6 @@ impl CloudRun {
             return Ok(view::no_checks());
         }
         super::checks_of(&self.running()?, &place.options(&[])).await
-    }
-
-    /// Hot-adds the learner's attack box into the running lab: a container in the VM the account
-    /// runs its containers in, on `network` (the only one otherwise), from `image`. A VM lab
-    /// there has no VM to put it in: the runner refuses.
-    pub(crate) async fn attach(&self, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-        super::attach_into(&self.running()?, network, image, log).await
-    }
-
-    /// Takes the attack box back out of the running lab, leaving the rest of it up.
-    pub(crate) async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        super::detach_from(&self.running()?, log).await
-    }
-
-    /// The attack box as the lab page shows it (nothing before the lab's files exist).
-    pub(crate) async fn attack_status(&self, network: Option<&str>) -> Result<super::AttackStatus> {
-        if !self.manifest.is_file() {
-            return Ok(super::AttackStatus::default());
-        }
-        super::attack_status_in(&self.running()?, network, false).await
-    }
-
-    /// The command that opens a shell into the attack box: `ssh -t` to the lab's VM, then into
-    /// the box, as the runner builds it.
-    pub(crate) fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
-        self.running()?.shell_command(None).map_err(errors::from_runner)
     }
 }
 
@@ -261,7 +237,7 @@ mod tests {
     }
 
     /// A fresh runner home with each `(lab, host)` as an expired cloud run (`cyberctf-<lab>`).
-    fn home_with(records: &[(&str, &str)]) -> PathBuf {
+    fn home_with(records: &[(&str, &str)]) -> std::path::PathBuf {
         let home = std::env::temp_dir().join(format!("cyberctf-reap-{}", rand::random::<u32>()));
         for (lab, host) in records {
             expired_record(&home, lab, host);

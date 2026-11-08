@@ -15,16 +15,8 @@ pub async fn authorize_launcher_key(h: &HostProfile, password: &str, identity: &
     // Next to the launcher's key (the player's own app data), not the shared system temp dir:
     // on Linux /tmp is common to every account, and a file another user left there under this
     // name can't be rewritten (or could be swapped for something else).
-    let askpass = write_askpass(identity)?;
-    let env = vec![
-        ("SSH_ASKPASS".to_string(), askpass.display().to_string()),
-        ("SSH_ASKPASS_REQUIRE".to_string(), "force".to_string()),
-        ("DISPLAY".to_string(), ":0".to_string()),
-        ("CYBERCTF_SSH_PASSWORD".to_string(), password.to_string()),
-    ];
-    let args = authorize_args(h, identity, public);
-    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    crate::platform::exec::run_env_timed("ssh", &refs, None, &env, AUTHORIZE_TIMEOUT).await.map(|_| ())
+    let env = password_env(identity, password)?;
+    ssh_with(&authorize_args(h, identity, public), &env, AUTHORIZE_TIMEOUT).await.map(|_| ())
 }
 
 /// The most letting the key in may take: a node that stops answering must not hang the launch.
@@ -40,6 +32,24 @@ pub(super) fn askpass_script(windows: bool) -> (&'static str, &'static str) {
     } else {
         ("askpass.sh", "#!/bin/sh\nprintf '%s\\n' \"$CYBERCTF_SSH_PASSWORD\"\n")
     }
+}
+
+/// SSH's environment for a password login: its askpass hook (a script next to the launcher's key
+/// `identity`) answering once with `password`.
+fn password_env(identity: &std::path::Path, password: &str) -> crate::error::Result<Vec<(String, String)>> {
+    let askpass = write_askpass(identity)?;
+    Ok(vec![
+        ("SSH_ASKPASS".to_string(), askpass.display().to_string()),
+        ("SSH_ASKPASS_REQUIRE".to_string(), "force".to_string()),
+        ("DISPLAY".to_string(), ":0".to_string()),
+        ("CYBERCTF_SSH_PASSWORD".to_string(), password.to_string()),
+    ])
+}
+
+/// `ssh` with `args` and `env`, for at most `timeout`: its output.
+async fn ssh_with(args: &[String], env: &[(String, String)], timeout: std::time::Duration) -> crate::error::Result<String> {
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    crate::platform::exec::run_env_timed("ssh", &refs, None, env, timeout).await
 }
 
 /// The askpass helper next to the launcher's key (see [`askpass_script`]), this user's only.
@@ -99,19 +109,11 @@ pub(super) async fn sdn_problem(h: &HostProfile, password: &str) -> Option<Strin
     let checked = if token {
         ssh::Target::direct(&h.host, ssh_user(&h.username), identity.clone()).exec_timed(&known_hosts, SDN_SOURCE_CHECK, timeout).await
     } else {
-        let askpass = match write_askpass(&identity) {
-            Ok(a) => a,
+        let env = match password_env(&identity, password) {
+            Ok(env) => env,
             Err(e) => return Some(format!("Couldn't check the node's network configuration over SSH ({e}).")),
         };
-        let env = vec![
-            ("SSH_ASKPASS".to_string(), askpass.display().to_string()),
-            ("SSH_ASKPASS_REQUIRE".to_string(), "force".to_string()),
-            ("DISPLAY".to_string(), ":0".to_string()),
-            ("CYBERCTF_SSH_PASSWORD".to_string(), password.to_string()),
-        ];
-        let args = password_ssh_args(h, &identity, SDN_SOURCE_CHECK);
-        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        crate::platform::exec::run_env_timed("ssh", &refs, None, &env, timeout).await
+        ssh_with(&password_ssh_args(h, &identity, SDN_SOURCE_CHECK), &env, timeout).await
     };
     sdn_outcome(checked, (!token).then(|| node_login(h)))
 }

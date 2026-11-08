@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChoiceAction } from "@/components/ui/choice-card";
-import { SelfTest, type SelfTestResult, type SelfTestTarget } from "@/features/machine/self-test";
+import { MachineSelfTest } from "@/features/machine/machine-parts";
+import type { SelfTestResult, SelfTestTarget } from "@/features/machine/self-test";
 import { useT } from "@/lib/i18n";
 
 /** A provider the picker installed (or found): `note`, its own test (inline, on `target`), and
@@ -52,16 +53,7 @@ export function ProviderReady({
           )}
         </span>
       </ChoiceAction>
-      {testing && (
-        <SelfTest
-          kind={kind}
-          title={kind === "docker" ? t("machine.selfTest.containerTitle") : t("machine.selfTest.vmTitle")}
-          description={kind === "docker" ? t("machine.selfTest.machineDockerDescription") : t("machine.selfTest.machineVmDescription")}
-          auto
-          target={target}
-          onResult={setResult}
-        />
-      )}
+      {testing && <MachineSelfTest kind={kind} target={target} onResult={setResult} />}
     </>
   );
 }

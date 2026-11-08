@@ -5,7 +5,18 @@ import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { cantRun, providerLabel } from "@/features/machine/hypervisors";
 import { ProviderRow } from "@/features/machine/machine-parts";
 import type { vmSetup } from "@/features/machine/machine-status";
-import { FixButton, TESTED_TONE, TestButton, TestLine, UseDefaultButton, lowFor, testKey, useFreeHint, type RowProps } from "@/features/machine/lab-row-parts";
+import {
+  FixButton,
+  TESTED_TONE,
+  RowTestButton,
+  TestLine,
+  UseDefaultButton,
+  lowFor,
+  testKey,
+  useFreeHint,
+  rowTest,
+  type RowProps,
+} from "@/features/machine/lab-row-parts";
 import { getLastTest, setVmProvider } from "@/lib/settings";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
@@ -69,16 +80,10 @@ function RunsLabsRow({ p, state, vm, onUseServer, ...row }: Props & { p: Provide
       actions={
         <>
           {lowFor("vm", row.memFree) && <ServerButton variant="ghost" onClick={onUseServer} />}
-          <TestButton
-            testing={row.testing === key}
-            onClick={() => {
-              row.onToggleTest(key);
-            }}
-          />
+          <RowTestButton row={row} id={key} />
         </>
       }
-      testing={row.testing === key}
-      onTestDone={row.onTestDone}
+      {...rowTest(row, key)}
       target={{ provider: p.provider, primary: true }}
     />
   );
@@ -153,16 +158,10 @@ function IdleHypervisorRow({ p, vm, ...row }: RowProps & { p: ProviderStatus; vm
               setVmProvider(p.provider);
             }}
           />
-          <TestButton
-            testing={row.testing === key}
-            onClick={() => {
-              row.onToggleTest(key);
-            }}
-          />
+          <RowTestButton row={row} id={key} />
         </>
       }
-      testing={row.testing === key}
-      onTestDone={row.onTestDone}
+      {...rowTest(row, key)}
       target={{ provider: p.provider, primary: false }}
     />
   );

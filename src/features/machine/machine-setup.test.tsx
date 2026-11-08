@@ -11,6 +11,7 @@ import { freshReport, hypervisorStatus as hv, readyReport, stoppedDockerReport }
 import { must } from "@/components/test-support";
 import { installTauri } from "@/test/tauri";
 import { button, clickEverything, flush } from "@/test/ui";
+import { installDockerDesktop } from "@/features/machine/machine-test-kit";
 
 const enabled = () => screen.queryAllByRole("button").filter((b) => !b.hasAttribute("disabled"));
 const text = (b: HTMLElement = document.body) => b.textContent.trim();
@@ -133,9 +134,7 @@ describe("MachineSetup window", () => {
     expect(text()).toMatch(/Container engines.*Docker Desktop.*OrbStack.*Colima.*Hypervisors.*VirtualBox.*VMware Fusion/);
     expect(text()).not.toContain("UTM");
     // The recommended engine installs from here; the others link out.
-    await user.click(button(/install docker desktop/i));
-    await flush();
-    expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "docker" });
+    await installDockerDesktop(user, calls);
     expect(text()).toContain("Installed");
     expect(button(/get orbstack/i)).toBeTruthy();
     await user.click(button(/install virtualbox/i));
