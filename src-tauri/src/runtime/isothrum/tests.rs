@@ -2,15 +2,12 @@
 //! runner's fake processes) and scripted launcher tools (the attack box's `docker` calls): no real
 //! tool runs. The lab's run manifest is the one Isoloom generates from the spec.
 
-use std::sync::{Arc, Mutex, PoisonError};
+use isothrum_runner::{EventKind, ReadyState, StepState, WarningCode};
 
-use isothrum_runner::process::fake::{Call, FakeProcesses, Reply};
-use isothrum_runner::{EventKind, FakePorts, ProcessRunner, ReadyState, StepState, WarningCode};
-
+use super::test_lab::prelude::*;
 use super::*;
 use crate::error::Error;
 use crate::platform::exec::fake::Tools;
-use crate::runtime::Park;
 
 const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_LAUNCH_TOKEN]\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8080 } }\n    files: [{ path: /run/lab/token, input: CTF_LAUNCH_TOKEN }]\n    app: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\nmessage: |\n  Open http://localhost:{{ machines.web.ports.web.published }}/\n";
 
@@ -30,31 +27,16 @@ enum Containers {
 }
 
 /// An installed lab (`<labs>/web`) with its files generated, a runner home, and the fake engine.
-struct Fixture {
-    root: std::path::PathBuf,
-    dir: std::path::PathBuf,
-    engine: Arc<Mutex<Engine>>,
-    fake: Arc<FakeProcesses>,
-}
+type Fixture = Scripted<Engine>;
 
 impl Fixture {
     fn new() -> Fixture {
-        let root = std::env::temp_dir().join(format!("cyberctf-isothrum-{}", rand::random::<u32>()));
-        let dir = root.join("labs").join("web");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("isoloom.yml"), SPEC).unwrap();
-        lab::prepare(&dir, lab::Target::Docker).unwrap();
-        let engine = Arc::new(Mutex::new(Engine::default()));
-        let script = Arc::clone(&engine);
-        let fake = Arc::new(FakeProcesses::new(move |call| answer(&script, call)));
-        Fixture { root, dir, engine, fake }
+        Scripted::answered_by(Home::new("", SPEC, &[], lab::Target::Docker), answer)
     }
 
     /// The lab's run, on a runner whose home is the fixture's root.
     fn run(&self) -> LabRun {
-        let config =
-            RunnerConfig::new(&self.root).with_processes(Arc::clone(&self.fake) as Arc<dyn ProcessRunner>).with_ports(Arc::new(FakePorts::new([41873])));
-        LabRun::with(config, &self.dir, "web", Kind::Docker).unwrap()
+        LabRun::with(self.home.config(&self.fake, [41873]), &self.home.dir, "web", Kind::Docker).unwrap()
     }
 
     /// The lab's run, started with [`launch_env`] (the attack box's tools scripted by the caller).
@@ -65,20 +47,14 @@ impl Fixture {
     }
 
     fn set(&self, containers: Containers) {
-        self.engine.lock().unwrap_or_else(PoisonError::into_inner).containers = containers;
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
+        self.model().containers = containers;
     }
 }
 
 /// The fake Compose engine's answer to `call`.
 fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
     let line = call.line();
-    let mut e = engine.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut e = locked(engine);
     if line.contains(" ps --all --format json") || line.contains(" ps --format json") {
         return Reply::ok(&ps(e.containers, line.contains("--all"), e.host_port));
     }
@@ -151,8 +127,8 @@ async fn a_container_lab_goes_up_through_the_runner_as_cyberctf_lab_id() {
     assert_eq!(up.env(PORTS_ENV), None, "a value no slot takes is never delivered");
     assert!(log.iter().any(|l| l == "Starting the lab's containers…"), "{log:?}");
     assert_eq!(log.last().map(String::as_str), Some("Open http://localhost:8080/"), "the lab's message, its port filled");
-    assert!(f.root.join("runs/cyberctf-web/record.json").is_file(), "the run is kept in the app data's runs/");
-    assert!(!f.dir.join(".cyberctf-ports.yml").exists(), "the runner pins ports in its own state, not the lab folder");
+    assert!(f.home.root.join("runs/cyberctf-web/record.json").is_file(), "the run is kept in the app data's runs/");
+    assert!(!f.home.dir.join(".cyberctf-ports.yml").exists(), "the runner pins ports in its own state, not the lab folder");
 }
 
 #[tokio::test]
@@ -179,7 +155,7 @@ async fn a_lab_parks_and_resumes() {
     assert!(f.fake.last("compose").is_some_and(|c| c.line().ends_with(" stop")));
     let parked = run.status().await.unwrap();
     assert_eq!((parked.running, parked.parked), (false, Some(Park::Shutdown)));
-    paths::mark_parked(&f.dir, Some(Park::Pause)).unwrap();
+    paths::mark_parked(&f.home.dir, Some(Park::Pause)).unwrap();
     assert_eq!(run.status().await.unwrap().parked, Some(Park::Pause), "as the player chose it");
     run.resume(&mut |_| {}).await.unwrap();
     assert!(run.status().await.unwrap().running);
@@ -204,11 +180,11 @@ async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
 #[tokio::test]
 async fn a_parked_lab_whose_containers_are_gone_offers_a_fresh_start() {
     let (f, run, _tools) = up_then_parked().await;
-    paths::mark_parked(&f.dir, Some(Park::Shutdown)).unwrap();
+    paths::mark_parked(&f.home.dir, Some(Park::Shutdown)).unwrap();
     f.set(Containers::None);
     let err = run.resume(&mut |_| {}).await.unwrap_err().to_string();
     assert!(err.starts_with("Nothing is left of this lab to resume"), "{err}");
-    assert_eq!(paths::parked(&f.dir), None, "the parked mark goes");
+    assert_eq!(paths::parked(&f.home.dir), None, "the parked mark goes");
 }
 
 #[tokio::test]

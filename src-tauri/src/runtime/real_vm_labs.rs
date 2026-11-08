@@ -16,12 +16,11 @@
 //! the attack VM's Vagrant box (default: the lab's own for this machine's CPU).
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use isothrum_runner::ShellCommand;
 
 use super::providers::Provider;
-use super::real_labs::{check, install_copy, log};
+use super::real_labs::{check, detach_box, install_copy, log, vagrant_ssh, vm_inputs};
 use super::{Park, Place, isothrum, launch, lifecycle};
 
 /// One VM lab installed for the test.
@@ -36,14 +35,6 @@ impl Lab {
     fn run(&self) -> isothrum::LabRun {
         isothrum::LabRun::vm(&self.home, &self.dir, &self.id).unwrap()
     }
-}
-
-fn inputs() -> Vec<(String, String)> {
-    std::env::var("CYBERCTF_TEST_VM_INPUTS")
-        .unwrap_or_default()
-        .split(',')
-        .filter_map(|p| p.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned())))
-        .collect()
 }
 
 /// Its status: running on a local VM, its machines up, and its entry answering here.
@@ -105,12 +96,7 @@ async fn attack_box(l: &Lab, f: &mut Vec<String>) {
         (Ok(_), None) => check(false, "the lab has a machine to reach".into(), f),
         (Err(e), _) => check(false, format!("the shell into the box is built: {e}"), f),
     }
-    let detached = run.detach(&mut log(&l.id)).await;
-    check(detached.is_ok(), format!("the box detaches ({:?})", detached.err()), f);
-    match run.attack_status(None).await {
-        Ok(s) => check(!s.running, "the box is gone".into(), f),
-        Err(e) => check(false, format!("the box's status reads: {e}"), f),
-    }
+    detach_box(&run, &l.id, f).await;
     up_and_answering(l, f, "with the attack VM gone").await;
 }
 
@@ -122,14 +108,7 @@ async fn shell_reaches(shell: &ShellCommand, machine: &str, port: u16, f: &mut V
     check(into_vm, format!("the shell is `vagrant ssh` into the attack VM ({} {:?})", shell.program, shell.args), f);
     let Some(define) = shell.args.get(1) else { return };
     let probe = format!("bash -c \"exec 3<>/dev/tcp/{machine}/{port} && printf 'GET / HTTP/1.0\\r\\nHost: {machine}\\r\\n\\r\\n' >&3 && head -c 300 <&3\"");
-    let out = crate::platform::exec::run_env_timed(
-        "vagrant",
-        &["ssh", "--no-tty", "--command", &probe, define],
-        shell.cwd.as_deref(),
-        &shell.env,
-        Duration::from_secs(120),
-    )
-    .await;
+    let out = vagrant_ssh(shell, define, &probe).await;
     check(
         out.as_ref().is_ok_and(|o| o.contains("HTTP/1.") && o.contains(" 200 ")),
         format!("a shell in the attack VM reaches http://{machine}:{port}/ over the lab network ({out:?})"),
@@ -139,7 +118,7 @@ async fn shell_reaches(shell: &ShellCommand, machine: &str, port: u16, f: &mut V
 
 /// The lab while it exists; every failure is collected so the lab is always stopped after.
 async fn exercise(l: &Lab, f: &mut Vec<String>) {
-    if let Err(e) = launch::start_vm_run(&l.home, &l.dir, &l.id, launch::VmStart { provider: l.provider, env: &inputs() }, &mut log(&l.id)).await {
+    if let Err(e) = launch::start_vm_run(&l.home, &l.dir, &l.id, launch::VmStart { provider: l.provider, env: &vm_inputs() }, &mut log(&l.id)).await {
         return check(false, format!("it starts: {e}"), f);
     }
     up_and_answering(l, f, "started").await;
