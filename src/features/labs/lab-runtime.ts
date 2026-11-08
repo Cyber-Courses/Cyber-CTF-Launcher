@@ -1,11 +1,12 @@
 import { Cloud, Container, Monitor, Server, type LucideIcon } from "lucide-react";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabStatus, Provider, ServerHost, SystemReport } from "@/lib/tauri";
+import { CLOUD_PROVIDERS } from "@/features/cloud/cloud-model";
 
 // Where a lab can run, from its runtime (catalogue) and what this machine has ready.
 
 const SERVERS = new Set(["vmware_esxi", "proxmox"]);
-export const CLOUDS = new Set(["aws", "azure", "gcp", "digitalocean", "linode", "oci"]);
+export const CLOUDS = new Set(CLOUD_PROVIDERS);
 // VM labs: one VM per machine on ESXi, Proxmox and AWS (Isoloom's vagrant, proxmox and cloud-vm
 // outputs); the other clouds run container labs only for now.
 const VM_CLOUDS_NOT_YET = new Set(["azure", "gcp", "digitalocean", "linode", "oci"]);

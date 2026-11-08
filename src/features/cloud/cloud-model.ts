@@ -10,7 +10,8 @@ export const MAIN_PROVIDERS: { id: CloudProvider; label: string }[] = [
   { id: "gcp", label: "Google Cloud" },
 ];
 
-const CLOUD_PROVIDERS: readonly string[] = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"] satisfies CloudProvider[];
+/** Every cloud the launcher runs labs in: the one list the lab runtime and the host setup read. */
+export const CLOUD_PROVIDERS: readonly string[] = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"] satisfies CloudProvider[];
 
 /** The cloud accounts among the saved hosts (the rest are servers). */
 export const cloudAccounts = (hosts: ServerHost[]) => hosts.filter((h) => CLOUD_PROVIDERS.includes(h.provider));

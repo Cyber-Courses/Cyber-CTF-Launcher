@@ -17,8 +17,14 @@ pub(super) async fn start_on_server(
     let LabRef { dir, id, runtime } = lab;
     // One VM per machine is cloud-vm on a cloud account; on a server (ESXi, Proxmox) the lab runs
     // as the catalogue publishes it. Refuse before any side effect (the secret, GCP, the marker).
-    if per_machine && !server::host_provider(dirs, host).is_some_and(Provider::is_cloud) {
-        return Err(Error::Invalid(PER_MACHINE_HERE_ONLY.into()));
+    if per_machine {
+        match server::host_provider(dirs, host) {
+            Some(p) if p.runs_cloud_vm() => {}
+            Some(p) if p.is_cloud() => {
+                return Err(Error::Invalid(format!("One VM per machine doesn't run on {} yet: run the lab as one VM there.", p.label())));
+            }
+            _ => return Err(Error::Invalid(PER_MACHINE_HERE_ONLY.into())),
+        }
     }
     let conn = server::connection(dirs, host)?;
     // GCP labs run in the account's labs project: make sure it exists (one free billing slot).

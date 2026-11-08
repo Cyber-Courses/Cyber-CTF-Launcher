@@ -226,6 +226,12 @@ async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
     let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, to, &[], |_| {}).await.unwrap_err().to_string();
     assert_eq!(err, super::PER_MACHINE_HERE_ONLY);
     assert!(tools.calls().is_empty() && !per_machine_vm(&dir), "{:?}", tools.calls());
+    // A cloud with no cloud-vm yet: refused with its name, before the marker or anything else.
+    t.host("az1", "azure", serde_json::json!({}));
+    let to = Destination { host: Some("az1"), per_machine_vm: true, ..Destination::default() };
+    let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, to, &[], |_| {}).await.unwrap_err().to_string();
+    assert!(err.starts_with("One VM per machine doesn't run on Azure yet"), "{err}");
+    assert!(tools.calls().is_empty() && !per_machine_vm(&dir), "{:?}", tools.calls());
     // UTM: Isoloom refuses the vagrant target there (vagrant_utm gives a VM no private network),
     // so the start is refused with its reason, before UTM is even opened.
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Utm), &[]).await;
