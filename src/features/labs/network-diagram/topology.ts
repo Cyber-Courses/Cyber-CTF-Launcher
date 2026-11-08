@@ -124,7 +124,6 @@ function addAttacker(g: Graph, attacker: NonNullable<Attacker>, entry: string) {
     data: {
       label: translate("diagram.attacker.label"),
       subtitle: attacker.ip || translate("diagram.attacker.attached"),
-      running: true,
     },
   });
   membersOf(g, entry).push("__attacker");

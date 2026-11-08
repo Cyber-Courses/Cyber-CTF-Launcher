@@ -359,13 +359,11 @@
   color: var(--you-text);
   font-family: var(--font-mono);
 }
+/* Only a running box is drawn: its dot is the live green. */
 .attacker-state {
   width: 0.45rem;
   height: 0.45rem;
   border-radius: 50%;
-  background: var(--faint);
-}
-.attacker-state[data-on="true"] {
   background: var(--success);
 }
 .attacker-shield {

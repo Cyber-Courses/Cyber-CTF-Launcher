@@ -88,7 +88,7 @@ function BridgeNode({ data }: NodeProps<Node<{ label: string; tone?: "attack" }>
   );
 }
 
-function AttackerNode({ data }: NodeProps<Node<{ label: string; subtitle: string; running: boolean }>>) {
+function AttackerNode({ data }: NodeProps<Node<{ label: string; subtitle: string }>>) {
   const t = useT();
   return (
     <div className="topology-node attacker-node">
@@ -102,8 +102,8 @@ function AttackerNode({ data }: NodeProps<Node<{ label: string; subtitle: string
         </div>
         <div className="node-title">{data.label}</div>
         <div className="node-subtitle" style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
-          <span className="attacker-state" data-on={data.running} />
-          {data.running && isIp(data.subtitle) ? <CopyText text={data.subtitle}>{data.subtitle}</CopyText> : data.subtitle}
+          <span className="attacker-state" />
+          {isIp(data.subtitle) ? <CopyText text={data.subtitle}>{data.subtitle}</CopyText> : data.subtitle}
         </div>
       </div>
       <ShieldCheck className="attacker-shield" size={17} />

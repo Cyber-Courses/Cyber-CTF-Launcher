@@ -62,7 +62,7 @@ describe("topology", () => {
       t.nodes.find((n) => n.id === "__attacker"),
       "the attack box",
     );
-    expect(atk.data).toMatchObject({ subtitle: "10.5.0.9", running: true });
+    expect(atk.data).toEqual({ label: "Attack box", subtitle: "10.5.0.9" });
     expect(
       must(
         t.zones.find((z) => z.id === "zone-dmz"),
