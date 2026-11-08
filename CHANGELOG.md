@@ -31,14 +31,15 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   Docker CLI context in turn with `docker --context <c> info`, so Docker Desktop, OrbStack,
   Colima, Docker Engine or Podman side by side each read running or stopped, not only the one
   the CLI points at; the current engine and the hypervisor labs run on are marked), with the
-  same Fix and Test actions. Engines and hypervisors not installed are not rows: "Add a
-  provider", in the header as the Servers page's "Add server", opens the guided setup on a choice
-  of the providers this machine can have, a container engine or a hypervisor for VMs, each row
-  saying how far along the machine is. A path lists only its own steps and opens at the first one
-  still to do, read from the machine check and the last self-tests: a machine whose engine is
-  installed and tested goes straight past the Docker steps to its summary, instead of walking
-  them again. Cloud accounts are connected on the Cloud page: the setup's cloud row takes you
-  there instead of walking steps of its own. A row's Fix or Test still opens its step directly.
+  same Fix and Test actions. Only what is installed is listed, in the Providers panel and in
+  Details alike: nothing for the engines and hypervisors this machine lacks. Adding one is what
+  "Add a provider" is for: in the header as the Servers page's "Add server", it opens the guided
+  setup on a choice of the providers this machine can have, a container engine or a hypervisor
+  for VMs, each row saying how far along the machine is. The setup is about this machine only
+  (cloud accounts and servers have their own pages). A path lists only its own steps and opens
+  at the first one still to do, read from the machine check and the last self-tests: a machine
+  whose engine is installed and tested goes straight past the Docker steps to its summary,
+  instead of walking them again. A row's Fix or Test still opens its step directly.
 
 ### Fixed
 

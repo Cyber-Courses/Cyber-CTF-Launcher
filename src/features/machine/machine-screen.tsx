@@ -94,9 +94,12 @@ function MachineBody({
     <>
       <UsageCards m={m} />
       <LowDiskCallout m={m} />
-      {/* The providers: each container engine and hypervisor, installed or not. */}
+      {/* The providers: every container engine and hypervisor installed here, nothing for the rest. */}
       <Panel>
         <PanelHeader title={t("machine.screen.providers")} meta={t("machine.screen.providersMeta")} />
+        {report.dockerEngines.length === 0 && !vm.hasHypervisor && (
+          <p className="px-4 py-3.5 text-[0.8125rem] text-muted-foreground">{t("machine.screen.providersEmpty")}</p>
+        )}
         <EngineRows {...rowProps("docker")} />
         <HypervisorRows
           {...rowProps("vm")}

@@ -28,10 +28,10 @@
     },
     "providers": "Provedores",
     "providersMeta": "o que roda labs nesta máquina",
+    "providersEmpty": "Nada instalado ainda. Adicione um provedor para rodar labs nesta máquina.",
     "test": "Testar",
     "hideTest": "Ocultar teste",
     "fix": "Corrigir",
-    "add": "Adicionar",
     "useServer": "Usar um servidor",
     "notTestedYet": "ainda não testado",
     "tested": "testado {ago}",
@@ -44,10 +44,8 @@
       "noPermission": "Sem permissão",
       "engineStopped": "Engine parada",
       "needsSetup": "Requer configuração",
-      "notOnThisMachine": "Não nesta máquina",
       "running": "Rodando",
       "installed": "Instalado",
-      "notSetUp": "Não configurado",
       "cantRunHere": "Não roda aqui"
     },
     "docker": {
@@ -55,15 +53,12 @@
       "stopped": "Uma engine de contêineres está instalada, mas não está rodando. Inicie-a para rodar labs."
     },
     "engine": {
-      "runningIdle": "Rodando. Os labs usam {engine}; troque na configuração.",
-      "none": "Nenhuma engine de contêineres ainda. Adicione uma para rodar labs de contêiner aqui."
+      "runningIdle": "Rodando. Os labs usam {engine}; troque na configuração."
     },
     "vm": {
-      "notApplicable": "Nenhum hypervisor local roda nesta máquina. Os labs de VM podem rodar num servidor.",
       "automatic": " (automático, mude em Configurações)",
       "vagrantMissing": "Falta o Vagrant ou o plugin Vagrant do hypervisor.",
-      "installedIdle": "Os labs rodam em {provider}; mude em Configurações.",
-      "none": "Nenhum hypervisor ainda. Adicione um para rodar labs de VM aqui."
+      "installedIdle": "Os labs rodam em {provider}; mude em Configurações."
     },
     "details": "Detalhes",
     "detail": {
@@ -163,15 +158,12 @@
     "paths": {
       "docker": "Labs de contêiner",
       "vm": "Labs de VM",
-      "cloud": "Labs na nuvem",
-      "dockerNote": "Contêineres Docker nesta máquina, com a caixa de ataque ao lado.",
+      "dockerNote": "Contêineres nesta máquina, com a caixa de ataque ao lado.",
       "vmNote": "Máquinas virtuais completas em um hypervisor: domínios, hosts Windows, redes com vários hosts.",
-      "cloudNote": "Labs na sua própria conta de nuvem (AWS, Azure, Google Cloud e outras): conecte-a pela página Nuvem.",
       "ready": "pronto",
       "review": "Revisar",
       "progress": "{done} de {total} concluídos",
-      "setUp": "Configurar",
-      "openCloud": "Abrir a página Nuvem"
+      "setUp": "Configurar"
     }
   },
   "steps": {

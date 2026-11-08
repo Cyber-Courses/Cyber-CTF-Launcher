@@ -28,10 +28,10 @@
     },
     "providers": "Proveedores",
     "providersMeta": "lo que ejecuta labs en esta máquina",
+    "providersEmpty": "Aún no hay nada instalado. Añade un proveedor para ejecutar labs en esta máquina.",
     "test": "Probar",
     "hideTest": "Ocultar prueba",
     "fix": "Arreglar",
-    "add": "Añadir",
     "useServer": "Usar un servidor",
     "notTestedYet": "aún sin probar",
     "tested": "probado {ago}",
@@ -44,10 +44,8 @@
       "noPermission": "Sin permiso",
       "engineStopped": "Motor detenido",
       "needsSetup": "Requiere configuración",
-      "notOnThisMachine": "No disponible aquí",
       "running": "En ejecución",
       "installed": "Instalado",
-      "notSetUp": "Sin configurar",
       "cantRunHere": "No puede ejecutarse aquí"
     },
     "docker": {
@@ -55,15 +53,12 @@
       "stopped": "Hay un motor de contenedores instalado pero no está en ejecución. Inícialo para ejecutar labs."
     },
     "engine": {
-      "runningIdle": "En ejecución. Los labs usan {engine}; cámbialo en la configuración.",
-      "none": "Aún no hay ningún motor de contenedores. Añade uno para ejecutar labs de contenedores aquí."
+      "runningIdle": "En ejecución. Los labs usan {engine}; cámbialo en la configuración."
     },
     "vm": {
-      "notApplicable": "No hay ningún hipervisor local que funcione en esta máquina. Los labs de VM pueden ejecutarse en un servidor.",
       "automatic": " (automático, cámbialo en Ajustes)",
       "vagrantMissing": "Falta Vagrant o el plugin de Vagrant del hipervisor.",
-      "installedIdle": "Los labs se ejecutan en {provider}; cámbialo en Ajustes.",
-      "none": "Aún no hay ningún hipervisor. Añade uno para ejecutar labs de VM aquí."
+      "installedIdle": "Los labs se ejecutan en {provider}; cámbialo en Ajustes."
     },
     "details": "Detalles",
     "detail": {
@@ -163,15 +158,12 @@
     "paths": {
       "docker": "Labs de contenedores",
       "vm": "Labs de VM",
-      "cloud": "Labs en la nube",
-      "dockerNote": "Contenedores Docker en esta máquina, con la caja de ataque al lado.",
+      "dockerNote": "Contenedores en esta máquina, con la caja de ataque al lado.",
       "vmNote": "Máquinas virtuales completas en un hipervisor: dominios, hosts Windows, redes de varios hosts.",
-      "cloudNote": "Labs en tu propia cuenta de nube (AWS, Azure, Google Cloud y más): conéctala desde la página Nube.",
       "ready": "listo",
       "review": "Revisar",
       "progress": "{done} de {total} hechos",
-      "setUp": "Configurar",
-      "openCloud": "Abrir la página Nube"
+      "setUp": "Configurar"
     }
   },
   "steps": {

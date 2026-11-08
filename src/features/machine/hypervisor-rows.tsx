@@ -10,8 +10,7 @@ import type { ProviderStatus, SystemReport } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
 // The Machine page's hypervisors, one row each: the one VM labs run on with their last test,
-// the others installed (ready, blocked, or short of Vagrant or its plugin), and the ones this OS
-// could have; or, with none that applies here, the way to a server.
+// the others installed (ready, blocked, or short of Vagrant or its plugin).
 
 type Vm = ReturnType<typeof vmSetup>;
 type Props = RowProps & { vm: Vm; onUseServer: () => void };
@@ -26,43 +25,11 @@ function ServerButton({ variant, onClick }: { variant: "outline" | "ghost"; onCl
   );
 }
 
-/** The icon tile and the way to a hypervisor's setup, for the rows that stand in for a list. */
-function PlaceholderRow({ status, detail, actions }: { status: string; detail: string; actions: React.ReactNode }) {
-  const t = useT();
-  return (
-    <ProviderRow
-      kind="vm"
-      icon={<HypervisorLogo provider={undefined} />}
-      title={t("machine.steps.vm.title")}
-      tone="muted"
-      status={status}
-      detail={detail}
-      actions={actions}
-      testing={false}
-      onTestDone={() => {}}
-    />
-  );
-}
-
-/** Every hypervisor installed here, each with its own state, the one labs run on marked; with
- *  none installed, one row to add one, and with none that applies here, the way to a server.
- *  Hypervisors not installed stay out: "Add a provider" covers those. */
+/** Every hypervisor installed here, each with its own state, the one labs run on marked. Only
+ *  what is installed: no row for one this machine lacks, "Add a provider" covers those. */
 export function HypervisorRows(props: Props) {
-  const t = useT();
-  const { vm, onUseServer, onFix } = props;
-  if (vm.state === "notApplicable")
-    return (
-      <PlaceholderRow
-        status={t("machine.screen.status.notOnThisMachine")}
-        detail={t("machine.screen.vm.notApplicable")}
-        actions={<ServerButton variant="outline" onClick={onUseServer} />}
-      />
-    );
+  const { vm } = props;
   const installed = vm.hypervisors.filter((p) => p.hypervisor === true);
-  if (installed.length === 0)
-    return (
-      <PlaceholderRow status={t("machine.screen.status.notSetUp")} detail={t("machine.screen.vm.none")} actions={<FixButton step="vm" onFix={onFix} add />} />
-    );
   return (
     <>
       {installed.map((p) =>

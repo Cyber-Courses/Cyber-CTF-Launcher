@@ -21,6 +21,7 @@ import { freshReport, hypervisorStatus as hv, readyReport, stoppedDockerReport }
 import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { pressFirstTest, renderMachineScreen } from "@/features/machine/machine-test-kit";
+import { must } from "@/components/test-support";
 
 const GB = 1e9;
 const text = () => document.body.textContent;
@@ -268,7 +269,7 @@ describe("EngineRows", () => {
     expect(text()).toContain("Container labs want about 2.0 GB of free memory; 1.0 GB free now.");
   });
 
-  it("explains a denied or stopped current engine, and offers to add one when none is found", async () => {
+  it("explains a denied or stopped current engine, and shows nothing when none is found", async () => {
     installTauri();
     const onFix = vi.fn();
     const user = userEvent.setup();
@@ -303,12 +304,9 @@ describe("EngineRows", () => {
     await user.click(button(/^fix$/i));
     expect(onFix).toHaveBeenCalledWith("docker");
     stopped.unmount();
-    // Nothing found: one row, to add an engine.
-    render(<EngineRows {...base} onFix={onFix} report={freshReport("linux")} last={null} />);
-    expect(text()).toMatch(/Container engine.*No container engine yet.*Not set up/);
-    expect(screen.queryByText("Ready")).toBeNull();
-    await user.click(button(/^add$/i));
-    expect(onFix).toHaveBeenLastCalledWith("docker");
+    // Nothing found: no row at all (Add a provider, in the header, is the way to one).
+    const { container } = render(<EngineRows {...base} onFix={onFix} report={freshReport("linux")} last={null} />);
+    expect(container.textContent).toBe("");
   });
 
   it("shows the self-test inline and reports when it finishes", async () => {
@@ -370,16 +368,6 @@ describe("HypervisorRows", () => {
     expect(button(/^test$/i)).toBeTruthy();
   });
 
-  it("sends the player to a server when no local hypervisor runs here", async () => {
-    installTauri();
-    const onUseServer = vi.fn();
-    const user = userEvent.setup();
-    render(rows({ ...readyReport(), vmProviders: [hv({ provider: "proxmox", remote: true })] }, null, { onUseServer }));
-    expect(text()).toContain("Not on this machine");
-    await user.click(button(/use a server/i));
-    expect(onUseServer).toHaveBeenCalledOnce();
-  });
-
   it("explains a blocked hypervisor", () => {
     installTauri();
     render(rows({ ...readyReport(), vmProviders: [hv({ provider: "libvirt", available: false, reason: "no /dev/kvm" })] }));
@@ -387,7 +375,7 @@ describe("HypervisorRows", () => {
     expect(button(/use a server/i)).toBeTruthy();
   });
 
-  it("fixes a missing Vagrant at its step, and with no hypervisor installed offers to add one", async () => {
+  it("fixes a missing Vagrant at its step, and shows nothing with no hypervisor installed", async () => {
     installTauri();
     const onFix = vi.fn();
     const user = userEvent.setup();
@@ -396,21 +384,12 @@ describe("HypervisorRows", () => {
     await user.click(button(/^fix$/i));
     expect(onFix).toHaveBeenLastCalledWith("vagrant");
     r.unmount();
-    render(
-      rows(
-        {
-          ...readyReport(),
-          os: "linux",
-          vmProviders: [hv({ hypervisor: false, available: false }), hv({ provider: "vmware_desktop", hypervisor: false, available: false })],
-        },
-        null,
-        { onFix },
-      ),
-    );
-    expect(text()).toMatch(/Virtual machines.*No hypervisor yet.*Not set up/);
-    expect(text()).not.toContain("VMware");
-    await user.click(button(/^add$/i));
-    expect(onFix).toHaveBeenLastCalledWith("vm");
+    // None installed, or none that applies here: no row, no placeholder.
+    for (const vmProviders of [[hv({ hypervisor: false, available: false }), hv({ provider: "vmware_desktop", hypervisor: false, available: false })], []]) {
+      const { container, unmount } = render(rows({ ...readyReport(), os: "linux", vmProviders }, null, { onFix }));
+      expect(container.textContent).toBe("");
+      unmount();
+    }
   });
 });
 
@@ -544,7 +523,7 @@ describe("RunningNowPanel", () => {
 });
 
 describe("MachineDetails", () => {
-  it("lists tool versions and hypervisors", () => {
+  it("lists tool versions and the hypervisors installed", () => {
     const report: SystemReport = {
       ...readyReport(),
       os: "windows",
@@ -567,7 +546,8 @@ describe("MachineDetails", () => {
     expect(text()).toContain("VMware Workstationinstalled · vagrant-vmware-desktop");
     expect(text()).toContain("QEMUplugin vagrant-qemu missing");
     expect(text()).toContain("VirtualBoxinstalled");
-    expect(text()).toContain("UTMnot installed");
+    // Not installed: not listed (Hyper-V, a Windows feature, is built in).
+    expect(text()).not.toContain("UTM");
     expect(text()).toContain("Hyper-Vbuilt in");
   });
 
@@ -611,17 +591,12 @@ describe("MachineScreen", () => {
     expect(text()).toContain("10 GB free");
     expect(text()).toContain("2 lab types need setup");
     expect(text()).toContain("Linux x86_64");
+    // Nothing installed: no provider rows, one line pointing at the header's button.
+    expect(text()).toContain("Nothing installed yet.");
+    expect(screen.queryByRole("button", { name: /^(fix|test|add)$/i })).toBeNull();
     await user.click(button(/add a provider/i));
     await flush();
     expect(calls.find((c) => c.cmd === "machine_open_setup")?.args).toEqual({ step: null });
-    // A row's Add opens the setup at that provider's step.
-    await user.click(screen.getAllByRole("button", { name: /^add$/i })[0]);
-    await flush();
-    expect(calls.filter((c) => c.cmd === "machine_open_setup").at(-1)?.args).toEqual({ step: "docker" });
-    const adds = screen.getAllByRole("button", { name: /^add$/i });
-    await user.click(adds[adds.length - 1]);
-    await flush();
-    expect(calls.filter((c) => c.cmd === "machine_open_setup").at(-1)?.args).toEqual({ step: "vm" });
   });
 
   it("names an unknown OS as-is and counts one lab type", async () => {
@@ -655,14 +630,15 @@ describe("MachineScreen", () => {
     expect(text()).not.toContain("Hide test");
   });
 
-  it("sends VM labs to a server when no hypervisor runs here", async () => {
+  it("lists only what is installed: no rows for the providers this machine lacks", async () => {
     installTauri();
-    const onNavigate = vi.fn();
-    const user = userEvent.setup();
-    render(<MachineScreen report={{ ...readyReport(), vmProviders: [] }} onRefresh={vi.fn()} onNavigate={onNavigate} />);
+    const report = { ...readyReport(), vmProviders: readyReport().vmProviders.filter((p) => p.remote) };
+    render(<MachineScreen report={report} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
     await flush(50);
-    await user.click(button(/use a server/i));
-    expect(onNavigate).toHaveBeenCalledWith("server");
+    const providers = must(screen.getByText("Providers").closest("section, div")?.parentElement, "the Providers panel").textContent;
+    expect(providers).toContain("Docker Desktop");
+    expect(providers).not.toContain("Nothing installed yet.");
+    for (const name of ["OrbStack", "Colima", "VirtualBox", "VMware", "UTM", "Not on this machine", "Use a server"]) expect(providers).not.toContain(name);
   });
 
   it("shows the last saved test results", async () => {

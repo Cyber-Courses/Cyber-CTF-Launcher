@@ -2,8 +2,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { listen } from "@tauri-apps/api/event";
-import { NAVIGATE_EVENT } from "@/lib/app-events";
 import { MachineSetup } from "@/features/machine/machine-setup";
 import { machineSteps } from "@/features/machine/setup-steps";
 import { Onboarding } from "@/features/onboarding/onboarding";
@@ -12,7 +10,7 @@ import { setLastTest } from "@/lib/settings";
 import { freshReport, readyReport, stoppedDockerReport } from "@/test/fixtures";
 import { must } from "@/components/test-support";
 import { installTauri } from "@/test/tauri";
-import { button, clickEverything, flush } from "@/test/ui";
+import { clickEverything, flush } from "@/test/ui";
 
 const enabled = () => screen.queryAllByRole("button").filter((b) => !b.hasAttribute("disabled"));
 const text = (b: HTMLElement = document.body) => b.textContent.trim();
@@ -112,24 +110,15 @@ describe("MachineSetup window", () => {
     expect(text()).not.toContain("Container engine");
   });
 
-  it("offers the local providers only: cloud accounts go to the Cloud page, and the window closes", async () => {
+  it("offers this machine's providers only: container labs and VM labs, nothing about the cloud", async () => {
     installTauri();
-    const user = userEvent.setup();
-    const onClose = vi.fn();
-    // What the main window hears: the request to show a screen.
-    const shown: unknown[] = [];
-    await listen(NAVIGATE_EVENT, (e) => shown.push(e.payload));
-    render(<MachineSetup report={freshReport("macos")} onRefresh={vi.fn()} onClose={onClose} />);
+    render(<MachineSetup report={freshReport("macos")} onRefresh={vi.fn()} onClose={vi.fn()} />);
     await flush();
     expect(text()).toContain("Container labs");
+    expect(text()).toContain("Containers on this machine, with the attack box next to them.");
     expect(text()).toContain("VM labs");
-    expect(text()).toContain("Cloud labs");
-    // No path to walk here: the main window shows its Cloud page instead.
+    expect(text()).not.toMatch(/cloud/i);
     expect(screen.getAllByRole("button", { name: /^set up$/i })).toHaveLength(2);
-    await user.click(button(/open the cloud page/i));
-    await flush();
-    expect(shown).toEqual(["cloud"]);
-    expect(onClose).toHaveBeenCalledOnce();
   });
 
   for (const [name, report] of MACHINES) {

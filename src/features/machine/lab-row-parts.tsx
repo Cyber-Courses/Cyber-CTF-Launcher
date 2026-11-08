@@ -35,18 +35,18 @@ export function TestButton({ testing, onClick }: { testing: boolean; onClick: ()
   );
 }
 
-/** Opens the setup window at `step`: Fix for a provider that should work, Add for one not here. */
-export function FixButton({ step, onFix, add = false }: { step: string; onFix: (step: string) => void; add?: boolean }) {
+/** Opens the setup window at `step`. */
+export function FixButton({ step, onFix }: { step: string; onFix: (step: string) => void }) {
   const t = useT();
   return (
     <Button
-      variant={add ? "ghost" : "outline"}
+      variant="outline"
       size="xs"
       onClick={() => {
         onFix(step);
       }}
     >
-      {add ? t("machine.screen.add") : t("machine.screen.fix")}
+      {t("machine.screen.fix")}
     </Button>
   );
 }

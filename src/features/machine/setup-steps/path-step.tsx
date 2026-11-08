@@ -1,6 +1,6 @@
 "use client";
 
-import { Cloud, Container, ExternalLink, Server, type LucideIcon } from "lucide-react";
+import { Container, Server, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TypeIcon } from "@/components/ui/type-icon";
 import { PATHS, type SetupPath } from "@/features/machine/setup-steps/steps";
@@ -14,21 +14,18 @@ const NOTES: Record<SetupPath, MessageKey> = { docker: "machine.setup.paths.dock
 
 /** The setup window's first screen: the providers this machine can have, one row each (a
  *  container engine, a hypervisor for VMs) with where this machine stands and the way into its
- *  path, then cloud accounts, which the Cloud page adds. The first path with something left to
- *  do carries the jewel. */
+ *  path. This machine only: cloud accounts and servers have their own pages. The first path
+ *  with something left to do carries the jewel. */
 export function PathChooser({
   report,
   last,
   preferred,
   onStart,
-  onCloud,
 }: {
   report: SystemReport;
   last: LastTests;
   preferred: Provider | null;
   onStart: (path: SetupPath) => void;
-  /** Sends the player to the Cloud page, where accounts are connected. */
-  onCloud: () => void;
 }) {
   const t = useT();
   const rows = PATHS.map((path) => ({ path, ...pathProgress(path, report, last, preferred) }));
@@ -54,11 +51,6 @@ export function PathChooser({
           </Row>
         );
       })}
-      <Row icon={Cloud} title={t("machine.setup.paths.cloud")} note={t("machine.setup.paths.cloudNote")}>
-        <Button variant="outline" size="xs" onClick={onCloud}>
-          <ExternalLink /> {t("machine.setup.paths.openCloud")}
-        </Button>
-      </Row>
     </div>
   );
 }

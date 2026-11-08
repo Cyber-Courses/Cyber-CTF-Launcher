@@ -14,8 +14,8 @@ import { describeError } from "@/lib/errors";
 // The Machine page's container engines, one row per engine found on this machine (each Docker
 // CLI context asked in turn by the machine check): the current one with its state and the
 // container labs' last test, the others running or stopped, with the way to fix, switch or test
-// them (the guided setup's engine step, or the inline self-test). Engines not installed stay out:
-// "Add a provider" covers those.
+// them (the guided setup's engine step, or the inline self-test). Only what is installed: no row
+// for an engine this machine lacks, "Add a provider" covers those.
 
 /** The engine's brand mark, or a plain tile for one without (Podman). */
 function EngineIcon({ id }: { id: DockerEngine }) {
@@ -29,7 +29,6 @@ function EngineIcon({ id }: { id: DockerEngine }) {
 
 export function EngineRows(row: RowProps) {
   const { report, last } = row;
-  if (report.dockerEngines.length === 0) return <NoEngineRow onFix={row.onFix} />;
   const state = dockerState(report, last);
   return (
     <>
@@ -41,28 +40,6 @@ export function EngineRows(row: RowProps) {
         ),
       )}
     </>
-  );
-}
-
-/** No engine on this machine: the one row says so, and adds one. */
-function NoEngineRow({ onFix }: { onFix: (step: string) => void }) {
-  const t = useT();
-  return (
-    <ProviderRow
-      kind="docker"
-      icon={
-        <TypeIcon>
-          <Container className="size-4" />
-        </TypeIcon>
-      }
-      title={t("machine.steps.docker.title")}
-      tone="muted"
-      status={t("machine.screen.status.notSetUp")}
-      detail={t("machine.screen.engine.none")}
-      actions={<FixButton step="docker" onFix={onFix} add />}
-      testing={false}
-      onTestDone={() => {}}
-    />
   );
 }
 

@@ -21,7 +21,6 @@ import {
   type SetupPath,
 } from "@/features/machine/setup-steps";
 import { useWindowSteps, type StartAt, type WindowStep } from "@/features/machine/use-window-steps";
-import { showInMainWindow } from "@/lib/app-events";
 import { getLastTest } from "@/lib/settings";
 import type { SystemReport } from "@/lib/tauri";
 import { useVmProvider } from "@/lib/use-vm-provider";
@@ -101,19 +100,7 @@ function SetupWizard({ report, startAt, onRefresh, onClose }: { report: SystemRe
         )}
         <Panel key={key} className="mt-5 flex min-h-0 flex-1 animate-rise-in flex-col">
           <StepBody step={key} report={report} setup={setup} path={path} count={{ current: at, total: walk.length }}>
-            {key === "path" && (
-              <PathChooser
-                report={report}
-                last={last}
-                preferred={preferred}
-                onStart={start}
-                // Cloud accounts are connected on the Cloud page: show it and leave this window.
-                onCloud={() => {
-                  showInMainWindow("cloud");
-                  onClose();
-                }}
-              />
-            )}
+            {key === "path" && <PathChooser report={report} last={last} preferred={preferred} onStart={start} />}
           </StepBody>
           {key !== "path" && (
             <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-3">

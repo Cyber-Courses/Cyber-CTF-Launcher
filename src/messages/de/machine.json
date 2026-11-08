@@ -28,10 +28,10 @@
     },
     "providers": "Anbieter",
     "providersMeta": "führt Labs auf diesem Rechner aus",
+    "providersEmpty": "Noch nichts installiert. Füge einen Anbieter hinzu, um Labs auf diesem Rechner auszuführen.",
     "test": "Testen",
     "hideTest": "Test ausblenden",
     "fix": "Beheben",
-    "add": "Hinzufügen",
     "useServer": "Server nutzen",
     "notTestedYet": "noch nicht getestet",
     "tested": "getestet {ago}",
@@ -44,10 +44,8 @@
       "noPermission": "Keine Berechtigung",
       "engineStopped": "Engine gestoppt",
       "needsSetup": "Einrichtung nötig",
-      "notOnThisMachine": "Nicht auf diesem Rechner",
       "running": "Läuft",
       "installed": "Installiert",
-      "notSetUp": "Nicht eingerichtet",
       "cantRunHere": "Kann hier nicht laufen"
     },
     "docker": {
@@ -55,15 +53,12 @@
       "stopped": "Eine Container-Engine ist installiert, läuft aber nicht. Starte sie, um Labs auszuführen."
     },
     "engine": {
-      "runningIdle": "Läuft. Labs nutzen {engine}; wechsle in der Einrichtung.",
-      "none": "Noch keine Container-Engine. Füge eine hinzu, um Container-Labs hier auszuführen."
+      "runningIdle": "Läuft. Labs nutzen {engine}; wechsle in der Einrichtung."
     },
     "vm": {
-      "notApplicable": "Auf diesem Rechner läuft kein lokaler Hypervisor. VM-Labs können stattdessen auf einem Server laufen.",
       "automatic": " (automatisch, in den Einstellungen änderbar)",
       "vagrantMissing": "Vagrant oder das Vagrant-Plugin des Hypervisors fehlt.",
-      "installedIdle": "Labs laufen auf {provider}; ändere das in den Einstellungen.",
-      "none": "Noch kein Hypervisor. Füge einen hinzu, um VM-Labs hier auszuführen."
+      "installedIdle": "Labs laufen auf {provider}; ändere das in den Einstellungen."
     },
     "details": "Details",
     "detail": {
@@ -163,15 +158,12 @@
     "paths": {
       "docker": "Container-Labs",
       "vm": "VM-Labs",
-      "cloud": "Cloud-Labs",
-      "dockerNote": "Docker-Container auf diesem Rechner, mit der Angriffsbox daneben.",
+      "dockerNote": "Container auf diesem Rechner, mit der Angriffsbox daneben.",
       "vmNote": "Vollständige virtuelle Maschinen auf einem Hypervisor: Domänen, Windows-Hosts, Multi-Host-Netzwerke.",
-      "cloudNote": "Labs in deinem eigenen Cloud-Konto (AWS, Azure, Google Cloud und mehr): verbinde es über die Seite Cloud.",
       "ready": "bereit",
       "review": "Ansehen",
       "progress": "{done} von {total} erledigt",
-      "setUp": "Einrichten",
-      "openCloud": "Seite Cloud öffnen"
+      "setUp": "Einrichten"
     }
   },
   "steps": {

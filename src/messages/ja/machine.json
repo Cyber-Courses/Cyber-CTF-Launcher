@@ -28,10 +28,10 @@
     },
     "providers": "プロバイダー",
     "providersMeta": "このマシンでラボを実行するもの",
+    "providersEmpty": "まだ何もインストールされていません。このマシンでラボを実行するにはプロバイダーを追加してください。",
     "test": "テスト",
     "hideTest": "テストを隠す",
     "fix": "修正",
-    "add": "追加",
     "useServer": "サーバーを使う",
     "notTestedYet": "未テスト",
     "tested": "{ago} にテスト済み",
@@ -44,10 +44,8 @@
       "noPermission": "権限なし",
       "engineStopped": "エンジン停止中",
       "needsSetup": "セットアップが必要",
-      "notOnThisMachine": "このマシンでは利用不可",
       "running": "実行中",
       "installed": "インストール済み",
-      "notSetUp": "未セットアップ",
       "cantRunHere": "このマシンでは実行不可"
     },
     "docker": {
@@ -55,15 +53,12 @@
       "stopped": "コンテナエンジンはインストールされていますが、起動していません。ラボを実行するには起動してください。"
     },
     "engine": {
-      "runningIdle": "実行中。ラボは {engine} を使用しています。セットアップで切り替えられます。",
-      "none": "コンテナエンジンはまだありません。ここでコンテナラボを実行するには追加してください。"
+      "runningIdle": "実行中。ラボは {engine} を使用しています。セットアップで切り替えられます。"
     },
     "vm": {
-      "notApplicable": "このマシンで動作するローカルのハイパーバイザーはありません。VM ラボは代わりにサーバーで実行できます。",
       "automatic": "（自動選択、「設定」で変更可能）",
       "vagrantMissing": "Vagrant またはハイパーバイザー用の Vagrant プラグインがありません。",
-      "installedIdle": "ラボは {provider} で実行されます。「設定」で変更できます。",
-      "none": "ハイパーバイザーはまだありません。ここで VM ラボを実行するには追加してください。"
+      "installedIdle": "ラボは {provider} で実行されます。「設定」で変更できます。"
     },
     "details": "詳細",
     "detail": {
@@ -163,15 +158,12 @@
     "paths": {
       "docker": "コンテナラボ",
       "vm": "VM ラボ",
-      "cloud": "クラウドラボ",
-      "dockerNote": "このマシン上の Docker コンテナと、その隣で動く攻撃ボックス。",
+      "dockerNote": "このマシン上のコンテナと、その隣で動く攻撃ボックス。",
       "vmNote": "ハイパーバイザー上の完全な仮想マシン：ドメイン、Windows ホスト、複数ホストのネットワーク。",
-      "cloudNote": "自分のクラウドアカウント（AWS、Azure、Google Cloud など）上のラボ。「クラウド」ページで接続します。",
       "ready": "準備完了",
       "review": "確認",
       "progress": "{done} / {total} 完了",
-      "setUp": "セットアップ",
-      "openCloud": "「クラウド」ページを開く"
+      "setUp": "セットアップ"
     }
   },
   "steps": {
