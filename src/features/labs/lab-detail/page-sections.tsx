@@ -162,7 +162,7 @@ export function LabNetwork({ page, props: p, meta }: { page: LabPage; props: Lab
   if (view === "none") return null;
   return (
     <Dimmed on={removing(page.s)}>
-      <NetworkPanel view={view} status={p.status} remote={page.s.remote} box={page.box.status} meta={p.lab.runtime ? meta : undefined} />
+      <NetworkPanel view={view} status={p.status} place={page.place} remote={page.s.remote} box={page.box.status} meta={p.lab.runtime ? meta : undefined} />
     </Dimmed>
   );
 }

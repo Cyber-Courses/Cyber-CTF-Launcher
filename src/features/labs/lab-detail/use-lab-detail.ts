@@ -8,6 +8,7 @@ import { useAttackBox } from "@/features/labs/use-attack-box";
 import type { Lab } from "@/features/labs/use-labs";
 import { useCloudPreview } from "@/features/labs/cloud-panel";
 import { removing, restartTarget } from "@/features/labs/lab-detail/lab-state";
+import { placeOf } from "@/features/labs/place";
 import { useObjectives } from "@/features/labs/objectives/use-objectives";
 import { useLabPageState } from "@/features/labs/lab-detail/use-lab-page-state";
 import { useLabShell } from "@/features/labs/lab-detail/use-lab-shell";
@@ -148,7 +149,9 @@ export function useLabDetail(p: LabDetailProps) {
   const restart = () => restartTarget(status, run.hosts, run.runOn, run.localVm);
   const { resetting, reset } = useLabReset(p.onStop, p.onStart, restart, clearCheck);
   const startOn = (target: RunTarget) => void p.onStart(target);
-  return { s, acting, act, provisionTarget, setProvisionTarget, run, preview, shell, box, check, tools, objectives, resetting, reset, startOn };
+  // Where it runs, said the same way by the header, Details and the diagram's host card.
+  const place = placeOf(status, s.isDocker, p.dockerEngine ?? null, run.hosts);
+  return { s, acting, act, provisionTarget, setProvisionTarget, run, preview, shell, box, check, tools, objectives, resetting, reset, startOn, place };
 }
 
 export type LabPage = ReturnType<typeof useLabDetail>;

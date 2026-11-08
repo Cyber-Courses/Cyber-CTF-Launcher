@@ -5,6 +5,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { HostHeader, hasPortTabs } from "@/features/labs/network-diagram/host-header";
 import type { Attacker } from "@/features/labs/network-diagram/model";
 import type { NetworkNote } from "@/features/labs/lab-detail/lab-state";
+import type { Place } from "@/features/labs/place";
 import type { AttackStatus, LabStatus } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -16,10 +17,10 @@ const NetworkDiagram = lazy(() => import("@/features/labs/network-diagram").then
 
 /** The diagram's card while its code loads: the same header, and the shell at the height the
  *  diagram starts at (before its layout), so the page doesn't move when it arrives. */
-function DiagramSkeleton({ host, docked }: { host: string | null; docked: boolean }) {
+function DiagramSkeleton({ place, docked }: { place: Place | null; docked: boolean }) {
   return (
     <div className={cn("hostcard", docked && "hostcard-docked")} aria-busy="true">
-      <HostHeader host={host} />
+      <HostHeader place={place} />
       <div className="topology-shell" />
     </div>
   );
@@ -37,12 +38,15 @@ function diagramAttacker(status: LabStatus, remote: boolean, box: AttackStatus |
 export function NetworkPanel({
   view,
   status,
+  place,
   remote,
   box,
   meta,
 }: {
   view: "diagram" | NetworkNote;
   status: LabStatus | undefined;
+  /** Where the lab runs: the host card's logo and name. */
+  place: Place | null;
   remote: boolean;
   /** The local attack box's last status. */
   box: AttackStatus | null;
@@ -52,8 +56,8 @@ export function NetworkPanel({
   const t = useT();
   if (view === "diagram" && status) {
     return (
-      <Suspense fallback={<DiagramSkeleton host={status.host} docked={hasPortTabs(status.machines)} />}>
-        <NetworkDiagram machines={status.machines} networks={status.networks} host={status.host} attacker={diagramAttacker(status, remote, box)} />
+      <Suspense fallback={<DiagramSkeleton place={place} docked={hasPortTabs(status.machines)} />}>
+        <NetworkDiagram machines={status.machines} networks={status.networks} place={place} attacker={diagramAttacker(status, remote, box)} />
       </Suspense>
     );
   }

@@ -1,7 +1,8 @@
 "use client";
 
 import { type DockerEngine, type SystemReport } from "@/lib/tauri";
-import { ENGINES, Engine, engineBadge, enginesFor, recommendedEngine } from "@/features/machine/setup-steps/engines";
+import { EngineLogo } from "@/features/machine/engine-logo";
+import { engineBadge, enginesFor, recommendedEngine } from "@/features/machine/setup-steps/engines";
 import { EngineAction, EngineHints } from "@/features/machine/setup-steps/engine-action";
 import { Log } from "@/features/machine/setup-steps/parts";
 import { Choice, ChoiceAction, ChoiceGrid } from "@/components/ui/choice-card";
@@ -46,26 +47,6 @@ export function EngineStep({ report, setup }: { report: SystemReport; setup: Mac
       <Log setup={setup} of={["docker"]} />
       <EngineTrademarks />
     </div>
-  );
-}
-
-/** The logo of a Docker-compatible engine, for other screens (e.g. the Machine page). */
-export function EngineMark({ id }: { id: DockerEngine }) {
-  const e = ENGINES.find((x) => x.id === id);
-  return e ? <EngineLogo engine={e} /> : null;
-}
-
-/** Brand mark in a fixed square. App icons (`tile`) fill it; bare marks sit on a white logo
- *  tile (white in every mode) so dark artwork stays legible. */
-function EngineLogo({ engine }: { engine: Engine }) {
-  return engine.tile ? (
-    // eslint-disable-next-line @next/next/no-img-element -- static export, plain asset
-    <img src={engine.logo} alt="" className="size-8 shrink-0 rounded-control object-contain" />
-  ) : (
-    <span className="logo-tile flex size-8 shrink-0 items-center justify-center rounded-control p-1.5">
-      {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
-      <img src={engine.logo} alt="" className="size-full object-contain" />
-    </span>
   );
 }
 

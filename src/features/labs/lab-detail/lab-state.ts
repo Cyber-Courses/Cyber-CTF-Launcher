@@ -2,8 +2,9 @@ import type { RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { EMULATORS, runsNatively } from "@/features/labs/lab-runtime";
 import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
+import { ENGINES, engineName as dockerEngineName } from "@/features/machine/setup-steps/engines";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
-import type { ActiveOperation, LabMachine, LabStatus, Provider, ServerHost } from "@/lib/tauri";
+import type { ActiveOperation, DockerEngine, LabMachine, LabStatus, Provider, ServerHost } from "@/lib/tauri";
 
 // What the lab page shows, derived from the lab's status and what is in flight on it.
 
@@ -103,10 +104,13 @@ function leftovers(status: LabStatus | undefined, isCloud: boolean): boolean {
   return (status?.machines ?? []).some((m) => m.state !== "not_created");
 }
 
-/** The engine or hypervisor the status says the lab runs on, by name. */
+/** The engine or hypervisor the status says the lab runs on, by name: the engine recorded at
+ *  launch (Docker Desktop, OrbStack…), else "Docker" for the CLI's current one. */
 function engineName(status: LabStatus | undefined): string | null {
   if (!status?.provider) return null;
-  return status.provider === "docker" ? "Docker" : (PROVIDER_LABELS[status.provider] ?? status.provider);
+  if (status.provider === "docker") return "Docker";
+  if (ENGINES.some((e) => e.id === status.provider) || status.provider === "podman") return dockerEngineName(status.provider as DockerEngine);
+  return PROVIDER_LABELS[status.provider] ?? status.provider;
 }
 
 export function deriveLabState(i: LabStateInput) {

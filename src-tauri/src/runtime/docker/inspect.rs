@@ -223,12 +223,21 @@ pub async fn status(dir: &Path, id: &str) -> Result<LabStatus> {
     } else {
         Vec::new()
     };
-    Ok(build_status(entries, inspected, networks, &serving))
+    Ok(build_status(entries, inspected, networks, &serving, lab_provider(dir)))
+}
+
+/// The engine a container lab here runs on, for its status: the engine behind the Docker context
+/// recorded at launch (a chosen engine, see `paths::mark_engine`), else "docker", the CLI's
+/// current engine, which the webview names from the machine report.
+fn lab_provider(dir: &Path) -> String {
+    super::super::paths::engine(dir)
+        .and_then(|context| crate::machine::system::docker::context_engine(&context, std::env::consts::OS))
+        .map_or_else(|| "docker".to_string(), str::to_string)
 }
 
 /// The lab's status from its containers, their inspection, its networks and which services
-/// should be serving.
-fn build_status(entries: Vec<PsEntry>, mut inspected: HashMap<String, Inspected>, networks: Vec<Network>, serving: &[String]) -> LabStatus {
+/// should be serving, on `provider` (the engine).
+fn build_status(entries: Vec<PsEntry>, mut inspected: HashMap<String, Inspected>, networks: Vec<Network>, serving: &[String], provider: String) -> LabStatus {
     let running = is_running(&entries);
     let url = if running { open_url(&entries, &inspected) } else { None };
     let down: Vec<(String, String)> = down_serving(&entries, serving);
@@ -250,7 +259,7 @@ fn build_status(entries: Vec<PsEntry>, mut inspected: HashMap<String, Inspected>
             machines.push(down_machine(service, state));
         }
     }
-    docker_status(running, machines, networks, url)
+    docker_status(running, machines, networks, url, provider)
 }
 
 /// A running container as a machine: its lab interfaces, the address on the first, its TCP
@@ -284,8 +293,8 @@ fn down_machine(service: String, state: String) -> Machine {
     Machine { name: service, state, image: String::new(), ip: String::new(), ports: Vec::new(), interfaces: Vec::new(), services: Vec::new(), infra: false }
 }
 
-/// A Docker lab's status from its machines, networks and URL.
-fn docker_status(running: bool, machines: Vec<Machine>, networks: Vec<Network>, url: Option<String>) -> LabStatus {
+/// A Docker lab's status from its machines, networks and URL, on `provider` (its engine).
+fn docker_status(running: bool, machines: Vec<Machine>, networks: Vec<Network>, url: Option<String>, provider: String) -> LabStatus {
     LabStatus {
         running,
         parked: None,
@@ -295,7 +304,7 @@ fn docker_status(running: bool, machines: Vec<Machine>, networks: Vec<Network>, 
         host: None,
         expires_at: None,
         place: None,
-        provider: Some("docker".to_string()),
+        provider: Some(provider),
         attacker: None,
         outputs: Vec::new(),
         message: None,

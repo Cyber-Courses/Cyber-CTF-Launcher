@@ -124,13 +124,48 @@ describe("NetworkDiagram", () => {
     expect(document.querySelector(".port-tab")?.getAttribute("title")).toContain("http://127.0.0.1:8080");
   });
 
-  it("names a server instead of your machine for a remote lab", async () => {
-    render(<NetworkDiagram machines={[machine("dc01", { ports: [] })]} host="homelab-pve" />);
+  it("names the server instead of your machine for a remote lab, with its kind and address", async () => {
+    render(
+      <NetworkDiagram machines={[machine("dc01", { ports: [] })]} place={{ kind: "server", name: "homelab-pve", provider: "proxmox", address: "10.0.0.5" }} />,
+    );
     await settle();
     expect(screen.getByText("homelab-pve")).toBeTruthy();
+    expect(screen.getByText("Proxmox VE · 10.0.0.5")).toBeTruthy();
+    expect(screen.getByAltText("Proxmox")).toBeTruthy();
     expect(screen.queryByText("Your machine")).toBeNull();
     expect(document.querySelector(".hostcard-docked")).toBeNull();
     expect(document.querySelector(".port-tab")).toBeNull();
+  });
+
+  it("shows the engine a container lab runs on here, with its logo, and keeps the loopback address", async () => {
+    render(<NetworkDiagram machines={[machine("web", { ports: [] })]} place={{ kind: "engine", engine: "orbstack" }} />);
+    await settle();
+    expect(screen.getByText("OrbStack")).toBeTruthy();
+    expect(document.querySelector(".hostcard-header img")?.getAttribute("src")).toBe("/brands/orbstack.png");
+    expect(screen.getAllByText("127.0.0.1").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Your machine")).toBeNull();
+  });
+
+  it("shows the hypervisor a VM lab runs on here", async () => {
+    const { unmount } = render(<NetworkDiagram machines={[machine("dc01", { ports: [] })]} place={{ kind: "hypervisor", provider: "qemu", inVm: false }} />);
+    await settle();
+    expect(screen.getByText("QEMU")).toBeTruthy();
+    expect(screen.getByText("VMs on this machine")).toBeTruthy();
+    expect(document.querySelector(".hostcard-header img")?.getAttribute("src")).toBe("/brands/qemu.svg");
+    unmount();
+    // A container lab whose containers run in one VM here says so.
+    render(<NetworkDiagram machines={[machine("web", { ports: [] })]} place={{ kind: "hypervisor", provider: "utm", inVm: true }} />);
+    await settle();
+    expect(screen.getByText("UTM")).toBeTruthy();
+    expect(screen.getByText("containers in a VM on this machine")).toBeTruthy();
+  });
+
+  it("shows the cloud, its region and the account for a lab in a cloud account", async () => {
+    render(<NetworkDiagram machines={[machine("ec2", { ports: [] })]} place={{ kind: "cloud", name: "My AWS", provider: "aws", region: "eu-west-3" }} />);
+    await settle();
+    expect(screen.getByText("AWS")).toBeTruthy();
+    expect(screen.getByText("eu-west-3 · My AWS")).toBeTruthy();
+    expect(screen.getByAltText("Amazon Web Services")).toBeTruthy();
   });
 
   it("shows each machine's state in words", async () => {

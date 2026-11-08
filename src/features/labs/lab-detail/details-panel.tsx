@@ -7,6 +7,7 @@ import { KeyValue, Panel, PanelHeader } from "@/components/ui/panel";
 import { AutoStop } from "@/features/labs/lab-timers";
 import { RerunSetupLabel } from "@/features/labs/lab-detail/deployment-panel";
 import { bindHost, publishedBinds } from "@/features/labs/lab-detail/lab-state";
+import { placeText, type Place } from "@/features/labs/place";
 import type { LabStatus } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
@@ -14,13 +15,14 @@ import { useT } from "@/lib/i18n";
  *  setup to run again. */
 export function DetailsPanel({
   status,
-  engine,
+  place,
   meta,
   cost = null,
   provision,
 }: {
   status: LabStatus | undefined;
-  engine: string | null;
+  /** Where it runs (the engine, hypervisor, server or cloud), as the header says it. */
+  place: Place | null;
   meta: string;
   /** A cloud lab's estimated cost, when it gives one. */
   cost?: string | null;
@@ -30,13 +32,12 @@ export function DetailsPanel({
   const t = useT();
   const url = status?.url;
   const binds = publishedBinds(status?.machines ?? []);
-  const here = status?.host ?? t("labs.detail.thisMachine");
+  const here = place ? placeText(t, place) : t("labs.detail.thisMachine");
   return (
     <Panel>
       <PanelHeader title={t("labs.detail.details")} meta={meta} />
       <div>
         <KeyValue k={t("labs.detail.runsOn")}>{here}</KeyValue>
-        {engine && !status?.host && <KeyValue k={t("labs.detail.engine")}>{engine}</KeyValue>}
         {status?.expiresAt && (
           <KeyValue k={t("labs.detail.autoStop")}>
             <AutoStop at={status.expiresAt} />

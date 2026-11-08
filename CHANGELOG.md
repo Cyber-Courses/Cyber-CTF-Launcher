@@ -24,6 +24,15 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Changed
 
+- **The lab page shows where a lab runs, with its logo.** The network diagram's host card
+  showed "Your machine · 127.0.0.1 · host" and a laptop whatever the lab ran on. It now carries
+  the logo and name of what runs the lab: the container engine for containers here (the one
+  the lab was started on, recorded at launch, else the one the Docker CLI points at), the
+  hypervisor for VMs here, the server and its kind (Proxmox VE, VMware ESXi) with its address,
+  or the cloud with its region and the account's name. The header's "on …" and Details' "Runs
+  on" say the same thing: "on this machine · OrbStack", "on this machine · QEMU", "on homelab ·
+  Proxmox VE", "on AWS · eu-west-3". A container lab's status now names the engine it runs on
+  instead of a bare "docker".
 - **The Machine page lists its providers, and "Add a provider" opens a guided setup per lab
   type that starts from where the machine stands.** The Health/Setup switch and the setup
   checklist are gone: the page shows this machine's health and every container engine and

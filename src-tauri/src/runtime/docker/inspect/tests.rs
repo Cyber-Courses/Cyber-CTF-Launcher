@@ -1,5 +1,5 @@
 use super::compose::parse_ps;
-use super::{build_status, ipv4_subnets, listed_names, networks_of_others};
+use super::{build_status, ipv4_subnets, lab_provider, listed_names, networks_of_others};
 use super::{declared_services, down_serving, first_published_url, is_datastore, is_running, open_url, parse_inspect, strip_project, tcp_ports};
 
 #[test]
@@ -21,7 +21,7 @@ fn network_listings_skip_blanks_and_ipv6() {
 #[test]
 fn a_serving_container_that_died_still_shows_on_the_diagram() {
     let entries = parse_ps(r#"[{"Service":"web","State":"exited","Name":"p-web-1"},{"Service":"db","State":"running","Name":"p-db-1","Health":"unhealthy"}]"#);
-    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()]);
+    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()], "docker".into());
     assert!(status.running);
     let machine_states: Vec<(&str, &str)> = status.machines.iter().map(|m| (m.name.as_str(), m.state.as_str())).collect();
     assert_eq!(machine_states, [("db", "unhealthy"), ("web", "exited")]);
@@ -340,9 +340,28 @@ fn a_down_serving_service_is_listed_once_even_with_several_containers() {
     let entries = parse_ps(
         r#"[{"Service":"web","State":"exited","Name":"p-web-1"},{"Service":"web","State":"exited","Name":"p-web-2"},{"Service":"db","State":"running","Name":"p-db-1"}]"#,
     );
-    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()]);
+    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()], "docker".into());
     assert_eq!(status.machines.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["db", "web"]);
     let entries = parse_ps(r#"[{"Service":"web","State":"exited","Name":"p-web-1"},{"Service":"web","State":"running","Name":"p-web-2"}]"#);
-    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()]);
+    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()], "docker".into());
     assert_eq!(status.machines.iter().map(|m| (m.name.as_str(), m.state.as_str())).collect::<Vec<_>>(), [("web", "running")]);
+}
+
+/// A lab started on a chosen engine carries that engine in its status (its logo on the lab
+/// page); one started on the CLI's current engine says "docker", which the page names from the
+/// machine report. A context whose name tells no engine reads as "docker" too.
+#[test]
+fn the_status_names_the_engine_recorded_at_launch() {
+    let dir = std::env::temp_dir().join(format!("cyberctf-lab-provider-{}", rand::random::<u32>()));
+    std::fs::create_dir_all(&dir).unwrap();
+    assert_eq!(lab_provider(&dir), "docker");
+    crate::runtime::paths::mark_engine(&dir, Some("orbstack")).unwrap();
+    assert_eq!(lab_provider(&dir), "orbstack");
+    crate::runtime::paths::mark_engine(&dir, Some("desktop-linux")).unwrap();
+    assert_eq!(lab_provider(&dir), "docker-desktop");
+    crate::runtime::paths::mark_engine(&dir, Some("my-remote")).unwrap();
+    assert_eq!(lab_provider(&dir), "docker");
+    let status = build_status(Vec::new(), std::collections::HashMap::default(), Vec::new(), &[], "orbstack".into());
+    assert_eq!(status.provider.as_deref(), Some("orbstack"));
+    std::fs::remove_dir_all(&dir).unwrap();
 }

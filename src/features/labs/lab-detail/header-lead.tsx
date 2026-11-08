@@ -4,7 +4,8 @@ import { StatusStrip } from "@/components/ui/page-header";
 import { Badge, LevelBadge } from "@/components/ui/badge";
 import { StatusDot, type Tone } from "@/components/ui/status-pill";
 import { AutoStop } from "@/features/labs/lab-timers";
-import { runtimeWord, thisMachine } from "@/features/labs/lab-detail/labels";
+import { runtimeWord } from "@/features/labs/lab-detail/labels";
+import { placeText, type Place } from "@/features/labs/place";
 import type { LabPhase, LabState } from "@/features/labs/lab-detail/lab-state";
 import { difficultyLabel, type Lab } from "@/features/labs/use-labs";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
@@ -31,7 +32,7 @@ function stateWord(t: T, s: LabState): { tone: Tone; word: string; pulse?: boole
 
 /** Under the title: the status strip (state, where, runtime, level, category), the skills and
  *  the description. */
-export function HeaderLead({ lab, state: s, status }: { lab: Lab; state: LabState; status?: LabStatus }) {
+export function HeaderLead({ lab, state: s, status, place = null }: { lab: Lab; state: LabState; status?: LabStatus; place?: Place | null }) {
   const t = useT();
   const state = stateWord(t, s);
   const strip: React.ReactNode[] = [
@@ -40,12 +41,9 @@ export function HeaderLead({ lab, state: s, status }: { lab: Lab; state: LabStat
       <b>{state.word}</b>
     </span>,
   ];
-  // A container lab in a VM here says so: "on this machine" alone hides where its containers are.
-  const inLocalVm = s.isDocker && s.place === "local_vm";
-  if (s.running)
-    strip.push(
-      <span key="where">{t("labs.detail.onWhere", { where: status?.host ?? (inLocalVm ? t("labs.detail.aVmHere") : thisMachine(t, s.engine)) })}</span>,
-    );
+  // Where it runs, with the engine, hypervisor, server or cloud by name (a container lab in a VM
+  // here says so: "on this machine" alone hides where its containers are).
+  if (s.running && place) strip.push(<span key="where">{t("labs.detail.onWhere", { where: placeText(t, place) })}</span>);
   else if (s.parked && s.engine) strip.push(<span key="where">{s.engine}</span>);
   if (lab.runtime) strip.push(<span key="rt">{runtimeWord(t, s)}</span>);
   if (lab.runtime && !s.native && (s.isDocker || s.emulates))

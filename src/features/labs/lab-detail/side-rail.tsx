@@ -64,7 +64,7 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
 
       {s.running && (
         <Dimmed on={removing(s)}>
-          <DetailsPanel status={status} engine={s.engine} meta={meta} cost={cost} provision={provisionControl(page, busy)} />
+          <DetailsPanel status={status} place={page.place} meta={meta} cost={cost} provision={provisionControl(page, busy)} />
         </Dimmed>
       )}
       {!p.loggedIn && <p className="px-1 text-[0.75rem] text-muted-foreground">{t("labs.detail.signInToRun")}</p>}

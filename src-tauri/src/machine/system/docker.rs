@@ -44,7 +44,7 @@ fn engine_named(os: &str, context: &str) -> &'static str {
 /// The engine behind a Docker CLI context, by the names the engines give their contexts.
 /// `default` only counts on Linux, where it is the native daemon; elsewhere its socket is a
 /// link to whichever desktop app installed it, so it says nothing on its own.
-fn context_engine(name: &str, os: &str) -> Option<&'static str> {
+pub(crate) fn context_engine(name: &str, os: &str) -> Option<&'static str> {
     let n = name.to_lowercase();
     if n == "orbstack" {
         Some("orbstack")

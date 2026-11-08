@@ -11,6 +11,7 @@ import { Flow, type Tab } from "@/features/labs/network-diagram/flow";
 import { Attacker, MIN_ZOOM, Machine } from "@/features/labs/network-diagram/model";
 import { CopyText } from "@/features/labs/network-diagram/copy-text";
 import { HostHeader, hasPortTabs } from "@/features/labs/network-diagram/host-header";
+import type { Place } from "@/features/labs/place";
 import { FitWidthControls, fitShellSize, useFitWidth } from "@/features/labs/network-diagram/fit-width";
 import { topology } from "@/features/labs/network-diagram/topology";
 
@@ -95,10 +96,11 @@ type DiagramProps = {
   machines: Machine[];
   networks?: LabNetwork[];
   attacker?: Attacker;
-  host?: string | null;
+  /** Where the lab runs: the host card's logo and name (null: this machine, unnamed). */
+  place?: Place | null;
 };
 
-export function NetworkDiagram({ machines, networks = [], attacker = null, host = null }: DiagramProps) {
+export function NetworkDiagram({ machines, networks = [], attacker = null, place = null }: DiagramProps) {
   const sig = topologySig(useLocale(), machines, networks, attacker);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- sig captures everything drawn
   const topo = useMemo(() => topology(machines, networks, attacker), [sig]);
@@ -125,7 +127,7 @@ export function NetworkDiagram({ machines, networks = [], attacker = null, host 
   return (
     <div className={cn("hostcard", hasPortTabs(machines) && "hostcard-docked")}>
       <HostHeader
-        host={host}
+        place={place}
         tools={
           <FitWidthControls
             wide={wide}

@@ -226,7 +226,15 @@ describe("SelfTest", () => {
 /* ------------------------------------------------------------------ provider rows */
 
 describe("EngineRows", () => {
-  const base = { now: Date.now(), memFree: 16 * GB, testing: null, onToggleTest: vi.fn(), onTestDone: vi.fn(), onFix: vi.fn(), onRefresh: vi.fn() };
+  const base = {
+    now: Date.now(),
+    memFree: 16 * GB,
+    testing: null as string | null,
+    onToggleTest: vi.fn(),
+    onTestDone: vi.fn(),
+    onFix: vi.fn(),
+    onRefresh: vi.fn(),
+  };
   type Engine = SystemReport["dockerEngines"][number];
   const found = (engine: Engine["engine"], over: Partial<Engine> = {}): Engine => ({ engine, context: engine, running: true, current: false, ...over });
 
@@ -367,7 +375,7 @@ describe("HypervisorRows", () => {
   const base = {
     now: Date.now(),
     memFree: 16 * GB,
-    testing: null,
+    testing: null as string | null,
     onToggleTest: vi.fn(),
     onTestDone: vi.fn(),
     onFix: vi.fn(),

@@ -135,6 +135,6 @@ export {
 export { firstPending, pathProgress, type LastTests } from "@/features/machine/setup-steps/step-status";
 export { PathChooser } from "@/features/machine/setup-steps/path-step";
 export { useMachineSetup, type MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
-export { EngineMark } from "@/features/machine/setup-steps/engine-step";
+export { EngineMark } from "@/features/machine/engine-logo";
 export { engineName } from "@/features/machine/setup-steps/engines";
 export { Requirement } from "@/features/machine/setup-steps/parts";

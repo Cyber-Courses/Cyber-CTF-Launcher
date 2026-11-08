@@ -4,7 +4,11 @@
     "serverSub": "servidor · host docker",
     "host": "host",
     "online": "online",
-    "portTab": "Publicada nesta máquina. Clique para copiar {url}"
+    "portTab": "Publicada nesta máquina. Clique para copiar {url}",
+    "vmSub": "VMs nesta máquina",
+    "containerVmSub": "contêineres em uma VM nesta máquina",
+    "serverSubWith": "{kind} · {address}",
+    "cloudSub": "{region} · {account}"
   },
   "copy": {
     "title": "Copiar {text}",
