@@ -92,12 +92,12 @@ describe("LabDetail: starting", () => {
     installTauri(quiet);
     const { user, h } = await clickStart({ readyVms: ["virtualbox"] });
     const dialog = screen.getByRole("dialog");
-    // This machine has more than one way, so its forms are a step in.
-    await user.click(within(dialog).getAllByText("This machine")[1]);
+    // Two rows: Containers (selected, with its ports) and In a VM.
     expect(within(dialog).getByText("Containers")).toBeTruthy();
-    // The port choice shows only with the Containers form.
+    expect(within(dialog).getByText("In a VM")).toBeTruthy();
+    // The port choice shows only with Containers selected.
     expect(within(dialog).getByText("Ports on this machine")).toBeTruthy();
-    await user.click(within(dialog).getByText("In one VM"));
+    await user.click(within(dialog).getByText("In a VM"));
     expect(within(dialog).queryByText("Ports on this machine")).toBeNull();
     await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local-vm", provider: "virtualbox" });
@@ -110,30 +110,32 @@ describe("LabDetail: starting", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     await user.click(screen.getByRole("button", { name: /Start lab/ }));
-    // Into the form step (this machine has more than one way), then containers' default ports.
-    await user.click(within(screen.getByRole("dialog")).getAllByText("This machine")[1]);
+    // Containers is selected by default, its default ports right there.
     await startIn(user, "The lab's default ports");
     expect(h.onStart).toHaveBeenCalledTimes(1);
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local", ports: "default" });
   });
 
-  it("shows this machine's three forms a step in for a dual-form lab, and Back returns to the platforms", async () => {
+  it("sends a dual-form lab's In a VM row to a form step, and Back returns to the places", async () => {
     installTauri(quiet);
     const bothForms: Lab = { ...dockerLab, id: "lab-both", runtime: { ...dockerRuntime, docker: true, vm: true } };
     const { user } = await clickStart({ lab: bothForms, readyVms: ["virtualbox"] });
     const dialog = screen.getByRole("dialog");
-    // Step 1 is the platform; the forms are not shown yet.
+    // Step 1: two rows; the VM forms are a step in.
     expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
-    expect(within(dialog).queryByText("Containers")).toBeNull();
-    // This machine has three ways: pick it to see them.
-    await user.click(within(dialog).getAllByText("This machine")[1]);
-    expect(within(dialog).getByText("How should it run?")).toBeTruthy();
     expect(within(dialog).getByText("Containers")).toBeTruthy();
+    expect(within(dialog).getByText("In a VM")).toBeTruthy();
+    expect(within(dialog).queryByText("One VM per machine")).toBeNull();
+    await user.click(within(dialog).getByText("In a VM"));
+    // Step 2: only the two VM forms, no Containers.
+    expect(within(dialog).getByText("How should it run?")).toBeTruthy();
     expect(within(dialog).getByText("In one VM")).toBeTruthy();
     expect(within(dialog).getByText("One VM per machine")).toBeTruthy();
-    // Back returns to the platform list.
+    expect(within(dialog).queryByText("Containers")).toBeNull();
+    // Back returns to the places.
     await user.click(within(dialog).getByRole("button", { name: "Back" }));
     expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
+    expect(within(dialog).getByText("Containers")).toBeTruthy();
     expect(within(dialog).queryByText("One VM per machine")).toBeNull();
   });
 

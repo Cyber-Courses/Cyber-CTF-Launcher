@@ -71,10 +71,8 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
   const cloudAccounts = cloudAccountsFor(rt, hosts);
   // A server picked, then removed in its setup window: back to where Start points at first.
   const runOn = picked && (picked.kind !== "host" || hosts.some((h) => h.id === picked.id)) ? picked : initialTarget(rt, hosts, defaultId, localReady);
-  // The picker's two steps and the moves between them. This machine offers more than one form (so
-  // a step 2) when a helper VM or a per-machine VM is ready; a VM lab or a hypervisor-less container
-  // lab has one form and skips straight to Start.
-  const steps = usePickerSteps(runOn, setRunOn, localVm !== null || perMachine !== null);
+  // The picker's two steps and the moves between them, over the VM forms This machine offers.
+  const steps = usePickerSteps(runOn, setRunOn, vmFormTargets(isCloud, isDocker, localVm, perMachineVm));
 
   return {
     hosts,
@@ -104,13 +102,22 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
 
 const NO_SERVERS = { hosts: [], defaultId: null };
 
-/** Every local form (`local`, `local-vm`, `local-vms`) belongs to the one "this machine" platform. */
-const isLocalTarget = (t: RunTarget) => t.kind === "local" || t.kind === "local-vm" || t.kind === "local-vms";
+/** The VM forms This machine's "In a VM" row offers: a VM lab runs its own VMs (`local`); a
+ *  container lab runs a helper VM (`local-vm`) and, when dual-form, one VM per machine
+ *  (`local-vms`). With two, picking "In a VM" opens step 2; with one it starts that form. */
+function vmFormTargets(isCloud: boolean, isDocker: boolean, localVm: Provider | null, perMachineVm: Provider | null): RunTarget[] {
+  if (isCloud) return [];
+  if (!isDocker) return [{ kind: "local" }];
+  const forms: RunTarget[] = [];
+  if (localVm) forms.push({ kind: "local-vm", provider: localVm });
+  if (perMachineVm) forms.push({ kind: "local-vms", provider: perMachineVm });
+  return forms;
+}
 
-/** The picker's two steps. Step 1 picks a platform: a host (one form today) or a single-form This
- *  machine selects it and stays on step 1 (next tap is Start); a multi-form This machine opens
+/** The picker's two steps. Step 1 picks a place: a host, Containers, or In a VM. Containers and a
+ *  lone VM form select and stay on step 1 (next tap is Start); In a VM with two VM forms opens
  *  step 2. `resetSteps` (dialog open/close) and `back` (the footer) return to step 1. */
-function usePickerSteps(runOn: RunTarget, setRunOn: (t: RunTarget) => void, localMultiForm: boolean) {
+function usePickerSteps(runOn: RunTarget, setRunOn: (t: RunTarget) => void, vmForms: RunTarget[]) {
   const [step, setStep] = useState<"platform" | "form">("platform");
   const toPlatform = () => {
     setStep("platform");
@@ -121,8 +128,19 @@ function usePickerSteps(runOn: RunTarget, setRunOn: (t: RunTarget) => void, loca
       setStep("platform");
       return;
     }
-    if (!isLocalTarget(runOn)) setRunOn({ kind: "local" });
-    setStep(localMultiForm ? "form" : "platform");
+    if (p.kind === "containers") {
+      setRunOn({ kind: "local" });
+      setStep("platform");
+      return;
+    }
+    // "In a VM": two forms open step 2 (keeping a VM form selected); one starts straight away.
+    if (vmForms.length >= 2) {
+      if (runOn.kind !== "local-vm" && runOn.kind !== "local-vms") setRunOn(vmForms[0]);
+      setStep("form");
+    } else {
+      setRunOn(vmForms[0] ?? { kind: "local" });
+      setStep("platform");
+    }
   };
   return { step, pickPlatform, back: toPlatform, resetSteps: toPlatform };
 }

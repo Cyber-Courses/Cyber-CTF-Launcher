@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { type Provider, type ServerHost } from "@/lib/tauri";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
 import { StatusPill } from "@/components/ui/status-pill";
-import { localFormOptions, platformGroups, useHostChecks, useRunTiers, type OptionGroup, type PerMachineVm } from "@/features/labs/run-on-options";
+import { platformGroups, vmFormOptions, useHostChecks, useRunTiers, type LocalRows, type OptionGroup, type PerMachineVm } from "@/features/labs/run-on-options";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { PortMode } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
@@ -28,20 +28,29 @@ const targetKey = (t: RunTarget) => {
   }
 };
 
-/** The two steps of the picker: first the platform ("Where should it run?"), then, only when the
- *  platform offers more than one form, how it runs there ("How should it run?"). */
+/** The two steps of the picker: first the platform ("Where should it run?"), then, only when This
+ *  machine's In a VM row has two VM forms, how it runs there ("How should it run?"). */
 export type PickerStep = "platform" | "form";
 
-/** A place a lab can run, before its form is chosen: this machine (every local form is the one
- *  "this machine" platform), or one saved host. */
-export type Platform = { kind: "local" } | { kind: "host"; id: string };
+/** A row a lab can be launched from in step 1: run here as containers, run here in a VM, or on one
+ *  saved host. (A container lab's local form is `containers`; a VM lab's is `vm`.) */
+export type Platform = { kind: "containers" } | { kind: "vm" } | { kind: "host"; id: string };
 
-/** The platform a target belongs to. */
-export const platformOf = (t: RunTarget): Platform => (t.kind === "host" ? { kind: "host", id: t.id } : { kind: "local" });
+/** The platform a step-1 row's target stands for. A bare `local` is the Containers row for a
+ *  container lab, the In a VM row (its own VMs) for a VM lab; `local-vm`/`local-vms` are In a VM. */
+const platformOfRow = (t: RunTarget, offerContainers: boolean): Platform => {
+  if (t.kind === "host") return { kind: "host", id: t.id };
+  if (t.kind === "local") return offerContainers ? { kind: "containers" } : { kind: "vm" };
+  return { kind: "vm" };
+};
 
-/** A target collapsed to its platform's representative, so step 1 highlights the right row
- *  whichever local form (`local`, `local-vm`, `local-vms`) is the current pick. */
-const asPlatformTarget = (t: RunTarget): RunTarget => (t.kind === "host" ? t : { kind: "local" });
+/** A target collapsed to its step-1 row's representative, so the right row highlights whichever
+ *  local form (`local`, `local-vm`, `local-vms`) is the current pick. A container lab's VM forms
+ *  all map to the In a VM row (`local-vm` on the chosen hypervisor). */
+const asRowTarget = (t: RunTarget, localVm: Provider | null): RunTarget => {
+  if (t.kind === "host" || t.kind === "local") return t;
+  return localVm ? { kind: "local-vm", provider: localVm } : t;
+};
 
 /**
  * A centered dialog over the page (Escape or a click on the backdrop closes it). The body
@@ -75,12 +84,11 @@ export function RunOnDialog({ onClose, children, footer }: { onClose: () => void
 }
 
 /**
- * The launch picker, in two steps. Step 1 ("Where should it run?") lists the platforms: this
- * machine, then the player's servers, then their cloud accounts, each with its logo and live
- * status; a platform the lab can't run on stays visible, disabled, saying why. Picking a platform
- * with a single form selects it (go straight to Start); picking This machine when it has more than
- * one form opens step 2 ("How should it run?"), the forms for this machine (containers, in one VM,
- * one VM per machine). `step`/`onPickPlatform` are driven by the caller (the hook).
+ * The launch picker, in two steps. Step 1 ("Where should it run?") lists the places: This machine
+ * as up to two rows (Containers, In a VM), then the player's servers, then their cloud accounts,
+ * each with its logo and live status; a place the lab can't run on stays visible, disabled, saying
+ * why. Containers and a lone VM form go straight to Start; an In a VM row with two VM forms opens
+ * step 2 ("How should it run?"). `step`/`onPickPlatform` are driven by the caller (the hook).
  */
 type RunOnPickerProps = {
   title: string;
@@ -89,6 +97,9 @@ type RunOnPickerProps = {
   localNote: string;
   /** Container labs: whether a Docker engine answers here (null = unknown / not relevant). */
   dockerRunning: boolean | null;
+  /** Whether the lab has a container form that runs here, so This machine shows a Containers row
+   *  (a VM lab shows only In a VM). */
+  offerContainers?: boolean;
   /** The local hypervisor this (container) lab can run a VM on: Settings' choice, else the first ready. */
   localVm: Provider | null;
   /** Every ready hypervisor it can run a VM on: with several, the VM form carries a switch. */
@@ -99,17 +110,16 @@ type RunOnPickerProps = {
    *  others ready for it, the switch); null when the lab or this machine can't. */
   perMachine?: PerMachineVm | null;
   value: RunTarget;
-  /** Picks a form in step 2 (the switches use `onPickVm`). */
+  /** Picks a VM form in step 2 (the switches use `onPickVm`). */
   onChange: (t: RunTarget) => void;
   disabled: boolean;
-  /** The host-port choice for a container lab here: shown with the Containers form (step 2, or
-   *  step 1's This machine row when it is the only form). */
+  /** The host-port choice for a container lab here: shown under the Containers row. */
   localExtra?: React.ReactNode;
   /** This machine is a place it can run (false for a cloud lab: cloud accounts only). */
   offerLocal?: boolean;
   /** Which step to show. */
   step?: PickerStep;
-  /** Picks a platform in step 1. */
+  /** Picks a place in step 1. */
   onPickPlatform?: (p: Platform) => void;
 };
 
@@ -124,38 +134,34 @@ function PickerHeading({ heading, title }: { heading: string; title: string }) {
 }
 
 export function RunOnPicker(props: RunOnPickerProps) {
-  const { title, hosts, hostOk, localNote, dockerRunning, value, disabled, localExtra, offerLocal = true, step = "platform" } = props;
+  const { title, hosts, hostOk, localNote, dockerRunning, value, disabled, localExtra, offerLocal = true, offerContainers = true, step = "platform" } = props;
   const { localVm, localVms = [], onPickVm = () => {}, perMachine = null, onChange, onPickPlatform = () => {} } = props;
   const t = useT();
   const checks = useHostChecks(hosts);
   const tiers = useRunTiers();
-  // This machine offers more than one form (and so a step 2): a container lab with a helper VM,
-  // or a dual-form lab with its per-machine VM. A VM lab, or a container lab with no hypervisor
-  // ready, has one.
-  const localMultiForm = !!(localVm || perMachine?.provider);
 
   if (step === "form") {
-    const forms = localFormOptions(t, tiers, localNote, dockerRunning, { localVm, localVms, onPickVm, perMachine });
+    const forms = vmFormOptions(t, tiers, { localVm, localVms, onPickVm, perMachine });
     return (
       <div className="space-y-4">
         <PickerHeading heading={t("labs.runOn.formHeading")} title={title} />
         <OptionList group={{ id: "local", label: t("labs.runOn.thisMachine"), options: forms }} value={value} onChange={onChange} disabled={disabled} />
-        {localExtra && <div>{localExtra}</div>}
       </div>
     );
   }
 
-  const groups = platformGroups(t, { hosts, hostOk, checks, localNote, dockerRunning, localMultiForm, offerLocal, tiers });
+  const local: LocalRows = { offerContainers, localNote, dockerRunning, localVm, localVms, onPickVm, perMachine };
+  const groups = platformGroups(t, { hosts, hostOk, checks, local, offerLocal, tiers });
   const pick = (target: RunTarget) => {
-    onPickPlatform(platformOf(target));
+    onPickPlatform(platformOfRow(target, offerContainers));
   };
   return (
     <div className="space-y-4">
       <PickerHeading heading={t("labs.runOn.heading")} title={title} />
       {groups.flatMap((g) => [
-        <OptionList key={g.id} group={g} value={asPlatformTarget(value)} onChange={pick} disabled={disabled} />,
-        // A single-form This machine (no step 2): its host ports sit with it here.
-        g.id === "local" && !localMultiForm && localExtra ? <div key="local-extra">{localExtra}</div> : null,
+        <OptionList key={g.id} group={g} value={asRowTarget(value, localVm)} onChange={pick} disabled={disabled} />,
+        // The Containers row is a leaf: its host ports sit with This machine here.
+        g.id === "local" && localExtra ? <div key="local-extra">{localExtra}</div> : null,
       ])}
     </div>
   );

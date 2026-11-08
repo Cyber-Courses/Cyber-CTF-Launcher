@@ -97,24 +97,13 @@ function hypervisorSwitch(t: T, value: Provider, options: Provider[], onChange: 
   );
 }
 
-/** Step 2, "How should it run?": the forms This machine offers for the chosen lab. Containers
- *  (with its Docker engine's state), a helper VM on `localVm` (with a switch to the other ready
- *  hypervisors when there are several), and for a lab with VM recipes too, one VM per machine
- *  (`perMachine`). Only shown when there is more than one; a single-form lab starts from the
- *  platform row. */
-export function localFormOptions(t: T, tiers: RunTier[], localNote: string, dockerRunning: boolean | null, vm: LocalVm): Option[] {
+/** Step 2, "How should it run?": the VM forms This machine offers, shown only when there are two
+ *  (a dual-form lab's helper VM and per-machine VM). A helper VM on `localVm` (with a switch to
+ *  the other ready hypervisors when there are several), and one VM per machine (`perMachine`). The
+ *  container form and a lone VM form are picked on step 1, not here. */
+export function vmFormOptions(t: T, tiers: RunTier[], vm: LocalVm): Option[] {
   const { localVm, localVms, onPickVm, perMachine } = vm;
-  const forms: Option[] = [
-    {
-      target: { kind: "local" },
-      title: t("labs.runOn.formContainers"),
-      subtitle: localNote,
-      ok: true,
-      badge: badgeFor(tiers, candidatesFor({ kind: "local" })),
-      logo: dockerRunning === null ? <HypervisorLogo provider={null} /> : <DockerLogo />,
-      status: engineStatus(t, dockerRunning),
-    },
-  ];
+  const forms: Option[] = [];
   if (localVm) {
     forms.push({
       target: { kind: "local-vm", provider: localVm },
@@ -143,18 +132,59 @@ export function localFormOptions(t: T, tiers: RunTier[], localNote: string, dock
   return forms;
 }
 
-/** Step 1's single "This machine" row: the whole platform, not any one form. Its logo and status
- *  are the container engine's (for a container lab) or the hypervisor's; a lab with more than one
- *  form says so in its subtitle, and its forms are chosen in step 2. */
-function localPlatform(t: T, tiers: RunTier[], localNote: string, dockerRunning: boolean | null, multiForm: boolean): Option {
+/** Everything the step-1 "This machine" rows need: whether a container form runs here
+ *  (`offerContainers`), the note/engine state for the Containers row, and the VM-form data. */
+export type LocalRows = LocalVm & { offerContainers: boolean; localNote: string; dockerRunning: boolean | null };
+
+/** Step 1's rows for "This machine": up to two, each its own kind of run here. Containers (Docker
+ *  logo, the engine's state) when the lab has a container form, and In a VM (the hypervisor's
+ *  logo) when a VM form is ready here. */
+function localPlatformRows(t: T, tiers: RunTier[], local: LocalRows): Option[] {
+  const { offerContainers, localNote, dockerRunning } = local;
+  const rows: Option[] = [];
+  if (offerContainers) {
+    rows.push({
+      target: { kind: "local" },
+      title: t("labs.runOn.formContainers"),
+      subtitle: localNote,
+      ok: true,
+      badge: badgeFor(tiers, candidatesFor({ kind: "local" })),
+      logo: <DockerLogo />,
+      status: engineStatus(t, dockerRunning),
+    });
+  }
+  const vm = localVmRow(t, tiers, local);
+  if (vm) rows.push(vm);
+  return rows;
+}
+
+/** The "In a VM" row, or null when no VM form is ready here. A VM lab runs its own VMs as
+ *  `{ kind: "local" }`; a container lab runs a helper VM (`local-vm`) and, when dual-form, one VM
+ *  per machine (`local-vms`). One VM form: the row starts it, its hypervisor switch inline. Two:
+ *  the row opens step 2, where each form carries its own switch. */
+function localVmRow(t: T, tiers: RunTier[], local: LocalRows): Option | null {
+  const { offerContainers, localNote, localVm, localVms, onPickVm, perMachine } = local;
+  if (!offerContainers) {
+    return {
+      target: { kind: "local" },
+      title: t("labs.runOn.inAVm"),
+      subtitle: localNote,
+      ok: true,
+      badge: badgeFor(tiers, candidatesFor({ kind: "local" })),
+      logo: <HypervisorLogo provider={null} />,
+    };
+  }
+  if (!localVm) return null;
+  const twoForms = !!perMachine?.provider;
   return {
-    target: { kind: "local" },
-    title: t("labs.runOn.thisMachine"),
-    subtitle: multiForm ? t("labs.runOn.localForms") : localNote,
+    target: { kind: "local-vm", provider: localVm },
+    title: t("labs.runOn.inAVm"),
+    subtitle: twoForms ? t("labs.runOn.vmForms") : t("labs.runOn.inVmSubtitle", { provider: PROVIDER_LABELS[localVm] ?? localVm }),
     ok: true,
-    badge: badgeFor(tiers, candidatesFor({ kind: "local" })),
-    logo: dockerRunning === null ? <HypervisorLogo provider={null} /> : <DockerLogo />,
-    status: engineStatus(t, dockerRunning),
+    badge: badgeFor(tiers, candidatesFor({ kind: "local-vm", provider: localVm })),
+    logo: <HypervisorLogo provider={localVm} />,
+    status: { tone: "ok", label: t("labs.runOn.ready"), title: t("labs.runOn.readyHint") },
+    extra: twoForms ? undefined : hypervisorSwitch(t, localVm, localVms, onPickVm),
   };
 }
 
@@ -183,34 +213,29 @@ function hostOption(t: T, tiers: RunTier[], h: ServerHost, ok: boolean, check: S
   };
 }
 
-/** Step 1's platforms with something to offer, in order: this machine (one row, whatever forms it
- *  has), then servers, then clouds. The form behind a platform is chosen in step 2 (this machine)
- *  or derived downstream (a host runs one way today). */
+/** Step 1's platforms with something to offer, in order: this machine (up to two rows, Containers
+ *  and In a VM), then servers, then clouds. A host runs one way, derived downstream. */
 export function platformGroups(
   t: T,
   {
     hosts,
     hostOk,
     checks,
-    localNote,
-    dockerRunning,
-    localMultiForm,
+    local,
     offerLocal,
     tiers,
   }: {
     hosts: ServerHost[];
     hostOk: (h: ServerHost) => boolean;
     checks: HostChecks;
-    localNote: string;
-    dockerRunning: boolean | null;
-    localMultiForm: boolean;
+    local: LocalRows;
     offerLocal: boolean;
     tiers: RunTier[];
   },
 ): OptionGroup[] {
   const forHost = (h: ServerHost) => hostOption(t, tiers, h, hostOk(h), checks[h.id]);
   const groups: OptionGroup[] = [
-    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? [localPlatform(t, tiers, localNote, dockerRunning, localMultiForm)] : [] },
+    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localPlatformRows(t, tiers, local) : [] },
     { id: "servers", label: t("labs.runOn.servers"), options: hosts.filter((h) => !CLOUDS.has(h.provider)).map(forHost) },
     { id: "cloud", label: t("labs.runOn.cloud"), options: hosts.filter((h) => CLOUDS.has(h.provider)).map(forHost) },
   ];

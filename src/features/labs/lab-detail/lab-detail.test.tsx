@@ -56,10 +56,8 @@ describe("LabDetail", () => {
     // With servers to choose from, Start asks where first.
     await user.click(screen.getByRole("button", { name: /start lab/i }));
     const dialog = await screen.findByRole("dialog");
-    // Try the AWS account, then back to this machine; it has more than one way, so pick the form:
-    // containers, with the lab's default ports.
+    // Try the AWS account, then Containers on this machine with the lab's default ports.
     await user.click(within(dialog).getByText("AWS sandbox"));
-    await user.click(within(dialog).getAllByText("This machine")[1]);
     await user.click(within(dialog).getByText("Containers"));
     await user.click(within(dialog).getByText("The lab's default ports"));
     const confirm = within(dialog)

@@ -124,6 +124,7 @@ function StartDialog({
         onChange={run.setRunOn}
         disabled={busy}
         offerLocal={!cloud}
+        offerContainers={isDocker}
         step={run.step}
         onPickPlatform={run.pickPlatform}
         localExtra={run.runOn.kind === "local" && isDocker && <LocalPorts run={run} />}

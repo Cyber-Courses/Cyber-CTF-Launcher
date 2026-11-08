@@ -82,52 +82,58 @@ describe("RunOnPicker", () => {
     expect(onPickPlatform).toHaveBeenCalledWith({ kind: "host", id: "esx" } satisfies Platform);
   });
 
-  it("collapses this machine to one platform row that leads to the form step for a VM-capable lab", async () => {
+  it("shows Containers and In a VM as two rows for a VM-capable container lab", async () => {
     installTauri();
     const user = userEvent.setup();
     const { onChange, onPickPlatform } = renderPicker({ hosts: [], dockerRunning: false, localVm: "virtualbox" });
+    // Two rows under This machine, each its own kind of run here: no misleading Docker logo on the VM one.
+    expect(screen.getByText("Containers")).toBeTruthy();
     expect(screen.getByText("Engine stopped")).toBeTruthy();
-    // One "This machine" row (plus its group label), not one per form; the forms live in step 2.
-    expect(screen.getAllByText("This machine").length).toBe(2);
-    expect(screen.getByText("Containers or in a VM")).toBeTruthy();
-    expect(screen.queryByText("In one VM")).toBeNull();
-    await user.click(screen.getAllByText("This machine")[1]);
-    expect(onPickPlatform).toHaveBeenCalledWith({ kind: "local" } satisfies Platform);
+    expect(screen.getByText("In a VM")).toBeTruthy();
+    expect(screen.getByText("VirtualBox · isolated from your system")).toBeTruthy();
+    await user.click(screen.getByText("Containers"));
+    expect(onPickPlatform).toHaveBeenLastCalledWith({ kind: "containers" } satisfies Platform);
+    await user.click(screen.getByText("In a VM"));
+    expect(onPickPlatform).toHaveBeenLastCalledWith({ kind: "vm" } satisfies Platform);
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.queryByText("Servers")).toBeNull();
   });
 
-  it("shows containers and the VM on the form step, with the host-port choice", async () => {
-    installTauri();
-    const user = userEvent.setup();
-    const { onChange } = renderPicker({ step: "form", hosts: [], dockerRunning: false, localVm: "virtualbox", localExtra: <p>ports here</p> });
-    expect(screen.getByText("How should it run?")).toBeTruthy();
-    expect(screen.getByText("Containers")).toBeTruthy();
-    expect(screen.getByText("Engine stopped")).toBeTruthy();
-    expect(screen.getByText("In one VM")).toBeTruthy();
-    expect(screen.getByText("VirtualBox · isolated from your system")).toBeTruthy();
-    expect(screen.getByText("ports here")).toBeTruthy();
-    await user.click(screen.getByText("In one VM"));
-    expect(onChange).toHaveBeenLastCalledWith({ kind: "local-vm", provider: "virtualbox" });
-  });
-
-  it("switches the VM's hypervisor inside the one in-VM form when several are ready", async () => {
+  it("puts the hypervisor switch inline on the In a VM row when it is the only VM form", async () => {
     installTauri();
     const user = userEvent.setup();
     const onPickVm = vi.fn();
-    const { onChange } = renderPicker({ step: "form", hosts: [], dockerRunning: true, localVm: "utm", localVms: ["utm", "qemu"], onPickVm });
-    // One form, not one per hypervisor; the switch names them.
-    expect(screen.getAllByText("In one VM").length).toBe(1);
+    const { onChange, onPickPlatform } = renderPicker({ hosts: [], dockerRunning: true, localVm: "utm", localVms: ["utm", "qemu"], onPickVm });
+    expect(screen.getByText("In a VM")).toBeTruthy();
     expect(screen.getByText("UTM · isolated from your system")).toBeTruthy();
     const group = screen.getByRole("radiogroup", { name: "Hypervisor" });
     expect(within(group).getByRole("radio", { name: "UTM" }).getAttribute("aria-checked")).toBe("true");
     await user.click(within(group).getByRole("radio", { name: "QEMU" }));
     expect(onPickVm).toHaveBeenCalledWith("qemu");
-    // The switch picks a hypervisor, not another form.
+    // The switch picks a hypervisor, not another place or form.
+    expect(onPickPlatform).not.toHaveBeenCalled();
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("offers one VM per machine on the form step for a lab with VM recipes too, with its own switch", async () => {
+  it("marks the In a VM row of a dual-form lab as leading to the form step, with no inline switch", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    const { onPickPlatform } = renderPicker({
+      hosts: [],
+      dockerRunning: true,
+      localVm: "qemu",
+      localVms: ["qemu", "virtualbox"],
+      perMachine: { provider: "qemu", providers: ["qemu", "virtualbox"], onPick: vi.fn() },
+    });
+    // Two VM forms: the row says so and carries no inline switch (the forms carry their own in step 2).
+    expect(screen.getByText("In a VM")).toBeTruthy();
+    expect(screen.getByText("In one VM, or one per machine")).toBeTruthy();
+    expect(screen.queryByRole("radiogroup", { name: "Hypervisor" })).toBeNull();
+    await user.click(screen.getByText("In a VM"));
+    expect(onPickPlatform).toHaveBeenLastCalledWith({ kind: "vm" } satisfies Platform);
+  });
+
+  it("offers only the two VM forms, each with its switch, on the form step", async () => {
     installTauri();
     const user = userEvent.setup();
     const onPick = vi.fn();
@@ -139,9 +145,9 @@ describe("RunOnPicker", () => {
       localVms: ["utm", "qemu"],
       perMachine: { provider: "qemu", providers: ["qemu", "virtualbox"], onPick },
     });
-    // Three forms on this machine: containers, one helper VM, one VM per machine (UTM can't run
-    // the latter, so its switch doesn't name it).
-    expect(screen.getByText("Containers")).toBeTruthy();
+    expect(screen.getByText("How should it run?")).toBeTruthy();
+    // No Containers on the form step: it is a leaf on step 1. Only the VM forms here.
+    expect(screen.queryByText("Containers")).toBeNull();
     expect(screen.getByText("In one VM")).toBeTruthy();
     expect(screen.getByText("One VM per machine")).toBeTruthy();
     expect(screen.getByText("QEMU · a full VM for each machine, as on a server")).toBeTruthy();
@@ -156,11 +162,12 @@ describe("RunOnPicker", () => {
     expect(onChange).toHaveBeenLastCalledWith({ kind: "local-vms", provider: "qemu" } satisfies RunTarget);
   });
 
-  it("offers no per-machine form without a hypervisor that can run it", () => {
+  it("shows no In a VM row for a container lab with no ready hypervisor", () => {
     installTauri();
-    renderPicker({ step: "form", hosts: [], dockerRunning: true, localVm: "utm", perMachine: { provider: null, providers: [], onPick: vi.fn() } });
-    expect(screen.getByText("In one VM")).toBeTruthy();
-    expect(screen.queryByText("One VM per machine")).toBeNull();
+    const { onPickPlatform } = renderPicker({ hosts: [], dockerRunning: true, localVm: null });
+    expect(screen.getByText("Containers")).toBeTruthy();
+    expect(screen.queryByText("In a VM")).toBeNull();
+    expect(onPickPlatform).not.toHaveBeenCalled();
   });
 
   it("badges a cloud with no real-run evidence as Beta, and leaves a proven one (AWS) unbadged", async () => {
@@ -182,13 +189,15 @@ describe("RunOnPicker", () => {
     expect(screen.queryByText("Experimental")).toBeNull();
   });
 
-  it("shows no engine status for a VM lab, and nothing selectable while busy", async () => {
+  it("shows a VM lab only the In a VM row, and nothing selectable while busy", async () => {
     installTauri();
     const user = userEvent.setup();
-    const { onPickPlatform } = renderPicker({ hosts: [], dockerRunning: null, disabled: true });
+    const { onPickPlatform } = renderPicker({ hosts: [], offerContainers: false, dockerRunning: null, disabled: true });
+    // A VM lab runs here only as VMs: one row, no Containers and no engine status.
+    expect(screen.queryByText("Containers")).toBeNull();
     expect(screen.queryByText("Running")).toBeNull();
     expect(screen.queryByText("Engine stopped")).toBeNull();
-    await user.click(screen.getAllByText("This machine")[1]);
+    await user.click(screen.getByText("In a VM"));
     expect(onPickPlatform).not.toHaveBeenCalled();
   });
 });
