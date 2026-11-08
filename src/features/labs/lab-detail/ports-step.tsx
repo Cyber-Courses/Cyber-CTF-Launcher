@@ -25,7 +25,7 @@ export function PortsStep({ title, run }: { title: string; run: RunTargetChoice 
 export function RememberToggle({ run }: { run: RunTargetChoice }) {
   const t = useT();
   return (
-    <label className="flex items-center gap-2 text-[0.8125rem] text-muted-foreground">
+    <label className="mt-4 mb-1 flex items-center gap-2.5 px-1 text-[0.8125rem] text-muted-foreground">
       <Switch checked={run.remember} onCheckedChange={run.setRemember} aria-label={t("labs.runOn.rememberChoice")} />
       {t("labs.runOn.rememberChoice")}
     </label>
