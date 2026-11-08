@@ -1,6 +1,6 @@
 "use client";
 
-import { type DockerEngine, type SystemReport } from "@/lib/tauri";
+import { type SystemReport } from "@/lib/tauri";
 import { EngineLogo } from "@/features/machine/engine-logo";
 import { engineBadge, enginesFor, recommendedEngine } from "@/features/machine/setup-steps/engines";
 import { EngineAction, EngineHints } from "@/features/machine/setup-steps/engine-action";
