@@ -14,12 +14,11 @@
 //! `CYBERCTF_TEST_ATTACK_BOX` overrides the attack-box image (default: the runner's own, Kali).
 
 use std::path::Path;
-use std::time::Duration;
 
 use isothrum_runner::ShellCommand;
 
 use super::providers::Provider;
-use super::real_labs::{check, install_copy, leftovers, log};
+use super::real_labs::{check, detach_box, install_copy, leftovers, log, vagrant_ssh};
 use super::{Place, Runtime, isothrum, lab, lifecycle, paths};
 
 /// The lab's status while it runs in the VM: running, placed in a local VM, its VM up. A docker-vm
@@ -66,12 +65,7 @@ async fn attack_box_in_vm(home: &Path, dir: &Path, id: &str, f: &mut Vec<String>
         Ok(shell) => shell_reaches_target(&shell, f).await,
         Err(e) => check(false, format!("the shell into the box is built: {e}"), f),
     }
-    let detached = run.detach(&mut log(id)).await;
-    check(detached.is_ok(), format!("the box detaches ({:?})", detached.err()), f);
-    match run.attack_status(None).await {
-        Ok(s) => check(!s.running, "the box is gone".into(), f),
-        Err(e) => check(false, format!("the box's status reads: {e}"), f),
-    }
+    detach_box(&run, id, f).await;
 }
 
 /// The shell's command run non-interactively through the same way into the VM: a request to
@@ -84,14 +78,7 @@ async fn shell_reaches_target(shell: &ShellCommand, f: &mut Vec<String>) {
     let vm = shell.args.get(1).map_or("default", String::as_str);
     let probe =
         format!("sudo docker exec {name} bash -c \"exec 3<>/dev/tcp/web/80 && printf 'GET / HTTP/1.0\\r\\nHost: web\\r\\n\\r\\n' >&3 && head -c 300 <&3\"");
-    let out = crate::platform::exec::run_env_timed(
-        "vagrant",
-        &["ssh", "--no-tty", "--command", &probe, vm],
-        shell.cwd.as_deref(),
-        &shell.env,
-        Duration::from_secs(120),
-    )
-    .await;
+    let out = vagrant_ssh(shell, vm, &probe).await;
     check(out.as_ref().is_ok_and(|o| o.contains("HTTP/1.") && o.contains(" 200 ")), format!("a shell in the box reaches http://web/ ({out:?})"), f);
 }
 

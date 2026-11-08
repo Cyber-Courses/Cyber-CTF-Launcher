@@ -108,7 +108,7 @@ fn aws_credentials(r: Result<String>) -> First<String> {
     }
 }
 
-/// The SSM public parameter naming the latest Amazon Linux 2023 image (x86_64, for the probe's
+/// The SSM public parameter naming the latest Amazon Linux 2023 image (`x86_64`, for the probe's
 /// `t3.micro`) in the account's region: a real, public image the dry run is checked against.
 const LATEST_AMAZON_LINUX: &str = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64";
 
