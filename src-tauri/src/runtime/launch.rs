@@ -121,6 +121,10 @@ fn deployed_elsewhere(base: &Path, dir: &Path, id: &str, host: Option<&str>) -> 
 }
 
 /// Starts the lab on this machine as `run` says (see [`local_run`]).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the local-launch helper mirrors start_locked's launch specification: the lab, how it runs, its engine, its inputs and a log sink"
+)]
 async fn start_here(
     dirs: &AppDirs,
     lab: LabRef<'_>,
