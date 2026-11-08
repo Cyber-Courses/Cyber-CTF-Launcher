@@ -7,7 +7,7 @@ export const runtimeWord = (t: T, { isDocker, isCloud }: { isDocker: boolean; is
   isCloud ? t("labs.detail.cloudServices") : isDocker ? t("labs.detail.containers") : "vm";
 
 /** "This machine", with the engine or hypervisor it runs on when known. */
-export const thisMachine = (t: T, engine: string | null) => (engine ? t("labs.detail.thisMachineWith", { engine }) : t("labs.detail.thisMachine"));
+const thisMachine = (t: T, engine: string | null) => (engine ? t("labs.detail.thisMachineWith", { engine }) : t("labs.detail.thisMachine"));
 
 /** Where this deploy is headed, shown in the Deployment panel so it's clear during a build, and
  *  where it runs once up: the status says (a container lab in a VM here reads "a VM on this

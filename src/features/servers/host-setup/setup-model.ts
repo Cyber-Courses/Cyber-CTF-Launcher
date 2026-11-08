@@ -126,7 +126,7 @@ export function serverReady(v: ServerHostInput): boolean {
 }
 
 /** Whether a Proxmox SSH key sign-in names a key, a user and a port. */
-export function sshKeyReady(k: SshKeySignIn): boolean {
+function sshKeyReady(k: SshKeySignIn): boolean {
   return k.path.trim() !== "" && k.user.trim() !== "" && portOk(k.port);
 }
 

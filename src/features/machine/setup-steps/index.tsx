@@ -121,7 +121,6 @@ export function SetupOutcome({ report, setup, paths = PATHS }: { report: SystemR
 
 // The setup flow's public surface (machine setup window, onboarding, Machine and Servers pages).
 export {
-  PATHS,
   canContinue,
   machineSteps,
   nextLabel,
@@ -132,9 +131,8 @@ export {
   type MachineStep,
   type SetupPath,
 } from "@/features/machine/setup-steps/steps";
-export { firstPending, pathProgress, type LastTests } from "@/features/machine/setup-steps/step-status";
+export { firstPending, type LastTests } from "@/features/machine/setup-steps/step-status";
 export { PathChooser } from "@/features/machine/setup-steps/path-step";
 export { useMachineSetup, type MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 export { EngineMark } from "@/features/machine/engine-logo";
 export { engineName } from "@/features/machine/setup-steps/engines";
-export { Requirement } from "@/features/machine/setup-steps/parts";

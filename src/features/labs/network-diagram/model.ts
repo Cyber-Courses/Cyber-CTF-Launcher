@@ -92,7 +92,6 @@ export type LinkData = { label?: string; route?: Pt[] };
 export const GREY = "var(--edge-line)";
 export const GREEN = "var(--success)";
 export const PIVOT = "var(--jewel)"; // a pivot's link on into a deeper network
-export const IDLE = "var(--faint)"; // a link that is not live (attack box not attached)
 
 export const BRIDGE = { w: 136, h: 60 };
 /** The diagram is never drawn smaller than this (a wide lab scrolls instead). */

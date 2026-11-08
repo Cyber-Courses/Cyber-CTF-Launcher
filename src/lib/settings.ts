@@ -280,7 +280,7 @@ const LOCAL_VM_FORM_KEY = "cyberctf.labs.vmForm";
 
 /** Sent on `window` when a saved launch choice (engine, ports, VM form, hypervisor) changes, so
  *  Settings and the lab page follow at once. */
-export const LAUNCH_CHOICE_CHANGED = "cyberctf:launch-choice";
+const LAUNCH_CHOICE_CHANGED = "cyberctf:launch-choice";
 
 function emitLaunchChoice() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(LAUNCH_CHOICE_CHANGED));
