@@ -28,6 +28,7 @@ export function freshReport(os = "macos"): SystemReport {
     dockerRunning: false,
     dockerEngine: null,
     dockerEnginesRunning: [],
+    dockerEngines: [],
     dockerCompose: missing,
     vagrant: missing,
     terraform: missing,
@@ -45,6 +46,8 @@ export function stoppedDockerReport(): SystemReport {
     dockerRunning: false,
     dockerEngine: null,
     dockerEnginesRunning: [],
+    // The native daemon's context, which refuses this account.
+    dockerEngines: [{ engine: "docker-engine", context: "default", running: false, current: true }],
     dockerDenied: true,
     dockerDeniedHint: {
       code: "dockerDenied",

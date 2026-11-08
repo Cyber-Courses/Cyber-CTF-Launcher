@@ -47,7 +47,6 @@
       "notOnThisMachine": "Not on this machine",
       "running": "Running",
       "installed": "Installed",
-      "notInstalled": "Not installed",
       "notSetUp": "Not set up",
       "cantRunHere": "Can't run here"
     },
@@ -56,13 +55,15 @@
       "stopped": "A container engine is installed but not running. Start it to run labs."
     },
     "engine": {
-      "runningIdle": "Running. Labs use {engine}; switch in the setup."
+      "runningIdle": "Running. Labs use {engine}; switch in the setup.",
+      "none": "No container engine yet. Add one to run container labs here."
     },
     "vm": {
       "notApplicable": "No local hypervisor runs on this machine. VM labs can run on a server instead.",
       "automatic": " (automatic, change in Settings)",
       "vagrantMissing": "Vagrant or the hypervisor's Vagrant plugin is missing.",
-      "installedIdle": "Labs run on {provider}; change it in Settings."
+      "installedIdle": "Labs run on {provider}; change it in Settings.",
+      "none": "No hypervisor yet. Add one to run VM labs here."
     },
     "details": "Details",
     "detail": {
@@ -74,6 +75,10 @@
       "builtIn": "built in",
       "installedWithPlugin": "installed · {plugin}",
       "pluginMissing": "plugin {plugin} missing"
+    },
+    "badge": {
+      "current": "current",
+      "default": "default"
     }
   },
   "running": {

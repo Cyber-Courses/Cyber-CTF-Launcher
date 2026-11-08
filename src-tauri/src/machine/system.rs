@@ -58,6 +58,10 @@ pub struct SystemReport {
     /// (e.g. Docker Desktop and OrbStack); `docker_engine` is the one the CLI uses.
     #[ts(type = r#"("docker-desktop" | "orbstack" | "colima" | "rancher-desktop" | "podman" | "docker-engine")[]"#)]
     pub docker_engines_running: Vec<&'static str>,
+    /// Every Docker-compatible engine found on this machine (one per CLI context that names
+    /// one or answers), each with its own state: the Machine page lists them all, not only
+    /// the one the CLI uses.
+    pub docker_engines: Vec<docker::EngineStatus>,
     pub docker_compose: Tool,
     pub vagrant: Tool,
     /// A local terraform binary (preferred for provisioning state; container is the fallback).
@@ -88,8 +92,9 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         probe("gcloud", &["--version"]),
         probe("terraform", &["version"]),
     );
-    let (vm_providers, docker_engines_running, ovftool, wsl) =
-        tokio::join!(providers::detect(vagrant.installed), docker::running_engines(), probe("ovftool", &["--version"]), wsl::report(&dirs));
+    let (vm_providers, docker_engines, ovftool, wsl) =
+        tokio::join!(providers::detect(vagrant.installed), docker::engines(), probe("ovftool", &["--version"]), wsl::report(&dirs));
+    let docker_engines_running = docker::running_of(&docker_engines);
     let docker_denied = daemon.as_ref().err().is_some_and(docker_denied);
     let docker_engine = match &daemon {
         Ok(os) => Some(docker::engine_in_use(os.trim()).await),
@@ -105,6 +110,7 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         docker_denied_hint: docker_denied.then(|| docker_denied_error().to_wire()),
         docker_engine,
         docker_engines_running,
+        docker_engines,
         docker_compose,
         vagrant,
         terraform,

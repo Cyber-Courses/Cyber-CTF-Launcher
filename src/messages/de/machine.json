@@ -47,7 +47,6 @@
       "notOnThisMachine": "Nicht auf diesem Rechner",
       "running": "Läuft",
       "installed": "Installiert",
-      "notInstalled": "Nicht installiert",
       "notSetUp": "Nicht eingerichtet",
       "cantRunHere": "Kann hier nicht laufen"
     },
@@ -56,13 +55,15 @@
       "stopped": "Eine Container-Engine ist installiert, läuft aber nicht. Starte sie, um Labs auszuführen."
     },
     "engine": {
-      "runningIdle": "Läuft. Labs nutzen {engine}; wechsle in der Einrichtung."
+      "runningIdle": "Läuft. Labs nutzen {engine}; wechsle in der Einrichtung.",
+      "none": "Noch keine Container-Engine. Füge eine hinzu, um Container-Labs hier auszuführen."
     },
     "vm": {
       "notApplicable": "Auf diesem Rechner läuft kein lokaler Hypervisor. VM-Labs können stattdessen auf einem Server laufen.",
       "automatic": " (automatisch, in den Einstellungen änderbar)",
       "vagrantMissing": "Vagrant oder das Vagrant-Plugin des Hypervisors fehlt.",
-      "installedIdle": "Labs laufen auf {provider}; ändere das in den Einstellungen."
+      "installedIdle": "Labs laufen auf {provider}; ändere das in den Einstellungen.",
+      "none": "Noch kein Hypervisor. Füge einen hinzu, um VM-Labs hier auszuführen."
     },
     "details": "Details",
     "detail": {
@@ -74,6 +75,10 @@
       "builtIn": "integriert",
       "installedWithPlugin": "installiert · {plugin}",
       "pluginMissing": "Plugin {plugin} fehlt"
+    },
+    "badge": {
+      "current": "aktuell",
+      "default": "Standard"
     }
   },
   "running": {

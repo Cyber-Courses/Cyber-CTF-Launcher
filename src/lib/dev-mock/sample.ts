@@ -18,6 +18,7 @@ export const report: SystemReport = {
   dockerDeniedHint: null,
   dockerEngine: "docker-desktop",
   dockerEnginesRunning: ["docker-desktop"],
+  dockerEngines: [{ engine: "docker-desktop", context: "desktop-linux", running: true, current: true }],
   dockerCompose: { installed: true, version: "2.29.7" },
   vagrant: { installed: true, version: "2.4.3" },
   terraform: { installed: true, version: "1.9.8" },

@@ -3,6 +3,7 @@ import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
 import type {
   CloudClis,
   Dependency,
+  EngineStatus,
   InstalledTool,
   MachineMetrics,
   PkgManager,
@@ -22,6 +23,7 @@ import type {
 export type {
   CloudClis,
   Dependency,
+  EngineStatus,
   InstalledTool,
   MachineMetrics,
   PkgManager,

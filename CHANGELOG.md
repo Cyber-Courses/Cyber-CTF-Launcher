@@ -26,9 +26,12 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 - **The Machine page lists its providers, and "Add a provider" opens a guided setup per lab
   type that starts from where the machine stands.** The Health/Setup switch and the setup
-  checklist are gone: the page shows this machine's health and each container engine and
-  hypervisor it has or could have as a row (in use with its last test, running, installed,
-  stopped, unable to run here, or not set up), with the same Fix, Add and Test actions. "Add a
+  checklist are gone: the page shows this machine's health and every container engine and
+  hypervisor found on it as a row, each with its own state (the machine check now asks every
+  Docker CLI context in turn with `docker --context <c> info`, so Docker Desktop, OrbStack,
+  Colima, Docker Engine or Podman side by side each read running or stopped, not only the one
+  the CLI points at; the current engine and the hypervisor labs run on are marked), with the
+  same Fix and Test actions. Engines and hypervisors not installed are not rows: "Add a
   provider", in the header as the Servers page's "Add server", opens the guided setup on a choice
   of the providers this machine can have, a container engine or a hypervisor for VMs, each row
   saying how far along the machine is. A path lists only its own steps and opens at the first one

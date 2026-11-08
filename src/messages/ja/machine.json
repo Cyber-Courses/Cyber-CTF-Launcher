@@ -47,7 +47,6 @@
       "notOnThisMachine": "このマシンでは利用不可",
       "running": "実行中",
       "installed": "インストール済み",
-      "notInstalled": "未インストール",
       "notSetUp": "未セットアップ",
       "cantRunHere": "このマシンでは実行不可"
     },
@@ -56,13 +55,15 @@
       "stopped": "コンテナエンジンはインストールされていますが、起動していません。ラボを実行するには起動してください。"
     },
     "engine": {
-      "runningIdle": "実行中。ラボは {engine} を使用しています。セットアップで切り替えられます。"
+      "runningIdle": "実行中。ラボは {engine} を使用しています。セットアップで切り替えられます。",
+      "none": "コンテナエンジンはまだありません。ここでコンテナラボを実行するには追加してください。"
     },
     "vm": {
       "notApplicable": "このマシンで動作するローカルのハイパーバイザーはありません。VM ラボは代わりにサーバーで実行できます。",
       "automatic": "（自動選択、「設定」で変更可能）",
       "vagrantMissing": "Vagrant またはハイパーバイザー用の Vagrant プラグインがありません。",
-      "installedIdle": "ラボは {provider} で実行されます。「設定」で変更できます。"
+      "installedIdle": "ラボは {provider} で実行されます。「設定」で変更できます。",
+      "none": "ハイパーバイザーはまだありません。ここで VM ラボを実行するには追加してください。"
     },
     "details": "詳細",
     "detail": {
@@ -74,6 +75,10 @@
       "builtIn": "内蔵",
       "installedWithPlugin": "インストール済み · {plugin}",
       "pluginMissing": "プラグイン {plugin} がありません"
+    },
+    "badge": {
+      "current": "現在",
+      "default": "既定"
     }
   },
   "running": {

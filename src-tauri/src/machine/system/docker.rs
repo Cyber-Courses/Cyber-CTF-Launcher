@@ -63,29 +63,77 @@ fn context_engine(name: &str, os: &str) -> Option<&'static str> {
     }
 }
 
-/// The Docker CLI contexts, each with the engine behind it (unknown contexts are left out).
+/// One Docker-compatible engine found on this machine: the CLI context that reaches it, whether
+/// its daemon answers, and whether it is the CLI's current context (the one labs run on).
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineStatus {
+    #[ts(type = r#""docker-desktop" | "orbstack" | "colima" | "rancher-desktop" | "podman" | "docker-engine""#)]
+    pub engine: &'static str,
+    pub context: String,
+    pub running: bool,
+    pub current: bool,
+}
+
+/// The Docker CLI contexts: each name, and whether it is the current one.
+async fn contexts() -> Vec<(String, bool)> {
+    let out = run_read("docker", &["context", "ls", "--format", "{{.Name}}\t{{.Current}}"], None).await.unwrap_or_default();
+    contexts_from(&out)
+}
+
+/// `docker context ls` lines: the name, then whether it is current (`true`, or a trailing `*`
+/// as the table view marks it).
+fn contexts_from(listing: &str) -> Vec<(String, bool)> {
+    listing
+        .lines()
+        .filter_map(|l| {
+            let mut words = l.split_whitespace();
+            let name = words.next()?.to_string();
+            let current = words.any(|w| w == "true" || w == "*");
+            Some((name, current))
+        })
+        .collect()
+}
+
+/// The Docker CLI contexts with an engine behind them (unknown contexts are left out).
 async fn engine_contexts() -> Vec<(String, &'static str)> {
-    let out = run_read("docker", &["context", "ls", "--format", "{{.Name}}"], None).await.unwrap_or_default();
-    contexts_from(&out, std::env::consts::OS)
+    let os = std::env::consts::OS;
+    contexts().await.into_iter().filter_map(|(name, _)| context_engine(&name, os).map(|e| (name, e))).collect()
 }
 
-/// `docker context ls` names (the current one marked ` *`), each with its engine.
-fn contexts_from(listing: &str, os: &str) -> Vec<(String, &'static str)> {
-    listing.lines().map(|l| l.trim().trim_end_matches(" *").to_string()).filter_map(|name| context_engine(&name, os).map(|e| (name, e))).collect()
-}
-
-/// Engines whose context answers, probed one by one (a stopped engine fails fast; the
-/// timeout covers one that hangs).
-pub(super) async fn running_engines() -> Vec<&'static str> {
-    let mut running = Vec::new();
-    for (name, engine) in engine_contexts().await {
-        let args = ["--context", name.as_str(), "version", "--format", "{{.Server.Version}}"];
-        let probe = run("docker", &args, None);
-        if matches!(tokio::time::timeout(ENGINE_PROBE_TIMEOUT, probe).await, Ok(Ok(_))) && !running.contains(&engine) {
-            running.push(engine);
+/// Every engine this machine has, one per context that names one or answers: probed one by one
+/// with `docker --context <c> info` (a stopped engine fails fast; the timeout covers one that
+/// hangs). A context that answers names its engine from the daemon's OS too, so `default` on a
+/// Mac reads as the desktop app behind it; one that doesn't is known by its name alone. Two
+/// contexts to one engine keep the first (the current one first of all).
+pub(super) async fn engines() -> Vec<EngineStatus> {
+    let os = std::env::consts::OS;
+    let mut found: Vec<EngineStatus> = Vec::new();
+    let mut listed = contexts().await;
+    listed.sort_by_key(|(_, current)| !current);
+    for (name, current) in listed {
+        let args = ["--context", name.as_str(), "info", "--format", "{{.OperatingSystem}}"];
+        let answer = match tokio::time::timeout(ENGINE_PROBE_TIMEOUT, run_read("docker", &args, None)).await {
+            Ok(Ok(daemon_os)) => Some(daemon_os),
+            _ => None,
+        };
+        let engine = match &answer {
+            Some(daemon_os) => engine_named(daemon_os.trim(), &name),
+            None => match context_engine(&name, os) {
+                Some(engine) => engine,
+                None => continue,
+            },
+        };
+        if !found.iter().any(|f| f.engine == engine) {
+            found.push(EngineStatus { engine, context: name, running: answer.is_some(), current });
         }
     }
-    running
+    found
+}
+
+/// The engines whose daemon answers right now.
+pub(super) fn running_of(engines: &[EngineStatus]) -> Vec<&'static str> {
+    engines.iter().filter(|e| e.running).map(|e| e.engine).collect()
 }
 
 /// Points the Docker CLI at another running engine (`docker context use`), as the player
@@ -156,15 +204,58 @@ mod tests {
     }
 
     #[test]
-    fn contexts_map_to_engines_and_default_only_counts_on_linux() {
-        let listing = "default *\ndesktop-linux\norbstack\ncolima-dev\nmy-remote\n";
+    fn contexts_are_read_with_the_current_one_marked_by_true_or_a_star() {
         assert_eq!(
-            contexts_from(listing, "macos"),
-            [("desktop-linux".to_string(), "docker-desktop"), ("orbstack".into(), "orbstack"), ("colima-dev".into(), "colima")]
+            contexts_from("default\ttrue\ndesktop-linux\tfalse\norbstack\tfalse\n"),
+            [("default".to_string(), true), ("desktop-linux".into(), false), ("orbstack".into(), false)]
         );
-        assert_eq!(contexts_from("default *\n", "linux"), [("default".to_string(), "docker-engine")]);
+        assert_eq!(contexts_from("default *\ncolima-dev\n\n"), [("default".to_string(), true), ("colima-dev".into(), false)]);
+        assert!(contexts_from("").is_empty());
+    }
+
+    #[test]
+    fn context_names_map_to_engines_and_default_only_counts_on_linux() {
+        assert_eq!(context_engine("desktop-linux", "macos"), Some("docker-desktop"));
+        assert_eq!(context_engine("colima-dev", "macos"), Some("colima"));
+        assert_eq!(context_engine("my-remote", "macos"), None);
+        assert_eq!(context_engine("default", "linux"), Some("docker-engine"));
         assert_eq!(context_engine("podman-machine-default", "macos"), Some("podman"));
         assert_eq!(context_engine("rancher-desktop", "windows"), Some("rancher-desktop"));
+    }
+
+    /// Several engines side by side: each context is asked with `docker --context <c> info`, so
+    /// each engine has its own state, and the current context is marked; one that doesn't
+    /// answer is still listed from its name, stopped; a context that names no engine and
+    /// doesn't answer is left out.
+    #[tokio::test]
+    async fn every_engine_is_listed_with_its_own_state_and_the_current_one_marked() {
+        let tools = Tools::new(|program, args| match (program, args) {
+            ("docker", ["context", "ls", ..]) => ok("desktop-linux\tfalse\norbstack\ttrue\ncolima\tfalse\nmy-remote\tfalse\n"),
+            ("docker", ["--context", "orbstack", "info", ..]) => ok("OrbStack\n"),
+            ("docker", ["--context", "desktop-linux", "info", ..]) => ok("Docker Desktop\n"),
+            ("docker", ["--context", ctx, "info", ..]) => fail(&format!("Cannot connect to the Docker daemon for {ctx}")),
+            _ => ok(""),
+        });
+        let found = engines().await;
+        let brief: Vec<(&str, &str, bool, bool)> = found.iter().map(|e| (e.engine, e.context.as_str(), e.running, e.current)).collect();
+        // The current context first, every context probed once.
+        assert_eq!(brief, [("orbstack", "orbstack", true, true), ("docker-desktop", "desktop-linux", true, false), ("colima", "colima", false, false)]);
+        assert_eq!(running_of(&found), ["orbstack", "docker-desktop"]);
+        assert_eq!(tools.calls().iter().filter(|c| c.contains(" info ")).count(), 4, "{:?}", tools.calls());
+    }
+
+    /// A context that says nothing by its name (`default` on a Mac) is known by the daemon it
+    /// reaches; two contexts to one engine count once.
+    #[tokio::test]
+    async fn a_context_without_a_telling_name_is_known_by_its_daemon() {
+        let _tools = Tools::new(|program, args| match (program, args) {
+            ("docker", ["context", "ls", ..]) => ok("default\ttrue\ndesktop-linux\tfalse\n"),
+            ("docker", ["--context", _, "info", ..]) => ok("Docker Desktop\n"),
+            _ => ok(""),
+        });
+        let found = engines().await;
+        assert_eq!(found.len(), 1);
+        assert_eq!((found[0].engine, found[0].context.as_str(), found[0].running, found[0].current), ("docker-desktop", "default", true, true));
     }
 
     #[tokio::test]

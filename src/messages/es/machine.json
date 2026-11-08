@@ -47,7 +47,6 @@
       "notOnThisMachine": "No disponible aquí",
       "running": "En ejecución",
       "installed": "Instalado",
-      "notInstalled": "No instalado",
       "notSetUp": "Sin configurar",
       "cantRunHere": "No puede ejecutarse aquí"
     },
@@ -56,13 +55,15 @@
       "stopped": "Hay un motor de contenedores instalado pero no está en ejecución. Inícialo para ejecutar labs."
     },
     "engine": {
-      "runningIdle": "En ejecución. Los labs usan {engine}; cámbialo en la configuración."
+      "runningIdle": "En ejecución. Los labs usan {engine}; cámbialo en la configuración.",
+      "none": "Aún no hay ningún motor de contenedores. Añade uno para ejecutar labs de contenedores aquí."
     },
     "vm": {
       "notApplicable": "No hay ningún hipervisor local que funcione en esta máquina. Los labs de VM pueden ejecutarse en un servidor.",
       "automatic": " (automático, cámbialo en Ajustes)",
       "vagrantMissing": "Falta Vagrant o el plugin de Vagrant del hipervisor.",
-      "installedIdle": "Los labs se ejecutan en {provider}; cámbialo en Ajustes."
+      "installedIdle": "Los labs se ejecutan en {provider}; cámbialo en Ajustes.",
+      "none": "Aún no hay ningún hipervisor. Añade uno para ejecutar labs de VM aquí."
     },
     "details": "Detalles",
     "detail": {
@@ -74,6 +75,10 @@
       "builtIn": "integrado",
       "installedWithPlugin": "instalado · {plugin}",
       "pluginMissing": "falta el plugin {plugin}"
+    },
+    "badge": {
+      "current": "actual",
+      "default": "predeterminado"
     }
   },
   "running": {

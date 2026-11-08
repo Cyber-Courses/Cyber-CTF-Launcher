@@ -131,6 +131,20 @@ const STATUS_TEXT: Record<Tone, string> = {
   muted: "text-muted-foreground",
 };
 
+/** A provider row's name, with its mark (the current engine, the default hypervisor) beside it. */
+function RowTitle({ title, badge }: { title: string; badge?: string }) {
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.8125rem] font-medium text-foreground">
+      <span className="min-w-0 break-words">{title}</span>
+      {badge && (
+        <span className="rounded-full px-2 py-px font-mono text-[0.625rem] font-normal whitespace-nowrap text-jewel-text shadow-[inset_0_0_0_1px_rgb(var(--jewel-rgb)/0.4)]">
+          {badge}
+        </span>
+      )}
+    </p>
+  );
+}
+
 /** One provider (a container engine, a hypervisor) as a row: logo tile, name over mono detail,
  *  status (dot + word) and the one action that matters on the right; the lab type's self-test
  *  opens inline below the provider labs use. */
@@ -138,6 +152,7 @@ export function ProviderRow({
   kind,
   icon,
   title,
+  badge,
   tone,
   status,
   detail,
@@ -149,6 +164,8 @@ export function ProviderRow({
   kind: LabKind;
   icon: ReactNode;
   title: string;
+  /** A short mark beside the name: the current engine, the default hypervisor. */
+  badge?: string;
   tone: Tone;
   status: string;
   detail: ReactNode;
@@ -163,7 +180,7 @@ export function ProviderRow({
       <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 px-4 py-3">
         {icon}
         <div className="min-w-0 flex-1">
-          <p className="text-[0.8125rem] font-medium text-foreground">{title}</p>
+          <RowTitle title={title} badge={badge} />
           <p className="mt-0.5 font-mono text-[0.6875rem] text-faint">{detail}</p>
           {hint && <p className="mt-1 text-[0.75rem] text-warning">{hint}</p>}
         </div>

@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
-import { INSTALLABLE, cantRun, providerLabel } from "@/features/machine/hypervisors";
+import { cantRun, providerLabel } from "@/features/machine/hypervisors";
 import { ProviderRow } from "@/features/machine/machine-parts";
 import type { vmSetup } from "@/features/machine/machine-status";
 import { FixButton, TESTED_TONE, TestButton, TestLine, lowFor, useFreeHint, type RowProps } from "@/features/machine/lab-row-parts";
@@ -26,26 +26,46 @@ function ServerButton({ variant, onClick }: { variant: "outline" | "ghost"; onCl
   );
 }
 
+/** The icon tile and the way to a hypervisor's setup, for the rows that stand in for a list. */
+function PlaceholderRow({ status, detail, actions }: { status: string; detail: string; actions: React.ReactNode }) {
+  const t = useT();
+  return (
+    <ProviderRow
+      kind="vm"
+      icon={<HypervisorLogo provider={undefined} />}
+      title={t("machine.steps.vm.title")}
+      tone="muted"
+      status={status}
+      detail={detail}
+      actions={actions}
+      testing={false}
+      onTestDone={() => {}}
+    />
+  );
+}
+
+/** Every hypervisor installed here, each with its own state, the one labs run on marked; with
+ *  none installed, one row to add one, and with none that applies here, the way to a server.
+ *  Hypervisors not installed stay out: "Add a provider" covers those. */
 export function HypervisorRows(props: Props) {
   const t = useT();
-  const { vm, onUseServer } = props;
+  const { vm, onUseServer, onFix } = props;
   if (vm.state === "notApplicable")
     return (
-      <ProviderRow
-        kind="vm"
-        icon={<HypervisorLogo provider={undefined} />}
-        title={t("machine.steps.vm.title")}
-        tone="muted"
+      <PlaceholderRow
         status={t("machine.screen.status.notOnThisMachine")}
         detail={t("machine.screen.vm.notApplicable")}
         actions={<ServerButton variant="outline" onClick={onUseServer} />}
-        testing={false}
-        onTestDone={() => {}}
       />
+    );
+  const installed = vm.hypervisors.filter((p) => p.hypervisor === true);
+  if (installed.length === 0)
+    return (
+      <PlaceholderRow status={t("machine.screen.status.notSetUp")} detail={t("machine.screen.vm.none")} actions={<FixButton step="vm" onFix={onFix} add />} />
     );
   return (
     <>
-      {vm.hypervisors.map((p) =>
+      {installed.map((p) =>
         p.provider === vm.provider?.provider && (vm.state === "ready" || vm.state === "testFailed") ? (
           <RunsLabsRow key={p.provider} p={p} state={vm.state} {...props} />
         ) : (
@@ -65,6 +85,7 @@ function RunsLabsRow({ p, state, vm, onUseServer, ...row }: Props & { p: Provide
       kind="vm"
       icon={<HypervisorLogo provider={p.provider} />}
       title={providerLabel(p, row.report.os)}
+      badge={t("machine.screen.badge.default")}
       tone={TESTED_TONE[state]}
       status={t(`machine.screen.status.${state}`)}
       detail={
@@ -86,28 +107,25 @@ function RunsLabsRow({ p, state, vm, onUseServer, ...row }: Props & { p: Provide
   );
 }
 
-/** Where a hypervisor that labs don't run on stands. */
-function standingOf(p: ProviderStatus, report: SystemReport): "notInstalled" | "cantRunHere" | "needsSetup" | "installed" {
-  if (p.hypervisor !== true) return "notInstalled";
+/** Where an installed hypervisor that labs don't run on stands. */
+function standingOf(p: ProviderStatus, report: SystemReport): "cantRunHere" | "needsSetup" | "installed" {
   if (cantRun(p, report)) return "cantRunHere";
   if (!report.vagrant.installed || (p.plugin && !p.pluginInstalled)) return "needsSetup";
   return "installed";
 }
 
-/** A hypervisor labs don't run on: not installed (add it), unable to run here (a server), short
- *  of Vagrant or its plugin (fix it), or installed and idle. */
+/** An installed hypervisor labs don't run on: unable to run here (a server), short of Vagrant
+ *  or its plugin (fix it), or idle. */
 function OtherHypervisorRow({ p, vm, onUseServer, report, onFix }: Props & { p: ProviderStatus }) {
   const t = useT();
   const standing = standingOf(p, report);
   const reason = p.reason ? `${p.reason.charAt(0).toUpperCase()}${p.reason.slice(1)}.` : "";
   const detail = {
-    notInstalled: INSTALLABLE[p.provider] ? t("machine.vm.canInstall") : t("machine.vm.vendorSite"),
     cantRunHere: reason,
     needsSetup: t("machine.screen.vm.vagrantMissing"),
     installed: vm.provider ? t("machine.screen.vm.installedIdle", { provider: providerLabel(vm.provider, report.os) }) : t("machine.screen.detail.installed"),
   }[standing];
   const action = {
-    notInstalled: <FixButton step="vm" onFix={onFix} add />,
     cantRunHere: <ServerButton variant="outline" onClick={onUseServer} />,
     needsSetup: <FixButton step="vagrant" onFix={onFix} />,
     installed: null,
@@ -117,7 +135,7 @@ function OtherHypervisorRow({ p, vm, onUseServer, report, onFix }: Props & { p: 
       kind="vm"
       icon={<HypervisorLogo provider={p.provider} />}
       title={providerLabel(p, report.os)}
-      tone={standing === "installed" ? "ok" : standing === "notInstalled" ? "muted" : "warn"}
+      tone={standing === "installed" ? "ok" : "warn"}
       status={t(`machine.screen.status.${standing}`)}
       detail={detail}
       actions={action}

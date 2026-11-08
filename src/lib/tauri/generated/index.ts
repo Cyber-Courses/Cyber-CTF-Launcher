@@ -12,6 +12,7 @@ export type * from "./CloudPreview";
 export type * from "./CommandError";
 export type * from "./Dependency";
 export type * from "./DeviceCode";
+export type * from "./EngineStatus";
 export type * from "./GcpBillingAccount";
 export type * from "./GcpOrganization";
 export type * from "./HostCapacity";

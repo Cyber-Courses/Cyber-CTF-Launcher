@@ -47,7 +47,6 @@
       "notOnThisMachine": "Indisponible sur cette machine",
       "running": "En marche",
       "installed": "Installé",
-      "notInstalled": "Non installé",
       "notSetUp": "Non configuré",
       "cantRunHere": "Ne peut pas tourner ici"
     },
@@ -56,13 +55,15 @@
       "stopped": "Un moteur de conteneurs est installé mais ne tourne pas. Démarrez-le pour lancer des labs."
     },
     "engine": {
-      "runningIdle": "En marche. Les labs utilisent {engine} ; changez dans la configuration."
+      "runningIdle": "En marche. Les labs utilisent {engine} ; changez dans la configuration.",
+      "none": "Pas encore de moteur de conteneurs. Ajoutez-en un pour exécuter des labs conteneurs ici."
     },
     "vm": {
       "notApplicable": "Aucun hyperviseur local ne fonctionne sur cette machine. Les labs VM peuvent tourner sur un serveur à la place.",
       "automatic": " (automatique, modifiable dans Réglages)",
       "vagrantMissing": "Vagrant ou le plugin Vagrant de l'hyperviseur est manquant.",
-      "installedIdle": "Les labs tournent sur {provider} ; changez-le dans Réglages."
+      "installedIdle": "Les labs tournent sur {provider} ; changez-le dans Réglages.",
+      "none": "Pas encore d'hyperviseur. Ajoutez-en un pour exécuter des labs VM ici."
     },
     "details": "Détails",
     "detail": {
@@ -74,6 +75,10 @@
       "builtIn": "intégré",
       "installedWithPlugin": "installé · {plugin}",
       "pluginMissing": "plugin {plugin} manquant"
+    },
+    "badge": {
+      "current": "actuel",
+      "default": "par défaut"
     }
   },
   "running": {

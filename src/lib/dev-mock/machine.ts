@@ -30,6 +30,7 @@ function withInstalls(r: SystemReport, installed: ReadonlySet<string>, { pm }: {
     dockerRunning: docker || r.dockerRunning,
     dockerEngine: docker ? engine : r.dockerEngine,
     dockerEnginesRunning: docker ? [engine] : r.dockerEnginesRunning,
+    dockerEngines: docker ? [{ engine, context: engine === "docker-engine" ? "default" : "desktop-linux", running: true, current: true }] : r.dockerEngines,
     dockerCompose: docker ? { installed: true, version: "2.29.7" } : r.dockerCompose,
     vagrant,
     terraform: has("terraform") ? { installed: true, version: "1.9.8" } : r.terraform,

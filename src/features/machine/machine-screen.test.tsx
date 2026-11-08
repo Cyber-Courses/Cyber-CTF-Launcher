@@ -14,7 +14,7 @@ import { SelfTest } from "@/features/machine/self-test";
 import { StepRow } from "@/features/machine/step-row";
 import { formatAgo, formatBytes, formatBytesOf, formatUptime } from "@/lib/format";
 import { LOCALES, setLocalePreference } from "@/lib/i18n";
-import { getLastTest, setAttackImage, setLastTest, type LastTest } from "@/lib/settings";
+import { getLastTest, setAttackImage, setLastTest, setVmProvider, type LastTest } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
 import { freshReport, hypervisorStatus as hv, readyReport, stoppedDockerReport } from "@/test/fixtures";
@@ -226,47 +226,54 @@ describe("SelfTest", () => {
 
 describe("EngineRows", () => {
   const base = { now: Date.now(), memFree: 16 * GB, testing: false, onToggleTest: vi.fn(), onTestDone: vi.fn(), onFix: vi.fn() };
+  type Engine = SystemReport["dockerEngines"][number];
+  const found = (engine: Engine["engine"], over: Partial<Engine> = {}): Engine => ({ engine, context: engine, running: true, current: false, ...over });
 
-  it("lists this OS's engines: the one in use with its last test and the test, the others to add", async () => {
+  it("lists every engine found, each with its own state, the current one marked with its last test", async () => {
     installTauri();
     const onToggleTest = vi.fn();
     const onFix = vi.fn();
     const user = userEvent.setup();
-    render(<EngineRows {...base} onToggleTest={onToggleTest} onFix={onFix} report={readyReport()} last={{ result: "ok", at: base.now - 3_600_000 }} />);
-    // The ready Mac: Docker Desktop in use; OrbStack and Colima not set up.
-    expect(text()).toMatch(/Docker Desktop.*tested 1 h ago.*Ready/);
-    expect(text()).toContain("OrbStack");
-    expect(text()).toContain("Colima");
-    expect(screen.getAllByText("Not set up")).toHaveLength(2);
+    const report: SystemReport = {
+      ...readyReport(),
+      dockerEngine: "orbstack",
+      dockerEnginesRunning: ["orbstack", "docker-desktop"],
+      dockerEngines: [found("orbstack", { current: true }), found("docker-desktop", { context: "desktop-linux" }), found("colima", { running: false })],
+    };
+    render(<EngineRows {...base} onToggleTest={onToggleTest} onFix={onFix} report={report} last={{ result: "ok", at: base.now - 3_600_000 }} />);
+    // Three rows, in the check's order: the current one, another running, one stopped.
+    expect(text()).toMatch(
+      /OrbStack.*current.*tested 1 h ago.*Ready.*Docker Desktop.*Running\. Labs use OrbStack; switch in the setup\..*Running.*Colima.*Engine stopped/,
+    );
+    expect(screen.getAllByText("current")).toHaveLength(1);
+    // Not installed here: not a row (Add a provider covers it).
+    expect(text()).not.toContain("Podman");
     await user.click(button(/^test$/i));
     expect(onToggleTest).toHaveBeenCalledOnce();
-    await user.click(screen.getAllByRole("button", { name: /^add$/i })[0]);
+    // The other engines' Fix opens the engine step, which switches to or starts them.
+    expect(screen.getAllByRole("button", { name: /^fix$/i })).toHaveLength(2);
+    await user.click(screen.getAllByRole("button", { name: /^fix$/i })[1]);
     expect(onFix).toHaveBeenCalledWith("docker");
   });
 
-  it("shows a failed last test and a low-memory hint on the engine in use, and names one without a tile", () => {
+  it("shows a failed last test and a low-memory hint on the current engine, and names one without a tile", () => {
     installTauri();
-    render(<EngineRows {...base} memFree={GB} report={{ ...readyReport(), dockerEngine: "podman" }} last={{ result: "fail", at: Date.now() }} />);
-    expect(text()).toMatch(/Podman.*last test failed just now.*Test failed/);
+    const report: SystemReport = {
+      ...readyReport(),
+      dockerEngine: "podman",
+      dockerEngines: [found("podman", { context: "podman-machine-default", current: true })],
+    };
+    render(<EngineRows {...base} memFree={GB} report={report} last={{ result: "fail", at: Date.now() }} />);
+    expect(text()).toMatch(/Podman.*current.*last test failed just now.*Test failed/);
     expect(text()).toContain("Container labs want about 2.0 GB of free memory; 1.0 GB free now.");
   });
 
-  it("marks another running engine, with the way to switch", async () => {
-    installTauri();
-    const onFix = vi.fn();
-    const user = userEvent.setup();
-    render(<EngineRows {...base} onFix={onFix} report={{ ...readyReport(), dockerEnginesRunning: ["docker-desktop", "orbstack"] }} last={null} />);
-    expect(text()).toContain("Running. Labs use Docker Desktop; switch in the setup.");
-    await user.click(button(/^fix$/i));
-    expect(onFix).toHaveBeenCalledWith("docker");
-  });
-
-  it("explains a denied or stopped engine on the OS's default, and offers every engine on a fresh machine", async () => {
+  it("explains a denied or stopped current engine, and offers to add one when none is found", async () => {
     installTauri();
     const onFix = vi.fn();
     const user = userEvent.setup();
     const { unmount } = render(<EngineRows {...base} report={stoppedDockerReport()} last={null} />);
-    expect(text()).toMatch(/Docker Engine.*No permission/);
+    expect(text()).toMatch(/Docker Engine.*current.*No permission/);
     expect(text()).toContain("sudo usermod -aG docker player");
     expect(screen.queryByRole("button", { name: /^fix$/i })).toBeNull();
     unmount();
@@ -283,22 +290,25 @@ describe("EngineRows", () => {
     const denied = render(<EngineRows {...base} report={{ ...stoppedDockerReport(), dockerDeniedHint: null }} last={null} />);
     expect(text()).toContain("add yourself to the docker group");
     denied.unmount();
-    const stopped = render(<EngineRows {...base} onFix={onFix} report={{ ...readyReport(), dockerRunning: false }} last={null} />);
-    expect(text()).toMatch(/Docker Desktop.*Engine stopped/);
+    const ready = readyReport();
+    const stopped = render(
+      <EngineRows
+        {...base}
+        onFix={onFix}
+        report={{ ...ready, dockerRunning: false, dockerEngines: ready.dockerEngines.map((e) => ({ ...e, running: false })) }}
+        last={null}
+      />,
+    );
+    expect(text()).toMatch(/Docker Desktop.*current.*Engine stopped/);
     await user.click(button(/^fix$/i));
     expect(onFix).toHaveBeenCalledWith("docker");
     stopped.unmount();
-    for (const [os, names] of [
-      ["linux", ["Docker Desktop", "Docker Engine", "Colima"]],
-      ["macos", ["Docker Desktop", "OrbStack", "Colima"]],
-      ["windows", ["Docker Desktop"]],
-    ] as const) {
-      const r = render(<EngineRows {...base} report={freshReport(os)} last={null} />);
-      for (const name of names) expect(text(), os).toContain(name);
-      expect(screen.getAllByText("Not set up"), os).toHaveLength(names.length);
-      expect(screen.queryByText("Ready")).toBeNull();
-      r.unmount();
-    }
+    // Nothing found: one row, to add an engine.
+    render(<EngineRows {...base} onFix={onFix} report={freshReport("linux")} last={null} />);
+    expect(text()).toMatch(/Container engine.*No container engine yet.*Not set up/);
+    expect(screen.queryByText("Ready")).toBeNull();
+    await user.click(button(/^add$/i));
+    expect(onFix).toHaveBeenLastCalledWith("docker");
   });
 
   it("shows the self-test inline and reports when it finishes", async () => {
@@ -318,11 +328,34 @@ describe("HypervisorRows", () => {
     <HypervisorRows {...base} {...over} report={report} last={last} vm={vmSetup(report, null, last)} />
   );
 
-  it("shows the hypervisor labs run on, picked automatically among several, and the other one installed", () => {
+  it("lists every hypervisor installed, each with its own state, the one labs run on marked", () => {
     installTauri();
-    render(rows({ ...readyReport(), os: "linux", vmProviders: [hv({}), hv({ provider: "vmware_desktop" })] }, { result: "ok", at: Date.now() }));
-    expect(text()).toMatch(/VirtualBox.*\(automatic, change in Settings\) · tested just now.*Ready/);
+    const report = {
+      ...readyReport(),
+      os: "linux",
+      vmProviders: [
+        hv({}),
+        hv({ provider: "vmware_desktop" }),
+        hv({ provider: "libvirt", available: false, reason: "no /dev/kvm" }),
+        hv({ provider: "qemu", hypervisor: false }),
+      ],
+    };
+    render(rows(report, { result: "ok", at: Date.now() }));
+    // Picked automatically among the ready ones, and marked; the others each as they stand.
+    expect(text()).toMatch(/VirtualBox.*default.*\(automatic, change in Settings\) · tested just now.*Ready/);
     expect(text()).toMatch(/VMware Workstation.*Labs run on VirtualBox; change it in Settings\..*Installed/);
+    expect(text()).toMatch(/libvirt \(KVM\).*No \/dev\/kvm\..*Can't run here/);
+    expect(screen.getAllByText("default")).toHaveLength(1);
+    // Not installed: not a row (Add a provider covers it).
+    expect(text()).not.toContain("QEMU");
+  });
+
+  it("marks the hypervisor chosen in Settings, not the first installed one", () => {
+    installTauri();
+    setVmProvider("vmware_desktop");
+    const report = { ...readyReport(), os: "linux", vmProviders: [hv({}), hv({ provider: "vmware_desktop" })] };
+    render(<HypervisorRows {...base} report={report} last={null} vm={vmSetup(report, "vmware_desktop", null)} />);
+    expect(text()).toMatch(/VirtualBox.*Labs run on VMware Workstation.*Installed.*VMware Workstation.*default.*not tested yet.*Ready/);
   });
 
   it("offers a server beside the test when memory is short", async () => {
@@ -354,7 +387,7 @@ describe("HypervisorRows", () => {
     expect(button(/use a server/i)).toBeTruthy();
   });
 
-  it("fixes a missing Vagrant at its step, and adds a hypervisor not installed at its own", async () => {
+  it("fixes a missing Vagrant at its step, and with no hypervisor installed offers to add one", async () => {
     installTauri();
     const onFix = vi.fn();
     const user = userEvent.setup();
@@ -374,9 +407,9 @@ describe("HypervisorRows", () => {
         { onFix },
       ),
     );
-    expect(text()).toMatch(/VirtualBox.*Cyber CTF can install it for you\..*Not installed/);
-    expect(text()).toMatch(/VMware Workstation.*Install it from the vendor's site\./);
-    await user.click(screen.getAllByRole("button", { name: /^add$/i })[0]);
+    expect(text()).toMatch(/Virtual machines.*No hypervisor yet.*Not set up/);
+    expect(text()).not.toContain("VMware");
+    await user.click(button(/^add$/i));
     expect(onFix).toHaveBeenLastCalledWith("vm");
   });
 });
@@ -564,7 +597,8 @@ describe("MachineScreen", () => {
     expect(text()).not.toContain("Low disk space");
     // The providers, each its own row; "Add a provider" opens the setup on its choice.
     expect(text()).toContain("Providers");
-    expect(text()).toMatch(/Docker Desktop.*OrbStack.*Colima.*VirtualBox/);
+    expect(text()).toMatch(/Docker Desktop.*current.*VirtualBox.*default/);
+    expect(text()).not.toContain("OrbStack");
     expect(screen.getByRole("button", { name: /add a provider/i })).toBeTruthy();
   });
 

@@ -117,6 +117,7 @@ function fresh(ready: SystemReport): SystemReport {
     dockerRunning: false,
     dockerEngine: null,
     dockerEnginesRunning: [],
+    dockerEngines: [],
     dockerCompose: notInstalled,
     vagrant: notInstalled,
     terraform: notInstalled,
@@ -139,6 +140,7 @@ function engineDown(ready: SystemReport, docker: Exclude<Scenario["docker"], "ru
     dockerRunning: false,
     dockerEngine: null,
     dockerEnginesRunning: [],
+    dockerEngines: ready.dockerEngines.map((e) => ({ ...e, running: false })),
     dockerDenied: denied,
     dockerDeniedHint: denied ? hint : null,
   };
@@ -159,6 +161,7 @@ export function scenarioReport(sc: Scenario): SystemReport {
     dockerDeniedHint: null,
     dockerEngine: engine,
     dockerEnginesRunning: [engine],
+    dockerEngines: [{ engine, context: engine === "docker-engine" ? "default" : "desktop-linux", running: true, current: true }],
     vmProviders: [...local, ...report.vmProviders.filter((p) => p.remote)],
   };
   if (sc.fresh) return fresh(ready);
