@@ -13,7 +13,7 @@ use std::path::Path;
 use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
 
 #[cfg(target_os = "linux")]
@@ -43,6 +43,13 @@ pub const STATUS_TIMEOUT: Duration = Duration::from_secs(25);
 /// re-authentication nobody will give, or on a dead network, must not leave Test spinning or a
 /// launch stalled with its lab locked.
 pub const CLI_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// The bound on `run`/`run_env` when the caller named none. A read probe or a cloud CLI sets its
+/// own shorter limit, but teardown (`docker compose down`, `docker rm -f`) runs through the plain
+/// path while holding the lab lock, and a wedged daemon there must fail rather than hang the lab
+/// for good. Generous, since a real teardown can be slow; the post-exit drain cap
+/// ([`DRAIN_AFTER_EXIT`]) returns a finished-but-leftover-held run far sooner.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// stderr lines kept for a streamed tool's error.
 const STREAM_ERROR_LINES: usize = 10;
@@ -198,7 +205,10 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
     shim::check_args(program, args)?;
     #[cfg(test)]
     if let Some(answer) = fake::answer(program, args, env) {
-        return answer;
+        return match answer {
+            fake::FakeOutcome::Done(result) => result,
+            fake::FakeOutcome::Hang => std::future::pending::<Result<String>>().await,
+        };
     }
     // Kept alive until the tool exits (see lan_relay).
     let relayed = crate::lan_relay::prepare(program, env).await;
@@ -208,17 +218,51 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
     // around `ruby` (an orphaned ruby per timed-out poll deadlocked on Vagrant's lock), and
     // `cmd /C az` around `python` (a cancelled `az login` left it running).
     let (child, group) = spawn_group(&mut cmd, false).map_err(spawn_error(program))?;
-    let waiting = child.wait_with_output();
-    let waited = match timeout {
-        None => waiting.await,
-        Some(dur) => tokio::time::timeout(dur, waiting).await.map_err(|_| failed(program, args, timed_out_after(dur)))?,
-    };
+    // The plain `run`/`run_env` path names no timeout, but it is what teardown runs through while
+    // holding the lab lock: a generous default ([`DEFAULT_TIMEOUT`]) bounds a wedged daemon so it
+    // can't hang the lab for good. A read/CLI caller's own, shorter, limit is used as given.
+    let limit = timeout.unwrap_or(DEFAULT_TIMEOUT);
+    let waited = tokio::time::timeout(limit, wait_output_drained(child)).await.map_err(|_| failed(program, args, timed_out_after(limit)))?;
     group.disarm();
     let output = waited.map_err(spawn_error(program))?;
     if !output.status.success() {
         return Err(exit_error(program, args, output.status.code(), String::from_utf8_lossy(&output.stderr).trim().to_string()));
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Waits for a piped child to exit and returns its output, but once it has exited waits at most
+/// [`DRAIN_AFTER_EXIT`] for its pipes to close. `wait_with_output` reads them to EOF, and a
+/// process the tool left running (an ssh `ControlMaster`, a Terraform provider plugin) can hold
+/// them open for good: that hung a `run`/`run_env` teardown, and the lab lock it holds, forever.
+/// The bytes are returned raw and decoded by the caller, exactly as `wait_with_output`.
+async fn wait_output_drained(mut child: Child) -> std::io::Result<std::process::Output> {
+    let mut out_pipe = child.stdout.take().ok_or_else(|| std::io::Error::other("the tool's output wasn't piped"))?;
+    let mut err_pipe = child.stderr.take().ok_or_else(|| std::io::Error::other("the tool's error output wasn't piped"))?;
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let status;
+    {
+        // Both pipes read to EOF while the exit is awaited, so the child never blocks on a full
+        // one. If it exits before they close (a leftover holding them open), they get only the
+        // bounded grace, never an unbounded wait.
+        let read_both = async {
+            tokio::try_join!(out_pipe.read_to_end(&mut stdout), err_pipe.read_to_end(&mut stderr))?;
+            std::io::Result::Ok(())
+        };
+        tokio::pin!(read_both);
+        tokio::select! {
+            read = &mut read_both => {
+                read?;
+                status = child.wait().await?;
+            }
+            exit = child.wait() => {
+                status = exit?;
+                let _ = tokio::time::timeout(DRAIN_AFTER_EXIT, &mut read_both).await;
+            }
+        }
+    }
+    Ok(std::process::Output { status, stdout, stderr })
 }
 
 /// Like `run`, but adds `env` to the process environment and forwards every
@@ -233,7 +277,10 @@ async fn stream_from(program: &'static str, args: &[&str], cwd: Option<&Path>, e
     let mut on_line = on_line;
     #[cfg(test)]
     if let Some(answer) = fake::answer_stream(program, args, env, &mut on_line) {
-        return answer;
+        return match answer {
+            fake::FakeOutcome::Done(result) => result,
+            fake::FakeOutcome::Hang => std::future::pending::<Result<()>>().await,
+        };
     }
     let relayed = crate::lan_relay::prepare(program, env).await;
     let env = relayed.env.as_slice();
@@ -394,6 +441,19 @@ mod tests {
         // A failing tool's message is piped too, so it reaches the error instead of vanishing.
         let err = run_read("sh", &["-c", "echo boom >&2; exit 3"], None).await.unwrap_err();
         assert!(matches!(err, Error::CommandFailed { ref stderr, .. } if stderr.contains("boom")), "{err:?}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_run_whose_tool_left_a_child_holding_its_output_returns_after_the_drain_cap() {
+        // Regression (#B2): the plain `run`/`run_env` path read stdout to EOF with no bound, so a
+        // process the tool left behind (a `compose down` leaving a plugin, an ssh ControlMaster)
+        // that held the pipe open hung the call — and the lab lock a teardown holds — for good. It
+        // now returns within the post-exit drain cap, with what the tool itself printed.
+        let started = std::time::Instant::now();
+        let out = run("sh", &["-c", "sleep 30 & printf done"], None).await.unwrap();
+        assert_eq!(out, "done");
+        assert!(started.elapsed() < Duration::from_secs(10), "returned after the drain cap, not after the leftover: {:?}", started.elapsed());
     }
 
     #[cfg(unix)]

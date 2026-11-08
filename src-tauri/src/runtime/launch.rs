@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::inflight::{Action, DeployGuard};
-use super::paths::{deployment_states, forget_lab_host_keys, mark_local_vm, mark_parked, parked, runner_home, vagrant_dirs};
+use super::paths::{deployment_states, forget_lab_host_keys, mark_local_vm, mark_parked, mark_per_machine_vm, parked, runner_home, vagrant_dirs};
 use super::providers::Provider;
 use super::{LabRef, Runtime, cloud_services, docker, isothrum, lab, server, terraform, vm};
 use crate::error::{Error, Result};
@@ -15,7 +15,7 @@ mod local;
 mod on_host;
 mod port_holder;
 
-use local::{check_qemu, warn_if_low_memory};
+use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};
 #[cfg(test)]
 use local::{emulated_arches, low_memory_warning};
 pub(crate) use on_host::esxi_run;
@@ -28,7 +28,9 @@ pub(super) use on_host::{runner_runs_on, server_place};
 /// Starts an installed lab; `env` is passed to the runtime (evidence claim, attack box).
 ///
 /// - No `host`: Docker labs run on this machine's Docker, or in one VM on this machine with a
-///   local `provider` (Isoloom's docker-vm); VM labs run one VM per machine (Isoloom's vagrant).
+///   local `provider` (Isoloom's docker-vm), or, with `per_machine_vm`, as one VM per machine
+///   like a VM lab when their spec has VM recipes too; VM labs run one VM per machine
+///   (Isoloom's vagrant).
 /// - With a server `host`: the lab runs there. ESXi runs the same Vagrantfiles; Proxmox and
 ///   the clouds run Isoloom's Terraform (Docker on one VM, or one VM per machine on Proxmox).
 /// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
@@ -36,7 +38,7 @@ pub(super) use on_host::{runner_runs_on, server_place};
 /// The caller holds the lab lock (`lock_lab`): a launch holds it from the download on.
 #[allow(
     clippy::too_many_arguments,
-    reason = "the launch entry point carries the whole launch specification — the lab (dir, id), its runtime, a local provider or a server host, the launch inputs and a log sink — which has no smaller cohesive grouping"
+    reason = "the launch entry point carries the whole launch specification — the lab (dir, id), its runtime, a local provider or a server host, the form override, the launch inputs and a log sink — which has no smaller cohesive grouping"
 )]
 pub(crate) async fn start_locked(
     dirs: &AppDirs,
@@ -45,6 +47,7 @@ pub(crate) async fn start_locked(
     runtime: Runtime,
     provider: Option<Provider>,
     host: Option<&str>,
+    per_machine_vm: bool,
     env: &[(String, String)],
     mut log: impl FnMut(String),
 ) -> Result<()> {
@@ -68,7 +71,10 @@ pub(crate) async fn start_locked(
         return cloud_services::start(dirs, lab, host, env, &mut log).await;
     }
     match host {
-        None => start_here(dirs, lab, provider, env, &mut log).await,
+        None => start_here(dirs, lab, local_run(runtime, provider, per_machine_vm)?, env, &mut log).await,
+        // On a server the lab runs as the catalogue says (ESXi: Docker on one VM for a container
+        // lab); the per-machine pick is "Where should it run?"'s for this machine only.
+        Some(_) if per_machine_vm => Err(Error::Invalid(PER_MACHINE_HERE_ONLY.into())),
         Some(host) => start_on_server(dirs, lab, host, env, &mut log).await,
     }
 }
@@ -83,11 +89,12 @@ pub(crate) async fn start(
     runtime: Runtime,
     provider: Option<Provider>,
     host: Option<&str>,
+    per_machine_vm: bool,
     env: &[(String, String)],
     log: impl FnMut(String),
 ) -> Result<()> {
     let _lock = super::inflight::lock_lab(dirs, id).await?;
-    start_locked(dirs, dir, id, runtime, provider, host, env, log).await
+    start_locked(dirs, dir, id, runtime, provider, host, per_machine_vm, env, log).await
 }
 
 /// The name of the server host lab `id` (folder `dir`) is deployed on, if something of it is
@@ -111,13 +118,18 @@ fn deployed_elsewhere(base: &Path, dir: &Path, id: &str, host: Option<&str>) -> 
     (terraform || vagrant).then_some(marked)
 }
 
-async fn start_here(dirs: &AppDirs, lab: LabRef<'_>, provider: Option<Provider>, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+/// Starts the lab on this machine as `run` says (see [`local_run`]).
+async fn start_here(dirs: &AppDirs, lab: LabRef<'_>, run: LocalRun, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     server::mark_lab(dir, None)?;
+    // The form is remembered with the lab before anything runs: every later operation on it
+    // (status, stop, park) follows the form it was started in, whatever the catalogue calls it.
+    // A container lab started as one VM per machine is the one case where the two differ.
+    mark_per_machine_vm(dir, runtime == Runtime::Docker && matches!(run, LocalRun::Vm(_)))?;
     // Every lab on this machine runs through the Isothrum runner. A parked run is resumed as it
     // was and leftovers are cleared first (the runner's `Occupied::ResumeParked`); the runner
     // wrappers record the lab's downloads for Storage.
-    let started = match local_run(runtime, provider)? {
+    let started = match run {
         LocalRun::Docker => start_with_runner(dirs, dir, id, env, log).await,
         LocalRun::DockerInVm(p) => start_docker_in_vm_with_runner(dirs, dir, id, VmStart { provider: p, env }, log).await,
         LocalRun::Vm(p) => start_vm_with_runner(dirs, dir, id, VmStart { provider: p, env }, log).await,
@@ -148,8 +160,34 @@ pub(super) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
     lab::prepare(dir, lab::vagrant_target(Runtime::Docker))?;
     mark_local_vm(dir, Some(provider))?;
     log(format!("Running in a {} VM on this machine", provider.id()));
-    isothrum::LabRun::docker_in_vm(home, dir, id)?.up(env, Some(provider.id()), log).await?;
-    mark_parked(dir, None)
+    if provider == Provider::Utm {
+        check_utm(log).await?;
+    }
+    let run = isothrum::LabRun::docker_in_vm(home, dir, id)?;
+    let mut tried_again = false;
+    loop {
+        // Marked before every attempt: the teardown of a failed one forgets the marker with the
+        // rest of the run, and without it status, stop and the attack box would read the lab
+        // as plain Docker on this machine once the next attempt succeeds.
+        mark_local_vm(dir, Some(provider))?;
+        let Err(e) = run.up(env, Some(provider.id()), log).await else {
+            return mark_parked(dir, None);
+        };
+        // A failed start can leave a half-created helper VM holding host ports (e.g. the QEMU
+        // SSH forward), and that lingering VM trips the next launch with a port-collision
+        // error. Destroy it before surfacing the failure; the teardown is best-effort, so its
+        // own error is logged, never allowed to mask the start's.
+        log("Start failed: removing the half-created VM so the next launch starts clean".into());
+        if let Err(teardown) = super::lifecycle::stop_docker_in_vm_run(home, dir, id, &mut *log).await {
+            log(format!("Could not fully remove the failed VM: {teardown}"));
+        }
+        if provider == Provider::Utm && !tried_again && local::utm_transient(&e) {
+            log(local::UTM_TRANSIENT_RETRY.into());
+            tried_again = true;
+            continue;
+        }
+        return Err(e);
+    }
 }
 
 /// A container lab on this machine's Docker through the Isothrum runner (see `isothrum`), its
@@ -197,11 +235,26 @@ async fn start_vm_with_runner(dirs: &AppDirs, dir: &Path, id: &str, start: VmSta
 pub(super) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let VmStart { provider, env } = start;
     let prepared = lab::prepare(dir, lab::Target::Vagrant)?;
+    // A container lab's VM form leaves no local-VM mark behind: that one names docker-vm.
+    mark_local_vm(dir, None)?;
+    check_provider(&prepared, provider)?;
     warn_if_low_memory(&prepared.spec, log);
     if provider == Provider::Qemu {
         check_qemu(&prepared, log).await?;
     }
-    isothrum::LabRun::vm(home, dir, id)?.up(env, Some(provider.id()), log).await?;
+    if provider == Provider::Utm {
+        check_utm(log).await?;
+    }
+    let run = isothrum::LabRun::vm(home, dir, id)?;
+    if let Err(e) = run.up(env, Some(provider.id()), log).await {
+        if provider != Provider::Utm || !local::utm_transient(&e) {
+            return Err(e);
+        }
+        // Once more: UTM's transient refusal, with the VMs left as they are (a `vagrant up`
+        // resumes what exists).
+        log(local::UTM_TRANSIENT_RETRY.into());
+        run.up(env, Some(provider.id()), log).await?;
+    }
     mark_parked(dir, None)
 }
 
@@ -221,6 +274,9 @@ async fn recheck_instance(dir: &Path, id: &str, log: &mut impl FnMut(String)) ->
 /// Cloud-services labs have nothing to run here.
 pub(super) const CLOUD_NEEDS_ACCOUNT: &str = "This lab runs in your cloud account: pick one of your cloud accounts to start it on.";
 
+/// The per-machine form is a pick for this machine.
+pub(super) const PER_MACHINE_HERE_ONLY: &str = "One VM per machine is a way to run the lab on this machine: on a server, the lab runs as it is published.";
+
 /// How a lab runs on this machine.
 #[derive(Debug, PartialEq)]
 enum LocalRun {
@@ -233,9 +289,14 @@ enum LocalRun {
 }
 
 /// The local run for `runtime` on `provider`: a container lab with a local hypervisor runs in a
-/// VM there, without one on Docker; a VM lab needs a local hypervisor.
-fn local_run(runtime: Runtime, provider: Option<Provider>) -> Result<LocalRun> {
+/// VM there, without one on Docker, and with `per_machine_vm` as one VM per machine (its spec's
+/// VM recipes, as a VM lab); a VM lab needs a local hypervisor.
+fn local_run(runtime: Runtime, provider: Option<Provider>, per_machine_vm: bool) -> Result<LocalRun> {
     match runtime {
+        Runtime::Docker if per_machine_vm => {
+            let provider = provider.filter(|p| !p.is_remote()).ok_or_else(|| Error::Invalid("One VM per machine needs a hypervisor on this machine".into()))?;
+            Ok(LocalRun::Vm(provider))
+        }
         Runtime::Docker => Ok(match provider.filter(|p| !p.is_remote()) {
             Some(p) => LocalRun::DockerInVm(p),
             None => LocalRun::Docker,

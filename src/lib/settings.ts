@@ -132,10 +132,17 @@ export const ATTACK_VM_PRESETS: { box: string; label: string; note: string }[] =
 ];
 
 export function getAttackBox(): string {
+  return getAttackBoxChoice() ?? DEFAULT_ATTACK_BOX;
+}
+
+/** The attack VM box the learner picked in Settings, or null when they never did: the lab's own
+ *  default then runs, the box its Vagrantfile picks for this machine's CPU (Kali on x86, the
+ *  Debian cloud image on Arm, where Kali's box has no build). */
+export function getAttackBoxChoice(): string | null {
   try {
-    return localStorage.getItem(ATTACK_BOX_KEY) || DEFAULT_ATTACK_BOX;
+    return localStorage.getItem(ATTACK_BOX_KEY) || null;
   } catch {
-    return DEFAULT_ATTACK_BOX;
+    return null;
   }
 }
 
@@ -148,6 +155,10 @@ export function setAttackBox(box: string) {
 }
 
 const VM_PROVIDER_KEY = "cyberctf.vm.provider";
+
+/** Sent on `window` when the hypervisor choice changes (Settings, the Machine setup, or the
+ *  switch in "Where should it run?"), so the header and the lab page follow at once. */
+export const VM_PROVIDER_CHANGED = "cyberctf:vm-provider";
 
 /** The hypervisor VM labs (and the VM test) run on, when several are installed. Null = automatic. */
 export function getVmProvider(): Provider | null {
@@ -165,6 +176,7 @@ export function setVmProvider(provider: Provider | null) {
   } catch {
     /* ignore */
   }
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(VM_PROVIDER_CHANGED));
 }
 
 /** An image name the core will run (exegol.rs `valid_image`): plain ASCII name characters, no

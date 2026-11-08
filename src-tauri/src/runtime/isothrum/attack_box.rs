@@ -1,8 +1,10 @@
-//! The learner's attack box as the runner sees it: the lab's on-demand access machine. The
-//! launcher never runs it — it asks the runner to hot-add it onto a chosen lab network (with the
-//! box image the learner picked), to take it out again, to report it, and to build the shell
-//! command into it. Status, networks and the shell come from the run, so the lab page treats the
-//! box like any other machine.
+//! The learner's attack box as the runner sees it: the lab's on-demand access machine, or the
+//! box the runner stands up itself (a container beside a container lab's, a VM added to a VM
+//! lab's running environment, `isoloom-access` either way). The launcher never runs it — it asks
+//! the runner to hot-add it onto a chosen lab network (with the box image the learner picked, else
+//! the lab's default), to take it out again, to report it, and to build the shell command into
+//! it. Status, networks and the shell come from the run, so the lab page treats the box like any
+//! other machine.
 
 use isoloom_manifest::Role;
 use isothrum_runner::{MachineState, MachineStatus, ShellCommand, Status};
@@ -35,9 +37,13 @@ fn networks(status: &Status) -> Vec<String> {
     status.networks.iter().map(|n| n.name.clone()).collect()
 }
 
-/// A shell command as one line, for the lab page (the player can also run it in their terminal).
+/// A shell command as one line the player can paste in their terminal: the variables it needs
+/// first (`VAR=value`, as a shell takes them), then the program and its arguments, each quoted
+/// where it must be.
 pub(super) fn display(cmd: &ShellCommand) -> String {
-    std::iter::once(cmd.program.as_str()).chain(cmd.args.iter().map(String::as_str)).collect::<Vec<_>>().join(" ")
+    let words: Vec<String> =
+        cmd.env.iter().map(|(k, v)| format!("{k}={v}")).chain(std::iter::once(cmd.program.clone())).chain(cmd.args.iter().cloned()).collect();
+    shell_words::join(&words)
 }
 
 /// The attack box's status from the run's status: up when the access machine runs, its address on
@@ -53,4 +59,51 @@ pub(super) fn status_of(status: &Status, network: Option<&str>, shell_cmd: Strin
         .unwrap_or_default();
     let ip = addresses.and_then(|a| a.get(&on)).cloned().unwrap_or_default();
     AttackStatus { running, ip: if running { ip } else { String::new() }, lab_network: on, networks: networks(status), shell_cmd }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A VM lab's status as the runner reports it: its web VM, and the attack VM the runner added
+    /// in `state` at its address on the lab network (absent: none added yet).
+    fn vm_lab(state: &str) -> Status {
+        serde_json::from_value(serde_json::json!({
+            "state": "ready",
+            "provider": "qemu",
+            "machines": [
+                { "name": "web", "role": "target", "state": "running", "addresses": { "lab": "10.61.0.10" }, "published": [] },
+                { "name": "isoloom-access", "role": "access", "state": state, "addresses": { "lab": "10.61.0.252" }, "published": [] }
+            ],
+            "networks": [{ "name": "lab", "cidr": "10.61.0.0/24", "internet": false, "native": "isoloom-t-lab" }],
+            "outputs": [],
+            "message": null
+        }))
+        .expect("a run status")
+    }
+
+    #[test]
+    fn a_vm_labs_attack_vm_is_the_runs_access_machine_down_until_hot_added() {
+        let shell = "VAGRANT_DOTFILE_PATH=/runs/t/vagrant vagrant ssh isoloom-access".to_owned();
+        let down = status_of(&vm_lab("absent"), None, shell.clone());
+        assert_eq!((down.running, down.ip.as_str(), down.networks.as_slice()), (false, "", ["lab".to_owned()].as_slice()));
+        assert_eq!(down.shell_cmd, shell, "the shell command is known before the box is up");
+        let up = status_of(&vm_lab("running"), None, shell);
+        assert_eq!((up.running, up.ip.as_str(), up.lab_network.as_str()), (true, "10.61.0.252", "lab"));
+    }
+
+    #[test]
+    fn the_shell_line_is_pasteable_with_the_variables_it_needs() {
+        let plain = ShellCommand { program: "docker".into(), args: ["compose", "exec", "kali", "bash"].map(String::from).to_vec(), cwd: None, env: Vec::new() };
+        assert_eq!(display(&plain), "docker compose exec kali bash");
+        let in_vm = ShellCommand {
+            program: "vagrant".into(),
+            args: ["ssh", "default", "-c", "sudo docker exec -it 'x-isoloom-access' sh"].map(String::from).to_vec(),
+            cwd: None,
+            env: vec![("VAGRANT_DOTFILE_PATH".into(), "/runs/x y/vagrant".into())],
+        };
+        let line = display(&in_vm);
+        assert!(line.starts_with("'VAGRANT_DOTFILE_PATH=/runs/x y/vagrant' vagrant ssh default -c "), "{line}");
+        assert_eq!(shell_words::split(&line).unwrap().last().map(String::as_str), Some("sudo docker exec -it 'x-isoloom-access' sh"), "{line}");
+    }
 }

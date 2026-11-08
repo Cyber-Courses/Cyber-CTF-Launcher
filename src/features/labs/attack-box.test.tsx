@@ -82,6 +82,16 @@ describe("useAttackBox", () => {
     expect(calls.find((c) => c.cmd === "attack_box_detach")?.args).toMatchObject({ id: "ab-vm", runtime: "VM" });
   });
 
+  it("leaves the box to the lab's default beside a VM lab until one is picked in Settings", async () => {
+    setAutoAttackBox(false);
+    const calls = installTauri({ attack_box_status: () => box(), attack_box_attach: () => null });
+    const { result } = renderHook(() => useAttackBox("ab-vm-default", { running: true, local: true, runtime: "VM" }));
+    await flush();
+    expect(result.current.name).toBe("this machine's default box");
+    await act(() => result.current.start());
+    expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "ab-vm-default", runtime: "VM", pick: { network: null, image: null } });
+  });
+
   it("attaches the box with the lab once, when Settings say so", async () => {
     const calls = installTauri({ attack_box_status: () => box() });
     renderHook(() => useAttackBox("ab-auto", { running: true, local: true }));
@@ -353,10 +363,10 @@ describe("AttackBoxPanel", () => {
     expect(screen.getByText(/Your own VM beside the lab/)).toBeTruthy();
   });
 
-  it("shows the QEMU controller as the attacker, with nothing to start", () => {
-    render(<AttackBoxPanel box={fake({ vm: true, status: box() })} running host={null} controller />);
-    expect(screen.getByText("Attacker")).toBeTruthy();
-    expect(screen.getByText("isoloom-controller")).toBeTruthy();
-    expect(screen.queryByRole("button")).toBeNull();
+  it("offers to start the attack VM beside a VM lab on any hypervisor, QEMU included", () => {
+    render(<AttackBoxPanel box={fake({ vm: true, name: "this machine's default box", status: box() })} running host={null} />);
+    expect(screen.getByText("Attack VM")).toBeTruthy();
+    expect(screen.getByText("this machine's default box")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Start attack box/ })).toBeTruthy();
   });
 });

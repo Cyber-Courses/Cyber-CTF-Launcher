@@ -320,9 +320,11 @@ pub async fn spec_at(dirs: &crate::platform::AppDirs, lab_id: &str, repository: 
     parse(&text)
 }
 
-/// Why the lab's VMs can't run on Vagrant's QEMU provider (its networks), if they can't.
-pub fn qemu_refusal(lab: &Lab) -> Option<String> {
-    isoloom_targets::refusal_on(lab, Target::Vagrant, Some("qemu"))
+/// Why the lab's VMs can't run on Vagrant's `provider` (`qemu`, `utm`, …: its networks, a TPM,
+/// data disks), if they can't. Isoloom's own rule, so the launcher refuses exactly what the
+/// generated Vagrantfile would.
+pub fn vagrant_refusal(lab: &Lab, provider: &str) -> Option<String> {
+    isoloom_targets::refusal_on(lab, Target::Vagrant, Some(provider))
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ import {
   saveName,
   setupSteps,
   setupTitle,
+  startingSetup,
   withProvider,
 } from "@/features/servers/host-setup/setup-model";
 
@@ -38,6 +39,29 @@ describe("setupSteps", () => {
     expect(setupSteps("azure", false)).toEqual(["provider", "tools", "credentials", "options", "test"]);
     expect(setupSteps("aws", true)).toEqual(["account", "credentials", "options", "test"]);
     expect(setupSteps("oci", true)).toEqual(["credentials", "options", "test"]);
+    // Opened on a chosen provider (a Connect row): no choosing, straight to its tools.
+    expect(setupSteps("azure", false, true)).toEqual(["tools", "credentials", "options", "test"]);
+    expect(setupSteps("aws", false, true)).toEqual(["tools", "account", "credentials", "options", "test"]);
+    expect(setupSteps("proxmox", false, true)).toEqual(["hypervisor", "tools", "connection", "placement", "test"]);
+  });
+});
+
+describe("startingSetup", () => {
+  it("starts a server, a cloud account, or the named cloud's account with the choice made", () => {
+    expect(startingSetup(null, null)).toEqual({ form: EMPTY_HOST, providerChosen: false });
+    expect(startingSetup("server", "azure")).toEqual({ form: EMPTY_HOST, providerChosen: false });
+    expect(startingSetup("cloud", null)).toEqual({ form: EMPTY_CLOUD, providerChosen: false });
+    const azure = startingSetup("cloud", "azure");
+    expect(azure.providerChosen).toBe(true);
+    expect(azure.form).toMatchObject({ provider: "azure", host: DEFAULT_REGION.azure, useCliCreds: false, name: "Azure" });
+    expect(startingSetup("cloud", "gcp").form.provider).toBe("gcp");
+  });
+
+  it("starts a plain new account, choice open, on a provider it doesn't know", () => {
+    expect(startingSetup("cloud", "proxmox")).toEqual({ form: EMPTY_CLOUD, providerChosen: false });
+    expect(startingSetup("cloud", "")).toEqual({ form: EMPTY_CLOUD, providerChosen: false });
+    // A fresh copy each time: the window keeps its own form.
+    expect(startingSetup("cloud", null).form).not.toBe(EMPTY_CLOUD);
   });
 });
 

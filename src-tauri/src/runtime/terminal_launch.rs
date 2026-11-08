@@ -9,11 +9,17 @@ use isothrum_runner::ShellCommand;
 use crate::error::{Error, Result};
 
 /// The POSIX command line that runs `command` in its folder: `cd <cwd> && exec <program> <args>`
-/// (the `exec` so leaving the shell ends it, no extra process in between). Unix terminals only
-/// (Windows uses [`windows_line`]); the tests exercise it on every platform.
+/// (the `exec` so leaving the shell ends it, no extra process in between), through `env` with
+/// the variables the command needs (a Vagrant run's state folder), when it has any. Unix
+/// terminals only (Windows uses [`windows_line`]); the tests exercise it on every platform.
 #[cfg(any(unix, test))]
 fn command_line(command: &ShellCommand) -> String {
-    let mut words = vec![command.program.clone()];
+    let mut words = Vec::new();
+    if !command.env.is_empty() {
+        words.push("env".to_owned());
+        words.extend(command.env.iter().map(|(name, value)| format!("{name}={value}")));
+    }
+    words.push(command.program.clone());
     words.extend(command.args.iter().cloned());
     let run = shell_words::join(&words);
     match &command.cwd {
@@ -87,11 +93,15 @@ pub fn open_terminal(command: &ShellCommand) -> Result<()> {
     }
 }
 
-/// The cmd.exe command line: `cd /d "<cwd>" && <program> <args>`, each word double-quoted.
+/// The cmd.exe command line: `cd /d "<cwd>" && set "<VAR>=<value>" && <program> <args>`, each
+/// word double-quoted, the command's variables set first.
 #[cfg(any(windows, test))]
 pub(crate) fn windows_line(command: &ShellCommand) -> String {
     let quote = |w: &str| if w.contains(' ') || w.contains('"') { format!("\"{}\"", w.replace('"', "\"\"")) } else { w.to_owned() };
     let mut run = std::iter::once(&command.program).chain(&command.args).map(|w| quote(w)).collect::<Vec<_>>().join(" ");
+    for (name, value) in command.env.iter().rev() {
+        run = format!("set \"{name}={value}\" && {run}");
+    }
     if let Some(cwd) = &command.cwd {
         run = format!("cd /d {} && {run}", quote(&cwd.to_string_lossy()));
     }
@@ -166,7 +176,23 @@ mod tests {
     use std::path::PathBuf;
 
     fn cmd(program: &str, args: &[&str], cwd: Option<&str>) -> ShellCommand {
-        ShellCommand { program: program.to_owned(), args: args.iter().map(|a| (*a).to_owned()).collect(), cwd: cwd.map(PathBuf::from) }
+        ShellCommand { program: program.to_owned(), args: args.iter().map(|a| (*a).to_owned()).collect(), cwd: cwd.map(PathBuf::from), env: Vec::new() }
+    }
+
+    /// The shell into a Vagrant run's box: `vagrant` needs the run's state folder to find the VM.
+    fn in_vm(cwd: &str) -> ShellCommand {
+        let mut c = cmd("vagrant", &["ssh", "default"], Some(cwd));
+        c.env = vec![("VAGRANT_DOTFILE_PATH".into(), "/runs/x y/vagrant".into())];
+        c
+    }
+
+    #[test]
+    fn the_lines_set_the_variables_the_command_needs() {
+        assert_eq!(
+            command_line(&in_vm("/labs/x/.isoloom/docker-vm")),
+            "cd /labs/x/.isoloom/docker-vm && exec env 'VAGRANT_DOTFILE_PATH=/runs/x y/vagrant' vagrant ssh default"
+        );
+        assert_eq!(windows_line(&in_vm("C:\\labs\\x")), "cd /d C:\\labs\\x && set \"VAGRANT_DOTFILE_PATH=/runs/x y/vagrant\" && vagrant ssh default");
     }
 
     #[test]

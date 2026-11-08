@@ -173,6 +173,15 @@ const serverCommands = {
   aws_month_to_date_cost: () => 6.4,
   aws_cli_identity: () => "arn:aws:iam::482100000193:user/florian",
   aws_profiles: () => ["default"],
+  // The other clouds' sign-in reads, so their setup steps render in the preview as AWS's do.
+  azure_subscriptions: () => [
+    { name: "Pay-As-You-Go", id: "0f1e2d3c-4b5a-4968-8776-655443322110", isDefault: true },
+    { name: "Lab sandbox", id: "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d", isDefault: false },
+  ],
+  gcp_account: () => "florian@cyberctf.org",
+  gcp_billing_accounts: () => [{ id: "01AB23-CD45EF-67GH89", name: "Cyber CTF billing", open: true }],
+  gcp_organizations: () => [{ id: "123456789012", name: "cyberctf.org" }],
+  oci_config: () => ({ configured: false, tenancy: "", region: "" }),
 } satisfies Handlers;
 
 /** The app's windows and Tauri plugins. */
@@ -182,7 +191,8 @@ const appCommands = {
     return null;
   },
   server_open_setup: (args) => {
-    const id = args?.id ? `?id=${encodeURIComponent(argText(args.id))}` : args?.kind === "cloud" ? "?kind=cloud" : "";
+    const provider = args?.provider ? `&provider=${encodeURIComponent(argText(args.provider))}` : "";
+    const id = args?.id ? `?id=${encodeURIComponent(argText(args.id))}` : args?.kind === "cloud" ? `?kind=cloud${provider}` : "";
     openWindow(`/server-setup${id}`);
     return null;
   },

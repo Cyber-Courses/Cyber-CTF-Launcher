@@ -69,6 +69,9 @@ pub struct Job {
     /// A container lab on the lab's own ports rather than random free ones.
     #[serde(default)]
     pub default_ports: bool,
+    /// A container lab with VM recipes run here as one VM per machine (the form of a VM lab).
+    #[serde(default)]
+    pub per_machine_vm: bool,
 }
 
 impl std::fmt::Debug for Job {
@@ -81,6 +84,7 @@ impl std::fmt::Debug for Job {
             .field("host", &self.host)
             .field("attackbox_image", &self.attackbox_image)
             .field("default_ports", &self.default_ports)
+            .field("per_machine_vm", &self.per_machine_vm)
             .finish()
     }
 }
@@ -88,7 +92,16 @@ impl std::fmt::Debug for Job {
 impl Job {
     /// An operation on an installed lab (no launch payload).
     pub fn on_lab(lab_id: &str, op: Op) -> Job {
-        Job { lab_id: lab_id.to_string(), op, launch: serde_json::Value::Null, provider: None, host: None, attackbox_image: None, default_ports: false }
+        Job {
+            lab_id: lab_id.to_string(),
+            op,
+            launch: serde_json::Value::Null,
+            provider: None,
+            host: None,
+            attackbox_image: None,
+            default_ports: false,
+            per_machine_vm: false,
+        }
     }
 
     /// The worker files' key: a lab's operations share one (they are serialised by the lab lock
@@ -108,6 +121,7 @@ pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<
                 host: job.host.as_deref(),
                 attackbox_image: job.attackbox_image.as_deref(),
                 default_ports: job.default_ports,
+                per_machine_vm: job.per_machine_vm,
             };
             crate::labs::run(&AppDirs::from(app), job.launch, &placement, log).await
         }
@@ -190,6 +204,14 @@ pub fn last_deploy_failed(dirs: &AppDirs, lab_id: &str) -> bool {
     files::last_deploy_failed(dirs, lab_id)
 }
 
+/// Records a failed launch for `lab_id`, so tests of code that reacts to a failed deploy can set
+/// one up (the `files` module is private).
+#[cfg(test)]
+pub(crate) fn mark_launch_failed_for_test(dirs: &AppDirs, lab_id: &str) {
+    let f = files::of(dirs, lab_id).expect("a valid lab id");
+    std::fs::write(&f.launch_status, "error: test").expect("write the launch status");
+}
+
 /// The cross-process lock file of `lab` (see [`lock`]).
 pub fn lock_path(dirs: &AppDirs, lab: &str) -> Result<std::path::PathBuf> {
     crate::runtime::validate_id(lab)?;
@@ -250,7 +272,9 @@ mod tests {
         // newer field takes its default.
         let job: Job = serde_json::from_str(r#"{"lab_id":"lab-1"}"#).unwrap();
         assert_eq!(job, Job::on_lab("lab-1", Op::Launch));
-        assert!(job.launch.is_null() && !job.default_ports && job.provider.is_none() && job.host.is_none() && job.attackbox_image.is_none());
+        assert!(
+            job.launch.is_null() && !job.default_ports && !job.per_machine_vm && job.provider.is_none() && job.host.is_none() && job.attackbox_image.is_none()
+        );
         assert_eq!(job.key(), "lab-1");
     }
 
@@ -286,6 +310,7 @@ mod tests {
             host: None,
             attackbox_image: Some("cyberctf/attack-box".into()),
             default_ports: true,
+            per_machine_vm: true,
         };
         let bytes = serde_json::to_vec(&job).unwrap();
         assert_eq!(serde_json::from_slice::<Job>(&bytes).unwrap(), job);

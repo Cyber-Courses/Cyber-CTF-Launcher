@@ -1,75 +1,39 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { type Badge, type Provider, type RunTier, type ServerHost, type ServerTest, runTiers } from "@/lib/tauri";
+import { type Provider, type RunTier, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { badgeFor, candidatesFor, type RunBadge } from "@/features/labs/run-on-badges";
 import { testHost } from "@/features/servers/use-server-list";
 import { type Tone } from "@/components/ui/status-pill";
 import { TypeIcon } from "@/components/ui/type-icon";
 import { KIND } from "@/features/servers/host-setup/constants";
 import { ProviderGlyph } from "@/features/servers/provider-glyph";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
+import { Segmented } from "@/components/ui/segmented";
 import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
 import { CLOUDS } from "@/features/labs/lab-runtime";
 import type { RunTarget } from "@/features/labs/run-on";
 import { type T } from "@/lib/i18n";
 
+export { useRunTiers } from "@/features/labs/run-on-badges";
+
 // The places "Where should it run?" offers, by group: this machine, Cyber CTF, servers, clouds.
 
 type Status = { tone: Tone; label: string; title?: string };
-/** A maturity badge on a launch path (Beta / Experimental), with the evidence as its tooltip. */
-type RunBadge = { kind: Exclude<Badge, "none">; title: string };
-type Option = { target: RunTarget; title: string; subtitle: string; ok: boolean; why?: string; logo: React.ReactNode; status?: Status; badge?: RunBadge };
+type Option = {
+  target: RunTarget;
+  title: string;
+  subtitle: string;
+  ok: boolean;
+  why?: string;
+  logo: React.ReactNode;
+  status?: Status;
+  badge?: RunBadge;
+  extra?: React.ReactNode;
+};
 export type OptionGroup = { id: string; label: string; options: Option[] };
 /** Each host's test result, by id; none yet while it runs. */
 type HostChecks = Partial<Record<string, ServerTest>>;
-
-/** Every launch path's maturity, fetched once when the picker opens (empty while it loads, or
- *  when the evidence can't be read — then no badges show). */
-export function useRunTiers(): RunTier[] {
-  const [tiers, setTiers] = useState<RunTier[]>([]);
-  useEffect(() => {
-    let live = true;
-    runTiers()
-      .then((t) => {
-        if (live) setTiers(t);
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, []);
-  return tiers;
-}
-
-const BADGE_RANK: Record<Badge, number> = { none: 0, beta: 1, experimental: 2 };
-
-/** The badge a launch path carries: the strongest (experimental > beta) of its candidate
- *  `target/variant` entries that has one. `None` → no badge. Purely from Isoloom's evidence. */
-function badgeFor(tiers: RunTier[], candidates: string[]): RunBadge | undefined {
-  let worst: RunTier | undefined;
-  for (const key of candidates) {
-    const slash = key.indexOf("/");
-    const [target, variant] = slash === -1 ? [key, null] : [key.slice(0, slash), key.slice(slash + 1)];
-    const entry = tiers.find((e) => e.target === target && (e.variant ?? null) === variant);
-    if (entry && entry.badge !== "none" && (!worst || BADGE_RANK[entry.badge] > BADGE_RANK[worst.badge])) worst = entry;
-  }
-  return worst && worst.badge !== "none" ? { kind: worst.badge, title: worst.evidence } : undefined;
-}
-
-/** The Isoloom `target/variant` paths a run target could take (so the worst of them badges it). */
-function candidatesFor(target: RunTarget, provider?: Provider): string[] {
-  switch (target.kind) {
-    case "local":
-      return ["docker"];
-    case "local-vm":
-      return [`docker-vm/${target.provider}`, `vagrant/${target.provider}`];
-    case "host":
-      if (!provider) return [];
-      if (CLOUDS.has(provider)) return [`cloud-vm/${provider}`, `cloud-docker/${provider}`];
-      if (provider === "vmware_esxi") return ["vagrant/vmware_esxi"];
-      return [`cloud-vm/${provider}`, `vagrant/${provider}`];
-  }
-}
 
 /** Each host's connection test, run once when the picker opens (like "Test" on the Servers page).
  *  A host without an answer yet is being tested. The answers are kept with the host list they
@@ -108,8 +72,26 @@ const DockerLogo = () => (
   </TypeIcon>
 );
 
-/** This machine (with its Docker engine's state, for a container lab), and a VM on `localVm`. */
-function localOptions(t: T, tiers: RunTier[], localNote: string, dockerRunning: boolean | null, localVm: Provider | null): Option[] {
+/** The hypervisor switch inside a VM option, when several are ready for it. */
+function hypervisorSwitch(t: T, value: Provider, options: Provider[], onChange: (p: Provider) => void) {
+  return (
+    options.length > 1 && (
+      <Segmented
+        label={t("labs.runOn.pickHypervisor")}
+        className="mt-2"
+        value={value}
+        onChange={onChange}
+        options={options.map((p) => ({ value: p, label: PROVIDER_LABELS[p] ?? p }))}
+      />
+    )
+  );
+}
+
+/** This machine (with its Docker engine's state, for a container lab), a VM on `localVm`, with
+ *  a switch to the other ready hypervisors (`localVms`) when there are several, and for a lab
+ *  with VM recipes too, one VM per machine (`perMachine`). */
+function localOptions(t: T, tiers: RunTier[], localNote: string, dockerRunning: boolean | null, vm: LocalVm): Option[] {
+  const { localVm, localVms, onPickVm, perMachine } = vm;
   const local: Option[] = [
     {
       target: { kind: "local" },
@@ -135,10 +117,33 @@ function localOptions(t: T, tiers: RunTier[], localNote: string, dockerRunning: 
       badge: badgeFor(tiers, candidatesFor({ kind: "local-vm", provider: localVm })),
       logo: <HypervisorLogo provider={localVm} />,
       status: { tone: "ok", label: t("labs.runOn.ready"), title: t("labs.runOn.readyHint") },
+      extra: hypervisorSwitch(t, localVm, localVms, onPickVm),
+    });
+  }
+  if (perMachine?.provider) {
+    const { provider, providers, onPick } = perMachine;
+    local.push({
+      target: { kind: "local-vms", provider },
+      title: t("labs.runOn.perMachineVm"),
+      subtitle: t("labs.runOn.perMachineVmSubtitle", { provider: PROVIDER_LABELS[provider] ?? provider }),
+      ok: true,
+      badge: badgeFor(tiers, candidatesFor({ kind: "local-vms", provider })),
+      logo: <HypervisorLogo provider={provider} />,
+      status: { tone: "ok", label: t("labs.runOn.ready"), title: t("labs.runOn.perMachineVmHint") },
+      extra: hypervisorSwitch(t, provider, providers, onPick),
     });
   }
   return local;
 }
+
+/** The hypervisor a (container) lab's VM runs on here, the others ready for it, and the switch;
+ *  and, for a lab with VM recipes too, its per-machine VM form (`perMachine`). */
+export type LocalVm = { localVm: Provider | null; localVms: Provider[]; onPickVm: (p: Provider) => void; perMachine?: PerMachineVm | null };
+
+/** The per-machine VM form of a lab with VM recipes too (Isoloom's vagrant target, as a VM lab
+ *  runs): the hypervisor it runs on here (null: none ready that can), the others that can, and
+ *  the switch's pick. */
+export type PerMachineVm = { provider: Provider | null; providers: Provider[]; onPick: (p: Provider) => void };
 
 /** A saved server or cloud account; one the lab can't run on says why, without a status. */
 function hostOption(t: T, tiers: RunTier[], h: ServerHost, ok: boolean, check: ServerTest | undefined): Option {
@@ -165,7 +170,7 @@ export function runOnGroups(
     checks,
     localNote,
     dockerRunning,
-    localVm,
+    vm,
     offerLocal,
     tiers,
   }: {
@@ -174,14 +179,14 @@ export function runOnGroups(
     checks: HostChecks;
     localNote: string;
     dockerRunning: boolean | null;
-    localVm: Provider | null;
+    vm: LocalVm;
     offerLocal: boolean;
     tiers: RunTier[];
   },
 ): OptionGroup[] {
   const forHost = (h: ServerHost) => hostOption(t, tiers, h, hostOk(h), checks[h.id]);
   const groups: OptionGroup[] = [
-    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localOptions(t, tiers, localNote, dockerRunning, localVm) : [] },
+    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localOptions(t, tiers, localNote, dockerRunning, vm) : [] },
     { id: "servers", label: t("labs.runOn.servers"), options: hosts.filter((h) => !CLOUDS.has(h.provider)).map(forHost) },
     { id: "cloud", label: t("labs.runOn.cloud"), options: hosts.filter((h) => CLOUDS.has(h.provider)).map(forHost) },
   ];

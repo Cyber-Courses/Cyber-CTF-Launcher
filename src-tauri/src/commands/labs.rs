@@ -13,7 +13,7 @@ use crate::error::{Error, Result};
 use crate::labs::operations::{self, ActiveOperation};
 use crate::labs::{self, LaunchRequest};
 use crate::platform::AppDirs;
-use crate::runtime::paths::{lab_dir, local_vm, runner_home};
+use crate::runtime::paths::{lab_dir, local_runtime, local_vm, runner_home};
 use crate::runtime::providers::Provider;
 use crate::runtime::{LabStatus, Park, Runtime, cloud_services, discover, docker, isothrum, lab, server, status, stop_lab, terminal_launch};
 
@@ -28,9 +28,18 @@ pub async fn lab_launch(
     attackbox_image: Option<String>,
     default_ports: Option<bool>,
     offline: Option<bool>,
+    per_machine_vm: Option<bool>,
     logs: Channel<String>,
 ) -> Result<()> {
-    let request = LaunchRequest { lab_id, provider, host, attackbox_image, default_ports: default_ports.unwrap_or(false), offline: offline.unwrap_or(false) };
+    let request = LaunchRequest {
+        lab_id,
+        provider,
+        host,
+        attackbox_image,
+        default_ports: default_ports.unwrap_or(false),
+        offline: offline.unwrap_or(false),
+        per_machine_vm: per_machine_vm.unwrap_or(false),
+    };
     // The deploy runs in a detached worker process, so quitting (or crashing) the app never cuts a
     // vagrant/docker/terraform run short; this command only follows the worker's log.
     let job = labs::launch_job(&AppDirs::from(&app), request, &channel_log(logs.clone())).await?;
@@ -182,11 +191,13 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
             isothrum::CloudRun::new(&home()?, &dir, &id, runtime, cloud)?.check(&place).await
         }
         Some(_) => isothrum::ServerRun::new(&home()?, &dir, &id, runtime)?.check().await,
-        // On this machine, through the runner.
-        None if runtime == Runtime::Docker && local_vm(&dir).is_some() => isothrum::LabRun::docker_in_vm(&home()?, &dir, &id)?.check().await,
-        None if runtime == Runtime::Docker => isothrum::LabRun::docker(&home()?, &dir, &id)?.check().await,
-        None if runtime == Runtime::Vm => isothrum::LabRun::vm(&home()?, &dir, &id)?.check().await,
-        None => Ok(docker::Check { available: false, ok: false, output: String::new(), results: Vec::new() }),
+        // On this machine, through the runner, in the form it was started in.
+        None => match local_runtime(&dir, runtime) {
+            Runtime::Docker if local_vm(&dir).is_some() => isothrum::LabRun::docker_in_vm(&home()?, &dir, &id)?.check().await,
+            Runtime::Docker => isothrum::LabRun::docker(&home()?, &dir, &id)?.check().await,
+            Runtime::Vm => isothrum::LabRun::vm(&home()?, &dir, &id)?.check().await,
+            Runtime::Cloud => Ok(docker::Check { available: false, ok: false, output: String::new(), results: Vec::new() }),
+        },
     }
 }
 
@@ -198,7 +209,7 @@ fn local_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<O
         return Ok(None);
     }
     let home = runner_home(dirs)?;
-    Ok(match runtime {
+    Ok(match local_runtime(dir, runtime) {
         Runtime::Docker if local_vm(dir).is_some() => Some(isothrum::LabRun::docker_in_vm(&home, dir, id)?),
         Runtime::Docker => Some(isothrum::LabRun::docker(&home, dir, id)?),
         Runtime::Vm => Some(isothrum::LabRun::vm(&home, dir, id)?),
@@ -241,11 +252,12 @@ pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime, net
 }
 
 /// The learner's pick for an attach: which lab network to join (none: the only one), with which
-/// box image. One argument so the command stays within Tauri's argument count.
+/// box image (none: the lab's own default; a VM lab's Vagrantfile picks its box for this
+/// machine's CPU). One argument so the command stays within Tauri's argument count.
 #[derive(serde::Deserialize)]
 pub struct AttachPick {
     network: Option<String>,
-    image: String,
+    image: Option<String>,
 }
 
 /// Hot-adds the attack box into the running lab, on the only network or the one the learner
@@ -256,16 +268,13 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
         let AttachPick { network, image } = pick;
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
-        check_image(&image)?;
+        if let Some(image) = &image {
+            check_image(image)?;
+        }
         let run = with_attack_box(&dirs, &dir, &id, runtime)?;
         // Boxed: the runner's attach future is large, and tracking it adds to it.
-        Box::pin(crate::machine::storage::owned::tracked(
-            &app,
-            std::slice::from_ref(&image),
-            &[],
-            run.attach(network.as_deref(), Some(&image), &mut channel_log(logs)),
-        ))
-        .await
+        Box::pin(crate::machine::storage::owned::tracked(&app, image.as_slice(), &[], run.attach(network.as_deref(), image.as_deref(), &mut channel_log(logs))))
+            .await
     })
     .await
 }
@@ -309,7 +318,7 @@ mod tests {
     async fn start_docker(t: &TestApp, id: &str, logs: Channel<String>) -> crate::error::Result<()> {
         let dirs = t.dirs();
         let dir = super::lab_dir(&dirs, id)?;
-        crate::runtime::start(&dirs, &dir, id, Runtime::Docker, None, None, &[], super::channel_log(logs)).await
+        crate::runtime::start(&dirs, &dir, id, Runtime::Docker, None, None, false, &[], super::channel_log(logs)).await
     }
 
     fn sink() -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {
@@ -356,9 +365,15 @@ mod tests {
         assert!(lab_attack_shell(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(attack_box_status(app(), "gone".into(), Runtime::Docker, None).await.is_err());
         assert!(
-            attack_box_attach(app(), "gone".into(), Runtime::Docker, AttachPick { network: None, image: "kalilinux/kali-rolling".into() }, channel(s.clone()))
-                .await
-                .is_err()
+            attack_box_attach(
+                app(),
+                "gone".into(),
+                Runtime::Docker,
+                AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()) },
+                channel(s.clone())
+            )
+            .await
+            .is_err()
         );
         assert!(attack_box_detach(app(), "gone".into(), Runtime::Docker, channel(s.clone())).await.is_err());
         // Installed, but a machine name or image that could reach a command line is refused.
@@ -366,7 +381,7 @@ mod tests {
         let err = lab_provision(app(), "ad".into(), Runtime::Vm, Some("a;rm".into()), channel(s.clone())).await.unwrap_err().to_string();
         assert_eq!(err, "invalid machine name `a;rm`");
         assert_eq!(
-            attack_box_attach(app(), "ad".into(), Runtime::Vm, AttachPick { network: None, image: "-x/y z".into() }, channel(s.clone()))
+            attack_box_attach(app(), "ad".into(), Runtime::Vm, AttachPick { network: None, image: Some("-x/y z".into()) }, channel(s.clone()))
                 .await
                 .unwrap_err()
                 .to_string(),
@@ -395,7 +410,7 @@ mod tests {
                 t.handle().clone(),
                 "srv".into(),
                 Runtime::Docker,
-                AttachPick { network: None, image: "kalilinux/kali-rolling".into() },
+                AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()) },
                 channel(s.clone())
             )
             .await
@@ -436,17 +451,22 @@ mod tests {
                 t.handle().clone(),
                 "a b".into(),
                 Runtime::Docker,
-                AttachPick { network: None, image: "kalilinux/kali-rolling".into() },
+                AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()) },
                 channel(sink.clone())
             )
             .await
             .is_err()
         );
-        let bad_image =
-            attack_box_attach(t.handle().clone(), "web".into(), Runtime::Docker, AttachPick { network: None, image: "x;y".into() }, channel(sink.clone()))
-                .await
-                .unwrap_err()
-                .to_string();
+        let bad_image = attack_box_attach(
+            t.handle().clone(),
+            "web".into(),
+            Runtime::Docker,
+            AttachPick { network: None, image: Some("x;y".into()) },
+            channel(sink.clone()),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
         assert_eq!(bad_image, "invalid attack-box image `x;y`");
         assert!(sink.lock().unwrap().is_empty(), "nothing ran");
     }
@@ -486,7 +506,7 @@ mod tests {
         // a bad attack-box image is refused before the backend is ever asked, so nothing streams.
         let t = TestApp::new();
         let s = sink();
-        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, channel(s.clone())).await;
+        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, None, channel(s.clone())).await;
         assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
         assert!(s.lock().unwrap().is_empty(), "the backend was never asked");
     }

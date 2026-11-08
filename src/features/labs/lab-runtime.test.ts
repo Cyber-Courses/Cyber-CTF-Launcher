@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { emulatorReady, hostSupports, localProviders, pickLocalHypervisor, readyHypervisors, runPlaces, runsNatively } from "@/features/labs/lab-runtime";
+import {
+  emulatorReady,
+  hasBothForms,
+  hostSupports,
+  localProviders,
+  perMachineProviders,
+  pickLocalHypervisor,
+  readyHypervisors,
+  runPlaces,
+  runsNatively,
+} from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { Provider, ServerHost, SystemReport } from "@/lib/tauri";
 
@@ -79,6 +89,29 @@ describe("pickLocalHypervisor", () => {
     expect(pickLocalHypervisor(local, undefined, "virtualbox")).toBe("virtualbox");
     expect(pickLocalHypervisor(local, undefined, "qemu")).toBe("parallels");
     expect(pickLocalHypervisor([], undefined, null)).toBeNull();
+  });
+});
+
+describe("perMachineProviders", () => {
+  it("is for labs with a container and a VM recipe per machine only", () => {
+    expect(hasBothForms(rt({ runtime: "DOCKER", docker: true, vm: true }))).toBe(true);
+    expect(hasBothForms(rt({ runtime: "DOCKER" }))).toBe(false);
+    expect(hasBothForms(rt({ runtime: "VM" }))).toBe(false);
+    expect(perMachineProviders(rt({ runtime: "DOCKER", docker: true, vm: false }))).toEqual([]);
+    expect(perMachineProviders(rt({ runtime: "VM", vm: true }))).toEqual([]);
+  });
+  it("runs on every local hypervisor but UTM, which Isoloom refuses the form on", () => {
+    const both = rt({ runtime: "DOCKER", docker: true, vm: true, providers: ["virtualbox"] });
+    const providers = perMachineProviders(both, "aarch64");
+    expect(providers).toContain("qemu");
+    expect(providers).toContain("virtualbox");
+    expect(providers).not.toContain("utm");
+    expect(providers).not.toContain("vmware_esxi");
+  });
+  it("runs only emulated for VMs built for another CPU", () => {
+    const both = rt({ runtime: "DOCKER", docker: true, vm: true, architectures: ["x86_64"] });
+    expect(perMachineProviders(both, "aarch64")).toEqual(["qemu"]);
+    expect(perMachineProviders(both, "x86_64")).toContain("virtualbox");
   });
 });
 

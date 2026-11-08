@@ -281,7 +281,8 @@ mod tests {
         );
         let tools = Tools::rules(&[]);
         // No such account: had it been read first, that would be the error.
-        let err = super::super::start(&t.dirs(), &dir, "goat", Runtime::Cloud, None, Some("no-such-account"), &[], |_| {}).await.unwrap_err().to_string();
+        let err =
+            super::super::start(&t.dirs(), &dir, "goat", Runtime::Cloud, None, Some("no-such-account"), false, &[], |_| {}).await.unwrap_err().to_string();
         assert!(err.contains("set-up steps on this machine"), "{err}");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert!(!t.data().join("deployments/goat").exists());

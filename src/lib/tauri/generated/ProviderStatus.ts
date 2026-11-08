@@ -12,7 +12,8 @@ hypervisor: boolean | null,
  */
 plugin: string | null, 
 /**
- * Whether that plugin is present (true when the provider is built in).
+ * Whether that plugin is present at a version the launcher drives (true when the provider is
+ * built in): an older one reads as not installed, so setup installs it again, which updates it.
  */
 pluginInstalled: boolean, 
 /**

@@ -8,15 +8,22 @@ import { Spinner } from "@/components/ui/spinner";
 import { Nav, Note } from "@/features/servers/host-setup/form";
 import { useT } from "@/lib/i18n";
 
-/** A step's buttons: Back, then its way forward. */
-export function BackNav({ onBack, children }: { onBack: () => void; children: ReactNode }) {
+/** A step's buttons: Back (Cancel on the first step, when `onCancel` is given), then its way
+ *  forward. */
+export function BackNav({ onBack, onCancel, children }: { onBack: () => void; onCancel?: () => void; children: ReactNode }) {
   const t = useT();
   return (
     <Nav
       left={
-        <Button variant="ghost" onClick={onBack}>
-          <ArrowLeft className="size-4" /> {t("servers.setup.nav.back")}
-        </Button>
+        onCancel ? (
+          <Button variant="ghost" onClick={onCancel}>
+            {t("servers.setup.nav.cancel")}
+          </Button>
+        ) : (
+          <Button variant="ghost" onClick={onBack}>
+            <ArrowLeft className="size-4" /> {t("servers.setup.nav.back")}
+          </Button>
+        )
       }
       right={children}
     />

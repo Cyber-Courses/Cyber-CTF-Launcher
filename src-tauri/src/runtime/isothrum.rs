@@ -7,8 +7,9 @@
 //!
 //! What stays the launcher's: the run's name (`cyberctf-<lab id>`, the Compose project the
 //! launcher always used), the runner's home (the app data folder, so runs are kept under its
-//! `runs/`), the attack box (the lab's on-demand access machine, hot-added into the run through
-//! the runner — [`LabRun::attach`] — never run by the launcher), the words the player reads (the
+//! `runs/`), the attack box (hot-added into the run through the runner — [`LabRun::attach`] — a
+//! container beside the lab's, or inside the VM a container lab runs in; never run by the
+//! launcher), the words the player reads (the
 //! runner's events in `progress`, its error codes in `errors`) and the lab page's shapes (`view`).
 //! An operation that
 //! outlives the app runs in the launcher's own deploy worker, which calls the runner in-process;
@@ -33,6 +34,18 @@ use std::sync::Arc;
 use isothrum_runner::{Occupied, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, SystemProcesses};
 
 use super::docker::{Check, PORTS_ENV};
+
+/// How long an operation the player asked for waits for the run's lock: the page's own status
+/// checks (a few seconds each, every so often) hold it too, and a Pause clicked while one runs
+/// must wait for it, not fail with "another operation is in progress".
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+/// Between two tries for the lock.
+const LOCK_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Whether `e` is the run's lock held by another operation, with time left to wait for it.
+fn lock_held(e: &isothrum_runner::Error, deadline: std::time::Instant) -> bool {
+    e.code() == isothrum_runner::ErrorCode::Locked && std::time::Instant::now() < deadline
+}
 use super::{LabStatus, Park, Place, Runtime, lab, paths};
 use crate::error::Result;
 
@@ -41,6 +54,11 @@ const ESXI_PARAMS: [&str; 5] = ["ESXI_HOSTNAME", "ESXI_HOSTPORT", "ESXI_USERNAME
 
 /// The ESXi host's password: the manifest's connection slot.
 const ESXI_PASSWORD: &str = "ESXI_PASSWORD";
+
+/// What the log says before an attach into a UTM VM is tried once more on UTM's passing scripting
+/// error (`launch::local::utm_transient`'s "(-600)": UTM answers "Application isn't running" to
+/// a command now and then while it runs and answers every other).
+const UTM_TRANSIENT_RETRY: &str = "UTM answered \"Application isn't running\" (-600) to a command while it runs (a passing UTM scripting error): trying again.";
 
 /// Where a VM lab on an ESXi server runs (Vagrant's `vmware_esxi`): the server's id, so an
 /// operation asked for elsewhere is refused; its settings as the manifest's params; its password,
@@ -109,13 +127,17 @@ impl LabRun {
     }
 
     /// VM lab `id`, installed in `dir`, on the runner whose home is `home`, with this host's tools.
+    /// Its attack box is a VM beside the lab's on the same hypervisor, QEMU included: the spec's own
+    /// access machine when it declares one, else a node the runner adds to the running environment
+    /// as GNS3 adds one to a live topology, through the hook every Isoloom Vagrantfile carries (see
+    /// [`LabRun::attach`]).
     pub(crate) fn vm(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
         LabRun::with(host_config(home), dir, id, Kind::Vm)
     }
 
     /// Container lab `id` in one local VM (Isoloom's `docker-vm`: Docker Compose inside a VM),
-    /// installed in `dir`, on the runner whose home is `home`. Its on-demand attack box is a
-    /// Compose service inside the VM, beside the containers, brought up by the runner.
+    /// installed in `dir`, on the runner whose home is `home`. Its attack box is a container the
+    /// runner stands up inside the VM, beside the lab's, on the lab's network there.
     pub(crate) fn docker_in_vm(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
         LabRun::with(host_config(home), dir, id, Kind::DockerVm)
     }
@@ -185,8 +207,14 @@ impl LabRun {
         }
         let lab = self.lab()?;
         let opts = self.placed(RunOptions::new());
-        let (sink, lines) = progress::channel();
-        progress::follow(log, lines, lab.down(&opts, &sink)).await.map_err(errors::from_runner)
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            let (sink, lines) = progress::channel();
+            match progress::follow(&mut *log, lines, lab.down(&opts, &sink)).await {
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+                r => return r.map_err(errors::from_runner),
+            }
+        }
     }
 
     /// Parks the lab, keeping what it created: Docker only stops containers, so both of the
@@ -200,8 +228,14 @@ impl LabRun {
             (Kind::Vm | Kind::DockerVm, Park::Pause) => isothrum_runner::Park::Pause,
             _ => isothrum_runner::Park::Shutdown,
         };
-        let (sink, lines) = progress::channel();
-        progress::follow(log, lines, lab.park(mode, &sink)).await.map_err(errors::from_runner)
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            let (sink, lines) = progress::channel();
+            match progress::follow(&mut *log, lines, lab.park(mode, &sink)).await {
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+                r => return r.map_err(errors::from_runner),
+            }
+        }
     }
 
     /// Starts the parked lab again. When nothing is left of it, the launcher's parked mark goes
@@ -209,8 +243,15 @@ impl LabRun {
     pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
         let lab = self.lab()?;
         let opts = self.placed(RunOptions::new());
-        let (sink, lines) = progress::channel();
-        match progress::follow(log, lines, lab.resume(&opts, &sink)).await {
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        let outcome = loop {
+            let (sink, lines) = progress::channel();
+            match progress::follow(&mut *log, lines, lab.resume(&opts, &sink)).await {
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+                r => break r,
+            }
+        };
+        match outcome {
             Ok(_) => Ok(()),
             Err(e) if e.code() == isothrum_runner::ErrorCode::NothingToResume => {
                 paths::mark_parked(&self.dir, None)?;
@@ -237,8 +278,14 @@ impl LabRun {
     pub(crate) async fn provision(&self, machine: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let lab = self.lab()?;
         let opts = self.placed(RunOptions::new());
-        let (sink, lines) = progress::channel();
-        progress::follow(log, lines, lab.provision(machine, &opts, &sink)).await.map_err(errors::from_runner)
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            let (sink, lines) = progress::channel();
+            match progress::follow(&mut *log, lines, lab.provision(machine, &opts, &sink)).await {
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+                r => return r.map_err(errors::from_runner),
+            }
+        }
     }
 
     /// Runs the lab's checks; not available when it declares none (nothing runs then).
@@ -246,24 +293,42 @@ impl LabRun {
         checks_of(&self.lab()?, &self.placed(RunOptions::new())).await
     }
 
-    /// Hot-adds the learner's on-demand attack box onto a lab network (the only one, or `network`
-    /// when the lab has several), with the box `image` the learner picked, through the runner.
+    /// Hot-adds the learner's attack box onto a lab network (the only one, or `network` when the
+    /// lab has several), with the box `image` the learner picked, through the runner. Into a VM
+    /// on UTM, a hot-add that met UTM's passing scripting error is tried once more, as a start is.
     pub(crate) async fn attach(&self, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let lab = self.lab()?;
-        let (sink, lines) = progress::channel();
-        progress::follow(log, lines, lab.attach(None, network, image, &sink)).await.map_err(errors::from_runner)?;
-        Ok(())
+        let mut tried_again = false;
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            let (sink, lines) = progress::channel();
+            match progress::follow(&mut *log, lines, lab.attach(None, network, image, &sink)).await {
+                Ok(_) => return Ok(()),
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+                Err(e) if self.kind == Kind::DockerVm && !tried_again && e.to_string().contains("(-600)") => {
+                    log(UTM_TRANSIENT_RETRY.into());
+                    tried_again = true;
+                }
+                Err(e) => return Err(errors::from_runner(e)),
+            }
+        }
     }
 
     /// Takes the attack box back out of the running lab, leaving the rest of the lab up.
     pub(crate) async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
         let lab = self.lab()?;
-        let (sink, lines) = progress::channel();
-        progress::follow(log, lines, lab.detach(None, &sink)).await.map_err(errors::from_runner)
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            let (sink, lines) = progress::channel();
+            match progress::follow(&mut *log, lines, lab.detach(None, &sink)).await {
+                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+                r => return r.map_err(errors::from_runner),
+            }
+        }
     }
 
-    /// The attack box's status: its on-demand access machine as the runner reports it, its address
-    /// on `network` (or the only one), the lab's networks to pick from, and the shell into it.
+    /// The attack box's status: its access machine as the runner reports it, its address on
+    /// `network` (or the only one), the lab's networks to pick from, and the shell into it.
     pub(crate) async fn attack_status(&self, network: Option<&str>) -> Result<AttackStatus> {
         if !self.manifest().is_file() {
             return Ok(AttackStatus::default());
@@ -322,6 +387,8 @@ fn start_options(env: &[(String, String)], provider: Option<&str>) -> RunOptions
     if env.iter().any(|(k, v)| k == PORTS_ENV && v == "default") { opts.with_param("ISOLOOM_PUBLISH_FIXED", "1") } else { opts }
 }
 
+#[cfg(test)]
+mod docker_vm_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

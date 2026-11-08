@@ -130,6 +130,9 @@ function StartDialog({
         hostOk={run.hostOk}
         localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
         localVm={run.localVm}
+        localVms={run.localVms}
+        onPickVm={run.pickVm}
+        perMachine={run.perMachine}
         dockerRunning={isDocker ? dockerRunning : null}
         value={run.runOn}
         onChange={run.setRunOn}

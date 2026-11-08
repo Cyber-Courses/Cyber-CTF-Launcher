@@ -4,50 +4,27 @@
 //! start, the attack box or attack VM, a self-test). Storage lists and removes only these: an
 //! image or a box the player already had, or pulled for their own projects, is never touched,
 //! even when a lab uses the same one.
+//!
+//! The record's shape (`Owned`/`OwnedImage`/`OwnedBox`), its `vagrant box list` parser and its
+//! loader are the shared [`isothrum_machine::storage`] ones, so this file and the Isothrum desktop
+//! app read and write the exact same `storage.json`. The process-reading parts (what is on the
+//! machine now, recording what an operation downloaded) stay here on the launcher's `platform::exec`
+//! so the self-test, launch and storage-page tests keep mocking them through `exec::fake::Tools`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+// The storage record format, its parser and its loader, shared with the Isothrum desktop app.
+use isothrum_machine::storage::parse_box_list;
+pub use isothrum_machine::storage::{Owned, OwnedBox, OwnedImage, load};
 
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::platform::exec::run_read;
 
-/// An image the app pulled: the reference it asked for, and the image that reference named then.
-/// The reference is untagged at clean-up only while it still names that image (one the player
-/// pulled again since, or retagged, is theirs).
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct OwnedImage {
-    pub reference: String,
-    pub id: String,
-}
-
-/// A box version the app downloaded, for one provider.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct OwnedBox {
-    pub name: String,
-    pub provider: String,
-    pub version: String,
-}
-
-#[derive(Serialize, Deserialize, Default, Debug, PartialEq)]
-pub struct Owned {
-    #[serde(default)]
-    pub images: BTreeSet<OwnedImage>,
-    #[serde(default)]
-    pub boxes: BTreeSet<OwnedBox>,
-}
-
 /// The record's file.
 pub fn path(dirs: &AppDirs) -> Result<PathBuf> {
     Ok(dirs.data()?.join("storage.json"))
-}
-
-/// The record at `store`; empty when there is none yet (or it can't be read: nothing is then
-/// the app's, which only means less is cleaned up).
-pub fn load(store: &Path) -> Owned {
-    std::fs::read(store).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 
 /// Changes the record at `store` with `change`, holding an OS lock on `<store>.lock` meanwhile:
@@ -101,20 +78,6 @@ pub async fn box_list() -> Option<BTreeSet<OwnedBox>> {
     run_read("vagrant", &["box", "list"], None).await.ok().map(|out| parse_box_list(&out))
 }
 
-/// `vagrant box list` lines: `bento/debian-12   (virtualbox, 202510.26.0, (amd64))`.
-pub fn parse_box_list(out: &str) -> BTreeSet<OwnedBox> {
-    out.lines()
-        .filter_map(|line| {
-            let (name, rest) = line.trim().split_once(char::is_whitespace)?;
-            let inner = rest.trim().strip_prefix('(')?;
-            let mut fields = inner.split(',').map(|f| f.trim().trim_end_matches(')'));
-            let provider = fields.next().filter(|p| !p.is_empty())?;
-            let version = fields.next().filter(|v| !v.is_empty())?;
-            Some(OwnedBox { name: name.to_string(), provider: provider.to_string(), version: version.to_string() })
-        })
-        .collect()
-}
-
 /// Records as the app's what appeared since `before` among what an operation used: the images of
 /// `images` (references) and the box versions named in `boxes`. Best effort: a failure is logged,
 /// and only means that download isn't cleaned up later.
@@ -161,16 +124,6 @@ mod tests {
 
     fn store() -> PathBuf {
         std::env::temp_dir().join(format!("cyberctf-owned-{}", rand::random::<u32>())).join("storage.json")
-    }
-
-    #[test]
-    fn box_listings_read_as_name_provider_and_version() {
-        let out = "bento/debian-12   (virtualbox, 202510.26.0, (amd64))\ngeneric/alpine319 (libvirt, 4.3.12)\nThere are no installed boxes!\nodd (\n";
-        let boxes: Vec<(String, String, String)> = parse_box_list(out).into_iter().map(|b| (b.name, b.provider, b.version)).collect();
-        assert_eq!(
-            boxes,
-            [("bento/debian-12".into(), "virtualbox".into(), "202510.26.0".into()), ("generic/alpine319".into(), "libvirt".into(), "4.3.12".into())]
-        );
     }
 
     #[tokio::test]

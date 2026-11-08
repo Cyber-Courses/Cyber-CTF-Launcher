@@ -93,7 +93,7 @@ export function OpenLab({
         launch(
           lab,
           target.kind === "host" ? target.id : null,
-          target.kind === "local-vm" ? target.provider : undefined,
+          target.kind === "local-vm" || target.kind === "local-vms" ? { provider: target.provider, perMachine: target.kind === "local-vms" } : undefined,
           report,
           target.kind === "local" ? target.ports : undefined,
         )

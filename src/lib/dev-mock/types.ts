@@ -5,17 +5,21 @@
 import type {
   ActiveOperation,
   AgentInfo,
-  AuthStatus,
-  CloudPreview,
   AttackStatus,
+  AuthStatus,
+  AzureSubscription,
+  CloudPreview,
+  GcpBillingAccount,
+  GcpOrganization,
   HostCapacity,
   InstalledTool,
   LabCheck,
   LabRequirements,
   LabStatus,
-  RunTier,
   LabTool,
   MachineMetrics,
+  OciConfig,
+  RunTier,
   ServerList,
   ServerTest,
   SharedFolder,
@@ -45,6 +49,11 @@ type Answers = {
   aws_month_to_date_cost: number | null;
   aws_cli_identity: string | null;
   aws_profiles: string[];
+  azure_subscriptions: AzureSubscription[];
+  gcp_account: string | null;
+  gcp_billing_accounts: GcpBillingAccount[];
+  gcp_organizations: GcpOrganization[];
+  oci_config: OciConfig;
   lab_status: LabStatus;
   lab_cloud_preview: CloudPreview | null;
   lab_requirements: LabRequirements | null;

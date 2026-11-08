@@ -8,8 +8,9 @@ import { machineSteps, stepMeta, type MachineStep } from "@/features/machine/set
 import { hasHypervisor, isDockerReady, wslState } from "@/features/machine/setup-steps/steps";
 import { engineName } from "@/features/machine/setup-steps/engines";
 import { cantRun, usableHypervisors, providerLabel } from "@/features/machine/hypervisors";
+import { useVmProvider } from "@/lib/use-vm-provider";
 import { ATTACK_PRESETS, getAttackImage, type LastTest } from "@/lib/settings";
-import type { ProviderStatus, SystemReport } from "@/lib/tauri";
+import type { Provider, ProviderStatus, SystemReport } from "@/lib/tauri";
 import { useOpenSetup } from "@/features/machine/use-open-setup";
 import { useT, type T } from "@/lib/i18n";
 
@@ -78,10 +79,12 @@ const LINES: Record<MachineStep, (f: Facts) => Line> = {
   "vm-test": ({ report, last, t }) => ({ done: last.vm?.result === "ok", optional: !hasHypervisor(report), meta: tested(t, last.vm) }),
 };
 
-function stepLine(step: MachineStep, report: SystemReport, last: LastTests, t: T): Line {
+function stepLine(step: MachineStep, report: SystemReport, last: LastTests, t: T, preferred: Provider | null): Line {
   const installed = usableHypervisors(report).filter((p) => p.hypervisor === true);
-  // One that can run labs first (QEMU without KVM can, when libvirt can't).
-  const hv = installed.find((p) => !cantRun(p, report)) ?? installed.at(0);
+  // The one labs run on: Settings' choice when it can run here, else one that can run labs
+  // (QEMU without KVM can, when libvirt can't), else the first installed.
+  const runs = installed.filter((p) => !cantRun(p, report));
+  const hv = runs.find((p) => p.provider === preferred) ?? runs.at(0) ?? installed.at(0);
   return LINES[step]({ report, last, t, hv, blocked: !!hv && cantRun(hv, report) });
 }
 
@@ -90,7 +93,8 @@ function stepLine(step: MachineStep, report: SystemReport, last: LastTests, t: T
 export function SetupChecklist({ report, last, onFix }: { report: SystemReport; last: LastTests; onFix: (step: string) => void }) {
   const t = useT();
   const openSetup = useOpenSetup();
-  const steps = machineSteps(report).map((step) => ({ step, title: stepMeta(step, report, t).title, ...stepLine(step, report, last, t) }));
+  const preferred = useVmProvider();
+  const steps = machineSteps(report).map((step) => ({ step, title: stepMeta(step, report, t).title, ...stepLine(step, report, last, t, preferred) }));
   const done = steps.filter((s) => s.done).length;
   return (
     <Panel>

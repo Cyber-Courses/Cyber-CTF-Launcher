@@ -123,6 +123,8 @@ function stopLines(id: string): string[] {
 const launch: BrowserHandler = (args, ctx) => {
   const id = labArg(args, "labId");
   const runtime = labRuntime(id);
+  // A container lab picked as one VM per machine starts as a VM lab would.
+  if (runtime === "DOCKER" && args?.perMachineVm === true) return launchElsewhere(id, "VM", args, ctx);
   return runtime === "VM" || runtime === "CLOUD" ? launchElsewhere(id, runtime, args, ctx) : launchContainer(id, args, ctx.live);
 };
 

@@ -43,7 +43,6 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
             host={s.remote ? (status?.host ?? null) : null}
             onShell={shell.open}
             shellReady={s.remote ? s.isDocker : !!box.status?.running}
-            controller={!s.isDocker && status?.provider === "qemu"}
           />
         </Dimmed>
       )}

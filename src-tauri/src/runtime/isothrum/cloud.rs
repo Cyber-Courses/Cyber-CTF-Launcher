@@ -160,16 +160,20 @@ fn connection_secrets(tf_env: &[(String, String)]) -> Secrets {
 
 /// Destroys every cloud run the runner records as past its expiry (the auto-stop), with the
 /// account's credentials resolved by `account` (a recorded account id to its Terraform
-/// environment). The runner replays the parameters each run was applied with. Returns the runs it
-/// couldn't destroy, with why, so the caller can surface and retry them; a run whose account can't
-/// be resolved is left for a later sweep.
+/// environment). The runner replays the parameters each run was applied with. Each destroy runs
+/// under the lab's per-lab lock (`lock`, `None` while another operation holds it): a user Stop or
+/// install of the same lab must not run a second Terraform operation over the same state, which
+/// could corrupt `terraform.tfstate`. Returns the runs it couldn't destroy, with why, so the
+/// caller can surface and retry them; a run whose account can't be resolved, or whose lab is
+/// busy, is left for a later sweep.
 ///
 /// # Errors
 ///
 /// Never returns an error itself: a sweep that can't even list the runs yields that as one entry.
-pub(crate) async fn reap_expired<F>(home: &Path, now: SystemTime, account: F) -> Vec<(String, Error)>
+pub(crate) async fn reap_expired<F, L, G>(home: &Path, now: SystemTime, account: F, lock: L) -> Vec<(String, Error)>
 where
     F: Fn(&str) -> Option<Vec<(String, String)>>,
+    L: Fn(&str) -> Option<G>,
 {
     let runner = match Runner::new(super::host_config(home)) {
         Ok(runner) => runner,
@@ -182,6 +186,14 @@ where
     let mut failed = Vec::new();
     for record in expired.into_iter().filter(|r| r.cloud.is_some()) {
         let name = record.name.to_string();
+        // Serialize with the launcher's own operations on this lab (`lock_lab`): busy means
+        // another operation holds it, so leave it for a later sweep rather than destroy over it
+        // (not a failure). Held across the destroy below.
+        let id = name.strip_prefix("cyberctf-").unwrap_or(&name);
+        let Some(_held) = lock(id) else {
+            log::debug!("auto-stop: {name} is busy (an operation holds its lab lock); left for a later sweep");
+            continue;
+        };
         let Some(host) = record.host_label.as_deref() else {
             failed.push((name, Error::Invalid("no account is recorded for it; remove its resources in your cloud console".to_owned())));
             continue;
@@ -222,24 +234,53 @@ mod tests {
         std::fs::write(dir.join("record.json"), record.to_string()).unwrap();
     }
 
+    /// A fresh runner home with each `(lab, host)` as an expired cloud run (`cyberctf-<lab>`).
+    fn home_with(records: &[(&str, &str)]) -> PathBuf {
+        let home = std::env::temp_dir().join(format!("cyberctf-reap-{}", rand::random::<u32>()));
+        for (lab, host) in records {
+            expired_record(&home, lab, host);
+        }
+        home
+    }
+
     /// An expired run whose account was removed since is left for a later sweep (the account may
     /// come back), neither destroyed nor reported, and the sweep goes on: the other expired run is
     /// still reaped (here its destroy fails, its lab's files being gone, so it is the one reported).
     #[tokio::test]
     async fn an_expired_run_whose_account_is_gone_is_skipped_and_the_others_still_swept() {
-        let home = std::env::temp_dir().join(format!("cyberctf-reap-{}", rand::random::<u32>()));
-        expired_record(&home, "orphan", "gone1");
-        expired_record(&home, "web", "aws1");
+        let home = home_with(&[("orphan", "gone1"), ("web", "aws1")]);
         let asked = std::sync::Mutex::new(Vec::new());
         let account = |host: &str| {
             asked.lock().unwrap().push(host.to_string());
             (host == "aws1").then(|| vec![("AWS_ACCESS_KEY_ID".to_string(), "AKIA".to_string())])
         };
-        let failed = reap_expired(&home, SystemTime::now(), account).await;
+        let failed = reap_expired(&home, SystemTime::now(), account, |_| Some(())).await;
         assert_eq!(asked.into_inner().unwrap(), ["gone1", "aws1"], "every expired run's account is looked up");
         let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
         assert_eq!(names, ["cyberctf-web"], "{failed:?}");
         assert!(home.join("runs").join("cyberctf-orphan").join("record.json").is_file(), "the skipped run keeps its record");
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    /// A lab with an operation in flight (its per-lab lock held) is left for a later sweep: the
+    /// reaper serializes with a user Stop/install, so it never runs a destroy over the same
+    /// Terraform state. The busy lab's account is not even looked up and it is not reported a
+    /// failure; the other expired run is still swept.
+    #[tokio::test]
+    async fn a_run_whose_lab_is_busy_is_left_for_a_later_sweep() {
+        let home = home_with(&[("busy", "aws1"), ("web", "aws1")]);
+        let asked = std::sync::Mutex::new(Vec::new());
+        let account = |host: &str| {
+            asked.lock().unwrap().push(host.to_string());
+            Some(vec![("AWS_ACCESS_KEY_ID".to_string(), "AKIA".to_string())])
+        };
+        // "busy"'s lock can't be taken (another operation holds it); "web"'s can.
+        let lock = |id: &str| (id != "busy").then_some(());
+        let failed = reap_expired(&home, SystemTime::now(), account, lock).await;
+        assert_eq!(asked.into_inner().unwrap(), ["aws1"], "only the free lab's account is used, never the busy one's");
+        let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["cyberctf-web"], "the free lab is swept (its files are gone, so its destroy fails); the busy one is not touched: {failed:?}");
+        assert!(home.join("runs").join("cyberctf-busy").join("record.json").is_file(), "the busy run keeps its record (never destroyed)");
         std::fs::remove_dir_all(home).unwrap();
     }
 

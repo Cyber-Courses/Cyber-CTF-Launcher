@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { type SelfTestResult } from "@/features/machine/self-test";
-import { getVmProvider } from "@/lib/settings";
+import { getVmProvider, setVmProvider } from "@/lib/settings";
+import type { Provider } from "@/lib/tauri";
 import {
   installDependency,
   installVagrantPlugin,
@@ -91,7 +92,13 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => vo
   const [vmTest, setVmTest] = useState<SelfTestResult>("idle");
   // The option the player picked on the engine / hypervisor steps (null = not picked yet).
   const [engine, setEngine] = useState<DockerEngine | null>(null);
-  const [hypervisor, setHypervisor] = useState<string | null>(null);
+  const [hypervisor, pickHypervisor] = useState<string | null>(null);
+  // The hypervisor picked here is the one labs run on from now on (the header and the lab page
+  // follow), not only the one this flow sets up.
+  const setHypervisor = (p: Provider | null) => {
+    pickHypervisor(p);
+    setVmProvider(p);
+  };
   return {
     ...installs,
     ...restart,

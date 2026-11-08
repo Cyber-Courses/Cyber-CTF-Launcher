@@ -210,6 +210,12 @@ describe("restartTarget", () => {
     });
     expect(restartTarget(status({ host: "isoloom-host" }), hosts, { kind: "local" }, null)).toEqual({ kind: "local" });
   });
+  it("starts again as one VM per machine when that was the pick: the status can't tell the forms apart", () => {
+    expect(restartTarget(status({ host: "isoloom-host" }), hosts, { kind: "local-vms", provider: "qemu" as Provider }, "virtualbox")).toEqual({
+      kind: "local-vms",
+      provider: "qemu",
+    });
+  });
   it("starts again here otherwise", () => {
     expect(restartTarget(status({}), hosts, { kind: "host", id: "h1" }, "virtualbox")).toEqual({ kind: "local" });
   });

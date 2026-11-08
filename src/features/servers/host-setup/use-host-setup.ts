@@ -22,6 +22,8 @@ import { useStepper } from "@/lib/use-stepper";
  *  tells its window. */
 type SetupInput = {
   initial: ServerHostInput;
+  /** A new cloud account opened on its provider already chosen: the setup skips choosing it. */
+  providerChosen: boolean;
   report: SystemReport | null;
   onRefresh: () => void;
   /** After every save, so the main window's host list can refresh. */
@@ -31,7 +33,7 @@ type SetupInput = {
 };
 
 /** All the server / cloud setup state and actions, shared by the setup steps. */
-export function useHostSetup({ initial, report, onRefresh, onSaved, onDone }: SetupInput) {
+export function useHostSetup({ initial, providerChosen, report, onRefresh, onSaved, onDone }: SetupInput) {
   const t = useT();
   const form = useHostForm(initial);
   const { v } = form;
@@ -41,7 +43,7 @@ export function useHostSetup({ initial, report, onRefresh, onSaved, onDone }: Se
   // existing account, where the provider step that would set it is skipped.
   const cloudProvider: CloudProvider = isCloud(v.provider) ? v.provider : "aws";
   const accounts = useCloudAccounts(v, form.setV, editing, cloudProvider);
-  const stepper = useSteps(v.provider, editing);
+  const stepper = useSteps(v.provider, editing, providerChosen);
   const tools = useToolInstall(onRefresh);
   const saving = useSaveAndTest(v, onSaved, stepper.next);
   const title = setupTitle({ saved: saving.saved, test: saving.test, editing, cloud: traits.cloud, initialName: initial.name });
@@ -84,8 +86,8 @@ function useHostForm(initial: ServerHostInput) {
 }
 
 /** The steps this setup takes, and where the player is among them. */
-function useSteps(provider: RemoteProvider, editing: boolean) {
-  const steps = setupSteps(provider, editing);
+function useSteps(provider: RemoteProvider, editing: boolean, providerChosen: boolean) {
+  const steps = setupSteps(provider, editing, providerChosen);
   const { pos, next, back } = useStepper(steps.length);
   return { i: pos, steps, key: steps[pos], next, back };
 }

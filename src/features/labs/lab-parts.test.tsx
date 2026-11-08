@@ -92,6 +92,56 @@ describe("RunOnPicker", () => {
     expect(screen.queryByText("Servers")).toBeNull();
   });
 
+  it("switches the VM's hypervisor inside the one in-VM option when several are ready", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    const onPickVm = vi.fn();
+    const onChange = renderPicker({ hosts: [], dockerRunning: true, localVm: "utm", localVms: ["utm", "qemu"], onPickVm });
+    // One option, not one per hypervisor; the switch names them.
+    expect(screen.getAllByText("This machine, in a VM").length).toBe(1);
+    expect(screen.getByText("UTM · isolated from your system")).toBeTruthy();
+    const group = screen.getByRole("radiogroup", { name: "Hypervisor" });
+    expect(within(group).getByRole("radio", { name: "UTM" }).getAttribute("aria-checked")).toBe("true");
+    await user.click(within(group).getByRole("radio", { name: "QEMU" }));
+    expect(onPickVm).toHaveBeenCalledWith("qemu");
+    // The switch picks a hypervisor, not another option.
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("offers one VM per machine for a lab with VM recipes too, with its own hypervisor switch", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    const onPick = vi.fn();
+    const onChange = renderPicker({
+      hosts: [],
+      dockerRunning: true,
+      localVm: "utm",
+      localVms: ["utm", "qemu"],
+      perMachine: { provider: "qemu", providers: ["qemu", "virtualbox"], onPick },
+    });
+    // Three places on this machine: containers, one helper VM, one VM per machine (UTM can't
+    // run the latter, so its switch doesn't name it).
+    expect(screen.getByText("This machine, in a VM")).toBeTruthy();
+    expect(screen.getByText("This machine, one VM per machine")).toBeTruthy();
+    expect(screen.getByText("QEMU · a full VM for each machine, as on a server")).toBeTruthy();
+    const perMachine = must(screen.getByText("This machine, one VM per machine").closest<HTMLElement>("[role=radio]"), "the per-machine option");
+    const group = within(perMachine).getByRole("radiogroup", { name: "Hypervisor" });
+    expect(within(group).queryByRole("radio", { name: "UTM" })).toBeNull();
+    expect(within(group).getByRole("radio", { name: "QEMU" }).getAttribute("aria-checked")).toBe("true");
+    await user.click(within(group).getByRole("radio", { name: "VirtualBox" }));
+    expect(onPick).toHaveBeenCalledWith("virtualbox");
+    expect(onChange).not.toHaveBeenCalled();
+    await user.click(screen.getByText("This machine, one VM per machine"));
+    expect(onChange).toHaveBeenLastCalledWith({ kind: "local-vms", provider: "qemu" } satisfies RunTarget);
+  });
+
+  it("offers no per-machine place without a hypervisor that can run it", () => {
+    installTauri();
+    renderPicker({ hosts: [], dockerRunning: true, localVm: "utm", perMachine: { provider: null, providers: [], onPick: vi.fn() } });
+    expect(screen.getByText("This machine, in a VM")).toBeTruthy();
+    expect(screen.queryByText("This machine, one VM per machine")).toBeNull();
+  });
+
   it("badges a cloud with no real-run evidence as Beta, and leaves a proven one (AWS) unbadged", async () => {
     // The badge is data-driven from Isoloom's tier evidence (the dev mock mirrors it): Azure is
     // validated-only, AWS has real runs.

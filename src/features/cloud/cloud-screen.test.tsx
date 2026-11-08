@@ -140,17 +140,22 @@ describe("CloudScreen", () => {
     expect(screen.getByText("keychain locked")).toBeTruthy();
   });
 
-  it("opens the cloud setup to edit an account, connect another, or set one up", async () => {
+  it("opens the cloud setup to edit an account, connect another on its own provider, or set one up", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
     await renderScreen();
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getAllByRole("button", { name: "Connect" })[0]);
+    // Regression: Connect on the Azure and Google Cloud rows opened the setup on AWS.
+    const connect = screen.getAllByRole("button", { name: "Connect" });
+    expect(connect).toHaveLength(2);
+    await user.click(connect[0]);
+    await user.click(connect[1]);
     await user.click(button(/set up cloud provider/i));
     await flush();
     expect(argsOf(calls, "server_open_setup")).toEqual([
       { id: "aws1", kind: "cloud" },
-      { id: null, kind: "cloud" },
+      { id: null, kind: "cloud", provider: "azure" },
+      { id: null, kind: "cloud", provider: "gcp" },
       { id: null, kind: "cloud" },
     ]);
   });
@@ -256,8 +261,30 @@ describe("cloud panels", () => {
 
   it("hides the connect rows for the providers already connected", () => {
     const accounts = [account({}), account({ id: "z", name: "Azure lab", provider: "azure" }), account({ id: "g", name: "GCP lab", provider: "gcp" })];
-    render(<AccountsPanel accounts={accounts} tests={{}} spend={{}} onTest={vi.fn()} onEdit={vi.fn()} onRemove={vi.fn()} onSetup={vi.fn()} />);
+    render(<AccountsPanel accounts={accounts} tests={{}} spend={{}} onTest={vi.fn()} onEdit={vi.fn()} onRemove={vi.fn()} onConnect={vi.fn()} />);
     expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
+  });
+
+  it("connects a provider from its own row", async () => {
+    const user = userEvent.setup();
+    const onConnect = vi.fn();
+    render(
+      <AccountsPanel
+        accounts={[account({ provider: "azure" })]}
+        tests={{}}
+        spend={{}}
+        onTest={vi.fn()}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+        onConnect={onConnect}
+      />,
+    );
+    const rows = screen.getAllByRole("button", { name: "Connect" });
+    expect(rows).toHaveLength(2);
+    await user.click(rows[1]);
+    expect(onConnect).toHaveBeenCalledWith("gcp");
+    await user.click(rows[0]);
+    expect(onConnect).toHaveBeenLastCalledWith("aws");
   });
 
   it("shows a budget under its limit, with no auto-stop", () => {

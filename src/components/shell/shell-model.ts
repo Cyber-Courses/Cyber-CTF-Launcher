@@ -1,5 +1,5 @@
 import { CalendarDays, Cloud, FlaskConical, LayoutDashboard, type LucideIcon, MonitorCog, Server } from "lucide-react";
-import type { ActiveOperation, LabStatus, SystemReport } from "@/lib/tauri";
+import type { ActiveOperation, LabStatus, Provider, SystemReport } from "@/lib/tauri";
 import { engineName } from "@/features/machine/setup-steps/engines";
 import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
 import { prettyLabId } from "@/lib/format";
@@ -33,14 +33,16 @@ export function breadcrumbs(tab: Tab, labTitle: string | null, title: (tab: Tab)
   return [tab === "settings" ? title("settings") : thisMachine, title(tab)];
 }
 
-/** The header's engine line: "OrbStack 29.5.3" while Docker runs (null otherwise), and the first
- *  hypervisor ready on this machine. */
-export function engineSummary(report: SystemReport) {
+/** The header's engine line: "OrbStack 29.5.3" while Docker runs (null otherwise), and the
+ *  hypervisor VM labs run on: `preferred` (Settings' choice) when it is ready, else the first
+ *  ready one. */
+export function engineSummary(report: SystemReport, preferred: Provider | null = null) {
   // `docker --version` reads "Docker version 29.5.3, build d1c06ef": the number is enough next to the engine's name.
   const version = report.docker.version?.match(/\d+\.\d+(\.\d+)?/)?.[0] ?? null;
   const engine = report.dockerRunning && report.dockerEngine ? `${engineName(report.dockerEngine)}${version ? ` ${version}` : ""}` : null;
-  const local = report.vmProviders.find((p) => !p.remote && p.available && p.hypervisor !== false);
-  const hypervisor = local ? (PROVIDER_LABELS[local.provider] ?? local.provider) : null;
+  const ready = report.vmProviders.filter((p) => !p.remote && p.available && p.hypervisor !== false).map((p) => p.provider);
+  const local = (preferred && ready.includes(preferred) ? preferred : ready.at(0)) ?? null;
+  const hypervisor = local ? (PROVIDER_LABELS[local] ?? local) : null;
   return { engine, hypervisor };
 }
 

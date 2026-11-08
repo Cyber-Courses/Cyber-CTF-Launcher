@@ -17,7 +17,7 @@ const OVFTOOL_URL = "https://developer.broadcom.com/tools/open-virtualization-fo
 
 export function ToolsStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { report, onRefresh, v, pluginLog, toolLabel, cloudProvider, cloud, next, back, toolBusy, cloudHasCli, toolsOk } = s;
+  const { report, onRefresh, onDone, v, i, pluginLog, toolLabel, cloudProvider, cloud, next, back, toolBusy, cloudHasCli, toolsOk } = s;
   return (
     <Step
       icon={HardDrive}
@@ -48,7 +48,8 @@ export function ToolsStep({ s }: { s: HostSetup }) {
           <LogConsole lines={pluginLog} running={toolBusy} title={t("servers.setup.tools.install", { name: toolLabel })} />
         </div>
       )}
-      <BackNav onBack={back}>
+      {/* First when the provider was chosen before the window opened: Cancel, not Back. */}
+      <BackNav onBack={back} onCancel={i === 0 ? onDone : undefined}>
         <span className="flex gap-2">
           {!toolsOk && (
             <Button

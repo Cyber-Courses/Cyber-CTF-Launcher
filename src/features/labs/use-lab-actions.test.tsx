@@ -36,6 +36,8 @@ const vmLab: Lab = {
   runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi", "proxmox"] },
 };
 
+/** The `lab_launch` call's arguments as sent (the flags `launchArgs` leaves out included). */
+const rawLaunchArgs = (calls: Call[]) => calls.find((x) => x.cmd === "lab_launch")?.args;
 const launchArgs = (calls: Call[]) => {
   const c = calls.find((x) => x.cmd === "lab_launch");
   if (!c) return undefined;
@@ -207,12 +209,29 @@ describe("useLabActions: launch", () => {
   it("runs a container lab inside a local VM on the chosen hypervisor", async () => {
     setAttackImage("");
     const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-in-vm" }, null, "virtualbox", readyReport()));
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-in-vm" }, null, { provider: "virtualbox" }, readyReport()));
     const args = must(launchArgs(calls), "the lab_launch call");
     expect(args.provider).toBe("virtualbox");
     expect(args.host).toBeNull();
+    expect(rawLaunchArgs(calls)?.perMachineVm).toBe(false);
     expect(typeof args.attackboxImage).toBe("string");
     expect(args.attackboxImage).not.toBe("");
+  });
+
+  it("runs a container lab with VM recipes as one VM per machine on the chosen hypervisor", async () => {
+    setAutoAttackBox(false);
+    const { calls, hook } = setup();
+    const both: Lab = { ...dockerLab, id: "act-vms", runtime: { ...must(dockerLab.runtime, "runtime"), docker: true, vm: true } };
+    await act(() => hook.result.current.launch(both, null, { provider: "qemu", perMachine: true }, readyReport()));
+    const args = must(launchArgs(calls), "the lab_launch call");
+    // The VM form on that hypervisor, flagged for the backend; no port question (no containers
+    // here) and, like a VM lab here, no container attack box.
+    expect(rawLaunchArgs(calls)?.perMachineVm).toBe(true);
+    expect(args.provider).toBe("qemu");
+    expect(args.host).toBeNull();
+    expect(args.attackboxImage).toBeNull();
+    expect(calls.some((c) => c.cmd === "lab_launch")).toBe(true);
+    setAutoAttackBox(true);
   });
 
   it("runs a VM lab here on the ready hypervisor, with the attack VM box when auto-start is on", async () => {

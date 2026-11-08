@@ -1,11 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { HostSetupPage, SetupTrademarks, EMPTY_CLOUD, EMPTY_HOST } from "@/features/servers/host-setup";
-import { isCloud } from "@/features/servers/host-setup/setup-model";
+import { HostSetupPage, SetupTrademarks } from "@/features/servers/host-setup";
+import { isCloud, startingSetup } from "@/features/servers/host-setup/setup-model";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/toaster";
 import { SERVER_CHANGED, serverList, systemCheck, type ServerHostInput, type SystemReport } from "@/lib/tauri";
@@ -18,25 +18,14 @@ function Setup() {
   const t = useT();
   const params = useSearchParams();
   const id = params.get("id");
-  const empty = params.get("kind") === "cloud" ? EMPTY_CLOUD : EMPTY_HOST;
-  const [initial, setInitial] = useState<ServerHostInput | null>(id ? null : { ...empty });
+  const { form: empty, providerChosen } = useMemo(() => startingSetup(params.get("kind"), params.get("provider")), [params]);
+  const initial = useInitialHost(id, empty);
   const [report, setReport] = useState<SystemReport | null>(null);
 
   const check = () => {
     systemCheck().then(setReport).catch(warn("system check"));
   };
   useEffect(check, []);
-  useEffect(() => {
-    if (!id) return;
-    serverList()
-      .then((l) => {
-        const h = l.hosts.find((x) => x.id === id);
-        setInitial(h ? { ...h, password: null } : { ...empty });
-      })
-      .catch(() => {
-        setInitial({ ...empty });
-      });
-  }, [id, empty]);
 
   const close = () => {
     getCurrentWindow().close().catch(warn("closing the window"));
@@ -63,6 +52,7 @@ function Setup() {
             <div className="flex w-full flex-1 flex-col">
               <HostSetupPage
                 initial={initial}
+                providerChosen={!id && providerChosen}
                 report={report}
                 onRefresh={check}
                 onSaved={() => {
@@ -83,6 +73,24 @@ function Setup() {
       <Toaster />
     </div>
   );
+}
+
+/** The form the setup starts from: `empty` for a new host, else host `id` as saved (its password
+ *  kept), or `empty` when it isn't found; null while it loads. */
+function useInitialHost(id: string | null, empty: ServerHostInput) {
+  const [initial, setInitial] = useState<ServerHostInput | null>(id ? null : empty);
+  useEffect(() => {
+    if (!id) return;
+    serverList()
+      .then((l) => {
+        const h = l.hosts.find((x) => x.id === id);
+        setInitial(h ? { ...h, password: null } : { ...empty });
+      })
+      .catch(() => {
+        setInitial({ ...empty });
+      });
+  }, [id, empty]);
+  return initial;
 }
 
 export default function ServerSetupWindow() {

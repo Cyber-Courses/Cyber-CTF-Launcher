@@ -4,6 +4,97 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.9] — 2026-11-08
+
+### Added
+
+- **A VM lab on this machine gets an attack VM, on QEMU too.** "Start attack box" on a lab
+  running as VMs on a local hypervisor now adds an attack VM to the running lab through the
+  Isothrum runner, as GNS3 adds a node to a live topology (the runner writes its definition into
+  the run's state and boots it alone, through the hook every Vagrantfile Isoloom 1.0.9 writes;
+  a spec's own `access` machine is used when it declares one): the panel shows its address on
+  the lab network, "Open shell" is `vagrant ssh` into it, Stop destroys it alone with the lab left
+  up. Until a box is picked in Settings, the lab's default box for this machine's CPU runs (Kali
+  on x86, the Debian cloud image on an Apple Silicon Mac, where Kali's box has no build and
+  emulated it is far too slow). On QEMU the lab's controller is no longer offered as the attacker
+  in its place.
+
+- **A container lab running in a VM on this machine gets a working attack box.** "Start attack
+  box" on a lab in its helper VM (Isoloom's docker-vm, UTM included) now stands the box up as a
+  container inside that VM, on the lab's network there, through the Isothrum runner (which
+  refused it before: "hot-adding an ad-hoc access VM … isn't supported"); the panel shows its
+  address, "Open shell" goes through the VM into it (`vagrant ssh … docker exec …`, with the run's
+  state folder, which the in-app and system terminals now pass on), and Stop takes it out. On
+  UTM, a hot-add that met UTM's passing "Application isn't running (-600)" is tried once more,
+  as a start is.
+- **A lab with both forms can run here as one VM per machine.** A container lab whose Isoloom
+  spec also has a VM recipe per machine (the backend's `docker` and `vm` flags both set, e.g.
+  `supplier-portal-api`) gets a third place in "Where should it run?": "This machine, one VM per
+  machine", next to its containers and the one helper VM. It runs through Isoloom's vagrant
+  target like a VM lab, on a ready hypervisor that form runs on (not UTM: its Vagrant plugin gives
+  a VM no private network, and Isoloom refuses it there); status, stop, pause, shut down and
+  provisioning follow the form the lab was started in, whatever the catalogue calls it.
+
+### Fixed
+
+- **"Start attack box" no longer says a running lab on UTM isn't running.** The runner read
+  UTM's `started` VM state as unknown, so the box's start found no running target and failed with
+  "This lab isn't running. Start it first." two seconds after the lab came up; with the runner's
+  fix (`started` reads as running) and a container read in the VM that is tried once more when
+  it misses, the box starts on the running lab.
+- **The AWS account test confirms the launch permission instead of warning on every account.**
+  Its dry run of `ec2 run-instances` used a made-up image id, which AWS refuses as malformed
+  before it looks at the permission at all, so a properly signed-in account read "Needs
+  attention" with `InvalidAMIID.Malformed`. The dry run now targets the region's latest Amazon
+  Linux image (the SSM public parameter; a well-formed unknown id when that can't be read), and
+  an answer AWS only gives once the request is authorized counts as the permission passing.
+- **"Connect" on the Cloud page's Azure and Google Cloud rows opens the setup on that provider.**
+  It opened "Set up cloud provider" at "Choose a cloud provider" with Amazon Web Services picked
+  whatever row was clicked. The click is the choice: the setup now skips that step and opens on
+  the row's provider, at its tools and sign-in. "Set up cloud provider" at the top keeps the full
+  flow.
+- **A lab on UTM waits for UTM to be open and answering before `vagrant up`.** Vagrant's UTM
+  plugin reads the VM's state and its forwarded ports from the UTM app through Apple events, and
+  a UTM not running yet, or one macOS doesn't let Cyber CTF control, failed the start mid-way
+  with "Application isn't running (-600)". UTM is now opened first and waited for; an Automation
+  refusal is named with its way out.
+- **Setup checks the versions of UTM and its Vagrant plugin, not only their presence.** A
+  `vagrant_utm` older than 0.2.0 reads as not installed, so setup installs it again (which
+  updates it), and a UTM older than 4.6.5 (the oldest the plugin drives) is named as too old.
+- **A UTM start is tried once more on UTM's passing "Application isn't running (-600)".** UTM
+  answers that to a VM customization right after an import now and then, while it runs and
+  answers everything else; the half-created VM is removed and the start runs again, instead of
+  failing the lab on a one-off.
+- **A container lab in a VM stays known as such after a retried start.** Removing the
+  half-created VM of a failed first attempt also forgot that the lab runs in a local VM, so once
+  the retry succeeded the page read it as plain Docker: not running, no machines, "Shut down"
+  offered, the attack box refusing. Each attempt marks it again; the page and the Deployment
+  panel now also say "a VM on this machine" for such a lab, whatever the picker last held.
+- **Pause, Resume, Stop and the attack box wait for the lab's own checks instead of failing.**
+  The page's periodic status check holds the run for a few seconds, and a Pause clicked meanwhile
+  failed with "Another operation on this lab is already in progress". The player's operations now
+  wait up to a minute for the run to be free.
+- **The Machine page's Setup summary names the hypervisor chosen in Settings.** It named the
+  first installed one (QEMU) while the header, the Health view and the labs used UTM.
+- **Switching the hypervisor is one click.** The hypervisor chosen in Settings never reached the
+  header, which named the first ready one (QEMU before UTM), and the Machine setup's pick wasn't
+  saved as the choice at all. Both follow the choice now, and "Where should it run?" carries a
+  switch inside its "in a VM" option when several hypervisors are ready; its pick is saved as
+  the choice.
+
+## [1.8.8] — 2026-11-07
+
+### Fixed
+
+- **A lab whose launch failed no longer shows as running.** A failed launch can leave a lab's
+  machines up; the page then showed the "Running" badge and a full, healthy topology diagram even
+  though the deployment had failed. A failed launch now reads as not running for local labs too (it
+  was masked only for server and cloud labs), so the page shows "Failed to start", no diagram, and
+  routes to the Stop & clean up path.
+- **QEMU docker-in-VM labs no longer collide on the helper VM's SSH port.** Bundles Isoloom 1.0.8
+  and the Isothrum runner 1.0.4: the QEMU helper VM's SSH forward takes a free host port picked
+  ahead of time, and the cloud-docker `AcceptEnv` drop-in directory is created before it is written.
+
 ## [1.8.7] — 2026-11-06
 
 ### Fixed

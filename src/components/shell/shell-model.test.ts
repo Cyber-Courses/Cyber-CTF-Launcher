@@ -57,6 +57,10 @@ describe("engineSummary", () => {
     ] as SystemReport["vmProviders"];
     expect(engineSummary(report({ vmProviders })).hypervisor).toBe("QEMU");
     expect(engineSummary(report({})).hypervisor).toBeNull();
+    // Settings' choice comes first when it is ready; one that isn't falls back to the first ready.
+    const two = [...vmProviders, { provider: "utm", remote: false, available: true, hypervisor: true }] as typeof vmProviders;
+    expect(engineSummary(report({ vmProviders: two }), "utm").hypervisor).toBe("UTM");
+    expect(engineSummary(report({ vmProviders: two }), "virtualbox").hypervisor).toBe("QEMU");
   });
 });
 

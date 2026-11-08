@@ -12,13 +12,17 @@ use std::time::Duration;
 use super::docker::IMAGE;
 use super::vm::{box_provider, pick_box};
 use crate::error::Result;
-use crate::platform::exec::{run, run_env_timed, stream};
+use crate::platform::exec::{run, run_env_timed, stream, within};
 use crate::runtime::providers::Provider;
 
 static DOCKER_DL: AtomicBool = AtomicBool::new(false);
 static VM_DL: AtomicBool = AtomicBool::new(false);
 /// The test image is 2 MB: past this the engine is stuck, not the network slow.
 const PULL_LIMIT: Duration = Duration::from_secs(300);
+/// A test box is hundreds of MB (far larger than the image), so a generous bound: past it the
+/// download is stalled, not just a slow link. Without it a wedged `vagrant box add` spins for
+/// good, and a test waiting on the `VM_DL` busy flag polls it forever.
+const BOX_LIMIT: Duration = Duration::from_secs(1800);
 /// Last line of the VM box download, so a test waiting on it can show progress.
 static VM_DL_LINE: Mutex<String> = Mutex::new(String::new());
 
@@ -64,13 +68,7 @@ pub(super) async fn ensure_box(dir: &Path, p: Provider, bx: &'static str, arm: b
         }
         if let Some(_busy) = Busy::try_take(&VM_DL) {
             on_line(format!("Downloading {bx} for {}, once…", p.id()));
-            stream("vagrant", &["box", "add", bx, "--provider", box_provider(p), "--force"], Some(dir), &[], |l| {
-                if let Ok(mut last) = VM_DL_LINE.lock() {
-                    last.clone_from(&l);
-                }
-                on_line(l);
-            })
-            .await?;
+            add_box(dir, p, bx, BOX_LIMIT, &mut on_line).await?;
             return Ok(waited);
         }
         waited = true;
@@ -78,6 +76,23 @@ pub(super) async fn ensure_box(dir: &Path, p: Provider, bx: &'static str, arm: b
         on_line(if line.trim().is_empty() { format!("Finishing the background download of {bx}…") } else { line });
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
+}
+
+/// Adds the test box for `p`, bounded by `limit` so a stalled download fails instead of spinning.
+/// `on_line` sees Vagrant's progress, kept as the last line so a test waiting on the download can
+/// show it.
+async fn add_box(dir: &Path, p: Provider, bx: &str, limit: Duration, mut on_line: impl FnMut(String)) -> Result<()> {
+    within(
+        "vagrant box add",
+        limit,
+        stream("vagrant", &["box", "add", bx, "--provider", box_provider(p), "--force"], Some(dir), &[], |l| {
+            if let Ok(mut last) = VM_DL_LINE.lock() {
+                last.clone_from(&l);
+            }
+            on_line(l);
+        }),
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -127,5 +142,21 @@ mod tests {
         assert!(lines.iter().any(|l| l.contains("Downloading bento/ubuntu-24.04 for")), "the notice: {lines:?}");
         assert!(lines.iter().any(|l| l == "Progress: 100%"), "the streamed lines: {lines:?}");
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn adding_a_box_that_stalls_is_given_up_on_instead_of_spinning() {
+        use crate::platform::exec::fake::{Reply, Tools};
+        use crate::platform::exec::timed_out;
+        let dir = std::env::temp_dir().join(format!("cyberctf-dl-box-stall-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // `vagrant box add` never returns (a wedged download): bounded by the limit, it surfaces as
+        // a timeout instead of hanging the test (and, in the app, the self-test's box step) for good.
+        let _tools = Tools::rules(&[("box add", Some(Reply::Hang))]);
+        let started = std::time::Instant::now();
+        let err = add_box(&dir, Provider::Virtualbox, "bento/debian-12", Duration::from_millis(200), |_| {}).await.unwrap_err();
+        assert!(timed_out(&err), "a stalled box add is a timeout, not an endless wait: {err:?}");
+        assert!(started.elapsed() < Duration::from_secs(5), "given up on at the limit, not spun on: {:?}", started.elapsed());
+        std::fs::remove_dir_all(dir).ok();
     }
 }

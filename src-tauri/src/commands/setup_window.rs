@@ -4,16 +4,27 @@ use crate::AppHandle;
 use tauri::Manager;
 
 use crate::error::{Error, Result};
+use crate::runtime::providers::Provider;
 use crate::runtime::server::input::valid_id;
 
 const LABEL: &str = "server-setup";
 
-/// The setup page to open: editing host `id`, or a new server / cloud account.
-fn setup_path(id: Option<String>, cloud: bool) -> Result<String> {
+/// The cloud `provider` names, if it is one (as the webview spells it: `aws`, `azure`, …).
+fn cloud_provider(provider: &str) -> Option<Provider> {
+    serde_json::from_value::<Provider>(serde_json::Value::String(provider.into())).ok().filter(|p| p.is_cloud())
+}
+
+/// The setup page to open: editing host `id`, or a new server / cloud account, the latter on
+/// `provider` when one is named (the Cloud page's Connect rows).
+fn setup_path(id: Option<String>, cloud: bool, provider: Option<&str>) -> Result<String> {
     Ok(match id {
         Some(id) if valid_id(&id) => format!("server-setup?id={id}"),
         Some(_) => return Err(Error::Invalid("unknown server host".into())),
-        None if cloud => "server-setup?kind=cloud".into(),
+        None if cloud => match provider.map(|p| cloud_provider(p).ok_or(p)) {
+            Some(Ok(p)) => format!("server-setup?kind=cloud&provider={}", p.id()),
+            Some(Err(p)) => return Err(Error::Invalid(format!("unknown cloud provider: {p}"))),
+            None => "server-setup?kind=cloud".into(),
+        },
         None => "server-setup".into(),
     })
 }
@@ -21,9 +32,9 @@ fn setup_path(id: Option<String>, cloud: bool) -> Result<String> {
 /// Opens the host setup in its own window (label `server-setup`); the window closes
 /// itself when setup ends. An already open setup window is replaced.
 #[tauri::command]
-pub async fn server_open_setup(app: AppHandle, id: Option<String>, kind: Option<String>) -> Result<()> {
+pub async fn server_open_setup(app: AppHandle, id: Option<String>, kind: Option<String>, provider: Option<String>) -> Result<()> {
     let cloud = kind.as_deref() == Some("cloud");
-    let path = setup_path(id, cloud)?;
+    let path = setup_path(id, cloud, provider.as_deref())?;
     if let Some(existing) = app.get_webview_window(LABEL) {
         let _ = existing.destroy();
     }
@@ -50,20 +61,28 @@ mod tests {
     #[tokio::test]
     async fn the_setup_window_opens_at_its_page_and_an_unknown_host_is_refused() {
         let t = crate::testing::test_app::TestApp::new();
-        let err = server_open_setup(t.handle().clone(), Some("../x".into()), None).await.unwrap_err();
+        let err = server_open_setup(t.handle().clone(), Some("../x".into()), None, None).await.unwrap_err();
         assert_eq!(err.to_string(), "unknown server host");
         assert!(t.handle().webview_windows().is_empty());
-        server_open_setup(t.handle().clone(), None, Some("cloud".into())).await.unwrap();
+        server_open_setup(t.handle().clone(), None, Some("cloud".into()), None).await.unwrap();
         let w = t.handle().get_webview_window(LABEL).expect("the setup window");
         assert!(w.url().unwrap().as_str().ends_with("server-setup?kind=cloud"), "{}", w.url().unwrap());
     }
 
     #[test]
     fn setup_paths() {
-        assert_eq!(setup_path(None, false).unwrap(), "server-setup");
-        assert_eq!(setup_path(None, true).unwrap(), "server-setup?kind=cloud");
+        assert_eq!(setup_path(None, false, None).unwrap(), "server-setup");
+        assert_eq!(setup_path(None, true, None).unwrap(), "server-setup?kind=cloud");
+        // The Cloud page's Connect rows name their provider; a server, or a local hypervisor, or
+        // anything else is refused rather than passed into the page's query.
+        assert_eq!(setup_path(None, true, Some("azure")).unwrap(), "server-setup?kind=cloud&provider=azure");
+        assert_eq!(setup_path(None, true, Some("digitalocean")).unwrap(), "server-setup?kind=cloud&provider=digitalocean");
+        assert_eq!(setup_path(None, true, Some("proxmox")).unwrap_err().to_string(), "unknown cloud provider: proxmox");
+        assert_eq!(setup_path(None, true, Some("<b>")).unwrap_err().to_string(), "unknown cloud provider: <b>");
+        // Editing and a server ignore it.
+        assert_eq!(setup_path(None, false, Some("azure")).unwrap(), "server-setup");
         // Editing ignores the kind: the host says what it is.
-        assert_eq!(setup_path(Some("ab12".into()), true).unwrap(), "server-setup?id=ab12");
-        assert!(setup_path(Some("../x".into()), false).is_err());
+        assert_eq!(setup_path(Some("ab12".into()), true, None).unwrap(), "server-setup?id=ab12");
+        assert!(setup_path(Some("../x".into()), false, None).is_err());
     }
 }

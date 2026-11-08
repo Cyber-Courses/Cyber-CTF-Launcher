@@ -286,7 +286,7 @@ mod tests {
         let boxes = "generic/alpine319 (virtualbox, 4.3.12)\nbento/debian-12 (virtualbox, 1)\ngeneric/alpine319 (libvirt, 4.3.12)\nbento/debian-12 (parallels, 1)\nbento/debian-12 (vmware_desktop, 1)\ngeneric/alpine319 (qemu, 1)\ngeneric/alpine319 (hyperv, 1)\nutm/bookworm (utm, 1)\n";
         let tools = Tools::new(move |program, args| match (program, args) {
             ("vagrant", ["plugin", "list"]) => {
-                ok("vagrant-qemu (0.3.6)\nvagrant-parallels (2.4)\nvagrant-vmware-desktop (3.0)\nvagrant-libvirt (0.12)\nvagrant_utm (0.1)\n")
+                ok("vagrant-qemu (0.3.6)\nvagrant-parallels (2.4)\nvagrant-vmware-desktop (3.0)\nvagrant-libvirt (0.12)\nvagrant_utm (0.2.0)\n")
             }
             ("vagrant", ["box", "list"]) => ok(boxes),
             ("vagrant", ["--version"]) => ok("Vagrant 2.4.3\n"),
