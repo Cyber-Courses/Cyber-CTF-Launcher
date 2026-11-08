@@ -205,12 +205,13 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
 }
 
 /// The run that holds lab `id`'s attack box, wherever the lab runs: on this machine, in the form
-/// it was started in; on a cloud account or a Proxmox server, a container in the VM the lab's
-/// containers run in (the runner refuses a VM lab there: it has no such VM). Mirrors the dispatch
-/// of [`lab_check`].
+/// it was started in; on a Proxmox server, a container in the VM the lab's containers run in (the
+/// runner refuses a VM lab there: it has no such VM); in a cloud account, that container, or, for
+/// a lab run as one VM per machine, an instance of its own the module adds (with the account's
+/// credentials: `place`). Mirrors the dispatch of [`lab_check`].
 enum BoxRun {
     Local(isothrum::LabRun),
-    Cloud(isothrum::CloudRun),
+    Cloud(isothrum::CloudRun, isothrum::CloudPlace),
     Server(isothrum::ServerRun),
 }
 
@@ -218,7 +219,7 @@ impl BoxRun {
     async fn attach(&self, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         match self {
             BoxRun::Local(r) => r.attach(network, image, log).await,
-            BoxRun::Cloud(r) => r.attach(network, image, log).await,
+            BoxRun::Cloud(r, place) => r.attach_with(&place.options(&[]), network, image, log).await,
             BoxRun::Server(r) => r.attach(network, image, log).await,
         }
     }
@@ -226,7 +227,7 @@ impl BoxRun {
     async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
         match self {
             BoxRun::Local(r) => r.detach(log).await,
-            BoxRun::Cloud(r) => r.detach(log).await,
+            BoxRun::Cloud(r, place) => r.detach_with(&place.options(&[]), log).await,
             BoxRun::Server(r) => r.detach(log).await,
         }
     }
@@ -234,7 +235,7 @@ impl BoxRun {
     async fn attack_status(&self, network: Option<&str>) -> Result<isothrum::AttackStatus> {
         match self {
             BoxRun::Local(r) => r.attack_status(network).await,
-            BoxRun::Cloud(r) => r.attack_status(network).await,
+            BoxRun::Cloud(r, _) => r.attack_status(network).await,
             BoxRun::Server(r) => r.attack_status(network).await,
         }
     }
@@ -242,7 +243,7 @@ impl BoxRun {
     fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
         match self {
             BoxRun::Local(r) => r.shell_command(),
-            BoxRun::Cloud(r) => r.shell_command(),
+            BoxRun::Cloud(r, _) => r.shell_command(),
             BoxRun::Server(r) => r.shell_command(),
         }
     }
@@ -254,16 +255,19 @@ fn box_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Opt
     let home = runner_home(dirs)?;
     Ok(match server::lab_connection(dirs, dir)? {
         Some(c) if c.provider == Provider::VmwareEsxi => None,
-        // A cloud account: the box is a container in the VM the lab's containers run in
-        // (cloud-docker). A cloud-vm run — a container lab started as one VM per machine, or a VM
-        // lab — has no such host VM, so there is no attack box yet (None, as for an ESXi host).
-        Some(c) if c.provider.is_cloud() => match local_runtime(dir, runtime) {
-            Runtime::Docker => {
-                let cloud = server::terraform_target(c.provider).unwrap_or_default();
-                Some(BoxRun::Cloud(isothrum::CloudRun::new(&home, dir, id, Runtime::Docker, cloud)?))
-            }
-            _ => None,
-        },
+        // A cloud account, in the form the lab was started in: the box is a container in the VM
+        // the lab's containers run in (cloud-docker), or an instance the module adds beside the
+        // lab's (cloud-vm), with the account's credentials for that apply.
+        Some(c) if c.provider.is_cloud() => {
+            let cloud = server::terraform_target(c.provider).unwrap_or_default();
+            let place = isothrum::CloudPlace {
+                label: server::marked_host(dir).unwrap_or_default(),
+                region: c.region.clone(),
+                tf_env: c.tf_env.clone(),
+                ..isothrum::CloudPlace::default()
+            };
+            Some(BoxRun::Cloud(isothrum::CloudRun::new(&home, dir, id, local_runtime(dir, runtime), cloud)?, place))
+        }
         Some(_) => Some(BoxRun::Server(isothrum::ServerRun::new(&home, dir, id, runtime)?)),
         None => match local_runtime(dir, runtime) {
             Runtime::Docker if local_vm(dir).is_some() => Some(BoxRun::Local(isothrum::LabRun::docker_in_vm(&home, dir, id)?)),
@@ -412,23 +416,22 @@ mod tests {
     }
 
     #[test]
-    fn a_cloud_vm_lab_has_no_attack_box_but_cloud_docker_does() {
-        use crate::runtime::paths::{mark_per_machine_vm, per_machine_vm};
+    fn a_cloud_lab_has_its_attack_box_in_both_forms_with_its_accounts_place() {
+        use crate::runtime::paths::mark_per_machine_vm;
         let t = TestApp::new();
         let _tools = Tools::rules(&[]);
         let dir = t.lab("srv", &[]);
-        server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
-        // cloud-docker (the default): the box is a container in the lab's cloud VM, so the launcher
-        // has a box run for it.
-        assert!(super::box_run(&t.dirs(), &dir, "srv", Runtime::Docker).unwrap().is_some());
-        // One VM per machine (cloud-vm): no container host VM, so no attack box yet — the dispatch
-        // reads the recorded form and returns none (the page then says there is no box).
+        server::mark_lab(&dir, Some(&t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
+        let in_account = |dir: &std::path::Path| match super::box_run(&t.dirs(), dir, "srv", Runtime::Docker).unwrap() {
+            Some(super::BoxRun::Cloud(_, place)) => place.label,
+            _ => panic!("a cloud box run"),
+        };
+        // cloud-docker (the default): a container in the lab's cloud VM.
+        assert_eq!(in_account(&dir), "aws1");
+        // One VM per machine (cloud-vm): an instance the module adds, applied with the account's
+        // place, so the box run carries it too.
         mark_per_machine_vm(&dir, true).unwrap();
-        assert!(super::box_run(&t.dirs(), &dir, "srv", Runtime::Docker).unwrap().is_none());
-        // Cleared back to cloud-docker: a box run again, and the form unset.
-        mark_per_machine_vm(&dir, false).unwrap();
-        assert!(super::box_run(&t.dirs(), &dir, "srv", Runtime::Docker).unwrap().is_some());
-        assert!(!per_machine_vm(&dir));
+        assert_eq!(in_account(&dir), "aws1");
     }
 
     #[tokio::test]

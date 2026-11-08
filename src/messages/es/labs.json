@@ -251,8 +251,7 @@
     "stop": "Detener máquina de ataque",
     "start": "Iniciar máquina de ataque",
     "attaching": "Iniciando la máquina de ataque…",
-    "removing": "Eliminando la máquina de ataque…",
-    "cloudVmNone": "Este laboratorio se ejecuta como una VM por máquina, así que todavía no tiene caja de ataque. Trabaja desde las máquinas del laboratorio."
+    "removing": "Eliminando la máquina de ataque…"
   },
   "actions": {
     "labRunning": "✓ El lab está en ejecución",

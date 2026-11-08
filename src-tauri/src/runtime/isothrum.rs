@@ -306,7 +306,7 @@ impl LabRun {
 
     /// Takes the attack box back out of the running lab, leaving the rest of the lab up.
     pub(crate) async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        detach_from(&self.lab()?, log).await
+        detach_from(&self.lab()?, &RunOptions::new(), log).await
     }
 
     /// The attack box's status: its access machine as the runner reports it, its address on
@@ -327,23 +327,16 @@ impl LabRun {
     }
 }
 
-/// Hot-adds the attack box into `lab` (on `network`, from `image`), waiting out another
+/// Hot-adds the attack box into `lab` (`pick`: where, from what), with `opts`, waiting out another
 /// operation's hold on the run: what a lab on a server or in a cloud account does.
-async fn attach_into(lab: &Running<'_>, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-    let deadline = std::time::Instant::now() + LOCK_WAIT;
-    loop {
-        let (sink, lines) = progress::channel();
-        match progress::follow(&mut *log, lines, lab.attach(None, network, image, &sink)).await {
-            Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-            r => return r.map(drop).map_err(errors::from_runner),
-        }
-    }
+async fn attach_into(lab: &Running<'_>, opts: &RunOptions, pick: isothrum_runner::BoxPick<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+    when_unlocked(log, move |sink| async move { lab.attach_with(opts, pick, &sink).await.map(drop) }).await.map_err(errors::from_runner)
 }
 
 /// Takes the attack box back out of `lab`, leaving the rest up, waiting out another operation's
 /// hold on the run.
-async fn detach_from(lab: &Running<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    when_unlocked(log, move |sink| async move { lab.detach(None, &sink).await }).await.map_err(errors::from_runner)
+async fn detach_from(lab: &Running<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
+    when_unlocked(log, move |sink| async move { lab.detach_with(opts, None, &sink).await }).await.map_err(errors::from_runner)
 }
 
 /// The attack box of `lab` as its page shows it: its access machine as the runner reports it,

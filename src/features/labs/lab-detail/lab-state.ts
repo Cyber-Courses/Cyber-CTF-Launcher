@@ -141,9 +141,6 @@ export function deriveLabState(i: LabStateInput) {
   const down = deploying || !running ? [] : machines.filter((m) => !m.infra && m.state !== "running");
   const isDocker = rt?.runtime !== "VM" && !isCloud;
   const remote = !!status?.host;
-  // A container lab running on a cloud account as one VM per machine (cloud-vm): its machines are
-  // cloud instances, not containers in one cloud VM, so there is no in-VM attack box yet.
-  const cloudVm = remote && isDocker && status.perMachine;
   // Where it actually ran, as the backend reports it (its marker survives a failed start, so this
   // is right even for a launch that failed): a dual-form lab is DOCKER-kind but can run as a VM
   // here, and "container" is the only place whose host ports can be swapped for random ones.
@@ -169,7 +166,6 @@ export function deriveLabState(i: LabStateInput) {
     isDocker,
     isCloud,
     remote,
-    cloudVm,
     place,
     canPause,
     canShutdown,

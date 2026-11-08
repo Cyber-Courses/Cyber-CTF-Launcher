@@ -75,7 +75,7 @@ impl CloudPlace {
     }
 
     /// The options of an operation on this account, with the launch's values `env`.
-    fn options(&self, env: &[(String, String)]) -> RunOptions {
+    pub(crate) fn options(&self, env: &[(String, String)]) -> RunOptions {
         let opts = RunOptions::new().with_secrets(self.secrets(env)).with_params(self.params()).with_host_label(&self.label);
         match self.lifetime {
             Some(lifetime) => opts.with_lifetime(lifetime),

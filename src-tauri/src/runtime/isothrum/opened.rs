@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use isothrum_runner::{RunName, Runner, RunnerConfig, Running};
+use isothrum_runner::{RunName, RunOptions, Runner, RunnerConfig, Running};
 
 use super::errors;
 use crate::error::Result;
@@ -31,12 +31,24 @@ impl OpenedRun {
     /// runs its containers in, on `network` (the only one otherwise), from `image`. A VM lab
     /// there has no VM to put it in: the runner refuses.
     pub(crate) async fn attach(&self, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-        super::attach_into(&self.running()?, network, image, log).await
+        self.attach_with(&RunOptions::new(), network, image, log).await
+    }
+
+    /// [`OpenedRun::attach`] with `opts`: what changing the run needs (a cloud account's
+    /// credentials, when its module makes the box an instance of its own).
+    pub(crate) async fn attach_with(&self, opts: &RunOptions, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
+        let pick = isothrum_runner::BoxPick { machine: None, network, image };
+        super::attach_into(&self.running()?, opts, pick, log).await
     }
 
     /// Takes the attack box back out of the running lab, leaving the rest of it up.
     pub(crate) async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        super::detach_from(&self.running()?, log).await
+        self.detach_with(&RunOptions::new(), log).await
+    }
+
+    /// [`OpenedRun::detach`] with `opts`, as [`OpenedRun::attach_with`].
+    pub(crate) async fn detach_with(&self, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
+        super::detach_from(&self.running()?, opts, log).await
     }
 
     /// The attack box as the lab page shows it (nothing before the lab's files exist).

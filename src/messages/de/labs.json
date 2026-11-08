@@ -251,8 +251,7 @@
     "stop": "Attack box stoppen",
     "start": "Attack box starten",
     "attaching": "Attack box wird gestartet…",
-    "removing": "Attack box wird entfernt…",
-    "cloudVmNone": "Dieses Lab läuft als eine VM pro Maschine und hat daher noch keine Angriffsbox. Arbeite von den Maschinen des Labs aus."
+    "removing": "Attack box wird entfernt…"
   },
   "actions": {
     "labRunning": "✓ Lab läuft",

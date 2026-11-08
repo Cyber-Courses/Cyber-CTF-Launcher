@@ -251,8 +251,7 @@
     "stop": "Parar attack box",
     "start": "Iniciar attack box",
     "attaching": "Iniciando a attack box…",
-    "removing": "Removendo a attack box…",
-    "cloudVmNone": "Este laboratório roda como uma VM por máquina, então ainda não tem caixa de ataque. Trabalhe a partir das máquinas do laboratório."
+    "removing": "Removendo a attack box…"
   },
   "actions": {
     "labRunning": "✓ Lab rodando",

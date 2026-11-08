@@ -20,22 +20,17 @@ export function AttackBoxPanel({
   host,
   onShell,
   shellReady,
-  noBox = false,
 }: {
   box: AttackBox;
   running: boolean;
   host: string | null;
   onShell?: () => void;
   shellReady?: boolean;
-  /** This run has no attack box yet (a cloud-vm lab: its machines are cloud instances, with no
-   *  container-host VM to add a box to): the panel says so, with no status, controls or shell. */
-  noBox?: boolean;
 }) {
   const t = useT();
   const remote = host !== null;
   const { status, busy, log, name, vm } = box;
   const tone = status?.running ? "ok" : busy ? "warn" : "muted";
-  if (noBox) return <NoBoxPanel />;
   return (
     <Panel>
       <PanelHeader
@@ -71,25 +66,6 @@ export function AttackBoxPanel({
           <LogConsole lines={log} running={busy} title={vm ? t("labs.attackBox.attackVm") : t("labs.attackBox.attackBox")} />
         )}
       </div>
-    </Panel>
-  );
-}
-
-/** A run with no attack box yet (cloud-vm): the card, with a plain note in place of the status
- *  and controls, so the player isn't offered a Start that can't work. */
-function NoBoxPanel() {
-  const t = useT();
-  return (
-    <Panel>
-      <PanelHeader
-        title={
-          <>
-            <StatusDot tone="muted" />
-            {t("labs.attackBox.attackBox")}
-          </>
-        }
-      />
-      <p className="p-4 text-[0.75rem] leading-relaxed text-muted-foreground">{t("labs.attackBox.cloudVmNone")}</p>
     </Panel>
   );
 }

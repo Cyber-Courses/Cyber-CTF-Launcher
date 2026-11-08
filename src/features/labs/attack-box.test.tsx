@@ -363,14 +363,6 @@ describe("AttackBoxPanel", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("says a cloud-vm lab has no attack box, with no status or Start", () => {
-    render(<AttackBoxPanel box={fake({ status: box({ running: true }) })} running host="AWS sandbox" noBox />);
-    expect(screen.getByText(/runs as one VM per machine, so it has no attack box yet/)).toBeTruthy();
-    // No status line, Start, Stop or shell for a form that has no box.
-    expect(screen.queryByText("running")).toBeNull();
-    expect(screen.queryByRole("button")).toBeNull();
-  });
-
   it("shows a box working and a failed start's log", () => {
     render(
       <AttackBoxPanel

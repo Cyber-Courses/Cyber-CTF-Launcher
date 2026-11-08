@@ -251,8 +251,7 @@
     "stop": "Arrêter l’attack box",
     "start": "Démarrer l’attack box",
     "attaching": "Démarrage de l’attack box…",
-    "removing": "Suppression de l’attack box…",
-    "cloudVmNone": "Ce lab s'exécute en une VM par machine : il n'a donc pas encore de boîte d'attaque. Travaillez depuis les machines du lab."
+    "removing": "Suppression de l’attack box…"
   },
   "actions": {
     "labRunning": "✓ Le lab est en cours",
