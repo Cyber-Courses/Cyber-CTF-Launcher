@@ -324,6 +324,9 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
         if let Some(image) = &image {
             check_image(image)?;
         }
+        // Held for the whole attach, like every lab operation: a pause or a stop from another
+        // window or the agent waits, rather than halting the VMs the attach is working in.
+        let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
         let run = with_attack_box(&dirs, &dir, &id, runtime)?;
         let mut log = channel_log(logs);
         let attach = run.attach(network.as_deref(), image.as_deref(), &mut log);
@@ -344,6 +347,7 @@ pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, log
     Box::pin(async move {
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
+        let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
         with_attack_box(&dirs, &dir, &id, runtime)?.detach(&mut channel_log(logs)).await
     })
     .await
