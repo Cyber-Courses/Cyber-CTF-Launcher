@@ -19,17 +19,9 @@ use std::path::Path;
 
 use super::paths::{PER_MACHINE_MARKER, local_runtime, per_machine_vm};
 use super::providers::Provider;
-use super::real_labs::{check, log};
+use super::real_labs::{check, log, vm_inputs};
 use super::{Place, Runtime, lab, status, stop_lab, vm};
 use crate::testing::test_app::TestApp;
-
-fn inputs() -> Vec<(String, String)> {
-    std::env::var("CYBERCTF_TEST_VM_INPUTS")
-        .unwrap_or_default()
-        .split(',')
-        .filter_map(|p| p.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned())))
-        .collect()
-}
 
 /// The machines the spec declares (the VMs the run must have, besides the runner's own).
 fn spec_machines(dir: &Path) -> Vec<String> {
@@ -75,7 +67,9 @@ async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
     let started = std::time::Instant::now();
     let mut f = Vec::new();
     // The launch as the job runs it: the catalogue's runtime, the hypervisor, the override.
-    let up = super::start(&t.dirs(), &dir, &id, Runtime::Docker, Some(provider), None, true, &inputs(), log(&id)).await;
+    let (lab, to) =
+        (super::LabRef { dir: &dir, id: &id, runtime: Runtime::Docker }, super::Destination { provider: Some(provider), host: None, per_machine_vm: true });
+    let up = super::start(&t.dirs(), lab, to, &vm_inputs(), log(&id)).await;
     match up {
         Ok(()) => {
             check(per_machine_vm(&dir) && dir.join(PER_MACHINE_MARKER).is_file(), "the form is recorded with the lab".into(), &mut f);

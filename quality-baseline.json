@@ -30,9 +30,6 @@
     "src-tauri/src/platform/sys.rs": {
       "#![allow(unsafe_code, reason = \"the audited home of the launcher's calls into libc and Win32\")]": 1
     },
-    "src-tauri/src/runtime/launch.rs": {
-      "#[allow(clippy::too_many_arguments, reason = \"mirrors start_locked's full launch specification so tests start a lab by the same parameters\")]": 1
-    },
     "src/app/layout.tsx": {
       "eslint-disable-next-line @next/next/no-sync-scripts -- must run before first paint to avoid a flash of the wrong mode": 1
     },
