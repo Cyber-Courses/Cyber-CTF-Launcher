@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HealthBanner, useLabCheck } from "@/features/labs/lab-health";
 import { LabRow } from "@/features/labs/lab-row";
 import { askPortMode, PortModePrompt } from "@/features/labs/port-mode-prompt";
-import { RunOnDialog, RunOnPicker, type RunTarget } from "@/features/labs/run-on";
+import { RunOnDialog, RunOnPicker, type Platform, type RunTarget } from "@/features/labs/run-on";
 import type { Lab } from "@/features/labs/use-labs";
 import { getPortMode, setPortMode } from "@/lib/settings";
 import type { LabCheck, LabStatus, ServerHost } from "@/lib/tauri";
@@ -31,6 +31,7 @@ describe("RunOnPicker", () => {
 
   function renderPicker(p: Partial<Parameters<typeof RunOnPicker>[0]> = {}) {
     const onChange = vi.fn();
+    const onPickPlatform = vi.fn();
     render(
       <RunOnPicker
         title="GOAD Light"
@@ -41,14 +42,15 @@ describe("RunOnPicker", () => {
         localVm={null}
         value={{ kind: "local" }}
         onChange={onChange}
+        onPickPlatform={onPickPlatform}
         disabled={false}
         {...p}
       />,
     );
-    return onChange;
+    return { onChange, onPickPlatform };
   }
 
-  it("groups this machine, servers and cloud accounts with each host's live check", async () => {
+  it("lists this machine, servers and cloud accounts as platforms, with each host's live check", async () => {
     const calls = installTauri({
       server_test: (a) => {
         if (a?.id === "down") throw new Error("connection refused");
@@ -58,7 +60,7 @@ describe("RunOnPicker", () => {
       },
     });
     const user = userEvent.setup();
-    const onChange = renderPicker();
+    const { onPickPlatform } = renderPicker();
     expect(screen.getByText("Where should it run?")).toBeTruthy();
     expect(screen.getAllByText("Checking…").length).toBe(3);
     await flush();
@@ -75,71 +77,90 @@ describe("RunOnPicker", () => {
     const pve = must(screen.getByText("homelab-pve").closest<HTMLElement>("[role=radio]"), "Proxmox's option");
     expect(pve.getAttribute("aria-disabled") === "true" || pve.hasAttribute("disabled")).toBe(true);
     expect(within(pve).getByText("Not supported by this lab")).toBeTruthy();
+    // Picking a platform (a host runs one way): the platform is chosen, no form step.
     await user.click(screen.getByText("esx-lab"));
-    expect(onChange).toHaveBeenCalledWith({ kind: "host", id: "esx" } satisfies RunTarget);
+    expect(onPickPlatform).toHaveBeenCalledWith({ kind: "host", id: "esx" } satisfies Platform);
   });
 
-  it("offers a VM here, and warns when the engine is stopped", async () => {
+  it("collapses this machine to one platform row that leads to the form step for a VM-capable lab", async () => {
     installTauri();
     const user = userEvent.setup();
-    const onChange = renderPicker({ hosts: [], dockerRunning: false, localVm: "virtualbox", localExtra: <p>ports here</p> });
+    const { onChange, onPickPlatform } = renderPicker({ hosts: [], dockerRunning: false, localVm: "virtualbox" });
     expect(screen.getByText("Engine stopped")).toBeTruthy();
-    expect(screen.getByText("This machine, in a VM")).toBeTruthy();
-    expect(screen.getByText("VirtualBox · isolated from your system")).toBeTruthy();
-    expect(screen.getByText("ports here")).toBeTruthy();
-    await user.click(screen.getByText("This machine, in a VM"));
-    expect(onChange).toHaveBeenLastCalledWith({ kind: "local-vm", provider: "virtualbox" });
+    // One "This machine" row (plus its group label), not one per form; the forms live in step 2.
+    expect(screen.getAllByText("This machine").length).toBe(2);
+    expect(screen.getByText("Containers or in a VM")).toBeTruthy();
+    expect(screen.queryByText("In one VM")).toBeNull();
+    await user.click(screen.getAllByText("This machine")[1]);
+    expect(onPickPlatform).toHaveBeenCalledWith({ kind: "local" } satisfies Platform);
+    expect(onChange).not.toHaveBeenCalled();
     expect(screen.queryByText("Servers")).toBeNull();
   });
 
-  it("switches the VM's hypervisor inside the one in-VM option when several are ready", async () => {
+  it("shows containers and the VM on the form step, with the host-port choice", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    const { onChange } = renderPicker({ step: "form", hosts: [], dockerRunning: false, localVm: "virtualbox", localExtra: <p>ports here</p> });
+    expect(screen.getByText("How should it run?")).toBeTruthy();
+    expect(screen.getByText("Containers")).toBeTruthy();
+    expect(screen.getByText("Engine stopped")).toBeTruthy();
+    expect(screen.getByText("In one VM")).toBeTruthy();
+    expect(screen.getByText("VirtualBox · isolated from your system")).toBeTruthy();
+    expect(screen.getByText("ports here")).toBeTruthy();
+    await user.click(screen.getByText("In one VM"));
+    expect(onChange).toHaveBeenLastCalledWith({ kind: "local-vm", provider: "virtualbox" });
+  });
+
+  it("switches the VM's hypervisor inside the one in-VM form when several are ready", async () => {
     installTauri();
     const user = userEvent.setup();
     const onPickVm = vi.fn();
-    const onChange = renderPicker({ hosts: [], dockerRunning: true, localVm: "utm", localVms: ["utm", "qemu"], onPickVm });
-    // One option, not one per hypervisor; the switch names them.
-    expect(screen.getAllByText("This machine, in a VM").length).toBe(1);
+    const { onChange } = renderPicker({ step: "form", hosts: [], dockerRunning: true, localVm: "utm", localVms: ["utm", "qemu"], onPickVm });
+    // One form, not one per hypervisor; the switch names them.
+    expect(screen.getAllByText("In one VM").length).toBe(1);
     expect(screen.getByText("UTM · isolated from your system")).toBeTruthy();
     const group = screen.getByRole("radiogroup", { name: "Hypervisor" });
     expect(within(group).getByRole("radio", { name: "UTM" }).getAttribute("aria-checked")).toBe("true");
     await user.click(within(group).getByRole("radio", { name: "QEMU" }));
     expect(onPickVm).toHaveBeenCalledWith("qemu");
-    // The switch picks a hypervisor, not another option.
+    // The switch picks a hypervisor, not another form.
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("offers one VM per machine for a lab with VM recipes too, with its own hypervisor switch", async () => {
+  it("offers one VM per machine on the form step for a lab with VM recipes too, with its own switch", async () => {
     installTauri();
     const user = userEvent.setup();
     const onPick = vi.fn();
-    const onChange = renderPicker({
+    const { onChange } = renderPicker({
+      step: "form",
       hosts: [],
       dockerRunning: true,
       localVm: "utm",
       localVms: ["utm", "qemu"],
       perMachine: { provider: "qemu", providers: ["qemu", "virtualbox"], onPick },
     });
-    // Three places on this machine: containers, one helper VM, one VM per machine (UTM can't
-    // run the latter, so its switch doesn't name it).
-    expect(screen.getByText("This machine, in a VM")).toBeTruthy();
-    expect(screen.getByText("This machine, one VM per machine")).toBeTruthy();
+    // Three forms on this machine: containers, one helper VM, one VM per machine (UTM can't run
+    // the latter, so its switch doesn't name it).
+    expect(screen.getByText("Containers")).toBeTruthy();
+    expect(screen.getByText("In one VM")).toBeTruthy();
+    expect(screen.getByText("One VM per machine")).toBeTruthy();
     expect(screen.getByText("QEMU · a full VM for each machine, as on a server")).toBeTruthy();
-    const perMachine = must(screen.getByText("This machine, one VM per machine").closest<HTMLElement>("[role=radio]"), "the per-machine option");
+    const perMachine = must(screen.getByText("One VM per machine").closest<HTMLElement>("[role=radio]"), "the per-machine form");
     const group = within(perMachine).getByRole("radiogroup", { name: "Hypervisor" });
     expect(within(group).queryByRole("radio", { name: "UTM" })).toBeNull();
     expect(within(group).getByRole("radio", { name: "QEMU" }).getAttribute("aria-checked")).toBe("true");
     await user.click(within(group).getByRole("radio", { name: "VirtualBox" }));
     expect(onPick).toHaveBeenCalledWith("virtualbox");
     expect(onChange).not.toHaveBeenCalled();
-    await user.click(screen.getByText("This machine, one VM per machine"));
+    await user.click(screen.getByText("One VM per machine"));
     expect(onChange).toHaveBeenLastCalledWith({ kind: "local-vms", provider: "qemu" } satisfies RunTarget);
   });
 
-  it("offers no per-machine place without a hypervisor that can run it", () => {
+  it("offers no per-machine form without a hypervisor that can run it", () => {
     installTauri();
-    renderPicker({ hosts: [], dockerRunning: true, localVm: "utm", perMachine: { provider: null, providers: [], onPick: vi.fn() } });
-    expect(screen.getByText("This machine, in a VM")).toBeTruthy();
-    expect(screen.queryByText("This machine, one VM per machine")).toBeNull();
+    renderPicker({ step: "form", hosts: [], dockerRunning: true, localVm: "utm", perMachine: { provider: null, providers: [], onPick: vi.fn() } });
+    expect(screen.getByText("In one VM")).toBeTruthy();
+    expect(screen.queryByText("One VM per machine")).toBeNull();
   });
 
   it("badges a cloud with no real-run evidence as Beta, and leaves a proven one (AWS) unbadged", async () => {
@@ -164,11 +185,11 @@ describe("RunOnPicker", () => {
   it("shows no engine status for a VM lab, and nothing selectable while busy", async () => {
     installTauri();
     const user = userEvent.setup();
-    const onChange = renderPicker({ hosts: [], dockerRunning: null, disabled: true });
+    const { onPickPlatform } = renderPicker({ hosts: [], dockerRunning: null, disabled: true });
     expect(screen.queryByText("Running")).toBeNull();
     expect(screen.queryByText("Engine stopped")).toBeNull();
     await user.click(screen.getAllByText("This machine")[1]);
-    expect(onChange).not.toHaveBeenCalled();
+    expect(onPickPlatform).not.toHaveBeenCalled();
   });
 });
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { cloudAccountsFor, hostSupports, isCloudLab, localProviders, perMachineProviders } from "@/features/labs/lab-runtime";
-import type { RunTarget } from "@/features/labs/run-on";
+import type { Platform, RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { getPortMode, setVmProvider, type PortMode } from "@/lib/settings";
 import { SERVER_CHANGED, serverList, type Provider, type ServerHost } from "@/lib/tauri";
@@ -71,12 +71,18 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
   const cloudAccounts = cloudAccountsFor(rt, hosts);
   // A server picked, then removed in its setup window: back to where Start points at first.
   const runOn = picked && (picked.kind !== "host" || hosts.some((h) => h.id === picked.id)) ? picked : initialTarget(rt, hosts, defaultId, localReady);
+  // The picker's two steps and the moves between them. This machine offers more than one form (so
+  // a step 2) when a helper VM or a per-machine VM is ready; a VM lab or a hypervisor-less container
+  // lab has one form and skips straight to Start.
+  const steps = usePickerSteps(runOn, setRunOn, localVm !== null || perMachine !== null);
 
   return {
     hosts,
     hostOk,
     runOn,
     setRunOn,
+    // `step`, `pickPlatform`, `back`, `resetSteps`: the picker's two-step flow (see usePickerSteps).
+    ...steps,
     ports,
     setPorts,
     localVm,
@@ -97,6 +103,29 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
 }
 
 const NO_SERVERS = { hosts: [], defaultId: null };
+
+/** Every local form (`local`, `local-vm`, `local-vms`) belongs to the one "this machine" platform. */
+const isLocalTarget = (t: RunTarget) => t.kind === "local" || t.kind === "local-vm" || t.kind === "local-vms";
+
+/** The picker's two steps. Step 1 picks a platform: a host (one form today) or a single-form This
+ *  machine selects it and stays on step 1 (next tap is Start); a multi-form This machine opens
+ *  step 2. `resetSteps` (dialog open/close) and `back` (the footer) return to step 1. */
+function usePickerSteps(runOn: RunTarget, setRunOn: (t: RunTarget) => void, localMultiForm: boolean) {
+  const [step, setStep] = useState<"platform" | "form">("platform");
+  const toPlatform = () => {
+    setStep("platform");
+  };
+  const pickPlatform = (p: Platform) => {
+    if (p.kind === "host") {
+      setRunOn({ kind: "host", id: p.id });
+      setStep("platform");
+      return;
+    }
+    if (!isLocalTarget(runOn)) setRunOn({ kind: "local" });
+    setStep(localMultiForm ? "form" : "platform");
+  };
+  return { step, pickPlatform, back: toPlatform, resetSteps: toPlatform };
+}
 
 /** Where Start points at first: a cloud lab's first account; the default host when this machine
  *  can't run the lab (`localReady`) and the host can; else here. */

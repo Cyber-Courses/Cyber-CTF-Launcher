@@ -56,13 +56,15 @@ describe("LabDetail", () => {
     // With servers to choose from, Start asks where first.
     await user.click(screen.getByRole("button", { name: /start lab/i }));
     const dialog = await screen.findByRole("dialog");
-    const confirm = within(dialog)
-      .getAllByRole("button")
-      .filter((b) => /start/i.test(b.textContent));
-    // Pick the lab's default ports, then the AWS account and back to this machine.
-    await user.click(within(dialog).getByText("The lab's default ports"));
+    // Try the AWS account, then back to this machine; it has more than one way, so pick the form:
+    // containers, with the lab's default ports.
     await user.click(within(dialog).getByText("AWS sandbox"));
     await user.click(within(dialog).getAllByText("This machine")[1]);
+    await user.click(within(dialog).getByText("Containers"));
+    await user.click(within(dialog).getByText("The lab's default ports"));
+    const confirm = within(dialog)
+      .getAllByRole("button")
+      .filter((b) => /^start$/i.test(b.textContent.trim()));
     await user.click(confirm[confirm.length - 1]);
     await flush();
     expect(h.onStart).toHaveBeenCalledWith(expect.objectContaining({ kind: "local" }));

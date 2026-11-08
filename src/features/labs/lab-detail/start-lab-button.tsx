@@ -81,9 +81,11 @@ export function StartLabButton({
           dockerRunning={dockerRunning}
           onClose={() => {
             setChoosing(false);
+            run.resetSteps();
           }}
           onStart={(target) => {
             setChoosing(false);
+            run.resetSteps();
             onStart(target);
           }}
         />
@@ -105,23 +107,7 @@ function StartDialog({
   onStart,
 }: Pick<StartLabProps, "lab" | "run" | "isDocker" | "busy" | "dockerRunning" | "onStart"> & { cloud: StartLabProps["cloud"]; onClose: () => void }) {
   const t = useT();
-  const footer = (
-    <>
-      <Button variant="ghost" size="sm" onClick={onClose}>
-        {t("labs.detail.cancel")}
-      </Button>
-      <Button
-        variant="primary"
-        size="sm"
-        disabled={!!cloud && !run.pickedAccount}
-        onClick={() => {
-          onStart(run.chosen());
-        }}
-      >
-        <Play className="size-3.5" /> {t("labs.detail.start")}
-      </Button>
-    </>
-  );
+  const footer = <StartFooter run={run} cloudGated={!!cloud} onClose={onClose} onStart={onStart} />;
   return (
     <RunOnDialog onClose={onClose} footer={footer}>
       <RunOnPicker
@@ -138,6 +124,8 @@ function StartDialog({
         onChange={run.setRunOn}
         disabled={busy}
         offerLocal={!cloud}
+        step={run.step}
+        onPickPlatform={run.pickPlatform}
         localExtra={run.runOn.kind === "local" && isDocker && <LocalPorts run={run} />}
       />
       {cloud && (
@@ -146,6 +134,34 @@ function StartDialog({
         </div>
       )}
     </RunOnDialog>
+  );
+}
+
+/** The dialog's actions: Back (only on the form step), Cancel, and Start. Start waits for a cloud
+ *  account to be picked (`cloudGated`). */
+function StartFooter({ run, cloudGated, onClose, onStart }: { run: RunTargetChoice; cloudGated: boolean; onClose: () => void; onStart: (t: RunTarget) => void }) {
+  const t = useT();
+  return (
+    <>
+      {run.step === "form" && (
+        <Button variant="ghost" size="sm" onClick={run.back}>
+          {t("labs.runOn.back")}
+        </Button>
+      )}
+      <Button variant="ghost" size="sm" onClick={onClose}>
+        {t("labs.detail.cancel")}
+      </Button>
+      <Button
+        variant="primary"
+        size="sm"
+        disabled={cloudGated && !run.pickedAccount}
+        onClick={() => {
+          onStart(run.chosen());
+        }}
+      >
+        <Play className="size-3.5" /> {t("labs.detail.start")}
+      </Button>
+    </>
   );
 }
 

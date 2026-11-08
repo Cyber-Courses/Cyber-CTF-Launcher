@@ -60,6 +60,12 @@
   "runOn": {
     "dialogLabel": "¿Dónde debe ejecutarse el lab?",
     "heading": "¿Dónde ejecutarlo?",
+    "formHeading": "¿Cómo ejecutarlo?",
+    "formContainers": "Contenedores",
+    "formInVm": "En una VM",
+    "formPerMachine": "Una VM por máquina",
+    "localForms": "Contenedores o en una VM",
+    "back": "Atrás",
     "checking": "Comprobando…",
     "online": "En línea",
     "needsAttention": "Requiere atención",

@@ -60,6 +60,12 @@
   "runOn": {
     "dialogLabel": "ラボをどこで実行しますか？",
     "heading": "どこで実行しますか？",
+    "formHeading": "どのように実行しますか？",
+    "formContainers": "コンテナ",
+    "formInVm": "VM 内",
+    "formPerMachine": "マシンごとに 1 台の VM",
+    "localForms": "コンテナまたは VM 内",
+    "back": "戻る",
     "checking": "確認中…",
     "online": "オンライン",
     "needsAttention": "要確認",
