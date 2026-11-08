@@ -5,6 +5,7 @@ import { setLocalePreference } from "@/lib/i18n";
 import {
   ATTACK_PRESETS,
   ATTACK_VM_PRESETS,
+  attackBoxLabel,
   attackImageLabel,
   CYBERCTF_ATTACK_REPO,
   DEFAULT_ATTACK_BOX,
@@ -89,7 +90,12 @@ describe("settings", () => {
   it("defaults to the Cyber CTF box pinned by digest, shown as its repository", () => {
     expect(DEFAULT_ATTACK_IMAGE).toMatch(/^cyberctf\/attack-box@sha256:[0-9a-f]{64}$/);
     expect(ATTACK_PRESETS[0].image).toBe(DEFAULT_ATTACK_IMAGE);
-    expect(attackImageLabel(DEFAULT_ATTACK_IMAGE)).toBe(CYBERCTF_ATTACK_REPO);
+    expect(attackImageLabel(DEFAULT_ATTACK_IMAGE)).toBe("Cyber CTF");
+    expect(attackImageLabel(CYBERCTF_ATTACK_REPO)).toBe("Cyber CTF");
+    expect(attackImageLabel(`${CYBERCTF_ATTACK_REPO}:latest`)).toBe("Cyber CTF");
+    expect(attackImageLabel("kalilinux/kali-rolling")).toBe("Kali");
+    expect(attackBoxLabel("kalilinux/rolling")).toBe("Kali");
+    expect(attackBoxLabel("me/box")).toBe("me/box");
     expect(attackImageLabel("ghcr.io/me/box")).toBe("ghcr.io/me/box");
     expect(OLD_ATTACK_IMAGES).toEqual(expect.arrayContaining(["cyberctf/attack-box", "cyberctf/attack-box:latest"]));
     expect(OLD_ATTACK_IMAGES).not.toContain(DEFAULT_ATTACK_IMAGE);

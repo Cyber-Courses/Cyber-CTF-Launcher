@@ -99,10 +99,20 @@ export function setAttackImage(image: string) {
   }
 }
 
-/** How an attack box image reads in the UI: the pinned default as its repository (the digest
- *  is noise to a player), anything else as saved. */
+/** How an attack box image reads in the UI: its preset's name (Cyber CTF, Kali, Parrot…), not a
+ *  Docker reference a player has no use for; a custom image as it was saved. */
 export function attackImageLabel(image: string): string {
-  return image === DEFAULT_ATTACK_IMAGE ? CYBERCTF_ATTACK_REPO : image;
+  // Cyber CTF's own box under any tag or digest is that preset; another preset by its name; a
+  // custom image as it was typed.
+  const ours = image === CYBERCTF_ATTACK_REPO || image.startsWith(`${CYBERCTF_ATTACK_REPO}:`) || image.startsWith(`${CYBERCTF_ATTACK_REPO}@`);
+  const preset = ours ? ATTACK_PRESETS.find((p) => p.image === DEFAULT_ATTACK_IMAGE) : ATTACK_PRESETS.find((p) => p.image === image);
+  return preset?.label ?? image;
+}
+
+/** The attack VM's Vagrant box as a learner reads it: its preset's name (Kali, Debian 12), else
+ *  the box as it was typed. */
+export function attackBoxLabel(box: string): string {
+  return ATTACK_VM_PRESETS.find((p) => p.box === box)?.label ?? box;
 }
 
 /** Earlier default images, for cleaning up what an older launcher downloaded. */

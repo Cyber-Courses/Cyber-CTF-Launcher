@@ -41,7 +41,7 @@ export function AttackBoxPanel({
           </>
         }
         action={
-          <span className="inline-block max-w-[9.5rem] truncate align-bottom font-mono text-[0.6875rem] text-faint" title={name}>
+          <span className="inline-block max-w-[9.5rem] truncate align-bottom text-[0.75rem] text-faint" title={box.ref ?? name}>
             {name}
           </span>
         }
