@@ -114,6 +114,20 @@ impl CloudRun {
         super::up_with(&self.running()?, &place.options(env), log).await
     }
 
+    /// Brings the running lab up to date with its regenerated module (a machine added to the lab
+    /// or taken out), with the account's credentials (`place`'s); the machines that run keep what
+    /// they were given.
+    pub(crate) async fn update(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> Result<()> {
+        let running = self.running()?;
+        let opts = place.options(&[]);
+        super::when_unlocked(log, |sink| {
+            let (running, opts) = (&running, &opts);
+            async move { running.update(opts, &sink).await.map(drop) }
+        })
+        .await
+        .map_err(errors::from_runner)
+    }
+
     /// Removes everything the run created in the account, with the parameters it was applied with
     /// (the connection is `place`'s, the account's as it is now).
     pub(crate) async fn down(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> Result<()> {

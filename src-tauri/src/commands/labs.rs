@@ -212,7 +212,33 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
 enum BoxRun {
     Local(isothrum::LabRun),
     Cloud(isothrum::CloudRun, isothrum::CloudPlace),
+    /// A cloud lab run as one VM per machine: no host for a box container, so the box is a
+    /// machine the launcher adds to the lab (`attack_machine`), brought up by updating the run.
+    CloudMachine(Box<CloudMachineBox>),
     Server(isothrum::ServerRun),
+}
+
+/// Where a lab run as one VM per machine in a cloud account keeps its box: the run, the account
+/// (its credentials for the update), the lab's folder, and the lab's module (`target`), which is
+/// regenerated once the box is added or taken out.
+struct CloudMachineBox {
+    run: isothrum::CloudRun,
+    place: isothrum::CloudPlace,
+    dir: std::path::PathBuf,
+    target: isoloom_spec::Target,
+}
+
+impl CloudMachineBox {
+    /// The lab regenerated with or without the box, then the run brought up to date with it.
+    async fn change(&self, with_box: bool, log: &mut impl FnMut(String)) -> Result<()> {
+        if with_box {
+            crate::runtime::attack_machine::add(&self.dir)?;
+        } else {
+            crate::runtime::attack_machine::remove(&self.dir)?;
+        }
+        crate::runtime::lab::prepare(&self.dir, self.target)?;
+        self.run.update(&self.place, log).await
+    }
 }
 
 impl BoxRun {
@@ -220,6 +246,8 @@ impl BoxRun {
         match self {
             BoxRun::Local(r) => r.attach(network, image, log).await,
             BoxRun::Cloud(r, place) => r.attach_with(&place.options(&[]), network, image, log).await,
+            // The box is Kali itself here: no image to run, no network to pick (its own).
+            BoxRun::CloudMachine(b) => b.change(true, log).await,
             BoxRun::Server(r) => r.attach(network, image, log).await,
         }
     }
@@ -228,6 +256,8 @@ impl BoxRun {
         match self {
             BoxRun::Local(r) => r.detach(log).await,
             BoxRun::Cloud(r, place) => r.detach_with(&place.options(&[]), log).await,
+            BoxRun::CloudMachine(b) if crate::runtime::attack_machine::added(&b.dir) => b.change(false, log).await,
+            BoxRun::CloudMachine(_) => Ok(()),
             BoxRun::Server(r) => r.detach(log).await,
         }
     }
@@ -236,6 +266,7 @@ impl BoxRun {
         match self {
             BoxRun::Local(r) => r.attack_status(network).await,
             BoxRun::Cloud(r, _) => r.attack_status(network).await,
+            BoxRun::CloudMachine(b) => b.run.machine_box_status(crate::runtime::attack_machine::NAME, network).await,
             BoxRun::Server(r) => r.attack_status(network).await,
         }
     }
@@ -244,6 +275,7 @@ impl BoxRun {
         match self {
             BoxRun::Local(r) => r.shell_command(),
             BoxRun::Cloud(r, _) => r.shell_command(),
+            BoxRun::CloudMachine(b) => b.run.console_command(crate::runtime::attack_machine::NAME),
             BoxRun::Server(r) => r.shell_command(),
         }
     }
@@ -266,7 +298,17 @@ fn box_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Opt
                 tf_env: c.tf_env.clone(),
                 ..isothrum::CloudPlace::default()
             };
-            Some(BoxRun::Cloud(isothrum::CloudRun::new(&home, dir, id, local_runtime(dir, runtime), cloud)?, place))
+            let form = local_runtime(dir, runtime);
+            let run = isothrum::CloudRun::new(&home, dir, id, form, cloud)?;
+            Some(match form {
+                Runtime::Vm => BoxRun::CloudMachine(Box::new(CloudMachineBox {
+                    run,
+                    place,
+                    dir: dir.to_path_buf(),
+                    target: crate::runtime::lab::terraform(dir, form, cloud).1,
+                })),
+                _ => BoxRun::Cloud(run, place),
+            })
         }
         Some(_) => Some(BoxRun::Server(isothrum::ServerRun::new(&home, dir, id, runtime)?)),
         None => match local_runtime(dir, runtime) {
@@ -422,16 +464,18 @@ mod tests {
         let _tools = Tools::rules(&[]);
         let dir = t.lab("srv", &[]);
         server::mark_lab(&dir, Some(&t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
-        let in_account = |dir: &std::path::Path| match super::box_run(&t.dirs(), dir, "srv", Runtime::Docker).unwrap() {
-            Some(super::BoxRun::Cloud(_, place)) => place.label,
-            _ => panic!("a cloud box run"),
-        };
         // cloud-docker (the default): a container in the lab's cloud VM.
-        assert_eq!(in_account(&dir), "aws1");
-        // One VM per machine (cloud-vm): an instance the module adds, applied with the account's
-        // place, so the box run carries it too.
+        match super::box_run(&t.dirs(), &dir, "srv", Runtime::Docker).unwrap() {
+            Some(super::BoxRun::Cloud(_, place)) => assert_eq!(place.label, "aws1"),
+            _ => panic!("a container box in the lab's cloud VM"),
+        }
+        // One VM per machine (cloud-vm): the box is a machine the launcher adds to the lab, the
+        // run updated with the account's place.
         mark_per_machine_vm(&dir, true).unwrap();
-        assert_eq!(in_account(&dir), "aws1");
+        match super::box_run(&t.dirs(), &dir, "srv", Runtime::Docker).unwrap() {
+            Some(super::BoxRun::CloudMachine(b)) => assert_eq!((b.place.label.as_str(), b.target), ("aws1", isoloom_spec::Target::CloudVm)),
+            _ => panic!("a machine box"),
+        }
     }
 
     #[tokio::test]

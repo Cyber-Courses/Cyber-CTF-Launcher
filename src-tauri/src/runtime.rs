@@ -16,6 +16,7 @@
 //! - `isothrum`: a container lab on this machine's Docker through the Isothrum runner, behind a
 //!   hidden developer switch (`CYBERCTF_RUNNER=isothrum`).
 
+pub(crate) mod attack_machine;
 pub(crate) mod cloud_services;
 pub(crate) mod discover;
 pub(crate) use discover::is_lab_id;

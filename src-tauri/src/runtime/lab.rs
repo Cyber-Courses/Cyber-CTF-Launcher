@@ -24,6 +24,7 @@ use crate::error::{Error, Result};
 
 mod instances;
 mod names;
+pub(crate) mod overlay;
 mod overrides;
 mod vars;
 
@@ -39,7 +40,8 @@ pub use isoloom_targets::Lab;
 /// The lab in `dir` as its author wrote it, checked (its fields, its lowered form's and the files
 /// it names), with this machine's Isoloom defaults' image table.
 pub fn lab(dir: &Path) -> Result<Lab> {
-    let source = isoloom_spec::load(dir).map_err(|e| Error::Invalid(load_error(&e)))?;
+    // With the launcher's additions (`overlay`) merged in, when it made any.
+    let source = overlay::spec_text(dir).and_then(|text| isoloom_spec::parse(&text)).map_err(|e| Error::Invalid(load_error(&e)))?;
     let lab = Lab::new(source).with_images(defaults(dir)?.images);
     let problems: Vec<String> = lab.problems_with_files(dir).iter().map(|p| p.render(isoloom_spec::SPEC_FILE)).collect();
     if !problems.is_empty() {
@@ -50,7 +52,10 @@ pub fn lab(dir: &Path) -> Result<Lab> {
 
 /// A spec as written, unchecked (what a launch dialog previews): `isoloom.yml` in `dir`.
 pub fn load(dir: &Path) -> Result<Spec> {
-    isoloom_spec::load(dir).map(|s| Lab::new(s).spec()).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
+    overlay::spec_text(dir)
+        .and_then(|text| isoloom_spec::parse(&text))
+        .map(|s| Lab::new(s).spec())
+        .map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
 }
 
 /// A spec from its text, unchecked.

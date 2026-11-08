@@ -59,6 +59,23 @@ impl OpenedRun {
         super::attack_status_in(&self.running()?, network, false).await
     }
 
+    /// The attack box as the lab page shows it when it is `machine`, a machine of the lab (the
+    /// launcher added it to the lab): its status as the runner reports it, the console into it.
+    pub(crate) async fn machine_box_status(&self, machine: &str, network: Option<&str>) -> Result<super::AttackStatus> {
+        if !self.manifest.is_file() {
+            return Ok(super::AttackStatus::default());
+        }
+        let running = self.running()?;
+        let status = running.status().await.map_err(errors::from_runner)?;
+        let shell = running.console_command(machine).ok().map(|c| super::attack_box::display(&c)).unwrap_or_default();
+        Ok(super::attack_box::status_of(&status, network, shell, false))
+    }
+
+    /// The command that opens a console into `machine`, any machine of the lab.
+    pub(crate) fn console_command(&self, machine: &str) -> Result<isothrum_runner::ShellCommand> {
+        self.running()?.console_command(machine).map_err(errors::from_runner)
+    }
+
     /// The command that opens a shell into the attack box: `ssh -t` to the lab's VM, then into
     /// the box, as the runner builds it.
     pub(crate) fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
