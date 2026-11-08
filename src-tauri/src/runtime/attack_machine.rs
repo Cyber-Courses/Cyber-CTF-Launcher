@@ -24,6 +24,9 @@ export DEBIAN_FRONTEND=noninteractive\n\
 apt-get update\n\
 apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold kali-linux-headless\n";
 
+/// Its disk: room for Kali's headless toolset (about 12 GB) beside the image.
+const DISK_GB: u32 = 40;
+
 /// The highest address the box takes on its network: the ones above are the gateway's, the
 /// tools' and Isoloom's controller and router's.
 const HIGHEST: u8 = 249;
@@ -42,7 +45,7 @@ pub(crate) fn add(dir: &Path) -> Result<()> {
         (2..=HIGHEST).rev().find(|o| !taken.contains(o)).ok_or_else(|| Error::Invalid(format!("no free address left on {network} for an attack box")))?;
     std::fs::write(dir.join(SETUP_FILE), SETUP)?;
     let machine = serde_yaml_ng::from_str::<Value>(&format!(
-        "{{ os: kali@rolling, access: true, networks: {{ {network:?}: {octet} }}, app: {{ steps: [{{ run: {SETUP_FILE} }}] }} }}"
+        "{{ os: kali@rolling, access: true, networks: {{ {network:?}: {octet} }}, resources: {{ disk_gb: {DISK_GB} }}, app: {{ steps: [{{ run: {SETUP_FILE} }}] }} }}"
     ))
     .map_err(|e| Error::Invalid(format!("the attack box's spec: {e}")))?;
     overlay::add_machine(dir, NAME, machine)
@@ -76,6 +79,7 @@ mod tests {
         let spec = lab::load(&dir).unwrap();
         let attackbox = &spec.machines[NAME];
         assert_eq!(attackbox.networks.get("lan"), Some(&248), "the highest address left");
+        assert!(attackbox.access, "the lab's access machine");
         assert!(dir.join(SETUP_FILE).is_file());
         remove(&dir).unwrap();
         assert!(!added(&dir) && !dir.join(SETUP_FILE).exists());
