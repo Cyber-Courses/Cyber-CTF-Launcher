@@ -104,16 +104,31 @@ describe("LabDetail: starting", () => {
     installTauri(quiet);
     const { user, h } = await clickStart({ readyVms: ["virtualbox"] });
     const dialog = screen.getByRole("dialog");
-    // Two rows: Containers (selected, with its ports) and In a VM.
+    // Two rows: Containers and In a VM. The port choice is NOT on this step.
     expect(within(dialog).getByText("Containers")).toBeTruthy();
     expect(within(dialog).getByText("In a VM")).toBeTruthy();
-    // The port choice shows only with Containers selected.
-    expect(within(dialog).getByText("Ports on this machine")).toBeTruthy();
-    await user.click(within(dialog).getByText("In a VM"));
     expect(within(dialog).queryByText("Ports on this machine")).toBeNull();
+    await user.click(within(dialog).getByText("In a VM"));
     await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local-vm", provider: "virtualbox" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("sends Containers to a ports step, and Back returns to the places", async () => {
+    installTauri(quiet);
+    const { user } = await clickStart({ readyVms: ["virtualbox"] });
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
+    expect(within(dialog).queryByText("Ports on this machine")).toBeNull();
+    await user.click(within(dialog).getByText("Containers"));
+    // The ports step: the choice is here, not with the places.
+    expect(within(dialog).getByText("Ports on this machine")).toBeTruthy();
+    expect(within(dialog).getByText("The lab's default ports")).toBeTruthy();
+    expect(within(dialog).queryByText("In a VM")).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Back" }));
+    expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
+    expect(within(dialog).getByText("In a VM")).toBeTruthy();
+    expect(within(dialog).queryByText("Ports on this machine")).toBeNull();
   });
 
   it("passes the ports picked in the dialog for containers here, and Cancel starts nothing", async () => {
@@ -122,7 +137,8 @@ describe("LabDetail: starting", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     await user.click(screen.getByRole("button", { name: /Start lab/ }));
-    // Containers is selected by default, its default ports right there.
+    // Containers takes a step to its ports, then the lab's default ports.
+    await user.click(within(screen.getByRole("dialog")).getByText("Containers"));
     await startIn(user, "The lab's default ports");
     expect(h.onStart).toHaveBeenCalledTimes(1);
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local", ports: "default" });

@@ -28,9 +28,9 @@ const targetKey = (t: RunTarget) => {
   }
 };
 
-/** The two steps of the picker: first the platform ("Where should it run?"), then, only when This
- *  machine's In a VM row has two VM forms, how it runs there ("How should it run?"). */
-export type PickerStep = "platform" | "form";
+/** The picker's steps: the places ("Where should it run?"), then — only when it is picked — the
+ *  Containers host ports or, when This machine's In a VM row has two VM forms, those VM forms. */
+export type PickerStep = "platform" | "ports" | "vmForms";
 
 /** A row a lab can be launched from in step 1: run here as containers, run here in a VM, or on one
  *  saved host. (A container lab's local form is `containers`; a VM lab's is `vm`.) */
@@ -87,8 +87,9 @@ export function RunOnDialog({ onClose, children, footer }: { onClose: () => void
  * The launch picker, in two steps. Step 1 ("Where should it run?") lists the places: This machine
  * as up to two rows (Containers, In a VM), then the player's servers, then their cloud accounts,
  * each with its logo and live status; a place the lab can't run on stays visible, disabled, saying
- * why. Containers and a lone VM form go straight to Start; an In a VM row with two VM forms opens
- * step 2 ("How should it run?"). `step`/`onPickPlatform` are driven by the caller (the hook).
+ * why. A lone VM form, a server and a cloud account go straight to Start; Containers opens the
+ * host-ports step (rendered by the caller), and an In a VM row with two VM forms opens the VM-forms
+ * step ("How should it run?"). `step`/`onPickPlatform` are driven by the caller (the hook).
  */
 type RunOnPickerProps = {
   title: string;
@@ -110,11 +111,9 @@ type RunOnPickerProps = {
    *  others ready for it, the switch); null when the lab or this machine can't. */
   perMachine?: PerMachineVm | null;
   value: RunTarget;
-  /** Picks a VM form in step 2 (the switches use `onPickVm`). */
+  /** Picks a VM form on the VM-forms step (the switches use `onPickVm`). */
   onChange: (t: RunTarget) => void;
   disabled: boolean;
-  /** The host-port choice for a container lab here: shown under the Containers row. */
-  localExtra?: React.ReactNode;
   /** This machine is a place it can run (false for a cloud lab: cloud accounts only). */
   offerLocal?: boolean;
   /** Which step to show. */
@@ -134,13 +133,13 @@ function PickerHeading({ heading, title }: { heading: string; title: string }) {
 }
 
 export function RunOnPicker(props: RunOnPickerProps) {
-  const { title, hosts, hostOk, localNote, dockerRunning, value, disabled, localExtra, offerLocal = true, offerContainers = true, step = "platform" } = props;
+  const { title, hosts, hostOk, localNote, dockerRunning, value, disabled, offerLocal = true, offerContainers = true, step = "platform" } = props;
   const { localVm, localVms = [], onPickVm = () => {}, perMachine = null, onChange, onPickPlatform = () => {} } = props;
   const t = useT();
   const checks = useHostChecks(hosts);
   const tiers = useRunTiers();
 
-  if (step === "form") {
+  if (step === "vmForms") {
     const forms = vmFormOptions(t, tiers, { localVm, localVms, onPickVm, perMachine });
     return (
       <div className="space-y-4">
@@ -158,11 +157,9 @@ export function RunOnPicker(props: RunOnPickerProps) {
   return (
     <div className="space-y-4">
       <PickerHeading heading={t("labs.runOn.heading")} title={title} />
-      {groups.flatMap((g) => [
-        <OptionList key={g.id} group={g} value={asRowTarget(value, localVm)} onChange={pick} disabled={disabled} />,
-        // The Containers row is a leaf: its host ports sit with This machine here.
-        g.id === "local" && localExtra ? <div key="local-extra">{localExtra}</div> : null,
-      ])}
+      {groups.map((g) => (
+        <OptionList key={g.id} group={g} value={asRowTarget(value, localVm)} onChange={pick} disabled={disabled} />
+      ))}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { cloudAccountsFor, hostSupports, isCloudLab, localProviders, perMachineProviders } from "@/features/labs/lab-runtime";
-import type { Platform, RunTarget } from "@/features/labs/run-on";
+import type { PickerStep, Platform, RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { getPortMode, setVmProvider, type PortMode } from "@/lib/settings";
 import { SERVER_CHANGED, serverList, type Provider, type ServerHost } from "@/lib/tauri";
@@ -114,11 +114,11 @@ function vmFormTargets(isCloud: boolean, isDocker: boolean, localVm: Provider | 
   return forms;
 }
 
-/** The picker's two steps. Step 1 picks a place: a host, Containers, or In a VM. Containers and a
- *  lone VM form select and stay on step 1 (next tap is Start); In a VM with two VM forms opens
- *  step 2. `resetSteps` (dialog open/close) and `back` (the footer) return to step 1. */
+/** The picker's steps. Step 1 picks a place: a host or a lone VM form starts straight away; picking
+ *  Containers opens the host-ports step; picking In a VM with two VM forms opens the VM-forms step.
+ *  `resetSteps` (dialog open/close) and `back` (the footer) return to the places. */
 function usePickerSteps(runOn: RunTarget, setRunOn: (t: RunTarget) => void, vmForms: RunTarget[]) {
-  const [step, setStep] = useState<"platform" | "form">("platform");
+  const [step, setStep] = useState<PickerStep>("platform");
   const toPlatform = () => {
     setStep("platform");
   };
@@ -129,14 +129,15 @@ function usePickerSteps(runOn: RunTarget, setRunOn: (t: RunTarget) => void, vmFo
       return;
     }
     if (p.kind === "containers") {
+      // The host ports are their own step; the place is settled here.
       setRunOn({ kind: "local" });
-      setStep("platform");
+      setStep("ports");
       return;
     }
-    // "In a VM": two forms open step 2 (keeping a VM form selected); one starts straight away.
+    // "In a VM": two forms open the VM-forms step (keeping a VM form selected); one starts at once.
     if (vmForms.length >= 2) {
       if (runOn.kind !== "local-vm" && runOn.kind !== "local-vms") setRunOn(vmForms[0]);
-      setStep("form");
+      setStep("vmForms");
     } else {
       setRunOn(vmForms[0] ?? { kind: "local" });
       setStep("platform");

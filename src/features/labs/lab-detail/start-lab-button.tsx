@@ -110,25 +110,28 @@ function StartDialog({
   const footer = <StartFooter run={run} cloudGated={!!cloud} onClose={onClose} onStart={onStart} />;
   return (
     <RunOnDialog onClose={onClose} footer={footer}>
-      <RunOnPicker
-        title={lab.title}
-        hosts={run.hosts}
-        hostOk={run.hostOk}
-        localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
-        localVm={run.localVm}
-        localVms={run.localVms}
-        onPickVm={run.pickVm}
-        perMachine={run.perMachine}
-        dockerRunning={isDocker ? dockerRunning : null}
-        value={run.runOn}
-        onChange={run.setRunOn}
-        disabled={busy}
-        offerLocal={!cloud}
-        offerContainers={isDocker}
-        step={run.step}
-        onPickPlatform={run.pickPlatform}
-        localExtra={run.runOn.kind === "local" && isDocker && <LocalPorts run={run} />}
-      />
+      {run.step === "ports" ? (
+        <PortsStep title={lab.title} run={run} />
+      ) : (
+        <RunOnPicker
+          title={lab.title}
+          hosts={run.hosts}
+          hostOk={run.hostOk}
+          localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
+          localVm={run.localVm}
+          localVms={run.localVms}
+          onPickVm={run.pickVm}
+          perMachine={run.perMachine}
+          dockerRunning={isDocker ? dockerRunning : null}
+          value={run.runOn}
+          onChange={run.setRunOn}
+          disabled={busy}
+          offerLocal={!cloud}
+          offerContainers={isDocker}
+          step={run.step}
+          onPickPlatform={run.pickPlatform}
+        />
+      )}
       {cloud && (
         <div className="mt-4">
           <CloudLaunchNote preview={cloud.preview} autoStopHours={run.pickedAccount?.autoStopHours ?? null} />
@@ -138,13 +141,13 @@ function StartDialog({
   );
 }
 
-/** The dialog's actions: Back (only on the form step), Cancel, and Start. Start waits for a cloud
+/** The dialog's actions: Back (off the places step), Cancel, and Start. Start waits for a cloud
  *  account to be picked (`cloudGated`). */
 function StartFooter({ run, cloudGated, onClose, onStart }: { run: RunTargetChoice; cloudGated: boolean; onClose: () => void; onStart: (t: RunTarget) => void }) {
   const t = useT();
   return (
     <>
-      {run.step === "form" && (
+      {run.step !== "platform" && (
         <Button variant="ghost" size="sm" onClick={run.back}>
           {t("labs.runOn.back")}
         </Button>
@@ -166,12 +169,15 @@ function StartFooter({ run, cloudGated, onClose, onStart }: { run: RunTargetChoi
   );
 }
 
-/** The host ports for a container lab started here. */
-function LocalPorts({ run }: { run: RunTargetChoice }) {
+/** Step 2 for Containers: the host ports this machine publishes the lab's services on. */
+function PortsStep({ title, run }: { title: string; run: RunTargetChoice }) {
   const t = useT();
   return (
-    <div className="space-y-1.5">
-      <p className="section-label">{t("labs.detail.portsHere")}</p>
+    <div className="space-y-4">
+      <div>
+        <p className="serif-title text-[1.5rem] text-foreground">{t("labs.detail.portsHere")}</p>
+        <p className="mt-1 text-[0.8125rem] text-muted-foreground">{title}</p>
+      </div>
       <PortChoice value={run.ports} onChange={run.setPorts} />
     </div>
   );

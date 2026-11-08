@@ -133,12 +133,12 @@ describe("RunOnPicker", () => {
     expect(onPickPlatform).toHaveBeenLastCalledWith({ kind: "vm" } satisfies Platform);
   });
 
-  it("offers only the two VM forms, each with its switch, on the form step", async () => {
+  it("offers only the two VM forms, each with its switch, on the VM-forms step", async () => {
     installTauri();
     const user = userEvent.setup();
     const onPick = vi.fn();
     const { onChange } = renderPicker({
-      step: "form",
+      step: "vmForms",
       hosts: [],
       dockerRunning: true,
       localVm: "utm",
