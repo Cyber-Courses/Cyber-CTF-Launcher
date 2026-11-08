@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { attackBoxAttach, attackBoxDetach, attackBoxStatus, type AttackStatus, type Runtime } from "@/lib/tauri";
 import { startOnce } from "@/lib/start-once";
-import { attackBoxLabel, attackImageLabel, getAttackBoxChoice, getAttackImage, getAutoAttackBox } from "@/lib/settings";
+import { attackImageLabel, getAttackBoxChoice, getAttackImage, getAutoAttackBox } from "@/lib/settings";
 import { translate } from "@/lib/i18n";
 import { ignore } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
@@ -131,11 +131,8 @@ export function useAttackBox(
   // Until the status says, the lab's declared runtime stands in: a VM lab's box is a VM.
   const vm = status?.vm ?? runtime === "VM";
   const pickedBox = status?.pickedBox ?? false;
-  // The image or box in use: by name for the panel (Cyber CTF, Kali…), the lab's own default box
-  // until one is picked; its full reference (`ref`) for the hover title.
-  const choice = pickedBox ? getAttackBoxChoice() : getAttackImage();
-  const name = pickedBox ? (choice ? attackBoxLabel(choice) : translate("labs.attackBox.defaultBox")) : attackImageLabel(choice ?? "");
-  const ref = choice ?? undefined;
+  // The image or box in use, for the panel's label: the lab's own default box until one is picked.
+  const name = pickedBox ? (getAttackBoxChoice() ?? translate("labs.attackBox.defaultBox")) : attackImageLabel(getAttackImage());
 
   const start = useCallback(
     () => run((l) => attach(labId, runtime, network, pickedBox, l), translate("labs.attackBox.attaching")),
@@ -153,7 +150,7 @@ export function useAttackBox(
   );
   useAutoStart({ running, holding, active, reachable, failed }, status, busy, start);
 
-  return { status, busy, log, start, stop, vm, name, ref, networks: status?.networks ?? [], network, setNetwork };
+  return { status, busy, log, start, stop, vm, name, networks: status?.networks ?? [], network, setNetwork };
 }
 
 export type AttackBox = ReturnType<typeof useAttackBox>;

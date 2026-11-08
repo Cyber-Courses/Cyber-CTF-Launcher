@@ -76,8 +76,7 @@ describe("useAttackBox", () => {
     const { result } = renderHook(() => useAttackBox("ab-vm", { running: true, reachable: true, runtime: "VM" }));
     await flush();
     expect(calls.find((c) => c.cmd === "attack_box_status")?.args).toEqual({ id: "ab-vm", runtime: "VM", network: null });
-    expect(result.current.name).toBe("Kali");
-    expect(result.current.ref).toBe("kalilinux/rolling");
+    expect(result.current.name).toBe("kalilinux/rolling");
     await act(() => result.current.start());
     expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "ab-vm", runtime: "VM", pick: { image: "kalilinux/rolling" } });
     expect(result.current.log).toEqual(["Starting the attack box…", "==> attach: adding kali"]);
