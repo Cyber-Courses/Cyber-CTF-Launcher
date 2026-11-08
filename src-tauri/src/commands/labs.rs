@@ -29,6 +29,7 @@ pub async fn lab_launch(
     default_ports: Option<bool>,
     offline: Option<bool>,
     per_machine_vm: Option<bool>,
+    docker_engine: Option<String>,
     logs: Channel<String>,
 ) -> Result<()> {
     let request = LaunchRequest {
@@ -39,6 +40,7 @@ pub async fn lab_launch(
         default_ports: default_ports.unwrap_or(false),
         offline: offline.unwrap_or(false),
         per_machine_vm: per_machine_vm.unwrap_or(false),
+        docker_engine,
     };
     // The deploy runs in a detached worker process, so quitting (or crashing) the app never cuts a
     // vagrant/docker/terraform run short; this command only follows the worker's log.
@@ -368,7 +370,7 @@ mod tests {
     async fn start_docker(t: &TestApp, id: &str, logs: Channel<String>) -> crate::error::Result<()> {
         let dirs = t.dirs();
         let dir = super::lab_dir(&dirs, id)?;
-        crate::runtime::start(&dirs, &dir, id, Runtime::Docker, None, None, false, &[], super::channel_log(logs)).await
+        crate::runtime::start(&dirs, &dir, id, Runtime::Docker, None, None, false, None, &[], super::channel_log(logs)).await
     }
 
     fn sink() -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {
@@ -557,7 +559,7 @@ mod tests {
         // a bad attack-box image is refused before the backend is ever asked, so nothing streams.
         let t = TestApp::new();
         let s = sink();
-        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, None, channel(s.clone())).await;
+        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, None, None, channel(s.clone())).await;
         assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
         assert!(s.lock().unwrap().is_empty(), "the backend was never asked");
     }

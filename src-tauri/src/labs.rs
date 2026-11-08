@@ -47,6 +47,8 @@ pub(crate) struct Placement<'a> {
     pub attackbox_image: Option<&'a str>,
     pub default_ports: bool,
     pub per_machine_vm: bool,
+    /// The Docker context a container lab here was pinned to (the chosen engine), if any.
+    pub docker_context: Option<&'a str>,
 }
 
 /// Only CyberCTF repositories at a full commit SHA are downloaded; the API
@@ -355,7 +357,19 @@ pub(crate) async fn run(dirs: &AppDirs, launch_json: serde_json::Value, placemen
     let dir = install(dirs, release, &log).await?;
     // Fixed names for every lab; the evidence itself is never in the environment.
     let env = launch_env(launch.env, placement.attackbox_image, placement.default_ports);
-    runtime::start_locked(dirs, &dir, &launch.lab_id, launch.runtime, placement.provider, placement.host, placement.per_machine_vm, &env, log).await?;
+    runtime::start_locked(
+        dirs,
+        &dir,
+        &launch.lab_id,
+        launch.runtime,
+        placement.provider,
+        placement.host,
+        placement.per_machine_vm,
+        placement.docker_context,
+        &env,
+        log,
+    )
+    .await?;
     // Where the lab's target is reachable on this machine, for the website to open.
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
 }
@@ -420,6 +434,9 @@ pub struct LaunchRequest {
     /// A container lab whose spec has VM recipes too, run on this machine as one VM per machine
     /// (the form of a VM lab) on `provider`, instead of as containers.
     pub per_machine_vm: bool,
+    /// The container engine a container lab here runs on, when the player chose one other than the
+    /// current context (`docker-desktop`, `orbstack`, …). Resolved to its Docker context at launch.
+    pub docker_engine: Option<String>,
 }
 
 /// Prepares `request`'s launch: validates the attack-box image, resolves the `startLab` spec (the
@@ -428,14 +445,20 @@ pub struct LaunchRequest {
 /// worker, started by the command layer (so quitting the app never cuts a run short); `log`
 /// carries the one "starting offline" line the preparation may emit.
 pub(crate) async fn launch_job(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<Job> {
-    let LaunchRequest { lab_id, provider, host, attackbox_image, default_ports, offline, per_machine_vm } = request;
+    let LaunchRequest { lab_id, provider, host, attackbox_image, default_ports, offline, per_machine_vm, docker_engine } = request;
     if let Some(image) = &attackbox_image
         && !crate::platform::exec::valid_image(image)
     {
         return Err(Error::Invalid(format!("invalid attack-box image `{image}`")));
     }
+    // Resolve the chosen engine to its Docker context now (here on the main process, where Docker
+    // answers): a container lab on a server never carries one.
+    let docker_context = match (&docker_engine, &host) {
+        (Some(engine), None) => crate::machine::system::docker::context_for_engine(engine).await,
+        _ => None,
+    };
     let startlab = launch_spec(dirs, &lab_id, offline, log).await?;
-    Ok(Job { lab_id, op: Op::Launch, launch: startlab, provider, host, attackbox_image, default_ports, per_machine_vm })
+    Ok(Job { lab_id, op: Op::Launch, launch: startlab, provider, host, attackbox_image, default_ports, per_machine_vm, docker_context })
 }
 
 /// A stable lab id for a lab imported from the local directory `src`: `local-<slug>` of the lab's
@@ -491,7 +514,7 @@ pub(crate) async fn run_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: imp
     runtime::validate_id(lab_id)?;
     let _lock = runtime::lock_lab(dirs, lab_id).await?;
     let dir = install_local(dirs, lab_id, src, &log).await?;
-    runtime::start_locked(dirs, &dir, lab_id, Runtime::Docker, None, None, false, &[], log).await?;
+    runtime::start_locked(dirs, &dir, lab_id, Runtime::Docker, None, None, false, None, &[], log).await?;
     Ok(runtime::primary_url(&dir, lab_id, Runtime::Docker).await)
 }
 
@@ -770,6 +793,7 @@ mod tests {
             default_ports: false,
             offline: false,
             per_machine_vm: false,
+            docker_engine: None,
         };
         let err = launch_job(&t.dirs(), request, &|_: String| {}).await;
         assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");

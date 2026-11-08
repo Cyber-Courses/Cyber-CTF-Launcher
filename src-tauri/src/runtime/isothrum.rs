@@ -31,7 +31,10 @@ pub(crate) use server::{ServerPlace, ServerRun};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use isothrum_runner::{Occupied, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, SystemProcesses};
+use isothrum_runner::process::{Exit, OnLine, ProcessError};
+use isothrum_runner::{
+    BoxFuture, Occupied, ProcessRunner, ProcessSpec, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, SystemProcesses,
+};
 
 use super::docker::{Check, PORTS_ENV};
 
@@ -123,7 +126,8 @@ impl LabRun {
     /// folder), with this host's tools. The learner's attack box is the lab's on-demand access
     /// machine, hot-added into the run on demand (see [`LabRun::attach`]).
     pub(crate) fn docker(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
-        LabRun::with(host_config(home), dir, id, Kind::Docker)
+        // The lab's docker calls go to the engine chosen at launch (its marker), if any.
+        LabRun::with(host_config(home, paths::engine(dir)), dir, id, Kind::Docker)
     }
 
     /// VM lab `id`, installed in `dir`, on the runner whose home is `home`, with this host's tools.
@@ -132,21 +136,21 @@ impl LabRun {
     /// as GNS3 adds one to a live topology, through the hook every Isoloom Vagrantfile carries (see
     /// [`LabRun::attach`]).
     pub(crate) fn vm(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
-        LabRun::with(host_config(home), dir, id, Kind::Vm)
+        LabRun::with(host_config(home, None), dir, id, Kind::Vm)
     }
 
     /// Container lab `id` in one local VM (Isoloom's `docker-vm`: Docker Compose inside a VM),
     /// installed in `dir`, on the runner whose home is `home`. Its attack box is a container the
     /// runner stands up inside the VM, beside the lab's, on the lab's network there.
     pub(crate) fn docker_in_vm(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
-        LabRun::with(host_config(home), dir, id, Kind::DockerVm)
+        LabRun::with(host_config(home, None), dir, id, Kind::DockerVm)
     }
 
     /// VM lab `id`, installed in `dir`, on the ESXi server `place`, through the runner whose home
     /// is `home`.
     pub(crate) fn on_esxi(home: &Path, dir: &Path, id: &str, runtime: Runtime, place: EsxiPlace) -> Result<LabRun> {
         let kind = if runtime == Runtime::Docker { Kind::DockerVm } else { Kind::Vm };
-        Ok(LabRun::with(host_config(home), dir, id, kind)?.on(place))
+        Ok(LabRun::with(host_config(home, None), dir, id, kind)?.on(place))
     }
 
     /// The run on the ESXi server `place`.
@@ -392,10 +396,45 @@ async fn checks_of(lab: &Running<'_>, opts: &RunOptions) -> Result<Check> {
     Ok(view::check(&report, &output))
 }
 
-/// A runner at `home` with this host's tools.
-fn host_config(home: &Path) -> RunnerConfig {
+/// Pins a lab's docker/compose calls to one engine: when a Docker context was chosen for the run,
+/// `docker …` becomes `docker --context <ctx> …`. The runner's `SystemProcesses` strips a
+/// `DOCKER_CONTEXT` env (to follow the current context), so the flag is used instead; it takes
+/// precedence and is not stripped. Non-docker tools, and docker calls that already carry
+/// `--context`, pass through untouched.
+struct EngineProcesses {
+    inner: SystemProcesses,
+    context: String,
+}
+
+impl ProcessRunner for EngineProcesses {
+    fn run<'a>(&'a self, spec: &'a ProcessSpec, on_line: OnLine<'a>) -> BoxFuture<'a, std::result::Result<Exit, ProcessError>> {
+        match pin_docker(spec, &self.context) {
+            None => self.inner.run(spec, on_line),
+            Some(pinned) => Box::pin(async move { self.inner.run(&pinned, on_line).await }),
+        }
+    }
+}
+
+/// `spec` with `--context <context>` put before its arguments, when it is a plain `docker` call;
+/// None when it needs no change (not docker, or already carrying `--context`).
+fn pin_docker(spec: &ProcessSpec, context: &str) -> Option<ProcessSpec> {
+    if spec.program != "docker" || spec.args.first().is_some_and(|a| a == "--context") {
+        return None;
+    }
+    let mut pinned = spec.clone();
+    pinned.args.splice(0..0, ["--context".to_string(), context.to_string()]);
+    Some(pinned)
+}
+
+/// A runner at `home` with this host's tools; a container lab's docker calls pinned to `context`
+/// (the engine chosen at launch), else the current Docker context as before.
+fn host_config(home: &Path, context: Option<String>) -> RunnerConfig {
     let processes = SystemProcesses::for_host(|var| std::env::var(var).ok(), crate::platform::home_dir().as_deref());
-    RunnerConfig::new(home).with_processes(Arc::new(processes))
+    let runner: Arc<dyn ProcessRunner> = match context {
+        Some(context) => Arc::new(EngineProcesses { inner: processes, context }),
+        None => Arc::new(processes),
+    };
+    RunnerConfig::new(home).with_processes(runner)
 }
 
 /// A start's options: the launch's values for the manifest's secret and input slots (a value no
@@ -411,6 +450,24 @@ fn start_options(env: &[(String, String)], provider: Option<&str>) -> RunOptions
         opts = opts.with_provider(p);
     }
     if env.iter().any(|(k, v)| k == PORTS_ENV && v == "default") { opts.with_param("ISOLOOM_PUBLISH_FIXED", "1") } else { opts }
+}
+
+#[cfg(test)]
+mod engine_tests {
+    use super::{ProcessSpec, pin_docker};
+
+    #[test]
+    fn a_chosen_engine_pins_the_labs_docker_calls_through_its_context() {
+        // Every docker/compose call the runner makes for the lab gets `--context <chosen>` first,
+        // so it reaches the chosen engine however the current context changes under it.
+        let pinned = pin_docker(&ProcessSpec::new("docker", ["compose", "-p", "cyberctf-x", "up"]), "orbstack").unwrap();
+        assert_eq!(pinned.program, "docker");
+        assert_eq!(pinned.args, ["--context", "orbstack", "compose", "-p", "cyberctf-x", "up"]);
+        // A non-docker tool (vagrant for a VM form) is left exactly as it was.
+        assert!(pin_docker(&ProcessSpec::new("vagrant", ["up"]), "orbstack").is_none());
+        // A docker call that already names a context is left alone (never two `--context`).
+        assert!(pin_docker(&ProcessSpec::new("docker", ["--context", "colima", "ps"]), "orbstack").is_none());
+    }
 }
 
 #[cfg(test)]

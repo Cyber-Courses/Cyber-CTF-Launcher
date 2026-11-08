@@ -30,9 +30,20 @@ pub(super) const PORTS_FILE: &str = ".cyberctf-ports.yml";
 /// Without that file (a lab upgraded or re-instanced while its containers run), the project
 /// alone: Compose finds its containers by their labels, so `ps`, `stop`, `start` and `down`
 /// still reach them, where a missing `-f` made every one of them fail.
+/// `--context <name>` when the lab in `dir` was pinned to a Docker engine at launch, else nothing:
+/// the launcher's own docker/compose calls for the lab then go to that engine (the runner pins its
+/// calls through `EngineProcesses`). The flag takes precedence over the current context.
+pub(super) fn context_prefix(dir: &Path) -> Vec<String> {
+    match crate::runtime::paths::engine(dir) {
+        Some(ctx) => vec!["--context".to_string(), ctx],
+        None => Vec::new(),
+    }
+}
+
 fn args(dir: &Path, project: &str, rest: &[&str]) -> Vec<String> {
     let file = crate::runtime::lab::compose_file(dir);
-    let mut a = vec!["compose".to_string(), "-p".into(), project.into()];
+    let mut a = context_prefix(dir);
+    a.extend(["compose".to_string(), "-p".into(), project.into()]);
     if file.is_file() {
         a.extend(["-f".into(), file.display().to_string()]);
         if dir.join(PORTS_FILE).is_file() {
@@ -103,13 +114,17 @@ fn rm_args(ids: &str) -> Option<Vec<&str>> {
 }
 
 /// Removes every container of a Compose project, one-off `run` containers included (`down`
-/// leaves those, so a check runner still going kept a removed lab "running").
-pub(super) async fn remove_all_containers(project: &str) {
+/// leaves those, so a check runner still going kept a removed lab "running"). On the engine the
+/// lab in `dir` was pinned to, if any.
+pub(super) async fn remove_all_containers(dir: &Path, project: &str) {
     let filter = format!("label=com.docker.compose.project={project}");
-    if let Ok(ids) = crate::platform::exec::run("docker", &["ps", "-aq", "--filter", &filter], None).await
+    let prefix = context_prefix(dir);
+    let ps: Vec<&str> = prefix.iter().map(String::as_str).chain(["ps", "-aq", "--filter", filter.as_str()]).collect();
+    if let Ok(ids) = crate::platform::exec::run("docker", &ps, None).await
         && let Some(args) = rm_args(&ids)
     {
-        let _ = crate::platform::exec::run("docker", &args, None).await;
+        let rm: Vec<&str> = prefix.iter().map(String::as_str).chain(args).collect();
+        let _ = crate::platform::exec::run("docker", &rm, None).await;
     }
 }
 
@@ -180,6 +195,23 @@ mod tests {
         std::fs::write(&file, "services: {}\n").unwrap();
         let a = args(&dir, "cyberctf-x", &["ps"]);
         assert_eq!(a[3..], ["-f".to_string(), file.display().to_string(), "-f".into(), PORTS_FILE.into(), "ps".into()]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_lab_pinned_to_an_engine_runs_its_compose_on_that_context() {
+        use super::{args, context_prefix};
+        use crate::runtime::paths::ENGINE_MARKER;
+        let dir = std::env::temp_dir().join(format!("cyberctf-compose-ctx-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // No engine recorded: no `--context`, today's behaviour (the current context).
+        assert!(context_prefix(&dir).is_empty());
+        assert_eq!(args(&dir, "cyberctf-x", &["down"]), ["compose", "-p", "cyberctf-x", "down"]);
+        // Pinned to an engine: every compose call carries `--context <ctx>` first, whatever the
+        // machine's current context is now (so stop reaches the engine it was started on).
+        std::fs::write(dir.join(ENGINE_MARKER), "orbstack\n").unwrap();
+        assert_eq!(context_prefix(&dir), ["--context", "orbstack"]);
+        assert_eq!(args(&dir, "cyberctf-x", &["down"]), ["--context", "orbstack", "compose", "-p", "cyberctf-x", "down"]);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

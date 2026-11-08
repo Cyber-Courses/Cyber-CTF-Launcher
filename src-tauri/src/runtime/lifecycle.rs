@@ -6,7 +6,9 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::inflight::{Action, DeployGuard, lock_lab};
-use super::paths::{lab_dir, local_runtime, local_vm, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm, runner_home, vagrant_dirs};
+use super::paths::{
+    lab_dir, local_runtime, local_vm, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm, runner_home, vagrant_dirs,
+};
 use super::{LabRef, Park, Runtime, docker, isothrum, lab, server, vm};
 use crate::error::{Error, Result};
 
@@ -250,11 +252,12 @@ pub(super) async fn stop_vm_run(home: &std::path::Path, dir: &Path, id: &str, mu
     forget_run(dir)
 }
 
-/// A stopped lab's markers: where it ran, its local VM, its per-machine form, parked.
+/// A stopped lab's markers: where it ran, its local VM, its per-machine form, its engine, parked.
 fn forget_run(dir: &Path) -> Result<()> {
     server::mark_lab(dir, None)?;
     mark_local_vm(dir, None)?;
     mark_per_machine_vm(dir, false)?;
+    mark_engine(dir, None)?;
     mark_parked(dir, None)
 }
 

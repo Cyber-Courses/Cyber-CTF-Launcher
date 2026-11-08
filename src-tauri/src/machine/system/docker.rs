@@ -136,15 +136,16 @@ pub(super) fn running_of(engines: &[EngineStatus]) -> Vec<&'static str> {
     engines.iter().filter(|e| e.running).map(|e| e.engine).collect()
 }
 
+/// The Docker context behind `engine` on this machine, for pinning a lab to it (`DOCKER_CONTEXT` /
+/// `docker --context <name>`). None when no context on this machine names that engine.
+pub async fn context_for_engine(engine: &str) -> Option<String> {
+    engine_contexts().await.into_iter().find(|(_, e)| *e == engine).map(|(name, _)| name)
+}
+
 /// Points the Docker CLI at another running engine (`docker context use`), as the player
 /// would in a terminal. Labs then run on it.
 pub async fn docker_use_engine(engine: String) -> Result<()> {
-    let name = engine_contexts()
-        .await
-        .into_iter()
-        .find(|(_, e)| *e == engine)
-        .map(|(name, _)| name)
-        .ok_or_else(|| Error::Invalid(format!("no Docker context for {engine}")))?;
+    let name = context_for_engine(&engine).await.ok_or_else(|| Error::Invalid(format!("no Docker context for {engine}")))?;
     run("docker", &["context", "use", &name], None).await?;
     Ok(())
 }
@@ -271,6 +272,14 @@ mod tests {
 
     const DENIED: &str = "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock";
     const DOWN: &str = "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?";
+
+    #[tokio::test]
+    async fn an_engines_context_is_resolved_for_pinning_a_lab_to_it() {
+        let _tools = Tools::rules(&[("context ls", ok("default *\norbstack\ncolima-dev\n"))]);
+        assert_eq!(context_for_engine("colima").await.as_deref(), Some("colima-dev"));
+        assert_eq!(context_for_engine("orbstack").await.as_deref(), Some("orbstack"));
+        assert_eq!(context_for_engine("podman").await, None);
+    }
 
     #[tokio::test]
     async fn the_cli_is_pointed_at_the_context_of_the_engine_asked_for() {

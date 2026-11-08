@@ -75,7 +75,7 @@ async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
     let started = std::time::Instant::now();
     let mut f = Vec::new();
     // The launch as the job runs it: the catalogue's runtime, the hypervisor, the override.
-    let up = super::start(&t.dirs(), &dir, &id, Runtime::Docker, Some(provider), None, true, &inputs(), log(&id)).await;
+    let up = super::start(&t.dirs(), &dir, &id, Runtime::Docker, Some(provider), None, true, None, &inputs(), log(&id)).await;
     match up {
         Ok(()) => {
             check(per_machine_vm(&dir) && dir.join(PER_MACHINE_MARKER).is_file(), "the form is recorded with the lab".into(), &mut f);

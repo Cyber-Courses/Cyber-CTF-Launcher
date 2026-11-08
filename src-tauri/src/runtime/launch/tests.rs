@@ -23,7 +23,7 @@ async fn start_here_as(
 ) -> (crate::error::Result<()>, Vec<String>) {
     let dir = t.data().join("labs").join(id);
     let mut log = Vec::new();
-    let r = start(&t.dirs(), &dir, id, runtime, provider, None, per_machine_vm, env, |l| log.push(l)).await;
+    let r = start(&t.dirs(), &dir, id, runtime, provider, None, per_machine_vm, None, env, |l| log.push(l)).await;
     (r, log)
 }
 
@@ -42,7 +42,7 @@ async fn a_lab_on_qemu_is_checked_for_its_emulator() {
 async fn start_on(t: &TestApp, id: &str, runtime: Runtime, host: &str) -> (crate::error::Result<()>, Vec<String>) {
     let dir = t.data().join("labs").join(id);
     let mut log = Vec::new();
-    let r = start(&t.dirs(), &dir, id, runtime, None, Some(host), false, &[], |l| log.push(l)).await;
+    let r = start(&t.dirs(), &dir, id, runtime, None, Some(host), false, None, &[], |l| log.push(l)).await;
     (r, log)
 }
 
@@ -225,7 +225,7 @@ async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
     t.host("pve1", "proxmox", serde_json::json!({}));
     let tools = Tools::rules(&[]);
     let mut log = Vec::new();
-    let err = start(&t.dirs(), &dir, "both", Runtime::Docker, None, Some("pve1"), true, &[], |l| log.push(l)).await.unwrap_err().to_string();
+    let err = start(&t.dirs(), &dir, "both", Runtime::Docker, None, Some("pve1"), true, None, &[], |l| log.push(l)).await.unwrap_err().to_string();
     assert_eq!(err, super::PER_MACHINE_HERE_ONLY);
     assert!(tools.calls().is_empty() && !per_machine_vm(&dir), "{:?}", tools.calls());
     // UTM: Isoloom refuses the vagrant target there (vagrant_utm gives a VM no private network),

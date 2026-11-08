@@ -130,6 +130,22 @@ pub(crate) fn local_runtime(dir: &Path, runtime: Runtime) -> Runtime {
     if runtime == Runtime::Docker && per_machine_vm(dir) { Runtime::Vm } else { runtime }
 }
 
+/// The Docker context a container lab here was started on (`orbstack`, `desktop-linux`, …), when
+/// the player chose an engine other than the current one. Every docker/compose call for the lab —
+/// the launcher's and the runner's — then goes to that context, so status, stop, park, checks, the
+/// attack box and the shell stay on the engine the lab runs on even if the current context later
+/// changes. Nothing written = the current context, as before.
+pub const ENGINE_MARKER: &str = ".cyberctf-engine";
+
+pub(super) fn mark_engine(dir: &Path, context: Option<&str>) -> Result<()> {
+    set_marker(dir, ENGINE_MARKER, context)
+}
+
+/// The Docker context a container lab here runs on, if one was recorded at launch.
+pub(crate) fn engine(dir: &Path) -> Option<String> {
+    std::fs::read_to_string(dir.join(ENGINE_MARKER)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
 /// The host keys of a lab's own hosts that Vagrant runs (a lab VM here, a lab host on ESXi), for
 /// its attack box shell. Kept with the lab, not shared: another lab later given the same address
 /// (DHCP, a recycled IP) has another key, and a shared pin refused every shell to it.
@@ -199,6 +215,25 @@ mod tests {
         mark_per_machine_vm(&dir, false).unwrap();
         assert!(!per_machine_vm(&dir));
         assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Docker);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn engine_marker_round_trips_and_reads_trimmed() {
+        use super::{ENGINE_MARKER, engine, mark_engine};
+        let dir = temp_dir("cyberctf-engine");
+        assert_eq!(engine(&dir), None);
+        mark_engine(&dir, Some("orbstack")).unwrap();
+        assert_eq!(engine(&dir).as_deref(), Some("orbstack"));
+        // A trailing newline changes nothing; blank is none.
+        std::fs::write(dir.join(ENGINE_MARKER), "desktop-linux\n").unwrap();
+        assert_eq!(engine(&dir).as_deref(), Some("desktop-linux"));
+        std::fs::write(dir.join(ENGINE_MARKER), "  \n").unwrap();
+        assert_eq!(engine(&dir), None);
+        mark_engine(&dir, Some("colima")).unwrap();
+        mark_engine(&dir, None).unwrap();
+        assert_eq!(engine(&dir), None);
+        assert!(!dir.join(ENGINE_MARKER).exists());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

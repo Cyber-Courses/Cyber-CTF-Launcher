@@ -25,19 +25,26 @@ pub(crate) fn explain_pool_overlap(e: Error) -> Error {
 pub async fn stop(dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
     let project = compose::project(id);
     let down = compose::stream(dir, &project, &["down", "--volumes", "--remove-orphans"], &[], &mut log).await;
-    compose::remove_all_containers(&project).await;
+    compose::remove_all_containers(dir, &project).await;
+    // Every bare docker call below goes to the engine the lab was pinned to at launch (if any), so
+    // stop reaches the lab's containers and network even if the current context has since changed.
+    let ctx = compose::context_prefix(dir);
+    let docker = |rest: &[&str]| {
+        let argv: Vec<String> = ctx.iter().cloned().chain(rest.iter().map(|s| (*s).to_string())).collect();
+        async move { run("docker", &argv.iter().map(String::as_str).collect::<Vec<_>>(), None).await }
+    };
     // The attack box starts with the lab on the lab network, but it is a bare container with no
     // Compose project, so `down --remove-orphans` and the project-label removals never take it out.
     // Remove it by name, or it is left running and still read as this lab by the workload scan.
     for name in compose::attack_box_names(&project) {
-        let _ = run("docker", &["rm", "-f", &name], None).await;
+        let _ = docker(&["rm", "-f", &name]).await;
     }
     // Belt and braces: whatever network of this lab is still around (something else plugged into
     // it, or Compose gave up), unplug everything from it and remove it, so nothing holds the subnet.
     let filter = format!("label=com.docker.compose.project={project}");
-    if let Ok(listed) = run("docker", &["network", "ls", "--filter", &filter, "--format", "{{.Name}}"], None).await {
+    if let Ok(listed) = docker(&["network", "ls", "--filter", &filter, "--format", "{{.Name}}"]).await {
         for net in listed.lines().map(str::trim).filter(|n| !n.is_empty()) {
-            remove_network(net).await;
+            remove_network(&ctx, net).await;
         }
     }
     // The next start is a new lab: it picks its ports again.
@@ -45,15 +52,19 @@ pub async fn stop(dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<(
     down
 }
 
-/// Unplugs every container from `net` (force) and removes it. Best effort: a network that is
-/// already gone, or that something unrelated won't let go of, is left as is.
-async fn remove_network(net: &str) {
-    if let Ok(attached) = run("docker", &["network", "inspect", "-f", "{{range .Containers}}{{.Name}} {{end}}", net], None).await {
+/// Unplugs every container from `net` (force) and removes it, on the lab's engine (`ctx`). Best
+/// effort: a network that is already gone, or that something unrelated won't let go of, is left.
+async fn remove_network(ctx: &[String], net: &str) {
+    let docker = |rest: &[&str]| {
+        let argv: Vec<String> = ctx.iter().cloned().chain(rest.iter().map(|s| (*s).to_string())).collect();
+        async move { run("docker", &argv.iter().map(String::as_str).collect::<Vec<_>>(), None).await }
+    };
+    if let Ok(attached) = docker(&["network", "inspect", "-f", "{{range .Containers}}{{.Name}} {{end}}", net]).await {
         for c in attached.split_whitespace() {
-            let _ = run("docker", &["network", "disconnect", "-f", net, c], None).await;
+            let _ = docker(&["network", "disconnect", "-f", net, c]).await;
         }
     }
-    let _ = run("docker", &["network", "rm", net], None).await;
+    let _ = docker(&["network", "rm", net]).await;
 }
 
 #[cfg(test)]

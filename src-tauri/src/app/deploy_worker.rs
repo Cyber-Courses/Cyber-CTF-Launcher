@@ -72,6 +72,9 @@ pub struct Job {
     /// A container lab with VM recipes run here as one VM per machine (the form of a VM lab).
     #[serde(default)]
     pub per_machine_vm: bool,
+    /// The Docker context a container lab here was pinned to (the chosen engine), if any.
+    #[serde(default)]
+    pub docker_context: Option<String>,
 }
 
 impl std::fmt::Debug for Job {
@@ -85,6 +88,7 @@ impl std::fmt::Debug for Job {
             .field("attackbox_image", &self.attackbox_image)
             .field("default_ports", &self.default_ports)
             .field("per_machine_vm", &self.per_machine_vm)
+            .field("docker_context", &self.docker_context)
             .finish()
     }
 }
@@ -101,6 +105,7 @@ impl Job {
             attackbox_image: None,
             default_ports: false,
             per_machine_vm: false,
+            docker_context: None,
         }
     }
 
@@ -122,6 +127,7 @@ pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<
                 attackbox_image: job.attackbox_image.as_deref(),
                 default_ports: job.default_ports,
                 per_machine_vm: job.per_machine_vm,
+                docker_context: job.docker_context.as_deref(),
             };
             crate::labs::run(&AppDirs::from(app), job.launch, &placement, log).await
         }
@@ -311,6 +317,7 @@ mod tests {
             attackbox_image: Some("cyberctf/attack-box".into()),
             default_ports: true,
             per_machine_vm: true,
+            docker_context: Some("orbstack".into()),
         };
         let bytes = serde_json::to_vec(&job).unwrap();
         assert_eq!(serde_json::from_slice::<Job>(&bytes).unwrap(), job);

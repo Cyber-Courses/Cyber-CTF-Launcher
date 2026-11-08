@@ -139,7 +139,7 @@ pub(crate) fn deployments(base: &Path) -> Vec<Deployment> {
 
 /// The runner of this host whose home is `home` (the app data folder), to hand deployments to.
 pub(crate) fn runner(home: &Path) -> crate::error::Result<Runner> {
-    Runner::new(super::host_config(home)).map_err(super::errors::from_runner)
+    Runner::new(super::host_config(home, None)).map_err(super::errors::from_runner)
 }
 
 /// Hands every deployment under the app data folder `base` (also the runner's home) that the

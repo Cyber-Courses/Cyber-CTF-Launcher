@@ -201,7 +201,7 @@ where
     F: Fn(&str) -> Option<Vec<(String, String)>>,
     L: Fn(&str) -> Option<G>,
 {
-    let runner = match Runner::new(super::host_config(home)) {
+    let runner = match Runner::new(super::host_config(home, None)) {
         Ok(runner) => runner,
         Err(e) => return vec![("runner".to_owned(), errors::from_runner(e))],
     };

@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::inflight::{Action, DeployGuard};
-use super::paths::{deployment_states, forget_lab_host_keys, mark_local_vm, mark_parked, mark_per_machine_vm, parked, runner_home, vagrant_dirs};
+use super::paths::{deployment_states, forget_lab_host_keys, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, runner_home, vagrant_dirs};
 use super::providers::Provider;
 use super::{LabRef, Runtime, cloud_services, docker, isothrum, lab, server, terraform, vm};
 use crate::error::{Error, Result};
@@ -48,6 +48,7 @@ pub(crate) async fn start_locked(
     provider: Option<Provider>,
     host: Option<&str>,
     per_machine_vm: bool,
+    docker_context: Option<&str>,
     env: &[(String, String)],
     mut log: impl FnMut(String),
 ) -> Result<()> {
@@ -71,7 +72,7 @@ pub(crate) async fn start_locked(
         return cloud_services::start(dirs, lab, host, env, &mut log).await;
     }
     match host {
-        None => start_here(dirs, lab, local_run(runtime, provider, per_machine_vm)?, env, &mut log).await,
+        None => start_here(dirs, lab, local_run(runtime, provider, per_machine_vm)?, docker_context, env, &mut log).await,
         // On a server the lab runs as the catalogue says (ESXi: Docker on one VM for a container
         // lab); the per-machine pick is "Where should it run?"'s for this machine only.
         Some(_) if per_machine_vm => Err(Error::Invalid(PER_MACHINE_HERE_ONLY.into())),
@@ -90,11 +91,12 @@ pub(crate) async fn start(
     provider: Option<Provider>,
     host: Option<&str>,
     per_machine_vm: bool,
+    docker_context: Option<&str>,
     env: &[(String, String)],
     log: impl FnMut(String),
 ) -> Result<()> {
     let _lock = super::inflight::lock_lab(dirs, id).await?;
-    start_locked(dirs, dir, id, runtime, provider, host, per_machine_vm, env, log).await
+    start_locked(dirs, dir, id, runtime, provider, host, per_machine_vm, docker_context, env, log).await
 }
 
 /// The name of the server host lab `id` (folder `dir`) is deployed on, if something of it is
@@ -119,13 +121,24 @@ fn deployed_elsewhere(base: &Path, dir: &Path, id: &str, host: Option<&str>) -> 
 }
 
 /// Starts the lab on this machine as `run` says (see [`local_run`]).
-async fn start_here(dirs: &AppDirs, lab: LabRef<'_>, run: LocalRun, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+async fn start_here(
+    dirs: &AppDirs,
+    lab: LabRef<'_>,
+    run: LocalRun,
+    docker_context: Option<&str>,
+    env: &[(String, String)],
+    log: &mut impl FnMut(String),
+) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     server::mark_lab(dir, None)?;
     // The form is remembered with the lab before anything runs: every later operation on it
     // (status, stop, park) follows the form it was started in, whatever the catalogue calls it.
     // A container lab started as one VM per machine is the one case where the two differ.
     mark_per_machine_vm(dir, runtime == Runtime::Docker && matches!(run, LocalRun::Vm(_)))?;
+    // The container engine the player chose for a plain container lab (a Docker context other than
+    // the current one), so every later docker/compose call for it — launcher and runner — goes to
+    // that engine. Only containers on Docker here (not a VM form); nothing recorded = current context.
+    mark_engine(dir, if matches!(run, LocalRun::Docker) { docker_context } else { None })?;
     // Every lab on this machine runs through the Isothrum runner. A parked run is resumed as it
     // was and leftovers are cleared first (the runner's `Occupied::ResumeParked`); the runner
     // wrappers record the lab's downloads for Storage.

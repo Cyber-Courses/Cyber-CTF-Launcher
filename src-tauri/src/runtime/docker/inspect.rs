@@ -126,8 +126,9 @@ async fn inspect_containers(dir: &Path, id: &str, names: &[String]) -> HashMap<S
     if names.is_empty() {
         return HashMap::new();
     }
-    let mut args: Vec<&str> =
-        vec!["inspect", "-f", "{{.Name}}\t{{range $k, $v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}\t{{json .Config.Labels}}"];
+    let prefix = compose::context_prefix(dir);
+    let mut args: Vec<&str> = prefix.iter().map(String::as_str).collect();
+    args.extend(["inspect", "-f", "{{.Name}}\t{{range $k, $v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}\t{{json .Config.Labels}}"]);
     args.extend(names.iter().map(String::as_str));
     let Ok(out) = run_read("docker", &args, Some(dir)).await else {
         return HashMap::new();
