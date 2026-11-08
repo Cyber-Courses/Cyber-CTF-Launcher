@@ -131,8 +131,9 @@ export function useAttackBox(
   // Until the status says, the lab's declared runtime stands in: a VM lab's box is a VM.
   const vm = status?.vm ?? runtime === "VM";
   const pickedBox = status?.pickedBox ?? false;
-  // The image or box in use, for the panel's label: the lab's own default box until one is picked.
-  const name = pickedBox ? (getAttackBoxChoice() ?? translate("labs.attackBox.defaultBox")) : attackImageLabel(getAttackImage());
+  // What the box runs, for the panel's label: the lab's own attack VM's box (its default until one
+  // is picked), Kali for the VM the launcher adds among a VM lab's, else the attack image.
+  const name = pickedBox ? (getAttackBoxChoice() ?? translate("labs.attackBox.defaultBox")) : vm ? "Kali Linux" : attackImageLabel(getAttackImage());
 
   const start = useCallback(
     () => run((l) => attach(labId, runtime, network, pickedBox, l), translate("labs.attackBox.attaching")),

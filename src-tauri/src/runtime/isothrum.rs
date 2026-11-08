@@ -17,7 +17,7 @@
 
 mod attack_box;
 mod cloud;
-mod errors;
+pub(crate) mod errors;
 mod import;
 mod opened;
 mod progress;
@@ -325,12 +325,52 @@ impl LabRun {
     pub(crate) fn shell_command(&self) -> Result<ShellCommand> {
         self.lab()?.shell_command(None).map_err(errors::from_runner)
     }
+
+    /// Brings the running lab up to date with its regenerated files (a machine added to the lab
+    /// or taken out), with the parameters it was started with.
+    pub(crate) async fn update(&self, log: &mut impl FnMut(String)) -> Result<()> {
+        update_of(&self.lab()?, &self.placed(RunOptions::new()), log).await
+    }
+
+    /// Takes `machine` out of the running lab, ahead of its removal from the lab's files.
+    pub(crate) async fn retire(&self, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
+        retire_from(&self.lab()?, machine, &self.placed(RunOptions::new()), log).await
+    }
+
+    /// `machine`, a machine of the lab, as the lab page shows the attack box (nothing before the
+    /// lab's files exist).
+    pub(crate) async fn machine_box_status(&self, machine: &str, network: Option<&str>) -> Result<AttackStatus> {
+        let vm = self.kind == Kind::Vm;
+        if !self.manifest().is_file() {
+            return Ok(AttackStatus { vm, ..AttackStatus::default() });
+        }
+        machine_status_in(&self.lab()?, machine, network, vm).await
+    }
+
+    /// The command that opens a console into `machine`, any machine of the lab.
+    pub(crate) fn console_command(&self, machine: &str) -> Result<ShellCommand> {
+        self.lab()?.console_command(machine).map_err(errors::from_runner)
+    }
 }
 
-/// Hot-adds the attack box into `lab` (`pick`: where, from what), with `opts`, waiting out another
-/// operation's hold on the run: what a lab on a server or in a cloud account does.
-async fn attach_into(lab: &Running<'_>, opts: &RunOptions, pick: isothrum_runner::BoxPick<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    when_unlocked(log, move |sink| async move { lab.attach_with(opts, pick, &sink).await.map(drop) }).await.map_err(errors::from_runner)
+/// Brings `lab` up to date with its regenerated manifest, with `opts`, waiting out another
+/// operation's hold on the run.
+async fn update_of(lab: &Running<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
+    when_unlocked(log, move |sink| async move { lab.update(opts, &sink).await.map(drop) }).await.map_err(errors::from_runner)
+}
+
+/// Takes `machine` out of `lab` ahead of its removal from the manifest, with `opts`, waiting out
+/// another operation's hold on the run.
+async fn retire_from(lab: &Running<'_>, machine: &str, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
+    when_unlocked(log, move |sink| async move { lab.retire(machine, opts, &sink).await }).await.map_err(errors::from_runner)
+}
+
+/// `machine` of `lab` as the lab page shows the attack box: its status as the runner reports
+/// it, the console into it. `vm`: the box is a VM here.
+async fn machine_status_in(lab: &Running<'_>, machine: &str, network: Option<&str>, vm: bool) -> Result<AttackStatus> {
+    let status = lab.status().await.map_err(errors::from_runner)?;
+    let shell = lab.console_command(machine).ok().map(|c| attack_box::display(&c)).unwrap_or_default();
+    Ok(attack_box::status_of(&status, Some(machine), network, shell, vm))
 }
 
 /// Takes the attack box back out of `lab`, leaving the rest up, waiting out another operation's
@@ -345,7 +385,7 @@ async fn detach_from(lab: &Running<'_>, opts: &RunOptions, log: &mut impl FnMut(
 async fn attack_status_in(lab: &Running<'_>, network: Option<&str>, vm: bool) -> Result<AttackStatus> {
     let status = lab.status().await.map_err(errors::from_runner)?;
     let shell = lab.shell_command(None).ok().map(|c| attack_box::display(&c)).unwrap_or_default();
-    Ok(attack_box::status_of(&status, network, shell, vm))
+    Ok(attack_box::status_of(&status, None, network, shell, vm))
 }
 
 /// Brings `lab` up with `opts`, its events as `log`'s lines, then says where to start: its

@@ -84,9 +84,28 @@ impl CloudPlace {
     }
 }
 
+/// The question that tells whether `cloud`'s sign-in still holds, asked of its CLI: who AWS's
+/// credentials are, an Azure CLI token, Google's application-default token (what its Terraform
+/// provider uses), Oracle's regions (through `~/.oci/config`). `DigitalOcean` and Linode sign in
+/// with a stored API token, which doesn't run out: none.
+fn sign_in_question(cloud: &str) -> Option<(&'static str, &'static [&'static str])> {
+    Some(match cloud {
+        "aws" => ("aws", &["sts", "get-caller-identity", "--output", "text"]),
+        "azure" => ("az", &["account", "get-access-token", "--output", "none"]),
+        "gcp" => ("gcloud", &["auth", "application-default", "print-access-token"]),
+        "oci" => ("oci", &["iam", "region", "list", "--output", "json"]),
+        _ => return None,
+    })
+}
+
+/// How long the sign-in question may take.
+const SIGN_IN_WAIT: Duration = Duration::from_secs(30);
+
 /// One cloud VM lab, run by the runner.
 pub(crate) struct CloudRun {
     run: OpenedRun,
+    /// The launcher's Terraform target for the cloud (`aws`, `azure`, …).
+    cloud: String,
 }
 
 /// The run's attack box and its opening are [`OpenedRun`]'s, shared with the other remote place.
@@ -105,12 +124,29 @@ impl CloudRun {
         let config = RunnerConfig::new(home).with_processes(Arc::new(processes));
         let manifest = lab::terraform(dir, runtime, cloud).0.join("run.json");
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
-        Ok(CloudRun { run: OpenedRun::new(config, manifest, name)? })
+        Ok(CloudRun { run: OpenedRun::new(config, manifest, name)?, cloud: cloud.to_owned() })
+    }
+
+    /// Refuses a change while the account's sign-in has run out, before anything runs: the
+    /// cloud's CLI asked for what its Terraform provider signs in with ([`sign_in_question`]),
+    /// with the account's environment. Any other failure of the question (no such CLI here, the
+    /// network) is left to the change itself, which says what is wrong.
+    async fn signed_in(&self, place: &CloudPlace) -> Result<()> {
+        let Some((program, args)) = sign_in_question(&self.cloud) else { return Ok(()) };
+        let mut env = place.tf_env.clone();
+        if let Some(region) = place.region.as_ref().filter(|_| self.cloud == "aws") {
+            env.push(("AWS_REGION".to_owned(), region.clone()));
+        }
+        match crate::platform::exec::run_env_timed(program, args, None, &env, SIGN_IN_WAIT).await {
+            Err(Error::CommandFailed { stderr, .. }) => errors::expired_sign_in(&stderr, Some(&self.cloud)).map_or(Ok(()), Err),
+            _ => Ok(()),
+        }
     }
 
     /// Brings the lab up in the account `place` from its generated module, and says where to
     /// start. `env` is the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &CloudPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+        self.signed_in(place).await?;
         super::up_with(&self.running()?, &place.options(env), log).await
     }
 
@@ -118,14 +154,15 @@ impl CloudRun {
     /// or taken out), with the account's credentials (`place`'s); the machines that run keep what
     /// they were given.
     pub(crate) async fn update(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> Result<()> {
-        let running = self.running()?;
-        let opts = place.options(&[]);
-        super::when_unlocked(log, |sink| {
-            let (running, opts) = (&running, &opts);
-            async move { running.update(opts, &sink).await.map(drop) }
-        })
-        .await
-        .map_err(errors::from_runner)
+        self.signed_in(place).await?;
+        self.update_with(&place.options(&[]), log).await
+    }
+
+    /// Takes `machine` out of the running lab ahead of its removal from the module, with the
+    /// account's credentials (`place`'s).
+    pub(crate) async fn retire(&self, place: &CloudPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
+        self.signed_in(place).await?;
+        self.retire_with(machine, &place.options(&[]), log).await
     }
 
     /// Removes everything the run created in the account, with the parameters it was applied with
@@ -138,6 +175,7 @@ impl CloudRun {
             log("Nothing to remove: the run has no files.".to_owned());
             return Ok(());
         }
+        self.signed_in(place).await?;
         let running = self.running()?;
         let (sink, lines) = progress::channel();
         progress::follow(log, lines, running.down(&place.options(&[]), &sink)).await.map_err(errors::from_runner)
@@ -236,6 +274,42 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::exec::fake::{Tools, fail, ok};
+
+    /// An AWS sign-in that ran out stops a change before anything runs, said as signing in again;
+    /// a valid one, or another cloud, lets it go on.
+    #[tokio::test]
+    async fn a_change_on_aws_waits_for_a_signed_in_account() {
+        let home = std::env::temp_dir().join(format!("cyberctf-signin-{}", rand::random::<u32>()));
+        let place = CloudPlace { region: Some("eu-west-3".into()), tf_env: vec![("AWS_PROFILE".into(), "labs".into())], ..CloudPlace::default() };
+        let aws = CloudRun::new(&home, &home.join("lab"), "t", Runtime::Docker, "aws").unwrap();
+        let tools = Tools::rules(&[("sts get-caller-identity", fail("Error: login session has expired, please reauthenticate"))]);
+        let err = aws.down(&place, &mut |_| ()).await;
+        assert!(err.is_ok(), "no files: nothing to remove, nothing asked");
+        let err = aws.update(&place, &mut |_| ()).await.unwrap_err().to_string();
+        assert!(err.starts_with("Your sign-in to AWS has expired") && err.contains("`aws login`"), "{err}");
+        assert_eq!(tools.calls().len(), 1, "only the question ran: {:?}", tools.calls());
+        drop(tools);
+        let signed = Tools::rules(&[("sts get-caller-identity", ok("arn:aws:iam::1:user/me\n"))]);
+        assert!(aws.signed_in(&place).await.is_ok());
+        drop(signed);
+        // Every cloud whose sign-in runs out is asked its own question; a token cloud, none.
+        for (cloud, question, said) in [
+            ("azure", "account get-access-token", "ERROR: AADSTS700082: The refresh token has expired. Please run 'az login'"),
+            ("gcp", "application-default print-access-token", "Reauthentication failed. cannot prompt during non-interactive execution."),
+            ("oci", "iam region list", "ServiceError: NotAuthenticated"),
+        ] {
+            let run = CloudRun::new(&home, &home.join("lab"), "t", Runtime::Docker, cloud).unwrap();
+            let tools = Tools::rules(&[(question, fail(said))]);
+            let err = run.update(&place, &mut |_| ()).await.unwrap_err().to_string();
+            assert!(err.starts_with("Your sign-in to") && tools.calls().len() == 1, "{cloud}: {err} {:?}", tools.calls());
+        }
+        let linode = CloudRun::new(&home, &home.join("lab"), "t", Runtime::Docker, "linode").unwrap();
+        let none = Tools::rules(&[]);
+        assert!(linode.signed_in(&place).await.is_ok());
+        assert!(none.calls().is_empty(), "no question for a token cloud");
+        let _ = std::fs::remove_dir_all(&home);
+    }
 
     /// A cloud run the runner lists as expired, as it records one: `cyberctf-<lab>`, started on
     /// account `host`, its stop time long past. Its manifest is not there (the lab's files gone).

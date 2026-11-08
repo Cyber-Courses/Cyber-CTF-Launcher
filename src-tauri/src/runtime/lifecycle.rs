@@ -234,8 +234,10 @@ pub(super) async fn stop_vm_run(home: &std::path::Path, dir: &Path, id: &str, mu
     forget_run(dir)
 }
 
-/// A stopped lab's markers: where it ran, its local VM, its per-machine form, its engine, parked.
+/// A stopped lab's markers: where it ran, its local VM, its per-machine form, its engine, parked;
+/// and the attack box the launcher added to it (the next start is the lab as published).
 fn forget_run(dir: &Path) -> Result<()> {
+    super::attack_machine::remove(dir)?;
     server::mark_lab(dir, None)?;
     mark_local_vm(dir, None)?;
     mark_per_machine_vm(dir, false)?;

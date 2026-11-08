@@ -10,10 +10,9 @@ import { Spinner } from "@/components/ui/spinner";
 import type { AttackBox } from "@/features/labs/use-attack-box";
 import { useT } from "@/lib/i18n";
 
-/** The attack box card in the lab page's side rail. `host` is the server or cloud account a
- *  remote lab runs on: there the box is a container in the VM the lab's containers run in, shown
- *  as the runner reports it, started and stopped as here. Beside a VM lab here the box is the
- *  lab's on-demand attack VM, on every local hypervisor (QEMU included). */
+/** The attack box card in the lab page's side rail. The box is one more machine of the lab,
+ *  wherever it runs (`host`: the server or cloud account of a remote lab): a Kali VM among a VM
+ *  lab's, a container among a container lab's; shown as the runner reports it. */
 export function AttackBoxPanel({
   box,
   running,
@@ -28,7 +27,6 @@ export function AttackBoxPanel({
   shellReady?: boolean;
 }) {
   const t = useT();
-  const remote = host !== null;
   const { status, busy, log, name, vm } = box;
   const tone = status?.running ? "ok" : busy ? "warn" : "muted";
   return (
@@ -55,7 +53,7 @@ export function AttackBoxPanel({
         </KeyValue>
       )}
       <div className="space-y-3 border-t border-border p-4">
-        <p className="text-[0.75rem] leading-relaxed text-muted-foreground">{t(boxHint({ remote, vm }))}</p>
+        <p className="text-[0.75rem] leading-relaxed text-muted-foreground">{t(vm ? "labs.attackBox.vmHint" : "labs.attackBox.containerHint")}</p>
         {onShell && shellReady && (
           <Button variant="primary" size="sm" className="w-full" onClick={onShell}>
             <Terminal className="size-3.5" /> {t("labs.attackBox.openShell")}
@@ -68,13 +66,6 @@ export function AttackBoxPanel({
       </div>
     </Panel>
   );
-}
-
-/** What the box is: a container in the lab's VM on its server or cloud account, a VM or a
- *  container here. */
-function boxHint({ remote, vm }: { remote: boolean; vm: boolean }) {
-  if (remote) return "labs.attackBox.remoteHint";
-  return vm ? "labs.attackBox.vmHint" : "labs.attackBox.containerHint";
 }
 
 /** Where the box stands, as the runner reports it: running (on the lab's server or cloud

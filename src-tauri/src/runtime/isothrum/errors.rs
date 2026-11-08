@@ -7,6 +7,18 @@ use isothrum_runner::{Error as RunnerError, ErrorCode};
 use crate::error::{Code, Error};
 
 /// The launcher's error for a runner's failure.
+/// What the launcher says when the runner refused to change a run that isn't up.
+const NOT_RUNNING: &str = "This lab isn't running. Start it first.";
+
+fn not_running() -> Error {
+    Error::Invalid(NOT_RUNNING.into())
+}
+
+/// Whether `e` says the runner refused a change because the run isn't up (nothing was changed).
+pub(crate) fn is_not_running(e: &Error) -> bool {
+    matches!(e, Error::Invalid(text) if text == NOT_RUNNING)
+}
+
 pub(super) fn from_runner(e: RunnerError) -> Error {
     match e {
         // The holder is filled in later, on the launch path, where an async lookup can run.
@@ -41,7 +53,7 @@ fn by_code(e: &RunnerError) -> Error {
         ErrorCode::NothingToResume => {
             Error::Invalid("Nothing is left of this lab to resume (its stopped containers or VMs are gone). Start it again for a fresh copy.".into())
         }
-        ErrorCode::NotRunning => Error::Invalid("This lab isn't running. Start it first.".into()),
+        ErrorCode::NotRunning => not_running(),
         ErrorCode::NotParkable => Error::Invalid("This lab can't be paused or shut down. Stop it instead.".into()),
         ErrorCode::ManifestVersion => Error::Invalid(format!(
             "This lab was generated for another version of Cyber CTF's runner. Update Cyber CTF (Settings > About), then start the lab again. ({e})"
@@ -61,10 +73,82 @@ fn tool_name(tool: &str) -> String {
     }
 }
 
+/// What a cloud's tools say when the sign-in they use has run out or is missing: Terraform's
+/// providers and the clouds' CLIs, from a CLI login or SSO session, an expired session token,
+/// application-default credentials gone stale, or a profile that was never signed in.
+const EXPIRED_SIGN_IN: [&str; 21] = [
+    // AWS
+    "login session has expired",
+    "please reauthenticate",
+    "expiredtoken",
+    "security token included in the request is expired",
+    "token has expired",
+    "error loading sso token",
+    "unable to locate credentials",
+    "aws login",
+    // Azure
+    "az login",
+    "aadsts700082",
+    "aadsts50173",
+    "refresh token has expired",
+    "interactive authentication is needed",
+    // Google Cloud
+    "reauthentication failed",
+    "problem refreshing your current auth tokens",
+    "gcloud auth application-default login",
+    "could not find default credentials",
+    "invalid_grant",
+    // Oracle Cloud
+    "session is no longer valid",
+    "oci session authenticate",
+    "notauthenticated",
+];
+
+/// A cloud by the launcher's Terraform target for it (`aws`, `azure`, `gcp`, `oci`, …): its name,
+/// and how its sign-in is made again.
+fn sign_in_of(cloud: &str) -> Option<(&'static str, &'static str)> {
+    Some(match cloud {
+        "aws" => ("AWS", "`aws login`, or `aws sso login`"),
+        "azure" => ("Azure", "`az login`"),
+        "gcp" => ("Google Cloud", "`gcloud auth application-default login`"),
+        "oci" => ("Oracle Cloud", "`oci session authenticate`, or check `~/.oci/config`"),
+        "digitalocean" => ("DigitalOcean", "check the account's API token in Settings"),
+        "linode" => ("Linode", "check the account's API token in Settings"),
+        _ => return None,
+    })
+}
+
+/// The cloud a Terraform failure comes from, by its provider's name in the message.
+fn cloud_in(reason: &str) -> Option<&'static str> {
+    [("hashicorp/aws", "aws"), ("hashicorp/azurerm", "azure"), ("hashicorp/google", "gcp"), ("oracle/oci", "oci")]
+        .into_iter()
+        .find(|(provider, _)| reason.contains(provider))
+        .map(|(_, cloud)| cloud)
+}
+
+/// The launcher's word for a cloud tool's `reason` when it says the account's sign-in ran out or
+/// is missing (`cloud`: the launcher's Terraform target for it, when known): sign in again,
+/// then try again; `None` for any other failure.
+pub(crate) fn expired_sign_in(reason: &str, cloud: Option<&str>) -> Option<Error> {
+    let lower = reason.to_ascii_lowercase();
+    if !EXPIRED_SIGN_IN.iter().any(|s| lower.contains(s)) {
+        return None;
+    }
+    let (name, again) = cloud.or_else(|| cloud_in(reason)).and_then(sign_in_of).map_or(("the cloud account", String::new()), |(n, a)| (n, format!(" ({a})")));
+    Some(Error::Invalid(format!(
+        "Your sign-in to {name} has expired or is missing, so the lab wasn't changed. Sign in again{again}, then try again. ({})",
+        reason.trim()
+    )))
+}
+
 /// A step's tool that ran and failed: Docker not answering its probe reads as the engine being
-/// stopped (or this account not allowed to use it); an address block another network holds,
-/// as what to do about it; anything else, as the command that failed.
+/// stopped (or this account not allowed to use it); a cloud sign-in that ran out, as signing in
+/// again; an address block another network holds, as what to do about it; anything else, as the
+/// command that failed.
 fn tool_failed(step: &str, reason: &str) -> Error {
+    if let Some(expired) = expired_sign_in(reason, None) {
+        return expired;
+    }
     if step == "tools" && reason.starts_with("`docker` doesn't answer") {
         return if reason.to_ascii_lowercase().contains("permission denied") {
             crate::platform::exec::docker_denied_error()
@@ -115,6 +199,18 @@ mod tests {
         assert!(matches!(from_runner(RunnerError::AlreadyRunning { run: "r".into() }), Error::Refused(_)), "a refusal leaves the last verdict as it was");
         assert!(said(RunnerError::NothingToResume { run: "r".into() }).1.starts_with("Nothing is left of this lab to resume"));
         assert!(said(RunnerError::NotRunning { run: "r".into() }).1.contains("Start it first"));
+        let expired = "with provider[\"registry.terraform.io/hashicorp/aws\"] Error: failed to refresh cached credentials, create oauth2 token: login session has expired, please reauthenticate (exited with code 1)";
+        let said_expired = said(RunnerError::ToolFailed { step: "destroy".into(), reason: expired.into() }).1;
+        assert!(said_expired.starts_with("Your sign-in to AWS has expired") && said_expired.contains("`aws login`"), "{said_expired}");
+        for (reason, cloud, again) in [
+            ("ERROR: AADSTS700082: The refresh token has expired due to inactivity. Please run 'az login'", "azure", "`az login`"),
+            ("Reauthentication failed. cannot prompt during non-interactive execution.", "gcp", "`gcloud auth application-default login`"),
+            ("ServiceError: NotAuthenticated: The required information to complete authentication was not provided", "oci", "`oci session authenticate`"),
+        ] {
+            let said = expired_sign_in(reason, Some(cloud)).expect("an expired sign-in").to_string();
+            assert!(said.contains(again), "{said}");
+        }
+        assert!(expired_sign_in("Error: creating EC2 Instance: InsufficientInstanceCapacity", Some("aws")).is_none());
         assert!(said(RunnerError::Timeout { step: "up".into(), after_s: 1800 }).1.contains("within 30 minutes"));
         assert!(said(RunnerError::SecretMissing { name: "CTF_FLAG_MAIN".into() }).1.contains("`CTF_FLAG_MAIN`"));
     }

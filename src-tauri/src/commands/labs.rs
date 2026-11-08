@@ -15,7 +15,7 @@ use crate::labs::{self, LaunchRequest};
 use crate::platform::AppDirs;
 use crate::runtime::paths::{lab_dir, local_runtime, local_vm, runner_home};
 use crate::runtime::providers::Provider;
-use crate::runtime::{LabStatus, Park, Runtime, cloud_services, discover, docker, isothrum, lab, server, status, stop_lab, terminal_launch};
+use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, isothrum, lab, server, status, stop_lab, terminal_launch};
 
 /// Starts a lab, the deploy's log sent on `logs` (see [`labs::launch_job`]).
 #[tauri::command]
@@ -204,79 +204,52 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
     }
 }
 
-/// The run that holds lab `id`'s attack box, wherever the lab runs: on this machine, in the form
-/// it was started in; on a Proxmox server, a container in the VM the lab's containers run in (the
-/// runner refuses a VM lab there: it has no such VM); in a cloud account, that container, or, for
-/// a lab run as one VM per machine, an instance of its own the module adds (with the account's
-/// credentials: `place`). Mirrors the dispatch of [`lab_check`].
+/// The run that holds lab `id`'s attack box, wherever the lab runs. A lab on this machine that
+/// declares its own attack machine (on demand) has it brought up and down by the runner; on every
+/// other lab the box is one more machine the launcher adds to the lab (`attack_machine`), wherever
+/// it runs: on this machine, on a Proxmox server, in a cloud account. Mirrors the dispatch of
+/// [`lab_check`].
 enum BoxRun {
-    Local(isothrum::LabRun),
-    Cloud(isothrum::CloudRun, isothrum::CloudPlace),
-    /// A cloud lab run as one VM per machine: no host for a box container, so the box is a
-    /// machine the launcher adds to the lab (`attack_machine`), brought up by updating the run.
-    CloudMachine(Box<CloudMachineBox>),
-    Server(isothrum::ServerRun),
-}
-
-/// Where a lab run as one VM per machine in a cloud account keeps its box: the run, the account
-/// (its credentials for the update), the lab's folder, and the lab's module (`target`), which is
-/// regenerated once the box is added or taken out.
-struct CloudMachineBox {
-    run: isothrum::CloudRun,
-    place: isothrum::CloudPlace,
-    dir: std::path::PathBuf,
-    target: isoloom_spec::Target,
-}
-
-impl CloudMachineBox {
-    /// The lab regenerated with or without the box, then the run brought up to date with it.
-    async fn change(&self, with_box: bool, log: &mut impl FnMut(String)) -> Result<()> {
-        if with_box {
-            crate::runtime::attack_machine::add(&self.dir)?;
-        } else {
-            crate::runtime::attack_machine::remove(&self.dir)?;
-        }
-        crate::runtime::lab::prepare(&self.dir, self.target)?;
-        self.run.update(&self.place, log).await
-    }
+    /// The lab's own on-demand attack machine, on this machine.
+    Own(Box<isothrum::LabRun>),
+    /// The box the launcher adds to the lab.
+    Machine(Box<attack_machine::Placed>),
 }
 
 impl BoxRun {
-    async fn attach(&self, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
+    async fn attach(&self, dirs: &AppDirs, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         match self {
-            BoxRun::Local(r) => r.attach(network, image, log).await,
-            BoxRun::Cloud(r, place) => r.attach_with(&place.options(&[]), network, image, log).await,
-            // The box is Kali itself here: no image to run, no network to pick (its own).
-            BoxRun::CloudMachine(b) => b.change(true, log).await,
-            BoxRun::Server(r) => r.attach(network, image, log).await,
+            BoxRun::Own(r) => r.attach(network, image, log).await,
+            BoxRun::Machine(b) => b.add(dirs, image.unwrap_or(isoloom_manifest::access::DEFAULT_IMAGE), network, log).await,
         }
     }
 
-    async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
+    async fn detach(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<()> {
         match self {
-            BoxRun::Local(r) => r.detach(log).await,
-            BoxRun::Cloud(r, place) => r.detach_with(&place.options(&[]), log).await,
-            BoxRun::CloudMachine(b) if crate::runtime::attack_machine::added(&b.dir) => b.change(false, log).await,
-            BoxRun::CloudMachine(_) => Ok(()),
-            BoxRun::Server(r) => r.detach(log).await,
+            BoxRun::Own(r) => r.detach(log).await,
+            BoxRun::Machine(b) => b.remove(dirs, log).await,
         }
     }
 
     async fn attack_status(&self, network: Option<&str>) -> Result<isothrum::AttackStatus> {
         match self {
-            BoxRun::Local(r) => r.attack_status(network).await,
-            BoxRun::Cloud(r, _) => r.attack_status(network).await,
-            BoxRun::CloudMachine(b) => b.run.machine_box_status(crate::runtime::attack_machine::NAME, network).await,
-            BoxRun::Server(r) => r.attack_status(network).await,
+            BoxRun::Own(r) => r.attack_status(network).await,
+            BoxRun::Machine(b) => b.status(network).await,
         }
     }
 
     fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
         match self {
-            BoxRun::Local(r) => r.shell_command(),
-            BoxRun::Cloud(r, _) => r.shell_command(),
-            BoxRun::CloudMachine(b) => b.run.console_command(crate::runtime::attack_machine::NAME),
-            BoxRun::Server(r) => r.shell_command(),
+            BoxRun::Own(r) => r.shell_command(),
+            BoxRun::Machine(b) => b.shell_command(),
+        }
+    }
+
+    /// Whether the box runs on this machine (its image is the learner's local download).
+    fn local(&self) -> bool {
+        match self {
+            BoxRun::Own(_) => true,
+            BoxRun::Machine(b) => b.local(),
         }
     }
 }
@@ -285,11 +258,10 @@ impl BoxRun {
 /// ESXi host, or a cloud-only lab started on this machine.
 fn box_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<BoxRun>> {
     let home = runner_home(dirs)?;
-    Ok(match server::lab_connection(dirs, dir)? {
-        Some(c) if c.provider == Provider::VmwareEsxi => None,
-        // A cloud account, in the form the lab was started in: the box is a container in the VM
-        // the lab's containers run in (cloud-docker), or an instance the module adds beside the
-        // lab's (cloud-vm), with the account's credentials for that apply.
+    // In the form the lab was started in (a container lab started as one VM per machine is VMs).
+    let form = local_runtime(dir, runtime);
+    let (host, target) = match server::lab_connection(dirs, dir)? {
+        Some(c) if c.provider == Provider::VmwareEsxi => return Ok(None),
         Some(c) if c.provider.is_cloud() => {
             let cloud = server::terraform_target(c.provider).unwrap_or_default();
             let place = isothrum::CloudPlace {
@@ -298,26 +270,35 @@ fn box_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Opt
                 tf_env: c.tf_env.clone(),
                 ..isothrum::CloudPlace::default()
             };
-            let form = local_runtime(dir, runtime);
             let run = isothrum::CloudRun::new(&home, dir, id, form, cloud)?;
-            Some(match form {
-                Runtime::Vm => BoxRun::CloudMachine(Box::new(CloudMachineBox {
-                    run,
-                    place,
-                    dir: dir.to_path_buf(),
-                    target: crate::runtime::lab::terraform(dir, form, cloud).1,
-                })),
-                _ => BoxRun::Cloud(run, place),
-            })
+            (attack_machine::Host::Cloud(run, place), lab::terraform(dir, form, cloud).1)
         }
-        Some(_) => Some(BoxRun::Server(isothrum::ServerRun::new(&home, dir, id, runtime)?)),
-        None => match local_runtime(dir, runtime) {
-            Runtime::Docker if local_vm(dir).is_some() => Some(BoxRun::Local(isothrum::LabRun::docker_in_vm(&home, dir, id)?)),
-            Runtime::Docker => Some(BoxRun::Local(isothrum::LabRun::docker(&home, dir, id)?)),
-            Runtime::Vm => Some(BoxRun::Local(isothrum::LabRun::vm(&home, dir, id)?)),
-            Runtime::Cloud => None,
-        },
-    })
+        Some(conn) => {
+            let run = isothrum::ServerRun::new(&home, dir, id, form)?;
+            let host = server::marked_host(dir).unwrap_or_default();
+            (attack_machine::Host::Server { run, host, conn }, lab::terraform(dir, form, "proxmox").1)
+        }
+        None => {
+            let (run, target) = match form {
+                Runtime::Docker if local_vm(dir).is_some() => (isothrum::LabRun::docker_in_vm(&home, dir, id)?, lab::vagrant_target(Runtime::Docker)),
+                Runtime::Docker => (isothrum::LabRun::docker(&home, dir, id)?, isoloom_spec::Target::Docker),
+                Runtime::Vm => (isothrum::LabRun::vm(&home, dir, id)?, isoloom_spec::Target::Vagrant),
+                Runtime::Cloud => return Ok(None),
+            };
+            // A lab of its own containers or VMs here that declares its attack machine: that one.
+            if local_vm(dir).is_none() && declares_access(dir) {
+                return Ok(Some(BoxRun::Own(Box::new(run))));
+            }
+            (attack_machine::Host::Local(run), target)
+        }
+    };
+    let vm = form == Runtime::Vm;
+    Ok(Some(BoxRun::Machine(Box::new(attack_machine::Placed { host, dir: dir.to_path_buf(), target, vm }))))
+}
+
+/// Whether the lab in `dir` declares an attack machine of its own (one the launcher didn't add).
+fn declares_access(dir: &Path) -> bool {
+    lab::load(dir).is_ok_and(|spec| spec.machines.iter().any(|(name, m)| m.access && name != attack_machine::NAME))
 }
 
 /// The run holding the lab's attack box, or an error when the launcher reaches none for it.
@@ -375,10 +356,10 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
         let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
         let run = with_attack_box(&dirs, &dir, &id, runtime)?;
         let mut log = channel_log(logs);
-        let attach = run.attach(network.as_deref(), image.as_deref(), &mut log);
+        let attach = run.attach(&dirs, network.as_deref(), image.as_deref(), &mut log);
         // An image pulled on this machine is the app's to account for; one pulled in a lab's VM
         // on a server or in a cloud account isn't here at all.
-        if !matches!(run, BoxRun::Local(_)) {
+        if !run.local() {
             return Box::pin(attach).await;
         }
         // Boxed: the runner's attach future is large, and tracking it adds to it.
@@ -394,7 +375,7 @@ pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, log
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
         let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
-        with_attack_box(&dirs, &dir, &id, runtime)?.detach(&mut channel_log(logs)).await
+        with_attack_box(&dirs, &dir, &id, runtime)?.detach(&dirs, &mut channel_log(logs)).await
     })
     .await
 }
@@ -464,18 +445,19 @@ mod tests {
         let _tools = Tools::rules(&[]);
         let dir = t.lab("srv", &[]);
         server::mark_lab(&dir, Some(&t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
-        // cloud-docker (the default): a container in the lab's cloud VM.
-        match super::box_run(&t.dirs(), &dir, "srv", Runtime::Docker).unwrap() {
-            Some(super::BoxRun::Cloud(_, place)) => assert_eq!(place.label, "aws1"),
-            _ => panic!("a container box in the lab's cloud VM"),
-        }
-        // One VM per machine (cloud-vm): the box is a machine the launcher adds to the lab, the
-        // run updated with the account's place.
-        mark_per_machine_vm(&dir, true).unwrap();
-        match super::box_run(&t.dirs(), &dir, "srv", Runtime::Docker).unwrap() {
-            Some(super::BoxRun::CloudMachine(b)) => assert_eq!((b.place.label.as_str(), b.target), ("aws1", isoloom_spec::Target::CloudVm)),
+        // The box is a machine the launcher adds to the lab, the run updated with the account's
+        // place: cloud-docker (the default), a container among the lab's in its cloud VM.
+        let placed = |runtime| match super::box_run(&t.dirs(), &dir, "srv", runtime).unwrap() {
+            Some(super::BoxRun::Machine(b)) => match &b.host {
+                crate::runtime::attack_machine::Host::Cloud(_, place) => (place.label.clone(), b.target, b.vm),
+                _ => panic!("in the cloud account"),
+            },
             _ => panic!("a machine box"),
-        }
+        };
+        assert_eq!(placed(Runtime::Docker), ("aws1".into(), isoloom_spec::Target::CloudDocker, false));
+        // One VM per machine (cloud-vm): a Kali VM among the lab's.
+        mark_per_machine_vm(&dir, true).unwrap();
+        assert_eq!(placed(Runtime::Docker), ("aws1".into(), isoloom_spec::Target::CloudVm, true));
     }
 
     #[tokio::test]
@@ -521,14 +503,16 @@ mod tests {
         t.lab("web", &[("isoloom.yml", SPEC)]);
         let st = attack_box_status(t.handle().clone(), "web".into(), Runtime::Docker, None).await.unwrap();
         assert!(!st.running && st.ip.is_empty() && st.networks.is_empty());
-        // A lab in a cloud account goes to the runner too (its box is a container in the lab's VM
-        // there): before its files exist the box reads as down and attach/detach fail, nothing run.
+        // A lab in a cloud account goes to the runner too (its box is a machine added to the
+        // lab): before its files exist the box reads as down, an attach fails and leaves the lab
+        // as published, and a detach has nothing to take out; nothing runs.
         let dir = t.lab("srv", &[]);
         server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
         let s = sink();
         assert!(!attack_box_status(t.handle().clone(), "srv".into(), Runtime::Docker, None).await.unwrap().running);
         assert!(kali_attach_fails(t.handle().clone(), "srv", channel(s.clone())).await);
-        assert!(attack_box_detach(t.handle().clone(), "srv".into(), Runtime::Docker, channel(s.clone())).await.is_err());
+        assert!(!crate::runtime::attack_machine::added(&dir), "the lab is as published");
+        attack_box_detach(t.handle().clone(), "srv".into(), Runtime::Docker, channel(s.clone())).await.unwrap();
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert!(s.lock().unwrap().is_empty());
     }

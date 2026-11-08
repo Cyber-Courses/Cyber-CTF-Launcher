@@ -86,6 +86,16 @@ impl ServerRun {
         progress::follow(log, lines, lab.down(&options(place, &[]), &sink)).await.map_err(errors::from_runner)
     }
 
+    /// Brings the running lab up to date with its regenerated files, on `place`.
+    pub(crate) async fn update(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
+        self.update_with(&options(place, &[]), log).await
+    }
+
+    /// Takes `machine` out of the running lab on `place`, ahead of its removal from its files.
+    pub(crate) async fn retire(&self, place: &ServerPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
+        self.retire_with(machine, &options(place, &[]), log).await
+    }
+
     /// The lab as its page shows it, on the server `place` names.
     pub(crate) async fn status(&self, place: &ServerPlace) -> Result<LabStatus> {
         if !self.manifest.is_file() {

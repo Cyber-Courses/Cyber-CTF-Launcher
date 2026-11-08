@@ -94,8 +94,9 @@ describe("useAttackBox", () => {
     expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "ab-vm-default", runtime: "VM", pick: { network: null, image: null } });
   });
 
-  it("sends the attack box image to the attack VM the runner adds to a lab running as VMs", async () => {
+  it("names the Kali VM the launcher adds to a lab running as VMs", async () => {
     // A container lab run as one VM per machine: declared DOCKER, a VM here, no attack VM of its own.
+    // The box is Kali there (the image only goes to a container box).
     setAttackImage("my/exegol:full");
     setAttackBox("kalilinux/rolling");
     setAutoAttackBox(false);
@@ -103,7 +104,7 @@ describe("useAttackBox", () => {
     const { result } = renderHook(() => useAttackBox("ab-as-vms", { running: true, reachable: true, runtime: "DOCKER" }));
     await flush();
     expect(result.current.vm).toBe(true);
-    expect(result.current.name).toBe("my/exegol:full");
+    expect(result.current.name).toBe("Kali Linux");
     await act(() => result.current.start());
     expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "ab-as-vms", runtime: "DOCKER", pick: { image: "my/exegol:full" } });
   });
@@ -331,7 +332,7 @@ describe("AttackBoxPanel", () => {
     const b = fake({ status: box() });
     render(<AttackBoxPanel box={b} running host={null} />);
     expect(screen.getByText("not started")).toBeTruthy();
-    expect(screen.getByText("Your machine on the lab network. Open its shell to attack the targets from inside the lab.")).toBeTruthy();
+    expect(screen.getByText(/a container among the lab's, on the lab network/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /Start attack box/ }));
     expect(b.start).toHaveBeenCalledTimes(1);
   });
@@ -387,7 +388,7 @@ describe("AttackBoxPanel", () => {
     // Not "running on" before the box is: the lab running says nothing of its box.
     expect(screen.queryByText("running on homelab-pve")).toBeNull();
     expect(screen.getByText("not started")).toBeTruthy();
-    expect(screen.getByText(/in the lab's VM on its server or cloud account/)).toBeTruthy();
+    expect(screen.getByText(/a container among the lab's, on the lab network/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Open attacker shell/ })).toBeNull();
     await user.click(screen.getByRole("button", { name: /Start attack box/ }));
     expect(down.start).toHaveBeenCalledTimes(1);
@@ -405,7 +406,7 @@ describe("AttackBoxPanel", () => {
     render(<AttackBoxPanel box={fake({ vm: true, name: "kalilinux/rolling" })} running host={null} />);
     expect(screen.getByText("Attack VM")).toBeTruthy();
     expect(screen.getByText("kalilinux/rolling")).toBeTruthy();
-    expect(screen.getByText(/as a VM beside the lab/)).toBeTruthy();
+    expect(screen.getByText(/Your Kali machine in the lab: a VM among the lab's/)).toBeTruthy();
   });
 
   it("offers to start the attack VM beside a VM lab on any hypervisor, QEMU included", () => {

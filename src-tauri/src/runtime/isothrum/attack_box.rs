@@ -65,12 +65,15 @@ fn own_access(status: &Status) -> bool {
     status.machines.iter().any(|m| m.role == Role::Access && m.name != ADHOC_NAME)
 }
 
-/// The attack box's status from the run's status: up when the access machine runs, its address on
-/// `network` (or its first), the lab's networks, the `shell_cmd` the runner built, and what the
-/// box is here (`vm`: the lab runs as VMs on this machine; the picked Vagrant box boots it only
-/// when the lab declares its own attack VM).
-pub(super) fn status_of(status: &Status, network: Option<&str>, shell_cmd: String, vm: bool) -> AttackStatus {
-    let machine = access(status);
+/// The attack box's status from the run's status: up when the box runs (`named`, a machine of
+/// the lab, else the run's access machine), its address on `network` (or its first), the lab's
+/// networks, the `shell_cmd` the runner built, and what the box is here (`vm`: a VM; the picked
+/// Vagrant box boots it only when the lab declares its own attack VM).
+pub(super) fn status_of(status: &Status, named: Option<&str>, network: Option<&str>, shell_cmd: String, vm: bool) -> AttackStatus {
+    let machine = match named {
+        Some(name) => status.machines.iter().find(|m| m.name == name),
+        None => access(status),
+    };
     let running = machine.is_some_and(|m| matches!(m.state, MachineState::Running | MachineState::Unhealthy));
     let addresses = machine.map(|m| &m.addresses);
     let on = network
@@ -114,12 +117,12 @@ mod tests {
     #[test]
     fn a_vm_labs_attack_vm_is_the_runs_access_machine_down_until_hot_added() {
         let shell = "VAGRANT_DOTFILE_PATH=/runs/t/vagrant vagrant ssh isoloom-access".to_owned();
-        let down = status_of(&vm_lab("absent"), None, shell.clone(), true);
+        let down = status_of(&vm_lab("absent"), None, None, shell.clone(), true);
         assert_eq!((down.running, down.ip.as_str(), down.networks.as_slice()), (false, "", ["lab".to_owned()].as_slice()));
         assert_eq!(down.shell_cmd, shell, "the shell command is known before the box is up");
         // The runner's own VM runs the attack box image: no Vagrant box to pick.
         assert!(down.vm && !down.picked_box, "{down:?}");
-        let up = status_of(&vm_lab("running"), None, shell, true);
+        let up = status_of(&vm_lab("running"), None, None, shell, true);
         assert_eq!((up.running, up.ip.as_str(), up.lab_network.as_str()), (true, "10.61.0.252", "lab"));
     }
 
@@ -127,10 +130,21 @@ mod tests {
     fn a_labs_own_attack_vm_boots_from_the_picked_box_and_a_container_box_is_no_vm() {
         let mut own = vm_lab("absent");
         own.machines[1].name = "kali".into();
-        let status = status_of(&own, None, String::new(), true);
+        let status = status_of(&own, None, None, String::new(), true);
         assert!(status.vm && status.picked_box, "{status:?}");
-        let container = status_of(&vm_lab("running"), None, String::new(), false);
+        let container = status_of(&vm_lab("running"), None, None, String::new(), false);
         assert!(!container.vm && !container.picked_box, "{container:?}");
+    }
+
+    #[test]
+    fn a_box_the_launcher_added_to_the_lab_is_found_by_its_name() {
+        let mut lab = vm_lab("absent");
+        lab.machines[1].name = "attackbox".into();
+        lab.machines[1].role = Role::Target;
+        lab.machines[1].state = MachineState::Running;
+        let status = status_of(&lab, Some("attackbox"), None, String::new(), true);
+        assert_eq!((status.running, status.ip.as_str()), (true, "10.61.0.252"));
+        assert!(!status.picked_box, "no lab-declared attack VM");
     }
 
     #[test]
