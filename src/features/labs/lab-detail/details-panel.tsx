@@ -46,7 +46,9 @@ export function DetailsPanel({
         {cost && <KeyValue k={t("labs.detail.estimatedCost")}>{cost}</KeyValue>}
         {!binds.length && url && (
           <KeyValue k={t("labs.detail.address")}>
-            <CopyValue text={url} />
+            {/* Shown without the scheme and the trailing slash, so it stays on one line; the full
+                URL is what is copied. */}
+            <CopyValue text={url} label={url.replace(/^https?:\/\//, "").replace(/\/$/, "")} />
           </KeyValue>
         )}
       </div>

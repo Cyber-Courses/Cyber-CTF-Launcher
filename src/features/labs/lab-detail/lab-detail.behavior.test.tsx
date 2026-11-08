@@ -438,6 +438,15 @@ describe("LabDetail: a lab that is up", () => {
     expect(screen.getByRole("button", { name: /Start attack box/ })).toBeTruthy();
   });
 
+  it("shows a cloud lab's address without its scheme, so it stays on one line, and copies it whole", async () => {
+    installTauri({ ...quiet, attack_box_status: () => remoteBox(false) });
+    setAutoAttackBox(false);
+    renderDetail({ status: status({ place: "server", host: "aws-1", url: "http://13.39.163.133:8180/", machines: [] }) });
+    await flush();
+    const address = screen.getByRole("button", { name: /^13\.39\.163\.133:8180/ });
+    expect(address.getAttribute("title")).toContain("http://13.39.163.133:8180/");
+  });
+
   it("opens the shell into a container lab's box on a server once the box runs", async () => {
     const calls = installTauri({ ...quiet, attack_box_status: () => remoteBox(true) });
     const user = userEvent.setup();
