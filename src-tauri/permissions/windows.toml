@@ -147,6 +147,7 @@ permissions = [
   "allow-server-public-key",
   "allow-server-save",
   "allow-server-save-ssh-key",
+  "allow-server-selftest",
   "allow-server-test",
   "allow-system-check",
 ]

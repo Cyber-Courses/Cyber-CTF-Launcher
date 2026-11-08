@@ -12,13 +12,17 @@ import { describeError } from "@/lib/errors";
 
 /** The step plan each provider reports, shown up front so the list doesn't grow as it runs. */
 const SELFTEST_PLAN: Record<"proxmox" | "esxi", { step: string; label: MessageKey }[]> = {
+  // A one-machine lab run the way a launch runs one (see the core's server self-test).
   proxmox: [
     { step: "connect", label: "servers.selfTest.steps.connect" },
-    { step: "prepare", label: "servers.selfTest.steps.prepare" },
-    { step: "apply", label: "servers.selfTest.steps.create" },
-    { step: "boot", label: "servers.selfTest.steps.boot" },
+    { step: "prepare", label: "servers.selfTest.steps.prepareLab" },
+    { step: "image", label: "servers.selfTest.steps.image" },
+    { step: "network", label: "servers.selfTest.steps.network" },
+    { step: "vm", label: "servers.selfTest.steps.vm" },
+    { step: "uplink", label: "servers.selfTest.steps.uplink" },
     { step: "ssh", label: "servers.selfTest.steps.ssh" },
-    { step: "cleanup", label: "servers.selfTest.steps.cleanup" },
+    { step: "command", label: "servers.selfTest.steps.command" },
+    { step: "cleanup", label: "servers.selfTest.steps.cleanupLab" },
   ],
   esxi: [
     { step: "connect", label: "servers.selfTest.steps.connect" },

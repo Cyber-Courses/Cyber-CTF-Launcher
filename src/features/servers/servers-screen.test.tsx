@@ -229,7 +229,7 @@ describe("ServerScreen", () => {
   it("runs a VM test from the menu, remembers its result and tests the host again", async () => {
     const calls = installTauri({
       server_selftest: (a) => {
-        stream(a, { step: "connect", state: "ok" }, { step: "apply", state: "ok", detail: "vm 9001" }, { step: "cleanup", state: "ok" });
+        stream(a, { step: "connect", state: "ok" }, { step: "vm", state: "ok", detail: "vm 9001" }, { step: "cleanup", state: "ok" });
         return null;
       },
     });
@@ -246,7 +246,7 @@ describe("ServerScreen", () => {
     expect(commands(calls)).toContain("server_running_labs");
     // The menu now offers to hide it.
     await menu(user, "homelab-pve", /hide vm test/i);
-    expect(screen.queryByText("Destroy the test VM")).toBeNull();
+    expect(screen.queryByText("Remove everything the test created")).toBeNull();
   });
 
   it("shows the remembered result of an earlier VM test", async () => {

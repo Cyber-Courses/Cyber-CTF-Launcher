@@ -276,7 +276,7 @@ describe("ServerSelfTest", () => {
           a,
           { step: "connect", label: "Connect", state: "ok", detail: null },
           { step: "prepare", label: "Prepare", state: "ok", detail: "template ready" },
-          { step: "apply", label: "Create", state: "fail", detail: "no space left on datastore" },
+          { step: "vm", label: "Start the test VMs", state: "fail", detail: "no space left on datastore" },
         );
         return null;
       },

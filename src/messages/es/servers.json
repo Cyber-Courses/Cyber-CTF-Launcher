@@ -54,10 +54,15 @@
       "connect": "Conectar con el host",
       "prepare": "Preparar una definición de VM de prueba",
       "create": "Crear y arrancar la VM en el host",
-      "boot": "La VM informa de una dirección de red",
       "ssh": "SSH responde en la VM",
       "command": "Ejecutar un comando en la VM",
-      "cleanup": "Destruir la VM de prueba"
+      "cleanup": "Destruir la VM de prueba",
+      "prepareLab": "Preparar el lab de prueba",
+      "image": "Descargar la imagen cloud de Debian",
+      "network": "Crear la red del lab de prueba",
+      "vm": "Arrancar las VM de prueba",
+      "uplink": "El router del lab obtiene una dirección en el uplink (DHCP e internet)",
+      "cleanupLab": "Quitar todo lo que creó la prueba"
     }
   },
   "setup": {
@@ -291,7 +296,8 @@
       "title": "Prueba de conexión",
       "description": "Guardado. Esto es lo que el launcher ha podido comprobar desde esta máquina.",
       "testing": "Probando la conexión…",
-      "checks": "Qué se comprobó"
+      "checks": "Qué se comprobó",
+      "vmLead": "Ahora un lab de prueba real en el servidor, ejecutado como un lab: una VM pequeña en su propia red, que luego se elimina. Tarda unos minutos."
     }
   }
 }

@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { CheckCircle2, Play, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Nav, Note, Step } from "@/features/servers/host-setup/form";
 import type { ServerCheck } from "@/lib/tauri";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
+import { ServerSelfTest } from "@/features/servers/server-self-test";
 import { useT } from "@/lib/i18n";
 
 export function TestStep({ s }: { s: HostSetup }) {
@@ -13,6 +15,10 @@ export function TestStep({ s }: { s: HostSetup }) {
   const { onDone, saved, test, runTest, v } = s;
   // A Proxmox setup made with an SSH key lists each part of it (SSH, token, key, API).
   const parts = v.provider === "proxmox" && test !== null && test !== "testing" ? test.checks : [];
+  // Once Proxmox answers as a launch needs, a real throwaway lab proves it can run one: a new
+  // one each time the connection is tested again.
+  const [round, setRound] = useState(0);
+  const vmHost = v.provider === "proxmox" && test !== null && test !== "testing" && test.ok ? saved : null;
   return (
     <Step icon={CheckCircle2} title={t("servers.setup.test.title")} description={t("servers.setup.test.description")}>
       {test === null || test === "testing" ? (
@@ -29,12 +35,20 @@ export function TestStep({ s }: { s: HostSetup }) {
         </Note>
       )}
       {parts.length > 0 && <Checklist checks={parts} />}
+      {vmHost && (
+        <div className="mt-4 space-y-2">
+          <p className="text-[0.75rem] text-muted-foreground">{t("servers.setup.test.vmLead")}</p>
+          <ServerSelfTest key={round} id={vmHost.id} provider="proxmox" onDone={() => {}} />
+        </div>
+      )}
       <Nav
         left={
           <Button
             variant="outline"
             onClick={() => {
-              if (saved) runTest(saved.id);
+              if (!saved) return;
+              setRound((n) => n + 1);
+              runTest(saved.id);
             }}
             disabled={test === "testing"}
           >

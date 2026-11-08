@@ -54,10 +54,15 @@
       "connect": "Reach the host",
       "prepare": "Prepare a test VM definition",
       "create": "Create and boot the VM on the host",
-      "boot": "VM reports a network address",
       "ssh": "SSH answers on the VM",
       "command": "Run a command in the VM",
-      "cleanup": "Destroy the test VM"
+      "cleanup": "Destroy the test VM",
+      "prepareLab": "Prepare the test lab",
+      "image": "Download the Debian cloud image",
+      "network": "Create the test's lab network",
+      "vm": "Start the test VMs",
+      "uplink": "The lab's router gets an address on the uplink (DHCP and internet)",
+      "cleanupLab": "Remove everything the test created"
     }
   },
   "setup": {
@@ -291,7 +296,8 @@
       "title": "Connection test",
       "description": "Saved. Here's what the launcher could check from this machine.",
       "testing": "Testing the connection…",
-      "checks": "What was checked"
+      "checks": "What was checked",
+      "vmLead": "Now a real test lab on the server, run the way a lab is: one small VM on its own network, then removed. It takes a few minutes."
     }
   }
 }

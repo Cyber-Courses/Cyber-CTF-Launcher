@@ -6,7 +6,7 @@ import { EMPTY_HOST } from "@/features/servers/host-setup";
 import { argsOf, failsWith, field, go, heading, input, renderSetup, selects } from "@/features/servers/host-setup/setup-test-kit";
 import type { ServerHostInput } from "@/lib/tauri";
 import { freshReport, readyReport } from "@/test/fixtures";
-import { installTauri } from "@/test/tauri";
+import { installTauri, stream } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 /** From a new Proxmox setup's first step (its address filled) to its sign-in step. */
@@ -291,6 +291,52 @@ describe("Proxmox server and sign-in steps", () => {
     expect(list.textContent).toContain("SSH with your key");
     expect(list.textContent).toContain("Launcher key");
     expect(list.querySelectorAll("li")).toHaveLength(4);
+  });
+});
+
+describe("Proxmox VM test after the connection test", () => {
+  it("runs a real test lab once the connection test passes, step by step, and again with Test again", async () => {
+    const calls = installTauri({
+      server_selftest: (a) =>
+        stream(
+          a,
+          { step: "connect", label: "Reach the host", state: "ok", detail: "homelab" },
+          { step: "image", label: "Download", state: "ok", detail: null },
+          {
+            step: "uplink",
+            label: "Uplink",
+            state: "fail",
+            detail:
+              "The test VM got no address on bridge vmbr1: the bridge has no DHCP server reachable from the VMs (or no internet). Use an uplink bridge with DHCP and internet.",
+          },
+          { step: "cleanup", label: "Cleanup", state: "ok", detail: "Nothing of the test is left on the server." },
+        ),
+    });
+    const user = userEvent.setup();
+    await renderSetup(editing({}));
+    await go(user, /^continue$/i);
+    await go(user, /^continue$/i);
+    await go(user, /save and test/i);
+    await flush(30);
+    expect(argsOf(calls, "server_selftest")[0]).toMatchObject({ id: "pve" });
+    for (const label of ["Download the Debian cloud image", "Create the test's lab network", "Start the test VMs", "Remove everything the test created"]) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+    expect(screen.getByText(/got no address on bridge vmbr1/)).toBeTruthy();
+    expect(screen.getByText("VM test failed")).toBeTruthy();
+    await go(user, /test again/i);
+    await flush(30);
+    expect(argsOf(calls, "server_selftest")).toHaveLength(2);
+  });
+
+  it("runs no VM test while the connection test fails", async () => {
+    const calls = installTauri({ server_test: () => ({ ok: false, reachable: true, authenticated: false, latencyMs: 4, message: "rejected", checks: [] }) });
+    const user = userEvent.setup();
+    await renderSetup(editing({}));
+    await go(user, /^continue$/i);
+    await go(user, /^continue$/i);
+    await go(user, /save and test/i);
+    expect(argsOf(calls, "server_selftest")).toEqual([]);
   });
 });
 

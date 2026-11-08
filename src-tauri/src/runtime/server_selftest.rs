@@ -3,9 +3,8 @@
 //! Like the machine VM self-test, but on the player's own server: it provisions a real
 //! throwaway VM on the host, waits for it to boot and accept SSH, then destroys it.
 //!
-//! - `proxmox`: a minimal Terraform module (written at run time from `templates/`, so no lab is
-//!   needed) clones a Debian cloud image, cloud-init installs the guest agent and the launcher's
-//!   key, Terraform waits for the agent to report an address, then `destroy` removes it.
+//! - `proxmox`: a one-machine Isoloom lab generated for the `proxmox` target and run by the
+//!   Isothrum runner with the server's profile, exactly as a launch runs a lab (see `proxmox`).
 //! - `esxi`: a minimal Vagrantfile booted with `vmware_esxi`, a command run over SSH, then
 //!   `vagrant destroy`.
 //!
@@ -28,6 +27,10 @@ use crate::machine::selftest::Event;
 
 /// Step labels shared by both hosts.
 const PREPARE: &str = "Prepare a test VM definition";
+
+/// One self-test per host at a time in this process: two runs would share the test's run on the
+/// server and its folder, each tearing the other's down. A second one waits for the first.
+static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 struct Reporter(Box<dyn Fn(Event) + Send + Sync>);
 
@@ -72,6 +75,7 @@ fn work_dir(dirs: &AppDirs, id: &str) -> Result<PathBuf> {
 /// Runs a real-VM self-test against host `id`, streaming each step to `sink` (the
 /// `server_selftest` command wraps the webview's channel in one).
 pub(crate) async fn run(dirs: &AppDirs, id: &str, sink: impl Fn(Event) + Send + Sync + 'static) -> Result<()> {
+    let _alone = ONE_AT_A_TIME.lock().await;
     let r = Reporter::new(sink);
     // `connect` resolves the host and its secret, which proves the profile and keychain are
     // usable before anything is created on the host.
@@ -92,7 +96,7 @@ pub(crate) async fn run(dirs: &AppDirs, id: &str, sink: impl Fn(Event) + Send + 
             .step("prepare", PREPARE, async {
                 r.progress("prepare", PREPARE, "Removing the VM a previous test left on the host…");
                 match conn.provider {
-                    Provider::Proxmox => proxmox::leftover(&r, &conn, &work),
+                    Provider::Proxmox => Box::pin(proxmox::leftover(dirs, id, &conn, &work)).await?,
                     Provider::VmwareEsxi => esxi::leftover(&r, &conn, &work),
                     _ => {}
                 }
@@ -106,7 +110,8 @@ pub(crate) async fn run(dirs: &AppDirs, id: &str, sink: impl Fn(Event) + Send + 
     }
 
     let ran = match conn.provider {
-        Provider::Proxmox => proxmox::run(dirs, id, &r, &conn, &work).await,
+        // Boxed: a whole lab's run on the server makes a large future.
+        Provider::Proxmox => Box::pin(proxmox::run(dirs, id, &r, &conn, &work)).await,
         Provider::VmwareEsxi => esxi::run(&r, &conn, &work).await,
         Provider::Aws => Ran::nothing(Error::Invalid("the VM test is for server hosts; AWS labs are billed, so it isn't run as a test".into())),
         _ => Ran::nothing(Error::Invalid("the VM test runs only on a Proxmox or ESXi host".into())),
