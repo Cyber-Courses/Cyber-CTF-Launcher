@@ -167,6 +167,16 @@
       "setUp": "Configurar"
     }
   },
+  "add": {
+    "title": "Adicionar um <em>provedor</em>",
+    "lead": "O que o {os} pode rodar mas ainda não tem. Instale um, teste-o e depois faça dele o que os labs usam.",
+    "engines": "Engines de contêineres",
+    "enginesMeta": "para labs de contêiner",
+    "hypervisors": "Hypervisors",
+    "hypervisorsMeta": "para labs de VM",
+    "nothing": "Tudo o que o {os} pode rodar está instalado.",
+    "installed": "Instalado. Teste-o e depois faça dele o padrão."
+  },
   "steps": {
     "aPackageManager": "um gerenciador de pacotes",
     "macLocalNetwork": "O macOS pode pedir para deixar o Cyber CTF encontrar dispositivos na sua rede local e mostrar notificações (lab pronto, falhas): escolha Permitir, os labs precisam da primeira.",

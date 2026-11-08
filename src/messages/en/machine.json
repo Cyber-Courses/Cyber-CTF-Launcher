@@ -167,6 +167,16 @@
       "setUp": "Set up"
     }
   },
+  "add": {
+    "title": "Add a <em>provider</em>",
+    "lead": "What {os} can run but doesn't have yet. Install one, test it, then make it the one labs use.",
+    "engines": "Container engines",
+    "enginesMeta": "for container labs",
+    "hypervisors": "Hypervisors",
+    "hypervisorsMeta": "for VM labs",
+    "nothing": "Everything {os} can run is installed.",
+    "installed": "Installed. Test it, then make it the default."
+  },
   "steps": {
     "aPackageManager": "a package manager",
     "macLocalNetwork": "macOS may ask to let Cyber CTF find devices on your local network, and to show notifications (lab ready, failures): choose Allow, labs need the first.",

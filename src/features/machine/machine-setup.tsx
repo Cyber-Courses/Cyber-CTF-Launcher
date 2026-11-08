@@ -20,6 +20,7 @@ import {
   type MachineSetupState,
   type SetupPath,
 } from "@/features/machine/setup-steps";
+import { AddProvider } from "@/features/machine/setup-steps/add-provider";
 import { useWindowSteps, type StartAt, type WindowStep } from "@/features/machine/use-window-steps";
 import { getLastTest } from "@/lib/settings";
 import type { SystemReport } from "@/lib/tauri";
@@ -43,7 +44,8 @@ export function MachineSetup({
   onRetryCheck?: () => unknown;
   onRefresh: () => void;
   onClose: () => void;
-  /** Open at this step (a "Fix" link from the Machine page); changes jump again. */
+  /** Open at this step (a "Fix" link from the Machine page), or at the provider picker ("add");
+   *  changes jump again. */
   startAt?: StartAt;
 }) {
   const t = useT();
@@ -64,7 +66,9 @@ export function MachineSetup({
           <Spinner className="size-4" /> {t("machine.setup.checking")}
         </div>
       )}
-      {report !== null && <SetupWizard report={report} startAt={startAt} onRefresh={onRefresh} onClose={onClose} />}
+      {/* "Add a provider" (the Machine page's button): the picker, not the lab-type guide. */}
+      {report !== null && startAt?.step === "add" && <AddProvider report={report} onRefresh={onRefresh} onClose={onClose} />}
+      {report !== null && startAt?.step !== "add" && <SetupWizard report={report} startAt={startAt} onRefresh={onRefresh} onClose={onClose} />}
     </div>
   );
 }

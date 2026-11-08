@@ -24,6 +24,14 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Changed
 
+- **"Add a provider" on the Machine page is a provider picker.** It opened the lab-type guide,
+  which on a set-up machine had nothing to add (both paths "ready", Review alone). It now opens
+  "Add a provider": the container engines and hypervisors this machine can run but doesn't
+  have, each with its logo, a note and its install (the one-click install where Cyber CTF has
+  one, else where to get it and a re-check), its install log, and, once the machine check finds
+  it, its own test right there and "Use by default" once the test passes; a hypervisor also asks
+  for Vagrant and its plugin first. With nothing left to install it says so. The lab-type guide
+  stays for the first run.
 - **The lab page shows where a lab runs, with its logo.** The network diagram's host card
   showed "Your machine · 127.0.0.1 · host" and a laptop whatever the lab ran on. It now carries
   the logo and name of what runs the lab: the container engine for containers here (the one

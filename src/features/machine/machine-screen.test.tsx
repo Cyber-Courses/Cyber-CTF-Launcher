@@ -693,7 +693,7 @@ describe("MachineScreen", () => {
     expect(screen.queryByRole("button", { name: /^(fix|test|add)$/i })).toBeNull();
     await user.click(button(/add a provider/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "machine_open_setup")?.args).toEqual({ step: null });
+    expect(calls.find((c) => c.cmd === "machine_open_setup")?.args).toEqual({ step: "add" });
   });
 
   it("names an unknown OS as-is and counts one lab type", async () => {

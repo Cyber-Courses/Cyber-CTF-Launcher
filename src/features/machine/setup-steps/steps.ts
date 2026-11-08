@@ -1,5 +1,5 @@
 import { Container, Cpu, Crosshair, FlaskConical, Package, Server, type LucideIcon } from "lucide-react";
-import { type SystemReport, type WslState } from "@/lib/tauri";
+import { type ProviderStatus, type SystemReport, type WslState } from "@/lib/tauri";
 import { translate, type MessageKey, type Vars } from "@/lib/i18n";
 import { cantRun, INSTALLABLE, usableHypervisors } from "@/features/machine/hypervisors";
 import { ENGINES, Engine } from "@/features/machine/setup-steps/engines";
@@ -179,8 +179,12 @@ export function chosenHypervisor(report: SystemReport, setup: MachineSetupState)
 
 /** Vagrant, and the plugin that lets it drive the chosen hypervisor, are installed. */
 function vagrantReady(report: SystemReport, setup: MachineSetupState): boolean {
-  const choice = chosenHypervisor(report, setup);
-  return report.vagrant.installed && (!choice?.plugin || choice.pluginInstalled);
+  return vagrantDrives(report, chosenHypervisor(report, setup));
+}
+
+/** Vagrant, and the plugin that lets it drive `hypervisor`, are installed. */
+export function vagrantDrives(report: SystemReport, hypervisor: ProviderStatus | undefined): boolean {
+  return report.vagrant.installed && (!hypervisor?.plugin || hypervisor.pluginInstalled);
 }
 
 /** The flow moves on only once the option picked on this step is actually set up. */

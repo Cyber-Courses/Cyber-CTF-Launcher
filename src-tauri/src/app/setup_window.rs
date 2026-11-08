@@ -8,8 +8,9 @@ use crate::error::{Error, Result};
 
 const LABEL: &str = "machine-setup";
 
-/// The setup steps the window can open at. Only these reach its URL.
-const STEPS: [&str; 8] = ["pkgmgr", "virtualization", "docker", "docker-test", "attack", "vm", "vagrant", "vm-test"];
+/// The setup steps the window can open at, and "add", the provider picker (the Machine page's
+/// "Add a provider"). Only these reach its URL.
+const STEPS: [&str; 9] = ["pkgmgr", "virtualization", "docker", "docker-test", "attack", "vm", "vagrant", "vm-test", "add"];
 
 /// The window's page, opened at `step` when given.
 fn page(step: Option<&str>) -> String {
@@ -60,8 +61,9 @@ mod tests {
         t.handle().listen_any("machine-setup-step", move |e| seen.lock().unwrap().push(e.payload().to_string()));
         super::open(t.handle(), Some("docker-test")).unwrap();
         super::open(t.handle(), Some("../../settings")).unwrap();
+        super::open(t.handle(), Some("add")).unwrap();
         super::open(t.handle(), None).unwrap();
-        assert_eq!(*steps.lock().unwrap(), ["\"docker-test\""]);
+        assert_eq!(*steps.lock().unwrap(), ["\"docker-test\"", "\"add\""]);
         assert_eq!(t.handle().webview_windows().len(), 1);
     }
 
@@ -69,5 +71,6 @@ mod tests {
     fn opens_at_a_step_only_when_given_one() {
         assert_eq!(super::page(None), "machine-setup");
         assert_eq!(super::page(Some("docker-test")), "machine-setup?step=docker-test");
+        assert_eq!(super::page(Some("add")), "machine-setup?step=add");
     }
 }

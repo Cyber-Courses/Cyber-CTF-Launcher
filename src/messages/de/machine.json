@@ -167,6 +167,16 @@
       "setUp": "Einrichten"
     }
   },
+  "add": {
+    "title": "<em>Anbieter</em> hinzufügen",
+    "lead": "Was {os} ausführen kann, aber noch nicht hat. Installiere einen, teste ihn und mach ihn dann zu dem, den Labs nutzen.",
+    "engines": "Container-Engines",
+    "enginesMeta": "für Container-Labs",
+    "hypervisors": "Hypervisoren",
+    "hypervisorsMeta": "für VM-Labs",
+    "nothing": "Alles, was {os} ausführen kann, ist installiert.",
+    "installed": "Installiert. Teste ihn und mach ihn dann zum Standard."
+  },
   "steps": {
     "aPackageManager": "einen Paketmanager",
     "macLocalNetwork": "macOS fragt eventuell, ob Cyber CTF Geräte in deinem lokalen Netzwerk finden und Mitteilungen anzeigen darf (Lab bereit, Fehler): Wähle Erlauben, Labs brauchen Ersteres.",

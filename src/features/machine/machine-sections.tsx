@@ -13,8 +13,9 @@ import { useT } from "@/lib/i18n";
 
 // The sections of the Machine page: its header and its live usage.
 
-/** Title, readiness strip (setup left, OS, uptime) and "Add a provider", which opens the guided
- *  setup on its choice of provider (as the Servers page's "Add server" opens the server setup). */
+/** Title, readiness strip (setup left, OS, uptime) and "Add a provider", which opens the provider
+ *  picker: what this machine can run but doesn't have (as the Servers page's "Add server" opens
+ *  the server setup). */
 export function MachineHeader({ report, m, needsSetup }: { report: SystemReport; m: MachineMetrics | null; needsSetup: number }) {
   const t = useT();
   const openSetup = useOpenSetup();
@@ -32,7 +33,7 @@ export function MachineHeader({ report, m, needsSetup }: { report: SystemReport;
           variant="outline"
           size="sm"
           onClick={() => {
-            openSetup();
+            openSetup("add");
           }}
         >
           <Plus className="size-3.5" /> {t("machine.screen.addProvider")}

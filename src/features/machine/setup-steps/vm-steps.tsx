@@ -59,7 +59,7 @@ export function VmStep({ report, setup }: { report: SystemReport; setup: Machine
 }
 
 /** A hypervisor not installed: its one-click install, or a link to its vendor and a re-check. */
-function GetHypervisor({ choice, report, setup }: { choice: ProviderStatus; report: SystemReport; setup: MachineSetupState }) {
+export function GetHypervisor({ choice, report, setup }: { choice: ProviderStatus; report: SystemReport; setup: MachineSetupState }) {
   const t = useT();
   const label = providerLabel(choice, report.os);
   const dependency = INSTALLABLE[choice.provider];
@@ -120,6 +120,18 @@ export function VagrantStep({ report, setup }: { report: SystemReport; setup: Ma
   return (
     <div className="space-y-3">
       {/* For the hypervisor picked on the previous step. */}
+      <VagrantRequirements choice={choice} report={report} setup={setup} />
+      <Log setup={setup} of={["vagrant", choice.plugin]} />
+    </div>
+  );
+}
+
+/** What Vagrant needs to drive `choice`: Vagrant itself, the hypervisor's plugin, and (VMware)
+ *  the utility; each with its install, the first missing one the jewel. */
+export function VagrantRequirements({ choice, report, setup }: { choice: ProviderStatus; report: SystemReport; setup: MachineSetupState }) {
+  const t = useT();
+  return (
+    <>
       <div className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
         <Requirement
           ok={report.vagrant.installed}
@@ -162,8 +174,7 @@ export function VagrantStep({ report, setup }: { report: SystemReport; setup: Ma
           />
         )}
       </div>
-      <Log setup={setup} of={["vagrant", choice.plugin]} />
-    </div>
+    </>
   );
 }
 
