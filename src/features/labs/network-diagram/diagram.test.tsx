@@ -183,6 +183,9 @@ describe("NetworkDiagram", () => {
     await settle();
     const states = Array.from(document.querySelectorAll(".running")).map((n) => n.textContent.trim());
     expect(states).toEqual(["paused", "off", "stopped", "restarting", "running"]);
+    // Only a running machine's dot is the live green: the others are idle (grey).
+    const tones = Array.from(document.querySelectorAll(".running")).map((n) => n.getAttribute("data-state"));
+    expect(tones).toEqual(["idle", "idle", "idle", "idle", "running"]);
     // No address yet: says so instead of a blank.
     expect(screen.getByText(/resolving/i)).toBeTruthy();
   });

@@ -411,6 +411,11 @@
   background: var(--success);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 18%, transparent);
 }
+/* Off, paused, stopped: grey, like the header's dot, never the live green. */
+.running.idle i {
+  background: var(--faint);
+  box-shadow: none;
+}
 .computer-ip {
   margin-top: 0.4375rem;
   color: var(--muted-foreground);

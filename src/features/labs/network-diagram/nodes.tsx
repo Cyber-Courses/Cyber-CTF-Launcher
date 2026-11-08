@@ -173,7 +173,7 @@ function ComputerNode({ data }: NodeProps<Node<ComputerData>>) {
           <Monitor size={15} />
           <span className="mono">{data.hostname}</span>
         </div>
-        <span className="running">
+        <span className={data.running ? "running" : "running idle"} data-state={data.running ? "running" : "idle"}>
           <i /> {stateLabel(t, data.state, data.running)}
         </span>
       </div>
