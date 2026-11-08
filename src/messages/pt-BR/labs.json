@@ -82,7 +82,7 @@
     "inVmSubtitle": "{provider} · isolada do seu sistema",
     "ready": "Pronta",
     "readyHint": "Hypervisor escolhido em Configurações",
-    "pickHypervisor": "Hypervisor",
+    "pickHypervisor": "Qual hipervisor?",
     "perMachineVm": "Esta máquina, uma VM por máquina",
     "perMachineVmSubtitle": "{provider} · uma VM completa para cada máquina, como num servidor",
     "perMachineVmHint": "As receitas de VM do laboratório: suas máquinas como máquinas virtuais, não contêineres",
@@ -93,7 +93,10 @@
     "beta": "Beta",
     "experimental": "Experimental",
     "engine": "Motor de contêineres",
-    "rememberChoice": "Não perguntar de novo"
+    "rememberChoice": "Não perguntar de novo",
+    "engineHeading": "Qual motor?",
+    "defaultChoice": "Padrão",
+    "inVmFormNote": "Contêineres numa VM"
   },
   "ports": {
     "question": "Quais portas {title} deve usar?",

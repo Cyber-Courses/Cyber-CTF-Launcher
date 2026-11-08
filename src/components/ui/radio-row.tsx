@@ -7,7 +7,7 @@ type RadioRowProps = {
   selected: boolean;
   onSelect: () => void;
   title: ReactNode;
-  subtitle: ReactNode;
+  subtitle?: ReactNode;
   disabled?: boolean;
   /** Tooltip, e.g. why the option can't be picked. */
   hint?: string;
@@ -65,12 +65,14 @@ export function RadioRow({ selected, onSelect, title, subtitle, disabled, hint, 
       <div className="min-w-0 flex-1">
         <div className={cn("flex flex-wrap items-center gap-1.5 font-medium text-foreground", compact ? "text-[0.78125rem]" : "text-[0.8125rem]")}>{title}</div>
         {/* Two lines before it cuts (a translated description runs longer); the whole text in the tooltip. */}
-        <div
-          title={typeof subtitle === "string" ? subtitle : undefined}
-          className={cn("mt-0.5 line-clamp-2 break-words", compact ? "font-mono text-[0.6875rem] text-faint" : "text-[0.75rem] text-muted-foreground")}
-        >
-          {subtitle}
-        </div>
+        {subtitle ? (
+          <div
+            title={typeof subtitle === "string" ? subtitle : undefined}
+            className={cn("mt-0.5 line-clamp-2 break-words", compact ? "font-mono text-[0.6875rem] text-faint" : "text-[0.75rem] text-muted-foreground")}
+          >
+            {subtitle}
+          </div>
+        ) : null}
         {children}
       </div>
       {trailing && <span className="shrink-0 self-center">{trailing}</span>}

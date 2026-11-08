@@ -10,8 +10,7 @@ import { TypeIcon } from "@/components/ui/type-icon";
 import { KIND } from "@/features/servers/host-setup/constants";
 import { ProviderGlyph } from "@/features/servers/provider-glyph";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
-import { engineName } from "@/features/machine/setup-steps/engines";
-import { Segmented } from "@/components/ui/segmented";
+import { ENGINES, engineName } from "@/features/machine/setup-steps/engines";
 import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
 import { CLOUDS } from "@/features/labs/lab-runtime";
 import type { RunTarget } from "@/features/labs/run-on";
@@ -25,13 +24,12 @@ type Status = { tone: Tone; label: string; title?: string };
 type Option = {
   target: RunTarget;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   ok: boolean;
   why?: string;
   logo: React.ReactNode;
   status?: Status;
   badge?: RunBadge;
-  extra?: React.ReactNode;
 };
 export type OptionGroup = { id: string; label: string; options: Option[] };
 /** Each host's test result, by id; none yet while it runs. */
@@ -67,6 +65,21 @@ function hostStatus(t: T, check: ServerTest | undefined): Status {
   };
 }
 
+/** An engine's brand logo for the engine step's rows (the neutral container icon when it has none). */
+export function EngineLogo({ id }: { id: DockerEngine }) {
+  const logo = ENGINES.find((e) => e.id === id)?.logo;
+  return (
+    <TypeIcon>
+      {logo ? (
+        // eslint-disable-next-line @next/next/no-img-element -- static export, plain asset
+        <img src={logo} alt="" className="size-5 object-contain" draggable={false} />
+      ) : (
+        <Container className="size-5 text-foreground" strokeWidth={1.5} />
+      )}
+    </TypeIcon>
+  );
+}
+
 /** This machine's container engine, for a container lab: running, stopped, or no status at all
  *  (a VM lab, or the engine's state not yet known). Shared by the platform row and the
  *  Containers form. */
@@ -77,60 +90,40 @@ function engineStatus(t: T, dockerRunning: boolean | null): Status | undefined {
     : { tone: "warn", label: t("labs.runOn.engineStopped"), title: t("labs.runOn.engineStoppedHint") };
 }
 
-/** The hypervisor switch inside a VM option, when several are ready for it. */
-function hypervisorSwitch(t: T, value: Provider, options: Provider[], onChange: (p: Provider) => void) {
-  return (
-    options.length > 1 && (
-      <Segmented
-        label={t("labs.runOn.pickHypervisor")}
-        className="mt-2"
-        value={value}
-        onChange={onChange}
-        options={options.map((p) => ({ value: p, label: PROVIDER_LABELS[p] ?? p }))}
-      />
-    )
-  );
+/** The "How should it run?" step: the VM forms This machine offers (helper VM, one VM per machine),
+ *  shown only when there are two. The hypervisor is a later step, so a form isn't named by one. */
+export function vmFormOptions(t: T, tiers: RunTier[], vmForms: RunTarget[]): Option[] {
+  return vmForms.map((form) => {
+    const provider = form.kind === "local-vm" || form.kind === "local-vms" ? form.provider : null;
+    const perMachine = form.kind === "local-vms";
+    return {
+      target: form,
+      title: t(perMachine ? "labs.runOn.formPerMachine" : "labs.runOn.formInVm"),
+      subtitle: t(perMachine ? "labs.runOn.perMachineVmHint" : "labs.runOn.inVmFormNote"),
+      ok: true,
+      badge: badgeFor(tiers, candidatesFor(form)),
+      logo: <HypervisorLogo provider={provider} />,
+      status: { tone: "ok", label: t("labs.runOn.ready") },
+    };
+  });
 }
 
-/** Step 2, "How should it run?": the VM forms This machine offers, shown only when there are two
- *  (a dual-form lab's helper VM and per-machine VM). A helper VM on `localVm` (with a switch to
- *  the other ready hypervisors when there are several), and one VM per machine (`perMachine`). The
- *  container form and a lone VM form are picked on step 1, not here. */
-export function vmFormOptions(t: T, tiers: RunTier[], vm: LocalVm): Option[] {
-  const { localVm, localVms, onPickVm, perMachine } = vm;
-  const forms: Option[] = [];
-  if (localVm) {
-    forms.push({
-      target: { kind: "local-vm", provider: localVm },
-      title: t("labs.runOn.formInVm"),
-      subtitle: t("labs.runOn.inVmSubtitle", { provider: PROVIDER_LABELS[localVm] ?? localVm }),
-      ok: true,
-      badge: badgeFor(tiers, candidatesFor({ kind: "local-vm", provider: localVm })),
-      logo: <HypervisorLogo provider={localVm} />,
-      status: { tone: "ok", label: t("labs.runOn.ready"), title: t("labs.runOn.readyHint") },
-      extra: hypervisorSwitch(t, localVm, localVms, onPickVm),
-    });
-  }
-  if (perMachine?.provider) {
-    const { provider, providers, onPick } = perMachine;
-    forms.push({
-      target: { kind: "local-vms", provider },
-      title: t("labs.runOn.formPerMachine"),
-      subtitle: t("labs.runOn.perMachineVmSubtitle", { provider: PROVIDER_LABELS[provider] ?? provider }),
-      ok: true,
-      badge: badgeFor(tiers, candidatesFor({ kind: "local-vms", provider })),
-      logo: <HypervisorLogo provider={provider} />,
-      status: { tone: "ok", label: t("labs.runOn.ready"), title: t("labs.runOn.perMachineVmHint") },
-      extra: hypervisorSwitch(t, provider, providers, onPick),
-    });
-  }
-  return forms;
+/** The "Which hypervisor?" step: the ready hypervisors that can run the chosen `form`, as full rows.
+ *  The default (Settings' choice, else the first) is marked and preselected by the caller. */
+export function hypervisorOptions(t: T, form: "local-vm" | "local-vms", hypervisors: Provider[], fallback: Provider | null): Option[] {
+  return hypervisors.map((p) => ({
+    target: { kind: form, provider: p },
+    title: PROVIDER_LABELS[p] ?? p,
+    ok: true,
+    logo: <HypervisorLogo provider={p} />,
+    status: { tone: "ok", label: t(p === fallback ? "labs.runOn.defaultChoice" : "labs.runOn.ready") },
+  }));
 }
 
 /** Everything the step-1 "This machine" rows need: whether a container form runs here
  *  (`offerContainers`), the note/engine state and the engine it will use for the Container row, and
- *  the VM-form data. */
-export type LocalRows = LocalVm & { offerContainers: boolean; localNote: string; dockerRunning: boolean | null; engine?: DockerEngine | null };
+ *  the VM forms available here (`vmForms`). */
+export type LocalRows = { offerContainers: boolean; localNote: string; dockerRunning: boolean | null; engine?: DockerEngine | null; vmForms: RunTarget[] };
 
 /** Step 1's rows for "This machine": up to two, each its own kind of run here. Container (the
  *  engine's state) when the lab has a container form, and VM (the hypervisor's logo) when a VM form
@@ -143,7 +136,7 @@ function localPlatformRows(t: T, local: LocalRows): Option[] {
       target: { kind: "local" },
       title: t("labs.runOn.formContainers"),
       // The engine it will run on (Docker Desktop, OrbStack…), not "Docker": a neutral container
-      // icon, the engine named, its state. The engine is chosen in step 2 when several answer.
+      // icon, the engine named, its state. The engine is chosen in its own step when several answer.
       subtitle: engine ? engineName(engine) : localNote,
       ok: true,
       logo: (
@@ -159,42 +152,27 @@ function localPlatformRows(t: T, local: LocalRows): Option[] {
   return rows;
 }
 
-/** The "VM" row, or null when no VM form is ready here. A VM lab runs its own VMs as
+/** The step-1 "VM" row, or null when no VM form is ready here. A VM lab runs its own VMs as
  *  `{ kind: "local" }`; a container lab runs a helper VM (`local-vm`) and, when dual-form, one VM
- *  per machine (`local-vms`). One VM form: the row starts it, its hypervisor switch inline. Two:
- *  the row opens step 2, where each form carries its own switch. */
+ *  per machine too. Picking it leads to the form step (two forms), the hypervisor step (one form,
+ *  several hypervisors), or straight to Start — no inline switch. */
 function localVmRow(t: T, local: LocalRows): Option | null {
-  const { offerContainers, localNote, localVm, localVms, onPickVm, perMachine } = local;
+  const { offerContainers, localNote, vmForms } = local;
   if (!offerContainers) {
-    return {
-      target: { kind: "local" },
-      title: t("labs.runOn.inAVm"),
-      subtitle: localNote,
-      ok: true,
-      logo: <HypervisorLogo provider={null} />,
-    };
+    return { target: { kind: "local" }, title: t("labs.runOn.inAVm"), subtitle: localNote, ok: true, logo: <HypervisorLogo provider={null} /> };
   }
-  if (!localVm) return null;
-  const twoForms = !!perMachine?.provider;
+  const first = vmForms.at(0);
+  if (!first || (first.kind !== "local-vm" && first.kind !== "local-vms")) return null;
+  const twoForms = vmForms.length >= 2;
   return {
-    target: { kind: "local-vm", provider: localVm },
+    target: first,
     title: t("labs.runOn.inAVm"),
-    subtitle: twoForms ? t("labs.runOn.vmForms") : t("labs.runOn.inVmSubtitle", { provider: PROVIDER_LABELS[localVm] ?? localVm }),
+    subtitle: twoForms ? t("labs.runOn.vmForms") : t("labs.runOn.inVmFormNote"),
     ok: true,
-    logo: <HypervisorLogo provider={localVm} />,
-    status: { tone: "ok", label: t("labs.runOn.ready"), title: t("labs.runOn.readyHint") },
-    extra: twoForms ? undefined : hypervisorSwitch(t, localVm, localVms, onPickVm),
+    logo: <HypervisorLogo provider={first.provider} />,
+    status: { tone: "ok", label: t("labs.runOn.ready") },
   };
 }
-
-/** The hypervisor a (container) lab's VM runs on here, the others ready for it, and the switch;
- *  and, for a lab with VM recipes too, its per-machine VM form (`perMachine`). */
-export type LocalVm = { localVm: Provider | null; localVms: Provider[]; onPickVm: (p: Provider) => void; perMachine?: PerMachineVm | null };
-
-/** The per-machine VM form of a lab with VM recipes too (Isoloom's vagrant target, as a VM lab
- *  runs): the hypervisor it runs on here (null: none ready that can), the others that can, and
- *  the switch's pick. */
-export type PerMachineVm = { provider: Provider | null; providers: Provider[]; onPick: (p: Provider) => void };
 
 /** A saved server or cloud account; one the lab can't run on says why, without a status. */
 function hostOption(t: T, tiers: RunTier[], h: ServerHost, ok: boolean, check: ServerTest | undefined): Option {

@@ -82,7 +82,7 @@
     "inVmSubtitle": "{provider} · isolé de votre système",
     "ready": "Prêt",
     "readyHint": "Hyperviseur choisi dans les Réglages",
-    "pickHypervisor": "Hyperviseur",
+    "pickHypervisor": "Quel hyperviseur ?",
     "perMachineVm": "Cette machine, une VM par machine",
     "perMachineVmSubtitle": "{provider} · une VM complète pour chaque machine, comme sur un serveur",
     "perMachineVmHint": "Les recettes VM du lab : ses machines en machines virtuelles, pas en conteneurs",
@@ -93,7 +93,10 @@
     "beta": "Bêta",
     "experimental": "Expérimental",
     "engine": "Moteur de conteneurs",
-    "rememberChoice": "Ne plus demander"
+    "rememberChoice": "Ne plus demander",
+    "engineHeading": "Quel moteur ?",
+    "defaultChoice": "Par défaut",
+    "inVmFormNote": "Conteneurs dans une VM"
   },
   "ports": {
     "question": "Quels ports {title} doit-il utiliser ?",

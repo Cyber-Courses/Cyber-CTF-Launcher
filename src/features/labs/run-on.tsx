@@ -1,11 +1,11 @@
 "use client";
 
-import { useRef } from "react";
+import { type ReactNode } from "react";
 import { type DockerEngine, type Provider, type ServerHost } from "@/lib/tauri";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
-import { StatusPill } from "@/components/ui/status-pill";
-import { platformGroups, vmFormOptions, useHostChecks, useRunTiers, type LocalRows, type OptionGroup, type PerMachineVm } from "@/features/labs/run-on-options";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { StatusPill, type Tone } from "@/components/ui/status-pill";
+import { EngineLogo, hypervisorOptions, platformGroups, vmFormOptions, useHostChecks, useRunTiers, type LocalRows, type OptionGroup } from "@/features/labs/run-on-options";
+import { engineName } from "@/features/machine/setup-steps/engines";
 import type { PortMode } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
 
@@ -31,9 +31,9 @@ const targetKey = (t: RunTarget) => {
   }
 };
 
-/** The picker's steps: the places ("Where should it run?"), then — only when it is picked — the
- *  Containers host ports or, when This machine's In a VM row has two VM forms, those VM forms. */
-export type PickerStep = "platform" | "ports" | "vmForms";
+/** The picker's steps: the places ("Where should it run?"), then — only when there is a choice —
+ *  the VM form, its hypervisor, or the container engine and host ports. */
+export type PickerStep = "platform" | "form" | "hypervisor" | "engine" | "ports";
 
 /** A row a lab can be launched from in step 1: run here as containers, run here in a VM, or on one
  *  saved host. (A container lab's local form is `containers`; a VM lab's is `vm`.) */
@@ -49,85 +49,56 @@ const platformOfRow = (t: RunTarget, offerContainers: boolean): Platform => {
 
 /** A target collapsed to its step-1 row's representative, so the right row highlights whichever
  *  local form (`local`, `local-vm`, `local-vms`) is the current pick. A container lab's VM forms
- *  all map to the In a VM row (`local-vm` on the chosen hypervisor). */
-const asRowTarget = (t: RunTarget, localVm: Provider | null): RunTarget => {
+ *  all map to the one VM row (its first form). */
+const asRowTarget = (t: RunTarget, firstVmForm: RunTarget | undefined): RunTarget => {
   if (t.kind === "host" || t.kind === "local") return t;
-  return localVm ? { kind: "local-vm", provider: localVm } : t;
+  return firstVmForm ?? t;
 };
 
-/**
- * A centered dialog over the page (Escape or a click on the backdrop closes it). The body
- * scrolls; `footer` (the actions) stays pinned at the bottom.
- */
-export function RunOnDialog({ onClose, children, footer }: { onClose: () => void; children: React.ReactNode; footer: React.ReactNode }) {
-  const t = useT();
-  const ref = useRef<HTMLDivElement>(null);
-  // Keep keyboard focus inside the dialog and restore it on close; Escape closes it.
-  useFocusTrap(ref, true, onClose);
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--scrim)] p-4 backdrop-blur-[0.125rem]"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={ref}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("labs.runOn.dialogLabel")}
-        className="surface-glass flex max-h-[85vh] w-full max-w-[28rem] flex-col rounded-panel outline-none"
-      >
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-3.5">{footer}</div>
-      </div>
-    </div>
-  );
-}
+export { RunOnDialog } from "@/features/labs/run-on-dialog";
 
 /**
- * The launch picker, in two steps. Step 1 ("Where should it run?") lists the places: This machine
- * as up to two rows (Containers, In a VM), then the player's servers, then their cloud accounts,
- * each with its logo and live status; a place the lab can't run on stays visible, disabled, saying
- * why. A lone VM form, a server and a cloud account go straight to Start; Containers opens the
- * host-ports step (rendered by the caller), and an In a VM row with two VM forms opens the VM-forms
- * step ("How should it run?"). `step`/`onPickPlatform` are driven by the caller (the hook).
+ * The launch picker, step by step. The places ("Where should it run?": This machine as up to two
+ * rows — Container, VM — then servers, then cloud accounts, each with its logo and live status);
+ * then, only when there is a choice, the VM form ("How should it run?"), its hypervisor ("Which
+ * hypervisor?"), or the container engine ("Which engine?"). The host-ports step is rendered by the
+ * caller. Each row is a full row — no inline switches. `step` and the `onPick…` handlers are driven
+ * by the hook.
  */
 type RunOnPickerProps = {
   title: string;
+  step?: PickerStep;
+  value: RunTarget;
+  disabled: boolean;
+  // The places (step 1).
   hosts: ServerHost[];
   hostOk: (h: ServerHost) => boolean;
+  /** This machine is a place it can run (false for a cloud lab: cloud accounts only). */
+  offerLocal?: boolean;
+  /** Whether the lab has a container form that runs here (a VM lab shows only the VM row). */
+  offerContainers?: boolean;
   localNote: string;
   /** Container labs: whether a Docker engine answers here (null = unknown / not relevant). */
   dockerRunning: boolean | null;
-  /** The container engine the lab will use here, named on the Container row (null: none / a VM lab). */
+  /** The container engine the lab will use here, named on the Container row and preselected in the
+   *  engine step (null: none / a VM lab). */
   engine?: DockerEngine | null;
-  /** Whether the lab has a container form that runs here, so This machine shows a Containers row
-   *  (a VM lab shows only In a VM). */
-  offerContainers?: boolean;
-  /** The local hypervisor this (container) lab can run a VM on: Settings' choice, else the first ready. */
-  localVm: Provider | null;
-  /** Every ready hypervisor it can run a VM on: with several, the VM form carries a switch. */
-  localVms?: Provider[];
-  /** The switch's pick (saved as Settings' choice by the caller). */
-  onPickVm?: (p: Provider) => void;
-  /** A lab with VM recipes too: the per-machine VM form here (the hypervisor it runs on, the
-   *  others ready for it, the switch); null when the lab or this machine can't. */
-  perMachine?: PerMachineVm | null;
-  value: RunTarget;
-  /** Picks a VM form on the VM-forms step (the switches use `onPickVm`). */
-  onChange: (t: RunTarget) => void;
-  disabled: boolean;
-  /** This machine is a place it can run (false for a cloud lab: cloud accounts only). */
-  offerLocal?: boolean;
-  /** Which step to show. */
-  step?: PickerStep;
-  /** Picks a place in step 1. */
+  /** The VM forms This machine offers (for the VM row and the form step). */
+  vmForms?: RunTarget[];
   onPickPlatform?: (p: Platform) => void;
+  // The form step.
+  onPickForm?: (t: RunTarget) => void;
+  // The hypervisor step.
+  hypervisors?: Provider[];
+  defaultHypervisor?: Provider | null;
+  onPickHypervisor?: (p: Provider) => void;
+  // The engine step.
+  engines?: DockerEngine[];
+  defaultEngine?: DockerEngine | null;
+  onPickEngine?: (e: DockerEngine) => void;
 };
 
-/** A step's title ("Where should it run?" / "How should it run?") over the lab's name. */
+/** A step's title over the lab's name. */
 function PickerHeading({ heading, title }: { heading: string; title: string }) {
   return (
     <div>
@@ -138,23 +109,38 @@ function PickerHeading({ heading, title }: { heading: string; title: string }) {
 }
 
 export function RunOnPicker(props: RunOnPickerProps) {
-  const { title, hosts, hostOk, localNote, dockerRunning, engine = null, value, disabled, offerLocal = true, offerContainers = true, step = "platform" } = props;
-  const { localVm, localVms = [], onPickVm = () => {}, perMachine = null, onChange, onPickPlatform = () => {} } = props;
+  const { title, step = "platform", value, disabled } = props;
+  const { hosts, hostOk, offerLocal = true, offerContainers = true, localNote, dockerRunning, engine = null, vmForms = [], onPickPlatform = () => {} } = props;
+  const { onPickForm = () => {}, hypervisors = [], defaultHypervisor = null, onPickHypervisor = () => {}, engines = [], defaultEngine = null, onPickEngine = () => {} } = props;
   const t = useT();
   const checks = useHostChecks(hosts);
   const tiers = useRunTiers();
 
-  if (step === "vmForms") {
-    const forms = vmFormOptions(t, tiers, { localVm, localVms, onPickVm, perMachine });
+  if (step === "form") {
     return (
       <div className="space-y-4">
         <PickerHeading heading={t("labs.runOn.formHeading")} title={title} />
-        <OptionList group={{ id: "local", label: t("labs.runOn.thisMachine"), options: forms }} value={value} onChange={onChange} disabled={disabled} />
+        <OptionList group={{ id: "local", label: t("labs.runOn.thisMachine"), options: vmFormOptions(t, tiers, vmForms) }} value={value} onChange={onPickForm} disabled={disabled} />
       </div>
     );
   }
+  if (step === "hypervisor") {
+    const form = value.kind === "local-vms" ? "local-vms" : "local-vm";
+    const pickHypervisor = (target: RunTarget) => {
+      if (target.kind === "local-vm" || target.kind === "local-vms") onPickHypervisor(target.provider);
+    };
+    return (
+      <div className="space-y-4">
+        <PickerHeading heading={t("labs.runOn.pickHypervisor")} title={title} />
+        <OptionList group={{ id: "hyp", label: t("labs.runOn.thisMachine"), options: hypervisorOptions(t, form, hypervisors, defaultHypervisor) }} value={value} onChange={pickHypervisor} disabled={disabled} />
+      </div>
+    );
+  }
+  if (step === "engine") {
+    return <EngineStep title={title} engines={engines} selected={engine} fallback={defaultEngine} onPick={onPickEngine} disabled={disabled} />;
+  }
 
-  const local: LocalRows = { offerContainers, localNote, dockerRunning, engine, localVm, localVms, onPickVm, perMachine };
+  const local: LocalRows = { offerContainers, localNote, dockerRunning, engine, vmForms };
   const groups = platformGroups(t, { hosts, hostOk, checks, local, offerLocal, tiers });
   const pick = (target: RunTarget) => {
     onPickPlatform(platformOfRow(target, offerContainers));
@@ -163,9 +149,60 @@ export function RunOnPicker(props: RunOnPickerProps) {
     <div className="space-y-4">
       <PickerHeading heading={t("labs.runOn.heading")} title={title} />
       {groups.map((g) => (
-        <OptionList key={g.id} group={g} value={asRowTarget(value, localVm)} onChange={pick} disabled={disabled} />
+        <OptionList key={g.id} group={g} value={asRowTarget(value, vmForms.at(0))} onChange={pick} disabled={disabled} />
       ))}
     </div>
+  );
+}
+
+/** "Which engine?": the container engines that answer here, as full rows (brand logo, name, the
+ *  current one marked Default and preselected). */
+function EngineStep({
+  title,
+  engines,
+  selected,
+  fallback,
+  onPick,
+  disabled,
+}: {
+  title: string;
+  engines: DockerEngine[];
+  selected: DockerEngine | null;
+  fallback: DockerEngine | null;
+  onPick: (e: DockerEngine) => void;
+  disabled: boolean;
+}) {
+  const t = useT();
+  return (
+    <div className="space-y-4">
+      <PickerHeading heading={t("labs.runOn.engineHeading")} title={title} />
+      <RadioList label={t("labs.runOn.engineHeading")}>
+        {engines.map((e) => (
+          <RadioRow
+            key={e}
+            selected={selected === e}
+            onSelect={() => {
+              onPick(e);
+            }}
+            disabled={disabled}
+            title={engineName(e)}
+            leading={<EngineLogo id={e} />}
+            trailing={<RowPill tone="ok">{t(e === fallback ? "labs.runOn.defaultChoice" : "labs.runOn.running")}</RowPill>}
+          />
+        ))}
+      </RadioList>
+    </div>
+  );
+}
+
+/** A tier badge or a live status, as one aligned pill (same line-height, dot and gap). */
+function RowPill({ tone, title, children }: { tone: Tone; title?: string; children: ReactNode }) {
+  return (
+    <span title={title} className="inline-flex items-center">
+      <StatusPill tone={tone}>
+        <span className="whitespace-nowrap">{children}</span>
+      </StatusPill>
+    </span>
   );
 }
 
@@ -192,32 +229,19 @@ function OptionList({ group: g, value, onChange, disabled }: { group: OptionGrou
               (o.badge || o.status) && (
                 <span className="flex items-center gap-1.5">
                   {o.badge && (
-                    <span title={o.badge.title}>
-                      <StatusPill tone={o.badge.kind === "experimental" ? "warn" : "muted"}>
-                        <span className="whitespace-nowrap">{t(o.badge.kind === "experimental" ? "labs.runOn.experimental" : "labs.runOn.beta")}</span>
-                      </StatusPill>
-                    </span>
+                    <RowPill tone={o.badge.kind === "experimental" ? "warn" : "muted"} title={o.badge.title}>
+                      {t(o.badge.kind === "experimental" ? "labs.runOn.experimental" : "labs.runOn.beta")}
+                    </RowPill>
                   )}
                   {o.status && (
-                    <StatusPill tone={o.status.tone}>
-                      <span className="whitespace-nowrap">{o.status.label}</span>
-                    </StatusPill>
+                    <RowPill tone={o.status.tone} title={o.status.title}>
+                      {o.status.label}
+                    </RowPill>
                   )}
                 </span>
               )
             }
-          >
-            {/* A switch inside the row picks within the option, never another option. */}
-            {o.extra && (
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                }}
-              >
-                {o.extra}
-              </div>
-            )}
-          </RadioRow>
+          />
         ))}
       </RadioList>
     </div>

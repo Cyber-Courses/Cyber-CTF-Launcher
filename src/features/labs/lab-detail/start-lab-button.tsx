@@ -115,29 +115,31 @@ function StartDialog({
       {run.step === "ports" ? (
         <PortsStep title={lab.title} run={run} />
       ) : (
-        <>
-          <RunOnPicker
-            title={lab.title}
-            hosts={run.hosts}
-            hostOk={run.hostOk}
-            localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
-            localVm={run.localVm}
-            localVms={run.localVms}
-            onPickVm={run.pickVm}
-            perMachine={run.perMachine}
-            dockerRunning={isDocker ? dockerRunning : null}
-            engine={run.engine}
-            value={run.runOn}
-            onChange={run.setRunOn}
-            disabled={busy}
-            offerLocal={!cloud}
-            offerContainers={isDocker}
-            step={run.step}
-            onPickPlatform={run.pickPlatform}
-          />
-          {run.step === "vmForms" && <RememberToggle run={run} />}
-        </>
+        <RunOnPicker
+          title={lab.title}
+          step={run.step}
+          value={run.runOn}
+          disabled={busy}
+          hosts={run.hosts}
+          hostOk={run.hostOk}
+          offerLocal={!cloud}
+          offerContainers={isDocker}
+          localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
+          dockerRunning={isDocker ? dockerRunning : null}
+          engine={run.engine}
+          vmForms={run.vmForms}
+          onPickPlatform={run.pickPlatform}
+          onPickForm={run.pickForm}
+          hypervisors={run.hypervisors}
+          defaultHypervisor={run.defaultHypervisor}
+          onPickHypervisor={run.pickHypervisor}
+          engines={run.engines}
+          defaultEngine={run.defaultEngine}
+          onPickEngine={run.pickEngine}
+        />
       )}
+      {/* "Don't ask again" sits on the last step of the path (never for a cloud lab). */}
+      {run.isLastStep && !cloud && <RememberToggle run={run} />}
       {cloud && (
         <div className="mt-4">
           <CloudLaunchNote preview={cloud.preview} autoStopHours={run.pickedAccount?.autoStopHours ?? null} />
@@ -149,7 +151,17 @@ function StartDialog({
 
 /** The dialog's actions: Back (off the places step), Cancel, and Start. Start waits for a cloud
  *  account to be picked (`cloudGated`). */
-function StartFooter({ run, cloudGated, onClose, onStart }: { run: RunTargetChoice; cloudGated: boolean; onClose: () => void; onStart: (t: RunTarget) => void }) {
+function StartFooter({
+  run,
+  cloudGated,
+  onClose,
+  onStart,
+}: {
+  run: RunTargetChoice;
+  cloudGated: boolean;
+  onClose: () => void;
+  onStart: (t: RunTarget) => void;
+}) {
   const t = useT();
   return (
     <>

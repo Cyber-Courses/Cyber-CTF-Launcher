@@ -178,12 +178,17 @@ describe("LabDetail: starting", () => {
     installTauri(quiet);
     const { user, h } = await clickStart({ dockerEngine: "docker-desktop", dockerEnginesRunning: ["docker-desktop", "orbstack"] });
     const dialog = screen.getByRole("dialog");
-    // Two engines answer, so the dialog opens even with nowhere else to run; Containers leads to
-    // the step with the engine switch above the ports.
+    // Two engines answer, so the dialog opens even with nowhere else to run; Container leads to an
+    // engine step ("Which engine?") of full rows, then the ports step.
     await user.click(within(dialog).getByText("Container"));
-    const engines = within(dialog).getByRole("radiogroup", { name: "Container engine" });
-    expect(within(engines).getByRole("radio", { name: "Docker Desktop" })).toBeTruthy();
-    await user.click(within(engines).getByRole("radio", { name: "OrbStack" }));
+    expect(within(dialog).getByText("Which engine?")).toBeTruthy();
+    expect(within(dialog).getByText("Docker Desktop")).toBeTruthy();
+    // No port choice on the engine step, and no "Don't ask again" until the last step.
+    expect(within(dialog).queryByText("Ports on this machine")).toBeNull();
+    expect(within(dialog).queryByRole("switch", { name: "Don't ask again" })).toBeNull();
+    await user.click(within(dialog).getByText("OrbStack"));
+    // The ports step, the last one: the engine's choice carries over and "Don't ask again" appears.
+    expect(within(dialog).getByText("Ports on this machine")).toBeTruthy();
     await user.click(within(dialog).getByRole("switch", { name: "Don't ask again" }));
     await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local", ports: "random", engine: "orbstack" });

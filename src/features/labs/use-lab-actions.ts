@@ -63,7 +63,11 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
       const containersHere = lab.runtime.runtime !== "VM" && host == null && !vm;
       const ports = containersHere ? (here?.ports ?? getPortMode() ?? (await askPortMode(lab.title))) : null;
       if (containersHere && !ports) return;
-      await operate(lab, "launch", localLaunch(lab, { host, vmProvider: vm?.provider, report, ports, perMachineVm: vm?.perMachine ?? false, engine: here?.engine }));
+      await operate(
+        lab,
+        "launch",
+        localLaunch(lab, { host, vmProvider: vm?.provider, report, ports, perMachineVm: vm?.perMachine ?? false, engine: here?.engine }),
+      );
     },
     [operate],
   );

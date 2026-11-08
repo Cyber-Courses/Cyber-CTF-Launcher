@@ -82,7 +82,7 @@
     "inVmSubtitle": "{provider} · システムから隔離",
     "ready": "準備完了",
     "readyHint": "ハイパーバイザーは「設定」で選択済み",
-    "pickHypervisor": "ハイパーバイザー",
+    "pickHypervisor": "どのハイパーバイザー？",
     "perMachineVm": "このマシン、マシンごとに 1 台の VM",
     "perMachineVmSubtitle": "{provider} · 各マシンに完全な VM、サーバー上と同様",
     "perMachineVmHint": "ラボの VM レシピ：マシンをコンテナではなく仮想マシンとして実行",
@@ -93,7 +93,10 @@
     "beta": "ベータ",
     "experimental": "実験的",
     "engine": "コンテナエンジン",
-    "rememberChoice": "次回から確認しない"
+    "rememberChoice": "次回から確認しない",
+    "engineHeading": "どのエンジン？",
+    "defaultChoice": "デフォルト",
+    "inVmFormNote": "1 台の VM 内のコンテナ"
   },
   "ports": {
     "question": "{title} はどのポートを使いますか？",

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { WhereItRunsPanel } from "@/features/labs/lab-detail/where-it-runs-panel";
 import { RunOnPicker } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
@@ -81,9 +81,7 @@ describe("RunOnPicker", () => {
         hostOk={(h) => h.provider !== "aws"}
         localNote="VirtualBox"
         dockerRunning={null}
-        localVm={null}
         value={{ kind: "local" }}
-        onChange={vi.fn()}
         disabled={false}
       />,
     );
