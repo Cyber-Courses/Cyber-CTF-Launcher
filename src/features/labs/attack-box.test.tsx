@@ -17,6 +17,8 @@ const box = (p: Partial<AttackStatus> = {}): AttackStatus => ({
   labNetwork: "default",
   networks: ["default"],
   shellCmd: "docker compose exec kali bash",
+  vm: false,
+  pickedBox: false,
   ...p,
 });
 const count = (calls: Call[], cmd: string) => calls.filter((c) => c.cmd === cmd).length;
@@ -61,11 +63,11 @@ describe("useAttackBox", () => {
     expect(count(calls, "attack_box_status")).toBe(0);
   });
 
-  it("reads and attaches the box beside a VM lab with the box from Settings", async () => {
+  it("reads and attaches a VM lab's own attack VM with the box from Settings", async () => {
     setAttackBox("kalilinux/rolling");
     setAutoAttackBox(false);
     const calls = installTauri({
-      attack_box_status: () => box(),
+      attack_box_status: () => box({ vm: true, pickedBox: true }),
       attack_box_attach: (a) => {
         stream(a, "==> attach: adding kali");
         return null;
@@ -82,14 +84,28 @@ describe("useAttackBox", () => {
     expect(calls.find((c) => c.cmd === "attack_box_detach")?.args).toMatchObject({ id: "ab-vm", runtime: "VM" });
   });
 
-  it("leaves the box to the lab's default beside a VM lab until one is picked in Settings", async () => {
+  it("leaves a lab's own attack VM to the lab's default box until one is picked in Settings", async () => {
     setAutoAttackBox(false);
-    const calls = installTauri({ attack_box_status: () => box(), attack_box_attach: () => null });
+    const calls = installTauri({ attack_box_status: () => box({ vm: true, pickedBox: true }), attack_box_attach: () => null });
     const { result } = renderHook(() => useAttackBox("ab-vm-default", { running: true, local: true, runtime: "VM" }));
     await flush();
     expect(result.current.name).toBe("this machine's default box");
     await act(() => result.current.start());
     expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "ab-vm-default", runtime: "VM", pick: { network: null, image: null } });
+  });
+
+  it("sends the attack box image to the attack VM the runner adds to a lab running as VMs", async () => {
+    // A container lab run as one VM per machine: declared DOCKER, a VM here, no attack VM of its own.
+    setAttackImage("my/exegol:full");
+    setAttackBox("kalilinux/rolling");
+    setAutoAttackBox(false);
+    const calls = installTauri({ attack_box_status: () => box({ vm: true }), attack_box_attach: () => null });
+    const { result } = renderHook(() => useAttackBox("ab-as-vms", { running: true, local: true, runtime: "DOCKER" }));
+    await flush();
+    expect(result.current.vm).toBe(true);
+    expect(result.current.name).toBe("my/exegol:full");
+    await act(() => result.current.start());
+    expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "ab-as-vms", runtime: "DOCKER", pick: { image: "my/exegol:full" } });
   });
 
   it("attaches the box with the lab once, when Settings say so", async () => {
@@ -360,7 +376,7 @@ describe("AttackBoxPanel", () => {
     render(<AttackBoxPanel box={fake({ vm: true, name: "kalilinux/rolling" })} running host={null} />);
     expect(screen.getByText("Attack VM")).toBeTruthy();
     expect(screen.getByText("kalilinux/rolling")).toBeTruthy();
-    expect(screen.getByText(/Your own VM beside the lab/)).toBeTruthy();
+    expect(screen.getByText(/as a VM beside the lab/)).toBeTruthy();
   });
 
   it("offers to start the attack VM beside a VM lab on any hypervisor, QEMU included", () => {

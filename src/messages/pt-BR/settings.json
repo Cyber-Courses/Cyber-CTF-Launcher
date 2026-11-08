@@ -82,7 +82,7 @@
   },
   "attackVm": {
     "title": "VM de ataque para labs de VM",
-    "description": "As redes de um lab de VM ficam dentro do hypervisor, então seu atacante é uma VM ao lado dele: esta box Vagrant, ligada a todas as redes do lab, com internet para instalar ferramentas. A primeira inicialização baixa a box. Até você escolher uma, o lab inicia sua box padrão para a CPU desta máquina: Kali em x86, a imagem cloud do Debian em Arm (a box do Kali não tem versão Arm).",
+    "description": "As redes de um lab de VM ficam dentro do hypervisor, então seu atacante é uma VM ao lado dele. Sua imagem de attack box acima roda dentro dessa VM (Debian 12 com Docker; em um Mac Apple Silicon, a versão Arm da imagem). Esta box Vagrant é para labs cujo próprio desenho declara uma VM de ataque: ela inicia essa VM, ligada a todas as redes do lab, com internet para instalar ferramentas. A primeira inicialização baixa a box. Até você escolher uma, o lab inicia sua box padrão para a CPU desta máquina: Kali em x86, a imagem cloud do Debian em Arm (a box do Kali não tem versão Arm).",
     "label": "Box da VM de ataque",
     "presets": {
       "kali": "Box oficial do Kali; tem acesso à internet, adicione ferramentas conforme avança",

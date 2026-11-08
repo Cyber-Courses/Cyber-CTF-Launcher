@@ -82,7 +82,7 @@
   },
   "attackVm": {
     "title": "Angriffs-VM für VM-Labs",
-    "description": "Die Netzwerke eines VM-Labs liegen im Hypervisor, daher ist dein Angreifer eine VM daneben: diese Vagrant-Box, verbunden mit jedem Lab-Netzwerk, mit Internet zum Installieren von Tools. Der erste Start lädt die Box herunter. Bis du eine wählst, startet das Lab seine Standard-Box für die CPU dieser Maschine: Kali auf x86, das Debian-Cloud-Image auf Arm (die Kali-Box hat keine Arm-Version).",
+    "description": "Die Netzwerke eines VM-Labs liegen im Hypervisor, daher ist dein Angreifer eine VM daneben. Dein Attack-Box-Image oben läuft in dieser VM (Debian 12 mit Docker; auf einem Apple-Silicon-Mac die Arm-Version des Images). Diese Vagrant-Box gilt für Labs, deren Aufbau eine eigene Angriffs-VM vorsieht: sie startet diese VM, verbunden mit jedem Lab-Netzwerk, mit Internet zum Installieren von Tools. Der erste Start lädt die Box herunter. Bis du eine wählst, startet das Lab seine Standard-Box für die CPU dieser Maschine: Kali auf x86, das Debian-Cloud-Image auf Arm (die Kali-Box hat keine Arm-Version).",
     "label": "Box der Angriffs-VM",
     "presets": {
       "kali": "Offizielle Kali-Box mit Internetzugang, Tools nach und nach ergänzen",

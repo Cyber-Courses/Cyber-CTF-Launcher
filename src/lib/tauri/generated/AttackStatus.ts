@@ -24,4 +24,15 @@ networks: Array<string>,
 /**
  * The command line that opens a shell in the box (shown so the player can also run it).
  */
-shellCmd: string, };
+shellCmd: string, 
+/**
+ * Whether the box is a VM here: beside a lab running as VMs on this machine (the lab's own
+ * attack VM, or the one the runner adds to the running lab).
+ */
+vm: boolean, 
+/**
+ * Whether the box boots from the Vagrant box picked in Settings: a VM lab's own attack VM.
+ * Otherwise it runs the attack box image: beside a container lab's containers, inside the VM
+ * of a container lab run in one, or inside the attack VM the runner adds to a VM lab.
+ */
+pickedBox: boolean, };

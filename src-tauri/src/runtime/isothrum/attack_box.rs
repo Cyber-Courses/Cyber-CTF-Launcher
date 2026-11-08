@@ -25,7 +25,18 @@ pub struct AttackStatus {
     pub networks: Vec<String>,
     /// The command line that opens a shell in the box (shown so the player can also run it).
     pub shell_cmd: String,
+    /// Whether the box is a VM here: beside a lab running as VMs on this machine (the lab's own
+    /// attack VM, or the one the runner adds to the running lab).
+    pub vm: bool,
+    /// Whether the box boots from the Vagrant box picked in Settings: a VM lab's own attack VM.
+    /// Otherwise it runs the attack box image: beside a container lab's containers, inside the VM
+    /// of a container lab run in one, or inside the attack VM the runner adds to a VM lab.
+    pub picked_box: bool,
 }
+
+/// The define name of the attack VM the runner adds to a VM lab itself (Isoloom's reserved
+/// namespace: a lab's own machine is never called so).
+const ADHOC_NAME: &str = "isoloom-access";
 
 /// The run's on-demand access machine, if it has one.
 fn access(status: &Status) -> Option<&MachineStatus> {
@@ -46,9 +57,17 @@ pub(super) fn display(cmd: &ShellCommand) -> String {
     shell_words::join(&words)
 }
 
+/// Whether the lab declares an attack VM of its own: an access machine that isn't the one the
+/// runner adds (which only appears once added).
+fn own_access(status: &Status) -> bool {
+    status.machines.iter().any(|m| m.role == Role::Access && m.name != ADHOC_NAME)
+}
+
 /// The attack box's status from the run's status: up when the access machine runs, its address on
-/// `network` (or its first), the lab's networks, and the `shell_cmd` the runner built.
-pub(super) fn status_of(status: &Status, network: Option<&str>, shell_cmd: String) -> AttackStatus {
+/// `network` (or its first), the lab's networks, the `shell_cmd` the runner built, and what the
+/// box is here (`vm`: the lab runs as VMs on this machine; the picked Vagrant box boots it only
+/// when the lab declares its own attack VM).
+pub(super) fn status_of(status: &Status, network: Option<&str>, shell_cmd: String, vm: bool) -> AttackStatus {
     let machine = access(status);
     let running = machine.is_some_and(|m| matches!(m.state, MachineState::Running | MachineState::Unhealthy));
     let addresses = machine.map(|m| &m.addresses);
@@ -58,7 +77,15 @@ pub(super) fn status_of(status: &Status, network: Option<&str>, shell_cmd: Strin
         .or_else(|| addresses.and_then(|a| a.keys().next().cloned()))
         .unwrap_or_default();
     let ip = addresses.and_then(|a| a.get(&on)).cloned().unwrap_or_default();
-    AttackStatus { running, ip: if running { ip } else { String::new() }, lab_network: on, networks: networks(status), shell_cmd }
+    AttackStatus {
+        running,
+        ip: if running { ip } else { String::new() },
+        lab_network: on,
+        networks: networks(status),
+        shell_cmd,
+        vm,
+        picked_box: vm && own_access(status),
+    }
 }
 
 #[cfg(test)]
@@ -85,11 +112,23 @@ mod tests {
     #[test]
     fn a_vm_labs_attack_vm_is_the_runs_access_machine_down_until_hot_added() {
         let shell = "VAGRANT_DOTFILE_PATH=/runs/t/vagrant vagrant ssh isoloom-access".to_owned();
-        let down = status_of(&vm_lab("absent"), None, shell.clone());
+        let down = status_of(&vm_lab("absent"), None, shell.clone(), true);
         assert_eq!((down.running, down.ip.as_str(), down.networks.as_slice()), (false, "", ["lab".to_owned()].as_slice()));
         assert_eq!(down.shell_cmd, shell, "the shell command is known before the box is up");
-        let up = status_of(&vm_lab("running"), None, shell);
+        // The runner's own VM runs the attack box image: no Vagrant box to pick.
+        assert!(down.vm && !down.picked_box, "{down:?}");
+        let up = status_of(&vm_lab("running"), None, shell, true);
         assert_eq!((up.running, up.ip.as_str(), up.lab_network.as_str()), (true, "10.61.0.252", "lab"));
+    }
+
+    #[test]
+    fn a_labs_own_attack_vm_boots_from_the_picked_box_and_a_container_box_is_no_vm() {
+        let mut own = vm_lab("absent");
+        own.machines[1].name = "kali".into();
+        let status = status_of(&own, None, String::new(), true);
+        assert!(status.vm && status.picked_box, "{status:?}");
+        let container = status_of(&vm_lab("running"), None, String::new(), false);
+        assert!(!container.vm && !container.picked_box, "{container:?}");
     }
 
     #[test]

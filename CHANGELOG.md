@@ -19,6 +19,18 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   Fix or Test there still opens its step directly. The first-run onboarding keeps the container
   and VM steps.
 
+### Fixed
+
+- **The attack box beside a container lab run as VMs failed on a missing Vagrant box.** On a lab
+  deployed "one VM per machine" on this machine, "Start attack box" sent the attack box image
+  (`cyberctf/attack-box@sha256:…`) where the runner expected the attack VM's Vagrant box, and
+  Vagrant Cloud answered 404. The box's status now says what it is here (`vm`: a VM beside a lab
+  running as VMs, whatever the lab declares; `pickedBox`: the lab's own attack VM, which boots
+  from the Vagrant box in Settings), and the attach sends the right choice: the attack box image,
+  which the runner now runs inside the attack VM it adds (Isothrum 1.0.6 on Isoloom 1.0.10: Debian
+  12 with Docker, the image's Arm build on an Apple Silicon Mac), or the Vagrant box for a lab
+  whose own design declares an attack VM. The panel calls it an attack VM in both cases.
+
 ## [1.8.9] — 2026-11-08
 
 ### Added

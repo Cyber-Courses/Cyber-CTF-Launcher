@@ -330,13 +330,15 @@ impl LabRun {
     /// The attack box's status: its access machine as the runner reports it, its address on
     /// `network` (or the only one), the lab's networks to pick from, and the shell into it.
     pub(crate) async fn attack_status(&self, network: Option<&str>) -> Result<AttackStatus> {
+        // What the box is here is known before the lab runs: a VM beside a lab of VMs.
+        let vm = self.kind == Kind::Vm;
         if !self.manifest().is_file() {
-            return Ok(AttackStatus::default());
+            return Ok(AttackStatus { vm, ..AttackStatus::default() });
         }
         let lab = self.lab()?;
         let status = lab.status().await.map_err(errors::from_runner)?;
         let shell = lab.shell_command(None).ok().map(|c| attack_box::display(&c)).unwrap_or_default();
-        Ok(attack_box::status_of(&status, network, shell))
+        Ok(attack_box::status_of(&status, network, shell, vm))
     }
 
     /// The command that opens a shell into the attack box: the runner builds it (it alone knows

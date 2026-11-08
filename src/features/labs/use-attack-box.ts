@@ -11,15 +11,16 @@ import { structurallyEqual } from "@/lib/equal";
 import { useLatest } from "@/lib/use-latest";
 import { useRunLog } from "@/features/servers/host-setup/use-run-log";
 
-/** The box image the learner chose for this lab's runtime: a Vagrant box beside a VM lab (null
- *  until they pick one: the lab's own default box for this machine's CPU runs), a container image
- *  beside a container lab. The runner takes either as its attach image. */
-const boxImage = (runtime: Runtime) => (runtime === "VM" ? getAttackBoxChoice() : getAttackImage());
+/** What the attach sends, from the box's status: the Vagrant box from Settings when the attacker is
+ *  a VM lab's own attack VM (`pickedBox`; null until one is picked: the lab's default box for this
+ *  machine's CPU runs), else the attack box image, which runs beside a container lab's containers
+ *  or inside the attack VM the runner adds to a lab running as VMs. */
+const boxImage = (pickedBox: boolean) => (pickedBox ? getAttackBoxChoice() : getAttackImage());
 
 /** Attaches the attack box onto `network` (null: the only one), or joins the attach already under
  *  way: a second attach would race the first on the same run. */
-const attach = (labId: string, runtime: Runtime, network: string | null, onLog: (line: string) => void) =>
-  startOnce(`attach:${labId}`, (log) => attackBoxAttach(labId, runtime, network, boxImage(runtime), log), onLog);
+const attach = (labId: string, runtime: Runtime, network: string | null, pickedBox: boolean, onLog: (line: string) => void) =>
+  startOnce(`attach:${labId}`, (log) => attackBoxAttach(labId, runtime, network, boxImage(pickedBox), log), onLog);
 
 /** The attack box's last status: read now and polled every 5 s while the lab is up here
  *  (`active` and `local`), dropped when the lab starts or ends an operation. `network` is the one
@@ -104,8 +105,10 @@ function useAutoStart(
 /**
  * The lab's attack box: polled while a lab is up on this machine (so running / IP stay
  * current), attached and detached through the runner with a streamed log, and attached with the
- * lab when the Settings preference is on (once per run). `runtime` is the lab's (a container
- * image beside a Docker lab, a Vagrant box beside a VM lab, both from Settings). The learner
+ * lab when the Settings preference is on (once per run). `runtime` is the lab's declared one; what
+ * the box is here comes from its status (`vm`: a VM beside a lab running as VMs on this machine,
+ * a container lab run as one VM per machine included; `pickedBox`: the lab's own attack VM, booted
+ * from the Vagrant box in Settings; otherwise the attack box image from Settings). The learner
  * picks which lab network to join when the lab has more than one (`networks`). `holding` = a lab
  * operation (start, shut down, stop…) is in flight: nothing is read or attached meanwhile.
  */
@@ -124,11 +127,16 @@ export function useAttackBox(
   const [network, setNetwork] = useState<string | null>(null);
   const { status, setStatus, refresh } = useAttackBoxStatus(labId, runtime, active, local, network);
   const { busy, log, run } = useAttackBoxRun(refresh);
-  const vm = runtime === "VM";
+  // Until the status says, the lab's declared runtime stands in: a VM lab's box is a VM.
+  const vm = status?.vm ?? runtime === "VM";
+  const pickedBox = status?.pickedBox ?? false;
   // The image or box in use, for the panel's label: the lab's own default box until one is picked.
-  const name = vm ? (getAttackBoxChoice() ?? translate("labs.attackBox.defaultBox")) : attackImageLabel(getAttackImage());
+  const name = pickedBox ? (getAttackBoxChoice() ?? translate("labs.attackBox.defaultBox")) : attackImageLabel(getAttackImage());
 
-  const start = useCallback(() => run((l) => attach(labId, runtime, network, l), translate("labs.attackBox.attaching")), [run, labId, runtime, network]);
+  const start = useCallback(
+    () => run((l) => attach(labId, runtime, network, pickedBox, l), translate("labs.attackBox.attaching")),
+    [run, labId, runtime, network, pickedBox],
+  );
   const stop = useCallback(
     () =>
       run(async (l) => {
