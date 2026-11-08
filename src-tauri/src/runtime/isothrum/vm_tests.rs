@@ -2,13 +2,9 @@
 //! hypervisor runs. The lab's run manifest is the one Isoloom generates for the `vagrant` target.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, PoisonError};
 
-use isothrum_runner::process::fake::{Call, FakeProcesses, Reply};
-use isothrum_runner::{FakePorts, ProcessRunner};
-
+use super::test_lab::prelude::*;
 use super::*;
-use crate::runtime::Park;
 
 const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.31.0.0/24 }\ninputs: [CTF_FLAG_MAIN]\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8086 } }\n    files: [{ path: /srv/flag, input: CTF_FLAG_MAIN }]\n    app: { steps: [{ run: web.sh }] }\nchecks:\n  - { http: \"http://web/\" }\nmessage: |\n  Open http://localhost:{{ machines.web.ports.web.published }}/\n";
 
@@ -16,55 +12,33 @@ const VMS: [&str; 2] = ["web", "isoloom-controller"];
 
 /// An installed VM lab (`<labs>/web`) with its files generated, a runner home, and a model of its
 /// VMs' states.
-struct Fixture {
-    root: std::path::PathBuf,
-    dir: std::path::PathBuf,
-    states: Arc<Mutex<BTreeMap<String, String>>>,
-    fake: Arc<FakeProcesses>,
-}
+type Fixture = Scripted<BTreeMap<String, String>>;
 
 impl Fixture {
     fn new() -> Fixture {
-        let root = std::env::temp_dir().join(format!("cyberctf-isothrum-vm-{}", rand::random::<u32>()));
-        let dir = root.join("labs").join("web");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("isoloom.yml"), SPEC).unwrap();
-        std::fs::write(dir.join("web.sh"), "true\n").unwrap();
-        lab::prepare(&dir, lab::Target::Vagrant).unwrap();
-        let states = Arc::new(Mutex::new(BTreeMap::new()));
-        let script = Arc::clone(&states);
-        let fake = Arc::new(FakeProcesses::new(move |call| answer(&script, call)));
-        Fixture { root, dir, states, fake }
+        Scripted::answered_by(Home::new("-vm", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), answer)
     }
 
     fn run(&self) -> LabRun {
-        let config = RunnerConfig::new(&self.root).with_processes(Arc::clone(&self.fake) as Arc<dyn ProcessRunner>).with_ports(Arc::new(FakePorts::new([])));
-        LabRun::with(config, &self.dir, "web", Kind::Vm).unwrap()
+        LabRun::with(self.home.config(&self.fake, []), &self.home.dir, "web", Kind::Vm).unwrap()
     }
 
     /// The lab on an ESXi host, `place`, run from a Linux host (no relay: the runner's own tests
     /// cover macOS's).
     fn esxi_run(&self, place: EsxiPlace) -> LabRun {
-        let mut config =
-            RunnerConfig::new(&self.root).with_processes(Arc::clone(&self.fake) as Arc<dyn ProcessRunner>).with_ports(Arc::new(FakePorts::new([])));
+        let mut config = self.home.config(&self.fake, []);
         config.host = isothrum_runner::isoloom_manifest::HostOs::Linux;
-        LabRun::with(config, &self.dir, "web", Kind::Vm).unwrap().on(place)
+        LabRun::with(config, &self.home.dir, "web", Kind::Vm).unwrap().on(place)
     }
 
     fn state(&self, vm: &str) -> String {
-        self.states.lock().unwrap_or_else(PoisonError::into_inner).get(vm).cloned().unwrap_or_else(|| "not_created".into())
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
+        self.model().get(vm).cloned().unwrap_or_else(|| "not_created".into())
     }
 }
 
 /// The fake Vagrant's answer to `call`.
 fn answer(states: &Mutex<BTreeMap<String, String>>, call: &Call) -> Reply {
-    let mut s = states.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut s = locked(states);
     let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
     let set = |s: &mut BTreeMap<String, String>, vms: &[&str], state: &str| vms.iter().for_each(|vm| drop(s.insert((*vm).to_owned(), state.to_owned())));
     match (call.program.as_str(), args.as_slice()) {
@@ -108,7 +82,10 @@ async fn a_vm_lab_goes_up_on_its_hypervisor_through_the_runner() {
     run.up(&[("CTF_FLAG_MAIN".into(), "flag{v}".into())], Some("virtualbox"), &mut |l| log.push(l)).await.unwrap();
     let up = f.fake.last("vagrant up --provider virtualbox").unwrap();
     assert_eq!(up.env("CTF_FLAG_MAIN"), Some("flag{v}"), "the launch's input reaches its slot");
-    assert!(up.env("VAGRANT_DOTFILE_PATH").is_some_and(|p| p.starts_with(&f.root.join("runs").display().to_string())), "Vagrant's record in the run's state");
+    assert!(
+        up.env("VAGRANT_DOTFILE_PATH").is_some_and(|p| p.starts_with(&f.home.root.join("runs").display().to_string())),
+        "Vagrant's record in the run's state"
+    );
     assert!(log.iter().any(|l| l == "flag ***"), "masked: {log:?}");
     assert_eq!(log.last().map(String::as_str), Some("Open http://localhost:8086/"));
     assert_eq!(f.state("isoloom-controller"), "poweroff", "the controller is halted once the lab is built");
@@ -128,7 +105,7 @@ async fn a_vm_lab_is_checked_parked_resumed_reprovisioned_and_stopped() {
     assert!(c.available && c.ok, "{}", c.output);
     run.park(Park::Pause, &mut |_| {}).await.unwrap();
     assert_eq!(f.state("web"), "saved", "paused: its state saved");
-    paths::mark_parked(&f.dir, Some(Park::Pause)).unwrap();
+    paths::mark_parked(&f.home.dir, Some(Park::Pause)).unwrap();
     assert_eq!(run.status().await.unwrap().parked, Some(Park::Pause));
     run.resume(&mut |_| {}).await.unwrap();
     assert_eq!((f.state("web").as_str(), f.state("isoloom-controller").as_str()), ("running", "poweroff"));

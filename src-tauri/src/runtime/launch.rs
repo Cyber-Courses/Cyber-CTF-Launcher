@@ -25,6 +25,18 @@ use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_f
 pub(super) use on_host::{check_aws_budget, public_ip};
 pub(super) use on_host::{runner_runs_on, server_place};
 
+/// Where a lab is started: on this machine (with a local `provider`, and `per_machine_vm`
+/// picking the one-VM-per-machine form for a container lab), or on the server `host`.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Destination<'a> {
+    pub(crate) provider: Option<Provider>,
+    pub(crate) host: Option<&'a str>,
+    pub(crate) per_machine_vm: bool,
+    /// The Docker context a container lab here runs on (the learner's engine); none: the
+    /// current one.
+    pub(crate) docker_context: Option<&'a str>,
+}
+
 /// Starts an installed lab; `env` is passed to the runtime (evidence claim, attack box).
 ///
 /// - No `host`: Docker labs run on this machine's Docker, or in one VM on this machine with a
@@ -36,22 +48,9 @@ pub(super) use on_host::{runner_runs_on, server_place};
 /// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
 ///
 /// The caller holds the lab lock (`lock_lab`): a launch holds it from the download on.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the launch entry point carries the whole launch specification — the lab (dir, id), its runtime, a local provider or a server host, the form override, the launch inputs and a log sink — which has no smaller cohesive grouping"
-)]
-pub(crate) async fn start_locked(
-    dirs: &AppDirs,
-    dir: &Path,
-    id: &str,
-    runtime: Runtime,
-    provider: Option<Provider>,
-    host: Option<&str>,
-    per_machine_vm: bool,
-    docker_context: Option<&str>,
-    env: &[(String, String)],
-    mut log: impl FnMut(String),
-) -> Result<()> {
+pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
+    let LabRef { dir, id, runtime } = lab;
+    let Destination { provider, host, per_machine_vm, docker_context } = to;
     let _deploy = DeployGuard::new(id, Action::Start);
     // A lab runs in one place: starting it here (or on another host) while its deployment is
     // still up elsewhere would drop the marker naming that host, and with it the way to stop
@@ -67,7 +66,6 @@ pub(crate) async fn start_locked(
     if parked(dir).is_none() {
         forget_lab_host_keys(dir);
     }
-    let lab = LabRef { dir, id, runtime };
     if runtime == Runtime::Cloud {
         return cloud_services::start(dirs, lab, host, env, &mut log).await;
     }
@@ -76,27 +74,15 @@ pub(crate) async fn start_locked(
         // On a cloud account the per-machine form is cloud-vm (one instance per machine); on a
         // server (ESXi, Proxmox) the lab runs as the catalogue says, so `start_on_server` refuses
         // the per-machine pick there. The dispatch on the provider is its to make (the connection).
-        Some(host) => start_on_server(dirs, lab, host, per_machine_vm, env, &mut log).await,
+        Some(host) => start_on_server(dirs, lab, (host, per_machine_vm), env, &mut log).await,
     }
 }
 
 /// [`start_locked`] under the lab lock, for tests that start an installed lab directly.
 #[cfg(test)]
-#[allow(clippy::too_many_arguments, reason = "mirrors start_locked's full launch specification so tests start a lab by the same parameters")]
-pub(crate) async fn start(
-    dirs: &AppDirs,
-    dir: &Path,
-    id: &str,
-    runtime: Runtime,
-    provider: Option<Provider>,
-    host: Option<&str>,
-    per_machine_vm: bool,
-    docker_context: Option<&str>,
-    env: &[(String, String)],
-    log: impl FnMut(String),
-) -> Result<()> {
-    let _lock = super::inflight::lock_lab(dirs, id).await?;
-    start_locked(dirs, dir, id, runtime, provider, host, per_machine_vm, docker_context, env, log).await
+pub(crate) async fn start(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, env: &[(String, String)], log: impl FnMut(String)) -> Result<()> {
+    let _lock = super::inflight::lock_lab(dirs, lab.id).await?;
+    start_locked(dirs, lab, to, env, log).await
 }
 
 /// The name of the server host lab `id` (folder `dir`) is deployed on, if something of it is

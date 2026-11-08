@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
 use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
-use super::{CLOUD_NEEDS_ACCOUNT, LocalRun, Provider, Runtime, budget_verdict, emulated_arches, local_run, low_memory_warning, parse_ipv4, record_cloud_form};
+use super::{
+    CLOUD_NEEDS_ACCOUNT, Destination, LabRef, LocalRun, Provider, Runtime, budget_verdict, emulated_arches, local_run, low_memory_warning, parse_ipv4,
+    record_cloud_form,
+};
 use super::{server, warn_if_low_memory};
 use crate::platform::exec::fake::Tools;
 use crate::runtime::paths::{mark_parked, parked};
@@ -9,22 +12,20 @@ use crate::runtime::{Park, start};
 use crate::testing::test_app::TestApp;
 
 async fn start_here(t: &TestApp, id: &str, runtime: Runtime, provider: Option<Provider>, env: &[(String, String)]) -> (crate::error::Result<()>, Vec<String>) {
-    start_here_as(t, id, runtime, provider, false, env).await
+    start_at(t, id, runtime, Destination { provider, ..Destination::default() }, env).await
 }
 
-/// A start on this machine, `per_machine_vm` picking the per-machine VM form for a container lab.
-async fn start_here_as(
-    t: &TestApp,
-    id: &str,
-    runtime: Runtime,
-    provider: Option<Provider>,
-    per_machine_vm: bool,
-    env: &[(String, String)],
-) -> (crate::error::Result<()>, Vec<String>) {
+/// A start of installed lab `id` at `to`, with the lines it logged.
+async fn start_at(t: &TestApp, id: &str, runtime: Runtime, to: Destination<'_>, env: &[(String, String)]) -> (crate::error::Result<()>, Vec<String>) {
     let dir = t.data().join("labs").join(id);
     let mut log = Vec::new();
-    let r = start(&t.dirs(), &dir, id, runtime, provider, None, per_machine_vm, None, env, |l| log.push(l)).await;
+    let r = start(&t.dirs(), LabRef { dir: &dir, id, runtime }, to, env, |l| log.push(l)).await;
     (r, log)
+}
+
+/// A start in one VM per machine here, on `provider`.
+fn per_machine_on(provider: Provider) -> Destination<'static> {
+    Destination { provider: Some(provider), host: None, per_machine_vm: true, docker_context: None }
 }
 
 #[tokio::test]
@@ -40,10 +41,7 @@ async fn a_lab_on_qemu_is_checked_for_its_emulator() {
 }
 
 async fn start_on(t: &TestApp, id: &str, runtime: Runtime, host: &str) -> (crate::error::Result<()>, Vec<String>) {
-    let dir = t.data().join("labs").join(id);
-    let mut log = Vec::new();
-    let r = start(&t.dirs(), &dir, id, runtime, None, Some(host), false, None, &[], |l| log.push(l)).await;
-    (r, log)
+    start_at(t, id, runtime, Destination { host: Some(host), ..Destination::default() }, &[]).await
 }
 
 // Cloud VM labs (cloud-vm, cloud-docker) now launch through the Isothrum runner (`CloudRun`),
@@ -174,7 +172,7 @@ async fn a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_fo
     // QEMU with no emulator for the other CPU: the start stops at the emulator check, after the
     // VM form's files are generated and the form is recorded, before any VM is created.
     let _tools = Tools::rules(&[("qemu-system", None)]);
-    let (r, _) = start_here_as(&t, "both", Runtime::Docker, Some(Provider::Qemu), true, &[]).await;
+    let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Qemu), &[]).await;
     let err = r.unwrap_err().to_string();
     assert!(err.contains("emulator"), "{err}");
     // The vagrant target's files (one VM per machine), not docker-vm's, and the form marked.
@@ -224,13 +222,13 @@ async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
     let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
     t.host("pve1", "proxmox", serde_json::json!({}));
     let tools = Tools::rules(&[]);
-    let mut log = Vec::new();
-    let err = start(&t.dirs(), &dir, "both", Runtime::Docker, None, Some("pve1"), true, None, &[], |l| log.push(l)).await.unwrap_err().to_string();
+    let to = Destination { host: Some("pve1"), per_machine_vm: true, ..Destination::default() };
+    let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, to, &[], |_| {}).await.unwrap_err().to_string();
     assert_eq!(err, super::PER_MACHINE_HERE_ONLY);
     assert!(tools.calls().is_empty() && !per_machine_vm(&dir), "{:?}", tools.calls());
     // UTM: Isoloom refuses the vagrant target there (vagrant_utm gives a VM no private network),
     // so the start is refused with its reason, before UTM is even opened.
-    let (r, _) = start_here_as(&t, "both", Runtime::Docker, Some(Provider::Utm), true, &[]).await;
+    let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Utm), &[]).await;
     let err = r.unwrap_err().to_string();
     assert!(err.starts_with("This lab can't run on UTM yet: ") && err.contains("vagrant_utm"), "{err}");
     assert!(!tools.called("open"), "{:?}", tools.calls());

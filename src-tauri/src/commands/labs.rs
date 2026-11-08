@@ -377,7 +377,8 @@ mod tests {
     async fn start_docker(t: &TestApp, id: &str, logs: Channel<String>) -> crate::error::Result<()> {
         let dirs = t.dirs();
         let dir = super::lab_dir(&dirs, id)?;
-        crate::runtime::start(&dirs, &dir, id, Runtime::Docker, None, None, false, None, &[], super::channel_log(logs)).await
+        let lab = crate::runtime::LabRef { dir: &dir, id, runtime: Runtime::Docker };
+        crate::runtime::start(&dirs, lab, crate::runtime::Destination::default(), &[], super::channel_log(logs)).await
     }
 
     fn sink() -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {
@@ -443,17 +444,7 @@ mod tests {
         assert!(lab_check(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(lab_attack_shell(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(attack_box_status(app(), "gone".into(), Runtime::Docker, None).await.is_err());
-        assert!(
-            attack_box_attach(
-                app(),
-                "gone".into(),
-                Runtime::Docker,
-                AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()) },
-                channel(s.clone())
-            )
-            .await
-            .is_err()
-        );
+        assert!(kali_attach_fails(app(), "gone", channel(s.clone())).await);
         assert!(attack_box_detach(app(), "gone".into(), Runtime::Docker, channel(s.clone())).await.is_err());
         // Installed, but a machine name or image that could reach a command line is refused.
         t.lab("ad", &[]);
@@ -485,20 +476,16 @@ mod tests {
         server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
         let s = sink();
         assert!(!attack_box_status(t.handle().clone(), "srv".into(), Runtime::Docker, None).await.unwrap().running);
-        assert!(
-            attack_box_attach(
-                t.handle().clone(),
-                "srv".into(),
-                Runtime::Docker,
-                AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()) },
-                channel(s.clone())
-            )
-            .await
-            .is_err()
-        );
+        assert!(kali_attach_fails(t.handle().clone(), "srv", channel(s.clone())).await);
         assert!(attack_box_detach(t.handle().clone(), "srv".into(), Runtime::Docker, channel(s.clone())).await.is_err());
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert!(s.lock().unwrap().is_empty());
+    }
+
+    /// Whether attaching the Kali attack box to lab `id`, a Docker lab, fails.
+    async fn kali_attach_fails(app: crate::AppHandle, id: &str, logs: Channel<String>) -> bool {
+        let pick = AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()) };
+        attack_box_attach(app, id.into(), Runtime::Docker, pick, logs).await.is_err()
     }
 
     /// A channel whose messages land in `sink`.

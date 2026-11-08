@@ -357,19 +357,14 @@ pub(crate) async fn run(dirs: &AppDirs, launch_json: serde_json::Value, placemen
     let dir = install(dirs, release, &log).await?;
     // Fixed names for every lab; the evidence itself is never in the environment.
     let env = launch_env(launch.env, placement.attackbox_image, placement.default_ports);
-    runtime::start_locked(
-        dirs,
-        &dir,
-        &launch.lab_id,
-        launch.runtime,
-        placement.provider,
-        placement.host,
-        placement.per_machine_vm,
-        placement.docker_context,
-        &env,
-        log,
-    )
-    .await?;
+    let lab = runtime::LabRef { dir: &dir, id: &launch.lab_id, runtime: launch.runtime };
+    let to = runtime::Destination {
+        provider: placement.provider,
+        host: placement.host,
+        per_machine_vm: placement.per_machine_vm,
+        docker_context: placement.docker_context,
+    };
+    runtime::start_locked(dirs, lab, to, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
 }
@@ -514,7 +509,8 @@ pub(crate) async fn run_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: imp
     runtime::validate_id(lab_id)?;
     let _lock = runtime::lock_lab(dirs, lab_id).await?;
     let dir = install_local(dirs, lab_id, src, &log).await?;
-    runtime::start_locked(dirs, &dir, lab_id, Runtime::Docker, None, None, false, None, &[], log).await?;
+    let lab = runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker };
+    runtime::start_locked(dirs, lab, runtime::Destination::default(), &[], log).await?;
     Ok(runtime::primary_url(&dir, lab_id, Runtime::Docker).await)
 }
 

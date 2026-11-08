@@ -46,7 +46,7 @@ export const hasBothForms = (rt: LabRuntimeInfo) => {
 
 /** The local hypervisors Isoloom refuses the per-machine VM form on: UTM's Vagrant plugin gives
  *  a VM no private network, so a lab's machines couldn't reach each other. */
-export const NO_PER_MACHINE_VM: readonly Provider[] = ["utm"];
+const NO_PER_MACHINE_VM: readonly Provider[] = ["utm"];
 
 /** The hypervisors on this machine that can run a dual-form lab as one VM per machine: every
  *  local one but those Isoloom refuses the form on (`NO_PER_MACHINE_VM`); for a lab whose VMs

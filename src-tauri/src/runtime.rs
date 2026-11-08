@@ -69,7 +69,7 @@ pub use isothrum_runner::ShellCommand;
 pub use launch::deployed_on_server;
 #[cfg(test)]
 pub(crate) use launch::start;
-pub(crate) use launch::start_locked;
+pub(crate) use launch::{Destination, start_locked};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
 pub use model::{Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
 pub use paths::{LOCAL_VM_MARKER, validate_id};
@@ -96,13 +96,13 @@ pub enum Runtime {
 /// These three identify and classify a lab everywhere it is driven, so the launch and lifecycle
 /// paths pass them as one value instead of repeating them as separate arguments.
 #[derive(Clone, Copy)]
-pub(in crate::runtime) struct LabRef<'a> {
+pub(crate) struct LabRef<'a> {
     /// The lab's installed folder.
-    pub(in crate::runtime) dir: &'a std::path::Path,
+    pub(crate) dir: &'a std::path::Path,
     /// The lab's id (its folder name).
-    pub(in crate::runtime) id: &'a str,
+    pub(crate) id: &'a str,
     /// How the lab runs (container, VM, or cloud services).
-    pub(in crate::runtime) runtime: Runtime,
+    pub(crate) runtime: Runtime,
 }
 
 /// Builders shared by the runtime's unit tests.

@@ -4,13 +4,8 @@
 //! target. What the lab page relies on: the lab reads as running once UTM's plugin says
 //! `started`, and its attack box is a container the runner stands up inside the VM.
 
-use std::sync::{Arc, Mutex, PoisonError};
-
-use isothrum_runner::process::fake::{Call, FakeProcesses, Reply};
-use isothrum_runner::{FakePorts, ProcessRunner};
-
+use super::test_lab::prelude::*;
 use super::*;
-use crate::runtime::Park;
 
 const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8080 } }\n    app: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\n";
 
@@ -38,36 +33,18 @@ struct Engine {
 
 /// An installed container lab (`<labs>/web`) with its docker-vm files generated, a runner home,
 /// and a model of its VM and containers.
-struct Fixture {
-    root: std::path::PathBuf,
-    dir: std::path::PathBuf,
-    engine: Arc<Mutex<Engine>>,
-    fake: Arc<FakeProcesses>,
-}
+type Fixture = Scripted<Engine>;
 
 impl Fixture {
     fn new() -> Fixture {
-        let root = std::env::temp_dir().join(format!("cyberctf-isothrum-dvm-{}", rand::random::<u32>()));
-        let dir = root.join("labs").join("web");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("isoloom.yml"), SPEC).unwrap();
-        lab::prepare(&dir, lab::vagrant_target(Runtime::Docker)).unwrap();
-        let engine = Arc::new(Mutex::new(Engine::default()));
-        let script = Arc::clone(&engine);
-        let fake = Arc::new(FakeProcesses::new(move |call| answer(&script, call)));
-        Fixture { root, dir, engine, fake }
+        Scripted::answered_by(Home::new("-dvm", SPEC, &[], lab::vagrant_target(Runtime::Docker)), answer)
     }
 
     /// The lab's run in a VM, on a macOS host (where UTM is).
     fn run(&self) -> LabRun {
-        let mut config =
-            RunnerConfig::new(&self.root).with_processes(Arc::clone(&self.fake) as Arc<dyn ProcessRunner>).with_ports(Arc::new(FakePorts::new([])));
+        let mut config = self.home.config(&self.fake, []);
         config.host = isothrum_runner::isoloom_manifest::HostOs::Macos;
-        LabRun::with(config, &self.dir, "web", Kind::DockerVm).unwrap()
-    }
-
-    fn engine(&self) -> std::sync::MutexGuard<'_, Engine> {
-        self.engine.lock().unwrap_or_else(PoisonError::into_inner)
+        LabRun::with(config, &self.home.dir, "web", Kind::DockerVm).unwrap()
     }
 
     /// The `docker run` calls into the VM so far.
@@ -76,15 +53,9 @@ impl Fixture {
     }
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
-    }
-}
-
 /// The fake Vagrant's answer to `call`: UTM's plugin, the helper VM, and the way into it.
 fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
-    let mut e = engine.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut e = locked(engine);
     let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
     match (call.program.as_str(), args.as_slice()) {
         ("vagrant", ["--version"]) => Reply::ok("Vagrant 2.4.9"),
@@ -189,7 +160,7 @@ async fn a_container_lab_in_a_utm_vm_gets_its_attack_box_inside_the_vm() {
         "{docker_run}"
     );
     assert!(docker_run.ends_with("_lab' 'kalilinux/kali-rolling' sleep infinity"), "on the lab's network there: {docker_run}");
-    assert!(started.env("VAGRANT_DOTFILE_PATH").is_some_and(|p| p.starts_with(&f.root.join("runs").display().to_string())), "{}", started.line());
+    assert!(started.env("VAGRANT_DOTFILE_PATH").is_some_and(|p| p.starts_with(&f.home.root.join("runs").display().to_string())), "{}", started.line());
 
     let after = run.attack_status(None).await.unwrap();
     assert_eq!((after.running, after.ip.as_str(), after.lab_network.as_str()), (true, BOX_IP, "lab"));
@@ -197,13 +168,13 @@ async fn a_container_lab_in_a_utm_vm_gets_its_attack_box_inside_the_vm() {
     assert_eq!(shell.program, "vagrant");
     assert_eq!(shell.args[..3], ["ssh", "default", "-c"]);
     assert!(shell.args[3].starts_with("sudo docker exec -it 'cyberctf-web-isoloom-access' sh -c '"), "{}", shell.args[3]);
-    assert!(shell.env.iter().any(|(k, v)| k == "VAGRANT_DOTFILE_PATH" && v.starts_with(&f.root.join("runs").display().to_string())), "{:?}", shell.env);
+    assert!(shell.env.iter().any(|(k, v)| k == "VAGRANT_DOTFILE_PATH" && v.starts_with(&f.home.root.join("runs").display().to_string())), "{:?}", shell.env);
 
     run.detach(&mut |_| {}).await.unwrap();
     assert!(f.fake.last("docker rm -f 'cyberctf-web-isoloom-access'").is_some());
     assert!(!run.attack_status(None).await.unwrap().running, "the box is gone");
     run.down(&mut |_| {}).await.unwrap();
-    assert!(f.engine().vm.is_none());
+    assert!(f.model().vm.is_none());
 }
 
 #[tokio::test]
@@ -211,7 +182,7 @@ async fn an_attach_into_a_utm_vm_is_tried_once_more_on_utms_passing_scripting_er
     let f = Fixture::new();
     let run = f.run();
     run.up(&[], Some("utm"), &mut |_| {}).await.unwrap();
-    f.engine().run_fails = 1;
+    f.model().run_fails = 1;
     let mut log = Vec::new();
     run.attach(None, None, &mut |l| log.push(l)).await.unwrap();
     assert_eq!(f.runs().len(), 2, "once more after the -600");
@@ -219,7 +190,7 @@ async fn an_attach_into_a_utm_vm_is_tried_once_more_on_utms_passing_scripting_er
     assert!(run.attack_status(None).await.unwrap().running);
     // Twice is a failure of its own, reported as it is: no third try.
     run.detach(&mut |_| {}).await.unwrap();
-    f.engine().run_fails = 2;
+    f.model().run_fails = 2;
     let runs = f.runs().len();
     let err = run.attach(None, None, &mut |_| {}).await.unwrap_err().to_string();
     assert!(err.contains("(-600)"), "{err}");

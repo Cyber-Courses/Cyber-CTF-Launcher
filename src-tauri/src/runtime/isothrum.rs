@@ -49,6 +49,23 @@ const LOCK_POLL: std::time::Duration = std::time::Duration::from_secs(2);
 fn lock_held(e: &isothrum_runner::Error, deadline: std::time::Instant) -> bool {
     e.code() == isothrum_runner::ErrorCode::Locked && std::time::Instant::now() < deadline
 }
+
+/// Runs `op` (a runner operation given the sink of [`progress::channel`]), its lines reaching
+/// `log`; tried again while another operation holds the run's lock, for up to [`LOCK_WAIT`].
+/// The sink is `op`'s to own (not lent) so the operation's future stays `Send`.
+async fn when_unlocked<T, F>(log: &mut impl FnMut(String), mut op: impl FnMut(progress::Lines) -> F) -> std::result::Result<T, isothrum_runner::Error>
+where
+    F: Future<Output = std::result::Result<T, isothrum_runner::Error>>,
+{
+    let deadline = std::time::Instant::now() + LOCK_WAIT;
+    loop {
+        let (sink, lines) = progress::channel();
+        match progress::follow(&mut *log, lines, op(sink)).await {
+            Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
+            r => return r,
+        }
+    }
+}
 use super::{LabStatus, Park, Place, Runtime, lab, paths};
 use crate::error::Result;
 
@@ -209,53 +226,29 @@ impl LabRun {
             log("Nothing to remove: the run has no files.".into());
             return Ok(());
         }
-        let lab = self.lab()?;
-        let opts = self.placed(RunOptions::new());
-        let deadline = std::time::Instant::now() + LOCK_WAIT;
-        loop {
-            let (sink, lines) = progress::channel();
-            match progress::follow(&mut *log, lines, lab.down(&opts, &sink)).await {
-                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-                r => return r.map_err(errors::from_runner),
-            }
-        }
+        let (lab, opts) = (&self.lab()?, &self.placed(RunOptions::new()));
+        when_unlocked(log, move |sink| async move { lab.down(opts, &sink).await }).await.map_err(errors::from_runner)
     }
 
     /// Parks the lab, keeping what it created: Docker only stops containers, so both of the
     /// launcher's park modes are the manifest's `shutdown` there; VMs are suspended (`Pause`) or
     /// powered off (`Shutdown`).
     pub(crate) async fn park(&self, mode: Park, log: &mut impl FnMut(String)) -> Result<()> {
-        let lab = self.lab()?;
+        let lab = &self.lab()?;
         let mode = match (self.kind, mode) {
             // VMs (a VM lab, or the VM a container lab runs in) suspend on Pause; Docker only
             // stops its containers, so both of its park modes are the manifest's `shutdown`.
             (Kind::Vm | Kind::DockerVm, Park::Pause) => isothrum_runner::Park::Pause,
             _ => isothrum_runner::Park::Shutdown,
         };
-        let deadline = std::time::Instant::now() + LOCK_WAIT;
-        loop {
-            let (sink, lines) = progress::channel();
-            match progress::follow(&mut *log, lines, lab.park(mode, &sink)).await {
-                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-                r => return r.map_err(errors::from_runner),
-            }
-        }
+        when_unlocked(log, move |sink| async move { lab.park(mode, &sink).await }).await.map_err(errors::from_runner)
     }
 
     /// Starts the parked lab again. When nothing is left of it, the launcher's parked mark goes
     /// too, so the lab page offers a fresh start instead of a resume that can't work.
     pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        let lab = self.lab()?;
-        let opts = self.placed(RunOptions::new());
-        let deadline = std::time::Instant::now() + LOCK_WAIT;
-        let outcome = loop {
-            let (sink, lines) = progress::channel();
-            match progress::follow(&mut *log, lines, lab.resume(&opts, &sink)).await {
-                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-                r => break r,
-            }
-        };
-        match outcome {
+        let (lab, opts) = (&self.lab()?, &self.placed(RunOptions::new()));
+        match when_unlocked(log, move |sink| async move { lab.resume(opts, &sink).await }).await {
             Ok(_) => Ok(()),
             Err(e) if e.code() == isothrum_runner::ErrorCode::NothingToResume => {
                 paths::mark_parked(&self.dir, None)?;
@@ -280,16 +273,8 @@ impl LabRun {
     /// and its controller's play. The launch's values aren't kept, so none reaches it: an input's
     /// file keeps the value it was written with.
     pub(crate) async fn provision(&self, machine: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-        let lab = self.lab()?;
-        let opts = self.placed(RunOptions::new());
-        let deadline = std::time::Instant::now() + LOCK_WAIT;
-        loop {
-            let (sink, lines) = progress::channel();
-            match progress::follow(&mut *log, lines, lab.provision(machine, &opts, &sink)).await {
-                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-                r => return r.map_err(errors::from_runner),
-            }
-        }
+        let (lab, opts) = (&self.lab()?, &self.placed(RunOptions::new()));
+        when_unlocked(log, move |sink| async move { lab.provision(machine, opts, &sink).await }).await.map_err(errors::from_runner)
     }
 
     /// Runs the lab's checks; not available when it declares none (nothing runs then).
@@ -357,14 +342,7 @@ async fn attach_into(lab: &Running<'_>, network: Option<&str>, image: Option<&st
 /// Takes the attack box back out of `lab`, leaving the rest up, waiting out another operation's
 /// hold on the run.
 async fn detach_from(lab: &Running<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    let deadline = std::time::Instant::now() + LOCK_WAIT;
-    loop {
-        let (sink, lines) = progress::channel();
-        match progress::follow(&mut *log, lines, lab.detach(None, &sink)).await {
-            Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-            r => return r.map_err(errors::from_runner),
-        }
-    }
+    when_unlocked(log, move |sink| async move { lab.detach(None, &sink).await }).await.map_err(errors::from_runner)
 }
 
 /// The attack box of `lab` as its page shows it: its access machine as the runner reports it,
@@ -472,6 +450,8 @@ mod engine_tests {
 
 #[cfg(test)]
 mod docker_vm_tests;
+#[cfg(test)]
+mod test_lab;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
