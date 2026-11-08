@@ -115,23 +115,6 @@ pub(super) fn vm_inputs() -> Vec<(String, String)> {
         .collect()
 }
 
-/// Takes the attack box out of the running lab `run` (lab `id`), and checks it then reads as gone.
-pub(super) async fn detach_box(run: &isothrum::LabRun, id: &str, f: &mut Vec<String>) {
-    let detached = run.detach(&mut log(id)).await;
-    check(detached.is_ok(), format!("the box detaches ({:?})", detached.err()), f);
-    match run.attack_status(None).await {
-        Ok(s) => check(!s.running, "the box is gone".into(), f),
-        Err(e) => check(false, format!("the box's status reads: {e}"), f),
-    }
-}
-
-/// `probe` run non-interactively in Vagrant machine `vm` of the attack box's `shell` (its folder
-/// and Vagrant environment), with two minutes to answer.
-pub(super) async fn vagrant_ssh(shell: &isothrum_runner::ShellCommand, vm: &str, probe: &str) -> Result<String> {
-    let args = ["ssh", "--no-tty", "--command", probe, vm];
-    crate::platform::exec::run_env_timed("vagrant", &args, shell.cwd.as_deref(), &shell.env, std::time::Duration::from_secs(120)).await
-}
-
 pub(crate) fn check(ok: bool, what: String, failures: &mut Vec<String>) {
     if ok {
         println!("ok: {what}");

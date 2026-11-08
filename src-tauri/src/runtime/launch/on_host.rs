@@ -107,7 +107,7 @@ pub(in crate::runtime) struct CloudStart<'a> {
 /// firewall, the GCP labs project (done in [`start_on_server`]), the account's credentials — and
 /// the runner does the work: it delivers the lab over SSH, applies the egress seal, reads the
 /// module's `ssh_user` output and keeps the Terraform state and the run's expiry.
-pub(super) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+pub(in crate::runtime) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let CloudStart { dir, id, runtime, host, conn, env, per_machine } = start;
     let cloud = server::terraform_target(conn.provider).ok_or_else(|| Error::Invalid("this account's cloud runs no Terraform labs".into()))?;
     // The form the player picked, recorded before anything runs so every later cloud dispatch
@@ -183,8 +183,9 @@ pub(in crate::runtime) async fn public_ip() -> Result<String> {
     // (see `public_ip_from`), so one that is down or blocked doesn't fail the launch, and one that
     // answers wrong (compromised, or a captive portal's page) doesn't open the lab to someone else.
     const RESOLVERS: [&str; 4] = ["https://checkip.amazonaws.com", "https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com"];
-    // Unit tests never reach the internet: a documentation address stands in.
-    if cfg!(test) {
+    // Unit tests never reach the internet: a documentation address stands in. A real-lab test
+    // (a lab in a real account, its firewall opened to this machine) asks for the real one.
+    if cfg!(test) && std::env::var_os("CYBERCTF_TEST_REAL_PUBLIC_IP").is_none() {
         return Ok("203.0.113.7".into());
     }
     public_ip_from(&RESOLVERS).await

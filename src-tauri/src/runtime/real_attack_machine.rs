@@ -10,13 +10,24 @@
 //! ```
 //!
 //! `CYBERCTF_TEST_BOX_TARGET` names the lab machine to reach (default `web`, on port 80).
+//!
+//! The same in an AWS account, through the launcher's cloud start and stop, with the AWS CLI's
+//! own sign-in (it is billed there while it runs, a few minutes; Kali's install on the VM form
+//! takes about 20):
+//!
+//! ```text
+//! CYBERCTF_TEST_BOX_LAB=<isoloom checkout>/examples/solo-web \
+//! CYBERCTF_TEST_BOX_FORM=cloud-docker|cloud-vm CYBERCTF_TEST_AWS_REGION=eu-west-3 \
+//! CYBERCTF_TEST_REAL_PUBLIC_IP=1 \
+//! cargo test --lib -- --ignored --nocapture --test-threads=1 the_attack_box_is_a_machine_of_an_aws_lab
+//! ```
 
 use std::path::Path;
 
 use isothrum_runner::ShellCommand;
 
 use super::attack_machine::{self, Host, Placed};
-use super::launch::{VmStart, start_docker_in_vm_run, start_docker_run, start_vm_run};
+use super::launch::{CloudStart, VmStart, start_cloud_run, start_docker_in_vm_run, start_docker_run, start_vm_run};
 use super::providers::Provider;
 use super::real_labs::{check, install_copy, leftovers, log};
 use super::{isothrum, lab, lifecycle};
@@ -34,8 +45,15 @@ async fn in_box(console: &ShellCommand, probe: &str) -> crate::error::Result<Str
         }
         // `vagrant ssh <vm>`: the probe as its command.
         ("vagrant", 2) => args.extend(["-c".to_owned(), probe.to_owned()]),
-        // `vagrant ssh <vm> -c <into the container>`: no TTY into it, the probe for its shell.
-        ("vagrant", _) => {
+        // `ssh -t … <login shell>` into a VM: no TTY, the probe for the shell.
+        ("ssh", _) if !args.last().is_some_and(|a| a.contains("docker exec")) => {
+            args.retain(|a| a != "-t");
+            *args.last_mut().unwrap() = probe.into();
+        }
+        // `vagrant ssh <vm> -c <into the container>`, `ssh -t … <into the container>`: no TTY
+        // into it, the probe for its shell.
+        ("vagrant" | "ssh", _) => {
+            args.retain(|a| a != "-t");
             let into = args.last_mut().unwrap();
             let shell = into.find("sh -c '").expect("into a container's shell");
             *into = format!("{} sh -c '{probe}'", into[..shell].replace(" -it ", " -i "));
@@ -43,7 +61,11 @@ async fn in_box(console: &ShellCommand, probe: &str) -> crate::error::Result<Str
         _ => panic!("an unexpected console: {console:?}"),
     }
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let program = if console.program == "docker" { "docker" } else { "vagrant" };
+    let program = match console.program.as_str() {
+        "docker" => "docker",
+        "ssh" => "ssh",
+        _ => "vagrant",
+    };
     crate::platform::exec::run_env_timed(program, &args, console.cwd.as_deref(), &console.env, std::time::Duration::from_secs(120)).await
 }
 
@@ -116,5 +138,70 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
     check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), &mut f);
     check(leftovers(&id).await.is_empty(), "nothing of it is left on this machine's Docker".into(), &mut f);
     let _ = std::fs::remove_dir_all(&dir);
+    assert!(f.is_empty(), "{f:#?}");
+}
+
+/// What of lab `name` AWS still holds in `region`: its instances not terminated, its networks, its
+/// key pairs (Isoloom's names start `isoloom-<lab>-`).
+async fn left_in_aws(region: &str, name: &str) -> String {
+    let prefix = format!("isoloom-{name}-*");
+    let queries: [&[&str]; 3] = [
+        &[
+            "ec2",
+            "describe-instances",
+            "--filters",
+            "Name=instance-state-name,Values=pending,running,stopping,stopped",
+            &format!("Name=tag:Name,Values={prefix}"),
+            "--query",
+            "Reservations[].Instances[].InstanceId",
+        ],
+        &["ec2", "describe-vpcs", "--filters", &format!("Name=tag:Name,Values={prefix}"), "--query", "Vpcs[].VpcId"],
+        &["ec2", "describe-key-pairs", "--filters", &format!("Name=key-name,Values={prefix}"), "--query", "KeyPairs[].KeyName"],
+    ];
+    let mut left = String::new();
+    for query in queries {
+        let mut args = query.to_vec();
+        args.extend(["--region", region, "--output", "text"]);
+        left.push_str(crate::platform::exec::run_cli("aws", &args).await.unwrap_or_else(|e| format!("({e})")).trim());
+    }
+    left
+}
+
+#[tokio::test]
+#[ignore = "needs an AWS account signed in with the AWS CLI, Terraform, and a lab (CYBERCTF_TEST_BOX_LAB); billed while it runs"]
+async fn the_attack_box_is_a_machine_of_an_aws_lab() {
+    use crate::testing::test_app::TestApp;
+    let Ok(src) = std::env::var("CYBERCTF_TEST_BOX_LAB") else { return };
+    let per_machine = std::env::var("CYBERCTF_TEST_BOX_FORM").is_ok_and(|f| f == "cloud-vm");
+    let region = std::env::var("CYBERCTF_TEST_AWS_REGION").unwrap_or_else(|_| "eu-west-3".into());
+    let target = std::env::var("CYBERCTF_TEST_BOX_TARGET").unwrap_or_else(|_| "web".into());
+    let t = TestApp::new();
+    let dirs = t.dirs();
+    let host = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true, "host": region }));
+    let id = format!("box-{}", rand::random::<u16>());
+    let dir = t.lab(&id, &[]);
+    lab::copy_tree(Path::new(&src), &dir).unwrap();
+    let name = lab::load(&dir).unwrap().name;
+    super::server::mark_lab(&dir, Some(&host)).unwrap();
+    let conn = super::server::connection(&dirs, &host).unwrap();
+    let (region_of, tf_env) = (conn.region.clone(), conn.tf_env.clone());
+    let mut f = Vec::new();
+    let mut l = log(&id);
+    let start = CloudStart { dir: &dir, id: &id, runtime: super::Runtime::Docker, host: &host, conn, env: &[], per_machine };
+    let started = start_cloud_run(&dirs, start, &mut l).await;
+    check(started.is_ok(), format!("the lab starts ({:?})", started.as_ref().err()), &mut f);
+    if started.is_ok() {
+        // The box's place, as the lab page's commands make it.
+        let form = super::paths::local_runtime(&dir, super::Runtime::Docker);
+        let place = isothrum::CloudPlace { label: host.clone(), region: region_of.clone(), tf_env: tf_env.clone(), ..isothrum::CloudPlace::default() };
+        let run = isothrum::CloudRun::new(&super::paths::runner_home(&dirs).unwrap(), &dir, &id, form, "aws").unwrap();
+        let target_kind = lab::terraform(&dir, form, "aws").1;
+        let placed = Placed { host: Host::Cloud(run, place), dir: dir.clone(), target: target_kind, vm: form == super::Runtime::Vm };
+        exercise(&placed, &dirs, &target, &mut l, &mut f).await;
+    }
+    let stopped = lifecycle::stop_locked(&dirs, &dir, &id, super::Runtime::Docker, log(&id)).await;
+    check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), &mut f);
+    let left = left_in_aws(&region, &name).await;
+    check(left.is_empty(), format!("nothing of it is left in AWS ({left})"), &mut f);
     assert!(f.is_empty(), "{f:#?}");
 }

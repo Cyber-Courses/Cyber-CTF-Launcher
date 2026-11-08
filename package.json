@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "e2e:native": "tests/native/run-all.sh",
-    "release-check": "scripts/release-check.sh"
+    "release-check": "scripts/release-check.sh",
+    "real-labs": "scripts/real-labs.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",

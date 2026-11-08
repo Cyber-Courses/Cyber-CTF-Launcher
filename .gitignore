@@ -49,3 +49,4 @@ next-env.d.ts
 
 # native GUI e2e: logs and fixtures of tests/native/run-all.sh
 /tests/native/.state/
+.real-labs/
