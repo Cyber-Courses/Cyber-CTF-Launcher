@@ -172,7 +172,7 @@ describe("MachineSetup window", () => {
     // The machine check finds OrbStack (the player installed it from its site and re-checked).
     const after = {
       ...before,
-      dockerEngines: [...before.dockerEngines, { engine: "orbstack", context: "orbstack", running: true, current: false }],
+      dockerEngines: [...before.dockerEngines, { engine: "orbstack" as const, context: "orbstack", running: true, current: false }],
     };
     rerender(<MachineSetup report={after} onRefresh={onRefresh} onClose={vi.fn()} startAt={{ step: "add", nonce: 1 }} />);
     await flush();

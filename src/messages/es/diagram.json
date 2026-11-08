@@ -24,8 +24,7 @@
     "you": "TÚ",
     "kicker": "ATACANTE",
     "label": "Máquina de ataque",
-    "attached": "conectada",
-    "notAttached": "no conectada"
+    "attached": "conectada"
   },
   "published": "publicado",
   "computer": {

@@ -125,7 +125,7 @@ const accountCommands = {
 } satisfies Handlers;
 
 /** The attack box, the lab's on-demand access machine, up on the chosen lab network. */
-const attackBox = () => ({ running: true, ip: "10.42.0.9", labNetwork: "default", networks: ["default"], shellCmd: "docker compose exec kali bash" });
+const attackBox = () => ({ running: true, ip: "10.42.0.9", labNetwork: "default", networks: ["default"], shellCmd: "docker compose exec kali bash", vm: false, pickedBox: false });
 
 /** This machine: its report, live usage, what runs and is stored on it, the attack box. */
 const machineCommands = {

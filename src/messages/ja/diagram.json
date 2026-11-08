@@ -24,8 +24,7 @@
     "you": "あなた",
     "kicker": "攻撃者",
     "label": "アタックボックス",
-    "attached": "接続済み",
-    "notAttached": "未接続"
+    "attached": "接続済み"
   },
   "published": "公開中",
   "computer": {

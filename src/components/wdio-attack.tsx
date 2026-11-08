@@ -31,7 +31,7 @@ export function WdioAttack() {
 
 /** The real side-rail attack-box panel, wired for a running local Docker lab. */
 function WdioAttackPanel({ labId }: { labId: string }) {
-  const box = useAttackBox(labId, { running: true, local: true, runtime: "DOCKER" });
+  const box = useAttackBox(labId, { running: true, reachable: true, runtime: "DOCKER" });
   const shell = useLabShell(labId, "attack box", "DOCKER");
   return (
     <div data-wdio-attack className="max-w-sm p-4">

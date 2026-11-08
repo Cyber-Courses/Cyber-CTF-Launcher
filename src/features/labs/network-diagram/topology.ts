@@ -9,7 +9,6 @@ import {
   ComputerData,
   GREEN,
   GREY,
-  IDLE,
   LinkData,
   Machine,
   PIVOT,
@@ -115,22 +114,21 @@ function addBridges(g: Graph, ordered: LabNetwork[]) {
     });
 }
 
-/** The attack box is a host on the lab network like the others (one attack box can be attached
- *  to several running labs at once), first in its zone so it reads leftmost. */
+/** The running attack box is a host on the lab network like the others (one attack box can be
+ *  attached to several running labs at once), first in its zone so it reads leftmost. */
 function addAttacker(g: Graph, attacker: NonNullable<Attacker>, entry: string) {
-  const atkOn = attacker.running;
   g.nodes.push({
     id: "__attacker",
     type: "attacker",
     position: { x: 0, y: 0 },
     data: {
       label: translate("diagram.attacker.label"),
-      subtitle: atkOn ? attacker.ip || translate("diagram.attacker.attached") : translate("diagram.attacker.notAttached"),
-      running: atkOn,
+      subtitle: attacker.ip || translate("diagram.attacker.attached"),
+      running: true,
     },
   });
   membersOf(g, entry).push("__attacker");
-  g.edges.push(link("e-attach", `bridge-${entry}`, "__attacker", atkOn ? attack : IDLE, { animated: atkOn }));
+  g.edges.push(link("e-attach", `bridge-${entry}`, "__attacker", attack, { animated: true }));
 }
 
 /** A machine: its card, in its network's zone (single-homed) or between zones (a pivot plugs
@@ -206,8 +204,9 @@ export function topology(machines: Machine[], networks: LabNetwork[], attacker: 
   const ordered = [...nets.values()].sort((a, b) => d(a.name) - d(b.name) || a.name.localeCompare(b.name));
   const g: Graph = { nodes: [], edges: [], members: new Map(ordered.map((n) => [n.name, [`bridge-${n.name}`]])) };
   addBridges(g, ordered);
-  // No attack box at all (VM labs) draws none.
-  if (attacker) addAttacker(g, attacker, entry);
+  // The attack box is on the map only while it runs: a stopped one (or none at all, VM labs)
+  // isn't on the lab network, so it draws nothing.
+  if (attacker?.running) addAttacker(g, attacker, entry);
   // The provisioning controller is plumbing, not a target: it has no place on the map.
   machines
     .filter((m) => !m.infra)

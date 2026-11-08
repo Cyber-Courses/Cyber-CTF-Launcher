@@ -24,8 +24,7 @@
     "you": "YOU",
     "kicker": "ATTACKER",
     "label": "Attack box",
-    "attached": "attached",
-    "notAttached": "not attached"
+    "attached": "attached"
   },
   "published": "published",
   "computer": {

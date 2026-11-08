@@ -74,7 +74,7 @@ describe("topology", () => {
     expect(t.edges.find((e) => e.id === "e-attach")).toMatchObject({ source: "bridge-dmz", animated: true });
   });
 
-  it("shows a running attack box without an address as attached, and a stopped one as not", () => {
+  it("shows a running attack box without an address as attached, and draws a stopped one not at all", () => {
     const on = topology([machine("web")], [], { running: true, ip: "" });
     expect(
       must(
@@ -82,15 +82,11 @@ describe("topology", () => {
         "the attack box",
       ).data.subtitle,
     ).toBe("attached");
+    // A stopped box isn't on the lab network: no node, no link, not in any zone.
     const off = topology([machine("web")], [], { running: false, ip: "10.0.0.9", labNetwork: "nowhere" });
-    const atk = must(
-      off.nodes.find((n) => n.id === "__attacker"),
-      "the attack box",
-    );
-    expect(atk.data).toMatchObject({ running: false });
-    expect(String(atk.data.subtitle)).toMatch(/not attached/i);
-    // An unknown lab network falls back to the default one, and the link is idle.
-    expect(off.edges.find((e) => e.id === "e-attach")).toMatchObject({ source: "bridge-default", animated: false });
+    expect(off.nodes.find((n) => n.id === "__attacker")).toBeUndefined();
+    expect(off.edges.find((e) => e.id === "e-attach")).toBeUndefined();
+    expect(off.zones.flatMap((z) => z.members)).not.toContain("__attacker");
   });
 
   it("links a pivot sideways: from its nearest network, on into the deeper one", () => {
