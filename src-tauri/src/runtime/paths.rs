@@ -84,13 +84,16 @@ pub(crate) fn recorded_host(state: &Path) -> Option<String> {
     std::fs::read_to_string(state.join(HOST_FILE)).ok().map(|h| h.trim().to_string()).filter(|h| !h.is_empty())
 }
 
-/// Writes `value` to `dir/name`, or removes the file for `None`.
+/// Writes `value` to `dir/name`, or removes the file for `None` (already gone is fine). A marker
+/// that can't be cleared is an error: left behind, it would send every later status, stop and
+/// check to the wrong form.
 fn set_marker(dir: &Path, name: &str, value: Option<&str>) -> Result<()> {
     match value {
         Some(v) => std::fs::write(dir.join(name), v)?,
-        None => {
-            let _ = std::fs::remove_file(dir.join(name));
-        }
+        None => match std::fs::remove_file(dir.join(name)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+            _ => {}
+        },
     }
     Ok(())
 }
@@ -175,6 +178,17 @@ pub(super) fn parked(dir: &Path) -> Option<Park> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_marker_that_cannot_be_cleared_is_an_error_and_one_already_gone_is_not() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-marker-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        super::set_marker(&dir, "m", None).expect("nothing to clear");
+        // A directory where the marker would be: remove_file refuses it.
+        std::fs::create_dir(dir.join("m")).unwrap();
+        assert!(super::set_marker(&dir, "m", None).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     use super::{
         PARKED_MARKER, Park, Provider, Runtime, deployed_ids, lab_dir_in, local_vm, mark_local_vm, mark_parked, parked, recorded_runtime, vagrant_dirs,
         validate_id,
