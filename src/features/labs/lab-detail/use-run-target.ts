@@ -19,6 +19,18 @@ import { SERVER_CHANGED, serverList, type DockerEngine, type Provider, type Serv
 import { useTauriEvent } from "@/lib/use-tauri-event";
 import { useLatest } from "@/lib/use-latest";
 
+/** A dual-form container lab on cloud account `id`, when it runs cloud-vm: two forms — one VM
+ *  (cloud-docker), one VM per machine (cloud-vm) — picked on the form step after the account. */
+function cloudForms(rt: LabRuntimeInfo | null, hosts: ServerHost[], id: string): RunTarget[] {
+  const h = hosts.find((x) => x.id === id);
+  return h && cloudRunsPerMachine(rt, h.provider)
+    ? [
+        { kind: "host", id },
+        { kind: "host", id, perMachine: true },
+      ]
+    : [];
+}
+
 /**
  * Where and how a lab starts, across the dialog's steps: the place ("Where should it run?"), then —
  * only when there is a choice — the form, its hypervisor, or the container engine and ports. Each
@@ -54,12 +66,7 @@ export function useRunTarget(
   // A server picked, then removed in its setup window: back to where Start points at first.
   const runOn = picked && (picked.kind !== "host" || hosts.some((h) => h.id === picked.id)) ? picked : initialTarget(rt, hosts, defaultId, localReady);
   const vmForms = vmFormTargets(isCloud, isDocker, localVm, perMachineVm);
-  // A dual-form container lab on a cloud account that runs cloud-vm offers two forms — one VM
-  // (cloud-docker), one VM per machine (cloud-vm) — picked on the form step after the account.
-  const cloudFormsFor = (id: string): RunTarget[] => {
-    const h = hosts.find((x) => x.id === id);
-    return h && cloudRunsPerMachine(rt, h.provider) ? [{ kind: "host", id }, { kind: "host", id, perMachine: true }] : [];
-  };
+  const cloudFormsFor = (id: string) => cloudForms(rt, hosts, id);
   const pickedHost = runOn.kind === "host" ? hosts.find((h) => h.id === runOn.id) : undefined;
   // What the form step offers: the cloud account's forms when one is picked, else this machine's.
   const formTargets = runOn.kind === "host" ? cloudFormsFor(runOn.id) : vmForms;

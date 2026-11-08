@@ -50,45 +50,66 @@ export function HeaderActions({
   onLogin,
   startedAt,
 }: HeaderActionsProps) {
-  const t = useT();
   const locked = busy || deploying;
   switch (mode) {
     case "running":
-      return <RunningActions state={s} url={url} locked={locked} parkLocked={locked || boxBusy} acting={acting} resetting={resetting} onAct={onAct} onRemove={onRemove} />;
+      return (
+        <RunningActions
+          state={s}
+          url={url}
+          locked={locked}
+          parkLocked={locked || boxBusy}
+          acting={acting}
+          resetting={resetting}
+          onAct={onAct}
+          onRemove={onRemove}
+        />
+      );
     case "parked":
       return <ParkedActions locked={locked} busy={busy} onAct={onAct} onRemove={onRemove} />;
     case "stopping":
-      return (
-        <Button variant="destructive" disabled>
-          <Spinner className="size-3.5" /> {t("labs.detail.stopping")}
-        </Button>
-      );
+      return <StoppingButton />;
     case "starting":
       return <StartingButton operation={s.operation} startedAt={startedAt} />;
     case "interrupted":
-      // Machines exist but nothing is deploying and the lab isn't fully up: a previous run was
-      // interrupted (e.g. the app restarted mid-start). Clean it up before a fresh start.
-      return (
-        <Button
-          variant="destructive"
-          onClick={() => {
-            void onStop();
-          }}
-          disabled={locked}
-          title={t("labs.detail.interruptedHint")}
-        >
-          {busy ? (
-            t("labs.detail.cleaningUp")
-          ) : (
-            <>
-              <Square className="size-3.5" /> {t("labs.detail.stopCleanUp")}
-            </>
-          )}
-        </Button>
-      );
+      return <CleanUpButton locked={locked} busy={busy} onStop={onStop} />;
     case "signIn":
       return <SignInButton onLogin={onLogin} />;
   }
+}
+
+/** A stop in flight. */
+function StoppingButton() {
+  const t = useT();
+  return (
+    <Button variant="destructive" disabled>
+      <Spinner className="size-3.5" /> {t("labs.detail.stopping")}
+    </Button>
+  );
+}
+
+/** Machines exist but nothing is deploying and the lab isn't fully up: a previous run was
+ *  interrupted (e.g. the app restarted mid-start). Clean it up before a fresh start. */
+function CleanUpButton({ locked, busy, onStop }: { locked: boolean; busy: boolean; onStop: HeaderActionsProps["onStop"] }) {
+  const t = useT();
+  return (
+    <Button
+      variant="destructive"
+      onClick={() => {
+        void onStop();
+      }}
+      disabled={locked}
+      title={t("labs.detail.interruptedHint")}
+    >
+      {busy ? (
+        t("labs.detail.cleaningUp")
+      ) : (
+        <>
+          <Square className="size-3.5" /> {t("labs.detail.stopCleanUp")}
+        </>
+      )}
+    </Button>
+  );
 }
 
 /** A start in flight: what it is doing (starting, resuming…) and for how long. */

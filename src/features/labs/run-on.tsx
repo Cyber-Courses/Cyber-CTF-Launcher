@@ -2,10 +2,19 @@
 
 import { type DockerEngine, type Provider, type ServerHost } from "@/lib/tauri";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
-import { EngineLogo, RowPill, hypervisorOptions, platformGroups, vmFormOptions, useHostChecks, useRunTiers, type LocalRows, type OptionGroup } from "@/features/labs/run-on-options";
-import { engineName } from "@/features/machine/setup-steps/engines";
+import {
+  RowPill,
+  hypervisorOptions,
+  platformGroups,
+  vmFormOptions,
+  useHostChecks,
+  useRunTiers,
+  type LocalRows,
+  type OptionGroup,
+} from "@/features/labs/run-on-options";
 import type { PortMode } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
+import { EngineStep, PickerHeading } from "@/features/labs/run-on-steps";
 
 /** Where a lab starts: this machine (Docker; a container lab in one VM on a local hypervisor;
  *  or, for a lab with VM recipes too, one VM per machine there), or a saved host.
@@ -106,16 +115,6 @@ type RunOnPickerProps = {
   onPickEngine?: (e: DockerEngine) => void;
 };
 
-/** A step's title over the lab's name. */
-function PickerHeading({ heading, title }: { heading: string; title: string }) {
-  return (
-    <div>
-      <p className="serif-title text-[1.5rem] text-foreground">{heading}</p>
-      <p className="mt-1 text-[0.8125rem] text-muted-foreground">{title}</p>
-    </div>
-  );
-}
-
 export function RunOnPicker(props: RunOnPickerProps) {
   const { title, step = "platform", value, disabled } = props;
   const { hosts, hostOk, offerLocal = true, offerContainers = true, localNote, dockerRunning, engine = null, vmForms = [], onPickPlatform = () => {} } = props;
@@ -131,7 +130,12 @@ export function RunOnPicker(props: RunOnPickerProps) {
     return (
       <div className="space-y-4">
         <PickerHeading heading={t("labs.runOn.formHeading")} title={title} />
-        <OptionList group={{ id: "form", label, options: vmFormOptions(t, tiers, formTargets, formAccount) }} value={value} onChange={onPickForm} disabled={disabled} />
+        <OptionList
+          group={{ id: "form", label, options: vmFormOptions(t, tiers, formTargets, formAccount) }}
+          value={value}
+          onChange={onPickForm}
+          disabled={disabled}
+        />
       </div>
     );
   }
@@ -143,7 +147,12 @@ export function RunOnPicker(props: RunOnPickerProps) {
     return (
       <div className="space-y-4">
         <PickerHeading heading={t("labs.runOn.pickHypervisor")} title={title} />
-        <OptionList group={{ id: "hyp", label: t("labs.runOn.thisMachine"), options: hypervisorOptions(t, form, hypervisors, defaultHypervisor) }} value={value} onChange={pickHypervisor} disabled={disabled} />
+        <OptionList
+          group={{ id: "hyp", label: t("labs.runOn.thisMachine"), options: hypervisorOptions(t, form, hypervisors, defaultHypervisor) }}
+          value={value}
+          onChange={pickHypervisor}
+          disabled={disabled}
+        />
       </div>
     );
   }
@@ -162,46 +171,6 @@ export function RunOnPicker(props: RunOnPickerProps) {
       {groups.map((g) => (
         <OptionList key={g.id} group={g} value={asRowTarget(value, vmForms.at(0))} onChange={pick} disabled={disabled} />
       ))}
-    </div>
-  );
-}
-
-/** "Which engine?": the container engines that answer here, as full rows (brand logo, name, the
- *  current one marked Default and preselected). */
-function EngineStep({
-  title,
-  engines,
-  selected,
-  fallback,
-  onPick,
-  disabled,
-}: {
-  title: string;
-  engines: DockerEngine[];
-  selected: DockerEngine | null;
-  fallback: DockerEngine | null;
-  onPick: (e: DockerEngine) => void;
-  disabled: boolean;
-}) {
-  const t = useT();
-  return (
-    <div className="space-y-4">
-      <PickerHeading heading={t("labs.runOn.engineHeading")} title={title} />
-      <RadioList label={t("labs.runOn.engineHeading")}>
-        {engines.map((e) => (
-          <RadioRow
-            key={e}
-            selected={selected === e}
-            onSelect={() => {
-              onPick(e);
-            }}
-            disabled={disabled}
-            title={engineName(e)}
-            leading={<EngineLogo id={e} />}
-            trailing={<RowPill tone="ok">{t(e === fallback ? "labs.runOn.defaultChoice" : "labs.runOn.running")}</RowPill>}
-          />
-        ))}
-      </RadioList>
     </div>
   );
 }

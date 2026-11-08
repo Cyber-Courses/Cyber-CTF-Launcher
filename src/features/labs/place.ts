@@ -26,9 +26,8 @@ export function placeOf(status: LabStatus | undefined, isDocker: boolean, curren
   if (!status) return null;
   if (status.host !== null) {
     const host = hosts.find((h) => h.name === status.host);
-    if (host && isCloud(host.provider))
-      return { kind: "cloud", name: host.name, provider: host.provider, region: host.host };
-    return { kind: "server", name: status.host, provider: (host?.provider) ?? null, address: host?.host ?? null };
+    if (host && isCloud(host.provider)) return { kind: "cloud", name: host.name, provider: host.provider, region: host.host };
+    return { kind: "server", name: status.host, provider: host?.provider ?? null, address: host?.host ?? null };
   }
   if (isDocker && status.place !== "local_vm") {
     const engine = status.provider && isEngine(status.provider) ? status.provider : currentEngine;
