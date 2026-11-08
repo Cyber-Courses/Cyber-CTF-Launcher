@@ -5,7 +5,7 @@ import { cloudAccountsFor, hostSupports, isCloudLab, localProviders, perMachineP
 import type { PickerStep, Platform, RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { getPortMode, setVmProvider, type PortMode } from "@/lib/settings";
-import { SERVER_CHANGED, serverList, type Provider, type ServerHost } from "@/lib/tauri";
+import { SERVER_CHANGED, serverList, type DockerEngine, type Provider, type ServerHost } from "@/lib/tauri";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 import { useLatest } from "@/lib/use-latest";
 
@@ -15,37 +15,21 @@ import { useLatest } from "@/lib/use-latest";
  * VM labs default to the default host; Docker labs to here; a cloud lab to the first of the
  * player's accounts on a cloud it runs on (never a default host: a server).
  */
-export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], hostArch: string) {
+export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], hostArch: string, dockerEngine: DockerEngine | null = null, dockerEnginesRunning: DockerEngine[] = []) {
   const isCloud = isCloudLab(rt);
   const isDocker = rt?.runtime !== "VM" && !isCloud;
+  // The container engines that answer here (several can run side by side) and the one a lab here
+  // will use — the current context when it answers, else the first. Only for a container lab.
+  const { engine, engines } = resolveEngines(isDocker, dockerEngine, dockerEnginesRunning);
   const [{ hosts, defaultId }, setServers] = useState<{ hosts: ServerHost[]; defaultId: string | null }>(NO_SERVERS);
   // The player's own pick, kept over what Start points at first (a server list read late, or
   // the machine report arriving, must not reset it).
   const [picked, setRunOn] = useState<RunTarget | null>(null);
   // A container lab here: its host ports (Settings' choice first).
   const [ports, setPorts] = useState<PortMode>(() => getPortMode() ?? "random");
-  // A container lab can also run in a VM here: on the hypervisor chosen in Settings (readyVms
-  // lists it first), else the first ready one its deploy/ supports. One option, not a catalogue;
-  // with several ready, the option carries a switch, whose pick becomes Settings' choice.
-  const localVms = isDocker && rt ? readyVms.filter((p) => localProviders(rt, hostArch).includes(p)) : [];
-  const [switched, setSwitched] = useState<Provider | null>(null);
-  const localVm = (switched && localVms.includes(switched) ? switched : localVms.at(0)) ?? null;
-  const pickVm = (p: Provider) => {
-    setVmProvider(p);
-    setSwitched(p);
-    setRunOn({ kind: "local-vm", provider: p });
-  };
-  // A container lab whose spec has VM recipes too can also run here as one VM per machine, like
-  // a VM lab (Isoloom's vagrant target), on a ready hypervisor that form runs on (not UTM). The
-  // same switch state: picking a hypervisor in either VM option is the one Settings' choice.
-  const perMachineVms = isDocker && rt ? readyVms.filter((p) => perMachineProviders(rt, hostArch).includes(p)) : [];
-  const perMachineVm = (switched && perMachineVms.includes(switched) ? switched : perMachineVms.at(0)) ?? null;
-  const pickPerMachineVm = (p: Provider) => {
-    setVmProvider(p);
-    setSwitched(p);
-    setRunOn({ kind: "local-vms", provider: p });
-  };
-  const perMachine = perMachineVm ? { provider: perMachineVm, providers: perMachineVms, onPick: pickPerMachineVm } : null;
+  // A container lab can also run in a VM here: one helper VM (`localVm`) and, for a dual-form lab,
+  // one VM per machine (`perMachine`), on the hypervisor chosen in Settings, else the first ready.
+  const { localVm, localVms, pickVm, perMachineVm, perMachine } = useLocalVmChoice(rt, readyVms, hostArch, isDocker, setRunOn);
   const hostOk = useCallback((h: ServerHost) => hostSupports(rt, h), [rt]);
   // Prefer this machine when a local hypervisor can run the lab; fall back to the default server
   // only when none can. A default server shouldn't silently capture every VM lab.
@@ -86,6 +70,10 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
     localVm,
     localVms,
     pickVm,
+    /** The container engine a lab here will run on (null: none answers, or not a container lab),
+     *  and every engine that answers, for the Containers row and (later) its switch. */
+    engine,
+    engines,
     /** The per-machine VM form here, for a lab with VM recipes too (null: not this lab, or no
      *  ready hypervisor can run it). */
     perMachine,
@@ -101,6 +89,40 @@ export function useRunTarget(rt: LabRuntimeInfo | null, readyVms: Provider[], ho
 }
 
 const NO_SERVERS = { hosts: [], defaultId: null };
+
+/** The container engines that answer here and the one a lab will use (the current context when it
+ *  answers, else the first). Empty for a VM or cloud lab. */
+function resolveEngines(isDocker: boolean, current: DockerEngine | null, running: DockerEngine[]): { engine: DockerEngine | null; engines: DockerEngine[] } {
+  const engines = isDocker ? running : [];
+  const engine = (current && engines.includes(current) ? current : engines.at(0)) ?? null;
+  return { engine, engines };
+}
+
+/** This machine's VM forms for a container lab: the helper VM (`localVm`, with every ready
+ *  hypervisor in `localVms`) and, for a dual-form lab, one VM per machine (`perMachine`). Both run
+ *  on the hypervisor chosen in Settings (readyVms lists it first), else the first ready; picking one
+ *  (in either option) saves it as Settings' choice and selects that form. */
+function useLocalVmChoice(rt: LabRuntimeInfo | null, readyVms: Provider[], hostArch: string, isDocker: boolean, setRunOn: (t: RunTarget) => void) {
+  const localVms = isDocker && rt ? readyVms.filter((p) => localProviders(rt, hostArch).includes(p)) : [];
+  const [switched, setSwitched] = useState<Provider | null>(null);
+  const localVm = (switched && localVms.includes(switched) ? switched : localVms.at(0)) ?? null;
+  const setLocal = (p: Provider) => {
+    setVmProvider(p);
+    setSwitched(p);
+  };
+  const pickVm = (p: Provider) => {
+    setLocal(p);
+    setRunOn({ kind: "local-vm", provider: p });
+  };
+  const perMachineVms = isDocker && rt ? readyVms.filter((p) => perMachineProviders(rt, hostArch).includes(p)) : [];
+  const perMachineVm = (switched && perMachineVms.includes(switched) ? switched : perMachineVms.at(0)) ?? null;
+  const pickPerMachineVm = (p: Provider) => {
+    setLocal(p);
+    setRunOn({ kind: "local-vms", provider: p });
+  };
+  const perMachine = perMachineVm ? { provider: perMachineVm, providers: perMachineVms, onPick: pickPerMachineVm } : null;
+  return { localVm, localVms, pickVm, perMachineVm, perMachine };
+}
 
 /** The VM forms This machine's "In a VM" row offers: a VM lab runs its own VMs (`local`); a
  *  container lab runs a helper VM (`local-vm`) and, when dual-form, one VM per machine

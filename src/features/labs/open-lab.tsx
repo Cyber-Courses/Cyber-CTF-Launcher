@@ -89,6 +89,8 @@ export function OpenLab({
       onBack={onBack}
       readyVms={readyVms}
       dockerRunning={report ? report.dockerRunning : null}
+      dockerEngine={report ? report.dockerEngine : null}
+      dockerEnginesRunning={report ? report.dockerEnginesRunning : []}
       onStart={(target) =>
         launch(
           lab,

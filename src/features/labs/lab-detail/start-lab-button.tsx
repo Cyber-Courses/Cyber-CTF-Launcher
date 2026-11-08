@@ -123,6 +123,7 @@ function StartDialog({
           onPickVm={run.pickVm}
           perMachine={run.perMachine}
           dockerRunning={isDocker ? dockerRunning : null}
+          engine={run.engine}
           value={run.runOn}
           onChange={run.setRunOn}
           disabled={busy}

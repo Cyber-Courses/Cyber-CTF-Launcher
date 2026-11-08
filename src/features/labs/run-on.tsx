@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { type Provider, type ServerHost } from "@/lib/tauri";
+import { type DockerEngine, type Provider, type ServerHost } from "@/lib/tauri";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
 import { StatusPill } from "@/components/ui/status-pill";
 import { platformGroups, vmFormOptions, useHostChecks, useRunTiers, type LocalRows, type OptionGroup, type PerMachineVm } from "@/features/labs/run-on-options";
@@ -98,6 +98,8 @@ type RunOnPickerProps = {
   localNote: string;
   /** Container labs: whether a Docker engine answers here (null = unknown / not relevant). */
   dockerRunning: boolean | null;
+  /** The container engine the lab will use here, named on the Container row (null: none / a VM lab). */
+  engine?: DockerEngine | null;
   /** Whether the lab has a container form that runs here, so This machine shows a Containers row
    *  (a VM lab shows only In a VM). */
   offerContainers?: boolean;
@@ -133,7 +135,7 @@ function PickerHeading({ heading, title }: { heading: string; title: string }) {
 }
 
 export function RunOnPicker(props: RunOnPickerProps) {
-  const { title, hosts, hostOk, localNote, dockerRunning, value, disabled, offerLocal = true, offerContainers = true, step = "platform" } = props;
+  const { title, hosts, hostOk, localNote, dockerRunning, engine = null, value, disabled, offerLocal = true, offerContainers = true, step = "platform" } = props;
   const { localVm, localVms = [], onPickVm = () => {}, perMachine = null, onChange, onPickPlatform = () => {} } = props;
   const t = useT();
   const checks = useHostChecks(hosts);
@@ -149,7 +151,7 @@ export function RunOnPicker(props: RunOnPickerProps) {
     );
   }
 
-  const local: LocalRows = { offerContainers, localNote, dockerRunning, localVm, localVms, onPickVm, perMachine };
+  const local: LocalRows = { offerContainers, localNote, dockerRunning, engine, localVm, localVms, onPickVm, perMachine };
   const groups = platformGroups(t, { hosts, hostOk, checks, local, offerLocal, tiers });
   const pick = (target: RunTarget) => {
     onPickPlatform(platformOfRow(target, offerContainers));

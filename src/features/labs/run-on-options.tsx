@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { type Provider, type RunTier, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { Container } from "lucide-react";
+import { type DockerEngine, type Provider, type RunTier, type ServerHost, type ServerTest } from "@/lib/tauri";
 import { badgeFor, candidatesFor, type RunBadge } from "@/features/labs/run-on-badges";
 import { testHost } from "@/features/servers/use-server-list";
 import { type Tone } from "@/components/ui/status-pill";
@@ -9,6 +10,7 @@ import { TypeIcon } from "@/components/ui/type-icon";
 import { KIND } from "@/features/servers/host-setup/constants";
 import { ProviderGlyph } from "@/features/servers/provider-glyph";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
+import { engineName } from "@/features/machine/setup-steps/engines";
 import { Segmented } from "@/components/ui/segmented";
 import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
 import { CLOUDS } from "@/features/labs/lab-runtime";
@@ -75,13 +77,6 @@ function engineStatus(t: T, dockerRunning: boolean | null): Status | undefined {
     : { tone: "warn", label: t("labs.runOn.engineStopped"), title: t("labs.runOn.engineStoppedHint") };
 }
 
-const DockerLogo = () => (
-  <TypeIcon>
-    {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
-    <img src="/brands/docker.svg" alt="Docker" className="size-5 object-contain" draggable={false} />
-  </TypeIcon>
-);
-
 /** The hypervisor switch inside a VM option, when several are ready for it. */
 function hypervisorSwitch(t: T, value: Provider, options: Provider[], onChange: (p: Provider) => void) {
   return (
@@ -133,22 +128,29 @@ export function vmFormOptions(t: T, tiers: RunTier[], vm: LocalVm): Option[] {
 }
 
 /** Everything the step-1 "This machine" rows need: whether a container form runs here
- *  (`offerContainers`), the note/engine state for the Containers row, and the VM-form data. */
-export type LocalRows = LocalVm & { offerContainers: boolean; localNote: string; dockerRunning: boolean | null };
+ *  (`offerContainers`), the note/engine state and the engine it will use for the Container row, and
+ *  the VM-form data. */
+export type LocalRows = LocalVm & { offerContainers: boolean; localNote: string; dockerRunning: boolean | null; engine?: DockerEngine | null };
 
 /** Step 1's rows for "This machine": up to two, each its own kind of run here. Container (the
  *  engine's state) when the lab has a container form, and VM (the hypervisor's logo) when a VM form
  *  is ready here. No tier badges here: a place is a place, not a form being compared (step 2). */
 function localPlatformRows(t: T, local: LocalRows): Option[] {
-  const { offerContainers, localNote, dockerRunning } = local;
+  const { offerContainers, localNote, dockerRunning, engine } = local;
   const rows: Option[] = [];
   if (offerContainers) {
     rows.push({
       target: { kind: "local" },
       title: t("labs.runOn.formContainers"),
-      subtitle: localNote,
+      // The engine it will run on (Docker Desktop, OrbStack…), not "Docker": a neutral container
+      // icon, the engine named, its state. The engine is chosen in step 2 when several answer.
+      subtitle: engine ? engineName(engine) : localNote,
       ok: true,
-      logo: <DockerLogo />,
+      logo: (
+        <TypeIcon>
+          <Container className="size-5 text-foreground" strokeWidth={1.5} />
+        </TypeIcon>
+      ),
       status: engineStatus(t, dockerRunning),
     });
   }

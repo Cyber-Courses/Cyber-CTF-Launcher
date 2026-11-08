@@ -14,7 +14,7 @@ import { useLabShell } from "@/features/labs/lab-detail/use-lab-shell";
 import { useLabTools } from "@/features/labs/lab-detail/use-lab-tools";
 import { usePageActions } from "@/features/labs/lab-detail/use-page-actions";
 import { useRunTarget } from "@/features/labs/lab-detail/use-run-target";
-import { type LabStatus, type Park, type Provider } from "@/lib/tauri";
+import { type DockerEngine, type LabStatus, type Park, type Provider } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 import type { ErrorCode } from "@/lib/errors";
@@ -40,6 +40,10 @@ export type LabDetailProps = {
   readyVms?: Provider[];
   /** Whether a Docker engine answers on this machine (null = unknown). */
   dockerRunning?: boolean | null;
+  /** The container engine the CLI uses here, and every engine that answers (for the Containers
+   *  row's name and its engine switch). */
+  dockerEngine?: DockerEngine | null;
+  dockerEnginesRunning?: DockerEngine[];
   onBack: () => void;
   onStart: (target: RunTarget) => Promise<void>;
   /** Resolves to the failure (a string) when the stop failed: Reset then doesn't start the lab again. */
@@ -134,7 +138,7 @@ export function useLabDetail(p: LabDetailProps) {
     runFailureCode: p.runFailureCode,
     runFailureHolder: p.runFailureHolder,
   });
-  const run = useRunTarget(rt, readyVms, p.hostArch);
+  const run = useRunTarget(rt, readyVms, p.hostArch, p.dockerEngine ?? null, p.dockerEnginesRunning ?? []);
   const preview = useCloudPreview(lab.id, rt);
   const shell = useLabShell(lab.id, lab.title, s.isDocker ? "DOCKER" : "VM");
   const box = useShownBox(useLabAttackBox(lab.id, s), removing(s));

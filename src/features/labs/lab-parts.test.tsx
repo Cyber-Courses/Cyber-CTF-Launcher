@@ -99,6 +99,15 @@ describe("RunOnPicker", () => {
     expect(screen.queryByText("Servers")).toBeNull();
   });
 
+  it("names the container engine on the Container row instead of showing Docker", () => {
+    installTauri();
+    renderPicker({ hosts: [], dockerRunning: true, engine: "orbstack" });
+    expect(screen.getByText("Container")).toBeTruthy();
+    // The engine it will run on, named; the row carries no Docker logo.
+    expect(screen.getByText("OrbStack")).toBeTruthy();
+    expect(screen.queryByAltText("Docker")).toBeNull();
+  });
+
   it("puts the hypervisor switch inline on the In a VM row when it is the only VM form", async () => {
     installTauri();
     const user = userEvent.setup();
