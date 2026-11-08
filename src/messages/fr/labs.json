@@ -96,7 +96,11 @@
     "rememberChoice": "Ne plus demander",
     "engineHeading": "Quel moteur ?",
     "defaultChoice": "Par défaut",
-    "inVmFormNote": "Conteneurs dans une VM"
+    "inVmFormNote": "Conteneurs dans une VM",
+    "cloudFormOneVm": "Une VM",
+    "cloudFormPerMachine": "Une VM par machine",
+    "cloudOneVmHint": "Vos conteneurs sur une VM cloud",
+    "cloudPerMachineHint": "Chaque machine comme sa propre instance cloud"
   },
   "ports": {
     "question": "Quels ports {title} doit-il utiliser ?",
@@ -247,7 +251,8 @@
     "stop": "Arrêter l’attack box",
     "start": "Démarrer l’attack box",
     "attaching": "Démarrage de l’attack box…",
-    "removing": "Suppression de l’attack box…"
+    "removing": "Suppression de l’attack box…",
+    "cloudVmNone": "Ce lab s'exécute en une VM par machine : il n'a donc pas encore de boîte d'attaque. Travaillez depuis les machines du lab."
   },
   "actions": {
     "labRunning": "✓ Le lab est en cours",

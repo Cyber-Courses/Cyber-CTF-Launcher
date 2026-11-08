@@ -1,10 +1,8 @@
 "use client";
 
-import { type ReactNode } from "react";
 import { type DockerEngine, type Provider, type ServerHost } from "@/lib/tauri";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
-import { StatusPill, type Tone } from "@/components/ui/status-pill";
-import { EngineLogo, hypervisorOptions, platformGroups, vmFormOptions, useHostChecks, useRunTiers, type LocalRows, type OptionGroup } from "@/features/labs/run-on-options";
+import { EngineLogo, RowPill, hypervisorOptions, platformGroups, vmFormOptions, useHostChecks, useRunTiers, type LocalRows, type OptionGroup } from "@/features/labs/run-on-options";
 import { engineName } from "@/features/machine/setup-steps/engines";
 import type { PortMode } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
@@ -16,7 +14,7 @@ export type RunTarget =
   | { kind: "local"; ports?: PortMode; engine?: DockerEngine }
   | { kind: "local-vm"; provider: Provider }
   | { kind: "local-vms"; provider: Provider }
-  | { kind: "host"; id: string };
+  | { kind: "host"; id: string; perMachine?: boolean };
 
 const targetKey = (t: RunTarget) => {
   switch (t.kind) {
@@ -26,8 +24,10 @@ const targetKey = (t: RunTarget) => {
       return `vm:${t.provider}`;
     case "local-vms":
       return `vms:${t.provider}`;
+    // `perMachine` (a cloud account's one-VM-per-machine form, cloud-vm) is its own row on the
+    // form step; on the places step both forms collapse to the one account row (`asRowTarget`).
     case "host":
-      return `host:${t.id}`;
+      return `host:${t.id}${t.perMachine ? ":vms" : ""}`;
   }
 };
 
@@ -51,7 +51,9 @@ const platformOfRow = (t: RunTarget, offerContainers: boolean): Platform => {
  *  local form (`local`, `local-vm`, `local-vms`) is the current pick. A container lab's VM forms
  *  all map to the one VM row (its first form). */
 const asRowTarget = (t: RunTarget, firstVmForm: RunTarget | undefined): RunTarget => {
-  if (t.kind === "host" || t.kind === "local") return t;
+  // A cloud form (`perMachine`) still highlights its account's one row on the places step.
+  if (t.kind === "host") return { kind: "host", id: t.id };
+  if (t.kind === "local") return t;
   return firstVmForm ?? t;
 };
 
@@ -83,10 +85,16 @@ type RunOnPickerProps = {
   /** The container engine the lab will use here, named on the Container row and preselected in the
    *  engine step (null: none / a VM lab). */
   engine?: DockerEngine | null;
-  /** The VM forms This machine offers (for the VM row and the form step). */
+  /** The VM forms This machine offers, for the "In a VM" row on the places step. */
   vmForms?: RunTarget[];
   onPickPlatform?: (p: Platform) => void;
-  // The form step.
+  // The form step ("How should it run?"): this machine's VM forms, or a cloud account's forms
+  // (one VM / one VM per machine) when `formAccount` is set.
+  /** The forms to choose between on the form step. */
+  formTargets?: RunTarget[];
+  /** The cloud account the form step's rows belong to (their logo and badge), when they are a
+   *  cloud account's forms rather than this machine's. */
+  formAccount?: ServerHost | null;
   onPickForm?: (t: RunTarget) => void;
   // The hypervisor step.
   hypervisors?: Provider[];
@@ -111,16 +119,19 @@ function PickerHeading({ heading, title }: { heading: string; title: string }) {
 export function RunOnPicker(props: RunOnPickerProps) {
   const { title, step = "platform", value, disabled } = props;
   const { hosts, hostOk, offerLocal = true, offerContainers = true, localNote, dockerRunning, engine = null, vmForms = [], onPickPlatform = () => {} } = props;
-  const { onPickForm = () => {}, hypervisors = [], defaultHypervisor = null, onPickHypervisor = () => {}, engines = [], defaultEngine = null, onPickEngine = () => {} } = props;
+  const { formTargets = vmForms, formAccount = null, onPickForm = () => {}, hypervisors = [], defaultHypervisor = null, onPickHypervisor = () => {} } = props;
+  const { engines = [], defaultEngine = null, onPickEngine = () => {} } = props;
   const t = useT();
   const checks = useHostChecks(hosts);
   const tiers = useRunTiers();
 
   if (step === "form") {
+    // A cloud account's forms sit under its name; this machine's under "This machine".
+    const label = formAccount ? formAccount.name : t("labs.runOn.thisMachine");
     return (
       <div className="space-y-4">
         <PickerHeading heading={t("labs.runOn.formHeading")} title={title} />
-        <OptionList group={{ id: "local", label: t("labs.runOn.thisMachine"), options: vmFormOptions(t, tiers, vmForms) }} value={value} onChange={onPickForm} disabled={disabled} />
+        <OptionList group={{ id: "form", label, options: vmFormOptions(t, tiers, formTargets, formAccount) }} value={value} onChange={onPickForm} disabled={disabled} />
       </div>
     );
   }
@@ -192,17 +203,6 @@ function EngineStep({
         ))}
       </RadioList>
     </div>
-  );
-}
-
-/** A tier badge or a live status, as one aligned pill (same line-height, dot and gap). */
-function RowPill({ tone, title, children }: { tone: Tone; title?: string; children: ReactNode }) {
-  return (
-    <span title={title} className="inline-flex items-center">
-      <StatusPill tone={tone}>
-        <span className="whitespace-nowrap">{children}</span>
-      </StatusPill>
-    </span>
   );
 }
 

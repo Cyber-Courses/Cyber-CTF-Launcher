@@ -6,7 +6,7 @@ use std::path::Path;
 
 use crate::platform::AppDirs;
 
-use super::paths::{lab_dir, local_runtime, local_vm, parked, runner_home, vagrant_dirs};
+use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm, runner_home, vagrant_dirs};
 use super::{LabStatus, Place, Runtime, docker, isothrum, server, vm};
 use crate::error::Result;
 
@@ -31,7 +31,10 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     // docker-in-VM or VM lab whose launch failed stayed "running" and showed a healthy diagram.
     let status = unless_launch_failed(dirs, id, status);
     // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
-    Ok(LabStatus { reap_error: super::reaper::last_failure(dirs, id), ..status })
+    // Whether this container lab runs as one VM per machine (its VM recipes), locally or as
+    // cloud-vm: the UI reads it to name the form and to know a cloud-vm run has no attack box yet.
+    let per_machine = runtime == Runtime::Docker && per_machine_vm(dir);
+    Ok(LabStatus { per_machine, reap_error: super::reaper::last_failure(dirs, id), ..status })
 }
 
 /// A lab whose last launch failed is not running, even if its machines stayed up: a failed setup
@@ -54,10 +57,11 @@ async fn server_status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c
         let status = super::launch::esxi_run(dirs, dir, id, runtime, &c)?.status().await?;
         return Ok(on_server(status, c.name, c.provider));
     }
-    // A cloud account (cloud-vm, cloud-docker, cloud-services): the runner's view from its record.
+    // A cloud account (cloud-vm, cloud-docker, cloud-services): the runner's view from its record,
+    // in the form it was started in (a container lab run as one VM per machine reads cloud-vm).
     if c.provider.is_cloud() {
         let cloud = server::terraform_target(c.provider).unwrap_or_default();
-        let status = isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, runtime, cloud)?.status().await?;
+        let status = isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, local_runtime(dir, runtime), cloud)?.status().await?;
         return Ok(on_server(status, c.name, c.provider));
     }
     // A Proxmox server: the runner's view from its own record and state (no SSH, no API call);

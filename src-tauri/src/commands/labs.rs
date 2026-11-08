@@ -190,7 +190,8 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
         Some(c) if c.provider.is_cloud() => {
             let cloud = server::terraform_target(c.provider).unwrap_or_default();
             let place = isothrum::CloudPlace { region: c.region.clone(), tf_env: c.tf_env.clone(), ..Default::default() };
-            isothrum::CloudRun::new(&home()?, &dir, &id, runtime, cloud)?.check(&place).await
+            // In the form it was started in: a container lab run as one VM per machine is cloud-vm.
+            isothrum::CloudRun::new(&home()?, &dir, &id, local_runtime(&dir, runtime), cloud)?.check(&place).await
         }
         Some(_) => isothrum::ServerRun::new(&home()?, &dir, &id, runtime)?.check().await,
         // On this machine, through the runner, in the form it was started in.
@@ -253,10 +254,16 @@ fn box_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Opt
     let home = runner_home(dirs)?;
     Ok(match server::lab_connection(dirs, dir)? {
         Some(c) if c.provider == Provider::VmwareEsxi => None,
-        Some(c) if c.provider.is_cloud() => {
-            let cloud = server::terraform_target(c.provider).unwrap_or_default();
-            Some(BoxRun::Cloud(isothrum::CloudRun::new(&home, dir, id, runtime, cloud)?))
-        }
+        // A cloud account: the box is a container in the VM the lab's containers run in
+        // (cloud-docker). A cloud-vm run — a container lab started as one VM per machine, or a VM
+        // lab — has no such host VM, so there is no attack box yet (None, as for an ESXi host).
+        Some(c) if c.provider.is_cloud() => match local_runtime(dir, runtime) {
+            Runtime::Docker => {
+                let cloud = server::terraform_target(c.provider).unwrap_or_default();
+                Some(BoxRun::Cloud(isothrum::CloudRun::new(&home, dir, id, Runtime::Docker, cloud)?))
+            }
+            _ => None,
+        },
         Some(_) => Some(BoxRun::Server(isothrum::ServerRun::new(&home, dir, id, runtime)?)),
         None => match local_runtime(dir, runtime) {
             Runtime::Docker if local_vm(dir).is_some() => Some(BoxRun::Local(isothrum::LabRun::docker_in_vm(&home, dir, id)?)),
@@ -397,6 +404,26 @@ mod tests {
         assert!(!check.available);
         let vm = lab_check(t.handle().clone(), "web".into(), Runtime::Vm).await.unwrap();
         assert!(!vm.available);
+    }
+
+    #[test]
+    fn a_cloud_vm_lab_has_no_attack_box_but_cloud_docker_does() {
+        use crate::runtime::paths::{mark_per_machine_vm, per_machine_vm};
+        let t = TestApp::new();
+        let _tools = Tools::rules(&[]);
+        let dir = t.lab("srv", &[]);
+        server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
+        // cloud-docker (the default): the box is a container in the lab's cloud VM, so the launcher
+        // has a box run for it.
+        assert!(super::box_run(&t.dirs(), &dir, "srv", Runtime::Docker).unwrap().is_some());
+        // One VM per machine (cloud-vm): no container host VM, so no attack box yet — the dispatch
+        // reads the recorded form and returns none (the page then says there is no box).
+        mark_per_machine_vm(&dir, true).unwrap();
+        assert!(super::box_run(&t.dirs(), &dir, "srv", Runtime::Docker).unwrap().is_none());
+        // Cleared back to cloud-docker: a box run again, and the form unset.
+        mark_per_machine_vm(&dir, false).unwrap();
+        assert!(super::box_run(&t.dirs(), &dir, "srv", Runtime::Docker).unwrap().is_some());
+        assert!(!per_machine_vm(&dir));
     }
 
     #[tokio::test]

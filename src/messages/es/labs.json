@@ -96,7 +96,11 @@
     "rememberChoice": "No volver a preguntar",
     "engineHeading": "¿Qué motor?",
     "defaultChoice": "Predeterminado",
-    "inVmFormNote": "Contenedores en una VM"
+    "inVmFormNote": "Contenedores en una VM",
+    "cloudFormOneVm": "Una VM",
+    "cloudFormPerMachine": "Una VM por máquina",
+    "cloudOneVmHint": "Tus contenedores en una VM en la nube",
+    "cloudPerMachineHint": "Cada máquina como su propia instancia en la nube"
   },
   "ports": {
     "question": "¿Qué puertos debe usar {title}?",
@@ -247,7 +251,8 @@
     "stop": "Detener máquina de ataque",
     "start": "Iniciar máquina de ataque",
     "attaching": "Iniciando la máquina de ataque…",
-    "removing": "Eliminando la máquina de ataque…"
+    "removing": "Eliminando la máquina de ataque…",
+    "cloudVmNone": "Este laboratorio se ejecuta como una VM por máquina, así que todavía no tiene caja de ataque. Trabaja desde las máquinas del laboratorio."
   },
   "actions": {
     "labRunning": "✓ El lab está en ejecución",

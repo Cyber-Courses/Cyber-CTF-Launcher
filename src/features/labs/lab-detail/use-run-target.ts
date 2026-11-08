@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { cloudAccountsFor, hostSupports, isCloudLab, localProviders, perMachineProviders } from "@/features/labs/lab-runtime";
+import { cloudAccountsFor, cloudRunsPerMachine, hostSupports, isCloudLab, localProviders, perMachineProviders } from "@/features/labs/lab-runtime";
 import type { PickerStep, Platform, RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import {
@@ -54,8 +54,17 @@ export function useRunTarget(
   // A server picked, then removed in its setup window: back to where Start points at first.
   const runOn = picked && (picked.kind !== "host" || hosts.some((h) => h.id === picked.id)) ? picked : initialTarget(rt, hosts, defaultId, localReady);
   const vmForms = vmFormTargets(isCloud, isDocker, localVm, perMachineVm);
+  // A dual-form container lab on a cloud account that runs cloud-vm offers two forms — one VM
+  // (cloud-docker), one VM per machine (cloud-vm) — picked on the form step after the account.
+  const cloudFormsFor = (id: string): RunTarget[] => {
+    const h = hosts.find((x) => x.id === id);
+    return h && cloudRunsPerMachine(rt, h.provider) ? [{ kind: "host", id }, { kind: "host", id, perMachine: true }] : [];
+  };
+  const pickedHost = runOn.kind === "host" ? hosts.find((h) => h.id === runOn.id) : undefined;
+  // What the form step offers: the cloud account's forms when one is picked, else this machine's.
+  const formTargets = runOn.kind === "host" ? cloudFormsFor(runOn.id) : vmForms;
   const hypervisorsFor = (form: RunTarget): Provider[] => (form.kind === "local-vm" ? localVms : form.kind === "local-vms" ? perMachineVms : []);
-  const steps = usePickerSteps({ runOn, setRunOn, setPickedEngine, pickProvider, vmForms, hypervisorsFor, engines });
+  const steps = usePickerSteps({ runOn, setRunOn, setPickedEngine, pickProvider, vmForms, cloudFormsFor, hypervisorsFor, engines });
   // Start, with "don't ask again" checked, saves what the path chose so the steps are skipped next time.
   const commitChoice = () => {
     if (remember) saveLaunchChoice(runOn, ports, engine, engines.length);
@@ -73,8 +82,14 @@ export function useRunTarget(
     setPorts,
     /** The helper-VM hypervisor a container lab here would use (for restarting it in the same one). */
     localVm,
-    /** The VM forms This machine offers (helper VM, one VM per machine) for the form step. */
+    /** The VM forms This machine's "In a VM" row offers (helper VM, one VM per machine). */
     vmForms,
+    /** The form step's rows: a picked cloud account's forms (one VM / one VM per machine), else
+     *  This machine's VM forms. Empty when there is no form to choose. */
+    formTargets,
+    /** The cloud account the form step's rows belong to (for their logo and badge), when the
+     *  form step shows a cloud account's forms rather than this machine's. */
+    formAccount: pickedHost,
     /** The hypervisor rows' default (marked, preselected): the Settings choice, else the first ready. */
     defaultHypervisor: runOn.kind === "local-vm" ? (localVms.at(0) ?? null) : runOn.kind === "local-vms" ? (perMachineVms.at(0) ?? null) : null,
     /** The container engine a lab here runs on, every engine that answers (engine step rows when
@@ -206,6 +221,7 @@ type StepsDeps = {
   setPickedEngine: (e: DockerEngine) => void;
   pickProvider: (form: "local-vm" | "local-vms", provider: Provider) => void;
   vmForms: RunTarget[];
+  cloudFormsFor: (id: string) => RunTarget[];
   hypervisorsFor: (form: RunTarget) => Provider[];
   engines: DockerEngine[];
 };
@@ -231,6 +247,12 @@ function usePickerSteps(d: StepsDeps) {
     step === "ports" || step === "hypervisor" || (step === "engine" && savedPorts()) || (step === "form" && (curHyps.length <= 1 || !!savedHyp(curHyps)));
 
   const pickForm = (form: RunTarget) => {
+    // A cloud account's form (one VM / one VM per machine) is the last step: set it and let Start
+    // finish, no hypervisor to pick.
+    if (form.kind === "host") {
+      d.setRunOn(form);
+      return;
+    }
     const formHyps = form.kind === "local-vm" || form.kind === "local-vms" ? hypervisorsFor(form) : [];
     const saved = savedHyp(formHyps);
     const provider = saved ?? (form.kind === "local-vm" || form.kind === "local-vms" ? form.provider : null);
@@ -243,7 +265,9 @@ function usePickerSteps(d: StepsDeps) {
   const pickPlatform = (p: Platform) => {
     if (p.kind === "host") {
       d.setRunOn({ kind: "host", id: p.id });
-      setStep("platform");
+      // A cloud account offering both forms opens the form step ("How should it run?"); otherwise
+      // the account is settled and Start runs there.
+      setStep(d.cloudFormsFor(p.id).length >= 2 ? "form" : "platform");
       return;
     }
     if (p.kind === "containers") {

@@ -1,23 +1,38 @@
 //! Starting a lab on a server host: ESXi through Vagrant, Proxmox and the clouds through
 //! Terraform, with the AWS budget check and this machine's public IP for the firewall rules.
 
-use super::{AppDirs, Error, LabRef, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, runner_home, server};
+use super::super::paths::local_runtime;
+use super::{
+    AppDirs, Error, LabRef, PER_MACHINE_HERE_ONLY, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, mark_per_machine_vm, runner_home, server,
+};
 
-pub(super) async fn start_on_server(dirs: &AppDirs, lab: LabRef<'_>, host: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+pub(super) async fn start_on_server(
+    dirs: &AppDirs,
+    lab: LabRef<'_>,
+    host: &str,
+    per_machine: bool,
+    env: &[(String, String)],
+    log: &mut impl FnMut(String),
+) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
+    // One VM per machine is cloud-vm on a cloud account; on a server (ESXi, Proxmox) the lab runs
+    // as the catalogue publishes it. Refuse before any side effect (the secret, GCP, the marker).
+    if per_machine && !server::host_provider(dirs, host).is_some_and(|p| p.is_cloud()) {
+        return Err(Error::Invalid(PER_MACHINE_HERE_ONLY.into()));
+    }
+    let conn = server::connection(dirs, host)?;
     // GCP labs run in the account's labs project: make sure it exists (one free billing slot).
-    if server::connection(dirs, host)?.provider == Provider::Gcp {
+    if conn.provider == Provider::Gcp {
         log("Checking the Cyber CTF labs project on Google Cloud…".into());
         server::gcp::labs_project(dirs, host).await?;
     }
-    let conn = server::connection(dirs, host)?;
     // Mark first, so a half-created lab can still be destroyed on the same host.
     server::mark_lab(dir, Some(host))?;
     log(format!("Running on server host {} ({})", conn.name, conn.provider.id()));
     // Every server lab runs through the Isothrum runner: a cloud account, an ESXi host (Vagrant),
     // or a Proxmox server (Terraform). The runner keeps the state, the slot and the connection.
     if conn.provider.is_cloud() {
-        return start_cloud_run(dirs, CloudStart { dir, id, runtime, host, conn, env }, log).await;
+        return start_cloud_run(dirs, CloudStart { dir, id, runtime, host, conn, env, per_machine }, log).await;
     }
     if conn.provider == Provider::VmwareEsxi {
         lab::prepare(dir, lab::vagrant_target(runtime))?;
@@ -75,6 +90,10 @@ pub(in crate::runtime) struct CloudStart<'a> {
     pub(in crate::runtime) host: &'a str,
     pub(in crate::runtime) conn: server::Connection,
     pub(in crate::runtime) env: &'a [(String, String)],
+    /// The player picked "one VM per machine" (cloud-vm): a container lab's machines as cloud
+    /// instances, not its containers on one cloud VM (cloud-docker). Only for a lab with VM
+    /// recipes; ignored for a VM lab, which is cloud-vm already.
+    pub(in crate::runtime) per_machine: bool,
 }
 
 /// A cloud VM lab (`cloud-vm`, `cloud-docker`) in the player's cloud account through the Isothrum
@@ -83,8 +102,12 @@ pub(in crate::runtime) struct CloudStart<'a> {
 /// the runner does the work: it delivers the lab over SSH, applies the egress seal, reads the
 /// module's `ssh_user` output and keeps the Terraform state and the run's expiry.
 pub(super) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    let CloudStart { dir, id, runtime, host, conn, env } = start;
+    let CloudStart { dir, id, runtime, host, conn, env, per_machine } = start;
     let cloud = server::terraform_target(conn.provider).ok_or_else(|| Error::Invalid("this account's cloud runs no Terraform labs".into()))?;
+    // The form the player picked, recorded before anything runs so every later cloud dispatch
+    // (status, stop, check, the attack box) reads it, and resolved to the runtime that drives the
+    // cloud module (cloud-vm for one VM per machine, else cloud-docker).
+    let runtime = record_cloud_form(dir, runtime, per_machine)?;
     // Generate the lab's module for this cloud (a cloud a lab can't run on has no module, and the
     // run surfaces that when the directory is missing).
     let (_, target) = lab::terraform(dir, runtime, cloud);
@@ -99,6 +122,16 @@ pub(super) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: 
     let run = isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, runtime, cloud)?;
     run.up(&place, env, log).await?;
     mark_parked(dir, None)
+}
+
+/// Records the form a container lab is launched in on a cloud account and resolves the runtime
+/// that drives its Terraform module: "one VM per machine" runs cloud-vm (its VM recipes, one
+/// instance per machine), anything else cloud-docker (its containers on one cloud VM). The mark is
+/// the same one a lab on this machine uses, so `local_runtime` reads it everywhere (status, stop,
+/// check, the attack box). A VM lab is cloud-vm whatever the pick says: the mark is container-only.
+pub(super) fn record_cloud_form(dir: &Path, runtime: Runtime, per_machine: bool) -> Result<Runtime> {
+    mark_per_machine_vm(dir, per_machine && runtime == Runtime::Docker)?;
+    Ok(local_runtime(dir, runtime))
 }
 
 /// Where a cloud VM lab runs, from the account's connection `conn` and this machine's public IP:

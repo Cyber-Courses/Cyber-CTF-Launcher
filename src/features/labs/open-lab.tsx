@@ -6,9 +6,21 @@ import { LabDetail } from "@/features/labs/lab-detail";
 import type { useLabActions } from "@/features/labs/use-lab-actions";
 import type { Lab } from "@/features/labs/use-labs";
 import { useWatchLab } from "@/features/labs/lab-polling";
+import type { LocalVmPick } from "@/features/labs/lab-operations";
+import type { RunTarget } from "@/features/labs/run-on";
 import type { LabStatus, Provider, SystemReport } from "@/lib/tauri";
 
 // The Labs screen's open lab: which one, from the navigation, and its page.
+
+/** How a chosen target runs beyond plain containers, for the launch: a VM here on a hypervisor, as
+ *  one VM per machine here, or a cloud account's one-VM-per-machine form (cloud-vm, no local
+ *  hypervisor). Nothing for plain containers, a server, or a cloud account's one-VM form. */
+function localVmPick(target: RunTarget): LocalVmPick | undefined {
+  if (target.kind === "local-vm") return { provider: target.provider };
+  if (target.kind === "local-vms") return { provider: target.provider, perMachine: true };
+  if (target.kind === "host" && target.perMachine) return { perMachine: true };
+  return undefined;
+}
 
 /**
  * The open lab's slug. Opened straight from the slug the navigation carried, so a lab opened
@@ -95,7 +107,7 @@ export function OpenLab({
         launch(
           lab,
           target.kind === "host" ? target.id : null,
-          target.kind === "local-vm" || target.kind === "local-vms" ? { provider: target.provider, perMachine: target.kind === "local-vms" } : undefined,
+          localVmPick(target),
           report,
           target.kind === "local" ? { ports: target.ports, engine: target.engine } : undefined,
         )

@@ -114,7 +114,7 @@ pub(crate) fn local_vm(dir: &Path) -> Option<String> {
 /// VM form (see [`local_runtime`]), whatever the catalogue calls the lab.
 pub const PER_MACHINE_MARKER: &str = ".cyberctf-per-machine-vm";
 
-pub(super) fn mark_per_machine_vm(dir: &Path, on: bool) -> Result<()> {
+pub(crate) fn mark_per_machine_vm(dir: &Path, on: bool) -> Result<()> {
     set_marker(dir, PER_MACHINE_MARKER, on.then_some("vm"))
 }
 

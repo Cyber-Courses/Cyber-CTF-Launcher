@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
-use super::{CLOUD_NEEDS_ACCOUNT, LocalRun, Provider, Runtime, budget_verdict, emulated_arches, local_run, low_memory_warning, parse_ipv4};
+use super::{CLOUD_NEEDS_ACCOUNT, LocalRun, Provider, Runtime, budget_verdict, emulated_arches, local_run, low_memory_warning, parse_ipv4, record_cloud_form};
 use super::{server, warn_if_low_memory};
 use crate::platform::exec::fake::Tools;
 use crate::runtime::paths::{mark_parked, parked};
@@ -234,6 +234,25 @@ async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
     let err = r.unwrap_err().to_string();
     assert!(err.starts_with("This lab can't run on UTM yet: ") && err.contains("vagrant_utm"), "{err}");
     assert!(!tools.called("open"), "{:?}", tools.calls());
+}
+
+#[test]
+fn the_cloud_form_sets_the_runtime_and_records_it() {
+    use crate::runtime::paths::per_machine_vm;
+    let t = TestApp::new();
+    let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS)]);
+    // A container lab picked as one VM per machine on a cloud: cloud-vm (the runtime that drives
+    // the module), and the form recorded so every later cloud dispatch follows it.
+    assert_eq!(record_cloud_form(&dir, Runtime::Docker, true).unwrap(), Runtime::Vm);
+    assert!(per_machine_vm(&dir));
+    // Its containers on one cloud VM: cloud-docker, and the mark cleared (a re-launch as the other
+    // form must not keep the old one).
+    assert_eq!(record_cloud_form(&dir, Runtime::Docker, false).unwrap(), Runtime::Docker);
+    assert!(!per_machine_vm(&dir));
+    // A VM lab is cloud-vm whatever the pick says; the mark is for container labs only, so it stays
+    // clear (status, stop and the rest read the catalogue runtime for it).
+    assert_eq!(record_cloud_form(&dir, Runtime::Vm, true).unwrap(), Runtime::Vm);
+    assert!(!per_machine_vm(&dir));
 }
 
 #[test]

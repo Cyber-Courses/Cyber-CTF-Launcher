@@ -5,7 +5,7 @@ import { Container } from "lucide-react";
 import { type DockerEngine, type Provider, type RunTier, type ServerHost, type ServerTest } from "@/lib/tauri";
 import { badgeFor, candidatesFor, type RunBadge } from "@/features/labs/run-on-badges";
 import { testHost } from "@/features/servers/use-server-list";
-import { type Tone } from "@/components/ui/status-pill";
+import { StatusPill, type Tone } from "@/components/ui/status-pill";
 import { TypeIcon } from "@/components/ui/type-icon";
 import { KIND } from "@/features/servers/host-setup/constants";
 import { ProviderGlyph } from "@/features/servers/provider-glyph";
@@ -65,6 +65,17 @@ function hostStatus(t: T, check: ServerTest | undefined): Status {
   };
 }
 
+/** A tier badge or a live status, as one aligned pill (same line-height, dot and gap). */
+export function RowPill({ tone, title, children }: { tone: Tone; title?: string; children: React.ReactNode }) {
+  return (
+    <span title={title} className="inline-flex items-center">
+      <StatusPill tone={tone}>
+        <span className="whitespace-nowrap">{children}</span>
+      </StatusPill>
+    </span>
+  );
+}
+
 /** An engine's brand logo for the engine step's rows (the neutral container icon when it has none). */
 export function EngineLogo({ id }: { id: DockerEngine }) {
   const logo = ENGINES.find((e) => e.id === id)?.logo;
@@ -90,10 +101,26 @@ function engineStatus(t: T, dockerRunning: boolean | null): Status | undefined {
     : { tone: "warn", label: t("labs.runOn.engineStopped"), title: t("labs.runOn.engineStoppedHint") };
 }
 
-/** The "How should it run?" step: the VM forms This machine offers (helper VM, one VM per machine),
- *  shown only when there are two. The hypervisor is a later step, so a form isn't named by one. */
-export function vmFormOptions(t: T, tiers: RunTier[], vmForms: RunTarget[]): Option[] {
-  return vmForms.map((form) => {
+/** The "How should it run?" step, shown only when there are two forms: This machine's VM forms
+ *  (helper VM, one VM per machine), or — when `account` is a cloud account — its one VM
+ *  (cloud-docker) and one VM per machine (cloud-vm). The hypervisor is a later step for a local
+ *  form, so it isn't named by one; a cloud form runs on the account, so Start finishes it. */
+export function vmFormOptions(t: T, tiers: RunTier[], forms: RunTarget[], account?: ServerHost | null): Option[] {
+  return forms.map((form) => {
+    // A cloud account's forms: the account's own logo and the path's tier badge.
+    if (form.kind === "host") {
+      const perMachine = !!form.perMachine;
+      const variant = `${perMachine ? "cloud-vm" : "cloud-docker"}/${account?.provider ?? ""}`;
+      return {
+        target: form,
+        title: t(perMachine ? "labs.runOn.cloudFormPerMachine" : "labs.runOn.cloudFormOneVm"),
+        subtitle: t(perMachine ? "labs.runOn.cloudPerMachineHint" : "labs.runOn.cloudOneVmHint"),
+        ok: true,
+        badge: account ? badgeFor(tiers, [variant]) : undefined,
+        logo: account ? <ProviderGlyph provider={account.provider} /> : <HypervisorLogo provider={null} />,
+        status: { tone: "ok", label: t("labs.runOn.ready") },
+      };
+    }
     const provider = form.kind === "local-vm" || form.kind === "local-vms" ? form.provider : null;
     const perMachine = form.kind === "local-vms";
     return {

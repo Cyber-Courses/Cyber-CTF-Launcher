@@ -139,9 +139,11 @@ function localHypervisor(
   return provider;
 }
 
-/** A VM here for a container lab: the hypervisor, and whether as one VM per machine (its VM
- *  recipes, as a VM lab runs) rather than its containers inside one helper VM. */
-export type LocalVmPick = { provider: Provider; perMachine?: boolean };
+/** How a container lab runs beyond plain containers: in a VM here (`provider`, the hypervisor),
+ *  and/or as one VM per machine (`perMachine`) — its VM recipes, as a VM lab runs, rather than its
+ *  containers inside one helper VM. A cloud account's one-VM-per-machine form (cloud-vm) carries
+ *  `perMachine` with no local `provider`. */
+export type LocalVmPick = { provider?: Provider; perMachine?: boolean };
 
 /** Where a (non-cloud) lab starts: on the server `host` (omitted: a VM lab's default server,
  *  when it supports its hypervisor); here in Docker or on a local hypervisor; in a VM here on
@@ -165,6 +167,8 @@ export const localLaunch =
     let { host } = where;
     // Run as one VM per machine, the lab is a VM lab here: its machines are VMs on `vmProvider`.
     const asVms = perMachineVm && !!vmProvider && host == null;
+    // On a cloud account, one VM per machine is cloud-vm: no local hypervisor, the host carries it.
+    const cloudPerMachine = perMachineVm && host != null;
     const vm = rt.runtime === "VM" || asVms;
     if (vm && !asVms && host === undefined) host = await defaultHostFor(lab);
     // Docker labs go to a server host only when one is picked explicitly.
@@ -184,7 +188,7 @@ export const localLaunch =
           attackboxImage: attackbox,
           defaultPorts: ports === "default",
           offline,
-          perMachineVm: asVms,
+          perMachineVm: asVms || cloudPerMachine,
           // The chosen engine pins a plain container lab here; never for a VM form or a server.
           dockerEngine: vm || remote ? null : (engine ?? null),
         },

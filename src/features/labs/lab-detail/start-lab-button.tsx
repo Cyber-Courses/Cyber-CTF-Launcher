@@ -128,6 +128,8 @@ function StartDialog({
           dockerRunning={isDocker ? dockerRunning : null}
           engine={run.engine}
           vmForms={run.vmForms}
+          formTargets={run.formTargets}
+          formAccount={run.formAccount}
           onPickPlatform={run.pickPlatform}
           onPickForm={run.pickForm}
           hypervisors={run.hypervisors}
@@ -138,8 +140,9 @@ function StartDialog({
           onPickEngine={run.pickEngine}
         />
       )}
-      {/* "Don't ask again" sits on the last step of the path (never for a cloud lab). */}
-      {run.isLastStep && !cloud && <RememberToggle run={run} />}
+      {/* "Don't ask again" sits on the last step of a this-machine path (not a cloud lab, and not a
+          cloud account's form step, whose choice isn't remembered). */}
+      {run.isLastStep && !cloud && run.runOn.kind !== "host" && <RememberToggle run={run} />}
       {cloud && (
         <div className="mt-4">
           <CloudLaunchNote preview={cloud.preview} autoStopHours={run.pickedAccount?.autoStopHours ?? null} />

@@ -184,7 +184,10 @@ async fn a_container_lab_in_a_utm_vm_gets_its_attack_box_inside_the_vm() {
     assert_eq!(started.args[..3], ["ssh", "--no-tty", "--command"]);
     assert_eq!(started.args[4], "default", "into the lab's VM");
     let docker_run = &started.args[3];
-    assert!(docker_run.starts_with("sudo docker run -d --name 'cyberctf-web-isoloom-access' --hostname attackbox --label isoloom.access=true --network '"), "{docker_run}");
+    assert!(
+        docker_run.starts_with("sudo docker run -d --name 'cyberctf-web-isoloom-access' --hostname attackbox --label isoloom.access=true --network '"),
+        "{docker_run}"
+    );
     assert!(docker_run.ends_with("_lab' 'kalilinux/kali-rolling' sleep infinity"), "on the lab's network there: {docker_run}");
     assert!(started.env("VAGRANT_DOTFILE_PATH").is_some_and(|p| p.starts_with(&f.root.join("runs").display().to_string())), "{}", started.line());
 

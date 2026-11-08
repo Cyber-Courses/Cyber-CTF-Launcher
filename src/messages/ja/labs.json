@@ -96,7 +96,11 @@
     "rememberChoice": "次回から確認しない",
     "engineHeading": "どのエンジン？",
     "defaultChoice": "デフォルト",
-    "inVmFormNote": "1 台の VM 内のコンテナ"
+    "inVmFormNote": "1 台の VM 内のコンテナ",
+    "cloudFormOneVm": "1台のVM",
+    "cloudFormPerMachine": "マシンごとに1台のVM",
+    "cloudOneVmHint": "コンテナを1台のクラウドVMで実行",
+    "cloudPerMachineHint": "各マシンを独立したクラウドインスタンスとして実行"
   },
   "ports": {
     "question": "{title} はどのポートを使いますか？",
@@ -247,7 +251,8 @@
     "stop": "アタックボックスを停止",
     "start": "アタックボックスを起動",
     "attaching": "アタックボックスを起動中…",
-    "removing": "アタックボックスを削除中…"
+    "removing": "アタックボックスを削除中…",
+    "cloudVmNone": "このラボはマシンごとに1台のVMとして実行されるため、まだ攻撃ボックスはありません。ラボ自体のマシンから操作してください。"
   },
   "actions": {
     "labRunning": "✓ ラボが実行中です",

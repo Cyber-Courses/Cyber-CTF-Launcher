@@ -114,6 +114,7 @@ export const invoiceStatus: LabStatus = {
   // The attack box of a lab here is read on its own (attack_box_status); the core names it only
   // for a lab on a server or in a VM.
   attacker: null,
+  perMachine: false,
   outputs: [],
   message: null,
   reapError: null,
@@ -216,6 +217,7 @@ export const stopped: LabStatus = {
   place: null,
   provider: null,
   attacker: null,
+  perMachine: false,
   reapError: null,
   networks: [],
   machines: [],

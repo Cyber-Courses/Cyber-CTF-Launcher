@@ -96,7 +96,11 @@
     "rememberChoice": "Nicht mehr fragen",
     "engineHeading": "Welche Engine?",
     "defaultChoice": "Standard",
-    "inVmFormNote": "Container in einer VM"
+    "inVmFormNote": "Container in einer VM",
+    "cloudFormOneVm": "Eine VM",
+    "cloudFormPerMachine": "Eine VM pro Maschine",
+    "cloudOneVmHint": "Deine Container auf einer Cloud-VM",
+    "cloudPerMachineHint": "Jede Maschine als eigene Cloud-Instanz"
   },
   "ports": {
     "question": "Welche Ports soll {title} verwenden?",
@@ -247,7 +251,8 @@
     "stop": "Attack box stoppen",
     "start": "Attack box starten",
     "attaching": "Attack box wird gestartet…",
-    "removing": "Attack box wird entfernt…"
+    "removing": "Attack box wird entfernt…",
+    "cloudVmNone": "Dieses Lab läuft als eine VM pro Maschine und hat daher noch keine Angriffsbox. Arbeite von den Maschinen des Labs aus."
   },
   "actions": {
     "labRunning": "✓ Lab läuft",

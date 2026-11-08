@@ -128,6 +128,7 @@ pub(crate) mod test_support {
             place: None,
             provider: None,
             attacker: None,
+            per_machine: false,
             outputs: Vec::new(),
             message: None,
             reap_error: None,

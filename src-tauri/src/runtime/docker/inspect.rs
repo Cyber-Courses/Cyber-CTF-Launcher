@@ -306,6 +306,8 @@ fn docker_status(running: bool, machines: Vec<Machine>, networks: Vec<Network>, 
         place: None,
         provider: Some(provider),
         attacker: None,
+        // The status dispatcher sets this from the lab's form marker.
+        per_machine: false,
         outputs: Vec::new(),
         message: None,
         reap_error: None,

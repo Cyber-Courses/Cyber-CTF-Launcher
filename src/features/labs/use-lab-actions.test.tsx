@@ -234,6 +234,18 @@ describe("useLabActions: launch", () => {
     setAutoAttackBox(true);
   });
 
+  it("runs a dual-form container lab on a cloud account as one VM per machine (cloud-vm)", async () => {
+    const { calls, hook } = setup();
+    const both: Lab = { ...dockerLab, id: "act-cloud-vms", runtime: { ...must(dockerLab.runtime, "runtime"), providers: ["aws"], docker: true, vm: true } };
+    // The cloud account's one-VM-per-machine form: `perMachine` with no local hypervisor; the
+    // backend reads the flag with the host and starts cloud-vm.
+    await act(() => hook.result.current.launch(both, "aws1", { perMachine: true }, readyReport()));
+    const args = must(launchArgs(calls), "the lab_launch call");
+    expect(rawLaunchArgs(calls)?.perMachineVm).toBe(true);
+    expect(args.provider).toBeNull();
+    expect(args.host).toBe("aws1");
+  });
+
   it("runs a VM lab here on the ready hypervisor, with the attack VM box when auto-start is on", async () => {
     setAttackBox("kalilinux/rolling");
     setAutoAttackBox(true);

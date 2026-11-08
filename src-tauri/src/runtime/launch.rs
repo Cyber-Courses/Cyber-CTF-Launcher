@@ -21,7 +21,7 @@ use local::{emulated_arches, low_memory_warning};
 pub(crate) use on_host::esxi_run;
 use on_host::start_on_server;
 #[cfg(test)]
-use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from};
+use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from, record_cloud_form};
 pub(super) use on_host::{check_aws_budget, public_ip};
 pub(super) use on_host::{runner_runs_on, server_place};
 
@@ -73,10 +73,10 @@ pub(crate) async fn start_locked(
     }
     match host {
         None => start_here(dirs, lab, local_run(runtime, provider, per_machine_vm)?, docker_context, env, &mut log).await,
-        // On a server the lab runs as the catalogue says (ESXi: Docker on one VM for a container
-        // lab); the per-machine pick is "Where should it run?"'s for this machine only.
-        Some(_) if per_machine_vm => Err(Error::Invalid(PER_MACHINE_HERE_ONLY.into())),
-        Some(host) => start_on_server(dirs, lab, host, env, &mut log).await,
+        // On a cloud account the per-machine form is cloud-vm (one instance per machine); on a
+        // server (ESXi, Proxmox) the lab runs as the catalogue says, so `start_on_server` refuses
+        // the per-machine pick there. The dispatch on the provider is its to make (the connection).
+        Some(host) => start_on_server(dirs, lab, host, per_machine_vm, env, &mut log).await,
     }
 }
 

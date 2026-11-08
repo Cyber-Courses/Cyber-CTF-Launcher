@@ -174,6 +174,41 @@ describe("LabDetail: starting", () => {
     expect(within(dialog).queryByText("One VM per machine")).toBeNull();
   });
 
+  it("offers a dual-form container lab on a cloud the two cloud forms, and starts one VM per machine", async () => {
+    installTauri({
+      ...quiet,
+      server_list: () => ({ default: null, hosts: [{ id: "aws1", name: "AWS sandbox", provider: "aws", host: "eu-west-3" }] }),
+      server_test: () => ({ ok: true, reachable: true, authenticated: true, latencyMs: 9, message: "Connected", checks: [] }),
+    });
+    const bothCloud: Lab = { ...dockerLab, id: "lab-cloud", runtime: { runtime: "DOCKER", architectures: [], providers: ["aws"], docker: true, vm: true } };
+    const { user, h } = await clickStart({ lab: bothCloud, readyVms: [] });
+    const dialog = screen.getByRole("dialog");
+    // Pick the AWS account → the form step ("How should it run?"), with the two cloud forms as rows.
+    await user.click(within(dialog).getByText("AWS sandbox"));
+    expect(within(dialog).getByText("How should it run?")).toBeTruthy();
+    expect(within(dialog).getByText("One VM")).toBeTruthy();
+    expect(within(dialog).getByText("One VM per machine")).toBeTruthy();
+    await user.click(within(dialog).getByText("One VM per machine"));
+    await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
+    expect(h.onStart).toHaveBeenCalledWith({ kind: "host", id: "aws1", perMachine: true });
+  });
+
+  it("skips the cloud form step for a cloud with no cloud-vm (one VM only)", async () => {
+    installTauri({
+      ...quiet,
+      server_list: () => ({ default: null, hosts: [{ id: "az1", name: "Azure sub", provider: "azure", host: "westeurope" }] }),
+      server_test: () => ({ ok: true, reachable: true, authenticated: true, latencyMs: 9, message: "Connected", checks: [] }),
+    });
+    const bothCloud: Lab = { ...dockerLab, id: "lab-cloud2", runtime: { runtime: "DOCKER", architectures: [], providers: ["azure"], docker: true, vm: true } };
+    const { user, h } = await clickStart({ lab: bothCloud, readyVms: [] });
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByText("Azure sub"));
+    // Azure runs container labs as cloud-docker only: no form to choose, Start runs there.
+    expect(within(dialog).queryByText("How should it run?")).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
+    expect(h.onStart).toHaveBeenCalledWith({ kind: "host", id: "az1" });
+  });
+
   it("picks a container engine when several answer, remembers it, and starts on it", async () => {
     installTauri(quiet);
     const { user, h } = await clickStart({ dockerEngine: "docker-desktop", dockerEnginesRunning: ["docker-desktop", "orbstack"] });

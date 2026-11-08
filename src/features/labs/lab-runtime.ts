@@ -98,6 +98,13 @@ export function pickLocalHypervisor(local: Provider[], ready: Provider[] | undef
   return ready.find((p) => local.includes(p)) ?? null;
 }
 
+/** Whether a cloud account offers the "one VM per machine" form (Isoloom's cloud-vm) for this lab,
+ *  as well as "one VM" (cloud-docker): a dual-form lab, on a cloud the launcher runs cloud-vm on.
+ *  Only AWS for now (the others run container labs as cloud-docker only — `VM_CLOUDS_NOT_YET`);
+ *  a single-form lab, or a cloud with no cloud-vm, offers one form, so the picker skips the step. */
+export const cloudRunsPerMachine = (rt: LabRuntimeInfo | null, provider: string) =>
+  !!rt && hasBothForms(rt) && CLOUDS.has(provider) && !VM_CLOUDS_NOT_YET.has(provider);
+
 /** Whether a saved server or cloud account can run the lab. */
 export const hostSupports = (rt: LabRuntimeInfo | null, h: ServerHost) => {
   if (!rt?.providers.includes(h.provider)) return false;

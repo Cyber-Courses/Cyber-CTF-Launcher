@@ -96,7 +96,11 @@
     "rememberChoice": "Don't ask again",
     "engineHeading": "Which engine?",
     "defaultChoice": "Default",
-    "inVmFormNote": "Containers in one VM"
+    "inVmFormNote": "Containers in one VM",
+    "cloudFormOneVm": "One VM",
+    "cloudFormPerMachine": "One VM per machine",
+    "cloudOneVmHint": "Your containers on one cloud VM",
+    "cloudPerMachineHint": "Each machine as its own cloud instance"
   },
   "ports": {
     "question": "Which ports should {title} use?",
@@ -247,7 +251,8 @@
     "stop": "Stop attack box",
     "start": "Start attack box",
     "attaching": "Starting the attack box…",
-    "removing": "Removing the attack box…"
+    "removing": "Removing the attack box…",
+    "cloudVmNone": "This lab runs as one VM per machine, so it has no attack box yet. Work from the lab's own machines."
   },
   "actions": {
     "labRunning": "✓ Lab is running",

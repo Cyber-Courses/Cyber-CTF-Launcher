@@ -214,7 +214,8 @@ async fn stop_cloud_run(dirs: &AppDirs, stop: CloudStop<'_>, log: &mut impl FnMu
     let cloud = server::terraform_target(c.provider).unwrap_or_default();
     let label = server::marked_host(dir).unwrap_or_default();
     let place = isothrum::CloudPlace { label, region: c.region.clone(), tf_env: c.tf_env.clone(), ..isothrum::CloudPlace::default() };
-    isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, runtime, cloud)?.down(&place, log).await
+    // In the form it was started in: a container lab started as one VM per machine is cloud-vm.
+    isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, local_runtime(dir, runtime), cloud)?.down(&place, log).await
 }
 
 /// Stops a lab that runs on this machine (its containers, a local VM, or its VMs) and, once it

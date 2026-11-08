@@ -46,6 +46,12 @@ provider: string | null,
  */
 attacker: LabAttacker | null, 
 /**
+ * A container lab (catalogue Docker) running as one VM per machine — its VM recipes rather
+ * than its containers: on this machine (Vagrant), or on a cloud account (cloud-vm). Set by
+ * the status dispatcher. The UI names the form, and knows a cloud-vm run has no attack box.
+ */
+perMachine: boolean, 
+/**
  * What a cloud-services lab exposes (its module's outputs, by the spec's names): its
  * entry points and credentials. Empty for the other labs.
  */

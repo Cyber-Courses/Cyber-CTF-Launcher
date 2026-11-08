@@ -44,6 +44,8 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
             onShell={shell.open}
             // The shell only into a box that runs, wherever the lab is.
             shellReady={!!box.status?.running}
+            // A cloud-vm run has no attack box yet: the panel says so, with no Start.
+            noBox={s.cloudVm}
           />
         </Dimmed>
       )}

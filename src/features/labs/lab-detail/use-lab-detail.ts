@@ -73,7 +73,8 @@ function useLabAttackBox(labId: string, s: PageState) {
   return useAttackBox(labId, {
     running: s.running && !s.isCloud,
     holding: s.deploying,
-    reachable: !s.isCloud && (!s.remote || s.isDocker),
+    // A cloud-vm run has no in-VM attack box yet, so it isn't reachable (the panel says so).
+    reachable: !s.isCloud && (!s.remote || (s.isDocker && !s.cloudVm)),
     runtime: s.isDocker ? "DOCKER" : "VM",
     failed: s.deployFailed,
   });

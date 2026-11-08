@@ -150,6 +150,32 @@ describe("RunOnPicker", () => {
     expect(onPickForm).toHaveBeenLastCalledWith({ kind: "local-vms", provider: "qemu" } satisfies RunTarget);
   });
 
+  it("offers a cloud account's two forms on the form step, under its name", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    const account = host({ id: "aws1", name: "AWS sandbox", provider: "aws", host: "eu-west-3" });
+    const { onPickForm } = renderPicker({
+      step: "form",
+      hosts: [],
+      value: { kind: "host", id: "aws1" },
+      formAccount: account,
+      formTargets: [
+        { kind: "host", id: "aws1" },
+        { kind: "host", id: "aws1", perMachine: true },
+      ],
+    });
+    expect(screen.getByText("How should it run?")).toBeTruthy();
+    // The account's own name labels its forms; the two rows are one VM (cloud-docker) and one VM
+    // per machine (cloud-vm), no hypervisor to pick.
+    expect(screen.getByText("AWS sandbox")).toBeTruthy();
+    expect(screen.getByText("One VM")).toBeTruthy();
+    expect(screen.getByText("Your containers on one cloud VM")).toBeTruthy();
+    expect(screen.getByText("One VM per machine")).toBeTruthy();
+    expect(screen.queryByText("Container")).toBeNull();
+    await user.click(screen.getByText("One VM per machine"));
+    expect(onPickForm).toHaveBeenLastCalledWith({ kind: "host", id: "aws1", perMachine: true } satisfies RunTarget);
+  });
+
   it("lists the hypervisors as full rows on the hypervisor step, the default marked and preselected", async () => {
     installTauri();
     const user = userEvent.setup();
