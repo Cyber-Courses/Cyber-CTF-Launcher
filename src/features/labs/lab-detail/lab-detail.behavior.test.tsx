@@ -311,6 +311,14 @@ describe("LabDetail: a lab that is up", () => {
     expect(commands(calls)).not.toContain("attack_box_status");
   });
 
+  it("offers no attacker shell on a server or cloud account until the lab is up", async () => {
+    installTauri(quiet);
+    // Still starting there (the infrastructure being created): no shell into a box not up yet.
+    renderDetail({ status: status({ running: false, machines: [], place: "server", host: "aws-1", url: null }), busy: true });
+    await flush();
+    expect(screen.queryByRole("button", { name: /Open attacker shell/ })).toBeNull();
+  });
+
   it("resets a lab with a container down: stops it, then starts it again where it ran", async () => {
     installTauri({ ...quiet, lab_check: () => ({ available: true, ok: false, output: "", results: [] }) });
     const user = userEvent.setup();

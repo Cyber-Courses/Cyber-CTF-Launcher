@@ -42,7 +42,9 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
             running={s.running && (!s.deploying || removing(s))}
             host={s.remote ? (status?.host ?? null) : null}
             onShell={shell.open}
-            shellReady={s.remote ? s.isDocker : !!box.status?.running}
+            // On a server or cloud account the box comes up with the lab: its shell only once the
+            // lab is up, never while it is still starting (or stopping).
+            shellReady={s.remote ? s.isDocker && s.running && !s.deploying : !!box.status?.running}
           />
         </Dimmed>
       )}
