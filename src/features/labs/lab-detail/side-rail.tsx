@@ -42,8 +42,9 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
             running={s.running && (!s.deploying || removing(s))}
             host={s.remote ? (status?.host ?? null) : null}
             onShell={shell.open}
-            // The shell only into a box that runs, wherever the lab is.
-            shellReady={!!box.status?.running}
+            // The shell only into a box that runs, wherever the lab is, once its start is done (a
+            // box made as a machine of the lab is set up during that start).
+            shellReady={!!box.status?.running && !box.busy}
           />
         </Dimmed>
       )}
