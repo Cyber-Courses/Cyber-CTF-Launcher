@@ -114,6 +114,7 @@ async fn a_vm_lab_goes_up_on_its_hypervisor_through_the_runner() {
     assert_eq!(f.state("isoloom-controller"), "poweroff", "the controller is halted once the lab is built");
     let s = run.status().await.unwrap();
     assert!(s.running && matches!(s.place, Some(Place::LocalVm)));
+    assert_eq!(s.provider.as_deref(), Some("virtualbox"), "the page knows the hypervisor (Pause hangs on it)");
     assert_eq!(s.url.as_deref(), Some("http://127.0.0.1:8086/"));
     assert!(s.machines.iter().find(|m| m.name == "isoloom-controller").is_some_and(|m| m.infra));
 }

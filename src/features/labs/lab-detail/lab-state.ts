@@ -38,15 +38,21 @@ export type LabStateInput = {
 /** The page's state as one word (see the status strip). */
 export type LabPhase = "operation" | "running" | "starting" | "failed" | "paused" | "shutDown" | "interrupted" | "notStarted";
 
+/** The local hypervisors whose Vagrant provider can't suspend a VM (no Pause there). */
+const PROVIDERS_WITHOUT_SUSPEND: ReadonlySet<string> = new Set(["qemu"]);
+
 /** What the page can do on the built lab. A container lab in a VM can only be paused (its
  *  containers don't restart on their own after a power-off); a container lab here only shut down
  *  (its containers stop; there's no state to save). A VM lab gets both. Nothing on a server host
  *  yet. Provisioning runs again in place on VM labs driven by Vagrant (here, or an ESXi host). */
 function labControls(i: LabStateInput, { isDocker, isCloud, remote }: { isDocker: boolean; isCloud: boolean; remote: boolean }) {
   const { status } = i;
+  // vagrant-qemu has no suspend action (Vagrant answers "this provider doesn't support this
+  // action"), so a lab on QEMU is never offered Pause; it still shuts down (halt).
+  const suspends = !PROVIDERS_WITHOUT_SUSPEND.has(status?.provider ?? "");
   return {
     // A cloud lab can't be paused (the backend refuses).
-    canPause: i.parkable && !remote && !isCloud && (!isDocker || status?.place === "local_vm"),
+    canPause: i.parkable && !remote && !isCloud && suspends && (!isDocker || status?.place === "local_vm"),
     // Not a container lab in a VM (its containers don't come back after a power-off). A VM lab on
     // this machine is reported in a local VM too, and shuts down like any VM lab.
     canShutdown: i.parkable && !remote && !isCloud && !(isDocker && status?.place === "local_vm"),

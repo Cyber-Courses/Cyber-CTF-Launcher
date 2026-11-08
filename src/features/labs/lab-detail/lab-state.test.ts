@@ -79,6 +79,18 @@ describe("deriveLabState", () => {
     expect([noHandler.canPause, noHandler.canShutdown]).toEqual([false, false]);
   });
 
+  it("never offers Pause on QEMU, whose Vagrant provider can't suspend", () => {
+    // A VM lab on QEMU: shut down (halt) only.
+    const vmLab = derive({ runtime: vm, status: status({ running: true, place: "local_vm", provider: "qemu" }) });
+    expect([vmLab.canPause, vmLab.canShutdown]).toEqual([false, true]);
+    // A container lab in a VM on QEMU: neither (its containers don't come back after a power-off).
+    const inVm = derive({ status: status({ running: true, place: "local_vm", provider: "qemu" }) });
+    expect([inVm.canPause, inVm.canShutdown]).toEqual([false, false]);
+    // The same lab on another hypervisor still pauses.
+    const onUtm = derive({ status: status({ running: true, place: "local_vm", provider: "utm" }) });
+    expect(onUtm.canPause).toBe(true);
+  });
+
   it("re-runs provisioning on Vagrant VM labs only", () => {
     expect(derive({ runtime: vm, status: status({ place: "local_vm" }) }).canProvision).toBe(true);
     expect(derive({ runtime: vm, status: status({ place: "server", provider: "vmware_esxi" }) }).canProvision).toBe(true);
