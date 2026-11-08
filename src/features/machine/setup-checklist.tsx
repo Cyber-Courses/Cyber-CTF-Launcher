@@ -4,88 +4,18 @@ import { Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { StepRow } from "@/features/machine/step-row";
-import { machineSteps, stepMeta, type MachineStep } from "@/features/machine/setup-steps";
-import { hasHypervisor, isDockerReady, wslState } from "@/features/machine/setup-steps/steps";
-import { engineName } from "@/features/machine/setup-steps/engines";
-import { cantRun, usableHypervisors, providerLabel } from "@/features/machine/hypervisors";
+import { PATHS, machineSteps, pathSteps, stepLine, stepMeta, type LastTests, type MachineStep, type SetupPath } from "@/features/machine/setup-steps";
 import { useVmProvider } from "@/lib/use-vm-provider";
-import { ATTACK_PRESETS, getAttackImage, type LastTest } from "@/lib/settings";
-import type { Provider, ProviderStatus, SystemReport } from "@/lib/tauri";
+import type { SystemReport } from "@/lib/tauri";
 import { useOpenSetup } from "@/features/machine/use-open-setup";
-import { useT, type T } from "@/lib/i18n";
+import { useT, type MessageKey } from "@/lib/i18n";
 
-type Line = { done: boolean; optional?: boolean; meta: string };
+const PATH_NAMES: Record<SetupPath, MessageKey> = { docker: "machine.setup.paths.docker", vm: "machine.setup.paths.vm", cloud: "machine.setup.paths.cloud" };
 
-/** The last self-test per lab type. */
-type LastTests = Record<"docker" | "vm", LastTest | null>;
-
-/** What every step's line reads: the report, the last tests, and the hypervisor labs would use. */
-type Facts = {
-  report: SystemReport;
-  last: LastTests;
-  t: T;
-  /** The installed hypervisor that can run labs, else the first installed one. */
-  hv: ProviderStatus | undefined;
-  /** It is installed yet can't run here: not done, as the Health tab says. */
-  blocked: boolean;
-};
-
-const tested = (t: T, r: LastTest | null) => {
-  if (!r) return t("machine.checklist.notTested");
-  return r.result === "ok" ? t("machine.checklist.passed") : t("machine.checklist.failed");
-};
-
-function wslLine({ report, t }: Facts): Line {
-  const wsl = wslState(report);
-  if (wsl === "ready") return { done: true, meta: "WSL 2" };
-  if (wsl === "needsReboot") return { done: false, meta: t("machine.checklist.restartNeeded") };
-  if (wsl === "missing") return { done: false, meta: t("machine.checklist.notInstalled") };
-  return { done: false, meta: t("machine.checklist.notChecked") };
-}
-
-function dockerLine({ report, t }: Facts): Line {
-  if (isDockerReady(report)) return { done: true, meta: report.dockerEngine ? engineName(report.dockerEngine) : t("machine.checklist.running") };
-  return { done: false, meta: report.docker.installed ? t("machine.checklist.stopped") : t("machine.checklist.notInstalled") };
-}
-
-function vagrantLine({ report, t, hv }: Facts): Line {
-  const optional = !hasHypervisor(report);
-  const missingPlugin = hv?.plugin && !hv.pluginInstalled ? hv.plugin : null;
-  if (!report.vagrant.installed) return { done: false, optional, meta: t("machine.checklist.notInstalled") };
-  if (missingPlugin) return { done: false, optional, meta: t("machine.checklist.pluginMissing", { plugin: missingPlugin }) };
-  return { done: true, optional, meta: t("machine.checklist.installed") };
-}
-
-/** Where this machine stands on each guided-setup step, read from the system report and the
- *  last self-tests. The steps themselves run in the setup window. */
-const LINES: Record<MachineStep, (f: Facts) => Line> = {
-  pkgmgr: ({ report, t }) => ({
-    done: report.pkgManager.installed,
-    meta: report.pkgManager.installed ? report.pkgManager.name : t("machine.checklist.notInstalled"),
-  }),
-  virtualization: wslLine,
-  docker: dockerLine,
-  "docker-test": ({ last, t }) => ({ done: last.docker?.result === "ok", meta: tested(t, last.docker) }),
-  attack: () => {
-    const image = getAttackImage();
-    return { done: true, meta: ATTACK_PRESETS.find((p) => p.image === image)?.label ?? image };
-  },
-  vm: ({ report, t, hv, blocked }) => ({
-    done: hasHypervisor(report) && !blocked,
-    optional: true,
-    meta: hv ? `${providerLabel(hv, report.os)}${blocked ? t("machine.checklist.cantRunHere") : ""}` : t("machine.checklist.optional"),
-  }),
-  vagrant: vagrantLine,
-  "vm-test": ({ report, last, t }) => ({ done: last.vm?.result === "ok", optional: !hasHypervisor(report), meta: tested(t, last.vm) }),
-};
-
-function stepLine(step: MachineStep, report: SystemReport, last: LastTests, t: T, preferred: Provider | null): Line {
-  const installed = usableHypervisors(report).filter((p) => p.hypervisor === true);
-  // The one labs run on: Settings' choice when it can run here, else one that can run labs
-  // (QEMU without KVM can, when libvirt can't), else the first installed.
-  const runs = installed.filter((p) => !cantRun(p, report));
-  const hv = runs.find((p) => p.provider === preferred) ?? runs.at(0) ?? installed.at(0);
-  return LINES[step]({ report, last, t, hv, blocked: !!hv && cantRun(hv, report) });
+/** The checklist's rows: the steps every path shares first, then each path's own under its name. */
+function sections(report: SystemReport): { path: SetupPath | null; steps: MachineStep[] }[] {
+  const shared = machineSteps(report, []);
+  return [{ path: null, steps: shared }, ...PATHS.map((path) => ({ path, steps: pathSteps(path, report).filter((s) => !shared.includes(s)) }))];
 }
 
 /** The Machine page's Setup view: each guided-setup step as a checklist row, with a way into
@@ -94,7 +24,11 @@ export function SetupChecklist({ report, last, onFix }: { report: SystemReport; 
   const t = useT();
   const openSetup = useOpenSetup();
   const preferred = useVmProvider();
-  const steps = machineSteps(report).map((step) => ({ step, title: stepMeta(step, report, t).title, ...stepLine(step, report, last, t, preferred) }));
+  const groups = sections(report).map((g) => ({
+    ...g,
+    steps: g.steps.map((step) => ({ step, title: stepMeta(step, report, t).title, ...stepLine(step, report, last, preferred, t) })),
+  }));
+  const steps = groups.flatMap((g) => g.steps);
   const done = steps.filter((s) => s.done).length;
   return (
     <Panel>
@@ -115,26 +49,31 @@ export function SetupChecklist({ report, last, onFix }: { report: SystemReport; 
         }
       />
       <div className="py-1.5">
-        {steps.map((s) => (
-          <StepRow
-            key={s.step}
-            state={s.done ? "done" : "pending"}
-            label={s.title}
-            meta={s.meta}
-            action={
-              !s.done && (
-                <Button
-                  variant={s.optional ? "ghost" : "outline"}
-                  size="xs"
-                  onClick={() => {
-                    onFix(s.step);
-                  }}
-                >
-                  {s.step.endsWith("-test") ? t("machine.checklist.test") : s.optional ? t("machine.checklist.add") : t("machine.checklist.setUp")}
-                </Button>
-              )
-            }
-          />
+        {groups.map((g) => (
+          <div key={g.path ?? "shared"}>
+            {g.path && <p className="px-4 pt-2.5 pb-0.5 text-[0.6875rem] font-medium tracking-wide text-faint uppercase">{t(PATH_NAMES[g.path])}</p>}
+            {g.steps.map((s) => (
+              <StepRow
+                key={s.step}
+                state={s.done ? "done" : "pending"}
+                label={s.title}
+                meta={s.meta}
+                action={
+                  !s.done && (
+                    <Button
+                      variant={s.optional ? "ghost" : "outline"}
+                      size="xs"
+                      onClick={() => {
+                        onFix(s.step);
+                      }}
+                    >
+                      {s.step.endsWith("-test") ? t("machine.checklist.test") : s.optional ? t("machine.checklist.add") : t("machine.checklist.setUp")}
+                    </Button>
+                  )
+                }
+              />
+            ))}
+          </div>
         ))}
       </div>
     </Panel>

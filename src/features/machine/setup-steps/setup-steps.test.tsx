@@ -291,7 +291,7 @@ describe("guided setup checklist, WSL line", () => {
     installTauri();
     render(<SetupChecklist report={windows(state)} last={{ docker: null, vm: null }} onFix={vi.fn()} />);
     expect(text()).toContain(`Enable virtualization (WSL 2)${meta}`);
-    expect(text()).toContain(`${String(done)} of 8 done`);
+    expect(text()).toContain(`${String(done)} of 9 done`);
   });
 });
 
@@ -608,7 +608,9 @@ describe("MachineSetup window", () => {
       const r = render(<MachineSetup report={{ ...readyReport(), os }} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "nope", nonce: 1 }} />);
       await flush();
       expect(text()).toContain(name);
-      expect(text()).toMatch(/1\D+(8|9)/);
+      // No step to open at: the choice of path, nothing counted yet.
+      expect(text()).toContain("What do you want to run?");
+      expect(text()).not.toMatch(/Step \d/);
       r.unmount();
     }
   });

@@ -4,7 +4,7 @@ import { ExternalLink, HardDrive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { LogConsole } from "@/components/ui/log-console";
-import { Requirement } from "@/features/machine/setup-steps";
+import { Requirement } from "@/features/machine/setup-steps/parts";
 import { installDependency, installVagrantPlugin } from "@/lib/tauri";
 import { CLOUD_META, KIND } from "@/features/servers/host-setup/constants";
 import { Step } from "@/features/servers/host-setup/form";

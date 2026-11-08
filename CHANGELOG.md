@@ -4,6 +4,21 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The guided machine setup is one path per lab type, and starts from where the machine
+  stands.** "Set up this machine" opens on a choice: container labs, VM labs or cloud labs, each
+  with how far along this machine is. A path lists only its own steps (a learner who only wants
+  cloud labs never sees Docker), and opens at the first one still to do, read from the machine
+  check and the last self-tests: a machine whose engine is installed and tested goes straight
+  past the Docker steps to its summary, instead of walking them again. The cloud path is new
+  (Terraform on this machine, then the account on the Cloud page) and begins at its own first
+  step, none shown as skipped. The Machine page's checklist groups its rows the same way, and a
+  Fix or Test there still opens its step directly. The first-run onboarding keeps the container
+  and VM steps.
+
 ## [1.8.9] — 2026-11-08
 
 ### Added

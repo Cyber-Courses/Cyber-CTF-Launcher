@@ -168,10 +168,22 @@
     "lead": "Get {os} ready to run labs, one step at a time.",
     "stepOf": "Step {current} of {total}",
     "stepFailed": "This step couldn’t load",
+    "pathTitle": "What do you want to run?",
+    "pathDescription": "Each lab type has its own short path. Pick one: it starts where this machine stands, and you can come back for the others anytime.",
     "back": "Back",
     "done": "Done",
     "readyTitle": "You’re set up",
-    "readyDescription": "You can run this guide again anytime from the Machine page."
+    "readyDescription": "You can run this guide again anytime from the Machine page.",
+    "paths": {
+      "docker": "Container labs",
+      "vm": "VM labs",
+      "cloud": "Cloud labs",
+      "dockerNote": "Docker containers on this machine, with the attack box next to them.",
+      "vmNote": "Full virtual machines on a hypervisor: domains, Windows hosts, multi-host networks.",
+      "cloudNote": "Labs on your own cloud account, created from this machine with Terraform.",
+      "ready": "ready",
+      "review": "Review"
+    }
   },
   "steps": {
     "aPackageManager": "a package manager",
@@ -203,6 +215,10 @@
     "vagrant": {
       "title": "Provisioning",
       "description": "Cyber CTF creates and starts each lab's virtual machines with Vagrant, a free tool, on your hypervisor. Most hypervisors also need a small add-on (plugin) for it."
+    },
+    "cloud": {
+      "title": "Cloud labs",
+      "description": "Labs on your own cloud account (AWS, Azure, Google Cloud and more) are created from this machine with Terraform, a free tool. Install it here, then connect an account from the Cloud page; its own command-line tool is installed there."
     },
     "dockerTest": {
       "title": "Test container labs",
@@ -271,7 +287,10 @@
       "engineRunning": "Engine running, not tested.",
       "setUpEngine": "Set up a container engine to run them.",
       "notTested": "Not tested.",
-      "installHypervisor": "Install a hypervisor to run them."
+      "installHypervisor": "Install a hypervisor to run them.",
+      "cloudLabs": "Cloud labs",
+      "terraformReady": "Terraform installed. Connect an account from the Cloud page to run them.",
+      "installTerraform": "Install Terraform to run them."
     }
   },
   "engine": {
@@ -336,5 +355,13 @@
     "autoStartHint": "Otherwise launch it from the lab’s page when you need it.",
     "needsEngine": "It runs on your container engine, so it works once one is set up.",
     "firstStart": "The image downloads the first time a lab starts it."
+  },
+  "cloud": {
+    "terraformDetail": "Creates each lab in your cloud account.",
+    "installLog": "Installing Terraform…",
+    "installTerraform": "Install Terraform",
+    "connectHint": "Your cloud account signs in on the Cloud page; it installs the cloud's own tool too.",
+    "connect": "Connect a cloud account",
+    "connectFailed": "Couldn't open the cloud setup"
   }
 }

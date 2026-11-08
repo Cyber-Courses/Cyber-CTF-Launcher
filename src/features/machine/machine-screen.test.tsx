@@ -527,7 +527,9 @@ describe("SetupChecklist", () => {
     const user = userEvent.setup();
     const ok = { result: "ok" as const, at: Date.now() };
     render(<SetupChecklist report={readyReport()} last={{ docker: ok, vm: ok }} onFix={vi.fn()} />);
-    expect(text()).toContain("7 of 7 done");
+    expect(text()).toContain("8 of 8 done");
+    // Grouped by path, the shared package manager first.
+    expect(text()).toMatch(/Package manager.*Container labs.*VM labs.*Cloud labs/);
     expect(text()).toContain("Docker Desktop");
     expect(text()).toContain("Cyber CTF");
     expect(screen.getAllByRole("button")).toHaveLength(1);
@@ -542,7 +544,7 @@ describe("SetupChecklist", () => {
     const onFix = vi.fn();
     const user = userEvent.setup();
     render(<SetupChecklist report={freshReport("windows")} last={{ docker: null, vm: { result: "fail", at: Date.now() } }} onFix={onFix} />);
-    expect(text()).toContain("1 of 8 done");
+    expect(text()).toContain("1 of 9 done");
     expect(text()).toContain("not checked");
     expect(text()).toContain("ghcr.io/me/box");
     expect(text()).toContain("failed");

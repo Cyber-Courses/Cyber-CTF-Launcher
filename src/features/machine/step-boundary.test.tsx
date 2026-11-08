@@ -55,7 +55,7 @@ describe("a step that throws", () => {
   it("shows the error panel inside the machine setup window, with the frame alive, and Try again recovers", async () => {
     installTauri();
     const user = userEvent.setup();
-    render(<MachineSetup report={readyReport()} onRefresh={vi.fn()} onClose={vi.fn()} />);
+    render(<MachineSetup report={readyReport()} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "pkgmgr", nonce: 1 }} />);
     await flush();
     expectStepFailed();
     // The window around the step still stands: its progress and its way out.

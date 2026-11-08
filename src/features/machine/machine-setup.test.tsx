@@ -6,13 +6,16 @@ import { MachineSetup } from "@/features/machine/machine-setup";
 import { machineSteps } from "@/features/machine/setup-steps";
 import { Onboarding } from "@/features/onboarding/onboarding";
 import type { SystemReport } from "@/lib/tauri";
+import { setLastTest } from "@/lib/settings";
 import { freshReport, readyReport, stoppedDockerReport } from "@/test/fixtures";
 import { must } from "@/components/test-support";
 import { installTauri } from "@/test/tauri";
-import { clickEverything, flush } from "@/test/ui";
+import { button, clickEverything, flush } from "@/test/ui";
 
 const enabled = () => screen.queryAllByRole("button").filter((b) => !b.hasAttribute("disabled"));
-const text = (b: HTMLElement) => b.textContent.trim();
+const text = (b: HTMLElement = document.body) => b.textContent.trim();
+/** The path chooser's button on the row named `path` (Set up, or Review once the path is done). */
+const pathButton = (path: string) => must(screen.getByText(path).closest("div.flex")?.querySelector("button"), `the ${path} path's button`);
 
 /** Presses the forward button (Get started, Continue, Skip this step) until there is none; the
  *  names of the steps' forward buttons, in order. */
@@ -43,19 +46,95 @@ describe("MachineSetup window", () => {
     expect(screen.queryByRole("heading")).toBeNull();
   });
 
-  it("walks a ready machine to the end and closes", async () => {
+  it("walks a ready machine's container path from where it stands to the end, and closes", async () => {
     installTauri();
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(<MachineSetup report={readyReport()} onRefresh={vi.fn()} onClose={onClose} />);
     await flush();
+    // The choice of path first: each lab type, where this machine stands on it.
+    expect(screen.getByText("What do you want to run?")).toBeTruthy();
+    await user.click(pathButton("Container labs"));
+    await flush();
+    // Package manager and engine are in: the path opens at the test, which runs on its own.
+    expect(text()).toContain("Step 3 of 5");
+    expect(text()).toContain("Test container labs");
     const pressed = await walk(user);
-    expect(pressed.length).toBe(machineSteps(readyReport()).length);
+    expect(pressed).toEqual(["Continue", "Continue"]);
+    expect(text()).toContain("You’re set up");
     await user.click(screen.getByRole("button", { name: /done|start/i }));
     expect(onClose).toHaveBeenCalled();
     // And back again.
     await user.click(screen.getByRole("button", { name: /back/i }));
     await flush();
+  });
+
+  it("a reopened setup on a machine with Docker installed and tested starts past the Docker steps", async () => {
+    installTauri();
+    setLastTest("docker", "ok");
+    const user = userEvent.setup();
+    render(<MachineSetup report={readyReport()} onRefresh={vi.fn()} onClose={vi.fn()} />);
+    await flush();
+    // Nothing left on that path: its row says so, and Review goes straight to the summary.
+    expect(pathButton("Container labs").textContent).toMatch(/review/i);
+    await user.click(pathButton("Container labs"));
+    await flush();
+    expect(text()).toContain("You’re set up");
+    expect(text()).toContain("Tested and ready to run.");
+    expect(text()).not.toContain("Container engine");
+    // Only the container path's outcome: VM labs were not this walk.
+    expect(text()).not.toContain("VM labs");
+    // Back still reaches the steps, done as they are.
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    await flush();
+    expect(text()).toContain("Step 4 of 5");
+    expect(text()).toContain("Attack machine");
+  });
+
+  it("each path lists only its own steps", async () => {
+    installTauri();
+    const user = userEvent.setup();
+    const report = freshReport("linux");
+    const { rerender } = render(<MachineSetup report={report} onRefresh={vi.fn()} onClose={vi.fn()} />);
+    await flush();
+    // The container path on a fresh box: the package manager, the engine, its test, the attack box.
+    await user.click(pathButton("Container labs"));
+    await flush();
+    expect(text()).toContain("Step 1 of 5");
+    expect(text()).not.toContain("Virtual machines");
+    expect(text()).not.toContain("Cloud labs");
+    // Its own steps, opened directly.
+    rerender(<MachineSetup report={report} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "vm", nonce: 1 }} />);
+    expect(text()).toContain("Step 2 of 5");
+    expect(text()).toContain("Virtual machines");
+    expect(text()).not.toContain("Container engine");
+    rerender(<MachineSetup report={report} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "cloud", nonce: 2 }} />);
+    expect(text()).toContain("Step 2 of 3");
+    expect(text()).not.toContain("Container engine");
+    expect(text()).not.toContain("Virtual machines");
+  });
+
+  it("the cloud path begins at its own first step, none skipped, and installs Terraform", async () => {
+    const calls = installTauri();
+    const user = userEvent.setup();
+    const report = { ...freshReport("macos"), pkgManager: { name: "brew", installed: true, version: "4.4" } };
+    render(<MachineSetup report={report} onRefresh={vi.fn()} onClose={vi.fn()} />);
+    await flush();
+    expect(pathButton("Cloud labs").textContent).toMatch(/set up/i);
+    await user.click(pathButton("Cloud labs"));
+    await flush();
+    // Homebrew is in: straight to the cloud step, step 2 of its path (the summary counted), with
+    // the one step before it done, not skipped.
+    expect(text()).toContain("Step 2 of 3");
+    expect(text()).toContain("Cloud labs");
+    expect(text()).not.toMatch(/skipped|nothing to test/i);
+    expect(document.querySelectorAll(".meter-fill")).toHaveLength(2);
+    await user.click(button(/install terraform/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "terraform" });
+    await user.click(button(/connect a cloud account/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "server_open_setup")?.args).toMatchObject({ kind: "cloud" });
   });
 
   for (const [name, report] of MACHINES) {
@@ -73,11 +152,12 @@ describe("MachineSetup window", () => {
     });
   }
 
-  it("opens at a requested step", async () => {
+  it("opens at a requested step, on its path", async () => {
     installTauri();
     render(<MachineSetup report={readyReport()} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "vagrant", nonce: 1 }} />);
     await flush();
-    expect(screen.getAllByText(/6/).length).toBeGreaterThan(0);
+    expect(text()).toContain("Step 3 of 5");
+    expect(text()).toContain("Provisioning");
   });
 });
 

@@ -27,9 +27,10 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const t = useT();
   const signIn = useOnboardingAuth();
   const machine = useMachineReport();
-  // The machine steps are the same ones the "Set up this machine" window shows.
+  // The machine steps are the ones the "Set up this machine" window's container and VM paths
+  // show (cloud labs need an account from the Cloud page first: not a first-run matter).
   const setup = useMachineSetup(machine.report, machine.refreshReport);
-  const steps = onboardingSteps(machineSteps(machine.report));
+  const steps = onboardingSteps(machineSteps(machine.report, ["docker", "vm"]));
   const { pos, next, back } = useStepper(steps.length);
   const step = steps[pos];
   const icon = isMachineStep(step) && machine.report !== null ? stepMeta(step, machine.report, t).icon : undefined;

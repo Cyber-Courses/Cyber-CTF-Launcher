@@ -168,10 +168,22 @@
     "lead": "Préparez {os} à exécuter des labs, une étape à la fois.",
     "stepOf": "Étape {current} sur {total}",
     "stepFailed": "Impossible de charger cette étape",
+    "pathTitle": "Que voulez-vous exécuter ?",
+    "pathDescription": "Chaque type de lab a son propre parcours, court. Choisissez-en un : il commence là où en est cette machine, et vous pourrez revenir pour les autres à tout moment.",
     "back": "Retour",
     "done": "Terminé",
     "readyTitle": "Tout est configuré",
-    "readyDescription": "Vous pouvez relancer ce guide à tout moment depuis la page Machine."
+    "readyDescription": "Vous pouvez relancer ce guide à tout moment depuis la page Machine.",
+    "paths": {
+      "docker": "Labs conteneurs",
+      "vm": "Labs VM",
+      "cloud": "Labs cloud",
+      "dockerNote": "Des conteneurs Docker sur cette machine, avec la machine d'attaque à côté.",
+      "vmNote": "Des machines virtuelles complètes sur un hyperviseur : domaines, hôtes Windows, réseaux multi-machines.",
+      "cloudNote": "Des labs sur votre propre compte cloud, créés depuis cette machine avec Terraform.",
+      "ready": "prêt",
+      "review": "Revoir"
+    }
   },
   "steps": {
     "aPackageManager": "un gestionnaire de paquets",
@@ -203,6 +215,10 @@
     "vagrant": {
       "title": "Provisionnement",
       "description": "Cyber CTF crée et démarre les machines virtuelles de chaque lab avec Vagrant, un outil gratuit, sur votre hyperviseur. La plupart des hyperviseurs ont aussi besoin d'un petit module (plugin) pour cela."
+    },
+    "cloud": {
+      "title": "Labs cloud",
+      "description": "Les labs sur votre propre compte cloud (AWS, Azure, Google Cloud et d'autres) sont créés depuis cette machine avec Terraform, un outil gratuit. Installez-le ici, puis connectez un compte depuis la page Cloud ; l'outil en ligne de commande du cloud s'y installe."
     },
     "dockerTest": {
       "title": "Tester les labs conteneurs",
@@ -271,7 +287,10 @@
       "engineRunning": "Moteur en marche, non testé.",
       "setUpEngine": "Configurez un moteur de conteneurs pour les exécuter.",
       "notTested": "Non testés.",
-      "installHypervisor": "Installez un hyperviseur pour les exécuter."
+      "installHypervisor": "Installez un hyperviseur pour les exécuter.",
+      "cloudLabs": "Labs cloud",
+      "terraformReady": "Terraform est installé. Connectez un compte depuis la page Cloud pour les exécuter.",
+      "installTerraform": "Installez Terraform pour les exécuter."
     }
   },
   "engine": {
@@ -336,5 +355,13 @@
     "autoStartHint": "Sinon, lancez-la depuis la page du lab quand vous en avez besoin.",
     "needsEngine": "Elle tourne sur votre moteur de conteneurs, elle fonctionnera donc une fois celui-ci configuré.",
     "firstStart": "L'image est téléchargée la première fois qu'un lab la démarre."
+  },
+  "cloud": {
+    "terraformDetail": "Crée chaque lab dans votre compte cloud.",
+    "installLog": "Installation de Terraform…",
+    "installTerraform": "Installer Terraform",
+    "connectHint": "Votre compte cloud se connecte depuis la page Cloud ; l'outil du cloud s'y installe aussi.",
+    "connect": "Connecter un compte cloud",
+    "connectFailed": "Impossible d'ouvrir la configuration cloud"
   }
 }

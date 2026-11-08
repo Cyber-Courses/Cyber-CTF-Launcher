@@ -168,10 +168,22 @@
     "lead": "Prepara {os} para ejecutar labs, paso a paso.",
     "stepOf": "Paso {current} de {total}",
     "stepFailed": "No se pudo cargar este paso",
+    "pathTitle": "¿Qué quieres ejecutar?",
+    "pathDescription": "Cada tipo de lab tiene su propio camino corto. Elige uno: empieza donde está esta máquina, y puedes volver por los demás cuando quieras.",
     "back": "Atrás",
     "done": "Listo",
     "readyTitle": "Todo configurado",
-    "readyDescription": "Puedes volver a ejecutar esta guía cuando quieras desde la página Máquina."
+    "readyDescription": "Puedes volver a ejecutar esta guía cuando quieras desde la página Máquina.",
+    "paths": {
+      "docker": "Labs de contenedores",
+      "vm": "Labs de VM",
+      "cloud": "Labs en la nube",
+      "dockerNote": "Contenedores Docker en esta máquina, con la caja de ataque al lado.",
+      "vmNote": "Máquinas virtuales completas en un hipervisor: dominios, hosts Windows, redes de varios hosts.",
+      "cloudNote": "Labs en tu propia cuenta de nube, creados desde esta máquina con Terraform.",
+      "ready": "listo",
+      "review": "Revisar"
+    }
   },
   "steps": {
     "aPackageManager": "un gestor de paquetes",
@@ -203,6 +215,10 @@
     "vagrant": {
       "title": "Aprovisionamiento",
       "description": "Cyber CTF crea e inicia las máquinas virtuales de cada lab con Vagrant, una herramienta gratuita, en tu hipervisor. La mayoría de hipervisores también necesitan un pequeño complemento (plugin) para ello."
+    },
+    "cloud": {
+      "title": "Labs en la nube",
+      "description": "Los labs en tu propia cuenta de nube (AWS, Azure, Google Cloud y más) se crean desde esta máquina con Terraform, una herramienta gratuita. Instálala aquí y luego conecta una cuenta desde la página Nube; la herramienta de línea de comandos de la nube se instala allí."
     },
     "dockerTest": {
       "title": "Probar labs de contenedores",
@@ -271,7 +287,10 @@
       "engineRunning": "Motor en ejecución, sin probar.",
       "setUpEngine": "Configura un motor de contenedores para ejecutarlos.",
       "notTested": "Sin probar.",
-      "installHypervisor": "Instala un hipervisor para ejecutarlos."
+      "installHypervisor": "Instala un hipervisor para ejecutarlos.",
+      "cloudLabs": "Labs en la nube",
+      "terraformReady": "Terraform instalado. Conecta una cuenta desde la página Nube para ejecutarlos.",
+      "installTerraform": "Instala Terraform para ejecutarlos."
     }
   },
   "engine": {
@@ -336,5 +355,13 @@
     "autoStartHint": "Si no, lánzala desde la página del lab cuando la necesites.",
     "needsEngine": "Se ejecuta en tu motor de contenedores, así que funciona en cuanto configures uno.",
     "firstStart": "La imagen se descarga la primera vez que un lab la inicia."
+  },
+  "cloud": {
+    "terraformDetail": "Crea cada lab en tu cuenta de nube.",
+    "installLog": "Instalando Terraform…",
+    "installTerraform": "Instalar Terraform",
+    "connectHint": "Tu cuenta de nube inicia sesión en la página Nube; allí también se instala la herramienta de la nube.",
+    "connect": "Conectar una cuenta de nube",
+    "connectFailed": "No se pudo abrir la configuración de la nube"
   }
 }

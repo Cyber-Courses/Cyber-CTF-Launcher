@@ -129,12 +129,9 @@ permissions = [
   "allow-azure-subscriptions",
   "allow-cloud-login",
   "allow-cloud-login-cancel",
-  "allow-docker-start-engine",
-  "allow-docker-use-engine",
   "allow-gcp-account",
   "allow-gcp-billing-accounts",
   "allow-gcp-organizations",
-  "allow-image-download-size",
   "allow-install-dependency",
   "allow-install-vagrant-plugin",
   "allow-machine-restart",
@@ -145,15 +142,12 @@ permissions = [
   "allow-server-public-key",
   "allow-server-save",
   "allow-server-test",
-  "allow-shared-folder-get",
-  "allow-shared-folder-open",
-  "allow-shared-folder-set",
   "allow-system-check",
 ]
 
 [[set]]
 identifier = "machine-setup-window"
-description = "The machine setup window: the container engine, hypervisor tools, self-test and shared folder."
+description = "The machine setup window: the container engine, hypervisor tools, self-test, shared folder, and the way to the cloud account setup."
 permissions = [
   "allow-docker-start-engine",
   "allow-docker-use-engine",
@@ -163,6 +157,7 @@ permissions = [
   "allow-machine-restart",
   "allow-machine-selftest",
   "allow-machine-selftest-prefetch",
+  "allow-server-open-setup",
   "allow-shared-folder-get",
   "allow-shared-folder-open",
   "allow-shared-folder-set",

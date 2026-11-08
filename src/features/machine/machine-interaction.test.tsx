@@ -318,7 +318,8 @@ describe("MachineSetup window", () => {
     expect(onRefresh).toHaveBeenCalledOnce();
     rerender(<MachineSetup report={readyReport()} checkError={null} onRefresh={onRefresh} onClose={vi.fn()} />);
     await flush();
-    expect(text()).toContain("Step 1 of 8");
+    // Opened with no step asked for: the choice of path comes first.
+    expect(text()).toContain("What do you want to run?");
   });
 
   it("opens at a step asked for before the machine check answered", async () => {
@@ -327,8 +328,8 @@ describe("MachineSetup window", () => {
     const report = { ...freshReport("windows"), pkgManager: { name: "winget", installed: true, version: "1.9" } };
     rerender(<MachineSetup report={report} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "virtualization", nonce: 1 }} />);
     await flush();
-    // Windows: the seven steps, the WSL one and the final "ready" page.
-    expect(text()).toContain("Step 2 of 9");
+    // Windows: the container path's steps, the WSL one among them, and the final "ready" page.
+    expect(text()).toContain("Step 2 of 6");
     expect(text()).toContain("Turn on WSL 2");
   });
 
@@ -338,14 +339,17 @@ describe("MachineSetup window", () => {
     const props = { report: readyReport(), onRefresh: vi.fn(), onClose: vi.fn() };
     const { rerender } = render(<MachineSetup {...props} startAt={{ step: "vagrant", nonce: 1 }} />);
     await flush();
-    expect(text()).toContain("Step 6 of 8");
+    // The VM path: package manager, hypervisor, Vagrant, the test, the summary.
+    expect(text()).toContain("Step 3 of 5");
     // The player moves on; the same request must not pull them back.
     await user.click(button(/^continue$/i));
     await flush();
     rerender(<MachineSetup {...props} startAt={{ step: "vagrant", nonce: 1 }} />);
-    expect(text()).toContain("Step 7 of 8");
+    expect(text()).toContain("Step 4 of 5");
+    // A step of another path switches path.
     rerender(<MachineSetup {...props} startAt={{ step: "docker", nonce: 2 }} />);
-    expect(text()).toContain("Step 2 of 8");
+    expect(text()).toContain("Step 2 of 5");
+    expect(text()).toContain("Container engine");
   });
 
   it("holds Back and Continue while a self-test runs on its step", async () => {
@@ -396,7 +400,7 @@ describe("MachineSetup window", () => {
     render(<MachineSetup report={readyReport()} onRefresh={vi.fn()} onClose={onClose} startAt={{ step: "vm-test", nonce: 1 }} />);
     await flush();
     await user.click(button(/^continue$/i));
-    expect(text()).toContain("Step 8 of 8");
+    expect(text()).toContain("Step 5 of 5");
     await user.click(button(/done$/i));
     expect(onClose).toHaveBeenCalledOnce();
   });

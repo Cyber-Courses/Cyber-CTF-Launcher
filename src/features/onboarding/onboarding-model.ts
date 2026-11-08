@@ -15,6 +15,7 @@ export const STEP_NAMES: Record<OnboardingStep, MessageKey> = {
   vm: "onboarding.stepNames.vm",
   vagrant: "onboarding.stepNames.vagrant",
   "vm-test": "onboarding.stepNames.vmTest",
+  cloud: "onboarding.stepNames.cloud",
   done: "onboarding.stepNames.done",
 };
 

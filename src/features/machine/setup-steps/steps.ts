@@ -1,19 +1,49 @@
-import { Container, Cpu, Crosshair, FlaskConical, Package, Server, type LucideIcon } from "lucide-react";
+import { Cloud, Container, Cpu, Crosshair, FlaskConical, Package, Server, type LucideIcon } from "lucide-react";
 import { type SystemReport, type WslState } from "@/lib/tauri";
 import { translate, type MessageKey, type Vars } from "@/lib/i18n";
 import { cantRun, INSTALLABLE, usableHypervisors } from "@/features/machine/hypervisors";
 import { ENGINES, Engine } from "@/features/machine/setup-steps/engines";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 
-export type MachineStep = "pkgmgr" | "virtualization" | "docker" | "docker-test" | "attack" | "vm" | "vagrant" | "vm-test";
+export type MachineStep = "pkgmgr" | "virtualization" | "docker" | "docker-test" | "attack" | "vm" | "vagrant" | "vm-test" | "cloud";
+
+/** One lab type's path through the guided setup: container labs, VM labs or cloud labs. Each
+ *  lists only what that type needs; a learner who only wants cloud labs never sees Docker. */
+export type SetupPath = "docker" | "vm" | "cloud";
+export const PATHS: SetupPath[] = ["docker", "vm", "cloud"];
 
 /** Translates a message: `useT()`'s `t` in a component (re-renders on a language change),
  *  `translate` (the current language) elsewhere. */
 type Tr = (key: MessageKey, vars?: Vars) => string;
 
-/** The steps this machine needs, in order. OS-aware: Windows gets the WSL step. */
-export function machineSteps(report: SystemReport | null): MachineStep[] {
-  return ["pkgmgr", ...(report?.os === "windows" ? (["virtualization"] as const) : []), "docker", "docker-test", "attack", "vm", "vagrant", "vm-test"];
+/** The steps every path begins with: the package manager installs the rest. */
+const SHARED: MachineStep[] = ["pkgmgr"];
+
+/** Each path's own steps, after the shared ones. OS-aware: Windows gets the WSL step before Docker. */
+function ownSteps(path: SetupPath, report: SystemReport | null): MachineStep[] {
+  switch (path) {
+    case "docker":
+      return [...(report?.os === "windows" ? (["virtualization"] as const) : []), "docker", "docker-test", "attack"];
+    case "vm":
+      return ["vm", "vagrant", "vm-test"];
+    case "cloud":
+      return ["cloud"];
+  }
+}
+
+/** The steps of one path, in order: the shared ones, then its own. */
+export const pathSteps = (path: SetupPath, report: SystemReport | null): MachineStep[] => [...SHARED, ...ownSteps(path, report)];
+
+/** The steps of `paths` (every path by default), each once, in path order: what the Machine
+ *  page's checklist lists, and what the onboarding walks (without the cloud path). */
+export function machineSteps(report: SystemReport | null, paths: SetupPath[] = PATHS): MachineStep[] {
+  return [...SHARED, ...paths.flatMap((p) => ownSteps(p, report))];
+}
+
+/** The path a step belongs to (a shared step counts with the first path); none for an unknown step. */
+export function pathOf(step: string): SetupPath | null {
+  if (SHARED.includes(step as MachineStep)) return PATHS[0];
+  return PATHS.find((p) => ownSteps(p, { os: "windows" } as SystemReport).includes(step as MachineStep)) ?? null;
 }
 
 export const isDockerReady = (r: SystemReport | null) => !!r && r.docker.installed && r.dockerRunning;
@@ -29,11 +59,14 @@ export function wslState(report: SystemReport | null, setup?: Pick<MachineSetupS
 }
 export const hasHypervisor = (r: SystemReport | null) => !!r && usableHypervisors(r).some((p) => p.hypervisor === true);
 
+/** macOS asks for a few things along the way; say so before the step that triggers each prompt. */
+function onMac(report: SystemReport | null, t: Tr) {
+  return (text: string, headsUp: MessageKey) => (report?.os === "macos" ? `${text} ${t(headsUp)}` : text);
+}
+
 export function stepMeta(step: MachineStep, report: SystemReport | null, t: Tr = translate): { icon: LucideIcon; title: string; description: string } {
   const pm = report?.pkgManager.name ?? t("machine.steps.aPackageManager");
-  // macOS asks for a few things along the way; say so before the step that triggers each prompt.
-  const mac = report?.os === "macos";
-  const withMac = (text: string, headsUp: MessageKey) => (mac ? `${text} ${t(headsUp)}` : text);
+  const withMac = onMac(report, t);
   switch (step) {
     case "pkgmgr":
       return {
@@ -71,6 +104,12 @@ export function stepMeta(step: MachineStep, report: SystemReport | null, t: Tr =
         title: t("machine.steps.vagrant.title"),
         description: withMac(t("machine.steps.vagrant.description"), "machine.steps.macInstaller"),
       };
+    case "cloud":
+      return {
+        icon: Cloud,
+        title: t("machine.steps.cloud.title"),
+        description: t("machine.steps.cloud.description"),
+      };
     case "docker-test":
       return {
         icon: FlaskConical,
@@ -105,6 +144,8 @@ function nextKind(step: MachineStep, report: SystemReport | null, setup?: Pick<M
   // A hypervisor is optional (VM labs can run on a server): with none set up, the VM steps
   // can be passed by.
   if ((step === "vm" || step === "vagrant" || step === "vm-test") && !hasHypervisor(report)) return "skip";
+  // Cloud labs are optional too: the account lives on the Cloud page, Terraform can come later.
+  if (step === "cloud" && !report?.terraform.installed) return "skip";
   return "continue";
 }
 

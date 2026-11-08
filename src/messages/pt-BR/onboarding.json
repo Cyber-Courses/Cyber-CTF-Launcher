@@ -15,6 +15,7 @@
     "vm": "Máquinas virtuais (opcional)",
     "vagrant": "Vagrant (opcional)",
     "vmTest": "Teste de VM (opcional)",
+    "cloud": "Labs na nuvem (opcional)",
     "done": "Pronto"
   },
   "welcome": {

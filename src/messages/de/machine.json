@@ -168,10 +168,22 @@
     "lead": "Mach {os} Schritt für Schritt bereit für Labs.",
     "stepOf": "Schritt {current} von {total}",
     "stepFailed": "Dieser Schritt konnte nicht geladen werden",
+    "pathTitle": "Was möchtest du ausführen?",
+    "pathDescription": "Jeder Lab-Typ hat seinen eigenen kurzen Pfad. Wähle einen: Er beginnt dort, wo dieser Rechner steht, und du kannst jederzeit für die anderen zurückkommen.",
     "back": "Zurück",
     "done": "Fertig",
     "readyTitle": "Alles eingerichtet",
-    "readyDescription": "Du kannst diese Anleitung jederzeit über die Seite Rechner erneut ausführen."
+    "readyDescription": "Du kannst diese Anleitung jederzeit über die Seite Rechner erneut ausführen.",
+    "paths": {
+      "docker": "Container-Labs",
+      "vm": "VM-Labs",
+      "cloud": "Cloud-Labs",
+      "dockerNote": "Docker-Container auf diesem Rechner, mit der Angriffsbox daneben.",
+      "vmNote": "Vollständige virtuelle Maschinen auf einem Hypervisor: Domänen, Windows-Hosts, Multi-Host-Netzwerke.",
+      "cloudNote": "Labs in deinem eigenen Cloud-Konto, von diesem Rechner aus mit Terraform erstellt.",
+      "ready": "bereit",
+      "review": "Ansehen"
+    }
   },
   "steps": {
     "aPackageManager": "einen Paketmanager",
@@ -203,6 +215,10 @@
     "vagrant": {
       "title": "Provisionierung",
       "description": "Cyber CTF erstellt und startet die virtuellen Maschinen jedes Labs mit Vagrant, einem kostenlosen Tool, auf deinem Hypervisor. Die meisten Hypervisoren brauchen dafür zusätzlich eine kleine Erweiterung (Plugin)."
+    },
+    "cloud": {
+      "title": "Cloud-Labs",
+      "description": "Labs in deinem eigenen Cloud-Konto (AWS, Azure, Google Cloud und mehr) werden von diesem Rechner aus mit Terraform erstellt, einem kostenlosen Tool. Installiere es hier und verbinde dann ein Konto über die Seite Cloud; das Kommandozeilen-Tool der Cloud wird dort installiert."
     },
     "dockerTest": {
       "title": "Container-Labs testen",
@@ -271,7 +287,10 @@
       "engineRunning": "Engine läuft, nicht getestet.",
       "setUpEngine": "Richte eine Container-Engine ein, um sie auszuführen.",
       "notTested": "Nicht getestet.",
-      "installHypervisor": "Installiere einen Hypervisor, um sie auszuführen."
+      "installHypervisor": "Installiere einen Hypervisor, um sie auszuführen.",
+      "cloudLabs": "Cloud-Labs",
+      "terraformReady": "Terraform ist installiert. Verbinde ein Konto über die Seite Cloud, um sie auszuführen.",
+      "installTerraform": "Installiere Terraform, um sie auszuführen."
     }
   },
   "engine": {
@@ -336,5 +355,13 @@
     "autoStartHint": "Sonst startest du sie bei Bedarf auf der Seite des Labs.",
     "needsEngine": "Sie läuft auf deiner Container-Engine und funktioniert, sobald eine eingerichtet ist.",
     "firstStart": "Das Image wird heruntergeladen, wenn ein Lab sie zum ersten Mal startet."
+  },
+  "cloud": {
+    "terraformDetail": "Erstellt jedes Lab in deinem Cloud-Konto.",
+    "installLog": "Terraform wird installiert…",
+    "installTerraform": "Terraform installieren",
+    "connectHint": "Dein Cloud-Konto meldet sich über die Seite Cloud an; dort wird auch das Tool der Cloud installiert.",
+    "connect": "Cloud-Konto verbinden",
+    "connectFailed": "Die Cloud-Einrichtung konnte nicht geöffnet werden"
   }
 }
