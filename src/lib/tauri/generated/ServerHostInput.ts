@@ -10,4 +10,8 @@ export type ServerHostInput = { id: string | null, name: string, provider: Provi
  * Proxmox: sign in to the node over SSH with this key to make the launcher's API token
  * (`server_save_ssh_key`); `username` and `password` are then the token's.
  */
-sshKey?: SshKeySignIn | null, };
+sshKey?: SshKeySignIn | null, 
+/**
+ * Proxmox: where cloud images and cloud-init snippets go (see `HostProfile`).
+ */
+imageStorage?: string | null, snippetStorage?: string | null, };

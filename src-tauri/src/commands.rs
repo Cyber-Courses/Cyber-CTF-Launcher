@@ -98,6 +98,7 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         server::server_list,
         server::server_save,
         server::server_save_ssh_key,
+        server::server_proxmox_placement,
         server::server_default_ssh_key,
         server::server_remove,
         server::server_set_default,

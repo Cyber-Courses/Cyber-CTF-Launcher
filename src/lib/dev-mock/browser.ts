@@ -86,6 +86,25 @@ const serverHandlers: Record<string, BrowserHandler> = {
     saveHosts([...hostsOf(sc).filter((h) => h.id !== saved.id), saved]);
     return saved;
   },
+  // A Proxmox server's placement, as a one-node home server lists it.
+  server_proxmox_placement: () => ({
+    nodes: [
+      {
+        name: "pve",
+        diskStorages: ["local", "local-lvm"],
+        imageStorages: ["local"],
+        snippetStorages: ["local"],
+        bridges: [
+          { name: "vmbr0", cidr: "192.168.150.10/24" },
+          { name: "vmbr1", cidr: "10.0.0.50/24" },
+        ],
+        defaultDisk: "local-lvm",
+        defaultImage: "local",
+        defaultSnippet: "local",
+        defaultBridge: "vmbr1",
+      },
+    ],
+  }),
   // The preview's node "makes" the launcher's token: saved as a token setup that keeps its key.
   server_save_ssh_key: (args, { sc }) => {
     const input = (args?.input ?? {}) as Host;

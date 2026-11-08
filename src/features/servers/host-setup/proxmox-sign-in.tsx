@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import { KIND } from "@/features/servers/host-setup/constants";
 import { Field, Input, Note, Step } from "@/features/servers/host-setup/form";
-import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav";
+import { BackNav, StepError } from "@/features/servers/host-setup/step-nav";
+import { Spinner } from "@/components/ui/spinner";
 import type { SignIn } from "@/features/servers/host-setup/setup-model";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { warn } from "@/lib/failure";
@@ -19,7 +20,7 @@ import { useT } from "@/lib/i18n";
 /** Proxmox's second connection step: how the launcher signs in, SSH key first. */
 export function ProxmoxSignIn({ s, signInFields, authorizeKey }: { s: HostSetup; signInFields: ReactNode; authorizeKey: ReactNode }) {
   const t = useT();
-  const { signInMethod, setSignInMethod, connectionOk, next, back } = s;
+  const { signInMethod, setSignInMethod, connectionOk, connect, connecting, connectError, back } = s;
   const methods: { value: SignIn; label: string }[] = [
     { value: "sshKey", label: t("servers.setup.connection.methodSshKey") },
     { value: "token", label: t("servers.setup.connection.methodToken") },
@@ -34,8 +35,17 @@ export function ProxmoxSignIn({ s, signInFields, authorizeKey }: { s: HostSetup;
       <Segmented label={t("servers.setup.connection.method")} value={signInMethod} onChange={setSignInMethod} options={methods} className="self-start" />
       {signInMethod === "sshKey" ? <SshKeyFields s={s} /> : signInFields}
       {signInMethod === "token" && authorizeKey}
+      <StepError error={connectError} />
       <BackNav onBack={back}>
-        <ContinueButton onClick={next} disabled={!connectionOk} />
+        <Button onClick={connect} disabled={!connectionOk || connecting}>
+          {connecting ? (
+            <>
+              <Spinner className="size-4" /> {t("servers.setup.nav.continue")}
+            </>
+          ) : (
+            t("servers.setup.nav.continue")
+          )}
+        </Button>
       </BackNav>
     </Step>
   );

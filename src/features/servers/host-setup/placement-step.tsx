@@ -2,8 +2,8 @@
 
 import { HardDrive } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 import { Field, Input, Note, Step } from "@/features/servers/host-setup/form";
+import { ProxmoxPlacementFields } from "@/features/servers/host-setup/proxmox-placement";
 import { BackNav, SaveAndTestButton, StepError } from "@/features/servers/host-setup/step-nav";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { useT } from "@/lib/i18n";
@@ -13,25 +13,18 @@ export function PlacementStep({ s }: { s: HostSetup }) {
   const { v, saving, error, set, text, back, saveAndTest } = s;
   return (
     <Step icon={HardDrive} title={t("servers.setup.placement.title")} description={t("servers.setup.placement.description")}>
-      <div className={cn("grid gap-3", v.provider === "proxmox" ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
-        {v.provider === "proxmox" && (
-          <Field label={t("servers.setup.placement.node")} hint={t("servers.setup.placement.optional")}>
-            <Input {...text("node")} placeholder="pve" />
+      {v.provider === "proxmox" ? (
+        <ProxmoxPlacementFields s={s} />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={t("servers.setup.placement.datastore")} hint={t("servers.setup.placement.optional")}>
+            <Input {...text("datastore")} placeholder="datastore1" />
           </Field>
-        )}
-        <Field
-          label={v.provider === "proxmox" ? t("servers.setup.placement.storage") : t("servers.setup.placement.datastore")}
-          hint={t("servers.setup.placement.optional")}
-        >
-          <Input {...text("datastore")} placeholder={v.provider === "proxmox" ? "local-lvm" : "datastore1"} />
-        </Field>
-        <Field
-          label={v.provider === "proxmox" ? t("servers.setup.placement.bridge") : t("servers.setup.placement.portGroup")}
-          hint={t("servers.setup.placement.optional")}
-        >
-          <Input {...text("network")} placeholder={v.provider === "proxmox" ? "vmbr0" : "VM Network"} />
-        </Field>
-      </div>
+          <Field label={t("servers.setup.placement.portGroup")} hint={t("servers.setup.placement.optional")}>
+            <Input {...text("network")} placeholder="VM Network" />
+          </Field>
+        </div>
+      )}
       {v.provider === "proxmox" && (
         <Note className="mt-4 flex items-center gap-3">
           <span className="min-w-0 flex-1">

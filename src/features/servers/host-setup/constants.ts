@@ -4,7 +4,7 @@ import { type CloudProvider, type ServerHostInput, type RemoteProvider } from "@
 // Matches the "Set up this machine" wizard (features/machine/machine-setup.tsx).
 
 export const KIND: Record<RemoteProvider, { label: string; note: string; port: number; user: string; plugin: string }> = {
-  proxmox: { label: "Proxmox VE", note: "Signs in to the Proxmox API", port: 8006, user: "root@pam", plugin: "vagrant-proxmox" },
+  proxmox: { label: "Proxmox VE", note: "Signs in to the Proxmox API", port: 8006, user: "root", plugin: "vagrant-proxmox" },
   vmware_esxi: { label: "VMware ESXi", note: "Drives the host over SSH", port: 22, user: "root", plugin: "vagrant-vmware-esxi" },
   aws: { label: "AWS", note: "EC2 in your own account", port: 443, user: "AKIA…", plugin: "" },
   azure: { label: "Azure", note: "VMs in your own subscription", port: 443, user: "subscription id", plugin: "" },

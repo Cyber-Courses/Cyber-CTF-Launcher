@@ -68,4 +68,13 @@ gcpProject: string | null,
  * runs like a token one (`username` is the token id, the keychain its secret). None for
  * password and token setups.
  */
-sshKey?: SshKeySignIn | null, };
+sshKey?: SshKeySignIn | null, 
+/**
+ * Proxmox: the storage the lab's cloud images are downloaded to (needs 'iso' content);
+ * None = `local`.
+ */
+imageStorage?: string | null, 
+/**
+ * Proxmox: the storage cloud-init snippets go to (needs 'snippets' content); None = `local`.
+ */
+snippetStorage?: string | null, };

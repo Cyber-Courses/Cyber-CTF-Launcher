@@ -158,10 +158,10 @@
       "sshKeyPick": "Choisissez votre clé privée SSH",
       "sshUser": "Utilisateur SSH",
       "sshKeyNoteTitle": "Ce que le launcher fait de votre clé",
-      "sshKeyNoteBody": "À l'enregistrement, il se connecte au nœud en SSH avec cette clé, crée un jeton d'API pour lui-même avec <code>pveum user token add</code> et ajoute sa propre clé publique au <code>~/.ssh/authorized_keys</code> de l'utilisateur. Rien d'autre ne s'exécute sur le nœud ; les labs utilisent ensuite ce jeton.",
+      "sshKeyNoteBody": "Quand vous continuez, il se connecte au nœud en SSH avec cette clé, crée un jeton d'API pour lui-même avec <code>pveum user token add</code> et ajoute sa propre clé publique au <code>~/.ssh/authorized_keys</code> de l'utilisateur. Rien d'autre ne s'exécute sur le nœud ; les labs utilisent ensuite ce jeton.",
       "tokenId": "ID du jeton",
-      "tokenIdHint": "user@realm!name, p. ex. root@pam!cyberctf",
-      "usernameHintPassword": "user@realm, p. ex. root@pam"
+      "tokenIdHint": "root!name, ou user@realm!name (@pam est ajouté si vous n'indiquez pas de realm)",
+      "usernameHintPassword": "root, ou user@realm (@pam est ajouté si vous n'indiquez pas de realm)"
     },
     "placement": {
       "title": "Emplacement",
@@ -173,7 +173,15 @@
       "bridge": "Pont réseau",
       "portGroup": "Groupe de ports",
       "selfSigned": "Certificat autosigné",
-      "selfSignedHint": "Proxmox en utilise un par défaut. Désactivez si votre hôte a un certificat de confiance."
+      "selfSignedHint": "Proxmox en utilise un par défaut. Désactivez si votre hôte a un certificat de confiance.",
+      "reading": "Lecture des nœuds, stockages et bridges du serveur…",
+      "bridgeHint": "Présélectionné : le bridge du réseau par lequel cette machine joint le serveur",
+      "noAddress": "pas d'adresse",
+      "diskStorage": "Disques des VM",
+      "imageStorage": "Images cloud",
+      "snippetStorage": "Snippets cloud-init",
+      "noStorage": "Ce nœud n'a pas de stockage pour cela",
+      "readFailed": "Impossible de lire les options du serveur ({error}). Saisissez-les à la main, ou laissez-les vides pour les valeurs par défaut."
     },
     "account": {
       "title": "Mode de connexion",

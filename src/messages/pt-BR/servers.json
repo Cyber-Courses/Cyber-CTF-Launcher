@@ -158,10 +158,10 @@
       "sshKeyPick": "Escolha sua chave privada SSH",
       "sshUser": "Usuário SSH",
       "sshKeyNoteTitle": "O que o launcher faz com sua chave",
-      "sshKeyNoteBody": "Ao salvar, ele entra no nó por SSH com esta chave, cria um token de API para si com <code>pveum user token add</code> e adiciona a própria chave pública ao <code>~/.ssh/authorized_keys</code> do usuário. Nada mais é executado no nó; os labs passam a usar esse token.",
+      "sshKeyNoteBody": "Ao continuar, ele entra no nó por SSH com esta chave, cria um token de API para si com <code>pveum user token add</code> e adiciona a própria chave pública ao <code>~/.ssh/authorized_keys</code> do usuário. Nada mais é executado no nó; os labs passam a usar esse token.",
       "tokenId": "ID do token",
-      "tokenIdHint": "user@realm!name, ex.: root@pam!cyberctf",
-      "usernameHintPassword": "user@realm, ex.: root@pam"
+      "tokenIdHint": "root!name, ou user@realm!name (@pam é adicionado quando você não informa o realm)",
+      "usernameHintPassword": "root, ou user@realm (@pam é adicionado quando você não informa o realm)"
     },
     "placement": {
       "title": "Posicionamento",
@@ -173,7 +173,15 @@
       "bridge": "Bridge",
       "portGroup": "Port group",
       "selfSigned": "Certificado autoassinado",
-      "selfSignedHint": "O Proxmox usa um por padrão. Desative se o seu host tiver um certificado confiável."
+      "selfSignedHint": "O Proxmox usa um por padrão. Desative se o seu host tiver um certificado confiável.",
+      "reading": "Lendo os nós, armazenamentos e bridges do servidor…",
+      "bridgeHint": "Pré-selecionado: a bridge da rede pela qual esta máquina alcança o servidor",
+      "noAddress": "sem endereço",
+      "diskStorage": "Discos das VMs",
+      "imageStorage": "Imagens de nuvem",
+      "snippetStorage": "Snippets do cloud-init",
+      "noStorage": "Este nó não tem armazenamento para isso",
+      "readFailed": "Não foi possível ler as opções do servidor ({error}). Digite-as manualmente ou deixe em branco para usar os padrões."
     },
     "account": {
       "title": "Como conectar",

@@ -95,7 +95,7 @@ function SignInFields({ s }: { s: HostSetup }) {
         label={isToken ? t("servers.setup.connection.tokenId") : t("servers.setup.connection.username")}
         hint={proxmox ? (isToken ? t("servers.setup.connection.tokenIdHint") : t("servers.setup.connection.usernameHintPassword")) : undefined}
       >
-        <Input {...text("username")} placeholder={isToken ? "root@pam!cyberctf" : kind.user} />
+        <Input {...text("username")} placeholder={isToken ? "root!cyberctf" : kind.user} />
       </Field>
       <Field
         label={isToken ? t("servers.setup.connection.tokenSecret") : t("servers.setup.connection.password")}

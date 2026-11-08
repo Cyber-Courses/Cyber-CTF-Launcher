@@ -3,7 +3,7 @@ import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { EMPTY_HOST } from "@/features/servers/host-setup";
-import { argsOf, failsWith, field, go, heading, input, renderSetup } from "@/features/servers/host-setup/setup-test-kit";
+import { argsOf, failsWith, field, go, heading, input, renderSetup, selects } from "@/features/servers/host-setup/setup-test-kit";
 import type { ServerHostInput } from "@/lib/tauri";
 import { freshReport, readyReport } from "@/test/fixtures";
 import { installTauri } from "@/test/tauri";
@@ -132,7 +132,7 @@ describe("server connection step", () => {
 });
 
 describe("Proxmox server and sign-in steps", () => {
-  it("asks for the server first, then signs in with the first usual SSH key and makes the token on save", async () => {
+  it("asks for the server first, then signs in with the first usual SSH key, makes the token, and places labs on the server's own choices", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
     await renderSetup({ ...EMPTY_HOST });
@@ -151,13 +151,82 @@ describe("Proxmox server and sign-in steps", () => {
     expect(field("22").value).toBe("22");
     expect(screen.queryByText("Token secret")).toBeNull();
     expect(screen.getByText(/pveum user token add/)).toBeTruthy();
+    // Leaving the step makes the token on the node, so Placement can read the server with it.
     await go(user, /^continue$/i);
-    await go(user, /save and test/i);
-    expect(argsOf(calls, "server_save")).toEqual([]);
     expect(argsOf(calls, "server_save_ssh_key")[0]).toMatchObject({
       input: { provider: "proxmox", host: "10.0.0.50", username: "", password: null, sshKey: { path: "/Users/me/.ssh/id_ed25519", user: "root", port: 22 } },
     });
+    expect(heading()).toBe("Placement");
+    expect(argsOf(calls, "server_proxmox_placement")[0]).toMatchObject({ input: { id: "new-host", username: "root@pam!cyberctf-0a1b2c3d" } });
+    // Each choice is the server's own, preselected: the only node, local-lvm, local, and the
+    // bridge on the server's own network.
+    expect(selects().map((s) => s.value)).toEqual(["pve", "vmbr1", "local-lvm", "local", "local"]);
+    expect(screen.getByRole("option", { name: "vmbr1 · 10.0.0.50/24" })).toBeTruthy();
+    fireEvent.change(selects()[2], { target: { value: "local" } });
+    await go(user, /save and test/i);
+    expect(argsOf(calls, "server_save_ssh_key")).toHaveLength(1);
+    expect(argsOf(calls, "server_save")[0]).toMatchObject({
+      input: {
+        id: "new-host",
+        username: "root@pam!cyberctf-0a1b2c3d",
+        password: null,
+        sshKey: { path: "/Users/me/.ssh/id_ed25519" },
+        node: "pve",
+        network: "vmbr1",
+        datastore: "local",
+        imageStorage: "local",
+        snippetStorage: "local",
+      },
+    });
     expect(argsOf(calls, "server_test")[0]).toEqual({ id: "new-host" });
+  });
+
+  it("says why the key sign-in failed and stays on the step", async () => {
+    installTauri({ server_save_ssh_key: failsWith("Couldn't sign in to the node over SSH with your key: Permission denied") });
+    const user = userEvent.setup();
+    await renderSetup(editing({ id: null }));
+    await toSignIn(user);
+    await go(user, /^continue$/i);
+    expect(heading()).toBe("Connect to Proxmox VE");
+    expect(screen.getByText(/Permission denied/)).toBeTruthy();
+  });
+
+  it("falls back to typing the placement when the server can't be read", async () => {
+    const calls = installTauri({ server_proxmox_placement: failsWith("401 authentication failure") });
+    const user = userEvent.setup();
+    await renderSetup(editing({}));
+    await go(user, /^continue$/i);
+    await go(user, /^continue$/i);
+    expect(screen.getByText(/Couldn't read the server's options \(401 authentication failure\)/)).toBeTruthy();
+    expect(selects()).toEqual([]);
+    fireEvent.change(field("vmbr0"), { target: { value: "vmbr7" } });
+    fireEvent.change(field("pve"), { target: { value: "node2" } });
+    await go(user, /save and test/i);
+    expect(argsOf(calls, "server_save")[0]).toMatchObject({ input: { network: "vmbr7", node: "node2" } });
+  });
+
+  it("switches node: its own storages and bridge are picked", async () => {
+    const node = (name: string, bridge: string) => ({
+      name,
+      diskStorages: [`${name}-ssd`],
+      imageStorages: ["local"],
+      snippetStorages: ["local"],
+      bridges: [{ name: bridge, cidr: null }],
+      defaultDisk: `${name}-ssd`,
+      defaultImage: "local",
+      defaultSnippet: "local",
+      defaultBridge: bridge,
+    });
+    installTauri({ server_proxmox_placement: () => ({ nodes: [node("pve1", "vmbr0"), node("pve2", "vmbr5")] }) });
+    const user = userEvent.setup();
+    await renderSetup(editing({ node: "pve2" }));
+    await go(user, /^continue$/i);
+    await go(user, /^continue$/i);
+    expect(selects().map((s) => s.value)).toEqual(["pve2", "vmbr5", "pve2-ssd", "local", "local"]);
+    expect(screen.getByRole("option", { name: "vmbr5 · no address" })).toBeTruthy();
+    fireEvent.change(selects()[0], { target: { value: "pve1" } });
+    await flush();
+    expect(selects().map((s) => s.value)).toEqual(["pve1", "vmbr0", "pve1-ssd", "local", "local"]);
   });
 
   it("needs a key, a user and a port, and picks the key with the file dialog", async () => {
@@ -193,7 +262,7 @@ describe("Proxmox server and sign-in steps", () => {
     expect(screen.queryByText("Loading the launcher's public key…")).toBeNull();
     await user.click(radio("API token"));
     expect(screen.getByText("Token id")).toBeTruthy();
-    fireEvent.change(field("root@pam!cyberctf"), { target: { value: "root@pam!ci" } });
+    fireEvent.change(field("root!cyberctf"), { target: { value: "root@pam!ci" } });
     fireEvent.change(input("input[type=password]"), { target: { value: "s3cret" } });
     await go(user, /^continue$/i);
     await go(user, /save and test/i);

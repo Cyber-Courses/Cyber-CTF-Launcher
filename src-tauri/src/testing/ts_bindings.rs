@@ -66,6 +66,7 @@ fn export(dir: &Path) {
         crate::commands::server::HostList,
         runtime::server::HostProfile,
         runtime::server::TestResult,
+        runtime::proxmox::placement::Placement,
         shared_folder::SharedFolderInfo,
         terminal::TermEvent,
     );

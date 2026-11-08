@@ -15,6 +15,7 @@ use super::ssh;
 
 mod check;
 mod node_ssh;
+pub mod placement;
 pub mod ssh_key;
 
 pub use check::{bridge_is_internal, test};
@@ -27,10 +28,28 @@ use node_ssh::{sdn_problem, ssh_key_problem};
 
 const TIMEOUT: Duration = Duration::from_secs(8);
 
-/// The storage `deploy/terraform/proxmox` puts the Debian image and the cloud-init
-/// snippet on (its defaults, not configurable from the launcher).
+/// The storages Isoloom's Proxmox module puts the cloud image and the cloud-init snippets on
+/// when the host names none (the module's defaults).
 pub const IMAGE_STORAGE: &str = "local";
 pub const SNIPPET_STORAGE: &str = "local";
+
+/// The host's storage for cloud images, else the module's default.
+pub fn image_storage(h: &HostProfile) -> String {
+    h.image_storage.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| IMAGE_STORAGE.into())
+}
+
+/// The host's storage for cloud-init snippets, else the module's default.
+pub fn snippet_storage(h: &HostProfile) -> String {
+    h.snippet_storage.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| SNIPPET_STORAGE.into())
+}
+
+/// A Proxmox login with its realm: `root` is `root@pam`, a token `root!name` is `root@pam!name`;
+/// one with a realm (`admin@pve`, `root@pam!ci`) stays as typed.
+pub fn with_default_realm(username: &str) -> String {
+    let (user, token) = username.split_once('!').map_or((username, None), |(u, t)| (u, Some(t)));
+    let user = if user.is_empty() || user.contains('@') { user.to_string() } else { format!("{user}@pam") };
+    token.map_or_else(|| user.clone(), |t| format!("{user}!{t}"))
+}
 
 /// `user@realm!name`: a Proxmox API token id rather than a user.
 pub fn is_token(username: &str) -> bool {

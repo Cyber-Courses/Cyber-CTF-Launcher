@@ -40,6 +40,13 @@ pub struct HostInput {
     #[serde(default)]
     #[ts(optional = nullable)]
     ssh_key: Option<SshKeySignIn>,
+    /// Proxmox: where cloud images and cloud-init snippets go (see `HostProfile`).
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    image_storage: Option<String>,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    snippet_storage: Option<String>,
 }
 
 /// The connection fields of an input, checked: what `HostInput::into_profile` builds on.
@@ -63,6 +70,12 @@ impl HostInput {
         checked_ssh_key(key)
     }
 
+    /// Whether this input signs in as the saved `host` does with the same SSH key: a save of an
+    /// SSH-key setup whose token was already made keeps its key.
+    pub(crate) fn same_ssh_key(&self, host: &HostProfile) -> bool {
+        self.ssh_key.is_some() && self.ssh_key == host.ssh_key && crate::runtime::proxmox::with_default_realm(self.username.trim()) == host.username
+    }
+
     /// Drops any SSH key sign-in: a password or token save keeps none.
     pub(crate) fn without_ssh_key(&mut self) {
         self.ssh_key = None;
@@ -83,6 +96,8 @@ impl HostInput {
         let use_cli = kind.account == AccountField::AccessKeyId && self.use_cli_creds.unwrap_or(false);
         // A token is the whole credential (DigitalOcean, Linode): no username.
         let username = if use_cli || kind.account == AccountField::Unused { String::new() } else { clean(&self.username, "username", 128)? };
+        // Proxmox: `root` is `root@pam` (and `root!name` its token), the realm most setups use.
+        let username = if self.provider == Provider::Proxmox { crate::runtime::proxmox::with_default_realm(&username) } else { username };
         match &kind.region {
             Some(region) => require((region.valid)(&host), region.message)?,
             None => require(valid_host(&host), "host must be a hostname or IP address, without https:// or a path")?,
@@ -139,6 +154,8 @@ impl HostInput {
             // persist a limit that would silently do nothing on Azure/GCP.
             monthly_limit: if provider == Provider::Aws { self.monthly_limit.filter(|v| *v > 0.0) } else { None },
             ssh_key: if provider == Provider::Proxmox { self.ssh_key.as_ref().map(checked_ssh_key).transpose()? } else { None },
+            image_storage: if provider == Provider::Proxmox { clean_opt(self.image_storage.as_deref(), "image storage")? } else { None },
+            snippet_storage: if provider == Provider::Proxmox { clean_opt(self.snippet_storage.as_deref(), "snippet storage")? } else { None },
         })
     }
 }
@@ -322,6 +339,19 @@ mod tests {
     }
 
     #[test]
+    fn a_proxmox_login_gets_pam_when_it_names_no_realm() {
+        let proxmox =
+            |user: &str| input(serde_json::json!({ "name": "P", "provider": "proxmox", "host": "10.0.0.50", "username": user })).check().unwrap().username;
+        assert_eq!(proxmox("root"), "root@pam");
+        assert_eq!(proxmox(" root!cyberctf "), "root@pam!cyberctf");
+        assert_eq!(proxmox("admin@pve"), "admin@pve");
+        assert_eq!(proxmox("admin@pve!ci"), "admin@pve!ci");
+        // Only Proxmox: an ESXi login is a plain user.
+        let esxi = input(serde_json::json!({ "name": "E", "provider": "vmware_esxi", "host": "10.0.0.5", "username": "root" }));
+        assert_eq!(esxi.check().unwrap().username, "root");
+    }
+
+    #[test]
     fn check_validates_azure_and_oci_accounts() {
         let azure = |host: &str, sub: &str| input(serde_json::json!({ "name": "A", "provider": "azure", "host": host, "username": sub }));
         assert!(azure("westeurope", "00000000-0000-0000-0000-000000000000").check().is_ok());
@@ -462,9 +492,10 @@ mod tests {
     }
 
     #[test]
-    fn check_wants_a_realm_on_proxmox() {
+    fn check_gives_a_proxmox_login_its_realm() {
+        // No realm typed: `@pam` is added, so the realm check never refuses `root`.
         let no_realm = input(serde_json::json!({"name": "x", "provider": "proxmox", "host": "pve", "username": "root"}));
-        assert!(error(&no_realm).contains("realm"));
+        assert_eq!(no_realm.check().unwrap().username, "root@pam");
         let token = input(serde_json::json!({"name": "x", "provider": "proxmox", "host": "pve", "username": "root@pam!cyberctf"}));
         assert!(token.check().is_ok());
     }

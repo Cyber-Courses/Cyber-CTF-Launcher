@@ -61,6 +61,15 @@ pub struct HostProfile {
     #[serde(default)]
     #[ts(optional = nullable)]
     pub ssh_key: Option<SshKeySignIn>,
+    /// Proxmox: the storage the lab's cloud images are downloaded to (needs 'iso' content);
+    /// None = `local`.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub image_storage: Option<String>,
+    /// Proxmox: the storage cloud-init snippets go to (needs 'snippets' content); None = `local`.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub snippet_storage: Option<String>,
 }
 
 /// Signing in to a Proxmox node over SSH with the player's own key: its private key's path
@@ -162,6 +171,8 @@ pub(crate) mod tests {
         HostProfile {
             gcp_project: None,
             ssh_key: None,
+            image_storage: None,
+            snippet_storage: None,
             id: "ab12".into(),
             name: "Lab".into(),
             provider,

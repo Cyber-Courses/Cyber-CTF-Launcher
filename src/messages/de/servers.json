@@ -158,10 +158,10 @@
       "sshKeyPick": "Wähle deinen privaten SSH-Schlüssel",
       "sshUser": "SSH-Benutzer",
       "sshKeyNoteTitle": "Was der Launcher mit deinem Schlüssel macht",
-      "sshKeyNoteBody": "Beim Speichern meldet er sich mit diesem Schlüssel per SSH am Knoten an, erstellt mit <code>pveum user token add</code> ein API-Token für sich und trägt seinen eigenen öffentlichen Schlüssel in <code>~/.ssh/authorized_keys</code> des Benutzers ein. Sonst läuft nichts auf dem Knoten; Labs nutzen danach dieses Token.",
+      "sshKeyNoteBody": "Wenn du fortfährst, meldet er sich mit diesem Schlüssel per SSH am Knoten an, erstellt mit <code>pveum user token add</code> ein API-Token für sich und trägt seinen eigenen öffentlichen Schlüssel in <code>~/.ssh/authorized_keys</code> des Benutzers ein. Sonst läuft nichts auf dem Knoten; Labs nutzen danach dieses Token.",
       "tokenId": "Token-ID",
-      "tokenIdHint": "user@realm!name, z. B. root@pam!cyberctf",
-      "usernameHintPassword": "user@realm, z. B. root@pam"
+      "tokenIdHint": "root!name oder user@realm!name (@pam wird ergänzt, wenn kein Realm angegeben ist)",
+      "usernameHintPassword": "root oder user@realm (@pam wird ergänzt, wenn kein Realm angegeben ist)"
     },
     "placement": {
       "title": "Platzierung",
@@ -173,7 +173,15 @@
       "bridge": "Bridge",
       "portGroup": "Portgruppe",
       "selfSigned": "Selbstsigniertes Zertifikat",
-      "selfSignedHint": "Proxmox nutzt standardmäßig eines. Deaktiviere es, wenn dein Host ein vertrauenswürdiges Zertifikat hat."
+      "selfSignedHint": "Proxmox nutzt standardmäßig eines. Deaktiviere es, wenn dein Host ein vertrauenswürdiges Zertifikat hat.",
+      "reading": "Knoten, Speicher und Bridges des Servers werden gelesen…",
+      "bridgeHint": "Vorausgewählt: die Bridge im Netz, über das dieser Rechner den Server erreicht",
+      "noAddress": "keine Adresse",
+      "diskStorage": "VM-Festplatten",
+      "imageStorage": "Cloud-Images",
+      "snippetStorage": "Cloud-init-Snippets",
+      "noStorage": "Dieser Knoten hat keinen Speicher dafür",
+      "readFailed": "Die Optionen des Servers konnten nicht gelesen werden ({error}). Gib sie von Hand ein oder lass sie für die Standardwerte leer."
     },
     "account": {
       "title": "Verbindungsart",

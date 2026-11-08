@@ -2,6 +2,16 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn a_login_without_a_realm_is_on_pam() {
+    assert_eq!(with_default_realm("root"), "root@pam");
+    assert_eq!(with_default_realm("admin@pve"), "admin@pve");
+    assert_eq!(with_default_realm("root@pam"), "root@pam");
+    assert_eq!(with_default_realm("root!ci"), "root@pam!ci");
+    assert_eq!(with_default_realm("admin@pve!ci"), "admin@pve!ci");
+    assert_eq!(with_default_realm(""), "");
+}
+
+#[test]
 fn recognises_token_ids() {
     assert!(is_token("root@pam!cyberctf"));
     assert!(!is_token("root@pam"));
@@ -17,6 +27,8 @@ fn host(addr: &str, network: Option<&str>) -> HostProfile {
     HostProfile {
         gcp_project: None,
         ssh_key: None,
+        image_storage: None,
+        snippet_storage: None,
         id: "t".into(),
         name: "t".into(),
         provider: crate::runtime::providers::Provider::Proxmox,
@@ -63,12 +75,12 @@ fn internal_bridges_have_no_ports() {
 #[test]
 fn storage_problems_name_the_fix() {
     let ok = json!([{"storage": "local", "content": "iso,vztmpl,snippets,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]);
-    assert_eq!(storage_problems(&ok, "local-lvm"), Vec::<String>::new());
+    assert_eq!(storage_problems(&ok, "local-lvm", IMAGE_STORAGE, SNIPPET_STORAGE), Vec::<String>::new());
     let stock = json!([{"storage": "local", "content": "iso,vztmpl,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]);
-    let p = storage_problems(&stock, "local-lvm");
+    let p = storage_problems(&stock, "local-lvm", IMAGE_STORAGE, SNIPPET_STORAGE);
     assert_eq!(p.len(), 1);
     assert!(p[0].contains("Snippets"));
-    let p = storage_problems(&stock, "fast-ssd");
+    let p = storage_problems(&stock, "fast-ssd", IMAGE_STORAGE, SNIPPET_STORAGE);
     assert!(p.iter().any(|m| m.contains("\"fast-ssd\" doesn't exist")));
 }
 
@@ -170,7 +182,7 @@ fn the_outcome_lists_every_problem() {
 fn storage_needs_each_content_once() {
     // The VM disks on `local` too: still one check per (storage, content).
     let all = json!([{"storage": "local", "content": "iso, snippets, images"}]);
-    assert_eq!(storage_problems(&all, "local"), Vec::<String>::new());
+    assert_eq!(storage_problems(&all, "local", IMAGE_STORAGE, SNIPPET_STORAGE), Vec::<String>::new());
     assert_eq!(storage_content(&json!([{"storage": "x"}]), "x"), Some(vec![String::new()]));
     assert_eq!(storage_content(&json!({}), "x"), None);
 }

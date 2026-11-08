@@ -61,7 +61,7 @@ describe("server setup: validation and saving", () => {
     expect(heading()).toBe("Connect to Proxmox VE");
     await user.click(screen.getByRole("radio", { name: "Password" }));
     expect(disabled(/^continue$/i)).toBe(true);
-    fireEvent.change(field("root@pam"), { target: { value: "root@pam" } });
+    fireEvent.change(field("root"), { target: { value: "root" } });
     fireEvent.change(password(), { target: { value: "s3cret" } });
     expect(disabled(/^continue$/i)).toBe(false);
     // Clearing the password again turns Continue back off.

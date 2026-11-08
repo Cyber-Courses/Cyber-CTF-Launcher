@@ -41,6 +41,25 @@ const DEFAULTS: Partial<Record<string, Handler>> = {
     return { ...(input as object), id: input?.id ?? "new-host", username: "root@pam!cyberctf-0a1b2c3d", password: undefined };
   },
   server_default_ssh_key: () => "/Users/me/.ssh/id_ed25519",
+  // The player's Proxmox server as its API lists it: one node, two storages, two bridges.
+  server_proxmox_placement: () => ({
+    nodes: [
+      {
+        name: "pve",
+        diskStorages: ["local", "local-lvm"],
+        imageStorages: ["local"],
+        snippetStorages: ["local"],
+        bridges: [
+          { name: "vmbr0", cidr: "192.168.150.10/24" },
+          { name: "vmbr1", cidr: "10.0.0.50/24" },
+        ],
+        defaultDisk: "local-lvm",
+        defaultImage: "local",
+        defaultSnippet: "local",
+        defaultBridge: "vmbr1",
+      },
+    ],
+  }),
   server_public_key: () => "ssh-ed25519 AAAAC3Nza cyberctf",
   machine_storage_clean: () => 1_000_000_000,
   lab_launch: streams("==> api: Creating", "✓ Lab ready"),

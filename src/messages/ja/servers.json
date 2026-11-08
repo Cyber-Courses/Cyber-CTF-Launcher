@@ -158,10 +158,10 @@
       "sshKeyPick": "SSH 秘密鍵を選択",
       "sshUser": "SSH ユーザー",
       "sshKeyNoteTitle": "ランチャーがこの鍵で行うこと",
-      "sshKeyNoteBody": "保存すると、この鍵で SSH 経由でノードにサインインし、<code>pveum user token add</code> で自分用の API トークンを作成し、自分の公開鍵をユーザーの <code>~/.ssh/authorized_keys</code> に追加します。ノード上でそれ以外は実行しません。ラボはその後このトークンを使います。",
+      "sshKeyNoteBody": "続行すると、この鍵で SSH 経由でノードにサインインし、<code>pveum user token add</code> で自分用の API トークンを作成し、自分の公開鍵をユーザーの <code>~/.ssh/authorized_keys</code> に追加します。ノード上でそれ以外は実行しません。ラボはその後このトークンを使います。",
       "tokenId": "トークン ID",
-      "tokenIdHint": "user@realm!name(例: root@pam!cyberctf)",
-      "usernameHintPassword": "user@realm(例: root@pam)"
+      "tokenIdHint": "root!name、または user@realm!name(realm を省略すると @pam を付けます)",
+      "usernameHintPassword": "root、または user@realm(realm を省略すると @pam を付けます)"
     },
     "placement": {
       "title": "配置",
@@ -173,7 +173,15 @@
       "bridge": "ブリッジ",
       "portGroup": "ポートグループ",
       "selfSigned": "自己署名証明書",
-      "selfSignedHint": "Proxmox はデフォルトで自己署名証明書を使用します。ホストに信頼された証明書がある場合はオフにしてください。"
+      "selfSignedHint": "Proxmox はデフォルトで自己署名証明書を使用します。ホストに信頼された証明書がある場合はオフにしてください。",
+      "reading": "サーバーのノード、ストレージ、ブリッジを読み込んでいます…",
+      "bridgeHint": "既定: このマシンがサーバーに届くネットワーク上のブリッジ",
+      "noAddress": "アドレスなし",
+      "diskStorage": "VM ディスク",
+      "imageStorage": "クラウドイメージ",
+      "snippetStorage": "cloud-init スニペット",
+      "noStorage": "このノードにはこれに使えるストレージがありません",
+      "readFailed": "サーバーのオプションを読み込めませんでした({error})。手入力するか、空欄のままにすると既定値を使います。"
     },
     "account": {
       "title": "接続方法",

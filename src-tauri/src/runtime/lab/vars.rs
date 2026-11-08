@@ -90,6 +90,12 @@ fn proxmox_vars(h: &HostProfile, password: &str) -> Vec<(String, String)> {
     if let Some(v) = &h.network {
         vars.push(("uplink_bridge", v.clone()));
     }
+    if let Some(v) = &h.image_storage {
+        vars.push(("image_datastore", v.clone()));
+    }
+    if let Some(v) = &h.snippet_storage {
+        vars.push(("snippets_datastore", v.clone()));
+    }
     vars.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
 }
 

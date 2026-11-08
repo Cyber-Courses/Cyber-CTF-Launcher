@@ -70,6 +70,7 @@ const COMMANDS: &[&str] = &[
     "server_list",
     "server_month_to_date_cost",
     "server_open_setup",
+    "server_proxmox_placement",
     "server_public_key",
     "server_remove",
     "server_running_labs",

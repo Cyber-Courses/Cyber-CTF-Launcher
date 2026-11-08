@@ -17,6 +17,7 @@ use crate::error::{Code, Error, Result};
 use crate::machine::selftest::Event;
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
+use crate::runtime::proxmox::placement;
 use crate::runtime::proxmox::ssh_key;
 use crate::runtime::server::SshKeySignIn;
 use crate::runtime::server::budget::month_to_date_cost;
@@ -45,11 +46,36 @@ pub fn server_list(app: AppHandle) -> Result<HostList> {
 
 /// Creates or updates a host. The first host saved becomes the default. A host labs are still
 /// deployed on keeps its place (see `keeps_placement`). A password or token save keeps no SSH
-/// key sign-in (see `server_save_ssh_key`).
+/// key sign-in (see `server_save_ssh_key`), but a re-save of an SSH-key setup whose token is
+/// already made, with the same key, keeps it.
 #[tauri::command]
 pub fn server_save(app: AppHandle, mut input: HostInput) -> Result<HostProfile> {
-    input.without_ssh_key();
+    let saved = input.id.as_deref().and_then(|id| load(&AppDirs::from(&app)).ok()?.hosts.into_iter().find(|h| h.id == id));
+    if !saved.is_some_and(|h| input.same_ssh_key(&h)) {
+        input.without_ssh_key();
+    }
     save(&app, input)
+}
+
+/// A Proxmox server's placement choices (nodes, storages, bridges), read from its API with the
+/// form's sign-in: its password or token secret, else the saved host's.
+#[tauri::command]
+pub async fn server_proxmox_placement(app: AppHandle, mut input: HostInput) -> Result<placement::Placement> {
+    if input.provider != Provider::Proxmox {
+        return Err(Error::Invalid("only Proxmox servers list their placement".into()));
+    }
+    input.without_ssh_key();
+    let checked = input.check()?;
+    let typed = input.password.take().filter(|p| !p.is_empty());
+    let id = input.id.clone();
+    let secret = match (typed, &id) {
+        (Some(p), _) => p,
+        (None, Some(id)) if load_host(&AppDirs::from(&app), id).is_ok() => get_secret(id)?,
+        (None, _) => return Err(Error::Invalid("enter the password or token secret first".into())),
+    };
+    let profile = input.into_profile(id.unwrap_or_else(new_id), checked, None)?;
+    let ip = tokio::net::lookup_host((profile.host.as_str(), profile.port)).await.ok().and_then(|mut a| a.next()).map(|a| a.ip());
+    placement::read_host(&profile, &secret, ip).await.map_err(|e| Error::Invalid(format!("Couldn't read the server's nodes, storages and bridges: {e}")))
 }
 
 /// Saves a Proxmox host set up with the player's SSH key: signs in to the node with it, makes the
@@ -478,6 +504,26 @@ mod tests {
         .unwrap()
     }
 
+    #[tokio::test]
+    async fn placement_choices_need_a_proxmox_server_and_its_secret() {
+        let t = crate::testing::test_app::TestApp::new();
+        let form = |provider: &str, password: Option<&str>| -> HostInput {
+            serde_json::from_value(serde_json::json!({
+                "id": null, "name": "P", "provider": provider, "host": "127.0.0.1", "port": 1, "username": "root",
+                "datastore": null, "network": null, "node": null, "insecureTls": true, "autoStopHours": null, "password": password
+            }))
+            .unwrap()
+        };
+        let err = |r: Result<placement::Placement>| r.unwrap_err().to_string();
+        assert_eq!(err(server_proxmox_placement(t.handle().clone(), form("vmware_esxi", Some("pw"))).await), "only Proxmox servers list their placement");
+        assert_eq!(err(server_proxmox_placement(t.handle().clone(), form("proxmox", None)).await), "enter the password or token secret first");
+        // Nothing listens on port 1: the read fails and says so (the setup then offers manual entry).
+        assert!(
+            err(server_proxmox_placement(t.handle().clone(), form("proxmox", Some("pw"))).await)
+                .starts_with("Couldn't read the server's nodes, storages and bridges")
+        );
+    }
+
     #[cfg(debug_assertions)]
     #[tokio::test]
     async fn an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup() {
@@ -524,6 +570,17 @@ mod tests {
         assert_eq!(tools.calls().len(), 1);
         drop(tools);
 
+        // Saving it again (its placement, say) with the same key and token keeps the key.
+        let again: HostInput = serde_json::from_value(serde_json::json!({
+            "id": saved.id, "name": "Garage", "provider": "proxmox", "host": "10.0.0.50", "port": 8006, "username": saved.username,
+            "datastore": "local-lvm", "network": "vmbr1", "node": "pve", "insecureTls": true, "autoStopHours": null, "password": null,
+            "sshKey": { "path": mine.display().to_string(), "user": "root", "port": 22 }, "imageStorage": "local", "snippetStorage": "local"
+        }))
+        .unwrap();
+        let kept = server_save(app(), again).unwrap();
+        assert_eq!(kept.ssh_key, saved.ssh_key);
+        assert_eq!((kept.network.as_deref(), kept.image_storage.as_deref()), (Some("vmbr1"), Some("local")));
+        assert_eq!(get_secret(&saved.id).unwrap(), "6f1d2c3b-aaaa-bbbb-cccc-0123456789ab", "the token's secret is kept");
         // A password save of the same host drops the SSH key sign-in.
         let password: HostInput = serde_json::from_value(serde_json::json!({
             "id": saved.id, "name": "Garage", "provider": "proxmox", "host": "10.0.0.50", "port": 8006, "username": "root@pam",

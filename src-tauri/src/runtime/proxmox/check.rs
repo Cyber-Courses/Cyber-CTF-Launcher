@@ -2,7 +2,7 @@
 //! token setup, the launcher's SSH key, and the node's SDN config, each problem with its fix.
 
 use super::{
-    CallError, HostProfile, IMAGE_STORAGE, SNIPPET_STORAGE, SignInError, Value, find_iface, has_no_ports, is_token, lab_bridge, sdn_problem, sign_in,
+    CallError, HostProfile, SignInError, Value, find_iface, has_no_ports, image_storage, is_token, lab_bridge, sdn_problem, sign_in, snippet_storage,
     ssh_key_problem,
 };
 
@@ -29,10 +29,9 @@ pub(super) fn storage_content(storages: &Value, id: &str) -> Option<Vec<String>>
 pub(super) const STORAGE_HINT: &str = "In the Proxmox web UI: Datacenter > Storage > select it > Edit > Content";
 
 /// Missing storage content a lab launch needs, as fix-it sentences.
-pub(super) fn storage_problems(storages: &Value, vm_storage: &str) -> Vec<String> {
-    let mut needs: Vec<(&str, &str, &str)> =
-        vec![(IMAGE_STORAGE, "iso", "ISO image"), (SNIPPET_STORAGE, "snippets", "Snippets"), (vm_storage, "images", "Disk image")];
-    needs.dedup();
+pub(super) fn storage_problems(storages: &Value, vm_storage: &str, image_storage: &str, snippet_storage: &str) -> Vec<String> {
+    let needs: Vec<(&str, &str, &str)> =
+        vec![(image_storage, "iso", "ISO image"), (snippet_storage, "snippets", "Snippets"), (vm_storage, "images", "Disk image")];
     let mut problems = Vec::new();
     for (id, content, label) in needs {
         match storage_content(storages, id) {
@@ -59,7 +58,7 @@ pub async fn test(h: &HostProfile, secret: &str) -> Report {
     let mut problems = Vec::new();
     let vm_storage = h.datastore.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| "local-lvm".into());
     match session.call(&format!("/nodes/{node}/storage")).await {
-        Ok(storages) => problems.extend(storage_problems(&storages, &vm_storage)),
+        Ok(storages) => problems.extend(storage_problems(&storages, &vm_storage, &image_storage(h), &snippet_storage(h))),
         Err(e) => problems.push(format!("Couldn't list the node's storage ({e}).")),
     }
     let bridge = lab_bridge(h);

@@ -16,6 +16,8 @@ import {
   initialSignIn,
   initialSshKey,
   keepsSecret,
+  makesToken,
+  sameSshKey,
   savePayload,
   serverReady,
   type SignIn,
@@ -61,8 +63,10 @@ export function useHostSetup({ initial, providerChosen, report, onRefresh, onSav
   const stepper = useSteps(v.provider, editing, providerChosen);
   const tools = useToolInstall(onRefresh);
   const signIn = useSignIn(initial);
-  const payload = savePayload(v, signIn.signInMethod, signIn.sshKey);
+  const made = sameSshKey(signIn.madeWith, signIn.sshKey) && v.username.includes("!");
+  const payload = savePayload(v, signIn.signInMethod, signIn.sshKey, made);
   const saving = useSaveAndTest(payload, onSaved, stepper.next);
+  const connecting = useConnect(payload, form.setV, signIn.setMadeWith, onSaved, stepper.next);
   const title = setupTitle({ saved: saving.saved, test: saving.test, editing, cloud: traits.cloud, initialName: initial.name });
 
   return {
@@ -76,6 +80,8 @@ export function useHostSetup({ initial, providerChosen, report, onRefresh, onSav
     ...accounts,
     ...stepper,
     ...signIn,
+    ...connecting,
+    payload,
     serverOk: serverReady(v),
     connectionOk: connectionReady(v, keepsSecret(initial, v), v.provider === "proxmox" && signIn.signInMethod === "sshKey" ? signIn.sshKey : null),
     secretKept: keepsSecret(initial, v),
@@ -92,7 +98,7 @@ function useHostForm(initial: ServerHostInput) {
   const set = <K extends keyof ServerHostInput>(k: K, value: ServerHostInput[K]) => {
     setV((s) => ({ ...s, [k]: value }));
   };
-  const text = (k: "name" | "host" | "username" | "datastore" | "network" | "node") => ({
+  const text = (k: "name" | "host" | "username" | "datastore" | "network" | "node" | "imageStorage" | "snippetStorage") => ({
     value: v[k] ?? "",
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
       set(k, e.target.value);
@@ -110,6 +116,8 @@ function useSignIn(initial: ServerHostInput) {
   const [signInMethod, setSignInMethod] = useState<SignIn>(() => initialSignIn(initial));
   const [sshKey, setSshKeyState] = useState<SshKeySignIn>(() => initialSshKey(initial));
   const [touched, setTouched] = useState(false);
+  // The key the saved token was made with (a saved SSH-key setup's, or the one just used).
+  const [madeWith, setMadeWith] = useState<SshKeySignIn | null>(initial.sshKey ?? null);
   useEffect(() => {
     if (touched || initial.sshKey) return;
     serverDefaultSshKey()
@@ -124,7 +132,47 @@ function useSignIn(initial: ServerHostInput) {
     setTouched(true);
     setSshKeyState((s) => ({ ...s, [k]: value }));
   };
-  return { signInMethod, setSignInMethod, sshKey, setSshKey };
+  return { signInMethod, setSignInMethod, sshKey, setSshKey, madeWith, setMadeWith };
+}
+
+/** Leaving the Connection step. An SSH key sign-in whose token isn't made yet makes it there
+ *  (`server_save_ssh_key`, which saves the host as a token setup), so Placement can read the
+ *  server's options with it; the form then edits that saved host. */
+function useConnect(
+  payload: ServerHostInput,
+  setV: React.Dispatch<React.SetStateAction<ServerHostInput>>,
+  setMadeWith: (k: SshKeySignIn | null) => void,
+  onSaved: (h: ServerHost) => void,
+  next: () => void,
+) {
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  async function connect() {
+    if (!makesToken(payload)) {
+      next();
+      return;
+    }
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const h = await serverSaveSshKey(payload);
+      setV((s) => ({ ...s, id: h.id, username: h.username, password: null }));
+      setMadeWith(h.sshKey ?? payload.sshKey ?? null);
+      onSaved(h);
+      next();
+    } catch (err) {
+      setConnectError(describeError(err));
+    } finally {
+      setConnecting(false);
+    }
+  }
+  return {
+    connecting,
+    connectError,
+    connect: () => {
+      if (!connecting) void connect();
+    },
+  };
 }
 
 /** The steps this setup takes, and where the player is among them. */
@@ -181,7 +229,7 @@ function useSaveAndTest(v: ServerHostInput, onSaved: (h: ServerHost) => void, ne
     setSaving(true);
     setError(null);
     try {
-      const h = await (v.sshKey ? serverSaveSshKey(v) : serverSave(v));
+      const h = await (makesToken(v) ? serverSaveSshKey(v) : serverSave(v));
       setSaved(h);
       onSaved(h);
       next();

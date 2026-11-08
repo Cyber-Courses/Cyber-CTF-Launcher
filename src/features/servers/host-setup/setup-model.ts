@@ -1,4 +1,14 @@
-import type { CloudClis, CloudProvider, Dependency, RemoteProvider, ServerHostInput, ServerTest, SshKeySignIn, SystemReport } from "@/lib/tauri";
+import type {
+  CloudClis,
+  CloudProvider,
+  Dependency,
+  ProxmoxPlacement,
+  RemoteProvider,
+  ServerHostInput,
+  ServerTest,
+  SshKeySignIn,
+  SystemReport,
+} from "@/lib/tauri";
 import {
   AWS_REGIONS,
   AZURE_LOCATIONS,
@@ -120,13 +130,45 @@ export function sshKeyReady(k: SshKeySignIn): boolean {
   return k.path.trim() !== "" && k.user.trim() !== "" && portOk(k.port);
 }
 
-/** What a save sends: an SSH key sign-in (`sshKey` mode) or none; the token is made from it. */
-export function savePayload(v: ServerHostInput, signIn: SignIn, key: SshKeySignIn): ServerHostInput {
-  const named = { ...v, name: saveName(v) };
-  if (v.provider === "proxmox" && signIn === "sshKey")
-    return { ...named, username: "", password: null, sshKey: { ...key, path: key.path.trim(), user: key.user.trim() } };
-  return { ...named, sshKey: null };
+/** Whether two SSH key sign-ins are the same key, user and port. */
+export function sameSshKey(a: SshKeySignIn | null | undefined, b: SshKeySignIn): boolean {
+  return !!a && a.path.trim() === b.path.trim() && a.user.trim() === b.user.trim() && a.port === b.port;
 }
+
+/** What a save sends. An SSH key sign-in whose token isn't made yet (`made` false) goes with no
+ *  username, for the node to make the token (`server_save_ssh_key`); once made, with the token
+ *  id the form now holds, kept by a plain save. Password and token setups send no key. */
+export function savePayload(v: ServerHostInput, signIn: SignIn, key: SshKeySignIn, made = false): ServerHostInput {
+  const named = { ...v, name: saveName(v) };
+  if (v.provider !== "proxmox" || signIn !== "sshKey") return { ...named, sshKey: null };
+  const sshKey = { ...key, path: key.path.trim(), user: key.user.trim() };
+  return made ? { ...named, password: null, sshKey } : { ...named, username: "", password: null, sshKey };
+}
+
+/** The form placed on node `nodeName` of the server's choices (the first node when it isn't one):
+ *  a value the form holds stays when that node offers it, unless `reset` (the node was just
+ *  changed); otherwise the node's default (`local-lvm`, `local`, the bridge on the server's LAN). */
+export function placementWith(v: ServerHostInput, placement: ProxmoxPlacement, nodeName: string | null, reset = false): ServerHostInput {
+  const node = placement.nodes.find((n) => n.name === nodeName) ?? placement.nodes.at(0);
+  if (!node) return v;
+  const keep = (value: string | null | undefined, options: string[], fallback: string | null) =>
+    !reset && value && options.includes(value) ? value : fallback;
+  return {
+    ...v,
+    node: node.name,
+    datastore: keep(v.datastore, node.diskStorages, node.defaultDisk),
+    imageStorage: keep(v.imageStorage, node.imageStorages, node.defaultImage),
+    snippetStorage: keep(v.snippetStorage, node.snippetStorages, node.defaultSnippet),
+    network: keep(
+      v.network,
+      node.bridges.map((b) => b.name),
+      node.defaultBridge,
+    ),
+  };
+}
+
+/** Whether a save must first make the token on the node (an SSH key sign-in with no token yet). */
+export const makesToken = (payload: ServerHostInput) => !!payload.sshKey && payload.username === "";
 
 /** Whether the connection / credentials step has what it needs to go on. `secretKept`: a saved
  *  secret stays when the field is left empty (see `keepsSecret`). `key`: the Proxmox SSH key

@@ -1,10 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
 import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
 import type * as Generated from "@/lib/tauri/generated";
-import type { HostCapacity, Provider, SelfTestEvent, ServerCheck, ServerCheckState, ServerTest, SshKeySignIn } from "@/lib/tauri/generated";
+import type {
+  HostCapacity,
+  Provider,
+  ProxmoxBridge,
+  ProxmoxNodeChoices,
+  ProxmoxPlacement,
+  SelfTestEvent,
+  ServerCheck,
+  ServerCheckState,
+  ServerTest,
+  SshKeySignIn,
+} from "@/lib/tauri/generated";
 import type { CloudProvider } from "@/lib/tauri/cloud";
 
-export type { HostCapacity, ServerCheck, ServerCheckState, ServerTest, SshKeySignIn };
+export type { HostCapacity, ProxmoxBridge, ProxmoxNodeChoices, ProxmoxPlacement, ServerCheck, ServerCheckState, ServerTest, SshKeySignIn };
 
 // --- Server (the player's own ESXi / Proxmox host) ---
 
@@ -23,6 +34,9 @@ export const serverSave = (input: ServerHostInput) => invoke<ServerHost>("server
  *  to the node with it, makes its own API token there and authorizes its key, then saves the host
  *  as a token setup. Rejects, saving nothing, when any part fails. */
 export const serverSaveSshKey = (input: ServerHostInput) => invoke<ServerHost>("server_save_ssh_key", { input });
+/** A Proxmox server's nodes, storages and bridges, read from its API with the form's sign-in (its
+ *  password or token secret, else the saved host's). Rejects when the API can't be read. */
+export const serverProxmoxPlacement = (input: ServerHostInput) => invoke<ProxmoxPlacement>("server_proxmox_placement", { input });
 /** The first of ~/.ssh/id_ed25519, id_ecdsa, id_rsa that exists (null when none does). */
 export const serverDefaultSshKey = () => invoke<string | null>("server_default_ssh_key");
 export const serverRemove = (id: string) => invokeUnit("server_remove", { id });

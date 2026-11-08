@@ -158,10 +158,10 @@
       "sshKeyPick": "Choose your SSH private key",
       "sshUser": "SSH user",
       "sshKeyNoteTitle": "What the launcher does with your key",
-      "sshKeyNoteBody": "When you save, it signs in to the node over SSH with this key, creates an API token for itself with <code>pveum user token add</code> and adds its own public key to the user's <code>~/.ssh/authorized_keys</code>. Nothing else runs on the node; labs then use that token.",
+      "sshKeyNoteBody": "When you continue, it signs in to the node over SSH with this key, creates an API token for itself with <code>pveum user token add</code> and adds its own public key to the user's <code>~/.ssh/authorized_keys</code>. Nothing else runs on the node; labs then use that token.",
       "tokenId": "Token id",
-      "tokenIdHint": "user@realm!name, e.g. root@pam!cyberctf",
-      "usernameHintPassword": "user@realm, e.g. root@pam"
+      "tokenIdHint": "root!name, or user@realm!name (@pam is added when you give no realm)",
+      "usernameHintPassword": "root, or user@realm (@pam is added when you give no realm)"
     },
     "placement": {
       "title": "Placement",
@@ -173,7 +173,15 @@
       "bridge": "Bridge",
       "portGroup": "Port group",
       "selfSigned": "Self-signed certificate",
-      "selfSignedHint": "Proxmox uses one by default. Turn off if your host has a trusted certificate."
+      "selfSignedHint": "Proxmox uses one by default. Turn off if your host has a trusted certificate.",
+      "reading": "Reading the server's nodes, storages and bridges…",
+      "bridgeHint": "Preselected: the bridge on the network this machine reaches the server on",
+      "noAddress": "no address",
+      "diskStorage": "VM disks",
+      "imageStorage": "Cloud images",
+      "snippetStorage": "Cloud-init snippets",
+      "noStorage": "This node has no storage for this",
+      "readFailed": "Couldn't read the server's options ({error}). Enter them by hand, or leave them blank for the defaults."
     },
     "account": {
       "title": "How to connect",

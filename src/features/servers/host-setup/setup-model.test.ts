@@ -10,6 +10,8 @@ import {
   machineTools,
   initialSignIn,
   initialSshKey,
+  makesToken,
+  placementWith,
   savePayload,
   saveName,
   serverReady,
@@ -93,6 +95,50 @@ describe("Proxmox sign-in", () => {
     expect(savePayload(v, "password", key)).toMatchObject({ username: "root@pam", password: "pw", sshKey: null });
     expect(savePayload(v, "token", key).sshKey).toBeNull();
     expect(savePayload({ ...v, provider: "vmware_esxi" }, "sshKey", key).sshKey).toBeNull();
+  });
+});
+
+describe("Proxmox placement and a made token", () => {
+  const node = {
+    name: "pve",
+    diskStorages: ["local", "local-lvm"],
+    imageStorages: ["local"],
+    snippetStorages: ["local"],
+    bridges: [
+      { name: "vmbr0", cidr: "192.168.150.10/24" },
+      { name: "vmbr1", cidr: "10.0.0.50/24" },
+    ],
+    defaultDisk: "local-lvm",
+    defaultImage: "local",
+    defaultSnippet: "local",
+    defaultBridge: "vmbr1",
+  };
+  const placement = { nodes: [node, { ...node, name: "pve2", diskStorages: ["ssd"], defaultDisk: "ssd" }] };
+
+  it("fills an empty placement with the node's defaults, keeps a valid choice, replaces an unknown one", () => {
+    expect(placementWith(form({}), placement, null)).toMatchObject({
+      node: "pve",
+      datastore: "local-lvm",
+      imageStorage: "local",
+      snippetStorage: "local",
+      network: "vmbr1",
+    });
+    expect(placementWith(form({ datastore: "local", network: "vmbr0" }), placement, "pve")).toMatchObject({ datastore: "local", network: "vmbr0" });
+    expect(placementWith(form({ datastore: "gone" }), placement, "pve").datastore).toBe("local-lvm");
+    expect(placementWith(form({ node: "nope" }), placement, "nope").node).toBe("pve");
+    // A node picked anew takes its own defaults.
+    expect(placementWith(form({ datastore: "local" }), placement, "pve2", true)).toMatchObject({ node: "pve2", datastore: "ssd" });
+    expect(placementWith(form({ node: "x" }), { nodes: [] }, "x").node).toBe("x");
+  });
+
+  it("makes the token once: then a plain save keeps the key and the token id", () => {
+    const key = { path: "/k", user: "root", port: 22 };
+    const fresh = savePayload(form({ host: "pve" }), "sshKey", key);
+    expect(makesToken(fresh)).toBe(true);
+    const made = savePayload(form({ host: "pve", username: "root@pam!cyberctf-1", password: "x" }), "sshKey", key, true);
+    expect(made).toMatchObject({ username: "root@pam!cyberctf-1", password: null, sshKey: key });
+    expect(makesToken(made)).toBe(false);
+    expect(makesToken(savePayload(form({ username: "root" }), "password", key))).toBe(false);
   });
 });
 

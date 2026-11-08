@@ -158,10 +158,10 @@
       "sshKeyPick": "Elige tu clave privada SSH",
       "sshUser": "Usuario SSH",
       "sshKeyNoteTitle": "Qué hace el launcher con tu clave",
-      "sshKeyNoteBody": "Al guardar, inicia sesión en el nodo por SSH con esta clave, crea un token de API para sí mismo con <code>pveum user token add</code> y añade su propia clave pública a <code>~/.ssh/authorized_keys</code> del usuario. No se ejecuta nada más en el nodo; los labs usan luego ese token.",
+      "sshKeyNoteBody": "Al continuar, inicia sesión en el nodo por SSH con esta clave, crea un token de API para sí mismo con <code>pveum user token add</code> y añade su propia clave pública a <code>~/.ssh/authorized_keys</code> del usuario. No se ejecuta nada más en el nodo; los labs usan luego ese token.",
       "tokenId": "ID del token",
-      "tokenIdHint": "user@realm!name, p. ej. root@pam!cyberctf",
-      "usernameHintPassword": "user@realm, p. ej. root@pam"
+      "tokenIdHint": "root!name, o user@realm!name (se añade @pam si no indicas realm)",
+      "usernameHintPassword": "root, o user@realm (se añade @pam si no indicas realm)"
     },
     "placement": {
       "title": "Ubicación",
@@ -173,7 +173,15 @@
       "bridge": "Bridge",
       "portGroup": "Grupo de puertos",
       "selfSigned": "Certificado autofirmado",
-      "selfSignedHint": "Proxmox usa uno por defecto. Desactívalo si tu host tiene un certificado de confianza."
+      "selfSignedHint": "Proxmox usa uno por defecto. Desactívalo si tu host tiene un certificado de confianza.",
+      "reading": "Leyendo los nodos, almacenamientos y bridges del servidor…",
+      "bridgeHint": "Preseleccionado: el bridge de la red por la que este equipo llega al servidor",
+      "noAddress": "sin dirección",
+      "diskStorage": "Discos de VM",
+      "imageStorage": "Imágenes cloud",
+      "snippetStorage": "Snippets de cloud-init",
+      "noStorage": "Este nodo no tiene almacenamiento para esto",
+      "readFailed": "No se pudieron leer las opciones del servidor ({error}). Escríbelas a mano o déjalas vacías para usar los valores por defecto."
     },
     "account": {
       "title": "Cómo conectar",

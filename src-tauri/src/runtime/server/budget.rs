@@ -37,6 +37,8 @@ fn cli_account(profile: Option<String>) -> HostProfile {
         monthly_limit: None,
         gcp_project: None,
         ssh_key: None,
+        image_storage: None,
+        snippet_storage: None,
     }
 }
 
