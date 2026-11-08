@@ -6,18 +6,18 @@ use super::{
     AppDirs, Error, LabRef, PER_MACHINE_HERE_ONLY, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, mark_per_machine_vm, runner_home, server,
 };
 
+/// Starts `lab` on server `host`; `per_machine`: as one VM per machine (a cloud account only).
 pub(super) async fn start_on_server(
     dirs: &AppDirs,
     lab: LabRef<'_>,
-    host: &str,
-    per_machine: bool,
+    (host, per_machine): (&str, bool),
     env: &[(String, String)],
     log: &mut impl FnMut(String),
 ) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     // One VM per machine is cloud-vm on a cloud account; on a server (ESXi, Proxmox) the lab runs
     // as the catalogue publishes it. Refuse before any side effect (the secret, GCP, the marker).
-    if per_machine && !server::host_provider(dirs, host).is_some_and(|p| p.is_cloud()) {
+    if per_machine && !server::host_provider(dirs, host).is_some_and(Provider::is_cloud) {
         return Err(Error::Invalid(PER_MACHINE_HERE_ONLY.into()));
     }
     let conn = server::connection(dirs, host)?;

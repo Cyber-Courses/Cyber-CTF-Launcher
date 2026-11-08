@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { Field, Input, Note, Select } from "@/features/servers/host-setup/form";
 import { placementWith } from "@/features/servers/host-setup/setup-model";
@@ -17,9 +17,11 @@ type Read = { state: "reading" } | { state: "read"; placement: ProxmoxPlacement 
 /** Reads the server's choices once, and fills the form's empty or unknown placement with the
  *  defaults. */
 function usePlacementChoices(s: HostSetup) {
-  const { payload, setV } = s;
+  // Read once, with the sign-in the Connection step left: later edits don't read again.
+  const first = useRef(s);
   const [read, setRead] = useState<Read>({ state: "reading" });
   useEffect(() => {
+    const { payload, setV } = first.current;
     let live = true;
     serverProxmoxPlacement(payload)
       .then((placement) => {
@@ -37,8 +39,6 @@ function usePlacementChoices(s: HostSetup) {
     return () => {
       live = false;
     };
-    // Read once, with the sign-in the Connection step left.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return read;
 }

@@ -180,9 +180,8 @@ mod tests {
 
     /// The player's server as its API answered on 2026-11-08: one node, `local` and `local-lvm`,
     /// `vmbr0` on 192.168.150.0/24 and `vmbr1` on the LAN this machine reaches it on.
-    #[allow(clippy::needless_pass_by_value, reason = "`read` hands each path over as a String")]
-    fn api(path: String) -> std::future::Ready<Result<Value, CallError>> {
-        std::future::ready(Ok(match path.as_str() {
+    fn answer(path: &str) -> std::future::Ready<Result<Value, CallError>> {
+        std::future::ready(Ok(match path {
             "/nodes" => json!([{ "node": "pve", "status": "online" }]),
             "/nodes/pve/storage" => json!([
                 { "storage": "local", "type": "dir", "content": "images,iso,snippets,vztmpl,rootdir,backup", "enabled": 1, "active": 1 },
@@ -199,7 +198,7 @@ mod tests {
     #[tokio::test]
     async fn the_servers_own_options_with_their_defaults() {
         let ip = "10.0.0.50".parse().ok();
-        let p = read(api, ip).await.unwrap();
+        let p = read(|p: String| answer(&p), ip).await.unwrap();
         assert_eq!(
             p,
             Placement {
@@ -220,8 +219,8 @@ mod tests {
             }
         );
         // An address on no bridge's network (a hostname not resolved, a NAT'd one): vmbr0.
-        assert_eq!(read(api, "172.16.0.9".parse().ok()).await.unwrap().nodes[0].default_bridge.as_deref(), Some("vmbr0"));
-        assert_eq!(read(api, None).await.unwrap().nodes[0].default_bridge.as_deref(), Some("vmbr0"));
+        assert_eq!(read(|p: String| answer(&p), "172.16.0.9".parse().ok()).await.unwrap().nodes[0].default_bridge.as_deref(), Some("vmbr0"));
+        assert_eq!(read(|p: String| answer(&p), None).await.unwrap().nodes[0].default_bridge.as_deref(), Some("vmbr0"));
     }
 
     #[tokio::test]

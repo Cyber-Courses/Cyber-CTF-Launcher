@@ -97,8 +97,10 @@ function useServerSelfTest(id: string, plan: PlanStep[], onDone: (result: "ok" |
   const [error, setError] = useState<string | null>(null);
   const [startAt, setStartAt] = useState(() => Date.now());
   const doneRef = useRef(onDone);
+  const planRef = useRef(plan);
   useEffect(() => {
     doneRef.current = onDone;
+    planRef.current = plan;
   });
 
   useEffect(() => {
@@ -114,7 +116,7 @@ function useServerSelfTest(id: string, plan: PlanStep[], onDone: (result: "ok" |
     const settled = () => {
       setRunning(false);
       if (run.error) setError(run.error);
-      doneRef.current(selfTestOutcome(plan, statesOf(run.events), false, run.error).kind === "passed" ? "ok" : "fail");
+      doneRef.current(selfTestOutcome(planRef.current, statesOf(run.events), false, run.error).kind === "passed" ? "ok" : "fail");
     };
     run.onSettled.add(settled);
     return () => {
@@ -122,8 +124,6 @@ function useServerSelfTest(id: string, plan: PlanStep[], onDone: (result: "ok" |
       run.listeners.delete(shown);
       run.onSettled.delete(settled);
     };
-    // The plan is the provider's constant.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
   return { states, running, error, startAt };
 }

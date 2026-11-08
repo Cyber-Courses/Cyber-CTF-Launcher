@@ -234,7 +234,7 @@ mod tests {
             ("docker", ["context", "ls", ..]) => ok("desktop-linux\tfalse\norbstack\ttrue\ncolima\tfalse\nmy-remote\tfalse\n"),
             ("docker", ["--context", "orbstack", "info", ..]) => ok("OrbStack\n"),
             ("docker", ["--context", "desktop-linux", "info", ..]) => ok("Docker Desktop\n"),
-            ("docker", ["--context", ctx, "info", ..]) => fail(&format!("Cannot connect to the Docker daemon for {ctx}")),
+            ("docker", ["--context", ctx, "info", ..]) => fail(format!("Cannot connect to the Docker daemon for {ctx}")),
             _ => ok(""),
         });
         let found = engines().await;
