@@ -23,18 +23,16 @@ labNetwork: string,
 networks: Array<string>, 
 /**
  * The command line that opens a shell in the box (shown so the player can also run it).
- * Empty when the runner makes no box for the run: a VM lab on a server or in a cloud
- * account (a container lab there gets one, in the VM its containers run in).
+ * Empty when the run has no way into the box (a lab with no attack machine of its own,
+ * before the launcher adds one).
  */
 shellCmd: string, 
 /**
- * Whether the box is a VM here: beside a lab running as VMs on this machine (the lab's own
- * attack VM, or the one the runner adds to the running lab).
+ * Whether the box is a VM here: beside a lab running as VMs on this machine.
  */
 vm: boolean, 
 /**
  * Whether the box boots from the Vagrant box picked in Settings: a VM lab's own attack VM.
- * Otherwise it runs the attack box image: beside a container lab's containers, inside the VM
- * of a container lab run in one, or inside the attack VM the runner adds to a VM lab.
+ * Otherwise it runs the attack box image.
  */
 pickedBox: boolean, };
