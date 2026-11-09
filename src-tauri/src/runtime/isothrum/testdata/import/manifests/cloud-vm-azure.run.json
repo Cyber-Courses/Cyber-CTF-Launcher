@@ -1,9 +1,9 @@
 {
-  "$schema": "https://www.isoloom.com/schema/run-manifest/v0.json",
-  "manifest_version": 0,
+  "$schema": "https://raw.githubusercontent.com/isoloom/isoloom/main/schemas/run-manifest-v1.schema.json",
+  "manifest_version": 1,
   "generator": {
     "name": "isoloom",
-    "version": "0.10.1"
+    "version": "1.0.9"
   },
   "environment": {
     "name": "solo-web",
@@ -43,40 +43,40 @@
   },
   "params": [
     {
-      "name": "region",
-      "description": "Where the lab runs.",
-      "set_by": "embedder",
-      "deliver": [
-        {
-          "via": "tf_var",
-          "var": "region"
-        }
-      ],
-      "default": "westeurope"
-    },
-    {
       "name": "subscription_id",
-      "description": "The subscription the lab's resources are in.",
+      "description": "Default: ARM_SUBSCRIPTION_ID from the environment.",
+      "required": true,
       "set_by": "embedder",
       "deliver": [
         {
           "via": "tf_var",
           "var": "subscription_id"
         }
-      ],
-      "required": true
+      ]
+    },
+    {
+      "name": "region",
+      "description": "The module's `region`.",
+      "default": "swedencentral",
+      "set_by": "embedder",
+      "deliver": [
+        {
+          "via": "tf_var",
+          "var": "region"
+        }
+      ]
     },
     {
       "name": "allowed_cidr",
-      "description": "Who may reach the machines.",
+      "description": "Who may reach the machines (SSH and the published ports), e.g. your IP/32.",
+      "required": true,
       "set_by": "embedder",
       "deliver": [
         {
           "via": "tf_var",
           "var": "allowed_cidr"
         }
-      ],
-      "required": true
+      ]
     },
     {
       "name": "ISOLOOM_DERIVED",
@@ -104,12 +104,18 @@
       "kind": "connection",
       "required": false,
       "sensitive": true,
+      "source": {
+        "store": "env",
+        "reference": "ARM_CLIENT_ID"
+      },
       "deliver": [
         {
           "via": "env",
           "var": "ARM_CLIENT_ID",
           "steps": [
-            "*"
+            "init",
+            "apply",
+            "destroy"
           ]
         }
       ]
@@ -119,12 +125,18 @@
       "kind": "connection",
       "required": false,
       "sensitive": true,
+      "source": {
+        "store": "env",
+        "reference": "ARM_CLIENT_SECRET"
+      },
       "deliver": [
         {
           "via": "env",
           "var": "ARM_CLIENT_SECRET",
           "steps": [
-            "*"
+            "init",
+            "apply",
+            "destroy"
           ]
         }
       ]
@@ -134,12 +146,18 @@
       "kind": "connection",
       "required": false,
       "sensitive": true,
+      "source": {
+        "store": "env",
+        "reference": "ARM_TENANT_ID"
+      },
       "deliver": [
         {
           "via": "env",
           "var": "ARM_TENANT_ID",
           "steps": [
-            "*"
+            "init",
+            "apply",
+            "destroy"
           ]
         }
       ]
@@ -166,7 +184,8 @@
     {
       "name": "app",
       "cidr": "10.80.0.0/24",
-      "internet": true
+      "internet": true,
+      "native": "app"
     }
   ],
   "machines": [
@@ -175,6 +194,10 @@
       "role": "target",
       "os": "debian-12",
       "arch": "amd64",
+      "resources": {
+        "cpus": 1,
+        "memory_mb": 1024
+      },
       "addresses": {
         "app": "10.80.0.10"
       },
@@ -201,7 +224,7 @@
       },
       {
         "id": "init",
-        "note": "Preparing Terraform and its providers\u2026",
+        "note": "Preparing Terraform and its providers…",
         "argv": [
           "terraform",
           "init",
@@ -215,11 +238,11 @@
           "TF_IN_AUTOMATION": "1",
           "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
         },
-        "timeout_s": 600
+        "timeout_s": 900
       },
       {
         "id": "apply",
-        "note": "Creating the lab's VMs on the server\u2026",
+        "note": "Creating the lab's machines in the cloud…",
         "argv": [
           "terraform",
           "apply",
@@ -234,6 +257,27 @@
           "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
         },
         "timeout_s": 3600
+      },
+      {
+        "id": "archive",
+        "note": "Archiving the project…",
+        "action": "project.archive",
+        "with": {
+          "root": "../../.."
+        }
+      },
+      {
+        "id": "deliver-web",
+        "note": "Copying the project into web…",
+        "action": "ssh.run",
+        "with": {
+          "command": "sudo sh -c 'mkdir -p /opt/isoloom /var/lib/isoloom && tar -xzf - -C /opt/isoloom && touch /var/lib/isoloom/project-delivered'",
+          "host": "${outputs.address_web}",
+          "user": "isoloom",
+          "wait_s": "900"
+        },
+        "stdin": "${run.state_dir}/project.tgz",
+        "timeout_s": 1500
       }
     ],
     "down": [
@@ -243,7 +287,7 @@
       },
       {
         "id": "init",
-        "note": "Preparing Terraform and its providers\u2026",
+        "note": "Preparing Terraform and its providers…",
         "argv": [
           "terraform",
           "init",
@@ -257,18 +301,17 @@
           "TF_IN_AUTOMATION": "1",
           "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
         },
-        "timeout_s": 600
+        "timeout_s": 900
       },
       {
         "id": "destroy",
-        "note": "Removing the lab from the server\u2026",
+        "note": "Removing the lab from the cloud…",
         "argv": [
           "terraform",
           "destroy",
           "-auto-approve",
           "-input=false",
-          "-no-color",
-          "-refresh=false"
+          "-no-color"
         ],
         "env": {
           "TF_DATA_DIR": "${run.state_dir}/.terraform",
@@ -276,7 +319,7 @@
           "TF_IN_AUTOMATION": "1",
           "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
         },
-        "timeout_s": 1800
+        "timeout_s": 3600
       }
     ],
     "status": {
@@ -288,14 +331,14 @@
     {
       "kind": "step_ok",
       "step": "apply",
-      "means": "the VMs exist; each sets itself up from its user data"
+      "means": "the machines exist and booted; each sets itself up from its user data once the project is in"
     },
     {
       "kind": "ready_file",
       "host": "${outputs.address_web}",
-      "user": "${outputs.ssh_user}",
+      "user": "isoloom",
       "path": "${outputs.ready_file}",
-      "log": "/var/log/cloud-init-output.log",
+      "log": "/var/log/isoloom-setup.log",
       "grammar": "isoloom-ready/1",
       "timeout_s": 2400,
       "unreachable_timeout_s": 600,
@@ -305,22 +348,12 @@
   "outputs": [
     {
       "name": "ip",
-      "description": "The entry machine's public address.",
+      "description": "Where to stand: the access machine's public address (the first Linux machine's, else the controller's).",
       "role": "address",
       "sensitive": false,
       "from": {
         "kind": "terraform_output",
         "name": "ip"
-      }
-    },
-    {
-      "name": "ssh_user",
-      "description": "The user the machines let in with the runner's key.",
-      "role": "info",
-      "sensitive": false,
-      "from": {
-        "kind": "terraform_output",
-        "name": "ssh_user"
       }
     },
     {
@@ -335,12 +368,22 @@
     },
     {
       "name": "address_web",
-      "description": "web's public address.",
+      "description": "web's public address: the runner's SSH and its published ports reach it there.",
       "role": "address",
       "sensitive": false,
       "from": {
         "kind": "terraform_output",
         "name": "address_web"
+      }
+    },
+    {
+      "name": "ssh_user_web",
+      "description": "The user the runner's key lets in on web.",
+      "role": "info",
+      "sensitive": false,
+      "from": {
+        "kind": "terraform_output",
+        "name": "ssh_user_web"
       }
     },
     {
@@ -367,7 +410,7 @@
           {
             "name": "checks/web-answers.sh",
             "kind": "script",
-            "wait_s": 0,
+            "wait_s": 60,
             "derived": false
           }
         ],
@@ -375,18 +418,18 @@
           "id": "check-networks",
           "action": "ssh.run",
           "with": {
-            "command": "ISOLOOM_DERIVED=${params.ISOLOOM_DERIVED} sh -s",
+            "command": "cd /opt/isoloom && ISOLOOM_DERIVED=${params.ISOLOOM_DERIVED} sh .isoloom/cloud-vm/checks/networks.sh",
             "host": "${outputs.address_web}",
-            "user": "${outputs.ssh_user}"
+            "user": "isoloom"
           },
-          "stdin": "checks/networks.sh",
-          "timeout_s": 75
+          "timeout_s": 135
         }
       }
     ],
     "teardown": []
   },
   "recovery": {
+    "retries": 0,
     "apply_retries": 1
   },
   "expiry": {

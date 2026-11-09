@@ -1,9 +1,9 @@
 {
-  "$schema": "https://www.isoloom.com/schema/run-manifest/v0.json",
-  "manifest_version": 0,
+  "$schema": "https://raw.githubusercontent.com/isoloom/isoloom/main/schemas/run-manifest-v1.schema.json",
+  "manifest_version": 1,
   "generator": {
     "name": "isoloom",
-    "version": "0.10.1"
+    "version": "1.0.9"
   },
   "environment": {
     "name": "solo-web",
@@ -43,20 +43,9 @@
   },
   "params": [
     {
-      "name": "region",
-      "description": "Where the lab runs.",
-      "set_by": "embedder",
-      "deliver": [
-        {
-          "via": "tf_var",
-          "var": "region"
-        }
-      ],
-      "default": "europe-west1"
-    },
-    {
       "name": "project",
-      "description": "The project the lab runs in.",
+      "description": "An existing project; or leave empty and give billing_account for a project of its own.",
+      "default": "",
       "set_by": "embedder",
       "deliver": [
         {
@@ -67,7 +56,8 @@
     },
     {
       "name": "billing_account",
-      "description": "The billing account of a project made for the lab.",
+      "description": "With no project: create one for this environment, billed here, deleted with it.",
+      "default": "",
       "set_by": "embedder",
       "deliver": [
         {
@@ -78,7 +68,8 @@
     },
     {
       "name": "org_id",
-      "description": "The organization of a project made for the lab.",
+      "description": "The module's `org_id`.",
+      "default": "",
       "set_by": "embedder",
       "deliver": [
         {
@@ -88,16 +79,40 @@
       ]
     },
     {
+      "name": "region",
+      "description": "The module's `region`.",
+      "default": "europe-west9",
+      "set_by": "embedder",
+      "deliver": [
+        {
+          "via": "tf_var",
+          "var": "region"
+        }
+      ]
+    },
+    {
+      "name": "machine_type",
+      "description": "The module's `machine_type`.",
+      "default": "e2-medium",
+      "set_by": "embedder",
+      "deliver": [
+        {
+          "via": "tf_var",
+          "var": "machine_type"
+        }
+      ]
+    },
+    {
       "name": "allowed_cidr",
-      "description": "Who may reach the machines.",
+      "description": "Who may reach the machines (SSH and the published ports), e.g. your IP/32.",
+      "required": true,
       "set_by": "embedder",
       "deliver": [
         {
           "via": "tf_var",
           "var": "allowed_cidr"
         }
-      ],
-      "required": true
+      ]
     },
     {
       "name": "ISOLOOM_DERIVED",
@@ -125,12 +140,18 @@
       "kind": "connection",
       "required": false,
       "sensitive": true,
+      "source": {
+        "store": "env",
+        "reference": "GOOGLE_OAUTH_ACCESS_TOKEN"
+      },
       "deliver": [
         {
           "via": "env",
           "var": "GOOGLE_OAUTH_ACCESS_TOKEN",
           "steps": [
-            "*"
+            "init",
+            "apply",
+            "destroy"
           ]
         }
       ]
@@ -140,12 +161,18 @@
       "kind": "connection",
       "required": false,
       "sensitive": true,
+      "source": {
+        "store": "env",
+        "reference": "GOOGLE_CREDENTIALS"
+      },
       "deliver": [
         {
           "via": "env",
           "var": "GOOGLE_CREDENTIALS",
           "steps": [
-            "*"
+            "init",
+            "apply",
+            "destroy"
           ]
         }
       ]
@@ -172,17 +199,33 @@
     {
       "name": "app",
       "cidr": "10.80.0.0/24",
-      "internet": true
+      "internet": true,
+      "native": "solo-web_app"
     }
   ],
   "machines": [
     {
+      "name": "isoloom-docker-host",
+      "role": "infra",
+      "resources": {
+        "cpus": 2,
+        "memory_mb": 2048
+      },
+      "addresses": {}
+    },
+    {
       "name": "web",
       "role": "target",
-      "os": "debian-12",
       "arch": "amd64",
+      "resources": {
+        "cpus": 1,
+        "memory_mb": 512
+      },
       "addresses": {
         "app": "10.80.0.10"
+      },
+      "native": {
+        "service": "web"
       },
       "ports": [
         {
@@ -193,10 +236,26 @@
           "publish": {
             "mode": "fixed",
             "preferred": 8080,
-            "address": "${outputs.address_web}"
+            "address": "${outputs.ip}"
           }
         }
       ]
+    },
+    {
+      "name": "isoloom-check",
+      "role": "check",
+      "addresses": {},
+      "native": {
+        "service": "isoloom-check"
+      }
+    },
+    {
+      "name": "isoloom-probe-amd64",
+      "role": "infra",
+      "addresses": {},
+      "native": {
+        "service": "isoloom-probe-amd64"
+      }
     }
   ],
   "lifecycle": {
@@ -207,7 +266,7 @@
       },
       {
         "id": "init",
-        "note": "Preparing Terraform and its providers\u2026",
+        "note": "Preparing Terraform and its providers…",
         "argv": [
           "terraform",
           "init",
@@ -221,11 +280,11 @@
           "TF_IN_AUTOMATION": "1",
           "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
         },
-        "timeout_s": 600
+        "timeout_s": 900
       },
       {
         "id": "apply",
-        "note": "Creating the lab's VMs on the server\u2026",
+        "note": "Creating the Docker host in the cloud…",
         "argv": [
           "terraform",
           "apply",
@@ -240,6 +299,50 @@
           "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
         },
         "timeout_s": 3600
+      },
+      {
+        "id": "docker",
+        "note": "Installing Docker in the VM…",
+        "action": "ssh.run",
+        "with": {
+          "command": "sudo sh -s",
+          "host": "${outputs.ip}",
+          "user": "admin",
+          "wait_s": "300"
+        },
+        "stdin": "setup.sh",
+        "timeout_s": 1800
+      },
+      {
+        "id": "archive",
+        "note": "Archiving the project…",
+        "action": "project.archive",
+        "with": {
+          "root": "../../.."
+        }
+      },
+      {
+        "id": "project",
+        "note": "Copying the project into the VM…",
+        "action": "ssh.run",
+        "with": {
+          "command": "sudo rm -rf /opt/isoloom && sudo mkdir -p /opt/isoloom && sudo tar -xzf - -C /opt/isoloom",
+          "host": "${outputs.ip}",
+          "user": "admin"
+        },
+        "stdin": "${run.state_dir}/project.tgz",
+        "timeout_s": 600
+      },
+      {
+        "id": "start",
+        "note": "Starting the lab's containers in the VM…",
+        "action": "ssh.run",
+        "with": {
+          "command": "cd /opt/isoloom && sudo -E env ISOLOOM_PUBLISH_ADDRESS=0.0.0.0 ISOLOOM_PUBLISH_FIXED=1 docker compose --project-name solo-web --file .isoloom/docker/compose.yml up --detach --build --pull missing --remove-orphans --wait --wait-timeout 600",
+          "host": "${outputs.ip}",
+          "user": "admin"
+        },
+        "timeout_s": 1800
       }
     ],
     "down": [
@@ -249,7 +352,7 @@
       },
       {
         "id": "init",
-        "note": "Preparing Terraform and its providers\u2026",
+        "note": "Preparing Terraform and its providers…",
         "argv": [
           "terraform",
           "init",
@@ -263,18 +366,17 @@
           "TF_IN_AUTOMATION": "1",
           "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
         },
-        "timeout_s": 600
+        "timeout_s": 900
       },
       {
         "id": "destroy",
-        "note": "Removing the lab from the server\u2026",
+        "note": "Removing the lab from the cloud…",
         "argv": [
           "terraform",
           "destroy",
           "-auto-approve",
           "-input=false",
-          "-no-color",
-          "-refresh=false"
+          "-no-color"
         ],
         "env": {
           "TF_DATA_DIR": "${run.state_dir}/.terraform",
@@ -282,7 +384,7 @@
           "TF_IN_AUTOMATION": "1",
           "TF_VAR_ssh_public_key": "${run.ssh_public_key}"
         },
-        "timeout_s": 1800
+        "timeout_s": 3600
       }
     ],
     "status": {
@@ -294,24 +396,18 @@
     {
       "kind": "step_ok",
       "step": "apply",
-      "means": "the VMs exist; each sets itself up from its user data"
+      "means": "the Docker host exists and booted"
     },
     {
-      "kind": "ready_file",
-      "host": "${outputs.address_web}",
-      "user": "${outputs.ssh_user}",
-      "path": "${outputs.ready_file}",
-      "log": "/var/log/cloud-init-output.log",
-      "grammar": "isoloom-ready/1",
-      "timeout_s": 2400,
-      "unreachable_timeout_s": 600,
-      "interval_s": 10
+      "kind": "step_ok",
+      "step": "start",
+      "means": "every long-running service is healthy (`--wait`: each port's probe, the route keepers, the machines' own healthchecks)"
     }
   ],
   "outputs": [
     {
       "name": "ip",
-      "description": "The entry machine's public address.",
+      "description": "The Docker host's address: SSH reaches it there, and its containers' published ports answer there.",
       "role": "address",
       "sensitive": false,
       "from": {
@@ -321,7 +417,7 @@
     },
     {
       "name": "ssh_user",
-      "description": "The user the machines let in with the runner's key.",
+      "description": "The user the runner's key lets in on the Docker host.",
       "role": "info",
       "sensitive": false,
       "from": {
@@ -330,31 +426,11 @@
       }
     },
     {
-      "name": "ready_file",
-      "description": "Where each Linux machine's set-up says how far it got (isoloom-ready/1).",
-      "role": "info",
-      "sensitive": false,
-      "from": {
-        "kind": "terraform_output",
-        "name": "ready_file"
-      }
-    },
-    {
-      "name": "address_web",
-      "description": "web's public address.",
-      "role": "address",
-      "sensitive": false,
-      "from": {
-        "kind": "terraform_output",
-        "name": "address_web"
-      }
-    },
-    {
       "name": "web_web",
       "description": "web's web (port 80).",
       "role": "entry",
       "sensitive": false,
-      "format": "http://${outputs.address_web}:${value}/",
+      "format": "http://${host.web}:${value}/",
       "from": {
         "kind": "published_port",
         "machine": "web",
@@ -367,13 +443,13 @@
     "setup": [],
     "runners": [
       {
-        "id": "networks",
-        "from": "from web",
+        "id": "isoloom-check",
+        "from": "from the environment's networks",
         "checks": [
           {
             "name": "checks/web-answers.sh",
             "kind": "script",
-            "wait_s": 0,
+            "wait_s": 60,
             "derived": false
           }
         ],
@@ -381,23 +457,49 @@
           "id": "check-networks",
           "action": "ssh.run",
           "with": {
-            "command": "ISOLOOM_DERIVED=${params.ISOLOOM_DERIVED} sh -s",
-            "host": "${outputs.address_web}",
-            "user": "${outputs.ssh_user}"
+            "command": "cd /opt/isoloom && sudo -E env ISOLOOM_PUBLISH_ADDRESS=0.0.0.0 ISOLOOM_PUBLISH_FIXED=1 docker compose --project-name solo-web --file .isoloom/docker/compose.yml --profile check run --rm --no-deps --env ISOLOOM_DERIVED=${params.ISOLOOM_DERIVED} isoloom-check",
+            "host": "${outputs.ip}",
+            "user": "admin"
           },
-          "stdin": "checks/networks.sh",
-          "timeout_s": 75
-        }
+          "timeout_s": 135
+        },
+        "on_timeout": [
+          {
+            "id": "rm-check-networks",
+            "action": "ssh.run",
+            "with": {
+              "command": "sudo docker ps -aq --filter label=com.docker.compose.project=solo-web --filter label=com.docker.compose.service=isoloom-check --filter label=com.docker.compose.oneoff=True | xargs -r sudo docker rm -f",
+              "host": "${outputs.ip}",
+              "user": "admin"
+            },
+            "timeout_s": 60
+          }
+        ]
       }
     ],
     "teardown": []
   },
   "recovery": {
+    "retries": 0,
     "apply_retries": 1
   },
   "expiry": {
     "tf_var": "expires_at",
     "unit": "unix_seconds",
     "default_minutes": 240
+  },
+  "guest": {
+    "machine": "isoloom-docker-host",
+    "host": "${outputs.ip}",
+    "status": {
+      "id": "ps",
+      "action": "ssh.run",
+      "with": {
+        "command": "if command -v docker >/dev/null; then sudo docker compose --project-name solo-web ps --all --format json; fi",
+        "host": "${outputs.ip}",
+        "user": "admin"
+      },
+      "timeout_s": 60
+    }
   }
 }
