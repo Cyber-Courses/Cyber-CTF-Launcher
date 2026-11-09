@@ -123,7 +123,7 @@ pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<
                 per_machine_vm: job.per_machine_vm,
                 docker_context: job.docker_context.as_deref(),
             };
-            crate::labs::run(&AppDirs::from(app), job.launch, &placement, log).await
+            crate::labs::run(&AppDirs::from(app), crate::labs::parse_launch(job.launch)?, &placement, log).await
         }
         Op::Resume { runtime } => crate::runtime::resume_lab(&AppDirs::from(app), &job.lab_id, runtime, log).await.map(|()| None),
         Op::Park { runtime, mode } => crate::runtime::park_lab(&AppDirs::from(app), &job.lab_id, runtime, mode, log).await.map(|()| None),

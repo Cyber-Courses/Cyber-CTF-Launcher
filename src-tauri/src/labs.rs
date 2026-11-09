@@ -22,13 +22,14 @@ use archive::extract;
 pub(crate) use archive::{recreate_symlink, symlink_target_within_tree};
 use launch_env::{EnvVar, launch_env};
 
-#[derive(Deserialize)]
+/// A lab to download and run, as the backend's `startLab` and `claimLaunch` answer it.
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Launch {
-    lab_id: String,
-    runtime: Runtime,
-    repository: String,
-    commit: String,
+pub(crate) struct Launch {
+    pub(crate) lab_id: String,
+    pub(crate) runtime: Runtime,
+    pub(crate) repository: String,
+    pub(crate) commit: String,
     env: Vec<EnvVar>,
 }
 
@@ -219,17 +220,15 @@ fn in_use(e: std::io::Error, dir: &Path) -> Error {
     }
 }
 
-/// A `startLab` / `claimLaunch` payload.
-fn parse_launch(launch_json: serde_json::Value) -> Result<Launch> {
+/// A `startLab` payload (the deploy worker's job carries it as JSON).
+pub(crate) fn parse_launch(launch_json: serde_json::Value) -> Result<Launch> {
     serde_json::from_value(launch_json).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))
 }
 
-/// Installs and starts a lab from a launch spec (the `startLab`/`claimLaunch` shape:
-/// `{ labId, runtime, repository, commit, env }`). Shared by the manual launch command
-/// and the agent's claim loop (bring your own compute).
+/// Installs and starts a lab from a launch spec (the `startLab`/`claimLaunch` answer). Shared by
+/// the manual launch command and the agent's claim loop (bring your own compute).
 /// It runs where `placement` says.
-pub(crate) async fn run(dirs: &AppDirs, launch_json: serde_json::Value, placement: &Placement<'_>, log: impl Fn(String)) -> Result<Option<String>> {
-    let launch = parse_launch(launch_json)?;
+pub(crate) async fn run(dirs: &AppDirs, launch: Launch, placement: &Placement<'_>, log: impl Fn(String)) -> Result<Option<String>> {
     runtime::validate_id(&launch.lab_id)?;
     // The lab is this launch's from the download on: two installs of one lab share its staging
     // folder, and a stop must not run while the new version is swapped in. Shared with the
@@ -605,7 +604,8 @@ mod tests {
         let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (".cyberctf-commit", SHA)]);
         let tools = Tools::rules(&[]);
         let held = runtime::lock_lab(&t.dirs(), "invoice").await.unwrap();
-        let launch = serde_json::json!({ "labId": "invoice", "runtime": "DOCKER", "repository": "CyberCTF/invoice", "commit": SHA, "env": [] });
+        let launch =
+            parse_launch(serde_json::json!({ "labId": "invoice", "runtime": "DOCKER", "repository": "CyberCTF/invoice", "commit": SHA, "env": [] })).unwrap();
         let waiting = tokio::time::timeout(std::time::Duration::from_millis(300), run(&t.dirs(), launch.clone(), &Placement::default(), |_| {})).await;
         assert!(waiting.is_err(), "the launch waits while another operation holds the lab");
         assert!(tools.calls().is_empty(), "nothing of the install ran meanwhile: {:?}", tools.calls());

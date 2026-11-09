@@ -7,11 +7,11 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-use serde_json::Value;
 use tokio::sync::oneshot;
 
-use super::{Deps, claim_runtime};
+use super::Deps;
 use crate::error::{Error, Result};
+use crate::labs::Launch;
 use crate::platform::AppDirs;
 use crate::runtime::server;
 
@@ -94,12 +94,11 @@ pub(super) async fn await_answer(rx: oneshot::Receiver<bool>, wait: Duration) ->
 /// What the prompt for the claimed launch shows: the lab (its spec, as the launcher reads it
 /// before installing: `runtime::lab::spec_at`), and where it would run (`host`: none for this
 /// machine). The policy is applied first: a launch it refuses is never asked about.
-pub(super) async fn launch_request(dirs: &AppDirs, session_id: &str, claim: &Value, host: Option<&str>) -> Result<LaunchRequest> {
-    let text = |key: &str| claim[key].as_str().unwrap_or_default().to_string();
-    let (lab_id, repository, commit) = (text("labId"), text("repository"), text("commit"));
+pub(super) async fn launch_request(dirs: &AppDirs, session_id: &str, launch: &Launch, host: Option<&str>) -> Result<LaunchRequest> {
+    let Launch { lab_id, repository, commit, runtime, .. } = launch.clone();
     let spec = crate::runtime::lab::spec_at(dirs, &lab_id, &repository, &commit).await?;
     let privileged = crate::runtime::lab::is_privileged(&spec);
-    crate::runtime::policy_allows(dirs, claim_runtime(claim), host, || Ok(privileged))?;
+    crate::runtime::policy_allows(dirs, runtime, host, || Ok(privileged))?;
     let (place, target) = match host {
         None => (LaunchPlace::Here, String::new()),
         // Unreadable saved hosts are an error: a cloud launch must never read as a free one.
@@ -167,13 +166,13 @@ mod tests {
         for (host, place, target) in
             [(None, LaunchPlace::Here, ""), (Some(pve.as_str()), LaunchPlace::Server, "Host pve1"), (Some(az.as_str()), LaunchPlace::Cloud, "Host az1")]
         {
-            let request = launch_request(&dirs, "s-1", &claim, host).await.unwrap();
+            let request = launch_request(&dirs, "s-1", &claim.launch, host).await.unwrap();
             assert_eq!((request.place, request.target.as_str()), (place, target));
             assert_eq!((request.lab_name.as_str(), request.privileged), ("Web Shop", true), "the privileged machine is said");
             assert_eq!((request.repository.as_str(), request.commit.as_str()), ("CyberCTF/web", COMMIT));
         }
         t.lab(id, &[("isoloom.yml", &spec(false))]);
-        assert!(!launch_request(&dirs, "s-1", &claim, None).await.unwrap().privileged);
+        assert!(!launch_request(&dirs, "s-1", &claim.launch, None).await.unwrap().privileged);
     }
 
     #[tokio::test]
@@ -184,7 +183,7 @@ mod tests {
         let id = "agent-approve";
         t.lab(id, &[(".cyberctf-commit", COMMIT), ("isoloom.yml", &spec(false))]);
         for (sid, approve) in [("s-here-yes", true), ("s-here-no", false)] {
-            let request = launch_request(deps.dirs(), sid, &claim_of(id), None).await.unwrap();
+            let request = launch_request(deps.dirs(), sid, &claim_of(id).launch, None).await.unwrap();
             let answered = answer(sid, approve);
             let r = confirm_here(&deps, &request).await;
             answered.await.unwrap();
@@ -215,13 +214,13 @@ mod tests {
         let az = t.host("az1", "azure", json!({}));
         {
             let _policy = policy::Override::with(&[Key::RefusePrivilegedLabs]);
-            let err = launch_request(&dirs, "s-1", &claim_of(id), None).await.unwrap_err();
+            let err = launch_request(&dirs, "s-1", &claim_of(id).launch, None).await.unwrap_err();
             assert_eq!(err.code(), crate::error::Code::TurnedOffByPolicy { setting: "RefusePrivilegedLabs".into() });
         }
         let _policy = policy::Override::with(&[Key::DisableCloudLaunches]);
-        let err = launch_request(&dirs, "s-1", &claim_of(id), Some(&az)).await.unwrap_err();
+        let err = launch_request(&dirs, "s-1", &claim_of(id).launch, Some(&az)).await.unwrap_err();
         assert_eq!(err.code(), crate::error::Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() });
-        assert_eq!(launch_request(&dirs, "s-1", &claim_of(id), None).await.unwrap().place, LaunchPlace::Here, "here is still allowed");
+        assert_eq!(launch_request(&dirs, "s-1", &claim_of(id).launch, None).await.unwrap().place, LaunchPlace::Here, "here is still allowed");
     }
 
     #[test]

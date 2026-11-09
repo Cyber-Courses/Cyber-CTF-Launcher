@@ -188,20 +188,20 @@ async fn accept_until_spent(listener: TcpListener, probe: Arc<Probe>, ttl: Durat
 
 /// The co-location server of the current launch, and its lab. A new launch retires the previous
 /// one, so listeners (and their ports/tokens) don't accumulate for the life of the app.
-static CURRENT: Mutex<Option<(Option<String>, tokio::task::JoinHandle<()>)>> = Mutex::new(None);
+static CURRENT: Mutex<Option<(String, tokio::task::JoinHandle<()>)>> = Mutex::new(None);
 
-fn current() -> std::sync::MutexGuard<'static, Option<(Option<String>, tokio::task::JoinHandle<()>)>> {
+fn current() -> std::sync::MutexGuard<'static, Option<(String, tokio::task::JoinHandle<()>)>> {
     CURRENT.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Starts the control server for lab `lab` on a free loopback port and returns the port. The
 /// previous launch's server is aborted, so only the latest is live.
-pub async fn serve(lab: Option<&str>, token: String, nonce: String) -> Result<u16> {
+pub async fn serve(lab: &str, token: String, nonce: String) -> Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0").await.map_err(Error::Io)?;
     let port = listener.local_addr().map_err(Error::Io)?.port();
     let probe = Arc::new(Probe::new(token, nonce, port));
     let handle = tokio::spawn(accept_until_spent(listener, probe, PROBE_TTL));
-    if let Some((_, old)) = current().replace((lab.map(str::to_string), handle)) {
+    if let Some((_, old)) = current().replace((lab.to_string(), handle)) {
         old.abort();
     }
     Ok(port)
@@ -210,7 +210,7 @@ pub async fn serve(lab: Option<&str>, token: String, nonce: String) -> Result<u1
 /// Ends lab `lab`'s co-location server, if it still runs: the lab is stopping.
 pub fn retire(lab: &str) {
     let mut current = current();
-    if current.as_ref().is_some_and(|(of, _)| of.as_deref() == Some(lab))
+    if current.as_ref().is_some_and(|(of, _)| of == lab)
         && let Some((_, server)) = current.take()
     {
         server.abort();
@@ -400,7 +400,7 @@ mod tests {
     #[tokio::test]
     async fn serve_answers_once_on_loopback_then_closes() {
         let _serial = ONE_AT_A_TIME.lock().await;
-        let port = super::serve(Some("lab-1"), "tok1".into(), "nonce1".into()).await.unwrap();
+        let port = super::serve("lab-1", "tok1".into(), "nonce1".into()).await.unwrap();
         assert!(health(port, "bad").await.starts_with("HTTP/1.1 403"));
         let ok = health(port, "tok1").await;
         assert!(ok.starts_with("HTTP/1.1 200") && ok.contains("nonce1"), "{ok}");
@@ -412,8 +412,8 @@ mod tests {
     #[tokio::test]
     async fn a_new_launch_or_the_lab_stopping_retires_the_server() {
         let _serial = ONE_AT_A_TIME.lock().await;
-        let first = super::serve(Some("lab-1"), "tok1".into(), "nonce1".into()).await.unwrap();
-        let second = super::serve(Some("lab-2"), "tok2".into(), "nonce2".into()).await.unwrap();
+        let first = super::serve("lab-1", "tok1".into(), "nonce1".into()).await.unwrap();
+        let second = super::serve("lab-2", "tok2".into(), "nonce2".into()).await.unwrap();
         assert_ne!(first, second);
         assert!(!health(first, "tok1").await.contains("nonce1"));
         // Another lab stopping leaves it alone; its own lab stopping ends it.

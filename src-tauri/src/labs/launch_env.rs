@@ -10,8 +10,8 @@ use serde::Deserialize;
 use crate::runtime;
 
 /// One variable of a launch's `env`.
-#[derive(Deserialize)]
-pub(super) struct EnvVar {
+#[derive(Clone, Deserialize)]
+pub(crate) struct EnvVar {
     pub(super) name: String,
     pub(super) value: String,
 }

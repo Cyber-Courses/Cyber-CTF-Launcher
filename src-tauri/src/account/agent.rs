@@ -189,53 +189,60 @@ fn update_vars(session_id: &str, state: &str, p: &Progress<'_>) -> Value {
     json!({ "id": session_id, "s": state, "u": p.local_url, "c": p.control_url, "t": p.token, "n": p.nonce, "m": p.message })
 }
 
+/// A launch the website sent this machine, as `claimLaunch` answers it: the lab to download and
+/// run, and the host or cloud account the player picked for it, if any.
+#[derive(Clone, serde::Deserialize)]
+pub(super) struct Claim {
+    #[serde(flatten)]
+    launch: labs::Launch,
+    target: Option<String>,
+}
+
+/// The claim in a `claimLaunch` answer; one missing what a launch needs is an error saying so,
+/// never a launch of an empty lab id or of the wrong runtime.
+fn parse_claim(data: &Value) -> Result<Claim> {
+    serde_json::from_value(data["claimLaunch"].clone()).map_err(|e| Error::Invalid(format!("the website's launch request is incomplete: {e}")))
+}
+
 /// Where a claimed launch runs: the target picked on the website (one of this launcher's hosts
 /// or cloud accounts); else where the app's Start with no place chosen runs it
 /// ([`start_place::default_place`]: where it last ran, else a ready hypervisor here for a VM lab,
 /// else the default server). A cloud lab never runs on an account it wasn't sent to (it costs
 /// money): no target, no launch (`runtime::start` says so).
-async fn launch_place(dirs: &AppDirs, claim: &Value) -> Result<StartPlace> {
-    if let Some(target) = picked_target(claim, |target| server::host_name(dirs, target))? {
+async fn launch_place(dirs: &AppDirs, claim: &Claim) -> Result<StartPlace> {
+    if let Some(target) = picked_target(claim.target.as_deref(), |target| server::host_name(dirs, target))? {
         return Ok(StartPlace { host: Some(target), ..StartPlace::default() });
     }
-    let text = |key: &str| claim[key].as_str().unwrap_or_default();
+    let l = &claim.launch;
     // The player's preferred hypervisor is the webview's (Settings): a website launch takes the
     // first ready one.
-    start_place::default_place(dirs, text("labId"), claim_runtime(claim), (text("repository"), text("commit")), None).await
+    start_place::default_place(dirs, &l.lab_id, l.runtime, (&l.repository, &l.commit), None).await
 }
 
 /// The target picked on the website, given how to name a host (`None` when it isn't set up):
 /// none when it picked none, an error when the host is gone.
-fn picked_target(claim: &Value, host_name: impl Fn(&str) -> Result<Option<String>>) -> Result<Option<String>> {
-    let Some(target) = claim["target"].as_str() else { return Ok(None) };
+fn picked_target(target: Option<&str>, host_name: impl Fn(&str) -> Result<Option<String>>) -> Result<Option<String>> {
+    let Some(target) = target else { return Ok(None) };
     host_name(target)?.map(|_| Some(target.to_string())).ok_or_else(|| Error::Invalid("that host is no longer set up in the launcher".into()))
-}
-
-/// The claimed lab's runtime, by its tag; containers when it names none the launcher knows.
-fn claim_runtime(claim: &Value) -> Runtime {
-    claim["runtime"].as_str().and_then(Runtime::from_tag).unwrap_or(Runtime::Docker)
 }
 
 /// Stops a claimed lab that must not keep running under a failed session. A lab that never got
 /// installed (its download failed) has nothing to stop.
-async fn tear_down(dirs: &AppDirs, lab_id: Option<&str>, runtime: Runtime) -> Result<()> {
-    match lab_id.filter(|id| crate::runtime::lab_installed(dirs, id)) {
-        Some(id) => crate::runtime::stop_lab(dirs, id, runtime, |_line: String| {}).await,
-        None => Ok(()),
-    }
+async fn tear_down(dirs: &AppDirs, lab_id: &str, runtime: Runtime) -> Result<()> {
+    if crate::runtime::lab_installed(dirs, lab_id) { crate::runtime::stop_lab(dirs, lab_id, runtime, |_line: String| {}).await } else { Ok(()) }
 }
 
 /// `failure`, after tearing down what the failed start brought up, when it must be (see
 /// [`undoes`]). A teardown that fails too is said with it: the lab may still be running (and,
 /// on a cloud account, billing), and the website and the log must say so.
-async fn undo_start(dirs: &AppDirs, lab_id: Option<&str>, runtime: Runtime, present_before: bool, failure: Error) -> Error {
+async fn undo_start(dirs: &AppDirs, lab_id: &str, runtime: Runtime, present_before: bool, failure: Error) -> Error {
     if !undoes(&failure, present_before) {
         return failure;
     }
     match tear_down(dirs, lab_id, runtime).await {
         Ok(()) => failure,
         Err(e) => {
-            log::warn!("stopping what a failed launch of {lab_id:?} started: {e}");
+            log::warn!("stopping what a failed launch of {lab_id} started: {e}");
             Error::Invalid(format!("{failure} Stopping what it had started failed too ({e}): stop the lab from its page."))
         }
     }
@@ -250,31 +257,22 @@ fn undoes(failure: &Error, present_before: bool) -> bool {
     !present_before && !failure.is_refusal()
 }
 
-/// Whether something of the claimed lab exists before its start (see `runtime::lab_present`).
-fn present_before(dirs: &AppDirs, claim: &Value) -> bool {
-    match claim["labId"].as_str() {
-        Some(id) => crate::runtime::lab_present(dirs, id),
-        None => false,
-    }
-}
-
 /// Starts a claimed lab at `place` (no host: this machine). A failure tears down what this
-/// start brought up, and only that (see [`undoes`]). Where the lab is reachable here, once
-/// running.
-async fn run_claimed(dirs: &AppDirs, claim: &Value, place: &StartPlace, runtime: Runtime, present_before: bool) -> Result<Option<String>> {
-    let lab_id = claim["labId"].as_str();
+/// start brought up, and only that (see [`undoes`]; `present_before`: whether something of it
+/// was there before, see `runtime::lab_present`). Where the lab is reachable here, once running.
+async fn run_claimed(dirs: &AppDirs, launch: &labs::Launch, place: &StartPlace, present_before: bool) -> Result<Option<String>> {
     let placement =
         labs::Placement { host: place.host.as_deref(), provider: place.provider, per_machine_vm: place.per_machine_vm, ..labs::Placement::default() };
-    match labs::run(dirs, claim.clone(), &placement, |_line: String| {}).await {
+    match labs::run(dirs, launch.clone(), &placement, |_line: String| {}).await {
         Ok(url) => Ok(url),
-        Err(e) => Err(undo_start(dirs, lab_id, runtime, present_before, e).await),
+        Err(e) => Err(undo_start(dirs, &launch.lab_id, launch.runtime, present_before, e).await),
     }
 }
 
 /// Tells the backend the lab runs: where its target is reachable, plus a loopback control
 /// endpoint + one-time token/nonce so the website can verify co-location before trusting the
 /// 127.0.0.1 URL (the endpoint ends once it answered, when the lab stops, or after a while). The relay path for a remote/headless agent is the next step.
-async fn report_running(dirs: &AppDirs, session_id: &str, lab_id: Option<&str>, host: Option<&str>, url: Option<&str>) -> Result<()> {
+async fn report_running(dirs: &AppDirs, session_id: &str, lab_id: &str, host: Option<&str>, url: Option<&str>) -> Result<()> {
     // On a host: its name, else (no longer saved, or the saved hosts unreadable) its id, never
     // "this machine".
     let running_on = running_message(host.map(|h| server::host_name(dirs, h).ok().flatten().unwrap_or_else(|| h.to_string())));
@@ -298,22 +296,22 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
         true,
     )
     .await?;
-    let claim = &data["claimLaunch"];
-    let place = launch_place(deps.dirs(), claim).await?;
+    let claim = parse_claim(&data)?;
+    let place = launch_place(deps.dirs(), &claim).await?;
     let host = place.host.clone();
-    let request = launch_request(deps.dirs(), session_id, claim, host.as_deref()).await?;
+    let request = launch_request(deps.dirs(), session_id, &claim.launch, host.as_deref()).await?;
     update_state(session_id, "PULLING", Progress { message: Some("Waiting for approval on your machine"), ..Default::default() }).await?;
     confirm_here(deps, &request).await?;
-    let runtime = claim_runtime(claim);
+    let launch = &claim.launch;
     // Anything this start brought up before failing (one unhealthy service, say) is torn down, or
     // it would keep running under a FAILED session and every later launch of it would be refused.
-    let present = present_before(deps.dirs(), claim);
-    let url = run_claimed(deps.dirs(), claim, &place, runtime, present).await?;
+    let present = crate::runtime::lab_present(deps.dirs(), &launch.lab_id);
+    let url = run_claimed(deps.dirs(), launch, &place, present).await?;
     // The lab is actually running now. If reporting back to the backend fails, tear down what
     // this start brought up before returning the error, so we don't leave infra running under a
     // session the poller will mark FAILED.
-    if let Err(e) = report_running(deps.dirs(), session_id, claim["labId"].as_str(), host.as_deref(), url.as_deref()).await {
-        return Err(undo_start(deps.dirs(), claim["labId"].as_str(), runtime, present, e).await);
+    if let Err(e) = report_running(deps.dirs(), session_id, &launch.lab_id, host.as_deref(), url.as_deref()).await {
+        return Err(undo_start(deps.dirs(), &launch.lab_id, launch.runtime, present, e).await);
     }
     // A lab launched from the website just started here: let the player know on this machine.
     (deps.notify)("Lab running", "A lab launched from the website is now running on this machine.");
@@ -439,7 +437,7 @@ pub async fn run(deps: Deps) {
         if let Some(agent_id) = agent_id_of(&current)
             && auth::access_token().await.is_ok()
         {
-            let _ = poll_once(&deps, &agent_id).await;
+            let _ = Box::pin(poll_once(&deps, &agent_id)).await;
         }
         tokio::time::sleep(Duration::from_secs(6)).await;
     }
@@ -511,11 +509,26 @@ mod tests {
     }
 
     #[test]
-    fn a_claim_runs_as_a_vm_lab_only_when_it_says_so() {
-        assert!(matches!(claim_runtime(&json!({ "runtime": "VM" })), Runtime::Vm));
-        assert!(matches!(claim_runtime(&json!({ "runtime": "DOCKER" })), Runtime::Docker));
-        assert!(matches!(claim_runtime(&json!({})), Runtime::Docker));
-        assert!(matches!(claim_runtime(&json!({ "runtime": "CLOUD" })), Runtime::Cloud));
+    fn a_claim_is_read_whole_or_refused_saying_what_it_lacks() {
+        // Regression: each field was read on its own with a default, so a claim without a lab id
+        // or with a runtime this launcher doesn't know ran an empty id, or as containers.
+        // The `claimLaunch` answer of lab "web" with `fields` set.
+        let answer = |fields: Value| {
+            let mut claim = claim_json("web");
+            claim.as_object_mut().unwrap().extend(fields.as_object().unwrap().clone());
+            json!({ "claimLaunch": claim })
+        };
+        let claim = parse_claim(&answer(json!({ "target": "aws1" }))).unwrap();
+        let l = &claim.launch;
+        assert_eq!((l.lab_id.as_str(), l.runtime, l.repository.as_str(), l.commit.as_str()), ("web", Runtime::Docker, "CyberCTF/web", COMMIT));
+        assert_eq!(claim.target.as_deref(), Some("aws1"));
+        let vm = parse_claim(&answer(json!({ "runtime": "VM", "target": null }))).unwrap();
+        assert_eq!((vm.launch.runtime, vm.target), (Runtime::Vm, None));
+        for (broken, missing) in [(json!({ "claimLaunch": { "runtime": "DOCKER" } }), "labId"), (answer(json!({ "runtime": "QUANTUM" })), "QUANTUM")] {
+            let err = parse_claim(&broken).err().unwrap().to_string();
+            assert!(err.starts_with("the website's launch request is incomplete: ") && err.contains(missing), "{err}");
+        }
+        assert!(parse_claim(&json!({ "claimLaunch": null })).is_err());
     }
 
     #[test]
@@ -555,13 +568,13 @@ mod tests {
     #[test]
     fn a_launch_goes_to_the_target_picked_on_the_website_while_it_is_set_up() {
         let known = |t: &str| Ok((t == "esxi-1").then(|| "My ESXi".to_string()));
-        assert_eq!(picked_target(&json!({ "target": "esxi-1" }), known).unwrap().as_deref(), Some("esxi-1"));
-        let gone = picked_target(&json!({ "target": "old" }), known).unwrap_err();
+        assert_eq!(picked_target(Some("esxi-1"), known).unwrap().as_deref(), Some("esxi-1"));
+        let gone = picked_target(Some("old"), known).unwrap_err();
         assert_eq!(gone.to_string(), "that host is no longer set up in the launcher");
-        assert_eq!(picked_target(&json!({ "runtime": "VM" }), known).unwrap(), None);
+        assert_eq!(picked_target(None, known).unwrap(), None);
         // Regression: saved hosts that can't be read said "no longer set up", as if it were gone.
         let unreadable = |_: &str| Err(Error::Invalid("server.json: expected value".into()));
-        let err = picked_target(&json!({ "target": "esxi-1" }), unreadable).unwrap_err();
+        let err = picked_target(Some("esxi-1"), unreadable).unwrap_err();
         assert_eq!(err.to_string(), "server.json: expected value");
     }
 
@@ -569,8 +582,9 @@ mod tests {
     async fn a_launch_runs_on_its_picked_host_else_here() {
         let t = crate::testing::test_app::TestApp::new();
         let az = t.host("az1", "azure", json!({}));
-        assert_eq!(launch_place(&t.dirs(), &json!({ "target": az })).await.unwrap().host.as_deref(), Some("az1"));
-        assert_eq!(launch_place(&t.dirs(), &json!({ "labId": "web", "runtime": "DOCKER" })).await.unwrap(), StartPlace::default(), "here");
+        let on_az = Claim { target: Some(az), ..claim_of("web") };
+        assert_eq!(launch_place(&t.dirs(), &on_az).await.unwrap().host.as_deref(), Some("az1"));
+        assert_eq!(launch_place(&t.dirs(), &claim_of("web")).await.unwrap(), StartPlace::default(), "here");
     }
 
     #[test]
@@ -611,18 +625,23 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let dirs = t.dirs();
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
-        tear_down(&dirs, Some("gone"), Runtime::Docker).await.unwrap();
-        tear_down(&dirs, None, Runtime::Vm).await.unwrap();
-        let err = undo_start(&dirs, Some("gone"), Runtime::Docker, false, Error::Invalid("download failed: HTTP 404".into())).await;
+        tear_down(&dirs, "gone", Runtime::Docker).await.unwrap();
+        tear_down(&dirs, "gone", Runtime::Vm).await.unwrap();
+        let err = undo_start(&dirs, "gone", Runtime::Docker, false, Error::Invalid("download failed: HTTP 404".into())).await;
         assert_eq!(err.to_string(), "download failed: HTTP 404");
         assert_eq!(tools.calls(), [] as [&str; 0]);
     }
 
     pub(super) const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
-    /// A website claim of lab `id` (Docker) at another commit than the one installed.
-    pub(super) fn claim_of(id: &str) -> Value {
+    /// A `claimLaunch` answer of lab `id` (Docker) at another commit than the one installed.
+    fn claim_json(id: &str) -> Value {
         json!({ "labId": id, "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": COMMIT, "env": [] })
+    }
+
+    /// A website claim of lab `id` (Docker) at another commit than the one installed, no target.
+    pub(super) fn claim_of(id: &str) -> Claim {
+        parse_claim(&json!({ "claimLaunch": claim_json(id) })).unwrap()
     }
 
     #[tokio::test]
@@ -641,9 +660,8 @@ mod tests {
         std::fs::create_dir_all(&state).unwrap();
         std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
-        let claim = claim_of(id);
-        assert!(present_before(&dirs, &claim));
-        let err = run_claimed(&dirs, &claim, &StartPlace::default(), Runtime::Docker, false).await.unwrap_err();
+        assert!(crate::runtime::lab_present(&dirs, id));
+        let err = run_claimed(&dirs, &claim_of(id).launch, &StartPlace::default(), false).await.unwrap_err();
         assert!(err.is_refusal() && err.to_string().contains("still running on Host aws1"), "{err}");
         assert!(!tools.called("terraform"), "nothing torn down: {:?}", tools.calls());
         assert!(state.join("terraform.tfstate").is_file());
@@ -661,7 +679,7 @@ mod tests {
         crate::runtime::test_support::record_run(t.data(), id, Some("pve1"), "proxmox", "ready");
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let failure = Error::Invalid("the lab host didn't answer".into());
-        let err = undo_start(&t.dirs(), Some(id), Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id), failure).await;
+        let err = undo_start(&t.dirs(), id, Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id), failure).await;
         assert_eq!(err.to_string(), "the lab host didn't answer");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert_eq!(server::marked_host(&dir).as_deref(), Some("pve1"));
