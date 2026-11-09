@@ -54,13 +54,6 @@ allow = [
 ]
 confidence-threshold = 0.9
 
-# The launcher itself. Its Cargo.toml `license` field is still empty; drop this once it says
-# "Apache-2.0".
-[[licenses.clarify]]
-crate = "cyberctf-desktop"
-expression = "Apache-2.0"
-license-files = []
-
 [bans]
 # Tauri, wry and the windows crates bring several majors of some crates; reported, not failed.
 multiple-versions = "warn"
