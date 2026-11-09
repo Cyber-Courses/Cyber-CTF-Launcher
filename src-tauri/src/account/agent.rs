@@ -278,9 +278,15 @@ async fn report_running(dirs: &AppDirs, session_id: &str, lab_id: &str, host: Op
     let running_on = running_message(host.map(|h| server::host_name(dirs, h).ok().flatten().unwrap_or_else(|| h.to_string())));
     let token = random_hex();
     let nonce = random_hex();
-    let control_url = colocation::serve(lab_id, token.clone(), nonce.clone()).await.ok().map(|port| format!("http://127.0.0.1:{port}"));
+    let control_url = control_url(lab_id, colocation::serve(lab_id, token.clone(), nonce.clone()).await);
     let progress = Progress { local_url: url, control_url: control_url.as_deref(), token: Some(&token), nonce: Some(&nonce), message: Some(&running_on) };
     update_state(session_id, "RUNNING", progress).await
+}
+
+/// The co-location server's address, from the port it was `served` on. Without one the website
+/// can't check the lab runs here, but the lab still runs: logged, not fatal.
+fn control_url(lab_id: &str, served: Result<u16>) -> Option<String> {
+    served.map(|port| format!("http://127.0.0.1:{port}")).inspect_err(|e| log::warn!("the co-location check of {lab_id} couldn't start: {e}")).ok()
 }
 
 /// Where the website says the lab runs: the host's name, or this machine.
@@ -318,11 +324,13 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Picks up and runs every pending launch aimed at this agent.
-async fn poll_once(deps: &Deps, agent_id: &str) -> Result<()> {
-    let data = api::graphql("query ($a: ID) { myPendingLaunches(agentId: $a) { id } }", json!({ "a": agent_id }), true).await?;
-    claim_each(pending_ids(&data), |sid| async move { claim_and_run(deps, &sid).await }, report_failed).await;
-    Ok(())
+/// Picks up and runs every pending launch aimed at this agent. A failed read of them is logged;
+/// the next poll asks again.
+async fn poll_once(deps: &Deps, agent_id: &str) {
+    match api::graphql("query ($a: ID) { myPendingLaunches(agentId: $a) { id } }", json!({ "a": agent_id }), true).await {
+        Ok(data) => claim_each(pending_ids(&data), |sid| async move { claim_and_run(deps, &sid).await }, report_failed).await,
+        Err(e) => log::warn!("myPendingLaunches failed: {e}"),
+    }
 }
 
 /// The session ids in a `myPendingLaunches` answer (entries without one are skipped).
@@ -350,7 +358,9 @@ where
 
 /// Marks a session FAILED on the backend, with the reason shown on the website.
 async fn report_failed(session_id: String, why: String) {
-    let _ = update_state(&session_id, "FAILED", Progress { message: Some(&why), ..Default::default() }).await;
+    if let Err(e) = update_state(&session_id, "FAILED", Progress { message: Some(&why), ..Default::default() }).await {
+        log::warn!("lab session {session_id} couldn't be marked failed on the website: {e}");
+    }
 }
 
 /// The agent this machine is registered as, and the account it was registered for.
@@ -437,7 +447,7 @@ pub async fn run(deps: Deps) {
         if let Some(agent_id) = agent_id_of(&current)
             && auth::access_token().await.is_ok()
         {
-            let _ = Box::pin(poll_once(&deps, &agent_id)).await;
+            Box::pin(poll_once(&deps, &agent_id)).await;
         }
         tokio::time::sleep(Duration::from_secs(6)).await;
     }
@@ -709,6 +719,23 @@ mod tests {
     fn the_running_message_names_the_host_or_this_machine() {
         assert_eq!(running_message(Some("My Proxmox".into())), "Running on My Proxmox");
         assert_eq!(running_message(None), "Running on your machine");
+    }
+
+    #[tokio::test]
+    async fn the_agents_failures_with_the_website_are_logged_not_dropped() {
+        // Regression: a failed poll, a session that couldn't be marked failed and a co-location
+        // check that couldn't start were all dropped without a word in the log.
+        let t = crate::testing::test_app::TestApp::new();
+        crate::testing::logs::take_warnings();
+        Box::pin(poll_once(&test_deps(&t, Arc::default()), "agent-1")).await;
+        report_failed("s-1".into(), "it broke".into()).await;
+        assert_eq!(control_url("web", Err(Error::Invalid("no free port".into()))), None);
+        assert_eq!(control_url("web", Ok(47100)).as_deref(), Some("http://127.0.0.1:47100"));
+        let logged = crate::testing::logs::take_warnings();
+        assert!(logged[0].starts_with("myPendingLaunches failed: "), "{logged:?}");
+        assert!(logged[1].starts_with("lab session s-1 couldn't be marked failed on the website: "), "{logged:?}");
+        assert_eq!(logged[2], "the co-location check of web couldn't start: no free port");
+        assert_eq!(logged.len(), 3, "{logged:?}");
     }
 
     #[test]
