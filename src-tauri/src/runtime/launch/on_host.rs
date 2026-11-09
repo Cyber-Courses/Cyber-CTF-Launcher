@@ -17,7 +17,7 @@ pub(super) async fn start_on_server(
     let LabRef { dir, id, runtime } = lab;
     // Refuse before any side effect (the secret, GCP, the marker).
     if per_machine {
-        per_machine_runs_on(server::host_provider(dirs, host))?;
+        per_machine_runs_on(server::host_provider(dirs, host)?)?;
     }
     let conn = server::connection(dirs, host)?;
     // GCP labs run in the account's labs project: make sure it exists (one free billing slot).

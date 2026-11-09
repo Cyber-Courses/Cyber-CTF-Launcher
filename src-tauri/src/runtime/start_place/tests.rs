@@ -147,6 +147,20 @@ async fn a_vm_lab_starts_here_on_the_preferred_hypervisor_when_it_is_ready_and_r
     assert_eq!(preferring(&t, "ad", Runtime::Vm, &ready, Some(Provider::Libvirt)).await, here_on(Provider::Virtualbox));
 }
 
+#[tokio::test]
+async fn a_lab_last_on_a_server_is_an_error_when_the_saved_servers_cant_be_read() {
+    // Regression: an unreadable server.json read as "no such server", so a lab last run on
+    // Proxmox started here instead.
+    let t = TestApp::new();
+    installed(&t, "ad", &vms_on(arches().0));
+    let pve = t.host("pve", "proxmox", serde_json::json!({}));
+    record_run(t.data(), "ad", Some(&pve), "proxmox", "absent");
+    std::fs::write(t.data().join("server.json"), "{ not json").unwrap();
+    let ready = vec![Provider::Virtualbox];
+    let place = Box::pin(default_place_with(&t.dirs(), ("ad", Runtime::Vm), ("CyberCTF/lab", SHA), None, async move || ready)).await;
+    assert!(place.is_err(), "{place:?}");
+}
+
 /// Lab `id`'s recorded run used Vagrant's `provider`.
 fn set_provider(t: &TestApp, id: &str, provider: &str) {
     let path = t.data().join("runs").join(format!("cyberctf-{id}")).join("record.json");

@@ -246,17 +246,21 @@ async fn launch_place(dirs: &AppDirs, claim: &Value) -> Result<StartPlace> {
 
 /// The target picked on the website, given how to name a host (`None` when it isn't set up):
 /// none when it picked none, an error when the host is gone.
-fn picked_target(claim: &Value, host_name: impl Fn(&str) -> Option<String>) -> Result<Option<String>> {
+fn picked_target(claim: &Value, host_name: impl Fn(&str) -> Result<Option<String>>) -> Result<Option<String>> {
     let Some(target) = claim["target"].as_str() else { return Ok(None) };
-    host_name(target).map(|_| Some(target.to_string())).ok_or_else(|| Error::Invalid("that host is no longer set up in the launcher".into()))
+    host_name(target)?.map(|_| Some(target.to_string())).ok_or_else(|| Error::Invalid("that host is no longer set up in the launcher".into()))
 }
 
 /// Running on a cloud account costs money, so a website launch onto one isn't auto-run: ask
 /// the user to confirm on this machine first (local and server targets still run unattended).
 async fn confirm_if_cloud(deps: &Deps, session_id: &str, claim: &Value, host: Option<&str>) -> Result<()> {
     let dirs = deps.dirs();
-    let Some(id) = host.filter(|id| server::host_provider(dirs, id).is_some_and(crate::runtime::providers::Provider::is_cloud)) else { return Ok(()) };
-    let target = server::host_name(dirs, id).unwrap_or_else(|| id.to_string());
+    let Some(id) = host else { return Ok(()) };
+    // Unreadable saved hosts are an error: a cloud launch must never read as a free one.
+    if !server::host_provider(dirs, id)?.is_some_and(crate::runtime::providers::Provider::is_cloud) {
+        return Ok(());
+    }
+    let target = server::host_name(dirs, id)?.unwrap_or_else(|| id.to_string());
     let repo = claim["repository"].as_str().unwrap_or("");
     let commit = claim["commit"].as_str().unwrap_or("");
     if confirm_cloud_launch(deps, session_id, repo, commit, &target).await {
@@ -333,7 +337,9 @@ async fn run_claimed(dirs: &AppDirs, claim: &Value, place: &StartPlace, runtime:
 /// endpoint + one-time token/nonce so the website can verify co-location before trusting the
 /// 127.0.0.1 URL (the endpoint ends once it answered, when the lab stops, or after a while). The relay path for a remote/headless agent is the next step.
 async fn report_running(dirs: &AppDirs, session_id: &str, lab_id: Option<&str>, host: Option<&str>, url: Option<&str>) -> Result<()> {
-    let running_on = running_message(host.and_then(|h| server::host_name(dirs, h)));
+    // On a host: its name, else (no longer saved, or the saved hosts unreadable) its id, never
+    // "this machine".
+    let running_on = running_message(host.map(|h| server::host_name(dirs, h).ok().flatten().unwrap_or_else(|| h.to_string())));
     let token = random_hex();
     let nonce = random_hex();
     let control_url = colocation::serve(lab_id, token.clone(), nonce.clone()).await.ok().map(|port| format!("http://127.0.0.1:{port}"));
@@ -604,11 +610,15 @@ mod tests {
 
     #[test]
     fn a_launch_goes_to_the_target_picked_on_the_website_while_it_is_set_up() {
-        let known = |t: &str| (t == "esxi-1").then(|| "My ESXi".to_string());
+        let known = |t: &str| Ok((t == "esxi-1").then(|| "My ESXi".to_string()));
         assert_eq!(picked_target(&json!({ "target": "esxi-1" }), known).unwrap().as_deref(), Some("esxi-1"));
         let gone = picked_target(&json!({ "target": "old" }), known).unwrap_err();
         assert_eq!(gone.to_string(), "that host is no longer set up in the launcher");
         assert_eq!(picked_target(&json!({ "runtime": "VM" }), known).unwrap(), None);
+        // Regression: saved hosts that can't be read said "no longer set up", as if it were gone.
+        let unreadable = |_: &str| Err(Error::Invalid("server.json: expected value".into()));
+        let err = picked_target(&json!({ "target": "esxi-1" }), unreadable).unwrap_err();
+        assert_eq!(err.to_string(), "server.json: expected value");
     }
 
     #[test]

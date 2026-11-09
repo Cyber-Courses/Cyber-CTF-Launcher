@@ -69,7 +69,10 @@ where
     }
     let lab = lab::lab_at(dirs, lab_id, repository, commit).await?;
     let options = lab::run_options(&lab, runtime);
-    let last = last.and_then(|run| last_place(dirs, run, runtime, &options));
+    let last = match last {
+        Some(run) => last_place(dirs, run, runtime, &options)?,
+        None => None,
+    };
     if runtime != Runtime::Vm {
         return Ok(last.unwrap_or_default());
     }
@@ -98,22 +101,23 @@ where
 /// Where the lab last ran (`run`, the runner's record of it, read from files only: a record that
 /// can't be read is the caller's error), while it can start there again: a saved server the spec
 /// still runs on, or here in the same form on a hypervisor the spec still runs on. None when it
-/// can't run there now.
-fn last_place(dirs: &AppDirs, run: isothrum_runner::RunRecord, runtime: Runtime, options: &RunOptions) -> Option<StartPlace> {
+/// can't run there now; an error when the saved servers can't be read (it would start here
+/// instead of on its server).
+fn last_place(dirs: &AppDirs, run: isothrum_runner::RunRecord, runtime: Runtime, options: &RunOptions) -> Result<Option<StartPlace>> {
     use isothrum_runner::isoloom_manifest::Target;
     if let Some(host) = run.host_label {
-        let kind = server::host_provider(dirs, &host).filter(|p| !p.is_cloud());
-        return kind.filter(|k| offers(&options.servers, *k)).map(|_| StartPlace { host: Some(host), ..StartPlace::default() });
+        let kind = server::host_provider(dirs, &host)?.filter(|p| !p.is_cloud());
+        return Ok(kind.filter(|k| offers(&options.servers, *k)).map(|_| StartPlace { host: Some(host), ..StartPlace::default() }));
     }
     let provider = run.provider.as_deref().and_then(Provider::from_id);
-    match (run.target, provider) {
+    Ok(match (run.target, provider) {
         (Target::Docker, _) if options.docker.is_some() => Some(StartPlace::default()),
         (Target::DockerVm, Some(p)) if offers(&options.docker_vm, p) => Some(StartPlace { provider: Some(p), ..StartPlace::default() }),
         (Target::Vagrant, Some(p)) if offers(&options.vms, p) => {
             Some(StartPlace { provider: Some(p), per_machine_vm: runtime == Runtime::Docker, ..StartPlace::default() })
         }
         _ => None,
-    }
+    })
 }
 
 /// Whether `paths` has one on `provider`.

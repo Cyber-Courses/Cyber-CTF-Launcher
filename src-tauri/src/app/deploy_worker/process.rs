@@ -401,18 +401,24 @@ const TERRAFORM_GRACE_CHECKS: u32 = 1200;
 const TERRAFORM_APPLY_WAIT_CHECKS: u32 = 2400;
 
 /// Whether `job` is a launch on a Terraform-driven host (a cloud account, Proxmox), given that
-/// host's provider: a worker mid-`terraform apply` must not be killed outright.
+/// host's provider: a worker mid-`terraform apply` must not be killed outright. With the saved
+/// hosts unreadable (`host_provider` an error), a launch on any host counts as one: interrupted
+/// first rather than killed mid-apply.
 #[cfg(any(windows, test))]
-fn terraform_launch(job: &Job, host_provider: Option<crate::runtime::providers::Provider>) -> bool {
-    job.op == super::Op::Launch && host_provider.is_some_and(|p| crate::runtime::server::terraform_target(p).is_some())
+fn terraform_launch(job: &Job, host_provider: &crate::error::Result<Option<crate::runtime::providers::Provider>>) -> bool {
+    let terraform = match host_provider {
+        Ok(provider) => provider.is_some_and(|p| crate::runtime::server::terraform_target(p).is_some()),
+        Err(_) => job.host.is_some(),
+    };
+    job.op == super::Op::Launch && terraform
 }
 
 /// [`terraform_launch`] for the job a worker's files describe.
 #[cfg(windows)]
 fn launches_terraform(dirs: &AppDirs, f: &Files) -> bool {
     let Some(job) = std::fs::read(&f.job).ok().and_then(|b| serde_json::from_slice::<Job>(&b).ok()) else { return false };
-    let provider = job.host.as_deref().and_then(|h| crate::runtime::server::host_provider(dirs, h));
-    terraform_launch(&job, provider)
+    let provider = job.host.as_deref().map_or(Ok(None), |h| crate::runtime::server::host_provider(dirs, h));
+    terraform_launch(&job, &provider)
 }
 
 /// [`kill`], then waits until the worker is gone (SIGKILL to its group after 20 s), so what
@@ -571,15 +577,20 @@ mod tests {
     fn a_launch_on_a_terraform_host_is_told_apart() {
         use crate::runtime::providers::Provider;
         let launch = Job { host: Some("h".into()), ..Job::on_lab("lab-1", super::super::Op::Launch) };
-        assert!(terraform_launch(&launch, Some(Provider::Aws)));
-        assert!(terraform_launch(&launch, Some(Provider::Proxmox)));
-        assert!(!terraform_launch(&launch, Some(Provider::VmwareEsxi)));
-        assert!(!terraform_launch(&launch, None));
+        assert!(terraform_launch(&launch, &Ok(Some(Provider::Aws))));
+        assert!(terraform_launch(&launch, &Ok(Some(Provider::Proxmox))));
+        assert!(!terraform_launch(&launch, &Ok(Some(Provider::VmwareEsxi))));
+        assert!(!terraform_launch(&launch, &Ok(None)));
+        // Regression: an unreadable server.json read as "no such host", so a Terraform launch was
+        // killed outright mid-apply. Now a launch on any host is interrupted first.
+        assert!(terraform_launch(&launch, &Err(crate::error::Error::Invalid("server.json: broken".into()))));
+        let here = Job { host: None, ..launch.clone() };
+        assert!(!terraform_launch(&here, &Ok(None)));
         let park = Job {
             host: Some("h".into()),
             ..Job::on_lab("lab-1", super::super::Op::Park { runtime: crate::runtime::Runtime::Vm, mode: crate::runtime::Park::Pause })
         };
-        assert!(!terraform_launch(&park, Some(Provider::Aws)));
+        assert!(!terraform_launch(&park, &Ok(Some(Provider::Aws))));
     }
 
     #[test]

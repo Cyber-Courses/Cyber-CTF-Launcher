@@ -166,14 +166,14 @@ fn targets_of(store: &Store) -> Vec<serde_json::Value> {
     store.hosts.iter().map(|h| serde_json::json!({ "id": h.id, "name": h.name, "provider": h.provider.id() })).collect()
 }
 
-/// A host's display name, if it exists.
-pub fn host_name(dirs: &AppDirs, id: &str) -> Option<String> {
-    saved_host(dirs, id).map(|h| h.name)
+/// A host's display name, if it is saved; an error when `server.json` can't be read.
+pub fn host_name(dirs: &AppDirs, id: &str) -> Result<Option<String>> {
+    Ok(saved_host(dirs, id)?.map(|h| h.name))
 }
 
-/// A host's provider, if it exists.
-pub fn host_provider(dirs: &AppDirs, id: &str) -> Option<Provider> {
-    saved_host(dirs, id).map(|h| h.provider)
+/// A host's provider, if it is saved; an error when `server.json` can't be read.
+pub fn host_provider(dirs: &AppDirs, id: &str) -> Result<Option<Provider>> {
+    Ok(saved_host(dirs, id)?.map(|h| h.provider))
 }
 
 /// The server marked as default, and its provider, if one is (`start_place::default_place` decides

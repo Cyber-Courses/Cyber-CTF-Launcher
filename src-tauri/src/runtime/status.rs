@@ -100,14 +100,20 @@ pub(crate) struct Up {
 /// only: no tool runs and no host is reached. A record that can't be read is an error, never
 /// "nothing up".
 pub(crate) fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
-    let up =
-        |host: Option<String>, parked: bool| Up { host_name: host.as_ref().map(|h| server::host_name(dirs, h).unwrap_or_else(|| h.clone())), host, parked };
+    // Named as the player reads it: by its id when it is no longer saved.
+    let up = |host: Option<String>, parked: bool| -> Result<Up> {
+        let host_name = match &host {
+            Some(h) => Some(server::host_name(dirs, h)?.unwrap_or_else(|| h.clone())),
+            None => None,
+        };
+        Ok(Up { host, host_name, parked })
+    };
     if let Some(host) = awaiting_hand_over(dirs, id) {
-        return Ok(Some(up(Some(host), false)));
+        return up(Some(host), false).map(Some);
     }
     let name = docker::project(id);
     let run = isothrum::records(&runner_home(dirs)?)?.into_iter().find(|r| r.name.as_str() == name);
-    Ok(run.filter(|r| r.state != isothrum_runner::RunState::Absent).map(|r| up(r.host_label, r.state == isothrum_runner::RunState::Parked)))
+    run.filter(|r| r.state != isothrum_runner::RunState::Absent).map(|r| up(r.host_label, r.state == isothrum_runner::RunState::Parked)).transpose()
 }
 
 /// The host a deployment of lab `id` on the launcher's own Terraform path is on, while one still

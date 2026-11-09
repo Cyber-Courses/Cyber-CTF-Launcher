@@ -67,9 +67,10 @@ pub(crate) fn find(store: &Store, id: &str) -> Result<HostProfile> {
     store.hosts.iter().find(|h| h.id == id).cloned().ok_or_else(|| Error::Invalid(format!("server host `{id}` not found")))
 }
 
-/// A saved host by id, if the store reads and has it.
-pub(super) fn saved_host(dirs: &AppDirs, id: &str) -> Option<HostProfile> {
-    load(dirs).ok()?.hosts.into_iter().find(|h| h.id == id)
+/// A saved host by id, if the store has it. A store that can't be read is an error, never "no
+/// such host": a lab on a server would read as one here, a cloud launch as a free one.
+pub(super) fn saved_host(dirs: &AppDirs, id: &str) -> Result<Option<HostProfile>> {
+    Ok(load(dirs)?.hosts.into_iter().find(|h| h.id == id))
 }
 
 /// A saved host by id, with the reason when it can't be had.
@@ -109,6 +110,19 @@ mod tests {
         assert_eq!(find(&back, "ab12").unwrap(), host);
         assert_eq!(find(&back, "zz").unwrap_err().to_string(), "server host `zz` not found");
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_store_is_an_error_never_no_such_host() {
+        // Regression: `saved_host` read a broken server.json as "no such host": a lab on a server
+        // then started here, and a website launch onto a cloud account skipped its cost prompt.
+        let t = crate::testing::test_app::TestApp::new();
+        let id = t.host("pve", "proxmox", serde_json::json!({}));
+        assert_eq!(saved_host(&t.dirs(), &id).unwrap().map(|h| h.provider), Some(Provider::Proxmox));
+        std::fs::write(t.data().join(STORE_FILE), "{ not json").unwrap();
+        assert!(saved_host(&t.dirs(), &id).is_err());
+        assert!(super::super::host_provider(&t.dirs(), &id).is_err());
+        assert!(super::super::host_name(&t.dirs(), &id).is_err());
     }
 
     #[test]
