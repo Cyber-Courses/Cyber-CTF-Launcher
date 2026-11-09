@@ -155,9 +155,10 @@ fn connection_for(host: &HostProfile, password: &str) -> Connection {
 }
 
 /// The player's hosts and cloud accounts as launch targets for the website
-/// (`{ id, name, provider }`), reported by the launcher agent.
-pub fn launch_targets(dirs: &AppDirs) -> Vec<serde_json::Value> {
-    load(dirs).map(|s| targets_of(&s)).unwrap_or_default()
+/// (`{ id, name, provider }`), reported by the launcher agent. A `server.json` that can't be read
+/// is an error: reported as "no targets", every host would vanish from the website.
+pub fn launch_targets(dirs: &AppDirs) -> Result<Vec<serde_json::Value>> {
+    load(dirs).map(|s| targets_of(&s))
 }
 
 /// `launch_targets` of a loaded store.
@@ -176,9 +177,10 @@ pub fn host_provider(dirs: &AppDirs, id: &str) -> Option<Provider> {
 }
 
 /// The server marked as default, and its provider, if one is (`labs::default_host` decides
-/// whether a lab starts there).
-pub fn default_server(dirs: &AppDirs) -> Option<(String, Provider)> {
-    default_of(load(dirs).ok()?)
+/// whether a lab starts there). A `server.json` that can't be read is an error, never "no
+/// default": the lab would start here instead of on the server the player chose.
+pub fn default_server(dirs: &AppDirs) -> Result<Option<(String, Provider)>> {
+    Ok(default_of(load(dirs)?))
 }
 
 /// `default_server` of a loaded store.
@@ -285,6 +287,29 @@ mod tests {
         assert_eq!(targets.len(), 2);
         assert_eq!(targets[0], serde_json::json!({ "id": "pve1", "name": "Lab", "provider": "proxmox" }));
         assert_eq!(targets[1]["provider"], "aws");
+    }
+
+    #[test]
+    fn a_damaged_server_list_is_an_error_not_no_default_and_no_targets() {
+        // Regression: a server.json that couldn't be read read as "no default server" and "no
+        // targets", so a VM lab started here instead of on the player's server and the website
+        // lost every host, with nothing said.
+        let t = crate::testing::test_app::TestApp::new();
+        let pve = t.host("pve1", "proxmox", serde_json::json!({}));
+        crate::runtime::server::store::update(&t.dirs(), |s| {
+            s.default = Some(pve.clone());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(default_server(&t.dirs()).unwrap(), Some(("pve1".into(), Provider::Proxmox)));
+        assert_eq!(launch_targets(&t.dirs()).unwrap().len(), 1);
+        std::fs::write(t.data().join("server.json"), "{ not json").unwrap();
+        assert!(default_server(&t.dirs()).unwrap_err().to_string().starts_with("server.json:"));
+        assert!(launch_targets(&t.dirs()).is_err());
+        // No file yet is no host at all, not an error.
+        std::fs::remove_file(t.data().join("server.json")).unwrap();
+        assert_eq!(default_server(&t.dirs()).unwrap(), None);
+        assert!(launch_targets(&t.dirs()).unwrap().is_empty());
     }
 
     #[test]

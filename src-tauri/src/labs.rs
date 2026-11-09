@@ -375,7 +375,7 @@ pub(crate) async fn default_host(dirs: &AppDirs, lab_id: &str, runtime: Runtime,
     if runtime != Runtime::Vm {
         return Ok(None);
     }
-    let Some((id, provider)) = runtime::server::default_server(dirs) else { return Ok(None) };
+    let Some((id, provider)) = runtime::server::default_server(dirs)? else { return Ok(None) };
     let spec = runtime::lab::spec_at(dirs, lab_id, repository, commit).await?;
     Ok(runtime::lab::runs_on_server(&spec, provider, runtime).then_some(id))
 }

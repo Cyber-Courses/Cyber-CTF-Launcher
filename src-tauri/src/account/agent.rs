@@ -144,7 +144,7 @@ fn capabilities() -> Vec<String> {
 async fn register(dirs: &AppDirs) -> Result<String> {
     let data = api::graphql(
         "mutation ($i: ID!, $n: String!, $c: [String!]!, $a: String, $t: [LaunchTargetInput!], $v: String, $o: String) { registerLauncher(installId: $i, name: $n, capabilities: $c, arch: $a, targets: $t, version: $v, os: $o) { id } }",
-        json!({ "i": install_id(dirs)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(dirs), "v": app_version(), "o": os_label() }),
+        json!({ "i": install_id(dirs)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(dirs)?, "v": app_version(), "o": os_label() }),
         true,
     )
     .await?;
@@ -156,7 +156,7 @@ async fn register(dirs: &AppDirs) -> Result<String> {
 async fn heartbeat(dirs: &AppDirs, agent_id: &str) -> Result<()> {
     api::graphql(
         "mutation ($id: ID!, $t: [LaunchTargetInput!], $v: String, $o: String) { launcherHeartbeat(agentId: $id, targets: $t, version: $v, os: $o) { id } }",
-        json!({ "id": agent_id, "t": server::launch_targets(dirs), "v": app_version(), "o": os_label() }),
+        json!({ "id": agent_id, "t": server::launch_targets(dirs)?, "v": app_version(), "o": os_label() }),
         true,
     )
     .await
@@ -443,8 +443,9 @@ fn spawn_heartbeat(dirs: AppDirs, current: Arc<Mutex<Option<Registration>>>) {
         loop {
             if let Some(agent_id) = agent_id_of(&current)
                 && auth::access_token().await.is_ok()
+                && let Err(e) = heartbeat(&dirs, &agent_id).await
             {
-                let _ = heartbeat(&dirs, &agent_id).await;
+                log::warn!("launcherHeartbeat failed: {e}");
             }
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
