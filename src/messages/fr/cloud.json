@@ -24,9 +24,18 @@
     "title": "Lancez des labs dans votre propre compte cloud",
     "body": "Une instance jetable par lab, détruite quand vous l'arrêtez. Fonctionne sur AWS, Azure ou Google Cloud.",
     "steps": {
-      "connect": { "title": "Connectez un compte", "body": "Des clés d'accès ou vos identifiants de la CLI AWS, et une région." },
-      "pick": { "title": "Choisissez-le sur un lab", "body": "Terraform crée une instance, joignable en SSH depuis votre IP." },
-      "stop": { "title": "Attaquez, puis arrêtez", "body": "Arrêter détruit l'instance, la facturation s'arrête donc avec elle." }
+      "connect": {
+        "title": "Connectez un compte",
+        "body": "Des clés d'accès ou vos identifiants de la CLI AWS, et une région."
+      },
+      "pick": {
+        "title": "Choisissez-le sur un lab",
+        "body": "Terraform crée une instance, joignable en SSH depuis votre IP."
+      },
+      "stop": {
+        "title": "Attaquez, puis arrêtez",
+        "body": "Arrêter détruit l'instance, la facturation s'arrête donc avec elle."
+      }
     }
   },
   "account": {
@@ -52,8 +61,6 @@
     "remove": "Supprimer",
     "cancel": "Annuler",
     "test": "Tester",
-    "edit": "Modifier",
-    "installed": "installé",
-    "notInstalled": "non installé"
+    "edit": "Modifier"
   }
 }

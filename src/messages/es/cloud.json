@@ -24,9 +24,18 @@
     "title": "Ejecuta labs en tu propia cuenta en la nube",
     "body": "Una instancia desechable por lab, destruida al detenerlo. Funciona en AWS, Azure o Google Cloud.",
     "steps": {
-      "connect": { "title": "Conecta una cuenta", "body": "Claves de acceso o tus credenciales de AWS CLI, y una región." },
-      "pick": { "title": "Elígela en un lab", "body": "Terraform crea una instancia, accesible por SSH desde tu IP." },
-      "stop": { "title": "Ataca y luego Detén", "body": "Detener destruye la instancia, así que la facturación se detiene con ella." }
+      "connect": {
+        "title": "Conecta una cuenta",
+        "body": "Claves de acceso o tus credenciales de AWS CLI, y una región."
+      },
+      "pick": {
+        "title": "Elígela en un lab",
+        "body": "Terraform crea una instancia, accesible por SSH desde tu IP."
+      },
+      "stop": {
+        "title": "Ataca y luego Detén",
+        "body": "Detener destruye la instancia, así que la facturación se detiene con ella."
+      }
     }
   },
   "account": {
@@ -52,8 +61,6 @@
     "remove": "Eliminar",
     "cancel": "Cancelar",
     "test": "Probar",
-    "edit": "Editar",
-    "installed": "instalado",
-    "notInstalled": "no instalado"
+    "edit": "Editar"
   }
 }

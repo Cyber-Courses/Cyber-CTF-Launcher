@@ -24,9 +24,18 @@
     "title": "Run labs in your own cloud account",
     "body": "One throwaway instance per lab, destroyed when you stop it. Runs on AWS, Azure or Google Cloud.",
     "steps": {
-      "connect": { "title": "Connect an account", "body": "Access keys or your AWS CLI credentials, and a region." },
-      "pick": { "title": "Pick it on a lab", "body": "Terraform creates one instance, reachable over SSH from your IP." },
-      "stop": { "title": "Attack, then Stop", "body": "Stop destroys the instance, so billing stops with it." }
+      "connect": {
+        "title": "Connect an account",
+        "body": "Access keys or your AWS CLI credentials, and a region."
+      },
+      "pick": {
+        "title": "Pick it on a lab",
+        "body": "Terraform creates one instance, reachable over SSH from your IP."
+      },
+      "stop": {
+        "title": "Attack, then Stop",
+        "body": "Stop destroys the instance, so billing stops with it."
+      }
     }
   },
   "account": {
@@ -52,8 +61,6 @@
     "remove": "Remove",
     "cancel": "Cancel",
     "test": "Test",
-    "edit": "Edit",
-    "installed": "installed",
-    "notInstalled": "not installed"
+    "edit": "Edit"
   }
 }

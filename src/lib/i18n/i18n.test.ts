@@ -50,13 +50,20 @@ function appSources(dir: string): string[] {
 }
 
 describe("message use", () => {
-  it("every English message is used by the app: its key written out, or under a prefix a key is built from", () => {
+  it("every English message is used by the app: its key written out, or one segment where a key is built", () => {
     const src = fileURLToPath(new URL("../..", import.meta.url));
     const code = appSources(src).map((f) => fs.readFileSync(f, "utf8"));
     // `"labs.attackBox.start"`, and `t(\`labs.places.${key}\`)`'s "labs.places.".
     const written = new Set(code.flatMap((c) => [...c.matchAll(/["'`]([a-z]\w*(?:\.[\w-]+)+)["'`]/g)].map((m) => m[1])));
-    const prefixes = [...new Set(code.flatMap((c) => [...c.matchAll(/`([a-z]\w*(?:\.[\w-]+)*\.)\$\{/g)].map((m) => m[1])))];
-    const unused = leaves(en).filter((key) => !written.has(key) && !prefixes.some((p) => key.startsWith(p)));
+    // Each built key's shape: what is written before its `${…}` and after it (`home.capacity.` and
+    // `.title` in `home.capacity.${level}.title`).
+    const shapes = code.flatMap((c) => [...c.matchAll(/`([a-z]\w*(?:\.[\w-]+)*\.)\$\{[^}]*\}((?:\.[\w-]+)*)`/g)].map((m) => [m[1], m[2]] as const));
+    // A built key (`labs.places.${key}`) reaches one segment where its `${…}` is, never a whole
+    // subtree: the prefix alone hid dead keys (`cloud.account.installed` under
+    // `cloud.account.${kind}`).
+    const built = (key: string) =>
+      shapes.some(([before, after]) => key.startsWith(before) && key.endsWith(after) && !key.slice(before.length, key.length - after.length).includes("."));
+    const unused = leaves(en).filter((key) => !written.has(key) && !built(key));
     expect(unused).toEqual([]);
   });
 });

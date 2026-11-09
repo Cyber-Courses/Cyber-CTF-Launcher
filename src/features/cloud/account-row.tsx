@@ -7,7 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { type ServerCheck, type ServerHost, type ServerTest } from "@/lib/tauri";
 import { StatusPill } from "@/components/ui/status-pill";
 import { budgetOf, credentialOf, isOverBudget, outcomeOf, type Credential, type Outcome } from "@/features/cloud/cloud-model";
-import { useT, type T } from "@/lib/i18n";
+import { useT, type MessageKey, type T } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
 import { cloudLogo } from "@/features/servers/host-setup/constants";
 
@@ -54,8 +54,18 @@ export function AccountRow({
   );
 }
 
+/** How each sign-in reads, by its kind (a CLI profile names the profile, below). Every kind of
+ *  `Credential` has its key written out here, so no message is reachable only by a built key. */
+const CREDENTIAL_TEXT: Record<Exclude<Credential["kind"], "cliProfile">, MessageKey> = {
+  apiToken: "cloud.account.apiToken",
+  apiKey: "cloud.account.apiKey",
+  cliSignIn: "cloud.account.cliSignIn",
+  cliCredentials: "cloud.account.cliCredentials",
+  accessKeys: "cloud.account.accessKeys",
+};
+
 function credentialText(t: T, c: Credential): string {
-  return c.kind === "cliProfile" ? t("cloud.account.cliProfile", { profile: c.profile }) : t(`cloud.account.${c.kind}`);
+  return c.kind === "cliProfile" ? t("cloud.account.cliProfile", { profile: c.profile }) : t(CREDENTIAL_TEXT[c.kind]);
 }
 
 /** The account's facts line: region, sign-in, auto-stop, then the last latency and the budget. */

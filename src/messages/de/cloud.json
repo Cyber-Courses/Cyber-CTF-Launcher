@@ -24,9 +24,18 @@
     "title": "Labs in deinem eigenen Cloud-Konto ausführen",
     "body": "Eine Wegwerf-Instanz pro Lab, gelöscht, wenn du sie stoppst. Läuft auf AWS, Azure oder Google Cloud.",
     "steps": {
-      "connect": { "title": "Konto verbinden", "body": "Zugriffsschlüssel oder deine AWS-CLI-Anmeldedaten, dazu eine Region." },
-      "pick": { "title": "Im Lab auswählen", "body": "Terraform erstellt eine Instanz, per SSH von deiner IP erreichbar." },
-      "stop": { "title": "Angreifen, dann stoppen", "body": "Stoppen löscht die Instanz, damit enden auch die Kosten." }
+      "connect": {
+        "title": "Konto verbinden",
+        "body": "Zugriffsschlüssel oder deine AWS-CLI-Anmeldedaten, dazu eine Region."
+      },
+      "pick": {
+        "title": "Im Lab auswählen",
+        "body": "Terraform erstellt eine Instanz, per SSH von deiner IP erreichbar."
+      },
+      "stop": {
+        "title": "Angreifen, dann stoppen",
+        "body": "Stoppen löscht die Instanz, damit enden auch die Kosten."
+      }
     }
   },
   "account": {
@@ -52,8 +61,6 @@
     "remove": "Entfernen",
     "cancel": "Abbrechen",
     "test": "Testen",
-    "edit": "Bearbeiten",
-    "installed": "installiert",
-    "notInstalled": "nicht installiert"
+    "edit": "Bearbeiten"
   }
 }
