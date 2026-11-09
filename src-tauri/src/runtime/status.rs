@@ -108,7 +108,7 @@ pub(crate) fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
         };
         Ok(Up { host, host_name, parked })
     };
-    if let Some(host) = awaiting_hand_over(dirs, id) {
+    if let Some(host) = awaiting_hand_over(dirs, id)? {
         return up(Some(host), false).map(Some);
     }
     let run = isothrum::record_of(dirs, id)?;
@@ -117,11 +117,17 @@ pub(crate) fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
 
 /// The host a deployment of lab `id` on the launcher's own Terraform path is on, while one still
 /// holds resources: one the runner hasn't taken over yet (`isothrum::import`), which only that
-/// path stops. Named by the host its state records, else by the lab's marker.
-fn awaiting_hand_over(dirs: &AppDirs, id: &str) -> Option<String> {
-    let base = dirs.data().ok()?;
-    let (_, state) = super::paths::deployment_states(base, id).into_iter().find(|(_, state)| super::terraform::deployed(state))?;
-    super::paths::recorded_host(&state).or_else(|| lab_dir(dirs, id).ok().and_then(|dir| server::marked_host(&dir)).filter(|h| !h.is_empty()))
+/// path stops. Named by the host its state records, else by the lab's marker. A deployment or
+/// state that can't be read is an error, never "nothing up": a missed one is a billable leftover.
+fn awaiting_hand_over(dirs: &AppDirs, id: &str) -> Result<Option<String>> {
+    let base = dirs.data()?;
+    for (_, state) in super::paths::deployment_states(base, id)? {
+        if super::terraform::deployed(&state)? {
+            let marked = || lab_dir(dirs, id).ok().and_then(|dir| server::marked_host(&dir)).filter(|h| !h.is_empty());
+            return Ok(super::paths::recorded_host(&state).or_else(marked));
+        }
+    }
+    Ok(None)
 }
 
 /// Refuses to replace lab `id`'s folder (`dir`), with a new version or a re-import, while
@@ -304,6 +310,30 @@ mod tests {
         assert!(super::still_up(&dirs, "web").is_err() && super::refuse_replace(&dirs, &dir, "web").is_err());
         // Nothing installed: nothing to replace.
         assert!(super::refuse_replace(&dirs, &t.data().join("labs/none"), "none").is_ok());
+    }
+
+    #[test]
+    fn a_deployment_that_cant_be_read_is_an_error_never_nothing_up() {
+        // Regression: an unreadable deployments folder or Terraform state read as "nothing up",
+        // contradicting `still_up`'s own rule: a missed deployment is a billable leftover.
+        let t = crate::testing::test_app::TestApp::new();
+        let dirs = t.dirs();
+        t.lab("web", &[]);
+        let state = t.data().join("deployments/web/aws");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("terraform.tfstate"), "{ cut short").unwrap();
+        assert!(super::still_up(&dirs, "web").is_err(), "a state that can't be parsed");
+        std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[]}"#).unwrap();
+        assert_eq!(super::still_up(&dirs, "web").unwrap(), None, "an empty state holds nothing");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let folder = t.data().join("deployments/web");
+            std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o000)).unwrap();
+            let unreadable = super::still_up(&dirs, "web");
+            std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(unreadable.is_err(), "a deployments folder that can't be listed");
+        }
     }
 
     #[tokio::test]

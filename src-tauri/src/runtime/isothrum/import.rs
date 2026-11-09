@@ -124,7 +124,12 @@ pub(crate) fn deployments(base: &Path) -> Vec<Deployment> {
     let mut out = Vec::new();
     for id in deployed_ids(base) {
         let marked = lab_dir_in(base, &id).ok().and_then(|dir| server::marked_host(&dir));
-        let mut found: Vec<Deployment> = deployment_states(base, &id)
+        // Unreadable, it is left for the next pass: the lab's status says so meanwhile (`still_up`).
+        let states = deployment_states(base, &id).unwrap_or_else(|e| {
+            log::warn!("hand-over: {id}'s deployments can't be read: {e}");
+            Vec::new()
+        });
+        let mut found: Vec<Deployment> = states
             .into_iter()
             .filter_map(|(target, state)| {
                 let provider = server::terraform_provider(&target)?;
@@ -168,7 +173,7 @@ pub(crate) async fn import_all<G>(
 
 /// Takes deployment `d` over, if there is anything to take.
 async fn import_one(runner: &Runner, base: &Path, d: &Deployment) -> Result<Outcome, ImportError> {
-    if !terraform::deployed(&d.state) {
+    if !terraform::deployed(&d.state)? {
         let imported = d.state.join(IMPORTED).is_file();
         return Ok(Outcome::Left(if imported { Left::Imported } else { Left::Empty }));
     }

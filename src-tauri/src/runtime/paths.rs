@@ -44,12 +44,24 @@ pub(crate) fn deployed_ids(base: &Path) -> Vec<String> {
 
 /// Every Terraform state folder of lab `id` under the app data folder `base`, by target
 /// (`aws`, `proxmox`, …): the current deployment's and any left from an earlier one elsewhere.
-pub(crate) fn deployment_states(base: &Path, id: &str) -> Vec<(String, PathBuf)> {
-    let Ok(entries) = std::fs::read_dir(base.join("deployments").join(id)) else { return Vec::new() };
-    let mut out: Vec<(String, PathBuf)> =
-        entries.flatten().filter(|e| e.path().is_dir()).filter_map(|e| Some((e.file_name().into_string().ok()?, e.path()))).collect();
+/// None when the lab has no deployments folder; one that can't be read is an error.
+pub(crate) fn deployment_states(base: &Path, id: &str) -> std::io::Result<Vec<(String, PathBuf)>> {
+    let entries = match std::fs::read_dir(base.join("deployments").join(id)) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+    let mut out = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        if entry.path().is_dir()
+            && let Ok(name) = entry.file_name().into_string()
+        {
+            out.push((name, entry.path()));
+        }
+    }
     out.sort();
-    out
+    Ok(out)
 }
 
 /// Next to a lab's Terraform state: which runtime started it (`DOCKER`, `VM` or `CLOUD`), for

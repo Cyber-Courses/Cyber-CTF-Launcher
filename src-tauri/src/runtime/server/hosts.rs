@@ -98,12 +98,14 @@ pub(crate) fn leftovers_on(dirs: &AppDirs, id: &str) -> Result<usize> {
         .filter_map(|r| crate::runtime::lab_of_project(r.name.as_str()).map(str::to_owned))
         .filter(|lab| elsewhere(lab))
         .count();
-    let states = crate::runtime::paths::deployed_ids(base)
-        .iter()
-        .filter(|lab| elsewhere(lab))
-        .flat_map(|lab| crate::runtime::paths::deployment_states(base, lab))
-        .filter(|(_, state)| crate::runtime::paths::recorded_host(state).as_deref() == Some(id) && crate::runtime::terraform::deployed(state))
-        .count();
+    let mut states = 0;
+    for lab in crate::runtime::paths::deployed_ids(base).iter().filter(|lab| elsewhere(lab)) {
+        for (_, state) in crate::runtime::paths::deployment_states(base, lab)? {
+            if crate::runtime::paths::recorded_host(&state).as_deref() == Some(id) && crate::runtime::terraform::deployed(&state)? {
+                states += 1;
+            }
+        }
+    }
     Ok(runs + states)
 }
 
