@@ -72,7 +72,7 @@ fn from_scutil(text: &str) -> SystemProxy {
         (false, _) => Some(format!("tools use the system proxy: {}", proxy_vars.iter().map(|(n, v)| format!("{n}={v}")).collect::<Vec<_>>().join(" "))),
     };
     if !proxy_vars.is_empty() {
-        let bypass = no_proxy(exceptions(text));
+        let bypass = no_proxy(&exceptions(text));
         proxy_vars.push(("NO_PROXY", bypass.clone()));
         proxy_vars.push(("no_proxy", bypass));
     }
@@ -93,18 +93,23 @@ fn exceptions(text: &str) -> Vec<String> {
     lines.take_while(|l| l.trim() != "}").filter_map(|l| l.split_once(" : ")).map(|(_, host)| host.trim().to_string()).collect()
 }
 
-/// A `NO_PROXY` value: this machine's own addresses, then the system's exceptions, a `*.domain`
-/// written `.domain` as the tools read it.
+/// A `NO_PROXY` value: the system's exceptions, a `*.domain` written `.domain` as the tools read
+/// it, and this machine's own addresses.
 #[cfg(any(target_os = "macos", test))]
-fn no_proxy(exceptions: Vec<String>) -> String {
-    let mut hosts: Vec<String> = ["localhost", "127.0.0.1", "::1"].map(String::from).to_vec();
-    for host in exceptions {
-        let host = host.strip_prefix('*').unwrap_or(&host).to_string();
-        if !host.is_empty() && !hosts.contains(&host) {
-            hosts.push(host);
+fn no_proxy(exceptions: &[String]) -> String {
+    with_loopback(exceptions.iter().map(|host| host.strip_prefix('*').unwrap_or(host)))
+}
+
+/// A `no_proxy` list of `hosts` (trimmed, each once, empty ones dropped) with this machine's own
+/// addresses added where missing: what reaches a loopback address never goes through a proxy.
+pub fn with_loopback<'a>(hosts: impl IntoIterator<Item = &'a str>) -> String {
+    let mut list: Vec<&str> = Vec::new();
+    for host in hosts.into_iter().map(str::trim).chain(["localhost", "127.0.0.1", "::1"]) {
+        if !host.is_empty() && !list.contains(&host) {
+            list.push(host);
         }
     }
-    hosts.join(",")
+    list.join(",")
 }
 
 #[cfg(test)]
@@ -142,6 +147,14 @@ mod tests {
     }
 
     #[test]
+    fn a_no_proxy_list_keeps_its_entries_once_and_gains_this_machines_addresses() {
+        // Regression: written twice, the two lists differed in order and one lacked ::1.
+        assert_eq!(with_loopback([".corp", " intranet.lan", ""]), ".corp,intranet.lan,localhost,127.0.0.1,::1");
+        assert_eq!(with_loopback(["localhost", ".corp", ".corp"]), "localhost,.corp,127.0.0.1,::1");
+        assert_eq!(with_loopback([]), "localhost,127.0.0.1,::1");
+    }
+
+    #[test]
     fn the_system_proxy_becomes_the_tools_variables() {
         let found = from_scutil(SCUTIL);
         let get = |name: &str| found.vars.iter().find(|(n, _)| *n == name).map(|(_, v)| v.as_str());
@@ -149,7 +162,7 @@ mod tests {
         assert_eq!(get("http_proxy"), Some("http://proxy.corp:3128"));
         assert_eq!(get("HTTPS_PROXY"), Some("http://proxy.corp:3129"));
         assert_eq!(get("https_proxy"), Some("http://proxy.corp:3129"));
-        assert_eq!(get("NO_PROXY"), Some("localhost,127.0.0.1,::1,.local,169.254/16,intranet.corp"));
+        assert_eq!(get("NO_PROXY"), Some(".local,169.254/16,intranet.corp,localhost,127.0.0.1,::1"));
         assert_eq!(get("no_proxy"), get("NO_PROXY"));
         assert!(found.note.is_some_and(|n| n.contains("HTTPS_PROXY=http://proxy.corp:3129")));
     }

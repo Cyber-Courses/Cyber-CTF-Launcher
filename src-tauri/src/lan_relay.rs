@@ -14,6 +14,7 @@ use tokio::task::JoinHandle;
 
 use self::http_proxy::{Targets, start_http_proxy};
 use self::ovftool::{real_ovftool, wrapper_dir};
+use crate::platform::proxy::with_loopback;
 
 /// A loopback port forwarding to a LAN endpoint while it lives.
 pub struct Relay {
@@ -126,8 +127,7 @@ pub async fn prepare(program: &str, env: &[(String, String)]) -> Relayed {
     let winrm = start_http_proxy(Targets::new(host)).await.ok();
     if let Some(p) = &winrm {
         set(&mut out, "http_proxy", format!("http://127.0.0.1:{}", p.port));
-        let bypass = with_loopback(no_proxy_of(env).as_deref());
-        set(&mut out, "no_proxy", bypass);
+        set(&mut out, "no_proxy", bypass(env));
     }
     if let (Some(real), Ok(dir)) = (real_ovftool(), wrapper_dir()) {
         set(&mut out, "CYBERCTF_REAL_OVFTOOL", real);
@@ -140,21 +140,16 @@ pub async fn prepare(program: &str, env: &[(String, String)]) -> Relayed {
     Relayed { env: out, _relays: relays }
 }
 
+/// The `no_proxy` of a run with environment `env` once the relays are on loopback: the one it
+/// already has, with this machine's own addresses.
+fn bypass(env: &[(String, String)]) -> String {
+    with_loopback(no_proxy_of(env).as_deref().into_iter().flat_map(|l| l.split(',')))
+}
+
 /// The `no_proxy` a run already has: its own environment's, else the app's (either case).
 fn no_proxy_of(env: &[(String, String)]) -> Option<String> {
     let from_env = || ["no_proxy", "NO_PROXY"].into_iter().find_map(|k| std::env::var(k).ok());
     first_of(env, ["no_proxy", "NO_PROXY"]).map(String::from).or_else(from_env)
-}
-
-/// `existing` (a `no_proxy` list) with loopback added, each entry once.
-fn with_loopback(existing: Option<&str>) -> String {
-    let mut hosts: Vec<String> = existing.into_iter().flat_map(|l| l.split(',')).map(str::trim).filter(|h| !h.is_empty()).map(String::from).collect();
-    for host in ["localhost", "127.0.0.1"] {
-        if !hosts.iter().any(|h| h == host) {
-            hosts.push(host.to_string());
-        }
-    }
-    hosts.join(",")
 }
 
 #[cfg(test)]
@@ -164,9 +159,8 @@ mod tests {
     #[test]
     fn loopback_is_added_to_the_no_proxy_a_run_already_has() {
         // Regression: the relay replaced no_proxy, so a corporate bypass list was lost for the run.
-        assert_eq!(with_loopback(Some(".corp, intranet.lan")), ".corp,intranet.lan,localhost,127.0.0.1");
-        assert_eq!(with_loopback(Some("localhost,.corp")), "localhost,.corp,127.0.0.1");
-        assert_eq!(with_loopback(None), "localhost,127.0.0.1");
+        let run = vec![("no_proxy".to_string(), ".corp, intranet.lan".to_string())];
+        assert_eq!(bypass(&run), ".corp,intranet.lan,localhost,127.0.0.1,::1");
         let env = vec![("NO_PROXY".to_string(), ".corp".to_string())];
         assert_eq!(no_proxy_of(&env).as_deref(), Some(".corp"));
         let both = vec![("NO_PROXY".to_string(), ".upper".to_string()), ("no_proxy".to_string(), ".lower".to_string())];
