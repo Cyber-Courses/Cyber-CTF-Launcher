@@ -8,10 +8,11 @@ import { translate } from "@/lib/i18n";
 import { getLabState } from "@/features/labs/lab-store";
 import { attachAttackBox } from "@/features/labs/attack-box-attach";
 
-/** The runtime lab `id` declares, from the catalogue last loaded: its status and its box are read
- *  in it. A lab that catalogue doesn't list (not loaded yet) is taken for a container lab. */
-function runtimeOf(id: string): Runtime {
-  return getLabState().catalogue?.labs.find((l) => l.id === id)?.runtime?.runtime ?? "DOCKER";
+/** The runtime lab `id` runs in: the one its worker's operation was run in (the backend's), else
+ *  the one the catalogue last loaded declares for it; null when neither says (an operation in this
+ *  process on a lab the catalogue doesn't list yet): nothing is guessed. */
+function runtimeOf(id: string, op: ActiveOperation): Runtime | null {
+  return op.runtime ?? getLabState().catalogue?.labs.find((l) => l.id === id)?.runtime?.runtime ?? null;
 }
 
 /**
@@ -24,13 +25,14 @@ function runtimeOf(id: string): Runtime {
  * told, as the lab page's own Start attack box tells it in its log.
  */
 export function useAttackBoxAutoStart(ops: Map<string, ActiveOperation>, enabled: boolean) {
-  const previous = useRef<Map<string, ActiveOperation["op"]>>(new Map());
+  const previous = useRef<Map<string, ActiveOperation>>(new Map());
   useEffect(() => {
-    const ended = [...previous.current].filter(([id, op]) => (op === "launch" || op === "resume") && !ops.has(id)).map(([id]) => id);
-    previous.current = new Map([...ops].map(([id, o]) => [id, o.op]));
+    const ended = [...previous.current].filter(([id, o]) => (o.op === "launch" || o.op === "resume") && !ops.has(id));
+    previous.current = new Map(ops);
     if (!enabled || ended.length === 0 || !getAutoAttackBox()) return;
-    for (const id of ended) {
-      const runtime = runtimeOf(id);
+    for (const [id, op] of ended) {
+      const runtime = runtimeOf(id, op);
+      if (!runtime) continue;
       labStatus(id, runtime)
         .then(async (s) => {
           // A failed launch or resume reads as not running (the backend's status says so).

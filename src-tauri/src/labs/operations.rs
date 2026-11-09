@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::app::deploy_worker::{self, Op};
 use crate::platform::AppDirs;
-use crate::runtime::{self, Action, Park};
+use crate::runtime::{self, Action, Park, Runtime};
 
 /// The labs currently starting or stopping. The UI reads this on load to rehydrate the "this lab
 /// is starting" state after a window reload: the deploy keeps running in this process even when
@@ -50,6 +50,11 @@ pub struct ActiveOperation {
     machine: Option<String>,
     /// The last meaningful line of the operation's log (detached workers only).
     step: Option<String>,
+    /// The runtime the lab was launched (or is operated) in, as its worker's job says: what its
+    /// status and attack box are read in once the operation ends, catalogue loaded or not.
+    /// None for an operation in this process.
+    #[ts(optional = nullable)]
+    runtime: Option<Runtime>,
 }
 
 /// The sidebar's name for a worker's operation, and the machine it targets when one.
@@ -60,6 +65,16 @@ fn worker_op(op: &Op) -> (&'static str, Option<String>) {
         Op::Park { mode: Park::Pause, .. } => ("pause", None),
         Op::Park { mode: Park::Shutdown, .. } => ("shutdown", None),
         Op::Provision { machine, .. } => ("provision", machine.clone()),
+    }
+}
+
+/// The runtime a worker's job runs its lab in: a launch's payload names it (`startLab`'s
+/// `runtime`), a lab imported from a folder runs as containers, the other operations carry it.
+fn job_runtime(job: &deploy_worker::Job) -> Option<Runtime> {
+    match &job.op {
+        Op::Launch => serde_json::from_value(job.launch.get("runtime")?.clone()).ok(),
+        Op::LaunchLocal { .. } => Some(Runtime::Docker),
+        Op::Resume { runtime } | Op::Park { runtime, .. } | Op::Provision { runtime, .. } => Some(*runtime),
     }
 }
 
@@ -84,12 +99,13 @@ fn merge_operations(jobs: Vec<(deploy_worker::Job, Option<String>)>, actions: Ve
         .into_iter()
         .map(|(job, step)| {
             let (op, machine) = worker_op(&job.op);
-            ActiveOperation { lab_id: job.lab_id, op, machine, step }
+            let runtime = job_runtime(&job);
+            ActiveOperation { lab_id: job.lab_id, op, machine, step, runtime }
         })
         .collect();
     for (id, action) in actions {
         if !out.iter().any(|o| o.lab_id == id) {
-            out.push(ActiveOperation { lab_id: id, op: in_app_op(action), machine: None, step: None });
+            out.push(ActiveOperation { lab_id: id, op: in_app_op(action), machine: None, step: None, runtime: None });
         }
     }
     out.sort_by(|a, b| a.lab_id.cmp(&b.lab_id));
@@ -105,7 +121,6 @@ pub async fn lab_deploy_log(dirs: AppDirs, id: String) -> std::result::Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::Runtime;
 
     #[test]
     fn worker_lab_ids_are_added_once_after_the_in_app_ones() {
@@ -124,12 +139,16 @@ mod tests {
         assert_eq!(
             ops,
             [
-                ActiveOperation { lab_id: "ad".into(), op: "provision", machine: Some("dc01".into()), step: None },
-                ActiveOperation { lab_id: "ctf".into(), op: "pause", machine: None, step: None },
-                ActiveOperation { lab_id: "web".into(), op: "launch", machine: None, step: Some("Pulling images".into()) },
+                ActiveOperation { lab_id: "ad".into(), op: "provision", machine: Some("dc01".into()), step: None, runtime: Some(Runtime::Vm) },
+                ActiveOperation { lab_id: "ctf".into(), op: "pause", machine: None, step: None, runtime: None },
+                ActiveOperation { lab_id: "web".into(), op: "launch", machine: None, step: Some("Pulling images".into()), runtime: None },
             ]
         );
         assert_eq!(merge_operations(Vec::new(), Vec::new()), [] as [ActiveOperation; 0]);
+        // A launch's runtime is its payload's; a lab from a folder runs as containers.
+        let launch = deploy_worker::Job { launch: serde_json::json!({ "labId": "goad", "runtime": "VM" }), ..deploy_worker::Job::on_lab("goad", Op::Launch) };
+        assert_eq!(job_runtime(&launch), Some(Runtime::Vm));
+        assert_eq!(job_runtime(&deploy_worker::Job::on_lab("mine", Op::LaunchLocal { src: "/labs/mine".into() })), Some(Runtime::Docker));
         // Serialized for the sidebar in camelCase.
         assert_eq!(serde_json::to_value(&ops[0]).unwrap()["labId"], "ad");
     }
@@ -160,7 +179,7 @@ mod tests {
         let id = "operations-test-pause";
         let listed = || wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
         let guard = crate::runtime::DeployGuard::new(id, Action::Park);
-        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "pause", machine: None, step: None }));
+        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "pause", machine: None, step: None, runtime: None }));
         drop(guard);
         assert_eq!(listed(), None);
     }
@@ -181,7 +200,7 @@ mod tests {
         std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string(&deploy_worker::Job::on_lab(id, Op::Launch)).unwrap()).unwrap();
         std::fs::write(dir.join(format!("{id}.log")), log).unwrap();
         let listed = || wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
-        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "launch", machine: None, step: Some("web: Booting VM...".into()) }));
+        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "launch", machine: None, step: Some("web: Booting VM...".into()), runtime: None }));
         assert!(wait(deploying_labs(t.dirs())).contains(&id.to_string()));
         assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), log);
         worker.kill().unwrap();

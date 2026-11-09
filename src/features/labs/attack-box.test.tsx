@@ -7,7 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
 import { useAttackBox, type AttackBox } from "@/features/labs/use-attack-box";
 import { attachAttackBox } from "@/features/labs/attack-box-attach";
-import type { ActiveOperation, AttackStatus } from "@/lib/tauri";
+import type { ActiveOperation, AttackStatus, Runtime } from "@/lib/tauri";
 import { DEFAULT_ATTACK_IMAGE, setAttackImage, setAutoAttackBox } from "@/lib/settings";
 import { commands, installTauri, stream, type Call } from "@/test/tauri";
 import { flush } from "@/test/ui";
@@ -244,15 +244,19 @@ describe("the attack box's attach", () => {
 });
 
 describe("useAttackBoxAutoStart", () => {
-  const op = (labId: string, o: ActiveOperation["op"]): [string, ActiveOperation] => [labId, { labId, op: o, machine: null, step: null }];
+  /** An operation as a worker reports it, in `runtime` (null: one in this process, which says none). */
+  const op = (labId: string, o: ActiveOperation["op"], runtime: Runtime | null = "DOCKER"): [string, ActiveOperation] => [
+    labId,
+    { labId, op: o, machine: null, step: null, runtime },
+  ];
 
-  function watch(calls: Call[], enabled = true) {
+  function watch(calls: Call[], enabled = true, launched: Runtime | null = "DOCKER") {
     const hook = renderHook(
       (p: { ops: Map<string, ActiveOperation> }) => {
         useAttackBoxAutoStart(p.ops, enabled);
       },
       {
-        initialProps: { ops: new Map([op("lab-a", "launch"), op("lab-b", "stop")]) },
+        initialProps: { ops: new Map([op("lab-a", "launch", launched), op("lab-b", "stop")]) },
       },
     );
     return { hook, calls };
@@ -306,7 +310,8 @@ describe("useAttackBoxAutoStart", () => {
       setCatalogue("auto-rt", [{ id: "lab-a", runtime: { runtime } } as Lab]);
       // The backend reaches no run to put a box in beside a cloud-services lab.
       const calls = installTauri({ lab_status: () => ({ running: true, place: "local_vm" }), attack_box_status: () => box({ vm: true, reachable: attached }) });
-      const { hook } = watch(calls);
+      // An operation in this process says no runtime: the catalogue's stands in.
+      const { hook } = watch(calls, true, null);
       hook.rerender({ ops: new Map() });
       await flush(50);
       expect(commands(calls).includes("attack_box_attach")).toBe(attached);
@@ -317,6 +322,23 @@ describe("useAttackBoxAutoStart", () => {
       hook.unmount();
     }
     setCatalogue("auto-rt", []);
+  });
+
+  it("reads the lab in the runtime its worker ran it in, and guesses none when nothing says", async () => {
+    const calls = installTauri({ lab_status: () => ({ running: true, place: "local_vm" }), attack_box_status: () => box({ vm: true }) });
+    const { hook } = watch(calls, true, "VM");
+    hook.rerender({ ops: new Map() });
+    await flush(50);
+    expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "lab-a", runtime: "VM" });
+    hook.unmount();
+    // Not in the catalogue, and an operation in this process: nothing is read nor attached.
+    const unknown = installTauri({ lab_status: () => ({ running: true, place: "container" }), attack_box_status: () => box() });
+    const second = watch(unknown, true, null);
+    second.hook.rerender({ ops: new Map() });
+    await flush(50);
+    expect(commands(unknown)).not.toContain("lab_status");
+    expect(commands(unknown)).not.toContain("attack_box_attach");
+    second.hook.unmount();
   });
 
   it("tells the player when the box couldn't be added with the lab", async () => {
