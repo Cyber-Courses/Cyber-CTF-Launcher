@@ -142,8 +142,12 @@ pub struct LabStatus {
     /// Loopback URL where the lab is reachable on this machine, once running (Docker labs
     /// with a published port). None for VM labs or when nothing is published yet.
     pub url: Option<String>,
-    /// Name of the server host a VM lab runs on; None when it runs on this machine.
+    /// Name of the server host or cloud account the lab runs on; None when it runs on this
+    /// machine (in a local VM too: `place` says that).
     pub host: Option<String>,
+    /// The id of that saved server host or cloud account (its connection's), to find it among
+    /// the saved ones; None when it runs on this machine.
+    pub host_id: Option<String>,
     /// Unix time a cloud lab stops itself (auto-stop), if it does.
     pub expires_at: Option<u64>,
     /// Where it runs; set by the runtime dispatcher (None from the per-runtime probes).

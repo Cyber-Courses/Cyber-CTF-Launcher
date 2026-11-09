@@ -38,6 +38,7 @@ const status = (p: Partial<LabStatus> = {}): LabStatus => ({
   networks: [],
   url: null,
   host: null,
+  hostId: null,
   expiresAt: null,
   place: "container",
   provider: "docker",

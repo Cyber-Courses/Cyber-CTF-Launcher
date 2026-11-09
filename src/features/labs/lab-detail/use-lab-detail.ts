@@ -142,7 +142,7 @@ export function useLabDetail(p: LabDetailProps) {
   const [check, clearCheck] = useLabCheck(lab.id, { running: s.running, downCount: s.down.length, enabled: s.isDocker });
   const tools = useLabTools(lab.id, s.running && !s.isCloud, rt?.runtime ?? "DOCKER");
   const objectives = useObjectives(lab.id, lab.question, t("labs.detail.objective"), p.loggedIn);
-  const restart = () => restartTarget(status, run.hosts, run.runOn, run.localVm);
+  const restart = () => restartTarget(status, run.hosts, rt?.runtime, run.runOn, run.localVm);
   const { resetting, reset } = useLabReset(p.onStop, p.onStart, restart, clearCheck);
   const startOn = (target: RunTarget) => void p.onStart(target);
   // Where it runs, said the same way by the header, Details and the diagram's host card.

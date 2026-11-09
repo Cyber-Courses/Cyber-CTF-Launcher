@@ -40,16 +40,16 @@ describe("where a lab runs", () => {
   });
 
   it("a lab on a server names the saved host and its kind; one whose host isn't saved any more, the name alone", () => {
-    const server = placeOf(labStatus({ running: true, place: "server", host: "homelab-pve", provider: "proxmox" }), false, null, hosts);
+    const server = placeOf(labStatus({ running: true, place: "server", host: "homelab-pve", hostId: "h", provider: "proxmox" }), false, null, hosts);
     expect(server).toEqual({ kind: "server", name: "homelab-pve", provider: "proxmox", address: "10.0.0.5" });
     expect(placeText(t, must(server))).toBe('labs.detail.serverWith:{"name":"homelab-pve","kind":"Proxmox VE"}');
-    const gone = placeOf(labStatus({ running: true, place: "server", host: "old-esxi" }), false, null, hosts);
+    const gone = placeOf(labStatus({ running: true, place: "server", host: "old-esxi", hostId: "gone" }), false, null, hosts);
     expect(gone).toEqual({ kind: "server", name: "old-esxi", provider: null, address: null });
     expect(placeText(t, must(gone))).toBe("old-esxi");
   });
 
   it("a lab in a cloud account names the cloud and its region", () => {
-    const cloud = placeOf(labStatus({ running: true, place: "cloud", host: "My AWS", provider: "aws" }), false, null, hosts);
+    const cloud = placeOf(labStatus({ running: true, place: "cloud", host: "My AWS", hostId: "aws1", provider: "aws" }), false, null, hosts);
     expect(cloud).toEqual({ kind: "cloud", name: "My AWS", provider: "aws", region: "eu-west-3" });
     expect(placeName(must(cloud))).toBe("AWS");
     expect(placeText(t, must(cloud))).toBe('labs.detail.cloudWith:{"cloud":"AWS","region":"eu-west-3"}');

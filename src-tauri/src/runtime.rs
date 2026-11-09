@@ -114,6 +114,7 @@ pub(crate) mod test_support {
             networks: Vec::new(),
             url: None,
             host: None,
+            host_id: None,
             expires_at: None,
             place: None,
             provider: None,

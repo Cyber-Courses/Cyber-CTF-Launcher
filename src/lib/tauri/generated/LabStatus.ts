@@ -23,9 +23,15 @@ networks: Array<LabNetwork>,
  */
 url: string | null, 
 /**
- * Name of the server host a VM lab runs on; None when it runs on this machine.
+ * Name of the server host or cloud account the lab runs on; None when it runs on this
+ * machine (in a local VM too: `place` says that).
  */
 host: string | null, 
+/**
+ * The id of that saved server host or cloud account (its connection's), to find it among
+ * the saved ones; None when it runs on this machine.
+ */
+hostId: string | null, 
 /**
  * Unix time a cloud lab stops itself (auto-stop), if it does.
  */

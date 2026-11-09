@@ -11,6 +11,7 @@ import {
   restartTarget,
 } from "@/features/labs/lab-detail/lab-state";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
+import type { RunTarget } from "@/features/labs/run-on";
 import type { Provider, ServerHost } from "@/lib/tauri";
 import { deriveState as derive, labMachine as machine, labStatus as status } from "@/features/labs/labs-test-kit";
 
@@ -189,29 +190,48 @@ describe("diagramAbove", () => {
 });
 
 describe("restartTarget", () => {
-  const hosts = [{ id: "h1", name: "esxi-01" }] as ServerHost[];
-  it("starts again on the saved host it ran on", () => {
-    expect(restartTarget(status({ host: "esxi-01" }), hosts, { kind: "local" }, null)).toEqual({ kind: "host", id: "h1" });
+  // What the backend sends: a server or cloud account by its name and saved id; a VM here as
+  // place local_vm with no host, the hypervisor as its provider, perMachine for one VM per machine.
+  const hosts = [
+    { id: "h1", name: "esxi-01" },
+    { id: "aws1", name: "My AWS" },
+  ] as ServerHost[];
+  const here: RunTarget = { kind: "local" };
+  it("starts again on the saved host it ran on, found by id", () => {
+    expect(restartTarget(status({ host: "esxi-01", hostId: "h1", place: "server" }), hosts, "VM", here, null)).toEqual({ kind: "host", id: "h1" });
   });
-  it("starts again in a VM here when its host isn't a saved one", () => {
-    expect(restartTarget(status({ host: "isoloom-host" }), hosts, { kind: "local-vm", provider: "qemu" as Provider }, "virtualbox")).toEqual({
+  it("starts again on a cloud account in the form it ran in there", () => {
+    const vms = status({ host: "My AWS", hostId: "aws1", place: "cloud", perMachine: true });
+    expect(restartTarget(vms, hosts, "DOCKER", here, null)).toEqual({ kind: "host", id: "aws1", perMachine: true });
+    expect(restartTarget({ ...vms, perMachine: false }, hosts, "DOCKER", here, null)).toEqual({ kind: "host", id: "aws1" });
+  });
+  it("keeps the pick when the host it ran on is no longer saved (a renamed one is still found)", () => {
+    const pick: RunTarget = { kind: "local-vm", provider: "qemu" };
+    expect(restartTarget(status({ host: "gone", hostId: "h9", place: "server" }), hosts, "VM", pick, null)).toEqual(pick);
+    expect(restartTarget(status({ host: "renamed", hostId: "h1", place: "server" }), hosts, "VM", pick, null)).toEqual({ kind: "host", id: "h1" });
+  });
+  it("starts a container lab again in one VM here, on the hypervisor it ran on", () => {
+    const inVm = status({ place: "local_vm", provider: "qemu" });
+    expect(restartTarget(inVm, hosts, "DOCKER", here, "virtualbox")).toEqual({ kind: "local-vm", provider: "qemu" });
+  });
+  it("starts a container lab run as one VM per machine again in that form", () => {
+    const perMachine = status({ place: "local_vm", provider: "virtualbox", perMachine: true });
+    expect(restartTarget(perMachine, hosts, "DOCKER", here, "qemu")).toEqual({ kind: "local-vms", provider: "virtualbox" });
+  });
+  it("falls back to the pick's hypervisor, then the default, when the status names none", () => {
+    const inVm = status({ place: "local_vm", provider: null });
+    expect(restartTarget(inVm, hosts, "DOCKER", { kind: "local-vm", provider: "parallels" }, "virtualbox")).toEqual({
       kind: "local-vm",
-      provider: "qemu",
+      provider: "parallels",
     });
-    expect(restartTarget(status({ host: "isoloom-host" }), hosts, { kind: "local" }, "virtualbox")).toEqual({
-      kind: "local-vm",
-      provider: "virtualbox",
-    });
-    expect(restartTarget(status({ host: "isoloom-host" }), hosts, { kind: "local" }, null)).toEqual({ kind: "local" });
+    expect(restartTarget(inVm, hosts, "DOCKER", here, "virtualbox")).toEqual({ kind: "local-vm", provider: "virtualbox" });
+    expect(restartTarget(inVm, hosts, "DOCKER", here, null)).toEqual({ kind: "local" });
   });
-  it("starts again as one VM per machine when that was the pick: the status can't tell the forms apart", () => {
-    expect(restartTarget(status({ host: "isoloom-host" }), hosts, { kind: "local-vms", provider: "qemu" as Provider }, "virtualbox")).toEqual({
-      kind: "local-vms",
-      provider: "qemu",
+  it("starts a VM lab here as its own VMs, and a container lab on its engine", () => {
+    expect(restartTarget(status({ place: "local_vm", provider: "virtualbox" }), hosts, "VM", here, null)).toEqual({ kind: "local" });
+    expect(restartTarget(status({ place: "container", provider: "docker" }), hosts, "DOCKER", { kind: "host", id: "h1" }, "virtualbox")).toEqual({
+      kind: "local",
     });
-  });
-  it("starts again here otherwise", () => {
-    expect(restartTarget(status({}), hosts, { kind: "host", id: "h1" }, "virtualbox")).toEqual({ kind: "local" });
   });
 });
 

@@ -22,6 +22,10 @@ const LOCAL_HYPERVISORS: readonly Provider[] = ["virtualbox", "vmware_desktop", 
  *  container lab's helper VM does, and Hyper-V, which that form has (it asks for elevation). */
 const VM_HYPERVISORS: readonly Provider[] = [...LOCAL_HYPERVISORS, "hyperv"];
 
+/** Whether `p` is a hypervisor a lab's VMs run on here (the provider a local VM lab's status
+ *  names). */
+export const isLocalHypervisor = (p: string | null | undefined): p is Provider => !!p && (VM_HYPERVISORS as readonly string[]).includes(p);
+
 // providers may still carry "hosted" (not a launcher Provider and no longer offered), so keep it
 // out of the local hypervisors; compare as strings.
 const isLocal = (p: string) => !SERVERS.has(p) && !CLOUDS.has(p) && p !== "hosted";

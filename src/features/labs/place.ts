@@ -21,11 +21,11 @@ export type Place =
 const isEngine = (id: string): id is DockerEngine => ENGINES.some((e) => e.id === id) || id === "podman";
 
 /** Where the lab runs, from its status: the engine it was started on (recorded at launch) or the
- *  machine's current one, the hypervisor the status names, or the saved host its name matches. */
+ *  machine's current one, the hypervisor the status names, or the saved host of its id. */
 export function placeOf(status: LabStatus | undefined, isDocker: boolean, currentEngine: DockerEngine | null, hosts: ServerHost[]): Place | null {
   if (!status) return null;
   if (status.host !== null) {
-    const host = hosts.find((h) => h.name === status.host);
+    const host = hosts.find((h) => h.id === status.hostId);
     if (host && isCloud(host.provider)) return { kind: "cloud", name: host.name, provider: host.provider, region: host.host };
     return { kind: "server", name: status.host, provider: host?.provider ?? null, address: host?.host ?? null };
   }

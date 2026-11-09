@@ -132,8 +132,9 @@ describe("bindHost, publishedBinds, restartTarget: edges", () => {
     expect(publishedBinds([web])).toEqual([{ machine: "web", target: 80, published: 8080 }]);
   });
 
-  it("falls back to this machine when the status names a host that isn't saved and no local hypervisor is known", () => {
-    expect(restartTarget(status({ host: "ESXI-1" }), [{ id: "h", name: "esxi-1" } as never], { kind: "host", id: "h" }, null)).toEqual({ kind: "local" });
-    expect(restartTarget(status({ host: "ESXI-1" }), [], { kind: "local" }, "qemu")).toEqual({ kind: "local-vm", provider: "qemu" });
+  it("matches the saved host by id, not by its name's spelling", () => {
+    const hosts = [{ id: "h", name: "esxi-1" } as never];
+    expect(restartTarget(status({ host: "ESXI-1", hostId: "h", place: "server" }), hosts, "VM", { kind: "local" }, null)).toEqual({ kind: "host", id: "h" });
+    expect(restartTarget(status({ host: "esxi-1", hostId: "other", place: "server" }), hosts, "VM", { kind: "local" }, "qemu")).toEqual({ kind: "local" });
   });
 });

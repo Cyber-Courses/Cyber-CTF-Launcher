@@ -58,19 +58,21 @@ async fn status_at(host: &Host) -> Result<LabStatus> {
         // On this machine: a container lab on Docker or in one local VM, or a VM lab.
         Host::Local(run) => run.status().await?,
         // ESXi (Vagrant on the host): Vagrant's states, each VM at its own address.
-        Host::Esxi { run, conn } => on_server(run.status().await?, conn.name.clone(), conn.provider),
+        Host::Esxi { run, conn } => on_server(run.status().await?, conn),
         // A cloud account (cloud-vm, cloud-docker, cloud-services): from the runner's record.
-        Host::Cloud { run, conn, .. } => on_server(run.status().await?, conn.name.clone(), conn.provider),
-        // A Proxmox server: from the runner's own record and state (no SSH, no API call);
-        // `ServerRun::status` fills the host and provider.
-        Host::Server { run, conn } => run.status(&isothrum::ServerPlace { name: conn.name.clone(), ..isothrum::ServerPlace::default() }).await?,
+        Host::Cloud { run, conn, .. } => on_server(run.status().await?, conn),
+        // A Proxmox server: from the runner's own record and state (no SSH, no API call).
+        Host::Server { run, conn } => {
+            on_server(run.status(&isothrum::ServerPlace { name: conn.name.clone(), ..isothrum::ServerPlace::default() }).await?, conn)
+        }
     })
 }
 
-/// A lab's status as running on the server host `name` (a cloud account, or a server).
-fn on_server(status: LabStatus, name: String, provider: super::providers::Provider) -> LabStatus {
-    let place = if provider.is_cloud() { Place::Cloud } else { Place::Server };
-    LabStatus { host: Some(name), place: Some(place), provider: Some(provider.id().to_string()), ..status }
+/// A lab's status as running on the server host or cloud account of connection `conn`: its
+/// name, its id (the saved host's, which the page finds it by) and its provider.
+fn on_server(status: LabStatus, conn: &server::Connection) -> LabStatus {
+    let place = if conn.provider.is_cloud() { Place::Cloud } else { Place::Server };
+    LabStatus { host: Some(conn.name.clone()), host_id: Some(conn.id.clone()), place: Some(place), provider: Some(conn.provider.id().to_string()), ..status }
 }
 
 /// Whether the lab runs on this machine right now: its containers, or a local VM of it. An
@@ -131,14 +133,28 @@ mod tests {
         assert_eq!(with_parked(status_with(false, &[]), None).parked, None);
     }
 
+    /// The connection of saved host `id`, named `name`, on `provider`.
+    fn conn(id: &str, name: &str, provider: Provider) -> crate::runtime::server::Connection {
+        crate::runtime::server::Connection {
+            id: id.into(),
+            provider,
+            name: name.into(),
+            env: Vec::new(),
+            tf_vars: Vec::new(),
+            tf_env: Vec::new(),
+            region: None,
+            auto_stop_hours: None,
+        }
+    }
+
     #[test]
     fn a_server_lab_says_where_it_runs() {
-        let s = on_server(status_with(true, &["web"]), "My AWS".into(), Provider::Aws);
-        assert_eq!((s.host.as_deref(), s.provider.as_deref()), (Some("My AWS"), Some("aws")));
+        let s = on_server(status_with(true, &["web"]), &conn("h-aws", "My AWS", Provider::Aws));
+        assert_eq!((s.host.as_deref(), s.host_id.as_deref(), s.provider.as_deref()), (Some("My AWS"), Some("h-aws"), Some("aws")));
         assert!(matches!(s.place, Some(Place::Cloud)));
-        let s = on_server(status_with(true, &["web"]), "pve".into(), Provider::Proxmox);
+        let s = on_server(status_with(true, &["web"]), &conn("h-pve", "pve", Provider::Proxmox));
         assert!(matches!(s.place, Some(Place::Server)));
-        assert_eq!(s.provider.as_deref(), Some("proxmox"));
+        assert_eq!((s.host_id.as_deref(), s.provider.as_deref()), (Some("h-pve"), Some("proxmox")));
     }
 
     #[tokio::test]

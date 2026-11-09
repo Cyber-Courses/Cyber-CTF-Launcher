@@ -96,6 +96,7 @@ export function mergeScan(statuses: Record<string, LabStatus>, scanRunning: Set<
           networks: [],
           url: null,
           host: null,
+          hostId: null,
           expiresAt: null,
           place: null,
           provider: null,

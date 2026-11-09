@@ -84,6 +84,7 @@ pub(super) fn status_from(out: &str, dir: &Path) -> LabStatus {
         networks,
         url: None,
         host: None,
+        host_id: None,
         expires_at: None,
         place: None,
         provider,

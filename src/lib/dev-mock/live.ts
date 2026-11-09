@@ -81,6 +81,7 @@ const VM_MACHINES = [
 export const vagrantMachines = (machine?: string | null) => VM_MACHINES.filter((m) => !machine || m.name === machine).map((m) => m.name);
 
 const hostName = (p: Placement) => (p.host ? argText(p.host.name) : null);
+const hostId = (p: Placement) => (p.host ? argText(p.host.id) : null);
 
 /** A VM lab's status: its machines on the lab network, running, saved or powered off. */
 function vmStatus(p: Placement): LabStatus {
@@ -90,6 +91,7 @@ function vmStatus(p: Placement): LabStatus {
     running: !p.parked,
     parked: p.parked,
     host: hostName(p),
+    hostId: hostId(p),
     place: p.host ? "server" : "local_vm",
     provider: p.provider,
     networks: [{ name: "lab", subnet: "192.168.56.0/24", internal: true }],
@@ -113,6 +115,7 @@ function cloudStatus(p: Placement): LabStatus {
     ...stopped,
     running: true,
     host: hostName(p),
+    hostId: hostId(p),
     place: "cloud",
     provider: p.provider,
     expiresAt: hours ? Math.floor(p.startedAt / 1000) + hours * 3600 : null,
