@@ -1,8 +1,9 @@
 name: CI
 
-# Every pull request and push to main or dev: the frontend (build, types, lint, format, tests) and the
-# Rust core (format, lint, tests) on Linux, macOS and Windows, so platform-specific code is at
-# least compiled and tested on its own platform. The Linux Rust leg also runs the quality ratchet.
+# Every pull request and push to main or dev: the frontend (build, types, lint, format, tests, npm
+# audit), the Rust dependency policy (cargo deny), and the Rust core (format, lint, tests) on Linux,
+# macOS and Windows, so platform-specific code is at least compiled and tested on its own platform.
+# The Linux Rust leg also runs the quality ratchet.
 
 on:
   pull_request:
@@ -36,6 +37,8 @@ jobs:
       - run: pnpm exec eslint src scripts e2e
       - run: pnpm exec prettier --check "{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}" "{*,docs/**/*,infra/**/*,scripts/**/*}.md"
       - run: pnpm exec vitest run
+      # Known vulnerabilities in the npm packages the app ships (devDependencies are build tools).
+      - run: pnpm audit --prod
 
   rust:
     strategy:
@@ -88,3 +91,15 @@ jobs:
             echo "::error::src/lib/tauri/generated differs from the Rust structs: run cargo test and commit the result"
             exit 1
           fi
+
+  # The Rust dependency policy (src-tauri/deny.toml): RustSec advisories (a vulnerable, yanked or
+  # unmaintained crate), licences (Apache-2.0 compatible only), bans and sources (crates.io only).
+  deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-deny@0.20.2
+      - run: cargo deny --manifest-path src-tauri/Cargo.toml check advisories bans licenses sources

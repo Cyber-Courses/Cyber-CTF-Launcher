@@ -1,0 +1,55 @@
+# Dependabot: weekly update pull requests for the Rust crates, the npm packages and the GitHub
+# Actions (the workflows and the composite actions under .github/actions/). Security updates come
+# on their own as advisories are published (enable Dependabot security updates in the repository
+# settings). A release must be a week old before it is proposed (`cooldown`), so a compromised
+# version that gets yanked within days never reaches a pull request.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      # Tauri's crates move together (their JS packages must match: pnpm check:tauri).
+      tauri:
+        patterns: ["tauri", "tauri-*"]
+      rust-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "Rust"
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      tauri:
+        patterns: ["@tauri-apps/*"]
+      next:
+        patterns: ["next", "eslint-config-next"]
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "npm"
+
+  - package-ecosystem: github-actions
+    # The workflows, and each composite action (their pinned SHAs live there too).
+    directories: ["/", "/.github/actions/*"]
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "Actions"
