@@ -49,19 +49,18 @@ fn decimal(num: &str) -> Option<(u128, u128, u128)> {
     Some((value(whole).unwrap_or(u128::MAX), value(fraction)?, scale))
 }
 
-/// Lab id from a container: its compose project (`cyberctf-<id>`) or, for the on-demand attack
-/// box (a `docker run` with no compose project), its name `cyberctf-<id>-isoloom-access` (older
-/// boxes: `-attacker`, `-exegol`).
+/// Lab id from a container: its compose project (`cyberctf-<id>`) or, for an attack box an older
+/// version left (a `docker run` with no compose project), its name `cyberctf-<id><suffix>`
+/// ([`crate::runtime::LEGACY_ATTACK_BOX_SUFFIXES`]).
 fn lab_of(name: &str, project: &str) -> Option<String> {
     if let Some(id) = project.strip_prefix("cyberctf-") {
         return Some(id.to_string());
     }
     let rest = name.strip_prefix("cyberctf-")?;
-    // The on-demand attack box runs as a bare `docker run` named `<project>-isoloom-access` with no
-    // compose project, so strip that suffix to group it under its lab. Without it the box surfaces
-    // as a separate id `<id>-isoloom-access`, which the sidebar, finding no such lab, shows by its
-    // prettified id. `-attacker`/`-exegol` are older attack-box names.
-    let id = rest.strip_suffix("-isoloom-access").or_else(|| rest.strip_suffix("-attacker")).or_else(|| rest.strip_suffix("-exegol")).unwrap_or(rest);
+    // Upgrade only: an older version's attack box is a bare `docker run` with no compose project,
+    // so strip its suffix to group it under its lab. Without it the box surfaces as a separate id
+    // (`<id>-isoloom-access`), which the sidebar, finding no such lab, shows by its prettified id.
+    let id = crate::runtime::LEGACY_ATTACK_BOX_SUFFIXES.iter().find_map(|s| rest.strip_suffix(s)).unwrap_or(rest);
     Some(id.to_string())
 }
 
@@ -129,13 +128,14 @@ fn project_filter(id: &str) -> String {
     format!("label=com.docker.compose.project={}", crate::runtime::compose_project(id))
 }
 
-/// Removes a lab's containers, its on-demand attack box included.
+/// Removes a lab's containers, an attack box an older version left beside them included.
 pub(super) async fn stop(id: &str) -> Result<()> {
     let project = crate::runtime::compose_project(id);
     let _ = run("docker", &["compose", "-p", &project, "down", "-t", "5", "--volumes", "--remove-orphans"], None).await;
-    // The attack box has no Compose project, so `down` and the project-label sweep below never
-    // catch it; remove it by name, or it is left running and still read as this lab by the scan.
-    let names = crate::runtime::attack_box_names(&project);
+    // Upgrade only: an older version's attack box has no Compose project, so `down` and the
+    // project-label sweep below never catch it; remove it by name, or it is left running and
+    // still read as this lab by the scan.
+    let names = crate::runtime::legacy_attack_box_names(&project);
     let mut reap = vec!["rm", "-f"];
     reap.extend(names.iter().map(String::as_str));
     let _ = run("docker", &reap, None).await;

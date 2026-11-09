@@ -189,16 +189,16 @@ fn leftover_folders_go_by_their_exact_sanitized_names() {
     std::fs::remove_dir_all(base).unwrap();
 }
 
-/// The attack VM's folder has no lab spec above it: its addresses come from its Vagrantfile.
+/// A folder with no lab spec above it: the addresses come from its Vagrantfile.
 #[test]
 fn status_without_a_lab_spec_reads_the_addresses_from_the_vagrantfile() {
     let dir = temp_dir("status-vf");
     std::fs::write(
         dir.join("Vagrantfile"),
-        "Vagrant.configure(\"2\") do |config|\n  config.vm.define \"attacker\" do |m|\n    m.vm.provider :virtualbox do |v|\n      v.name = \"minilab · attacker\"\n    end\n    m.vm.network \"private_network\", ip: \"192.168.56.250\", netmask: \"255.255.255.0\", virtualbox__intnet: \"isoloom-minilab-lab\"\n  end\nend\n",
+        "Vagrant.configure(\"2\") do |config|\n  config.vm.define \"web\" do |m|\n    m.vm.provider :virtualbox do |v|\n      v.name = \"minilab · web\"\n    end\n    m.vm.network \"private_network\", ip: \"192.168.56.250\", netmask: \"255.255.255.0\", virtualbox__intnet: \"isoloom-minilab-lab\"\n  end\nend\n",
     )
     .unwrap();
-    let s = super::status_from("1,attacker,state,running\n", &dir);
+    let s = super::status_from("1,web,state,running\n", &dir);
     assert!(s.running);
     assert_eq!(s.machines[0].ip, "192.168.56.250");
     assert_eq!(s.machines[0].interfaces[0].network, "lab");

@@ -33,10 +33,11 @@ pub async fn stop(dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<(
         let argv: Vec<String> = ctx.iter().cloned().chain(rest.iter().map(|s| (*s).to_string())).collect();
         async move { run("docker", &argv.iter().map(String::as_str).collect::<Vec<_>>(), None).await }
     };
-    // The attack box starts with the lab on the lab network, but it is a bare container with no
-    // Compose project, so `down --remove-orphans` and the project-label removals never take it out.
-    // Remove it by name, or it is left running and still read as this lab by the workload scan.
-    for name in compose::attack_box_names(&project) {
+    // Upgrade only: an attack box an older version ran beside the lab is a bare container with no
+    // Compose project, so `down --remove-orphans` and the project-label removals never take it
+    // out. Remove it by name, or it is left running and still read as this lab by the workload
+    // scan. (Today's box is a service of the lab's project, gone with it.)
+    for name in compose::legacy_attack_box_names(&project) {
         let _ = docker(&["rm", "-f", &name]).await;
     }
     // Belt and braces: whatever network of this lab is still around (something else plugged into

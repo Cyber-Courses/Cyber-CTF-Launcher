@@ -73,21 +73,6 @@ proptest! {
         prop_assert_eq!(lab_ids_from_vmrun(&listing), vec![id]);
     }
 
-    /// The attack VM (`labs/<id>/.cyberctf-attack-vm/...`) runs beside the lab; on its own it names
-    /// no running lab (as the VM-name scan excludes `· attacker`).
-    #[test]
-    fn an_attack_vm_alone_names_no_running_lab(
-        id in lab_id(),
-        prefix in proptest::collection::vec("[A-Za-z0-9 ._-]{1,10}", 0..3),
-        windows in any::<bool>(),
-    ) {
-        let mut segs: Vec<String> = vec![if windows { "C:".into() } else { String::new() }];
-        segs.extend(prefix);
-        segs.extend(["labs".to_string(), id, ".cyberctf-attack-vm/.vagrant/m".to_string(), "vm.vmx".to_string()]);
-        let path = segs.join(if windows { "\\" } else { "/" });
-        let listing = format!("Total running VMs: 1\n{path}\n");
-        prop_assert!(lab_ids_from_vmrun(&listing).is_empty(), "{:?}", path);
-    }
 
     #[test]
     fn vbox_names_read_back(names in proptest::collection::vec("[^\"\n\r]{0,20}", 0..5), uuid in "[0-9a-f-]{36}") {
@@ -123,9 +108,9 @@ proptest! {
     }
 
     #[test]
-    fn vms_map_only_to_installed_labs_and_never_by_the_attacker_alone(
+    fn vms_map_only_to_installed_labs(
         labs in proptest::collection::hash_map("[a-z0-9-]{1,10}", lab_id(), 0..4),
-        vms in proptest::collection::vec((prop_oneof!["[a-z0-9-]{1,10}", "\\PC{0,12}"], prop_oneof![Just("attacker".to_string()), "[a-z0-9]{1,6}"], any::<bool>()), 0..8),
+        vms in proptest::collection::vec((prop_oneof!["[a-z0-9-]{1,10}", "\\PC{0,12}"], "[a-z0-9]{1,6}", any::<bool>()), 0..8),
     ) {
         let by_name: HashMap<String, String> = labs.clone();
         let names: Vec<String> = vms
@@ -139,7 +124,7 @@ proptest! {
         prop_assert!(got.windows(2).all(|w| w[0] < w[1]), "sorted and unique");
         for id in &got {
             let name = by_name.iter().find(|(_, v)| *v == id).map(|(k, _)| k.clone()).unwrap();
-            prop_assert!(names.iter().any(|n| n.split_once(VM_NAME_SEP).is_some_and(|(l, m)| l == name && m != "attacker")));
+            prop_assert!(names.iter().any(|n| n.split_once(VM_NAME_SEP).is_some_and(|(l, _)| l == name)));
         }
     }
 
@@ -158,16 +143,5 @@ proptest! {
         for id in &got {
             prop_assert!(by_name.values().any(|v| v == id), "{:?}", id);
         }
-    }
-
-    /// An installed lab's attacker VM alone (`<lab><sep>attacker`) never marks the lab running,
-    /// whichever separator and however the lab name itself is shaped.
-    #[test]
-    fn a_prefixed_attacker_vm_alone_names_no_running_lab(
-        name in "[a-z0-9-]{1,10}", id in lab_id(), sep in prop_oneof![Just('_'), Just('-')],
-    ) {
-        let by_name: HashMap<String, String> = [(name.clone(), id)].into();
-        let vm = format!("{name}{sep}attacker");
-        prop_assert!(lab_ids_from_prefixed_vm_names([vm.as_str()].into_iter(), &by_name, sep).is_empty(), "{:?}", vm);
     }
 }

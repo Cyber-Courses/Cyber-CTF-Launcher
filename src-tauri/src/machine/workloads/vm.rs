@@ -109,6 +109,11 @@ fn running_by_owner(out: &str, labs: Option<&Path>, selftest_dir: Option<&Path>)
     by_lab.into_iter().map(|(id, (count, provider))| Workload { id, kind: "vm", count, mem_bytes: 0, provider: Some(provider) }).collect()
 }
 
+/// Upgrade only: the folder beside `.isoloom` where older versions of the launcher kept the
+/// attack VM, a Vagrant project of its own (`<lab>/.cyberctf-attack-vm`). Nothing makes it any
+/// more (the box is a machine of the lab now); a stop still destroys what an older version left.
+const LEGACY_ATTACK_VM_DIR: &str = ".cyberctf-attack-vm";
+
 /// Destroys a lab's (or the self-test's) local VMs.
 pub(super) async fn stop(dirs: &AppDirs, id: &str) -> Result<()> {
     // A lab's VMs: one per machine (.isoloom/vagrant) or Docker on one VM (.isoloom/docker-vm).
@@ -117,18 +122,17 @@ pub(super) async fn stop(dirs: &AppDirs, id: &str) -> Result<()> {
     } else {
         let lab = labs_dir(dirs)?.join(id);
         let out = crate::runtime::lab::out(&lab);
-        // The attack VM too: it is a Vagrant project of its own beside `.isoloom`
-        // (`<lab>/.cyberctf-attack-vm`), so a lab stopped here when its own stop didn't run (an
-        // orphan cleaned from the Running-now panel) does not leave its attack box behind. The
-        // Vagrantfile filter below skips it when there is none.
-        vec![out.join("vagrant"), out.join("docker-vm"), lab.join(".cyberctf-attack-vm")]
+        // And an older version's attack VM ([`LEGACY_ATTACK_VM_DIR`]), so a lab stopped after an
+        // upgrade does not leave it behind. The Vagrantfile filter below skips it when there is
+        // none.
+        vec![out.join("vagrant"), out.join("docker-vm"), lab.join(LEGACY_ATTACK_VM_DIR)]
     };
     let vagrant_dirs: Vec<PathBuf> = vagrant_dirs.into_iter().filter(|d| d.join("Vagrantfile").is_file()).collect();
     if vagrant_dirs.is_empty() {
         return Err(Error::Invalid(format!("no VMs found for `{id}`")));
     }
     // Every folder is attempted even after one fails (a lab's own destroy failing must not leave
-    // its attack VM behind); the first failure is what the stop reports once all were tried.
+    // the others behind); the first failure is what the stop reports once all were tried.
     let mut first_failure = None;
     for dir in vagrant_dirs {
         if let Err(e) = crate::platform::exec::Vagrant::of(&dir, &[]).run(&["destroy", "-f"]).await {
@@ -182,8 +186,10 @@ mod tests {
         );
         assert!(running_by_owner(&out, Some(&labs), Some(&selftest)).is_empty());
         // A folder with a Vagrantfile under a lab, however deep, belongs to that lab.
-        let deep =
-            format!("5,,machine-id,e\n5,,provider-name,qemu\n5,,machine-home,{}\n5,,state,running\n", home(&labs.join("goad").join(".cyberctf-attack-vm")));
+        let deep = format!(
+            "5,,machine-id,e\n5,,provider-name,qemu\n5,,machine-home,{}\n5,,state,running\n",
+            home(&labs.join("goad").join(super::LEGACY_ATTACK_VM_DIR))
+        );
         let w = running_by_owner(&deep, Some(&labs), Some(&selftest));
         assert_eq!(w.iter().map(|w| (w.id.as_str(), w.count)).collect::<Vec<_>>(), [("goad", 1)]);
     }
@@ -199,8 +205,8 @@ mod tests {
             std::fs::create_dir_all(&d).unwrap();
             std::fs::write(d.join("Vagrantfile"), "").unwrap();
         }
-        // And the attack VM beside `.isoloom`: its project is destroyed with the lab's.
-        let attack = lab.join(".cyberctf-attack-vm");
+        // And an older version's attack VM beside `.isoloom`: destroyed with the lab's.
+        let attack = lab.join(super::LEGACY_ATTACK_VM_DIR);
         std::fs::create_dir_all(&attack).unwrap();
         std::fs::write(attack.join("Vagrantfile"), "").unwrap();
         let tools = Tools::rules(&[]);
@@ -231,7 +237,7 @@ mod tests {
     }
 
     /// The first `vagrant destroy -f` failing (a locked VirtualBox, a VM half-removed by hand)
-    /// used to end the stop there, leaving the other folders, the attack VM's included, running.
+    /// used to end the stop there, leaving the other folders running.
     /// Each folder is still attempted, and the stop reports that first failure once all were.
     #[tokio::test]
     async fn a_failed_destroy_still_destroys_the_other_folders_and_is_reported() {
@@ -239,7 +245,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let lab = t.lab("goad", &[]);
         let out = crate::runtime::lab::out(&lab);
-        for d in [out.join("vagrant"), out.join("docker-vm"), lab.join(".cyberctf-attack-vm")] {
+        for d in [out.join("vagrant"), out.join("docker-vm"), lab.join(super::LEGACY_ATTACK_VM_DIR)] {
             std::fs::create_dir_all(&d).unwrap();
             std::fs::write(d.join("Vagrantfile"), "").unwrap();
         }

@@ -55,8 +55,8 @@ pub(super) fn status_from(out: &str, dir: &Path) -> LabStatus {
     // so it comes from the lab's spec (`.isoloom/vagrant` sits two levels under the lab).
     let (mut ifaces, networks) = match dir.parent().and_then(Path::parent).and_then(lab_topology) {
         Some(topology) => topology,
-        // No lab spec two levels up (the attack VM's own folder, `<lab>/.cyberctf-attack-vm`):
-        // the generated Vagrantfile says where its machines sit.
+        // The lab's spec two levels up can't be read (an edit in progress, a newer format): the
+        // generated Vagrantfile says where its machines sit.
         None => match std::fs::read_to_string(dir.join("Vagrantfile")) {
             Ok(text) => {
                 let lab = super::vm_names_from(&text).first().and_then(|n| n.split(" · ").next()).unwrap_or_default().to_string();

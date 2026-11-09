@@ -13,11 +13,16 @@ pub fn project(id: &str) -> String {
     format!("cyberctf-{id}")
 }
 
-/// The names the on-demand attack box can carry for `project`: the current ad-hoc name and the
-/// older ones. The box is a bare `docker run` with no Compose project, so tearing a lab down by
-/// its project label never removes it — it has to go by name.
-pub fn attack_box_names(project: &str) -> [String; 3] {
-    [format!("{project}-isoloom-access"), format!("{project}-attacker"), format!("{project}-exegol")]
+/// Upgrade only: the suffixes of the attack box containers older versions of the launcher ran
+/// beside a lab's project (`<project>-isoloom-access`, `-attacker`, `-exegol`). Those were bare
+/// `docker run`s with no Compose project, so a teardown by the project label never removes them.
+/// Today's box is a service of the lab's own project; nothing makes these any more.
+pub const LEGACY_ATTACK_BOX_SUFFIXES: [&str; 3] = ["-isoloom-access", "-attacker", "-exegol"];
+
+/// Upgrade only: the names a box an older version left beside `project` can carry
+/// ([`LEGACY_ATTACK_BOX_SUFFIXES`]), for a teardown to remove it by name.
+pub fn legacy_attack_box_names(project: &str) -> [String; 3] {
+    LEGACY_ATTACK_BOX_SUFFIXES.map(|s| format!("{project}{s}"))
 }
 
 /// The host ports picked at the lab's first start, pinned over the ephemeral ones Isoloom's
@@ -165,7 +170,7 @@ pub(super) fn serving_services_from_config(json: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{attack_box_names, parse_ps, project, serving_services_from_config};
+    use super::{legacy_attack_box_names, parse_ps, project, serving_services_from_config};
 
     #[test]
     fn serving_services_are_those_that_publish_a_port() {
@@ -285,9 +290,12 @@ mod tests {
     }
 
     #[test]
-    fn attack_box_names_cover_the_current_and_older_names() {
-        // Tearing a lab down removes these by name: the box is a bare container with no project
-        // label, so a project-label removal never catches it.
-        assert_eq!(attack_box_names("cyberctf-sqli"), ["cyberctf-sqli-isoloom-access", "cyberctf-sqli-attacker", "cyberctf-sqli-exegol"].map(String::from));
+    fn legacy_attack_box_names_cover_every_older_name() {
+        // Tearing a lab down removes these by name: an older version's box is a bare container
+        // with no project label, so a project-label removal never catches it.
+        assert_eq!(
+            legacy_attack_box_names("cyberctf-sqli"),
+            ["cyberctf-sqli-isoloom-access", "cyberctf-sqli-attacker", "cyberctf-sqli-exegol"].map(String::from)
+        );
     }
 }

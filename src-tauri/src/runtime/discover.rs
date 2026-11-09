@@ -95,10 +95,7 @@ fn vm_name_prefix(dir: &Path) -> Option<String> {
 pub(crate) fn lab_ids_from_vm_names<'a>(names: impl Iterator<Item = &'a str>, by_name: &HashMap<String, String>) -> Vec<String> {
     let mut ids = BTreeSet::new();
     for name in names {
-        // The launcher's own attack VM (`<lab> · attacker`) runs beside the lab; on its own it
-        // doesn't mean the lab is up.
-        if let Some((lab, machine)) = name.split_once(VM_NAME_SEP)
-            && machine != "attacker"
+        if let Some((lab, _)) = name.split_once(VM_NAME_SEP)
             && let Some(id) = by_name.get(lab)
         {
             ids.insert(id.clone());
@@ -111,7 +108,7 @@ pub(crate) fn lab_ids_from_vm_names<'a>(names: impl Iterator<Item = &'a str>, by
 /// domains (`<lab>_<machine>`, from vagrant-libvirt's `default_prefix`) and Hyper-V/ESXi VMs
 /// (`<lab>-<machine>`). Unlike the ` · ` separator, `_` and `-` can occur inside a lab's own name,
 /// so a lab is matched as a prefix, not by splitting: the longest installed name that leaves a
-/// non-empty machine wins. As with ` · attacker`, a lone attacker VM does not mean the lab is up.
+/// non-empty machine wins.
 pub(crate) fn lab_ids_from_prefixed_vm_names<'a>(names: impl Iterator<Item = &'a str>, by_name: &HashMap<String, String>, sep: char) -> Vec<String> {
     let mut ids = BTreeSet::new();
     for name in names {
@@ -126,11 +123,7 @@ pub(crate) fn lab_ids_from_prefixed_vm_names<'a>(names: impl Iterator<Item = &'a
                 (!machine.is_empty()).then_some((lab.len(), id, machine))
             })
             .max_by_key(|&(len, _, _)| len);
-        // On that most-specific reading, a lone attacker VM (`<lab><sep>attacker`) runs beside the
-        // lab and does not mean it is up: so `goad-light-attacker` counts for neither lab.
-        if let Some((_, id, machine)) = best
-            && machine != "attacker"
-        {
+        if let Some((_, id, _)) = best {
             ids.insert(id.clone());
         }
     }
@@ -182,12 +175,6 @@ pub(crate) fn lab_ids_from_vmrun(out: &str) -> Vec<String> {
     let mut ids = BTreeSet::new();
     for line in out.lines() {
         let line = line.trim();
-        // The attack VM (under `labs/<id>/.cyberctf-attack-vm/`) runs beside the lab; on its own it
-        // does not mean the lab's targets are up, so — as the VM-name scan does for `· attacker` —
-        // it is not counted.
-        if line.replace('\\', "/").contains("/.cyberctf-attack-vm/") {
-            continue;
-        }
         if let Some(id) = id_after_labs(line) {
             ids.insert(id);
         }
@@ -203,8 +190,7 @@ fn id_after_labs(path: &str) -> Option<String> {
     let path = path.replace('\\', "/");
     let segments: Vec<&str> = path.split('/').collect();
     let under_labs = |i: usize| segments.get(i) == Some(&"labs") && segments.get(i + 1).is_some_and(|id| is_lab_id(id));
-    // A target VM's own layout (`.isoloom/...`). The attack VM's `.cyberctf-attack-vm/...` is
-    // filtered out before here, so it is not a layout a lab-is-running path can match on.
+    // A lab VM's own layout (`.isoloom/...`).
     let lab_layout = |i: usize| segments.get(i + 2).is_some_and(|d| d.starts_with(".isoloom"));
     let at = (0..segments.len()).rev().find(|&i| under_labs(i) && lab_layout(i)).or_else(|| (0..segments.len()).rev().find(|&i| under_labs(i)))?;
     Some(segments[at + 1].to_string())
@@ -424,23 +410,19 @@ mod tests {
     }
 
     #[test]
-    fn utm_started_vms_map_back_to_installed_labs_and_a_lone_attacker_does_not_count() {
+    fn utm_started_vms_map_back_to_installed_labs() {
         // The full UTM path: utmctl output, through the name reader, through the ` · ` matcher.
         let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
         let out = "UUID  Status  Name\n\
                    a started  minilab · dc01\n\
                    b started  minilab · ws01\n\
                    c stopped  minilab · router\n\
-                   d started  minilab · attacker\n\
+                   d started  minilab · kali\n\
                    e started  elsewhere · box\n";
         let names = super::utm_running_vm_names(out);
-        assert_eq!(names, ["minilab · dc01", "minilab · ws01", "minilab · attacker", "elsewhere · box"]);
-        // Two target VMs of the lab are up: the lab runs (once), the foreign VM and the attacker aside.
+        assert_eq!(names, ["minilab · dc01", "minilab · ws01", "minilab · kali", "elsewhere · box"]);
+        // Machines of the lab are up: the lab runs (once), the foreign VM aside.
         assert_eq!(super::lab_ids_from_vm_names(names.iter().map(String::as_str), &by_name), vec!["mid".to_string()]);
-        // Only its attacker started: not the lab running.
-        let only_attacker = "UUID  Status  Name\nx started  minilab · attacker\n";
-        let names = super::utm_running_vm_names(only_attacker);
-        assert_eq!(super::lab_ids_from_vm_names(names.iter().map(String::as_str), &by_name), Vec::<String>::new());
     }
 
     #[test]
@@ -448,19 +430,6 @@ mod tests {
         let out = "Total running VMs: 1\n/Users/x/Library/App/labs/goad-light/.isoloom/vagrant/.vagrant/machines/dc01/vmware_desktop/x.vmx\n";
         assert_eq!(super::lab_ids_from_vmrun(out), vec!["goad-light".to_string()]);
         assert_eq!(super::lab_ids_from_vmrun("Total running VMs: 0\n"), Vec::<String>::new());
-    }
-
-    #[test]
-    fn a_running_attack_vm_alone_does_not_mean_the_vmware_lab_runs() {
-        // The attack VM is under `labs/<id>/.cyberctf-attack-vm/`; like the VM-name scan's
-        // `· attacker` exclusion, it is not counted on its own (it runs beside the lab).
-        let attacker = "Total running VMs: 1\n/Users/x/labs/goad-light/.cyberctf-attack-vm/.vagrant/machines/attacker/vmware_desktop/x.vmx\n";
-        assert_eq!(super::lab_ids_from_vmrun(attacker), Vec::<String>::new());
-        // A target VM up alongside it: the lab runs, counted once from the target.
-        let both = "Total running VMs: 2\n\
-                    /Users/x/labs/goad-light/.cyberctf-attack-vm/.vagrant/machines/attacker/vmware_desktop/x.vmx\n\
-                    /Users/x/labs/goad-light/.isoloom/vagrant/.vagrant/machines/dc01/vmware_desktop/y.vmx\n";
-        assert_eq!(super::lab_ids_from_vmrun(both), vec!["goad-light".to_string()]);
     }
 
     #[test]
@@ -521,12 +490,10 @@ mod tests {
     }
 
     #[test]
-    fn a_vm_named_only_attacker_or_without_the_separator_does_not_mean_a_lab_runs() {
+    fn a_vm_without_the_separator_does_not_mean_a_lab_runs() {
         let by_name: HashMap<String, String> = [("minilab-1".to_string(), "goad".to_string())].into();
-        let names = ["minilab-1 · attacker", "minilab-1", "minilab-1·dc01", "minilab-1 · ", "minilab-1 · attacker2", " · dc01"];
-        // The attack VM alone: no. A machine named like the attacker but not exactly: yes.
-        assert_eq!(super::lab_ids_from_vm_names(names.into_iter(), &by_name), ["goad".to_string()]);
-        assert_eq!(super::lab_ids_from_vm_names(["minilab-1 · attacker"].into_iter(), &by_name), Vec::<String>::new());
+        assert_eq!(super::lab_ids_from_vm_names(["minilab-1", "minilab-1·dc01", " · dc01"].into_iter(), &by_name), Vec::<String>::new());
+        assert_eq!(super::lab_ids_from_vm_names(["minilab-1 · dc01"].into_iter(), &by_name), ["goad".to_string()]);
         assert_eq!(super::lab_ids_from_vm_names(["minilab-1 · "].into_iter(), &by_name), ["goad".to_string()], "an empty machine name still names the lab");
     }
 
@@ -538,8 +505,6 @@ mod tests {
         let domains = ["minilab_dc01", "goad-light_dc01", "goad-light_ws01", "unknown_x"];
         // Two machines of goad-light collapse to one id; an unknown domain is ignored.
         assert_eq!(super::lab_ids_from_prefixed_vm_names(domains.into_iter(), &by_name, '_'), vec!["id1".to_string(), "id2".to_string()]);
-        // The attacker domain on its own does not mean the lab runs.
-        assert_eq!(super::lab_ids_from_prefixed_vm_names(["minilab_attacker"].into_iter(), &by_name, '_'), Vec::<String>::new());
     }
 
     #[test]
@@ -549,9 +514,6 @@ mod tests {
         let by_name: HashMap<String, String> = [("goad".to_string(), "g".to_string()), ("goad-light".to_string(), "gl".to_string())].into();
         assert_eq!(super::lab_ids_from_prefixed_vm_names(["goad-light-dc01"].into_iter(), &by_name, '-'), vec!["gl".to_string()]);
         assert_eq!(super::lab_ids_from_prefixed_vm_names(["goad-ws01"].into_iter(), &by_name, '-'), vec!["g".to_string()]);
-        // goad-light's attacker, read most-specifically, is goad-light's attacker: it counts for
-        // neither goad-light nor (as `light-attacker`) goad.
-        assert_eq!(super::lab_ids_from_prefixed_vm_names(["goad-light-attacker"].into_iter(), &by_name, '-'), Vec::<String>::new());
         // A bare lab name (no machine) and a foreign VM do not count.
         assert_eq!(super::lab_ids_from_prefixed_vm_names(["other-vm", "goad"].into_iter(), &by_name, '-'), Vec::<String>::new());
     }
@@ -569,7 +531,7 @@ mod tests {
         // the app data in a portable setup) comes first and its next segment is taken as the id.
         // Fails with: left: ["Library"], right: ["goad-light"].
         // Suggested fix: match the path against the app's own labs folder (`<app data>/labs/`),
-        // or take the id from the `/labs/<id>/.isoloom` (or `/.cyberctf-attack-vm`) shape.
+        // or take the id from the `/labs/<id>/.isoloom` shape.
         let out = "Total running VMs: 1\n/Users/labs/Library/Application Support/com.cyberctf/labs/goad-light/.isoloom/vagrant/.vagrant/machines/dc01/vmware_desktop/x.vmx\n";
         assert_eq!(super::lab_ids_from_vmrun(out), vec!["goad-light".to_string()]);
     }
