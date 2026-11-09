@@ -49,7 +49,7 @@ try {
   if (runningCount(resumed) === 0) throw new Error(`lab_resume did not bring the lab back: ${JSON.stringify(resumed)}`);
   console.log("PARK_RESUME_OK parked then resumed; states:", JSON.stringify(resumed));
 
-  // Teardown only; the verdict above already stands. run-all.sh's cleanup_lab tears the lab down
+  // Teardown only; the verdict above already stands. run.sh's cleanup_lab tears the lab down
   // regardless, so a stop that races the resume's lock here is not a failure.
   await invokeWhenIdle(b, "lab_stop", { id, runtime: "DOCKER" }).catch((e) => console.log("(cleanup lab_stop skipped:", e.message + ")"));
 } catch (e) {

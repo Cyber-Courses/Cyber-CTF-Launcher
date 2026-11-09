@@ -31,7 +31,7 @@ order that leaves nothing behind:
 Each scenario writes `e2e/desktop/.state/logs/<name>.log`. Knobs: `APP_BIN`,
 `TAURI_WEBDRIVER_PORT`, `DEV_URL_PORT`, `CYBERCTF_TEST_LOCAL_LAB`, `CASE_TIMEOUT`, `ONLY`,
 `SKIP_BUILD`, `KEEP` (leave the lab running), `STRICT` (a skip fails the run). The scenarios are `e2e/desktop/specs/<name>.mjs` and share `e2e/desktop/support.mjs`; a new
-one is a short `.mjs` there plus a line in `run-all.sh`.
+one is a short `.mjs` there plus a line in `e2e/desktop/run.sh`.
 
 On Linux the VM scan is skipped: start a libvirt domain named `<lab>_<machine>` (or a Hyper-V VM
 `<lab>-<machine>`) yourself, `<lab>` being the installed lab's isoloom name plus `-<instance>` when
@@ -45,5 +45,5 @@ window until `next dev` answers on port 3000. The runner handles it.
 
 Why the scripts force the page visible: the frontend pauses its polls while the document is
 hidden (`src/lib/visibility.ts`), and on macOS a window another one covers reports hidden, so a
-driven app never learned that its lab came up. `lib.mjs` overrides `document.visibilityState`
+driven app never learned that its lab came up. `support.mjs` overrides `document.visibilityState`
 and re-applies it on every wait tick (a reload drops it).

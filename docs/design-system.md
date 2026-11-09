@@ -25,7 +25,7 @@ The product jewel is **Cyber CTF emerald**. This file describes the system as it
 | `src/lib/appearance.ts`, `public/appearance.js` | The Dark / Black / Light preference, applied before first paint and synced across windows                                                                  |
 | `src/components/brand/mark.tsx`                 | `CtfMark`, the layered up-chevron, coloured by `--mark-top` / `--mark-base`                                                                                |
 | `src/components/ui/*`                           | The primitives below                                                                                                                                       |
-| `src/lib/dev-mock.ts`                           | Development only: `pnpm dev` then `http://localhost:3000/?mock` previews every screen in a browser with sample data                                        |
+| `src/lib/dev-mock/`                             | Development only: `pnpm dev` then `http://localhost:3000/?mock` previews every screen in a browser with sample data                                        |
 
 ## Modes
 

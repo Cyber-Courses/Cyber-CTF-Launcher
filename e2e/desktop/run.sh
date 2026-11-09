@@ -37,7 +37,7 @@ DEV_URL_PORT=${DEV_URL_PORT:-3000}
 export TAURI_WEBDRIVER_PORT=${TAURI_WEBDRIVER_PORT:-4445}
 OS=$(uname -s)
 
-fail_now() { printf 'run-all: %s\n' "$*" >&2; exit 2; }
+fail_now() { printf 'run.sh: %s\n' "$*" >&2; exit 2; }
 
 use_nvmrc_node "$HERE"
 command -v pnpm >/dev/null || fail_now "pnpm is not installed"

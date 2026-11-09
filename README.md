@@ -14,12 +14,9 @@ A lab describes itself once as an `isoloom.yml` (its machines, networks, service
 
 ### Lab engine
 
-Two engines run a lab's generated files, chosen under **Settings > Labs > Lab engine**:
+The [Isothrum runner](https://github.com/Isothrum/isothrum) runs every lab with machines, in every mode above: it executes the versioned run manifest Isoloom writes beside the generated files (local Docker, a container lab in a local VM (`docker-vm`), local VMs, Proxmox and ESXi servers, and `cloud-docker` / `cloud-vm` in a cloud account). There is no other engine to choose. Only cloud-services labs (managed cloud services, no machines) run through the launcher's own Terraform path (`runtime/cloud_services.rs`).
 
-- **Built-in** (the default): the launcher's own lifecycle code, which runs every mode above.
-- **Isothrum runner**: the shared Isothrum runner, which executes the versioned run manifest Isoloom writes alongside the generated files. It currently drives local Docker labs, local VM labs, and **Proxmox** and **ESXi** server labs; `docker-vm` and the cloud modes stay on the launcher's own code whichever engine is selected. The developer environment variable `CYBERCTF_RUNNER` (`isothrum` or `launcher`) forces one regardless of the setting.
-
-**Proven vs. generated.** Local labs (Docker and VMs) and server labs (Proxmox and ESXi) are proven by real runs. The cloud modes are **generated and validated** — the Terraform each cloud produces passes its official validator — but have not been run end to end on a paid account, so treat cloud runs as generate-and-validate-proven until exercised with real credentials.
+**Proven vs. generated.** Local labs (Docker, Docker in a VM, VMs) and server labs (Proxmox and ESXi) are proven by real runs, and so are cloud labs on **AWS**: the integration tests' AWS tier runs `cloud-docker` and `cloud-vm` labs end to end in a real account ([docs/testing/integration.md](docs/testing/integration.md)). On the other clouds the Terraform Isoloom generates passes the cloud's official validator but hasn't been run end to end on a paid account yet.
 
 ## Architecture
 
@@ -31,21 +28,21 @@ Two engines run a lab's generated files, chosen under **Settings > Labs > Lab en
   - [`account/`](src-tauri/src/account/): Cyber Auth sign-in (`auth.rs`: authorization code + PKCE through the system browser, loopback redirect on `127.0.0.1:47290-47292/callback`, or a code entered on another device (`auth/device.rs`); tokens in the OS keychain, refreshed automatically, never in the webview; see [Signing in](#signing-in)), CyberBackend GraphQL with the token attached on the Rust side (`api.rs`), and the agent that links the launcher to the website (`agent.rs`, `colocation.rs`).
   - [`labs.rs`](src-tauri/src/labs.rs): `lab_launch` calls `startLab`, then downloads `CyberCTF/*` at the pinned commit (full SHA only; archive paths checked), and starts the lab with `CTF_API_URL` and `CTF_LAUNCH_TOKEN`. The lab's `evidence` service exchanges the token for this player's evidence.
   - [`machine/`](src-tauri/src/machine/): what this machine can run (`system/`: Docker engines, Vagrant, hypervisors, package manager), the setup self-tests (`selftest/`), the workloads/storage the Machine page shows (`workloads/`, `storage.rs`) and one-click dependency installs (`tools/`).
-  - [`platform/`](src-tauri/src/platform/): running tools without a shell (`exec/`), files only this user can read (`private_fs.rs`), whole-file writes (`atomic_file.rs`), HTTP clients with timeouts and a download size cap (`http.rs`), and the PATH a GUI launch is missing (`env_path.rs`).
+  - [`platform/`](src-tauri/src/platform/): running tools without a shell (`exec/`), files only this user can read (`private_fs.rs`), whole-file writes (`atomic_file.rs`), HTTP clients with timeouts and a download size cap (`http.rs`), the PATH a GUI launch is missing (`env_path.rs`), and the service endpoints (`config.rs`).
   - [`runtime/`](src-tauri/src/runtime/): lab lifecycle, with logs streamed to the UI over a Tauri channel
     - `lab/`: the launcher's one door to Isoloom (its crates — `isoloom-spec`, `-plan`, `-targets`, `-compose`, `-render` and the run-manifest types `isoloom-manifest` — are used nowhere else): the target's files (Compose, Vagrant, Terraform) are generated from the lab's `isoloom.yml` right before they run, then the launcher's own overrides applied (`overrides.rs`); Isoloom's paths and names (`names.rs`); the variables of Isoloom's Terraform modules from the player's hosts and accounts (`vars.rs`); and each lab's instance numbering (`instances.rs`)
-    - `isothrum.rs` + `isothrum/`: the Isothrum runner path (`isothrum-runner`) — when the Isothrum runner is the lab engine, the launcher hands it local Docker labs, local VM labs and Proxmox/ESXi server labs, and it executes the run manifest Isoloom wrote; its runs live under the app data folder's `runs/`, never in the lab folder
+    - `isothrum.rs` + `isothrum/`: the Isothrum runner (`isothrum-runner`), the one lab engine: the launcher hands it every lab with machines, wherever it runs (here, on a server, in a cloud account), and it executes the run manifest Isoloom wrote; its runs live under the app data folder's `runs/`, never in the lab folder
     - `launch.rs`, `lifecycle.rs`, `status.rs`: start, park/resume, stop and the auto-stop reaper for cloud labs, and what is running where
     - `docker/`: `docker compose -p cyberctf-<lab>`; stop removes volumes, so every start is a clean lab; status reports machines, interfaces, networks and declared services
     - `vm.rs` + `vm/`: `vagrant up --provider <p>`; stop destroys the VMs
     - `server/`, `proxmox.rs`, `terraform/`: labs on the player's own servers (ESXi, Proxmox) and cloud accounts (AWS, Azure, GCP, DigitalOcean, Linode, OCI); `server_selftest/` checks a server or account before the first lab
     - `providers.rs`: Vagrant providers. Local: VirtualBox, VMware Desktop, Hyper-V, Parallels, libvirt, QEMU, UTM. Remote: VMware ESXi, Proxmox.
     - `attack_machine.rs` + `attack_machine/`: the attack box, a machine the launcher adds to the lab through its overlay (`lab/overlay.rs`), at the seat the lab declares for the player or as `attackbox` on its first network: a container among a container lab's, a Kali VM among a VM lab's
-  - [`deploy_worker/`](src-tauri/src/deploy_worker/): launches, resumes, parks and provisioning runs in a detached worker process (`cyberctf-desktop deploy --job <file>`), so quitting the app never cuts a deploy short. A per-lab file lock keeps the app and the workers from running two operations on one lab at once.
+  - [`app/deploy_worker/`](src-tauri/src/app/deploy_worker/): launches, resumes, parks and provisioning runs in a detached worker process (`cyberctf-desktop deploy --job <file>`), so quitting the app never cuts a deploy short. A per-lab file lock keeps the app and the workers from running two operations on one lab at once.
   - [`lan_relay/`](src-tauri/src/lan_relay/): loopback relays that let Vagrant and ovftool reach a LAN ESXi host on macOS.
   - `terminal.rs`: the in-app attack box shell (a PTY streamed to xterm.js); `shared_folder.rs`: the folder shared with the attack box.
   - `cloud.rs`: cloud account sign-in through each provider's CLI; `error.rs`: crate-wide errors.
-  - [`app/`](src-tauri/src/app/): the app shell (windows, menu, quitting, the log file, the service endpoints in `config.rs`); [`commands.rs`](src-tauri/src/commands.rs): the commands the webview invokes.
+  - [`app/`](src-tauri/src/app/): the app shell (windows, menu, quitting, the log file); [`commands.rs`](src-tauri/src/commands.rs): the commands the webview invokes.
 
 The runtime layer knows nothing about CTFs: a lab is a directory with an `isoloom.yml` (its machines, networks, services and checks). The launcher generates the files for the target it runs on under the lab's `.isoloom/` folder.
 
@@ -90,7 +87,7 @@ The sidebar and **Settings > Account** show who is signed in (name and email fro
 
 ## Configuration
 
-Production endpoints are built in ([`app/config.rs`](src-tauri/src/app/config.rs)). Each can be overridden at build or run time, e.g. to test against a local cyber-auth:
+Production endpoints are built in ([`platform/config.rs`](src-tauri/src/platform/config.rs)). Each can be overridden at build or run time, e.g. to test against a local cyber-auth:
 
 | Variable             | Default                                                                  |
 | -------------------- | ------------------------------------------------------------------------ |
