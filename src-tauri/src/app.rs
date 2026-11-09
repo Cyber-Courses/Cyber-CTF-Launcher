@@ -308,6 +308,16 @@ mod tests {
     }
 
     #[test]
+    fn the_webview_loads_images_from_the_app_and_the_account_pictures_host_only() {
+        // `img-src https:` let any page the webview rendered load (and beacon to) any host. The
+        // one remote image is the account's picture: cyber-auth's sign-in is GitHub's, whose
+        // avatars come from avatars.githubusercontent.com (any other shows the initials).
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let img = conf["app"]["security"]["csp"]["img-src"].as_str().unwrap();
+        assert_eq!(img.split_whitespace().collect::<Vec<_>>(), ["'self'", "data:", "https://avatars.githubusercontent.com"]);
+    }
+
+    #[test]
     fn only_deploy_job_arguments_make_a_worker() {
         let args = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
         assert_eq!(worker_job(args(&["app", "deploy", "--job", "/d/lab.json"])), Some("/d/lab.json".into()));

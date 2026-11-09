@@ -74,6 +74,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   licences, crates.io only) and `pnpm audit --prod` in CI, Dependabot for the crates, the npm
   packages and the pinned actions, and a link check of the docs (`pnpm check:docs`).
 
+- **The webview loads remote images from one host.** Its content security policy allowed images
+  from any `https:` address; it now allows the app's own, `data:` and
+  `https://avatars.githubusercontent.com` (the account picture of a GitHub sign-in). Any other
+  picture shows the account's initials.
 - **Corporate proxies reach the tools the app starts.** On macOS, an app opened from the Finder
   doesn't get the shell's proxy: when no proxy variable is set, the system proxy (MDM-set or from
   System Settings, as `scutil --proxy` reports it) is passed to docker, vagrant, terraform, git
