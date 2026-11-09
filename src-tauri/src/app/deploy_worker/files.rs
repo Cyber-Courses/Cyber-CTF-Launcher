@@ -80,6 +80,7 @@ pub fn log_so_far(dirs: &AppDirs, lab_id: &str) -> Result<String> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::testing::temp_dir;
 
     #[test]
     fn a_workers_files_share_its_key() {
@@ -106,13 +107,6 @@ pub(crate) mod tests {
         assert_eq!(read_worker(&p), None);
         assert_eq!(read_worker(&dir.join("missing.pid")), None);
         std::fs::remove_dir_all(dir).ok();
-    }
-
-    /// A fresh folder under the temp dir for one test.
-    pub(in crate::app::deploy_worker) fn temp_dir(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("cyberctf-{tag}-{}-{}", std::process::id(), rand::random::<u32>()));
-        std::fs::create_dir_all(&d).unwrap();
-        d
     }
 
     #[test]

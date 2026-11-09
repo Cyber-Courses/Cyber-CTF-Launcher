@@ -8,6 +8,13 @@ pub mod source_scan;
 pub mod test_app;
 mod ts_bindings;
 
+/// A fresh folder under the temp dir for one test, named after `tag`.
+pub fn temp_dir(tag: &str) -> std::path::PathBuf {
+    let d = std::env::temp_dir().join(format!("cyberctf-{tag}-{}-{}", std::process::id(), rand::random::<u32>()));
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
 /// Asserts that `actual` is `expected` as a float can be: within a millionth of it (an exact
 /// comparison of floats says more about rounding than about the code under test).
 #[track_caller]

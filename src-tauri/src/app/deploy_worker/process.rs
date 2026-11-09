@@ -802,7 +802,7 @@ mod tests {
 
     #[test]
     fn a_pidfile_is_claimed_once_and_a_stale_one_replaced() {
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("claim");
+        let dir = crate::testing::temp_dir("claim");
         let f = Files::of(&dir, "lab-1");
         drop(claim(&f).unwrap());
         assert!(f.pid.exists());
@@ -817,7 +817,7 @@ mod tests {
     #[test]
     fn a_second_start_is_refused_while_the_first_worker_runs() {
         // Regression: two launches racing each other both saw no worker and spawned two.
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("claim-live");
+        let dir = crate::testing::temp_dir("claim-live");
         let f = Files::of(&dir, "lab-1");
         let mut child = fake_worker();
         let worker = Worker { pid: child.id(), started: observe(child.id()).map(|o| o.started) };
@@ -833,7 +833,7 @@ mod tests {
 
     #[test]
     fn a_just_claimed_pidfile_is_not_swept_as_stale() {
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("claimed");
+        let dir = crate::testing::temp_dir("claimed");
         let f = Files::of(&dir, "lab-1");
         drop(claim(&f).unwrap());
         assert_eq!(running_in(&dir), [] as [&str; 0]);
@@ -843,7 +843,7 @@ mod tests {
 
     #[test]
     fn only_the_workers_own_pidfile_is_removed() {
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("own-pid");
+        let dir = crate::testing::temp_dir("own-pid");
         let p = dir.join("lab-1.pid");
         std::fs::write(&p, "200 1").unwrap();
         remove_pidfile_of(&p, 100);
@@ -855,7 +855,7 @@ mod tests {
 
     #[test]
     fn stale_pidfiles_are_cleared_and_only_live_workers_listed() {
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("running");
+        let dir = crate::testing::temp_dir("running");
         let f = Files::of(&dir, "lab-1");
         std::fs::write(&f.pid, "4000000000").unwrap();
         std::fs::write(dir.join("lab-2.pid"), "garbage").unwrap();
@@ -870,7 +870,7 @@ mod tests {
 
     #[test]
     fn killing_a_worker_that_is_gone_just_drops_its_pidfile() {
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("kill");
+        let dir = crate::testing::temp_dir("kill");
         let f = Files::of(&dir, "lab-1");
         std::fs::write(&f.pid, "4000000000").unwrap();
         std::fs::write(&f.job, "{}").unwrap();
@@ -883,7 +883,7 @@ mod tests {
 
     #[test]
     fn the_job_and_its_log_are_written_for_this_user_only() {
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("private");
+        let dir = crate::testing::temp_dir("private");
         let f = Files::of(&dir, "lab-1");
         // Left by an older version, readable by everyone.
         std::fs::write(&f.log, "old run").unwrap();
@@ -991,7 +991,7 @@ mod tests {
     fn a_pidfile_naming_pid_zero_or_one_never_signals_anything() {
         // A half-written or corrupt pidfile may read as 0 or 1; signalling that group would hit
         // this very process (0) or init (1). Both are dropped as stale, nothing is sent.
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("kill-zero");
+        let dir = crate::testing::temp_dir("kill-zero");
         let f = Files::of(&dir, "lab-1");
         for text in ["0", "1", "0 1760000000"] {
             std::fs::write(&f.pid, text).unwrap();
@@ -1026,7 +1026,7 @@ mod tests {
     fn the_sweep_keeps_an_empty_pidfile_but_drops_a_whitespace_only_one() {
         // `claim` creates the pidfile empty before the worker is spawned; a sweep in that window
         // must leave it. One holding only whitespace was never a claim: stale.
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("sweep-empty");
+        let dir = crate::testing::temp_dir("sweep-empty");
         std::fs::write(dir.join("lab-1.pid"), "").unwrap();
         std::fs::write(dir.join("lab-2.pid"), " \n").unwrap();
         assert_eq!(running_in(&dir), [] as [&str; 0]);
@@ -1037,7 +1037,7 @@ mod tests {
 
     #[test]
     fn a_running_job_with_a_corrupt_job_file_is_listed_as_running_but_not_as_a_job() {
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("jobs-corrupt");
+        let dir = crate::testing::temp_dir("jobs-corrupt");
         let f = Files::of(&dir, "lab-1");
         // This test process is alive, but not a worker: not listed at all.
         std::fs::write(&f.pid, std::process::id().to_string()).unwrap();

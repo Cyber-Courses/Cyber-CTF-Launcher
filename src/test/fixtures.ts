@@ -75,3 +75,9 @@ export const hypervisorStatus = (over: Partial<ProviderStatus>): ProviderStatus 
   reason: null,
   ...over,
 });
+
+/** The `managed_settings` answer of a computer whose policy turns one-click tool installs off. */
+export const INSTALLS_OFF = { managed_settings: () => ({ policy: ["DisableToolInstalls"], updates: "inApp" }) };
+
+/** What the UI says beside the install buttons that policy turns off. */
+export const INSTALLS_OFF_NOTE = "Your organization turned off one-click tool installs and removals";

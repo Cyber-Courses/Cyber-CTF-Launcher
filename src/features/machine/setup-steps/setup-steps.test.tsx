@@ -7,7 +7,7 @@ import { MachineStepBody, SetupOutcome, useMachineSetup, type MachineStep, type 
 import { wslState } from "@/features/machine/setup-steps/steps";
 import { getAttackImage, getAutoAttackBox, setAttackImage } from "@/lib/settings";
 import type { SystemReport, WslState } from "@/lib/tauri";
-import { freshReport, hypervisorStatus as hv, readyReport } from "@/test/fixtures";
+import { INSTALLS_OFF, INSTALLS_OFF_NOTE, freshReport, hypervisorStatus as hv, readyReport } from "@/test/fixtures";
 import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { installDockerDesktop, radioWith } from "@/features/machine/machine-test-kit";
@@ -359,11 +359,11 @@ describe("engine step", () => {
 
   it("offers no one-click install the policy turns off, and says why", async () => {
     // Regression: Install was offered, and failed only once clicked.
-    const calls = installTauri({ managed_settings: () => ({ policy: ["DisableToolInstalls"], updates: "inApp" }) });
+    const calls = installTauri(INSTALLS_OFF);
     const user = userEvent.setup();
     render(<Step step="docker" report={freshReport("macos")} />);
     await flush();
-    expect(text()).toContain("Your organization turned off one-click tool installs and removals on this computer");
+    expect(text()).toContain(INSTALLS_OFF_NOTE);
     const install = button(/install docker desktop/i);
     expect(install.hasAttribute("disabled")).toBe(true);
     await user.click(install);

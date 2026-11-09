@@ -9,7 +9,7 @@ import { argsOf, failsWith, field, go, heading, input, renderSetup, type User } 
 import { ServerScreen } from "@/features/servers/servers-screen";
 import { answer } from "@/lib/dev-mock";
 import type { ServerHostInput, ServerList } from "@/lib/tauri";
-import { readyReport } from "@/test/fixtures";
+import { INSTALLS_OFF, INSTALLS_OFF_NOTE, readyReport } from "@/test/fixtures";
 import { installTauri, stream } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
@@ -53,6 +53,14 @@ async function newProxmoxAtServer(user: User) {
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+/** A server's setup at its tools step, on a machine without Terraform. */
+async function atToolsWithoutTerraform(user: User) {
+  const report = readyReport();
+  report.terraform = { installed: false, version: null };
+  await renderSetup({ ...EMPTY_HOST }, report);
+  await go(user, /^continue$/i);
+}
 
 describe("server setup: validation and saving", () => {
   it("keeps Continue off until the address, then the user and password, are filled, and a blank address does not count", async () => {
@@ -244,14 +252,10 @@ describe("cloud setup: validation per provider", () => {
 
   it("offers no one-click install the policy turns off, and says why", async () => {
     // Regression: Install was offered, and failed only once clicked.
-    const calls = installTauri({ managed_settings: () => ({ policy: ["DisableToolInstalls"], updates: "inApp" }) });
-    const user = userEvent.setup();
-    const report = readyReport();
-    report.terraform = { installed: false, version: null };
-    await renderSetup({ ...EMPTY_HOST }, report);
-    await go(user, /^continue$/i);
+    const calls = installTauri(INSTALLS_OFF);
+    await atToolsWithoutTerraform(userEvent.setup());
     expect(disabled(/install terraform/i)).toBe(true);
-    expect(document.body.textContent).toContain("Your organization turned off one-click tool installs and removals");
+    expect(document.body.textContent).toContain(INSTALLS_OFF_NOTE);
     expect(argsOf(calls, "install_dependency")).toHaveLength(0);
   });
 
@@ -269,10 +273,7 @@ describe("cloud setup: validation per provider", () => {
         }),
     });
     const user = userEvent.setup();
-    const report = readyReport();
-    report.terraform = { installed: false, version: null };
-    await renderSetup({ ...EMPTY_HOST }, report);
-    await go(user, /^continue$/i);
+    await atToolsWithoutTerraform(user);
     await user.click(button(/install terraform/i));
     await flush();
     expect(disabled(/install terraform/i)).toBe(true);

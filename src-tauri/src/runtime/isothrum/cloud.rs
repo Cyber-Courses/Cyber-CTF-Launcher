@@ -465,29 +465,28 @@ mod tests {
         }
     }
 
-    /// The run manifest Isoloom generates for a lab of its own module on `cloud` (cloud
-    /// services): `env` is its `cloud.env`, which takes the names it sets from the params.
-    fn services_manifest(cloud: &str, env: &str) -> Manifest {
-        let dir = crate::runtime::test_support::write_lab(&format!("version: 1\nname: s\ncloud:\n  provider: {cloud}\n  terraform: terraform\n{env}"));
+    /// The run manifest Isoloom generates for the lab `spec`, declared `runtime`, on `cloud`.
+    fn manifest_of(spec: &str, runtime: Runtime, cloud: &str) -> Manifest {
+        let dir = crate::runtime::test_support::write_lab(spec);
         std::fs::create_dir_all(dir.join("terraform")).unwrap();
         std::fs::write(dir.join("terraform").join("main.tf"), "variable \"region\" {}\n").unwrap();
-        let (module, target) = lab::terraform(&dir, Runtime::Cloud, cloud);
+        let (module, target) = lab::terraform(&dir, runtime, cloud);
         lab::prepare(&dir, target).unwrap();
         let manifest = isothrum_runner::load_manifest(&module.join("run.json")).unwrap().manifest;
         let _ = std::fs::remove_dir_all(&dir);
         manifest
     }
 
+    /// A lab of its own module on `cloud` (cloud services): `env` is its `cloud.env`, which takes
+    /// the names it sets from the params.
+    fn services_manifest(cloud: &str, env: &str) -> Manifest {
+        manifest_of(&format!("version: 1\nname: s\ncloud:\n  provider: {cloud}\n  terraform: terraform\n{env}"), Runtime::Cloud, cloud)
+    }
+
     /// A cloud-docker run's manifest on AWS: no placement params.
     fn vm_manifest() -> Manifest {
-        let dir = crate::runtime::test_support::write_lab(
-            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, networks: { lan: 10 } }\n",
-        );
-        let (module, target) = lab::terraform(&dir, Runtime::Docker, "aws");
-        lab::prepare(&dir, target).unwrap();
-        let manifest = isothrum_runner::load_manifest(&module.join("run.json")).unwrap().manifest;
-        let _ = std::fs::remove_dir_all(&dir);
-        manifest
+        let spec = "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, networks: { lan: 10 } }\n";
+        manifest_of(spec, Runtime::Docker, "aws")
     }
 
     #[test]

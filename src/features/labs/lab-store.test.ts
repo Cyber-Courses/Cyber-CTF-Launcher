@@ -3,9 +3,9 @@ import type { Lab } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
 
 // labStatus answers from a queue of deferred replies, so a test decides which read lands first.
-const replies: { resolve: (s: LabStatus) => void; reject: (e: unknown) => void }[] = [];
+const replies: { resolve: (s: LabStatus) => void }[] = [];
 vi.mock("@/lib/tauri", () => ({
-  labStatus: () => new Promise<LabStatus>((resolve, reject) => replies.push({ resolve, reject })),
+  labStatus: () => new Promise<LabStatus>((resolve) => replies.push({ resolve })),
 }));
 
 const lab = { id: "lab-1", runtime: { runtime: "DOCKER", architectures: [], providers: [] } } as unknown as Lab;
@@ -71,37 +71,5 @@ describe("lab-store", () => {
     expect(getLabState().scanRunning).toBe(scan);
     setScanRunning([]);
     expect(getLabState().scanRunning.size).toBe(0);
-  });
-
-  it("keeps why a status read failed, logging it once, until a read succeeds", async () => {
-    // Regression: every failed read was discarded, so Docker down or a lab whose files couldn't be
-    // generated again showed its last status with no word of it.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const { refreshStatus, getLabState } = await freshStore();
-    const denied = { code: "other", message: "Docker isn't running" };
-    for (const i of [0, 1]) {
-      const read = refreshStatus(lab);
-      replies[i].reject({ ...denied });
-      await read;
-    }
-    expect(getLabState().statusErrors["lab-1"]).toEqual(denied);
-    expect(getLabState().probed.has("lab-1")).toBe(true);
-    expect(warn).toHaveBeenCalledTimes(1);
-    const ok = refreshStatus(lab);
-    replies[2].resolve(status(false));
-    await ok;
-    expect("lab-1" in getLabState().statusErrors).toBe(false);
-    warn.mockRestore();
-  });
-
-  it("a failed read begun before a newer one doesn't overwrite its answer", async () => {
-    const { refreshStatus, getLabState } = await freshStore();
-    const poll = refreshStatus(lab);
-    const fresh = refreshStatus(lab, { fresh: true });
-    replies[1].resolve(status(true));
-    await fresh;
-    replies[0].reject({ code: "other", message: "late" });
-    await poll;
-    expect(getLabState().statusErrors).toEqual({});
   });
 });

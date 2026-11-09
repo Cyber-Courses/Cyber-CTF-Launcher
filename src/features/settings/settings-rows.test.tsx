@@ -18,7 +18,7 @@ import { openCustomImage, toggleFailingSharedFolder } from "@/features/settings/
 import { getLocalePreference, setLocalePreference } from "@/lib/i18n";
 import { getAttackImage, getAutoAttackBox, getPortMode, getVmProvider, setAttackImage, setVmProvider } from "@/lib/settings";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
-import { readyReport } from "@/test/fixtures";
+import { INSTALLS_OFF, INSTALLS_OFF_NOTE, readyReport } from "@/test/fixtures";
 import { installTauri, stream, rejectWith } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
@@ -318,7 +318,7 @@ describe("HypervisorRow", () => {
   });
 
   it("offers no add-on install the policy turns off", async () => {
-    installTauri({ managed_settings: () => ({ policy: ["DisableToolInstalls"], updates: "inApp" }) });
+    installTauri(INSTALLS_OFF);
     const report = withProviders([hv({ provider: "vmware_desktop", available: false, plugin: "vagrant-vmware-desktop", pluginInstalled: false })]);
     render(<HypervisorRow report={report} {...props} />);
     await flush();
@@ -567,11 +567,11 @@ describe("InstalledToolsPanel", () => {
   it("offers no removal the policy turns off, and says why", async () => {
     installTauri({
       installed_tools: () => [{ dependency: "vagrant", at: Math.floor(Date.now() / 1000) - 3600 }],
-      managed_settings: () => ({ policy: ["DisableToolInstalls"], updates: "inApp" }),
+      ...INSTALLS_OFF,
     });
     render(<InstalledToolsPanel />);
     await flush();
-    expect(text()).toContain("Your organization turned off one-click tool installs and removals");
+    expect(text()).toContain(INSTALLS_OFF_NOTE);
     expect(button(/remove/i).hasAttribute("disabled")).toBe(true);
   });
 

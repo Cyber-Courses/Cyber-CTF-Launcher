@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn a_job_file_reads_back_or_is_refused() {
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("job");
+        let dir = crate::testing::temp_dir("job");
         let path = dir.join("lab-1.json");
         assert!(read_job(&path).is_none());
         let job = Job::on_lab("lab-1", Op::Provision { runtime: crate::runtime::Runtime::Vm, machine: Some("dc01".into()) });
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn a_job_file_with_a_byte_order_mark_or_trailing_text_is_refused() {
         // Hand-edited or half-overwritten job files: the worker exits rather than guessing.
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("job-odd");
+        let dir = crate::testing::temp_dir("job-odd");
         let path = dir.join("lab-1.json");
         let job = Job::on_lab("lab-1", Op::Resume { runtime: crate::runtime::Runtime::Vm });
         let json = serde_json::to_string(&job).unwrap();
@@ -322,7 +322,7 @@ mod tests {
 
     #[test]
     fn concluding_writes_the_verdict_and_drops_the_pidfile() {
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("conclude");
+        let dir = crate::testing::temp_dir("conclude");
         let f = Files::of(&dir, "lab-1");
         std::fs::write(&f.pid, std::process::id().to_string()).unwrap();
         std::fs::write(&f.job, "{}").unwrap();

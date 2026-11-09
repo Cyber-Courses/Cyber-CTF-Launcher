@@ -10,6 +10,15 @@ import { clickEverything, flush } from "@/test/ui";
 
 const signedIn = { loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" };
 
+/** The Settings screen for the signed-in player. */
+const renderScreen = () => render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
+
+/** `renderScreen`, once its first reads have settled. */
+async function openScreen() {
+  renderScreen();
+  await flush();
+}
+
 async function openTab(name: RegExp) {
   const user = userEvent.setup();
   const nav = screen.getByRole("navigation");
@@ -25,16 +34,14 @@ afterEach(() => {
 describe("SettingsScreen", () => {
   it("shows the account section first, with the signed-in player", async () => {
     installTauri();
-    render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
-    await flush();
+    await openScreen();
     expect(screen.getAllByText(/Florian Amette/).length).toBeGreaterThan(0);
   });
 
   for (const tab of [/account/i, /appearance/i, /labs/i, /maintenance/i, /about/i]) {
     it(`presses every control of the ${tab.source} section`, async () => {
       const calls = installTauri();
-      render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
-      await flush();
+      await openScreen();
       const user = await openTab(tab);
       expect(within(screen.getByRole("navigation")).getByRole("button", { name: tab }).getAttribute("aria-current")).toBe("page");
       await clickEverything(user, { skip: /^(Account|Appearance|Labs|Maintenance|About)$/ });
@@ -46,7 +53,7 @@ describe("SettingsScreen", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
     let state = "registering";
     installTauri({ agent_info: () => ({ installId: "x", name: "mbp", arch: "arm64", capabilities: [], state }) });
-    render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
+    renderScreen();
     await act(() => vi.advanceTimersByTimeAsync(0));
     expect(document.body.textContent).toContain("Registering…");
     state = "online";
@@ -57,8 +64,7 @@ describe("SettingsScreen", () => {
 
   it("saves the lab port mode from the Labs section", async () => {
     installTauri();
-    render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
-    await flush();
+    await openScreen();
     const user = await openTab(/labs/i);
     const before = getPortMode();
     const radios = screen.getAllByRole("radio");
@@ -82,8 +88,7 @@ describe("SettingsScreen", () => {
         rejectWith("not registered");
       },
     });
-    render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
-    await flush();
+    await openScreen();
     expect(document.body.textContent).toContain("Couldn’t read how the website sees this machine: not registered");
     expect(document.body.textContent).not.toContain("Registering…");
     await openTab(/about/i);
@@ -104,8 +109,7 @@ describe("SettingsScreen", () => {
         vmProviders: [{ provider: "qemu", remote: false, available: false, hypervisor: true, plugin: "vagrant-qemu", pluginInstalled: false, reason: null }],
       }),
     });
-    render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
-    await flush();
+    await openScreen();
     const user = await openTab(/labs/i);
     await user.click(screen.getByRole("button", { name: /install add-on/i }));
     await flush();
