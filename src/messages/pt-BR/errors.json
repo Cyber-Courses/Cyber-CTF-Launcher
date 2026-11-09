@@ -37,6 +37,7 @@
     "reapLabGone": "Os arquivos do lab sumiram ({detail}). Instale o lab de novo e pare-o, ou remova os recursos dele no console da sua nuvem.",
     "reapAccount": "A conta {account} não pode ser usada ({detail}). Corrija a conta nas Configurações e depois pare o lab.",
     "reapDestroy": "A destruição em {account} falhou: {detail}",
-    "reapTimedOut": "A destruição não terminou em {minutes} minutos. Pare o lab para tentar de novo."
+    "reapTimedOut": "A destruição não terminou em {minutes} minutos. Pare o lab para tentar de novo.",
+    "turnedOffByPolicy": "Sua organização desativou este recurso neste computador (configuração de política {setting}). Fale com sua equipe de TI se precisar dele."
   }
 }

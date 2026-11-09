@@ -37,6 +37,7 @@
     "reapLabGone": "Its lab files are gone ({detail}). Install the lab again, then stop it, or remove its resources in your cloud console.",
     "reapAccount": "The account {account} can't be used ({detail}). Fix the account in Settings, then stop the lab.",
     "reapDestroy": "Destroying it on {account} failed: {detail}",
-    "reapTimedOut": "The destroy didn't finish within {minutes} minutes. Stop the lab to retry."
+    "reapTimedOut": "The destroy didn't finish within {minutes} minutes. Stop the lab to retry.",
+    "turnedOffByPolicy": "Your organization turned this off on this computer (policy setting {setting}). Ask your IT team if you need it."
   }
 }

@@ -156,7 +156,13 @@
     "logsFailed": "Impossible d'ouvrir le dossier des journaux",
     "firstRun": "Configuration initiale",
     "firstRunDescription": "Refaire l'accueil. Vos réglages et vos labs sont conservés.",
-    "replay": "Relancer"
+    "replay": "Relancer",
+    "channel": {
+      "policy": "Votre organisation gère les mises à jour sur cet ordinateur.",
+      "homebrew": "Installé avec Homebrew, qui le met à jour : lancez brew upgrade.",
+      "linuxPackage": "Installé comme paquet système : votre gestionnaire de paquets (apt) le met à jour.",
+      "microsoftStore": "Installé depuis le Microsoft Store, qui le tient à jour."
+    }
   },
   "sharedFolder": {
     "title": "Dossier partagé",
@@ -170,5 +176,17 @@
     "remembered": "Un moteur de conteneurs ou une forme de VM est mémorisé pour cette machine.",
     "asked": "La boîte de dialogue de lancement demande à chaque fois.",
     "reset": "Redemander"
+  },
+  "managed": {
+    "title": "Géré par votre organisation",
+    "description": "Votre équipe informatique a désactivé ces fonctions sur cet ordinateur. Demandez-lui si vous en avez besoin.",
+    "off": "Désactivé",
+    "keys": {
+      "DisableWebsiteAgent": "Lancer des labs depuis le site web",
+      "DisableUpdater": "Mises à jour dans l'app",
+      "DisableToolInstalls": "Installation des outils en un clic",
+      "DisableCloudLaunches": "Labs sur des comptes cloud",
+      "RefusePrivilegedLabs": "Labs avec des machines privilégiées"
+    }
   }
 }

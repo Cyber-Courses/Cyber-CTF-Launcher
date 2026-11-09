@@ -7,7 +7,7 @@
 #![allow(clippy::needless_pass_by_value, reason = "Tauri hands a command its arguments by value")]
 
 mod account;
-mod app;
+pub(crate) mod app;
 mod cloud;
 pub(crate) mod labs;
 mod machine;
@@ -116,6 +116,7 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         app::force_quit,
         app::open_settings,
         app::open_log_folder,
+        app::managed_settings,
     ])
 }
 

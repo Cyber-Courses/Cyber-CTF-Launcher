@@ -3,10 +3,10 @@
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::OsStringExt;
 
-use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_SUCCESS};
+use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS};
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, REG_SZ, RRF_RT_ANY, RRF_RT_REG_SZ, RegCloseKey, RegDeleteKeyValueW, RegGetValueW, RegOpenKeyExW,
-    RegSetKeyValueW,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, REG_DWORD, REG_SZ, RRF_RT_ANY, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegCloseKey, RegDeleteKeyValueW,
+    RegEnumValueW, RegGetValueW, RegOpenKeyExW, RegSetKeyValueW,
 };
 
 use super::wide;
@@ -81,6 +81,72 @@ pub fn registry_value_exists(hive: Hive, path: &str, name: &str) -> Option<bool>
         ERROR_FILE_NOT_FOUND => Some(false),
         _ => None,
     }
+}
+
+/// A registry value as the launcher reads it: a `REG_DWORD`'s number, or the type of any other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RegistryValue {
+    Dword(u32),
+    Other(u32),
+}
+
+/// Every value under `path` (its name and data), None when the key doesn't exist.
+///
+/// # Errors
+///
+/// When the key is there but can't be opened or listed (access denied).
+pub fn registry_values(hive: Hive, path: &str) -> std::io::Result<Option<Vec<(String, RegistryValue)>>> {
+    let path = wide(OsStr::new(path));
+    let mut key: HKEY = std::ptr::null_mut();
+    // SAFETY: a NUL-terminated key name; `key` receives the handle, closed below.
+    let status = unsafe { RegOpenKeyExW(hive.key(), path.as_ptr(), 0, KEY_READ, &raw mut key) };
+    match status {
+        ERROR_SUCCESS => {}
+        ERROR_FILE_NOT_FOUND => return Ok(None),
+        other => return Err(os_error(other)),
+    }
+    let values = values_of(key);
+    // SAFETY: the handle RegOpenKeyExW just opened.
+    unsafe { RegCloseKey(key) };
+    values.map(Some)
+}
+
+/// The values of the open key `key`: each name and type, then a `REG_DWORD`'s data.
+fn values_of(key: HKEY) -> std::io::Result<Vec<(String, RegistryValue)>> {
+    let mut values = Vec::new();
+    // A value name is at most 16,383 characters.
+    let mut name = vec![0u16; 16_384];
+    for index in 0.. {
+        let mut len = u32::try_from(name.len()).map_err(std::io::Error::other)?;
+        let mut kind = 0u32;
+        // SAFETY: `name` holds `len` characters; the data isn't asked for (null pointers).
+        let status =
+            unsafe { RegEnumValueW(key, index, name.as_mut_ptr(), &raw mut len, std::ptr::null(), &raw mut kind, std::ptr::null_mut(), std::ptr::null_mut()) };
+        match status {
+            ERROR_SUCCESS => {}
+            ERROR_NO_MORE_ITEMS => break,
+            other => return Err(os_error(other)),
+        }
+        let units = usize::try_from(len).map_err(std::io::Error::other)?.min(name.len());
+        let value = if kind == REG_DWORD { dword(key, &name[..units])? } else { RegistryValue::Other(kind) };
+        values.push((String::from_utf16_lossy(&name[..units]), value));
+    }
+    Ok(values)
+}
+
+/// The `REG_DWORD` value named `name` (without its NUL) under the open key `key`.
+fn dword(key: HKEY, name: &[u16]) -> std::io::Result<RegistryValue> {
+    let name: Vec<u16> = name.iter().copied().chain(std::iter::once(0)).collect();
+    let mut data = 0u32;
+    let mut bytes = 4u32;
+    // SAFETY: a NUL-terminated value name; `data` holds the 4 bytes `bytes` says.
+    let status = unsafe { RegGetValueW(key, std::ptr::null(), name.as_ptr(), RRF_RT_REG_DWORD, std::ptr::null_mut(), (&raw mut data).cast(), &raw mut bytes) };
+    if status == ERROR_SUCCESS { Ok(RegistryValue::Dword(data)) } else { Err(os_error(status)) }
+}
+
+/// A Win32 error code as an I/O error.
+fn os_error(code: u32) -> std::io::Error {
+    std::io::Error::from_raw_os_error(i32::try_from(code).unwrap_or(i32::MAX))
 }
 
 /// Sets the string value `name` under the current user's `key` to `value`; whether it was.

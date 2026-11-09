@@ -910,6 +910,7 @@ dependencies = [
  "keyring",
  "libc",
  "log",
+ "plist",
  "portable-pty",
  "proptest",
  "rand 0.10.3",

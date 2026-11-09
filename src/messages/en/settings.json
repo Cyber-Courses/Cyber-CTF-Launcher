@@ -156,7 +156,13 @@
     "logsFailed": "Couldn't open the log folder",
     "firstRun": "First-run setup",
     "firstRunDescription": "Walk through the onboarding again. Your settings and labs are kept.",
-    "replay": "Replay"
+    "replay": "Replay",
+    "channel": {
+      "policy": "Your organization manages updates on this computer.",
+      "homebrew": "Installed with Homebrew, which updates it: run brew upgrade.",
+      "linuxPackage": "Installed as a system package: your package manager (apt) updates it.",
+      "microsoftStore": "Installed from the Microsoft Store, which keeps it up to date."
+    }
   },
   "sharedFolder": {
     "title": "Shared folder",
@@ -170,5 +176,17 @@
     "remembered": "A container engine or VM form is remembered for this machine.",
     "asked": "The launch dialog asks each time.",
     "reset": "Ask again"
+  },
+  "managed": {
+    "title": "Managed by your organization",
+    "description": "Your IT team turned these off on this computer. Ask them if you need one.",
+    "off": "Off",
+    "keys": {
+      "DisableWebsiteAgent": "Launching labs from the website",
+      "DisableUpdater": "In-app updates",
+      "DisableToolInstalls": "One-click tool installs",
+      "DisableCloudLaunches": "Labs on cloud accounts",
+      "RefusePrivilegedLabs": "Labs with privileged machines"
+    }
   }
 }

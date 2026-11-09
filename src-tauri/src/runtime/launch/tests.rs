@@ -403,3 +403,29 @@ async fn utm_is_opened_and_answers_before_a_vm_starts() {
     check_utm(&mut |l| lines.push(l)).await.unwrap();
     println!("said: {lines:?}");
 }
+
+#[tokio::test]
+async fn the_policy_refuses_a_start_it_turns_off_before_anything_runs() {
+    use crate::error::Code;
+    use crate::platform::policy::{Key, Override};
+    const PRIVILEGED: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    privileged: true\n    app: { image: nginx:1.27 }\n";
+    let t = TestApp::new();
+    t.lab("priv", &[("isoloom.yml", PRIVILEGED)]);
+    let aws = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
+    let tools = Tools::rules(&[]);
+    let refused = |r: crate::error::Result<()>, setting: &str| {
+        let err = r.unwrap_err();
+        assert_eq!(err.code(), Code::TurnedOffByPolicy { setting: setting.into() }, "{err}");
+    };
+    {
+        let _policy = Override::with(&[Key::RefusePrivilegedLabs]);
+        refused(start_here(&t, "priv", Runtime::Docker, None, &[]).await.0, "RefusePrivilegedLabs");
+    }
+    {
+        let _policy = Override::with(&[Key::DisableCloudLaunches]);
+        refused(start_on(&t, "priv", Runtime::Docker, &aws).await.0, "DisableCloudLaunches");
+        // A cloud-services lab always runs on a cloud account.
+        refused(start_here(&t, "priv", Runtime::Cloud, None, &[]).await.0, "DisableCloudLaunches");
+    }
+    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+}

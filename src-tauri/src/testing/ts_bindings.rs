@@ -72,6 +72,7 @@ fn generate(dir: &Path) {
         runtime::start_place::StartPlace,
         runtime::lab::Resources,
         runtime::providers::Provider,
+        crate::commands::app::ManagedSettings,
         crate::commands::server::HostCapacity,
         runtime::server::HostInput,
         crate::commands::server::HostList,

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { Button } from "@/components/ui/button";
-import { restartApp } from "@/lib/tauri";
+import { managedSettings, restartApp } from "@/lib/tauri";
 import { installUpdate } from "@/lib/install-update";
 import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { cn } from "@/lib/utils";
@@ -21,12 +21,14 @@ function useUpdate() {
   useEffect(() => {
     // A dev build carries its branch's version, so it would always "find" the latest release.
     if (process.env.NODE_ENV === "development") return;
-    check()
+    // A copy the organization or a package manager updates has no in-app updater to ask.
+    managedSettings()
+      .then((m) => (m.updates === "inApp" ? check() : null))
       .then((u) => {
         if (u) setUpdate(u);
       })
       .catch(() => {
-        /* offline, dev, or no update endpoint: stay silent */
+        /* offline, dev, no update endpoint, or updates managed elsewhere: stay silent */
       });
   }, []);
 
@@ -51,7 +53,8 @@ function useUpdate() {
 
 /**
  * Checks for an update on launch (via plugins.updater) and offers a one-click install.
- * Silent when up to date, when the check fails (offline), and in dev builds. After install the app relaunches
+ * Silent when up to date, when the check fails (offline), in dev builds, and when updates come from
+ * elsewhere (the organization or a package manager: `managedSettings`). After install the app relaunches
  * itself through a tiny command (no process plugin needed); Restart now is the fallback.
  */
 export function UpdateBanner() {

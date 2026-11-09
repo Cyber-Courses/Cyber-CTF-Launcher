@@ -7,13 +7,19 @@ import { catalogueQuery } from "@/lib/dev-mock/catalogue";
 import { labHandlers } from "@/lib/dev-mock/lab-ops";
 import type { BrowserHandler, Context } from "@/lib/dev-mock/live";
 import { machineHandlers } from "@/lib/dev-mock/machine";
-import { answer } from "@/lib/dev-mock/sample";
+import { answer, UNMANAGED } from "@/lib/dev-mock/sample";
 import { isSignedIn, sessionExpired, setSignedIn } from "@/lib/dev-mock/session";
 import { terminalHandlers } from "@/lib/dev-mock/terminal";
 import type { Args } from "@/lib/dev-mock/types";
-import type { DeviceCode } from "@/lib/tauri";
+import type { DeviceCode, ManagedSettings } from "@/lib/tauri";
 import type { CommandError } from "@/lib/tauri/generated";
 import { PROXMOX_PLACEMENT } from "@/lib/dev-mock/proxmox-sample";
+
+/** Every policy switch on (`managed`): an administrator manages this computer. */
+const MANAGED: ManagedSettings = {
+  policy: ["DisableWebsiteAgent", "DisableUpdater", "DisableToolInstalls", "DisableCloudLaunches", "RefusePrivilegedLabs"],
+  updates: "policy",
+};
 
 /** Ends the sign-in waiting, if one is (as the core's `auth_login_cancel`, or a sign-in with a
  *  code starting over a browser one): it rejects as cancelled. */
@@ -73,6 +79,7 @@ const accountHandlers: Record<string, BrowserHandler> = {
     return null;
   },
   agent_info: (args, { sc }) => ({ ...(answer("agent_info", args) as object), arch: sc.arch }),
+  managed_settings: (_args, { sc }) => (sc.managed ? MANAGED : UNMANAGED),
   api_query: catalogueQuery,
 };
 

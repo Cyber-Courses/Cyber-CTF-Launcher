@@ -6,6 +6,9 @@
 //!
 //! Phase 2a (here): presence + claim-and-run. The interactive surface (loopback
 //! co-location server, relay tunnel, terminal / noVNC) is Phase 2b.
+//!
+//! An administrator's policy (`DisableWebsiteAgent`) turns the agent off: the machine then
+//! never registers, shows online, nor takes launches.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -21,6 +24,7 @@ use crate::account::auth;
 use crate::account::colocation;
 use crate::error::{Error, Result};
 use crate::labs;
+use crate::platform::policy::{self, Key};
 use crate::runtime::start_place::{self, StartPlace};
 use crate::runtime::{Runtime, server};
 
@@ -462,13 +466,17 @@ fn spawn_heartbeat(dirs: AppDirs, current: Arc<Mutex<Option<Registration>>>) {
     });
 }
 
-/// Runs the background agent: waits for login, registers, then heartbeats (~30s) and
-/// polls for launches (~6s) for as long as the app runs. Signing out forgets the agent, and
+/// Runs the background agent, unless the policy turns it off: waits for login, registers, then
+/// heartbeats (~30s) and polls for launches (~6s) for as long as the app runs. Signing out forgets the agent, and
 /// signing in as another account registers again, so launches are never polled for (and
 /// the machine never shows online for) an account that isn't signed in here. The app shell spawns
 /// this on its runtime (see `crate::app`), with the effects (`Deps`) the agent reaches the player
 /// through, so this loop itself is free of `tauri`.
 pub async fn run(deps: Deps) {
+    if policy::current().is_on(Key::DisableWebsiteAgent) {
+        log::info!("the website agent is off (policy {}): this machine takes no launches from the website", Key::DisableWebsiteAgent.name());
+        return;
+    }
     let current = Arc::new(Mutex::new(None::<Registration>));
     spawn_heartbeat(deps.dirs().clone(), current.clone());
     loop {
@@ -546,6 +554,15 @@ mod tests {
     /// webview prompt and the system notification have nothing to show in unit tests).
     fn test_deps(t: &crate::testing::test_app::TestApp) -> Deps {
         Deps::new(t.dirs(), Arc::new(|_: &str, _: &str, _: &str, _: &str| {}), Arc::new(|_: &str, _: &str| {}))
+    }
+
+    #[tokio::test]
+    async fn the_policy_keeps_the_agent_off() {
+        // With the website agent off the loop returns at once: it never registers nor polls.
+        let t = crate::testing::test_app::TestApp::new();
+        let _policy = policy::Override::with(&[Key::DisableWebsiteAgent]);
+        let ran = tokio::time::timeout(Duration::from_secs(5), Box::pin(run(test_deps(&t)))).await;
+        assert!(ran.is_ok(), "the agent kept running");
     }
 
     #[test]

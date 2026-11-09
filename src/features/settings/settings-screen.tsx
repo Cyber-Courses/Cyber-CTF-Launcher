@@ -13,6 +13,8 @@ import { LabPortsRow } from "@/features/settings/lab-ports-row";
 import { LaunchDefaultsRow } from "@/features/settings/launch-defaults-row";
 import { CleanupSection } from "@/features/settings/cleanup-section";
 import { HypervisorRow } from "@/features/settings/hypervisor-row";
+import { ManagedSection } from "@/features/settings/managed-section";
+import { useManagedSettings } from "@/lib/use-managed";
 import { Section, useSavedFlash } from "@/features/settings/settings-layout";
 import { warn } from "@/lib/failure";
 import { useT, type MessageKey } from "@/lib/i18n";
@@ -107,6 +109,7 @@ export function SettingsScreen({
   const { agent, report, version, recheck } = useAboutThisMachine(auth?.loggedIn ?? false);
   const [labsSaved, flashLabs] = useSavedFlash();
   const [tab, setTab] = useState<SettingsTab>("account");
+  const managed = useManagedSettings();
 
   return (
     // A rail beside the section; a tab bar above it in a narrow window.
@@ -128,7 +131,12 @@ export function SettingsScreen({
 
         {tab === "maintenance" && <CleanupSection />}
 
-        {tab === "about" && <AboutSection version={version} report={report} agent={agent} />}
+        {tab === "about" && (
+          <>
+            <ManagedSection policy={managed?.policy ?? []} />
+            <AboutSection version={version} report={report} agent={agent} updates={managed?.updates ?? null} />
+          </>
+        )}
       </div>
     </div>
   );

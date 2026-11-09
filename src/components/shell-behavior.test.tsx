@@ -21,6 +21,7 @@ import { flush } from "@/test/ui";
 import { blockQuit, askLaunch, focusedPalette, openMainWindow } from "@/components/shell-test-kit";
 import { emitSettled, must, toastsShown } from "@/components/test-support";
 import { resetUpdater, updater } from "@/components/updater-double";
+import { UNMANAGED } from "@/lib/dev-mock/sample";
 
 vi.mock("@tauri-apps/plugin-updater", () => import("@/components/updater-double"));
 
@@ -45,6 +46,15 @@ describe("UpdateBanner", () => {
     await flush();
     return user;
   };
+
+  it.each(["policy", "homebrew", "linuxPackage", "microsoftStore"])("offers no update when %s updates the app", async (updates) => {
+    // A copy the organization or a package manager updates: an in-app update would fight it.
+    idleTauri({ managed_settings: () => ({ policy: UNMANAGED.policy, updates }) });
+    updater.pending = { version: "1.5.0", downloadAndInstall: vi.fn(() => Promise.resolve()) };
+    render(<UpdateBanner />);
+    await flush();
+    expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
+  });
 
   it("waits for running deploys: installing would end them", async () => {
     let deploying = ["web-sqli"];

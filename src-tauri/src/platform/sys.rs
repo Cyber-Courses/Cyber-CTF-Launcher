@@ -15,8 +15,8 @@ use std::ffi::OsStr;
 pub use unix::{login_name, process_exists, signal_group};
 #[cfg(windows)]
 pub use windows::{
-    ElevatedProcess, Hive, Job, delete_user_registry_value, in_hyperv_admins, is_elevated, launch_elevated, registry_key_exists, registry_string,
-    registry_value_exists, resume_threads_of, send_ctrl_c, set_path, set_user_registry_string, take_ctrl_c, terminate,
+    ElevatedProcess, Hive, Job, RegistryValue, delete_user_registry_value, in_hyperv_admins, is_elevated, launch_elevated, registry_key_exists,
+    registry_string, registry_value_exists, registry_values, resume_threads_of, send_ctrl_c, set_path, set_user_registry_string, take_ctrl_c, terminate,
 };
 
 /// Sets this process's `PATH`, which the tools it starts inherit. Only while the process is still

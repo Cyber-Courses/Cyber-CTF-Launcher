@@ -63,6 +63,12 @@ pub fn load(dir: &Path) -> Result<Spec> {
         .map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
 }
 
+/// Whether the lab has a machine with kernel-level access (`privileged: true`): a container that
+/// can reach past its own isolation into the host's kernel.
+pub fn is_privileged(spec: &Spec) -> bool {
+    spec.machines.values().any(|m| m.privileged)
+}
+
 /// A spec from its text, unchecked.
 #[cfg(test)]
 pub fn parse(text: &str) -> Result<Spec> {

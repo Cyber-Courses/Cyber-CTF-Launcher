@@ -21,6 +21,7 @@ import type {
   OciConfig,
   LabRunOptions,
   LabStartPlace,
+  ManagedSettings,
   ServerList,
   ServerTest,
   SharedFolder,
@@ -65,6 +66,7 @@ type Answers = {
   lab_deploy_log: string;
   lab_tools: LabTool[];
   lab_check: LabCheck;
+  managed_settings: ManagedSettings;
 };
 
 export type Args = Record<string, unknown> | undefined;

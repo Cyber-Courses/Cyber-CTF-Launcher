@@ -3,6 +3,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { listen } from "@tauri-apps/api/event";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ManagedSection } from "@/features/settings/managed-section";
 import { AboutSection } from "@/features/settings/about-section";
 import { AccountSection } from "@/features/settings/account-section";
 import { AppearanceSection } from "@/features/settings/appearance-section";
@@ -40,7 +41,7 @@ const radioWith = (s: string) =>
 /** The About section (no report or agent) after Check for updates, once the check answered. */
 async function checkForUpdates() {
   const user = userEvent.setup();
-  render(<AboutSection version="1.4.0" report={null} agent={null} />);
+  render(<AboutSection version="1.4.0" report={null} agent={null} updates="inApp" />);
   await user.click(button(/check for updates/i));
   await flush();
   return user;
@@ -61,16 +62,30 @@ describe("AboutSection", () => {
 
   it("shows the version, the system and the install id", () => {
     installTauri();
-    render(<AboutSection version="1.4.0" report={readyReport()} agent={{ installId: "c0ffee", name: "mbp", arch: "arm64", capabilities: [] }} />);
+    render(
+      <AboutSection version="1.4.0" report={readyReport()} agent={{ installId: "c0ffee", name: "mbp", arch: "arm64", capabilities: [] }} updates="inApp" />,
+    );
     expect(text()).toContain("v1.4.0");
     expect(text()).toContain("macos arm64");
     expect(text()).toContain("c0ffee");
     expect(text()).toMatch(/install automatically/);
   });
 
+  it.each([
+    ["policy", "Your organization manages updates on this computer."],
+    ["homebrew", "Installed with Homebrew, which updates it: run brew upgrade."],
+    ["linuxPackage", "Installed as a system package: your package manager (apt) updates it."],
+    ["microsoftStore", "Installed from the Microsoft Store, which keeps it up to date."],
+  ] as const)("says who updates the app when it is %s, with no update button", (updates, says) => {
+    installTauri();
+    render(<AboutSection version="1.4.0" report={null} agent={null} updates={updates} />);
+    expect(text()).toContain(says);
+    expect(screen.queryByRole("button", { name: /check for updates/i })).toBeNull();
+  });
+
   it("shows a placeholder without a version, report or agent", () => {
     installTauri();
-    render(<AboutSection version={null} report={null} agent={null} />);
+    render(<AboutSection version={null} report={null} agent={null} updates="inApp" />);
     expect(text()).toContain("…");
     expect(text()).not.toMatch(/System|Install ID/);
   });
@@ -139,7 +154,7 @@ describe("AboutSection", () => {
     setAttackImage("kalilinux/kali-rolling");
     setVmProvider("virtualbox");
     const report: SystemReport = { ...readyReport(), dockerEngine: null };
-    render(<AboutSection version="1.4.0" report={report} agent={{ installId: "c0ffee", name: "mbp", arch: "arm64", capabilities: [] }} />);
+    render(<AboutSection version="1.4.0" report={report} agent={{ installId: "c0ffee", name: "mbp", arch: "arm64", capabilities: [] }} updates="inApp" />);
     await user.click(button(/^\s*copy$/i));
     await flush();
     const copied = writeText.mock.calls[0][0];
@@ -159,7 +174,7 @@ describe("AboutSection", () => {
     // After the user: user-event puts in a clipboard of its own.
     const user = userEvent.setup();
     const writeText = stubClipboard();
-    render(<AboutSection version={null} report={null} agent={null} />);
+    render(<AboutSection version={null} report={null} agent={null} updates="inApp" />);
     await user.click(button(/^\s*copy$/i));
     await flush();
     const copied = writeText.mock.calls[0][0];
@@ -182,14 +197,14 @@ describe("AboutSection", () => {
       terraform: { installed: false, version: null },
       vmProviders: [],
     };
-    const { unmount } = render(<AboutSection version="1" report={stopped} agent={null} />);
+    const { unmount } = render(<AboutSection version="1" report={stopped} agent={null} updates="inApp" />);
     await user.click(button(/^\s*copy$/i));
     await flush();
     expect(writeText.mock.calls[0][0]).toContain("Docker: installed, not running");
     expect(writeText.mock.calls[0][0]).toContain("Vagrant: not installed, Terraform: not installed");
     expect(writeText.mock.calls[0][0]).toContain("Hypervisors ready: none");
     unmount();
-    render(<AboutSection version="1" report={{ ...stopped, docker: { installed: false, version: null } }} agent={null} />);
+    render(<AboutSection version="1" report={{ ...stopped, docker: { installed: false, version: null } }} agent={null} updates="inApp" />);
     await user.click(button(/^\s*copy$/i));
     await flush();
     expect(writeText.mock.calls[1][0]).toContain("Docker: not installed");
@@ -199,7 +214,7 @@ describe("AboutSection", () => {
     installTauri();
     const user = userEvent.setup();
     Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn(() => Promise.reject(new Error("denied"))) }, configurable: true });
-    render(<AboutSection version="1" report={null} agent={null} />);
+    render(<AboutSection version="1" report={null} agent={null} updates="inApp" />);
     await user.click(button(/^\s*copy$/i));
     await flush();
     expect(text()).not.toContain("Copied");
@@ -211,7 +226,7 @@ describe("AboutSection", () => {
     await listen("cyberctf:replay-onboarding", heard);
     markOnboarded();
     const user = userEvent.setup();
-    render(<AboutSection version="1" report={null} agent={null} />);
+    render(<AboutSection version="1" report={null} agent={null} updates="inApp" />);
     await user.click(button(/replay/i));
     await flush();
     expect(readOnboarded()).toBe(false);
@@ -718,5 +733,22 @@ describe("LabPortsRow", () => {
     await user.click(screen.getByRole("radio", { name: "Ask" }));
     expect(getPortMode()).toBeNull();
     expect(onSaved).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("ManagedSection", () => {
+  it("lists what the policy turns off, each with its setting", () => {
+    render(<ManagedSection policy={["DisableToolInstalls", "RefusePrivilegedLabs"]} />);
+    expect(screen.getByRole("heading", { name: "Managed by your organization" })).toBeTruthy();
+    expect(text()).toContain("One-click tool installs");
+    expect(text()).toContain("DisableToolInstalls");
+    expect(text()).toContain("Labs with privileged machines");
+    expect(text()).toContain("RefusePrivilegedLabs");
+    expect(text()).not.toContain("In-app updates");
+  });
+
+  it("shows nothing when nothing is managed", () => {
+    const { container } = render(<ManagedSection policy={[]} />);
+    expect(container.textContent).toBe("");
   });
 });

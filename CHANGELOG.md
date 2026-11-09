@@ -25,6 +25,16 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 - **Governance files**: `SECURITY.md` (private vulnerability reporting, response times),
   `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `SUPPORT.md`, `CODEOWNERS`,
   issue forms and a pull request template.
+- **A machine-wide policy for administrators.** An administrator can turn launcher features off
+  for everyone on a computer: the website agent (`DisableWebsiteAgent`), the in-app updater
+  (`DisableUpdater`), one-click tool installs (`DisableToolInstalls`), labs on cloud accounts
+  (`DisableCloudLaunches`) and labs with privileged machines (`RefusePrivilegedLabs`). The launcher
+  reads it at start from the OS's managed location: `HKLM\SOFTWARE\Policies\CyberCTF\Launcher`
+  (`REG_DWORD`s) on Windows, the `org.cyberctf.desktop` managed preferences (an MDM profile) on
+  macOS, `/etc/cyberctf/policy.json` on Linux. Settings, under About, lists what it turns off, and
+  an operation it refuses says which setting did. A setting it doesn't know is logged and ignored;
+  one whose value isn't a boolean, or a policy that can't be read, is logged and treated as on.
+  `docs/reference/policy.md` has the reference.
 - **The attack box on every form a lab runs in.** The attack box is one more machine of the lab,
   wherever it runs: on Docker, in a VM on this machine, as VMs here, on a Proxmox server, or in a
   cloud account (containers on one VM, or one VM per machine). Beside containers it is a container
@@ -60,6 +70,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   licences, crates.io only) and `pnpm audit --prod` in CI, Dependabot for the crates, the npm
   packages and the pinned actions, and a link check of the docs (`pnpm check:docs`).
 
+- **The in-app updater stays out of a package manager's way.** A copy installed by a Homebrew
+  cask, a Debian package or the Microsoft Store is updated there, so the app no longer checks for
+  or offers its own update (the updater plugin isn't started); Settings says where its updates
+  come from. The `DisableUpdater` policy turns it off the same way.
 - **Tests, scripts and docs, reorganised.** End-to-end tests are under `e2e/` (`web/` with
   Playwright, `desktop/` with WebDriver), the integration tests (real labs on real tools) in
   `src-tauri/src/integration_tests/`, run by tier with `pnpm test:integration`; the Proxmox and

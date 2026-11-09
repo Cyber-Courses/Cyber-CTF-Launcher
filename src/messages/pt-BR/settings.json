@@ -156,7 +156,13 @@
     "logsFailed": "Não foi possível abrir a pasta de logs",
     "firstRun": "Configuração inicial",
     "firstRunDescription": "Percorra a introdução de novo. Suas configurações e labs são mantidos.",
-    "replay": "Refazer"
+    "replay": "Refazer",
+    "channel": {
+      "policy": "Sua organização gerencia as atualizações neste computador.",
+      "homebrew": "Instalado com o Homebrew, que o atualiza: rode brew upgrade.",
+      "linuxPackage": "Instalado como pacote do sistema: seu gerenciador de pacotes (apt) o atualiza.",
+      "microsoftStore": "Instalado pela Microsoft Store, que o mantém atualizado."
+    }
   },
   "sharedFolder": {
     "title": "Pasta compartilhada",
@@ -170,5 +176,17 @@
     "remembered": "Um motor de contêineres ou forma de VM está lembrado para esta máquina.",
     "asked": "A caixa de diálogo de inicialização pergunta sempre.",
     "reset": "Perguntar de novo"
+  },
+  "managed": {
+    "title": "Gerenciado pela sua organização",
+    "description": "Sua equipe de TI desativou estes recursos neste computador. Fale com ela se precisar de algum.",
+    "off": "Desativado",
+    "keys": {
+      "DisableWebsiteAgent": "Iniciar labs pelo site",
+      "DisableUpdater": "Atualizações no app",
+      "DisableToolInstalls": "Instalação de ferramentas com um clique",
+      "DisableCloudLaunches": "Labs em contas de nuvem",
+      "RefusePrivilegedLabs": "Labs com máquinas privilegiadas"
+    }
   }
 }

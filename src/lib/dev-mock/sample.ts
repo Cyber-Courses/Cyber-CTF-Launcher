@@ -2,7 +2,7 @@
 // an AWS account, as the core answers each command. The component tests build on it; the
 // browser preview's scenarios (browser.ts) change it as the preview is used.
 import { GB } from "@/lib/format";
-import type { ServerHost, ServerList, SystemReport } from "@/lib/tauri";
+import type { ManagedSettings, ServerHost, ServerList, SystemReport } from "@/lib/tauri";
 import { argText } from "@/lib/dev-mock/command";
 import { apiQuery, labCommands } from "@/lib/dev-mock/labs";
 import type { Args, Handler, Handlers } from "@/lib/dev-mock/types";
@@ -184,8 +184,12 @@ const serverCommands = {
   oci_config: () => ({ configured: false, tenancy: "", region: "" }),
 } satisfies Handlers;
 
+/** Nothing managed by an administrator: the app updates itself. */
+export const UNMANAGED: ManagedSettings = { policy: [], updates: "inApp" };
+
 /** The app's windows and Tauri plugins. */
 const appCommands = {
+  managed_settings: () => UNMANAGED,
   open_settings: () => {
     openWindow("/?window=settings");
     return null;

@@ -28,6 +28,8 @@ import { report } from "@/lib/dev-mock/sample";
  *    stream an installer's output and succeed: the next system check reports the tool installed.
  *  - `deploying=none`: no lab is deploying at load (GOAD Light otherwise is).
  *  - `cloud=none`: no cloud account saved (until one is saved in the setup).
+ *  - `managed`: this computer's administrator turned every policy switch on (no website agent,
+ *    in-app updates, tool installs, cloud labs or privileged labs).
  *  - `link=<url>`: the app was opened with this link (`cyberctf://labs/<slug>`).
  * Labs started or stopped here stay so until a reload: Docker labs stream a Compose log, VM labs
  * a Vagrant log (on this machine's hypervisor or a saved server; pause, shut down, resume and
@@ -54,6 +56,8 @@ export type Scenario = {
   installFails: boolean;
   noDeploying: boolean;
   noCloud: boolean;
+  /** An administrator's policy turns every switch off (`managed`): Settings says so. */
+  managed: boolean;
   link: string | null;
 };
 
@@ -75,6 +79,7 @@ export function scenarioFrom(search: string): Scenario {
     installFails: q.get("install") === "fail",
     noDeploying: q.get("deploying") === "none",
     noCloud: q.get("cloud") === "none",
+    managed: q.has("managed"),
     link: q.get("link"),
   };
 }

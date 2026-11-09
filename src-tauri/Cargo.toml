@@ -125,6 +125,11 @@ shell-words = "1"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# The machine-wide policy on macOS: the managed preferences an MDM profile installs, a property
+# list (`platform::policy`). Already in the tree through Tauri.
+[target.'cfg(target_os = "macos")'.dependencies]
+plist = "1"
+
 # Job objects: a timed tool's whole process tree ends with it on Windows. Shell (and Registry, which
 # its SHELLEXECUTEINFOW needs): the UAC-elevated Vagrant for Hyper-V.
 [target.'cfg(windows)'.dependencies]

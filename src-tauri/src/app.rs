@@ -6,6 +6,7 @@ pub mod logging;
 pub mod menu;
 pub mod quit;
 pub mod setup_window;
+pub mod updates;
 pub mod window;
 
 use std::path::PathBuf;
@@ -84,7 +85,6 @@ fn app_builder() -> tauri::Builder<AppRuntime> {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init());
     // WebdriverIO e2e: the embedded W3C WebDriver server and the plugin @wdio/tauri-service checks
     // for. Behind the `wdio` feature, so a release build carries neither.
@@ -138,6 +138,9 @@ fn wdio_seed(handle: &crate::AppHandle) {
 
 fn setup(app: &mut App) {
     logging::log_startup(app.handle(), "app");
+    // Once the log is up, so what is wrong with the policy is in it.
+    let policy = platform::policy::current();
+    register_updater(app.handle(), updates::channel(policy));
     // Before anything reads its settings: what a virtualized Store build saved.
     #[cfg(windows)]
     {
@@ -179,6 +182,19 @@ fn setup(app: &mut App) {
     let agent = account::agent::Deps::new(platform::AppDirs::from(app.handle()), agent_prompt(app.handle()), agent_notify(app.handle()));
     tauri::async_runtime::spawn(account::agent::run(agent));
     spawn_reaper(app.handle().clone());
+}
+
+/// The in-app updater, only when this copy updates itself: a package manager's copy updates
+/// through it, and a policy can turn it off (see `updates`). Without the plugin nothing in the
+/// webview can check for or install an update.
+fn register_updater(handle: &AppHandle, channel: updates::Channel) {
+    if channel != updates::Channel::InApp {
+        log::info!("in-app updates off: {channel:?}");
+        return;
+    }
+    if let Err(e) = handle.plugin(tauri_plugin_updater::Builder::new().build()) {
+        log::error!("couldn't start the updater: {e}");
+    }
 }
 
 /// The background agent's cloud-launch prompt: an event the webview renders as a confirmation,

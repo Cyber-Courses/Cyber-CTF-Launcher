@@ -33,7 +33,7 @@ const alerts = () => screen.queryAllByRole("alert").map((a) => a.textContent);
 function renderAbout() {
   render(
     <>
-      <AboutSection version="1.4.0" report={null} agent={null} />
+      <AboutSection version="1.4.0" report={null} agent={null} updates="inApp" />
       <Toaster />
     </>,
   );

@@ -323,6 +323,7 @@ fn plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
 
 /// Removes a tool Cyber CTF installed, streaming the output, then forgets it.
 pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
+    super::install::installs_allowed(&mut on_line)?;
     if !confirmed(load(&dirs)).iter().any(|t| t.dependency == dependency) {
         return Err(Error::Invalid("Cyber CTF didn't install this tool, so it won't remove it.".into()));
     }

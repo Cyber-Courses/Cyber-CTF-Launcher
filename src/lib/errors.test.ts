@@ -74,6 +74,7 @@ describe("command errors", () => {
         "signInDenied",
         "signedOut",
         "toolMissing",
+        "turnedOffByPolicy",
         "unreachable",
       ].sort(),
     );

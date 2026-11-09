@@ -156,7 +156,13 @@
     "logsFailed": "ログフォルダを開けませんでした",
     "firstRun": "初回セットアップ",
     "firstRunDescription": "オンボーディングをもう一度行います。設定とラボは保持されます。",
-    "replay": "再実行"
+    "replay": "再実行",
+    "channel": {
+      "policy": "このコンピューターのアップデートは組織が管理しています。",
+      "homebrew": "Homebrew でインストールされています。brew upgrade でアップデートしてください。",
+      "linuxPackage": "システムパッケージとしてインストールされています。パッケージマネージャー（apt）がアップデートします。",
+      "microsoftStore": "Microsoft Store からインストールされており、Microsoft Store が最新の状態に保ちます。"
+    }
   },
   "sharedFolder": {
     "title": "共有フォルダー",
@@ -170,5 +176,17 @@
     "remembered": "このマシンのコンテナエンジンまたは VM 形式が記憶されています。",
     "asked": "起動ダイアログが毎回確認します。",
     "reset": "もう一度確認する"
+  },
+  "managed": {
+    "title": "組織による管理",
+    "description": "このコンピューターでは、IT 担当者が次の機能をオフにしています。必要な場合は問い合わせてください。",
+    "off": "オフ",
+    "keys": {
+      "DisableWebsiteAgent": "Web サイトからのラボの起動",
+      "DisableUpdater": "アプリ内アップデート",
+      "DisableToolInstalls": "ワンクリックでのツールのインストール",
+      "DisableCloudLaunches": "クラウドアカウントでのラボ",
+      "RefusePrivilegedLabs": "特権マシンを含むラボ"
+    }
   }
 }

@@ -156,7 +156,13 @@
     "logsFailed": "Der Protokollordner konnte nicht geöffnet werden",
     "firstRun": "Ersteinrichtung",
     "firstRunDescription": "Das Onboarding noch einmal durchlaufen. Deine Einstellungen und Labs bleiben erhalten.",
-    "replay": "Wiederholen"
+    "replay": "Wiederholen",
+    "channel": {
+      "policy": "Deine Organisation verwaltet die Updates auf diesem Computer.",
+      "homebrew": "Mit Homebrew installiert, das es aktualisiert: Führe brew upgrade aus.",
+      "linuxPackage": "Als Systempaket installiert: Deine Paketverwaltung (apt) aktualisiert es.",
+      "microsoftStore": "Aus dem Microsoft Store installiert, der es aktuell hält."
+    }
   },
   "sharedFolder": {
     "title": "Geteilter Ordner",
@@ -170,5 +176,17 @@
     "remembered": "Eine Container-Engine oder VM-Form ist für diesen Rechner gemerkt.",
     "asked": "Der Startdialog fragt jedes Mal.",
     "reset": "Erneut fragen"
+  },
+  "managed": {
+    "title": "Von deiner Organisation verwaltet",
+    "description": "Deine IT hat diese Funktionen auf diesem Computer deaktiviert. Frag dort nach, wenn du eine brauchst.",
+    "off": "Aus",
+    "keys": {
+      "DisableWebsiteAgent": "Labs von der Website starten",
+      "DisableUpdater": "Updates in der App",
+      "DisableToolInstalls": "Tools mit einem Klick installieren",
+      "DisableCloudLaunches": "Labs in Cloud-Konten",
+      "RefusePrivilegedLabs": "Labs mit privilegierten Maschinen"
+    }
   }
 }

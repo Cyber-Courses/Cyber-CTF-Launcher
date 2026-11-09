@@ -8,7 +8,9 @@ use std::ffi::OsStr;
 
 pub use elevation::{ElevatedProcess, in_hyperv_admins, is_elevated, launch_elevated};
 pub use job::{Job, resume_threads_of, terminate};
-pub use registry::{Hive, delete_user_registry_value, registry_key_exists, registry_string, registry_value_exists, set_user_registry_string};
+pub use registry::{
+    Hive, RegistryValue, delete_user_registry_value, registry_key_exists, registry_string, registry_value_exists, registry_values, set_user_registry_string,
+};
 
 /// Sets this process's `PATH`, which the tools it starts inherit; at any time.
 pub fn set_path(path: &OsStr) {

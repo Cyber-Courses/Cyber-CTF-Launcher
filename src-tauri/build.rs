@@ -61,6 +61,7 @@ const COMMANDS: &[&str] = &[
     "machine_storage_clean",
     "machine_workload_stop",
     "machine_workloads",
+    "managed_settings",
     "oci_config",
     "open_log_folder",
     "open_settings",

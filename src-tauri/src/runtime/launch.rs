@@ -10,6 +10,7 @@ use super::paths::{forget_lab_host_keys, mark_engine, mark_local_vm, mark_parked
 use super::providers::Provider;
 use super::{LabRef, Runtime, cloud_services, docker, isothrum, lab, server};
 use crate::error::{Error, Result};
+use crate::platform::policy::Key;
 
 mod local;
 mod on_host;
@@ -50,11 +51,13 @@ pub(crate) struct Destination<'a> {
 ///   the clouds run Isoloom's Terraform (Docker on one VM, or one VM per machine on Proxmox).
 /// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
 ///
-/// The caller holds the lab lock (`lock_lab`): a launch holds it from the download on.
+/// The caller holds the lab lock (`lock_lab`): a launch holds it from the download on. A start
+/// the administrator's policy turns off is refused before anything changes ([`policy_allows`]).
 pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     let Destination { provider, host, per_machine_vm, docker_context } = to;
     let _deploy = DeployGuard::new(id, Action::Start);
+    policy_allows(dirs, runtime, host, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
     // A lab runs in one place: starting it here (or on another host) while its run is still up
     // elsewhere would drop the marker naming that place, and with it the way to stop it (a cloud
     // lab would keep billing).
@@ -78,6 +81,29 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
         // the per-machine pick there. The dispatch on the provider is its to make (the connection).
         Some(host) => start_on_server(dirs, lab, (host, per_machine_vm), env, &mut log).await,
     }
+}
+
+/// Refuses a start this computer's policy turns off: on a cloud account (`DisableCloudLaunches`;
+/// a cloud-services lab always runs on one), or of a lab with a privileged machine
+/// (`RefusePrivilegedLabs`; `privileged` reads the lab's spec, only when that switch is on).
+pub(crate) fn policy_allows(dirs: &AppDirs, runtime: Runtime, host: Option<&str>, privileged: impl FnOnce() -> Result<bool>) -> Result<()> {
+    let policy = crate::platform::policy::current();
+    if policy.is_on(Key::DisableCloudLaunches) && on_cloud(dirs, runtime, host)? {
+        return policy.check(Key::DisableCloudLaunches);
+    }
+    if policy.is_on(Key::RefusePrivilegedLabs) && privileged()? {
+        return policy.check(Key::RefusePrivilegedLabs);
+    }
+    Ok(())
+}
+
+/// Whether a start of a `runtime` lab on `host` (none: this machine) runs on a cloud account.
+fn on_cloud(dirs: &AppDirs, runtime: Runtime, host: Option<&str>) -> Result<bool> {
+    let host_is_cloud = match host {
+        Some(id) => server::host_provider(dirs, id)?.is_some_and(Provider::is_cloud),
+        None => false,
+    };
+    Ok(runtime == Runtime::Cloud || host_is_cloud)
 }
 
 /// [`start_locked`] under the lab lock, for tests that start an installed lab directly.

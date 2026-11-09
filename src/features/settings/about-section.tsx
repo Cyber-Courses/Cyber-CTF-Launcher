@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KeyValue } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
-import { openLogFolder, restartApp, type AgentInfo, type SystemReport } from "@/lib/tauri";
+import { openLogFolder, restartApp, type AgentInfo, type SystemReport, type UpdateChannel } from "@/lib/tauri";
 import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { getAttackImage, getVmProvider } from "@/lib/settings";
 import { Row, Section } from "@/features/settings/settings-layout";
@@ -57,7 +57,18 @@ function DiagnosticsRow({ version, report, agent }: { version: string | null; re
   );
 }
 
-export function AboutSection({ version, report, agent }: { version: string | null; report: SystemReport | null; agent: AgentInfo | null }) {
+export function AboutSection({
+  version,
+  report,
+  agent,
+  updates,
+}: {
+  version: string | null;
+  report: SystemReport | null;
+  agent: AgentInfo | null;
+  /** Where this copy's updates come from (null until known). */
+  updates: UpdateChannel | null;
+}) {
   const t = useT();
 
   // The onboarding shows in the main window: it is asked to show it again (a reload here only
@@ -77,7 +88,7 @@ export function AboutSection({ version, report, agent }: { version: string | nul
         </KeyValue>
       )}
       {agent && <KeyValue k={t("settings.about.installId")}>{agent.installId}</KeyValue>}
-      <UpdatesRow />
+      {updates === null || updates === "inApp" ? <UpdatesRow /> : <ManagedUpdatesRow channel={updates} />}
       <DiagnosticsRow version={version} report={report} agent={agent} />
       <Row
         title={t("settings.about.logs")}
@@ -105,6 +116,13 @@ export function AboutSection({ version, report, agent }: { version: string | nul
       />
     </Section>
   );
+}
+
+/** Updates that come from elsewhere (the organization, or the package manager that installed the
+ *  app): which, and no button, since the in-app updater is off. */
+function ManagedUpdatesRow({ channel }: { channel: Exclude<UpdateChannel, "inApp"> }) {
+  const t = useT();
+  return <Row title={t("settings.about.updates")} description={t(`settings.about.channel.${channel}`)} />;
 }
 
 /** Updates: where the last check left things, and the next step (check, install, restart). */

@@ -106,6 +106,11 @@ pub enum Code {
         command: String,
         stderr: String,
     },
+    /// This computer's administrator turned the feature off: `setting` is the policy switch
+    /// (`platform::policy::Key`) that did.
+    TurnedOffByPolicy {
+        setting: String,
+    },
 }
 
 impl Code {
@@ -162,6 +167,9 @@ impl Code {
             }
             Code::ToolMissing { tool } => format!("`{tool}` is not installed or not on PATH"),
             Code::CommandFailed { command, stderr } => format!("`{command}` failed: {stderr}"),
+            Code::TurnedOffByPolicy { setting } => {
+                format!("Your organization turned this off on this computer (policy setting {setting}). Ask your IT team if you need it.")
+            }
         }
     }
 }
@@ -218,7 +226,7 @@ impl Error {
     /// would be replaced or started again): the lab's last verdict stays what it was, and a failed
     /// start has nothing of its own to undo.
     pub fn is_refusal(&self) -> bool {
-        matches!(self, Error::Refused(_) | Error::Coded { code: Code::LabRunningHere | Code::LabRunningOn { .. }, .. })
+        matches!(self, Error::Refused(_) | Error::Coded { code: Code::LabRunningHere | Code::LabRunningOn { .. } | Code::TurnedOffByPolicy { .. }, .. })
     }
 
     /// The code the UI knows this error by.

@@ -12,6 +12,7 @@ use super::scripts::{TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, awscli_script, azurecl
 use super::steps::{Step, command_line, run_step, run_steps, step};
 use super::uninstall;
 use crate::error::{Error, Result};
+use crate::platform::policy::{self, Key};
 
 #[derive(Deserialize, serde::Serialize, Clone, Copy, PartialEq, Debug, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
@@ -187,8 +188,15 @@ fn plan(dep: Dependency) -> Result<Vec<Step>> {
     }
 }
 
+/// Refused when this computer's policy turns one-click installs off (`DisableToolInstalls`): the
+/// organization installs its tools itself. Said on the install's log too.
+pub(super) fn installs_allowed(on_line: &mut impl FnMut(String)) -> Result<()> {
+    policy::current().check(Key::DisableToolInstalls).inspect_err(|e| on_line(e.to_string()))
+}
+
 /// Installs a dependency, streaming each command and its output to the UI.
 pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
+    installs_allowed(&mut on_line)?;
     let steps = plan(dependency).inspect_err(|e| on_line(e.to_string()))?;
     let before = uninstall::present(dependency).await;
     run_steps(&steps, &mut on_line).await?;
@@ -220,6 +228,7 @@ fn valid_plugin(plugin: &str) -> bool {
 /// Installs a Vagrant plugin (userland, no admin), streaming the output. The plugin name
 /// is validated so it can never be anything but a `vagrant-*` / `vagrant_*` identifier.
 pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(String)) -> Result<()> {
+    installs_allowed(&mut on_line)?;
     if !valid_plugin(&plugin) {
         return Err(Error::Invalid(format!("invalid plugin name `{plugin}`")));
     }
@@ -233,6 +242,20 @@ pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
+        let _policy = policy::Override::with(&[Key::DisableToolInstalls]);
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let t = crate::testing::test_app::TestApp::new();
+        let mut lines = Vec::new();
+        let err = install_dependency(t.dirs(), Dependency::Docker, |l| lines.push(l)).await.unwrap_err();
+        assert_eq!(err.code(), crate::error::Code::TurnedOffByPolicy { setting: "DisableToolInstalls".into() });
+        assert_eq!(lines, [err.to_string()], "said on the install's log");
+        let err = install_vagrant_plugin("vagrant-vmware-esxi".into(), |_| {}).await.unwrap_err();
+        assert!(err.to_string().contains("DisableToolInstalls"), "{err}");
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    }
 
     #[test]
     fn only_vagrant_plugin_names_are_installed() {

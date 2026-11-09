@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { invokeUnit } from "@/lib/tauri/invoke";
-import type { AgentInfo } from "@/lib/tauri/generated";
+import type { AgentInfo, ManagedSettings, PolicySetting, UpdateChannel } from "@/lib/tauri/generated";
 
-export type { AgentInfo };
+export type { AgentInfo, ManagedSettings, PolicySetting, UpdateChannel };
 
 /** Opens Settings in its own window (reused/focused if already open). */
 export const openSettings = () => invokeUnit("open_settings");
@@ -13,6 +13,9 @@ export const openLogFolder = () => invokeUnit("open_log_folder");
 
 /** This machine's launcher-agent identity (for the Settings screen). */
 export const agentInfo = () => invoke<AgentInfo>("agent_info");
+
+/** What this computer's administrator manages (the policy) and where the app's updates come from. */
+export const managedSettings = () => invoke<ManagedSettings>("managed_settings");
 
 /** Answer a cloud-launch confirmation the agent asked for (a website launch onto a cloud account). */
 export const confirmLaunch = (sessionId: string, approve: boolean) => invokeUnit("confirm_launch", { sessionId, approve });

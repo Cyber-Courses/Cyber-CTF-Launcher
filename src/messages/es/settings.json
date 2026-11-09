@@ -156,7 +156,13 @@
     "logsFailed": "No se pudo abrir la carpeta de registros",
     "firstRun": "Configuración inicial",
     "firstRunDescription": "Vuelve a recorrer la bienvenida. Tus ajustes y labs se conservan.",
-    "replay": "Repetir"
+    "replay": "Repetir",
+    "channel": {
+      "policy": "Tu organización gestiona las actualizaciones en este equipo.",
+      "homebrew": "Instalado con Homebrew, que lo actualiza: ejecuta brew upgrade.",
+      "linuxPackage": "Instalado como paquete del sistema: tu gestor de paquetes (apt) lo actualiza.",
+      "microsoftStore": "Instalado desde Microsoft Store, que lo mantiene actualizado."
+    }
   },
   "sharedFolder": {
     "title": "Carpeta compartida",
@@ -170,5 +176,17 @@
     "remembered": "Se recuerda un motor de contenedores o una forma de VM para esta máquina.",
     "asked": "El diálogo de inicio pregunta cada vez.",
     "reset": "Volver a preguntar"
+  },
+  "managed": {
+    "title": "Gestionado por tu organización",
+    "description": "Tu equipo de TI desactivó estas funciones en este equipo. Pídeselas si necesitas alguna.",
+    "off": "Desactivado",
+    "keys": {
+      "DisableWebsiteAgent": "Lanzar labs desde el sitio web",
+      "DisableUpdater": "Actualizaciones en la app",
+      "DisableToolInstalls": "Instalación de herramientas con un clic",
+      "DisableCloudLaunches": "Labs en cuentas en la nube",
+      "RefusePrivilegedLabs": "Labs con máquinas privilegiadas"
+    }
   }
 }
