@@ -102,10 +102,14 @@ pub(crate) struct Placed {
 /// Where lab `id`, installed in `dir` and declared `runtime`, runs, in the form it was started in
 /// (a container lab started as one VM per machine is VMs): its run on this machine, on a Proxmox
 /// server or in a cloud account. `None` where the launcher reaches no run of it: on an ESXi host
-/// (its runs are the launcher's own, see `launch::esxi_run`), or a cloud-services lab here.
+/// (its runs are the launcher's own, see `launch::esxi_run`), or a cloud-services lab (its
+/// services are the launcher's own too, see `cloud_services`), wherever it runs.
 pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<Placed>> {
     let home = runner_home(dirs)?;
     let form = local_runtime(dir, runtime);
+    if form == Runtime::Cloud {
+        return Ok(None);
+    }
     let (host, target) = match server::lab_connection(dirs, dir)? {
         Some(c) if c.provider == Provider::VmwareEsxi => return Ok(None),
         Some(c) if c.provider.is_cloud() => {
@@ -180,14 +184,19 @@ impl Placed {
     }
 
     /// The box as the lab page shows it: read by its name from the run's status (down, with no
-    /// shell, before the lab's files exist).
+    /// shell, before the lab's files exist), with the networks it can join
+    /// ([`super::networks`]).
     pub(crate) async fn status(&self, network: Option<&str>) -> Result<AttackStatus> {
-        let Some(status) = self.host.run_status().await? else {
-            return Ok(AttackStatus { vm: self.vm, ..AttackStatus::default() });
+        let super::Networks { pickable, default } = super::networks(&self.dir)?;
+        let seen = match self.host.run_status().await? {
+            None => AttackStatus { vm: self.vm, ..AttackStatus::default() },
+            Some(status) => {
+                let name = super::name(&self.dir)?;
+                let shell = self.host.console(&name).ok().map(|c| display(&c)).unwrap_or_default();
+                status_of(&status, &name, network, shell, self.vm)
+            }
         };
-        let name = super::name(&self.dir)?;
-        let shell = self.host.console(&name).ok().map(|c| display(&c)).unwrap_or_default();
-        Ok(status_of(&status, &name, network, shell, self.vm))
+        Ok(AttackStatus { reachable: true, networks: pickable, default_network: default, ..seen })
     }
 
     /// The command that opens a shell into the box.

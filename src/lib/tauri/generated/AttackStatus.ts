@@ -5,6 +5,11 @@
  */
 export type AttackStatus = { 
 /**
+ * Whether the launcher reaches a run of the lab to put a box in (`attack_machine::locate`):
+ * not on an ESXi host, nor beside a cloud-services lab.
+ */
+reachable: boolean, 
+/**
  * Whether the box is up (the runner has it running).
  */
 running: boolean, 
@@ -17,10 +22,15 @@ ip: string,
  */
 labNetwork: string, 
 /**
- * Every lab network the box can join, for the learner to pick from (the only one is used
- * without asking). Known before the box is up, so the page can offer the choice.
+ * The lab networks the learner may pick for the box (the only one is used without asking):
+ * none when the lab declares where the player sits, or once the box is in. Known before the
+ * box is up, so the page can offer the choice.
  */
 networks: Array<string>, 
+/**
+ * The network the box joins when the learner picks none (`attack_machine::Networks`).
+ */
+defaultNetwork: string, 
 /**
  * The command line that opens a shell in the box (shown so the player can also run it).
  * Empty when the run has no way into it yet (before the box is added to the lab).

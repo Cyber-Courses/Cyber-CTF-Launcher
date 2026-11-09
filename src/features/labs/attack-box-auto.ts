@@ -18,8 +18,8 @@ function runtimeOf(id: string): Runtime {
  * lab running, its attack box is added too, wherever the lab runs (here, on a server or in a cloud
  * account; a container among a container lab's, a Kali VM among a VM lab's). The lab page alone
  * did this before, so a lab started from Overview, the Labs list or the website ran without one
- * until its page was opened. Not on an ESXi host (the launcher reaches no run there), nor beside a
- * cloud-services lab (the player works from their own machine).
+ * until its page was opened. Only where the box's status says the launcher reaches a run to put
+ * it in (`reachable`: not on an ESXi host, nor beside a cloud-services lab).
  */
 export function useAttackBoxAutoStart(ops: Map<string, ActiveOperation>, enabled: boolean) {
   const previous = useRef<Map<string, ActiveOperation["op"]>>(new Map());
@@ -29,13 +29,12 @@ export function useAttackBoxAutoStart(ops: Map<string, ActiveOperation>, enabled
     if (!enabled || ended.length === 0 || !getAutoAttackBox()) return;
     for (const id of ended) {
       const runtime = runtimeOf(id);
-      if (runtime === "CLOUD") continue;
       labStatus(id, runtime)
         .then(async (s) => {
           // A failed start leaves nothing running.
-          if (!s.running || s.provider === "vmware_esxi") return;
+          if (!s.running) return;
           const box = await attackBoxStatus(id, runtime, null);
-          if (!box.running) await attachAttackBox(id, runtime, null);
+          if (box.reachable && !box.running) await attachAttackBox(id, runtime, null);
         })
         .catch(warn("attaching the attack box with the lab"));
     }

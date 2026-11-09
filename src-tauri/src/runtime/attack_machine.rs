@@ -145,6 +145,31 @@ pub(crate) fn name(dir: &Path) -> Result<String> {
     Ok(declared(&lab::load(dir)?).map_or_else(|| NAME.to_owned(), |(n, _)| n.clone()))
 }
 
+/// The lab networks the box can join in a lab, for the learner to pick from, and the one it
+/// joins unpicked.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Networks {
+    /// The lab's networks; none when there is nothing to pick: the lab declares where the player
+    /// sits (the box takes that seat, whatever is picked), or the box is in already.
+    pub(crate) pickable: Vec<String>,
+    /// The box's network unpicked: the declared seat's (its first), else the network of the lab's
+    /// first machine; once the box is in, the one it joined (its first).
+    pub(crate) default: String,
+}
+
+/// [`Networks`] for the box in the lab in `dir`, as [`add`] places it.
+pub(crate) fn networks(dir: &Path) -> Result<Networks> {
+    let spec = lab::load(dir)?;
+    if let Some(name) = overlay::attack_box(dir)? {
+        let joined = spec.machines.get(&name).and_then(|m| m.networks.keys().next().cloned()).unwrap_or_default();
+        return Ok(Networks { pickable: Vec::new(), default: joined });
+    }
+    let Seat { networks, replaces, .. } = seat(&spec, None)?;
+    let default = networks.into_iter().next().map(|(n, _)| n).unwrap_or_default();
+    let pickable = if replaces { Vec::new() } else { spec.networks.keys().cloned().collect() };
+    Ok(Networks { pickable, default })
+}
+
 /// Adds the box to the lab in `dir` as `kind`, at its seat ([`seat`]; `network` is the player's
 /// pick when the lab declares none).
 pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, shared: Option<&Path>) -> Result<()> {
@@ -243,6 +268,7 @@ mod tests {
             "version: 1\nname: t\nnetworks: { front: { cidr: 10.70.0.0/24 }, access: { cidr: 10.71.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { front: 10 } }\n  user: { access: true, networks: { access: 10 } }\n",
         );
         assert_eq!(name(&dir).unwrap(), "user", "the seat the box would take, before it is added");
+        assert_eq!(networks(&dir).unwrap(), Networks { pickable: Vec::new(), default: "access".into() }, "nothing to pick: the declared seat's");
         add_at(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, Some("front")).unwrap();
         let spec = lab::load(&dir).unwrap();
         let user = &spec.machines["user"];
@@ -259,10 +285,13 @@ mod tests {
         let dir = crate::runtime::test_support::write_lab(
             "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 }, dmz: { cidr: 10.71.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, networks: { lan: 10, dmz: 10 } }\n",
         );
+        let unpicked = Networks { pickable: vec!["lan".into(), "dmz".into()], default: "lan".into() };
+        assert_eq!(networks(&dir).unwrap(), unpicked, "the lab's networks, the first machine's first unpicked");
         add_at(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, Some("dmz")).unwrap();
         let spec = lab::load(&dir).unwrap();
         let attackbox = &spec.machines[NAME];
         assert_eq!(attackbox.networks.keys().collect::<Vec<_>>(), ["dmz"]);
+        assert_eq!(networks(&dir).unwrap(), Networks { pickable: Vec::new(), default: "dmz".into() }, "in: the one it joined");
         assert!(!dir.join(SETUP_FILE).exists(), "no set-up: the image is the box");
         assert!(add_at(&dir, Kind::Container { image: "x" }, Cpu::Lab, Some("nope")).is_err(), "no such network");
         remove(&dir).unwrap();

@@ -87,11 +87,11 @@ function BoxState({ running, host, up, busy }: { running: boolean; host: string 
   return <span className="text-muted-foreground">{running ? t("labs.attackBox.notStarted") : t("labs.attackBox.startsWithLab")}</span>;
 }
 
-/** Start or stop the box by hand, picking which lab network it joins when the lab
- *  has more than one. */
+/** Start or stop the box by hand, picking which lab network it joins when the backend offers
+ *  more than one (none where the lab declares the player's seat), its default until picked. */
 function BoxControls({ box }: { box: AttackBox }) {
   const t = useT();
-  const { status, busy, networks, network, setNetwork } = box;
+  const { status, busy, networks, network, defaultNetwork, setNetwork } = box;
   const choosing = !status?.running && networks.length > 1;
   return (
     <div className="space-y-2">
@@ -100,7 +100,7 @@ function BoxControls({ box }: { box: AttackBox }) {
           <span className="text-[0.6875rem] text-faint">{t("labs.attackBox.network")}</span>
           <select
             className="w-full rounded-md border border-border bg-background px-2 py-1 text-[0.75rem]"
-            value={network ?? networks[0]}
+            value={network ?? defaultNetwork}
             onChange={(e) => {
               setNetwork(e.target.value);
             }}

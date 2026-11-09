@@ -1,6 +1,6 @@
 //! The learner's attack box as the lab page shows it: the machine the launcher adds to the lab,
 //! read by its name from the run's status like any other machine: whether it runs, its address on
-//! the lab network, the lab's networks, and the console into it.
+//! the lab network, and the console into it; beside it, the networks it can join.
 
 use isothrum_runner::{MachineState, ShellCommand, Status};
 use serde::Serialize;
@@ -9,25 +9,26 @@ use serde::Serialize;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AttackStatus {
+    /// Whether the launcher reaches a run of the lab to put a box in (`attack_machine::locate`):
+    /// not on an ESXi host, nor beside a cloud-services lab.
+    pub reachable: bool,
     /// Whether the box is up (the runner has it running).
     pub running: bool,
     /// Its address on the network it joined (what the targets see), once running.
     pub ip: String,
     /// The lab network it is on (the lab's name for it), once running.
     pub lab_network: String,
-    /// Every lab network the box can join, for the learner to pick from (the only one is used
-    /// without asking). Known before the box is up, so the page can offer the choice.
+    /// The lab networks the learner may pick for the box (the only one is used without asking):
+    /// none when the lab declares where the player sits, or once the box is in. Known before the
+    /// box is up, so the page can offer the choice.
     pub networks: Vec<String>,
+    /// The network the box joins when the learner picks none (`attack_machine::Networks`).
+    pub default_network: String,
     /// The command line that opens a shell in the box (shown so the player can also run it).
     /// Empty when the run has no way into it yet (before the box is added to the lab).
     pub shell_cmd: String,
     /// Whether the box is a VM: a Kali VM among a lab's VMs, wherever the lab runs.
     pub vm: bool,
-}
-
-/// The networks the box can join: the lab's networks, in the run's order.
-fn networks(status: &Status) -> Vec<String> {
-    status.networks.iter().map(|n| n.name.clone()).collect()
 }
 
 /// A shell command as one line the player can paste in their terminal: the variables it needs
@@ -40,7 +41,7 @@ pub(super) fn display(cmd: &ShellCommand) -> String {
 }
 
 /// The box `name` from the run's status: up when it runs, its address on `network` (or its
-/// first), the lab's networks, the `shell_cmd` the runner built, and whether it is a VM (`vm`).
+/// first), the `shell_cmd` the runner built, and whether it is a VM (`vm`).
 pub(super) fn status_of(status: &Status, name: &str, network: Option<&str>, shell_cmd: String, vm: bool) -> AttackStatus {
     let machine = status.machines.iter().find(|m| m.name == name);
     let running = machine.is_some_and(|m| matches!(m.state, MachineState::Running | MachineState::Unhealthy));
@@ -51,7 +52,7 @@ pub(super) fn status_of(status: &Status, name: &str, network: Option<&str>, shel
         .or_else(|| addresses.and_then(|a| a.keys().next().cloned()))
         .unwrap_or_default();
     let ip = addresses.and_then(|a| a.get(&on)).cloned().unwrap_or_default();
-    AttackStatus { running, ip: if running { ip } else { String::new() }, lab_network: on, networks: networks(status), shell_cmd, vm }
+    AttackStatus { running, ip: if running { ip } else { String::new() }, lab_network: on, shell_cmd, vm, ..AttackStatus::default() }
 }
 
 #[cfg(test)]
@@ -79,7 +80,7 @@ mod tests {
     fn the_box_is_found_by_its_name_down_until_it_runs() {
         let shell = "VAGRANT_DOTFILE_PATH=/runs/t/vagrant vagrant ssh kali".to_owned();
         let down = status_of(&vm_lab("absent"), "kali", None, shell.clone(), true);
-        assert_eq!((down.running, down.ip.as_str(), down.networks.as_slice()), (false, "", ["lab".to_owned()].as_slice()));
+        assert_eq!((down.running, down.ip.as_str()), (false, ""));
         assert_eq!(down.shell_cmd, shell, "the shell command is known before the box is up");
         let up = status_of(&vm_lab("running"), "kali", None, shell, true);
         assert_eq!((up.running, up.ip.as_str(), up.lab_network.as_str()), (true, "10.61.0.252", "lab"));

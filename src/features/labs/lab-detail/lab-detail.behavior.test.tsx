@@ -54,10 +54,12 @@ const quiet: Record<string, Handler> = {
 
 /** A container lab's attack box in its VM on a server, as the runner reports it. */
 const remoteBox = (up: boolean) => ({
+  reachable: true,
   running: up,
   ip: up ? "10.30.0.77" : "",
   labNetwork: up ? "lab" : "",
   networks: ["lab"],
+  defaultNetwork: "lab",
   shellCmd: "ssh -t isoloom@10.0.0.9 sudo docker exec -it x sh",
   vm: false,
 });
@@ -460,18 +462,19 @@ describe("LabDetail: a lab that is up", () => {
     expect(screen.queryByRole("button", { name: /Shut down/ })).toBeNull();
   });
 
-  it("reads a VM lab's box on a server as on this machine, but none on an ESXi host", async () => {
-    for (const [provider, read] of [
+  it("reads a VM lab's box on a server as on this machine, and follows the backend where it reaches none (an ESXi host)", async () => {
+    for (const [provider, reachable] of [
       ["proxmox", true],
       ["vmware_esxi", false],
     ] as const) {
-      const calls = installTauri({ ...quiet, attack_box_status: () => ({ ...remoteBox(true), vm: true }) });
+      const calls = installTauri({ ...quiet, attack_box_status: () => ({ ...remoteBox(false), vm: true, reachable }) });
       renderDetail({ lab: vmLab, status: status({ place: "server", host: "srv-1", provider, url: null }) });
       await flush();
       expect(
         calls.some((c) => c.cmd === "attack_box_status" && (c.args as { runtime?: string }).runtime === "VM"),
         provider,
-      ).toBe(read);
+      ).toBe(true);
+      expect(commands(calls).includes("attack_box_attach"), provider).toBe(reachable);
       cleanup();
     }
   });

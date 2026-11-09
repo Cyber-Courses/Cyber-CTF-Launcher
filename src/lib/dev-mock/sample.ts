@@ -126,10 +126,12 @@ const accountCommands = {
 
 /** The attack box, the lab's on-demand access machine, up on the chosen lab network. */
 const attackBox = () => ({
+  reachable: true,
   running: true,
   ip: "10.42.0.9",
   labNetwork: "default",
   networks: ["default"],
+  defaultNetwork: "default",
   shellCmd: "docker compose exec kali bash",
   vm: false,
 });

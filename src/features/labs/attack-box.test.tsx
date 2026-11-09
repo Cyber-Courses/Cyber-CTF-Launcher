@@ -15,10 +15,12 @@ import { setCatalogue } from "@/features/labs/lab-store";
 import type { Lab } from "@/features/labs/use-labs";
 
 const box = (p: Partial<AttackStatus> = {}): AttackStatus => ({
+  reachable: true,
   running: false,
   ip: "",
   labNetwork: "default",
   networks: ["default"],
+  defaultNetwork: "default",
   shellCmd: "docker compose exec kali bash",
   vm: false,
   ...p,
@@ -35,7 +37,7 @@ describe("useAttackBox", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     setAttackImage("my/exegol:full");
     const calls = installTauri({ attack_box_status: () => box({ running: true, ip: "10.42.0.9" }) });
-    const { result, rerender } = renderHook((p: { running: boolean }) => useAttackBox("ab-poll", { running: p.running, reachable: true }), {
+    const { result, rerender } = renderHook((p: { running: boolean }) => useAttackBox("ab-poll", { running: p.running }), {
       initialProps: { running: true },
     });
     await flush();
@@ -58,11 +60,17 @@ describe("useAttackBox", () => {
     expect(count(calls, "attack_box_status")).toBe(2);
   });
 
-  it("never reads a box the launcher can't reach (a VM lab on a server)", async () => {
-    const calls = installTauri();
-    renderHook(() => useAttackBox("ab-remote", { running: true, reachable: false }));
+  it("stops reading, and never attaches, a box the backend says it can't reach (a lab on an ESXi host)", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const calls = installTauri({ attack_box_status: () => box({ reachable: false, networks: [], defaultNetwork: "" }) });
+    renderHook(() => useAttackBox("ab-remote", { running: true }));
     await flush();
-    expect(count(calls, "attack_box_status")).toBe(0);
+    act(() => {
+      vi.advanceTimersByTime(15000);
+    });
+    await flush();
+    expect(count(calls, "attack_box_status")).toBe(1);
+    expect(count(calls, "attack_box_attach")).toBe(0);
   });
 
   it("names the Kali VM the launcher adds to a lab running as VMs, and takes it out", async () => {
@@ -71,7 +79,7 @@ describe("useAttackBox", () => {
     setAttackImage("my/exegol:full");
     setAutoAttackBox(false);
     const calls = installTauri({ attack_box_status: () => box({ vm: true }), attack_box_attach: () => null });
-    const { result } = renderHook(() => useAttackBox("ab-as-vms", { running: true, reachable: true, runtime: "DOCKER" }));
+    const { result } = renderHook(() => useAttackBox("ab-as-vms", { running: true, runtime: "DOCKER" }));
     await flush();
     expect(result.current.vm).toBe(true);
     expect(result.current.name).toBe("Kali Linux");
@@ -83,7 +91,7 @@ describe("useAttackBox", () => {
 
   it("attaches the box with the lab once, when Settings say so", async () => {
     const calls = installTauri({ attack_box_status: () => box() });
-    renderHook(() => useAttackBox("ab-auto", { running: true, reachable: true }));
+    renderHook(() => useAttackBox("ab-auto", { running: true }));
     await flush(50);
     expect(count(calls, "attack_box_attach")).toBe(1);
     expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "ab-auto" });
@@ -91,17 +99,17 @@ describe("useAttackBox", () => {
 
   it("doesn't attach the box beside a lab whose deploy failed, or with auto-start off", async () => {
     const calls = installTauri({ attack_box_status: () => box() });
-    renderHook(() => useAttackBox("ab-failed", { running: true, reachable: true, failed: true }));
+    renderHook(() => useAttackBox("ab-failed", { running: true, failed: true }));
     await flush(50);
     setAutoAttackBox(false);
-    renderHook(() => useAttackBox("ab-off", { running: true, reachable: true }));
+    renderHook(() => useAttackBox("ab-off", { running: true }));
     await flush(50);
     expect(count(calls, "attack_box_attach")).toBe(0);
   });
 
   it("doesn't touch the box while a lab operation is in flight", async () => {
     const calls = installTauri({ attack_box_status: () => box() });
-    renderHook(() => useAttackBox("ab-hold", { running: true, holding: true, reachable: true }));
+    renderHook(() => useAttackBox("ab-hold", { running: true, holding: true }));
     await flush(50);
     expect(count(calls, "attack_box_status")).toBe(0);
     expect(count(calls, "attack_box_attach")).toBe(0);
@@ -119,7 +127,7 @@ describe("useAttackBox", () => {
       },
       attack_box_attach: () => rejectWith("image pull failed"),
     });
-    const { result } = renderHook(() => useAttackBox("ab-stop", { running: true, reachable: true }));
+    const { result } = renderHook(() => useAttackBox("ab-stop", { running: true }));
     await flush();
     expect(result.current.status?.running).toBe(true);
     await act(() => result.current.stop());
@@ -139,7 +147,7 @@ describe("useAttackBox", () => {
         return box({ running: true, ip: "10.42.0.9" });
       },
     });
-    const { result } = renderHook(() => useAttackBox("ab-keep", { running: true, reachable: true }));
+    const { result } = renderHook(() => useAttackBox("ab-keep", { running: true }));
     await flush();
     fail = true;
     act(() => {
@@ -190,7 +198,7 @@ describe("the attack box's attach", () => {
             }),
         ),
     });
-    const visit = () => renderHook(() => useAttackBox("ab-vm-twice", { running: true, reachable: true, runtime: "VM" }));
+    const visit = () => renderHook(() => useAttackBox("ab-vm-twice", { running: true, runtime: "VM" }));
     const first = visit();
     await flush();
     expect(count(calls, "attack_box_attach")).toBe(1);
@@ -241,13 +249,13 @@ describe("useAttackBoxAutoStart", () => {
     expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "lab-a" });
   });
 
-  it("leaves a box already running, a failed launch and a lab on an ESXi host alone", async () => {
-    for (const [status, running] of [
-      [{ running: true, place: "container" }, true],
-      [{ running: false, place: null }, false],
-      [{ running: true, place: "server", provider: "vmware_esxi" }, false],
+  it("leaves a box already running, a failed launch and a box the backend can't reach (an ESXi host) alone", async () => {
+    for (const [status, running, reachable] of [
+      [{ running: true, place: "container" }, true, true],
+      [{ running: false, place: null }, false, true],
+      [{ running: true, place: "server", provider: "vmware_esxi" }, false, false],
     ] as const) {
-      const calls = installTauri({ lab_status: () => status, attack_box_status: () => box({ running }) });
+      const calls = installTauri({ lab_status: () => status, attack_box_status: () => box({ running, reachable }) });
       const { hook } = watch(calls);
       hook.rerender({ ops: new Map() });
       await flush(50);
@@ -273,7 +281,8 @@ describe("useAttackBoxAutoStart", () => {
       ["CLOUD", false],
     ] as const) {
       setCatalogue("auto-rt", [{ id: "lab-a", runtime: { runtime } } as Lab]);
-      const calls = installTauri({ lab_status: () => ({ running: true, place: "local_vm" }), attack_box_status: () => box({ vm: true }) });
+      // The backend reaches no run to put a box in beside a cloud-services lab.
+      const calls = installTauri({ lab_status: () => ({ running: true, place: "local_vm" }), attack_box_status: () => box({ vm: true, reachable: attached }) });
       const { hook } = watch(calls);
       hook.rerender({ ops: new Map() });
       await flush(50);
@@ -311,6 +320,7 @@ describe("AttackBoxPanel", () => {
     name: "nwodtuhs/exegol:free",
     networks: [],
     network: null,
+    defaultNetwork: "",
     setNetwork: vi.fn(),
     ...p,
   });
@@ -325,12 +335,19 @@ describe("AttackBoxPanel", () => {
     expect(b.start).toHaveBeenCalledTimes(1);
   });
 
-  it("lets the learner pick which lab network the box joins when there is more than one", async () => {
+  it("lets the learner pick which lab network the box joins when there is more than one, the backend's default shown first", async () => {
     const user = userEvent.setup();
-    const b = fake({ status: box({ networks: ["dmz", "internal"] }), networks: ["dmz", "internal"] });
+    const b = fake({ status: box({ networks: ["dmz", "internal"] }), networks: ["dmz", "internal"], defaultNetwork: "internal" });
     render(<AttackBoxPanel box={b} running host={null} />);
-    await user.selectOptions(screen.getByRole("combobox"), "internal");
-    expect(b.setNetwork).toHaveBeenCalledWith("internal");
+    expect(screen.getByRole<HTMLSelectElement>("combobox").value).toBe("internal");
+    await user.selectOptions(screen.getByRole("combobox"), "dmz");
+    expect(b.setNetwork).toHaveBeenCalledWith("dmz");
+  });
+
+  it("offers no pick where the lab declares the player's seat", () => {
+    const b = fake({ status: box({ networks: [], defaultNetwork: "access" }), networks: [], defaultNetwork: "access" });
+    render(<AttackBoxPanel box={b} running host={null} />);
+    expect(screen.queryByRole("combobox")).toBeNull();
   });
 
   it("shows a running box with its address, a shell and Stop", async () => {

@@ -209,8 +209,9 @@ pub(crate) fn box_shell_command(dirs: &AppDirs, id: &str, runtime: Runtime) -> R
 }
 
 /// The attack box's status for the lab detail view: the machine the launcher added to the lab,
-/// read by its name from the run's status, and the lab networks it can join (for the learner to
-/// pick from). Down, with nothing to pick, where the launcher reaches no run. Boxed: the runner's
+/// read by its name from the run's status, the lab networks the learner may pick for it and the
+/// one it joins unpicked. Unreachable (down, with nothing to pick) where the launcher reaches no
+/// run. Boxed: the runner's
 /// status future is large, and awaiting it inline would make every caller's future large too.
 #[tauri::command]
 pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime, network: Option<String>) -> Result<AttackStatus> {
@@ -339,7 +340,7 @@ mod tests {
         use crate::runtime::paths::mark_per_machine_vm;
         let t = TestApp::new();
         let _tools = Tools::rules(&[]);
-        let dir = t.lab("srv", &[]);
+        let dir = t.lab("srv", &[("isoloom.yml", SPEC)]);
         server::mark_lab(&dir, Some(&t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
         // The box is a machine the launcher adds to the lab, the run updated with the account's
         // place: cloud-docker (the default), a container among the lab's in its cloud VM.
@@ -398,14 +399,15 @@ mod tests {
         // runtime touched (everything goes through the runner, which has nothing to report yet).
         t.lab("web", &[("isoloom.yml", SPEC)]);
         let st = attack_box_status(t.handle().clone(), "web".into(), Runtime::Docker, None).await.unwrap();
-        assert!(!st.running && st.ip.is_empty() && st.networks.is_empty());
+        assert!(st.reachable && !st.running && st.ip.is_empty());
+        assert_eq!((st.networks.as_slice(), st.default_network.as_str()), (["lab".to_owned()].as_slice(), "lab"), "what it can join, from the lab's spec");
         // A lab in a cloud account goes to the runner too (its box is a machine added to the
-        // lab): before its files exist the box reads as down, an attach fails and leaves the lab
-        // as published, and a detach has nothing to take out; nothing runs.
+        // lab): with no spec to place it by, its status doesn't read, an attach fails and leaves
+        // the lab as published, and a detach has nothing to take out; nothing runs.
         let dir = t.lab("srv", &[]);
         server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
         let s = sink();
-        assert!(!attack_box_status(t.handle().clone(), "srv".into(), Runtime::Docker, None).await.unwrap().running);
+        assert!(attack_box_status(t.handle().clone(), "srv".into(), Runtime::Docker, None).await.is_err());
         assert!(kali_attach_fails(t.handle().clone(), "srv", channel(s.clone())).await);
         assert!(!crate::runtime::attack_machine::added(&dir).unwrap(), "the lab is as published");
         attack_box_detach(t.handle().clone(), "srv".into(), Runtime::Docker, channel(s.clone())).await.unwrap();
