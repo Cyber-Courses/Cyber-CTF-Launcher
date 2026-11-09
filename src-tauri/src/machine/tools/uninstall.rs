@@ -285,7 +285,7 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
 /// How to remove `dep` on Linux: its apt packages (as root through pkexec), or its folder.
 #[cfg(target_os = "linux")]
 fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
-    let root = |script: &str| step("pkexec", &["sh", "-c", script]);
+    let root = |script: &str| super::install::root(script.to_string());
     Ok(match dep {
         Dependency::Docker => vec![root("apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")],
         Dependency::Vagrant => vec![root("apt-get remove -y vagrant")],
@@ -347,6 +347,16 @@ pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_removal_runs_as_root_as_an_install_does() {
+        // Regression: removals built their own pkexec line, without the proxy installs hand it.
+        let steps = linux_plan(Dependency::Vagrant).unwrap();
+        assert_eq!(steps[0].program, "pkexec");
+        assert_eq!(steps[0].args.first().map(String::as_str), Some("env"));
+        assert_eq!(steps[0].args.last().map(String::as_str), Some("apt-get remove -y vagrant"));
+    }
 
     #[tokio::test]
     async fn the_policy_refuses_a_removal_before_anything_runs() {

@@ -160,10 +160,16 @@ fn as_root(script: String, proxy: Vec<String>) -> Step {
     Step { program: "pkexec".into(), args, note: None }
 }
 
+/// `script` run as root through pkexec ([`as_root`]), with this process's proxy: every install
+/// and removal step on Linux.
+#[cfg(target_os = "linux")]
+pub(super) fn root(script: String) -> Step {
+    as_root(script, crate::platform::proxy::assignments(|name| std::env::var(name).ok()))
+}
+
 /// The install steps on Linux: apt and the vendors' apt repositories, as root through pkexec.
 #[cfg(target_os = "linux")]
 fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
-    let root = |script: String| as_root(script, crate::platform::proxy::assignments(|name| std::env::var(name).ok()));
     Ok(match dep {
         Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
         Dependency::Docker => vec![root(docker_script(crate::platform::exec::login_name().as_deref()))],
