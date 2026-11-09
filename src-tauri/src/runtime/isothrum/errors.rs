@@ -6,7 +6,6 @@ use isothrum_runner::{Error as RunnerError, ErrorCode};
 
 use crate::error::{Code, Error};
 
-/// The launcher's error for a runner's failure.
 /// What the launcher says when the runner refused to change a run that isn't up.
 const NOT_RUNNING: &str = "This lab isn't running. Start it first.";
 
@@ -25,6 +24,7 @@ pub(crate) fn refused_before_acting(e: &Error) -> bool {
     is_not_running(e) || matches!(e.code(), Code::AlreadyInProgress | Code::ToolMissing { .. })
 }
 
+/// The launcher's error for a runner's failure.
 pub(super) fn from_runner(e: RunnerError) -> Error {
     match e {
         // The holder is filled in later, on the launch path, where an async lookup can run.

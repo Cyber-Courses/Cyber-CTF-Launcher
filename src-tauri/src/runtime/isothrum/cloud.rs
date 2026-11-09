@@ -1,7 +1,8 @@
-//! A cloud VM lab (`cloud-vm`, `cloud-docker`) in the player's cloud account through the Isothrum
-//! runner: the run manifest Isoloom writes beside its Terraform module
-//! (`.isoloom[-<n>]/cloud-vm/<cloud>/run.json`, `.isoloom[-<n>]/cloud-docker/<cloud>/run.json`),
-//! run through the runner's operations instead of the launcher's own Terraform path.
+//! A lab in the player's cloud account through the Isothrum runner, as VMs (`cloud-vm`) or as
+//! its containers in a VM (`cloud-docker`): the run manifest Isoloom writes beside its Terraform
+//! module (`.isoloom[-<n>]/cloud-vm/<cloud>/run.json`,
+//! `.isoloom[-<n>]/cloud-docker/<cloud>/run.json`), run through the runner's operations instead
+//! of the launcher's own Terraform path.
 //!
 //! What stays the launcher's (policy, never execution): the run's name (`cyberctf-<lab id>`), the
 //! AWS budget guard, this machine's public IP for the firewall, the GCP labs project, and turning
@@ -26,7 +27,7 @@ use crate::runtime::{LabStatus, Place, Runtime, lab};
 /// environment is a credential, delivered as a connection secret.
 const PARAM_ENV: [&str; 3] = ["AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION"];
 
-/// Where a cloud VM lab runs, as the launcher resolved it from the player's account.
+/// Where a cloud lab runs, as the launcher resolved it from the player's account.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CloudPlace {
     /// The account's id among the launcher's hosts (recorded: a later operation elsewhere is
@@ -101,14 +102,15 @@ fn sign_in_question(cloud: &str) -> Option<(&'static str, &'static [&'static str
 /// How long the sign-in question may take.
 const SIGN_IN_WAIT: Duration = Duration::from_secs(30);
 
-/// One cloud VM lab, run by the runner.
+/// One cloud lab (`cloud-vm` or `cloud-docker`), run by the runner.
 pub(crate) struct CloudRun {
     run: OpenedRun,
     /// The launcher's Terraform target for the cloud (`aws`, `azure`, …).
     cloud: String,
 }
 
-/// The run's attack box and its opening are [`OpenedRun`]'s, shared with the other remote place.
+/// The run's opened manifest and what reads it (its status, console, update and retire) are
+/// [`OpenedRun`]'s, shared with the other remote place (`ServerRun`).
 impl std::ops::Deref for CloudRun {
     type Target = OpenedRun;
     fn deref(&self) -> &OpenedRun {
