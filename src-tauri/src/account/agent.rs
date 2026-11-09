@@ -270,12 +270,9 @@ async fn confirm_if_cloud(deps: &Deps, session_id: &str, claim: &Value, host: Op
     }
 }
 
+/// The claimed lab's runtime, by its tag; containers when it names none the launcher knows.
 fn claim_runtime(claim: &Value) -> Runtime {
-    match claim["runtime"].as_str() {
-        Some("VM") => Runtime::Vm,
-        Some("CLOUD") => Runtime::Cloud,
-        _ => Runtime::Docker,
-    }
+    claim["runtime"].as_str().and_then(Runtime::from_tag).unwrap_or(Runtime::Docker)
 }
 
 /// Stops a claimed lab that must not keep running under a failed session. A lab that never got

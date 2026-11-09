@@ -56,17 +56,9 @@ pub(crate) fn deployment_states(base: &Path, id: &str) -> Vec<(String, PathBuf)>
 /// the auto-stop reaper.
 const RUNTIME_FILE: &str = "runtime";
 
-fn runtime_from_tag(tag: &str) -> Runtime {
-    match tag.trim() {
-        "VM" => Runtime::Vm,
-        "CLOUD" => Runtime::Cloud,
-        _ => Runtime::Docker,
-    }
-}
-
 /// The runtime recorded at start; containers when nothing (readable) was.
 pub(super) fn recorded_runtime(state: &Path) -> Runtime {
-    std::fs::read_to_string(state.join(RUNTIME_FILE)).map_or(Runtime::Docker, |t| runtime_from_tag(&t))
+    std::fs::read_to_string(state.join(RUNTIME_FILE)).ok().and_then(|t| Runtime::from_tag(t.trim())).unwrap_or(Runtime::Docker)
 }
 
 /// Next to a lab's Terraform state: the host (server or cloud account id) it was applied on, so
@@ -281,7 +273,21 @@ mod tests {
         // The runtime tag is exact too: an unknown one reads as containers (the oldest kind).
         std::fs::write(dir.join("runtime"), "vm").unwrap();
         assert_eq!(recorded_runtime(&dir), Runtime::Docker);
+        std::fs::write(dir.join("runtime"), "CLOUD\n").unwrap();
+        assert_eq!(recorded_runtime(&dir), Runtime::Cloud);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_runtimes_tag_is_its_serde_name_both_ways() {
+        // One spelling: the tag the launcher writes and reads is what CyberBackend and the
+        // webview send.
+        for r in Runtime::ALL {
+            assert_eq!(serde_json::to_value(r).unwrap(), r.tag());
+            assert_eq!(Runtime::from_tag(r.tag()), Some(r));
+            assert_eq!(serde_json::from_value::<Runtime>(r.tag().into()).unwrap(), r);
+        }
+        assert_eq!(Runtime::from_tag("vm"), None);
     }
 
     #[test]

@@ -80,6 +80,25 @@ pub enum Runtime {
     Cloud,
 }
 
+impl Runtime {
+    pub const ALL: [Runtime; 3] = [Runtime::Docker, Runtime::Vm, Runtime::Cloud];
+
+    /// Its tag as CyberBackend, the webview and the files next to a lab's state spell it
+    /// (`DOCKER`, `VM`, `CLOUD`): its serde name.
+    pub fn tag(self) -> &'static str {
+        match self {
+            Runtime::Docker => "DOCKER",
+            Runtime::Vm => "VM",
+            Runtime::Cloud => "CLOUD",
+        }
+    }
+
+    /// The runtime tagged `tag` ([`Runtime::tag`]), if one is.
+    pub fn from_tag(tag: &str) -> Option<Runtime> {
+        Runtime::ALL.into_iter().find(|r| r.tag() == tag)
+    }
+}
+
 /// An installed lab the runtime starts, parks or stops: its folder, its id, and how it runs.
 /// These three identify and classify a lab everywhere it is driven, so the launch and lifecycle
 /// paths pass them as one value instead of repeating them as separate arguments.

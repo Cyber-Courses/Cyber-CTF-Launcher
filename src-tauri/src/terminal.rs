@@ -295,12 +295,7 @@ pub(crate) fn window_title(title: &str) -> String {
 
 /// A lab shell window's label and page.
 pub(crate) fn shell_window(id: &str, runtime: Runtime) -> (String, String) {
-    let rt = match runtime {
-        Runtime::Docker => "DOCKER",
-        Runtime::Vm => "VM",
-        Runtime::Cloud => "CLOUD",
-    };
-    (format!("shell-{id}"), format!("shell?id={id}&runtime={rt}"))
+    (format!("shell-{id}"), format!("shell?id={id}&runtime={}", runtime.tag()))
 }
 
 #[cfg(test)]
