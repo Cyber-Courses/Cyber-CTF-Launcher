@@ -37,6 +37,7 @@ cloudVm: Array<LabRunPath>,
  */
 cloudServices: Array<LabRunPath>, 
 /**
- * Where a form exists but Isoloom refuses the lab, and why.
+ * Where a form exists but Isoloom refuses the lab, or this computer's policy turns it off,
+ * and why.
  */
 refused: Array<LabRunRefusal>, };
