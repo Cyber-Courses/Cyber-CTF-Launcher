@@ -133,7 +133,7 @@ pub(super) async fn hand_to_runner(dirs: &AppDirs, report: &Report) {
 
 /// What the player is told about lab `id`'s deployment on `provider` the runner couldn't take.
 fn handover_message(id: &str, provider: Provider, why: &impl std::fmt::Display) -> String {
-    let place = if provider.is_cloud() { format!("your {} account", provider.id().to_uppercase()) } else { "your Proxmox server".into() };
+    let place = if provider.is_cloud() { format!("your {} account", provider.label()) } else { "your Proxmox server".into() };
     format!(
         "Lab {id}, running in {place}, couldn't be handed over to the Isothrum runner: {why}. It stays with the launcher's own engine until you stop it, so Stop and the auto-stop still remove it."
     )

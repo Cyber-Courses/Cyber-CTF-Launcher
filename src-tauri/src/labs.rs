@@ -290,7 +290,7 @@ fn stage(labs: &Path, dir: &Path, tarball: &[u8], release: Release<'_>) -> Resul
     std::fs::write(staging.join(".cyberctf-repository"), repository)?;
     // Keep where the lab runs, so a lab still up on a server host or in a local VM can be
     // stopped there.
-    for marker in [".cyberctf-host", runtime::LOCAL_VM_MARKER, runtime::lab::INSTANCE_MARKER] {
+    for marker in [runtime::server::HOST_MARKER, runtime::LOCAL_VM_MARKER, runtime::lab::INSTANCE_MARKER] {
         if let Ok(value) = std::fs::read(dir.join(marker)) {
             std::fs::write(staging.join(marker), value)?;
         }
@@ -631,7 +631,7 @@ mod tests {
         let dir = labs.join("invoice");
         let sha = "0123456789abcdef0123456789abcdef01234567";
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(".cyberctf-host"), "pve1").unwrap();
+        std::fs::write(dir.join(runtime::server::HOST_MARKER), "pve1").unwrap();
         std::fs::write(dir.join(runtime::LOCAL_VM_MARKER), "virtualbox").unwrap();
         std::fs::write(dir.join("old.txt"), "old").unwrap();
         // Nothing is installed at that commit yet.
@@ -641,7 +641,7 @@ mod tests {
         assert_eq!(staging, labs.join(".invoice.staging"));
         assert_eq!(std::fs::read_to_string(staging.join("isoloom.yml")).unwrap(), "name: invoice");
         assert_eq!(std::fs::read_to_string(staging.join(".cyberctf-repository")).unwrap(), "CyberCTF/invoice");
-        assert_eq!(std::fs::read_to_string(staging.join(".cyberctf-host")).unwrap(), "pve1");
+        assert_eq!(std::fs::read_to_string(staging.join(runtime::server::HOST_MARKER)).unwrap(), "pve1");
         assert_eq!(std::fs::read_to_string(staging.join(runtime::LOCAL_VM_MARKER)).unwrap(), "virtualbox");
         assert!(!staging.join(runtime::lab::INSTANCE_MARKER).exists());
 

@@ -97,7 +97,7 @@ pub(super) async fn start(dirs: &AppDirs, lab: LabRef<'_>, host: Option<&str>, e
     let conn = ready_account(dirs, host, conn, log).await?;
     // Mark first, so a half-created lab can still be destroyed with the same account.
     server::mark_lab(dir, Some(host))?;
-    log(format!("Running in your {} account {} ({})", conn.provider.id().to_uppercase(), conn.name, region_used(cloud, &conn).unwrap_or("default region")));
+    log(format!("Running in your {} account {} ({})", conn.provider.label(), conn.name, region_used(cloud, &conn).unwrap_or("default region")));
     if conn.provider == Provider::Aws {
         check_aws_budget(dirs, host, log).await?;
     }
@@ -156,8 +156,8 @@ fn check_account(cloud: CloudProvider, conn: &server::Connection) -> Result<()> 
     if conn.provider == provider(cloud) {
         return Ok(());
     }
-    let wanted = cloud.id().to_uppercase();
-    Err(Error::Invalid(format!("This lab runs on {wanted}, and {} is a {} account. Pick a {wanted} account.", conn.name, conn.provider.id().to_uppercase())))
+    let wanted = provider(cloud).label();
+    Err(Error::Invalid(format!("This lab runs on {wanted}, and {} is a {} account. Pick a {wanted} account.", conn.name, conn.provider.label())))
 }
 
 /// The account ready to run labs in: on GCP, its labs project made sure of (one free billing

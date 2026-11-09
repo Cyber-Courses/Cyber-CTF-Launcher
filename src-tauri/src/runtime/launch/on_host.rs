@@ -123,7 +123,7 @@ pub(crate) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: 
     if conn.provider == Provider::Aws {
         check_aws_budget(dirs, host, log).await?;
     }
-    log(format!("This lab runs in your {} account and is billed there until you stop it.", conn.provider.id().to_uppercase()));
+    log(format!("This lab runs in your {} account and is billed there until you stop it.", conn.provider.label()));
     // The firewall opens the lab's SSH and published ports to this machine's public IP only.
     let allowed = public_ip().await?;
     let place = isothrum::CloudPlace::launch(&conn, Some(&allowed));
