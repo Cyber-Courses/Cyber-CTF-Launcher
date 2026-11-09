@@ -93,12 +93,15 @@ are described in the [policy reference](reference/policy.md).
 
 ## Updates
 
-| Installed from                                     | Updated by                         |
-| -------------------------------------------------- | ---------------------------------- |
-| GitHub installers (MSI, NSIS, DMG, .deb, AppImage) | the launcher's own updater (below) |
-| Homebrew                                           | `brew upgrade --cask cyberctf`     |
-| apt repository                                     | `apt-get upgrade`                  |
-| Microsoft Store                                    | the Store                          |
+| Installed from                               | Updated by                         |
+| -------------------------------------------- | ---------------------------------- |
+| GitHub installers (MSI, NSIS, DMG, AppImage) | the launcher's own updater (below) |
+| Homebrew                                     | `brew upgrade --cask cyberctf`     |
+| .deb (apt repository or GitHub)              | `apt-get upgrade`                  |
+| Microsoft Store                              | the Store                          |
+
+Installed from Homebrew, a `.deb` or the Store, the launcher's own updater is off: Settings >
+About says where updates come from.
 
 The launcher's own updater checks
 `https://github.com/Cyber-Courses/Cyber-CTF-Launcher/releases/latest/download/latest.json` when it
@@ -156,11 +159,12 @@ identity provider the user signs in with there). The public-IP lookup asks all f
 needs two to agree: a cloud lab's firewall is opened to that address only. Behind a proxy or NAT,
 that is the organisation's egress address.
 
-The app window shows the account's profile picture from the URL the identity provider gives
-(an `https:` image); everything else in the window is bundled with the app.
+The app window shows the account's profile picture when the identity provider gives one on
+`avatars.githubusercontent.com` (the only remote image the window may load; any other shows the
+account's initials); everything else in the window is bundled with the app.
 
-The endpoints of Cyber CTF's services can be changed with environment variables, for testing
-([configuration reference](reference/configuration.md)).
+The endpoints of Cyber CTF's services are fixed in a released build; only development builds read
+them from the environment ([configuration reference](reference/configuration.md)).
 
 ### Traffic of the tools the launcher runs
 
@@ -185,11 +189,11 @@ reach whatever their own definitions name.
 When the user installs a tool from the Machine page or the first-run setup, the launcher runs the
 OS's package manager or the vendor's installer:
 
-| OS      | How                                                                                                                                                                                                                                        | Hosts                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS   | Homebrew formulae and casks (`docker-desktop`, `vagrant`, `virtualbox`, `utm`, `qemu`, `hashicorp/tap/terraform`, `awscli`, `azure/azure-cli` tap's `azure-cli-preview`, `google-cloud-sdk`)                                               | Homebrew (`github.com`, `ghcr.io`, `formulae.brew.sh`) and each cask's vendor download host                                                                                                                                                                                                                                                                                           |
-| Windows | `winget install` (`Docker.DockerDesktop`, `Hashicorp.Vagrant`, `Hashicorp.Terraform`, `Oracle.VirtualBox`, `SoftwareFreedomConservancy.QEMU`, `Amazon.AWSCLI`, `Microsoft.AzureCLI`, `Google.CloudSDK`); `wsl --install --no-distribution` | winget's sources and each package's vendor download host                                                                                                                                                                                                                                                                                                                              |
-| Linux   | apt, through `pkexec`                                                                                                                                                                                                                      | the distribution's mirrors; `download.docker.com` (`get.docker.com` on distributions without Docker's apt repository); `apt.releases.hashicorp.com`; `download.virtualbox.org`, `www.virtualbox.org`; `awscli.amazonaws.com`; `aka.ms` (Microsoft's Azure CLI script, which then uses Microsoft's hosts); `sdk.cloud.google.com` (Google's installer, which then uses Google's hosts) |
+| OS      | How                                                                                                                                                                                                                                        | Hosts                                                                                                                                                                                                                                                                                                                            |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS   | Homebrew formulae and casks (`docker-desktop`, `vagrant`, `virtualbox`, `utm`, `qemu`, `hashicorp/tap/terraform`, `awscli`, `azure/azure-cli` tap's `azure-cli-preview`, `google-cloud-sdk`)                                               | Homebrew (`github.com`, `ghcr.io`, `formulae.brew.sh`) and each cask's vendor download host                                                                                                                                                                                                                                      |
+| Windows | `winget install` (`Docker.DockerDesktop`, `Hashicorp.Vagrant`, `Hashicorp.Terraform`, `Oracle.VirtualBox`, `SoftwareFreedomConservancy.QEMU`, `Amazon.AWSCLI`, `Microsoft.AzureCLI`, `Google.CloudSDK`); `wsl --install --no-distribution` | winget's sources and each package's vendor download host                                                                                                                                                                                                                                                                         |
+| Linux   | apt, through `pkexec`                                                                                                                                                                                                                      | the distribution's mirrors; `download.docker.com`; `apt.releases.hashicorp.com`; `download.virtualbox.org`, `www.virtualbox.org`; `awscli.amazonaws.com`; `packages.microsoft.com` (Azure CLI); `packages.cloud.google.com` (Google Cloud CLI). Every repository's key is pinned by fingerprint; no vendor install script is run |
 
 On Linux the Docker and HashiCorp repository keys are checked against pinned fingerprints, and the
 AWS CLI download against AWS's signing key, before anything is installed.
@@ -212,10 +216,13 @@ definitions say.
 system proxy settings on macOS (Network settings) and Windows (Internet Options). Proxy
 auto-configuration (PAC, WPAD) is not read, and a proxy that needs NTLM or Kerberos authentication
 is not supported; basic credentials can be given in the proxy URL. The tools the launcher runs
-inherit its environment and follow their own proxy rules: configure Docker, Vagrant, Terraform,
-the cloud CLIs, Homebrew and winget as their vendors document. On Linux, tool installs run
-through `pkexec`, which starts them with a clean environment: give apt its proxy in
-`/etc/apt/apt.conf.d/`.
+inherit its environment and follow their own proxy rules. On macOS, an app opened from the Dock
+or Finder has no proxy variables, so when none is set the launcher puts the system proxy
+(`scutil --proxy`, with its exceptions plus loopback in `NO_PROXY`) into the environment at
+start, and the tools it runs get it; a PAC file can't be translated, and the log says so. On
+Linux, tool installs run through `pkexec`, which clears the environment: the launcher passes the
+proxy variables to it explicitly. Configure the tools' own proxy settings (Docker's daemon,
+Homebrew, winget) as their vendors document where those don't read the environment.
 
 **Certificate authorities.** The launcher verifies TLS against the operating system's trust store
 (the macOS keychains, the Windows certificate store, and the system CA bundle on Linux). A
@@ -314,12 +321,17 @@ launcher never asks for or stores a password itself.
   of `docker` can control the Docker daemon, which runs as root: **this is equivalent to root
   access** on the machine. Install Docker yourself (rootless, or without the group) where that is
   not acceptable.
-- Installing Docker, Terraform or VirtualBox adds the vendor's apt repository and its key:
+- Installing Docker, Terraform, VirtualBox, the Azure CLI or the Google Cloud CLI adds the
+  vendor's apt repository and its key, checked against a pinned fingerprint:
   `/etc/apt/sources.list.d/docker.list` (key `/etc/apt/keyrings/docker.asc`),
   `/etc/apt/sources.list.d/hashicorp.list` (`/usr/share/keyrings/hashicorp-archive-keyring.gpg`),
-  `/etc/apt/sources.list.d/virtualbox.list` (`/usr/share/keyrings/oracle-virtualbox-2016.gpg`).
-  The Azure CLI script adds Microsoft's repository.
-- The Google Cloud SDK is installed for the user, in `~/google-cloud-sdk`, without root.
+  `/etc/apt/sources.list.d/virtualbox.list` (`/usr/share/keyrings/oracle-virtualbox-2016.gpg`),
+  `/etc/apt/sources.list.d/azure-cli.list` (`/etc/apt/keyrings/microsoft.gpg`),
+  `/etc/apt/sources.list.d/google-cloud-sdk.list` (`/usr/share/keyrings/cloud.google.gpg`).
+  Removing a tool from Settings > Maintenance leaves its repository and key in place.
+- On a distribution without Docker's apt repository, the launcher doesn't install Docker: it
+  links to Docker's own instructions.
+- The AWS CLI goes to `/usr/local/aws-cli`, after its signature is checked.
 
 **macOS.** Tools come from Homebrew, which must be installed first; casks open their vendor's
 installer, which asks for an administrator password where it needs one.
@@ -345,17 +357,20 @@ reports the launch's progress and, when it runs, the lab's local address. Starti
 lab's id and where it runs. The launcher has no analytics or crash reporting; its logs stay on the
 machine. To keep user names out of the machine name, set `CYBERCTF_AGENT_NAME` for the user.
 
-A launch started from the website runs on this machine without the user starting it in the app:
-the launcher shows a system notification when it starts, and asks the user to confirm before any
-launch into a cloud account. The [policy reference](reference/policy.md) says how an administrator
+A launch started from the website never runs unattended: the launcher brings its window forward
+and asks the user to approve it, naming the lab, where it would run (this computer, or the server
+or cloud account by name) and whether it has privileged machines. A decline, or no answer within
+three minutes, refuses it and tells the website why. The [policy reference](reference/policy.md) says how an administrator
 controls this.
 
 Cyber CTF's privacy policy: <https://www.cyberctf.org/privacy>.
 
 ## Logs and diagnostics
 
-The log folder (table above) holds `cyberctf.log` and one `deploy-<lab>.log` per lab, at the Info
-level, rotated at 2 MB with four files kept. **Settings > About** has **Diagnostics > Copy** (the
+The log folder (table above) holds `cyberctf.log` and one `deploy-<lab>.log` per lab, rotated at
+2 MB with four files kept. The level is `info`; set `CYBERCTF_LOG` (`error`, `warn`, `info`,
+`debug` or `trace`) in the app's environment for another. Tokens, passwords, credentials in URLs
+and values under secret-sounding names are redacted from every line. **Settings > About** has **Diagnostics > Copy** (the
 version, the OS and the machine's setup status, for a support request) and **Log files > Open
 folder**. Logs name labs, servers and paths: read them before sending them outside.
 
