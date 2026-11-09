@@ -180,6 +180,11 @@ function cloudPlaces(rt: LabRuntimeInfo, hosts: ServerHost[]): { key: PlaceKey; 
 /** Whether the lab is cloud services (created in the player's cloud account, no machines). */
 export const isCloudLab = (rt: LabRuntimeInfo | null | undefined) => rt?.runtime === "CLOUD";
 
+/** Whether the catalogue publishes the lab as containers (a lab not read yet counts as one). Where
+ *  and in which form it actually runs is its status's (`place`, `perMachine`): this only decides
+ *  what the launch picker offers and how the lab is named. */
+export const isContainerLab = (rt: LabRuntimeInfo | null | undefined) => rt?.runtime !== "VM" && !isCloudLab(rt);
+
 /** The runtime column's word: what the lab is made of. */
 export const runtimeLabel = (rt: LabRuntimeInfo) => (rt.runtime === "VM" ? "vm" : rt.runtime === "CLOUD" ? "cloud" : "docker");
 

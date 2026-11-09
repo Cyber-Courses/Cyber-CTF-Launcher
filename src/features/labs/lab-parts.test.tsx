@@ -308,7 +308,7 @@ describe("useLabCheck and HealthBanner", () => {
 
   it("checks once per incident whether the lab is still solvable", async () => {
     const calls = installTauri({ lab_check: () => solvable });
-    const { result, rerender } = renderHook((p: { downCount: number; running: boolean }) => useLabCheck("lab-x", { ...p, enabled: true }), {
+    const { result, rerender } = renderHook((p: { downCount: number; running: boolean }) => useLabCheck("lab-x", "DOCKER", p), {
       initialProps: { downCount: 0, running: true },
     });
     expect(result.current[0]).toBeNull();
@@ -334,16 +334,16 @@ describe("useLabCheck and HealthBanner", () => {
     installTauri({
       lab_check: () => rejectWith("docker unreachable"),
     });
-    const { result } = renderHook(() => useLabCheck("lab-y", { running: true, downCount: 1, enabled: true }));
+    const { result } = renderHook(() => useLabCheck("lab-y", "DOCKER", { running: true, downCount: 1 }));
     await flush();
     expect(result.current[0]).toMatchObject({ ok: false, output: "docker unreachable" });
   });
 
-  it("doesn't check a VM lab", async () => {
-    const calls = installTauri();
-    renderHook(() => useLabCheck("lab-z", { running: true, downCount: 2, enabled: false }));
+  it("checks a VM lab too, by its runtime: the checks run wherever and however the lab runs", async () => {
+    const calls = installTauri({ lab_check: () => solvable });
+    renderHook(() => useLabCheck("lab-z", "VM", { running: true, downCount: 2 }));
     await flush();
-    expect(commands(calls)).not.toContain("lab_check");
+    expect(calls.find((c) => c.cmd === "lab_check")?.args).toEqual({ id: "lab-z", runtime: "VM" });
   });
 
   // Regression: a second machine going down while the check was in flight cancelled it and the
@@ -351,7 +351,7 @@ describe("useLabCheck and HealthBanner", () => {
   it("settles the check when another machine goes down while it runs", async () => {
     let answer!: (c: LabCheck) => void;
     installTauri({ lab_check: () => new Promise<LabCheck>((r) => (answer = r)) });
-    const { result, rerender } = renderHook((p: { downCount: number }) => useLabCheck("lab-race", { running: true, downCount: p.downCount, enabled: true }), {
+    const { result, rerender } = renderHook((p: { downCount: number }) => useLabCheck("lab-race", "DOCKER", { running: true, downCount: p.downCount }), {
       initialProps: { downCount: 1 },
     });
     expect(result.current[0]).toBe("checking");

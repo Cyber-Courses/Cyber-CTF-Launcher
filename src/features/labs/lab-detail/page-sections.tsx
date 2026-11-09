@@ -123,7 +123,7 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
           onReset={() => {
             void page.reset();
           }}
-          onResume={!s.isDocker && !s.remote && p.onResume ? () => void act("resume") : undefined}
+          onResume={s.canRepair && p.onResume ? () => void act("resume") : undefined}
         />
       )}
     </>

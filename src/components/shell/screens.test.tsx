@@ -144,13 +144,17 @@ describe("Labs", () => {
         parked: null,
         url: null,
         host: null,
+        hostId: null,
         expiresAt: null,
         place: null,
         provider: null,
+        perMachine: false,
         networks: [],
         machines: [],
         outputs: [],
         message: null,
+        reapError: null,
+        controls: [],
       }),
     });
     const user = userEvent.setup();

@@ -266,13 +266,14 @@ mod tests {
 
     #[tokio::test]
     async fn the_status_carries_what_the_page_may_do_where_the_lab_runs() {
+        use crate::runtime::Control;
         let t = crate::testing::test_app::TestApp::new();
         let _tools = crate::platform::exec::fake::Tools::rules(&[]);
         let dir = t.lab("web", &[]);
         let docker = super::status(&t.dirs(), &dir, "web", Runtime::Docker).await.unwrap().controls;
-        assert_eq!((docker.can_pause, docker.can_shutdown, docker.can_provision), (false, true, false));
+        assert_eq!(docker, [Control::Shutdown]);
         let vm = super::status(&t.dirs(), &dir, "web", Runtime::Vm).await.unwrap().controls;
-        assert_eq!((vm.can_pause, vm.can_shutdown, vm.can_provision), (true, true, true));
-        assert_eq!(super::status(&t.dirs(), &dir, "web", Runtime::Cloud).await.unwrap().controls, crate::runtime::Controls::default());
+        assert_eq!(vm, [Control::Pause, Control::Shutdown, Control::Provision, Control::Repair]);
+        assert!(super::status(&t.dirs(), &dir, "web", Runtime::Cloud).await.unwrap().controls.is_empty());
     }
 }

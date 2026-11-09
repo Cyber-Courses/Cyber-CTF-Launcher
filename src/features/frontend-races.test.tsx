@@ -46,7 +46,7 @@ const status = (p: Partial<LabStatus> = {}): LabStatus => ({
   outputs: [],
   message: null,
   reapError: null,
-  controls: { canPause: false, canShutdown: false, canProvision: false },
+  controls: [],
   ...p,
 });
 
@@ -70,7 +70,7 @@ describe("lab health check", () => {
         return d.promise;
       },
     });
-    const { result, rerender } = renderHook((p: { downCount: number }) => useLabCheck("lab-c", { running: true, downCount: p.downCount, enabled: true }), {
+    const { result, rerender } = renderHook((p: { downCount: number }) => useLabCheck("lab-c", "DOCKER", { running: true, downCount: p.downCount }), {
       initialProps: { downCount: 1 },
     });
     await flush();

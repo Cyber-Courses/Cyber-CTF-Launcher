@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { bindHost, cloudView, deployPlacement, headerMode, networkView, publishedBinds, restartTarget } from "@/features/labs/lab-detail/lab-state";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import type { Provider } from "@/lib/tauri";
+import type { LabControl, Provider } from "@/lib/tauri";
 import { deriveState as derive, labMachine as machine, labStatus as status } from "@/features/labs/labs-test-kit";
 
 const vm: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi", "proxmox"] as Provider[] };
@@ -66,7 +66,7 @@ describe("deriveLabState: contradictory inputs", () => {
   });
 
   it("a lab on a server is remote, and offers what the backend says of it there", () => {
-    const provisionOnly = { canPause: false, canShutdown: false, canProvision: true };
+    const provisionOnly: LabControl[] = ["provision"];
     const esxi = derive({ runtime: vm, status: status({ running: true, host: "esxi-1", provider: "vmware_esxi", controls: provisionOnly }) });
     expect([esxi.remote, esxi.canPause, esxi.canShutdown, esxi.canProvision]).toEqual([true, false, false, true]);
     expect(esxi.engine).toBe("VMware ESXi (remote)");
@@ -102,7 +102,7 @@ describe("headerMode and networkView: edges", () => {
   });
 
   it("an interrupted VM lab offers provisioning, an interrupted container lab a clean-up", () => {
-    const controls = { canPause: true, canShutdown: true, canProvision: true };
+    const controls: LabControl[] = ["pause", "shutdown", "provision", "repair"];
     const vmLab = derive({ runtime: vm, status: status({ machines: [machine("dc01", "poweroff")], controls }) });
     expect(networkView(vmLab, { busy: false, acting: null, hasMachines: true })).toBe("interruptedProvision");
     const dockerLab = derive({ status: status({ machines: [machine("web", "exited")] }) });

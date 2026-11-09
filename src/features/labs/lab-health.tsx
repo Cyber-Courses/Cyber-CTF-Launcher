@@ -4,14 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Play, RotateCcw, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { labCheck, type LabCheck } from "@/lib/tauri";
+import { labCheck, type LabCheck, type Runtime } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";
 
 type CheckState = LabCheck | "checking" | null;
 
-/** When a container goes down, check (once per incident) whether the lab is still solvable. */
-export function useLabCheck(labId: string, { running, downCount, enabled }: { running: boolean; downCount: number; enabled: boolean }) {
+/** When a machine goes down, check (once per incident) whether the lab is still solvable: its
+ *  checks, run where it runs and in the form it was started in (the backend resolves both from
+ *  the catalogue's `runtime`). */
+export function useLabCheck(labId: string, runtime: Runtime, { running, downCount }: { running: boolean; downCount: number }) {
   const [check, setCheck] = useState<CheckState>(null);
   const done = useRef(false);
   useEffect(() => {
@@ -19,13 +21,13 @@ export function useLabCheck(labId: string, { running, downCount, enabled }: { ru
       done.current = false;
       return;
     }
-    if (!enabled || done.current) return;
+    if (done.current) return;
     done.current = true;
     // The check's own state changes are the point; it runs in the background.
     setCheck("checking");
     let alive = true;
     let finished = false;
-    labCheck(labId, "DOCKER")
+    labCheck(labId, runtime)
       .then((c) => {
         if (alive) setCheck(c);
       })
@@ -41,7 +43,7 @@ export function useLabCheck(labId: string, { running, downCount, enabled }: { ru
       // must check again instead of leaving "checking" up forever.
       if (!finished) done.current = false;
     };
-  }, [labId, running, downCount, enabled]);
+  }, [labId, runtime, running, downCount]);
   return [
     check,
     () => {
@@ -50,7 +52,7 @@ export function useLabCheck(labId: string, { running, downCount, enabled }: { ru
   ] as const;
 }
 
-/** A container went down: say so, show the check, offer a clean restart. */
+/** A machine went down: say so, show the check, offer a clean restart. */
 export function HealthBanner({
   down,
   check,
@@ -64,7 +66,8 @@ export function HealthBanner({
   busy: boolean;
   resetting: boolean;
   onReset: () => void;
-  /** VM labs: bring the down machines back as they are (no rebuild), before reaching for Reset. */
+  /** Where the backend can (its `repair` control): bring the down machines back as they are (no rebuild),
+   *  before reaching for Reset. */
   onResume?: () => void;
 }) {
   const t = useT();

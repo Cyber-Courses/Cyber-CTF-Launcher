@@ -12,7 +12,7 @@ import {
 } from "@/features/labs/lab-detail/lab-state";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { RunTarget } from "@/features/labs/run-on";
-import type { Provider, ServerHost } from "@/lib/tauri";
+import type { LabControl, Provider, ServerHost } from "@/lib/tauri";
 import { deriveState as derive, labMachine as machine, labStatus as status } from "@/features/labs/labs-test-kit";
 
 const docker: LabRuntimeInfo = { runtime: "DOCKER", architectures: [], providers: [] };
@@ -67,17 +67,20 @@ describe("deriveLabState", () => {
   });
 
   it("offers what the backend says the lifecycle accepts where the lab runs, with the page's handlers", () => {
-    const controls = (canPause: boolean, canShutdown: boolean, canProvision: boolean) => ({ canPause, canShutdown, canProvision });
-    // A container lab run as one VM per machine: catalogue DOCKER, a VM lab where it runs.
-    const asVms = derive({ runtime: docker, status: status({ running: true, place: "local_vm", perMachine: true, controls: controls(true, true, true) }) });
-    expect([asVms.canPause, asVms.canShutdown, asVms.canProvision]).toEqual([true, true, true]);
-    const inVm = derive({ status: status({ running: true, place: "local_vm", controls: controls(true, false, false) }) });
-    expect([inVm.canPause, inVm.canShutdown, inVm.canProvision]).toEqual([true, false, false]);
+    // A container lab run as one VM per machine: catalogue DOCKER, a VM lab where it runs (its
+    // down machines brought back as they are, like a VM lab's).
+    const asVms = derive({
+      runtime: docker,
+      status: status({ running: true, place: "local_vm", perMachine: true, controls: ["pause", "shutdown", "provision", "repair"] }),
+    });
+    expect([asVms.canPause, asVms.canShutdown, asVms.canProvision, asVms.canRepair]).toEqual([true, true, true, true]);
+    const inVm = derive({ status: status({ running: true, place: "local_vm", controls: ["pause"] }) });
+    expect([inVm.canPause, inVm.canShutdown, inVm.canProvision, inVm.canRepair]).toEqual([true, false, false, false]);
     // Nothing the backend doesn't offer, whatever the catalogue says.
-    const remote = derive({ runtime: vm, status: status({ running: true, host: "pve", place: "server", provider: "proxmox" }) });
-    expect([remote.canPause, remote.canShutdown, remote.canProvision]).toEqual([false, false, false]);
+    const remote = derive({ runtime: vm, status: status({ running: true, host: "pve", hostId: "pve", place: "server", provider: "proxmox" }) });
+    expect([remote.canPause, remote.canShutdown, remote.canProvision, remote.canRepair]).toEqual([false, false, false, false]);
     // Nor without the page's handlers.
-    const all = status({ running: true, controls: controls(true, true, true) });
+    const all = status({ running: true, controls: ["pause", "shutdown", "provision", "repair"] });
     const unwired = derive({ parkable: false, provisionable: false, status: all });
     expect([unwired.canPause, unwired.canShutdown, unwired.canProvision]).toEqual([false, false, false]);
   });
@@ -147,7 +150,7 @@ describe("networkView", () => {
   });
   it("says why there is no diagram", () => {
     const leftovers = { machines: [machine("dc01", "poweroff")] };
-    const provisionable = { ...leftovers, controls: { canPause: true, canShutdown: true, canProvision: true } };
+    const provisionable = { ...leftovers, controls: ["pause", "shutdown", "provision", "repair"] satisfies LabControl[] };
     expect(view({ runtime: vm, status: status(provisionable) }, { hasMachines: false })).toBe("interruptedProvision");
     expect(view({ status: status(leftovers) }, { hasMachines: false })).toBe("interruptedClean");
     expect(view({ status: status({ parked: "shutdown" }) }, { hasMachines: false })).toBe("shutDownNote");

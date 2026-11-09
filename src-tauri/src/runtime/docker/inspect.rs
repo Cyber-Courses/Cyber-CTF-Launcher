@@ -311,7 +311,7 @@ fn docker_status(running: bool, machines: Vec<Machine>, networks: Vec<Network>, 
         outputs: Vec::new(),
         message: None,
         reap_error: None,
-        controls: crate::runtime::Controls::default(),
+        controls: Vec::new(),
     }
 }
 

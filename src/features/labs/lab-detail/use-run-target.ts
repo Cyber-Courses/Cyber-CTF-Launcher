@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { cloudAccountsFor, cloudRunsPerMachine, hostSupports, isCloudLab, localProviders, perMachineProviders } from "@/features/labs/lab-runtime";
+import {
+  cloudAccountsFor,
+  cloudRunsPerMachine,
+  hostSupports,
+  isCloudLab,
+  isContainerLab,
+  localProviders,
+  perMachineProviders,
+} from "@/features/labs/lab-runtime";
 import type { PickerStep, Platform, RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import {
@@ -45,7 +53,7 @@ export function useRunTarget(
   dockerEnginesRunning: DockerEngine[] = [],
 ) {
   const isCloud = isCloudLab(rt);
-  const isDocker = rt?.runtime !== "VM" && !isCloud;
+  const isDocker = isContainerLab(rt);
   // The container engines that answer here and the one a lab here runs on (see useEngineChoice).
   const { engine, engines, chosenEngine, setPickedEngine } = useEngineChoice(isDocker, dockerEngine, dockerEnginesRunning);
   // "Don't ask again": checked, Start saves the path's choices so next time skips the steps.

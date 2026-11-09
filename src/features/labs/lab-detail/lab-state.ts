@@ -1,10 +1,10 @@
 import type { RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { EMULATORS, isLocalHypervisor, runsNatively } from "@/features/labs/lab-runtime";
+import { EMULATORS, isCloudLab, isContainerLab, isLocalHypervisor, runsNatively } from "@/features/labs/lab-runtime";
 import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
 import { ENGINES, engineName as dockerEngineName } from "@/features/machine/setup-steps/engines";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
-import type { ActiveOperation, DockerEngine, LabMachine, LabStatus, Provider, Runtime, ServerHost } from "@/lib/tauri";
+import type { ActiveOperation, DockerEngine, LabControl, LabMachine, LabStatus, Provider, Runtime, ServerHost } from "@/lib/tauri";
 
 // What the lab page shows, derived from the lab's status and what is in flight on it.
 
@@ -40,13 +40,15 @@ export type LabStateInput = {
 export type LabPhase = "operation" | "running" | "starting" | "failed" | "paused" | "shutDown" | "interrupted" | "notStarted";
 
 /** What the page can do on the built lab: what the backend says the lifecycle accepts where it
- *  runs (its status's `controls`), when this page has the handler wired. */
+ *  runs (its status's `controls`), when this page has the handler wired (the repair, a resume,
+ *  is wired with the resume handler where it is offered). */
 function labControls(i: LabStateInput) {
-  const controls = i.status?.controls;
+  const offers = (c: LabControl) => !!i.status?.controls.includes(c);
   return {
-    canPause: i.parkable && !!controls?.canPause,
-    canShutdown: i.parkable && !!controls?.canShutdown,
-    canProvision: i.provisionable && !!controls?.canProvision,
+    canPause: i.parkable && offers("pause"),
+    canShutdown: i.parkable && offers("shutdown"),
+    canProvision: i.provisionable && offers("provision"),
+    canRepair: offers("repair"),
   };
 }
 
@@ -121,20 +123,20 @@ export function deriveLabState(i: LabStateInput) {
   const tearingDown = operation === "stop" || operation === "shutdown" || operation === "pause";
   // Infrastructure exists but nothing is deploying and the lab isn't fully up: a run was cut off
   // (a crash or a restart mid-start). Offer to clean it up rather than a Start that would collide.
-  const isCloud = rt?.runtime === "CLOUD";
+  const isCloud = isCloudLab(rt);
   const interrupted = !deploying && !running && !parked && leftovers(status, isCloud);
   // Machines that went down while the lab runs. Not while it's starting or stopping: machines
   // come up one after another then (a web server waits for its database), and that's normal.
   // The controller is powered off by design once the lab is built: never "down".
   // Nor while it is parked or down altogether: then every machine is off, by design.
   const down = deploying || !running ? [] : machines.filter((m) => !m.infra && m.state !== "running");
-  const isDocker = rt?.runtime !== "VM" && !isCloud;
+  const isDocker = isContainerLab(rt);
   const remote = !!status?.host;
   // Where it actually ran, as the backend reports it (its marker survives a failed start, so this
   // is right even for a launch that failed): a dual-form lab is DOCKER-kind but can run as a VM
   // here, and "container" is the only place whose host ports can be swapped for random ones.
   const place = status?.place ?? null;
-  const { canPause, canShutdown, canProvision } = labControls(i);
+  const { canPause, canShutdown, canProvision, canRepair } = labControls(i);
   // Where it actually runs: "on this machine" alone is misleading for a VM lab (which hypervisor
   // do I open?), so name the engine or hypervisor the status reports.
   const engine = engineName(status);
@@ -159,6 +161,7 @@ export function deriveLabState(i: LabStateInput) {
     canPause,
     canShutdown,
     canProvision,
+    canRepair,
     engine,
     phase,
   };

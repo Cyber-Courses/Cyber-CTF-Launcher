@@ -518,11 +518,25 @@ describe("LabDetail: a lab that is up", () => {
         place: "local_vm",
         provider: "virtualbox",
         url: null,
+        controls: VMS_HERE,
       }),
     });
     await flush();
     await user.click(screen.getByRole("button", { name: /Start them/ }));
     expect(h.onResume).toHaveBeenCalled();
+  });
+
+  it("offers Start them where the backend can bring machines back: a container lab run as one VM per machine, not one in a helper VM", async () => {
+    installTauri(quiet);
+    const machines = [machine("web", "running", { image: "" }), machine("db", "poweroff", { image: "" })];
+    const perMachine = status({ machines, place: "local_vm", provider: "virtualbox", perMachine: true, url: null, controls: VMS_HERE });
+    renderDetail({ status: perMachine });
+    await flush();
+    expect(screen.getByRole("button", { name: /Start them/ })).toBeTruthy();
+    cleanup();
+    renderDetail({ status: { ...perMachine, perMachine: false, controls: ["pause"] } });
+    await flush();
+    expect(screen.queryByRole("button", { name: /Start them/ })).toBeNull();
   });
 });
 

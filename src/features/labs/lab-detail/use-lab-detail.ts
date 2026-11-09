@@ -137,12 +137,14 @@ export function useLabDetail(p: LabDetailProps) {
   });
   const run = useRunTarget(rt, readyVms, p.hostArch, p.dockerEngine ?? null, p.dockerEnginesRunning ?? []);
   const preview = useCloudPreview(lab.id, rt);
-  const shell = useLabShell(lab.id, lab.title, s.isDocker ? "DOCKER" : "VM");
-  const box = useShownBox(useLabAttackBox(lab.id, s, rt?.runtime ?? "DOCKER"), removing(s));
-  const [check, clearCheck] = useLabCheck(lab.id, { running: s.running, downCount: s.down.length, enabled: s.isDocker });
-  const tools = useLabTools(lab.id, s.running && !s.isCloud, rt?.runtime ?? "DOCKER");
+  // The lab's catalogue runtime: the backend resolves the form it runs in (`local_runtime`).
+  const runtime = rt?.runtime ?? "DOCKER";
+  const shell = useLabShell(lab.id, lab.title, runtime);
+  const box = useShownBox(useLabAttackBox(lab.id, s, runtime), removing(s));
+  const [check, clearCheck] = useLabCheck(lab.id, runtime, { running: s.running, downCount: s.down.length });
+  const tools = useLabTools(lab.id, s.running && !s.isCloud, runtime);
   const objectives = useObjectives(lab.id, lab.question, t("labs.detail.objective"), p.loggedIn);
-  const restart = () => restartTarget(status, run.hosts, rt?.runtime, run.runOn, run.localVm);
+  const restart = () => restartTarget(status, run.hosts, runtime, run.runOn, run.localVm);
   const { resetting, reset } = useLabReset(p.onStop, p.onStart, restart, clearCheck);
   const startOn = (target: RunTarget) => void p.onStart(target);
   // Where it runs, said the same way by the header, Details and the diagram's host card.

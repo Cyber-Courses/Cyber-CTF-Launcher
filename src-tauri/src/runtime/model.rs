@@ -171,21 +171,24 @@ pub struct LabStatus {
     pub reap_error: Option<crate::error::Wire>,
     /// What can be done on the lab where it runs, in the form it was started in: set by the
     /// status dispatcher (`lifecycle::controls`), none from the per-runtime probes.
-    pub controls: Controls,
+    pub controls: Vec<Control>,
 }
 
-/// What can be done on a started lab where it runs: the backend's own rules, so the lab page
-/// offers exactly what the lifecycle accepts.
-#[derive(Serialize, Clone, Copy, Default, Debug, PartialEq, Eq, TS)]
+/// One thing that can be done on a started lab where it runs: the backend's own rules, so the
+/// lab page offers exactly what the lifecycle accepts.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(rename = "LabControls")]
-pub struct Controls {
+#[ts(rename = "LabControl")]
+pub enum Control {
     /// Pausing it (its machines' state saved).
-    pub can_pause: bool,
+    Pause,
     /// Shutting it down (its machines powered off, kept).
-    pub can_shutdown: bool,
+    Shutdown,
     /// Running its machines' provisioning again in place.
-    pub can_provision: bool,
+    Provision,
+    /// Bringing machines that went down back up as they are, no rebuild (a resume of the run):
+    /// the lab page's repair beside Reset.
+    Repair,
 }
 
 /// One thing a cloud-services lab exposes: a module output, under the spec's name for it.
