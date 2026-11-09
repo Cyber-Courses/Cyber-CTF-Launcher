@@ -1,143 +1,133 @@
-# Cyber CTF Desktop
+# Cyber CTF
 
-Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It runs CTF labs on the player's own machine, servers and cloud accounts, using [Isoloom](https://www.isoloom.com) to read each lab and convert it to the right infrastructure files, and the [Isothrum](https://github.com/Isothrum/isothrum) runner to run them. This app replaced the earlier Electron launcher in this repository.
+The desktop launcher for [Cyber CTF](https://www.cyberctf.org) labs: hands-on, deliberately
+vulnerable environments for learning offensive and defensive security. It runs each lab, with an
+attack box to work from, on your own computer (Docker or virtual machines), on your own Proxmox or
+ESXi server, or in your own cloud account (AWS, Azure, Google Cloud, DigitalOcean, Linode, Oracle
+Cloud), and installs and checks the tools that needs.
 
-## Where labs run
+It is for learners, for the trainers and teams who run Cyber CTF labs, and for the IT teams who
+deploy it: the [administrator guide](docs/admin-guide.md) has what a security review and a managed
+deployment need.
 
-A lab describes itself once as an `isoloom.yml` (its machines, networks, services and checks). The launcher uses Isoloom to read that spec and convert it to each target's native files (Compose, Vagrant, Terraform) under the lab's `.isoloom/` folder, then runs them in one of three modes:
+![The launcher's Overview: a running lab, one deploying, and the lab list (an earlier version)](packaging/store/images/en-us/screenshot-1.png)
 
-| Mode       | What runs the lab                                                                                                                                                                                                              |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Local**  | Docker on the player's machine (Docker Compose), or VMs through Vagrant on any local hypervisor (VirtualBox, VMware Desktop, Hyper-V, Parallels, libvirt, QEMU, UTM). Containers can also run inside a local VM (`docker-vm`). |
-| **Server** | The player's own **Proxmox** or **VMware ESXi** server, through Vagrant or Terraform.                                                                                                                                          |
-| **Cloud**  | The player's own **AWS, Azure, GCP, DigitalOcean, Linode or Oracle Cloud** account, through Terraform with that provider's CLI credentials.                                                                                    |
+## Install
 
-### Lab engine
+Every release is on [GitHub Releases](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/releases),
+with `SHA256SUMS` and a build provenance attestation for each file
+([verify a download](docs/admin-guide.md#verify-a-download)).
 
-The [Isothrum runner](https://github.com/Isothrum/isothrum) runs every lab with machines, in every mode above: it executes the versioned run manifest Isoloom writes beside the generated files (local Docker, a container lab in a local VM (`docker-vm`), local VMs, Proxmox and ESXi servers, and `cloud-docker` / `cloud-vm` in a cloud account). There is no other engine to choose: cloud-services labs (managed cloud services, no machines) run through it too, the lab's own Terraform module applied by the runner in the player's account (`runtime/cloud_services.rs`).
+### macOS (Apple silicon and Intel)
 
-**Proven vs. generated.** Local labs (Docker, Docker in a VM, VMs) and server labs (Proxmox and ESXi) are proven by real runs, and so are cloud labs on **AWS**: the integration tests' AWS tier runs `cloud-docker` and `cloud-vm` labs end to end in a real account ([docs/testing/integration.md](docs/testing/integration.md)). On the other clouds the Terraform Isoloom generates passes the cloud's official validator but hasn't been run end to end on a paid account yet.
-
-## Architecture
-
-- **UI:** Next.js as a **static export** (`output: "export"`) served by Tauri. There is no Next server, so no API routes, SSR or middleware. The UI only calls typed Rust commands ([`src/lib/tauri/`](src/lib/tauri/), one module per area).
-  - [`src/features/`](src/features/): one folder per page with its parts and hooks: `labs` (catalogue, lab page, deployment steps, network diagram), `machine` (Machine page and the setup steps), `servers`, `cloud`, `settings`, `home`, `hosted`, `onboarding`, `account`.
-  - [`src/components/ui/`](src/components/ui/): shared building blocks (Button, Panel, RadioRow, Segmented, ChoiceCard, StatusPill, LogConsole…); [`src/components/`](src/components/) holds the app shell.
-  - [`src/lib/`](src/lib/): data access ([`tauri/`](src/lib/tauri/)), per-machine settings, formatting ([`format.ts`](src/lib/format.ts)) and small helpers.
-- **Core (Rust, [`src-tauri/`](src-tauri/)):** everything privileged. Processes are spawned without a shell, lab ids are validated, and the UI never passes paths or command lines.
-  - [`account/`](src-tauri/src/account/): Cyber Auth sign-in (`auth.rs`: authorization code + PKCE through the system browser, loopback redirect on `127.0.0.1:47290-47292/callback`, or a code entered on another device (`auth/device.rs`); tokens in the OS keychain, refreshed automatically, never in the webview; see [Signing in](#signing-in)), CyberBackend GraphQL with the token attached on the Rust side (`api.rs`), and the agent that links the launcher to the website (`agent.rs`, `colocation.rs`).
-  - [`labs.rs`](src-tauri/src/labs.rs): `lab_launch` calls `startLab`, then downloads `CyberCTF/*` at the pinned commit (full SHA only; archive paths checked), and starts the lab with `CTF_API_URL` and `CTF_LAUNCH_TOKEN`. The lab's `evidence` service exchanges the token for this player's evidence.
-  - [`machine/`](src-tauri/src/machine/): what this machine can run (`system/`: Docker engines, Vagrant, hypervisors, package manager), the setup self-tests (`selftest/`), the workloads/storage the Machine page shows (`workloads/`, `storage.rs`) and one-click dependency installs (`tools/`).
-  - [`platform/`](src-tauri/src/platform/): running tools without a shell (`exec/`), files only this user can read (`private_fs.rs`), whole-file writes (`atomic_file.rs`), HTTP clients with timeouts and a download size cap (`http.rs`), the PATH a GUI launch is missing (`env_path.rs`), and the service endpoints (`config.rs`).
-  - [`runtime/`](src-tauri/src/runtime/): lab lifecycle, with logs streamed to the UI over a Tauri channel
-    - `lab/`: the launcher's one door to Isoloom's spec and generators (`isoloom-spec`, `isoloom-targets` are used nowhere else; the types others need are re-exported from it): the target's files (Compose, Vagrant, Terraform) are generated from the lab's `isoloom.yml` right before they run, then the launcher's own overrides applied (`overrides.rs`); Isoloom's paths and names (`names.rs`); the variables of Isoloom's Terraform modules from the player's hosts and accounts (`vars.rs`); each lab's instance numbering (`instances.rs`); where and how a lab can run (`run_options.rs`) and each launch path's maturity from Isoloom's tier evidence (`tiers.rs`)
-    - `isothrum.rs` + `isothrum/`: the Isothrum runner (`isothrum-runner`), the one lab engine: the launcher hands it every lab with machines, wherever it runs (here, on a server, in a cloud account), and it executes the run manifest Isoloom wrote, whose types (`isoloom-manifest`) only this module reads; its runs live under the app data folder's `runs/`, never in the lab folder
-    - `launch.rs`, `lifecycle.rs`, `status.rs`: start, park/resume, stop and the auto-stop reaper for cloud labs, and what is running where; whether something of a lab is still up (an update, a re-import or a start elsewhere waits for it to stop) is read from the runner's record of its run, wherever it runs
-    - `docker/`: reads only, never starts or stops anything (the runner does): a running container lab's reachable URL here, the address blocks Docker's networks hold, the lab-check result types, and the Compose project name and the names an older version's attack box carried
-    - `server/`, `proxmox.rs`: the player's own servers (ESXi, Proxmox) and cloud accounts (AWS, Azure, GCP, DigitalOcean, Linode, OCI) labs run on; `server_selftest/` checks a server or account before the first lab
-    - `cloud_services.rs`: cloud-services labs, run by the runner in the player's account; the launcher keeps the policy (the account, the budget, this machine's IP for an allow-list)
-    - `terraform/`: reads only: the states the launcher's own Terraform left before the runner (for their hand-over to it) and the Terraform plugin cache the Storage page cleans
-    - `providers.rs`: Vagrant providers. Local: VirtualBox, VMware Desktop, Hyper-V, Parallels, libvirt, QEMU, UTM. Remote: VMware ESXi, Proxmox.
-    - `attack_machine.rs` + `attack_machine/`: the attack box, a machine the launcher adds to the lab through its overlay (`lab/overlay.rs`), at the seat the lab declares for the player or as `attackbox` on its first network: a container among a container lab's, a Kali VM among a VM lab's
-  - [`app/deploy_worker/`](src-tauri/src/app/deploy_worker/): launches, resumes, parks and provisioning runs in a detached worker process (`cyberctf-desktop deploy --job <file>`), so quitting the app never cuts a deploy short. A per-lab file lock keeps the app and the workers from running two operations on one lab at once.
-  - [`lan_relay/`](src-tauri/src/lan_relay/): loopback relays that let Vagrant and ovftool reach a LAN ESXi host on macOS.
-  - `terminal.rs`: the in-app attack box shell (a PTY streamed to xterm.js); `shared_folder.rs`: the folder shared with the attack box.
-  - `cloud.rs`: cloud account sign-in through each provider's CLI; `error.rs`: crate-wide errors.
-  - [`app/`](src-tauri/src/app/): the app shell (windows, menu, quitting, the log file); [`commands.rs`](src-tauri/src/commands.rs): the commands the webview invokes.
-
-The runtime layer knows nothing about CTFs: a lab is a directory with an `isoloom.yml` (its machines, networks, services and checks). The launcher generates the files for the target it runs on under the lab's `.isoloom/` folder.
-
-Labs live in `<app data>/labs/<lab id>/`.
-
-### Platform notes
-
-A VM lab runs natively only where its boxes exist for the host architecture. On Apple Silicon, ARM boxes run natively on UTM/QEMU (Apple Hypervisor). x86-only boxes such as pfSense run there only under QEMU emulation, which is several times slower; heavy x86 labs should use a remote x86 host (ESXi, Proxmox).
-
-Hyper-V only takes management commands from an administrator (or a member of "Hyper-V Administrators"), and Vagrant's Hyper-V provider refuses to run otherwise. On Windows, Vagrant commands on Hyper-V machines run through a generated, hidden Windows PowerShell script ([`platform/exec/elevate.rs`](src-tauri/src/platform/exec/elevate.rs)); when the launcher itself may not manage Hyper-V, Windows first asks for administrator rights (a UAC prompt, raised for the app's window). Status reads are never elevated, and Vagrant refuses even those without the rights: so the Machine report shows Hyper-V as not ready for an account that may not manage it, and Settings > Hypervisor offers **Allow my account**, which adds the account to "Hyper-V Administrators" (one UAC prompt; it takes effect at the next Windows sign-in).
-
-- Prompts: one per batch of Vagrant commands. A lab's own start (boot, then power off the setup machine), provisioning run, pause or shutdown, resume and stop are one batch each. Adding or taking out the attack box (a machine of the lab) is one batch too. The VM self-test asks twice (boot and run a command, then delete the test VM), three times when it first deletes a test VM left from an earlier run. Started as administrator (or as a Hyper-V administrator), the launcher asks nothing.
-- Output streams as usual: the script writes it to a log the launcher follows. The environment the commands need (tokens included) goes through a file in the batch's own temp folder, read and deleted by the script, never on a command line.
-- Vagrant's questions: on Windows, Vagrant waits forever for an answer even with no one to give it. The script picks a virtual switch ("Default Switch", else an external one, else the first) unless `ISOLOOM_HYPERV_SWITCH` already names one, and passes it as `ISOLOOM_HYPERV_SWITCH`: a lab's Isoloom Vagrantfile puts each VM's first adapter on it (and its lab networks on private switches `isoloom-<lab>-<network>`), and the launcher's own Vagrantfile (the self-test) attaches to it too. If Vagrant asks anyway, the batch is stopped with a message saying so.
-- Stopping: cancelling an operation, the deploy worker being stopped, or the launcher exiting ends the batch and every process it started; a batch running for more than 6 hours is ended too. Declining the UAC prompt fails the operation with a plain message.
-
-## Roadmap
-
-- [x] System check, Docker/VM runtimes, provider detection
-- [x] Login: system browser + PKCE against cyberauth.co, loopback redirect, tokens in the OS keychain
-- [x] Login with a code on another device (device authorization grant), once cyber-auth enables it for the launcher's client
-- [x] Lab catalogue from [CyberBackend](https://github.com/Cyber-Courses/CyberBackend); launch = `startLab`, download at the pinned commit, run with the launch token
-- [x] Servers (ESXi/Proxmox, credentials in the keychain) and cloud accounts (AWS, Azure, GCP, DigitalOcean, Linode, OCI)
-- [x] Attack box on the lab network (Cyber CTF image on Docker Hub, built by the attack-box workflow)
-- [x] VM lab provisioning from the lab's `isoloom.yml` (through Isoloom), re-runnable per machine from the lab page
-- [x] Signed builds + auto-update (GitHub Releases; the in-app updater installs signed updates from `latest.json`)
-
-## Signing in
-
-The launcher signs in to [Cyber Auth](https://www.cyberauth.co) the way desktop and CLI apps should (RFC 8252): the player never copies a token.
-
-1. **Sign in** opens the system browser on cyberauth.co with an OAuth 2.0 authorization code request protected by PKCE (S256). A player already signed in there only confirms the account (`prompt=select_account`).
-2. cyber-auth redirects to a one-shot server the launcher runs on `http://127.0.0.1:<port>/callback` (the first free one of 47290, 47291, 47292). The launcher checks the `state`, exchanges the code with its PKCE verifier, and only then tells the browser tab "You're signed in. You can close this tab."
-3. The tokens go to the OS keychain (macOS Keychain, Secret Service on Linux, Windows Credential Manager), never to a file or the webview. The access token is refreshed silently a minute before it expires, so the session survives restarts until the refresh token is revoked. **Sign out** deletes them from the keychain.
-
-While it waits, the launcher offers two fallbacks under the spinner:
-
-- **Browser didn't open? Copy the sign-in link**: for a default browser that takes the link and shows nothing.
-- **Use a code instead**: the OAuth device authorization grant (RFC 8628), for a machine whose browser can't be used (a remote desktop, a kiosk, an SSH-forwarded window). The launcher shows a short code and the cyberauth.co page to enter it on, from any device, and polls until it is approved, declined or expired (at most 30 minutes).
-
-The sidebar and **Settings > Account** show who is signed in (name and email from the ID token). Errors say what to do: a sign-in not finished within 5 minutes (or a code that expired) is cancelled, a declined consent says so, cyber-auth unreachable says to check the connection, and a keychain that can't be read (locked, its prompt dismissed, no Secret Service on Linux) is shown in Settings. Cancel always ends the wait.
-
-## Configuration
-
-Production endpoints are built in ([`platform/config.rs`](src-tauri/src/platform/config.rs)). Each can be overridden at build or run time, e.g. to test against a local cyber-auth:
-
-| Variable             | Default                                                                  |
-| -------------------- | ------------------------------------------------------------------------ |
-| `CYBERCTF_AUTH_BASE` | `https://www.cyberauth.co/api/auth`                                      |
-| `CYBERBACKEND_URL`   | `https://cyberbackend.com` (also the token audience)                     |
-| `CYBERCTF_CLIENT_ID` | `MORSNcedpYSLupYIwbaKyHIXdGgVhanC` (the launcher's client in cyber-auth) |
-
-The OAuth client in cyber-auth must be first-party and public (`token_endpoint_auth_method: none`, PKCE required, consent skipped), use the `authorization_code` and `refresh_token` grants, and have these redirect URIs: `http://127.0.0.1:47290/callback`, `http://127.0.0.1:47291/callback`, `http://127.0.0.1:47292/callback`. **Use a code instead** also needs the `urn:ietf:params:oauth:grant-type:device_code` grant on that client; until it has it, cyber-auth answers `unauthorized_client` and the launcher says signing in with a code isn't available yet, pointing to the copy-the-link fallback.
-
-## Design
-
-The UI follows the Cyber family design system, "Lit from within", at app density: tokens, modes
-(Dark, Black, Light), primitives and patterns are documented in [`docs/design-system.md`](docs/design-system.md).
-To preview the UI in a browser without the Rust core, run `pnpm dev` and open
-`http://localhost:3000/?mock` (sample data, development builds only).
-
-## Development
-
-Requirements: Node 22, 24, 25 or later (see `engines`), pnpm, Rust (stable), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. On Windows that means **Visual Studio 2022 Build Tools** with the _Desktop development with C++_ workload (it provides `link.exe` and the Windows SDK; without it the build stops at `linker 'link.exe' not found`).
+With [Homebrew](https://brew.sh):
 
 ```bash
-pnpm install
-pnpm tauri dev          # app with hot reload
-pnpm tauri build        # installers in src-tauri/target/release/bundle (needs the release signing key)
-pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'   # a local build without it
-pnpm format             # Prettier (src/, scripts/, e2e/, Markdown) + rustfmt (src-tauri/)
-pnpm check              # formatting, types, lint, clippy
-cd src-tauri && cargo test
-cargo test -- --ignored --nocapture   # prints this machine's system report
-pnpm e2e                # the frontend in Chromium against the dev mock (Playwright)
-pnpm e2e:desktop        # the real app through its embedded WebDriver, with Docker and UTM
-pnpm test:integration  # real labs on Docker and local VMs (TIERS="local aws server" for more)
-pnpm release-check      # every layer, one verdict per step: the gate before a release
+brew tap Cyber-Courses/homebrew-tap
+brew trust --tap cyber-courses/tap
+brew install --cask cyberctf
 ```
 
-[`docs/testing/`](docs/testing/README.md) says what each test layer proves, where a new test goes,
-and what stays manual; [`docs/`](docs/README.md) has the rest (how labs run, the design system). Every runner script takes `--help`; [`scripts/README.md`](scripts/README.md) lists them.
+Or download `Cyber.CTF_<version>_universal.dmg` and drag **Cyber CTF** to Applications.
 
-`.gitattributes` keeps every text file LF (Windows scripts CRLF) whatever `core.autocrlf` says; a checkout made before it may need `git add --renormalize .` once. The tests that syntax-check the Linux/macOS install scripts with `sh -n` skip that part where no `sh` is on PATH (Windows without Git's `usr\bin`); their other assertions still run.
+### Windows (x64 and Arm64)
 
-The TypeScript types of the commands' arguments and results ([`src/lib/tauri/generated/`](src/lib/tauri/generated/)) are generated from the Rust structs by [ts-rs](https://github.com/Aleph-Alpha/ts-rs): `cargo test` rewrites them, and CI fails when the committed ones differ. A command taking or returning a new struct or enum derives `ts_rs::TS` and is listed in [`testing/ts_bindings.rs`](src-tauri/src/testing/ts_bindings.rs).
+- **[Microsoft Store](https://apps.microsoft.com/detail/9P9L4WZ0N8ZJ)**, or
+  `winget install --id 9P9L4WZ0N8ZJ --source msstore`.
+- **Installer** for your account, no administrator rights: `Cyber.CTF_<version>_x64-setup.exe`
+  (`_arm64-setup.exe` on Arm). Silent: `/S`.
+- **MSI** for all users, for Intune, Configuration Manager or Group Policy (x64):
+  `Cyber.CTF_<version>_x64_en-US.msi`. Silent: `msiexec /i <file> /qn`.
 
-### Branches
+### Linux (x64 and arm64)
 
+The apt repository (Debian, Ubuntu and derivatives), signed with the key
+`B4B6 770F 5BED 6F3E 91BA C67E EB61 45F4 8E6D 7C1C`:
+
+```bash
+sudo curl -fsSL https://cyber-courses.github.io/apt/cyberctf-apt.asc -o /usr/share/keyrings/cyberctf.asc
+echo "deb [signed-by=/usr/share/keyrings/cyberctf.asc] https://cyber-courses.github.io/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/cyberctf.list
+sudo apt update && sudo apt install cyber-ctf
 ```
-feature/… · fix/…  ──PR──▶  dev  ──PR──▶  main  ──tag v*──▶  release
-```
 
-- **Work** happens on a `feature/…` or `fix/…` branch cut from `dev`, merged into `dev` by pull request.
-- **`dev` is staging**: everything merged there is checked together (CI, coverage, E2E, labs on each push) before it reaches production.
-- **`main` is production**: it only takes pull requests from `dev`. Pushes to `main` publish the attack-box image; a `v*` tag on `main` builds and ships the release (`release.yml`, then `distribute.yml`).
-- A hotfix goes into `main` by pull request, then `main` is merged back into `dev`.
+Or download the `.deb` (`_amd64.deb`, `_arm64.deb`) or the `.AppImage` (`_amd64`, `_aarch64`).
+
+### Updates
+
+Installs from GitHub update themselves: the launcher checks for a new version when it starts and
+installs it when you accept (only a package signed with the launcher's update key). Homebrew,
+apt and the Store update through their own channel.
+
+## System requirements
+
+| Platform | Versions                                                               | Architectures        |
+| -------- | ---------------------------------------------------------------------- | -------------------- |
+| Windows  | 10 (version 2004 or later) and 11, with the WebView2 Runtime           | x64, Arm64           |
+| macOS    | a release Apple still updates                                          | Apple silicon, Intel |
+| Linux    | glibc 2.35 or later (Ubuntu 22.04, Debian 12 and later), WebKitGTK 4.1 | x64, arm64           |
+
+What labs need, on the computer that runs them:
+
+- **Memory**: 16 GB is comfortable; with 8–16 GB container labs run well and large VM labs may be
+  slow; under 8 GB labs struggle.
+- **Disk**: the attack box image takes about 14 GB once unpacked, and the Kali attack VM of a VM lab
+  a disk of up to 40 GB; each lab's own images or VMs come on top.
+- **Container labs**: a Docker-compatible engine (Docker Desktop, Docker Engine, OrbStack, Colima…)
+  with Docker Compose. On Windows, Docker Desktop needs WSL 2.
+- **VM labs**: hardware virtualization (Intel VT-x or AMD-V) turned on, a hypervisor (VirtualBox,
+  VMware, Hyper-V, Parallels, libvirt, QEMU or UTM) and Vagrant.
+- **Server and cloud labs**: Terraform, and for a cloud its own CLI; see
+  [running labs](docs/running-labs.md#accounts-and-servers) for what a Proxmox or ESXi server needs.
+- **Network**: Cyber CTF's online services for signing in, the catalogue and starting labs. The
+  launcher can't run air-gapped ([network endpoints](docs/admin-guide.md#network)).
+
+The launcher's first-run setup and its **Machine** page check all of this and install what is
+missing.
+
+## Quickstart
+
+1. Open **Cyber CTF** and **Sign in** with your Cyber CTF account (in your browser).
+2. Follow the setup: it installs a container engine and the attack box, and tests them.
+3. Open **Labs**, pick a lab, select **Start lab**, and choose **This machine**.
+4. When it is up, **Open attacker shell** and start hacking.
+5. **Stop & remove** when you're done.
+
+[Getting started](docs/getting-started.md) walks through it in detail;
+[troubleshooting](docs/troubleshooting.md) helps when something goes wrong.
+
+## Documentation
+
+- [Getting started](docs/getting-started.md) and [troubleshooting](docs/troubleshooting.md)
+- [Administrator guide](docs/admin-guide.md): silent install, network endpoints and ports, proxy
+  and certificates, files and data, machine changes, privacy, uninstall; and the
+  [policy reference](docs/reference/policy.md)
+- [All the docs](docs/README.md), by what you came to do
+
+## Signed releases
+
+- **macOS**: the app is signed with a Developer ID and notarized by Apple.
+- **Windows**: the installers and the app are Authenticode-signed from the release after 1.8.9;
+  the release workflow refuses to publish a build it couldn't sign. Up to 1.8.9 they were not
+  signed. The Microsoft Store package is signed by Microsoft.
+- **Updates**: the in-app updater installs only packages signed with the launcher's own key.
+- **Linux**: the apt repository is signed; each release has `SHA256SUMS`, build provenance
+  attestations and SBOMs.
+
+## Support and security
+
+- Questions and bugs: [SUPPORT.md](SUPPORT.md). Settings > About has the diagnostics and logs to
+  attach.
+- Security vulnerabilities: report them privately, as [SECURITY.md](SECURITY.md) says. Only the
+  latest release gets fixes ([versioning and support policy](docs/reference/versioning.md)).
+
+## Contributing
+
+Contributions are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the tests and the
+gates, and [docs/architecture.md](docs/architecture.md) maps the code. Please follow the
+[code of conduct](CODE_OF_CONDUCT.md).
+
+## Licence
+
+Licensed under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE). Each release lists the
+third-party software it includes and their licences in `THIRD_PARTY_NOTICES`.

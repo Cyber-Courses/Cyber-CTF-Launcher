@@ -31,7 +31,9 @@ key. Debug builds keep the sign-in session and the server secrets in files under
 instead of the OS keychain.
 
 `.gitattributes` keeps every text file LF (Windows scripts CRLF) whatever `core.autocrlf` says; a
-checkout made before it may need `git add --renormalize .` once.
+checkout made before it may need `git add --renormalize .` once. The tests that syntax-check the
+Linux and macOS install scripts with `sh -n` skip that part where no `sh` is on `PATH` (Windows
+without Git's `usr\bin`); their other assertions still run.
 
 ## Run the tests
 
@@ -63,7 +65,9 @@ pnpm audit --prod
 - **The quality ratchet** (`pnpm quality`, `quality-baseline.json`): a count of lint warnings,
   duplication or dead code may go down, never up.
 - **Generated types**: `cargo test` rewrites the TypeScript types of the Tauri commands
-  (`src/lib/tauri/generated/`) from the Rust structs; commit them with the change, or CI fails.
+  (`src/lib/tauri/generated/`) from the Rust structs ([ts-rs](https://github.com/Aleph-Alpha/ts-rs));
+  commit them with the change, or CI fails. A command taking or returning a new struct or enum
+  derives `ts_rs::TS` and is listed in `src-tauri/src/testing/ts_bindings.rs`.
 - **Dependencies**: a new crate must be under a licence `src-tauri/deny.toml` allows (Apache-2.0
   compatible). Tauri's JS packages and Rust crates move together (`pnpm check:tauri`).
 - **Workflows**: every action is pinned to a full commit SHA with its version in a comment

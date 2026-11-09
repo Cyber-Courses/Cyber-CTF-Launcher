@@ -3,14 +3,14 @@
 Each kind of test lives where its tool expects it, and proves what the one below cannot. A change
 is tested at the lowest level that can show it; the higher ones run before a release.
 
-| Kind                | What it drives                                                                      | Where                                                          | Run                         | In CI                                                        |
-| ------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------ |
-| Unit, frontend      | components, hooks and scripts; the Tauri commands answered by a fake                | beside the code: `src/**/*.test.ts(x)`, `scripts/**/*.test.ts` | `pnpm test`                 | `ci.yml`, `web-coverage.yml` (floors in `vitest.config.mts`) |
-| Unit, Rust          | the backend, every external tool scripted (`src-tauri/src/platform/exec/fake.rs`)   | beside the code: `#[cfg(test)]` in `src-tauri/src`             | `cargo test` (`src-tauri/`) | `ci.yml`, `coverage.yml`                                     |
-| Integration         | real labs through the launcher's Rust on real Docker, VMs, clouds and servers       | `src-tauri/src/integration_tests/` (opt-in, `#[ignore]`)       | `pnpm test:integration`     | `labs.yml` (the Docker labs)                                 |
-| End-to-end, web     | the real frontend in Chromium, the commands answered by the dev mock (Playwright)   | `e2e/web/`                                                     | `pnpm e2e`                  | `e2e.yml`                                                    |
-| End-to-end, desktop | the real app binary through its embedded WebDriver, on a real Docker and hypervisor | `e2e/desktop/specs/` ([desktop-e2e.md](desktop-e2e.md))        | `pnpm e2e:desktop`          | `native-e2e.yml` (manual, Linux)                             |
-| Packaging           | the built bundle installed and launched; the Windows installer's edge cases         | `package-smoke.yml`; `packaging/windows/smoke-test.ps1`        | see each                    | `package-smoke.yml`                                          |
+| Kind                | What it drives                                                                                               | Where                                                          | Run                         | In CI                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------ |
+| Unit, frontend      | components, hooks and scripts; the Tauri commands answered by a fake                                         | beside the code: `src/**/*.test.ts(x)`, `scripts/**/*.test.ts` | `pnpm test`                 | `ci.yml`, `web-coverage.yml` (floors in `vitest.config.mts`) |
+| Unit, Rust          | the backend, every external tool scripted (`src-tauri/src/platform/exec/fake.rs`)                            | beside the code: `#[cfg(test)]` in `src-tauri/src`             | `cargo test` (`src-tauri/`) | `ci.yml`, `coverage.yml`                                     |
+| Integration         | real labs through the launcher's Rust on real Docker, VMs, clouds and servers                                | `src-tauri/src/integration_tests/` (opt-in, `#[ignore]`)       | `pnpm test:integration`     | `labs.yml` (the Docker labs)                                 |
+| End-to-end, web     | the real frontend in Chromium, the commands answered by the dev mock (Playwright)                            | `e2e/web/`                                                     | `pnpm e2e`                  | `e2e.yml`                                                    |
+| End-to-end, desktop | the real app binary through its embedded WebDriver, on a real Docker and hypervisor                          | `e2e/desktop/specs/` ([desktop-e2e.md](desktop-e2e.md))        | `pnpm e2e:desktop`          | `native-e2e.yml` (manual, Linux)                             |
+| Packaging           | the built bundle installed and launched (the MSI silently, then removed); the Windows installer's edge cases | `package-smoke.yml`; `packaging/windows/smoke-test.ps1`        | see each                    | `package-smoke.yml`                                          |
 
 `pnpm release-check` runs everything CI runs plus the desktop end-to-end, one verdict per step
 ([release-check.md](release-check.md)). [integration.md](integration.md) lists the integration
@@ -27,7 +27,7 @@ Every platform the launcher ships for is tested in CI, on the runners `release.y
 | Linux Arm            | `ubuntu-22.04-arm` | yes         | yes (`.deb`)    | yes (`ubuntu-24.04-arm`, native box)  |
 | macOS, Apple Silicon | `macos-latest`     | yes         | yes (`.app`)    | here (`pnpm test:integration`)        |
 | macOS, Intel         | `macos-15-intel`   | yes         | yes (`.app`)    | no runner with Docker or a hypervisor |
-| Windows x64          | `windows-latest`   | yes         | yes (NSIS)      | no Linux containers on the runner     |
+| Windows x64          | `windows-latest`   | yes         | yes (NSIS, MSI) | no Linux containers on the runner     |
 | Windows Arm          | `windows-11-arm`   | yes         | yes (NSIS)      | no Linux containers on the runner     |
 
 What differs by platform is decided in code a unit test covers on every platform (the box's CPU:
