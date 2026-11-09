@@ -160,6 +160,30 @@ fn tool_failed(step: &str, reason: &str) -> Error {
     super::super::docker::explain_pool_overlap(Error::CommandFailed { command: format!("lab step {step}"), stderr: reason.to_owned() })
 }
 
+/// What the log says before an operation UTM refused in passing is tried once more.
+const UTM_TRANSIENT_RETRY: &str =
+    "UTM answered \"Application isn't running\" while it runs (a passing UTM scripting error, seen while a VM boots): trying again.";
+
+/// Whether an operation failed on UTM's passing scripting error: `osascript` reports `UTM got an
+/// error: Application isn't running. (-600)` from a VM customization right after an import, or
+/// from the UTM provider reading the VM's forwarded ports while it boots (a start, a reload),
+/// while UTM runs and answers every other command; the same operation then goes through. The
+/// other -600, a UTM that really isn't reachable, the start's UTM check catches before.
+fn utm_transient(e: &Error) -> bool {
+    e.to_string().contains("(-600)")
+}
+
+/// Whether `e` is UTM's passing scripting error ([`utm_transient`]), saying in `log` that the
+/// operation is tried once more when it is: a start or an update leaves the run as it got it, so
+/// the next attempt picks up from there.
+pub(crate) fn try_again_after_utm(e: &Error, log: &mut impl FnMut(String)) -> bool {
+    let again = utm_transient(e);
+    if again {
+        log(UTM_TRANSIENT_RETRY.into());
+    }
+    again
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,5 +315,17 @@ mod tests {
         assert!(!refused_before_acting(&Error::Invalid("This lab isn't running. Start it first.".into())));
         let failed_step = from_runner(RunnerError::ToolFailed { step: "up".into(), reason: "exit status 1".into() });
         assert!(!refused_before_acting(&failed_step), "{failed_step}");
+    }
+
+    #[test]
+    fn utms_passing_refusal_is_tried_again_and_said_and_nothing_else_is() {
+        let mut said = Vec::new();
+        let mut log = |l: String| said.push(l);
+        let refused = Error::Invalid(
+            "`vagrant reload default --no-provision` failed: read_forwarded_ports.applescript: execution error: UTM got an error: Application isn\u{2019}t running. (-600)".into(),
+        );
+        assert!(try_again_after_utm(&refused, &mut log));
+        assert!(!try_again_after_utm(&Error::Invalid("a step failed".into()), &mut log));
+        assert_eq!(said, [UTM_TRANSIENT_RETRY]);
     }
 }

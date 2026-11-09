@@ -189,8 +189,7 @@ pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
         if let Err(teardown) = teardown {
             log(format!("Could not fully remove the failed VM: {teardown}"));
         }
-        if provider == Provider::Utm && !tried_again && local::utm_transient(&e) {
-            log(local::UTM_TRANSIENT_RETRY.into());
+        if provider == Provider::Utm && !tried_again && isothrum::errors::try_again_after_utm(&e, log) {
             tried_again = true;
             continue;
         }
@@ -256,12 +255,10 @@ pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmSta
     }
     let run = isothrum::LabRun::vm(home, dir, id)?;
     if let Err(e) = run.up(env, Some(provider.id()), log).await {
-        if provider != Provider::Utm || !local::utm_transient(&e) {
+        if provider != Provider::Utm || !isothrum::errors::try_again_after_utm(&e, log) {
             return Err(e);
         }
-        // Once more: UTM's transient refusal, with the VMs left as they are (a `vagrant up`
-        // resumes what exists).
-        log(local::UTM_TRANSIENT_RETRY.into());
+        // A `vagrant up` after UTM's passing refusal resumes the VMs as they were left.
         run.up(env, Some(provider.id()), log).await?;
     }
     mark_parked(dir, None)

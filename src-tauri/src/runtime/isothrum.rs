@@ -294,7 +294,13 @@ impl LabRun {
     /// Brings the running lab up to date with its regenerated files (a machine added to the lab
     /// or taken out), with the parameters it was started with.
     pub(crate) async fn update(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        update_of(&self.lab()?, &self.placed(RunOptions::new()), log).await
+        let (lab, opts) = (self.lab()?, self.placed(RunOptions::new()));
+        match update_of(&lab, &opts, log).await {
+            // A VM restarted for its new settings boots like a started one, into the same passing
+            // UTM refusal; the run keeps the old settings recorded, so the next update restarts it.
+            Err(e) if errors::try_again_after_utm(&e, log) => update_of(&lab, &opts, log).await,
+            done => done,
+        }
     }
 
     /// Takes `machine` out of the running lab, ahead of its removal from the lab's files.

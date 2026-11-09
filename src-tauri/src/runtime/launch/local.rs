@@ -126,14 +126,3 @@ pub(super) async fn check_utm(log: &mut impl FnMut(String)) -> Result<()> {
 pub(super) fn utm_not_allowed(stderr: &str) -> bool {
     stderr.contains("-1743") || stderr.contains("Not authorized to send Apple events")
 }
-
-/// What the log says before a UTM start is tried once more.
-pub(super) const UTM_TRANSIENT_RETRY: &str = "UTM answered \"Application isn't running\" to a VM customization while it runs (a passing UTM scripting error, seen right after a VM's import): starting again.";
-
-/// Whether a start failed on UTM's passing scripting error: `osascript` reports `UTM got an
-/// error: Application isn't running. (-600)` from a VM customization (the directory-share mode,
-/// right after the import) while UTM runs and answers every other command; the same start then
-/// goes through. The other -600, a UTM that really isn't reachable, `check_utm` catches before.
-pub(super) fn utm_transient(e: &Error) -> bool {
-    e.to_string().contains("(-600)")
-}
