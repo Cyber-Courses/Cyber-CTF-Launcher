@@ -99,19 +99,17 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 reqwest = { version = "0.13", features = ["json", "form"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
-# layered crates, the published crates.io 1.0 line (1.0.8). Only `src/runtime/lab/` calls them:
+# layered crates, the published crates.io 1.0 line. Only `src/runtime/lab/` calls them:
 # the spec (`isoloom-spec`), the check plan (`isoloom-plan`), the backends' registry and the
 # resolved snapshot (`isoloom-targets`).
 isoloom-spec = "1.0.9"
 isoloom-targets = "1.0.9"
-# The Compose backend's start plan and the check runners' names, which the launcher's own Docker
-# path reads from the generated files (`isoloom-compose`, `isoloom-render`).
 # The run manifest's types, shared with the Isothrum runner: what `runtime/isothrum` reads of a run.
 isoloom-manifest = "1.0.9"
-# The Isothrum runner: executes the run manifest Isoloom writes (`runtime/isothrum`, local Docker
-# behind the hidden developer flag `CYBERCTF_RUNNER=isothrum`). The published crates.io 1.0.5.
+# The Isothrum runner: executes the run manifest Isoloom writes; every lab runs through it
+# (`runtime/isothrum`). The published crates.io 1.0 line.
 isothrum-runner = "1.0.5"
-# The map type of the Isoloom crates' API (a cloud-services lab's outputs).
+# The in-app terminal's pseudo-terminal (`terminal`).
 portable-pty = "0.9"
 tauri-plugin-dialog = "2"
 # The TypeScript types of the commands' arguments and results, derived from these structs
