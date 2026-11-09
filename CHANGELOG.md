@@ -8,6 +8,23 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
+- **An MSI installer for Windows x64**, for all users of a machine and for deployment with
+  Intune, Configuration Manager or Group Policy: `msiexec /i Cyber.CTF_<version>_x64_en-US.msi /qn`.
+  The NSIS installer (per user, `/S`) stays.
+- **Each release says what it contains and where it comes from**: `SHA256SUMS` of every file, a
+  build provenance attestation of each (`gh attestation verify <file> --repo
+Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependencies, and
+  `THIRD_PARTY_NOTICES`, also shipped inside the installed app and the Store package.
+- **An administrator guide** (`docs/admin-guide.md`): silent install and removal, updates, the
+  network endpoints and local ports, proxy and certificate behaviour, what works offline, the
+  files, keychain items and machine changes, what is sent to Cyber CTF, and a clean uninstall per
+  platform. The docs are reorganised by purpose (`docs/README.md`), with a getting-started
+  tutorial, troubleshooting, a configuration reference, a versioning and support policy and the
+  release process; the README is rewritten for users and IT, and the architecture moved to
+  `docs/architecture.md`.
+- **Governance files**: `SECURITY.md` (private vulnerability reporting, response times),
+  `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `SUPPORT.md`, `CODEOWNERS`,
+  issue forms and a pull request template.
 - **The attack box on every form a lab runs in.** The attack box is one more machine of the lab,
   wherever it runs: on Docker, in a VM on this machine, as VMs here, on a Proxmox server, or in a
   cloud account (containers on one VM, or one VM per machine). Beside containers it is a container
@@ -29,6 +46,19 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   attack box among VMs is now always Kali, made by the launcher.
 
 ### Changed
+
+- **Licensed under the Apache License 2.0** (`LICENSE`, `NOTICE`).
+- **A tag build refuses to ship unsigned installers.** The release stops before building when a
+  Windows (Azure Artifact Signing), macOS (Developer ID, notarization) or updater signing secret is
+  missing, where Windows installers used to ship unsigned, and it verifies every signature it made
+  (`Get-AuthenticodeSignature`, `codesign --verify --deep --strict`, `spctl`). The signing tool is
+  pinned to a version.
+- **The Homebrew cask is kept in this repository** (`packaging/homebrew/cyberctf.rb`) and its
+  `zap` also removes the logs and the web view data; it says what zap leaves (the keychain items,
+  the shared folder).
+- **Dependencies are checked and kept current**: `cargo deny` (advisories, Apache-2.0-compatible
+  licences, crates.io only) and `pnpm audit --prod` in CI, Dependabot for the crates, the npm
+  packages and the pinned actions, and a link check of the docs (`pnpm check:docs`).
 
 - **Tests, scripts and docs, reorganised.** End-to-end tests are under `e2e/` (`web/` with
   Playwright, `desktop/` with WebDriver), the integration tests (real labs on real tools) in
@@ -85,6 +115,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   which the runner now runs inside the attack VM it adds (Isothrum 1.0.6 on Isoloom 1.0.10: Debian
   12 with Docker, the image's Arm build on an Apple Silicon Mac), or the Vagrant box for a lab
   whose own design declares an attack VM. The panel calls it an attack VM in both cases.
+
+### Security
+
+- **rustls-webpki 0.103.16** (RUSTSEC-2026-0382: certificate paths through distrusted
+  intermediates could be accepted).
 
 ## [1.8.9] — 2026-11-08
 
