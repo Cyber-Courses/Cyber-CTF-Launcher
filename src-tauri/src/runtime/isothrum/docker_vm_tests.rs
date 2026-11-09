@@ -23,7 +23,13 @@ struct Engine {
     vm: Option<&'static str>,
     /// Whether Compose started the lab in it.
     up: bool,
+    /// How many of the next VM starts (an `up` or a `reload`) UTM refuses as it does right after
+    /// an import or a restart.
+    refusals: u32,
 }
+
+/// UTM's passing refusal, as Vagrant's UTM plugin reports it.
+const UTM_REFUSAL: &str = "read_forwarded_ports.applescript: execution error: UTM got an error: Application isn\u{2019}t running. (-600)";
 
 /// An installed container lab (`<labs>/web`) with its docker-vm files generated, a runner home,
 /// and a model of its VM and containers.
@@ -46,6 +52,10 @@ impl Fixture {
 fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
     let mut e = locked(engine);
     let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
+    if call.program == "vagrant" && matches!(args.first(), Some(&("up" | "reload"))) && e.refusals > 0 {
+        e.refusals -= 1;
+        return Reply::fail(1, UTM_REFUSAL);
+    }
     match (call.program.as_str(), args.as_slice()) {
         ("vagrant", ["--version"]) => Reply::ok("Vagrant 2.4.9"),
         ("vagrant", ["plugin", "list", "--machine-readable"]) => Reply::ok("1,,plugin-name,vagrant_utm\n"),
@@ -59,7 +69,8 @@ fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
             Reply::ok("")
         }
         ("vagrant", ["destroy", ..]) => {
-            *e = Engine::default();
+            // The VM goes; UTM's mood doesn't.
+            *e = Engine { refusals: e.refusals, ..Engine::default() };
             Reply::ok("")
         }
         ("vagrant", ["ssh", "--no-tty", "--command", command, "default"]) => {
@@ -96,4 +107,62 @@ async fn a_container_lab_in_a_utm_vm_runs_with_nothing_of_the_runners_own_in_it(
     assert!(f.fake.calls().iter().all(|c| !c.line().contains("docker run")), "nothing but the lab went into the VM");
     run.down(&mut |_| {}).await.unwrap();
     assert!(f.model().vm.is_none());
+}
+
+/// The lab up in its UTM VM, then changed so that bringing the run up to date restarts the VM
+/// (another host port), with UTM refusing the next `refusals` VM starts: what the update said, and
+/// how it ended.
+async fn update_through_utm_refusals(refusals: u32) -> (Vec<String>, Result<()>, usize) {
+    let f = Fixture::new();
+    let run = f.run();
+    run.up(&[], Some("utm"), &mut |_| {}).await.unwrap();
+    std::fs::write(f.home.dir.join("isoloom.yml"), SPEC.replace("publish: 8080", "publish: 8081")).unwrap();
+    lab::prepare(&f.home.dir, lab::vagrant_target(Runtime::Docker)).unwrap();
+    f.model().refusals = refusals;
+    let before = f.fake.calls().len();
+    let mut said = Vec::new();
+    let updated = run.update(&mut |l| said.push(l)).await;
+    let reloads = f.fake.calls().iter().skip(before).filter(|c| c.line().starts_with("vagrant reload")).count();
+    (said, updated, reloads)
+}
+
+#[tokio::test]
+async fn an_update_tries_again_once_after_utms_passing_refusal() {
+    // Regression: restarting the helper VM for its new settings booted into UTM's passing "-600"
+    // and the update failed, where a second try goes through.
+    let (said, updated, reloads) = update_through_utm_refusals(1).await;
+    assert!(updated.is_ok(), "{updated:?}");
+    assert_eq!(reloads, 2, "the restart, tried again once");
+    assert_eq!(said.iter().filter(|l| l.contains("a passing UTM scripting error") && l.ends_with("trying again.")).count(), 1, "{said:?}");
+    // Refused again: that is the error, not another try.
+    let (said, updated, reloads) = update_through_utm_refusals(2).await;
+    assert!(updated.as_ref().is_err_and(|e| e.to_string().contains("(-600)")), "{updated:?}");
+    assert_eq!(reloads, 2, "one try again, no more");
+    assert_eq!(said.iter().filter(|l| l.ends_with("trying again.")).count(), 1, "{said:?}");
+}
+
+/// A start of the lab in its UTM VM (the launcher's own, [`launch::up_in_vm`]) with UTM refusing
+/// its first `refusals` VM starts: what it said, how it ended, and how many `vagrant up` it ran.
+async fn start_through_utm_refusals(refusals: u32) -> (Vec<String>, Result<()>, usize) {
+    let f = Fixture::new();
+    f.model().refusals = refusals;
+    let mut said = Vec::new();
+    let started = crate::runtime::launch::up_in_vm(&f.home.dir, crate::runtime::providers::Provider::Utm, &[], || Ok(f.run()), &mut |l| said.push(l)).await;
+    let ups = f.fake.calls().iter().filter(|c| c.line().starts_with("vagrant up")).count();
+    (said, started, ups)
+}
+
+#[tokio::test]
+async fn a_start_in_a_utm_vm_tries_again_once_after_utms_passing_refusal() {
+    // Regression: a first boot right after UTM imported the VM answered "-600" and the start
+    // failed, where a second try goes through.
+    let (said, started, ups) = start_through_utm_refusals(1).await;
+    assert!(started.is_ok(), "{started:?}");
+    assert_eq!(ups, 2, "the start, tried again once");
+    assert_eq!(said.iter().filter(|l| l.ends_with("trying again.")).count(), 1, "{said:?}");
+    // Refused again: that is the error, not another try.
+    let (said, started, ups) = start_through_utm_refusals(2).await;
+    assert!(started.as_ref().is_err_and(|e| e.to_string().contains("(-600)")), "{started:?}");
+    assert_eq!(ups, 2, "one try again, no more");
+    assert_eq!(said.iter().filter(|l| l.ends_with("trying again.")).count(), 1, "{said:?}");
 }

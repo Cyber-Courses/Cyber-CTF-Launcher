@@ -145,7 +145,20 @@ pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
     if provider == Provider::Utm {
         check_utm(log).await?;
     }
-    let run = isothrum::LabRun::docker_in_vm(home, dir, id)?;
+    up_in_vm(dir, provider, env, || isothrum::LabRun::docker_in_vm(home, dir, id), log).await
+}
+
+/// Brings up a container lab's helper VM on `provider` (the run [`isothrum::LabRun`] `run_of`
+/// opens) with the launch's values `env`: a failed start takes down what it half created, and on
+/// UTM its passing `-600` refusal is tried again, once.
+pub(in crate::runtime) async fn up_in_vm(
+    dir: &Path,
+    provider: Provider,
+    env: &[(String, String)],
+    run_of: impl Fn() -> Result<isothrum::LabRun>,
+    log: &mut impl FnMut(String),
+) -> Result<()> {
+    let run = run_of()?;
     let mut tried_again = false;
     loop {
         // Marked before every attempt: the teardown of a failed one forgets the marker with the
@@ -160,7 +173,7 @@ pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
         // error. Destroy it before surfacing the failure; the teardown is best-effort, so its
         // own error is logged, never allowed to mask the start's.
         log("Start failed: removing the half-created VM so the next launch starts clean".into());
-        let teardown = match isothrum::LabRun::docker_in_vm(home, dir, id) {
+        let teardown = match run_of() {
             Ok(vm) => super::lifecycle::stop_run(vm, dir, &mut *log).await,
             Err(e) => Err(e),
         };
