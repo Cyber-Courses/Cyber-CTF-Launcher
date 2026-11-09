@@ -46,6 +46,24 @@ pub(crate) struct CloudPlace {
 }
 
 impl CloudPlace {
+    /// Account `conn`'s place, for an operation on its run: the account's id, region and
+    /// credentials.
+    pub(crate) fn of(conn: &crate::runtime::server::Connection) -> CloudPlace {
+        CloudPlace { label: conn.id.clone(), region: conn.region.clone(), tf_env: conn.tf_env.clone(), ..CloudPlace::default() }
+    }
+
+    /// Account `conn`'s place for a launch: [`CloudPlace::of`], with the account's auto-stop as
+    /// the run's expiry, and the firewall open to `allowed_ip` only, when the lab's module takes
+    /// one (cloud services take none).
+    pub(crate) fn launch(conn: &crate::runtime::server::Connection, allowed_ip: Option<&str>) -> CloudPlace {
+        let hours = conn.auto_stop_hours.unwrap_or(0);
+        CloudPlace {
+            allowed_cidr: allowed_ip.map(|ip| format!("{ip}/32")),
+            lifetime: (hours > 0).then(|| Duration::from_secs(u64::from(hours) * 3600)),
+            ..CloudPlace::of(conn)
+        }
+    }
+
     /// The run's connection secrets: every credential in the account's environment (a value no
     /// manifest slot takes is never delivered), by its environment-variable name.
     fn secrets(&self, env: &[(String, String)]) -> Secrets {
@@ -107,6 +125,8 @@ pub(crate) struct CloudRun {
     run: OpenedRun,
     /// The launcher's Terraform target for the cloud (`aws`, `azure`, …).
     cloud: String,
+    /// The Isoloom target the run's files are generated for.
+    target: lab::Target,
 }
 
 /// The run's opened manifest and what reads it (its status, console, update and retire) are
@@ -124,9 +144,14 @@ impl CloudRun {
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
         let processes = SystemProcesses::for_host(|var| std::env::var(var).ok(), crate::platform::home_dir().as_deref());
         let config = RunnerConfig::new(home).with_processes(Arc::new(processes));
-        let manifest = lab::terraform(dir, runtime, cloud).0.join("run.json");
+        let (out, target) = lab::terraform(dir, runtime, cloud);
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
-        Ok(CloudRun { run: OpenedRun::new(config, manifest, name)?, cloud: cloud.to_owned() })
+        Ok(CloudRun { run: OpenedRun::new(config, out.join("run.json"), name)?, cloud: cloud.to_owned(), target })
+    }
+
+    /// The Isoloom target the run's files are generated for.
+    pub(crate) fn target(&self) -> lab::Target {
+        self.target
     }
 
     /// Refuses a change while the account's sign-in has run out, before anything runs: the

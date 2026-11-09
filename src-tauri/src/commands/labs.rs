@@ -16,7 +16,7 @@ use crate::platform::AppDirs;
 use crate::runtime::attack_machine::AttackStatus;
 use crate::runtime::paths::lab_dir;
 use crate::runtime::providers::Provider;
-use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, lab, server, status, stop_lab, terminal_launch};
+use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, lab, status, stop_lab, terminal_launch};
 
 /// Starts a lab, the deploy's log sent on `logs` (see [`labs::launch_job`]).
 #[tauri::command]
@@ -182,14 +182,12 @@ pub fn run_tiers() -> Vec<crate::runtime::RunTier> {
 pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<docker::Check> {
     let dirs = AppDirs::from(&app);
     let dir = lab_dir(&dirs, &id)?;
-    if let Some(c) = server::lab_connection(&dirs, &dir)?
-        && c.provider == Provider::VmwareEsxi
-    {
-        return crate::runtime::launch::esxi_run(&dirs, &dir, &id, runtime, &c)?.check().await;
+    // A cloud-services lab: nothing of it to check.
+    if crate::runtime::paths::local_runtime(&dir, runtime) == Runtime::Cloud {
+        return Ok(docker::Check::default());
     }
-    match attack_machine::locate(&dirs, &dir, &id, runtime)? {
-        Some(placed) => placed.host.check().await,
-        // A cloud-services lab started here: nothing of it to check.
+    match crate::runtime::host::locate(&dirs, &dir, &id, runtime)? {
+        Some(host) => host.check().await,
         None => Ok(docker::Check::default()),
     }
 }
@@ -346,7 +344,7 @@ mod tests {
         // place: cloud-docker (the default), a container among the lab's in its cloud VM.
         let placed = |runtime| match crate::runtime::attack_machine::locate(&t.dirs(), &dir, "srv", runtime).unwrap() {
             Some(b) => match &b.host {
-                crate::runtime::attack_machine::Host::Cloud(_, place) => (place.label.clone(), b.target, b.vm),
+                crate::runtime::host::Host::Cloud { place, .. } => (place.label.clone(), b.target, b.vm),
                 _ => panic!("in the cloud account"),
             },
             None => panic!("a box"),

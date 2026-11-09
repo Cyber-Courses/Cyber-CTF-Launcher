@@ -6,92 +6,18 @@
 use std::path::{Path, PathBuf};
 
 use isoloom_spec::Target;
-use isothrum_runner::Status;
 
 use super::status::{AttackStatus, status_of};
 use super::{Cpu, Kind};
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::platform::AppDirs;
-use crate::runtime::paths::{local_runtime, runner_home};
-use crate::runtime::providers::Provider;
-use crate::runtime::{Runtime, isothrum, lab, server};
+use crate::runtime::host::{self, Failed, Host};
+use crate::runtime::paths::local_runtime;
+use crate::runtime::{Runtime, lab};
 
-/// The run holding the lab, and what changing it needs.
-pub(crate) enum Host {
-    /// On this machine: on Docker, in one local VM, or as VMs.
-    Local(isothrum::LabRun),
-    /// In a cloud account, with its credentials.
-    Cloud(isothrum::CloudRun, isothrum::CloudPlace),
-    /// On a Proxmox server (`host`, the launcher's id for it), through `conn`: its place is
-    /// found when the run is changed (its node, its SSH jump), not to read the box's status.
-    Server { run: isothrum::ServerRun, host: String, conn: server::Connection },
-}
-
-/// Why changing the run failed, and whether the run may have changed by then.
-struct Failed {
-    error: Error,
-    /// False only when the run certainly didn't change: its place couldn't be reached, or the
-    /// change was refused before acting ([`isothrum::errors::refused_before_acting`]: a cloud
-    /// sign-in that ran out included).
-    run_changed: bool,
-}
-
-impl Failed {
-    fn of_runner(error: Error) -> Self {
-        let run_changed = !isothrum::errors::refused_before_acting(&error);
-        Failed { error, run_changed }
-    }
-}
-
-impl Host {
-    async fn update(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> std::result::Result<(), Failed> {
-        match self {
-            Host::Local(run) => run.update(log).await.map_err(Failed::of_runner),
-            Host::Cloud(run, place) => run.update(place, log).await.map_err(Failed::of_runner),
-            Host::Server { run, host, conn } => {
-                let place = crate::runtime::launch::server_place(dirs, host, conn, run).await.map_err(|error| Failed { error, run_changed: false })?;
-                run.update(&place, log).await.map_err(Failed::of_runner)
-            }
-        }
-    }
-
-    async fn retire(&self, dirs: &AppDirs, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        match self {
-            Host::Local(run) => run.retire(machine, log).await,
-            Host::Cloud(run, place) => run.retire(place, machine, log).await,
-            Host::Server { run, host, conn } => run.retire(&crate::runtime::launch::server_place(dirs, host, conn, run).await?, machine, log).await,
-        }
-    }
-
-    /// The run's status as the runner reports it; None before the lab's files exist.
-    async fn run_status(&self) -> Result<Option<Status>> {
-        match self {
-            Host::Local(run) => run.run_status().await,
-            Host::Cloud(run, _) => run.run_status().await,
-            Host::Server { run, .. } => run.run_status().await,
-        }
-    }
-
-    fn console(&self, machine: &str) -> Result<isothrum_runner::ShellCommand> {
-        match self {
-            Host::Local(run) => run.console_command(machine),
-            Host::Cloud(run, _) => run.console_command(machine),
-            Host::Server { run, .. } => run.console_command(machine),
-        }
-    }
-
-    /// Runs the lab's checks where it runs (a cloud's and a server's over SSH).
-    pub(crate) async fn check(&self) -> Result<crate::runtime::docker::Check> {
-        match self {
-            Host::Local(run) => run.check().await,
-            Host::Cloud(run, place) => run.check(place).await,
-            Host::Server { run, .. } => run.check().await,
-        }
-    }
-}
-
-/// The lab the box joins: its run (`host`), its folder, the Isoloom target it is generated for,
-/// and whether its machines are VMs (the box is Kali then) or containers (the picked image).
+/// The lab the box joins: its run (`host`, [`crate::runtime::host`]), its folder, the Isoloom
+/// target it is generated for, and whether its machines are VMs (the box is Kali then) or
+/// containers (the picked image).
 pub(crate) struct Placed {
     pub(crate) host: Host,
     pub(crate) dir: PathBuf,
@@ -99,42 +25,20 @@ pub(crate) struct Placed {
     pub(crate) vm: bool,
 }
 
-/// Where lab `id`, installed in `dir` and declared `runtime`, runs, in the form it was started in
-/// (a container lab started as one VM per machine is VMs): its run on this machine, on a Proxmox
-/// server or in a cloud account. `None` where the launcher reaches no run of it: on an ESXi host
-/// (its runs are the launcher's own, see `launch::esxi_run`), or a cloud-services lab (its
-/// services are the launcher's own too, see `cloud_services`), wherever it runs.
+/// Where lab `id`, installed in `dir` and declared `runtime`, runs, as [`host::locate`] finds it:
+/// its run on this machine, on a Proxmox server or in a cloud account. `None` where the launcher
+/// reaches no run of it to add a box to: on an ESXi host (its runs are the launcher's own), or a
+/// cloud-services lab (its services are the launcher's own too, see `cloud_services`), wherever it
+/// runs.
 pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<Placed>> {
-    let home = runner_home(dirs)?;
     let form = local_runtime(dir, runtime);
     if form == Runtime::Cloud {
         return Ok(None);
     }
-    let (host, target) = match server::lab_connection(dirs, dir)? {
-        Some(c) if c.provider == Provider::VmwareEsxi => return Ok(None),
-        Some(c) if c.provider.is_cloud() => {
-            let cloud = server::terraform_target(c.provider).unwrap_or_default();
-            let place = isothrum::CloudPlace {
-                label: server::marked_host(dir).unwrap_or_default(),
-                region: c.region.clone(),
-                tf_env: c.tf_env.clone(),
-                ..isothrum::CloudPlace::default()
-            };
-            let run = isothrum::CloudRun::new(&home, dir, id, form, cloud)?;
-            (Host::Cloud(run, place), lab::terraform(dir, form, cloud).1)
-        }
-        Some(conn) => {
-            let run = isothrum::ServerRun::new(&home, dir, id, form)?;
-            let host = server::marked_host(dir).unwrap_or_default();
-            (Host::Server { run, host, conn }, lab::terraform(dir, form, "proxmox").1)
-        }
-        None => {
-            let Some(run) = isothrum::LabRun::local(&home, dir, id, runtime)? else { return Ok(None) };
-            let target = run.target();
-            (Host::Local(run), target)
-        }
-    };
-    Ok(Some(Placed { host, dir: dir.to_path_buf(), target, vm: form == Runtime::Vm }))
+    Ok(match host::locate(dirs, dir, id, runtime)? {
+        None | Some(Host::Esxi { .. }) => None,
+        Some(host) => Some(Placed { target: host.target(), host, dir: dir.to_path_buf(), vm: form == Runtime::Vm }),
+    })
 }
 
 impl Placed {
@@ -218,7 +122,7 @@ impl Placed {
                     None
                 }
             },
-            Host::Cloud(..) | Host::Server { .. } => None,
+            Host::Esxi { .. } | Host::Cloud { .. } | Host::Server { .. } => None,
         };
         if shares_folders(self.local(), self.target, provider.as_deref(), std::env::consts::OS) {
             return Some(folder);
@@ -275,6 +179,7 @@ fn box_cpu(arch: &str, local: bool, target: Target) -> Cpu {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::isothrum;
 
     /// Every file of the lab's generated module for `cloud` (a container lab, `cloud-docker`), by
     /// its path under it.
@@ -309,7 +214,17 @@ mod tests {
         let before = module(&dir, "aws");
         let home = dir.join("home");
         let run = isothrum::CloudRun::new(&home, &dir, "t", Runtime::Docker, "aws").unwrap();
-        let placed = Placed { host: Host::Cloud(run, isothrum::CloudPlace::default()), dir: dir.clone(), target, vm: false };
+        let conn = crate::runtime::server::Connection {
+            id: String::new(),
+            provider: crate::runtime::providers::Provider::Aws,
+            name: "aws".into(),
+            env: Vec::new(),
+            tf_vars: Vec::new(),
+            tf_env: Vec::new(),
+            region: None,
+            auto_stop_hours: None,
+        };
+        let placed = Placed { host: Host::Cloud { run, place: isothrum::CloudPlace::default(), conn }, dir: dir.clone(), target, vm: false };
         let tools = Tools::rules(&[("sts get-caller-identity", fail("Error: login session has expired, please reauthenticate"))]);
         let dirs = AppDirs::new(Some(home), None);
         let err = placed.add(&dirs, "kalilinux/kali-rolling", None, &mut |_| {}).await.unwrap_err();

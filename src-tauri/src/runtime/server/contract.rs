@@ -111,6 +111,8 @@ pub(super) fn linode_env(_: &HostProfile, token: &str) -> Vec<(String, String)> 
 /// A host resolved for a launch: its provider, the Vagrant env (Vagrantfile contract) and
 /// the Terraform variables (Isoloom's modules, see `lab::host_vars`).
 pub struct Connection {
+    /// The host's id among the launcher's hosts (what a lab's marker names).
+    pub id: String,
     pub provider: Provider,
     pub name: String,
     pub env: Vec<(String, String)>,
@@ -123,6 +125,14 @@ pub struct Connection {
     pub auto_stop_hours: Option<u32>,
 }
 
+impl Connection {
+    /// The Terraform target (state folder, Isoloom module) a lab runs through on this host; an
+    /// error for a host that runs no Terraform labs (ESXi).
+    pub fn terraform(&self) -> Result<&'static str> {
+        super::terraform_target(self.provider).ok_or_else(|| crate::error::Error::Invalid(format!("{} runs no Terraform labs.", self.provider.label())))
+    }
+}
+
 pub fn connection(dirs: &AppDirs, id: &str) -> Result<Connection> {
     let host = load_host(dirs, id)?;
     // CLI-credential hosts keep no secret; Terraform uses the CLI's own sign-in.
@@ -133,6 +143,7 @@ pub fn connection(dirs: &AppDirs, id: &str) -> Result<Connection> {
 /// What a launch on `host` is given, with its secret.
 fn connection_for(host: &HostProfile, password: &str) -> Connection {
     Connection {
+        id: host.id.clone(),
         provider: host.provider,
         name: host.name.clone(),
         env: connection_env(host, password),
@@ -252,6 +263,14 @@ mod tests {
         assert_eq!(c.auto_stop_hours, Some(0));
         let c = connection_for(&full_profile(Provider::Proxmox), "pw");
         assert_eq!((c.region, c.auto_stop_hours), (None, None));
+    }
+
+    #[test]
+    fn a_connection_names_its_host_and_its_terraform_target() {
+        let c = connection_for(&HostProfile { id: "aws1".into(), ..full_profile(Provider::Aws) }, "key");
+        assert_eq!((c.id.as_str(), c.terraform().unwrap()), ("aws1", "aws"));
+        assert_eq!(connection_for(&full_profile(Provider::Proxmox), "pw").terraform().unwrap(), "proxmox");
+        assert!(connection_for(&full_profile(Provider::VmwareEsxi), "pw").terraform().is_err(), "ESXi runs Vagrant, not Terraform");
     }
 
     #[test]

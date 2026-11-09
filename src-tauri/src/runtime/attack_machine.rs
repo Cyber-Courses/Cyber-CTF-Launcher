@@ -11,8 +11,6 @@
 mod place;
 mod status;
 
-#[cfg(test)]
-pub(crate) use place::Host;
 pub(crate) use place::{Placed, locate};
 pub(crate) use status::AttackStatus;
 

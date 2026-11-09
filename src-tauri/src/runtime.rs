@@ -26,6 +26,7 @@ pub(crate) mod docker;
 #[cfg(test)]
 #[cfg(unix)]
 mod fake_clis;
+pub(crate) mod host;
 mod inflight;
 pub(crate) mod isothrum;
 pub mod lab;

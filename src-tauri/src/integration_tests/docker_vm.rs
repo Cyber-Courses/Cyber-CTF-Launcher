@@ -71,7 +71,7 @@ async fn a_container_lab_runs_in_a_local_vm_end_to_end() {
         }
         Err(e) => check(false, format!("it starts: {e}"), &mut f),
     }
-    let stopped = lifecycle::stop_docker_in_vm_run(&home, &dir, &id, log(&id)).await;
+    let stopped = lifecycle::stop_run(isothrum::LabRun::docker_in_vm(&home, &dir, &id).unwrap(), &dir, log(&id)).await;
     check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), &mut f);
     let leftover_vms = left(provider, &dir).await;
     check(leftover_vms.is_empty(), format!("no VM of it is left ({leftover_vms:?})"), &mut f);

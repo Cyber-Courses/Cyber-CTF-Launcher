@@ -1,7 +1,7 @@
 //! A real VM lab through the launcher's runner path, end to end: generate the lab's files and
 //! start it on a local hypervisor (`launch::start_vm_run`, the path the lab page takes with the
 //! Isothrum runner chosen), read its status, run its checks, pause and resume the lab, shut it
-//! down and resume it, provision it again, then stop it (`lifecycle::stop_vm_run`) and assert
+//! down and resume it, provision it again, then stop it (`lifecycle::stop_run`) and assert
 //! nothing of it is left. The attack box among a VM lab's is `real_attack_machine`'s. Opt-in (it
 //! needs Vagrant, a hypervisor and its boxes):
 //!
@@ -110,7 +110,7 @@ async fn a_vm_lab_runs_end_to_end_through_the_runner() {
     let lab = Lab { dir, id, home, provider };
     let mut failures = Vec::new();
     exercise(&lab, &mut failures).await;
-    let stopped = lifecycle::stop_vm_run(&lab.home, &lab.dir, &lab.id, log(&lab.id)).await;
+    let stopped = lifecycle::stop_run(isothrum::LabRun::vm(&lab.home, &lab.dir, &lab.id).unwrap(), &lab.dir, log(&lab.id)).await;
     check(stopped.is_ok(), format!("it stops: {:?}", stopped.err()), &mut failures);
     let name = crate::runtime::lab::lab(&lab.dir).map(|l| l.source().name.clone()).unwrap_or_default();
     let left = left_on(provider, &name).await;

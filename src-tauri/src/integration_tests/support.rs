@@ -46,7 +46,7 @@ impl Run {
     }
 
     pub(crate) async fn stop(&self, log: impl FnMut(String)) -> Result<()> {
-        lifecycle::stop_docker_run(&self.home, &self.dir, &self.id, log).await
+        lifecycle::stop_run(isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?, &self.dir, log).await
     }
 }
 

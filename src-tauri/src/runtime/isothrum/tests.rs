@@ -277,7 +277,8 @@ fn a_start_gives_the_launch_values_to_the_slots_and_resumes_a_parked_run() {
 /// The lab's attack box as the launcher places it on this machine: a container added to the
 /// lab, the run brought up to date with it.
 fn placed_box(f: &Fixture) -> crate::runtime::attack_machine::Placed {
-    use crate::runtime::attack_machine::{Host, Placed};
+    use crate::runtime::attack_machine::Placed;
+    use crate::runtime::host::Host;
     Placed { host: Host::Local(f.run()), dir: f.home.dir.clone(), target: lab::Target::Docker, vm: false }
 }
 
@@ -327,4 +328,22 @@ async fn an_attack_box_goes_in_and_out_of_the_run_with_the_labs_files() {
     assert!(!compose().contains("attackbox"));
     assert_eq!(updates(), before + 2);
     assert!(!crate::runtime::attack_machine::added(&f.home.dir).unwrap());
+}
+
+#[test]
+fn a_lab_here_is_run_in_the_form_it_was_started_in() {
+    let dir = std::env::temp_dir().join(format!("cyberctf-local-form-{}", rand::random::<u32>()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let home = dir.join("home");
+    let form = |runtime| LabRun::local(&home, &dir, "t", runtime).unwrap().map(|r| r.target());
+    // As declared: its containers on Docker, its VMs, and no run here for cloud services.
+    assert_eq!(form(Runtime::Docker), Some(lab::Target::Docker));
+    assert_eq!(form(Runtime::Vm), Some(lab::Target::Vagrant));
+    assert_eq!(form(Runtime::Cloud), None);
+    // A container lab started in one local VM, then as one VM per machine (which wins).
+    paths::mark_local_vm(&dir, Some(crate::runtime::providers::Provider::Qemu)).unwrap();
+    assert_eq!(form(Runtime::Docker), Some(lab::Target::DockerVm));
+    paths::mark_per_machine_vm(&dir, true).unwrap();
+    assert_eq!(form(Runtime::Docker), Some(lab::Target::Vagrant));
+    std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -60,11 +60,10 @@ pub(in crate::runtime) fn runner_runs_on(provider: Provider, runtime: Runtime) -
     matches!(provider, Provider::Proxmox | Provider::VmwareEsxi) && runtime == Runtime::Vm
 }
 
-/// The runner's run of VM lab `id` (in `dir`) on the ESXi server it is marked for, with that
-/// server's connection `c`: its settings as params, its password as the run's connection.
-pub(crate) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection) -> Result<isothrum::LabRun> {
-    let host = server::marked_host(dir).unwrap_or_default();
-    isothrum::LabRun::on_esxi(&runner_home(dirs)?, dir, id, runtime, isothrum::EsxiPlace::from_env(&host, &c.env))
+/// The runner's run of VM lab `id` (in `dir`) on the ESXi server of connection `c`: its
+/// settings as params, its password as the run's connection.
+pub(in crate::runtime) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection) -> Result<isothrum::LabRun> {
+    isothrum::LabRun::on_esxi(&runner_home(dirs)?, dir, id, runtime, isothrum::EsxiPlace::from_env(&c.id, &c.env))
 }
 
 /// Where a runner's run goes on server `host` (connection `conn`): its variables, the node when
@@ -109,7 +108,7 @@ pub(crate) struct CloudStart<'a> {
 /// module's `ssh_user` output and keeps the Terraform state and the run's expiry.
 pub(crate) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let CloudStart { dir, id, runtime, host, conn, env, per_machine } = start;
-    let cloud = server::terraform_target(conn.provider).ok_or_else(|| Error::Invalid("this account's cloud runs no Terraform labs".into()))?;
+    let cloud = conn.terraform()?;
     // The form the player picked, recorded before anything runs so every later cloud dispatch
     // (status, stop, check, the attack box) reads it, and resolved to the runtime that drives the
     // cloud module (cloud-vm for one VM per machine, else cloud-docker).
@@ -124,7 +123,7 @@ pub(crate) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: 
     log(format!("This lab runs in your {} account and is billed there until you stop it.", conn.provider.id().to_uppercase()));
     // The firewall opens the lab's SSH and published ports to this machine's public IP only.
     let allowed = public_ip().await?;
-    let place = cloud_place(host, &conn, &allowed);
+    let place = isothrum::CloudPlace::launch(&conn, Some(&allowed));
     let run = isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, runtime, cloud)?;
     run.up(&place, env, log).await?;
     mark_parked(dir, None)
@@ -138,20 +137,6 @@ pub(crate) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: 
 pub(super) fn record_cloud_form(dir: &Path, runtime: Runtime, per_machine: bool) -> Result<Runtime> {
     mark_per_machine_vm(dir, per_machine && runtime == Runtime::Docker)?;
     Ok(local_runtime(dir, runtime))
-}
-
-/// Where a cloud VM lab runs, from the account's connection `conn` and this machine's public IP:
-/// the account's region and credentials, the firewall CIDR, and the account's auto-stop as the
-/// run's expiry.
-pub(in crate::runtime) fn cloud_place(host: &str, conn: &server::Connection, allowed_ip: &str) -> isothrum::CloudPlace {
-    let hours = conn.auto_stop_hours.unwrap_or(0);
-    isothrum::CloudPlace {
-        label: host.to_owned(),
-        region: conn.region.clone(),
-        allowed_cidr: Some(format!("{allowed_ip}/32")),
-        tf_env: conn.tf_env.clone(),
-        lifetime: (hours > 0).then(|| std::time::Duration::from_secs(u64::from(hours) * 3600)),
-    }
 }
 
 /// Stops before spending if this AWS account is over its monthly budget, or if a budget is set

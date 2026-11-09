@@ -109,15 +109,8 @@ pub(super) async fn start(dirs: &AppDirs, lab: LabRef<'_>, host: Option<&str>, e
         inputs.push(("PLAYER_IP".to_string(), ip));
     }
     log(format!("Creating the lab's cloud services ({})…", cloud.terraform));
-    let place = isothrum::CloudPlace {
-        label: host.to_string(),
-        region: conn.region.clone(),
-        tf_env: conn.tf_env.clone(),
-        lifetime: (hours > 0).then(|| std::time::Duration::from_secs(u64::from(hours) * 3600)),
-        ..isothrum::CloudPlace::default()
-    };
-    let cloud_tf = server::terraform_target(conn.provider).unwrap_or_default();
-    isothrum::CloudRun::new(&super::paths::runner_home(dirs)?, dir, id, Runtime::Cloud, cloud_tf)?.up(&place, &inputs, log).await
+    let place = isothrum::CloudPlace::launch(&conn, None);
+    isothrum::CloudRun::new(&super::paths::runner_home(dirs)?, dir, id, Runtime::Cloud, conn.terraform()?)?.up(&place, &inputs, log).await
 }
 
 /// Refuses a lab using what this launcher doesn't run yet: set-up steps on this machine before

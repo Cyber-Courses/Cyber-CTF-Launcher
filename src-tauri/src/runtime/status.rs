@@ -6,22 +6,17 @@ use std::path::Path;
 
 use crate::platform::AppDirs;
 
-use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm, runner_home, vagrant_dirs};
+use super::host::{self, Host};
+use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm, vagrant_dirs};
 use super::{LabStatus, Place, Runtime, attack_machine, docker, isothrum, server, vm};
 use crate::error::Result;
 
 pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
-    // On this machine, in the form it was started in (a container lab run as one VM per machine
-    // reads as a VM lab); on a host, as the catalogue says.
-    let (status, here) = match server::lab_connection(dirs, dir)? {
-        // On a server host or cloud account: the runner's view.
-        Some(c) => (server_status(dirs, dir, id, runtime, c).await?, false),
-        // On this machine, through the runner: a container lab on Docker or in one local VM, or a
-        // VM lab. Cloud-services labs run only on an account; nothing of them on this machine.
-        None => match isothrum::LabRun::local(&runner_home(dirs)?, dir, id, runtime)? {
-            Some(run) => (run.status().await?, true),
-            None => (LabStatus::default(), false),
-        },
+    // Where it runs, in the form it was started in (a container lab run as one VM per machine
+    // reads as a VM lab): the runner's view. A cloud-services lab on no account runs nowhere.
+    let (status, here) = match host::locate(dirs, dir, id, runtime)? {
+        Some(host) => (status_at(&host).await?, matches!(host, Host::Local(_))),
+        None => (LabStatus::default(), false),
     };
     // The attack box the launcher added is no machine of the lab's own (`attack_machine`).
     let status = attack_machine::set_apart(status, dir)?;
@@ -51,25 +46,20 @@ fn with_parked(s: LabStatus, parked: Option<super::Park>) -> LabStatus {
     LabStatus { parked: parked.filter(|_| !s.running), ..s }
 }
 
-async fn server_status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: server::Connection) -> Result<LabStatus> {
-    // The failed-launch masking is applied by `status`, uniformly, so it is not repeated here.
-    // ESXi (Vagrant on the host): the runner's view, Vagrant's states, each VM at its own address.
-    if c.provider == super::providers::Provider::VmwareEsxi {
-        let status = super::launch::esxi_run(dirs, dir, id, runtime, &c)?.status().await?;
-        return Ok(on_server(status, c.name, c.provider));
-    }
-    // A cloud account (cloud-vm, cloud-docker, cloud-services): the runner's view from its record,
-    // in the form it was started in (a container lab run as one VM per machine reads cloud-vm).
-    if c.provider.is_cloud() {
-        let cloud = server::terraform_target(c.provider).unwrap_or_default();
-        let status = isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, local_runtime(dir, runtime), cloud)?.status().await?;
-        return Ok(on_server(status, c.name, c.provider));
-    }
-    // A Proxmox server: the runner's view from its own record and state (no SSH, no API call);
-    // `ServerRun::status` fills the host and provider.
-    let place = isothrum::ServerPlace { name: c.name.clone(), ..isothrum::ServerPlace::default() };
-    let status = isothrum::ServerRun::new(&runner_home(dirs)?, dir, id, runtime)?.status(&place).await?;
-    Ok(status)
+/// The lab as the runner sees it where it runs. The failed-launch masking is applied by `status`,
+/// uniformly, so it is not repeated here.
+async fn status_at(host: &Host) -> Result<LabStatus> {
+    Ok(match host {
+        // On this machine: a container lab on Docker or in one local VM, or a VM lab.
+        Host::Local(run) => run.status().await?,
+        // ESXi (Vagrant on the host): Vagrant's states, each VM at its own address.
+        Host::Esxi { run, conn } => on_server(run.status().await?, conn.name.clone(), conn.provider),
+        // A cloud account (cloud-vm, cloud-docker, cloud-services): from the runner's record.
+        Host::Cloud { run, conn, .. } => on_server(run.status().await?, conn.name.clone(), conn.provider),
+        // A Proxmox server: from the runner's own record and state (no SSH, no API call);
+        // `ServerRun::status` fills the host and provider.
+        Host::Server { run, conn } => run.status(&isothrum::ServerPlace { name: conn.name.clone(), ..isothrum::ServerPlace::default() }).await?,
+    })
 }
 
 /// A lab's status as running on the server host `name` (a cloud account, or a server).

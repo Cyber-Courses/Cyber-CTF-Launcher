@@ -5,10 +5,9 @@ use std::path::Path;
 
 use crate::platform::AppDirs;
 
+use super::host::{self, Host};
 use super::inflight::{Action, DeployGuard, lock_lab};
-use super::paths::{
-    lab_dir, local_runtime, local_vm, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm, runner_home, vagrant_dirs,
-};
+use super::paths::{lab_dir, local_runtime, local_vm, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm, vagrant_dirs};
 use super::{LabRef, Park, Runtime, docker, isothrum, lab, server, vm};
 use crate::error::{Error, Result};
 
@@ -19,11 +18,8 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
     let _lock = lock_lab(dirs, id).await?;
     let _deploy = DeployGuard::new(id, Action::Park);
     refuse_cloud_park(runtime)?;
-    if server::lab_connection(dirs, dir)?.is_some() {
-        return Err(Error::Invalid("Pausing a lab on a server host isn't available yet. Stop it instead.".into()));
-    }
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
-    let run = local_run(dirs, dir, id, runtime)?;
+    let run = local_run(dirs, dir, id, runtime, "Pausing a lab on a server host isn't available yet. Stop it instead.")?;
     // A container lab in one local VM is paused (its state saved), never shut down.
     if run.target() == lab::Target::DockerVm {
         refuse_vm_shutdown(mode)?;
@@ -34,10 +30,15 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
     Ok(())
 }
 
-/// Lab `id`'s run on this machine ([`isothrum::LabRun::local`]), for a lab parked or resumed
-/// here: a cloud-services lab, refused before, has none.
-fn local_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<isothrum::LabRun> {
-    isothrum::LabRun::local(&runner_home(dirs)?, dir, id, runtime)?.ok_or_else(|| Error::Invalid(CLOUD_PARK.into()))
+/// Lab `id`'s run on this machine ([`host::locate`]), for a lab parked or resumed here; refused
+/// with `elsewhere` for a lab on a server host or cloud account. A cloud-services lab, refused
+/// before, has none.
+fn local_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, elsewhere: &str) -> Result<isothrum::LabRun> {
+    match host::locate(dirs, dir, id, runtime)? {
+        Some(Host::Local(run)) => Ok(run),
+        Some(_) => Err(Error::Invalid(elsewhere.into())),
+        None => Err(Error::Invalid(CLOUD_PARK.into())),
+    }
 }
 
 /// Cloud services are created or destroyed, never kept switched off.
@@ -80,13 +81,11 @@ async fn resume(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, mut log:
 /// resume): the machines already up are left alone, the others come back.
 pub(super) async fn resume_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: &mut impl FnMut(String)) -> Result<()> {
     refuse_cloud_park(runtime)?;
-    if server::lab_connection(dirs, dir)?.is_some() {
-        return Err(Error::Invalid("This lab was parked on a server host; resuming there isn't available yet.".into()));
-    }
+    let run = local_run(dirs, dir, id, runtime, "This lab was parked on a server host; resuming there isn't available yet.")?;
     log("Resuming the lab…".into());
     // The runner resumes a parked run as it was; when nothing is left of it, it drops the parked
     // mark and reports `NothingToResume`, so the page offers a fresh start.
-    local_run(dirs, dir, id, runtime)?.resume(&mut *log).await?;
+    run.resume(&mut *log).await?;
     mark_parked(dir, None)?;
     log("Lab resumed.".into());
     Ok(())
@@ -107,10 +106,8 @@ async fn provision(dirs: &AppDirs, lab: LabRef<'_>, machine: Option<&str>, mut l
     let _deploy = DeployGuard::new(id, Action::Start);
     // Through the runner: a VM lab on this machine, or on an ESXi host. Proxmox and the clouds
     // aren't re-provisioned in place yet.
-    let run = match server::lab_connection(dirs, dir)? {
-        None => isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?,
-        Some(c) if c.provider == super::providers::Provider::VmwareEsxi => super::launch::esxi_run(dirs, dir, id, runtime, &c)?,
-        Some(_) => return Err(Error::Invalid("Re-running provisioning isn't available for labs on Proxmox or a cloud yet.".into())),
+    let Some(Host::Local(run) | Host::Esxi { run, .. }) = host::locate(dirs, dir, id, runtime)? else {
+        return Err(Error::Invalid("Re-running provisioning isn't available for labs on Proxmox or a cloud yet.".into()));
     };
     log(provision_target(&run.status().await?, machine)?);
     run.provision(machine, &mut log).await?;
@@ -150,88 +147,21 @@ pub(crate) async fn stop_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: R
     // keys go with its hosts.
     crate::account::colocation::retire(id);
     super::paths::forget_lab_host_keys(dir);
-    // On this machine, through the runner: a container lab on Docker or in one local VM, or a VM
-    // lab (its attack box, a machine of it, goes with it). Cloud-services have a host, so they
-    // never reach here.
-    let Some(c) = server::lab_connection(dirs, dir)? else {
-        return match local_runtime(dir, runtime) {
-            Runtime::Docker if local_vm(dir).is_some() => stop_docker_in_vm_run(&runner_home(dirs)?, dir, id, log).await,
-            Runtime::Docker => stop_docker_run(&runner_home(dirs)?, dir, id, log).await,
-            Runtime::Vm => stop_vm_run(&runner_home(dirs)?, dir, id, log).await,
-            // Cloud services run on a cloud account only: nothing of them here, the marks cleared.
-            Runtime::Cloud => forget_run(dir),
-        };
-    };
-    // On a server host or cloud account: destroyed through the runner, which replays the
-    // parameters it was applied with; the connection given here is the one that works now.
+    // Wherever it runs, through the runner (its attack box, a machine of it, goes with it): on
+    // this machine, or on a server host or cloud account, destroyed there with the parameters it
+    // was applied with and the connection that works now. A cloud-services lab on no account has
+    // nothing anywhere: its marks are cleared.
     let mut log = log;
-    let lab = LabRef { dir, id, runtime };
-    let result = if c.provider == super::providers::Provider::VmwareEsxi {
-        stop_esxi_run(dirs, lab, &c, &mut log).await
-    } else if c.provider.is_cloud() {
-        stop_cloud_run(dirs, CloudStop { dir, id, runtime, conn: &c }, &mut log).await
-    } else {
-        stop_server_run(dirs, lab, &c, &mut log).await
-    };
-    if result.is_ok() {
-        forget_run(dir)?;
+    if let Some(host) = host::locate(dirs, dir, id, runtime)? {
+        host.down(dirs, &mut log).await?;
     }
-    result
-}
-
-/// Destroys a container lab that ran in one local VM, through the runner (its containers go with
-/// the VM), and clears what marked it as running.
-pub(crate) async fn stop_docker_in_vm_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
-    isothrum::LabRun::docker_in_vm(home, dir, id)?.down(&mut log).await?;
     forget_run(dir)
 }
 
-/// Destroys a Proxmox lab the runner runs (connection `c`, the server's as it is now).
-async fn stop_server_run(dirs: &AppDirs, lab: LabRef<'_>, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
-    let LabRef { dir, id, runtime } = lab;
-    let host = server::marked_host(dir).unwrap_or_default();
-    let run = isothrum::ServerRun::new(&runner_home(dirs)?, dir, id, runtime)?;
-    let place = super::launch::server_place(dirs, &host, c, &run).await?;
-    run.down(&place, log).await
-}
-
-/// Destroys an ESXi lab the runner runs (connection `c`, the server's as it is now).
-async fn stop_esxi_run(dirs: &AppDirs, lab: LabRef<'_>, c: &server::Connection, log: &mut impl FnMut(String)) -> Result<()> {
-    let LabRef { dir, id, runtime } = lab;
-    super::launch::esxi_run(dirs, dir, id, runtime, c)?.down(log).await
-}
-
-/// A cloud VM lab to tear down: the lab (folder, id, runtime) and the account it ran on.
-struct CloudStop<'a> {
-    dir: &'a Path,
-    id: &'a str,
-    runtime: Runtime,
-    conn: &'a server::Connection,
-}
-
-/// Destroys a cloud VM lab in its account (as it is now), through the runner, which replays the
-/// recorded parameters with the account's credentials.
-async fn stop_cloud_run(dirs: &AppDirs, stop: CloudStop<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    let CloudStop { dir, id, runtime, conn: c } = stop;
-    let cloud = server::terraform_target(c.provider).unwrap_or_default();
-    let label = server::marked_host(dir).unwrap_or_default();
-    let place = isothrum::CloudPlace { label, region: c.region.clone(), tf_env: c.tf_env.clone(), ..isothrum::CloudPlace::default() };
-    // In the form it was started in: a container lab started as one VM per machine is cloud-vm.
-    isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, local_runtime(dir, runtime), cloud)?.down(&place, log).await
-}
-
-/// Stops a container lab the Isothrum runner runs (runner home `home`) and, once it is gone,
-/// clears what marked it as running. Takes no app handle, so the integration tests run exactly this.
-pub(crate) async fn stop_docker_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
-    isothrum::LabRun::docker(home, dir, id)?.down(&mut log).await?;
-    forget_run(dir)
-}
-
-/// Stops a VM lab the Isothrum runner runs (runner home `home`) — its attack box, a machine of
-/// the lab, goes with it — and once it is gone clears what marked it as running. Takes
-/// no app handle, so the integration tests run exactly this.
-pub(crate) async fn stop_vm_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
-    isothrum::LabRun::vm(home, dir, id)?.down(&mut log).await?;
+/// Destroys a lab's run on this machine (`run`, of the lab in `dir`) and, once it is gone, clears
+/// what marked it as running. Takes no app handle, so the integration tests run exactly this.
+pub(crate) async fn stop_run(run: isothrum::LabRun, dir: &Path, mut log: impl FnMut(String)) -> Result<()> {
+    run.down(&mut log).await?;
     forget_run(dir)
 }
 

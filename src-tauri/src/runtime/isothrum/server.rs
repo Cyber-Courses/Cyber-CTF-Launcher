@@ -44,6 +44,8 @@ pub(crate) struct ServerPlace {
 /// One VM lab on a Proxmox server, run by the runner.
 pub(crate) struct ServerRun {
     run: OpenedRun,
+    /// The Isoloom target the run's files are generated for.
+    target: lab::Target,
 }
 
 /// The run's attack box and its opening are [`OpenedRun`]'s, shared with the other remote place.
@@ -62,8 +64,13 @@ impl ServerRun {
         let config = RunnerConfig::new(home).with_processes(Arc::new(processes));
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
         // VM labs use the per-machine Proxmox module; container labs use docker-vm on one VM there.
-        let manifest = lab::terraform(dir, runtime, "proxmox").0.join("run.json");
-        Ok(ServerRun { run: OpenedRun::new(config, manifest, name)? })
+        let (out, target) = lab::terraform(dir, runtime, "proxmox");
+        Ok(ServerRun { run: OpenedRun::new(config, out.join("run.json"), name)?, target })
+    }
+
+    /// The Isoloom target the run's files are generated for.
+    pub(crate) fn target(&self) -> lab::Target {
+        self.target
     }
 
     /// The runner's SSH public key (the launcher's own), made when there is none: what the node

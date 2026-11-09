@@ -26,7 +26,8 @@ use std::path::Path;
 
 use super::support::{add_box, box_reaches, check, in_box, install_copy, leftovers, log, remove_box};
 use crate::platform::AppDirs;
-use crate::runtime::attack_machine::{self, Host, Placed};
+use crate::runtime::attack_machine::{self, Placed};
+use crate::runtime::host::Host;
 use crate::runtime::launch::{CloudStart, VmStart, start_cloud_run, start_docker_in_vm_run, start_docker_run, start_vm_run};
 use crate::runtime::providers::Provider;
 use crate::runtime::{isothrum, lab, lifecycle};
@@ -96,11 +97,8 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
         shared_folder(&home);
         exercise(&placed, &dirs, &target, &mut l, &mut f).await;
     }
-    let stopped = match form.as_str() {
-        "docker" => lifecycle::stop_docker_run(&home, &dir, &id, log(&id)).await,
-        "docker-vm" => lifecycle::stop_docker_in_vm_run(&home, &dir, &id, log(&id)).await,
-        _ => lifecycle::stop_vm_run(&home, &dir, &id, log(&id)).await,
-    };
+    let Host::Local(run) = placed.host else { unreachable!("a lab on this machine") };
+    let stopped = lifecycle::stop_run(run, &dir, log(&id)).await;
     check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), &mut f);
     check(leftovers(&id).await.is_empty(), "nothing of it is left on this machine's Docker".into(), &mut f);
     let _ = std::fs::remove_dir_all(&dir);
@@ -150,19 +148,14 @@ async fn the_attack_box_is_a_machine_of_an_aws_lab() {
     let name = lab::load(&dir).unwrap().name;
     crate::runtime::server::mark_lab(&dir, Some(&host)).unwrap();
     let conn = crate::runtime::server::connection(&dirs, &host).unwrap();
-    let (region_of, tf_env) = (conn.region.clone(), conn.tf_env.clone());
     let mut f = Vec::new();
     let mut l = log(&id);
     let start = CloudStart { dir: &dir, id: &id, runtime: crate::runtime::Runtime::Docker, host: &host, conn, env: &[], per_machine };
     let started = start_cloud_run(&dirs, start, &mut l).await;
     check(started.is_ok(), format!("the lab starts ({:?})", started.as_ref().err()), &mut f);
     if started.is_ok() {
-        // The box's place, as the lab page's commands make it.
-        let form = crate::runtime::paths::local_runtime(&dir, crate::runtime::Runtime::Docker);
-        let place = isothrum::CloudPlace { label: host.clone(), region: region_of.clone(), tf_env: tf_env.clone(), ..isothrum::CloudPlace::default() };
-        let run = isothrum::CloudRun::new(&crate::runtime::paths::runner_home(&dirs).unwrap(), &dir, &id, form, "aws").unwrap();
-        let target_kind = lab::terraform(&dir, form, "aws").1;
-        let placed = Placed { host: Host::Cloud(run, place), dir: dir.clone(), target: target_kind, vm: form == crate::runtime::Runtime::Vm };
+        // The box's place, as the lab page's commands find it.
+        let placed = attack_machine::locate(&dirs, &dir, &id, crate::runtime::Runtime::Docker).unwrap().expect("the box's place in the account");
         exercise(&placed, &dirs, &target, &mut l, &mut f).await;
     }
     let stopped = lifecycle::stop_locked(&dirs, &dir, &id, crate::runtime::Runtime::Docker, log(&id)).await;

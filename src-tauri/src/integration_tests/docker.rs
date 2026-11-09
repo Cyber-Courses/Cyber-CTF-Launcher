@@ -21,7 +21,8 @@ use std::path::Path;
 use super::support::{Run, add_box, box_reaches, check, install_copy, leftovers, log, remove_box};
 use crate::platform::AppDirs;
 use crate::platform::exec::run;
-use crate::runtime::attack_machine::{Host, Placed};
+use crate::runtime::attack_machine::Placed;
+use crate::runtime::host::Host;
 use crate::runtime::{LabStatus, Place, docker, isothrum};
 
 /// What one lab must show once it is up.

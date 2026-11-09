@@ -18,7 +18,7 @@ mod port_holder;
 use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};
 #[cfg(test)]
 use local::{emulated_arches, low_memory_warning};
-pub(crate) use on_host::esxi_run;
+pub(in crate::runtime) use on_host::esxi_run;
 use on_host::start_on_server;
 #[cfg(test)]
 pub(crate) use on_host::{CloudStart, start_cloud_run};
@@ -182,7 +182,11 @@ pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
         // error. Destroy it before surfacing the failure; the teardown is best-effort, so its
         // own error is logged, never allowed to mask the start's.
         log("Start failed: removing the half-created VM so the next launch starts clean".into());
-        if let Err(teardown) = super::lifecycle::stop_docker_in_vm_run(home, dir, id, &mut *log).await {
+        let teardown = match isothrum::LabRun::docker_in_vm(home, dir, id) {
+            Ok(vm) => super::lifecycle::stop_run(vm, dir, &mut *log).await,
+            Err(e) => Err(e),
+        };
+        if let Err(teardown) = teardown {
             log(format!("Could not fully remove the failed VM: {teardown}"));
         }
         if provider == Provider::Utm && !tried_again && local::utm_transient(&e) {
