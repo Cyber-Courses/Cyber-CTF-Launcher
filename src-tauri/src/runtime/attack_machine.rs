@@ -148,21 +148,27 @@ pub(crate) fn name(dir: &Path) -> Result<String> {
 
 /// Adds the box to the lab in `dir` as `kind`, at its seat ([`seat`]; `network` is the player's
 /// pick when the lab declares none).
-pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>) -> Result<()> {
+pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, shared: Option<&Path>) -> Result<()> {
     let Seat { name, networks, replaces } = seat(&lab::load(dir)?, network)?;
     let networks = networks.iter().map(|(n, o)| format!("{n:?}: {o}")).collect::<Vec<_>>().join(", ");
     let hardware = match cpu {
         Cpu::Lab => "",
         Cpu::Arm => "hardware: { arch: arm64 }, ",
     };
+    // The learner's shared folder, mounted both ways at the same place on every form.
+    let shared = shared.map_or_else(String::new, |folder| {
+        format!("host_folders: [{{ from: {:?}, path: {:?} }}], ", folder.display().to_string(), crate::shared_folder::MOUNT_POINT)
+    });
     let machine = match (kind, cpu) {
         (Kind::Container { image }, _) => {
-            format!("{{ {hardware}app: {{ image: {image:?} }}, command: sleep infinity, networks: {{ {networks} }} }}")
+            format!("{{ {hardware}{shared}app: {{ image: {image:?} }}, command: sleep infinity, networks: {{ {networks} }} }}")
         }
         (Kind::Vm, cpu) => {
             std::fs::write(dir.join(SETUP_FILE), SETUP)?;
             let os = if cpu == Cpu::Arm { "debian@12" } else { "kali@rolling" };
-            format!("{{ os: {os}, {hardware}networks: {{ {networks} }}, resources: {{ disk_gb: {DISK_GB} }}, app: {{ steps: [{{ run: {SETUP_FILE} }}] }} }}")
+            format!(
+                "{{ os: {os}, {hardware}{shared}networks: {{ {networks} }}, resources: {{ disk_gb: {DISK_GB} }}, app: {{ steps: [{{ run: {SETUP_FILE} }}] }} }}"
+            )
         }
     };
     let machine = serde_yaml_ng::from_str::<Value>(&machine).map_err(|e| Error::Invalid(format!("the attack box's spec: {e}")))?;
@@ -203,6 +209,11 @@ pub(crate) fn added(dir: &Path) -> Result<bool> {
 mod tests {
     use super::*;
 
+    /// [`add`] with no shared folder.
+    fn add_at(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>) -> Result<()> {
+        add(dir, kind, cpu, network, None)
+    }
+
     #[test]
     fn the_default_image_is_the_cyber_ctf_image_pinned_by_its_digest() {
         let image = default_image();
@@ -215,7 +226,7 @@ mod tests {
         let dir = crate::runtime::test_support::write_lab(
             "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 249 } }\n",
         );
-        add(&dir, Kind::Vm, Cpu::Lab, None).unwrap();
+        add_at(&dir, Kind::Vm, Cpu::Lab, None).unwrap();
         assert!(added(&dir).unwrap());
         let spec = lab::load(&dir).unwrap();
         let attackbox = &spec.machines[NAME];
@@ -233,7 +244,7 @@ mod tests {
             "version: 1\nname: t\nnetworks: { front: { cidr: 10.70.0.0/24 }, access: { cidr: 10.71.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { front: 10 } }\n  user: { access: true, networks: { access: 10 } }\n",
         );
         assert_eq!(name(&dir).unwrap(), "user", "the seat the box would take, before it is added");
-        add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, Some("front")).unwrap();
+        add_at(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, Some("front")).unwrap();
         let spec = lab::load(&dir).unwrap();
         let user = &spec.machines["user"];
         assert!(!user.access, "an ordinary machine of the lab now, up with it");
@@ -249,12 +260,12 @@ mod tests {
         let dir = crate::runtime::test_support::write_lab(
             "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 }, dmz: { cidr: 10.71.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, networks: { lan: 10, dmz: 10 } }\n",
         );
-        add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, Some("dmz")).unwrap();
+        add_at(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, Some("dmz")).unwrap();
         let spec = lab::load(&dir).unwrap();
         let attackbox = &spec.machines[NAME];
         assert_eq!(attackbox.networks.keys().collect::<Vec<_>>(), ["dmz"]);
         assert!(!dir.join(SETUP_FILE).exists(), "no set-up: the image is the box");
-        assert!(add(&dir, Kind::Container { image: "x" }, Cpu::Lab, Some("nope")).is_err(), "no such network");
+        assert!(add_at(&dir, Kind::Container { image: "x" }, Cpu::Lab, Some("nope")).is_err(), "no such network");
         remove(&dir).unwrap();
     }
 
@@ -263,7 +274,7 @@ mod tests {
         let dir = crate::runtime::test_support::write_lab(
             "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 10 } }\n",
         );
-        add(&dir, Kind::Vm, Cpu::Arm, None).unwrap();
+        add_at(&dir, Kind::Vm, Cpu::Arm, None).unwrap();
         let spec = lab::load(&dir).unwrap();
         let attackbox = &spec.machines[NAME];
         assert_eq!(attackbox.os.as_deref(), Some("debian@12"));
@@ -291,11 +302,26 @@ mod tests {
         let status = |web: &str| LabStatus { running: true, machines: vec![machine("web", web), machine(NAME, "running")], ..LabStatus::default() };
         // Not added: a machine of that name is the lab's own.
         assert_eq!(set_apart(status("running"), &dir).unwrap().machines.len(), 2);
-        add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None).unwrap();
+        add_at(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None).unwrap();
         let up = set_apart(status("running"), &dir).unwrap();
         assert_eq!(up.machines.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["web"]);
         assert!(up.running);
         assert!(!set_apart(status("exited"), &dir).unwrap().running, "the box alone up: the lab is down");
         remove(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_shared_folder_is_mounted_in_the_box_on_every_kind() {
+        let dir = crate::runtime::test_support::write_lab(
+            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 10 } }\n",
+        );
+        let folder = Path::new("/Users/someone/CyberCTF/shared");
+        for kind in [Kind::Container { image: "kalilinux/kali-rolling" }, Kind::Vm] {
+            add(&dir, kind, Cpu::Lab, None, Some(folder)).unwrap();
+            let spec = lab::load(&dir).unwrap();
+            let mounted: Vec<(&str, &str)> = spec.machines[NAME].host_folders.iter().map(|h| (h.from.as_str(), h.path.as_str())).collect();
+            assert_eq!(mounted, [("/Users/someone/CyberCTF/shared", crate::shared_folder::MOUNT_POINT)], "{kind:?}");
+            remove(&dir).unwrap();
+        }
     }
 }

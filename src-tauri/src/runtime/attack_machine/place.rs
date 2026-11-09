@@ -152,7 +152,8 @@ impl Placed {
     /// in the lab, so the learner's Stop retires whatever of it the run already has.
     pub(crate) async fn add(&self, dirs: &AppDirs, image: &str, network: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let kind = if self.vm { Kind::Vm } else { Kind::Container { image } };
-        let written = super::add(&self.dir, kind, self.cpu(), network).and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
+        let shared = self.shared_folder(log).await;
+        let written = super::add(&self.dir, kind, self.cpu(), network, shared.as_deref()).and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
         let failed = match written {
             Err(error) => Failed { error, run_changed: false },
             Ok(()) => match self.host.update(dirs, log).await {
@@ -202,6 +203,28 @@ impl Placed {
         self.host.console(&super::name(&self.dir)?)
     }
 
+    /// The learner's shared folder for the box, when it is on and the lab runs where a machine
+    /// can mount a folder of this computer ([`shares_folders`]); otherwise none, `log` saying why
+    /// when it is on.
+    async fn shared_folder(&self, log: &mut impl FnMut(String)) -> Option<std::path::PathBuf> {
+        let folder = crate::shared_folder::current()?;
+        let provider = match &self.host {
+            Host::Local(run) => run.status().await.ok().and_then(|s| s.provider),
+            Host::Cloud(..) | Host::Server { .. } => None,
+        };
+        if shares_folders(self.local(), self.target, provider.as_deref(), std::env::consts::OS) {
+            return Some(folder);
+        }
+        log(format!(
+            "The shared folder isn't mounted in the attack box here: {}.",
+            match provider.as_deref() {
+                Some(p) if self.local() => format!("{p} can't share a folder of this computer with a VM"),
+                _ => "a lab on a server or in a cloud account can't reach a folder of this computer".to_owned(),
+            }
+        ));
+        None
+    }
+
     /// The box's CPU on this computer ([`box_cpu`]).
     fn cpu(&self) -> Cpu {
         box_cpu(std::env::consts::ARCH, self.local(), self.target)
@@ -210,6 +233,24 @@ impl Placed {
     /// Whether the box runs here, on this machine (its image is the learner's local download).
     pub(crate) fn local(&self) -> bool {
         matches!(self.host, Host::Local(_))
+    }
+}
+
+/// Whether a machine of a lab of `target` can mount a folder of this computer (`os`, as Rust
+/// names it), the lab run here (`local`) on `provider` (its hypervisor, for a VM form): Docker
+/// binds it; a local VM shares it with its hypervisor's two-way folder type, which QEMU only has
+/// on Linux (virtiofsd) and Hyper-V doesn't have without a password at every start (Isoloom's
+/// `host_folders`); a lab on a server or in a cloud account can't reach this computer.
+fn shares_folders(local: bool, target: Target, provider: Option<&str>, os: &str) -> bool {
+    match target {
+        _ if !local => false,
+        Target::Docker => true,
+        Target::DockerVm | Target::Vagrant => match provider {
+            Some("virtualbox" | "vmware_desktop" | "parallels" | "utm" | "libvirt") => true,
+            Some("qemu") => os == "linux",
+            _ => false,
+        },
+        _ => false,
     }
 }
 
@@ -226,6 +267,22 @@ fn box_cpu(arch: &str, local: bool, target: Target) -> Cpu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_shared_folder_reaches_the_box_wherever_the_lab_runs_on_this_computer_and_can_share_it() {
+        assert!(shares_folders(true, Target::Docker, None, "macos"), "Docker binds it");
+        for p in ["virtualbox", "vmware_desktop", "parallels", "utm"] {
+            assert!(shares_folders(true, Target::Vagrant, Some(p), "macos"), "{p}");
+            assert!(shares_folders(true, Target::DockerVm, Some(p), "windows"), "{p}");
+        }
+        assert!(shares_folders(true, Target::Vagrant, Some("qemu"), "linux"), "QEMU with virtiofsd");
+        assert!(!shares_folders(true, Target::Vagrant, Some("qemu"), "macos"), "no virtiofsd on macOS");
+        assert!(!shares_folders(true, Target::Vagrant, Some("hyperv"), "windows"), "SMB asks for a password");
+        assert!(!shares_folders(true, Target::Vagrant, None, "linux"), "an unknown hypervisor: not assumed");
+        for t in [Target::CloudDocker, Target::CloudVm, Target::Proxmox, Target::DockerVm] {
+            assert!(!shares_folders(false, t, Some("virtualbox"), "linux"), "{t:?} away from this computer");
+        }
+    }
 
     /// Every computer the launcher ships for, as Rust names its CPU: Apple Silicon and Intel Macs,
     /// Windows on x64 and Arm, Linux on x64 and Arm.

@@ -1,6 +1,8 @@
 //! A folder on this computer shared with the attack box: tools, wordlists and notes go in, loot
 //! comes out, and it all survives the box being removed with its lab. Chosen in the setup and in
-//! Settings (off until then); mounted at `/shared` in the container attack box and in the attack VM.
+//! Settings (off until then); mounted at `/shared` in the attack box wherever the lab runs on this
+//! computer and its form can share a folder of it (`attack_machine::Placed`): not on a server or
+//! in a cloud account, nor in a VM on QEMU outside Linux.
 //! Kept in the app's data folder, so the background deploy worker sees the same choice.
 
 use std::path::{Path, PathBuf};

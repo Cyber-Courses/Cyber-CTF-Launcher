@@ -160,7 +160,7 @@
   },
   "sharedFolder": {
     "title": "Geteilter Ordner",
-    "description": "Ein Ordner auf diesem Computer, den deine Attack box unter {mount} sieht: Tools rein, Beute raus. Er bleibt erhalten, wenn ein Lab entfernt wird.",
+    "description": "Ein Ordner auf diesem Computer, den deine Attack-Box unter {mount} sieht: Tools rein, Beute raus. Er bleibt, wenn ein Lab entfernt wird. Für Labs, die auf diesem Computer laufen (mit QEMU nur unter Linux); nicht auf einem Server oder in einem Cloud-Konto.",
     "pick": "Mit der Attack box geteilter Ordner",
     "change": "Ändern…",
     "open": "Ordner öffnen"
