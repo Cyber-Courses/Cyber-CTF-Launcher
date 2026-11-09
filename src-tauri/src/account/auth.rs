@@ -60,14 +60,28 @@ impl AuthStatus {
 /// Whether the last session ended because cyber-auth refused its refresh token (see
 /// `access_token_renewed_by`): the player was signed out under the app, and is told so until
 /// they sign in or out themselves.
+#[cfg(not(test))]
 static EXPIRED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(test)]
+thread_local! {
+    /// Per test thread, like the session file (`store::dev_session_path`).
+    static EXPIRED: std::sync::atomic::AtomicBool = const { std::sync::atomic::AtomicBool::new(false) };
+}
 
 fn expired() -> bool {
-    EXPIRED.load(std::sync::atomic::Ordering::Relaxed)
+    let read = |e: &std::sync::atomic::AtomicBool| e.load(std::sync::atomic::Ordering::Relaxed);
+    #[cfg(test)]
+    return EXPIRED.with(read);
+    #[cfg(not(test))]
+    read(&EXPIRED)
 }
 
 fn set_expired(expired: bool) {
-    EXPIRED.store(expired, std::sync::atomic::Ordering::Relaxed);
+    let write = |e: &std::sync::atomic::AtomicBool| e.store(expired, std::sync::atomic::Ordering::Relaxed);
+    #[cfg(test)]
+    EXPIRED.with(write);
+    #[cfg(not(test))]
+    write(&EXPIRED);
 }
 
 /// The session, or the error a call needing the account returns: signed out, or why the
@@ -103,14 +117,29 @@ static SESSION_WRITE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(())
 /// A renewed session the keychain refused to save. Refresh tokens rotate: the old one in the
 /// keychain is spent, so dropping the new one would sign the player out at the next call (an
 /// `invalid_grant`). It is served from here, and saved again at each read until that works.
+#[cfg(not(test))]
 static UNSAVED: std::sync::Mutex<Option<Session>> = std::sync::Mutex::new(None);
+#[cfg(test)]
+thread_local! {
+    /// Per test thread, like the session file (`store::dev_session_path`).
+    static UNSAVED: std::sync::Mutex<Option<Session>> = const { std::sync::Mutex::new(None) };
+}
+
+/// `f` on the renewed session waiting to be saved.
+fn with_unsaved<T>(f: impl FnOnce(&mut Option<Session>) -> T) -> T {
+    let run = |m: &std::sync::Mutex<Option<Session>>| f(&mut m.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
+    #[cfg(test)]
+    return UNSAVED.with(run);
+    #[cfg(not(test))]
+    run(&UNSAVED)
+}
 
 fn unsaved() -> Option<Session> {
-    UNSAVED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+    with_unsaved(|u| u.clone())
 }
 
 fn set_unsaved(session: Option<Session>) {
-    *UNSAVED.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = session;
+    with_unsaved(|u| *u = session);
 }
 
 /// The session calls use: the stored one, unless a newer renewed one is still waiting to be
@@ -437,7 +466,8 @@ mod tests {
         assert!(failed.get("sessionExpired").is_none());
     }
 
-    /// The dev session store and `UNSAVED` are shared: the tests over them run one at a time.
+    /// Each test thread has its own session file, `UNSAVED` and `EXPIRED`, but `SESSION_WRITE` is
+    /// the process's: the tests that wait on it run one at a time.
     static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     /// The commands over the dev session store (a file of this test run's own).

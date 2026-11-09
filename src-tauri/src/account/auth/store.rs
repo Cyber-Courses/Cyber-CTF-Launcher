@@ -98,11 +98,21 @@ fn keychain_error(e: &keyring::Error) -> Error {
 }
 
 pub(super) fn dev_session_path() -> Option<std::path::PathBuf> {
-    // Unit tests never read or replace the developer's own session: theirs is per test run.
+    // Unit tests never read or replace the developer's own session, nor each other's: each test
+    // thread has its own (a `#[tokio::test]` runs its tasks on its one thread, and the file is
+    // resolved there, before any blocking thread, see `session_file`).
     if cfg!(test) {
-        return Some(std::env::temp_dir().join(format!("cyberctf-test-session-{}", std::process::id())).join("dev-session.json"));
+        let thread: String = format!("{:?}", std::thread::current().id()).chars().filter(char::is_ascii_digit).collect();
+        let run = std::env::temp_dir().join(format!("cyberctf-test-session-{}", std::process::id()));
+        return Some(run.join(thread).join("dev-session.json"));
     }
     home_session_path()
+}
+
+/// The dev session file a read, save or clear goes to (none when the keychain keeps the
+/// session), resolved on the caller's thread.
+fn session_file() -> Option<std::path::PathBuf> {
+    if IN_A_FILE { dev_session_path() } else { None }
 }
 
 /// The dev session file in the home folder.
@@ -128,8 +138,8 @@ fn save_file(path: &std::path::Path, raw: &str) -> Result<()> {
 
 /// The stored session: `Ok(None)` when there is none, `Err` when the keychain couldn't be read.
 /// Blocking (the Secret Service may show its unlock prompt and wait): call `read`.
-fn load_blocking() -> std::result::Result<Option<Session>, String> {
-    if IN_A_FILE { Ok(dev_session_path().and_then(|path| load_file(&path))) } else { load_keychain() }
+fn load_blocking(file: Option<&std::path::Path>) -> std::result::Result<Option<Session>, String> {
+    if IN_A_FILE { Ok(file.and_then(load_file)) } else { load_keychain() }
 }
 
 /// The session in the keychain, unless the keychain failed a moment ago (see [`backoff`]).
@@ -180,14 +190,15 @@ pub(super) fn ask_keychain_again() {
 
 /// `load_blocking` on a blocking thread, never the UI thread or an async worker.
 pub(super) async fn read() -> std::result::Result<Option<Session>, String> {
-    tokio::task::spawn_blocking(load_blocking).await.unwrap_or_else(|e| Err(e.to_string()))
+    let file = session_file();
+    tokio::task::spawn_blocking(move || load_blocking(file.as_deref())).await.unwrap_or_else(|e| Err(e.to_string()))
 }
 
-fn save_blocking(session: &Session) -> Result<()> {
+fn save_blocking(session: &Session, file: Option<&std::path::Path>) -> Result<()> {
     let raw = serde_json::to_string(session).map_err(|e| Error::Invalid(e.to_string()))?;
     if IN_A_FILE {
-        let path = dev_session_path().ok_or_else(|| Error::Invalid("no home directory".into()))?;
-        return save_file(&path, &raw);
+        let path = file.ok_or_else(|| Error::Invalid("no home directory".into()))?;
+        return save_file(path, &raw);
     }
     // The pieces first, then the head naming them: a reader never sees a head whose pieces
     // aren't there yet. Pieces left from a longer session before are removed.
@@ -212,12 +223,13 @@ fn clear_chunks_from(from: usize) {
 
 /// `save_blocking` on a blocking thread (the keychain may prompt).
 pub(super) async fn store(session: Session) -> Result<()> {
-    tokio::task::spawn_blocking(move || save_blocking(&session)).await.map_err(|e| Error::Invalid(e.to_string()))?
+    let file = session_file();
+    tokio::task::spawn_blocking(move || save_blocking(&session, file.as_deref())).await.map_err(|e| Error::Invalid(e.to_string()))?
 }
 
-fn clear_blocking() {
+fn clear_blocking(file: Option<&std::path::Path>) {
     if IN_A_FILE {
-        if let Some(path) = dev_session_path() {
+        if let Some(path) = file {
             let _ = std::fs::remove_file(path);
         }
         return;
@@ -230,7 +242,8 @@ fn clear_blocking() {
 
 /// Forgets the session, on a blocking thread.
 pub(super) async fn clear() {
-    let _ = tokio::task::spawn_blocking(clear_blocking).await;
+    let file = session_file();
+    let _ = tokio::task::spawn_blocking(move || clear_blocking(file.as_deref())).await;
 }
 
 #[cfg(test)]
