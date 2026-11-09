@@ -288,7 +288,7 @@ async fn an_attack_box_refused_by_a_lab_that_is_not_up_leaves_the_lab_as_publish
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     let compose = std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap();
     let err = placed_box(&f).add(&dirs, "kalilinux/kali-rolling", None, &mut |_| {}).await.unwrap_err();
-    assert!(errors::is_not_running(&err), "{err}");
+    assert!(matches!(&err, crate::error::Error::RefusedBeforeActing(m) if m == "This lab isn't running. Start it first."), "{err}");
     assert!(!crate::runtime::attack_machine::added(&f.home.dir).unwrap(), "the box is out of the lab's spec again");
     assert_eq!(std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap(), compose, "and its files as they were");
 }

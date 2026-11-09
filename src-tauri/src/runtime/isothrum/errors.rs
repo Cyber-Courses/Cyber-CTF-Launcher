@@ -6,32 +6,13 @@ use isothrum_runner::{Error as RunnerError, ErrorCode};
 
 use crate::error::{Code, Error};
 
-/// What the launcher says when the runner refused to change a run that isn't up.
-const NOT_RUNNING: &str = "This lab isn't running. Start it first.";
-
-fn not_running() -> Error {
-    Error::Invalid(NOT_RUNNING.into())
-}
-
-/// Whether `e` says the runner refused a change because the run isn't up (nothing was changed).
-pub(crate) fn is_not_running(e: &Error) -> bool {
-    matches!(e, Error::Invalid(text) if text == NOT_RUNNING)
-}
-
-/// How the launcher's words for a value the runner refused begin: a secret the launch didn't
-/// give, or a param it gave that isn't one the manifest takes. The runner checks both before it
-/// runs anything.
-const VALUE_REFUSED: &str = "This lab needs a value ";
-
-/// Whether `e` is a change of a run refused before acting on it: the run isn't up, another
-/// operation holds it, a tool it needs is missing, a value it needs is missing or refused
-/// ([`VALUE_REFUSED`]), or the cloud account's sign-in ran out (asked before the change,
-/// [`expired_sign_in`]). Nothing of the run changed then.
+/// Whether `e` is a change of a run refused before acting on it: refused as such (the run isn't
+/// up, a value it needs is missing or unusable — the runner checks the launch's values before it
+/// runs anything —, the cloud account's sign-in ran out, asked before the change:
+/// [`Error::RefusedBeforeActing`]; the run already up or recorded elsewhere: [`Error::Refused`]),
+/// another operation holds it, or a tool it needs is missing. Nothing of the run changed then.
 pub(crate) fn refused_before_acting(e: &Error) -> bool {
-    is_not_running(e)
-        || is_expired_sign_in(e)
-        || matches!(e, Error::Invalid(text) if text.starts_with(VALUE_REFUSED))
-        || matches!(e.code(), Code::AlreadyInProgress | Code::ToolMissing { .. })
+    matches!(e, Error::RefusedBeforeActing(_) | Error::Refused(_)) || matches!(e.code(), Code::AlreadyInProgress | Code::ToolMissing { .. })
 }
 
 /// The launcher's error for a runner's failure.
@@ -54,10 +35,10 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         }
         RunnerError::NotReady { detail, .. } => Error::Invalid(format!("The lab started, but didn't become ready: {detail}")),
         RunnerError::SecretMissing { name } => {
-            Error::Invalid(format!("{VALUE_REFUSED}for `{name}` that the launch didn't give. Start it from the catalogue again."))
+            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
         }
         RunnerError::Param { name, reason } => {
-            Error::Invalid(format!("{VALUE_REFUSED}for `{name}` it can use: the one given {reason}. Start it from the catalogue again."))
+            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` it can use: the one given {reason}. Start it from the catalogue again."))
         }
         other => by_code(&other),
     }
@@ -72,7 +53,7 @@ fn by_code(e: &RunnerError) -> Error {
         ErrorCode::NothingToResume => {
             Error::Invalid("Nothing is left of this lab to resume (its stopped containers or VMs are gone). Start it again for a fresh copy.".into())
         }
-        ErrorCode::NotRunning => not_running(),
+        ErrorCode::NotRunning => Error::RefusedBeforeActing("This lab isn't running. Start it first.".into()),
         ErrorCode::NotParkable => Error::Invalid("This lab can't be paused or shut down. Stop it instead.".into()),
         ErrorCode::ManifestVersion => Error::Invalid(format!(
             "This lab was generated for another version of Cyber CTF's runner. Update Cyber CTF (Settings > About), then start the lab again. ({e})"
@@ -145,25 +126,20 @@ fn cloud_in(reason: &str) -> Option<&'static str> {
         .map(|(_, cloud)| cloud)
 }
 
-/// How [`expired_sign_in`]'s word starts, and what it says of the lab.
-const SIGN_IN_TO: &str = "Your sign-in to ";
-const NOT_CHANGED: &str = " has expired or is missing, so the lab wasn't changed.";
-
-/// Whether `e` is [`expired_sign_in`]'s word.
-fn is_expired_sign_in(e: &Error) -> bool {
-    matches!(e, Error::Invalid(text) if text.starts_with(SIGN_IN_TO) && text.contains(NOT_CHANGED))
-}
-
 /// The launcher's word for a cloud tool's `reason` when it says the account's sign-in ran out or
 /// is missing (`cloud`: the launcher's Terraform target for it, when known): sign in again,
-/// then try again; `None` for any other failure.
+/// then try again, a refusal before acting (nothing could change without the sign-in); `None`
+/// for any other failure.
 pub(crate) fn expired_sign_in(reason: &str, cloud: Option<&str>) -> Option<Error> {
     let lower = reason.to_ascii_lowercase();
     if !EXPIRED_SIGN_IN.iter().any(|s| lower.contains(s)) {
         return None;
     }
     let (name, again) = cloud.or_else(|| cloud_in(reason)).and_then(sign_in_of).map_or(("the cloud account", String::new()), |(n, a)| (n, format!(" ({a})")));
-    Some(Error::Invalid(format!("{SIGN_IN_TO}{name}{NOT_CHANGED} Sign in again{again}, then try again. ({})", reason.trim())))
+    Some(Error::RefusedBeforeActing(format!(
+        "Your sign-in to {name} has expired or is missing, so the lab wasn't changed. Sign in again{again}, then try again. ({})",
+        reason.trim()
+    )))
 }
 
 /// A step's tool that ran and failed: Docker not answering its probe reads as the engine being
@@ -295,5 +271,25 @@ mod tests {
         let param = from_runner(RunnerError::Param { name: "ISOLOOM_DERIVED".into(), reason: "`2` isn't one of 0, 1".into() });
         assert!(param.to_string().contains("`ISOLOOM_DERIVED`") && param.to_string().contains("`2` isn't one of 0, 1"), "{param}");
         assert!(!refused_before_acting(&Error::Invalid("a step failed".into())));
+    }
+
+    #[test]
+    fn a_refusal_is_known_by_its_kind_not_its_words() {
+        // The run not up, a cloud sign-in that ran out, a busy run, a missing tool, a run up
+        // already: refused before acting, whatever they say.
+        for refused in [
+            from_runner(RunnerError::NotRunning { run: "r".into() }),
+            expired_sign_in("Error: login session has expired", Some("aws")).expect("an expired sign-in"),
+            from_runner(RunnerError::Locked { run: "r".into() }),
+            from_runner(RunnerError::ToolMissing { step: "tools".into(), tool: "vagrant".into() }),
+            from_runner(RunnerError::AlreadyRunning { run: "r".into() }),
+        ] {
+            assert!(refused_before_acting(&refused), "{refused}");
+            assert_eq!(refused.code(), refused.to_wire().code, "the UI gets the same code: {refused}");
+        }
+        // The same words from anything else are no refusal.
+        assert!(!refused_before_acting(&Error::Invalid("This lab isn't running. Start it first.".into())));
+        let failed_step = from_runner(RunnerError::ToolFailed { step: "up".into(), reason: "exit status 1".into() });
+        assert!(!refused_before_acting(&failed_step), "{failed_step}");
     }
 }

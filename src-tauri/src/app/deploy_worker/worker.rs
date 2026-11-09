@@ -308,6 +308,10 @@ mod tests {
         conclude(&f, &Err::<(), _>(Error::Refused("still running on AWS".into())), true, |_| {});
         assert_eq!(verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string(), "still running on AWS");
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
+        // A launch refused for something to put right first (a missing value, an expired cloud
+        // sign-in) failed: its verdict says so.
+        conclude(&f, &Err::<(), _>(Error::RefusedBeforeActing("sign in again".into())), true, |_| {});
+        assert_eq!(verdict(&std::fs::read_to_string(&f.launch_status).unwrap()).unwrap_err().to_string(), "sign in again");
         std::fs::remove_dir_all(dir).ok();
     }
 }

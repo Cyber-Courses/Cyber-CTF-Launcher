@@ -171,6 +171,12 @@ pub enum Error {
     /// running lab): not a failed deploy, so the lab's last verdict stays what it was.
     #[error("{0}")]
     Refused(String),
+    /// A change of a lab refused before it acted, for something to put right first (the run isn't
+    /// up, a value it needs is missing or unusable, a cloud sign-in ran out): nothing changed, so
+    /// what was written for it can be put back. Unlike [`Error::Refused`], a launch refused so
+    /// failed: its verdict says so.
+    #[error("{0}")]
+    RefusedBeforeActing(String),
     /// The player cancelled sign-in (or started another one): not a failure to show.
     #[error("Sign-in cancelled.")]
     Cancelled,
@@ -207,7 +213,7 @@ impl Error {
             Error::CommandFailed { command, stderr } => Code::CommandFailed { command: command.clone(), stderr: stderr.clone() },
             Error::Cancelled => Code::SignInCancelled,
             Error::Unreachable(detail) => Code::Unreachable { detail: detail.clone() },
-            Error::Invalid(_) | Error::Refused(_) | Error::LockUnavailable(_) | Error::Io(_) => Code::Other,
+            Error::Invalid(_) | Error::Refused(_) | Error::RefusedBeforeActing(_) | Error::LockUnavailable(_) | Error::Io(_) => Code::Other,
         }
     }
 
@@ -256,6 +262,7 @@ mod tests {
         let cases = [
             (Error::Invalid("bad id".into()), json!({ "code": "other", "message": "bad id" })),
             (Error::Refused("still running".into()), json!({ "code": "other", "message": "still running" })),
+            (Error::RefusedBeforeActing("not running".into()), json!({ "code": "other", "message": "not running" })),
             (Error::Cancelled, json!({ "code": "signInCancelled", "message": "Sign-in cancelled." })),
             (
                 Error::Unreachable("API unreachable: timed out".into()),
