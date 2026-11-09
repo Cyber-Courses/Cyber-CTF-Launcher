@@ -2,32 +2,25 @@
 //! buckets, instances...) from a Terraform module of the lab's own (`cloud:` in its
 //! `isoloom.yml`, Isoloom's `cloud-services` target), applied into the player's cloud account.
 //!
-//! They reuse what the other cloud labs have: the player's cloud account of the lab's cloud
-//! (its credentials, region and auto-stop), the host Terraform, the AWS budget guard, and the
-//! state kept under `<app data>/deployments/<lab>/<cloud>/`, outside the lab folder, with a run
-//! record whose `expires_at` the reaper (`reap_expired_labs`) destroys the lab at. What differs:
+//! They run through the Isothrum runner like every other lab ([`isothrum::CloudRun`]): Isoloom
+//! writes the run manifest beside the lab's module, and the runner applies it, keeps its state
+//! and its expiry under the app data folder's `runs/`, reads its outputs, and destroys it on a
+//! stop or the auto-stop. The launcher's `terraform/` only reads states its own Terraform path
+//! left before the runner (for their hand-over, `isothrum::import`) and cleans the plugin cache.
 //!
-//! - The module is the lab's, used as is (see `terraform::services`), with Isoloom's
-//!   generated `terraform.tfvars.json` (the spec's fixed `cloud.vars`).
-//! - Variables holding `{{ inputs.NAME }}` (a whole value, or inside a string at any depth:
-//!   `["{{ inputs.PLAYER_IP }}/32"]`) take launch-time inputs, written to
-//!   `inputs.tfvars.json` (mode 0600) beside the state, so the destroy reuses them, as Isoloom's
-//!   CLI does. The launcher fills `PLAYER_CIDR` (this machine's public IP as a /32, for an
-//!   allow-list) and `PLAYER_IP`, and the launch's own values (`CTF_API_URL`,
-//!   `CTF_LAUNCH_TOKEN`); a lab asking for anything else can't start here.
-//! - Every module may take `expires_at` (Unix seconds, for its tags) and `region`: passed as
-//!   `TF_VAR_*`, which Terraform ignores for a module that doesn't declare them.
-//! - On AWS, Terraform also gets shared credentials and config files of its own (see
-//!   `AwsFiles`): labs that name a profile (`CloudGoat`'s `profile = var.profile`, and
-//!   `--profile` in its local-exec commands) find the picked account's keys under it, since an
-//!   explicitly set profile beats the environment's keys in the AWS provider.
-//! - `cloud.env` goes into Terraform's environment, over the account's own (a lab's
-//!   `AWS_REGION`), and `cloud.apply_retries` applies again after a failed apply. What
-//!   `cloud.requires` names must be on this machine. `cloud.before` (set-up steps run on this
-//!   machine before Terraform) isn't supported yet: such a lab is refused before anything is
-//!   created.
-//! - What the lab exposes is its outputs (`cloud.outputs`), read from the state; its message
-//!   names them (`{{ cloud.outputs.NAME }}`). Stop destroys everything: nothing is parked.
+//! What stays the launcher's is the policy around a start:
+//!
+//! - The account: one of the lab's cloud (its credentials, region and auto-stop), the GCP labs
+//!   project made sure of, the AWS budget guard.
+//! - The launch's values for the lab's `{{ inputs.NAME }}` variables: its own (`CTF_API_URL`,
+//!   `CTF_LAUNCH_TOKEN`) and, where the lab asks for an allow-list, this machine's public IP
+//!   (`PLAYER_IP`).
+//! - What it refuses before anything is created: `cloud.before` (set-up steps on this machine,
+//!   not supported yet) and a `cloud.env` setting what the launcher keeps to itself (the
+//!   account's credentials, Terraform's own settings).
+//! - What the launch dialog shows first ([`preview`]): the lab's cloud, its cost estimate, what
+//!   it asks for and what it exposes (`cloud.outputs`). Stop destroys everything: nothing is
+//!   parked.
 
 use crate::platform::AppDirs;
 
