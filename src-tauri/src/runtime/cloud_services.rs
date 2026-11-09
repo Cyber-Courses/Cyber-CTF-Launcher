@@ -14,7 +14,7 @@
 //!   project made sure of, the AWS budget guard.
 //! - The launch's values for the lab's `{{ inputs.NAME }}` variables: its own (`CTF_API_URL`,
 //!   `CTF_LAUNCH_TOKEN`) and, where the lab asks for an allow-list, this machine's public IP
-//!   (`PLAYER_IP`).
+//!   (`PLAYER_IP`) or that IP as a one-address block (`PLAYER_CIDR`).
 //! - What it refuses before anything is created: `cloud.before` (set-up steps on this machine,
 //!   not supported yet) and a `cloud.env` setting what the launcher keeps to itself (the
 //!   account's credentials, Terraform's own settings).
@@ -30,10 +30,11 @@ use super::providers::Provider;
 use super::{LabRef, Runtime, isothrum, lab, server};
 use crate::error::{Error, Result};
 
-/// The launch-time input the launcher fills with this machine's public IP as a /32.
-pub const PLAYER_CIDR: &str = "PLAYER_CIDR";
+/// The launch-time input the launcher fills with this machine's public IP as a one-address block
+/// (`/32`, or `/128` for an IPv6 address).
+const PLAYER_CIDR: &str = "PLAYER_CIDR";
 /// The launch-time input the launcher fills with this machine's public IP.
-pub const PLAYER_IP: &str = "PLAYER_IP";
+const PLAYER_IP: &str = "PLAYER_IP";
 
 /// The lab's cloud services, or why it has none.
 pub fn of(spec: &Spec) -> Result<&CloudServices> {
@@ -99,7 +100,7 @@ pub(super) async fn start(dirs: &AppDirs, lab: LabRef<'_>, host: Option<&str>, e
     // The lab's launch inputs, and this machine's public IP where the lab asks for an allow-list.
     let mut inputs = env.to_vec();
     if let Some(ip) = player_ip(cloud, log).await? {
-        inputs.push(("PLAYER_IP".to_string(), ip));
+        inputs.extend(allow_list_inputs(cloud, &ip));
     }
     log(format!("Creating the lab's cloud services ({})…", cloud.terraform));
     let place = isothrum::CloudPlace::launch(&conn, None);
@@ -177,6 +178,15 @@ async fn player_ip(cloud: &CloudServices, log: &mut impl FnMut(String)) -> Resul
     let ip = public_ip().await?;
     log(format!("Only your public IP ({ip}) is let in where the lab asks for an allow-list."));
     Ok(Some(ip))
+}
+
+/// The allow-list inputs the lab asks for, filled with this machine's public IP `ip`: `PLAYER_IP`
+/// as it is, `PLAYER_CIDR` as a one-address block.
+fn allow_list_inputs(cloud: &CloudServices, ip: &str) -> Vec<(String, String)> {
+    let wanted = wanted(cloud);
+    let asks = |name: &str| wanted.iter().any(|(_, i)| i == name);
+    let block = if ip.contains(':') { format!("{ip}/128") } else { format!("{ip}/32") };
+    [(PLAYER_IP, ip.to_owned()), (PLAYER_CIDR, block)].into_iter().filter(|(name, _)| asks(name)).map(|(name, value)| (name.to_owned(), value)).collect()
 }
 
 /// What the launch dialog shows before a cloud-services lab starts: its cloud, what it costs
@@ -273,6 +283,17 @@ mod tests {
         assert!(err.contains("set-up steps on this machine"), "{err}");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert!(!t.data().join("deployments/goat").exists());
+    }
+
+    #[test]
+    fn the_allow_list_inputs_the_lab_asks_for_are_filled_with_this_machines_ip() {
+        // Regression: only PLAYER_IP was filled, so a lab asking for PLAYER_CIDR never got its
+        // allow-list input.
+        let cidr = spec(SPEC);
+        assert_eq!(allow_list_inputs(of(&cidr).unwrap(), "203.0.113.7"), [("PLAYER_CIDR".to_owned(), "203.0.113.7/32".to_owned())]);
+        assert_eq!(allow_list_inputs(of(&cidr).unwrap(), "2001:db8::7"), [("PLAYER_CIDR".to_owned(), "2001:db8::7/128".to_owned())]);
+        let ip = spec(&goat());
+        assert_eq!(allow_list_inputs(of(&ip).unwrap(), "203.0.113.7"), [("PLAYER_IP".to_owned(), "203.0.113.7".to_owned())]);
     }
 
     #[test]
