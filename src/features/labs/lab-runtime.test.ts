@@ -105,6 +105,9 @@ describe("perMachineProviders", () => {
     const providers = perMachineProviders(both, "aarch64");
     expect(providers).toContain("qemu");
     expect(providers).toContain("virtualbox");
+    // Hyper-V runs the form (not a container lab's helper VM: that has no Hyper-V).
+    expect(providers).toContain("hyperv");
+    expect(localProviders(both)).not.toContain("hyperv");
     expect(providers).not.toContain("utm");
     expect(providers).not.toContain("vmware_esxi");
   });

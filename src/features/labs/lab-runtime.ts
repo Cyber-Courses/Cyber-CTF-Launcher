@@ -21,6 +21,10 @@ export const EMULATORS: readonly Provider[] = ["qemu"];
  *  only fail at launch with "provider hyperv isn't one of this run's providers". */
 const LOCAL_HYPERVISORS: readonly Provider[] = ["virtualbox", "vmware_desktop", "parallels", "libvirt", "qemu", "utm"];
 
+/** The local hypervisors Isoloom's per-machine VM form (its vagrant target) runs on: every one a
+ *  container lab's helper VM does, and Hyper-V, which that form has (it asks for elevation). */
+const VM_HYPERVISORS: readonly Provider[] = [...LOCAL_HYPERVISORS, "hyperv"];
+
 // providers may still carry "hosted" (not a launcher Provider and no longer offered), so keep it
 // out of the local hypervisors; compare as strings.
 const isLocal = (p: string) => !SERVERS.has(p) && !CLOUDS.has(p) && p !== "hosted";
@@ -55,7 +59,7 @@ const NO_PER_MACHINE_VM: readonly Provider[] = ["utm"];
 export function perMachineProviders(rt: LabRuntimeInfo, hostArch?: string): Provider[] {
   if (!hasBothForms(rt)) return [];
   if (hostArch && !runsNatively(rt, hostArch)) return EMULATORS.filter((p) => !NO_PER_MACHINE_VM.includes(p));
-  return LOCAL_HYPERVISORS.filter((p) => !NO_PER_MACHINE_VM.includes(p));
+  return VM_HYPERVISORS.filter((p) => !NO_PER_MACHINE_VM.includes(p));
 }
 
 /** Whether an emulator (QEMU) is ready on this machine: Vagrant, the hypervisor and its plugin. */
