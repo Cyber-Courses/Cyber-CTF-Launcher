@@ -31,7 +31,9 @@ use crate::runtime::launch::{CloudStart, VmStart, start_cloud_run, start_docker_
 use crate::runtime::providers::Provider;
 use crate::runtime::{isothrum, lab, lifecycle};
 
-/// The box added to the running lab, reaching `target` from a shell in it, then taken out.
+/// The box added to the running lab, reaching `target` from a shell in it, then taken out; with
+/// the shared folder on (Settings, as [`shared_folder`] turns it on), that folder seen both ways
+/// from inside the box.
 pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &mut impl FnMut(String), f: &mut Vec<String>) {
     let added = placed.add(dirs, attack_machine::default_image(), None, l).await;
     check(added.is_ok(), format!("the box is added ({:?})", added.err()), f);
@@ -47,6 +49,14 @@ pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &
         format!("the box reaches {target} and is called {} ({reached:?})", attack_machine::NAME),
         f,
     );
+    if let Some(folder) = crate::shared_folder::current() {
+        std::fs::write(folder.join("to-box"), "tools in").unwrap();
+        let mount = crate::shared_folder::MOUNT_POINT;
+        let seen = in_box(&console, &format!("cat {mount}/to-box && echo loot out > {mount}/from-box")).await;
+        check(seen.as_deref().is_ok_and(|o| o.contains("tools in")), format!("the box sees the shared folder at {mount} ({seen:?})"), f);
+        let back = std::fs::read_to_string(folder.join("from-box")).unwrap_or_default();
+        check(back.contains("loot out"), format!("what the box writes there lands on this computer ({back:?})"), f);
+    }
     let removed = placed.remove(dirs, l).await;
     check(removed.is_ok(), format!("the box is taken out ({:?})", removed.err()), f);
     match placed.status(None).await {
@@ -54,6 +64,15 @@ pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &
         Err(e) => check(false, format!("the box's status reads: {e}"), f),
     }
     check(!attack_machine::added(&placed.dir).unwrap_or(true), "the lab is as published".into(), f);
+}
+
+/// With `CYBERCTF_TEST_SHARED_FOLDER` (a folder; empty or unset: off), the shared folder turned on there, as Settings
+/// do, the launcher's settings kept under `home`.
+fn shared_folder(home: &Path) {
+    let Some(folder) = std::env::var("CYBERCTF_TEST_SHARED_FOLDER").ok().filter(|f| !f.is_empty()) else { return };
+    std::fs::create_dir_all(home).unwrap();
+    crate::shared_folder::init(home);
+    crate::shared_folder::shared_folder_set(true, &folder).unwrap();
 }
 
 #[tokio::test]
@@ -90,6 +109,7 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
     check(started.is_ok(), format!("the lab starts ({:?})", started.as_ref().err()), &mut f);
     let placed = Placed { host: Host::Local(run), dir: dir.clone(), target: target_kind, vm };
     if started.is_ok() {
+        shared_folder(&home);
         exercise(&placed, &dirs, &target, &mut l, &mut f).await;
     }
     let stopped = match form.as_str() {

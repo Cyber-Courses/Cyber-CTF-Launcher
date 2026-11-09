@@ -52,6 +52,15 @@ scenario() {
   fi
 }
 tier() { [[ " $TIERS " == *" $1 "* ]]; }
+# shared_for <provider> <scenario>: the shared folder a VM box gets on that hypervisor here, empty
+# where it can't share one (QEMU outside Linux: no virtiofsd; Hyper-V).
+shared_for() {
+  case "$1" in
+    qemu) [ "$(uname -s)" = Linux ] && echo "$LOGS/shared/$2" ;;
+    hyperv) ;;
+    *) echo "$LOGS/shared/$2" ;;
+  esac
+}
 
 BOX=integration_tests::attack_box
 LOCAL_BOX="$BOX::the_attack_box_is_a_machine_of_the_lab_on_every_local_form"
@@ -59,10 +68,14 @@ AWS_BOX="$BOX::the_attack_box_is_a_machine_of_an_aws_lab"
 SOLO="$EXAMPLES/solo-web"
 
 if tier local; then
-  # The attack box, a machine of the lab, on each local form: added, reached from, taken out.
-  scenario box-docker "$LOCAL_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=docker
-  scenario box-docker-vm "$LOCAL_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=docker-vm CYBERCTF_TEST_VM_PROVIDER="$DOCKER_VM_PROVIDER"
-  scenario box-vm "$LOCAL_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=vm CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER"
+  # The attack box, a machine of the lab, on each local form: added, reached from, the shared
+  # folder seen both ways from inside it (where the form can share one), taken out.
+  scenario box-docker "$LOCAL_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=docker \
+    CYBERCTF_TEST_SHARED_FOLDER="$LOGS/shared/box-docker"
+  scenario box-docker-vm "$LOCAL_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=docker-vm CYBERCTF_TEST_VM_PROVIDER="$DOCKER_VM_PROVIDER" \
+    CYBERCTF_TEST_SHARED_FOLDER="$(shared_for "$DOCKER_VM_PROVIDER" box-docker-vm)"
+  scenario box-vm "$LOCAL_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=vm CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER" \
+    CYBERCTF_TEST_SHARED_FOLDER="$(shared_for "$VM_PROVIDER" box-vm)"
   # A lab's whole life on each local form: up, status, park and resume, checks, down, nothing left.
   scenario docker-lab integration_tests::docker::hello_stack_runs_end_to_end CYBERCTF_TEST_HELLO_LAB="$EXAMPLES/hello-stack"
   scenario docker-lab-segmented integration_tests::docker::segmented_runs_end_to_end CYBERCTF_TEST_SEGMENTED_LAB="$EXAMPLES/segmented"
