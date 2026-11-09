@@ -12,13 +12,14 @@ use crate::runtime::{self, Action, Park, Runtime};
 /// is starting" state after a window reload: the deploy keeps running in this process even when
 /// the webview reloaded and lost its own in-memory deploy state.
 pub async fn deploying_labs(dirs: AppDirs) -> Vec<String> {
-    off_main(move || {
-        // Worker keys with a dot (an older version's attack VM start) are not a lab's own deploy.
-        let workers = deploy_worker::running(&dirs).into_iter().filter(|k| !k.contains('.'));
-        merge_unique(runtime::deploying_labs(), workers)
-    })
-    .await
-    .unwrap_or_default()
+    or_logged(
+        off_main(move || {
+            // Worker keys with a dot (an older version's attack VM start) are not a lab's own deploy.
+            let workers = deploy_worker::running(&dirs).into_iter().filter(|k| !k.contains('.'));
+            merge_unique(runtime::deploying_labs(), workers)
+        })
+        .await,
+    )
 }
 
 /// Runs `f` on a blocking thread. These commands are polled every 2 s by every window, and each
@@ -26,6 +27,15 @@ pub async fn deploying_labs(dirs: AppDirs) -> Vec<String> {
 /// sync commands they ran on the main thread, stalling every window while they did.
 async fn off_main<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Result<T, String> {
     tokio::task::spawn_blocking(f).await.map_err(|e| e.to_string())
+}
+
+/// What a poll's blocking task answered; when it panicked, the failure logged and nothing in
+/// flight (the windows poll again in a moment).
+fn or_logged<T: Default>(answer: Result<T, String>) -> T {
+    answer.unwrap_or_else(|e| {
+        log::error!("reading the lab operations in flight failed: {e}");
+        T::default()
+    })
 }
 
 /// `ids` followed by each of `more` not already in it, in order.
@@ -90,7 +100,7 @@ fn in_app_op(action: Action) -> &'static str {
 /// Every lab operation in flight: the detached workers (with the step their log is at) and the
 /// in-process ones. A lab with a worker is listed once, as the worker's operation.
 pub async fn active_operations(dirs: AppDirs) -> Vec<ActiveOperation> {
-    off_main(move || merge_operations(deploy_worker::running_jobs(&dirs), runtime::active_actions())).await.unwrap_or_default()
+    or_logged(off_main(move || merge_operations(deploy_worker::running_jobs(&dirs), runtime::active_actions())).await)
 }
 
 /// The workers' operations (with their step), then the in-process ones on other labs, by lab id.

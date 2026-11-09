@@ -136,7 +136,13 @@ fn open_main_app() {
 /// Runs the job, logging to its file (also this process's stdout/stderr, for panics), and leaves
 /// the verdict in the status file. Returns the process's exit code.
 async fn run_logged(app: &AppHandle, job: Job) -> i32 {
-    let Ok(f) = files::of(&crate::platform::AppDirs::from(app), &job.key()) else { return 2 };
+    let f = match files::of(&crate::platform::AppDirs::from(app), &job.key()) {
+        Ok(f) => f,
+        Err(e) => {
+            log::error!("deploy worker for {}: no files to run the job in: {e}", job.key());
+            return 2;
+        }
+    };
     let sink = std::sync::Mutex::new(crate::platform::private_fs::append(&f.log).ok());
     let log = |line: String| {
         if let Ok(mut guard) = sink.lock()
@@ -180,10 +186,16 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
     // A refusal (the lab is still up elsewhere, an update of a running lab) changed nothing: the
     // launch's last verdict stays, or a lab still running on its host would read as failed.
     let refused = matches!(result, Err(crate::error::Error::Refused(_)));
-    if launch && !refused {
-        let _ = std::fs::write(&f.launch_status, &status);
+    if launch
+        && !refused
+        && let Err(e) = std::fs::write(&f.launch_status, &status)
+    {
+        log::error!("couldn't write the launch status {}: {e}", f.launch_status.display());
     }
-    let _ = std::fs::write(&f.status, status);
+    // The app reads the verdict here alone: a run whose status isn't written reads as still going.
+    if let Err(e) = std::fs::write(&f.status, status) {
+        log::error!("couldn't write the deploy status {}: {e}", f.status.display());
+    }
     // The job file carries the launch token: done with it.
     let _ = std::fs::remove_file(&f.job);
     // Only while it still names this worker: a newer one's pidfile stays.

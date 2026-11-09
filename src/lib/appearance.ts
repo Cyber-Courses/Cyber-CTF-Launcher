@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ignore } from "@/lib/failure";
 
 /**
  * The launcher's appearance: Dark (default), Black (true #000, for OLED) or Light (Paper).
@@ -40,7 +41,9 @@ function applyAppearance(mode: Appearance) {
  *  system's colour: light over a dark app). No-op outside the desktop app. */
 function applyWindowTheme(mode: Appearance) {
   if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return;
-  import("@tauri-apps/api/window").then(({ getCurrentWindow }) => getCurrentWindow().setTheme(mode === "light" ? "light" : "dark")).catch(() => {});
+  import("@tauri-apps/api/window")
+    .then(({ getCurrentWindow }) => getCurrentWindow().setTheme(mode === "light" ? "light" : "dark"))
+    .catch(ignore("the window's frame keeps the system's colour; the app itself follows the appearance"));
 }
 
 function setAppearance(mode: Appearance) {

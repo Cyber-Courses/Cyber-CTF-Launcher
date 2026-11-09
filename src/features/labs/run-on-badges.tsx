@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ignore } from "@/lib/failure";
 import { type Badge, type Provider, type RunTier, runTiers } from "@/lib/tauri";
 import { CLOUDS } from "@/features/labs/lab-runtime";
 import type { RunTarget } from "@/features/labs/run-on";
@@ -21,7 +22,7 @@ export function useRunTiers(): RunTier[] {
       .then((t) => {
         if (live) setTiers(t);
       })
-      .catch(() => {});
+      .catch(ignore("without the evidence, no launch path shows a badge"));
     return () => {
       live = false;
     };
