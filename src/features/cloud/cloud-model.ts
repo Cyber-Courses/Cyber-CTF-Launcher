@@ -1,17 +1,13 @@
-import { PROVIDER_NAMES, type CloudProvider, type LabStatus, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { PROVIDER_NAMES, isCloudProvider, type CloudProvider, type LabStatus, type ServerHost, type ServerTest } from "@/lib/tauri";
 import type { Lab } from "@/features/labs/use-labs";
-import { CLOUD_IDS } from "@/features/servers/host-setup/constants";
 
 // The Cloud page's logic, as pure functions of the saved accounts, their spend and the labs.
 
 /** The providers offered up front: the first-run tiles, and a "connect" row each until connected. */
 export const MAIN_PROVIDERS = (["aws", "azure", "gcp"] satisfies CloudProvider[]).map((id) => ({ id, label: PROVIDER_NAMES[id] }));
 
-/** Every cloud the launcher runs labs in (`CLOUD_IDS`), for the lab runtime and the cloud page. */
-export const CLOUD_PROVIDERS: readonly string[] = CLOUD_IDS;
-
 /** The cloud accounts among the saved hosts (the rest are servers). */
-export const cloudAccounts = (hosts: ServerHost[]) => hosts.filter((h) => CLOUD_PROVIDERS.includes(h.provider));
+export const cloudAccounts = (hosts: ServerHost[]) => hosts.filter((h) => isCloudProvider(h.provider));
 
 /** An account's monthly budget in USD, or null when it set none (null or 0 means no limit). */
 export const budgetOf = (h: ServerHost): number | null => (h.monthlyLimit !== null && h.monthlyLimit > 0 ? h.monthlyLimit : null);

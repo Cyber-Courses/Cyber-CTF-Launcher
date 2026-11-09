@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import { AttackBoxRows } from "@/features/settings/attack-box-rows";
 import { InstalledToolsPanel } from "@/features/settings/installed-tools-panel";
-import { SharedFolderControl } from "@/features/settings/shared-folder";
+import { SharedFolderControl } from "@/features/machine/shared-folder";
 import { installTauri, rejectWith, type Handler } from "@/test/tauri";
 import { flush } from "@/test/ui";
 

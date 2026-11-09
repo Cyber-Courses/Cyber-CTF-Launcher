@@ -1,13 +1,21 @@
 import { Cloud, Container, Monitor, Server, type LucideIcon } from "lucide-react";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { EMULATORS, LOCAL_PROVIDERS, PROVIDER_NAMES, SERVER_PROVIDERS, type LabRunOptions, type LabStatus, type Provider, type ServerHost } from "@/lib/tauri";
-import { CLOUD_PROVIDERS } from "@/features/cloud/cloud-model";
+import {
+  EMULATORS,
+  LOCAL_PROVIDERS,
+  PROVIDER_NAMES,
+  SERVER_PROVIDERS,
+  isCloudProvider,
+  type LabRunOptions,
+  type LabStatus,
+  type Provider,
+  type ServerHost,
+} from "@/lib/tauri";
 import type { RunTarget } from "@/features/labs/run-on";
 
 // Where a lab can run, from its runtime (catalogue) and what this machine has ready.
 
 const SERVERS = new Set<string>(SERVER_PROVIDERS);
-export const CLOUDS = new Set(CLOUD_PROVIDERS);
 
 /** Whether `p` is a hypervisor a lab's VMs run on here (the provider a local VM lab's status
  *  names): one of the backend's local providers. */
@@ -59,7 +67,7 @@ const cloudPaths = (o: LabRunOptions) => [...o.cloudDocker, ...o.cloudVm, ...o.c
  *  catalogue lists its provider. */
 export function hostSupports(rt: LabRuntimeInfo | null, h: ServerHost, options?: LabRunOptions | null): boolean {
   if (!options) return !!rt?.providers.includes(h.provider);
-  const paths = CLOUDS.has(h.provider) ? cloudPaths(options) : options.servers;
+  const paths = isCloudProvider(h.provider) ? cloudPaths(options) : options.servers;
   return paths.some((p) => p.provider === h.provider);
 }
 
@@ -78,7 +86,7 @@ export type LauncherSetup = { readyVms?: Provider[]; hosts?: ServerHost[]; optio
 const placeState = (supported: boolean, configured: boolean): PlaceState => (supported ? (configured ? "ready" : "configurable") : "unsupported");
 
 const cloudConfigured = (rt: LabRuntimeInfo, hosts: ServerHost[], options: LabRunOptions | null) =>
-  hosts.some((h) => CLOUDS.has(h.provider) && hostSupports(rt, h, options));
+  hosts.some((h) => isCloudProvider(h.provider) && hostSupports(rt, h, options));
 
 /** Every place a lab could run, and its state (see [`PlaceState`]). Its words are
  *  `labs.places.<key>`. Whether the lab runs there at all is the backend's run options' word once
@@ -100,7 +108,7 @@ export function runPlaces(
   if (w.cloud && !w.docker && !w.vm) return cloudPlaces(rt, hosts, options);
   // A container lab runs in a helper VM here where the backend's run options say, else (until
   // they are read) wherever the catalogue lists no server or cloud only.
-  const local = options ? options.dockerVm.length > 0 : rt.providers.some((p) => !SERVERS.has(p) && !CLOUDS.has(p));
+  const local = options ? options.dockerVm.length > 0 : rt.providers.some((p) => !SERVERS.has(p) && !isCloudProvider(p));
   // The VM edition built for another CPU runs here only emulated (containers run emulated anyway).
   const vmForeignCpu = w.vm && !!hostArch && !runsNatively(rt, hostArch);
   const localVmSupported = (w.vm || (w.docker && local)) && (!vmForeignCpu || emulates);
@@ -108,7 +116,7 @@ export function runPlaces(
   const containerSupported = options ? options.docker !== null : w.docker;
   const serverSupported = options ? options.servers.length > 0 : (w.vm || w.docker) && rt.providers.some((p) => SERVERS.has(p));
   const serverReady = hosts.some((h) => SERVERS.has(h.provider) && hostSupports(rt, h, options));
-  const cloudSupported = options ? cloudPaths(options).length > 0 : rt.providers.some((p) => CLOUDS.has(p));
+  const cloudSupported = options ? cloudPaths(options).length > 0 : rt.providers.some((p) => isCloudProvider(p));
   return [
     { key: "container", icon: Container, state: placeState(containerSupported, true) },
     { key: "local_vm", icon: Monitor, state: placeState(localVmSupported, localVmReady) },
@@ -140,11 +148,11 @@ export const isContainerLab = (rt: LabRuntimeInfo | null | undefined) => rt?.run
 export const runtimeLabel = (rt: LabRuntimeInfo) => (rt.runtime === "VM" ? "vm" : rt.runtime === "CLOUD" ? "cloud" : "docker");
 
 /** The names of the clouds a cloud lab runs on ("AWS", "Google Cloud"), in its order. */
-export const cloudNames = (providers: readonly string[]): string[] => providers.filter((p): p is Provider => CLOUDS.has(p)).map((p) => PROVIDER_NAMES[p]);
+export const cloudNames = (providers: readonly string[]): string[] => providers.filter((p): p is Provider => isCloudProvider(p)).map((p) => PROVIDER_NAMES[p]);
 
 /** The player's accounts a cloud lab can run on: of a cloud it lists. */
 export const cloudAccountsFor = (rt: LabRuntimeInfo | null | undefined, hosts: ServerHost[], options?: LabRunOptions | null) =>
-  rt && isCloudLab(rt) ? hosts.filter((h) => CLOUDS.has(h.provider) && hostSupports(rt, h, options)) : [];
+  rt && isCloudLab(rt) ? hosts.filter((h) => isCloudProvider(h.provider) && hostSupports(rt, h, options)) : [];
 
 /** A container lab's VM form here (`local-vm`: one helper VM, `local-vms`: one VM per machine) on
  *  hypervisor `provider`. */

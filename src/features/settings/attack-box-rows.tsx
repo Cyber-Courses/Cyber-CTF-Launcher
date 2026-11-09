@@ -14,7 +14,7 @@ import {
   validImage,
 } from "@/lib/settings";
 import { Row } from "@/features/settings/settings-layout";
-import { SharedFolderControl } from "@/features/settings/shared-folder";
+import { SharedFolderControl } from "@/features/machine/shared-folder";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
 import { formatBytes } from "@/lib/format";
 import { useImageSizes } from "@/lib/use-image-sizes";

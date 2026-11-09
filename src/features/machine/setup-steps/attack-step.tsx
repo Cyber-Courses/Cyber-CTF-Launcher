@@ -11,7 +11,7 @@ import { isDockerReady } from "@/features/machine/setup-steps/steps";
 import { formatBytes } from "@/lib/format";
 import { useT, type T } from "@/lib/i18n";
 import { useImageSizes } from "@/lib/use-image-sizes";
-import { SharedFolderControl } from "@/features/settings/shared-folder";
+import { SharedFolderControl } from "@/features/machine/shared-folder";
 
 type Preset = (typeof ATTACK_PRESETS)[number];
 

@@ -10,7 +10,8 @@ import { TypeIcon } from "@/components/ui/type-icon";
 import { ProviderGlyph } from "@/features/servers/provider-glyph";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { ENGINES, engineName } from "@/features/machine/setup-steps/engines";
-import { CLOUDS, vmFormTarget } from "@/features/labs/lab-runtime";
+import { vmFormTarget } from "@/features/labs/lab-runtime";
+import { isCloudProvider } from "@/lib/tauri";
 import type { RunTarget } from "@/features/labs/run-on";
 import { type T } from "@/lib/i18n";
 
@@ -203,7 +204,7 @@ function localVmRow(t: T, local: LocalRows): Option | null {
 /** A saved server or cloud account; one the lab can't run on says why, without a status. */
 function hostOption(t: T, options: LabRunOptions | null, h: ServerHost, ok: boolean, check: ServerTest | undefined): Option {
   const kind = PROVIDER_NAMES[h.provider];
-  const cloud = CLOUDS.has(h.provider);
+  const cloud = isCloudProvider(h.provider);
   return {
     target: { kind: "host", id: h.id },
     title: h.name,
@@ -239,8 +240,8 @@ export function platformGroups(
   const forHost = (h: ServerHost) => hostOption(t, options, h, hostOk(h), checks[h.id]);
   const groups: OptionGroup[] = [
     { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localPlatformRows(t, local, options) : [] },
-    { id: "servers", label: t("labs.runOn.servers"), options: hosts.filter((h) => !CLOUDS.has(h.provider)).map(forHost) },
-    { id: "cloud", label: t("labs.runOn.cloud"), options: hosts.filter((h) => CLOUDS.has(h.provider)).map(forHost) },
+    { id: "servers", label: t("labs.runOn.servers"), options: hosts.filter((h) => !isCloudProvider(h.provider)).map(forHost) },
+    { id: "cloud", label: t("labs.runOn.cloud"), options: hosts.filter((h) => isCloudProvider(h.provider)).map(forHost) },
   ];
   return groups.filter((g) => g.options.length > 0);
 }

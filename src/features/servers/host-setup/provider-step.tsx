@@ -3,12 +3,12 @@
 import { Cloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
-import { CLOUD_IDS, CLOUD_META, cloudLogo } from "@/features/servers/host-setup/constants";
+import { CLOUD_META, cloudLogo } from "@/features/servers/host-setup/constants";
 import { MarkTile, Nav, Step } from "@/features/servers/host-setup/form";
 import { ContinueButton } from "@/features/servers/host-setup/step-nav";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { useT } from "@/lib/i18n";
-import { PROVIDER_NAMES } from "@/lib/tauri";
+import { CLOUD_PROVIDERS, PROVIDER_NAMES } from "@/lib/tauri";
 
 export function ProviderStep({ s }: { s: HostSetup }) {
   const t = useT();
@@ -16,7 +16,7 @@ export function ProviderStep({ s }: { s: HostSetup }) {
   return (
     <Step icon={Cloud} title={t("servers.setup.provider.title")} description={t("servers.setup.provider.description")}>
       <RadioList label={t("servers.setup.provider.label")}>
-        {CLOUD_IDS.map((id) => ({ id, ...CLOUD_META[id] })).map((p) => (
+        {CLOUD_PROVIDERS.map((id) => ({ id, ...CLOUD_META[id] })).map((p) => (
           <RadioRow
             key={p.id}
             selected={p.ready && cloudProvider === p.id}

@@ -9,11 +9,10 @@ import type {
   SshKeySignIn,
   SystemReport,
 } from "@/lib/tauri";
-import { PROVIDER_NAMES } from "@/lib/tauri";
+import { CLOUD_PROVIDERS, PROVIDER_NAMES, isCloudProvider } from "@/lib/tauri";
 import {
   AWS_REGIONS,
   AZURE_LOCATIONS,
-  CLOUD_IDS,
   CLOUD_META,
   DO_REGIONS,
   EMPTY_CLOUD,
@@ -27,12 +26,11 @@ import {
 
 // The server / cloud setup's logic, as pure functions of the form and what this machine has.
 
-const CLOUDS: readonly string[] = CLOUD_IDS;
 /** A cloud account's default name: its cloud's (the player can rename it). */
 const defaultName = (p: CloudProvider) => PROVIDER_NAMES[p];
-const DEFAULT_NAMES = CLOUD_IDS.map(defaultName);
+const DEFAULT_NAMES = CLOUD_PROVIDERS.map(defaultName);
 
-export const isCloud = (p: RemoteProvider): p is CloudProvider => CLOUDS.includes(p);
+export const isCloud = (p: RemoteProvider): p is CloudProvider => isCloudProvider(p);
 
 /** Token clouds (DigitalOcean, Linode) authenticate with just a pasted API token (no CLI, no username). */
 const isTokenCloud = (p: RemoteProvider) => p === "digitalocean" || p === "linode";

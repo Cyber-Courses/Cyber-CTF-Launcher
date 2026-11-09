@@ -1,6 +1,6 @@
 "use client";
 
-import { CLOUDS } from "@/features/labs/lab-runtime";
+import { isCloudProvider } from "@/lib/tauri";
 import type { LabRunOptions, LabRunPath, Provider } from "@/lib/tauri";
 import type { RunTarget } from "@/features/labs/run-on";
 import type { T } from "@/lib/i18n";
@@ -33,7 +33,7 @@ export function pathOf(options: LabRunOptions | null, target: RunTarget, provide
     case "local-vms":
       return on(options.vms, target.provider);
     case "host":
-      if (!provider || !CLOUDS.has(provider)) return on(options.servers, provider);
+      if (!provider || !isCloudProvider(provider)) return on(options.servers, provider);
       if (target.perMachine) return on(options.cloudVm, provider);
       return on([...options.cloudServices, ...options.cloudDocker, ...options.cloudVm], provider);
   }

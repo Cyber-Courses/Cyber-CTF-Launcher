@@ -125,8 +125,5 @@ export const CLOUD_META: Record<CloudProvider, { cli: string; ready: boolean }> 
   oci: { cli: "", ready: true },
 };
 
-/** Every cloud, in the order the launcher lists them. */
-export const CLOUD_IDS = Object.keys(CLOUD_META) as CloudProvider[];
-
 /** A cloud's logo, in public/brands. */
 export const cloudLogo = (id: string) => `/brands/${id}.svg`;

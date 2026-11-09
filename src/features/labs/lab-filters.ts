@@ -1,4 +1,4 @@
-import { CLOUDS } from "@/features/labs/lab-runtime";
+import { isCloudProvider } from "@/lib/tauri";
 import type { Lab } from "@/features/labs/use-labs";
 
 export type StatusFilter = "all" | "todo" | "running" | "solved";
@@ -32,6 +32,6 @@ export function filterLabs(labs: Lab[], f: LabFilters, isRunning: (lab: Lab) => 
  *  account can run. */
 function runtimeMatches(lab: Lab, runtime: RuntimeFilter): boolean {
   if (runtime === "all") return true;
-  if (runtime === "CLOUD") return lab.runtime?.runtime === "CLOUD" || !!lab.runtime?.providers.some((p) => CLOUDS.has(p));
+  if (runtime === "CLOUD") return lab.runtime?.runtime === "CLOUD" || !!lab.runtime?.providers.some((p) => isCloudProvider(p));
   return lab.runtime?.runtime === runtime;
 }

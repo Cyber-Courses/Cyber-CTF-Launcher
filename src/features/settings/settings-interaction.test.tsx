@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppearanceSection } from "@/features/settings/appearance-section";
 import { InstalledToolsPanel } from "@/features/settings/installed-tools-panel";
 import { SettingsScreen } from "@/features/settings/settings-screen";
-import { SharedFolderControl } from "@/features/settings/shared-folder";
+import { SharedFolderControl } from "@/features/machine/shared-folder";
 import { must } from "@/components/test-support";
 import { openCustomImage, renderInstalledTools, toggleFailingSharedFolder } from "@/features/settings/settings-test-kit";
 import { getLocalePreference, setLocalePreference } from "@/lib/i18n";

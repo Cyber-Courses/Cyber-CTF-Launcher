@@ -1,11 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
 import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
 import type { AzureSubscription, CloudLoginProvider, GcpBillingAccount, GcpOrganization, OciConfig, Provider } from "@/lib/tauri/generated";
+import { CLOUD_PROVIDERS as GENERATED_CLOUD_PROVIDERS } from "@/lib/tauri/generated/ProviderNames";
 
 export type { AzureSubscription, CloudLoginProvider, GcpBillingAccount, GcpOrganization, OciConfig };
 
 /** The cloud accounts a lab can run in (the cloud ones of the providers). */
 export type CloudProvider = Extract<Provider, "aws" | "azure" | "gcp" | "digitalocean" | "linode" | "oci">;
+
+/** Every cloud labs run in, in the launcher's order (the backend's `Provider::CLOUDS`). */
+export const CLOUD_PROVIDERS = GENERATED_CLOUD_PROVIDERS as readonly CloudProvider[];
+
+/** Whether `provider` is a cloud account's, not this machine's or a server's. */
+export const isCloudProvider = (provider: string | null | undefined): provider is CloudProvider =>
+  !!provider && (CLOUD_PROVIDERS as readonly string[]).includes(provider);
 
 /** Signs in to a cloud provider using its CLI's own auth (browser flow): AWS, Azure or GCP. */
 export const cloudLogin = (provider: CloudLoginProvider, onLog: (line: string) => void) => invokeStreaming("cloud_login", { provider }, onLog);

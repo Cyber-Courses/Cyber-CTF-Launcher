@@ -36,3 +36,6 @@ export const EMULATORS: readonly Provider[] = ["qemu"];
 
 /** The player's own servers, as opposed to cloud accounts, in the launcher's order (Rust's `Provider::SERVERS`). */
 export const SERVER_PROVIDERS: readonly Provider[] = ["proxmox", "vmware_esxi"];
+
+/** The cloud accounts labs run in, in the launcher's order (Rust's `Provider::CLOUDS`). */
+export const CLOUD_PROVIDERS: readonly Provider[] = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"];

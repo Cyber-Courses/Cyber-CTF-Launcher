@@ -11,7 +11,7 @@ import { AttackBoxRows } from "@/features/settings/attack-box-rows";
 import { HypervisorRow } from "@/features/settings/hypervisor-row";
 import { InstalledToolsPanel } from "@/features/settings/installed-tools-panel";
 import { LabPortsRow } from "@/features/settings/lab-ports-row";
-import { SharedFolderControl } from "@/features/settings/shared-folder";
+import { SharedFolderControl } from "@/features/machine/shared-folder";
 import { readOnboarded, markOnboarded } from "@/components/shell/onboarded-flag";
 import { must } from "@/components/test-support";
 import { openCustomImage, toggleFailingSharedFolder } from "@/features/settings/settings-test-kit";
