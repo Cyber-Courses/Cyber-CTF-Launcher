@@ -4,12 +4,18 @@
 //! Files live in the app's log folder (`%LOCALAPPDATA%\org.cyberctf.desktop\logs` on Windows,
 //! `~/Library/Logs/org.cyberctf.desktop` on macOS, `~/.local/share/org.cyberctf.desktop/logs` on
 //! Linux): `cyberctf.log` for the app, `deploy-<lab>.log` for each lab's deploy worker.
+//!
+//! They record `info` and above; `CYBERCTF_LOG` (`error`, `warn`, `info`, `debug`, `trace`) sets
+//! another level for the run. Every line is redacted first (`platform::redact`): a token,
+//! password or key that reaches a log line is replaced, so the files can be sent on.
 
 use std::path::PathBuf;
 
 use tauri::plugin::TauriPlugin;
 use tauri::{Manager, Runtime};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
+
+use crate::platform::redact::redact;
 
 /// A file is rotated past this size; the last few are kept, so the folder stays small.
 const MAX_FILE_BYTES: u128 = 2 * 1024 * 1024;
@@ -18,7 +24,11 @@ const KEEP_FILES: usize = 4;
 /// The app's log file.
 pub const APP_LOG: &str = "cyberctf";
 
-/// The log plugin writing to `<log dir>/<file_name>.log`, and to stdout in development.
+/// The variable that sets the log level for a run.
+pub const LEVEL_VAR: &str = "CYBERCTF_LOG";
+
+/// The log plugin writing to `<log dir>/<file_name>.log`, and to stdout in development, at the
+/// level `CYBERCTF_LOG` sets (info without it), each line redacted.
 ///
 /// One file per writer: Windows can't rename a file another process holds open, so two processes
 /// rotating the same file would fail. The app has one instance; a lab has at most one worker
@@ -26,15 +36,27 @@ pub const APP_LOG: &str = "cyberctf";
 pub fn plugin<R: Runtime>(file_name: &str) -> TauriPlugin<R> {
     let mut builder = tauri_plugin_log::Builder::new()
         .clear_targets()
-        .target(Target::new(TargetKind::LogDir { file_name: Some(file_name.to_owned()) }))
-        .level(log::LevelFilter::Info)
+        .target(redacted(TargetKind::LogDir { file_name: Some(file_name.to_owned()) }))
+        .level(level(std::env::var(LEVEL_VAR).ok().as_deref()))
         .max_file_size(MAX_FILE_BYTES)
         .rotation_strategy(RotationStrategy::KeepSome(KEEP_FILES))
         .timezone_strategy(TimezoneStrategy::UseLocal);
     if cfg!(debug_assertions) {
-        builder = builder.target(Target::new(TargetKind::Stdout));
+        builder = builder.target(redacted(TargetKind::Stdout));
     }
     builder.build()
+}
+
+/// A log target whose lines (the whole formatted line, its time and level included) are
+/// redacted before they are written.
+fn redacted(kind: TargetKind) -> Target {
+    Target::new(kind).format(|out, line, _record| out.finish(format_args!("{}", redact(&line.to_string()))))
+}
+
+/// The log level `CYBERCTF_LOG` names (`setting`, any case), info when it is unset or names none:
+/// a level that can't be read keeps the default rather than silencing the log.
+fn level(setting: Option<&str>) -> log::LevelFilter {
+    setting.and_then(|s| s.trim().parse().ok()).unwrap_or(log::LevelFilter::Info)
 }
 
 /// The folder the log files are in.
@@ -82,6 +104,19 @@ pub fn log_startup(app: &crate::AppHandle, role: &str) {
         os_version(),
         std::process::id(),
     );
+    if let Some(problem) = level_problem(std::env::var(LEVEL_VAR).ok().as_deref()) {
+        log::warn!("{problem}");
+    }
+}
+
+/// What is wrong with `CYBERCTF_LOG`'s value (`setting`), if it names no level.
+fn level_problem(setting: Option<&str>) -> Option<String> {
+    let setting = setting?;
+    setting
+        .trim()
+        .parse::<log::LevelFilter>()
+        .is_err()
+        .then(|| format!("{LEVEL_VAR}={setting:?} isn't a log level (error, warn, info, debug, trace): logging at info"))
 }
 
 fn os_version() -> String {
@@ -97,6 +132,20 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let dir = log_dir(t.handle()).unwrap();
         assert!(dir.is_absolute(), "{}", dir.display());
+    }
+
+    #[test]
+    fn the_log_level_comes_from_cyberctf_log() {
+        assert_eq!(level(None), log::LevelFilter::Info);
+        assert_eq!(level(Some("debug")), log::LevelFilter::Debug);
+        assert_eq!(level(Some(" TRACE ")), log::LevelFilter::Trace);
+        assert_eq!(level(Some("warn")), log::LevelFilter::Warn);
+        assert_eq!(level(Some("off")), log::LevelFilter::Off);
+        assert_eq!(level(Some("loud")), log::LevelFilter::Info, "a level that isn't one keeps the default");
+        assert_eq!(LEVEL_VAR, "CYBERCTF_LOG");
+        assert_eq!(level_problem(None), None);
+        assert_eq!(level_problem(Some("debug")), None);
+        assert_eq!(level_problem(Some("loud")).as_deref(), Some(r#"CYBERCTF_LOG="loud" isn't a log level (error, warn, info, debug, trace): logging at info"#));
     }
 
     #[test]

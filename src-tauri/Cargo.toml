@@ -121,6 +121,9 @@ ts-rs = "12"
 # POSIX quoting) runs its `sh_quote`d command lines' words directly; tests check `sh_quote`
 # round-trips through it.
 shell-words = "1"
+# Secrets taken out of the log and the setup log (`platform::redact`). Already in the tree
+# through Tauri.
+regex = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

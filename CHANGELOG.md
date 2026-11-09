@@ -25,6 +25,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 - **Governance files**: `SECURITY.md` (private vulnerability reporting, response times),
   `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `SUPPORT.md`, `CODEOWNERS`,
   issue forms and a pull request template.
+- **A log level switch, and secrets kept out of the logs.** `CYBERCTF_LOG` (`error`, `warn`,
+  `info`, `debug`, `trace`) sets the level of the log files for a run (`info` without it). Every
+  log line, and every command a setup log shows, has its tokens, passwords in URLs, values under
+  secret-sounding names, JWTs and AWS access key ids replaced by `[redacted]`.
 - **A machine-wide policy for administrators.** An administrator can turn launcher features off
   for everyone on a computer: the website agent (`DisableWebsiteAgent`), the in-app updater
   (`DisableUpdater`), one-click tool installs (`DisableToolInstalls`), labs on cloud accounts

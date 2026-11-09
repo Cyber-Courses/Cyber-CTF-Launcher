@@ -87,7 +87,8 @@ pub async fn run_steps(steps: &[Step], on_line: &mut impl FnMut(String)) -> Resu
 
 /// How a step shows in the log.
 pub fn command_line(step: &Step) -> String {
-    format!("$ {} {}", step.program, step.args.join(" "))
+    // Redacted: the setup log is shown and copied, and a root install's proxy can carry a password.
+    crate::platform::redact::redact(&format!("$ {} {}", step.program, step.args.join(" "))).into_owned()
 }
 
 pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<()> {
@@ -307,5 +308,8 @@ mod tests {
     #[test]
     fn a_command_line_reads_as_typed() {
         assert_eq!(command_line(&step("brew", &["install", "qemu"])), "$ brew install qemu");
+        // A proxy's password never reaches the setup log.
+        let root = step("pkexec", &["env", "https_proxy=http://ada:s3cret@proxy.corp:3128", "sh", "-c", "apt-get update"]);
+        assert_eq!(command_line(&root), "$ pkexec env https_proxy=http://ada:[redacted]@proxy.corp:3128 sh -c apt-get update");
     }
 }
