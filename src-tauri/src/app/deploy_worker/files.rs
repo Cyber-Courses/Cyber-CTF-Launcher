@@ -1,4 +1,4 @@
-//! A worker's files under `<app data>/deploys/`, keyed by the lab or its attack VM.
+//! A worker's files under `<app data>/deploys/`, keyed by the lab.
 
 use std::path::{Path, PathBuf};
 

@@ -357,7 +357,7 @@ fn jobs_in(d: &Path) -> Vec<(Job, Option<String>)> {
         .collect()
 }
 
-/// Stops the worker of `key` (a lab id, or its attack VM's key), with everything it started
+/// Stops the worker of `key` (a lab id), with everything it started
 /// (its process group), if one runs.
 pub fn kill(dirs: &AppDirs, key: &str) {
     let Ok(f) = files::of(dirs, key) else { return };

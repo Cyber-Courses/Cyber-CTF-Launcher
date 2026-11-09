@@ -177,8 +177,8 @@ mod tests {
     fn maps_containers_to_labs() {
         assert_eq!(lab_of("cyberctf-sqli-web-1", "cyberctf-sqli").as_deref(), Some("sqli"));
         assert_eq!(lab_of("cyberctf-sqli-attacker", "").as_deref(), Some("sqli"));
-        // The on-demand attack box (`<project>-isoloom-access`, a bare docker run with no project)
-        // groups under its lab, instead of a phantom `sqli-isoloom-access` the sidebar names by id.
+        // An older version's attack box (`<project>-isoloom-access`, a bare docker run with no
+        // project) groups under its lab, instead of a phantom `sqli-isoloom-access` the sidebar names by id.
         assert_eq!(lab_of("cyberctf-sqli-isoloom-access", "").as_deref(), Some("sqli"));
         assert_eq!(lab_of("postgres", ""), None);
     }

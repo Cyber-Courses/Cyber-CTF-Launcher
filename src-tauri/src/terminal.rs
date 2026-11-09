@@ -1,6 +1,6 @@
 //! The attack box shell inside the app: a pseudo-terminal running the very command the runner
-//! builds for the on-demand access box (`docker compose … exec … bash`, or `vagrant ssh …`),
-//! streamed to an xterm.js view. No Terminal.app window with a title we can't control, and no
+//! builds for the attack box, a machine of the lab (`docker compose … exec … bash`, or
+//! `vagrant ssh …`), streamed to an xterm.js view. No Terminal.app window with a title we can't control, and no
 //! macOS Automation prompt for driving Terminal. Closing the window ends the session, which ends
 //! the `exec`/`ssh` it holds — the box itself is taken out by detaching it, through the runner.
 

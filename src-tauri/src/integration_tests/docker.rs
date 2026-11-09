@@ -134,7 +134,7 @@ impl Attack {
 }
 
 /// Parked, the lab stops and stays; resumed, it comes back as it was, at the same address. The
-/// on-demand attack box is a machine of the run, so it parks and resumes with the lab.
+/// attack box is a machine of the lab, so it parks and resumes with it.
 async fn exercise_park_and_resume(r: &Run, f: &mut Vec<String>) {
     let url = r.status().await.ok().and_then(|s| s.url);
     let parked = r.park(&mut log(&r.id)).await;

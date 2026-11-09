@@ -13,7 +13,7 @@ use crate::runtime::{self, Action, Park};
 /// the webview reloaded and lost its own in-memory deploy state.
 pub async fn deploying_labs(dirs: AppDirs) -> Vec<String> {
     off_main(move || {
-        // Worker keys with a dot are attack VM starts beside a lab, not the lab's own deploy.
+        // Worker keys with a dot (an older version's attack VM start) are not a lab's own deploy.
         let workers = deploy_worker::running(&dirs).into_iter().filter(|k| !k.contains('.'));
         merge_unique(runtime::deploying_labs(), workers)
     })

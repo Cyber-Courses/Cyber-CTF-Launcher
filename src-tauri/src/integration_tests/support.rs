@@ -66,7 +66,7 @@ async fn docker_lines(args: &[&str]) -> Vec<String> {
 }
 
 /// Everything of the lab Docker still holds: the project's containers (one-off `run` containers
-/// and the on-demand attack box included: they carry the project label too) and networks.
+/// and the attack box included: they carry the project label too) and networks.
 pub(crate) async fn leftovers(id: &str) -> Vec<String> {
     let label = format!("label=com.docker.compose.project={}", docker::project(id));
     let mut left = Vec::new();

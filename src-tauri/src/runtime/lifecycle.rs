@@ -151,7 +151,8 @@ pub(crate) async fn stop_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: R
     crate::account::colocation::retire(id);
     super::paths::forget_lab_host_keys(dir);
     // On this machine, through the runner: a container lab on Docker or in one local VM, or a VM
-    // lab (its attack VM goes with it). Cloud-services have a host, so they never reach here.
+    // lab (its attack box, a machine of it, goes with it). Cloud-services have a host, so they
+    // never reach here.
     let Some(c) = server::lab_connection(dirs, dir)? else {
         return match local_runtime(dir, runtime) {
             Runtime::Docker if local_vm(dir).is_some() => stop_docker_in_vm_run(&runner_home(dirs)?, dir, id, log).await,
@@ -226,8 +227,8 @@ pub(crate) async fn stop_docker_run(home: &std::path::Path, dir: &Path, id: &str
     forget_run(dir)
 }
 
-/// Stops a VM lab the Isothrum runner runs (runner home `home`) — its on-demand attack box, a
-/// machine of the run, goes with it — and once it is gone clears what marked it as running. Takes
+/// Stops a VM lab the Isothrum runner runs (runner home `home`) — its attack box, a machine of
+/// the lab, goes with it — and once it is gone clears what marked it as running. Takes
 /// no app handle, so the integration tests run exactly this.
 pub(crate) async fn stop_vm_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
     isothrum::LabRun::vm(home, dir, id)?.down(&mut log).await?;
@@ -297,9 +298,9 @@ pub fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
 /// Stops lab `id` wherever it runs: the one Stop of the lab page, the Machine page and the
 /// hosted agent. Marked as stopping from the start: ending a deploy can take minutes (Terraform
 /// is interrupted and waited for), during which the page and the quit guard must see a stop, and
-/// no attack VM may start. A deploy still running in its worker (and an attack VM start beside
-/// it) is ended first, so the teardown never races a `vagrant up` or `compose up` that would
-/// recreate what it removes; then the lab is torn down under its lock.
+/// no attack box may be added. A deploy still running in its worker is ended first, so the
+/// teardown never races a `vagrant up` or `compose up` that would recreate what it removes; then
+/// the lab is torn down under its lock.
 pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
     let dir = lab_dir(dirs, id)?;
     let _stopping = DeployGuard::new(id, Action::Stop);

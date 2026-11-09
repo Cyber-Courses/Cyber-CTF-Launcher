@@ -1,7 +1,7 @@
 //! What Cyber CTF downloaded itself, recorded in `<app data>/storage.json`: the container images
 //! (each by the reference it pulled and the image id it got) and the Vagrant boxes (name,
 //! provider, version) that appeared on this machine during one of its own operations (a lab
-//! start, the attack box or attack VM, a self-test). Storage lists and removes only these: an
+//! start, a container attack box, a self-test). Storage lists and removes only these: an
 //! image or a box the player already had, or pulled for their own projects, is never touched,
 //! even when a lab uses the same one.
 //!
