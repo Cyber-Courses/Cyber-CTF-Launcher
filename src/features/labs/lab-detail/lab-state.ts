@@ -1,7 +1,7 @@
 import type { RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { EMULATORS, isCloudLab, isContainerLab, isLocalHypervisor, runsNatively } from "@/features/labs/lab-runtime";
-import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
+import { providerName } from "@/features/machine/hypervisors";
 import { ENGINES, engineName as dockerEngineName } from "@/features/machine/setup-steps/engines";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
 import type { ActiveOperation, DockerEngine, LabControl, LabMachine, LabStatus, Provider, Runtime, ServerHost } from "@/lib/tauri";
@@ -101,7 +101,7 @@ function engineName(status: LabStatus | undefined): string | null {
   if (!status?.provider) return null;
   if (status.provider === "docker") return "Docker";
   if (ENGINES.some((e) => e.id === status.provider) || status.provider === "podman") return dockerEngineName(status.provider as DockerEngine);
-  return PROVIDER_LABELS[status.provider] ?? status.provider;
+  return providerName(status.provider);
 }
 
 export function deriveLabState(i: LabStateInput) {

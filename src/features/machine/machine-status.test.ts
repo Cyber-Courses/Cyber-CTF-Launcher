@@ -235,3 +235,18 @@ describe("usableHypervisors", () => {
     expect(names(report({ os: "macos", arch: "aarch64", vmProviders: installed }))).toEqual(["virtualbox"]);
   });
 });
+
+describe("provider names", () => {
+  it("come from the backend's table, VMware's desktop hypervisor by the OS's name", async () => {
+    const { providerName, providerLabel } = await import("@/features/machine/hypervisors");
+    expect(providerName("libvirt")).toBe("libvirt");
+    expect(providerName("proxmox")).toBe("Proxmox");
+    expect(providerName("vmware_desktop")).toBe("VMware");
+    expect(providerName("vmware_desktop", "macos")).toBe("VMware Fusion");
+    expect(providerName("vmware_desktop", "windows")).toBe("VMware Workstation");
+    expect(providerName("qemu", "macos")).toBe("QEMU");
+    // An id the backend doesn't name reads as itself.
+    expect(providerName("docker")).toBe("docker");
+    expect(providerLabel({ provider: "vmware_desktop" } as ProviderStatus, "linux")).toBe("VMware Workstation");
+  });
+});

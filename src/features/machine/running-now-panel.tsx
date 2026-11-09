@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
 import { TypeIcon } from "@/components/ui/type-icon";
-import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
+import { providerName } from "@/features/machine/hypervisors";
 import { ListSkeleton } from "@/features/machine/machine-parts";
 import { useT } from "@/lib/i18n";
 import { apiQuery, machineWorkloadStop, machineWorkloads, type Workload } from "@/lib/tauri";
@@ -79,7 +79,7 @@ function WorkloadRow({ w, title, stopping, onStop }: { w: Workload; title: strin
   const meta =
     w.kind === "docker"
       ? `${t("machine.running.containers", { count: w.count })}${w.memBytes ? ` · ${formatBytes(w.memBytes)}` : ""}`
-      : `${t("machine.running.vms", { count: w.count })}${w.provider ? ` · ${PROVIDER_LABELS[w.provider] ?? w.provider}` : ""}`;
+      : `${t("machine.running.vms", { count: w.count })}${w.provider ? ` · ${providerName(w.provider)}` : ""}`;
   return (
     <div className="flex min-h-[3.25rem] items-center gap-3 border-t border-border px-4 py-2 transition-colors first:border-t-0 hover:bg-glass">
       <TypeIcon>{w.kind === "docker" ? <Container className="size-4" /> : <Server className="size-4" />}</TypeIcon>

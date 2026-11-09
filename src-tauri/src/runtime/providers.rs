@@ -82,8 +82,21 @@ impl Provider {
         }
     }
 
-    /// The provider's name as the player reads it ("VirtualBox", "QEMU"): the webview's too, which
-    /// reads it from the generated `ProviderNames.ts` (`testing/ts_bindings.rs`).
+    /// The provider's name as the player reads it on the OS `os` (`std::env::consts::OS`):
+    /// VMware's desktop hypervisor is Fusion on macOS and Workstation elsewhere, so nobody is
+    /// pointed at a product their OS doesn't have; every other provider is its [`Provider::label`].
+    pub fn label_on(self, os: &str) -> &'static str {
+        match (self, os) {
+            (Provider::VmwareDesktop, "macos") => "VMware Fusion",
+            (Provider::VmwareDesktop, "linux" | "windows") => "VMware Workstation",
+            _ => self.label(),
+        }
+    }
+
+    /// The provider's name as the player reads it ("VirtualBox", "QEMU"), whatever the OS. The
+    /// webview's names come from here: the generator (`testing/ts_bindings.rs`) writes
+    /// `PROVIDER_NAMES` and, for the names an OS changes ([`Provider::label_on`]),
+    /// `PROVIDER_NAMES_ON` into `src/lib/tauri/generated/ProviderNames.ts`.
     pub fn label(self) -> &'static str {
         match self {
             Provider::Virtualbox => "VirtualBox",
@@ -453,6 +466,19 @@ mod tests {
     /// The plugin names alone, as the checks before versions mattered read them.
     fn parse_plugins(out: &str) -> Vec<String> {
         parse_plugin_versions(out).into_iter().map(|(name, _)| name).collect()
+    }
+
+    #[test]
+    fn vmwares_desktop_hypervisor_is_named_for_the_os_and_nothing_else_is() {
+        assert_eq!(Provider::VmwareDesktop.label_on("macos"), "VMware Fusion");
+        assert_eq!(Provider::VmwareDesktop.label_on("windows"), "VMware Workstation");
+        assert_eq!(Provider::VmwareDesktop.label_on("linux"), "VMware Workstation");
+        assert_eq!(Provider::VmwareDesktop.label_on("freebsd"), "VMware");
+        for p in Provider::ALL.iter().chain(&Provider::CLOUDS).filter(|p| **p != Provider::VmwareDesktop) {
+            for os in ["macos", "linux", "windows"] {
+                assert_eq!(p.label_on(os), p.label(), "{p:?} on {os}");
+            }
+        }
     }
 
     #[test]

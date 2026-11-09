@@ -1,5 +1,5 @@
 import { ENGINES, engineName } from "@/features/machine/setup-steps/engines";
-import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
+import { providerName } from "@/features/machine/hypervisors";
 import { KIND } from "@/features/servers/host-setup/constants";
 import { isCloud } from "@/features/servers/host-setup/setup-model";
 import type { CloudProvider, DockerEngine, LabStatus, RemoteProvider, ServerHost } from "@/lib/tauri";
@@ -42,7 +42,7 @@ export function placeName(place: Place): string {
     case "engine":
       return place.engine ? engineName(place.engine) : "";
     case "hypervisor":
-      return PROVIDER_LABELS[place.provider] ?? place.provider;
+      return providerName(place.provider);
     case "server":
       return place.name;
     case "cloud":

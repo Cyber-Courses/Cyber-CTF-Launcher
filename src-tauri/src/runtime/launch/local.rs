@@ -54,7 +54,7 @@ pub(super) fn check_provider(prepared: &lab::Prepared, provider: super::Provider
     match lab::vagrant_refusal(&prepared.lab, provider.id()) {
         Some(why) => Err(Error::Invalid(format!(
             "This lab can't run on {} yet: {why}. Run it on another hypervisor, a server or in your cloud account.",
-            provider.label()
+            provider.label_on(std::env::consts::OS)
         ))),
         None => Ok(()),
     }

@@ -1,23 +1,17 @@
-import type { Dependency, ProviderStatus, SystemReport } from "@/lib/tauri";
+import { PROVIDER_NAMES, PROVIDER_NAMES_ON, type Dependency, type Provider, type ProviderStatus, type SystemReport } from "@/lib/tauri";
 
-export const PROVIDER_LABELS: Record<string, string> = {
-  virtualbox: "VirtualBox",
-  vmware_desktop: "VMware Workstation / Fusion",
-  hyperv: "Hyper-V",
-  parallels: "Parallels",
-  libvirt: "libvirt (KVM)",
-  qemu: "QEMU",
-  utm: "UTM",
-  vmware_esxi: "VMware ESXi (remote)",
-  proxmox: "Proxmox VE (remote)",
-};
-
-/** A hypervisor's name on this OS: VMware's desktop hypervisor is Fusion on macOS and
- *  Workstation elsewhere, so a Linux or Windows player isn't pointed at a Mac-only product. */
-export function providerLabel(p: ProviderStatus, os?: string): string {
-  if (p.provider === "vmware_desktop" && os) return os === "macos" ? "VMware Fusion" : "VMware Workstation";
-  return PROVIDER_LABELS[p.provider] ?? p.provider;
+/** A provider's name, by its id (a status's, a workload's), from the backend's names: on the OS
+ *  `os` (the machine report's) when it is known, where an OS changes some (VMware's desktop
+ *  hypervisor is Fusion on macOS, Workstation elsewhere). An id the backend doesn't name reads as
+ *  itself. */
+export function providerName(id: string, os?: string): string {
+  const names: Partial<Record<string, string>> = PROVIDER_NAMES;
+  const onOs: Partial<Record<string, Partial<Record<Provider, string>>>> = PROVIDER_NAMES_ON;
+  return (os ? onOs[os]?.[id as Provider] : undefined) ?? names[id] ?? id;
 }
+
+/** A hypervisor's name on this OS (`os`, the machine report's): see [`providerName`]. */
+export const providerLabel = (p: ProviderStatus, os?: string): string => providerName(p.provider, os);
 
 /** Hypervisors we can install in one click (per-OS plans live in the Rust installer). */
 export const INSTALLABLE: Partial<Record<string, Dependency>> = {

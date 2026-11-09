@@ -28,7 +28,7 @@ import type {
 import type { DockerEngine } from "@/lib/tauri/machine";
 
 /** Each provider's name as the player reads it, from the backend (`Provider::label`). */
-export { PROVIDER_NAMES } from "@/lib/tauri/generated/ProviderNames";
+export { PROVIDER_NAMES, PROVIDER_NAMES_ON } from "@/lib/tauri/generated/ProviderNames";
 
 export type {
   ActiveOperation,

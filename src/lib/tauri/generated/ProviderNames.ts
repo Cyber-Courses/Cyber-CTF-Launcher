@@ -19,3 +19,11 @@ export const PROVIDER_NAMES: Record<Provider, string> = {
   linode: "Linode",
   oci: "Oracle Cloud",
 };
+
+/** The names an OS changes (Rust's `Provider::label_on`): VMware's desktop hypervisor is Fusion on
+ *  macOS and Workstation elsewhere. */
+export const PROVIDER_NAMES_ON: Record<string, Partial<Record<Provider, string>>> = {
+  macos: { vmware_desktop: "VMware Fusion", },
+  linux: { vmware_desktop: "VMware Workstation", },
+  windows: { vmware_desktop: "VMware Workstation", },
+};

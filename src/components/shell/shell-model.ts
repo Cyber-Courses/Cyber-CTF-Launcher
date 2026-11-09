@@ -1,7 +1,7 @@
 import { CalendarDays, Cloud, FlaskConical, LayoutDashboard, type LucideIcon, MonitorCog, Server } from "lucide-react";
 import type { ActiveOperation, LabStatus, Provider, SystemReport } from "@/lib/tauri";
 import { engineName } from "@/features/machine/setup-steps/engines";
-import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
+import { providerName } from "@/features/machine/hypervisors";
 import { prettyLabId } from "@/lib/format";
 
 // The app shell's pure logic: the screens and their order, the breadcrumb, the header's engine
@@ -42,7 +42,7 @@ export function engineSummary(report: SystemReport, preferred: Provider | null =
   const engine = report.dockerRunning && report.dockerEngine ? `${engineName(report.dockerEngine)}${version ? ` ${version}` : ""}` : null;
   const ready = report.vmProviders.filter((p) => !p.remote && p.available && p.hypervisor !== false).map((p) => p.provider);
   const local = (preferred && ready.includes(preferred) ? preferred : ready.at(0)) ?? null;
-  const hypervisor = local ? (PROVIDER_LABELS[local] ?? local) : null;
+  const hypervisor = local ? providerName(local, report.os) : null;
   return { engine, hypervisor };
 }
 

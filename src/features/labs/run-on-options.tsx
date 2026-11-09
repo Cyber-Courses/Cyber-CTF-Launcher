@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Container } from "lucide-react";
-import { type DockerEngine, type Provider, type RunTier, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { PROVIDER_NAMES, type DockerEngine, type Provider, type RunTier, type ServerHost, type ServerTest } from "@/lib/tauri";
 import { badgeFor, candidatesFor, type RunBadge } from "@/features/labs/run-on-badges";
 import { testHost } from "@/features/servers/use-server-list";
 import { StatusPill, type Tone } from "@/components/ui/status-pill";
@@ -11,7 +11,6 @@ import { KIND } from "@/features/servers/host-setup/constants";
 import { ProviderGlyph } from "@/features/servers/provider-glyph";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { ENGINES, engineName } from "@/features/machine/setup-steps/engines";
-import { PROVIDER_LABELS } from "@/features/machine/hypervisors";
 import { CLOUDS } from "@/features/labs/lab-runtime";
 import type { RunTarget } from "@/features/labs/run-on";
 import { type T } from "@/lib/i18n";
@@ -140,7 +139,7 @@ export function vmFormOptions(t: T, tiers: RunTier[], forms: RunTarget[], accoun
 export function hypervisorOptions(t: T, form: "local-vm" | "local-vms", hypervisors: Provider[], fallback: Provider | null): Option[] {
   return hypervisors.map((p) => ({
     target: { kind: form, provider: p },
-    title: PROVIDER_LABELS[p] ?? p,
+    title: PROVIDER_NAMES[p],
     ok: true,
     logo: <HypervisorLogo provider={p} />,
     status: { tone: "ok", label: t(p === fallback ? "labs.runOn.defaultChoice" : "labs.runOn.ready") },

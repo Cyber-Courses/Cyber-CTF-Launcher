@@ -93,8 +93,19 @@ fn write_provider_names(dir: &Path) {
         lines
     });
     let doc = "/** Each provider's name as the player reads it (Rust's `Provider::label`). */";
-    let text =
-        format!("{HEADER}import type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n");
+    // The names an OS changes (Rust's `Provider::label_on`), by OS.
+    let on = ["macos", "linux", "windows"].iter().fold(String::new(), |mut lines, os| {
+        let names = Provider::ALL.iter().filter(|p| p.label_on(os) != p.label()).fold(String::new(), |mut l, p| {
+            let _ = write!(l, " {}: \"{}\",", p.id(), p.label_on(os));
+            l
+        });
+        let _ = writeln!(lines, "  {os}: {{{names} }},");
+        lines
+    });
+    let doc_on = "/** The names an OS changes (Rust's `Provider::label_on`): VMware's desktop hypervisor is Fusion on\n *  macOS and Workstation elsewhere. */";
+    let text = format!(
+        "{HEADER}import type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n\n{doc_on}\nexport const PROVIDER_NAMES_ON: Record<string, Partial<Record<Provider, string>>> = {{\n{on}}};\n"
+    );
     fs::write(dir.join(format!("{PROVIDER_NAMES}.ts")), text).unwrap();
 }
 
