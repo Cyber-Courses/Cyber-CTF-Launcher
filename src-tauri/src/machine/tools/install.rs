@@ -8,7 +8,7 @@ use serde::Deserialize;
 #[cfg(target_os = "macos")]
 use super::scripts::fetch_and_open;
 #[cfg(target_os = "linux")]
-use super::scripts::{AZURECLI_SCRIPT, GCLOUD_SCRIPT, TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, awscli_script, docker_script};
+use super::scripts::{awscli_script, azurecli_script, docker_script, gcloud_script, terraform_script, virtualbox_script};
 #[cfg(any(target_os = "macos", windows))]
 use super::steps::step;
 use super::steps::{Step, command_line, run_step, run_steps};
@@ -169,16 +169,16 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
         Dependency::Docker => vec![root(docker_script(crate::platform::exec::login_name().as_deref()))],
         Dependency::Vagrant => vec![root("apt-get update && apt-get install -y vagrant".into())],
         // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
-        Dependency::Terraform => vec![root(TERRAFORM_SCRIPT.into())],
-        Dependency::Virtualbox => vec![root(VIRTUALBOX_SCRIPT.into())],
+        Dependency::Terraform => vec![root(terraform_script())],
+        Dependency::Virtualbox => vec![root(virtualbox_script())],
         Dependency::Qemu => vec![root("apt-get update && apt-get install -y qemu-system qemu-utils".into())],
         Dependency::Libvirt => vec![root("apt-get update && apt-get install -y libvirt-daemon-system virt-manager".into())],
         Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
         // Cloud CLIs: AWS CLI v2 from Amazon's signed bundle, in a private temporary directory;
         // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned.
         Dependency::Awscli => vec![root(awscli_script())],
-        Dependency::Azurecli => vec![root(AZURECLI_SCRIPT.into())],
-        Dependency::Gcloud => vec![root(GCLOUD_SCRIPT.into())],
+        Dependency::Azurecli => vec![root(azurecli_script())],
+        Dependency::Gcloud => vec![root(gcloud_script())],
     })
 }
 

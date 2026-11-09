@@ -322,12 +322,10 @@ launcher never asks for or stores a password itself.
   access** on the machine. Install Docker yourself (rootless, or without the group) where that is
   not acceptable.
 - Installing Docker, Terraform, VirtualBox, the Azure CLI or the Google Cloud CLI adds the
-  vendor's apt repository and its key, checked against a pinned fingerprint:
-  `/etc/apt/sources.list.d/docker.list` (key `/etc/apt/keyrings/docker.asc`),
-  `/etc/apt/sources.list.d/hashicorp.list` (`/usr/share/keyrings/hashicorp-archive-keyring.gpg`),
-  `/etc/apt/sources.list.d/virtualbox.list` (`/usr/share/keyrings/oracle-virtualbox-2016.gpg`),
-  `/etc/apt/sources.list.d/azure-cli.list` (`/etc/apt/keyrings/microsoft.gpg`),
-  `/etc/apt/sources.list.d/google-cloud-sdk.list` (`/usr/share/keyrings/cloud.google.gpg`).
+  vendor's apt repository, for this machine's architecture, and its key, checked against a
+  pinned fingerprint: `/etc/apt/sources.list.d/<name>.list` with the key
+  `/etc/apt/keyrings/<name>.gpg`, `<name>` being `docker`, `hashicorp`, `virtualbox`, `azure-cli`
+  or `google-cloud-sdk`. (Earlier versions put some of the keys under `/usr/share/keyrings/`.)
   Removing a tool from Settings > Maintenance leaves its repository and key in place.
 - On a distribution without Docker's apt repository, the launcher doesn't install Docker: it
   links to Docker's own instructions.

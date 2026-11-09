@@ -48,42 +48,73 @@ esac"#
     Step { program: "sh".into(), args: vec!["-c".into(), script], note: Some(format!("Downloading {name}…")) }
 }
 
-/// The start of every script run as root that downloads something (see [`PRIVATE_WORKDIR`]), as a
-/// literal for the scripts built with `concat!`.
+/// The start of every script run as root that downloads something: stop at the first failure,
+/// and work in a fresh private directory (`mktemp -d`, mode 0700, removed on exit). A fixed path
+/// such as `/tmp/aws` could be prepared by any local user beforehand and then run as root.
 #[cfg(any(target_os = "linux", test))]
-macro_rules! private_workdir {
-    () => {
-        r#"set -e; d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT"#
-    };
-}
+const PRIVATE_WORKDIR: &str = r#"set -e; d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT"#;
 
 /// gpg, for the vendors' signing keys (Debian's minimal installs have only gpgv), and a private
 /// keyring folder for it in the work directory, so root's own keyring is never read or changed.
 #[cfg(any(target_os = "linux", test))]
-macro_rules! need_gpg {
-    () => {
-        r#"command -v gpg >/dev/null || { apt-get update && apt-get install -y gnupg; }; mkdir -p -m 700 "$d/gnupg""#
-    };
-}
+const NEED_GPG: &str = r#"command -v gpg >/dev/null || { apt-get update && apt-get install -y gnupg; }; mkdir -p -m 700 "$d/gnupg""#;
+
+/// The distro's codename as the vendors' repos name it (`$codename`): an Ubuntu derivative like
+/// Mint uses its Ubuntu base's.
+#[cfg(any(target_os = "linux", test))]
+const CODENAME: &str =
+    r#"codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"; [ -n "$codename" ] || codename="$(lsb_release -cs)""#;
 
 /// Stops the script unless `"$d/key"`, a vendor's signing key just downloaded, is exactly one key
-/// with the fingerprint pinned here (`$fpr`, 40 hex digits). TLS alone trusted whatever the
+/// with the fingerprint pinned here (`fpr`, 40 hex digits). TLS alone trusted whatever the
 /// vendor's server sent the first time; a swapped key would sign the packages apt then installs
 /// as root.
 #[cfg(any(target_os = "linux", test))]
-macro_rules! check_key {
-    ($fpr:expr, $vendor:literal) => {
-        concat!(
-            r#"k="$(gpg --homedir "$d/gnupg" --batch --show-keys --with-colons "$d/key" | awk -F: '$1=="pub"{n++} $1=="fpr"&&!f{f=$10} END{print n+0" "f}')""#,
-            r#"; [ "$k" = "1 "#,
-            $fpr,
-            r#"" ] || { echo ""#,
-            $vendor,
-            r#"'s signing key isn't the expected one (fingerprint "#,
-            $fpr,
-            r#", got: $k). Nothing was installed." >&2; exit 1; }"#
-        )
-    };
+fn check_key(fpr: &str, vendor: &str) -> String {
+    format!(
+        r#"k="$(gpg --homedir "$d/gnupg" --batch --show-keys --with-colons "$d/key" | awk -F: '$1=="pub"{{n++}} $1=="fpr"&&!f{{f=$10}} END{{print n+0" "f}}')"; [ "$k" = "1 {fpr}" ] || {{ echo "{vendor}'s signing key isn't the expected one (fingerprint {fpr}, got: $k). Nothing was installed." >&2; exit 1; }}"#
+    )
+}
+
+/// A vendor's apt repository: where its packages and its signing key are, the key's pinned
+/// fingerprint, and the name its keyring and its source list take here.
+#[cfg(any(target_os = "linux", test))]
+struct VendorRepo {
+    /// Who signs it, as a refusal names them.
+    vendor: &'static str,
+    /// Its signing key's fingerprint, pinned (40 hex digits).
+    fingerprint: &'static str,
+    /// Where its signing key is (a shell word: it may use `$repo`).
+    key_url: &'static str,
+    /// The repository (a shell word: it may use `$dist`).
+    repo: &'static str,
+    /// Its suite: `$codename` for one per distro release.
+    suite: &'static str,
+    component: &'static str,
+    /// The keyring's and the source list's name: `/etc/apt/keyrings/<name>.gpg`,
+    /// `/etc/apt/sources.list.d/<name>.list`.
+    name: &'static str,
+    /// Where to install from instead when the repository has no packages for this release; none
+    /// for a suite every release shares.
+    by_hand: Option<&'static str>,
+}
+
+/// Sets up `r` for apt, the same way for every vendor: the suite checked when releases have their
+/// own, the key downloaded, checked against its fingerprint and only then made a keyring under
+/// `/etc/apt/keyrings`, the source restricted to this machine's architecture and to that key, and
+/// apt's lists updated. `--batch --yes`: a second run (after a partial one) overwrites the
+/// keyring instead of asking on a terminal it doesn't have. Runs in [`PRIVATE_WORKDIR`].
+#[cfg(any(target_os = "linux", test))]
+fn apt_repo_script(r: &VendorRepo) -> String {
+    let VendorRepo { vendor, fingerprint, key_url, repo, suite, component, name, by_hand } = r;
+    let suite_check = by_hand.map(|url| {
+        format!(r#"; curl -fsI "$repo/dists/{suite}/Release" >/dev/null || {{ echo "{vendor} has no packages for {suite} yet. Install it from {url}" >&2; exit 1; }}"#)
+    });
+    format!(
+        r#"repo="{repo}"{suite_check}; {NEED_GPG}; curl -fsSL "{key_url}" -o "$d/key"; {check}; install -m 0755 -d /etc/apt/keyrings; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /etc/apt/keyrings/{name}.gpg "$d/key"; echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/{name}.gpg] $repo {suite} {component}" > /etc/apt/sources.list.d/{name}.list; apt-get update"#,
+        suite_check = suite_check.unwrap_or_default(),
+        check = check_key(fingerprint, vendor),
+    )
 }
 
 /// HashiCorp's package signing key (`security+packaging@hashicorp.com`, created 2026-09-09,
@@ -91,86 +122,63 @@ macro_rules! check_key {
 /// `InRelease` files with; keys.openpgp.org and keyserver.ubuntu.com have the same. When HashiCorp
 /// rotates it, installs stop with "isn't the expected one" until this is updated.
 #[cfg(any(target_os = "linux", test))]
-macro_rules! hashicorp_key_fingerprint {
-    () => {
-        "D55C0D1AC78A8D8126CB631CFC9CA96ACA026560"
-    };
-}
-#[cfg(test)]
-const HASHICORP_KEY_FINGERPRINT: &str = hashicorp_key_fingerprint!();
+const HASHICORP: VendorRepo = VendorRepo {
+    vendor: "HashiCorp",
+    fingerprint: "D55C0D1AC78A8D8126CB631CFC9CA96ACA026560",
+    key_url: "https://apt.releases.hashicorp.com/gpg",
+    repo: "https://apt.releases.hashicorp.com",
+    suite: "$codename",
+    component: "main",
+    name: "hashicorp",
+    by_hand: Some("https://developer.hashicorp.com/terraform/install"),
+};
 
-/// The distro's codename as the vendors' repos name it (`$codename`): an Ubuntu derivative like
-/// Mint uses its Ubuntu base's.
+/// HashiCorp's apt repo, then terraform.
 #[cfg(any(target_os = "linux", test))]
-macro_rules! codename {
-    () => {
-        r#"codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"; [ -n "$codename" ] || codename="$(lsb_release -cs)""#
-    };
+pub fn terraform_script() -> String {
+    format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y terraform", apt_repo_script(&HASHICORP))
 }
-
-/// HashiCorp's apt repo, then terraform. The repo key must be HashiCorp's pinned one
-/// (`hashicorp_key_fingerprint!`). `--batch --yes`: a second run (after a partial one) overwrites
-/// the keyring instead of asking on a terminal it doesn't have.
-#[cfg(any(target_os = "linux", test))]
-pub const TERRAFORM_SCRIPT: &str = concat!(
-    private_workdir!(),
-    "; ",
-    need_gpg!(),
-    "; ",
-    codename!(),
-    r#"; curl -fsSL https://apt.releases.hashicorp.com/gpg -o "$d/key"; "#,
-    check_key!(hashicorp_key_fingerprint!(), "HashiCorp"),
-    r#"; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /usr/share/keyrings/hashicorp-archive-keyring.gpg "$d/key""#,
-    "; echo \"deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $codename main\" > /etc/apt/sources.list.d/hashicorp.list",
-    "; apt-get update && apt-get install -y terraform"
-);
 
 /// Oracle's VirtualBox archive signing key (`info@virtualbox.org`, "Oracle Corporation (VirtualBox
 /// archive signing key)"), the one www.virtualbox.org serves as `oracle_vbox_2016.asc` and
 /// download.virtualbox.org signs its `InRelease` files with.
 #[cfg(any(target_os = "linux", test))]
-macro_rules! oracle_key_fingerprint {
-    () => {
-        "B9F8D658297AF3EFC18D5CDFA2F683C52980AECF"
-    };
-}
-#[cfg(test)]
-const ORACLE_KEY_FINGERPRINT: &str = oracle_key_fingerprint!();
+const ORACLE: VendorRepo = VendorRepo {
+    vendor: "Oracle",
+    fingerprint: "B9F8D658297AF3EFC18D5CDFA2F683C52980AECF",
+    key_url: "https://www.virtualbox.org/download/oracle_vbox_2016.asc",
+    repo: "https://download.virtualbox.org/virtualbox/debian",
+    suite: "$codename",
+    component: "contrib",
+    name: "virtualbox",
+    by_hand: Some("https://www.virtualbox.org/wiki/Linux_Downloads"),
+};
 
-/// The distro's own `virtualbox` when it has one (Ubuntu), else Oracle's apt repo, its key
-/// checked against the pinned fingerprint (`oracle_key_fingerprint!`), and its newest
+/// The distro's own `virtualbox` when it has one (Ubuntu), else Oracle's apt repo and its newest
 /// `virtualbox-X.Y` (Debian ships none in main, so `apt-get install virtualbox` failed).
 #[cfg(any(target_os = "linux", test))]
-pub const VIRTUALBOX_SCRIPT: &str = concat!(
-    private_workdir!(),
-    "; apt-get update; ",
-    "if apt-cache policy virtualbox 2>/dev/null | grep -q 'Candidate: [0-9]'; then apt-get install -y virtualbox; exit 0; fi; ",
-    codename!(),
-    "; repo=https://download.virtualbox.org/virtualbox/debian",
-    "; curl -fsI \"$repo/dists/$codename/Release\" >/dev/null || { echo \"Oracle has no VirtualBox packages for $codename yet. Install it from https://www.virtualbox.org/wiki/Linux_Downloads\" >&2; exit 1; }",
-    "; ",
-    need_gpg!(),
-    r#"; curl -fsSL https://www.virtualbox.org/download/oracle_vbox_2016.asc -o "$d/key"; "#,
-    check_key!(oracle_key_fingerprint!(), "Oracle"),
-    r#"; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /usr/share/keyrings/oracle-virtualbox-2016.gpg "$d/key""#,
-    "; echo \"deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/oracle-virtualbox-2016.gpg] $repo $codename contrib\" > /etc/apt/sources.list.d/virtualbox.list",
-    "; apt-get update",
-    "; pkg=\"$(apt-cache search --names-only '^virtualbox-[0-9]+\\.[0-9]+$' | awk '{print $1}' | sort -V | tail -n 1)\"",
-    "; [ -n \"$pkg\" ] || { echo \"No VirtualBox package found in Oracle's repo. Install it from https://www.virtualbox.org/wiki/Linux_Downloads\" >&2; exit 1; }",
-    "; apt-get install -y \"$pkg\""
-);
+pub fn virtualbox_script() -> String {
+    format!(
+        r#"{PRIVATE_WORKDIR}; apt-get update; if apt-cache policy virtualbox 2>/dev/null | grep -q 'Candidate: [0-9]'; then apt-get install -y virtualbox; exit 0; fi; {CODENAME}; {}; pkg="$(apt-cache search --names-only '^virtualbox-[0-9]+\.[0-9]+$' | awk '{{print $1}}' | sort -V | tail -n 1)"; [ -n "$pkg" ] || {{ echo "No VirtualBox package found in Oracle's repo. Install it from https://www.virtualbox.org/wiki/Linux_Downloads" >&2; exit 1; }}; apt-get install -y "$pkg""#,
+        apt_repo_script(&ORACLE)
+    )
+}
 
 /// Docker's release key (`docker@docker.com`, Docker Release (CE deb)), the one download.docker.com
 /// serves at `/linux/{ubuntu,debian,raspbian}/gpg` and signs its `InRelease` files with (from its
 /// signing subkey D3306A018370199E527AE7997EA0A9C3F273FCD8); keyserver.ubuntu.com has the same.
+/// Its repository is one per distro (`$dist`, see [`DOCKER_DIST`]).
 #[cfg(any(target_os = "linux", test))]
-macro_rules! docker_key_fingerprint {
-    () => {
-        "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
-    };
-}
-#[cfg(test)]
-const DOCKER_KEY_FINGERPRINT: &str = docker_key_fingerprint!();
+const DOCKER: VendorRepo = VendorRepo {
+    vendor: "Docker",
+    fingerprint: "9DC858229FC7DD38854AE2D88D81803C0EBFCD88",
+    key_url: "$repo/gpg",
+    repo: "https://download.docker.com/linux/$dist",
+    suite: "$codename",
+    component: "stable",
+    name: "docker",
+    by_hand: Some("https://docs.docker.com/engine/install/"),
+};
 
 /// Docker Engine, then the player into the `docker` group so the CLI can reach the daemon without
 /// root (pkexec runs as root, so `$USER` there is root: the name comes from the app). The group
@@ -178,14 +186,15 @@ const DOCKER_KEY_FINGERPRINT: &str = docker_key_fingerprint!();
 ///
 /// On Ubuntu, Debian and Raspbian (and Ubuntu's derivatives, on their Ubuntu base) it sets up
 /// Docker's apt repository, the way Docker documents it, with Docker's key checked against its
-/// pinned fingerprint (`docker_key_fingerprint!`). Elsewhere it stops and says where to get
-/// Docker: Docker's convenience script (get.docker.com) can't be held to a key (it fetches the key
-/// and installs what it signed in one go), so it never runs as root from here.
+/// pinned fingerprint. Elsewhere it stops and says where to get Docker: Docker's convenience
+/// script (get.docker.com) can't be held to a key (it fetches the key and installs what it signed
+/// in one go), so it never runs as root from here.
 #[cfg(any(target_os = "linux", test))]
 pub fn docker_script(user: Option<&str>) -> String {
     use std::fmt::Write as _;
     let mut s = format!(
-        "{PRIVATE_WORKDIR}; {DOCKER_DIST}; [ -n \"$dist\" ] || {{ echo 'No Docker apt repository fits this system. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again.' >&2; exit 1; }}; {DOCKER_APT_REPO}"
+        "{PRIVATE_WORKDIR}; {DOCKER_DIST}; [ -n \"$dist\" ] || {{ echo 'No Docker apt repository fits this system. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again.' >&2; exit 1; }}; {}; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+        apt_repo_script(&DOCKER)
     );
     if let Some(u) = user.filter(|u| valid_user(u)) {
         let _ = write!(s, "; usermod -aG docker {u}; echo 'Added {u} to the docker group: log out and back in (or restart) for it to apply.'");
@@ -197,27 +206,6 @@ pub fn docker_script(user: Option<&str>) -> String {
 /// codename there. Raspbian Trixie has none: Debian's serves it (as get.docker.com does).
 #[cfg(any(target_os = "linux", test))]
 const DOCKER_DIST: &str = r#". /etc/os-release; dist=""; codename="${VERSION_CODENAME:-}"; case "$ID" in ubuntu|debian|raspbian) dist="$ID";; *) case " ${ID_LIKE:-} " in *" ubuntu "*) dist=ubuntu;; esac;; esac; [ "$dist" != ubuntu ] || codename="${UBUNTU_CODENAME:-$codename}"; [ "$dist$codename" != raspbiantrixie ] || dist=debian; command -v apt-get >/dev/null || dist="""#;
-
-/// Docker's apt repository for `$dist` / `$codename`, its key checked, then Docker Engine. The
-/// keyring is where get.docker.com puts it, so a system set up by either one is the same.
-#[cfg(any(target_os = "linux", test))]
-const DOCKER_APT_REPO: &str = concat!(
-    r#"repo="https://download.docker.com/linux/$dist""#,
-    r#"; curl -fsI "$repo/dists/$codename/Release" >/dev/null || { echo "Docker has no packages for $dist $codename yet. Install Docker from https://docs.docker.com/engine/install/" >&2; exit 1; }"#,
-    "; ",
-    need_gpg!(),
-    r#"; curl -fsSL "$repo/gpg" -o "$d/key"; "#,
-    check_key!(docker_key_fingerprint!(), "Docker"),
-    r#"; install -m 0755 -d /etc/apt/keyrings; install -m 0644 "$d/key" /etc/apt/keyrings/docker.asc"#,
-    r#"; echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] $repo $codename stable" > /etc/apt/sources.list.d/docker.list"#,
-    "; apt-get update; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
-);
-
-/// The start of every script run as root that downloads something: stop at the first failure,
-/// and work in a fresh private directory (`mktemp -d`, mode 0700, removed on exit). A fixed path
-/// such as `/tmp/aws` could be prepared by any local user beforehand and then run as root.
-#[cfg(any(target_os = "linux", test))]
-const PRIVATE_WORKDIR: &str = private_workdir!();
 
 /// The AWS CLI team's signing key (`aws-cli@amazon.com`, created 2019-09-18, expires 2027-07-01 as
 /// published), as AWS publishes it in "Installing or updating to the latest version of the AWS
@@ -249,11 +237,10 @@ pub fn awscli_script() -> String {
 fn aws_verify() -> String {
     let key = AWS_CLI_KEY.trim_end();
     format!(
-        r#"{need_gpg}; cat > "$d/aws-cli.asc" <<'AWS_CLI_KEY'
+        r#"{NEED_GPG}; cat > "$d/aws-cli.asc" <<'AWS_CLI_KEY'
 {key}
 AWS_CLI_KEY
-gpg --batch --yes --dearmor --homedir "$d/gnupg" -o "$d/aws-cli.gpg" "$d/aws-cli.asc"; gpgv --homedir "$d/gnupg" --status-fd 1 --keyring "$d/aws-cli.gpg" "$d/awscliv2.zip.sig" "$d/awscliv2.zip" 2>/dev/null | grep -q '^\[GNUPG:\] VALIDSIG {AWS_CLI_KEY_FINGERPRINT} ' || {{ echo "The AWS CLI download isn't signed by AWS's key ({AWS_CLI_KEY_FINGERPRINT}). Nothing was installed." >&2; exit 1; }}"#,
-        need_gpg = need_gpg!(),
+gpg --batch --yes --dearmor --homedir "$d/gnupg" -o "$d/aws-cli.gpg" "$d/aws-cli.asc"; gpgv --homedir "$d/gnupg" --status-fd 1 --keyring "$d/aws-cli.gpg" "$d/awscliv2.zip.sig" "$d/awscliv2.zip" 2>/dev/null | grep -q '^\[GNUPG:\] VALIDSIG {AWS_CLI_KEY_FINGERPRINT} ' || {{ echo "The AWS CLI download isn't signed by AWS's key ({AWS_CLI_KEY_FINGERPRINT}). Nothing was installed." >&2; exit 1; }}"#
     )
 }
 
@@ -261,59 +248,46 @@ gpg --batch --yes --dearmor --homedir "$d/gnupg" -o "$d/aws-cli.gpg" "$d/aws-cli
 /// the one packages.microsoft.com serves at `/keys/microsoft.asc` and signs the azure-cli
 /// repository's `InRelease` files with (its key id EB3E94ADBE1229CF).
 #[cfg(any(target_os = "linux", test))]
-macro_rules! microsoft_key_fingerprint {
-    () => {
-        "BC528686B50D79E339D3721CEB3E94ADBE1229CF"
-    };
-}
-#[cfg(test)]
-const MICROSOFT_KEY_FINGERPRINT: &str = microsoft_key_fingerprint!();
+const MICROSOFT: VendorRepo = VendorRepo {
+    vendor: "Microsoft",
+    fingerprint: "BC528686B50D79E339D3721CEB3E94ADBE1229CF",
+    key_url: "https://packages.microsoft.com/keys/microsoft.asc",
+    repo: "https://packages.microsoft.com/repos/azure-cli",
+    suite: "$codename",
+    component: "main",
+    name: "azure-cli",
+    by_hand: Some("https://learn.microsoft.com/cli/azure/install-azure-cli-linux"),
+};
 
-/// Microsoft's azure-cli apt repository for this distro's codename, its key checked against the
-/// pinned fingerprint (`microsoft_key_fingerprint!`), then `azure-cli`: what Microsoft's install
-/// script (aka.ms/InstallAzureCLIDeb) sets up, without running that script as root.
+/// Microsoft's azure-cli apt repository for this distro's codename, then `azure-cli`: what
+/// Microsoft's install script (aka.ms/InstallAzureCLIDeb) sets up, without running that script as
+/// root.
 #[cfg(any(target_os = "linux", test))]
-pub const AZURECLI_SCRIPT: &str = concat!(
-    private_workdir!(),
-    "; ",
-    codename!(),
-    "; repo=https://packages.microsoft.com/repos/azure-cli",
-    r#"; curl -fsI "$repo/dists/$codename/Release" >/dev/null || { echo "Microsoft has no Azure CLI packages for $codename yet. Install it from https://learn.microsoft.com/cli/azure/install-azure-cli-linux" >&2; exit 1; }"#,
-    "; ",
-    need_gpg!(),
-    r#"; curl -fsSL https://packages.microsoft.com/keys/microsoft.asc -o "$d/key"; "#,
-    check_key!(microsoft_key_fingerprint!(), "Microsoft"),
-    r#"; install -m 0755 -d /etc/apt/keyrings; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /etc/apt/keyrings/microsoft.gpg "$d/key""#,
-    r#"; echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] $repo/ $codename main" > /etc/apt/sources.list.d/azure-cli.list"#,
-    "; apt-get update && apt-get install -y azure-cli"
-);
+pub fn azurecli_script() -> String {
+    format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y azure-cli", apt_repo_script(&MICROSOFT))
+}
 
 /// Google Cloud's package signing key ("Artifact Registry Repository Signer"), the one
 /// packages.cloud.google.com serves at `/apt/doc/apt-key.gpg` and signs the cloud-sdk
-/// repository's `InRelease` files with.
+/// repository's `InRelease` files with. One suite for every release.
 #[cfg(any(target_os = "linux", test))]
-macro_rules! google_key_fingerprint {
-    () => {
-        "35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3"
-    };
-}
-#[cfg(test)]
-const GOOGLE_KEY_FINGERPRINT: &str = google_key_fingerprint!();
+const GOOGLE: VendorRepo = VendorRepo {
+    vendor: "Google Cloud",
+    fingerprint: "35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3",
+    key_url: "https://packages.cloud.google.com/apt/doc/apt-key.gpg",
+    repo: "https://packages.cloud.google.com/apt",
+    suite: "cloud-sdk",
+    component: "main",
+    name: "google-cloud-sdk",
+    by_hand: None,
+};
 
-/// Google Cloud's apt repository, its key checked against the pinned fingerprint
-/// (`google_key_fingerprint!`), then `google-cloud-cli` (gcloud), system-wide: what Google
+/// Google Cloud's apt repository, then `google-cloud-cli` (gcloud), system-wide: what Google
 /// documents for Debian and Ubuntu, in place of its install script.
 #[cfg(any(target_os = "linux", test))]
-pub const GCLOUD_SCRIPT: &str = concat!(
-    private_workdir!(),
-    "; ",
-    need_gpg!(),
-    r#"; curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg -o "$d/key"; "#,
-    check_key!(google_key_fingerprint!(), "Google Cloud"),
-    r#"; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /usr/share/keyrings/cloud.google.gpg "$d/key""#,
-    r#"; echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apt/sources.list.d/google-cloud-sdk.list"#,
-    "; apt-get update && apt-get install -y google-cloud-cli"
-);
+pub fn gcloud_script() -> String {
+    format!("{PRIVATE_WORKDIR}; {}; apt-get install -y google-cloud-cli", apt_repo_script(&GOOGLE))
+}
 
 /// A login name safe to put in a shell script unquoted.
 #[cfg(any(target_os = "linux", test))]
@@ -375,19 +349,44 @@ mod tests {
         assert!(String::from_utf8_lossy(&out.stderr).contains("Run 'brew update' in Terminal"));
     }
 
+    /// Every vendor's apt repository, with the script that sets it up.
+    fn repo_scripts() -> [(&'static VendorRepo, String); 5] {
+        [
+            (&HASHICORP, terraform_script()),
+            (&ORACLE, virtualbox_script()),
+            (&DOCKER, docker_script(None)),
+            (&MICROSOFT, azurecli_script()),
+            (&GOOGLE, gcloud_script()),
+        ]
+    }
+
     #[test]
     fn repo_scripts_rerun_without_a_terminal_and_parse() {
         // gpg asked "overwrite?" on a second run, with no tty to answer it.
-        for s in [TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, AZURECLI_SCRIPT, GCLOUD_SCRIPT] {
+        for (_, s) in repo_scripts() {
             assert!(s.contains("gpg --batch --yes --dearmor"), "{s}");
-            assert!(crate::platform::sh_parses(s), "not valid sh: {s}");
+            assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
         }
-        assert!(VIRTUALBOX_SCRIPT.contains("download.virtualbox.org/virtualbox/debian"));
+        assert!(virtualbox_script().contains("download.virtualbox.org/virtualbox/debian"));
+    }
+
+    #[test]
+    fn every_vendor_repository_is_set_up_the_same_way() {
+        // Regression: five copies of one sequence had drifted (keyrings in /usr/share/keyrings or
+        // /etc/apt/keyrings, an architecture on some sources and not others).
+        for (repo, s) in repo_scripts() {
+            let name = repo.name;
+            assert!(s.contains(&format!("-o /etc/apt/keyrings/{name}.gpg")), "{s}");
+            let source = format!("signed-by=/etc/apt/keyrings/{name}.gpg] $repo {} {}\" > /etc/apt/sources.list.d/{name}.list", repo.suite, repo.component);
+            assert!(s.contains(&format!("deb [arch=$(dpkg --print-architecture) {source}")), "{s}");
+            assert!(!s.contains("/usr/share/keyrings"), "{s}");
+            assert_eq!(s.contains(r#"curl -fsI "$repo/dists/"#), repo.by_hand.is_some(), "{s}");
+        }
     }
 
     /// Every install script that runs as root.
     fn root_scripts() -> [String; 6] {
-        [awscli_script(), docker_script(Some("player")), TERRAFORM_SCRIPT.into(), VIRTUALBOX_SCRIPT.into(), AZURECLI_SCRIPT.into(), GCLOUD_SCRIPT.into()]
+        [awscli_script(), docker_script(Some("player")), terraform_script(), virtualbox_script(), azurecli_script(), gcloud_script()]
     }
 
     #[test]
@@ -401,7 +400,7 @@ mod tests {
             assert!(s.starts_with("set -e"), "{s}");
             assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
         }
-        for s in [awscli_script(), docker_script(None), VIRTUALBOX_SCRIPT.into(), AZURECLI_SCRIPT.into(), GCLOUD_SCRIPT.into()] {
+        for s in root_scripts() {
             assert!(s.contains(r#"d="$(mktemp -d)""#) && s.contains("trap 'rm -rf \"$d\"' EXIT"), "{s}");
         }
         assert!(awscli_script().contains(r#""$d/aws/install" --update"#) && awscli_script().contains("unzip -tq"));
@@ -429,14 +428,8 @@ mod tests {
 
     #[test]
     fn vendor_keys_are_pinned_and_checked_before_apt_trusts_them() {
-        for fpr in [
-            HASHICORP_KEY_FINGERPRINT,
-            DOCKER_KEY_FINGERPRINT,
-            AWS_CLI_KEY_FINGERPRINT,
-            ORACLE_KEY_FINGERPRINT,
-            MICROSOFT_KEY_FINGERPRINT,
-            GOOGLE_KEY_FINGERPRINT,
-        ] {
+        let vendors = repo_scripts().map(|(repo, _)| repo.fingerprint);
+        for fpr in vendors.into_iter().chain([AWS_CLI_KEY_FINGERPRINT]) {
             assert!(fpr.len() == 40 && fpr.bytes().all(|b| b.is_ascii_digit() || (b'A'..=b'F').contains(&b)), "{fpr}");
         }
         // The key is checked, then installed for apt: never fetched straight into the keyring.
@@ -445,19 +438,12 @@ mod tests {
             let installed = s.find(install).unwrap_or_else(|| panic!("no install of the key: {s}"));
             assert!(s.find(r#"-o "$d/key""#).is_some_and(|fetched| fetched < checked) && checked < installed, "{s}");
         };
-        check(TERRAFORM_SCRIPT, HASHICORP_KEY_FINGERPRINT, "-o /usr/share/keyrings/hashicorp-archive-keyring.gpg");
-        assert!(!TERRAFORM_SCRIPT.contains("gpg | gpg"), "{TERRAFORM_SCRIPT}");
-        let docker = docker_script(None);
-        check(&docker, DOCKER_KEY_FINGERPRINT, r#"install -m 0644 "$d/key" /etc/apt/keyrings/docker.asc"#);
-        assert!(docker.contains("signed-by=/etc/apt/keyrings/docker.asc] $repo $codename stable"), "{docker}");
-        check(VIRTUALBOX_SCRIPT, ORACLE_KEY_FINGERPRINT, "-o /usr/share/keyrings/oracle-virtualbox-2016.gpg");
-        check(AZURECLI_SCRIPT, MICROSOFT_KEY_FINGERPRINT, "-o /etc/apt/keyrings/microsoft.gpg");
-        assert!(AZURECLI_SCRIPT.contains("signed-by=/etc/apt/keyrings/microsoft.gpg] $repo/ $codename main"), "{AZURECLI_SCRIPT}");
-        check(GCLOUD_SCRIPT, GOOGLE_KEY_FINGERPRINT, "-o /usr/share/keyrings/cloud.google.gpg");
-        assert!(GCLOUD_SCRIPT.contains("signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main"));
-        for s in [TERRAFORM_SCRIPT.to_string(), docker, VIRTUALBOX_SCRIPT.into(), AZURECLI_SCRIPT.into(), GCLOUD_SCRIPT.into()] {
+        for (repo, s) in repo_scripts() {
+            check(&s, repo.fingerprint, &format!("-o /etc/apt/keyrings/{}.gpg", repo.name));
+            assert!(!s.contains("gpg | gpg"), "{s}");
             assert!(s.contains(r#"--homedir "$d/gnupg""#) && !s.contains("--keyserver"), "{s}");
         }
+        assert!(gcloud_script().contains(r#"repo="https://packages.cloud.google.com/apt"; "#));
     }
 
     #[test]
@@ -502,14 +488,14 @@ mod tests {
             eprintln!("no gpg here: the key check isn't run");
             return;
         }
-        let pinned = concat!(r#"mkdir -p -m 700 "$d/gnupg"; "#, check_key!("FB5DB77FD5C118B80511ADA8A6310ACC4672475C", "AWS"), "; echo checked >&2");
-        let (ok, err) = run_in_workdir(pinned, &[("key", AWS_CLI_KEY.as_bytes())]);
+        let pinned = format!(r#"mkdir -p -m 700 "$d/gnupg"; {}; echo checked >&2"#, check_key(AWS_CLI_KEY_FINGERPRINT, "AWS"));
+        let (ok, err) = run_in_workdir(&pinned, &[("key", AWS_CLI_KEY.as_bytes())]);
         assert!(ok && err.contains("checked"), "{err}");
-        let other = concat!(r#"mkdir -p -m 700 "$d/gnupg"; "#, check_key!("9DC858229FC7DD38854AE2D88D81803C0EBFCD88", "Docker"), "; echo checked >&2");
-        let (ok, err) = run_in_workdir(other, &[("key", AWS_CLI_KEY.as_bytes())]);
+        let other = format!(r#"mkdir -p -m 700 "$d/gnupg"; {}; echo checked >&2"#, check_key(DOCKER.fingerprint, "Docker"));
+        let (ok, err) = run_in_workdir(&other, &[("key", AWS_CLI_KEY.as_bytes())]);
         assert!(!ok && !err.contains("checked"), "{err}");
         assert!(err.contains("Docker's signing key isn't the expected one (fingerprint 9DC858229FC7DD38854AE2D88D81803C0EBFCD88, got: 1 FB5DB77FD5C118B80511ADA8A6310ACC4672475C)"), "{err}");
-        let (ok, err) = run_in_workdir(other, &[("key", b"<html>captive portal</html>")]);
+        let (ok, err) = run_in_workdir(&other, &[("key", b"<html>captive portal</html>")]);
         assert!(!ok && err.contains("got: 0 )"), "{err}");
     }
 

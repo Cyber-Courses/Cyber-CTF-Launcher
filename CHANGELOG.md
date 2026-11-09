@@ -100,6 +100,8 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   HashiCorp's already were; Docker on a distro without Docker's apt repository says where to get
   it instead of running get.docker.com. gcloud is now a system package (`google-cloud-cli`)
   rather than a per-user SDK in `~/google-cloud-sdk`; removing it from Cleanup removes both.
+  Every vendor's repository is set up the same way: its key in `/etc/apt/keyrings/<name>.gpg`
+  and its source, for this machine's architecture, in `/etc/apt/sources.list.d/<name>.list`.
 - **Every lab launched from the website asks on this computer first.** Only a launch onto a cloud
   account used to ask; one here or on a server ran unattended. Now each one shows the lab's name,
   where it would run (this computer, a server or a cloud account, by name) and, when the lab has
