@@ -152,7 +152,8 @@ impl Placed {
 /// binds it; a local VM shares it with its hypervisor's two-way folder type, which QEMU only has
 /// on Linux (virtiofsd) and Hyper-V doesn't have without a password at every start (Isoloom's
 /// `host_folders`); a lab on a server or in a cloud account can't reach this computer. The
-/// integration tests' `shared_for` (`scripts/integration-tests.sh`) lists the same hypervisors.
+/// integration tests' `shared_for` (`scripts/integration-tests.sh`) lists the same hypervisors, as
+/// a test here checks.
 fn shares_folders(local: bool, target: Target, provider: Option<&str>, os: &str) -> bool {
     match target {
         _ if !local => false,
@@ -250,6 +251,33 @@ mod tests {
         assert!(!shares_folders(true, Target::Vagrant, None, "linux"), "an unknown hypervisor: not assumed");
         for t in [Target::CloudDocker, Target::CloudVm, Target::Proxmox, Target::DockerVm] {
             assert!(!shares_folders(false, t, Some("virtualbox"), "linux"), "{t:?} away from this computer");
+        }
+    }
+
+    /// Whether the integration tests' `shared_for` (`scripts/integration-tests.sh`) gives a VM
+    /// box on `provider` a shared folder on `os`, read from its `case` arms: a plain `echo`
+    /// always, one behind `uname -s` = Linux only there, any other arm none.
+    fn script_shares(script: &str, provider: &str, os: &str) -> bool {
+        let body = script.split("shared_for() {").nth(1).and_then(|b| b.split("esac").next()).expect("shared_for's case");
+        let arm = body.lines().filter_map(|l| l.split_once(')')).find(|(pattern, _)| pattern.split('|').any(|p| p.trim() == provider));
+        match arm {
+            Some((_, action)) if action.contains("uname -s") => action.contains("= Linux") && os == "linux",
+            Some((_, action)) => action.contains("echo"),
+            None => false,
+        }
+    }
+
+    #[test]
+    fn the_integration_tests_share_a_folder_on_the_same_hypervisors_as_the_launcher() {
+        let script = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/integration-tests.sh")).unwrap();
+        for provider in crate::runtime::providers::Provider::ALL.map(crate::runtime::providers::Provider::id) {
+            for os in ["linux", "macos", "windows"] {
+                assert_eq!(
+                    script_shares(&script, provider, os),
+                    shares_folders(true, Target::Vagrant, Some(provider), os),
+                    "{provider} on {os}: shared_for and shares_folders disagree"
+                );
+            }
         }
     }
 
