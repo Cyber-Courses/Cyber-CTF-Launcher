@@ -1,5 +1,5 @@
-//! A tiny loopback control server for the co-location probe (see
-//! doc/architecture/LAB-LAUNCHER-CHANNEL.md). When a lab is launched, the website must
+//! A tiny loopback control server for the co-location probe (the agent, `account::agent`, starts
+//! one per website launch that runs here). When a lab is launched, the website must
 //! decide whether this launcher is on the same machine as the browser before it trusts a
 //! `127.0.0.1` lab URL. It does that by fetching `GET /health?token=<one-time token>` here
 //! and checking the returned nonce. We bind loopback-only, require the token and a loopback
