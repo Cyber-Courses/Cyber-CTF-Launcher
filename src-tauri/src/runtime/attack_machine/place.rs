@@ -30,8 +30,9 @@ pub(crate) enum Host {
 /// Why changing the run failed, and whether the run may have changed by then.
 struct Failed {
     error: Error,
-    /// False only when the run certainly didn't change: its place couldn't be reached, or the
-    /// runner refused before acting ([`isothrum::errors::refused_before_acting`]).
+    /// False only when the run certainly didn't change: its place couldn't be reached, its cloud
+    /// sign-in ran out, or the runner refused before acting
+    /// ([`isothrum::errors::refused_before_acting`]).
     run_changed: bool,
 }
 
@@ -46,7 +47,11 @@ impl Host {
     async fn update(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> std::result::Result<(), Failed> {
         match self {
             Host::Local(run) => run.update(log).await.map_err(Failed::of_runner),
-            Host::Cloud(run, place) => run.update(place, log).await.map_err(Failed::of_runner),
+            Host::Cloud(run, place) => {
+                // A sign-in that ran out is refused before anything runs: the run is unchanged.
+                run.signed_in(place).await.map_err(|error| Failed { error, run_changed: false })?;
+                run.update(place, log).await.map_err(Failed::of_runner)
+            }
             Host::Server { run, host, conn } => {
                 let place = crate::runtime::launch::server_place(dirs, host, conn, run).await.map_err(|error| Failed { error, run_changed: false })?;
                 run.update(&place, log).await.map_err(Failed::of_runner)

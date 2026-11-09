@@ -131,7 +131,7 @@ impl CloudRun {
     /// cloud's CLI asked for what its Terraform provider signs in with ([`sign_in_question`]),
     /// with the account's environment. Any other failure of the question (no such CLI here, the
     /// network) is left to the change itself, which says what is wrong.
-    async fn signed_in(&self, place: &CloudPlace) -> Result<()> {
+    pub(crate) async fn signed_in(&self, place: &CloudPlace) -> Result<()> {
         let Some((program, args)) = sign_in_question(&self.cloud) else { return Ok(()) };
         let mut env = place.tf_env.clone();
         if let Some(region) = place.region.as_ref().filter(|_| self.cloud == "aws") {
