@@ -23,7 +23,7 @@ use on_host::start_on_server;
 #[cfg(test)]
 pub(crate) use on_host::{CloudStart, start_cloud_run};
 #[cfg(test)]
-use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from, record_cloud_form};
+use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, per_machine_runs_on, public_ip_from, record_cloud_form};
 pub(super) use on_host::{check_aws_budget, public_ip};
 pub(super) use on_host::{runner_runs_on, server_place};
 

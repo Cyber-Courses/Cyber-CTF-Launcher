@@ -120,15 +120,6 @@ impl Provider {
         self.is_remote() && !matches!(self, Provider::VmwareEsxi | Provider::Proxmox)
     }
 
-    /// Whether the launcher runs one VM per machine (Isoloom's cloud-vm) in this cloud account:
-    /// AWS only so far, the other clouds run container labs on one VM (cloud-docker). The picker
-    /// follows the same rule (`cloudRunsPerMachine` in `lab-runtime.ts`); a start elsewhere is
-    /// refused before anything is written.
-    #[must_use]
-    pub fn runs_cloud_vm(self) -> bool {
-        self == Provider::Aws
-    }
-
     /// Whether this provider can run on the current OS at all. Local hypervisors are
     /// platform-specific; remote ones (ESXi, Proxmox) apply anywhere. We only surface
     /// providers that are possible on this machine, not the whole catalogue.

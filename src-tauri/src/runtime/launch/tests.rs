@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
 use super::{
     CLOUD_NEEDS_ACCOUNT, Destination, LabRef, LocalRun, Provider, Runtime, budget_verdict, emulated_arches, local_run, low_memory_warning, parse_ipv4,
-    record_cloud_form,
+    per_machine_runs_on, record_cloud_form,
 };
 use super::{server, warn_if_low_memory};
 use crate::platform::exec::fake::Tools;
@@ -226,18 +226,24 @@ async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
     let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, to, &[], |_| {}).await.unwrap_err().to_string();
     assert_eq!(err, super::PER_MACHINE_HERE_ONLY);
     assert!(tools.calls().is_empty() && !per_machine_vm(&dir), "{:?}", tools.calls());
-    // A cloud with no cloud-vm yet: refused with its name, before the marker or anything else.
-    t.host("az1", "azure", serde_json::json!({}));
-    let to = Destination { host: Some("az1"), per_machine_vm: true, ..Destination::default() };
-    let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, to, &[], |_| {}).await.unwrap_err().to_string();
-    assert!(err.starts_with("One VM per machine doesn't run on Azure yet"), "{err}");
-    assert!(tools.calls().is_empty() && !per_machine_vm(&dir), "{:?}", tools.calls());
     // UTM: Isoloom refuses the vagrant target there (vagrant_utm gives a VM no private network),
     // so the start is refused with its reason, before UTM is even opened.
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Utm), &[]).await;
     let err = r.unwrap_err().to_string();
     assert!(err.starts_with("This lab can't run on UTM yet: ") && err.contains("vagrant_utm"), "{err}");
     assert!(!tools.called("open"), "{:?}", tools.calls());
+}
+
+#[test]
+fn one_vm_per_machine_runs_on_every_cloud_and_on_no_server() {
+    // Isoloom writes a cloud-vm module for every cloud (its run tiers badge how far each is
+    // proven), so the start follows the picker (`cloudRunsPerMachine`): any cloud account.
+    for cloud in [Provider::Aws, Provider::Azure, Provider::Gcp, Provider::DigitalOcean, Provider::Linode, Provider::Oci] {
+        assert!(per_machine_runs_on(Some(cloud)).is_ok(), "{cloud:?}");
+    }
+    for server in [Some(Provider::Proxmox), Some(Provider::VmwareEsxi), None] {
+        assert_eq!(per_machine_runs_on(server).unwrap_err().to_string(), super::PER_MACHINE_HERE_ONLY, "{server:?}");
+    }
 }
 
 #[test]

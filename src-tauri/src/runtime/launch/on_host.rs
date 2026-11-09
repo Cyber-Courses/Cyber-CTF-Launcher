@@ -15,16 +15,9 @@ pub(super) async fn start_on_server(
     log: &mut impl FnMut(String),
 ) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
-    // One VM per machine is cloud-vm on a cloud account; on a server (ESXi, Proxmox) the lab runs
-    // as the catalogue publishes it. Refuse before any side effect (the secret, GCP, the marker).
+    // Refuse before any side effect (the secret, GCP, the marker).
     if per_machine {
-        match server::host_provider(dirs, host) {
-            Some(p) if p.runs_cloud_vm() => {}
-            Some(p) if p.is_cloud() => {
-                return Err(Error::Invalid(format!("One VM per machine doesn't run on {} yet: run the lab as one VM there.", p.label())));
-            }
-            _ => return Err(Error::Invalid(PER_MACHINE_HERE_ONLY.into())),
-        }
+        per_machine_runs_on(server::host_provider(dirs, host))?;
     }
     let conn = server::connection(dirs, host)?;
     // GCP labs run in the account's labs project: make sure it exists (one free billing slot).
@@ -52,6 +45,16 @@ pub(super) async fn start_on_server(
         log("The lab bridge is internal to the node: reaching the lab's VMs through the node.".into());
     }
     run.up(&place, env, log).await
+}
+
+/// One VM per machine on a server host is Isoloom's cloud-vm, which every cloud account runs (how
+/// far each is proven is its run tier's badge); on a server (ESXi, Proxmox) the lab runs as the
+/// catalogue publishes it.
+pub(super) fn per_machine_runs_on(provider: Option<Provider>) -> Result<()> {
+    match provider {
+        Some(p) if p.is_cloud() => Ok(()),
+        _ => Err(Error::Invalid(PER_MACHINE_HERE_ONLY.into())),
+    }
 }
 
 /// Whether the Isothrum runner runs labs of `runtime` on `provider` servers: VM labs on Proxmox
