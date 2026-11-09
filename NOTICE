@@ -1,0 +1,26 @@
+Cyber CTF launcher
+Copyright 2026 CyberCTF
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party software
+--------------------
+The installers include open source components (Rust crates and npm packages)
+under their own licences. Each release ships their full notices in
+THIRD_PARTY_NOTICES, beside the installers on the GitHub release; to produce
+them from a checkout, run `pnpm notices` (scripts/third-party-notices.ts).
+
+Files in this repository under other licences
+---------------------------------------------
+- src/app/fonts/: the Newsreader font, Copyright 2020 The Newsreader Project
+  Authors, under the SIL Open Font License 1.1 (src/app/fonts/Newsreader-OFL.txt).
+- public/brands/utm.png: the UTM logo, under the Apache License 2.0
+  (public/brands/utm.LICENSE).
+
+Trademarks
+----------
+The product names and logos in public/brands/ (AWS, Azure, Google Cloud,
+DigitalOcean, Linode, Oracle Cloud, Docker, OrbStack, Colima, Proxmox, QEMU,
+UTM, VirtualBox) are trademarks of their owners. They are shown only to name
+the products the launcher works with, and are not covered by this product's
+licence.
