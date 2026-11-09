@@ -33,8 +33,8 @@ jobs:
       # The static export; it also generates the route types tsc checks against.
       - run: pnpm build
       - run: pnpm exec tsc --noEmit
-      - run: pnpm exec eslint src scripts
-      - run: pnpm exec prettier --check "{src,scripts}/**/*.{ts,tsx,css}"
+      - run: pnpm exec eslint src scripts e2e
+      - run: pnpm exec prettier --check "{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}"
       - run: pnpm exec vitest run
 
   rust:

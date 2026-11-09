@@ -26,7 +26,7 @@ for tool in bash sh tr grep kill; do
   docker exec "$name" sh -c "command -v $tool" >/dev/null || fail "missing $tool (the launcher's shell needs it)"
 done
 
-# The real-labs test reaches a target with curl from inside the box; the rest is the standard
+# The integration tests reach a target with curl from inside the box; the rest is the standard
 # Kali toolset (kali-linux-headless) players expect.
 for tool in curl ip nmap python3 sqlmap hydra john nikto msfconsole; do
   docker exec "$name" sh -c "command -v $tool" >/dev/null || fail "missing $tool"

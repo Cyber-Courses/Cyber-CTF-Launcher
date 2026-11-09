@@ -10,7 +10,7 @@ import type { Exception, Finding } from "./model.ts";
 const MAX_FILE_LOC = 400;
 
 /** Whole files of test code. */
-const TEST_FILES = new Set(["tests.rs", "proptests.rs", "fake.rs", "test_app.rs", "proptest_support.rs", "source_scan.rs", "real_labs.rs"]);
+const TEST_FILES = new Set(["tests.rs", "proptests.rs", "fake.rs", "test_app.rs", "proptest_support.rs", "source_scan.rs"]);
 
 /** Where `tauri` may be used: the crate root, the app shell and the command adapters. */
 const TAURI_LAYERS = [/^src-tauri\/src\/(lib|main)\.rs$/, /^src-tauri\/src\/(app|commands)(\.rs$|\/)/];
@@ -48,7 +48,7 @@ export function rustSources(root: string, rel: string): Source[] {
 function read(root: string, full: string, name: string): Source {
   const all = fs.readFileSync(full, "utf8").split(/\r?\n/);
   const file = path.relative(root, full).split(path.sep).join("/");
-  if (TEST_FILES.has(name) || file.includes("/testing/")) return { file, code: [], all };
+  if (TEST_FILES.has(name) || file.includes("/testing/") || file.includes("/integration_tests/")) return { file, code: [], all };
   const start = all.findIndex((line, i) => {
     const attr = line.trim();
     const next = (all[i + 1] ?? "").trim();

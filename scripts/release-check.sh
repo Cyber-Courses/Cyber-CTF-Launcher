@@ -2,99 +2,50 @@
 # The gate before a release: every check CI runs, plus the layer it cannot (the native GUI e2e,
 # which needs a desktop session, a real Docker engine and a hypervisor), in one command on a
 # developer machine, with one line per step at the end. Steps keep going after a failure so one
-# run reports everything that is wrong.
+# run reports everything that is wrong. docs/testing/release-check.md says what each step proves.
 #
-#   scripts/release-check.sh                    # the whole gate
+#   scripts/release-check.sh                     the whole gate (pnpm release-check)
 #   ONLY="unit-web e2e-mock" scripts/release-check.sh
-#   SKIP="e2e-native" scripts/release-check.sh  # what CI covers, without the native layer
+#   SKIP="e2e-native" scripts/release-check.sh   what CI covers, without the native layer
 #
 # Steps, in order: prereqs, install, versions, format, types, lint, quality, unit-web (with the
 # coverage floors), unit-rust, coverage-rust (when cargo-llvm-cov is installed), e2e-mock
-# (Playwright against the dev mock), e2e-native (tests/native/run-all.sh, which documents its knobs).
-# docs/release-check.md says what each step proves and what stays manual.
+# (Playwright against the dev mock), e2e-native (e2e/desktop/run.sh, which has its own knobs).
+#
+# Knobs:
+#   RUST_LINES_FLOOR    the Rust line coverage floor (default: coverage.yml's)
+#   DEV_URL_PORT        a dev server Playwright reuses when it answers there (default: 3000)
+#   ONLY, SKIP, STRICT  as every suite runner (scripts/lib/suite.sh)
 set -uo pipefail
 
-HERE=$(cd "$(dirname "$0")/.." && pwd)
-cd "$HERE" || exit 2
-export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.cargo/bin:/Applications/Docker.app/Contents/Resources/bin"
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck source=lib/suite.sh
+. "$ROOT/scripts/lib/suite.sh"
+suite_help "$0" "$@"
+cd "$ROOT" || exit 2
+use_nvmrc_node "$ROOT"
 # The line floor coverage.yml enforces; kept in one place there, mirrored here.
 RUST_LINES_FLOOR=${RUST_LINES_FLOOR:-82.7}
-
-RESULTS=()
-FAILED=0
-wanted() {
-  if [ -n "${ONLY:-}" ] && [[ " $ONLY " != *" $1 "* ]]; then return 1; fi
-  if [ -n "${SKIP:-}" ] && [[ " $SKIP " == *" $1 "* ]]; then return 1; fi
-  return 0
-}
-record() { RESULTS+=("$(printf '%-14s %-7s %5ss  %s' "$1" "$2" "$3" "$4")"); }
-# step <name> <command...>: runs it in the open (its output is the detail), records the verdict.
-step() {
-  local name=$1
-  shift
-  wanted "$name" || return 0
-  printf '\n==== %s: %s\n' "$name" "$*"
-  local start=$SECONDS
-  if "$@"; then
-    record "$name" ok $((SECONDS - start)) ""
-  else
-    local rc=$?
-    FAILED=$((FAILED + 1))
-    record "$name" FAIL $((SECONDS - start)) "exit $rc"
-  fi
-}
-skip() {
-  wanted "$1" || return 0
-  printf '\n==== %s: skipped (%s)\n' "$1" "$2"
-  record "$1" skip 0 "$2"
-}
-
-# --- Node: the version .nvmrc names ---------------------------------------------------------
-want=$(tr -d '[:space:]' < .nvmrc)
-if ! node --version 2>/dev/null | grep -q "^v${want}\."; then
-  nvm_sh="${NVM_DIR:-$HOME/.nvm}/nvm.sh"
-  if [ -s "$nvm_sh" ]; then
-    set +u
-    # shellcheck source=/dev/null
-    . "$nvm_sh"
-    nvm use "$want" >/dev/null 2>&1
-    set -u
-  fi
-fi
+NODE_WANTED=$(tr -d '[:space:]' <.nvmrc)
 
 prereqs() {
-  local missing=0
-  local tool
+  local missing=0 tool
   for tool in node pnpm cargo docker; do
     command -v "$tool" >/dev/null || { echo "missing: $tool"; missing=1; }
   done
-  node --version | grep -q "^v${want}\." || { echo "node $(node --version) in use; .nvmrc asks for $want (nvm install $want)"; missing=1; }
+  node --version | grep -q "^v${NODE_WANTED}\." || { echo "node $(node --version) in use; .nvmrc asks for $NODE_WANTED (nvm install $NODE_WANTED)"; missing=1; }
   cargo machete --version >/dev/null 2>&1 || { echo "missing: cargo-machete (cargo install cargo-machete); pnpm quality needs it"; missing=1; }
   docker info >/dev/null 2>&1 || echo "note: docker is not running; e2e-native skips the scenarios that run a lab"
   cargo llvm-cov --version >/dev/null 2>&1 || echo "note: cargo-llvm-cov is not installed; coverage-rust is skipped (cargo install cargo-llvm-cov)"
   [ "$missing" -eq 0 ]
 }
-
-step prereqs prereqs
-step install pnpm install --frozen-lockfile
-step versions pnpm check:tauri
-format_check() { pnpm exec prettier --check "{src,scripts}/**/*.{ts,tsx,css}" && cargo fmt --manifest-path src-tauri/Cargo.toml --check; }
-step format format_check
-step types pnpm typecheck
-step lint pnpm lint
-step quality pnpm quality
-# The coverage run applies vitest.config.mts's floors, as web-coverage.yml does.
-step unit-web pnpm exec vitest run --coverage
-step unit-rust cargo test --manifest-path src-tauri/Cargo.toml
-if cargo llvm-cov --version >/dev/null 2>&1; then
-  rust_cov() {
-    cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml \
-      && cargo llvm-cov report --manifest-path src-tauri/Cargo.toml --summary-only --fail-under-lines "$RUST_LINES_FLOOR"
-  }
-  step coverage-rust rust_cov
-else
-  skip coverage-rust "cargo-llvm-cov not installed"
-fi
+format_check() {
+  pnpm exec prettier --check "{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}" && cargo fmt --manifest-path src-tauri/Cargo.toml --check
+}
+rust_cov() {
+  cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml &&
+    cargo llvm-cov report --manifest-path src-tauri/Cargo.toml --summary-only --fail-under-lines "$RUST_LINES_FLOOR"
+}
 # Next's dev lock allows one dev server per checkout: when one already serves the app's devUrl
 # port (`pnpm tauri dev`, or e2e-native's), Playwright runs against it instead of starting its own.
 e2e_mock() {
@@ -105,16 +56,22 @@ e2e_mock() {
     pnpm exec playwright test
   fi
 }
+
+step prereqs prereqs
+step install pnpm install --frozen-lockfile
+step versions pnpm check:tauri
+step format format_check
+step types pnpm typecheck
+step lint pnpm lint
+step quality pnpm quality
+# The coverage run applies vitest.config.mts's floors, as web-coverage.yml does.
+step unit-web pnpm exec vitest run --coverage
+step unit-rust cargo test --manifest-path src-tauri/Cargo.toml
+if cargo llvm-cov --version >/dev/null 2>&1; then step coverage-rust rust_cov; else skip coverage-rust "cargo-llvm-cov not installed"; fi
 step e2e-mock e2e_mock
 case "$(uname -s)" in
-  Darwin | Linux) step e2e-native tests/native/run-all.sh ;;
-  *) skip e2e-native "run tests/native/run-embedded.ps1 on Windows" ;;
+  Darwin | Linux) step e2e-native e2e/desktop/run.sh ;;
+  *) skip e2e-native "run e2e/desktop/smoke.ps1 on Windows" ;;
 esac
 
-printf '\n==== release check\n'
-printf '   %s\n' "${RESULTS[@]}"
-if [ "$FAILED" -gt 0 ]; then
-  printf '\n%d step(s) failed: not ready to release.\n' "$FAILED"
-  exit 1
-fi
-printf '\nAll steps passed.\n'
+suite_end "release check"

@@ -419,7 +419,7 @@ mod tests {
     #[tokio::test]
     async fn running_labs_lists_nothing_when_no_lab_is_running() {
         // An installed but never-started lab is not running; the quit guard and the tray read
-        // this. A running lab's listing is covered by the real-lab integration tests.
+        // this. A running lab's listing is covered by the integration tests.
         let t = TestApp::new();
         t.lab("web", &[("isoloom.yml", SPEC)]);
         let _tools = Tools::rules(&[]);

@@ -6,11 +6,11 @@ Desktop launcher for Cyber CTF labs, built with [Tauri 2](https://tauri.app). It
 
 A lab describes itself once as an `isoloom.yml` (its machines, networks, services and checks). The launcher uses Isoloom to read that spec and convert it to each target's native files (Compose, Vagrant, Terraform) under the lab's `.isoloom/` folder, then runs them in one of three modes:
 
-| Mode | What runs the lab |
-|------|-------------------|
-| **Local** | Docker on the player's machine (Docker Compose), or VMs through Vagrant on any local hypervisor (VirtualBox, VMware Desktop, Hyper-V, Parallels, libvirt, QEMU, UTM). Containers can also run inside a local VM (`docker-vm`). |
-| **Server** | The player's own **Proxmox** or **VMware ESXi** server, through Vagrant or Terraform. |
-| **Cloud** | The player's own **AWS, Azure, GCP, DigitalOcean, Linode or Oracle Cloud** account, through Terraform with that provider's CLI credentials. |
+| Mode       | What runs the lab                                                                                                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Local**  | Docker on the player's machine (Docker Compose), or VMs through Vagrant on any local hypervisor (VirtualBox, VMware Desktop, Hyper-V, Parallels, libvirt, QEMU, UTM). Containers can also run inside a local VM (`docker-vm`). |
+| **Server** | The player's own **Proxmox** or **VMware ESXi** server, through Vagrant or Terraform.                                                                                                                                          |
+| **Cloud**  | The player's own **AWS, Azure, GCP, DigitalOcean, Linode or Oracle Cloud** account, through Terraform with that provider's CLI credentials.                                                                                    |
 
 ### Lab engine
 
@@ -92,10 +92,10 @@ The sidebar and **Settings > Account** show who is signed in (name and email fro
 
 Production endpoints are built in ([`app/config.rs`](src-tauri/src/app/config.rs)). Each can be overridden at build or run time, e.g. to test against a local cyber-auth:
 
-| Variable | Default |
-|----------|---------|
-| `CYBERCTF_AUTH_BASE` | `https://www.cyberauth.co/api/auth` |
-| `CYBERBACKEND_URL` | `https://cyberbackend.com` (also the token audience) |
+| Variable             | Default                                                                  |
+| -------------------- | ------------------------------------------------------------------------ |
+| `CYBERCTF_AUTH_BASE` | `https://www.cyberauth.co/api/auth`                                      |
+| `CYBERBACKEND_URL`   | `https://cyberbackend.com` (also the token audience)                     |
 | `CYBERCTF_CLIENT_ID` | `MORSNcedpYSLupYIwbaKyHIXdGgVhanC` (the launcher's client in cyber-auth) |
 
 The OAuth client in cyber-auth must be first-party and public (`token_endpoint_auth_method: none`, PKCE required, consent skipped), use the `authorization_code` and `refresh_token` grants, and have these redirect URIs: `http://127.0.0.1:47290/callback`, `http://127.0.0.1:47291/callback`, `http://127.0.0.1:47292/callback`. **Use a code instead** also needs the `urn:ietf:params:oauth:grant-type:device_code` grant on that client; until it has it, cyber-auth answers `unauthorized_client` and the launcher says signing in with a code isn't available yet, pointing to the copy-the-link fallback.
@@ -103,29 +103,31 @@ The OAuth client in cyber-auth must be first-party and public (`token_endpoint_a
 ## Design
 
 The UI follows the Cyber family design system, "Lit from within", at app density: tokens, modes
-(Dark, Black, Light), primitives and patterns are documented in [`docs/DESIGN.md`](docs/DESIGN.md).
+(Dark, Black, Light), primitives and patterns are documented in [`docs/design-system.md`](docs/design-system.md).
 To preview the UI in a browser without the Rust core, run `pnpm dev` and open
 `http://localhost:3000/?mock` (sample data, development builds only).
 
 ## Development
 
-Requirements: Node 22 or 24 (an odd release such as 25 is refused by Next, see `engines`), pnpm, Rust (stable), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. On Windows that means **Visual Studio 2022 Build Tools** with the *Desktop development with C++* workload (it provides `link.exe` and the Windows SDK; without it the build stops at `linker 'link.exe' not found`).
+Requirements: Node 22 or 24 (an odd release such as 25 is refused by Next, see `engines`), pnpm, Rust (stable), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. On Windows that means **Visual Studio 2022 Build Tools** with the _Desktop development with C++_ workload (it provides `link.exe` and the Windows SDK; without it the build stops at `linker 'link.exe' not found`).
 
 ```bash
 pnpm install
 pnpm tauri dev          # app with hot reload
 pnpm tauri build        # installers in src-tauri/target/release/bundle (needs the release signing key)
 pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'   # a local build without it
-pnpm format             # Prettier (src/) + rustfmt (src-tauri/)
+pnpm format             # Prettier (src/, scripts/, tests/) + rustfmt (src-tauri/)
 pnpm check              # formatting, types, lint, clippy
 cd src-tauri && cargo test
 cargo test -- --ignored --nocapture   # prints this machine's system report
 pnpm e2e                # the frontend in Chromium against the dev mock (Playwright)
-pnpm e2e:native         # the real app through its embedded WebDriver, with Docker and UTM
+pnpm e2e:desktop        # the real app through its embedded WebDriver, with Docker and UTM
+pnpm test:integration  # real labs on Docker and local VMs (TIERS="local aws server" for more)
 pnpm release-check      # every layer, one verdict per step: the gate before a release
 ```
 
-[`docs/release-check.md`](docs/release-check.md) says what each layer proves, how the native scenarios are set up, and what stays manual.
+[`docs/testing/`](docs/testing/README.md) says what each test layer proves, where a new test goes,
+and what stays manual; [`docs/`](docs/README.md) has the rest (how labs run, the design system). Every runner script takes `--help`; [`scripts/README.md`](scripts/README.md) lists them.
 
 `.gitattributes` keeps every text file LF (Windows scripts CRLF) whatever `core.autocrlf` says; a checkout made before it may need `git add --renormalize .` once. The tests that syntax-check the Linux/macOS install scripts with `sh -n` skip that part where no `sh` is on PATH (Windows without Git's `usr\bin`); their other assertions still run.
 

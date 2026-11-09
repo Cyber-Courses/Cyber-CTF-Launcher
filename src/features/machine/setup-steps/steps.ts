@@ -148,7 +148,7 @@ export function nextLabel(step: MachineStep, report: SystemReport | null, t: Tr 
  * The forward button's look: the jewel only for a Continue once the step is set up. Skip for
  * now, I've done this and I'll restart later are ways past a step, not what we nudge players
  * to, and while the step's own action (Install, Turn on WSL 2) is the thing to do, that action
- * is the view's one jewel (docs/DESIGN.md).
+ * is the view's one jewel (docs/design-system.md).
  */
 export function nextVariant(step: MachineStep, report: SystemReport | null, setup: MachineSetupState): "primary" | "secondary" {
   if (nextKind(step, report, setup) !== "continue" || !canContinue(step, report, setup)) return "secondary";

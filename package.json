@@ -9,18 +9,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint src scripts",
-    "format": "prettier --write \"{src,scripts}/**/*.{ts,tsx,css}\" && cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "lint": "eslint src scripts e2e",
+    "format": "prettier --write \"{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}\" && cargo fmt --manifest-path src-tauri/Cargo.toml",
     "typecheck": "next typegen && tsc --noEmit",
     "check:tauri": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check-tauri-versions.ts",
-    "check": "pnpm check:tauri && prettier --check \"{src,scripts}/**/*.{ts,tsx,css}\" && pnpm typecheck && cargo fmt --manifest-path src-tauri/Cargo.toml --check && pnpm quality && vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
+    "check": "pnpm check:tauri && prettier --check \"{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}\" && pnpm typecheck && cargo fmt --manifest-path src-tauri/Cargo.toml --check && pnpm quality && vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
     "quality": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/quality/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "e2e:native": "tests/native/run-all.sh",
+    "e2e:desktop": "e2e/desktop/run.sh",
     "release-check": "scripts/release-check.sh",
-    "real-labs": "scripts/real-labs.sh"
+    "test:integration": "scripts/integration-tests.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",

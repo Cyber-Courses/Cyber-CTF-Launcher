@@ -7,7 +7,7 @@ name: Attack box image
 # smoke test passed on both architectures, so a broken Kali update never reaches players.
 # The launcher doesn't follow `latest`: its default is the image pinned by digest in
 # src-tauri/attack-box-image.json. Once a publish is out, the pushed digest is pulled and smoke-tested
-# again on both architectures, then a bot PR moves the launcher's default to it (and the real-labs
+# again on both architectures, then a bot PR moves the launcher's default to it (and the labs
 # and CI workflows are dispatched on that PR, since a GITHUB_TOKEN PR starts no runs by itself).
 on:
   pull_request:
@@ -181,7 +181,7 @@ jobs:
           git commit -qam "Attack box: pin ${PINNED#*@}" -m "Published and smoke-tested by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
           git push -f origin "$BRANCH"
           title="Attack box: pin the $(date -u +%Y-%m-%d) image"
-          body="Moves the launcher's default attack box to \`$PINNED\` (\`$IMAGE:$(date -u +%Y-%m-%d)\`), published and smoke-tested on amd64 and arm64 by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. The real-labs and CI workflows run on this branch by dispatch."
+          body="Moves the launcher's default attack box to \`$PINNED\` (\`$IMAGE:$(date -u +%Y-%m-%d)\`), published and smoke-tested on amd64 and arm64 by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. The labs and CI workflows run on this branch by dispatch."
           # `gh pr edit` fails on repos that still list classic Projects; the REST call doesn't.
           number=$(gh pr list --head "$BRANCH" --base dev --state open --json number -q '.[0].number')
           if [ -n "$number" ]; then

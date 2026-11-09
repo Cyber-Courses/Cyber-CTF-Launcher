@@ -38,7 +38,7 @@ fn a_lab_id_must_be_a_plain_name_to_be_a_record_file() {
 #[tokio::test]
 async fn a_sweep_of_a_fresh_app_destroys_nothing_and_records_nothing() {
     // No launcher deployment to hand over, no cloud run past its auto-stop: a clean no-op. The
-    // runner-backed destroy of an expired cloud lab is covered by the fake-CLI and real-lab tests.
+    // runner-backed destroy of an expired cloud lab is covered by the fake-CLI and integration tests.
     let t = TestApp::new();
     reap_expired_labs(&t.dirs(), &|_: &str, _: &str| {}).await;
     assert!(failed_last_time(&t.data().join(REAP_ERRORS)).is_empty());

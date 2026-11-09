@@ -85,7 +85,7 @@ pub fn vm_network_prefix(lab: &str) -> String {
 /// reaches directly (an ESXi host through the launcher's relay).
 pub const SSH_PROXY_COMMAND_ENV: &str = "ISOLOOM_SSH_PROXY_COMMAND";
 
-/// The outputs of Isoloom's Terraform modules the launcher reads (docs/cloud-modules.md).
+/// The outputs of Isoloom's Terraform modules the launcher reads (Isoloom's run manifest outputs, its docs/runner.md).
 pub mod outputs {
     /// The address to start from: the lab's VM.
     pub const IP: &str = "ip";

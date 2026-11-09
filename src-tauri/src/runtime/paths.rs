@@ -102,7 +102,7 @@ fn set_marker(dir: &Path, name: &str, value: Option<&str>) -> Result<()> {
 /// so stop, status and the attack-box shell go to the VM instead of local Docker.
 pub const LOCAL_VM_MARKER: &str = ".cyberctf-local-vm";
 
-pub(super) fn mark_local_vm(dir: &Path, provider: Option<Provider>) -> Result<()> {
+pub(crate) fn mark_local_vm(dir: &Path, provider: Option<Provider>) -> Result<()> {
     set_marker(dir, LOCAL_VM_MARKER, provider.map(super::providers::Provider::id))
 }
 
@@ -168,11 +168,11 @@ pub(super) fn forget_lab_host_keys(dir: &Path) {
 /// machines instead of clearing them as leftovers; removed on resume and on stop.
 const PARKED_MARKER: &str = ".cyberctf-parked";
 
-pub(super) fn mark_parked(dir: &Path, mode: Option<Park>) -> Result<()> {
+pub(crate) fn mark_parked(dir: &Path, mode: Option<Park>) -> Result<()> {
     set_marker(dir, PARKED_MARKER, mode.map(super::model::Park::id))
 }
 
-pub(super) fn parked(dir: &Path) -> Option<Park> {
+pub(crate) fn parked(dir: &Path) -> Option<Park> {
     std::fs::read_to_string(dir.join(PARKED_MARKER)).ok().and_then(|s| Park::from_id(&s))
 }
 

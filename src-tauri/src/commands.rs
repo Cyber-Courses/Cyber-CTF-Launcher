@@ -11,8 +11,6 @@ mod app;
 mod cloud;
 pub(crate) mod labs;
 mod machine;
-#[cfg(test)]
-mod real_launch_labs;
 pub(crate) mod server;
 mod setup_window;
 mod shared_folder;

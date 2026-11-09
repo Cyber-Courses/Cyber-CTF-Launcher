@@ -144,7 +144,7 @@ async fn stop(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: impl 
 /// The body of `stop`, assuming the caller already holds the lab lock. The reaper uses this so
 /// it can re-check expiry under the same lock before tearing a lab down (the lock is not
 /// reentrant, so it must not call `stop`, which would deadlock).
-pub(super) async fn stop_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+pub(crate) async fn stop_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
     let _deploy = DeployGuard::new(id, Action::Stop);
     // The website's co-location check for this lab has nothing left to vouch for, and its hosts'
     // keys go with its hosts.
@@ -180,7 +180,7 @@ pub(super) async fn stop_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: R
 
 /// Destroys a container lab that ran in one local VM, through the runner (its containers go with
 /// the VM), and clears what marked it as running.
-pub(super) async fn stop_docker_in_vm_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
+pub(crate) async fn stop_docker_in_vm_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
     isothrum::LabRun::docker_in_vm(home, dir, id)?.down(&mut log).await?;
     forget_run(dir)
 }
@@ -220,16 +220,16 @@ async fn stop_cloud_run(dirs: &AppDirs, stop: CloudStop<'_>, log: &mut impl FnMu
 }
 
 /// Stops a container lab the Isothrum runner runs (runner home `home`) and, once it is gone,
-/// clears what marked it as running. Takes no app handle, so the real-lab tests run exactly this.
-pub(super) async fn stop_docker_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
+/// clears what marked it as running. Takes no app handle, so the integration tests run exactly this.
+pub(crate) async fn stop_docker_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
     isothrum::LabRun::docker(home, dir, id)?.down(&mut log).await?;
     forget_run(dir)
 }
 
 /// Stops a VM lab the Isothrum runner runs (runner home `home`) — its on-demand attack box, a
 /// machine of the run, goes with it — and once it is gone clears what marked it as running. Takes
-/// no app handle, so the real-lab tests run exactly this.
-pub(super) async fn stop_vm_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
+/// no app handle, so the integration tests run exactly this.
+pub(crate) async fn stop_vm_run(home: &std::path::Path, dir: &Path, id: &str, mut log: impl FnMut(String)) -> Result<()> {
     isothrum::LabRun::vm(home, dir, id)?.down(&mut log).await?;
     forget_run(dir)
 }

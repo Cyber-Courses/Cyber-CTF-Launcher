@@ -80,7 +80,7 @@ mod tests {
 
     /// A fake labs' runtime: an installed, running lab here gets its own Stop (the lab page's,
     /// now the Isothrum runner's); anything else goes by name through the Machine-page janitor.
-    /// The runner-backed Stop itself is covered by the runner's tests and the real-lab tests.
+    /// The runner-backed Stop itself is covered by the runner's tests and the integration tests.
     struct FakeLabs {
         installed: Vec<(&'static str, super::Runtime)>,
         stopped: std::sync::Mutex<Vec<(String, super::Runtime)>>,

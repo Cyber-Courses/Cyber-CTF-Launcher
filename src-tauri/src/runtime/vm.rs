@@ -33,9 +33,10 @@ pub async fn stop(dir: &Path, env: &[(String, String)], mut log: impl FnMut(Stri
 mod recover;
 mod status;
 
+pub(crate) use recover::has_machines;
 #[cfg(test)]
 use recover::{folder_candidates, machine_folder, ours_in_prlctl, parse_machine_folder, parse_vbox_vms, remove_leftover_folders};
-pub(super) use recover::{has_machines, recover_parallels, recover_virtualbox, vm_names, vm_names_from};
+pub(super) use recover::{recover_parallels, recover_virtualbox, vm_names, vm_names_from};
 pub use status::status;
 #[cfg(test)]
 use status::{cidr, field, parse_status, quoted, status_from, vagrant_topology};

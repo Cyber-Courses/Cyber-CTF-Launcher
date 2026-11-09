@@ -21,7 +21,7 @@ use local::{emulated_arches, low_memory_warning};
 pub(crate) use on_host::esxi_run;
 use on_host::start_on_server;
 #[cfg(test)]
-pub(super) use on_host::{CloudStart, start_cloud_run};
+pub(crate) use on_host::{CloudStart, start_cloud_run};
 #[cfg(test)]
 use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from, record_cloud_form};
 pub(super) use on_host::{check_aws_budget, public_ip};
@@ -159,8 +159,8 @@ async fn start_docker_in_vm_with_runner(dirs: &AppDirs, dir: &Path, id: &str, st
 /// The runner's start of a container lab in one VM (Isoloom's `docker-vm`, runner home `home`) on
 /// the local hypervisor: its files generated, then up, then the attack box inside the VM beside
 /// the containers (the lab network isn't reachable from here). Takes no app handle, so the
-/// real-lab tests run exactly this.
-pub(super) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+/// integration tests run exactly this.
+pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let VmStart { provider, env } = start;
     lab::prepare(dir, lab::vagrant_target(Runtime::Docker))?;
     mark_local_vm(dir, Some(provider))?;
@@ -206,8 +206,8 @@ async fn start_with_runner(dirs: &AppDirs, dir: &Path, id: &str, env: &[(String,
 
 /// The runner's start of a container lab (runner home `home`): its files generated (the run
 /// manifest with them), then up, or resumed as it was when it is parked (the runner's own rule).
-/// Takes no app handle, so the real-lab tests run exactly this.
-pub(super) async fn start_docker_run(home: &Path, dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+/// Takes no app handle, so the integration tests run exactly this.
+pub(crate) async fn start_docker_run(home: &Path, dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
     recheck_instance(dir, id, log).await?;
     lab::prepare(dir, lab::Target::Docker)?;
     mark_local_vm(dir, None)?;
@@ -217,11 +217,11 @@ pub(super) async fn start_docker_run(home: &Path, dir: &Path, id: &str, env: &[(
 
 /// What a VM lab on this machine starts with: its hypervisor, and the launch's values.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct VmStart<'a> {
+pub(crate) struct VmStart<'a> {
     /// The local hypervisor (Vagrant provider).
-    pub(super) provider: Provider,
+    pub(crate) provider: Provider,
     /// The launch's values: the inputs the lab's slots take, and the ports choice.
-    pub(super) env: &'a [(String, String)],
+    pub(crate) env: &'a [(String, String)],
 }
 
 /// A VM lab on this machine through the Isothrum runner, its boxes recorded for Storage as on
@@ -236,8 +236,8 @@ async fn start_vm_with_runner(dirs: &AppDirs, dir: &Path, id: &str, start: VmSta
 /// The runner's start of a VM lab (runner home `home`) on `provider`: its files generated (the
 /// run manifest with them), the memory warning and QEMU's emulator check, then up (a parked run
 /// is resumed as it was). The learner's attack box is hot-added into the run on demand, from the
-/// lab page, not at launch. Takes no app handle, so the real-lab tests run exactly this.
-pub(super) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+/// lab page, not at launch. Takes no app handle, so the integration tests run exactly this.
+pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let VmStart { provider, env } = start;
     let prepared = lab::prepare(dir, lab::Target::Vagrant)?;
     // A container lab's VM form leaves no local-VM mark behind: that one names docker-vm.

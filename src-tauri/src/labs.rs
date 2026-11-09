@@ -380,7 +380,7 @@ async fn start_lab(lab_id: &str) -> Result<serde_json::Value> {
 }
 
 /// The values a launch of `lab_id` gives the lab, as the backend at `base` answers player
-/// `token`'s `startLab` (no extras): for the real-lab tests, against a local test backend.
+/// `token`'s `startLab` (no extras): for the integration tests, against a local test backend.
 #[cfg(test)]
 pub(crate) async fn launch_values_at(base: &str, token: &str, lab_id: &str) -> Result<Vec<(String, String)>> {
     let data = api::send(base, Some(token.to_owned()), START_LAB, json!({ "id": lab_id })).await?;
@@ -773,7 +773,7 @@ mod tests {
         assert!(tools.calls().is_empty(), "nothing of the install ran meanwhile: {:?}", tools.calls());
         assert!(!dir.join(runtime::lab::INSTANCE_MARKER).exists());
         // Once the lock is free the launch may proceed (its install and the runner start are
-        // covered by the runner's own tests and the real-lab integration tests).
+        // covered by the runner's own tests and the integration tests).
         drop(held);
         let _ = launch;
     }

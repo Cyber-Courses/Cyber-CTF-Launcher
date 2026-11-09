@@ -8,22 +8,28 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
-- **The attack box for a container lab on a cloud account or a Proxmox server.** A container lab
-  started in AWS, Azure, Google Cloud, DigitalOcean or Linode (`cloud-docker`), or on a Proxmox
-  server, runs its containers in one VM there; its attack box is now a container in that VM, on
-  the lab network next to the targets, made by the runner over SSH (the cloud firewall only lets
-  your machine reach the VM's SSH and published ports, so the lab's internal machines are reachable
-  only from inside). The lab page reads and polls the box's real state, starts it with the attack
-  box image from Settings (and with the lab when Settings say so, from any page), stops it, shows
-  its address on the lab network, and offers "Open attacker shell" only once the box runs: `ssh -t`
-  to the VM, then into the box. The page no longer shows a remote container lab's box as "running"
-  just because the lab is.
-  **Still unsupported:** a VM lab on a cloud account (`cloud-vm`) or on a Proxmox server has no
-  VM to put the box in; its page keeps saying it has no attacker yet. A lab on an ESXi host is
-  unchanged.
+- **The attack box on every form a lab runs in.** The attack box is one more machine of the lab,
+  wherever it runs: on Docker, in a VM on this machine, as VMs here, on a Proxmox server, or in a
+  cloud account (containers on one VM, or one VM per machine). Beside containers it is a container
+  from the attack box image in Settings; among VMs it is a Kali VM with Kali's headless toolset
+  (installed on its first start, about 16 minutes), named `attackbox`. On an Arm Mac it runs
+  natively (Kali's arm64 image; a Debian VM made Kali). Its status, address and shell are the
+  lab's own; starting or stopping it changes the running lab without restarting the rest. A lab
+  that declares its own attack machine keeps it.
+- **The launcher checks a cloud account's sign-in before it changes a lab there.** Before a lab
+  in AWS, Azure, Google Cloud or Oracle Cloud starts, changes or stops, the launcher asks that
+  cloud's CLI whether its sign-in still holds; when it ran out, it says how to sign in again
+  (`aws login`, `az login`, …) and changes nothing, where Terraform used to fail halfway and leave
+  part of the lab behind. A failure that says the same reads the same way.
 
 ### Changed
 
+- **Tests, scripts and docs, reorganised.** End-to-end tests are under `e2e/` (`web/` with
+  Playwright, `desktop/` with WebDriver), the integration tests (real labs on real tools) in
+  `src-tauri/src/integration_tests/`, run by tier with `pnpm test:integration`; the Proxmox and
+  ESXi builders moved to `infra/test-servers/` and the Windows installer smoke to `packaging/`.
+  The suite runners share `scripts/lib/suite.sh` and take `--help`; `docs/` has an index, how labs
+  run (`running-labs.md`) and the testing guide (`docs/testing/`).
 - **"Add a provider" on the Machine page is a provider picker.** It opened the lab-type guide,
   which on a set-up machine had nothing to add (both paths "ready", Review alone). It now opens
   "Add a provider": the container engines and hypervisors this machine can run but doesn't

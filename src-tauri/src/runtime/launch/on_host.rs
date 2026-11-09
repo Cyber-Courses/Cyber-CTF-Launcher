@@ -89,17 +89,17 @@ pub(in crate::runtime) async fn server_place(
 
 /// What a cloud VM lab starts with: the lab (its folder, id and runtime), the account it runs on
 /// and the launch's values for its input slots.
-pub(in crate::runtime) struct CloudStart<'a> {
-    pub(in crate::runtime) dir: &'a Path,
-    pub(in crate::runtime) id: &'a str,
-    pub(in crate::runtime) runtime: Runtime,
-    pub(in crate::runtime) host: &'a str,
-    pub(in crate::runtime) conn: server::Connection,
-    pub(in crate::runtime) env: &'a [(String, String)],
+pub(crate) struct CloudStart<'a> {
+    pub(crate) dir: &'a Path,
+    pub(crate) id: &'a str,
+    pub(crate) runtime: Runtime,
+    pub(crate) host: &'a str,
+    pub(crate) conn: server::Connection,
+    pub(crate) env: &'a [(String, String)],
     /// The player picked "one VM per machine" (cloud-vm): a container lab's machines as cloud
     /// instances, not its containers on one cloud VM (cloud-docker). Only for a lab with VM
     /// recipes; ignored for a VM lab, which is cloud-vm already.
-    pub(in crate::runtime) per_machine: bool,
+    pub(crate) per_machine: bool,
 }
 
 /// A cloud VM lab (`cloud-vm`, `cloud-docker`) in the player's cloud account through the Isothrum
@@ -107,7 +107,7 @@ pub(in crate::runtime) struct CloudStart<'a> {
 /// firewall, the GCP labs project (done in [`start_on_server`]), the account's credentials — and
 /// the runner does the work: it delivers the lab over SSH, applies the egress seal, reads the
 /// module's `ssh_user` output and keeps the Terraform state and the run's expiry.
-pub(in crate::runtime) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+pub(crate) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let CloudStart { dir, id, runtime, host, conn, env, per_machine } = start;
     let cloud = server::terraform_target(conn.provider).ok_or_else(|| Error::Invalid("this account's cloud runs no Terraform labs".into()))?;
     // The form the player picked, recorded before anything runs so every later cloud dispatch
@@ -183,7 +183,7 @@ pub(in crate::runtime) async fn public_ip() -> Result<String> {
     // (see `public_ip_from`), so one that is down or blocked doesn't fail the launch, and one that
     // answers wrong (compromised, or a captive portal's page) doesn't open the lab to someone else.
     const RESOLVERS: [&str; 4] = ["https://checkip.amazonaws.com", "https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com"];
-    // Unit tests never reach the internet: a documentation address stands in. A real-lab test
+    // Unit tests never reach the internet: a documentation address stands in. An integration test
     // (a lab in a real account, its firewall opened to this machine) asks for the real one.
     if cfg!(test) && std::env::var_os("CYBERCTF_TEST_REAL_PUBLIC_IP").is_none() {
         return Ok("203.0.113.7".into());

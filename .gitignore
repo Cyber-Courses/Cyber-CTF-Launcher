@@ -47,6 +47,6 @@ next-env.d.ts
 /blob-report/
 /playwright/.cache/
 
-# native GUI e2e: logs and fixtures of tests/native/run-all.sh
-/tests/native/.state/
-.real-labs/
+# native GUI e2e: logs and fixtures of e2e/desktop/run.sh
+/e2e/desktop/.state/
+.integration-tests/

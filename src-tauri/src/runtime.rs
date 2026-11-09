@@ -28,27 +28,11 @@ mod inflight;
 pub(crate) mod isothrum;
 pub mod lab;
 pub(crate) mod launch;
-mod lifecycle;
+pub(crate) mod lifecycle;
 mod model;
 pub(crate) mod paths;
 pub mod providers;
 pub(crate) mod proxmox;
-#[cfg(test)]
-mod real_attack_machine;
-#[cfg(test)]
-mod real_corpus_labs;
-#[cfg(test)]
-mod real_docker_vm_labs;
-#[cfg(test)]
-mod real_flag_labs;
-#[cfg(test)]
-pub(crate) mod real_labs;
-#[cfg(test)]
-mod real_per_machine_labs;
-#[cfg(test)]
-mod real_server_labs;
-#[cfg(test)]
-mod real_vm_labs;
 mod reaper;
 pub mod server;
 pub mod server_selftest;
@@ -57,7 +41,7 @@ pub(crate) mod status;
 pub(crate) mod terminal_launch;
 pub(crate) mod terraform;
 pub(crate) mod tiers;
-mod vm;
+pub(crate) mod vm;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

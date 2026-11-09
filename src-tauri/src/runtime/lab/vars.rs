@@ -1,5 +1,5 @@
 //! The launcher's hosts and cloud accounts in the terms of Isoloom's Terraform modules (their
-//! variables, docs/cloud-modules.md, and the Proxmox module's) and of its Vagrantfiles (the ESXi
+//! variables (Isoloom's docs/runner.md), and the Proxmox module's) and of its Vagrantfiles (the ESXi
 //! plugin's environment). Isoloom's modules keep their own conventions; the mapping from the
 //! launcher's providers, profiles and credentials to them lives here.
 

@@ -7,7 +7,7 @@ const PORT = Number(process.env.E2E_PORT ?? 3210);
 const CI = !!process.env.CI;
 
 export default defineConfig({
-  testDir: "./tests/ui",
+  testDir: "./e2e/web",
   fullyParallel: true,
   forbidOnly: CI,
   retries: CI ? 1 : 0,

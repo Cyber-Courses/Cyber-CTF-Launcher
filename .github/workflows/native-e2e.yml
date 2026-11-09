@@ -2,7 +2,7 @@ name: Native GUI e2e
 
 # The real app binary (a release build with the embedded WebDriver server, `--features wdio`)
 # driven through its own window under Xvfb, against the runner's Docker engine: the scenarios in
-# tests/native/, as scripts/release-check.sh runs them on a developer machine (docs/release-check.md).
+# e2e/desktop/, as scripts/release-check.sh runs them on a developer machine (docs/testing/release-check.md).
 # Manual for now: the scenarios build the fixture lab's images and take a while, and a Linux
 # runner has no hypervisor, so the VM scan is skipped here (a Mac with UTM runs it locally).
 # Promote to a schedule once a few manual runs are green.
@@ -41,11 +41,11 @@ jobs:
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
           LIBGL_ALWAYS_SOFTWARE: "1"
           RUST_BACKTRACE: "1"
-        run: xvfb-run -a dbus-run-session -- tests/native/run-all.sh
+        run: xvfb-run -a dbus-run-session -- e2e/desktop/run.sh
       - name: Upload scenario logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: native-e2e-logs
-          path: tests/native/.state/logs
+          path: e2e/desktop/.state/logs
           if-no-files-found: ignore

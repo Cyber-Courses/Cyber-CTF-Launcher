@@ -17,7 +17,7 @@ use crate::runtime::proxmox;
 
 // --- the Vagrantfile contract ---------------------------------------------
 
-/// Environment a lab's Vagrantfile reads to target this host. See `docs/server.md`.
+/// Environment a lab's Vagrantfile reads to target this host. See `docs/running-labs.md`.
 /// ESXi Vagrantfiles should use `esxi.esxi_password = "env:CYBERCTF_ESXI_PASSWORD"` so the
 /// plugin reads the secret itself.
 pub fn connection_env(h: &HostProfile, password: &str) -> Vec<(String, String)> {

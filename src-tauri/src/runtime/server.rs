@@ -5,7 +5,7 @@
 //!
 //! Neither `vagrant-vmware-esxi` nor `vagrant-proxmox` reads environment variables on its
 //! own: a lab's Vagrantfile reads `ENV` and sets `esxi.*` / `proxmox.*` from it. `contract`
-//! defines that contract (`connection_env`), documented in `docs/server.md`.
+//! defines that contract (`connection_env`), documented in `docs/running-labs.md`.
 //!
 //! - `kind`: each kind of host in one table (what its fields mean, its checks, its Terraform).
 //! - `profile`, `input`: a saved host and the setup form that makes one.
