@@ -61,21 +61,20 @@ export type LabDetailProps = {
 
 type PageState = ReturnType<typeof useLabPageState>;
 
-/** The attack box: a container on a local container lab's networks, the learner's own VM beside
- *  a local VM lab; on a server or in a cloud account, a container in the VM the lab's containers
- *  run in (a VM lab there has none yet).
- *  Not while the lab itself is starting, resuming or stopping: a resume brings the attack VM
- *  back on its own, and a second `vagrant up` in its folder at the same time would collide.
- *  A failed deploy can leave the VMs up (a provisioning step broke): the lab then reads as
+/** The attack box: a machine the launcher adds to the lab wherever it runs (here, on a server or
+ *  in a cloud account), at the seat the lab declares for the player: a container among a container
+ *  lab's, a Kali VM among a VM lab's (a container lab run as one VM per machine included).
+ *  Not on an ESXi host (`provider`): the launcher reaches no run there.
+ *  Not while the lab itself is starting, resuming or stopping: the box goes in by updating the
+ *  lab's run, which must not race the lab's own operation.
+ *  A failed deploy can leave the machines up (a provisioning step broke): the lab then reads as
  *  running, but its attack box must not start beside a lab that isn't ready.
- *  A cloud lab has none: the player works from their own machine. */
-function useLabAttackBox(labId: string, s: PageState) {
+ *  A cloud-services lab has none: the player works from their own machine. */
+function useLabAttackBox(labId: string, s: PageState, provider: string | null | undefined) {
   return useAttackBox(labId, {
     running: s.running && !s.isCloud,
     holding: s.deploying,
-    // On a server or in a cloud account, a container lab's: in the VM its containers run in, or,
-    // run as one VM per machine in a cloud account, an instance of its own beside them.
-    reachable: !s.isCloud && (!s.remote || s.isDocker),
+    reachable: !s.isCloud && provider !== "vmware_esxi",
     runtime: s.isDocker ? "DOCKER" : "VM",
     failed: s.deployFailed,
   });
@@ -144,7 +143,7 @@ export function useLabDetail(p: LabDetailProps) {
   const run = useRunTarget(rt, readyVms, p.hostArch, p.dockerEngine ?? null, p.dockerEnginesRunning ?? []);
   const preview = useCloudPreview(lab.id, rt);
   const shell = useLabShell(lab.id, lab.title, s.isDocker ? "DOCKER" : "VM");
-  const box = useShownBox(useLabAttackBox(lab.id, s), removing(s));
+  const box = useShownBox(useLabAttackBox(lab.id, s, status?.provider), removing(s));
   const [check, clearCheck] = useLabCheck(lab.id, { running: s.running, downCount: s.down.length, enabled: s.isDocker });
   const tools = useLabTools(lab.id, s.running && !s.isCloud, s.isDocker);
   const objectives = useObjectives(lab.id, lab.question, t("labs.detail.objective"), p.loggedIn);

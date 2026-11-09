@@ -3,13 +3,16 @@ import { act, render, renderHook, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AttackBoxPanel } from "@/features/labs/attack-box-panel";
-import { attachContainerBox, useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
+import { useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
 import { useAttackBox, type AttackBox } from "@/features/labs/use-attack-box";
+import { attachAttackBox } from "@/features/labs/attack-box-attach";
 import type { ActiveOperation, AttackStatus } from "@/lib/tauri";
 import { setAttackImage, setAutoAttackBox } from "@/lib/settings";
 import { commands, installTauri, stream, type Call } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { rejectWith } from "@/features/labs/labs-test-kit";
+import { setCatalogue } from "@/features/labs/lab-store";
+import type { Lab } from "@/features/labs/use-labs";
 
 const box = (p: Partial<AttackStatus> = {}): AttackStatus => ({
   running: false,
@@ -147,7 +150,7 @@ describe("useAttackBox", () => {
   });
 });
 
-describe("attachContainerBox", () => {
+describe("attachAttackBox", () => {
   it("joins an attach already under way instead of running a second one", async () => {
     let finish!: () => void;
     const calls = installTauri({
@@ -159,14 +162,14 @@ describe("attachContainerBox", () => {
             }),
         ),
     });
-    const a = attachContainerBox("ab-join");
-    const b = attachContainerBox("ab-join");
+    const a = attachAttackBox("ab-join", "DOCKER", null);
+    const b = attachAttackBox("ab-join", "DOCKER", null);
     await flush();
     expect(count(calls, "attack_box_attach")).toBe(1);
     finish();
     await Promise.all([a, b]);
     // Done: the next attach runs again.
-    void attachContainerBox("ab-join");
+    void attachAttackBox("ab-join", "DOCKER", null);
     await flush();
     expect(count(calls, "attack_box_attach")).toBe(2);
     finish();
@@ -238,11 +241,11 @@ describe("useAttackBoxAutoStart", () => {
     expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "lab-a" });
   });
 
-  it("leaves a box already running, a failed launch and a lab in a VM alone", async () => {
+  it("leaves a box already running, a failed launch and a lab on an ESXi host alone", async () => {
     for (const [status, running] of [
       [{ running: true, place: "container" }, true],
       [{ running: false, place: null }, false],
-      [{ running: true, place: "local_vm" }, false],
+      [{ running: true, place: "server", provider: "vmware_esxi" }, false],
     ] as const) {
       const calls = installTauri({ lab_status: () => status, attack_box_status: () => box({ running }) });
       const { hook } = watch(calls);
@@ -253,19 +256,35 @@ describe("useAttackBoxAutoStart", () => {
     }
   });
 
-  it("attaches the box of a container lab on a server or cloud account, never a VM lab's there", async () => {
-    for (const [place, shellCmd, attached] of [
-      ["cloud", "ssh -t isoloom@10.0.0.9 sudo docker exec -it x sh", true],
-      ["server", "ssh -t isoloom@10.0.0.9 sudo docker exec -it x sh", true],
-      ["server", "", false],
+  it("attaches the box wherever the lab runs, before the box exists (no shell command yet)", async () => {
+    for (const place of ["cloud", "server", "local_vm"] as const) {
+      const calls = installTauri({ lab_status: () => ({ running: true, place, provider: "proxmox" }), attack_box_status: () => box({ shellCmd: "" }) });
+      const { hook } = watch(calls);
+      hook.rerender({ ops: new Map() });
+      await flush(50);
+      expect(commands(calls), place).toContain("attack_box_attach");
+      hook.unmount();
+    }
+  });
+
+  it("reads and attaches in the runtime the catalogue declares for the lab, never a cloud-services lab's", async () => {
+    for (const [runtime, attached] of [
+      ["VM", true],
+      ["CLOUD", false],
     ] as const) {
-      const calls = installTauri({ lab_status: () => ({ running: true, place }), attack_box_status: () => box({ shellCmd }) });
+      setCatalogue("auto-rt", [{ id: "lab-a", runtime: { runtime } } as Lab]);
+      const calls = installTauri({ lab_status: () => ({ running: true, place: "local_vm" }), attack_box_status: () => box({ vm: true }) });
       const { hook } = watch(calls);
       hook.rerender({ ops: new Map() });
       await flush(50);
       expect(commands(calls).includes("attack_box_attach")).toBe(attached);
+      if (attached) {
+        expect(calls.find((c) => c.cmd === "lab_status")?.args).toEqual({ id: "lab-a", runtime: "VM" });
+        expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "lab-a", runtime: "VM" });
+      }
       hook.unmount();
     }
+    setCatalogue("auto-rt", []);
   });
 
   it("does nothing when disabled or when Settings turn auto-start off", async () => {

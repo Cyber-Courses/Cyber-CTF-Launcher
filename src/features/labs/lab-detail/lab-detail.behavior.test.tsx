@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
@@ -458,6 +458,22 @@ describe("LabDetail: a lab that is up", () => {
     expect(commands(calls)).not.toContain("attack_box_attach");
     // No shut down or pause for a lab on a server.
     expect(screen.queryByRole("button", { name: /Shut down/ })).toBeNull();
+  });
+
+  it("reads a VM lab's box on a server as on this machine, but none on an ESXi host", async () => {
+    for (const [provider, read] of [
+      ["proxmox", true],
+      ["vmware_esxi", false],
+    ] as const) {
+      const calls = installTauri({ ...quiet, attack_box_status: () => ({ ...remoteBox(true), vm: true }) });
+      renderDetail({ lab: vmLab, status: status({ place: "server", host: "srv-1", provider, url: null }) });
+      await flush();
+      expect(
+        calls.some((c) => c.cmd === "attack_box_status" && (c.args as { runtime?: string }).runtime === "VM"),
+        provider,
+      ).toBe(read);
+      cleanup();
+    }
   });
 
   it("offers no attacker shell on a server or cloud account until the lab is up", async () => {

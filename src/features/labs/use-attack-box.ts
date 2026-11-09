@@ -1,21 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { attackBoxAttach, attackBoxDetach, attackBoxStatus, type AttackStatus, type Runtime } from "@/lib/tauri";
-import { startOnce } from "@/lib/start-once";
+import { attackBoxDetach, attackBoxStatus, type AttackStatus, type Runtime } from "@/lib/tauri";
 import { attackImageLabel, getAttackImage, getAutoAttackBox } from "@/lib/settings";
+import { attachAttackBox } from "@/features/labs/attack-box-attach";
 import { translate } from "@/lib/i18n";
 import { ignore } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
 import { structurallyEqual } from "@/lib/equal";
 import { useLatest } from "@/lib/use-latest";
 import { useRunLog } from "@/features/servers/host-setup/use-run-log";
-
-/** Adds the attack box onto `network` (null: the seat the lab declares, else its first network),
- *  from the attack box image in Settings (a container box runs it; a VM box is Kali), or joins the
- *  add already under way: a second one would race the first on the same run. */
-const attach = (labId: string, runtime: Runtime, network: string | null, onLog: (line: string) => void) =>
-  startOnce(`attach:${labId}`, (log) => attackBoxAttach(labId, runtime, network, getAttackImage(), log), onLog);
 
 /** The attack box's last status: read now and polled every 5 s while the lab is up where the
  *  launcher reaches its box (`active` and `reachable`), dropped when the lab starts or ends an
@@ -127,7 +121,10 @@ export function useAttackBox(
   // What the box runs, for the panel's label: Kali among VMs, else the attack image.
   const name = vm ? "Kali Linux" : attackImageLabel(getAttackImage());
 
-  const start = useCallback(() => run((l) => attach(labId, runtime, network, l), translate("labs.attackBox.attaching")), [run, labId, runtime, network]);
+  const start = useCallback(
+    () => run((l) => attachAttackBox(labId, runtime, network, l), translate("labs.attackBox.attaching")),
+    [run, labId, runtime, network],
+  );
   const stop = useCallback(
     () =>
       run(async (l) => {
