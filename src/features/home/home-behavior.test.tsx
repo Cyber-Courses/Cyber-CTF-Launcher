@@ -140,7 +140,6 @@ describe("HomeScreen", () => {
       provider: "docker",
       networks: [],
       machines: [],
-      attacker: null,
       outputs: [],
       message: null,
     };

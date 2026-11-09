@@ -114,7 +114,6 @@ pub(crate) mod test_support {
             expires_at: None,
             place: None,
             provider: None,
-            attacker: None,
             per_machine: false,
             outputs: Vec::new(),
             message: None,

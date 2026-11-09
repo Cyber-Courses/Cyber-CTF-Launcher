@@ -152,9 +152,6 @@ pub struct LabStatus {
     /// "`vmware_desktop`", "parallels", ...), or a server/cloud provider. "On this machine" alone
     /// is misleading for a VM lab: this says which hypervisor to look in.
     pub provider: Option<String>,
-    /// Where the attack box sits when the lab host runs it (server and cloud labs): the local
-    /// attack box probe can't see a container on another machine.
-    pub attacker: Option<AttackerAt>,
     /// A container lab (catalogue Docker) running as one VM per machine — its VM recipes rather
     /// than its containers: on this machine (Vagrant), or on a cloud account (cloud-vm). Set by
     /// the status dispatcher. The UI names the form, and knows a cloud-vm run has no attack box.
@@ -179,15 +176,6 @@ pub struct Output {
     pub value: String,
     /// Terraform marks it sensitive (a secret key): the UI masks it until asked.
     pub sensitive: bool,
-}
-
-/// The attack box's address on the lab network.
-#[derive(Serialize, Clone, Debug, PartialEq, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename = "LabAttacker")]
-pub struct AttackerAt {
-    pub ip: String,
-    pub lab_network: String,
 }
 
 #[cfg(test)]

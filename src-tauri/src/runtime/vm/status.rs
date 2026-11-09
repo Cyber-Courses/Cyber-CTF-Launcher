@@ -87,7 +87,6 @@ pub(super) fn status_from(out: &str, dir: &Path) -> LabStatus {
         expires_at: None,
         place: None,
         provider,
-        attacker: None,
         // The status dispatcher sets this from the lab's form marker.
         per_machine: false,
         outputs: Vec::new(),

@@ -17,7 +17,6 @@ export type * from "./GcpBillingAccount";
 export type * from "./GcpOrganization";
 export type * from "./HostCapacity";
 export type * from "./InstalledTool";
-export type * from "./LabAttacker";
 export type * from "./LabCheck";
 export type * from "./LabCheckResult";
 export type * from "./LabInterface";

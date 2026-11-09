@@ -13,10 +13,9 @@ describe("the dev mock answers like the core", () => {
     }
   });
 
-  it("gives every lab status its attacker, outputs and message", () => {
+  it("gives every lab status its outputs and message", () => {
     for (const id of ["lab-invoice", "lab-goad"]) {
       const s = answer("lab_status", { id }) as LabStatus;
-      expect(s).toHaveProperty("attacker");
       expect(Array.isArray(s.outputs)).toBe(true);
       expect(s).toHaveProperty("message");
       expect(s).toHaveProperty("reapError", null);

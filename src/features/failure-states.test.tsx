@@ -54,7 +54,6 @@ const stopped: LabStatus = {
   expiresAt: null,
   place: null,
   provider: null,
-  attacker: null,
   perMachine: false,
   outputs: [],
   message: null,

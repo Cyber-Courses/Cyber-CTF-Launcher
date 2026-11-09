@@ -149,7 +149,6 @@ describe("Labs", () => {
         provider: null,
         networks: [],
         machines: [],
-        attacker: null,
         outputs: [],
         message: null,
       }),

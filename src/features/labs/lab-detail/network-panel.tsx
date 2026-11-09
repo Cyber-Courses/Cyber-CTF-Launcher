@@ -26,12 +26,9 @@ function DiagramSkeleton({ place, docked }: { place: Place | null; docked: boole
   );
 }
 
-/** The attack box as the diagram draws it: as the runner reports it, wherever the lab runs; a
- *  remote lab whose box the launcher doesn't read falls back on its host's report. */
-function diagramAttacker(status: LabStatus, remote: boolean, box: AttackStatus | null): Attacker {
-  if (box) return { running: box.running, ip: box.ip, labNetwork: box.labNetwork };
-  if (remote && status.attacker) return { running: true, ip: status.attacker.ip, labNetwork: status.attacker.labNetwork };
-  return null;
+/** The attack box as the diagram draws it: as the runner reports it, wherever the lab runs. */
+function diagramAttacker(box: AttackStatus | null): Attacker {
+  return box ? { running: box.running, ip: box.ip, labNetwork: box.labNetwork } : null;
 }
 
 /** The lab's network: its diagram, or a note saying why there is none yet (see networkView). */
@@ -39,7 +36,6 @@ export function NetworkPanel({
   view,
   status,
   place,
-  remote,
   box,
   meta,
 }: {
@@ -47,8 +43,7 @@ export function NetworkPanel({
   status: LabStatus | undefined;
   /** Where the lab runs: the host card's logo and name. */
   place: Place | null;
-  remote: boolean;
-  /** The local attack box's last status. */
+  /** The attack box's last status. */
   box: AttackStatus | null;
   /** The runtime word for the header, when the lab has one. */
   meta: string | undefined;
@@ -57,7 +52,7 @@ export function NetworkPanel({
   if (view === "diagram" && status) {
     return (
       <Suspense fallback={<DiagramSkeleton place={place} docked={hasPortTabs(status.machines)} />}>
-        <NetworkDiagram machines={status.machines} networks={status.networks} place={place} attacker={diagramAttacker(status, remote, box)} />
+        <NetworkDiagram machines={status.machines} networks={status.networks} place={place} attacker={diagramAttacker(box)} />
       </Suspense>
     );
   }

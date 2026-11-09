@@ -416,7 +416,6 @@ describe("LabRow", () => {
       expiresAt: null,
       place: "container",
       provider: "docker",
-      attacker: null,
       outputs: [],
       message: null,
       ...p,
