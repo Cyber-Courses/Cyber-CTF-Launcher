@@ -3,7 +3,8 @@ name: Package smoke test
 # Builds the real app bundle (unsigned, no updater artifacts) on Linux, macOS and Windows, installs
 # or opens it, launches it and checks it is still running 15 s later: what CI's `cargo test`
 # can't see (the frontend embedded in the binary, the bundle layout, the .deb's dependencies,
-# the NSIS installer, a crash at startup). Logs are uploaded when a launch fails.
+# the NSIS installer and the MSI with their silent switches, a crash at startup). Logs are uploaded
+# when a launch fails.
 
 on:
   pull_request:
@@ -30,7 +31,7 @@ env:
 
 jobs:
   smoke:
-    name: smoke (${{ matrix.os }})
+    name: smoke (${{ matrix.os }}, ${{ matrix.bundles }})
     strategy:
       fail-fast: false
       matrix:
@@ -47,6 +48,9 @@ jobs:
             bundles: app
           - os: windows-latest
             bundles: nsis
+          # The MSI for managed deployment (x64 only, as release.yml builds it).
+          - os: windows-latest
+            bundles: msi
           - os: windows-11-arm
             bundles: nsis
     runs-on: ${{ matrix.os }}
@@ -134,7 +138,7 @@ jobs:
           ! grep -q "panicked" smoke-logs/app.log
 
       - name: Install and launch (Windows, the NSIS installer)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.bundles == 'nsis'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -157,10 +161,40 @@ jobs:
           Write-Host "Still running after $($env:SMOKE_SECONDS)s."
           Stop-Process -Id $app.Id -Force
 
+      # The silent install and removal docs/admin-guide.md gives administrators: msiexec /qn.
+      - name: Install, launch and remove (Windows, the MSI)
+        if: runner.os == 'Windows' && matrix.bundles == 'msi'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = Get-ChildItem src-tauri/target/release/bundle/msi -Filter *.msi | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP 'CyberCTF'
+          $log = Join-Path (Resolve-Path smoke-logs) 'msiexec-install.log'
+          $setup = Start-Process -FilePath msiexec.exe -ArgumentList '/i', "`"$($msi.FullName)`"", '/qn', '/norestart', "INSTALLDIR=`"$dir`"", '/l*v', "`"$log`"" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "msiexec /i failed (exit $($setup.ExitCode)); see msiexec-install.log" }
+          Get-ChildItem $dir | Out-File smoke-logs/installed.txt
+          $exe = Get-ChildItem $dir -Filter *.exe | Select-Object -First 1
+          Write-Host "Launching $($exe.FullName)"
+          $env:RUST_BACKTRACE = '1'
+          $app = Start-Process -FilePath $exe.FullName -PassThru -WindowStyle Minimized `
+            -RedirectStandardOutput smoke-logs/app.log -RedirectStandardError smoke-logs/app.err.log
+          Start-Sleep -Seconds $env:SMOKE_SECONDS
+          if ($app.HasExited) {
+            Write-Host "::error::The app exited within $($env:SMOKE_SECONDS)s (code $($app.ExitCode))"
+            exit 1
+          }
+          Write-Host "Still running after $($env:SMOKE_SECONDS)s."
+          Stop-Process -Id $app.Id -Force
+          $log = Join-Path (Resolve-Path smoke-logs) 'msiexec-remove.log'
+          $remove = Start-Process -FilePath msiexec.exe -ArgumentList '/x', "`"$($msi.FullName)`"", '/qn', '/norestart', '/l*v', "`"$log`"" -Wait -PassThru
+          if ($remove.ExitCode -ne 0) { throw "msiexec /x failed (exit $($remove.ExitCode)); see msiexec-remove.log" }
+          if (Test-Path (Join-Path $dir $exe.Name)) { throw "msiexec /x left $($exe.Name) behind" }
+          Write-Host "Removed."
+
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: package-smoke-logs-${{ matrix.os }}
+          name: package-smoke-logs-${{ matrix.os }}-${{ matrix.bundles }}
           path: smoke-logs/
           if-no-files-found: ignore

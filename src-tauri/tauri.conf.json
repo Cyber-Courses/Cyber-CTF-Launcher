@@ -48,6 +48,7 @@
       "app",
       "dmg",
       "nsis",
+      "msi",
       "deb",
       "appimage"
     ],
@@ -58,7 +59,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "wix": {
+        "upgradeCode": "3c132869-2900-5442-a3a5-fc9d7aa8d141"
+      }
+    }
   },
   "plugins": {
     "deep-link": {

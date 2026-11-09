@@ -129,6 +129,8 @@ jobs:
         env:
           VERSION: ${{ steps.ver.outputs.version }}
           ARCH: ${{ matrix.arch }}
+          TAG: ${{ inputs.tag }}
+          REPO: ${{ github.repository }}
         run: |
           $ErrorActionPreference = "Stop"
           $layout = "$env:RUNNER_TEMP\msix"
@@ -145,6 +147,15 @@ jobs:
 
           # Per-language strings (the app description in English and French).
           Copy-Item -Recurse "packaging\msix\Strings" "$layout\Strings"
+
+          # The release's third-party notices, as the other installers carry them (the release is
+          # published by then: release.yml calls this after its publish job). A manual build (no
+          # tag) has no release to take them from.
+          if ($env:TAG) {
+            Invoke-WebRequest -Uri "https://github.com/$env:REPO/releases/download/$env:TAG/THIRD_PARTY_NOTICES" -OutFile "$layout\THIRD_PARTY_NOTICES"
+          } else {
+            Write-Host "::notice::No release tag: the MSIX carries no THIRD_PARTY_NOTICES."
+          }
 
           # Manifest with the build version substituted in.
           $manifest = Get-Content "packaging\msix\AppxManifest.xml" -Raw
