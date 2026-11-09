@@ -3,14 +3,21 @@
 // panel.
 import { finish, goTo, mainText, openApp, sleep } from "../support.mjs";
 
+/** What the Labs page shows once the catalogue load failed (any apostrophe). */
+const DEGRADED = /can.?t (be )?reach|couldn|sign in|offline|no labs/i;
+
 let rc = 0;
 let proc;
 let b;
 try {
   ({ proc, b } = await openApp({ env: { CYBERBACKEND_URL: "http://127.0.0.1:1" } }));
   await goTo(b, "Labs");
-  await sleep(10000);
-  const main = await mainText(b);
+  // The failed load can take a while to come back (a refused connection, retried): wait for it.
+  let main = await mainText(b);
+  for (let waited = 0; waited < 30000 && !DEGRADED.test(main); waited += 1000) {
+    await sleep(1000);
+    main = await mainText(b);
+  }
   console.log(
     "labs lines:",
     JSON.stringify(
@@ -21,7 +28,7 @@ try {
     ),
   );
   const rendered = await b.$("aside nav").isExisting(); // app still usable, not crashed
-  const degraded = /can.?t be reached|couldn|sign in|offline|no labs|loading labs/i.test(main);
+  const degraded = DEGRADED.test(main);
   if (rendered && degraded) console.log("FAIL_OFFLINE_OK the app stays usable and shows the catalogue degraded");
   else {
     console.log("FAIL_OFFLINE_FAIL rendered=", rendered, "degraded=", degraded);

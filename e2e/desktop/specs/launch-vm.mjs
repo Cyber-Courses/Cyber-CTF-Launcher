@@ -57,10 +57,14 @@ try {
     process.exit(2);
   }
   await card.click();
-  await waitAwake(b, async () => /Stop & remove|Stop & clean up|Start lab|\bRetry\b/.test(await pageText(b)), {
+  await waitAwake(b, async () => /Stop & remove|Stop & clean up|Start lab|\bRetry\b|Sign in to start/.test(await pageText(b)), {
     timeout: 60000,
     timeoutMsg: "the lab page shows no action",
   });
+  if (/Sign in to start/.test(await pageText(b))) {
+    console.log("LAUNCH_VM_SKIP the app isn't signed in: a catalogue lab starts only once it is");
+    process.exit(2);
+  }
   say(`VMs before: ${vms() || "(none)"}`);
   if (/Stop & remove|Stop & clean up/.test(await pageText(b))) {
     say("the lab is up (or half up) from before: stopping it first");

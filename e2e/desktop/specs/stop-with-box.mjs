@@ -38,7 +38,8 @@ try {
   await forceVisible(b);
   await waitAwake(b, async () => /Stop attack box/.test(await panel(b)), { timeout: 90000, interval: 3000, timeoutMsg: "the box never came up" });
   const withBox = labContainers(id);
-  if (!withBox.some((n) => n.endsWith("-isoloom-access"))) throw new Error(`no access container among ${JSON.stringify(withBox)}`);
+  // The box is a machine of the lab: its `attackbox` service in the lab's own project.
+  if (!withBox.some((n) => /-attackbox-\d+$/.test(n))) throw new Error(`no attack box container among ${JSON.stringify(withBox)}`);
   console.log("box attached; containers:", JSON.stringify(withBox));
 
   // Stop the lab as the lab page does: the `lab_stop` command, its log on a Tauri channel.
