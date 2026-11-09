@@ -647,6 +647,16 @@ mod tests {
         assert_eq!(pids(""), [] as [u32; 0]);
     }
 
+    /// Waits for a stand-in Terraform to print `ready` on `out`: it has started, under its own
+    /// command line.
+    #[cfg(unix)]
+    fn ready(out: std::process::ChildStdout) {
+        use std::io::BufRead;
+        let mut line = String::new();
+        std::io::BufReader::new(out).read_line(&mut line).unwrap();
+        assert_eq!(line.trim(), "ready");
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_stop_interrupts_terraform_rather_than_killing_it() {
@@ -656,18 +666,20 @@ mod tests {
         // stop). Terraform here is a stand-in for its container run (`… hashicorp/terraform …`),
         // in a group of its own like a worker's.
         use std::os::unix::process::CommandExt;
-        let mut run =
-            std::process::Command::new("sh").args(["-c", "sleep 30 & wait", "docker", "run", "hashicorp/terraform:1.9.8"]).process_group(0).spawn().unwrap();
+        let mut run = std::process::Command::new("sh")
+            .args(["-c", "echo ready; sleep 30 & wait", "docker", "run", "hashicorp/terraform:1.9.8"])
+            .process_group(0)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
         let group = run.id();
         // A group with no Terraform in it: nothing is sent.
         let mut other = std::process::Command::new("sleep").arg("30").process_group(0).spawn().unwrap();
         assert!(!interrupt_terraform(other.id()));
-        // `pgrep` may need a moment to see the new process by name.
-        let found = (0..20).any(|_| {
-            std::thread::sleep(Duration::from_millis(50));
-            interrupt_terraform(group)
-        });
-        assert!(found, "terraform found in its group");
+        // Once it says so, the stand-in runs under its own command line, for `pgrep` to find:
+        // waited for, however long a loaded machine takes, not guessed with a few short sleeps.
+        ready(run.stdout.take().unwrap());
+        assert!(interrupt_terraform(group), "terraform found in its group");
         let status = run.wait().unwrap();
         // Ended by the interrupt (its sleep alone would take 30 s), however the shell reports it.
         assert!(!status.success(), "{status:?}");
@@ -684,13 +696,17 @@ mod tests {
         // to its default: `&` ignores it); the image name comes from the environment, so only
         // the stand-in Terraform's command line names it.
         use std::os::unix::process::CommandExt;
-        let run = r#"perl -e '$SIG{INT} = "DEFAULT"; setpgrp(0, 0); exec @ARGV' sh -c 'sleep 30 & wait' docker run "$IMAGE" & wait"#;
-        let mut worker = std::process::Command::new("sh").args(["-c", run]).env("IMAGE", "hashicorp/terraform:1.9.8").process_group(0).spawn().unwrap();
-        let found = (0..40).any(|_| {
-            std::thread::sleep(Duration::from_millis(50));
-            interrupt_terraform(worker.id())
-        });
-        assert!(found, "terraform found in its own group under the worker");
+        let run = r#"perl -e '$SIG{INT} = "DEFAULT"; setpgrp(0, 0); exec @ARGV' sh -c 'echo ready; sleep 30 & wait' docker run "$IMAGE" & wait"#;
+        let mut worker = std::process::Command::new("sh")
+            .args(["-c", run])
+            .env("IMAGE", "hashicorp/terraform:1.9.8")
+            .process_group(0)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        // The stand-in Terraform says when it runs, in its own group under the worker.
+        ready(worker.stdout.take().unwrap());
+        assert!(interrupt_terraform(worker.id()), "terraform found in its own group under the worker");
         let started = std::time::Instant::now();
         let waiter = std::thread::spawn(move || worker.wait());
         while !waiter.is_finished() && started.elapsed() < Duration::from_secs(10) {
