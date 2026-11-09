@@ -67,9 +67,6 @@ fn warning(code: WarningCode, message: &str) -> Option<String> {
     match code {
         WarningCode::LeftoversRemoved => Some("Clearing a previous, stopped run…".into()),
         WarningCode::Recovering => Some("Docker kept something of an earlier run: clearing it, then starting again…".into()),
-        WarningCode::HookFailed => {
-            Some(format!("The lab is fine, but its attack box didn't follow: {}", message.split_once(": ").map_or(message, |(_, why)| why)))
-        }
         // A best-effort step (an old network left in place): nothing the player can act on.
         WarningCode::StepTolerated => None,
         _ => Some(message.to_owned()),

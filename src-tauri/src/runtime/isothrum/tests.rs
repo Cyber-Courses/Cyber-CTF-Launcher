@@ -255,7 +255,6 @@ fn the_deploy_log_shows_steps_tool_lines_and_warnings_only() {
     assert_eq!(progress::line(&waiting).as_deref(), Some("Waiting for the lab to be ready: no answer yet"));
     let warning = |code: WarningCode, message: &str| progress::line(&EventKind::Warning { code, message: message.into() });
     assert_eq!(warning(WarningCode::LeftoversRemoved, "removing what an earlier run left").as_deref(), Some("Clearing a previous, stopped run…"));
-    assert_eq!(warning(WarningCode::HookFailed, "after_up: no network").as_deref(), Some("The lab is fine, but its attack box didn't follow: no network"));
     assert_eq!(warning(WarningCode::StepTolerated, "x"), None);
     assert_eq!(warning(WarningCode::OrphanRemoved, "Removing a VM an earlier run left").as_deref(), Some("Removing a VM an earlier run left"));
     assert_eq!(progress::line(&EventKind::Result { ok: true, data: serde_json::json!({}) }), None, "the caller says how it ended");

@@ -345,7 +345,7 @@ mod tests {
         let dir = home.join("runs").join(&name);
         std::fs::create_dir_all(&dir).unwrap();
         let record = serde_json::json!({
-            "version": 0, "name": name, "manifest": home.join(lab).join("run.json"), "manifest_sha256": "ab".repeat(32),
+            "version": 0, "name": name, "manifest": home.join(lab).join("run.json"),
             "target": "cloud-docker", "driver": "terraform", "cloud": "aws", "host_label": host, "state": "ready", "params": {}, "expires_at": 1
         });
         std::fs::write(dir.join("record.json"), record.to_string()).unwrap();
