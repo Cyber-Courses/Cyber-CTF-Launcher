@@ -13,7 +13,6 @@
       "shutdown": "Extinction…",
       "provision": "Provisionnement…",
       "provisionMachine": "Provisionnement de {machine}…",
-      "attackVm": "Démarrage de la VM d'attaque…",
       "stop": "Arrêt…"
     }
   },

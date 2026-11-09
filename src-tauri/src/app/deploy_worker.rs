@@ -1,14 +1,13 @@
-//! Lab operations that outlive the app. A launch, a resume, a pause or shutdown, a provisioning
-//! run and an attack VM start each run in a detached worker process: this same executable,
+//! Lab operations that outlive the app. A launch, a resume, a pause or shutdown, and a
+//! provisioning run each run in a detached worker process: this same executable,
 //! headless (`cyberctf-desktop deploy --job <file>`), in its own process group, with its output
 //! in a log file. Quitting, crashing or rebuilding the app never cuts a `vagrant up`, a `compose
 //! up` or a `terraform apply` short. The app only follows the worker's log; "in progress" is a
 //! live pidfile, so a relaunched app sees the operation and re-attaches to its log.
 //!
-//! Files, under `<app data>/deploys/`, keyed by the lab (`<lab>`) or, for its attack VM, which
-//! runs beside the lab's own operation, `<lab>.attack`: `<key>.json` (the job), `<key>.log`
-//! (what the worker says, also its stdout/stderr), `<key>.pid` (the worker, while it runs),
-//! `<key>.status` (`ok` or `error: ...`, written last).
+//! Files, under `<app data>/deploys/`, keyed by the lab (`<lab>`): `<key>.json` (the job),
+//! `<key>.log` (what the worker says, also its stdout/stderr), `<key>.pid` (the worker, while it
+//! runs), `<key>.status` (`ok` or `error: ...`, written last).
 
 mod files;
 pub(crate) mod lock;

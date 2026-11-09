@@ -57,14 +57,6 @@ describe("deriveLabState: contradictory inputs", () => {
     expect(resuming.phase).toBe("operation");
   });
 
-  it("an attack VM start reported by the backend on a running lab keeps the running word and tears nothing down", () => {
-    const s = derive({ backendDeploying: true, backendOp: "attack_vm", status: status({ running: true, machines: [machine("web")] }) });
-    expect(s.operation).toBe("attack_vm");
-    expect(s.phase).toBe("running");
-    expect(s.tearingDown).toBe(false);
-    expect(s.down).toEqual([]);
-  });
-
   it("with no host CPU known yet, a lab built for another CPU is native, and QEMU ready still means it emulates", () => {
     const foreign: LabRuntimeInfo = { ...vm, architectures: ["aarch64"] };
     const s = derive({ runtime: foreign, hostArch: "", readyVms: ["qemu"] });

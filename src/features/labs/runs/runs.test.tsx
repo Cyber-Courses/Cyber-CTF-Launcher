@@ -178,13 +178,12 @@ describe("operations", () => {
   const op = (o: ActiveOperation["op"], machine: string | null = null): ActiveOperation => ({ labId: "l", op: o, machine, step: null });
 
   it("names every operation", () => {
-    expect((["launch", "resume", "pause", "shutdown", "provision", "attack_vm", "stop"] as const).map((o) => operationLabel(op(o)))).toEqual([
+    expect((["launch", "resume", "pause", "shutdown", "provision", "stop"] as const).map((o) => operationLabel(op(o)))).toEqual([
       "Starting…",
       "Resuming…",
       "Pausing…",
       "Shutting down…",
       "Provisioning…",
-      "Starting the attack VM…",
       "Stopping…",
     ]);
   });

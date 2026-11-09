@@ -5,9 +5,9 @@
  */
 export type ActiveOperation = { labId: string, 
 /**
- * `launch`, `resume`, `pause`, `shutdown`, `provision`, `attack_vm` or `stop`.
+ * `launch`, `resume`, `pause`, `shutdown`, `provision` or `stop`.
  */
-op: "launch" | "resume" | "pause" | "shutdown" | "provision" | "attack_vm" | "stop", 
+op: "launch" | "resume" | "pause" | "shutdown" | "provision" | "stop", 
 /**
  * The machine a provisioning run targets, when one.
  */

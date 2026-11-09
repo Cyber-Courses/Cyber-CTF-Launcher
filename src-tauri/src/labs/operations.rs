@@ -43,8 +43,8 @@ fn merge_unique(mut ids: Vec<String>, more: impl IntoIterator<Item = String>) ->
 #[serde(rename_all = "camelCase")]
 pub struct ActiveOperation {
     lab_id: String,
-    /// `launch`, `resume`, `pause`, `shutdown`, `provision`, `attack_vm` or `stop`.
-    #[ts(type = r#""launch" | "resume" | "pause" | "shutdown" | "provision" | "attack_vm" | "stop""#)]
+    /// `launch`, `resume`, `pause`, `shutdown`, `provision` or `stop`.
+    #[ts(type = r#""launch" | "resume" | "pause" | "shutdown" | "provision" | "stop""#)]
     op: &'static str,
     /// The machine a provisioning run targets, when one.
     machine: Option<String>,

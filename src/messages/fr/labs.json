@@ -138,11 +138,6 @@
         "busy": "Arrêt",
         "step": "Supprimer les machines",
         "done": "Supprimé"
-      },
-      "attack_vm": {
-        "busy": "Démarrage",
-        "step": "Démarrer la VM d’attaque",
-        "done": "Démarrée"
       }
     },
     "phases": {

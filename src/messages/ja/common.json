@@ -13,7 +13,6 @@
       "shutdown": "シャットダウン中…",
       "provision": "プロビジョニング中…",
       "provisionMachine": "{machine} をプロビジョニング中…",
-      "attackVm": "攻撃用 VM を起動中…",
       "stop": "停止中…"
     }
   },

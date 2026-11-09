@@ -61,8 +61,6 @@ export function operationLabel(o: ActiveOperation): string {
       return o.machine
         ? translate("common.operation.label.provisionMachine", { machine: o.machine.replace(/^isoloom-/, "") })
         : translate("common.operation.label.provision");
-    case "attack_vm":
-      return translate("common.operation.label.attackVm");
     case "stop":
       return translate("common.operation.label.stop");
   }

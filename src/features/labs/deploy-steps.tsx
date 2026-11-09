@@ -14,7 +14,7 @@ type Operation = ActiveOperation["op"];
 
 // Operations on a lab that is already built: one step named after them, not the launch's
 // "Building" / "Preparing", which read as a new deploy while the lab was shutting down.
-const OPERATIONS = ["resume", "pause", "shutdown", "stop", "attack_vm"] as const;
+const OPERATIONS = ["resume", "pause", "shutdown", "stop"] as const;
 
 type OperationText = { busy: string; step: string; done: string };
 

@@ -13,7 +13,6 @@
       "shutdown": "Fährt herunter…",
       "provision": "Wird provisioniert…",
       "provisionMachine": "{machine} wird provisioniert…",
-      "attackVm": "Angriffs-VM wird gestartet…",
       "stop": "Wird gestoppt…"
     }
   },

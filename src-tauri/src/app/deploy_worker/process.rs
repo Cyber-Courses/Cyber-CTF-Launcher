@@ -296,9 +296,8 @@ fn is_worker(cmdline: &str) -> bool {
     cmdline.contains(" deploy ") && cmdline.contains("--job")
 }
 
-/// The keys (lab ids, and `<lab>.attack` for attack VM starts) whose worker is running right
-/// now: a pidfile naming a live process. A pidfile whose process is gone (the worker finished,
-/// or died) is removed on the way.
+/// The keys (lab ids) whose worker is running right now: a pidfile naming a live process. A
+/// pidfile whose process is gone (the worker finished, or died) is removed on the way.
 pub fn running(dirs: &AppDirs) -> Vec<String> {
     let Ok(d) = files::dir(dirs) else { return Vec::new() };
     running_in(&d)

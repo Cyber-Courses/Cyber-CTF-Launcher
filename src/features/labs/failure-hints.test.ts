@@ -36,7 +36,7 @@ describe("failureKind", () => {
 
   it("names the operations it reports", () => {
     expect(failureTitleKey("stop")).toBe("labs.failure.title.stop");
-    expect(failureTitleKey("attack_vm")).toBeNull();
+    expect(failureTitleKey("reboot")).toBeNull();
   });
 });
 

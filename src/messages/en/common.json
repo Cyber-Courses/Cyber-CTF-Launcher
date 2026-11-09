@@ -13,7 +13,6 @@
       "shutdown": "Shutting down…",
       "provision": "Provisioning…",
       "provisionMachine": "Provisioning {machine}…",
-      "attackVm": "Starting the attack VM…",
       "stop": "Stopping…"
     }
   },

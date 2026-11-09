@@ -138,11 +138,6 @@
         "busy": "Wird gestoppt",
         "step": "Maschinen entfernen",
         "done": "Entfernt"
-      },
-      "attack_vm": {
-        "busy": "Startet",
-        "step": "Angriffs-VM starten",
-        "done": "Gestartet"
       }
     },
     "phases": {
