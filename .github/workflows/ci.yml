@@ -36,6 +36,8 @@ jobs:
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec eslint src scripts e2e
       - run: pnpm exec prettier --check "{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}" "{*,docs/**/*,infra/**/*,scripts/**/*}.md"
+      # Every relative link and #anchor in the Markdown resolves.
+      - run: pnpm check:docs
       - run: pnpm exec vitest run
       # Known vulnerabilities in the npm packages the app ships (devDependencies are build tools).
       - run: pnpm audit --prod

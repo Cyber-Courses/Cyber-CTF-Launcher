@@ -9,6 +9,7 @@ Each runner takes `--help`, which prints its header (what it does, its knobs).
 | `integration-tests.sh`    | `pnpm test:integration`     | the integration tests: real labs by tier (`local`, `aws`, `server`)                                    |
 | `quality/`                | `pnpm quality`              | the ratchet in `quality-baseline.json`: clippy, ESLint warnings, duplication, dead code, conventions   |
 | `check-tauri-versions.ts` | `pnpm check:tauri`          | the Tauri JS plugins and Rust crates on matching versions                                              |
+| `check-doc-links.ts`      | `pnpm check:docs`           | every relative link and `#anchor` in the repository's Markdown resolves                                |
 | `third-party.ts`          | `pnpm notices`, `pnpm sbom` | THIRD_PARTY_NOTICES (cargo-about + the npm licences) and the CycloneDX SBOMs a release ships           |
 | `lib/suite.sh`            | (sourced)                   | what every suite runner shares: `ONLY` / `SKIP` / `STRICT`, verdicts, logged steps, Node from `.nvmrc` |
 
