@@ -140,23 +140,23 @@ fn load_at(f: &std::path::Path) -> Vec<InstalledTool> {
 }
 
 /// Written whole through a temporary file and a rename, so a crash mid-write can't leave a
-/// half file that reads as "nothing installed".
+/// half file that reads as "nothing installed". A record that can't be written is logged: Cleanup
+/// then doesn't offer to remove that tool.
 fn save(dirs: &AppDirs, tools: &[InstalledTool]) {
-    if let Some(f) = records_file(dirs) {
-        save_at(&f, tools);
+    if let Some(f) = records_file(dirs)
+        && let Err(e) = save_at(&f, tools)
+    {
+        log::warn!("the record of the tools Cyber CTF installed ({}) couldn't be written: {e}", f.display());
     }
 }
 
-fn save_at(f: &std::path::Path, tools: &[InstalledTool]) {
+fn save_at(f: &std::path::Path, tools: &[InstalledTool]) -> std::io::Result<()> {
     if let Some(dir) = f.parent() {
-        let _ = std::fs::create_dir_all(dir);
+        std::fs::create_dir_all(dir)?;
     }
-    if let Ok(json) = serde_json::to_vec_pretty(tools) {
-        let tmp = f.with_extension("json.tmp");
-        if std::fs::write(&tmp, json).is_ok() {
-            let _ = std::fs::rename(&tmp, f);
-        }
-    }
+    let tmp = f.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(tools)?)?;
+    std::fs::rename(&tmp, f)
 }
 
 /// Serialises the read-modify-writes of the records: installs and removals in different windows
@@ -365,6 +365,21 @@ mod tests {
     }
 
     #[test]
+    fn a_record_that_cant_be_written_is_said_in_the_log() {
+        // Regression: a failed write of the record was dropped, and Cleanup silently stopped
+        // offering to remove the tool.
+        let t = crate::testing::test_app::TestApp::new();
+        let dirs = t.dirs();
+        let f = records_file(&dirs).unwrap();
+        std::fs::create_dir_all(&f).unwrap();
+        crate::testing::logs::take_warnings();
+        record_outcome(&dirs, Dependency::Vagrant, Outcome::Installed);
+        let logged = crate::testing::logs::take_warnings();
+        assert!(logged.iter().any(|w| w.starts_with("the record of the tools Cyber CTF installed")), "{logged:?}");
+        assert!(save_at(&f, &[]).is_err());
+    }
+
+    #[test]
     fn records_round_trip_through_their_file_and_keep_one_entry_per_tool() {
         let dir = std::env::temp_dir().join(format!("cyberctf-tools-{}", rand::random::<u32>()));
         let f = dir.join("data").join("installed-tools.json");
@@ -373,7 +388,7 @@ mod tests {
         remember(&mut tools, Dependency::Vagrant, false);
         remember(&mut tools, Dependency::Docker, false);
         remember(&mut tools, Dependency::Vagrant, false);
-        save_at(&f, &tools);
+        save_at(&f, &tools).unwrap();
         let back = load_at(&f);
         assert_eq!(back.iter().map(|t| t.dependency).collect::<Vec<_>>(), [Dependency::Docker, Dependency::Vagrant]);
         assert!(back.iter().all(|t| t.at > 0));

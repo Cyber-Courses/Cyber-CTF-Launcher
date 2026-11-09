@@ -18,33 +18,48 @@ fn migrate_once(src: &Path, dst: &Path) {
     if marker.exists() || !src.is_dir() {
         return;
     }
-    if merge_missing(src, dst) {
-        let _ = std::fs::create_dir_all(dst).and_then(|()| std::fs::write(&marker, b""));
+    if !merge_missing(src, dst) {
+        log::warn!("the Store build's earlier files in {} weren't all brought over: tried again at the next start", src.display());
+    } else if let Err(e) = std::fs::create_dir_all(dst).and_then(|()| std::fs::write(&marker, b"")) {
+        log::warn!("{} couldn't be written ({e}): the Store build's earlier files are looked for again at the next start", marker.display());
     }
 }
 
-/// Copies every file under `src` that `dst` doesn't have yet (recursively). Errors on one file
-/// don't stop the others. Whether every file was there or copied.
+/// Copies every file under `src` that `dst` doesn't have yet (recursively). An error on one file
+/// is logged and doesn't stop the others. Whether every file was there or copied.
 fn merge_missing(src: &Path, dst: &Path) -> bool {
-    let Ok(entries) = std::fs::read_dir(src) else { return false };
+    let entries = match std::fs::read_dir(src) {
+        Ok(entries) => entries,
+        Err(e) => return failed(src, &e),
+    };
     let mut all = true;
     for entry in entries {
-        let Ok(entry) = entry else {
-            all = false;
-            continue;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                all = failed(src, &e);
+                continue;
+            }
         };
         let (from, to) = (entry.path(), dst.join(entry.file_name()));
-        let Ok(kind) = entry.file_type() else {
-            all = false;
-            continue;
-        };
-        if kind.is_dir() {
-            all &= merge_missing(&from, &to);
-        } else if kind.is_file() && !to.exists() {
-            all &= std::fs::create_dir_all(dst).is_ok() && std::fs::copy(&from, &to).is_ok();
+        match entry.file_type() {
+            Ok(kind) if kind.is_dir() => all &= merge_missing(&from, &to),
+            Ok(kind) if kind.is_file() && !to.exists() => {
+                if let Err(e) = std::fs::create_dir_all(dst).and_then(|()| std::fs::copy(&from, &to)) {
+                    all = failed(&from, &e);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => all = failed(&from, &e),
         }
     }
     all
+}
+
+/// Logs that `path` couldn't be brought over; false, for the merge's verdict.
+fn failed(path: &Path, e: &std::io::Error) -> bool {
+    log::warn!("bringing over the Store build's {}: {e}", path.display());
+    false
 }
 
 /// Windows: brings over what an earlier, virtualized Store build of the app `id` saved, into
@@ -129,9 +144,13 @@ mod tests {
         std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
         // Root reads it anyway (some CI containers): then there's no failure to see.
         if std::fs::read(&unreadable).is_err() {
+            crate::testing::logs::take_warnings();
             migrate_once(&src, &dst);
             assert!(dst.join("server.json").exists());
             assert!(!dst.join(MIGRATED).exists(), "not recorded while a file is missing");
+            // Regression: the file left behind was said nowhere.
+            let logged = crate::testing::logs::take_warnings();
+            assert!(logged.iter().any(|w| w.starts_with("bringing over the Store build's") && w.contains("keys.json")), "{logged:?}");
             std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644)).unwrap();
             migrate_once(&src, &dst);
             assert_eq!(std::fs::read_to_string(dst.join("keys.json")).unwrap(), "k");

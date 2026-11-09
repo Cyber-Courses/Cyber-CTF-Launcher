@@ -165,7 +165,7 @@ fn setup(app: &mut App) {
     }
     // The app's data (deploy jobs, Terraform state, keys) is this user's alone.
     if let Ok(dir) = app.path().app_data_dir() {
-        let _ = private_fs::dir(&dir);
+        narrow_to_this_user(&dir);
         shared_folder::init(&dir);
     }
     // Linux and Windows dev builds: register cyberctf:// at runtime (installers do it otherwise).
@@ -281,8 +281,28 @@ fn on_run_event(app: &AppHandle, event: &RunEvent) {
     }
 }
 
+/// Makes the app's data folder `dir` this user's alone; one that can't be is said in the log (its
+/// files then keep the folder's own permissions), and the app goes on.
+fn narrow_to_this_user(dir: &std::path::Path) {
+    if let Err(e) = private_fs::dir(dir) {
+        log::warn!("the app's data folder {} couldn't be made this user's alone: {e}", dir.display());
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_data_folder_that_cant_be_narrowed_is_said_in_the_log() {
+        // Regression: the failure was dropped.
+        let file = std::env::temp_dir().join(format!("cyberctf-not-a-dir-{}", rand::random::<u32>()));
+        std::fs::write(&file, "").unwrap();
+        crate::testing::logs::take_warnings();
+        super::narrow_to_this_user(&file);
+        let logged = crate::testing::logs::take_warnings();
+        assert!(logged.iter().any(|w| w.contains("couldn't be made this user's alone")), "{logged:?}");
+        std::fs::remove_file(file).unwrap();
+    }
+
     use super::worker_job;
 
     #[tokio::test]

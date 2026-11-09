@@ -144,7 +144,7 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
             return 2;
         }
     };
-    let sink = std::sync::Mutex::new(crate::platform::private_fs::append(&f.log).ok());
+    let sink = std::sync::Mutex::new(open_log(&f.log));
     let log = |line: String| {
         if let Ok(mut guard) = sink.lock()
             && let Some(file) = guard.as_mut()
@@ -163,6 +163,12 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
         Err(e) => Err(e),
     };
     conclude(&f, &result, launch, log)
+}
+
+/// The job's log file, opened for appending; none when it can't be (the job still runs, and the
+/// app's log says why its own is empty).
+fn open_log(path: &std::path::Path) -> Option<std::fs::File> {
+    crate::platform::private_fs::append(path).inspect_err(|e| log::warn!("the deploy log {} can't be written: {e}", path.display())).ok()
 }
 
 /// Whether `op` brings the lab up, its verdict then saying whether it came up
@@ -221,6 +227,18 @@ mod tests {
     use crate::app::deploy_worker::progress::verdict;
     use crate::app::deploy_worker::{Job, Op};
     use crate::error::{Code, Error};
+
+    #[test]
+    fn a_deploy_log_that_cant_be_opened_is_said_in_the_apps_log() {
+        // Regression: the job ran without its log, and nothing said why.
+        let dir = std::env::temp_dir().join(format!("cyberctf-log-dir-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::testing::logs::take_warnings();
+        assert!(super::open_log(&dir).is_none(), "a folder isn't a log file");
+        let logged = crate::testing::logs::take_warnings();
+        assert!(logged.iter().any(|w| w.starts_with("the deploy log ") && w.contains("can't be written")), "{logged:?}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn the_status_line_reads_back_as_the_same_verdict() {
