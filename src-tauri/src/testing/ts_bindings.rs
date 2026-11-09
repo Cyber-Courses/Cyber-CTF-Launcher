@@ -42,6 +42,7 @@ fn generate(dir: &Path) {
     }
     export!(
         account::agent::AgentInfo,
+        account::agent::LaunchRequest,
         account::api_operation::ApiOperation,
         account::auth::AuthStatus,
         account::auth::DeviceCode,

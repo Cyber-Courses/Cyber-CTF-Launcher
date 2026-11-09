@@ -1,14 +1,27 @@
 {
   "launchConfirm": {
-    "label": "Confirmar el lanzamiento de un lab en la nube",
-    "title": "¿Ejecutar este lab en tu cuenta en la nube?",
-    "body": "Un lanzamiento desde el sitio web quiere ejecutarse en <target>{target}</target>. Esto inicia recursos facturables en tu cuenta (se detienen solos más tarde). Aprueba solo un lanzamiento que hayas iniciado tú.",
+    "label": "Confirmar el lanzamiento de un lab desde el sitio web",
+    "title": {
+      "here": "¿Ejecutar este lab en este equipo?",
+      "server": "¿Ejecutar este lab en tu servidor?",
+      "cloud": "¿Ejecutar este lab en tu cuenta en la nube?"
+    },
+    "body": {
+      "here": "Un lanzamiento desde el sitio web quiere iniciar <lab>{lab}</lab> en este equipo. Aprueba solo un lanzamiento que hayas iniciado tú.",
+      "server": "Un lanzamiento desde el sitio web quiere iniciar <lab>{lab}</lab> en <target>{target}</target>. Aprueba solo un lanzamiento que hayas iniciado tú.",
+      "cloud": "Un lanzamiento desde el sitio web quiere iniciar <lab>{lab}</lab> en <target>{target}</target>. Esto inicia recursos facturables en tu cuenta (se detienen solos más tarde). Aprueba solo un lanzamiento que hayas iniciado tú."
+    },
+    "privileged": "Este lab tiene máquinas privilegiadas: tienen acceso al kernel del equipo que las ejecuta.",
     "repo": "repo: {repo}",
     "commit": "commit: {commit}",
     "failed": "No se pudo enviar tu respuesta a Cyber CTF",
     "decline": "Rechazar",
-    "approve": "Ejecutar en mi nube",
-    "expired": "Esta solicitud caducó: el lanzamiento no se inició. Vuelve a lanzarlo desde el sitio web si todavía lo quieres.",
+    "approve": {
+      "here": "Ejecutar aquí",
+      "server": "Ejecutar en mi servidor",
+      "cloud": "Ejecutar en mi nube"
+    },
+    "expired": "Esta solicitud caducó: el lab no se inició. Vuelve a lanzarlo desde el sitio web si todavía lo quieres.",
     "close": "Cerrar"
   },
   "quitGuard": {

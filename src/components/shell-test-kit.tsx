@@ -24,7 +24,7 @@ export async function blockQuit(count: unknown = 1) {
   await emitSettled("quit-blocked", count);
 }
 
-/** The cloud launch confirmation, listening, after the agent asked for `request`. */
+/** The website launch confirmation, listening, after the agent asked for `request`. */
 export async function askLaunch(request: unknown) {
   render(<LaunchConfirm />);
   await flush();

@@ -28,7 +28,17 @@ describe("AppShell", () => {
     installTauri();
     render(<AppShell />);
     await screen.findAllByText(/welcome/i);
-    await act(() => emit("launch-confirm", { sessionId: "sess-1", repository: "cyber-courses/lab-s3", commit: "0123456789abcdef", target: "AWS sandbox" }));
+    await act(() =>
+      emit("launch-confirm", {
+        sessionId: "sess-1",
+        labName: "S3 leak",
+        repository: "cyber-courses/lab-s3",
+        commit: "0123456789abcdef",
+        place: "cloud",
+        target: "AWS sandbox",
+        privileged: false,
+      }),
+    );
     await flush();
     expect(screen.getByRole("alertdialog").textContent).toContain("AWS sandbox");
     // The onboarding ends before the player answers: the question is still there.

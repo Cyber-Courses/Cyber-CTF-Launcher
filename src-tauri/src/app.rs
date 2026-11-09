@@ -176,9 +176,10 @@ fn setup(app: &mut App) {
             }
         });
     }
-    // Bring your own compute: register this machine and run the player's labs on it. The agent is
-    // domain code; the app shell gives it the data folder and the two effects it reaches the
-    // player through (the cloud-launch prompt, a system notification).
+    // Bring your own compute: register this machine and run the player's labs on it, each once
+    // the player approves it here. The agent is domain code; the app shell gives it the data
+    // folder and the two effects it reaches the player through (the launch prompt, a system
+    // notification).
     let agent = account::agent::Deps::new(platform::AppDirs::from(app.handle()), agent_prompt(app.handle()), agent_notify(app.handle()));
     tauri::async_runtime::spawn(account::agent::run(agent));
     spawn_reaper(app.handle().clone());
@@ -197,15 +198,15 @@ fn register_updater(handle: &AppHandle, channel: updates::Channel) {
     }
 }
 
-/// The background agent's cloud-launch prompt: an event the webview renders as a confirmation,
-/// with the window brought forward so the player sees it.
-fn agent_prompt(handle: &AppHandle) -> std::sync::Arc<account::agent::PromptCloudLaunch> {
+/// The background agent's launch prompt: an event the webview renders as a confirmation, with
+/// the main window brought back (it may be hidden or minimized) so the player sees it.
+fn agent_prompt(handle: &AppHandle) -> std::sync::Arc<account::agent::PromptLaunch> {
     let handle = handle.clone();
-    std::sync::Arc::new(move |session_id: &str, repository: &str, commit: &str, target: &str| {
-        let _ = handle.emit("launch-confirm", serde_json::json!({ "sessionId": session_id, "repository": repository, "commit": commit, "target": target }));
-        if let Some(w) = handle.get_webview_window("main") {
-            let _ = w.set_focus();
+    std::sync::Arc::new(move |request: &account::agent::LaunchRequest| {
+        if let Err(e) = handle.emit("launch-confirm", request) {
+            log::warn!("couldn't show a website launch's prompt: {e}");
         }
+        window::reveal_main(&handle);
     })
 }
 

@@ -1,14 +1,27 @@
 {
   "launchConfirm": {
-    "label": "Confirmar a inicialização de um lab na nuvem",
-    "title": "Rodar este lab na sua conta de nuvem?",
-    "body": "Uma inicialização feita pelo site quer rodar em <target>{target}</target>. Isso cria recursos cobrados na sua conta (eles param sozinhos depois). Só aprove uma inicialização que você mesmo fez.",
+    "label": "Confirmar a inicialização de um lab pelo site",
+    "title": {
+      "here": "Rodar este lab neste computador?",
+      "server": "Rodar este lab no seu servidor?",
+      "cloud": "Rodar este lab na sua conta de nuvem?"
+    },
+    "body": {
+      "here": "Uma inicialização feita pelo site quer iniciar <lab>{lab}</lab> neste computador. Só aprove uma inicialização que você mesmo fez.",
+      "server": "Uma inicialização feita pelo site quer iniciar <lab>{lab}</lab> em <target>{target}</target>. Só aprove uma inicialização que você mesmo fez.",
+      "cloud": "Uma inicialização feita pelo site quer iniciar <lab>{lab}</lab> em <target>{target}</target>. Isso cria recursos cobrados na sua conta (eles param sozinhos depois). Só aprove uma inicialização que você mesmo fez."
+    },
+    "privileged": "Este lab tem máquinas privilegiadas: elas têm acesso ao kernel do computador que as executa.",
     "repo": "repo: {repo}",
     "commit": "commit: {commit}",
     "failed": "Não foi possível enviar sua resposta ao Cyber CTF",
     "decline": "Recusar",
-    "approve": "Rodar na minha nuvem",
-    "expired": "Esta solicitação expirou: o lançamento não foi iniciado. Lance de novo pelo site se ainda quiser.",
+    "approve": {
+      "here": "Rodar aqui",
+      "server": "Rodar no meu servidor",
+      "cloud": "Rodar na minha nuvem"
+    },
+    "expired": "Esta solicitação expirou: o lab não foi iniciado. Inicie de novo pelo site se ainda quiser.",
     "close": "Fechar"
   },
   "quitGuard": {

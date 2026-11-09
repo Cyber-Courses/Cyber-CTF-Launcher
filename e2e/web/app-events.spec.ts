@@ -2,8 +2,8 @@ import { test, expect, openApp, navButton, pageTitle, emitEvent } from "./fixtur
 
 // What the Rust core tells the main window, through the dev mock's event delivery: a
 // `cyberctf://labs/<slug>` link (the deep-link plugin's `deep-link://new-url`, or the one the app
-// was opened with: `link=` in the URL), the quit guard (`quit-blocked`), and a website launch onto
-// a cloud account waiting for the player's approval (`launch-confirm`). See src/lib/dev-mock/scenario.ts.
+// was opened with: `link=` in the URL), the quit guard (`quit-blocked`), and a launch from the
+// website waiting for the player's approval (`launch-confirm`). See src/lib/dev-mock/scenario.ts.
 
 const DEEP_LINK = "deep-link://new-url";
 
@@ -67,21 +67,24 @@ test.describe("quit guard", () => {
   });
 });
 
-test.describe("cloud launch confirmation", () => {
+test.describe("website launch confirmation", () => {
   test("a website launch onto a cloud account waits for Approve or Decline", async ({ page }) => {
     await openApp(page);
     const request = {
       sessionId: "sess-42",
+      labName: "CloudGoat EC2 SSRF",
       repository: "CyberCTF/cloudgoat-ec2-ssrf",
       commit: "0123456789abcdef0123456789abcdef01234567",
+      place: "cloud",
       target: "AWS sandbox",
+      privileged: false,
     };
-    const confirm = page.getByRole("alertdialog", { name: "Confirm a cloud lab launch" });
+    const confirm = page.getByRole("alertdialog", { name: "Confirm a lab launch from the website" });
 
     await emitEvent(page, "launch-confirm", request);
     await expect(confirm).toBeVisible();
     await expect(confirm).toContainText("Run this lab on your cloud account?");
-    await expect(confirm).toContainText("A launch from the website wants to run on AWS sandbox.");
+    await expect(confirm).toContainText("A launch from the website wants to start CloudGoat EC2 SSRF on AWS sandbox.");
     await expect(confirm).toContainText("repo: CyberCTF/cloudgoat-ec2-ssrf");
     await expect(confirm).toContainText("commit: 0123456789ab");
     await confirm.getByRole("button", { name: "Run on my cloud" }).click();

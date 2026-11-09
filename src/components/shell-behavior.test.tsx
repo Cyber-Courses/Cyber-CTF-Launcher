@@ -419,7 +419,15 @@ describe("AppShell", () => {
 });
 
 describe("LaunchConfirm", () => {
-  const request = { sessionId: "sess-9", repository: "cyber-courses/lab-s3", commit: "0123456789abcdef0123", target: "AWS sandbox" };
+  const request = {
+    sessionId: "sess-9",
+    labName: "S3 leak",
+    repository: "cyber-courses/lab-s3",
+    commit: "0123456789abcdef0123",
+    place: "cloud",
+    target: "AWS sandbox",
+    privileged: false,
+  };
 
   it.each([
     ["Run on my cloud", true],

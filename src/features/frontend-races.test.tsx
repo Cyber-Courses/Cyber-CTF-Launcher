@@ -179,18 +179,26 @@ describe("reset", () => {
   });
 });
 
-describe("cloud launch confirmation", () => {
+describe("website launch confirmation", () => {
   it("expires with the backend's window instead of letting a late Approve do nothing", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const calls = installTauri();
     render(<LaunchConfirm />);
     await act(async () => {
-      await emit("launch-confirm", { sessionId: "s-1", repository: "org/lab", commit: "abcdef1234567890", target: "aws" });
+      await emit("launch-confirm", {
+        sessionId: "s-1",
+        labName: "Web",
+        repository: "org/lab",
+        commit: "abcdef1234567890",
+        place: "cloud",
+        target: "aws",
+        privileged: false,
+      });
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(screen.getByRole("alertdialog")).toBeTruthy();
     await advance(CONFIRM_WINDOW_MS);
-    expect(screen.queryByText(translate("app.launchConfirm.approve"))).toBeNull();
+    expect(screen.queryByText(translate("app.launchConfirm.approve.cloud"))).toBeNull();
     expect(screen.getByText(translate("app.launchConfirm.expired"))).toBeTruthy();
     await settle(() => {
       button(new RegExp(translate("app.launchConfirm.close"))).click();

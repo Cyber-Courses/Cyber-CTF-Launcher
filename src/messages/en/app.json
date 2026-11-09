@@ -1,14 +1,27 @@
 {
   "launchConfirm": {
-    "label": "Confirm a cloud lab launch",
-    "title": "Run this lab on your cloud account?",
-    "body": "A launch from the website wants to run on <target>{target}</target>. This starts billable resources on your account (they auto-stop later). Only approve a launch you started.",
+    "label": "Confirm a lab launch from the website",
+    "title": {
+      "here": "Run this lab on this computer?",
+      "server": "Run this lab on your server?",
+      "cloud": "Run this lab on your cloud account?"
+    },
+    "body": {
+      "here": "A launch from the website wants to start <lab>{lab}</lab> on this computer. Only approve a launch you started.",
+      "server": "A launch from the website wants to start <lab>{lab}</lab> on <target>{target}</target>. Only approve a launch you started.",
+      "cloud": "A launch from the website wants to start <lab>{lab}</lab> on <target>{target}</target>. This starts billable resources on your account (they auto-stop later). Only approve a launch you started."
+    },
+    "privileged": "This lab has privileged machines: they get kernel-level access to the computer that runs them.",
     "repo": "repo: {repo}",
     "commit": "commit: {commit}",
     "failed": "Couldn't send your answer to Cyber CTF",
     "decline": "Decline",
-    "approve": "Run on my cloud",
-    "expired": "This request expired: the launch wasn't started. Launch it again from the website if you still want it.",
+    "approve": {
+      "here": "Run here",
+      "server": "Run on my server",
+      "cloud": "Run on my cloud"
+    },
+    "expired": "This request expired: the lab wasn't started. Launch it again from the website if you still want it.",
     "close": "Close"
   },
   "quitGuard": {

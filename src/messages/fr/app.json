@@ -1,14 +1,27 @@
 {
   "launchConfirm": {
-    "label": "Confirmer le lancement d'un lab dans le cloud",
-    "title": "Lancer ce lab sur votre compte cloud ?",
-    "body": "Un lancement depuis le site web veut s'exécuter sur <target>{target}</target>. Cela crée des ressources facturables sur votre compte (elles s'arrêtent automatiquement plus tard). N'approuvez qu'un lancement que vous avez initié.",
+    "label": "Confirmer le lancement d'un lab depuis le site web",
+    "title": {
+      "here": "Lancer ce lab sur cet ordinateur ?",
+      "server": "Lancer ce lab sur votre serveur ?",
+      "cloud": "Lancer ce lab sur votre compte cloud ?"
+    },
+    "body": {
+      "here": "Un lancement depuis le site web veut démarrer <lab>{lab}</lab> sur cet ordinateur. N'approuvez qu'un lancement que vous avez initié.",
+      "server": "Un lancement depuis le site web veut démarrer <lab>{lab}</lab> sur <target>{target}</target>. N'approuvez qu'un lancement que vous avez initié.",
+      "cloud": "Un lancement depuis le site web veut démarrer <lab>{lab}</lab> sur <target>{target}</target>. Cela crée des ressources facturables sur votre compte (elles s'arrêtent automatiquement plus tard). N'approuvez qu'un lancement que vous avez initié."
+    },
+    "privileged": "Ce lab a des machines privilégiées : elles ont un accès au noyau de l'ordinateur qui les exécute.",
     "repo": "dépôt : {repo}",
     "commit": "commit : {commit}",
     "failed": "Impossible d'envoyer votre réponse à Cyber CTF",
     "decline": "Refuser",
-    "approve": "Lancer sur mon cloud",
-    "expired": "Cette demande a expiré : le lancement n'a pas eu lieu. Relancez-le depuis le site si vous le voulez toujours.",
+    "approve": {
+      "here": "Lancer ici",
+      "server": "Lancer sur mon serveur",
+      "cloud": "Lancer sur mon cloud"
+    },
+    "expired": "Cette demande a expiré : le lab n'a pas été lancé. Relancez-le depuis le site si vous le voulez toujours.",
     "close": "Fermer"
   },
   "quitGuard": {

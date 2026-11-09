@@ -397,7 +397,15 @@ describe("QuitGuard", () => {
 });
 
 describe("LaunchConfirm keyboard", () => {
-  const request = { sessionId: "sess-1", repository: "cyber-courses/lab-s3", commit: "0123456789abcdef", target: "AWS sandbox" };
+  const request = {
+    sessionId: "sess-1",
+    labName: "S3 leak",
+    repository: "cyber-courses/lab-s3",
+    commit: "0123456789abcdef",
+    place: "cloud",
+    target: "AWS sandbox",
+    privileged: false,
+  };
 
   it("puts the focus on Decline first, so Enter after a misclick never starts billable resources", async () => {
     const calls = installTauri({ confirm_launch: () => null });

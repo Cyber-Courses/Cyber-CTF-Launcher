@@ -1,23 +1,25 @@
 //! Launcher agent: "bring your own compute". Once the player is logged in, this machine
 //! registers itself with CyberBackend (keyed by a stable per-install id so several
 //! machines are distinct), heartbeats so it shows as online, and polls for the player's
-//! launch requests. When one arrives it claims it, runs the lab locally, and reports back.
-//! See doc/architecture/LAB-LAUNCHER-CHANNEL.md.
-//!
-//! Phase 2a (here): presence + claim-and-run. The interactive surface (loopback
-//! co-location server, relay tunnel, terminal / noVNC) is Phase 2b.
+//! launch requests. When one arrives it claims it, asks the player on this machine (the lab, where
+//! it would run, whether it has privileged machines), runs it once they approve, and reports back.
+//! A launch nobody approves here never runs. The website checks that a running lab's local
+//! address is this machine through the co-location probe (`colocation`).
 //!
 //! An administrator's policy (`DisableWebsiteAgent`) turns the agent off: the machine then
 //! never registers, shows online, nor takes launches.
 
-use std::collections::HashMap;
+mod confirm;
+
 use std::fmt::Write as _;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::platform::AppDirs;
 use serde_json::{Value, json};
-use tokio::sync::oneshot;
+
+pub use confirm::{LaunchRequest, PromptLaunch, confirm_launch};
+use confirm::{confirm_here, launch_request};
 
 use crate::account::api;
 use crate::account::auth;
@@ -28,30 +30,25 @@ use crate::platform::policy::{self, Key};
 use crate::runtime::start_place::{self, StartPlace};
 use crate::runtime::{Runtime, server};
 
-/// The prompt that asks the player to confirm a launch onto a cloud account (session id,
-/// repository, commit, target). The app shell shows it in the webview and brings the window
-/// forward; unit tests do nothing.
-pub type PromptCloudLaunch = dyn Fn(&str, &str, &str, &str) + Send + Sync;
-
 /// A system notification for the player (title, body), shown when a website launch starts here.
 pub type Notify = dyn Fn(&str, &str) + Send + Sync;
 
 /// The app the background agent runs inside: its data folder, and the two things it reaches the
-/// player through — a prompt to confirm a launch onto a cloud account and a system notification
-/// when a website launch starts here. The app shell builds it from the `AppHandle` (see
-/// `crate::app`); unit tests build one with no-op effects. Keeping the effects behind closures is
-/// what lets this module stay domain code, free of `tauri`.
+/// player through — a prompt to confirm a website launch and a system notification when one
+/// starts here. The app shell builds it from the `AppHandle` (see `crate::app`); unit tests build
+/// one with effects of their own. Keeping the effects behind closures is what lets this module
+/// stay domain code, free of `tauri`.
 #[derive(Clone)]
 pub struct Deps {
     dirs: AppDirs,
-    prompt_cloud_launch: Arc<PromptCloudLaunch>,
+    prompt_launch: Arc<PromptLaunch>,
     notify: Arc<Notify>,
 }
 
 impl Deps {
-    /// The agent's dependencies: the data folder, the cloud-launch prompt, and the notification.
-    pub fn new(dirs: AppDirs, prompt_cloud_launch: Arc<PromptCloudLaunch>, notify: Arc<Notify>) -> Deps {
-        Deps { dirs, prompt_cloud_launch, notify }
+    /// The agent's dependencies: the data folder, the launch prompt, and the notification.
+    pub fn new(dirs: AppDirs, prompt_launch: Arc<PromptLaunch>, notify: Arc<Notify>) -> Deps {
+        Deps { dirs, prompt_launch, notify }
     }
 
     fn dirs(&self) -> &AppDirs {
@@ -192,47 +189,6 @@ fn update_vars(session_id: &str, state: &str, p: &Progress<'_>) -> Value {
     json!({ "id": session_id, "s": state, "u": p.local_url, "c": p.control_url, "t": p.token, "n": p.nonce, "m": p.message })
 }
 
-/// Cloud-launch confirmations awaiting the user's answer, keyed by session id. The agent inserts
-/// a sender and awaits it; `confirm_launch` (from the UI) resolves it.
-fn pending_confirmations() -> &'static Mutex<HashMap<String, oneshot::Sender<bool>>> {
-    static P: OnceLock<Mutex<HashMap<String, oneshot::Sender<bool>>>> = OnceLock::new();
-    P.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// The user's answer to a cloud-launch confirmation, from the UI.
-pub fn confirm_launch(session_id: &str, approve: bool) {
-    if let Ok(mut map) = pending_confirmations().lock()
-        && let Some(tx) = map.remove(session_id)
-    {
-        let _ = tx.send(approve);
-    }
-}
-
-/// Asks the user to confirm a website launch that would run on one of their cloud accounts
-/// (it costs money), by emitting an event the UI shows as a prompt and waiting for the answer.
-/// A timeout counts as a decline, so a missed prompt doesn't hang the session or spend money.
-async fn confirm_cloud_launch(deps: &Deps, session_id: &str, repo: &str, commit: &str, target: &str) -> bool {
-    let (tx, rx) = oneshot::channel();
-    if let Ok(mut map) = pending_confirmations().lock() {
-        map.insert(session_id.to_string(), tx);
-    }
-    (deps.prompt_cloud_launch)(session_id, repo, commit, target);
-    let approved = await_answer(rx, CONFIRM_WAIT).await;
-    if let Ok(mut map) = pending_confirmations().lock() {
-        map.remove(session_id);
-    }
-    approved
-}
-
-/// How long a cloud-launch prompt waits for the player.
-const CONFIRM_WAIT: Duration = Duration::from_secs(180);
-
-/// The player's answer on `rx`: only an explicit approval within `wait` counts; a decline, a
-/// dropped prompt or no answer in time is a no.
-async fn await_answer(rx: oneshot::Receiver<bool>, wait: Duration) -> bool {
-    matches!(tokio::time::timeout(wait, rx).await, Ok(Ok(true)))
-}
-
 /// Where a claimed launch runs: the target picked on the website (one of this launcher's hosts
 /// or cloud accounts); else where the app's Start with no place chosen runs it
 /// ([`start_place::default_place`]: where it last ran, else a ready hypervisor here for a VM lab,
@@ -253,25 +209,6 @@ async fn launch_place(dirs: &AppDirs, claim: &Value) -> Result<StartPlace> {
 fn picked_target(claim: &Value, host_name: impl Fn(&str) -> Result<Option<String>>) -> Result<Option<String>> {
     let Some(target) = claim["target"].as_str() else { return Ok(None) };
     host_name(target)?.map(|_| Some(target.to_string())).ok_or_else(|| Error::Invalid("that host is no longer set up in the launcher".into()))
-}
-
-/// Running on a cloud account costs money, so a website launch onto one isn't auto-run: ask
-/// the user to confirm on this machine first (local and server targets still run unattended).
-async fn confirm_if_cloud(deps: &Deps, session_id: &str, claim: &Value, host: Option<&str>) -> Result<()> {
-    let dirs = deps.dirs();
-    let Some(id) = host else { return Ok(()) };
-    // Unreadable saved hosts are an error: a cloud launch must never read as a free one.
-    if !server::host_provider(dirs, id)?.is_some_and(crate::runtime::providers::Provider::is_cloud) {
-        return Ok(());
-    }
-    let target = server::host_name(dirs, id)?.unwrap_or_else(|| id.to_string());
-    let repo = claim["repository"].as_str().unwrap_or("");
-    let commit = claim["commit"].as_str().unwrap_or("");
-    if confirm_cloud_launch(deps, session_id, repo, commit, &target).await {
-        Ok(())
-    } else {
-        Err(Error::Invalid(format!("Launch on {target} was not confirmed on this machine.")))
-    }
 }
 
 /// The claimed lab's runtime, by its tag; containers when it names none the launcher knows.
@@ -362,10 +299,11 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
     )
     .await?;
     let claim = &data["claimLaunch"];
-    update_state(session_id, "PULLING", Progress { message: Some("Preparing the lab on your machine"), ..Default::default() }).await?;
     let place = launch_place(deps.dirs(), claim).await?;
     let host = place.host.clone();
-    confirm_if_cloud(deps, session_id, claim, host.as_deref()).await?;
+    let request = launch_request(deps.dirs(), session_id, claim, host.as_deref()).await?;
+    update_state(session_id, "PULLING", Progress { message: Some("Waiting for approval on your machine"), ..Default::default() }).await?;
+    confirm_here(deps, &request).await?;
     let runtime = claim_runtime(claim);
     // Anything this start brought up before failing (one unhealthy service, say) is torn down, or
     // it would keep running under a FAILED session and every later launch of it would be refused.
@@ -550,19 +488,11 @@ pub fn agent_info(dirs: &AppDirs) -> Result<AgentInfo> {
 mod tests {
     use super::*;
 
-    /// The agent's dependencies against a test app: its data folder, with no-op effects (the
-    /// webview prompt and the system notification have nothing to show in unit tests).
-    fn test_deps(t: &crate::testing::test_app::TestApp) -> Deps {
-        Deps::new(t.dirs(), Arc::new(|_: &str, _: &str, _: &str, _: &str| {}), Arc::new(|_: &str, _: &str| {}))
-    }
-
-    #[tokio::test]
-    async fn the_policy_keeps_the_agent_off() {
-        // With the website agent off the loop returns at once: it never registers nor polls.
-        let t = crate::testing::test_app::TestApp::new();
-        let _policy = policy::Override::with(&[Key::DisableWebsiteAgent]);
-        let ran = tokio::time::timeout(Duration::from_secs(5), Box::pin(run(test_deps(&t)))).await;
-        assert!(ran.is_ok(), "the agent kept running");
+    /// The agent's dependencies against a test app: its data folder, the prompts it shows kept
+    /// in `prompts`, and a no-op notification (a system notification has nothing to show here).
+    pub(super) fn test_deps(t: &crate::testing::test_app::TestApp, prompts: Arc<Mutex<Vec<LaunchRequest>>>) -> Deps {
+        let prompt = move |request: &LaunchRequest| prompts.lock().unwrap().push(request.clone());
+        Deps::new(t.dirs(), Arc::new(prompt), Arc::new(|_: &str, _: &str| {}))
     }
 
     #[test]
@@ -635,6 +565,14 @@ mod tests {
         assert_eq!(err.to_string(), "server.json: expected value");
     }
 
+    #[tokio::test]
+    async fn a_launch_runs_on_its_picked_host_else_here() {
+        let t = crate::testing::test_app::TestApp::new();
+        let az = t.host("az1", "azure", json!({}));
+        assert_eq!(launch_place(&t.dirs(), &json!({ "target": az })).await.unwrap().host.as_deref(), Some("az1"));
+        assert_eq!(launch_place(&t.dirs(), &json!({ "labId": "web", "runtime": "DOCKER" })).await.unwrap(), StartPlace::default(), "here");
+    }
+
     #[test]
     fn this_machines_identity_is_its_install_id_name_and_arch() {
         let t = crate::testing::test_app::TestApp::new();
@@ -659,37 +597,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_launch_onto_a_cloud_account_runs_only_once_confirmed_here() {
+    async fn the_policy_keeps_the_agent_off() {
+        // With the website agent off the loop returns at once: it never registers nor polls.
+        let t = crate::testing::test_app::TestApp::new();
+        let _policy = policy::Override::with(&[Key::DisableWebsiteAgent]);
+        let ran = tokio::time::timeout(Duration::from_secs(5), Box::pin(run(test_deps(&t, Arc::default())))).await;
+        assert!(ran.is_ok(), "the agent kept running");
+    }
+
+    #[tokio::test]
+    async fn a_lab_that_was_never_installed_has_nothing_to_tear_down() {
+        // A lab whose download failed: the failure isn't said to have left anything up.
         let t = crate::testing::test_app::TestApp::new();
         let dirs = t.dirs();
-        let deps = test_deps(&t);
-        let az = t.host("az1", "azure", json!({}));
-        let claim = json!({ "target": az, "repository": "CyberCTF/web", "commit": "abc" });
-        assert_eq!(launch_place(&dirs, &claim).await.unwrap().host.as_deref(), Some("az1"));
-        assert_eq!(launch_place(&dirs, &json!({ "labId": "web", "runtime": "DOCKER" })).await.unwrap(), StartPlace::default(), "here");
-        // Not a cloud (here, or no host): no question asked.
-        confirm_if_cloud(&deps, "s-local", &claim, None).await.unwrap();
-        // A cloud account: the answer from the UI decides.
-        for (sid, approve) in [("s-cloud-yes", true), ("s-cloud-no", false)] {
-            let answer = tokio::spawn(async move {
-                loop {
-                    if pending_confirmations().lock().unwrap().contains_key(sid) {
-                        confirm_launch(sid, approve);
-                        return;
-                    }
-                    tokio::task::yield_now().await;
-                }
-            });
-            let r = confirm_if_cloud(&deps, sid, &claim, Some(&az)).await;
-            answer.await.unwrap();
-            if approve {
-                r.unwrap();
-            } else {
-                assert_eq!(r.unwrap_err().to_string(), "Launch on Host az1 was not confirmed on this machine.");
-            }
-        }
-        // A lab that was never installed (its download failed) has nothing to tear down: the
-        // failure isn't said to have left anything up.
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         tear_down(&dirs, Some("gone"), Runtime::Docker).await.unwrap();
         tear_down(&dirs, None, Runtime::Vm).await.unwrap();
@@ -698,10 +618,10 @@ mod tests {
         assert_eq!(tools.calls(), [] as [&str; 0]);
     }
 
-    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+    pub(super) const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
     /// A website claim of lab `id` (Docker) at another commit than the one installed.
-    fn claim_of(id: &str) -> Value {
+    pub(super) fn claim_of(id: &str) -> Value {
         json!({ "labId": id, "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": COMMIT, "env": [] })
     }
 
@@ -755,19 +675,6 @@ mod tests {
     }
 
     #[test]
-    fn confirm_launch_answers_the_waiting_prompt_once() {
-        let (tx, mut rx) = oneshot::channel();
-        pending_confirmations().lock().unwrap().insert("s-confirm".into(), tx);
-        confirm_launch("s-other", true);
-        assert!(rx.try_recv().is_err());
-        confirm_launch("s-confirm", true);
-        assert!(rx.try_recv().unwrap());
-        assert!(!pending_confirmations().lock().unwrap().contains_key("s-confirm"));
-        let p = Progress::default();
-        assert!(p.local_url.is_none() && p.control_url.is_none() && p.token.is_none() && p.nonce.is_none() && p.message.is_none());
-    }
-
-    #[test]
     fn a_session_update_carries_its_state_and_progress() {
         let p = Progress { local_url: Some("http://127.0.0.1:8080"), message: Some("Running on your machine"), ..Default::default() };
         let vars = update_vars("s-1", "RUNNING", &p);
@@ -776,6 +683,8 @@ mod tests {
         assert_eq!(vars["u"], "http://127.0.0.1:8080");
         assert_eq!(vars["m"], "Running on your machine");
         assert!(vars["c"].is_null() && vars["t"].is_null() && vars["n"].is_null());
+        let p = Progress::default();
+        assert!(p.local_url.is_none() && p.control_url.is_none() && p.token.is_none() && p.nonce.is_none() && p.message.is_none());
     }
 
     #[test]
@@ -799,7 +708,7 @@ mod tests {
         let ids = vec!["s-1".to_string(), "s-2".to_string(), "s-3".to_string()];
         let claim = |sid: String| {
             claimed.lock().unwrap().push(sid.clone());
-            async move { if sid == "s-2" { Err(Error::Invalid("Launch on AWS was not confirmed on this machine.".into())) } else { Ok(()) } }
+            async move { if sid == "s-2" { Err(Error::Refused("Web wasn't approved on this machine, so it didn't start on AWS.".into())) } else { Ok(()) } }
         };
         let fail = |sid: String, why: String| {
             failed.lock().unwrap().push((sid, why));
@@ -807,24 +716,6 @@ mod tests {
         };
         claim_each(ids, claim, fail).await;
         assert_eq!(*claimed.lock().unwrap(), ["s-1", "s-2", "s-3"]);
-        assert_eq!(*failed.lock().unwrap(), [("s-2".to_string(), "Launch on AWS was not confirmed on this machine.".to_string())]);
-    }
-
-    #[tokio::test]
-    async fn a_cloud_launch_runs_only_on_an_explicit_yes_in_time() {
-        let (tx, rx) = oneshot::channel();
-        tx.send(true).unwrap();
-        assert!(await_answer(rx, Duration::from_secs(1)).await);
-        let (tx, rx) = oneshot::channel();
-        tx.send(false).unwrap();
-        assert!(!await_answer(rx, Duration::from_secs(1)).await);
-        // The prompt went away (sender dropped): a no.
-        let (tx, rx) = oneshot::channel::<bool>();
-        drop(tx);
-        assert!(!await_answer(rx, Duration::from_secs(1)).await);
-        // No answer in time: a no, so a missed prompt never spends money.
-        let (_tx, rx) = oneshot::channel::<bool>();
-        assert!(!await_answer(rx, Duration::from_millis(20)).await);
-        assert_eq!(CONFIRM_WAIT, Duration::from_secs(180));
+        assert_eq!(*failed.lock().unwrap(), [("s-2".to_string(), "Web wasn't approved on this machine, so it didn't start on AWS.".to_string())]);
     }
 }

@@ -35,6 +35,8 @@ export type * from "./LabService";
 export type * from "./LabStartPlace";
 export type * from "./LabStatus";
 export type * from "./LabTool";
+export type * from "./LaunchConfirmPlace";
+export type * from "./LaunchConfirmRequest";
 export type * from "./MachineMetrics";
 export type * from "./ManagedSettings";
 export type * from "./OciConfig";

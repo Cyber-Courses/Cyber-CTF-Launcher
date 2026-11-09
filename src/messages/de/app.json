@@ -1,14 +1,27 @@
 {
   "launchConfirm": {
-    "label": "Start eines Cloud-Labs bestätigen",
-    "title": "Dieses Lab in deinem Cloud-Konto ausführen?",
-    "body": "Ein Start von der Website soll auf <target>{target}</target> laufen. Dabei werden kostenpflichtige Ressourcen in deinem Konto gestartet (sie stoppen später automatisch). Bestätige nur einen Start, den du selbst ausgelöst hast.",
+    "label": "Start eines Labs von der Website bestätigen",
+    "title": {
+      "here": "Dieses Lab auf diesem Computer ausführen?",
+      "server": "Dieses Lab auf deinem Server ausführen?",
+      "cloud": "Dieses Lab in deinem Cloud-Konto ausführen?"
+    },
+    "body": {
+      "here": "Ein Start von der Website will <lab>{lab}</lab> auf diesem Computer starten. Bestätige nur einen Start, den du selbst ausgelöst hast.",
+      "server": "Ein Start von der Website will <lab>{lab}</lab> auf <target>{target}</target> starten. Bestätige nur einen Start, den du selbst ausgelöst hast.",
+      "cloud": "Ein Start von der Website will <lab>{lab}</lab> auf <target>{target}</target> starten. Dabei werden kostenpflichtige Ressourcen in deinem Konto gestartet (sie stoppen später automatisch). Bestätige nur einen Start, den du selbst ausgelöst hast."
+    },
+    "privileged": "Dieses Lab hat privilegierte Maschinen: Sie erhalten Zugriff auf den Kernel des Computers, auf dem sie laufen.",
     "repo": "Repo: {repo}",
     "commit": "Commit: {commit}",
     "failed": "Deine Antwort konnte nicht an Cyber CTF gesendet werden",
     "decline": "Ablehnen",
-    "approve": "In meiner Cloud ausführen",
-    "expired": "Diese Anfrage ist abgelaufen: Der Start wurde nicht ausgeführt. Starte ihn erneut über die Website, wenn du ihn noch willst.",
+    "approve": {
+      "here": "Hier ausführen",
+      "server": "Auf meinem Server ausführen",
+      "cloud": "In meiner Cloud ausführen"
+    },
+    "expired": "Diese Anfrage ist abgelaufen: Das Lab wurde nicht gestartet. Starte es erneut über die Website, wenn du es noch willst.",
     "close": "Schließen"
   },
   "quitGuard": {

@@ -70,6 +70,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   licences, crates.io only) and `pnpm audit --prod` in CI, Dependabot for the crates, the npm
   packages and the pinned actions, and a link check of the docs (`pnpm check:docs`).
 
+- **Every lab launched from the website asks on this computer first.** Only a launch onto a cloud
+  account used to ask; one here or on a server ran unattended. Now each one shows the lab's name,
+  where it would run (this computer, a server or a cloud account, by name) and, when the lab has
+  privileged machines, that they get kernel-level access; it runs only once approved here, and a
+  decline or no answer within three minutes refuses it. A launch the policy refuses is refused
+  before it is asked about.
 - **The in-app updater stays out of a package manager's way.** A copy installed by a Homebrew
   cask, a Debian package or the Microsoft Store is updated there, so the app no longer checks for
   or offers its own update (the updater plugin isn't started); Settings says where its updates
