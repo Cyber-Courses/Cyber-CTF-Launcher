@@ -51,12 +51,15 @@ export function localProviders(rt: LabRuntimeInfo, hostArch?: string, options?: 
   return hostArch && !runsNatively(rt, hostArch) ? [...EMULATORS] : listed;
 }
 
+/** The cloud paths the backend's run options give the lab, every form. */
+const cloudPaths = (o: LabRunOptions) => [...o.cloudDocker, ...o.cloudVm, ...o.cloudServices];
+
 /** Whether a saved server or cloud account can run the lab: as the backend's run options say
  *  (`options`: a path on its kind of server or its cloud), else, until they are read, when the
  *  catalogue lists its provider. */
 export function hostSupports(rt: LabRuntimeInfo | null, h: ServerHost, options?: LabRunOptions | null): boolean {
   if (!options) return !!rt?.providers.includes(h.provider);
-  const paths = CLOUDS.has(h.provider) ? [...options.cloudDocker, ...options.cloudVm, ...options.cloudServices] : options.servers;
+  const paths = CLOUDS.has(h.provider) ? cloudPaths(options) : options.servers;
   return paths.some((p) => p.provider === h.provider);
 }
 
@@ -78,8 +81,10 @@ const cloudConfigured = (rt: LabRuntimeInfo, hosts: ServerHost[], options: LabRu
   hosts.some((h) => CLOUDS.has(h.provider) && hostSupports(rt, h, options));
 
 /** Every place a lab could run, and its state (see [`PlaceState`]). Its words are
- *  `labs.places.<key>`. `setup` is what the launcher has ready, used to tell a place that can run
- *  now from one the lab supports but the launcher isn't configured for.
+ *  `labs.places.<key>`. Whether the lab runs there at all is the backend's run options' word once
+ *  they are read (`setup.options`), the catalogue's until then. `setup` is also what the launcher
+ *  has ready, used to tell a place that can run now from one the lab supports but the launcher
+ *  isn't configured for.
  *  A VM lab built for another CPU (x86 Windows on Apple Silicon) runs on this machine only
  *  emulated, so "VM on this machine" needs `emulates` (QEMU ready); containers run emulated
  *  anyway. */
@@ -100,30 +105,26 @@ export function runPlaces(
   const vmForeignCpu = w.vm && !!hostArch && !runsNatively(rt, hostArch);
   const localVmSupported = (w.vm || (w.docker && local)) && (!vmForeignCpu || emulates);
   const localVmReady = readyVms.some((p) => localProviders(rt, hostArch, options).includes(p));
-  const serverSupported = (w.vm || w.docker) && rt.providers.some((p) => SERVERS.has(p));
+  const containerSupported = options ? options.docker !== null : w.docker;
+  const serverSupported = options ? options.servers.length > 0 : (w.vm || w.docker) && rt.providers.some((p) => SERVERS.has(p));
   const serverReady = hosts.some((h) => SERVERS.has(h.provider) && hostSupports(rt, h, options));
+  const cloudSupported = options ? cloudPaths(options).length > 0 : rt.providers.some((p) => CLOUDS.has(p));
   return [
-    { key: "container", icon: Container, state: placeState(w.docker, true) },
+    { key: "container", icon: Container, state: placeState(containerSupported, true) },
     { key: "local_vm", icon: Monitor, state: placeState(localVmSupported, localVmReady) },
     { key: "server", icon: Server, state: placeState(serverSupported, serverReady) },
-    {
-      key: "cloud",
-      icon: Cloud,
-      state: placeState(
-        rt.providers.some((p) => CLOUDS.has(p)),
-        cloudConfigured(rt, hosts, options),
-      ),
-    },
+    { key: "cloud", icon: Cloud, state: placeState(cloudSupported, cloudConfigured(rt, hosts, options)) },
   ];
 }
 
-/** Cloud services: the player's cloud account, nowhere else (configurable until one is connected). */
+/** Cloud services: the player's cloud account, nowhere else (configurable until one is connected;
+ *  unsupported when the backend's run options give it no cloud, Isoloom refusing it there). */
 function cloudPlaces(rt: LabRuntimeInfo, hosts: ServerHost[], options: LabRunOptions | null): { key: PlaceKey; icon: LucideIcon; state: PlaceState }[] {
   return [
     { key: "container", icon: Container, state: "unsupported" },
     { key: "local_vm", icon: Monitor, state: "unsupported" },
     { key: "server", icon: Server, state: "unsupported" },
-    { key: "cloud", icon: Cloud, state: placeState(true, cloudConfigured(rt, hosts, options)) },
+    { key: "cloud", icon: Cloud, state: placeState(options ? options.cloudServices.length > 0 : true, cloudConfigured(rt, hosts, options)) },
   ];
 }
 

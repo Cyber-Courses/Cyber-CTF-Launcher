@@ -137,4 +137,17 @@ describe("runPlaces", () => {
     const localOnly = rt({ runtime: "DOCKER", docker: true, providers: ["virtualbox"] as Provider[] });
     expect(stateOf(runPlaces(localOnly, undefined, false, { hosts: [host("proxmox")] }), "server")).toBe("unsupported");
   });
+  it("takes each place from the run options once loaded: a server, cloud or Docker not in them is unsupported", () => {
+    // Regression: only this machine's VM place read the run options; the catalogue listing
+    // Proxmox and AWS kept those places offered though the backend gave the lab neither.
+    const lab = rt({ runtime: "DOCKER", docker: true, vm: true, providers: ["virtualbox", "proxmox", "aws"] as Provider[] });
+    const loaded = runPlaces(lab, undefined, false, { hosts: [host("proxmox"), host("aws")], options: options({ docker: null }) });
+    expect(stateOf(loaded, "container")).toBe("unsupported");
+    expect(stateOf(loaded, "server")).toBe("unsupported");
+    expect(stateOf(loaded, "cloud")).toBe("unsupported");
+    // Cloud services Isoloom refuses on their cloud: nowhere.
+    const goat = rt({ runtime: "CLOUD", cloud: true, providers: ["aws"] as Provider[] });
+    expect(stateOf(runPlaces(goat, undefined, false, { options: options({}) }), "cloud")).toBe("unsupported");
+    expect(stateOf(runPlaces(goat), "cloud")).toBe("configurable");
+  });
 });
