@@ -320,14 +320,20 @@ pub struct LaunchRequest {
 /// carries the one "starting offline" line the preparation may emit.
 pub(crate) async fn launch_job(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<Job> {
     let LaunchRequest { lab_id, provider, host, default_ports, offline, per_machine_vm, docker_engine } = request;
-    // Resolve the chosen engine to its Docker context now (here on the main process, where Docker
-    // answers): a container lab on a server never carries one.
-    let docker_context = match (&docker_engine, &host) {
-        (Some(engine), None) => crate::machine::system::docker::context_for_engine(engine).await,
-        _ => None,
-    };
+    let docker_context = pinned_context(docker_engine.as_deref(), host.as_deref()).await?;
     let startlab = launch_spec(dirs, &lab_id, offline, log).await?;
     Ok(Job { lab_id, op: Op::Launch, launch: startlab, provider, host, default_ports, per_machine_vm, docker_context })
+}
+
+/// The Docker context a container lab here is pinned to, resolved now (on the main process, where
+/// Docker answers) from the engine the player chose (`engine`); none without one, or on a server
+/// (`host`). An engine with no context here is an error: starting on the current context would
+/// run the lab on another engine than the one picked.
+async fn pinned_context(engine: Option<&str>, host: Option<&str>) -> Result<Option<String>> {
+    match (engine, host) {
+        (Some(engine), None) => crate::machine::system::docker::engine_context(engine).await.map(Some),
+        _ => Ok(None),
+    }
 }
 
 /// A stable lab id for a lab imported from the local directory `src`: `local-<slug>` of the lab's
@@ -608,6 +614,18 @@ mod tests {
         // covered by the runner's own tests and the integration tests).
         drop(held);
         let _ = launch;
+    }
+
+    #[tokio::test]
+    async fn a_chosen_engine_with_no_context_here_fails_the_launch_rather_than_use_another() {
+        // Regression: an engine whose context couldn't be found pinned nothing, and the lab
+        // started on the current context: another engine than the one the player picked.
+        let _tools = crate::platform::exec::fake::Tools::rules(&[("context ls", crate::platform::exec::fake::ok("default *\ncolima-dev\n"))]);
+        assert_eq!(pinned_context(Some("colima"), None).await.unwrap().as_deref(), Some("colima-dev"));
+        assert_eq!(pinned_context(Some("orbstack"), None).await.unwrap_err().to_string(), "no Docker context for orbstack");
+        // On a server, or with no engine chosen, nothing is pinned.
+        assert_eq!(pinned_context(Some("orbstack"), Some("pve")).await.unwrap(), None);
+        assert_eq!(pinned_context(None, None).await.unwrap(), None);
     }
 
     #[test]

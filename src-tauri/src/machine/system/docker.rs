@@ -137,15 +137,16 @@ pub(super) fn running_of(engines: &[EngineStatus]) -> Vec<&'static str> {
 }
 
 /// The Docker context behind `engine` on this machine, for pinning a lab to it (`DOCKER_CONTEXT` /
-/// `docker --context <name>`). None when no context on this machine names that engine.
-pub async fn context_for_engine(engine: &str) -> Option<String> {
-    engine_contexts().await.into_iter().find(|(_, e)| *e == engine).map(|(name, _)| name)
+/// `docker --context <name>`); an error when no context on this machine names that engine.
+pub async fn engine_context(engine: &str) -> Result<String> {
+    let found = engine_contexts().await.into_iter().find(|(_, e)| *e == engine).map(|(name, _)| name);
+    found.ok_or_else(|| Error::Invalid(format!("no Docker context for {engine}")))
 }
 
 /// Points the Docker CLI at another running engine (`docker context use`), as the player
 /// would in a terminal. Labs then run on it.
 pub async fn docker_use_engine(engine: String) -> Result<()> {
-    let name = context_for_engine(&engine).await.ok_or_else(|| Error::Invalid(format!("no Docker context for {engine}")))?;
+    let name = engine_context(&engine).await?;
     run("docker", &["context", "use", &name], None).await?;
     Ok(())
 }
@@ -276,9 +277,9 @@ mod tests {
     #[tokio::test]
     async fn an_engines_context_is_resolved_for_pinning_a_lab_to_it() {
         let _tools = Tools::rules(&[("context ls", ok("default *\norbstack\ncolima-dev\n"))]);
-        assert_eq!(context_for_engine("colima").await.as_deref(), Some("colima-dev"));
-        assert_eq!(context_for_engine("orbstack").await.as_deref(), Some("orbstack"));
-        assert_eq!(context_for_engine("podman").await, None);
+        assert_eq!(engine_context("colima").await.unwrap(), "colima-dev");
+        assert_eq!(engine_context("orbstack").await.unwrap(), "orbstack");
+        assert_eq!(engine_context("podman").await.unwrap_err().to_string(), "no Docker context for podman");
     }
 
     #[tokio::test]
