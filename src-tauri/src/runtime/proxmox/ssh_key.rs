@@ -6,7 +6,6 @@
 //! Only those two commands ever run on the node, and only the key's path is ever used (ssh
 //! reads the key itself): its contents are never read, kept or logged.
 
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -32,10 +31,7 @@ pub fn default_key(home: &Path) -> Option<PathBuf> {
 /// their own token, and setting up again from this one replaces its own.
 pub fn token_name(launcher_public: &str) -> String {
     let digest = Sha256::digest(launcher_public.trim().as_bytes());
-    digest.iter().take(4).fold(String::from("cyberctf-"), |mut name, b| {
-        let _ = write!(name, "{b:02x}");
-        name
-    })
+    format!("cyberctf-{}", crate::platform::hex(&digest[..4]))
 }
 
 /// The node command that (re)makes the token: an older token of the same name is removed first,

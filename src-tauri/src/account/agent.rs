@@ -11,7 +11,6 @@
 
 mod confirm;
 
-use std::fmt::Write as _;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -78,10 +77,7 @@ fn install_id_at(path: &std::path::Path) -> Result<String> {
 
 /// 16 random bytes as hex: install ids, co-location tokens and nonces.
 fn random_hex() -> String {
-    rand::random::<[u8; 16]>().iter().fold(String::with_capacity(32), |mut hex, b| {
-        let _ = write!(hex, "{b:02x}");
-        hex
-    })
+    crate::platform::random_hex(16)
 }
 
 /// A human label for this machine (editable server-side later). Not an identifier.
@@ -571,13 +567,6 @@ mod tests {
             assert!(err.starts_with("the website's launch request is incomplete: ") && err.contains(missing), "{err}");
         }
         assert!(parse_claim(&json!({ "claimLaunch": null })).is_err());
-    }
-
-    #[test]
-    fn random_hex_is_32_hex_digits() {
-        let (a, b) = (random_hex(), random_hex());
-        assert!(a.len() == 32 && a.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_ne!(a, b);
     }
 
     #[test]

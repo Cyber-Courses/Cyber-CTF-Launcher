@@ -8,10 +8,11 @@ use std::time::Duration;
 
 use crate::platform::AppDirs;
 
-use super::profile::{HostProfile, random_hex};
+use super::profile::HostProfile;
 use super::store::{find, load, update};
 use crate::error::{Error, Result};
 use crate::platform::exec::{CLI_TIMEOUT, run_env_timed};
+use crate::platform::random_hex;
 
 /// How long creating the project, linking it to billing or enabling Compute Engine may take.
 const PROJECT_TIMEOUT: Duration = Duration::from_secs(5 * 60);

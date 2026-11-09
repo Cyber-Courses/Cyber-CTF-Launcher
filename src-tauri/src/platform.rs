@@ -69,6 +69,20 @@ pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)
 }
 
+/// `bytes` as lowercase hex, two digits each.
+pub fn hex(bytes: &[u8]) -> String {
+    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut out, b| {
+        // Writing to a String can't fail.
+        let _ = std::fmt::Write::write_fmt(&mut out, format_args!("{b:02x}"));
+        out
+    })
+}
+
+/// `n` random bytes as lowercase hex: ids, tokens, nonces.
+pub fn random_hex(n: usize) -> String {
+    hex(&(0..n).map(|_| rand::random::<u8>()).collect::<Vec<_>>())
+}
+
 /// Whether `sh -n` accepts `script` (the install scripts run on macOS and Linux). Windows has no
 /// `sh` unless Git's is on PATH: there the syntax check is skipped, the other assertions still run.
 #[cfg(test)]
@@ -87,4 +101,17 @@ pub(crate) fn sh_parses(script: &str) -> bool {
 #[cfg(target_os = "macos")]
 pub fn brew_bin() -> Option<String> {
     ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].into_iter().find(|p| std::path::Path::new(p).exists()).map(String::from)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bytes_read_as_two_lowercase_hex_digits_each() {
+        assert_eq!(super::hex(&[0x00, 0x0f, 0xab, 0xff]), "000fabff");
+        assert_eq!(super::hex(&[]), "");
+        let (a, b) = (super::random_hex(16), super::random_hex(16));
+        assert!(a.len() == 32 && a.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "{a}");
+        assert_ne!(a, b);
+        assert_eq!(super::random_hex(3).len(), 6);
+    }
 }
