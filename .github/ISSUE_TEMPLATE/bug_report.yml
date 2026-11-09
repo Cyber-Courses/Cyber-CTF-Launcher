@@ -1,0 +1,64 @@
+name: Bug report
+description: The launcher did something wrong or failed.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. A security problem goes to the private report instead (see SECURITY.md).
+        Settings > About in the launcher has what the fields below ask for.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+      placeholder: "I started the lab … on this machine; it stopped at … with …"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where the lab ran
+      options:
+        - Not about a lab
+        - This machine, Docker
+        - This machine, VMs (or containers in a VM)
+        - A Proxmox server
+        - An ESXi server
+        - A cloud account
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Settings > About > Diagnostics > Copy, pasted here (the version, the OS and this machine's setup).
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: channel
+    attributes:
+      label: How you installed it
+      options:
+        - Installer from GitHub Releases (.exe, .msi, .dmg, .deb, AppImage)
+        - Homebrew
+        - apt repository
+        - Microsoft Store
+        - Built from source
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        From Settings > About > Log files > Open folder: cyberctf.log and the deploy-<lab>.log of the lab, from when it
+        went wrong. Drag the files here or paste the relevant lines. Read them first: they name your labs, servers and paths.
