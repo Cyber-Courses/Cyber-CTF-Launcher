@@ -52,10 +52,10 @@ pub async fn auth_status() -> AuthStatus {
     auth::auth_status().await
 }
 
-/// Signs out.
+/// Signs out; fails when the keychain still holds the session.
 #[tauri::command]
-pub async fn auth_logout() {
-    auth::auth_logout().await;
+pub async fn auth_logout() -> Result<()> {
+    auth::auth_logout().await
 }
 
 /// One of the backend's known queries, with the player's token (see [`api::api_query`]).

@@ -18,5 +18,6 @@
   "codeExpires": "Caduca en {time}",
   "codeExpired": "El código caducó. Cancela y vuelve a empezar.",
   "sessionExpiredTitle": "Sesión cerrada",
-  "sessionExpired": "Tu sesión caducó. Inicia sesión de nuevo para continuar."
+  "sessionExpired": "Tu sesión caducó. Inicia sesión de nuevo para continuar.",
+  "signOutFailed": "No se pudo cerrar la sesión"
 }

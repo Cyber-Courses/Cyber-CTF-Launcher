@@ -235,19 +235,24 @@ describe("Account", () => {
     expect(screen.queryByTitle(/Online/)).toBeNull();
   });
 
-  it("signs out locally even when the backend sign-out fails, without an unhandled rejection", async () => {
+  it("says a sign-out the keychain refused, and shows the session it kept, not a sign-out", async () => {
+    // Regression: a keychain that kept the session read as signed out, until the next start
+    // signed the player in again.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const kept = { loggedIn: true, name: "Ada", email: "ada@example.com" };
     const calls = installTauri({
       auth_logout: () => rejectWith("keychain locked"),
+      auth_status: () => kept,
     });
     const onChange = vi.fn();
     const user = userEvent.setup();
-    render(<Account status={{ loggedIn: true, name: "Ada", email: "ada@example.com" }} onChange={onChange} />);
+    render(<Account status={kept} onChange={onChange} />);
     await user.click(screen.getByTitle("Sign out"));
     await flush();
-    expect(commands(calls)).toContain("auth_logout");
-    expect(onChange).toHaveBeenCalledWith(signedOut);
-    expect(warn).toHaveBeenCalledWith("sign out:", "keychain locked");
+    expect(commands(calls)).toEqual(expect.arrayContaining(["auth_logout", "auth_status"]));
+    expect(onChange).toHaveBeenCalledWith(kept);
+    expect(onChange).not.toHaveBeenCalledWith(signedOut);
+    expect(warn).toHaveBeenCalledWith("Couldn’t sign out:", "keychain locked");
     warn.mockRestore();
   });
 });

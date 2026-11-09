@@ -18,5 +18,6 @@
   "codeExpires": "有効期限まで {time}",
   "codeExpired": "コードの有効期限が切れました。キャンセルしてやり直してください。",
   "sessionExpiredTitle": "サインアウトしました",
-  "sessionExpired": "セッションの有効期限が切れました。続行するには再度サインインしてください。"
+  "sessionExpired": "セッションの有効期限が切れました。続行するには再度サインインしてください。",
+  "signOutFailed": "サインアウトできませんでした"
 }

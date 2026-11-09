@@ -18,5 +18,6 @@
   "codeExpires": "Expires in {time}",
   "codeExpired": "The code expired. Cancel and start again.",
   "sessionExpiredTitle": "Signed out",
-  "sessionExpired": "Your session expired. Sign in again to continue."
+  "sessionExpired": "Your session expired. Sign in again to continue.",
+  "signOutFailed": "Couldn’t sign out"
 }

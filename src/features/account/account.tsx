@@ -2,13 +2,13 @@
 
 import { type ReactNode, useState } from "react";
 import { Check, Cog, Copy } from "lucide-react";
-import { authLogout, type AuthStatus } from "@/lib/tauri";
+import { authLogout, authStatus, type AuthStatus } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 import { CopyValue, useCopy } from "@/components/ui/copy-value";
 import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
-import { warn } from "@/lib/failure";
-import { useT } from "@/lib/i18n";
+import { tell, warn } from "@/lib/failure";
+import { translate, useT } from "@/lib/i18n";
 import { useNow } from "@/lib/use-now";
 import { cancelSignIn, signIn, signInWithCode, useSignIn } from "@/features/account/sign-in";
 import { cn } from "@/lib/utils";
@@ -57,16 +57,15 @@ async function signInAndReport(onChange: (status: AuthStatus) => void) {
   }
 }
 
-/** Signs out. The local auth state is always cleared, even if the backend's sign-out fails, so
- *  the UI can't get stuck "signed in" with no way out. */
+/** Signs out. When the keychain keeps the session, says so and shows the state it leaves (still
+ *  signed in), rather than a sign-out the next start would undo. */
 async function signOut(onChange: (status: AuthStatus) => void) {
   try {
     await authLogout();
-  } catch (e) {
-    // The click handler has no one to reject to: log it rather than leave it unhandled.
-    warn("sign out")(e);
-  } finally {
     onChange({ loggedIn: false, name: null, email: null });
+  } catch (e) {
+    tell(translate("account.signOutFailed"))(e);
+    onChange(await authStatus());
   }
 }
 

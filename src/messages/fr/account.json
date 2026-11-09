@@ -18,5 +18,6 @@
   "codeExpires": "Expire dans {time}",
   "codeExpired": "Le code a expiré. Annulez et recommencez.",
   "sessionExpiredTitle": "Déconnecté",
-  "sessionExpired": "Votre session a expiré. Reconnectez-vous pour continuer."
+  "sessionExpired": "Votre session a expiré. Reconnectez-vous pour continuer.",
+  "signOutFailed": "Impossible de se déconnecter"
 }

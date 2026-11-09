@@ -18,5 +18,6 @@
   "codeExpires": "Läuft ab in {time}",
   "codeExpired": "Der Code ist abgelaufen. Abbrechen und neu beginnen.",
   "sessionExpiredTitle": "Abgemeldet",
-  "sessionExpired": "Deine Sitzung ist abgelaufen. Melde dich erneut an, um fortzufahren."
+  "sessionExpired": "Deine Sitzung ist abgelaufen. Melde dich erneut an, um fortzufahren.",
+  "signOutFailed": "Abmelden fehlgeschlagen"
 }

@@ -208,7 +208,9 @@ where
             // 5xx, another refusal) keep it, so a blip near expiry doesn't log the user out and
             // stop the background agent.
             if e.code() == Code::SessionExpired {
-                store::clear().await;
+                if let Err(kept) = store::clear().await {
+                    log::warn!("the session the server refused stays stored: {kept}");
+                }
                 set_expired(true);
             }
             return Err(e);
@@ -394,14 +396,20 @@ fn status_from_read(read: std::result::Result<Option<Session>, String>, expired:
     }
 }
 
-pub async fn auth_logout() {
+/// Signs out: forgets the session, here and in the keychain.
+///
+/// # Errors
+///
+/// When the keychain (the session file, in a dev build) still holds the session: the player
+/// isn't signed out, and is told so rather than signed in again at the next start.
+pub async fn auth_logout() -> Result<()> {
     // After a refresh in flight: it would otherwise store its renewed session right after this
     // clear, and the player would be back in at the next call.
     let _no_refresh = SESSION_WRITE.lock().await;
     set_unsaved(None);
     // Signed out on purpose: not an expiry to explain.
     set_expired(false);
-    store::clear().await;
+    store::clear().await
 }
 
 #[cfg(test)]
@@ -485,12 +493,12 @@ mod tests {
         assert_eq!(access_token().await.unwrap(), "tok");
         assert_eq!(signed_in_user().await.as_deref(), Some("ada@example.com"));
 
-        auth_logout().await;
+        auth_logout().await.unwrap();
         assert_eq!(serde_json::to_value(auth_status().await).unwrap()["loggedIn"], false);
         assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
         assert_eq!(signed_in_user().await, None);
         // Signing out twice is fine.
-        auth_logout().await;
+        auth_logout().await.unwrap();
     }
 
     /// A renewed session the keychain couldn't take is served (its refresh token is the only
@@ -513,7 +521,7 @@ mod tests {
         assert!(unsaved().is_none());
         // Sign-out forgets both.
         set_unsaved(Some(Session { access_token: "tok3".into(), expires_at: now() + 3600, ..session() }));
-        auth_logout().await;
+        auth_logout().await.unwrap();
         assert!(unsaved().is_none());
         assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
     }
@@ -559,7 +567,7 @@ mod tests {
         assert!(still_waiting(&mut logout).await, "the sign-out went through while the refresh was in flight");
         release.send(()).unwrap();
         assert_eq!(refresh.await.unwrap().unwrap(), "renewed");
-        logout.await.unwrap();
+        logout.await.unwrap().unwrap();
         assert!(store::read().await.unwrap().is_none());
         assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
     }
@@ -578,7 +586,7 @@ mod tests {
         refresh.await.unwrap().unwrap();
         sign_in.await.unwrap().unwrap();
         assert_eq!(access_token().await.unwrap(), "other-account");
-        auth_logout().await;
+        auth_logout().await.unwrap();
     }
 
     /// The sign-in link reaches the app before the wait, for a "copy the link" fallback when no
@@ -655,7 +663,7 @@ mod tests {
         let status = serde_json::to_value(auth_status().await).unwrap();
         assert_eq!(status["loggedIn"], false);
         assert_eq!(status["sessionExpired"], true);
-        auth_logout().await;
+        auth_logout().await.unwrap();
         assert!(serde_json::to_value(auth_status().await).unwrap().get("sessionExpired").is_none());
 
         // Another refusal keeps the session, even one whose description names `invalid_grant`:
@@ -675,7 +683,7 @@ mod tests {
         let renew = |refresh: String| async move { refresh_tokens_at(&base, "client", "api", &refresh).await };
         assert!(matches!(access_token_renewed_by(renew).await.unwrap_err(), Error::Unreachable(_)));
         assert!(store::read().await.unwrap().is_some());
-        auth_logout().await;
+        auth_logout().await.unwrap();
     }
 
     const DEVICE_GRANT: &str =
@@ -696,7 +704,7 @@ mod tests {
         assert_eq!(shown["userCode"], "WDJB-MJHT");
         assert_eq!(shown["verificationUri"], "https://auth.example/device");
         assert_eq!(access_token().await.unwrap(), "at1");
-        auth_logout().await;
+        auth_logout().await.unwrap();
     }
 
     /// Cancel ends a sign-in with a code waiting for its approval, as cancelled.
@@ -727,7 +735,7 @@ mod tests {
         assert!(status.get("keychainError").is_none(), "{status}");
         assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
         assert_eq!(signed_in_user().await, None);
-        auth_logout().await;
+        auth_logout().await.unwrap();
     }
 
     /// An access token past its margin with no refresh token kept (a sign-in that was given
@@ -742,7 +750,7 @@ mod tests {
         let err = access_token_renewed_by(renew).await.unwrap_err();
         assert_eq!(err.code(), Code::SessionExpired);
         assert!(store::read().await.unwrap().is_some(), "the session was dropped");
-        auth_logout().await;
+        auth_logout().await.unwrap();
     }
 
     /// CyberBackend refusing a call (401: the token isn't accepted, 403: not allowed) is that
@@ -762,7 +770,7 @@ mod tests {
             assert_eq!((err.code(), err.to_string()), (Code::Other, "not allowed".to_string()), "{status}");
             assert_eq!(access_token().await.unwrap(), "tok", "{status}: the session was dropped");
         }
-        auth_logout().await;
+        auth_logout().await.unwrap();
     }
 
     #[test]

@@ -207,17 +207,29 @@ fn save_blocking(session: &Session, file: Option<&std::path::Path>) -> Result<()
         entry_named(&format!("session.{}", i + 1))?.set_password(part).map_err(|e| keychain_error(&e))?;
     }
     entry()?.set_password(&head).map_err(|e| keychain_error(&e))?;
-    clear_chunks_from(parts.len() + 1);
+    // The head names how many pieces to read: one left from before is never read, only stale.
+    if let Err(e) = clear_chunks_from(parts.len() + 1) {
+        log::warn!("the session is saved, but a piece of the one before stays in the keychain: {e}");
+    }
     backoff::set(None);
     Ok(())
 }
 
-/// Removes the session pieces `session.<from>` and after.
-fn clear_chunks_from(from: usize) {
-    for i in from..=MAX_CHUNKS {
-        if let Ok(e) = entry_named(&format!("session.{i}")) {
-            let _ = e.delete_credential();
-        }
+/// Removes the session pieces `session.<from>` and after, every one tried; the first failure.
+fn clear_chunks_from(from: usize) -> Result<()> {
+    (from..=MAX_CHUNKS).map(|i| entry_named(&format!("session.{i}")).and_then(|e| delete(&e))).fold(Ok(()), Result::and)
+}
+
+/// Deletes a keychain entry; one that isn't there is deleted already.
+fn delete(entry: &keyring::Entry) -> Result<()> {
+    removed(entry.delete_credential())
+}
+
+/// The outcome of deleting a keychain entry: gone, or why it stays.
+fn removed(deleted: keyring::Result<()>) -> Result<()> {
+    match deleted {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(keychain_error(&e)),
     }
 }
 
@@ -227,23 +239,32 @@ pub(super) async fn store(session: Session) -> Result<()> {
     tokio::task::spawn_blocking(move || save_blocking(&session, file.as_deref())).await.map_err(|e| Error::Invalid(e.to_string()))?
 }
 
-fn clear_blocking(file: Option<&std::path::Path>) {
+fn clear_blocking(file: Option<&std::path::Path>) -> Result<()> {
     if IN_A_FILE {
-        if let Some(path) = file {
-            let _ = std::fs::remove_file(path);
-        }
-        return;
+        return file.map_or(Ok(()), remove_file);
     }
-    if let Ok(e) = entry() {
-        let _ = e.delete_credential();
+    // The head first: without it the pieces are never read, so the session is gone even if one
+    // of them stays.
+    delete(&entry()?)?;
+    clear_chunks_from(1)
+}
+
+/// Removes the dev build's session file; one that isn't there is removed already.
+fn remove_file(path: &std::path::Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(Error::Invalid(format!("couldn't remove {}: {e}", path.display()))),
+        _ => Ok(()),
     }
-    clear_chunks_from(1);
 }
 
 /// Forgets the session, on a blocking thread.
-pub(super) async fn clear() {
+///
+/// # Errors
+///
+/// When the keychain (the session file, in a dev build) still holds it.
+pub(super) async fn clear() -> Result<()> {
     let file = session_file();
-    let _ = tokio::task::spawn_blocking(move || clear_blocking(file.as_deref())).await;
+    tokio::task::spawn_blocking(move || clear_blocking(file.as_deref())).await.map_err(|e| Error::Invalid(e.to_string()))?
 }
 
 #[cfg(test)]
@@ -327,6 +348,27 @@ mod tests {
         assert_eq!(back.name.as_deref(), Some("N"));
         std::fs::write(&path, "not json").unwrap();
         assert!(load_file(&path).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_session_is_forgotten_only_when_its_store_lets_it_go() {
+        // Regression: every failure to delete was dropped, and sign-out said it worked while the
+        // keychain kept the session.
+        assert!(removed(Ok(())).is_ok());
+        assert!(removed(Err(keyring::Error::NoEntry)).is_ok(), "nothing kept: already signed out");
+        let locked = removed(Err(keyring::Error::PlatformFailure("the keychain is locked".into()))).unwrap_err();
+        assert!(locked.to_string().contains("the keychain is locked"), "{locked}");
+
+        let dir = std::env::temp_dir().join(format!("cyberctf-clear-{}", rand::random::<u64>()));
+        let path = dir.join("dev-session.json");
+        assert!(remove_file(&path).is_ok(), "no file: already signed out");
+        std::fs::create_dir_all(&path).unwrap();
+        assert!(remove_file(&path).is_err(), "a session file that can't be removed is said");
+        std::fs::remove_dir(&path).unwrap();
+        std::fs::write(&path, "{}").unwrap();
+        remove_file(&path).unwrap();
+        assert!(!path.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
