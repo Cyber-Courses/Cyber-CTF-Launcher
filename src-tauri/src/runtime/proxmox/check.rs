@@ -44,8 +44,9 @@ pub(super) fn storage_problems(storages: &Value, vm_storage: &str, image_storage
 }
 
 /// Signs in, then checks the node, the storages and bridge a launch uses and, for token
-/// setups, that the launcher's SSH key is authorized on the node.
-pub async fn test(h: &HostProfile, secret: &str) -> Report {
+/// setups, that the launcher's SSH key (`identity`, in the app's own folder) is authorized on the
+/// node.
+pub async fn test(h: &HostProfile, secret: &str, identity: &std::path::Path) -> Report {
     let session = match sign_in(h, secret).await {
         Ok(s) => s,
         Err(e) => return sign_in_report(e, is_token(&h.username)),
@@ -67,12 +68,12 @@ pub async fn test(h: &HostProfile, secret: &str) -> Report {
         Err(e) => problems.push(format!("Couldn't list the node's network ({e}).")),
     }
     if is_token(&h.username)
-        && let Some(problem) = ssh_key_problem(h).await
+        && let Some(problem) = ssh_key_problem(h, identity).await
     {
         problems.push(problem);
     }
     // Lab networks are SDN vnets: the node must source its SDN config, or their bridges never exist.
-    problems.extend(sdn_problem(h, secret).await);
+    problems.extend(sdn_problem(h, secret, identity).await);
     outcome(&node, &bridge, &problems)
 }
 

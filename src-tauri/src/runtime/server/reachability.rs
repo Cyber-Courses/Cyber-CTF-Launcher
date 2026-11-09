@@ -9,11 +9,14 @@ use tokio::net::TcpStream;
 use super::checks::{TestResult, elapsed_ms};
 use super::cloud_checks::{test_aws, test_azure, test_digitalocean, test_gcp, test_linode, test_oci};
 use super::profile::HostProfile;
+use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(6);
 
-pub(crate) async fn test_host(h: &HostProfile, password: &str) -> TestResult {
+/// "Test connection" of host `h`, signing in with `password`; a Proxmox node is checked over SSH
+/// with the launcher's key in the app's folders `dirs` (made when there is none).
+pub(crate) async fn test_host(dirs: &AppDirs, h: &HostProfile, password: &str) -> TestResult {
     match h.provider {
         Provider::Aws => test_aws(h, password).await,
         Provider::Azure => test_azure(h).await,
@@ -21,12 +24,12 @@ pub(crate) async fn test_host(h: &HostProfile, password: &str) -> TestResult {
         Provider::DigitalOcean => test_digitalocean(password).await,
         Provider::Linode => test_linode(password).await,
         Provider::Oci => test_oci(h).await,
-        _ => test_server(h, password).await,
+        _ => test_server(dirs, h, password).await,
     }
 }
 
 /// A server host: it must accept a TCP connection on its port, then answer as what labs use.
-async fn test_server(h: &HostProfile, password: &str) -> TestResult {
+async fn test_server(dirs: &AppDirs, h: &HostProfile, password: &str) -> TestResult {
     let started = Instant::now();
     let mut stream = match tokio::time::timeout(TEST_TIMEOUT, TcpStream::connect((h.host.as_str(), h.port))).await {
         Ok(Ok(s)) => s,
@@ -53,7 +56,11 @@ async fn test_server(h: &HostProfile, password: &str) -> TestResult {
         // launch needs (node, storage content, bridge, SSH key for token setups).
         Provider::Proxmox => {
             drop(stream);
-            let r = crate::runtime::proxmox::test(h, password).await;
+            let key = match crate::runtime::ssh::ensure_key(dirs).await {
+                Ok((key, _)) => key,
+                Err(e) => return TestResult::reached(false, None, latency_ms, format!("The launcher's SSH key couldn't be made ({e}).")),
+            };
+            let r = crate::runtime::proxmox::test(h, password, &key).await;
             TestResult::reached(r.ok, r.authenticated, latency_ms, r.message)
         }
         _ => TestResult::reached(true, None, latency_ms, "Reachable"),
@@ -69,8 +76,9 @@ mod tests {
     async fn closed_ports_are_unreachable() {
         // Nothing can listen on port 0, so the connect fails at once (a freed port could be
         // taken by a parallel test).
+        let t = crate::testing::test_app::TestApp::new();
         let h = HostProfile { host: "127.0.0.1".into(), port: 0, ..profile(Provider::VmwareEsxi) };
-        let r = test_host(&h, "").await;
+        let r = test_host(&t.dirs(), &h, "").await;
         assert!(!r.ok && !r.reachable);
         assert!(r.message.starts_with("Can't reach 127.0.0.1:0"), "{}", r.message);
     }
@@ -86,10 +94,11 @@ mod tests {
                 s.write_all(banner).await.unwrap();
             }
         });
+        let t = crate::testing::test_app::TestApp::new();
         let h = HostProfile { host: "127.0.0.1".into(), port, ..profile(Provider::VmwareEsxi) };
-        let ssh = test_host(&h, "").await;
+        let ssh = test_host(&t.dirs(), &h, "").await;
         assert!(ssh.ok && ssh.reachable && ssh.latency_ms.is_some());
-        let http = test_host(&h, "").await;
+        let http = test_host(&t.dirs(), &h, "").await;
         assert!(!http.ok && http.reachable);
         assert!(http.message.contains("doesn't answer as SSH"));
     }

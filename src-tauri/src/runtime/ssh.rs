@@ -7,7 +7,6 @@
 //! Vagrant targets (ESXi) use Vagrant's own key, read from `vagrant ssh-config`.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
@@ -20,19 +19,6 @@ fn ssh_dir(dirs: &AppDirs) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// The launcher's key path once `ensure_key` has run, for code with no handle on the app's
-/// folders (the Terraform driver waiting on a lab host it just installed the key on).
-static LAUNCHER_KEY: OnceLock<PathBuf> = OnceLock::new();
-
-pub fn launcher_key() -> Option<PathBuf> {
-    LAUNCHER_KEY.get().cloned()
-}
-
-#[cfg(test)]
-pub fn set_launcher_key_for_test(key: PathBuf) {
-    let _ = LAUNCHER_KEY.set(key);
-}
-
 /// The launcher's private key, created on first use. Returns (key path, public key line).
 pub async fn ensure_key(dirs: &AppDirs) -> Result<(PathBuf, String)> {
     let key = ssh_dir(dirs)?.join("id_ed25519");
@@ -40,7 +26,6 @@ pub async fn ensure_key(dirs: &AppDirs) -> Result<(PathBuf, String)> {
         let path = key.to_string_lossy().to_string();
         run("ssh-keygen", &["-q", "-t", "ed25519", "-N", "", "-C", "cyberctf-launcher", "-f", &path], None).await?;
     }
-    let _ = LAUNCHER_KEY.set(key.clone());
     let public = std::fs::read_to_string(key.with_extension("pub"))?.trim().to_string();
     Ok((key, public))
 }

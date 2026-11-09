@@ -328,12 +328,7 @@ pub async fn server_test(app: AppHandle, id: String) -> Result<TestResult> {
     let host = load_host(&dirs, &id)?;
     // CLI-credential hosts keep no secret; the CLI resolves its own credentials.
     let password = host_secret(&host)?;
-    // Proxmox is checked over SSH too (the launcher's key on token hosts, the password next to
-    // it otherwise): make sure the key exists first.
-    if host.provider == Provider::Proxmox {
-        crate::runtime::ssh::ensure_key(&dirs).await?;
-    }
-    let mut result = test_host(&host, &password).await;
+    let mut result = test_host(&dirs, &host, &password).await;
     // macOS answers the app's first connection to a LAN host after a launch with "no route to
     // host" while it checks the Local Network permission; the next one goes through. One retry
     // keeps every freshly opened app from listing reachable servers as Unreachable.
@@ -343,7 +338,7 @@ pub async fn server_test(app: AppHandle, id: String) -> Result<TestResult> {
         let delays: &[u64] = if launched_recently() { &[2, 3, 5] } else { &[2] };
         for secs in delays {
             tokio::time::sleep(Duration::from_secs(*secs)).await;
-            result = test_host(&host, &password).await;
+            result = test_host(&dirs, &host, &password).await;
             if result.reachable {
                 break;
             }

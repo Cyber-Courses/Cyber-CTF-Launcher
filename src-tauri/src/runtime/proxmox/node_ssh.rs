@@ -97,23 +97,21 @@ pub(super) const SDN_SOURCE_CHECK: &str =
 pub(super) const SDN_MISSING: &str = "The node's /etc/network/interfaces doesn't load the SDN configuration, so a lab's network (an SDN vnet bridge) is never created and its VMs fail to start with \"bridge ... does not exist\". On the node, add this line at the end of /etc/network/interfaces:\n  source /etc/network/interfaces.d/*\nthen run: ifreload -a";
 
 /// The problem a launch would hit when the node doesn't source its SDN config (checked over SSH:
-/// the launcher's key on token setups, the password otherwise). A token setup whose SSH fails is
-/// reported by `ssh_key_problem` already.
-pub(super) async fn sdn_problem(h: &HostProfile, password: &str) -> Option<String> {
-    let Some(identity) = ssh::launcher_key() else {
-        return Some("The launcher's SSH key isn't ready yet; test again.".into());
-    };
-    let known_hosts = ssh::node_known_hosts(&identity);
+/// the launcher's key `identity` on token setups, the password otherwise, its askpass helper and
+/// the nodes' known hosts beside that key). A token setup whose SSH fails is reported by
+/// `ssh_key_problem` already.
+pub(super) async fn sdn_problem(h: &HostProfile, password: &str, identity: &std::path::Path) -> Option<String> {
+    let known_hosts = ssh::node_known_hosts(identity);
     let timeout = std::time::Duration::from_secs(30);
     let token = super::is_token(&h.username);
     let checked = if token {
-        ssh::Target::direct(&h.host, ssh_user(&h.username), identity.clone()).exec_timed(&known_hosts, SDN_SOURCE_CHECK, timeout).await
+        ssh::Target::direct(&h.host, ssh_user(&h.username), identity.to_path_buf()).exec_timed(&known_hosts, SDN_SOURCE_CHECK, timeout).await
     } else {
-        let env = match password_env(&identity, password) {
+        let env = match password_env(identity, password) {
             Ok(env) => env,
             Err(e) => return Some(format!("Couldn't check the node's network configuration over SSH ({e}).")),
         };
-        ssh_with(&password_ssh_args(h, &identity, SDN_SOURCE_CHECK), &env, timeout).await
+        ssh_with(&password_ssh_args(h, identity, SDN_SOURCE_CHECK), &env, timeout).await
     };
     sdn_outcome(checked, (!token).then(|| node_login(h)))
 }
@@ -134,15 +132,13 @@ pub fn ssh_user(username: &str) -> &str {
     token_user(username).split('@').next().unwrap_or("root")
 }
 
-/// Token setups upload the snippet over SSH with the launcher's key: checks it's authorized.
-pub(super) async fn ssh_key_problem(h: &HostProfile) -> Option<String> {
-    let Some(identity) = ssh::launcher_key() else {
-        return Some("The launcher's SSH key isn't ready yet; test again.".into());
-    };
+/// Token setups upload the snippet over SSH with the launcher's key `identity`: checks it's
+/// authorized.
+pub(super) async fn ssh_key_problem(h: &HostProfile, identity: &std::path::Path) -> Option<String> {
     let public = std::fs::read_to_string(identity.with_extension("pub")).unwrap_or_default().trim().to_string();
     let user = ssh_user(&h.username).to_string();
-    let target = ssh::Target::direct(&h.host, &user, identity.clone());
-    match target.exec_timed(&ssh::node_known_hosts(&identity), "true", std::time::Duration::from_secs(30)).await {
+    let target = ssh::Target::direct(&h.host, &user, identity.to_path_buf());
+    match target.exec_timed(&ssh::node_known_hosts(identity), "true", std::time::Duration::from_secs(30)).await {
         Ok(_) => None,
         Err(_) => Some(format!(
             "The launcher can't SSH to {user}@{} with its key, which a token setup needs to upload the lab's cloud-init. On the node, run:\n  echo '{public}' >> ~/.ssh/authorized_keys",

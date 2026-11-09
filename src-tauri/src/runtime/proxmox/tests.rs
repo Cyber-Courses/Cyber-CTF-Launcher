@@ -101,24 +101,27 @@ async fn proxmox_live_test() {
     };
     let bridge = var("CYBERCTF_TEST_PVE_BRIDGE").unwrap_or_else(|| "vmbr1".into());
     let password = var("CYBERCTF_TEST_PVE_PASSWORD").expect("CYBERCTF_TEST_PVE_PASSWORD");
+    // The launcher's key in a throwaway app folder: a password setup keeps its askpass beside it.
+    let app = crate::testing::test_app::TestApp::new();
+    let (key, _) = ssh::ensure_key(&app.dirs()).await.unwrap();
 
-    let r = test(&profile("root@pam", &bridge), &password).await;
+    let r = test(&profile("root@pam", &bridge), &password, &key).await;
     println!("password: ok={} {}", r.ok, r.message);
     assert!(r.ok);
-    let r = test(&profile("root@pam", &bridge), "wrong").await;
+    let r = test(&profile("root@pam", &bridge), "wrong", &key).await;
     println!("bad password: {}", r.message);
     assert_eq!(r.authenticated, Some(false));
-    let r = test(&profile("root@pam", "vmbr-nope"), &password).await;
+    let r = test(&profile("root@pam", "vmbr-nope"), &password, &key).await;
     println!("bad bridge: {}", r.message);
     assert!(!r.ok && r.message.contains("vmbr-nope"));
 
     if let (Some(secret), Some(key)) = (var("CYBERCTF_TEST_PVE_TOKEN_SECRET"), var("CYBERCTF_TEST_SSH_KEY")) {
-        ssh::set_launcher_key_for_test(key.into());
+        let key = std::path::PathBuf::from(key);
         let token = var("CYBERCTF_TEST_PVE_TOKEN_ID").unwrap_or_else(|| "root@pam!cyberctf-live".into());
-        let r = test(&profile(&token, &bridge), &secret).await;
+        let r = test(&profile(&token, &bridge), &secret, &key).await;
         println!("token: ok={} {}", r.ok, r.message);
         assert!(r.ok);
-        let r = test(&profile(&token, &bridge), "00000000-0000-0000-0000-000000000000").await;
+        let r = test(&profile(&token, &bridge), "00000000-0000-0000-0000-000000000000", &key).await;
         println!("bad token: {}", r.message);
         assert_eq!(r.authenticated, Some(false));
     }
@@ -242,7 +245,8 @@ async fn an_unreachable_host_fails_to_sign_in() {
     let mut h = host("127.0.0.1", None);
     h.port = 1;
     assert!(matches!(sign_in(&h, "pw").await, Err(SignInError::Failed(_))));
-    let r = test(&h, "pw").await;
+    // Fails at sign-in, before the key is ever used.
+    let r = test(&h, "pw", std::path::Path::new("/nonexistent/id_ed25519")).await;
     assert!(!r.ok && r.authenticated.is_none(), "{}", r.message);
     // Not knowing whether the bridge is internal fails the launch: guessing "no" hung Terraform.
     let err = bridge_is_internal(&h, "pw").await.unwrap_err().to_string();
@@ -293,23 +297,47 @@ fn a_missing_sdn_directive_is_reported_with_its_fix() {
 #[tokio::test]
 async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
     use crate::platform::exec::fake::{Tools, fail, ok};
-    let dir = std::env::temp_dir().join(format!("cyberctf-sdn-key-{}", rand::random::<u32>()));
-    ssh::set_launcher_key_for_test(dir.join("id_ed25519"));
-    let key = ssh::launcher_key().unwrap();
+    let app = crate::testing::test_app::TestApp::new();
+    let key = app.data().join("ssh").join("id_ed25519");
     std::fs::create_dir_all(key.parent().unwrap()).unwrap();
     // A token setup: the launcher's key, as the token's user.
     let token = HostProfile { username: "root@pam!cyberctf-0a1b2c3d".into(), ..host("10.0.0.50", None) };
     let tools = Tools::rules(&[("/etc/network/interfaces", fail(""))]);
-    assert_eq!(sdn_problem(&token, "secret").await.as_deref(), Some(SDN_MISSING));
+    assert_eq!(sdn_problem(&token, "secret", &key).await.as_deref(), Some(SDN_MISSING));
     let call = tools.calls().pop().unwrap();
     assert!(call.starts_with("ssh -i ") && call.contains(" root@10.0.0.50 ") && call.ends_with(SDN_SOURCE_CHECK), "{call}");
     drop(tools);
     let tools = Tools::rules(&[("/etc/network/interfaces", ok(""))]);
-    assert_eq!(sdn_problem(&token, "secret").await, None);
+    assert_eq!(sdn_problem(&token, "secret", &key).await, None);
     drop(tools);
     // A password setup: the password, through the askpass helper.
     let tools = Tools::rules(&[("/etc/network/interfaces", fail(""))]);
-    assert_eq!(sdn_problem(&host("10.0.0.50", None), "pw").await.as_deref(), Some(SDN_MISSING));
+    assert_eq!(sdn_problem(&host("10.0.0.50", None), "pw", &key).await.as_deref(), Some(SDN_MISSING));
     assert_eq!(tools.env_of("/etc/network/interfaces", "CYBERCTF_SSH_PASSWORD").as_deref(), Some("pw"));
     assert!(tools.calls().pop().unwrap().contains("PreferredAuthentications=password"));
+}
+
+/// Regression: the launcher's key path was process-wide, pinned by whichever test made a key
+/// first, so a later check wrote its askpass helper into that test's app folder after it was
+/// removed: one stray folder per test run in the real Application Support. The helper goes
+/// beside the key of the app it is given, and nowhere else.
+#[tokio::test]
+async fn the_sdn_check_writes_its_askpass_in_the_given_apps_folder_only() {
+    use crate::platform::exec::fake::{Tools, fail};
+    let (first, second) = (crate::testing::test_app::TestApp::new(), crate::testing::test_app::TestApp::new());
+    let _tools = Tools::rules(&[("/etc/network/interfaces", fail(""))]);
+    for app in [&first, &second] {
+        let key = app.data().join("ssh").join("id_ed25519");
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        sdn_problem(&host("10.0.0.50", None), "pw", &key).await;
+    }
+    let askpass = askpass_script(cfg!(windows)).0;
+    for app in [&first, &second] {
+        assert!(app.data().join("ssh").join(askpass).is_file(), "{}", app.data().display());
+    }
+    // The first app gone, a check for the second leaves nothing where the first one was.
+    let gone = first.data().to_path_buf();
+    drop(first);
+    sdn_problem(&host("10.0.0.50", None), "pw", &second.data().join("ssh").join("id_ed25519")).await;
+    assert!(!gone.exists(), "{} came back", gone.display());
 }
