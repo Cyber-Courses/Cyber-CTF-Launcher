@@ -315,14 +315,7 @@ async fn present_before(dirs: &AppDirs, claim: &Value) -> bool {
 /// brought up, and only that (see [`undoes`]). Where the lab is reachable here, once running.
 async fn run_claimed(dirs: &AppDirs, claim: &Value, host: Option<&str>, runtime: Runtime, present_before: bool) -> Result<Option<String>> {
     let lab_id = claim["labId"].as_str();
-    match labs::run(
-        dirs,
-        claim.clone(),
-        &labs::Placement { host, ..labs::Placement::default() },
-        |_line: String| {},
-    )
-    .await
-    {
+    match labs::run(dirs, claim.clone(), &labs::Placement { host, ..labs::Placement::default() }, |_line: String| {}).await {
         Ok(url) => Ok(url),
         Err(e) => Err(undo_start(dirs, lab_id, runtime, present_before, e).await),
     }

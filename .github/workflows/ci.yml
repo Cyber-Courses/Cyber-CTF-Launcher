@@ -41,9 +41,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux on ubuntu-22.04 to compile and test on the same glibc floor the shipped installers
-        # target (release.yml builds the Linux binaries on 22.04); macOS/Windows on latest.
-        os: [ubuntu-22.04, macos-latest, windows-latest]
+        # Every platform the launcher ships for, on the runners release.yml builds it on: Linux
+        # x64 and Arm on ubuntu-22.04 (the glibc floor the installers target), Windows x64 and Arm,
+        # and macOS on Apple Silicon and Intel (the universal app's two halves).
+        os: [ubuntu-22.04, ubuntu-22.04-arm, macos-latest, macos-15-intel, windows-latest, windows-11-arm]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:

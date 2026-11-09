@@ -17,6 +17,25 @@ is tested at the lowest level that can show it; the higher ones run before a rel
 scenarios and what each guards against; `infra/test-servers/` makes throwaway Proxmox and ESXi
 hosts for their server tier.
 
+## Platforms
+
+Every platform the launcher ships for is tested in CI, on the runners `release.yml` builds it on.
+
+| Platform             | Runner             | Unit (Rust) | Installer smoke | Integration (Docker labs, attack box) |
+| -------------------- | ------------------ | ----------- | --------------- | ------------------------------------- |
+| Linux x64            | `ubuntu-22.04`     | yes         | yes (`.deb`)    | yes (`ubuntu-latest`)                 |
+| Linux Arm            | `ubuntu-22.04-arm` | yes         | yes (`.deb`)    | yes (`ubuntu-24.04-arm`, native box)  |
+| macOS, Apple Silicon | `macos-latest`     | yes         | yes (`.app`)    | here (`pnpm test:integration`)        |
+| macOS, Intel         | `macos-15-intel`   | yes         | yes (`.app`)    | no runner with Docker or a hypervisor |
+| Windows x64          | `windows-latest`   | yes         | yes (NSIS)      | no Linux containers on the runner     |
+| Windows Arm          | `windows-11-arm`   | yes         | yes (NSIS)      | no Linux containers on the runner     |
+
+What differs by platform is decided in code a unit test covers on every platform (the box's CPU:
+`attack_machine/place.rs`; the tools' paths and shells: `platform/`). A real lab on an Intel Mac
+or on Windows (Docker Desktop, Hyper-V, VirtualBox) still needs a machine of that kind: run
+`pnpm test:integration` there before a release that changes how labs run, and
+`packaging/windows/smoke-test.ps1` for the installer's edge cases.
+
 ## Where a new test goes
 
 A failure found in the field goes to the lowest level that can reproduce it:

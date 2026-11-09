@@ -38,9 +38,16 @@ jobs:
           # ubuntu-22.04 to build the .deb on the glibc floor the shipped installers target.
           - os: ubuntu-22.04
             bundles: deb
+          - os: ubuntu-22.04-arm
+            bundles: deb
           - os: macos-latest
             bundles: app
+          # The universal app's Intel half, launched on an Intel Mac.
+          - os: macos-15-intel
+            bundles: app
           - os: windows-latest
+            bundles: nsis
+          - os: windows-11-arm
             bundles: nsis
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30

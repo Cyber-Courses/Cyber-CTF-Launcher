@@ -107,16 +107,56 @@ impl Placed {
         self.host.console(&super::name(&self.dir))
     }
 
-    /// The box's CPU: this computer's own where the lab runs on it and it is Arm (a lab's
-    /// machines are amd64 unless they say otherwise; the VM a container lab runs in here is this
-    /// computer's own CPU too); the lab's on a server or in a cloud account.
+    /// The box's CPU on this computer ([`box_cpu`]).
     fn cpu(&self) -> Cpu {
-        let native = matches!(self.target, Target::Docker | Target::DockerVm | Target::Vagrant);
-        if self.local() && native && std::env::consts::ARCH == "aarch64" { Cpu::Arm } else { Cpu::Lab }
+        box_cpu(std::env::consts::ARCH, self.local(), self.target)
     }
 
     /// Whether the box runs here, on this machine (its image is the learner's local download).
     pub(crate) fn local(&self) -> bool {
         matches!(self.host, Host::Local(_))
+    }
+}
+
+/// The box's CPU for a lab of `target`, run on this computer (`local`) or not, `arch` being this
+/// computer's (`std::env::consts::ARCH`): this computer's own where the lab runs on it and it is
+/// Arm (a lab's machines are amd64 unless they say otherwise; the VM a container lab runs in here
+/// is this computer's CPU too), whatever the OS; the lab's on a server or in a cloud account, and
+/// on an x86 computer.
+fn box_cpu(arch: &str, local: bool, target: Target) -> Cpu {
+    let native = matches!(target, Target::Docker | Target::DockerVm | Target::Vagrant);
+    if local && native && arch == "aarch64" { Cpu::Arm } else { Cpu::Lab }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every computer the launcher ships for, as Rust names its CPU: Apple Silicon and Intel Macs,
+    /// Windows on x64 and Arm, Linux on x64 and Arm.
+    const ARM: &str = "aarch64";
+    const X86: &str = "x86_64";
+
+    #[test]
+    fn on_an_arm_computer_the_box_of_a_lab_here_runs_natively_on_every_local_form() {
+        for target in [Target::Docker, Target::DockerVm, Target::Vagrant] {
+            assert_eq!(box_cpu(ARM, true, target), Cpu::Arm, "{target:?}");
+        }
+    }
+
+    #[test]
+    fn on_an_x86_computer_the_box_takes_the_labs_cpu() {
+        for target in [Target::Docker, Target::DockerVm, Target::Vagrant] {
+            assert_eq!(box_cpu(X86, true, target), Cpu::Lab, "{target:?}");
+        }
+    }
+
+    #[test]
+    fn on_a_server_or_in_a_cloud_account_the_box_takes_the_labs_cpu_whatever_this_computer_is() {
+        for arch in [ARM, X86] {
+            for target in [Target::DockerVm, Target::Proxmox, Target::CloudDocker, Target::CloudVm] {
+                assert_eq!(box_cpu(arch, false, target), Cpu::Lab, "{arch} {target:?}");
+            }
+        }
     }
 }

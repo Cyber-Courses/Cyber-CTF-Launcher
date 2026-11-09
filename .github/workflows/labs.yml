@@ -4,7 +4,8 @@ name: Labs
 # a lab is generated and started, its status read, the attack box started beside it and a target
 # reached from inside it, the lab's checks run, then the lab stopped and nothing of it left.
 # Labs: the Supplier portal API (one network) and Isoloom's `segmented` example (three networks
-# behind a router).
+# behind a router); then the attack box added to Isoloom's `solo-web` and taken out. On Linux x64
+# and Linux Arm (where the box runs natively on arm64).
 
 on:
   pull_request:
@@ -26,7 +27,11 @@ permissions:
 
 jobs:
   docker-labs:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -90,6 +95,13 @@ jobs:
           CYBERCTF_TEST_ATTACK_BOX: ${{ env.ATTACK_BOX }}
           ISOLOOM_HOME: ${{ runner.temp }}/isoloom-home
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib 'integration_tests::docker::' -- --ignored --nocapture --test-threads=1
+      - name: Integration tests (the attack box)
+        timeout-minutes: 8
+        env:
+          CYBERCTF_TEST_BOX_LAB: ${{ runner.temp }}/isoloom/examples/solo-web
+          CYBERCTF_TEST_BOX_FORM: docker
+          ISOLOOM_HOME: ${{ runner.temp }}/isoloom-home
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib 'integration_tests::attack_box::the_attack_box_is_a_machine_of_the_lab_on_every_local_form' -- --ignored --nocapture --test-threads=1 --exact
       - name: Docker state on failure
         if: failure()
         run: |

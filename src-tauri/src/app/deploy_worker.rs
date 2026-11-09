@@ -273,9 +273,7 @@ mod tests {
         // newer field takes its default.
         let job: Job = serde_json::from_str(r#"{"lab_id":"lab-1"}"#).unwrap();
         assert_eq!(job, Job::on_lab("lab-1", Op::Launch));
-        assert!(
-            job.launch.is_null() && !job.default_ports && !job.per_machine_vm && job.provider.is_none() && job.host.is_none()
-        );
+        assert!(job.launch.is_null() && !job.default_ports && !job.per_machine_vm && job.provider.is_none() && job.host.is_none());
         assert_eq!(job.key(), "lab-1");
     }
 
