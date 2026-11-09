@@ -375,6 +375,25 @@ fn an_automation_refusal_is_told_apart_from_a_utm_still_opening() {
     assert!(UTM_NOT_ALLOWED.contains("Automation"));
 }
 
+/// A UTM that answers but isn't ready for commands yet (-2700, as it refused a VM import after
+/// answering its name) is waited for like one still opening: the start goes on once it is.
+#[tokio::test]
+async fn a_utm_not_ready_for_commands_is_waited_for() {
+    use crate::platform::exec::fake::{Tools, fail, ok};
+    let mut probes = 0;
+    let tools = Tools::new(move |program, args| match (program, args) {
+        ("osascript", [_, probe]) if probe.contains("every virtual machine") => {
+            probes += 1;
+            if probes == 1 { fail("execution error: UTM got an error: UTM is not ready to accept commands. (-2700)") } else { ok("") }
+        }
+        _ => ok(""),
+    });
+    let mut lines = Vec::new();
+    check_utm(&mut |l| lines.push(l)).await.unwrap();
+    assert!(lines.iter().any(|l| l.contains("waiting for it to answer")), "{lines:?}");
+    assert!(tools.called("every virtual machine"), "asks for its VMs, which only a ready UTM lists");
+}
+
 /// The real UTM, opened cold: run by hand before a release with UTM quit (`osascript -e 'tell
 /// application "UTM" to quit'`), so the wait covers its launch.
 #[tokio::test]

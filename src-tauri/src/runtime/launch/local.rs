@@ -83,8 +83,10 @@ pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(St
 /// How long UTM may take to open and answer Apple events.
 const UTM_WAIT: Duration = Duration::from_secs(60);
 
-/// What UTM is asked, once it runs: its name, the cheapest Apple event it answers.
-const UTM_PROBE: &str = "tell application \"UTM\" to get name";
+/// What UTM is asked, once it runs: its virtual machines. Not its name: UTM answers that while
+/// it is still loading, then refuses the VM import a moment later with "UTM is not ready to
+/// accept commands. (-2700)"; it lists its VMs only once it takes commands.
+const UTM_PROBE: &str = "tell application \"UTM\" to get id of every virtual machine";
 
 /// Why UTM refused the probe when macOS doesn't let this app drive it, with the way out.
 pub(super) const UTM_NOT_ALLOWED: &str =
