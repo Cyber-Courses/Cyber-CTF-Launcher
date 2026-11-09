@@ -2,7 +2,7 @@
 //! with a stable code; the launcher's wording (and the codes its UI knows) is decided here, from
 //! that code, the same as the launcher's own Docker path says it.
 
-use isothrum_runner::{Error as RunnerError, ErrorCode};
+use isothrum_runner::{Error as RunnerError, ErrorCode, TimedOut};
 
 use crate::error::{Code, Error};
 
@@ -15,6 +15,27 @@ pub(crate) fn refused_before_acting(e: &Error) -> bool {
     matches!(e, Error::RefusedBeforeActing(_) | Error::Refused(_)) || matches!(e.code(), Code::AlreadyInProgress | Code::ToolMissing { .. })
 }
 
+/// What a step stopped for taking too long says: how long it went without progress (and what it
+/// last printed), or that it hit the longest any step may run.
+fn timed_out_step(step: &str, timed_out: &TimedOut) -> Error {
+    const AGAIN: &str = "Start the lab again; if it keeps happening, check the network and the resources of Docker, the hypervisor or the server.";
+    let minutes = timed_out.after_s().div_ceil(60);
+    Error::Invalid(match timed_out {
+        TimedOut::NoProgress { last_line: Some(line), .. } => {
+            format!("The lab's `{step}` step showed no progress for {minutes} minutes, so it was stopped. Its last output was: \u{201c}{line}\u{201d}. {AGAIN}")
+        }
+        TimedOut::NoProgress { last_line: None, .. } => {
+            format!("The lab's `{step}` step printed nothing for {minutes} minutes, so it was stopped. {AGAIN}")
+        }
+        TimedOut::Ceiling { after_s } => format!(
+            "The lab's `{step}` step was still working after {} hours, the longest any step may run, so it was stopped. {AGAIN}",
+            after_s.div_ceil(3600)
+        ),
+        // A reason added later reads as the plain limit.
+        _ => format!("The lab's `{step}` step ran into its {minutes}-minute limit, so it was stopped. {AGAIN}"),
+    })
+}
+
 /// The launcher's error for a runner's failure.
 pub(super) fn from_runner(e: RunnerError) -> Error {
     match e {
@@ -22,10 +43,7 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port, holder: None }),
         RunnerError::ToolMissing { tool, .. } => Error::coded(Code::ToolMissing { tool }),
         RunnerError::ToolFailed { step, reason } => tool_failed(&step, &reason),
-        RunnerError::Timeout { step, after_s } => Error::Invalid(format!(
-            "The lab's `{step}` step didn't finish within {} minutes, so it was stopped. Start the lab again; if it keeps happening, check the resources of Docker, the hypervisor or the server.",
-            after_s.div_ceil(60)
-        )),
+        RunnerError::Timeout { step, timed_out } => timed_out_step(&step, &timed_out),
         RunnerError::ToolTooOld { tool, found, required } => Error::Invalid(format!(
             "This lab needs {} {required} or later, and this computer has {found}. Update it, then start the lab again.",
             tool_name(&tool)
@@ -236,7 +254,13 @@ mod tests {
             assert!(said.contains(again), "{said}");
         }
         assert!(expired_sign_in("Error: creating EC2 Instance: InsufficientInstanceCapacity", Some("aws")).is_none());
-        assert!(said(RunnerError::Timeout { step: "up".into(), after_s: 1800 }).1.contains("within 30 minutes"));
+        let stalled = TimedOut::NoProgress { after_s: 1800, last_line: Some("web Downloading 1.121GB".into()) };
+        assert_eq!(
+            said(RunnerError::Timeout { step: "up".into(), timed_out: stalled }).1,
+            "The lab's `up` step showed no progress for 30 minutes, so it was stopped. Its last output was: \u{201c}web Downloading 1.121GB\u{201d}. Start the lab again; if it keeps happening, check the network and the resources of Docker, the hypervisor or the server."
+        );
+        let silent = TimedOut::NoProgress { after_s: 1800, last_line: None };
+        assert!(said(RunnerError::Timeout { step: "up".into(), timed_out: silent }).1.starts_with("The lab's `up` step printed nothing for 30 minutes"));
         assert!(said(RunnerError::SecretMissing { name: "CTF_FLAG_MAIN".into() }).1.contains("`CTF_FLAG_MAIN`"));
     }
 
@@ -246,7 +270,12 @@ mod tests {
         assert_eq!(said(old).1, "This lab needs Vagrant 2.4.0 or later, and this computer has 2.3.8. Update it, then start the lab again.");
         let declined = RunnerError::Elevation { reason: "the prompt was declined".into() };
         assert!(said(declined).1.starts_with("Hyper-V needs administrator rights"));
-        assert!(said(RunnerError::Timeout { step: "up".into(), after_s: 21600 }).1.starts_with("The lab's `up` step didn't finish within 360 minutes"));
+        let ceiling = TimedOut::Ceiling { after_s: 21600 };
+        assert!(
+            said(RunnerError::Timeout { step: "up".into(), timed_out: ceiling })
+                .1
+                .starts_with("The lab's `up` step was still working after 6 hours, the longest any step may run")
+        );
     }
 
     #[test]
