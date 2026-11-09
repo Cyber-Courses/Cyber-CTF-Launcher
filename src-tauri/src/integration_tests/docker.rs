@@ -18,8 +18,10 @@
 
 use std::path::Path;
 
-use super::support::{Run, check, in_box, install_copy, leftovers, log};
+use super::support::{Run, add_box, box_reaches, check, install_copy, leftovers, log, remove_box};
+use crate::platform::AppDirs;
 use crate::platform::exec::run;
+use crate::runtime::attack_machine::{Host, Placed};
 use crate::runtime::{LabStatus, Place, docker, isothrum};
 
 /// What one lab must show once it is up.
@@ -85,52 +87,20 @@ async fn exercise(r: &Run, e: &Expect, f: &mut Vec<String>) {
     exercise_checks(r, f).await;
     let Some(attack) = attack_box_up(r, e, f).await else { return exercise_park_and_resume(r, f).await };
     exercise_park_and_resume(r, f).await;
-    attack.reached(e, f, "after the lab resumed").await;
-    attack.down(r, f).await;
+    box_reaches(&attack, e.target, "after the lab resumed", f).await;
+    remove_box(&attack, &AppDirs::new(None, None), &mut log, f).await;
 }
 
-/// The attack box as the lab page drives it: the machine the launcher adds to the lab, at the
-/// seat it declares for the player when it declares one (in place of its own access machine).
-struct Attack(crate::runtime::attack_machine::Placed);
-
-/// Adds the attack box, and checks it runs, has an address and reaches the target.
-async fn attack_box_up(r: &Run, e: &Expect, f: &mut Vec<String>) -> Option<Attack> {
+/// Adds the attack box as the lab page does (the machine the launcher adds to the lab, at the seat
+/// it declares for the player when it declares one, in place of its own access machine), and
+/// checks it runs and reaches the target.
+async fn attack_box_up(r: &Run, e: &Expect, f: &mut Vec<String>) -> Option<Placed> {
     let run = isothrum::LabRun::docker(&r.home, &r.dir, &r.id).ok()?;
-    let placed = crate::runtime::attack_machine::Placed {
-        host: crate::runtime::attack_machine::Host::Local(run),
-        dir: r.dir.clone(),
-        target: isoloom_spec::Target::Docker,
-        vm: false,
-    };
+    let placed = Placed { host: Host::Local(run), dir: r.dir.clone(), target: isoloom_spec::Target::Docker, vm: false };
     let image = std::env::var("CYBERCTF_TEST_ATTACK_BOX").unwrap_or_else(|_| crate::runtime::attack_machine::default_image().to_owned());
-    let added = placed.add(&crate::platform::AppDirs::new(None, None), &image, None, &mut log(&r.id)).await;
-    check(added.is_ok(), format!("the attack box is added to the lab ({:?})", added.err()), f);
-    let attack = Attack(placed);
-    attack.reached(e, f, "once up").await;
-    Some(attack)
-}
-
-impl Attack {
-    /// The box runs, with an address, and a shell in it reaches the target's port 80 by name.
-    async fn reached(&self, e: &Expect, f: &mut Vec<String>, when: &str) {
-        match self.0.status(None).await {
-            Ok(s) => check(s.running && !s.ip.is_empty(), format!("the attack box runs, with an address, {when} ({} on {})", s.ip, s.lab_network), f),
-            Err(err) => check(false, format!("the attack box's status reads, {when}: {err}"), f),
-        }
-        let probe = format!("bash -c \"exec 3<>/dev/tcp/{}/80 && echo reached\"", e.target);
-        let reached = match self.0.shell_command() {
-            Ok(console) => in_box(&console, &probe).await,
-            Err(err) => Err(err),
-        };
-        check(reached.as_deref().is_ok_and(|o| o.contains("reached")), format!("a shell in the attack box reaches {}:80 {when} ({reached:?})", e.target), f);
-    }
-
-    /// Takes the box out, the lab left up.
-    async fn down(&self, r: &Run, f: &mut Vec<String>) {
-        let down = self.0.remove(&crate::platform::AppDirs::new(None, None), &mut log(&r.id)).await;
-        check(down.is_ok(), format!("the attack box is taken out ({:?})", down.err()), f);
-        check(self.0.status(None).await.is_ok_and(|s| !s.running), "the attack box is gone".into(), f);
-    }
+    add_box(&placed, &AppDirs::new(None, None), &image, &mut log(&r.id), f).await;
+    box_reaches(&placed, e.target, "once up", f).await;
+    Some(placed)
 }
 
 /// Parked, the lab stops and stays; resumed, it comes back as it was, at the same address. The

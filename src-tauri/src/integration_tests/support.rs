@@ -1,13 +1,16 @@
 //! What the real-lab tests share: a lab installed for a test and run through the runner, the
 //! test's log, its checks (each failure collected, so the lab is always stopped after), what a
-//! lab leaves on Docker, and a probe run through the console the lab page opens.
+//! lab leaves on Docker, a probe run through the console the lab page opens, and the attack box
+//! driven as the lab page drives it.
 
 use std::path::{Path, PathBuf};
 
 use isothrum_runner::ShellCommand;
 
 use crate::error::Result;
+use crate::platform::AppDirs;
 use crate::platform::exec::run;
+use crate::runtime::attack_machine::{self, Placed};
 use crate::runtime::{LabStatus, docker, isothrum, launch, lifecycle};
 
 /// One lab installed for a test, run through the Isothrum runner.
@@ -136,5 +139,43 @@ pub(crate) fn check(ok: bool, what: String, failures: &mut Vec<String>) {
     } else {
         println!("FAILED: {what}");
         failures.push(what);
+    }
+}
+
+/// Adds the attack box to the running lab `placed`, from `image` beside containers, as the lab
+/// page's Start attack box does.
+pub(crate) async fn add_box(placed: &Placed, dirs: &AppDirs, image: &str, l: &mut impl FnMut(String), f: &mut Vec<String>) {
+    let added = placed.add(dirs, image, None, l).await;
+    check(added.is_ok(), format!("the attack box is added to the lab ({:?})", added.err()), f);
+}
+
+/// The box runs, with an address, and a shell in it reaches `target`'s port 80 and is called by
+/// the box's own name in the lab ([`attack_machine::name`]: the seat the lab declares, else
+/// [`attack_machine::NAME`]); `when` says at which point of the test.
+pub(crate) async fn box_reaches(placed: &Placed, target: &str, when: &str, f: &mut Vec<String>) {
+    match placed.status(None).await {
+        Ok(s) => check(s.running && !s.ip.is_empty(), format!("the attack box runs, with an address, {when} ({} on {})", s.ip, s.lab_network), f),
+        Err(err) => check(false, format!("the attack box's status reads, {when}: {err}"), f),
+    }
+    let name = attack_machine::name(&placed.dir).unwrap_or_else(|e| panic!("the box's name: {e}"));
+    let probe = format!("bash -c \"exec 3<>/dev/tcp/{target}/80 && echo reached; hostname\"");
+    let reached = match placed.shell_command() {
+        Ok(console) => in_box(&console, &probe).await,
+        Err(err) => Err(err),
+    };
+    check(
+        reached.as_deref().is_ok_and(|o| o.contains("reached") && o.contains(&name)),
+        format!("a shell in the attack box reaches {target}:80 and is called {name}, {when} ({reached:?})"),
+        f,
+    );
+}
+
+/// Takes the box out, the lab left up, and checks it is gone.
+pub(crate) async fn remove_box(placed: &Placed, dirs: &AppDirs, l: &mut impl FnMut(String), f: &mut Vec<String>) {
+    let removed = placed.remove(dirs, l).await;
+    check(removed.is_ok(), format!("the attack box is taken out ({:?})", removed.err()), f);
+    match placed.status(None).await {
+        Ok(s) => check(!s.running, "the attack box is gone".into(), f),
+        Err(err) => check(false, format!("the attack box's status reads: {err}"), f),
     }
 }

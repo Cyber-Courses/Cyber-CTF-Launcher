@@ -24,7 +24,7 @@
 
 use std::path::Path;
 
-use super::support::{check, in_box, install_copy, leftovers, log};
+use super::support::{add_box, box_reaches, check, in_box, install_copy, leftovers, log, remove_box};
 use crate::platform::AppDirs;
 use crate::runtime::attack_machine::{self, Host, Placed};
 use crate::runtime::launch::{CloudStart, VmStart, start_cloud_run, start_docker_in_vm_run, start_docker_run, start_vm_run};
@@ -35,21 +35,10 @@ use crate::runtime::{isothrum, lab, lifecycle};
 /// the shared folder on (Settings, as [`shared_folder`] turns it on), that folder seen both ways
 /// from inside the box.
 pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &mut impl FnMut(String), f: &mut Vec<String>) {
-    let added = placed.add(dirs, attack_machine::default_image(), None, l).await;
-    check(added.is_ok(), format!("the box is added ({:?})", added.err()), f);
-    match placed.status(None).await {
-        Ok(s) => check(s.running && !s.ip.is_empty(), format!("the box runs, with an address ({s:?})"), f),
-        Err(e) => check(false, format!("the box's status reads: {e}"), f),
-    }
-    let console = placed.shell_command().expect("a console into the box");
-    let probe = format!("bash -c \"exec 3<>/dev/tcp/{target}/80 && echo reached; hostname\"");
-    let reached = in_box(&console, &probe).await;
-    check(
-        reached.as_deref().is_ok_and(|o| o.contains("reached") && o.contains(attack_machine::NAME)),
-        format!("the box reaches {target} and is called {} ({reached:?})", attack_machine::NAME),
-        f,
-    );
+    add_box(placed, dirs, attack_machine::default_image(), l, f).await;
+    box_reaches(placed, target, "once added", f).await;
     if let Some(folder) = crate::shared_folder::current().unwrap_or_else(|e| panic!("the shared folder: {e}")) {
+        let console = placed.shell_command().expect("a console into the box");
         std::fs::write(folder.join("to-box"), "tools in").unwrap();
         let mount = crate::shared_folder::MOUNT_POINT;
         let seen = in_box(&console, &format!("cat {mount}/to-box && echo loot out > {mount}/from-box")).await;
@@ -57,12 +46,7 @@ pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &
         let back = std::fs::read_to_string(folder.join("from-box")).unwrap_or_default();
         check(back.contains("loot out"), format!("what the box writes there lands on this computer ({back:?})"), f);
     }
-    let removed = placed.remove(dirs, l).await;
-    check(removed.is_ok(), format!("the box is taken out ({:?})", removed.err()), f);
-    match placed.status(None).await {
-        Ok(s) => check(!s.running, "the box is gone".into(), f),
-        Err(e) => check(false, format!("the box's status reads: {e}"), f),
-    }
+    remove_box(placed, dirs, l, f).await;
     check(!attack_machine::added(&placed.dir).unwrap_or(true), "the lab is as published".into(), f);
 }
 
