@@ -430,5 +430,8 @@
     "pick": "Choisir un dossier de lab",
     "started": "Lab importé et en cours de démarrage",
     "failed": "Impossible d'importer ce lab"
+  },
+  "statusError": {
+    "title": "Impossible de lire l’état de {title}"
   }
 }

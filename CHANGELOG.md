@@ -172,6 +172,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   generated again for where it runs before any of those, with its instance and the launcher's
   own settings. A lab whose files can't be generated any more (its `isoloom.yml` gone) says to
   remove it and add it again, and that what it still runs is on the Machine page.
+- **A lab whose state can't be read says why.** When reading a lab's state failed (Docker not
+  running, its run record unreadable, its files no longer able to be generated again), the lab
+  page went on showing the last state it had read, with no word of it. It now says, at the top,
+  that the state couldn't be read and why, until a read succeeds.
 
 ### Security
 

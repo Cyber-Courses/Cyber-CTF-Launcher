@@ -430,5 +430,8 @@
     "pick": "Choose a lab folder",
     "started": "Lab imported and starting",
     "failed": "Couldn't import that lab"
+  },
+  "statusError": {
+    "title": "Couldn’t read the state of {title}"
   }
 }

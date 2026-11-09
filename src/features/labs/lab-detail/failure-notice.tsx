@@ -63,6 +63,20 @@ export function FailureNotice({
 }
 
 /**
+ * The lab's status couldn't be read (Docker down, its run record unreadable, its files no longer
+ * able to be generated again): what the page shows may be stale, so the reason is said at the top
+ * until a read succeeds.
+ */
+export function StatusReadNotice({ title, error }: { title: string; error: unknown }) {
+  const t = useT();
+  return (
+    <CalloutRow tone="fail" title={t("labs.statusError.title", { title })}>
+      <span className="block break-words font-mono text-[0.6875rem]">{describeError(error, t)}</span>
+    </CalloutRow>
+  );
+}
+
+/**
  * The auto-stop couldn't destroy this lab past its stop time (expired credentials, a removed
  * account…): it may still be billing, so it is said at the top of the page until it is gone.
  */

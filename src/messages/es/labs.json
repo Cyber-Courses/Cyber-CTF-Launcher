@@ -430,5 +430,8 @@
     "pick": "Elegir una carpeta de lab",
     "started": "Lab importado e iniciándose",
     "failed": "No se pudo importar ese lab"
+  },
+  "statusError": {
+    "title": "No se pudo leer el estado de {title}"
   }
 }

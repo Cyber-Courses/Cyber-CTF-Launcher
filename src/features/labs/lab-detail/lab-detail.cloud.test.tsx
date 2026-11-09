@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab } from "@/features/labs/use-labs";
-import { installTauri } from "@/test/tauri";
+import { installTauri, rejectWith } from "@/test/tauri";
 import { flush as flushUi } from "@/test/ui";
 import { labStatus } from "@/features/labs/labs-test-kit";
+import { refreshStatus } from "@/features/labs/lab-store";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
 import type { CommandError } from "@/lib/errors";
 import { setLocalePreference } from "@/lib/i18n";
@@ -76,11 +77,30 @@ describe("LabDetail, a cloud lab", () => {
     setLocalePreference("en");
   });
 
+  it("says why its status couldn't be read, so a stale page isn't taken for the truth", async () => {
+    installTauri(idle);
+    const statusError: CommandError = { code: "other", message: "its files can't be generated again. Remove the lab and add it again." };
+    installTauri({ ...idle, lab_status: () => rejectWith(statusError) });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await refreshStatus(goat);
+    renderGoat({ status: status({}) });
+    await flush();
+    expect(screen.getByText("Couldn’t read the state of EC2 SSRF")).toBeTruthy();
+    expect(screen.getByText(statusError.message)).toBeTruthy();
+    // A read that succeeds takes it away.
+    installTauri({ ...idle, lab_status: () => status({}) });
+    await refreshStatus(goat, { fresh: true });
+    await flush();
+    expect(screen.queryByText(/Couldn’t read the state/)).toBeNull();
+    vi.restoreAllMocks();
+  });
+
   it("says nothing of the auto-stop when it had nothing to report", async () => {
     installTauri(idle);
     renderGoat({ status: status({}) });
     await flush();
     expect(screen.queryByText(/Auto-stop couldn’t destroy/)).toBeNull();
+    expect(screen.queryByText(/Couldn’t read the state/)).toBeNull();
   });
 
   it("with no account of its cloud, offers to connect one", async () => {

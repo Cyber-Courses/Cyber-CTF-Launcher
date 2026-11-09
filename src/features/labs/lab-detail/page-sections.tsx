@@ -10,10 +10,11 @@ import { DeploymentPanel } from "@/features/labs/lab-detail/deployment-panel";
 import { HeaderActions } from "@/features/labs/lab-detail/header-actions";
 import { deployDestination } from "@/features/labs/lab-detail/labels";
 import { cloudView, networkView, removing, type HeaderMode } from "@/features/labs/lab-detail/lab-state";
-import { FailureNotice, ReapFailedNotice } from "@/features/labs/lab-detail/failure-notice";
+import { FailureNotice, ReapFailedNotice, StatusReadNotice } from "@/features/labs/lab-detail/failure-notice";
 import { NetworkPanel } from "@/features/labs/lab-detail/network-panel";
 import { Dimmed } from "@/features/labs/lab-detail/page-parts";
 import { ObserversPanel } from "@/features/labs/lab-detail/observers-panel";
+import { useLabState } from "@/features/labs/lab-store";
 import { StartLabButton } from "@/features/labs/lab-detail/start-lab-button";
 import type { LabDetailProps, LabPage } from "@/features/labs/lab-detail/use-lab-detail";
 import { ObjectivesLoading, ObjectivesPanel } from "@/features/labs/objectives/objectives-panel";
@@ -90,6 +91,7 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
   // Dismissed for this failure only: the next one shows again.
   const failure = s.failure && s.failedOp ? { op: s.failedOp, message: s.failure, key: `${s.failedOp}|${String(s.startedAt ?? "")}|${s.failure}` } : null;
   const [dismissed, setDismissed] = useState<string | null>(null);
+  const statusError = useLabState("statusErrors")[p.lab.id];
   return (
     <>
       {failure && failure.key !== dismissed && (
@@ -108,6 +110,7 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
           }}
         />
       )}
+      {statusError !== undefined && <StatusReadNotice title={p.lab.title} error={statusError} />}
       {p.status?.reapError && <ReapFailedNotice title={p.lab.title} error={p.status.reapError} />}
       {shell.error && (
         <p className="-mt-2 flex items-center gap-2 text-[0.75rem] text-muted-foreground">
