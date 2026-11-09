@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { Button } from "@/components/ui/button";
-import { deployingLabs, restartApp } from "@/lib/tauri";
+import { restartApp } from "@/lib/tauri";
+import { installUpdate } from "@/lib/install-update";
 import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { cn } from "@/lib/utils";
 import { ignore, tell } from "@/lib/failure";
@@ -31,13 +32,13 @@ function useUpdate() {
 
   async function install() {
     if (!update) return;
-    // Asked again now: the polled set can be a few seconds old.
-    if ((await deployingLabs().catch(() => [])).length > 0) return;
-    setPhase("downloading");
-    try {
-      await update.downloadAndInstall();
-    } catch {
-      setPhase("error");
+    const installed = await installUpdate(update, () => {
+      setPhase("downloading");
+    });
+    if (!installed) {
+      // Only a download that began and failed is the banner's error; a wait for the deploys
+      // leaves it as it was.
+      setPhase((p) => (p === "downloading" ? "error" : p));
       return;
     }
     setPhase("ready");

@@ -111,7 +111,8 @@
     "removing": "Removing…",
     "remove": "Remove",
     "freed": "Freed {size}.",
-    "nothingFreed": "Nothing could be removed (all in use)."
+    "nothingFreed": "Nothing could be removed (all in use).",
+    "cleanFailed": "Couldn't remove the downloads"
   },
   "selfTest": {
     "containerTitle": "Container lab test",

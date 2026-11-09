@@ -56,7 +56,8 @@
     "restartNow": "Reiniciar agora",
     "updating": "Atualizando…",
     "update": "Atualizar",
-    "waitForDeploys": "A atualização reinicia o Cyber CTF. Aguarde seus labs terminarem de implantar."
+    "waitForDeploys": "A atualização reinicia o Cyber CTF. Aguarde seus labs terminarem de implantar.",
+    "deployingUnknown": "Não foi possível saber se um lab está sendo implantado, então a atualização aguarda. Tente de novo em instantes."
   },
   "error": {
     "title": "Algo deu errado",

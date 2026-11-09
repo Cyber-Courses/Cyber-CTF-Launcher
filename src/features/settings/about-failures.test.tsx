@@ -7,7 +7,7 @@ import { UpdateBanner } from "@/components/update-banner";
 import { Toaster } from "@/components/ui/toaster";
 import { toastsShown } from "@/components/test-support";
 import { resetUpdater, updater } from "@/components/updater-double";
-import { commands, installTauri, rejects } from "@/test/tauri";
+import { commands, installTauri, rejects, rejectWith } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 // What the About section and the update banner say when a step the player asked for fails:
@@ -37,6 +37,25 @@ function renderAbout() {
       <Toaster />
     </>,
   );
+}
+
+/** The update banner with the Toaster, its launch check settled. */
+async function renderBanner() {
+  render(
+    <>
+      <UpdateBanner />
+      <Toaster />
+    </>,
+  );
+  await flush();
+}
+
+/** In the About section: checks for updates, then installs what it offers. */
+async function checkThenInstall(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(button(/Check for updates/i));
+  await flush();
+  await user.click(button(/Install update/i));
+  await flush();
 }
 
 beforeEach(() => {
@@ -76,10 +95,7 @@ describe("AboutSection failures", () => {
     const calls = installTauri({ deploying_labs: () => [], restart_app: rejects({ code: "other", message: "relaunch denied" }) });
     const user = userEvent.setup();
     renderAbout();
-    await user.click(button(/Check for updates/i));
-    await flush();
-    await user.click(button(/Install update/i));
-    await flush();
+    await checkThenInstall(user);
     // Installed: the automatic relaunch failed, which is said, and Restart now stays.
     expect(document.body.textContent).toMatch(/Version 1\.5\.0 is installed/);
     expect(alerts().filter((a) => a.includes(RESTART_FAILED))).toHaveLength(1);
@@ -90,20 +106,54 @@ describe("AboutSection failures", () => {
     expect(alerts().filter((a) => a.includes(RESTART_FAILED))).toHaveLength(2);
     expect(screen.getByRole("button", { name: /Restart now/i })).toBeTruthy();
   });
+  it("doesn't install while it can't tell whether a lab deploys, nor hide a failed install, and says so", async () => {
+    const downloadAndInstall = vi.fn(() => Promise.reject(new Error("signature mismatch")));
+    updater.pending = { version: "1.5.0", downloadAndInstall };
+    let deploying: () => unknown = () => {
+      rejectWith("worker list unreadable");
+    };
+    installTauri({ deploying_labs: () => deploying() });
+    const user = userEvent.setup();
+    renderAbout();
+    await checkThenInstall(user);
+    expect(downloadAndInstall).not.toHaveBeenCalled();
+    expect(alerts().join("\n")).toContain("Couldn't tell whether a lab is deploying");
+    // A lab deploying: said, not silently skipped.
+    deploying = () => ["web-sqli"];
+    await user.click(button(/Install update/i));
+    await flush();
+    expect(downloadAndInstall).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Wait until your labs finish deploying");
+    // Nothing deploying: the install runs, and its failure is told; it can be tried again.
+    deploying = () => [];
+    await user.click(button(/Install update/i));
+    await flush();
+    expect(downloadAndInstall).toHaveBeenCalledTimes(1);
+    expect(alerts().join("\n")).toContain("Update failed");
+    expect(alerts().join("\n")).toContain("signature mismatch");
+    expect(button(/Install update/i)).toBeTruthy();
+  });
 });
 
 describe("UpdateBanner failures", () => {
+  it("doesn't install while it can't tell whether a lab deploys, and says so", async () => {
+    const downloadAndInstall = vi.fn(() => Promise.resolve());
+    updater.pending = { version: "9.9.9", downloadAndInstall };
+    installTauri({ deploying_labs: rejects({ code: "other", message: "worker list unreadable" }) });
+    const user = userEvent.setup();
+    await renderBanner();
+    await user.click(screen.getByRole("button", { name: "Update" }));
+    await flush();
+    expect(downloadAndInstall).not.toHaveBeenCalled();
+    expect(alerts().join("\n")).toContain("Couldn't tell whether a lab is deploying");
+    expect(screen.getAllByRole("status")[0].textContent).not.toContain("Update failed");
+  });
+
   it("stays quiet when the relaunch after the install fails, and says so when Restart now fails too", async () => {
     updater.pending = { version: "9.9.9", downloadAndInstall: () => Promise.resolve() };
     const calls = installTauri({ deploying_labs: () => [], restart_app: rejects({ code: "other", message: "relaunch denied" }) });
     const user = userEvent.setup();
-    render(
-      <>
-        <UpdateBanner />
-        <Toaster />
-      </>,
-    );
-    await flush();
+    await renderBanner();
     await user.click(screen.getByRole("button", { name: "Update" }));
     await flush();
     // The update is installed: a failed relaunch is not a failed update, so nothing is told yet.

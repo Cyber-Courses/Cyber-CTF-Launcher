@@ -111,7 +111,8 @@
     "removing": "削除中…",
     "remove": "削除",
     "freed": "{size} を解放しました。",
-    "nothingFreed": "削除できるものはありませんでした（すべて使用中）。"
+    "nothingFreed": "削除できるものはありませんでした（すべて使用中）。",
+    "cleanFailed": "ダウンロードを削除できませんでした"
   },
   "selfTest": {
     "containerTitle": "コンテナラボのテスト",

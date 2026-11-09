@@ -111,7 +111,8 @@
     "removing": "Removendo…",
     "remove": "Remover",
     "freed": "{size} liberados.",
-    "nothingFreed": "Nada pôde ser removido (tudo em uso)."
+    "nothingFreed": "Nada pôde ser removido (tudo em uso).",
+    "cleanFailed": "Não foi possível remover os downloads"
   },
   "selfTest": {
     "containerTitle": "Teste de lab de contêiner",

@@ -2,15 +2,16 @@
 
 import { useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
-import { deployingLabs, restartApp } from "@/lib/tauri";
+import { restartApp } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
+import { installUpdate } from "@/lib/install-update";
 import { translate } from "@/lib/i18n";
 
 export type UpdateState = { phase: "idle" | "checking" | "none" | "error" } | { phase: "available" | "installing" | "installed"; update: Update };
 
 /**
  * The About section's update check: ask the update server, then download and install what it
- * offers (unless a lab is deploying) and reopen on the new version. `checkedAt` is when the
+ * offers ([`installUpdate`]: not while a lab is deploying) and reopen on the new version. `checkedAt` is when the
  * last check ended.
  */
 export function useUpdater() {
@@ -31,17 +32,11 @@ export function useUpdater() {
   async function installNow() {
     if (!("update" in upd)) return;
     const { update } = upd;
-    // Installing quits the deploy workers too: asked again now, as the polled set can be a few
-    // seconds old.
-    if ((await deployingLabs().catch(() => [])).length > 0) return;
-    setUpd({ phase: "installing", update });
-    try {
-      await update.downloadAndInstall();
-      setUpd({ phase: "installed", update });
-    } catch {
-      setUpd({ phase: "available", update });
-      return;
-    }
+    const installed = await installUpdate(update, () => {
+      setUpd({ phase: "installing", update });
+    });
+    setUpd({ phase: installed ? "installed" : "available", update });
+    if (!installed) return;
     // Reopen on the new version straight away; Restart now stays as the fallback.
     await restartApp().catch(tell(translate("settings.about.restartFailed")));
   }

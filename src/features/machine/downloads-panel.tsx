@@ -8,7 +8,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { StatusDot } from "@/components/ui/status-pill";
 import { ListSkeleton } from "@/features/machine/machine-parts";
 import { formatBytes } from "@/lib/format";
-import { useT } from "@/lib/i18n";
+import { translate, useT } from "@/lib/i18n";
+import { tell } from "@/lib/failure";
 import { getAttackImage, OLD_ATTACK_IMAGES } from "@/lib/settings";
 import { machineStorage, machineStorageClean, type Storage } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -52,7 +53,13 @@ function useDownloads() {
 
   async function clean() {
     setCleaning(true);
-    setFreed(await machineStorageClean(attackImages()).catch(() => 0));
+    // A failed clean-up is told, and nothing reads as freed.
+    setFreed(
+      await machineStorageClean(attackImages()).catch((e: unknown) => {
+        tell(translate("machine.downloads.cleanFailed"))(e);
+        return null;
+      }),
+    );
     setCleaning(false);
     setConfirmClean(false);
     load();

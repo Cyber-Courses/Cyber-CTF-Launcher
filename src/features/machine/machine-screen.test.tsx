@@ -21,7 +21,8 @@ import { freshReport, hypervisorStatus as hv, readyReport, stoppedDockerReport }
 import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { pressFirstTest, renderMachineScreen } from "@/features/machine/machine-test-kit";
-import { must } from "@/components/test-support";
+import { must, toastsShown } from "@/components/test-support";
+import { Toaster } from "@/components/ui/toaster";
 
 const GB = 1e9;
 const text = () => document.body.textContent;
@@ -513,10 +514,16 @@ describe("DownloadsPanel", () => {
   });
 
   it("says when nothing could be freed, or the clean-up failed", async () => {
+    toastsShown();
     let clean: () => number = () => 0;
     installTauri({ machine_storage_clean: () => clean() });
     const user = userEvent.setup();
-    render(<DownloadsPanel />);
+    render(
+      <>
+        <DownloadsPanel />
+        <Toaster />
+      </>,
+    );
     await flush();
     await user.click(button(/clean up/i));
     await user.click(button(/^remove$/i));
@@ -528,7 +535,11 @@ describe("DownloadsPanel", () => {
     await user.click(button(/clean up/i));
     await user.click(button(/^remove$/i));
     await flush();
-    expect(text()).toContain("Nothing could be removed");
+    // A failed clean-up isn't "nothing in use could go": it is told, with why.
+    expect(text()).not.toContain("Nothing could be removed");
+    const alert = screen.getByRole("alert").textContent;
+    expect(alert).toContain("Couldn't remove the downloads");
+    expect(alert).toContain("docker is not running");
   });
 
   it("shows an empty list when there are no downloads or they can't be read", async () => {
