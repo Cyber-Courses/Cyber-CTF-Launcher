@@ -71,6 +71,12 @@ impl Host {
         }
     }
 
+    /// Whether the run has machines of the lab's own: every run but a cloud-services lab's,
+    /// whose services are no machines to check or to put an attack box beside.
+    pub(crate) fn has_machines(&self) -> bool {
+        self.target() != lab::Target::CloudServices
+    }
+
     /// The Proxmox server's place for a change of its run (its node, its SSH jump).
     async fn server_place(dirs: &AppDirs, run: &isothrum::ServerRun, conn: &server::Connection) -> Result<isothrum::ServerPlace> {
         super::launch::server_place(dirs, &conn.id, conn, run).await
@@ -125,8 +131,11 @@ impl Host {
     }
 
     /// Runs the lab's checks where it runs (a cloud's and a server's over SSH, an ESXi host's
-    /// from its controller).
+    /// from its controller); none to run beside cloud services ([`Host::has_machines`]).
     pub(crate) async fn check(&self) -> Result<docker::Check> {
+        if !self.has_machines() {
+            return Ok(docker::Check::default());
+        }
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.check().await,
             Host::Cloud { run, place, .. } => run.check(place).await,
@@ -194,5 +203,34 @@ mod tests {
         assert_eq!(located(&t, &dir, Runtime::Vm), Some(("server", lab::Target::Proxmox)));
         server::mark_lab(&dir, Some(&t.host("esx", "vmware_esxi", serde_json::json!({})))).unwrap();
         assert_eq!(located(&t, &dir, Runtime::Vm), Some(("esxi", lab::Target::Vagrant)));
+    }
+
+    #[tokio::test]
+    async fn cloud_services_have_no_machines_to_check_nor_to_put_an_attack_box_beside() {
+        let t = TestApp::new();
+        let tools = Tools::rules(&[]);
+        let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
+        server::mark_lab(&dir, Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
+        let host = locate(&t.dirs(), &dir, "t", Runtime::Cloud).unwrap().unwrap();
+        assert!(!host.has_machines());
+        let check = host.check().await.unwrap();
+        assert!(!check.available && check.results.is_empty());
+        assert!(crate::runtime::attack_machine::locate(&t.dirs(), &dir, "t", Runtime::Cloud).unwrap().is_none());
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        // Its containers in the same account are machines of the lab's own.
+        assert!(locate(&t.dirs(), &dir, "t", Runtime::Docker).unwrap().unwrap().has_machines());
+        assert!(crate::runtime::attack_machine::locate(&t.dirs(), &dir, "t", Runtime::Docker).unwrap().is_some());
+    }
+
+    #[test]
+    fn only_a_container_box_on_this_machine_pulls_its_image_here() {
+        let t = TestApp::new();
+        let _tools = Tools::rules(&[]);
+        let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
+        let placed = |runtime| crate::runtime::attack_machine::locate(&t.dirs(), &dir, "t", runtime).unwrap().unwrap();
+        assert!(placed(Runtime::Docker).pulls_image_here());
+        assert!(!placed(Runtime::Vm).pulls_image_here(), "a Kali VM pulls no image");
+        server::mark_lab(&dir, Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
+        assert!(!placed(Runtime::Docker).pulls_image_here(), "pulled in the account's VM");
     }
 }

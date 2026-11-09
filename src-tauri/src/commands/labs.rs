@@ -184,10 +184,6 @@ pub fn run_tiers() -> Vec<crate::runtime::RunTier> {
 pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<docker::Check> {
     let dirs = AppDirs::from(&app);
     let dir = lab_dir(&dirs, &id)?;
-    // A cloud-services lab: nothing of it to check.
-    if local_runtime(&dir, runtime) == Runtime::Cloud {
-        return Ok(docker::Check::default());
-    }
     match crate::runtime::host::locate(&dirs, &dir, &id, runtime)? {
         Some(host) => host.check().await,
         None => Ok(docker::Check::default()),
@@ -255,9 +251,8 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
         let mut log = channel_log(logs);
         let image = image.unwrap_or_else(|| attack_machine::default_image().to_owned());
         let attach = run.add(&dirs, &image, network.as_deref(), &mut log);
-        // Only a container box pulls an image, and only one pulled on this machine is the app's
-        // to account for: one pulled in a lab's VM on a server or in a cloud account isn't here.
-        if run.vm || !run.local() {
+        // Only an image pulled on this machine is the app's to account for.
+        if !run.pulls_image_here() {
             return Box::pin(attach).await;
         }
         // Boxed: the runner's attach future is large, and tracking it adds to it.

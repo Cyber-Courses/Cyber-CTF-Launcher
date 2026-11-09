@@ -27,17 +27,13 @@ pub(crate) struct Placed {
 
 /// Where lab `id`, installed in `dir` and declared `runtime`, runs, as [`host::locate`] finds it:
 /// its run on this machine, on a Proxmox server or in a cloud account. `None` where the launcher
-/// reaches no run of it to add a box to: on an ESXi host (its runs are the launcher's own), or a
-/// cloud-services lab (its services are the launcher's own too, see `cloud_services`), wherever it
-/// runs.
+/// reaches no run of it to add a box to: on an ESXi host (its runs are the launcher's own), or
+/// beside cloud services ([`Host::has_machines`]), wherever they run.
 pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<Placed>> {
-    let form = local_runtime(dir, runtime);
-    if form == Runtime::Cloud {
-        return Ok(None);
-    }
     Ok(match host::locate(dirs, dir, id, runtime)? {
         None | Some(Host::Esxi { .. }) => None,
-        Some(host) => Some(Placed { target: host.target(), host, dir: dir.to_path_buf(), vm: form == Runtime::Vm }),
+        Some(host) if !host.has_machines() => None,
+        Some(host) => Some(Placed { target: host.target(), host, dir: dir.to_path_buf(), vm: local_runtime(dir, runtime) == Runtime::Vm }),
     })
 }
 
@@ -141,9 +137,16 @@ impl Placed {
         box_cpu(std::env::consts::ARCH, self.local(), self.target)
     }
 
-    /// Whether the box runs here, on this machine (its image is the learner's local download).
-    pub(crate) fn local(&self) -> bool {
+    /// Whether the box runs here, on this machine.
+    fn local(&self) -> bool {
         matches!(self.host, Host::Local(_))
+    }
+
+    /// Whether adding the box pulls its image on this machine: a container box here. A Kali VM
+    /// box pulls none, and an image pulled in a lab's VM on a server or in a cloud account isn't
+    /// this machine's download to account for.
+    pub(crate) fn pulls_image_here(&self) -> bool {
+        !self.vm && self.local()
     }
 }
 
