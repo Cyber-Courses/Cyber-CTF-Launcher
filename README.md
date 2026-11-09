@@ -33,8 +33,8 @@ The [Isothrum runner](https://github.com/Isothrum/isothrum) runs every lab with 
     - `lab/`: the launcher's one door to Isoloom (its crates — `isoloom-spec`, `-plan`, `-targets`, `-compose`, `-render` and the run-manifest types `isoloom-manifest` — are used nowhere else): the target's files (Compose, Vagrant, Terraform) are generated from the lab's `isoloom.yml` right before they run, then the launcher's own overrides applied (`overrides.rs`); Isoloom's paths and names (`names.rs`); the variables of Isoloom's Terraform modules from the player's hosts and accounts (`vars.rs`); and each lab's instance numbering (`instances.rs`)
     - `isothrum.rs` + `isothrum/`: the Isothrum runner (`isothrum-runner`), the one lab engine: the launcher hands it every lab with machines, wherever it runs (here, on a server, in a cloud account), and it executes the run manifest Isoloom wrote; its runs live under the app data folder's `runs/`, never in the lab folder
     - `launch.rs`, `lifecycle.rs`, `status.rs`: start, park/resume, stop and the auto-stop reaper for cloud labs, and what is running where
-    - `docker/`: `docker compose -p cyberctf-<lab>`; stop removes volumes, so every start is a clean lab; status reports machines, interfaces, networks and declared services
-    - `vm.rs` + `vm/`: `vagrant up --provider <p>`; stop destroys the VMs
+    - `docker/`: reads only, never starts or stops anything (the runner does): whether a container lab's Compose project is up here and its reachable URL (an update must not swap the folder of a lab still running), the address blocks Docker's networks hold, the lab-check result types, and the Compose project name and the names an older version's attack box carried
+    - `vm.rs` + `vm/`: reads only: whether a lab's VMs are up here (`vagrant status`) and whether Vagrant still records machines of it in its folder
     - `server/`, `proxmox.rs`, `terraform/`: labs on the player's own servers (ESXi, Proxmox) and cloud accounts (AWS, Azure, GCP, DigitalOcean, Linode, OCI); `server_selftest/` checks a server or account before the first lab
     - `providers.rs`: Vagrant providers. Local: VirtualBox, VMware Desktop, Hyper-V, Parallels, libvirt, QEMU, UTM. Remote: VMware ESXi, Proxmox.
     - `attack_machine.rs` + `attack_machine/`: the attack box, a machine the launcher adds to the lab through its overlay (`lab/overlay.rs`), at the seat the lab declares for the player or as `attackbox` on its first network: a container among a container lab's, a Kali VM among a VM lab's
@@ -106,14 +106,14 @@ To preview the UI in a browser without the Rust core, run `pnpm dev` and open
 
 ## Development
 
-Requirements: Node 22 or 24 (an odd release such as 25 is refused by Next, see `engines`), pnpm, Rust (stable), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. On Windows that means **Visual Studio 2022 Build Tools** with the _Desktop development with C++_ workload (it provides `link.exe` and the Windows SDK; without it the build stops at `linker 'link.exe' not found`).
+Requirements: Node 22, 24, 25 or later (see `engines`), pnpm, Rust (stable), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. On Windows that means **Visual Studio 2022 Build Tools** with the _Desktop development with C++_ workload (it provides `link.exe` and the Windows SDK; without it the build stops at `linker 'link.exe' not found`).
 
 ```bash
 pnpm install
 pnpm tauri dev          # app with hot reload
 pnpm tauri build        # installers in src-tauri/target/release/bundle (needs the release signing key)
 pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'   # a local build without it
-pnpm format             # Prettier (src/, scripts/, tests/) + rustfmt (src-tauri/)
+pnpm format             # Prettier (src/, scripts/, e2e/, Markdown) + rustfmt (src-tauri/)
 pnpm check              # formatting, types, lint, clippy
 cd src-tauri && cargo test
 cargo test -- --ignored --nocapture   # prints this machine's system report

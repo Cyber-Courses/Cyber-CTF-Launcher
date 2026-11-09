@@ -1,4 +1,4 @@
-//! Bringing a lab up and tearing it down.
+//! What a container lab's launch is told (its ports setting) and how its failure is said.
 
 use crate::error::Error;
 

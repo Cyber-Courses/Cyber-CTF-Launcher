@@ -1,11 +1,9 @@
-//! Docker-Compose lab engine, split by concern:
+//! What the launcher reads of container labs from Docker itself; the runner starts, parks and
+//! stops them (`isothrum`). Split by concern:
 //! - `compose`: talking to the compose CLI and parsing its output (one place for the flags)
-//! - `lifecycle`: start / stop, with the host-port collision check
-//! - `inspect`: status, networks, interfaces, the reachable URL
-//! - `check`: the exploitability self-check
-//!
-//! A new signal (a health field, another network fact) touches one of these, not all of
-//! them, so parallel work stops colliding in a single god-function.
+//! - `lifecycle`: the launch's ports setting, and Docker's address-pool clash said as what to do
+//! - `inspect`: whether a lab's project is up here, the reachable URL, the networks' blocks
+//! - `check`: the exploitability check's result, as the lab page shows it
 
 mod check;
 mod compose;

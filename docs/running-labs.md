@@ -23,8 +23,9 @@ account, what the player picked); the runner does the work and keeps the run's s
 | Cloud account  | VMs, or containers as "one VM per machine" | `cloud-vm`              | one instance per machine (AWS, Azure, GCP, DigitalOcean, Linode, OCI) |
 | Cloud account  | cloud services (no machines)               | `cloud-services`        | the lab's own Terraform module                                        |
 
-The catalogue names a lab by its own runtime (containers or VMs); every operation goes through
-`paths::local_runtime`, which reads the form the lab was actually started in.
+The catalogue names a lab by its own runtime (containers or VMs); every operation on a started
+lab finds its run through `runtime::host::locate`, which reads where it runs and the form it was
+actually started in (`paths::local_runtime`).
 
 ## What says where a lab is
 

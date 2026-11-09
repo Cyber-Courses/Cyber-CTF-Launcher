@@ -1,3 +1,7 @@
+//! What the launcher reads of VM labs from Vagrant itself; the runner starts, parks and stops
+//! them (`isothrum`): whether a lab's VMs are up (`status`) and whether Vagrant still records
+//! machines of it in its folder (`records`).
+
 use std::path::{Path, PathBuf};
 
 use super::{LabStatus, Machine};
