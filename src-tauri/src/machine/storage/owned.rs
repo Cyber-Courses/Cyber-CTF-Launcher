@@ -35,7 +35,7 @@ pub fn update(store: &Path, change: impl FnOnce(&mut Owned)) -> Result<()> {
     }
     let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(store.with_extension("lock"))?;
     lock.lock()?;
-    let mut owned = load(store);
+    let mut owned = load(store)?;
     change(&mut owned);
     let json = serde_json::to_vec_pretty(&owned).map_err(|e| Error::Invalid(e.to_string()))?;
     crate::platform::atomic_file::write(store, json)?;
@@ -150,7 +150,7 @@ mod tests {
         let images = ["nginx:1.27".to_string(), "postgres:16".into(), "missing:1".into()];
         let boxes = ["generic/alpine319".to_string(), "bento/debian-12".into()];
         claim(&store, &before, &images, &boxes).await;
-        let owned = load(&store);
+        let owned = load(&store).unwrap();
         assert_eq!(owned.images.into_iter().collect::<Vec<_>>(), [OwnedImage { reference: "nginx:1.27".into(), id: "sha256:nginx".into() }]);
         // `other/box` appeared too, but this operation doesn't use it: the player's.
         assert_eq!(
@@ -171,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn updates_add_to_the_record_and_a_damaged_one_starts_over() {
+    fn updates_add_to_the_record_and_a_damaged_one_is_left_alone() {
         let store = store();
         let image = |r: &str| OwnedImage { reference: r.into(), id: format!("sha256:{r}") };
         update(&store, |o| {
@@ -182,9 +182,18 @@ mod tests {
             o.images.insert(image("b"));
         })
         .unwrap();
-        assert_eq!(load(&store).images.len(), 2);
+        assert_eq!(load(&store).unwrap().images.len(), 2);
+        // A damaged record is an error, never read as empty and written back: that would forget
+        // every download it lists.
         std::fs::write(&store, "{not json").unwrap();
-        assert_eq!(load(&store), Owned::default());
+        assert!(load(&store).is_err());
+        assert!(
+            update(&store, |o| {
+                o.images.insert(image("c"));
+            })
+            .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(&store).unwrap(), "{not json", "the damaged record is not overwritten");
         std::fs::remove_dir_all(store.parent().unwrap()).ok();
     }
 }

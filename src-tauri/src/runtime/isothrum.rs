@@ -387,7 +387,7 @@ fn pin_docker(spec: &ProcessSpec, context: &str) -> Option<ProcessSpec> {
 /// A runner at `home` with this host's tools; a container lab's docker calls pinned to `context`
 /// (the engine chosen at launch), else the current Docker context as before.
 fn host_config(home: &Path, context: Option<String>) -> RunnerConfig {
-    let processes = SystemProcesses::for_host(|var| std::env::var(var).ok(), crate::platform::home_dir().as_deref());
+    let processes = SystemProcesses::default();
     let runner: Arc<dyn ProcessRunner> = match context {
         Some(context) => Arc::new(EngineProcesses { inner: processes, context }),
         None => Arc::new(processes),

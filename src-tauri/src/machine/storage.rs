@@ -221,7 +221,7 @@ impl Present {
 /// repository count (see [`image_candidates`]), any other is the player's unless recorded.
 pub async fn machine_storage(dirs: AppDirs, extra_images: Vec<String>) -> Result<Storage> {
     let store = owned::path(&dirs)?;
-    Ok(Present::find(&owned::load(&store), &extra_images, vagrant_home().as_deref(), &plugin_cache(&store)).await.storage())
+    Ok(Present::find(&owned::load(&store)?, &extra_images, vagrant_home().as_deref(), &plugin_cache(&store)).await.storage())
 }
 
 /// Removes what `machine_storage` lists (see [`clean`]). Returns the bytes freed.
@@ -237,7 +237,7 @@ pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>) -> 
 /// holds it). Ones still in use stay. Then forgets what is gone. Returns the bytes freed.
 async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>, plugins: bool) -> Result<u64> {
     let cache = plugin_cache(store);
-    let before = Present::find(&owned::load(store), extra_images, home, &cache).await;
+    let before = Present::find(&owned::load(store)?, extra_images, home, &cache).await;
     for (reference, _, _) in &before.images {
         let _ = run("docker", &["image", "rm", reference], None).await;
     }
@@ -248,7 +248,7 @@ async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>, plugi
     if plugins && cache.is_dir() {
         crate::runtime::clear_plugin_cache(&cache);
     }
-    let after = Present::find(&owned::load(store), extra_images, home, &cache).await;
+    let after = Present::find(&owned::load(store)?, extra_images, home, &cache).await;
     forget_gone(store).await?;
     Ok(before.storage().total().saturating_sub(after.storage().total()))
 }
@@ -258,7 +258,7 @@ async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>, plugi
 /// Only those are dropped: a download another operation records meanwhile stays.
 async fn forget_gone(store: &Path) -> Result<()> {
     let (images, boxes) = tokio::join!(owned::image_ids(), owned::box_list());
-    let owned = owned::load(store);
+    let owned = owned::load(store)?;
     let gone_images: Vec<owned::OwnedImage> = match &images {
         Some(ids) => owned.images.iter().filter(|i| !ids.contains(&i.id)).cloned().collect(),
         None => Vec::new(),
@@ -442,14 +442,14 @@ mod tests {
         );
         // Still here (the fake Docker and Vagrant removed nothing): still recorded. The old redis
         // image is gone from the machine: its record goes.
-        let owned = owned::load(&store);
+        let owned = owned::load(&store).unwrap();
         assert_eq!(owned.images.iter().map(|i| i.reference.as_str()).collect::<Vec<_>>(), ["nginx:1.27"]);
         assert_eq!(owned.boxes.len(), 1);
         drop(tools);
         // Docker down and Vagrant gone: nothing can be told, so nothing is forgotten.
         let _down = Tools::rules(&[("docker", crate::platform::exec::fake::fail("Cannot connect to the Docker daemon")), ("vagrant", None)]);
         clean(&store, &[], Some(&home), true).await.unwrap();
-        assert_eq!(owned::load(&store), owned, "the record survives a clean-up the tools couldn't answer");
+        assert_eq!(owned::load(&store).unwrap(), owned, "the record survives a clean-up the tools couldn't answer");
     }
 
     #[tokio::test]
@@ -485,7 +485,7 @@ mod tests {
         })
         .unwrap();
         forget_gone(&store).await.unwrap();
-        assert!(owned::load(&store).images.contains(&recorded()));
+        assert!(owned::load(&store).unwrap().images.contains(&recorded()));
     }
 
     /// Builds a throwaway image `tag` (no layers, labelled as this test's) on the real Docker.
