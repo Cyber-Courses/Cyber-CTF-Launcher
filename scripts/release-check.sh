@@ -40,7 +40,7 @@ prereqs() {
   [ "$missing" -eq 0 ]
 }
 format_check() {
-  pnpm exec prettier --check "{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}" && cargo fmt --manifest-path src-tauri/Cargo.toml --check
+  pnpm exec prettier --check "{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}" "{*,docs/**/*,infra/**/*,scripts/**/*}.md" && cargo fmt --manifest-path src-tauri/Cargo.toml --check
 }
 rust_cov() {
   cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml &&

@@ -218,7 +218,7 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 ### Fixed
 
 - **The VM self-test now boots on QEMU.** It fetched its test box with `vagrant box add --provider
-  qemu`, but `generic/alpine319`'s qemu box is a libvirt image mislabeled, so the add failed
+qemu`, but `generic/alpine319`'s qemu box is a libvirt image mislabeled, so the add failed
   ("Provider of box: libvirt"). The test now adds and lists the box under the libvirt provider for
   QEMU: the vagrant-qemu plugin boots a libvirt box's disk directly, and that box bakes in the
   vagrant user, so the VM comes up with working SSH without cloud-init (which vagrant-qemu does not

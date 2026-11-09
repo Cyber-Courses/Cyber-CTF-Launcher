@@ -34,7 +34,7 @@ jobs:
       - run: pnpm build
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec eslint src scripts e2e
-      - run: pnpm exec prettier --check "{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}"
+      - run: pnpm exec prettier --check "{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}" "{*,docs/**/*,infra/**/*,scripts/**/*}.md"
       - run: pnpm exec vitest run
 
   rust:
