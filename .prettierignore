@@ -5,3 +5,5 @@ pnpm-lock.yaml
 dev
 # Written by ts-rs on `cargo test`; CI checks they match the Rust structs byte for byte.
 src/lib/tauri/generated
+# Machine-local state of the test rigs (lab checkouts, logs): ignored by git, not ours to format.
+**/.state/
