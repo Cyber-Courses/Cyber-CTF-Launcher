@@ -1,7 +1,8 @@
 //! A container lab in a local VM (Isoloom's docker-vm) through the Isothrum runner, end to end,
-//! for the v1 release QA: start it on a local hypervisor (the runner's `docker_in_vm` path the
-//! lab page takes when a container lab is run inside a VM), read its status (running, in a local
-//! VM, its machine up), then stop the lab (the runner's `down`) and assert no VM of it is left.
+//! for the v1 release QA: start it on a local hypervisor through the launcher's own start
+//! (`launch::start_docker_in_vm_run`, the path the lab page takes for a container lab in a VM),
+//! read its status (running, in a local VM, its machine up), then stop the lab (the runner's
+//! `down`) and assert no VM of it is left.
 //! The attack box inside the VM is `real_attack_machine`'s. Opt-in (it needs Vagrant, a
 //! hypervisor and its boxes):
 //!
@@ -15,7 +16,7 @@ use std::path::Path;
 
 use super::support::{check, install_copy, leftovers, log};
 use crate::runtime::providers::Provider;
-use crate::runtime::{Place, Runtime, isothrum, lab, lifecycle, paths};
+use crate::runtime::{Place, isothrum, lab, launch, lifecycle};
 
 /// The lab's status while it runs in the VM: running, placed in a local VM, its VM up. A docker-vm
 /// lab's containers are up and healthy inside the VM (the start blocked on Compose's `--wait`
@@ -57,14 +58,10 @@ async fn a_container_lab_runs_in_a_local_vm_end_to_end() {
     let home = std::env::temp_dir().join(format!("cyberctf-{id}-home"));
     let started = std::time::Instant::now();
     let mut f = Vec::new();
-    // The lab page's path for a container lab in a VM: generate its Vagrant files, mark it as
-    // running in a local VM, and bring it up through the runner.
-    let brought_up = async {
-        lab::prepare(&dir, lab::vagrant_target(Runtime::Docker))?;
-        paths::mark_local_vm(&dir, Some(provider))?;
-        isothrum::LabRun::docker_in_vm(&home, &dir, &id)?.up(&[], Some(provider.id()), &mut log(&id)).await
-    }
-    .await;
+    // The launcher's own start of a container lab in a VM, as the lab page's runs it: its Vagrant
+    // files generated, the lab marked as running in a local VM, UTM opened first and its passing
+    // refusal tried again, then up through the runner.
+    let brought_up = launch::start_docker_in_vm_run(&home, &dir, &id, launch::VmStart { provider, env: &[] }, &mut log(&id)).await;
     match brought_up {
         Ok(()) => {
             up_in_vm(&home, &dir, &id, &mut f).await;
