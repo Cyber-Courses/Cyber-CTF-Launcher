@@ -69,7 +69,9 @@ async fn exercise(l: &Lab, f: &mut Vec<String>) {
     }
     up_and_answering(l, f, "started").await;
     match l.run().check().await {
-        Ok(c) => check(c.available && c.ok, format!("its checks pass ({:?})", c.results.iter().map(|r| (&r.name, r.ok)).collect::<Vec<_>>()), f),
+        Ok(c) => {
+            check(c.available && c.ok, format!("its checks pass ({:?}: {})", c.results.iter().map(|r| (&r.name, r.ok)).collect::<Vec<_>>(), c.output.trim()), f)
+        }
         Err(e) => check(false, format!("its checks run: {e}"), f),
     }
     // vagrant-qemu has no `suspend`: a QEMU lab shuts down and resumes, never pauses.
