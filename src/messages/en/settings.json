@@ -160,7 +160,7 @@
   },
   "sharedFolder": {
     "title": "Shared folder",
-    "description": "A folder on this computer that your attack box sees at {mount}: tools in, loot out. It stays when a lab is removed. For labs that run on this computer (on QEMU, only on Linux); not on a server or in a cloud account.",
+    "description": "A folder on this computer that your attack box sees at {mount}: tools in, loot out. It stays when a lab is removed. For labs that run on this computer (on QEMU, only on Linux; not on Hyper-V, nor on a hypervisor the lab's run doesn't name); not on a server or in a cloud account.",
     "pick": "Folder to share with the attack box",
     "change": "Change…",
     "open": "Open the folder"

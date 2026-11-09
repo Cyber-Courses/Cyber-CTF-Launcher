@@ -160,7 +160,7 @@
   },
   "sharedFolder": {
     "title": "Pasta compartilhada",
-    "description": "Uma pasta deste computador que sua attack box vê em {mount}: ferramentas entram, o espólio sai. Ela fica quando um lab é removido. Para labs que rodam neste computador (com QEMU, só no Linux); não em um servidor nem em uma conta de nuvem.",
+    "description": "Uma pasta deste computador que sua attack box vê em {mount}: ferramentas entram, o espólio sai. Ela fica quando um lab é removido. Para labs que rodam neste computador (com QEMU, só no Linux; não com Hyper-V nem com um hipervisor que a execução do lab não indique); não em um servidor nem em uma conta de nuvem.",
     "pick": "Pasta a compartilhar com a attack box",
     "change": "Alterar…",
     "open": "Abrir a pasta"

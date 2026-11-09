@@ -2,7 +2,8 @@
 //! comes out, and it all survives the box being removed with its lab. Chosen in the setup and in
 //! Settings (off until then); mounted at `/shared` in the attack box wherever the lab runs on this
 //! computer and its form can share a folder of it (`attack_machine::Placed`): not on a server or
-//! in a cloud account, nor in a VM on QEMU outside Linux.
+//! in a cloud account, nor in a VM on QEMU outside Linux, on Hyper-V or on a hypervisor the lab's
+//! run doesn't name.
 //! Kept in the app's data folder, so the background deploy worker sees the same choice.
 
 use std::path::{Path, PathBuf};
@@ -36,28 +37,41 @@ pub fn default_path() -> Option<PathBuf> {
     crate::platform::home_dir().map(|h| h.join("CyberCTF").join("shared"))
 }
 
-fn load() -> SharedFolder {
+fn load() -> Result<SharedFolder> {
     load_from(FILE.get().map(PathBuf::as_path))
 }
 
-/// The setting in `file`; off when there is no file or it doesn't read.
-fn load_from(file: Option<&Path>) -> SharedFolder {
-    file.and_then(|f| std::fs::read_to_string(f).ok()).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+/// The setting in `file`; off when there is none (not set up, or never saved). A file that can't
+/// be read or isn't the setting is an error, never taken for "off".
+fn load_from(file: Option<&Path>) -> Result<SharedFolder> {
+    let Some(file) = file else { return Ok(SharedFolder::default()) };
+    let unreadable = |e: &dyn std::fmt::Display| Error::Invalid(format!("the shared folder setting ({}) can't be read: {e}", file.display()));
+    let text = match std::fs::read_to_string(file) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(SharedFolder::default()),
+        Err(e) => return Err(unreadable(&e)),
+    };
+    serde_json::from_str(&text).map_err(|e| unreadable(&e))
 }
 
-/// The folder to mount, when sharing is on: created if missing. None when off or unusable.
-pub fn current() -> Option<PathBuf> {
-    folder(load())
+/// The folder to mount, when sharing is on: created if missing. None when off; an error when the
+/// setting can't be read or the folder can't be made.
+pub fn current() -> Result<Option<PathBuf>> {
+    folder(load()?)
 }
 
 /// `current` for a loaded setting.
-fn folder(s: SharedFolder) -> Option<PathBuf> {
+fn folder(s: SharedFolder) -> Result<Option<PathBuf>> {
     if !s.enabled {
-        return None;
+        return Ok(None);
     }
-    let path = s.path.map(PathBuf::from).or_else(default_path)?;
-    std::fs::create_dir_all(&path).ok()?;
-    path.is_dir().then_some(path)
+    let path = s
+        .path
+        .map(PathBuf::from)
+        .or_else(default_path)
+        .ok_or_else(|| Error::Invalid("no shared folder is chosen, and this account has no home folder".into()))?;
+    std::fs::create_dir_all(&path).map_err(|e| Error::Invalid(format!("couldn't create {}: {e}", path.display())))?;
+    Ok(Some(path))
 }
 
 fn check(path: &Path) -> Result<()> {
@@ -83,8 +97,8 @@ pub struct SharedFolderInfo {
     pub mount_point: &'static str,
 }
 
-pub fn shared_folder_get() -> SharedFolderInfo {
-    info(load())
+pub fn shared_folder_get() -> Result<SharedFolderInfo> {
+    Ok(info(load()?))
 }
 
 /// What the Settings page shows for a setting: the chosen folder, else the default one.
@@ -96,7 +110,7 @@ fn info(s: SharedFolder) -> SharedFolderInfo {
 /// Turns sharing on or off and sets the folder (created now, so a wrong path shows at once).
 pub fn shared_folder_set(enabled: bool, path: &str) -> Result<SharedFolderInfo> {
     save_to(FILE.get().map(PathBuf::as_path), enabled, path)?;
-    Ok(shared_folder_get())
+    shared_folder_get()
 }
 
 /// `shared_folder_set` into the settings file `file` (None until `init`).
@@ -117,7 +131,7 @@ fn save_to(file: Option<&Path>, enabled: bool, path: &str) -> Result<()> {
 
 /// Opens the folder with `open` (the system's file manager).
 pub fn shared_folder_open(open: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
-    let path = current().ok_or_else(|| Error::Invalid("folder sharing is off".into()))?;
+    let path = current()?.ok_or_else(|| Error::Invalid("folder sharing is off".into()))?;
     open(&path)
 }
 
@@ -159,12 +173,12 @@ mod tests {
         let file = root.join("data").join("shared-folder.json");
         let folder = root.join("my shared");
         // No file yet, or none set up: sharing is off.
-        assert_eq!(load_from(None), SharedFolder::default());
-        assert_eq!(load_from(Some(&file)), SharedFolder::default());
+        assert_eq!(load_from(None).unwrap(), SharedFolder::default());
+        assert_eq!(load_from(Some(&file)).unwrap(), SharedFolder::default());
 
         save_to(Some(&file), true, &format!("  {}  ", folder.display())).unwrap();
         assert!(folder.is_dir(), "the folder is created when sharing is turned on");
-        let s = load_from(Some(&file));
+        let s = load_from(Some(&file)).unwrap();
         assert_eq!(s, SharedFolder { enabled: true, path: Some(folder.display().to_string()) });
         assert_eq!(folder_of(&s), Some(folder.clone()));
         let shown = info(s);
@@ -173,13 +187,19 @@ mod tests {
 
         // Off, with no folder: nothing to mount, and the default folder is suggested.
         save_to(Some(&file), false, " ").unwrap();
-        let s = load_from(Some(&file));
+        let s = load_from(Some(&file)).unwrap();
         assert_eq!(s, SharedFolder { enabled: false, path: None });
         assert_eq!(folder_of(&s), None);
         assert_eq!(info(s).path, default_path().map(|p| p.display().to_string()).unwrap_or_default());
 
         std::fs::write(&file, "garbage").unwrap();
-        assert_eq!(load_from(Some(&file)), SharedFolder::default());
+        let err = load_from(Some(&file)).unwrap_err().to_string();
+        assert!(err.contains("shared-folder.json") && err.contains("can't be read"), "never taken for off: {err}");
+        // A folder that can't be made is said, not taken for none.
+        let blocker = root.join("a file");
+        std::fs::write(&blocker, "").unwrap();
+        let unusable = SharedFolder { enabled: true, path: Some(blocker.join("shared").display().to_string()) };
+        assert!(super::folder(unusable).unwrap_err().to_string().starts_with("couldn't create"));
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -194,7 +214,7 @@ mod tests {
     }
 
     fn folder_of(s: &SharedFolder) -> Option<PathBuf> {
-        folder(s.clone())
+        folder(s.clone()).unwrap()
     }
 
     /// The commands, over a settings file of this test's own. The setting is process-wide, so
@@ -208,13 +228,13 @@ mod tests {
         let shown = shared_folder_set(false, &folder.display().to_string()).unwrap();
         assert!(!shown.enabled);
         assert_eq!((shown.path.as_str(), shown.mount_point), (folder.display().to_string().as_str(), MOUNT_POINT));
-        assert_eq!(shared_folder_get().path, folder.display().to_string());
+        assert_eq!(shared_folder_get().unwrap().path, folder.display().to_string());
         assert!(file.is_file() && !folder.exists(), "off: the folder isn't created");
         assert_eq!(shared_folder_open(|_| panic!("nothing to open")).unwrap_err().to_string(), "folder sharing is off");
         // A path that can't be shared is refused and the setting kept.
         assert_eq!(shared_folder_set(true, "relative/dir").err().unwrap().to_string(), "choose a full folder path");
-        assert_eq!(shared_folder_get().path, folder.display().to_string());
-        assert!(current().is_none());
+        assert_eq!(shared_folder_get().unwrap().path, folder.display().to_string());
+        assert!(current().unwrap().is_none());
         std::fs::remove_dir_all(root).unwrap();
     }
 

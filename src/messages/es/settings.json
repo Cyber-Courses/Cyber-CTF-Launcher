@@ -160,7 +160,7 @@
   },
   "sharedFolder": {
     "title": "Carpeta compartida",
-    "description": "Una carpeta de este ordenador que tu attack box ve en {mount}: herramientas dentro, botín fuera. Se queda cuando se elimina un lab. Para labs que se ejecutan en este ordenador (con QEMU, solo en Linux); no en un servidor ni en una cuenta en la nube.",
+    "description": "Una carpeta de este ordenador que tu attack box ve en {mount}: herramientas dentro, botín fuera. Se queda cuando se elimina un lab. Para labs que se ejecutan en este ordenador (con QEMU, solo en Linux; no con Hyper-V ni con un hipervisor que la ejecución del lab no indique); no en un servidor ni en una cuenta en la nube.",
     "pick": "Carpeta para compartir con la máquina de ataque",
     "change": "Cambiar…",
     "open": "Abrir la carpeta"

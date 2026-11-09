@@ -160,7 +160,7 @@
   },
   "sharedFolder": {
     "title": "Dossier partagé",
-    "description": "Un dossier de cet ordinateur que votre attack box voit dans {mount} : les outils y entrent, le butin en sort. Il reste quand un lab est supprimé. Pour les labs qui tournent sur cet ordinateur (avec QEMU, seulement sous Linux) ; pas sur un serveur ni dans un compte cloud.",
+    "description": "Un dossier de cet ordinateur que votre attack box voit dans {mount} : les outils y entrent, le butin en sort. Il reste quand un lab est supprimé. Pour les labs qui tournent sur cet ordinateur (avec QEMU, seulement sous Linux ; pas avec Hyper-V, ni avec un hyperviseur que l’exécution du lab ne nomme pas) ; pas sur un serveur ni dans un compte cloud.",
     "pick": "Dossier à partager avec l'attack box",
     "change": "Changer…",
     "open": "Ouvrir le dossier"

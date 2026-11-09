@@ -5,7 +5,7 @@ use crate::shared_folder::{self, SharedFolderInfo};
 
 /// The shared folder setting.
 #[tauri::command]
-pub fn shared_folder_get() -> SharedFolderInfo {
+pub fn shared_folder_get() -> Result<SharedFolderInfo> {
     shared_folder::shared_folder_get()
 }
 

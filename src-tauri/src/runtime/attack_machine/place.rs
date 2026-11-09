@@ -197,23 +197,34 @@ impl Placed {
 
     /// The learner's shared folder for the box, when it is on and the lab runs where a machine
     /// can mount a folder of this computer ([`shares_folders`]); otherwise none, `log` saying why
-    /// when it is on.
-    async fn shared_folder(&self, log: &mut impl FnMut(String)) -> Option<std::path::PathBuf> {
-        let folder = crate::shared_folder::current()?;
+    /// when it is on (or when the setting or the folder can't be used).
+    async fn shared_folder(&self, log: &mut impl FnMut(String)) -> Option<PathBuf> {
+        let folder = match crate::shared_folder::current() {
+            Ok(folder) => folder?,
+            Err(e) => {
+                log(format!("The shared folder isn't mounted in the attack box: {e}."));
+                return None;
+            }
+        };
         let provider = match &self.host {
-            Host::Local(run) => run.status().await.ok().and_then(|s| s.provider),
+            Host::Local(run) => match run.status().await {
+                Ok(s) => s.provider,
+                Err(e) => {
+                    log::warn!("couldn't read the lab's hypervisor for the shared folder: {e}");
+                    None
+                }
+            },
             Host::Cloud(..) | Host::Server { .. } => None,
         };
         if shares_folders(self.local(), self.target, provider.as_deref(), std::env::consts::OS) {
             return Some(folder);
         }
-        log(format!(
-            "The shared folder isn't mounted in the attack box here: {}.",
-            match provider.as_deref() {
-                Some(p) if self.local() => format!("{p} can't share a folder of this computer with a VM"),
-                _ => "a lab on a server or in a cloud account can't reach a folder of this computer".to_owned(),
-            }
-        ));
+        let why = match provider.as_deref() {
+            _ if !self.local() => "a lab on a server or in a cloud account can't reach a folder of this computer".to_owned(),
+            Some(p) => format!("{p} can't share a folder of this computer with a VM"),
+            None => "the lab's hypervisor isn't known, so sharing a folder with its VM isn't assumed".to_owned(),
+        };
+        log(format!("The shared folder isn't mounted in the attack box here: {why}."));
         None
     }
 
@@ -232,7 +243,8 @@ impl Placed {
 /// names it), the lab run here (`local`) on `provider` (its hypervisor, for a VM form): Docker
 /// binds it; a local VM shares it with its hypervisor's two-way folder type, which QEMU only has
 /// on Linux (virtiofsd) and Hyper-V doesn't have without a password at every start (Isoloom's
-/// `host_folders`); a lab on a server or in a cloud account can't reach this computer.
+/// `host_folders`); a lab on a server or in a cloud account can't reach this computer. The
+/// integration tests' `shared_for` (`scripts/integration-tests.sh`) lists the same hypervisors.
 fn shares_folders(local: bool, target: Target, provider: Option<&str>, os: &str) -> bool {
     match target {
         _ if !local => false,

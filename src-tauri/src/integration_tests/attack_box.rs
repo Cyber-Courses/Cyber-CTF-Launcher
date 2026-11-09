@@ -49,7 +49,7 @@ pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &
         format!("the box reaches {target} and is called {} ({reached:?})", attack_machine::NAME),
         f,
     );
-    if let Some(folder) = crate::shared_folder::current() {
+    if let Some(folder) = crate::shared_folder::current().unwrap_or_else(|e| panic!("the shared folder: {e}")) {
         std::fs::write(folder.join("to-box"), "tools in").unwrap();
         let mount = crate::shared_folder::MOUNT_POINT;
         let seen = in_box(&console, &format!("cat {mount}/to-box && echo loot out > {mount}/from-box")).await;
