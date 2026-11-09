@@ -3,7 +3,7 @@ import { act, render, renderHook, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CONFIRM_WINDOW_MS, LaunchConfirm } from "@/features/app/launch-confirm";
+import { ANSWER_MARGIN_MS, LaunchConfirm } from "@/features/app/launch-confirm";
 import { LabDetail } from "@/features/labs/lab-detail";
 import { useLabCheck } from "@/features/labs/lab-health";
 import { useAttackBox } from "@/features/labs/use-attack-box";
@@ -180,7 +180,9 @@ describe("reset", () => {
 });
 
 describe("website launch confirmation", () => {
-  it("expires with the backend's window instead of letting a late Approve do nothing", async () => {
+  it("expires by the backend's deadline instead of letting a late Approve do nothing", async () => {
+    // The deadline comes with the request, so a prompt shown late (here, a minute before the
+    // agent stops waiting) expires with it, not a fixed time after it shows.
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const calls = installTauri();
     render(<LaunchConfirm />);
@@ -193,11 +195,14 @@ describe("website launch confirmation", () => {
         place: "cloud",
         target: "aws",
         privileged: false,
+        expiresAtMs: Date.now() + 60_000,
       });
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(screen.getByRole("alertdialog")).toBeTruthy();
-    await advance(CONFIRM_WINDOW_MS);
+    await advance(60_000 - ANSWER_MARGIN_MS - 1_000);
+    expect(screen.queryByText(translate("app.launchConfirm.expired"))).toBeNull();
+    await advance(1_000);
     expect(screen.queryByText(translate("app.launchConfirm.approve.cloud"))).toBeNull();
     expect(screen.getByText(translate("app.launchConfirm.expired"))).toBeTruthy();
     await settle(() => {

@@ -409,10 +409,11 @@ describe("LaunchConfirm keyboard", () => {
     place: "cloud",
     target: "AWS sandbox",
     privileged: false,
+    expiresAtMs: Date.now() + 180_000,
   };
 
   it("puts the focus on Decline first, so Enter after a misclick never starts billable resources", async () => {
-    const calls = installTauri({ confirm_launch: () => null });
+    const calls = installTauri({ confirm_launch: () => true });
     const user = userEvent.setup();
     await askLaunch(request);
     expect(document.activeElement?.textContent).toBe("Decline");
@@ -421,11 +422,9 @@ describe("LaunchConfirm keyboard", () => {
     expect(calls.filter((c) => c.cmd === "confirm_launch").map((c) => c.args)).toEqual([{ sessionId: "sess-1", approve: false }]);
   });
 
-  // Bug: like the quit guard, the launch confirmation has no Escape handling. Suggested fix
-  // (launch-confirm.tsx): Escape answers `answer(false)` (or just closes when expired), the same
-  // as Decline.
-  it("Escape doesn't decline the cloud launch confirmation", async () => {
-    const calls = installTauri({ confirm_launch: () => null });
+  // Regression: the launch confirmation had no Escape handling. Escape declines, as Decline does.
+  it("Escape declines the cloud launch confirmation", async () => {
+    const calls = installTauri({ confirm_launch: () => true });
     const user = userEvent.setup();
     await askLaunch(request);
     await user.keyboard("{Escape}");

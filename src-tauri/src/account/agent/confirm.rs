@@ -4,8 +4,8 @@
 //! time never runs.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::oneshot;
 
@@ -35,6 +35,9 @@ pub struct LaunchRequest {
     target: String,
     /// Whether the lab has a machine with kernel-level access (`privileged: true`).
     privileged: bool,
+    /// When the agent stops waiting for an answer (Unix time, in milliseconds): an answer after it
+    /// starts nothing. Set when the prompt is shown.
+    expires_at_ms: u64,
 }
 
 /// Where a website launch would run.
@@ -51,19 +54,23 @@ pub enum LaunchPlace {
 }
 
 /// Launch confirmations awaiting the user's answer, keyed by session id. The agent inserts a
-/// sender and awaits it; `confirm_launch` (from the UI) resolves it.
-pub(super) fn pending_confirmations() -> &'static Mutex<HashMap<String, oneshot::Sender<bool>>> {
+/// sender and awaits it; `confirm_launch` (from the UI) resolves it. A panic elsewhere while it
+/// was held leaves the map as it was: it is used on.
+pub(super) fn pending_confirmations() -> MutexGuard<'static, HashMap<String, oneshot::Sender<bool>>> {
     static P: OnceLock<Mutex<HashMap<String, oneshot::Sender<bool>>>> = OnceLock::new();
-    P.get_or_init(|| Mutex::new(HashMap::new()))
+    P.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The user's answer to a launch confirmation, from the UI.
-pub fn confirm_launch(session_id: &str, approve: bool) {
-    if let Ok(mut map) = pending_confirmations().lock()
-        && let Some(tx) = map.remove(session_id)
-    {
-        let _ = tx.send(approve);
+/// The user's answer to a launch confirmation, from the UI. Whether it reached the waiting launch:
+/// false when the launch no longer waits (its time ran out, or it was answered already), so the UI
+/// says the answer started nothing.
+pub fn confirm_launch(session_id: &str, approve: bool) -> bool {
+    let waiting = pending_confirmations().remove(session_id);
+    let answered = waiting.is_some_and(|tx| tx.send(approve).is_ok());
+    if !answered {
+        log::info!("an answer to website launch {session_id} came when it no longer waited for one");
     }
+    answered
 }
 
 /// Asks the user to confirm `request` on this machine, by the prompt the UI shows, and waits for
@@ -71,15 +78,17 @@ pub fn confirm_launch(session_id: &str, approve: bool) {
 /// nothing a website asked for runs unattended.
 pub(super) async fn ask(deps: &Deps, request: &LaunchRequest) -> bool {
     let (tx, rx) = oneshot::channel();
-    if let Ok(mut map) = pending_confirmations().lock() {
-        map.insert(request.session_id.clone(), tx);
-    }
-    (deps.prompt_launch)(request);
+    pending_confirmations().insert(request.session_id.clone(), tx);
+    (deps.prompt_launch)(&LaunchRequest { expires_at_ms: unix_ms_after(CONFIRM_WAIT), ..request.clone() });
     let approved = await_answer(rx, CONFIRM_WAIT).await;
-    if let Ok(mut map) = pending_confirmations().lock() {
-        map.remove(&request.session_id);
-    }
+    pending_confirmations().remove(&request.session_id);
     approved
+}
+
+/// The Unix time, in milliseconds, `wait` from now.
+fn unix_ms_after(wait: Duration) -> u64 {
+    let at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default() + wait;
+    u64::try_from(at.as_millis()).unwrap_or(u64::MAX)
 }
 
 /// How long a launch prompt waits for the player.
@@ -109,7 +118,7 @@ pub(super) async fn launch_request(dirs: &AppDirs, session_id: &str, launch: &La
         }
     };
     let lab_name = if spec.name.trim().is_empty() { lab_id } else { spec.name.clone() };
-    Ok(LaunchRequest { session_id: session_id.to_string(), lab_name, repository, commit, place, target, privileged })
+    Ok(LaunchRequest { session_id: session_id.to_string(), lab_name, repository, commit, place, target, privileged, expires_at_ms: 0 })
 }
 
 /// A website launch runs only once the player approved it on this machine: whatever runs here,
@@ -143,8 +152,8 @@ mod tests {
     fn answer(sid: &'static str, approve: bool) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             loop {
-                if pending_confirmations().lock().unwrap().contains_key(sid) {
-                    confirm_launch(sid, approve);
+                if pending_confirmations().contains_key(sid) {
+                    assert!(confirm_launch(sid, approve));
                     return;
                 }
                 tokio::task::yield_now().await;
@@ -197,11 +206,14 @@ mod tests {
         }
         let shown: Vec<String> = prompts.lock().unwrap().iter().map(|r| r.session_id.clone()).collect();
         assert_eq!(shown, ["s-here-yes", "s-here-no"], "each launch was shown here");
-        // What the webview gets.
+        // What the webview gets: with when the wait for it ends, so the prompt says when it did.
         let request = prompts.lock().unwrap()[0].clone();
+        let expires = request.expires_at_ms;
+        let in_full = unix_ms_after(CONFIRM_WAIT);
+        assert!((in_full - 5_000..=in_full).contains(&expires), "{expires} is not about {} s from now", CONFIRM_WAIT.as_secs());
         assert_eq!(
             serde_json::to_value(&request).unwrap(),
-            json!({ "sessionId": "s-here-yes", "labName": "Web Shop", "repository": "CyberCTF/web", "commit": COMMIT, "place": "here", "target": "", "privileged": false })
+            json!({ "sessionId": "s-here-yes", "labName": "Web Shop", "repository": "CyberCTF/web", "commit": COMMIT, "place": "here", "target": "", "privileged": false, "expiresAtMs": expires })
         );
     }
 
@@ -224,14 +236,35 @@ mod tests {
     }
 
     #[test]
-    fn confirm_launch_answers_the_waiting_prompt_once() {
+    fn confirm_launch_answers_the_waiting_prompt_once_and_says_so() {
+        // Regression: an answer to no waiting launch (late, or twice) vanished, and the prompt
+        // closed as if it had been taken.
         let (tx, mut rx) = oneshot::channel();
-        pending_confirmations().lock().unwrap().insert("s-confirm".into(), tx);
-        confirm_launch("s-other", true);
+        pending_confirmations().insert("s-confirm".into(), tx);
+        assert!(!confirm_launch("s-other", true), "no such launch waits");
         assert!(rx.try_recv().is_err());
-        confirm_launch("s-confirm", true);
+        assert!(confirm_launch("s-confirm", true));
         assert!(rx.try_recv().unwrap());
-        assert!(!pending_confirmations().lock().unwrap().contains_key("s-confirm"));
+        assert!(!pending_confirmations().contains_key("s-confirm"));
+        assert!(!confirm_launch("s-confirm", true), "answered already");
+        // The launch stopped waiting (its receiver gone) just before the answer came.
+        let (tx, rx) = oneshot::channel();
+        pending_confirmations().insert("s-late".into(), tx);
+        drop(rx);
+        assert!(!confirm_launch("s-late", true));
+    }
+
+    #[test]
+    fn a_panic_while_the_waiting_launches_were_held_doesnt_stop_answers() {
+        let poisoned = std::thread::spawn(|| {
+            let _held = pending_confirmations();
+            panic!("held while panicking");
+        });
+        assert!(poisoned.join().is_err());
+        let (tx, mut rx) = oneshot::channel();
+        pending_confirmations().insert("s-poisoned".into(), tx);
+        assert!(confirm_launch("s-poisoned", false));
+        assert!(!rx.try_recv().unwrap());
     }
 
     #[tokio::test]

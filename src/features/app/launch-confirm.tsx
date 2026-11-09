@@ -15,16 +15,17 @@ type Place = Request["place"];
 const PLACES: readonly Place[] = ["here", "server", "cloud"];
 const ICONS = { here: Laptop, server: Server, cloud: Cloud } as const;
 
-/** How long the agent waits for an answer (account/agent.rs: 180 s), less a margin so an answer
- *  given at the very end isn't lost on its way: past it, Approve would silently do nothing. */
-export const CONFIRM_WINDOW_MS = 175_000;
+/** How long before the agent stops waiting (the request's `expiresAtMs`) the prompt stops taking
+ *  an answer, so one given at the very end isn't lost on its way. */
+export const ANSWER_MARGIN_MS = 5_000;
 
 /** The request in a `launch-confirm` event's payload, or null for anything else. */
 function parseRequest(payload: unknown): Request | null {
   if (typeof payload !== "object" || payload === null) return null;
-  const { sessionId, labName, repository, commit, target, place, privileged } = payload as Record<string, unknown>;
+  const { sessionId, labName, repository, commit, target, place, privileged, expiresAtMs } = payload as Record<string, unknown>;
   const fields = [sessionId, labName, repository, commit, target];
-  const known = fields.every((f) => typeof f === "string") && PLACES.includes(place as Place) && typeof privileged === "boolean";
+  const known =
+    fields.every((f) => typeof f === "string") && PLACES.includes(place as Place) && typeof privileged === "boolean" && typeof expiresAtMs === "number";
   return known ? (payload as Request) : null;
 }
 
@@ -43,9 +44,12 @@ function useLaunchRequest() {
   });
   useEffect(() => {
     if (!req) return;
-    const timer = setTimeout(() => {
-      setExpired(req.sessionId);
-    }, CONFIRM_WINDOW_MS);
+    const timer = setTimeout(
+      () => {
+        setExpired(req.sessionId);
+      },
+      req.expiresAtMs - ANSWER_MARGIN_MS - Date.now(),
+    );
     return () => {
       clearTimeout(timer);
     };
@@ -55,10 +59,17 @@ function useLaunchRequest() {
     if (!req) return;
     setBusy(true);
     void confirmLaunch(req.sessionId, approve)
-      .catch(tell(t("app.launchConfirm.failed")))
+      .then((waited) => {
+        // The launch no longer waited (its time ran out on the way): the answer started nothing.
+        if (waited) setReq(null);
+        else setExpired(req.sessionId);
+      })
+      .catch((e: unknown) => {
+        tell(t("app.launchConfirm.failed"))(e);
+        setReq(null);
+      })
       .finally(() => {
         setBusy(false);
-        setReq(null);
       });
   };
   const dismiss = () => {

@@ -37,6 +37,7 @@ describe("AppShell", () => {
         place: "cloud",
         target: "AWS sandbox",
         privileged: false,
+        expiresAtMs: Date.now() + 180_000,
       }),
     );
     await flush();

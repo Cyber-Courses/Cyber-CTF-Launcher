@@ -17,5 +17,6 @@ export const agentInfo = () => invoke<AgentInfo>("agent_info");
 /** What this computer's administrator manages (the policy) and where the app's updates come from. */
 export const managedSettings = () => invoke<ManagedSettings>("managed_settings");
 
-/** Answer a launch confirmation the agent asked for (a launch from the website). */
-export const confirmLaunch = (sessionId: string, approve: boolean) => invokeUnit("confirm_launch", { sessionId, approve });
+/** Answer a launch confirmation the agent asked for (a launch from the website); whether the
+ *  launch still waited for the answer. */
+export const confirmLaunch = (sessionId: string, approve: boolean) => invoke<boolean>("confirm_launch", { sessionId, approve });

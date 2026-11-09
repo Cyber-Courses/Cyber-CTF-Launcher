@@ -17,6 +17,7 @@ const request = {
   place: "cloud",
   target: "aws",
   privileged: false,
+  expiresAtMs: Date.now() + 180_000,
 };
 
 /** Emits `launch-confirm` with `payload` and lets what it causes render. */
@@ -36,6 +37,7 @@ describe("LaunchConfirm", () => {
     await confirmAsked({ ...request, labName: undefined });
     await confirmAsked({ ...request, place: "mars" });
     await confirmAsked({ ...request, privileged: "yes" });
+    await confirmAsked({ ...request, expiresAtMs: undefined });
     expect(screen.queryByRole("alertdialog")).toBeNull();
 
     await confirmAsked(request);

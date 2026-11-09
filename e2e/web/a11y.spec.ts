@@ -95,6 +95,7 @@ for (const theme of ["dark", "light"] as const) {
         place: "here",
         target: "",
         privileged: true,
+        expiresAtMs: Date.now() + 180_000,
       });
       await expect(page.getByRole("alertdialog")).toBeVisible();
       await animationsFinished(page);

@@ -22,6 +22,7 @@ import { blockQuit, askLaunch, focusedPalette, openMainWindow } from "@/componen
 import { emitSettled, must, toastsShown } from "@/components/test-support";
 import { resetUpdater, updater } from "@/components/updater-double";
 import { UNMANAGED } from "@/lib/dev-mock/sample";
+import { translate } from "@/lib/i18n";
 
 vi.mock("@tauri-apps/plugin-updater", () => import("@/components/updater-double"));
 
@@ -427,13 +428,14 @@ describe("LaunchConfirm", () => {
     place: "cloud",
     target: "AWS sandbox",
     privileged: false,
+    expiresAtMs: Date.now() + 180_000,
   };
 
   it.each([
     ["Run on my cloud", true],
     ["Decline", false],
   ])("%s answers the agent once, then closes", async (label, approve) => {
-    const calls = installTauri({ confirm_launch: () => null });
+    const calls = installTauri({ confirm_launch: () => true });
     const user = userEvent.setup();
     await askLaunch(request);
     const dialog = screen.getByRole("alertdialog");
@@ -446,6 +448,18 @@ describe("LaunchConfirm", () => {
     await flush();
     expect(calls.filter((c) => c.cmd === "confirm_launch").map((c) => c.args)).toEqual([{ sessionId: "sess-9", approve }]);
     expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("says an answer the launch no longer waited for started nothing", async () => {
+    // Regression: an answer that came after the agent stopped waiting closed the prompt as if it
+    // had been taken; the lab never started and nothing said why.
+    installTauri({ confirm_launch: () => false });
+    const user = userEvent.setup();
+    await askLaunch(request);
+    await user.click(screen.getByRole("button", { name: "Run on my cloud" }));
+    await flush();
+    expect(screen.getByRole("alertdialog").textContent).toContain(translate("app.launchConfirm.expired"));
+    expect(screen.queryByRole("button", { name: "Run on my cloud" })).toBeNull();
   });
 
   it("says when the answer couldn't be sent", async () => {

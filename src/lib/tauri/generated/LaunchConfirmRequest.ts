@@ -20,4 +20,9 @@ target: string,
 /**
  * Whether the lab has a machine with kernel-level access (`privileged: true`).
  */
-privileged: boolean, };
+privileged: boolean, 
+/**
+ * When the agent stops waiting for an answer (Unix time, in milliseconds): an answer after it
+ * starts nothing. Set when the prompt is shown.
+ */
+expiresAtMs: number, };

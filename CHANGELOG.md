@@ -175,6 +175,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 - **Sign out says when the keychain kept the session.** A keychain that refused to delete it
   (locked, its unlock prompt dismissed) went unnoticed: the app showed signed out, and the next
   start signed the player in again. Sign out now says it couldn't, and the app stays signed in.
+- **An answer to a website launch that came too late says it started nothing.** Approving just
+  as the three minutes ran out closed the prompt as if the lab were starting; nothing started and
+  nothing said so. The prompt now says the request expired, and it counts down from when the
+  launcher stops waiting rather than from when it was shown.
 - **A lab whose state can't be read says why.** When reading a lab's state failed (Docker not
   running, its run record unreadable, its files no longer able to be generated again), the lab
   page went on showing the last state it had read, with no word of it. It now says, at the top,

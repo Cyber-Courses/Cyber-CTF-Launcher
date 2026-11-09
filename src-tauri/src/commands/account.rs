@@ -70,10 +70,10 @@ pub fn agent_info(app: AppHandle) -> Result<AgentInfo> {
     agent::agent_info(&AppDirs::from(&app))
 }
 
-/// The player's answer to a launch the website asked for.
+/// The player's answer to a launch the website asked for; whether the launch still waited for it.
 #[tauri::command]
-pub fn confirm_launch(session_id: &str, approve: bool) {
-    agent::confirm_launch(session_id, approve);
+pub fn confirm_launch(session_id: &str, approve: bool) -> bool {
+    agent::confirm_launch(session_id, approve)
 }
 
 #[cfg(test)]
