@@ -303,16 +303,28 @@ fn stage(labs: &Path, dir: &Path, tarball: &[u8], release: Release<'_>) -> Resul
 /// stop halfway and leave a broken lab), the new one moved in, and the old one put back if
 /// that fails. The old copy is deleted last, best effort; a leftover goes on the next update.
 fn swap_in(staging: &Path, dir: &Path) -> Result<()> {
+    swap_in_with(staging, dir, rename_retrying)
+}
+
+/// [`swap_in`], moving folders with `rename`. Should the old copy not go back after the new
+/// one failed to move in, the lab is in neither place the launcher looks: that is logged, and
+/// the error says where the old copy is.
+fn swap_in_with(staging: &Path, dir: &Path, rename: impl Fn(&Path, &Path) -> std::io::Result<()>) -> Result<()> {
     let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let old = dir.with_file_name(format!(".{name}.old"));
     let _ = std::fs::remove_dir_all(&old);
     let had_old = dir.exists();
     if had_old {
-        rename_retrying(dir, &old).map_err(|e| in_use(e, dir))?;
+        rename(dir, &old).map_err(|e| in_use(e, dir))?;
     }
-    if let Err(e) = rename_retrying(staging, dir) {
-        if had_old {
-            let _ = rename_retrying(&old, dir);
+    if let Err(e) = rename(staging, dir) {
+        if had_old && let Err(back) = rename(&old, dir) {
+            log::error!("lab update: {} didn't move in ({e}), and the installed copy didn't go back from {} ({back})", dir.display(), old.display());
+            return Err(Error::Invalid(format!(
+                "Couldn't update the lab, nor put the installed copy back: it is in {}. Move that folder back to {}, or remove the lab and add it again.",
+                old.display(),
+                dir.display()
+            )));
         }
         return Err(in_use(e, dir));
     }
@@ -639,6 +651,28 @@ mod tests {
         assert!(installed(&dir.join(".cyberctf-commit"), sha));
         assert!(!installed(&dir.join(".cyberctf-commit"), "ffffffffffffffffffffffffffffffffffffffff"));
         assert!(!labs.join(".invoice.old").exists(), "the old copy is cleared");
+        std::fs::remove_dir_all(labs).unwrap();
+    }
+
+    #[test]
+    fn a_failed_update_that_cant_put_the_old_copy_back_says_where_it_is() {
+        let labs = std::env::temp_dir().join(format!("cyberctf-swap-back-{}", rand::random::<u32>()));
+        let (dir, staging, old) = (labs.join("invoice"), labs.join(".invoice.staging"), labs.join(".invoice.old"));
+        for (d, v) in [(&dir, "old"), (&staging, "new")] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("a.txt"), v).unwrap();
+        }
+        // Moving aside works; moving the new copy in, and the old one back, don't.
+        let rename = |from: &Path, to: &Path| if from == dir.as_path() { std::fs::rename(from, to) } else { Err(std::io::Error::other("held")) };
+        let err = swap_in_with(&staging, &dir, rename).unwrap_err().to_string();
+        assert!(err.contains("nor put the installed copy back") && err.contains(&old.display().to_string()), "{err}");
+        assert_eq!(std::fs::read_to_string(old.join("a.txt")).unwrap(), "old", "the old copy kept where the error says");
+        // The old copy back fine: the move-in's own error, the lab where it was.
+        std::fs::rename(&old, &dir).unwrap();
+        let rename = |from: &Path, to: &Path| if from == staging.as_path() { Err(std::io::Error::other("held")) } else { std::fs::rename(from, to) };
+        let err = swap_in_with(&staging, &dir, rename).unwrap_err().to_string();
+        assert!(!err.contains("put the installed copy back"), "{err}");
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "old");
         std::fs::remove_dir_all(labs).unwrap();
     }
 
