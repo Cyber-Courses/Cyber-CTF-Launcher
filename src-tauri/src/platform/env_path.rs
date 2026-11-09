@@ -11,9 +11,9 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-/// Dirs added even before they exist: a tool installed there while the app runs (the gcloud
-/// SDK, per user, from the Cloud setup) is then found without a restart, since PATH is only
-/// set once at startup.
+/// Dirs added even before they exist: a tool installed there while the app runs is then found
+/// without a restart, since PATH is only set once at startup. On Linux, the per-user gcloud SDK
+/// earlier versions installed (gcloud now comes from Google's apt repository, in /usr/bin).
 fn future_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if cfg!(target_os = "linux")

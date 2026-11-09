@@ -70,6 +70,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   licences, crates.io only) and `pnpm audit --prod` in CI, Dependabot for the crates, the npm
   packages and the pinned actions, and a link check of the docs (`pnpm check:docs`).
 
+- **No vendor install script runs as root on Linux.** The one-click installs of Azure CLI and
+  gcloud set up Microsoft's and Google's apt repositories, and VirtualBox's Oracle repository, each
+  with its signing key checked against a fingerprint pinned in the app, as Docker's and
+  HashiCorp's already were; Docker on a distro without Docker's apt repository says where to get
+  it instead of running get.docker.com. gcloud is now a system package (`google-cloud-cli`)
+  rather than a per-user SDK in `~/google-cloud-sdk`; removing it from Cleanup removes both.
 - **Every lab launched from the website asks on this computer first.** Only a launch onto a cloud
   account used to ask; one here or on a server ran unattended. Now each one shows the lab's name,
   where it would run (this computer, a server or a cloud account, by name) and, when the lab has

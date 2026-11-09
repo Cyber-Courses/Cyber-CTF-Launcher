@@ -8,7 +8,7 @@ use serde::Deserialize;
 #[cfg(target_os = "macos")]
 use super::scripts::fetch_and_open;
 #[cfg(target_os = "linux")]
-use super::scripts::{TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, awscli_script, azurecli_script, docker_script, gcloud_script};
+use super::scripts::{AZURECLI_SCRIPT, GCLOUD_SCRIPT, TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, awscli_script, docker_script};
 use super::steps::{Step, command_line, run_step, run_steps, step};
 use super::uninstall;
 use crate::error::{Error, Result};
@@ -162,13 +162,11 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
         Dependency::Qemu => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y qemu-system qemu-utils"])],
         Dependency::Libvirt => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y libvirt-daemon-system virt-manager"])],
         Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
-        // Cloud CLIs via each vendor's official installer (best effort across distros).
-        // AWS CLI v2 from the official bundle, in a private temporary directory.
+        // Cloud CLIs: AWS CLI v2 from Amazon's signed bundle, in a private temporary directory;
+        // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned.
         Dependency::Awscli => vec![root(awscli_script())],
-        Dependency::Azurecli => vec![root(azurecli_script())],
-        // The SDK installs per user, without root: under pkexec it landed in /root, which the
-        // player can't read. It goes to ~/google-cloud-sdk, whose bin the app adds to PATH.
-        Dependency::Gcloud => vec![step("sh", &["-c", &gcloud_script()])],
+        Dependency::Azurecli => vec![root(AZURECLI_SCRIPT.into())],
+        Dependency::Gcloud => vec![root(GCLOUD_SCRIPT.into())],
     })
 }
 

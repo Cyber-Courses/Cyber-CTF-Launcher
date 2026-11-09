@@ -1,5 +1,6 @@
 //! The shell scripts behind some installs: macOS casks opened in their own installer, and the
-//! vendors' apt repositories on Linux.
+//! vendors' apt repositories on Linux. Every repository's signing key is checked against its
+//! fingerprint, pinned here, before apt trusts it; no vendor install script runs as root.
 
 #[cfg(target_os = "macos")]
 use super::steps::Step;
@@ -98,17 +99,25 @@ macro_rules! hashicorp_key_fingerprint {
 #[cfg(test)]
 const HASHICORP_KEY_FINGERPRINT: &str = hashicorp_key_fingerprint!();
 
-/// HashiCorp's apt repo, then terraform. The codename is the distro's as the vendors' repos name
-/// it (an Ubuntu derivative like Mint uses its Ubuntu base's). The repo key must be HashiCorp's
-/// pinned one (`hashicorp_key_fingerprint!`). `--batch --yes`: a second run (after a partial
-/// one) overwrites the keyring instead of asking on a terminal it doesn't have.
+/// The distro's codename as the vendors' repos name it (`$codename`): an Ubuntu derivative like
+/// Mint uses its Ubuntu base's.
+#[cfg(any(target_os = "linux", test))]
+macro_rules! codename {
+    () => {
+        r#"codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"; [ -n "$codename" ] || codename="$(lsb_release -cs)""#
+    };
+}
+
+/// HashiCorp's apt repo, then terraform. The repo key must be HashiCorp's pinned one
+/// (`hashicorp_key_fingerprint!`). `--batch --yes`: a second run (after a partial one) overwrites
+/// the keyring instead of asking on a terminal it doesn't have.
 #[cfg(any(target_os = "linux", test))]
 pub const TERRAFORM_SCRIPT: &str = concat!(
     private_workdir!(),
     "; ",
     need_gpg!(),
     "; ",
-    r#"codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"; [ -n "$codename" ] || codename="$(lsb_release -cs)""#,
+    codename!(),
     r#"; curl -fsSL https://apt.releases.hashicorp.com/gpg -o "$d/key"; "#,
     check_key!(hashicorp_key_fingerprint!(), "HashiCorp"),
     r#"; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /usr/share/keyrings/hashicorp-archive-keyring.gpg "$d/key""#,
@@ -116,16 +125,34 @@ pub const TERRAFORM_SCRIPT: &str = concat!(
     "; apt-get update && apt-get install -y terraform"
 );
 
-/// The distro's own `virtualbox` when it has one (Ubuntu), else Oracle's apt repo and its
-/// newest `virtualbox-X.Y` (Debian ships none in main, so `apt-get install virtualbox` failed).
+/// Oracle's VirtualBox archive signing key (`info@virtualbox.org`, "Oracle Corporation (VirtualBox
+/// archive signing key)"), the one www.virtualbox.org serves as `oracle_vbox_2016.asc` and
+/// download.virtualbox.org signs its `InRelease` files with.
+#[cfg(any(target_os = "linux", test))]
+macro_rules! oracle_key_fingerprint {
+    () => {
+        "B9F8D658297AF3EFC18D5CDFA2F683C52980AECF"
+    };
+}
+#[cfg(test)]
+const ORACLE_KEY_FINGERPRINT: &str = oracle_key_fingerprint!();
+
+/// The distro's own `virtualbox` when it has one (Ubuntu), else Oracle's apt repo, its key
+/// checked against the pinned fingerprint (`oracle_key_fingerprint!`), and its newest
+/// `virtualbox-X.Y` (Debian ships none in main, so `apt-get install virtualbox` failed).
 #[cfg(any(target_os = "linux", test))]
 pub const VIRTUALBOX_SCRIPT: &str = concat!(
-    "set -e; apt-get update; ",
+    private_workdir!(),
+    "; apt-get update; ",
     "if apt-cache policy virtualbox 2>/dev/null | grep -q 'Candidate: [0-9]'; then apt-get install -y virtualbox; exit 0; fi; ",
-    r#"codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"; [ -n "$codename" ] || codename="$(lsb_release -cs)""#,
+    codename!(),
     "; repo=https://download.virtualbox.org/virtualbox/debian",
     "; curl -fsI \"$repo/dists/$codename/Release\" >/dev/null || { echo \"Oracle has no VirtualBox packages for $codename yet. Install it from https://www.virtualbox.org/wiki/Linux_Downloads\" >&2; exit 1; }",
-    "; curl -fsSL https://www.virtualbox.org/download/oracle_vbox_2016.asc | gpg --batch --yes --dearmor -o /usr/share/keyrings/oracle-virtualbox-2016.gpg",
+    "; ",
+    need_gpg!(),
+    r#"; curl -fsSL https://www.virtualbox.org/download/oracle_vbox_2016.asc -o "$d/key"; "#,
+    check_key!(oracle_key_fingerprint!(), "Oracle"),
+    r#"; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /usr/share/keyrings/oracle-virtualbox-2016.gpg "$d/key""#,
     "; echo \"deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/oracle-virtualbox-2016.gpg] $repo $codename contrib\" > /etc/apt/sources.list.d/virtualbox.list",
     "; apt-get update",
     "; pkg=\"$(apt-cache search --names-only '^virtualbox-[0-9]+\\.[0-9]+$' | awk '{print $1}' | sort -V | tail -n 1)\"",
@@ -150,17 +177,15 @@ const DOCKER_KEY_FINGERPRINT: &str = docker_key_fingerprint!();
 /// applies from the next login.
 ///
 /// On Ubuntu, Debian and Raspbian (and Ubuntu's derivatives, on their Ubuntu base) it sets up
-/// Docker's apt repository itself, the way Docker documents it, with Docker's key checked against
-/// its pinned fingerprint (`docker_key_fingerprint!`). Docker's convenience script
-/// (get.docker.com) can't be held to a key: it fetches the key and installs the packages signed
-/// with it in one go. So it only runs, downloaded first, on the other distros, where it knows the
-/// package manager.
+/// Docker's apt repository, the way Docker documents it, with Docker's key checked against its
+/// pinned fingerprint (`docker_key_fingerprint!`). Elsewhere it stops and says where to get
+/// Docker: Docker's convenience script (get.docker.com) can't be held to a key (it fetches the key
+/// and installs what it signed in one go), so it never runs as root from here.
 #[cfg(any(target_os = "linux", test))]
 pub fn docker_script(user: Option<&str>) -> String {
     use std::fmt::Write as _;
     let mut s = format!(
-        "{PRIVATE_WORKDIR}; {DOCKER_DIST}; if [ -n \"$dist\" ]; then {DOCKER_APT_REPO}; else echo 'No Docker apt repository for this system: running Docker'\\''s install script.'; {}; fi",
-        fetch_into_workdir("https://get.docker.com", "sh"),
+        "{PRIVATE_WORKDIR}; {DOCKER_DIST}; [ -n \"$dist\" ] || {{ echo 'No Docker apt repository fits this system. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again.' >&2; exit 1; }}; {DOCKER_APT_REPO}"
     );
     if let Some(u) = user.filter(|u| valid_user(u)) {
         let _ = write!(s, "; usermod -aG docker {u}; echo 'Added {u} to the docker group: log out and back in (or restart) for it to apply.'");
@@ -193,20 +218,6 @@ const DOCKER_APT_REPO: &str = concat!(
 /// such as `/tmp/aws` could be prepared by any local user beforehand and then run as root.
 #[cfg(any(target_os = "linux", test))]
 const PRIVATE_WORKDIR: &str = private_workdir!();
-
-/// Downloads a vendor's install script into a private directory, then runs it with `shell`.
-/// Not `curl | sh`: a failed or cut download (`curl -f`, `set -e`) stops the install instead of
-/// running half a script, or nothing at all and reporting success.
-#[cfg(any(target_os = "linux", test))]
-fn fetch_and_run(url: &str, shell: &str) -> String {
-    format!("{PRIVATE_WORKDIR}; {}", fetch_into_workdir(url, shell))
-}
-
-/// [`fetch_and_run`] inside a script that already has its private directory `$d`.
-#[cfg(any(target_os = "linux", test))]
-fn fetch_into_workdir(url: &str, shell: &str) -> String {
-    format!(r#"curl -fsSL '{url}' -o "$d/install.sh"; {shell} "$d/install.sh""#)
-}
 
 /// The AWS CLI team's signing key (`aws-cli@amazon.com`, created 2019-09-18, expires 2027-07-01 as
 /// published), as AWS publishes it in "Installing or updating to the latest version of the AWS
@@ -246,21 +257,63 @@ gpg --batch --yes --dearmor --homedir "$d/gnupg" -o "$d/aws-cli.gpg" "$d/aws-cli
     )
 }
 
-/// Microsoft's install script for Debian/Ubuntu, downloaded first then run. Like get.docker.com
-/// it fetches Microsoft's repository key itself, so the key can't be held to a fingerprint here.
+/// Microsoft's package signing key (`gpgsecurity@microsoft.com`, "Microsoft (Release signing)"),
+/// the one packages.microsoft.com serves at `/keys/microsoft.asc` and signs the azure-cli
+/// repository's `InRelease` files with (its key id EB3E94ADBE1229CF).
 #[cfg(any(target_os = "linux", test))]
-pub fn azurecli_script() -> String {
-    fetch_and_run("https://aka.ms/InstallAzureCLIDeb", "bash")
+macro_rules! microsoft_key_fingerprint {
+    () => {
+        "BC528686B50D79E339D3721CEB3E94ADBE1229CF"
+    };
 }
+#[cfg(test)]
+const MICROSOFT_KEY_FINGERPRINT: &str = microsoft_key_fingerprint!();
 
-/// Google's installer for the Cloud SDK, downloaded first then run, as the player (it installs
-/// into `~/google-cloud-sdk`, whose bin the app adds to PATH; under pkexec it landed in /root).
-/// Google's apt repository would be signed, but it installs system-wide as root, which the
-/// per-user install and its removal (Cleanup) don't expect.
+/// Microsoft's azure-cli apt repository for this distro's codename, its key checked against the
+/// pinned fingerprint (`microsoft_key_fingerprint!`), then `azure-cli`: what Microsoft's install
+/// script (aka.ms/InstallAzureCLIDeb) sets up, without running that script as root.
 #[cfg(any(target_os = "linux", test))]
-pub fn gcloud_script() -> String {
-    format!(r#"{} --disable-prompts --install-dir="$HOME""#, fetch_and_run("https://sdk.cloud.google.com", "bash"))
+pub const AZURECLI_SCRIPT: &str = concat!(
+    private_workdir!(),
+    "; ",
+    codename!(),
+    "; repo=https://packages.microsoft.com/repos/azure-cli",
+    r#"; curl -fsI "$repo/dists/$codename/Release" >/dev/null || { echo "Microsoft has no Azure CLI packages for $codename yet. Install it from https://learn.microsoft.com/cli/azure/install-azure-cli-linux" >&2; exit 1; }"#,
+    "; ",
+    need_gpg!(),
+    r#"; curl -fsSL https://packages.microsoft.com/keys/microsoft.asc -o "$d/key"; "#,
+    check_key!(microsoft_key_fingerprint!(), "Microsoft"),
+    r#"; install -m 0755 -d /etc/apt/keyrings; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /etc/apt/keyrings/microsoft.gpg "$d/key""#,
+    r#"; echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] $repo/ $codename main" > /etc/apt/sources.list.d/azure-cli.list"#,
+    "; apt-get update && apt-get install -y azure-cli"
+);
+
+/// Google Cloud's package signing key ("Artifact Registry Repository Signer"), the one
+/// packages.cloud.google.com serves at `/apt/doc/apt-key.gpg` and signs the cloud-sdk
+/// repository's `InRelease` files with.
+#[cfg(any(target_os = "linux", test))]
+macro_rules! google_key_fingerprint {
+    () => {
+        "35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3"
+    };
 }
+#[cfg(test)]
+const GOOGLE_KEY_FINGERPRINT: &str = google_key_fingerprint!();
+
+/// Google Cloud's apt repository, its key checked against the pinned fingerprint
+/// (`google_key_fingerprint!`), then `google-cloud-cli` (gcloud), system-wide: what Google
+/// documents for Debian and Ubuntu, in place of its install script.
+#[cfg(any(target_os = "linux", test))]
+pub const GCLOUD_SCRIPT: &str = concat!(
+    private_workdir!(),
+    "; ",
+    need_gpg!(),
+    r#"; curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg -o "$d/key"; "#,
+    check_key!(google_key_fingerprint!(), "Google Cloud"),
+    r#"; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /usr/share/keyrings/cloud.google.gpg "$d/key""#,
+    r#"; echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apt/sources.list.d/google-cloud-sdk.list"#,
+    "; apt-get update && apt-get install -y google-cloud-cli"
+);
 
 /// A login name safe to put in a shell script unquoted.
 #[cfg(any(target_os = "linux", test))]
@@ -278,7 +331,7 @@ mod tests {
     #[test]
     fn docker_install_adds_the_player_to_the_docker_group() {
         let s = docker_script(Some("florianamette"));
-        assert!(s.contains("get.docker.com") && s.contains("usermod -aG docker florianamette"), "{s}");
+        assert!(s.contains("usermod -aG docker florianamette"), "{s}");
         // A name that isn't a plain login name never reaches the script.
         assert!(!docker_script(Some("a; rm -rf /")).contains("usermod"));
         assert!(!docker_script(None).contains("usermod"));
@@ -325,25 +378,30 @@ mod tests {
     #[test]
     fn repo_scripts_rerun_without_a_terminal_and_parse() {
         // gpg asked "overwrite?" on a second run, with no tty to answer it.
-        for s in [TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT] {
+        for s in [TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, AZURECLI_SCRIPT, GCLOUD_SCRIPT] {
             assert!(s.contains("gpg --batch --yes --dearmor"), "{s}");
             assert!(crate::platform::sh_parses(s), "not valid sh: {s}");
         }
         assert!(VIRTUALBOX_SCRIPT.contains("download.virtualbox.org/virtualbox/debian"));
     }
 
+    /// Every install script that runs as root.
+    fn root_scripts() -> [String; 6] {
+        [awscli_script(), docker_script(Some("player")), TERRAFORM_SCRIPT.into(), VIRTUALBOX_SCRIPT.into(), AZURECLI_SCRIPT.into(), GCLOUD_SCRIPT.into()]
+    }
+
     #[test]
     fn root_scripts_never_use_fixed_temp_paths_or_pipe_downloads_into_a_shell() {
         // Under pkexec the AWS CLI was unzipped into /tmp/aws and /tmp/aws/install run as root:
         // any local user could plant that file first.
-        for s in [awscli_script(), azurecli_script(), gcloud_script(), docker_script(Some("player")), TERRAFORM_SCRIPT.into(), VIRTUALBOX_SCRIPT.into()] {
+        for s in root_scripts() {
             assert!(!s.contains("/tmp"), "fixed temp path: {s}");
             assert!(!s.contains("| sh") && !s.contains("| bash"), "download piped into a shell: {s}");
             assert!(!s.contains("curl -s") || s.contains("curl -fs"), "a failed download must fail: {s}");
             assert!(s.starts_with("set -e"), "{s}");
             assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
         }
-        for s in [awscli_script(), azurecli_script(), docker_script(None)] {
+        for s in [awscli_script(), docker_script(None), VIRTUALBOX_SCRIPT.into(), AZURECLI_SCRIPT.into(), GCLOUD_SCRIPT.into()] {
             assert!(s.contains(r#"d="$(mktemp -d)""#) && s.contains("trap 'rm -rf \"$d\"' EXIT"), "{s}");
         }
         assert!(awscli_script().contains(r#""$d/aws/install" --update"#) && awscli_script().contains("unzip -tq"));
@@ -371,7 +429,14 @@ mod tests {
 
     #[test]
     fn vendor_keys_are_pinned_and_checked_before_apt_trusts_them() {
-        for fpr in [HASHICORP_KEY_FINGERPRINT, DOCKER_KEY_FINGERPRINT, AWS_CLI_KEY_FINGERPRINT] {
+        for fpr in [
+            HASHICORP_KEY_FINGERPRINT,
+            DOCKER_KEY_FINGERPRINT,
+            AWS_CLI_KEY_FINGERPRINT,
+            ORACLE_KEY_FINGERPRINT,
+            MICROSOFT_KEY_FINGERPRINT,
+            GOOGLE_KEY_FINGERPRINT,
+        ] {
             assert!(fpr.len() == 40 && fpr.bytes().all(|b| b.is_ascii_digit() || (b'A'..=b'F').contains(&b)), "{fpr}");
         }
         // The key is checked, then installed for apt: never fetched straight into the keyring.
@@ -385,9 +450,12 @@ mod tests {
         let docker = docker_script(None);
         check(&docker, DOCKER_KEY_FINGERPRINT, r#"install -m 0644 "$d/key" /etc/apt/keyrings/docker.asc"#);
         assert!(docker.contains("signed-by=/etc/apt/keyrings/docker.asc] $repo $codename stable"), "{docker}");
-        // Elsewhere Docker's own script, downloaded first.
-        assert!(docker.contains(r#"curl -fsSL 'https://get.docker.com' -o "$d/install.sh"; sh "$d/install.sh""#), "{docker}");
-        for s in [TERRAFORM_SCRIPT.to_string(), docker] {
+        check(VIRTUALBOX_SCRIPT, ORACLE_KEY_FINGERPRINT, "-o /usr/share/keyrings/oracle-virtualbox-2016.gpg");
+        check(AZURECLI_SCRIPT, MICROSOFT_KEY_FINGERPRINT, "-o /etc/apt/keyrings/microsoft.gpg");
+        assert!(AZURECLI_SCRIPT.contains("signed-by=/etc/apt/keyrings/microsoft.gpg] $repo/ $codename main"), "{AZURECLI_SCRIPT}");
+        check(GCLOUD_SCRIPT, GOOGLE_KEY_FINGERPRINT, "-o /usr/share/keyrings/cloud.google.gpg");
+        assert!(GCLOUD_SCRIPT.contains("signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main"));
+        for s in [TERRAFORM_SCRIPT.to_string(), docker, VIRTUALBOX_SCRIPT.into(), AZURECLI_SCRIPT.into(), GCLOUD_SCRIPT.into()] {
             assert!(s.contains(r#"--homedir "$d/gnupg""#) && !s.contains("--keyserver"), "{s}");
         }
     }
@@ -405,18 +473,26 @@ mod tests {
     }
 
     #[test]
-    fn gcloud_is_downloaded_then_run_as_the_player() {
-        let s = gcloud_script();
-        assert!(
-            s.starts_with("set -e")
-                && s.contains(r#"curl -fsSL 'https://sdk.cloud.google.com' -o "$d/install.sh"; bash "$d/install.sh" --disable-prompts --install-dir="$HOME""#),
-            "{s}"
-        );
-        assert!(!s.contains("| bash") && !s.contains("| sh") && !s.contains("/tmp"), "{s}");
-        assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
-        for s in [docker_script(Some("player")), azurecli_script()] {
-            assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
+    fn no_vendor_install_script_runs_as_root() {
+        // Regression: Docker (on distros without its apt repository), Azure CLI and gcloud ran
+        // the vendor's install script (get.docker.com, aka.ms/InstallAzureCLIDeb,
+        // sdk.cloud.google.com), which fetches its own key: no fingerprint held it.
+        for s in root_scripts() {
+            for script in ["get.docker.com", "aka.ms/InstallAzureCLIDeb", "sdk.cloud.google.com", "install.sh"] {
+                assert!(!s.contains(script), "{script} in {s}");
+            }
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn docker_without_its_apt_repository_stops_and_says_where_to_get_it() {
+        // Only the branch past the distro check: `dist` empty, nothing else run.
+        let s = docker_script(None);
+        let refuse = &s[s.find("[ -n \"$dist\" ]").unwrap()..s.find("; repo=").unwrap()];
+        let out = std::process::Command::new("sh").arg("-c").arg(format!("dist=''; {refuse}; echo installed")).output().unwrap();
+        assert!(!out.status.success() && !String::from_utf8_lossy(&out.stdout).contains("installed"));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("https://docs.docker.com/engine/install/"));
     }
 
     #[cfg(unix)]

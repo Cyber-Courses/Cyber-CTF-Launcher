@@ -26,7 +26,7 @@ const NAMES: Record<Dependency, string> = {
   wsl: "WSL",
 };
 
-/** What setup installed under that name: Docker Engine on Linux (get.docker.com), Docker Desktop elsewhere. */
+/** What setup installed under that name: Docker Engine on Linux (Docker's apt repository), Docker Desktop elsewhere. */
 function toolName(dep: Dependency): string {
   if (dep !== "docker") return NAMES[dep];
   return typeof navigator !== "undefined" && navigator.userAgent.includes("Linux") ? "Docker Engine" : "Docker Desktop";

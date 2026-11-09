@@ -298,7 +298,8 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
         Dependency::Libvirt => vec![root("apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager")],
         Dependency::Awscli => vec![root("rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer")],
         Dependency::Azurecli => vec![root("apt-get remove -y azure-cli")],
-        Dependency::Gcloud => vec![step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
+        // Google's apt package, and the per-user SDK earlier versions installed in its place.
+        Dependency::Gcloud => vec![root("apt-get remove -y google-cloud-cli"), step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
         Dependency::Utm | Dependency::Wsl => return Err(Error::Invalid("Not installed on Linux.".into())),
     })
 }
