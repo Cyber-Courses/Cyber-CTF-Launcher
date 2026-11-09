@@ -241,7 +241,7 @@ describe("LabDetail: starting", () => {
     };
     await clickStart({ lab, readyVms: ["virtualbox"] });
     expect(calls.find((c) => c.cmd === "lab_run_options")?.args).toEqual({ id: "lab-goad", runtime: "VM", repository: "CyberCTF/goad", commit: SHA });
-    expect(within(screen.getByRole("dialog")).getByTitle("This lab doesn't support Proxmox VE")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByTitle("This lab doesn't support Proxmox")).toBeTruthy();
   });
 
   it("offers the cloud form step on every cloud, not only AWS", async () => {

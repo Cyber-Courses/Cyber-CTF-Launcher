@@ -30,7 +30,7 @@ test.describe("servers and cloud", () => {
     const main = page.locator("main");
     await expect(main.getByText("AWS sandbox", { exact: true })).toBeVisible();
     await expect(main).toContainText("eu-west-3");
-    await expect(main.getByText("Microsoft Azure", { exact: true })).toBeVisible();
+    await expect(main.getByText("Azure", { exact: true })).toBeVisible();
     await expect(main.getByText("Google Cloud", { exact: true })).toBeVisible();
   });
 

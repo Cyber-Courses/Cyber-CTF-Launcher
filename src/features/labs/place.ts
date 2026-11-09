@@ -1,8 +1,7 @@
 import { ENGINES, engineName } from "@/features/machine/setup-steps/engines";
 import { providerName } from "@/features/machine/hypervisors";
-import { KIND } from "@/features/servers/host-setup/constants";
 import { isCloud } from "@/features/servers/host-setup/setup-model";
-import type { CloudProvider, DockerEngine, LabStatus, RemoteProvider, ServerHost } from "@/lib/tauri";
+import { PROVIDER_NAMES, type CloudProvider, type DockerEngine, type LabStatus, type RemoteProvider, type ServerHost } from "@/lib/tauri";
 import type { T } from "@/lib/i18n";
 
 // Where a running lab runs, as one fact the page tells three times the same way: the header's
@@ -46,12 +45,12 @@ export function placeName(place: Place): string {
     case "server":
       return place.name;
     case "cloud":
-      return KIND[place.provider].label;
+      return PROVIDER_NAMES[place.provider];
   }
 }
 
 /** The place as the header's "on …" and Details' "Runs on" say it: "this machine · Docker
- *  Desktop", "a VM on this machine · QEMU", "homelab · Proxmox VE", "AWS · eu-west-3". */
+ *  Desktop", "a VM on this machine · QEMU", "homelab · Proxmox", "AWS · eu-west-3". */
 export function placeText(t: T, place: Place): string {
   const name = placeName(place);
   switch (place.kind) {
@@ -61,7 +60,7 @@ export function placeText(t: T, place: Place): string {
       if (!name) return place.inVm ? t("labs.detail.aVmHere") : t("labs.detail.thisMachine");
       return place.inVm ? t("labs.detail.aVmHereWith", { hypervisor: name }) : t("labs.detail.thisMachineWith", { engine: name });
     case "server":
-      return place.provider ? t("labs.detail.serverWith", { name, kind: KIND[place.provider].label }) : name;
+      return place.provider ? t("labs.detail.serverWith", { name, kind: PROVIDER_NAMES[place.provider] }) : name;
     case "cloud":
       return t("labs.detail.cloudWith", { cloud: name, region: place.region });
   }

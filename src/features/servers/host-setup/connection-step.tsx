@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy, KeyRound, Network, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCopy } from "@/components/ui/copy-value";
-import { KIND } from "@/features/servers/host-setup/constants";
+import { PROVIDER_NAMES } from "@/lib/tauri";
 import { Field, Input, Note, Step } from "@/features/servers/host-setup/form";
 import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav";
 import { SecretInput } from "@/features/servers/host-setup/credentials-parts";
@@ -19,7 +19,7 @@ export function ServerStep({ s }: { s: HostSetup }) {
   const t = useT();
   const { v, serverOk, next, back } = s;
   return (
-    <Step icon={Server} title={t("servers.setup.server.title", { kind: KIND[v.provider].label })} description={t("servers.setup.server.description")}>
+    <Step icon={Server} title={t("servers.setup.server.title", { kind: PROVIDER_NAMES[v.provider] })} description={t("servers.setup.server.description")}>
       <AddressFields s={s} />
       <BackNav onBack={back}>
         <ContinueButton onClick={next} disabled={!serverOk} />
@@ -37,7 +37,7 @@ export function ConnectionStep({ s }: { s: HostSetup }) {
   return (
     <Step
       icon={Network}
-      title={t("servers.setup.connection.title", { kind: KIND[v.provider].label })}
+      title={t("servers.setup.connection.title", { kind: PROVIDER_NAMES[v.provider] })}
       description={t("servers.setup.connection.descriptionSsh")}
     >
       <AddressFields s={s} />

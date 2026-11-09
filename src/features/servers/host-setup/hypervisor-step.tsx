@@ -3,7 +3,7 @@
 import { Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
-import { KIND, SERVER_KINDS } from "@/features/servers/host-setup/constants";
+import { PROVIDER_NAMES, SERVER_PROVIDERS } from "@/lib/tauri";
 import { HypervisorMark, MarkTile, Nav, Step } from "@/features/servers/host-setup/form";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { useT } from "@/lib/i18n";
@@ -14,7 +14,7 @@ export function HypervisorStep({ s }: { s: HostSetup }) {
   return (
     <Step icon={Server} title={t("servers.setup.hypervisor.title")} description={t("servers.setup.hypervisor.description")}>
       <RadioList label={t("servers.setup.hypervisor.label")}>
-        {SERVER_KINDS.map((p) => (
+        {SERVER_PROVIDERS.map((p) => (
           <RadioRow
             key={p}
             selected={v.provider === p}
@@ -26,7 +26,7 @@ export function HypervisorStep({ s }: { s: HostSetup }) {
                 <HypervisorMark provider={p} />
               </MarkTile>
             }
-            title={KIND[p].label}
+            title={PROVIDER_NAMES[p]}
             subtitle={t(`servers.setup.kinds.${p}`)}
           />
         ))}

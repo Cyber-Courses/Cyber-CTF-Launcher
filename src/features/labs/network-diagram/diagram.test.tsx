@@ -130,7 +130,7 @@ describe("NetworkDiagram", () => {
     );
     await settle();
     expect(screen.getByText("homelab-pve")).toBeTruthy();
-    expect(screen.getByText("Proxmox VE · 10.0.0.5")).toBeTruthy();
+    expect(screen.getByText("Proxmox · 10.0.0.5")).toBeTruthy();
     expect(screen.getByAltText("Proxmox")).toBeTruthy();
     expect(screen.queryByText("Your machine")).toBeNull();
     expect(document.querySelector(".hostcard-docked")).toBeNull();
@@ -165,7 +165,7 @@ describe("NetworkDiagram", () => {
     await settle();
     expect(screen.getByText("AWS")).toBeTruthy();
     expect(screen.getByText("eu-west-3 · My AWS")).toBeTruthy();
-    expect(screen.getByAltText("Amazon Web Services")).toBeTruthy();
+    expect(screen.getByAltText("AWS")).toBeTruthy();
   });
 
   it("shows each machine's state in words", async () => {

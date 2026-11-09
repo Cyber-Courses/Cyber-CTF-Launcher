@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { LogConsole } from "@/components/ui/log-console";
 import { Requirement } from "@/features/machine/setup-steps/parts";
-import { installDependency, installVagrantPlugin } from "@/lib/tauri";
-import { CLOUD_META, KIND } from "@/features/servers/host-setup/constants";
+import { PROVIDER_NAMES, installDependency, installVagrantPlugin } from "@/lib/tauri";
+import { CLOUD_META } from "@/features/servers/host-setup/constants";
 import { Step } from "@/features/servers/host-setup/form";
 import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
@@ -25,9 +25,9 @@ export function ToolsStep({ s }: { s: HostSetup }) {
       description={
         cloud
           ? cloudHasCli
-            ? t("servers.setup.tools.descriptionCli", { cloud: CLOUD_META[cloudProvider].label })
-            : t("servers.setup.tools.descriptionToken", { cloud: CLOUD_META[cloudProvider].label })
-          : t("servers.setup.tools.descriptionServer", { kind: KIND[v.provider].label })
+            ? t("servers.setup.tools.descriptionCli", { cloud: PROVIDER_NAMES[cloudProvider] })
+            : t("servers.setup.tools.descriptionToken", { cloud: PROVIDER_NAMES[cloudProvider] })
+          : t("servers.setup.tools.descriptionServer", { kind: PROVIDER_NAMES[v.provider] })
       }
     >
       <div className="surface-panel overflow-hidden rounded-control">
@@ -78,7 +78,7 @@ function CloudTools({ s }: { s: HostSetup }) {
       {cloudHasCli && (
         <Requirement
           ok={cloudCliOk}
-          title={t("servers.setup.tools.cliTitle", { cloud: CLOUD_META[cloudProvider].label })}
+          title={t("servers.setup.tools.cliTitle", { cloud: PROVIDER_NAMES[cloudProvider] })}
           detail={cloudCliOk ? (cloudCliTool?.version ?? t("servers.setup.tools.installed")) : t("servers.setup.tools.cliDetail", { cli })}
           action={
             <Button
@@ -102,7 +102,8 @@ function CloudTools({ s }: { s: HostSetup }) {
 /** An ESXi host's tools: Vagrant, its ESXi plugin, and VMware's OVF Tool (a manual download). */
 function EsxiTools({ s }: { s: HostSetup }) {
   const t = useT();
-  const { report, kind, toolBusy, installTool, vagrantOk, esxiPluginOk, ovftoolOk } = s;
+  const { report, toolBusy, installTool, vagrantOk, esxiPluginOk, esxiPlugin, ovftoolOk } = s;
+  const plugin = esxiPlugin ?? "";
   return (
     <>
       <Requirement
@@ -125,14 +126,14 @@ function EsxiTools({ s }: { s: HostSetup }) {
       <Requirement
         ok={esxiPluginOk}
         title={t("servers.setup.tools.esxiPlugin")}
-        detail={vagrantOk || esxiPluginOk ? kind.plugin : t("servers.setup.tools.esxiPluginPending", { plugin: kind.plugin })}
+        detail={vagrantOk || esxiPluginOk ? plugin : t("servers.setup.tools.esxiPluginPending", { plugin })}
         action={
           <Button
             variant="outline"
             size="xs"
-            disabled={toolBusy || !vagrantOk}
+            disabled={toolBusy || !vagrantOk || !plugin}
             onClick={() => {
-              installTool(kind.plugin, (log) => installVagrantPlugin(kind.plugin, log));
+              installTool(plugin, (log) => installVagrantPlugin(plugin, log));
             }}
           >
             {t("servers.setup.tools.installPlugin")}

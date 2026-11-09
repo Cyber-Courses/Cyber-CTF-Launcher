@@ -33,3 +33,6 @@ export const LOCAL_PROVIDERS: readonly Provider[] = ["virtualbox", "vmware_deskt
 
 /** The hypervisors that run VMs built for another CPU, emulated (Rust's `Provider::is_emulator`). */
 export const EMULATORS: readonly Provider[] = ["qemu"];
+
+/** The player's own servers, as opposed to cloud accounts, in the launcher's order (Rust's `Provider::SERVERS`). */
+export const SERVER_PROVIDERS: readonly Provider[] = ["proxmox", "vmware_esxi"];

@@ -238,6 +238,8 @@ export function machineTools(provider: RemoteProvider, report: SystemReport | nu
   const tools = {
     vagrantOk: !!report?.vagrant.installed,
     esxiPluginOk: !!status?.pluginInstalled,
+    // The Vagrant plugin ESXi needs, as the backend names it (none until the report is in).
+    esxiPlugin: status?.plugin ?? null,
     ovftoolOk: !!report?.ovftool.installed,
     terraformOk: !!report?.terraform.installed,
     cloudHasCli,

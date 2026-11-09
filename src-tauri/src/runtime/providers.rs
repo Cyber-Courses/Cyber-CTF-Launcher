@@ -47,6 +47,10 @@ pub enum Provider {
 }
 
 impl Provider {
+    /// The player's own servers (as opposed to cloud accounts), in the order the launcher lists
+    /// them. The webview reads them as `SERVER_PROVIDERS` (`testing/ts_bindings.rs`).
+    pub const SERVERS: [Provider; 2] = [Provider::Proxmox, Provider::VmwareEsxi];
+
     /// The cloud accounts, in the order the launcher lists them.
     pub const CLOUDS: [Provider; 6] = [Provider::Aws, Provider::Azure, Provider::Gcp, Provider::DigitalOcean, Provider::Linode, Provider::Oci];
 
@@ -620,7 +624,7 @@ mod tests {
     #[test]
     fn remote_and_cloud_classification() {
         // Servers are remote but not cloud; the billed accounts are both.
-        for server in [Provider::VmwareEsxi, Provider::Proxmox] {
+        for server in Provider::SERVERS {
             assert!(server.is_remote() && !server.is_cloud());
         }
         for cloud in [Provider::Aws, Provider::Azure, Provider::Gcp, Provider::DigitalOcean, Provider::Linode, Provider::Oci] {

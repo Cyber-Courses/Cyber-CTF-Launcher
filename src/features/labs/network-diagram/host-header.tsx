@@ -6,7 +6,7 @@ import type { Machine } from "@/features/labs/network-diagram/model";
 import { CopyText } from "@/features/labs/network-diagram/copy-text";
 import { PlaceMark } from "@/features/labs/place-mark";
 import { placeName, type Place } from "@/features/labs/place";
-import { KIND } from "@/features/servers/host-setup/constants";
+import { PROVIDER_NAMES } from "@/lib/tauri";
 
 // Kept apart from the diagram (React Flow, ELK) so the lab page can draw the card's header while
 // the diagram's code loads (see lab-detail/network-panel.tsx).
@@ -33,7 +33,7 @@ function Sub({ place }: { place: Place | null }) {
     return (
       <>
         {place.provider && place.address
-          ? t("diagram.host.serverSubWith", { kind: KIND[place.provider].label, address: place.address })
+          ? t("diagram.host.serverSubWith", { kind: PROVIDER_NAMES[place.provider], address: place.address })
           : t("diagram.host.serverSub")}
       </>
     );

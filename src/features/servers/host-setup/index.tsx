@@ -76,5 +76,5 @@ export function HostSetupPage({
 }
 
 // Used by the server-setup window and the Servers page.
-export { EMPTY_CLOUD, EMPTY_HOST, KIND } from "@/features/servers/host-setup/constants";
+export { EMPTY_CLOUD, EMPTY_HOST } from "@/features/servers/host-setup/constants";
 export { SetupTrademarks } from "@/features/servers/host-setup/form";

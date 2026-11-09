@@ -13,6 +13,7 @@ import {
   gcpBillingAccounts,
   gcpOrganizations,
   ociConfig,
+  PROVIDER_NAMES,
   type AzureSubscription,
   type CloudProvider,
   type GcpBillingAccount,
@@ -20,7 +21,6 @@ import {
   type OciConfig,
   type ServerHostInput,
 } from "@/lib/tauri";
-import { CLOUD_META } from "@/features/servers/host-setup/constants";
 import { useRunLog } from "@/lib/use-run-log";
 import { ignore } from "@/lib/failure";
 import { describeError } from "@/lib/errors";
@@ -77,7 +77,7 @@ export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: bo
   const signIn = () => {
     const cloud = cloudProvider;
     if (cloud !== "azure" && cloud !== "gcp") return;
-    void signInWith(CLOUD_META[cloud].label, async (onLog) => {
+    void signInWith(PROVIDER_NAMES[cloud], async (onLog) => {
       await cloudLogin(cloud, onLog);
       if (cloud === "azure") azureAccount.loadAzureSubs();
       else gcpAccounts.loadGcpProjects();

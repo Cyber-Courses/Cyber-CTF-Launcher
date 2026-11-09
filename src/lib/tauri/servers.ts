@@ -14,6 +14,7 @@ import type {
   SshKeySignIn,
 } from "@/lib/tauri/generated";
 import type { CloudProvider } from "@/lib/tauri/cloud";
+import { SERVER_PROVIDERS as GENERATED_SERVER_PROVIDERS } from "@/lib/tauri/generated/ProviderNames";
 
 export type { HostCapacity, ProxmoxBridge, ProxmoxNodeChoices, ProxmoxPlacement, ServerCheck, ServerCheckState, ServerTest, SshKeySignIn };
 
@@ -27,6 +28,10 @@ export type ServerHost = Omit<Generated.ServerHost, "provider"> & { provider: Re
 /** Form payload; `id` null creates a host, `password` null keeps the stored one. */
 export type ServerHostInput = Omit<Generated.ServerHostInput, "provider"> & { provider: RemoteProvider };
 export type ServerList = Omit<Generated.ServerList, "hosts"> & { hosts: ServerHost[] };
+
+/** The player's own servers, as opposed to cloud accounts, in the launcher's order: the backend's
+ *  `Provider::SERVERS`, each a host's provider. */
+export const SERVER_PROVIDERS = GENERATED_SERVER_PROVIDERS as readonly RemoteProvider[];
 
 export const serverList = () => invoke<ServerList>("server_list");
 export const serverSave = (input: ServerHostInput) => invoke<ServerHost>("server_save", { input });

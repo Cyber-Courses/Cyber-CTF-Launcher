@@ -37,7 +37,7 @@ fn a_container_lab_runs_where_isoloom_generates_each_form() {
     // On a server, the helper VM: ESXi through Vagrant there, Proxmox through its module, each
     // by its own launch path (the picker took ESXi's for `vagrant/vmware_esxi` and Proxmox's
     // for `cloud-vm/proxmox`, neither of which Isoloom has).
-    assert_eq!(paths_of(&o.servers), [(Some(Provider::VmwareEsxi), "docker-vm", Some("vmware_esxi")), (Some(Provider::Proxmox), "docker-vm", Some("proxmox"))]);
+    assert_eq!(paths_of(&o.servers), [(Some(Provider::Proxmox), "docker-vm", Some("proxmox")), (Some(Provider::VmwareEsxi), "docker-vm", Some("vmware_esxi"))]);
     assert_eq!(providers(&o.cloud_docker), Provider::CLOUDS);
     assert_eq!(providers(&o.cloud_vm), Provider::CLOUDS);
     assert!(o.cloud_services.is_empty());

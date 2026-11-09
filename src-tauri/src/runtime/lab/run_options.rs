@@ -104,7 +104,7 @@ pub fn run_options(lab: &Lab, runtime: Runtime) -> RunOptions {
             out.docker = if has(Target::Docker) { on_docker(lab, path(Target::Docker, None), &mut refused) } else { None };
             on(Target::DockerVm, &docker_vm_local, &mut out.docker_vm, &mut refused);
             on(Target::Vagrant, &local, &mut out.vms, &mut refused);
-            on(Target::DockerVm, &[Provider::VmwareEsxi, Provider::Proxmox], &mut out.servers, &mut refused);
+            on(Target::DockerVm, &Provider::SERVERS, &mut out.servers, &mut refused);
             on(Target::CloudDocker, &clouds(Target::CloudDocker), &mut out.cloud_docker, &mut refused);
             on(Target::CloudVm, &clouds(Target::CloudVm), &mut out.cloud_vm, &mut refused);
         }

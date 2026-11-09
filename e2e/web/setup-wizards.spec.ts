@@ -17,7 +17,7 @@ test.describe("server setup", () => {
     const [setup] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: "Add server" }).click()]);
 
     await expect(stepOf(setup)).toHaveText("Step 1 of 5");
-    await expect(setup.getByRole("radio", { name: /^Proxmox VE/ })).toHaveAttribute("aria-checked", "true");
+    await expect(setup.getByRole("radio", { name: /^Proxmox/ })).toHaveAttribute("aria-checked", "true");
     await button(setup, "Continue").click();
     await expect(stepOf(setup)).toHaveText("Step 2 of 5");
     await expect(setup.getByText("Terraform", { exact: true })).toBeVisible();
@@ -25,7 +25,7 @@ test.describe("server setup", () => {
 
     // Connection: Continue waits for the host, the user and the password.
     await expect(stepOf(setup)).toHaveText("Step 3 of 5");
-    await expect(setup.getByRole("heading", { level: 2, name: "Connect to Proxmox VE" })).toBeVisible();
+    await expect(setup.getByRole("heading", { level: 2, name: "Connect to Proxmox" })).toBeVisible();
     const next = button(setup, "Continue");
     await expect(next).toBeDisabled();
     await field(setup, "Name").fill("garage-pve");
@@ -100,9 +100,9 @@ test.describe("cloud setup", () => {
     const [setup] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: "Set up cloud provider" }).click()]);
 
     await expect(stepOf(setup)).toHaveText("Step 1 of 6");
-    await expect(setup.getByRole("radio", { name: /^Amazon Web Services/ })).toHaveAttribute("aria-checked", "true");
+    await expect(setup.getByRole("radio", { name: /^AWS/ })).toHaveAttribute("aria-checked", "true");
     await button(setup, "Continue").click();
-    await expect(setup.getByText("Amazon Web Services CLI", { exact: true })).toBeVisible();
+    await expect(setup.getByText("AWS CLI", { exact: true })).toBeVisible();
     await button(setup, "Continue").click();
     await expect(setup.getByRole("radio", { name: /^Use the AWS CLI/ })).toHaveAttribute("aria-checked", "true");
     await button(setup, "Continue").click();

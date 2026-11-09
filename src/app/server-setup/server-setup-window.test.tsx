@@ -6,7 +6,7 @@ import { readyReport } from "@/test/fixtures";
 import { installTauri } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
-// The setup window opened from the Cloud page's "Connect" on the Microsoft Azure row: the
+// The setup window opened from the Cloud page's "Connect" on the Azure row: the
 // provider is chosen by that click, so the window skips "Choose a cloud provider" and opens on
 // Azure's next step, with Azure fixed.
 
@@ -30,7 +30,7 @@ describe("the setup window opened on a provider", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Set up cloud provider");
     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Command-line tools");
     expect(document.body.textContent).toContain("Step 1 of 4");
-    expect(document.body.textContent).toContain("The Microsoft Azure CLI and Terraform");
+    expect(document.body.textContent).toContain("The Azure CLI and Terraform");
     expect(screen.queryByRole("radio")).toBeNull();
     expect(screen.queryByRole("button", { name: /back/i })).toBeNull();
     // Its next step is Azure's sign-in, not AWS's "How to connect".

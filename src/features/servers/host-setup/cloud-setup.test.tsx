@@ -370,9 +370,9 @@ describe("new cloud account: provider and tools", () => {
     const calls = installTauri();
     const user = userEvent.setup();
     const h = await renderSetup({ ...EMPTY_CLOUD }, freshReport());
-    await user.click(screen.getByText("Microsoft Azure"));
+    await user.click(screen.getByText("Azure"));
     await go(user, /^continue$/i);
-    expect(screen.getByText("Microsoft Azure CLI")).toBeTruthy();
+    expect(screen.getByText("Azure CLI")).toBeTruthy();
     expect(button(/^continue$/i).hasAttribute("disabled")).toBe(true);
     await go(user, /install az/i);
     expect(argsOf(calls, "install_dependency")[0]).toMatchObject({ dependency: "azurecli" });

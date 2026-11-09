@@ -1,21 +1,20 @@
-import { PROVIDER_NAMES, type CloudProvider, type ServerHostInput, type RemoteProvider } from "@/lib/tauri";
+import type { CloudProvider, ServerHostInput, RemoteProvider } from "@/lib/tauri";
 
 // The server setup flow, a step-by-step wizard shown in its own window (src/app/server-setup).
 // Matches the "Set up this machine" wizard (features/machine/machine-setup.tsx).
 
-export const KIND: Record<RemoteProvider, { label: string; note: string; port: number; user: string; plugin: string }> = {
-  proxmox: { label: "Proxmox VE", note: "Signs in to the Proxmox API", port: 8006, user: "root", plugin: "vagrant-proxmox" },
-  vmware_esxi: { label: "VMware ESXi", note: "Drives the host over SSH", port: 22, user: "root", plugin: "vagrant-vmware-esxi" },
-  aws: { label: PROVIDER_NAMES.aws, note: "EC2 in your own account", port: 443, user: "AKIA…", plugin: "" },
-  azure: { label: PROVIDER_NAMES.azure, note: "VMs in your own subscription", port: 443, user: "subscription id", plugin: "" },
-  gcp: { label: PROVIDER_NAMES.gcp, note: "VMs in your own project", port: 443, user: "project id", plugin: "" },
-  digitalocean: { label: PROVIDER_NAMES.digitalocean, note: "Droplets in your own account", port: 443, user: "API token", plugin: "" },
-  linode: { label: PROVIDER_NAMES.linode, note: "Linodes in your own account", port: 443, user: "API token", plugin: "" },
-  oci: { label: PROVIDER_NAMES.oci, note: "Instances in your own tenancy", port: 443, user: "compartment OCID", plugin: "" },
+/** Each remote provider's connection defaults, the setup form's placeholders: its port and the
+ *  user (or account field) it signs in with. Its name is the backend's `PROVIDER_NAMES`. */
+export const KIND: Record<RemoteProvider, { port: number; user: string }> = {
+  proxmox: { port: 8006, user: "root" },
+  vmware_esxi: { port: 22, user: "root" },
+  aws: { port: 443, user: "AKIA…" },
+  azure: { port: 443, user: "subscription id" },
+  gcp: { port: 443, user: "project id" },
+  digitalocean: { port: 443, user: "API token" },
+  linode: { port: 443, user: "API token" },
+  oci: { port: 443, user: "compartment OCID" },
 };
-
-/** Server hypervisors, as opposed to cloud accounts. */
-export const SERVER_KINDS: RemoteProvider[] = ["proxmox", "vmware_esxi"];
 
 export const EMPTY_HOST: ServerHostInput = {
   id: null,
@@ -114,17 +113,16 @@ export const OCI_REGIONS: [string, string][] = [
 
 export type StepKey = "provider" | "hypervisor" | "tools" | "server" | "connection" | "placement" | "account" | "credentials" | "options" | "test";
 /** Each cloud, in the order the launcher lists them: the one table of the clouds the rest
- *  derive from. Its brand's full name (`label`: the picker, the first-run tiles, the logo's alt
- *  text; its short name, in lists and places and as a new account's default name, is the
- *  backend's `PROVIDER_NAMES`), its CLI (none for the token and key clouds), and whether it can
- *  be picked (`ready`). Each has its logo at `/brands/<id>.svg`. */
-export const CLOUD_META: Record<CloudProvider, { label: string; cli: string; ready: boolean }> = {
-  aws: { label: "Amazon Web Services", cli: "aws", ready: true },
-  azure: { label: "Microsoft Azure", cli: "az", ready: true },
-  gcp: { label: "Google Cloud", cli: "gcloud", ready: true },
-  digitalocean: { label: "DigitalOcean", cli: "", ready: true },
-  linode: { label: "Linode", cli: "", ready: true },
-  oci: { label: "Oracle Cloud", cli: "", ready: true },
+ *  derive from. Its CLI (none for the token and key clouds), and whether it can be picked
+ *  (`ready`); its name is the backend's `PROVIDER_NAMES`. Each has its logo at
+ *  `/brands/<id>.svg`. */
+export const CLOUD_META: Record<CloudProvider, { cli: string; ready: boolean }> = {
+  aws: { cli: "aws", ready: true },
+  azure: { cli: "az", ready: true },
+  gcp: { cli: "gcloud", ready: true },
+  digitalocean: { cli: "", ready: true },
+  linode: { cli: "", ready: true },
+  oci: { cli: "", ready: true },
 };
 
 /** Every cloud, in the order the launcher lists them. */

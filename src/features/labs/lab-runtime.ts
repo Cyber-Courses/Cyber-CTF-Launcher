@@ -1,12 +1,12 @@
 import { Cloud, Container, Monitor, Server, type LucideIcon } from "lucide-react";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { EMULATORS, LOCAL_PROVIDERS, PROVIDER_NAMES, type LabRunOptions, type LabStatus, type Provider, type ServerHost } from "@/lib/tauri";
+import { EMULATORS, LOCAL_PROVIDERS, PROVIDER_NAMES, SERVER_PROVIDERS, type LabRunOptions, type LabStatus, type Provider, type ServerHost } from "@/lib/tauri";
 import { CLOUD_PROVIDERS } from "@/features/cloud/cloud-model";
 import type { RunTarget } from "@/features/labs/run-on";
 
 // Where a lab can run, from its runtime (catalogue) and what this machine has ready.
 
-const SERVERS = new Set(["vmware_esxi", "proxmox"]);
+const SERVERS = new Set<string>(SERVER_PROVIDERS);
 export const CLOUDS = new Set(CLOUD_PROVIDERS);
 
 /** Whether `p` is a hypervisor a lab's VMs run on here (the provider a local VM lab's status

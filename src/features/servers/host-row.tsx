@@ -3,8 +3,7 @@
 import { FlaskConical, Pencil, Star, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { KIND } from "@/features/servers/host-setup";
-import { type HostCapacity, type ServerHost } from "@/lib/tauri";
+import { PROVIDER_NAMES, type HostCapacity, type ServerHost } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { ServerSelfTest } from "@/features/servers/server-self-test";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -61,7 +60,7 @@ export function HostRow({ host, view, now, actions }: { host: ServerHost; view: 
 
 /** The host's kind, address, node and capacity, as the row's facts line lists them. */
 function hostFacts(t: T, host: ServerHost, capacity: HostCapacity | null | undefined): string[] {
-  const facts = [KIND[host.provider].label, `${host.username}@${host.host}:${String(host.port)}`];
+  const facts = [PROVIDER_NAMES[host.provider], `${host.username}@${host.host}:${String(host.port)}`];
   if (host.node) facts.push(t("servers.host.node", { node: host.node }));
   if (capacity) {
     facts.push(t("servers.screen.vcpu", { count: capacity.cores }));

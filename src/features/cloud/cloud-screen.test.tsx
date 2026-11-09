@@ -44,8 +44,8 @@ describe("CloudScreen", () => {
     await renderScreen();
     expect(screen.getByText("AWS sandbox")).toBeTruthy();
     expect(screen.queryByText("homelab-pve")).toBeNull();
-    expect(screen.queryByText("Amazon Web Services")).toBeNull();
-    expect(screen.getByText("Microsoft Azure")).toBeTruthy();
+    expect(screen.queryByText("AWS")).toBeNull();
+    expect(screen.getByText("Azure")).toBeTruthy();
     expect(screen.getByText("Google Cloud")).toBeTruthy();
     expect(document.body.textContent).toContain("eu-west-3 · CLI · default · auto-stop 4h");
     // No budget set: Cost Explorer (billed per call) isn't asked.

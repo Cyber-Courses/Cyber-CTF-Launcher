@@ -12,7 +12,7 @@ import { button, flush } from "@/test/ui";
 /** From a new Proxmox setup's first step (its address filled) to its sign-in step. */
 async function toSignIn(user: ReturnType<typeof userEvent.setup>) {
   for (let n = 0; n < 3; n++) await go(user, /^continue$/i);
-  expect(heading()).toBe("Connect to Proxmox VE");
+  expect(heading()).toBe("Connect to Proxmox");
 }
 
 /** The sign-in method choice named `name`. */
@@ -127,7 +127,7 @@ describe("server connection step", () => {
     expect(argsOf(calls, "server_save")[0]).toMatchObject({ input: { insecureTls: false } });
     expect(screen.getByText("duplicate name")).toBeTruthy();
     await go(user, /^\s*back$/i);
-    expect(heading()).toBe("Connect to Proxmox VE");
+    expect(heading()).toBe("Connect to Proxmox");
   });
 });
 
@@ -138,13 +138,13 @@ describe("Proxmox server and sign-in steps", () => {
     await renderSetup({ ...EMPTY_HOST });
     await go(user, /^continue$/i);
     await go(user, /^continue$/i);
-    expect(heading()).toBe("Your Proxmox VE server");
+    expect(heading()).toBe("Your Proxmox server");
     expect(screen.getByText("API port")).toBeTruthy();
     expect(screen.queryByRole("radio")).toBeNull();
     expect(button(/^continue$/i).hasAttribute("disabled")).toBe(true);
     fireEvent.change(field("192.168.1.20 or pve.lan"), { target: { value: "10.0.0.50" } });
     await go(user, /^continue$/i);
-    expect(heading()).toBe("Connect to Proxmox VE");
+    expect(heading()).toBe("Connect to Proxmox");
     expect(radio("SSH key").getAttribute("aria-checked")).toBe("true");
     expect(field("~/.ssh/id_ed25519").value).toBe("/Users/me/.ssh/id_ed25519");
     expect(field("root").value).toBe("root");
@@ -187,7 +187,7 @@ describe("Proxmox server and sign-in steps", () => {
     await renderSetup(editing({ id: null }));
     await toSignIn(user);
     await go(user, /^continue$/i);
-    expect(heading()).toBe("Connect to Proxmox VE");
+    expect(heading()).toBe("Connect to Proxmox");
     expect(screen.getByText(/Permission denied/)).toBeTruthy();
   });
 

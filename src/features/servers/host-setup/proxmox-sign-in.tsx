@@ -5,7 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { KeyRound, Network } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
-import { KIND } from "@/features/servers/host-setup/constants";
+import { PROVIDER_NAMES } from "@/lib/tauri";
 import { Field, Input, Note, Step } from "@/features/servers/host-setup/form";
 import { BackNav, StepError } from "@/features/servers/host-setup/step-nav";
 import { Spinner } from "@/components/ui/spinner";
@@ -29,7 +29,7 @@ export function ProxmoxSignIn({ s, signInFields, authorizeKey }: { s: HostSetup;
   return (
     <Step
       icon={Network}
-      title={t("servers.setup.connection.title", { kind: KIND.proxmox.label })}
+      title={t("servers.setup.connection.title", { kind: PROVIDER_NAMES.proxmox })}
       description={t("servers.setup.connection.descriptionSignIn")}
     >
       <Segmented label={t("servers.setup.connection.method")} value={signInMethod} onChange={setSignInMethod} options={methods} className="self-start" />

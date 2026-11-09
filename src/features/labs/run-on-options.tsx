@@ -7,7 +7,6 @@ import { badgeOf, pathOf, refusalOn, type RunBadge } from "@/features/labs/run-o
 import { testHost } from "@/features/servers/use-server-list";
 import { StatusPill, type Tone } from "@/components/ui/status-pill";
 import { TypeIcon } from "@/components/ui/type-icon";
-import { KIND } from "@/features/servers/host-setup/constants";
 import { ProviderGlyph } from "@/features/servers/provider-glyph";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { ENGINES, engineName } from "@/features/machine/setup-steps/engines";
@@ -203,7 +202,7 @@ function localVmRow(t: T, local: LocalRows): Option | null {
 
 /** A saved server or cloud account; one the lab can't run on says why, without a status. */
 function hostOption(t: T, options: LabRunOptions | null, h: ServerHost, ok: boolean, check: ServerTest | undefined): Option {
-  const kind = KIND[h.provider].label;
+  const kind = PROVIDER_NAMES[h.provider];
   const cloud = CLOUDS.has(h.provider);
   return {
     target: { kind: "host", id: h.id },

@@ -106,9 +106,11 @@ fn write_provider_names(dir: &Path) {
     let ids = |keep: fn(&Provider) -> bool| Provider::ALL.iter().filter(|p| keep(p)).map(|p| format!("\"{}\"", p.id())).collect::<Vec<_>>().join(", ");
     let doc_local = "/** The hypervisors that run on this machine (Rust's providers that aren't `is_remote`). */";
     let doc_emulators = "/** The hypervisors that run VMs built for another CPU, emulated (Rust's `Provider::is_emulator`). */";
+    let doc_servers = "/** The player's own servers, as opposed to cloud accounts, in the launcher's order (Rust's `Provider::SERVERS`). */";
+    let servers = Provider::SERVERS.iter().map(|p| format!("\"{}\"", p.id())).collect::<Vec<_>>().join(", ");
     let doc_on = "/** The names an OS changes (Rust's `Provider::label_on`): VMware's desktop hypervisor is Fusion on\n *  macOS and Workstation elsewhere. */";
     let text = format!(
-        "{HEADER}import type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n\n{doc_on}\nexport const PROVIDER_NAMES_ON: Record<string, Partial<Record<Provider, string>>> = {{\n{on}}};\n\n{doc_local}\nexport const LOCAL_PROVIDERS: readonly Provider[] = [{}];\n\n{doc_emulators}\nexport const EMULATORS: readonly Provider[] = [{}];\n",
+        "{HEADER}import type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n\n{doc_on}\nexport const PROVIDER_NAMES_ON: Record<string, Partial<Record<Provider, string>>> = {{\n{on}}};\n\n{doc_local}\nexport const LOCAL_PROVIDERS: readonly Provider[] = [{}];\n\n{doc_emulators}\nexport const EMULATORS: readonly Provider[] = [{}];\n\n{doc_servers}\nexport const SERVER_PROVIDERS: readonly Provider[] = [{servers}];\n",
         ids(|p| !p.is_remote()),
         ids(|p| p.is_emulator()),
     );

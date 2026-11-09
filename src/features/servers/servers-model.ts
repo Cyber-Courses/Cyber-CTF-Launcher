@@ -1,4 +1,4 @@
-import type { HostCapacity, ServerHost, ServerTest, SystemReport } from "@/lib/tauri";
+import { SERVER_PROVIDERS, type HostCapacity, type ServerHost, type ServerTest, type SystemReport } from "@/lib/tauri";
 import type { Tone } from "@/components/ui/status-pill";
 import { describeError, errorCode, type ErrorCode } from "@/lib/errors";
 
@@ -6,7 +6,7 @@ import { describeError, errorCode, type ErrorCode } from "@/lib/errors";
 
 /** The hosts the Servers page lists: the hypervisors. Every cloud account (AWS, Azure, GCP,
  *  DigitalOcean, Linode, Oracle Cloud) lives on the Cloud page. */
-export const onPremHosts = (hosts: ServerHost[]) => hosts.filter((h) => h.provider === "proxmox" || h.provider === "vmware_esxi");
+export const onPremHosts = (hosts: ServerHost[]) => hosts.filter((h) => SERVER_PROVIDERS.includes(h.provider));
 
 /** Each host's last test by id ("testing" while one runs; none before the first). */
 export type HostTests = Partial<Record<string, HostTest | "testing">>;

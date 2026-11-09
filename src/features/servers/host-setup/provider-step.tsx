@@ -8,6 +8,7 @@ import { MarkTile, Nav, Step } from "@/features/servers/host-setup/form";
 import { ContinueButton } from "@/features/servers/host-setup/step-nav";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { useT } from "@/lib/i18n";
+import { PROVIDER_NAMES } from "@/lib/tauri";
 
 export function ProviderStep({ s }: { s: HostSetup }) {
   const t = useT();
@@ -30,7 +31,7 @@ export function ProviderStep({ s }: { s: HostSetup }) {
                 <img src={cloudLogo(p.id)} alt="" className="size-5 object-contain" draggable={false} />
               </MarkTile>
             }
-            title={p.label}
+            title={PROVIDER_NAMES[p.id]}
             subtitle={p.ready ? t(`servers.setup.kinds.${p.id}`) : t("servers.setup.provider.comingSoon")}
           />
         ))}

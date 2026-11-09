@@ -46,7 +46,7 @@ async function newProxmoxAtServer(user: User) {
   const handlers = await renderSetup({ ...EMPTY_HOST }, report);
   await go(user, /^continue$/i);
   await go(user, /^continue$/i);
-  expect(heading()).toBe("Your Proxmox VE server");
+  expect(heading()).toBe("Your Proxmox server");
   return handlers;
 }
 
@@ -66,7 +66,7 @@ describe("server setup: validation and saving", () => {
     fireEvent.change(field("192.168.1.20 or pve.lan"), { target: { value: "pve.lan" } });
     expect(disabled(/^continue$/i)).toBe(false);
     await go(user, /^continue$/i);
-    expect(heading()).toBe("Connect to Proxmox VE");
+    expect(heading()).toBe("Connect to Proxmox");
     await user.click(screen.getByRole("radio", { name: "Password" }));
     expect(disabled(/^continue$/i)).toBe(true);
     fireEvent.change(field("root"), { target: { value: "root" } });
@@ -215,7 +215,7 @@ describe("cloud setup: validation per provider", () => {
     linode.focus();
     await user.keyboard(" ");
     expect(linode.getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: /amazon/i }).getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("radio", { name: /^AWS/ }).getAttribute("aria-checked")).toBe("false");
   });
 
   // Bug: connectionReady() (setup-model.ts:94) treats any edited account as having a stored
