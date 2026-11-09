@@ -1,10 +1,12 @@
 //! How far each launch path has been proven, from Isoloom's tier evidence (`isoloom-targets`'s
-//! bundled `tiers.json`), for each of a lab's run options (`lab::run_options`). The launcher shows a badge off the real-run **evidence**, not the tier
-//! number: a path with no real run yet (validated only) is Beta, whatever its tier; a path real
-//! runs have passed (AWS, Docker, the proven VM providers…) carries no badge even while tier 1
-//! waits for the other host OSes. This updates itself as the evidence does — no hardcoded list.
+//! bundled `tiers.json`), for each of a lab's run options (`lab::run_options`). The launcher shows
+//! a badge off the evidence's runs, not the tier number: a path no host OS's latest run has passed
+//! (validated only) is Beta, whatever its tier; a path real runs have passed (AWS, Docker, the
+//! proven VM providers…) carries no badge even while tier 1 waits for the other host OSes. A path
+//! the evidence doesn't have, or evidence that can't be read, is Beta: nothing proves it. This
+//! updates itself as the evidence does — no hardcoded list.
 
-use isoloom_targets::tiers::{self, Tier};
+use isoloom_targets::tiers::{self, TierEntry};
 
 /// The badge a launch path carries: none when real runs prove it, Beta when it is only validated,
 /// Experimental when the target itself is.
@@ -33,43 +35,75 @@ pub struct RunTier {
     pub evidence: String,
 }
 
-/// The badge an evidence line earns: Experimental for an experimental target, Beta when it is
-/// validated only (no real run), else None (real runs have passed).
-fn badge_of(tier: Tier, evidence: &str) -> Badge {
-    if tier == Tier::Three || evidence.starts_with("experimental") {
+/// The badge entry `e` earns: Experimental for an experimental target, Beta while no host OS's
+/// latest run has passed (validated only, or only failed runs), else None.
+fn badge_of(e: &TierEntry) -> Badge {
+    if e.experimental {
         Badge::Experimental
-    } else if evidence.starts_with("validated only") {
+    } else if e.proven().is_empty() {
         Badge::Beta
     } else {
         Badge::None
     }
 }
 
-/// Every launch path's maturity, from Isoloom's tier evidence. Empty when the evidence can't be
-/// read (the launcher then shows no badges rather than guessing).
+/// Every launch path's maturity, from Isoloom's tier evidence. Empty, and logged, when the
+/// evidence can't be read: each path then reads as unproven (`badge_or_beta`), never as proven.
 pub fn run_tiers() -> Vec<RunTier> {
-    let Ok(entries) = tiers::tiers() else { return Vec::new() };
-    entries
-        .into_iter()
-        .map(|e| {
-            let evidence = e.evidence();
-            RunTier { target: e.target.id().to_owned(), variant: e.variant.map(str::to_owned), badge: badge_of(e.tier(), &evidence), evidence }
-        })
-        .collect()
+    match tiers::tiers() {
+        Ok(entries) => entries
+            .iter()
+            .map(|e| RunTier { target: e.target.id().to_owned(), variant: e.variant.map(str::to_owned), badge: badge_of(e), evidence: e.evidence() })
+            .collect(),
+        Err(e) => {
+            log::warn!("Isoloom's tier evidence can't be read, every launch path reads as Beta: {e}");
+            Vec::new()
+        }
+    }
+}
+
+/// The badge of `tier`, the evidence's entry for a launch path: Beta when the evidence has none
+/// for it (logged), as nothing proves it.
+pub fn badge_or_beta(tier: Option<&RunTier>, path: &str) -> Badge {
+    tier.map_or_else(
+        || {
+            log::warn!("no tier evidence for launch path {path}: it reads as Beta");
+            Badge::Beta
+        },
+        |t| t.badge,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The evidence's entry for `target`/`variant`.
+    fn entry(target: &str, variant: &str) -> TierEntry {
+        tiers::tiers().unwrap().into_iter().find(|e| e.target.id() == target && e.variant == Some(variant)).unwrap()
+    }
+
     #[test]
-    fn evidence_not_the_tier_number_decides_the_badge() {
-        // A validated-only cloud is Beta even at tier 2; a cloud real runs have passed is not,
-        // even while tier 1 waits for the other host OSes.
-        assert_eq!(badge_of(Tier::Two, "validated only; tier 1 pending: linux, macos, windows"), Badge::Beta);
-        assert_eq!(badge_of(Tier::Two, "real runs: macos (mac, 2026-10-17); tier 1 pending: linux, windows"), Badge::None);
-        assert_eq!(badge_of(Tier::One, "real runs: linux (jarvis, 2026-10-15), macos (mac, 2026-10-15), windows (karen, 2026-10-15)"), Badge::None);
-        assert_eq!(badge_of(Tier::Three, "experimental"), Badge::Experimental);
+    fn the_runs_not_the_evidence_text_decide_the_badge() {
+        // Regression: the badge parsed the evidence line's English ("validated only", "experimental"),
+        // so a failed latest run, or a rewording, read as proven.
+        let mut aws = entry("cloud-vm", "aws");
+        assert_eq!(badge_of(&aws), Badge::None, "real runs passed");
+        for run in &mut aws.runs {
+            run.result = tiers::RunResult::Fail;
+        }
+        assert_eq!(badge_of(&aws), Badge::Beta, "its runs failed: {}", aws.evidence());
+        aws.runs.clear();
+        assert_eq!(badge_of(&aws), Badge::Beta, "validated only");
+        aws.experimental = true;
+        assert_eq!(badge_of(&aws), Badge::Experimental);
+    }
+
+    #[test]
+    fn a_path_missing_from_the_evidence_is_beta_never_proven() {
+        assert_eq!(badge_or_beta(None, "docker-vm/virtualbox"), Badge::Beta);
+        let proven = RunTier { target: "docker".into(), variant: None, badge: Badge::None, evidence: String::new() };
+        assert_eq!(badge_or_beta(Some(&proven), "docker"), Badge::None);
     }
 
     #[test]

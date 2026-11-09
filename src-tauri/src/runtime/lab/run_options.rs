@@ -79,13 +79,8 @@ pub fn run_options(lab: &Lab, runtime: Runtime) -> RunOptions {
     let path = |target: Target, provider: Option<Provider>| {
         let variant = provider.map(|p| p.id().to_owned());
         let tier = tiers.iter().find(|t| t.target == target.id() && t.variant == variant);
-        RunPath {
-            provider,
-            target: target.id().to_owned(),
-            variant,
-            badge: tier.map_or(Badge::None, |t| t.badge),
-            evidence: tier.map(|t| t.evidence.clone()).unwrap_or_default(),
-        }
+        let badge = tiers::badge_or_beta(tier, &format!("{}/{}", target.id(), variant.as_deref().unwrap_or("-")));
+        RunPath { provider, target: target.id().to_owned(), variant, badge, evidence: tier.map(|t| t.evidence.clone()).unwrap_or_default() }
     };
     let mut out = RunOptions::default();
     // Each of `providers` the lab runs on as `target` (Isoloom's refusal on that provider aside).
