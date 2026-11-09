@@ -12,7 +12,7 @@ import { setLocalePreference } from "@/lib/i18n";
 import type { CommandError } from "@/lib/errors";
 import { setPortMode, setVmProvider, type PortMode } from "@/lib/settings";
 import { readyReport as armReport } from "@/test/fixtures";
-import { installTauri, rejects, type Call } from "@/test/tauri";
+import { commands, installTauri, rejects, type Call } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must, startInAct } from "@/components/test-support";
 import { rejectWith } from "@/features/labs/labs-test-kit";
@@ -35,6 +35,10 @@ const vmLab: Lab = {
   title: "GOAD Light",
   runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi", "proxmox"] },
 };
+
+const SHA = "0123456789abcdef0123456789abcdef01234567";
+/** The VM lab with its source at a pinned commit, as the catalogue lists it. */
+const sourcedVmLab: Lab = { ...vmLab, runtime: { ...must(vmLab.runtime), repository: "CyberCTF/goad", commit: SHA } };
 
 /** The `lab_launch` call's arguments as sent (the flags `launchArgs` leaves out included). */
 const rawLaunchArgs = (calls: Call[]) => calls.find((x) => x.cmd === "lab_launch")?.args;
@@ -244,28 +248,34 @@ describe("useLabActions: launch", () => {
     expect(launchArgs(calls)).toEqual({ labId: "act-vm-here", provider: "virtualbox", host: null, defaultPorts: false });
   });
 
-  it("sends a VM lab to the default server when it supports that server's hypervisor", async () => {
-    const servers = () => ({ default: "esx", hosts: [{ id: "esx", name: "esx", provider: "vmware_esxi", host: "10.0.0.2" }] });
-    const { calls, hook } = setup({ server_list: servers });
-    await act(() => hook.result.current.launch({ ...vmLab, id: "act-vm-def" }, undefined, undefined, readyReport()));
-    expect(launchArgs(calls)).toMatchObject({ provider: null, host: "esx" });
+  it("starts a VM lab with no place picked on the server the backend picks for it", async () => {
+    const { calls, hook } = setup({ lab_default_host: () => "pve" });
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-def" }, undefined, undefined, readyReport()));
+    expect(calls.find((c) => c.cmd === "lab_default_host")?.args).toEqual({ id: "act-vm-def", runtime: "VM", repository: "CyberCTF/goad", commit: SHA });
+    expect(launchArgs(calls)).toMatchObject({ provider: null, host: "pve" });
   });
 
-  it("never sends a VM lab to a default Proxmox server implicitly", async () => {
-    // The dev mock's default host is Proxmox.
+  it("runs a VM lab here when the backend picks no server, or its source isn't known", async () => {
+    const { calls, hook } = setup({ lab_default_host: () => null });
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-here" }, undefined, undefined, readyReport()));
+    expect(launchArgs(calls)).toMatchObject({ provider: "virtualbox", host: null });
+    const unsourced = setup();
+    await act(() => unsourced.hook.result.current.launch({ ...vmLab, id: "act-vm-nosrc" }, undefined, undefined, readyReport()));
+    expect(commands(unsourced.calls)).not.toContain("lab_default_host");
+    expect(launchArgs(unsourced.calls)).toMatchObject({ provider: "virtualbox", host: null });
+  });
+
+  it("fails the start, rather than guess, when the default server can't be decided", async () => {
+    const { calls, hook } = setup({ lab_default_host: () => rejectWith("couldn't read the lab's spec: HTTP 404") });
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-nospec" }, undefined, undefined, readyReport()));
+    expect(commands(calls)).not.toContain("lab_launch");
+    expect(logsOf("act-vm-nospec").at(-1)).toContain("couldn't read the lab's spec");
+  });
+
+  it("asks for no default server when a place is picked", async () => {
     const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...vmLab, id: "act-vm-pve" }, undefined, undefined, readyReport()));
-    expect(launchArgs(calls)).toMatchObject({ provider: "virtualbox", host: null });
-  });
-
-  it("runs a VM lab here when the server list can't be read", async () => {
-    const { calls, hook } = setup({
-      server_list: () => {
-        throw new Error("no servers");
-      },
-    });
-    await act(() => hook.result.current.launch({ ...vmLab, id: "act-vm-nolist" }, undefined, undefined, readyReport()));
-    expect(launchArgs(calls)).toMatchObject({ provider: "virtualbox", host: null });
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-picked" }, null, undefined, readyReport()));
+    expect(commands(calls)).not.toContain("lab_default_host");
   });
 
   it("says no hypervisor is installed instead of starting a VM lab", async () => {

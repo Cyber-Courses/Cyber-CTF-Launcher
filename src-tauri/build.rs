@@ -39,6 +39,7 @@ const COMMANDS: &[&str] = &[
     "lab_attack_shell",
     "lab_check",
     "lab_cloud_preview",
+    "lab_default_host",
     "lab_deploy_log",
     "lab_launch",
     "lab_launch_local",

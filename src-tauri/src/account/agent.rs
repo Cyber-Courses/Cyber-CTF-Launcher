@@ -229,21 +229,23 @@ async fn await_answer(rx: oneshot::Receiver<bool>, wait: Duration) -> bool {
 }
 
 /// Where a claimed launch runs: the target picked on the website (one of this launcher's hosts
-/// or cloud accounts); else VM labs go to the default server host and Docker labs run here.
-fn launch_host(dirs: &AppDirs, claim: &Value) -> Result<Option<String>> {
-    pick_launch_host(claim, |target| server::host_name(dirs, target), || server::default_host(dirs))
+/// or cloud accounts); else where the app's Start with no place chosen runs it
+/// ([`labs::default_host`]: a VM lab on the default server that runs it, else here). A cloud lab
+/// never runs on an account it wasn't sent to (it costs money): no target, no launch
+/// (`runtime::start` says so).
+async fn launch_host(dirs: &AppDirs, claim: &Value) -> Result<Option<String>> {
+    if let Some(target) = picked_target(claim, |target| server::host_name(dirs, target))? {
+        return Ok(Some(target));
+    }
+    let text = |key: &str| claim[key].as_str().unwrap_or_default();
+    labs::default_host(dirs, text("labId"), claim_runtime(claim), text("repository"), text("commit")).await
 }
 
-/// `launch_host` given how to name a host (`None` when it isn't set up) and the default host.
-fn pick_launch_host(claim: &Value, host_name: impl Fn(&str) -> Option<String>, default_host: impl FnOnce() -> Option<String>) -> Result<Option<String>> {
-    Ok(match claim["target"].as_str() {
-        Some(target) => {
-            Some(host_name(target).map(|_| target.to_string()).ok_or_else(|| Error::Invalid("that host is no longer set up in the launcher".into()))?)
-        }
-        // A cloud lab never runs on an account it wasn't sent to (it costs money): no target, no
-        // launch (runtime::start says so).
-        None => (claim["runtime"] == "VM").then(default_host).flatten(),
-    })
+/// The target picked on the website, given how to name a host (`None` when it isn't set up):
+/// none when it picked none, an error when the host is gone.
+fn picked_target(claim: &Value, host_name: impl Fn(&str) -> Option<String>) -> Result<Option<String>> {
+    let Some(target) = claim["target"].as_str() else { return Ok(None) };
+    host_name(target).map(|_| Some(target.to_string())).ok_or_else(|| Error::Invalid("that host is no longer set up in the launcher".into()))
 }
 
 /// Running on a cloud account costs money, so a website launch onto one isn't auto-run: ask
@@ -348,7 +350,7 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
     .await?;
     let claim = &data["claimLaunch"];
     update_state(session_id, "PULLING", Progress { message: Some("Preparing the lab on your machine"), ..Default::default() }).await?;
-    let host = launch_host(deps.dirs(), claim)?;
+    let host = launch_host(deps.dirs(), claim).await?;
     confirm_if_cloud(deps, session_id, claim, host.as_deref()).await?;
     let runtime = claim_runtime(claim);
     // Anything this start brought up before failing (one unhealthy service, say) is torn down, or
@@ -593,15 +595,12 @@ mod tests {
     }
 
     #[test]
-    fn a_launch_goes_to_its_target_or_vm_labs_to_the_default_host() {
+    fn a_launch_goes_to_the_target_picked_on_the_website_while_it_is_set_up() {
         let known = |t: &str| (t == "esxi-1").then(|| "My ESXi".to_string());
-        let default = || Some("proxmox-1".to_string());
-        assert_eq!(pick_launch_host(&json!({ "target": "esxi-1" }), known, default).unwrap().as_deref(), Some("esxi-1"));
-        let gone = pick_launch_host(&json!({ "target": "old" }), known, default).unwrap_err();
+        assert_eq!(picked_target(&json!({ "target": "esxi-1" }), known).unwrap().as_deref(), Some("esxi-1"));
+        let gone = picked_target(&json!({ "target": "old" }), known).unwrap_err();
         assert_eq!(gone.to_string(), "that host is no longer set up in the launcher");
-        assert_eq!(pick_launch_host(&json!({ "runtime": "VM" }), known, default).unwrap().as_deref(), Some("proxmox-1"));
-        assert_eq!(pick_launch_host(&json!({ "runtime": "VM" }), known, || None).unwrap(), None);
-        assert_eq!(pick_launch_host(&json!({ "runtime": "DOCKER" }), known, default).unwrap(), None);
+        assert_eq!(picked_target(&json!({ "runtime": "VM" }), known).unwrap(), None);
     }
 
     #[test]
@@ -634,8 +633,8 @@ mod tests {
         let deps = test_deps(&t);
         let az = t.host("az1", "azure", json!({}));
         let claim = json!({ "target": az, "repository": "CyberCTF/web", "commit": "abc" });
-        assert_eq!(launch_host(&dirs, &claim).unwrap().as_deref(), Some("az1"));
-        assert_eq!(launch_host(&dirs, &json!({ "runtime": "VM" })).unwrap(), None, "no default server host");
+        assert_eq!(launch_host(&dirs, &claim).await.unwrap().as_deref(), Some("az1"));
+        assert_eq!(launch_host(&dirs, &json!({ "runtime": "VM" })).await.unwrap(), None, "no default server host");
         // Not a cloud (here, or no host): no question asked.
         confirm_if_cloud(&deps, "s-local", &claim, None).await.unwrap();
         // A cloud account: the answer from the UI decides.

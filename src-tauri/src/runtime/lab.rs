@@ -325,6 +325,19 @@ pub async fn spec_at(dirs: &crate::platform::AppDirs, lab_id: &str, repository: 
     parse(&text)
 }
 
+/// Whether a lab of `spec` runs as VMs on a server of `provider`: on ESXi through Vagrant there,
+/// on Proxmox through Terraform, as its targets allow (its `targets:` included). No other
+/// provider is a server.
+pub fn runs_on_server(spec: &Spec, provider: crate::runtime::providers::Provider) -> bool {
+    use crate::runtime::providers::Provider;
+    let target = match provider {
+        Provider::VmwareEsxi => Target::Vagrant,
+        Provider::Proxmox => Target::Proxmox,
+        _ => return false,
+    };
+    isoloom_spec::effective(spec).contains(&target)
+}
+
 /// Why the lab's VMs can't run on Vagrant's `provider` (`qemu`, `utm`, …: its networks, a TPM,
 /// data disks), if they can't. Isoloom's own rule, so the launcher refuses exactly what the
 /// generated Vagrantfile would.

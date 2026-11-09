@@ -175,15 +175,17 @@ pub fn host_provider(dirs: &AppDirs, id: &str) -> Option<Provider> {
     saved_host(dirs, id).map(|h| h.provider)
 }
 
-/// The host marked as default, if any (used for VM labs launched from the website).
-pub fn default_host(dirs: &AppDirs) -> Option<String> {
+/// The server marked as default, and its provider, if one is (`labs::default_host` decides
+/// whether a lab starts there).
+pub fn default_server(dirs: &AppDirs) -> Option<(String, Provider)> {
     default_of(load(dirs).ok()?)
 }
 
-/// `default_host` of a loaded store.
-fn default_of(store: Store) -> Option<String> {
+/// `default_server` of a loaded store.
+fn default_of(store: Store) -> Option<(String, Provider)> {
     // Only server hosts: a cloud account is never used implicitly (it costs money).
-    store.default.filter(|id| store.hosts.iter().any(|h| &h.id == id && !h.provider.is_cloud()))
+    let id = store.default?;
+    store.hosts.into_iter().find(|h| h.id == id && !h.provider.is_cloud()).map(|h| (id, h.provider))
 }
 
 // --- labs tied to a host ----------------------------------------------------
@@ -289,7 +291,7 @@ mod tests {
     fn the_default_host_is_a_saved_server_never_a_cloud() {
         let hosts =
             vec![HostProfile { id: "pve1".into(), ..full_profile(Provider::Proxmox) }, HostProfile { id: "aws1".into(), ..full_profile(Provider::Aws) }];
-        assert_eq!(default_of(Store { default: Some("pve1".into()), hosts: hosts.clone() }).as_deref(), Some("pve1"));
+        assert_eq!(default_of(Store { default: Some("pve1".into()), hosts: hosts.clone() }), Some(("pve1".into(), Provider::Proxmox)));
         assert_eq!(default_of(Store { default: Some("aws1".into()), hosts: hosts.clone() }), None);
         assert_eq!(default_of(Store { default: Some("gone".into()), hosts: hosts.clone() }), None);
         assert_eq!(default_of(Store { default: None, hosts }), None);

@@ -147,6 +147,13 @@ pub async fn lab_requirements(app: AppHandle, id: String, repository: String, co
     Ok(lab::requirements(&spec))
 }
 
+/// The saved server lab `id`, declared `runtime`, starts on when no place is picked
+/// ([`labs::default_host`]), from its spec at the catalogue's pinned commit; none: here.
+#[tauri::command]
+pub async fn lab_default_host(app: AppHandle, id: String, runtime: Runtime, repository: String, commit: String) -> Result<Option<String>> {
+    labs::default_host(&AppDirs::from(&app), &id, runtime, &repository, &commit).await
+}
+
 /// The observers a lab, declared `runtime`, puts beside itself (`tools:` in its spec), at their
 /// addresses in the form it was started in ([`local_runtime`]): container addresses for a
 /// container lab wherever its Compose file runs, VM addresses for a lab run as VMs (a container
@@ -286,8 +293,8 @@ pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> R
 mod tests {
     use super::{AttachPick, channel_log, check_image, valid_machine_name};
     use super::{
-        attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_launch, lab_launch_local, lab_park, lab_provision,
-        lab_resume, lab_status, lab_stop, lab_tools, running_labs,
+        attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_default_host, lab_launch, lab_launch_local, lab_park,
+        lab_provision, lab_resume, lab_status, lab_stop, lab_tools, running_labs,
     };
     use crate::platform::exec::fake::Tools;
     use crate::runtime::{Park, Runtime, server};
@@ -334,6 +341,20 @@ mod tests {
         assert_eq!(tools(Runtime::Docker).await.unwrap()[0].addresses[0].ip, vms[0].addresses[0].ip);
         // Beside cloud services, none.
         assert!(tools(Runtime::Cloud).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_container_lab_has_no_default_server() {
+        let t = TestApp::new();
+        let pve = t.host("pve", "proxmox", serde_json::json!({}));
+        crate::runtime::server::store::update(&t.dirs(), |s| {
+            s.default = Some(pve);
+            Ok(())
+        })
+        .unwrap();
+        let sha = "0123456789abcdef0123456789abcdef01234567".to_string();
+        let host = lab_default_host(t.handle().clone(), "web".into(), Runtime::Docker, "CyberCTF/web".into(), sha).await.unwrap();
+        assert_eq!(host, None);
     }
 
     #[tokio::test]

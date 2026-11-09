@@ -29,7 +29,7 @@ pub(crate) mod store;
 // generated `__cmd__*` macros along with it (lib.rs registers the commands by this path).
 pub use budget::*;
 pub use contract::{
-    Connection, connection, default_host, discovered_node, host_name, host_provider, lab_connection, launch_targets, mark_lab, marked_host,
+    Connection, connection, default_server, discovered_node, host_name, host_provider, lab_connection, launch_targets, mark_lab, marked_host,
     proxmox_jump_for_host,
 };
 /// The test profiles, for the tests of what is built from them elsewhere (`lab::vars`).

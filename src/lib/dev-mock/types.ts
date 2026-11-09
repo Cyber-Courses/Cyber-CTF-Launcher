@@ -57,6 +57,7 @@ type Answers = {
   lab_status: LabStatus;
   lab_cloud_preview: CloudPreview | null;
   lab_requirements: LabRequirements | null;
+  lab_default_host: string | null;
   running_labs: string[];
   deploying_labs: string[];
   active_operations: ActiveOperation[];

@@ -38,6 +38,7 @@ permissions = [
   "allow-installed-tools",
   "allow-lab-check",
   "allow-lab-cloud-preview",
+  "allow-lab-default-host",
   "allow-lab-deploy-log",
   "allow-lab-launch",
   "allow-lab-launch-local",

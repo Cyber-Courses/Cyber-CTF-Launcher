@@ -53,6 +53,11 @@ export type {
 /** A cloud lab's cost and inputs before it starts; null for other labs. */
 export const labCloudPreview = (id: string, repository: string, commit: string) => invoke<CloudPreview | null>("lab_cloud_preview", { id, repository, commit });
 
+/** The saved server a lab (declared `runtime`) starts on when no place is picked, from its spec at
+ *  the catalogue's pinned commit (a VM lab on the default server that runs it); null: here. */
+export const labDefaultHost = (id: string, runtime: Runtime, repository: string, commit: string) =>
+  invoke<string | null>("lab_default_host", { id, runtime, repository, commit });
+
 /** A lab's minimum-to-run requirements (CPU/RAM/disk) as a lightest-to-heaviest range; null for a lab with no machines of its own. */
 export const labRequirements = (id: string, repository: string, commit: string) =>
   invoke<LabRequirements | null>("lab_requirements", { id, repository, commit });

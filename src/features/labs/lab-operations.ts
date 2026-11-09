@@ -1,5 +1,5 @@
 import {
-  serverList,
+  labDefaultHost,
   labLaunch,
   labPark,
   labProvision,
@@ -145,8 +145,8 @@ function localHypervisor(
  *  `perMachine` with no local `provider`. */
 export type LocalVmPick = { provider?: Provider; perMachine?: boolean };
 
-/** Where a (non-cloud) lab starts: on the server `host` (omitted: a VM lab's default server,
- *  when it supports its hypervisor); here in Docker or on a local hypervisor; in a VM here on
+/** Where a (non-cloud) lab starts: on the server `host` (omitted: the default server the backend
+ *  picks for a VM lab, see `defaultHost`); here in Docker or on a local hypervisor; in a VM here on
  *  `vmProvider`; or (`perMachineVm`, a container lab with VM recipes) as one VM per machine on
  *  `vmProvider`. `ports` = the host ports of a container lab here; `report` = the machine report. */
 export type LocalWhere = {
@@ -159,6 +159,13 @@ export type LocalWhere = {
   engine?: DockerEngine | null;
 };
 
+/** Where a lab with no place picked starts: the backend's default server for it (`labDefaultHost`),
+ *  read from its spec at the catalogue's commit; without that source known, here. */
+async function defaultHost(id: string, rt: LabRuntimeInfo): Promise<string | null> {
+  if (!rt.repository || !rt.commit) return null;
+  return labDefaultHost(id, rt.runtime, rt.repository, rt.commit);
+}
+
 /** A VM or container lab, started where `where` says. */
 export const localLaunch =
   (lab: Lab, where: LocalWhere): OperationBody =>
@@ -170,7 +177,7 @@ export const localLaunch =
     // On a cloud account, one VM per machine is cloud-vm: no local hypervisor, the host carries it.
     const cloudPerMachine = perMachineVm && host != null;
     const vm = rt.runtime === "VM" || asVms;
-    if (vm && !asVms && host === undefined) host = await defaultHostFor(lab);
+    if (vm && !asVms && host === undefined) host = await defaultHost(lab.id, rt);
     // Docker labs go to a server host only when one is picked explicitly.
     const remote = host != null;
     const inLocalVm = !vm && !remote && !!vmProvider;
@@ -230,15 +237,3 @@ export const provisioning =
     await labProvision(lab.id, rt.runtime, machine, log);
     log(machine ? translate("labs.actions.machineProvisioned", { machine }) : translate("labs.actions.labProvisioned"));
   };
-
-/** The default server host id, if one is set and the lab supports its hypervisor. */
-async function defaultHostFor(lab: Lab): Promise<string | null> {
-  try {
-    const { default: id, hosts } = await serverList();
-    const host = hosts.find((h) => h.id === id);
-    // Proxmox can't run labs yet (no working Vagrant provider), so it's never an implicit target.
-    return host && host.provider !== "proxmox" && lab.runtime?.providers.includes(host.provider) ? host.id : null;
-  } catch {
-    return null;
-  }
-}
