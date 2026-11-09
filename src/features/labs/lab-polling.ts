@@ -57,14 +57,12 @@ function poll(): Promise<string[]> {
   const read = new Set([...hot, ...lastHot]);
   lastHot = hot;
   labs.filter((l) => read.has(l.id)).forEach((l) => void refreshStatus(l));
-  const began = Date.now();
   return runningLabs().then((all) => {
-    // A lab read fresh after this scan began (an operation just ended on it) is left out.
-    const kept = setScanRunning(all, began);
+    setScanRunning(all);
     const after = getLabState().scanRunning;
-    // What the scan sees (a lab started from the website, one this app took down that runs
-    // again) and what it no longer sees, unless just read above.
-    const changed = new Set([...kept, ...[...before].filter((id) => !after.has(id))].filter((id) => !read.has(id)));
+    // What the scan newly sees (a lab started from the website) and what it no longer sees,
+    // unless just read above: their statuses say whether they run.
+    const changed = new Set([...after, ...before].filter((id) => after.has(id) !== before.has(id) && !read.has(id)));
     allLabs()
       .filter((l) => changed.has(l.id))
       .forEach((l) => void refreshStatus(l));

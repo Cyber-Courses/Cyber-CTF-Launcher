@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiQuery, type LabStatus, type Provider, type Runtime } from "@/lib/tauri";
+import { useCallback, useEffect, useState } from "react";
+import { apiQuery, type Provider, type Runtime } from "@/lib/tauri";
 import { catalogueFor, refreshStatus, setCatalogue, useLabState } from "@/features/labs/lab-store";
 import { useLabPolling } from "@/features/labs/lab-polling";
 import type { T } from "@/lib/i18n";
@@ -77,40 +77,6 @@ function useCatalogue(reloadKey: unknown) {
   return { labs, error, completed, retry };
 }
 
-/** The scan is authoritative for "running": OR it over each lab's probed status, so a lab the
- *  scan sees stays running even when its per-lab probe returns not-running or errors. A lab the
- *  scan does not see keeps its probed status (remote labs, stopped labs). */
-export function mergeScan(statuses: Record<string, LabStatus>, scanRunning: Set<string>): Record<string, LabStatus> {
-  if (scanRunning.size === 0) return statuses;
-  // Read as possibly missing: a lab the scan sees may have no status yet.
-  const known: Partial<Record<string, LabStatus>> = statuses;
-  const next: Record<string, LabStatus> = { ...statuses };
-  for (const id of scanRunning) {
-    const cur = known[id];
-    next[id] = cur
-      ? { ...cur, running: true }
-      : {
-          running: true,
-          parked: null,
-          machines: [],
-          networks: [],
-          url: null,
-          host: null,
-          hostId: null,
-          expiresAt: null,
-          place: null,
-          provider: null,
-          perMachine: false,
-          outputs: [],
-          message: null,
-          reapError: null,
-          // Unknown until its own status is read: nothing offered meanwhile.
-          controls: [],
-        };
-  }
-  return next;
-}
-
 /**
  * Loads the published labs from CyberBackend and tracks each lab's local runtime status
  * (running / machines / url). Shared by the Labs screen and the Home dashboard so both
@@ -119,18 +85,18 @@ export function mergeScan(statuses: Record<string, LabStatus>, scanRunning: Set<
  */
 export function useLabs(reloadKey: unknown = 0) {
   const { labs, error, completed, retry } = useCatalogue(reloadKey);
+  // Each lab's own status alone says whether it runs: the infrastructure scan only picks which
+  // labs to read again (`hotLabs`). A lab whose launch failed has its machines up, which the scan
+  // sees, but is not running.
   const statuses = useLabState("statuses");
-  // Labs the infrastructure scan (docker/vagrant) reports running. Authoritative for the running
-  // flag: a lab is shown running when the scan sees it even if its per-lab status probe is failing
-  // or hasn't run yet (e.g. right after a crash/restart).
-  const scanRunning = useLabState("scanRunning");
+  // What the scan sees up: only for the labs the catalogue doesn't list (`runningUnlisted`).
+  const scanned = useLabState("scanRunning");
   // Labs whose status has been asked at least once (answered or not): a page can wait for its
   // first answer instead of rendering a "not started" lab that flips to running a beat later.
   const probed = useLabState("probed");
   // One poll for the window, however many screens use this (see lab-polling).
   useLabPolling(labs);
-  const mergedStatuses = useMemo(() => mergeScan(statuses, scanRunning), [statuses, scanRunning]);
-  return { labs, error, retry, statuses: mergedStatuses, completed, refreshStatus, probed };
+  return { labs, error, retry, statuses, scanned, completed, refreshStatus, probed };
 }
 
 const DIFFICULTY_KEYS: Partial<Record<number, "easy" | "medium" | "hard">> = { 1: "easy", 2: "medium", 3: "hard" };

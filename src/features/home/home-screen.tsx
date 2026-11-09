@@ -37,7 +37,7 @@ type HomeProps = {
 /** The labs as the Overview shows them: the catalogue, what runs and deploys, what to jump back
  *  into, and the actions on them. */
 function useOverviewLabs(loggedIn: boolean) {
-  const { labs, error, retry, statuses, completed, refreshStatus } = useLabs(loggedIn);
+  const { labs, error, retry, statuses, scanned, completed, refreshStatus } = useLabs(loggedIn);
   const actions = useLabActions(refreshStatus);
   const ops = useActiveOperations();
   // Deploys running in the backend (started before a reload, or from the website), for the rows.
@@ -56,7 +56,7 @@ function useOverviewLabs(loggedIn: boolean) {
     servers,
     running,
     // Running here but not in the catalogue (it couldn't be loaded): still listed, by id.
-    unlisted: runningUnlisted(labs, statuses),
+    unlisted: runningUnlisted(labs, statuses, scanned),
     labContainers: labContainerCount(running, statuses),
     activeOps: [...ops.values()],
     recent: recentLabs(all, statuses, getLastRun),

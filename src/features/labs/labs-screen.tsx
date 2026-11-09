@@ -109,7 +109,7 @@ function LabsView(props: ViewProps) {
   const onResume = useStableCallback((lab: Lab) => void actions.resume(lab));
   const login = useStableCallback(() => onLogin?.() ?? Promise.resolve(false));
 
-  if (v.error) return <LabsUnreachable statuses={statuses} labs={labs} onRetry={onRetry} />;
+  if (v.error) return <LabsUnreachable statuses={statuses} scanned={v.scanned} labs={labs} onRetry={onRetry} />;
   if (v.detailSlug && !detail && !labs) return <OpenLabLoading />;
   if (detail) {
     return (
@@ -167,11 +167,11 @@ function LabsView(props: ViewProps) {
 
 /** The catalogue couldn't be loaded: the labs running here still run, listed (by the catalogue
  *  last loaded, else by id), above the error and its Retry. */
-function LabsUnreachable({ statuses, labs, onRetry }: { statuses: Statuses; labs: Lab[] | null; onRetry: () => void }) {
+function LabsUnreachable({ statuses, scanned, labs, onRetry }: { statuses: Statuses; scanned: Set<string>; labs: Lab[] | null; onRetry: () => void }) {
   const t = useT();
   return (
     <div className={cn("space-y-5", LIST_SCREEN)}>
-      <UnlistedRunning ids={runningUnlisted(null, statuses)} labs={labs} />
+      <UnlistedRunning ids={runningUnlisted(null, statuses, scanned)} labs={labs} />
       <EmptyState
         icon="alert"
         title={t("labs.list.unreachableTitle")}

@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONFIRM_WINDOW_MS, LaunchConfirm } from "@/features/app/launch-confirm";
 import { LabDetail } from "@/features/labs/lab-detail";
 import { useLabCheck } from "@/features/labs/lab-health";
-import { getLabState, noteStopped, refreshStatus, setScanRunning } from "@/features/labs/lab-store";
 import { useAttackBox } from "@/features/labs/use-attack-box";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
@@ -212,32 +211,25 @@ describe("attack box poll", () => {
   });
 });
 
-describe("a stale scan after a local stop", () => {
-  it("doesn't bring a stopped lab back to running until a read confirms it", async () => {
-    installTauri({ lab_status: () => status({ running: true }) });
-    setScanRunning(["lab-d"], Date.now() - 1000);
-    noteStopped("lab-d");
-    expect(getLabState().scanRunning.has("lab-d")).toBe(false);
-    // The backend's cached answer from before the stop, to a scan asked after it.
-    expect(setScanRunning(["lab-d"], Date.now() + 1)).toEqual(["lab-d"]);
-    expect(getLabState().scanRunning.has("lab-d")).toBe(false);
-    // A status read after the stop sees it running (started from the website): the scan counts again.
-    await refreshStatus(lab("lab-d"));
-    setScanRunning(["lab-d"], Date.now() + 2);
-    expect(getLabState().scanRunning.has("lab-d")).toBe(true);
-  });
-
-  it("shows a lab stopped here as stopped while the scan still reports it, so no attack box starts", async () => {
-    const stale = lab("lab-e");
+describe("the running scan", () => {
+  it("doesn't show a lab whose launch failed as running though the scan sees its machines up", async () => {
+    // Regression: the scan's word was OR-ed over the lab's status, so a failed launch (the
+    // backend's status: not running) read running every scan and stopped after each fresh read.
+    vi.useFakeTimers();
+    const failed = lab("lab-e");
     const calls = installTauri({
-      api_query: (a) => (String(a?.operation).includes("completedLabs") ? { myCompletedLabs: [] } : { labs: [stale] }),
+      api_query: (a) => (String(a?.operation).includes("completedLabs") ? { myCompletedLabs: [] } : { labs: [failed] }),
       lab_status: () => status({ running: false, parked: null }),
       running_labs: () => ["lab-e"],
     });
-    noteStopped("lab-e");
-    const { result } = renderHook(() => useLabs("stale-scan"));
-    await flush(50);
+    const { result } = renderHook(() => useLabs("failed-launch"));
+    await advance(0);
     expect(commands(calls)).toContain("running_labs");
+    expect(result.current.statuses["lab-e"].running).toBe(false);
+    // Seen up, it is read again on the next poll, and stays not running.
+    const reads = commands(calls).filter((c) => c === "lab_status").length;
+    await advance(6000);
+    expect(commands(calls).filter((c) => c === "lab_status").length).toBeGreaterThan(reads);
     expect(result.current.statuses["lab-e"].running).toBe(false);
   });
 });

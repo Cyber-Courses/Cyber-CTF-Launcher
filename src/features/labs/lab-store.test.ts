@@ -55,20 +55,6 @@ describe("lab-store", () => {
     expect(getLabState().probed.has("lab-1")).toBe(true);
   });
 
-  it("a fresh read finding the lab down drops it from an older scan, and older scans don't count", async () => {
-    const { refreshStatus, setScanRunning, getLabState } = await freshStore();
-    const before = Date.now() - 1000;
-    setScanRunning(["lab-1", "lab-2"], before);
-    const fresh = refreshStatus(lab, { fresh: true });
-    replies[0].resolve(status(false));
-    await fresh;
-    expect([...getLabState().scanRunning]).toEqual(["lab-2"]);
-    // A scan that began before the fresh read reports lab-1 running: old news, left out.
-    expect(setScanRunning(["lab-1", "lab-2"], before)).toEqual(["lab-2"]);
-    // One begun after it counts.
-    expect(setScanRunning(["lab-1"], Date.now() + 1)).toEqual(["lab-1"]);
-  });
-
   it("keeps the same statuses and scan objects when a read says nothing new", async () => {
     const { refreshStatus, setScanRunning, getLabState } = await freshStore();
     const first = refreshStatus(lab);
@@ -79,11 +65,11 @@ describe("lab-store", () => {
     replies[1].resolve(status(true));
     await again;
     expect(getLabState().statuses).toBe(statuses);
-    setScanRunning(["lab-1"], Date.now());
+    setScanRunning(["lab-1"]);
     const scan = getLabState().scanRunning;
-    setScanRunning(["lab-1"], Date.now());
+    setScanRunning(["lab-1"]);
     expect(getLabState().scanRunning).toBe(scan);
-    setScanRunning([], Date.now());
+    setScanRunning([]);
     expect(getLabState().scanRunning.size).toBe(0);
   });
 });

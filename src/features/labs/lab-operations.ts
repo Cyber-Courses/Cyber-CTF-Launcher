@@ -19,7 +19,6 @@ import { setLastRun } from "@/features/labs/runs/last-run";
 import { appendDeployLog, beginDeploy, failDeploy, getDeploySnapshot, restoreDeploy } from "@/features/labs/runs/deploy-runs";
 import { noteSignedOut } from "@/features/account/signed-out";
 import { describeError, errorCode, isSignedOut } from "@/lib/errors";
-import { noteStopped } from "@/features/labs/lab-store";
 import { tell } from "@/lib/failure";
 import { translate } from "@/lib/i18n";
 import { failureTitleKey } from "@/features/labs/failure-hints";
@@ -59,7 +58,6 @@ async function launchOrOfferOffline(title: string, launch: (offline: boolean) =>
 export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: OperationBody, settle: (lab: Lab) => Promise<void>): Promise<string | null> {
   if (!lab.runtime) return null;
   const previous = getDeploySnapshot().runs[lab.id];
-  let refused = false;
   beginDeploy(lab.id, op);
   try {
     await body((line) => {
@@ -69,8 +67,7 @@ export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: Op
   } catch (e) {
     // The backend's answer to an operation started while another one runs on the lab
     // (deploy_worker::start_worker): refused, not failed.
-    refused = errorCode(e) === "alreadyInProgress";
-    if (refused) {
+    if (errorCode(e) === "alreadyInProgress") {
       // The backend refused it (another operation on the lab is in flight): nothing ran, so
       // nothing failed. Keep the run that was there and say why instead of a ✗ in its log,
       // which read as a failed deploy.
@@ -87,8 +84,6 @@ export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: Op
     }
     return describeError(e);
   } finally {
-    // Down now, by this app's hand: a scan answer from before this can't bring it back.
-    if (!refused && (op === "stop" || op === "pause" || op === "shutdown")) noteStopped(lab.id);
     await settle(lab);
   }
 }

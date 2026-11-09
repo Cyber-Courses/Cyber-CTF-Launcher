@@ -29,8 +29,13 @@ describe("rowPhase", () => {
   it("lists the labs running that the catalogue doesn't", () => {
     const lab = { id: "a" } as Lab;
     const s = { a: status({ running: true }), b: status({ running: true }), c: status({}) };
-    expect(runningUnlisted([lab], s)).toEqual(["b"]);
-    expect(runningUnlisted(null, s)).toEqual(["a", "b"]);
+    expect(runningUnlisted([lab], s, new Set())).toEqual(["b"]);
+    expect(runningUnlisted(null, s, new Set())).toEqual(["a", "b"]);
+  });
+  it("takes the scan's word only for a lab whose status was never read", () => {
+    const s = { a: status({}) };
+    // a: read, not running (its launch failed); d: never read, seen up by the scan.
+    expect(runningUnlisted(null, s, new Set(["a", "d"]))).toEqual(["d"]);
   });
   it("is solved or not started at rest", () => {
     expect(phase({ solved: true })).toBe("solved");

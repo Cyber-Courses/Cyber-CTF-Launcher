@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Lab } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
 
@@ -14,7 +14,6 @@ vi.mock("@/lib/tauri", () => ({
 }));
 
 const lab = { id: "lab-1", runtime: { runtime: "DOCKER", architectures: [], providers: [] } } as unknown as Lab;
-const status = (running: boolean) => ({ running, parked: null, machines: [], networks: [] }) as unknown as LabStatus;
 
 async function freshStore() {
   vi.resetModules();
@@ -28,7 +27,6 @@ describe("lab-store: edges", () => {
     replies.length = 0;
     asked.n = 0;
   });
-  afterEach(() => vi.useRealTimers());
 
   it("a lab without a runtime is neither asked nor counted as probed", async () => {
     const { refreshStatus, getLabState } = await freshStore();
@@ -44,29 +42,5 @@ describe("lab-store: edges", () => {
     await read;
     expect(getLabState().statuses["lab-1"]).toBeUndefined();
     expect(getLabState().probed.has("lab-1")).toBe(true);
-  });
-
-  it("noting a stop on a lab the scan never saw changes nothing", async () => {
-    const { noteStopped, getLabState } = await freshStore();
-    const before = getLabState();
-    noteStopped("lab-1");
-    expect(getLabState()).toBe(before);
-  });
-
-  it("a scan after this app stopped a lab reports it to be read, but keeps it out of the running set until a later read sees it running", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(1000);
-    const { noteStopped, setScanRunning, refreshStatus, getLabState } = await freshStore();
-    noteStopped("lab-1");
-    vi.setSystemTime(2000);
-    expect(setScanRunning(["lab-1"], 2000)).toEqual(["lab-1"]);
-    expect(getLabState().scanRunning.has("lab-1")).toBe(false);
-    // Started again from the website: a read begun after the stop sees it running.
-    vi.setSystemTime(3000);
-    const read = refreshStatus(lab);
-    replies[0].resolve(status(true));
-    await read;
-    setScanRunning(["lab-1"], 4000);
-    expect(getLabState().scanRunning.has("lab-1")).toBe(true);
   });
 });
