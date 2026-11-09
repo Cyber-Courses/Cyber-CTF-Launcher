@@ -14,7 +14,7 @@ use crate::labs::operations::{self, ActiveOperation};
 use crate::labs::{self, LaunchRequest};
 use crate::platform::AppDirs;
 use crate::runtime::attack_machine::AttackStatus;
-use crate::runtime::paths::lab_dir;
+use crate::runtime::paths::{lab_dir, local_runtime};
 use crate::runtime::providers::Provider;
 use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, lab, status, stop_lab, terminal_launch};
 
@@ -147,15 +147,17 @@ pub async fn lab_requirements(app: AppHandle, id: String, repository: String, co
     Ok(lab::requirements(&spec))
 }
 
-/// The observers a lab puts beside itself (`tools:` in its spec), at their addresses where it
-/// runs (container addresses for a container lab, wherever its Compose file runs).
+/// The observers a lab, declared `runtime`, puts beside itself (`tools:` in its spec), at their
+/// addresses in the form it was started in ([`local_runtime`]): container addresses for a
+/// container lab wherever its Compose file runs, VM addresses for a lab run as VMs (a container
+/// lab run as one VM per machine included); none beside cloud services.
 #[tauri::command]
 pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<Vec<lab::Observer>> {
     let dir = lab_dir(&AppDirs::from(&app), &id)?;
-    if runtime == Runtime::Cloud {
-        return Ok(Vec::new());
+    match local_runtime(&dir, runtime) {
+        Runtime::Cloud => Ok(Vec::new()),
+        form => lab::tools(&dir, form == Runtime::Docker),
     }
-    lab::tools(&dir, runtime == Runtime::Docker)
 }
 
 /// The ids of labs running on this machine right now, found by scanning Docker and Vagrant
@@ -183,7 +185,7 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
     let dirs = AppDirs::from(&app);
     let dir = lab_dir(&dirs, &id)?;
     // A cloud-services lab: nothing of it to check.
-    if crate::runtime::paths::local_runtime(&dir, runtime) == Runtime::Cloud {
+    if local_runtime(&dir, runtime) == Runtime::Cloud {
         return Ok(docker::Check::default());
     }
     match crate::runtime::host::locate(&dirs, &dir, &id, runtime)? {
@@ -319,6 +321,24 @@ mod tests {
         t.lab("web", &[("isoloom.yml", SPEC)]);
         let _tools = Tools::rules(&[]);
         assert_eq!(running_labs(t.handle().clone()).await, Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn the_observers_are_at_their_addresses_in_the_form_the_lab_was_started_in() {
+        let t = TestApp::new();
+        let spec = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n    os: debian@12\ntools:\n  shell: {}\n";
+        let dir = t.lab("obs", &[("isoloom.yml", spec)]);
+        // A second instance of the lab: its Docker blocks are its own, unlike its VMs'.
+        std::fs::write(dir.join(crate::runtime::lab::INSTANCE_MARKER), "2").unwrap();
+        let tools = |runtime| lab_tools(t.handle().clone(), "obs".into(), runtime);
+        let docker = tools(Runtime::Docker).await.unwrap();
+        let vms = tools(Runtime::Vm).await.unwrap();
+        assert_ne!(docker[0].addresses[0].ip, vms[0].addresses[0].ip, "a container and a VM address differ");
+        // A container lab run as one VM per machine: its observers are at their VM addresses.
+        crate::runtime::paths::mark_per_machine_vm(&dir, true).unwrap();
+        assert_eq!(tools(Runtime::Docker).await.unwrap()[0].addresses[0].ip, vms[0].addresses[0].ip);
+        // Beside cloud services, none.
+        assert!(tools(Runtime::Cloud).await.unwrap().is_empty());
     }
 
     #[tokio::test]

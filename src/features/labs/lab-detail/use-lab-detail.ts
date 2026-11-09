@@ -140,7 +140,7 @@ export function useLabDetail(p: LabDetailProps) {
   const shell = useLabShell(lab.id, lab.title, s.isDocker ? "DOCKER" : "VM");
   const box = useShownBox(useLabAttackBox(lab.id, s, rt?.runtime ?? "DOCKER"), removing(s));
   const [check, clearCheck] = useLabCheck(lab.id, { running: s.running, downCount: s.down.length, enabled: s.isDocker });
-  const tools = useLabTools(lab.id, s.running && !s.isCloud, s.isDocker);
+  const tools = useLabTools(lab.id, s.running && !s.isCloud, rt?.runtime ?? "DOCKER");
   const objectives = useObjectives(lab.id, lab.question, t("labs.detail.objective"), p.loggedIn);
   const restart = () => restartTarget(status, run.hosts, run.runOn, run.localVm);
   const { resetting, reset } = useLabReset(p.onStop, p.onStart, restart, clearCheck);

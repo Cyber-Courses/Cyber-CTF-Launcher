@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { labTools, type LabTool } from "@/lib/tauri";
+import { labTools, type LabTool, type Runtime } from "@/lib/tauri";
 
 /** The lab's observers (`tools:` in its spec), read once it runs: static addresses, so the
- *  last answer stays good across a stop and a start. */
-export function useLabTools(labId: string, running: boolean, isDocker: boolean): LabTool[] {
+ *  last answer stays good across a stop and a start. `runtime` is the lab's declared one: the
+ *  backend reads the form it was started in (a container lab run as one VM per machine has VM
+ *  addresses). */
+export function useLabTools(labId: string, running: boolean, runtime: Runtime): LabTool[] {
   const [tools, setTools] = useState<LabTool[]>([]);
   useEffect(() => {
     if (!running) return;
     let alive = true;
-    labTools(labId, isDocker ? "DOCKER" : "VM")
+    labTools(labId, runtime)
       .then((found) => {
         if (alive) setTools(found);
       })
@@ -20,6 +22,6 @@ export function useLabTools(labId: string, running: boolean, isDocker: boolean):
     return () => {
       alive = false;
     };
-  }, [labId, running, isDocker]);
+  }, [labId, running, runtime]);
   return tools;
 }
