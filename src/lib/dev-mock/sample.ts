@@ -24,6 +24,7 @@ export const report: SystemReport = {
   terraform: { installed: true, version: "1.9.8" },
   ovftool: { installed: false, version: null },
   cloudClis: { aws: { installed: true, version: "2.18.0" }, azure: { installed: false, version: null }, gcloud: { installed: false, version: null } },
+  readyHypervisors: ["virtualbox"],
   vmProviders: [
     { provider: "virtualbox", remote: false, available: true, hypervisor: true, plugin: null, pluginInstalled: true, reason: null },
     {

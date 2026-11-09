@@ -239,7 +239,9 @@ async fn launch_place(dirs: &AppDirs, claim: &Value) -> Result<StartPlace> {
         return Ok(StartPlace { host: Some(target), ..StartPlace::default() });
     }
     let text = |key: &str| claim[key].as_str().unwrap_or_default();
-    start_place::default_place(dirs, text("labId"), claim_runtime(claim), text("repository"), text("commit")).await
+    // The player's preferred hypervisor is the webview's (Settings): a website launch takes the
+    // first ready one.
+    start_place::default_place(dirs, text("labId"), claim_runtime(claim), (text("repository"), text("commit")), None).await
 }
 
 /// The target picked on the website, given how to name a host (`None` when it isn't set up):

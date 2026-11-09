@@ -75,6 +75,8 @@ pub struct SystemReport {
     /// this architecture: x86-only boxes (e.g. pfSense) cannot run on ARM hosts
     /// with a local hypervisor, but can on a remote x86 host.
     pub vm_providers: Vec<ProviderStatus>,
+    /// The local hypervisors of `vm_providers` ready for a lab's VMs ([`providers::ready`]).
+    pub ready_hypervisors: Vec<providers::Provider>,
     /// Windows: whether WSL 2 is on, waits for a restart, or is missing (`None` elsewhere).
     pub wsl: Option<wsl::WslReport>,
 }
@@ -100,6 +102,7 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         Ok(os) => Some(docker::engine_in_use(os.trim()).await),
         Err(_) => None,
     };
+    let ready_hypervisors = providers::ready(&vm_providers, vagrant.installed);
     SystemReport {
         os: std::env::consts::OS,
         arch: std::env::consts::ARCH,
@@ -116,6 +119,7 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         terraform,
         ovftool,
         cloud_clis: CloudClis { aws, azure, gcloud },
+        ready_hypervisors,
         vm_providers,
         wsl,
     }

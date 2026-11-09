@@ -242,27 +242,42 @@ describe("useLabActions: launch", () => {
     expect(args.host).toBe("aws1");
   });
 
-  it("runs a VM lab here on the ready hypervisor", async () => {
+  it("runs a VM lab picked here on the hypervisor the backend picks for it there", async () => {
+    const { calls, hook } = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false, hypervisor: "parallels" }) });
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-here" }, null, undefined, readyReport()));
+    expect(launchArgs(calls)).toEqual({ labId: "act-vm-here", provider: "parallels", host: null, defaultPorts: false });
+  });
+
+  it("runs a VM lab started again here on the hypervisor it ran on, without asking the backend", async () => {
     const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...vmLab, id: "act-vm-here" }, null, undefined, readyReport()));
-    expect(launchArgs(calls)).toEqual({ labId: "act-vm-here", provider: "virtualbox", host: null, defaultPorts: false });
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-again" }, null, { provider: "libvirt" }, readyReport()));
+    expect(commands(calls)).not.toContain("lab_default_place");
+    expect(launchArgs(calls)).toMatchObject({ provider: "libvirt", host: null });
   });
 
   it("starts a VM lab with no place picked on the server the backend picks for it", async () => {
-    const { calls, hook } = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false }) });
+    const { calls, hook } = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false, hypervisor: null }) });
     await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-def" }, undefined, undefined, readyReport()));
-    expect(calls.find((c) => c.cmd === "lab_default_place")?.args).toEqual({ id: "act-vm-def", runtime: "VM", repository: "CyberCTF/goad", commit: SHA });
+    expect(calls.find((c) => c.cmd === "lab_default_place")?.args).toEqual({
+      id: "act-vm-def",
+      runtime: "VM",
+      source: { repository: "CyberCTF/goad", commit: SHA },
+      preferred: null,
+    });
     expect(launchArgs(calls)).toMatchObject({ provider: null, host: "pve" });
   });
 
-  it("runs a VM lab here when the backend picks no server, or its source isn't known", async () => {
-    const { calls, hook } = setup({ lab_default_place: () => ({ host: null, provider: "virtualbox", perMachineVm: false }) });
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-here" }, undefined, undefined, readyReport()));
-    expect(launchArgs(calls)).toMatchObject({ provider: "virtualbox", host: null });
-    const unsourced = setup();
-    await act(() => unsourced.hook.result.current.launch({ ...vmLab, id: "act-vm-nosrc" }, undefined, undefined, readyReport()));
-    expect(commands(unsourced.calls)).not.toContain("lab_default_place");
-    expect(launchArgs(unsourced.calls)).toMatchObject({ provider: "virtualbox", host: null });
+  it("runs a VM lab here on the hypervisor the backend picks, with the Settings choice for it to weigh", async () => {
+    // Regression: the backend's hypervisor was dropped for a VM lab and the webview picked its
+    // own (the Settings choice first). Two hypervisors ready and the Settings choice not the
+    // backend's: only the backend's pick passes.
+    setVmProvider("virtualbox");
+    const report = readyReport();
+    report.readyHypervisors = ["virtualbox", "parallels"];
+    const { calls, hook } = setup({ lab_default_place: () => ({ host: null, provider: "parallels", perMachineVm: false, hypervisor: "parallels" }) });
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-here" }, undefined, undefined, report));
+    expect(calls.find((c) => c.cmd === "lab_default_place")?.args?.preferred).toBe("virtualbox");
+    expect(launchArgs(calls)).toMatchObject({ provider: "parallels", host: null });
   });
 
   it("fails the start, rather than guess, when the default server can't be decided", async () => {
@@ -286,52 +301,30 @@ describe("useLabActions: launch", () => {
 
   it("asks for no default place when a place is picked", async () => {
     const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-picked" }, null, undefined, readyReport()));
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-picked" }, "pve", undefined, readyReport()));
     expect(commands(calls)).not.toContain("lab_default_place");
   });
 
   it("says no hypervisor is installed instead of starting a VM lab", async () => {
-    const report = readyReport();
-    report.vmProviders = report.vmProviders.map((p) => ({ ...p, available: false }));
-    const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...vmLab, id: "act-vm-none" }, null, undefined, report));
+    const { calls, hook } = setup({ lab_default_place: () => ({ host: null, provider: null, perMachineVm: false, hypervisor: null }) });
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-none" }, null, undefined, readyReport()));
     expect(launchArgs(calls)).toBeUndefined();
     expect(logsOf("act-vm-none").at(-1)).toMatch(/^✗ No hypervisor for this lab is installed on this machine \(it runs on virtualbox\)/);
   });
 
   it("names 'none' when the lab lists no local hypervisor", async () => {
-    const report = readyReport();
     const { hook } = setup();
     const lab: Lab = { ...vmLab, id: "act-vm-cloudonly", runtime: { runtime: "VM", architectures: [], providers: ["aws"] } };
-    await act(() => hook.result.current.launch(lab, null, undefined, report));
+    await act(() => hook.result.current.launch(lab, null, undefined, readyReport()));
     expect(logsOf("act-vm-cloudonly").at(-1)).toContain("(it runs on none)");
   });
 
   it("explains a VM lab built for another CPU on Apple Silicon", async () => {
     const report = { ...readyReport(), arch: "aarch64" };
-    const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...vmLab, id: "act-vm-arm" }, null, undefined, report));
+    const { calls, hook } = setup({ lab_default_place: () => ({ host: null, provider: null, perMachineVm: false, hypervisor: null }) });
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-arm" }, null, undefined, report));
     expect(launchArgs(calls)).toBeUndefined();
     expect(logsOf("act-vm-arm").at(-1)).toContain("built for x86_64 and this machine is aarch64");
-  });
-
-  it("starts an x86 VM lab emulated on QEMU when it is ready", async () => {
-    const report = { ...readyReport(), arch: "aarch64" };
-    report.vmProviders = [
-      ...report.vmProviders,
-      { provider: "qemu", remote: false, available: true, hypervisor: true, plugin: null, pluginInstalled: true, reason: null },
-    ];
-    const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...vmLab, id: "act-vm-qemu" }, null, undefined, report));
-    expect(launchArgs(calls)?.provider).toBe("qemu");
-  });
-
-  it("picks the Settings hypervisor before the machine report has loaded", async () => {
-    setVmProvider("vmware_esxi");
-    const { calls, hook } = setup();
-    const lab: Lab = { ...vmLab, id: "act-vm-noreport", runtime: { runtime: "VM", architectures: [], providers: ["virtualbox", "vmware_desktop"] } };
-    await act(() => hook.result.current.launch(lab, null, undefined, null));
-    expect(launchArgs(calls)?.provider).toBe("virtualbox");
   });
 
   it("puts a failed start on the log's last line and ends the run", async () => {

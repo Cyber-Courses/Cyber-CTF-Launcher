@@ -11,7 +11,7 @@ import { KIND } from "@/features/servers/host-setup/constants";
 import { ProviderGlyph } from "@/features/servers/provider-glyph";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { ENGINES, engineName } from "@/features/machine/setup-steps/engines";
-import { CLOUDS } from "@/features/labs/lab-runtime";
+import { CLOUDS, vmFormTarget } from "@/features/labs/lab-runtime";
 import type { RunTarget } from "@/features/labs/run-on";
 import { type T } from "@/lib/i18n";
 
@@ -135,7 +135,7 @@ export function vmFormOptions(t: T, options: LabRunOptions | null, forms: RunTar
  *  The default (Settings' choice, else the first) is marked and preselected by the caller. */
 export function hypervisorOptions(t: T, form: "local-vm" | "local-vms", hypervisors: Provider[], fallback: Provider | null): Option[] {
   return hypervisors.map((p) => ({
-    target: { kind: form, provider: p },
+    target: vmFormTarget(form, p),
     title: PROVIDER_NAMES[p],
     ok: true,
     logo: <HypervisorLogo provider={p} />,

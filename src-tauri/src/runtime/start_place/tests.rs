@@ -37,8 +37,13 @@ fn default_server(t: &TestApp, id: &str) {
 
 /// Where lab `id`, declared `runtime`, starts with `ready` the hypervisors ready here.
 async fn place(t: &TestApp, id: &str, runtime: Runtime, ready: &[Provider]) -> StartPlace {
+    preferring(t, id, runtime, ready, None).await
+}
+
+/// [`place`], the player preferring hypervisor `preferred`.
+async fn preferring(t: &TestApp, id: &str, runtime: Runtime, ready: &[Provider], preferred: Option<Provider>) -> StartPlace {
     let ready = ready.to_vec();
-    Box::pin(default_place_with(&t.dirs(), (id, runtime), ("CyberCTF/lab", SHA), async move || ready)).await.unwrap()
+    Box::pin(default_place_with(&t.dirs(), (id, runtime), ("CyberCTF/lab", SHA), preferred, async move || ready)).await.unwrap()
 }
 
 /// On saved server `id`.
@@ -46,8 +51,13 @@ fn host(id: &str) -> StartPlace {
     StartPlace { host: Some(id.into()), ..StartPlace::default() }
 }
 
-/// Here, on hypervisor `p`.
+/// A VM lab here, on hypervisor `p`.
 fn here_on(p: Provider) -> StartPlace {
+    StartPlace { provider: Some(p), hypervisor: Some(p), ..StartPlace::default() }
+}
+
+/// A container lab here in a VM on hypervisor `p`.
+fn in_vm_on(p: Provider) -> StartPlace {
     StartPlace { provider: Some(p), ..StartPlace::default() }
 }
 
@@ -91,9 +101,10 @@ async fn a_lab_starts_again_where_it_last_ran() {
     let pve = t.host("pve", "proxmox", serde_json::json!({}));
     let esx = t.host("esx", "vmware_esxi", serde_json::json!({}));
     default_server(&t, &esx);
-    // Last on Proxmox: there again, a hypervisor ready here notwithstanding.
+    // Last on Proxmox: there again, a hypervisor ready here notwithstanding (the one it would run
+    // on if the player picks this machine).
     record_run(t.data(), "ad", Some(&pve), "proxmox", "absent");
-    assert_eq!(place(&t, "ad", Runtime::Vm, &[Provider::Virtualbox]).await, host("pve"));
+    assert_eq!(place(&t, "ad", Runtime::Vm, &[Provider::Virtualbox]).await, StartPlace { hypervisor: Some(Provider::Virtualbox), ..host("pve") });
     // Last in a cloud account: never there unasked; the rule as if it never ran.
     record_run(t.data(), "ad", Some("aws1"), "cloud-vm", "absent");
     assert_eq!(place(&t, "ad", Runtime::Vm, &[]).await, host("esx"));
@@ -106,15 +117,34 @@ async fn a_lab_starts_again_where_it_last_ran() {
     assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, StartPlace::default(), "never ran: on Docker here");
     record_run(t.data(), "web", None, "docker-vm", "absent");
     set_provider(&t, "web", "utm");
-    assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, here_on(Provider::Utm));
+    assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, in_vm_on(Provider::Utm));
     record_run(t.data(), "web", None, "vagrant", "parked");
     set_provider(&t, "web", "virtualbox");
-    assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, StartPlace { per_machine_vm: true, ..here_on(Provider::Virtualbox) });
+    assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, StartPlace { per_machine_vm: true, ..in_vm_on(Provider::Virtualbox) });
     // A server no longer saved: as if it never ran there.
     record_run(t.data(), "web", Some("gone"), "docker-vm", "absent");
     assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, StartPlace::default());
     // A cloud-services lab is picked on its page.
     assert_eq!(place(&t, "goat", Runtime::Cloud, &[]).await, StartPlace::default());
+}
+
+#[tokio::test]
+async fn a_vm_lab_starts_here_on_the_preferred_hypervisor_when_it_is_ready_and_runs_it() {
+    // Regression: the webview picked a VM lab's hypervisor itself (the Settings choice first),
+    // dropping the backend's: two rules for one question, and a test that couldn't tell them apart.
+    let t = TestApp::new();
+    installed(&t, "ad", &vms_on(arches().0));
+    let ready = [Provider::Virtualbox, Provider::Libvirt];
+    assert_eq!(preferring(&t, "ad", Runtime::Vm, &ready, Some(Provider::Libvirt)).await, here_on(Provider::Libvirt));
+    assert_eq!(preferring(&t, "ad", Runtime::Vm, &ready, None).await, here_on(Provider::Virtualbox), "no choice: the first ready");
+    // Preferred but not ready, or ready but unable to run it (UTM: no network for its VMs): not it.
+    assert_eq!(preferring(&t, "ad", Runtime::Vm, &ready, Some(Provider::Parallels)).await, here_on(Provider::Virtualbox));
+    let utm = [Provider::Utm, Provider::Virtualbox];
+    assert_eq!(preferring(&t, "ad", Runtime::Vm, &utm, Some(Provider::Utm)).await, here_on(Provider::Virtualbox));
+    // Where it last ran here comes first: its VMs are there.
+    record_run(t.data(), "ad", None, "vagrant", "absent");
+    set_provider(&t, "ad", "virtualbox");
+    assert_eq!(preferring(&t, "ad", Runtime::Vm, &ready, Some(Provider::Libvirt)).await, here_on(Provider::Virtualbox));
 }
 
 /// Lab `id`'s recorded run used Vagrant's `provider`.

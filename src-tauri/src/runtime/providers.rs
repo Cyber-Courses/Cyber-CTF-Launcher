@@ -138,6 +138,12 @@ impl Provider {
         )
     }
 
+    /// Whether it runs VMs built for another CPU (emulated, slowly): QEMU runs an x86 lab on an
+    /// Apple Silicon Mac. The webview reads them as `EMULATORS` (`testing/ts_bindings.rs`).
+    pub fn is_emulator(self) -> bool {
+        self == Provider::Qemu
+    }
+
     /// Cloud accounts (billed to the player), as opposed to the player's own servers.
     pub fn is_cloud(self) -> bool {
         Self::CLOUDS.contains(&self)
@@ -360,7 +366,17 @@ pub async fn ready_here() -> Vec<Provider> {
     if run_read("vagrant", &["--version"], None).await.is_err() {
         return Vec::new();
     }
-    detect(true).await.into_iter().filter(|p| !p.remote && p.available && p.hypervisor != Some(false)).map(|p| p.provider).collect()
+    ready(&detect(true).await, true)
+}
+
+/// Of `statuses` ([`detect`]'s), the local hypervisors ready for a lab's VMs: none without
+/// Vagrant (`vagrant_installed`). The machine report carries them, so the webview never works
+/// this out again.
+pub fn ready(statuses: &[ProviderStatus], vagrant_installed: bool) -> Vec<Provider> {
+    if !vagrant_installed {
+        return Vec::new();
+    }
+    statuses.iter().filter(|p| !p.remote && p.available && p.hypervisor != Some(false)).map(|p| p.provider).collect()
 }
 
 pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {

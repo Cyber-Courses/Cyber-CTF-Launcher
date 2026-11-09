@@ -1,16 +1,13 @@
 import { Cloud, Container, Monitor, Server, type LucideIcon } from "lucide-react";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { LOCAL_PROVIDERS, PROVIDER_NAMES, type LabRunOptions, type LabStatus, type Provider, type ServerHost, type SystemReport } from "@/lib/tauri";
+import { EMULATORS, LOCAL_PROVIDERS, PROVIDER_NAMES, type LabRunOptions, type LabStatus, type Provider, type ServerHost } from "@/lib/tauri";
 import { CLOUD_PROVIDERS } from "@/features/cloud/cloud-model";
+import type { RunTarget } from "@/features/labs/run-on";
 
 // Where a lab can run, from its runtime (catalogue) and what this machine has ready.
 
 const SERVERS = new Set(["vmware_esxi", "proxmox"]);
 export const CLOUDS = new Set(CLOUD_PROVIDERS);
-
-/** Hypervisors that run VMs built for another CPU, emulated (slowly): QEMU runs an x86 lab on
- *  an Apple Silicon Mac. */
-export const EMULATORS: readonly Provider[] = ["qemu"];
 
 /** Whether `p` is a hypervisor a lab's VMs run on here (the provider a local VM lab's status
  *  names): one of the backend's local providers. */
@@ -35,22 +32,13 @@ export function formProviders(paths: LabRunOptions["vms"], rt: LabRuntimeInfo, h
   return hostArch && !runsNatively(rt, hostArch) ? providers.filter((p) => EMULATORS.includes(p)) : providers;
 }
 
-/** Whether an emulator (QEMU) is ready on this machine: Vagrant, the hypervisor and its plugin. */
-export const emulatorReady = (report: SystemReport | null | undefined) =>
-  !!report?.vagrant.installed && report.vmProviders.some((p) => EMULATORS.includes(p.provider) && !p.remote && p.available && p.hypervisor !== false);
+/** Whether an emulator (QEMU) is among the hypervisors `ready` here (the machine report's). */
+export const emulatorReady = (ready: readonly Provider[]) => ready.some((p) => EMULATORS.includes(p));
 
-/** The local hypervisors ready for a lab VM (Vagrant + hypervisor), `preferred` (Settings'
- *  choice) first. Only the report's fields this reads, so a partial report type fits. */
-export function readyHypervisors(
-  report: {
-    vagrant: { installed: boolean };
-    vmProviders: { provider: Provider; remote: boolean; available: boolean; hypervisor?: boolean | null }[];
-  },
-  preferred: Provider | null | undefined,
-): Provider[] {
-  const ready = report.vagrant.installed ? report.vmProviders.filter((p) => !p.remote && p.available && p.hypervisor !== false).map((p) => p.provider) : [];
-  return preferred && ready.includes(preferred) ? [preferred, ...ready.filter((p) => p !== preferred)] : ready;
-}
+/** The hypervisors ready here (the machine report's `readyHypervisors`), `preferred` (Settings'
+ *  choice) first: the picker's default for a container lab's VM forms. */
+export const preferredFirst = (ready: readonly Provider[], preferred: Provider | null): Provider[] =>
+  preferred && ready.includes(preferred) ? [preferred, ...ready.filter((p) => p !== preferred)] : [...ready];
 
 /** The hypervisors on this machine that can run a VM lab's VMs: as the backend's run options say
  *  (`options`, once read), else those the catalogue lists; a VM lab built for another CPU only
@@ -61,15 +49,6 @@ export function localProviders(rt: LabRuntimeInfo, hostArch?: string, options?: 
   const listed = options ? formProviders(options.vms, rt) : rt.providers.filter(isLocalHypervisor);
   // A VM edition built for another CPU runs here only emulated (whatever hypervisors it lists).
   return hostArch && !runsNatively(rt, hostArch) ? [...EMULATORS] : listed;
-}
-
-/** The hypervisor a VM lab starts on here: a ready one among those it can use (`local`), else
- *  null. Never the lab's first listed provider: the catalogue lists them alphabetically, and
- *  picking e.g. "parallels" on a VirtualBox machine fails at once with "prlctl was not found".
- *  With no machine report yet (`ready` undefined), the Settings preference, then the first one. */
-export function pickLocalHypervisor(local: Provider[], ready: Provider[] | undefined, preferred: Provider | null): Provider | null {
-  if (ready === undefined) return (preferred && local.includes(preferred) ? preferred : local.at(0)) ?? null;
-  return ready.find((p) => local.includes(p)) ?? null;
 }
 
 /** Whether a saved server or cloud account can run the lab: as the backend's run options say
@@ -165,3 +144,8 @@ export const cloudNames = (providers: readonly string[]): string[] => providers.
 /** The player's accounts a cloud lab can run on: of a cloud it lists. */
 export const cloudAccountsFor = (rt: LabRuntimeInfo | null | undefined, hosts: ServerHost[], options?: LabRunOptions | null) =>
   rt && isCloudLab(rt) ? hosts.filter((h) => CLOUDS.has(h.provider) && hostSupports(rt, h, options)) : [];
+
+/** A container lab's VM form here (`local-vm`: one helper VM, `local-vms`: one VM per machine) on
+ *  hypervisor `provider`. */
+export const vmFormTarget = (form: "local-vm" | "local-vms", provider: Provider): RunTarget =>
+  form === "local-vm" ? { kind: form, provider } : { kind: form, provider };

@@ -30,3 +30,6 @@ export const PROVIDER_NAMES_ON: Record<string, Partial<Record<Provider, string>>
 
 /** The hypervisors that run on this machine (Rust's providers that aren't `is_remote`). */
 export const LOCAL_PROVIDERS: readonly Provider[] = ["virtualbox", "vmware_desktop", "hyperv", "parallels", "libvirt", "qemu", "utm"];
+
+/** The hypervisors that run VMs built for another CPU, emulated (Rust's `Provider::is_emulator`). */
+export const EMULATORS: readonly Provider[] = ["qemu"];

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { cloudAccountsFor, formProviders, hostSupports, isCloudLab, isContainerLab } from "@/features/labs/lab-runtime";
+import { cloudAccountsFor, formProviders, hostSupports, isCloudLab, isContainerLab, vmFormTarget } from "@/features/labs/lab-runtime";
 import type { PickerStep, Platform, RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import {
@@ -15,8 +15,9 @@ import {
   setVmProvider,
   type PortMode,
 } from "@/lib/settings";
-import { labDefaultPlace, type DockerEngine, type LabRunOptions, type LabStartPlace, type Provider, type ServerHost } from "@/lib/tauri";
+import { type DockerEngine, type LabRunOptions, type LabStartPlace, type Provider, type ServerHost } from "@/lib/tauri";
 import { useLabAnswer, useLabRunOptions } from "@/features/labs/use-lab-answer";
+import { askDefaultPlace } from "@/features/labs/lab-operations";
 import { useSavedHosts } from "@/features/servers/use-server-list";
 
 /** A container lab on cloud account `id`, when the lab's run options have it there in both
@@ -59,7 +60,7 @@ export function useRunTarget(
   const [ports, setPorts] = useState<PortMode>(() => getPortMode() ?? "random");
   // Every way the lab starts, and where it starts with nothing picked: the backend's answers.
   const options = useLabRunOptions(lab.id, rt);
-  const place = useLabAnswer(lab.id, rt, labDefaultPlace);
+  const place = useLabAnswer(lab.id, rt, askDefaultPlace);
   // The VM forms a container lab can run here as, and the hypervisors each can run on.
   const vm = useLocalVmChoice(rt, { readyVms, hostArch, options }, isDocker, setRunOn);
   const { localVm, localVms, perMachineVm, perMachineVms, perMachine, pickProvider } = vm;
@@ -193,7 +194,7 @@ function useLocalVmChoice(
   const pickProvider = (form: "local-vm" | "local-vms", provider: Provider) => {
     setVmProvider(provider);
     setSwitched(provider);
-    setRunOn({ kind: form, provider });
+    setRunOn(vmFormTarget(form, provider));
   };
   return { localVm, localVms, perMachineVm, perMachineVms, perMachine, pickProvider };
 }
@@ -297,15 +298,15 @@ function usePickerSteps(d: StepsDeps) {
 
 /** Where Start points at first: a cloud lab's first account it runs on; else where the backend
  *  starts the lab with nothing picked (`place`: where it last ran, a ready hypervisor here, the
- *  default server), in the form it says; here until it answers. */
+ *  default server), in the form and on the hypervisor it says; here until it answers. */
 export function initialTarget(rt: LabRuntimeInfo | null, hosts: ServerHost[], place: LabStartPlace | null, options: LabRunOptions | null = null): RunTarget {
   if (isCloudLab(rt)) {
     const account = cloudAccountsFor(rt, hosts, options).at(0);
     return account ? { kind: "host", id: account.id } : { kind: "local" };
   }
   if (place?.host) return hosts.some((h) => h.id === place.host) ? { kind: "host", id: place.host } : { kind: "local" };
-  if (place?.provider && isContainerLab(rt)) return { kind: place.perMachineVm ? "local-vms" : "local-vm", provider: place.provider };
-  return { kind: "local" };
+  if (!place?.provider) return { kind: "local" };
+  return isContainerLab(rt) ? vmFormTarget(place.perMachineVm ? "local-vms" : "local-vm", place.provider) : { kind: "local", provider: place.provider };
 }
 
 export type RunTargetChoice = ReturnType<typeof useRunTarget>;

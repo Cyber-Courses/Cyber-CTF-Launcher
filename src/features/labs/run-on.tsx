@@ -11,7 +11,7 @@ import { EngineStep, PickerHeading } from "@/features/labs/run-on-steps";
  *  or, for a lab with VM recipes too, one VM per machine there), or a saved host.
  *  `ports` on this machine: chosen in the dialog (container labs), else asked at the start. */
 export type RunTarget =
-  | { kind: "local"; ports?: PortMode; engine?: DockerEngine }
+  | { kind: "local"; ports?: PortMode; engine?: DockerEngine; provider?: Provider }
   | { kind: "local-vm"; provider: Provider }
   | { kind: "local-vms"; provider: Provider }
   | { kind: "host"; id: string; perMachine?: boolean };

@@ -67,18 +67,22 @@ describe("cloud labs", () => {
 
   it("start on their first account, never a default server; other labs where the backend says", () => {
     const hosts = [host("esxi", "vmware_esxi"), host("a", "aws"), host("b", "aws")];
-    const onEsxi = { host: "esxi", provider: null, perMachineVm: false };
+    const onEsxi = { host: "esxi", provider: null, perMachineVm: false, hypervisor: null };
     expect(initialTarget(cloud, hosts, onEsxi)).toEqual({ kind: "host", id: "a" });
     expect(initialTarget(cloud, [host("esxi", "vmware_esxi")], onEsxi)).toEqual({ kind: "local" });
     const vm = rt("VM", ["vmware_esxi"]);
     expect(initialTarget(vm, hosts, onEsxi)).toEqual({ kind: "host", id: "esxi" });
-    expect(initialTarget(vm, hosts, { host: null, provider: "virtualbox", perMachineVm: false })).toEqual({ kind: "local" });
+    // A VM lab here: on the hypervisor the backend picked for it.
+    expect(initialTarget(vm, hosts, { host: null, provider: "virtualbox", perMachineVm: false, hypervisor: "virtualbox" })).toEqual({
+      kind: "local",
+      provider: "virtualbox",
+    });
     // Here until the backend answers.
     expect(initialTarget(vm, hosts, null)).toEqual({ kind: "local" });
     // A container lab last run in a VM here, or as one VM per machine: there again, in that form.
     const web = rt("DOCKER", ["docker"]);
-    expect(initialTarget(web, hosts, { host: null, provider: "utm", perMachineVm: false })).toEqual({ kind: "local-vm", provider: "utm" });
-    expect(initialTarget(web, hosts, { host: null, provider: "qemu", perMachineVm: true })).toEqual({ kind: "local-vms", provider: "qemu" });
+    expect(initialTarget(web, hosts, { host: null, provider: "utm", perMachineVm: false, hypervisor: null })).toEqual({ kind: "local-vm", provider: "utm" });
+    expect(initialTarget(web, hosts, { host: null, provider: "qemu", perMachineVm: true, hypervisor: null })).toEqual({ kind: "local-vms", provider: "qemu" });
     // A server since removed: here.
     expect(initialTarget(web, [], onEsxi)).toEqual({ kind: "local" });
   });

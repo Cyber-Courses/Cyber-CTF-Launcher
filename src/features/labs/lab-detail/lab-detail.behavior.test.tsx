@@ -303,11 +303,12 @@ describe("LabDetail: starting", () => {
     installTauri({
       ...quiet,
       ...defaultEsx,
-      lab_default_place: () => ({ host: null, provider: "virtualbox", perMachineVm: false }),
+      lab_default_place: () => ({ host: null, provider: "virtualbox", perMachineVm: false, hypervisor: "virtualbox" }),
     });
     const { user, h } = await clickStart({ lab: vmLab, readyVms: ["virtualbox"] });
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Start$/ }));
-    expect(h.onStart).toHaveBeenCalledWith({ kind: "local" });
+    // On the hypervisor the backend picked.
+    expect(h.onStart).toHaveBeenCalledWith({ kind: "local", provider: "virtualbox" });
   });
 
   it("can't start a lab without a runtime", async () => {

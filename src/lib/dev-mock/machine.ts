@@ -62,8 +62,15 @@ const systemCheck: BrowserHandler = async (_args, { sc, live }) => {
   }
   // `hold=pm`: missing until the test lets it show up.
   const pm = sc.held.includes("pm") ? !live.holds.isHeld("pm") : null;
-  return withInstalls(scenarioReport(sc), live.installed, { pm });
+  return withReady(withInstalls(scenarioReport(sc), live.installed, { pm }));
 };
+
+/** The report's ready hypervisors, as the core works them out (providers::ready): the local ones
+ *  available, with Vagrant. */
+function withReady(r: SystemReport): SystemReport {
+  const ready = r.vagrant.installed ? r.vmProviders.filter((p) => !p.remote && p.available && p.hypervisor !== false).map((p) => p.provider) : [];
+  return { ...r, readyHypervisors: ready };
+}
 
 /** A one-click install of `what` (a dependency or a Vagrant plugin). */
 const install =

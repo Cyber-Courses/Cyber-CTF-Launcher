@@ -147,12 +147,26 @@ pub async fn lab_requirements(app: AppHandle, id: String, repository: String, co
     Ok(lab::requirements(&spec))
 }
 
+/// A lab's source: its repository at the catalogue's pinned commit.
+#[derive(serde::Deserialize)]
+pub struct LabSource {
+    repository: String,
+    commit: String,
+}
+
 /// Where lab `id`, declared `runtime`, starts when no place is picked
 /// ([`start_place::default_place`]: where it last ran, else a ready hypervisor here for a VM lab,
-/// else the default server), from its spec at the catalogue's pinned commit.
+/// `preferred` (the player's Settings choice) first, else the default server), from its spec at
+/// its `source`.
 #[tauri::command]
-pub async fn lab_default_place(app: AppHandle, id: String, runtime: Runtime, repository: String, commit: String) -> Result<start_place::StartPlace> {
-    start_place::default_place(&AppDirs::from(&app), &id, runtime, &repository, &commit).await
+pub async fn lab_default_place(
+    app: AppHandle,
+    id: String,
+    runtime: Runtime,
+    source: LabSource,
+    preferred: Option<Provider>,
+) -> Result<start_place::StartPlace> {
+    start_place::default_place(&AppDirs::from(&app), &id, runtime, (&source.repository, &source.commit), preferred).await
 }
 
 /// Every way lab `id`, declared `runtime`, can start ([`lab::run_options`]): per form, the
@@ -294,7 +308,7 @@ pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> R
 
 #[cfg(test)]
 mod tests {
-    use super::{AttachPick, channel_log, check_image, valid_machine_name};
+    use super::{AttachPick, LabSource, channel_log, check_image, valid_machine_name};
     use super::{
         attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_default_place, lab_launch, lab_launch_local, lab_park,
         lab_provision, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools, running_labs,
@@ -357,7 +371,8 @@ mod tests {
         .unwrap();
         let sha = "0123456789abcdef0123456789abcdef01234567".to_string();
         // Never run: on Docker here, its spec not even read.
-        let place = lab_default_place(t.handle().clone(), "web".into(), Runtime::Docker, "CyberCTF/web".into(), sha).await.unwrap();
+        let source = LabSource { repository: "CyberCTF/web".into(), commit: sha };
+        let place = lab_default_place(t.handle().clone(), "web".into(), Runtime::Docker, source, None).await.unwrap();
         assert_eq!(place, crate::runtime::start_place::StartPlace::default());
     }
 

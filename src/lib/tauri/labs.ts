@@ -30,7 +30,7 @@ import type {
 import type { DockerEngine } from "@/lib/tauri/machine";
 
 /** Each provider's name as the player reads it, from the backend (`Provider::label`). */
-export { LOCAL_PROVIDERS, PROVIDER_NAMES, PROVIDER_NAMES_ON } from "@/lib/tauri/generated/ProviderNames";
+export { EMULATORS, LOCAL_PROVIDERS, PROVIDER_NAMES, PROVIDER_NAMES_ON } from "@/lib/tauri/generated/ProviderNames";
 
 export type {
   ActiveOperation,
@@ -63,10 +63,11 @@ export type {
 export const labCloudPreview = (id: string, repository: string, commit: string) => invoke<CloudPreview | null>("lab_cloud_preview", { id, repository, commit });
 
 /** Where a lab (declared `runtime`) starts when no place is picked, by the backend's one rule:
- *  where it last ran, else a hypervisor ready here for a VM lab, else the default server the
- *  lab's spec (at the catalogue's pinned commit) runs on, else here. */
-export const labDefaultPlace = (id: string, runtime: Runtime, repository: string, commit: string) =>
-  invoke<LabStartPlace>("lab_default_place", { id, runtime, repository, commit });
+ *  where it last ran, else a hypervisor ready here for a VM lab (`preferred`, the Settings choice,
+ *  first), else the default server the lab's spec (at the catalogue's pinned commit) runs on,
+ *  else here. Also a VM lab's hypervisor should it start here (`hypervisor`). */
+export const labDefaultPlace = (id: string, runtime: Runtime, repository: string, commit: string, preferred: Provider | null) =>
+  invoke<LabStartPlace>("lab_default_place", { id, runtime, source: { repository, commit }, preferred });
 
 /** Every way a lab (declared `runtime`) can start, from its spec at the catalogue's pinned commit:
  *  per form, the hypervisors, servers and clouds it runs on, each with its launch path's badge,

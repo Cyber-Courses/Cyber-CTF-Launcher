@@ -10,11 +10,12 @@ import {
   type LabStartPlace,
   type Park,
   type Provider,
+  type Runtime,
 } from "@/lib/tauri";
 import { getVmProvider, type PortMode } from "@/lib/settings";
 import { notify } from "@/lib/notify";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
-import { localProviders, pickLocalHypervisor, readyHypervisors, runsNatively } from "@/features/labs/lab-runtime";
+import { isLocalHypervisor, runsNatively } from "@/features/labs/lab-runtime";
 import { setLastRun } from "@/features/labs/runs/last-run";
 import { appendDeployLog, beginDeploy, failDeploy, getDeploySnapshot, restoreDeploy } from "@/features/labs/runs/deploy-runs";
 import { noteSignedOut } from "@/features/account/signed-out";
@@ -30,12 +31,8 @@ import { askOfflineStart } from "@/features/labs/offline-start-prompt";
 /** What an operation does, its output streamed through `log`. */
 export type OperationBody = (log: (line: string) => void, runtime: LabRuntimeInfo) => Promise<void>;
 
-/** The machine report, to pick a hypervisor that is actually installed here. */
-export type LaunchReport = {
-  arch?: string;
-  vagrant: { installed: boolean };
-  vmProviders: { provider: Provider; remote: boolean; available: boolean; hypervisor?: boolean | null }[];
-} | null;
+/** The machine report, to say why a VM lab can't run here: its CPU. */
+export type LaunchReport = { arch?: string } | null;
 
 /** Runs `launch`; when it fails because Cyber CTF can't be reached and the lab, installed here,
  *  can start without it (the `offlineReady` code, labs/offline.rs), asks the player (the lab
@@ -100,39 +97,19 @@ export const cloudLaunch =
     void notify(translate("labs.actions.labReady"), translate("labs.actions.readyInCloud", { title: lab.title }));
   };
 
-/** The hypervisor a lab starts on here (a VM lab, a container lab in a local VM, or one run as
- *  one VM per machine), null for one on a server or in Docker here. Throws when a VM lab can't
- *  run here. */
-function localHypervisor(
-  rt: LabRuntimeInfo,
-  remote: boolean,
-  vmProvider: Provider | undefined,
-  report: LaunchReport | undefined,
-  perMachineVm = false,
-): Provider | null {
-  // The per-machine form runs on the hypervisor picked for it ("Where should it run?" offers
-  // only the ready ones that form runs on).
-  if (perMachineVm && vmProvider && !remote) return vmProvider;
-  const vm = rt.runtime === "VM";
-  const preferred = getVmProvider();
-  // Hypervisors ready on this machine (Vagrant + the tool), the Settings default first;
-  // unknown (undefined) until the machine report has loaded.
-  const ready = report ? readyHypervisors(report, preferred) : undefined;
-  // A VM lab built for another CPU (x86 Windows on Apple Silicon) runs here only emulated,
-  // on QEMU.
-  const local = localProviders(rt, report?.arch);
-  const foreign = vm && !!report?.arch && !runsNatively(rt, report.arch);
-  const inLocalVm = !vm && !remote && !!vmProvider;
-  const provider = inLocalVm ? vmProvider : vm && !remote ? pickLocalHypervisor(local, ready, preferred) : null;
+/** The hypervisor a VM lab starts on here: the one picked (`picked`: where Reset starts it again,
+ *  its status's), else the backend's (`place.hypervisor`: where it last ran here, the Settings
+ *  choice, the first ready one that runs it). Throws, saying why, when none here runs it. */
+function vmHypervisor(rt: LabRuntimeInfo, picked: Provider | undefined, place: LabStartPlace | null, report: LaunchReport | undefined): Provider {
+  const provider = picked ?? place?.hypervisor;
+  if (provider) return provider;
   // x86 VMs (Windows AD labs) boot on an Apple Silicon Mac only under QEMU's emulation; say
   // so up front instead of failing deep in Vagrant.
-  if (!remote && foreign && provider === null) {
-    throw new Error(translate("labs.actions.foreignCpu", { archs: rt.architectures.join(", "), arch: report.arch ?? "" }));
+  if (report?.arch && !runsNatively(rt, report.arch)) {
+    throw new Error(translate("labs.actions.foreignCpu", { archs: rt.architectures.join(", "), arch: report.arch }));
   }
-  if (vm && !remote && provider === null) {
-    throw new Error(translate("labs.actions.noHypervisor", { providers: local.join(", ") || translate("labs.actions.none") }));
-  }
-  return provider;
+  const local = rt.providers.filter(isLocalHypervisor);
+  throw new Error(translate("labs.actions.noHypervisor", { providers: local.join(", ") || translate("labs.actions.none") }));
 }
 
 /** How a container lab runs beyond plain containers: in a VM here (`provider`, the hypervisor),
@@ -141,8 +118,8 @@ function localHypervisor(
  *  `perMachine` with no local `provider`. */
 export type LocalVmPick = { provider?: Provider; perMachine?: boolean };
 
-/** Where a (non-cloud) lab starts: on the server `host`; here in Docker or on a local hypervisor;
- *  in a VM here on `vmProvider`; or (`perMachineVm`, a container lab with VM recipes) as one VM
+/** Where a (non-cloud) lab starts: on the server `host`; here in Docker or, a VM lab, on the
+ *  hypervisor `vmProvider` (none: the backend's, `vmHypervisor`); in a VM here on `vmProvider`; or (`perMachineVm`, a container lab with VM recipes) as one VM
  *  per machine on `vmProvider`. `host` omitted (undefined): nothing was picked, and the backend
  *  says where (`defaultPlace`). `ports` = the host ports of a container lab here; `report` = the
  *  machine report. */
@@ -157,11 +134,29 @@ export type LocalWhere = {
 };
 
 /** Where a lab with no place picked starts, by the backend's one rule (`labDefaultPlace`: where
- *  it last ran, else a hypervisor ready here for a VM lab, else the default server the lab's spec
- *  runs on), read from its spec at the catalogue's commit; without that source known, here. */
+ *  it last ran, else a hypervisor ready here for a VM lab, the Settings choice first, else the
+ *  default server the lab's spec runs on), read from its spec at the catalogue's commit. */
+export const askDefaultPlace = (id: string, runtime: Runtime, repository: string, commit: string) =>
+  labDefaultPlace(id, runtime, repository, commit, getVmProvider());
+
+/** [`askDefaultPlace`] for a lab; without its source known, here (and no hypervisor). */
 async function defaultPlace(id: string, rt: LabRuntimeInfo): Promise<LabStartPlace> {
-  if (!rt.repository || !rt.commit) return { host: null, provider: null, perMachineVm: false };
-  return labDefaultPlace(id, rt.runtime, rt.repository, rt.commit);
+  if (!rt.repository || !rt.commit) return { host: null, provider: null, perMachineVm: false, hypervisor: null };
+  return askDefaultPlace(id, rt.runtime, rt.repository, rt.commit);
+}
+
+/** Where a lab starts, as picked (`where`) or, with nothing picked (Home's "start again", a Start
+ *  with no choice), the backend's place in the form it says. A VM lab here asks it for its
+ *  hypervisor too (`place`), unless one was picked. */
+async function resolveWhere(lab: Lab, rt: LabRuntimeInfo, where: LocalWhere) {
+  let { host, vmProvider, perMachineVm = false } = where;
+  const isVmLab = rt.runtime === "VM";
+  const place = host === undefined || (isVmLab && host === null && !vmProvider) ? await defaultPlace(lab.id, rt) : null;
+  if (place && host === undefined) {
+    host = place.host;
+    if (place.provider) [vmProvider, perMachineVm] = [place.provider, !isVmLab && place.perMachineVm];
+  }
+  return { host, vmProvider, perMachineVm, place, isVmLab };
 }
 
 /** A VM or container lab, started where `where` says. */
@@ -169,23 +164,16 @@ export const localLaunch =
   (lab: Lab, where: LocalWhere): OperationBody =>
   async (log, rt) => {
     const { report, ports, engine } = where;
-    let { host, vmProvider, perMachineVm = false } = where;
-    // Nothing picked (Home's "start again", a Start with no choice): the backend's place, in the
-    // form it says. Its hypervisor for a VM lab is a default the Settings choice still overrides.
-    if (host === undefined) {
-      const place = await defaultPlace(lab.id, rt);
-      host = place.host;
-      if (rt.runtime !== "VM" && place.provider) [vmProvider, perMachineVm] = [place.provider, place.perMachineVm];
-    }
+    const { host, vmProvider, perMachineVm, place, isVmLab } = await resolveWhere(lab, rt, where);
     // Run as one VM per machine, the lab is a VM lab here: its machines are VMs on `vmProvider`.
     const asVms = perMachineVm && !!vmProvider && host == null;
     // On a cloud account, one VM per machine is cloud-vm: no local hypervisor, the host carries it.
     const cloudPerMachine = perMachineVm && host != null;
-    const vm = rt.runtime === "VM" || asVms;
-    // Docker labs go to a server host only when one is picked explicitly.
+    const vm = isVmLab || asVms;
     const remote = host != null;
     const inLocalVm = !vm && !remote && !!vmProvider;
-    const provider = localHypervisor(rt, remote, vmProvider, report, asVms);
+    // Here: a VM lab on its hypervisor, a container lab's VM form on the one picked for it.
+    const provider = remote ? null : isVmLab ? vmHypervisor(rt, vmProvider, place, report) : (vmProvider ?? null);
     await launchOrOfferOffline(lab.title, (offline) =>
       labLaunch(
         {

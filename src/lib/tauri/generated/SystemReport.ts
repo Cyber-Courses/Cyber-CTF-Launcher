@@ -3,6 +3,7 @@ import type { CloudClis } from "./CloudClis";
 import type { CommandError } from "./CommandError";
 import type { EngineStatus } from "./EngineStatus";
 import type { PkgManager } from "./PkgManager";
+import type { Provider } from "./Provider";
 import type { ProviderStatus } from "./ProviderStatus";
 import type { Tool } from "./Tool";
 import type { WslReport } from "./WslReport";
@@ -50,6 +51,10 @@ ovftool: Tool, cloudClis: CloudClis,
  * with a local hypervisor, but can on a remote x86 host.
  */
 vmProviders: Array<ProviderStatus>, 
+/**
+ * The local hypervisors of `vm_providers` ready for a lab's VMs ([`providers::ready`]).
+ */
+readyHypervisors: Array<Provider>, 
 /**
  * Windows: whether WSL 2 is on, waits for a restart, or is missing (`None` elsewhere).
  */

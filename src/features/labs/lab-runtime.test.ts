@@ -1,26 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  emulatorReady,
-  formProviders,
-  hostSupports,
-  localProviders,
-  pickLocalHypervisor,
-  readyHypervisors,
-  runPlaces,
-  runsNatively,
-} from "@/features/labs/lab-runtime";
+import { emulatorReady, formProviders, hostSupports, localProviders, preferredFirst, runPlaces, runsNatively } from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import type { LabRunOptions, LabRunPath, Provider, ServerHost, SystemReport } from "@/lib/tauri";
+import type { LabRunOptions, LabRunPath, Provider, ServerHost } from "@/lib/tauri";
 
 const rt = (p: Partial<LabRuntimeInfo>): LabRuntimeInfo => ({ runtime: "VM", architectures: [], providers: [], ...p });
-const vmProvider = (provider: string, p: { remote?: boolean; available?: boolean; hypervisor?: boolean | null } = {}) => ({
-  provider: provider as Provider,
-  remote: false,
-  available: true,
-  hypervisor: true,
-  ...p,
-});
 const host = (provider: string) => ({ id: provider, name: provider, provider }) as unknown as ServerHost;
 const path = (target: string, provider: Provider): LabRunPath => ({ provider, target, variant: provider, badge: "none", evidence: "" });
 /** The backend's run options with only `paths` set. */
@@ -46,38 +30,20 @@ describe("runsNatively", () => {
   });
 });
 
-describe("readyHypervisors", () => {
-  const report = {
-    vagrant: { installed: true },
-    vmProviders: [
-      vmProvider("virtualbox"),
-      vmProvider("qemu"),
-      vmProvider("parallels", { available: false }),
-      vmProvider("vmware_desktop", { hypervisor: false }),
-      vmProvider("vmware_esxi", { remote: true }),
-    ],
-  };
-  it("keeps the local, available hypervisors", () => {
-    expect(readyHypervisors(report, null)).toEqual(["virtualbox", "qemu"]);
-  });
+describe("preferredFirst", () => {
+  const ready = ["virtualbox", "qemu"] as Provider[];
   it("puts the preferred one first when it is ready", () => {
-    expect(readyHypervisors(report, "qemu")).toEqual(["qemu", "virtualbox"]);
-    expect(readyHypervisors(report, "parallels")).toEqual(["virtualbox", "qemu"]);
-  });
-  it("is empty without Vagrant", () => {
-    expect(readyHypervisors({ ...report, vagrant: { installed: false } }, null)).toEqual([]);
+    expect(preferredFirst(ready, "qemu")).toEqual(["qemu", "virtualbox"]);
+    expect(preferredFirst(ready, "parallels")).toEqual(["virtualbox", "qemu"]);
+    expect(preferredFirst(ready, null)).toEqual(["virtualbox", "qemu"]);
   });
 });
 
 describe("emulatorReady", () => {
-  it("needs Vagrant and a local QEMU", () => {
-    const report = (installed: boolean, providers: ReturnType<typeof vmProvider>[]) =>
-      ({ vagrant: { installed }, vmProviders: providers }) as unknown as SystemReport;
-    expect(emulatorReady(report(true, [vmProvider("qemu")]))).toBe(true);
-    expect(emulatorReady(report(false, [vmProvider("qemu")]))).toBe(false);
-    expect(emulatorReady(report(true, [vmProvider("qemu", { remote: true })]))).toBe(false);
-    expect(emulatorReady(report(true, [vmProvider("virtualbox")]))).toBe(false);
-    expect(emulatorReady(null)).toBe(false);
+  it("is QEMU among the hypervisors ready here", () => {
+    expect(emulatorReady(["virtualbox", "qemu"])).toBe(true);
+    expect(emulatorReady(["virtualbox"])).toBe(false);
+    expect(emulatorReady([])).toBe(false);
   });
 });
 
@@ -88,19 +54,6 @@ describe("localProviders", () => {
   });
   it("is the emulator alone for a VM lab built for another CPU", () => {
     expect(localProviders(lab, "arm64")).toEqual(["qemu"]);
-  });
-});
-
-describe("pickLocalHypervisor", () => {
-  const local = ["parallels", "virtualbox"] as Provider[];
-  it("takes a ready hypervisor the lab can use, never just the first listed", () => {
-    expect(pickLocalHypervisor(local, ["virtualbox"] as Provider[], null)).toBe("virtualbox");
-    expect(pickLocalHypervisor(local, ["qemu"] as Provider[], null)).toBeNull();
-  });
-  it("falls back to the preference, then the first one, before the report is in", () => {
-    expect(pickLocalHypervisor(local, undefined, "virtualbox")).toBe("virtualbox");
-    expect(pickLocalHypervisor(local, undefined, "qemu")).toBe("parallels");
-    expect(pickLocalHypervisor([], undefined, null)).toBeNull();
   });
 });
 

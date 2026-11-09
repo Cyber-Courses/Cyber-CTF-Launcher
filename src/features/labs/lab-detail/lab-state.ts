@@ -1,6 +1,6 @@
 import type { RunTarget } from "@/features/labs/run-on";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { EMULATORS, isCloudLab, isContainerLab, isLocalHypervisor, runsNatively } from "@/features/labs/lab-runtime";
+import { emulatorReady, vmFormTarget, isCloudLab, isContainerLab, isLocalHypervisor, runsNatively } from "@/features/labs/lab-runtime";
 import { providerName } from "@/features/machine/hypervisors";
 import { ENGINES, engineName as dockerEngineName } from "@/features/machine/setup-steps/engines";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
@@ -110,7 +110,7 @@ export function deriveLabState(i: LabStateInput) {
   // Unknown host (report not in yet) or a lab for any CPU: native, never a wrong "emulated".
   const native = !i.hostArch || !rt || runsNatively(rt, i.hostArch);
   // A VM lab built for another CPU runs here only through an emulator (QEMU), when one is ready.
-  const emulates = i.readyVms.some((p) => EMULATORS.includes(p));
+  const emulates = emulatorReady(i.readyVms);
   const running = status?.running ?? false;
   // A deploy this session started sets `busy`; one still running after a window reload (which
   // loses the in-memory deploy state) is recovered from the backend, so the page shows "Starting"
@@ -197,9 +197,9 @@ export function bindHost(url: string | null | undefined): string {
 
 /** Where Reset starts the lab again: where it ran, as its status says. On the saved server or
  *  cloud account it ran on (found by id), in the form it ran in there; in a VM here, on the
- *  hypervisor the status names (else the pick's, else the default), as one VM per machine or one
- *  helper VM for a container lab, as its own VMs for a VM lab; else here. A host no longer saved
- *  can't be started on again: the current pick stands. */
+ *  hypervisor the status names (else, for a container lab, the pick's, else the default), as one
+ *  VM per machine or one helper VM for a container lab, as its own VMs for a VM lab; else here. A
+ *  host no longer saved can't be started on again: the current pick stands. */
 export function restartTarget(
   status: LabStatus | undefined,
   hosts: ServerHost[],
@@ -212,11 +212,13 @@ export function restartTarget(
     if (!host) return runOn;
     return status.perMachine ? { kind: "host", id: host.id, perMachine: true } : { kind: "host", id: host.id };
   }
-  if (status?.place !== "local_vm" || runtime === "VM") return { kind: "local" };
+  if (status?.place !== "local_vm") return { kind: "local" };
+  // A VM lab's own VMs: on the hypervisor they ran on, else the backend's for it.
+  if (runtime === "VM") return isLocalHypervisor(status.provider) ? { kind: "local", provider: status.provider } : { kind: "local" };
   const picked = runOn.kind === "local-vm" || runOn.kind === "local-vms" ? runOn.provider : localVm;
   const provider = isLocalHypervisor(status.provider) ? status.provider : picked;
   if (!provider) return { kind: "local" };
-  return { kind: status.perMachine ? "local-vms" : "local-vm", provider };
+  return vmFormTarget(status.perMachine ? "local-vms" : "local-vm", provider);
 }
 
 /** The header's actions, by what the lab is doing. */

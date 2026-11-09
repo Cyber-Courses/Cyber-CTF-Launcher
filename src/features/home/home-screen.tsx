@@ -89,7 +89,7 @@ function useRowContext(
     loggedIn,
     onLogin: !loggedIn && onLogin ? login : undefined,
     hostArch: report?.arch ?? "",
-    emulates: emulatorReady(report),
+    emulates: emulatorReady(report?.readyHypervisors ?? []),
     onOpen,
     onStop,
     onResume,

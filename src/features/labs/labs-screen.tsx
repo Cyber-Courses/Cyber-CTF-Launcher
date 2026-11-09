@@ -5,7 +5,7 @@ import { RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LIST_SCREEN } from "@/components/ui/screen-width";
-import { EMULATORS, readyHypervisors } from "@/features/labs/lab-runtime";
+import { emulatorReady, preferredFirst } from "@/features/labs/lab-runtime";
 import { filterLabs, NO_FILTERS, type LabFilters } from "@/features/labs/lab-filters";
 import { LabsFilterBar } from "@/features/labs/labs-filter-bar";
 import { LabListSkeleton, LabsCatalogue, LabsHeader, SignInBanner, UnlistedRunning, type RowContext } from "@/features/labs/labs-list";
@@ -90,7 +90,7 @@ function useLabsScreen({ loggedIn, report, openLab, onDetailChange }: ViewProps)
   const [filters, setFilters] = useState<LabFilters>(NO_FILTERS);
   const servers = useSavedHosts().hosts;
   // Local hypervisors ready for a lab VM (Vagrant + hypervisor), the Settings default first.
-  const readyVms = useMemo(() => (report ? readyHypervisors(report, getVmProvider()) : []), [report]);
+  const readyVms = useMemo(() => (report ? preferredFirst(report.readyHypervisors, getVmProvider()) : []), [report]);
   const shown = useFilteredLabs(labs, filters, statuses, completed);
   const detail = labs && detailSlug ? labs.find((l) => l.slug === detailSlug) : undefined;
   useDetailTitle(detail?.title ?? null, onDetailChange);
@@ -144,7 +144,7 @@ function LabsView(props: ViewProps) {
     // Signed out, the banner above the list signs in: no Sign in button on every row.
     onLogin: loggedIn && onLogin ? login : undefined,
     hostArch,
-    emulates: v.readyVms.some((p) => EMULATORS.includes(p)),
+    emulates: emulatorReady(v.readyVms),
     onOpen,
     onStop,
     onResume,

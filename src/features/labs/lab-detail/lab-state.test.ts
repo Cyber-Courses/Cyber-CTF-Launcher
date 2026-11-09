@@ -231,7 +231,7 @@ describe("restartTarget", () => {
     expect(restartTarget(inVm, hosts, "DOCKER", here, null)).toEqual({ kind: "local" });
   });
   it("starts a VM lab here as its own VMs, and a container lab on its engine", () => {
-    expect(restartTarget(status({ place: "local_vm", provider: "virtualbox" }), hosts, "VM", here, null)).toEqual({ kind: "local" });
+    expect(restartTarget(status({ place: "local_vm", provider: "virtualbox" }), hosts, "VM", here, null)).toEqual({ kind: "local", provider: "virtualbox" });
     expect(restartTarget(status({ place: "container", provider: "docker" }), hosts, "DOCKER", { kind: "host", id: "h1" }, "virtualbox")).toEqual({
       kind: "local",
     });

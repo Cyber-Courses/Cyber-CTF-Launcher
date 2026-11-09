@@ -5,7 +5,8 @@
 //!    form and on the hypervisor it was started in), while that place is still saved and the
 //!    lab's spec still runs there.
 //! 2. Else, for a VM lab, this machine when a hypervisor ready here runs it (an emulator only,
-//!    for VMs built for another CPU); else the default server, when the spec runs there.
+//!    for VMs built for another CPU), the player's preferred one (Settings) first; else the
+//!    default server, when the spec runs there.
 //! 3. Else this machine (a container lab on Docker).
 //!
 //! Never a cloud account: it costs money, so it is only ever picked by the player.
@@ -26,13 +27,24 @@ pub struct StartPlace {
     pub host: Option<String>,
     pub provider: Option<Provider>,
     pub per_machine_vm: bool,
+    /// A VM lab's hypervisor when it starts on this machine, wherever it starts by default (the
+    /// player can still pick this machine): the one it last ran on here, else the preferred one,
+    /// else the first ready one that runs it. None for a container lab, or when no hypervisor
+    /// ready here runs it.
+    pub hypervisor: Option<Provider>,
 }
 
 /// Where lab `lab_id`, declared `runtime`, starts with no place picked (see the module's rule),
-/// from its spec at `repository`@`commit`.
-pub(crate) async fn default_place(dirs: &AppDirs, lab_id: &str, runtime: Runtime, repository: &str, commit: &str) -> Result<StartPlace> {
+/// from its spec at `repository`@`commit`; `preferred` is the player's hypervisor of choice.
+pub(crate) async fn default_place(
+    dirs: &AppDirs,
+    lab_id: &str,
+    runtime: Runtime,
+    (repository, commit): (&str, &str),
+    preferred: Option<Provider>,
+) -> Result<StartPlace> {
     // Boxed: the lab's spec is held across the hypervisors' probe, which makes the future large.
-    Box::pin(default_place_with(dirs, (lab_id, runtime), (repository, commit), super::providers::ready_here)).await
+    Box::pin(default_place_with(dirs, (lab_id, runtime), (repository, commit), preferred, super::providers::ready_here)).await
 }
 
 /// [`default_place`], the hypervisors ready here read by `ready` (only when the rule needs them).
@@ -40,6 +52,7 @@ async fn default_place_with<F>(
     dirs: &AppDirs,
     (lab_id, runtime): (&str, Runtime),
     (repository, commit): (&str, &str),
+    preferred: Option<Provider>,
     ready: impl FnOnce() -> F,
 ) -> Result<StartPlace>
 where
@@ -56,17 +69,25 @@ where
     }
     let lab = lab::lab_at(dirs, lab_id, repository, commit).await?;
     let options = lab::run_options(&lab, runtime);
-    if let Some(place) = last.and_then(|run| last_place(dirs, run, runtime, &options)) {
-        return Ok(place);
-    }
+    let last = last.and_then(|run| last_place(dirs, run, runtime, &options));
     if runtime != Runtime::Vm {
-        return Ok(StartPlace::default());
+        return Ok(last.unwrap_or_default());
     }
-    // VMs built for another CPU run here only emulated.
-    let foreign = !super::launch::emulated_arches(&lab.spec(), std::env::consts::ARCH).is_empty();
-    let runs_here = |p: &Provider| offers(&options.vms, *p) && (!foreign || *p == Provider::Qemu);
-    if let Some(provider) = ready().await.into_iter().find(runs_here) {
-        return Ok(StartPlace { provider: Some(provider), ..StartPlace::default() });
+    // Where it last ran here, else a ready hypervisor here that runs it: VMs built for another
+    // CPU only emulated, the preferred one first.
+    let hypervisor = if let Some(StartPlace { host: None, provider: Some(p), .. }) = last.as_ref() {
+        Some(*p)
+    } else {
+        let foreign = !super::launch::emulated_arches(&lab.spec(), std::env::consts::ARCH).is_empty();
+        let runs_here = |p: &Provider| offers(&options.vms, *p) && (!foreign || p.is_emulator());
+        let ready: Vec<Provider> = ready().await.into_iter().filter(runs_here).collect();
+        preferred.filter(|p| ready.contains(p)).or_else(|| ready.first().copied())
+    };
+    if let Some(last) = last {
+        return Ok(StartPlace { hypervisor, ..last });
+    }
+    if let Some(provider) = hypervisor {
+        return Ok(StartPlace { provider: Some(provider), hypervisor, ..StartPlace::default() });
     }
     Ok(match server::default_server(dirs)? {
         Some((id, kind)) if offers(&options.servers, kind) => StartPlace { host: Some(id), ..StartPlace::default() },

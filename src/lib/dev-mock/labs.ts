@@ -235,7 +235,12 @@ export const labCommands = {
       ? { min: { cpus: 4, memoryMb: 2560, diskGb: 25 }, max: { cpus: 6, memoryMb: 12288, diskGb: 120 } }
       : { min: { cpus: 2, memoryMb: 1024, diskGb: 20 }, max: { cpus: 2, memoryMb: 1024, diskGb: 20 } },
   // The sample's default server is Proxmox, which runs the VM labs; the others start here.
-  lab_default_place: (args) => ({ host: args?.runtime === "VM" ? "pve" : null, provider: null, perMachineVm: false }),
+  lab_default_place: (args) => ({
+    host: args?.runtime === "VM" ? "pve" : null,
+    provider: null,
+    perMachineVm: false,
+    hypervisor: args?.runtime === "VM" ? "virtualbox" : null,
+  }),
   lab_run_options: (args) => runOptions(args?.runtime),
   running_labs: () => ["lab-invoice"],
   deploying_labs: () => ["lab-goad"],
