@@ -9,7 +9,9 @@ use serde::Deserialize;
 use super::scripts::fetch_and_open;
 #[cfg(target_os = "linux")]
 use super::scripts::{AZURECLI_SCRIPT, GCLOUD_SCRIPT, TERRAFORM_SCRIPT, VIRTUALBOX_SCRIPT, awscli_script, docker_script};
-use super::steps::{Step, command_line, run_step, run_steps, step};
+#[cfg(any(target_os = "macos", windows))]
+use super::steps::step;
+use super::steps::{Step, command_line, run_step, run_steps};
 use super::uninstall;
 use crate::error::{Error, Result};
 use crate::platform::policy::{self, Key};
