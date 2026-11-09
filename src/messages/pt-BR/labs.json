@@ -236,7 +236,8 @@
     "stop": "Parar attack box",
     "start": "Iniciar attack box",
     "attaching": "Iniciando a attack box…",
-    "removing": "Removendo a attack box…"
+    "removing": "Removendo a attack box…",
+    "autoAttachFailed": "Não foi possível adicionar a attack box com o lab"
   },
   "actions": {
     "labRunning": "✓ Lab rodando",

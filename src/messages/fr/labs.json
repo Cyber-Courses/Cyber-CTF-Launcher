@@ -236,7 +236,8 @@
     "stop": "Arrêter l’attack box",
     "start": "Démarrer l’attack box",
     "attaching": "Démarrage de l’attack box…",
-    "removing": "Suppression de l’attack box…"
+    "removing": "Suppression de l’attack box…",
+    "autoAttachFailed": "L’attack box n’a pas pu être ajoutée avec le lab"
   },
   "actions": {
     "labRunning": "✓ Le lab est en cours",

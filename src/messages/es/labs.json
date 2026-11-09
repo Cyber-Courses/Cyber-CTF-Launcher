@@ -236,7 +236,8 @@
     "stop": "Detener máquina de ataque",
     "start": "Iniciar máquina de ataque",
     "attaching": "Iniciando la máquina de ataque…",
-    "removing": "Eliminando la máquina de ataque…"
+    "removing": "Eliminando la máquina de ataque…",
+    "autoAttachFailed": "No se pudo añadir la attack box con el lab"
   },
   "actions": {
     "labRunning": "✓ El lab está en ejecución",

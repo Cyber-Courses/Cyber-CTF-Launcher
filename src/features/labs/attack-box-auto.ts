@@ -3,7 +3,8 @@
 import { useEffect, useRef } from "react";
 import { attackBoxStatus, labStatus, type ActiveOperation, type Runtime } from "@/lib/tauri";
 import { getAutoAttackBox } from "@/lib/settings";
-import { warn } from "@/lib/failure";
+import { tell } from "@/lib/failure";
+import { translate } from "@/lib/i18n";
 import { getLabState } from "@/features/labs/lab-store";
 import { attachAttackBox } from "@/features/labs/attack-box-attach";
 
@@ -19,7 +20,8 @@ function runtimeOf(id: string): Runtime {
  * account; a container among a container lab's, a Kali VM among a VM lab's). The lab page alone
  * did this before, so a lab started from Overview, the Labs list or the website ran without one
  * until its page was opened. Only where the box's status says the launcher reaches a run to put
- * it in (`reachable`: not on an ESXi host, nor beside a cloud-services lab).
+ * it in (`reachable`: not on an ESXi host, nor beside a cloud-services lab). A failed attach is
+ * told, as the lab page's own Start attack box tells it in its log.
  */
 export function useAttackBoxAutoStart(ops: Map<string, ActiveOperation>, enabled: boolean) {
   const previous = useRef<Map<string, ActiveOperation["op"]>>(new Map());
@@ -36,7 +38,7 @@ export function useAttackBoxAutoStart(ops: Map<string, ActiveOperation>, enabled
           const box = await attackBoxStatus(id, runtime, null);
           if (box.reachable && !box.running) await attachAttackBox(id, runtime, null);
         })
-        .catch(warn("attaching the attack box with the lab"));
+        .catch(tell(translate("labs.attackBox.autoAttachFailed")));
     }
   }, [ops, enabled]);
 }

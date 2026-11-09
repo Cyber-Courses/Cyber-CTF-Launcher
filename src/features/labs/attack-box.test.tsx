@@ -3,6 +3,7 @@ import { act, render, renderHook, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AttackBoxPanel } from "@/features/labs/attack-box-panel";
+import { Toaster } from "@/components/ui/toaster";
 import { useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
 import { useAttackBox, type AttackBox } from "@/features/labs/use-attack-box";
 import { attachAttackBox } from "@/features/labs/attack-box-attach";
@@ -294,6 +295,23 @@ describe("useAttackBoxAutoStart", () => {
       hook.unmount();
     }
     setCatalogue("auto-rt", []);
+  });
+
+  it("tells the player when the box couldn't be added with the lab", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    render(<Toaster />);
+    const calls = installTauri({
+      lab_status: () => ({ running: true, place: "container" }),
+      attack_box_status: () => box(),
+      attack_box_attach: () => rejectWith("image pull failed"),
+    });
+    const { hook } = watch(calls);
+    hook.rerender({ ops: new Map() });
+    await flush(50);
+    expect(document.body.textContent).toContain("The attack box couldn't be added with the lab");
+    expect(document.body.textContent).toContain("image pull failed");
+    vi.restoreAllMocks();
   });
 
   it("does nothing when disabled or when Settings turn auto-start off", async () => {
