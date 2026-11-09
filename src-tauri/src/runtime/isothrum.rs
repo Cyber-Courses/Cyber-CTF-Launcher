@@ -150,6 +150,28 @@ impl LabRun {
         LabRun::with(host_config(home, None), dir, id, Kind::DockerVm)
     }
 
+    /// Lab `id`, installed in `dir` and declared `runtime`, as it runs on this machine, in the form
+    /// it was started in (`paths::local_runtime`): a container lab in one local VM, on Docker, or
+    /// as VMs (a container lab started as one VM per machine included); none for a cloud-services
+    /// lab, which runs only in a cloud account.
+    pub(crate) fn local(home: &Path, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<LabRun>> {
+        Ok(Some(match paths::local_runtime(dir, runtime) {
+            Runtime::Docker if paths::local_vm(dir).is_some() => LabRun::docker_in_vm(home, dir, id)?,
+            Runtime::Docker => LabRun::docker(home, dir, id)?,
+            Runtime::Vm => LabRun::vm(home, dir, id)?,
+            Runtime::Cloud => return Ok(None),
+        }))
+    }
+
+    /// The Isoloom target the run's files are generated for.
+    pub(crate) fn target(&self) -> lab::Target {
+        match self.kind {
+            Kind::Docker => lab::Target::Docker,
+            Kind::DockerVm => lab::Target::DockerVm,
+            Kind::Vm => lab::Target::Vagrant,
+        }
+    }
+
     /// VM lab `id`, installed in `dir`, on the ESXi server `place`, through the runner whose home
     /// is `home`.
     pub(crate) fn on_esxi(home: &Path, dir: &Path, id: &str, runtime: Runtime, place: EsxiPlace) -> Result<LabRun> {

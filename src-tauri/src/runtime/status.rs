@@ -13,16 +13,15 @@ use crate::error::Result;
 pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
     // On this machine, in the form it was started in (a container lab run as one VM per machine
     // reads as a VM lab); on a host, as the catalogue says.
-    let (status, here) = match (local_runtime(dir, runtime), server::lab_connection(dirs, dir)?) {
+    let (status, here) = match server::lab_connection(dirs, dir)? {
         // On a server host or cloud account: the runner's view.
-        (_, Some(c)) => (server_status(dirs, dir, id, runtime, c).await?, false),
-        // Cloud-services labs run only on an account; nothing of them on this machine.
-        (Runtime::Cloud, None) => (LabStatus::default(), false),
+        Some(c) => (server_status(dirs, dir, id, runtime, c).await?, false),
         // On this machine, through the runner: a container lab on Docker or in one local VM, or a
-        // VM lab.
-        (Runtime::Docker, None) if local_vm(dir).is_some() => (isothrum::LabRun::docker_in_vm(&runner_home(dirs)?, dir, id)?.status().await?, true),
-        (Runtime::Docker, None) => (isothrum::LabRun::docker(&runner_home(dirs)?, dir, id)?.status().await?, true),
-        (Runtime::Vm, None) => (isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?.status().await?, true),
+        // VM lab. Cloud-services labs run only on an account; nothing of them on this machine.
+        None => match isothrum::LabRun::local(&runner_home(dirs)?, dir, id, runtime)? {
+            Some(run) => (run.status().await?, true),
+            None => (LabStatus::default(), false),
+        },
     };
     // The attack box the launcher added is no machine of the lab's own (`attack_machine`).
     let status = attack_machine::set_apart(status, dir)?;

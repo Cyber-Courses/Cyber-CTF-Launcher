@@ -9,7 +9,7 @@ use super::inflight::{Action, DeployGuard, lock_lab};
 use super::paths::{
     lab_dir, local_runtime, local_vm, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm, runner_home, vagrant_dirs,
 };
-use super::{LabRef, Park, Runtime, docker, isothrum, server, vm};
+use super::{LabRef, Park, Runtime, docker, isothrum, lab, server, vm};
 use crate::error::{Error, Result};
 
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
@@ -23,28 +23,33 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
         return Err(Error::Invalid("Pausing a lab on a server host isn't available yet. Stop it instead.".into()));
     }
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
-    match local_runtime(dir, runtime) {
-        // A container lab in one local VM is paused (its state saved), never shut down.
-        Runtime::Docker if local_vm(dir).is_some() => {
-            refuse_vm_shutdown(mode)?;
-            isothrum::LabRun::docker_in_vm(&runner_home(dirs)?, dir, id)?.park(mode, &mut log).await?;
-        }
-        Runtime::Docker => isothrum::LabRun::docker(&runner_home(dirs)?, dir, id)?.park(mode, &mut log).await?,
-        Runtime::Vm => isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?.park(mode, &mut log).await?,
-        Runtime::Cloud => unreachable!("refused above"),
+    let run = local_run(dirs, dir, id, runtime)?;
+    // A container lab in one local VM is paused (its state saved), never shut down.
+    if run.target() == lab::Target::DockerVm {
+        refuse_vm_shutdown(mode)?;
     }
+    run.park(mode, &mut log).await?;
     mark_parked(dir, Some(mode))?;
     log(parked_message(mode).into());
     Ok(())
 }
 
+/// Lab `id`'s run on this machine ([`isothrum::LabRun::local`]), for a lab parked or resumed
+/// here: a cloud-services lab, refused before, has none.
+fn local_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<isothrum::LabRun> {
+    isothrum::LabRun::local(&runner_home(dirs)?, dir, id, runtime)?.ok_or_else(|| Error::Invalid(CLOUD_PARK.into()))
+}
+
 /// Cloud services are created or destroyed, never kept switched off.
 fn refuse_cloud_park(runtime: Runtime) -> Result<()> {
     if runtime == Runtime::Cloud {
-        return Err(Error::Invalid("A cloud lab can't be paused: stop it to end what it costs, and start it again later.".into()));
+        return Err(Error::Invalid(CLOUD_PARK.into()));
     }
     Ok(())
 }
+
+/// Why a cloud-services lab isn't parked.
+const CLOUD_PARK: &str = "A cloud lab can't be paused: stop it to end what it costs, and start it again later.";
 
 /// Inside the VM the containers don't restart on their own after a power-off, so a container
 /// lab in a VM is paused (its state saved), never shut down.
@@ -81,12 +86,7 @@ pub(super) async fn resume_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime:
     log("Resuming the lab…".into());
     // The runner resumes a parked run as it was; when nothing is left of it, it drops the parked
     // mark and reports `NothingToResume`, so the page offers a fresh start.
-    match local_runtime(dir, runtime) {
-        Runtime::Docker if local_vm(dir).is_some() => isothrum::LabRun::docker_in_vm(&runner_home(dirs)?, dir, id)?.resume(&mut *log).await?,
-        Runtime::Docker => isothrum::LabRun::docker(&runner_home(dirs)?, dir, id)?.resume(&mut *log).await?,
-        Runtime::Vm => isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?.resume(&mut *log).await?,
-        Runtime::Cloud => unreachable!("refused above"),
-    }
+    local_run(dirs, dir, id, runtime)?.resume(&mut *log).await?;
     mark_parked(dir, None)?;
     log("Lab resumed.".into());
     Ok(())

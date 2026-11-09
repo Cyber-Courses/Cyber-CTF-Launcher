@@ -12,7 +12,7 @@ use super::status::{AttackStatus, display, status_of};
 use super::{Cpu, Kind};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
-use crate::runtime::paths::{local_runtime, local_vm, runner_home};
+use crate::runtime::paths::{local_runtime, runner_home};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Runtime, isothrum, lab, server};
 
@@ -129,12 +129,8 @@ pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> 
             (Host::Server { run, host, conn }, lab::terraform(dir, form, "proxmox").1)
         }
         None => {
-            let (run, target) = match form {
-                Runtime::Docker if local_vm(dir).is_some() => (isothrum::LabRun::docker_in_vm(&home, dir, id)?, lab::vagrant_target(Runtime::Docker)),
-                Runtime::Docker => (isothrum::LabRun::docker(&home, dir, id)?, Target::Docker),
-                Runtime::Vm => (isothrum::LabRun::vm(&home, dir, id)?, Target::Vagrant),
-                Runtime::Cloud => return Ok(None),
-            };
+            let Some(run) = isothrum::LabRun::local(&home, dir, id, runtime)? else { return Ok(None) };
+            let target = run.target();
             (Host::Local(run), target)
         }
     };
