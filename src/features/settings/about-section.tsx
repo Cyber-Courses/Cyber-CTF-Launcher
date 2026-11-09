@@ -59,11 +59,15 @@ function DiagnosticsRow({ version, report, agent }: { version: string | null; re
 
 export function AboutSection({
   version,
+  versionError,
   report,
   agent,
   updates,
 }: {
+  /** The app's version; null until it is read. */
   version: string | null;
+  /** Why reading the version failed, if it did. */
+  versionError?: unknown;
   report: SystemReport | null;
   agent: AgentInfo | null;
   /** Where this copy's updates come from (null until known). */
@@ -81,7 +85,7 @@ export function AboutSection({
 
   return (
     <Section title={t("settings.about.title")} description={t("settings.about.description")}>
-      <KeyValue k={t("settings.about.version")}>{version ? `v${version}` : "…"}</KeyValue>
+      <KeyValue k={t("settings.about.version")}>{version ? `v${version}` : versionError === undefined ? "…" : t("settings.about.versionUnknown")}</KeyValue>
       {report && (
         <KeyValue k={t("settings.about.system")}>
           {report.os} {report.arch}

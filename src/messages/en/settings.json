@@ -39,7 +39,9 @@
     "registering": "Registering…",
     "notSignedIn": "Not signed in",
     "signInHint": "Sign in with your Cyber account to sync labs and run them from any device.",
-    "signIn": "Sign in"
+    "signIn": "Sign in",
+    "offByPolicy": "Your organization turned off launching labs from the website on this computer.",
+    "agentFailed": "Couldn’t read how the website sees this machine: {error}"
   },
   "labs": {
     "title": "Labs",
@@ -101,7 +103,9 @@
     "allowHyperv": "Allow my account",
     "allowingHyperv": "Allowing…",
     "logAllowingHyperv": "Adding your account to Hyper-V Administrators (Windows asks for permission)…",
-    "logHypervAllowed": "✓ Done. Sign out of Windows and back in, then re-check."
+    "logHypervAllowed": "✓ Done. Sign out of Windows and back in, then re-check.",
+    "checkFailed": "Couldn’t check this machine’s hypervisors: {error}",
+    "checkAgain": "Check again"
   },
   "cleanup": {
     "title": "Cleanup",
@@ -162,7 +166,8 @@
       "homebrew": "Installed with Homebrew, which updates it: run brew upgrade.",
       "linuxPackage": "Installed as a system package: your package manager (apt) updates it.",
       "microsoftStore": "Installed from the Microsoft Store, which keeps it up to date."
-    }
+    },
+    "versionUnknown": "unknown"
   },
   "sharedFolder": {
     "title": "Shared folder",

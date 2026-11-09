@@ -63,7 +63,12 @@ describe("AboutSection", () => {
   it("shows the version, the system and the install id", () => {
     installTauri();
     render(
-      <AboutSection version="1.4.0" report={readyReport()} agent={{ installId: "c0ffee", name: "mbp", arch: "arm64", capabilities: [] }} updates="inApp" />,
+      <AboutSection
+        version="1.4.0"
+        report={readyReport()}
+        agent={{ installId: "c0ffee", name: "mbp", arch: "arm64", capabilities: [], state: "online" }}
+        updates="inApp"
+      />,
     );
     expect(text()).toContain("v1.4.0");
     expect(text()).toContain("macos arm64");
@@ -154,7 +159,14 @@ describe("AboutSection", () => {
     setAttackImage("kalilinux/kali-rolling");
     setVmProvider("virtualbox");
     const report: SystemReport = { ...readyReport(), dockerEngine: null };
-    render(<AboutSection version="1.4.0" report={report} agent={{ installId: "c0ffee", name: "mbp", arch: "arm64", capabilities: [] }} updates="inApp" />);
+    render(
+      <AboutSection
+        version="1.4.0"
+        report={report}
+        agent={{ installId: "c0ffee", name: "mbp", arch: "arm64", capabilities: [], state: "online" }}
+        updates="inApp"
+      />,
+    );
     await user.click(button(/^\s*copy$/i));
     await flush();
     const copied = writeText.mock.calls[0][0];
@@ -613,7 +625,7 @@ describe("AccountSection", () => {
     render(
       <AccountSection
         auth={{ loggedIn: true, name: "Ada Lovelace", email: "ada@example.com" }}
-        agent={{ installId: "x", name: "ada-pc", arch: "x86_64", capabilities: ["docker", "vagrant"] }}
+        agent={{ installId: "x", name: "ada-pc", arch: "x86_64", capabilities: ["docker", "vagrant"], state: "online" }}
         onAuthChange={vi.fn()}
       />,
     );
@@ -624,19 +636,41 @@ describe("AccountSection", () => {
     expect(text()).toContain("runs docker, vagrant");
   });
 
-  it("says the machine is registering, and names a player without a name", () => {
+  it("names a player without a name, and says it is reading the machine's agent", () => {
     installTauri();
     render(
       <AccountSection
         auth={{ loggedIn: true, name: null, email: null }}
-        agent={{ installId: "x", name: "pc", arch: "arm64", capabilities: [] }}
+        agent={{ installId: "x", name: "pc", arch: "arm64", capabilities: [], state: "online" }}
         onAuthChange={vi.fn()}
       />,
     );
     expect(text()).toContain("Signed in");
     expect(text()).not.toContain("runs");
+    cleanup();
     render(<AccountSection auth={{ loggedIn: true, name: "A", email: null }} agent={null} onAuthChange={vi.fn()} />);
-    expect(text()).toContain("Registering…");
+    expect(text()).toContain("Checking…");
+    expect(text()).not.toContain("Online");
+  });
+
+  // Regression: every signed-in machine read "Online", even with the website agent turned off by
+  // the policy or still registering.
+  it.each([
+    ["online", "Online", null],
+    ["registering", "Registering…", null],
+    ["offByPolicy", "Offline", "Your organization turned off launching labs from the website on this computer."],
+  ] as const)("shows the agent %s as it is", (state, pill, note) => {
+    installTauri();
+    render(
+      <AccountSection
+        auth={{ loggedIn: true, name: "A", email: null }}
+        agent={{ installId: "x", name: "pc", arch: "arm64", capabilities: [], state }}
+        onAuthChange={vi.fn()}
+      />,
+    );
+    expect(text()).toContain(pill);
+    for (const other of ["Online", "Registering…", "Offline"].filter((p) => p !== pill)) expect(text()).not.toContain(other);
+    if (note) expect(text()).toContain(note);
   });
 
   it("signs out", async () => {

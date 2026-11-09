@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { invokeUnit } from "@/lib/tauri/invoke";
-import type { AgentInfo, LaunchConfirmRequest, ManagedSettings, PolicySetting, UpdateChannel } from "@/lib/tauri/generated";
+import type { AgentInfo, AgentState, LaunchConfirmRequest, ManagedSettings, PolicySetting, UpdateChannel } from "@/lib/tauri/generated";
 
-export type { AgentInfo, LaunchConfirmRequest, ManagedSettings, PolicySetting, UpdateChannel };
+export type { AgentInfo, AgentState, LaunchConfirmRequest, ManagedSettings, PolicySetting, UpdateChannel };
 
 /** Opens Settings in its own window (reused/focused if already open). */
 export const openSettings = () => invokeUnit("open_settings");

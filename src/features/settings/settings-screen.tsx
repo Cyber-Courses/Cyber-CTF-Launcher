@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { Eraser, FlaskConical, Info, Palette, UserRound, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { agentInfo, systemCheck, type AgentInfo, type AuthStatus, type SystemReport } from "@/lib/tauri";
+import { agentInfo, systemCheck, type AgentInfo, type AuthStatus } from "@/lib/tauri";
 import { AboutSection } from "@/features/settings/about-section";
 import { AccountSection } from "@/features/settings/account-section";
 import { AppearanceSection } from "@/features/settings/appearance-section";
@@ -17,6 +17,8 @@ import { ManagedSection } from "@/features/settings/managed-section";
 import { useManagedSettings } from "@/lib/use-managed";
 import { Section, useSavedFlash } from "@/features/settings/settings-layout";
 import { warn } from "@/lib/failure";
+import { usePoll } from "@/lib/use-poll";
+import { useStableCallback } from "@/lib/use-stable-callback";
 import { useT, type MessageKey } from "@/lib/i18n";
 
 /* ------------------------------------------------------------------ screen */
@@ -32,39 +34,53 @@ const TABS = [
 ] as const satisfies readonly { id: string; label: MessageKey; icon: LucideIcon }[];
 type SettingsTab = (typeof TABS)[number]["id"];
 
+/** How often this machine's agent is read again while signed in: it registers, goes online, and
+ *  registers again for another account, in the background. */
+const AGENT_POLL_MS = 5_000;
+
+/** A read the sections show: what it answered, or why it failed (`undefined`: no failure). Both
+ *  unset while it runs. */
+type Read<T> = { value: T | null; error?: unknown };
+
+/** One read on mount, and again on demand (`reread`): a failure is kept (and logged) to be said
+ *  where its answer would show, never left looking like a read still running. */
+function useRead<T>(read: () => Promise<T>, what: string) {
+  const [state, setState] = useState<Read<T>>({ value: null });
+  const reread = useStableCallback(() => {
+    read()
+      .then((value) => {
+        setState({ value });
+      })
+      .catch((error: unknown) => {
+        warn(what)(error);
+        setState((s) => ({ value: s.value, error }));
+      });
+  });
+  useEffect(reread, [reread]);
+  return [state, reread] as const;
+}
+
 /** What the sections show about this app and machine: its version, the system check (checked
- *  again on demand) and, once signed in, this machine's agent. */
+ *  again on demand) and, while signed in, this machine's agent, read again as it registers. */
 function useAboutThisMachine(loggedIn: boolean) {
-  const [agent, setAgent] = useState<AgentInfo | null>(null);
-  const [report, setReport] = useState<SystemReport | null>(null);
-  const [version, setVersion] = useState<string | null>(null);
-
-  useEffect(() => {
-    getVersion()
-      .then(setVersion)
-      .catch(() => {
-        setVersion(null);
-      });
-    systemCheck()
-      .then(setReport)
-      .catch(() => {
-        setReport(null);
-      });
-  }, []);
-  const recheck = () => {
-    systemCheck().then(setReport).catch(warn("system check"));
-  };
-
-  // The agent registers once signed in, so re-read it whenever auth changes.
-  useEffect(() => {
-    if (loggedIn)
-      agentInfo()
-        .then(setAgent)
-        .catch(() => {
-          setAgent(null);
-        });
-  }, [loggedIn]);
-  return { agent: loggedIn ? agent : null, report, version, recheck };
+  const [version] = useRead(getVersion, "reading the app's version");
+  const [report, recheck] = useRead(systemCheck, "system check");
+  const [agent, setAgent] = useState<Read<AgentInfo>>({ value: null });
+  // A failing read is logged once, not on every poll that repeats it.
+  const failing = useRef(false);
+  usePoll(agentInfo, AGENT_POLL_MS, {
+    enabled: loggedIn,
+    onValue: (value) => {
+      failing.current = false;
+      setAgent({ value });
+    },
+    onError: (error) => {
+      if (!failing.current) warn("reading this machine's agent")(error);
+      failing.current = true;
+      setAgent((a) => ({ value: a.value, error }));
+    },
+  });
+  return { agent: loggedIn ? agent : { value: null }, report, version, recheck };
 }
 
 /** The rail of sections; under 640px (the window's narrowest), a tab bar, text only so the
@@ -116,7 +132,7 @@ export function SettingsScreen({
     <div className="mx-auto flex max-w-[47.5rem] flex-col gap-6 pb-10 sm:flex-row sm:gap-8">
       <SettingsTabs tab={tab} onPick={setTab} />
       <div className="min-w-0 flex-1 space-y-9">
-        {tab === "account" && <AccountSection auth={auth} agent={agent} onAuthChange={onAuthChange} />}
+        {tab === "account" && <AccountSection auth={auth} agent={agent.value} agentError={agent.error} onAuthChange={onAuthChange} />}
 
         {tab === "appearance" && <AppearanceSection />}
 
@@ -125,7 +141,7 @@ export function SettingsScreen({
             <LabPortsRow onSaved={flashLabs} />
             <LaunchDefaultsRow onSaved={flashLabs} />
             <AttackBoxRows onSaved={flashLabs} />
-            <HypervisorRow report={report} onSaved={flashLabs} onNavigate={onNavigate} onRefresh={recheck} />
+            <HypervisorRow report={report.value} reportError={report.error} onSaved={flashLabs} onNavigate={onNavigate} onRefresh={recheck} />
           </Section>
         )}
 
@@ -134,7 +150,7 @@ export function SettingsScreen({
         {tab === "about" && (
           <>
             <ManagedSection policy={managed?.policy ?? []} />
-            <AboutSection version={version} report={report} agent={agent} updates={managed?.updates ?? null} />
+            <AboutSection version={version.value} versionError={version.error} report={report.value} agent={agent.value} updates={managed?.updates ?? null} />
           </>
         )}
       </div>

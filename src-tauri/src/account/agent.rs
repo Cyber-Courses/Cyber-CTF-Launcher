@@ -12,7 +12,7 @@
 mod confirm;
 
 use std::fmt::Write as _;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use crate::platform::AppDirs;
@@ -389,19 +389,28 @@ fn next_step(current: Option<&Registration>, user: Option<&str>) -> Next {
     }
 }
 
+/// The agent this machine is registered as now, for the signed-in account: none while signed
+/// out, and while it registers (again, for another account). What `agent_info` says of it.
+static REGISTRATION: Mutex<Option<Registration>> = Mutex::new(None);
+
+/// The registration in `current`, poisoned or not (it is only ever replaced whole).
+fn registration(current: &Mutex<Option<Registration>>) -> MutexGuard<'_, Option<Registration>> {
+    current.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// The current registration's agent id, if any.
 fn agent_id_of(current: &Mutex<Option<Registration>>) -> Option<String> {
-    current.lock().ok().and_then(|r| r.as_ref().map(|r| r.agent_id.clone()))
+    registration(current).as_ref().map(|r| r.agent_id.clone())
 }
 
 /// Heartbeats (~30s) for the current registration, on its own task: claiming and running a lab
 /// can block for a long time (a cloud launch waits on terraform apply, up to tens of minutes),
 /// and the machine must keep reporting that it's online for the whole launch, not drop offline
 /// while busy.
-fn spawn_heartbeat(dirs: AppDirs, current: Arc<Mutex<Option<Registration>>>) {
+fn spawn_heartbeat(dirs: AppDirs, current: &'static Mutex<Option<Registration>>) {
     tokio::spawn(async move {
         loop {
-            if let Some(agent_id) = agent_id_of(&current)
+            if let Some(agent_id) = agent_id_of(current)
                 && auth::access_token().await.is_ok()
                 && let Err(e) = heartbeat(&dirs, &agent_id).await
             {
@@ -423,28 +432,28 @@ pub async fn run(deps: Deps) {
         log::info!("the website agent is off (policy {}): this machine takes no launches from the website", Key::DisableWebsiteAgent.name());
         return;
     }
-    let current = Arc::new(Mutex::new(None::<Registration>));
-    spawn_heartbeat(deps.dirs().clone(), current.clone());
+    let current = &REGISTRATION;
+    spawn_heartbeat(deps.dirs().clone(), current);
     loop {
         let user = auth::signed_in_user().await;
-        let registered = current.lock().ok().and_then(|r| r.clone());
+        let registered = registration(current).clone();
         match next_step(registered.as_ref(), user.as_deref()) {
             Next::SignedOut => {
-                if let Ok(mut r) = current.lock() {
-                    *r = None;
-                }
+                *registration(current) = None;
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
             Next::Register => {
+                // Not online for the account registered before while this one registers.
+                *registration(current) = None;
                 // No token yet, or registering failed: wait and start the cycle over.
-                if register_step(&deps, &current, user).await {
+                if register_step(&deps, current, user).await {
                     continue;
                 }
             }
             Next::Run => {}
         }
-        if let Some(agent_id) = agent_id_of(&current)
+        if let Some(agent_id) = agent_id_of(current)
             && auth::access_token().await.is_ok()
         {
             Box::pin(poll_once(&deps, &agent_id)).await;
@@ -464,9 +473,7 @@ async fn register_step(deps: &Deps, current: &Mutex<Option<Registration>>, user:
     match register(deps.dirs()).await {
         Ok(agent_id) => {
             log::info!("launcher agent online: {agent_id}");
-            if let Ok(mut r) = current.lock() {
-                *r = Some(Registration { user: user.unwrap_or_default(), agent_id });
-            }
+            *registration(current) = Some(Registration { user: user.unwrap_or_default(), agent_id });
             false
         }
         Err(e) => {
@@ -485,11 +492,36 @@ pub struct AgentInfo {
     name: String,
     arch: &'static str,
     capabilities: Vec<String>,
+    /// Whether the website sees this machine, as of now.
+    state: AgentState,
 }
 
-/// This machine's identity, for the UI ("running as ...").
+/// Whether the website sees this machine as somewhere to launch labs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub enum AgentState {
+    /// The administrator's policy turned the agent off (`DisableWebsiteAgent`).
+    OffByPolicy,
+    /// Not registered (yet) for the signed-in account: waiting for its first registration, or
+    /// retrying one that failed.
+    Registering,
+    /// Registered for the signed-in account: it shows online and takes launches.
+    Online,
+}
+
+/// The agent's state, from whether the policy turns it `off` and whether it is `registered`.
+fn agent_state(off: bool, registered: bool) -> AgentState {
+    match (off, registered) {
+        (true, _) => AgentState::OffByPolicy,
+        (false, false) => AgentState::Registering,
+        (false, true) => AgentState::Online,
+    }
+}
+
+/// This machine's identity, for the UI ("running as ..."), and whether the website sees it.
 pub fn agent_info(dirs: &AppDirs) -> Result<AgentInfo> {
-    Ok(AgentInfo { install_id: install_id(dirs)?, name: machine_name(), arch: arch(), capabilities: capabilities() })
+    let state = agent_state(policy::current().is_on(Key::DisableWebsiteAgent), registration(&REGISTRATION).is_some());
+    Ok(AgentInfo { install_id: install_id(dirs)?, name: machine_name(), arch: arch(), capabilities: capabilities(), state })
 }
 
 #[cfg(test)]
@@ -595,6 +627,18 @@ mod tests {
         let on_az = Claim { target: Some(az), ..claim_of("web") };
         assert_eq!(launch_place(&t.dirs(), &on_az).await.unwrap().host.as_deref(), Some("az1"));
         assert_eq!(launch_place(&t.dirs(), &claim_of("web")).await.unwrap(), StartPlace::default(), "here");
+    }
+
+    #[test]
+    fn the_agent_is_online_only_registered_and_never_against_the_policy() {
+        // Regression: Settings showed every signed-in machine online, the policy's too.
+        assert_eq!(agent_state(true, false), AgentState::OffByPolicy);
+        assert_eq!(agent_state(true, true), AgentState::OffByPolicy);
+        assert_eq!(agent_state(false, false), AgentState::Registering);
+        assert_eq!(agent_state(false, true), AgentState::Online);
+        let t = crate::testing::test_app::TestApp::new();
+        let _policy = policy::Override::with(&[Key::DisableWebsiteAgent]);
+        assert_eq!(serde_json::to_value(agent_info(&t.dirs()).unwrap()).unwrap()["state"], "offByPolicy");
     }
 
     #[test]

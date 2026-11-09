@@ -121,7 +121,7 @@ const accountCommands = {
   auth_status: player,
   auth_login: player,
   auth_login_device: player,
-  agent_info: () => ({ installId: "c0ffee", name: "florian-mbp", arch: "arm64", capabilities: ["docker", "vagrant"] }),
+  agent_info: () => ({ installId: "c0ffee", name: "florian-mbp", arch: "arm64", capabilities: ["docker", "vagrant"], state: "online" }),
   api_query: apiQuery,
 } satisfies Handlers;
 

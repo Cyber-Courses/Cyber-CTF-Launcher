@@ -5,13 +5,26 @@ import { Avatar, signedOutReason, SignInWait, useAuthActions } from "@/features/
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { StatusPill } from "@/components/ui/status-pill";
-import { type AgentInfo, type AuthStatus } from "@/lib/tauri";
+import { type AgentInfo, type AgentState, type AuthStatus } from "@/lib/tauri";
 import { Row, Section } from "@/features/settings/settings-layout";
-import { useT } from "@/lib/i18n";
+import { describeError } from "@/lib/errors";
+import { useT, type MessageKey } from "@/lib/i18n";
 
 /* ------------------------------------------------------------------ account */
 
-export function AccountSection({ auth, agent, onAuthChange }: { auth: AuthStatus | null; agent: AgentInfo | null; onAuthChange: (s: AuthStatus) => void }) {
+export function AccountSection({
+  auth,
+  agent,
+  agentError,
+  onAuthChange,
+}: {
+  auth: AuthStatus | null;
+  /** This machine's agent; null until it is read. */
+  agent: AgentInfo | null;
+  /** Why the last read of the agent failed, if it did. */
+  agentError?: unknown;
+  onAuthChange: (s: AuthStatus) => void;
+}) {
   const t = useT();
   return (
     <Section title={t("settings.account.title")} description={t("settings.account.description")}>
@@ -24,7 +37,7 @@ export function AccountSection({ auth, agent, onAuthChange }: { auth: AuthStatus
           }
         />
       ) : auth.loggedIn ? (
-        <SignedIn auth={auth} agent={agent} onAuthChange={onAuthChange} />
+        <SignedIn auth={auth} agent={agent} agentError={agentError} onAuthChange={onAuthChange} />
       ) : (
         <SignedOut auth={auth} onAuthChange={onAuthChange} />
       )}
@@ -33,7 +46,17 @@ export function AccountSection({ auth, agent, onAuthChange }: { auth: AuthStatus
 }
 
 /** The player, Sign out, and this machine as the website sees it. */
-function SignedIn({ auth, agent, onAuthChange }: { auth: AuthStatus; agent: AgentInfo | null; onAuthChange: (s: AuthStatus) => void }) {
+function SignedIn({
+  auth,
+  agent,
+  agentError,
+  onAuthChange,
+}: {
+  auth: AuthStatus;
+  agent: AgentInfo | null;
+  agentError: unknown;
+  onAuthChange: (s: AuthStatus) => void;
+}) {
   const t = useT();
   const { logout } = useAuthActions(onAuthChange);
   return (
@@ -48,16 +71,39 @@ function SignedIn({ auth, agent, onAuthChange }: { auth: AuthStatus; agent: Agen
           <LogOut className="size-3.5" /> {t("settings.account.signOut")}
         </Button>
       </div>
-      <Row
-        title={
-          <span className="flex items-center gap-2">
-            {t("settings.account.thisMachine")}
-            <StatusPill tone="ok">{t("settings.account.online")}</StatusPill>
-          </span>
-        }
-        description={agent ? <AgentLine agent={agent} /> : t("settings.account.registering")}
-      />
+      <ThisMachine agent={agent} error={agentError} />
     </>
+  );
+}
+
+/** How each state of the agent reads: its pill, and what is said of it under the machine. */
+const AGENT_STATES = {
+  online: { tone: "ok", pill: "settings.account.online", note: null },
+  registering: { tone: "muted", pill: "settings.account.registering", note: null },
+  offByPolicy: { tone: "muted", pill: "settings.account.offline", note: "settings.account.offByPolicy" },
+} as const satisfies Record<AgentState, { tone: "ok" | "muted"; pill: MessageKey; note: MessageKey | null }>;
+
+/** This machine as the website sees it: online, still registering, or off by the policy; while
+ *  it is read, saying so, and why a read failed. */
+function ThisMachine({ agent, error }: { agent: AgentInfo | null; error: unknown }) {
+  const t = useT();
+  const state = agent ? AGENT_STATES[agent.state] : null;
+  return (
+    <Row
+      title={
+        <span className="flex items-center gap-2">
+          {t("settings.account.thisMachine")}
+          {state && <StatusPill tone={state.tone}>{t(state.pill)}</StatusPill>}
+        </span>
+      }
+      description={
+        <>
+          {agent ? <AgentLine agent={agent} /> : error === undefined && t("settings.account.checking")}
+          {state?.note && <span className="mt-1 block">{t(state.note)}</span>}
+          {error !== undefined && <span className="block text-destructive">{t("settings.account.agentFailed", { error: describeError(error, t) })}</span>}
+        </>
+      }
+    />
   );
 }
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SettingsScreen } from "@/features/settings/settings-screen";
 import { getPortMode } from "@/lib/settings";
 import { readyReport } from "@/test/fixtures";
@@ -17,6 +17,10 @@ async function openTab(name: RegExp) {
   await flush();
   return user;
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("SettingsScreen", () => {
   it("shows the account section first, with the signed-in player", async () => {
@@ -38,6 +42,19 @@ describe("SettingsScreen", () => {
     });
   }
 
+  it("reads the agent again as it registers, and shows it online once it is", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    let state = "registering";
+    installTauri({ agent_info: () => ({ installId: "x", name: "mbp", arch: "arm64", capabilities: [], state }) });
+    render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(document.body.textContent).toContain("Registering…");
+    state = "online";
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(document.body.textContent).toContain("Online");
+    expect(document.body.textContent).not.toContain("Registering…");
+  });
+
   it("saves the lab port mode from the Labs section", async () => {
     installTauri();
     render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
@@ -50,7 +67,10 @@ describe("SettingsScreen", () => {
     expect(getPortMode()).not.toBe(before);
   });
 
-  it("still opens when the version, the machine check and the agent can't be read", async () => {
+  it("says why the version, the machine check and the agent couldn't be read, instead of waiting on them", async () => {
+    // Regression: each failure read as a read still running ("Checking hypervisors…" and
+    // "Registering…" for good), with nothing logged.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     installTauri({
       "plugin:app|version": () => {
         rejectWith("no version");
@@ -64,12 +84,16 @@ describe("SettingsScreen", () => {
     });
     render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
     await flush();
-    expect(document.body.textContent).toContain("Registering…");
+    expect(document.body.textContent).toContain("Couldn’t read how the website sees this machine: not registered");
+    expect(document.body.textContent).not.toContain("Registering…");
     await openTab(/about/i);
-    expect(document.body.textContent).toContain("…");
+    expect(document.body.textContent).toContain("unknown");
     expect(document.body.textContent).not.toContain("Install ID");
     await openTab(/labs/i);
-    expect(document.body.textContent).toContain("Checking hypervisors…");
+    expect(document.body.textContent).toContain("Couldn’t check this machine’s hypervisors: check failed");
+    expect(document.body.textContent).not.toContain("Checking hypervisors…");
+    expect(warn).toHaveBeenCalledWith("system check:", "check failed");
+    warn.mockRestore();
   });
 
   it("re-checks the machine after a hypervisor add-on install", async () => {

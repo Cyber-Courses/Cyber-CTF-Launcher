@@ -39,7 +39,9 @@
     "registering": "Wird registriert…",
     "notSignedIn": "Nicht angemeldet",
     "signInHint": "Melde dich mit deinem Cyber-Konto an, um Labs zu synchronisieren und von jedem Gerät aus zu starten.",
-    "signIn": "Anmelden"
+    "signIn": "Anmelden",
+    "offByPolicy": "Deine Organisation hat das Starten von Labs über die Website auf diesem Computer deaktiviert.",
+    "agentFailed": "Wie die Website diesen Rechner sieht, konnte nicht gelesen werden: {error}"
   },
   "labs": {
     "title": "Labs",
@@ -101,7 +103,9 @@
     "allowHyperv": "Mein Konto zulassen",
     "allowingHyperv": "Wird zugelassen…",
     "logAllowingHyperv": "Ihr Konto wird zu den Hyper-V-Administratoren hinzugefügt (Windows fragt nach der Berechtigung)…",
-    "logHypervAllowed": "✓ Erledigt. Melden Sie sich bei Windows ab und wieder an, dann erneut prüfen."
+    "logHypervAllowed": "✓ Erledigt. Melden Sie sich bei Windows ab und wieder an, dann erneut prüfen.",
+    "checkFailed": "Die Hypervisoren dieses Rechners konnten nicht geprüft werden: {error}",
+    "checkAgain": "Erneut prüfen"
   },
   "cleanup": {
     "title": "Aufräumen",
@@ -162,7 +166,8 @@
       "homebrew": "Mit Homebrew installiert, das es aktualisiert: Führe brew upgrade aus.",
       "linuxPackage": "Als Systempaket installiert: Deine Paketverwaltung (apt) aktualisiert es.",
       "microsoftStore": "Aus dem Microsoft Store installiert, der es aktuell hält."
-    }
+    },
+    "versionUnknown": "unbekannt"
   },
   "sharedFolder": {
     "title": "Geteilter Ordner",

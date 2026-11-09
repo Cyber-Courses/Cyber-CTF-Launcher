@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { LogConsole } from "@/components/ui/log-console";
 import { Spinner } from "@/components/ui/spinner";
 import { providerLabel } from "@/features/machine/hypervisors";
 import { Row } from "@/features/settings/settings-layout";
 import { getVmProvider, setVmProvider } from "@/lib/settings";
 import type { Provider, ProviderStatus, SystemReport } from "@/lib/tauri";
+import { describeError } from "@/lib/errors";
 import { useT } from "@/lib/i18n";
 import { useAddonInstall } from "@/features/settings/hypervisor-addons";
 import { NotReadyList, ReadyList } from "@/features/settings/hypervisor-lists";
@@ -19,11 +21,15 @@ import { NotReadyList, ReadyList } from "@/features/settings/hypervisor-lists";
  */
 export function HypervisorRow({
   report,
+  reportError,
   onSaved,
   onNavigate,
   onRefresh,
 }: {
+  /** The machine check; null until it answers. */
   report: SystemReport | null;
+  /** Why the machine check failed, if it did. */
+  reportError?: unknown;
   onSaved: () => void;
   onNavigate: (tab: "machine") => void;
   onRefresh: () => void;
@@ -34,9 +40,20 @@ export function HypervisorRow({
       <Row
         title={t("settings.hypervisor.title")}
         description={
-          <span className="flex items-center gap-2">
-            <Spinner className="size-3" /> {t("settings.hypervisor.checking")}
-          </span>
+          reportError === undefined ? (
+            <span className="flex items-center gap-2">
+              <Spinner className="size-3" /> {t("settings.hypervisor.checking")}
+            </span>
+          ) : (
+            <span className="text-destructive">{t("settings.hypervisor.checkFailed", { error: describeError(reportError, t) })}</span>
+          )
+        }
+        control={
+          reportError === undefined ? undefined : (
+            <Button variant="outline" size="xs" onClick={onRefresh}>
+              {t("settings.hypervisor.checkAgain")}
+            </Button>
+          )
         }
       />
     );

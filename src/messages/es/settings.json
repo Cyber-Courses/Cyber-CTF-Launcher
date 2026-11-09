@@ -39,7 +39,9 @@
     "registering": "Registrando…",
     "notSignedIn": "Sin sesión iniciada",
     "signInHint": "Inicia sesión con tu cuenta Cyber para sincronizar labs y ejecutarlos desde cualquier dispositivo.",
-    "signIn": "Iniciar sesión"
+    "signIn": "Iniciar sesión",
+    "offByPolicy": "Tu organización desactivó el inicio de labs desde el sitio web en este equipo.",
+    "agentFailed": "No se pudo leer cómo ve el sitio web este equipo: {error}"
   },
   "labs": {
     "title": "Labs",
@@ -101,7 +103,9 @@
     "allowHyperv": "Permitir mi cuenta",
     "allowingHyperv": "Permitiendo…",
     "logAllowingHyperv": "Añadiendo tu cuenta a Administradores de Hyper-V (Windows pide permiso)…",
-    "logHypervAllowed": "✓ Listo. Cierra la sesión de Windows y vuelve a iniciarla; después, vuelve a comprobar."
+    "logHypervAllowed": "✓ Listo. Cierra la sesión de Windows y vuelve a iniciarla; después, vuelve a comprobar.",
+    "checkFailed": "No se pudieron comprobar los hipervisores de este equipo: {error}",
+    "checkAgain": "Volver a comprobar"
   },
   "cleanup": {
     "title": "Limpieza",
@@ -162,7 +166,8 @@
       "homebrew": "Instalado con Homebrew, que lo actualiza: ejecuta brew upgrade.",
       "linuxPackage": "Instalado como paquete del sistema: tu gestor de paquetes (apt) lo actualiza.",
       "microsoftStore": "Instalado desde Microsoft Store, que lo mantiene actualizado."
-    }
+    },
+    "versionUnknown": "desconocida"
   },
   "sharedFolder": {
     "title": "Carpeta compartida",

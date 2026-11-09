@@ -7,7 +7,7 @@ const settings = { attackImage: "cyberctf/attack-box", vmProvider: null };
 describe("diagnosticsText", () => {
   it("lists the version, the system, the tools and the settings", () => {
     const report = readyReport();
-    const text = diagnosticsText("1.4.0", report, { installId: "c0ffee", name: "mbp", arch: "arm64", capabilities: [] }, settings);
+    const text = diagnosticsText("1.4.0", report, { installId: "c0ffee", name: "mbp", arch: "arm64", capabilities: [], state: "online" }, settings);
     const lines = text.split("\n");
     expect(lines[0]).toBe("Cyber CTF v1.4.0");
     expect(lines[1]).toBe(`OS: ${report.os} ${report.arch}`);
