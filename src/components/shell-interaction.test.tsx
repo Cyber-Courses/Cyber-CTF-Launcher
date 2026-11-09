@@ -179,17 +179,21 @@ describe("CommandPalette keyboard", () => {
     expect(screen.getByText("No results")).toBeTruthy();
   });
 
-  it("keeps the focus in the search field: Tab doesn't leave the palette, and Enter runs the picked result", async () => {
-    // A combobox over a listbox: the results are options picked with the arrows, never focused.
+  it("keeps Tab in the palette, between the search field and its results, and Enter runs the picked result", async () => {
+    // A combobox over a listbox: the results are options picked with the arrows, never focused
+    // one by one. Their scrolling list is a tab stop of its own (axe: a scrollable region must
+    // be reachable from the keyboard), where the arrows still move the pick.
     const { run } = open();
     await waitFor(() => {
       expect(document.activeElement).toBe(field());
     });
-    fireEvent.keyDown(field(), { key: "Tab" });
-    expect(document.activeElement).toBe(field());
     fireEvent.keyDown(field(), { key: "Tab", shiftKey: true });
+    const list = must(document.activeElement as HTMLElement | null, "a focused element");
+    expect(list).not.toBe(field());
+    expect(screen.getByRole("dialog").contains(list)).toBe(true);
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "Tab" });
     expect(document.activeElement).toBe(field());
-    fireEvent.keyDown(field(), { key: "ArrowDown" });
     fireEvent.keyDown(field(), { key: "Enter" });
     expect(run).toHaveBeenCalledOnce();
   });

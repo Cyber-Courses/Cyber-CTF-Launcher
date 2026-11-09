@@ -138,7 +138,9 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
           query={query}
           onQuery={setQuery}
         />
-        <div ref={listRef} className="max-h-[24rem] overflow-y-auto pb-2">
+        {/* The arrow keys in the field move the active option, which scrolls into view; a tab stop
+            too, so the list scrolls from the keyboard without picking an option. */}
+        <div ref={listRef} tabIndex={0} className="max-h-[24rem] overflow-y-auto pb-2">
           <PaletteResults listId={listId} results={results} selected={selected} onHover={setActive} onRun={run} />
         </div>
       </div>

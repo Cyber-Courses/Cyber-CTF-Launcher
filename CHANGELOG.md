@@ -74,6 +74,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   licences, crates.io only) and `pnpm audit --prod` in CI, Dependabot for the crates, the npm
   packages and the pinned actions, and a link check of the docs (`pnpm check:docs`).
 
+- **The accessibility check fails on serious issues too.** The axe check in the web end-to-end
+  tests failed only on critical issues and contrast; it now fails on serious ones as well, and
+  covers the launch prompt and Settings as an administrator manages it. The one serious issue it
+  found, the command palette's results list scrolling out of keyboard reach, is fixed: the list is
+  a tab stop of its own.
 - **Docker Desktop's licence is said where the app offers it.** The one-click Docker install on
   macOS and Windows, and Docker Desktop's card, say it needs a paid subscription in larger
   companies, and name the engines Cyber CTF also runs labs on: Colima and Podman (free) and
