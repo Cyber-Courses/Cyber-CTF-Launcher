@@ -99,21 +99,6 @@ impl<'a> Vagrant<'a> {
         Vagrant::new(dir, env, on_hyperv(dir))
     }
 
-    /// Runs one command, forwarding each output line to `on_line` as it arrives.
-    pub async fn stream(&self, args: &[&str], mut on_line: impl FnMut(String)) -> Result<()> {
-        if self.mode == Mode::Direct {
-            return super::stream("vagrant", args, Some(self.dir), self.env, on_line).await;
-        }
-        let outcomes = self
-            .batch(&[Step::new(args)], |e| {
-                if let Event::Line(_, l) = e {
-                    on_line(l);
-                }
-            })
-            .await?;
-        only(outcomes).map(|_| ())
-    }
-
     /// Runs one command and returns its output (stdout only, except through the Hyper-V script,
     /// where both streams share one log).
     pub async fn run(&self, args: &[&str]) -> Result<String> {
@@ -185,10 +170,8 @@ mod tests {
         let d = dir();
         let v = Vagrant::new(&d, &[], true);
         assert_eq!(v.run(&["ssh", "-c", "uname"]).await.unwrap(), "Linux\n");
-        let mut lines = Vec::new();
-        let err = v.stream(&["destroy", "-f"], |l| lines.push(l)).await.unwrap_err();
+        let err = v.run(&["destroy", "-f"]).await.unwrap_err();
         assert!(err.to_string().contains("locked"), "{err}");
-        assert_eq!(lines, ["locked"]);
         assert_eq!(tools.calls(), ["vagrant ssh -c uname", "vagrant destroy -f"]);
     }
 

@@ -6,7 +6,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::error::Result;
-use crate::platform::exec::{run_read, stream as exec_stream};
+use crate::platform::exec::run_read;
 
 // One compose project per lab, so labs never collide and can be cleaned up by name.
 pub fn project(id: &str) -> String {
@@ -66,13 +66,6 @@ pub(super) async fn output(dir: &Path, project: &str, rest: &[&str]) -> Result<S
     run_read("docker", &a, Some(dir)).await
 }
 
-/// Runs a compose subcommand, streaming its output line by line.
-pub(super) async fn stream(dir: &Path, project: &str, rest: &[&str], env: &[(String, String)], log: impl FnMut(String)) -> Result<()> {
-    let a = args(dir, project, rest);
-    let a: Vec<&str> = a.iter().map(String::as_str).collect();
-    exec_stream("docker", &a, Some(dir), env, log).await
-}
-
 #[derive(Deserialize)]
 pub(super) struct PsEntry {
     #[serde(rename = "Service")]
@@ -104,32 +97,6 @@ impl PsEntry {
     /// machines.
     pub(super) fn one_off(&self) -> bool {
         self.labels.split(',').any(|l| l.trim() == "com.docker.compose.oneoff=True")
-    }
-}
-
-/// `docker rm -f` of the containers `docker ps -q` listed; None when it listed none.
-fn rm_args(ids: &str) -> Option<Vec<&str>> {
-    let ids: Vec<&str> = ids.split_whitespace().collect();
-    if ids.is_empty() {
-        return None;
-    }
-    let mut args = vec!["rm", "-f"];
-    args.extend(ids);
-    Some(args)
-}
-
-/// Removes every container of a Compose project, one-off `run` containers included (`down`
-/// leaves those, so a check runner still going kept a removed lab "running"). On the engine the
-/// lab in `dir` was pinned to, if any.
-pub(super) async fn remove_all_containers(dir: &Path, project: &str) {
-    let filter = format!("label=com.docker.compose.project={project}");
-    let prefix = context_prefix(dir);
-    let ps: Vec<&str> = prefix.iter().map(String::as_str).chain(["ps", "-aq", "--filter", filter.as_str()]).collect();
-    if let Ok(ids) = crate::platform::exec::run("docker", &ps, None).await
-        && let Some(args) = rm_args(&ids)
-    {
-        let rm: Vec<&str> = prefix.iter().map(String::as_str).chain(args).collect();
-        let _ = crate::platform::exec::run("docker", &rm, None).await;
     }
 }
 
@@ -218,14 +185,6 @@ mod tests {
         assert_eq!(context_prefix(&dir), ["--context", "orbstack"]);
         assert_eq!(args(&dir, "cyberctf-x", &["down"]), ["--context", "orbstack", "compose", "-p", "cyberctf-x", "down"]);
         std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn removes_exactly_the_listed_containers() {
-        use super::rm_args;
-        assert_eq!(rm_args(""), None);
-        assert_eq!(rm_args(" \n"), None);
-        assert_eq!(rm_args("abc\ndef\n"), Some(vec!["rm", "-f", "abc", "def"]));
     }
 
     #[test]

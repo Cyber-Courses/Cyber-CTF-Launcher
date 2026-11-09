@@ -59,7 +59,7 @@ pub(super) fn status_from(out: &str, dir: &Path) -> LabStatus {
         // generated Vagrantfile says where its machines sit.
         None => match std::fs::read_to_string(dir.join("Vagrantfile")) {
             Ok(text) => {
-                let lab = super::vm_names_from(&text).first().and_then(|n| n.split(" · ").next()).unwrap_or_default().to_string();
+                let lab = vm_names_from(&text).first().and_then(|n| n.split(" · ").next()).unwrap_or_default().to_string();
                 vagrant_topology(&text, &lab)
             }
             Err(_) => Default::default(),
@@ -149,4 +149,31 @@ pub(super) fn cidr(ip: &str, mask: &str) -> Option<String> {
     let mask: std::net::Ipv4Addr = mask.parse().ok()?;
     let (i, m) = (u32::from(ip), u32::from(mask));
     Some(format!("{}/{}", std::net::Ipv4Addr::from(i & m), m.count_ones()))
+}
+
+/// The VM names Isoloom wrote into a Vagrantfile (`text`): every provider block names the VM on a
+/// `v.name` / `v.guest_name` / `v.vmx["displayName"]` line, as the quoted string after the `=`
+/// (for `displayName` the key itself is quoted, so the value after `=` is what's taken).
+pub(super) fn vm_names_from(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for raw in text.lines() {
+        let l = raw.trim();
+        let is_name_line = l.starts_with("v.name") || l.starts_with("v.guest_name") || l.contains("displayName\"]");
+        let Some(eq) = l.find('=') else { continue };
+        if !is_name_line {
+            continue;
+        }
+        let after = &l[eq + 1..];
+        if let Some(open) = after.find('"')
+            && let Some(len) = after[open + 1..].find('"')
+        {
+            let name = &after[open + 1..open + 1 + len];
+            if !name.is_empty() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
 }

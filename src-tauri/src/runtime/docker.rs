@@ -15,5 +15,5 @@ mod lifecycle;
 pub use check::{Check, CheckResult};
 pub use compose::{LEGACY_ATTACK_BOX_SUFFIXES, legacy_attack_box_names, project};
 pub use inspect::{primary_url, status, subnets_in_use};
+pub use lifecycle::PORTS_ENV;
 pub(crate) use lifecycle::explain_pool_overlap;
-pub use lifecycle::{PORTS_ENV, stop};

@@ -7,8 +7,8 @@ use crate::platform::AppDirs;
 
 use super::host::{self, Host};
 use super::inflight::{Action, DeployGuard, lock_lab};
-use super::paths::{lab_dir, local_runtime, local_vm, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm, vagrant_dirs};
-use super::{LabRef, Park, Runtime, docker, isothrum, lab, server, vm};
+use super::paths::{lab_dir, local_runtime, local_vm, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm};
+use super::{LabRef, Park, Runtime, isothrum, lab, server};
 use crate::error::{Error, Result};
 
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
@@ -176,23 +176,20 @@ fn forget_run(dir: &Path) -> Result<()> {
     mark_parked(dir, None)
 }
 
-/// Destroys a parked lab's machines before the lab folder is replaced by a newer version of the
-/// lab (they'd otherwise be orphaned at the hypervisor, Vagrant having lost track of them).
-pub async fn clear_parked(dir: &Path, id: &str, log: &impl Fn(String)) {
+/// Takes down a parked lab before its folder is replaced by a newer version of the lab: its
+/// machines would otherwise be orphaned (the runner's record of them goes with the folder).
+/// Through the runner, in the form it was parked in ([`host::locate`]), its marks cleared after;
+/// nothing to do when it isn't parked.
+pub async fn clear_parked(dirs: &AppDirs, lab: LabRef<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+    let LabRef { dir, id, runtime } = lab;
     if parked(dir).is_none() {
-        return;
+        return Ok(());
     }
     log("A parked copy of an older version of this lab is here: removing it…".into());
-    let mut sink = |l: String| log(l);
-    // A container lab here: its containers go by their Compose project, wherever (or whether)
-    // its generated Compose file is (Isoloom labs keep it under .isoloom-<n>/, not at the root).
-    if local_vm(dir).is_none() {
-        let _ = docker::stop(dir, id, &mut sink).await;
+    if let Some(host) = host::locate(dirs, dir, id, runtime)? {
+        host.down(dirs, log).await?;
     }
-    for vdir in vagrant_dirs(dir) {
-        let _ = vm::stop(&vdir, &[], &mut sink).await;
-    }
-    let _ = mark_parked(dir, None);
+    forget_run(dir)
 }
 
 // The bodies of the lab operations the deploy worker runs (`deploy_worker::execute`), by lab id.
@@ -240,7 +237,9 @@ pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMu
 
 #[cfg(test)]
 mod tests {
-    use super::{Park, clear_parked, park_lab, parked_message, provision_lab, provision_target, refuse_cloud_park, refuse_vm_shutdown, resume_lab, stop_lab};
+    use super::{
+        LabRef, Park, clear_parked, park_lab, parked_message, provision_lab, provision_target, refuse_cloud_park, refuse_vm_shutdown, resume_lab, stop_lab,
+    };
     use crate::platform::exec::fake::Tools;
     use crate::runtime::paths::{mark_parked, parked};
 
@@ -270,16 +269,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_parked_lab_is_cleared_before_its_folder_is_replaced() {
+    async fn a_parked_lab_is_taken_down_through_the_runner_before_its_folder_is_replaced() {
         let t = TestApp::new();
         let dir = t.lab("web", &[]);
         mark_parked(&dir, Some(Park::Shutdown)).unwrap();
+        crate::runtime::paths::mark_engine(&dir, Some("orbstack")).unwrap();
         let tools = Tools::rules(&[]);
-        let lines = std::sync::Mutex::new(Vec::<String>::new());
-        clear_parked(&dir, "web", &|l: String| lines.lock().unwrap().push(l)).await;
-        assert!(tools.called("down --volumes --remove-orphans"));
+        let mut lines = Vec::<String>::new();
+        let lab = LabRef { dir: &dir, id: "web", runtime: Runtime::Docker };
+        clear_parked(&t.dirs(), lab, &mut |l| lines.push(l)).await.unwrap();
+        // No files of a run left: nothing to remove, and its marks go.
         assert_eq!(parked(&dir), None);
-        assert!(lines.lock().unwrap()[0].starts_with("A parked copy of an older version"));
+        assert_eq!(crate::runtime::paths::engine(&dir), None);
+        assert!(lines[0].starts_with("A parked copy of an older version"), "{lines:?}");
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    }
+
+    #[tokio::test]
+    async fn a_parked_lab_that_couldnt_be_taken_down_stays_parked_and_says_why() {
+        let t = TestApp::new();
+        let dir = t.lab("web", &[]);
+        mark_parked(&dir, Some(Park::Pause)).unwrap();
+        // The runner can't read the run's record: the teardown fails.
+        let manifest = crate::runtime::lab::docker_manifest(&dir);
+        std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+        std::fs::write(&manifest, "not a manifest").unwrap();
+        let _tools = Tools::rules(&[]);
+        let lab = LabRef { dir: &dir, id: "web", runtime: Runtime::Docker };
+        assert!(clear_parked(&t.dirs(), lab, &mut |_| {}).await.is_err());
+        assert_eq!(parked(&dir), Some(Park::Pause), "still parked: its machines may still be there");
     }
 
     #[test]
@@ -328,11 +346,12 @@ mod tests {
 
     #[tokio::test]
     async fn clearing_a_lab_that_is_not_parked_does_nothing() {
-        let dir = std::env::temp_dir().join(format!("cyberctf-clear-{}", rand::random::<u32>()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let lines = std::sync::Mutex::new(Vec::<String>::new());
-        clear_parked(&dir, "web-1", &|l: String| lines.lock().unwrap().push(l)).await;
-        assert!(lines.lock().unwrap().is_empty());
-        std::fs::remove_dir_all(dir).unwrap();
+        let t = TestApp::new();
+        let dir = t.lab("web-1", &[]);
+        let tools = Tools::rules(&[]);
+        let mut lines = Vec::<String>::new();
+        clear_parked(&t.dirs(), LabRef { dir: &dir, id: "web-1", runtime: Runtime::Vm }, &mut |l| lines.push(l)).await.unwrap();
+        assert!(lines.is_empty());
+        assert!(tools.calls().is_empty());
     }
 }

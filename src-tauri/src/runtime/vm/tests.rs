@@ -1,4 +1,4 @@
-use super::{folder_candidates, parse_status, vm_names_from};
+use super::{parse_status, vm_names_from};
 
 #[test]
 fn parses_machine_readable_status() {
@@ -64,40 +64,6 @@ fn cidr_masks_the_address() {
 }
 
 #[test]
-fn vm_names_reads_the_value_for_every_provider_block() {
-    // VirtualBox/Parallels/UTM use `v.name`, ESXi uses `v.guest_name`, VMware uses the quoted
-    // key `v.vmx["displayName"]` — the parser must take the VALUE after `=`, not the key.
-    let vf = r#"
-  config.vm.define "dc01" do |m|
-m.vm.provider "virtualbox" do |v|
-  v.name = "minilab · dc01"
-end
-m.vm.provider "vmware_desktop" do |v|
-  v.vmx["displayName"] = "minilab · dc01"
-end
-m.vm.provider "vmware_esxi" do |v|
-  v.guest_name = "minilab-dc01"
-end
-  end
-"#;
-    let names = vm_names_from(vf);
-    assert!(names.contains(&"minilab · dc01".to_string()), "got {names:?}");
-    assert!(names.contains(&"minilab-dc01".to_string()), "got {names:?}");
-    // The literal key must never be captured as a name.
-    assert!(!names.iter().any(|n| n == "displayName"), "captured the key: {names:?}");
-}
-
-#[test]
-fn folder_candidates_cover_virtualbox_sanitization_exactly() {
-    // VirtualBox turns the middot into a hyphen for the on-disk folder; both are exact.
-    let c = folder_candidates("minilab · dc01");
-    assert!(c.contains(&"minilab · dc01".to_string()));
-    assert!(c.contains(&"minilab - dc01".to_string()));
-    // It must NOT produce a collapsed form that could match an unrelated "minilab-dc01".
-    assert!(!c.iter().any(|f| f == "minilab-dc01"));
-}
-
-#[test]
 fn keeps_every_state_label_verbatim() {
     // Vagrant reports many lifecycle states; each is surfaced as-is for the UI.
     let out = "ts,a,state,saved\n\
@@ -135,61 +101,6 @@ fn temp_dir(tag: &str) -> std::path::PathBuf {
     dir
 }
 
-#[test]
-fn reads_virtualboxs_machine_folder() {
-    let out = "API version: 7_0\nDefault machine folder:          /Users/a/VirtualBox VMs\nVRDE auth library: x\n";
-    assert_eq!(super::parse_machine_folder(out), Some(std::path::PathBuf::from("/Users/a/VirtualBox VMs")));
-    assert_eq!(super::parse_machine_folder("Default machine folder:   \n"), None);
-    assert_eq!(super::parse_machine_folder(""), None);
-}
-
-#[test]
-fn virtualboxs_machine_folder_falls_back_to_the_home_folder_given() {
-    // Regression (#238): the fallback read `HOME`, usually unset on Windows, so leftover VM
-    // folders were never found there. The caller now passes the platform's home folder.
-    let home = std::path::PathBuf::from(r"C:\Users\ada");
-    assert_eq!(super::machine_folder(None, Some(home.clone())), Some(home.join("VirtualBox VMs")));
-    assert_eq!(super::machine_folder(Some("no such line"), Some(home.clone())), Some(home.join("VirtualBox VMs")));
-    let listed = "Default machine folder:  D:\\VMs\n";
-    assert_eq!(super::machine_folder(Some(listed), Some(home)), Some(std::path::PathBuf::from(r"D:\VMs")));
-    assert_eq!(super::machine_folder(None, None), None);
-}
-
-#[test]
-fn lists_virtualbox_vms_by_name_and_uuid() {
-    let out = "\"minilab · dc01\" {1111-aaaa}\n\"other\" {2222-bbbb}\ngarbage\n} backwards {\n";
-    assert_eq!(super::parse_vbox_vms(out), vec![("minilab · dc01".to_string(), "1111-aaaa".to_string()), ("other".to_string(), "2222-bbbb".to_string())]);
-}
-
-#[test]
-fn only_our_parallels_vms_are_picked() {
-    let wanted: std::collections::HashSet<String> = ["minilab · dc01".to_string()].into();
-    let out = "minilab · dc01\n  \nminilab-dc01\nsomeone else\n";
-    assert_eq!(super::ours_in_prlctl(out, &wanted), ["minilab · dc01"]);
-}
-
-#[test]
-fn leftover_folders_go_by_their_exact_sanitized_names() {
-    let base = temp_dir("vbox-folders");
-    for f in ["minilab - dc01", "minilab-dc01", "unrelated"] {
-        std::fs::create_dir_all(base.join(f)).unwrap();
-    }
-    std::fs::write(base.join("minilab · dc01"), "a file, not a folder").unwrap();
-    let wanted: std::collections::HashSet<String> = ["minilab · dc01".to_string()].into();
-    let mut lines = Vec::new();
-    super::remove_leftover_folders(&base, &wanted, &mut |l| lines.push(l));
-    assert!(!base.join("minilab - dc01").exists());
-    assert!(base.join("minilab-dc01").is_dir(), "a lossy match is never deleted");
-    assert!(base.join("unrelated").is_dir());
-    assert!(base.join("minilab · dc01").is_file());
-    assert_eq!(lines, ["Removing a leftover VM folder: minilab - dc01"]);
-    // A missing base folder is nothing to do.
-    super::remove_leftover_folders(&base.join("nope"), &wanted, &mut |l| lines.push(l));
-    assert_eq!(lines.len(), 1);
-    std::fs::remove_dir_all(base).unwrap();
-}
-
-/// A folder with no lab spec above it: the addresses come from its Vagrantfile.
 #[test]
 fn status_without_a_lab_spec_reads_the_addresses_from_the_vagrantfile() {
     let dir = temp_dir("status-vf");
@@ -270,15 +181,6 @@ fn the_labs_topology_is_read_again_only_once_its_spec_changed() {
     .unwrap();
     assert!(super::status::lab_topology(&lab).is_some(), "isoloom.yaml read");
     std::fs::remove_dir_all(lab).unwrap();
-}
-
-#[test]
-fn vm_names_come_from_the_vagrantfile_on_disk() {
-    let dir = temp_dir("names");
-    assert_eq!(super::vm_names(&dir), Vec::<String>::new());
-    std::fs::write(dir.join("Vagrantfile"), "v.name = \"b\"\nv.name = \"a\"\nv.name = \"a\"\nv.name = \"\"\nv.name\n").unwrap();
-    assert_eq!(super::vm_names(&dir), ["a", "b"]);
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -374,19 +276,6 @@ fn vagrant_topology_reads_crlf_files_and_ipv6_addresses_leave_the_subnet_blank()
 }
 
 #[test]
-fn virtualbox_listings_keep_braces_and_unicode_inside_a_name() {
-    let out = "\"lab · {odd} name\" {1111-aaaa}\r\n\"日本語 · dc01\" {2222}\n\"<inaccessible>\" {3333}\n";
-    assert_eq!(
-        super::parse_vbox_vms(out),
-        vec![
-            ("lab · {odd} name".to_string(), "1111-aaaa".to_string()),
-            ("日本語 · dc01".to_string(), "2222".to_string()),
-            ("<inaccessible>".to_string(), "3333".to_string())
-        ]
-    );
-}
-
-#[test]
 fn a_machine_is_tracked_only_by_an_id_file() {
     let dir = temp_dir("has-machines");
     let vbox = dir.join(".vagrant").join("machines").join("dc01").join("virtualbox");
@@ -401,21 +290,25 @@ fn a_machine_is_tracked_only_by_an_id_file() {
 }
 
 #[test]
-fn leftover_folder_removal_never_follows_a_symlink_out_of_the_base() {
-    // A folder named exactly like one of ours but that is a symlink to somewhere else: removing
-    // it must take the link, never the folder it points to.
-    let base = temp_dir("vbox-symlink");
-    let elsewhere = temp_dir("vbox-elsewhere");
-    std::fs::write(elsewhere.join("keep.txt"), "x").unwrap();
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(&elsewhere, base.join("minilab - dc01")).unwrap();
-    #[cfg(windows)]
-    std::os::windows::fs::symlink_dir(&elsewhere, base.join("minilab - dc01")).unwrap();
-    let wanted: std::collections::HashSet<String> = ["minilab · dc01".to_string()].into();
-    let mut lines = Vec::new();
-    super::remove_leftover_folders(&base, &wanted, &mut |l| lines.push(l));
-    assert!(elsewhere.join("keep.txt").is_file(), "the link's target is untouched");
-    assert!(std::fs::symlink_metadata(base.join("minilab - dc01")).is_err(), "the link itself is removed: {lines:?}");
-    std::fs::remove_dir_all(base).unwrap();
-    std::fs::remove_dir_all(elsewhere).unwrap();
+fn vm_names_reads_the_value_for_every_provider_block() {
+    // VirtualBox/Parallels/UTM use `v.name`, ESXi uses `v.guest_name`, VMware uses the quoted
+    // key `v.vmx["displayName"]` — the parser must take the VALUE after `=`, not the key.
+    let vf = r#"
+  config.vm.define "dc01" do |m|
+m.vm.provider "virtualbox" do |v|
+  v.name = "minilab · dc01"
+end
+m.vm.provider "vmware_desktop" do |v|
+  v.vmx["displayName"] = "minilab · dc01"
+end
+m.vm.provider "vmware_esxi" do |v|
+  v.guest_name = "minilab-dc01"
+end
+  end
+"#;
+    let names = vm_names_from(vf);
+    assert!(names.contains(&"minilab · dc01".to_string()), "got {names:?}");
+    assert!(names.contains(&"minilab-dc01".to_string()), "got {names:?}");
+    // The literal key must never be captured as a name.
+    assert!(!names.iter().any(|n| n == "displayName"), "captured the key: {names:?}");
 }

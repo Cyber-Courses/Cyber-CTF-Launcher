@@ -29,12 +29,14 @@ struct Launch {
     env: Vec<EnvVar>,
 }
 
-/// A lab release to install: the lab, and the CyberCTF repository and commit it comes from.
+/// A lab release to install: the lab, the CyberCTF repository and commit it comes from, and the
+/// runtime it declares (what a parked copy of it is taken down in before it is replaced).
 #[derive(Clone, Copy)]
 struct Release<'a> {
     lab_id: &'a str,
     repository: &'a str,
     commit: &'a str,
+    runtime: Runtime,
 }
 
 /// Where and how a launched lab runs: VM labs locally with `provider`, or on the server `host`
@@ -204,7 +206,7 @@ async fn install(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String)) ->
 
 /// [`install`], the archive fetched by `fetch` (when the commit isn't installed yet).
 async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String), fetch: impl AsyncFnOnce() -> Result<Vec<u8>>) -> Result<PathBuf> {
-    let Release { lab_id, repository, commit } = release;
+    let Release { lab_id, repository, commit, runtime: declared } = release;
     // The lab id comes from the backend and is used to build paths (join, remove_dir_all, rename).
     // Validate it like every other id so a hostile/buggy response can't escape the labs dir with
     // `..` or an absolute path. Reachable unattended through the agent, so this is the guard.
@@ -235,10 +237,10 @@ async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String
     log(format!("Downloading {repository}@{}", &commit[..12]));
     let bytes = fetch().await?;
 
+    // A parked copy of the previous version would be orphaned once its folder (and the runner's
+    // record of it) is gone: take it down first, before its markers are carried over.
+    clear_parked(dirs, runtime::LabRef { dir: &dir, id: lab_id, runtime: declared }, log).await?;
     let staging = stage(&labs, &dir, &bytes, release)?;
-    // A paused copy of the previous version would be orphaned at the hypervisor once its
-    // folder (and Vagrant's record of it) is gone: take it down first.
-    runtime::clear_parked(&dir, lab_id, log).await;
     swap_in(&staging, &dir)?;
     // Its own room on this machine (networks, names), so it runs beside the other labs.
     runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
@@ -262,6 +264,14 @@ fn refuse_update(here: bool, on_server: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// Takes down a parked copy of `lab` before its folder is replaced ([`runtime::clear_parked`]);
+/// when that fails the replacement is refused, the parked copy left as it was.
+async fn clear_parked(dirs: &AppDirs, lab: runtime::LabRef<'_>, log: &impl Fn(String)) -> Result<()> {
+    runtime::clear_parked(dirs, lab, &mut |l| log(l)).await.map_err(|e| {
+        Error::Refused(format!("A parked copy of this lab is here and couldn't be removed ({e}). Resume it and stop it, then start the lab again."))
+    })
+}
+
 /// Whether the lab at `commit` is the one installed (its commit marker says so).
 fn installed(marker: &Path, commit: &str) -> bool {
     std::fs::read_to_string(marker).is_ok_and(|c| c.trim() == commit)
@@ -270,7 +280,7 @@ fn installed(marker: &Path, commit: &str) -> bool {
 /// Extracts the downloaded lab into a staging folder next to `dir`, with its source markers and
 /// the markers of where the installed copy runs. Returns the staging folder.
 fn stage(labs: &Path, dir: &Path, tarball: &[u8], release: Release<'_>) -> Result<PathBuf> {
-    let Release { lab_id, repository, commit } = release;
+    let Release { lab_id, repository, commit, .. } = release;
     let staging = labs.join(format!(".{lab_id}.staging"));
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging)?;
@@ -352,7 +362,7 @@ pub(crate) async fn run(dirs: &AppDirs, launch_json: serde_json::Value, placemen
     // folder, and a stop must not run while the new version is swapped in. Shared with the
     // deploy worker's own hold on it (same process), so a worker runs on.
     let _lock = runtime::lock_lab(dirs, &launch.lab_id).await?;
-    let release = Release { lab_id: &launch.lab_id, repository: &launch.repository, commit: &launch.commit };
+    let release = Release { lab_id: &launch.lab_id, repository: &launch.repository, commit: &launch.commit, runtime: launch.runtime };
     let dir = install(dirs, release, &log).await?;
     // Fixed names for every lab; the evidence itself is never in the environment.
     let env = launch_env(launch.env, placement.default_ports);
@@ -483,10 +493,10 @@ async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(S
         }
     }
     log(format!("Importing {lab_id} from {}", src.display()));
+    clear_parked(dirs, runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker }, log).await?;
     let staging = dir.with_file_name(format!(".{lab_id}.staging"));
     let _ = std::fs::remove_dir_all(&staging);
     runtime::lab::copy_tree(src, &staging)?;
-    runtime::clear_parked(&dir, lab_id, log).await;
     swap_in(&staging, &dir)?;
     runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
     log("Lab imported".into());
@@ -523,6 +533,11 @@ mod tests {
         ] {
             assert!(validate_source(repo, commit).is_err(), "{repo}@{commit}");
         }
+    }
+
+    /// A release of a container lab from `CyberCTF/invoice`, as `lab_id` at `commit`.
+    fn invoice<'a>(lab_id: &'a str, commit: &'a str) -> Release<'a> {
+        Release { lab_id, repository: "CyberCTF/invoice", commit, runtime: Runtime::Docker }
     }
 
     fn tarball(entries: &[(&str, &[u8])]) -> Vec<u8> {
@@ -597,13 +612,7 @@ mod tests {
         // Nothing is installed at that commit yet.
         assert!(!installed(&dir.join(".cyberctf-commit"), sha));
 
-        let staging = stage(
-            &labs,
-            &dir,
-            &tarball(&[("lab-abc/isoloom.yml", b"name: invoice")]),
-            Release { lab_id: "invoice", repository: "CyberCTF/invoice", commit: sha },
-        )
-        .unwrap();
+        let staging = stage(&labs, &dir, &tarball(&[("lab-abc/isoloom.yml", b"name: invoice")]), invoice("invoice", sha)).unwrap();
         assert_eq!(staging, labs.join(".invoice.staging"));
         assert_eq!(std::fs::read_to_string(staging.join("isoloom.yml")).unwrap(), "name: invoice");
         assert_eq!(std::fs::read_to_string(staging.join(".cyberctf-repository")).unwrap(), "CyberCTF/invoice");
@@ -726,27 +735,45 @@ mod tests {
         let tools = Tools::rules(&[]);
         let lines = std::sync::Mutex::new(Vec::<String>::new());
         let log = |l: String| lines.lock().unwrap().push(l);
-        let dir =
-            install_with(&t.dirs(), Release { lab_id: "invoice", repository: "CyberCTF/invoice", commit: SHA }, &log, async || Ok(gz.clone())).await.unwrap();
+        let dir = install_with(&t.dirs(), invoice("invoice", SHA), &log, async || Ok(gz.clone())).await.unwrap();
         assert_eq!(dir, t.data().join("labs").join("invoice"));
         assert!(installed(&dir.join(".cyberctf-commit"), SHA) && dir.join("isoloom.yml").is_file());
         assert_eq!(lines.lock().unwrap().as_slice(), ["Downloading CyberCTF/invoice@0123456789ab", "Lab installed"]);
         // The same commit again: nothing downloaded.
-        install_with(&t.dirs(), Release { lab_id: "invoice", repository: "CyberCTF/invoice", commit: SHA }, &log, async || panic!("no download"))
-            .await
-            .unwrap();
+        install_with(&t.dirs(), invoice("invoice", SHA), &log, async || panic!("no download")).await.unwrap();
         drop(tools);
         // A newer commit while the old one runs here: refused, the running copy left alone.
         let _tools = Tools::rules(&[("ps --all", ok(r#"{"Service":"web","State":"running"}"#))]);
         let newer = "1123456789abcdef0123456789abcdef01234567";
-        let err = install_with(&t.dirs(), Release { lab_id: "invoice", repository: "CyberCTF/invoice", commit: newer }, &log, async || panic!("no download"))
-            .await
-            .unwrap_err()
-            .to_string();
+        let err = install_with(&t.dirs(), invoice("invoice", newer), &log, async || panic!("no download")).await.unwrap_err().to_string();
         assert!(err.starts_with("A new version of this lab is out, but it is still running here"), "{err}");
         // Ids and sources are checked before anything else.
-        assert!(install_with(&t.dirs(), Release { lab_id: "../x", repository: "CyberCTF/invoice", commit: SHA }, &log, async || panic!()).await.is_err());
-        assert!(install_with(&t.dirs(), Release { lab_id: "invoice", repository: "evil/lab", commit: SHA }, &log, async || panic!()).await.is_err());
+        assert!(install_with(&t.dirs(), invoice("../x", SHA), &log, async || panic!()).await.is_err());
+        assert!(
+            install_with(&t.dirs(), Release { lab_id: "invoice", repository: "evil/lab", commit: SHA, runtime: Runtime::Docker }, &log, async || panic!())
+                .await
+                .is_err()
+        );
+    }
+
+    /// A parked copy the runner couldn't take down refuses the new version: swapping the folder
+    /// would orphan its machines. The parked copy stays as it was.
+    #[tokio::test]
+    async fn a_new_lab_version_is_refused_while_a_parked_copy_couldnt_be_taken_down() {
+        let t = crate::testing::test_app::TestApp::new();
+        let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
+        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let dir = install_with(&t.dirs(), invoice("invoice", SHA), &|_| {}, async || Ok(gz.clone())).await.unwrap();
+        crate::runtime::paths::mark_parked(&dir, Some(runtime::Park::Shutdown)).unwrap();
+        let manifest = runtime::lab::docker_manifest(&dir);
+        std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+        std::fs::write(&manifest, "not a manifest").unwrap();
+        let newer = "1123456789abcdef0123456789abcdef01234567";
+        let err = install_with(&t.dirs(), invoice("invoice", newer), &|_| {}, async || Ok(gz.clone())).await.unwrap_err();
+        assert!(matches!(err, Error::Refused(_)), "{err:?}");
+        assert!(err.to_string().starts_with("A parked copy of this lab is here and couldn't be removed"), "{err}");
+        assert!(installed(&dir.join(".cyberctf-commit"), SHA), "the parked copy's folder was replaced");
+        assert!(!t.data().join("labs").join(".invoice.staging").exists());
     }
 
     #[tokio::test]
@@ -969,8 +996,13 @@ mod tests {
         let staging = labs.join(".lab.staging");
         std::fs::create_dir_all(staging.join("old")).unwrap();
         std::fs::write(staging.join("old/file"), "from a crashed install").unwrap();
-        let staged =
-            stage(&labs, &dir, &tarball(&[("lab-abc/isoloom.yml", b"name: lab")]), Release { lab_id: "lab", repository: "CyberCTF/lab", commit: SHA }).unwrap();
+        let staged = stage(
+            &labs,
+            &dir,
+            &tarball(&[("lab-abc/isoloom.yml", b"name: lab")]),
+            Release { lab_id: "lab", repository: "CyberCTF/lab", commit: SHA, runtime: Runtime::Docker },
+        )
+        .unwrap();
         assert_eq!(staged, staging);
         assert!(!staging.join("old").exists(), "the crashed install's files are gone");
         // The commit marker reads back with surrounding whitespace or CRLF (a hand edit).
@@ -988,20 +1020,15 @@ mod tests {
         let log = |_: String| {};
         let max = "A".repeat(63) + "_";
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
-        let dir = install_with(&t.dirs(), Release { lab_id: &max, repository: "CyberCTF/invoice", commit: SHA }, &log, async || Ok(gz.clone())).await.unwrap();
+        let dir = install_with(&t.dirs(), invoice(&max, SHA), &log, async || Ok(gz.clone())).await.unwrap();
         assert_eq!(dir.file_name().unwrap().to_str().unwrap(), max);
         for bad in ["", &"a".repeat(65), "é", "a b", "a/b", ".", "a.b", "..", "a\u{0}b"] {
             let bad = bad.to_string();
-            let err = install_with(&t.dirs(), Release { lab_id: &bad, repository: "CyberCTF/invoice", commit: SHA }, &log, async || {
-                panic!("no download for {bad:?}")
-            })
-            .await
-            .unwrap_err()
-            .to_string();
+            let err = install_with(&t.dirs(), invoice(&bad, SHA), &log, async || panic!("no download for {bad:?}")).await.unwrap_err().to_string();
             assert!(err.starts_with("invalid lab id"), "{bad:?}: {err}");
         }
         // "-" and "_" alone pass the rule (a folder of that name is harmless).
-        let dir = install_with(&t.dirs(), Release { lab_id: "-", repository: "CyberCTF/invoice", commit: SHA }, &log, async || Ok(gz.clone())).await.unwrap();
+        let dir = install_with(&t.dirs(), invoice("-", SHA), &log, async || Ok(gz.clone())).await.unwrap();
         assert_eq!(dir, t.data().join("labs").join("-"));
     }
 }
