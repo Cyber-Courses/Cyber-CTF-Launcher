@@ -173,7 +173,6 @@
       "description": "Dónde se colocan los labs en el host. Déjalo en blanco para usar los valores por defecto del host.",
       "node": "Nodo",
       "optional": "Opcional",
-      "storage": "Almacenamiento",
       "datastore": "Datastore",
       "bridge": "Bridge",
       "portGroup": "Grupo de puertos",
@@ -289,8 +288,7 @@
       "title": "Elige un proveedor de nube",
       "description": "Donde los labs se ejecutan como instancias desechables en tu propia cuenta. AWS, Azure y Google Cloud; pronto habrá más.",
       "label": "Proveedor de nube",
-      "comingSoon": "Próximamente",
-      "available": "Disponible"
+      "comingSoon": "Próximamente"
     },
     "test": {
       "title": "Prueba de conexión",

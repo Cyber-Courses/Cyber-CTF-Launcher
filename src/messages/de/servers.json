@@ -173,7 +173,6 @@
       "description": "Wo Labs auf dem Host abgelegt werden. Leer lassen für die Standardwerte des Hosts.",
       "node": "Node",
       "optional": "Optional",
-      "storage": "Storage",
       "datastore": "Datastore",
       "bridge": "Bridge",
       "portGroup": "Portgruppe",
@@ -289,8 +288,7 @@
       "title": "Cloud-Anbieter wählen",
       "description": "Wo Labs als Wegwerf-Instanzen in deinem eigenen Konto laufen. AWS, Azure und Google Cloud; weitere folgen.",
       "label": "Cloud-Anbieter",
-      "comingSoon": "Demnächst",
-      "available": "Verfügbar"
+      "comingSoon": "Demnächst"
     },
     "test": {
       "title": "Verbindungstest",

@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { CATALOGS } from "@/messages";
@@ -34,5 +37,26 @@ describe("messages", () => {
   it("no em dashes (house style)", () => {
     for (const tree of [en, ...Object.values(OTHERS)])
       for (const path of leaves(tree)) for (const s of texts(at(tree, path))) expect(s.includes("\u2014"), path).toBe(false);
+  });
+});
+
+/** Every source file of the app (its tests and the catalogs themselves left out). */
+function appSources(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) return e.name === "messages" ? [] : appSources(p);
+    return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [p] : [];
+  });
+}
+
+describe("message use", () => {
+  it("every English message is used by the app: its key written out, or under a prefix a key is built from", () => {
+    const src = fileURLToPath(new URL("../..", import.meta.url));
+    const code = appSources(src).map((f) => fs.readFileSync(f, "utf8"));
+    // `"labs.attackBox.start"`, and `t(\`labs.places.${key}\`)`'s "labs.places.".
+    const written = new Set(code.flatMap((c) => [...c.matchAll(/["'`]([a-z]\w*(?:\.[\w-]+)+)["'`]/g)].map((m) => m[1])));
+    const prefixes = [...new Set(code.flatMap((c) => [...c.matchAll(/`([a-z]\w*(?:\.[\w-]+)*\.)\$\{/g)].map((m) => m[1])))];
+    const unused = leaves(en).filter((key) => !written.has(key) && !prefixes.some((p) => key.startsWith(p)));
+    expect(unused).toEqual([]);
   });
 });

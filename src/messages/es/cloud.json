@@ -55,13 +55,5 @@
     "edit": "Editar",
     "installed": "instalado",
     "notInstalled": "no instalado"
-  },
-  "tools": {
-    "install": "Instalar",
-    "installing": "Instalando…",
-    "pulled": "descargada",
-    "notPulled": "sin descargar",
-    "pull": "Descargar",
-    "pulling": "Descargando…"
   }
 }

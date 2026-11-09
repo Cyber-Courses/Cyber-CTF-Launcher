@@ -55,13 +55,5 @@
     "edit": "編集",
     "installed": "インストール済み",
     "notInstalled": "未インストール"
-  },
-  "tools": {
-    "install": "インストール",
-    "installing": "インストール中…",
-    "pulled": "取得済み",
-    "notPulled": "未取得",
-    "pull": "取得",
-    "pulling": "取得中…"
   }
 }

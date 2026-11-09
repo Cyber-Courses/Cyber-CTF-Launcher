@@ -173,7 +173,6 @@
       "description": "Where labs are placed on the host. Leave blank for the host's defaults.",
       "node": "Node",
       "optional": "Optional",
-      "storage": "Storage",
       "datastore": "Datastore",
       "bridge": "Bridge",
       "portGroup": "Port group",
@@ -289,8 +288,7 @@
       "title": "Choose a cloud provider",
       "description": "Where labs run as throwaway instances in your own account. AWS, Azure and Google Cloud; more coming.",
       "label": "Cloud provider",
-      "comingSoon": "Coming soon",
-      "available": "Available"
+      "comingSoon": "Coming soon"
     },
     "test": {
       "title": "Connection test",
