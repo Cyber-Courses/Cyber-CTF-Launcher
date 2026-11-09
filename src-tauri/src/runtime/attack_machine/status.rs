@@ -2,7 +2,7 @@
 //! read by its name from the run's status like any other machine: whether it runs, its address on
 //! the lab network, and the console into it; beside it, the networks it can join.
 
-use isothrum_runner::{MachineState, ShellCommand, Status};
+use isothrum_runner::{MachineState, Status};
 use serde::Serialize;
 
 /// The attack box beside a lab, as the lab page shows it.
@@ -29,15 +29,6 @@ pub struct AttackStatus {
     pub shell_cmd: String,
     /// Whether the box is a VM: a Kali VM among a lab's VMs, wherever the lab runs.
     pub vm: bool,
-}
-
-/// A shell command as one line the player can paste in their terminal: the variables it needs
-/// first (`VAR=value`, as a shell takes them), then the program and its arguments, each quoted
-/// where it must be.
-pub(super) fn display(cmd: &ShellCommand) -> String {
-    let words: Vec<String> =
-        cmd.env.iter().map(|(k, v)| format!("{k}={v}")).chain(std::iter::once(cmd.program.clone())).chain(cmd.args.iter().cloned()).collect();
-    shell_words::join(&words)
 }
 
 /// The box `name` from the run's status: up when it runs, its address on `network` (or its
@@ -85,20 +76,5 @@ mod tests {
         let up = status_of(&vm_lab("running"), "kali", None, shell, true);
         assert_eq!((up.running, up.ip.as_str(), up.lab_network.as_str()), (true, "10.61.0.252", "lab"));
         assert!(!status_of(&vm_lab("running"), "nobody", None, String::new(), false).running, "no such machine: no box");
-    }
-
-    #[test]
-    fn the_shell_line_is_pasteable_with_the_variables_it_needs() {
-        let plain = ShellCommand { program: "docker".into(), args: ["compose", "exec", "kali", "bash"].map(String::from).to_vec(), cwd: None, env: Vec::new() };
-        assert_eq!(display(&plain), "docker compose exec kali bash");
-        let in_vm = ShellCommand {
-            program: "vagrant".into(),
-            args: ["ssh", "default", "-c", "sudo docker exec -it 'x-web' sh"].map(String::from).to_vec(),
-            cwd: None,
-            env: vec![("VAGRANT_DOTFILE_PATH".into(), "/runs/x y/vagrant".into())],
-        };
-        let line = display(&in_vm);
-        assert!(line.starts_with("'VAGRANT_DOTFILE_PATH=/runs/x y/vagrant' vagrant ssh default -c "), "{line}");
-        assert_eq!(shell_words::split(&line).unwrap().last().map(String::as_str), Some("sudo docker exec -it 'x-web' sh"), "{line}");
     }
 }

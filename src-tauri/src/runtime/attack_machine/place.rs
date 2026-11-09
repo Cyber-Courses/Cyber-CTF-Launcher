@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use isoloom_spec::Target;
 use isothrum_runner::Status;
 
-use super::status::{AttackStatus, display, status_of};
+use super::status::{AttackStatus, status_of};
 use super::{Cpu, Kind};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
@@ -192,7 +192,7 @@ impl Placed {
             None => AttackStatus { vm: self.vm, ..AttackStatus::default() },
             Some(status) => {
                 let name = super::name(&self.dir)?;
-                let shell = self.host.console(&name).ok().map(|c| display(&c)).unwrap_or_default();
+                let shell = self.host.console(&name).ok().map(|c| c.sh_line()).unwrap_or_default();
                 status_of(&status, &name, network, shell, self.vm)
             }
         };

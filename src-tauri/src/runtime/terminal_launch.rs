@@ -1,5 +1,5 @@
 //! Opening the OS terminal on the attack box shell: the runner builds the command (program,
-//! arguments and the run's folder — see [`isothrum_runner::Running::shell_command`]); this turns
+//! arguments and the run's folder — see [`isothrum_runner::Running::console_command`]); this turns
 //! it into a command line and hands it to the platform's terminal. The in-app pseudo-terminal
 //! ([`crate::terminal`]) runs the same command without a terminal window; this is the "open in a
 //! system terminal" path, so the player gets a real terminal they fully control.
@@ -22,10 +22,7 @@ fn command_line(command: &ShellCommand) -> String {
     words.push(command.program.clone());
     words.extend(command.args.iter().cloned());
     let run = shell_words::join(&words);
-    match &command.cwd {
-        Some(cwd) => format!("cd {} && exec {run}", shell_words::quote(&cwd.to_string_lossy())),
-        None => format!("exec {run}"),
-    }
+    format!("cd {} && exec {run}", shell_words::quote(&command.cwd.to_string_lossy()))
 }
 
 /// [`open_terminal`] off the async runtime's threads and the UI thread: finding a terminal that
@@ -102,10 +99,7 @@ pub(crate) fn windows_line(command: &ShellCommand) -> String {
     for (name, value) in command.env.iter().rev() {
         run = format!("set \"{name}={value}\" && {run}");
     }
-    if let Some(cwd) = &command.cwd {
-        run = format!("cd /d {} && {run}", quote(&cwd.to_string_lossy()));
-    }
-    run
+    format!("cd /d {} && {run}", quote(&command.cwd.to_string_lossy()))
 }
 
 /// Opens a console window titled "Cyber CTF attack box" on `line`, a cmd.exe command line. The
@@ -175,13 +169,13 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn cmd(program: &str, args: &[&str], cwd: Option<&str>) -> ShellCommand {
-        ShellCommand { program: program.to_owned(), args: args.iter().map(|a| (*a).to_owned()).collect(), cwd: cwd.map(PathBuf::from), env: Vec::new() }
+    fn cmd(program: &str, args: &[&str], cwd: &str) -> ShellCommand {
+        ShellCommand { program: program.to_owned(), args: args.iter().map(|a| (*a).to_owned()).collect(), cwd: PathBuf::from(cwd), env: Vec::new() }
     }
 
     /// The shell into a Vagrant run's box: `vagrant` needs the run's state folder to find the VM.
     fn in_vm(cwd: &str) -> ShellCommand {
-        let mut c = cmd("vagrant", &["ssh", "default"], Some(cwd));
+        let mut c = cmd("vagrant", &["ssh", "default"], cwd);
         c.env = vec![("VAGRANT_DOTFILE_PATH".into(), "/runs/x y/vagrant".into())];
         c
     }
@@ -197,18 +191,16 @@ mod tests {
 
     #[test]
     fn the_posix_line_runs_the_command_in_its_folder_and_execs_it() {
-        let line = command_line(&cmd("docker", &["compose", "--file", "/runs/x y/compose.yml", "exec", "kali", "bash"], Some("/runs/x y")));
+        let line = command_line(&cmd("docker", &["compose", "--file", "/runs/x y/compose.yml", "exec", "kali", "bash"], "/runs/x y"));
         assert_eq!(line, "cd '/runs/x y' && exec docker compose --file '/runs/x y/compose.yml' exec kali bash");
-        assert_eq!(command_line(&cmd("vagrant", &["ssh", "me"], None)), "exec vagrant ssh me");
     }
 
     #[test]
     fn the_windows_line_quotes_paths_with_spaces() {
         assert_eq!(
-            windows_line(&cmd("docker", &["compose", "exec", "kali", "bash"], Some("C:\\runs\\x y"))),
+            windows_line(&cmd("docker", &["compose", "exec", "kali", "bash"], "C:\\runs\\x y")),
             "cd /d \"C:\\runs\\x y\" && docker compose exec kali bash"
         );
-        assert_eq!(windows_line(&cmd("vagrant", &["ssh", "me"], None)), "vagrant ssh me");
     }
 
     #[test]

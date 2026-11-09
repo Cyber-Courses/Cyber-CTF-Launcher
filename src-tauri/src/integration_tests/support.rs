@@ -130,7 +130,7 @@ pub(crate) async fn in_box(console: &ShellCommand, probe: &str) -> crate::error:
         "ssh" => "ssh",
         _ => "vagrant",
     };
-    crate::platform::exec::run_env_timed(program, &args, console.cwd.as_deref(), &console.env, std::time::Duration::from_secs(120)).await
+    crate::platform::exec::run_env_timed(program, &args, Some(console.cwd.as_path()), &console.env, std::time::Duration::from_secs(120)).await
 }
 
 pub(crate) fn check(ok: bool, what: String, failures: &mut Vec<String>) {

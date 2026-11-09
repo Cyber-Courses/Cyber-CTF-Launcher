@@ -214,9 +214,7 @@ fn watch_exit(session: u32, ended: std::sync::Arc<Mutex<Option<u32>>>) {
 fn pty_command(command: &ShellCommand) -> CommandBuilder {
     let mut c = CommandBuilder::new(&command.program);
     c.args(&command.args);
-    if let Some(cwd) = &command.cwd {
-        c.cwd(cwd);
-    }
+    c.cwd(&command.cwd);
     for (name, value) in &command.env {
         c.env(name, value);
     }
@@ -433,14 +431,14 @@ mod tests {
         // is, no shell wrapping, on every platform.
         let dir = std::env::temp_dir();
         let env = vec![("VAGRANT_DOTFILE_PATH".to_owned(), "/runs/x/vagrant".to_owned())];
-        let c = pty_command(&ShellCommand { program: "vagrant".into(), args: vec!["ssh".into(), "isoloom-controller".into()], cwd: Some(dir.clone()), env });
+        let c = pty_command(&ShellCommand { program: "vagrant".into(), args: vec!["ssh".into(), "isoloom-controller".into()], cwd: dir.clone(), env });
         assert_eq!(argv(&c), ["vagrant", "ssh", "isoloom-controller"]);
-        assert_eq!(c.get_cwd().map(std::path::PathBuf::from), Some(dir));
+        assert_eq!(c.get_cwd().map(std::path::PathBuf::from), Some(dir.clone()));
         assert_eq!(c.get_env("VAGRANT_DOTFILE_PATH").map(|v| v.to_string_lossy().into_owned()).as_deref(), Some("/runs/x/vagrant"), "Vagrant finds the VM");
         let d = pty_command(&ShellCommand {
             program: "docker".into(),
             args: ["compose", "exec", "kali", "bash"].iter().map(|s| (*s).into()).collect(),
-            cwd: None,
+            cwd: dir.clone(),
             env: Vec::new(),
         });
         assert_eq!(argv(&d), ["docker", "compose", "exec", "kali", "bash"]);
