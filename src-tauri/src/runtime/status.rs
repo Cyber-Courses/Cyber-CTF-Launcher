@@ -26,24 +26,12 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     let status = attack_machine::set_apart(status, dir)?;
     // Here, parked = the launcher parked it and it is still down.
     let status = if here { with_parked(status, parked(dir)) } else { status };
-    // A setup step that failed can leave a lab's machines up but the lab not ready: not running,
-    // wherever it runs. This used to be masked for server and cloud hosts only, so a local Docker,
-    // docker-in-VM or VM lab whose launch failed stayed "running" and showed a healthy diagram.
-    let status = unless_launch_failed(dirs, id, status);
     // Whether this container lab runs as one VM per machine (its VM recipes), locally or as
     // cloud-vm: the UI reads it to name the form.
     let per_machine = runtime == Runtime::Docker && per_machine_vm(dir);
     // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
     let reap_error = super::reaper::last_failure(dirs, id);
     Ok(LabStatus { per_machine, reap_error, controls, ..status })
-}
-
-/// A lab whose last launch or resume failed is not running, even if its machines stayed up: a
-/// failed setup step leaves it unusable, and showing it running with a healthy diagram misleads.
-/// The lab page and the attack box's auto-start go by this alone.
-fn unless_launch_failed(dirs: &AppDirs, id: &str, s: LabStatus) -> LabStatus {
-    let failed = crate::app::deploy_worker::last_deploy_failed(dirs, id);
-    LabStatus { running: s.running && !failed, ..s }
 }
 
 /// Parked = the launcher parked it (`parked`) and it is still down; a lab someone started again
@@ -351,18 +339,6 @@ mod tests {
         // Refused before anything local or remote is probed; the marker alone never makes it
         // run here either.
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-    }
-
-    #[test]
-    fn a_failed_launch_reads_as_not_running_even_with_machines_up() {
-        let t = crate::testing::test_app::TestApp::new();
-        // Nothing failed yet: a lab with machines up stays running.
-        assert!(super::unless_launch_failed(&t.dirs(), "lab-x", status_with(true, &["web"])).running);
-        // Its last launch failed and left machines up: not running, so the page shows "failed"
-        // and no healthy diagram. Regression: only server and cloud labs used to be masked, so a
-        // local Docker, docker-in-VM or VM lab read as running after a failed launch.
-        crate::app::deploy_worker::mark_launch_failed_for_test(&t.dirs(), "lab-x");
-        assert!(!super::unless_launch_failed(&t.dirs(), "lab-x", status_with(true, &["web"])).running);
     }
 
     #[test]

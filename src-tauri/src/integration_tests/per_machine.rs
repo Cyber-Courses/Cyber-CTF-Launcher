@@ -84,7 +84,7 @@ async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
     }
     println!("per-machine ({}): up after {:.0?}", provider.id(), started.elapsed());
     // The page's Stop, with the catalogue runtime: the VMs go, and so does the form.
-    let stopped = stop_lab(&t.dirs(), &id, Runtime::Docker, log(&id)).await;
+    let stopped = stop_lab(&t.dirs(), &id, Runtime::Docker, std::future::ready(()), log(&id)).await;
     check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), &mut f);
     check(!per_machine_vm(&dir), "the form is forgotten".into(), &mut f);
     let left = status::still_up(&t.dirs(), &id);

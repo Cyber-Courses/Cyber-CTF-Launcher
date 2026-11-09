@@ -46,6 +46,16 @@ pub fn path_in(dir: &Path, lab: &str) -> PathBuf {
     dir.join(format!("{lab}.lock"))
 }
 
+/// The lock file of `lab`, in the workers' folder (`runtime::deploys_dir`).
+///
+/// # Errors
+///
+/// An invalid lab id, or a data folder that can't be made.
+pub fn path(dirs: &crate::platform::AppDirs, lab: &str) -> crate::error::Result<PathBuf> {
+    crate::runtime::validate_id(lab)?;
+    Ok(path_in(&crate::runtime::deploys_dir(dirs)?, lab))
+}
+
 /// Takes the lock at `path` if no other process (or other handle) holds it; `None` when one
 /// does. Shared with a holder in this process.
 pub fn try_acquire(path: &Path) -> std::io::Result<Option<LabFileLock>> {
@@ -93,6 +103,13 @@ pub(crate) mod tests {
     /// Whether `f` holds within a second. A lock is released when its handle closes, but a
     /// process another test starts meanwhile shares the handle for a moment (until it runs its
     /// program), so a release can take that moment to show.
+    /// A new empty folder for one test's lock files.
+    fn temp_dir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("cyberctf-{tag}-{}-{}", std::process::id(), rand::random::<u32>()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
     pub(crate) fn eventually(mut f: impl FnMut() -> bool) -> bool {
         (0..40).any(|_| {
             f() || {
@@ -103,7 +120,7 @@ pub(crate) mod tests {
     }
 
     fn lock_file(tag: &str) -> (PathBuf, PathBuf) {
-        let dir = crate::app::deploy_worker::files::tests::temp_dir(tag);
+        let dir = temp_dir(tag);
         (path_in(&dir, "lab-1"), dir)
     }
 
@@ -179,7 +196,7 @@ pub(crate) mod tests {
 
     #[test]
     fn locks_of_two_labs_are_independent_and_an_empty_lock_file_is_left_behind() {
-        let dir = crate::app::deploy_worker::files::tests::temp_dir("lock-two");
+        let dir = temp_dir("lock-two");
         let (a, b) = (path_in(&dir, "lab-a"), path_in(&dir, "lab-b"));
         let _a = try_acquire(&a).unwrap().unwrap();
         assert!(!held(&b));

@@ -250,6 +250,12 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, placement: &Placement<'_
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
 }
 
+/// Stops lab `id` wherever it runs ([`runtime::stop_lab`]), first ending the deploy still running
+/// in its worker, if any.
+pub(crate) async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+    runtime::stop_lab(dirs, id, runtime, crate::app::deploy_worker::end_workers(dirs, id), log).await
+}
+
 /// The backend's operation starting a lab for the signed-in player: what to download and run,
 /// and the launch's values (the evidence claim, the player's flags).
 const START_LAB: &str = "mutation ($id: ID!) { startLab(labId: $id) { labId runtime repository commit env { name value } } }";

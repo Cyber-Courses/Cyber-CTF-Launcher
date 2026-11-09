@@ -16,7 +16,7 @@ use crate::platform::AppDirs;
 use crate::runtime::attack_machine::AttackStatus;
 use crate::runtime::paths::{lab_dir, local_runtime};
 use crate::runtime::providers::Provider;
-use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, lab, start_place, status, stop_lab, terminal_launch};
+use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, lab, start_place, status, terminal_launch};
 
 /// Starts a lab, the deploy's log sent on `logs` (see [`labs::launch_job`]).
 #[tauri::command]
@@ -94,7 +94,7 @@ fn valid_machine_name(m: &str) -> bool {
 
 #[tauri::command]
 pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
-    stop_lab(&AppDirs::from(&app), &id, runtime, channel_log(logs)).await
+    crate::labs::stop_lab(&AppDirs::from(&app), &id, runtime, channel_log(logs)).await
 }
 
 /// Pauses (state saved) or shuts down (powered off) a lab on this machine, keeping its machines
@@ -124,11 +124,14 @@ pub async fn lab_resume(app: AppHandle, id: String, runtime: Runtime, logs: Chan
     deploy_worker::run_job(&app, Job::on_lab(&id, Op::Resume { runtime }), logs).await
 }
 
+/// What lab `id` looks like right now, wherever it runs; not running when its last launch or
+/// resume failed in its worker, whatever machines it left up.
 #[tauri::command]
 pub async fn lab_status(app: AppHandle, id: String, runtime: Runtime) -> Result<LabStatus> {
     let dirs = AppDirs::from(&app);
     let dir = lab_dir(&dirs, &id)?;
-    status::status(&dirs, &dir, &id, runtime).await
+    let failed = deploy_worker::last_deploy_failed(&dirs, &id);
+    Ok(status::status(&dirs, &dir, &id, runtime).await?.unless_launch_failed(failed))
 }
 
 /// Before a cloud-services lab starts: its cloud, its cost estimate, what it asks for at launch

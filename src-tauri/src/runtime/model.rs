@@ -183,6 +183,17 @@ pub enum Control {
     Repair,
 }
 
+impl LabStatus {
+    /// The status of a lab whose last launch or resume `failed` (its worker's verdict): not
+    /// running, even if its machines stayed up. A failed setup step leaves it unusable, and showing
+    /// it running with a healthy diagram misleads; the lab page and the attack box's auto-start go
+    /// by this alone, wherever the lab runs.
+    #[must_use]
+    pub fn unless_launch_failed(self, failed: bool) -> LabStatus {
+        LabStatus { running: self.running && !failed, ..self }
+    }
+}
+
 /// One thing a cloud-services lab exposes: a module output, under the spec's name for it.
 #[derive(Serialize, Debug, Clone, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
@@ -196,7 +207,17 @@ pub struct Output {
 
 #[cfg(test)]
 mod tests {
-    use super::Park;
+    use super::{LabStatus, Park};
+
+    #[test]
+    fn a_failed_launch_reads_as_not_running_even_with_machines_up() {
+        // Regression: only server and cloud labs used to be masked, so a local Docker,
+        // docker-in-VM or VM lab read as running after a failed launch.
+        let up = || LabStatus { running: true, ..LabStatus::default() };
+        assert!(up().unless_launch_failed(false).running, "nothing failed: running");
+        assert!(!up().unless_launch_failed(true).running);
+        assert!(!LabStatus::default().unless_launch_failed(false).running);
+    }
 
     #[test]
     fn park_ids_round_trip_and_read_with_surrounding_whitespace_only() {

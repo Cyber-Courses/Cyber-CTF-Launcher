@@ -10,7 +10,6 @@
 //! runs), `<key>.status` (`ok` or `error: ...`, written last).
 
 mod files;
-pub(crate) mod lock;
 mod process;
 #[cfg(all(test, unix))]
 pub(crate) use process::{observed_as_worker, pidfile_line};
@@ -27,7 +26,7 @@ pub use worker::worker_main;
 use crate::error::{Code, Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
-use crate::runtime::{Park, Runtime};
+use crate::runtime::{Park, Runtime, lab_file_lock};
 
 /// What a worker runs. `Launch` (the default, so job files from before the other kinds existed
 /// still read) is a full deploy from a `startLab` payload; the others act on an installed lab.
@@ -191,7 +190,7 @@ fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> 
     }
     // An operation of the app itself (a stop, the expiry reaper) holds the lab: the worker
     // would only wait for it, then act on what it left.
-    if lock::held(&lock_path(&AppDirs::from(app), &job.lab_id)?) {
+    if lab_file_lock::held(&lab_file_lock::path(&AppDirs::from(app), &job.lab_id)?) {
         return Err(Error::coded(Code::AlreadyInProgress));
     }
     // The pidfile is taken before the worker starts (another process may be racing for it too).
@@ -202,20 +201,6 @@ fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> 
 /// Whether the lab's last finished launch failed (see [`files::last_deploy_failed`]).
 pub fn last_deploy_failed(dirs: &AppDirs, lab_id: &str) -> bool {
     files::last_deploy_failed(dirs, lab_id)
-}
-
-/// Records a failed launch for `lab_id`, so tests of code that reacts to a failed deploy can set
-/// one up (the `files` module is private).
-#[cfg(test)]
-pub(crate) fn mark_launch_failed_for_test(dirs: &AppDirs, lab_id: &str) {
-    let f = files::of(dirs, lab_id).expect("a valid lab id");
-    std::fs::write(&f.launch_status, "error: test").expect("write the launch status");
-}
-
-/// The cross-process lock file of `lab` (see [`lock`]).
-pub fn lock_path(dirs: &AppDirs, lab: &str) -> Result<std::path::PathBuf> {
-    crate::runtime::validate_id(lab)?;
-    Ok(lock::path_in(&files::dir(dirs)?, lab))
 }
 
 #[cfg(test)]

@@ -191,7 +191,7 @@ async fn a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_fo
     assert!(manifest.is_file(), "the VM run's manifest was written");
     std::fs::remove_file(&manifest).unwrap();
     let mut log = Vec::new();
-    crate::runtime::stop_lab(&t.dirs(), "both", Runtime::Docker, |l| log.push(l)).await.unwrap();
+    crate::runtime::stop_lab(&t.dirs(), "both", Runtime::Docker, std::future::ready(()), |l| log.push(l)).await.unwrap();
     assert_eq!(log, ["Nothing to remove: the run has no files."], "the VM run, not a Docker one");
     assert!(!per_machine_vm(&dir));
     assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Docker);

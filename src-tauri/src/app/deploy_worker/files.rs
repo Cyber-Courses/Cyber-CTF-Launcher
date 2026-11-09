@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::process::{Worker, alive};
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::platform::AppDirs;
 
 /// A worker's files.
@@ -48,11 +48,9 @@ impl Files {
     }
 }
 
-/// The workers' folder, created if missing, owner-only (its jobs carry launch tokens).
+/// The workers' folder (`runtime::deploys_dir`).
 pub fn dir(dirs: &AppDirs) -> Result<PathBuf> {
-    let d = dirs.data()?.join("deploys");
-    crate::platform::private_fs::dir(&d).map_err(Error::Io)?;
-    Ok(d)
+    crate::runtime::deploys_dir(dirs)
 }
 
 /// The files of `key`'s worker.

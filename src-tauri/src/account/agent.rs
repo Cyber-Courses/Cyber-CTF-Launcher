@@ -229,7 +229,7 @@ fn picked_target(target: Option<&str>, host_name: impl Fn(&str) -> Result<Option
 /// Stops a claimed lab that must not keep running under a failed session. A lab that never got
 /// installed (its download failed) has nothing to stop.
 async fn tear_down(dirs: &AppDirs, lab_id: &str, runtime: Runtime) -> Result<()> {
-    if crate::runtime::lab_installed(dirs, lab_id) { crate::runtime::stop_lab(dirs, lab_id, runtime, |_line: String| {}).await } else { Ok(()) }
+    if crate::runtime::lab_installed(dirs, lab_id) { labs::stop_lab(dirs, lab_id, runtime, |_line: String| {}).await } else { Ok(()) }
 }
 
 /// `failure`, after tearing down what the failed start brought up, when it must be (see

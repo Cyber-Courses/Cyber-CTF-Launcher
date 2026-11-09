@@ -61,9 +61,10 @@ impl Event {
 /// The environment variable naming the Hyper-V virtual switch a VM's first adapter goes on (set
 /// by the script that runs Vagrant on Hyper-V, see [`super::elevate`], unless the user set it):
 /// with several switches and none named, Vagrant stops to ask which one. Isoloom's own name, so
-/// one value serves both kinds of Vagrantfile: the lab's (Isoloom reads it, and stops `vagrant
-/// up` when no switch has that name) and the launcher's own (the self-test).
-pub const HYPERV_SWITCH_ENV: &str = crate::runtime::lab::HYPERV_SWITCH_ENV;
+/// one value serves both kinds of Vagrantfile: the lab's (Isoloom reads it for the switch each
+/// VM's first adapter goes on, takes the Default Switch without it, and stops `vagrant up` when no
+/// switch has that name) and the launcher's own (the self-test).
+pub const HYPERV_SWITCH_ENV: &str = "ISOLOOM_HYPERV_SWITCH";
 
 /// The Vagrantfile line attaching `target` (`config`, or a machine's variable) to that switch,
 /// when it is set.

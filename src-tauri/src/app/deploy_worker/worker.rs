@@ -10,6 +10,7 @@ use tauri::Manager as _;
 
 use super::progress::FAILED_MARK;
 use super::{Job, Op, execute, files};
+use crate::runtime::lab_file_lock;
 
 /// The worker's entry point, in place of the app: a headless Tauri app on the same data dir
 /// (so lab, key and server paths resolve the same), the deploy, a status file, then exit.
@@ -171,8 +172,8 @@ fn brings_up(op: &Op) -> bool {
 }
 
 /// The cross-process lock of lab `id`, waited for.
-async fn hold_lab(app: &AppHandle, id: &str) -> crate::error::Result<super::lock::LabFileLock> {
-    super::lock::acquire(&super::lock_path(&crate::platform::AppDirs::from(app), id)?).await.map_err(super::lock::unavailable)
+async fn hold_lab(app: &AppHandle, id: &str) -> crate::error::Result<lab_file_lock::LabFileLock> {
+    lab_file_lock::acquire(&lab_file_lock::path(&crate::platform::AppDirs::from(app), id)?).await.map_err(lab_file_lock::unavailable)
 }
 
 /// The end of a run: the failure in the log, the verdict in the status file (and, for a
@@ -270,7 +271,7 @@ mod tests {
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         t.lab("web", &[]);
         // A folder where the lock file goes: it can't be opened.
-        std::fs::create_dir_all(crate::app::deploy_worker::lock_path(&t.dirs(), "web").unwrap()).unwrap();
+        std::fs::create_dir_all(crate::runtime::lab_file_lock::path(&t.dirs(), "web").unwrap()).unwrap();
         let job = Job::on_lab("web", Op::Resume { runtime: crate::runtime::Runtime::Docker });
         let f = crate::app::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
         assert_eq!(super::run_logged(t.handle(), job).await, 1);

@@ -135,3 +135,24 @@ mod tests {
         assert!(sources.iter().any(|s| s.path.ends_with("exec/shim.rs") && s.code.contains("fn check_args") && s.tests.contains("mod tests")));
     }
 }
+
+/// The layers depend downwards only: the platform (running tools, files, the OS) names neither the
+/// labs' runtime nor the app shell, and the runtime doesn't name the app shell; a cycle between
+/// them came back once (the runtime reached for the deploy workers' lock and status files).
+#[test]
+fn the_platform_and_the_runtime_never_reach_up_into_the_layers_above() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    // Spelled in two, so this file doesn't name the layers itself.
+    let (runtime, app) = (["crate::", "runtime"].concat(), ["crate::", "app::"].concat());
+    for s in crate_sources() {
+        let rel = s.path.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/");
+        let text = format!("{}\n{}", s.code, s.tests);
+        let layer = rel.split(['/', '.']).next().unwrap_or_default();
+        if layer == "platform" {
+            assert!(!text.contains(&runtime) && !text.contains(&app), "{rel} reaches up from the platform");
+        }
+        if layer == "runtime" {
+            assert!(!text.contains(&app), "{rel} reaches up from the runtime into the app shell");
+        }
+    }
+}

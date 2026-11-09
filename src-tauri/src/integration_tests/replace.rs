@@ -69,7 +69,7 @@ async fn a_running_lab_is_not_replaced_under_it() {
         check(refused_here(&reimport), format!("an import of it again is refused while it runs ({:?})", reimport.err()), &mut f);
         check(dir.join(".replace-probe").is_file(), "the running copy's folder is untouched".into(), &mut f);
     }
-    let stopped = stop_lab(&t.dirs(), &id, runtime, log(&id)).await;
+    let stopped = stop_lab(&t.dirs(), &id, runtime, std::future::ready(()), log(&id)).await;
     check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), &mut f);
     let reimport = crate::labs::for_tests::reimport(&t.dirs(), &id, src).await;
     check(reimport.is_ok(), format!("stopped, it imports again ({:?})", reimport.err()), &mut f);

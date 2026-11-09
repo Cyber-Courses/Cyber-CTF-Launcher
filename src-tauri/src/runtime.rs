@@ -52,6 +52,7 @@ pub use docker::{LEGACY_ATTACK_BOX_SUFFIXES, PORTS_ENV, lab_of_project, legacy_a
 /// For tests elsewhere that need an operation in flight.
 #[cfg(test)]
 pub(crate) use inflight::DeployGuard;
+pub(crate) use inflight::lock as lab_file_lock;
 pub(crate) use inflight::lock_lab;
 pub use inflight::{Action, active_actions, active_deploys, deploying_labs, stopping};
 pub use isothrum_runner::ShellCommand;
@@ -60,6 +61,7 @@ pub(crate) use launch::start;
 pub(crate) use launch::{Destination, policy_allows, start_locked};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
 pub use model::{Control, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
+pub(crate) use paths::deploys_dir;
 pub use paths::{LOCAL_VM_MARKER, validate_id};
 pub use reaper::reap_expired_labs;
 pub(crate) use status::refuse_replace;

@@ -52,7 +52,7 @@ async fn a_local_lab_launches_and_tears_down_through_the_commands() {
         );
     }
 
-    let stopped = stop_lab(&dirs, &id, Runtime::Docker, log(&id)).await;
+    let stopped = stop_lab(&dirs, &id, Runtime::Docker, std::future::ready(()), log(&id)).await;
     check(stopped.is_ok(), format!("{id}: it stops ({:?})", stopped.err()), &mut f);
     let left = leftovers(&id).await;
     check(left.is_empty(), format!("{id}: nothing of it is left ({left:?})"), &mut f);

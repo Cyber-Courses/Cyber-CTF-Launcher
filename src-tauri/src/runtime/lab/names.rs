@@ -40,11 +40,6 @@ pub fn vagrant_dir(dir: &Path, runtime: Runtime) -> PathBuf {
     }
 }
 
-/// The environment variable Isoloom's Vagrantfiles read on Hyper-V: the virtual switch each VM's
-/// first adapter (Vagrant's connection, and the internet) goes on. Isoloom takes the Default
-/// Switch without it, and stops `vagrant up` when no switch has the name.
-pub const HYPERV_SWITCH_ENV: &str = "ISOLOOM_HYPERV_SWITCH";
-
 /// The Isoloom target of a Vagrant run.
 pub fn vagrant_target(runtime: Runtime) -> Target {
     match runtime {

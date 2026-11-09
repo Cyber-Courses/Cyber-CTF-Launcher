@@ -257,15 +257,16 @@ pub fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
 }
 
 /// Stops lab `id` wherever it runs: the one Stop of the lab page, the Machine page and the
-/// hosted agent. Marked as stopping from the start: ending a deploy can take minutes (Terraform
-/// is interrupted and waited for), during which the page and the quit guard must see a stop, and
-/// no attack box may be added. A deploy still running in its worker is ended first, so the
-/// teardown never races a `vagrant up` or `compose up` that would recreate what it removes; then
-/// the lab is torn down under its lock.
-pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+/// hosted agent (through `labs::stop_lab`, which ends the lab's deploy workers). Marked as
+/// stopping from the start: `end_workers` (ending a deploy still running in its worker, which can
+/// take minutes while Terraform is interrupted and waited for) runs first, while the page and the
+/// quit guard see a stop and no attack box may be added, so the teardown never races a `vagrant
+/// up` or `compose up` that would recreate what it removes; then the lab is torn down under its
+/// lock.
+pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_workers: impl Future<Output = ()>, log: impl FnMut(String)) -> Result<()> {
     let dir = lab_dir(dirs, id)?;
     let _stopping = DeployGuard::new(id, Action::Stop);
-    crate::app::deploy_worker::end_workers(dirs, id).await;
+    end_workers.await;
     stop(dirs, &dir, id, runtime, log).await
 }
 
@@ -297,7 +298,7 @@ mod tests {
         assert_eq!(tools.calls(), Vec::<String>::new());
         // Stopping it destroys it with Terraform there: with no state, nothing is left to destroy,
         // and the lab no longer reads as running there.
-        stop_lab(&t.dirs(), "web", Runtime::Docker, |_| {}).await.unwrap();
+        stop_lab(&t.dirs(), "web", Runtime::Docker, std::future::ready(()), |_| {}).await.unwrap();
         assert!(!dir.join(server::HOST_MARKER).exists());
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
     }
@@ -367,7 +368,7 @@ mod tests {
         let dir = t.lab("goat", &[]);
         mark_parked(&dir, Some(Park::Pause)).unwrap();
         let tools = Tools::rules(&[]);
-        stop_lab(&t.dirs(), "goat", Runtime::Cloud, |_| {}).await.unwrap();
+        stop_lab(&t.dirs(), "goat", Runtime::Cloud, std::future::ready(()), |_| {}).await.unwrap();
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert_eq!(parked(&dir), None);
         // Parking or resuming it is refused on the runtime alone.

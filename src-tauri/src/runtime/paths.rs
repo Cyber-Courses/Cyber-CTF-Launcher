@@ -20,6 +20,19 @@ pub(crate) fn runner_home(dirs: &AppDirs) -> Result<PathBuf> {
     Ok(dirs.data()?.to_path_buf())
 }
 
+/// The folder of the lab operations' records under the app data folder (`deploys/`): each lab's
+/// lock file, and the detached workers' jobs, logs, pidfiles and verdicts. Created if missing,
+/// owner-only (a worker's job carries a launch token).
+///
+/// # Errors
+///
+/// No data folder, or one where it can't be made.
+pub(crate) fn deploys_dir(dirs: &AppDirs) -> Result<PathBuf> {
+    let d = dirs.data()?.join("deploys");
+    crate::platform::private_fs::dir(&d).map_err(Error::Io)?;
+    Ok(d)
+}
+
 /// An installed lab's folder.
 pub(crate) fn lab_dir(dirs: &AppDirs, id: &str) -> Result<PathBuf> {
     validate_id(id)?;
