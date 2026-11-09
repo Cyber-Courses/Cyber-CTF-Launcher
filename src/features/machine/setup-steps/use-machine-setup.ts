@@ -12,7 +12,7 @@ import {
   type SystemReport,
 } from "@/lib/tauri";
 import { hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
-import { useRunLog } from "@/features/servers/host-setup/use-run-log";
+import { useRunLog } from "@/lib/use-run-log";
 import { ignore, tell } from "@/lib/failure";
 import { translate } from "@/lib/i18n";
 

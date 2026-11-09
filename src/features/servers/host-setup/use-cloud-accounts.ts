@@ -21,7 +21,7 @@ import {
   type ServerHostInput,
 } from "@/lib/tauri";
 import { CLOUD_META } from "@/features/servers/host-setup/constants";
-import { useRunLog } from "@/features/servers/host-setup/use-run-log";
+import { useRunLog } from "@/lib/use-run-log";
 import { ignore } from "@/lib/failure";
 import { describeError } from "@/lib/errors";
 import { useLatest } from "@/lib/use-latest";

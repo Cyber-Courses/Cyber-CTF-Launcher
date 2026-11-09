@@ -9,7 +9,7 @@ import { ignore } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
 import { structurallyEqual } from "@/lib/equal";
 import { useLatest } from "@/lib/use-latest";
-import { useRunLog } from "@/features/servers/host-setup/use-run-log";
+import { useRunLog } from "@/lib/use-run-log";
 
 /** The attack box's last status: read now and polled every 5 s while the lab is up where the
  *  launcher reaches its box (`active` and `reachable`), dropped when the lab starts or ends an

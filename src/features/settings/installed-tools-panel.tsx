@@ -7,7 +7,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LogConsole } from "@/components/ui/log-console";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { installedTools, uninstallDependency, type Dependency, type InstalledTool } from "@/lib/tauri";
-import { useRunLog } from "@/features/servers/host-setup/use-run-log";
+import { useRunLog } from "@/lib/use-run-log";
 import { formatAgo } from "@/lib/format";
 import { warn } from "@/lib/failure";
 import { translate, useT } from "@/lib/i18n";

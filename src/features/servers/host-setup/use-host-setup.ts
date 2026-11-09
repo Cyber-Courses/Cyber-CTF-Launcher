@@ -29,7 +29,7 @@ import {
   withProvider,
 } from "@/features/servers/host-setup/setup-model";
 import { useCloudAccounts } from "@/features/servers/host-setup/use-cloud-accounts";
-import { useRunLog } from "@/features/servers/host-setup/use-run-log";
+import { useRunLog } from "@/lib/use-run-log";
 import { testHost } from "@/features/servers/use-server-list";
 import { translate, useT } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";

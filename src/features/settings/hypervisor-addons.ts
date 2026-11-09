@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { hypervJoinAdmins, installVagrantPlugin, type ProviderStatus } from "@/lib/tauri";
-import { useRunLog } from "@/features/servers/host-setup/use-run-log";
+import { useRunLog } from "@/lib/use-run-log";
 import { translate } from "@/lib/i18n";
 
 // What a hypervisor that is installed but can't run VM labs yet needs: its Vagrant add-on, or
