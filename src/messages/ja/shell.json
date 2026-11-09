@@ -75,6 +75,7 @@
     "failed": "接続できませんでした",
     "systemTerminal": "システムターミナル",
     "systemTerminalHint": "このシェルを普段使っているターミナルアプリで開きます",
+    "systemTerminalFailed": "システムターミナルを開けませんでした",
     "shellEnded": "シェルが終了しました。",
     "shellEndedWithCode": "シェルが終了しました（終了コード {code}）。",
     "reconnect": "再接続",

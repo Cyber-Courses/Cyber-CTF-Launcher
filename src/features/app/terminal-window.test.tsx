@@ -56,7 +56,7 @@ describe("the terminal window", () => {
     expect(attempts).toBe(2);
   });
 
-  it("swallows a system terminal that can't open, without crashing the window", async () => {
+  it("says when the system terminal can't open, without crashing the window", async () => {
     const calls = installTauri({
       terminal_open: () => 7,
       terminal_close: () => null,
@@ -69,8 +69,9 @@ describe("the terminal window", () => {
     await user.click(screen.getByRole("button", { name: /System terminal/ }));
     await flush();
     expect(commands(calls)).toContain("lab_attack_shell");
-    // Still the terminal, still connected: the failure went nowhere.
+    // Still the terminal, still connected; the failure is said, with why.
     expect(screen.getByText("attack box")).toBeTruthy();
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(await screen.findByText("Couldn't open the system terminal")).toBeTruthy();
+    expect(screen.getByText(/osascript failed/)).toBeTruthy();
   });
 });

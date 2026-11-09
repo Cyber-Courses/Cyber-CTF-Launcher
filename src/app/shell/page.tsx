@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { RotateCw, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/toaster";
+import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 import { useIsMac } from "@/lib/platform";
 import { labAttackShell, type Runtime } from "@/lib/tauri";
@@ -17,6 +19,7 @@ installDevMock();
 
 /** The attack box shell window (opened by `terminal_window`): xterm.js over a pseudo-terminal. */
 function Shell() {
+  const t = useT();
   const params = useSearchParams();
   const id = params.get("id") ?? "";
   const runtime = (params.get("runtime") ?? "DOCKER") as Runtime;
@@ -30,8 +33,8 @@ function Shell() {
     setState({ kind: "connecting" });
     setAttempt((a) => a + 1);
   }, []);
-  // The system terminal, for players who prefer theirs.
-  const openOutside = () => void labAttackShell(id, runtime).catch(() => {});
+  // The system terminal, for players who prefer theirs; a failure says why.
+  const openOutside = () => void labAttackShell(id, runtime).catch(tell(t("shell.terminal.systemTerminalFailed")));
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
@@ -40,6 +43,7 @@ function Shell() {
         <div ref={host} className="h-full w-full" />
         {(state.kind === "ended" || state.kind === "failed") && <EndedBar state={state} onReconnect={reconnect} />}
       </div>
+      <Toaster />
     </div>
   );
 }

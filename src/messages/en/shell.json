@@ -75,6 +75,7 @@
     "failed": "couldn't connect",
     "systemTerminal": "System terminal",
     "systemTerminalHint": "Open this shell in your own terminal app",
+    "systemTerminalFailed": "Couldn't open the system terminal",
     "shellEnded": "The shell ended.",
     "shellEndedWithCode": "The shell ended (exit {code}).",
     "reconnect": "Reconnect",

@@ -75,6 +75,7 @@
     "failed": "Verbindung fehlgeschlagen",
     "systemTerminal": "System-Terminal",
     "systemTerminalHint": "Diese Shell in deiner eigenen Terminal-App öffnen",
+    "systemTerminalFailed": "Das Systemterminal ließ sich nicht öffnen",
     "shellEnded": "Die Shell wurde beendet.",
     "shellEndedWithCode": "Die Shell wurde beendet (Exit-Code {code}).",
     "reconnect": "Neu verbinden",
