@@ -23,7 +23,7 @@ use serde::Serialize;
 use crate::error::{Code, Error, Result};
 use crate::platform::config;
 use store::Session;
-use tokens::{TokenResponse, code_challenge, now, random_b64, session_from, token_request, token_request_at};
+use tokens::{TokenResponse, code_challenge, now, random_b64, refresh_request_at, session_from, token_request};
 
 const SCOPES: &str = "openid profile email offline_access";
 /// An access token this close to expiry is refreshed before use.
@@ -178,7 +178,7 @@ async fn refresh_tokens(refresh: String) -> Result<TokenResponse> {
 
 /// [`refresh_tokens`] at the cyber-auth at `base`.
 async fn refresh_tokens_at(base: &str, client_id: &str, api: &str, refresh: &str) -> Result<TokenResponse> {
-    token_request_at(base, &[("grant_type", "refresh_token"), ("refresh_token", refresh), ("client_id", client_id), ("resource", api)]).await
+    refresh_request_at(base, &[("grant_type", "refresh_token"), ("refresh_token", refresh), ("client_id", client_id), ("resource", api)]).await
 }
 
 /// [`access_token`], an expired session renewed by `renew` (given its refresh token).
@@ -204,9 +204,10 @@ where
         Ok(tokens) => tokens,
         Err(e) => {
             // Only drop the session when the server explicitly rejected the refresh token
-            // (OAuth `invalid_grant`). On a transient failure (network, 5xx) keep it, so a blip
-            // near expiry doesn't log the user out and stop the background agent.
-            if e.to_string().contains("invalid_grant") {
+            // (OAuth `invalid_grant`, see `refresh_request_at`). On any other failure (network,
+            // 5xx, another refusal) keep it, so a blip near expiry doesn't log the user out and
+            // stop the background agent.
+            if e.code() == Code::SessionExpired {
                 store::clear().await;
                 set_expired(true);
             }
@@ -406,6 +407,7 @@ pub async fn auth_logout() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokens::token_request_at;
 
     #[test]
     fn the_authorize_url_asks_for_pkce_and_an_account_choice() {
@@ -647,13 +649,24 @@ mod tests {
         store::store(expiring()).await.unwrap();
         let (base, _) = testing::serve(vec![(400, r#"{"error":"invalid_grant"}"#)]).await;
         let renew = |refresh: String| async move { refresh_tokens_at(&base, "client", "api", &refresh).await };
-        assert!(access_token_renewed_by(renew).await.is_err());
+        assert_eq!(access_token_renewed_by(renew).await.unwrap_err().code(), Code::SessionExpired);
         assert!(store::read().await.unwrap().is_none(), "a refused refresh token was kept");
         // Signed out under the app: the status says the session expired, until a sign-out on purpose.
         let status = serde_json::to_value(auth_status().await).unwrap();
         assert_eq!(status["loggedIn"], false);
         assert_eq!(status["sessionExpired"], true);
         auth_logout().await;
+        assert!(serde_json::to_value(auth_status().await).unwrap().get("sessionExpired").is_none());
+
+        // Another refusal keeps the session, even one whose description names `invalid_grant`:
+        // only the OAuth error code says the refresh token itself was refused.
+        store::store(expiring()).await.unwrap();
+        let (base, _) = testing::serve(vec![(400, r#"{"error":"invalid_request","error_description":"not an invalid_grant: resource missing"}"#)]).await;
+        let renew = |refresh: String| async move { refresh_tokens_at(&base, "client", "api", &refresh).await };
+        let err = access_token_renewed_by(renew).await.unwrap_err();
+        assert_ne!(err.code(), Code::SessionExpired, "{err}");
+        assert!(err.to_string().starts_with("token request rejected"), "{err}");
+        assert!(store::read().await.unwrap().is_some(), "another refusal signed the player out");
         assert!(serde_json::to_value(auth_status().await).unwrap().get("sessionExpired").is_none());
 
         // An outage keeps the session: a blip near expiry doesn't sign the player out.

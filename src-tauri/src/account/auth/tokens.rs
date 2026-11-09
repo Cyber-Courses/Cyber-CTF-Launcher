@@ -8,7 +8,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use super::store::Session;
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::platform::config;
 
 /// Lifetime assumed for an access token whose response doesn't say.
@@ -69,7 +69,16 @@ pub(super) async fn token_request(form: &[(&str, &str)]) -> Result<TokenResponse
 
 /// [`token_request`] to the cyber-auth at `base`.
 pub(super) async fn token_request_at(base: &str, form: &[(&str, &str)]) -> Result<TokenResponse> {
-    post_form(&format!("{base}/oauth2/token"), "token request", form).await?.map_err(|r| Error::Invalid(format!("token request rejected: {}", r.body)))
+    post_form(&format!("{base}/oauth2/token"), "token request", form).await?.map_err(Refusal::rejected)
+}
+
+/// A refresh of the session with `form` at the cyber-auth at `base`: its refusal of the refresh
+/// token itself (OAuth `invalid_grant`) is [`Code::SessionExpired`], the one failure that signs
+/// the player out; any other is the request's failure.
+pub(super) async fn refresh_request_at(base: &str, form: &[(&str, &str)]) -> Result<TokenResponse> {
+    post_form(&format!("{base}/oauth2/token"), "token request", form)
+        .await?
+        .map_err(|r| if r.error == "invalid_grant" { Error::coded(Code::SessionExpired) } else { r.rejected() })
 }
 
 /// An OAuth endpoint's refusal (RFC 6749 §5.2): its `error` code, and the body as sent.
@@ -77,6 +86,13 @@ pub(super) async fn token_request_at(base: &str, form: &[(&str, &str)]) -> Resul
 pub(super) struct Refusal {
     pub error: String,
     pub body: String,
+}
+
+impl Refusal {
+    /// The refusal of a token request, as its error.
+    fn rejected(self) -> Error {
+        Error::Invalid(format!("token request rejected: {}", self.body))
+    }
 }
 
 /// POSTs `form` to an OAuth endpoint: its JSON answer, or its refusal (a 4xx). An outage (no
