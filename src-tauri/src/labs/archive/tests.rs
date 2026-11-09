@@ -147,12 +147,8 @@ fn paths_outside_the_top_folder_land_inside_the_destination_or_are_refused() {
 
 #[test]
 fn a_top_folder_with_a_leading_dot_is_stripped_too() {
-    // GNU tar (`tar czf x.tgz .`, or `-C dir .`) writes `./` before every entry; GitHub's
-    // tarballs don't, but a lab archive built any other way would install under
-    // `<dest>/<repo>-<sha>/`, where nothing looks.
-    // Fails with: assertion failed: dir.join("isoloom.yml").is_file().
-    // Suggested fix: skip a leading `CurDir` component before dropping the top folder
-    // (`path.components().skip_while(|c| matches!(c, Component::CurDir)).skip(1)`).
+    // Regression: GNU tar (`tar czf x.tgz .`) writes `./` before every entry, and a lab archive built
+    // that way installed under `<dest>/<repo>-<sha>/`, where nothing looks.
     let dir = extract_to(&[("./lab-abc/isoloom.yml", b"name: x")]).unwrap();
     assert!(dir.join("isoloom.yml").is_file(), "{:?}", std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect::<Vec<_>>());
     std::fs::remove_dir_all(dir).unwrap();

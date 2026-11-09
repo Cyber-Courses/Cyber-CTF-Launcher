@@ -92,11 +92,8 @@ describe("engine step: switching and starting", () => {
     expect(calls.find((c) => c.cmd === "docker_start_engine")?.args).toMatchObject({ engine: "colima" });
   });
 
-  // Bug: the start error is one state for the whole step. After "Start Docker Desktop" fails,
-  // picking Colima still shows Docker Desktop's error, with a "Get Colima" button, as if Colima
-  // had failed to start. Suggested fix (engine-step.tsx): keep the error per engine
-  // (`useState<{ engine: DockerEngine; message: string } | null>` and show it only when
-  // `startError.engine === choice.id`), or clear it in the Choice's onSelect.
+  // Regression: one start error served the whole step: after Docker Desktop failed to start, picking
+  // Colima still showed Docker Desktop's error, as if Colima had failed.
   it("forgets one engine's start error when the player picks another engine", async () => {
     installTauri({
       docker_start_engine: () => {
@@ -113,10 +110,8 @@ describe("engine step: switching and starting", () => {
     expect(text()).toContain("Colima is installed but not running.");
   });
 
-  // Bug: the engine cards' badges ("in use", "running", "recommended") are typed English literals
-  // passed straight to the Choice card (choice-card.tsx renders `{badge}`), so they stay English
-  // in every language. Suggested fix: keep the union as the prop's value but render
-  // `t(\`ui.choice.badge.${badge}\`)` (new keys in each ui.json), as the rest of the step does.
+  // Regression: the engine cards' badges ("in use", "running", "recommended") stayed English in
+  // every language.
   it("translates the engine badges with the rest of the step", () => {
     installTauri();
     setLocalePreference("fr");
@@ -188,12 +183,8 @@ describe("SelfTest: states and re-runs", () => {
     expect(text()).toContain("Boot the test VM");
   });
 
-  // Bug: on the Machine page, "Hide test" stays available while the self-test runs. Hiding it
-  // unmounts SelfTest (the Rust run goes on), and "Test" mounts a fresh one with `auto`, which
-  // starts a second machine_selftest beside the first: two test labs on the same engine.
-  // Suggested fix (lab-type-rows.tsx TestButton / machine-parts.tsx LabTypeRow): disable "Hide
-  // test" while the row's test runs (LabTypeRow knows it from onResult), or keep the SelfTest
-  // mounted and only hide it.
+  // Regression: "Hide test" while the self-test ran, then "Test", started a second self-test beside
+  // the first: two test labs on the same engine.
   it("does not start a second self-test when the test is hidden and shown again mid-run", async () => {
     const calls = installTauri({ machine_selftest: () => new Promise(() => {}) });
     const user = userEvent.setup();
@@ -367,12 +358,8 @@ describe("MachineSetup window", () => {
     expect(disabled(button(/^continue$/i))).toBe(false);
   });
 
-  // Bug: a test step's SelfTest runs on mount (`auto`), and its "already ran" flag lives in the
-  // component. Going Back from a passed test step and Continue again mounts a new SelfTest that
-  // runs the whole test again; for the VM test that is another VM boot of several minutes,
-  // though setup.vmTest already says "ok". Suggested fix (setup-steps/index.tsx): pass
-  // `auto={setup.dockerTest === "idle"}` (and the same for vmTest), and seed SelfTest's result
-  // from the setup state so the passed checklist shows again.
+  // Regression: going Back from a passed test step and Continue again ran the whole test again (for
+  // the VM test, another VM boot of several minutes).
   it("does not run a passed test again when the player comes back to its step", async () => {
     const calls = installTauri({ machine_selftest: () => null });
     const user = userEvent.setup();

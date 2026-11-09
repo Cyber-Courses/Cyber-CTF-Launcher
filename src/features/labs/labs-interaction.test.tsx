@@ -126,13 +126,8 @@ describe("Labs catalogue, from the keyboard", () => {
   });
 
   it("arrow keys don't move between a filter's options", async () => {
-    // The filters are WAI-ARIA radiogroups (role=radiogroup / role=radio), and a keyboard or
-    // screen-reader user expects the arrow keys to move the choice inside one, with the group a
-    // single Tab stop. Segmented (src/components/ui/segmented.tsx:24) renders plain buttons:
-    // every option is its own Tab stop and ArrowRight does nothing.
-    // Suggested fix: roving tabindex in Segmented (tabIndex 0 on the checked option, -1 on the
-    // others) and an onKeyDown on the group that moves and selects with ArrowLeft/Right/Up/Down,
-    // Home and End.
+    // Regression: the filters are WAI-ARIA radiogroups, where the arrow keys move the choice and the
+    // group is a single Tab stop; Segmented rendered plain buttons, each its own Tab stop.
     renderLabs(null);
     const user = userEvent.setup();
     await flush(80);
@@ -143,12 +138,8 @@ describe("Labs catalogue, from the keyboard", () => {
   });
 
   it("a lab row is a role=button with its action buttons inside it", async () => {
-    // ARIA gives role=button presentational children: a screen reader reads the row as one
-    // button ("Open Invoice portal API") and its Open / Stop / Resume / Set up / Connect buttons
-    // inside are not exposed as controls (axe: nested-interactive). LabRow
-    // (src/features/labs/lab-row.tsx:118) puts them inside the role=button div.
-    // Suggested fix: make the row a plain container whose title is the button (or a
-    // stretched-link button covering the row), with the row actions as its siblings.
+    // Regression: the row was a role=button holding its own buttons, which ARIA makes
+    // presentational: a screen reader read the row as one button and hid its actions.
     renderLabs(null);
     await flush(80);
     const nested = screen.queryAllByRole("button").filter((b) => b.getAttribute("role") === "button" && b.querySelector("button"));

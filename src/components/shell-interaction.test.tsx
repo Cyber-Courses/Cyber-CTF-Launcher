@@ -198,11 +198,9 @@ describe("CommandPalette keyboard", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
-  // Bug: Enter that confirms an IME composition (Japanese is a shipped language) runs the
-  // highlighted command while the player is still typing a query. Suggested fix
-  // (command-palette.tsx onKey): `if (e.nativeEvent.isComposing || e.keyCode === 229) return;`
-  // before the Enter branch.
-  it("Enter confirming an IME composition in the search field runs a command", () => {
+  // Regression: the Enter that confirms an IME composition (Japanese is a shipped language) ran the
+  // highlighted command while the player was still typing.
+  it("Enter confirming an IME composition in the search field runs no command", () => {
     const { run } = open();
     fireEvent.keyDown(field(), { key: "Enter", isComposing: true, keyCode: 229 });
     expect(run).not.toHaveBeenCalled();
@@ -281,13 +279,9 @@ describe("AppShell shortcuts", () => {
     expect(unnamed.map((b) => b.outerHTML.slice(0, 120))).toEqual([]);
   });
 
-  // Bug: the shell's window keydown handler runs while a modal is open. With the quit guard (or
-  // the launch confirmation) up and its button focused, "/" switches the screen behind the modal
-  // and its requestAnimationFrame then focuses the lab search behind it, breaking the focus trap;
-  // Ctrl+K opens the palette over it. Suggested fix (app-shell.tsx onKey): return early when
-  // `document.activeElement?.closest('[aria-modal="true"]')` is set and is not the palette (or
-  // track an "a modal is open" flag the dialogs set).
-  it("/ switches the screen behind the quit guard while the dialog has the focus", async () => {
+  // Regression: the shell's shortcuts ran behind an open modal: with the quit guard up, "/" switched
+  // the screen behind it and took the focus out of it.
+  it("/ leaves the screen behind the quit guard alone while the dialog has the focus", async () => {
     installTauri();
     await shell();
     await emitSettled("quit-blocked", 1);
@@ -327,13 +321,9 @@ describe("AppShell shortcuts", () => {
     expect(screen.getByRole("alertdialog")).toBeTruthy();
   });
 
-  // Bug: shortcutFor accepts Ctrl+K on macOS too, where the palette's shortcut is Cmd+K (the
-  // sidebar shows "⌘K"). On macOS, Ctrl+K is the system's "delete to end of line" in every text
-  // field, and in the attack box terminal the shell's kill-line: the shell takes it (with
-  // preventDefault) and pops the palette over what the player was typing. Suggested fix
-  // (shell-model.ts shortcutFor): match `mac ? e.metaKey : e.ctrlKey` for the palette, as the
-  // Settings shortcut already does by platform.
-  it("on macOS Ctrl+K in a text field opens the palette instead of reaching the field", async () => {
+  // Regression: Ctrl+K opened the palette on macOS too, where its shortcut is Cmd+K and Ctrl+K is
+  // a text field's "delete to end of line" (and the attack box shell's kill-line).
+  it("on macOS Ctrl+K in a text field reaches the field, not the palette", async () => {
     onMac();
     installTauri();
     await shell();
@@ -386,11 +376,8 @@ describe("QuitGuard", () => {
     release();
   });
 
-  // Bug: the quit guard is a modal alertdialog with no Escape handling: Escape does nothing, so a
-  // keyboard player must Tab to "Keep waiting". Every other dialog (ConfirmDialog, the palette)
-  // closes on Escape. Suggested fix (quit-guard.tsx): an onKeyDown on the dialog that calls
-  // setCount(null) on Escape (keep waiting is the safe answer), as ConfirmDialog does.
-  it("Escape doesn't dismiss the quit guard (keep waiting)", async () => {
+  // Regression: the quit guard had no Escape handling; Escape now keeps waiting, the safe answer.
+  it("Escape dismisses the quit guard and keeps waiting", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
     await blockQuit();

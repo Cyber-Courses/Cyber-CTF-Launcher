@@ -117,11 +117,8 @@ fn reads_the_services_a_lab_declares_and_nothing_else() {
 
 #[test]
 fn a_web_app_whose_name_contains_a_datastore_token_keeps_its_open_url() {
-    // `is_datastore` matches substrings: "wordpress" contains "rdp", "giftportal" contains
-    // "ftp". A WordPress lab (the most common web target there is) then has no Open button.
-    // Fails with: assertion failed: !is_datastore(&ps("wordpress", "wordpress:6.4")).
-    // Suggested fix: match whole tokens (split the service and image on non-alphanumerics)
-    // for the short keys, or at least for "ftp", "rdp", "vnc", "smtp".
+    // Regression: `is_datastore` matched substrings ("wordpress" contains "rdp"), so a WordPress lab had
+    // no Open button.
     let ps = |svc: &str, image: &str| {
         parse_ps(&format!(r#"[{{"Service":"{svc}","Image":"{image}","State":"running","Publishers":[{{"PublishedPort":8080,"Protocol":"tcp"}}]}}]"#))
             .pop()
@@ -175,12 +172,8 @@ fn open_goes_to_the_service_the_lab_declares_as_http() {
 
 #[test]
 fn a_null_publishers_list_is_no_ports() {
-    // `#[serde(default)]` covers a missing field, not an explicit null. In NDJSON the line is
-    // dropped (the lab reads as not running when that was its only live container); in the array
-    // format the whole array fails and every container is gone.
-    // Fails with: left: 0, right: 1.
-    // Suggested fix: deserialize `Publishers` (and `Labels`, `Health`, `Image`, `Name`) through
-    // `Option` or a `deserialize_with` that reads null as empty.
+    // Regression: an explicit null (`"Publishers":null`) dropped the NDJSON line, and failed the whole
+    // array format: a running lab read as not running.
     let line = r#"{"Service":"web","State":"running","Name":"p-web-1","Publishers":null}"#;
     assert_eq!(parse_ps(line).len(), 1);
     assert_eq!(parse_ps(&format!("[{line}]")).len(), 1);

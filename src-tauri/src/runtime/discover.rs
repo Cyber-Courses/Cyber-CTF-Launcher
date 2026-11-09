@@ -461,12 +461,8 @@ mod tests {
 
     #[test]
     fn a_comment_after_the_name_is_not_part_of_it() {
-        // The VMs are named after `spec.name` as isoloom-spec parses it (YAML drops the comment);
-        // the scan's line reader keeps it, and `lab_names` then maps "minilab # ..." to the lab,
-        // which no VM name starts with: a VirtualBox/Parallels lab is never found running.
-        // Fails with: left: Some("minilab # the lab's name"), right: Some("minilab").
-        // Suggested fix: parse the line's value as YAML (`serde_yaml_ng::from_str::<String>`),
-        // or cut at " #" before trimming the quotes.
+        // Regression: a comment after the lab's name (`name: minilab # ...`) was kept in it, so no VM
+        // name matched and a VirtualBox/Parallels lab was never found running.
         let yaml = "version: 1\nname: minilab # the lab's name\n";
         let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(parsed["name"].as_str(), Some("minilab"), "what the spec parser (and the VM names) say");
@@ -524,12 +520,8 @@ mod tests {
 
     #[test]
     fn a_labs_folder_earlier_in_the_path_does_not_mislead_the_vmrun_scan() {
-        // The lab's id follows the launcher's own `labs/` folder, which sits under the app data
-        // folder; a parent folder also named `labs` (an account `labs`, a `~/labs` checkout holding
-        // the app data in a portable setup) comes first and its next segment is taken as the id.
-        // Fails with: left: ["Library"], right: ["goad-light"].
-        // Suggested fix: match the path against the app's own labs folder (`<app data>/labs/`),
-        // or take the id from the `/labs/<id>/.isoloom` shape.
+        // Regression: a parent folder also named `labs` (`/Users/labs/…`) came before the app's own and
+        // its next segment was taken as the lab id.
         let out = "Total running VMs: 1\n/Users/labs/Library/Application Support/com.cyberctf/labs/goad-light/.isoloom/vagrant/.vagrant/machines/dc01/vmware_desktop/x.vmx\n";
         assert_eq!(super::lab_ids_from_vmrun(out), vec!["goad-light".to_string()]);
     }

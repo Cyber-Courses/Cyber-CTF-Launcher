@@ -218,13 +218,8 @@ describe("cloud setup: validation per provider", () => {
     expect(screen.getByRole("radio", { name: /^AWS/ }).getAttribute("aria-checked")).toBe("false");
   });
 
-  // Bug: connectionReady() (setup-model.ts:94) treats any edited account as having a stored
-  // secret. An AWS account saved with the CLI never had a secret key, yet after switching it to
-  // access keys the secret field says "Leave empty to keep" and Continue is on with no secret;
-  // the save then fails in the core with "enter the host's password" on the last step.
-  // Suggested fix: only count the secret as kept when the saved account already used the same
-  // way in (pass `initial.useCliCreds` to connectionReady, and require a secret when it was
-  // true and v.useCliCreds is now false), and show no "keep" placeholder in that case.
+  // Regression: an AWS account saved with the CLI and switched to access keys offered "Leave empty to
+  // keep" for a secret it never had, and its save failed on the last step.
   it("asks for a secret key when an account that signed in with the CLI switches to access keys", async () => {
     installTauri();
     const user = userEvent.setup();
@@ -236,10 +231,8 @@ describe("cloud setup: validation per provider", () => {
     expect(disabled(/^continue$/i)).toBe(true);
   });
 
-  // Bug: options-step.tsx:28 lists 1, 2, 4, 8, 12, 24 hours and Never, but the core accepts any
-  // auto-stop (input.rs keeps 72). Editing such an account shows the first option ("1 hour")
-  // while the form still holds 72, so the screen says one thing and Save writes another.
-  // Suggested fix: as the region select does, add an option for a saved value the list lacks.
+  // Regression: an account's auto-stop that isn't one of the listed choices (72 hours) showed as
+  // "1 hour" while Save wrote 72.
   it("shows an edited account's own auto-stop when it is not one of the listed choices", async () => {
     installTauri();
     const user = userEvent.setup();
@@ -340,10 +333,7 @@ describe("server row menu: keyboard", () => {
     return trigger;
   }
 
-  // Bug: the overflow menu (host-row.tsx:166) closes on a click outside, a scroll or a resize,
-  // but not on Escape: a keyboard player who opened it has to Tab past its items or click.
-  // Suggested fix: while open, listen for Escape on document, close the menu and return focus
-  // to the trigger.
+  // Regression: the overflow menu closed on a click outside, a scroll or a resize, but not on Escape.
   it("closes the overflow menu on Escape", async () => {
     const user = userEvent.setup();
     await openMenu(user);
@@ -354,10 +344,8 @@ describe("server row menu: keyboard", () => {
     expect(document.activeElement?.getAttribute("aria-label")).toMatch(/more actions/i);
   });
 
-  // Bug: the trigger (host-row.tsx:189) says nothing about the menu it opens: no aria-haspopup,
-  // no aria-expanded, so a screen reader can't tell it opened. Suggested fix: add
-  // aria-haspopup="menu" and aria-expanded={!!pos}, give the dropdown role="menu" and its items
-  // role="menuitem", and move focus to the first item on open.
+  // Regression: the menu's trigger said nothing of the menu it opens (no aria-haspopup, no
+  // aria-expanded), so a screen reader couldn't tell it opened.
   it("tells assistive tech that the overflow menu is open", async () => {
     const user = userEvent.setup();
     const trigger = await openMenu(user);

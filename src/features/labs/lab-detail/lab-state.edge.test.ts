@@ -39,10 +39,8 @@ describe("deriveLabState: contradictory inputs", () => {
   });
 
   it("a running cloud lab offers no Pause, which the backend would refuse", () => {
-    // `isDocker` is false for a cloud lab, so canPause takes the VM branch and is true whenever
-    // the page wires onPark (labs-screen.tsx always does): the header shows Pause on a running
-    // cloud-services lab, and the click fails with lifecycle.rs's "A cloud lab can't be paused".
-    // canShutdown already excludes cloud labs. Suggested fix: `&& !isCloud` in canPause.
+    // Regression: a running cloud-services lab took the VM branch of canPause, so its header offered
+    // Pause, which fails (a cloud lab can't be paused).
     const s = derive({ runtime: cloud, status: status({ running: true, provider: "aws" }) });
     expect(s.canPause).toBe(false);
   });
@@ -74,10 +72,8 @@ describe("deriveLabState: contradictory inputs", () => {
   });
 
   it("a parked lab lists none of its machines as down", () => {
-    // `down` is meant for machines that went down while the lab runs (its comment says so),
-    // but it only skips the deploying case: a paused lab's machines are all "paused", a shut-down
-    // lab's all "poweroff", and both land in `down`. Harmless while the page gates the health
-    // panel on `running`; wrong as a derived fact. Suggested fix: `down = deploying || !running ? [] : …`.
+    // Regression: `down` (machines that went down while the lab runs) also listed a paused or
+    // shut-down lab's machines.
     const paused = derive({ status: status({ parked: "pause", machines: [machine("web", "paused"), machine("db", "paused")] }) });
     expect(paused.phase).toBe("paused");
     expect(paused.down).toEqual([]);
@@ -119,10 +115,8 @@ describe("bindHost, publishedBinds, restartTarget: edges", () => {
   });
 
   it("a port Docker reports once per address family is listed once", () => {
-    // Docker publishes on 0.0.0.0 and :: and the status carries both entries; the diagram
-    // dedupes them (uniquePorts) but the Details panel does not, so it draws the same row
-    // twice with the same React key (details-panel keys rows by machine:target). Suggested fix:
-    // dedupe on (machine, target, published) in publishedBinds.
+    // Regression: Docker publishes on 0.0.0.0 and ::, and the Details panel drew both entries as one
+    // row twice, with the same React key.
     const web = machine("web", "running", {
       ports: [
         { published: 8080, target: 80 },

@@ -12,12 +12,8 @@ const md = (content: string) => render(<Markdown content={content} />).container
 // Write-ups come from lab authors: the renderer must survive whatever Markdown they write.
 describe("Markdown: block edges", () => {
   it("a line starting with # that is not a heading is text, and up to six hashes make a heading", () => {
-    // "#### Deeper", "#hashtag" and a lone "#" match neither the heading regex (one to three
-    // hashes then whitespace) nor any other block, and the paragraph loop refuses lines that
-    // start with "#", so `i` never moves and the while loop spins forever: the window freezes
-    // on such a write-up. Skipped because it cannot complete (confirmed under a 45 s alarm).
-    // Suggested fix: drop the `startsWith("#")` guard from the paragraph loop (test the heading
-    // regex there instead), and accept up to six hashes as headings.
+    // Regression: "#### Deeper", "#hashtag" and a lone "#" matched no block, and the renderer looped
+    // forever on them: the window froze on such a write-up.
     for (const content of ["#### Deeper", "#hashtag", "#"]) {
       const { container, unmount } = render(<Markdown content={content} />);
       expect(container.textContent.length, content).toBeGreaterThan(0);
@@ -93,19 +89,15 @@ describe("Markdown: inline edges", () => {
   });
 
   it("a link whose URL holds parentheses keeps them", () => {
-    // `\([^)]+\)` stops at the first ")", so a Wikipedia-style URL loses its tail and the
-    // stray ")" shows as text after the link. Suggested fix: allow one level of balanced
-    // parentheses in the URL part, as CommonMark does: `\(((?:[^()]|\([^()]*\))+)\)`.
+    // Regression: a link's URL stopped at its first ")", so a Wikipedia-style URL lost its tail.
     const c = md("[wiki](https://en.wikipedia.org/wiki/Foo_(bar))");
     expect(c.querySelector("a")?.getAttribute("href")).toBe("https://en.wikipedia.org/wiki/Foo_(bar)");
     expect(c.textContent).toBe("wiki");
   });
 
   it("a javascript: link is plain text and never reaches the system opener", () => {
-    // Write-ups are third-party content: a `javascript:` (or `data:`) URL should not become a
-    // link, let alone be passed to openUrl. The opener plugin's scope is the only thing stopping
-    // it today. Suggested fix: render the text alone unless the URL starts with http(s)://,
-    // mailto: or a relative path.
+    // Write-ups are third-party content: a `javascript:` (or `data:`) URL never becomes a link, nor
+    // reaches openUrl.
     md("[click](javascript:alert(1))");
     const link = screen.queryByRole("link");
     if (link) fireEvent.click(link);

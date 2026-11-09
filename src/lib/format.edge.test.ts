@@ -29,10 +29,8 @@ describe("format: boundaries", () => {
   });
 
   it("a non-finite duration reads as zero", () => {
-    // `NaN < 10_000` is false, so formatDuration(NaN) goes through formatElapsed, where
-    // Math.max(0, NaN) is NaN and the m:ss branch prints "NaN:NaN"; Infinity prints
-    // "Infinity:NaN". A missing timestamp (a garbage last-run value, see last-run) reaches
-    // these. Suggested fix: `if (!Number.isFinite(ms)) ms = 0;` at the top of both.
+    // Regression: a missing timestamp (a garbage last-run value) printed "NaN:NaN", and Infinity
+    // "Infinity:NaN".
     expect(formatDuration(NaN)).not.toMatch(/NaN/);
     expect(formatElapsed(NaN)).not.toMatch(/NaN/);
     expect(formatDuration(Infinity)).not.toMatch(/Infinity|NaN/);
@@ -75,9 +73,8 @@ describe("format: boundaries", () => {
   });
 
   it("a non-finite size reads as the smallest size", () => {
-    // Math.max(1, NaN) is NaN, and Intl formats Infinity as "∞". A metric the backend could
-    // not read (a server with no capacity figures) reaches these. Suggested fix: return the
-    // kilobyte floor (or a dash) when `!Number.isFinite(b)`.
+    // Regression: a metric the backend could not read (a server with no capacity figures) printed
+    // NaN, or "∞".
     expect(formatBytes(NaN)).not.toMatch(/NaN/);
     expect(formatBytes(Infinity)).not.toMatch(/∞|Infinity/);
   });

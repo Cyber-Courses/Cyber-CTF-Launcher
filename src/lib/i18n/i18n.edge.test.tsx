@@ -44,11 +44,8 @@ describe("i18n: plurals in every language", () => {
   });
 
   it("Brazilian Portuguese singular forms carry the count, since zero takes them too", () => {
-    // Intl.PluralRules("pt-BR").select(0) is "one", so with no lab running the Overview's
-    // "Running now" header reads "1 lab" (home-screen.tsx passes `count: running.length`, which
-    // is 0 there). The French forms carry {count} and read "0 lab". Suggested fix: write
-    // "{count} lab" / "{count} contêiner" / "{count} lab rodando…" in pt-BR home.json, and keep
-    // this invariant: where zero takes `one`, a `one` form must carry {count}.
+    // Intl.PluralRules("pt-BR").select(0) is "one": where zero takes `one`, a `one` form must carry
+    // {count}, or "Running now" read "1 lab" with none running (a regression in pt-BR).
     setLocalePreference("pt-BR");
     expect(translate("home.running.labs", { count: 0 })).toMatch(/^0/);
     expect(translate("home.running.containers", { count: 0 })).toMatch(/^0/);

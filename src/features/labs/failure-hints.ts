@@ -21,9 +21,10 @@ const BY_CODE: Partial<Record<ErrorCode, FailureKind>> = {
 
 // Most specific first: Docker's "can't use it yet" message also says "Docker is running".
 const RULES: [FailureKind, RegExp][] = [
-  // runtime/docker/lifecycle.rs's own check, and Docker's bind error when it races it.
+  // error.rs's Code::PortInUse (the launcher's own port check), and Docker's bind error when it
+  // races it.
   ["ports", /already in use on this machine|port is already allocated|address already in use|bind for \S+ failed/i],
-  // exec/docker.rs docker_denied_message, and the daemon's own answer.
+  // error.rs's Code::DockerDenied, and the daemon's own answer.
   ["dockerAccess", /can't use it yet|permission denied while trying to connect to the docker daemon/i],
   ["docker", /docker isn't running|cannot connect to the docker daemon|is the docker daemon running/i],
   // account/auth.rs: the session is gone.

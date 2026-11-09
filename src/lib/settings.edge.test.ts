@@ -30,10 +30,8 @@ describe("settings: stray values in storage", () => {
   });
 
   it("a self-test record of the wrong shape is no result", () => {
-    // Only broken JSON is caught: `42`, `[]` or an object without `at` parse fine and come
-    // back typed as LastTest, so `last.at` is undefined and "tested … ago" is computed from
-    // NaN. Suggested fix: return null unless `parsed.result` is "ok" | "fail" and
-    // `typeof parsed.at === "number"`.
+    // Regression: only broken JSON was refused: `42`, `[]` or an object without `at` read as a last
+    // test, and "tested … ago" was computed from NaN.
     for (const raw of ["42", "[]", '"ok"', '{"result":"ok"}', '{"result":"maybe","at":1}']) {
       localStorage.setItem("cyberctf.selftest.docker", raw);
       expect(getLastTest("docker"), raw).toBeNull();

@@ -261,10 +261,8 @@ describe("topology: addresses and ports", () => {
   });
 
   it("two interfaces on the same network get distinct edge ids", () => {
-    // A machine with two addresses on one segment (two NICs of a VM on the same network) goes
-    // down the pivot path, and both links get the id `e-<network>-<machine>`: React Flow keeps
-    // one and React warns about the duplicate key. Not reachable from Docker (one address per
-    // network). Suggested fix: suffix the id with the interface index.
+    // Regression: a machine with two addresses on one segment (two NICs of a VM on the same network)
+    // gave both pivot links the id `e-<network>-<machine>`, and React Flow kept one.
     const twin = machine("fw", {
       interfaces: [
         { network: "default", ip: "10.0.0.3" },

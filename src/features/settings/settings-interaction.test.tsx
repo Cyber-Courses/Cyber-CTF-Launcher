@@ -105,9 +105,8 @@ describe("Settings: shared folder", () => {
     expect(screen.getByRole("switch", { name: /share/i })).toBeTruthy();
   });
 
-  // Bug: shared-folder.tsx:34 awaits the folder picker with no catch. When the dialog can't open
-  // (a denied permission, a sandbox), `void choose()` drops the rejection: nothing is shown and
-  // the press seems ignored. Suggested fix: wrap the `open()` call in try/catch and set `error`.
+  // Regression: a folder picker that couldn't open (a denied permission, a sandbox) was dropped
+  // without a word, and the press seemed ignored.
   it("says why the folder picker couldn't open", async () => {
     installTauri({
       shared_folder_get: () => ({ enabled: true, path: "/Users/player/CyberCTF", mountPoint: "/shared" }),
@@ -153,11 +152,9 @@ describe("Settings: attack box image", () => {
     expect(screen.getByRole("radio", { name: /custom image/i }).getAttribute("aria-checked")).toBe("false");
   });
 
-  // Bug: attack-box-rows.tsx:99 saves any custom text as the image. The core only accepts a
-  // plain `registry/name:tag@digest` (exegol.rs valid_image: ASCII letters, digits and . _ - / :
-  // @, no leading "-"), so "kali linux" or "-v" is saved here without a word and fails only
-  // later, when the attack box starts beside a lab. Suggested fix: check the same rule before
-  // enabling Save, and say what is wrong under the field.
+  // Regression: any custom text was saved as the attack box image, though the core takes only a plain
+  // `registry/name:tag@digest` (platform/exec/docker.rs `valid_image`), so "kali linux" failed only
+  // when the attack box started beside a lab.
   it("refuses a custom image name the core can't run", async () => {
     const { user, field, save } = await openCustomImage();
     await user.type(field(), "kali linux:latest");

@@ -979,12 +979,9 @@ mod tests {
 
     #[test]
     fn a_foreign_program_mentioning_deploy_and_job_is_not_a_worker() {
-        // With a legacy pidfile (no start time) and a recycled id, `kubectl ... deploy --job x`
-        // (or any tool with those words) keeps the lab "in progress" and gets SIGTERMed by Stop.
-        // The OS named its executable, and it isn't this app's; that is enough to tell.
-        // Fails with: assertion failed: !is_live_worker(...).
-        // Suggested fix: when `seen.exe` is known and differs from `this_exe`, return false
-        // before looking at the command line.
+        // Regression: with a legacy pidfile (no start time) and a recycled id, `kubectl ... deploy --job x`
+        // kept the lab "in progress" and got Stop's SIGTERM; the OS names its executable, which isn't
+        // this app's, and that is enough.
         let legacy = Worker { pid: 4242, started: None };
         let foreign = Observed { started: 1, zombie: false, cmdline: "/usr/bin/kubectl rollout deploy --job x".into(), exe: Some("kubectl".into()) };
         assert!(!is_live_worker(&legacy, Some(&foreign), Some("cyberctf-desktop")));

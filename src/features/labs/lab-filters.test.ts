@@ -68,9 +68,8 @@ describe("filterLabs: the query", () => {
   });
 
   it("the search ignores accents", () => {
-    // A player typing "elevation" (no accents, as on many keyboards) finds nothing in a French
-    // catalogue entry titled "Élévation de privilèges"; the same for "delegation" in its
-    // description. Suggested fix: fold both sides with `.normalize("NFD").replace(/\p{M}/gu, "")`.
+    // Regression: a player typing "elevation" (no accents, as on many keyboards) found nothing in a
+    // French catalogue entry titled "Élévation de privilèges"; the same for "delegation".
     expect(oddIds({ query: "elevation" })).toEqual(["priv"]);
     expect(oddIds({ query: "delegation" })).toEqual(["priv"]);
   });
