@@ -20,7 +20,6 @@ import { formatBytes } from "@/lib/format";
 import { useImageSizes } from "@/lib/use-image-sizes";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { translated, usePresetChoice } from "@/features/settings/preset-choice";
-import { AttackVmRow } from "@/features/settings/attack-vm-row";
 import { CustomValueForm } from "@/features/settings/custom-value-form";
 
 /** The presets' notes and terms, by image / box (a preset not listed keeps its English note). */
@@ -42,8 +41,6 @@ export function AttackBoxRows({ onSaved }: { onSaved: () => void }) {
   return (
     <>
       <AttackImageRow onSaved={onSaved} />
-
-      <AttackVmRow onSaved={onSaved} />
 
       <div className="border-t border-border px-4 py-3.5">
         <SharedFolderControl onSaved={onSaved} />

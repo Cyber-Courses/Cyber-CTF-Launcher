@@ -1,7 +1,7 @@
 import type { AgentInfo, Provider, SystemReport } from "@/lib/tauri";
 
 /** The settings the diagnostics report: the attack box image and VM, and the chosen hypervisor. */
-export type DiagnosticsSettings = { attackImage: string; attackBox: string; vmProvider: Provider | null };
+export type DiagnosticsSettings = { attackImage: string; vmProvider: Provider | null };
 
 /**
  * The About section's "Copy diagnostics" text: the version, the system, the tools and the
@@ -26,7 +26,6 @@ export function diagnosticsText(version: string | null, report: SystemReport | n
         }`
       : null,
     `Attack box: ${settings.attackImage}`,
-    `Attack VM: ${settings.attackBox}`,
     `VM provider: ${settings.vmProvider ?? "automatic"}`,
     agent ? `Install ID: ${agent.installId}` : "Not signed in",
   ].filter(Boolean);

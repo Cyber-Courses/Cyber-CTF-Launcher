@@ -87,20 +87,13 @@ fn in_vm(e: &mut Engine, command: &str, call: &Call) -> Reply {
 }
 
 #[tokio::test]
-async fn a_container_lab_in_a_utm_vm_runs_and_the_runner_adds_no_attack_box_of_its_own() {
+async fn a_container_lab_in_a_utm_vm_runs_with_nothing_of_the_runners_own_in_it() {
     let f = Fixture::new();
     let run = f.run();
     run.up(&[], Some("utm"), &mut |_| {}).await.unwrap();
     let s = run.status().await.unwrap();
     assert!(s.running && matches!(s.place, Some(Place::LocalVm)), "UTM's `started` reads as running (running={})", s.running);
-
-    let attack = run.attack_status(None).await.unwrap();
-    assert!(!attack.running && attack.ip.is_empty(), "{attack:?}");
-    assert_eq!(attack.networks, ["lab"], "the lab's networks are known");
-    assert_eq!(attack.shell_cmd, "", "no box of the runner's own to open");
-    let err = run.attach(None, Some("kalilinux/kali-rolling"), &mut |_| {}).await.unwrap_err().to_string();
-    assert!(err.contains("this lab declares no access machine"), "{err}");
-    assert!(f.fake.calls().iter().all(|c| !c.line().contains("docker run")), "nothing went into the VM");
+    assert!(f.fake.calls().iter().all(|c| !c.line().contains("docker run")), "nothing but the lab went into the VM");
     run.down(&mut |_| {}).await.unwrap();
     assert!(f.model().vm.is_none());
 }

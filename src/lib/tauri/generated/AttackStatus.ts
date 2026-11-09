@@ -30,9 +30,4 @@ shellCmd: string,
 /**
  * Whether the box is a VM here: beside a lab running as VMs on this machine.
  */
-vm: boolean, 
-/**
- * Whether the box boots from the Vagrant box picked in Settings: a VM lab's own attack VM.
- * Otherwise it runs the attack box image.
- */
-pickedBox: boolean, };
+vm: boolean, };

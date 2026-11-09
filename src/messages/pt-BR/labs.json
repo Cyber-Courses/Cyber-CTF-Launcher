@@ -235,7 +235,6 @@
     "network": "Rede",
     "attackVm": "VM de ataque",
     "attackBox": "Attack box",
-    "defaultBox": "a box padrão desta máquina",
     "status": "Status",
     "runningOn": "rodando em {host}",
     "running": "rodando",

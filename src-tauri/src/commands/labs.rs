@@ -25,7 +25,6 @@ pub async fn lab_launch(
     lab_id: String,
     provider: Option<Provider>,
     host: Option<String>,
-    attackbox_image: Option<String>,
     default_ports: Option<bool>,
     offline: Option<bool>,
     per_machine_vm: Option<bool>,
@@ -36,7 +35,6 @@ pub async fn lab_launch(
         lab_id,
         provider,
         host,
-        attackbox_image,
         default_ports: default_ports.unwrap_or(false),
         offline: offline.unwrap_or(false),
         per_machine_vm: per_machine_vm.unwrap_or(false),
@@ -204,55 +202,10 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
     }
 }
 
-/// The run that holds lab `id`'s attack box, wherever the lab runs. A lab on this machine that
-/// declares its own attack machine (on demand) has it brought up and down by the runner; on every
-/// other lab the box is one more machine the launcher adds to the lab (`attack_machine`), wherever
-/// it runs: on this machine, on a Proxmox server, in a cloud account. Mirrors the dispatch of
-/// [`lab_check`].
-enum BoxRun {
-    /// The lab's own on-demand attack machine, on this machine.
-    Own(Box<isothrum::LabRun>),
-    /// The box the launcher adds to the lab.
-    Machine(Box<attack_machine::Placed>),
-}
-
-impl BoxRun {
-    async fn attach(&self, dirs: &AppDirs, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-        match self {
-            BoxRun::Own(r) => r.attach(network, image, log).await,
-            BoxRun::Machine(b) => b.add(dirs, image.unwrap_or(isoloom_manifest::access::DEFAULT_IMAGE), network, log).await,
-        }
-    }
-
-    async fn detach(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<()> {
-        match self {
-            BoxRun::Own(r) => r.detach(log).await,
-            BoxRun::Machine(b) => b.remove(dirs, log).await,
-        }
-    }
-
-    async fn attack_status(&self, network: Option<&str>) -> Result<isothrum::AttackStatus> {
-        match self {
-            BoxRun::Own(r) => r.attack_status(network).await,
-            BoxRun::Machine(b) => b.status(network).await,
-        }
-    }
-
-    fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
-        match self {
-            BoxRun::Own(r) => r.shell_command(),
-            BoxRun::Machine(b) => b.shell_command(),
-        }
-    }
-
-    /// Whether the box runs on this machine (its image is the learner's local download).
-    fn local(&self) -> bool {
-        match self {
-            BoxRun::Own(_) => true,
-            BoxRun::Machine(b) => b.local(),
-        }
-    }
-}
+/// The run that holds lab `id`'s attack box, wherever the lab runs: the box is a machine the
+/// launcher adds to the lab (`attack_machine`), at the seat the lab declares for the player when
+/// it declares one. Mirrors the dispatch of [`lab_check`].
+type BoxRun = attack_machine::Placed;
 
 /// The run holding lab `id`'s attack box, or `None` where the launcher reaches none: a lab on an
 /// ESXi host, or a cloud-only lab started on this machine.
@@ -285,20 +238,11 @@ fn box_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Opt
                 Runtime::Vm => (isothrum::LabRun::vm(&home, dir, id)?, isoloom_spec::Target::Vagrant),
                 Runtime::Cloud => return Ok(None),
             };
-            // A lab of its own containers or VMs here that declares its attack machine: that one.
-            if local_vm(dir).is_none() && declares_access(dir) {
-                return Ok(Some(BoxRun::Own(Box::new(run))));
-            }
             (attack_machine::Host::Local(run), target)
         }
     };
     let vm = form == Runtime::Vm;
-    Ok(Some(BoxRun::Machine(Box::new(attack_machine::Placed { host, dir: dir.to_path_buf(), target, vm }))))
-}
-
-/// Whether the lab in `dir` declares an attack machine of its own (one the launcher didn't add).
-fn declares_access(dir: &Path) -> bool {
-    lab::load(dir).is_ok_and(|spec| spec.machines.iter().any(|(name, m)| m.access && name != attack_machine::NAME))
+    Ok(Some(attack_machine::Placed { host, dir: dir.to_path_buf(), target, vm }))
 }
 
 /// The run holding the lab's attack box, or an error when the launcher reaches none for it.
@@ -324,7 +268,7 @@ pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime, net
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
         match box_run(&dirs, &dir, &id, runtime)? {
-            Some(run) => run.attack_status(network.as_deref()).await,
+            Some(run) => run.status(network.as_deref()).await,
             None => Ok(isothrum::AttackStatus::default()),
         }
     })
@@ -356,7 +300,7 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
         let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
         let run = with_attack_box(&dirs, &dir, &id, runtime)?;
         let mut log = channel_log(logs);
-        let attach = run.attach(&dirs, network.as_deref(), image.as_deref(), &mut log);
+        let attach = run.add(&dirs, image.as_deref().unwrap_or(isoloom_manifest::access::DEFAULT_IMAGE), network.as_deref(), &mut log);
         // An image pulled on this machine is the app's to account for; one pulled in a lab's VM
         // on a server or in a cloud account isn't here at all.
         if !run.local() {
@@ -375,7 +319,7 @@ pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, log
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
         let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
-        with_attack_box(&dirs, &dir, &id, runtime)?.detach(&dirs, &mut channel_log(logs)).await
+        with_attack_box(&dirs, &dir, &id, runtime)?.remove(&dirs, &mut channel_log(logs)).await
     })
     .await
 }
@@ -448,11 +392,11 @@ mod tests {
         // The box is a machine the launcher adds to the lab, the run updated with the account's
         // place: cloud-docker (the default), a container among the lab's in its cloud VM.
         let placed = |runtime| match super::box_run(&t.dirs(), &dir, "srv", runtime).unwrap() {
-            Some(super::BoxRun::Machine(b)) => match &b.host {
+            Some(b) => match &b.host {
                 crate::runtime::attack_machine::Host::Cloud(_, place) => (place.label.clone(), b.target, b.vm),
                 _ => panic!("in the cloud account"),
             },
-            _ => panic!("a machine box"),
+            None => panic!("a box"),
         };
         assert_eq!(placed(Runtime::Docker), ("aws1".into(), isoloom_spec::Target::CloudDocker, false));
         // One VM per machine (cloud-vm): a Kali VM among the lab's.
@@ -603,14 +547,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lab_launch_refuses_a_bad_attack_box_image_before_asking_the_backend() {
-        // The launch is prepared (image checked, spec resolved) here and run in a detached worker;
-        // a bad attack-box image is refused before the backend is ever asked, so nothing streams.
+    async fn lab_launch_offline_refuses_a_lab_that_is_not_installed() {
+        // An offline start runs the installed lab: with none installed it is refused here, before
+        // the backend or a deploy worker is involved, so nothing streams.
         let t = TestApp::new();
         let s = sink();
-        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, Some("-x".into()), None, None, None, None, channel(s.clone())).await;
-        assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
-        assert!(s.lock().unwrap().is_empty(), "the backend was never asked");
+        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, None, Some(true), None, None, channel(s.clone())).await;
+        assert!(err.is_err(), "{err:?}");
+        assert!(s.lock().unwrap().is_empty(), "nothing ran");
     }
 
     #[tokio::test]

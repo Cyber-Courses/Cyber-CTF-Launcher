@@ -269,13 +269,6 @@ fn claim_runtime(claim: &Value) -> Runtime {
     }
 }
 
-/// The attack box a launch on a server host brings; none here (the player's own setting) and
-/// none for cloud services, which the player works on from their own machine. On a host it is the
-/// default image (the per-machine setting lives in the webview), pinned by digest like settings.ts's.
-fn attack_image(host: Option<&str>, runtime: Runtime) -> Option<&'static str> {
-    host.filter(|_| runtime != Runtime::Cloud).map(|_| isoloom_manifest::access::DEFAULT_IMAGE)
-}
-
 /// Stops a claimed lab that must not keep running under a failed session. A lab that never got
 /// installed (its download failed) has nothing to stop.
 async fn tear_down(dirs: &AppDirs, lab_id: Option<&str>, runtime: Runtime) -> Result<()> {
@@ -325,7 +318,7 @@ async fn run_claimed(dirs: &AppDirs, claim: &Value, host: Option<&str>, runtime:
     match labs::run(
         dirs,
         claim.clone(),
-        &labs::Placement { host, attackbox_image: attack_image(host, runtime), ..labs::Placement::default() },
+        &labs::Placement { host, ..labs::Placement::default() },
         |_line: String| {},
     )
     .await
@@ -570,13 +563,6 @@ mod tests {
         assert!(matches!(claim_runtime(&json!({ "runtime": "DOCKER" })), Runtime::Docker));
         assert!(matches!(claim_runtime(&json!({})), Runtime::Docker));
         assert!(matches!(claim_runtime(&json!({ "runtime": "CLOUD" })), Runtime::Cloud));
-    }
-
-    #[test]
-    fn only_container_and_vm_launches_on_a_host_bring_the_attack_box() {
-        assert_eq!(attack_image(Some("aws-1"), Runtime::Docker), Some(isoloom_manifest::access::DEFAULT_IMAGE));
-        assert_eq!(attack_image(Some("aws-1"), Runtime::Cloud), None);
-        assert_eq!(attack_image(None, Runtime::Docker), None);
     }
 
     #[test]

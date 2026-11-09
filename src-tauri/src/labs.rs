@@ -38,13 +38,12 @@ struct Release<'a> {
 }
 
 /// Where and how a launched lab runs: VM labs locally with `provider`, or on the server `host`
-/// when one is given; the attack box image; whether a container lab keeps its own ports; and
+/// when one is given; whether a container lab keeps its own ports; and
 /// whether a container lab with VM recipes runs here as one VM per machine instead.
 #[derive(Default)]
 pub(crate) struct Placement<'a> {
     pub provider: Option<Provider>,
     pub host: Option<&'a str>,
-    pub attackbox_image: Option<&'a str>,
     pub default_ports: bool,
     pub per_machine_vm: bool,
     /// The Docker context a container lab here was pinned to (the chosen engine), if any.
@@ -356,7 +355,7 @@ pub(crate) async fn run(dirs: &AppDirs, launch_json: serde_json::Value, placemen
     let release = Release { lab_id: &launch.lab_id, repository: &launch.repository, commit: &launch.commit };
     let dir = install(dirs, release, &log).await?;
     // Fixed names for every lab; the evidence itself is never in the environment.
-    let env = launch_env(launch.env, placement.attackbox_image, placement.default_ports);
+    let env = launch_env(launch.env, placement.default_ports);
     let lab = runtime::LabRef { dir: &dir, id: &launch.lab_id, runtime: launch.runtime };
     let to = runtime::Destination {
         provider: placement.provider,
@@ -384,7 +383,7 @@ async fn start_lab(lab_id: &str) -> Result<serde_json::Value> {
 #[cfg(test)]
 pub(crate) async fn launch_values_at(base: &str, token: &str, lab_id: &str) -> Result<Vec<(String, String)>> {
     let data = api::send(base, Some(token.to_owned()), START_LAB, json!({ "id": lab_id })).await?;
-    Ok(launch_env(parse_launch(data["startLab"].clone())?.env, None, false))
+    Ok(launch_env(parse_launch(data["startLab"].clone())?.env, false))
 }
 
 /// The launch spec for `lab_id`: the backend's answer (whose source is kept for a later offline
@@ -418,9 +417,6 @@ pub struct LaunchRequest {
     pub provider: Option<Provider>,
     /// The saved server or cloud account it runs on (this machine when None).
     pub host: Option<String>,
-    /// An attack box started next to the lab on a server host (where the lab network isn't
-    /// reachable from this machine).
-    pub attackbox_image: Option<String>,
     /// A container lab's services published on their own ports instead of random free ones.
     pub default_ports: bool,
     /// The installed lab started without the backend when it can't be reached (no progress
@@ -434,18 +430,13 @@ pub struct LaunchRequest {
     pub docker_engine: Option<String>,
 }
 
-/// Prepares `request`'s launch: validates the attack-box image, resolves the `startLab` spec (the
+/// Prepares `request`'s launch: resolves the `startLab` spec (the
 /// backend's, kept for a later offline start, or the installed lab's when the backend can't be
 /// reached and the player asked), and returns the job to run. The deploy itself runs in a detached
 /// worker, started by the command layer (so quitting the app never cuts a run short); `log`
 /// carries the one "starting offline" line the preparation may emit.
 pub(crate) async fn launch_job(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<Job> {
-    let LaunchRequest { lab_id, provider, host, attackbox_image, default_ports, offline, per_machine_vm, docker_engine } = request;
-    if let Some(image) = &attackbox_image
-        && !crate::platform::exec::valid_image(image)
-    {
-        return Err(Error::Invalid(format!("invalid attack-box image `{image}`")));
-    }
+    let LaunchRequest { lab_id, provider, host, default_ports, offline, per_machine_vm, docker_engine } = request;
     // Resolve the chosen engine to its Docker context now (here on the main process, where Docker
     // answers): a container lab on a server never carries one.
     let docker_context = match (&docker_engine, &host) {
@@ -453,7 +444,7 @@ pub(crate) async fn launch_job(dirs: &AppDirs, request: LaunchRequest, log: &imp
         _ => None,
     };
     let startlab = launch_spec(dirs, &lab_id, offline, log).await?;
-    Ok(Job { lab_id, op: Op::Launch, launch: startlab, provider, host, attackbox_image, default_ports, per_machine_vm, docker_context })
+    Ok(Job { lab_id, op: Op::Launch, launch: startlab, provider, host, default_ports, per_machine_vm, docker_context })
 }
 
 /// A stable lab id for a lab imported from the local directory `src`: `local-<slug>` of the lab's
@@ -776,23 +767,6 @@ mod tests {
         // covered by the runner's own tests and the integration tests).
         drop(held);
         let _ = launch;
-    }
-
-    #[tokio::test]
-    async fn a_launch_refuses_a_bad_attack_box_image_before_asking_the_backend() {
-        let t = crate::testing::test_app::TestApp::new();
-        let request = LaunchRequest {
-            lab_id: "invoice".into(),
-            provider: None,
-            host: None,
-            attackbox_image: Some("-x".into()),
-            default_ports: false,
-            offline: false,
-            per_machine_vm: false,
-            docker_engine: None,
-        };
-        let err = launch_job(&t.dirs(), request, &|_: String| {}).await;
-        assert_eq!(err.unwrap_err().to_string(), "invalid attack-box image `-x`");
     }
 
     #[test]

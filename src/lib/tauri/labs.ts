@@ -104,7 +104,6 @@ export type LabLaunch = {
   labId: string;
   provider: Provider | null;
   host: string | null;
-  attackboxImage: string | null;
   defaultPorts: boolean;
   offline?: boolean;
   perMachineVm?: boolean;

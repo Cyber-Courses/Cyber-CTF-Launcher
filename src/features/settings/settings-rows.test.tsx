@@ -15,7 +15,7 @@ import { readOnboarded, markOnboarded } from "@/components/shell/onboarded-flag"
 import { must } from "@/components/test-support";
 import { openCustomImage, toggleFailingSharedFolder } from "@/features/settings/settings-test-kit";
 import { getLocalePreference, setLocalePreference } from "@/lib/i18n";
-import { getAttackBox, getAttackImage, getAutoAttackBox, getPortMode, getVmProvider, setAttackBox, setAttackImage, setVmProvider } from "@/lib/settings";
+import { getAttackImage, getAutoAttackBox, getPortMode, getVmProvider, setAttackImage, setVmProvider } from "@/lib/settings";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
 import { installTauri, stream, rejectWith } from "@/test/tauri";
@@ -411,24 +411,8 @@ describe("AttackBoxRows", () => {
   it("opens with the custom field filled when the saved image is not a preset", () => {
     installTauri();
     setAttackImage("ghcr.io/me/box:1");
-    setAttackBox("me/box");
     render(<AttackBoxRows onSaved={vi.fn()} />);
     expect(screen.getByDisplayValue("ghcr.io/me/box:1")).toBeTruthy();
-    expect(screen.getByDisplayValue("me/box")).toBeTruthy();
-  });
-
-  it("picks an attack VM box, or a custom one", async () => {
-    installTauri();
-    const onSaved = vi.fn();
-    const user = userEvent.setup();
-    render(<AttackBoxRows onSaved={onSaved} />);
-    await flush();
-    await user.click(radioWith("generic/debian12"));
-    expect(getAttackBox()).toBe("generic/debian12");
-    await user.click(screen.getByRole("radio", { name: /custom box/i }));
-    await user.type(screen.getByPlaceholderText("owner/name"), "me/kali{Enter}");
-    expect(getAttackBox()).toBe("me/kali");
-    expect(onSaved).toHaveBeenCalledTimes(2);
   });
 
   it("turns the auto-start off and on", async () => {

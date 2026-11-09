@@ -235,7 +235,6 @@
     "network": "ネットワーク",
     "attackVm": "攻撃用 VM",
     "attackBox": "アタックボックス",
-    "defaultBox": "このマシンの既定の Box",
     "status": "ステータス",
     "runningOn": "{host} で実行中",
     "running": "実行中",

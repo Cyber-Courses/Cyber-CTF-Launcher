@@ -1,7 +1,6 @@
 //! Docker labs through the Isothrum runner, end to end: generate and start the lab, read its
-//! status, run its checks, start the attack box as the lab page does (the lab's own attack machine
-//! when it declares one, else the machine the launcher adds to it) and reach the target from a
-//! shell in it, park and resume the lab (the box following), take the box out, then stop the lab
+//! status, run its checks, add the attack box as the lab page does (at the seat the lab declares
+//! for the player, else on its first network) and reach the target from a shell in it, park and resume the lab (the box following), take the box out, then stop the lab
 //! and assert nothing of it is left. Each lab runs from the run manifest Isoloom writes, through
 //! the runner — the one lab engine.
 //!
@@ -19,10 +18,7 @@
 
 use std::path::Path;
 
-use isothrum_runner::ShellCommand;
-
 use super::support::{Run, check, in_box, install_copy, leftovers, log};
-use crate::error::Result;
 use crate::platform::exec::run;
 use crate::runtime::{LabStatus, Place, docker, isothrum};
 
@@ -93,60 +89,36 @@ async fn exercise(r: &Run, e: &Expect, f: &mut Vec<String>) {
     attack.down(r, f).await;
 }
 
-/// The attack box as the lab page drives it: the lab's own on-demand attack machine when it
-/// declares one (the runner brings it up and down), else the machine the launcher adds to it.
-enum Attack {
-    Own(isothrum::LabRun),
-    Added(crate::runtime::attack_machine::Placed),
-}
+/// The attack box as the lab page drives it: the machine the launcher adds to the lab, at the
+/// seat it declares for the player when it declares one (in place of its own access machine).
+struct Attack(crate::runtime::attack_machine::Placed);
 
-/// Starts the attack box, and checks it runs, has an address and reaches the target.
+/// Adds the attack box, and checks it runs, has an address and reaches the target.
 async fn attack_box_up(r: &Run, e: &Expect, f: &mut Vec<String>) -> Option<Attack> {
     let run = isothrum::LabRun::docker(&r.home, &r.dir, &r.id).ok()?;
-    let declares = crate::runtime::lab::load(&r.dir).is_ok_and(|s| s.machines.values().any(|m| m.access));
-    let attack = if declares {
-        let up = run.attach(None, None, &mut log(&r.id)).await;
-        check(up.is_ok(), format!("the lab's own attack machine comes up ({:?})", up.err()), f);
-        Attack::Own(run)
-    } else {
-        let placed = crate::runtime::attack_machine::Placed {
-            host: crate::runtime::attack_machine::Host::Local(run),
-            dir: r.dir.clone(),
-            target: isoloom_spec::Target::Docker,
-            vm: false,
-        };
-        let image = std::env::var("CYBERCTF_TEST_ATTACK_BOX").unwrap_or_else(|_| isoloom_manifest::access::DEFAULT_IMAGE.to_owned());
-        let added = placed.add(&crate::platform::AppDirs::new(None, None), &image, None, &mut log(&r.id)).await;
-        check(added.is_ok(), format!("the attack box is added to the lab ({:?})", added.err()), f);
-        Attack::Added(placed)
+    let placed = crate::runtime::attack_machine::Placed {
+        host: crate::runtime::attack_machine::Host::Local(run),
+        dir: r.dir.clone(),
+        target: isoloom_spec::Target::Docker,
+        vm: false,
     };
+    let image = std::env::var("CYBERCTF_TEST_ATTACK_BOX").unwrap_or_else(|_| isoloom_manifest::access::DEFAULT_IMAGE.to_owned());
+    let added = placed.add(&crate::platform::AppDirs::new(None, None), &image, None, &mut log(&r.id)).await;
+    check(added.is_ok(), format!("the attack box is added to the lab ({:?})", added.err()), f);
+    let attack = Attack(placed);
     attack.reached(e, f, "once up").await;
     Some(attack)
 }
 
 impl Attack {
-    async fn status(&self) -> Result<crate::runtime::AttackStatus> {
-        match self {
-            Attack::Own(run) => run.attack_status(None).await,
-            Attack::Added(placed) => placed.status(None).await,
-        }
-    }
-
-    fn console(&self) -> Result<ShellCommand> {
-        match self {
-            Attack::Own(run) => run.shell_command(),
-            Attack::Added(placed) => placed.shell_command(),
-        }
-    }
-
     /// The box runs, with an address, and a shell in it reaches the target's port 80 by name.
     async fn reached(&self, e: &Expect, f: &mut Vec<String>, when: &str) {
-        match self.status().await {
+        match self.0.status(None).await {
             Ok(s) => check(s.running && !s.ip.is_empty(), format!("the attack box runs, with an address, {when} ({} on {})", s.ip, s.lab_network), f),
             Err(err) => check(false, format!("the attack box's status reads, {when}: {err}"), f),
         }
         let probe = format!("bash -c \"exec 3<>/dev/tcp/{}/80 && echo reached\"", e.target);
-        let reached = match self.console() {
+        let reached = match self.0.shell_command() {
             Ok(console) => in_box(&console, &probe).await,
             Err(err) => Err(err),
         };
@@ -155,12 +127,9 @@ impl Attack {
 
     /// Takes the box out, the lab left up.
     async fn down(&self, r: &Run, f: &mut Vec<String>) {
-        let down = match self {
-            Attack::Own(run) => run.detach(&mut log(&r.id)).await,
-            Attack::Added(placed) => placed.remove(&crate::platform::AppDirs::new(None, None), &mut log(&r.id)).await,
-        };
+        let down = self.0.remove(&crate::platform::AppDirs::new(None, None), &mut log(&r.id)).await;
         check(down.is_ok(), format!("the attack box is taken out ({:?})", down.err()), f);
-        check(self.status().await.is_ok_and(|s| !s.running), "the attack box is gone".into(), f);
+        check(self.0.status(None).await.is_ok_and(|s| !s.running), "the attack box is gone".into(), f);
     }
 }
 

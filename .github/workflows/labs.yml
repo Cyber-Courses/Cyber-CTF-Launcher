@@ -89,7 +89,7 @@ jobs:
           CYBERCTF_TEST_HELLO_LAB: ${{ runner.temp }}/isoloom/examples/hello-stack
           CYBERCTF_TEST_ATTACK_BOX: ${{ env.ATTACK_BOX }}
           ISOLOOM_HOME: ${{ runner.temp }}/isoloom-home
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib integration_tests::docker:: -- --ignored --nocapture --test-threads=1
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib 'integration_tests::docker::' -- --ignored --nocapture --test-threads=1
       - name: Docker state on failure
         if: failure()
         run: |

@@ -4,19 +4,15 @@ import { formatAgo, formatBytes, formatDuration, formatElapsed, prettyLabId } fr
 import { setLocalePreference } from "@/lib/i18n";
 import {
   ATTACK_PRESETS,
-  ATTACK_VM_PRESETS,
   attackImageLabel,
   CYBERCTF_ATTACK_REPO,
-  DEFAULT_ATTACK_BOX,
   DEFAULT_ATTACK_IMAGE,
-  getAttackBox,
   getAttackImage,
   getAutoAttackBox,
   getLastTest,
   getPortMode,
   getVmProvider,
   OLD_ATTACK_IMAGES,
-  setAttackBox,
   setAttackImage,
   setAutoAttackBox,
   setLastTest,
@@ -81,9 +77,8 @@ describe("format", () => {
 });
 
 describe("settings", () => {
-  it("defaults the attack box image and VM box", () => {
+  it("defaults the attack box image", () => {
     expect(getAttackImage()).toBe(DEFAULT_ATTACK_IMAGE);
-    expect(getAttackBox()).toBe(DEFAULT_ATTACK_BOX);
   });
 
   it("defaults to the Cyber CTF box pinned by digest, shown as its repository", () => {
@@ -123,10 +118,6 @@ describe("settings", () => {
     expect(getAttackImage()).toBe("ghcr.io/me/box");
     setAttackImage("   ");
     expect(getAttackImage()).toBe(DEFAULT_ATTACK_IMAGE);
-    setAttackBox(" generic/debian12 ");
-    expect(getAttackBox()).toBe("generic/debian12");
-    setAttackBox("");
-    expect(getAttackBox()).toBe(DEFAULT_ATTACK_BOX);
   });
 
   it("keeps or clears the chosen hypervisor", () => {
@@ -178,14 +169,12 @@ describe("settings", () => {
       throw new Error("denied");
     });
     expect(getAttackImage()).toBe(DEFAULT_ATTACK_IMAGE);
-    expect(getAttackBox()).toBe(DEFAULT_ATTACK_BOX);
     expect(getVmProvider()).toBeNull();
     expect(getLastTest("vm")).toBeNull();
     expect(getAutoAttackBox()).toBe(true);
     expect(getPortMode()).toBeNull();
     expect(() => {
       setAttackImage("x");
-      setAttackBox("x");
       setVmProvider("virtualbox");
       setVmProvider(null);
       setLastTest("vm", "fail");
@@ -199,7 +188,7 @@ describe("settings", () => {
   });
 
   it("describes every preset in the current language", () => {
-    for (const p of [...ATTACK_PRESETS, ...ATTACK_VM_PRESETS]) expect(p.note.length).toBeGreaterThan(0);
+    for (const p of ATTACK_PRESETS) expect(p.note.length).toBeGreaterThan(0);
     for (const p of ATTACK_PRESETS) if (p.terms !== undefined) expect(typeof p.terms).toBe("string");
   });
 });

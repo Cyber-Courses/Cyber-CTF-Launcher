@@ -8,7 +8,7 @@ import { KeyValue } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
 import { openLogFolder, restartApp, type AgentInfo, type SystemReport } from "@/lib/tauri";
 import { useDeployingLabs } from "@/features/labs/runs/operations";
-import { getAttackBox, getAttackImage, getVmProvider } from "@/lib/settings";
+import { getAttackImage, getVmProvider } from "@/lib/settings";
 import { Row, Section } from "@/features/settings/settings-layout";
 import { clearOnboarded } from "@/components/shell/onboarded-flag";
 import { diagnosticsText } from "@/features/settings/diagnostics";
@@ -25,7 +25,7 @@ function DiagnosticsRow({ version, report, agent }: { version: string | null; re
   const t = useT();
   const [copied, setCopied] = useState(false);
   const copy = () => {
-    const text = diagnosticsText(version, report, agent, { attackImage: getAttackImage(), attackBox: getAttackBox(), vmProvider: getVmProvider() });
+    const text = diagnosticsText(version, report, agent, { attackImage: getAttackImage(), vmProvider: getVmProvider() });
     // Inside the chain, so a webview without the clipboard API fails here too, quietly.
     Promise.resolve()
       .then(() => navigator.clipboard.writeText(text))

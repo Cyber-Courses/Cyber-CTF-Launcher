@@ -10,7 +10,7 @@ import {
   type Park,
   type Provider,
 } from "@/lib/tauri";
-import { getAttackBox, getAttackImage, getAutoAttackBox, getVmProvider, type PortMode } from "@/lib/settings";
+import { getVmProvider, type PortMode } from "@/lib/settings";
 import { notify } from "@/lib/notify";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import { localProviders, pickLocalHypervisor, readyHypervisors, runsNatively } from "@/features/labs/lab-runtime";
@@ -98,7 +98,7 @@ export const cloudLaunch =
   (lab: Lab, host: string | null | undefined): OperationBody =>
   async (log) => {
     if (!host) throw new Error(translate("labs.actions.pickCloudAccount"));
-    await labLaunch({ labId: lab.id, provider: null, host, attackboxImage: null, defaultPorts: false }, log);
+    await labLaunch({ labId: lab.id, provider: null, host, defaultPorts: false }, log);
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);
     void notify(translate("labs.actions.labReady"), translate("labs.actions.readyInCloud", { title: lab.title }));
@@ -175,17 +175,12 @@ export const localLaunch =
     const remote = host != null;
     const inLocalVm = !vm && !remote && !!vmProvider;
     const provider = localHypervisor(rt, remote, vmProvider, report, asVms);
-    // The lab network isn't reachable from here, so an attack box goes next to the lab.
-    // Remotely or inside a local VM: the container attack box image. A VM lab here: the
-    // attack VM's Vagrant box, when Settings start the attack box with each lab.
-    const attackbox = remote || inLocalVm ? getAttackImage() : vm && getAutoAttackBox() ? getAttackBox() : null;
     await launchOrOfferOffline(lab.title, (offline) =>
       labLaunch(
         {
           labId: lab.id,
           provider,
           host: host ?? null,
-          attackboxImage: attackbox,
           defaultPorts: ports === "default",
           offline,
           perMachineVm: asVms || cloudPerMachine,

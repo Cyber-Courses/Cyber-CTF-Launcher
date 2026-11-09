@@ -61,9 +61,12 @@ the runner's console into it (`Running::console_command`).
 | VMs           | a Kali VM (`kali@rolling`, 40 GB) with Kali's headless toolset, installed on its first start (~16 minutes) |
 | On an Arm Mac | native: Kali's arm64 image beside containers; a Debian arm64 VM made Kali by its set-up among VMs          |
 
-A lab that declares its own attack machine (`access: true`) keeps it: the runner brings that
-on-demand machine up and down. Isoloom and Isothrum know nothing of the attack box: the launcher
-composes their general features (`.cyberctf-overlay.yml`, update, retire, the console).
+A lab that declares an access machine (`access: true`) says with it where the player sits: the
+box takes its place there (its name, its networks and addresses, in the overlay's `replace:`), so
+the checks run from that seat run from the box; taking the box out brings the lab's own machine
+back. Without one, the box is `attackbox` on the lab's first network (or the one the player
+picks). Isoloom and Isothrum know nothing of the attack box: the launcher composes their general
+features (`.cyberctf-overlay.yml`, update, retire, the console).
 
 ## Accounts and servers
 

@@ -80,17 +80,6 @@
     "autoStartDescription": "La inicia en cuanto un lab está activo en esta máquina: el contenedor en un lab de contenedores, la VM junto a un lab de VM. Aun así puedes iniciarla o detenerla desde el lab.",
     "invalidImage": "Usa un nombre de imagen simple como registry/name:tag: solo letras, cifras y . _ - / : @, sin guion al principio."
   },
-  "attackVm": {
-    "title": "VM de ataque para labs de VM",
-    "description": "Las redes de un lab de VM viven dentro del hipervisor, así que tu atacante es una VM junto a él. Tu imagen de attack box de arriba se ejecuta dentro de esa VM (Debian 12 con Docker; en un Mac Apple Silicon, la versión Arm de la imagen). Este box de Vagrant es para labs cuyo propio diseño declara una VM de ataque: arranca esa VM, conectada a cada red del lab, con internet para instalar herramientas. El primer inicio descarga el box. Hasta que elijas uno, el lab arranca su box por defecto para la CPU de esta máquina: Kali en x86, la imagen cloud de Debian en Arm (el box de Kali no tiene versión Arm).",
-    "label": "Box de la VM de ataque",
-    "presets": {
-      "kali": "Box oficial de Kali; tiene internet, añade herramientas sobre la marcha",
-      "debian12": "Una base limpia sobre la que montar tus propias herramientas"
-    },
-    "customBox": "Box personalizado",
-    "customBoxNote": "Cualquier box de Vagrant Cloud (owner/name) creado para tu hipervisor."
-  },
   "hypervisor": {
     "title": "Hipervisor para labs de VM",
     "checking": "Comprobando hipervisores…",

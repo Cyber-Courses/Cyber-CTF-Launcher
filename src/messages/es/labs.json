@@ -235,7 +235,6 @@
     "network": "Red",
     "attackVm": "VM de ataque",
     "attackBox": "Máquina de ataque",
-    "defaultBox": "el box por defecto de esta máquina",
     "status": "Estado",
     "runningOn": "en ejecución en {host}",
     "running": "en ejecución",

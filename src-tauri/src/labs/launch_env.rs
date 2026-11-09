@@ -32,11 +32,10 @@ fn is_flag(name: &str) -> bool {
 /// The environment a launch runs with: the evidence claim's two variables and the player's flags
 /// from the backend (nothing else it sends), then the attack-box image and the default-ports
 /// switch when asked for.
-pub(super) fn launch_env(env: Vec<EnvVar>, attackbox_image: Option<&str>, default_ports: bool) -> Vec<(String, String)> {
+pub(super) fn launch_env(env: Vec<EnvVar>, default_ports: bool) -> Vec<(String, String)> {
     env.into_iter()
         .filter(|v| CLAIM.contains(&v.name.as_str()) || is_flag(&v.name))
         .map(|v| (v.name, v.value))
-        .chain(attackbox_image.map(|i| ("CYBERCTF_ATTACKBOX_IMAGE".to_string(), i.to_string())))
         .chain(default_ports.then(|| (runtime::PORTS_ENV.to_string(), "default".to_string())))
         .collect()
 }
@@ -64,9 +63,8 @@ mod tests {
     #[test]
     fn a_launch_passes_the_evidence_claim_and_the_extras_asked_for() {
         let backend = env(&[("CTF_API_URL", "https://api"), ("PATH", "/evil"), ("CTF_LAUNCH_TOKEN", "t0k")]);
-        assert_eq!(launch_env(backend, None, false), pairs(&[("CTF_API_URL", "https://api"), ("CTF_LAUNCH_TOKEN", "t0k")]));
-        let extras = launch_env(env(&[]), Some("ghcr.io/x/box:1"), true);
-        assert_eq!(extras, pairs(&[("CYBERCTF_ATTACKBOX_IMAGE", "ghcr.io/x/box:1"), (runtime::PORTS_ENV, "default")]));
+        assert_eq!(launch_env(backend, false), pairs(&[("CTF_API_URL", "https://api"), ("CTF_LAUNCH_TOKEN", "t0k")]));
+        assert_eq!(launch_env(env(&[]), true), pairs(&[(runtime::PORTS_ENV, "default")]));
     }
 
     /// Regression: only the claim's two variables were kept, so no player's flag ever reached a
@@ -81,7 +79,7 @@ mod tests {
             ("CTF_FLAG_CTF_KEY", "k3y"),
         ]);
         assert_eq!(
-            launch_env(backend, None, false),
+            launch_env(backend, false),
             pairs(&[
                 ("CTF_API_URL", "https://api"),
                 ("CTF_LAUNCH_TOKEN", "t0k"),
@@ -105,7 +103,7 @@ mod tests {
             "X_CTF_FLAG_MAIN",
             "LD_PRELOAD",
         ] {
-            assert!(launch_env(env(&[(name, "v")]), None, false).is_empty(), "{name}");
+            assert!(launch_env(env(&[(name, "v")]), false).is_empty(), "{name}");
         }
     }
 
@@ -118,14 +116,14 @@ mod tests {
         fn every_flag_the_backend_can_name_reaches_the_lab(key in "[a-z0-9]{1,12}(-[a-z0-9]{1,12}){0,4}", value in "\\PC{0,40}") {
             prop_assume!(key.len() <= 64);
             let name = backend_flag_name(&key);
-            prop_assert_eq!(launch_env(env(&[(name.as_str(), value.as_str())]), None, false), pairs(&[(name.as_str(), value.as_str())]));
+            prop_assert_eq!(launch_env(env(&[(name.as_str(), value.as_str())]), false), pairs(&[(name.as_str(), value.as_str())]));
         }
 
         /// Nothing else the backend could send gets through.
         #[test]
         fn any_other_name_is_dropped(name in "[A-Za-z0-9_-]{0,24}") {
             prop_assume!(!CLAIM.contains(&name.as_str()) && !name.starts_with(FLAG_PREFIX));
-            prop_assert!(launch_env(env(&[(name.as_str(), "v")]), None, false).is_empty());
+            prop_assert!(launch_env(env(&[(name.as_str(), "v")]), false).is_empty());
         }
     }
 }

@@ -132,7 +132,6 @@ const attackBox = () => ({
   networks: ["default"],
   shellCmd: "docker compose exec kali bash",
   vm: false,
-  pickedBox: false,
 });
 
 /** This machine: its report, live usage, what runs and is stored on it, the attack box. */

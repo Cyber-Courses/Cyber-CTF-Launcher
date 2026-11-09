@@ -235,7 +235,6 @@
     "network": "Réseau",
     "attackVm": "VM d’attaque",
     "attackBox": "Attack box",
-    "defaultBox": "la box par défaut de cette machine",
     "status": "Statut",
     "runningOn": "en cours sur {host}",
     "running": "en cours",

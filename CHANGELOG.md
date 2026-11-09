@@ -15,12 +15,18 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   (installed on its first start, about 16 minutes), named `attackbox`. On an Arm Mac it runs
   natively (Kali's arm64 image; a Debian VM made Kali). Its status, address and shell are the
   lab's own; starting or stopping it changes the running lab without restarting the rest. A lab
-  that declares its own attack machine keeps it.
+  that declares where the player sits (its own access machine) gets the box there, in place of
+  that machine.
 - **The launcher checks a cloud account's sign-in before it changes a lab there.** Before a lab
   in AWS, Azure, Google Cloud or Oracle Cloud starts, changes or stops, the launcher asks that
   cloud's CLI whether its sign-in still holds; when it ran out, it says how to sign in again
   (`aws login`, `az login`, …) and changes nothing, where Terraform used to fail halfway and leave
   part of the lab behind. A failure that says the same reads the same way.
+
+### Removed
+
+- **The attack VM box in Settings.** It chose the Vagrant box of a lab's own attack VM; the
+  attack box among VMs is now always Kali, made by the launcher.
 
 ### Changed
 

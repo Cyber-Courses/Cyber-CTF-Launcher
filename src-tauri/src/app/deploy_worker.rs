@@ -64,8 +64,6 @@ pub struct Job {
     pub provider: Option<Provider>,
     #[serde(default)]
     pub host: Option<String>,
-    #[serde(default)]
-    pub attackbox_image: Option<String>,
     /// A container lab on the lab's own ports rather than random free ones.
     #[serde(default)]
     pub default_ports: bool,
@@ -85,7 +83,6 @@ impl std::fmt::Debug for Job {
             .field("launch", &if self.launch.is_null() { "none" } else { "<redacted>" })
             .field("provider", &self.provider)
             .field("host", &self.host)
-            .field("attackbox_image", &self.attackbox_image)
             .field("default_ports", &self.default_ports)
             .field("per_machine_vm", &self.per_machine_vm)
             .field("docker_context", &self.docker_context)
@@ -102,7 +99,6 @@ impl Job {
             launch: serde_json::Value::Null,
             provider: None,
             host: None,
-            attackbox_image: None,
             default_ports: false,
             per_machine_vm: false,
             docker_context: None,
@@ -124,7 +120,6 @@ pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<
             let placement = crate::labs::Placement {
                 provider: job.provider,
                 host: job.host.as_deref(),
-                attackbox_image: job.attackbox_image.as_deref(),
                 default_ports: job.default_ports,
                 per_machine_vm: job.per_machine_vm,
                 docker_context: job.docker_context.as_deref(),
@@ -279,7 +274,7 @@ mod tests {
         let job: Job = serde_json::from_str(r#"{"lab_id":"lab-1"}"#).unwrap();
         assert_eq!(job, Job::on_lab("lab-1", Op::Launch));
         assert!(
-            job.launch.is_null() && !job.default_ports && !job.per_machine_vm && job.provider.is_none() && job.host.is_none() && job.attackbox_image.is_none()
+            job.launch.is_null() && !job.default_ports && !job.per_machine_vm && job.provider.is_none() && job.host.is_none()
         );
         assert_eq!(job.key(), "lab-1");
     }
@@ -314,7 +309,6 @@ mod tests {
             launch: serde_json::json!({ "labId": "lab-1", "runtime": "DOCKER", "repository": "CyberCTF/x", "commit": "abc", "env": [] }),
             provider: Some(crate::runtime::providers::Provider::Virtualbox),
             host: None,
-            attackbox_image: Some("cyberctf/attack-box".into()),
             default_ports: true,
             per_machine_vm: true,
             docker_context: Some("orbstack".into()),

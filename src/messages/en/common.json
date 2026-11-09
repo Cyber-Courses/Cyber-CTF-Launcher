@@ -41,8 +41,6 @@
     "exegolFree": "Exegol Community: full toolkit, updated after Full; for learning and personal use",
     "exegolFreeTerms": "Non-commercial use",
     "exegolFull": "The latest Exegol toolkit; needs an Exegol Pro, Team or Enterprise plan",
-    "exegolFullTerms": "Paid plan",
-    "kaliVm": "Official Kali box; it has the internet, add tools as you go",
-    "debianVm": "A plain base to build your own toolset on"
+    "exegolFullTerms": "Paid plan"
   }
 }

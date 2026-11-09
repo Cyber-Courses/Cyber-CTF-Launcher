@@ -108,52 +108,6 @@ export function attackImageLabel(image: string): string {
 /** Earlier default images, for cleaning up what an older launcher downloaded. */
 export const OLD_ATTACK_IMAGES: readonly string[] = [...OLD_DEFAULT_IMAGES];
 
-const ATTACK_BOX_KEY = "cyberctf.attackbox.box";
-
-/** Default attack VM beside VM labs: the official Kali Vagrant box (VirtualBox, VMware, Hyper-V). */
-export const DEFAULT_ATTACK_BOX = "kalilinux/rolling";
-
-/** Vagrant boxes for the attack VM; the field is free text so any `owner/name` box works. */
-export const ATTACK_VM_PRESETS: { box: string; label: string; note: string }[] = [
-  {
-    box: "kalilinux/rolling",
-    label: "Kali",
-    get note() {
-      return translate("common.attackPresets.kaliVm");
-    },
-  },
-  {
-    box: "generic/debian12",
-    label: "Debian 12",
-    get note() {
-      return translate("common.attackPresets.debianVm");
-    },
-  },
-];
-
-export function getAttackBox(): string {
-  return getAttackBoxChoice() ?? DEFAULT_ATTACK_BOX;
-}
-
-/** The attack VM box the learner picked in Settings, or null when they never did: the lab's own
- *  default then runs, the box its Vagrantfile picks for this machine's CPU (Kali on x86, the
- *  Debian cloud image on Arm, where Kali's box has no build). */
-export function getAttackBoxChoice(): string | null {
-  try {
-    return localStorage.getItem(ATTACK_BOX_KEY) || null;
-  } catch {
-    return null;
-  }
-}
-
-export function setAttackBox(box: string) {
-  try {
-    localStorage.setItem(ATTACK_BOX_KEY, box.trim() || DEFAULT_ATTACK_BOX);
-  } catch {
-    /* ignore */
-  }
-}
-
 const VM_PROVIDER_KEY = "cyberctf.vm.provider";
 
 /** Sent on `window` when the hypervisor choice changes (Settings, the Machine setup, or the

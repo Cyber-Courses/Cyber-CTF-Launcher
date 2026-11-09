@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use isoloom_spec::Target;
 
-use super::{Cpu, Kind, NAME};
+use super::{Cpu, Kind};
 use crate::error::Result;
 use crate::platform::AppDirs;
 use crate::runtime::isothrum::AttackStatus;
@@ -91,7 +91,7 @@ impl Placed {
         if !super::added(&self.dir) {
             return Ok(());
         }
-        self.host.retire(dirs, NAME, log).await?;
+        self.host.retire(dirs, &super::name(&self.dir), log).await?;
         super::remove(&self.dir)?;
         lab::prepare(&self.dir, self.target)?;
         self.host.update(dirs, log).await
@@ -99,12 +99,12 @@ impl Placed {
 
     /// The box as the lab page shows it.
     pub(crate) async fn status(&self, network: Option<&str>) -> Result<AttackStatus> {
-        self.host.status(NAME, network, self.vm).await
+        self.host.status(&super::name(&self.dir), network, self.vm).await
     }
 
     /// The command that opens a shell into the box.
     pub(crate) fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
-        self.host.console(NAME)
+        self.host.console(&super::name(&self.dir))
     }
 
     /// The box's CPU: this computer's own where the lab runs on it and it is Arm (a lab's

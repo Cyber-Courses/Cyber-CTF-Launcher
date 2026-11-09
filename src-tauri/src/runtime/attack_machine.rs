@@ -1,9 +1,10 @@
-//! The learner's attack box as a machine of the lab, wherever the lab runs: one more machine,
-//! added to the launcher's layer over the lab's spec (`lab::overlay`), the lab regenerated, and
-//! the run brought up to date with it (`place`); taken out the same way. Everything that makes it
-//! an attack box is the launcher's: its name (`attackbox`, its host name too), what it runs (the
-//! attack image picked in Settings beside containers, Kali with its toolset among VMs), the
-//! network and address it takes.
+//! The learner's attack box as a machine of the lab, wherever the lab runs: added to the
+//! launcher's layer over the lab's spec (`lab::overlay`), the lab regenerated, and the run brought
+//! up to date with it (`place`); taken out the same way. A lab that declares an access machine
+//! says with it where the player sits: the box takes its place (its name, its networks and
+//! addresses, so the checks from that seat run from the box). Otherwise the box is `attackbox` on
+//! the lab's first network. What it runs is the launcher's: the attack image picked in Settings
+//! beside containers, Kali with its toolset among VMs.
 
 mod place;
 
@@ -16,7 +17,7 @@ use serde_yaml_ng::Value;
 use super::lab::{self, overlay};
 use crate::error::{Error, Result};
 
-/// The machine's name in the lab, and so its host name.
+/// The box's name (and host name) in a lab that declares no access machine.
 pub(crate) const NAME: &str = "attackbox";
 
 /// Its set-up, a file of the lab's project (the project is what a machine gets): Kali's headless
@@ -77,10 +78,26 @@ pub(crate) enum Cpu {
     Arm,
 }
 
-/// Adds the box to the lab in `dir` as `kind`: on `network` (else the network of the lab's first
-/// machine), at the highest address no machine has there.
-pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>) -> Result<()> {
-    let spec = lab::load(dir)?;
+/// Where the box sits in a lab: its name, and its address on each network.
+struct Seat {
+    name: String,
+    networks: Vec<(String, u8)>,
+    /// It takes the place of the lab's own access machine of that name.
+    replaces: bool,
+}
+
+/// The lab's own access machine, the seat it declares for the player, if it declares one.
+fn declared(spec: &isoloom_spec::model::Spec) -> Option<(&String, &isoloom_spec::Machine)> {
+    spec.machines.iter().find(|(_, m)| m.access)
+}
+
+/// The seat in `spec`: the declared access machine's, else [`NAME`] on `network` (else the
+/// network of the lab's first machine) at the highest address no machine has there.
+fn seat(spec: &isoloom_spec::model::Spec, network: Option<&str>) -> Result<Seat> {
+    if let Some((name, m)) = declared(spec) {
+        let networks = m.networks.iter().map(|(n, o)| (n.clone(), *o)).collect();
+        return Ok(Seat { name: name.clone(), networks, replaces: true });
+    }
     let network = match network {
         Some(n) if spec.networks.contains_key(n) => n.to_owned(),
         Some(n) => return Err(Error::Invalid(format!("this lab has no network {n:?}"))),
@@ -93,29 +110,47 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>) -
     let taken: Vec<u8> = spec.machines.values().filter_map(|m| m.networks.get(&network).copied()).collect();
     let octet =
         (2..=HIGHEST).rev().find(|o| !taken.contains(o)).ok_or_else(|| Error::Invalid(format!("no free address left on {network} for an attack box")))?;
+    Ok(Seat { name: NAME.to_owned(), networks: vec![(network, octet)], replaces: false })
+}
+
+/// The box's name in the lab in `dir`: the one added, else the lab's own access machine's (the
+/// seat it would take), else [`NAME`].
+pub(crate) fn name(dir: &Path) -> String {
+    overlay::machines(dir)
+        .into_iter()
+        .next()
+        .or_else(|| lab::load(dir).ok().and_then(|s| declared(&s).map(|(n, _)| n.clone())))
+        .unwrap_or_else(|| NAME.to_owned())
+}
+
+/// Adds the box to the lab in `dir` as `kind`, at its seat ([`seat`]; `network` is the player's
+/// pick when the lab declares none).
+pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>) -> Result<()> {
+    let Seat { name, networks, replaces } = seat(&lab::load(dir)?, network)?;
+    let networks = networks.iter().map(|(n, o)| format!("{n:?}: {o}")).collect::<Vec<_>>().join(", ");
     let hardware = match cpu {
         Cpu::Lab => "",
         Cpu::Arm => "hardware: { arch: arm64 }, ",
     };
     let machine = match (kind, cpu) {
         (Kind::Container { image }, _) => {
-            format!("{{ {hardware}app: {{ image: {image:?} }}, command: sleep infinity, networks: {{ {network:?}: {octet} }} }}")
+            format!("{{ {hardware}app: {{ image: {image:?} }}, command: sleep infinity, networks: {{ {networks} }} }}")
         }
         (Kind::Vm, cpu) => {
             std::fs::write(dir.join(SETUP_FILE), SETUP)?;
             let os = if cpu == Cpu::Arm { "debian@12" } else { "kali@rolling" };
-            format!(
-                "{{ os: {os}, {hardware}networks: {{ {network:?}: {octet} }}, resources: {{ disk_gb: {DISK_GB} }}, app: {{ steps: [{{ run: {SETUP_FILE} }}] }} }}"
-            )
+            format!("{{ os: {os}, {hardware}networks: {{ {networks} }}, resources: {{ disk_gb: {DISK_GB} }}, app: {{ steps: [{{ run: {SETUP_FILE} }}] }} }}")
         }
     };
     let machine = serde_yaml_ng::from_str::<Value>(&machine).map_err(|e| Error::Invalid(format!("the attack box's spec: {e}")))?;
-    overlay::add_machine(dir, NAME, machine)
+    overlay::add_machine(dir, &name, machine, replaces)
 }
 
-/// Takes the box out of the lab in `dir`.
+/// Takes the box out of the lab in `dir` (a lab's own access machine it stood in for comes back).
 pub(crate) fn remove(dir: &Path) -> Result<()> {
-    overlay::remove_machine(dir, NAME)?;
+    for name in overlay::machines(dir) {
+        overlay::remove_machine(dir, &name)?;
+    }
     match std::fs::remove_file(dir.join(SETUP_FILE)) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
         _ => Ok(()),
@@ -124,7 +159,7 @@ pub(crate) fn remove(dir: &Path) -> Result<()> {
 
 /// Whether the lab in `dir` has the box.
 pub(crate) fn added(dir: &Path) -> bool {
-    overlay::has_machine(dir, NAME)
+    !overlay::machines(dir).is_empty()
 }
 
 #[cfg(test)]
@@ -146,6 +181,23 @@ mod tests {
         remove(&dir).unwrap();
         assert!(!added(&dir) && !dir.join(SETUP_FILE).exists());
         assert!(!lab::load(&dir).unwrap().machines.contains_key(NAME));
+    }
+
+    #[test]
+    fn a_lab_that_declares_where_the_player_sits_gets_the_box_there_in_place_of_its_own() {
+        let dir = crate::runtime::test_support::write_lab(
+            "version: 1\nname: t\nnetworks: { front: { cidr: 10.70.0.0/24 }, access: { cidr: 10.71.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { front: 10 } }\n  user: { access: true, networks: { access: 10 } }\n",
+        );
+        assert_eq!(name(&dir), "user", "the seat the box would take, before it is added");
+        add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, Some("front")).unwrap();
+        let spec = lab::load(&dir).unwrap();
+        let user = &spec.machines["user"];
+        assert!(!user.access, "an ordinary machine of the lab now, up with it");
+        assert_eq!(user.networks.iter().collect::<Vec<_>>(), [(&"access".to_owned(), &10)], "the declared seat, not the pick");
+        assert!(!spec.machines.contains_key(NAME));
+        assert_eq!(name(&dir), "user");
+        remove(&dir).unwrap();
+        assert!(lab::load(&dir).unwrap().machines["user"].access, "the lab's own access machine is back");
     }
 
     #[test]

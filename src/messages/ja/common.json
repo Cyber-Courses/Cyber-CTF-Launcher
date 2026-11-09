@@ -41,8 +41,6 @@
     "exegolFree": "Exegol Community：フルツールキット、Full より後に更新。学習・個人利用向け",
     "exegolFreeTerms": "非商用利用",
     "exegolFull": "最新の Exegol ツールキット。Exegol Pro、Team、Enterprise プランが必要です",
-    "exegolFullTerms": "有料プラン",
-    "kaliVm": "公式 Kali Box。インターネットに接続でき、ツールは随時追加できます",
-    "debianVm": "独自のツール環境を構築するためのシンプルなベース"
+    "exegolFullTerms": "有料プラン"
   }
 }

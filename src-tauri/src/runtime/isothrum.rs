@@ -76,11 +76,6 @@ const ESXI_PARAMS: [&str; 5] = ["ESXI_HOSTNAME", "ESXI_HOSTPORT", "ESXI_USERNAME
 /// The ESXi host's password: the manifest's connection slot.
 const ESXI_PASSWORD: &str = "ESXI_PASSWORD";
 
-/// What the log says before an attach into a UTM VM is tried once more on UTM's passing scripting
-/// error (`launch::local::utm_transient`'s "(-600)": UTM answers "Application isn't running" to
-/// a command now and then while it runs and answers every other).
-const UTM_TRANSIENT_RETRY: &str = "UTM answered \"Application isn't running\" (-600) to a command while it runs (a passing UTM scripting error): trying again.";
-
 /// Where a VM lab on an ESXi server runs (Vagrant's `vmware_esxi`): the server's id, so an
 /// operation asked for elsewhere is refused; its settings as the manifest's params; its password,
 /// given to every operation of the run (status and park too). The runner relays the host's SSH
@@ -283,49 +278,6 @@ impl LabRun {
         checks_of(&self.lab()?, &self.placed(RunOptions::new())).await
     }
 
-    /// Hot-adds the learner's attack box onto a lab network (the only one, or `network` when the
-    /// lab has several), with the box `image` the learner picked, through the runner. Into a VM
-    /// on UTM, a hot-add that met UTM's passing scripting error is tried once more, as a start is.
-    pub(crate) async fn attach(&self, network: Option<&str>, image: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-        let lab = self.lab()?;
-        let mut tried_again = false;
-        let deadline = std::time::Instant::now() + LOCK_WAIT;
-        loop {
-            let (sink, lines) = progress::channel();
-            match progress::follow(&mut *log, lines, lab.attach(None, network, image, &sink)).await {
-                Ok(_) => return Ok(()),
-                Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-                Err(e) if self.kind == Kind::DockerVm && !tried_again && e.to_string().contains("(-600)") => {
-                    log(UTM_TRANSIENT_RETRY.into());
-                    tried_again = true;
-                }
-                Err(e) => return Err(errors::from_runner(e)),
-            }
-        }
-    }
-
-    /// Takes the attack box back out of the running lab, leaving the rest of the lab up.
-    pub(crate) async fn detach(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        detach_from(&self.lab()?, &RunOptions::new(), log).await
-    }
-
-    /// The attack box's status: its access machine as the runner reports it, its address on
-    /// `network` (or the only one), the lab's networks to pick from, and the shell into it.
-    pub(crate) async fn attack_status(&self, network: Option<&str>) -> Result<AttackStatus> {
-        // What the box is here is known before the lab runs: a VM beside a lab of VMs.
-        let vm = self.kind == Kind::Vm;
-        if !self.manifest().is_file() {
-            return Ok(AttackStatus { vm, ..AttackStatus::default() });
-        }
-        attack_status_in(&self.lab()?, network, vm).await
-    }
-
-    /// The command that opens a shell into the attack box: the runner builds it (it alone knows
-    /// the Compose project and files, the Vagrant define), the launcher runs it in a terminal.
-    pub(crate) fn shell_command(&self) -> Result<ShellCommand> {
-        self.lab()?.shell_command(None).map_err(errors::from_runner)
-    }
-
     /// Brings the running lab up to date with its regenerated files (a machine added to the lab
     /// or taken out), with the parameters it was started with.
     pub(crate) async fn update(&self, log: &mut impl FnMut(String)) -> Result<()> {
@@ -370,22 +322,7 @@ async fn retire_from(lab: &Running<'_>, machine: &str, opts: &RunOptions, log: &
 async fn machine_status_in(lab: &Running<'_>, machine: &str, network: Option<&str>, vm: bool) -> Result<AttackStatus> {
     let status = lab.status().await.map_err(errors::from_runner)?;
     let shell = lab.console_command(machine).ok().map(|c| attack_box::display(&c)).unwrap_or_default();
-    Ok(attack_box::status_of(&status, Some(machine), network, shell, vm))
-}
-
-/// Takes the attack box back out of `lab`, leaving the rest up, waiting out another operation's
-/// hold on the run.
-async fn detach_from(lab: &Running<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-    when_unlocked(log, move |sink| async move { lab.detach_with(opts, None, &sink).await }).await.map_err(errors::from_runner)
-}
-
-/// The attack box of `lab` as its page shows it: its access machine as the runner reports it,
-/// its address on `network` (or the only one), the lab's networks and the shell into it (none
-/// when the runner can't make a box for the run). `vm`: the box is a VM beside a lab of VMs here.
-async fn attack_status_in(lab: &Running<'_>, network: Option<&str>, vm: bool) -> Result<AttackStatus> {
-    let status = lab.status().await.map_err(errors::from_runner)?;
-    let shell = lab.shell_command(None).ok().map(|c| attack_box::display(&c)).unwrap_or_default();
-    Ok(attack_box::status_of(&status, None, network, shell, vm))
+    Ok(attack_box::status_of(&status, machine, network, shell, vm))
 }
 
 /// Brings `lab` up with `opts`, its events as `log`'s lines, then says where to start: its

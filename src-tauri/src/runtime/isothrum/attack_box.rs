@@ -1,12 +1,8 @@
-//! The learner's attack box as the runner sees it: the lab's on-demand access machine, or the box
-//! the launcher adds to the lab as one of its machines (`attack_machine`). The launcher never runs
-//! the lab's own one — it asks the runner to hot-add it onto a chosen lab network (with the box
-//! the learner picked, else the lab's default), to take it out again, to report it, and to build
-//! the shell command into it. Status, networks and the shell come from the run, so the lab page
-//! treats the box like any other machine.
+//! The learner's attack box as the runner sees it: the machine the launcher adds to the lab
+//! (`attack_machine`), read by its name from the run's status like any other machine: whether it
+//! runs, its address on the lab network, the lab's networks, and the console into it.
 
-use isoloom_manifest::Role;
-use isothrum_runner::{MachineState, MachineStatus, ShellCommand, Status};
+use isothrum_runner::{MachineState, ShellCommand, Status};
 use serde::Serialize;
 
 /// The attack box beside a lab, as the lab page shows it.
@@ -28,14 +24,6 @@ pub struct AttackStatus {
     pub shell_cmd: String,
     /// Whether the box is a VM here: beside a lab running as VMs on this machine.
     pub vm: bool,
-    /// Whether the box boots from the Vagrant box picked in Settings: a VM lab's own attack VM.
-    /// Otherwise it runs the attack box image.
-    pub picked_box: bool,
-}
-
-/// The run's on-demand access machine, if it has one.
-fn access(status: &Status) -> Option<&MachineStatus> {
-    status.machines.iter().find(|m| m.role == Role::Access)
 }
 
 /// The networks the box can join: the lab's networks, in the run's order.
@@ -52,20 +40,10 @@ pub(super) fn display(cmd: &ShellCommand) -> String {
     shell_words::join(&words)
 }
 
-/// Whether the lab declares an attack VM of its own: an access machine.
-fn own_access(status: &Status) -> bool {
-    access(status).is_some()
-}
-
-/// The attack box's status from the run's status: up when the box runs (`named`, a machine of
-/// the lab, else the run's access machine), its address on `network` (or its first), the lab's
-/// networks, the `shell_cmd` the runner built, and what the box is here (`vm`: a VM; the picked
-/// Vagrant box boots it only when the lab declares its own attack VM).
-pub(super) fn status_of(status: &Status, named: Option<&str>, network: Option<&str>, shell_cmd: String, vm: bool) -> AttackStatus {
-    let machine = match named {
-        Some(name) => status.machines.iter().find(|m| m.name == name),
-        None => access(status),
-    };
+/// The box `name` from the run's status: up when it runs, its address on `network` (or its
+/// first), the lab's networks, the `shell_cmd` the runner built, and whether it is a VM (`vm`).
+pub(super) fn status_of(status: &Status, name: &str, network: Option<&str>, shell_cmd: String, vm: bool) -> AttackStatus {
+    let machine = status.machines.iter().find(|m| m.name == name);
     let running = machine.is_some_and(|m| matches!(m.state, MachineState::Running | MachineState::Unhealthy));
     let addresses = machine.map(|m| &m.addresses);
     let on = network
@@ -74,23 +52,15 @@ pub(super) fn status_of(status: &Status, named: Option<&str>, network: Option<&s
         .or_else(|| addresses.and_then(|a| a.keys().next().cloned()))
         .unwrap_or_default();
     let ip = addresses.and_then(|a| a.get(&on)).cloned().unwrap_or_default();
-    AttackStatus {
-        running,
-        ip: if running { ip } else { String::new() },
-        lab_network: on,
-        networks: networks(status),
-        shell_cmd,
-        vm,
-        picked_box: vm && own_access(status),
-    }
+    AttackStatus { running, ip: if running { ip } else { String::new() }, lab_network: on, networks: networks(status), shell_cmd, vm }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A VM lab's status as the runner reports it: its web VM, and its own attack VM `kali` in
-    /// `state` at its address on the lab network (absent: not hot-added yet).
+    /// A VM lab's status as the runner reports it: its web VM, and the box `kali` in `state` at
+    /// its address on the lab network (absent: not added yet).
     fn vm_lab(state: &str) -> Status {
         serde_json::from_value(serde_json::json!({
             "state": "ready",
@@ -107,32 +77,14 @@ mod tests {
     }
 
     #[test]
-    fn a_labs_own_attack_vm_is_the_runs_access_machine_down_until_hot_added() {
+    fn the_box_is_found_by_its_name_down_until_it_runs() {
         let shell = "VAGRANT_DOTFILE_PATH=/runs/t/vagrant vagrant ssh kali".to_owned();
-        let down = status_of(&vm_lab("absent"), None, None, shell.clone(), true);
+        let down = status_of(&vm_lab("absent"), "kali", None, shell.clone(), true);
         assert_eq!((down.running, down.ip.as_str(), down.networks.as_slice()), (false, "", ["lab".to_owned()].as_slice()));
         assert_eq!(down.shell_cmd, shell, "the shell command is known before the box is up");
-        let up = status_of(&vm_lab("running"), None, None, shell, true);
+        let up = status_of(&vm_lab("running"), "kali", None, shell, true);
         assert_eq!((up.running, up.ip.as_str(), up.lab_network.as_str()), (true, "10.61.0.252", "lab"));
-    }
-
-    #[test]
-    fn a_labs_own_attack_vm_boots_from_the_picked_box_and_a_container_box_is_no_vm() {
-        let status = status_of(&vm_lab("absent"), None, None, String::new(), true);
-        assert!(status.vm && status.picked_box, "{status:?}");
-        let container = status_of(&vm_lab("running"), None, None, String::new(), false);
-        assert!(!container.vm && !container.picked_box, "{container:?}");
-    }
-
-    #[test]
-    fn a_box_the_launcher_added_to_the_lab_is_found_by_its_name() {
-        let mut lab = vm_lab("absent");
-        lab.machines[1].name = "attackbox".into();
-        lab.machines[1].role = Role::Target;
-        lab.machines[1].state = MachineState::Running;
-        let status = status_of(&lab, Some("attackbox"), None, String::new(), true);
-        assert_eq!((status.running, status.ip.as_str()), (true, "10.61.0.252"));
-        assert!(!status.picked_box, "no lab-declared attack VM");
+        assert!(!status_of(&vm_lab("running"), "nobody", None, String::new(), false).running, "no such machine: no box");
     }
 
     #[test]

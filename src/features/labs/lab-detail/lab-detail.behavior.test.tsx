@@ -60,7 +60,6 @@ const remoteBox = (up: boolean) => ({
   networks: ["lab"],
   shellCmd: "ssh -t isoloom@10.0.0.9 sudo docker exec -it x sh",
   vm: false,
-  pickedBox: false,
 });
 
 // One saved server, an ESXi host, set as the default.
