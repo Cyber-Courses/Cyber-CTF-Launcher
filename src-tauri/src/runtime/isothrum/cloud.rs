@@ -11,10 +11,9 @@
 //! waits on the project delivery, so a cloud lab now actually comes up, is sealed and checked.
 
 use std::path::Path;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use isothrum_runner::{RunName, RunOptions, Runner, RunnerConfig, SecretValue, Secrets, SystemProcesses};
+use isothrum_runner::{RunName, RunOptions, Runner, SecretValue, Secrets};
 
 use super::opened::OpenedRun;
 use super::{errors, progress, view};
@@ -142,8 +141,7 @@ impl CloudRun {
     /// Lab `id` of `runtime` (a container lab is `cloud-docker`, a VM lab `cloud-vm`) on `cloud`,
     /// installed in `dir`, on the runner whose home is `home` (the app data folder).
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
-        let processes = SystemProcesses::for_host(|var| std::env::var(var).ok(), crate::platform::home_dir().as_deref());
-        let config = RunnerConfig::new(home).with_processes(Arc::new(processes));
+        let config = super::host_config(home, None);
         let (out, target) = lab::terraform(dir, runtime, cloud);
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
         Ok(CloudRun { run: OpenedRun::new(config, out.join("run.json"), name)?, cloud: cloud.to_owned(), target })

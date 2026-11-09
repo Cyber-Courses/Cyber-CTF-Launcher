@@ -392,7 +392,9 @@ fn host_config(home: &Path, context: Option<String>) -> RunnerConfig {
         Some(context) => Arc::new(EngineProcesses { inner: processes, context }),
         None => Arc::new(processes),
     };
-    RunnerConfig::new(home).with_processes(runner)
+    let mut config = RunnerConfig::new(home);
+    config.processes = runner;
+    config
 }
 
 /// A start's options: the launch's values for the manifest's secret and input slots (a value no

@@ -43,7 +43,10 @@ impl Home {
 
     /// A runner on this home: its processes `fake`, its free ports `ports`.
     pub(super) fn config(&self, fake: &Arc<FakeProcesses>, ports: impl IntoIterator<Item = u16>) -> RunnerConfig {
-        RunnerConfig::new(&self.root).with_processes(Arc::clone(fake) as Arc<dyn ProcessRunner>).with_ports(Arc::new(FakePorts::new(ports)))
+        let mut config = RunnerConfig::new(&self.root);
+        config.processes = Arc::clone(fake) as Arc<dyn ProcessRunner>;
+        config.ports = Arc::new(FakePorts::new(ports));
+        config
     }
 }
 

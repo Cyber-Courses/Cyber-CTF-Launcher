@@ -12,9 +12,8 @@
 //! destroy replays.
 
 use std::path::Path;
-use std::sync::Arc;
 
-use isothrum_runner::{RunName, RunOptions, RunnerConfig, SecretValue, Secrets, SystemProcesses};
+use isothrum_runner::{RunName, RunOptions, SecretValue, Secrets};
 
 use super::opened::OpenedRun;
 use super::{errors, progress, view};
@@ -60,8 +59,7 @@ impl ServerRun {
     /// Running `id`, installed in `dir`, on the runner whose home is `home` (the app data folder),
     /// with this host's tools.
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
-        let processes = SystemProcesses::for_host(|var| std::env::var(var).ok(), crate::platform::home_dir().as_deref());
-        let config = RunnerConfig::new(home).with_processes(Arc::new(processes));
+        let config = super::host_config(home, None);
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
         // VM labs use the per-machine Proxmox module; container labs use docker-vm on one VM there.
         let (out, target) = lab::terraform(dir, runtime, "proxmox");
