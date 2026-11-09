@@ -7,9 +7,6 @@ import { CLOUD_PROVIDERS } from "@/features/cloud/cloud-model";
 
 const SERVERS = new Set(["vmware_esxi", "proxmox"]);
 export const CLOUDS = new Set(CLOUD_PROVIDERS);
-// VM labs: one VM per machine on ESXi, Proxmox and AWS (Isoloom's vagrant, proxmox and cloud-vm
-// outputs); the other clouds run container labs only for now.
-const VM_CLOUDS_NOT_YET = new Set(["azure", "gcp", "digitalocean", "linode", "oci"]);
 
 /** Hypervisors that run VMs built for another CPU, emulated (slowly): QEMU runs an x86 lab on
  *  an Apple Silicon Mac. */
@@ -104,20 +101,13 @@ export function pickLocalHypervisor(local: Provider[], ready: Provider[] | undef
 }
 
 /** Whether a cloud account offers the "one VM per machine" form (Isoloom's cloud-vm) for this lab,
- *  as well as "one VM" (cloud-docker): a dual-form lab, on a cloud the launcher runs cloud-vm on.
- *  Only AWS for now (the others run container labs as cloud-docker only — `VM_CLOUDS_NOT_YET`);
- *  a single-form lab, or a cloud with no cloud-vm, offers one form, so the picker skips the step. */
-export const cloudRunsPerMachine = (rt: LabRuntimeInfo | null, provider: string) =>
-  !!rt && hasBothForms(rt) && CLOUDS.has(provider) && !VM_CLOUDS_NOT_YET.has(provider);
+ *  as well as "one VM" (cloud-docker): a dual-form lab, on any cloud (each has a cloud-vm module;
+ *  how far each is proven is its run tier's badge). A single-form lab offers one form, so the
+ *  picker skips the step. */
+export const cloudRunsPerMachine = (rt: LabRuntimeInfo | null, provider: string) => !!rt && hasBothForms(rt) && CLOUDS.has(provider);
 
-/** Whether a saved server or cloud account can run the lab. */
-export const hostSupports = (rt: LabRuntimeInfo | null, h: ServerHost) => {
-  if (!rt?.providers.includes(h.provider)) return false;
-  const w = ways(rt);
-  // A not-yet-supported VM cloud is blocked only for a VM-only lab; one that also runs as
-  // containers still runs there via cloud-docker.
-  return !(w.vm && !w.docker && VM_CLOUDS_NOT_YET.has(h.provider));
-};
+/** Whether a saved server or cloud account can run the lab: the lab lists its provider. */
+export const hostSupports = (rt: LabRuntimeInfo | null, h: ServerHost) => !!rt?.providers.includes(h.provider);
 
 type PlaceKey = NonNullable<LabStatus["place"]>;
 

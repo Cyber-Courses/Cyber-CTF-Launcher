@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  cloudRunsPerMachine,
   emulatorReady,
   hasBothForms,
   hostSupports,
@@ -124,12 +125,21 @@ describe("hostSupports", () => {
     expect(hostSupports(rt({ runtime: "DOCKER", providers: ["aws"] as Provider[] }), host("gcp"))).toBe(false);
     expect(hostSupports(null, host("aws"))).toBe(false);
   });
-  it("keeps VM labs off the clouds that can't run them yet", () => {
-    expect(hostSupports(rt({ providers: ["aws", "azure"] as Provider[] }), host("aws"))).toBe(true);
-    expect(hostSupports(rt({ providers: ["aws", "azure"] as Provider[] }), host("azure"))).toBe(false);
+  it("runs a VM lab on every cloud it lists, not only AWS", () => {
+    for (const cloud of ["aws", "azure", "gcp", "digitalocean", "linode", "oci"] as Provider[]) {
+      expect(hostSupports(rt({ providers: [cloud] }), host(cloud)), cloud).toBe(true);
+    }
+    expect(hostSupports(rt({ providers: ["aws"] as Provider[] }), host("azure"))).toBe(false);
   });
-  it("allows a dual-form lab on a not-yet-VM cloud: it runs there as containers", () => {
-    expect(hostSupports(rt({ runtime: "DOCKER", docker: true, vm: true, providers: ["azure"] as Provider[] }), host("azure"))).toBe(true);
+});
+
+describe("cloudRunsPerMachine", () => {
+  it("offers one VM per machine on every cloud for a lab with both forms, and on no server", () => {
+    const both = rt({ runtime: "DOCKER", docker: true, vm: true });
+    for (const cloud of ["aws", "azure", "gcp", "digitalocean", "linode", "oci"]) expect(cloudRunsPerMachine(both, cloud), cloud).toBe(true);
+    expect(cloudRunsPerMachine(both, "proxmox")).toBe(false);
+    expect(cloudRunsPerMachine(rt({ runtime: "DOCKER", docker: true, vm: false }), "azure")).toBe(false);
+    expect(cloudRunsPerMachine(null, "aws")).toBe(false);
   });
 });
 
