@@ -19,10 +19,12 @@ use tokio::process::{Child, Command};
 #[cfg(target_os = "linux")]
 pub use docker::login_name;
 pub use docker::{docker_denied, docker_denied_error, image_repository, valid_image};
+#[cfg(test)]
+pub(crate) use elevate::leftover_script;
+pub use elevate::{Leftover, join_hyperv_admins, may_manage_hyperv, remove_hyperv_leftover};
 #[cfg(windows)]
 #[cfg(windows)]
 pub use elevate::{OWNER_WINDOW_ENV, owner_window, set_owner_window};
-pub use elevate::{join_hyperv_admins, may_manage_hyperv};
 pub(crate) use group::GroupGuard;
 pub use group::kill_live_tools;
 pub use vagrant::{Event, Step, Vagrant, hyperv_switch_line};

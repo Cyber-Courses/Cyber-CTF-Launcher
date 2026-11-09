@@ -1,5 +1,7 @@
 //! The VM self-test: a real throwaway VM on a local hypervisor.
 
+mod leftover;
+
 use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Duration;
@@ -105,8 +107,10 @@ fn box_listed(list: &str, name: &str, provider: &str, arm: bool) -> bool {
 /// `no_kvm`: a Linux host without a usable /dev/kvm. vagrant-qemu asks for `accel=kvm` with
 /// `cpu=host` there, which QEMU refuses; the test VM falls back to software emulation (slow,
 /// but it boots and the check says something true).
-/// `ip`: the VM's address on a private network, when it gets one.
-fn vagrantfile(p: Provider, bx: &str, no_kvm: bool, ip: Option<&str>) -> String {
+/// `ip`: the VM's address on a private network, when it gets one. `dir`: the test's folder, which
+/// a VirtualBox VM's description names, so a VM an earlier test left is known as the test's
+/// ([`leftover`]).
+fn vagrantfile(p: Provider, bx: &str, no_kvm: bool, ip: Option<&str>, dir: &Path) -> String {
     let mut v = format!(
         "Vagrant.configure(\"2\") do |config|\n  config.vm.box = \"{bx}\"\n  config.vm.hostname = \"cyberctf-selftest\"\n  config.vm.boot_timeout = 600\n  config.vm.synced_folder \".\", \"/vagrant\", disabled: true\n"
     );
@@ -119,7 +123,11 @@ fn vagrantfile(p: Provider, bx: &str, no_kvm: bool, ip: Option<&str>) -> String 
     }
     // A readable name in the hypervisor's VM list instead of Vagrant's `<dir>_default_<timestamp>`.
     let settings = match p {
-        Provider::Virtualbox | Provider::Parallels => format!("    h.name = \"{VM_NAME}\"\n    h.memory = 512\n"),
+        Provider::Virtualbox => format!(
+            "    h.name = \"{VM_NAME}\"\n    h.memory = 512\n    h.customize [\"modifyvm\", :id, \"--description\", {}]\n",
+            ruby_quote(&leftover::vbox_description(dir))
+        ),
+        Provider::Parallels => format!("    h.name = \"{VM_NAME}\"\n    h.memory = 512\n"),
         Provider::VmwareDesktop => format!("    h.vmx[\"displayName\"] = \"{VM_NAME}\"\n    h.memory = 512\n"),
         Provider::Libvirt => "    h.default_prefix = \"cyberctf-\"\n    h.memory = 512\n".to_string(),
         Provider::Hyperv => format!("    h.vmname = \"{VM_NAME}\"\n"),
@@ -134,6 +142,11 @@ fn vagrantfile(p: Provider, bx: &str, no_kvm: bool, ip: Option<&str>) -> String 
     }
     v.push_str("end\n");
     v
+}
+
+/// `s` as a Ruby single-quoted string (a Windows path's backslashes kept as they are).
+fn ruby_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
 }
 
 /// One ping with a 3 s wait, in this OS's `ping` flags.
@@ -176,10 +189,7 @@ fn uname_line(out: &str) -> String {
 }
 
 pub(super) async fn run_test(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<()> {
-    // A test interrupted last time (window closed) may have left its VM behind.
-    if dir.join(".vagrant").exists() {
-        let _ = destroy(dir).await;
-    }
+    clear_earlier_test(dir, r).await?;
     let res = steps(dir, preferred, r).await;
     // Destroy the VM whatever happened; the box stays cached for the next test.
     if dir.join("Vagrantfile").exists() {
@@ -187,6 +197,33 @@ pub(super) async fn run_test(dir: &Path, preferred: Option<Provider>, r: &Report
         r.cleanup("Delete the test VM", &res, down, Some("test box kept for next time".into()));
     }
     res
+}
+
+/// What a test interrupted last time (the window closed, the app quit or was uninstalled) may
+/// have left: its VM, destroyed through Vagrant when Vagrant still knows it, else found by its
+/// name and removed when it is surely this test's ([`leftover`]); then Vagrant's state of it.
+/// Reported only when something was left.
+async fn clear_earlier_test(dir: &Path, r: &Reporter) -> Result<()> {
+    const STEP: (&str, &str) = ("leftover", "Remove the VM an earlier test left");
+    let state = dir.join(".vagrant");
+    if state.exists()
+        && let Err(e) = destroy(dir).await
+    {
+        log::warn!("destroying the VM an earlier self-test left: {e}");
+    }
+    match leftover::clear(dir).await {
+        Ok(removed) if removed.is_empty() => {}
+        Ok(removed) => r.send(STEP.0, STEP.1, "ok", Some(format!("removed from {}", removed.join(", ")))),
+        Err(e) => {
+            r.send(STEP.0, STEP.1, "fail", Some(e.to_string()));
+            return Err(e);
+        }
+    }
+    match std::fs::remove_dir_all(&state) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => log::warn!("removing {}: {e}", state.display()),
+        _ => {}
+    }
+    Ok(())
 }
 
 async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<()> {
@@ -240,7 +277,7 @@ async fn boot_and_exec(dir: &Path, provider: Provider, bx: &str, ip: Option<&'st
     let mut inside = None;
     r.step("boot", "Boot the test VM", async {
         let no_kvm = cfg!(target_os = "linux") && providers::kvm_problem().is_some();
-        std::fs::write(dir.join("Vagrantfile"), vagrantfile(provider, bx, no_kvm, ip))?;
+        std::fs::write(dir.join("Vagrantfile"), vagrantfile(provider, bx, no_kvm, ip, dir))?;
         let steps = [Step::new(&["up", "--provider", provider.id()]), Step::new(&["ssh", "-c", &uname_command()])];
         let vagrant = Vagrant::new(dir, &[], provider == Provider::Hyperv);
         let batch = vagrant.batch(&steps, |e| {
@@ -304,11 +341,11 @@ mod tests {
             _ => ok(""),
         });
         assert_eq!(free_ip().await, Some("192.168.56.249"));
-        let v = vagrantfile(Provider::Virtualbox, "x", false, free_ip().await);
+        let v = vagrantfile(Provider::Virtualbox, "x", false, free_ip().await, Path::new("/t"));
         assert!(v.contains("ip: \"192.168.56.249\"") && !v.contains(".250"), "{v}");
         let _all = Tools::rules(&[]);
         assert_eq!(free_ip().await, None, "every address answers");
-        assert!(!vagrantfile(Provider::Virtualbox, "x", false, None).contains("private_network"));
+        assert!(!vagrantfile(Provider::Virtualbox, "x", false, None, Path::new("/t")).contains("private_network"));
     }
 
     #[test]
@@ -317,19 +354,20 @@ mod tests {
         assert_eq!(uname_line("Connection to x closed.\n"), "");
         assert_eq!(uname_command(), "echo cyberctf-uname:$(uname -srm)");
         assert!(
-            vagrantfile(Provider::Hyperv, "x", false, Some(VM_IPS[0])).contains("config.vm.network \"public_network\", bridge: ENV[\"ISOLOOM_HYPERV_SWITCH\"]")
+            vagrantfile(Provider::Hyperv, "x", false, Some(VM_IPS[0]), Path::new("/t"))
+                .contains("config.vm.network \"public_network\", bridge: ENV[\"ISOLOOM_HYPERV_SWITCH\"]")
         );
-        assert!(!vagrantfile(Provider::Virtualbox, "x", false, Some(VM_IPS[0])).contains("public_network"));
+        assert!(!vagrantfile(Provider::Virtualbox, "x", false, Some(VM_IPS[0]), Path::new("/t")).contains("public_network"));
     }
 
     #[test]
     fn qemu_test_vm_falls_back_to_software_emulation_without_kvm() {
-        let with_kvm = vagrantfile(Provider::Qemu, "generic/alpine319", false, Some(VM_IPS[0]));
+        let with_kvm = vagrantfile(Provider::Qemu, "generic/alpine319", false, Some(VM_IPS[0]), Path::new("/t"));
         assert!(with_kvm.contains("h.memory = \"1G\"") && !with_kvm.contains("accel=tcg"), "{with_kvm}");
-        let without = vagrantfile(Provider::Qemu, "generic/alpine319", true, Some(VM_IPS[0]));
+        let without = vagrantfile(Provider::Qemu, "generic/alpine319", true, Some(VM_IPS[0]), Path::new("/t"));
         assert!(without.contains("h.machine = \"q35,accel=tcg\"") && without.contains("h.cpu = \"max\""), "{without}");
         // Other providers are unaffected.
-        assert!(!vagrantfile(Provider::Virtualbox, "x", true, Some(VM_IPS[0])).contains("accel"));
+        assert!(!vagrantfile(Provider::Virtualbox, "x", true, Some(VM_IPS[0]), Path::new("/t")).contains("accel"));
     }
 
     #[test]
@@ -360,9 +398,67 @@ mod tests {
 
     #[test]
     fn the_test_vm_is_on_a_private_network_where_the_provider_has_one() {
-        assert!(vagrantfile(Provider::Virtualbox, "x", false, Some(VM_IPS[0])).contains(VM_IPS[0]));
-        assert!(!vagrantfile(Provider::Utm, "x", false, Some(VM_IPS[0])).contains(VM_IPS[0]));
+        assert!(vagrantfile(Provider::Virtualbox, "x", false, Some(VM_IPS[0]), Path::new("/t")).contains(VM_IPS[0]));
+        assert!(!vagrantfile(Provider::Utm, "x", false, Some(VM_IPS[0]), Path::new("/t")).contains(VM_IPS[0]));
         assert_eq!(ping_args("10.0.0.1")[4], "10.0.0.1");
+    }
+
+    /// The Windows uninstaller's removal of the test VM (packaging/windows): the app's own, for the
+    /// test's folder in the app's cache (`%LOCALAPPDATA%\<identifier>\selftest\vm`). Written by
+    /// this test; a change shows in the diff, and CI fails on one left uncommitted.
+    #[test]
+    fn the_uninstaller_removes_the_test_vm_as_the_app_does() {
+        let under = format!("\"$env:LOCALAPPDATA\\{}\\selftest\\vm\\\"", crate::platform::config::KEYCHAIN_SERVICE);
+        let script = format!(
+            "# Written by `cargo test` (machine/selftest/vm.rs) from the app's own removal: don't edit.\n# Run by installer-hooks.nsh before the uninstaller removes the app's folders.\n{}",
+            crate::platform::exec::leftover_script(VM_NAME, &under)
+        );
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../packaging/windows/remove-test-vm.ps1");
+        let crlf = script.replace('\n', "\r\n");
+        if std::fs::read_to_string(&path).ok().as_deref() != Some(crlf.as_str()) {
+            std::fs::write(&path, &crlf).unwrap();
+        }
+        assert!(script.contains(r#"StartsWith("$env:LOCALAPPDATA\org.cyberctf.desktop\selftest\vm\", "#), "{script}");
+    }
+
+    #[test]
+    fn a_virtualbox_test_vm_carries_its_folder_so_a_leftover_is_known_as_the_tests() {
+        let v = vagrantfile(Provider::Virtualbox, "x", false, None, Path::new(r"C:\Users\O'Brien\selftest\vm"));
+        assert!(v.contains(r#"h.customize ["modifyvm", :id, "--description", 'cyberctf-selftest:C:\\Users\\O\'Brien\\selftest\\vm']"#), "{v}");
+    }
+
+    #[tokio::test]
+    async fn an_earlier_tests_vm_is_removed_before_the_test_and_a_foreign_one_stops_it() {
+        // Regression: a VM left running that Vagrant no longer knew made every later test fail at
+        // `vagrant up`; the destroy's failure was dropped and nothing removed the VM.
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let dir = std::env::temp_dir().join(format!("cyberctf-selftest-vm-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(dir.join(".vagrant").join("machines").join("default").join("virtualbox")).unwrap();
+        let ours = format!("description=\"{}\"\n", leftover::vbox_description(&dir));
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = events.clone();
+        let r = Reporter(Box::new(move |e: super::super::Event| seen.lock().unwrap().push(format!("{}:{}", e.step, e.state))));
+        let tools = Tools::rules(&[
+            ("vagrant destroy", fail("The machine isn't created")),
+            ("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")),
+            ("VBoxManage showvminfo abc", ok(&ours)),
+            ("vagrant --version", fail("stop here")),
+        ]);
+        crate::testing::logs::take_warnings();
+        let _ = run_test(&dir, None, &r).await;
+        assert!(tools.called("VBoxManage unregistervm abc --delete"), "{:?}", tools.calls());
+        assert!(!dir.join(".vagrant").exists(), "Vagrant's stale state is gone");
+        assert!(tools.called("vagrant --version"), "the test went on: {:?}", tools.calls());
+        assert_eq!(events.lock().unwrap()[0], "leftover:ok");
+        assert!(crate::testing::logs::take_warnings().iter().any(|w| w.contains("The machine isn't created")), "the destroy's failure is logged");
+
+        let tools = Tools::rules(&[("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")), ("VBoxManage showvminfo abc", ok("description=\"\"\n"))]);
+        events.lock().unwrap().clear();
+        let err = run_test(&dir, None, &r).await.unwrap_err();
+        assert!(err.to_string().contains("isn't this test's"), "{err}");
+        assert!(!tools.called("unregistervm") && !tools.called("vagrant --version"), "{:?}", tools.calls());
+        assert_eq!(*events.lock().unwrap(), ["leftover:fail"]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -375,7 +471,7 @@ mod tests {
             (Provider::Hyperv, "h.vmname = "),
             (Provider::Utm, "h.name = "),
         ] {
-            let v = vagrantfile(p, "box/x", false, Some(VM_IPS[0]));
+            let v = vagrantfile(p, "box/x", false, Some(VM_IPS[0]), Path::new("/t"));
             assert!(v.contains(needle) && v.contains(&format!("config.vm.provider \"{}\"", p.id())), "{v}");
             assert!(v.starts_with("Vagrant.configure") && v.ends_with("end\n"));
         }

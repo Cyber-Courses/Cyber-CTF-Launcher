@@ -122,6 +122,20 @@ fn join_error(code: i32) -> Error {
     }
 }
 
+/// Runs PowerShell `script` elevated, through one UAC prompt, and waits for its exit code. `Err`
+/// carries the Windows error that kept it from starting (`ERROR_CANCELLED`: the prompt was
+/// declined).
+#[cfg(windows)]
+async fn elevated_powershell(script: &str) -> Result<std::result::Result<u32, i32>> {
+    let args = powershell_args(script)?.join(" ");
+    let exe = powershell();
+    let dir = std::env::temp_dir();
+    let owner = owner_window().unwrap_or(0);
+    tokio::task::spawn_blocking(move || crate::platform::sys::launch_elevated(&exe, &args, &dir, owner).map(crate::platform::sys::ElevatedProcess::wait))
+        .await
+        .map_err(|e| Error::Invalid(e.to_string()))
+}
+
 /// Adds this user to "Hyper-V Administrators", through one UAC prompt (#185). From the next
 /// sign-in on, Vagrant drives Hyper-V for this account without administrator rights, status
 /// reads included, so the app needn't run as administrator nor ask again for each lab.
@@ -132,15 +146,7 @@ pub async fn join_hyperv_admins() -> Result<()> {
         (_, Ok(user)) => user,
         _ => return Err(Error::Invalid("couldn't tell which Windows account this is".into())),
     };
-    let args = powershell_args(&join_hyperv_admins_script(&account))?.join(" ");
-    let exe = powershell();
-    let dir = std::env::temp_dir();
-    let owner = owner_window().unwrap_or(0);
-    let code =
-        tokio::task::spawn_blocking(move || crate::platform::sys::launch_elevated(&exe, &args, &dir, owner).map(crate::platform::sys::ElevatedProcess::wait))
-            .await
-            .map_err(|e| Error::Invalid(e.to_string()))?
-            .map_err(join_error)?;
+    let code = elevated_powershell(&join_hyperv_admins_script(&account)).await?.map_err(join_error)?;
     if code != 0 {
         return Err(Error::Invalid(format!("Windows couldn't add your account to Hyper-V Administrators (PowerShell exited with {code}).")));
     }
@@ -150,6 +156,94 @@ pub async fn join_hyperv_admins() -> Result<()> {
 #[cfg(not(windows))]
 pub async fn join_hyperv_admins() -> Result<()> {
     Err(Error::Invalid("Hyper-V is only on Windows.".into()))
+}
+
+/// What [`remove_hyperv_leftover`] found of a VM by its name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Leftover {
+    /// No VM has the name.
+    None,
+    /// Every VM of the name had all its disks under the folder: each was turned off and removed.
+    Removed,
+    /// A VM of the name has a disk elsewhere (or none): not one of ours, left alone.
+    Foreign,
+}
+
+/// The exit codes of [`leftover_script`]: what it found and did.
+#[cfg(any(windows, test))]
+const LEFTOVER_REMOVED: i32 = 10;
+#[cfg(any(windows, test))]
+const LEFTOVER_FOREIGN: i32 = 20;
+
+/// The PowerShell script that turns off and removes every Hyper-V VM named `name` whose disks
+/// are all under the folder `under` (a PowerShell expression of its path, ending in a separator
+/// so a sibling folder of the same prefix isn't under it), and nothing if any VM of that name has
+/// a disk elsewhere (or none): it exits 0 (none), [`LEFTOVER_REMOVED`] or [`LEFTOVER_FOREIGN`], so
+/// an elevated run (whose output can't be read) says what it did too. The app runs it for its
+/// self-test's folder, and the Windows uninstaller for the same folder in the app's cache
+/// (`packaging/windows/remove-test-vm.ps1`, written from it).
+#[cfg(any(windows, test))]
+pub(crate) fn leftover_script(name: &str, under: &str) -> String {
+    format!(
+        "$ErrorActionPreference = 'Stop'\n\
+         $vms = @(Get-VM -Name {name} -ErrorAction SilentlyContinue | Where-Object {{ $_.Name -ceq {name} }})\n\
+         if ($vms.Count -eq 0) {{ exit 0 }}\n\
+         foreach ($vm in $vms) {{\n\
+         \x20 $disks = @(Get-VMHardDiskDrive -VM $vm | ForEach-Object {{ $_.Path }})\n\
+         \x20 $outside = @($disks | Where-Object {{ -not $_.StartsWith({under}, [System.StringComparison]::OrdinalIgnoreCase) }})\n\
+         \x20 if ($disks.Count -eq 0 -or $outside.Count -gt 0) {{ exit {LEFTOVER_FOREIGN} }}\n\
+         }}\n\
+         foreach ($vm in $vms) {{ Stop-VM -VM $vm -TurnOff -Force; Remove-VM -VM $vm -Force }}\n\
+         exit {LEFTOVER_REMOVED}\n",
+        name = ps_quote(name),
+    )
+}
+
+/// `folder` as the `under` of [`leftover_script`]: quoted, with one separator at its end.
+#[cfg(any(windows, test))]
+fn folder_expr(folder: &Path) -> String {
+    ps_quote(&format!("{}\\", folder.display().to_string().trim_end_matches(['\\', '/'])))
+}
+
+/// What the leftover script's exit `code` says.
+#[cfg(any(windows, test))]
+fn leftover_outcome(code: i32) -> Result<Leftover> {
+    match code {
+        0 => Ok(Leftover::None),
+        LEFTOVER_REMOVED => Ok(Leftover::Removed),
+        LEFTOVER_FOREIGN => Ok(Leftover::Foreign),
+        other => Err(Error::Invalid(format!("removing the leftover Hyper-V VM failed (PowerShell exited with {other})"))),
+    }
+}
+
+/// Turns off and removes the Hyper-V VMs named `name` whose disks are all under `folder` (a VM
+/// an earlier run left, which Vagrant no longer knows); a VM of that name with a disk elsewhere
+/// is left alone ([`Leftover::Foreign`]). Through one UAC prompt when this process may not
+/// manage Hyper-V itself.
+#[cfg(windows)]
+pub async fn remove_hyperv_leftover(name: &str, folder: &Path) -> Result<Leftover> {
+    let script = leftover_script(name, &folder_expr(folder));
+    let code = if may_manage_hyperv() {
+        let args = powershell_args(&script)?;
+        let mut cmd = tokio::process::Command::new(powershell());
+        cmd.args(&args);
+        super::headless(&mut cmd).status().await?.code().unwrap_or(-1)
+    } else {
+        let code = elevated_powershell(&script).await?.map_err(|code| {
+            Error::Invalid(format!(
+                "Windows didn't remove the VM an earlier test left, which needs administrator rights ({}).",
+                std::io::Error::from_raw_os_error(code)
+            ))
+        })?;
+        i32::try_from(code).unwrap_or(-1)
+    };
+    leftover_outcome(code)
+}
+
+/// No Hyper-V off Windows: nothing is left there.
+#[cfg(not(windows))]
+pub fn remove_hyperv_leftover(_name: &str, _folder: &std::path::Path) -> impl std::future::Future<Output = Result<Leftover>> {
+    std::future::ready(Ok(Leftover::None))
 }
 
 /// The environment variable a deploy worker gets the app's main window in (see
@@ -292,6 +386,22 @@ mod tests {
         assert!(join_error(1223).to_string().contains("declined"));
         assert!(join_error(5).to_string().contains("Hyper-V Administrators"));
         assert!(!may_manage_hyperv() || cfg!(windows), "never off Windows");
+    }
+
+    #[test]
+    fn a_leftover_hyperv_vm_is_removed_only_by_its_exact_name_with_its_disks_in_the_folder() {
+        let script = leftover_script("CyberCTF test VM", &folder_expr(Path::new(r"C:\Users\jo\AppData\Local\org.cyberctf.desktop\selftest\vm\")));
+        assert!(script.contains("Get-VM -Name 'CyberCTF test VM'") && script.contains("$_.Name -ceq 'CyberCTF test VM'"), "{script}");
+        // The folder with one separator: a sibling folder (`vm2`) doesn't count as under it.
+        assert!(script.contains(r"StartsWith('C:\Users\jo\AppData\Local\org.cyberctf.desktop\selftest\vm\', "), "{script}");
+        assert!(script.contains("if ($disks.Count -eq 0 -or $outside.Count -gt 0) { exit 20 }"), "{script}");
+        let removal = script.find("Remove-VM").unwrap();
+        assert!(script.find("exit 20").unwrap() < removal, "every VM is checked before any is removed");
+        assert!(script.contains("Stop-VM -VM $vm -TurnOff -Force; Remove-VM -VM $vm -Force"));
+        assert_eq!(leftover_outcome(0).unwrap(), Leftover::None);
+        assert_eq!(leftover_outcome(10).unwrap(), Leftover::Removed);
+        assert_eq!(leftover_outcome(20).unwrap(), Leftover::Foreign);
+        assert!(leftover_outcome(1).is_err());
     }
 
     #[test]

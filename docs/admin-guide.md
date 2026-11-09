@@ -379,7 +379,23 @@ folder**. Logs name labs, servers and paths: read them before sending them outsi
 First, in the launcher, **stop every lab** (_Stop & remove_ on the lab's page), above all those on
 a server or in a cloud account: their Terraform state in the app data folder is what destroys
 them. Settings > Maintenance > Cleanup removes leftover labs, the images and boxes the launcher
-downloaded, and the tools it installed.
+downloaded, and the tools it installed. A lab's VMs on this computer go with the lab; once the
+app data folder is deleted the launcher can't find them any more, so one still running (in the
+hypervisor's own app, named after the lab) is then removed there by hand.
+
+The machine self-test removes its VM when it ends; one it left running (the test interrupted)
+is named **CyberCTF test VM** and runs from a disk in the app's cache folder. The next test
+removes it first. On uninstall:
+
+- the NSIS uninstaller removes it from Hyper-V before it deletes anything, when the account may
+  manage Hyper-V (an administrator, or a member of Hyper-V Administrators); only a VM of exactly
+  that name whose every disk is in the cache folder;
+- the MSI doesn't: it installs for the whole computer and leaves each user's data folders, so it
+  never touches a VM running from one;
+- anywhere else, remove it by hand before deleting the cache folder:
+  `Stop-VM -Name "CyberCTF test VM" -TurnOff; Remove-VM -Name "CyberCTF test VM" -Force`
+  (Hyper-V), `VBoxManage unregistervm "CyberCTF test VM" --delete` (VirtualBox), or in the
+  hypervisor's app.
 
 **Windows**
 

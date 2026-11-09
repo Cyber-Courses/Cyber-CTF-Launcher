@@ -192,6 +192,14 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   now says what failed and why, with a way to check the machine again.
 - **A failed quit says so.** "Quit anyway" or "Finish in background" that failed only enabled
   its buttons again; it now says it couldn't quit, and why.
+- **The VM test removes a test VM an earlier run left behind.** A test VM left running that
+  Vagrant no longer knew (its state lost, as with the app's data at an uninstall) held its disk,
+  and every later VM test failed at `vagrant up` ("the file is being used by another process" on
+  Hyper-V) until someone removed it by hand. The test now finds it by its name and removes it
+  first, on Hyper-V when all its disks are in the test's folder and on VirtualBox when its
+  description names that folder; a VM of the same name that is anyone else's is left alone, and
+  the test says so. The NSIS uninstaller removes a Hyper-V test VM the same way before it deletes
+  the app's folders.
 - **A lab whose state can't be read says why.** When reading a lab's state failed (Docker not
   running, its run record unreadable, its files no longer able to be generated again), the lab
   page went on showing the last state it had read, with no word of it. It now says, at the top,
