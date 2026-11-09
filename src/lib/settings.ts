@@ -74,18 +74,22 @@ export const ATTACK_PRESETS: { image: string; label: string; note: string; large
   },
 ];
 
-/** The attack box image to use. A saved old default is migrated: the key is cleared, so this
- *  machine follows the default from then on. */
-export function getAttackImage(): string {
+/** The attack box image the learner saved, null when they follow the default (the backend then
+ *  runs its own, read from the same `attack-box-image.json`). A saved old default is migrated:
+ *  the key is cleared, so this machine follows the default from then on. */
+export function savedAttackImage(): string | null {
   try {
     const saved = localStorage.getItem(ATTACK_IMAGE_KEY);
     if (saved && OLD_DEFAULT_IMAGES.has(saved)) localStorage.removeItem(ATTACK_IMAGE_KEY);
     else if (saved) return saved;
-    return DEFAULT_ATTACK_IMAGE;
+    return null;
   } catch {
-    return DEFAULT_ATTACK_IMAGE;
+    return null;
   }
 }
+
+/** The attack box image to use, as the settings show it: the learner's own, else the default. */
+export const getAttackImage = (): string => savedAttackImage() ?? DEFAULT_ATTACK_IMAGE;
 
 /** Saves the attack box image. The default (or blank) isn't stored, so a later launcher's newer
  *  pinned default applies without another migration. */

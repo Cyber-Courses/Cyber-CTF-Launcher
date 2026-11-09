@@ -8,7 +8,7 @@ import { useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
 import { useAttackBox, type AttackBox } from "@/features/labs/use-attack-box";
 import { attachAttackBox } from "@/features/labs/attack-box-attach";
 import type { ActiveOperation, AttackStatus } from "@/lib/tauri";
-import { setAttackImage, setAutoAttackBox } from "@/lib/settings";
+import { DEFAULT_ATTACK_IMAGE, setAttackImage, setAutoAttackBox } from "@/lib/settings";
 import { commands, installTauri, stream, type Call } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { rejectWith } from "@/features/labs/labs-test-kit";
@@ -85,6 +85,17 @@ describe("useAttackBox", () => {
     await flush();
     expect(count(calls, "attack_box_status")).toBe(1);
     expect(count(calls, "attack_box_attach")).toBe(0);
+  });
+
+  it("leaves the image to the backend's default when the learner saved none", async () => {
+    setAttackImage(DEFAULT_ATTACK_IMAGE);
+    setAutoAttackBox(false);
+    const calls = installTauri({ attack_box_status: () => box(), attack_box_attach: () => null });
+    const { result } = renderHook(() => useAttackBox("ab-default", { running: true }));
+    await flush();
+    expect(result.current.name).toBe("cyberctf/attack-box");
+    await act(() => result.current.start());
+    expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ pick: { image: null } });
   });
 
   it("names the Kali VM the launcher adds to a lab running as VMs, and takes it out", async () => {
