@@ -158,13 +158,9 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 - **The attack box beside a container lab run as VMs failed on a missing Vagrant box.** On a lab
   deployed "one VM per machine" on this machine, "Start attack box" sent the attack box image
-  (`cyberctf/attack-box@sha256:…`) where the runner expected the attack VM's Vagrant box, and
-  Vagrant Cloud answered 404. The box's status now says what it is here (`vm`: a VM beside a lab
-  running as VMs, whatever the lab declares; `pickedBox`: the lab's own attack VM, which boots
-  from the Vagrant box in Settings), and the attach sends the right choice: the attack box image,
-  which the runner now runs inside the attack VM it adds (Isothrum 1.0.6 on Isoloom 1.0.10: Debian
-  12 with Docker, the image's Arm build on an Apple Silicon Mac), or the Vagrant box for a lab
-  whose own design declares an attack VM. The panel calls it an attack VM in both cases.
+  (`cyberctf/attack-box@sha256:…`) where the runner expected a Vagrant box, and Vagrant Cloud
+  answered 404. Among VMs the attack box is now the Kali VM the launcher makes (see Added), and
+  the panel calls it an attack VM.
 - **Labs made by an earlier version keep working after an update.** A lab's generated files hold
   a run manifest of the version that wrote them, and this version reads manifest version 1 only,
   so a lab left running or paused across the update couldn't be stopped, paused, checked or
