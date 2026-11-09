@@ -136,14 +136,13 @@ fn seat(spec: &isoloom_spec::model::Spec, network: Option<&str>) -> Result<Seat>
     Ok(Seat { name: NAME.to_owned(), networks: vec![(network, octet)], replaces: false })
 }
 
-/// The box's name in the lab in `dir`: the one added, else the lab's own access machine's (the
-/// seat it would take), else [`NAME`].
+/// The box's name in the lab in `dir`: the one added (the layer's attack box), else the lab's own
+/// access machine's (the seat it would take), else [`NAME`].
 pub(crate) fn name(dir: &Path) -> Result<String> {
-    Ok(overlay::machines(dir)?
-        .into_iter()
-        .next()
-        .or_else(|| lab::load(dir).ok().and_then(|s| declared(&s).map(|(n, _)| n.clone())))
-        .unwrap_or_else(|| NAME.to_owned()))
+    if let Some(name) = overlay::attack_box(dir)? {
+        return Ok(name);
+    }
+    Ok(declared(&lab::load(dir)?).map_or_else(|| NAME.to_owned(), |(n, _)| n.clone()))
 }
 
 /// Adds the box to the lab in `dir` as `kind`, at its seat ([`seat`]; `network` is the player's
@@ -172,12 +171,12 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
         }
     };
     let machine = serde_yaml_ng::from_str::<Value>(&machine).map_err(|e| Error::Invalid(format!("the attack box's spec: {e}")))?;
-    overlay::add_machine(dir, &name, machine, replaces)
+    overlay::add_machine(dir, &name, machine, overlay::Adding { replaces, attack_box: true })
 }
 
 /// Takes the box out of the lab in `dir` (a lab's own access machine it stood in for comes back).
 pub(crate) fn remove(dir: &Path) -> Result<()> {
-    for name in overlay::machines(dir)? {
+    if let Some(name) = overlay::attack_box(dir)? {
         overlay::remove_machine(dir, &name)?;
     }
     match std::fs::remove_file(dir.join(SETUP_FILE)) {
@@ -191,7 +190,7 @@ pub(crate) fn remove(dir: &Path) -> Result<()> {
 /// would draw it twice) nor what makes the lab running (a lab whose targets are all down is down,
 /// its box up or not).
 pub(crate) fn set_apart(status: crate::runtime::LabStatus, dir: &Path) -> Result<crate::runtime::LabStatus> {
-    let Some(name) = overlay::machines(dir)?.into_iter().next() else { return Ok(status) };
+    let Some(name) = overlay::attack_box(dir)? else { return Ok(status) };
     if !status.machines.iter().any(|m| m.name == name) {
         return Ok(status);
     }
@@ -202,7 +201,7 @@ pub(crate) fn set_apart(status: crate::runtime::LabStatus, dir: &Path) -> Result
 
 /// Whether the lab in `dir` has the box.
 pub(crate) fn added(dir: &Path) -> Result<bool> {
-    Ok(!overlay::machines(dir)?.is_empty())
+    Ok(overlay::attack_box(dir)?.is_some())
 }
 
 #[cfg(test)]
@@ -267,6 +266,22 @@ mod tests {
         assert!(!dir.join(SETUP_FILE).exists(), "no set-up: the image is the box");
         assert!(add_at(&dir, Kind::Container { image: "x" }, Cpu::Lab, Some("nope")).is_err(), "no such network");
         remove(&dir).unwrap();
+    }
+
+    #[test]
+    fn another_machine_of_the_layer_is_never_taken_for_the_box() {
+        let dir = crate::runtime::test_support::write_lab(
+            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, networks: { lan: 10 } }\n",
+        );
+        let other = serde_yaml_ng::from_str::<Value>("{ app: { image: nginx }, networks: { lan: 20 } }").unwrap();
+        overlay::add_machine(&dir, "aaa-extra", other, overlay::Adding::default()).unwrap();
+        assert!(!added(&dir).unwrap());
+        assert_eq!(name(&dir).unwrap(), NAME);
+        add_at(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None).unwrap();
+        assert_eq!(name(&dir).unwrap(), NAME, "the box, not the layer's first machine");
+        remove(&dir).unwrap();
+        let spec = lab::load(&dir).unwrap();
+        assert!(spec.machines.contains_key("aaa-extra") && !spec.machines.contains_key(NAME), "only the box is taken out");
     }
 
     #[test]

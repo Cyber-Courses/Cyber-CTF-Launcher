@@ -2,7 +2,9 @@
 //! beside the lab in [`FILE`], a YAML layer merged into its `isoloom.yml` with Isoloom's own merge
 //! each time the lab is read. A machine of the layer may replace one of the spec wholesale (its
 //! name in the layer's `replace:` list, which only the launcher reads): the spec's machine is
-//! dropped before the merge, so none of its fields carry over. The published spec is never
+//! dropped before the merge, so none of its fields carry over. Which of its machines is the
+//! learner's attack box is the layer's `attack_box:` (also the launcher's only), so no other
+//! machine of the layer is taken for it. The published spec is never
 //! written: taking a machine out removes it from the layer, and a lab with no additions has no
 //! layer at all.
 
@@ -18,6 +20,9 @@ pub(crate) const FILE: &str = ".cyberctf-overlay.yml";
 /// The layer's own key: the spec machines its machines replace wholesale.
 const REPLACE: &str = "replace";
 
+/// The layer's own key: which of its machines is the attack box.
+const ATTACK_BOX: &str = "attack_box";
+
 /// The lab's spec text in `dir`, with the layer merged in when there is one. The outer error is
 /// the layer's (it exists but can't be read: never taken for no layer, which would quietly drop
 /// the launcher's machines from the lab); the inner one the spec's.
@@ -31,6 +36,7 @@ fn merged(dir: &Path, layer: Option<Value>) -> isoloom_spec::Result<String> {
     let path = isoloom_spec::find(dir)?;
     let text = std::fs::read_to_string(&path).map_err(|source| isoloom_spec::Error::Read { path, source })?;
     let Some(mut layer) = layer else { return Ok(text) };
+    layer.as_mapping_mut().map(|m| m.remove(ATTACK_BOX));
     let replaced = layer.as_mapping_mut().and_then(|m| m.remove(REPLACE));
     let Some(replaced) = replaced.as_ref().and_then(Value::as_sequence).filter(|r| !r.is_empty()) else {
         return isoloom_spec::defaults::override_spec_with(&text, Some(&layer), &[]);
@@ -44,15 +50,27 @@ fn merged(dir: &Path, layer: Option<Value>) -> isoloom_spec::Result<String> {
     isoloom_spec::defaults::override_spec_with(&serde_yaml_ng::to_string(&spec)?, Some(&layer), &[])
 }
 
-/// Adds machine `name`, as `machine` (its spec, as `isoloom.yml` writes a machine), to the layer;
-/// with `replaces`, in place of the spec's machine of that name (none of its fields kept).
-pub(crate) fn add_machine(dir: &Path, name: &str, machine: Value, replaces: bool) -> Result<()> {
+/// How a machine goes into the layer.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct Adding {
+    /// In place of the spec's machine of that name (none of its fields kept).
+    pub(crate) replaces: bool,
+    /// It is the attack box ([`attack_box`]).
+    pub(crate) attack_box: bool,
+}
+
+/// Adds machine `name`, as `machine` (its spec, as `isoloom.yml` writes a machine), to the layer,
+/// as `adding` says.
+pub(crate) fn add_machine(dir: &Path, name: &str, machine: Value, adding: Adding) -> Result<()> {
     let mut layer = read(dir)?.unwrap_or_else(|| Value::Mapping(Mapping::new()));
     let root = layer.as_mapping_mut().ok_or_else(|| Error::Invalid(format!("{FILE} isn't a YAML mapping")))?;
     let machines = root.entry(Value::from("machines")).or_insert_with(|| Value::Mapping(Mapping::new()));
     let machines = machines.as_mapping_mut().ok_or_else(|| Error::Invalid(format!("{FILE}: `machines` isn't a mapping")))?;
     machines.insert(Value::from(name), machine);
-    if replaces {
+    if adding.attack_box {
+        root.insert(Value::from(ATTACK_BOX), Value::from(name));
+    }
+    if adding.replaces {
         let list = root.entry(Value::from(REPLACE)).or_insert_with(|| Value::Sequence(Vec::new()));
         let list = list.as_sequence_mut().ok_or_else(|| Error::Invalid(format!("{FILE}: `{REPLACE}` isn't a list")))?;
         if !list.iter().any(|n| n.as_str() == Some(name)) {
@@ -62,11 +80,9 @@ pub(crate) fn add_machine(dir: &Path, name: &str, machine: Value, replaces: bool
     write(dir, &layer)
 }
 
-/// The layer's machines, by name.
-pub(crate) fn machines(dir: &Path) -> Result<Vec<String>> {
-    Ok(read(dir)?
-        .and_then(|l| l.get("machines").and_then(Value::as_mapping).map(|m| m.keys().filter_map(Value::as_str).map(str::to_owned).collect()))
-        .unwrap_or_default())
+/// The layer's machine that is the attack box, when it has one.
+pub(crate) fn attack_box(dir: &Path) -> Result<Option<String>> {
+    Ok(read(dir)?.and_then(|l| l.get(ATTACK_BOX).and_then(Value::as_str).map(str::to_owned)))
 }
 
 /// Takes machine `name` out of the layer (the spec's own machine of that name comes back); the
@@ -78,6 +94,9 @@ pub(crate) fn remove_machine(dir: &Path, name: &str) -> Result<()> {
         if machines.is_empty() {
             layer.as_mapping_mut().map(|m| m.remove("machines"));
         }
+    }
+    if layer.get(ATTACK_BOX).and_then(Value::as_str) == Some(name) {
+        layer.as_mapping_mut().map(|m| m.remove(ATTACK_BOX));
     }
     if let Some(list) = layer.get_mut(REPLACE).and_then(Value::as_sequence_mut) {
         list.retain(|n| n.as_str() != Some(name));
@@ -129,8 +148,8 @@ mod tests {
         let dir = lab();
         assert_eq!(spec_text(&dir).unwrap().unwrap(), SPEC, "no layer: the spec as published");
         let machine: Value = serde_yaml_ng::from_str("{ os: kali@rolling, networks: { lan: 249 } }").unwrap();
-        add_machine(&dir, "extra", machine, false).unwrap();
-        assert_eq!(machines(&dir).unwrap(), ["extra"]);
+        add_machine(&dir, "extra", machine, Adding::default()).unwrap();
+        assert_eq!(attack_box(&dir).unwrap(), None, "not the attack box");
         let spec = isoloom_spec::parse(&spec_text(&dir).unwrap().unwrap()).unwrap();
         let names: Vec<&str> = spec.machines.keys().map(String::as_str).collect();
         assert_eq!(names, ["web", "extra"]);
@@ -145,11 +164,11 @@ mod tests {
     fn a_machine_that_replaces_one_of_the_spec_keeps_none_of_its_fields() {
         let dir = lab();
         let machine: Value = serde_yaml_ng::from_str("{ os: kali@rolling, networks: { lan: 10 } }").unwrap();
-        add_machine(&dir, "web", machine, true).unwrap();
+        add_machine(&dir, "web", machine, Adding { replaces: true, attack_box: true }).unwrap();
         let text = spec_text(&dir).unwrap().unwrap();
         isoloom_spec::parse(&text).unwrap();
         assert!(text.contains("kali@rolling") && !text.contains("debian@12"), "the layer's machine, not a merge: {text}");
-        assert_eq!(machines(&dir).unwrap(), ["web"]);
+        assert_eq!(attack_box(&dir).unwrap().as_deref(), Some("web"));
         remove_machine(&dir, "web").unwrap();
         assert!(!dir.join(FILE).exists(), "nothing left: the layer goes");
         assert_eq!(spec_text(&dir).unwrap().unwrap(), SPEC, "the spec's own machine is back");
@@ -162,8 +181,8 @@ mod tests {
         std::fs::write(dir.join(FILE), "machines: [unclosed\n").unwrap();
         let unreadable = |e: Error| assert!(e.to_string().contains(FILE), "names the layer: {e}");
         unreadable(spec_text(&dir).unwrap_err());
-        unreadable(machines(&dir).unwrap_err());
-        unreadable(add_machine(&dir, "extra", Value::Mapping(Mapping::new()), false).unwrap_err());
+        unreadable(add_machine(&dir, "extra", Value::Mapping(Mapping::new()), Adding::default()).unwrap_err());
+        unreadable(attack_box(&dir).unwrap_err());
         unreadable(remove_machine(&dir, "extra").unwrap_err());
         assert_eq!(std::fs::read_to_string(dir.join(FILE)).unwrap(), "machines: [unclosed\n", "left as it was");
         std::fs::remove_dir_all(&dir).unwrap();
