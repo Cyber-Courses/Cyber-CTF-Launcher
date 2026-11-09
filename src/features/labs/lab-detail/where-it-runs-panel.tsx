@@ -6,8 +6,8 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-pill";
 import { runPlaces } from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { labRequirements, serverList, SERVER_CHANGED, type LabRequirements, type Provider, type ServerHost } from "@/lib/tauri";
-import { useTauriEvent } from "@/lib/use-tauri-event";
+import { labRequirements, type LabRequirements, type Provider } from "@/lib/tauri";
+import { useSavedHosts } from "@/features/servers/use-server-list";
 import { cn } from "@/lib/utils";
 import { useT, type MessageKey, type T } from "@/lib/i18n";
 
@@ -17,30 +17,6 @@ const SETUP_HINT: Partial<Record<string, MessageKey>> = {
   server: "labs.detail.connectServer",
   cloud: "labs.detail.connectAccount",
 };
-
-/** The launcher's saved servers and cloud accounts, kept fresh when one is added or removed, so a
- *  place the lab supports reads as ready once its server or account is connected. */
-function useSavedHosts(): ServerHost[] {
-  const [hosts, setHosts] = useState<ServerHost[]>([]);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    serverList()
-      .then((l) => {
-        if (alive) setHosts(l.hosts);
-      })
-      .catch(() => {
-        if (alive) setHosts([]);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [tick]);
-  useTauriEvent(SERVER_CHANGED, () => {
-    setTick((n) => n + 1);
-  });
-  return hosts;
-}
 
 /** A lab's minimum-to-run requirements, read from its spec at the catalogue's commit (null until
  *  read, or when the lab has no machines of its own). */
@@ -125,7 +101,7 @@ export function WhereItRunsPanel({
 }) {
   const t = useT();
   const requirements = useLabRequirements(labId, runtime);
-  const hosts = useSavedHosts();
+  const { hosts } = useSavedHosts();
   return (
     <Panel>
       <PanelHeader title={t("labs.detail.whereItRuns")} meta={meta} />

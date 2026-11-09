@@ -23,10 +23,9 @@ import {
   setVmProvider,
   type PortMode,
 } from "@/lib/settings";
-import { SERVER_CHANGED, labServers, serverList, type DockerEngine, type Provider, type ServerHost } from "@/lib/tauri";
+import { labServers, type DockerEngine, type Provider, type ServerHost } from "@/lib/tauri";
+import { useSavedHosts } from "@/features/servers/use-server-list";
 import { ignore } from "@/lib/failure";
-import { useTauriEvent } from "@/lib/use-tauri-event";
-import { useLatest } from "@/lib/use-latest";
 
 /** A dual-form container lab on cloud account `id`, when it runs cloud-vm: two forms — one VM
  *  (cloud-docker), one VM per machine (cloud-vm) — picked on the form step after the account. */
@@ -72,7 +71,7 @@ export function useRunTarget(
   // Prefer this machine when a local hypervisor can run the lab; fall back to the default server
   // only when none can. A default server shouldn't silently capture every VM lab.
   const localReady = isDocker || (!!rt && readyVms.some((p) => localProviders(rt, hostArch).includes(p)));
-  const { hosts, defaultId } = useServerList();
+  const { hosts, defaultId } = useSavedHosts();
   const cloudAccounts = cloudAccountsFor(rt, hosts);
   // A server picked, then removed in its setup window: back to where Start points at first.
   const runOn = picked && (picked.kind !== "host" || hosts.some((h) => h.id === picked.id)) ? picked : initialTarget(rt, hosts, defaultId, localReady, servers);
@@ -154,30 +153,6 @@ function useLabServers(labId: string, rt: LabRuntimeInfo | null): Provider[] | n
     };
   }, [labId, key, runtime, repository, commit]);
   return answer?.key === key ? answer.servers : null;
-}
-
-const NO_SERVERS: { hosts: ServerHost[]; defaultId: string | null } = { hosts: [], defaultId: null };
-
-/** The player's saved servers and cloud accounts, kept fresh: a server or account added (or
- *  removed) in its setup window shows at once, and only the newest read is kept. */
-function useServerList() {
-  const [servers, setServers] = useState(NO_SERVERS);
-  const [changed, setChanged] = useState(0);
-  const begin = useLatest();
-  useEffect(() => {
-    const isLatest = begin();
-    serverList()
-      .then((l) => {
-        if (isLatest()) setServers({ hosts: l.hosts, defaultId: l.default });
-      })
-      .catch(() => {
-        if (isLatest()) setServers(NO_SERVERS);
-      });
-  }, [begin, changed]);
-  useTauriEvent(SERVER_CHANGED, () => {
-    setChanged((n) => n + 1);
-  });
-  return servers;
 }
 
 /** `e` when it is one of the container engines that answer here, else null. */

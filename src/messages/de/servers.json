@@ -7,14 +7,18 @@
     "checking": "Wird geprüft…",
     "onlineCount": "{online} von {total} online",
     "hosts": "Hosts",
-    "hostCount": { "one": "{count} Host", "other": "{count} Hosts" },
+    "hostCount": {
+      "one": "{count} Host",
+      "other": "{count} Hosts"
+    },
     "removeConfirm": "{name} entfernen? Das Passwort wird aus dem Schlüsselbund gelöscht.",
     "capacityTitle": "Kapazität auf {name}",
     "vcpu": "{count} vCPU",
     "memory": "Arbeitsspeicher",
     "memoryUsed": "{used} von {total} belegt",
     "noServerHint": "Kein Server? Wenn dieser Rechner es schafft, installiere einen lokalen Hypervisor und führe VM-Labs hier aus.",
-    "setUpMachine": "Diesen Rechner einrichten"
+    "setUpMachine": "Diesen Rechner einrichten",
+    "listFailed": "Deine gespeicherten Server und Cloud-Konten konnten nicht gelesen werden"
   },
   "empty": {
     "title": "Kein Server verbunden",
@@ -34,7 +38,10 @@
     "setDefault": "Als Standard festlegen",
     "node": "Node {node}",
     "memFree": "{free} von {total} frei",
-    "labsRunning": { "one": "{count} Lab läuft", "other": "{count} Labs laufen" },
+    "labsRunning": {
+      "one": "{count} Lab läuft",
+      "other": "{count} Labs laufen"
+    },
     "vmTestPassed": "VM-Test bestanden",
     "vmTestFailed": "VM-Test fehlgeschlagen",
     "localNetwork": "Wenn der Host läuft, blockiert macOS eventuell den Zugriff von Cyber CTF auf dein lokales Netzwerk: Aktiviere Cyber CTF unter Datenschutz & Sicherheit > Lokales Netzwerk.",
@@ -273,7 +280,10 @@
         "gcp": "Mein Google Cloud"
       },
       "autoStop": "Auto-Stopp",
-      "hours": { "one": "{count} Stunde", "other": "{count} Stunden" },
+      "hours": {
+        "one": "{count} Stunde",
+        "other": "{count} Stunden"
+      },
       "never": "Nie",
       "awsAutoStop": "Ein Lab mit Auto-Stopp beendet sich nach Ablauf der Zeit selbst, auch wenn dieser Rechner aus ist.",
       "otherAutoStop": "Zur Auto-Stopp-Zeit baut der Launcher das Lab ab, um die Kosten zu beenden; lass ihn also bis dahin geöffnet (oder stoppe das Lab vorher selbst).",

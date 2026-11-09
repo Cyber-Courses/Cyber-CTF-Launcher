@@ -7,14 +7,18 @@
     "checking": "確認中…",
     "onlineCount": "{total} 台中 {online} 台がオンライン",
     "hosts": "ホスト",
-    "hostCount": { "one": "{count} 台のホスト", "other": "{count} 台のホスト" },
+    "hostCount": {
+      "one": "{count} 台のホスト",
+      "other": "{count} 台のホスト"
+    },
     "removeConfirm": "{name} を削除しますか？パスワードはキーチェーンから削除されます。",
     "capacityTitle": "{name} のキャパシティ",
     "vcpu": "{count} vCPU",
     "memory": "メモリ",
     "memoryUsed": "{total} 中 {used} 使用",
     "noServerHint": "サーバーがない場合：このマシンに余裕があれば、ローカルのハイパーバイザーをインストールして VM ラボをここで実行できます。",
-    "setUpMachine": "このマシンをセットアップ"
+    "setUpMachine": "このマシンをセットアップ",
+    "listFailed": "保存したサーバーとクラウドアカウントを読み込めませんでした"
   },
   "empty": {
     "title": "接続されたサーバーはありません",
@@ -34,7 +38,10 @@
     "setDefault": "デフォルトに設定",
     "node": "ノード {node}",
     "memFree": "{total} 中 {free} 空き",
-    "labsRunning": { "one": "{count} 件のラボが実行中", "other": "{count} 件のラボが実行中" },
+    "labsRunning": {
+      "one": "{count} 件のラボが実行中",
+      "other": "{count} 件のラボが実行中"
+    },
     "vmTestPassed": "VM テスト成功",
     "vmTestFailed": "VM テスト失敗",
     "localNetwork": "ホストが起動している場合、macOS が Cyber CTF のローカルネットワークへのアクセスをブロックしている可能性があります。「プライバシーとセキュリティ > ローカルネットワーク」で Cyber CTF をオンにしてください。",
@@ -273,7 +280,10 @@
         "gcp": "マイ Google Cloud"
       },
       "autoStop": "自動停止",
-      "hours": { "one": "{count} 時間", "other": "{count} 時間" },
+      "hours": {
+        "one": "{count} 時間",
+        "other": "{count} 時間"
+      },
       "never": "しない",
       "awsAutoStop": "自動停止の時刻になると、このマシンがオフでもラボは自ら終了します。",
       "otherAutoStop": "自動停止の時刻になると、ランチャーがラボを破棄して課金を止めます。それまではアプリを開いたままにする（または自分でラボを停止する）必要があります。",

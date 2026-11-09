@@ -7,14 +7,18 @@
     "checking": "Vérification…",
     "onlineCount": "{online} sur {total} en ligne",
     "hosts": "Hôtes",
-    "hostCount": { "one": "{count} hôte", "other": "{count} hôtes" },
+    "hostCount": {
+      "one": "{count} hôte",
+      "other": "{count} hôtes"
+    },
     "removeConfirm": "Supprimer {name} ? Son mot de passe est effacé du trousseau.",
     "capacityTitle": "Capacité de {name}",
     "vcpu": "{count} vCPU",
     "memory": "Mémoire",
     "memoryUsed": "{used} utilisés sur {total}",
     "noServerHint": "Pas de serveur ? Si cette machine en est capable, installez un hyperviseur local et lancez les labs VM ici.",
-    "setUpMachine": "Configurer cette machine"
+    "setUpMachine": "Configurer cette machine",
+    "listFailed": "Impossible de lire vos serveurs et comptes cloud enregistrés"
   },
   "empty": {
     "title": "Aucun serveur connecté",
@@ -34,7 +38,10 @@
     "setDefault": "Définir par défaut",
     "node": "nœud {node}",
     "memFree": "{free} libres sur {total}",
-    "labsRunning": { "one": "{count} lab en cours", "other": "{count} labs en cours" },
+    "labsRunning": {
+      "one": "{count} lab en cours",
+      "other": "{count} labs en cours"
+    },
     "vmTestPassed": "Test VM réussi",
     "vmTestFailed": "Test VM échoué",
     "localNetwork": "Si l'hôte est allumé, macOS bloque peut-être l'accès de Cyber CTF à votre réseau local : activez Cyber CTF dans Confidentialité et sécurité > Réseau local.",
@@ -273,7 +280,10 @@
         "gcp": "Mon Google Cloud"
       },
       "autoStop": "Arrêt automatique",
-      "hours": { "one": "{count} heure", "other": "{count} heures" },
+      "hours": {
+        "one": "{count} heure",
+        "other": "{count} heures"
+      },
       "never": "Jamais",
       "awsAutoStop": "Un lab arrêté automatiquement se termine de lui-même à l'heure prévue, même si cette machine est éteinte.",
       "otherAutoStop": "À l'heure d'arrêt automatique, le launcher détruit le lab pour arrêter la facturation : gardez-le ouvert d'ici là (ou arrêtez le lab vous-même).",

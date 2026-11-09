@@ -15,7 +15,7 @@ import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import { useDeployingLabs } from "@/features/labs/runs/operations";
 import type { LabStatus, SystemReport } from "@/lib/tauri";
-import { useSavedServers } from "@/features/labs/use-saved-servers";
+import { useSavedHosts } from "@/features/servers/use-server-list";
 import { getVmProvider } from "@/lib/settings";
 import { useStableCallback } from "@/lib/use-stable-callback";
 import { useT } from "@/lib/i18n";
@@ -88,7 +88,7 @@ function useLabsScreen({ loggedIn, report, openLab, onDetailChange }: ViewProps)
   const deploying = useDeployingLabs();
   const [detailSlug, setDetailSlug] = useOpenLab(openLab, labs);
   const [filters, setFilters] = useState<LabFilters>(NO_FILTERS);
-  const servers = useSavedServers();
+  const servers = useSavedHosts().hosts;
   // Local hypervisors ready for a lab VM (Vagrant + hypervisor), the Settings default first.
   const readyVms = useMemo(() => (report ? readyHypervisors(report, getVmProvider()) : []), [report]);
   const shown = useFilteredLabs(labs, filters, statuses, completed);

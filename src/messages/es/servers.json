@@ -7,14 +7,18 @@
     "checking": "Comprobando…",
     "onlineCount": "{online} de {total} en línea",
     "hosts": "Hosts",
-    "hostCount": { "one": "{count} host", "other": "{count} hosts" },
+    "hostCount": {
+      "one": "{count} host",
+      "other": "{count} hosts"
+    },
     "removeConfirm": "¿Eliminar {name}? Su contraseña se borra del llavero.",
     "capacityTitle": "Capacidad en {name}",
     "vcpu": "{count} vCPU",
     "memory": "Memoria",
     "memoryUsed": "{used} de {total} en uso",
     "noServerHint": "¿Sin servidor? Si esta máquina puede con ello, instala un hipervisor local y ejecuta aquí los labs de VM.",
-    "setUpMachine": "Configurar esta máquina"
+    "setUpMachine": "Configurar esta máquina",
+    "listFailed": "No se pudieron leer tus servidores y cuentas en la nube guardados"
   },
   "empty": {
     "title": "Ningún servidor conectado",
@@ -34,7 +38,10 @@
     "setDefault": "Establecer por defecto",
     "node": "nodo {node}",
     "memFree": "{free} libres de {total}",
-    "labsRunning": { "one": "{count} lab en ejecución", "other": "{count} labs en ejecución" },
+    "labsRunning": {
+      "one": "{count} lab en ejecución",
+      "other": "{count} labs en ejecución"
+    },
     "vmTestPassed": "Prueba de VM superada",
     "vmTestFailed": "Prueba de VM fallida",
     "localNetwork": "Si el host está activo, puede que macOS esté bloqueando el acceso de Cyber CTF a tu red local: activa Cyber CTF en Privacidad y seguridad > Red local.",
@@ -273,7 +280,10 @@
         "gcp": "Mi Google Cloud"
       },
       "autoStop": "Parada automática",
-      "hours": { "one": "{count} hora", "other": "{count} horas" },
+      "hours": {
+        "one": "{count} hora",
+        "other": "{count} horas"
+      },
       "never": "Nunca",
       "awsAutoStop": "Un lab con parada automática se termina solo cuando se acaba el tiempo, aunque esta máquina esté apagada.",
       "otherAutoStop": "A la hora de la parada automática, el launcher elimina el lab para dejar de facturar, así que mantenlo abierto hasta entonces (o detén el lab tú mismo antes).",

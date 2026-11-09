@@ -7,14 +7,18 @@
     "checking": "Verificando…",
     "onlineCount": "{online} de {total} online",
     "hosts": "Hosts",
-    "hostCount": { "one": "{count} host", "other": "{count} hosts" },
+    "hostCount": {
+      "one": "{count} host",
+      "other": "{count} hosts"
+    },
     "removeConfirm": "Remover {name}? A senha dele é apagada do keychain.",
     "capacityTitle": "Capacidade em {name}",
     "vcpu": "{count} vCPU",
     "memory": "Memória",
     "memoryUsed": "{used} de {total} em uso",
     "noServerHint": "Sem servidor? Se esta máquina aguentar, instale um hypervisor local e rode labs de VM aqui.",
-    "setUpMachine": "Configurar esta máquina"
+    "setUpMachine": "Configurar esta máquina",
+    "listFailed": "Não foi possível ler seus servidores e contas de nuvem salvos"
   },
   "empty": {
     "title": "Nenhum servidor conectado",
@@ -34,7 +38,10 @@
     "setDefault": "Definir como padrão",
     "node": "nó {node}",
     "memFree": "{free} livres de {total}",
-    "labsRunning": { "one": "{count} lab rodando", "other": "{count} labs rodando" },
+    "labsRunning": {
+      "one": "{count} lab rodando",
+      "other": "{count} labs rodando"
+    },
     "vmTestPassed": "Teste de VM passou",
     "vmTestFailed": "Teste de VM falhou",
     "localNetwork": "Se o host estiver no ar, o macOS pode estar bloqueando o acesso do Cyber CTF à sua rede local: ative o Cyber CTF em Privacidade e Segurança > Rede Local.",
@@ -273,7 +280,10 @@
         "gcp": "Meu Google Cloud"
       },
       "autoStop": "Parada automática",
-      "hours": { "one": "{count} hora", "other": "{count} horas" },
+      "hours": {
+        "one": "{count} hora",
+        "other": "{count} horas"
+      },
       "never": "Nunca",
       "awsAutoStop": "Um lab com parada automática se encerra sozinho quando o tempo acaba, mesmo se esta máquina estiver desligada.",
       "otherAutoStop": "No horário da parada automática, o launcher derruba o lab para encerrar a cobrança, então mantenha-o aberto até lá (ou pare o lab você mesmo antes).",

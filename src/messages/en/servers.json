@@ -7,14 +7,18 @@
     "checking": "Checking…",
     "onlineCount": "{online} of {total} online",
     "hosts": "Hosts",
-    "hostCount": { "one": "{count} host", "other": "{count} hosts" },
+    "hostCount": {
+      "one": "{count} host",
+      "other": "{count} hosts"
+    },
     "removeConfirm": "Remove {name}? Its password is deleted from the keychain.",
     "capacityTitle": "Capacity on {name}",
     "vcpu": "{count} vCPU",
     "memory": "Memory",
     "memoryUsed": "{used} of {total} used",
     "noServerHint": "No server? If this machine can handle it, install a local hypervisor and run VM labs here.",
-    "setUpMachine": "Set up this machine"
+    "setUpMachine": "Set up this machine",
+    "listFailed": "Couldn't read your saved servers and cloud accounts"
   },
   "empty": {
     "title": "No server connected",
@@ -34,7 +38,10 @@
     "setDefault": "Set as default",
     "node": "node {node}",
     "memFree": "{free} free of {total}",
-    "labsRunning": { "one": "{count} lab running", "other": "{count} labs running" },
+    "labsRunning": {
+      "one": "{count} lab running",
+      "other": "{count} labs running"
+    },
     "vmTestPassed": "VM test passed",
     "vmTestFailed": "VM test failed",
     "localNetwork": "If the host is up, macOS may be blocking Cyber CTF from your local network: turn Cyber CTF on under Privacy & Security > Local Network.",
@@ -273,7 +280,10 @@
         "gcp": "My Google Cloud"
       },
       "autoStop": "Auto-stop",
-      "hours": { "one": "{count} hour", "other": "{count} hours" },
+      "hours": {
+        "one": "{count} hour",
+        "other": "{count} hours"
+      },
       "never": "Never",
       "awsAutoStop": "An auto-stopped lab terminates itself when the time is up, even if this machine is off.",
       "otherAutoStop": "At the auto-stop time the launcher tears the lab down to end billing, so keep it open (or stop the lab yourself) before then.",

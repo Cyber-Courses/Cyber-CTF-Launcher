@@ -4,7 +4,7 @@ import { useState } from "react";
 import { LabRow, emulatorReady } from "@/features/labs/lab-row";
 import { catalogueRowProps, UnlistedRunningRow, type RowContext } from "@/features/labs/labs-list";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
-import { useSavedServers } from "@/features/labs/use-saved-servers";
+import { useSavedHosts } from "@/features/servers/use-server-list";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import { useMachineMetrics } from "@/features/machine/use-machine-metrics";
 import { DeployPanel } from "@/features/home/deploy-panel";
@@ -42,7 +42,7 @@ function useOverviewLabs(loggedIn: boolean) {
   const ops = useActiveOperations();
   // Deploys running in the backend (started before a reload, or from the website), for the rows.
   const deploying = useDeployingLabs();
-  const servers = useSavedServers();
+  const servers = useSavedHosts().hosts;
   const all = labs ?? [];
   const running = runningLabs(all, statuses);
   return {
