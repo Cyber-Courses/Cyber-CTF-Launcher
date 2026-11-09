@@ -75,7 +75,7 @@ fn blocks_clear(lab: Option<&Lab>, n: u8, used: &[(u32, u32)]) -> bool {
     if isoloom_spec::instance::apply(&lab.spec(), n).is_err() {
         return false;
     }
-    let snapshot = isoloom_targets::resolved::resolve_with(lab, Some(n));
+    let Ok(snapshot) = isoloom_targets::resolved::resolve_with(lab, Some(n)) else { return false };
     snapshot["networks"]
         .as_object()
         .into_iter()

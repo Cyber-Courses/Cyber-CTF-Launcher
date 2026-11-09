@@ -1,5 +1,5 @@
 //! The launcher's own changes to the files Isoloom generates: its conventions, applied by the
-//! launcher right after Isoloom's defaults (`defaults::apply_to_files`), never asked of Isoloom.
+//! launcher to the generated files, never asked of Isoloom.
 //!
 //! - The Compose project: a lab on this machine's Docker runs as `cyberctf-<lab id>` (see
 //!   `docker::project`), not under its spec's name, so two labs declaring the same name never

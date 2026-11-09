@@ -43,11 +43,12 @@ pub use isoloom_spec::model::{CloudProvider, CloudServices};
 pub use isoloom_targets::Lab;
 
 /// The lab in `dir` as its author wrote it, checked (its fields, its lowered form's and the files
-/// it names), with this machine's Isoloom defaults' image table.
+/// it names), with this machine's Isoloom defaults' image table and cloud regions.
 pub fn lab(dir: &Path) -> Result<Lab> {
     // With the launcher's additions (`overlay`) merged in, when it made any.
     let source = overlay::spec_text(dir)?.and_then(|text| isoloom_spec::parse(&text)).map_err(|e| Error::Invalid(load_error(&e)))?;
-    let lab = Lab::new(source).with_images(defaults(dir)?.images);
+    let d = defaults(dir)?;
+    let lab = Lab::new(source).with_images(d.images.clone()).with_regions(d.regions());
     let problems: Vec<String> = lab.problems_with_files(dir).iter().map(|p| p.render(isoloom_spec::SPEC_FILE)).collect();
     if !problems.is_empty() {
         return Err(Error::Invalid(format!("this lab's isoloom.yml has mistakes:\n{}", problems.join("\n"))));
@@ -165,7 +166,7 @@ pub struct Observer {
 /// The observers of the lab in `dir` (as its instance), at their addresses: the container ones
 /// when the lab runs as containers (`docker`), else the ones the spec writes.
 pub fn tools(dir: &Path, docker: bool) -> Result<Vec<Observer>> {
-    let snapshot = isoloom_targets::resolved::resolve_with(&lab(dir)?, instance(dir));
+    let snapshot = isoloom_targets::resolved::resolve_with(&lab(dir)?, instance(dir)).map_err(|e| Error::Invalid(e.to_string()))?;
     let key = if docker { "docker_addresses" } else { "addresses" };
     Ok(snapshot["tools"]
         .as_object()
@@ -204,13 +205,12 @@ pub struct Prepared {
 
 /// Generates `target`'s files into the lab (overwriting the previous ones), and returns the lab
 /// ready to run there. Fails with Isoloom's own reason when the lab can't run there (e.g.
-/// Windows machines on a target without Windows images). Isoloom's defaults are applied to the
-/// files, then the launcher's own overrides (see `overrides`).
+/// Windows machines on a target without Windows images). The launcher's own overrides (see
+/// `overrides`) are applied to the files.
 pub fn prepare(dir: &Path, target: Target) -> Result<Prepared> {
     let lab = lab(dir)?;
     let n = instance(dir);
     let files = generate(&lab, target, n).map_err(|e| Error::Invalid(format!("this lab can't run there: {e}")))?;
-    let files = isoloom_spec::defaults::apply_to_files(files, &defaults(dir)?);
     for f in overrides::apply(files, &launcher_overrides(dir, target)) {
         let path = dir.join(f.path);
         if let Some(parent) = path.parent() {
@@ -471,9 +471,9 @@ mod tests {
         // `tools`, `topology` and `blocks_clear` read the resolved snapshot's v3 fields
         // (`networks.*.cidr`, `docker_cidr`, `internet`, `machines.*.addresses`, `tools`). A new
         // version changes or drops fields: this fails so they are read again.
-        assert_eq!(isoloom_targets::resolved::RESOLVED_VERSION, 3);
+        assert_eq!(isoloom_targets::resolved::RESOLVED_VERSION, 4);
         let dir = lab(SPEC);
-        assert_eq!(isoloom_targets::resolved::resolve(&super::lab(&dir).unwrap())["resolved_version"], 3);
+        assert_eq!(isoloom_targets::resolved::resolve(&super::lab(&dir).unwrap())["resolved_version"], 4);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
