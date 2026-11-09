@@ -14,13 +14,15 @@ import type {
   LabPlace,
   LabPort,
   LabRequirements,
+  LabRunOptions,
+  LabRunPath,
   LabService,
+  LabStartPlace,
   LabControl,
   LabStatus,
   LabTool,
   Park,
   Provider,
-  RunTier,
   Runtime,
   SharedFolder,
   TermEvent,
@@ -28,14 +30,13 @@ import type {
 import type { DockerEngine } from "@/lib/tauri/machine";
 
 /** Each provider's name as the player reads it, from the backend (`Provider::label`). */
-export { PROVIDER_NAMES, PROVIDER_NAMES_ON } from "@/lib/tauri/generated/ProviderNames";
+export { LOCAL_PROVIDERS, PROVIDER_NAMES, PROVIDER_NAMES_ON } from "@/lib/tauri/generated/ProviderNames";
 
 export type {
   ActiveOperation,
   Badge,
   CloudPreview,
   AttackStatus,
-  RunTier,
   LabCheck,
   LabCheckResult,
   LabInterface,
@@ -46,7 +47,10 @@ export type {
   LabPlace,
   LabPort,
   LabRequirements,
+  LabRunOptions,
+  LabRunPath,
   LabService,
+  LabStartPlace,
   LabStatus,
   LabTool,
   Park,
@@ -58,15 +62,17 @@ export type {
 /** A cloud lab's cost and inputs before it starts; null for other labs. */
 export const labCloudPreview = (id: string, repository: string, commit: string) => invoke<CloudPreview | null>("lab_cloud_preview", { id, repository, commit });
 
-/** The saved server a lab (declared `runtime`) starts on when no place is picked, from its spec at
- *  the catalogue's pinned commit (a VM lab on the default server that runs it); null: here. */
-export const labDefaultHost = (id: string, runtime: Runtime, repository: string, commit: string) =>
-  invoke<string | null>("lab_default_host", { id, runtime, repository, commit });
+/** Where a lab (declared `runtime`) starts when no place is picked, by the backend's one rule:
+ *  where it last ran, else a hypervisor ready here for a VM lab, else the default server the
+ *  lab's spec (at the catalogue's pinned commit) runs on, else here. */
+export const labDefaultPlace = (id: string, runtime: Runtime, repository: string, commit: string) =>
+  invoke<LabStartPlace>("lab_default_place", { id, runtime, repository, commit });
 
-/** The kinds of server (ESXi, Proxmox) a lab (declared `runtime`) runs on, from its spec at the
- *  catalogue's pinned commit: the default server's rule, for the launch picker's servers. */
-export const labServers = (id: string, runtime: Runtime, repository: string, commit: string) =>
-  invoke<Provider[]>("lab_servers", { id, runtime, repository, commit });
+/** Every way a lab (declared `runtime`) can start, from its spec at the catalogue's pinned commit:
+ *  per form, the hypervisors, servers and clouds it runs on, each with its launch path's badge,
+ *  and where Isoloom refuses it. */
+export const labRunOptions = (id: string, runtime: Runtime, repository: string, commit: string) =>
+  invoke<LabRunOptions>("lab_run_options", { id, runtime, repository, commit });
 
 /** A lab's minimum-to-run requirements (CPU/RAM/disk) as a lightest-to-heaviest range; null for a lab with no machines of its own. */
 export const labRequirements = (id: string, repository: string, commit: string) =>
@@ -168,6 +174,3 @@ export const terminalClose = (session: number) => invokeUnit("terminal_close", {
 export const sharedFolderGet = () => invoke<SharedFolder>("shared_folder_get");
 export const sharedFolderSet = (enabled: boolean, path: string) => invoke<SharedFolder>("shared_folder_set", { enabled, path });
 export const sharedFolderOpen = () => invokeUnit("shared_folder_open");
-
-/** How far each launch path has been proven, from Isoloom's tier evidence (for the Beta/Experimental badge). */
-export const runTiers = () => invoke<RunTier[]>("run_tiers");

@@ -82,6 +82,12 @@ impl Provider {
         }
     }
 
+    /// The provider whose id (`vagrant up --provider`'s, the runner's) is `id`, if the launcher
+    /// knows one.
+    pub fn from_id(id: &str) -> Option<Provider> {
+        Provider::ALL.into_iter().chain(Provider::CLOUDS).find(|p| p.id() == id)
+    }
+
     /// The provider's name as the player reads it on the OS `os` (`std::env::consts::OS`):
     /// VMware's desktop hypervisor is Fusion on macOS and Workstation elsewhere, so nobody is
     /// pointed at a product their OS doesn't have; every other provider is its [`Provider::label`].
@@ -346,6 +352,15 @@ async fn tool_present(program: &'static str, args: &[&str]) -> bool {
 /// plugin list` fails).
 async fn installed_plugins() -> Vec<(String, Option<String>)> {
     run_read("vagrant", &["plugin", "list"], None).await.map(|o| parse_plugin_versions(&o)).unwrap_or_default()
+}
+
+/// The local hypervisors ready for a lab's VMs on this machine: Vagrant, the hypervisor and its
+/// plugin (what the Machine page reports as ready), in [`Provider::ALL`]'s order.
+pub async fn ready_here() -> Vec<Provider> {
+    if run_read("vagrant", &["--version"], None).await.is_err() {
+        return Vec::new();
+    }
+    detect(true).await.into_iter().filter(|p| !p.remote && p.available && p.hypervisor != Some(false)).map(|p| p.provider).collect()
 }
 
 pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {

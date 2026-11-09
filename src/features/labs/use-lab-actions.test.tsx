@@ -249,33 +249,45 @@ describe("useLabActions: launch", () => {
   });
 
   it("starts a VM lab with no place picked on the server the backend picks for it", async () => {
-    const { calls, hook } = setup({ lab_default_host: () => "pve" });
+    const { calls, hook } = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false }) });
     await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-def" }, undefined, undefined, readyReport()));
-    expect(calls.find((c) => c.cmd === "lab_default_host")?.args).toEqual({ id: "act-vm-def", runtime: "VM", repository: "CyberCTF/goad", commit: SHA });
+    expect(calls.find((c) => c.cmd === "lab_default_place")?.args).toEqual({ id: "act-vm-def", runtime: "VM", repository: "CyberCTF/goad", commit: SHA });
     expect(launchArgs(calls)).toMatchObject({ provider: null, host: "pve" });
   });
 
   it("runs a VM lab here when the backend picks no server, or its source isn't known", async () => {
-    const { calls, hook } = setup({ lab_default_host: () => null });
+    const { calls, hook } = setup({ lab_default_place: () => ({ host: null, provider: "virtualbox", perMachineVm: false }) });
     await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-here" }, undefined, undefined, readyReport()));
     expect(launchArgs(calls)).toMatchObject({ provider: "virtualbox", host: null });
     const unsourced = setup();
     await act(() => unsourced.hook.result.current.launch({ ...vmLab, id: "act-vm-nosrc" }, undefined, undefined, readyReport()));
-    expect(commands(unsourced.calls)).not.toContain("lab_default_host");
+    expect(commands(unsourced.calls)).not.toContain("lab_default_place");
     expect(launchArgs(unsourced.calls)).toMatchObject({ provider: "virtualbox", host: null });
   });
 
   it("fails the start, rather than guess, when the default server can't be decided", async () => {
-    const { calls, hook } = setup({ lab_default_host: () => rejectWith("couldn't read the lab's spec: HTTP 404") });
+    const { calls, hook } = setup({ lab_default_place: () => rejectWith("couldn't read the lab's spec: HTTP 404") });
     await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-nospec" }, undefined, undefined, readyReport()));
     expect(commands(calls)).not.toContain("lab_launch");
     expect(logsOf("act-vm-nospec").at(-1)).toContain("couldn't read the lab's spec");
   });
 
-  it("asks for no default server when a place is picked", async () => {
+  it("starts a container lab with no place picked where the backend says it last ran", async () => {
+    // Regression: Home's "start again" ran a container lab on Docker here whatever the lab last
+    // ran on, where the lab page's Reset takes it back there.
+    const sourced = { ...sourcedVmLab, id: "act-web-again", runtime: { ...must(sourcedVmLab.runtime), runtime: "DOCKER" as const } };
+    const inVm = setup({ lab_default_place: () => ({ host: null, provider: "utm", perMachineVm: false }) });
+    await act(() => inVm.hook.result.current.launch(sourced, undefined, undefined, readyReport(), { ports: "random" }));
+    expect(launchArgs(inVm.calls)).toMatchObject({ provider: "utm", host: null });
+    const onServer = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false }) });
+    await act(() => onServer.hook.result.current.launch({ ...sourced, id: "act-web-pve" }, undefined, undefined, readyReport(), { ports: "random" }));
+    expect(launchArgs(onServer.calls)).toMatchObject({ provider: null, host: "pve" });
+  });
+
+  it("asks for no default place when a place is picked", async () => {
     const { calls, hook } = setup();
     await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-picked" }, null, undefined, readyReport()));
-    expect(commands(calls)).not.toContain("lab_default_host");
+    expect(commands(calls)).not.toContain("lab_default_place");
   });
 
   it("says no hypervisor is installed instead of starting a VM lab", async () => {

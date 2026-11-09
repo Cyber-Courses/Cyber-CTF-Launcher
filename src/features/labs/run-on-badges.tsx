@@ -1,63 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ignore } from "@/lib/failure";
-import { type Badge, type Provider, type RunTier, runTiers } from "@/lib/tauri";
 import { CLOUDS } from "@/features/labs/lab-runtime";
+import type { LabRunOptions, LabRunPath, Provider } from "@/lib/tauri";
 import type { RunTarget } from "@/features/labs/run-on";
 
-// The maturity badge (Beta / Experimental) on each place of "Where should it run?", from
-// Isoloom's tier evidence for the launch paths a place could take.
+// The maturity badge (Beta / Experimental) on each place of "Where should it run?": the badge of
+// the launch path the backend says the lab takes there (`labRunOptions`).
 
 /** A maturity badge on a launch path (Beta / Experimental), with the evidence as its tooltip. */
-export type RunBadge = { kind: Exclude<Badge, "none">; title: string };
+export type RunBadge = { kind: "beta" | "experimental"; title: string };
 
-/** Every launch path's maturity, fetched once when the picker opens (empty while it loads, or
- *  when the evidence can't be read — then no badges show). */
-export function useRunTiers(): RunTier[] {
-  const [tiers, setTiers] = useState<RunTier[]>([]);
-  useEffect(() => {
-    let live = true;
-    runTiers()
-      .then((t) => {
-        if (live) setTiers(t);
-      })
-      .catch(ignore("without the evidence, no launch path shows a badge"));
-    return () => {
-      live = false;
-    };
-  }, []);
-  return tiers;
-}
+/** `path`'s badge; none for a proven path, or none known. */
+export const badgeOf = (path: LabRunPath | undefined): RunBadge | undefined =>
+  path && path.badge !== "none" ? { kind: path.badge, title: path.evidence } : undefined;
 
-const BADGE_RANK: Record<Badge, number> = { none: 0, beta: 1, experimental: 2 };
+const on = (paths: LabRunPath[], provider: Provider | undefined) => paths.find((p) => p.provider === provider);
 
-/** The badge a launch path carries: the strongest (experimental > beta) of its candidate
- *  `target/variant` entries that has one. `None` → no badge. Purely from Isoloom's evidence. */
-export function badgeFor(tiers: RunTier[], candidates: string[]): RunBadge | undefined {
-  let worst: RunTier | undefined;
-  for (const key of candidates) {
-    const slash = key.indexOf("/");
-    const [target, variant] = slash === -1 ? [key, null] : [key.slice(0, slash), key.slice(slash + 1)];
-    const entry = tiers.find((e) => e.target === target && (e.variant ?? null) === variant);
-    if (entry && entry.badge !== "none" && (!worst || BADGE_RANK[entry.badge] > BADGE_RANK[worst.badge])) worst = entry;
-  }
-  return worst && worst.badge !== "none" ? { kind: worst.badge, title: worst.evidence } : undefined;
-}
-
-/** The Isoloom `target/variant` paths a run target could take (so the worst of them badges it). */
-export function candidatesFor(target: RunTarget, provider?: Provider): string[] {
+/** The launch path `target` takes, as the lab's `options` say (the host's `provider` for a saved
+ *  server or account): a helper VM's or one VM per machine's on its hypervisor, a server's by its
+ *  kind, a cloud account's in the form picked (its default: cloud services, else one VM with the
+ *  containers, else one VM per machine). None while the options load, or here on Docker or a VM
+ *  lab's own hypervisor (picked later). */
+export function pathOf(options: LabRunOptions | null, target: RunTarget, provider?: Provider): LabRunPath | undefined {
+  if (!options) return undefined;
   switch (target.kind) {
     case "local":
-      return ["docker"];
+      return undefined;
     case "local-vm":
-      return [`docker-vm/${target.provider}`, `vagrant/${target.provider}`];
+      return on(options.dockerVm, target.provider);
     case "local-vms":
-      return [`vagrant/${target.provider}`];
+      return on(options.vms, target.provider);
     case "host":
-      if (!provider) return [];
-      if (CLOUDS.has(provider)) return [`cloud-vm/${provider}`, `cloud-docker/${provider}`];
-      if (provider === "vmware_esxi") return ["vagrant/vmware_esxi"];
-      return [`cloud-vm/${provider}`, `vagrant/${provider}`];
+      if (!provider || !CLOUDS.has(provider)) return on(options.servers, provider);
+      if (target.perMachine) return on(options.cloudVm, provider);
+      return on([...options.cloudServices, ...options.cloudDocker, ...options.cloudVm], provider);
   }
 }

@@ -1,6 +1,6 @@
 import { Cloud, Container, Monitor, Server, type LucideIcon } from "lucide-react";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { PROVIDER_NAMES, type LabStatus, type Provider, type ServerHost, type SystemReport } from "@/lib/tauri";
+import { LOCAL_PROVIDERS, PROVIDER_NAMES, type LabRunOptions, type LabStatus, type Provider, type ServerHost, type SystemReport } from "@/lib/tauri";
 import { CLOUD_PROVIDERS } from "@/features/cloud/cloud-model";
 
 // Where a lab can run, from its runtime (catalogue) and what this machine has ready.
@@ -12,24 +12,9 @@ export const CLOUDS = new Set(CLOUD_PROVIDERS);
  *  an Apple Silicon Mac. */
 export const EMULATORS: readonly Provider[] = ["qemu"];
 
-/** The local hypervisors a container lab can run on as docker-in-VM (inside a generic helper VM),
- *  independent of the lab's own (native-VM) provider list. Hyper-V is left out: Isoloom's
- *  docker-vm manifest lists no Hyper-V provider (it needs elevation and a named switch), so the
- *  runner refuses the start with "provider hyperv isn't one of this run's providers" — this
- *  list mirrors that manifest, which the backend doesn't send. */
-const LOCAL_HYPERVISORS: readonly Provider[] = ["virtualbox", "vmware_desktop", "parallels", "libvirt", "qemu", "utm"];
-
-/** The local hypervisors Isoloom's per-machine VM form (its vagrant target) runs on: every one a
- *  container lab's helper VM does, and Hyper-V, which that form has (it asks for elevation). */
-const VM_HYPERVISORS: readonly Provider[] = [...LOCAL_HYPERVISORS, "hyperv"];
-
 /** Whether `p` is a hypervisor a lab's VMs run on here (the provider a local VM lab's status
- *  names). */
-export const isLocalHypervisor = (p: string | null | undefined): p is Provider => !!p && (VM_HYPERVISORS as readonly string[]).includes(p);
-
-// providers may still carry "hosted" (not a launcher Provider and no longer offered), so keep it
-// out of the local hypervisors; compare as strings.
-const isLocal = (p: string) => !SERVERS.has(p) && !CLOUDS.has(p) && p !== "hosted";
+ *  names): one of the backend's local providers. */
+export const isLocalHypervisor = (p: string | null | undefined): p is Provider => !!p && (LOCAL_PROVIDERS as readonly string[]).includes(p);
 
 /** Whether the lab is built for this CPU (no architectures listed = any). */
 export const runsNatively = (rt: LabRuntimeInfo, hostArch: string) => !rt.architectures.length || rt.architectures.includes(hostArch);
@@ -43,27 +28,11 @@ const ways = (rt: LabRuntimeInfo) => ({
   cloud: rt.cloud ?? rt.runtime === "CLOUD",
 });
 
-/** Whether the lab has both forms: a container recipe and a VM recipe per machine (the backend's
- *  `docker` and `vm` flags). Such a lab can run here as containers, as containers in one helper VM
- *  (docker-vm), or as one VM per machine like a VM lab (Isoloom's vagrant target). */
-export const hasBothForms = (rt: LabRuntimeInfo) => {
-  const w = ways(rt);
-  return w.docker && w.vm;
-};
-
-/** The local hypervisors Isoloom refuses the per-machine VM form on: UTM's Vagrant plugin gives
- *  a VM no private network, so a lab's machines couldn't reach each other. Mirrors the backend's
- *  refusal at launch (`launch/local.rs::check_provider`, Isoloom's `vagrant_refusal`), which
- *  stays the rule: this only keeps the picker from offering what it would refuse. */
-const NO_PER_MACHINE_VM: readonly Provider[] = ["utm"];
-
-/** The hypervisors on this machine that can run a dual-form lab as one VM per machine: every
- *  local one but those Isoloom refuses the form on (`NO_PER_MACHINE_VM`); for a lab whose VMs
- *  are built for another CPU, the emulator only. Empty for a lab with a single form. */
-export function perMachineProviders(rt: LabRuntimeInfo, hostArch?: string): Provider[] {
-  if (!hasBothForms(rt)) return [];
-  if (hostArch && !runsNatively(rt, hostArch)) return EMULATORS.filter((p) => !NO_PER_MACHINE_VM.includes(p));
-  return VM_HYPERVISORS.filter((p) => !NO_PER_MACHINE_VM.includes(p));
+/** The hypervisors a form of the lab runs on here, as the backend's run options say (`paths`:
+ *  the helper VM's, or one VM per machine's); for VMs built for another CPU, the emulator only. */
+export function formProviders(paths: LabRunOptions["vms"], rt: LabRuntimeInfo, hostArch?: string): Provider[] {
+  const providers = paths.flatMap((p) => (p.provider ? [p.provider] : []));
+  return hostArch && !runsNatively(rt, hostArch) ? providers.filter((p) => EMULATORS.includes(p)) : providers;
 }
 
 /** Whether an emulator (QEMU) is ready on this machine: Vagrant, the hypervisor and its plugin. */
@@ -83,19 +52,15 @@ export function readyHypervisors(
   return preferred && ready.includes(preferred) ? [preferred, ...ready.filter((p) => p !== preferred)] : ready;
 }
 
-/** The hypervisors on this machine that can run the lab's VMs: those the lab lists, except for
- *  a VM lab built for another CPU, which only an emulator can run (whatever the lab lists: its
- *  list names the hypervisors of its own CPU). */
-export function localProviders(rt: LabRuntimeInfo, hostArch?: string): Provider[] {
-  const w = ways(rt);
-  // Cloud services (no container or VM edition) run in the player's cloud account only.
-  if (w.cloud && !w.docker && !w.vm) return [];
+/** The hypervisors on this machine that can run a VM lab's VMs: as the backend's run options say
+ *  (`options`, once read), else those the catalogue lists; a VM lab built for another CPU only
+ *  emulated. A container lab's helper VM is the run options' too (`formProviders`), and none for
+ *  cloud services. */
+export function localProviders(rt: LabRuntimeInfo, hostArch?: string, options?: LabRunOptions | null): Provider[] {
+  if (rt.runtime !== "VM") return options ? formProviders(options.dockerVm, rt) : [];
+  const listed = options ? formProviders(options.vms, rt) : rt.providers.filter(isLocalHypervisor);
   // A VM edition built for another CPU runs here only emulated (whatever hypervisors it lists).
-  if (w.vm && hostArch && !runsNatively(rt, hostArch)) return [...EMULATORS];
-  // A container lab runs as docker-in-VM inside a generic helper VM, so any local hypervisor can
-  // host it, not only the lab's own (native-VM) providers.
-  if (w.docker) return [...LOCAL_HYPERVISORS];
-  return rt.providers.filter((p: string) => isLocal(p));
+  return hostArch && !runsNatively(rt, hostArch) ? [...EMULATORS] : listed;
 }
 
 /** The hypervisor a VM lab starts on here: a ready one among those it can use (`local`), else
@@ -107,17 +72,14 @@ export function pickLocalHypervisor(local: Provider[], ready: Provider[] | undef
   return ready.find((p) => local.includes(p)) ?? null;
 }
 
-/** Whether a cloud account offers the "one VM per machine" form (Isoloom's cloud-vm) for this lab,
- *  as well as "one VM" (cloud-docker): a dual-form lab, on any cloud (each has a cloud-vm module;
- *  how far each is proven is its run tier's badge). A single-form lab offers one form, so the
- *  picker skips the step. */
-export const cloudRunsPerMachine = (rt: LabRuntimeInfo | null, provider: string) => !!rt && hasBothForms(rt) && CLOUDS.has(provider);
-
-/** Whether a saved server or cloud account can run the lab: the lab lists its provider, and a
- *  server is of a kind the backend says the lab's spec runs on (`servers`, the default server's
- *  rule: its targets), once that is known. */
-export const hostSupports = (rt: LabRuntimeInfo | null, h: ServerHost, servers?: readonly Provider[] | null) =>
-  !!rt?.providers.includes(h.provider) && (!servers || !SERVERS.has(h.provider) || servers.includes(h.provider));
+/** Whether a saved server or cloud account can run the lab: as the backend's run options say
+ *  (`options`: a path on its kind of server or its cloud), else, until they are read, when the
+ *  catalogue lists its provider. */
+export function hostSupports(rt: LabRuntimeInfo | null, h: ServerHost, options?: LabRunOptions | null): boolean {
+  if (!options) return !!rt?.providers.includes(h.provider);
+  const paths = CLOUDS.has(h.provider) ? [...options.cloudDocker, ...options.cloudVm, ...options.cloudServices] : options.servers;
+  return paths.some((p) => p.provider === h.provider);
+}
 
 type PlaceKey = NonNullable<LabStatus["place"]>;
 
@@ -129,11 +91,12 @@ export type PlaceState = "ready" | "configurable" | "unsupported";
 /** What the launcher is set up with, so a place the lab supports but the launcher can't reach yet
  *  reads as `configurable`, not `ready`: the local hypervisors ready here, and the saved servers
  *  and cloud accounts. */
-export type LauncherSetup = { readyVms?: Provider[]; hosts?: ServerHost[] };
+export type LauncherSetup = { readyVms?: Provider[]; hosts?: ServerHost[]; options?: LabRunOptions | null };
 
 const placeState = (supported: boolean, configured: boolean): PlaceState => (supported ? (configured ? "ready" : "configurable") : "unsupported");
 
-const cloudConfigured = (rt: LabRuntimeInfo, hosts: ServerHost[]) => hosts.some((h) => CLOUDS.has(h.provider) && hostSupports(rt, h));
+const cloudConfigured = (rt: LabRuntimeInfo, hosts: ServerHost[], options: LabRunOptions | null) =>
+  hosts.some((h) => CLOUDS.has(h.provider) && hostSupports(rt, h, options));
 
 /** Every place a lab could run, and its state (see [`PlaceState`]). Its words are
  *  `labs.places.<key>`. `setup` is what the launcher has ready, used to tell a place that can run
@@ -147,17 +110,19 @@ export function runPlaces(
   emulates = false,
   setup: LauncherSetup = {},
 ): { key: PlaceKey; icon: LucideIcon; state: PlaceState }[] {
-  const { readyVms = [], hosts = [] } = setup;
+  const { readyVms = [], hosts = [], options = null } = setup;
   const w = ways(rt);
   // Cloud services (no container or VM edition) run in the player's cloud account only.
-  if (w.cloud && !w.docker && !w.vm) return cloudPlaces(rt, hosts);
-  const local = rt.providers.some((p: string) => isLocal(p));
+  if (w.cloud && !w.docker && !w.vm) return cloudPlaces(rt, hosts, options);
+  // A container lab runs in a helper VM here where the backend's run options say, else (until
+  // they are read) wherever the catalogue lists no server or cloud only.
+  const local = options ? options.dockerVm.length > 0 : rt.providers.some((p) => !SERVERS.has(p) && !CLOUDS.has(p));
   // The VM edition built for another CPU runs here only emulated (containers run emulated anyway).
   const vmForeignCpu = w.vm && !!hostArch && !runsNatively(rt, hostArch);
   const localVmSupported = (w.vm || (w.docker && local)) && (!vmForeignCpu || emulates);
-  const localVmReady = readyVms.some((p) => localProviders(rt, hostArch).includes(p));
+  const localVmReady = readyVms.some((p) => localProviders(rt, hostArch, options).includes(p));
   const serverSupported = (w.vm || w.docker) && rt.providers.some((p) => SERVERS.has(p));
-  const serverReady = hosts.some((h) => SERVERS.has(h.provider) && hostSupports(rt, h));
+  const serverReady = hosts.some((h) => SERVERS.has(h.provider) && hostSupports(rt, h, options));
   return [
     { key: "container", icon: Container, state: placeState(w.docker, true) },
     { key: "local_vm", icon: Monitor, state: placeState(localVmSupported, localVmReady) },
@@ -167,19 +132,19 @@ export function runPlaces(
       icon: Cloud,
       state: placeState(
         rt.providers.some((p) => CLOUDS.has(p)),
-        cloudConfigured(rt, hosts),
+        cloudConfigured(rt, hosts, options),
       ),
     },
   ];
 }
 
 /** Cloud services: the player's cloud account, nowhere else (configurable until one is connected). */
-function cloudPlaces(rt: LabRuntimeInfo, hosts: ServerHost[]): { key: PlaceKey; icon: LucideIcon; state: PlaceState }[] {
+function cloudPlaces(rt: LabRuntimeInfo, hosts: ServerHost[], options: LabRunOptions | null): { key: PlaceKey; icon: LucideIcon; state: PlaceState }[] {
   return [
     { key: "container", icon: Container, state: "unsupported" },
     { key: "local_vm", icon: Monitor, state: "unsupported" },
     { key: "server", icon: Server, state: "unsupported" },
-    { key: "cloud", icon: Cloud, state: placeState(true, cloudConfigured(rt, hosts)) },
+    { key: "cloud", icon: Cloud, state: placeState(true, cloudConfigured(rt, hosts, options)) },
   ];
 }
 
@@ -198,5 +163,5 @@ export const runtimeLabel = (rt: LabRuntimeInfo) => (rt.runtime === "VM" ? "vm" 
 export const cloudNames = (providers: readonly string[]): string[] => providers.filter((p): p is Provider => CLOUDS.has(p)).map((p) => PROVIDER_NAMES[p]);
 
 /** The player's accounts a cloud lab can run on: of a cloud it lists. */
-export const cloudAccountsFor = (rt: LabRuntimeInfo | null | undefined, hosts: ServerHost[]) =>
-  rt && isCloudLab(rt) ? hosts.filter((h) => CLOUDS.has(h.provider) && hostSupports(rt, h)) : [];
+export const cloudAccountsFor = (rt: LabRuntimeInfo | null | undefined, hosts: ServerHost[], options?: LabRunOptions | null) =>
+  rt && isCloudLab(rt) ? hosts.filter((h) => CLOUDS.has(h.provider) && hostSupports(rt, h, options)) : [];

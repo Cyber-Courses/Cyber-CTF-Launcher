@@ -27,3 +27,6 @@ export const PROVIDER_NAMES_ON: Record<string, Partial<Record<Provider, string>>
   linux: { vmware_desktop: "VMware Workstation", },
   windows: { vmware_desktop: "VMware Workstation", },
 };
+
+/** The hypervisors that run on this machine (Rust's providers that aren't `is_remote`). */
+export const LOCAL_PROVIDERS: readonly Provider[] = ["virtualbox", "vmware_desktop", "hyperv", "parallels", "libvirt", "qemu", "utm"];

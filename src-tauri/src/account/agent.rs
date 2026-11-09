@@ -21,6 +21,7 @@ use crate::account::auth;
 use crate::account::colocation;
 use crate::error::{Error, Result};
 use crate::labs;
+use crate::runtime::start_place::{self, StartPlace};
 use crate::runtime::{Runtime, server};
 
 /// The prompt that asks the player to confirm a launch onto a cloud account (session id,
@@ -230,15 +231,15 @@ async fn await_answer(rx: oneshot::Receiver<bool>, wait: Duration) -> bool {
 
 /// Where a claimed launch runs: the target picked on the website (one of this launcher's hosts
 /// or cloud accounts); else where the app's Start with no place chosen runs it
-/// ([`labs::default_host`]: a VM lab on the default server that runs it, else here). A cloud lab
-/// never runs on an account it wasn't sent to (it costs money): no target, no launch
-/// (`runtime::start` says so).
-async fn launch_host(dirs: &AppDirs, claim: &Value) -> Result<Option<String>> {
+/// ([`start_place::default_place`]: where it last ran, else a ready hypervisor here for a VM lab,
+/// else the default server). A cloud lab never runs on an account it wasn't sent to (it costs
+/// money): no target, no launch (`runtime::start` says so).
+async fn launch_place(dirs: &AppDirs, claim: &Value) -> Result<StartPlace> {
     if let Some(target) = picked_target(claim, |target| server::host_name(dirs, target))? {
-        return Ok(Some(target));
+        return Ok(StartPlace { host: Some(target), ..StartPlace::default() });
     }
     let text = |key: &str| claim[key].as_str().unwrap_or_default();
-    labs::default_host(dirs, text("labId"), claim_runtime(claim), text("repository"), text("commit")).await
+    start_place::default_place(dirs, text("labId"), claim_runtime(claim), text("repository"), text("commit")).await
 }
 
 /// The target picked on the website, given how to name a host (`None` when it isn't set up):
@@ -313,11 +314,14 @@ fn present_before(dirs: &AppDirs, claim: &Value) -> bool {
     }
 }
 
-/// Starts a claimed lab on `host` (None: this machine). A failure tears down what this start
-/// brought up, and only that (see [`undoes`]). Where the lab is reachable here, once running.
-async fn run_claimed(dirs: &AppDirs, claim: &Value, host: Option<&str>, runtime: Runtime, present_before: bool) -> Result<Option<String>> {
+/// Starts a claimed lab at `place` (no host: this machine). A failure tears down what this
+/// start brought up, and only that (see [`undoes`]). Where the lab is reachable here, once
+/// running.
+async fn run_claimed(dirs: &AppDirs, claim: &Value, place: &StartPlace, runtime: Runtime, present_before: bool) -> Result<Option<String>> {
     let lab_id = claim["labId"].as_str();
-    match labs::run(dirs, claim.clone(), &labs::Placement { host, ..labs::Placement::default() }, |_line: String| {}).await {
+    let placement =
+        labs::Placement { host: place.host.as_deref(), provider: place.provider, per_machine_vm: place.per_machine_vm, ..labs::Placement::default() };
+    match labs::run(dirs, claim.clone(), &placement, |_line: String| {}).await {
         Ok(url) => Ok(url),
         Err(e) => Err(undo_start(dirs, lab_id, runtime, present_before, e).await),
     }
@@ -350,13 +354,14 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
     .await?;
     let claim = &data["claimLaunch"];
     update_state(session_id, "PULLING", Progress { message: Some("Preparing the lab on your machine"), ..Default::default() }).await?;
-    let host = launch_host(deps.dirs(), claim).await?;
+    let place = launch_place(deps.dirs(), claim).await?;
+    let host = place.host.clone();
     confirm_if_cloud(deps, session_id, claim, host.as_deref()).await?;
     let runtime = claim_runtime(claim);
     // Anything this start brought up before failing (one unhealthy service, say) is torn down, or
     // it would keep running under a FAILED session and every later launch of it would be refused.
     let present = present_before(deps.dirs(), claim);
-    let url = run_claimed(deps.dirs(), claim, host.as_deref(), runtime, present).await?;
+    let url = run_claimed(deps.dirs(), claim, &place, runtime, present).await?;
     // The lab is actually running now. If reporting back to the backend fails, tear down what
     // this start brought up before returning the error, so we don't leave infra running under a
     // session the poller will mark FAILED.
@@ -634,8 +639,8 @@ mod tests {
         let deps = test_deps(&t);
         let az = t.host("az1", "azure", json!({}));
         let claim = json!({ "target": az, "repository": "CyberCTF/web", "commit": "abc" });
-        assert_eq!(launch_host(&dirs, &claim).await.unwrap().as_deref(), Some("az1"));
-        assert_eq!(launch_host(&dirs, &json!({ "runtime": "VM" })).await.unwrap(), None, "no default server host");
+        assert_eq!(launch_place(&dirs, &claim).await.unwrap().host.as_deref(), Some("az1"));
+        assert_eq!(launch_place(&dirs, &json!({ "labId": "web", "runtime": "DOCKER" })).await.unwrap(), StartPlace::default(), "here");
         // Not a cloud (here, or no host): no question asked.
         confirm_if_cloud(&deps, "s-local", &claim, None).await.unwrap();
         // A cloud account: the answer from the UI decides.
@@ -692,7 +697,7 @@ mod tests {
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let claim = claim_of(id);
         assert!(present_before(&dirs, &claim));
-        let err = run_claimed(&dirs, &claim, None, Runtime::Docker, false).await.unwrap_err();
+        let err = run_claimed(&dirs, &claim, &StartPlace::default(), Runtime::Docker, false).await.unwrap_err();
         assert!(err.is_refusal() && err.to_string().contains("still running on Host aws1"), "{err}");
         assert!(!tools.called("terraform"), "nothing torn down: {:?}", tools.calls());
         assert!(state.join("terraform.tfstate").is_file());

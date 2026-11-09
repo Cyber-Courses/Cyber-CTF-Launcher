@@ -1,5 +1,5 @@
 import {
-  labDefaultHost,
+  labDefaultPlace,
   labLaunch,
   labPark,
   labProvision,
@@ -7,6 +7,7 @@ import {
   labStop,
   type ActiveOperation,
   type DockerEngine,
+  type LabStartPlace,
   type Park,
   type Provider,
 } from "@/lib/tauri";
@@ -145,10 +146,11 @@ function localHypervisor(
  *  `perMachine` with no local `provider`. */
 export type LocalVmPick = { provider?: Provider; perMachine?: boolean };
 
-/** Where a (non-cloud) lab starts: on the server `host` (omitted: the default server the backend
- *  picks for a VM lab, see `defaultHost`); here in Docker or on a local hypervisor; in a VM here on
- *  `vmProvider`; or (`perMachineVm`, a container lab with VM recipes) as one VM per machine on
- *  `vmProvider`. `ports` = the host ports of a container lab here; `report` = the machine report. */
+/** Where a (non-cloud) lab starts: on the server `host`; here in Docker or on a local hypervisor;
+ *  in a VM here on `vmProvider`; or (`perMachineVm`, a container lab with VM recipes) as one VM
+ *  per machine on `vmProvider`. `host` omitted (undefined): nothing was picked, and the backend
+ *  says where (`defaultPlace`). `ports` = the host ports of a container lab here; `report` = the
+ *  machine report. */
 export type LocalWhere = {
   host?: string | null;
   vmProvider?: Provider;
@@ -159,25 +161,32 @@ export type LocalWhere = {
   engine?: DockerEngine | null;
 };
 
-/** Where a lab with no place picked starts: the backend's default server for it (`labDefaultHost`),
- *  read from its spec at the catalogue's commit; without that source known, here. */
-async function defaultHost(id: string, rt: LabRuntimeInfo): Promise<string | null> {
-  if (!rt.repository || !rt.commit) return null;
-  return labDefaultHost(id, rt.runtime, rt.repository, rt.commit);
+/** Where a lab with no place picked starts, by the backend's one rule (`labDefaultPlace`: where
+ *  it last ran, else a hypervisor ready here for a VM lab, else the default server the lab's spec
+ *  runs on), read from its spec at the catalogue's commit; without that source known, here. */
+async function defaultPlace(id: string, rt: LabRuntimeInfo): Promise<LabStartPlace> {
+  if (!rt.repository || !rt.commit) return { host: null, provider: null, perMachineVm: false };
+  return labDefaultPlace(id, rt.runtime, rt.repository, rt.commit);
 }
 
 /** A VM or container lab, started where `where` says. */
 export const localLaunch =
   (lab: Lab, where: LocalWhere): OperationBody =>
   async (log, rt) => {
-    const { vmProvider, report, ports, perMachineVm = false, engine } = where;
-    let { host } = where;
+    const { report, ports, engine } = where;
+    let { host, vmProvider, perMachineVm = false } = where;
+    // Nothing picked (Home's "start again", a Start with no choice): the backend's place, in the
+    // form it says. Its hypervisor for a VM lab is a default the Settings choice still overrides.
+    if (host === undefined) {
+      const place = await defaultPlace(lab.id, rt);
+      host = place.host;
+      if (rt.runtime !== "VM" && place.provider) [vmProvider, perMachineVm] = [place.provider, place.perMachineVm];
+    }
     // Run as one VM per machine, the lab is a VM lab here: its machines are VMs on `vmProvider`.
     const asVms = perMachineVm && !!vmProvider && host == null;
     // On a cloud account, one VM per machine is cloud-vm: no local hypervisor, the host carries it.
     const cloudPerMachine = perMachineVm && host != null;
     const vm = rt.runtime === "VM" || asVms;
-    if (vm && !asVms && host === undefined) host = await defaultHost(lab.id, rt);
     // Docker labs go to a server host only when one is picked explicitly.
     const remote = host != null;
     const inLocalVm = !vm && !remote && !!vmProvider;

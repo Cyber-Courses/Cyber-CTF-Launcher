@@ -236,8 +236,8 @@ async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
 
 #[test]
 fn one_vm_per_machine_runs_on_every_cloud_and_on_no_server() {
-    // Isoloom writes a cloud-vm module for every cloud (its run tiers badge how far each is
-    // proven), so the start follows the picker (`cloudRunsPerMachine`): any cloud account.
+    // One VM per machine is cloud-vm on any cloud account (which clouds a lab's module is written
+    // for is its run options', `lab::run_options`, which the picker offers); never on a server.
     for cloud in [Provider::Aws, Provider::Azure, Provider::Gcp, Provider::DigitalOcean, Provider::Linode, Provider::Oci] {
         assert!(per_machine_runs_on(Some(cloud)).is_ok(), "{cloud:?}");
     }

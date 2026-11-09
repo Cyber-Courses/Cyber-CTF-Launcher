@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Container } from "lucide-react";
-import { PROVIDER_NAMES, type DockerEngine, type Provider, type RunTier, type ServerHost, type ServerTest } from "@/lib/tauri";
-import { badgeFor, candidatesFor, type RunBadge } from "@/features/labs/run-on-badges";
+import { PROVIDER_NAMES, type DockerEngine, type LabRunOptions, type Provider, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { badgeOf, pathOf, type RunBadge } from "@/features/labs/run-on-badges";
 import { testHost } from "@/features/servers/use-server-list";
 import { StatusPill, type Tone } from "@/components/ui/status-pill";
 import { TypeIcon } from "@/components/ui/type-icon";
@@ -14,8 +14,6 @@ import { ENGINES, engineName } from "@/features/machine/setup-steps/engines";
 import { CLOUDS } from "@/features/labs/lab-runtime";
 import type { RunTarget } from "@/features/labs/run-on";
 import { type T } from "@/lib/i18n";
-
-export { useRunTiers } from "@/features/labs/run-on-badges";
 
 // The places "Where should it run?" offers, by group: this machine, Cyber CTF, servers, clouds.
 
@@ -104,18 +102,17 @@ function engineStatus(t: T, dockerRunning: boolean | null): Status | undefined {
  *  (helper VM, one VM per machine), or — when `account` is a cloud account — its one VM
  *  (cloud-docker) and one VM per machine (cloud-vm). The hypervisor is a later step for a local
  *  form, so it isn't named by one; a cloud form runs on the account, so Start finishes it. */
-export function vmFormOptions(t: T, tiers: RunTier[], forms: RunTarget[], account?: ServerHost | null): Option[] {
+export function vmFormOptions(t: T, options: LabRunOptions | null, forms: RunTarget[], account?: ServerHost | null): Option[] {
   return forms.map((form) => {
     // A cloud account's forms: the account's own logo and the path's tier badge.
     if (form.kind === "host") {
       const perMachine = !!form.perMachine;
-      const variant = `${perMachine ? "cloud-vm" : "cloud-docker"}/${account?.provider ?? ""}`;
       return {
         target: form,
         title: t(perMachine ? "labs.runOn.cloudFormPerMachine" : "labs.runOn.cloudFormOneVm"),
         subtitle: t(perMachine ? "labs.runOn.cloudPerMachineHint" : "labs.runOn.cloudOneVmHint"),
         ok: true,
-        badge: account ? badgeFor(tiers, [variant]) : undefined,
+        badge: account ? badgeOf(pathOf(options, form, account.provider)) : undefined,
         logo: account ? <ProviderGlyph provider={account.provider} /> : <HypervisorLogo provider={null} />,
         status: { tone: "ok", label: t("labs.runOn.ready") },
       };
@@ -127,7 +124,7 @@ export function vmFormOptions(t: T, tiers: RunTier[], forms: RunTarget[], accoun
       title: t(perMachine ? "labs.runOn.formPerMachine" : "labs.runOn.formInVm"),
       subtitle: t(perMachine ? "labs.runOn.perMachineVmHint" : "labs.runOn.inVmFormNote"),
       ok: true,
-      badge: badgeFor(tiers, candidatesFor(form)),
+      badge: badgeOf(pathOf(options, form)),
       logo: <HypervisorLogo provider={provider} />,
       status: { tone: "ok", label: t("labs.runOn.ready") },
     };
@@ -201,7 +198,7 @@ function localVmRow(t: T, local: LocalRows): Option | null {
 }
 
 /** A saved server or cloud account; one the lab can't run on says why, without a status. */
-function hostOption(t: T, tiers: RunTier[], h: ServerHost, ok: boolean, check: ServerTest | undefined): Option {
+function hostOption(t: T, options: LabRunOptions | null, h: ServerHost, ok: boolean, check: ServerTest | undefined): Option {
   const kind = KIND[h.provider].label;
   const cloud = CLOUDS.has(h.provider);
   return {
@@ -212,7 +209,7 @@ function hostOption(t: T, tiers: RunTier[], h: ServerHost, ok: boolean, check: S
     why: t("labs.runOn.unsupportedKind", { kind }),
     logo: <ProviderGlyph provider={h.provider} />,
     status: ok ? hostStatus(t, check) : undefined,
-    badge: badgeFor(tiers, candidatesFor({ kind: "host", id: h.id }, h.provider)),
+    badge: badgeOf(pathOf(options, { kind: "host", id: h.id }, h.provider)),
   };
 }
 
@@ -226,17 +223,17 @@ export function platformGroups(
     checks,
     local,
     offerLocal,
-    tiers,
+    options,
   }: {
     hosts: ServerHost[];
     hostOk: (h: ServerHost) => boolean;
     checks: HostChecks;
     local: LocalRows;
     offerLocal: boolean;
-    tiers: RunTier[];
+    options: LabRunOptions | null;
   },
 ): OptionGroup[] {
-  const forHost = (h: ServerHost) => hostOption(t, tiers, h, hostOk(h), checks[h.id]);
+  const forHost = (h: ServerHost) => hostOption(t, options, h, hostOk(h), checks[h.id]);
   const groups: OptionGroup[] = [
     { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localPlatformRows(t, local) : [] },
     { id: "servers", label: t("labs.runOn.servers"), options: hosts.filter((h) => !CLOUDS.has(h.provider)).map(forHost) },

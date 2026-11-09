@@ -1,17 +1,8 @@
 "use client";
 
-import { type DockerEngine, type Provider, type ServerHost } from "@/lib/tauri";
+import { type DockerEngine, type LabRunOptions, type Provider, type ServerHost } from "@/lib/tauri";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
-import {
-  RowPill,
-  hypervisorOptions,
-  platformGroups,
-  vmFormOptions,
-  useHostChecks,
-  useRunTiers,
-  type LocalRows,
-  type OptionGroup,
-} from "@/features/labs/run-on-options";
+import { RowPill, hypervisorOptions, platformGroups, vmFormOptions, useHostChecks, type LocalRows, type OptionGroup } from "@/features/labs/run-on-options";
 import type { PortMode } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
 import { EngineStep, PickerHeading } from "@/features/labs/run-on-steps";
@@ -109,6 +100,8 @@ type RunOnPickerProps = {
   hypervisors?: Provider[];
   defaultHypervisor?: Provider | null;
   onPickHypervisor?: (p: Provider) => void;
+  /** The lab's run options (each place's launch path and its badge); null while they load. */
+  runOptions?: LabRunOptions | null;
   // The engine step.
   engines?: DockerEngine[];
   defaultEngine?: DockerEngine | null;
@@ -122,7 +115,7 @@ export function RunOnPicker(props: RunOnPickerProps) {
   const { engines = [], defaultEngine = null, onPickEngine = () => {} } = props;
   const t = useT();
   const checks = useHostChecks(hosts);
-  const tiers = useRunTiers();
+  const options = props.runOptions ?? null;
 
   if (step === "form") {
     // A cloud account's forms sit under its name; this machine's under "This machine".
@@ -131,7 +124,7 @@ export function RunOnPicker(props: RunOnPickerProps) {
       <div className="space-y-4">
         <PickerHeading heading={t("labs.runOn.formHeading")} title={title} />
         <OptionList
-          group={{ id: "form", label, options: vmFormOptions(t, tiers, formTargets, formAccount) }}
+          group={{ id: "form", label, options: vmFormOptions(t, options, formTargets, formAccount) }}
           value={value}
           onChange={onPickForm}
           disabled={disabled}
@@ -161,7 +154,7 @@ export function RunOnPicker(props: RunOnPickerProps) {
   }
 
   const local: LocalRows = { offerContainers, localNote, dockerRunning, engine, vmForms };
-  const groups = platformGroups(t, { hosts, hostOk, checks, local, offerLocal, tiers });
+  const groups = platformGroups(t, { hosts, hostOk, checks, local, offerLocal, options });
   const pick = (target: RunTarget) => {
     onPickPlatform(platformOfRow(target, offerContainers));
   };

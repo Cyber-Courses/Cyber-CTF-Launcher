@@ -96,9 +96,23 @@ describe("late answers", () => {
     expect(result.current.runOn).toEqual({ kind: "host", id: "esxi" });
   });
 
-  it("offers one VM per machine for a lab with both forms, on a ready hypervisor that isn't UTM", async () => {
-    installTauri();
-    const both: LabRuntimeInfo = { runtime: "DOCKER", architectures: [], providers: ["virtualbox"], docker: true, vm: true };
+  it("offers one VM per machine where the backend's run options have it: a ready hypervisor that isn't UTM", async () => {
+    // The backend reads the lab's spec: Isoloom refuses its per-machine VMs on UTM (no network).
+    const path = (target: string, provider: Provider) => ({ provider, target, variant: provider, badge: "none" as const, evidence: "" });
+    installTauri({
+      lab_run_options: () => ({
+        docker: null,
+        dockerVm: [path("docker-vm", "utm"), path("docker-vm", "qemu")],
+        vms: [path("vagrant", "qemu"), path("vagrant", "virtualbox")],
+        servers: [],
+        cloudDocker: [],
+        cloudVm: [],
+        cloudServices: [],
+        refused: [{ provider: "utm", target: "vagrant", reason: "no network" }],
+      }),
+    });
+    const source = { repository: "CyberCTF/lab", commit: "0123456789abcdef0123456789abcdef01234567" };
+    const both: LabRuntimeInfo = { runtime: "DOCKER", architectures: [], providers: ["virtualbox"], docker: true, vm: true, ...source };
     const { result, rerender } = renderHook(({ ready }) => useRunTarget({ id: "lab-t", runtime: both }, ready, "aarch64"), {
       initialProps: { ready: ["utm"] as Provider[] },
     });

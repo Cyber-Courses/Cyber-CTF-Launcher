@@ -251,19 +251,6 @@ pub(crate) async fn run(dirs: &AppDirs, launch_json: serde_json::Value, placemen
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
 }
 
-/// The saved server lab `lab_id` starts on when none is picked (the app's Start with no place
-/// chosen, a website launch with no target): the default server, for a VM lab only, when the lab
-/// runs as VMs there ([`runtime::lab::runs_on_server`]: ESXi through Vagrant, Proxmox through
-/// Terraform), read from its spec at `repository`@`commit`. Never a cloud account: it costs money.
-pub(crate) async fn default_host(dirs: &AppDirs, lab_id: &str, runtime: Runtime, repository: &str, commit: &str) -> Result<Option<String>> {
-    if runtime != Runtime::Vm {
-        return Ok(None);
-    }
-    let Some((id, provider)) = runtime::server::default_server(dirs)? else { return Ok(None) };
-    let spec = runtime::lab::spec_at(dirs, lab_id, repository, commit).await?;
-    Ok(runtime::lab::runs_on_server(&spec, provider, runtime).then_some(id))
-}
-
 /// The backend's operation starting a lab for the signed-in player: what to download and run,
 /// and the launch's values (the evidence claim, the player's flags).
 const START_LAB: &str = "mutation ($id: ID!) { startLab(labId: $id) { labId runtime repository commit env { name value } } }";
@@ -581,41 +568,6 @@ mod tests {
                 .await
                 .is_err()
         );
-    }
-
-    /// A VM lab with no place picked starts on the default server when it runs as VMs there; a
-    /// container lab, a lab the server can't run, or no default server: here. Never a cloud.
-    #[tokio::test]
-    async fn the_default_server_takes_a_vm_lab_it_runs() {
-        let t = crate::testing::test_app::TestApp::new();
-        let vms = "version: 1\nname: ad\nnetworks: { lan: { cidr: 10.20.0.0/24 } }\nmachines:\n  dc: { os: windows-server@2022, networks: { lan: 10 } }\n";
-        let dir = t.lab("ad", &[("isoloom.yml", vms)]);
-        std::fs::write(dir.join(".cyberctf-commit"), SHA).unwrap();
-        let dirs = t.dirs();
-        let host = |runtime| default_host(&dirs, "ad", runtime, "CyberCTF/ad", SHA);
-        assert_eq!(host(Runtime::Vm).await.unwrap(), None, "no default server");
-        let set_default = |id: &str| {
-            runtime::server::store::update(&dirs, |s| {
-                s.default = Some(id.to_owned());
-                Ok(())
-            })
-            .unwrap();
-        };
-        // Proxmox runs VM labs, through Terraform.
-        let pve = t.host("pve", "proxmox", serde_json::json!({}));
-        set_default(&pve);
-        assert_eq!(host(Runtime::Vm).await.unwrap().as_deref(), Some("pve"));
-        assert_eq!(host(Runtime::Docker).await.unwrap(), None, "a container lab runs here");
-        // A lab whose targets leave Proxmox out stays here.
-        std::fs::write(dir.join("isoloom.yml"), format!("{vms}targets: [vagrant]\n")).unwrap();
-        assert_eq!(host(Runtime::Vm).await.unwrap(), None);
-        let esx = t.host("esx", "vmware_esxi", serde_json::json!({}));
-        set_default(&esx);
-        assert_eq!(host(Runtime::Vm).await.unwrap().as_deref(), Some("esx"), "ESXi runs it through Vagrant");
-        // A cloud account is never the implicit place.
-        let aws = t.host("aws1", "aws", serde_json::json!({}));
-        set_default(&aws);
-        assert_eq!(host(Runtime::Vm).await.unwrap(), None);
     }
 
     /// A parked copy the runner couldn't take down refuses the new version: swapping the folder

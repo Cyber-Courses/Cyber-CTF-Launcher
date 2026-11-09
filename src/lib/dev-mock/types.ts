@@ -19,8 +19,8 @@ import type {
   LabTool,
   MachineMetrics,
   OciConfig,
-  Provider,
-  RunTier,
+  LabRunOptions,
+  LabStartPlace,
   ServerList,
   ServerTest,
   SharedFolder,
@@ -43,7 +43,6 @@ type Answers = {
   attack_box_status: AttackStatus;
   shared_folder_get: SharedFolder;
   shared_folder_set: SharedFolder;
-  run_tiers: RunTier[];
   server_list: ServerList;
   server_capacity: HostCapacity | null;
   server_test: ServerTest;
@@ -58,8 +57,8 @@ type Answers = {
   lab_status: LabStatus;
   lab_cloud_preview: CloudPreview | null;
   lab_requirements: LabRequirements | null;
-  lab_default_host: string | null;
-  lab_servers: Provider[];
+  lab_default_place: LabStartPlace;
+  lab_run_options: LabRunOptions;
   running_labs: string[];
   deploying_labs: string[];
   active_operations: ActiveOperation[];

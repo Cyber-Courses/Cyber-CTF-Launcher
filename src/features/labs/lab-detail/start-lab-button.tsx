@@ -122,6 +122,7 @@ function StartDialog({
           disabled={busy}
           hosts={run.hosts}
           hostOk={run.hostOk}
+          runOptions={run.runOptions}
           offerLocal={!cloud}
           offerContainers={isDocker}
           localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}

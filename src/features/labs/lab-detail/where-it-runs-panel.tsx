@@ -8,6 +8,7 @@ import { runPlaces } from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { labRequirements, type LabRequirements, type Provider } from "@/lib/tauri";
 import { useSavedHosts } from "@/features/servers/use-server-list";
+import { useLabRunOptions } from "@/features/labs/use-lab-answer";
 import { cn } from "@/lib/utils";
 import { useT, type MessageKey, type T } from "@/lib/i18n";
 
@@ -102,11 +103,12 @@ export function WhereItRunsPanel({
   const t = useT();
   const requirements = useLabRequirements(labId, runtime);
   const { hosts } = useSavedHosts();
+  const options = useLabRunOptions(labId, runtime);
   return (
     <Panel>
       <PanelHeader title={t("labs.detail.whereItRuns")} meta={meta} />
       <div>
-        {runPlaces(runtime, hostArch, emulates, { readyVms, hosts }).map((place) => (
+        {runPlaces(runtime, hostArch, emulates, { readyVms, hosts, options }).map((place) => (
           <PlaceRow key={place.key} place={place} t={t} />
         ))}
         {requirements && (

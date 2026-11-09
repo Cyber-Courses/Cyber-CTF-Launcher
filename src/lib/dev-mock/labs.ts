@@ -1,4 +1,4 @@
-import type { LabStatus } from "@/lib/tauri";
+import type { LabRunOptions, LabRunPath, LabStatus, Provider } from "@/lib/tauri";
 import { argText } from "@/lib/dev-mock/command";
 import { objectivesAnswer } from "@/lib/dev-mock/objectives";
 import type { Args, Handlers } from "@/lib/dev-mock/types";
@@ -234,10 +234,9 @@ export const labCommands = {
     args?.id === "lab-goad"
       ? { min: { cpus: 4, memoryMb: 2560, diskGb: 25 }, max: { cpus: 6, memoryMb: 12288, diskGb: 120 } }
       : { min: { cpus: 2, memoryMb: 1024, diskGb: 20 }, max: { cpus: 2, memoryMb: 1024, diskGb: 20 } },
-  // The sample's default server is Proxmox, which runs the VM labs.
-  lab_default_host: (args) => (args?.runtime === "VM" ? "pve" : null),
-  // Every lab of the sample runs on both kinds of server, but cloud services.
-  lab_servers: (args) => (args?.runtime === "CLOUD" ? [] : ["vmware_esxi", "proxmox"]),
+  // The sample's default server is Proxmox, which runs the VM labs; the others start here.
+  lab_default_place: (args) => ({ host: args?.runtime === "VM" ? "pve" : null, provider: null, perMachineVm: false }),
+  lab_run_options: (args) => runOptions(args?.runtime),
   running_labs: () => ["lab-invoice"],
   deploying_labs: () => ["lab-goad"],
   active_operations: () => [{ labId: "lab-goad", op: "launch", machine: "SRV02", step: "Configure SRV02 (ansible 41/88)" }],
@@ -254,4 +253,41 @@ export function apiQuery(args: Args): unknown {
     return objectivesAnswer(op, (args?.variables ?? {}) as Record<string, unknown>);
   if (["labs", "labTitles", "sidebarLabs"].includes(op)) return { labs };
   return {};
+}
+
+/** A badge-less path, or a Beta one. */
+const runPath = (target: string, provider: Provider | null, beta = false): LabRunPath => ({
+  provider,
+  target,
+  variant: provider === "proxmox" && target === "proxmox" ? null : provider,
+  badge: beta ? "beta" : "none",
+  evidence: beta ? "validated only; tier 1 pending: linux, macos, windows" : "real runs: macos (mac, 2026-10-17)",
+});
+
+const CLOUDS_OF_SAMPLE: Provider[] = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"];
+const NO_OPTIONS: LabRunOptions = { docker: null, dockerVm: [], vms: [], servers: [], cloudDocker: [], cloudVm: [], cloudServices: [], refused: [] };
+
+/** Where the sample's labs run, as the backend reads it from their spec: a container lab on
+ *  Docker, in a helper VM and on a server or a cloud VM (none has VM recipes too), a VM lab as
+ *  VMs (not on UTM), cloud services on AWS. */
+function runOptions(runtime: unknown): LabRunOptions {
+  const clouds = (target: string) => CLOUDS_OF_SAMPLE.map((c) => runPath(target, c, c !== "aws"));
+  if (runtime === "CLOUD") return { ...NO_OPTIONS, cloudServices: [runPath("cloud-services", "aws")] };
+  const local: Provider[] = ["virtualbox", "vmware_desktop", "parallels", "libvirt", "qemu"];
+  const utm = { provider: "utm" as const, target: "vagrant", reason: "a VM on UTM gets no private network" };
+  if (runtime === "VM")
+    return {
+      ...NO_OPTIONS,
+      vms: [...local, "hyperv" as const].map((p) => runPath("vagrant", p, p !== "virtualbox")),
+      servers: [runPath("vagrant", "vmware_esxi"), runPath("proxmox", "proxmox")],
+      cloudVm: clouds("cloud-vm"),
+      refused: [utm],
+    };
+  return {
+    ...NO_OPTIONS,
+    docker: runPath("docker", null),
+    dockerVm: [...local, "utm" as const].map((p) => runPath("docker-vm", p, p !== "virtualbox")),
+    servers: [runPath("docker-vm", "vmware_esxi", true), runPath("docker-vm", "proxmox", true)],
+    cloudDocker: clouds("cloud-docker"),
+  };
 }

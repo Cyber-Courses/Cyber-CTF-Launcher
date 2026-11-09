@@ -9,7 +9,7 @@ import { askPortMode, PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { RunOnDialog, RunOnPicker, type Platform, type RunTarget } from "@/features/labs/run-on";
 import type { Lab } from "@/features/labs/use-labs";
 import { getPortMode, setPortMode } from "@/lib/settings";
-import type { LabCheck, LabStatus, ServerHost } from "@/lib/tauri";
+import type { LabCheck, LabRunPath, LabStatus, Provider, ServerHost } from "@/lib/tauri";
 import { commands, installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must, startInAct } from "@/components/test-support";
@@ -222,23 +222,43 @@ describe("RunOnPicker", () => {
     expect(onPickPlatform).not.toHaveBeenCalled();
   });
 
-  it("badges a cloud with no real-run evidence as Beta, and leaves a proven one (AWS) unbadged", async () => {
-    // The badge is data-driven from Isoloom's tier evidence (the dev mock mirrors it): Azure is
-    // validated-only, AWS has real runs.
+  it("badges each place by the launch path the backend says the lab takes there", async () => {
+    // The badge is the backend's, per path (Isoloom's tier evidence): Azure's cloud-docker is
+    // validated-only, AWS's has real runs; a Proxmox server runs a container lab's helper VM, an
+    // experimental path here. The picker used to guess the paths (Proxmox as cloud-vm/proxmox).
     installTauri();
+    const path = (target: string, provider: Provider, badge: LabRunPath["badge"]): LabRunPath => ({
+      provider,
+      target,
+      variant: provider,
+      badge,
+      evidence: `${target}/${provider}`,
+    });
     renderPicker({
       hosts: [
         host({ id: "az", name: "Azure sub", provider: "azure", host: "westeurope" }),
         host({ id: "aws", name: "AWS sandbox", provider: "aws", host: "eu-west-3" }),
+        host({ id: "pve", name: "Homelab", provider: "proxmox", host: "10.0.0.2" }),
       ],
       hostOk: () => true,
+      runOptions: {
+        docker: null,
+        dockerVm: [],
+        vms: [],
+        servers: [path("docker-vm", "proxmox", "experimental")],
+        cloudDocker: [path("cloud-docker", "azure", "beta"), path("cloud-docker", "aws", "none")],
+        cloudVm: [],
+        cloudServices: [],
+        refused: [],
+      },
     });
+    const pve = must(screen.getByText("Homelab").closest<HTMLElement>("[role=radio]"), "Proxmox's option");
+    expect(within(pve).getByText("Experimental").closest("[title]")?.getAttribute("title")).toBe("docker-vm/proxmox");
     await flush();
     const az = must(screen.getByText("Azure sub").closest<HTMLElement>("[role=radio]"), "Azure's option");
     expect(within(az).getByText("Beta")).toBeTruthy();
     const aws = must(screen.getByText("AWS sandbox").closest<HTMLElement>("[role=radio]"), "AWS's option");
     expect(within(aws).queryByText("Beta")).toBeNull();
-    expect(screen.queryByText("Experimental")).toBeNull();
   });
 
   it("shows a VM lab only the In a VM row, and nothing selectable while busy", async () => {

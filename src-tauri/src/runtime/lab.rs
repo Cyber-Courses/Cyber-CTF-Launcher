@@ -25,10 +25,12 @@ mod instances;
 mod names;
 pub(crate) mod overlay;
 mod overrides;
+mod run_options;
 mod vars;
 
 pub use instances::*;
 pub use names::*;
+pub use run_options::{RunOptions, RunPath, run_options};
 pub use vars::{esxi_env, host_vars};
 
 // What the rest of the launcher uses of Isoloom's types: through here, like its functions.
@@ -58,6 +60,7 @@ pub fn load(dir: &Path) -> Result<Spec> {
 }
 
 /// A spec from its text, unchecked.
+#[cfg(test)]
 pub fn parse(text: &str) -> Result<Spec> {
     isoloom_spec::parse(text).map(|s| Lab::new(s).spec()).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
 }
@@ -269,57 +272,78 @@ pub fn requirements(spec: &Spec) -> Option<Requirements> {
     Some(Requirements { min: (*sizes.first()?).into(), max: (*sizes.last()?).into() })
 }
 
-/// A lab's spec at a commit: the installed copy when it is that commit, else its `isoloom.yml`
-/// fetched from GitHub (CyberCTF repositories at a full SHA only). The one way the launcher reads
-/// a catalogue lab's spec before it is installed.
+/// A lab's spec at a commit ([`lab_at`]'s, as the launcher reads it).
 pub async fn spec_at(dirs: &crate::platform::AppDirs, lab_id: &str, repository: &str, commit: &str) -> Result<Spec> {
-    use crate::platform::http::{MAX_LAB_SPEC, api_client, body_limited};
+    Ok(lab_at(dirs, lab_id, repository, commit).await?.spec())
+}
+
+/// A lab as its author wrote it at a commit: the installed copy when it is that commit, else its
+/// `isoloom.yml` fetched from GitHub (CyberCTF repositories at a full SHA only), once per
+/// repository and commit for the app's session. The one way the launcher reads a catalogue lab's
+/// spec before it is installed: a lab page's requirements, its run options and its start place
+/// read it once between them.
+pub async fn lab_at(dirs: &crate::platform::AppDirs, lab_id: &str, repository: &str, commit: &str) -> Result<Lab> {
+    lab_at_with(dirs, lab_id, repository, commit, fetch_spec).await
+}
+
+/// [`lab_at`], a spec not read yet fetched from its URL by `fetch`.
+async fn lab_at_with<F>(dirs: &crate::platform::AppDirs, lab_id: &str, repository: &str, commit: &str, fetch: impl FnOnce(String) -> F) -> Result<Lab>
+where
+    F: Future<Output = Result<String>>,
+{
     crate::runtime::paths::validate_id(lab_id)?;
     crate::labs::validate_source(repository, commit)?;
     if let Ok(dir) = crate::runtime::paths::lab_dir(dirs, lab_id)
         && std::fs::read_to_string(dir.join(".cyberctf-commit")).is_ok_and(|c| c.trim() == commit)
-        && let Ok(spec) = load(&dir)
+        && let Ok(Ok(text)) = overlay::spec_text(&dir)
+        && let Ok(lab) = parsed(&text)
     {
-        return Ok(spec);
+        return Ok(lab);
     }
-    let url = format!("https://raw.githubusercontent.com/{repository}/{commit}/isoloom.yml");
+    let key = (repository.to_owned(), commit.to_owned());
+    let cached = FETCHED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&key).cloned();
+    let text = if let Some(text) = cached {
+        text
+    } else {
+        let text = fetch(format!("https://raw.githubusercontent.com/{repository}/{commit}/isoloom.yml")).await?;
+        FETCHED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(key, text.clone());
+        text
+    };
+    parsed(&text)
+}
+
+/// The specs fetched this session, by repository and commit: a commit's spec never changes.
+static FETCHED: std::sync::Mutex<std::collections::BTreeMap<(String, String), String>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// A lab from its spec's text, unchecked.
+fn parsed(text: &str) -> Result<Lab> {
+    isoloom_spec::parse(text).map(Lab::new).map_err(|e| Error::Invalid(format!("this lab's isoloom.yml: {e}")))
+}
+
+/// The `isoloom.yml` at `url`, read through the API client with its size limit.
+async fn fetch_spec(url: String) -> Result<String> {
+    use crate::platform::http::{MAX_LAB_SPEC, api_client, body_limited};
     let unread = |e: &dyn std::fmt::Display| Error::Invalid(format!("couldn't read the lab's spec: {e}"));
     let res = api_client()?.get(&url).send().await.map_err(|e| unread(&e))?;
     if !res.status().is_success() {
         return Err(unread(&format!("HTTP {}", res.status())));
     }
     let body = body_limited(res, MAX_LAB_SPEC).await.map_err(|e| unread(&e))?;
-    parse(&String::from_utf8(body).map_err(|e| unread(&e))?)
+    String::from_utf8(body).map_err(|e| unread(&e))
 }
 
-/// Whether a lab of `spec`, declared `runtime`, runs on a server of `provider`, as its targets
-/// allow (its `targets:` included): on ESXi through Vagrant there (its VMs, or its containers in
-/// one VM), on Proxmox through Terraform (likewise). Cloud services run on no server, and no
-/// other provider is a server.
-pub fn runs_on_server(spec: &Spec, provider: crate::runtime::providers::Provider, runtime: crate::runtime::Runtime) -> bool {
-    use crate::runtime::{Runtime, providers::Provider};
-    let target = match (provider, runtime) {
-        (_, Runtime::Cloud) => return false,
-        (Provider::VmwareEsxi, _) => vagrant_target(runtime),
-        (Provider::Proxmox, Runtime::Docker) => Target::DockerVm,
-        (Provider::Proxmox, Runtime::Vm) => Target::Proxmox,
-        _ => return false,
-    };
-    isoloom_spec::effective(spec).contains(&target)
-}
-
-/// The kinds of server (ESXi, Proxmox) a lab of `spec`, declared `runtime`, runs on
-/// ([`runs_on_server`]): the ones the launch picker offers its saved servers of.
-pub fn servers_for(spec: &Spec, runtime: crate::runtime::Runtime) -> Vec<crate::runtime::providers::Provider> {
-    use crate::runtime::providers::Provider;
-    [Provider::VmwareEsxi, Provider::Proxmox].into_iter().filter(|p| runs_on_server(spec, *p, runtime)).collect()
-}
-
-/// Why the lab's VMs can't run on Vagrant's `provider` (`qemu`, `utm`, …: its networks, a TPM,
-/// data disks), if they can't. Isoloom's own rule, so the launcher refuses exactly what the
-/// generated Vagrantfile would.
-pub fn vagrant_refusal(lab: &Lab, provider: &str) -> Option<String> {
-    isoloom_targets::refusal_on(lab, Target::Vagrant, Some(provider))
+/// Why Isoloom won't run `lab` as `target` on `provider` (a hypervisor, a server's kind or a
+/// cloud), if it won't: its VMs on a Vagrant provider (`qemu`, `utm`, …: its networks, a TPM, data
+/// disks), its helper VM there (`docker-vm`), a cloud whose `cloud-vm` module it drops, or the
+/// target itself. Isoloom's own rule, so the launcher refuses exactly what the generated files
+/// would.
+pub fn refusal_on(lab: &Lab, target: Target, provider: crate::runtime::providers::Provider) -> Option<String> {
+    if target == Target::CloudVm {
+        return isoloom_targets::refusal(lab, target)
+            .or_else(|| isoloom_targets::cloud_refusals(lab, target)?.refused.into_iter().find(|r| r.cloud == provider.id()).map(|r| r.reason));
+    }
+    let variant = matches!(target, Target::Vagrant | Target::DockerVm).then(|| provider.id());
+    isoloom_targets::refusal_on(lab, target, variant)
 }
 
 #[cfg(test)]
@@ -357,19 +381,29 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
-    #[test]
-    fn a_lab_is_offered_the_servers_its_targets_run_on() {
-        use crate::runtime::providers::Provider;
-        let vms = "version: 1\nname: ad\nnetworks: { lan: { cidr: 10.20.0.0/24 } }\nmachines:\n  dc: { os: windows-server@2022, networks: { lan: 10 } }\n";
-        assert_eq!(servers_for(&parse(vms).unwrap(), Runtime::Vm), [Provider::VmwareEsxi, Provider::Proxmox]);
-        // Its targets leave Proxmox out: ESXi only, as the default server's rule says.
-        let vagrant_only = parse(&format!("{vms}targets: [vagrant]\n")).unwrap();
-        assert_eq!(servers_for(&vagrant_only, Runtime::Vm), [Provider::VmwareEsxi]);
-        assert!(!runs_on_server(&vagrant_only, Provider::Proxmox, Runtime::Vm));
-        // A container lab runs in one VM there; cloud services, and a cloud account, on none.
-        assert_eq!(servers_for(&parse(SPEC).unwrap(), Runtime::Docker), [Provider::VmwareEsxi, Provider::Proxmox]);
-        assert!(servers_for(&parse(SPEC).unwrap(), Runtime::Cloud).is_empty());
-        assert!(!runs_on_server(&parse(vms).unwrap(), Provider::Aws, Runtime::Vm));
+    #[tokio::test]
+    async fn a_spec_not_installed_is_fetched_once_per_commit() {
+        // Regression: a lab page's requirements, its servers and its start place each downloaded
+        // the same isoloom.yml: three fetches for one page and its Start.
+        let t = crate::testing::test_app::TestApp::new();
+        let fetches = std::sync::atomic::AtomicUsize::new(0);
+        let fetch = |url: String| {
+            fetches.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            assert_eq!(url, "https://raw.githubusercontent.com/CyberCTF/cached/1111111111111111111111111111111111111111/isoloom.yml");
+            async { Ok(SPEC.to_owned()) }
+        };
+        let commit = "1111111111111111111111111111111111111111";
+        for _ in 0..3 {
+            let lab = lab_at_with(&t.dirs(), "cached", "CyberCTF/cached", commit, fetch).await.unwrap();
+            assert_eq!(lab.spec().name, "t");
+        }
+        assert_eq!(fetches.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // A failed fetch is not remembered: the next read tries again.
+        let other = "2222222222222222222222222222222222222222";
+        let failing = |_: String| async { Err(Error::Invalid("couldn't read the lab's spec: HTTP 503".into())) };
+        assert!(lab_at_with(&t.dirs(), "cached", "CyberCTF/cached", other, failing).await.is_err());
+        let ok = |_: String| async { Ok(SPEC.to_owned()) };
+        assert!(lab_at_with(&t.dirs(), "cached", "CyberCTF/cached", other, ok).await.is_ok());
     }
 
     #[test]

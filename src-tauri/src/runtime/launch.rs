@@ -15,9 +15,10 @@ mod local;
 mod on_host;
 mod port_holder;
 
-use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};
+pub(in crate::runtime) use local::emulated_arches;
 #[cfg(test)]
-use local::{emulated_arches, low_memory_warning};
+use local::low_memory_warning;
+use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};
 pub(in crate::runtime) use on_host::esxi_run;
 use on_host::start_on_server;
 #[cfg(test)]
@@ -139,7 +140,8 @@ async fn start_docker_in_vm_with_runner(dirs: &AppDirs, dir: &Path, id: &str, st
 /// tests run exactly this.
 pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let VmStart { provider, env } = start;
-    lab::prepare(dir, lab::vagrant_target(Runtime::Docker))?;
+    let prepared = lab::prepare(dir, lab::vagrant_target(Runtime::Docker))?;
+    check_provider(&prepared, lab::Target::DockerVm, provider)?;
     mark_local_vm(dir, Some(provider))?;
     log(format!("Running in a {} VM on this machine", provider.id()));
     if provider == Provider::Utm {
@@ -236,7 +238,7 @@ pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmSta
     let prepared = lab::prepare(dir, lab::Target::Vagrant)?;
     // A container lab's VM form leaves no local-VM mark behind: that one names docker-vm.
     mark_local_vm(dir, None)?;
-    check_provider(&prepared, provider)?;
+    check_provider(&prepared, lab::Target::Vagrant, provider)?;
     warn_if_low_memory(&prepared.spec, log);
     if provider == Provider::Qemu {
         check_qemu(&prepared, log).await?;

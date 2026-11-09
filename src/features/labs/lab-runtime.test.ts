@@ -1,19 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  cloudRunsPerMachine,
   emulatorReady,
-  hasBothForms,
+  formProviders,
   hostSupports,
   localProviders,
-  perMachineProviders,
   pickLocalHypervisor,
   readyHypervisors,
   runPlaces,
   runsNatively,
 } from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import type { Provider, ServerHost, SystemReport } from "@/lib/tauri";
+import type { LabRunOptions, LabRunPath, Provider, ServerHost, SystemReport } from "@/lib/tauri";
 
 const rt = (p: Partial<LabRuntimeInfo>): LabRuntimeInfo => ({ runtime: "VM", architectures: [], providers: [], ...p });
 const vmProvider = (provider: string, p: { remote?: boolean; available?: boolean; hypervisor?: boolean | null } = {}) => ({
@@ -24,6 +22,19 @@ const vmProvider = (provider: string, p: { remote?: boolean; available?: boolean
   ...p,
 });
 const host = (provider: string) => ({ id: provider, name: provider, provider }) as unknown as ServerHost;
+const path = (target: string, provider: Provider): LabRunPath => ({ provider, target, variant: provider, badge: "none", evidence: "" });
+/** The backend's run options with only `paths` set. */
+const options = (paths: Partial<LabRunOptions>): LabRunOptions => ({
+  docker: null,
+  dockerVm: [],
+  vms: [],
+  servers: [],
+  cloudDocker: [],
+  cloudVm: [],
+  cloudServices: [],
+  refused: [],
+  ...paths,
+});
 
 describe("runsNatively", () => {
   it("runs anywhere when the lab lists no CPU", () => {
@@ -93,29 +104,22 @@ describe("pickLocalHypervisor", () => {
   });
 });
 
-describe("perMachineProviders", () => {
-  it("is for labs with a container and a VM recipe per machine only", () => {
-    expect(hasBothForms(rt({ runtime: "DOCKER", docker: true, vm: true }))).toBe(true);
-    expect(hasBothForms(rt({ runtime: "DOCKER" }))).toBe(false);
-    expect(hasBothForms(rt({ runtime: "VM" }))).toBe(false);
-    expect(perMachineProviders(rt({ runtime: "DOCKER", docker: true, vm: false }))).toEqual([]);
-    expect(perMachineProviders(rt({ runtime: "VM", vm: true }))).toEqual([]);
-  });
-  it("runs on every local hypervisor but UTM, which Isoloom refuses the form on", () => {
-    const both = rt({ runtime: "DOCKER", docker: true, vm: true, providers: ["virtualbox"] });
-    const providers = perMachineProviders(both, "aarch64");
-    expect(providers).toContain("qemu");
-    expect(providers).toContain("virtualbox");
-    // Hyper-V runs the form (not a container lab's helper VM: that has no Hyper-V).
-    expect(providers).toContain("hyperv");
-    expect(localProviders(both)).not.toContain("hyperv");
-    expect(providers).not.toContain("utm");
-    expect(providers).not.toContain("vmware_esxi");
-  });
-  it("runs only emulated for VMs built for another CPU", () => {
+describe("formProviders", () => {
+  it("are the hypervisors the backend's run options give the form, the emulator alone for another CPU's VMs", () => {
+    // Regression: the picker kept its own tables (every local hypervisor but UTM, any cloud):
+    // what a lab runs on is what Isoloom generates it for, which the backend says.
+    const vms = ["virtualbox", "hyperv", "qemu"].map((p) => path("vagrant", p as Provider));
     const both = rt({ runtime: "DOCKER", docker: true, vm: true, architectures: ["x86_64"] });
-    expect(perMachineProviders(both, "aarch64")).toEqual(["qemu"]);
-    expect(perMachineProviders(both, "x86_64")).toContain("virtualbox");
+    expect(formProviders(vms, both)).toEqual(["virtualbox", "hyperv", "qemu"]);
+    expect(formProviders(vms, both, "x86_64")).toEqual(["virtualbox", "hyperv", "qemu"]);
+    expect(formProviders(vms, both, "aarch64")).toEqual(["qemu"]);
+  });
+  it("give a container lab's helper VM its hypervisors, and a VM lab its own once read", () => {
+    const docker = rt({ runtime: "DOCKER" });
+    expect(localProviders(docker)).toEqual([]);
+    expect(localProviders(docker, "x86_64", options({ dockerVm: [path("docker-vm", "utm")] }))).toEqual(["utm"]);
+    const vm = rt({ architectures: ["x86_64"], providers: ["virtualbox", "utm"] as Provider[] });
+    expect(localProviders(vm, "x86_64", options({ vms: [path("vagrant", "virtualbox")] }))).toEqual(["virtualbox"]);
   });
 });
 
@@ -131,15 +135,13 @@ describe("hostSupports", () => {
     }
     expect(hostSupports(rt({ providers: ["aws"] as Provider[] }), host("azure"))).toBe(false);
   });
-});
-
-describe("cloudRunsPerMachine", () => {
-  it("offers one VM per machine on every cloud for a lab with both forms, and on no server", () => {
-    const both = rt({ runtime: "DOCKER", docker: true, vm: true });
-    for (const cloud of ["aws", "azure", "gcp", "digitalocean", "linode", "oci"]) expect(cloudRunsPerMachine(both, cloud), cloud).toBe(true);
-    expect(cloudRunsPerMachine(both, "proxmox")).toBe(false);
-    expect(cloudRunsPerMachine(rt({ runtime: "DOCKER", docker: true, vm: false }), "azure")).toBe(false);
-    expect(cloudRunsPerMachine(null, "aws")).toBe(false);
+  it("goes by the backend's run options once read: its servers, its clouds in any form", () => {
+    const lab = rt({ providers: ["vmware_esxi", "proxmox", "aws"] as Provider[] });
+    const read = options({ servers: [path("vagrant", "vmware_esxi")], cloudVm: [path("cloud-vm", "azure")] });
+    expect(hostSupports(lab, host("vmware_esxi"), read)).toBe(true);
+    expect(hostSupports(lab, host("proxmox"), read)).toBe(false);
+    expect(hostSupports(lab, host("azure"), read)).toBe(true);
+    expect(hostSupports(lab, host("aws"), read)).toBe(false);
   });
 });
 
@@ -170,7 +172,11 @@ describe("runPlaces", () => {
     expect(stateOf(bare, "server")).toBe("configurable");
     expect(stateOf(bare, "cloud")).toBe("configurable");
     // A ready hypervisor, a Proxmox server and an AWS account: those places turn ready.
-    const setUp = runPlaces(lab, undefined, false, { readyVms: ["virtualbox"] as Provider[], hosts: [host("proxmox"), host("aws")] });
+    const setUp = runPlaces(lab, undefined, false, {
+      readyVms: ["virtualbox"] as Provider[],
+      hosts: [host("proxmox"), host("aws")],
+      options: options({ dockerVm: [path("docker-vm", "virtualbox")], servers: [path("docker-vm", "proxmox")], cloudDocker: [path("cloud-docker", "aws")] }),
+    });
     expect(stateOf(setUp, "local_vm")).toBe("ready");
     expect(stateOf(setUp, "server")).toBe("ready");
     expect(stateOf(setUp, "cloud")).toBe("ready");

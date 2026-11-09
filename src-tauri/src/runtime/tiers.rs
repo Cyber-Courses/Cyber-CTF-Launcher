@@ -1,5 +1,5 @@
 //! How far each launch path has been proven, from Isoloom's tier evidence (`isoloom-targets`'s
-//! bundled `tiers.json`). The launcher shows a badge off the real-run **evidence**, not the tier
+//! bundled `tiers.json`), for each of a lab's run options (`lab::run_options`). The launcher shows a badge off the real-run **evidence**, not the tier
 //! number: a path with no real run yet (validated only) is Beta, whatever its tier; a path real
 //! runs have passed (AWS, Docker, the proven VM providers…) carries no badge even while tier 1
 //! waits for the other host OSes. This updates itself as the evidence does — no hardcoded list.
@@ -21,8 +21,7 @@ pub enum Badge {
 
 /// One launch path's maturity: the Isoloom target and its provider/cloud (`docker`, `cloud-vm`
 /// with `aws`…), the badge, and the evidence line behind it (the badge's tooltip).
-#[derive(Debug, Clone, serde::Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct RunTier {
     /// The Isoloom target id (`docker`, `vagrant`, `cloud-vm`, `cloud-docker`, …).
     pub target: String,

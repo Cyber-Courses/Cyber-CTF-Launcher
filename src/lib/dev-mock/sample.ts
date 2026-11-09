@@ -157,16 +157,6 @@ const machineCommands = {
   attack_box_status: () => attackBox(),
   image_download_size: () => 4.1 * GB,
   installed_tools: () => [],
-  run_tiers: () => [
-    { target: "docker", variant: null, badge: "none", evidence: "real runs: macos (mac, 2026-10-17)" },
-    { target: "vagrant", variant: "virtualbox", badge: "none", evidence: "real runs: macos (mac, 2026-10-17)" },
-    { target: "cloud-vm", variant: "aws", badge: "none", evidence: "real runs: macos (mac, 2026-10-17); tier 1 pending: linux, windows" },
-    { target: "cloud-docker", variant: "aws", badge: "none", evidence: "real runs: macos (mac, 2026-10-17); tier 1 pending: linux, windows" },
-    ...(["azure", "gcp", "digitalocean", "linode", "oci"] as const).flatMap((c) => [
-      { target: "cloud-vm", variant: c, badge: "beta" as const, evidence: "validated only; tier 1 pending: linux, macos, windows" },
-      { target: "cloud-docker", variant: c, badge: "beta" as const, evidence: "validated only; tier 1 pending: linux, macos, windows" },
-    ]),
-  ],
   shared_folder_get: () => sharedFolder,
   shared_folder_set: (args) => {
     sharedFolder = { ...sharedFolder, enabled: !!args?.enabled, path: argText(args?.path, sharedFolder.path) };

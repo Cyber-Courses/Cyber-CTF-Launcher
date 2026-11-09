@@ -31,7 +31,7 @@ pub(super) fn low_memory_warning(needed_mb: u64, available_mb: u64) -> Option<St
 
 /// The CPUs (`std::env::consts::ARCH` names) a lab's VMs are built for that differ from `host`,
 /// i.e. the ones QEMU has to emulate.
-pub(super) fn emulated_arches(spec: &lab::Spec, host: &str) -> Vec<&'static str> {
+pub(in crate::runtime) fn emulated_arches(spec: &lab::Spec, host: &str) -> Vec<&'static str> {
     let mut emulated: Vec<&'static str> = spec
         .machines
         .values()
@@ -46,12 +46,13 @@ pub(super) fn emulated_arches(spec: &lab::Spec, host: &str) -> Vec<&'static str>
     emulated
 }
 
-/// A lab's VMs on `provider`: Isoloom's own refusal of the pair, if it has one, before any VM
-/// is created. QEMU links a VM on one network only; UTM's Vagrant plugin gives a VM no private
-/// network, so a lab with a network (every lab) can't run as VMs on UTM; a TPM runs on
-/// VirtualBox, libvirt and Hyper-V only.
-pub(super) fn check_provider(prepared: &lab::Prepared, provider: super::Provider) -> Result<()> {
-    match lab::vagrant_refusal(&prepared.lab, provider.id()) {
+/// A lab run as `target` on `provider` (its VMs, or the helper VM a container lab runs in):
+/// Isoloom's own refusal of the pair, if it has one, before any VM is created. QEMU links a VM on
+/// one network only; UTM's Vagrant plugin gives a VM no private network, so a lab with a network
+/// (every lab) can't run as VMs on UTM; a TPM runs on VirtualBox, libvirt and Hyper-V only; a
+/// container's host folders aren't shared into a helper VM everywhere.
+pub(super) fn check_provider(prepared: &lab::Prepared, target: lab::Target, provider: super::Provider) -> Result<()> {
+    match lab::refusal_on(&prepared.lab, target, provider) {
         Some(why) => Err(Error::Invalid(format!(
             "This lab can't run on {} yet: {why}. Run it on another hypervisor, a server or in your cloud account.",
             provider.label_on(std::env::consts::OS)

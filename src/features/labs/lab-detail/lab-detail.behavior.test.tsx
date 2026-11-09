@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
-import type { LabStatus } from "@/lib/tauri";
+import type { LabRunOptions, LabRunPath, LabStatus, Provider } from "@/lib/tauri";
 import { commands, installTauri, type Handler } from "@/test/tauri";
 import { NOTHING, VMS_HERE, containerMachine, rejectWith, startIn, upStatus } from "@/features/labs/labs-test-kit";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
@@ -20,7 +20,9 @@ afterEach(() => {
 
 // Behavior of the lab page's actions: what each button calls, with what, and what it shows.
 
-const dockerRuntime: LabRuntimeInfo = { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws", "virtualbox"] };
+const SHA = "0123456789abcdef0123456789abcdef01234567";
+const SOURCE = { repository: "CyberCTF/lab", commit: SHA };
+const dockerRuntime: LabRuntimeInfo = { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws", "virtualbox"], ...SOURCE };
 const dockerLab: Lab = {
   id: "lab-invoice",
   slug: "invoice-portal-api",
@@ -37,13 +39,51 @@ const vmLab: Lab = {
   id: "lab-goad",
   slug: "goad-light",
   title: "GOAD Light",
-  runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi"] },
+  runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi"], ...SOURCE },
 };
+
+/** A launch path on `provider`, unbadged. */
+const path = (target: string, provider: Provider): LabRunPath => ({ provider, target, variant: provider, badge: "none", evidence: "" });
+
+/** The backend's run options with only `paths` set. */
+const runOptions = (paths: Partial<LabRunOptions>): LabRunOptions => ({
+  docker: path("docker", "virtualbox"),
+  dockerVm: [],
+  vms: [],
+  servers: [],
+  cloudDocker: [],
+  cloudVm: [],
+  cloudServices: [],
+  refused: [],
+  ...paths,
+});
+
+/** A container lab with VM recipes too, as the backend reads it: in one VM or one VM per machine
+ *  here, and on every cloud in both forms. */
+const bothForms = () =>
+  runOptions({
+    dockerVm: [path("docker-vm", "virtualbox")],
+    vms: [path("vagrant", "virtualbox")],
+    cloudDocker: ["aws", "azure"].map((c) => path("cloud-docker", c as Provider)),
+    cloudVm: ["aws", "azure"].map((c) => path("cloud-vm", c as Provider)),
+  });
 
 const machine = containerMachine;
 const status = (p: Partial<LabStatus> = {}) => upStatus([machine("api")], p);
 const stopped = status({ running: false, machines: [], url: null, place: null, provider: null });
 const vmRunning = status({ machines: [machine("DC01", "running", { image: "" })], place: "local_vm", provider: "virtualbox", url: null, controls: VMS_HERE });
+
+/** A container lab with VM recipes too, `id`, whose one saved place is cloud `account` (its test
+ *  answering at once), the backend's answers installed. */
+function dualLabOnCloud(id: string, account: { id: string; name: string; provider: Provider; host: string }): Lab {
+  installTauri({
+    ...quiet,
+    server_list: () => ({ default: null, hosts: [account] }),
+    server_test: () => ({ ok: true, reachable: true, authenticated: true, latencyMs: 9, message: "Connected", checks: [] }),
+    lab_run_options: bothForms,
+  });
+  return { ...dockerLab, id, runtime: { runtime: "DOCKER", architectures: [], providers: [account.provider], docker: true, vm: true, ...SOURCE } };
+}
 
 // Settled: nothing deploying, no servers (Start then starts right away for a Docker lab).
 const quiet: Record<string, Handler> = {
@@ -152,9 +192,9 @@ describe("LabDetail: starting", () => {
   });
 
   it("sends a dual-form lab's In a VM row to a form step, and Back returns to the places", async () => {
-    installTauri(quiet);
-    const bothForms: Lab = { ...dockerLab, id: "lab-both", runtime: { ...dockerRuntime, docker: true, vm: true } };
-    const { user } = await clickStart({ lab: bothForms, readyVms: ["virtualbox"] });
+    installTauri({ ...quiet, lab_run_options: bothForms });
+    const both: Lab = { ...dockerLab, id: "lab-both", runtime: { ...dockerRuntime, docker: true, vm: true } };
+    const { user } = await clickStart({ lab: both, readyVms: ["virtualbox"] });
     const dialog = screen.getByRole("dialog");
     // Step 1: two rows; the VM forms are a step in.
     expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
@@ -175,12 +215,7 @@ describe("LabDetail: starting", () => {
   });
 
   it("offers a dual-form container lab on a cloud the two cloud forms, and starts one VM per machine", async () => {
-    installTauri({
-      ...quiet,
-      server_list: () => ({ default: null, hosts: [{ id: "aws1", name: "AWS sandbox", provider: "aws", host: "eu-west-3" }] }),
-      server_test: () => ({ ok: true, reachable: true, authenticated: true, latencyMs: 9, message: "Connected", checks: [] }),
-    });
-    const bothCloud: Lab = { ...dockerLab, id: "lab-cloud", runtime: { runtime: "DOCKER", architectures: [], providers: ["aws"], docker: true, vm: true } };
+    const bothCloud = dualLabOnCloud("lab-cloud", { id: "aws1", name: "AWS sandbox", provider: "aws", host: "eu-west-3" });
     const { user, h } = await clickStart({ lab: bothCloud, readyVms: [] });
     const dialog = screen.getByRole("dialog");
     // Pick the AWS account → the form step ("How should it run?"), with the two cloud forms as rows.
@@ -194,11 +229,10 @@ describe("LabDetail: starting", () => {
   });
 
   it("offers a saved server only of a kind the lab's spec runs on, as the backend says", async () => {
-    const SHA = "0123456789abcdef0123456789abcdef01234567";
     const calls = installTauri({
       ...quiet,
       server_list: () => ({ default: null, hosts: [{ id: "pve", name: "homelab", provider: "proxmox", host: "10.0.0.5" }] }),
-      lab_servers: () => ["vmware_esxi"],
+      lab_run_options: () => runOptions({ docker: null, vms: [path("vagrant", "virtualbox")], servers: [path("vagrant", "vmware_esxi")] }),
     });
     // The catalogue lists Proxmox; the lab's targets leave it out.
     const lab: Lab = {
@@ -206,17 +240,12 @@ describe("LabDetail: starting", () => {
       runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "proxmox"], repository: "CyberCTF/goad", commit: SHA },
     };
     await clickStart({ lab, readyVms: ["virtualbox"] });
-    expect(calls.find((c) => c.cmd === "lab_servers")?.args).toEqual({ id: "lab-goad", runtime: "VM", repository: "CyberCTF/goad", commit: SHA });
+    expect(calls.find((c) => c.cmd === "lab_run_options")?.args).toEqual({ id: "lab-goad", runtime: "VM", repository: "CyberCTF/goad", commit: SHA });
     expect(within(screen.getByRole("dialog")).getByTitle("This lab doesn't support Proxmox VE")).toBeTruthy();
   });
 
   it("offers the cloud form step on every cloud, not only AWS", async () => {
-    installTauri({
-      ...quiet,
-      server_list: () => ({ default: null, hosts: [{ id: "az1", name: "Azure sub", provider: "azure", host: "westeurope" }] }),
-      server_test: () => ({ ok: true, reachable: true, authenticated: true, latencyMs: 9, message: "Connected", checks: [] }),
-    });
-    const bothCloud: Lab = { ...dockerLab, id: "lab-cloud2", runtime: { runtime: "DOCKER", architectures: [], providers: ["azure"], docker: true, vm: true } };
+    const bothCloud = dualLabOnCloud("lab-cloud2", { id: "az1", name: "Azure sub", provider: "azure", host: "westeurope" });
     const { user } = await clickStart({ lab: bothCloud, readyVms: [] });
     const dialog = screen.getByRole("dialog");
     await user.click(within(dialog).getByText("Azure sub"));
@@ -256,10 +285,11 @@ describe("LabDetail: starting", () => {
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local", engine: "orbstack" });
   });
 
-  it("defaults a VM lab with no hypervisor here to the default server", async () => {
+  it("points Start where the backend starts the lab with nothing picked: the default server", async () => {
     installTauri({
       ...quiet,
       ...defaultEsx,
+      lab_default_place: () => ({ host: "esx", provider: null, perMachineVm: false }),
     });
     const { user, h } = await clickStart({ lab: vmLab, readyVms: [] });
     const dialog = screen.getByRole("dialog");
@@ -269,10 +299,11 @@ describe("LabDetail: starting", () => {
     expect(h.onStart).toHaveBeenCalledWith({ kind: "host", id: "esx" });
   });
 
-  it("keeps a VM lab here when a local hypervisor can run it, even with a default server", async () => {
+  it("points Start here when the backend keeps the lab here, even with a default server", async () => {
     installTauri({
       ...quiet,
       ...defaultEsx,
+      lab_default_place: () => ({ host: null, provider: "virtualbox", perMachineVm: false }),
     });
     const { user, h } = await clickStart({ lab: vmLab, readyVms: ["virtualbox"] });
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Start$/ }));

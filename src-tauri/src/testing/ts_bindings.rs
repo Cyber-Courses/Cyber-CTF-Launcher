@@ -61,7 +61,6 @@ fn generate(dir: &Path) {
         tools::install::Dependency,
         tools::uninstall::InstalledTool,
         runtime::Check,
-        runtime::RunTier,
         runtime::AttackStatus,
         runtime::LabStatus,
         runtime::Park,
@@ -69,6 +68,8 @@ fn generate(dir: &Path) {
         runtime::Runtime,
         runtime::lab::Observer,
         runtime::lab::Requirements,
+        runtime::lab::RunOptions,
+        runtime::start_place::StartPlace,
         runtime::lab::Resources,
         runtime::providers::Provider,
         crate::commands::server::HostCapacity,
@@ -102,9 +103,12 @@ fn write_provider_names(dir: &Path) {
         let _ = writeln!(lines, "  {os}: {{{names} }},");
         lines
     });
+    let local: Vec<String> = Provider::ALL.iter().filter(|p| !p.is_remote()).map(|p| format!("\"{}\"", p.id())).collect();
+    let doc_local = "/** The hypervisors that run on this machine (Rust's providers that aren't `is_remote`). */";
     let doc_on = "/** The names an OS changes (Rust's `Provider::label_on`): VMware's desktop hypervisor is Fusion on\n *  macOS and Workstation elsewhere. */";
     let text = format!(
-        "{HEADER}import type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n\n{doc_on}\nexport const PROVIDER_NAMES_ON: Record<string, Partial<Record<Provider, string>>> = {{\n{on}}};\n"
+        "{HEADER}import type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n\n{doc_on}\nexport const PROVIDER_NAMES_ON: Record<string, Partial<Record<Provider, string>>> = {{\n{on}}};\n\n{doc_local}\nexport const LOCAL_PROVIDERS: readonly Provider[] = [{}];\n",
+        local.join(", ")
     );
     fs::write(dir.join(format!("{PROVIDER_NAMES}.ts")), text).unwrap();
 }

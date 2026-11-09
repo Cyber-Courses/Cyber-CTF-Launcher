@@ -65,13 +65,22 @@ describe("cloud labs", () => {
     expect(titles("all")).toEqual(["goat", "web", "ad"]);
   });
 
-  it("start on their first account, never a default server", () => {
+  it("start on their first account, never a default server; other labs where the backend says", () => {
     const hosts = [host("esxi", "vmware_esxi"), host("a", "aws"), host("b", "aws")];
-    expect(initialTarget(cloud, hosts, "esxi", false)).toEqual({ kind: "host", id: "a" });
-    expect(initialTarget(cloud, [host("esxi", "vmware_esxi")], "esxi", false)).toEqual({ kind: "local" });
+    const onEsxi = { host: "esxi", provider: null, perMachineVm: false };
+    expect(initialTarget(cloud, hosts, onEsxi)).toEqual({ kind: "host", id: "a" });
+    expect(initialTarget(cloud, [host("esxi", "vmware_esxi")], onEsxi)).toEqual({ kind: "local" });
     const vm = rt("VM", ["vmware_esxi"]);
-    expect(initialTarget(vm, hosts, "esxi", false)).toEqual({ kind: "host", id: "esxi" });
-    expect(initialTarget(vm, hosts, "esxi", true)).toEqual({ kind: "local" });
+    expect(initialTarget(vm, hosts, onEsxi)).toEqual({ kind: "host", id: "esxi" });
+    expect(initialTarget(vm, hosts, { host: null, provider: "virtualbox", perMachineVm: false })).toEqual({ kind: "local" });
+    // Here until the backend answers.
+    expect(initialTarget(vm, hosts, null)).toEqual({ kind: "local" });
+    // A container lab last run in a VM here, or as one VM per machine: there again, in that form.
+    const web = rt("DOCKER", ["docker"]);
+    expect(initialTarget(web, hosts, { host: null, provider: "utm", perMachineVm: false })).toEqual({ kind: "local-vm", provider: "utm" });
+    expect(initialTarget(web, hosts, { host: null, provider: "qemu", perMachineVm: true })).toEqual({ kind: "local-vms", provider: "qemu" });
+    // A server since removed: here.
+    expect(initialTarget(web, [], onEsxi)).toEqual({ kind: "local" });
   });
 
   it("have no machines, attack box, pause or setup to re-run", () => {

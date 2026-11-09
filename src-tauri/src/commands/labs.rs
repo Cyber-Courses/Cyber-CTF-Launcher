@@ -16,7 +16,7 @@ use crate::platform::AppDirs;
 use crate::runtime::attack_machine::AttackStatus;
 use crate::runtime::paths::{lab_dir, local_runtime};
 use crate::runtime::providers::Provider;
-use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, lab, status, stop_lab, terminal_launch};
+use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, lab, start_place, status, stop_lab, terminal_launch};
 
 /// Starts a lab, the deploy's log sent on `logs` (see [`labs::launch_job`]).
 #[tauri::command]
@@ -147,20 +147,21 @@ pub async fn lab_requirements(app: AppHandle, id: String, repository: String, co
     Ok(lab::requirements(&spec))
 }
 
-/// The saved server lab `id`, declared `runtime`, starts on when no place is picked
-/// ([`labs::default_host`]), from its spec at the catalogue's pinned commit; none: here.
+/// Where lab `id`, declared `runtime`, starts when no place is picked
+/// ([`start_place::default_place`]: where it last ran, else a ready hypervisor here for a VM lab,
+/// else the default server), from its spec at the catalogue's pinned commit.
 #[tauri::command]
-pub async fn lab_default_host(app: AppHandle, id: String, runtime: Runtime, repository: String, commit: String) -> Result<Option<String>> {
-    labs::default_host(&AppDirs::from(&app), &id, runtime, &repository, &commit).await
+pub async fn lab_default_place(app: AppHandle, id: String, runtime: Runtime, repository: String, commit: String) -> Result<start_place::StartPlace> {
+    start_place::default_place(&AppDirs::from(&app), &id, runtime, &repository, &commit).await
 }
 
-/// The kinds of server (ESXi, Proxmox) lab `id`, declared `runtime`, runs on, from its spec at
-/// the catalogue's pinned commit: the same rule as [`labs::default_host`]'s, for the launch
-/// picker's saved servers.
+/// Every way lab `id`, declared `runtime`, can start ([`lab::run_options`]): per form, the
+/// hypervisors, servers and clouds its spec at the catalogue's pinned commit runs on, each with
+/// its launch path's badge, and where Isoloom refuses it. What the launch picker offers.
 #[tauri::command]
-pub async fn lab_servers(app: AppHandle, id: String, runtime: Runtime, repository: String, commit: String) -> Result<Vec<Provider>> {
-    let spec = lab::spec_at(&AppDirs::from(&app), &id, &repository, &commit).await?;
-    Ok(lab::servers_for(&spec, runtime))
+pub async fn lab_run_options(app: AppHandle, id: String, runtime: Runtime, repository: String, commit: String) -> Result<lab::RunOptions> {
+    let lab = lab::lab_at(&AppDirs::from(&app), &id, &repository, &commit).await?;
+    Ok(lab::run_options(&lab, runtime))
 }
 
 /// The observers a lab, declared `runtime`, puts beside itself (`tools:` in its spec), at their
@@ -183,13 +184,6 @@ pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<V
 #[tauri::command]
 pub async fn running_labs(app: AppHandle) -> Vec<String> {
     discover::running_lab_ids(&AppDirs::from(&app)).await
-}
-
-/// How far each launch path has been proven, from Isoloom's tier evidence: the Beta/Experimental
-/// badge the launch picker shows (data-driven, no hardcoded list).
-#[tauri::command]
-pub fn run_tiers() -> Vec<crate::runtime::RunTier> {
-    crate::runtime::tiers::run_tiers()
 }
 
 /// Runs a lab's exploitability check: does the intended exploit path still work? Lets a
@@ -302,8 +296,8 @@ pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> R
 mod tests {
     use super::{AttachPick, channel_log, check_image, valid_machine_name};
     use super::{
-        attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_default_host, lab_launch, lab_launch_local, lab_park,
-        lab_provision, lab_resume, lab_servers, lab_status, lab_stop, lab_tools, running_labs,
+        attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_default_place, lab_launch, lab_launch_local, lab_park,
+        lab_provision, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools, running_labs,
     };
     use crate::platform::exec::fake::Tools;
     use crate::runtime::{Park, Runtime, providers::Provider, server};
@@ -362,8 +356,9 @@ mod tests {
         })
         .unwrap();
         let sha = "0123456789abcdef0123456789abcdef01234567".to_string();
-        let host = lab_default_host(t.handle().clone(), "web".into(), Runtime::Docker, "CyberCTF/web".into(), sha).await.unwrap();
-        assert_eq!(host, None);
+        // Never run: on Docker here, its spec not even read.
+        let place = lab_default_place(t.handle().clone(), "web".into(), Runtime::Docker, "CyberCTF/web".into(), sha).await.unwrap();
+        assert_eq!(place, crate::runtime::start_place::StartPlace::default());
     }
 
     #[tokio::test]
@@ -374,8 +369,9 @@ mod tests {
         let dir = t.lab("ad", &[("isoloom.yml", vms)]);
         std::fs::write(dir.join(".cyberctf-commit"), sha).unwrap();
         // The installed copy at that commit is read: no download.
-        let servers = lab_servers(t.handle().clone(), "ad".into(), Runtime::Vm, "CyberCTF/ad".into(), sha.into()).await.unwrap();
-        assert_eq!(servers, [Provider::VmwareEsxi], "its targets leave Proxmox out");
+        let options = lab_run_options(t.handle().clone(), "ad".into(), Runtime::Vm, "CyberCTF/ad".into(), sha.into()).await.unwrap();
+        let servers: Vec<_> = options.servers.iter().map(|p| (p.provider, p.target.as_str())).collect();
+        assert_eq!(servers, [(Some(Provider::VmwareEsxi), "vagrant")], "its targets leave Proxmox out");
     }
 
     #[tokio::test]
