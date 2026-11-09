@@ -157,7 +157,8 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
     // can't be taken fails the job: running unlocked is what it is there to prevent.
     let held = hold_lab(app, &job.lab_id).await.map(Some);
     let result = match held {
-        Ok(_lab) => execute(app, job, &log).await,
+        // Boxed: every operation's future is in it, too large to keep on the caller's stack.
+        Ok(_lab) => Box::pin(execute(app, job, &log)).await,
         Err(e) => Err(e),
     };
     conclude(&f, &result, launch, log)
