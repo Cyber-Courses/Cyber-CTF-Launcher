@@ -214,12 +214,12 @@ pub(crate) fn box_shell_command(dirs: &AppDirs, id: &str, runtime: Runtime) -> R
 /// run. Boxed: the runner's
 /// status future is large, and awaiting it inline would make every caller's future large too.
 #[tauri::command]
-pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime, network: Option<String>) -> Result<AttackStatus> {
+pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime) -> Result<AttackStatus> {
     Box::pin(async move {
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
         match attack_machine::locate(&dirs, &dir, &id, runtime)? {
-            Some(placed) => placed.status(network.as_deref()).await,
+            Some(placed) => placed.status().await,
             None => Ok(AttackStatus::default()),
         }
     })
@@ -373,7 +373,7 @@ mod tests {
         assert!(lab_tools(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(lab_check(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(lab_attack_shell(app(), "gone".into(), Runtime::Docker).await.is_err());
-        assert!(attack_box_status(app(), "gone".into(), Runtime::Docker, None).await.is_err());
+        assert!(attack_box_status(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(kali_attach_fails(app(), "gone", channel(s.clone())).await);
         assert!(attack_box_detach(app(), "gone".into(), Runtime::Docker, channel(s.clone())).await.is_err());
         // Installed, but a machine name or image that could reach a command line is refused.
@@ -398,7 +398,7 @@ mod tests {
         // Installed but never started: the run has no manifest, so the box reads as down, with no
         // runtime touched (everything goes through the runner, which has nothing to report yet).
         t.lab("web", &[("isoloom.yml", SPEC)]);
-        let st = attack_box_status(t.handle().clone(), "web".into(), Runtime::Docker, None).await.unwrap();
+        let st = attack_box_status(t.handle().clone(), "web".into(), Runtime::Docker).await.unwrap();
         assert!(st.reachable && !st.running && st.ip.is_empty());
         assert_eq!((st.networks.as_slice(), st.default_network.as_str()), (["lab".to_owned()].as_slice(), "lab"), "what it can join, from the lab's spec");
         // A lab in a cloud account goes to the runner too (its box is a machine added to the
@@ -407,7 +407,7 @@ mod tests {
         let dir = t.lab("srv", &[]);
         server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
         let s = sink();
-        assert!(attack_box_status(t.handle().clone(), "srv".into(), Runtime::Docker, None).await.is_err());
+        assert!(attack_box_status(t.handle().clone(), "srv".into(), Runtime::Docker).await.is_err());
         assert!(kali_attach_fails(t.handle().clone(), "srv", channel(s.clone())).await);
         assert!(!crate::runtime::attack_machine::added(&dir).unwrap(), "the lab is as published");
         attack_box_detach(t.handle().clone(), "srv".into(), Runtime::Docker, channel(s.clone())).await.unwrap();
@@ -443,7 +443,7 @@ mod tests {
     #[tokio::test]
     async fn attack_box_commands_refuse_bad_ids_and_images_before_touching_the_runner() {
         let t = TestApp::new();
-        assert!(attack_box_status(t.handle().clone(), "../x".into(), Runtime::Docker, None).await.is_err());
+        assert!(attack_box_status(t.handle().clone(), "../x".into(), Runtime::Docker).await.is_err());
         let sink = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         t.lab("web", &[("isoloom.yml", SPEC)]);
         assert!(

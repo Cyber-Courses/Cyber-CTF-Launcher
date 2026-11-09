@@ -1,6 +1,6 @@
 //! The learner's attack box as the lab page shows it: the machine the launcher adds to the lab,
-//! read by its name from the run's status like any other machine: whether it runs, its address on
-//! the lab network, and the console into it; beside it, the networks it can join.
+//! read by its name from the run's status like any other machine: whether it runs and its address
+//! on the lab network; beside it, the networks it can join.
 
 use isothrum_runner::{MachineState, Status};
 use serde::Serialize;
@@ -24,26 +24,18 @@ pub struct AttackStatus {
     pub networks: Vec<String>,
     /// The network the box joins when the learner picks none (`attack_machine::Networks`).
     pub default_network: String,
-    /// The command line that opens a shell in the box (shown so the player can also run it).
-    /// Empty when the run has no way into it yet (before the box is added to the lab).
-    pub shell_cmd: String,
     /// Whether the box is a VM: a Kali VM among a lab's VMs, wherever the lab runs.
     pub vm: bool,
 }
 
-/// The box `name` from the run's status: up when it runs, its address on `network` (or its
-/// first), the `shell_cmd` the runner built, and whether it is a VM (`vm`).
-pub(super) fn status_of(status: &Status, name: &str, network: Option<&str>, shell_cmd: String, vm: bool) -> AttackStatus {
+/// The box `name` from the run's status: up when it runs, then its address on the network it
+/// joined (the only one it is on), and whether it is a VM (`vm`).
+pub(super) fn status_of(status: &Status, name: &str, vm: bool) -> AttackStatus {
     let machine = status.machines.iter().find(|m| m.name == name);
     let running = machine.is_some_and(|m| matches!(m.state, MachineState::Running | MachineState::Unhealthy));
-    let addresses = machine.map(|m| &m.addresses);
-    let on = network
-        .filter(|n| addresses.is_some_and(|a| a.contains_key(*n)))
-        .map(str::to_owned)
-        .or_else(|| addresses.and_then(|a| a.keys().next().cloned()))
-        .unwrap_or_default();
-    let ip = addresses.and_then(|a| a.get(&on)).cloned().unwrap_or_default();
-    AttackStatus { running, ip: if running { ip } else { String::new() }, lab_network: on, shell_cmd, vm, ..AttackStatus::default() }
+    let joined = machine.filter(|_| running).and_then(|m| m.addresses.iter().next());
+    let (lab_network, ip) = joined.map(|(network, ip)| (network.clone(), ip.clone())).unwrap_or_default();
+    AttackStatus { running, ip, lab_network, vm, ..AttackStatus::default() }
 }
 
 #[cfg(test)]
@@ -69,12 +61,10 @@ mod tests {
 
     #[test]
     fn the_box_is_found_by_its_name_down_until_it_runs() {
-        let shell = "VAGRANT_DOTFILE_PATH=/runs/t/vagrant vagrant ssh kali".to_owned();
-        let down = status_of(&vm_lab("absent"), "kali", None, shell.clone(), true);
-        assert_eq!((down.running, down.ip.as_str()), (false, ""));
-        assert_eq!(down.shell_cmd, shell, "the shell command is known before the box is up");
-        let up = status_of(&vm_lab("running"), "kali", None, shell, true);
+        let down = status_of(&vm_lab("absent"), "kali", true);
+        assert_eq!((down.running, down.ip.as_str(), down.lab_network.as_str()), (false, "", ""), "no address nor network until it runs");
+        let up = status_of(&vm_lab("running"), "kali", true);
         assert_eq!((up.running, up.ip.as_str(), up.lab_network.as_str()), (true, "10.61.0.252", "lab"));
-        assert!(!status_of(&vm_lab("running"), "nobody", None, String::new(), false).running, "no such machine: no box");
+        assert!(!status_of(&vm_lab("running"), "nobody", false).running, "no such machine: no box");
     }
 }

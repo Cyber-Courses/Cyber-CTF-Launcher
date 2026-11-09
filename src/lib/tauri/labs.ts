@@ -81,9 +81,8 @@ export const labTools = (id: string, runtime: Runtime) => invoke<LabTool[]>("lab
 export const labCheck = (id: string, runtime: Runtime) => invoke<LabCheck>("lab_check", { id, runtime });
 
 /** The lab's attack box (a machine the launcher adds to the lab) as the runner reports it, and
- *  the lab networks it can join (`network`: the one the box is on, or null to read its first).
- *  Known before the box is up. */
-export const attackBoxStatus = (id: string, runtime: Runtime, network: string | null) => invoke<AttackStatus>("attack_box_status", { id, runtime, network });
+ *  the lab networks it can join. Known before the box is up. */
+export const attackBoxStatus = (id: string, runtime: Runtime) => invoke<AttackStatus>("attack_box_status", { id, runtime });
 
 /** Adds the attack box to the running lab as one of its machines, on `network` (null: the seat the
  *  lab declares, else its first network), from `image` when it is a container (null: the

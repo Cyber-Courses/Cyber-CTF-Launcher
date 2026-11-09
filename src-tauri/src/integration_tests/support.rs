@@ -153,7 +153,7 @@ pub(crate) async fn add_box(placed: &Placed, dirs: &AppDirs, image: &str, l: &mu
 /// the box's own name in the lab ([`attack_machine::name`]: the seat the lab declares, else
 /// [`attack_machine::NAME`]); `when` says at which point of the test.
 pub(crate) async fn box_reaches(placed: &Placed, target: &str, when: &str, f: &mut Vec<String>) {
-    match placed.status(None).await {
+    match placed.status().await {
         Ok(s) => check(s.running && !s.ip.is_empty(), format!("the attack box runs, with an address, {when} ({} on {})", s.ip, s.lab_network), f),
         Err(err) => check(false, format!("the attack box's status reads, {when}: {err}"), f),
     }
@@ -174,7 +174,7 @@ pub(crate) async fn box_reaches(placed: &Placed, target: &str, when: &str, f: &m
 pub(crate) async fn remove_box(placed: &Placed, dirs: &AppDirs, l: &mut impl FnMut(String), f: &mut Vec<String>) {
     let removed = placed.remove(dirs, l).await;
     check(removed.is_ok(), format!("the attack box is taken out ({:?})", removed.err()), f);
-    match placed.status(None).await {
+    match placed.status().await {
         Ok(s) => check(!s.running, "the attack box is gone".into(), f),
         Err(err) => check(false, format!("the attack box's status reads: {err}"), f),
     }

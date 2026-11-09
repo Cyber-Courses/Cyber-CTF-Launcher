@@ -35,7 +35,7 @@ export function useAttackBoxAutoStart(ops: Map<string, ActiveOperation>, enabled
         .then(async (s) => {
           // A failed start leaves nothing running.
           if (!s.running) return;
-          const box = await attackBoxStatus(id, runtime, null);
+          const box = await attackBoxStatus(id, runtime);
           if (box.reachable && !box.running) await attachAttackBox(id, runtime, null);
         })
         .catch(tell(translate("labs.attackBox.autoAttachFailed")));

@@ -60,7 +60,6 @@ const remoteBox = (up: boolean) => ({
   labNetwork: up ? "lab" : "",
   networks: ["lab"],
   defaultNetwork: "lab",
-  shellCmd: "ssh -t isoloom@10.0.0.9 sudo docker exec -it x sh",
   vm: false,
 });
 

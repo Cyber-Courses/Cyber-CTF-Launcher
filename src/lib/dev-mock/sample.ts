@@ -132,7 +132,6 @@ const attackBox = () => ({
   labNetwork: "default",
   networks: ["default"],
   defaultNetwork: "default",
-  shellCmd: "docker compose exec kali bash",
   vm: false,
 });
 

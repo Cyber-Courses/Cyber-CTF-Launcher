@@ -32,11 +32,6 @@ networks: Array<string>,
  */
 defaultNetwork: string, 
 /**
- * The command line that opens a shell in the box (shown so the player can also run it).
- * Empty when the run has no way into it yet (before the box is added to the lab).
- */
-shellCmd: string, 
-/**
  * Whether the box is a VM: a Kali VM among a lab's VMs, wherever the lab runs.
  */
 vm: boolean, };

@@ -13,9 +13,8 @@ import { useRunLog } from "@/lib/use-run-log";
 
 /** The attack box's last status: read now and polled every 5 s while the lab is up (`active`)
  *  and the backend reaches a run of it to put a box in (its status's `reachable`: polling stops at
- *  the first read that says no), dropped when the lab starts or ends an operation. `network` is
- *  the one the box should report its address on (null: its first). */
-function useAttackBoxStatus(labId: string, runtime: Runtime, active: boolean, network: string | null) {
+ *  the first read that says no), dropped when the lab starts or ends an operation. */
+function useAttackBoxStatus(labId: string, runtime: Runtime, active: boolean) {
   const [status, setStatus] = useState<AttackStatus | null>(null);
   // A status read before an operation says nothing about after it (a detach takes the box out),
   // so drop it: the auto-attach then waits for a fresh read instead of acting on it.
@@ -30,11 +29,11 @@ function useAttackBoxStatus(labId: string, runtime: Runtime, active: boolean, ne
   const begin = useLatest();
   const read = useCallback(() => {
     const isLatest = begin();
-    return attackBoxStatus(labId, runtime, network).then((s) => {
+    return attackBoxStatus(labId, runtime).then((s) => {
       // The same answer again keeps the current object: the page doesn't re-render.
       if (isLatest()) setStatus((prev) => (structurallyEqual(prev, s) ? prev : s));
     });
-  }, [labId, runtime, network, begin]);
+  }, [labId, runtime, begin]);
   // A failed read (the runner busy or slow, an emulated lab) says nothing about the box: keep what
   // was last seen rather than flip it to "not started".
   const refresh = useCallback(() => void read().catch(ignore("the box's status is read again in a moment")), [read]);
@@ -114,7 +113,7 @@ export function useAttackBox(
   // The lab network the box joins: the learner's pick (null: the seat the lab declares, else its
   // first network).
   const [network, setNetwork] = useState<string | null>(null);
-  const { status, setStatus, refresh } = useAttackBoxStatus(labId, runtime, active, network);
+  const { status, setStatus, refresh } = useAttackBoxStatus(labId, runtime, active);
   const { busy, log, run } = useAttackBoxRun(refresh);
   // Until the status says, the lab's declared runtime stands in: a VM lab's box is a VM.
   const vm = status?.vm ?? runtime === "VM";

@@ -22,7 +22,6 @@ const box = (p: Partial<AttackStatus> = {}): AttackStatus => ({
   labNetwork: "default",
   networks: ["default"],
   defaultNetwork: "default",
-  shellCmd: "docker compose exec kali bash",
   vm: false,
   ...p,
 });
@@ -42,7 +41,7 @@ describe("useAttackBox", () => {
       initialProps: { running: true },
     });
     await flush();
-    expect(calls.find((c) => c.cmd === "attack_box_status")?.args).toEqual({ id: "ab-poll", runtime: "DOCKER", network: null });
+    expect(calls.find((c) => c.cmd === "attack_box_status")?.args).toEqual({ id: "ab-poll", runtime: "DOCKER" });
     expect(result.current.status?.ip).toBe("10.42.0.9");
     expect(result.current.name).toBe("my/exegol:full");
     act(() => {
@@ -59,6 +58,20 @@ describe("useAttackBox", () => {
     });
     await flush();
     expect(count(calls, "attack_box_status")).toBe(2);
+  });
+
+  it("doesn't read the box again when the learner picks the network it joins", async () => {
+    setAutoAttackBox(false);
+    const calls = installTauri({ attack_box_status: () => box({ networks: ["default", "dmz"] }) });
+    const { result } = renderHook(() => useAttackBox("ab-pick", { running: true }));
+    await flush();
+    expect(count(calls, "attack_box_status")).toBe(1);
+    act(() => {
+      result.current.setNetwork("dmz");
+    });
+    await flush();
+    expect(result.current.network).toBe("dmz");
+    expect(count(calls, "attack_box_status")).toBe(1);
   });
 
   it("stops reading, and never attaches, a box the backend says it can't reach (a lab on an ESXi host)", async () => {
@@ -265,9 +278,9 @@ describe("useAttackBoxAutoStart", () => {
     }
   });
 
-  it("attaches the box wherever the lab runs, before the box exists (no shell command yet)", async () => {
+  it("attaches the box wherever the lab runs, before the box exists", async () => {
     for (const place of ["cloud", "server", "local_vm"] as const) {
-      const calls = installTauri({ lab_status: () => ({ running: true, place, provider: "proxmox" }), attack_box_status: () => box({ shellCmd: "" }) });
+      const calls = installTauri({ lab_status: () => ({ running: true, place, provider: "proxmox" }), attack_box_status: () => box() });
       const { hook } = watch(calls);
       hook.rerender({ ops: new Map() });
       await flush(50);

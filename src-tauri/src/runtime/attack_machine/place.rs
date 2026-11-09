@@ -183,18 +183,13 @@ impl Placed {
         self.host.update(dirs, log).await.map_err(|f| f.error)
     }
 
-    /// The box as the lab page shows it: read by its name from the run's status (down, with no
-    /// shell, before the lab's files exist), with the networks it can join
-    /// ([`super::networks`]).
-    pub(crate) async fn status(&self, network: Option<&str>) -> Result<AttackStatus> {
+    /// The box as the lab page shows it: read by its name from the run's status (down before
+    /// the lab's files exist), with the networks it can join ([`super::networks`]).
+    pub(crate) async fn status(&self) -> Result<AttackStatus> {
         let super::Networks { pickable, default } = super::networks(&self.dir)?;
         let seen = match self.host.run_status().await? {
             None => AttackStatus { vm: self.vm, ..AttackStatus::default() },
-            Some(status) => {
-                let name = super::name(&self.dir)?;
-                let shell = self.host.console(&name).ok().map(|c| c.sh_line()).unwrap_or_default();
-                status_of(&status, &name, network, shell, self.vm)
-            }
+            Some(status) => status_of(&status, &super::name(&self.dir)?, self.vm),
         };
         Ok(AttackStatus { reachable: true, networks: pickable, default_network: default, ..seen })
     }

@@ -64,7 +64,7 @@ try {
         return;
       }
       Promise.all([
-        inv("attack_box_status", { id: v, runtime: "DOCKER", network: null }).then(
+        inv("attack_box_status", { id: v, runtime: "DOCKER" }).then(
           (s) => ["box", s],
           (x) => ["box-err", String(x)],
         ),
