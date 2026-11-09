@@ -198,7 +198,7 @@ impl CloudRun {
     /// module was ever generated (nothing is deployed to check).
     pub(crate) async fn check(&self, place: &CloudPlace) -> Result<Check> {
         if !self.manifest.is_file() {
-            return Ok(view::no_checks());
+            return Ok(Check::default());
         }
         super::checks_of(&self.running()?, &place.options(&[])).await
     }

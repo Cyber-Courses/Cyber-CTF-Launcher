@@ -72,11 +72,6 @@ fn state_word(state: &MachineState) -> String {
     }
 }
 
-/// A lab that declares no checks: nothing to verify.
-pub(super) fn no_checks() -> Check {
-    Check { available: false, ok: false, output: String::new(), results: Vec::new() }
-}
-
 /// The runner's check report, with the runners' output (`lines`, as they printed it).
 pub(super) fn check(report: &CheckReport, lines: &[String]) -> Check {
     // A check its runner never reported is in the report already, failed.

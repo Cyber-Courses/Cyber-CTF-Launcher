@@ -2,7 +2,7 @@
 import type { LabCheckResult } from "./LabCheckResult";
 
 /**
- * Result of a lab's self-verification.
+ * Result of a lab's self-verification; the default is a lab with no checks, nothing to verify.
  */
 export type LabCheck = { 
 /**

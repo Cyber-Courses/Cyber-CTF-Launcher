@@ -15,8 +15,8 @@ pub struct CheckResult {
     pub reason: String,
 }
 
-/// Result of a lab's self-verification.
-#[derive(serde::Serialize, Debug, ts_rs::TS)]
+/// Result of a lab's self-verification; the default is a lab with no checks, nothing to verify.
+#[derive(serde::Serialize, Debug, Default, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabCheck")]
 pub struct Check {

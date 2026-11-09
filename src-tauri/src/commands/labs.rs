@@ -190,7 +190,7 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
     match attack_machine::locate(&dirs, &dir, &id, runtime)? {
         Some(placed) => placed.host.check().await,
         // A cloud-services lab started here: nothing of it to check.
-        None => Ok(docker::Check { available: false, ok: false, output: String::new(), results: Vec::new() }),
+        None => Ok(docker::Check::default()),
     }
 }
 

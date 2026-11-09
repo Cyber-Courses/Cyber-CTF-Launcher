@@ -318,7 +318,7 @@ async fn up_with(lab: &Running<'_>, opts: &RunOptions, log: &mut impl FnMut(Stri
 /// Runs `lab`'s checks; not available when it declares none (nothing runs then).
 async fn checks_of(lab: &Running<'_>, opts: &RunOptions) -> Result<Check> {
     if lab.manifest().checks.runners.is_empty() {
-        return Ok(view::no_checks());
+        return Ok(Check::default());
     }
     let mut output = Vec::new();
     let (sink, lines) = progress::channel();
