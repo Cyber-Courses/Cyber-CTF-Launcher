@@ -11,6 +11,7 @@
 //! - `profile`, `input`: a saved host and the setup form that makes one.
 //! - `store`, `secrets`: where profiles and their secrets are kept.
 //! - `checks`, `reachability`, `cloud_checks`, `budget`: "Test connection" and the spend limit.
+//! - `hosts`: the saved hosts' rules: the default, what moves a host, the labs on each.
 //! - `contract`: what a launch is given to reach its host; `gcp`: the GCP labs project.
 
 pub(crate) mod budget;
@@ -18,6 +19,7 @@ pub(crate) mod checks;
 mod cloud_checks;
 mod contract;
 pub mod gcp;
+pub(crate) mod hosts;
 pub(crate) mod input;
 mod kind;
 pub(crate) mod profile;

@@ -1,10 +1,9 @@
 //! The Server screen's Tauri commands: list, save, remove and test hosts, what each row shows
 //! (running labs, capacity), an AWS account's month-to-date spend, and the host self-test. Each is
-//! a thin adapter over the `crate::runtime::server` domain; the filesystem-only helpers that read
-//! each lab's host marker (which need the app's data folder) live here with them.
+//! a thin adapter over the `crate::runtime::server` domain (its rules on the saved hosts are
+//! `server::hosts`').
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -13,7 +12,7 @@ use tauri::Manager;
 use tauri::ipc::Channel;
 
 use crate::AppHandle;
-use crate::error::{Code, Error, Result};
+use crate::error::{Error, Result};
 use crate::machine::selftest::Event;
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
@@ -23,12 +22,12 @@ use crate::runtime::server::SshKeySignIn;
 use crate::runtime::server::budget::month_to_date_cost;
 use crate::runtime::server::checks::{Check, TestResult};
 use crate::runtime::server::gcp;
+use crate::runtime::server::hosts::{keeps_placement, labs_on, no_labs_running, put_host, remove_host, running_by_host, set_default_host};
 use crate::runtime::server::input::{HostInput, valid_id};
-use crate::runtime::server::marked_host;
 use crate::runtime::server::profile::{HostProfile, new_id};
 use crate::runtime::server::reachability::test_host;
 use crate::runtime::server::secrets::{delete_secret, get_secret, host_secret, set_secret};
-use crate::runtime::server::store::{Store, find, load, load_host, update};
+use crate::runtime::server::store::{Store, load, load_host, update};
 
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -45,7 +44,7 @@ pub fn server_list(app: AppHandle) -> Result<HostList> {
 }
 
 /// Creates or updates a host. The first host saved becomes the default. A host labs are still
-/// deployed on keeps its place (see `keeps_placement`). A password or token save keeps no SSH
+/// deployed on keeps its place (see `hosts::keeps_placement`). A password or token save keeps no SSH
 /// key sign-in (see `server_save_ssh_key`), but a re-save of an SSH-key setup whose token is
 /// already made, with the same key, keeps it.
 #[tauri::command]
@@ -114,8 +113,12 @@ pub fn server_default_ssh_key(app: AppHandle) -> Option<String> {
 /// Saves a checked form: under its id, its secret in the keychain.
 fn save(app: &AppHandle, mut input: HostInput) -> Result<HostProfile> {
     let checked = input.check()?;
-    let deployed = input.id.as_deref().map_or(0, |id| labs_on(app, id));
-    update(&AppDirs::from(app), |store| {
+    let dirs = AppDirs::from(app);
+    let deployed = match input.id.as_deref() {
+        Some(id) => labs_on(&dirs, id)?,
+        None => 0,
+    };
+    update(&dirs, |store| {
         let id = save_id(store, input.id.take())?;
         let gcp_project = kept_gcp_project(store, &id, input.provider, &checked.username);
         let password = input.password.take();
@@ -160,25 +163,6 @@ async fn ssh_key_checks(dirs: &AppDirs, host: &HostProfile, key: &SshKeySignIn) 
     checks
 }
 
-/// Refuses to move a host (another provider, region or address, port, node, or the account labs
-/// are created in) while `deployed` labs still have something on it: a stop would then look for
-/// them where they aren't, find nothing, and leave them running (and, on a cloud, billing).
-/// Everything else (its name, credentials, size, auto-stop, budget) can change.
-fn keeps_placement(saved: &HostProfile, edited: &HostProfile, deployed: usize) -> Result<()> {
-    let (before, after) = (saved.placement(), edited.placement());
-    let mut changed: Vec<&str> = Vec::new();
-    for (name, _) in before.iter().filter(|f| !after.contains(f)).chain(after.iter().filter(|f| !before.contains(f))) {
-        if !changed.contains(name) {
-            changed.push(name);
-        }
-    }
-    if deployed == 0 || changed.is_empty() {
-        return Ok(());
-    }
-    let (count, fields) = (deployed as u64, changed.join(", "));
-    Err(Error::coded(if saved.provider.is_cloud() { Code::PlacementLockedAccount { count, fields } } else { Code::PlacementLockedHost { count, fields } }))
-}
-
 /// The id a save writes under: an existing host's (edit), or a new one.
 fn save_id(store: &Store, id: Option<String>) -> Result<String> {
     match id {
@@ -206,69 +190,14 @@ fn new_password(password: Option<String>) -> Result<Option<String>> {
     }
 }
 
-/// Adds or replaces a host; the first server saved becomes the default.
-fn put_host(store: &mut Store, profile: HostProfile) {
-    let id = profile.id.clone();
-    let server = !profile.provider.is_cloud();
-    match store.hosts.iter_mut().find(|h| h.id == id) {
-        Some(existing) => *existing = profile,
-        None => store.hosts.push(profile),
-    }
-    if store.default.is_none() && server {
-        store.default = Some(id);
-    }
-}
-
-/// The host id of each installed lab's marker (trimmed; empty when the marker is). A lab leaves
-/// a `.cyberctf-host` marker in its directory while it runs on a host (written on start,
-/// cleared on stop), so this is filesystem-only: no host calls, no credentials.
-fn lab_markers(app: &AppHandle) -> Vec<String> {
-    let Ok(labs) = app.path().app_data_dir().map(|d| d.join("labs")) else { return Vec::new() };
-    markers_in(&labs)
-}
-
-/// `lab_markers` for the labs folder `labs`.
-fn markers_in(labs: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(labs) else { return Vec::new() };
-    entries.flatten().filter_map(|e| marked_host(&e.path())).collect()
-}
-
-/// Terraform deployments still holding resources on host `id` (under the app data folder
-/// `base`) of labs no longer marked as running there: their state can only be destroyed with
-/// that host's credentials.
-fn leftovers_on(base: &Path, id: &str) -> usize {
-    let paths = crate::runtime::paths::deployed_ids(base);
-    paths
-        .iter()
-        .filter(|lab| marked_host(&base.join("labs").join(lab)).as_deref() != Some(id))
-        .flat_map(|lab| crate::runtime::paths::deployment_states(base, lab))
-        .filter(|(_, state)| crate::runtime::paths::recorded_host(state).as_deref() == Some(id) && crate::runtime::terraform::deployed(state))
-        .count()
-}
-
-/// Lab counts per host id (markers with no id aren't counted).
-fn count_by_host(markers: &[String]) -> HashMap<String, u32> {
-    let mut counts: HashMap<String, u32> = HashMap::new();
-    for id in markers.iter().filter(|id| !id.is_empty()) {
-        *counts.entry(id.clone()).or_default() += 1;
-    }
-    counts
-}
-
-/// How many labs still have something on host `id`: marked as running there, or a Terraform
-/// state left there that holds resources.
-fn labs_on(app: &AppHandle, id: &str) -> usize {
-    let left = app.path().app_data_dir().map_or(0, |base| leftovers_on(&base, id));
-    lab_markers(app).iter().filter(|m| *m == id).count() + left
-}
-
 #[tauri::command]
 pub fn server_remove(app: AppHandle, id: &str) -> Result<()> {
     // Don't strand running labs: this host holds the credentials and state needed to stop and
     // destroy its labs. Removing it mid-run would leave them unstoppable from the app, and a
     // cloud lab would keep billing with no way left to tear it down.
-    no_labs_running(labs_on(&app, id))?;
-    update(&AppDirs::from(&app), |store| {
+    let dirs = AppDirs::from(&app);
+    no_labs_running(labs_on(&dirs, id)?)?;
+    update(&dirs, |store| {
         remove_host(store, id);
         Ok(())
     })?;
@@ -276,38 +205,10 @@ pub fn server_remove(app: AppHandle, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Refuses to remove a host `running` labs still run on.
-fn no_labs_running(running: usize) -> Result<()> {
-    if running > 0 {
-        return Err(Error::coded(Code::HostHasLabs { count: running as u64 }));
-    }
-    Ok(())
-}
-
-/// Drops a host; when it was the default, another server (never a cloud account) takes over.
-fn remove_host(store: &mut Store, id: &str) {
-    store.hosts.retain(|h| h.id != id);
-    if store.default.as_deref() == Some(id) {
-        // The default is a *server* to run VM labs on; a cloud account must never become it.
-        store.default = store.hosts.iter().find(|h| !h.provider.is_cloud()).map(|h| h.id.clone());
-    }
-}
-
 /// Sets (or clears, with None) the host VM labs run on by default.
 #[tauri::command]
 pub fn server_set_default(app: AppHandle, id: Option<String>) -> Result<()> {
     update(&AppDirs::from(&app), |store| set_default_host(store, id))
-}
-
-/// `server_set_default` on a loaded store.
-fn set_default_host(store: &mut Store, id: Option<String>) -> Result<()> {
-    if let Some(id) = &id
-        && find(store, id)?.provider.is_cloud()
-    {
-        return Err(Error::Invalid("a cloud account can't be the default host".into()));
-    }
-    store.default = id;
-    Ok(())
 }
 
 static STARTED: OnceLock<Instant> = OnceLock::new();
@@ -369,11 +270,11 @@ pub async fn server_public_key(app: AppHandle) -> Result<String> {
     Ok(crate::runtime::ssh::ensure_key(&AppDirs::from(&app)).await?.1)
 }
 
-/// How many installed labs are currently running on each host, keyed by host id (see
-/// `lab_markers`).
+/// How many installed labs are currently running on each host, keyed by host id (each lab's
+/// host marker).
 #[tauri::command]
 pub fn server_running_labs(app: AppHandle) -> HashMap<String, u32> {
-    count_by_host(&lab_markers(&app))
+    running_by_host(&AppDirs::from(&app))
 }
 
 /// A host's hardware headroom, shown on its row so you can see what it can run.
@@ -433,17 +334,11 @@ pub async fn server_selftest(app: AppHandle, id: String, events: Channel<Event>)
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::runtime::server::HOST_MARKER;
-    use crate::runtime::server::profile::tests::profile;
-
-    fn host(id: &str, provider: Provider) -> HostProfile {
-        HostProfile { id: id.into(), ..profile(provider) }
-    }
-
-    fn store(hosts: Vec<HostProfile>, default: Option<&str>) -> Store {
-        Store { default: default.map(str::to_string), hosts }
-    }
+    use crate::runtime::server::hosts::tests::{host, store};
 
     #[tokio::test]
     async fn hosts_are_saved_listed_tested_and_removed_through_the_commands() {
@@ -622,29 +517,6 @@ mod tests {
     }
 
     #[test]
-    fn a_host_moves_only_with_nothing_on_it_and_renewed_keys_never_move_it() {
-        let aws = |region: &str, key: &str| HostProfile { host: region.into(), username: key.into(), ..host("a1", Provider::Aws) };
-        let (now, keys) = (aws("eu-west-3", "AKIAOLD"), aws("eu-west-3", "AKIANEW"));
-        // A new access key (the old one deleted or expired) is how to sign in, not where.
-        keeps_placement(&now, &keys, 2).unwrap();
-        let err = keeps_placement(&now, &aws("us-east-1", "AKIAOLD"), 2).unwrap_err().to_string();
-        assert_eq!(err, "2 labs are still on this account: stop them before changing its address or region.");
-        keeps_placement(&now, &aws("us-east-1", "AKIAOLD"), 0).unwrap();
-        // A server pointed at another machine or node, or turned into another provider.
-        let pve = host("p1", Provider::Proxmox);
-        let err = keeps_placement(&pve, &HostProfile { node: Some("pve2".into()), host: "10.0.0.9".into(), ..pve.clone() }, 1).unwrap_err().to_string();
-        assert_eq!(err, "1 lab is still on this host: stop it before changing its address or region, node or organization.");
-        assert!(keeps_placement(&pve, &HostProfile { provider: Provider::VmwareEsxi, ..pve.clone() }, 1).unwrap_err().to_string().contains("provider"));
-        keeps_placement(&pve, &HostProfile { username: "root@pam!token".into(), datastore: Some("other".into()), ..pve.clone() }, 1).unwrap();
-        // An AWS CLI account switched to another profile (likely another AWS account), or from
-        // stored keys to the CLI.
-        let cli = HostProfile { use_cli_creds: true, aws_profile: Some("labs".into()), ..host("a2", Provider::Aws) };
-        let err = keeps_placement(&cli, &HostProfile { aws_profile: Some("personal".into()), ..cli.clone() }, 1).unwrap_err().to_string();
-        assert!(err.ends_with("changing its AWS CLI profile."), "{err}");
-        assert!(keeps_placement(&HostProfile { use_cli_creds: false, aws_profile: None, ..cli.clone() }, &cli, 1).is_err());
-    }
-
-    #[test]
     fn saves_edit_known_hosts_or_make_new_ones() {
         let s = store(vec![host("ab12", Provider::Proxmox)], None);
         assert_eq!(save_id(&s, Some("ab12".into())).unwrap(), "ab12");
@@ -673,80 +545,6 @@ mod tests {
         assert!(new_password(Some("a\0b".into())).is_err());
         assert!(new_password(Some("x".repeat(1025))).is_err());
         assert!(new_password(Some("x".repeat(1024))).is_ok());
-    }
-
-    #[test]
-    fn the_first_server_saved_becomes_the_default_but_never_a_cloud() {
-        let mut s = store(Vec::new(), None);
-        put_host(&mut s, host("aws1", Provider::Aws));
-        assert_eq!(s.default, None);
-        put_host(&mut s, host("pve1", Provider::Proxmox));
-        assert_eq!(s.default.as_deref(), Some("pve1"));
-        put_host(&mut s, host("esx1", Provider::VmwareEsxi));
-        assert_eq!(s.default.as_deref(), Some("pve1"));
-        // Saving again replaces the entry instead of adding one.
-        put_host(&mut s, HostProfile { name: "Renamed".into(), ..host("pve1", Provider::Proxmox) });
-        assert_eq!(s.hosts.len(), 3);
-        assert_eq!(s.hosts.iter().find(|h| h.id == "pve1").unwrap().name, "Renamed");
-    }
-
-    #[test]
-    fn removing_the_default_hands_it_to_another_server() {
-        let mut s = store(vec![host("aws1", Provider::Aws), host("pve1", Provider::Proxmox), host("esx1", Provider::VmwareEsxi)], Some("pve1"));
-        remove_host(&mut s, "pve1");
-        assert_eq!(s.default.as_deref(), Some("esx1"));
-        assert_eq!(s.hosts.len(), 2);
-        // Removing a non-default leaves the default alone.
-        remove_host(&mut s, "aws1");
-        assert_eq!(s.default.as_deref(), Some("esx1"));
-        // No server left: no default (the cloud account never takes it).
-        let mut s = store(vec![host("aws1", Provider::Aws), host("esx1", Provider::VmwareEsxi)], Some("esx1"));
-        remove_host(&mut s, "esx1");
-        assert_eq!(s.default, None);
-    }
-
-    #[test]
-    fn hosts_with_running_labs_are_not_removed() {
-        assert!(no_labs_running(0).is_ok());
-        assert_eq!(no_labs_running(1).unwrap_err().to_string(), "1 lab still running on this host. Stop it before removing the host.");
-        assert_eq!(no_labs_running(3).unwrap_err().to_string(), "3 labs still running on this host. Stop them before removing the host.");
-    }
-
-    #[test]
-    fn only_a_saved_server_can_be_the_default() {
-        let mut s = store(vec![host("aws1", Provider::Aws), host("pve1", Provider::Proxmox)], None);
-        set_default_host(&mut s, Some("pve1".into())).unwrap();
-        assert_eq!(s.default.as_deref(), Some("pve1"));
-        assert_eq!(set_default_host(&mut s, Some("aws1".into())).unwrap_err().to_string(), "a cloud account can't be the default host");
-        assert!(set_default_host(&mut s, Some("nope".into())).is_err());
-        assert_eq!(s.default.as_deref(), Some("pve1"));
-        set_default_host(&mut s, None).unwrap();
-        assert_eq!(s.default, None);
-    }
-
-    #[test]
-    fn a_deployment_left_on_a_host_keeps_it_from_being_removed() {
-        let base = std::env::temp_dir().join(format!("cyberctf-leftovers-{}", rand::random::<u32>()));
-        let deploy = |lab: &str, host: &str, marker: Option<&str>| {
-            let state = base.join("deployments").join(lab).join("aws");
-            std::fs::create_dir_all(&state).unwrap();
-            std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}}}"#).unwrap();
-            std::fs::write(state.join("host"), host).unwrap();
-            std::fs::create_dir_all(base.join("labs").join(lab)).unwrap();
-            if let Some(m) = marker {
-                std::fs::write(base.join("labs").join(lab).join(HOST_MARKER), m).unwrap();
-            }
-        };
-        assert_eq!(leftovers_on(&base, "aws1"), 0);
-        // Still marked as running there: counted by its marker already.
-        deploy("web-1", "aws1", Some("aws1"));
-        assert_eq!(leftovers_on(&base, "aws1"), 0);
-        // Moved elsewhere, its AWS state left behind.
-        deploy("db-1", "aws1", Some("pve1"));
-        deploy("api-1", "aws2", None);
-        assert_eq!(leftovers_on(&base, "aws1"), 1);
-        assert_eq!(leftovers_on(&base, "aws2"), 1);
-        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
@@ -787,23 +585,6 @@ mod tests {
     }
 
     #[test]
-    fn markers_are_read_from_each_lab_folder() {
-        let labs = std::env::temp_dir().join(format!("cyberctf-markers-{}", rand::random::<u32>()));
-        assert_eq!(markers_in(&labs), Vec::<String>::new());
-        for (lab, marker) in [("a", Some("pve1\n")), ("b", Some("pve1")), ("c", None), ("d", Some(""))] {
-            std::fs::create_dir_all(labs.join(lab)).unwrap();
-            if let Some(m) = marker {
-                std::fs::write(labs.join(lab).join(HOST_MARKER), m).unwrap();
-            }
-        }
-        let mut markers = markers_in(&labs);
-        markers.sort();
-        assert_eq!(markers, ["", "pve1", "pve1"]);
-        assert_eq!(count_by_host(&markers).get("pve1"), Some(&2));
-        std::fs::remove_dir_all(labs).unwrap();
-    }
-
-    #[test]
     fn capacity_needs_every_figure() {
         let d = serde_json::json!({"cpuinfo": {"cpus": 8}, "memory": {"total": 64, "free": 20}});
         let c = capacity_from(&d).unwrap();
@@ -815,15 +596,6 @@ mod tests {
     fn the_start_is_recent_right_after_marking_it() {
         mark_started();
         assert!(launched_recently());
-    }
-
-    #[test]
-    fn running_labs_count_per_host_and_skip_blank_markers() {
-        let markers: Vec<String> = ["ab", "cd", "ab", ""].iter().map(ToString::to_string).collect();
-        let counts = count_by_host(&markers);
-        assert_eq!(counts.get("ab"), Some(&2));
-        assert_eq!(counts.get("cd"), Some(&1));
-        assert_eq!(counts.len(), 2);
     }
 
     #[tokio::test]

@@ -13,10 +13,13 @@ use crate::app::deploy_worker::{Job, Op};
 use crate::error::{Error, Result};
 use crate::runtime::{self, Runtime, providers::Provider};
 
+mod archive;
 mod launch_env;
 mod offline;
 pub mod operations;
 
+use archive::extract;
+pub(crate) use archive::{recreate_symlink, symlink_target_within_tree};
 use launch_env::{EnvVar, launch_env};
 
 #[derive(Deserialize)]
@@ -60,125 +63,6 @@ pub(crate) fn validate_source(repository: &str, commit: &str) -> Result<()> {
     });
     let commit_ok = commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase());
     if repo_ok && commit_ok { Ok(()) } else { Err(Error::Invalid(format!("refusing to download {repository}@{commit}"))) }
-}
-
-/// Extracts a GitHub tarball (single top-level `<repo>-<sha>/` folder) into
-/// `dest`, rejecting absolute paths, `..` and links.
-fn extract(tarball: &[u8], dest: &Path) -> Result<()> {
-    extract_within(tarball, dest, crate::platform::http::MAX_LAB_UNPACKED)
-}
-
-/// [`extract`], refused before the files would add up to more than `max` bytes.
-fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
-    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(tarball));
-    let mut unpacked: u64 = 0;
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        let kind = entry.header().entry_type();
-        let is_symlink = kind.is_symlink();
-        if !(kind.is_file() || kind.is_dir() || is_symlink) {
-            // Hard links, fifos and devices are not part of a lab's source: left out.
-            continue;
-        }
-        unpacked = unpacked.saturating_add(entry.size());
-        if unpacked > max {
-            return Err(Error::Invalid(format!("the lab archive unpacks to more than {} MB; refused", max / (1024 * 1024))));
-        }
-        let path = entry.path()?.into_owned();
-        // Past a leading `./` (GNU tar's `-C dir .` style), then the top folder GitHub names
-        // `<repo>-<sha>`.
-        let relative: PathBuf = path.components().skip_while(|c| matches!(c, std::path::Component::CurDir)).skip(1).collect();
-        if relative.as_os_str().is_empty() {
-            continue;
-        }
-        if relative.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
-            return Err(Error::Invalid(format!("unsafe path in lab archive: {}", path.display())));
-        }
-        // Windows can't hold every name git can (a trailing space, `aux.c`): said plainly, not
-        // as the file system's "not found" halfway through the lab.
-        if cfg!(windows)
-            && let Some(why) = relative.components().find_map(|c| windows_name_problem(&c.as_os_str().to_string_lossy()))
-        {
-            return Err(Error::Invalid(format!("this lab can't be installed on Windows: its archive holds {}, {why}", path.display())));
-        }
-        let target = dest.join(&relative);
-        if is_symlink {
-            // A lab may rely on an internal symlink (e.g. client/src/contracts -> ../../contracts):
-            // recreate one that stays inside the tree, leave out one that is absolute or climbs out
-            // of it, so a link can never point outside the extracted lab.
-            let link = entry.link_name()?.map(std::borrow::Cow::into_owned).unwrap_or_default();
-            if symlink_target_within_tree(&relative, &link) {
-                if let Some(parent) = target.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                recreate_symlink(&link, &target)?;
-            }
-        } else if kind.is_dir() {
-            std::fs::create_dir_all(&target)?;
-        } else {
-            if let Some(parent) = target.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            entry.unpack(&target)?;
-        }
-    }
-    Ok(())
-}
-
-/// Lexically, does a symlink at `link_rel` (its path relative to the tree root) that points at
-/// `target` resolve to a location still inside the tree? An absolute target, or one that climbs
-/// above the root with `..`, is rejected, so an internal relative link is kept while one that would
-/// escape the extracted lab is left out. Purely lexical: it never touches the file system.
-pub(crate) fn symlink_target_within_tree(link_rel: &Path, target: &Path) -> bool {
-    use std::path::Component;
-    if target.is_absolute() {
-        return false;
-    }
-    // Depth of the link's own folder below the root; each `..` in the target climbs one level, and
-    // climbing above the root (depth already 0) means the target escapes the tree.
-    let mut depth: usize = link_rel.parent().map_or(0, |p| p.components().filter(|c| matches!(c, Component::Normal(_))).count());
-    for c in target.components() {
-        match c {
-            Component::ParentDir => match depth.checked_sub(1) {
-                Some(d) => depth = d,
-                None => return false,
-            },
-            Component::Normal(_) => depth += 1,
-            Component::CurDir => {}
-            // A root or prefix component means an absolute/Windows-rooted target: rejected.
-            _ => return false,
-        }
-    }
-    true
-}
-
-/// Recreates a symlink to `target` at `at`. Off Unix the link is left out (a published lab builds
-/// its image on Linux, where the symlink is what matters), the same as before this was added.
-#[cfg(unix)]
-pub(crate) fn recreate_symlink(target: &Path, at: &Path) -> std::io::Result<()> {
-    std::os::unix::fs::symlink(target, at)
-}
-#[cfg(not(unix))]
-pub(crate) fn recreate_symlink(_target: &Path, _at: &Path) -> std::io::Result<()> {
-    Ok(())
-}
-
-/// Why Windows can't create a file or folder named `name` (None: it can): a name ending in a
-/// space or a dot, a character Windows reserves, or a device name (`CON`, `aux.c`, `LPT1.txt`).
-fn windows_name_problem(name: &str) -> Option<&'static str> {
-    const DEVICES: &[&str] = &["CON", "PRN", "AUX", "NUL"];
-    if name.ends_with([' ', '.']) {
-        return Some("a name ending in a space or a dot");
-    }
-    if name.chars().any(|c| c < ' ' || "<>:\"|?*\\".contains(c)) {
-        return Some("a name with a character Windows reserves");
-    }
-    let stem = name.split('.').next().unwrap_or_default().trim_end().to_ascii_uppercase();
-    let numbered = |prefix: &str| stem.strip_prefix(prefix).is_some_and(|n| n.len() == 1 && n.as_bytes()[0].is_ascii_digit() && n != "0");
-    if DEVICES.contains(&stem.as_str()) || numbered("COM") || numbered("LPT") {
-        return Some("a device name Windows reserves");
-    }
-    None
 }
 
 /// The lab's GitHub tarball at `commit`.
@@ -531,6 +415,7 @@ pub(crate) mod for_tests {
 
 #[cfg(test)]
 mod tests {
+    use super::archive::tests::tarball;
     use super::*;
 
     #[test]
@@ -552,50 +437,6 @@ mod tests {
     /// A release of a container lab from `CyberCTF/invoice`, as `lab_id` at `commit`.
     fn invoice<'a>(lab_id: &'a str, commit: &'a str) -> Release<'a> {
         Release { lab_id, repository: "CyberCTF/invoice", commit, runtime: Runtime::Docker }
-    }
-
-    fn tarball(entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
-        for (path, data) in entries {
-            let mut header = tar::Header::new_gnu();
-            header.set_size(data.len() as u64);
-            header.set_mode(0o644);
-            header.set_entry_type(tar::EntryType::Regular);
-            // Write the raw name so tests can include `..` (append_data refuses it).
-            let name = header.as_old_mut().name.as_mut();
-            name[..path.len()].copy_from_slice(path.as_bytes());
-            header.set_cksum();
-            builder.append(&header, *data).unwrap();
-        }
-        builder.into_inner().unwrap().finish().unwrap()
-    }
-
-    #[test]
-    fn extracts_without_the_top_level_folder() {
-        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
-        extract(&tarball(&[("lab-abc/docker-compose.yml", b"services: {}"), ("lab-abc/evidence/claim.sh", b"#!/bin/sh")]), &dir).unwrap();
-        assert_eq!(std::fs::read_to_string(dir.join("docker-compose.yml")).unwrap(), "services: {}");
-        assert!(dir.join("evidence/claim.sh").is_file());
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn names_windows_cant_hold_are_told_apart() {
-        for bad in ["0 ", "notes.", "aux", "AUX.c", "con.txt", "Lpt1", "com9.log", "a:b", "what?", "tab\there", "x\"y"] {
-            assert!(windows_name_problem(bad).is_some(), "{bad:?}");
-        }
-        for good in ["0", "a b", ".env", "auxiliary.c", "com10", "lpt0", "console", "README.md", "caf\u{e9}"] {
-            assert_eq!(windows_name_problem(good), None, "{good:?}");
-        }
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn a_lab_archive_with_a_name_windows_cant_hold_is_refused_plainly() {
-        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
-        let err = extract(&tarball(&[("lab-abc/ok.txt", b"x"), ("lab-abc/notes ", b"y")]), &dir).unwrap_err().to_string();
-        let _ = std::fs::remove_dir_all(&dir);
-        assert!(err.contains("can't be installed on Windows") && err.contains("ending in a space"), "{err}");
     }
 
     #[test]
@@ -694,59 +535,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("sub").join("disk.vmdk")).unwrap(), "new");
         assert!(!staging.exists() && !labs.join(".invoice.old").exists());
         std::fs::remove_dir_all(labs).unwrap();
-    }
-
-    /// A gzip tar builder with the lab's top folder `lab-abc/` and one `subdir/` already in it, so
-    /// a symlink test adds only the link it exercises.
-    fn tarball_with_dir(subdir: &str) -> tar::Builder<flate2::write::GzEncoder<Vec<u8>>> {
-        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
-        let mut dir = tar::Header::new_gnu();
-        dir.set_entry_type(tar::EntryType::Directory);
-        dir.set_size(0);
-        dir.set_mode(0o755);
-        builder.append_data(&mut dir.clone(), "lab-abc/", &[][..]).unwrap();
-        builder.append_data(&mut dir, format!("lab-abc/{subdir}/"), &[][..]).unwrap();
-        builder
-    }
-
-    #[test]
-    fn links_and_the_top_level_folder_entry_are_skipped() {
-        let mut builder = tarball_with_dir("docs");
-        let mut link = tar::Header::new_gnu();
-        link.set_entry_type(tar::EntryType::Symlink);
-        link.set_size(0);
-        builder.append_link(&mut link, "lab-abc/passwd", "/etc/passwd").unwrap();
-        let gz = builder.into_inner().unwrap().finish().unwrap();
-        let dest = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
-        extract(&gz, &dest).unwrap();
-        assert!(dest.join("docs").is_dir());
-        assert!(std::fs::symlink_metadata(dest.join("passwd")).is_err());
-        std::fs::remove_dir_all(dest).unwrap();
-    }
-
-    #[test]
-    fn an_internal_symlink_is_recreated_a_tree_escaping_one_is_not() {
-        let mut builder = tarball_with_dir("contracts");
-        // An internal relative link, like a lab's `client/src/contracts -> ../../contracts`: kept.
-        let mut inside = tar::Header::new_gnu();
-        inside.set_entry_type(tar::EntryType::Symlink);
-        inside.set_size(0);
-        builder.append_link(&mut inside, "lab-abc/here", "contracts").unwrap();
-        // A relative link that climbs out of the tree: left out, so nothing points outside.
-        let mut out = tar::Header::new_gnu();
-        out.set_entry_type(tar::EntryType::Symlink);
-        out.set_size(0);
-        builder.append_link(&mut out, "lab-abc/escape", "../../../outside").unwrap();
-        let gz = builder.into_inner().unwrap().finish().unwrap();
-        let dest = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
-        extract(&gz, &dest).unwrap();
-        if cfg!(unix) {
-            let here = std::fs::symlink_metadata(dest.join("here"));
-            assert!(here.is_ok_and(|m| m.file_type().is_symlink()), "the internal link is recreated");
-            assert_eq!(std::fs::read_link(dest.join("here")).unwrap(), std::path::Path::new("contracts"));
-        }
-        assert!(std::fs::symlink_metadata(dest.join("escape")).is_err(), "the escaping link is left out");
-        std::fs::remove_dir_all(dest).unwrap();
     }
 
     const SPEC: &str = "version: 1\nname: invoice\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\n";
@@ -933,14 +721,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_path_traversal_in_archives() {
-        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
-        let err = extract(&tarball(&[("lab-abc/../../evil", b"x")]), &dir);
-        assert!(err.is_err());
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
     fn repository_names_at_the_length_boundary_and_commit_lengths() {
         let sha = "0123456789abcdef0123456789abcdef01234567";
         assert!(validate_source(&format!("CyberCTF/{}", "a".repeat(100)), sha).is_ok());
@@ -960,108 +740,6 @@ mod tests {
         ] {
             assert!(validate_source(repo, commit).is_err(), "{repo:?}@{commit:?}");
         }
-    }
-
-    fn extract_to(entries: &[(&str, &[u8])]) -> Result<PathBuf> {
-        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
-        extract(&tarball(entries), &dir).map(|()| dir)
-    }
-
-    #[test]
-    fn an_archive_unpacking_past_the_limit_is_refused() {
-        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
-        // Highly compressible, like a gzip bomb: 3 MiB of zeros in a few KiB.
-        let zeros = vec![0u8; 3 * 1024 * 1024];
-        let archive = tarball(&[("lab-abc/a.bin", &zeros), ("lab-abc/b.bin", &zeros)]);
-        assert!(archive.len() < 64 * 1024);
-        let err = extract_within(&archive, &dir, 4 * 1024 * 1024).unwrap_err().to_string();
-        assert_eq!(err, "the lab archive unpacks to more than 4 MB; refused");
-        // The entry past the limit was never written.
-        assert!(!dir.join("b.bin").exists());
-        let _ = std::fs::remove_dir_all(&dir);
-        extract_within(&archive, &dir, 6 * 1024 * 1024).unwrap();
-        assert_eq!(std::fs::metadata(dir.join("b.bin")).unwrap().len(), zeros.len() as u64);
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn an_empty_archive_installs_nothing_and_fails_nothing() {
-        let dir = extract_to(&[]).unwrap();
-        // The destination is created by the caller (`stage`); nothing appears on its own.
-        assert!(!dir.exists() || std::fs::read_dir(&dir).unwrap().next().is_none());
-        let _ = std::fs::remove_dir_all(dir);
-        // An entry that is only the top-level folder name (no slash) is the folder itself: skipped.
-        let dir = extract_to(&[("lab-abc", b"not a file we want")]).unwrap();
-        assert!(!dir.exists() || std::fs::read_dir(&dir).unwrap().next().is_none());
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn paths_outside_the_top_folder_land_inside_the_destination_or_are_refused() {
-        // An absolute path and a leading `..` lose their first component like the top folder
-        // does, so they can only land inside the destination.
-        let dir = extract_to(&[("/etc/passwd", b"x"), ("../evil", b"y")]).unwrap();
-        assert_eq!(std::fs::read_to_string(dir.join("etc/passwd")).unwrap(), "x");
-        assert_eq!(std::fs::read_to_string(dir.join("evil")).unwrap(), "y");
-        std::fs::remove_dir_all(dir).unwrap();
-        // A `..` anywhere after the top folder is refused, wherever it sits.
-        for path in ["lab-abc/a/../b", "lab-abc/..", "lab-abc/a/b/../../../c"] {
-            let err = extract_to(&[(path, b"x")]).unwrap_err().to_string();
-            assert!(err.starts_with("unsafe path in lab archive"), "{path}: {err}");
-        }
-        // A `.` in the middle is nothing; a backslash is a plain character on Unix, not a separator.
-        let dir = extract_to(&[("lab-abc/./a", b"x")]).unwrap();
-        assert!(dir.join("a").is_file());
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn a_top_folder_with_a_leading_dot_is_stripped_too() {
-        // GNU tar (`tar czf x.tgz .`, or `-C dir .`) writes `./` before every entry; GitHub's
-        // tarballs don't, but a lab archive built any other way would install under
-        // `<dest>/<repo>-<sha>/`, where nothing looks.
-        // Fails with: assertion failed: dir.join("isoloom.yml").is_file().
-        // Suggested fix: skip a leading `CurDir` component before dropping the top folder
-        // (`path.components().skip_while(|c| matches!(c, Component::CurDir)).skip(1)`).
-        let dir = extract_to(&[("./lab-abc/isoloom.yml", b"name: x")]).unwrap();
-        assert!(dir.join("isoloom.yml").is_file(), "{:?}", std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect::<Vec<_>>());
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn a_file_under_a_path_that_is_a_file_fails_cleanly_and_a_truncated_archive_fails() {
-        let err = extract_to(&[("lab-abc/sub", b"a file"), ("lab-abc/sub/x", b"under a file")]).unwrap_err();
-        assert!(matches!(err, Error::Io(_)), "{err}");
-        // Cut mid-stream: an error, never a lab installed from half an archive.
-        let big = vec![7u8; 20_000];
-        let gz = tarball(&[("lab-abc/isoloom.yml", b"name: x"), ("lab-abc/big", &big)]);
-        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
-        assert!(extract(&gz[..gz.len() / 2], &dir).is_err());
-        assert!(extract(b"not a gzip at all", &dir).is_err());
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn long_unicode_paths_and_hard_links_in_an_archive() {
-        // A path past tar's 100-byte name field (GNU long-name extension) with non-ASCII names
-        // extracts whole; a hard link (not a file or folder) is skipped like a symlink.
-        let deep = format!("lab-abc/{}/{}/fichier é.txt", "dossier-très-long-".repeat(4), "ü".repeat(40));
-        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
-        let mut file = tar::Header::new_gnu();
-        file.set_size(2);
-        file.set_mode(0o644);
-        file.set_entry_type(tar::EntryType::Regular);
-        builder.append_data(&mut file, &deep, &b"ok"[..]).unwrap();
-        let mut link = tar::Header::new_gnu();
-        link.set_entry_type(tar::EntryType::Link);
-        link.set_size(0);
-        builder.append_link(&mut link, "lab-abc/alias", &deep).unwrap();
-        let gz = builder.into_inner().unwrap().finish().unwrap();
-        let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
-        extract(&gz, &dir).unwrap();
-        assert_eq!(std::fs::read_to_string(dir.join(&deep["lab-abc/".len()..])).unwrap(), "ok");
-        assert!(std::fs::symlink_metadata(dir.join("alias")).is_err(), "a hard link is skipped");
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -1107,6 +785,3 @@ mod tests {
         assert_eq!(dir, t.data().join("labs").join("-"));
     }
 }
-
-#[cfg(test)]
-mod proptests;
