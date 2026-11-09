@@ -32,7 +32,7 @@ fn a_container_lab_runs_where_isoloom_generates_each_form() {
     // One VM per machine: not on UTM, whose VMs get no network, which says why.
     let per_machine = providers(&o.vms);
     assert!(per_machine.contains(&Provider::Hyperv) && !per_machine.contains(&Provider::Utm), "{per_machine:?}");
-    let utm = o.refused.iter().find(|r| r.provider == Provider::Utm && r.target == "vagrant").expect("UTM's refusal");
+    let utm = o.refused.iter().find(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant").expect("UTM's refusal");
     assert!(utm.reason.contains("no private network"), "{}", utm.reason);
     // On a server, the helper VM: ESXi through Vagrant there, Proxmox through its module, each
     // by its own launch path (the picker took ESXi's for `vagrant/vmware_esxi` and Proxmox's
@@ -52,7 +52,7 @@ fn a_vm_lab_runs_its_vms_where_its_spec_and_isoloom_allow() {
     assert_eq!(paths_of(&o.servers), [(Some(Provider::VmwareEsxi), "vagrant", Some("vmware_esxi")), (Some(Provider::Proxmox), "proxmox", None)]);
     // Windows runs on the clouds whose cloud-vm module takes it, and each other says why not.
     assert_eq!(providers(&o.cloud_vm), [Provider::Aws, Provider::Azure]);
-    let gcp = o.refused.iter().find(|r| r.provider == Provider::Gcp).expect("GCP's refusal");
+    let gcp = o.refused.iter().find(|r| r.provider == Some(Provider::Gcp)).expect("GCP's refusal");
     assert_eq!(gcp.target, "cloud-vm");
     // Its targets leave Proxmox out: ESXi only.
     let o = options(&format!("{VMS}targets: [vagrant]\n"), Runtime::Vm);
@@ -76,4 +76,16 @@ fn cloud_services_run_on_their_own_cloud_only() {
     let o = options(spec, Runtime::Cloud);
     assert_eq!(paths_of(&o.cloud_services), [(Some(Provider::Aws), "cloud-services", Some("aws"))]);
     assert!(o.docker.is_none() && o.vms.is_empty() && o.servers.is_empty() && o.cloud_docker.is_empty() && o.cloud_vm.is_empty());
+}
+
+#[test]
+fn a_refused_container_form_says_why() {
+    // Regression: Isoloom's reason for refusing the lab on this machine's Docker was dropped (a
+    // refusal named a provider, and Docker has none): the picker could only say "not supported".
+    let broken = DUAL.replace("networks: { lab: 10 }", "networks: { nowhere: 10 }");
+    let o = options(&broken, Runtime::Docker);
+    assert!(o.docker.is_none());
+    let docker = o.refused.iter().find(|r| r.provider.is_none()).expect("Docker's refusal");
+    assert_eq!(docker.target, "docker");
+    assert!(!docker.reason.is_empty());
 }

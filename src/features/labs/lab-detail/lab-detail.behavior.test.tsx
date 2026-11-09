@@ -43,11 +43,11 @@ const vmLab: Lab = {
 };
 
 /** A launch path on `provider`, unbadged. */
-const path = (target: string, provider: Provider): LabRunPath => ({ provider, target, variant: provider, badge: "none", evidence: "" });
+const path = (provider: Provider): LabRunPath => ({ provider, badge: "none", evidence: "" });
 
 /** The backend's run options with only `paths` set. */
 const runOptions = (paths: Partial<LabRunOptions>): LabRunOptions => ({
-  docker: path("docker", "virtualbox"),
+  docker: path("virtualbox"),
   dockerVm: [],
   vms: [],
   servers: [],
@@ -62,10 +62,10 @@ const runOptions = (paths: Partial<LabRunOptions>): LabRunOptions => ({
  *  here, and on every cloud in both forms. */
 const bothForms = () =>
   runOptions({
-    dockerVm: [path("docker-vm", "virtualbox")],
-    vms: [path("vagrant", "virtualbox")],
-    cloudDocker: ["aws", "azure"].map((c) => path("cloud-docker", c as Provider)),
-    cloudVm: ["aws", "azure"].map((c) => path("cloud-vm", c as Provider)),
+    dockerVm: [path("virtualbox")],
+    vms: [path("virtualbox")],
+    cloudDocker: ["aws", "azure"].map((c) => path(c as Provider)),
+    cloudVm: ["aws", "azure"].map((c) => path(c as Provider)),
   });
 
 const machine = containerMachine;
@@ -232,7 +232,7 @@ describe("LabDetail: starting", () => {
     const calls = installTauri({
       ...quiet,
       server_list: () => ({ default: null, hosts: [{ id: "pve", name: "homelab", provider: "proxmox", host: "10.0.0.5" }] }),
-      lab_run_options: () => runOptions({ docker: null, vms: [path("vagrant", "virtualbox")], servers: [path("vagrant", "vmware_esxi")] }),
+      lab_run_options: () => runOptions({ docker: null, vms: [path("virtualbox")], servers: [path("vmware_esxi")] }),
     });
     // The catalogue lists Proxmox; the lab's targets leave it out.
     const lab: Lab = {

@@ -8,14 +8,6 @@ import type { Provider } from "./Provider";
  */
 export type LabRunPath = { provider: Provider | null, 
 /**
- * The Isoloom target (`docker-vm`, `vagrant`, `cloud-vm`, …).
- */
-target: string, 
-/**
- * Its provider or cloud as Isoloom's tier evidence names it (`utm`, `aws`), if it has one.
- */
-variant: string | null, 
-/**
  * The path's maturity badge (none when real runs prove it).
  */
 badge: Badge, 

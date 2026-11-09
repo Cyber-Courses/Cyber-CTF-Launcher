@@ -17,9 +17,14 @@ use crate::runtime::{Runtime, lab};
 #[ts(rename = "LabRunPath")]
 pub struct RunPath {
     pub provider: Option<Provider>,
-    /// The Isoloom target (`docker-vm`, `vagrant`, `cloud-vm`, …).
+    /// The Isoloom target (`docker-vm`, `vagrant`, `cloud-vm`, …): how its badge is found, not
+    /// the webview's.
+    #[serde(skip)]
+    #[ts(skip)]
     pub target: String,
     /// Its provider or cloud as Isoloom's tier evidence names it (`utm`, `aws`), if it has one.
+    #[serde(skip)]
+    #[ts(skip)]
     pub variant: Option<String>,
     /// The path's maturity badge (none when real runs prove it).
     pub badge: Badge,
@@ -27,13 +32,16 @@ pub struct RunPath {
     pub evidence: String,
 }
 
-/// A provider or cloud a form of the lab exists for, which Isoloom refuses the lab on.
+/// A form of the lab Isoloom refuses: on a provider or cloud, or (no provider) as containers on
+/// this machine's Docker; the picker says the reason on that place's row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabRunRefusal")]
 pub struct Refusal {
-    pub provider: Provider,
+    pub provider: Option<Provider>,
     /// The Isoloom target refused there.
+    #[serde(skip)]
+    #[ts(skip)]
     pub target: String,
     pub reason: String,
 }
@@ -87,7 +95,7 @@ pub fn run_options(lab: &Lab, runtime: Runtime) -> RunOptions {
         }
         for p in providers {
             match lab::refusal_on(lab, target, *p) {
-                Some(reason) => refused.push(Refusal { provider: *p, target: target.id().to_owned(), reason }),
+                Some(reason) => refused.push(Refusal { provider: Some(*p), target: target.id().to_owned(), reason }),
                 None => out.push(path(target, Some(*p))),
             }
         }
@@ -98,7 +106,7 @@ pub fn run_options(lab: &Lab, runtime: Runtime) -> RunOptions {
     let mut refused = Vec::new();
     match runtime {
         Runtime::Docker => {
-            out.docker = (has(Target::Docker) && isoloom_targets::refusal(lab, Target::Docker).is_none()).then(|| path(Target::Docker, None));
+            out.docker = if has(Target::Docker) { on_docker(lab, path(Target::Docker, None), &mut refused) } else { None };
             on(Target::DockerVm, &docker_vm_local, &mut out.docker_vm, &mut refused);
             on(Target::Vagrant, &local, &mut out.vms, &mut refused);
             on(Target::DockerVm, &[Provider::VmwareEsxi, Provider::Proxmox], &mut out.servers, &mut refused);
@@ -111,7 +119,7 @@ pub fn run_options(lab: &Lab, runtime: Runtime) -> RunOptions {
             if has(Target::Proxmox) {
                 // Proxmox's own target has one form: no provider of its own in the evidence.
                 match lab::refusal_on(lab, Target::Proxmox, Provider::Proxmox) {
-                    Some(reason) => refused.push(Refusal { provider: Provider::Proxmox, target: Target::Proxmox.id().to_owned(), reason }),
+                    Some(reason) => refused.push(Refusal { provider: Some(Provider::Proxmox), target: Target::Proxmox.id().to_owned(), reason }),
                     None => out.servers.push(RunPath { provider: Some(Provider::Proxmox), ..path(Target::Proxmox, None) }),
                 }
             }
@@ -125,6 +133,18 @@ pub fn run_options(lab: &Lab, runtime: Runtime) -> RunOptions {
     }
     out.refused = refused;
     out
+}
+
+/// The lab as containers on this machine's Docker, by its launch path `path`, unless Isoloom
+/// refuses it there: then its reason goes in `refused`.
+fn on_docker(lab: &Lab, path: RunPath, refused: &mut Vec<Refusal>) -> Option<RunPath> {
+    match isoloom_targets::refusal(lab, Target::Docker) {
+        Some(reason) => {
+            refused.push(Refusal { provider: None, target: path.target, reason });
+            None
+        }
+        None => Some(path),
+    }
 }
 
 /// The providers or clouds Isoloom's tier evidence lists for `target`: the ones it generates it

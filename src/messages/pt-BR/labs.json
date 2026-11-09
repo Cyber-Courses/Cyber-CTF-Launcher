@@ -73,6 +73,7 @@
     "hostSubtitle": "{kind} · {host}",
     "hostSubtitleCloud": "{kind}, cobrado de você · {host}",
     "unsupportedKind": "Este lab não suporta {kind}",
+    "refusedHere": "O Isoloom não pode executar este lab aqui: {reason}",
     "thisMachine": "Esta máquina",
     "running": "Rodando",
     "engineStopped": "Engine parada",

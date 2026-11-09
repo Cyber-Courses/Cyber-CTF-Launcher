@@ -73,6 +73,7 @@
     "hostSubtitle": "{kind} · {host}",
     "hostSubtitleCloud": "{kind}, billed to you · {host}",
     "unsupportedKind": "This lab doesn't support {kind}",
+    "refusedHere": "Isoloom can't run this lab here: {reason}",
     "thisMachine": "This machine",
     "running": "Running",
     "engineStopped": "Engine stopped",

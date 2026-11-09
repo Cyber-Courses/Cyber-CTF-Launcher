@@ -2,10 +2,7 @@
 import type { Provider } from "./Provider";
 
 /**
- * A provider or cloud a form of the lab exists for, which Isoloom refuses the lab on.
+ * A form of the lab Isoloom refuses: on a provider or cloud, or (no provider) as containers on
+ * this machine's Docker; the picker says the reason on that place's row.
  */
-export type LabRunRefusal = { provider: Provider, 
-/**
- * The Isoloom target refused there.
- */
-target: string, reason: string, };
+export type LabRunRefusal = { provider: Provider | null, reason: string, };

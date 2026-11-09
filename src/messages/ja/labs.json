@@ -73,6 +73,7 @@
     "hostSubtitle": "{kind} · {host}",
     "hostSubtitleCloud": "{kind}、自分に課金 · {host}",
     "unsupportedKind": "このラボは {kind} に対応していません",
+    "refusedHere": "Isoloom はこのラボをここで実行できません: {reason}",
     "thisMachine": "このマシン",
     "running": "実行中",
     "engineStopped": "エンジン停止中",

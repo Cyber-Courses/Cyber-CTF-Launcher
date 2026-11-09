@@ -261,10 +261,8 @@ export function apiQuery(args: Args): unknown {
 }
 
 /** A badge-less path, or a Beta one. */
-const runPath = (target: string, provider: Provider | null, beta = false): LabRunPath => ({
+const runPath = (provider: Provider | null, beta = false): LabRunPath => ({
   provider,
-  target,
-  variant: provider === "proxmox" && target === "proxmox" ? null : provider,
   badge: beta ? "beta" : "none",
   evidence: beta ? "validated only; tier 1 pending: linux, macos, windows" : "real runs: macos (mac, 2026-10-17)",
 });
@@ -276,23 +274,23 @@ const NO_OPTIONS: LabRunOptions = { docker: null, dockerVm: [], vms: [], servers
  *  Docker, in a helper VM and on a server or a cloud VM (none has VM recipes too), a VM lab as
  *  VMs (not on UTM), cloud services on AWS. */
 function runOptions(runtime: unknown): LabRunOptions {
-  const clouds = (target: string) => CLOUDS_OF_SAMPLE.map((c) => runPath(target, c, c !== "aws"));
-  if (runtime === "CLOUD") return { ...NO_OPTIONS, cloudServices: [runPath("cloud-services", "aws")] };
+  const clouds = () => CLOUDS_OF_SAMPLE.map((c) => runPath(c, c !== "aws"));
+  if (runtime === "CLOUD") return { ...NO_OPTIONS, cloudServices: [runPath("aws")] };
   const local: Provider[] = ["virtualbox", "vmware_desktop", "parallels", "libvirt", "qemu"];
-  const utm = { provider: "utm" as const, target: "vagrant", reason: "a VM on UTM gets no private network" };
+  const utm = { provider: "utm" as const, reason: "a VM on UTM gets no private network" };
   if (runtime === "VM")
     return {
       ...NO_OPTIONS,
-      vms: [...local, "hyperv" as const].map((p) => runPath("vagrant", p, p !== "virtualbox")),
-      servers: [runPath("vagrant", "vmware_esxi"), runPath("proxmox", "proxmox")],
-      cloudVm: clouds("cloud-vm"),
+      vms: [...local, "hyperv" as const].map((p) => runPath(p, p !== "virtualbox")),
+      servers: [runPath("vmware_esxi"), runPath("proxmox")],
+      cloudVm: clouds(),
       refused: [utm],
     };
   return {
     ...NO_OPTIONS,
-    docker: runPath("docker", null),
-    dockerVm: [...local, "utm" as const].map((p) => runPath("docker-vm", p, p !== "virtualbox")),
-    servers: [runPath("docker-vm", "vmware_esxi", true), runPath("docker-vm", "proxmox", true)],
-    cloudDocker: clouds("cloud-docker"),
+    docker: runPath(null),
+    dockerVm: [...local, "utm" as const].map((p) => runPath(p, p !== "virtualbox")),
+    servers: [runPath("vmware_esxi", true), runPath("proxmox", true)],
+    cloudDocker: clouds(),
   };
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Container } from "lucide-react";
 import { PROVIDER_NAMES, type DockerEngine, type LabRunOptions, type Provider, type ServerHost, type ServerTest } from "@/lib/tauri";
-import { badgeOf, pathOf, type RunBadge } from "@/features/labs/run-on-badges";
+import { badgeOf, pathOf, refusalOn, type RunBadge } from "@/features/labs/run-on-badges";
 import { testHost } from "@/features/servers/use-server-list";
 import { StatusPill, type Tone } from "@/components/ui/status-pill";
 import { TypeIcon } from "@/components/ui/type-icon";
@@ -149,25 +149,29 @@ export function hypervisorOptions(t: T, form: "local-vm" | "local-vms", hypervis
 export type LocalRows = { offerContainers: boolean; localNote: string; dockerRunning: boolean | null; engine?: DockerEngine | null; vmForms: RunTarget[] };
 
 /** Step 1's rows for "This machine": up to two, each its own kind of run here. Container (the
- *  engine's state) when the lab has a container form, and VM (the hypervisor's logo) when a VM form
- *  is ready here. No tier badges here: a place is a place, not a form being compared (step 2). */
-function localPlatformRows(t: T, local: LocalRows): Option[] {
+ *  engine's state) when the lab has a container form the run options give it (once read; refused
+ *  there, the row says Isoloom's reason), and VM (the hypervisor's logo) when a VM form is ready
+ *  here. No tier badges here: a place is a place, not a form being compared (step 2). */
+function localPlatformRows(t: T, local: LocalRows, options: LabRunOptions | null): Option[] {
   const { offerContainers, localNote, dockerRunning, engine } = local;
   const rows: Option[] = [];
-  if (offerContainers) {
+  const containers = !options || options.docker !== null;
+  const refused = containers ? undefined : refusalOn(t, options, null);
+  if (offerContainers && (containers || refused)) {
     rows.push({
       target: { kind: "local" },
       title: t("labs.runOn.formContainers"),
       // The engine it will run on (Docker Desktop, OrbStack…), not "Docker": a neutral container
       // icon, the engine named, its state. The engine is chosen in its own step when several answer.
       subtitle: engine ? engineName(engine) : localNote,
-      ok: true,
+      ok: containers,
+      why: refused,
       logo: (
         <TypeIcon>
           <Container className="size-5 text-foreground" strokeWidth={1.5} />
         </TypeIcon>
       ),
-      status: engineStatus(t, dockerRunning),
+      status: containers ? engineStatus(t, dockerRunning) : undefined,
     });
   }
   const vm = localVmRow(t, local);
@@ -206,7 +210,7 @@ function hostOption(t: T, options: LabRunOptions | null, h: ServerHost, ok: bool
     title: h.name,
     subtitle: t(cloud ? "labs.runOn.hostSubtitleCloud" : "labs.runOn.hostSubtitle", { kind, host: h.host }),
     ok,
-    why: t("labs.runOn.unsupportedKind", { kind }),
+    why: refusalOn(t, options, h.provider) ?? t("labs.runOn.unsupportedKind", { kind }),
     logo: <ProviderGlyph provider={h.provider} />,
     status: ok ? hostStatus(t, check) : undefined,
     badge: badgeOf(pathOf(options, { kind: "host", id: h.id }, h.provider)),
@@ -235,7 +239,7 @@ export function platformGroups(
 ): OptionGroup[] {
   const forHost = (h: ServerHost) => hostOption(t, options, h, hostOk(h), checks[h.id]);
   const groups: OptionGroup[] = [
-    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localPlatformRows(t, local) : [] },
+    { id: "local", label: t("labs.runOn.thisMachine"), options: offerLocal ? localPlatformRows(t, local, options) : [] },
     { id: "servers", label: t("labs.runOn.servers"), options: hosts.filter((h) => !CLOUDS.has(h.provider)).map(forHost) },
     { id: "cloud", label: t("labs.runOn.cloud"), options: hosts.filter((h) => CLOUDS.has(h.provider)).map(forHost) },
   ];

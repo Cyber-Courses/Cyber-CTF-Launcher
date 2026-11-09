@@ -6,7 +6,7 @@ import type { LabRunOptions, LabRunPath, Provider, ServerHost } from "@/lib/taur
 
 const rt = (p: Partial<LabRuntimeInfo>): LabRuntimeInfo => ({ runtime: "VM", architectures: [], providers: [], ...p });
 const host = (provider: string) => ({ id: provider, name: provider, provider }) as unknown as ServerHost;
-const path = (target: string, provider: Provider): LabRunPath => ({ provider, target, variant: provider, badge: "none", evidence: "" });
+const path = (provider: Provider): LabRunPath => ({ provider, badge: "none", evidence: "" });
 /** The backend's run options with only `paths` set. */
 const options = (paths: Partial<LabRunOptions>): LabRunOptions => ({
   docker: null,
@@ -61,7 +61,7 @@ describe("formProviders", () => {
   it("are the hypervisors the backend's run options give the form, the emulator alone for another CPU's VMs", () => {
     // Regression: the picker kept its own tables (every local hypervisor but UTM, any cloud):
     // what a lab runs on is what Isoloom generates it for, which the backend says.
-    const vms = ["virtualbox", "hyperv", "qemu"].map((p) => path("vagrant", p as Provider));
+    const vms = ["virtualbox", "hyperv", "qemu"].map((p) => path(p as Provider));
     const both = rt({ runtime: "DOCKER", docker: true, vm: true, architectures: ["x86_64"] });
     expect(formProviders(vms, both)).toEqual(["virtualbox", "hyperv", "qemu"]);
     expect(formProviders(vms, both, "x86_64")).toEqual(["virtualbox", "hyperv", "qemu"]);
@@ -70,9 +70,9 @@ describe("formProviders", () => {
   it("give a container lab's helper VM its hypervisors, and a VM lab its own once read", () => {
     const docker = rt({ runtime: "DOCKER" });
     expect(localProviders(docker)).toEqual([]);
-    expect(localProviders(docker, "x86_64", options({ dockerVm: [path("docker-vm", "utm")] }))).toEqual(["utm"]);
+    expect(localProviders(docker, "x86_64", options({ dockerVm: [path("utm")] }))).toEqual(["utm"]);
     const vm = rt({ architectures: ["x86_64"], providers: ["virtualbox", "utm"] as Provider[] });
-    expect(localProviders(vm, "x86_64", options({ vms: [path("vagrant", "virtualbox")] }))).toEqual(["virtualbox"]);
+    expect(localProviders(vm, "x86_64", options({ vms: [path("virtualbox")] }))).toEqual(["virtualbox"]);
   });
 });
 
@@ -90,7 +90,7 @@ describe("hostSupports", () => {
   });
   it("goes by the backend's run options once read: its servers, its clouds in any form", () => {
     const lab = rt({ providers: ["vmware_esxi", "proxmox", "aws"] as Provider[] });
-    const read = options({ servers: [path("vagrant", "vmware_esxi")], cloudVm: [path("cloud-vm", "azure")] });
+    const read = options({ servers: [path("vmware_esxi")], cloudVm: [path("azure")] });
     expect(hostSupports(lab, host("vmware_esxi"), read)).toBe(true);
     expect(hostSupports(lab, host("proxmox"), read)).toBe(false);
     expect(hostSupports(lab, host("azure"), read)).toBe(true);
@@ -128,7 +128,7 @@ describe("runPlaces", () => {
     const setUp = runPlaces(lab, undefined, false, {
       readyVms: ["virtualbox"] as Provider[],
       hosts: [host("proxmox"), host("aws")],
-      options: options({ dockerVm: [path("docker-vm", "virtualbox")], servers: [path("docker-vm", "proxmox")], cloudDocker: [path("cloud-docker", "aws")] }),
+      options: options({ dockerVm: [path("virtualbox")], servers: [path("proxmox")], cloudDocker: [path("aws")] }),
     });
     expect(stateOf(setUp, "local_vm")).toBe("ready");
     expect(stateOf(setUp, "server")).toBe("ready");

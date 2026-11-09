@@ -9,7 +9,7 @@ import { askPortMode, PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { RunOnDialog, RunOnPicker, type Platform, type RunTarget } from "@/features/labs/run-on";
 import type { Lab } from "@/features/labs/use-labs";
 import { getPortMode, setPortMode } from "@/lib/settings";
-import type { LabCheck, LabRunPath, LabStatus, Provider, ServerHost } from "@/lib/tauri";
+import type { LabCheck, LabRunOptions, LabRunPath, LabStatus, Provider, ServerHost } from "@/lib/tauri";
 import { commands, installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must, startInAct } from "@/components/test-support";
@@ -227,13 +227,7 @@ describe("RunOnPicker", () => {
     // validated-only, AWS's has real runs; a Proxmox server runs a container lab's helper VM, an
     // experimental path here. The picker used to guess the paths (Proxmox as cloud-vm/proxmox).
     installTauri();
-    const path = (target: string, provider: Provider, badge: LabRunPath["badge"]): LabRunPath => ({
-      provider,
-      target,
-      variant: provider,
-      badge,
-      evidence: `${target}/${provider}`,
-    });
+    const path = (provider: Provider, badge: LabRunPath["badge"]): LabRunPath => ({ provider, badge, evidence: `${provider}: ${badge}` });
     renderPicker({
       hosts: [
         host({ id: "az", name: "Azure sub", provider: "azure", host: "westeurope" }),
@@ -245,20 +239,59 @@ describe("RunOnPicker", () => {
         docker: null,
         dockerVm: [],
         vms: [],
-        servers: [path("docker-vm", "proxmox", "experimental")],
-        cloudDocker: [path("cloud-docker", "azure", "beta"), path("cloud-docker", "aws", "none")],
+        servers: [path("proxmox", "experimental")],
+        cloudDocker: [path("azure", "beta"), path("aws", "none")],
         cloudVm: [],
         cloudServices: [],
         refused: [],
       },
     });
     const pve = must(screen.getByText("Homelab").closest<HTMLElement>("[role=radio]"), "Proxmox's option");
-    expect(within(pve).getByText("Experimental").closest("[title]")?.getAttribute("title")).toBe("docker-vm/proxmox");
+    expect(within(pve).getByText("Experimental").closest("[title]")?.getAttribute("title")).toBe("proxmox: experimental");
     await flush();
     const az = must(screen.getByText("Azure sub").closest<HTMLElement>("[role=radio]"), "Azure's option");
     expect(within(az).getByText("Beta")).toBeTruthy();
     const aws = must(screen.getByText("AWS sandbox").closest<HTMLElement>("[role=radio]"), "AWS's option");
     expect(within(aws).queryByText("Beta")).toBeNull();
+  });
+
+  it("says Isoloom's reason on a place it refuses the lab, and offers no containers the run options don't give it", async () => {
+    // Regression: the picker offered containers by the catalogue's word and said only "doesn't
+    // support" on a refused host; Docker's refusal wasn't even sent (a refusal named a provider).
+    installTauri();
+    const refusing = (refused: LabRunOptions["refused"]): LabRunOptions => ({
+      docker: null,
+      dockerVm: [],
+      vms: [],
+      servers: [],
+      cloudDocker: [],
+      cloudVm: [],
+      cloudServices: [],
+      refused,
+    });
+    renderPicker({
+      offerContainers: true,
+      runOptions: refusing([
+        { provider: null, reason: "environment-level steps don't run on Docker" },
+        { provider: "proxmox", reason: "a Windows machine on Proxmox" },
+      ]),
+    });
+    const containers = must(screen.getByText("Container").closest<HTMLElement>("[role=radio]"), "the Containers row");
+    expect(containers.getAttribute("aria-disabled")).toBe("true");
+    expect(containers.getAttribute("title")).toBe("Isoloom can't run this lab here: environment-level steps don't run on Docker");
+    const pve = must(screen.getByText("homelab-pve").closest<HTMLElement>("[role=radio]"), "the Proxmox row");
+    expect(pve.getAttribute("title")).toBe("Isoloom can't run this lab here: a Windows machine on Proxmox");
+    await flush();
+  });
+
+  it("offers no Containers row when the run options give the lab no container form at all", async () => {
+    installTauri();
+    renderPicker({
+      offerContainers: true,
+      runOptions: { docker: null, dockerVm: [], vms: [], servers: [], cloudDocker: [], cloudVm: [], cloudServices: [], refused: [] },
+    });
+    expect(screen.queryByText("Container")).toBeNull();
+    await flush();
   });
 
   it("shows a VM lab only the In a VM row, and nothing selectable while busy", async () => {

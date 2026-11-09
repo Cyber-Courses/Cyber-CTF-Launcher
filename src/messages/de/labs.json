@@ -73,6 +73,7 @@
     "hostSubtitle": "{kind} · {host}",
     "hostSubtitleCloud": "{kind}, auf deine Rechnung · {host}",
     "unsupportedKind": "Dieses Lab unterstützt {kind} nicht",
+    "refusedHere": "Isoloom kann dieses Lab hier nicht ausführen: {reason}",
     "thisMachine": "Dieser Rechner",
     "running": "Läuft",
     "engineStopped": "Engine gestoppt",
