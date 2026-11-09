@@ -307,6 +307,7 @@ pub fn requirements(spec: &Spec) -> Option<Requirements> {
 /// fetched from GitHub (CyberCTF repositories at a full SHA only). The one way the launcher reads
 /// a catalogue lab's spec before it is installed.
 pub async fn spec_at(dirs: &crate::platform::AppDirs, lab_id: &str, repository: &str, commit: &str) -> Result<Spec> {
+    use crate::platform::http::{MAX_LAB_SPEC, api_client, body_limited};
     crate::runtime::paths::validate_id(lab_id)?;
     crate::labs::validate_source(repository, commit)?;
     if let Ok(dir) = crate::runtime::paths::lab_dir(dirs, lab_id)
@@ -316,13 +317,13 @@ pub async fn spec_at(dirs: &crate::platform::AppDirs, lab_id: &str, repository: 
         return Ok(spec);
     }
     let url = format!("https://raw.githubusercontent.com/{repository}/{commit}/isoloom.yml");
-    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().map_err(|e| Error::Invalid(e.to_string()))?;
-    let res = client.get(&url).send().await.map_err(|e| Error::Invalid(format!("couldn't read the lab's spec: {e}")))?;
+    let unread = |e: &dyn std::fmt::Display| Error::Invalid(format!("couldn't read the lab's spec: {e}"));
+    let res = api_client()?.get(&url).send().await.map_err(|e| unread(&e))?;
     if !res.status().is_success() {
-        return Err(Error::Invalid(format!("couldn't read the lab's spec: HTTP {}", res.status())));
+        return Err(unread(&format!("HTTP {}", res.status())));
     }
-    let text = res.text().await.map_err(|e| Error::Invalid(format!("couldn't read the lab's spec: {e}")))?;
-    parse(&text)
+    let body = body_limited(res, MAX_LAB_SPEC).await.map_err(|e| unread(&e))?;
+    parse(&String::from_utf8(body).map_err(|e| unread(&e))?)
 }
 
 /// Whether a lab of `spec` runs as VMs on a server of `provider`: on ESXi through Vagrant there,
