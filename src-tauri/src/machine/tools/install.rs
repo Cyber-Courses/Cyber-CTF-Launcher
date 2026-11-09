@@ -147,20 +147,30 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
     }
 }
 
-/// The install steps on Linux: apt and the vendors' installers, as root through pkexec.
+/// `script` run as root through pkexec, which raises a graphical password prompt (polkit). pkexec
+/// clears the environment, so the proxy variables set here (`proxy`, `NAME=value`) are handed to
+/// the script through `env`: behind a corporate proxy apt and curl need them.
+#[cfg(any(target_os = "linux", test))]
+fn as_root(script: String, proxy: Vec<String>) -> Step {
+    let mut args = vec!["env".to_string()];
+    args.extend(proxy);
+    args.extend(["sh".to_string(), "-c".to_string(), script]);
+    Step { program: "pkexec".into(), args, note: None }
+}
+
+/// The install steps on Linux: apt and the vendors' apt repositories, as root through pkexec.
 #[cfg(target_os = "linux")]
 fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
-    // pkexec raises a graphical password prompt (polkit) for the privileged install.
-    let root = |script: String| Step { program: "pkexec".into(), args: vec!["sh".into(), "-c".into(), script], note: None };
+    let root = |script: String| as_root(script, crate::platform::proxy::assignments(|name| std::env::var(name).ok()));
     Ok(match dep {
         Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
         Dependency::Docker => vec![root(docker_script(crate::platform::exec::login_name().as_deref()))],
-        Dependency::Vagrant => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y vagrant"])],
+        Dependency::Vagrant => vec![root("apt-get update && apt-get install -y vagrant".into())],
         // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
         Dependency::Terraform => vec![root(TERRAFORM_SCRIPT.into())],
         Dependency::Virtualbox => vec![root(VIRTUALBOX_SCRIPT.into())],
-        Dependency::Qemu => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y qemu-system qemu-utils"])],
-        Dependency::Libvirt => vec![step("pkexec", &["sh", "-c", "apt-get update && apt-get install -y libvirt-daemon-system virt-manager"])],
+        Dependency::Qemu => vec![root("apt-get update && apt-get install -y qemu-system qemu-utils".into())],
+        Dependency::Libvirt => vec![root("apt-get update && apt-get install -y libvirt-daemon-system virt-manager".into())],
         Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
         // Cloud CLIs: AWS CLI v2 from Amazon's signed bundle, in a private temporary directory;
         // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned.
@@ -253,6 +263,14 @@ mod tests {
         let err = install_vagrant_plugin("vagrant-vmware-esxi".into(), |_| {}).await.unwrap_err();
         assert!(err.to_string().contains("DisableToolInstalls"), "{err}");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    }
+
+    #[test]
+    fn a_root_install_carries_the_proxy_through_pkexec() {
+        let step = as_root("apt-get update".into(), vec!["https_proxy=http://proxy.corp:3128".into(), "no_proxy=.corp".into()]);
+        assert_eq!(step.program, "pkexec");
+        assert_eq!(step.args, ["env", "https_proxy=http://proxy.corp:3128", "no_proxy=.corp", "sh", "-c", "apt-get update"]);
+        assert_eq!(as_root("true".into(), Vec::new()).args, ["env", "sh", "-c", "true"]);
     }
 
     #[test]

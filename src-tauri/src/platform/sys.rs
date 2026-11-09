@@ -19,11 +19,12 @@ pub use windows::{
     registry_string, registry_value_exists, registry_values, resume_threads_of, send_ctrl_c, set_path, set_user_registry_string, take_ctrl_c, terminate,
 };
 
-/// Sets this process's `PATH`, which the tools it starts inherit. Only while the process is still
-/// single-threaded (the first lines of `run()`, or a test run with `--test-threads=1`): on Unix,
-/// another thread reading the environment meanwhile (libc's `getenv`) would be a data race.
-pub fn set_path_at_startup(path: &OsStr) {
+/// Sets this process's environment variable `name` (`PATH`, a proxy), which the tools it starts
+/// inherit. Only while the process is still single-threaded (the first lines of `run()`, or a
+/// test run with `--test-threads=1`): on Unix, another thread reading the environment meanwhile
+/// (libc's `getenv`) would be a data race.
+pub fn set_env_at_startup(name: &str, value: &OsStr) {
     // SAFETY: called before any other thread exists (see above), so nothing reads the
     // environment while it changes.
-    unsafe { std::env::set_var("PATH", path) };
+    unsafe { std::env::set_var(name, value) };
 }

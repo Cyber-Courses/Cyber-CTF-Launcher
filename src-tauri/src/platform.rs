@@ -1,6 +1,7 @@
 //! OS plumbing: the app's folders, running tools, files only this user can read, whole-file
-//! writes, the service endpoints, HTTP clients with limits, the PATH a GUI launch is missing, the
-//! console's Ctrl+C on Windows, the files a Store build saved before, and the administrator's policy.
+//! writes, the service endpoints, HTTP clients with limits, the PATH and the proxy a GUI launch is
+//! missing, the console's Ctrl+C on Windows, the files a Store build saved before, and the
+//! administrator's policy.
 
 use std::path::{Path, PathBuf};
 
@@ -16,6 +17,7 @@ pub mod http;
 pub mod msix_data;
 pub mod policy;
 pub mod private_fs;
+pub mod proxy;
 pub mod sys;
 
 /// Resets an in-flight flag to `false` when dropped, so a single-flight scan frees the next one

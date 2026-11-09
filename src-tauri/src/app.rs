@@ -51,8 +51,13 @@ pub fn run() -> tauri::Result<()> {
         std::process::exit(i32::from(!platform::console::send_ctrl_c(pid)));
     }
     crate::commands::server::mark_started();
-    // Before anything else: GUI launches don't get the shell PATH (docker, vagrant, ovftool).
+    // Before anything else: GUI launches don't get the shell PATH (docker, vagrant, ovftool), nor,
+    // on macOS, the proxy (said in the log once it is up).
     platform::env_path::augment();
+    #[cfg(target_os = "macos")]
+    let proxy_note = platform::proxy::inherit_system_proxy();
+    #[cfg(not(target_os = "macos"))]
+    let proxy_note = None;
     // One context (the embedded config and assets) for whichever role this process plays.
     let context = tauri::generate_context!();
     // `cyberctf-desktop deploy --job <file>`: this process is a deploy worker, not the app. It
@@ -61,13 +66,14 @@ pub fn run() -> tauri::Result<()> {
     if let Some(job) = worker_job(std::env::args()) {
         return deploy_worker::worker_main(&job, context);
     }
-    let app = commands::register(app_builder()).build(context).inspect_err(|e| log::error!("couldn't build Cyber CTF: {e}"))?;
+    let app = commands::register(app_builder(proxy_note)).build(context).inspect_err(|e| log::error!("couldn't build Cyber CTF: {e}"))?;
     app.run(|app, event| on_run_event(app, &event));
     Ok(())
 }
 
-/// The app: its plugins, window and menu events, and setup.
-fn app_builder() -> tauri::Builder<AppRuntime> {
+/// The app: its plugins, window and menu events, and setup (`proxy_note`: what startup found of
+/// the system proxy, for the log).
+fn app_builder(proxy_note: Option<String>) -> tauri::Builder<AppRuntime> {
     let mut builder = tauri::Builder::<AppRuntime>::new();
     // First: a cyberctf:// link opened while the app runs goes to that window (Windows/Linux would
     // otherwise start a second instance). Off during a GUI e2e run (TAURI_WEBDRIVER_PORT set), so a
@@ -107,6 +113,9 @@ fn app_builder() -> tauri::Builder<AppRuntime> {
         .on_menu_event(|app, event| menu::on_event(app, &event))
         .setup(|app| {
             setup(app);
+            if let Some(note) = proxy_note {
+                log::info!("{note}");
+            }
             #[cfg(feature = "wdio")]
             wdio_seed(app.handle());
             Ok(())

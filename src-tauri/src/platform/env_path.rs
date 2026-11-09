@@ -143,7 +143,7 @@ fn user_path() -> Option<OsString> {
 pub fn augment() {
     if let Some(path) = augmented(std::env::var_os("PATH").as_deref()) {
         // At the very start of `run()`: no thread is started yet (Tauri, tokio, a plugin).
-        crate::platform::sys::set_path_at_startup(&path);
+        crate::platform::sys::set_env_at_startup("PATH", &path);
     }
 }
 
@@ -157,7 +157,7 @@ mod tests {
     #[test]
     #[ignore = "changes the process PATH: run alone, with --test-threads=1"]
     fn finder_path_finds_tools() {
-        crate::platform::sys::set_path_at_startup(OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
+        crate::platform::sys::set_env_at_startup("PATH", OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
         let found = |tool: &str| std::process::Command::new(tool).arg("--version").output().is_ok();
         assert!(!found("docker"), "docker should be missing on the bare Finder PATH");
         augment();

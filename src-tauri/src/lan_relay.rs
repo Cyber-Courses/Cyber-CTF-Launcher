@@ -117,12 +117,17 @@ pub async fn prepare(program: &str, env: &[(String, String)]) -> Relayed {
         set(&mut out, k, ssh.port.to_string());
     }
     set(&mut out, crate::runtime::lab::SSH_PROXY_COMMAND_ENV, "/usr/bin/nc %h %p".into());
-    // Windows guests: Vagrant's WinRM (plain HTTP to the guest) through the in-app proxy. Only
-    // the lowercase http_proxy: HTTPS (box downloads) doesn't read it.
+    // Windows guests: Vagrant's WinRM (plain HTTP to the guest) through the in-app proxy. This
+    // replaces a corporate `http_proxy`, and must: the guests are on the LAN macOS keeps Vagrant
+    // off, which only this process reaches, and Vagrant's plain HTTP against an ESXi host is
+    // WinRM alone. Only the lowercase name, which Vagrant's Ruby reads first; `https_proxy` (box
+    // and plugin downloads) is left as it was. The relays are on loopback: added to `no_proxy`,
+    // whose own entries (the corporate bypass list) are kept.
     let winrm = start_http_proxy(Targets::new(host)).await.ok();
     if let Some(p) = &winrm {
         set(&mut out, "http_proxy", format!("http://127.0.0.1:{}", p.port));
-        set(&mut out, "no_proxy", "localhost,127.0.0.1".into());
+        let bypass = with_loopback(no_proxy_of(env).as_deref());
+        set(&mut out, "no_proxy", bypass);
     }
     if let (Some(real), Ok(dir)) = (real_ovftool(), wrapper_dir()) {
         set(&mut out, "CYBERCTF_REAL_OVFTOOL", real);
@@ -135,9 +140,38 @@ pub async fn prepare(program: &str, env: &[(String, String)]) -> Relayed {
     Relayed { env: out, _relays: relays }
 }
 
+/// The `no_proxy` a run already has: its own environment's, else the app's (either case).
+fn no_proxy_of(env: &[(String, String)]) -> Option<String> {
+    let from_env = || ["no_proxy", "NO_PROXY"].into_iter().find_map(|k| std::env::var(k).ok());
+    first_of(env, ["no_proxy", "NO_PROXY"]).map(String::from).or_else(from_env)
+}
+
+/// `existing` (a `no_proxy` list) with loopback added, each entry once.
+fn with_loopback(existing: Option<&str>) -> String {
+    let mut hosts: Vec<String> = existing.into_iter().flat_map(|l| l.split(',')).map(str::trim).filter(|h| !h.is_empty()).map(String::from).collect();
+    for host in ["localhost", "127.0.0.1"] {
+        if !hosts.iter().any(|h| h == host) {
+            hosts.push(host.to_string());
+        }
+    }
+    hosts.join(",")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loopback_is_added_to_the_no_proxy_a_run_already_has() {
+        // Regression: the relay replaced no_proxy, so a corporate bypass list was lost for the run.
+        assert_eq!(with_loopback(Some(".corp, intranet.lan")), ".corp,intranet.lan,localhost,127.0.0.1");
+        assert_eq!(with_loopback(Some("localhost,.corp")), "localhost,.corp,127.0.0.1");
+        assert_eq!(with_loopback(None), "localhost,127.0.0.1");
+        let env = vec![("NO_PROXY".to_string(), ".corp".to_string())];
+        assert_eq!(no_proxy_of(&env).as_deref(), Some(".corp"));
+        let both = vec![("NO_PROXY".to_string(), ".upper".to_string()), ("no_proxy".to_string(), ".lower".to_string())];
+        assert_eq!(no_proxy_of(&both).as_deref(), Some(".lower"), "the lowercase one, as Ruby reads it");
+    }
 
     #[tokio::test]
     async fn relay_pipes_both_ways() {
