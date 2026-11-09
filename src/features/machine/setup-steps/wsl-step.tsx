@@ -105,7 +105,7 @@ function TurnOnWsl({ report, setup, unknown }: { report: SystemReport; setup: Ma
         <Button
           variant="primary"
           size="sm"
-          disabled={setup.busy}
+          disabled={setup.busy || setup.installsOff}
           onClick={() => {
             setup.install("wsl", "wsl", t("machine.body.wsl.log"));
           }}

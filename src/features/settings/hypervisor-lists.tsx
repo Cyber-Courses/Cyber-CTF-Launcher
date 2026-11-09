@@ -74,6 +74,8 @@ export function NotReadyList({ notReady, os, ...actions }: { notReady: ProviderS
 type AddonActions = {
   installing: string | null;
   canInstall: boolean;
+  /** The policy turns one-click installs off (`DisableToolInstalls`). */
+  installsOff: boolean;
   onInstall: (plugin: string) => void;
   onAllowHyperv: () => void;
 };
@@ -84,6 +86,7 @@ function NotReadyRow({
   os,
   installing,
   canInstall,
+  installsOff,
   onInstall,
   onAllowHyperv,
 }: { hypervisor: ProviderStatus; os: string | undefined } & AddonActions) {
@@ -102,7 +105,8 @@ function NotReadyRow({
         <Button
           variant="outline"
           size="xs"
-          disabled={installing !== null || !canInstall}
+          disabled={installing !== null || !canInstall || installsOff}
+          title={installsOff ? t("settings.managed.installsOff") : undefined}
           onClick={() => {
             onInstall(missing);
           }}

@@ -249,11 +249,21 @@ describe("cloud setup: validation per provider", () => {
     expect(autoStop.selectedOptions.item(0)?.textContent).toMatch(/72/);
   });
 
-  // Bug: use-host-setup.ts:73 derives "an install is running" from the log's last line not
-  // starting with ✓ or ✗. An installer that prints its own "✓ …" progress line mid-run makes the
-  // step think the install ended: the Install buttons come back on and a second install of the
-  // same tool can start beside the first. Suggested fix: keep an explicit `installing` flag set
-  // before the task and cleared in a finally, as useMachineSetup does.
+  it("offers no one-click install the policy turns off, and says why", async () => {
+    // Regression: Install was offered, and failed only once clicked.
+    const calls = installTauri({ managed_settings: () => ({ policy: ["DisableToolInstalls"], updates: "inApp" }) });
+    const user = userEvent.setup();
+    const report = readyReport();
+    report.terraform = { installed: false, version: null };
+    await renderSetup({ ...EMPTY_HOST }, report);
+    await go(user, /^continue$/i);
+    expect(disabled(/install terraform/i)).toBe(true);
+    expect(document.body.textContent).toContain("Your organization turned off one-click tool installs and removals");
+    expect(argsOf(calls, "install_dependency")).toHaveLength(0);
+  });
+
+  // Regression: "an install is running" was read from the log's last line, so an installer
+  // printing its own "✓ …" line mid-run turned the Install buttons back on beside it.
   it("keeps the Install buttons off while an install runs, whatever its log lines say", async () => {
     let finish: () => void = () => {};
     const calls = installTauri({

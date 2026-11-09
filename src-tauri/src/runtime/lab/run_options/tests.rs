@@ -89,3 +89,27 @@ fn a_refused_container_form_says_why() {
     assert_eq!(docker.target, "docker");
     assert!(!docker.reason.is_empty());
 }
+
+#[test]
+fn the_picker_offers_no_way_the_policy_turns_off_and_says_why() {
+    // Regression: the policy refused a start only after the click; the picker offered it.
+    use crate::platform::policy::{Key, Override};
+    let open = options(DUAL, Runtime::Docker);
+    assert!(!open.cloud_vm.is_empty() && !open.cloud_docker.is_empty());
+    {
+        let _policy = Override::with(&[Key::DisableCloudLaunches]);
+        let o = options(DUAL, Runtime::Docker);
+        assert!(o.cloud_vm.is_empty() && o.cloud_docker.is_empty(), "no cloud account offered");
+        assert_eq!(o.docker, open.docker, "this machine still is");
+        assert_eq!(o.vms, open.vms);
+        let clouds = o.refused.iter().filter(|r| r.reason.contains("policy setting DisableCloudLaunches")).count();
+        assert_eq!(clouds, open.cloud_vm.len() + open.cloud_docker.len(), "each cloud's row says why");
+        let _privileged = Override::with(&[Key::RefusePrivilegedLabs]);
+        assert_eq!(options(DUAL, Runtime::Docker).docker, open.docker, "a lab without privileged machines runs");
+    }
+    let privileged = DUAL.replace("networks: { lab: 10 } }", "networks: { lab: 10 }, privileged: true }");
+    let _policy = Override::with(&[Key::RefusePrivilegedLabs]);
+    let o = options(&privileged, Runtime::Docker);
+    assert!(o.docker.is_none() && o.docker_vm.is_empty() && o.vms.is_empty() && o.servers.is_empty() && o.cloud_vm.is_empty(), "nowhere");
+    assert!(o.refused.iter().any(|r| r.provider.is_none() && r.reason.contains("RefusePrivilegedLabs")), "this machine's Docker says why");
+}

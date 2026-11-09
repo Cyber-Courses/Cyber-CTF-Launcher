@@ -192,6 +192,7 @@
       "DisableToolInstalls": "ワンクリックでのツールのインストール",
       "DisableCloudLaunches": "クラウドアカウントでのラボ",
       "RefusePrivilegedLabs": "特権マシンを含むラボ"
-    }
+    },
+    "installsOff": "このコンピューターでは、組織によってツールのワンクリックでのインストールと削除が無効にされています (DisableToolInstalls)。ご自身で行うか、IT チームに依頼してください。"
   }
 }

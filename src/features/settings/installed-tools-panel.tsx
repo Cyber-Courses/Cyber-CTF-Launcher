@@ -11,6 +11,8 @@ import { useRunLog } from "@/lib/use-run-log";
 import { formatAgo } from "@/lib/format";
 import { warn } from "@/lib/failure";
 import { translate, useT } from "@/lib/i18n";
+import { useToolInstallsOff } from "@/lib/use-managed";
+import { InstallsOffNote } from "@/components/installs-off-note";
 
 const NAMES: Record<Dependency, string> = {
   docker: "Docker",
@@ -56,7 +58,19 @@ function useInstalledTools() {
 }
 
 /** One installed tool: when setup installed it, and Remove. */
-function ToolRow({ tool, now, removing, onRemove }: { tool: InstalledTool; now: number; removing: Dependency | null; onRemove: () => void }) {
+function ToolRow({
+  tool,
+  now,
+  removing,
+  canRemove,
+  onRemove,
+}: {
+  tool: InstalledTool;
+  now: number;
+  removing: Dependency | null;
+  canRemove: boolean;
+  onRemove: () => void;
+}) {
   const t = useT();
   return (
     <li className="flex min-h-[3.25rem] items-center gap-3 border-t border-border px-4 py-2 transition-colors first:border-t-0 hover:bg-glass">
@@ -64,7 +78,7 @@ function ToolRow({ tool, now, removing, onRemove }: { tool: InstalledTool; now: 
         <p className="text-[0.8125rem] font-medium text-foreground">{toolName(tool.dependency)}</p>
         <p className="font-mono text-[0.6875rem] text-faint">{t("settings.installedTools.installedAgo", { ago: formatAgo(tool.at * 1000, now) })}</p>
       </div>
-      <Button variant="outline" size="xs" disabled={removing !== null} onClick={onRemove}>
+      <Button variant="outline" size="xs" disabled={removing !== null || !canRemove} onClick={onRemove}>
         <Trash2 className="size-3" /> {removing === tool.dependency ? t("settings.installedTools.removing") : t("settings.installedTools.remove")}
       </Button>
     </li>
@@ -77,6 +91,8 @@ export function InstalledToolsPanel() {
   const t = useT();
   const { tools, removing, log, remove } = useInstalledTools();
   const [asking, setAsking] = useState<Dependency | null>(null);
+  // Removals go with installs under the policy (`DisableToolInstalls`).
+  const installsOff = useToolInstallsOff();
 
   // "Installed … ago" counts from when the panel opened.
   const [now] = useState(Date.now);
@@ -86,6 +102,7 @@ export function InstalledToolsPanel() {
     <Panel>
       <PanelHeader title={t("settings.installedTools.title")} meta={tools.length ? t("settings.installedTools.count", { count: tools.length }) : undefined} />
       <p className="border-b border-border px-4 py-2.5 text-[0.75rem] text-muted-foreground">{t("settings.installedTools.intro")}</p>
+      {installsOff && <InstallsOffNote className="border-b border-border px-4 py-2.5" />}
       <ul>
         {tools.map((tool) => (
           <ToolRow
@@ -93,6 +110,7 @@ export function InstalledToolsPanel() {
             tool={tool}
             now={now}
             removing={removing}
+            canRemove={!installsOff}
             onRemove={() => {
               setAsking(tool.dependency);
             }}

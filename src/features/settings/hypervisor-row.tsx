@@ -13,6 +13,7 @@ import { describeError } from "@/lib/errors";
 import { useT } from "@/lib/i18n";
 import { useAddonInstall } from "@/features/settings/hypervisor-addons";
 import { NotReadyList, ReadyList } from "@/features/settings/hypervisor-lists";
+import { useToolInstallsOff } from "@/lib/use-managed";
 
 /**
  * Which local hypervisor VM labs run on. Every installed one is listed: the ready ones can be
@@ -97,6 +98,7 @@ function HypervisorChoice({
   const t = useT();
   const [provider, setProvider] = useState<Provider | null>(() => getVmProvider());
   const { installing, log, installAddon, allowHyperv } = useAddonInstall(onRefresh);
+  const installsOff = useToolInstallsOff();
   // Ready = hypervisor + Vagrant + its plugin: VM labs can start on it right now.
   const ready = local.filter((p) => p.available);
   const notReady = local.filter((p) => !p.available);
@@ -123,6 +125,7 @@ function HypervisorChoice({
           os={report.os}
           installing={installing}
           canInstall={report.vagrant.installed}
+          installsOff={installsOff}
           onInstall={installAddon}
           onAllowHyperv={allowHyperv}
         />

@@ -35,6 +35,7 @@ import { translate, useT } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";
 import { useStepper } from "@/lib/use-stepper";
 import { ignore } from "@/lib/failure";
+import { useToolInstallsOff } from "@/lib/use-managed";
 
 /** The setup's inputs: the host or account it starts from and the machine's tools, and what it
  *  tells its window. */
@@ -189,6 +190,7 @@ function useToolInstall(onRefresh: () => void) {
   // Set for the whole install: an installer printing its own "✓ …" line mid-run read as done
   // from the log, and a second install could start beside the first.
   const [toolBusy, setToolBusy] = useState(false);
+  const installsOff = useToolInstallsOff();
   async function installTool(label: string, run: (onLog: (l: string) => void) => Promise<void>) {
     setToolLabel(label);
     setToolBusy(true);
@@ -204,8 +206,11 @@ function useToolInstall(onRefresh: () => void) {
     pluginLog: toolLog.lines,
     toolLabel,
     toolBusy,
+    installsOff,
+    /** No install runs, and the policy allows one. */
+    canInstallTools: !toolBusy && !installsOff,
     installTool: (label: string, run: (onLog: (l: string) => void) => Promise<void>) => {
-      if (!toolBusy) void installTool(label, run);
+      if (!toolBusy && !installsOff) void installTool(label, run);
     },
   };
 }

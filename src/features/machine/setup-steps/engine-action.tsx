@@ -89,7 +89,7 @@ function StartEngine({ choice, actions }: ActionProps) {
 
 function InstallEngine({ setup, choice }: ActionProps) {
   const t = useT();
-  const { installing, installerOpened, install } = setup;
+  const { installing, canInstall, installerOpened, install } = setup;
   return (
     <>
       <span className="text-[0.8125rem] text-muted-foreground">{t("machine.engine.canInstall", { name: choice.name })}</span>
@@ -100,7 +100,7 @@ function InstallEngine({ setup, choice }: ActionProps) {
           onClick={() => {
             install("docker", "docker", t("machine.engine.installLog"));
           }}
-          disabled={installing !== null}
+          disabled={!canInstall}
         >
           <BusyLabel busy={installing === "docker"} label={t("machine.engine.installing")}>
             {t("machine.engine.install", { name: choice.name })}

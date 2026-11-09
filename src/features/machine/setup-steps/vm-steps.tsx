@@ -74,7 +74,7 @@ export function GetHypervisor({ choice, report, setup }: { choice: ProviderStatu
           onClick={() => {
             setup.install(choice.provider, dependency, t("machine.vm.installLog", { name: label }));
           }}
-          disabled={setup.installing !== null}
+          disabled={!setup.canInstall}
         >
           <BusyLabel busy={setup.installing === choice.provider} label={t("machine.vm.installing")}>
             {t("machine.vm.install", { name: label })}
@@ -145,7 +145,7 @@ export function VagrantRequirements({ choice, report, setup }: { choice: Provide
               onClick={() => {
                 setup.install("vagrant", "vagrant", t("machine.vm.installVagrantLog"));
               }}
-              disabled={setup.installing !== null}
+              disabled={!setup.canInstall}
             >
               <BusyLabel busy={setup.installing === "vagrant"} label={t("machine.vm.installing")} spinner="size-3">
                 {t("machine.vm.installVagrant")}
@@ -193,7 +193,7 @@ function PluginRequirement({ plugin, choice, report, setup }: { plugin: string; 
           onClick={() => {
             setup.installPlugin(plugin);
           }}
-          disabled={setup.installing !== null || !report.vagrant.installed}
+          disabled={!setup.canInstall || !report.vagrant.installed}
         >
           <BusyLabel busy={setup.installing === plugin} label={t("machine.vm.installing")} spinner="size-3">
             {t("machine.vm.installPlugin")}

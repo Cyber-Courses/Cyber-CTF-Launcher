@@ -15,6 +15,7 @@ import { hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/ste
 import { useRunLog } from "@/lib/use-run-log";
 import { ignore, tell } from "@/lib/failure";
 import { translate } from "@/lib/i18n";
+import { useToolInstallsOff } from "@/lib/use-managed";
 
 /** Starts each self-test's download in the background as soon as the machine can run it. */
 function usePrefetch(report: SystemReport | null) {
@@ -53,7 +54,9 @@ function useInstalls(onRefresh: () => void) {
     onRefresh();
   }
 
+  const installsOff = useToolInstallsOff();
   const install = (id: string, dep: Dependency, first: string) => {
+    if (installsOff) return;
     void run(id, first, async (onLog) => {
       await installDependency(dep, onLog);
       if (dep === "docker") setInstallerOpened(true);
@@ -62,9 +65,12 @@ function useInstalls(onRefresh: () => void) {
   };
   /** Adds the Vagrant plugin a hypervisor needs (e.g. vagrant-vmware-desktop). */
   const installPlugin = (plugin: string) => {
+    if (installsOff) return;
     void run(plugin, translate("machine.vm.pluginLog", { plugin }), (onLog) => installVagrantPlugin(plugin, onLog));
   };
-  return { installing, installerOpened, wslTurnedOn, logs: lines ?? [], logsFor, install, installPlugin };
+  /** No install runs, and the policy allows one. */
+  const canInstall = installing === null && !installsOff;
+  return { installing, installsOff, canInstall, installerOpened, wslTurnedOn, logs: lines ?? [], logsFor, install, installPlugin };
 }
 
 /** Windows counts down to the restart that finishes WSL 2: kept with the flow, not the step, so a

@@ -12,6 +12,7 @@ import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav"
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { openExternal } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
+import { InstallsOffNote } from "@/components/installs-off-note";
 
 const OVFTOOL_URL = "https://developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest";
 
@@ -43,6 +44,7 @@ export function ToolsStep({ s }: { s: HostSetup }) {
           <TerraformRequirement s={s} detail={report.terraform.installed ? null : t("servers.setup.tools.terraformProxmox")} />
         )}
       </div>
+      {s.installsOff && !toolsOk && <InstallsOffNote className="mt-2" />}
       {pluginLog && (
         <div className="mt-3">
           <LogConsole lines={pluginLog} running={toolBusy} title={t("servers.setup.tools.install", { name: toolLabel })} />
@@ -71,7 +73,7 @@ export function ToolsStep({ s }: { s: HostSetup }) {
 /** A cloud account's tools: its CLI (for the clouds that sign in with one), then Terraform. */
 function CloudTools({ s }: { s: HostSetup }) {
   const t = useT();
-  const { cloudProvider, toolBusy, installTool, cloudDep, cloudHasCli, cloudCliTool, cloudCliOk, terraformOk } = s;
+  const { cloudProvider, canInstallTools, installTool, cloudDep, cloudHasCli, cloudCliTool, cloudCliOk, terraformOk } = s;
   const cli = CLOUD_META[cloudProvider].cli;
   return (
     <>
@@ -84,7 +86,7 @@ function CloudTools({ s }: { s: HostSetup }) {
             <Button
               variant="outline"
               size="xs"
-              disabled={toolBusy}
+              disabled={!canInstallTools}
               onClick={() => {
                 installTool(`${cli} CLI`, (log) => installDependency(cloudDep, log));
               }}
@@ -102,7 +104,7 @@ function CloudTools({ s }: { s: HostSetup }) {
 /** An ESXi host's tools: Vagrant, its ESXi plugin, and VMware's OVF Tool (a manual download). */
 function EsxiTools({ s }: { s: HostSetup }) {
   const t = useT();
-  const { report, toolBusy, installTool, vagrantOk, esxiPluginOk, esxiPlugin, ovftoolOk } = s;
+  const { report, canInstallTools, installTool, vagrantOk, esxiPluginOk, esxiPlugin, ovftoolOk } = s;
   const plugin = esxiPlugin ?? "";
   return (
     <>
@@ -114,7 +116,7 @@ function EsxiTools({ s }: { s: HostSetup }) {
           <Button
             variant="outline"
             size="xs"
-            disabled={toolBusy}
+            disabled={!canInstallTools}
             onClick={() => {
               installTool("Vagrant", (log) => installDependency("vagrant", log));
             }}
@@ -131,7 +133,7 @@ function EsxiTools({ s }: { s: HostSetup }) {
           <Button
             variant="outline"
             size="xs"
-            disabled={toolBusy || !vagrantOk || !plugin}
+            disabled={!canInstallTools || !vagrantOk || !plugin}
             onClick={() => {
               installTool(plugin, (log) => installVagrantPlugin(plugin, log));
             }}
@@ -163,7 +165,7 @@ function EsxiTools({ s }: { s: HostSetup }) {
 /** Terraform, with its version once installed; `detail` says why it's needed while it isn't. */
 function TerraformRequirement({ s, detail }: { s: HostSetup; detail: string | null }) {
   const t = useT();
-  const { report, terraformOk, toolBusy, installTool } = s;
+  const { report, terraformOk, canInstallTools, installTool } = s;
   return (
     <Requirement
       ok={terraformOk}
@@ -173,7 +175,7 @@ function TerraformRequirement({ s, detail }: { s: HostSetup; detail: string | nu
         <Button
           variant="outline"
           size="xs"
-          disabled={toolBusy}
+          disabled={!canInstallTools}
           onClick={() => {
             installTool("Terraform", (log) => installDependency("terraform", log));
           }}

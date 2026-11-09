@@ -317,6 +317,14 @@ describe("HypervisorRow", () => {
     expect(screen.getByRole("radio", { name: /automatic/i }).getAttribute("aria-checked")).toBe("true");
   });
 
+  it("offers no add-on install the policy turns off", async () => {
+    installTauri({ managed_settings: () => ({ policy: ["DisableToolInstalls"], updates: "inApp" }) });
+    const report = withProviders([hv({ provider: "vmware_desktop", available: false, plugin: "vagrant-vmware-desktop", pluginInstalled: false })]);
+    render(<HypervisorRow report={report} {...props} />);
+    await flush();
+    expect(button(/install add-on/i).hasAttribute("disabled")).toBe(true);
+  });
+
   it("installs a missing Vagrant add-on, streaming its log, then re-checks", async () => {
     const calls = installTauri({ install_vagrant_plugin: (a) => (stream(a, "Installing the 'vagrant-vmware-desktop' plugin"), null) });
     const user = userEvent.setup();
@@ -554,6 +562,17 @@ describe("InstalledToolsPanel", () => {
     const { container } = render(<InstalledToolsPanel />);
     await flush();
     expect(container.textContent).toBe("");
+  });
+
+  it("offers no removal the policy turns off, and says why", async () => {
+    installTauri({
+      installed_tools: () => [{ dependency: "vagrant", at: Math.floor(Date.now() / 1000) - 3600 }],
+      managed_settings: () => ({ policy: ["DisableToolInstalls"], updates: "inApp" }),
+    });
+    render(<InstalledToolsPanel />);
+    await flush();
+    expect(text()).toContain("Your organization turned off one-click tool installs and removals");
+    expect(button(/remove/i).hasAttribute("disabled")).toBe(true);
   });
 
   it("removes a tool after confirming, then re-reads the list", async () => {

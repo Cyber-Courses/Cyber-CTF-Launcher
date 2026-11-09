@@ -192,6 +192,7 @@
       "DisableToolInstalls": "Instalação de ferramentas com um clique",
       "DisableCloudLaunches": "Labs em contas de nuvem",
       "RefusePrivilegedLabs": "Labs com máquinas privilegiadas"
-    }
+    },
+    "installsOff": "Sua organização desativou a instalação e a remoção de ferramentas com um clique neste computador (DisableToolInstalls). Faça isso você mesmo ou peça à sua equipe de TI."
   }
 }

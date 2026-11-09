@@ -348,6 +348,22 @@ pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn the_policy_refuses_a_removal_before_anything_runs() {
+        use crate::platform::policy::{Key, Override};
+        let t = crate::testing::test_app::TestApp::new();
+        let dirs = t.dirs();
+        record_outcome(&dirs, Dependency::Vagrant, Outcome::Installed);
+        let _policy = Override::with(&[Key::DisableToolInstalls]);
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let mut lines = Vec::new();
+        let err = uninstall_dependency(dirs.clone(), Dependency::Vagrant, |l| lines.push(l)).await.unwrap_err();
+        assert_eq!(err.code(), crate::error::Code::TurnedOffByPolicy { setting: "DisableToolInstalls".into() });
+        assert_eq!(lines, [err.to_string()], "said on the removal's log");
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert!(confirmed(load(&dirs)).iter().any(|t| t.dependency == Dependency::Vagrant), "still remembered as installed");
+    }
+
     #[test]
     fn records_round_trip_through_their_file_and_keep_one_entry_per_tool() {
         let dir = std::env::temp_dir().join(format!("cyberctf-tools-{}", rand::random::<u32>()));

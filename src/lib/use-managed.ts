@@ -13,3 +13,10 @@ export function useManagedSettings(): ManagedSettings | null {
   }, []);
   return managed;
 }
+
+/** Whether this computer's policy turns one-click tool installs and removals off
+ *  (`DisableToolInstalls`): their buttons are then disabled, and say why, instead of failing
+ *  when clicked. False until the managed settings are read. */
+export function useToolInstallsOff(): boolean {
+  return useManagedSettings()?.policy.includes("DisableToolInstalls") ?? false;
+}

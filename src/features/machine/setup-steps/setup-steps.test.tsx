@@ -357,6 +357,23 @@ describe("engine step", () => {
     expect(text()).not.toContain("paid subscription");
   });
 
+  it("offers no one-click install the policy turns off, and says why", async () => {
+    // Regression: Install was offered, and failed only once clicked.
+    const calls = installTauri({ managed_settings: () => ({ policy: ["DisableToolInstalls"], updates: "inApp" }) });
+    const user = userEvent.setup();
+    render(<Step step="docker" report={freshReport("macos")} />);
+    await flush();
+    expect(text()).toContain("Your organization turned off one-click tool installs and removals on this computer");
+    const install = button(/install docker desktop/i);
+    expect(install.hasAttribute("disabled")).toBe(true);
+    await user.click(install);
+    expect(commands(calls)).not.toContain("install_dependency");
+    cleanup();
+    render(<Step step="vagrant" report={freshReport("macos")} />);
+    await flush();
+    expect(button(/install vagrant/i).hasAttribute("disabled")).toBe(true);
+  });
+
   it("installs the recommended engine, then asks to finish in its installer", async () => {
     const { calls, onRefresh, user } = freshMacEngineStep();
     expect(text()).toContain("Cyber CTF can install Docker Desktop for you.");

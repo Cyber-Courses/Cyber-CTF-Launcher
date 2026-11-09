@@ -17,8 +17,10 @@ Every setting is a boolean. When a setting is missing, the feature stays on.
 | `RefusePrivilegedLabs` | No lab with a privileged machine starts (`privileged: true` in its `isoloom.yml`: a container with kernel-level access to the computer that runs it).                        |
 
 Names match regardless of case. The app's Settings window, under About, lists what the policy turns
-off. An operation the policy refuses fails before it changes anything, and says which setting refused
-it.
+off. The app doesn't offer what the policy turns off: the lab's launch picker shows the places it
+refuses with the setting that refuses them, and the install and remove buttons of tools are
+disabled with a line saying why. An operation the policy refuses anyway (a launch from the website,
+a request made another way) fails before it changes anything, and says which setting refused it.
 
 ## Where the policy lives
 

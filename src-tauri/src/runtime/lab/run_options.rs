@@ -1,12 +1,14 @@
 //! Where and in which form a lab can run, as its spec allows: per form, the hypervisors, servers
 //! and clouds Isoloom generates it for, each with the launch path it takes there (its Isoloom
 //! target and provider or cloud) and that path's maturity badge, and the ones Isoloom refuses,
-//! with why. The launch picker offers exactly these; a start checks the same refusals.
+//! with why, and the ones this computer's policy turns off. The launch picker offers exactly
+//! these; a start checks the same refusals.
 
 use isoloom_spec::model::Target;
 use isoloom_targets::Lab;
 
 use super::tiers::{self, Badge};
+use crate::platform::policy::{self, Key, Policy};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Runtime, lab};
 
@@ -67,12 +69,19 @@ pub struct RunOptions {
     pub cloud_vm: Vec<RunPath>,
     /// Its own cloud services (`cloud-services`), on its cloud.
     pub cloud_services: Vec<RunPath>,
-    /// Where a form exists but Isoloom refuses the lab, and why.
+    /// Where a form exists but Isoloom refuses the lab, or this computer's policy turns it off,
+    /// and why.
     pub refused: Vec<Refusal>,
 }
 
-/// Every way lab `lab`, declared `runtime`, can start ([`RunOptions`]).
+/// Every way lab `lab`, declared `runtime`, can start ([`RunOptions`]), as Isoloom generates it
+/// and this computer's policy allows.
 pub fn run_options(lab: &Lab, runtime: Runtime) -> RunOptions {
+    with_policy(generated(lab, runtime), policy::current(), lab::is_privileged(&lab.spec()))
+}
+
+/// Every way lab `lab`, declared `runtime`, can start as Isoloom generates it.
+fn generated(lab: &Lab, runtime: Runtime) -> RunOptions {
     let spec = lab.spec();
     let has = |t: Target| isoloom_spec::effective(&spec).contains(&t);
     let tiers = tiers::run_tiers();
@@ -128,6 +137,27 @@ pub fn run_options(lab: &Lab, runtime: Runtime) -> RunOptions {
     }
     out.refused = refused;
     out
+}
+
+/// `options` with the ways `policy` turns off moved to its refusals, with the policy's reason
+/// (what `launch::policy_allows` refuses at the start): every way, for a `privileged` lab under
+/// `RefusePrivilegedLabs`; the cloud accounts' under `DisableCloudLaunches`.
+fn with_policy(mut options: RunOptions, policy: Policy, privileged: bool) -> RunOptions {
+    let refuse = |key: Key, paths: Vec<RunPath>, refused: &mut Vec<Refusal>| {
+        if let Err(e) = policy.check(key) {
+            refused.extend(paths.into_iter().map(|p| Refusal { provider: p.provider, target: p.target, reason: e.to_string() }));
+        }
+    };
+    let o = &mut options;
+    if privileged && policy.is_on(Key::RefusePrivilegedLabs) {
+        let every = o.docker.take().into_iter().chain([&mut o.docker_vm, &mut o.vms, &mut o.servers].into_iter().flat_map(std::mem::take));
+        let every: Vec<RunPath> = every.chain([&mut o.cloud_docker, &mut o.cloud_vm, &mut o.cloud_services].into_iter().flat_map(std::mem::take)).collect();
+        refuse(Key::RefusePrivilegedLabs, every, &mut o.refused);
+    } else if policy.is_on(Key::DisableCloudLaunches) {
+        let clouds: Vec<RunPath> = [&mut o.cloud_docker, &mut o.cloud_vm, &mut o.cloud_services].into_iter().flat_map(std::mem::take).collect();
+        refuse(Key::DisableCloudLaunches, clouds, &mut o.refused);
+    }
+    options
 }
 
 /// The lab as containers on this machine's Docker, by its launch path `path`, unless Isoloom

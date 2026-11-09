@@ -203,6 +203,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   (every 5 seconds only while a check is failing). Vagrant's version and plugins are kept 10
   minutes (forgotten when the app installs or removes a tool), the running-VMs scan 30 seconds,
   and the WSL check is logged when its result changes.
+- **What the policy turns off isn't offered.** The launch picker offered a cloud account under
+  `DisableCloudLaunches`, and every place for a privileged lab under `RefusePrivilegedLabs`, and the
+  tool install and remove buttons stayed on under `DisableToolInstalls`; each refused only once
+  clicked. The picker now shows those places as refused, with the setting that refuses them, and
+  the buttons are disabled with a line saying why.
 - **A lab whose state can't be read says why.** When reading a lab's state failed (Docker not
   running, its run record unreadable, its files no longer able to be generated again), the lab
   page went on showing the last state it had read, with no word of it. It now says, at the top,

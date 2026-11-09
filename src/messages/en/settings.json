@@ -192,6 +192,7 @@
       "DisableToolInstalls": "One-click tool installs",
       "DisableCloudLaunches": "Labs on cloud accounts",
       "RefusePrivilegedLabs": "Labs with privileged machines"
-    }
+    },
+    "installsOff": "Your organization turned off one-click tool installs and removals on this computer (DisableToolInstalls). Do it yourself, or ask your IT team."
   }
 }

@@ -6,6 +6,7 @@
  * list, titles, bodies and install/test state all live here, so a change shows up in both.
  */
 
+import { InstallsOffNote } from "@/components/installs-off-note";
 import { SelfTest, type SelfTestResult } from "@/features/machine/self-test";
 import { getLastTest } from "@/lib/settings";
 import { type SystemReport } from "@/lib/tauri";
@@ -21,6 +22,21 @@ import { useT } from "@/lib/i18n";
 
 /** The body of one setup step (no header, no nav: the flow draws those). */
 export function MachineStepBody({ step, report, setup }: { step: MachineStep; report: SystemReport; setup: MachineSetupState }) {
+  const body = <StepContent step={step} report={report} setup={setup} />;
+  if (!setup.installsOff || !INSTALLING_STEPS.has(step)) return body;
+  return (
+    <>
+      <InstallsOffNote className="mb-3" />
+      {body}
+    </>
+  );
+}
+
+/** The steps that install a tool: under `DisableToolInstalls` they say why their buttons are off. */
+const INSTALLING_STEPS: ReadonlySet<MachineStep> = new Set<MachineStep>(["virtualization", "docker", "vm", "vagrant"]);
+
+/** One step's own content. */
+function StepContent({ step, report, setup }: { step: MachineStep; report: SystemReport; setup: MachineSetupState }) {
   switch (step) {
     case "pkgmgr":
       return <PackageManagerStep report={report} />;
