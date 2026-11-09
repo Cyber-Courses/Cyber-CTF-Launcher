@@ -210,6 +210,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   tool install and remove buttons stayed on under `DisableToolInstalls`; each refused only once
   clicked. The picker now shows those places as refused, with the setting that refuses them, and
   the buttons are disabled with a line saying why.
+- **A cloud-services lab gets the account's region, subscription or project.** The lab's own
+  Terraform module was never given where the account works when its provider names none: the AWS
+  region (`AWS_REGION`), the Azure subscription, the Google Cloud project and region. They are now
+  given from the picked account, unless the lab's `cloud.env` sets them, and a lab brought over
+  from an earlier version keeps the region it was applied in.
 - **A lab whose state can't be read says why.** When reading a lab's state failed (Docker not
   running, its run record unreadable, its files no longer able to be generated again), the lab
   page went on showing the last state it had read, with no word of it. It now says, at the top,

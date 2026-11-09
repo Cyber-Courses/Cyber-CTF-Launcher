@@ -12,15 +12,24 @@ const ENV: &str = "env";
 /// When the deployment stops itself, in Unix seconds.
 const EXPIRES_AT: &str = "expires_at";
 
-/// The provider environment an old record kept, as the module variable each stands for: taken
-/// only when the record kept no variable of that name, the first of a name winning (the
-/// launcher's AWS path set `AWS_REGION`, its cloud-services path the GCP project and region).
-const ENV_AS_PARAM: [(&str, &str); 5] = [
+/// The provider environment an old record kept, as each param it stands for: the module
+/// variable of the launcher's own modules (`region`, `subscription_id`, `project`), and the
+/// environment param of a module of the lab's own (cloud services: `AWS_REGION`,
+/// `ARM_SUBSCRIPTION_ID`, `GOOGLE_PROJECT`, `GOOGLE_REGION`). Each taken only when the record kept
+/// no variable of that name, the first of a name winning (the launcher's AWS path set
+/// `AWS_REGION`, its cloud-services path the GCP project and region); the manifest's own params
+/// pick which apply.
+const ENV_AS_PARAM: [(&str, &str); 10] = [
     ("ARM_SUBSCRIPTION_ID", "subscription_id"),
+    ("ARM_SUBSCRIPTION_ID", "ARM_SUBSCRIPTION_ID"),
     ("AWS_REGION", "region"),
     ("AWS_DEFAULT_REGION", "region"),
+    ("AWS_REGION", "AWS_REGION"),
+    ("AWS_DEFAULT_REGION", "AWS_REGION"),
     ("GOOGLE_PROJECT", "project"),
+    ("GOOGLE_PROJECT", "GOOGLE_PROJECT"),
     ("GOOGLE_REGION", "region"),
+    ("GOOGLE_REGION", "GOOGLE_REGION"),
 ];
 
 /// What an old run record says, parsed once: a missing or malformed one says nothing.
@@ -104,6 +113,20 @@ mod tests {
         assert_eq!(pairs(&env_only.params(&takes(&["region"]))), [("region", "us-east-1")]);
         let both = OldRecord::parse(r#"{"region":"eu-west-3","env":{"AWS_REGION":"us-east-1"}}"#);
         assert_eq!(pairs(&both.params(&takes(&["region"]))), [("region", "eu-west-3")]);
+    }
+
+    #[test]
+    fn a_kept_region_fills_a_lab_modules_own_region_param_too() {
+        // Regression: a kept AWS_REGION only ever filled `region`, never a cloud-services
+        // module's own AWS_REGION param, so its adopted run had no region to destroy in.
+        let services = OldRecord::parse(r#"{"cloud_services":true,"env":{"AWS_REGION":"us-east-1"}}"#);
+        assert_eq!(pairs(&services.params(&takes(&["region", "AWS_REGION"]))), [("AWS_REGION", "us-east-1"), ("region", "us-east-1")]);
+        let older = OldRecord::parse(r#"{"env":{"AWS_DEFAULT_REGION":"us-west-2"}}"#);
+        assert_eq!(pairs(&older.params(&takes(&["AWS_REGION"]))), [("AWS_REGION", "us-west-2")]);
+        let azure = OldRecord::parse(r#"{"env":{"ARM_SUBSCRIPTION_ID":"0000-1111"}}"#);
+        assert_eq!(pairs(&azure.params(&takes(&["ARM_SUBSCRIPTION_ID"]))), [("ARM_SUBSCRIPTION_ID", "0000-1111")]);
+        let gcp = OldRecord::parse(r#"{"env":{"GOOGLE_PROJECT":"labs-1","GOOGLE_REGION":"us-central1"}}"#);
+        assert_eq!(pairs(&gcp.params(&takes(&["GOOGLE_PROJECT", "GOOGLE_REGION"]))), [("GOOGLE_PROJECT", "labs-1"), ("GOOGLE_REGION", "us-central1")]);
     }
 
     #[test]

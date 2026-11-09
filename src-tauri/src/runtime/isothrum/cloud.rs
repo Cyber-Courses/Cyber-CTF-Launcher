@@ -13,6 +13,7 @@
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
+use isoloom_manifest::{Manifest, SetBy};
 use isothrum_runner::{RunName, RunOptions, Runner, SecretValue, Secrets};
 
 use super::opened::OpenedRun;
@@ -41,6 +42,8 @@ pub(crate) struct CloudPlace {
     /// The account's Terraform environment (`conn.tf_env`): its credentials (delivered as the
     /// manifest's connection secrets) and any profile/region (delivered as parameters).
     pub(crate) tf_env: Vec<(String, String)>,
+    /// The account's Google Cloud project (its labs project), for a module of the lab's own.
+    pub(crate) project: Option<String>,
     /// When the run stops itself (the account's auto-stop): the manifest's `expiry`.
     pub(crate) lifetime: Option<Duration>,
 }
@@ -49,7 +52,8 @@ impl CloudPlace {
     /// Account `conn`'s place, for an operation on its run: the account's id, region and
     /// credentials.
     pub(crate) fn of(conn: &crate::runtime::server::Connection) -> CloudPlace {
-        CloudPlace { label: conn.id.clone(), region: conn.region.clone(), tf_env: conn.tf_env.clone(), ..CloudPlace::default() }
+        let project = conn.tf_vars.iter().find(|(k, _)| k == "project").map(|(_, v)| v.clone());
+        CloudPlace { label: conn.id.clone(), region: conn.region.clone(), tf_env: conn.tf_env.clone(), project, ..CloudPlace::default() }
     }
 
     /// Account `conn`'s place for a launch: [`CloudPlace::of`], with the account's auto-stop as
@@ -93,9 +97,27 @@ impl CloudPlace {
         params
     }
 
-    /// The options of an operation on this account, with the launch's values `env`.
-    pub(crate) fn options(&self, env: &[(String, String)]) -> RunOptions {
-        let opts = RunOptions::new().with_secrets(self.secrets(env)).with_params(self.params()).with_host_label(&self.label);
+    /// Where a module of the lab's own (cloud services) works, as its provider reads it from the
+    /// environment, for each that `manifest` takes as a param (Isoloom's placement, left out when
+    /// the lab's `cloud.env` sets it): the account's AWS region, Azure subscription, Google Cloud
+    /// project and region. A start refuses a param its manifest doesn't take: only those it does.
+    fn placement(&self, manifest: &Manifest) -> Vec<(String, String)> {
+        let env = |name: &str| self.tf_env.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+        let candidates = [
+            ("AWS_REGION", env("AWS_REGION").or_else(|| env("AWS_DEFAULT_REGION")).or_else(|| self.region.clone())),
+            ("ARM_SUBSCRIPTION_ID", env("ARM_SUBSCRIPTION_ID")),
+            ("GOOGLE_PROJECT", self.project.clone()),
+            ("GOOGLE_REGION", self.region.clone()),
+        ];
+        let takes = |name: &str| manifest.params.iter().any(|p| p.set_by == SetBy::Embedder && p.name.as_str() == name);
+        candidates.into_iter().filter(|(name, _)| takes(name)).filter_map(|(name, value)| Some((name.to_owned(), value?))).collect()
+    }
+
+    /// The options of an operation on this account's run of `manifest`, with the launch's values
+    /// `env`.
+    pub(crate) fn options(&self, env: &[(String, String)], manifest: &Manifest) -> RunOptions {
+        let params = self.params().into_iter().chain(self.placement(manifest));
+        let opts = RunOptions::new().with_secrets(self.secrets(env)).with_params(params).with_host_label(&self.label);
         match self.lifetime {
             Some(lifetime) => opts.with_lifetime(lifetime),
             None => opts,
@@ -166,7 +188,8 @@ impl CloudRun {
     /// start. `env` is the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &CloudPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        super::up_with(&self.running()?, &place.options(env), log).await
+        let running = self.running()?;
+        super::up_with(&running, &place.options(env, running.manifest()), log).await
     }
 
     /// Brings the running lab up to date with its regenerated module (a machine added to the lab
@@ -174,14 +197,16 @@ impl CloudRun {
     /// they were given.
     pub(crate) async fn update(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        self.update_with(&place.options(&[]), log).await
+        let running = self.running()?;
+        super::update_of(&running, &place.options(&[], running.manifest()), log).await
     }
 
     /// Takes `machine` out of the running lab ahead of its removal from the module, with the
     /// account's credentials (`place`'s).
     pub(crate) async fn retire(&self, place: &CloudPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        self.retire_with(machine, &place.options(&[]), log).await
+        let running = self.running()?;
+        super::retire_from(&running, machine, &place.options(&[], running.manifest()), log).await
     }
 
     /// Removes everything the run created in the account, with the parameters it was applied with
@@ -197,7 +222,7 @@ impl CloudRun {
         self.signed_in(place).await?;
         let running = self.running()?;
         let (sink, lines) = progress::channel();
-        progress::follow(log, lines, running.down(&place.options(&[]), &sink)).await.map_err(errors::from_runner)
+        progress::follow(log, lines, running.down(&place.options(&[], running.manifest()), &sink)).await.map_err(errors::from_runner)
     }
 
     /// The lab as its page shows it (place `Cloud`); not running before its module was ever
@@ -217,7 +242,8 @@ impl CloudRun {
         if !self.manifest.is_file() {
             return Ok(Check::default());
         }
-        super::checks_of(&self.running()?, &place.options(&[])).await
+        let running = self.running()?;
+        super::checks_of(&running, &place.options(&[], running.manifest())).await
     }
 }
 
@@ -435,12 +461,59 @@ mod tests {
                 .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
                 .collect(),
             lifetime: Some(Duration::from_secs(4 * 3600)),
+            project: None,
         }
+    }
+
+    /// The run manifest Isoloom generates for a lab of its own module on `cloud` (cloud
+    /// services): `env` is its `cloud.env`, which takes the names it sets from the params.
+    fn services_manifest(cloud: &str, env: &str) -> Manifest {
+        let dir = crate::runtime::test_support::write_lab(&format!("version: 1\nname: s\ncloud:\n  provider: {cloud}\n  terraform: terraform\n{env}"));
+        std::fs::create_dir_all(dir.join("terraform")).unwrap();
+        std::fs::write(dir.join("terraform").join("main.tf"), "variable \"region\" {}\n").unwrap();
+        let (module, target) = lab::terraform(&dir, Runtime::Cloud, cloud);
+        lab::prepare(&dir, target).unwrap();
+        let manifest = isothrum_runner::load_manifest(&module.join("run.json")).unwrap().manifest;
+        let _ = std::fs::remove_dir_all(&dir);
+        manifest
+    }
+
+    /// A cloud-docker run's manifest on AWS: no placement params.
+    fn vm_manifest() -> Manifest {
+        let dir = crate::runtime::test_support::write_lab(
+            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, networks: { lan: 10 } }\n",
+        );
+        let (module, target) = lab::terraform(&dir, Runtime::Docker, "aws");
+        lab::prepare(&dir, target).unwrap();
+        let manifest = isothrum_runner::load_manifest(&module.join("run.json")).unwrap().manifest;
+        let _ = std::fs::remove_dir_all(&dir);
+        manifest
+    }
+
+    #[test]
+    fn a_module_of_the_labs_own_gets_where_the_account_works() {
+        // Regression: the cloud-services target's AWS_REGION param (and Azure's subscription,
+        // Google's project and region) was never given, so a module whose provider names no
+        // region had none.
+        let aws = place().options(&[], &services_manifest("aws", ""));
+        assert_eq!(aws.params.get("AWS_REGION").map(String::as_str), Some("us-east-1"));
+        // The lab's own region (its cloud.env) wins: the param isn't there to give.
+        let own = place().options(&[], &services_manifest("aws", "  env: { AWS_REGION: eu-west-3 }\n"));
+        assert!(!own.params.contains_key("AWS_REGION"));
+        let azure = CloudPlace { tf_env: vec![("ARM_SUBSCRIPTION_ID".into(), "sub-1".into())], ..CloudPlace::default() };
+        assert_eq!(azure.options(&[], &services_manifest("azure", "")).params.get("ARM_SUBSCRIPTION_ID").map(String::as_str), Some("sub-1"));
+        let gcp = CloudPlace { region: Some("europe-west1".into()), project: Some("cyberctf-labs-1".into()), ..CloudPlace::default() };
+        let gcp = gcp.options(&[], &services_manifest("gcp", ""));
+        assert_eq!(gcp.params.get("GOOGLE_PROJECT").map(String::as_str), Some("cyberctf-labs-1"));
+        assert_eq!(gcp.params.get("GOOGLE_REGION").map(String::as_str), Some("europe-west1"));
+        // A run of the launcher's own modules takes none of them: none given (a start refuses one).
+        let vm = place().options(&[], &vm_manifest());
+        assert!(!vm.params.contains_key("AWS_REGION") && !vm.params.contains_key("GOOGLE_REGION"));
     }
 
     #[test]
     fn credentials_are_connection_secrets_while_region_and_profile_are_parameters() {
-        let opts = place().options(&[("FLAG".to_owned(), "flag{x}".to_owned())]);
+        let opts = place().options(&[("FLAG".to_owned(), "flag{x}".to_owned())], &vm_manifest());
         // The account's credentials and the launch's input slots travel as secrets…
         assert_eq!(opts.secrets.get("AWS_ACCESS_KEY_ID").map(SecretValue::expose), Some("AKIA"));
         assert_eq!(opts.secrets.get("AWS_SECRET_ACCESS_KEY").map(SecretValue::expose), Some("sk"));
@@ -478,7 +551,7 @@ mod tests {
     #[test]
     fn a_destroy_sets_no_firewall_or_expiry_and_leaves_the_runner_to_replay_the_rest() {
         let place = CloudPlace { region: Some("eu-west-3".to_owned()), tf_env: vec![("AWS_ACCESS_KEY_ID".to_owned(), "k".to_owned())], ..Default::default() };
-        let opts = place.options(&[]);
+        let opts = place.options(&[], &vm_manifest());
         assert!(!opts.params.contains_key("allowed_cidr"), "no firewall value at destroy");
         assert!(opts.lifetime.is_none());
         assert_eq!(opts.params.get("region").map(String::as_str), Some("eu-west-3"));
