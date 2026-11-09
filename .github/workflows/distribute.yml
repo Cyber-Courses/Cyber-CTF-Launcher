@@ -1,9 +1,9 @@
 name: Distribute
 
-# Pushes a release to the package channels so nobody bumps them by hand:
-# the Homebrew cask (Cyber-Courses/homebrew-tap) and the apt repository (Cyber-Courses/apt,
-# which signs with its own key). The website's download links already follow the latest
-# release on their own. Cross-repo writes use the org's cyber-ctf-creator GitHub App.
+# Pushes a release to the package channels so nobody bumps them by hand: the Homebrew cask
+# (Cyber-Courses/homebrew-tap, rendered from packaging/homebrew/cyberctf.rb) and the apt
+# repository (Cyber-Courses/apt, which signs with its own key). The website's download links
+# already follow the latest release on their own. Cross-repo writes use the org's cyber-ctf-creator GitHub App.
 # Release calls this after publishing a tag build; a release published by hand also
 # triggers it, and workflow_dispatch re-runs it for any tag.
 
@@ -52,7 +52,15 @@ jobs:
           owner: Cyber-Courses
           repositories: homebrew-tap,apt
 
-      - name: Bump the Homebrew cask
+      # The cask's source is packaging/homebrew/cyberctf.rb at the release's tag; the tap's copy is
+      # replaced by it, with the version and the DMG's checksum filled in.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+          sparse-checkout: packaging/homebrew
+
+      - name: Update the Homebrew cask
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
@@ -64,11 +72,11 @@ jobs:
             echo "::error::refusing to bump the cask with version '$version' (tag '$TAG')"
             exit 1
           fi
-          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "*_${version}_universal.dmg" --output app.dmg
-          sha=$(sha256sum app.dmg | cut -d' ' -f1)
-          git clone -q "https://x-access-token:${GH_TOKEN}@github.com/Cyber-Courses/homebrew-tap.git" tap
-          cd tap
-          sed -i -E "s/^  version \".*\"/  version \"${version}\"/; s/^  sha256 \".*\"/  sha256 \"${sha}\"/" Casks/cyberctf.rb
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "*_${version}_universal.dmg" --output "$RUNNER_TEMP/app.dmg"
+          sha=$(sha256sum "$RUNNER_TEMP/app.dmg" | cut -d' ' -f1)
+          git clone -q "https://x-access-token:${GH_TOKEN}@github.com/Cyber-Courses/homebrew-tap.git" "$RUNNER_TEMP/tap"
+          sed -e "s/__VERSION__/${version}/" -e "s/__SHA256__/${sha}/" packaging/homebrew/cyberctf.rb > "$RUNNER_TEMP/tap/Casks/cyberctf.rb"
+          cd "$RUNNER_TEMP/tap"
           git diff --quiet && { echo "Cask already at ${version}"; exit 0; }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
