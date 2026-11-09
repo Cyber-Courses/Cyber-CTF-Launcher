@@ -62,7 +62,8 @@ host's knobs its scenario is skipped, saying which ones it needs.
 
 ## Not here yet
 
-- The attack box on a server: `box-*` on Proxmox and ESXi, once a test host is back.
+- The attack box on a server: `box-*` on Proxmox, once a test host is back (a lab on ESXi has
+  no attack box).
 - The shell as a person sees it: a console whose prompt went to its error output and showed
   nothing after Kali's MOTD (now a unit test in Isothrum: the shell is chosen first, then started
   with nothing redirected), and a shell offered before the box finished installing (the side

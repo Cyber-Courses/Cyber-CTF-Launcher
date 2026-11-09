@@ -55,11 +55,11 @@ from the run (`Running::retire`: Vagrant forgets a VM its Vagrantfile no longer 
 from the overlay and updates again. Its status is the run's status of that machine; its shell is
 the runner's console into it (`Running::console_command`).
 
-| Form          | The box                                                                                                    |
-| ------------- | ---------------------------------------------------------------------------------------------------------- |
-| Containers    | a container from the attack image picked in Settings, on the lab's network                                 |
-| VMs           | a Kali VM (`kali@rolling`, 40 GB) with Kali's headless toolset, installed on its first start (~16 minutes) |
-| On an Arm Mac | native: Kali's arm64 image beside containers; a Debian arm64 VM made Kali by its set-up among VMs          |
+| Form               | The box                                                                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Containers         | a container from the attack image picked in Settings, on the lab's network                                 |
+| VMs                | a Kali VM (`kali@rolling`, 40 GB) with Kali's headless toolset, installed on its first start (~16 minutes) |
+| On an Arm computer | native: Kali's arm64 image beside containers; a Debian arm64 VM made Kali by its set-up among VMs          |
 
 A lab that declares an access machine (`access: true`) says with it where the player sits: the
 box takes its place there (its name, its networks and addresses, in the overlay's `replace:`), so

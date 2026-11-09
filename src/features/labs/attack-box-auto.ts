@@ -33,7 +33,7 @@ export function useAttackBoxAutoStart(ops: Map<string, ActiveOperation>, enabled
       const runtime = runtimeOf(id);
       labStatus(id, runtime)
         .then(async (s) => {
-          // A failed start leaves nothing running.
+          // A failed launch or resume reads as not running (the backend's status says so).
           if (!s.running) return;
           const box = await attackBoxStatus(id, runtime);
           if (box.reachable && !box.running) await attachAttackBox(id, runtime, null);

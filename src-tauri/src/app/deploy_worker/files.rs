@@ -16,9 +16,9 @@ pub struct Files {
     pub pid: PathBuf,
     /// `ok` or `error: ...`, written last (`<key>.status`).
     pub status: PathBuf,
-    /// The verdict of the last launch alone, in the same form (`<key>.launch-status`): the
-    /// other operations (a pause, a resume, a provisioning run) write `status` too, and their
-    /// failure says nothing about whether the lab itself came up.
+    /// The verdict of the last operation that brought the lab up (a launch or a resume) alone,
+    /// in the same form (`<key>.launch-status`): the other operations (a pause, a provisioning
+    /// run) write `status` too, and their failure says nothing about whether the lab came up.
     pub launch_status: PathBuf,
 }
 
@@ -38,8 +38,8 @@ impl Files {
         read_worker(&self.pid)
     }
 
-    /// Whether this lab's last finished launch failed (none still running, `error: …` launch
-    /// status). A failed pause, resume or provisioning run doesn't count.
+    /// Whether this lab's last finished launch or resume failed (none still running, `error: …`
+    /// launch status). A failed pause or provisioning run doesn't count.
     pub fn failed(&self) -> bool {
         if self.worker().is_some_and(|w| alive(&w)) {
             return false;

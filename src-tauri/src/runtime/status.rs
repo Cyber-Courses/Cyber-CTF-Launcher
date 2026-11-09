@@ -33,8 +33,9 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     Ok(LabStatus { per_machine, reap_error: super::reaper::last_failure(dirs, id), ..status })
 }
 
-/// A lab whose last launch failed is not running, even if its machines stayed up: a failed setup
-/// step leaves it unusable, and showing it running with a healthy diagram misleads.
+/// A lab whose last launch or resume failed is not running, even if its machines stayed up: a
+/// failed setup step leaves it unusable, and showing it running with a healthy diagram misleads.
+/// The lab page and the attack box's auto-start go by this alone.
 fn unless_launch_failed(dirs: &AppDirs, id: &str, s: LabStatus) -> LabStatus {
     let failed = crate::app::deploy_worker::last_deploy_failed(dirs, id);
     LabStatus { running: s.running && !failed, ..s }

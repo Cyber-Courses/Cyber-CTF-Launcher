@@ -68,10 +68,11 @@ type PageState = ReturnType<typeof useLabPageState>;
  *  player works from their own machine), its status says so (`reachable`).
  *  Not while the lab itself is starting, resuming or stopping: the box goes in by updating the
  *  lab's run, which must not race the lab's own operation.
- *  A failed deploy can leave the machines up (a provisioning step broke): the lab then reads as
- *  running, but its attack box must not start beside a lab that isn't ready. */
+ *  A failed launch or resume can leave the machines up (a provisioning step broke): the backend
+ *  then reports the lab as not running, so no box starts beside a lab that isn't ready, here as
+ *  in the auto-start with each lab. */
 function useLabAttackBox(labId: string, s: PageState, runtime: Runtime) {
-  return useAttackBox(labId, { running: s.running, holding: s.deploying, runtime, failed: s.deployFailed });
+  return useAttackBox(labId, { running: s.running, holding: s.deploying, runtime });
 }
 
 /** `value`, held at what it was when `hold` began, for as long as it lasts. */

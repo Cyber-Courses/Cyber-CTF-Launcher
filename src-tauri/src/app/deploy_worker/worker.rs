@@ -145,7 +145,7 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
             let _ = writeln!(file, "{line}");
         }
     };
-    let launch = job.op == Op::Launch;
+    let launch = brings_up(&job.op);
     // The lab is this worker's for the whole job (download and install included): the app's
     // own operations on it (a stop, the expiry reaper) wait or step aside meanwhile. A lock that
     // can't be taken fails the job: running unlocked is what it is there to prevent.
@@ -157,13 +157,19 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
     conclude(&f, &result, launch, log)
 }
 
+/// Whether `op` brings the lab up, its verdict then saying whether it came up
+/// (`files::Files::launch_status`): a launch, from the catalogue or a local folder, and a resume.
+fn brings_up(op: &Op) -> bool {
+    matches!(op, Op::Launch | Op::LaunchLocal { .. } | Op::Resume { .. })
+}
+
 /// The cross-process lock of lab `id`, waited for.
 async fn hold_lab(app: &AppHandle, id: &str) -> crate::error::Result<super::lock::LabFileLock> {
     super::lock::acquire(&super::lock_path(&crate::platform::AppDirs::from(app), id)?).await.map_err(super::lock::unavailable)
 }
 
 /// The end of a run: the failure in the log, the verdict in the status file (and, for a
-/// `launch`, in the launch status too), the pidfile gone. Returns the process's exit code.
+/// `launch` or a resume, in the launch status too), the pidfile gone. Returns the process's exit code.
 fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool, log: impl Fn(String)) -> i32 {
     // The log file says how it ended too, so a page that re-attaches to it after a reload or a
     // relaunch (it has no live verdict) still sees the run failed.
@@ -196,7 +202,7 @@ fn status_line<T>(result: &crate::error::Result<T>) -> (String, i32) {
 
 #[cfg(test)]
 mod tests {
-    use super::{conclude, read_job, status_line};
+    use super::{brings_up, conclude, read_job, status_line};
     use crate::app::deploy_worker::files::Files;
     use crate::app::deploy_worker::progress::verdict;
     use crate::app::deploy_worker::{Job, Op};
@@ -313,5 +319,15 @@ mod tests {
         conclude(&f, &Err::<(), _>(Error::RefusedBeforeActing("sign in again".into())), true, |_| {});
         assert_eq!(verdict(&std::fs::read_to_string(&f.launch_status).unwrap()).unwrap_err().to_string(), "sign in again");
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_launch_and_a_resume_say_whether_the_lab_came_up_a_pause_or_a_provisioning_run_doesnt() {
+        use crate::runtime::{Park, Runtime};
+        assert!(brings_up(&Op::Launch));
+        assert!(brings_up(&Op::LaunchLocal { src: "/labs/web".into() }));
+        assert!(brings_up(&Op::Resume { runtime: Runtime::Vm }));
+        assert!(!brings_up(&Op::Park { runtime: Runtime::Docker, mode: Park::Pause }));
+        assert!(!brings_up(&Op::Provision { runtime: Runtime::Vm, machine: None }));
     }
 }

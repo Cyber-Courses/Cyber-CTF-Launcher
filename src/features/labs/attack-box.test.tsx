@@ -122,10 +122,8 @@ describe("useAttackBox", () => {
     expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "ab-auto" });
   });
 
-  it("doesn't attach the box beside a lab whose deploy failed, or with auto-start off", async () => {
+  it("doesn't attach the box with auto-start off", async () => {
     const calls = installTauri({ attack_box_status: () => box() });
-    renderHook(() => useAttackBox("ab-failed", { running: true, failed: true }));
-    await flush(50);
     setAutoAttackBox(false);
     renderHook(() => useAttackBox("ab-off", { running: true }));
     await flush(50);

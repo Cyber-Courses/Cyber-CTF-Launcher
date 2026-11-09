@@ -137,7 +137,7 @@ export function setVmProvider(provider: Provider | null) {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(VM_PROVIDER_CHANGED));
 }
 
-/** An image name the core will run (exegol.rs `valid_image`): plain ASCII name characters, no
+/** An image name the core will run (`valid_image` in src-tauri/src/platform/exec/docker.rs): plain ASCII name characters, no
  *  leading dash (it would read as a `docker` option). */
 export function validImage(image: string): boolean {
   return image.length > 0 && image.length <= 200 && !image.startsWith("-") && /^[A-Za-z0-9._\-/:@]+$/.test(image);
@@ -189,7 +189,8 @@ export function setLastTest(
 
 const AUTO_ATTACK_KEY = "cyberctf.attackbox.auto";
 
-/** Start the attack box as soon as a local container lab is up (default on). */
+/** Start the attack box as soon as a lab the launcher reaches a run of is up, wherever it runs
+ *  (default on). */
 export function getAutoAttackBox(): boolean {
   try {
     return localStorage.getItem(AUTO_ATTACK_KEY) !== "false";

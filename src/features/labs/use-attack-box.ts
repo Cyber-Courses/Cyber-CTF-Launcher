@@ -66,9 +66,10 @@ function useAttackBoxRun(refresh: () => void) {
 /** Attaches the box with the lab when Settings say so, once per run of the lab. Only a lab that is
  *  really down starts a new run: an operation in flight doesn't, nor does the stale "running"
  *  the lab status still shows just after one ends. A box seen running counts as attached, so
- *  taking it out by hand doesn't bring it back. Never beside a lab whose last deploy failed. */
+ *  taking it out by hand doesn't bring it back. A lab whose last launch or resume failed is not
+ *  running (the backend's status says so), so none goes in beside it. */
 function useAutoStart(
-  { running, holding, active, failed }: { running: boolean; holding: boolean; active: boolean; failed: boolean },
+  { running, holding, active }: { running: boolean; holding: boolean; active: boolean },
   status: AttackStatus | null,
   busy: boolean,
   start: () => Promise<void>,
@@ -86,10 +87,10 @@ function useAutoStart(
       autoStarted.current = true;
       return;
     }
-    if (!autoStart || !status.reachable || busy || failed || autoStarted.current) return;
+    if (!autoStart || !status.reachable || busy || autoStarted.current) return;
     autoStarted.current = true;
     void start();
-  }, [running, holding, active, autoStart, status, busy, failed, start]);
+  }, [running, holding, active, autoStart, status, busy, start]);
 }
 
 /**
@@ -105,10 +106,7 @@ function useAutoStart(
  * where the player sits), `defaultNetwork` until they do. `holding` = a lab operation (start,
  * shut down, stop…) is in flight: nothing is read or attached meanwhile.
  */
-export function useAttackBox(
-  labId: string,
-  { running, holding = false, runtime = "DOCKER", failed = false }: { running: boolean; holding?: boolean; runtime?: Runtime; failed?: boolean },
-) {
+export function useAttackBox(labId: string, { running, holding = false, runtime = "DOCKER" }: { running: boolean; holding?: boolean; runtime?: Runtime }) {
   const active = running && !holding;
   // The lab network the box joins: the learner's pick (null: the seat the lab declares, else its
   // first network).
@@ -134,7 +132,7 @@ export function useAttackBox(
       }, translate("labs.attackBox.removing")),
     [run, labId, runtime, setStatus],
   );
-  useAutoStart({ running, holding, active, failed }, status, busy, start);
+  useAutoStart({ running, holding, active }, status, busy, start);
 
   const defaultNetwork = status?.defaultNetwork ?? "";
   return { status, busy, log, start, stop, vm, name, networks: status?.networks ?? [], network, defaultNetwork, setNetwork };
