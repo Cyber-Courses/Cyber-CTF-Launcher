@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn a_taken_port_and_a_missing_tool_keep_the_codes_the_ui_knows() {
-        assert_eq!(said(RunnerError::PortInUse { port: 8080, protocol: "tcp" }).0, Code::PortInUse { port: 8080, holder: None });
+        assert_eq!(said(RunnerError::PortInUse { port: 8080, protocol: "tcp".into() }).0, Code::PortInUse { port: 8080, holder: None });
         assert_eq!(said(RunnerError::ToolMissing { step: "tools".into(), tool: "docker".into() }).0, Code::ToolMissing { tool: "docker".into() });
         assert_eq!(said(RunnerError::Locked { run: "cyberctf-web".into() }).0, Code::AlreadyInProgress);
     }

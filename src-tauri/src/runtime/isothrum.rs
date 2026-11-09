@@ -249,14 +249,14 @@ impl LabRun {
     /// launcher's park modes are the manifest's `shutdown` there; VMs are suspended (`Pause`) or
     /// powered off (`Shutdown`).
     pub(crate) async fn park(&self, mode: Park, log: &mut impl FnMut(String)) -> Result<()> {
-        let lab = &self.lab()?;
+        let (lab, opts) = (&self.lab()?, &self.placed(RunOptions::new()));
         let mode = match (self.kind, mode) {
             // VMs (a VM lab, or the VM a container lab runs in) suspend on Pause; Docker only
             // stops its containers, so both of its park modes are the manifest's `shutdown`.
             (Kind::Vm | Kind::DockerVm, Park::Pause) => isothrum_runner::Park::Pause,
             _ => isothrum_runner::Park::Shutdown,
         };
-        when_unlocked(log, move |sink| async move { lab.park(mode, &sink).await }).await.map_err(errors::from_runner)
+        when_unlocked(log, move |sink| async move { lab.park(mode, opts, &sink).await }).await.map_err(errors::from_runner)
     }
 
     /// Starts the parked lab again. When nothing is left of it, the launcher's parked mark goes
