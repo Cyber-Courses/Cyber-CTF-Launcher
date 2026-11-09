@@ -42,7 +42,7 @@ provider: string | null,
 /**
  * A container lab (catalogue Docker) running as one VM per machine — its VM recipes rather
  * than its containers: on this machine (Vagrant), or on a cloud account (cloud-vm). Set by
- * the status dispatcher. The UI names the form, and knows a cloud-vm run has no attack box.
+ * the status dispatcher. The UI names the form.
  */
 perMachine: boolean, 
 /**

@@ -11,10 +11,12 @@
 //!
 //! The Tauri commands over all of the above are thin adapters in `crate::commands` (lab commands
 //! in `commands::labs`, server-host commands in `commands::server`).
-//! - `inflight`, `paths`, `remote`: the per-lab lock and in-flight registry, a lab's files and
+//! - `inflight`, `paths`, `ssh`: the per-lab lock and in-flight registry, a lab's files and
 //!   markers, and SSH to a lab host.
-//! - `isothrum`: a container lab on this machine's Docker through the Isothrum runner, behind a
-//!   hidden developer switch (`CYBERCTF_RUNNER=isothrum`).
+//! - `isothrum`: every lab run through the Isothrum runner: on this machine (Docker, one VM, or
+//!   VMs), on a server, in a cloud account.
+//! - `attack_machine`: the learner's attack box, a machine the launcher adds to the lab (through
+//!   its overlay, `lab::overlay`) and takes out again, wherever the lab runs.
 
 pub(crate) mod attack_machine;
 pub(crate) mod cloud_services;

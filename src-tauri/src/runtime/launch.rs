@@ -157,9 +157,8 @@ async fn start_docker_in_vm_with_runner(dirs: &AppDirs, dir: &Path, id: &str, st
 }
 
 /// The runner's start of a container lab in one VM (Isoloom's `docker-vm`, runner home `home`) on
-/// the local hypervisor: its files generated, then up, then the attack box inside the VM beside
-/// the containers (the lab network isn't reachable from here). Takes no app handle, so the
-/// integration tests run exactly this.
+/// the local hypervisor: its files generated, then up. Takes no app handle, so the integration
+/// tests run exactly this.
 pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let VmStart { provider, env } = start;
     lab::prepare(dir, lab::vagrant_target(Runtime::Docker))?;

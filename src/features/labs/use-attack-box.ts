@@ -92,14 +92,15 @@ function useAutoStart(
 }
 
 /**
- * The lab's attack box: polled while the lab is up where the launcher reaches its box
- * (`reachable`: wherever the lab runs but an ESXi host), so running / IP stay current, added and
- * taken out with a streamed log, and added with the lab when the Settings preference is on (once
- * per run). `runtime` is the lab's declared one; what the box is comes from its status (`vm`: a
- * Kali VM among a lab running as VMs, a container lab run as one VM per machine included;
- * otherwise a container from the attack box image in Settings). The learner
- * picks which lab network to join when the lab has more than one (`networks`). `holding` = a lab
- * operation (start, shut down, stop…) is in flight: nothing is read or attached meanwhile.
+ * The lab's attack box, a machine the launcher adds to the lab (at the seat the lab declares for
+ * the player, else on the network picked): polled while the lab is up where the launcher reaches
+ * its run (`reachable`: wherever the lab runs but an ESXi host), so running / IP stay current,
+ * added and taken out with a streamed log, and added with the lab when the Settings preference is
+ * on (once per run). `runtime` is the lab's declared one; what the box is comes from its status
+ * (`vm`: a Kali VM among a lab running as VMs, a container lab run as one VM per machine included;
+ * otherwise a container from the attack box image in Settings). The learner picks which lab
+ * network to join when the lab has more than one (`networks`). `holding` = a lab operation (start,
+ * shut down, stop…) is in flight: nothing is read or attached meanwhile.
  */
 export function useAttackBox(
   labId: string,
@@ -112,7 +113,8 @@ export function useAttackBox(
   }: { running: boolean; holding?: boolean; reachable: boolean; runtime?: Runtime; failed?: boolean },
 ) {
   const active = running && !holding;
-  // The lab network the box joins: the learner's pick, or the only one (null = the runner's choice).
+  // The lab network the box joins: the learner's pick (null: the seat the lab declares, else its
+  // first network).
   const [network, setNetwork] = useState<string | null>(null);
   const { status, setStatus, refresh } = useAttackBoxStatus(labId, runtime, active, reachable, network);
   const { busy, log, run } = useAttackBoxRun(refresh);
