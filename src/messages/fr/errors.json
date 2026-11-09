@@ -31,6 +31,8 @@
       "one": "{count} lab tourne encore sur cet hôte. Arrêtez-le avant de supprimer l'hôte.",
       "other": "{count} labs tournent encore sur cet hôte. Arrêtez-les avant de supprimer l'hôte."
     },
+    "labRunningHere": "Ce lab tourne encore sur cette machine (ou ses machines sont encore là). Arrêtez-le, puis réessayez.",
+    "labRunningOn": "Ce lab tourne encore sur {host}. Arrêtez-le là-bas, puis réessayez.",
     "reapNoHost": "Aucun compte n'est enregistré pour lui, le launcher ne peut donc pas le détruire. Supprimez ses ressources dans la console de votre cloud.",
     "reapLabGone": "Les fichiers du lab ont disparu ({detail}). Réinstallez le lab, puis arrêtez-le, ou supprimez ses ressources dans la console de votre cloud.",
     "reapAccount": "Le compte {account} n'est pas utilisable ({detail}). Corrigez le compte dans les Réglages, puis arrêtez le lab.",

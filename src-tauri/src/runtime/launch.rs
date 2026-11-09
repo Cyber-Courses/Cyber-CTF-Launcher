@@ -6,9 +6,9 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::inflight::{Action, DeployGuard};
-use super::paths::{deployment_states, forget_lab_host_keys, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, runner_home, vagrant_dirs};
+use super::paths::{forget_lab_host_keys, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, runner_home};
 use super::providers::Provider;
-use super::{LabRef, Runtime, cloud_services, docker, isothrum, lab, server, terraform, vm};
+use super::{LabRef, Runtime, cloud_services, docker, isothrum, lab, server};
 use crate::error::{Error, Result};
 
 mod local;
@@ -54,14 +54,13 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
     let LabRef { dir, id, runtime } = lab;
     let Destination { provider, host, per_machine_vm, docker_context } = to;
     let _deploy = DeployGuard::new(id, Action::Start);
-    // A lab runs in one place: starting it here (or on another host) while its deployment is
-    // still up elsewhere would drop the marker naming that host, and with it the way to stop
-    // it (a cloud lab would keep billing).
-    if let Ok(base) = dirs.data()
-        && let Some(other) = deployed_elsewhere(base, dir, id, host)
+    // A lab runs in one place: starting it here (or on another host) while its run is still up
+    // elsewhere would drop the marker naming that place, and with it the way to stop it (a cloud
+    // lab would keep billing).
+    if let Some(up) = super::status::still_up(dirs, id)?
+        && up.host.as_deref() != host
     {
-        let name = server::host_name(dirs, &other).unwrap_or(other);
-        return Err(Error::Refused(format!("This lab is still running on {name}. Stop it there before starting it somewhere else.")));
+        return Err(super::status::still_running(&up));
     }
     // New hosts may come up at the addresses of others: no key pinned before counts. A parked
     // lab resumes its own machines, whose keys stay pinned.
@@ -85,27 +84,6 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
 pub(crate) async fn start(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, env: &[(String, String)], log: impl FnMut(String)) -> Result<()> {
     let _lock = super::inflight::lock_lab(dirs, lab.id).await?;
     start_locked(dirs, lab, to, env, log).await
-}
-
-/// The name of the server host lab `id` (folder `dir`) is deployed on, if something of it is
-/// still there: its folder must stay as it is (Vagrant's record of its machines, the module its
-/// Terraform state was applied from) until it is stopped there.
-pub fn deployed_on_server(dirs: &AppDirs, dir: &Path, id: &str) -> Option<String> {
-    let host = deployed_elsewhere(dirs.data().ok()?, dir, id, None)?;
-    Some(server::host_name(dirs, &host).unwrap_or(host))
-}
-
-/// The server host lab `id` (folder `dir`, app data folder `base`) is still deployed on, when
-/// it is not `host` (`None`: this machine): its marker names that host and something of it is
-/// left there (a Terraform state holding resources, or machines Vagrant still tracks).
-fn deployed_elsewhere(base: &Path, dir: &Path, id: &str, host: Option<&str>) -> Option<String> {
-    let marked = server::marked_host(dir).filter(|h| !h.is_empty())?;
-    if host == Some(marked.as_str()) {
-        return None;
-    }
-    let terraform = deployment_states(base, id).iter().any(|(_, state)| terraform::deployed(state));
-    let vagrant = vagrant_dirs(dir).any(|v| vm::has_machines(&v));
-    (terraform || vagrant).then_some(marked)
 }
 
 /// Starts the lab on this machine as `run` says (see [`local_run`]).

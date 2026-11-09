@@ -72,9 +72,6 @@ pub(super) struct PsEntry {
     pub(super) service: String,
     #[serde(rename = "State")]
     pub(super) state: String,
-    /// Compose healthcheck result: "healthy" / "unhealthy" / "starting" / "" (none declared).
-    #[serde(rename = "Health", default)]
-    pub(super) health: String,
     #[serde(rename = "Image", default)]
     pub(super) image: String,
     #[serde(rename = "Name", default)]
@@ -82,22 +79,11 @@ pub(super) struct PsEntry {
     /// `null` from some Compose versions for a container without ports: as none.
     #[serde(rename = "Publishers", default, deserialize_with = "null_as_empty")]
     pub(super) publishers: Vec<Publisher>,
-    /// Compose's labels, comma-joined ("com.docker.compose.oneoff=True,...").
-    #[serde(rename = "Labels", default)]
-    pub(super) labels: String,
 }
 
 /// A JSON `null` where a list is expected reads as an empty list.
 fn null_as_empty<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(d: D) -> std::result::Result<Vec<T>, D::Error> {
     Ok(Option::<Vec<T>>::deserialize(d)?.unwrap_or_default())
-}
-
-impl PsEntry {
-    /// A `docker compose run` container (a check runner, a one-off job): not one of the lab's
-    /// machines.
-    pub(super) fn one_off(&self) -> bool {
-        self.labels.split(',').any(|l| l.trim() == "com.docker.compose.oneoff=True")
-    }
 }
 
 #[derive(Deserialize)]
@@ -120,40 +106,9 @@ pub(super) fn parse_ps(out: &str) -> Vec<PsEntry> {
     trimmed.lines().filter_map(|l| serde_json::from_str(l).ok()).collect()
 }
 
-/// Service names a compose file publishes a host port for, from `docker compose config`.
-/// These are the lab's serving containers (web/app), as opposed to one-shot init jobs.
-pub(super) fn serving_services_from_config(json: &str) -> Vec<String> {
-    let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
-    let mut names = Vec::new();
-    if let Some(services) = v.get("services").and_then(|s| s.as_object()) {
-        for (name, svc) in services {
-            if svc.get("ports").and_then(|p| p.as_array()).is_some_and(|a| !a.is_empty()) {
-                names.push(name.clone());
-            }
-        }
-    }
-    names
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{legacy_attack_box_names, parse_ps, project, serving_services_from_config};
-
-    #[test]
-    fn serving_services_are_those_that_publish_a_port() {
-        let json = r#"{"services":{
-            "web":{"ports":[{"published":"80","target":80}]},
-            "db":{"ports":[{"published":5432,"target":5432}]},
-            "init":{},
-            "worker":{"ports":[]}
-        }}"#;
-        let mut names = serving_services_from_config(json);
-        names.sort();
-        // init (no `ports`) and worker (empty `ports`) are one-shot/background, not serving.
-        assert_eq!(names, vec!["db", "web"]);
-        assert_eq!(serving_services_from_config("{}"), Vec::<String>::new());
-        assert_eq!(serving_services_from_config("garbage"), Vec::<String>::new());
-    }
+    use super::{legacy_attack_box_names, parse_ps, project};
 
     #[test]
     fn without_its_compose_file_a_lab_is_reached_by_project() {
@@ -203,20 +158,12 @@ mod tests {
     }
 
     #[test]
-    fn compose_run_containers_are_one_off() {
-        let out = "{\"Service\":\"isoloom-check\",\"State\":\"running\",\"Labels\":\"com.docker.compose.project=p,com.docker.compose.oneoff=True\"}\n{\"Service\":\"web\",\"State\":\"running\",\"Labels\":\"com.docker.compose.oneoff=False\"}\n{\"Service\":\"db\",\"State\":\"running\"}\n";
-        let flags: Vec<(String, bool)> = parse_ps(out).iter().map(|e| (e.service.clone(), e.one_off())).collect();
-        assert_eq!(flags, vec![("isoloom-check".into(), true), ("web".into(), false), ("db".into(), false)]);
-    }
-
-    #[test]
     fn parse_ps_ndjson_skips_blank_and_malformed_lines() {
         // NDJSON with surrounding whitespace, a blank line, and one unparseable line.
         let out = "  \n{\"Service\":\"web\",\"State\":\"running\",\"Health\":\"healthy\"}\n\n{bogus}\n{\"Service\":\"db\",\"State\":\"exited\"}\n";
         let entries = parse_ps(out);
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].service, "web");
-        assert_eq!(entries[0].health, "healthy");
         assert_eq!(entries[1].state, "exited");
     }
 

@@ -10,6 +10,7 @@ mod docker;
 mod docker_vm;
 mod flag_contract;
 mod per_machine;
+mod replace;
 mod servers;
 pub(crate) mod support;
 mod vm;

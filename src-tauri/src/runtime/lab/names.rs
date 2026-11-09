@@ -70,16 +70,6 @@ pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> (PathBuf, Target) {
     }
 }
 
-/// The machine Isoloom adds to run a lab's `provision:` playbooks (and its checks on VMs).
-pub const CONTROLLER: &str = "isoloom-controller";
-
-/// What a lab's networks on the local hypervisor start with: the internal network (VirtualBox,
-/// libvirt) or private switch (Hyper-V) prefix `isoloom-<lab>-`, `lab` being the lab's name (its
-/// VM-name prefix).
-pub fn vm_network_prefix(lab: &str) -> String {
-    format!("isoloom-{lab}-")
-}
-
 /// The environment variable Isoloom's Vagrantfiles read for the command Vagrant's SSH to a VM
 /// goes through (`config.ssh.proxy_command`), when the VMs aren't on a network this machine
 /// reaches directly (an ESXi host through the launcher's relay).

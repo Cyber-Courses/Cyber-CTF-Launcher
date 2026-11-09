@@ -222,17 +222,10 @@ async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String
         return Ok(dir);
     }
 
-    // A new version of a lab that is up here: swapping the folder would pull its files out from
-    // under the running containers (they bind-mount them) and lose track of them. Stop it first.
-    // Same on a server host: the folder holds Vagrant's record of its ESXi machines (and the
-    // module its Terraform state was applied from), which the swap would delete.
-    if dir.exists() {
-        let on_server = runtime::deployed_on_server(dirs, &dir, lab_id);
-        // Running here, or VMs Vagrant still tracks here (a launch that failed on one machine, a
-        // VM powered off by hand): the swap would delete its record and orphan them.
-        let here = on_server.is_none() && (runtime::running_here(&dir, lab_id).await || runtime::vms_recorded_here(&dir));
-        refuse_update(here, on_server.as_deref())?;
-    }
+    // A new version of a lab that is up, here or elsewhere: swapping the folder would pull the
+    // files its run reads (its manifest, what its containers bind-mount) out from under it. Stop
+    // it first.
+    runtime::refuse_replace(dirs, &dir, lab_id)?;
 
     log(format!("Downloading {repository}@{}", &commit[..12]));
     let bytes = fetch().await?;
@@ -246,22 +239,6 @@ async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String
     runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
     log("Lab installed".into());
     Ok(dir)
-}
-
-/// Refuses to replace an installed lab with a new version while it runs `here`, or on the
-/// server host named `on_server`.
-fn refuse_update(here: bool, on_server: Option<&str>) -> Result<()> {
-    if let Some(host) = on_server {
-        return Err(Error::Refused(format!(
-            "A new version of this lab is out, but it is still running on {host}. Stop it, then start it again to get the new version."
-        )));
-    }
-    if here {
-        return Err(Error::Refused(
-            "A new version of this lab is out, but it is still running here (or its machines still exist here). Stop it, then start it again to get the new version.".into(),
-        ));
-    }
-    Ok(())
 }
 
 /// Takes down a parked copy of `lab` before its folder is replaced ([`runtime::clear_parked`]);
@@ -506,17 +483,8 @@ async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(S
     let dir = labs.join(lab_id);
     let in_use = runtime::subnets_in_use(lab_id).await;
     // Re-importing while the previous copy is up would pull its files out from under it, as an
-    // update would: running here, deployed on a server host (its folder holds Vagrant's record of
-    // the machines and the module its state was applied from), or machines Vagrant still tracks
-    // here. Stop it first.
-    if dir.exists() {
-        if let Some(host) = runtime::deployed_on_server(dirs, &dir, lab_id) {
-            return Err(Error::Refused(format!("{lab_id} is still running on {host}; stop it before importing it again")));
-        }
-        if runtime::running_here(&dir, lab_id).await || runtime::vms_recorded_here(&dir) {
-            return Err(Error::Refused(format!("{lab_id} is running (or its machines still exist here); stop it before importing it again")));
-        }
-    }
+    // update would. Stop it first.
+    runtime::refuse_replace(dirs, &dir, lab_id)?;
     log(format!("Importing {lab_id} from {}", src.display()));
     clear_parked(dirs, runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker }, log).await?;
     let staging = dir.with_file_name(format!(".{lab_id}.staging"));
@@ -538,6 +506,27 @@ pub(crate) async fn run_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: imp
     let lab = runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker };
     runtime::start_locked(dirs, lab, runtime::Destination::default(), &[], log).await?;
     Ok(runtime::primary_url(&dir, lab_id, Runtime::Docker).await)
+}
+
+/// An update and an import as a launch and the import run them, for the integration tests.
+#[cfg(test)]
+pub(crate) mod for_tests {
+    use std::path::{Path, PathBuf};
+
+    use crate::error::Result;
+    use crate::platform::AppDirs;
+    use crate::runtime::Runtime;
+
+    /// Lab `lab_id`, declared `runtime`, updated to `commit`, whose GitHub tarball is `tarball`.
+    pub(crate) async fn update(dirs: &AppDirs, lab_id: &str, runtime: Runtime, commit: &str, tarball: Vec<u8>) -> Result<PathBuf> {
+        let release = super::Release { lab_id, repository: "CyberCTF/integration-test", commit, runtime };
+        super::install_with(dirs, release, &|_| {}, async move || Ok(tarball)).await
+    }
+
+    /// Lab `lab_id` imported again from the folder `src`.
+    pub(crate) async fn reimport(dirs: &AppDirs, lab_id: &str, src: &Path) -> Result<PathBuf> {
+        super::install_local(dirs, lab_id, src, &|_| {}).await
+    }
 }
 
 #[cfg(test)]
@@ -707,17 +696,6 @@ mod tests {
         std::fs::remove_dir_all(labs).unwrap();
     }
 
-    #[test]
-    fn a_lab_up_here_or_on_a_server_is_not_updated_under_it() {
-        // Regression: the update only asked this machine's Docker and hypervisors, so a lab
-        // running on ESXi was swapped out and its `.vagrant` (Vagrant's record of the machines)
-        // deleted.
-        assert!(refuse_update(false, None).is_ok());
-        assert!(refuse_update(true, None).unwrap_err().to_string().contains("still running here"));
-        let err = refuse_update(false, Some("ESXi lab")).unwrap_err().to_string();
-        assert!(err.contains("still running on ESXi lab"), "{err}");
-    }
-
     /// A gzip tar builder with the lab's top folder `lab-abc/` and one `subdir/` already in it, so
     /// a symlink test adds only the link it exercises.
     fn tarball_with_dir(subdir: &str) -> tar::Builder<flate2::write::GzEncoder<Vec<u8>>> {
@@ -776,7 +754,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_new_lab_version_is_installed_unless_the_old_one_still_runs() {
-        use crate::platform::exec::fake::{Tools, ok};
+        use crate::platform::exec::fake::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
         let tools = Tools::rules(&[]);
@@ -789,11 +767,25 @@ mod tests {
         // The same commit again: nothing downloaded.
         install_with(&t.dirs(), invoice("invoice", SHA), &log, async || panic!("no download")).await.unwrap();
         drop(tools);
-        // A newer commit while the old one runs here: refused, the running copy left alone.
-        let _tools = Tools::rules(&[("ps --all", ok(r#"{"Service":"web","State":"running"}"#))]);
+        // A newer commit while the old one is up, wherever the runner runs it: refused, the
+        // running copy left alone. Regression: only this machine's Docker and the lab folder's
+        // Vagrant record were asked, where the runner keeps nothing, so a VM, docker-in-VM,
+        // ESXi, Proxmox or cloud run had its folder swapped out from under it.
         let newer = "1123456789abcdef0123456789abcdef01234567";
-        let err = install_with(&t.dirs(), invoice("invoice", newer), &log, async || panic!("no download")).await.unwrap_err().to_string();
-        assert!(err.starts_with("A new version of this lab is out, but it is still running here"), "{err}");
+        for (host, target) in
+            [(None, "docker"), (None, "docker-vm"), (None, "vagrant"), (Some("esx1"), "vagrant"), (Some("pve1"), "proxmox"), (Some("aws1"), "cloud-vm")]
+        {
+            crate::runtime::test_support::record_run(t.data(), "invoice", host, target, "ready");
+            let err = install_with(&t.dirs(), invoice("invoice", newer), &log, async || panic!("no download")).await.unwrap_err();
+            assert!(err.is_refusal(), "{target}: {err}");
+            let expected = host.map_or_else(|| "This lab is still running on this machine".to_owned(), |h| format!("This lab is still running on {h}."));
+            assert!(err.to_string().starts_with(&expected), "{target}: {err}");
+            assert!(installed(&dir.join(".cyberctf-commit"), SHA), "{target}: the running copy was replaced");
+        }
+        // Stopped (the run taken down): the new version goes in.
+        crate::runtime::test_support::record_run(t.data(), "invoice", None, "docker", "absent");
+        install_with(&t.dirs(), invoice("invoice", newer), &log, async || Ok(gz.clone())).await.unwrap();
+        assert!(installed(&dir.join(".cyberctf-commit"), newer));
         // Ids and sources are checked before anything else.
         assert!(install_with(&t.dirs(), invoice("../x", SHA), &log, async || panic!()).await.is_err());
         assert!(
@@ -891,11 +883,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn re_importing_a_lab_that_is_up_elsewhere_or_has_machines_recorded_is_refused() {
-        // Regression: the import only asked whether the lab ran here (its containers), unlike an
-        // update, so a copy deployed on a server host or with machines Vagrant still tracked was
-        // swapped out from under them and their record lost.
+    async fn re_importing_a_lab_that_is_up_here_or_elsewhere_is_refused() {
+        // Regression: the import asked this machine's Docker, the lab folder's Vagrant record and
+        // `deployments/`, where the runner keeps nothing: a copy the runner ran as VMs here, in a
+        // local VM or on a server was swapped out from under it.
         use crate::platform::exec::fake::Tools;
+        use crate::runtime::test_support::record_run;
         let t = crate::testing::test_app::TestApp::new();
         let src = std::env::temp_dir().join(format!("cyberctf-import-src-{}", rand::random::<u32>()));
         std::fs::create_dir_all(&src).unwrap();
@@ -903,22 +896,22 @@ mod tests {
         let _tools = Tools::rules(&[]);
         let log = |_: String| {};
         let dir = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap();
-        // Machines Vagrant still tracks here (a VM launch that failed on one machine).
-        let vagrant = runtime::lab::vagrant_dir(&dir, Runtime::Vm);
-        let machine = vagrant.join(".vagrant").join("machines").join("web").join("virtualbox");
-        std::fs::create_dir_all(&machine).unwrap();
-        std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
-        std::fs::write(machine.join("id"), "vm-1").unwrap();
+        std::fs::write(dir.join("mine"), "kept").unwrap();
+        // Up here, as the runner records it (a failed start that left its VM counts too).
+        record_run(t.data(), "local-invoice", None, "docker-vm", "failed");
         let err = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap_err();
-        assert!(matches!(err, Error::Refused(_)), "{err:?}");
-        assert!(err.to_string().contains("machines still exist here"), "{err}");
-        // Deployed on a server host, with something of it still there: the host is named.
-        runtime::server::mark_lab(&dir, Some("esxi1")).unwrap();
+        assert_eq!(err.code(), crate::error::Code::LabRunningHere, "{err:?}");
+        assert!(err.to_string().contains("its machines are still there"), "{err}");
+        // On a server host: the host is named.
+        record_run(t.data(), "local-invoice", Some("esxi1"), "vagrant", "ready");
         let err = install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap_err();
-        assert!(matches!(err, Error::Refused(_)), "{err:?}");
-        assert!(err.to_string().contains("still running on esxi1"), "{err}");
-        // Refused before anything was staged: the installed copy and its record are untouched.
-        assert!(machine.join("id").is_file() && !dir.with_file_name(".local-invoice.staging").exists());
+        assert!(err.is_refusal() && err.to_string().contains("still running on esxi1"), "{err}");
+        // Refused before anything was staged: the installed copy is untouched.
+        assert!(dir.join("mine").is_file() && !dir.with_file_name(".local-invoice.staging").exists());
+        // Stopped: imported again.
+        record_run(t.data(), "local-invoice", Some("esxi1"), "vagrant", "absent");
+        install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap();
+        assert!(!dir.join("mine").exists());
         let _ = std::fs::remove_dir_all(&src);
     }
 

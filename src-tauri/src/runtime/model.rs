@@ -48,14 +48,6 @@ pub struct Machine {
     pub infra: bool,
 }
 
-impl Machine {
-    /// A machine known only by name, state and whether it is infra plumbing: a status probe fills
-    /// a lab's addresses, ports and services in separately, so every machine starts them empty.
-    pub(crate) fn named(name: String, state: String, infra: bool) -> Machine {
-        Machine { name, state, infra, image: String::new(), ip: String::new(), ports: Vec::new(), interfaces: Vec::new(), services: Vec::new() }
-    }
-}
-
 /// One service inside a machine, as declared by the lab.
 #[derive(Serialize, Debug, PartialEq, Clone, TS)]
 #[serde(rename_all = "camelCase")]

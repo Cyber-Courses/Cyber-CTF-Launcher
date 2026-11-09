@@ -315,63 +315,45 @@ fn a_lab_without_vms_needs_no_emulator() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-#[test]
-fn a_lab_still_deployed_on_another_host_is_not_started_elsewhere() {
-    // Regression: starting a lab here (or on another host) dropped the marker naming the host
-    // its deployment still ran on, so Stop, the expiry reaper and removing that host all lost
-    // it, and a cloud lab kept billing.
-    let base = std::env::temp_dir().join(format!("cyberctf-elsewhere-{}", rand::random::<u32>()));
-    let dir = base.join("labs").join("web-1");
-    std::fs::create_dir_all(&dir).unwrap();
-    // Never deployed on a server: free to start anywhere.
-    assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", None), None);
-    server::mark_lab(&dir, Some("aws1")).unwrap();
-    // Marked, but nothing of it is left there (destroyed): free.
-    assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", None), None);
-    // A Terraform state still holding resources.
-    let state = base.join("deployments").join("web-1").join("aws");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
-    assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", None).as_deref(), Some("aws1"), "here");
-    assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", Some("pve1")).as_deref(), Some("aws1"), "another host");
-    assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", Some("aws1")), None, "the same host again");
-    std::fs::remove_dir_all(base.join("deployments")).unwrap();
-    // Machines Vagrant still tracks on an ESXi host.
-    server::mark_lab(&dir, Some("esxi1")).unwrap();
-    let vagrant = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
-    let machine = vagrant.join(".vagrant").join("machines").join("dc01").join("vmware_esxi");
-    std::fs::create_dir_all(&machine).unwrap();
-    std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
-    assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", None), None, "no machine created yet");
-    std::fs::write(machine.join("id"), "vm-42").unwrap();
-    assert_eq!(super::deployed_elsewhere(&base, &dir, "web-1", None).as_deref(), Some("esxi1"));
-    std::fs::remove_dir_all(base).unwrap();
-}
-
 #[tokio::test]
 async fn a_start_refused_for_a_lab_still_up_elsewhere_changes_nothing() {
-    // Refused before anything ran: the host marker (the way to stop it there) and the parked
-    // mark stay, no tool is touched, and the error is a refusal, not a failed deploy.
+    // Regression: starting a lab here (or on another host) dropped the marker naming the host
+    // its run was still up on, so Stop, the expiry reaper and removing that host all lost it,
+    // and a cloud lab kept billing. Only the launcher's own Terraform states were asked, never
+    // the runner's record. Refused before anything ran: the host marker (the way to stop it
+    // there) and the parked mark stay, no tool is touched, and the error is a refusal, not a
+    // failed deploy.
     let t = TestApp::new();
     let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
     t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
     server::mark_lab(&dir, Some("aws1")).unwrap();
     mark_parked(&dir, Some(Park::Pause)).unwrap();
-    let state = t.data().join("deployments").join("web").join("aws");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{},"resources":[{"type":"aws_instance"}]}"#).unwrap();
+    crate::runtime::test_support::record_run(t.data(), "web", Some("aws1"), "cloud-docker", "ready");
     let tools = Tools::rules(&[]);
     let (r, log) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
     let err = r.unwrap_err();
-    assert!(matches!(err, crate::error::Error::Refused(_)), "{err}");
-    assert_eq!(err.to_string(), "This lab is still running on Host aws1. Stop it there before starting it somewhere else.");
+    assert!(err.is_refusal(), "{err}");
+    assert_eq!(err.to_string(), "This lab is still running on Host aws1. Stop it there, then try again.");
     assert_eq!(server::marked_host(&dir).as_deref(), Some("aws1"));
     assert_eq!(parked(&dir), Some(Park::Pause));
     assert!(tools.calls().is_empty() && log.is_empty(), "{:?} {log:?}", tools.calls());
     // The same for another host; its own host again is not "elsewhere".
     let (r, _) = start_on(&t, "web", Runtime::Docker, "pve1").await;
-    assert!(matches!(r.unwrap_err(), crate::error::Error::Refused(_)));
-    assert_eq!(super::deployed_elsewhere(t.data(), &dir, "web", Some("aws1")), None);
+    assert!(r.unwrap_err().is_refusal());
+    // Up here (VMs the runner started on this machine): a start on a server is refused too.
+    server::mark_lab(&dir, None).unwrap();
+    crate::runtime::test_support::record_run(t.data(), "web", None, "vagrant", "ready");
+    let (r, _) = start_on(&t, "web", Runtime::Docker, "aws1").await;
+    assert_eq!(r.unwrap_err().code(), crate::error::Code::LabRunningHere);
+    // A deployment of the launcher's own Terraform path not yet handed to the runner counts too.
+    crate::runtime::test_support::record_run(t.data(), "web", None, "vagrant", "absent");
+    server::mark_lab(&dir, Some("aws1")).unwrap();
+    let state = t.data().join("deployments").join("web").join("aws");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{},"resources":[{"type":"aws_instance"}]}"#).unwrap();
+    let (r, _) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
+    assert_eq!(r.unwrap_err().code(), crate::error::Code::LabRunningOn { host: "Host aws1".into() });
+    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
 }
 
 #[test]

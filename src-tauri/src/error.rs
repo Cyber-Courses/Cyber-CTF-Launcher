@@ -86,6 +86,13 @@ pub enum Code {
         count: u64,
         fields: String,
     },
+    /// Something of the lab is still up on this machine (running, or its machines left over): it
+    /// can't be replaced, nor started somewhere else, until it is stopped.
+    LabRunningHere,
+    /// The same on the saved server or cloud account `host` (its name).
+    LabRunningOn {
+        host: String,
+    },
     /// A host can't be removed while labs run on it.
     HostHasLabs {
         count: u64,
@@ -147,6 +154,8 @@ impl Code {
             Code::ReapTimedOut { minutes } => format!("The destroy didn't finish within {minutes} minutes. Stop the lab to retry."),
             Code::PlacementLockedHost { count, fields } => placement_locked(*count, "host", fields),
             Code::PlacementLockedAccount { count, fields } => placement_locked(*count, "account", fields),
+            Code::LabRunningHere => "This lab is still running on this machine (or its machines are still there). Stop it, then try again.".into(),
+            Code::LabRunningOn { host } => format!("This lab is still running on {host}. Stop it there, then try again."),
             Code::HostHasLabs { count } => {
                 let (labs, them) = if *count == 1 { ("lab", "it") } else { ("labs", "them") };
                 format!("{count} {labs} still running on this host. Stop {them} before removing the host.")
@@ -203,6 +212,13 @@ impl Error {
     /// The error with this code, and the code's English message.
     pub fn coded(code: Code) -> Self {
         Error::Coded { message: code.message(), code }
+    }
+
+    /// Whether the operation was refused before it changed anything (the lab still up where it
+    /// would be replaced or started again): the lab's last verdict stays what it was, and a failed
+    /// start has nothing of its own to undo.
+    pub fn is_refusal(&self) -> bool {
+        matches!(self, Error::Refused(_) | Error::Coded { code: Code::LabRunningHere | Code::LabRunningOn { .. }, .. })
     }
 
     /// The code the UI knows this error by.
@@ -344,6 +360,8 @@ mod tests {
             Code::PlacementLockedAccount { count: 2, fields: "region".into() },
             Code::HostHasLabs { count: 1 },
             Code::HostHasLabs { count: 3 },
+            Code::LabRunningHere,
+            Code::LabRunningOn { host: "My Proxmox".into() },
             Code::ReapNoHost,
             Code::ReapLabGone { detail: "lab `web` is not installed".into() },
             Code::ReapAccount { account: "My Azure".into(), detail: "unknown server host".into() },

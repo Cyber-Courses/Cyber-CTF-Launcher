@@ -16,10 +16,9 @@
 //! Isoloom only converts: it keeps no registry of running labs and probes no host, so neither
 //! does this module.
 
-use std::collections::HashMap;
 use std::path::Path;
 
-use super::{Interface, Network};
+use super::Interface;
 use crate::error::{Error, Result};
 
 mod instances;
@@ -121,14 +120,6 @@ fn load_error(e: &isoloom_spec::Error) -> String {
 fn defaults(dir: &Path) -> Result<isoloom_spec::defaults::Defaults> {
     let sources = isoloom_spec::defaults::Sources { project: dir, images_file: None, profile: None, sets: &[], host: host() };
     isoloom_spec::defaults::load(&sources).map(|r| r.defaults).map_err(|e| Error::Invalid(format!("this machine's Isoloom defaults: {e}")))
-}
-
-/// The files [`spec`] reads for the lab in `dir`: its spec (either name Isoloom accepts), its
-/// own defaults, its instance marker, and the user's Isoloom defaults (wherever Isoloom finds
-/// them). What a cache of a spec watches.
-pub fn spec_files(dir: &Path) -> Vec<std::path::PathBuf> {
-    let own = isoloom_spec::SPEC_FILES.iter().copied().chain(["isoloom.defaults.yml", INSTANCE_MARKER]).map(|f| dir.join(f));
-    own.chain([isoloom_spec::defaults::user_file(&host())]).collect()
 }
 
 /// This machine as Isoloom reads it: its home and the `ISOLOOM_*` variables.
@@ -235,31 +226,6 @@ fn generate(lab: &Lab, target: Target, n: Option<u8>) -> isoloom_targets::Result
 fn launcher_overrides(dir: &Path, target: Target) -> overrides::Overrides {
     let id = dir.file_name().and_then(|n| n.to_str()).filter(|_| target == Target::Docker);
     overrides::Overrides { compose_project: id.map(super::docker::project) }
-}
-
-/// Each machine's lab interfaces and the lab's networks, from Isoloom's resolved snapshot of
-/// the lab: addresses are static (declared in the lab), so the diagram of a VM lab comes from
-/// here, without reaching into the guests or reading the generated files.
-pub fn topology(lab: &Lab) -> (HashMap<String, Vec<Interface>>, Vec<Network>) {
-    let snapshot = isoloom_targets::resolved::resolve(lab);
-    let networks: Vec<Network> = snapshot["networks"]
-        .as_object()
-        .map(|nets| {
-            nets.iter()
-                .map(|(name, n)| Network {
-                    name: name.clone(),
-                    subnet: n["cidr"].as_str().unwrap_or_default().to_string(),
-                    // No internet declared: its machines have no route out.
-                    internal: !n["internet"].as_bool().unwrap_or(true),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let ifaces = snapshot["machines"]
-        .as_object()
-        .map(|machines| machines.iter().map(|(name, m)| (name.clone(), interfaces(&m["addresses"]))).collect())
-        .unwrap_or_default();
-    (ifaces, networks)
 }
 
 /// The memory the lab's machines ask for, in MB.
@@ -632,9 +598,7 @@ mod tests {
         let dir = lab(&SPEC.replace('\n', "\r\n"));
         let lab = super::lab(&dir).unwrap();
         assert_eq!(lab.spec().name, "t");
-        let (ifaces, networks) = topology(&lab);
-        assert_eq!(networks[0].subnet, "10.30.0.0/24");
-        assert_eq!(ifaces["web"][0].ip, "10.30.0.10");
+        assert_eq!(lab.spec().networks["lab"].cidr, "10.30.0.0/24");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

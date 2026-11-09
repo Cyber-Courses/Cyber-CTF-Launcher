@@ -20,7 +20,7 @@ use std::path::Path;
 use super::support::{check, log, vm_inputs};
 use crate::runtime::paths::{PER_MACHINE_MARKER, local_runtime, per_machine_vm};
 use crate::runtime::providers::Provider;
-use crate::runtime::{Place, Runtime, lab, status, stop_lab, vm};
+use crate::runtime::{Place, Runtime, lab, status, stop_lab};
 use crate::testing::test_app::TestApp;
 
 /// The machines the spec declares (the VMs the run must have, besides the runner's own).
@@ -87,7 +87,8 @@ async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
     let stopped = stop_lab(&t.dirs(), &id, Runtime::Docker, log(&id)).await;
     check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), &mut f);
     check(!per_machine_vm(&dir), "the form is forgotten".into(), &mut f);
-    check(!vm::has_machines(&lab::vagrant_dir(&dir, Runtime::Vm)), "Vagrant tracks no machine of it".into(), &mut f);
+    let left = status::still_up(&t.dirs(), &id);
+    check(left.as_ref().is_ok_and(Option::is_none), format!("the runner records nothing of it up ({left:?})"), &mut f);
     let gone = status::status(&t.dirs(), &dir, &id, Runtime::Docker).await;
     check(gone.as_ref().is_ok_and(|s| !s.running), format!("its status reads as gone ({:?})", gone.map(|s| s.running)), &mut f);
     println!("per-machine ({}): {:.0?}", provider.id(), started.elapsed());

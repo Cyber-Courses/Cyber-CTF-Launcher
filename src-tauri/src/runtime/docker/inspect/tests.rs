@@ -1,6 +1,5 @@
 use super::compose::parse_ps;
-use super::{build_status, ipv4_subnets, lab_provider, listed_names, networks_of_others};
-use super::{declared_services, down_serving, first_published_url, is_datastore, is_running, open_url, parse_inspect, strip_project, tcp_ports};
+use super::{declared_services, first_published_url, ipv4_subnets, is_datastore, networks_of_others, open_url, parse_inspect};
 
 #[test]
 fn a_labs_own_networks_are_told_by_their_exact_project() {
@@ -13,54 +12,8 @@ fn a_labs_own_networks_are_told_by_their_exact_project() {
 }
 
 #[test]
-fn network_listings_skip_blanks_and_ipv6() {
-    assert_eq!(listed_names(" bridge \n\ncyberctf-x_lab\n"), ["bridge", "cyberctf-x_lab"]);
+fn network_subnets_skip_ipv6() {
     assert_eq!(ipv4_subnets("172.17.0.0/16 fd00::/64\n10.30.0.0/24 \n"), ["172.17.0.0/16", "10.30.0.0/24"]);
-}
-
-#[test]
-fn a_serving_container_that_died_still_shows_on_the_diagram() {
-    let entries = parse_ps(r#"[{"Service":"web","State":"exited","Name":"p-web-1"},{"Service":"db","State":"running","Name":"p-db-1","Health":"unhealthy"}]"#);
-    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()], "docker".into());
-    assert!(status.running);
-    let machine_states: Vec<(&str, &str)> = status.machines.iter().map(|m| (m.name.as_str(), m.state.as_str())).collect();
-    assert_eq!(machine_states, [("db", "unhealthy"), ("web", "exited")]);
-    assert_eq!(status.provider.as_deref(), Some("docker"));
-}
-
-// A compose `ps --all` line, as Docker Compose prints it.
-const INIT_EXITED: &str = r#"[
-    {"Service":"web","State":"running"},
-    {"Service":"database","State":"running"},
-    {"Service":"database-init-1","State":"exited"}]"#;
-
-#[test]
-fn a_lab_is_running_when_its_one_shot_init_has_exited() {
-    // Regression: after a start the evidence init exits 0; the lab must still read as running
-    // (web + database up), not flip back to a "Start lab" page.
-    let entries = parse_ps(INIT_EXITED);
-    assert!(is_running(&entries));
-    // The exited init publishes nothing, so it is never counted as a down serving container.
-    assert_eq!(down_serving(&entries, &["web".into(), "database".into()]), vec![]);
-}
-
-#[test]
-fn a_lab_with_only_a_finished_init_is_not_running() {
-    let entries = parse_ps(r#"[{"Service":"database-init-1","State":"exited"}]"#);
-    assert!(!is_running(&entries));
-}
-
-#[test]
-fn a_serving_container_that_died_is_reported_down_while_others_run() {
-    // web died but the database is up: running (something is up) yet degraded, so web is listed.
-    let entries = parse_ps(
-        r#"[
-        {"Service":"web","State":"exited"},
-        {"Service":"database","State":"running"},
-        {"Service":"database-init-1","State":"exited"}]"#,
-    );
-    assert!(is_running(&entries));
-    assert_eq!(down_serving(&entries, &["web".into(), "database".into()]), vec![("web".to_string(), "exited".to_string())]);
 }
 
 #[test]
@@ -97,14 +50,6 @@ fn open_url_ignores_udp_and_unpublished_ports() {
 }
 
 #[test]
-fn a_networks_name_is_stripped_of_only_this_labs_project_prefix() {
-    assert_eq!(strip_project("cyberctf-sqli", "cyberctf-sqli_dmz"), "dmz");
-    // A different lab's prefix (or none) is left untouched.
-    assert_eq!(strip_project("cyberctf-sqli", "cyberctf-other_dmz"), "cyberctf-other_dmz");
-    assert_eq!(strip_project("cyberctf-sqli", "bridge"), "bridge");
-}
-
-#[test]
 fn declared_services_maps_isoloom_http_to_web_and_keeps_tcp_name() {
     let labels = [
         ("isoloom.port.portal".to_string(), "http:80,443".to_string()),
@@ -134,19 +79,6 @@ fn declared_services_skips_malformed_ports_and_zero() {
 }
 
 #[test]
-fn tcp_ports_keeps_distinct_pairs_and_drops_udp() {
-    let out = r#"[{"Service":"x","State":"running","Publishers":[
-        {"TargetPort":80,"PublishedPort":8080,"Protocol":"tcp"},
-        {"TargetPort":80,"PublishedPort":8080,"Protocol":"tcp"},
-        {"TargetPort":443,"PublishedPort":8443,"Protocol":"tcp"},
-        {"TargetPort":53,"PublishedPort":5353,"Protocol":"udp"},
-        {"TargetPort":0,"PublishedPort":0,"Protocol":"tcp"}]}]"#;
-    let ports = tcp_ports(&parse_ps(out)[0].publishers);
-    // The duplicate tcp pair is listed once, udp is dropped, and the all-zero entry is dropped.
-    assert_eq!(ports.iter().map(|p| (p.published, p.target)).collect::<Vec<_>>(), vec![(8080, 80), (8443, 443)]);
-}
-
-#[test]
 fn finds_the_first_published_tcp_port() {
     let out = r#"[
       {"Service":"db","State":"running","Publishers":[{"PublishedPort":0,"Protocol":"tcp"}]},
@@ -172,35 +104,14 @@ fn open_url_prefers_web_and_skips_datastores() {
 }
 
 #[test]
-fn reads_every_interface_with_the_lab_network_name() {
-    let out = "/cyberctf-sqli-web-1\tcyberctf-sqli_dmz=172.21.0.3 cyberctf-sqli_internal=172.22.0.2 \n/cyberctf-sqli-db-1\tcyberctf-sqli_internal=172.22.0.3 \n/x\tcyberctf-sqli_dmz= \n";
-    let m: std::collections::HashMap<_, _> = parse_inspect(&super::compose::project("sqli"), out).into_iter().map(|(k, v)| (k, v.interfaces)).collect();
-    let web: Vec<(&str, &str)> = m["cyberctf-sqli-web-1"].iter().map(|i| (i.network.as_str(), i.ip.as_str())).collect();
-    assert_eq!(web, vec![("dmz", "172.21.0.3"), ("internal", "172.22.0.2")]);
-    assert_eq!(m["cyberctf-sqli-db-1"][0].network, "internal");
-    assert!(m["x"].is_empty(), "a network with no address yet is skipped");
-}
-
-#[test]
-fn lists_a_port_published_on_ipv4_and_ipv6_once() {
-    let out = r#"[{"Service":"db","State":"running","Publishers":[
-      {"URL":"0.0.0.0","TargetPort":3207,"PublishedPort":3207,"Protocol":"tcp"},
-      {"URL":"::","TargetPort":3207,"PublishedPort":3207,"Protocol":"tcp"},
-      {"URL":"","TargetPort":33060,"PublishedPort":0,"Protocol":"tcp"}]}]"#;
-    let ports = tcp_ports(&parse_ps(out)[0].publishers);
-    assert_eq!(ports.iter().map(|p| (p.published, p.target)).collect::<Vec<_>>(), vec![(3207, 3207), (0, 33060)]);
-}
-
-#[test]
 fn reads_the_services_a_lab_declares_and_nothing_else() {
-    let out = "/cyberctf-x-app-1\tcyberctf-x_default=172.20.0.2 \t{\"cyberctf.service.web\":\"web:80,443\",\"cyberctf.service.ssh\":\"ssh:22\",\"cyberctf.service.jobs\":\"worker\",\"com.docker.compose.service\":\"app\"}\n";
-    let m = parse_inspect(&super::compose::project("x"), out);
+    let out = "/cyberctf-x-app-1\t{\"cyberctf.service.web\":\"web:80,443\",\"cyberctf.service.ssh\":\"ssh:22\",\"cyberctf.service.jobs\":\"worker\",\"com.docker.compose.service\":\"app\"}\n";
+    let m = parse_inspect(out);
     let s = &m["cyberctf-x-app-1"].services;
     let got: Vec<(&str, &str, Vec<u16>)> = s.iter().map(|s| (s.name.as_str(), s.kind.as_str(), s.ports.clone())).collect();
     assert_eq!(got, vec![("jobs", "worker", vec![]), ("ssh", "ssh", vec![22]), ("web", "web", vec![80, 443])]);
-    assert_eq!(m["cyberctf-x-app-1"].interfaces[0].ip, "172.20.0.2");
     // No labels, null labels: no services (never inferred).
-    assert_eq!(parse_inspect(&super::compose::project("x"), "/a\t\tnull\n")["a"].services, Vec::<crate::runtime::model::Service>::new());
+    assert_eq!(parse_inspect("/a\tnull\n")["a"].services, Vec::<crate::runtime::model::Service>::new());
     assert_eq!(declared_services(&[("cyberctf.service.db".to_string(), "database:abc".to_string())].into()).first().unwrap().ports, Vec::<u16>::new());
 }
 
@@ -256,7 +167,7 @@ fn open_goes_to_the_service_the_lab_declares_as_http() {
             {"Service":"metrics","Name":"p-metrics-1","Image":"acme/agent","State":"running","Publishers":[{"PublishedPort":3000,"TargetPort":3000,"Protocol":"tcp"}]}]"#,
     );
     assert_eq!(first_published_url(&entries).as_deref(), Some("http://127.0.0.1:2222"), "by name alone, the lowest port");
-    let declared = parse_inspect("p", "/p-portal-1\t\t{\"isoloom.port.site\":\"http:80\",\"isoloom.port.ssh\":\"tcp:22\"}\n");
+    let declared = parse_inspect("/p-portal-1\t{\"isoloom.port.site\":\"http:80\",\"isoloom.port.ssh\":\"tcp:22\"}\n");
     assert_eq!(open_url(&entries, &declared).as_deref(), Some("http://127.0.0.1:8443"));
     // Nothing declared: the name-based pick.
     assert_eq!(open_url(&entries, &std::collections::HashMap::default()).as_deref(), Some("http://127.0.0.1:2222"));
@@ -273,7 +184,6 @@ fn a_null_publishers_list_is_no_ports() {
     let line = r#"{"Service":"web","State":"running","Name":"p-web-1","Publishers":null}"#;
     assert_eq!(parse_ps(line).len(), 1);
     assert_eq!(parse_ps(&format!("[{line}]")).len(), 1);
-    assert!(is_running(&parse_ps(line)));
 }
 
 #[test]
@@ -287,32 +197,21 @@ fn ps_entries_with_odd_but_legal_values_are_read() {
     assert_eq!(e.len(), 2);
     assert_eq!(e[0].service, "wéb");
     assert_eq!(e[0].name.len(), 10_000);
-    assert!(e[0].one_off(), "the one-off label is found after a tab-bearing one");
-    assert_eq!(e[1].health, "starting");
     assert!(e[1].publishers.is_empty());
 }
 
 #[test]
 fn inspect_lines_with_missing_columns_or_odd_names_are_read_or_skipped() {
-    let project = super::compose::project("x");
-    // Name only (no tabs): a machine with no interfaces and no services. An empty line is an
-    // entry with an empty name, which no container ever has (harmless, and stated here).
-    let m = parse_inspect(&project, "/cyberctf-x-a-1\n\n/b\tcyberctf-x_lab=10.0.0.2 \n");
-    assert_eq!(m.len(), 3, "{:?}", m.keys().collect::<Vec<_>>());
-    assert!(m[""].interfaces.is_empty() && m[""].services.is_empty());
-    assert!(m["cyberctf-x-a-1"].interfaces.is_empty() && m["cyberctf-x-a-1"].services.is_empty());
-    assert_eq!(m["b"].interfaces[0].ip, "10.0.0.2");
+    // A name with no labels column is no container to read; an unreadable labels column is no
+    // services.
+    let m = parse_inspect("/cyberctf-x-a-1\n\n/b\tnot json\n");
+    assert_eq!(m.keys().collect::<Vec<_>>(), ["b"]);
+    assert!(m["b"].services.is_empty());
     // A label value holding a tab or newline comes JSON-escaped, so the columns hold.
-    let out = "/c\tcyberctf-x_lab=10.0.0.3 \t{\"isoloom.port.app\":\"http:80\",\"note\":\"a\\tb\\nc\"}\n";
-    let m = parse_inspect(&project, out);
-    assert_eq!(m["c"].interfaces[0].ip, "10.0.0.3");
+    let m = parse_inspect("/c\t{\"isoloom.port.app\":\"http:80\",\"note\":\"a\\tb\\nc\"}\n");
     assert_eq!(m["c"].services[0].kind, "web");
-    // A network name holding `=`: the first `=` splits it, the address is the rest.
-    let m = parse_inspect(&project, "/d\tcyberctf-x_a=b=10.0.0.4 \n");
-    assert_eq!((m["d"].interfaces[0].network.as_str(), m["d"].interfaces[0].ip.as_str()), ("a", "b=10.0.0.4"));
-    // Windows line endings: no carriage return in the labels JSON or the address.
-    let m = parse_inspect(&project, "/e\tcyberctf-x_lab=10.0.0.5 \t{\"isoloom.port.s\":\"tcp:22\"}\r\n");
-    assert_eq!(m["e"].interfaces[0].ip, "10.0.0.5");
+    // Windows line endings: no carriage return in the labels JSON.
+    let m = parse_inspect("/e\t{\"isoloom.port.s\":\"tcp:22\"}\r\n");
     assert_eq!(m["e"].services[0].ports, [22]);
 }
 
@@ -331,37 +230,4 @@ fn declared_service_ports_at_the_boundaries() {
     // empty name is no service; an empty value is a service with no kind (its own name) and no
     // ports; an empty kind before the colon becomes the service's own name.
     assert_eq!(got, vec![("a", "a", vec![65535, 22, 80]), ("b", "b", vec![]), ("c", "c", vec![80])]);
-}
-
-#[test]
-fn a_down_serving_service_is_listed_once_even_with_several_containers() {
-    // A scaled service with two exited containers is one down machine, and a running replica
-    // keeps it off the down list.
-    let entries = parse_ps(
-        r#"[{"Service":"web","State":"exited","Name":"p-web-1"},{"Service":"web","State":"exited","Name":"p-web-2"},{"Service":"db","State":"running","Name":"p-db-1"}]"#,
-    );
-    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()], "docker".into());
-    assert_eq!(status.machines.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["db", "web"]);
-    let entries = parse_ps(r#"[{"Service":"web","State":"exited","Name":"p-web-1"},{"Service":"web","State":"running","Name":"p-web-2"}]"#);
-    let status = build_status(entries, std::collections::HashMap::default(), Vec::new(), &["web".into()], "docker".into());
-    assert_eq!(status.machines.iter().map(|m| (m.name.as_str(), m.state.as_str())).collect::<Vec<_>>(), [("web", "running")]);
-}
-
-/// A lab started on a chosen engine carries that engine in its status (its logo on the lab
-/// page); one started on the CLI's current engine says "docker", which the page names from the
-/// machine report. A context whose name tells no engine reads as "docker" too.
-#[test]
-fn the_status_names_the_engine_recorded_at_launch() {
-    let dir = std::env::temp_dir().join(format!("cyberctf-lab-provider-{}", rand::random::<u32>()));
-    std::fs::create_dir_all(&dir).unwrap();
-    assert_eq!(lab_provider(&dir), "docker");
-    crate::runtime::paths::mark_engine(&dir, Some("orbstack")).unwrap();
-    assert_eq!(lab_provider(&dir), "orbstack");
-    crate::runtime::paths::mark_engine(&dir, Some("desktop-linux")).unwrap();
-    assert_eq!(lab_provider(&dir), "docker-desktop");
-    crate::runtime::paths::mark_engine(&dir, Some("my-remote")).unwrap();
-    assert_eq!(lab_provider(&dir), "docker");
-    let status = build_status(Vec::new(), std::collections::HashMap::default(), Vec::new(), &[], "orbstack".into());
-    assert_eq!(status.provider.as_deref(), Some("orbstack"));
-    std::fs::remove_dir_all(&dir).unwrap();
 }

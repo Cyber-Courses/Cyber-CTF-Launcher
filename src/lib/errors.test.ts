@@ -54,6 +54,8 @@ describe("command errors", () => {
         "dockerDeniedWindows",
         "dockerNotRunning",
         "hostHasLabs",
+        "labRunningHere",
+        "labRunningOn",
         "loginTimeout",
         "noBrowser",
         "noPasswordStored",

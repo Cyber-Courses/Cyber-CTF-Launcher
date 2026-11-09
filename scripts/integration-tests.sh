@@ -90,6 +90,13 @@ if tier local; then
     CYBERCTF_TEST_VM_INPUTS=API_URL=http://localhost:3206,LAUNCH_TOKEN=test-token
   scenario launch-commands integration_tests::commands::a_local_lab_launches_and_tears_down_through_the_commands \
     CYBERCTF_TEST_LOCAL_LAB="$EXAMPLES/hello-stack"
+  # A running lab's folder is never replaced under it: an update and a re-import are refused
+  # while it is up on each local form, and go through once it is stopped.
+  REPLACE=integration_tests::replace::a_running_lab_is_not_replaced_under_it
+  scenario replace-docker "$REPLACE" CYBERCTF_TEST_REPLACE_LAB="$EXAMPLES/hello-stack" CYBERCTF_TEST_REPLACE_FORM=docker
+  scenario replace-docker-vm "$REPLACE" CYBERCTF_TEST_REPLACE_LAB="$SOLO" CYBERCTF_TEST_REPLACE_FORM=docker-vm \
+    CYBERCTF_TEST_VM_PROVIDER="$DOCKER_VM_PROVIDER"
+  scenario replace-vm "$REPLACE" CYBERCTF_TEST_REPLACE_LAB="$SOLO" CYBERCTF_TEST_REPLACE_FORM=vm CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER"
 fi
 
 if tier aws; then

@@ -44,7 +44,6 @@ pub(crate) mod status;
 pub(crate) mod terminal_launch;
 pub(crate) mod terraform;
 pub(crate) mod tiers;
-pub(crate) mod vm;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -56,7 +55,6 @@ pub(crate) use inflight::DeployGuard;
 pub(crate) use inflight::lock_lab;
 pub use inflight::{Action, active_actions, active_deploys, deploying_labs, stopping};
 pub use isothrum_runner::ShellCommand;
-pub use launch::deployed_on_server;
 #[cfg(test)]
 pub(crate) use launch::start;
 pub(crate) use launch::{Destination, start_locked};
@@ -64,7 +62,8 @@ pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_h
 pub use model::{Control, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
 pub use paths::{LOCAL_VM_MARKER, validate_id};
 pub use reaper::reap_expired_labs;
-pub use status::{lab_installed, lab_present, primary_url, running_here, vms_recorded_here};
+pub(crate) use status::refuse_replace;
+pub use status::{lab_installed, lab_present, primary_url};
 pub use terraform::{PLUGIN_CACHE as TERRAFORM_PLUGINS, clear_plugin_cache};
 pub use tiers::RunTier;
 /// For the generated TypeScript types (`ts_bindings`).
@@ -102,7 +101,16 @@ pub(crate) mod test_support {
 
     /// A machine in `state`, with nothing else known about it.
     pub(crate) fn machine(name: &str, state: &str) -> Machine {
-        Machine::named(name.to_string(), state.to_string(), false)
+        Machine {
+            name: name.into(),
+            state: state.into(),
+            infra: false,
+            image: String::new(),
+            ip: String::new(),
+            ports: Vec::new(),
+            interfaces: Vec::new(),
+            services: Vec::new(),
+        }
     }
 
     /// A lab status with these running machines and nothing else set.
@@ -124,6 +132,27 @@ pub(crate) mod test_support {
             reap_error: None,
             controls: Vec::new(),
         }
+    }
+
+    /// Lab `lab`'s run as the runner whose home is `home` (the app data folder) records it:
+    /// `cyberctf-<lab>`, of `target`, on the place labelled `host` (none: this machine), left in
+    /// `state` (`ready`, `parked`, `failed`, `absent`, …) by its last operation.
+    pub(crate) fn record_run(home: &std::path::Path, lab: &str, host: Option<&str>, target: &str, state: &str) {
+        let name = format!("cyberctf-{lab}");
+        let dir = home.join("runs").join(&name);
+        std::fs::create_dir_all(&dir).unwrap();
+        let driver = if target.starts_with("cloud") || target == "proxmox" {
+            "terraform"
+        } else if target == "docker" {
+            "compose"
+        } else {
+            "vagrant"
+        };
+        let record = serde_json::json!({
+            "version": 0, "name": name, "manifest": home.join("labs").join(lab).join("run.json"),
+            "target": target, "driver": driver, "host_label": host, "state": state, "params": {}
+        });
+        std::fs::write(dir.join("record.json"), record.to_string()).unwrap();
     }
 
     /// A temp lab folder holding `spec` as its `isoloom.yml`, for tests that load a lab from disk.

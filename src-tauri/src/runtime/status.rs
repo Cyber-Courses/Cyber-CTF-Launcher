@@ -7,8 +7,8 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::host::{self, Host};
-use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm, vagrant_dirs};
-use super::{LabStatus, Place, Runtime, attack_machine, docker, isothrum, server, vm};
+use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm, runner_home};
+use super::{LabStatus, Place, Runtime, attack_machine, docker, isothrum, server};
 use crate::error::Result;
 
 pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
@@ -75,34 +75,87 @@ fn on_server(status: LabStatus, conn: &server::Connection) -> LabStatus {
     LabStatus { host: Some(conn.name.clone()), host_id: Some(conn.id.clone()), place: Some(place), provider: Some(conn.provider.id().to_string()), ..status }
 }
 
-/// Whether the lab runs on this machine right now: its containers, or a local VM of it. An
-/// upgrade must not swap the folder out from under it (its containers bind-mount files from it).
-pub async fn running_here(dir: &Path, id: &str) -> bool {
-    if docker::status(dir, id).await.is_ok_and(|s| s.running) {
+/// Something of a lab still up somewhere: its run, in any state but gone (running, starting, a
+/// failed start's machines left over, parked), or a deployment of the launcher's own Terraform
+/// path not handed to the runner yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Up {
+    /// The saved server or cloud account it is on, by id; `None`: this machine.
+    pub(crate) host: Option<String>,
+    /// That host's name, as the player reads it (its id when it is no longer saved).
+    pub(crate) host_name: Option<String>,
+    /// Only parked: nothing of it runs, its machines are kept.
+    pub(crate) parked: bool,
+}
+
+/// Whether something of lab `id` is still up, and where: its run as the runner records it (run
+/// `cyberctf-<id>`, in the state its last operation left it in, on the place it was started on:
+/// this machine, a server or a cloud account, whatever the form), or a deployment of the
+/// launcher's own Terraform path still waiting for its hand-over to the runner
+/// (`isothrum::import`). The one rule an update, a re-import, a start somewhere else, a failed
+/// website launch and a host's removal go by.
+///
+/// The runner keeps its record of a run (and Vagrant's) under the app data folder's `runs/`,
+/// never in the lab folder, so the lab folder says nothing of it. The record is read from files
+/// only: no tool runs and no host is reached. A record that can't be read is an error, never
+/// "nothing up".
+pub(crate) fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
+    let up =
+        |host: Option<String>, parked: bool| Up { host_name: host.as_ref().map(|h| server::host_name(dirs, h).unwrap_or_else(|| h.clone())), host, parked };
+    if let Some(host) = awaiting_hand_over(dirs, id) {
+        return Ok(Some(up(Some(host), false)));
+    }
+    let name = docker::project(id);
+    let run = isothrum::records(&runner_home(dirs)?)?.into_iter().find(|r| r.name.as_str() == name);
+    Ok(run.filter(|r| r.state != isothrum_runner::RunState::Absent).map(|r| up(r.host_label, r.state == isothrum_runner::RunState::Parked)))
+}
+
+/// The host a deployment of lab `id` on the launcher's own Terraform path is on, while one still
+/// holds resources: one the runner hasn't taken over yet (`isothrum::import`), which only that
+/// path stops. Named by the host its state records, else by the lab's marker.
+fn awaiting_hand_over(dirs: &AppDirs, id: &str) -> Option<String> {
+    let base = dirs.data().ok()?;
+    let (_, state) = super::paths::deployment_states(base, id).into_iter().find(|(_, state)| super::terraform::deployed(state))?;
+    super::paths::recorded_host(&state).or_else(|| lab_dir(dirs, id).ok().and_then(|dir| server::marked_host(&dir)).filter(|h| !h.is_empty()))
+}
+
+/// Refuses to replace lab `id`'s folder (`dir`), with a new version or a re-import, while
+/// something of it is up ([`still_up`]): the run's manifest and the files it bind-mounts or
+/// provisions from are in that folder. A parked copy is no reason: it is taken down before the
+/// swap (`clear_parked`).
+pub(crate) fn refuse_replace(dirs: &AppDirs, dir: &Path, id: &str) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    match still_up(dirs, id)? {
+        Some(up) if up.parked && parked(dir).is_some() => Ok(()),
+        Some(up) => Err(still_running(&up)),
+        None => Ok(()),
+    }
+}
+
+/// The refusal of an operation that needs the lab down while it is `up`.
+pub(crate) fn still_running(up: &Up) -> crate::error::Error {
+    use crate::error::{Code, Error};
+    Error::coded(match &up.host_name {
+        Some(host) => Code::LabRunningOn { host: host.clone() },
+        None => Code::LabRunningHere,
+    })
+}
+
+/// Whether lab `id` is up somewhere before a start: parked here, or up where its run is
+/// ([`still_up`]). What a failed start finds already up was not brought up by it, and must not
+/// be torn down with what it did bring up. When the runner's record can't be read, a lab marked
+/// as running on a host counts as up there. False when it isn't installed.
+pub fn lab_present(dirs: &AppDirs, id: &str) -> bool {
+    let Ok(dir) = lab_dir(dirs, id) else { return false };
+    if parked(&dir).is_some() {
         return true;
     }
-    for vdir in vagrant_dirs(dir) {
-        if vm::status(&vdir, &[]).await.is_ok_and(|s| s.running) {
-            return true;
-        }
+    match still_up(dirs, id) {
+        Ok(up) => up.is_some(),
+        Err(_) => server::marked_host(&dir).is_some_and(|h| !h.is_empty()),
     }
-    false
-}
-
-/// Whether Vagrant still tracks machines of this lab on this machine, running or not: their
-/// record lives in the lab's folder, which must not be replaced under them.
-pub fn vms_recorded_here(dir: &Path) -> bool {
-    vagrant_dirs(dir).into_iter().any(|vdir| vm::has_machines(&vdir))
-}
-
-/// Whether lab `id` is up somewhere before a start: running here, parked here, or marked as
-/// running on a server host or cloud account. What a failed start finds already up was not
-/// brought up by it, and must not be torn down with what it did bring up. A leftover (a state
-/// left on another account, stopped VMs the start clears) doesn't count: a failed start tears
-/// down its own deployment as before. False when it isn't installed.
-pub async fn lab_present(dirs: &AppDirs, id: &str) -> bool {
-    let Ok(dir) = lab_dir(dirs, id) else { return false };
-    server::marked_host(&dir).is_some_and(|h| !h.is_empty()) || parked(&dir).is_some() || running_here(&dir, id).await
 }
 
 /// Whether lab `id` is installed here.
@@ -171,44 +224,81 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
-    #[tokio::test]
-    async fn a_lab_is_present_wherever_something_of_it_is_left() {
+    #[test]
+    fn a_lab_is_present_wherever_something_of_it_is_left() {
         // Regression: a failed website launch asked only whether the lab ran *here* (local Docker
-        // and Vagrant), so a lab up on a server host or cloud account read as absent, and the
-        // teardown of the failed start destroyed it.
-        use crate::platform::exec::fake::Tools;
+        // and the lab folder's Vagrant record), so a lab up on a server host or cloud account, or
+        // as VMs the runner started here, read as absent, and the failed start's teardown
+        // destroyed it.
+        use crate::runtime::test_support::record_run;
         let t = crate::testing::test_app::TestApp::new();
         let dirs = t.dirs();
-        let _tools = Tools::rules(&[]);
         let dir = t.lab("present", &[]);
-        assert!(!super::lab_present(&dirs, "present").await, "installed, nothing of it up");
-        // Marked as running on a host.
-        crate::runtime::server::mark_lab(&dir, Some("pve1")).unwrap();
-        assert!(super::lab_present(&dirs, "present").await);
-        crate::runtime::server::mark_lab(&dir, None).unwrap();
-        // A Terraform state left on another account isn't this lab being up: a failed start on
-        // another account still tears down what it created there.
+        assert!(!super::lab_present(&dirs, "present"), "installed, nothing of it up");
+        // Its run, wherever the runner records it up: in a cloud account, as VMs here.
+        record_run(t.data(), "present", Some("aws1"), "cloud-docker", "ready");
+        assert!(super::lab_present(&dirs, "present"));
+        record_run(t.data(), "present", None, "vagrant", "failed");
+        assert!(super::lab_present(&dirs, "present"), "a failed start's VMs left here");
+        // Taken down: absent.
+        record_run(t.data(), "present", None, "vagrant", "absent");
+        assert!(!super::lab_present(&dirs, "present"));
+        // A Terraform state of the launcher's own path still holding resources, waiting for its
+        // hand-over to the runner, is the lab up on that account.
         let state = t.data().join("deployments/present/aws");
         std::fs::create_dir_all(&state).unwrap();
         std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[{"type":"aws_instance"}]}"#).unwrap();
-        assert!(!super::lab_present(&dirs, "present").await);
+        std::fs::write(state.join("host"), "aws1").unwrap();
+        assert!(super::lab_present(&dirs, "present"));
+        std::fs::remove_dir_all(t.data().join("deployments")).unwrap();
         assert!(super::lab_installed(&dirs, "present") && !super::lab_installed(&dirs, "gone"));
         // Parked here.
         crate::runtime::paths::mark_parked(&dir, Some(crate::runtime::Park::Pause)).unwrap();
-        assert!(super::lab_present(&dirs, "present").await);
+        assert!(super::lab_present(&dirs, "present"));
     }
 
-    #[tokio::test]
-    async fn a_lab_with_nothing_up_is_not_running_here() {
-        use crate::platform::exec::fake::Tools;
-        let dir = std::env::temp_dir().join(format!("cyberctf-status-here-{}", rand::random::<u32>()));
-        let vagrant = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
-        std::fs::create_dir_all(&vagrant).unwrap();
-        std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
-        let tools = Tools::rules(&[]);
-        assert!(!super::running_here(&dir, "t").await);
-        assert!(tools.called("vagrant status"));
-        std::fs::remove_dir_all(dir).unwrap();
+    #[test]
+    fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
+        // Regression: an update, a re-import and a start elsewhere asked the lab folder (Vagrant's
+        // `.vagrant`, local Docker, `deployments/`), where the runner keeps nothing: a VM, a
+        // docker-in-VM, an ESXi, a Proxmox or a cloud lab run by the runner read as down.
+        use crate::runtime::test_support::record_run;
+        let t = crate::testing::test_app::TestApp::new();
+        let dirs = t.dirs();
+        let dir = t.lab("web", &[]);
+        let pve = t.host("pve1", "proxmox", serde_json::json!({}));
+        assert_eq!(super::still_up(&dirs, "web").unwrap(), None, "never started");
+        for (host, target) in
+            [(None, "docker"), (None, "docker-vm"), (None, "vagrant"), (Some("esx1"), "vagrant"), (Some(pve.as_str()), "proxmox"), (Some("aws1"), "cloud-vm")]
+        {
+            record_run(t.data(), "web", host, target, "ready");
+            let up = super::still_up(&dirs, "web").unwrap().unwrap_or_else(|| panic!("{target} on {host:?}"));
+            assert_eq!((up.host.as_deref(), up.parked), (host, false), "{target}");
+            let err = super::refuse_replace(&dirs, &dir, "web").unwrap_err();
+            let expected = match host {
+                None => crate::error::Code::LabRunningHere,
+                // A saved host by its name; one no longer saved by its id.
+                Some(h) => crate::error::Code::LabRunningOn { host: if h == pve { "Host pve1".into() } else { h.into() } },
+            };
+            assert_eq!(err.code(), expected, "{target}");
+            assert!(err.is_refusal());
+        }
+        // Parked: only its parked mark lets the copy go (it is taken down before the swap).
+        record_run(t.data(), "web", None, "vagrant", "parked");
+        assert!(super::still_up(&dirs, "web").unwrap().is_some_and(|u| u.parked));
+        assert!(super::refuse_replace(&dirs, &dir, "web").is_err());
+        crate::runtime::paths::mark_parked(&dir, Some(crate::runtime::Park::Shutdown)).unwrap();
+        assert!(super::refuse_replace(&dirs, &dir, "web").is_ok());
+        // Down: free to replace; another lab's run is no business of this one's.
+        record_run(t.data(), "web", None, "vagrant", "absent");
+        record_run(t.data(), "web-2", None, "docker", "ready");
+        assert_eq!(super::still_up(&dirs, "web").unwrap(), None);
+        assert!(super::refuse_replace(&dirs, &dir, "web").is_ok());
+        // A record that can't be read stops the replacement rather than read as "down".
+        std::fs::write(t.data().join("runs/cyberctf-web/record.json"), "not json").unwrap();
+        assert!(super::still_up(&dirs, "web").is_err() && super::refuse_replace(&dirs, &dir, "web").is_err());
+        // Nothing installed: nothing to replace.
+        assert!(super::refuse_replace(&dirs, &t.data().join("labs/none"), "none").is_ok());
     }
 
     #[tokio::test]
@@ -225,21 +315,6 @@ mod tests {
         // Refused before anything local or remote is probed; the marker alone never makes it
         // run here either.
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-        assert!(!super::running_here(&dir, "web").await);
-    }
-
-    #[tokio::test]
-    async fn running_here_is_false_when_neither_docker_nor_vagrant_answers() {
-        use crate::platform::exec::fake::{Tools, fail};
-        let dir = std::env::temp_dir().join(format!("cyberctf-status-down-{}", rand::random::<u32>()));
-        let vagrant = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
-        std::fs::create_dir_all(&vagrant).unwrap();
-        std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
-        // A wedged engine and a wedged hypervisor: an error, not a lab that reads as running.
-        let tools = Tools::rules(&[("docker", fail("Cannot connect to the Docker daemon")), ("vagrant status", fail("VBoxManage: error: timed out"))]);
-        assert!(!super::running_here(&dir, "t").await);
-        assert!(tools.called("docker compose") && tools.called("vagrant status"), "{:?}", tools.calls());
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

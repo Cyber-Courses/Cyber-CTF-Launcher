@@ -31,6 +31,8 @@
       "one": "{count} lab still running on this host. Stop it before removing the host.",
       "other": "{count} labs still running on this host. Stop them before removing the host."
     },
+    "labRunningHere": "This lab is still running on this machine (or its machines are still there). Stop it, then try again.",
+    "labRunningOn": "This lab is still running on {host}. Stop it there, then try again.",
     "reapNoHost": "No account is recorded for it, so the launcher can't destroy it. Remove its resources in your cloud console.",
     "reapLabGone": "Its lab files are gone ({detail}). Install the lab again, then stop it, or remove its resources in your cloud console.",
     "reapAccount": "The account {account} can't be used ({detail}). Fix the account in Settings, then stop the lab.",

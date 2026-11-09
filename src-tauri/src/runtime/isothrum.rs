@@ -67,6 +67,12 @@ where
 use super::{LabStatus, Park, Place, Runtime, lab, paths};
 use crate::error::Result;
 
+/// Every run the runner whose home is `home` (the app data folder) records, each in the state
+/// its last operation left it in: read from its files only.
+pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {
+    import::runner(home)?.runs().map_err(errors::from_runner)
+}
+
 /// The ESXi host's settings the vagrant target's manifest takes as params.
 const ESXI_PARAMS: [&str; 5] = ["ESXI_HOSTNAME", "ESXI_HOSTPORT", "ESXI_USERNAME", "ESXI_DATASTORE", "ESXI_VIRTUAL_NETWORK"];
 

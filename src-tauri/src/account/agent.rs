@@ -302,13 +302,13 @@ async fn undo_start(dirs: &AppDirs, lab_id: Option<&str>, runtime: Runtime, pres
 /// (`present_before`: up on a server host or cloud account, parked, its VMs): tearing it down
 /// would destroy the player's running lab, the opposite of what the refusal tells them.
 fn undoes(failure: &Error, present_before: bool) -> bool {
-    !present_before && !matches!(failure, Error::Refused(_))
+    !present_before && !failure.is_refusal()
 }
 
 /// Whether something of the claimed lab exists before its start (see `runtime::lab_present`).
-async fn present_before(dirs: &AppDirs, claim: &Value) -> bool {
+fn present_before(dirs: &AppDirs, claim: &Value) -> bool {
     match claim["labId"].as_str() {
-        Some(id) => crate::runtime::lab_present(dirs, id).await,
+        Some(id) => crate::runtime::lab_present(dirs, id),
         None => false,
     }
 }
@@ -355,7 +355,7 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
     let runtime = claim_runtime(claim);
     // Anything this start brought up before failing (one unhealthy service, say) is torn down, or
     // it would keep running under a FAILED session and every later launch of it would be refused.
-    let present = present_before(deps.dirs(), claim).await;
+    let present = present_before(deps.dirs(), claim);
     let url = run_claimed(deps.dirs(), claim, host.as_deref(), runtime, present).await?;
     // The lab is actually running now. If reporting back to the backend fails, tear down what
     // this start brought up before returning the error, so we don't leave infra running under a
@@ -690,9 +690,9 @@ mod tests {
         std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let claim = claim_of(id);
-        assert!(present_before(&dirs, &claim).await);
+        assert!(present_before(&dirs, &claim));
         let err = run_claimed(&dirs, &claim, None, Runtime::Docker, false).await.unwrap_err();
-        assert!(matches!(err, Error::Refused(_)) && err.to_string().contains("still running on Host aws1"), "{err}");
+        assert!(err.is_refusal() && err.to_string().contains("still running on Host aws1"), "{err}");
         assert!(!tools.called("terraform"), "nothing torn down: {:?}", tools.calls());
         assert!(state.join("terraform.tfstate").is_file());
         assert_eq!(server::marked_host(&dir).as_deref(), Some("aws1"));
@@ -706,9 +706,10 @@ mod tests {
         let id = "agent-present";
         let dir = t.lab(id, &[]);
         server::mark_lab(&dir, Some("pve1")).unwrap();
+        crate::runtime::test_support::record_run(t.data(), id, Some("pve1"), "proxmox", "ready");
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let failure = Error::Invalid("the lab host didn't answer".into());
-        let err = undo_start(&t.dirs(), Some(id), Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id).await, failure).await;
+        let err = undo_start(&t.dirs(), Some(id), Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id), failure).await;
         assert_eq!(err.to_string(), "the lab host didn't answer");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert_eq!(server::marked_host(&dir).as_deref(), Some("pve1"));

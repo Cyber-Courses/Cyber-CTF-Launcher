@@ -185,7 +185,7 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
     let (status, code) = status_line(result);
     // A refusal (the lab is still up elsewhere, an update of a running lab) changed nothing: the
     // launch's last verdict stays, or a lab still running on its host would read as failed.
-    let refused = matches!(result, Err(crate::error::Error::Refused(_)));
+    let refused = result.as_ref().is_err_and(crate::error::Error::is_refusal);
     if launch
         && !refused
         && let Err(e) = std::fs::write(&f.launch_status, &status)

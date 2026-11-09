@@ -52,12 +52,6 @@ pub(crate) fn deployment_states(base: &Path, id: &str) -> Vec<(String, PathBuf)>
     out
 }
 
-/// The lab's vagrant folders (Docker on one VM, one VM per machine) that hold a Vagrantfile, i.e.
-/// that a local or ESXi VM of it may have been started from.
-pub(super) fn vagrant_dirs(dir: &Path) -> impl Iterator<Item = PathBuf> {
-    [Runtime::Docker, Runtime::Vm].into_iter().map(|rt| super::lab::vagrant_dir(dir, rt)).filter(|v| v.join("Vagrantfile").exists())
-}
-
 /// Next to a lab's Terraform state: which runtime started it (`DOCKER`, `VM` or `CLOUD`), for
 /// the auto-stop reaper.
 const RUNTIME_FILE: &str = "runtime";
@@ -190,8 +184,7 @@ mod tests {
     }
 
     use super::{
-        PARKED_MARKER, Park, Provider, Runtime, deployed_ids, lab_dir_in, local_vm, mark_local_vm, mark_parked, parked, recorded_runtime, vagrant_dirs,
-        validate_id,
+        PARKED_MARKER, Park, Provider, Runtime, deployed_ids, lab_dir_in, local_vm, mark_local_vm, mark_parked, parked, recorded_runtime, validate_id,
     };
 
     fn temp_dir(prefix: &str) -> std::path::PathBuf {
@@ -322,21 +315,5 @@ mod tests {
         ids.sort();
         assert_eq!(ids, ["sqli_basic", "web-1"]);
         std::fs::remove_dir_all(base).unwrap();
-    }
-
-    #[test]
-    fn vagrant_dirs_lists_only_folders_with_a_vagrantfile() {
-        let dir = temp_dir("cyberctf-vagrantdirs");
-        assert_eq!(vagrant_dirs(&dir).count(), 0);
-        let vm = crate::runtime::lab::vagrant_dir(&dir, Runtime::Vm);
-        std::fs::create_dir_all(&vm).unwrap();
-        assert_eq!(vagrant_dirs(&dir).count(), 0, "a folder without a Vagrantfile is no VM");
-        std::fs::write(vm.join("Vagrantfile"), "").unwrap();
-        assert_eq!(vagrant_dirs(&dir).collect::<Vec<_>>(), std::slice::from_ref(&vm));
-        let docker_vm = crate::runtime::lab::vagrant_dir(&dir, Runtime::Docker);
-        std::fs::create_dir_all(&docker_vm).unwrap();
-        std::fs::write(docker_vm.join("Vagrantfile"), "").unwrap();
-        assert_eq!(vagrant_dirs(&dir).collect::<Vec<_>>(), [docker_vm, vm]);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }

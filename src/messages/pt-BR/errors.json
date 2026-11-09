@@ -31,6 +31,8 @@
       "one": "{count} lab ainda está em execução neste host. Pare-o antes de remover o host.",
       "other": "{count} labs ainda estão em execução neste host. Pare-os antes de remover o host."
     },
+    "labRunningHere": "Este lab ainda está rodando nesta máquina (ou as máquinas dele ainda estão aqui). Pare-o e tente de novo.",
+    "labRunningOn": "Este lab ainda está rodando em {host}. Pare-o lá e tente de novo.",
     "reapNoHost": "Nenhuma conta está registrada para ele, então o launcher não pode destruí-lo. Remova os recursos dele no console da sua nuvem.",
     "reapLabGone": "Os arquivos do lab sumiram ({detail}). Instale o lab de novo e pare-o, ou remova os recursos dele no console da sua nuvem.",
     "reapAccount": "A conta {account} não pode ser usada ({detail}). Corrija a conta nas Configurações e depois pare o lab.",
