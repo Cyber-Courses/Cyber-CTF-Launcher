@@ -258,21 +258,6 @@
   line-height: 1.1;
   font-optical-sizing: auto;
 }
-/* Eyebrow: mono, faint, with a short hairline before it. */
-.eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  font: 500 0.75rem var(--font-mono);
-  letter-spacing: 0.04em;
-  color: var(--faint);
-}
-.eyebrow::before {
-  content: "";
-  width: 1.25rem;
-  height: 1px;
-  background: var(--input);
-}
 /* Small caps label for groups (sidebar "Running", palette groups). */
 .section-label {
   font: 500 0.625rem var(--font-mono);
@@ -406,9 +391,6 @@
 .dot-jewel {
   background: var(--jewel);
 }
-.dot-you {
-  background: var(--you);
-}
 @keyframes dot-pulse {
   50% {
     box-shadow: 0 0 0 6px transparent;
@@ -462,17 +444,6 @@
 }
 .animate-fade-in {
   animation: fade-in 0.14s ease-out;
-}
-
-/* Flowing dashed edges for the lab network diagram. */
-@keyframes dash-flow {
-  to {
-    stroke-dashoffset: -16;
-  }
-}
-.animate-dash {
-  stroke-dasharray: 4 5;
-  animation: dash-flow 0.8s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

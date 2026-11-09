@@ -216,15 +216,6 @@
   color: var(--you-text);
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--you) 35%, transparent);
 }
-/* The host the published ports land on (your machine, or the server). */
-.zone-host {
-  border-style: solid;
-  border-color: color-mix(in oklab, var(--success) 30%, transparent);
-  background: color-mix(in oklab, var(--success) 3%, transparent);
-}
-.zone-host .zone-label {
-  color: var(--success);
-}
 /* A segment's side ports are anchors for pivot links only, never drawn. */
 .zone .zone-handle {
   pointer-events: none;
