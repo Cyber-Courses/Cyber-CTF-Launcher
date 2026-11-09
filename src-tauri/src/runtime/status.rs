@@ -7,7 +7,7 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::host::{self, Host};
-use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm, runner_home};
+use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm};
 use super::{LabStatus, Place, Runtime, attack_machine, docker, isothrum, server};
 use crate::error::Result;
 
@@ -111,8 +111,7 @@ pub(crate) fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
     if let Some(host) = awaiting_hand_over(dirs, id) {
         return up(Some(host), false).map(Some);
     }
-    let name = docker::project(id);
-    let run = isothrum::records(&runner_home(dirs)?)?.into_iter().find(|r| r.name.as_str() == name);
+    let run = isothrum::record_of(dirs, id)?;
     run.filter(|r| r.state != isothrum_runner::RunState::Absent).map(|r| up(r.host_label, r.state == isothrum_runner::RunState::Parked)).transpose()
 }
 

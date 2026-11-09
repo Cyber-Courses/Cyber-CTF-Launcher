@@ -95,7 +95,7 @@ pub(crate) fn leftovers_on(dirs: &AppDirs, id: &str) -> Result<usize> {
     let runs = crate::runtime::isothrum::records(&crate::runtime::paths::runner_home(dirs)?)?
         .into_iter()
         .filter(|r| r.host_label.as_deref() == Some(id) && r.state != isothrum_runner::RunState::Absent)
-        .filter_map(|r| r.name.as_str().strip_prefix(&crate::runtime::compose_project("")).map(str::to_owned))
+        .filter_map(|r| crate::runtime::lab_of_project(r.name.as_str()).map(str::to_owned))
         .filter(|lab| elsewhere(lab))
         .count();
     let states = crate::runtime::paths::deployed_ids(base)

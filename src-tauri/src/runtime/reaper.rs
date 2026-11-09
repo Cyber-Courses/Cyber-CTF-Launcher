@@ -59,7 +59,7 @@ async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
     let prior = failed_last_time(&dir);
     let _ = std::fs::remove_dir_all(&dir);
     for (run, e) in failures {
-        let id = run.strip_prefix("cyberctf-").unwrap_or(&run).to_string();
+        let id = super::docker::lab_of_project(&run).unwrap_or(&run).to_string();
         let message = format!("Auto-stop couldn't destroy {id}: {e}");
         log::warn!("{message}");
         if let Err(w) = record_failure(&dir, &id, &e.to_wire(), &message) {

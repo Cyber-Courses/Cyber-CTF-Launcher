@@ -53,10 +53,10 @@ fn decimal(num: &str) -> Option<(u128, u128, u128)> {
 /// version left (a `docker run` with no compose project), its name `cyberctf-<id><suffix>`
 /// ([`crate::runtime::LEGACY_ATTACK_BOX_SUFFIXES`]).
 fn lab_of(name: &str, project: &str) -> Option<String> {
-    if let Some(id) = project.strip_prefix("cyberctf-") {
+    if let Some(id) = crate::runtime::lab_of_project(project) {
         return Some(id.to_string());
     }
-    let rest = name.strip_prefix("cyberctf-")?;
+    let rest = crate::runtime::lab_of_project(name)?;
     // Upgrade only: an older version's attack box is a bare `docker run` with no compose project,
     // so strip its suffix to group it under its lab. Without it the box surfaces as a separate id
     // (`<id>-isoloom-access`), which the sidebar, finding no such lab, shows by its prettified id.

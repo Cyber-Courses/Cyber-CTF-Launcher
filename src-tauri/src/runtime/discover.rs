@@ -18,8 +18,6 @@ use std::path::Path;
 use crate::platform::AppDirs;
 use crate::platform::exec::run_read;
 
-/// The Compose project prefix every lab's containers carry (`cyberctf-<id>`).
-const PROJECT_PREFIX: &str = "cyberctf-";
 /// Between the lab's name and the machine's in a VM name (`minilab · dc01`).
 const VM_NAME_SEP: &str = " · ";
 
@@ -31,7 +29,7 @@ pub(crate) fn lab_ids_from_docker_projects(out: &str) -> Vec<String> {
     let mut ids = BTreeSet::new();
     for line in out.lines() {
         let project = line.trim();
-        if let Some(id) = project.strip_prefix(PROJECT_PREFIX)
+        if let Some(id) = super::docker::lab_of_project(project)
             && is_lab_id(id)
         {
             ids.insert(id.to_string());

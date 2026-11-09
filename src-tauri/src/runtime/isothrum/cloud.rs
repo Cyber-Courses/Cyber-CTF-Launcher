@@ -268,7 +268,7 @@ where
         // Serialize with the launcher's own operations on this lab (`lock_lab`): busy means
         // another operation holds it, so leave it for a later sweep rather than destroy over it
         // (not a failure). Held across the destroy below.
-        let id = name.strip_prefix("cyberctf-").unwrap_or(&name);
+        let id = super::super::docker::lab_of_project(&name).unwrap_or(&name);
         let Some(_held) = lock(id) else {
             log::debug!("auto-stop: {name} is busy (an operation holds its lab lock); left for a later sweep");
             continue;

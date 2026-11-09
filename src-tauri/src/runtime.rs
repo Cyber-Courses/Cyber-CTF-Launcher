@@ -48,7 +48,7 @@ pub(crate) mod terraform;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub use docker::{LEGACY_ATTACK_BOX_SUFFIXES, PORTS_ENV, legacy_attack_box_names, project as compose_project, subnets_in_use};
+pub use docker::{LEGACY_ATTACK_BOX_SUFFIXES, PORTS_ENV, lab_of_project, legacy_attack_box_names, project as compose_project, subnets_in_use};
 /// For tests elsewhere that need an operation in flight.
 #[cfg(test)]
 pub(crate) use inflight::DeployGuard;

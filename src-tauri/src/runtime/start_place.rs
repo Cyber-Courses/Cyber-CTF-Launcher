@@ -16,7 +16,7 @@ use crate::platform::AppDirs;
 
 use super::lab::{self, RunOptions};
 use super::providers::Provider;
-use super::{Runtime, docker, isothrum, paths, server};
+use super::{Runtime, isothrum, server};
 
 /// Where a lab starts: on the saved server `host`, or here (no host) on the hypervisor `provider`
 /// (none: on Docker), as one VM per machine with `per_machine_vm` (a container lab's VM form).
@@ -61,8 +61,7 @@ where
     if runtime == Runtime::Cloud {
         return Ok(StartPlace::default());
     }
-    let name = docker::project(lab_id);
-    let last = isothrum::records(&paths::runner_home(dirs)?)?.into_iter().find(|r| r.name.as_str() == name);
+    let last = isothrum::record_of(dirs, lab_id)?;
     // A container lab that never ran starts on Docker here: its spec needn't be read.
     if last.is_none() && runtime != Runtime::Vm {
         return Ok(StartPlace::default());

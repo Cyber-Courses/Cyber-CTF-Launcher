@@ -8,9 +8,19 @@ use serde::Deserialize;
 use crate::error::Result;
 use crate::platform::exec::run_read;
 
-// One compose project per lab, so labs never collide and can be cleaned up by name.
+/// What every lab's Compose project, and its run with the runner, is named after: `cyberctf-<id>`.
+const PROJECT_PREFIX: &str = "cyberctf-";
+
+/// Lab `id`'s Compose project (and run name): one per lab, so labs never collide and can be
+/// cleaned up by name.
 pub fn project(id: &str) -> String {
-    format!("cyberctf-{id}")
+    format!("{PROJECT_PREFIX}{id}")
+}
+
+/// The lab whose project (or run, or a name built on it) `name` is: what follows `cyberctf-`, if
+/// it starts so. The inverse of [`project`]; whether the rest is a valid lab id is the caller's.
+pub fn lab_of_project(name: &str) -> Option<&str> {
+    name.strip_prefix(PROJECT_PREFIX)
 }
 
 /// Upgrade only: the suffixes of the attack box containers older versions of the launcher ran
@@ -108,7 +118,7 @@ pub(super) fn parse_ps(out: &str) -> Vec<PsEntry> {
 
 #[cfg(test)]
 mod tests {
-    use super::{legacy_attack_box_names, parse_ps, project};
+    use super::{lab_of_project, legacy_attack_box_names, parse_ps, project};
 
     #[test]
     fn without_its_compose_file_a_lab_is_reached_by_project() {
@@ -193,6 +203,10 @@ mod tests {
         let long = "a".repeat(64);
         assert_eq!(project(&long), format!("cyberctf-{long}"));
         assert_eq!(project("Up_Per"), "cyberctf-Up_Per");
+        // And back: the lab a project, a run or a name built on one is.
+        assert_eq!(lab_of_project(&project(&long)), Some(long.as_str()));
+        assert_eq!(lab_of_project("cyberctf-web-isoloom-access"), Some("web-isoloom-access"));
+        assert_eq!(lab_of_project("other-web"), None);
     }
 
     #[test]

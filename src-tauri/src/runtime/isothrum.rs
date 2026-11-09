@@ -77,6 +77,13 @@ pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {
     import::runner(home)?.runs().map_err(errors::from_runner)
 }
 
+/// Lab `id`'s run as the runner whose home is the app data folder records it (`cyberctf-<id>`),
+/// if it has one: read from its files only, an unreadable record an error.
+pub(crate) fn record_of(dirs: &crate::platform::AppDirs, id: &str) -> Result<Option<isothrum_runner::RunRecord>> {
+    let name = super::docker::project(id);
+    Ok(records(&paths::runner_home(dirs)?)?.into_iter().find(|r| r.name.as_str() == name))
+}
+
 /// The ESXi host's settings the vagrant target's manifest takes as params.
 const ESXI_PARAMS: [&str; 5] = ["ESXI_HOSTNAME", "ESXI_HOSTPORT", "ESXI_USERNAME", "ESXI_DATASTORE", "ESXI_VIRTUAL_NETWORK"];
 
