@@ -61,7 +61,7 @@ pub use launch::deployed_on_server;
 pub(crate) use launch::start;
 pub(crate) use launch::{Destination, start_locked};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
-pub use model::{Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
+pub use model::{Controls, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
 pub use paths::{LOCAL_VM_MARKER, validate_id};
 pub use reaper::reap_expired_labs;
 pub use status::{lab_installed, lab_present, primary_url, running_here, vms_recorded_here};
@@ -121,6 +121,7 @@ pub(crate) mod test_support {
             outputs: Vec::new(),
             message: None,
             reap_error: None,
+            controls: crate::runtime::Controls::default(),
         }
     }
 

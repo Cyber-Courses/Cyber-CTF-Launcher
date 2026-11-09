@@ -14,10 +14,14 @@ use crate::error::Result;
 pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
     // Where it runs, in the form it was started in (a container lab run as one VM per machine
     // reads as a VM lab): the runner's view. A cloud-services lab on no account runs nowhere.
-    let (status, here) = match host::locate(dirs, dir, id, runtime)? {
-        Some(host) => (status_at(&host).await?, matches!(host, Host::Local(_))),
-        None => (LabStatus::default(), false),
+    let host = host::locate(dirs, dir, id, runtime)?;
+    let status = match &host {
+        Some(host) => status_at(host).await?,
+        None => LabStatus::default(),
     };
+    let here = matches!(host, Some(Host::Local(_)));
+    // What the page may do on it, by the lifecycle's own rules.
+    let controls = super::lifecycle::controls(host.as_ref(), status.provider.as_deref());
     // The attack box the launcher added is no machine of the lab's own (`attack_machine`).
     let status = attack_machine::set_apart(status, dir)?;
     // Here, parked = the launcher parked it and it is still down.
@@ -30,7 +34,7 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     // Whether this container lab runs as one VM per machine (its VM recipes), locally or as
     // cloud-vm: the UI reads it to name the form.
     let per_machine = runtime == Runtime::Docker && per_machine_vm(dir);
-    Ok(LabStatus { per_machine, reap_error: super::reaper::last_failure(dirs, id), ..status })
+    Ok(LabStatus { per_machine, reap_error: super::reaper::last_failure(dirs, id), controls, ..status })
 }
 
 /// A lab whose last launch or resume failed is not running, even if its machines stayed up: a
@@ -242,5 +246,17 @@ mod tests {
             // so the page offers Stop rather than a Resume that would do nothing.
             assert_eq!(with_parked(status_with(true, &["dc01"]), Some(mode)).parked, None);
         }
+    }
+
+    #[tokio::test]
+    async fn the_status_carries_what_the_page_may_do_where_the_lab_runs() {
+        let t = crate::testing::test_app::TestApp::new();
+        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let dir = t.lab("web", &[]);
+        let docker = super::status(&t.dirs(), &dir, "web", Runtime::Docker).await.unwrap().controls;
+        assert_eq!((docker.can_pause, docker.can_shutdown, docker.can_provision), (false, true, false));
+        let vm = super::status(&t.dirs(), &dir, "web", Runtime::Vm).await.unwrap().controls;
+        assert_eq!((vm.can_pause, vm.can_shutdown, vm.can_provision), (true, true, true));
+        assert_eq!(super::status(&t.dirs(), &dir, "web", Runtime::Cloud).await.unwrap().controls, crate::runtime::Controls::default());
     }
 }

@@ -165,6 +165,23 @@ pub struct LabStatus {
     /// Why the auto-stop couldn't destroy this lab, while it is past its stop time (it may still
     /// be billing): set by the status dispatcher, None from the per-runtime probes.
     pub reap_error: Option<crate::error::Wire>,
+    /// What can be done on the lab where it runs, in the form it was started in: set by the
+    /// status dispatcher (`lifecycle::controls`), none from the per-runtime probes.
+    pub controls: Controls,
+}
+
+/// What can be done on a started lab where it runs: the backend's own rules, so the lab page
+/// offers exactly what the lifecycle accepts.
+#[derive(Serialize, Clone, Copy, Default, Debug, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabControls")]
+pub struct Controls {
+    /// Pausing it (its machines' state saved).
+    pub can_pause: bool,
+    /// Shutting it down (its machines powered off, kept).
+    pub can_shutdown: bool,
+    /// Running its machines' provisioning again in place.
+    pub can_provision: bool,
 }
 
 /// One thing a cloud-services lab exposes: a module output, under the spec's name for it.

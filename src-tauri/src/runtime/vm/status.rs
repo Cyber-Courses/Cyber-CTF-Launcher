@@ -92,6 +92,7 @@ pub(super) fn status_from(out: &str, dir: &Path) -> LabStatus {
         outputs: Vec::new(),
         message: None,
         reap_error: None,
+        controls: crate::runtime::Controls::default(),
     }
 }
 

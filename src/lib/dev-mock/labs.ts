@@ -115,6 +115,7 @@ export const invoiceStatus: LabStatus = {
   outputs: [],
   message: null,
   reapError: null,
+  controls: { canPause: false, canShutdown: true, canProvision: false },
   networks: [
     { name: "default", subnet: "10.42.0.0/24", internal: false },
     { name: "billing", subnet: "10.42.1.0/24", internal: true },
@@ -215,6 +216,7 @@ export const stopped: LabStatus = {
   provider: null,
   perMachine: false,
   reapError: null,
+  controls: { canPause: false, canShutdown: false, canProvision: false },
   networks: [],
   machines: [],
   outputs: [],

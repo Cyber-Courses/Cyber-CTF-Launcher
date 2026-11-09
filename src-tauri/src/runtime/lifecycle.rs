@@ -21,7 +21,7 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
     let run = local_run(dirs, dir, id, runtime, "Pausing a lab on a server host isn't available yet. Stop it instead.")?;
     // A container lab in one local VM is paused (its state saved), never shut down.
-    if run.target() == lab::Target::DockerVm {
+    if !shuts_down(run.target()) {
         refuse_vm_shutdown(mode)?;
     }
     run.park(mode, &mut log).await?;
@@ -59,6 +59,36 @@ fn refuse_vm_shutdown(mode: Park) -> Result<()> {
         return Err(Error::Invalid("A container lab running in a VM can be paused, not shut down.".into()));
     }
     Ok(())
+}
+
+/// Whether a run on this machine for `target` can be shut down: not a container lab in one
+/// VM ([`refuse_vm_shutdown`]).
+fn shuts_down(target: lab::Target) -> bool {
+    target != lab::Target::DockerVm
+}
+
+/// Whether a run on this machine for `target`, on `provider`, can be paused: its VMs suspend
+/// (a container lab here only stops its containers: there is no state to save, so it is shut
+/// down), unless the provider has no suspend (vagrant-qemu answers "this provider doesn't
+/// support this action").
+fn pauses(target: lab::Target, provider: Option<&str>) -> bool {
+    target != lab::Target::Docker && provider != Some("qemu")
+}
+
+/// What can be done on a lab where it runs (`host`, on `provider` as its status reads it): pause
+/// and shut down only here ([`park`] refuses elsewhere, and a cloud-services lab, which locates
+/// no run here, is never parked); provisioning on a lab run as VMs through Vagrant, here or on an
+/// ESXi host ([`provision`]). None where nothing runs.
+pub(crate) fn controls(host: Option<&Host>, provider: Option<&str>) -> super::Controls {
+    match host {
+        Some(Host::Local(run)) => super::Controls {
+            can_pause: pauses(run.target(), provider),
+            can_shutdown: shuts_down(run.target()),
+            can_provision: run.target() == lab::Target::Vagrant,
+        },
+        Some(Host::Esxi { run, .. }) => super::Controls { can_provision: run.target() == lab::Target::Vagrant, ..super::Controls::default() },
+        Some(Host::Cloud { .. } | Host::Server { .. }) | None => super::Controls::default(),
+    }
 }
 
 /// The last line of a park.
@@ -353,5 +383,49 @@ mod tests {
         clear_parked(&t.dirs(), LabRef { dir: &dir, id: "web-1", runtime: Runtime::Vm }, &mut |l| lines.push(l)).await.unwrap();
         assert!(lines.is_empty());
         assert!(tools.calls().is_empty());
+    }
+
+    /// What the page may do on lab `t`, declared `runtime`, where it is located now, on `provider`.
+    fn controls_of(t: &TestApp, dir: &std::path::Path, runtime: Runtime, provider: Option<&str>) -> (bool, bool, bool) {
+        let host = crate::runtime::host::locate(&t.dirs(), dir, "t", runtime).unwrap();
+        let c = super::controls(host.as_ref(), provider);
+        (c.can_pause, c.can_shutdown, c.can_provision)
+    }
+
+    #[test]
+    fn the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs() {
+        use crate::runtime::paths::{mark_local_vm, mark_per_machine_vm};
+        let t = TestApp::new();
+        let _tools = Tools::rules(&[]);
+        let spec = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, os: debian@12, networks: { lab: 10 } }\n";
+        let dir = t.lab("t", &[("isoloom.yml", spec)]);
+        // Containers here: shut down only (nothing to save), no provisioning.
+        assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("docker")), (false, true, false));
+        // A VM lab here: both, and provisioning; QEMU can't suspend.
+        assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("virtualbox")), (true, true, true));
+        assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("qemu")), (false, true, true));
+        // A container lab run as one VM per machine is a VM lab here.
+        mark_per_machine_vm(&dir, true).unwrap();
+        assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("virtualbox")), (true, true, true));
+        mark_per_machine_vm(&dir, false).unwrap();
+        // Containers in one local VM: paused, never shut down nor provisioned.
+        mark_local_vm(&dir, Some(crate::runtime::providers::Provider::Virtualbox)).unwrap();
+        assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("virtualbox")), (true, false, false));
+        mark_local_vm(&dir, None).unwrap();
+        // A cloud-services lab on no account: nothing runs.
+        assert_eq!(controls_of(&t, &dir, Runtime::Cloud, None), (false, false, false));
+        // In a cloud account, or on Proxmox: nothing parked or provisioned there.
+        server::mark_lab(&dir, Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
+        assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("aws")), (false, false, false));
+        crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
+        for host in ["pve", "esx"] {
+            crate::runtime::server::secrets::set_secret(host, "pw").unwrap();
+        }
+        server::mark_lab(&dir, Some(&t.host("pve", "proxmox", serde_json::json!({})))).unwrap();
+        assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("proxmox")), (false, false, false));
+        // On ESXi: provisioning a VM lab, through Vagrant there; never its containers' VM.
+        server::mark_lab(&dir, Some(&t.host("esx", "vmware_esxi", serde_json::json!({})))).unwrap();
+        assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("vmware_esxi")), (false, false, true));
+        assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("vmware_esxi")), (false, false, false));
     }
 }

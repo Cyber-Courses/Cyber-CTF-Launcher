@@ -19,6 +19,7 @@ export type * from "./HostCapacity";
 export type * from "./InstalledTool";
 export type * from "./LabCheck";
 export type * from "./LabCheckResult";
+export type * from "./LabControls";
 export type * from "./LabInterface";
 export type * from "./LabMachine";
 export type * from "./LabNetwork";

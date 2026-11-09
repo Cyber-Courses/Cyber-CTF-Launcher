@@ -7,7 +7,7 @@ import type { Lab } from "@/features/labs/use-labs";
 import type { LabMachine, LabStatus } from "@/lib/tauri";
 import { installTauri } from "@/test/tauri";
 import { flush as flushUi } from "@/test/ui";
-import { containerMachine, upStatus } from "@/features/labs/labs-test-kit";
+import { VMS_HERE, containerMachine, upStatus } from "@/features/labs/labs-test-kit";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
 import { must } from "@/components/test-support";
 
@@ -149,7 +149,7 @@ describe("LabDetail", () => {
     renderDetail({
       lab: vmLab,
       busy: true,
-      status: status({ running: false, machines: [], place: "local_vm", provider: "virtualbox", url: null }),
+      status: status({ running: false, machines: [], place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null }),
       logs: ["==> DC01: Importing base box", "==> DC01: Booting VM...", "TASK [Configure SRV02] ***"],
       times: [1, 2, 3],
     });
@@ -164,7 +164,7 @@ describe("LabDetail", () => {
     const vmMachines = [machine("DC01", "running", { image: "", ip: "192.168.56.10", ports: [], services: [] })];
     const h = renderDetail({
       lab: vmLab,
-      status: status({ machines: vmMachines, place: "local_vm", provider: "virtualbox", url: null }),
+      status: status({ machines: vmMachines, place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null }),
       logs: ["==> DC01: Booting VM...", "✗ Provisioning failed on DC01"],
       times: [1, 2],
     });
@@ -181,7 +181,7 @@ describe("LabDetail", () => {
       machine("DC01", "running", { image: "", ip: "192.168.56.10", ports: [], services: [] }),
       machine("SRV02", "running", { image: "", ip: "192.168.56.22", ports: [], services: [] }),
     ];
-    const h = renderDetail({ lab: vmLab, status: status({ machines: vmMachines, place: "local_vm", provider: "virtualbox", url: null }) });
+    const h = renderDetail({ lab: vmLab, status: status({ machines: vmMachines, place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null }) });
     await flush();
     expect(screen.getAllByText(/DC01/).length).toBeGreaterThan(0);
     const pause = screen.queryAllByRole("button").find((b) => /pause|suspend/i.test(b.textContent));
@@ -197,7 +197,7 @@ describe("LabDetail", () => {
     const user = userEvent.setup();
     const h = renderDetail({
       lab: vmLab,
-      status: status({ running: false, parked: "pause", machines: [], place: "local_vm", provider: "virtualbox", url: null }),
+      status: status({ running: false, parked: "pause", machines: [], place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null }),
     });
     await flush();
     await user.click(

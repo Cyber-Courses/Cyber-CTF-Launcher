@@ -103,6 +103,8 @@ export function mergeScan(statuses: Record<string, LabStatus>, scanRunning: Set<
           outputs: [],
           message: null,
           reapError: null,
+          // Unknown until its own status is read: nothing offered meanwhile.
+          controls: { canPause: false, canShutdown: false, canProvision: false },
         };
   }
   return next;

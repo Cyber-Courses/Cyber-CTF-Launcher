@@ -71,6 +71,9 @@ export const deriveState = (p: Partial<LabStateInput>) =>
     ...p,
   });
 
+/** What the backend offers on a container lab here: shut down only. */
+const CONTAINERS_HERE: LabStatus["controls"] = { canPause: false, canShutdown: true, canProvision: false };
+
 /** A Docker lab up on this machine: `machines` on its default network (10.42.0.0/24), served on
  *  port 8080, `p` over it. */
 export const upStatus = (machines: LabMachine[], p: Partial<LabStatus> = {}): LabStatus =>
@@ -81,8 +84,15 @@ export const upStatus = (machines: LabMachine[], p: Partial<LabStatus> = {}): La
     url: "http://127.0.0.1:8080",
     place: "container",
     provider: "docker",
+    controls: CONTAINERS_HERE,
     ...p,
   });
+
+/** What the backend offers on a lab on a server or in a cloud account: nothing to park. */
+export const NOTHING: LabStatus["controls"] = { canPause: false, canShutdown: false, canProvision: false };
+
+/** What the backend offers on a VM lab here (on a hypervisor that suspends): all of it. */
+export const VMS_HERE: LabStatus["controls"] = { canPause: true, canShutdown: true, canProvision: true };
 
 /** The titles of the lab rows on screen, in order (read from their Open buttons). */
 export const rowTitles = () =>

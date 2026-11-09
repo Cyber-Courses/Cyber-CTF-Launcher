@@ -65,39 +65,20 @@ describe("deriveLabState", () => {
     expect(derive({ busy: true, status: status({ running: true, machines }) }).down).toEqual([]);
   });
 
-  it("offers pause and shut down by where the lab runs", () => {
-    const here = derive({ status: status({ running: true, place: "container" }) });
-    expect([here.canPause, here.canShutdown]).toEqual([false, true]);
-    const inVm = derive({ status: status({ running: true, place: "local_vm" }) });
-    expect([inVm.canPause, inVm.canShutdown]).toEqual([true, false]);
-    // A VM lab here is reported in a local VM too: it can be paused and shut down.
-    const vmLab = derive({ runtime: vm, status: status({ running: true, place: "local_vm" }) });
-    expect([vmLab.canPause, vmLab.canShutdown]).toEqual([true, true]);
-    const remote = derive({ runtime: vm, status: status({ running: true, host: "esxi", place: "server" }) });
-    expect([remote.canPause, remote.canShutdown]).toEqual([false, false]);
-    const noHandler = derive({ parkable: false, status: status({ running: true, place: "container" }) });
-    expect([noHandler.canPause, noHandler.canShutdown]).toEqual([false, false]);
-  });
-
-  it("never offers Pause on QEMU, whose Vagrant provider can't suspend", () => {
-    // A VM lab on QEMU: shut down (halt) only.
-    const vmLab = derive({ runtime: vm, status: status({ running: true, place: "local_vm", provider: "qemu" }) });
-    expect([vmLab.canPause, vmLab.canShutdown]).toEqual([false, true]);
-    // A container lab in a VM on QEMU: neither (its containers don't come back after a power-off).
-    const inVm = derive({ status: status({ running: true, place: "local_vm", provider: "qemu" }) });
-    expect([inVm.canPause, inVm.canShutdown]).toEqual([false, false]);
-    // The same lab on another hypervisor still pauses.
-    const onUtm = derive({ status: status({ running: true, place: "local_vm", provider: "utm" }) });
-    expect(onUtm.canPause).toBe(true);
-  });
-
-  it("re-runs provisioning on Vagrant VM labs only", () => {
-    expect(derive({ runtime: vm, status: status({ place: "local_vm" }) }).canProvision).toBe(true);
-    expect(derive({ runtime: vm, status: status({ place: "server", provider: "vmware_esxi" }) }).canProvision).toBe(true);
-    expect(derive({ runtime: vm, status: status({ place: "server", provider: "proxmox" }) }).canProvision).toBe(false);
-    expect(derive({ runtime: vm, status: status({ place: "cloud" }) }).canProvision).toBe(false);
-    expect(derive({ runtime: docker, status: status({}) }).canProvision).toBe(false);
-    expect(derive({ runtime: vm, provisionable: false, status: status({}) }).canProvision).toBe(false);
+  it("offers what the backend says the lifecycle accepts where the lab runs, with the page's handlers", () => {
+    const controls = (canPause: boolean, canShutdown: boolean, canProvision: boolean) => ({ canPause, canShutdown, canProvision });
+    // A container lab run as one VM per machine: catalogue DOCKER, a VM lab where it runs.
+    const asVms = derive({ runtime: docker, status: status({ running: true, place: "local_vm", perMachine: true, controls: controls(true, true, true) }) });
+    expect([asVms.canPause, asVms.canShutdown, asVms.canProvision]).toEqual([true, true, true]);
+    const inVm = derive({ status: status({ running: true, place: "local_vm", controls: controls(true, false, false) }) });
+    expect([inVm.canPause, inVm.canShutdown, inVm.canProvision]).toEqual([true, false, false]);
+    // Nothing the backend doesn't offer, whatever the catalogue says.
+    const remote = derive({ runtime: vm, status: status({ running: true, host: "pve", place: "server", provider: "proxmox" }) });
+    expect([remote.canPause, remote.canShutdown, remote.canProvision]).toEqual([false, false, false]);
+    // Nor without the page's handlers.
+    const all = status({ running: true, controls: controls(true, true, true) });
+    const unwired = derive({ parkable: false, provisionable: false, status: all });
+    expect([unwired.canPause, unwired.canShutdown, unwired.canProvision]).toEqual([false, false, false]);
   });
 
   it("names the engine or hypervisor it runs on", () => {
@@ -165,7 +146,8 @@ describe("networkView", () => {
   });
   it("says why there is no diagram", () => {
     const leftovers = { machines: [machine("dc01", "poweroff")] };
-    expect(view({ runtime: vm, status: status(leftovers) }, { hasMachines: false })).toBe("interruptedProvision");
+    const provisionable = { ...leftovers, controls: { canPause: true, canShutdown: true, canProvision: true } };
+    expect(view({ runtime: vm, status: status(provisionable) }, { hasMachines: false })).toBe("interruptedProvision");
     expect(view({ status: status(leftovers) }, { hasMachines: false })).toBe("interruptedClean");
     expect(view({ status: status({ parked: "shutdown" }) }, { hasMachines: false })).toBe("shutDownNote");
     expect(view({ status: status({ parked: "pause" }) }, { hasMachines: false })).toBe("pausedNote");

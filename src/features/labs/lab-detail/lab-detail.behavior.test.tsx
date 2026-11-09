@@ -6,7 +6,7 @@ import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
 import { commands, installTauri, type Handler } from "@/test/tauri";
-import { containerMachine, rejectWith, startIn, upStatus } from "@/features/labs/labs-test-kit";
+import { NOTHING, VMS_HERE, containerMachine, rejectWith, startIn, upStatus } from "@/features/labs/labs-test-kit";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
 import { flush } from "@/test/ui";
 import { getDockerEngine, setDockerEngine, setLocalVmForm, setPortMode, setVmProvider } from "@/lib/settings";
@@ -43,7 +43,7 @@ const vmLab: Lab = {
 const machine = containerMachine;
 const status = (p: Partial<LabStatus> = {}) => upStatus([machine("api")], p);
 const stopped = status({ running: false, machines: [], url: null, place: null, provider: null });
-const vmRunning = status({ machines: [machine("DC01", "running", { image: "" })], place: "local_vm", provider: "virtualbox", url: null });
+const vmRunning = status({ machines: [machine("DC01", "running", { image: "" })], place: "local_vm", provider: "virtualbox", url: null, controls: VMS_HERE });
 
 // Settled: nothing deploying, no servers (Start then starts right away for a Docker lab).
 const quiet: Record<string, Handler> = {
@@ -428,7 +428,7 @@ describe("LabDetail: a lab that is up", () => {
 
   it("reads a container lab's box on a server: no shell before the box runs", async () => {
     const calls = installTauri({ ...quiet, attack_box_status: () => remoteBox(false) });
-    renderDetail({ status: status({ place: "server", host: "aws-1", url: null }) });
+    renderDetail({ status: status({ place: "server", host: "aws-1", controls: NOTHING, url: null }) });
     await flush();
     expect(calls.find((c) => c.cmd === "attack_box_status")?.args).toMatchObject({ runtime: "DOCKER" });
     // The lab running says nothing of its box: no "running on" and no shell before it runs.
@@ -439,7 +439,7 @@ describe("LabDetail: a lab that is up", () => {
 
   it("shows a cloud lab's address without its scheme, so it stays on one line, and copies it whole", async () => {
     installTauri({ ...quiet, attack_box_status: () => remoteBox(false) });
-    renderDetail({ status: status({ place: "server", host: "aws-1", url: "http://13.39.163.133:8180/", machines: [] }) });
+    renderDetail({ status: status({ place: "server", host: "aws-1", controls: NOTHING, url: "http://13.39.163.133:8180/", machines: [] }) });
     await flush();
     const address = screen.getByRole("button", { name: /^13\.39\.163\.133:8180/ });
     expect(address.getAttribute("title")).toContain("http://13.39.163.133:8180/");
@@ -448,7 +448,7 @@ describe("LabDetail: a lab that is up", () => {
   it("opens the shell into a container lab's box on a server once the box runs", async () => {
     const calls = installTauri({ ...quiet, attack_box_status: () => remoteBox(true) });
     const user = userEvent.setup();
-    renderDetail({ status: status({ place: "server", host: "aws-1", url: null }) });
+    renderDetail({ status: status({ place: "server", host: "aws-1", controls: NOTHING, url: null }) });
     await flush();
     expect(screen.getByText("running on aws-1")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /Open attacker shell/ }));
@@ -465,7 +465,7 @@ describe("LabDetail: a lab that is up", () => {
       ["vmware_esxi", false],
     ] as const) {
       const calls = installTauri({ ...quiet, attack_box_status: () => ({ ...remoteBox(false), vm: true, reachable }) });
-      renderDetail({ lab: vmLab, status: status({ place: "server", host: "srv-1", provider, url: null }) });
+      renderDetail({ lab: vmLab, status: status({ place: "server", host: "srv-1", controls: NOTHING, provider, url: null }) });
       await flush();
       expect(
         calls.some((c) => c.cmd === "attack_box_status" && (c.args as { runtime?: string }).runtime === "VM"),
@@ -479,7 +479,7 @@ describe("LabDetail: a lab that is up", () => {
   it("offers no attacker shell on a server or cloud account until the lab is up", async () => {
     installTauri(quiet);
     // Still starting there (the infrastructure being created): no shell into a box not up yet.
-    renderDetail({ status: status({ running: false, machines: [], place: "server", host: "aws-1", url: null }), busy: true });
+    renderDetail({ status: status({ running: false, machines: [], place: "server", host: "aws-1", controls: NOTHING, url: null }), busy: true });
     await flush();
     expect(screen.queryByRole("button", { name: /Open attacker shell/ })).toBeNull();
   });

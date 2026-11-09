@@ -45,6 +45,7 @@ const status = (p: Partial<LabStatus> = {}): LabStatus => ({
   outputs: [],
   message: null,
   reapError: null,
+  controls: { canPause: false, canShutdown: false, canProvision: false },
   ...p,
 });
 

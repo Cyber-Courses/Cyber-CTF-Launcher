@@ -10,7 +10,7 @@ import { commands, installTauri, stream, type Handler } from "@/test/tauri";
 import type { SystemReport } from "@/lib/tauri";
 import { flush } from "@/test/ui";
 import { must } from "@/components/test-support";
-import { containerMachine, labStatus, rejectWith, rowTitles } from "@/features/labs/labs-test-kit";
+import { VMS_HERE, containerMachine, labStatus, rejectWith, rowTitles } from "@/features/labs/labs-test-kit";
 
 // The Labs screen as a player drives it: the real useLabs / useLabActions / deploy store behind
 // the list and the lab page, with only the Rust commands mocked. The component tests next to it
@@ -335,10 +335,20 @@ describe("Lab page, driven through the Labs screen", () => {
   it("pauses a VM lab running here, saying Pausing… on that button only, then shows it paused with Resume", async () => {
     let parked = false;
     let release!: () => void;
-    const vmUp = status({ running: true, machines: [machine("DC01", "running", { image: "" })], place: "local_vm", provider: "virtualbox" });
+    const vmUp = status({
+      running: true,
+      machines: [machine("DC01", "running", { image: "" })],
+      place: "local_vm",
+      controls: VMS_HERE,
+      provider: "virtualbox",
+    });
     const { calls } = renderLabs("goad-light", {
       lab_status: (a) =>
-        a?.id === "lab-goad" ? (parked ? status({ parked: "pause", machines: [machine("DC01", "saved", { image: "" })], place: "local_vm" }) : vmUp) : status(),
+        a?.id === "lab-goad"
+          ? parked
+            ? status({ parked: "pause", machines: [machine("DC01", "saved", { image: "" })], place: "local_vm", controls: VMS_HERE })
+            : vmUp
+          : status(),
       lab_park: (a) => {
         stream(a, "==> DC01: Saving state");
         return new Promise<null>(
@@ -372,8 +382,8 @@ describe("Lab page, driven through the Labs screen", () => {
         a?.id !== "lab-goad"
           ? status()
           : parked
-            ? status({ parked: "shutdown", machines: [machine("DC01", "poweroff", { image: "" })], place: "local_vm" })
-            : status({ running: true, machines: [machine("DC01", "running", { image: "" })], place: "local_vm", provider: "virtualbox" }),
+            ? status({ parked: "shutdown", machines: [machine("DC01", "poweroff", { image: "" })], place: "local_vm", controls: VMS_HERE })
+            : status({ running: true, machines: [machine("DC01", "running", { image: "" })], place: "local_vm", controls: VMS_HERE, provider: "virtualbox" }),
       lab_resume: (a) => {
         stream(a, "==> DC01: Resuming");
         parked = false;
@@ -396,6 +406,7 @@ describe("Lab page, driven through the Labs screen", () => {
               running: true,
               machines: [machine("DC01", "running", { image: "" }), machine("SRV02", "running", { image: "" })],
               place: "local_vm",
+              controls: VMS_HERE,
               provider: "virtualbox",
             })
           : status(),

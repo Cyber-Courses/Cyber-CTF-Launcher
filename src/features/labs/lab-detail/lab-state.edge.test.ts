@@ -65,12 +65,11 @@ describe("deriveLabState: contradictory inputs", () => {
     expect(derive({ runtime: foreign, hostArch: "x86_64", readyVms: ["virtualbox"] }).native).toBe(false);
   });
 
-  it("a lab on a server offers neither pause nor shut down, and provisioning only off Proxmox", () => {
-    const esxi = derive({ runtime: vm, status: status({ running: true, host: "esxi-1", provider: "vmware_esxi" }) });
+  it("a lab on a server is remote, and offers what the backend says of it there", () => {
+    const provisionOnly = { canPause: false, canShutdown: false, canProvision: true };
+    const esxi = derive({ runtime: vm, status: status({ running: true, host: "esxi-1", provider: "vmware_esxi", controls: provisionOnly }) });
     expect([esxi.remote, esxi.canPause, esxi.canShutdown, esxi.canProvision]).toEqual([true, false, false, true]);
     expect(esxi.engine).toBe("VMware ESXi (remote)");
-    const pve = derive({ runtime: vm, status: status({ running: true, host: "pve", provider: "proxmox" }) });
-    expect(pve.canProvision).toBe(false);
     expect(derive({ runtime: vm, status: status({ provider: "weird" }) }).engine).toBe("weird");
   });
 
@@ -103,7 +102,8 @@ describe("headerMode and networkView: edges", () => {
   });
 
   it("an interrupted VM lab offers provisioning, an interrupted container lab a clean-up", () => {
-    const vmLab = derive({ runtime: vm, status: status({ machines: [machine("dc01", "poweroff")] }) });
+    const controls = { canPause: true, canShutdown: true, canProvision: true };
+    const vmLab = derive({ runtime: vm, status: status({ machines: [machine("dc01", "poweroff")], controls }) });
     expect(networkView(vmLab, { busy: false, acting: null, hasMachines: true })).toBe("interruptedProvision");
     const dockerLab = derive({ status: status({ machines: [machine("web", "exited")] }) });
     expect(networkView(dockerLab, { busy: false, acting: null, hasMachines: true })).toBe("interruptedClean");
