@@ -87,15 +87,54 @@ async fn exercise(l: &Lab, f: &mut Vec<String>) {
     check(provisioned.is_ok(), format!("it provisions again: {:?}", provisioned.err()), f);
 }
 
-/// Whether the hypervisor still holds a VM of `lab` (by the names Isoloom gives them).
-async fn left_on(provider: Provider, lab: &str) -> Vec<String> {
-    let (program, args): (&str, &[&str]) = match provider {
-        Provider::Virtualbox => ("VBoxManage", &["list", "vms"]),
-        Provider::Libvirt => ("virsh", &["-c", "qemu:///system", "list", "--all", "--name"]),
-        _ => return Vec::new(),
-    };
-    let out = crate::platform::exec::run(program, args, None).await.unwrap_or_default();
-    out.lines().filter(|l| l.contains(&format!("{lab} · ")) || l.starts_with(&format!("{lab}_"))).map(str::to_owned).collect()
+/// How a VM of a lab shows in a hypervisor's listing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Shows {
+    /// Named `<lab> · <machine>` (VirtualBox, Parallels, UTM).
+    Labelled,
+    /// Named `<lab><sep><machine>` (libvirt `_`, Hyper-V `-`).
+    Prefixed(char),
+    /// By a path in the lab's folder (VMware's `.vmx`, a QEMU process's disk).
+    InFolder,
+}
+
+/// How `provider` lists every VM it holds (running or not, where it can say), and how a lab's
+/// shows there; none for a provider the scenario can't check (a server's, which isn't local).
+fn listing(provider: Provider) -> Option<(&'static str, &'static [&'static str], Shows)> {
+    Some(match provider {
+        Provider::Virtualbox => ("VBoxManage", &["list", "vms"], Shows::Labelled),
+        Provider::Parallels => ("prlctl", &["list", "--all", "--no-header", "-o", "name"], Shows::Labelled),
+        Provider::Utm => ("utmctl", &["list"], Shows::Labelled),
+        Provider::Libvirt => ("virsh", &["-c", "qemu:///system", "list", "--all", "--name"], Shows::Prefixed('_')),
+        Provider::Hyperv => ("powershell", &["-NoProfile", "-Command", "Get-VM | ForEach-Object { $_.Name }"], Shows::Prefixed('-')),
+        // vmrun lists running VMs only, by their .vmx, which Vagrant keeps in the lab's folder.
+        Provider::VmwareDesktop => ("vmrun", &["list"], Shows::InFolder),
+        // vagrant-qemu's VMs are QEMU processes, started on disks in the lab's folder.
+        Provider::Qemu => ("ps", &["-axo", "command"], Shows::InFolder),
+        _ => return None,
+    })
+}
+
+/// Whether `line` of a listing is a VM of the lab named `lab` in `folder`, shown as `shows`.
+fn is_labs(line: &str, shows: Shows, lab: &str, folder: &str) -> bool {
+    match shows {
+        Shows::Labelled => line.contains(&format!("{lab} · ")),
+        Shows::Prefixed(sep) => line.trim().starts_with(&format!("{lab}{sep}")),
+        Shows::InFolder => line.contains(folder),
+    }
+}
+
+/// The VMs of the lab named `lab`, installed in `dir`, that the hypervisor `provider` still holds.
+///
+/// # Errors
+///
+/// When it can't be told: a provider without a listing here, or one whose listing failed. Never
+/// "nothing left" by default.
+async fn left_on(provider: Provider, lab: &str, dir: &Path) -> Result<Vec<String>, String> {
+    let (program, args, shows) = listing(provider).ok_or_else(|| format!("can't check what is left on {}", provider.id()))?;
+    let out = crate::platform::exec::run(program, args, None).await.map_err(|e| format!("listing the VMs on {} failed: {e}", provider.id()))?;
+    let folder = dir.display().to_string();
+    Ok(out.lines().filter(|l| is_labs(l, shows, lab, &folder)).map(str::to_owned).collect())
 }
 
 #[tokio::test]
@@ -113,10 +152,46 @@ async fn a_vm_lab_runs_end_to_end_through_the_runner() {
     let stopped = lifecycle::stop_run(isothrum::LabRun::vm(&lab.home, &lab.dir, &lab.id).unwrap(), &lab.dir, log(&lab.id)).await;
     check(stopped.is_ok(), format!("it stops: {:?}", stopped.err()), &mut failures);
     let name = crate::runtime::lab::lab(&lab.dir).map(|l| l.source().name.clone()).unwrap_or_default();
-    let left = left_on(provider, &name).await;
-    check(left.is_empty(), format!("nothing of it is left on {} ({left:?})", provider.id()), &mut failures);
+    let left = left_on(provider, &name, &lab.dir).await;
+    check(left.as_ref().is_ok_and(Vec::is_empty), format!("nothing of it is left on {} ({left:?})", provider.id()), &mut failures);
     check(lab.run().status().await.is_ok_and(|s| !s.running && s.machines.is_empty()), "its status reads as gone".into(), &mut failures);
     let _ = std::fs::remove_dir_all(&lab.dir);
     let _ = std::fs::remove_dir_all(&lab.home);
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_local_provider_is_checked_for_leftovers_and_a_server_never_passes_by_default() {
+        // Regression: only VirtualBox and libvirt were listed; on any other hypervisor the check
+        // found nothing and passed.
+        for p in Provider::ALL {
+            assert_eq!(listing(p).is_some(), !p.is_remote(), "{p:?}");
+        }
+        let folder = "/data/labs/web";
+        let shows = |p| listing(p).unwrap().2;
+        assert!(is_labs("\"Web · srv\" {1234}", shows(Provider::Virtualbox), "Web", folder));
+        assert!(!is_labs("\"Webshop · srv\" {1234}", shows(Provider::Virtualbox), "Web", folder));
+        assert!(is_labs("Web · srv", shows(Provider::Parallels), "Web", folder));
+        assert!(is_labs("1234-5678  stopped  Web · srv", shows(Provider::Utm), "Web", folder));
+        assert!(is_labs("Web_srv", shows(Provider::Libvirt), "Web", folder));
+        assert!(!is_labs("Webshop_srv", shows(Provider::Libvirt), "Web", folder));
+        assert!(is_labs("Web-srv\r", shows(Provider::Hyperv), "Web", folder));
+        assert!(is_labs("/data/labs/web/.vagrant/machines/srv/vmware_desktop/x/srv.vmx", shows(Provider::VmwareDesktop), "Web", folder));
+        assert!(is_labs("qemu-system-aarch64 -drive file=/data/labs/web/.vagrant/machines/srv/qemu/disk.qcow2", shows(Provider::Qemu), "Web", folder));
+        assert!(!is_labs("qemu-system-aarch64 -drive file=/data/labs/other/disk.qcow2", shows(Provider::Qemu), "Web", folder));
+    }
+
+    #[tokio::test]
+    async fn a_listing_that_fails_or_a_server_is_an_error_not_nothing_left() {
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let _tools = Tools::rules(&[("VBoxManage list vms", ok("\"Web · srv\" {1}\n\"Other · a\" {2}\n")), ("virsh", fail("not found"))]);
+        let dir = Path::new("/data/labs/web");
+        assert_eq!(left_on(Provider::Virtualbox, "Web", dir).await.unwrap(), ["\"Web · srv\" {1}"]);
+        assert!(left_on(Provider::Libvirt, "Web", dir).await.unwrap_err().contains("listing the VMs on libvirt failed"));
+        assert!(left_on(Provider::VmwareEsxi, "Web", dir).await.unwrap_err().contains("can't check"));
+    }
 }
