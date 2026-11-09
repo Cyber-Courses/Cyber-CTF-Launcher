@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { systemCheck, type SystemReport } from "@/lib/tauri";
 import { warn } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
+import { machineCheckInterval } from "@/features/machine/check-cadence";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 
 import { installDevMock } from "@/lib/dev-mock";
@@ -26,11 +27,12 @@ export default function MachineSetupWindow() {
     const step = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("step");
     return step ? { step, nonce: 0 } : null;
   });
-  // Poll so an install (incl. one the user finishes in a native installer) is detected as
-  // done and the steps update, without a manual re-check.
+  // Read again so an install (incl. one the user finishes in a native installer, then comes back
+  // to this window) is detected as done and the steps update, without a manual re-check.
   const stuck = checkError !== null && report === null;
-  const check = usePoll(systemCheck, 5000, {
+  const check = usePoll(systemCheck, machineCheckInterval(checkError !== null), {
     serial: true,
+    onFocus: true,
     enabled: !stuck,
     onValue: (r) => {
       setReport(r);

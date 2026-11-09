@@ -9,9 +9,9 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use super::Workload;
 use crate::error::{Error, Result};
@@ -25,24 +25,42 @@ const GLOBAL_STATUS_TIMEOUT: Duration = Duration::from_secs(30);
 /// Providers whose machines run elsewhere (a server host), not on this machine.
 const REMOTE_PROVIDERS: [&str; 2] = ["vmware_esxi", "proxmox"];
 
-/// `vagrant global-status`, one at a time: a poll that lands while the previous scan is still
-/// running reuses the last answer instead of starting another vagrant (they contend for one lock,
-/// so overlapping scans only get slower and pile up).
+/// How long a `vagrant global-status` answer stands: the sidebar and the Machine page each poll
+/// the workloads every few seconds, and each scan is a Vagrant (Ruby) start, a second or two of CPU
+/// on Windows. Vagrant's answer is its own cache anyway (see above).
+const GLOBAL_STATUS_FRESH: Duration = Duration::from_secs(30);
+
+/// `vagrant global-status`, one at a time and at most every [`GLOBAL_STATUS_FRESH`]: a poll that
+/// lands while the previous scan is still running, or soon after it, reuses its answer instead of
+/// starting another vagrant (they contend for one lock, so overlapping scans only get slower and
+/// pile up).
 async fn global_status() -> Option<String> {
     static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
-    static LAST: Mutex<Option<String>> = Mutex::new(None);
+    static LAST: Mutex<Option<(Instant, String)>> = Mutex::new(None);
+    let last = || LAST.lock().unwrap_or_else(PoisonError::into_inner).clone();
 
+    // Unit tests script each scan's answer per test: one test's must never stand for another's.
+    if !cfg!(test)
+        && let Some(answer) = fresh(last(), Instant::now())
+    {
+        return Some(answer);
+    }
     if IN_FLIGHT.swap(true, Ordering::AcqRel) {
-        return LAST.lock().ok().and_then(|l| l.clone());
+        return last().map(|(_, answer)| answer);
     }
     // Cleared on drop too, so a cancelled scan doesn't block every later one.
     let _done = crate::platform::ResetOnDrop(&IN_FLIGHT);
     // Timed: without a limit a polled call would hang and stack up one blocked process per tick.
     let out = run_env_timed("vagrant", &["global-status", "--prune", "--machine-readable"], None, &[], GLOBAL_STATUS_TIMEOUT).await.ok();
-    if let (Some(o), Ok(mut last)) = (&out, LAST.lock()) {
-        *last = Some(o.clone());
+    if let Some(o) = &out {
+        *LAST.lock().unwrap_or_else(PoisonError::into_inner) = Some((Instant::now(), o.clone()));
     }
     out
+}
+
+/// The `last` scan's answer, when it is still fresh at `now`.
+fn fresh(last: Option<(Instant, String)>, now: Instant) -> Option<String> {
+    last.filter(|(at, _)| now.saturating_duration_since(*at) < GLOBAL_STATUS_FRESH).map(|(_, answer)| answer)
 }
 
 /// One machine in `vagrant global-status`.
@@ -145,6 +163,15 @@ pub(super) async fn stop(dirs: &AppDirs, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_scan_stands_for_a_while_so_polls_dont_start_vagrant_each_time() {
+        let at = Instant::now();
+        let last = || Some((at, "1,default,state,running".to_string()));
+        assert_eq!(fresh(last(), at + GLOBAL_STATUS_FRESH.saturating_sub(Duration::from_secs(1))).as_deref(), Some("1,default,state,running"));
+        assert_eq!(fresh(last(), at + GLOBAL_STATUS_FRESH), None, "scanned again once old");
+        assert_eq!(fresh(None, at), None);
+    }
 
     #[test]
     fn reads_machines_from_global_status() {

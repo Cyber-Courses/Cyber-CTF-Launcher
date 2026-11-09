@@ -200,6 +200,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   description names that folder; a VM of the same name that is anyone else's is left alone, and
   the test says so. The NSIS uninstaller removes a Hyper-V test VM the same way before it deletes
   the app's folders.
+- **Setting the machine up checks it far less often.** The guided setup and the onboarding
+  checked the machine every 5 seconds, each check starting `vagrant` twice (a second or two of CPU
+  each on Windows) and the WSL probe, and logging a WSL line every time. They now check when they
+  open, when their window comes back to the front, after an install, and otherwise once a minute
+  (every 5 seconds only while a check is failing). Vagrant's version and plugins are kept 10
+  minutes (forgotten when the app installs or removes a tool), the running-VMs scan 30 seconds,
+  and the WSL check is logged when its result changes.
 - **A lab whose state can't be read says why.** When reading a lab's state failed (Docker not
   running, its run record unreadable, its files no longer able to be generated again), the lab
   page went on showing the last state it had read, with no word of it. It now says, at the top,

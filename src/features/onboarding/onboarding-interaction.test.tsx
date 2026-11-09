@@ -246,6 +246,28 @@ describe("Onboarding: a machine check that fails, then recovers", () => {
     expect(text()).toContain(`attempt ${String(n)} failed`);
   });
 
+  it("checks the machine on opening, on focus and once a minute, not every few seconds", async () => {
+    // Regression: every 5 s, each check a Ruby start of a second or two on Windows (`vagrant
+    // --version`, `vagrant plugin list`) and a WSL probe.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let checks = 0;
+    await atFirstMachineStep(() => {
+      checks++;
+      return readyReport();
+    });
+    const opened = checks;
+    await act(() => vi.advanceTimersByTimeAsync(30_000));
+    expect(checks).toBe(opened);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await flush();
+    expect(checks).toBe(opened + 1);
+    await act(() => vi.advanceTimersByTimeAsync(31_000));
+    expect(checks).toBe(opened + 2);
+    vi.useRealTimers();
+  });
+
   it("recovers on its own on the next poll, without Try again", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let fail = true;
@@ -261,12 +283,8 @@ describe("Onboarding: a machine check that fails, then recovers", () => {
     vi.useRealTimers();
   });
 
-  // Bug: while the machine check has not answered (or keeps failing), a machine step shows only
-  // the loader or the "Try again" panel: no Back button. The player cannot return to the sign-in
-  // step to sign in; the only ways out are a check that succeeds or "Skip setup", which ends the
-  // whole onboarding. Suggested fix (onboarding.tsx, the `report === null` branch): render
-  // <StepActions onBack={back} onNext={next} disabled nextLabel={t("onboarding.continue")} />
-  // under <WaitingForCheck>.
+  // Regression: while the machine check had not answered (or kept failing), a machine step showed
+  // only the loader or the "Try again" panel, with no Back button to the sign-in step.
   it("keeps a Back button on a machine step while the check is failing", async () => {
     const { user } = await atFirstMachineStep(() => {
       throw new Error("hung");

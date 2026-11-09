@@ -4,11 +4,9 @@ import { useEffect, useState } from "react";
 import { useAuthActions } from "@/features/account/account";
 import { authStatus, systemCheck, type AuthStatus, type SystemReport } from "@/lib/tauri";
 import { usePoll } from "@/lib/use-poll";
+import { machineCheckInterval } from "@/features/machine/check-cadence";
 import { describeError } from "@/lib/errors";
 import { warn } from "@/lib/failure";
-
-/** Machine checks while onboarding: an install finished in a native installer shows up on its own. */
-const CHECK_POLL_MS = 5000;
 
 /** Who is signed in (read once on mount), and the app's one sign-in: on failure the step stays
  *  and says why (a timeout, a missing browser or an unsaved session). */
@@ -37,8 +35,11 @@ export function useOnboardingAuth() {
 export function useMachineReport() {
   const [report, setReport] = useState<SystemReport | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
-  const refreshReport = usePoll(systemCheck, CHECK_POLL_MS, {
+  // Read again on its own (an install finished in a native installer shows up when the window
+  // comes back), and after each install the onboarding runs.
+  const refreshReport = usePoll(systemCheck, machineCheckInterval(checkError !== null), {
     serial: true,
+    onFocus: true,
     onValue: (r) => {
       setReport(r);
       setCheckError(null);

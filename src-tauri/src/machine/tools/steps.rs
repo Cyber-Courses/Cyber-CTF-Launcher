@@ -91,7 +91,10 @@ pub fn command_line(step: &Step) -> String {
     crate::platform::redact::redact(&format!("$ {} {}", step.program, step.args.join(" "))).into_owned()
 }
 
+/// Runs one install or removal step. Whatever it changed, the tools' kept answers (versions,
+/// Vagrant's plugins) are forgotten first, so the next machine check asks them again.
 pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<()> {
+    crate::platform::remembered::forget_all();
     if let Some(note) = &step.note {
         on_line(note.clone());
     }

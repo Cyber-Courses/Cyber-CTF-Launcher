@@ -19,6 +19,7 @@ pub mod policy;
 pub mod private_fs;
 pub mod proxy;
 pub mod redact;
+pub mod remembered;
 pub mod sys;
 
 /// Resets an in-flight flag to `false` when dropped, so a single-flight scan frees the next one

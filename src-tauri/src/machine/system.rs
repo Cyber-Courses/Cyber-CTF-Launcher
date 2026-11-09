@@ -8,6 +8,7 @@ pub mod wsl;
 use serde::Serialize;
 
 use crate::platform::exec::{docker_denied, docker_denied_error, run_read};
+use crate::platform::remembered::remembered;
 use crate::runtime::providers::{self, ProviderStatus};
 
 #[derive(Serialize, ts_rs::TS)]
@@ -125,9 +126,16 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
     }
 }
 
-/// A tool's version, timed: a wedged daemon or a held Vagrant lock must not hang the check.
+/// A tool's version, timed: a wedged daemon or a held Vagrant lock must not hang the check. A
+/// `--version` answer is kept a while (`platform::remembered`): it changes only with an install.
 async fn probe(program: &'static str, args: &[&str]) -> Tool {
-    match run_read(program, args, None).await {
+    let answer = if args == ["--version"] {
+        // Boxed: kept in the machine check's future, it would double every probe's size.
+        Box::pin(remembered(&format!("{program} --version"), run_read(program, args, None))).await
+    } else {
+        run_read(program, args, None).await
+    };
+    match answer {
         Ok(out) => Tool { installed: true, version: first_line(&out) },
         Err(_) => Tool { installed: false, version: None },
     }

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::platform::exec::run_read;
+use crate::platform::remembered::remembered;
 
 /// Vagrant provider ids (the value given to `vagrant up --provider`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
@@ -362,7 +363,7 @@ async fn tool_present(program: &'static str, args: &[&str]) -> bool {
 /// The Vagrant plugins installed, each with its version when it says one (none when `vagrant
 /// plugin list` fails).
 async fn installed_plugins() -> Vec<(String, Option<String>)> {
-    run_read("vagrant", &["plugin", "list"], None).await.map(|o| parse_plugin_versions(&o)).unwrap_or_default()
+    remembered("vagrant plugin list", run_read("vagrant", &["plugin", "list"], None)).await.map(|o| parse_plugin_versions(&o)).unwrap_or_default()
 }
 
 /// The local hypervisors ready for a lab's VMs on this machine: Vagrant, the hypervisor and its

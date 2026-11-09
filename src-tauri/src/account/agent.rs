@@ -328,7 +328,7 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
 /// the next poll asks again.
 async fn poll_once(deps: &Deps, agent_id: &str) {
     match api::graphql("query ($a: ID) { myPendingLaunches(agentId: $a) { id } }", json!({ "a": agent_id }), true).await {
-        Ok(data) => claim_each(pending_ids(&data), |sid| async move { claim_and_run(deps, &sid).await }, report_failed).await,
+        Ok(data) => claim_each(pending_ids(&data), |sid| async move { Box::pin(claim_and_run(deps, &sid)).await }, report_failed).await,
         Err(e) => log::warn!("myPendingLaunches failed: {e}"),
     }
 }
