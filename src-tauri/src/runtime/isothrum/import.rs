@@ -194,13 +194,15 @@ async fn import_one(runner: &Runner, base: &Path, d: &Deployment) -> Result<Outc
 }
 
 /// The run manifest `d`'s lab runs from where `d` is, its files generated first when they
-/// predate it.
+/// predate it, or when an earlier version of the launcher made them.
 fn manifest_of(base: &Path, d: &Deployment) -> Result<PathBuf, ImportError> {
     let dir = lab_dir_in(base, &d.id).map_err(ImportError::LabGone)?;
     let tf = server::terraform_target(d.provider).unwrap_or_default();
     let (module, target) = lab::terraform(&dir, d.runtime, tf);
     let manifest = module.join("run.json");
-    if !manifest.is_file() {
+    if manifest.is_file() {
+        super::regenerate::current(&manifest, &dir, target).map_err(ImportError::Generate)?;
+    } else {
         lab::prepare(&dir, target).map_err(ImportError::Generate)?;
     }
     if manifest.is_file() { Ok(manifest) } else { Err(ImportError::NoManifest(format!("{} on {}", target.id(), d.provider.id()))) }

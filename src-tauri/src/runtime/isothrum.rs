@@ -18,6 +18,7 @@ pub(crate) mod errors;
 mod import;
 mod opened;
 mod progress;
+mod regenerate;
 mod server;
 mod view;
 
@@ -217,9 +218,12 @@ impl LabRun {
         }
     }
 
-    /// The lab's manifest, opened under the run's name.
+    /// The lab's manifest, opened under the run's name: its files generated again first when an
+    /// earlier version of the launcher made them ([`regenerate::current`]).
     fn lab(&self) -> Result<Running<'_>> {
-        let lab = self.runner.open(&self.manifest(), Some(self.name.clone())).map_err(errors::from_runner)?;
+        let manifest = self.manifest();
+        regenerate::current(&manifest, &self.dir, self.target())?;
+        let lab = self.runner.open(&manifest, Some(self.name.clone())).map_err(errors::from_runner)?;
         Ok(match &self.esxi {
             Some(place) => lab.with_connection(place.connection()),
             None => lab,

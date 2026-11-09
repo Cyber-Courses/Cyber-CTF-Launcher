@@ -152,3 +152,37 @@ async fn only_what_the_runner_runs_is_handed_over_and_a_busy_lab_waits() {
     let web = busy.iter().find(|(d, _)| d.id == "web").map(|(_, o)| o);
     assert!(matches!(web, Some(Outcome::Left(Left::Busy))), "{busy:?}");
 }
+
+/// `id`'s manifest for `target` as an earlier launcher left it: the version its Isoloom wrote (0,
+/// every 1.x's).
+fn as_written_before(app: &AppData, id: &str, target: &str) {
+    let manifest = app.base.join("labs").join(id).join(".isoloom").join(target).join("run.json");
+    let mut written: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&manifest).unwrap()).unwrap();
+    written["manifest_version"] = 0.into();
+    std::fs::write(&manifest, written.to_string()).unwrap();
+}
+
+#[tokio::test]
+async fn a_lab_generated_by_an_earlier_version_is_generated_again_then_taken() {
+    let app = AppData::new();
+    let dir = app.base.join("labs/pve");
+    lab::prepare(&dir, lab::Target::Proxmox).unwrap();
+    let manifest = dir.join(".isoloom/proxmox/run.json");
+    let generated = std::fs::read_to_string(&manifest).unwrap();
+    as_written_before(&app, "pve", "proxmox");
+    let all = app.import(every_kind).await;
+    assert!(matches!(outcome(&all, "pve/proxmox"), Outcome::Imported), "{all:?}");
+    assert_eq!(std::fs::read_to_string(&manifest).unwrap(), generated, "generated again as this version writes it");
+    assert_eq!(app.record("pve").slot, Some(1));
+}
+
+#[tokio::test]
+async fn a_lab_generated_by_an_earlier_version_that_cant_be_generated_again_stays_and_says_why() {
+    let app = AppData::new();
+    as_written_before(&app, "web", "cloud-vm/aws");
+    let all = app.import(every_kind).await;
+    let Outcome::Failed { error, new: true } = outcome(&all, "web/aws") else { panic!("{all:?}") };
+    assert_eq!(error.kind(), "generate", "{error}");
+    assert!(error.to_string().contains("This lab's files were made by another version of Cyber CTF"), "{error}");
+    assert!(app.state("web", "aws").join("terraform.tfstate").is_file(), "left on the launcher's path");
+}

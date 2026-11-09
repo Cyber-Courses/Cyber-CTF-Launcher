@@ -2,28 +2,40 @@
 //! (Proxmox) or a cloud account's. Both are changed (brought up to date, a machine retired), read
 //! and consoled into the same way.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use isothrum_runner::{RunName, RunOptions, Runner, RunnerConfig, Running};
 
-use super::errors;
+use super::{errors, regenerate};
 use crate::error::Result;
+use crate::runtime::lab;
 
 pub(crate) struct OpenedRun {
     pub(super) runner: Runner,
+    /// The lab's folder.
+    dir: PathBuf,
+    /// The Isoloom target the run's files are generated for.
+    target: lab::Target,
     pub(super) manifest: PathBuf,
     pub(super) name: RunName,
 }
 
 impl OpenedRun {
-    /// The run named `name` of the lab whose generated manifest is `manifest`, on a runner set up
-    /// with `config`.
-    pub(super) fn new(config: RunnerConfig, manifest: PathBuf, name: RunName) -> Result<Self> {
-        Ok(OpenedRun { runner: Runner::new(config).map_err(errors::from_runner)?, manifest, name })
+    /// The run named `name` of the lab in `dir`, whose manifest `manifest` is generated for
+    /// `target`, on a runner set up with `config`.
+    pub(super) fn new(config: RunnerConfig, dir: &Path, target: lab::Target, manifest: PathBuf, name: RunName) -> Result<Self> {
+        Ok(OpenedRun { runner: Runner::new(config).map_err(errors::from_runner)?, dir: dir.to_path_buf(), target, manifest, name })
     }
 
-    /// The lab's manifest, opened under the run's name.
+    /// The Isoloom target the run's files are generated for.
+    pub(crate) fn target(&self) -> lab::Target {
+        self.target
+    }
+
+    /// The lab's manifest, opened under the run's name: its files generated again first when an
+    /// earlier version of the launcher made them ([`regenerate::current`]).
     pub(super) fn running(&self) -> Result<Running<'_>> {
+        regenerate::current(&self.manifest, &self.dir, self.target)?;
         self.runner.open(&self.manifest, Some(self.name.clone())).map_err(errors::from_runner)
     }
 

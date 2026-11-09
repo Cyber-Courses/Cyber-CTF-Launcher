@@ -36,6 +36,12 @@ fn timed_out_step(step: &str, timed_out: &TimedOut) -> Error {
     })
 }
 
+/// A lab whose files another version of the launcher made, and this one couldn't make again.
+pub(super) const EARLIER_FILES: &str = "This lab's files were made by another version of Cyber CTF, and they couldn't be made again for this one";
+
+/// What to do about a lab whose files can't be made again.
+pub(super) const ADD_AGAIN: &str = "Remove the lab and add it again from the catalogue; anything it still runs is on the Machine page.";
+
 /// The launcher's error for a runner's failure.
 pub(super) fn from_runner(e: RunnerError) -> Error {
     match e {
@@ -73,9 +79,9 @@ fn by_code(e: &RunnerError) -> Error {
         }
         ErrorCode::NotRunning => Error::RefusedBeforeActing("This lab isn't running. Start it first.".into()),
         ErrorCode::NotParkable => Error::Invalid("This lab can't be paused or shut down. Stop it instead.".into()),
-        ErrorCode::ManifestVersion => Error::Invalid(format!(
-            "This lab was generated for another version of Cyber CTF's runner. Update Cyber CTF (Settings > About), then start the lab again. ({e})"
-        )),
+        // A lab's files of another version are generated again before the runner reads them
+        // (`regenerate`): one still refused is a lab that can't be generated any more.
+        ErrorCode::ManifestVersion => Error::Invalid(format!("{EARLIER_FILES}. {ADD_AGAIN} ({e})")),
         ErrorCode::ManifestInvalid | ErrorCode::Unsupported => Error::Invalid(format!("Cyber CTF can't run this lab's generated files: {e}")),
         _ => Error::Invalid(e.to_string()),
     }
@@ -301,6 +307,16 @@ mod tests {
         assert!(compose.contains("Docker Compose 2 or later"), "{compose}");
         let other = said(RunnerError::ToolTooOld { tool: "qemu".into(), found: "6".into(), required: "8".into() }).1;
         assert!(other.contains("`qemu` 8 or later"), "{other}");
+    }
+
+    #[test]
+    fn a_manifest_of_another_version_says_to_add_the_lab_again() {
+        let source = isoloom_manifest::parse(r#"{"manifest_version": 0}"#).unwrap_err();
+        let (code, text) = said(RunnerError::Manifest { path: "run.json".into(), source });
+        assert_eq!(code, Code::Other);
+        assert!(text.starts_with("This lab's files were made by another version of Cyber CTF, and they couldn't be made again for this one. Remove the lab and add it again from the catalogue"), "{text}");
+        assert!(text.contains("(run.json: manifest_version 0"), "the runner's words follow: {text}");
+        assert!(!text.contains("Update Cyber CTF"), "updating doesn't help a lab that can't be generated again: {text}");
     }
 
     #[test]

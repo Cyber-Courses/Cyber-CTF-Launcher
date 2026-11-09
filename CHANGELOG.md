@@ -165,6 +165,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   which the runner now runs inside the attack VM it adds (Isothrum 1.0.6 on Isoloom 1.0.10: Debian
   12 with Docker, the image's Arm build on an Apple Silicon Mac), or the Vagrant box for a lab
   whose own design declares an attack VM. The panel calls it an attack VM in both cases.
+- **Labs made by an earlier version keep working after an update.** A lab's generated files hold
+  a run manifest of the version that wrote them, and this version reads manifest version 1 only,
+  so a lab left running or paused across the update couldn't be stopped, paused, checked or
+  shown, and its old Terraform deployment couldn't be handed to the runner. Its files are now
+  generated again for where it runs before any of those, with its instance and the launcher's
+  own settings. A lab whose files can't be generated any more (its `isoloom.yml` gone) says to
+  remove it and add it again, and that what it still runs is on the Machine page.
 
 ### Security
 
