@@ -14,7 +14,7 @@ account, what the player picked); the runner does the work and keeps the run's s
 | Place          | Lab                                        | Isoloom target          | What runs                                                             |
 | -------------- | ------------------------------------------ | ----------------------- | --------------------------------------------------------------------- |
 | This machine   | containers                                 | `docker`                | Docker Compose on the engine picked at launch                         |
-| This machine   | containers, "in a VM"                      | `docker-vm`             | one Vagrant VM (QEMU, UTM, VirtualBox, Hyper-V), Compose inside       |
+| This machine   | containers, "in a VM"                      | `docker-vm`             | one Vagrant VM (any local hypervisor but Hyper-V), Compose inside     |
 | This machine   | VMs, or containers as "one VM per machine" | `vagrant`               | one Vagrant VM per machine                                            |
 | Proxmox server | containers                                 | `docker-vm` (Proxmox)   | one VM made by Terraform, Compose inside over SSH                     |
 | Proxmox server | VMs                                        | `proxmox`               | one VM per machine, made by Terraform                                 |

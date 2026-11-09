@@ -45,10 +45,7 @@ describe("setupNeeded: cloud labs", () => {
   });
 
   it("a cloud lab on DigitalOcean, Linode or OCI names the cloud it needs an account on", () => {
-    // cloudNames knows AWS, Azure and Google Cloud only, so for the other three clouds the
-    // launcher supports (CLOUD_META marks them ready) the row reads "Needs an account on ".
-    // Suggested fix: add digitalocean, linode and oci to CLOUD_NAMES in lab-runtime.ts, or read
-    // the labels from CLOUD_META.
+    // Every cloud the launcher supports has a name (a missing one read "Needs an account on ").
     expect(cloudNames(["digitalocean", "linode", "oci"])).toHaveLength(3);
     expect(setupNeeded(cloudLab(["digitalocean"]), report(), [])).toMatch(/DigitalOcean/);
   });

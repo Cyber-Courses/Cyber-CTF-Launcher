@@ -13,9 +13,10 @@ export const CLOUDS = new Set(CLOUD_PROVIDERS);
 export const EMULATORS: readonly Provider[] = ["qemu"];
 
 /** The local hypervisors a container lab can run on as docker-in-VM (inside a generic helper VM),
- *  independent of the lab's own (native-VM) provider list. Hyper-V is left out: the engine's
- *  docker-vm has no Hyper-V block (it needs elevation and a named switch), so offering it would
- *  only fail at launch with "provider hyperv isn't one of this run's providers". */
+ *  independent of the lab's own (native-VM) provider list. Hyper-V is left out: Isoloom's
+ *  docker-vm manifest lists no Hyper-V provider (it needs elevation and a named switch), so the
+ *  runner refuses the start with "provider hyperv isn't one of this run's providers" — this
+ *  list mirrors that manifest, which the backend doesn't send. */
 const LOCAL_HYPERVISORS: readonly Provider[] = ["virtualbox", "vmware_desktop", "parallels", "libvirt", "qemu", "utm"];
 
 /** The local hypervisors Isoloom's per-machine VM form (its vagrant target) runs on: every one a
@@ -51,7 +52,9 @@ export const hasBothForms = (rt: LabRuntimeInfo) => {
 };
 
 /** The local hypervisors Isoloom refuses the per-machine VM form on: UTM's Vagrant plugin gives
- *  a VM no private network, so a lab's machines couldn't reach each other. */
+ *  a VM no private network, so a lab's machines couldn't reach each other. Mirrors the backend's
+ *  refusal at launch (`launch/local.rs::check_provider`, Isoloom's `vagrant_refusal`), which
+ *  stays the rule: this only keeps the picker from offering what it would refuse. */
 const NO_PER_MACHINE_VM: readonly Provider[] = ["utm"];
 
 /** The hypervisors on this machine that can run a dual-form lab as one VM per machine: every
