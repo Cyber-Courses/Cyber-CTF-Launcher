@@ -50,3 +50,7 @@ next-env.d.ts
 # native GUI e2e: logs and fixtures of e2e/desktop/run.sh
 /e2e/desktop/.state/
 .integration-tests/
+
+# release artifacts written by scripts/third-party.ts (pnpm notices / pnpm sbom)
+/THIRD_PARTY_NOTICES
+/sbom/

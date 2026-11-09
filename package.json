@@ -21,7 +21,9 @@
     "e2e": "playwright test",
     "e2e:desktop": "e2e/desktop/run.sh",
     "release-check": "scripts/release-check.sh",
-    "test:integration": "scripts/integration-tests.sh"
+    "test:integration": "scripts/integration-tests.sh",
+    "notices": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/third-party.ts notices",
+    "sbom": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/third-party.ts sbom"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",
