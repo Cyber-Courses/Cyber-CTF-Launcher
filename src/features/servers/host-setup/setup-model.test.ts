@@ -155,7 +155,7 @@ describe("withProvider", () => {
     const gcp = withProvider(aws, "gcp");
     expect(gcp).toMatchObject({
       provider: "gcp",
-      name: "GCP",
+      name: "Google Cloud",
       host: "europe-west1",
       username: "",
       password: null,
@@ -220,7 +220,7 @@ describe("saveName", () => {
   it("falls back to the cloud's name or the address", () => {
     expect(saveName(form({ name: "  Home lab ", host: "pve" }))).toBe("Home lab");
     expect(saveName(form({ name: " ", host: " 10.0.0.2 " }))).toBe("10.0.0.2");
-    expect(saveName(form({ provider: "gcp", name: "", host: "europe-west1" }))).toBe("GCP");
+    expect(saveName(form({ provider: "gcp", name: "", host: "europe-west1" }))).toBe("Google Cloud");
     expect(isCloud("proxmox")).toBe(false);
   });
 });
@@ -256,7 +256,7 @@ describe("connectionReady: edges", () => {
 
 describe("withProvider: edges", () => {
   it("replaces a default name even with spaces around it, keeps one that differs in case or wording", () => {
-    expect(withProvider(cloud({ name: "  AWS  " }), "gcp").name).toBe("GCP");
+    expect(withProvider(cloud({ name: "  AWS  " }), "gcp").name).toBe("Google Cloud");
     expect(withProvider(cloud({ name: "aws" }), "gcp").name).toBe("aws");
     expect(withProvider(cloud({ name: "Work account" }), "gcp").name).toBe("Work account");
     expect(withProvider(cloud({ name: "   " }), "oci").name).toBe("Oracle Cloud");

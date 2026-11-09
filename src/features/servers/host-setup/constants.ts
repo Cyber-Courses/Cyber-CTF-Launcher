@@ -1,4 +1,4 @@
-import { type CloudProvider, type ServerHostInput, type RemoteProvider } from "@/lib/tauri";
+import { PROVIDER_NAMES, type CloudProvider, type ServerHostInput, type RemoteProvider } from "@/lib/tauri";
 
 // The server setup flow, a step-by-step wizard shown in its own window (src/app/server-setup).
 // Matches the "Set up this machine" wizard (features/machine/machine-setup.tsx).
@@ -6,12 +6,12 @@ import { type CloudProvider, type ServerHostInput, type RemoteProvider } from "@
 export const KIND: Record<RemoteProvider, { label: string; note: string; port: number; user: string; plugin: string }> = {
   proxmox: { label: "Proxmox VE", note: "Signs in to the Proxmox API", port: 8006, user: "root", plugin: "vagrant-proxmox" },
   vmware_esxi: { label: "VMware ESXi", note: "Drives the host over SSH", port: 22, user: "root", plugin: "vagrant-vmware-esxi" },
-  aws: { label: "AWS", note: "EC2 in your own account", port: 443, user: "AKIA…", plugin: "" },
-  azure: { label: "Azure", note: "VMs in your own subscription", port: 443, user: "subscription id", plugin: "" },
-  gcp: { label: "Google Cloud", note: "VMs in your own project", port: 443, user: "project id", plugin: "" },
-  digitalocean: { label: "DigitalOcean", note: "Droplets in your own account", port: 443, user: "API token", plugin: "" },
-  linode: { label: "Linode", note: "Linodes in your own account", port: 443, user: "API token", plugin: "" },
-  oci: { label: "Oracle Cloud", note: "Instances in your own tenancy", port: 443, user: "compartment OCID", plugin: "" },
+  aws: { label: PROVIDER_NAMES.aws, note: "EC2 in your own account", port: 443, user: "AKIA…", plugin: "" },
+  azure: { label: PROVIDER_NAMES.azure, note: "VMs in your own subscription", port: 443, user: "subscription id", plugin: "" },
+  gcp: { label: PROVIDER_NAMES.gcp, note: "VMs in your own project", port: 443, user: "project id", plugin: "" },
+  digitalocean: { label: PROVIDER_NAMES.digitalocean, note: "Droplets in your own account", port: 443, user: "API token", plugin: "" },
+  linode: { label: PROVIDER_NAMES.linode, note: "Linodes in your own account", port: 443, user: "API token", plugin: "" },
+  oci: { label: PROVIDER_NAMES.oci, note: "Instances in your own tenancy", port: 443, user: "compartment OCID", plugin: "" },
 };
 
 /** Server hypervisors, as opposed to cloud accounts. */
@@ -113,18 +113,11 @@ export const OCI_REGIONS: [string, string][] = [
 ];
 
 export type StepKey = "provider" | "hypervisor" | "tools" | "server" | "connection" | "placement" | "account" | "credentials" | "options" | "test";
-/** A cloud host's default name: the provider's short name (the user can rename it). */
-export const CLOUD_DEFAULT_NAME: Record<CloudProvider, string> = {
-  aws: "AWS",
-  azure: "Azure",
-  gcp: "GCP",
-  digitalocean: "DigitalOcean",
-  linode: "Linode",
-  oci: "Oracle Cloud",
-};
-
-/** Each cloud's full name and CLI (none for the token and key clouds); `ready` gates which can
- *  be picked. */
+/** Each cloud, in the order the launcher lists them: the one table of the clouds the rest
+ *  derive from. Its brand's full name (`label`: the picker, the first-run tiles, the logo's alt
+ *  text; its short name, in lists and places and as a new account's default name, is the
+ *  backend's `PROVIDER_NAMES`), its CLI (none for the token and key clouds), and whether it can
+ *  be picked (`ready`). Each has its logo at `/brands/<id>.svg`. */
 export const CLOUD_META: Record<CloudProvider, { label: string; cli: string; ready: boolean }> = {
   aws: { label: "Amazon Web Services", cli: "aws", ready: true },
   azure: { label: "Microsoft Azure", cli: "az", ready: true },
@@ -134,13 +127,8 @@ export const CLOUD_META: Record<CloudProvider, { label: string; cli: string; rea
   oci: { label: "Oracle Cloud", cli: "", ready: true },
 };
 
-/** The provider picker. `logo` marks the ones with an SVG in public/brands (others fall back to
- *  a cloud icon). */
-export const CLOUD_PICKER: { id: CloudProvider; label: string; ready: boolean; logo: boolean }[] = [
-  { id: "aws", label: "Amazon Web Services", ready: true, logo: true },
-  { id: "azure", label: "Microsoft Azure", ready: true, logo: true },
-  { id: "gcp", label: "Google Cloud", ready: true, logo: true },
-  { id: "digitalocean", label: "DigitalOcean", ready: true, logo: true },
-  { id: "linode", label: "Linode", ready: true, logo: true },
-  { id: "oci", label: "Oracle Cloud", ready: true, logo: true },
-];
+/** Every cloud, in the order the launcher lists them. */
+export const CLOUD_IDS = Object.keys(CLOUD_META) as CloudProvider[];
+
+/** A cloud's logo, in public/brands. */
+export const cloudLogo = (id: string) => `/brands/${id}.svg`;

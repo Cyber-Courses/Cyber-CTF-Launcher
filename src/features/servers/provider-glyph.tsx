@@ -1,6 +1,7 @@
 import { Server } from "lucide-react";
 import type { RemoteProvider } from "@/lib/tauri";
 import { TypeIcon } from "@/components/ui/type-icon";
+import { CLOUD_IDS, CLOUD_META, cloudLogo } from "@/features/servers/host-setup/constants";
 
 /** Brand logos we can show for a host/hypervisor. VMware/Broadcom's logo needs their approval,
  *  and the local hypervisors (VirtualBox, Hyper-V, Parallels, QEMU, UTM) have no bundled mark
@@ -8,12 +9,7 @@ import { TypeIcon } from "@/components/ui/type-icon";
  *  light one up. Proxmox uses its icon mark (not the wide lockup) so it reads in the tile. */
 const LOGO: Partial<Record<RemoteProvider, { src: string; alt: string }>> = {
   proxmox: { src: "/brands/proxmox-icon.svg", alt: "Proxmox" },
-  aws: { src: "/brands/aws.svg", alt: "Amazon Web Services" },
-  azure: { src: "/brands/azure.svg", alt: "Microsoft Azure" },
-  gcp: { src: "/brands/gcp.svg", alt: "Google Cloud" },
-  digitalocean: { src: "/brands/digitalocean.svg", alt: "DigitalOcean" },
-  linode: { src: "/brands/linode.svg", alt: "Linode" },
-  oci: { src: "/brands/oci.svg", alt: "Oracle Cloud" },
+  ...Object.fromEntries(CLOUD_IDS.map((id) => [id, { src: cloudLogo(id), alt: CLOUD_META[id].label }])),
 };
 
 /** The leading mark for a host row: the provider's logo in a tile when we have one, else a

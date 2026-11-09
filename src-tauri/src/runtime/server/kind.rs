@@ -68,8 +68,6 @@ pub struct Shape {
 /// One kind of host.
 pub struct Kind {
     pub provider: Provider,
-    /// Its name for the player.
-    pub name: &'static str,
     /// The Terraform target (state folder, Isoloom module) its labs use; None for Vagrant.
     pub terraform: Option<&'static str>,
     pub default_port: u16,
@@ -94,7 +92,6 @@ const fn shape(valid: fn(&str) -> bool, message: &'static str) -> Shape {
 pub const KINDS: [Kind; 8] = [
     Kind {
         provider: Provider::VmwareEsxi,
-        name: "ESXi",
         terraform: None,
         default_port: 22,
         host: HostField::Address,
@@ -107,7 +104,6 @@ pub const KINDS: [Kind; 8] = [
     },
     Kind {
         provider: Provider::Proxmox,
-        name: "Proxmox",
         terraform: Some("proxmox"),
         default_port: 8006,
         host: HostField::Address,
@@ -120,7 +116,6 @@ pub const KINDS: [Kind; 8] = [
     },
     Kind {
         provider: Provider::Aws,
-        name: "AWS",
         terraform: Some("aws"),
         default_port: 443,
         host: HostField::Region,
@@ -133,7 +128,6 @@ pub const KINDS: [Kind; 8] = [
     },
     Kind {
         provider: Provider::Azure,
-        name: "Azure",
         terraform: Some("azure"),
         default_port: 443,
         host: HostField::Region,
@@ -146,7 +140,6 @@ pub const KINDS: [Kind; 8] = [
     },
     Kind {
         provider: Provider::Gcp,
-        name: "GCP",
         terraform: Some("gcp"),
         default_port: 443,
         host: HostField::Region,
@@ -160,7 +153,6 @@ pub const KINDS: [Kind; 8] = [
     },
     Kind {
         provider: Provider::DigitalOcean,
-        name: "DigitalOcean",
         terraform: Some("digitalocean"),
         default_port: 443,
         host: HostField::Region,
@@ -173,7 +165,6 @@ pub const KINDS: [Kind; 8] = [
     },
     Kind {
         provider: Provider::Linode,
-        name: "Linode",
         terraform: Some("linode"),
         default_port: 443,
         host: HostField::Region,
@@ -186,7 +177,6 @@ pub const KINDS: [Kind; 8] = [
     },
     Kind {
         provider: Provider::Oci,
-        name: "OCI",
         terraform: Some("oci"),
         default_port: 443,
         host: HostField::Region,

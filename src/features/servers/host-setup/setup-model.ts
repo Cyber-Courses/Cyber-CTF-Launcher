@@ -9,10 +9,11 @@ import type {
   SshKeySignIn,
   SystemReport,
 } from "@/lib/tauri";
+import { PROVIDER_NAMES } from "@/lib/tauri";
 import {
   AWS_REGIONS,
   AZURE_LOCATIONS,
-  CLOUD_DEFAULT_NAME,
+  CLOUD_IDS,
   CLOUD_META,
   DO_REGIONS,
   EMPTY_CLOUD,
@@ -26,8 +27,10 @@ import {
 
 // The server / cloud setup's logic, as pure functions of the form and what this machine has.
 
-const CLOUDS: readonly string[] = Object.keys(CLOUD_DEFAULT_NAME);
-const DEFAULT_NAMES = Object.values(CLOUD_DEFAULT_NAME);
+const CLOUDS: readonly string[] = CLOUD_IDS;
+/** A cloud account's default name: its cloud's (the player can rename it). */
+const defaultName = (p: CloudProvider) => PROVIDER_NAMES[p];
+const DEFAULT_NAMES = CLOUD_IDS.map(defaultName);
 
 export const isCloud = (p: RemoteProvider): p is CloudProvider => CLOUDS.includes(p);
 
@@ -79,7 +82,7 @@ export function withProvider(s: ServerHostInput, id: CloudProvider): ServerHostI
   return {
     ...s,
     provider: id,
-    name: !s.name.trim() || DEFAULT_NAMES.includes(s.name.trim()) ? CLOUD_DEFAULT_NAME[id] : s.name,
+    name: !s.name.trim() || DEFAULT_NAMES.includes(s.name.trim()) ? defaultName(id) : s.name,
     host: DEFAULT_REGION[id],
     username: "",
     password: null,
@@ -252,7 +255,7 @@ export function machineTools(provider: RemoteProvider, report: SystemReport | nu
 
 /** The name a host is saved under: the typed one, else the cloud's short name or the address. */
 export function saveName(v: ServerHostInput): string {
-  const fallback = isCloud(v.provider) ? CLOUD_DEFAULT_NAME[v.provider] : v.host.trim();
+  const fallback = isCloud(v.provider) ? defaultName(v.provider) : v.host.trim();
   return v.name.trim() || fallback;
 }
 

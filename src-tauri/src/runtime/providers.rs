@@ -47,6 +47,9 @@ pub enum Provider {
 }
 
 impl Provider {
+    /// The cloud accounts, in the order the launcher lists them.
+    pub const CLOUDS: [Provider; 6] = [Provider::Aws, Provider::Azure, Provider::Gcp, Provider::DigitalOcean, Provider::Linode, Provider::Oci];
+
     pub const ALL: [Provider; 9] = [
         Provider::Virtualbox,
         Provider::VmwareDesktop,
@@ -79,7 +82,8 @@ impl Provider {
         }
     }
 
-    /// The provider's name as the player reads it ("VirtualBox", "QEMU").
+    /// The provider's name as the player reads it ("VirtualBox", "QEMU"): the webview's too, which
+    /// reads it from the generated `ProviderNames.ts` (`testing/ts_bindings.rs`).
     pub fn label(self) -> &'static str {
         match self {
             Provider::Virtualbox => "VirtualBox",
@@ -117,7 +121,7 @@ impl Provider {
 
     /// Cloud accounts (billed to the player), as opposed to the player's own servers.
     pub fn is_cloud(self) -> bool {
-        self.is_remote() && !matches!(self, Provider::VmwareEsxi | Provider::Proxmox)
+        Self::CLOUDS.contains(&self)
     }
 
     /// Whether this provider can run on the current OS at all. Local hypervisors are

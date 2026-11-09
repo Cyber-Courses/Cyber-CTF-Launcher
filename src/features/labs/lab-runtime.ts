@@ -1,6 +1,6 @@
 import { Cloud, Container, Monitor, Server, type LucideIcon } from "lucide-react";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import type { LabStatus, Provider, ServerHost, SystemReport } from "@/lib/tauri";
+import { PROVIDER_NAMES, type LabStatus, type Provider, type ServerHost, type SystemReport } from "@/lib/tauri";
 import { CLOUD_PROVIDERS } from "@/features/cloud/cloud-model";
 
 // Where a lab can run, from its runtime (catalogue) and what this machine has ready.
@@ -191,17 +191,8 @@ export const isContainerLab = (rt: LabRuntimeInfo | null | undefined) => rt?.run
 /** The runtime column's word: what the lab is made of. */
 export const runtimeLabel = (rt: LabRuntimeInfo) => (rt.runtime === "VM" ? "vm" : rt.runtime === "CLOUD" ? "cloud" : "docker");
 
-const CLOUD_NAMES: Record<string, string> = {
-  aws: "AWS",
-  azure: "Azure",
-  gcp: "Google Cloud",
-  digitalocean: "DigitalOcean",
-  linode: "Linode",
-  oci: "Oracle Cloud",
-};
-
 /** The names of the clouds a cloud lab runs on ("AWS", "Google Cloud"), in its order. */
-export const cloudNames = (providers: readonly string[]): string[] => providers.filter((p) => CLOUD_NAMES[p]).map((p) => CLOUD_NAMES[p]);
+export const cloudNames = (providers: readonly string[]): string[] => providers.filter((p): p is Provider => CLOUDS.has(p)).map((p) => PROVIDER_NAMES[p]);
 
 /** The player's accounts a cloud lab can run on: of a cloud it lists. */
 export const cloudAccountsFor = (rt: LabRuntimeInfo | null | undefined, hosts: ServerHost[]) =>

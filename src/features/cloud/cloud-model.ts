@@ -1,17 +1,14 @@
 import type { CloudProvider, LabStatus, ServerHost, ServerTest } from "@/lib/tauri";
 import type { Lab } from "@/features/labs/use-labs";
+import { CLOUD_IDS, CLOUD_META } from "@/features/servers/host-setup/constants";
 
 // The Cloud page's logic, as pure functions of the saved accounts, their spend and the labs.
 
 /** The providers offered up front: the first-run tiles, and a "connect" row each until connected. */
-export const MAIN_PROVIDERS: { id: CloudProvider; label: string }[] = [
-  { id: "aws", label: "Amazon Web Services" },
-  { id: "azure", label: "Microsoft Azure" },
-  { id: "gcp", label: "Google Cloud" },
-];
+export const MAIN_PROVIDERS = (["aws", "azure", "gcp"] satisfies CloudProvider[]).map((id) => ({ id, label: CLOUD_META[id].label }));
 
-/** Every cloud the launcher runs labs in: the one list the lab runtime and the host setup read. */
-export const CLOUD_PROVIDERS: readonly string[] = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"] satisfies CloudProvider[];
+/** Every cloud the launcher runs labs in (`CLOUD_META`'s), for the lab runtime and the cloud page. */
+export const CLOUD_PROVIDERS: readonly string[] = CLOUD_IDS;
 
 /** The cloud accounts among the saved hosts (the rest are servers). */
 export const cloudAccounts = (hosts: ServerHost[]) => hosts.filter((h) => CLOUD_PROVIDERS.includes(h.provider));

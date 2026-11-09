@@ -80,8 +80,26 @@ fn generate(dir: &Path) {
         shared_folder::SharedFolderInfo,
         terminal::TermEvent,
     );
+    write_provider_names(dir);
     write_index(dir);
 }
+
+/// The file of every provider's name as the player reads it ([`Provider::label`]), the one table
+/// the webview names providers from (not a type: imported by its path, not from the index).
+fn write_provider_names(dir: &Path) {
+    use runtime::providers::Provider;
+    let entries = Provider::ALL.iter().chain(&Provider::CLOUDS).fold(String::new(), |mut lines, p| {
+        let _ = writeln!(lines, "  {}: \"{}\",", p.id(), p.label());
+        lines
+    });
+    let doc = "/** Each provider's name as the player reads it (Rust's `Provider::label`). */";
+    let text =
+        format!("{HEADER}import type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n");
+    fs::write(dir.join(format!("{PROVIDER_NAMES}.ts")), text).unwrap();
+}
+
+/// The generated file of provider names (a value, not a type).
+const PROVIDER_NAMES: &str = "ProviderNames";
 
 /// The `.ts` files in `dir` (none when it doesn't exist), by name.
 fn ts_files(dir: &Path) -> Vec<std::ffi::OsString> {
@@ -112,8 +130,11 @@ fn sync(staged: &Path, dir: &Path) -> Vec<std::ffi::OsString> {
 
 /// Writes `index.ts`, re-exporting every generated file.
 fn write_index(dir: &Path) {
-    let mut names: Vec<String> =
-        fs::read_dir(dir).unwrap().filter_map(|e| e.unwrap().path().file_stem().map(|s| s.to_string_lossy().into_owned())).filter(|n| n != "index").collect();
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|e| e.unwrap().path().file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .filter(|n| n != "index" && n != PROVIDER_NAMES)
+        .collect();
     names.sort();
     let lines = names.iter().fold(String::new(), |mut lines, n| {
         let _ = writeln!(lines, "export type * from \"./{n}\";");

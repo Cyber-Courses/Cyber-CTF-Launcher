@@ -114,7 +114,7 @@ impl HostInput {
         // A new token must look like one; None or empty keeps the stored one.
         if kind.secret == Secret::ApiToken {
             let token_ok = self.password.as_deref().filter(|p| !p.is_empty()).is_none_or(valid_do_token);
-            require(token_ok, &format!("that doesn't look like a {} API token", kind.name))?;
+            require(token_ok, &format!("that doesn't look like a {} API token", kind.provider.label()))?;
         }
         if self.provider == Provider::Gcp {
             require(valid_org_id(self.node.as_deref().unwrap_or_default()), "organization id must be all digits, or empty for a personal account")?;

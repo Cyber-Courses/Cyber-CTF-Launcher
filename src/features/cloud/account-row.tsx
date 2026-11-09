@@ -9,6 +9,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { budgetOf, credentialOf, isOverBudget, outcomeOf, type Credential, type Outcome } from "@/features/cloud/cloud-model";
 import { useT, type T } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
+import { cloudLogo } from "@/features/servers/host-setup/constants";
 
 /** An account's test: running, its result, or never run. */
 type TestState = ServerTest | "testing" | undefined;
@@ -175,7 +176,7 @@ export function LogoTile({ provider, label }: { provider: string; label?: string
   return (
     <span className="grid size-9 shrink-0 place-items-center rounded-control bg-glass-2 shadow-[inset_0_0_0_1px_var(--input)]">
       {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
-      <img src={`/brands/${provider}.svg`} alt={label ?? ""} className="size-5 object-contain" draggable={false} />
+      <img src={cloudLogo(provider)} alt={label ?? ""} className="size-5 object-contain" draggable={false} />
     </span>
   );
 }
