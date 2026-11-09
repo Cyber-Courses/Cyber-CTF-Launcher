@@ -146,7 +146,7 @@ mod tests {
         // spend is `server_month_to_date_cost`, tested with the command).
         use crate::platform::exec::fake::{Tools, ok};
         let _tools = Tools::rules(&[("ce get-cost-and-usage", ok("7.25\n"))]);
-        assert_eq!(cli_month_to_date_cost(None).await.unwrap(), 7.25);
+        crate::testing::assert_close(cli_month_to_date_cost(None).await.unwrap(), 7.25);
     }
 
     #[test]
@@ -159,16 +159,16 @@ mod tests {
 
     #[test]
     fn spend_figures_parse_or_say_what_came_back() {
-        assert_eq!(parse_spend("12.5\n").unwrap(), 12.5);
-        assert_eq!(parse_spend(" 0 ").unwrap(), 0.0);
+        crate::testing::assert_close(parse_spend("12.5\n").unwrap(), 12.5);
+        crate::testing::assert_close(parse_spend(" 0 ").unwrap(), 0.0);
         assert_eq!(parse_spend("None\n").unwrap_err().to_string(), "couldn't read the spend figure from Cost Explorer: \"None\"");
     }
 
     #[test]
     fn spend_figures_in_exponent_or_signed_form_parse_and_localized_ones_do_not() {
-        assert_eq!(parse_spend("1.5e2").unwrap(), 150.0);
-        assert_eq!(parse_spend("-0.0").unwrap(), 0.0);
-        assert_eq!(parse_spend("\n  7\n").unwrap(), 7.0);
+        crate::testing::assert_close(parse_spend("1.5e2").unwrap(), 150.0);
+        crate::testing::assert_close(parse_spend("-0.0").unwrap(), 0.0);
+        crate::testing::assert_close(parse_spend("\n  7\n").unwrap(), 7.0);
         for bad in ["", "12,5", "$12.5", "12.5 USD"] {
             assert!(parse_spend(bad).is_err(), "{bad:?}");
         }

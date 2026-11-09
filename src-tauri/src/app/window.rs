@@ -129,9 +129,9 @@ mod tests {
 
     #[test]
     fn a_window_fits_the_screen_but_stays_usable() {
-        assert_eq!(fit_height(920.0, None), 920.0);
-        assert_eq!(fit_height(920.0, Some(1400.0)), 920.0);
-        assert_eq!(fit_height(920.0, Some(700.0)), 700.0);
-        assert_eq!(fit_height(920.0, Some(300.0)), 480.0);
+        crate::testing::assert_close(fit_height(920.0, None), 920.0);
+        crate::testing::assert_close(fit_height(920.0, Some(1400.0)), 920.0);
+        crate::testing::assert_close(fit_height(920.0, Some(700.0)), 700.0);
+        crate::testing::assert_close(fit_height(920.0, Some(300.0)), 480.0);
     }
 }

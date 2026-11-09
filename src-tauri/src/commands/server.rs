@@ -840,7 +840,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let cli = t.host("aws-cli", "aws", serde_json::json!({ "useCliCreds": true, "awsProfile": "labs" }));
         let tools = Tools::rules(&[("ce get-cost-and-usage", ok("7.25\n"))]);
-        assert_eq!(server_month_to_date_cost(t.handle().clone(), cli).await.unwrap(), 7.25);
+        crate::testing::assert_close(server_month_to_date_cost(t.handle().clone(), cli).await.unwrap(), 7.25);
         assert!(tools.called("aws ce get-cost-and-usage"), "{:?}", tools.calls());
         assert_eq!(tools.env_of("ce get-cost-and-usage", "AWS_PROFILE").as_deref(), Some("labs"));
         // Not an AWS account, or not saved: no figure.
@@ -848,7 +848,7 @@ mod tests {
         assert_eq!(server_month_to_date_cost(t.handle().clone(), az).await.unwrap_err().to_string(), "only AWS accounts report their spend");
         assert!(server_month_to_date_cost(t.handle().clone(), "nope".into()).await.is_err());
         // The setup form's figure, for a profile not saved yet.
-        assert_eq!(crate::runtime::server::cli_month_to_date_cost(None).await.unwrap(), 7.25);
+        crate::testing::assert_close(crate::runtime::server::cli_month_to_date_cost(None).await.unwrap(), 7.25);
     }
 
     /// Each self-test event's step and state, as the UI gets them.

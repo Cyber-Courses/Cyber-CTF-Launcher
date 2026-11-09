@@ -16,7 +16,9 @@ pub(super) fn channel() -> (Lines, UnboundedReceiver<String>) {
 /// Runs `op` (an operation given the sink of [`channel`]), each line `rx` receives from it
 /// reaching `log` as it comes, in order.
 pub(super) async fn follow<T>(log: &mut impl FnMut(String), mut rx: UnboundedReceiver<String>, op: impl Future<Output = T>) -> T {
-    let mut running = std::pin::pin!(op);
+    // On the heap: a runner operation's future is large, and kept inline it would make every
+    // future awaiting this one (the commands, the deploy worker, the agent) as large.
+    let mut running = Box::pin(op);
     loop {
         tokio::select! {
             biased;
