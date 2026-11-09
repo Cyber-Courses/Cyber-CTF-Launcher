@@ -12,15 +12,24 @@ import { describeError } from "@/lib/errors";
  * - `warn(what)`: shouldn't happen and nobody is waiting on it; logged so it isn't lost.
  * - `tell(title)`: the player asked for this and it didn't happen; tell them (an in-app toast
  *   while the window has focus, an OS notification otherwise), and log it.
+ *
+ * `ignore` and `warn` take what to show `instead` (an empty list, signed out…): its value is the
+ * handler's, so `.catch(ignore("…", () => null))` reads a failure as null.
  */
-export const ignore = (why: string) => (e: unknown) => {
-  console.debug(`ignored (${why}):`, e);
-};
+export const ignore =
+  <T = undefined>(why: string, instead: () => T = () => undefined as T) =>
+  (e: unknown): T => {
+    console.debug(`ignored (${why}):`, e);
+    return instead();
+  };
 
-export const warn = (what: string) => (e: unknown) => {
-  console.warn(`${what}:`, e);
-  logFrontendWarning(what, e);
-};
+export const warn =
+  <T = undefined>(what: string, instead: () => T = () => undefined as T) =>
+  (e: unknown): T => {
+    console.warn(`${what}:`, e);
+    logFrontendWarning(what, e);
+    return instead();
+  };
 
 export const tell = (title: string) => (e: unknown) => {
   warn(title)(e);

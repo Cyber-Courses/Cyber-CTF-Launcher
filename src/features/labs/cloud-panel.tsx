@@ -8,6 +8,7 @@ import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { labCloudPreview, type CloudPreview, type LabOutput } from "@/lib/tauri";
 import { useT, type T } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
+import { warn } from "@/lib/failure";
 
 /** "about $0.02 an hour (about $0.08 until it auto-stops in 4 h)" from a lab's own estimate. */
 export function costEstimate(t: T, hourlyUsd: number | null | undefined, autoStopHours?: number | null): string | null {
@@ -30,9 +31,11 @@ export function useCloudPreview(labId: string, rt: LabRuntimeInfo | null): Cloud
       .then((p) => {
         if (alive) setPreview(p);
       })
-      .catch(() => {
-        if (alive) setPreview(null);
-      });
+      .catch(
+        warn("reading the cloud lab's preview", () => {
+          if (alive) setPreview(null);
+        }),
+      );
     return () => {
       alive = false;
     };

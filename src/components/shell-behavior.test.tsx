@@ -184,7 +184,9 @@ describe("QuitGuard", () => {
   it.each([
     ["Quit anyway", "force_quit"],
     ["Finish in background", "linger_quit"],
-  ])("%s calls %s once, and re-enables the buttons if it fails", async (label, cmd) => {
+  ])("%s calls %s once, and says so and re-enables the buttons if it fails", async (label, cmd) => {
+    // Regression: the failure was dropped, and the buttons came back with no word of why.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     let calls = 0;
     installTauri({
       [cmd]: () => {
@@ -198,6 +200,8 @@ describe("QuitGuard", () => {
     await flush();
     expect(calls).toBe(1);
     expect(screen.getByRole("button", { name: label }).hasAttribute("disabled")).toBe(false);
+    expect(warn).toHaveBeenCalledWith("Couldn’t quit:", new Error("still busy"));
+    warn.mockRestore();
   });
 
   it("keeps Tab inside the dialog", async () => {

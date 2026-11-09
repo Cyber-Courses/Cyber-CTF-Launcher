@@ -32,6 +32,7 @@
     },
     "keepWaiting": "待機を続ける",
     "quitAnyway": "そのまま終了",
-    "finishInBackground": "バックグラウンドで完了"
+    "finishInBackground": "バックグラウンドで完了",
+    "quitFailed": "終了できませんでした"
   }
 }

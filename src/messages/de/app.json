@@ -32,6 +32,7 @@
     },
     "keepWaiting": "Weiter warten",
     "quitAnyway": "Trotzdem beenden",
-    "finishInBackground": "Im Hintergrund abschließen"
+    "finishInBackground": "Im Hintergrund abschließen",
+    "quitFailed": "Beenden fehlgeschlagen"
   }
 }

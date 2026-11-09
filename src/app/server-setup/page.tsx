@@ -86,9 +86,11 @@ function useInitialHost(id: string | null, empty: ServerHostInput) {
         const h = l.hosts.find((x) => x.id === id);
         setInitial(h ? { ...h, password: null } : { ...empty });
       })
-      .catch(() => {
-        setInitial({ ...empty });
-      });
+      .catch(
+        warn("reading the saved servers to edit one", () => {
+          setInitial({ ...empty });
+        }),
+      );
   }, [id, empty]);
   return initial;
 }

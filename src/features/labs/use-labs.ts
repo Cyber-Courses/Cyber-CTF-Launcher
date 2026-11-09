@@ -6,6 +6,7 @@ import { catalogueFor, refreshStatus, setCatalogue, useLabState } from "@/featur
 import { useLabPolling } from "@/features/labs/lab-polling";
 import type { T } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";
+import { ignore } from "@/lib/failure";
 
 export interface LabRuntimeInfo {
   runtime: Runtime;
@@ -67,9 +68,11 @@ function useCatalogue(reloadKey: unknown) {
       .then((d) => {
         if (alive) setCompleted(new Set(d.myCompletedLabs));
       })
-      .catch(() => {
-        if (alive) setCompleted(new Set());
-      });
+      .catch(
+        ignore("signed out, or a backend without the query: no progress shown", () => {
+          if (alive) setCompleted(new Set());
+        }),
+      );
     return () => {
       alive = false;
     };

@@ -129,7 +129,7 @@ function useAwsAccount(aws: boolean, awsCli: boolean, awsProfile: string | null)
       setCheckingId(true);
       // The identity and the spend each read as nothing when they can't be read.
       void awsCliIdentity(profile ?? undefined)
-        .catch(() => null)
+        .catch(ignore("the profile isn't signed in: no account shown", () => null))
         .then((id) => {
           if (latest()) setAwsIdentity(id);
         })
@@ -137,7 +137,7 @@ function useAwsAccount(aws: boolean, awsCli: boolean, awsProfile: string | null)
           if (latest()) setCheckingId(false);
         });
       void awsMonthToDateCost(profile ?? undefined)
-        .catch(() => null)
+        .catch(ignore("Cost Explorer isn't readable with this profile: no spend shown", () => null))
         .then((c) => {
           if (latest()) setMtdCost(c);
         });
@@ -169,9 +169,11 @@ function useAzureSubscriptions(azure: boolean, setV: SetInput) {
         // Default to the account's default subscription if none chosen yet.
         setV((s) => (s.provider === "azure" && !s.username && subs.length > 0 ? { ...s, username: (subs.find((x) => x.isDefault) ?? subs[0]).id } : s));
       })
-      .catch(() => {
-        if (latest()) setAzureSubs([]);
-      })
+      .catch(
+        ignore("az isn't signed in: the form says to sign in", () => {
+          if (latest()) setAzureSubs([]);
+        }),
+      )
       .finally(() => {
         if (latest()) setAzureChecking(false);
       });
@@ -232,9 +234,11 @@ function useOciConfig(oci: boolean, editing: boolean, setV: SetInput) {
         setOciCfg(cfg);
         setV((s) => (s.provider === "oci" ? { ...s, username: s.username || cfg.tenancy, host: cfg.region && !editing ? cfg.region : s.host } : s));
       })
-      .catch(() => {
-        setOciCfg(null);
-      });
+      .catch(
+        ignore("no OCI CLI config here: the form asks for its values", () => {
+          setOciCfg(null);
+        }),
+      );
   }, [oci, editing, setV]);
   return ociCfg;
 }

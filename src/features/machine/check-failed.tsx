@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Spinner } from "@/components/ui/spinner";
 import { useT } from "@/lib/i18n";
+import { ignore } from "@/lib/failure";
 
 /**
  * The machine check failed (and none answered before it): what went wrong and Try again, in
@@ -19,9 +20,7 @@ export function CheckFailed({ error, onRetry, className }: { error: string; onRe
     setRetrying(true);
     void Promise.resolve()
       .then(onRetry)
-      .catch(() => {
-        /* the card stays, with the new error */
-      })
+      .catch(ignore("the card stays, with the new error"))
       .finally(() => {
         setRetrying(false);
       });

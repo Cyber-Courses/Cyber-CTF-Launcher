@@ -32,6 +32,7 @@
     },
     "keepWaiting": "Continuar aguardando",
     "quitAnyway": "Sair mesmo assim",
-    "finishInBackground": "Terminar em segundo plano"
+    "finishInBackground": "Terminar em segundo plano",
+    "quitFailed": "Não foi possível sair do app"
   }
 }

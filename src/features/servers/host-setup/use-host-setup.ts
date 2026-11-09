@@ -34,6 +34,7 @@ import { testHost } from "@/features/servers/use-server-list";
 import { translate, useT } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";
 import { useStepper } from "@/lib/use-stepper";
+import { ignore } from "@/lib/failure";
 
 /** The setup's inputs: the host or account it starts from and the machine's tools, and what it
  *  tells its window. */
@@ -124,9 +125,7 @@ function useSignIn(initial: ServerHostInput) {
       .then((path) => {
         if (path) setSshKeyState((k) => (k.path === "" ? { ...k, path } : k));
       })
-      .catch(() => {
-        // No default key: the player picks one.
-      });
+      .catch(ignore("no default SSH key: the player picks one"));
   }, [touched, initial.sshKey]);
   const setSshKey = <K extends keyof SshKeySignIn>(k: K, value: SshKeySignIn[K]) => {
     setTouched(true);

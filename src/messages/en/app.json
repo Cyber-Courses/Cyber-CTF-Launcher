@@ -32,6 +32,7 @@
     },
     "keepWaiting": "Keep waiting",
     "quitAnyway": "Quit anyway",
-    "finishInBackground": "Finish in background"
+    "finishInBackground": "Finish in background",
+    "quitFailed": "Couldn’t quit"
   }
 }

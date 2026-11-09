@@ -5,6 +5,7 @@ import { useAuthActions } from "@/features/account/account";
 import { authStatus, systemCheck, type AuthStatus, type SystemReport } from "@/lib/tauri";
 import { usePoll } from "@/lib/use-poll";
 import { describeError } from "@/lib/errors";
+import { warn } from "@/lib/failure";
 
 /** Machine checks while onboarding: an install finished in a native installer shows up on its own. */
 const CHECK_POLL_MS = 5000;
@@ -17,9 +18,11 @@ export function useOnboardingAuth() {
   useEffect(() => {
     authStatus()
       .then(setAuth)
-      .catch(() => {
-        setAuth(null);
-      });
+      .catch(
+        warn("reading the sign-in", () => {
+          setAuth({ loggedIn: false, name: null, email: null });
+        }),
+      );
   }, []);
   return { auth, loggingIn: busy, loginError: error, login };
 }

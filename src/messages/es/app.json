@@ -32,6 +32,7 @@
     },
     "keepWaiting": "Seguir esperando",
     "quitAnyway": "Salir de todos modos",
-    "finishInBackground": "Terminar en segundo plano"
+    "finishInBackground": "Terminar en segundo plano",
+    "quitFailed": "No se pudo salir"
   }
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { labTools, type LabTool, type Runtime } from "@/lib/tauri";
+import { warn } from "@/lib/failure";
 
 /** The lab's observers (`tools:` in its spec), read once it runs: static addresses, so the
  *  last answer stays good across a stop and a start. `runtime` is the lab's declared one: the
@@ -16,9 +17,11 @@ export function useLabTools(labId: string, running: boolean, runtime: Runtime): 
       .then((found) => {
         if (alive) setTools(found);
       })
-      .catch(() => {
-        if (alive) setTools([]);
-      });
+      .catch(
+        warn("reading the lab's tools", () => {
+          if (alive) setTools([]);
+        }),
+      );
     return () => {
       alive = false;
     };

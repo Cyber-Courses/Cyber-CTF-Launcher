@@ -74,9 +74,11 @@ export function useAuthSession() {
     () =>
       void authStatus()
         .then(setAuth)
-        .catch(() => {
-          setAuth(SIGNED_OUT);
-        }),
+        .catch(
+          warn("reading the sign-in", () => {
+            setAuth(SIGNED_OUT);
+          }),
+        ),
     [],
   );
 

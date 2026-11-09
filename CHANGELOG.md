@@ -190,6 +190,8 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 - **Settings says when it couldn't read something.** A machine check, version or agent read that
   failed looked like one still running ("Checking hypervisors…", "Registering…") for good. It
   now says what failed and why, with a way to check the machine again.
+- **A failed quit says so.** "Quit anyway" or "Finish in background" that failed only enabled
+  its buttons again; it now says it couldn't quit, and why.
 - **A lab whose state can't be read says why.** When reading a lab's state failed (Docker not
   running, its run record unreadable, its files no longer able to be generated again), the lab
   page went on showing the last state it had read, with no word of it. It now says, at the top,

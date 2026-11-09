@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { CopyValue, useCopy } from "@/components/ui/copy-value";
 import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
-import { tell, warn } from "@/lib/failure";
+import { ignore, tell, warn } from "@/lib/failure";
 import { translate, useT } from "@/lib/i18n";
 import { useNow } from "@/lib/use-now";
 import { cancelSignIn, signIn, signInWithCode, useSignIn } from "@/features/account/sign-in";
@@ -49,12 +49,8 @@ export function Avatar({ status, className, children }: { status: Pick<AuthStatu
 /** Signs in through the browser (one sign-in at a time, see sign-in.ts) and reports the new
  *  status; a failure stays in the sign-in's state as `error`, and is shown from there. */
 async function signInAndReport(onChange: (status: AuthStatus) => void) {
-  try {
-    const status = await signIn();
-    if (status) onChange(status);
-  } catch {
-    // Kept in the sign-in's state as `error`.
-  }
+  const status = await signIn().catch(ignore("kept in the sign-in's state as `error`, and shown from there", () => null));
+  if (status) onChange(status);
 }
 
 /** Signs out. When the keychain keeps the session, says so and shows the state it leaves (still

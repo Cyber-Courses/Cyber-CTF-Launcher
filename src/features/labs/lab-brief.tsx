@@ -8,6 +8,7 @@ import { PROSE } from "@/components/ui/screen-width";
 import { apiQuery } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
+import { warn } from "@/lib/failure";
 
 /** The lab's brief (markdown from CyberBackend). */
 export function LabBrief({ labId }: { labId: string }) {
@@ -18,9 +19,11 @@ export function LabBrief({ labId }: { labId: string }) {
       .then((d) => {
         setContent(d.labs[0]?.contentMd ?? null);
       })
-      .catch(() => {
-        setContent(null);
-      });
+      .catch(
+        warn("reading the lab's brief", () => {
+          setContent(null);
+        }),
+      );
   }, [labId]);
   return (
     <Panel>

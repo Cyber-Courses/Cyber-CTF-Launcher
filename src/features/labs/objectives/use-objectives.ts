@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { warn } from "@/lib/failure";
 import {
   afterSubmit,
   challengesFor,
@@ -39,9 +40,11 @@ function useChallenges(labId: string, question: string | null, title: string) {
       .then((objectives) => {
         if (alive) setLoaded({ labId, challenges: challengesFor(objectives, question, title) });
       })
-      .catch(() => {
-        if (alive) setLoaded({ labId, challenges: "unavailable" });
-      });
+      .catch(
+        warn("reading the lab's objectives", () => {
+          if (alive) setLoaded({ labId, challenges: "unavailable" });
+        }),
+      );
     return () => {
       alive = false;
     };
@@ -64,9 +67,11 @@ function useStoredProgress(labId: string, loggedIn: boolean) {
       .then((progress) => {
         setStored({ key, progress });
       })
-      .catch(() => {
-        setStored((s) => (s?.key === key ? s : { key, progress: null }));
-      });
+      .catch(
+        warn("reading the lab's progress", () => {
+          setStored((s) => (s?.key === key ? s : { key, progress: null }));
+        }),
+      );
   }, [labId, loggedIn]);
 
   useEffect(() => {
@@ -78,9 +83,11 @@ function useStoredProgress(labId: string, loggedIn: boolean) {
           if (alive) setStored({ key, progress });
         })
         // Unreadable: counted as read (nothing solved, or what this page recorded since) rather than waited for.
-        .catch(() => {
-          if (alive) setStored((s) => (s?.key === key ? s : { key, progress: null }));
-        });
+        .catch(
+          warn("reading the lab's progress", () => {
+            if (alive) setStored((s) => (s?.key === key ? s : { key, progress: null }));
+          }),
+        );
     return () => {
       alive = false;
     };

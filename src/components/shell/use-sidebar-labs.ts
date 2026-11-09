@@ -6,6 +6,7 @@ import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { useLabState } from "@/features/labs/lab-store";
 import { usePolled } from "@/lib/use-poll";
 import { activeLabs, type SidebarLab } from "@/components/shell/shell-model";
+import { warn } from "@/lib/failure";
 
 const WORKLOADS_POLL_MS = 8000;
 
@@ -26,9 +27,11 @@ export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, A
       .then((d) => {
         if (alive) setLabs(d.labs);
       })
-      .catch(() => {
-        if (alive) setLabs([]);
-      });
+      .catch(
+        warn("reading the sidebar's labs", () => {
+          if (alive) setLabs([]);
+        }),
+      );
     return () => {
       alive = false;
     };

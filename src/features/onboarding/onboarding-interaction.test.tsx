@@ -114,6 +114,15 @@ describe("Onboarding: Back, Continue and Skip", () => {
     expect(onComplete).toHaveBeenCalledOnce();
   });
 
+  it("reads as signed out, and logs why, when the sign-in can't be read", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { user } = await renderOnboarding({ auth_status: () => rejectWith("keychain locked") });
+    await user.click(button(/get started/i));
+    expect(button(/^skip for now$/i)).toBeTruthy();
+    expect(warn).toHaveBeenCalledWith("reading the sign-in:", "keychain locked");
+    warn.mockRestore();
+  });
+
   it("moves forward with the keyboard alone", async () => {
     const { user } = await renderOnboarding({ auth_status: signedOut });
     button(/get started/i).focus();

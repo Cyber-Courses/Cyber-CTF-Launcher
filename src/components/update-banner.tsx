@@ -27,9 +27,7 @@ function useUpdate() {
       .then((u) => {
         if (u) setUpdate(u);
       })
-      .catch(() => {
-        /* offline, dev, no update endpoint, or updates managed elsewhere: stay silent */
-      });
+      .catch(ignore("offline, or no update endpoint: the banner stays hidden; Settings' check says why"));
   }, []);
 
   async function install() {

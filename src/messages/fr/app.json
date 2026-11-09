@@ -32,6 +32,7 @@
     },
     "keepWaiting": "Continuer d'attendre",
     "quitAnyway": "Quitter quand même",
-    "finishInBackground": "Terminer en arrière-plan"
+    "finishInBackground": "Terminer en arrière-plan",
+    "quitFailed": "Impossible de quitter"
   }
 }

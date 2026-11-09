@@ -21,7 +21,10 @@ function writeLog(write: (message: string) => Promise<void>, where: string, err:
   if (!inTauri()) return;
   const page = window.location.pathname + window.location.search;
   try {
-    write(`[${where}] ${page}: ${describeError(err)}`).catch(() => {});
+    // A log line that can't be written has nowhere left to be said but the console.
+    write(`[${where}] ${page}: ${describeError(err)}`).catch((e: unknown) => {
+      console.debug("couldn't write to the log file:", e);
+    });
   } catch {
     // The log command itself is unavailable (an old core); nothing else to do.
   }

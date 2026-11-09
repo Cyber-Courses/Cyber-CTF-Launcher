@@ -7,6 +7,7 @@ import { forceQuit, lingerQuit } from "@/lib/tauri";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 import { useT } from "@/lib/i18n";
+import { tell } from "@/lib/failure";
 
 /**
  * When the user tries to quit while a lab is still deploying, the Rust side holds the window
@@ -65,7 +66,8 @@ function QuitChoices({ onKeepWaiting }: { onKeepWaiting: () => void }) {
   const [quitting, setQuitting] = useState(false);
   const quit = (how: () => Promise<void>) => () => {
     setQuitting(true);
-    how().catch(() => {
+    how().catch((e: unknown) => {
+      tell(t("app.quitGuard.quitFailed"))(e);
       setQuitting(false);
     });
   };

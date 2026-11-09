@@ -21,6 +21,7 @@ import {
 } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import { isMac } from "@/lib/platform";
+import { ignore, warn } from "@/lib/failure";
 
 describe("format", () => {
   beforeEach(() => {
@@ -205,5 +206,18 @@ describe("utils", () => {
     ua.mockReturnValue("Mozilla/5.0 (X11; Linux x86_64)");
     expect(isMac()).toBe(false);
     ua.mockRestore();
+  });
+});
+
+describe("failure handlers", () => {
+  it("log what failed and answer with what to show instead", () => {
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(ignore("signed out: nothing to show", () => [])("401")).toEqual([]);
+    expect(debug).toHaveBeenCalledWith("ignored (signed out: nothing to show):", "401");
+    expect(warn("reading the brief", () => null)("timeout")).toBeNull();
+    expect(warning).toHaveBeenCalledWith("reading the brief:", "timeout");
+    debug.mockRestore();
+    warning.mockRestore();
   });
 });

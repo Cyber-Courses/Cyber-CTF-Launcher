@@ -11,6 +11,7 @@ import { useSavedHosts } from "@/features/servers/use-server-list";
 import { useLabRunOptions } from "@/features/labs/use-lab-answer";
 import { cn } from "@/lib/utils";
 import { useT, type MessageKey, type T } from "@/lib/i18n";
+import { warn } from "@/lib/failure";
 
 /** What a place the lab supports but the launcher isn't set up for yet tells the player to do. */
 const SETUP_HINT: Partial<Record<string, MessageKey>> = {
@@ -31,9 +32,11 @@ function useLabRequirements(labId: string, runtime: LabRuntimeInfo): LabRequirem
       .then((r) => {
         if (alive) setReqs(r);
       })
-      .catch(() => {
-        if (alive) setReqs(null);
-      });
+      .catch(
+        warn("reading the lab's requirements", () => {
+          if (alive) setReqs(null);
+        }),
+      );
     return () => {
       alive = false;
     };

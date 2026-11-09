@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { restartApp } from "@/lib/tauri";
-import { tell } from "@/lib/failure";
+import { tell, warn } from "@/lib/failure";
 import { installUpdate } from "@/lib/install-update";
 import { translate } from "@/lib/i18n";
 
@@ -23,7 +23,8 @@ export function useUpdater() {
     try {
       const u = await check();
       setUpd(u ? { phase: "available", update: u } : { phase: "none" });
-    } catch {
+    } catch (e) {
+      warn("checking for an update")(e);
       setUpd({ phase: "error" });
     }
     setCheckedAt(Date.now());

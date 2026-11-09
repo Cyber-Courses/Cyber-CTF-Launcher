@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { imageDownloadSize } from "@/lib/tauri";
+import { ignore } from "@/lib/failure";
 
 // Sizes don't change while the app is open: ask Docker Hub once per image.
 const cache = new Map<string, Promise<number | null>>();
@@ -10,7 +11,7 @@ const cache = new Map<string, Promise<number | null>>();
 function sizeOf(image: string): Promise<number | null> {
   const known = cache.get(image);
   if (known) return known;
-  const asked = imageDownloadSize(image).catch(() => null);
+  const asked = imageDownloadSize(image).catch(ignore("Docker Hub doesn't say: no size shown", () => null));
   cache.set(image, asked);
   return asked;
 }
