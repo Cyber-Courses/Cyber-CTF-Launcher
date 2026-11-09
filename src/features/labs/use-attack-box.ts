@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { attackBoxDetach, attackBoxStatus, type AttackStatus, type Runtime } from "@/lib/tauri";
-import { attackImageLabel, getAttackImage, getAutoAttackBox } from "@/lib/settings";
+import { attackImageLabel, getAttackImage } from "@/lib/settings";
 import { attachAttackBox } from "@/features/labs/attack-box-attach";
 import { translate } from "@/lib/i18n";
 import { ignore } from "@/lib/failure";
@@ -63,43 +63,15 @@ function useAttackBoxRun(refresh: () => void) {
   return { busy, log: lines ?? [], run };
 }
 
-/** Attaches the box with the lab when Settings say so, once per run of the lab. Only a lab that is
- *  really down starts a new run: an operation in flight doesn't, nor does the stale "running"
- *  the lab status still shows just after one ends. A box seen running counts as attached, so
- *  taking it out by hand doesn't bring it back. A lab whose last launch or resume failed is not
- *  running (the backend's status says so), so none goes in beside it. */
-function useAutoStart(
-  { running, holding, active }: { running: boolean; holding: boolean; active: boolean },
-  status: AttackStatus | null,
-  busy: boolean,
-  start: () => Promise<void>,
-) {
-  // Set in Settings; read once per visit.
-  const [autoStart] = useState(() => getAutoAttackBox());
-  const autoStarted = useRef(false);
-  useEffect(() => {
-    if (!running && !holding) {
-      autoStarted.current = false;
-      return;
-    }
-    if (!active || !status) return;
-    if (status.running) {
-      autoStarted.current = true;
-      return;
-    }
-    if (!autoStart || !status.reachable || busy || autoStarted.current) return;
-    autoStarted.current = true;
-    void start();
-  }, [running, holding, active, autoStart, status, busy, start]);
-}
-
 /**
  * The lab's attack box, a machine the launcher adds to the lab (at the seat the lab declares for
  * the player, else on the network picked): polled while the lab is up where the launcher reaches
  * its run (the status says: wherever the lab runs but an ESXi host, and never beside a
  * cloud-services lab), so running / IP stay current,
- * added and taken out with a streamed log, and added with the lab when the Settings preference is
- * on (once per run). `runtime` is the lab's declared one; what the box is comes from its status
+ * added and taken out with a streamed log. Added with the lab when the Settings preference is on by
+ * the app-wide auto-start alone (`useAttackBoxAutoStart`), wherever the lab was started: the page
+ * shows the box it added on its next read, and a click while it adds joins it. `runtime` is the
+ * lab's declared one; what the box is comes from its status
  * (`vm`: a Kali VM among a lab running as VMs, a container lab run as one VM per machine included;
  * otherwise a container from the attack box image in Settings). The learner picks which lab
  * network to join when the backend offers more than one (`networks`: none when the lab declares
@@ -132,8 +104,6 @@ export function useAttackBox(labId: string, { running, holding = false, runtime 
       }, translate("labs.attackBox.removing")),
     [run, labId, runtime, setStatus],
   );
-  useAutoStart({ running, holding, active }, status, busy, start);
-
   const defaultNetwork = status?.defaultNetwork ?? "";
   return { status, busy, log, start, stop, vm, name, networks: status?.networks ?? [], network, defaultNetwork, setNetwork };
 }

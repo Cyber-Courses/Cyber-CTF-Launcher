@@ -61,7 +61,6 @@ describe("useAttackBox", () => {
   });
 
   it("doesn't read the box again when the learner picks the network it joins", async () => {
-    setAutoAttackBox(false);
     const calls = installTauri({ attack_box_status: () => box({ networks: ["default", "dmz"] }) });
     const { result } = renderHook(() => useAttackBox("ab-pick", { running: true }));
     await flush();
@@ -89,7 +88,6 @@ describe("useAttackBox", () => {
 
   it("leaves the image to the backend's default when the learner saved none", async () => {
     setAttackImage(DEFAULT_ATTACK_IMAGE);
-    setAutoAttackBox(false);
     const calls = installTauri({ attack_box_status: () => box(), attack_box_attach: () => null });
     const { result } = renderHook(() => useAttackBox("ab-default", { running: true }));
     await flush();
@@ -102,7 +100,6 @@ describe("useAttackBox", () => {
     // A container lab run as one VM per machine: declared DOCKER, a VM here. The box is Kali there
     // (the image only goes to a container box).
     setAttackImage("my/exegol:full");
-    setAutoAttackBox(false);
     const calls = installTauri({ attack_box_status: () => box({ vm: true }), attack_box_attach: () => null });
     const { result } = renderHook(() => useAttackBox("ab-as-vms", { running: true, runtime: "DOCKER" }));
     await flush();
@@ -114,19 +111,11 @@ describe("useAttackBox", () => {
     expect(calls.find((c) => c.cmd === "attack_box_detach")?.args).toMatchObject({ id: "ab-as-vms", runtime: "DOCKER" });
   });
 
-  it("attaches the box with the lab once, when Settings say so", async () => {
+  it("never attaches the box on its own, Settings or not: the app-wide auto-start does", async () => {
     const calls = installTauri({ attack_box_status: () => box() });
     renderHook(() => useAttackBox("ab-auto", { running: true }));
     await flush(50);
-    expect(count(calls, "attack_box_attach")).toBe(1);
-    expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ id: "ab-auto" });
-  });
-
-  it("doesn't attach the box with auto-start off", async () => {
-    const calls = installTauri({ attack_box_status: () => box() });
-    setAutoAttackBox(false);
-    renderHook(() => useAttackBox("ab-off", { running: true }));
-    await flush(50);
+    expect(count(calls, "attack_box_status")).toBe(1);
     expect(count(calls, "attack_box_attach")).toBe(0);
   });
 
@@ -139,7 +128,6 @@ describe("useAttackBox", () => {
   });
 
   it("shows a detached box at once and puts a failure on the log", async () => {
-    setAutoAttackBox(false);
     let running = true;
     installTauri({
       attack_box_status: () => box({ running, ip: running ? "10.42.0.9" : "" }),
@@ -208,8 +196,7 @@ describe("attachAttackBox", () => {
 });
 
 describe("the attack box's attach", () => {
-  it("runs once when its lab page is left and opened again while it attaches", async () => {
-    setAutoAttackBox(true);
+  it("is joined by the lab page's Start while the auto-start with the lab adds it", async () => {
     let finish!: () => void;
     const calls = installTauri({
       attack_box_status: () => box({ running: false }),
@@ -221,23 +208,20 @@ describe("the attack box's attach", () => {
             }),
         ),
     });
-    const visit = () => renderHook(() => useAttackBox("ab-vm-twice", { running: true, runtime: "VM" }));
-    const first = visit();
+    // The app-wide auto-start adds the box; the page, opened meanwhile, still reads it down.
+    const auto = attachAttackBox("ab-vm-twice", "VM", null);
+    const page = renderHook(() => useAttackBox("ab-vm-twice", { running: true, runtime: "VM" }));
     await flush();
     expect(count(calls, "attack_box_attach")).toBe(1);
-    // Left while the attach runs; back again: the status still reads "not running".
-    first.unmount();
-    const second = visit();
-    await flush();
-    expect(count(calls, "attack_box_attach")).toBe(1);
-    // A click joins the attach under way too.
+    // A click joins the attach under way.
     await act(async () => {
-      void second.result.current.start();
+      void page.result.current.start();
       await flush();
     });
     expect(count(calls, "attack_box_attach")).toBe(1);
     await act(async () => {
       finish();
+      await auto;
       await flush();
     });
   });

@@ -9,7 +9,7 @@ import { commands, installTauri, type Handler } from "@/test/tauri";
 import { containerMachine, rejectWith, startIn, upStatus } from "@/features/labs/labs-test-kit";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
 import { flush } from "@/test/ui";
-import { getDockerEngine, setAutoAttackBox, setDockerEngine, setLocalVmForm, setPortMode, setVmProvider } from "@/lib/settings";
+import { getDockerEngine, setDockerEngine, setLocalVmForm, setPortMode, setVmProvider } from "@/lib/settings";
 
 afterEach(() => {
   setPortMode(null);
@@ -428,7 +428,6 @@ describe("LabDetail: a lab that is up", () => {
 
   it("reads a container lab's box on a server: no shell before the box runs", async () => {
     const calls = installTauri({ ...quiet, attack_box_status: () => remoteBox(false) });
-    setAutoAttackBox(false);
     renderDetail({ status: status({ place: "server", host: "aws-1", url: null }) });
     await flush();
     expect(calls.find((c) => c.cmd === "attack_box_status")?.args).toMatchObject({ runtime: "DOCKER" });
@@ -440,7 +439,6 @@ describe("LabDetail: a lab that is up", () => {
 
   it("shows a cloud lab's address without its scheme, so it stays on one line, and copies it whole", async () => {
     installTauri({ ...quiet, attack_box_status: () => remoteBox(false) });
-    setAutoAttackBox(false);
     renderDetail({ status: status({ place: "server", host: "aws-1", url: "http://13.39.163.133:8180/", machines: [] }) });
     await flush();
     const address = screen.getByRole("button", { name: /^13\.39\.163\.133:8180/ });
@@ -461,7 +459,7 @@ describe("LabDetail: a lab that is up", () => {
     expect(screen.queryByRole("button", { name: /Shut down/ })).toBeNull();
   });
 
-  it("reads a VM lab's box on a server as on this machine, and follows the backend where it reaches none (an ESXi host)", async () => {
+  it("reads a VM lab's box on a server as on this machine, and leaves adding it to the auto-start with the lab", async () => {
     for (const [provider, reachable] of [
       ["proxmox", true],
       ["vmware_esxi", false],
@@ -473,7 +471,7 @@ describe("LabDetail: a lab that is up", () => {
         calls.some((c) => c.cmd === "attack_box_status" && (c.args as { runtime?: string }).runtime === "VM"),
         provider,
       ).toBe(true);
-      expect(commands(calls).includes("attack_box_attach"), provider).toBe(reachable);
+      expect(commands(calls), provider).not.toContain("attack_box_attach");
       cleanup();
     }
   });
