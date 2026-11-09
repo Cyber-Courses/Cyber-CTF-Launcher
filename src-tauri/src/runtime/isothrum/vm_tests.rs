@@ -27,7 +27,7 @@ impl Fixture {
     /// cover macOS's).
     fn esxi_run(&self, place: EsxiPlace) -> LabRun {
         let mut config = self.home.config(&self.fake, []);
-        config.host = isothrum_runner::isoloom_manifest::HostOs::Linux;
+        config.host = isoloom_manifest::HostOs::Linux;
         LabRun::with(config, &self.home.dir, "web", Kind::Vm).unwrap().on(place)
     }
 

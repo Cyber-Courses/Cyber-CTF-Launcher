@@ -25,6 +25,10 @@ pub(crate) use cloud::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds
 pub(crate) use import::{Outcome, import_all, runner as import_runner};
 pub(crate) use server::{ServerPlace, ServerRun};
 
+/// The form a run was started in, as the runner records it: the run manifest's target (its types,
+/// `isoloom-manifest`, are read here alone).
+pub(crate) use isoloom_manifest::Target as RunTarget;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

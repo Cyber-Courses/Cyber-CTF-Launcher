@@ -1,5 +1,5 @@
 //! How far each launch path has been proven, from Isoloom's tier evidence (`isoloom-targets`'s
-//! bundled `tiers.json`), for each of a lab's run options (`lab::run_options`). The launcher shows
+//! bundled `tiers.json`), for each of a lab's run options (`run_options`). The launcher shows
 //! a badge off the evidence's runs, not the tier number: a path no host OS's latest run has passed
 //! (validated only) is Beta, whatever its tier; a path real runs have passed (AWS, Docker, the
 //! proven VM providers…) carries no badge even while tier 1 waits for the other host OSes. A path

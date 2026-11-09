@@ -8,9 +8,12 @@
 //! Docker networks move to their own blocks and its names get a suffix, so two labs that
 //! declare the same addresses run at once. The generated files then live in `.isoloom-<n>/`.
 //!
-//! This module is the launcher's one door to Isoloom (its crates are used nowhere else): the
-//! spec, the generated files, the resolved snapshot and the checks go through it, and so do
-//! Isoloom's path and naming conventions (`names`). The launcher's own conventions sit on top:
+//! This module is the launcher's one door to Isoloom's spec and generators (`isoloom-spec`,
+//! `isoloom-targets`: used nowhere else, their types re-exported from here): the spec, the
+//! generated files, the resolved snapshot, the checks and each launch path's tier evidence
+//! (`tiers`) go through it, and so do Isoloom's path and naming conventions (`names`). The run
+//! manifest those generators write is the Isothrum runner's input: its types (`isoloom-manifest`)
+//! are read by `runtime/isothrum` alone. The launcher's own conventions sit on top:
 //! its overrides of the generated files (`overrides`, applied after Isoloom's defaults) and the
 //! variables it gives Isoloom's Terraform modules from its hosts and cloud accounts (`vars`).
 //! Isoloom only converts: it keeps no registry of running labs and probes no host, so neither
@@ -26,6 +29,7 @@ mod names;
 pub(crate) mod overlay;
 mod overrides;
 mod run_options;
+mod tiers;
 mod vars;
 
 pub use instances::*;
@@ -34,7 +38,7 @@ pub use run_options::{RunOptions, RunPath, run_options};
 pub use vars::{esxi_env, host_vars};
 
 // What the rest of the launcher uses of Isoloom's types: through here, like its functions.
-pub use isoloom_spec::model::{Arch, Spec, Target};
+pub use isoloom_spec::model::{Arch, Machine, Spec, Target};
 pub use isoloom_spec::model::{CloudProvider, CloudServices};
 pub use isoloom_targets::Lab;
 
@@ -351,6 +355,25 @@ mod tests {
     use super::*;
     use crate::runtime::Runtime;
     use std::path::PathBuf;
+
+    #[test]
+    fn isolooms_spec_and_generators_are_used_here_alone_and_the_run_manifest_by_the_runner_module() {
+        // Regression: the door was said to be this module's alone while the tier evidence, the
+        // attack box, the start place and the runner's view used Isoloom's crates directly.
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        // Spelled in two, so this file doesn't name the manifest's crate itself.
+        let manifest = ["isoloom", "_manifest::"].concat();
+        for s in crate::testing::source_scan::crate_sources() {
+            let rel = s.path.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/");
+            let text = format!("{}\n{}", s.code, s.tests);
+            let here = rel == "runtime/lab.rs" || rel.starts_with("runtime/lab/");
+            let runner = rel == "runtime/isothrum.rs" || rel.starts_with("runtime/isothrum/");
+            for krate in ["isoloom_spec::", "isoloom_targets::", "isoloom_plan::", "isoloom_compose::", "isoloom_render::"] {
+                assert!(here || !text.contains(krate), "{rel} uses {krate} outside runtime/lab");
+            }
+            assert!(runner || !text.contains(&manifest), "{rel} reads the run manifest outside runtime/isothrum");
+        }
+    }
 
     const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_LAUNCH_TOKEN]\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    files: [{ path: /run/lab/token, input: CTF_LAUNCH_TOKEN }]\n    app: { image: nginx:1.27 }\n";
 

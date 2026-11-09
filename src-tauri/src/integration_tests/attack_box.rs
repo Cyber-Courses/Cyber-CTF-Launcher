@@ -74,9 +74,12 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
     let mut f = Vec::new();
     let mut l = log(&id);
     let (started, run, target_kind, vm) = match form.as_str() {
-        "docker" => {
-            (start_docker_run(&home, &dir, &id, &[], &mut l).await, isothrum::LabRun::docker(&home, &dir, &id).unwrap(), isoloom_spec::Target::Docker, false)
-        }
+        "docker" => (
+            start_docker_run(&home, &dir, &id, &[], &mut l).await,
+            isothrum::LabRun::docker(&home, &dir, &id).unwrap(),
+            crate::runtime::lab::Target::Docker,
+            false,
+        ),
         "docker-vm" => (
             start_docker_in_vm_run(&home, &dir, &id, VmStart { provider, env: &[] }, &mut l).await,
             isothrum::LabRun::docker_in_vm(&home, &dir, &id).unwrap(),
@@ -86,7 +89,7 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
         "vm" => (
             start_vm_run(&home, &dir, &id, VmStart { provider, env: &[] }, &mut l).await,
             isothrum::LabRun::vm(&home, &dir, &id).unwrap(),
-            isoloom_spec::Target::Vagrant,
+            crate::runtime::lab::Target::Vagrant,
             true,
         ),
         other => panic!("no form {other}"),

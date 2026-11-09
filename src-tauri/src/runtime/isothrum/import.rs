@@ -19,7 +19,7 @@ mod record;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use isothrum_runner::isoloom_manifest::SetBy;
+use isoloom_manifest::SetBy;
 use isothrum_runner::{Adoption, RunName, RunState, Runner, load_manifest, rfc3339};
 
 use crate::error::Error;

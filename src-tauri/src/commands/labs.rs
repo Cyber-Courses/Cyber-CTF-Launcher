@@ -417,10 +417,10 @@ mod tests {
             },
             None => panic!("a box"),
         };
-        assert_eq!(placed(Runtime::Docker), ("aws1".into(), isoloom_spec::Target::CloudDocker, false));
+        assert_eq!(placed(Runtime::Docker), ("aws1".into(), crate::runtime::lab::Target::CloudDocker, false));
         // One VM per machine (cloud-vm): a Kali VM among the lab's.
         mark_per_machine_vm(&dir, true).unwrap();
-        assert_eq!(placed(Runtime::Docker), ("aws1".into(), isoloom_spec::Target::CloudVm, true));
+        assert_eq!(placed(Runtime::Docker), ("aws1".into(), crate::runtime::lab::Target::CloudVm, true));
     }
 
     #[tokio::test]

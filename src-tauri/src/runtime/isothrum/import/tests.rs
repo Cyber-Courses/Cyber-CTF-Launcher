@@ -107,7 +107,7 @@ async fn a_cloud_services_lab_takes_its_launch_values_into_its_run() {
     let all = app.import(every_kind).await;
     assert!(matches!(outcome(&all, "bucket/aws"), Outcome::Imported), "{all:?}");
     let r = app.record("bucket");
-    assert_eq!((r.target, r.expires_at), (isothrum_runner::isoloom_manifest::Target::CloudServices, Some(4_102_444_800)));
+    assert_eq!((r.target, r.expires_at), (isoloom_manifest::Target::CloudServices, Some(4_102_444_800)));
     assert_eq!(params(&r).len(), 0, "its manifest takes no region: {:?}", r.params);
     let inputs = std::fs::read_to_string(app.run_dir("bucket").join("inputs.tfvars.json")).unwrap();
     assert!(inputs.contains("203.0.113.7/32"), "{inputs}");

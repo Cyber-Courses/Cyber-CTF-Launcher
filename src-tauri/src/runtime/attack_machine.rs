@@ -108,13 +108,13 @@ struct Seat {
 }
 
 /// The lab's own access machine, the seat it declares for the player, if it declares one.
-fn declared(spec: &isoloom_spec::model::Spec) -> Option<(&String, &isoloom_spec::Machine)> {
+fn declared(spec: &lab::Spec) -> Option<(&String, &lab::Machine)> {
     spec.machines.iter().find(|(_, m)| m.access)
 }
 
 /// The seat in `spec`: the declared access machine's, else [`NAME`] on `network` (else the
 /// network of the lab's first machine) at the highest address no machine has there.
-fn seat(spec: &isoloom_spec::model::Spec, network: Option<&str>) -> Result<Seat> {
+fn seat(spec: &lab::Spec, network: Option<&str>) -> Result<Seat> {
     if let Some((name, m)) = declared(spec) {
         let networks = m.networks.iter().map(|(n, o)| (n.clone(), *o)).collect();
         return Ok(Seat { name: name.clone(), networks, replaces: true });
@@ -320,7 +320,7 @@ mod tests {
         let spec = lab::load(&dir).unwrap();
         let attackbox = &spec.machines[NAME];
         assert_eq!(attackbox.os.as_deref(), Some("debian@12"));
-        assert_eq!(attackbox.arch, isoloom_spec::Arch::Arm64);
+        assert_eq!(attackbox.arch, crate::runtime::lab::Arch::Arm64);
         assert!(std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap().contains("kali-archive-keyring"));
         remove(&dir).unwrap();
     }

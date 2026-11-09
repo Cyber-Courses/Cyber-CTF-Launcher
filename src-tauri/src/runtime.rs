@@ -44,7 +44,6 @@ pub(crate) mod start_place;
 pub(crate) mod status;
 pub(crate) mod terminal_launch;
 pub(crate) mod terraform;
-pub(crate) mod tiers;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

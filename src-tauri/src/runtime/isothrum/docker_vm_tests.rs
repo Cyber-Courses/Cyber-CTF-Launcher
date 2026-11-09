@@ -43,7 +43,7 @@ impl Fixture {
     /// The lab's run in a VM, on a macOS host (where UTM is).
     fn run(&self) -> LabRun {
         let mut config = self.home.config(&self.fake, []);
-        config.host = isothrum_runner::isoloom_manifest::HostOs::Macos;
+        config.host = isoloom_manifest::HostOs::Macos;
         LabRun::with(config, &self.home.dir, "web", Kind::DockerVm).unwrap()
     }
 }

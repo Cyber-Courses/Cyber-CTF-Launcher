@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use isoloom_spec::Target;
+use crate::runtime::lab::Target;
 
 use super::status::{AttackStatus, status_of};
 use super::{Cpu, Kind};

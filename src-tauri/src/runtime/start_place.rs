@@ -104,7 +104,7 @@ where
 /// can't run there now; an error when the saved servers can't be read (it would start here
 /// instead of on its server).
 fn last_place(dirs: &AppDirs, run: isothrum_runner::RunRecord, runtime: Runtime, options: &RunOptions) -> Result<Option<StartPlace>> {
-    use isothrum_runner::isoloom_manifest::Target;
+    use isothrum::RunTarget as Target;
     if let Some(host) = run.host_label {
         let kind = server::host_provider(dirs, &host)?.filter(|p| !p.is_cloud());
         return Ok(kind.filter(|k| offers(&options.servers, *k)).map(|_| StartPlace { host: Some(host), ..StartPlace::default() }));

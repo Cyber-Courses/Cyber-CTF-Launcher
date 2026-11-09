@@ -6,8 +6,8 @@
 use isoloom_spec::model::Target;
 use isoloom_targets::Lab;
 
+use super::tiers::{self, Badge};
 use crate::runtime::providers::Provider;
-use crate::runtime::tiers::{self, Badge};
 use crate::runtime::{Runtime, lab};
 
 /// One way to start the lab: the provider or cloud it runs on (none: this machine's Docker), the
