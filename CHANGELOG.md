@@ -74,6 +74,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   licences, crates.io only) and `pnpm audit --prod` in CI, Dependabot for the crates, the npm
   packages and the pinned actions, and a link check of the docs (`pnpm check:docs`).
 
+- **Docker Desktop's licence is said where the app offers it.** The one-click Docker install on
+  macOS and Windows, and Docker Desktop's card, say it needs a paid subscription in larger
+  companies, and name the engines Cyber CTF also runs labs on: Colima and Podman (free) and
+  OrbStack (free for personal use).
 - **The webview loads remote images from one host.** Its content security policy allowed images
   from any `https:` address; it now allows the app's own, `data:` and
   `https://avatars.githubusercontent.com` (the account picture of a GitHub sign-in). Any other

@@ -345,6 +345,18 @@ describe("engine step", () => {
     expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args).toMatchObject({ url: "https://www.docker.com/products/docker-desktop/" });
   });
 
+  it("says Docker Desktop is paid in larger companies, and names the free engines", async () => {
+    const { user } = freshMacEngineStep();
+    expect(text()).toContain("Docker Desktop needs a paid subscription in larger companies");
+    expect(text()).toContain("Colima and Podman, which are free");
+    // Not once another engine is picked, nor where Docker Engine is the one installed (Linux).
+    await user.click(radioWith("Colima"));
+    expect(text()).not.toContain("paid subscription");
+    cleanup();
+    render(<Step step="docker" report={freshReport("linux")} />);
+    expect(text()).not.toContain("paid subscription");
+  });
+
   it("installs the recommended engine, then asks to finish in its installer", async () => {
     const { calls, onRefresh, user } = freshMacEngineStep();
     expect(text()).toContain("Cyber CTF can install Docker Desktop for you.");

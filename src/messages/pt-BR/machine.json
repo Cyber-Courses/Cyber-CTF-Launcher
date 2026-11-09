@@ -281,7 +281,7 @@
   },
   "engine": {
     "notes": {
-      "dockerDesktop": "O app oficial. O mais fácil de configurar.",
+      "dockerDesktop": "O app oficial. O mais fácil de configurar; pago em empresas maiores.",
       "dockerEngine": "O daemon nativo, sem app de desktop.",
       "orbstack": "Rápido e leve na memória. Gratuito para uso pessoal.",
       "colima": "Código aberto, só linha de comando."
@@ -296,6 +296,7 @@
     "startingButton": "Iniciando…",
     "start": "Iniciar {engine}",
     "canInstall": "O Cyber CTF pode instalar {name} para você.",
+    "dockerDesktopLicence": "O Docker Desktop exige uma assinatura paga em empresas maiores (mais de 250 funcionários ou 10 milhões de dólares de faturamento anual). O Cyber CTF também roda labs no Colima e no Podman, que são gratuitos, e no OrbStack (gratuito para uso pessoal).",
     "installLog": "Instalando a engine de contêineres…",
     "installing": "Instalando…",
     "install": "Instalar {name}",

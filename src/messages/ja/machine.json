@@ -281,7 +281,7 @@
   },
   "engine": {
     "notes": {
-      "dockerDesktop": "公式アプリ。セットアップが最も簡単です。",
+      "dockerDesktop": "公式アプリ。最も簡単にセットアップできます。大企業では有料です。",
       "dockerEngine": "ネイティブのデーモン、デスクトップアプリなし。",
       "orbstack": "高速でメモリ消費が少なめ。個人利用は無料です。",
       "colima": "オープンソース、コマンドラインのみ。"
@@ -296,6 +296,7 @@
     "startingButton": "起動中…",
     "start": "{engine} を起動",
     "canInstall": "Cyber CTF が {name} をインストールできます。",
+    "dockerDesktopLicence": "Docker Desktop は、大企業（従業員 250 人超、または年間売上 1,000 万ドル超）では有料サブスクリプションが必要です。Cyber CTF は無料の Colima や Podman、個人利用は無料の OrbStack でもラボを実行できます。",
     "installLog": "コンテナエンジンをインストール中…",
     "installing": "インストール中…",
     "install": "{name} をインストール",

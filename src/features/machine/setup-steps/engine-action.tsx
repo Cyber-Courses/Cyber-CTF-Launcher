@@ -156,14 +156,17 @@ function RecheckButton({ setup }: { setup: MachineSetupState }) {
   );
 }
 
-/** A button's label, or a spinner and `label` while it runs. */
-/** While Docker isn't ready: finish the installer, reboot on Windows, the Linux post-install steps. */
+/** While Docker isn't ready: Docker Desktop's licence before it is installed, finish the
+ *  installer, reboot on Windows, the Linux post-install steps. */
 export function EngineHints({ report, choice, installerOpened }: { report: SystemReport; choice: Engine; installerOpened: boolean }) {
   const t = useT();
   const isWin = report.os === "windows";
   const isMac = report.os === "macos";
   return (
     <>
+      {choice.id === "docker-desktop" && !report.docker.installed && (
+        <p className="text-[0.75rem] text-muted-foreground">{t("machine.engine.dockerDesktopLicence")}</p>
+      )}
       {installerOpened && (
         <p className="text-[0.75rem] text-muted-foreground">
           {choice.id === "docker-desktop" ? t("machine.engine.finishDockerDesktop") : t("machine.engine.finishOther", { engine: choice.name })}
