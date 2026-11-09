@@ -236,6 +236,8 @@ export const labCommands = {
       : { min: { cpus: 2, memoryMb: 1024, diskGb: 20 }, max: { cpus: 2, memoryMb: 1024, diskGb: 20 } },
   // The sample's default server is Proxmox, which runs the VM labs.
   lab_default_host: (args) => (args?.runtime === "VM" ? "pve" : null),
+  // Every lab of the sample runs on both kinds of server, but cloud services.
+  lab_servers: (args) => (args?.runtime === "CLOUD" ? [] : ["vmware_esxi", "proxmox"]),
   running_labs: () => ["lab-invoice"],
   deploying_labs: () => ["lab-goad"],
   active_operations: () => [{ labId: "lab-goad", op: "launch", machine: "SRV02", step: "Configure SRV02 (ansible 41/88)" }],

@@ -113,8 +113,11 @@ export function pickLocalHypervisor(local: Provider[], ready: Provider[] | undef
  *  picker skips the step. */
 export const cloudRunsPerMachine = (rt: LabRuntimeInfo | null, provider: string) => !!rt && hasBothForms(rt) && CLOUDS.has(provider);
 
-/** Whether a saved server or cloud account can run the lab: the lab lists its provider. */
-export const hostSupports = (rt: LabRuntimeInfo | null, h: ServerHost) => !!rt?.providers.includes(h.provider);
+/** Whether a saved server or cloud account can run the lab: the lab lists its provider, and a
+ *  server is of a kind the backend says the lab's spec runs on (`servers`, the default server's
+ *  rule: its targets), once that is known. */
+export const hostSupports = (rt: LabRuntimeInfo | null, h: ServerHost, servers?: readonly Provider[] | null) =>
+  !!rt?.providers.includes(h.provider) && (!servers || !SERVERS.has(h.provider) || servers.includes(h.provider));
 
 type PlaceKey = NonNullable<LabStatus["place"]>;
 

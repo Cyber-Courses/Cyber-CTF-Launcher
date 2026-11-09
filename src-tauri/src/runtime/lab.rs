@@ -326,17 +326,27 @@ pub async fn spec_at(dirs: &crate::platform::AppDirs, lab_id: &str, repository: 
     parse(&String::from_utf8(body).map_err(|e| unread(&e))?)
 }
 
-/// Whether a lab of `spec` runs as VMs on a server of `provider`: on ESXi through Vagrant there,
-/// on Proxmox through Terraform, as its targets allow (its `targets:` included). No other
-/// provider is a server.
-pub fn runs_on_server(spec: &Spec, provider: crate::runtime::providers::Provider) -> bool {
-    use crate::runtime::providers::Provider;
-    let target = match provider {
-        Provider::VmwareEsxi => Target::Vagrant,
-        Provider::Proxmox => Target::Proxmox,
+/// Whether a lab of `spec`, declared `runtime`, runs on a server of `provider`, as its targets
+/// allow (its `targets:` included): on ESXi through Vagrant there (its VMs, or its containers in
+/// one VM), on Proxmox through Terraform (likewise). Cloud services run on no server, and no
+/// other provider is a server.
+pub fn runs_on_server(spec: &Spec, provider: crate::runtime::providers::Provider, runtime: crate::runtime::Runtime) -> bool {
+    use crate::runtime::{Runtime, providers::Provider};
+    let target = match (provider, runtime) {
+        (_, Runtime::Cloud) => return false,
+        (Provider::VmwareEsxi, _) => vagrant_target(runtime),
+        (Provider::Proxmox, Runtime::Docker) => Target::DockerVm,
+        (Provider::Proxmox, Runtime::Vm) => Target::Proxmox,
         _ => return false,
     };
     isoloom_spec::effective(spec).contains(&target)
+}
+
+/// The kinds of server (ESXi, Proxmox) a lab of `spec`, declared `runtime`, runs on
+/// ([`runs_on_server`]): the ones the launch picker offers its saved servers of.
+pub fn servers_for(spec: &Spec, runtime: crate::runtime::Runtime) -> Vec<crate::runtime::providers::Provider> {
+    use crate::runtime::providers::Provider;
+    [Provider::VmwareEsxi, Provider::Proxmox].into_iter().filter(|p| runs_on_server(spec, *p, runtime)).collect()
 }
 
 /// Why the lab's VMs can't run on Vagrant's `provider` (`qemu`, `utm`, …: its networks, a TPM,
@@ -379,6 +389,21 @@ mod tests {
         let err = prepare(&dir, Target::Vagrant).unwrap_err().to_string();
         assert!(err.starts_with("this lab can't run there: vagrant") && err.contains("machines.web.app.image"), "{err}");
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_lab_is_offered_the_servers_its_targets_run_on() {
+        use crate::runtime::providers::Provider;
+        let vms = "version: 1\nname: ad\nnetworks: { lan: { cidr: 10.20.0.0/24 } }\nmachines:\n  dc: { os: windows-server@2022, networks: { lan: 10 } }\n";
+        assert_eq!(servers_for(&parse(vms).unwrap(), Runtime::Vm), [Provider::VmwareEsxi, Provider::Proxmox]);
+        // Its targets leave Proxmox out: ESXi only, as the default server's rule says.
+        let vagrant_only = parse(&format!("{vms}targets: [vagrant]\n")).unwrap();
+        assert_eq!(servers_for(&vagrant_only, Runtime::Vm), [Provider::VmwareEsxi]);
+        assert!(!runs_on_server(&vagrant_only, Provider::Proxmox, Runtime::Vm));
+        // A container lab runs in one VM there; cloud services, and a cloud account, on none.
+        assert_eq!(servers_for(&parse(SPEC).unwrap(), Runtime::Docker), [Provider::VmwareEsxi, Provider::Proxmox]);
+        assert!(servers_for(&parse(SPEC).unwrap(), Runtime::Cloud).is_empty());
+        assert!(!runs_on_server(&parse(vms).unwrap(), Provider::Aws, Runtime::Vm));
     }
 
     #[test]

@@ -46,6 +46,7 @@ permissions = [
   "allow-lab-provision",
   "allow-lab-requirements",
   "allow-lab-resume",
+  "allow-lab-servers",
   "allow-lab-status",
   "allow-lab-stop",
   "allow-lab-tools",

@@ -82,7 +82,9 @@ describe("late answers", () => {
   it("keeps the target the player picked when the server list is read again", async () => {
     installTauri();
     const rt: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "proxmox", "vmware_esxi"] };
-    const { result, rerender } = renderHook(({ ready }) => useRunTarget(rt, ready, "x86_64"), { initialProps: { ready: [] as never[] } });
+    const { result, rerender } = renderHook(({ ready }) => useRunTarget({ id: "lab-t", runtime: rt }, ready, "x86_64"), {
+      initialProps: { ready: [] as never[] },
+    });
     await flush();
     act(() => {
       result.current.setRunOn({ kind: "host", id: "esxi" });
@@ -97,7 +99,9 @@ describe("late answers", () => {
   it("offers one VM per machine for a lab with both forms, on a ready hypervisor that isn't UTM", async () => {
     installTauri();
     const both: LabRuntimeInfo = { runtime: "DOCKER", architectures: [], providers: ["virtualbox"], docker: true, vm: true };
-    const { result, rerender } = renderHook(({ ready }) => useRunTarget(both, ready, "aarch64"), { initialProps: { ready: ["utm"] as Provider[] } });
+    const { result, rerender } = renderHook(({ ready }) => useRunTarget({ id: "lab-t", runtime: both }, ready, "aarch64"), {
+      initialProps: { ready: ["utm"] as Provider[] },
+    });
     await flush();
     // UTM alone: the helper VM, but no per-machine place (Isoloom refuses the form on UTM).
     expect(result.current.localVm).toBe("utm");

@@ -78,6 +78,7 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         labs::lab_cloud_preview,
         labs::lab_requirements,
         labs::lab_default_host,
+        labs::lab_servers,
         labs::running_labs,
         labs::run_tiers,
         labs::lab_check,

@@ -63,6 +63,11 @@ export const labCloudPreview = (id: string, repository: string, commit: string) 
 export const labDefaultHost = (id: string, runtime: Runtime, repository: string, commit: string) =>
   invoke<string | null>("lab_default_host", { id, runtime, repository, commit });
 
+/** The kinds of server (ESXi, Proxmox) a lab (declared `runtime`) runs on, from its spec at the
+ *  catalogue's pinned commit: the default server's rule, for the launch picker's servers. */
+export const labServers = (id: string, runtime: Runtime, repository: string, commit: string) =>
+  invoke<Provider[]>("lab_servers", { id, runtime, repository, commit });
+
 /** A lab's minimum-to-run requirements (CPU/RAM/disk) as a lightest-to-heaviest range; null for a lab with no machines of its own. */
 export const labRequirements = (id: string, repository: string, commit: string) =>
   invoke<LabRequirements | null>("lab_requirements", { id, repository, commit });

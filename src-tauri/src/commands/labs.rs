@@ -154,6 +154,15 @@ pub async fn lab_default_host(app: AppHandle, id: String, runtime: Runtime, repo
     labs::default_host(&AppDirs::from(&app), &id, runtime, &repository, &commit).await
 }
 
+/// The kinds of server (ESXi, Proxmox) lab `id`, declared `runtime`, runs on, from its spec at
+/// the catalogue's pinned commit: the same rule as [`labs::default_host`]'s, for the launch
+/// picker's saved servers.
+#[tauri::command]
+pub async fn lab_servers(app: AppHandle, id: String, runtime: Runtime, repository: String, commit: String) -> Result<Vec<Provider>> {
+    let spec = lab::spec_at(&AppDirs::from(&app), &id, &repository, &commit).await?;
+    Ok(lab::servers_for(&spec, runtime))
+}
+
 /// The observers a lab, declared `runtime`, puts beside itself (`tools:` in its spec), at their
 /// addresses in the form it was started in ([`local_runtime`]): container addresses for a
 /// container lab wherever its Compose file runs, VM addresses for a lab run as VMs (a container
@@ -294,10 +303,10 @@ mod tests {
     use super::{AttachPick, channel_log, check_image, valid_machine_name};
     use super::{
         attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_default_host, lab_launch, lab_launch_local, lab_park,
-        lab_provision, lab_resume, lab_status, lab_stop, lab_tools, running_labs,
+        lab_provision, lab_resume, lab_servers, lab_status, lab_stop, lab_tools, running_labs,
     };
     use crate::platform::exec::fake::Tools;
-    use crate::runtime::{Park, Runtime, server};
+    use crate::runtime::{Park, Runtime, providers::Provider, server};
     use crate::testing::test_app::TestApp;
     use tauri::ipc::{Channel, InvokeResponseBody};
 
@@ -355,6 +364,18 @@ mod tests {
         let sha = "0123456789abcdef0123456789abcdef01234567".to_string();
         let host = lab_default_host(t.handle().clone(), "web".into(), Runtime::Docker, "CyberCTF/web".into(), sha).await.unwrap();
         assert_eq!(host, None);
+    }
+
+    #[tokio::test]
+    async fn the_picker_is_offered_the_servers_the_labs_targets_run_on() {
+        let t = TestApp::new();
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        let vms = "version: 1\nname: ad\nnetworks: { lan: { cidr: 10.20.0.0/24 } }\nmachines:\n  dc: { os: windows-server@2022, networks: { lan: 10 } }\ntargets: [vagrant]\n";
+        let dir = t.lab("ad", &[("isoloom.yml", vms)]);
+        std::fs::write(dir.join(".cyberctf-commit"), sha).unwrap();
+        // The installed copy at that commit is read: no download.
+        let servers = lab_servers(t.handle().clone(), "ad".into(), Runtime::Vm, "CyberCTF/ad".into(), sha.into()).await.unwrap();
+        assert_eq!(servers, [Provider::VmwareEsxi], "its targets leave Proxmox out");
     }
 
     #[tokio::test]

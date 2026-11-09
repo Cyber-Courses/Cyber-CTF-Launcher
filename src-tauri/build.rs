@@ -47,6 +47,7 @@ const COMMANDS: &[&str] = &[
     "lab_provision",
     "lab_requirements",
     "lab_resume",
+    "lab_servers",
     "lab_status",
     "lab_stop",
     "lab_tools",

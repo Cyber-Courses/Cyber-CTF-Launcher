@@ -135,7 +135,7 @@ export function useLabDetail(p: LabDetailProps) {
     runFailureCode: p.runFailureCode,
     runFailureHolder: p.runFailureHolder,
   });
-  const run = useRunTarget(rt, readyVms, p.hostArch, p.dockerEngine ?? null, p.dockerEnginesRunning ?? []);
+  const run = useRunTarget(lab, readyVms, p.hostArch, p.dockerEngine ?? null, p.dockerEnginesRunning ?? []);
   const preview = useCloudPreview(lab.id, rt);
   // The lab's catalogue runtime: the backend resolves the form it runs in (`local_runtime`).
   const runtime = rt?.runtime ?? "DOCKER";

@@ -19,6 +19,7 @@ import type {
   LabTool,
   MachineMetrics,
   OciConfig,
+  Provider,
   RunTier,
   ServerList,
   ServerTest,
@@ -58,6 +59,7 @@ type Answers = {
   lab_cloud_preview: CloudPreview | null;
   lab_requirements: LabRequirements | null;
   lab_default_host: string | null;
+  lab_servers: Provider[];
   running_labs: string[];
   deploying_labs: string[];
   active_operations: ActiveOperation[];

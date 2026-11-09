@@ -193,6 +193,23 @@ describe("LabDetail: starting", () => {
     expect(h.onStart).toHaveBeenCalledWith({ kind: "host", id: "aws1", perMachine: true });
   });
 
+  it("offers a saved server only of a kind the lab's spec runs on, as the backend says", async () => {
+    const SHA = "0123456789abcdef0123456789abcdef01234567";
+    const calls = installTauri({
+      ...quiet,
+      server_list: () => ({ default: null, hosts: [{ id: "pve", name: "homelab", provider: "proxmox", host: "10.0.0.5" }] }),
+      lab_servers: () => ["vmware_esxi"],
+    });
+    // The catalogue lists Proxmox; the lab's targets leave it out.
+    const lab: Lab = {
+      ...vmLab,
+      runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "proxmox"], repository: "CyberCTF/goad", commit: SHA },
+    };
+    await clickStart({ lab, readyVms: ["virtualbox"] });
+    expect(calls.find((c) => c.cmd === "lab_servers")?.args).toEqual({ id: "lab-goad", runtime: "VM", repository: "CyberCTF/goad", commit: SHA });
+    expect(within(screen.getByRole("dialog")).getByTitle("This lab doesn't support Proxmox VE")).toBeTruthy();
+  });
+
   it("offers the cloud form step on every cloud, not only AWS", async () => {
     installTauri({
       ...quiet,

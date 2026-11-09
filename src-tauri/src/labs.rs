@@ -400,7 +400,7 @@ pub(crate) async fn default_host(dirs: &AppDirs, lab_id: &str, runtime: Runtime,
     }
     let Some((id, provider)) = runtime::server::default_server(dirs) else { return Ok(None) };
     let spec = runtime::lab::spec_at(dirs, lab_id, repository, commit).await?;
-    Ok(runtime::lab::runs_on_server(&spec, provider).then_some(id))
+    Ok(runtime::lab::runs_on_server(&spec, provider, runtime).then_some(id))
 }
 
 /// The backend's operation starting a lab for the signed-in player: what to download and run,
