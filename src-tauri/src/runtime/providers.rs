@@ -1,7 +1,8 @@
-//! Vagrant providers the launcher knows how to drive. Vagrant abstracts the
-//! hypervisor; we only detect what is usable on this machine and pass
-//! `--provider` through. The cloud accounts share the enum (labs run there through Terraform)
-//! but are never detected here.
+//! The hypervisors, servers and cloud accounts labs run on. The local hypervisors are Vagrant
+//! providers: only what is usable on this machine is detected, and the runner is given the
+//! provider. The servers and cloud accounts share the enum; labs run there through the Isothrum
+//! runner (Proxmox and the clouds' `cloud-docker`, `cloud-vm` and `cloud-services` through
+//! Terraform, ESXi through Vagrant), and they are never detected here.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -23,26 +24,26 @@ pub enum Provider {
     Utm,
     /// Remote VMware ESXi host (plugin `vagrant-vmware-esxi`).
     VmwareEsxi,
-    /// Remote Proxmox VE host (Terraform bpg/proxmox; plugin `vagrant-proxmox` is dead).
+    /// Remote Proxmox VE host (the runner's Terraform, bpg/proxmox).
     Proxmox,
-    /// The player's AWS account (Terraform, a lab's Isoloom cloud-docker module). Not a Vagrant
+    /// The player's AWS account (the runner's Terraform: a lab's `cloud-docker`, `cloud-vm` or `cloud-services`). Not a Vagrant
     /// provider and never detected locally, so it is not in `ALL`.
     Aws,
-    /// The player's Azure subscription (Terraform, a lab's Isoloom cloud-docker module). Like
+    /// The player's Azure subscription (the runner's Terraform: a lab's `cloud-docker`, `cloud-vm` or `cloud-services`). Like
     /// AWS: not a Vagrant provider, never detected locally, not in `ALL`.
     Azure,
-    /// The player's Google Cloud project (Terraform, a lab's Isoloom cloud-docker module). Like
+    /// The player's Google Cloud project (the runner's Terraform: a lab's `cloud-docker`, `cloud-vm` or `cloud-services`). Like
     /// AWS and Azure: not a Vagrant provider, never detected locally, not in `ALL`.
     Gcp,
-    /// The player's `DigitalOcean` account (Terraform, a lab's Isoloom cloud-docker module).
+    /// The player's `DigitalOcean` account (the runner's Terraform: a lab's `cloud-docker`, `cloud-vm` or `cloud-services`).
     /// Authenticated with an API token; not a Vagrant provider, never detected, not in `ALL`.
     #[serde(rename = "digitalocean")]
     DigitalOcean,
-    /// The player's Linode account (Terraform, a lab's Isoloom cloud-docker module). Like
+    /// The player's Linode account (the runner's Terraform: a lab's `cloud-docker`, `cloud-vm` or `cloud-services`). Like
     /// `DigitalOcean`: API-token auth, not a Vagrant provider, never detected, not in `ALL`.
     Linode,
-    /// The player's Oracle Cloud tenancy (Terraform, a lab's Isoloom cloud-docker module). Authenticated
-    /// with an API signing key in ~/.oci/config; not a Vagrant provider, never detected, not in `ALL`.
+    /// The player's Oracle Cloud tenancy (the runner's Terraform: a lab's `cloud-docker`,
+    /// `cloud-vm` or `cloud-services`). Authenticated with an API signing key in ~/.oci/config; not a Vagrant provider, never detected, not in `ALL`.
     Oci,
 }
 

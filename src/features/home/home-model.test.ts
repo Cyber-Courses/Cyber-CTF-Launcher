@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LabStatus, SystemReport } from "@/lib/tauri";
 import type { Lab } from "@/features/labs/use-labs";
-import { dockerReadiness, greetingKey, heroStatus, labContainerCount, recentLabs, runningLabs } from "@/features/home/home-model";
+import { dockerReadiness, greetingKey, heroStatus, labContainerCount, recentLabs, labsRunning } from "@/features/home/home-model";
 
 const lab = (id: string, runtime: "DOCKER" | "VM" = "DOCKER") => ({ id, slug: id, title: id, runtime: { runtime } }) as Lab;
 const status = (running: boolean, patch: Partial<LabStatus> = {}) =>
@@ -32,7 +32,7 @@ describe("home model", () => {
   it("counts the running labs' own containers only", () => {
     const labs = [lab("a"), lab("b"), lab("vm", "VM"), lab("off")];
     const statuses = { a: status(true), b: status(true, { place: "cloud" }), vm: status(true), off: status(false) };
-    const running = runningLabs(labs, statuses);
+    const running = labsRunning(labs, statuses);
     expect(running.map((l) => l.id)).toEqual(["a", "b", "vm"]);
     // b runs in a cloud account and vm is a VM lab: only a's two containers are here.
     expect(labContainerCount(running, statuses)).toBe(2);

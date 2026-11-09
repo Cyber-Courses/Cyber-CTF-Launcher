@@ -43,12 +43,13 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
   const operate = useCallback((lab: Lab, op: ActiveOperation["op"], body: OperationBody) => runOperation(lab, op, body, settle), [settle]);
 
   /**
-   * `host` = a server host id to run a VM lab on, null for this machine. Omitted, a VM lab
-   * goes to the default server the backend picks for it (one that runs it), else here. `vm` runs a
-   * container lab in a VM on this machine (its deploy/vagrant lab host) on that hypervisor, or
-   * (`perMachine`) a container lab with VM recipes as one VM per machine there.
+   * `host` = a saved server or cloud account to run the lab on, null for this machine. Omitted,
+   * the lab starts where the backend says (`labDefaultPlace`: where it last ran, else a VM lab on
+   * a hypervisor ready here, else the default server that runs it, else here). `vm` runs a VM lab
+   * here on that hypervisor (none: the backend's), a container lab in a VM on this machine on
+   * that hypervisor, or (`perMachine`) a container lab with VM recipes as one VM per machine there.
    * A cloud lab runs only on the cloud account `host` (never one picked implicitly: it costs).
-   * `report` (the machine report) picks a hypervisor that is actually installed here;
+   * `report` (the machine report) says why a VM lab can't run here (its CPU);
    * `chosenPorts` = the host ports for a container lab here, already chosen ("Where should it run?").
    */
   const launch = useCallback(

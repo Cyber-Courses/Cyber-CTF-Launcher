@@ -12,7 +12,7 @@ import { JumpBackPanel } from "@/features/home/jump-back-panel";
 import { MachineSummaryPanel } from "@/features/home/machine-summary-panel";
 import { HomeHeader, LowRamCallout, SignInHint, UsageStats } from "@/features/home/home-sections";
 import { LabsPreviewPanel, RunningPanel } from "@/features/home/lab-panels";
-import { dockerReadiness, labContainerCount, recentLabs, runningLabs } from "@/features/home/home-model";
+import { dockerReadiness, labContainerCount, recentLabs, labsRunning } from "@/features/home/home-model";
 import { runningUnlisted } from "@/features/labs/lab-row-state";
 import { CheckFailed } from "@/features/machine/check-failed";
 import { getLastRun } from "@/features/labs/runs/last-run";
@@ -44,7 +44,7 @@ function useOverviewLabs(loggedIn: boolean) {
   const deploying = useDeployingLabs();
   const servers = useSavedHosts().hosts;
   const all = labs ?? [];
-  const running = runningLabs(all, statuses);
+  const running = labsRunning(all, statuses);
   return {
     labs,
     error,

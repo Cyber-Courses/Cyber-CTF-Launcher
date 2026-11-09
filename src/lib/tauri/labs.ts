@@ -92,8 +92,9 @@ export const labResume = (id: string, runtime: Runtime, onLog: (line: string) =>
 
 export const labStatus = (id: string, runtime: Runtime) => invoke<LabStatus>("lab_status", { id, runtime });
 
-/** Lab ids running on this machine right now, found by scanning Docker and Vagrant directly.
- *  Recovers running labs after a crash/restart, independent of any per-lab status probe. */
+/** Lab ids with something up on this machine right now, asked of Docker and each hypervisor
+ *  (VMware, VirtualBox, Parallels, UTM, libvirt, Hyper-V): which labs to read the status of again,
+ *  never whether one runs (`labStatus` says that). */
 export const runningLabs = () => invoke<string[]>("running_labs");
 
 /** The lab's observers, at their addresses where it runs. */

@@ -103,8 +103,8 @@ pub(crate) fn lab_ids_from_vm_names<'a>(names: impl Iterator<Item = &'a str>, by
 }
 
 /// The lab ids of running VMs named `<lab><sep><machine>`, for the labs in `by_name`: libvirt
-/// domains (`<lab>_<machine>`, from vagrant-libvirt's `default_prefix`) and Hyper-V/ESXi VMs
-/// (`<lab>-<machine>`). Unlike the ` · ` separator, `_` and `-` can occur inside a lab's own name,
+/// domains (`<lab>_<machine>`, from vagrant-libvirt's `default_prefix`) and Hyper-V VMs
+/// (`<lab>-<machine>`). An ESXi host's VMs aren't this machine's: never scanned. Unlike the ` · ` separator, `_` and `-` can occur inside a lab's own name,
 /// so a lab is matched as a prefix, not by splitting: the longest installed name that leaves a
 /// non-empty machine wins.
 pub(crate) fn lab_ids_from_prefixed_vm_names<'a>(names: impl Iterator<Item = &'a str>, by_name: &HashMap<String, String>, sep: char) -> Vec<String> {

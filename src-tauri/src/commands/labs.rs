@@ -191,10 +191,10 @@ pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<V
     }
 }
 
-/// The ids of labs running on this machine right now, found by scanning Docker and Vagrant
-/// directly. Unlike `lab_status` (one lab at a time, from its dir and Compose file), this is a
-/// single infrastructure scan, so the UI recovers which labs are up even after a crash or restart,
-/// and a lab whose per-lab status probe is momentarily failing still shows as running.
+/// The ids of labs with something up on this machine right now, found by asking Docker and each
+/// hypervisor directly (`vmrun`, `VBoxManage`, `prlctl`, `utmctl`, `virsh`, Hyper-V). One scan for
+/// every lab, unlike `lab_status`: the UI reads it only to pick which labs to read the status of
+/// again (one started from the website, or after a crash or restart), never as whether one runs.
 #[tauri::command]
 pub async fn running_labs(app: AppHandle) -> Vec<String> {
     discover::running_lab_ids(&AppDirs::from(&app)).await

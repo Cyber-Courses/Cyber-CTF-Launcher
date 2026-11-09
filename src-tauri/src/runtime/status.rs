@@ -30,11 +30,12 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     // wherever it runs. This used to be masked for server and cloud hosts only, so a local Docker,
     // docker-in-VM or VM lab whose launch failed stayed "running" and showed a healthy diagram.
     let status = unless_launch_failed(dirs, id, status);
-    // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
     // Whether this container lab runs as one VM per machine (its VM recipes), locally or as
     // cloud-vm: the UI reads it to name the form.
     let per_machine = runtime == Runtime::Docker && per_machine_vm(dir);
-    Ok(LabStatus { per_machine, reap_error: super::reaper::last_failure(dirs, id), controls, ..status })
+    // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
+    let reap_error = super::reaper::last_failure(dirs, id);
+    Ok(LabStatus { per_machine, reap_error, controls, ..status })
 }
 
 /// A lab whose last launch or resume failed is not running, even if its machines stayed up: a

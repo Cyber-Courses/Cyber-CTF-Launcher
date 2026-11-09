@@ -28,7 +28,7 @@ export function heroStatus(
 }
 
 /** The labs running now. */
-export const runningLabs = (labs: Lab[], statuses: Statuses) => labs.filter((l) => statuses[l.id]?.running);
+export const labsRunning = (labs: Lab[], statuses: Statuses) => labs.filter((l) => statuses[l.id]?.running);
 
 /** The running labs' own containers: the engine's total also counts the player's other projects. */
 export const labContainerCount = (running: Lab[], statuses: Statuses) =>
