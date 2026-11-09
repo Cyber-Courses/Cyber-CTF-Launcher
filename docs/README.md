@@ -3,6 +3,7 @@
 | Page                                                 | What it covers                                                                                                   |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | [running-labs.md](running-labs.md)                   | where and how a lab runs: places and forms, the files that say where it is, the attack box, accounts and servers |
+| [training-apps.md](training-apps.md)                 | deliberately vulnerable apps a lab can run (DVWA, Juice Shop): their pinned images, ready to paste               |
 | [design-system.md](design-system.md)                 | the launcher's design system: tokens, type, surfaces, components, patterns                                       |
 | [testing/](testing/README.md)                        | the test layers, where a new test goes, and the conventions                                                      |
 | [testing/release-check.md](testing/release-check.md) | the gate before a release                                                                                        |
