@@ -18,11 +18,20 @@ pub(crate) fn is_not_running(e: &Error) -> bool {
     matches!(e, Error::Invalid(text) if text == NOT_RUNNING)
 }
 
+/// How the launcher's words for a value the runner refused begin: a secret the launch didn't
+/// give, or a param it gave that isn't one the manifest takes. The runner checks both before it
+/// runs anything.
+const VALUE_REFUSED: &str = "This lab needs a value ";
+
 /// Whether `e` is a change of a run refused before acting on it: the run isn't up, another
-/// operation holds it, a tool it needs is missing, or the cloud account's sign-in ran out (asked
-/// before the change, [`expired_sign_in`]). Nothing of the run changed then.
+/// operation holds it, a tool it needs is missing, a value it needs is missing or refused
+/// ([`VALUE_REFUSED`]), or the cloud account's sign-in ran out (asked before the change,
+/// [`expired_sign_in`]). Nothing of the run changed then.
 pub(crate) fn refused_before_acting(e: &Error) -> bool {
-    is_not_running(e) || is_expired_sign_in(e) || matches!(e.code(), Code::AlreadyInProgress | Code::ToolMissing { .. })
+    is_not_running(e)
+        || is_expired_sign_in(e)
+        || matches!(e, Error::Invalid(text) if text.starts_with(VALUE_REFUSED))
+        || matches!(e.code(), Code::AlreadyInProgress | Code::ToolMissing { .. })
 }
 
 /// The launcher's error for a runner's failure.
@@ -45,7 +54,10 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         }
         RunnerError::NotReady { detail, .. } => Error::Invalid(format!("The lab started, but didn't become ready: {detail}")),
         RunnerError::SecretMissing { name } => {
-            Error::Invalid(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
+            Error::Invalid(format!("{VALUE_REFUSED}for `{name}` that the launch didn't give. Start it from the catalogue again."))
+        }
+        RunnerError::Param { name, reason } => {
+            Error::Invalid(format!("{VALUE_REFUSED}for `{name}` it can use: the one given {reason}. Start it from the catalogue again."))
         }
         other => by_code(&other),
     }
@@ -267,7 +279,21 @@ mod tests {
         let e = RunnerError::Unbound { at: "lifecycle.up.up".into(), placeholder: "params.X".into() };
         let text = e.to_string();
         assert!(said(e).1.ends_with(&text));
-        let other = RunnerError::Param { name: "ISOLOOM_DERIVED".into(), reason: "`2` isn't one of 0, 1".into() };
-        assert_eq!(said(other).1, "param `ISOLOOM_DERIVED`: `2` isn't one of 0, 1");
+    }
+
+    #[test]
+    fn a_missing_or_refused_value_changed_nothing() {
+        // The runner checks the launch's values before it runs anything: a change refused for one
+        // is rolled back like one refused for a run that isn't up.
+        for e in [
+            RunnerError::SecretMissing { name: "CTF_FLAG_MAIN".into() },
+            RunnerError::Param { name: "ISOLOOM_DERIVED".into(), reason: "`2` isn't one of 0, 1".into() },
+        ] {
+            let launcher = from_runner(e);
+            assert!(refused_before_acting(&launcher), "{launcher}");
+        }
+        let param = from_runner(RunnerError::Param { name: "ISOLOOM_DERIVED".into(), reason: "`2` isn't one of 0, 1".into() });
+        assert!(param.to_string().contains("`ISOLOOM_DERIVED`") && param.to_string().contains("`2` isn't one of 0, 1"), "{param}");
+        assert!(!refused_before_acting(&Error::Invalid("a step failed".into())));
     }
 }
