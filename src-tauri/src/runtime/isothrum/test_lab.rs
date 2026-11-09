@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use isothrum_runner::process::fake::{Call, FakeProcesses, Reply};
+use isothrum_runner::fake::{Call, FakeProcesses, Reply};
 use isothrum_runner::{FakePorts, ProcessRunner, RunnerConfig};
 
 use super::lab;
@@ -14,7 +14,7 @@ use super::lab;
 pub(super) mod prelude {
     pub(in crate::runtime::isothrum) use std::sync::Mutex;
 
-    pub(in crate::runtime::isothrum) use isothrum_runner::process::fake::{Call, Reply};
+    pub(in crate::runtime::isothrum) use isothrum_runner::fake::{Call, Reply};
 
     pub(in crate::runtime::isothrum) use super::{Home, Scripted, locked};
 }

@@ -6,17 +6,17 @@
 //! even when a lab uses the same one.
 //!
 //! The record's shape (`Owned`/`OwnedImage`/`OwnedBox`), its `vagrant box list` parser and its
-//! loader are the shared [`isothrum_machine::storage`] ones, so this file and the Isothrum desktop
-//! app read and write the exact same `storage.json`. The process-reading parts (what is on the
+//! loader are in [`record`]. The process-reading parts (what is on the
 //! machine now, recording what an operation downloaded) stay here on the launcher's `platform::exec`
 //! so the self-test, launch and storage-page tests keep mocking them through `exec::fake::Tools`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-// The storage record format, its parser and its loader, shared with the Isothrum desktop app.
-use isothrum_machine::storage::parse_box_list;
-pub use isothrum_machine::storage::{Owned, OwnedBox, OwnedImage, load};
+mod record;
+
+use record::parse_box_list;
+pub use record::{Owned, OwnedBox, OwnedImage, load};
 
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;

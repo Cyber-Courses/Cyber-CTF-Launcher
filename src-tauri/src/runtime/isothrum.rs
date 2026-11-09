@@ -32,11 +32,11 @@ pub(crate) use isoloom_manifest::Target as RunTarget;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use isothrum_runner::process::{Exit, OnLine, ProcessError};
 use isothrum_runner::{
     BoxFuture, Occupied, ProcessRunner, ProcessSpec, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, Status,
     SystemProcesses,
 };
+use isothrum_runner::{Exit, OnLine, ProcessError};
 
 use super::docker::{Check, PORTS_ENV};
 
