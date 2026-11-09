@@ -1,21 +1,18 @@
-//! The launcher on the Isothrum runner: a container lab on this machine's Docker, or a VM lab on
-//! this machine's hypervisor (Vagrant, every local provider), runs from the run manifest Isoloom
-//! writes beside its files (`.isoloom[-<n>]/docker/run.json`, `.isoloom[-<n>]/vagrant/run.json`),
-//! through the runner's `Running` operations, instead of the launcher's own `docker` and `vm` modules.
-//! Which path runs a lab is the player's choice in Settings > Labs ([`chosen`]; the developer
-//! override `CYBERCTF_RUNNER` wins): with the launcher's, nothing here runs.
+//! The launcher on the Isothrum runner: every lab runs from the run manifest Isoloom writes beside
+//! its files (`.isoloom[-<n>]/docker/run.json`, `.isoloom[-<n>]/vagrant/run.json`, ...), through
+//! the runner's `Running` operations: a container lab on this machine's Docker or in one local VM,
+//! a VM lab on this machine's hypervisor (Vagrant, every local provider) or an ESXi host, and a lab
+//! on a Proxmox server (`server`) or in a cloud account (`cloud`).
 //!
 //! What stays the launcher's: the run's name (`cyberctf-<lab id>`, the Compose project the
 //! launcher always used), the runner's home (the app data folder, so runs are kept under its
-//! `runs/`), the attack box (hot-added into the run through the runner — [`LabRun::attach`] — a
-//! container beside the lab's, or inside the VM a container lab runs in; never run by the
-//! launcher), the words the player reads (the
-//! runner's events in `progress`, its error codes in `errors`) and the lab page's shapes (`view`).
-//! An operation that
-//! outlives the app runs in the launcher's own deploy worker, which calls the runner in-process;
+//! `runs/`), the words the player reads (the runner's events in `progress`, its error codes in
+//! `errors`) and the lab page's shapes (`view`). The attack box is no concern of the run's: the
+//! launcher adds it to the lab as one of its machines (`attack_machine`), and the run is brought
+//! up to date with it ([`LabRun::update`], [`LabRun::retire`]) like with any change of the lab.
+//! An operation that outlives the app runs in the launcher's own deploy worker, which calls the runner in-process;
 //! stopping that worker drops the operation, which ends what it started.
 
-mod attack_box;
 mod cloud;
 pub(crate) mod errors;
 mod import;
@@ -24,7 +21,6 @@ mod progress;
 mod server;
 mod view;
 
-pub(crate) use attack_box::AttackStatus;
 pub(crate) use cloud::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds};
 pub(crate) use import::{Outcome, import_all, runner as import_runner};
 pub(crate) use server::{ServerPlace, ServerRun};
@@ -34,7 +30,8 @@ use std::sync::Arc;
 
 use isothrum_runner::process::{Exit, OnLine, ProcessError};
 use isothrum_runner::{
-    BoxFuture, Occupied, ProcessRunner, ProcessSpec, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, SystemProcesses,
+    BoxFuture, Occupied, ProcessRunner, ProcessSpec, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, Status,
+    SystemProcesses,
 };
 
 use super::docker::{Check, PORTS_ENV};
@@ -136,25 +133,19 @@ pub(crate) struct LabRun {
 
 impl LabRun {
     /// Container lab `id`, installed in `dir`, on the runner whose home is `home` (the app data
-    /// folder), with this host's tools. The learner's attack box is the lab's on-demand access
-    /// machine, hot-added into the run on demand (see [`LabRun::attach`]).
+    /// folder), with this host's tools.
     pub(crate) fn docker(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
         // The lab's docker calls go to the engine chosen at launch (its marker), if any.
         LabRun::with(host_config(home, paths::engine(dir)), dir, id, Kind::Docker)
     }
 
     /// VM lab `id`, installed in `dir`, on the runner whose home is `home`, with this host's tools.
-    /// Its attack box is a VM beside the lab's on the same hypervisor, QEMU included: the spec's own
-    /// access machine when it declares one, else a node the runner adds to the running environment
-    /// as GNS3 adds one to a live topology, through the hook every Isoloom Vagrantfile carries (see
-    /// [`LabRun::attach`]).
     pub(crate) fn vm(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
         LabRun::with(host_config(home, None), dir, id, Kind::Vm)
     }
 
     /// Container lab `id` in one local VM (Isoloom's `docker-vm`: Docker Compose inside a VM),
-    /// installed in `dir`, on the runner whose home is `home`. Its attack box is a container the
-    /// runner stands up inside the VM, beside the lab's, on the lab's network there.
+    /// installed in `dir`, on the runner whose home is `home`.
     pub(crate) fn docker_in_vm(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
         LabRun::with(host_config(home, None), dir, id, Kind::DockerVm)
     }
@@ -289,14 +280,12 @@ impl LabRun {
         retire_from(&self.lab()?, machine, &self.placed(RunOptions::new()), log).await
     }
 
-    /// `machine`, a machine of the lab, as the lab page shows the attack box (nothing before the
-    /// lab's files exist).
-    pub(crate) async fn machine_box_status(&self, machine: &str, network: Option<&str>) -> Result<AttackStatus> {
-        let vm = self.kind == Kind::Vm;
+    /// The run's status as the runner reports it; None before the lab's files exist.
+    pub(crate) async fn run_status(&self) -> Result<Option<Status>> {
         if !self.manifest().is_file() {
-            return Ok(AttackStatus { vm, ..AttackStatus::default() });
+            return Ok(None);
         }
-        machine_status_in(&self.lab()?, machine, network, vm).await
+        self.lab()?.status().await.map(Some).map_err(errors::from_runner)
     }
 
     /// The command that opens a console into `machine`, any machine of the lab.
@@ -315,14 +304,6 @@ async fn update_of(lab: &Running<'_>, opts: &RunOptions, log: &mut impl FnMut(St
 /// another operation's hold on the run.
 async fn retire_from(lab: &Running<'_>, machine: &str, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
     when_unlocked(log, move |sink| async move { lab.retire(machine, opts, &sink).await }).await.map_err(errors::from_runner)
-}
-
-/// `machine` of `lab` as the lab page shows the attack box: its status as the runner reports
-/// it, the console into it. `vm`: the box is a VM here.
-async fn machine_status_in(lab: &Running<'_>, machine: &str, network: Option<&str>, vm: bool) -> Result<AttackStatus> {
-    let status = lab.status().await.map_err(errors::from_runner)?;
-    let shell = lab.console_command(machine).ok().map(|c| attack_box::display(&c)).unwrap_or_default();
-    Ok(attack_box::status_of(&status, machine, network, shell, vm))
 }
 
 /// Brings `lab` up with `opts`, its events as `log`'s lines, then says where to start: its

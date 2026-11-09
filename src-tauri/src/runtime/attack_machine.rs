@@ -4,11 +4,17 @@
 //! says with it where the player sits: the box takes its place (its name, its networks and
 //! addresses, so the checks from that seat run from the box). Otherwise the box is `attackbox` on
 //! the lab's first network. What it runs is the launcher's: the attack image picked in Settings
-//! beside containers, Kali with its toolset among VMs.
+//! ([`default_image`] unless the learner picked another) beside containers, Kali with its toolset
+//! among VMs. Where the lab runs, and how the box goes in and out of its run: [`locate`],
+//! [`Placed`]; the box as the lab page shows it: [`AttackStatus`].
 
 mod place;
+mod status;
 
-pub(crate) use place::{Host, Placed};
+#[cfg(test)]
+pub(crate) use place::Host;
+pub(crate) use place::{Placed, locate};
+pub(crate) use status::AttackStatus;
 
 use std::path::Path;
 
@@ -19,6 +25,23 @@ use crate::error::{Error, Result};
 
 /// The box's name (and host name) in a lab that declares no access machine.
 pub(crate) const NAME: &str = "attackbox";
+
+/// The default attack image, shared with the frontend's Settings (`src/lib/settings.ts`): the
+/// Cyber CTF image, pinned by its digest in `attack-box-image.json`, which the attack-box workflow
+/// updates once a published image passed its smoke test.
+const IMAGE_FILE: &str = include_str!("../../attack-box-image.json");
+
+/// The attack image a container box runs when the learner picked none: [`IMAGE_FILE`]'s `image`
+/// (its repository unpinned, should the file not read: a test keeps it readable).
+pub(crate) fn default_image() -> &'static str {
+    #[derive(serde::Deserialize)]
+    struct File {
+        image: String,
+    }
+    static IMAGE: std::sync::LazyLock<String> =
+        std::sync::LazyLock::new(|| serde_json::from_str::<File>(IMAGE_FILE).map_or_else(|_| "cyberctf/attack-box".to_owned(), |f| f.image));
+    &IMAGE
+}
 
 /// Its set-up, a file of the lab's project (the project is what a machine gets): Kali's headless
 /// toolset, what the launcher's attack box image installs, unattended. A Debian VM (where Kali
@@ -115,12 +138,12 @@ fn seat(spec: &isoloom_spec::model::Spec, network: Option<&str>) -> Result<Seat>
 
 /// The box's name in the lab in `dir`: the one added, else the lab's own access machine's (the
 /// seat it would take), else [`NAME`].
-pub(crate) fn name(dir: &Path) -> String {
-    overlay::machines(dir)
+pub(crate) fn name(dir: &Path) -> Result<String> {
+    Ok(overlay::machines(dir)?
         .into_iter()
         .next()
         .or_else(|| lab::load(dir).ok().and_then(|s| declared(&s).map(|(n, _)| n.clone())))
-        .unwrap_or_else(|| NAME.to_owned())
+        .unwrap_or_else(|| NAME.to_owned()))
 }
 
 /// Adds the box to the lab in `dir` as `kind`, at its seat ([`seat`]; `network` is the player's
@@ -148,7 +171,7 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>) -
 
 /// Takes the box out of the lab in `dir` (a lab's own access machine it stood in for comes back).
 pub(crate) fn remove(dir: &Path) -> Result<()> {
-    for name in overlay::machines(dir) {
+    for name in overlay::machines(dir)? {
         overlay::remove_machine(dir, &name)?;
     }
     match std::fs::remove_file(dir.join(SETUP_FILE)) {
@@ -157,9 +180,23 @@ pub(crate) fn remove(dir: &Path) -> Result<()> {
     }
 }
 
+/// The lab's status with its attack box set apart: the box has its own status and panel, and
+/// the diagram draws it as the player, so it is neither one of the lab's machines (the diagram
+/// would draw it twice) nor what makes the lab running (a lab whose targets are all down is down,
+/// its box up or not).
+pub(crate) fn set_apart(status: crate::runtime::LabStatus, dir: &Path) -> Result<crate::runtime::LabStatus> {
+    let Some(name) = overlay::machines(dir)?.into_iter().next() else { return Ok(status) };
+    if !status.machines.iter().any(|m| m.name == name) {
+        return Ok(status);
+    }
+    let machines: Vec<_> = status.machines.into_iter().filter(|m| m.name != name).collect();
+    let running = status.running && machines.iter().any(|m| !m.infra && matches!(m.state.as_str(), "running" | "unhealthy"));
+    Ok(crate::runtime::LabStatus { running, machines, ..status })
+}
+
 /// Whether the lab in `dir` has the box.
-pub(crate) fn added(dir: &Path) -> bool {
-    !overlay::machines(dir).is_empty()
+pub(crate) fn added(dir: &Path) -> Result<bool> {
+    Ok(!overlay::machines(dir)?.is_empty())
 }
 
 #[cfg(test)]
@@ -167,19 +204,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_default_image_is_the_cyber_ctf_image_pinned_by_its_digest() {
+        let image = default_image();
+        assert!(image.starts_with("cyberctf/attack-box@sha256:"), "{image}");
+        assert!(crate::platform::exec::valid_image(image), "{image}");
+    }
+
+    #[test]
     fn the_box_is_a_kali_machine_on_the_first_machines_network_at_a_free_address() {
         let dir = crate::runtime::test_support::write_lab(
             "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 249 } }\n",
         );
         add(&dir, Kind::Vm, Cpu::Lab, None).unwrap();
-        assert!(added(&dir));
+        assert!(added(&dir).unwrap());
         let spec = lab::load(&dir).unwrap();
         let attackbox = &spec.machines[NAME];
         assert_eq!(attackbox.networks.get("lan"), Some(&248), "the highest address left");
         assert!(!attackbox.access, "an ordinary machine: up with the lab, not on demand");
         assert!(dir.join(SETUP_FILE).is_file());
         remove(&dir).unwrap();
-        assert!(!added(&dir) && !dir.join(SETUP_FILE).exists());
+        assert!(!added(&dir).unwrap() && !dir.join(SETUP_FILE).exists());
         assert!(!lab::load(&dir).unwrap().machines.contains_key(NAME));
     }
 
@@ -188,14 +232,14 @@ mod tests {
         let dir = crate::runtime::test_support::write_lab(
             "version: 1\nname: t\nnetworks: { front: { cidr: 10.70.0.0/24 }, access: { cidr: 10.71.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { front: 10 } }\n  user: { access: true, networks: { access: 10 } }\n",
         );
-        assert_eq!(name(&dir), "user", "the seat the box would take, before it is added");
+        assert_eq!(name(&dir).unwrap(), "user", "the seat the box would take, before it is added");
         add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, Some("front")).unwrap();
         let spec = lab::load(&dir).unwrap();
         let user = &spec.machines["user"];
         assert!(!user.access, "an ordinary machine of the lab now, up with it");
         assert_eq!(user.networks.iter().collect::<Vec<_>>(), [(&"access".to_owned(), &10)], "the declared seat, not the pick");
         assert!(!spec.machines.contains_key(NAME));
-        assert_eq!(name(&dir), "user");
+        assert_eq!(name(&dir).unwrap(), "user");
         remove(&dir).unwrap();
         assert!(lab::load(&dir).unwrap().machines["user"].access, "the lab's own access machine is back");
     }
@@ -225,6 +269,33 @@ mod tests {
         assert_eq!(attackbox.os.as_deref(), Some("debian@12"));
         assert_eq!(attackbox.arch, isoloom_spec::Arch::Arm64);
         assert!(std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap().contains("kali-archive-keyring"));
+        remove(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_box_is_set_apart_from_the_labs_machines_and_never_makes_it_running() {
+        use crate::runtime::{LabStatus, Machine};
+        let dir = crate::runtime::test_support::write_lab(
+            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, networks: { lan: 10 } }\n",
+        );
+        let machine = |name: &str, state: &str| Machine {
+            name: name.into(),
+            state: state.into(),
+            image: String::new(),
+            ip: String::new(),
+            ports: Vec::new(),
+            interfaces: Vec::new(),
+            services: Vec::new(),
+            infra: false,
+        };
+        let status = |web: &str| LabStatus { running: true, machines: vec![machine("web", web), machine(NAME, "running")], ..LabStatus::default() };
+        // Not added: a machine of that name is the lab's own.
+        assert_eq!(set_apart(status("running"), &dir).unwrap().machines.len(), 2);
+        add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None).unwrap();
+        let up = set_apart(status("running"), &dir).unwrap();
+        assert_eq!(up.machines.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["web"]);
+        assert!(up.running);
+        assert!(!set_apart(status("exited"), &dir).unwrap().running, "the box alone up: the lab is down");
         remove(&dir).unwrap();
     }
 }

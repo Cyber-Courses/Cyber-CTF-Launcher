@@ -27,13 +27,12 @@ impl OpenedRun {
         self.runner.open(&self.manifest, Some(self.name.clone())).map_err(errors::from_runner)
     }
 
-    /// The attack box as the lab page shows it when it is `machine`, a machine of the lab (the
-    /// launcher added it to the lab): its status as the runner reports it, the console into it.
-    pub(crate) async fn machine_box_status(&self, machine: &str, network: Option<&str>, vm: bool) -> Result<super::AttackStatus> {
+    /// The run's status as the runner reports it; None before the lab's files exist.
+    pub(crate) async fn run_status(&self) -> Result<Option<isothrum_runner::Status>> {
         if !self.manifest.is_file() {
-            return Ok(super::AttackStatus { vm, ..super::AttackStatus::default() });
+            return Ok(None);
         }
-        super::machine_status_in(&self.running()?, machine, network, vm).await
+        self.running()?.status().await.map(Some).map_err(errors::from_runner)
     }
 
     /// Brings the running lab up to date with its regenerated files, with `opts` (what changing

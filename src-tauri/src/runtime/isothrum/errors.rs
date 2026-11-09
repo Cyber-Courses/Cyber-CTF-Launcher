@@ -19,6 +19,12 @@ pub(crate) fn is_not_running(e: &Error) -> bool {
     matches!(e, Error::Invalid(text) if text == NOT_RUNNING)
 }
 
+/// Whether `e` is the runner refusing to change a run before acting on it: the run isn't up,
+/// another operation holds it, or a tool it needs is missing. Nothing of the run changed then.
+pub(crate) fn refused_before_acting(e: &Error) -> bool {
+    is_not_running(e) || matches!(e.code(), Code::AlreadyInProgress | Code::ToolMissing { .. })
+}
+
 pub(super) fn from_runner(e: RunnerError) -> Error {
     match e {
         // The holder is filled in later, on the launch path, where an async lookup can run.

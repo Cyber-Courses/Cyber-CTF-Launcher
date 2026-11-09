@@ -68,7 +68,7 @@ pub use terraform::{PLUGIN_CACHE as TERRAFORM_PLUGINS, clear_plugin_cache};
 pub use tiers::RunTier;
 /// For the generated TypeScript types (`ts_bindings`).
 #[cfg(test)]
-pub(crate) use {cloud_services::Preview, docker::Check, isothrum::AttackStatus};
+pub(crate) use {attack_machine::AttackStatus, cloud_services::Preview, docker::Check};
 
 /// Mirrors `LabRuntime` in CyberBackend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]

@@ -33,7 +33,7 @@ use crate::runtime::{isothrum, lab, lifecycle};
 
 /// The box added to the running lab, reaching `target` from a shell in it, then taken out.
 pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &mut impl FnMut(String), f: &mut Vec<String>) {
-    let added = placed.add(dirs, isoloom_manifest::access::DEFAULT_IMAGE, None, l).await;
+    let added = placed.add(dirs, attack_machine::default_image(), None, l).await;
     check(added.is_ok(), format!("the box is added ({:?})", added.err()), f);
     match placed.status(None).await {
         Ok(s) => check(s.running && !s.ip.is_empty(), format!("the box runs, with an address ({s:?})"), f),
@@ -53,7 +53,7 @@ pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &
         Ok(s) => check(!s.running, "the box is gone".into(), f),
         Err(e) => check(false, format!("the box's status reads: {e}"), f),
     }
-    check(!attack_machine::added(&placed.dir), "the lab is as published".into(), f);
+    check(!attack_machine::added(&placed.dir).unwrap_or(true), "the lab is as published".into(), f);
 }
 
 #[tokio::test]

@@ -102,7 +102,7 @@ async fn attack_box_up(r: &Run, e: &Expect, f: &mut Vec<String>) -> Option<Attac
         target: isoloom_spec::Target::Docker,
         vm: false,
     };
-    let image = std::env::var("CYBERCTF_TEST_ATTACK_BOX").unwrap_or_else(|_| isoloom_manifest::access::DEFAULT_IMAGE.to_owned());
+    let image = std::env::var("CYBERCTF_TEST_ATTACK_BOX").unwrap_or_else(|_| crate::runtime::attack_machine::default_image().to_owned());
     let added = placed.add(&crate::platform::AppDirs::new(None, None), &image, None, &mut log(&r.id)).await;
     check(added.is_ok(), format!("the attack box is added to the lab ({:?})", added.err()), f);
     let attack = Attack(placed);

@@ -7,32 +7,34 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm, runner_home, vagrant_dirs};
-use super::{LabStatus, Place, Runtime, docker, isothrum, server, vm};
+use super::{LabStatus, Place, Runtime, attack_machine, docker, isothrum, server, vm};
 use crate::error::Result;
 
 pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
     // On this machine, in the form it was started in (a container lab run as one VM per machine
     // reads as a VM lab); on a host, as the catalogue says.
-    let status = match (local_runtime(dir, runtime), server::lab_connection(dirs, dir)?) {
+    let (status, here) = match (local_runtime(dir, runtime), server::lab_connection(dirs, dir)?) {
         // On a server host or cloud account: the runner's view.
-        (_, Some(c)) => server_status(dirs, dir, id, runtime, c).await?,
+        (_, Some(c)) => (server_status(dirs, dir, id, runtime, c).await?, false),
         // Cloud-services labs run only on an account; nothing of them on this machine.
-        (Runtime::Cloud, None) => LabStatus::default(),
+        (Runtime::Cloud, None) => (LabStatus::default(), false),
         // On this machine, through the runner: a container lab on Docker or in one local VM, or a
-        // VM lab. Parked = the launcher parked it and it is still down.
-        (Runtime::Docker, None) if local_vm(dir).is_some() => {
-            with_parked(isothrum::LabRun::docker_in_vm(&runner_home(dirs)?, dir, id)?.status().await?, parked(dir))
-        }
-        (Runtime::Docker, None) => with_parked(isothrum::LabRun::docker(&runner_home(dirs)?, dir, id)?.status().await?, parked(dir)),
-        (Runtime::Vm, None) => with_parked(isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?.status().await?, parked(dir)),
+        // VM lab.
+        (Runtime::Docker, None) if local_vm(dir).is_some() => (isothrum::LabRun::docker_in_vm(&runner_home(dirs)?, dir, id)?.status().await?, true),
+        (Runtime::Docker, None) => (isothrum::LabRun::docker(&runner_home(dirs)?, dir, id)?.status().await?, true),
+        (Runtime::Vm, None) => (isothrum::LabRun::vm(&runner_home(dirs)?, dir, id)?.status().await?, true),
     };
+    // The attack box the launcher added is no machine of the lab's own (`attack_machine`).
+    let status = attack_machine::set_apart(status, dir)?;
+    // Here, parked = the launcher parked it and it is still down.
+    let status = if here { with_parked(status, parked(dir)) } else { status };
     // A setup step that failed can leave a lab's machines up but the lab not ready: not running,
     // wherever it runs. This used to be masked for server and cloud hosts only, so a local Docker,
     // docker-in-VM or VM lab whose launch failed stayed "running" and showed a healthy diagram.
     let status = unless_launch_failed(dirs, id, status);
     // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
     // Whether this container lab runs as one VM per machine (its VM recipes), locally or as
-    // cloud-vm: the UI reads it to name the form and to know a cloud-vm run has no attack box yet.
+    // cloud-vm: the UI reads it to name the form.
     let per_machine = runtime == Runtime::Docker && per_machine_vm(dir);
     Ok(LabStatus { per_machine, reap_error: super::reaper::last_failure(dirs, id), ..status })
 }

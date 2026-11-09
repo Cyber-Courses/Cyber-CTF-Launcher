@@ -16,6 +16,8 @@ const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 
 struct Engine {
     containers: Containers,
     host_port: u16,
+    /// `compose up` fails (Compose's own error) from now on.
+    failing_up: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +66,9 @@ fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
         );
     }
     if line.contains(" up --detach ") {
+        if e.failing_up {
+            return Reply::fail(1, "Error response from daemon: pull access denied");
+        }
         e.containers = Containers::Up;
         e.host_port = if call.env("ISOLOOM_PUBLISH_FIXED").is_some() { 8080 } else { 41873 };
         return Reply::ok(" Container cyberctf-web-web-1  Started");
@@ -267,4 +272,59 @@ fn a_start_gives_the_launch_values_to_the_slots_and_resumes_a_parked_run() {
     assert_eq!(fixed.params.get("ISOLOOM_PUBLISH_FIXED").map(String::as_str), Some("1"));
     assert_eq!(opts.provider, None);
     assert_eq!(start_options(&[], Some("virtualbox")).provider.as_deref(), Some("virtualbox"), "a VM lab's hypervisor");
+}
+
+/// The lab's attack box as the launcher places it on this machine: a container added to the
+/// lab, the run brought up to date with it.
+fn placed_box(f: &Fixture) -> crate::runtime::attack_machine::Placed {
+    use crate::runtime::attack_machine::{Host, Placed};
+    Placed { host: Host::Local(f.run()), dir: f.home.dir.clone(), target: lab::Target::Docker, vm: false }
+}
+
+#[tokio::test]
+async fn an_attack_box_refused_by_a_lab_that_is_not_up_leaves_the_lab_as_published() {
+    let f = Fixture::new();
+    let _tools = Tools::rules(&[]);
+    let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
+    let compose = std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap();
+    let err = placed_box(&f).add(&dirs, "kalilinux/kali-rolling", None, &mut |_| {}).await.unwrap_err();
+    assert!(errors::is_not_running(&err), "{err}");
+    assert!(!crate::runtime::attack_machine::added(&f.home.dir).unwrap(), "the box is out of the lab's spec again");
+    assert_eq!(std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap(), compose, "and its files as they were");
+}
+
+#[tokio::test]
+async fn an_attack_box_whose_start_failed_in_the_run_stays_in_the_lab_for_stop_to_take_out() {
+    let f = Fixture::new();
+    let _tools = Tools::rules(&[]);
+    let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
+    f.up().await;
+    f.model().failing_up = true;
+    let placed = placed_box(&f);
+    assert!(placed.add(&dirs, "kalilinux/kali-rolling", None, &mut |_| {}).await.is_err());
+    assert!(crate::runtime::attack_machine::added(&f.home.dir).unwrap(), "the run may hold some of it: kept, for a stop to retire");
+    f.model().failing_up = false;
+    placed.remove(&dirs, &mut |_| {}).await.unwrap();
+    assert!(!crate::runtime::attack_machine::added(&f.home.dir).unwrap());
+}
+
+#[tokio::test]
+async fn an_attack_box_goes_in_and_out_of_the_run_with_the_labs_files() {
+    let f = Fixture::new();
+    let _tools = Tools::rules(&[]);
+    let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
+    f.up().await;
+    let placed = placed_box(&f);
+    let compose = || std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap();
+    let updates = || f.fake.calls().iter().filter(|c| c.line().contains(" up --detach ")).count();
+    let before = updates();
+    placed.add(&dirs, "kalilinux/kali-rolling", None, &mut |_| {}).await.unwrap();
+    // The lab's files regenerated with the box, then the run brought up to date with them.
+    assert!(compose().contains("attackbox") && compose().contains("kalilinux/kali-rolling"));
+    assert_eq!(updates(), before + 1);
+    placed.remove(&dirs, &mut |_| {}).await.unwrap();
+    // Out of the files, and the run brought up to date again (Compose drops the orphan).
+    assert!(!compose().contains("attackbox"));
+    assert_eq!(updates(), before + 2);
+    assert!(!crate::runtime::attack_machine::added(&f.home.dir).unwrap());
 }

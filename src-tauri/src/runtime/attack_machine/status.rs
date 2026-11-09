@@ -1,6 +1,6 @@
-//! The learner's attack box as the runner sees it: the machine the launcher adds to the lab
-//! (`attack_machine`), read by its name from the run's status like any other machine: whether it
-//! runs, its address on the lab network, the lab's networks, and the console into it.
+//! The learner's attack box as the lab page shows it: the machine the launcher adds to the lab,
+//! read by its name from the run's status like any other machine: whether it runs, its address on
+//! the lab network, the lab's networks, and the console into it.
 
 use isothrum_runner::{MachineState, ShellCommand, Status};
 use serde::Serialize;
@@ -19,10 +19,9 @@ pub struct AttackStatus {
     /// without asking). Known before the box is up, so the page can offer the choice.
     pub networks: Vec<String>,
     /// The command line that opens a shell in the box (shown so the player can also run it).
-    /// Empty when the run has no way into the box (a lab with no attack machine of its own,
-    /// before the launcher adds one).
+    /// Empty when the run has no way into it yet (before the box is added to the lab).
     pub shell_cmd: String,
-    /// Whether the box is a VM here: beside a lab running as VMs on this machine.
+    /// Whether the box is a VM: a Kali VM among a lab's VMs, wherever the lab runs.
     pub vm: bool,
 }
 
