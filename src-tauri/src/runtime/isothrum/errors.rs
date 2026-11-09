@@ -18,10 +18,11 @@ pub(crate) fn is_not_running(e: &Error) -> bool {
     matches!(e, Error::Invalid(text) if text == NOT_RUNNING)
 }
 
-/// Whether `e` is the runner refusing to change a run before acting on it: the run isn't up,
-/// another operation holds it, or a tool it needs is missing. Nothing of the run changed then.
+/// Whether `e` is a change of a run refused before acting on it: the run isn't up, another
+/// operation holds it, a tool it needs is missing, or the cloud account's sign-in ran out (asked
+/// before the change, [`expired_sign_in`]). Nothing of the run changed then.
 pub(crate) fn refused_before_acting(e: &Error) -> bool {
-    is_not_running(e) || matches!(e.code(), Code::AlreadyInProgress | Code::ToolMissing { .. })
+    is_not_running(e) || is_expired_sign_in(e) || matches!(e.code(), Code::AlreadyInProgress | Code::ToolMissing { .. })
 }
 
 /// The launcher's error for a runner's failure.
@@ -132,6 +133,15 @@ fn cloud_in(reason: &str) -> Option<&'static str> {
         .map(|(_, cloud)| cloud)
 }
 
+/// How [`expired_sign_in`]'s word starts, and what it says of the lab.
+const SIGN_IN_TO: &str = "Your sign-in to ";
+const NOT_CHANGED: &str = " has expired or is missing, so the lab wasn't changed.";
+
+/// Whether `e` is [`expired_sign_in`]'s word.
+fn is_expired_sign_in(e: &Error) -> bool {
+    matches!(e, Error::Invalid(text) if text.starts_with(SIGN_IN_TO) && text.contains(NOT_CHANGED))
+}
+
 /// The launcher's word for a cloud tool's `reason` when it says the account's sign-in ran out or
 /// is missing (`cloud`: the launcher's Terraform target for it, when known): sign in again,
 /// then try again; `None` for any other failure.
@@ -141,10 +151,7 @@ pub(crate) fn expired_sign_in(reason: &str, cloud: Option<&str>) -> Option<Error
         return None;
     }
     let (name, again) = cloud.or_else(|| cloud_in(reason)).and_then(sign_in_of).map_or(("the cloud account", String::new()), |(n, a)| (n, format!(" ({a})")));
-    Some(Error::Invalid(format!(
-        "Your sign-in to {name} has expired or is missing, so the lab wasn't changed. Sign in again{again}, then try again. ({})",
-        reason.trim()
-    )))
+    Some(Error::Invalid(format!("{SIGN_IN_TO}{name}{NOT_CHANGED} Sign in again{again}, then try again. ({})", reason.trim())))
 }
 
 /// A step's tool that ran and failed: Docker not answering its probe reads as the engine being

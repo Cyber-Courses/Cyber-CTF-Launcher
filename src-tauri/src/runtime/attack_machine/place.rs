@@ -30,9 +30,9 @@ pub(crate) enum Host {
 /// Why changing the run failed, and whether the run may have changed by then.
 struct Failed {
     error: Error,
-    /// False only when the run certainly didn't change: its place couldn't be reached, its cloud
-    /// sign-in ran out, or the runner refused before acting
-    /// ([`isothrum::errors::refused_before_acting`]).
+    /// False only when the run certainly didn't change: its place couldn't be reached, or the
+    /// change was refused before acting ([`isothrum::errors::refused_before_acting`]: a cloud
+    /// sign-in that ran out included).
     run_changed: bool,
 }
 
@@ -47,11 +47,7 @@ impl Host {
     async fn update(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> std::result::Result<(), Failed> {
         match self {
             Host::Local(run) => run.update(log).await.map_err(Failed::of_runner),
-            Host::Cloud(run, place) => {
-                // A sign-in that ran out is refused before anything runs: the run is unchanged.
-                run.signed_in(place).await.map_err(|error| Failed { error, run_changed: false })?;
-                run.update(place, log).await.map_err(Failed::of_runner)
-            }
+            Host::Cloud(run, place) => run.update(place, log).await.map_err(Failed::of_runner),
             Host::Server { run, host, conn } => {
                 let place = crate::runtime::launch::server_place(dirs, host, conn, run).await.map_err(|error| Failed { error, run_changed: false })?;
                 run.update(&place, log).await.map_err(Failed::of_runner)
@@ -263,6 +259,52 @@ fn box_cpu(arch: &str, local: bool, target: Target) -> Cpu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every file of the lab's generated module for `cloud` (a container lab, `cloud-docker`), by
+    /// its path under it.
+    fn module(dir: &Path, cloud: &str) -> Vec<(PathBuf, String)> {
+        let root = lab::terraform(dir, Runtime::Docker, cloud).0;
+        let mut files = Vec::new();
+        let mut todo = vec![root.clone()];
+        while let Some(d) = todo.pop() {
+            for entry in std::fs::read_dir(&d).unwrap().map(std::result::Result::unwrap) {
+                let path = entry.path();
+                if path.is_dir() {
+                    todo.push(path);
+                } else {
+                    files.push((path.strip_prefix(&root).unwrap().to_path_buf(), std::fs::read_to_string(&path).unwrap_or_default()));
+                }
+            }
+        }
+        files.sort();
+        files
+    }
+
+    /// An add in a cloud account whose sign-in ran out is refused before the run could change,
+    /// the account's CLI asked once: the box out of the lab's spec again, its files as they were.
+    #[tokio::test]
+    async fn an_attack_box_refused_for_an_expired_cloud_sign_in_leaves_the_lab_as_published() {
+        use crate::platform::exec::fake::{Tools, fail};
+        let dir = crate::runtime::test_support::write_lab(
+            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, networks: { lan: 10 } }\n",
+        );
+        let target = lab::terraform(&dir, Runtime::Docker, "aws").1;
+        lab::prepare(&dir, target).unwrap();
+        let before = module(&dir, "aws");
+        let home = dir.join("home");
+        let run = isothrum::CloudRun::new(&home, &dir, "t", Runtime::Docker, "aws").unwrap();
+        let placed = Placed { host: Host::Cloud(run, isothrum::CloudPlace::default()), dir: dir.clone(), target, vm: false };
+        let tools = Tools::rules(&[("sts get-caller-identity", fail("Error: login session has expired, please reauthenticate"))]);
+        let dirs = AppDirs::new(Some(home), None);
+        let err = placed.add(&dirs, "kalilinux/kali-rolling", None, &mut |_| {}).await.unwrap_err();
+        assert!(err.to_string().starts_with("Your sign-in to AWS has expired"), "{err}");
+        let asked = tools.calls().iter().filter(|c| c.contains("sts get-caller-identity")).count();
+        assert_eq!(asked, 1, "the sign-in asked once: {:?}", tools.calls());
+        assert!(!super::super::added(&dir).unwrap(), "the box is out of the lab's spec again");
+        assert!(!dir.join(lab::overlay::FILE).exists(), "and the launcher's layer gone");
+        assert_eq!(module(&dir, "aws"), before, "the lab's files as they were");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn the_shared_folder_reaches_the_box_wherever_the_lab_runs_on_this_computer_and_can_share_it() {
