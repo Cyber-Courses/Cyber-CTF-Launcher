@@ -6,8 +6,9 @@
 //! spec, its instance (`.isoloom-<n>/`) and the launcher's overrides give the same files the new
 //! version would have written at the lab's start.
 
-use std::path::Path;
-use std::sync::{Mutex, PoisonError};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use isoloom_manifest::ManifestVersion;
 
@@ -15,10 +16,14 @@ use super::errors::{ADD_AGAIN, EARLIER_FILES};
 use crate::error::{Error, Result};
 use crate::runtime::lab;
 
-/// Held while a manifest's version is read and, when it isn't this build's, the lab's files are
-/// generated again: an operation reading the manifest meanwhile (a status the lab page asks for
-/// during a stop) never reads a file half written.
-static REGENERATING: Mutex<()> = Mutex::new(());
+/// The lock of the lab in `dir`, held while its manifest's version is read and, when it isn't this
+/// build's, its files are generated again: an operation reading the manifest meanwhile (a status
+/// the lab page asks for during a stop) never reads a file half written. One per lab: another
+/// lab's status read never waits on this one's generation (several seconds for a large lab).
+fn lab_lock(dir: &Path) -> Arc<Mutex<()>> {
+    static LOCKS: Mutex<BTreeMap<PathBuf, Arc<Mutex<()>>>> = Mutex::new(BTreeMap::new());
+    LOCKS.lock().unwrap_or_else(PoisonError::into_inner).entry(dir.to_path_buf()).or_default().clone()
+}
 
 /// Generates the files of the lab in `dir` for `target` again when its run manifest, `manifest`,
 /// isn't the version this build reads; nothing when it is, or when there is none (no files yet)
@@ -29,7 +34,8 @@ static REGENERATING: Mutex<()> = Mutex::new(());
 /// When the lab's files can't be generated any more (its spec gone or unreadable, or the lab no
 /// longer able to run there), saying what to do.
 pub(super) fn current(manifest: &Path, dir: &Path, target: lab::Target) -> Result<()> {
-    let _held = REGENERATING.lock().unwrap_or_else(PoisonError::into_inner);
+    let lock = lab_lock(dir);
+    let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let Some(found) = stale_version(manifest) else { return Ok(()) };
     log::info!("{}: its run manifest is version {found}, which this version doesn't read; generating the lab's files again", manifest.display());
     lab::prepare(dir, target).map(drop).map_err(|e| Error::Invalid(format!("{EARLIER_FILES}: {e}. {ADD_AGAIN}")))
@@ -85,6 +91,22 @@ mod tests {
         assert_eq!(read("{}"), None, "no version: the runner says what is wrong");
         assert_eq!(stale_version(&dir.join("missing.json")), None);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_lab_being_generated_again_holds_up_no_other_lab() {
+        // Regression: one process-wide lock served every lab, so one lab's regeneration held up
+        // every other lab's status read.
+        let root = std::env::temp_dir().join(format!("cyberctf-regen-{}", rand::random::<u32>()));
+        let (a, b) = (root.join("a"), root.join("b"));
+        let held = lab_lock(&a);
+        let _a_busy = held.lock().unwrap();
+        let (done, finished) = std::sync::mpsc::channel();
+        let other = b.clone();
+        std::thread::spawn(move || done.send(current(&other.join("run.json"), &other, lab::Target::Docker).is_ok()).unwrap());
+        assert_eq!(finished.recv_timeout(std::time::Duration::from_secs(5)), Ok(true), "lab b waited on lab a");
+        assert!(Arc::ptr_eq(&lab_lock(&a), &held), "one lock per lab, the same each time");
+        assert!(!Arc::ptr_eq(&lab_lock(&b), &held));
     }
 
     #[test]
