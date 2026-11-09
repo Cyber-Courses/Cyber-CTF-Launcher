@@ -23,6 +23,8 @@ use std::cell::Cell;
 use std::sync::OnceLock;
 
 use crate::error::{Code, Error, Result};
+#[cfg(any(windows, test))]
+use crate::platform::sys::RegistryValue;
 
 /// A policy switch, by the name an administrator writes (matched regardless of case, as the
 /// registry does): the UI knows it by that name too.
@@ -144,21 +146,21 @@ fn from_entries(entries: Vec<(String, Value)>) -> (Policy, Vec<String>) {
     (policy, problems)
 }
 
+/// The entries of a policy whose values `items` the OS holds in its own form, each read as a
+/// boolean by `as_bool` or described as what else it is.
+#[cfg(any(target_os = "linux", target_os = "macos", windows, test))]
+fn entries_of<V>(items: impl IntoIterator<Item = (String, V)>, as_bool: impl Fn(V) -> std::result::Result<bool, String>) -> Source {
+    Source::Entries(items.into_iter().map(|(name, value)| (name, as_bool(value).map_or_else(Value::Other, Value::Bool))).collect())
+}
+
 /// The policy in `text`, a JSON object (Linux's `policy.json`).
 #[cfg(any(target_os = "linux", test))]
 fn json_source(text: &str) -> Source {
     match serde_json::from_str::<serde_json::Value>(text) {
-        Ok(serde_json::Value::Object(map)) => Source::Entries(
-            map.into_iter()
-                .map(|(name, value)| {
-                    let value = match value {
-                        serde_json::Value::Bool(on) => Value::Bool(on),
-                        other => Value::Other(format!("the JSON value {other}")),
-                    };
-                    (name, value)
-                })
-                .collect(),
-        ),
+        Ok(serde_json::Value::Object(map)) => entries_of(map, |value| match value {
+            serde_json::Value::Bool(on) => Ok(on),
+            other => Err(format!("the JSON value {other}")),
+        }),
         Ok(other) => Source::Unreadable(format!("not a JSON object: {other}")),
         Err(e) => Source::Unreadable(format!("not JSON: {e}")),
     }
@@ -199,45 +201,37 @@ fn read_source() -> Source {
 #[cfg(target_os = "macos")]
 fn plist_source(bytes: &[u8]) -> Source {
     match plist::Value::from_reader(std::io::Cursor::new(bytes)) {
-        Ok(plist::Value::Dictionary(dict)) => Source::Entries(
-            dict.into_iter()
-                .map(|(name, value)| {
-                    let value = match value {
-                        plist::Value::Boolean(on) => Value::Bool(on),
-                        other => Value::Other(format!("the property list value {other:?}")),
-                    };
-                    (name, value)
-                })
-                .collect(),
-        ),
+        Ok(plist::Value::Dictionary(dict)) => entries_of(dict, |value| match value {
+            plist::Value::Boolean(on) => Ok(on),
+            other => Err(format!("the property list value {other:?}")),
+        }),
         Ok(other) => Source::Unreadable(format!("not a dictionary: {other:?}")),
         Err(e) => Source::Unreadable(format!("not a property list: {e}")),
     }
 }
 
 /// Where the policy is on Windows, under `HKEY_LOCAL_MACHINE`.
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 pub const WINDOWS_POLICY: &str = r"SOFTWARE\Policies\CyberCTF\Launcher";
 
 #[cfg(windows)]
 fn read_source() -> Source {
-    use crate::platform::sys::{Hive, RegistryValue, registry_values};
-    match registry_values(Hive::LocalMachine, WINDOWS_POLICY) {
+    use crate::platform::sys::{Hive, registry_values};
+    registry_source(registry_values(Hive::LocalMachine, WINDOWS_POLICY))
+}
+
+/// The policy in the registry key's values, as `read` (`registry_values`) found them: absent
+/// without the key, each `REG_DWORD` 0 or 1 a boolean.
+#[cfg(any(windows, test))]
+fn registry_source(read: std::io::Result<Option<Vec<(String, RegistryValue)>>>) -> Source {
+    match read {
         Ok(None) => Source::Absent,
-        Ok(Some(values)) => Source::Entries(
-            values
-                .into_iter()
-                .map(|(name, value)| {
-                    let value = match value {
-                        RegistryValue::Dword(0) => Value::Bool(false),
-                        RegistryValue::Dword(1) => Value::Bool(true),
-                        RegistryValue::Dword(n) => Value::Other(format!("the REG_DWORD {n}")),
-                        RegistryValue::Other(kind) => Value::Other(format!("a registry value of type {kind}, not a REG_DWORD")),
-                    };
-                    (name, value)
-                })
-                .collect(),
-        ),
+        Ok(Some(values)) => entries_of(values, |value| match value {
+            RegistryValue::Dword(0) => Ok(false),
+            RegistryValue::Dword(1) => Ok(true),
+            RegistryValue::Dword(n) => Err(format!("the REG_DWORD {n}")),
+            RegistryValue::Other(kind) => Err(format!("a registry value of type {kind}, not a REG_DWORD")),
+        }),
         Err(e) => Source::Unreadable(format!(r"HKLM\{WINDOWS_POLICY}: {e}")),
     }
 }
@@ -298,6 +292,30 @@ impl Drop for Override {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_registry_keys_values_are_read_as_the_policy_on_every_os() {
+        // Regression: this mapping sat in the Windows-only reader, never tested.
+        assert_eq!(registry_source(Ok(None)), Source::Absent);
+        let read = registry_source(Ok(Some(vec![
+            ("DisableUpdater".into(), RegistryValue::Dword(1)),
+            ("DisableToolInstalls".into(), RegistryValue::Dword(0)),
+            ("DisableCloudLaunches".into(), RegistryValue::Dword(2)),
+            ("RefusePrivilegedLabs".into(), RegistryValue::Other(1)),
+        ])));
+        let (policy, problems) = from_source(read);
+        assert!(policy.is_on(Key::DisableUpdater) && !policy.is_on(Key::DisableToolInstalls));
+        assert!(policy.is_on(Key::DisableCloudLaunches) && policy.is_on(Key::RefusePrivilegedLabs), "not a boolean: on");
+        assert_eq!(
+            problems,
+            [
+                "policy setting DisableCloudLaunches is the REG_DWORD 2, not a boolean: treated as on",
+                "policy setting RefusePrivilegedLabs is a registry value of type 1, not a REG_DWORD, not a boolean: treated as on"
+            ]
+        );
+        let denied = registry_source(Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)));
+        assert!(matches!(&denied, Source::Unreadable(why) if why.starts_with(r"HKLM\SOFTWARE\Policies\CyberCTF\Launcher: ")), "{denied:?}");
+    }
 
     fn entries(list: &[(&str, Value)]) -> Source {
         Source::Entries(list.iter().map(|(n, v)| ((*n).to_string(), v.clone())).collect())

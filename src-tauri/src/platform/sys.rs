@@ -15,9 +15,18 @@ use std::ffi::OsStr;
 pub use unix::{login_name, process_exists, signal_group};
 #[cfg(windows)]
 pub use windows::{
-    ElevatedProcess, Hive, Job, RegistryValue, delete_user_registry_value, in_hyperv_admins, is_elevated, launch_elevated, registry_key_exists,
-    registry_string, registry_value_exists, registry_values, resume_threads_of, send_ctrl_c, set_path, set_user_registry_string, take_ctrl_c, terminate,
+    ElevatedProcess, Hive, Job, delete_user_registry_value, in_hyperv_admins, is_elevated, launch_elevated, registry_key_exists, registry_string,
+    registry_value_exists, registry_values, resume_threads_of, send_ctrl_c, set_path, set_user_registry_string, take_ctrl_c, terminate,
 };
+
+/// A registry value as the launcher reads it: a `REG_DWORD`'s number, or the type of any other.
+/// Here, not with the Windows calls, so what reads it (the policy) is tested on every OS.
+#[cfg(any(windows, test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RegistryValue {
+    Dword(u32),
+    Other(u32),
+}
 
 /// Sets this process's environment variable `name` (`PATH`, a proxy), which the tools it starts
 /// inherit. Only while the process is still single-threaded (the first lines of `run()`, or a

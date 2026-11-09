@@ -10,6 +10,7 @@ use windows_sys::Win32::System::Registry::{
 };
 
 use super::wide;
+use crate::platform::sys::RegistryValue;
 
 /// A registry hive the launcher reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,13 +82,6 @@ pub fn registry_value_exists(hive: Hive, path: &str, name: &str) -> Option<bool>
         ERROR_FILE_NOT_FOUND => Some(false),
         _ => None,
     }
-}
-
-/// A registry value as the launcher reads it: a `REG_DWORD`'s number, or the type of any other.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RegistryValue {
-    Dword(u32),
-    Other(u32),
 }
 
 /// Every value under `path` (its name and data), None when the key doesn't exist.
@@ -163,4 +157,35 @@ pub fn delete_user_registry_value(key: &str, name: &str) {
     let (key, name) = (wide(OsStr::new(key)), wide(OsStr::new(name)));
     // SAFETY: NUL-terminated names.
     unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr()) };
+}
+
+#[cfg(test)]
+mod tests {
+    use windows_sys::Win32::System::Registry::RegDeleteTreeW;
+
+    use super::*;
+
+    #[test]
+    fn values_written_under_the_current_user_read_back_as_the_policy_reads_them() {
+        let key = format!(r"Software\CyberCTF-test-{}", rand::random::<u32>());
+        let wkey = wide(OsStr::new(&key));
+        let name = wide(OsStr::new("DisableUpdater"));
+        let one = 1u32;
+        // SAFETY: NUL-terminated names; `one` is the 4 bytes of a REG_DWORD.
+        let status = unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, wkey.as_ptr(), name.as_ptr(), REG_DWORD, (&raw const one).cast(), 4) };
+        assert_eq!(status, ERROR_SUCCESS);
+        assert!(set_user_registry_string(&key, "Note", "%USERPROFILE%"));
+        assert_eq!(registry_key_exists(Hive::CurrentUser, &key), Some(true));
+        assert_eq!(registry_value_exists(Hive::CurrentUser, &key, "Note"), Some(true));
+        let values = registry_values(Hive::CurrentUser, &key).unwrap().unwrap();
+        assert!(values.contains(&("DisableUpdater".to_string(), RegistryValue::Dword(1))), "{values:?}");
+        assert!(values.contains(&("Note".to_string(), RegistryValue::Other(REG_SZ))), "{values:?}");
+        assert_eq!(registry_string(Hive::CurrentUser, &key, "Note"), Some(OsString::from("%USERPROFILE%")), "a REG_SZ is read as written");
+        delete_user_registry_value(&key, "Note");
+        assert_eq!(registry_value_exists(Hive::CurrentUser, &key, "Note"), Some(false));
+        // SAFETY: a NUL-terminated key name under the current user, made by this test.
+        unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, wkey.as_ptr()) };
+        assert_eq!(registry_key_exists(Hive::CurrentUser, &key), Some(false));
+        assert_eq!(registry_values(Hive::CurrentUser, &key).unwrap(), None, "no key: no policy");
+    }
 }
