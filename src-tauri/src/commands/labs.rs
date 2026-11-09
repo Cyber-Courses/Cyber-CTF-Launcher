@@ -72,7 +72,7 @@ pub async fn active_operations(app: AppHandle) -> Vec<ActiveOperation> {
 
 /// The log of lab `id`'s last deploy.
 #[tauri::command]
-pub async fn lab_deploy_log(app: AppHandle, id: String) -> std::result::Result<String, String> {
+pub async fn lab_deploy_log(app: AppHandle, id: String) -> Result<String> {
     operations::lab_deploy_log(AppDirs::from(&app), id).await
 }
 

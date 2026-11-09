@@ -3,7 +3,7 @@
 
 use crate::AppHandle;
 use crate::app::{logging, quit, updates, window};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::platform::policy::{self, Key};
 
 /// What is managed outside the app, for the UI to say so: the policy switches this computer's
@@ -17,8 +17,8 @@ pub struct ManagedSettings {
 
 /// Opens the Settings window, or brings it forward.
 #[tauri::command]
-pub fn open_settings(app: AppHandle) -> std::result::Result<(), String> {
-    window::open_settings_window(&app).map_err(|e| e.to_string())
+pub fn open_settings(app: AppHandle) -> Result<()> {
+    window::open_settings_window(&app).map_err(|e| Error::Invalid(format!("couldn't open Settings: {e}")))
 }
 
 /// Lets the operations in flight finish with the windows hidden, then quits.

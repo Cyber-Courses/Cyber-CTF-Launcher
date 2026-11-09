@@ -124,8 +124,12 @@ fn merge_operations(jobs: Vec<(deploy_worker::Job, Option<String>)>, actions: Ve
 
 /// The log so far of a lab's deploy in its worker process, so a reloaded or relaunched app can
 /// re-attach to a deploy still in progress.
-pub async fn lab_deploy_log(dirs: AppDirs, id: String) -> std::result::Result<String, String> {
-    off_main(move || deploy_worker::log_so_far(&dirs, &id).map_err(|e| e.to_string())).await?
+///
+/// # Errors
+///
+/// An invalid lab id, a log that can't be read, or a read that couldn't run.
+pub async fn lab_deploy_log(dirs: AppDirs, id: String) -> crate::error::Result<String> {
+    off_main(move || deploy_worker::log_so_far(&dirs, &id)).await.map_err(crate::error::Error::Invalid)?
 }
 
 #[cfg(test)]
@@ -264,7 +268,7 @@ mod tests {
     fn a_deploy_log_is_read_for_a_valid_lab_id_only() {
         let t = crate::testing::test_app::TestApp::new();
         assert_eq!(wait(lab_deploy_log(t.dirs(), "never-deployed".into())).unwrap(), "");
-        assert_eq!(wait(lab_deploy_log(t.dirs(), "../x".into())).unwrap_err(), "invalid lab id `../x`");
+        assert_eq!(wait(lab_deploy_log(t.dirs(), "../x".into())).unwrap_err().to_string(), "invalid lab id `../x`");
     }
 
     #[test]
