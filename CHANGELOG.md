@@ -179,6 +179,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   as the three minutes ran out closed the prompt as if the lab were starting; nothing started and
   nothing said so. The prompt now says the request expired, and it counts down from when the
   launcher stops waiting rather than from when it was shown.
+- **The Proxmox server test follows its steps when a credential is named like the provider.**
+  The run hides a saved secret's value in every line it logs; a token or password containing
+  "proxmox" hid the start of the lines that end each step, and the test showed its first step
+  until it finished. Steps are now read from what can't be hidden.
 - **A lab whose state can't be read says why.** When reading a lab's state failed (Docker not
   running, its run record unreadable, its files no longer able to be generated again), the lab
   page went on showing the last state it had read, with no word of it. It now says, at the top,

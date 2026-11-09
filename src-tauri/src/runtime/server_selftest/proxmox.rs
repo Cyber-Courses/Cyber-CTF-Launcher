@@ -240,16 +240,24 @@ impl<'a> Steps<'a> {
     }
 }
 
+/// The resources whose creation ends a step of [`UP`], by what of their Terraform address can't
+/// be masked: the runner replaces a saved secret's value in every line, and a credential that is,
+/// or contains, "proxmox" turns `proxmox_download_file.debian_12` into `***_download_file.debian_12`.
+/// So the provider's prefix isn't matched, only the rest of the type and the resource's name.
+const DOWNLOAD_FILE: &str = "_download_file.";
+const SDN_APPLY: &str = "_sdn_applier.env";
+const PROBE_VM: &str = "_virtual_environment_vm.probe";
+
 /// The step a line of the run ends, as its index in [`UP`]: Terraform's line for the image, the
 /// lab network's SDN apply, the lab machine's VM, then the runner waiting for the machines to be
 /// ready (the apply, and so the router's uplink address, done).
 fn marker(line: &str) -> Option<usize> {
-    let complete = |resource: &str| line.starts_with(resource) && line.contains(": Creation complete");
-    if complete("proxmox_download_file.") {
+    let complete = |resource: &str| line.split_once(": Creation complete").is_some_and(|(address, _)| address.contains(resource));
+    if complete(DOWNLOAD_FILE) {
         Some(0)
-    } else if complete("proxmox_sdn_applier.env") {
+    } else if complete(SDN_APPLY) {
         Some(1)
-    } else if complete("proxmox_virtual_environment_vm.probe") {
+    } else if complete(PROBE_VM) {
         Some(2)
     } else if line.starts_with("Waiting for the lab to be ready") {
         Some(3)
@@ -276,7 +284,7 @@ fn explain(raw: &str, bridge: &str) -> Option<(usize, String)> {
             ),
         ));
     }
-    if raw.contains("proxmox_download_file") {
+    if raw.contains(DOWNLOAD_FILE.trim_end_matches('.')) {
         return Some((0, format!("The server couldn't download the Debian cloud image (it needs internet, and a storage with 'iso' content). Details: {raw}")));
     }
     None
@@ -436,8 +444,24 @@ mod tests {
         assert_eq!(at, 2);
         assert!(why.contains("source /etc/network/interfaces.d/*") && why.contains("ifreload -a"));
         assert_eq!(explain("proxmox_download_file.debian_12: 404", "vmbr1").unwrap().0, 0);
+        assert_eq!(explain("***_download_file.debian_12: 404", "vmbr1").unwrap().0, 0, "the provider's name masked");
         assert!(explain("something else", "vmbr1").is_none());
         assert_eq!(run_id("ab12"), "server-selftest-ab12");
+    }
+
+    #[test]
+    fn a_step_ends_on_its_resource_even_with_the_providers_name_masked() {
+        // Regression: a saved credential containing "proxmox" had the runner mask the provider's
+        // name in every line; no marker matched, and the test sat on its first step to the end.
+        for prefix in ["proxmox", "***"] {
+            assert_eq!(marker(&format!("{prefix}_download_file.debian_12: Creation complete after 3s [id=local:iso/debian.img]")), Some(0));
+            assert_eq!(marker(&format!("{prefix}_sdn_applier.env: Creation complete after 1s")), Some(1));
+            assert_eq!(marker(&format!("{prefix}_virtual_environment_vm.probe: Creation complete after 11s [id=101]")), Some(2));
+            assert_eq!(marker(&format!("{prefix}_virtual_environment_vm.probe: Still creating... [10s elapsed]")), None);
+            assert_eq!(marker(&format!("{prefix}_virtual_environment_vm.isoloom_router: Creation complete after 9s")), None);
+        }
+        assert_eq!(marker("Waiting for the lab to be ready"), Some(3));
+        assert_eq!(marker("Apply complete! Resources: 5 added"), None);
     }
 
     /// The test lab compiles for Proxmox, and the resources the step markers watch are the ones
@@ -455,13 +479,13 @@ mod tests {
             .map(|e| std::fs::read_to_string(e.path()).unwrap())
             .collect();
         for resource in [
-            "resource \"proxmox_download_file\"",
-            "resource \"proxmox_sdn_applier\" \"env\"",
-            "resource \"proxmox_virtual_environment_vm\" \"probe\"",
-            "resource \"proxmox_virtual_environment_vm\" \"isoloom_router\"",
-            "got no IPv4 address on its uplink bridge",
+            format!("resource \"proxmox{}\"", DOWNLOAD_FILE.trim_end_matches('.')),
+            format!("resource \"proxmox{}\" \"env\"", SDN_APPLY.trim_end_matches(".env")),
+            format!("resource \"proxmox{}\" \"probe\"", PROBE_VM.trim_end_matches(".probe")),
+            "resource \"proxmox_virtual_environment_vm\" \"isoloom_router\"".into(),
+            "got no IPv4 address on its uplink bridge".into(),
         ] {
-            assert!(tf.contains(resource), "{resource} missing from the generated module");
+            assert!(tf.contains(&resource), "{resource} missing from the generated module");
         }
         assert!(isothrum_runner::RunName::new(&crate::runtime::docker::project(&run_id("0123456789abcdef"))).is_ok());
         std::fs::remove_dir_all(work).unwrap();
