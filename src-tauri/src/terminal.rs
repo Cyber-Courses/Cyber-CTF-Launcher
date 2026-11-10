@@ -237,13 +237,46 @@ fn watch_exit(session: u32, ended: std::sync::Arc<Mutex<Option<u32>>>) {
 /// in the run's folder, with the variables it needs (a Vagrant run's state folder) — the same
 /// program the system terminal would run, no shell wrapping.
 fn pty_command(command: &ShellCommand) -> CommandBuilder {
-    let mut c = CommandBuilder::new(&command.program);
+    #[cfg(windows)]
+    let program = {
+        let path =
+            command.env.iter().find(|(k, _)| k.eq_ignore_ascii_case("PATH")).map(|(_, v)| std::ffi::OsString::from(v)).or_else(|| std::env::var_os("PATH"));
+        let exts = std::env::var("PATHEXT").unwrap_or_else(|_| DEFAULT_PATHEXT.to_owned());
+        let dirs: Vec<std::path::PathBuf> = path.map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
+        windows_program(&command.program, &dirs, &exts, std::path::Path::is_file)
+    };
+    #[cfg(not(windows))]
+    let program = std::path::PathBuf::from(&command.program);
+    let mut c = CommandBuilder::new(program);
     c.args(&command.args);
     c.cwd(&command.cwd);
     for (name, value) in &command.env {
         c.env(name, value);
     }
     c
+}
+
+/// Windows' own `PATHEXT` when the variable isn't set.
+#[cfg(any(windows, test))]
+const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
+
+/// The file Windows runs for a bare `program` name: the first of `dirs` (PATH, in order) holding
+/// `program` with one of `exts` (`PATHEXT`, `;`-separated), as cmd.exe looks it up. A name with a
+/// folder or an extension of its own, or one found nowhere, is kept as it is. `portable-pty` took
+/// the first file named `program` exactly, and Docker Desktop ships an extensionless `docker` (a
+/// script for WSL and Git Bash) beside `docker.exe` in its `bin` folder: the attack box shell then
+/// failed with "%1 is not a valid Win32 application".
+#[cfg(any(windows, test))]
+fn windows_program(program: &str, dirs: &[std::path::PathBuf], exts: &str, exists: impl Fn(&std::path::Path) -> bool) -> std::path::PathBuf {
+    let bare = std::path::Path::new(program);
+    if bare.extension().is_some() || bare.components().count() > 1 {
+        return bare.to_path_buf();
+    }
+    let exts: Vec<&str> = exts.split(';').map(str::trim).filter(|e| !e.is_empty()).collect();
+    dirs.iter()
+        .flat_map(|dir| exts.iter().map(move |ext| dir.join(format!("{program}{}", ext.to_ascii_lowercase()))))
+        .find(|candidate| exists(candidate))
+        .unwrap_or_else(|| bare.to_path_buf())
 }
 
 /// Streams the shell's output to `send` as text until it ends (or `send` refuses more), then
@@ -496,6 +529,25 @@ mod tests {
         assert_eq!(c.get_env("VAGRANT_DOTFILE_PATH").map(|v| v.to_string_lossy().into_owned()).as_deref(), Some("/runs/x/vagrant"), "Vagrant finds the VM");
         let d = pty_command(&ShellCommand::new("docker", ["compose", "exec", "kali", "bash"], dir.clone()));
         assert_eq!(argv(&d), ["docker", "compose", "exec", "kali", "bash"]);
+    }
+
+    #[test]
+    fn a_bare_program_runs_as_windows_finds_it_through_pathext_not_an_extensionless_file() {
+        // Regression (karen): Docker Desktop's bin folder holds `docker` (a script) and
+        // `docker.exe`; the shell was started on the script and Windows refused it.
+        let dir = crate::testing::temp_dir("pathext");
+        std::fs::write(dir.join("docker"), "#!/bin/sh").unwrap();
+        std::fs::write(dir.join("docker.exe"), "MZ").unwrap();
+        std::fs::write(dir.join("az.cmd"), "@echo off").unwrap();
+        let dirs = [dir.join("missing"), dir.clone()];
+        let find = |p: &str| windows_program(p, &dirs, DEFAULT_PATHEXT, std::path::Path::is_file);
+        assert_eq!(find("docker"), dir.join("docker.exe"));
+        assert_eq!(find("az"), dir.join("az.cmd"), "a .cmd wrapper, as PATHEXT lists it");
+        assert_eq!(find("vagrant"), std::path::PathBuf::from("vagrant"), "found nowhere: kept, for the spawn to say so");
+        assert_eq!(find("docker.exe"), std::path::PathBuf::from("docker.exe"), "an extension of its own is kept");
+        let full = dir.join("docker").display().to_string();
+        assert_eq!(find(&full), dir.join("docker"), "a path is kept");
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
