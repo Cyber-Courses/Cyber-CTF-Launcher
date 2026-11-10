@@ -30,8 +30,6 @@ import {
 const defaultName = (p: CloudProvider) => PROVIDER_NAMES[p];
 const DEFAULT_NAMES = CLOUD_PROVIDERS.map(defaultName);
 
-export const isCloud = (p: RemoteProvider): p is CloudProvider => isCloudProvider(p);
-
 /** Token clouds (DigitalOcean, Linode) authenticate with just a pasted API token (no CLI, no username). */
 const isTokenCloud = (p: RemoteProvider) => p === "digitalocean" || p === "linode";
 
@@ -45,7 +43,7 @@ const isCliAuthCloud = (p: RemoteProvider) => p === "azure" || p === "gcp";
  * Proxmox describes the server first, then picks how to sign in to it.
  */
 export function setupSteps(provider: RemoteProvider, editing: boolean, providerChosen = false): StepKey[] {
-  if (!isCloud(provider)) {
+  if (!isCloudProvider(provider)) {
     const connect: StepKey[] = provider === "proxmox" ? ["server", "connection"] : ["connection"];
     return editing ? [...connect, "placement", "test"] : ["hypervisor", "tools", ...connect, "placement", "test"];
   }
@@ -98,7 +96,7 @@ export function withProvider(s: ServerHostInput, id: CloudProvider): ServerHostI
  *  choosing the provider (`providerChosen`). An unknown provider starts as a plain new account. */
 export function startingSetup(kind: string | null, provider: string | null): { form: ServerHostInput; providerChosen: boolean } {
   if (kind !== "cloud") return { form: { ...EMPTY_HOST }, providerChosen: false };
-  if (provider !== null && isCloud(provider as RemoteProvider)) return { form: withProvider(EMPTY_CLOUD, provider as CloudProvider), providerChosen: true };
+  if (isCloudProvider(provider)) return { form: withProvider(EMPTY_CLOUD, provider), providerChosen: true };
   return { form: { ...EMPTY_CLOUD }, providerChosen: false };
 }
 
@@ -181,7 +179,7 @@ export function connectionReady(v: ServerHostInput, secretKept: boolean, key: Ss
   const secret = secretKept || (v.password ?? "") !== "";
   if (isTokenCloud(v.provider)) return host && secret;
   if (isCliAuthCloud(v.provider) || v.provider === "oci") return host && user;
-  if (isCloud(v.provider) && v.useCliCreds) return host;
+  if (isCloudProvider(v.provider) && v.useCliCreds) return host;
   // A server's port: empty (its default) or a whole number a TCP port can be (the field took 0
   // or 70000 and went on).
   return host && user && secret && portOk(v.port);
@@ -196,7 +194,7 @@ export function keepsSecret(initial: ServerHostInput, v: ServerHostInput): boole
 /** The provider's kind and how it connects, as the setup steps read it. */
 export function providerTraits(provider: RemoteProvider) {
   return {
-    cloud: isCloud(provider),
+    cloud: isCloudProvider(provider),
     aws: provider === "aws",
     azure: provider === "azure",
     gcp: provider === "gcp",
@@ -228,7 +226,7 @@ export function cloudCli(provider: CloudProvider) {
  * a cloud through Terraform and its CLI (the token and key clouds have none).
  */
 export function machineTools(provider: RemoteProvider, report: SystemReport | null) {
-  const cloud = isCloud(provider);
+  const cloud = isCloudProvider(provider);
   const cli = cloudCli(cloud ? provider : "aws");
   const status = report?.vmProviders.find((p) => p.provider === provider);
   const cloudHasCli = cloud && cli.has;
@@ -255,7 +253,7 @@ export function machineTools(provider: RemoteProvider, report: SystemReport | nu
 
 /** The name a host is saved under: the typed one, else the cloud's short name or the address. */
 export function saveName(v: ServerHostInput): string {
-  const fallback = isCloud(v.provider) ? defaultName(v.provider) : v.host.trim();
+  const fallback = isCloudProvider(v.provider) ? defaultName(v.provider) : v.host.trim();
   return v.name.trim() || fallback;
 }
 

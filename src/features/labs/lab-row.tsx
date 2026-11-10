@@ -10,9 +10,6 @@ import type { LabStatus } from "@/lib/tauri";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
 import { useT } from "@/lib/i18n";
 
-// Home imports it from here, beside the row it feeds.
-export { emulatorReady } from "@/features/labs/lab-runtime";
-
 const PHASE_WORDS = {
   running: "labs.state.running",
   failed: "labs.state.failed",

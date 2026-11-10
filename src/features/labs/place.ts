@@ -1,7 +1,6 @@
 import { ENGINES, engineName } from "@/features/machine/setup-steps/engines";
 import { providerName } from "@/features/machine/hypervisors";
-import { isCloud } from "@/features/servers/host-setup/setup-model";
-import { PROVIDER_NAMES, type CloudProvider, type DockerEngine, type LabStatus, type RemoteProvider, type ServerHost } from "@/lib/tauri";
+import { PROVIDER_NAMES, isCloudProvider, type CloudProvider, type DockerEngine, type LabStatus, type RemoteProvider, type ServerHost } from "@/lib/tauri";
 import type { T } from "@/lib/i18n";
 
 // Where a running lab runs, as one fact the page tells three times the same way: the header's
@@ -26,7 +25,7 @@ export function placeOf(status: LabStatus | undefined, isDocker: boolean, curren
   if (!status) return null;
   if (status.host !== null) {
     const host = hosts.find((h) => h.id === status.hostId);
-    if (host && isCloud(host.provider)) return { kind: "cloud", name: host.name, provider: host.provider, region: host.host };
+    if (host && isCloudProvider(host.provider)) return { kind: "cloud", name: host.name, provider: host.provider, region: host.host };
     return { kind: "server", name: status.host, provider: host?.provider ?? null, address: host?.host ?? null };
   }
   if (isDocker && status.place !== "local_vm") {

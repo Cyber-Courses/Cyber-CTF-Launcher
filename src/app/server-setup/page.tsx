@@ -5,10 +5,10 @@ import { useSearchParams } from "next/navigation";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { HostSetupPage, SetupTrademarks } from "@/features/servers/host-setup";
-import { isCloud, startingSetup } from "@/features/servers/host-setup/setup-model";
+import { startingSetup } from "@/features/servers/host-setup/setup-model";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/toaster";
-import { SERVER_CHANGED, serverList, systemCheck, type ServerHostInput, type SystemReport } from "@/lib/tauri";
+import { SERVER_CHANGED, isCloudProvider, serverList, systemCheck, type ServerHostInput, type SystemReport } from "@/lib/tauri";
 import { warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 import { DevMockGate } from "@/components/dev-mock-gate";
@@ -31,7 +31,7 @@ function Setup() {
     getCurrentWindow().close().catch(warn("closing the window"));
   };
 
-  const cloud = id ? !!initial && isCloud(initial.provider) : params.get("kind") === "cloud";
+  const cloud = id ? !!initial && isCloudProvider(initial.provider) : params.get("kind") === "cloud";
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">

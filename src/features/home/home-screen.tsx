@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { LabRow, emulatorReady } from "@/features/labs/lab-row";
+import { LabRow } from "@/features/labs/lab-row";
+import { emulatorReady } from "@/features/labs/lab-runtime";
 import { catalogueRowProps, UnlistedRunningRow, type RowContext } from "@/features/labs/labs-list";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { useSavedHosts } from "@/features/servers/use-server-list";

@@ -7,7 +7,6 @@ import {
   REGIONS,
   cloudCli,
   connectionReady,
-  isCloud,
   machineTools,
   initialSignIn,
   initialSshKey,
@@ -221,7 +220,6 @@ describe("saveName", () => {
     expect(saveName(form({ name: "  Home lab ", host: "pve" }))).toBe("Home lab");
     expect(saveName(form({ name: " ", host: " 10.0.0.2 " }))).toBe("10.0.0.2");
     expect(saveName(form({ provider: "gcp", name: "", host: "europe-west1" }))).toBe("Google Cloud");
-    expect(isCloud("proxmox")).toBe(false);
   });
 });
 

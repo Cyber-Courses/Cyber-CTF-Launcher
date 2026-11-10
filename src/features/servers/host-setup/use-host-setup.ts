@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  isCloudProvider,
   serverDefaultSshKey,
   serverSave,
   serverSaveSshKey,
@@ -21,7 +22,6 @@ import {
   savePayload,
   serverReady,
   type SignIn,
-  isCloud,
   machineTools,
   providerTraits,
   setupSteps,
@@ -60,7 +60,7 @@ export function useHostSetup({ initial, providerChosen, report, onRefresh, onSav
   const traits = providerTraits(v.provider);
   // Derived from the saved provider (not separate state) so it stays correct when editing an
   // existing account, where the provider step that would set it is skipped.
-  const cloudProvider: CloudProvider = isCloud(v.provider) ? v.provider : "aws";
+  const cloudProvider: CloudProvider = isCloudProvider(v.provider) ? v.provider : "aws";
   const accounts = useCloudAccounts(v, form.setV, editing, cloudProvider);
   const stepper = useSteps(v.provider, editing, providerChosen);
   const tools = useToolInstall(onRefresh);
