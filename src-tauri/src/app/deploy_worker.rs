@@ -5,9 +5,8 @@
 //! up` or a `terraform apply` short. The app only follows the worker's log; "in progress" is a
 //! live pidfile, so a relaunched app sees the operation and re-attaches to its log.
 //!
-//! Files, under `<app data>/deploys/`, keyed by the lab (`<lab>`): `<key>.json` (the job),
-//! `<key>.log` (what the worker says, also its stdout/stderr), `<key>.pid` (the worker, while it
-//! runs), `<key>.status` (`ok` or `error: ...`, written last).
+//! Files, under `<app data>/deploys/`, keyed by the lab: the job, the worker's log and the last
+//! run's, its pidfile, its verdict and its lab's last launch verdict (`files::Files` names each).
 
 mod files;
 mod process;

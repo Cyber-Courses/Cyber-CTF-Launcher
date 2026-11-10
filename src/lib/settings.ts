@@ -27,9 +27,9 @@ export const CYBERCTF_ATTACK_REPO = "cyberctf/attack-box";
 const OLD_DEFAULT_IMAGES = new Set<string>([CYBERCTF_ATTACK_REPO, `${CYBERCTF_ATTACK_REPO}:latest`, ...defaultAttackBox.previous]);
 
 /** Common attack-box images; the field is free text so any tag/registry still works. Notes and
- *  terms are getters, read in the current language. */
-/** `terms`: a short usage condition shown as a badge (e.g. Exegol's plan requirements).
- *  `large`: shown as "Large download" only when Docker Hub gives no size for the image. */
+ *  terms are getters, read in the current language. `terms`: a short usage condition shown as a
+ *  badge (e.g. Exegol's plan requirements). `large`: shown as "Large download" only when Docker
+ *  Hub gives no size for the image. */
 export const ATTACK_PRESETS: { image: string; label: string; note: string; large?: boolean; terms?: string }[] = [
   {
     image: DEFAULT_ATTACK_IMAGE,
