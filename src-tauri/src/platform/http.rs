@@ -34,6 +34,13 @@ pub fn api_client() -> Result<reqwest::Client> {
     built(reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT).read_timeout(API_READ_TIMEOUT).timeout(API_TIMEOUT))
 }
 
+/// A client for a short probe (a lab's port, a public-IP resolver, a server's API, Docker Hub's
+/// tag sizes): given up after `timeout` overall. `insecure_tls`: a certificate that doesn't
+/// verify is accepted (a Proxmox host the player said has a self-signed one).
+pub fn probe_client(timeout: Duration, insecure_tls: bool) -> Result<reqwest::Client> {
+    built(reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT.min(timeout)).timeout(timeout).tls_danger_accept_invalid_certs(insecure_tls))
+}
+
 /// A client for downloads.
 pub fn download_client() -> Result<reqwest::Client> {
     built(reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT).read_timeout(DOWNLOAD_STALL_TIMEOUT).timeout(DOWNLOAD_TIMEOUT))
@@ -84,6 +91,26 @@ pub async fn body_limited(mut res: reqwest::Response, max: u64) -> Result<Vec<u8
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_probe_gives_up_on_a_host_that_never_answers() {
+        // A host that accepts the connection and then says nothing.
+        let silent = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = silent.local_addr().unwrap().port();
+        let held = tokio::spawn(async move {
+            let mut open = Vec::new();
+            while let Ok((stream, _)) = silent.accept().await {
+                open.push(stream);
+            }
+        });
+        for insecure in [false, true] {
+            let started = std::time::Instant::now();
+            let client = probe_client(Duration::from_millis(300), insecure).unwrap();
+            assert!(client.get(format!("http://127.0.0.1:{port}/")).send().await.is_err());
+            assert!(started.elapsed() < Duration::from_secs(5), "{:?}", started.elapsed());
+        }
+        held.abort();
+    }
 
     #[test]
     fn a_body_past_its_limit_is_refused() {

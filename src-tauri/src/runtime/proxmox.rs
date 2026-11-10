@@ -122,8 +122,7 @@ impl std::fmt::Display for SignInError {
 }
 
 pub async fn sign_in(h: &HostProfile, secret: &str) -> Result<Session, SignInError> {
-    let client =
-        reqwest::Client::builder().timeout(TIMEOUT).tls_danger_accept_invalid_certs(h.insecure_tls).build().map_err(|e| SignInError::Failed(e.to_string()))?;
+    let client = crate::platform::http::probe_client(TIMEOUT, h.insecure_tls).map_err(|e| SignInError::Failed(e.to_string()))?;
     let base = api_url(h);
     if is_token(&h.username) {
         let session = Session { client, base, auth: ("Authorization", format!("PVEAPIToken={}={secret}", h.username)) };

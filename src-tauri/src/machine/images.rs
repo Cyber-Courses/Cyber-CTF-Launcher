@@ -32,7 +32,7 @@ pub async fn image_download_size(image: String) -> Option<u64> {
     }
     let (repo, tag) = hub_ref(&image)?;
     let url = format!("https://hub.docker.com/v2/repositories/{repo}/tags/{tag}");
-    let res = reqwest::Client::new().get(url).timeout(Duration::from_secs(8)).send().await.ok()?;
+    let res = crate::platform::http::probe_client(Duration::from_secs(8), false).ok()?.get(url).send().await.ok()?;
     let v: serde_json::Value = res.error_for_status().ok()?.json().await.ok()?;
     size_for_arch(&v, hub_arch())
 }

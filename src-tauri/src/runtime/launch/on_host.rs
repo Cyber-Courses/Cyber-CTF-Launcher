@@ -185,7 +185,7 @@ pub(in crate::runtime) async fn public_ip() -> Result<String> {
 /// they disagree (a VPN or a second internet connection, or a service lying) the launch stops
 /// rather than guess.
 pub(super) async fn public_ip_from(resolvers: &[&str]) -> Result<String> {
-    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(8)).build().map_err(|e| Error::Invalid(e.to_string()))?;
+    let client = crate::platform::http::probe_client(std::time::Duration::from_secs(8), false)?;
     let mut asked = tokio::task::JoinSet::new();
     for (i, url) in resolvers.iter().enumerate() {
         let (client, url) = (client.clone(), url.to_string());

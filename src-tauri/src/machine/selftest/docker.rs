@@ -96,7 +96,7 @@ async fn steps(dir: &Path, env: &[(String, String)], r: &Reporter) -> Result<()>
     r.step("port", "Lab port reachable from this machine", async {
         let addr = compose(dir, env, &["port", "web", "80"], PROBE_LIMIT).await?;
         let url = format!("http://{}", addr.trim());
-        let client = reqwest::Client::builder().timeout(Duration::from_secs(3)).build().map_err(|e| Error::Invalid(e.to_string()))?;
+        let client = crate::platform::http::probe_client(Duration::from_secs(3), false)?;
         let mut last = String::new();
         for _ in 0..ANSWER_TRIES {
             match client.get(&url).send().await {
