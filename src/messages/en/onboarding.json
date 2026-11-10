@@ -36,7 +36,7 @@
     "signedIn": "Signed in",
     "signedInAs": "Signed in as {name}",
     "button": "Sign in with your browser",
-    "hint": "Opens <mono>cyberauth.co</mono> in your browser. Labs run without an account too: you can sign in later from Settings.",
+    "hint": "Opens <mono>cyberauth.co</mono> in your browser. A lab imported from a folder runs without an account; the catalogue's labs need one. You can sign in later from Settings.",
     "skip": "Skip for now"
   },
   "done": {

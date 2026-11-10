@@ -177,7 +177,7 @@
   },
   "launchDefaults": {
     "title": "Remembered launch choices",
-    "remembered": "A container engine or VM form is remembered for this machine.",
+    "remembered": "A container engine, VM form or hypervisor is remembered for this machine.",
     "asked": "The launch dialog asks each time.",
     "reset": "Ask again"
   },

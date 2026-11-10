@@ -177,7 +177,7 @@
   },
   "launchDefaults": {
     "title": "Choix de lancement mémorisés",
-    "remembered": "Un moteur de conteneurs ou une forme de VM est mémorisé pour cette machine.",
+    "remembered": "Un moteur de conteneurs, une forme de VM ou un hyperviseur est mémorisé pour cette machine.",
     "asked": "La boîte de dialogue de lancement demande à chaque fois.",
     "reset": "Redemander"
   },

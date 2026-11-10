@@ -177,7 +177,7 @@
   },
   "launchDefaults": {
     "title": "Gemerkte Startauswahl",
-    "remembered": "Eine Container-Engine oder VM-Form ist für diesen Rechner gemerkt.",
+    "remembered": "Eine Container-Engine, VM-Form oder ein Hypervisor ist für diesen Rechner gemerkt.",
     "asked": "Der Startdialog fragt jedes Mal.",
     "reset": "Erneut fragen"
   },

@@ -20,7 +20,7 @@
   },
   "firstRun": {
     "title": "Lancez des labs dans votre propre compte cloud",
-    "body": "Une instance jetable par lab, détruite quand vous l'arrêtez. Fonctionne sur AWS, Azure ou Google Cloud.",
+    "body": "Une instance jetable par lab, détruite quand vous l'arrêtez. Fonctionne sur AWS, Azure, Google Cloud, DigitalOcean, Linode ou Oracle Cloud.",
     "steps": {
       "connect": {
         "title": "Connectez un compte",

@@ -27,8 +27,8 @@
   "quitGuard": {
     "title": "A lab is still deploying",
     "body": {
-      "one": "A lab is being worked on inside the app. Quitting now can leave machines half-created, and a lab on a cloud account keeps billing until it is torn down. Let it finish in the background (the app closes by itself when it is done), keep waiting, or quit anyway. Quitting a second time also quits anyway.",
-      "other": "{count} labs are being worked on inside the app. Quitting now can leave machines half-created, and a lab on a cloud account keeps billing until it is torn down. Let it finish in the background (the app closes by itself when it is done), keep waiting, or quit anyway. Quitting a second time also quits anyway."
+      "one": "A lab is being worked on inside the app. Quitting now can leave machines half-created, and a lab on a cloud account keeps billing until it is torn down. Let it finish in the background (the app closes by itself when it is done, or after an hour at most), keep waiting, or quit anyway. Quitting again within 20 seconds also quits anyway.",
+      "other": "{count} labs are being worked on inside the app. Quitting now can leave machines half-created, and a lab on a cloud account keeps billing until it is torn down. Let it finish in the background (the app closes by itself when it is done, or after an hour at most), keep waiting, or quit anyway. Quitting again within 20 seconds also quits anyway."
     },
     "keepWaiting": "Keep waiting",
     "quitAnyway": "Quit anyway",

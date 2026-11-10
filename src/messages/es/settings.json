@@ -177,7 +177,7 @@
   },
   "launchDefaults": {
     "title": "Opciones de inicio recordadas",
-    "remembered": "Se recuerda un motor de contenedores o una forma de VM para esta máquina.",
+    "remembered": "Se recuerda un motor de contenedores, una forma de VM o un hipervisor para esta máquina.",
     "asked": "El diálogo de inicio pregunta cada vez.",
     "reset": "Volver a preguntar"
   },

@@ -36,7 +36,7 @@
     "signedIn": "Angemeldet",
     "signedInAs": "Angemeldet als {name}",
     "button": "Im Browser anmelden",
-    "hint": "Öffnet <mono>cyberauth.co</mono> in deinem Browser. Labs laufen auch ohne Konto: Du kannst dich später in den Einstellungen anmelden.",
+    "hint": "Öffnet <mono>cyberauth.co</mono> in deinem Browser. Ein aus einem Ordner importiertes Lab läuft ohne Konto; die Labs des Katalogs brauchen eines. Du kannst dich später in den Einstellungen anmelden.",
     "skip": "Vorerst überspringen"
   },
   "done": {

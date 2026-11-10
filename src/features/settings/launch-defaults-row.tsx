@@ -6,7 +6,7 @@ import { getDockerEngine, getLocalVmForm, getVmProvider, setDockerEngine, setLoc
 import { Row } from "@/features/settings/settings-layout";
 import { useT } from "@/lib/i18n";
 
-/** The engine and VM form "don't ask again" remembered for launches here (the host ports have their
+/** The engine, VM form and hypervisor "don't ask again" remembered for launches here (the host ports have their
  *  own row): shown, with a reset so the dialog asks again. */
 export function LaunchDefaultsRow({ onSaved }: { onSaved: () => void }) {
   const t = useT();

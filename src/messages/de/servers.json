@@ -330,7 +330,7 @@
     },
     "provider": {
       "title": "Cloud-Anbieter wählen",
-      "description": "Wo Labs als Wegwerf-Instanzen in deinem eigenen Konto laufen. AWS, Azure und Google Cloud; weitere folgen.",
+      "description": "Wo Labs als Wegwerf-Instanzen in deinem eigenen Konto laufen: AWS, Azure, Google Cloud, DigitalOcean, Linode oder Oracle Cloud.",
       "label": "Cloud-Anbieter"
     },
     "test": {

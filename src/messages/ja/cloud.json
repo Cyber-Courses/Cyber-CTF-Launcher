@@ -20,7 +20,7 @@
   },
   "firstRun": {
     "title": "自分のクラウドアカウントでラボを実行",
-    "body": "ラボごとに使い捨てインスタンスを 1 つ作成し、停止すると削除されます。AWS、Azure、Google Cloud で実行できます。",
+    "body": "ラボごとに使い捨てインスタンスを 1 つ作成し、停止すると削除されます。AWS、Azure、Google Cloud、DigitalOcean、Linode、Oracle Cloud で実行できます。",
     "steps": {
       "connect": {
         "title": "アカウントを接続",

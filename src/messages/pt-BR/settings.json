@@ -177,7 +177,7 @@
   },
   "launchDefaults": {
     "title": "Escolhas de inicialização lembradas",
-    "remembered": "Um motor de contêineres ou forma de VM está lembrado para esta máquina.",
+    "remembered": "Um motor de contêineres, forma de VM ou hipervisor está lembrado para esta máquina.",
     "asked": "A caixa de diálogo de inicialização pergunta sempre.",
     "reset": "Perguntar de novo"
   },

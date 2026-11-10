@@ -36,7 +36,7 @@
     "signedIn": "Sesión iniciada",
     "signedInAs": "Sesión iniciada como {name}",
     "button": "Iniciar sesión con tu navegador",
-    "hint": "Abre <mono>cyberauth.co</mono> en tu navegador. Los labs también funcionan sin cuenta: puedes iniciar sesión más tarde desde Ajustes.",
+    "hint": "Abre <mono>cyberauth.co</mono> en tu navegador. Un lab importado desde una carpeta funciona sin cuenta; los labs del catálogo necesitan una. Puedes iniciar sesión más tarde desde Ajustes.",
     "skip": "Omitir por ahora"
   },
   "done": {

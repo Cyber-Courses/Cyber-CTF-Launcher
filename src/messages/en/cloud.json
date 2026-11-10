@@ -20,7 +20,7 @@
   },
   "firstRun": {
     "title": "Run labs in your own cloud account",
-    "body": "One throwaway instance per lab, destroyed when you stop it. Runs on AWS, Azure or Google Cloud.",
+    "body": "One throwaway instance per lab, destroyed when you stop it. Runs on AWS, Azure, Google Cloud, DigitalOcean, Linode or Oracle Cloud.",
     "steps": {
       "connect": {
         "title": "Connect an account",

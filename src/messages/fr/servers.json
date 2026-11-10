@@ -330,7 +330,7 @@
     },
     "provider": {
       "title": "Choisissez un fournisseur cloud",
-      "description": "Où les labs tournent comme instances jetables dans votre propre compte. AWS, Azure et Google Cloud ; d'autres arrivent.",
+      "description": "Où les labs tournent comme instances jetables dans votre propre compte : AWS, Azure, Google Cloud, DigitalOcean, Linode ou Oracle Cloud.",
       "label": "Fournisseur cloud"
     },
     "test": {

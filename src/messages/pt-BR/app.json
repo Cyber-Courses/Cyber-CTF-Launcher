@@ -27,8 +27,8 @@
   "quitGuard": {
     "title": "Um lab ainda está sendo implantado",
     "body": {
-      "one": "Um lab está em andamento no app. Sair agora pode deixar máquinas criadas pela metade, e um lab numa conta de nuvem continua sendo cobrado até ser destruído. Deixe-o terminar em segundo plano (o app fecha sozinho quando acabar), continue aguardando ou saia mesmo assim. Sair uma segunda vez também força a saída.",
-      "other": "{count} labs estão em andamento no app. Sair agora pode deixar máquinas criadas pela metade, e um lab numa conta de nuvem continua sendo cobrado até ser destruído. Deixe-os terminar em segundo plano (o app fecha sozinho quando acabar), continue aguardando ou saia mesmo assim. Sair uma segunda vez também força a saída."
+      "one": "Um lab está em andamento no app. Sair agora pode deixar máquinas criadas pela metade, e um lab numa conta de nuvem continua sendo cobrado até ser destruído. Deixe-o terminar em segundo plano (o app fecha sozinho quando acabar, ou no máximo depois de uma hora), continue aguardando ou saia mesmo assim. Sair de novo em até 20 segundos também força a saída.",
+      "other": "{count} labs estão em andamento no app. Sair agora pode deixar máquinas criadas pela metade, e um lab numa conta de nuvem continua sendo cobrado até ser destruído. Deixe-os terminar em segundo plano (o app fecha sozinho quando acabar, ou no máximo depois de uma hora), continue aguardando ou saia mesmo assim. Sair de novo em até 20 segundos também força a saída."
     },
     "keepWaiting": "Continuar aguardando",
     "quitAnyway": "Sair mesmo assim",

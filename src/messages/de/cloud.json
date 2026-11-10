@@ -20,7 +20,7 @@
   },
   "firstRun": {
     "title": "Labs in deinem eigenen Cloud-Konto ausführen",
-    "body": "Eine Wegwerf-Instanz pro Lab, gelöscht, wenn du sie stoppst. Läuft auf AWS, Azure oder Google Cloud.",
+    "body": "Eine Wegwerf-Instanz pro Lab, gelöscht, wenn du sie stoppst. Läuft auf AWS, Azure, Google Cloud, DigitalOcean, Linode oder Oracle Cloud.",
     "steps": {
       "connect": {
         "title": "Konto verbinden",

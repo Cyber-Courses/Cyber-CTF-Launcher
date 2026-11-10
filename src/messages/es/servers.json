@@ -330,7 +330,7 @@
     },
     "provider": {
       "title": "Elige un proveedor de nube",
-      "description": "Donde los labs se ejecutan como instancias desechables en tu propia cuenta. AWS, Azure y Google Cloud; pronto habrá más.",
+      "description": "Donde los labs se ejecutan como instancias desechables en tu propia cuenta: AWS, Azure, Google Cloud, DigitalOcean, Linode u Oracle Cloud.",
       "label": "Proveedor de nube"
     },
     "test": {

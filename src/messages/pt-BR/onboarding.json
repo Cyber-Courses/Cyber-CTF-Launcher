@@ -36,7 +36,7 @@
     "signedIn": "Conectado",
     "signedInAs": "Conectado como {name}",
     "button": "Entrar pelo navegador",
-    "hint": "Abre <mono>cyberauth.co</mono> no seu navegador. Os labs também funcionam sem conta: você pode entrar depois pelas Configurações.",
+    "hint": "Abre <mono>cyberauth.co</mono> no seu navegador. Um lab importado de uma pasta funciona sem conta; os labs do catálogo precisam de uma. Você pode entrar depois pelas Configurações.",
     "skip": "Pular por enquanto"
   },
   "done": {

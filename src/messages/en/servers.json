@@ -330,7 +330,7 @@
     },
     "provider": {
       "title": "Choose a cloud provider",
-      "description": "Where labs run as throwaway instances in your own account. AWS, Azure and Google Cloud; more coming.",
+      "description": "Where labs run as throwaway instances in your own account: AWS, Azure, Google Cloud, DigitalOcean, Linode or Oracle Cloud.",
       "label": "Cloud provider"
     },
     "test": {

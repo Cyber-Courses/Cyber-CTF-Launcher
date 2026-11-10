@@ -330,7 +330,7 @@
     },
     "provider": {
       "title": "クラウドプロバイダーを選択",
-      "description": "自分のアカウント上で、ラボを使い捨てインスタンスとして実行する場所です。AWS、Azure、Google Cloud に対応、今後さらに追加予定です。",
+      "description": "自分のアカウント上で、ラボを使い捨てインスタンスとして実行する場所です。AWS、Azure、Google Cloud、DigitalOcean、Linode、Oracle Cloud に対応しています。",
       "label": "クラウドプロバイダー"
     },
     "test": {

@@ -20,7 +20,7 @@
   },
   "firstRun": {
     "title": "Ejecuta labs en tu propia cuenta en la nube",
-    "body": "Una instancia desechable por lab, destruida al detenerlo. Funciona en AWS, Azure o Google Cloud.",
+    "body": "Una instancia desechable por lab, destruida al detenerlo. Funciona en AWS, Azure, Google Cloud, DigitalOcean, Linode u Oracle Cloud.",
     "steps": {
       "connect": {
         "title": "Conecta una cuenta",

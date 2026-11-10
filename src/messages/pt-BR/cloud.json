@@ -20,7 +20,7 @@
   },
   "firstRun": {
     "title": "Rode labs na sua própria conta de nuvem",
-    "body": "Uma instância descartável por lab, destruída quando você a para. Roda na AWS, Azure ou Google Cloud.",
+    "body": "Uma instância descartável por lab, destruída quando você a para. Roda na AWS, Azure, Google Cloud, DigitalOcean, Linode ou Oracle Cloud.",
     "steps": {
       "connect": {
         "title": "Conecte uma conta",
