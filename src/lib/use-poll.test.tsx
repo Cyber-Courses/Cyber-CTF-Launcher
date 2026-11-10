@@ -31,6 +31,20 @@ describe("usePoll", () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
+  it("times the next read from the end of a slow one, as the shared polls do", async () => {
+    let resolve: (v: number) => void = () => {};
+    const read = vi.fn(() => new Promise<number>((r) => (resolve = r)));
+    renderHook(() => usePoll(read, 100, { onValue: vi.fn() }));
+    await act(() => vi.advanceTimersByTimeAsync(150));
+    await settle(() => {
+      resolve(1);
+    });
+    await act(() => vi.advanceTimersByTimeAsync(90));
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(20));
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it("resolves a read asked for once it answers or fails, so a Try again spins until then", async () => {
     const pending: { ok: (v: number) => void; fail: (e: unknown) => void }[] = [];
     const read = vi.fn(() => new Promise<number>((ok, fail) => pending.push({ ok, fail })));

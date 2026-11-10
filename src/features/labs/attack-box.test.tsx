@@ -34,7 +34,7 @@ afterEach(() => {
 
 describe("useAttackBox", () => {
   it("reads the container attack box for the image in Settings and polls it while the lab runs", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     setAttackImage("my/exegol:full");
     const calls = installTauri({ attack_box_status: () => box({ running: true, ip: "10.42.0.9" }) });
     const { result, rerender } = renderHook((p: { running: boolean }) => useAttackBox("ab-poll", { running: p.running }), {
@@ -74,7 +74,7 @@ describe("useAttackBox", () => {
   });
 
   it("stops reading, and never attaches, a box the backend says it can't reach (a lab on an ESXi host)", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     const calls = installTauri({ attack_box_status: () => box({ reachable: false, networks: [], defaultNetwork: "" }) });
     renderHook(() => useAttackBox("ab-remote", { running: true }));
     await flush();
@@ -151,7 +151,7 @@ describe("useAttackBox", () => {
 
   it("keeps the last status when a read fails", async () => {
     let fail = false;
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     installTauri({
       attack_box_status: () => {
         if (fail) throw new Error("runner busy");

@@ -263,7 +263,10 @@ describe("Onboarding: a machine check that fails, then recovers", () => {
     });
     await flush();
     expect(checks).toBe(opened + 1);
-    await act(() => vi.advanceTimersByTimeAsync(31_000));
+    // A minute after the last check, the one on focus.
+    await act(() => vi.advanceTimersByTimeAsync(59_000));
+    expect(checks).toBe(opened + 1);
+    await act(() => vi.advanceTimersByTimeAsync(2000));
     expect(checks).toBe(opened + 2);
     vi.useRealTimers();
   });

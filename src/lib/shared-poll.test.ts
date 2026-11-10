@@ -60,7 +60,7 @@ describe("sharedPoll", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(read).toHaveBeenCalledTimes(5);
     // A refresh with nobody listening reads nothing.
-    poll.refresh();
+    void poll.refresh();
     expect(read).toHaveBeenCalledTimes(5);
 
     // Subscribed again: it starts over, keeping the last answer meanwhile.
@@ -128,7 +128,7 @@ describe("sharedPoll", () => {
     const poll = sharedPoll({ read, ms: 1000, initial: "none" });
     const off = poll.subscribe(() => {});
     // A forced read while the timer's is in flight.
-    poll.refresh();
+    void poll.refresh();
     expect(read).toHaveBeenCalledTimes(2);
     pending[1].resolve("new");
     await vi.advanceTimersByTimeAsync(0);
@@ -139,7 +139,7 @@ describe("sharedPoll", () => {
     expect(poll.get()).toBe("new");
     // In order, both count.
     await vi.advanceTimersByTimeAsync(1000);
-    poll.refresh();
+    void poll.refresh();
     pending[2].resolve("third");
     await vi.advanceTimersByTimeAsync(0);
     expect(poll.get()).toBe("third");
