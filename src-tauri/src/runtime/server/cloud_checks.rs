@@ -254,75 +254,9 @@ pub(super) async fn test_azure(h: &HostProfile) -> TestResult {
     if let Err(done) = azure_subscription(run_cli("az", &args).await).settle(&mut checks, started) {
         return done;
     }
-    checks.push(azure_capacity_check(h).await);
+    checks.push(super::azure_size::capacity_check(h).await);
     checks.push(terraform_check().await);
     TestResult::timed(checks, started)
-}
-
-/// Free cores in a VM family's quota, from `az vm list-usage` (numbers come as strings or ints).
-fn free_cores(usage: &[serde_json::Value], family: &str) -> Option<i64> {
-    usage.iter().find(|x| x["name"]["value"].as_str().map(str::to_lowercase).as_deref() == Some(family)).map(|x| {
-        let n = |v: &serde_json::Value| v.as_str().and_then(|s| s.parse::<i64>().ok()).or_else(|| v.as_i64()).unwrap_or(0);
-        n(&x["limit"]) - n(&x["currentValue"])
-    })
-}
-
-/// The lab VM size in `az vm list-skus`' answer: its family (lowercase) when the subscription
-/// may create it in `region`, else the check that says why not. An `az` that fails (signed out,
-/// throttled, no network) or answers something else than the list says it couldn't ask, never
-/// that the size isn't offered.
-fn size_family(skus_json: &Result<String>, size: &str, region: &str) -> std::result::Result<String, Check> {
-    let unasked = |why: &dyn std::fmt::Display| Check::warn("VM size", format!("Couldn't ask Azure whether {size} is offered in {region}: {why}"));
-    let skus: Vec<serde_json::Value> = match skus_json {
-        Ok(out) => serde_json::from_str(out).map_err(|e| unasked(&format!("its answer isn't the list of sizes ({e})")))?,
-        Err(e) => return Err(unasked(e)),
-    };
-    let Some(entry) = skus.iter().find(|k| k["name"].as_str() == Some(size)) else {
-        return Err(Check::fail("VM size", format!("{size} isn't offered in {region}. Try the region swedencentral, which accepts new subscriptions.")));
-    };
-    if entry["restrictions"].as_array().is_some_and(|r| !r.is_empty()) {
-        return Err(Check::fail("VM size", format!("{size} isn't available to this subscription in {region}. Try the region swedencentral.")));
-    }
-    Ok(entry["family"].as_str().unwrap_or_default().to_lowercase())
-}
-
-/// The VM size check from the family's quota in `az vm list-usage`' answer; one that can't be
-/// had says why.
-fn quota_check(usage_json: &Result<String>, family: &str, size: &str, region: &str) -> Check {
-    let usage = match usage_json {
-        Ok(out) => serde_json::from_str::<Vec<serde_json::Value>>(out).map_err(|e| format!("its answer isn't the list of quotas ({e})")),
-        Err(e) => Err(e.to_string()),
-    };
-    let usage = match usage {
-        Ok(usage) => usage,
-        Err(why) => return Check::warn("VM size", format!("Couldn't read the core quota for {size} in {region} ({why}); a launch may still fail on it.")),
-    };
-    match free_cores(&usage, family) {
-        Some(f) if f >= 2 => Check::ok("VM size", format!("{size} is available in {region} ({f} cores of quota free).")),
-        Some(_) => Check::fail(
-            "VM size",
-            format!("No core quota left for {size} in {region}. Request more in the Azure portal (Quotas), or try the region swedencentral."),
-        ),
-        None => Check::warn("VM size", format!("Couldn't read the core quota for {size} in {region}; a launch may still fail on it.")),
-    }
-}
-
-/// Azure: can this subscription create the lab VM size in the region? New subscriptions often
-/// can't: a region refuses new customers, a size isn't offered to the subscription, or its
-/// family has no core quota. All seen on real runs; each makes a launch fail late.
-async fn azure_capacity_check(h: &HostProfile) -> Check {
-    // The size labs use: the one set on the account, else Isoloom's default for a small lab.
-    let size = h.size().unwrap_or("Standard_D2als_v6");
-    let (region, subscription) = (h.region().unwrap_or_default(), h.cloud_account().unwrap_or_default());
-    let sku =
-        run_cli("az", &["vm", "list-skus", "--subscription", subscription, "-l", region, "--size", size, "--resource-type", "virtualMachines", "-o", "json"])
-            .await;
-    let family = match size_family(&sku, size, region) {
-        Ok(family) => family,
-        Err(check) => return check,
-    };
-    let usage = run_cli("az", &["vm", "list-usage", "--subscription", subscription, "-l", region, "-o", "json"]).await;
-    quota_check(&usage, &family, size, region)
 }
 
 /// GCP `gcloud billing accounts describe`: the billing account's name, or why it can't be seen.
@@ -473,37 +407,6 @@ mod tests {
         assert_eq!(refusal("ERROR: Please run 'az login' to setup account.", &markers, "Sign in.", "Azure"), "Sign in.");
         assert_eq!(refusal("WARNING: x\nERROR: quota exceeded", &markers, "Sign in.", "Azure"), "Azure check failed: ERROR: quota exceeded");
         assert_eq!(refusal("", &markers, "Sign in.", "OCI"), "OCI check failed: ");
-    }
-
-    #[test]
-    fn free_cores_reads_string_or_number_quotas() {
-        let usage = serde_json::json!([
-            {"name": {"value": "standardDASv6Family"}, "limit": "10", "currentValue": "4"},
-            {"name": {"value": "cores"}, "limit": 20, "currentValue": 19}
-        ]);
-        let usage = usage.as_array().unwrap();
-        assert_eq!(free_cores(usage, "standarddasv6family"), Some(6));
-        assert_eq!(free_cores(usage, "cores"), Some(1));
-        assert_eq!(free_cores(usage, "other"), None);
-    }
-
-    #[test]
-    fn azure_listings_of_the_wrong_shape_or_with_missing_fields_do_not_panic() {
-        // The SKU list as an object, a size with null restrictions and no family, and a usage
-        // list whose numbers are missing or not numbers.
-        assert!(size_family(&Ok("{}".into()), "Standard_D2als_v6", "westeurope").is_err());
-        let loose = r#"[{"name": "Standard_D2als_v6", "restrictions": null}]"#;
-        assert_eq!(size_family(&Ok(loose.into()), "Standard_D2als_v6", "westeurope").ok().unwrap(), "");
-        let usage = serde_json::json!([
-            {"name": {"value": "fam"}, "limit": "10"},
-            {"name": {"value": "odd"}, "limit": "ten", "currentValue": 4},
-            {"name": "not an object"}
-        ]);
-        let usage = usage.as_array().unwrap();
-        assert_eq!(free_cores(usage, "fam"), Some(10), "no current use yet");
-        assert_eq!(free_cores(usage, "odd"), Some(-4), "unreadable numbers count as 0");
-        assert_eq!(free_cores(usage, "not an object"), None);
-        assert_eq!(quota_check(&Ok("{}".into()), "fam", "s", "r").state, CheckState::Warn);
     }
 
     #[test]
@@ -727,40 +630,6 @@ mod tests {
         assert!(c.detail.starts_with("Not signed in to Azure"), "{}", c.detail);
         let (way, c) = first(azure_subscription(Err(missing())));
         assert_eq!((way, c.name.as_str()), ("unreachable", "Azure CLI"));
-    }
-
-    #[test]
-    fn azure_sizes_must_be_offered_unrestricted_and_have_quota() {
-        let answer = |json: &str| Ok(json.to_owned());
-        let skus = answer(r#"[{"name": "Standard_D2als_v6", "family": "standardDALSv6Family", "restrictions": []}]"#);
-        assert_eq!(size_family(&skus, "Standard_D2als_v6", "westeurope").ok().unwrap(), "standarddalsv6family");
-        let c = size_family(&skus, "Standard_B1s", "westeurope").err().unwrap();
-        assert!(c.detail.starts_with("Standard_B1s isn't offered in westeurope."), "{}", c.detail);
-        let restricted = answer(r#"[{"name": "Standard_D2als_v6", "family": "f", "restrictions": [{"type": "Location"}]}]"#);
-        let c = size_family(&restricted, "Standard_D2als_v6", "westeurope").err().unwrap();
-        assert!(c.detail.contains("isn't available to this subscription"), "{}", c.detail);
-
-        let usage = answer(r#"[{"name": {"value": "standardDALSv6Family"}, "limit": "10", "currentValue": "4"}]"#);
-        let c = quota_check(&usage, "standarddalsv6family", "Standard_D2als_v6", "westeurope");
-        assert_eq!((c.state, c.detail.as_str()), (CheckState::Ok, "Standard_D2als_v6 is available in westeurope (6 cores of quota free)."));
-        let full = answer(r#"[{"name": {"value": "standardDALSv6Family"}, "limit": 4, "currentValue": 3}]"#);
-        assert_eq!(quota_check(&full, "standarddalsv6family", "s", "r").state, CheckState::Fail);
-        assert_eq!(quota_check(&usage, "otherfamily", "s", "r").state, CheckState::Warn);
-    }
-
-    #[test]
-    fn an_azure_cli_that_fails_says_it_couldnt_ask_never_that_the_size_isnt_offered() {
-        // Regression: a failed `az vm list-skus` (signed out, throttled, a bad region) read as an
-        // empty list, and the check said the size isn't offered there.
-        let c = size_family(&Err(failed("ERROR: Please run 'az login' to setup account.")), "Standard_D2als_v6", "westeurope").err().unwrap();
-        assert_eq!(c.state, CheckState::Warn);
-        assert!(c.detail.starts_with("Couldn't ask Azure whether Standard_D2als_v6 is offered in westeurope: "), "{}", c.detail);
-        assert!(c.detail.contains("az login"), "{}", c.detail);
-        let c = size_family(&Ok("oops".into()), "Standard_D2als_v6", "westeurope").err().unwrap();
-        assert!(c.detail.contains("isn't the list of sizes"), "{}", c.detail);
-        let c = quota_check(&Err(failed("throttled")), "f", "Standard_D2als_v6", "westeurope");
-        assert_eq!(c.state, CheckState::Warn);
-        assert!(c.detail.contains("throttled"), "{}", c.detail);
     }
 
     #[tokio::test]

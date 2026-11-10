@@ -11,12 +11,13 @@
 //! - `profile`, `input`: a saved host and the setup form that makes one.
 //! - `setup`: the setup form's actions (save, with a password or an SSH key; remove; placement).
 //! - `store`, `secrets`: where profiles and their secrets are kept.
-//! - `connection_test`, `checks`, `reachability`, `cloud_checks`: "Test connection".
+//! - `connection_test`, `checks`, `reachability`, `cloud_checks`, `azure_size`: "Test connection".
 //! - `budget`: an AWS account's spend and the limit a launch is checked against.
 //! - `capacity`: a Proxmox server's cores and memory, for its row.
 //! - `hosts`: the saved hosts' rules: the default, what moves a host, the labs on each.
 //! - `contract`: what a launch is given to reach its host; `gcp`: the GCP labs project.
 
+mod azure_size;
 pub(crate) mod budget;
 pub(crate) mod capacity;
 pub(crate) mod checks;
