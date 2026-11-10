@@ -6,7 +6,6 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use crate::AppHandle;
-use tauri::Manager as _;
 
 use super::files::status_line;
 use super::{Job, Op, execute, files};
@@ -63,9 +62,6 @@ pub fn worker_main(job_path: &Path, mut context: tauri::Context<crate::AppRuntim
 /// the job's task, which a stop ends.
 fn start(app: &mut tauri::App<crate::AppRuntime>, job: Job) -> tauri::async_runtime::JoinHandle<()> {
     crate::app::logging::log_startup(app.handle(), &format!("deploy worker ({})", job.lab_id));
-    if let Ok(dir) = app.path().app_data_dir() {
-        crate::shared_folder::init(&dir);
-    }
     // A background process, not an app: on macOS keep it out of the Dock, the app
     // switcher and Apple Events aimed at "Cyber CTF".
     #[cfg(target_os = "macos")]

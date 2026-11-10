@@ -49,7 +49,7 @@ impl Placed {
     /// in the lab, so the learner's Stop retires whatever of it the run already has.
     pub(crate) async fn add(&self, dirs: &AppDirs, image: &str, network: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let kind = if self.vm { Kind::Vm } else { Kind::Container { image } };
-        let shared = self.shared_folder(log).await;
+        let shared = self.shared_folder(dirs, log).await;
         let written = super::add(&self.dir, kind, self.cpu(), network, shared.as_deref()).and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
         let failed = match written {
             Err(error) => Failed { error, run_changed: false },
@@ -103,8 +103,8 @@ impl Placed {
     /// The learner's shared folder for the box, when it is on and the lab runs where a machine
     /// can mount a folder of this computer ([`shares_folders`]); otherwise none, `log` saying why
     /// when it is on (or when the setting or the folder can't be used).
-    async fn shared_folder(&self, log: &mut impl FnMut(String)) -> Option<PathBuf> {
-        let folder = match crate::shared_folder::current() {
+    async fn shared_folder(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Option<PathBuf> {
+        let folder = match crate::shared_folder::current(dirs) {
             Ok(folder) => folder?,
             Err(e) => {
                 log(format!("The shared folder isn't mounted in the attack box: {e}."));

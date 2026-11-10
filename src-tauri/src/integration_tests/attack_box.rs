@@ -38,7 +38,7 @@ use crate::runtime::{isothrum, lab, lifecycle};
 pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &mut impl FnMut(String), f: &mut Vec<String>) {
     add_box(placed, dirs, attack_machine::default_image(), l, f).await;
     box_reaches(placed, target, "once added", f).await;
-    match crate::shared_folder::current() {
+    match crate::shared_folder::current(dirs) {
         Ok(Some(folder)) => shared_both_ways(placed, &folder, f).await,
         Ok(None) => {}
         Err(e) => check(false, format!("the shared folder's setting reads: {e}"), f),
@@ -64,14 +64,13 @@ async fn shared_both_ways(placed: &Placed, folder: &Path, f: &mut Vec<String>) {
 }
 
 /// With `CYBERCTF_TEST_SHARED_FOLDER` (a folder; empty or unset: off), the shared folder turned on
-/// there, as Settings do, the launcher's settings kept under `home`.
-fn shared_folder(home: &Path, f: &mut Vec<String>) {
+/// there, as Settings do, the launcher's settings kept in `dirs`' data folder.
+fn shared_folder(dirs: &AppDirs, f: &mut Vec<String>) {
     let Some(folder) = std::env::var("CYBERCTF_TEST_SHARED_FOLDER").ok().filter(|f| !f.is_empty()) else { return };
-    if let Err(e) = std::fs::create_dir_all(home) {
+    if let Err(e) = dirs.data().map_err(|e| e.to_string()).and_then(|home| std::fs::create_dir_all(home).map_err(|e| e.to_string())) {
         return check(false, format!("the launcher's settings folder is made: {e}"), f);
     }
-    crate::shared_folder::init(home);
-    let on = crate::shared_folder::shared_folder_set(true, &folder);
+    let on = crate::shared_folder::shared_folder_set(dirs, true, &folder);
     check(on.is_ok(), format!("the shared folder is turned on at {folder} ({:?})", on.err()), f);
 }
 
@@ -85,7 +84,8 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
     let id = format!("box-{}", rand::random::<u16>());
     let dir = install_copy(Path::new(&src), &id);
     let home = std::env::temp_dir().join(format!("cyberctf-{id}-home"));
-    let dirs = AppDirs::new(None, None);
+    // The app's data folder is the runner's home, as in the app: the shared folder's setting too.
+    let dirs = AppDirs::new(Some(home.clone()), None);
     let (target_kind, vm) = match form.as_str() {
         "docker" => (lab::Target::Docker, false),
         "docker-vm" => (lab::vagrant_target(crate::runtime::Runtime::Docker), false),
@@ -114,7 +114,7 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
                 Err(e) => return check(false, format!("the lab's run opens: {e}"), f),
             };
             if started.is_ok() {
-                shared_folder(&home, f);
+                shared_folder(&dirs, f);
                 exercise(&placed, &dirs, &target, &mut l, f).await;
             }
         },

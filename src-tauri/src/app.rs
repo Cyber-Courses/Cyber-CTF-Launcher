@@ -17,7 +17,7 @@ use std::time::Duration;
 use tauri::{Manager, RunEvent, WindowEvent};
 
 use crate::platform::{exec, private_fs};
-use crate::{AppHandle, AppRuntime, account, commands, platform, runtime, shared_folder, terminal};
+use crate::{AppHandle, AppRuntime, account, commands, platform, runtime, terminal};
 
 type App = tauri::App<AppRuntime>;
 
@@ -175,7 +175,6 @@ fn setup(app: &mut App) {
     // The app's data (deploy jobs, Terraform state, keys) is this user's alone.
     if let Ok(dir) = app.path().app_data_dir() {
         narrow_to_this_user(&dir);
-        shared_folder::init(&dir);
     }
     // Linux and Windows dev builds: register cyberctf:// at runtime (installers do it otherwise).
     #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
