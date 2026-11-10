@@ -1,7 +1,7 @@
 //! OS plumbing: the app's folders, running tools, files only this user can read, whole-file
 //! writes, the service endpoints, HTTP clients with limits, the PATH and the proxy a GUI launch is
-//! missing, the console's Ctrl+C on Windows, the files a Store build saved before, and the
-//! administrator's policy.
+//! missing, the console's Ctrl+C on Windows, the files a Store build saved before, the
+//! administrator's policy, and the pieces of a root script that checks what it downloads.
 
 use std::path::{Path, PathBuf};
 
@@ -20,6 +20,7 @@ pub mod private_fs;
 pub mod proxy;
 pub mod redact;
 pub mod remembered;
+pub mod root_script;
 pub mod sys;
 #[cfg(any(unix, test))]
 pub mod tree_link;

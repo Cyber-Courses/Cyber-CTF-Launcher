@@ -48,33 +48,14 @@ esac"#
     Step { program: "sh".into(), args: vec!["-c".into(), script], note: Some(format!("Downloading {name}…")) }
 }
 
-/// The start of every script run as root that downloads something: stop at the first failure,
-/// and work in a fresh private directory (`mktemp -d`, mode 0700, removed on exit). A fixed path
-/// such as `/tmp/aws` could be prepared by any local user beforehand and then run as root.
 #[cfg(any(target_os = "linux", test))]
-const PRIVATE_WORKDIR: &str = r#"set -e; d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT"#;
-
-/// gpg, for the vendors' signing keys (Debian's minimal installs have only gpgv), and a private
-/// keyring folder for it in the work directory, so root's own keyring is never read or changed.
-#[cfg(any(target_os = "linux", test))]
-const NEED_GPG: &str = r#"command -v gpg >/dev/null || { apt-get update && apt-get install -y gnupg; }; mkdir -p -m 700 "$d/gnupg""#;
+use crate::platform::root_script::{NEED_GPG, PRIVATE_WORKDIR, check_keys};
 
 /// The distro's codename as the vendors' repos name it (`$codename`): an Ubuntu derivative like
 /// Mint uses its Ubuntu base's.
 #[cfg(any(target_os = "linux", test))]
 const CODENAME: &str =
     r#"codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"; [ -n "$codename" ] || codename="$(lsb_release -cs)""#;
-
-/// Stops the script unless `"$d/key"`, a vendor's signing key just downloaded, is exactly one key
-/// with the fingerprint pinned here (`fpr`, 40 hex digits). TLS alone trusted whatever the
-/// vendor's server sent the first time; a swapped key would sign the packages apt then installs
-/// as root.
-#[cfg(any(target_os = "linux", test))]
-fn check_key(fpr: &str, vendor: &str) -> String {
-    format!(
-        r#"k="$(gpg --homedir "$d/gnupg" --batch --show-keys --with-colons "$d/key" | awk -F: '$1=="pub"{{n++}} $1=="fpr"&&!f{{f=$10}} END{{print n+0" "f}}')"; [ "$k" = "1 {fpr}" ] || {{ echo "{vendor}'s signing key isn't the expected one (fingerprint {fpr}, got: $k). Nothing was installed." >&2; exit 1; }}"#
-    )
-}
 
 /// A vendor's apt repository: where its packages and its signing key are, the key's pinned
 /// fingerprint, and the name its keyring and its source list take here.
@@ -113,7 +94,7 @@ fn apt_repo_script(r: &VendorRepo) -> String {
     format!(
         r#"repo="{repo}"{suite_check}; {NEED_GPG}; curl -fsSL "{key_url}" -o "$d/key"; {check}; install -m 0755 -d /etc/apt/keyrings; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /etc/apt/keyrings/{name}.gpg "$d/key"; echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/{name}.gpg] $repo {suite} {component}" > /etc/apt/sources.list.d/{name}.list; apt-get update"#,
         suite_check = suite_check.unwrap_or_default(),
-        check = check_key(fingerprint, vendor),
+        check = check_keys(&[fingerprint], vendor),
     )
 }
 
@@ -434,7 +415,7 @@ mod tests {
         }
         // The key is checked, then installed for apt: never fetched straight into the keyring.
         let check = |s: &str, fpr: &str, install: &str| {
-            let checked = s.find(&format!(r#"[ "$k" = "1 {fpr}" ]"#)).unwrap_or_else(|| panic!("no fingerprint check: {s}"));
+            let checked = s.find(&format!(r#"[ "$k" = "{fpr}" ]"#)).unwrap_or_else(|| panic!("no fingerprint check: {s}"));
             let installed = s.find(install).unwrap_or_else(|| panic!("no install of the key: {s}"));
             assert!(s.find(r#"-o "$d/key""#).is_some_and(|fetched| fetched < checked) && checked < installed, "{s}");
         };
@@ -488,15 +469,15 @@ mod tests {
             eprintln!("no gpg here: the key check isn't run");
             return;
         }
-        let pinned = format!(r#"mkdir -p -m 700 "$d/gnupg"; {}; echo checked >&2"#, check_key(AWS_CLI_KEY_FINGERPRINT, "AWS"));
+        let pinned = format!(r#"mkdir -p -m 700 "$d/gnupg"; {}; echo checked >&2"#, check_keys(&[AWS_CLI_KEY_FINGERPRINT], "AWS"));
         let (ok, err) = run_in_workdir(&pinned, &[("key", AWS_CLI_KEY.as_bytes())]);
         assert!(ok && err.contains("checked"), "{err}");
-        let other = format!(r#"mkdir -p -m 700 "$d/gnupg"; {}; echo checked >&2"#, check_key(DOCKER.fingerprint, "Docker"));
+        let other = format!(r#"mkdir -p -m 700 "$d/gnupg"; {}; echo checked >&2"#, check_keys(&[DOCKER.fingerprint], "Docker"));
         let (ok, err) = run_in_workdir(&other, &[("key", AWS_CLI_KEY.as_bytes())]);
         assert!(!ok && !err.contains("checked"), "{err}");
-        assert!(err.contains("Docker's signing key isn't the expected one (fingerprint 9DC858229FC7DD38854AE2D88D81803C0EBFCD88, got: 1 FB5DB77FD5C118B80511ADA8A6310ACC4672475C)"), "{err}");
+        assert!(err.contains("Docker's signing key isn't the expected one (fingerprint 9DC858229FC7DD38854AE2D88D81803C0EBFCD88, got: FB5DB77FD5C118B80511ADA8A6310ACC4672475C)"), "{err}");
         let (ok, err) = run_in_workdir(&other, &[("key", b"<html>captive portal</html>")]);
-        assert!(!ok && err.contains("got: 0 )"), "{err}");
+        assert!(!ok && err.contains("got: )"), "{err}");
     }
 
     #[cfg(unix)]

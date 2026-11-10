@@ -179,7 +179,8 @@ settings:
 | Cloud CLIs and Terraform | the cloud provider's APIs (AWS, Azure, Google Cloud, DigitalOcean, Linode, Oracle Cloud)                                                                                                      |
 
 The lab machines themselves download too: a Kali attack VM fetches its packages from
-`archive.kali.org` and `http.kali.org` (Kali's mirror redirector, plain HTTP, signed packages); a
+`archive.kali.org` and `http.kali.org` (Kali's mirror redirector, plain HTTP, signed packages;
+on a Debian VM made Kali, Kali's archive keyring is checked against its pinned fingerprints first); a
 container lab run inside a VM installs Docker from `download.docker.com`; server and cloud labs
 download OS images (`cloud-images.ubuntu.com`, `cloud.debian.org`, `repo.almalinux.org`). Labs can
 reach whatever their own definitions name.

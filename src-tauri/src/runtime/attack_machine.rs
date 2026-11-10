@@ -44,10 +44,28 @@ pub(crate) fn default_image() -> &'static str {
 /// Its set-up, a file of the lab's project (the project is what a machine gets): Kali's headless
 /// toolset, what the launcher's attack box image installs, unattended. A Debian VM (where Kali
 /// has no image for the computer's CPU) is made Kali first: Kali's archive in place of Debian's,
-/// pinned over what Debian installed, keeping its own kernel (Kali's doesn't fit the image's boot
-/// partition).
+/// its signing keys checked against [`KALI_ARCHIVE_KEYS`] before apt trusts them, pinned over
+/// what Debian installed, keeping its own kernel (Kali's doesn't fit the image's boot partition).
 const SETUP_FILE: &str = "cyberctf-attackbox.sh";
-const SETUP: &str = r"#!/bin/sh
+
+/// The primary keys of Kali's archive keyring (`archive.kali.org/archive-keyring.gpg`): its 2025
+/// automatic signing key, which signs the archive, and the repository key before it, which the
+/// keyring still holds. A keyring with any other key, or without one of these, is refused.
+const KALI_ARCHIVE_KEYS: [&str; 2] = ["827C8569F2518CC677FECA1AED65462EC8D5E4C5", "44C6513A8E4FB3D30875F758ED444FF07D8D0BF6"];
+
+/// The set-up script: [`SETUP_START`], Kali's archive keyring downloaded into a private work
+/// directory and checked there, then [`SETUP_REST`].
+fn setup_script() -> String {
+    use crate::platform::root_script::{NEED_GPG, PRIVATE_WORKDIR, check_keys};
+    let keyring = format!(
+        "  {PRIVATE_WORKDIR}\n  {NEED_GPG}\n  curl -fsSL https://archive.kali.org/archive-keyring.gpg -o \"$d/key\"\n  {}\n  install -m 0644 \"$d/key\" /usr/share/keyrings/kali-archive-keyring.gpg\n",
+        check_keys(&KALI_ARCHIVE_KEYS, "Kali's archive")
+    );
+    [SETUP_START, &keyring, SETUP_REST].concat()
+}
+
+/// The set-up up to Kali's archive keyring, on a Debian VM.
+const SETUP_START: &str = r"#!/bin/sh
 # The Cyber CTF attack box: Kali's headless toolset, as the attack box image has it.
 set -e
 export DEBIAN_FRONTEND=noninteractive
@@ -56,9 +74,11 @@ export DEBIAN_FRONTEND=noninteractive
 keep='-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-overwrite'
 if ! grep -q '^ID=kali' /etc/os-release; then
   apt-get update
-  apt-get install -y ca-certificates curl
-  curl -fsSL https://archive.kali.org/archive-keyring.gpg -o /usr/share/keyrings/kali-archive-keyring.gpg
-  echo 'deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware' > /etc/apt/sources.list.d/kali.list
+  apt-get install -y ca-certificates curl gnupg
+";
+
+/// The set-up once Kali's archive keyring is in place.
+const SETUP_REST: &str = r"  echo 'deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware' > /etc/apt/sources.list.d/kali.list
   # Kali's archive only, over what Debian installed (its versions win, older ones included).
   rm -f /etc/apt/sources.list.d/debian.sources; : > /etc/apt/sources.list
   printf 'Package: *\nPin: release o=Kali\nPin-Priority: 1001\n' > /etc/apt/preferences.d/kali
@@ -84,7 +104,7 @@ const HIGHEST: u8 = 249;
 pub(crate) enum Kind<'a> {
     /// A container beside the lab's, from `image`, kept up idle.
     Container { image: &'a str },
-    /// A VM among the lab's, booted from Kali, set up with [`SETUP`].
+    /// A VM among the lab's, booted from Kali, set up with its [`setup_script`].
     Vm,
 }
 
@@ -186,7 +206,7 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
             format!("{{ {hardware}{shared}app: {{ image: {image:?} }}, command: sleep infinity, networks: {{ {networks} }} }}")
         }
         (Kind::Vm, cpu) => {
-            std::fs::write(dir.join(SETUP_FILE), SETUP)?;
+            std::fs::write(dir.join(SETUP_FILE), setup_script())?;
             let os = if cpu == Cpu::Arm { "debian@12" } else { "kali@rolling" };
             format!(
                 "{{ os: {os}, {hardware}{shared}networks: {{ {networks} }}, resources: {{ disk_gb: {DISK_GB} }}, app: {{ steps: [{{ run: {SETUP_FILE} }}] }} }}"
@@ -309,6 +329,20 @@ mod tests {
         remove(&dir).unwrap();
         let spec = lab::load(&dir).unwrap();
         assert!(spec.machines.contains_key("aaa-extra") && !spec.machines.contains_key(NAME), "only the box is taken out");
+    }
+
+    #[test]
+    fn kalis_archive_keys_are_checked_before_apt_trusts_them() {
+        // Regression: the keyring was downloaded straight into apt's keyrings, trusted on TLS
+        // alone, with no fingerprint holding it.
+        let script = setup_script();
+        let download = script.find("archive.kali.org/archive-keyring.gpg").unwrap();
+        let checked = script.find(r#"[ "$k" = "44C6513A8E4FB3D30875F758ED444FF07D8D0BF6 827C8569F2518CC677FECA1AED65462EC8D5E4C5" ]"#).unwrap();
+        let trusted = script.find("/usr/share/keyrings/kali-archive-keyring.gpg").unwrap();
+        let used = script.find("signed-by=").unwrap();
+        assert!(download < checked && checked < trusted && trusted < used, "{script}");
+        assert!(script.contains(r#"-o "$d/key""#) && !script.contains("-o /usr/share/keyrings"), "downloaded into the private folder: {script}");
+        assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
     }
 
     #[test]

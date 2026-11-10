@@ -267,6 +267,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Security
 
+- **Kali's archive keys are checked before a Debian attack VM trusts them.** Where Kali has no VM
+  image for the computer's CPU, the attack VM is a Debian VM made Kali; it downloaded Kali's
+  archive keyring straight into apt's keyrings, trusted on TLS alone. The keyring is now checked
+  against the fingerprints of Kali's archive keys pinned in the launcher, and the set-up stops,
+  installing nothing from Kali, when it holds any other key.
 - **rustls-webpki 0.103.16** (RUSTSEC-2026-0382: certificate paths through distrusted
   intermediates could be accepted).
 
