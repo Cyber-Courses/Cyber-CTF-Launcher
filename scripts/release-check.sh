@@ -8,9 +8,11 @@
 #   ONLY="unit-web e2e-mock" scripts/release-check.sh
 #   SKIP="e2e-native" scripts/release-check.sh   what CI covers, without the native layer
 #
-# Steps, in order: prereqs, install, versions, format, types, lint, quality, unit-web (with the
-# coverage floors), unit-rust, coverage-rust (when cargo-llvm-cov is installed), e2e-mock
-# (Playwright against the dev mock), e2e-native (e2e/desktop/run.sh, which has its own knobs).
+# Steps, in order: prereqs, install, versions, docs, format, types, lint, build, quality, unit-web
+# (with the coverage floors), unit-rust, bindings (the generated types the Rust tests rewrote are
+# committed), coverage-rust (when cargo-llvm-cov is installed), deny (when cargo-deny is), audit,
+# e2e-mock (Playwright against the dev mock), e2e-native (e2e/desktop/run.sh, which has its own
+# knobs).
 #
 # Knobs:
 #   RUST_LINES_FLOOR    the Rust line coverage floor (default: coverage.yml's)
@@ -37,7 +39,14 @@ prereqs() {
   cargo machete --version >/dev/null 2>&1 || { echo "missing: cargo-machete (cargo install cargo-machete); pnpm quality needs it"; missing=1; }
   docker info >/dev/null 2>&1 || echo "note: docker is not running; e2e-native skips the scenarios that run a lab"
   cargo llvm-cov --version >/dev/null 2>&1 || echo "note: cargo-llvm-cov is not installed; coverage-rust is skipped (cargo install cargo-llvm-cov)"
+  cargo deny --version >/dev/null 2>&1 || echo "note: cargo-deny is not installed; deny is skipped (cargo install cargo-deny)"
   [ "$missing" -eq 0 ]
+}
+# The command types the Rust tests rewrite (ts_bindings.rs) are the ones committed, as ci.yml checks.
+bindings_committed() {
+  local changed
+  changed=$(git status --porcelain -- src/lib/tauri/generated)
+  [ -z "$changed" ] || { echo "$changed"; echo "src/lib/tauri/generated differs from the Rust structs: commit what cargo test wrote"; return 1; }
 }
 format_check() {
   pnpm exec prettier --check "{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}" "{*,docs/**/*,infra/**/*,scripts/**/*}.md" && cargo fmt --manifest-path src-tauri/Cargo.toml --check
@@ -60,14 +69,23 @@ e2e_mock() {
 step prereqs prereqs
 step install pnpm install --frozen-lockfile
 step versions pnpm check:tauri
+step docs pnpm check:docs
 step format format_check
 step types pnpm typecheck
 step lint pnpm lint
+step build pnpm build
 step quality pnpm quality
 # The coverage run applies vitest.config.mts's floors, as web-coverage.yml does.
 step unit-web pnpm exec vitest run --coverage
 step unit-rust cargo test --manifest-path src-tauri/Cargo.toml
+step bindings bindings_committed
 if cargo llvm-cov --version >/dev/null 2>&1; then step coverage-rust rust_cov; else skip coverage-rust "cargo-llvm-cov not installed"; fi
+if cargo deny --version >/dev/null 2>&1; then
+  step deny cargo deny --manifest-path src-tauri/Cargo.toml check advisories bans licenses sources
+else
+  skip deny "cargo-deny not installed"
+fi
+step audit pnpm audit --prod
 step e2e-mock e2e_mock
 case "$(uname -s)" in
   Darwin | Linux) step e2e-native e2e/desktop/run.sh ;;
