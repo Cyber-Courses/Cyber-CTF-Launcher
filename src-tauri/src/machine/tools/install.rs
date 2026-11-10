@@ -321,11 +321,10 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn linux_installs_through_pkexec_except_the_per_user_gcloud() {
+    fn linux_installs_through_pkexec() {
         for (dep, p) in plans() {
             match dep {
                 Dependency::Utm | Dependency::Wsl => assert!(p.is_err(), "{dep:?}"),
-                Dependency::Gcloud => assert_eq!(p.unwrap()[0].program, "sh"),
                 _ => assert_eq!(p.unwrap()[0].program, "pkexec", "{dep:?}"),
             }
         }
