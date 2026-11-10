@@ -134,7 +134,7 @@ pub(crate) async fn claim_lab(dirs: impl Into<AppDirs>, dir: &Path, id: &str, be
 fn image_candidates(owned: &Owned, extra_images: &[String]) -> Vec<(String, Option<String>)> {
     let launcher = extra_images
         .iter()
-        .filter(|i| crate::platform::exec::valid_image(i) && crate::platform::exec::image_repository(i) == ATTACK_BOX_REPOSITORY)
+        .filter(|i| crate::platform::exec::valid_image(i) && crate::platform::exec::ImageRef::parse(i).repository == ATTACK_BOX_REPOSITORY)
         .map(|i| (i.clone(), None));
     owned.images.iter().map(|i| (i.reference.clone(), Some(i.id.clone()))).chain(launcher).collect()
 }

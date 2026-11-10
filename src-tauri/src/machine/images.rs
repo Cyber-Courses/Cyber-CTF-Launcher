@@ -7,20 +7,12 @@ use std::time::Duration;
 /// Docker Hub's `namespace/repo` and tag for an image reference, or None when the image
 /// lives on another registry. `kali` -> `library/kali`, no tag -> `latest`.
 fn hub_ref(image: &str) -> Option<(String, String)> {
-    let image = image.split('@').next()?;
-    let (path, tag) = match image.rsplit_once(':') {
-        Some((p, t)) if !t.contains('/') => (p, t),
-        _ => (image, "latest"),
-    };
-    let mut parts: Vec<&str> = path.split('/').collect();
-    if parts.len() > 1 && (parts[0].contains('.') || parts[0].contains(':') || parts[0] == "localhost") {
-        if parts[0] != "docker.io" {
-            return None;
-        }
-        parts.remove(0);
+    let r = crate::platform::exec::ImageRef::parse(image);
+    if r.registry.is_some_and(|host| host != "docker.io") {
+        return None;
     }
-    let repo = if parts.len() == 1 { format!("library/{}", parts[0]) } else { parts.join("/") };
-    Some((repo, tag.to_string()))
+    let repo = if r.repository.contains('/') { r.repository.to_owned() } else { format!("library/{}", r.repository) };
+    Some((repo, r.tag.unwrap_or("latest").to_owned()))
 }
 
 /// Docker Hub's name for this machine's CPU architecture.
