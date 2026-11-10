@@ -277,6 +277,25 @@ describe("MachineSetup window", () => {
     expect(calls.find((c) => c.cmd === "machine_selftest")?.args).toMatchObject({ kind: "vm", provider: "vmware_desktop" });
     expect(getVmProvider()).toBe("utm");
   });
+
+  it("the chooser counts the VM path for the hypervisor its steps show, not Settings' choice", async () => {
+    // Regression: the chooser judged the steps "done" on Settings' choice (ready) while the
+    // steps' bodies showed the core's pick (its plugin missing): the path read set up and opened
+    // at its summary, where the Vagrant step would have asked for the plugin.
+    installTauri();
+    const user = userEvent.setup();
+    setVmProvider("virtualbox");
+    setLastTest("vm", "ok");
+    const libvirt = hv({ provider: "libvirt", available: false, plugin: "vagrant-libvirt", pluginInstalled: false });
+    const linux = withNeeds({ ...freshDebian(), vagrant: { installed: true, version: "2.4.3" }, ...hypervisors([libvirt, hv({ provider: "virtualbox" })]) });
+    expect(linux.setup.hypervisor).toBe("libvirt");
+    render(<MachineSetup report={linux} onRefresh={vi.fn()} onClose={vi.fn()} />);
+    await flush();
+    expect(text(pathButton("VM labs"))).toBe("Set up");
+    await user.click(pathButton("VM labs"));
+    await flush();
+    expect(text()).toContain("libvirt add-on for Vagrant");
+  });
 });
 
 describe("Onboarding", () => {

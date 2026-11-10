@@ -21,7 +21,7 @@ const stepsOf = (path: SetupPath | null, report: SystemReport): WindowStep[] => 
  * reopened setup never asks to redo what the report and the last tests say is done; `startAt`
  * (a "Fix" link) opens its own step, whatever its state.
  */
-export function useWindowSteps(report: SystemReport, startAt: StartAt, last: LastTests, preferred: Provider | null) {
+export function useWindowSteps(report: SystemReport, startAt: StartAt, last: LastTests, picked: string | null) {
   const [path, setPath] = useState<SetupPath | null>(() => (startAt ? pathOf(startAt.step) : null));
   const steps = stepsOf(path, report);
   const { pos, next, back, goTo } = useStepper(steps.length);
@@ -37,7 +37,7 @@ export function useWindowSteps(report: SystemReport, startAt: StartAt, last: Las
   const start = (p: SetupPath) => {
     setPath(p);
     const list = stepsOf(p, report);
-    const pending = firstPending(p, report, last, preferred);
+    const pending = firstPending(p, report, last, picked);
     goTo(pending ? list.indexOf(pending) : list.length - 1);
   };
   return { steps, path, at: pos, key: steps[pos], next, back, start };

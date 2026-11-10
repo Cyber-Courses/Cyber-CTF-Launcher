@@ -5,7 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LogConsole } from "@/components/ui/log-console";
 import { Spinner } from "@/components/ui/spinner";
-import { providerLabel } from "@/features/machine/hypervisors";
+import { labHypervisor, providerLabel } from "@/features/machine/hypervisors";
 import { Row } from "@/features/settings/settings-layout";
 import { getVmProvider, setVmProvider } from "@/lib/settings";
 import type { Provider, ProviderStatus, SystemReport } from "@/lib/tauri";
@@ -104,7 +104,11 @@ function HypervisorChoice({
   const notReady = local.filter((p) => !p.available);
   // A saved choice that's no longer ready falls back to automatic.
   const effective = ready.some((h) => h.provider === provider) ? provider : null;
-  const current = ready.find((h) => h.provider === (effective ?? ready[0]?.provider));
+  const chosen = labHypervisor(
+    ready.map((h) => h.provider),
+    provider,
+  );
+  const current = ready.find((h) => h.provider === chosen);
 
   function choose(p: Provider | null) {
     setVmProvider(p);

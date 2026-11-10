@@ -44,11 +44,6 @@ export const formProviders = (paths: LabRunOptions["vms"]): Provider[] => paths.
 /** Whether an emulator (QEMU) is among the hypervisors `ready` here (the machine report's). */
 export const emulatorReady = (ready: readonly Provider[]) => ready.some((p) => EMULATORS.includes(p));
 
-/** The hypervisors ready here (the machine report's `readyHypervisors`), `preferred` (Settings'
- *  choice) first: the picker's default for a container lab's VM forms. */
-export const preferredFirst = (ready: readonly Provider[], preferred: Provider | null): Provider[] =>
-  preferred && ready.includes(preferred) ? [preferred, ...ready.filter((p) => p !== preferred)] : [...ready];
-
 /** The hypervisors on this machine that can run a VM lab's VMs: as the backend's run options say
  *  (`options`, once read: VMs built for another CPU on an emulator only, by the backend's rule),
  *  else, until then, those the catalogue lists, a VM lab built for another CPU only emulated. A

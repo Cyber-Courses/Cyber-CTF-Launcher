@@ -25,7 +25,6 @@ import { AddProvider } from "@/features/machine/setup-steps/add-provider";
 import { useWindowSteps, type StartAt, type WindowStep } from "@/features/machine/use-window-steps";
 import { getLastTest } from "@/lib/settings";
 import type { SystemReport } from "@/lib/tauri";
-import { useVmProvider } from "@/lib/use-vm-provider";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
@@ -82,9 +81,8 @@ const OS_NAMES: Partial<Record<string, string>> = { windows: "Windows", macos: "
 function SetupWizard({ report, startAt, onRefresh, onClose }: { report: SystemReport; startAt: StartAt; onRefresh: () => void; onClose: () => void }) {
   const t = useT();
   const last = { docker: getLastTest("docker"), vm: getLastTest("vm") };
-  const preferred = useVmProvider();
-  const { steps, path, at, key, next, back, start } = useWindowSteps(report, startAt, last, preferred);
   const setup = useMachineSetup(report, onRefresh);
+  const { steps, path, at, key, next, back, start } = useWindowSteps(report, startAt, last, setup.hypervisor);
   // A row's Fix sets up that hypervisor (picked for this flow, not made the default): the steps,
   // their "done" and the test then read it, not whichever another rule would pick.
   const [targeted, setTargeted] = useState<number | null>(null);
@@ -111,7 +109,7 @@ function SetupWizard({ report, startAt, onRefresh, onClose }: { report: SystemRe
         )}
         <Panel key={key} className="mt-5 flex min-h-0 flex-1 animate-rise-in flex-col">
           <StepBody step={key} report={report} setup={setup} path={path} count={{ current: at, total: walk.length }}>
-            {key === "path" && <PathChooser report={report} last={last} preferred={preferred} onStart={start} />}
+            {key === "path" && <PathChooser report={report} last={last} picked={setup.hypervisor} onStart={start} />}
           </StepBody>
           {key !== "path" && (
             <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-3">

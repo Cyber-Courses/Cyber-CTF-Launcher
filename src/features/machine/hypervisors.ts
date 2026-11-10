@@ -20,6 +20,16 @@ export function localHypervisors(report: SystemReport): ProviderStatus[] {
   return report.vmProviders.filter((p) => !p.remote);
 }
 
+/** The hypervisors ready here (the machine report's `readyHypervisors`), `preferred` (Settings'
+ *  choice) first when it is one of them. */
+export const preferredFirst = (ready: readonly Provider[], preferred: string | null): Provider[] =>
+  preferred && ready.includes(preferred as Provider) ? [preferred as Provider, ...ready.filter((p) => p !== preferred)] : [...ready];
+
+/** The hypervisor VM labs run on: `preferred` (Settings' choice) when it is ready here, else the
+ *  first ready one, else none. The one rule the header, the Machine page, Settings and the lab
+ *  page's picker read. */
+export const labHypervisor = (ready: readonly Provider[], preferred: string | null): Provider | null => preferredFirst(ready, preferred).at(0) ?? null;
+
 /** Whether Vagrant can drive `p` here: nothing left to install for it (Vagrant, its plugin, and
  *  for VMware HashiCorp's utility), as the backend lists it (`needs`, the same list its readiness
  *  reads). The one rule the Machine page's rows, the setup steps and their "done" all read, so

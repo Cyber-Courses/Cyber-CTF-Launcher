@@ -1,6 +1,6 @@
 import type { MachineMetrics, ProviderStatus, SystemReport, Tool } from "@/lib/tauri";
 import type { LastTest } from "@/lib/settings";
-import { cantRun, localHypervisors } from "@/features/machine/hypervisors";
+import { cantRun, labHypervisor, localHypervisors } from "@/features/machine/hypervisors";
 import type { LabKind } from "@/features/machine/machine-parts";
 import { GB } from "@/lib/format";
 
@@ -79,13 +79,13 @@ function vmStateOf({
 /** The VM side of this machine: the hypervisors it can use, the one labs run on, and its state. */
 export function vmSetup(report: SystemReport, preferred: string | null, last: LastTest | null) {
   const hypervisors = localHypervisors(report);
-  const readyList: ProviderStatus[] = report.vmProviders.filter((p) => report.readyHypervisors.includes(p.provider));
-  const provider = readyList.find((p) => p.provider === preferred) ?? readyList.at(0) ?? null;
+  const chosen = labHypervisor(report.readyHypervisors, preferred);
+  const provider = report.vmProviders.find((p) => p.provider === chosen) ?? null;
   const hasHypervisor = hypervisors.some((p) => p.hypervisor === true);
   const blockedReason = blockedReasonOf(report, hypervisors);
   const state = vmStateOf({ count: hypervisors.length, provider, blockedReason, hasHypervisor, last });
   // Several ready and no preference: the first one is picked automatically.
-  const automatic = readyList.length > 1 && !preferred;
+  const automatic = report.readyHypervisors.length > 1 && !preferred;
   return { hypervisors, provider, hasHypervisor, blockedReason, automatic, state };
 }
 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TypeIcon } from "@/components/ui/type-icon";
 import { PATHS, type SetupPath } from "@/features/machine/setup-steps/steps";
 import { pathProgress, type LastTests } from "@/features/machine/setup-steps/step-status";
-import type { Provider, SystemReport } from "@/lib/tauri";
+import type { SystemReport } from "@/lib/tauri";
 import { useT, type MessageKey } from "@/lib/i18n";
 
 const ICONS: Record<SetupPath, LucideIcon> = { docker: Container, vm: Server };
@@ -19,16 +19,17 @@ const NOTES: Record<SetupPath, MessageKey> = { docker: "machine.setup.paths.dock
 export function PathChooser({
   report,
   last,
-  preferred,
+  picked,
   onStart,
 }: {
   report: SystemReport;
   last: LastTests;
-  preferred: Provider | null;
+  /** The hypervisor picked in this flow, null before one (see `setupHypervisor`). */
+  picked: string | null;
   onStart: (path: SetupPath) => void;
 }) {
   const t = useT();
-  const rows = PATHS.map((path) => ({ path, ...pathProgress(path, report, last, preferred) }));
+  const rows = PATHS.map((path) => ({ path, ...pathProgress(path, report, last, picked) }));
   const jewel = rows.find((r) => r.done < r.total)?.path;
   return (
     <div className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">

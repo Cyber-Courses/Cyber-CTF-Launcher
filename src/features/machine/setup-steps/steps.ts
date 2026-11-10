@@ -165,13 +165,16 @@ export function chosenEngine(report: SystemReport, setup: MachineSetupState): En
   return engines.find((e) => e.id === (setup.engine ?? report.setup.engine)) ?? engines[0];
 }
 
-/** The hypervisor the player picked, else the core's (an installed one that can run labs, else an
- *  installed one, else the first it installs). */
-export function chosenHypervisor(report: SystemReport, setup: MachineSetupState) {
+/** The hypervisor the setup works on: `picked` (this flow's pick, null before one) when it is
+ *  offered here, else the core's (an installed one that can run labs, else an installed one, else
+ *  the first it installs), else the first offered. The steps' "done" and their bodies read this one. */
+export function setupHypervisor(report: SystemReport, picked: string | null) {
   const hypervisors = localHypervisors(report);
-  const fallback = hypervisors.find((p) => p.provider === report.setup.hypervisor) ?? hypervisors.at(0);
-  return hypervisors.find((p) => p.provider === (setup.hypervisor ?? fallback?.provider)) ?? fallback;
+  return hypervisors.find((p) => p.provider === picked) ?? hypervisors.find((p) => p.provider === report.setup.hypervisor) ?? hypervisors.at(0);
 }
+
+/** The hypervisor this flow works on (`setupHypervisor` of the player's pick). */
+export const chosenHypervisor = (report: SystemReport, setup: MachineSetupState) => setupHypervisor(report, setup.hypervisor);
 
 /** Everything Vagrant needs to drive the chosen hypervisor is in (Vagrant, its plugin, VMware's
  *  utility): the core's plan has nothing left for it, or just Vagrant when there is none to drive. */

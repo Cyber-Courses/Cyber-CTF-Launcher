@@ -1,15 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  emulatorReady,
-  formProviders,
-  hostSupports,
-  localProviders,
-  preferredFirst,
-  runPlaces,
-  runsNatively,
-  runsNativelyHere,
-} from "@/features/labs/lab-runtime";
+import { emulatorReady, formProviders, hostSupports, localProviders, runPlaces, runsNatively, runsNativelyHere } from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabRunOptions, LabRunPath, Provider, ServerHost } from "@/lib/tauri";
 
@@ -37,15 +28,6 @@ describe("runsNatively", () => {
   it("runs only on the CPUs the lab lists", () => {
     expect(runsNatively(rt({ architectures: ["x86_64"] }), "x86_64")).toBe(true);
     expect(runsNatively(rt({ architectures: ["x86_64"] }), "arm64")).toBe(false);
-  });
-});
-
-describe("preferredFirst", () => {
-  const ready = ["virtualbox", "qemu"] as Provider[];
-  it("puts the preferred one first when it is ready", () => {
-    expect(preferredFirst(ready, "qemu")).toEqual(["qemu", "virtualbox"]);
-    expect(preferredFirst(ready, "parallels")).toEqual(["virtualbox", "qemu"]);
-    expect(preferredFirst(ready, null)).toEqual(["virtualbox", "qemu"]);
   });
 });
 
