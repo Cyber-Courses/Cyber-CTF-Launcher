@@ -83,3 +83,7 @@ export function prettyLabId(id: string) {
   if (!words.length) return id;
   return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
 }
+
+/** A lab machine's name as the player reads it: without the `isoloom-` its Vagrant machines carry
+ *  ("isoloom-dc01" reads "dc01"). */
+export const machineLabel = (name: string) => name.replace(/^isoloom-/, "");

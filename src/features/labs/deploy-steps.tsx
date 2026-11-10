@@ -7,7 +7,6 @@ import { formatDuration } from "@/lib/format";
 import type { ActiveOperation } from "@/lib/tauri";
 import { deriveSteps, failedMachineStep, type Step, type Timed } from "@/features/labs/deploy-log";
 import { LiveDuration, RawLog, StepItem, StepMark } from "@/features/labs/deploy-step-parts";
-import { OPERATION_STATUS } from "@/features/labs/runs/operations";
 import { useT, type T } from "@/lib/i18n";
 import { failureText, isDoneLine, isFailedLine } from "@/lib/log-marks";
 
@@ -106,9 +105,8 @@ function DeployHeader({
   );
 }
 
-/** A launch's or a provisioning run's word while it runs: the one word a start has everywhere. */
-const busyWord = (t: T, operation: Operation) =>
-  operation === "provision" ? t("common.operation.label.provision").replace(/…$/, "") : (OPERATION_STATUS.launch ?? t("common.operation.status.launch"));
+/** A launch's or a provisioning run's word while it runs: the one word each has everywhere. */
+const busyWord = (t: T, operation: Operation) => t(operation === "provision" ? "common.operation.status.provision" : "common.operation.status.launch");
 
 /** When a step's last line came: a step holds at least the line that made it. */
 const lastAt = (step: Step) => step.rows[step.rows.length - 1].at;

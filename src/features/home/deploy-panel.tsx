@@ -6,7 +6,7 @@ import { StatusDot } from "@/components/ui/status-pill";
 import { StepRow } from "@/features/machine/step-row";
 import type { Lab } from "@/features/labs/use-labs";
 import { operationLabel } from "@/features/labs/runs/operations";
-import { prettyLabId } from "@/lib/format";
+import { machineLabel, prettyLabId } from "@/lib/format";
 import type { ActiveOperation } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
@@ -61,7 +61,7 @@ function OperationRow({ op, lab, title, onOpen }: { op: ActiveOperation; lab: La
       state="run"
       label={op.step ?? operationLabel(op)}
       detail={lab === undefined ? undefined : title}
-      meta={op.machine?.replace(/^isoloom-/, "") ?? t("home.deploy.running")}
+      meta={op.machine ? machineLabel(op.machine) : t("home.deploy.running")}
       action={
         lab && (
           <Button

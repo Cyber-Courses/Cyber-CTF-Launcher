@@ -5,15 +5,11 @@
       "resume": "Resuming",
       "pause": "Pausing",
       "shutdown": "Shutting down",
+      "provision": "Provisioning",
       "stop": "Stopping"
     },
     "label": {
-      "resume": "Resuming…",
-      "pause": "Pausing…",
-      "shutdown": "Shutting down…",
-      "provision": "Provisioning…",
-      "provisionMachine": "Provisioning {machine}…",
-      "stop": "Stopping…"
+      "provisionMachine": "Provisioning {machine}…"
     }
   },
   "time": {

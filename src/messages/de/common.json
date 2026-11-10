@@ -5,15 +5,11 @@
       "resume": "Wird fortgesetzt",
       "pause": "Wird pausiert",
       "shutdown": "Fährt herunter",
+      "provision": "Wird provisioniert",
       "stop": "Wird gestoppt"
     },
     "label": {
-      "resume": "Wird fortgesetzt…",
-      "pause": "Wird pausiert…",
-      "shutdown": "Fährt herunter…",
-      "provision": "Wird provisioniert…",
-      "provisionMachine": "{machine} wird provisioniert…",
-      "stop": "Wird gestoppt…"
+      "provisionMachine": "{machine} wird provisioniert…"
     }
   },
   "time": {

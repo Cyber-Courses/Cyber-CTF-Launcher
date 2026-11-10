@@ -1,4 +1,5 @@
 import type { T } from "@/lib/i18n";
+import { machineLabel } from "@/lib/format";
 import { FETCH_LINES, PREPARE_LINES } from "@/lib/tauri";
 
 /**
@@ -38,8 +39,6 @@ const isDownloadLine = startsAny(FETCH_LINES);
 // The launcher's own narration while it readies this machine for a lab's VMs (its memory, QEMU's
 // emulation, UTM, a previous run's leftovers).
 const isPrepLine = startsAny(PREPARE_LINES);
-
-const machineLabel = (name: string) => name.replace(/^isoloom-/, "");
 
 /** The step of the machine a Vagrant failure names ("…while executing the action on the
  *  'isoloom-controller' machine"), if it names one: that step failed, not necessarily the last

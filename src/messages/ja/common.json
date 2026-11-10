@@ -5,15 +5,11 @@
       "resume": "再開中",
       "pause": "一時停止中",
       "shutdown": "シャットダウン中",
+      "provision": "プロビジョニング中",
       "stop": "停止中"
     },
     "label": {
-      "resume": "再開中…",
-      "pause": "一時停止中…",
-      "shutdown": "シャットダウン中…",
-      "provision": "プロビジョニング中…",
-      "provisionMachine": "{machine} をプロビジョニング中…",
-      "stop": "停止中…"
+      "provisionMachine": "{machine} をプロビジョニング中…"
     }
   },
   "time": {

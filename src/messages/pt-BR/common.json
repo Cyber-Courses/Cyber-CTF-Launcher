@@ -5,15 +5,11 @@
       "resume": "Retomando",
       "pause": "Pausando",
       "shutdown": "Desligando",
+      "provision": "Provisionando",
       "stop": "Parando"
     },
     "label": {
-      "resume": "Retomando…",
-      "pause": "Pausando…",
-      "shutdown": "Desligando…",
-      "provision": "Provisionando…",
-      "provisionMachine": "Provisionando {machine}…",
-      "stop": "Parando…"
+      "provisionMachine": "Provisionando {machine}…"
     }
   },
   "time": {

@@ -7,6 +7,7 @@ import { translate } from "@/lib/i18n";
 import { structurallyEqual } from "@/lib/equal";
 import { ignore } from "@/lib/failure";
 import { readSession, writeSession } from "@/lib/local-store";
+import { machineLabel } from "@/lib/format";
 
 // The operations the backend runs on labs right now, polled from the long-lived Rust process,
 // and how they read on screen.
@@ -57,25 +58,11 @@ export function useDeployingLabs(enabled = true): Set<string> {
 /** The labs deploying in the backend as last read (empty while nothing reads them). */
 export const deployingLabsNow = () => deployingOf(operationsPoll.get());
 
-/** The sidebar's label for an operation, e.g. "Pausing…"; the machine when it targets one. */
+/** The sidebar's label for an operation, e.g. "Pausing…": the word the operation has everywhere
+ *  else (header, list, deployment), running; the machine when it targets one. */
 export function operationLabel(o: ActiveOperation): string {
-  switch (o.op) {
-    case "launch":
-      // The same word as everywhere else a lab starts (header, list, deployment): "Starting…".
-      return `${translate("common.operation.status.launch")}…`;
-    case "resume":
-      return translate("common.operation.label.resume");
-    case "pause":
-      return translate("common.operation.label.pause");
-    case "shutdown":
-      return translate("common.operation.label.shutdown");
-    case "provision":
-      return o.machine
-        ? translate("common.operation.label.provisionMachine", { machine: o.machine.replace(/^isoloom-/, "") })
-        : translate("common.operation.label.provision");
-    case "stop":
-      return translate("common.operation.label.stop");
-  }
+  if (o.op === "provision" && o.machine) return translate("common.operation.label.provisionMachine", { machine: machineLabel(o.machine) });
+  return `${translate(`common.operation.status.${o.op}`)}…`;
 }
 
 /**
