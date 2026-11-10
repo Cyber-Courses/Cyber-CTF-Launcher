@@ -31,6 +31,12 @@ describe("command errors", () => {
     expect(describeError({ code: "other", message: "lab `x` is not installed" })).toBe("lab `x` is not installed");
   });
 
+  it("keep a refusal's own words, which say what to put right", () => {
+    setLocalePreference("de");
+    expect(describeError({ code: "refused", message: "This lab is still running on esxi1." })).toBe("This lab is still running on esxi1.");
+    expect(describeError({ code: "refusedBeforeActing", message: "The run isn't up." })).toBe("The run isn't up.");
+  });
+
   it("say a JS error by its message, without the 'Error: ' String() adds", () => {
     expect(describeError(new Error("Pick a cloud account"))).toBe("Pick a cloud account");
     expect(describeError("plain text")).toBe("plain text");

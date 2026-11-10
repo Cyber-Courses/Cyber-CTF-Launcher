@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn the_lifecycle_refusals_say_what_to_do() {
         let (code, text) = said(RunnerError::AlreadyRunning { run: "cyberctf-web".into() });
-        assert_eq!((code, text.as_str()), (Code::Other, "This lab is already running on this machine. Stop it before starting it again."));
+        assert_eq!((code, text.as_str()), (Code::Refused, "This lab is already running on this machine. Stop it before starting it again."));
         assert!(matches!(from_runner(RunnerError::AlreadyRunning { run: "r".into() }), Error::Refused(_)), "a refusal leaves the last verdict as it was");
         assert!(said(RunnerError::NothingToResume { run: "r".into() }).1.starts_with("Nothing is left of this lab to resume"));
         assert!(said(RunnerError::NotRunning { run: "r".into() }).1.contains("Start it first"));

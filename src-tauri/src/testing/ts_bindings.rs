@@ -85,6 +85,12 @@ fn generate(dir: &Path) {
         shared_folder::SharedFolderInfo,
         terminal::TermEvent,
     );
+    write_values(dir);
+    write_index(dir);
+}
+
+/// Writes the files of values (not types) the webview reads from the core's own tables.
+fn write_values(dir: &Path) {
     write_provider_names(dir);
     write_docker_engines(dir);
     write_host_kinds(dir);
@@ -92,7 +98,7 @@ fn generate(dir: &Path) {
     write_selftest_steps(dir);
     write_deploy_log(dir);
     write_setup_shapes(dir);
-    write_index(dir);
+    write_error_codes(dir);
 }
 
 /// The file of the machines the setup's plan is tested on ([`machine::setup::shapes`]), each as
@@ -252,6 +258,25 @@ fn write_provider_names(dir: &Path) {
 /// The generated file of provider names (a value, not a type).
 const PROVIDER_NAMES: &str = "ProviderNames";
 
+/// The file of the error codes whose message is the error's own text, not a sentence of the
+/// catalogue ([`crate::error::Code::OWN_MESSAGE`]), which the webview says as they come (not a
+/// type: imported by its path, not from the index).
+fn write_error_codes(dir: &Path) {
+    let codes = crate::error::Code::OWN_MESSAGE
+        .iter()
+        .map(|code| serde_json::to_value(crate::error::Wire { code: code.clone(), message: String::new() }).unwrap()["code"].to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let doc = "/** The error codes said as the error's own (English) message, with no sentence in the catalogue: anything\n *  without a code, and the refusals, which say in their own words what to put right (Rust's `Code::OWN_MESSAGE`). */";
+    let text = format!(
+        "{HEADER}import type {{ CommandError }} from \"./CommandError\";\n\n{doc}\nexport const OWN_MESSAGE_CODES = [{codes}] as const satisfies readonly CommandError[\"code\"][];\n"
+    );
+    fs::write(dir.join(format!("{ERROR_CODES}.ts")), text).unwrap();
+}
+
+/// The generated file of the error codes said as their own message (a value, not a type).
+const ERROR_CODES: &str = "ErrorCodes";
+
 /// The `.ts` files in `dir` (none when it doesn't exist), by name.
 fn ts_files(dir: &Path) -> Vec<std::ffi::OsString> {
     let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
@@ -293,6 +318,7 @@ fn write_index(dir: &Path) {
                 && n != SELFTEST_STEPS
                 && n != DEPLOY_LOG
                 && n != SETUP_SHAPES
+                && n != ERROR_CODES
         })
         .collect();
     names.sort();

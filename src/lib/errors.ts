@@ -1,4 +1,5 @@
 import type { CommandError } from "@/lib/tauri/generated";
+import { OWN_MESSAGE_CODES } from "@/lib/tauri/generated/ErrorCodes";
 import { translate, type MessageKey, type Vars } from "@/lib/i18n";
 
 export type { CommandError };
@@ -24,13 +25,18 @@ export function isSignedOut(e: unknown): boolean {
   return code === "signedOut" || code === "sessionExpired";
 }
 
+/** An error whose code is said as its own English message (Rust's `Code::OWN_MESSAGE`): no code, or a refusal. */
+const saysItsOwn = (e: CommandError): e is Extract<CommandError, { code: (typeof OWN_MESSAGE_CODES)[number] }> =>
+  (OWN_MESSAGE_CODES as readonly string[]).includes(e.code);
+
 /**
  * What went wrong, in the player's language: a command's error by its code (its English message
- * for `other`), a JS error by its message (no "Error: " in front), anything else as text.
+ * for a code without a sentence of its own: `other`, a refusal), a JS error by its message (no
+ * "Error: " in front), anything else as text.
  */
 export function describeError(e: unknown, t: Translate = translate): string {
   const known = commandError(e);
-  if (known) return known.code === "other" ? known.message : t(`errors.codes.${known.code}`, "args" in known ? known.args : undefined);
+  if (known) return saysItsOwn(known) ? known.message : t(`errors.codes.${known.code}`, "args" in known ? known.args : undefined);
   if (e instanceof Error) return e.message;
   return String(e);
 }

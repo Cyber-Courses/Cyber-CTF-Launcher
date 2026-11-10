@@ -4,14 +4,19 @@
 use serde::{Deserialize, Serialize};
 
 /// What went wrong, as the UI knows it: a code it can branch on and say in the player's
-/// language, with the values its message needs. `Other` is everything the UI shows as the
-/// error's own (English) message.
+/// language, with the values its message needs. `Other` and the refusals are the codes the UI
+/// shows as the error's own (English) message ([`Code::OWN_MESSAGE`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "code", content = "args", rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[ts(rename = "ErrorCode")]
 pub enum Code {
     /// Anything the UI has no code for: it shows the error's own (English) message.
     Other,
+    /// An operation refused before it changed anything ([`Error::Refused`]), in its own words.
+    Refused,
+    /// A change of a lab refused before it acted, for something to put right first
+    /// ([`Error::RefusedBeforeActing`]), in its own words.
+    RefusedBeforeActing,
     /// A call that needs the account, with no session kept.
     SignedOut,
     /// The session can't be renewed any more: signed out.
@@ -116,10 +121,20 @@ pub enum Code {
 }
 
 impl Code {
-    /// The English message, for the log and for a UI without this code's translation.
+    /// The codes whose message is the error's own English text rather than a sentence of the
+    /// webview's catalogue: anything without a code, and the refusals, which say in their own
+    /// words what to put right. The webview reads this list from the generated bindings, which the
+    /// tests write (`testing::ts_bindings`).
+    #[cfg(test)]
+    pub const OWN_MESSAGE: [Code; 3] = [Code::Other, Code::Refused, Code::RefusedBeforeActing];
+
+    /// The English message, for the log and for a UI without this code's translation; for a code
+    /// of [`Code::OWN_MESSAGE`], what is said when an error has none of its own.
     fn message(&self) -> String {
         match self {
             Code::Other => "Something went wrong.".into(),
+            Code::Refused => "The operation was refused before it changed anything.".into(),
+            Code::RefusedBeforeActing => "The change was refused before it acted: nothing changed.".into(),
             Code::SignedOut => "You're signed out. Sign in again to continue.".into(),
             Code::SessionExpired => "Your session expired: you're signed out. Sign in again to continue.".into(),
             Code::LoginTimeout { minutes } => format!("Sign-in wasn't finished within {minutes} minutes, so it was cancelled. Try again."),
@@ -197,7 +212,7 @@ pub enum Error {
     #[error("{0}")]
     RefusedBeforeActing(String),
     /// The player cancelled sign-in (or started another one): not a failure to show.
-    #[error("Sign-in cancelled.")]
+    #[error("{}", Code::SignInCancelled.message())]
     Cancelled,
     /// CyberBackend or the sign-in service couldn't be reached (no network, an outage, an answer
     /// that isn't the API's): unlike a refusal, trying again later may work.
@@ -212,13 +227,13 @@ pub enum Error {
         message: String,
     },
     /// A tool the operation runs isn't installed, or isn't on `PATH`.
-    #[error("`{tool}` is not installed or not on PATH")]
+    #[error("{}", Code::ToolMissing { tool: (*tool).into() }.message())]
     ToolMissing {
         /// The tool's command name.
         tool: &'static str,
     },
     /// A command ran and failed.
-    #[error("`{command}` failed: {stderr}")]
+    #[error("{}", Code::CommandFailed { command: command.clone(), stderr: stderr.clone() }.message())]
     CommandFailed {
         /// The command line that failed.
         command: String,
@@ -255,7 +270,9 @@ impl Error {
             Error::CommandFailed { command, stderr } => Code::CommandFailed { command: command.clone(), stderr: stderr.clone() },
             Error::Cancelled => Code::SignInCancelled,
             Error::Unreachable(detail) => Code::Unreachable { detail: detail.clone() },
-            Error::Invalid(_) | Error::Refused(_) | Error::RefusedBeforeActing(_) | Error::LockUnavailable(_) | Error::Io(_) => Code::Other,
+            Error::Refused(_) => Code::Refused,
+            Error::RefusedBeforeActing(_) => Code::RefusedBeforeActing,
+            Error::Invalid(_) | Error::LockUnavailable(_) | Error::Io(_) => Code::Other,
         }
     }
 
@@ -266,7 +283,7 @@ impl Error {
 }
 
 /// An error as the webview receives it: `{ code, args?, message }`. `message` is English and
-/// always there, for the log and for codes the UI doesn't translate (`other`).
+/// always there, for the log and for the codes the UI says as they come ([`Code::OWN_MESSAGE`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(rename = "CommandError")]
 pub struct Wire {
@@ -281,6 +298,8 @@ impl From<Wire> for Error {
     fn from(w: Wire) -> Self {
         match w.code {
             Code::Other => Error::Invalid(w.message),
+            Code::Refused => Error::Refused(w.message),
+            Code::RefusedBeforeActing => Error::RefusedBeforeActing(w.message),
             Code::SignInCancelled => Error::Cancelled,
             Code::Unreachable { .. } => Error::Unreachable(w.message),
             code => Error::Coded { code, message: w.message },
@@ -306,8 +325,8 @@ mod tests {
     fn errors_reach_the_webview_with_their_code_and_message() {
         let cases = [
             (Error::Invalid("bad id".into()), json!({ "code": "other", "message": "bad id" })),
-            (Error::Refused("still running".into()), json!({ "code": "other", "message": "still running" })),
-            (Error::RefusedBeforeActing("not running".into()), json!({ "code": "other", "message": "not running" })),
+            (Error::Refused("still running".into()), json!({ "code": "refused", "message": "still running" })),
+            (Error::RefusedBeforeActing("not running".into()), json!({ "code": "refusedBeforeActing", "message": "not running" })),
             (Error::Cancelled, json!({ "code": "signInCancelled", "message": "Sign-in cancelled." })),
             (
                 Error::Unreachable("API unreachable: timed out".into()),
@@ -344,6 +363,16 @@ mod tests {
     }
 
     #[test]
+    fn a_refusal_read_back_from_the_wire_is_still_one() {
+        // A deploy worker hands its error back as a Wire: a refusal it read as Other came back as
+        // Invalid, neither a refusal nor refused before acting.
+        let back = Error::from(Error::Refused("still running on esxi1".into()).to_wire());
+        assert!(back.is_refusal() && back.to_string() == "still running on esxi1", "{back:?}");
+        let back = Error::from(Error::RefusedBeforeActing("the run isn't up".into()).to_wire());
+        assert!(matches!(&back, Error::RefusedBeforeActing(m) if m == "the run isn't up"), "{back:?}");
+    }
+
+    #[test]
     fn a_coded_error_says_its_code_in_english() {
         let e = Error::coded(Code::LoginTimeout { minutes: 5 });
         assert_eq!(e.to_string(), "Sign-in wasn't finished within 5 minutes, so it was cancelled. Try again.");
@@ -359,7 +388,7 @@ mod tests {
     fn every_code_says_what_the_english_catalog_says() {
         let catalog: serde_json::Value = serde_json::from_str(include_str!("../../src/messages/en/errors.json")).unwrap();
         let labs: serde_json::Value = serde_json::from_str(include_str!("../../src/messages/en/labs.json")).unwrap();
-        for code in sample_codes().into_iter().filter(|c| *c != Code::Other) {
+        for code in sample_codes().into_iter().filter(|c| !Code::OWN_MESSAGE.contains(c)) {
             let wire = serde_json::to_value(Wire { code: code.clone(), message: String::new() }).unwrap();
             let entry = &catalog["codes"][wire["code"].as_str().unwrap()];
             // A plural ({ one, other }) by its `count`, as the webview picks it in English.
@@ -407,11 +436,13 @@ mod tests {
             Code::ToolMissing { .. } => 22,
             Code::CommandFailed { .. } => 23,
             Code::TurnedOffByPolicy { .. } => 24,
+            Code::Refused => 25,
+            Code::RefusedBeforeActing => 26,
         }
     }
 
     /// How many forms [`form`] tells apart.
-    const FORMS: usize = 25;
+    const FORMS: usize = 27;
 
     #[test]
     fn every_form_has_a_sample() {
@@ -422,6 +453,8 @@ mod tests {
     fn sample_codes() -> Vec<Code> {
         vec![
             Code::Other,
+            Code::Refused,
+            Code::RefusedBeforeActing,
             Code::SignedOut,
             Code::SessionExpired,
             Code::LoginTimeout { minutes: 5 },
@@ -456,6 +489,8 @@ mod tests {
             // As the core raises it: its own variant where it has one, else coded.
             let error = match code.clone() {
                 Code::Other => Error::Invalid("bad id".into()),
+                Code::Refused => Error::Refused("still running elsewhere".into()),
+                Code::RefusedBeforeActing => Error::RefusedBeforeActing("the run isn't up".into()),
                 Code::SignInCancelled => Error::Cancelled,
                 Code::Unreachable { detail } => Error::Unreachable(detail),
                 c => Error::coded(c),

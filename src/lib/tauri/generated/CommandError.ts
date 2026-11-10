@@ -2,13 +2,13 @@
 
 /**
  * An error as the webview receives it: `{ code, args?, message }`. `message` is English and
- * always there, for the log and for codes the UI doesn't translate (`other`).
+ * always there, for the log and for the codes the UI says as they come ([`Code::OWN_MESSAGE`]).
  */
 export type CommandError = { 
 /**
  * The English message.
  */
-message: string, } & ({ "code": "other" } | { "code": "signedOut" } | { "code": "sessionExpired" } | { "code": "loginTimeout", "args": { 
+message: string, } & ({ "code": "other" } | { "code": "refused" } | { "code": "refusedBeforeActing" } | { "code": "signedOut" } | { "code": "sessionExpired" } | { "code": "loginTimeout", "args": { 
 /**
  * How long the sign-in waited, in minutes.
  */
