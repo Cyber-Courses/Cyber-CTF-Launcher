@@ -100,40 +100,62 @@ async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String
     // `..` or an absolute path. Reachable unattended through the agent, so this is the guard.
     runtime::validate_id(lab_id)?;
     validate_source(repository, commit)?;
-    let labs = dirs.data()?.join("labs");
-    let dir = labs.join(lab_id);
-    // Docker's networks now, so a new lab's instance lands on blocks nothing else holds.
-    let in_use = runtime::subnets_in_use(lab_id).await;
-    if runtime::lab::installed_at(&dir, commit) {
-        runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
-        return Ok(dir);
+    let slot = Slot::of(dirs, lab_id).await?;
+    if runtime::lab::installed_at(&slot.dir, commit) {
+        runtime::lab::ensure_instance(&slot.labs, &slot.dir, &slot.in_use)?;
+        return Ok(slot.dir);
     }
-
     // A new version of a lab that is up, here or elsewhere: swapping the folder would pull the
     // files its run reads (its manifest, what its containers bind-mount) out from under it. Stop
     // it first.
-    runtime::refuse_replace(dirs, &dir, lab_id)?;
-
+    runtime::refuse_replace(dirs, &slot.dir, lab_id)?;
     log(runtime::deploy_log::downloading(repository, &commit[..12]));
     let bytes = fetch().await?;
+    let (labs, into, owned) = (slot.labs.clone(), slot.dir.clone(), (lab_id.to_owned(), repository.to_owned(), commit.to_owned()));
+    let staged = move || {
+        let (lab_id, repository, commit) = &owned;
+        stage(&labs, &into, &bytes, Release { lab_id, repository, commit, runtime: declared })
+    };
+    install_into(dirs, &slot, (lab_id, declared), log, staged).await?;
+    log(runtime::deploy_log::INSTALLED.into());
+    Ok(slot.dir)
+}
 
+/// Where an install puts a lab: the labs folder, the lab's folder there, and the address blocks
+/// Docker's networks hold now (so a new lab's instance lands on blocks nothing else holds).
+struct Slot {
+    labs: PathBuf,
+    dir: PathBuf,
+    in_use: Vec<String>,
+}
+
+impl Slot {
+    /// Lab `lab_id`'s slot.
+    async fn of(dirs: &AppDirs, lab_id: &str) -> Result<Slot> {
+        let labs = dirs.data()?.join("labs");
+        let dir = labs.join(lab_id);
+        Ok(Slot { labs, dir, in_use: runtime::subnets_in_use(lab_id).await })
+    }
+}
+
+/// The steps every install shares, once the caller has refused a replacement of a lab that is up:
+/// a parked copy of the lab (`id`, declared `runtime`) is taken down, the folder `fill` stages
+/// (seconds of file work, on a blocking thread) swapped in all or nothing, and the lab given its
+/// own room on this machine (networks, names), so it runs beside the other labs.
+async fn install_into(
+    dirs: &AppDirs,
+    slot: &Slot,
+    (id, runtime): (&str, Runtime),
+    log: &impl Fn(String),
+    fill: impl FnOnce() -> Result<PathBuf> + Send + 'static,
+) -> Result<()> {
     // A parked copy of the previous version would be orphaned once its folder (and the runner's
     // record of it) is gone: take it down first, before its markers are carried over.
-    clear_parked(dirs, runtime::LabRef { dir: &dir, id: lab_id, runtime: declared }, log).await?;
-    // Seconds of file work (up to the archive's 512 MB unpacked, a rename retried while a file is
-    // held): on a blocking thread.
-    let (into, owned) = (dir.clone(), (lab_id.to_owned(), repository.to_owned(), commit.to_owned()));
-    let labs_dir = labs.clone();
-    blocking(move || {
-        let (lab_id, repository, commit) = &owned;
-        let staging = stage(&labs_dir, &into, &bytes, Release { lab_id, repository, commit, runtime: declared })?;
-        swap_in(&staging, &into)
-    })
-    .await?;
-    // Its own room on this machine (networks, names), so it runs beside the other labs.
-    runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
-    log(runtime::deploy_log::INSTALLED.into());
-    Ok(dir)
+    clear_parked(dirs, runtime::LabRef { dir: &slot.dir, id, runtime }, log).await?;
+    let into = slot.dir.clone();
+    blocking(move || swap_in(&fill()?, &into)).await?;
+    runtime::lab::ensure_instance(&slot.labs, &slot.dir, &slot.in_use)?;
+    Ok(())
 }
 
 /// Takes down a parked copy of `lab` before its folder is replaced ([`runtime::clear_parked`]);
@@ -401,26 +423,23 @@ pub(crate) fn local_id(src: &Path) -> Result<String> {
 /// parked copy cleared first — so the lifecycle commands then drive it like any installed lab.
 async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(String)) -> Result<PathBuf> {
     runtime::validate_id(lab_id)?;
+    // The folder is read again here: the worker that runs this may start well after the import
+    // was asked for (`local_id`), and the folder may have changed since.
     runtime::lab::load(src).map_err(|e| Error::Invalid(format!("not a lab folder ({}): {e}", src.display())))?;
-    let labs = dirs.data()?.join("labs");
-    let dir = labs.join(lab_id);
-    let in_use = runtime::subnets_in_use(lab_id).await;
+    let slot = Slot::of(dirs, lab_id).await?;
     // Re-importing while the previous copy is up would pull its files out from under it, as an
     // update would. Stop it first.
-    runtime::refuse_replace(dirs, &dir, lab_id)?;
+    runtime::refuse_replace(dirs, &slot.dir, lab_id)?;
     log(runtime::deploy_log::importing(lab_id, src));
-    clear_parked(dirs, runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker }, log).await?;
-    let staging = dir.with_file_name(format!(".{lab_id}.staging"));
-    let (from, into) = (src.to_path_buf(), dir.clone());
-    blocking(move || {
+    let (from, staging) = (src.to_path_buf(), slot.dir.with_file_name(format!(".{lab_id}.staging")));
+    let copied = move || {
         clear_leftover(&staging);
         runtime::lab::copy_tree(&from, &staging)?;
-        swap_in(&staging, &into)
-    })
-    .await?;
-    runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
+        Ok(staging)
+    };
+    install_into(dirs, &slot, (lab_id, Runtime::Docker), log, copied).await?;
     log(runtime::deploy_log::IMPORTED.into());
-    Ok(dir)
+    Ok(slot.dir)
 }
 
 /// Installs and starts the lab in the local directory `src` as a Docker lab with development
