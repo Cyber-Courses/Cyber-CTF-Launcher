@@ -88,8 +88,8 @@ mod dev_file {
         if let Some(file) = TEST_FILE.with(|f| f.borrow().clone()) {
             return Ok(file);
         }
-        let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).ok_or_else(|| Error::Invalid("no home directory".into()))?;
-        Ok(file_in(&PathBuf::from(home)))
+        let home = crate::platform::home_dir().ok_or_else(|| Error::Invalid("no home directory".into()))?;
+        Ok(file_in(&home))
     }
 
     /// The secrets file under a home folder.

@@ -329,6 +329,26 @@ fn the_source_rules_see_what_they_look_for() {
     assert!(!tauri.is_match("use ts_rs::TS;") && !tauri.is_match("let my_AppHandles = 1;"));
 }
 
+/// The user's home folder is read in one place, `platform::home_dir` (`USERPROFILE` on Windows,
+/// `HOME` elsewhere). Regression: the OCI config, the dev session and the dev servers' secrets
+/// read `HOME` first and the SSH key's Tauri's own lookup, so on Windows with `HOME` set (Git for
+/// Windows, MSYS) the OCI setup looked for `%HOME%\.oci\config` where the OCI CLI reads
+/// `%USERPROFILE%`.
+#[test]
+fn the_home_folder_is_read_only_through_platform_home_dir() {
+    let home = regex::Regex::new(r#"\bvar(_os)?\("(HOME|USERPROFILE)"\)|\.home_dir\(\)"#).unwrap();
+    assert!(home.is_match(r#"std::env::var_os("HOME")"#) && home.is_match("app.path().home_dir()") && !home.is_match("crate::platform::home_dir()"));
+    let elsewhere: Vec<String> = by_path()
+        .into_iter()
+        .filter(|(rel, _)| rel != "platform.rs")
+        .filter_map(|(rel, s)| {
+            let line = s.code.lines().position(|l| !l.trim_start().starts_with("//") && home.is_match(l))?;
+            Some(format!("{rel}:{}", line + 1))
+        })
+        .collect();
+    assert_eq!(elsewhere, [] as [String; 0], "read the home folder with crate::platform::home_dir()");
+}
+
 /// Nothing the app runs listens beyond the loopback. Regression (#230): the port check bound
 /// 0.0.0.0, and Windows Firewall asked the player whether Cyber CTF may accept connections from
 /// public networks, mid-deploy.

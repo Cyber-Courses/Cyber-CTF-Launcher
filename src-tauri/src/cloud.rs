@@ -205,9 +205,7 @@ pub fn oci_config() -> OciConfig {
 
 /// `OCI_CLI_CONFIG_FILE`, else ~/.oci/config.
 fn oci_config_path() -> Option<std::path::PathBuf> {
-    std::env::var_os("OCI_CLI_CONFIG_FILE")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(|h| std::path::PathBuf::from(h).join(".oci").join("config")))
+    std::env::var_os("OCI_CLI_CONFIG_FILE").map(std::path::PathBuf::from).or_else(|| crate::platform::home_dir().map(|h| h.join(".oci").join("config")))
 }
 
 /// The config file at `path`; not configured when there is none or it can't be read.

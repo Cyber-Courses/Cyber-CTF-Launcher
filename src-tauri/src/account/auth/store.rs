@@ -119,8 +119,7 @@ fn session_file() -> Option<std::path::PathBuf> {
 
 /// The dev session file in the home folder.
 fn home_session_path() -> Option<std::path::PathBuf> {
-    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
-    Some(std::path::PathBuf::from(home).join(".cyberctf").join("dev-session.json"))
+    Some(crate::platform::home_dir()?.join(".cyberctf").join("dev-session.json"))
 }
 
 /// The session kept in a dev session file: none when there is no file or it doesn't parse (as a

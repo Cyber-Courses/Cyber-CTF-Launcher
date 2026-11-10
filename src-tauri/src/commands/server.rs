@@ -8,7 +8,6 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
-use tauri::Manager;
 use tauri::ipc::Channel;
 
 use crate::AppHandle;
@@ -62,8 +61,8 @@ pub async fn server_save_ssh_key(app: AppHandle, input: HostInput) -> Result<Hos
 /// The SSH key the setup offers first: the first of `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa`
 /// that exists (its path only).
 #[tauri::command]
-pub fn server_default_ssh_key(app: AppHandle) -> Option<String> {
-    let home = app.path().home_dir().ok()?;
+pub fn server_default_ssh_key() -> Option<String> {
+    let home = crate::platform::home_dir()?;
     ssh_key::default_key(&home).map(|p| p.display().to_string())
 }
 
@@ -172,7 +171,7 @@ mod tests {
         std::fs::write(ssh.join("id_ed25519.pub"), "ssh-ed25519 AAAA cyberctf-launcher\n").unwrap();
         assert_eq!(server_public_key(app()).await.unwrap(), "ssh-ed25519 AAAA cyberctf-launcher");
         // The default key offered is one of the usual ones, when the player has one.
-        if let Some(path) = server_default_ssh_key(app()) {
+        if let Some(path) = server_default_ssh_key() {
             assert!(["id_ed25519", "id_ecdsa", "id_rsa"].iter().any(|n| path.ends_with(n)), "{path}");
         }
     }
