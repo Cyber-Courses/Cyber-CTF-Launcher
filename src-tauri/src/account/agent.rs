@@ -8,24 +8,29 @@
 //!
 //! An administrator's policy (`DisableWebsiteAgent`) turns the agent off: the machine then
 //! never registers, shows online, nor takes launches.
+//!
+//! Here: a claimed launch, from the claim to the report back. This machine's identity is
+//! `identity`'s; its registration, the heartbeat and the agent loop are `registration`'s; the
+//! player's approval is `confirm`'s.
 
 mod confirm;
+mod identity;
+mod registration;
 
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::sync::Arc;
 
 use crate::platform::AppDirs;
 use serde_json::{Value, json};
 
 pub use confirm::{LaunchRequest, PromptLaunch, confirm_launch};
 use confirm::{confirm_here, launch_request};
+use identity::random_hex;
+pub use registration::{AgentInfo, agent_info, run};
 
 use crate::account::api;
-use crate::account::auth;
 use crate::account::colocation;
 use crate::error::{Error, Result};
 use crate::labs;
-use crate::platform::policy::{self, Key};
 use crate::runtime::start_place::{self, StartPlace};
 use crate::runtime::{Runtime, server};
 
@@ -53,112 +58,6 @@ impl Deps {
     fn dirs(&self) -> &AppDirs {
         &self.dirs
     }
-}
-
-/// A stable identifier for this installation, generated once and kept in the app data
-/// dir. It is the merge key for the agent, so reinstalling re-registers the same machine
-/// and two machines never collide even when they share a display name.
-fn install_id(dirs: &AppDirs) -> Result<String> {
-    install_id_at(&dirs.data()?.join("install-id"))
-}
-
-/// The install id kept at `path`, generated and written there the first time.
-fn install_id_at(path: &std::path::Path) -> Result<String> {
-    if let Ok(existing) = std::fs::read_to_string(path) {
-        let trimmed = existing.trim();
-        if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
-        }
-    }
-    let id = random_hex();
-    crate::platform::atomic_file::write(path, &id)?;
-    Ok(id)
-}
-
-/// 16 random bytes as hex: install ids, co-location tokens and nonces.
-fn random_hex() -> String {
-    crate::platform::random_hex(16)
-}
-
-/// A human label for this machine (editable server-side later). Not an identifier.
-fn machine_name() -> String {
-    let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).ok();
-    machine_name_from(std::env::var("CYBERCTF_AGENT_NAME").ok(), user, std::env::consts::OS)
-}
-
-/// The machine label from an explicit name, else the user and the OS.
-fn machine_name_from(explicit: Option<String>, user: Option<String>, os: &str) -> String {
-    if let Some(n) = explicit
-        && !n.trim().is_empty()
-    {
-        return n.trim().to_string();
-    }
-    let user = user.filter(|s| !s.trim().is_empty());
-    let os = match os {
-        "macos" => "Mac",
-        "windows" => "PC",
-        "linux" => "Linux",
-        other => other,
-    };
-    match user {
-        Some(u) => format!("{u}'s {os}"),
-        None => format!("Cyber CTF {os}"),
-    }
-}
-
-fn arch() -> &'static str {
-    std::env::consts::ARCH
-}
-
-/// The launcher app's own version (semver), reported so the website can tell which build each
-/// machine runs. The crate version is the app's, bumped with `tauri.conf.json` and `package.json`
-/// at each release (as the About menu shows it).
-fn app_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
-}
-
-/// This machine's OS as the website shows it: `"macos 15.1"`, `"windows 11"`, `"linux 24.04"`, or
-/// the family alone when the version can't be read.
-fn os_label() -> String {
-    os_label_from(std::env::consts::OS, sysinfo::System::os_version().as_deref())
-}
-
-/// The OS label from its family and the version the OS reports, lowercased; only the version's
-/// first word is kept (Windows reports `"11 (22631)"`, the build in brackets).
-fn os_label_from(family: &str, version: Option<&str>) -> String {
-    let family = family.trim().to_lowercase();
-    match version.and_then(|v| v.split_whitespace().next()) {
-        Some(v) => format!("{family} {}", v.to_lowercase()),
-        None => family,
-    }
-}
-
-/// What this machine can run. Docker for now; VM providers are detected later.
-fn capabilities() -> Vec<String> {
-    vec!["docker".to_string()]
-}
-
-/// Upserts this machine as the player's launcher agent and returns the server agent id.
-async fn register(dirs: &AppDirs) -> Result<String> {
-    let data = api::graphql(
-        "mutation ($i: ID!, $n: String!, $c: [String!]!, $a: String, $t: [LaunchTargetInput!], $v: String, $o: String) { registerLauncher(installId: $i, name: $n, capabilities: $c, arch: $a, targets: $t, version: $v, os: $o) { id } }",
-        json!({ "i": install_id(dirs)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(dirs)?, "v": app_version(), "o": os_label() }),
-        true,
-    )
-    .await?;
-    data["registerLauncher"]["id"].as_str().map(String::from).ok_or_else(|| Error::Invalid("registerLauncher returned no id".into()))
-}
-
-/// Keep-alive, re-reporting the targets so hosts added since registering show on the website, and
-/// the app version and OS, so an update installed since registering shows too.
-async fn heartbeat(dirs: &AppDirs, agent_id: &str) -> Result<()> {
-    api::graphql(
-        "mutation ($id: ID!, $t: [LaunchTargetInput!], $v: String, $o: String) { launcherHeartbeat(agentId: $id, targets: $t, version: $v, os: $o) { id } }",
-        json!({ "id": agent_id, "t": server::launch_targets(dirs)?, "v": app_version(), "o": os_label() }),
-        true,
-    )
-    .await
-    .map(|_| ())
 }
 
 #[derive(Default)]
@@ -322,7 +221,7 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
 
 /// Picks up and runs every pending launch aimed at this agent. A failed read of them is logged;
 /// the next poll asks again.
-async fn poll_once(deps: &Deps, agent_id: &str) {
+pub(super) async fn poll_once(deps: &Deps, agent_id: &str) {
     match api::graphql("query ($a: ID) { myPendingLaunches(agentId: $a) { id } }", json!({ "a": agent_id }), true).await {
         Ok(data) => claim_each(pending_ids(&data), |sid| async move { Box::pin(claim_and_run(deps, &sid)).await }, report_failed).await,
         Err(e) => log::warn!("myPendingLaunches failed: {e}"),
@@ -359,169 +258,10 @@ async fn report_failed(session_id: String, why: String) {
     }
 }
 
-/// The agent this machine is registered as, and the account it was registered for.
-#[derive(Clone, Debug, PartialEq)]
-struct Registration {
-    user: String,
-    agent_id: String,
-}
-
-/// What the agent loop does next, from whom it is registered for and who is signed in now.
-#[derive(Debug, PartialEq)]
-enum Next {
-    /// Signed out: no agent (its id is forgotten), wait for a sign-in.
-    SignedOut,
-    /// Signed in as someone it isn't registered for (first sign-in, or another account).
-    Register,
-    /// Registered for the signed-in account: heartbeat and poll.
-    Run,
-}
-
-fn next_step(current: Option<&Registration>, user: Option<&str>) -> Next {
-    match (current, user) {
-        (_, None) => Next::SignedOut,
-        (Some(r), Some(u)) if r.user == u => Next::Run,
-        _ => Next::Register,
-    }
-}
-
-/// The agent this machine is registered as now, for the signed-in account: none while signed
-/// out, and while it registers (again, for another account). What `agent_info` says of it.
-static REGISTRATION: Mutex<Option<Registration>> = Mutex::new(None);
-
-/// The registration in `current`, poisoned or not (it is only ever replaced whole).
-fn registration(current: &Mutex<Option<Registration>>) -> MutexGuard<'_, Option<Registration>> {
-    current.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// The current registration's agent id, if any.
-fn agent_id_of(current: &Mutex<Option<Registration>>) -> Option<String> {
-    registration(current).as_ref().map(|r| r.agent_id.clone())
-}
-
-/// Heartbeats (~30s) for the current registration, on its own task: claiming and running a lab
-/// can block for a long time (a cloud launch waits on terraform apply, up to tens of minutes),
-/// and the machine must keep reporting that it's online for the whole launch, not drop offline
-/// while busy.
-fn spawn_heartbeat(dirs: AppDirs, current: &'static Mutex<Option<Registration>>) {
-    tokio::spawn(async move {
-        loop {
-            if let Some(agent_id) = agent_id_of(current)
-                && auth::access_token().await.is_ok()
-                && let Err(e) = heartbeat(&dirs, &agent_id).await
-            {
-                log::warn!("launcherHeartbeat failed: {e}");
-            }
-            tokio::time::sleep(Duration::from_secs(30)).await;
-        }
-    });
-}
-
-/// Runs the background agent, unless the policy turns it off: waits for login, registers, then
-/// heartbeats (~30s) and polls for launches (~6s) for as long as the app runs. Signing out forgets the agent, and
-/// signing in as another account registers again, so launches are never polled for (and
-/// the machine never shows online for) an account that isn't signed in here. The app shell spawns
-/// this on its runtime (see `crate::app`), with the effects (`Deps`) the agent reaches the player
-/// through, so this loop itself is free of `tauri`.
-pub async fn run(deps: Deps) {
-    if policy::current().is_on(Key::DisableWebsiteAgent) {
-        log::info!("the website agent is off (policy {}): this machine takes no launches from the website", Key::DisableWebsiteAgent.name());
-        return;
-    }
-    let current = &REGISTRATION;
-    spawn_heartbeat(deps.dirs().clone(), current);
-    loop {
-        let user = auth::signed_in_user().await;
-        let registered = registration(current).clone();
-        match next_step(registered.as_ref(), user.as_deref()) {
-            Next::SignedOut => {
-                *registration(current) = None;
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                continue;
-            }
-            Next::Register => {
-                // Not online for the account registered before while this one registers.
-                *registration(current) = None;
-                // No token yet, or registering failed: wait and start the cycle over.
-                if register_step(&deps, current, user).await {
-                    continue;
-                }
-            }
-            Next::Run => {}
-        }
-        if let Some(agent_id) = agent_id_of(current)
-            && auth::access_token().await.is_ok()
-        {
-            Box::pin(poll_once(&deps, &agent_id)).await;
-        }
-        tokio::time::sleep(Duration::from_secs(6)).await;
-    }
-}
-
-/// Registers this machine for `user`, keeping its agent id in `current`. Returns whether the loop
-/// should wait and start over — there was no access token yet, or `registerLauncher` failed — so a
-/// poll is never made for an account this machine isn't registered as.
-async fn register_step(deps: &Deps, current: &Mutex<Option<Registration>>, user: Option<String>) -> bool {
-    if auth::access_token().await.is_err() {
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        return true;
-    }
-    match register(deps.dirs()).await {
-        Ok(agent_id) => {
-            log::info!("launcher agent online: {agent_id}");
-            *registration(current) = Some(Registration { user: user.unwrap_or_default(), agent_id });
-            false
-        }
-        Err(e) => {
-            log::warn!("registerLauncher failed, retrying: {e}");
-            tokio::time::sleep(Duration::from_secs(15)).await;
-            true
-        }
-    }
-}
-
-/// This machine's launcher-agent identity, for the UI ("running as ...").
-#[derive(serde::Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInfo {
-    install_id: String,
-    name: String,
-    arch: &'static str,
-    capabilities: Vec<String>,
-    /// Whether the website sees this machine, as of now.
-    state: AgentState,
-}
-
-/// Whether the website sees this machine as somewhere to launch labs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-pub enum AgentState {
-    /// The administrator's policy turned the agent off (`DisableWebsiteAgent`).
-    OffByPolicy,
-    /// Not registered (yet) for the signed-in account: waiting for its first registration, or
-    /// retrying one that failed.
-    Registering,
-    /// Registered for the signed-in account: it shows online and takes launches.
-    Online,
-}
-
-/// The agent's state, from whether the policy turns it `off` and whether it is `registered`.
-fn agent_state(off: bool, registered: bool) -> AgentState {
-    match (off, registered) {
-        (true, _) => AgentState::OffByPolicy,
-        (false, false) => AgentState::Registering,
-        (false, true) => AgentState::Online,
-    }
-}
-
-/// This machine's identity, for the UI ("running as ..."), and whether the website sees it.
-pub fn agent_info(dirs: &AppDirs) -> Result<AgentInfo> {
-    let state = agent_state(policy::current().is_on(Key::DisableWebsiteAgent), registration(&REGISTRATION).is_some());
-    Ok(AgentInfo { install_id: install_id(dirs)?, name: machine_name(), arch: arch(), capabilities: capabilities(), state })
-}
-
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
 
     /// The agent's dependencies against a test app: its data folder, the prompts it shows kept
@@ -529,21 +269,6 @@ mod tests {
     pub(super) fn test_deps(t: &crate::testing::test_app::TestApp, prompts: Arc<Mutex<Vec<LaunchRequest>>>) -> Deps {
         let prompt = move |request: &LaunchRequest| prompts.lock().unwrap().push(request.clone());
         Deps::new(t.dirs(), Arc::new(prompt), Arc::new(|_: &str, _: &str| {}))
-    }
-
-    #[test]
-    fn the_agent_registers_again_for_another_account_and_forgets_it_on_sign_out() {
-        // After signing out and in as someone else, the old agent id was still polled with.
-        let a = Registration { user: "u1".into(), agent_id: "agent-1".into() };
-        assert_eq!(next_step(None, None), Next::SignedOut);
-        assert_eq!(next_step(None, Some("u1")), Next::Register);
-        assert_eq!(next_step(Some(&a), Some("u1")), Next::Run);
-        assert_eq!(next_step(Some(&a), Some("u2")), Next::Register);
-        assert_eq!(next_step(Some(&a), None), Next::SignedOut);
-        let current = Mutex::new(Some(a));
-        assert_eq!(agent_id_of(&current).as_deref(), Some("agent-1"));
-        *current.lock().unwrap() = None;
-        assert_eq!(agent_id_of(&current), None);
     }
 
     #[test]
@@ -570,33 +295,6 @@ mod tests {
     }
 
     #[test]
-    fn the_install_id_is_made_once_and_kept() {
-        let dir = std::env::temp_dir().join(format!("cyberctf-install-{}", random_hex()));
-        let path = dir.join("data").join("install-id");
-        let first = install_id_at(&path).unwrap();
-        assert_eq!(first.len(), 32);
-        assert_eq!(install_id_at(&path).unwrap(), first);
-        std::fs::write(&path, "  kept-id \n").unwrap();
-        assert_eq!(install_id_at(&path).unwrap(), "kept-id");
-        std::fs::write(&path, "   ").unwrap();
-        let regenerated = install_id_at(&path).unwrap();
-        assert_eq!(regenerated.len(), 32);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn the_machine_name_prefers_the_explicit_name_then_the_user() {
-        assert_eq!(machine_name_from(Some("  Lab box ".into()), Some("ada".into()), "linux"), "Lab box");
-        assert_eq!(machine_name_from(Some("  ".into()), Some("ada".into()), "macos"), "ada's Mac");
-        assert_eq!(machine_name_from(None, Some("bob".into()), "windows"), "bob's PC");
-        assert_eq!(machine_name_from(None, Some(" ".into()), "linux"), "Cyber CTF Linux");
-        assert_eq!(machine_name_from(None, None, "freebsd"), "Cyber CTF freebsd");
-        assert_ne!(machine_name(), "");
-        assert_eq!(capabilities(), vec!["docker".to_string()]);
-        assert_eq!(arch(), std::env::consts::ARCH);
-    }
-
-    #[test]
     fn a_launch_goes_to_the_target_picked_on_the_website_while_it_is_set_up() {
         let known = |t: &str| Ok((t == "esxi-1").then(|| "My ESXi".to_string()));
         assert_eq!(picked_target(Some("esxi-1"), known).unwrap().as_deref(), Some("esxi-1"));
@@ -616,50 +314,6 @@ mod tests {
         let on_az = Claim { target: Some(az), ..claim_of("web") };
         assert_eq!(launch_place(&t.dirs(), &on_az).await.unwrap().host.as_deref(), Some("az1"));
         assert_eq!(launch_place(&t.dirs(), &claim_of("web")).await.unwrap(), StartPlace::default(), "here");
-    }
-
-    #[test]
-    fn the_agent_is_online_only_registered_and_never_against_the_policy() {
-        // Regression: Settings showed every signed-in machine online, the policy's too.
-        assert_eq!(agent_state(true, false), AgentState::OffByPolicy);
-        assert_eq!(agent_state(true, true), AgentState::OffByPolicy);
-        assert_eq!(agent_state(false, false), AgentState::Registering);
-        assert_eq!(agent_state(false, true), AgentState::Online);
-        let t = crate::testing::test_app::TestApp::new();
-        let _policy = policy::Override::with(&[Key::DisableWebsiteAgent]);
-        assert_eq!(serde_json::to_value(agent_info(&t.dirs()).unwrap()).unwrap()["state"], "offByPolicy");
-    }
-
-    #[test]
-    fn this_machines_identity_is_its_install_id_name_and_arch() {
-        let t = crate::testing::test_app::TestApp::new();
-        let info = || serde_json::to_value(agent_info(&t.dirs()).unwrap()).unwrap();
-        let first = info();
-        assert_eq!(first["installId"].as_str().unwrap().len(), 32);
-        assert_eq!(info()["installId"], first["installId"], "kept");
-        let info = first;
-        assert_eq!(info["arch"], arch());
-        assert_eq!(info["capabilities"], json!(["docker"]));
-    }
-
-    #[test]
-    fn this_machine_reports_the_app_version_and_its_os_family_and_version() {
-        assert_eq!(app_version(), env!("CARGO_PKG_VERSION"));
-        assert_eq!(os_label_from("macos", Some("15.1")), "macos 15.1");
-        assert_eq!(os_label_from("windows", Some("11 (22631)")), "windows 11", "the build is dropped");
-        assert_eq!(os_label_from("Linux", Some("24.04")), "linux 24.04", "lowercased");
-        assert_eq!(os_label_from("linux", None), "linux", "the family alone without a version");
-        assert_eq!(os_label_from("linux", Some("  ")), "linux", "a blank version is none");
-        assert!(os_label().starts_with(std::env::consts::OS));
-    }
-
-    #[tokio::test]
-    async fn the_policy_keeps_the_agent_off() {
-        // With the website agent off the loop returns at once: it never registers nor polls.
-        let t = crate::testing::test_app::TestApp::new();
-        let _policy = policy::Override::with(&[Key::DisableWebsiteAgent]);
-        let ran = tokio::time::timeout(Duration::from_secs(5), Box::pin(run(test_deps(&t, Arc::default())))).await;
-        assert!(ran.is_ok(), "the agent kept running");
     }
 
     #[tokio::test]
