@@ -1,4 +1,5 @@
 import type { T } from "@/lib/i18n";
+import { FETCH_LINES, PREPARE_LINES } from "@/lib/tauri";
 
 /**
  * A lab's start-up log read as named steps. Which steps appear depends on the target the
@@ -31,10 +32,12 @@ export function detectTarget(text: string): "vagrant" | "terraform" | "docker" |
   return "unknown";
 }
 
+const startsAny = (starts: readonly string[]) => (l: string) => starts.some((start) => l.startsWith(start));
 // A line the launcher prints while fetching/placing the lab, before the target's own output.
-const isDownloadLine = (l: string) => /^(Downloading|Cloning|Lab installed|Fetching)\b|^Running (on server host|in a .* VM)/.test(l);
-// The launcher's own narration during a local VM start (recovery, provider choice).
-const isPrepLine = (l: string) => /left VM state behind|Clearing leftover|different target|Recovering|Preparing the lab/.test(l);
+const isDownloadLine = startsAny(FETCH_LINES);
+// The launcher's own narration while it readies this machine for a lab's VMs (its memory, QEMU's
+// emulation, UTM, a previous run's leftovers).
+const isPrepLine = startsAny(PREPARE_LINES);
 
 const machineLabel = (name: string) => name.replace(/^isoloom-/, "");
 

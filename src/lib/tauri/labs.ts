@@ -33,6 +33,9 @@ import type { DockerEngine } from "@/lib/tauri/machine";
 /** Each provider's name as the player reads it, from the backend (`Provider::label`). */
 export { EMULATORS, LOCAL_PROVIDERS, PROVIDER_NAMES, PROVIDER_NAMES_ON } from "@/lib/tauri/generated/ProviderNames";
 
+/** How the launcher's own deploy-log lines start, by the step the lab page files them under (`deploy_log`). */
+export { FETCH_LINES, PREPARE_LINES } from "@/lib/tauri/generated/DeployLog";
+
 export type {
   ActiveOperation,
   Badge,

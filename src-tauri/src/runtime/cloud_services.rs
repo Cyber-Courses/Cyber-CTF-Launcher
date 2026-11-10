@@ -91,7 +91,7 @@ pub(super) async fn start(dirs: &AppDirs, lab: LabRef<'_>, host: Option<&str>, e
     let conn = ready_account(dirs, host, conn, log).await?;
     // Mark first, so a half-created lab can still be destroyed with the same account.
     server::mark_lab(dir, Some(host))?;
-    log(format!("Running in your {} account {} ({})", conn.provider.label(), conn.name, region_used(cloud, &conn).unwrap_or("default region")));
+    log(super::deploy_log::in_cloud_account(conn.provider.label(), &conn.name, region_used(cloud, &conn).unwrap_or("default region")));
     if conn.provider == Provider::Aws {
         check_aws_budget(dirs, host, log).await?;
     }

@@ -3,6 +3,7 @@
 //! manifest's note for it), what its tool prints, and what the runner warns about are shown;
 //! state moves, outputs and the final result or error are not (the caller says how it ended).
 
+use super::super::deploy_log;
 use isothrum_runner::{Event, EventKind, Events, ReadyState, StepState, WarningCode};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
@@ -65,8 +66,8 @@ pub(super) fn line(kind: &EventKind) -> Option<String> {
 /// What the player reads for one of the runner's warnings (its codes; its message otherwise).
 fn warning(code: WarningCode, message: &str) -> Option<String> {
     match code {
-        WarningCode::LeftoversRemoved => Some("Clearing a previous, stopped run…".into()),
-        WarningCode::Recovering => Some("Docker kept something of an earlier run: clearing it, then starting again…".into()),
+        WarningCode::LeftoversRemoved => Some(deploy_log::CLEARING_LEFTOVERS.into()),
+        WarningCode::Recovering => Some(deploy_log::RECOVERING.into()),
         // A best-effort step (an old network left in place): nothing the player can act on.
         WarningCode::StepTolerated => None,
         _ => Some(message.to_owned()),

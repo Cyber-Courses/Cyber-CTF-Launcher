@@ -27,7 +27,7 @@ pub(super) async fn start_on_server(
     }
     // Mark first, so a half-created lab can still be destroyed on the same host.
     server::mark_lab(dir, Some(host))?;
-    log(format!("Running on server host {} ({})", conn.name, conn.provider.id()));
+    log(super::super::deploy_log::on_server_host(&conn.name, conn.provider.id()));
     // Every server lab runs through the Isothrum runner: a cloud account, an ESXi host (Vagrant),
     // or a Proxmox server (Terraform). The runner keeps the state, the slot and the connection.
     if conn.provider.is_cloud() {

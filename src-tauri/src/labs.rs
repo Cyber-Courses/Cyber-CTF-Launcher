@@ -114,7 +114,7 @@ async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String
     // it first.
     runtime::refuse_replace(dirs, &dir, lab_id)?;
 
-    log(format!("Downloading {repository}@{}", &commit[..12]));
+    log(runtime::deploy_log::downloading(repository, &commit[..12]));
     let bytes = fetch().await?;
 
     // A parked copy of the previous version would be orphaned once its folder (and the runner's
@@ -132,7 +132,7 @@ async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String
     .await?;
     // Its own room on this machine (networks, names), so it runs beside the other labs.
     runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
-    log("Lab installed".into());
+    log(runtime::deploy_log::INSTALLED.into());
     Ok(dir)
 }
 
@@ -409,7 +409,7 @@ async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(S
     // Re-importing while the previous copy is up would pull its files out from under it, as an
     // update would. Stop it first.
     runtime::refuse_replace(dirs, &dir, lab_id)?;
-    log(format!("Importing {lab_id} from {}", src.display()));
+    log(runtime::deploy_log::importing(lab_id, src));
     clear_parked(dirs, runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker }, log).await?;
     let staging = dir.with_file_name(format!(".{lab_id}.staging"));
     let (from, into) = (src.to_path_buf(), dir.clone());
@@ -420,7 +420,7 @@ async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(S
     })
     .await?;
     runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
-    log("Lab imported".into());
+    log(runtime::deploy_log::IMPORTED.into());
     Ok(dir)
 }
 

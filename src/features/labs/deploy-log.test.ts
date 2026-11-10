@@ -4,6 +4,10 @@ import { deriveSteps, detectTarget, failedMachineStep } from "@/features/labs/de
 import type { T } from "@/lib/i18n";
 
 // Labels as their message keys, so the tests read which step a line landed in.
+// The launcher's own lines below are the ones it prints (Rust's `runtime::deploy_log`, whose tests
+// hold them to these words).
+const EMULATING =
+  "Emulating x86_64 on this aarch64 machine with QEMU, many times slower than native: a Windows machine takes 15 to 40 minutes to boot, and the lab's setup can take hours.";
 const t = ((key: string) => key) as unknown as T;
 const timed = (lines: string[]) => lines.map((line, i) => ({ line, at: i * 1000 }));
 const steps = (lines: string[]) => deriveSteps(t, timed(lines)).map((s) => [s.id, s.label, s.rows.length]);
@@ -45,7 +49,7 @@ describe("deriveSteps", () => {
   });
 
   it("gives each Vagrant machine its own step, without the isoloom- prefix", () => {
-    expect(steps(["Recovering the lab", "==> isoloom-dc01: Importing box", "==> isoloom-ws01: Booting", "    more ws01 output"])).toEqual([
+    expect(steps(["Clearing a previous, stopped run…", "==> isoloom-dc01: Importing box", "==> isoloom-ws01: Booting", "    more ws01 output"])).toEqual([
       ["prepare", "labs.deploy.steps.prepareMachine", 1],
       ["m:isoloom-dc01", "dc01", 1],
       ["m:isoloom-ws01", "ws01", 2],
@@ -77,12 +81,12 @@ describe("deriveSteps: odd Vagrant output", () => {
   });
 
   it("lines before the first ==> are preparation, named after the launcher's narration when that comes first", () => {
-    expect(steps(["Clearing leftover VM state", "Bringing machine 'isoloom-dc01' up with 'virtualbox' provider...", "==> isoloom-dc01: Importing"])).toEqual([
+    expect(steps([EMULATING, "Bringing machine 'isoloom-dc01' up with 'virtualbox' provider...", "==> isoloom-dc01: Importing"])).toEqual([
       ["prepare", "labs.deploy.steps.prepareMachine", 2],
       ["m:isoloom-dc01", "dc01", 1],
     ]);
     // The step keeps the label of its first line.
-    expect(steps(["Bringing machine 'x' up with 'y' provider...", "Recovering the lab", "==> x: Booting"])[0]).toEqual([
+    expect(steps(["Bringing machine 'x' up with 'y' provider...", "Opening UTM and waiting for it to answer…", "==> x: Booting"])[0]).toEqual([
       "prepare",
       "labs.deploy.steps.start",
       2,
@@ -90,9 +94,28 @@ describe("deriveSteps: odd Vagrant output", () => {
   });
 
   it("keeps the launcher's download and placement lines in the download step, before the target's output", () => {
-    expect(steps(["Downloading lab files", "Lab installed", "Running on server host esxi-1", "==> dc01: Booting"])).toEqual([
+    expect(steps(["Downloading CyberCTF/ad@0123456789ab", "Lab installed", "Running on server host esxi-1 (vmware_esxi)", "==> dc01: Booting"])).toEqual([
       ["download", "labs.deploy.steps.download", 3],
       ["m:dc01", "dc01", 1],
+    ]);
+    expect(steps(["Running in a qemu VM on this machine", "Clearing a previous, stopped run…", "==> default: Booting VM..."])).toEqual([
+      ["download", "labs.deploy.steps.download", 1],
+      ["prepare", "labs.deploy.steps.prepareMachine", 1],
+      ["m:default", "default", 1],
+    ]);
+  });
+
+  it("keeps an imported lab's install in the download step, before its containers", () => {
+    expect(steps(["Importing local-web from /home/ada/labs/web", "Lab imported", " Container web-1  Started"])).toEqual([
+      ["download", "labs.deploy.steps.download", 2],
+      ["start", "labs.deploy.phases.start", 1],
+    ]);
+  });
+
+  it("keeps a cloud account's placement in the download step, before Terraform", () => {
+    expect(steps(["Running in your AWS account Labs (eu-west-1)", "Initializing the backend..."])).toEqual([
+      ["download", "labs.deploy.steps.download", 1],
+      ["tf-init", "labs.deploy.steps.tfInit", 1],
     ]);
   });
 
@@ -115,7 +138,7 @@ describe("deriveSteps: Docker Compose and Terraform order", () => {
   });
 
   it("lines before the first Compose phase are preparation", () => {
-    expect(steps(["Preparing the lab", "Container api Creating"])).toEqual([
+    expect(steps(["Clearing a previous, stopped run…", "Container api Creating"])).toEqual([
       ["prepare", "labs.deploy.steps.prepareLab", 1],
       ["create", "labs.deploy.phases.create", 1],
     ]);

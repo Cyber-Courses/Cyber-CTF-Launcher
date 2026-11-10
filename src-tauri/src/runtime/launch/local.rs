@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use super::super::deploy_log;
 use super::{Error, Result, lab};
 
 /// Warns (without blocking) when the host likely can't fit all of a one-VM-per-machine lab's
@@ -22,11 +23,7 @@ pub(super) fn warn_if_low_memory(spec: &lab::Spec, log: &mut impl FnMut(String))
 
 /// The warning for a lab needing `needed_mb` of memory with `available_mb` free (0: unknown).
 pub(super) fn low_memory_warning(needed_mb: u64, available_mb: u64) -> Option<String> {
-    (available_mb > 0 && needed_mb > available_mb).then(|| {
-        format!(
-            "This lab's VMs ask for about {needed_mb} MB, but only ~{available_mb} MB is free on this machine. It may run slowly or fail to boot; close other apps or stop other labs if it struggles."
-        )
-    })
+    (available_mb > 0 && needed_mb > available_mb).then(|| deploy_log::low_memory(needed_mb, available_mb))
 }
 
 /// The CPUs (`std::env::consts::ARCH` names) a lab's VMs are built for that differ from `host`,
@@ -73,9 +70,7 @@ pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(St
                 "This lab's machines are {arch}, and QEMU's {arch} emulator ({bin}) isn't installed. Reinstall QEMU from the Machine page."
             )));
         }
-        log(format!(
-            "Emulating {arch} on this {host} machine with QEMU, many times slower than native: a Windows machine takes 15 to 40 minutes to boot, and the lab's setup can take hours."
-        ));
+        log(deploy_log::emulating(arch, host));
     }
     Ok(())
 }
@@ -114,7 +109,7 @@ pub(super) async fn check_utm(log: &mut impl FnMut(String)) -> Result<()> {
             }
             Err(_) => {
                 if !said {
-                    log("Opening UTM and waiting for it to answer…".into());
+                    log(deploy_log::OPENING_UTM.into());
                     said = true;
                 }
                 tokio::time::sleep(Duration::from_secs(1)).await;

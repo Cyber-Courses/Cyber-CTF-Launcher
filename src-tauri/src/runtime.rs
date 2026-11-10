@@ -20,6 +20,7 @@
 
 pub(crate) mod attack_machine;
 pub(crate) mod cloud_services;
+pub(crate) mod deploy_log;
 pub(crate) mod discover;
 pub(crate) use discover::is_lab_id;
 pub(crate) mod docker;

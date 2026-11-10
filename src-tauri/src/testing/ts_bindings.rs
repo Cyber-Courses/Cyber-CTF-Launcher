@@ -85,6 +85,7 @@ fn generate(dir: &Path) {
     );
     write_provider_names(dir);
     write_selftest_steps(dir);
+    write_deploy_log(dir);
     write_index(dir);
 }
 
@@ -102,6 +103,25 @@ fn write_selftest_steps(dir: &Path) {
 
 /// The generated file of the VM test's steps (a value, not a type).
 const SELFTEST_STEPS: &str = "SelfTestSteps";
+
+/// The file of how the launcher's own deploy-log lines start, by the step the lab page files them
+/// under ([`runtime::deploy_log`]), which the page's step parser reads (not a type: imported by
+/// its path, not from the index).
+fn write_deploy_log(dir: &Path) {
+    use runtime::deploy_log::{FETCH, PREPARE};
+    let listed = |starts: &[&str]| starts.iter().map(|s| serde_json::to_string(s).unwrap()).collect::<Vec<_>>().join(", ");
+    let doc_fetch = "/** How the launcher's lines start while it fetches and places the lab: the \"Download the lab\" step (Rust's `deploy_log::FETCH`). */";
+    let doc_prepare = "/** How the launcher's lines start while it readies this machine for a lab's VMs: the \"Prepare this machine\" step when one\n *  comes first (Rust's `deploy_log::PREPARE`). */";
+    let text = format!(
+        "{HEADER}\n{doc_fetch}\nexport const FETCH_LINES: readonly string[] = [{}];\n\n{doc_prepare}\nexport const PREPARE_LINES: readonly string[] = [{}];\n",
+        listed(&FETCH),
+        listed(&PREPARE),
+    );
+    fs::write(dir.join(format!("{DEPLOY_LOG}.ts")), text).unwrap();
+}
+
+/// The generated file of the deploy log's line starts (values, not types).
+const DEPLOY_LOG: &str = "DeployLog";
 
 /// The file of every provider's name as the player reads it ([`Provider::label`]), the one table
 /// the webview names providers from (not a type: imported by its path, not from the index).
@@ -172,7 +192,7 @@ fn write_index(dir: &Path) {
     let mut names: Vec<String> = fs::read_dir(dir)
         .unwrap()
         .filter_map(|e| e.unwrap().path().file_stem().map(|s| s.to_string_lossy().into_owned()))
-        .filter(|n| n != "index" && n != PROVIDER_NAMES && n != SELFTEST_STEPS)
+        .filter(|n| n != "index" && n != PROVIDER_NAMES && n != SELFTEST_STEPS && n != DEPLOY_LOG)
         .collect();
     names.sort();
     let lines = names.iter().fold(String::new(), |mut lines, n| {

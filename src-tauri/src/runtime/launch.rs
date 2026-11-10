@@ -161,7 +161,7 @@ pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
     let prepared = lab::prepare(dir, lab::vagrant_target(Runtime::Docker))?;
     check_provider(&prepared, lab::Target::DockerVm, provider)?;
     mark_local_vm(dir, Some(provider))?;
-    log(format!("Running in a {} VM on this machine", provider.id()));
+    log(super::deploy_log::in_local_vm(provider.id()));
     if provider == Provider::Utm {
         check_utm(log).await?;
     }
