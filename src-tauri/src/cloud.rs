@@ -130,15 +130,40 @@ pub(crate) fn month_period() -> String {
 
 /// This month's AWS spend so far in USD, as the AWS CLI's `profile` (or its default) sees it:
 /// the setup form's, before the account is saved (a saved account's is `server_month_to_date_cost`,
-/// with its own credentials). None when the CLI or Cost Explorer isn't available.
+/// with its own credentials). None when the CLI or Cost Explorer isn't available (logged, but for
+/// a CLI that isn't installed).
 pub async fn aws_month_to_date_cost(profile: Option<String>) -> Option<f64> {
-    crate::runtime::server::cli_month_to_date_cost(profile).await.ok()
+    answered("this month's AWS spend", crate::runtime::server::cli_month_to_date_cost(profile).await)
 }
 
 /// The AWS CLI profiles configured on this machine (`aws configure list-profiles`), so the
-/// user can pick one when they have several. Empty when the CLI is missing or has none.
+/// user can pick one when they have several. Empty when the CLI is missing or has none, or fails
+/// (logged).
 pub async fn aws_profiles() -> Vec<String> {
-    run_cli("aws", &["configure", "list-profiles"]).await.ok().map(|s| lines(&s)).unwrap_or_default()
+    answered("the AWS CLI profiles", run_cli("aws", &["configure", "list-profiles"]).await).map(|s| lines(&s)).unwrap_or_default()
+}
+
+/// What a CLI answered when asked for `what`; none when it couldn't answer. A CLI that isn't
+/// installed is the one expected case; any other failure (signed out, an API turned off, a
+/// permission denied, a timeout) is logged, so a setup showing nothing can be explained.
+fn answered<T>(what: &str, answer: Result<T>) -> Option<T> {
+    match answer {
+        Ok(found) => Some(found),
+        Err(Error::ToolMissing { .. }) => None,
+        Err(e) => {
+            log::warn!("couldn't read {what}, so none is offered: {e}");
+            None
+        }
+    }
+}
+
+/// A CLI's JSON list of `what`; empty when it doesn't parse (logged: a changed
+/// output format).
+fn parsed<T: serde::de::DeserializeOwned>(what: &str, out: &str) -> Vec<T> {
+    serde_json::from_str(out).unwrap_or_else(|e| {
+        log::warn!("couldn't read {what} from the CLI's answer, so none is offered: {e}");
+        Vec::new()
+    })
 }
 
 /// The non-blank lines of a CLI's output, trimmed.
@@ -157,18 +182,19 @@ pub struct AzureSubscription {
 }
 
 /// The Azure subscriptions the signed-in account can see (`az account list`), so the user can
-/// pick one instead of pasting a GUID. Empty when the CLI is missing or not signed in.
+/// pick one instead of pasting a GUID. Empty when the CLI is missing or not signed in, or fails
+/// (logged).
 pub async fn azure_subscriptions() -> Vec<AzureSubscription> {
-    run_cli("az", &["account", "list", "--query", "[].{name:name,id:id,isDefault:isDefault}", "--output", "json"])
-        .await
-        .ok()
-        .map(|out| subscriptions(&out))
-        .unwrap_or_default()
+    let out = run_cli("az", &["account", "list", "--query", "[].{name:name,id:id,isDefault:isDefault}", "--output", "json"]).await;
+    answered(SUBSCRIPTIONS, out).map(|out| subscriptions(&out)).unwrap_or_default()
 }
+
+/// What the Azure subscriptions are called in the log.
+const SUBSCRIPTIONS: &str = "the Azure subscriptions";
 
 /// `az account list` output (the query above) as subscriptions; none when it doesn't parse.
 fn subscriptions(out: &str) -> Vec<AzureSubscription> {
-    serde_json::from_str::<Vec<AzureSubscription>>(out).unwrap_or_default()
+    parsed(SUBSCRIPTIONS, out)
 }
 
 /// A GCP billing account the signed-in user can see.
@@ -255,19 +281,21 @@ pub async fn gcp_account() -> Option<String> {
 }
 
 /// The GCP billing accounts the signed-in user can see (`gcloud billing accounts list`), so they
-/// pick one for the per-lab projects. Empty when the CLI is missing or not signed in.
+/// pick one for the per-lab projects. Empty when the CLI is missing or not signed in, or fails
+/// (logged).
 pub async fn gcp_billing_accounts() -> Vec<GcpBillingAccount> {
-    run_cli("gcloud", &["billing", "accounts", "list", "--format", "json"]).await.ok().map(|out| billing_accounts(&out)).unwrap_or_default()
+    answered(BILLING_ACCOUNTS, run_cli("gcloud", &["billing", "accounts", "list", "--format", "json"]).await)
+        .map(|out| billing_accounts(&out))
+        .unwrap_or_default()
 }
 
-/// The entries of a gcloud JSON list; none when it doesn't parse.
-fn json_list(out: &str) -> Vec<serde_json::Value> {
-    serde_json::from_str::<Vec<serde_json::Value>>(out).unwrap_or_default()
-}
+/// What the GCP billing accounts are called in the log.
+const BILLING_ACCOUNTS: &str = "the Google Cloud billing accounts";
 
-/// `gcloud billing accounts list --format json` as billing accounts (ids without their prefix).
+/// `gcloud billing accounts list --format json` as billing accounts (ids without their prefix);
+/// none when it doesn't parse.
 fn billing_accounts(out: &str) -> Vec<GcpBillingAccount> {
-    json_list(out)
+    parsed::<serde_json::Value>(BILLING_ACCOUNTS, out)
         .into_iter()
         .map(|v| GcpBillingAccount {
             id: v["name"].as_str().unwrap_or_default().trim_start_matches("billingAccounts/").to_string(),
@@ -279,14 +307,19 @@ fn billing_accounts(out: &str) -> Vec<GcpBillingAccount> {
 }
 
 /// The GCP organizations the signed-in user belongs to (`gcloud organizations list`). Empty for
-/// a personal / no-org account, so the user can create projects without a parent.
+/// a personal / no-org account, so the user can create projects without a parent; and when the CLI
+/// fails (logged).
 pub async fn gcp_organizations() -> Vec<GcpOrganization> {
-    run_cli("gcloud", &["organizations", "list", "--format", "json"]).await.ok().map(|out| organizations(&out)).unwrap_or_default()
+    answered(ORGANIZATIONS, run_cli("gcloud", &["organizations", "list", "--format", "json"]).await).map(|out| organizations(&out)).unwrap_or_default()
 }
 
-/// `gcloud organizations list --format json` as organizations (ids without their prefix).
+/// What the GCP organizations are called in the log.
+const ORGANIZATIONS: &str = "the Google Cloud organizations";
+
+/// `gcloud organizations list --format json` as organizations (ids without their prefix); none
+/// when it doesn't parse.
 fn organizations(out: &str) -> Vec<GcpOrganization> {
-    json_list(out)
+    parsed::<serde_json::Value>(ORGANIZATIONS, out)
         .into_iter()
         .map(|v| GcpOrganization {
             id: v["name"].as_str().unwrap_or_default().trim_start_matches("organizations/").to_string(),
@@ -331,11 +364,13 @@ mod tests {
         assert!(aws_cli_identity(Some("labs".into())).await.is_some());
         assert!(tools.called("--profile labs"));
         assert_eq!(aws_profiles().await, ["default", "labs"]);
-        let _ = aws_month_to_date_cost(None).await;
+        assert_eq!(aws_month_to_date_cost(None).await, Some(12.5));
         assert_eq!(azure_subscriptions().await.len(), 1);
         assert_eq!(gcp_account().await.as_deref(), Some("ada@example.com"));
-        let _ = gcp_billing_accounts().await;
-        let _ = gcp_organizations().await;
+        let billing = gcp_billing_accounts().await;
+        assert_eq!((billing.len(), billing[0].id.as_str(), billing[0].name.as_str(), billing[0].open), (1, "AAAAAA-BBBBBB-CCCCCC", "Main", true));
+        let orgs = gcp_organizations().await;
+        assert_eq!((orgs.len(), orgs[0].id.as_str(), orgs[0].name.as_str()), (1, "123", "Org"));
         let (channel, seen) = sink();
         cloud_login(Cloud::Azure, channel).await.unwrap();
         assert_eq!(*seen.lock().unwrap(), ["$ az login", "signed in"]);
@@ -374,6 +409,34 @@ mod tests {
         assert_eq!(gcp_account().await, None, "an expired sign-in counts as signed out");
         assert!(gcp_billing_accounts().await.is_empty() && gcp_organizations().await.is_empty());
         assert!(cloud_login(Cloud::Gcp, sink().0).await.is_err());
+    }
+
+    /// Regression: every list read a failure as "none", nothing logged, so a setup showing no
+    /// billing account (the Cloud Billing API off, a permission denied) couldn't be explained.
+    #[tokio::test]
+    async fn a_cli_list_that_fails_or_doesnt_parse_is_logged_and_a_missing_cli_is_not() {
+        let _tools = Tools::new(|program, args| match (program, args) {
+            ("gcloud", ["billing", ..]) => fail("Cloud Billing API has not been used in project 12 before or it is disabled."),
+            ("gcloud", ["organizations", ..]) => ok("Listed 0 items."),
+            ("az", ..) => None,
+            _ => fail("AccessDenied"),
+        });
+        crate::testing::logs::take_warnings();
+        assert!(gcp_billing_accounts().await.is_empty());
+        let warned = crate::testing::logs::take_warnings();
+        assert_eq!(warned.len(), 1, "{warned:?}");
+        assert!(
+            warned[0].starts_with("couldn't read the Google Cloud billing accounts, so none is offered: ") && warned[0].contains("Cloud Billing API"),
+            "{warned:?}"
+        );
+        assert!(gcp_organizations().await.is_empty());
+        let warned = crate::testing::logs::take_warnings();
+        assert!(warned.len() == 1 && warned[0].starts_with("couldn't read the Google Cloud organizations from the CLI's answer"), "{warned:?}");
+        assert_eq!(aws_month_to_date_cost(None).await, None);
+        assert_eq!(aws_profiles().await, [] as [&str; 0]);
+        assert_eq!(crate::testing::logs::take_warnings().len(), 2, "the spend and the profiles");
+        assert!(azure_subscriptions().await.is_empty());
+        assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0], "a CLI that isn't installed is no failure");
     }
 
     #[test]
