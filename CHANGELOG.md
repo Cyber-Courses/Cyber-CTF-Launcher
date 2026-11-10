@@ -71,6 +71,16 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
+- **The ESXi VM test runs a real VM.** It used to check only that the host's SSH port answered.
+  It now runs a throwaway one-machine lab on the host the way a lab runs there: Vagrant's
+  `vmware_esxi` through the Isothrum runner, with the host's settings and password. The steps
+  are: reach the host; prepare the test lab; upload the test VM to the datastore with the OVF
+  Tool, its box named with its architecture; start the VM; the VM gets an address on the host's
+  network; reach it over SSH; run a command inside it; remove everything the test created. The
+  teardown runs even after a failure and says what is left when it fails. A test cut short
+  keeps its folder, and the next test removes its VM first. Before anything reaches the host,
+  the test checks that this computer has the `vagrant-vmware-esxi` plugin and the OVF Tool, as
+  the Machine page finds them, and says which one is missing.
 - **`pnpm release-check` runs everything CI runs**: it gained the docs' links, the build, the
   generated bindings check, `cargo deny` (when installed) and `pnpm audit --prod`.
 - **Licensed under the Apache License 2.0** (`LICENSE`, `NOTICE`).
