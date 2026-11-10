@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use tokio::sync::Mutex as AsyncMutex;
+
 use isoloom_manifest::ManifestVersion;
 
 use super::errors::{ADD_AGAIN, EARLIER_FILES};
@@ -19,26 +21,30 @@ use crate::runtime::lab;
 /// The lock of the lab in `dir`, held while its manifest's version is read and, when it isn't this
 /// build's, its files are generated again: an operation reading the manifest meanwhile (a status
 /// the lab page asks for during a stop) never reads a file half written. One per lab: another
-/// lab's status read never waits on this one's generation (several seconds for a large lab).
-fn lab_lock(dir: &Path) -> Arc<Mutex<()>> {
-    static LOCKS: Mutex<BTreeMap<PathBuf, Arc<Mutex<()>>>> = Mutex::new(BTreeMap::new());
+/// lab's status read never waits on this one's generation (several seconds for a large lab). An
+/// async lock: a read waiting on it gives its thread back meanwhile.
+fn lab_lock(dir: &Path) -> Arc<AsyncMutex<()>> {
+    static LOCKS: Mutex<BTreeMap<PathBuf, Arc<AsyncMutex<()>>>> = Mutex::new(BTreeMap::new());
     LOCKS.lock().unwrap_or_else(PoisonError::into_inner).entry(dir.to_path_buf()).or_default().clone()
 }
 
 /// Generates the files of the lab in `dir` for `target` again when its run manifest, `manifest`,
 /// isn't the version this build reads; nothing when it is, or when there is none (no files yet)
-/// or it isn't one at all (the runner says what is wrong with it).
+/// or it isn't one at all (the runner says what is wrong with it). The generation (seconds for a
+/// large lab) runs on a blocking thread, off the async workers a status read runs on.
 ///
 /// # Errors
 ///
 /// When the lab's files can't be generated any more (its spec gone or unreadable, or the lab no
 /// longer able to run there), saying what to do.
-pub(super) fn current(manifest: &Path, dir: &Path, target: lab::Target) -> Result<()> {
+pub(super) async fn current(manifest: &Path, dir: &Path, target: lab::Target) -> Result<()> {
     let lock = lab_lock(dir);
-    let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
+    let _held = lock.lock().await;
     let Some(found) = stale_version(manifest) else { return Ok(()) };
     log::info!("{}: its run manifest is version {found}, which this version doesn't read; generating the lab's files again", manifest.display());
-    lab::prepare(dir, target).map(drop).map_err(|e| Error::Invalid(format!("{EARLIER_FILES}: {e}. {ADD_AGAIN}")))
+    let dir = dir.to_path_buf();
+    let generated = tokio::task::spawn_blocking(move || lab::prepare(&dir, target).map(drop)).await.map_err(|e| Error::Invalid(e.to_string()))?;
+    generated.map_err(|e| Error::Invalid(format!("{EARLIER_FILES}: {e}. {ADD_AGAIN}")))
 }
 
 /// The Isoloom target whose files hold a run manifest of `target` (what the runner records of a
@@ -93,18 +99,40 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
-    #[test]
-    fn a_lab_being_generated_again_holds_up_no_other_lab() {
+    /// `fut`, given 5 s.
+    async fn in_time<F: Future>(fut: F) -> std::result::Result<F::Output, tokio::time::error::Elapsed> {
+        tokio::time::timeout(std::time::Duration::from_secs(5), fut).await
+    }
+
+    /// Lab `n`'s folder under `root`, and its run manifest's path.
+    fn lab_in(root: &Path, n: &str) -> (PathBuf, PathBuf) {
+        let dir = root.join(n);
+        (dir.join("run.json"), dir)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn a_lab_being_generated_again_holds_up_no_other_lab_nor_a_thread() {
         // Regression: one process-wide lock served every lab, so one lab's regeneration held up
-        // every other lab's status read.
+        // every other lab's status read; then a read waiting on its own lab's held the thread it
+        // ran on, every other task on it stalled meanwhile.
         let root = std::env::temp_dir().join(format!("cyberctf-regen-{}", rand::random::<u32>()));
-        let (a, b) = (root.join("a"), root.join("b"));
+        let ((a_manifest, a), (b_manifest, b)) = (lab_in(&root, "a"), lab_in(&root, "b"));
         let held = lab_lock(&a);
-        let _a_busy = held.lock().unwrap();
-        let (done, finished) = std::sync::mpsc::channel();
-        let other = b.clone();
-        std::thread::spawn(move || done.send(current(&other.join("run.json"), &other, lab::Target::Docker).is_ok()).unwrap());
-        assert_eq!(finished.recv_timeout(std::time::Duration::from_secs(5)), Ok(true), "lab b waited on lab a");
+        let a_busy = held.lock().await;
+        assert!(matches!(in_time(current(&b_manifest, &b, lab::Target::Docker)).await, Ok(Ok(()))), "lab b waited on lab a");
+        // A read of lab a waits for it on the only worker, which still runs other tasks. Watched
+        // from this thread, with no timer of the runtime's: a held worker would drive none.
+        let waiting = tokio::spawn(async move { current(&a_manifest, &a, lab::Target::Docker).await });
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let (sent, other) = std::sync::mpsc::channel();
+        tokio::spawn(async move { sent.send(7) });
+        let ran = other.recv_timeout(std::time::Duration::from_secs(2));
+        let early = waiting.is_finished();
+        drop(a_busy);
+        assert_eq!(ran, Ok(7), "the worker was held while the read waited");
+        assert!(!early, "the read went on while its lab's generation was held");
+        assert!(matches!(in_time(waiting).await, Ok(Ok(Ok(())))));
+        let a = root.join("a");
         assert!(Arc::ptr_eq(&lab_lock(&a), &held), "one lock per lab, the same each time");
         assert!(!Arc::ptr_eq(&lab_lock(&b), &held));
     }

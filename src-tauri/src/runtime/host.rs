@@ -122,11 +122,11 @@ impl Host {
     }
 
     /// The command that opens a shell into `machine`.
-    pub(crate) fn console(&self, machine: &str) -> Result<ShellCommand> {
+    pub(crate) async fn console(&self, machine: &str) -> Result<ShellCommand> {
         match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.console_command(machine),
-            Host::Cloud { run, .. } => run.console_command(machine),
-            Host::Server { run, .. } => run.console_command(machine),
+            Host::Local(run) | Host::Esxi { run, .. } => run.console_command(machine).await,
+            Host::Cloud { run, .. } => run.console_command(machine).await,
+            Host::Server { run, .. } => run.console_command(machine).await,
         }
     }
 

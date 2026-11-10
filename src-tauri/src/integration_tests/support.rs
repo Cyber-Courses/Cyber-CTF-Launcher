@@ -159,7 +159,7 @@ pub(crate) async fn box_reaches(placed: &Placed, target: &str, when: &str, f: &m
     }
     let name = attack_machine::name(&placed.dir).unwrap_or_else(|e| panic!("the box's name: {e}"));
     let probe = format!("bash -c \"exec 3<>/dev/tcp/{target}/80 && echo reached; hostname\"");
-    let reached = match placed.shell_command() {
+    let reached = match placed.shell_command().await {
         Ok(console) => in_box(&console, &probe).await,
         Err(err) => Err(err),
     };

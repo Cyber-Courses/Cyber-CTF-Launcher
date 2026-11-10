@@ -188,7 +188,7 @@ impl CloudRun {
     /// start. `env` is the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &CloudPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        let running = self.running()?;
+        let running = self.running().await?;
         super::up_with(&running, &place.options(env, running.manifest()), log).await
     }
 
@@ -197,7 +197,7 @@ impl CloudRun {
     /// they were given.
     pub(crate) async fn update(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        let running = self.running()?;
+        let running = self.running().await?;
         super::update_of(&running, &place.options(&[], running.manifest()), log).await
     }
 
@@ -205,7 +205,7 @@ impl CloudRun {
     /// account's credentials (`place`'s).
     pub(crate) async fn retire(&self, place: &CloudPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        let running = self.running()?;
+        let running = self.running().await?;
         super::retire_from(&running, machine, &place.options(&[], running.manifest()), log).await
     }
 
@@ -220,7 +220,7 @@ impl CloudRun {
             return Ok(());
         }
         self.signed_in(place).await?;
-        let running = self.running()?;
+        let running = self.running().await?;
         let (sink, lines) = progress::channel();
         progress::follow(log, lines, running.down(&place.options(&[], running.manifest()), &sink)).await.map_err(errors::from_runner)
     }
@@ -231,7 +231,7 @@ impl CloudRun {
         if !self.manifest.is_file() {
             return Ok(LabStatus { place: Some(Place::Cloud), ..LabStatus::default() });
         }
-        let running = self.running()?;
+        let running = self.running().await?;
         let status = running.status().await.map_err(errors::from_runner)?;
         Ok(LabStatus { place: Some(Place::Cloud), ..view::lab_status(running.manifest(), &status, None) })
     }
@@ -242,7 +242,7 @@ impl CloudRun {
         if !self.manifest.is_file() {
             return Ok(Check::default());
         }
-        let running = self.running()?;
+        let running = self.running().await?;
         super::checks_of(&running, &place.options(&[], running.manifest())).await
     }
 }
@@ -305,7 +305,7 @@ where
         };
         // Its lab's files generated again first when an earlier version of the launcher made them.
         if let Ok(dir) = lab_dir_in(home, id)
-            && let Err(e) = regenerate::current(&record.manifest, &dir, regenerate::lab_target(record.target))
+            && let Err(e) = regenerate::current(&record.manifest, &dir, regenerate::lab_target(record.target)).await
         {
             failed.push((name, e));
             continue;

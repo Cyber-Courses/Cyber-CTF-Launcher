@@ -181,7 +181,7 @@ async fn import_one(runner: &Runner, base: &Path, d: &Deployment) -> Result<Outc
     if runner.runs().map_err(ImportError::Runner)?.iter().any(|r| r.name == name && r.state != RunState::Absent) {
         return Ok(Outcome::Left(Left::RunExists));
     }
-    let manifest = manifest_of(base, d)?;
+    let manifest = manifest_of(base, d).await?;
     let takes = embedder_params(&manifest)?;
     runner.adopt(&manifest, adoption(d, name.clone(), &takes)).await.map_err(ImportError::Runner)?;
     // Both folders are in the app data folder: a rename moves the file.
@@ -195,13 +195,13 @@ async fn import_one(runner: &Runner, base: &Path, d: &Deployment) -> Result<Outc
 
 /// The run manifest `d`'s lab runs from where `d` is, its files generated first when they
 /// predate it, or when an earlier version of the launcher made them.
-fn manifest_of(base: &Path, d: &Deployment) -> Result<PathBuf, ImportError> {
+async fn manifest_of(base: &Path, d: &Deployment) -> Result<PathBuf, ImportError> {
     let dir = lab_dir_in(base, &d.id).map_err(ImportError::LabGone)?;
     let tf = server::terraform_target(d.provider).unwrap_or_default();
     let (module, target) = lab::terraform(&dir, d.runtime, tf);
     let manifest = module.join("run.json");
     if manifest.is_file() {
-        super::regenerate::current(&manifest, &dir, target).map_err(ImportError::Generate)?;
+        super::regenerate::current(&manifest, &dir, target).await.map_err(ImportError::Generate)?;
     } else {
         lab::prepare(&dir, target).map_err(ImportError::Generate)?;
     }

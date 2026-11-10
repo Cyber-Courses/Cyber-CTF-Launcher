@@ -34,8 +34,8 @@ impl OpenedRun {
 
     /// The lab's manifest, opened under the run's name: its files generated again first when an
     /// earlier version of the launcher made them ([`regenerate::current`]).
-    pub(super) fn running(&self) -> Result<Running<'_>> {
-        regenerate::current(&self.manifest, &self.dir, self.target)?;
+    pub(super) async fn running(&self) -> Result<Running<'_>> {
+        regenerate::current(&self.manifest, &self.dir, self.target).await?;
         self.runner.open(&self.manifest, Some(self.name.clone())).map_err(errors::from_runner)
     }
 
@@ -44,23 +44,23 @@ impl OpenedRun {
         if !self.manifest.is_file() {
             return Ok(None);
         }
-        self.running()?.status().await.map(Some).map_err(errors::from_runner)
+        self.running().await?.status().await.map(Some).map_err(errors::from_runner)
     }
 
     /// Brings the running lab up to date with its regenerated files, with `opts` (what changing
     /// the run needs: the place's connection and credentials).
     pub(crate) async fn update_with(&self, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-        super::update_of(&self.running()?, opts, log).await
+        super::update_of(&self.running().await?, opts, log).await
     }
 
     /// Takes `machine` out of the running lab ahead of its removal from the lab's files, with
     /// `opts`, as [`OpenedRun::update_with`].
     pub(crate) async fn retire_with(&self, machine: &str, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-        super::retire_from(&self.running()?, machine, opts, log).await
+        super::retire_from(&self.running().await?, machine, opts, log).await
     }
 
     /// The command that opens a console into `machine`, any machine of the lab.
-    pub(crate) fn console_command(&self, machine: &str) -> Result<isothrum_runner::ShellCommand> {
-        self.running()?.console_command(machine).map_err(errors::from_runner)
+    pub(crate) async fn console_command(&self, machine: &str) -> Result<isothrum_runner::ShellCommand> {
+        self.running().await?.console_command(machine).map_err(errors::from_runner)
     }
 }

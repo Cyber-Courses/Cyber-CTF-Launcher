@@ -25,8 +25,8 @@ struct Targets<'a>(&'a AppHandle);
 
 impl terminal::ShellTargets for Targets<'_> {
     fn command(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<ShellCommand>> + Send {
-        let command = super::labs::box_shell_command(&AppDirs::from(self.0), id, runtime);
-        async move { command }
+        let (dirs, id) = (AppDirs::from(self.0), id.to_owned());
+        async move { super::labs::box_shell_command(&dirs, &id, runtime).await }
     }
 }
 

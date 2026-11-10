@@ -39,7 +39,7 @@ pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &
     add_box(placed, dirs, attack_machine::default_image(), l, f).await;
     box_reaches(placed, target, "once added", f).await;
     if let Some(folder) = crate::shared_folder::current().unwrap_or_else(|e| panic!("the shared folder: {e}")) {
-        let console = placed.shell_command().expect("a console into the box");
+        let console = placed.shell_command().await.expect("a console into the box");
         std::fs::write(folder.join("to-box"), "tools in").unwrap();
         let mount = crate::shared_folder::MOUNT_POINT;
         let seen = in_box(&console, &format!("cat {mount}/to-box && echo loot out > {mount}/from-box")).await;

@@ -73,13 +73,13 @@ impl ServerRun {
     /// Brings the lab up on `place` from its generated files, and says where to start. `env` is
     /// the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &ServerPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-        super::up_with(&self.running()?, &options(place, env), log).await
+        super::up_with(&self.running().await?, &options(place, env), log).await
     }
 
     /// Removes everything the run created on the server, with the params it was applied with
     /// (the connection is `place`'s, the one that works now).
     pub(crate) async fn down(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
-        let lab = self.running()?;
+        let lab = self.running().await?;
         let (sink, lines) = progress::channel();
         progress::follow(log, lines, lab.down(&options(place, &[]), &sink)).await.map_err(errors::from_runner)
     }
@@ -99,7 +99,7 @@ impl ServerRun {
         if !self.manifest.is_file() {
             return Ok(LabStatus { place: Some(Place::Server), ..LabStatus::default() });
         }
-        let lab = self.running()?;
+        let lab = self.running().await?;
         let status = lab.status().await.map_err(errors::from_runner)?;
         let shown = view::lab_status(lab.manifest(), &status, None);
         Ok(LabStatus { place: Some(Place::Server), host: Some(place.name.clone()), provider: Some("proxmox".into()), ..shown })
@@ -107,7 +107,7 @@ impl ServerRun {
 
     /// Runs the lab's checks over SSH; not available when it declares none.
     pub(crate) async fn check(&self) -> Result<Check> {
-        super::checks_of(&self.running()?, &RunOptions::new()).await
+        super::checks_of(&self.running().await?, &RunOptions::new()).await
     }
 }
 

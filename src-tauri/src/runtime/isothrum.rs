@@ -220,9 +220,9 @@ impl LabRun {
 
     /// The lab's manifest, opened under the run's name: its files generated again first when an
     /// earlier version of the launcher made them ([`regenerate::current`]).
-    fn lab(&self) -> Result<Running<'_>> {
+    async fn lab(&self) -> Result<Running<'_>> {
         let manifest = self.manifest();
-        regenerate::current(&manifest, &self.dir, self.target())?;
+        regenerate::current(&manifest, &self.dir, self.target()).await?;
         let lab = self.runner.open(&manifest, Some(self.name.clone())).map_err(errors::from_runner)?;
         Ok(match &self.esxi {
             Some(place) => lab.with_connection(place.connection()),
@@ -242,7 +242,7 @@ impl LabRun {
     /// where to start: the lab's message, its host ports filled in. `env` is the launch's: the
     /// inputs the lab's slots take, and [`PORTS_ENV`]; a VM lab runs on `provider`.
     pub(crate) async fn up(&self, env: &[(String, String)], provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-        up_with(&self.lab()?, &self.placed(start_options(env, provider)), log).await
+        up_with(&self.lab().await?, &self.placed(start_options(env, provider)), log).await
     }
 
     /// Removes everything the run created: containers, networks, volumes, its pinned ports; or
@@ -256,7 +256,7 @@ impl LabRun {
             log("Nothing to remove: the run has no files.".into());
             return Ok(());
         }
-        let (lab, opts) = (&self.lab()?, &self.placed(RunOptions::new()));
+        let (lab, opts) = (&self.lab().await?, &self.placed(RunOptions::new()));
         when_unlocked(log, move |sink| async move { lab.down(opts, &sink).await }).await.map_err(errors::from_runner)
     }
 
@@ -264,7 +264,7 @@ impl LabRun {
     /// launcher's park modes are the manifest's `shutdown` there; VMs are suspended (`Pause`) or
     /// powered off (`Shutdown`).
     pub(crate) async fn park(&self, mode: Park, log: &mut impl FnMut(String)) -> Result<()> {
-        let (lab, opts) = (&self.lab()?, &self.placed(RunOptions::new()));
+        let (lab, opts) = (&self.lab().await?, &self.placed(RunOptions::new()));
         let mode = match (self.kind, mode) {
             // VMs (a VM lab, or the VM a container lab runs in) suspend on Pause; Docker only
             // stops its containers, so both of its park modes are the manifest's `shutdown`.
@@ -277,7 +277,7 @@ impl LabRun {
     /// Starts the parked lab again. When nothing is left of it, the launcher's parked mark goes
     /// too, so the lab page offers a fresh start instead of a resume that can't work.
     pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        let (lab, opts) = (&self.lab()?, &self.placed(RunOptions::new()));
+        let (lab, opts) = (&self.lab().await?, &self.placed(RunOptions::new()));
         match when_unlocked(log, move |sink| async move { lab.resume(opts, &sink).await }).await {
             Ok(_) => Ok(()),
             Err(e) if e.code() == isothrum_runner::ErrorCode::NothingToResume => {
@@ -294,7 +294,7 @@ impl LabRun {
         if !self.manifest().is_file() {
             return Ok(LabStatus { place: Some(place), ..LabStatus::default() });
         }
-        let lab = self.lab()?;
+        let lab = self.lab().await?;
         let status = lab.status().await.map_err(errors::from_runner)?;
         Ok(LabStatus { place: Some(place), ..view::lab_status(lab.manifest(), &status, paths::parked(&self.dir)) })
     }
@@ -303,19 +303,19 @@ impl LabRun {
     /// and its controller's play. The launch's values aren't kept, so none reaches it: an input's
     /// file keeps the value it was written with.
     pub(crate) async fn provision(&self, machine: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-        let (lab, opts) = (&self.lab()?, &self.placed(RunOptions::new()));
+        let (lab, opts) = (&self.lab().await?, &self.placed(RunOptions::new()));
         when_unlocked(log, move |sink| async move { lab.provision(machine, opts, &sink).await }).await.map_err(errors::from_runner)
     }
 
     /// Runs the lab's checks; not available when it declares none (nothing runs then).
     pub(crate) async fn check(&self) -> Result<Check> {
-        checks_of(&self.lab()?, &self.placed(RunOptions::new())).await
+        checks_of(&self.lab().await?, &self.placed(RunOptions::new())).await
     }
 
     /// Brings the running lab up to date with its regenerated files (a machine added to the lab
     /// or taken out), with the parameters it was started with.
     pub(crate) async fn update(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        let (lab, opts) = (self.lab()?, self.placed(RunOptions::new()));
+        let (lab, opts) = (self.lab().await?, self.placed(RunOptions::new()));
         match update_of(&lab, &opts, log).await {
             // A VM restarted for its new settings boots like a started one, into the same passing
             // UTM refusal; the run keeps the old settings recorded, so the next update restarts it.
@@ -326,7 +326,7 @@ impl LabRun {
 
     /// Takes `machine` out of the running lab, ahead of its removal from the lab's files.
     pub(crate) async fn retire(&self, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        retire_from(&self.lab()?, machine, &self.placed(RunOptions::new()), log).await
+        retire_from(&self.lab().await?, machine, &self.placed(RunOptions::new()), log).await
     }
 
     /// The run's status as the runner reports it; None before the lab's files exist.
@@ -334,12 +334,12 @@ impl LabRun {
         if !self.manifest().is_file() {
             return Ok(None);
         }
-        self.lab()?.status().await.map(Some).map_err(errors::from_runner)
+        self.lab().await?.status().await.map(Some).map_err(errors::from_runner)
     }
 
     /// The command that opens a console into `machine`, any machine of the lab.
-    pub(crate) fn console_command(&self, machine: &str) -> Result<ShellCommand> {
-        self.lab()?.console_command(machine).map_err(errors::from_runner)
+    pub(crate) async fn console_command(&self, machine: &str) -> Result<ShellCommand> {
+        self.lab().await?.console_command(machine).map_err(errors::from_runner)
     }
 }
 

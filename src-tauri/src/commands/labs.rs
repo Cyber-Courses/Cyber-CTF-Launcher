@@ -226,9 +226,9 @@ fn with_attack_box(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Re
 
 /// The command the runner builds to open a shell into lab `id`'s attack box (the in-app terminal
 /// and the system terminal both run it).
-pub(crate) fn box_shell_command(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<isothrum_runner::ShellCommand> {
+pub(crate) async fn box_shell_command(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<isothrum_runner::ShellCommand> {
     let dir = lab_dir(dirs, id)?;
-    with_attack_box(dirs, &dir, id, runtime)?.shell_command()
+    with_attack_box(dirs, &dir, id, runtime)?.shell_command().await
 }
 
 /// The attack box's status for the lab detail view: the machine the launcher added to the lab,
@@ -305,7 +305,7 @@ pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, log
 #[tauri::command]
 pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> Result<()> {
     let dirs = AppDirs::from(&app);
-    let shell = box_shell_command(&dirs, &id, runtime)?;
+    let shell = box_shell_command(&dirs, &id, runtime).await?;
     terminal_launch::open_terminal_async(shell).await
 }
 

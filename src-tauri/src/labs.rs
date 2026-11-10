@@ -123,8 +123,16 @@ async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String
     // A parked copy of the previous version would be orphaned once its folder (and the runner's
     // record of it) is gone: take it down first, before its markers are carried over.
     clear_parked(dirs, runtime::LabRef { dir: &dir, id: lab_id, runtime: declared }, log).await?;
-    let staging = stage(&labs, &dir, &bytes, release)?;
-    swap_in(&staging, &dir)?;
+    // Seconds of file work (up to the archive's 512 MB unpacked, a rename retried while a file is
+    // held): on a blocking thread.
+    let (into, owned) = (dir.clone(), (lab_id.to_owned(), repository.to_owned(), commit.to_owned()));
+    let labs_dir = labs.clone();
+    blocking(move || {
+        let (lab_id, repository, commit) = &owned;
+        let staging = stage(&labs_dir, &into, &bytes, Release { lab_id, repository, commit, runtime: declared })?;
+        swap_in(&staging, &into)
+    })
+    .await?;
     // Its own room on this machine (networks, names), so it runs beside the other labs.
     runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
     log("Lab installed".into());
@@ -149,7 +157,7 @@ fn installed(marker: &Path, commit: &str) -> bool {
 fn stage(labs: &Path, dir: &Path, tarball: &[u8], release: Release<'_>) -> Result<PathBuf> {
     let Release { lab_id, repository, commit, .. } = release;
     let staging = labs.join(format!(".{lab_id}.staging"));
-    let _ = std::fs::remove_dir_all(&staging);
+    clear_leftover(&staging);
     std::fs::create_dir_all(&staging)?;
     extract(tarball, &staging)?;
     std::fs::write(staging.join(".cyberctf-commit"), commit)?;
@@ -179,7 +187,7 @@ fn swap_in(staging: &Path, dir: &Path) -> Result<()> {
 fn swap_in_with(staging: &Path, dir: &Path, rename: impl Fn(&Path, &Path) -> std::io::Result<()>) -> Result<()> {
     let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let old = dir.with_file_name(format!(".{name}.old"));
-    let _ = std::fs::remove_dir_all(&old);
+    clear_leftover(&old);
     let had_old = dir.exists();
     if had_old {
         rename(dir, &old).map_err(|e| in_use(e, dir))?;
@@ -195,8 +203,24 @@ fn swap_in_with(staging: &Path, dir: &Path, rename: impl Fn(&Path, &Path) -> std
         }
         return Err(in_use(e, dir));
     }
-    let _ = std::fs::remove_dir_all(&old);
+    clear_leftover(&old);
     Ok(())
+}
+
+/// Removes `path`, a staging folder or an old copy an earlier install may have left. Best effort:
+/// one that won't go is logged, and tried again by the next install.
+fn clear_leftover(path: &Path) {
+    if let Err(e) = std::fs::remove_dir_all(path)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        log::warn!("couldn't remove {}: {e}", path.display());
+    }
+}
+
+/// Runs `f`, file work that can take seconds (unpacking an archive, copying a folder, a rename
+/// retried while a file is held), on a blocking thread, off the async workers.
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
+    tokio::task::spawn_blocking(f).await.map_err(|e| Error::Invalid(format!("installing the lab's files: {e}")))?
 }
 
 /// `rename`, retried briefly: on Windows an antivirus or the search indexer holds a just-written
@@ -379,9 +403,13 @@ async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(S
     log(format!("Importing {lab_id} from {}", src.display()));
     clear_parked(dirs, runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker }, log).await?;
     let staging = dir.with_file_name(format!(".{lab_id}.staging"));
-    let _ = std::fs::remove_dir_all(&staging);
-    runtime::lab::copy_tree(src, &staging)?;
-    swap_in(&staging, &dir)?;
+    let (from, into) = (src.to_path_buf(), dir.clone());
+    blocking(move || {
+        clear_leftover(&staging);
+        runtime::lab::copy_tree(&from, &staging)?;
+        swap_in(&staging, &into)
+    })
+    .await?;
     runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
     log("Lab imported".into());
     Ok(dir)
@@ -441,6 +469,16 @@ mod tests {
     use super::archive::tests::tarball;
     use super::*;
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn an_installs_file_work_leaves_the_async_worker_free() {
+        // Regression: unpacking an archive and the retried renames ran on the async worker,
+        // stalling every task on it for seconds.
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let work = tokio::spawn(blocking(move || held.recv_timeout(std::time::Duration::from_secs(5)).map_err(|e| Error::Invalid(e.to_string()))));
+        // The only worker runs this while the file work waits on it.
+        tokio::spawn(async move { release.send(()) }).await.unwrap().unwrap();
+        work.await.unwrap().unwrap();
+    }
     #[test]
     fn only_cyberctf_repos_at_full_shas() {
         let sha = "0123456789abcdef0123456789abcdef01234567";

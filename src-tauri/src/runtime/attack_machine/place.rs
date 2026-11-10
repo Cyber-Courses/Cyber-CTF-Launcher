@@ -96,8 +96,8 @@ impl Placed {
     }
 
     /// The command that opens a shell into the box.
-    pub(crate) fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
-        self.host.console(&super::name(&self.dir)?)
+    pub(crate) async fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
+        self.host.console(&super::name(&self.dir)?).await
     }
 
     /// The learner's shared folder for the box, when it is on and the lab runs where a machine
