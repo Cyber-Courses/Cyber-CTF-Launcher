@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { Eraser, FlaskConical, Info, Palette, UserRound, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { agentInfo, systemCheck, type AgentInfo, type AuthStatus } from "@/lib/tauri";
+import { systemCheck, type AuthStatus } from "@/lib/tauri";
 import { AboutSection } from "@/features/settings/about-section";
 import { AccountSection } from "@/features/settings/account-section";
 import { AppearanceSection } from "@/features/settings/appearance-section";
@@ -17,7 +17,7 @@ import { ManagedSection } from "@/features/settings/managed-section";
 import { useManagedSettings } from "@/lib/use-managed";
 import { Section, useSavedFlash } from "@/features/settings/settings-layout";
 import { warn } from "@/lib/failure";
-import { usePoll } from "@/lib/use-poll";
+import { useAgentInfo } from "@/lib/use-agent-info";
 import { useStableCallback } from "@/lib/use-stable-callback";
 import { useT, type MessageKey } from "@/lib/i18n";
 
@@ -33,10 +33,6 @@ const TABS = [
   { id: "about", label: "settings.tabs.about", icon: Info },
 ] as const satisfies readonly { id: string; label: MessageKey; icon: LucideIcon }[];
 type SettingsTab = (typeof TABS)[number]["id"];
-
-/** How often this machine's agent is read again while signed in: it registers, goes online, and
- *  registers again for another account, in the background. */
-const AGENT_POLL_MS = 5_000;
 
 /** A read the sections show: what it answered, or why it failed (`undefined`: no failure). Both
  *  unset while it runs. */
@@ -65,22 +61,8 @@ function useRead<T>(read: () => Promise<T>, what: string) {
 function useAboutThisMachine(loggedIn: boolean) {
   const [version] = useRead(getVersion, "reading the app's version");
   const [report, recheck] = useRead(systemCheck, "system check");
-  const [agent, setAgent] = useState<Read<AgentInfo>>({ value: null });
-  // A failing read is logged once, not on every poll that repeats it.
-  const failing = useRef(false);
-  usePoll(agentInfo, AGENT_POLL_MS, {
-    enabled: loggedIn,
-    onValue: (value) => {
-      failing.current = false;
-      setAgent({ value });
-    },
-    onError: (error) => {
-      if (!failing.current) warn("reading this machine's agent")(error);
-      failing.current = true;
-      setAgent((a) => ({ value: a.value, error }));
-    },
-  });
-  return { agent: loggedIn ? agent : { value: null }, report, version, recheck };
+  const agent = useAgentInfo(loggedIn);
+  return { agent, report, version, recheck };
 }
 
 /** The rail of sections; under 640px (the window's narrowest), a tab bar, text only so the

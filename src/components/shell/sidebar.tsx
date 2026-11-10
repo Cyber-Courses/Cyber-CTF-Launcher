@@ -9,6 +9,7 @@ import { operationLabel } from "@/features/labs/runs/operations";
 import type { AuthStatus } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
+import { useAgentInfo } from "@/lib/use-agent-info";
 import { NAV, type ActiveLab, type Tab } from "@/components/shell/shell-model";
 
 type SidebarProps = {
@@ -29,6 +30,9 @@ type SidebarProps = {
 export function Sidebar({ tab, isMac, version, labCount, activeLabs, auth, onFind, onNavigate, onOpenSettings, onAuthChange }: SidebarProps) {
   const t = useT();
   const title = (id: Tab) => t(`shell.tabs.${id}`);
+  // Online only once the website sees this machine: not while it registers, nor with the agent
+  // turned off by the policy.
+  const agent = useAgentInfo(!!auth?.loggedIn);
   return (
     <aside className="flex w-[14.5rem] shrink-0 flex-col border-r border-border bg-card">
       <SidebarTop isMac={isMac} version={version} onFind={onFind} />
@@ -71,7 +75,7 @@ export function Sidebar({ tab, isMac, version, labCount, activeLabs, auth, onFin
       </nav>
 
       <div className="mt-1 border-t border-border px-2.5 py-2.5">
-        <Account status={auth} onChange={onAuthChange} online={!!auth?.loggedIn} />
+        <Account status={auth} onChange={onAuthChange} online={agent.value?.state === "online"} />
       </div>
     </aside>
   );

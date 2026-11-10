@@ -184,7 +184,8 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 - **Settings shows whether the website really sees this machine.** Every signed-in machine read
   "Online", even with the website agent turned off by the `DisableWebsiteAgent` policy or before
   it had registered. Settings now shows it online, registering, or turned off by the
-  organization, and follows it as it changes.
+  organization, and follows it as it changes; the sidebar's online dot on the account follows it
+  too.
 - **Settings says when it couldn't read something.** A machine check, version or agent read that
   failed looked like one still running ("Checking hypervisors…", "Registering…") for good. It
   now says what failed and why, with a way to check the machine again.

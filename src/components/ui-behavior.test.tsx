@@ -18,6 +18,7 @@ import { freshReport, readyReport, stoppedDockerReport } from "@/test/fixtures";
 import { installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must } from "@/components/test-support";
+import type { AgentState, AuthStatus } from "@/lib/tauri";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -69,6 +70,27 @@ describe("Sidebar", () => {
     expect(onFind).toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /^Settings/ }));
     expect(onOpenSettings).toHaveBeenCalled();
+  });
+
+  it("marks the player online only once the website sees this machine", async () => {
+    const signedIn: AuthStatus = { loggedIn: true, name: "Ada", email: "ada@example.com" };
+    const ONLINE = "Online: labs you launch from the website run on this machine";
+    const agent = (state: AgentState) => () => ({ installId: "i", name: "ada-mbp", arch: "arm64", capabilities: [], state });
+    installTauri({ agent_info: agent("registering") });
+    const { unmount } = render(<Sidebar {...props} auth={signedIn} />);
+    await flush();
+    expect(screen.getByText("Ada")).toBeTruthy();
+    expect(screen.queryByTitle(ONLINE)).toBeNull();
+    unmount();
+    installTauri({ agent_info: agent("offByPolicy") });
+    const off = render(<Sidebar {...props} auth={signedIn} />);
+    await flush();
+    expect(screen.queryByTitle(ONLINE)).toBeNull();
+    off.unmount();
+    installTauri({ agent_info: agent("online") });
+    render(<Sidebar {...props} auth={signedIn} />);
+    await flush();
+    expect(screen.getByTitle(ONLINE)).toBeTruthy();
   });
 
   it("lists the labs running, with what a busy one is doing", async () => {

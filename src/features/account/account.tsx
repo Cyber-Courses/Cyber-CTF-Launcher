@@ -198,7 +198,7 @@ export function Account({
 }: {
   status: AuthStatus | null;
   onChange: (status: AuthStatus) => void;
-  /** Show an online dot on the avatar (signed in means labs from the website run on this machine). */
+  /** Show an online dot on the avatar: the website sees this machine, so its labs run here. */
   online?: boolean;
   /** When set, a Settings gear sits next to Sign out, so the footer is one row. */
   onSettings?: () => void;
