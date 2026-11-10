@@ -10,7 +10,7 @@ import { Screen } from "@/components/shell/screen";
 import { SettingsWindowView } from "@/components/shell/settings-window";
 import { paletteCommands } from "@/components/shell/palette-commands";
 import { breadcrumbs, type Tab } from "@/components/shell/shell-model";
-import { markOnboarded } from "@/components/shell/onboarded-flag";
+import { markOnboarded } from "@/lib/onboarded-flag";
 import { openSettingsWindow, useShellListeners, useShellMount } from "@/components/shell/use-shell-setup";
 import { useNavigation, type OpenLab } from "@/components/shell/use-navigation";
 import { useAuthSession } from "@/components/shell/use-auth-session";

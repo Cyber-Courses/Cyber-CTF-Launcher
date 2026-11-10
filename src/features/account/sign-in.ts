@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { authLogin, authLoginCancel, authLoginDevice, type AuthStatus, type DeviceCode } from "@/lib/tauri";
-import { toast } from "@/components/ui/toaster";
+import { toast } from "@/lib/toast";
 import { describeError, errorCode } from "@/lib/errors";
 import { translate } from "@/lib/i18n";
 import { registerReset } from "@/lib/module-state";

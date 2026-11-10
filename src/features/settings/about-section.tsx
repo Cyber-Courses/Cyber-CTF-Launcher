@@ -10,7 +10,7 @@ import { openLogFolder, type AgentInfo, type SystemReport, type UpdateChannel } 
 import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { getAttackImage, getVmProvider } from "@/lib/settings";
 import { Row, Section } from "@/features/settings/settings-layout";
-import { clearOnboarded } from "@/components/shell/onboarded-flag";
+import { clearOnboarded } from "@/lib/onboarded-flag";
 import { diagnosticsText } from "@/features/settings/diagnostics";
 import { useUpdater, type UpdateState } from "@/features/settings/use-updater";
 import { restartOnUpdate } from "@/lib/install-update";

@@ -1,7 +1,7 @@
 import type { Update } from "@tauri-apps/plugin-updater";
 import { deployingLabs, restartApp } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
-import { toast } from "@/components/ui/toaster";
+import { toast } from "@/lib/toast";
 import { translate } from "@/lib/i18n";
 
 /**

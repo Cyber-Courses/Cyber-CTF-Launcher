@@ -1,6 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { notify } from "@/lib/notify";
-import { toast } from "@/components/ui/toaster";
+import { toast } from "@/lib/toast";
 import { translate } from "@/lib/i18n";
 import { warn } from "@/lib/failure-log";
 import { describeError } from "@/lib/errors";

@@ -2,24 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { StatusDot, type Tone } from "@/components/ui/status-pill";
+import { StatusDot } from "@/components/ui/status-pill";
+import { TOAST_EVENT, type Toast } from "@/lib/toast";
 import { useT } from "@/lib/i18n";
 
 /**
- * In-app toasts: glass cards at the bottom right, gone after a few seconds. `toast()` can be
- * called from anywhere (lib/failure's `tell` uses it while the window has focus; an OS
- * notification covers the rest).
+ * In-app toasts: glass cards at the bottom right, gone after a few seconds. What `toast()`
+ * (`@/lib/toast`) sends, drawn: one Toaster per window.
  */
-type Toast = { id: number; title: string; body?: string; tone: Tone };
-
-const EVENT = "cyberctf:toast";
-let seq = 0;
-
-export function toast(title: string, body?: string, tone: Tone = "ok") {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent<Toast>(EVENT, { detail: { id: ++seq, title, body, tone } }));
-}
-
 export function Toaster() {
   const t = useT();
   const [items, setItems] = useState<Toast[]>([]);
@@ -34,9 +24,9 @@ export function Toaster() {
         item.tone === "fail" ? 7000 : 4000,
       );
     };
-    window.addEventListener(EVENT, on);
+    window.addEventListener(TOAST_EVENT, on);
     return () => {
-      window.removeEventListener(EVENT, on);
+      window.removeEventListener(TOAST_EVENT, on);
     };
   }, []);
   // The live region stays mounted (empty when idle) so assistive tech is already watching it

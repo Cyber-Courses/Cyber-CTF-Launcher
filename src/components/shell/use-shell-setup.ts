@@ -4,7 +4,7 @@ import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { isSettingsWindow } from "@/components/shell/settings-window";
 import type { Tab } from "@/components/shell/shell-model";
-import { readOnboarded } from "@/components/shell/onboarded-flag";
+import { readOnboarded } from "@/lib/onboarded-flag";
 import { useAppShortcuts } from "@/components/shell/use-app-shortcuts";
 import { useWindowRequests } from "@/components/shell/use-window-requests";
 import { openSettings } from "@/lib/tauri";

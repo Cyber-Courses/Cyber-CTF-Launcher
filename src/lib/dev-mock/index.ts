@@ -8,7 +8,7 @@
  * objectives.ts.
  */
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
-import { clearOnboarded, markOnboarded } from "@/components/shell/onboarded-flag";
+import { clearOnboarded, markOnboarded } from "@/lib/onboarded-flag";
 import { browserAnswer } from "@/lib/dev-mock/browser";
 import { joinEventBus } from "@/lib/dev-mock/events";
 import { liveFrom } from "@/lib/dev-mock/live";

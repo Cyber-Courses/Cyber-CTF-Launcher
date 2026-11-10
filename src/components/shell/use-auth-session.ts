@@ -9,7 +9,7 @@ import { ignore, warn } from "@/lib/failure";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 import { usePoll } from "@/lib/use-poll";
 import { structurallyEqual } from "@/lib/equal";
-import { toast } from "@/components/ui/toaster";
+import { toast } from "@/lib/toast";
 import { translate } from "@/lib/i18n";
 
 const SIGNED_IN_POLL_MS = 30_000;

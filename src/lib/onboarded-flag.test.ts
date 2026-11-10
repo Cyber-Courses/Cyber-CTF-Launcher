@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clearOnboarded, markOnboarded, readOnboarded } from "@/components/shell/onboarded-flag";
+import { clearOnboarded, markOnboarded, readOnboarded } from "@/lib/onboarded-flag";
 
 describe("onboarded flag", () => {
   afterEach(() => {

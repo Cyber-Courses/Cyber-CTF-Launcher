@@ -18,6 +18,9 @@ const ENTRY_POINTS = ["src/app/**/{page,layout,error,global-error,not-found,load
 /** A static import of the dev mock, outside the mock itself. */
 const DEV_MOCK = { group: ["@/lib/dev-mock", "@/lib/dev-mock/*"], message: "Wrap the page in DevMockGate, which loads the mock in development only." };
 
+/** An import of the UI, from `src/lib`. */
+const COMPONENTS = { group: ["@/components", "@/components/*"], message: "src/lib doesn't import the UI: move what it needs into src/lib, or hand it in." };
+
 /** Rules the shipped code and the tests don't meet yet: none, every area is at zero. A rule added
  *  before the code meets it goes here, at "warn", until its count reaches zero. */
 const RATCHETED = [];
@@ -72,13 +75,26 @@ const eslintConfig = defineConfig([
     ignores: TESTS,
     rules: Object.fromEntries([rule("max-lines", { max: 200, skipBlankLines: true, skipComments: true })]),
   },
-  // The dev mock is loaded by DevMockGate alone, imported dynamically behind NODE_ENV, so a
-  // production build leaves it and its sample data out; a static import anywhere else would ship
-  // them (only tree-shaking stood in the way).
+  // Imports the layering forbids. The dev mock is loaded by DevMockGate alone, imported
+  // dynamically behind NODE_ENV, so a production build leaves it and its sample data out; a static
+  // import anywhere else would ship them (only tree-shaking stood in the way). And `src/lib` (data
+  // access and helpers) never imports the UI in `src/components`: a toast goes through
+  // `@/lib/toast`, which the Toaster listens to. (One block per set of files: a later block's
+  // patterns replace an earlier one's.)
   {
     files: CODE,
-    ignores: [...TESTS, "src/**/*-test-kit.{ts,tsx}", "src/lib/dev-mock/**"],
+    ignores: [...TESTS, "src/**/*-test-kit.{ts,tsx}", "src/lib/**"],
     rules: Object.fromEntries([rule("no-restricted-imports", { patterns: [DEV_MOCK] })]),
+  },
+  {
+    files: ["src/lib/**/*.{ts,tsx}"],
+    ignores: [...TESTS, "src/lib/dev-mock/**"],
+    rules: Object.fromEntries([rule("no-restricted-imports", { patterns: [DEV_MOCK, COMPONENTS] })]),
+  },
+  {
+    files: ["src/lib/dev-mock/**/*.{ts,tsx}"],
+    ignores: TESTS,
+    rules: Object.fromEntries([rule("no-restricted-imports", { patterns: [COMPONENTS] })]),
   },
   // Configured above for the tests too: only the level changes.
   { files: TESTS, rules: Object.fromEntries(RATCHETED_IN_TESTS.map((name) => [name, "warn"])) },
