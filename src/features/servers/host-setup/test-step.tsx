@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Play, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Play, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Nav, Note, Step } from "@/features/servers/host-setup/form";
 import type { ServerCheck } from "@/lib/tauri";
+import { outcomeOf, type Outcome } from "@/features/servers/test-outcome";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { ServerSelfTest } from "@/features/servers/server-self-test";
 import { useT } from "@/lib/i18n";
@@ -13,8 +14,8 @@ import { useT } from "@/lib/i18n";
 export function TestStep({ s }: { s: HostSetup }) {
   const t = useT();
   const { onDone, saved, test, runTest, v } = s;
-  // A Proxmox setup made with an SSH key lists each part of it (SSH, token, key, API).
-  const parts = v.provider === "proxmox" && test !== null && test !== "testing" ? test.checks : [];
+  // Each part checked (a cloud's checklist, the parts of a Proxmox setup made with an SSH key).
+  const parts = test !== null && test !== "testing" ? test.checks : [];
   // Once Proxmox answers as a launch needs, a real throwaway lab proves it can run one: a new
   // one each time the connection is tested again.
   const [round, setRound] = useState(0);
@@ -26,8 +27,10 @@ export function TestStep({ s }: { s: HostSetup }) {
           <Spinner className="size-4" /> {t("servers.setup.test.testing")}
         </p>
       ) : (
+        // The result's mark and its message follow one rule (`outcomeOf`, the Cloud page's too):
+        // failed on a failing check, whose detail is the message.
         <Note className="flex items-start gap-3 p-3.5">
-          {test.ok ? <CheckCircle2 className="mt-px size-4 shrink-0 text-success" /> : <XCircle className="mt-px size-4 shrink-0 text-destructive" />}
+          <OutcomeGlyph outcome={outcomeOf(test)} className="mt-px size-4" />
           <p className="min-w-0 text-[0.8125rem] break-words text-foreground">
             {test.message}
             {test.latencyMs != null && <span className="ml-1.5 font-mono text-[0.6875rem] text-faint">{test.latencyMs} ms</span>}
@@ -72,11 +75,7 @@ function Checklist({ checks }: { checks: ServerCheck[] }) {
     <ul className="mt-3 space-y-2" aria-label={t("servers.setup.test.checks")}>
       {checks.map((c) => (
         <li key={c.name} className="flex items-start gap-2.5 text-[0.75rem]">
-          {c.state === "fail" ? (
-            <XCircle className="mt-px size-3.5 shrink-0 text-destructive" />
-          ) : (
-            <CheckCircle2 className="mt-px size-3.5 shrink-0 text-success" />
-          )}
+          <OutcomeGlyph outcome={c.state} className="mt-px size-3.5" />
           <span className="min-w-0 break-words">
             <span className="font-medium text-foreground">{c.name}</span> <span className="text-muted-foreground">{c.detail}</span>
           </span>
@@ -84,4 +83,17 @@ function Checklist({ checks }: { checks: ServerCheck[] }) {
       ))}
     </ul>
   );
+}
+
+const GLYPHS = {
+  ok: { Icon: CheckCircle2, tone: "text-success", label: "servers.setup.test.passed" },
+  warn: { Icon: AlertTriangle, tone: "text-warning", label: "servers.setup.test.warning" },
+  fail: { Icon: XCircle, tone: "text-destructive", label: "servers.setup.test.failed" },
+} as const satisfies Record<Outcome, unknown>;
+
+/** A result's or a check's mark: passed, passed with a warning, or failed (named for readers). */
+function OutcomeGlyph({ outcome, className }: { outcome: Outcome; className: string }) {
+  const t = useT();
+  const { Icon, tone, label } = GLYPHS[outcome];
+  return <Icon role="img" aria-label={t(label)} className={`${className} shrink-0 ${tone}`} />;
 }

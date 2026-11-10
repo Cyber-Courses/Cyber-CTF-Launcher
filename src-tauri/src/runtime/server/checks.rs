@@ -81,6 +81,15 @@ impl TestResult {
         TestResult::from_checks(checks, Some(elapsed_ms(started)))
     }
 
+    /// This result with one more check: whether it passed and what it says are read again from
+    /// every check, by `from_checks`' rule, so a failing check added after the others can't leave
+    /// a failed result saying what passed.
+    pub(super) fn with_check(mut self, check: Check) -> Self {
+        self.checks.push(check);
+        let (reachable, latency_ms) = (self.reachable, self.latency_ms);
+        TestResult { reachable, ..TestResult::from_checks(self.checks, latency_ms) }
+    }
+
     /// A cloud account whose service (or CLI) couldn't be reached at all.
     pub(super) fn unreachable_checks(checks: Vec<Check>) -> Self {
         // Unreachable is never ok, and nothing was authenticated, whatever the checks say.
@@ -115,6 +124,22 @@ impl TestResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_check_added_last_counts_as_the_others_do() {
+        // Regression: a GCP account whose labs project couldn't be made read as failed (a red
+        // cross) while it said "Signed in; billing account …", the first check's pass.
+        let signed_in = || TestResult::from_checks(vec![Check::ok("Sign-in", "Signed in; billing account \"Main\"."), Check::ok("Terraform", "1.9")], Some(5));
+        let r = signed_in().with_check(Check::fail("Labs project", "no free project slot on the billing account"));
+        assert!(!r.ok);
+        assert_eq!(
+            (r.message.as_str(), r.authenticated, r.latency_ms, r.checks.len()),
+            ("no free project slot on the billing account", Some(false), Some(5), 3)
+        );
+        let r = signed_in().with_check(Check::ok("Labs project", "Labs run in the project p."));
+        assert!(r.ok);
+        assert_eq!(r.message, "Signed in; billing account \"Main\".");
+    }
 
     #[test]
     fn test_result_from_checks_summarises_first_failure() {

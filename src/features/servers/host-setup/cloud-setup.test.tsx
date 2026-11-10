@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { EMPTY_CLOUD } from "@/features/servers/host-setup";
 import { argsOf, failsWith, go, heading, input, renderSetup, selects, title } from "@/features/servers/host-setup/setup-test-kit";
-import type { ServerHostInput } from "@/lib/tauri";
+import type { ServerCheck, ServerHostInput } from "@/lib/tauri";
 import { freshReport, readyReport } from "@/test/fixtures";
 import { commands, installTauri, rejectWith, stream, type Handler } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
@@ -292,6 +292,36 @@ describe("Google Cloud account setup", () => {
     expect(screen.getByPlaceholderText("My Google Cloud")).toBeTruthy();
     await go(user, /save and test/i);
     expect(argsOf(calls, "server_save")[0]).toMatchObject({ input: { provider: "gcp", username: "open-1", node: "org-1" } });
+  });
+
+  it("marks a connection test that passed as passed, and one that failed with the check that failed", async () => {
+    // Regression: the Connection test showed a red cross beside "Signed in; billing account …":
+    // the labs project had failed, and the result kept the sign-in's message.
+    const signedIn = { name: "Sign-in", state: "ok", detail: 'Signed in; billing account "Main".' } as const;
+    let checks: ServerCheck[] = [
+      signedIn,
+      { name: "Terraform", state: "ok", detail: "Terraform v1.9" },
+      { name: "Labs project", state: "ok", detail: "Labs run in the project p." },
+    ];
+    installTauri({
+      server_test: () => {
+        const failed = checks.find((c) => c.state === "fail");
+        return { ok: !failed, reachable: true, authenticated: !failed, latencyMs: 40, message: (failed ?? signedIn).detail, checks };
+      },
+    });
+    const user = userEvent.setup();
+    await renderSetup(editing({ provider: "gcp", host: "europe-west1", username: "open-1" }));
+    await go(user, /^continue$/i);
+    await go(user, /save and test/i);
+    expect(heading()).toBe("Connection test");
+    const marks = () => screen.getAllByRole("img").map((i) => i.getAttribute("aria-label"));
+    // The result, then each check: all passed.
+    expect(marks()).toEqual(["Passed", "Passed", "Passed", "Passed"]);
+    expect(title()).toBe("Lab account connected");
+    checks = [signedIn, { name: "Labs project", state: "fail", detail: "No free project slot on the billing account." }];
+    await go(user, /test again/i);
+    expect(marks()).toEqual(["Failed", "Passed", "Failed"]);
+    expect(screen.getAllByText("No free project slot on the billing account.")).toHaveLength(2);
   });
 
   it("takes a typed billing id when the account lists none", async () => {

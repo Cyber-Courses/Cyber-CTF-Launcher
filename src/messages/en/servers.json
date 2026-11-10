@@ -338,7 +338,10 @@
       "description": "Saved. Here's what the launcher could check from this machine.",
       "testing": "Testing the connection…",
       "checks": "What was checked",
-      "vmLead": "Now a real test lab on the server, run the way a lab is: one small VM on its own network, then removed. It takes a few minutes."
+      "vmLead": "Now a real test lab on the server, run the way a lab is: one small VM on its own network, then removed. It takes a few minutes.",
+      "passed": "Passed",
+      "warning": "Passed, with a warning",
+      "failed": "Failed"
     }
   }
 }

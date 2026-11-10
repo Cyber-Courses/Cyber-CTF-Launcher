@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { LabStatus, ServerCheck, ServerHost, ServerTest } from "@/lib/tauri";
 import type { Lab } from "@/features/labs/use-labs";
-import { budgetedAccounts, cloudAccounts, credentialOf, isOverBudget, labsOnAccounts, outcomeOf } from "@/features/cloud/cloud-model";
+import { budgetedAccounts, cloudAccounts, credentialOf, isOverBudget, labsOnAccounts } from "@/features/cloud/cloud-model";
+import { outcomeOf } from "@/features/servers/test-outcome";
 
 const host = (id: string, provider: ServerHost["provider"], patch: Partial<ServerHost> = {}) => ({ id, name: id, provider, ...patch }) as ServerHost;
 

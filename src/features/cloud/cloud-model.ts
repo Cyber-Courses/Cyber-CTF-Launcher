@@ -1,4 +1,4 @@
-import { HOST_KINDS, PROVIDER_NAMES, isCloudProvider, type CloudProvider, type LabStatus, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { HOST_KINDS, PROVIDER_NAMES, isCloudProvider, type CloudProvider, type LabStatus, type ServerHost } from "@/lib/tauri";
 import type { Lab } from "@/features/labs/use-labs";
 
 // The Cloud page's logic, as pure functions of the saved accounts, their spend and the labs.
@@ -50,12 +50,4 @@ export function credentialOf(h: ServerHost): Credential {
   if (signIn !== "accessKeys") return { kind: signIn === "login" ? "cliSignIn" : signIn };
   if (!h.useCliCreds) return { kind: "accessKeys" };
   return h.awsProfile ? { kind: "cliProfile", profile: h.awsProfile } : { kind: "cliCredentials" };
-}
-
-/** A test's outcome: failed on any failure, a warning when a check only warrants one, else ok. */
-export type Outcome = "ok" | "warn" | "fail";
-
-export function outcomeOf(result: ServerTest): Outcome {
-  if (!result.ok) return "fail";
-  return result.checks.some((c) => c.state === "warn") ? "warn" : "ok";
 }

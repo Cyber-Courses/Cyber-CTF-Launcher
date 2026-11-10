@@ -338,7 +338,10 @@
       "description": "Gespeichert. Das konnte der Launcher von diesem Rechner aus prüfen.",
       "testing": "Verbindung wird getestet…",
       "checks": "Was geprüft wurde",
-      "vmLead": "Jetzt ein echtes Test-Lab auf dem Server, so gestartet wie ein Lab: eine kleine VM in ihrem eigenen Netz, danach entfernt. Das dauert ein paar Minuten."
+      "vmLead": "Jetzt ein echtes Test-Lab auf dem Server, so gestartet wie ein Lab: eine kleine VM in ihrem eigenen Netz, danach entfernt. Das dauert ein paar Minuten.",
+      "passed": "Bestanden",
+      "warning": "Bestanden, mit einer Warnung",
+      "failed": "Fehlgeschlagen"
     }
   }
 }

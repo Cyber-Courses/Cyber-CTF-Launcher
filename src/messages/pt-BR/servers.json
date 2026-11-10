@@ -338,7 +338,10 @@
       "description": "Salvo. Veja o que o launcher conseguiu verificar a partir desta máquina.",
       "testing": "Testando a conexão…",
       "checks": "O que foi verificado",
-      "vmLead": "Agora um lab de teste real no servidor, executado como um lab: uma VM pequena em sua própria rede, depois removida. Leva alguns minutos."
+      "vmLead": "Agora um lab de teste real no servidor, executado como um lab: uma VM pequena em sua própria rede, depois removida. Leva alguns minutos.",
+      "passed": "Aprovado",
+      "warning": "Aprovado, com um aviso",
+      "failed": "Falhou"
     }
   }
 }
