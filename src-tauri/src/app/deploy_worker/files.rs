@@ -2,8 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
+use super::Job;
 use super::process::{Worker, alive};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 
 /// A worker's files.
@@ -12,6 +13,8 @@ pub struct Files {
     pub job: PathBuf,
     /// What it says, also its stdout/stderr (`<key>.log`).
     pub log: PathBuf,
+    /// The log of the run before (`<key>.previous.log`), kept when the next one starts.
+    pub previous_log: PathBuf,
     /// Its process id, while it runs (`<key>.pid`).
     pub pid: PathBuf,
     /// `ok` or `error: ...`, written last (`<key>.status`).
@@ -27,6 +30,7 @@ impl Files {
         Files {
             job: dir.join(format!("{key}.json")),
             log: dir.join(format!("{key}.log")),
+            previous_log: dir.join(format!("{key}.previous.log")),
             pid: dir.join(format!("{key}.pid")),
             status: dir.join(format!("{key}.status")),
             launch_status: dir.join(format!("{key}.launch-status")),
@@ -77,6 +81,29 @@ pub fn log_so_far(dirs: &AppDirs, lab_id: &str) -> Result<String> {
     Ok(std::fs::read_to_string(&f.log).unwrap_or_default())
 }
 
+/// Writes the job for its worker and opens its fresh log, both owner-only: the job carries the
+/// launch token (the worker removes it when the job ends), the log what the tools printed. The
+/// last run's log is kept beside it ([`Files::previous_log`]): a start again right after a failed
+/// one emptied the only log that said why the first failed.
+pub(super) fn write_job(f: &Files, job: &Job) -> Result<std::fs::File> {
+    crate::platform::private_fs::write(&f.job, serde_json::to_vec(job).map_err(|e| Error::Invalid(e.to_string()))?).map_err(Error::Io)?;
+    keep_last_log(f);
+    crate::platform::private_fs::create(&f.log).map_err(Error::Io)
+}
+
+/// Moves the last run's log, if any, to [`Files::previous_log`] (owner-only, as the log is).
+/// Best effort: one that can't be kept is logged, and the new run starts all the same.
+fn keep_last_log(f: &Files) {
+    let kept = match std::fs::rename(&f.log, &f.previous_log) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+        // An older version's log was readable by everyone.
+        moved => moved.and_then(|()| crate::platform::private_fs::append(&f.previous_log).map(drop)),
+    };
+    if let Err(e) = kept {
+        log::warn!("couldn't keep the last run's log {} as {}: {e}", f.log.display(), f.previous_log.display());
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -87,6 +114,7 @@ pub(crate) mod tests {
         let f = Files::of(Path::new("/data/deploys"), "lab-1.attack");
         assert_eq!(f.job, Path::new("/data/deploys/lab-1.attack.json"));
         assert_eq!(f.log, Path::new("/data/deploys/lab-1.attack.log"));
+        assert_eq!(f.previous_log, Path::new("/data/deploys/lab-1.attack.previous.log"));
         assert_eq!(f.pid, Path::new("/data/deploys/lab-1.attack.pid"));
         assert_eq!(f.status, Path::new("/data/deploys/lab-1.attack.status"));
         assert_eq!(f.launch_status, Path::new("/data/deploys/lab-1.attack.launch-status"));
@@ -182,5 +210,44 @@ pub(crate) mod tests {
         assert_eq!(log_so_far(&t.dirs(), "lab-1").unwrap(), "line\n");
         assert!(last_deploy_failed(&t.dirs(), "lab-1"));
         assert!(!last_deploy_failed(&t.dirs(), "../x"), "a bad id is never a failed deploy");
+    }
+
+    #[test]
+    fn the_job_and_its_log_are_written_for_this_user_only() {
+        let dir = crate::testing::temp_dir("private");
+        let f = Files::of(&dir, "lab-1");
+        // Left by an older version, readable by everyone.
+        std::fs::write(&f.log, "old run").unwrap();
+        let job = Job::on_lab("lab-1", super::super::Op::Launch);
+        drop(write_job(&f, &job).unwrap());
+        assert_eq!(serde_json::from_slice::<Job>(&std::fs::read(&f.job).unwrap()).unwrap(), job);
+        assert_eq!(std::fs::read_to_string(&f.log).unwrap(), "", "a fresh log");
+        #[cfg(unix)]
+        {
+            assert_eq!(crate::platform::private_fs::tests::mode(&f.job), 0o600);
+            assert_eq!(crate::platform::private_fs::tests::mode(&f.log), 0o600);
+            assert_eq!(crate::platform::private_fs::tests::mode(&f.previous_log), 0o600);
+        }
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_new_run_keeps_the_last_runs_log() {
+        // Regression: a start again right after one whose worker died emptied the only log that
+        // could say why (its stderr), so the first failure could never be explained.
+        let dir = crate::testing::temp_dir("previous-log");
+        let f = Files::of(&dir, "lab-1");
+        let job = Job::on_lab("lab-1", super::super::Op::Launch);
+        drop(write_job(&f, &job).unwrap());
+        assert!(!f.previous_log.exists(), "no run before the first");
+        std::fs::write(&f.log, "Downloading CyberCTF/web@abc\nthread 'main' has overflowed its stack\n").unwrap();
+        drop(write_job(&f, &job).unwrap());
+        assert_eq!(std::fs::read_to_string(&f.previous_log).unwrap(), "Downloading CyberCTF/web@abc\nthread 'main' has overflowed its stack\n");
+        assert_eq!(std::fs::read_to_string(&f.log).unwrap(), "");
+        // One run back only: the run before that one goes.
+        std::fs::write(&f.log, "second run\n").unwrap();
+        drop(write_job(&f, &job).unwrap());
+        assert_eq!(std::fs::read_to_string(&f.previous_log).unwrap(), "second run\n");
+        std::fs::remove_dir_all(dir).ok();
     }
 }

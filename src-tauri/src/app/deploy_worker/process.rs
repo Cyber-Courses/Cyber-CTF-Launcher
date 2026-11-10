@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::AppHandle;
 
 use super::Job;
-use super::files::{self, Files, read_worker};
+use super::files::{self, Files, read_worker, write_job};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 
@@ -37,11 +37,15 @@ impl Worker {
     }
 }
 
-/// A worker just started: its files and its process.
+/// A worker just started: its files, its process, and how that ended once it has.
 pub struct Spawned {
     pub files: Files,
     pub worker: Worker,
+    pub exit: Exit,
 }
+
+/// How a worker process ended, once it has (set when it is reaped).
+pub type Exit = std::sync::Arc<std::sync::OnceLock<std::process::ExitStatus>>;
 
 /// Takes the pidfile for a new worker: created only if no other worker holds it (a stale one,
 /// naming no live worker, is replaced). Refuses while a worker of the same key runs, so two
@@ -94,7 +98,7 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
     if let Some(hwnd) = crate::platform::exec::owner_window() {
         cmd.env(crate::platform::exec::OWNER_WINDOW_ENV, hwnd.to_string());
     }
-    let mut child = match cmd.spawn() {
+    let child = match cmd.spawn() {
         // Windows: the job the app runs in forbids breaking away; start the worker inside it.
         Err(e) if cfg!(windows) && e.raw_os_error() == Some(ERROR_ACCESS_DENIED) => {
             log::warn!("deploy worker can't leave the app's job object; it ends if that job is closed");
@@ -107,23 +111,29 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
     let worker = Worker { pid, started: observe(pid).map(|o| o.started) };
     pidfile.write_all(worker.line().as_bytes()).map_err(Error::Io)?;
     drop(pidfile);
-    // Reaped when it exits: unreaped, a finished worker stays a zombie for as long as the app
-    // runs, and a zombie still answers `kill -0`. Its pidfile goes with it (only while it still
-    // names this worker): a worker that finished before the line above wrote the pidfile would
-    // otherwise leave one behind.
-    let path = f.pid.clone();
-    std::thread::spawn(move || {
-        let _ = child.wait();
-        remove_pidfile_of(&path, pid);
-    });
-    Ok(Spawned { files: f, worker })
+    let exit = reap(child, f.pid.clone());
+    Ok(Spawned { files: f, worker, exit })
 }
 
-/// Writes the job for its worker and opens its fresh log, both owner-only: the job carries the
-/// launch token (the worker removes it when the job ends), the log what the tools printed.
-fn write_job(f: &Files, job: &Job) -> Result<std::fs::File> {
-    crate::platform::private_fs::write(&f.job, serde_json::to_vec(job).map_err(|e| Error::Invalid(e.to_string()))?).map_err(Error::Io)?;
-    crate::platform::private_fs::create(&f.log).map_err(Error::Io)
+/// Waits for the worker `child` on a thread of its own: unreaped, a finished worker stays a
+/// zombie for as long as the app runs, and a zombie still answers `kill -0`. Its pidfile goes
+/// with it (only while it still names this worker): a worker that finished before its pidfile
+/// was written would otherwise leave one behind. Returns how it ended, once it has: what the app
+/// says of a worker that ended without a verdict.
+fn reap(mut child: std::process::Child, pidfile: std::path::PathBuf) -> Exit {
+    let exit = Exit::default();
+    let ended = exit.clone();
+    let pid = child.id();
+    std::thread::spawn(move || {
+        match child.wait() {
+            Ok(status) => {
+                let _ = ended.set(status);
+            }
+            Err(e) => log::warn!("couldn't wait for deploy worker {pid}: {e}"),
+        }
+        remove_pidfile_of(&pidfile, pid);
+    });
+    exit
 }
 
 /// Removes the pidfile at `path` only while it still names the worker `pid`: a newer worker's
@@ -882,20 +892,22 @@ mod tests {
     }
 
     #[test]
-    fn the_job_and_its_log_are_written_for_this_user_only() {
-        let dir = crate::testing::temp_dir("private");
-        let f = Files::of(&dir, "lab-1");
-        // Left by an older version, readable by everyone.
-        std::fs::write(&f.log, "old run").unwrap();
-        let job = Job::on_lab("lab-1", super::super::Op::Launch);
-        drop(write_job(&f, &job).unwrap());
-        assert_eq!(serde_json::from_slice::<Job>(&std::fs::read(&f.job).unwrap()).unwrap(), job);
-        assert_eq!(std::fs::read_to_string(&f.log).unwrap(), "", "a fresh log");
-        #[cfg(unix)]
-        {
-            assert_eq!(crate::platform::private_fs::tests::mode(&f.job), 0o600);
-            assert_eq!(crate::platform::private_fs::tests::mode(&f.log), 0o600);
+    fn a_reaped_worker_says_how_it_ended() {
+        let child = if cfg!(windows) {
+            std::process::Command::new("cmd").args(["/C", "exit 3"]).spawn().unwrap()
+        } else {
+            std::process::Command::new("sh").args(["-c", "exit 3"]).spawn().unwrap()
+        };
+        let dir = crate::testing::temp_dir("reap");
+        let pidfile = dir.join("lab-1.pid");
+        std::fs::write(&pidfile, child.id().to_string()).unwrap();
+        let exit = reap(child, pidfile.clone());
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while (exit.get().is_none() || pidfile.exists()) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
         }
+        assert_eq!(exit.get().and_then(std::process::ExitStatus::code), Some(3));
+        assert!(!pidfile.exists(), "its pidfile goes with it");
         std::fs::remove_dir_all(dir).ok();
     }
 

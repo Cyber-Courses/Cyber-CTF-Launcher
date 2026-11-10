@@ -158,6 +158,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   couldn't be added with the lab".** With the attack box set to start with each lab, the end of
   such a start read the lab's status, which refused a lab that isn't installed. A lab that isn't
   installed now reads as not running, and nothing is added.
+- **A deploy worker that stops without a result says how.** The error names how its process
+  ended (its exit code, and what a crash's code means, or the signal that killed it) and the last
+  line it wrote, and the app's log says where its output is. A panic in a lab operation is now its
+  result ("the deploy worker crashed: …") instead of leaving the lab starting for good; a worker
+  that can't read its job, or can't start, says so as its result. Starting a lab again keeps the
+  failed run's output in `deploys/<lab>.previous.log` instead of emptying it.
 - **Signing in as another account mid-launch no longer reports the first one's machine
   online.** While a website launch ran, the heartbeat kept sending the agent registered for the
   account signed in before, with the new account's sign-in. It now waits until this machine is

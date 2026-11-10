@@ -100,6 +100,8 @@ pub async fn tail(spawned: &Spawned, mut log: impl FnMut(String)) -> Result<()> 
     let mut offset = 0usize;
     let mut lines = LineBuffer::default();
     let mut grace = 0u8;
+    // What it said last: why it stopped, when it ends without a verdict.
+    let mut last: Option<String> = None;
     loop {
         // The status first, then the log: the worker writes its last lines before its status, so
         // a status seen here means the log read next holds every line. (Read the other way
@@ -109,6 +111,9 @@ pub async fn tail(spawned: &Spawned, mut log: impl FnMut(String)) -> Result<()> 
             && bytes.len() > offset
         {
             lines.push(&bytes[offset..], |line| {
+                if !line.trim().is_empty() {
+                    last = Some(line.clone());
+                }
                 // The worker's closing ✗ line restates its verdict, which the caller reports.
                 if !line.starts_with(FAILED_MARK) {
                     log(line);
@@ -126,11 +131,47 @@ pub async fn tail(spawned: &Spawned, mut log: impl FnMut(String)) -> Result<()> 
             // The status is written just before the worker exits: give it a moment to land.
             grace += 1;
             if grace > STATUS_GRACE {
-                return Err(Error::Invalid("the deploy worker stopped without a result (see its log)".into()));
+                return Err(lost(spawned, last.as_deref()));
             }
         }
         tokio::time::sleep(POLL).await;
     }
+}
+
+/// The error of a worker that ended without a verdict: how its process ended and the last line
+/// it wrote (a crash's message lands there, on its stderr), also in the app's log with where its
+/// own log is. It said only "stopped without a result", and nothing in the app's log said more.
+fn lost(spawned: &Spawned, last_line: Option<&str>) -> Error {
+    let how = ended(spawned.exit.get());
+    log::warn!("deploy worker {} ended without a verdict: it {how}; its output is in {}", spawned.worker.pid, spawned.files.log.display());
+    let said = last_line.map(|l| format!(" Its last line: {}", l.trim())).unwrap_or_default();
+    Error::Invalid(format!("the deploy worker stopped without a result: it {how}.{said}"))
+}
+
+/// How a worker process ended (`None`: not known, it wasn't reaped by this app).
+fn ended(status: Option<&std::process::ExitStatus>) -> String {
+    #[cfg(unix)]
+    if let Some(signal) = status.and_then(std::os::unix::process::ExitStatusExt::signal) {
+        return format!("was killed by signal {signal}");
+    }
+    status.and_then(std::process::ExitStatus::code).map_or_else(|| "ended, how isn't known".into(), exit_code)
+}
+
+/// `exited with code N`, with what the code means when it is one a crash or a kill leaves (the
+/// Windows ones are NTSTATUS codes, shown in hex as Windows tools show them).
+fn exit_code(code: i32) -> String {
+    let raw = code.cast_unsigned();
+    let meaning = match raw {
+        101 => Some("a panic"),
+        0xC000_0005 => Some("an access violation"),
+        0xC000_00FD => Some("a stack overflow"),
+        0xC000_0374 => Some("a heap corruption"),
+        0xC000_0409 => Some("an abort"),
+        0xC000_013A => Some("a Ctrl+C, or its console closed"),
+        _ => None,
+    };
+    let shown = if raw >= 0x8000_0000 { format!("0x{raw:08X}") } else { code.to_string() };
+    meaning.map_or_else(|| format!("exited with code {shown}"), |m| format!("exited with code {shown} ({m})"))
 }
 
 #[cfg(test)]
@@ -200,7 +241,8 @@ mod tests {
     fn spawned(tag: &str) -> (std::path::PathBuf, Spawned) {
         let dir = crate::testing::temp_dir(tag);
         let files = crate::app::deploy_worker::files::Files::of(&dir, "lab-1");
-        (dir, Spawned { files, worker: crate::app::deploy_worker::process::Worker { pid: 4_000_000_000, started: None } })
+        let worker = crate::app::deploy_worker::process::Worker { pid: 4_000_000_000, started: None };
+        (dir, Spawned { files, worker, exit: crate::app::deploy_worker::process::Exit::default() })
     }
 
     #[tokio::test]
@@ -245,8 +287,41 @@ mod tests {
     async fn a_worker_gone_without_a_status_is_an_error() {
         let (dir, s) = spawned("tail-lost");
         let err = tail(&s, |_| {}).await.unwrap_err();
-        assert!(err.to_string().contains("without a result"));
+        assert_eq!(err.to_string(), "the deploy worker stopped without a result: it ended, how isn't known.");
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_worker_gone_without_a_status_says_how_it_ended_and_its_last_line() {
+        // Regression (karen, Windows): a worker that died mid-download left the app saying only
+        // "stopped without a result (see its log)"; the next start then emptied that log.
+        use std::os::unix::process::ExitStatusExt;
+        let (dir, s) = spawned("tail-crashed");
+        std::fs::write(&s.files.log, "Downloading CyberCTF/web@abc\n\nthread 'tokio-runtime-worker' has overflowed its stack\n\n").unwrap();
+        s.exit.set(std::process::ExitStatus::from_raw(9)).unwrap();
+        let err = tail(&s, |_| {}).await.unwrap_err().to_string();
+        assert_eq!(
+            err,
+            "the deploy worker stopped without a result: it was killed by signal 9. Its last line: thread 'tokio-runtime-worker' has overflowed its stack"
+        );
+        let (dir2, s) = spawned("tail-exited");
+        s.exit.set(std::process::ExitStatus::from_raw(101 << 8)).unwrap();
+        let err = tail(&s, |_| {}).await.unwrap_err().to_string();
+        assert_eq!(err, "the deploy worker stopped without a result: it exited with code 101 (a panic).");
+        std::fs::remove_dir_all(dir).ok();
+        std::fs::remove_dir_all(dir2).ok();
+    }
+
+    #[test]
+    fn exit_codes_a_crash_leaves_say_what_they_mean() {
+        assert_eq!(exit_code(2), "exited with code 2");
+        assert_eq!(exit_code(1), "exited with code 1");
+        assert_eq!(exit_code(0xC000_00FD_u32.cast_signed()), "exited with code 0xC00000FD (a stack overflow)");
+        assert_eq!(exit_code(0xC000_0409_u32.cast_signed()), "exited with code 0xC0000409 (an abort)");
+        assert_eq!(exit_code(0xC000_013A_u32.cast_signed()), "exited with code 0xC000013A (a Ctrl+C, or its console closed)");
+        assert_eq!(exit_code(0xE000_0001_u32.cast_signed()), "exited with code 0xE0000001");
+        assert_eq!(ended(None), "ended, how isn't known");
     }
 }
 

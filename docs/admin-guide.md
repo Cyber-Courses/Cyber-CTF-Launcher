@@ -262,17 +262,17 @@ the per-user profile folder keeps other accounts out. On Windows it is under the
 
 In the app data folder:
 
-| Path                                   | Holds                                                                                                                                                                                  |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `labs/<lab id>/`                       | each installed lab: its source (up to 512 MB downloaded, 4 GB unpacked) and the files generated to run it (Compose, Vagrant, Terraform)                                                |
-| `runs/<run>/`                          | the state of each running lab, kept by the Isothrum runner: its record, events, and for a server or cloud lab its **Terraform state**, which holds the lab's outputs, secrets included |
-| `server.json`                          | the user's servers and cloud accounts (names, addresses, regions; no secrets)                                                                                                          |
-| `ssh/id_ed25519`                       | the launcher's own SSH key (no passphrase), put on the server and cloud machines it creates                                                                                            |
-| `install-id`                           | a random identifier of this installation (see [Privacy](#privacy-and-what-is-sent))                                                                                                    |
-| `offline/`                             | which lab, runtime, repository and commit each lab last started from, for an offline start (no tokens)                                                                                 |
-| `deploys/`                             | the jobs of the deploy workers (a deploy keeps running if the window closes); a job carries the lab's launch token                                                                     |
-| `storage.json`, `installed-tools.json` | the images, boxes and tools the launcher downloaded or installed, so Settings > Maintenance removes only those                                                                         |
-| `terraform-plugins/`                   | an older Terraform provider cache, cleanable from the Storage page                                                                                                                     |
+| Path                                   | Holds                                                                                                                                                                                               |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `labs/<lab id>/`                       | each installed lab: its source (up to 512 MB downloaded, 4 GB unpacked) and the files generated to run it (Compose, Vagrant, Terraform)                                                             |
+| `runs/<run>/`                          | the state of each running lab, kept by the Isothrum runner: its record, events, and for a server or cloud lab its **Terraform state**, which holds the lab's outputs, secrets included              |
+| `server.json`                          | the user's servers and cloud accounts (names, addresses, regions; no secrets)                                                                                                                       |
+| `ssh/id_ed25519`                       | the launcher's own SSH key (no passphrase), put on the server and cloud machines it creates                                                                                                         |
+| `install-id`                           | a random identifier of this installation (see [Privacy](#privacy-and-what-is-sent))                                                                                                                 |
+| `offline/`                             | which lab, runtime, repository and commit each lab last started from, for an offline start (no tokens)                                                                                              |
+| `deploys/`                             | the jobs of the deploy workers (a deploy keeps running if the window closes), each with its output (`<lab>.log`, the run before kept as `<lab>.previous.log`); a job carries the lab's launch token |
+| `storage.json`, `installed-tools.json` | the images, boxes and tools the launcher downloaded or installed, so Settings > Maintenance removes only those                                                                                      |
+| `terraform-plugins/`                   | an older Terraform provider cache, cleanable from the Storage page                                                                                                                                  |
 
 **Terraform state is the record of what a server or cloud lab created.** While such a lab runs,
 deleting `runs/` (or the whole app data folder) leaves its machines running, and billing in a cloud
@@ -368,7 +368,9 @@ Cyber CTF's privacy policy: <https://www.cyberctf.org/privacy>.
 ## Logs and diagnostics
 
 The log folder (table above) holds `cyberctf.log` and one `deploy-<lab>.log` per lab, rotated at
-2 MB with four files kept. The level is `info`; set `CYBERCTF_LOG` (`error`, `warn`, `info`,
+2 MB with four files kept. What a lab operation's tools printed, and a deploy worker's crash
+message, is in `deploys/<lab>.log` in the data folder, the previous operation's in
+`deploys/<lab>.previous.log`. The level is `info`; set `CYBERCTF_LOG` (`error`, `warn`, `info`,
 `debug` or `trace`) in the app's environment for another. Tokens, passwords, credentials in URLs
 and values under secret-sounding names are redacted from every line. **Settings > About** has **Diagnostics > Copy** (the
 version, the OS and the machine's setup status, for a support request) and **Log files > Open
