@@ -9,22 +9,28 @@
 //!
 //! - `kind`: each kind of host in one table (what its fields mean, its checks, its Terraform).
 //! - `profile`, `input`: a saved host and the setup form that makes one.
+//! - `setup`: the setup form's actions (save, with a password or an SSH key; remove; placement).
 //! - `store`, `secrets`: where profiles and their secrets are kept.
-//! - `checks`, `reachability`, `cloud_checks`, `budget`: "Test connection" and the spend limit.
+//! - `connection_test`, `checks`, `reachability`, `cloud_checks`: "Test connection".
+//! - `budget`: an AWS account's spend and the limit a launch is checked against.
+//! - `capacity`: a Proxmox server's cores and memory, for its row.
 //! - `hosts`: the saved hosts' rules: the default, what moves a host, the labs on each.
 //! - `contract`: what a launch is given to reach its host; `gcp`: the GCP labs project.
 
 pub(crate) mod budget;
+pub(crate) mod capacity;
 pub(crate) mod checks;
 mod cloud_checks;
+pub(crate) mod connection_test;
 mod contract;
 pub mod gcp;
 pub(crate) mod hosts;
 pub(crate) mod input;
 mod kind;
 pub(crate) mod profile;
-pub(crate) mod reachability;
+mod reachability;
 pub(crate) mod secrets;
+pub(crate) mod setup;
 pub(crate) mod store;
 
 // What the rest of the app uses, at the paths it always had. The globs carry each command's

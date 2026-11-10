@@ -42,8 +42,19 @@ fn cli_account(profile: Option<String>) -> HostProfile {
     }
 }
 
+/// This month's spend so far (USD) on the saved AWS account `id`, with its own credentials (its
+/// stored keys, or its CLI profile): the figure the Cloud screen shows is the one the launch
+/// budget gate checks, never another account's (the CLI's default profile's).
+pub(crate) async fn account_month_to_date_cost(dirs: &AppDirs, id: &str) -> Result<f64> {
+    let host = load_host(dirs, id)?;
+    if host.provider != Provider::Aws {
+        return Err(Error::Invalid("only AWS accounts report their spend".into()));
+    }
+    month_to_date_cost(&host, &host_secret(&host)?).await
+}
+
 /// This month's AWS spend so far (USD) for a host, via Cost Explorer.
-pub(crate) async fn month_to_date_cost(h: &HostProfile, password: &str) -> Result<f64> {
+pub(super) async fn month_to_date_cost(h: &HostProfile, password: &str) -> Result<f64> {
     let env = terraform_env(h, password);
     let period = crate::cloud::month_period();
     let out = aws_cmd(h, &env, &cost_args(&period)).await?;
@@ -141,11 +152,22 @@ mod tests {
     use crate::runtime::server::profile::tests::profile;
 
     #[tokio::test]
-    async fn the_cli_profiles_spend_is_read_for_the_setup_form() {
-        // The setup form's figure, for a profile not saved yet (a saved account's own-credential
-        // spend is `server_month_to_date_cost`, tested with the command).
+    async fn an_accounts_spend_is_read_with_its_own_keys_not_the_clis_default() {
+        // Regression: the Cloud screen read the spend of an account added with stored keys through
+        // the host CLI's default profile: another account's spend, or nothing, while the launch
+        // budget gate read the stored keys.
         use crate::platform::exec::fake::{Tools, ok};
-        let _tools = Tools::rules(&[("ce get-cost-and-usage", ok("7.25\n"))]);
+        let t = crate::testing::test_app::TestApp::new();
+        let cli = t.host("aws-cli", "aws", serde_json::json!({ "useCliCreds": true, "awsProfile": "labs" }));
+        let tools = Tools::rules(&[("ce get-cost-and-usage", ok("7.25\n"))]);
+        crate::testing::assert_close(account_month_to_date_cost(&t.dirs(), &cli).await.unwrap(), 7.25);
+        assert!(tools.called("aws ce get-cost-and-usage"), "{:?}", tools.calls());
+        assert_eq!(tools.env_of("ce get-cost-and-usage", "AWS_PROFILE").as_deref(), Some("labs"));
+        // Not an AWS account, or not saved: no figure.
+        let az = t.host("az1", "azure", serde_json::json!({}));
+        assert_eq!(account_month_to_date_cost(&t.dirs(), &az).await.unwrap_err().to_string(), "only AWS accounts report their spend");
+        assert!(account_month_to_date_cost(&t.dirs(), "nope").await.is_err());
+        // The setup form's figure, for a profile not saved yet.
         crate::testing::assert_close(cli_month_to_date_cost(None).await.unwrap(), 7.25);
     }
 

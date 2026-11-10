@@ -54,7 +54,8 @@ export const serverRunningLabs = () => invoke<Record<string, number>>("server_ru
 /** This month's spend so far (USD) on a saved AWS account, with its own credentials: the figure
  *  the launch budget gate checks. Rejects when it can't be read. */
 export const serverMonthToDateCost = (id: string) => invoke<number>("server_month_to_date_cost", { id });
-/** A host's hardware headroom (Proxmox only; null otherwise or on failure). */
+/** A host's hardware headroom: null for a host that isn't a Proxmox server; rejects when it
+ *  can't be read. */
 export const serverCapacity = (id: string) => invoke<HostCapacity | null>("server_capacity", { id });
 /** Real-VM self-test: provisions a throwaway VM on the host, checks it, then destroys it. */
 export const serverSelftest = (id: string, onEvent: (e: SelfTestEvent) => void) => invokeStreaming("server_selftest", { id }, onEvent, "events");

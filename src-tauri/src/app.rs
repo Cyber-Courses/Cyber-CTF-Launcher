@@ -50,7 +50,7 @@ pub fn run() -> tauri::Result<()> {
         // Exit code 0 when it was sent, else 1 (the app reads only whether it succeeded).
         std::process::exit(i32::from(!platform::console::send_ctrl_c(pid)));
     }
-    crate::commands::server::mark_started();
+    crate::runtime::server::connection_test::mark_started();
     // Before anything else: GUI launches don't get the shell PATH (docker, vagrant, ovftool), nor,
     // on macOS, the proxy (said in the log once it is up).
     platform::env_path::augment();
