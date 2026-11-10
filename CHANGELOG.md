@@ -216,6 +216,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   container lab's VM in the "Where should the lab run?" dialog, even one then cancelled, made it
   the Settings choice, and the next launch skipped the question. Only "Don't ask again" saves it
   now, with the rest of the path.
+- **A UTM start is tried once more when UTM is too busy to answer.** Vagrant's UTM plugin reads
+  a VM's forwarded ports through Apple events, and a busy UTM let one time out ("AppleEvent timed
+  out (-1712)"), failing the start. That is now taken as passing, like "Application isn't running
+  (-600)": the log says so and the start (or the update of a running lab) is tried once more.
 - **A cloud-services lab gets the account's region, subscription or project.** The lab's own
   Terraform module was never given where the account works when its provider names none: the AWS
   region (`AWS_REGION`), the Azure subscription, the Google Cloud project and region. They are now
