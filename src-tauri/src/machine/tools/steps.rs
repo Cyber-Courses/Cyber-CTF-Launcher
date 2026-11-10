@@ -114,56 +114,95 @@ pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<(
         std::io::ErrorKind::NotFound => Error::Invalid(format!("{} is not available on this machine.", step.program)),
         _ => Error::Io(e),
     })?;
-    // pkexec's own failure (refused, or no agent to ask), told apart from the script's exit code.
-    let mut pkexec_error: Option<String> = None;
-    // The exit code of the installer winget ran, which says whether the player cancelled it.
-    let mut installer_code: Option<u32> = None;
-    // A broken-Homebrew cause recognised in brew's output: the first one seen (an update's lock
-    // error comes before the install error it leads to, so it wins), shown only if the step fails.
-    let brew = is_brew_step(step);
-    let mut brew_help: Option<&'static str> = None;
-    let watch = |line: String| {
-        if step.program == "winget" {
-            installer_code = exit_codes::installer_exit_code(&line).or(installer_code);
-        }
-        on_line(line);
-    };
-    let forwarded = crate::platform::exec::forward_lines(&mut child, 0, watch, |line| {
-        if step.program == "pkexec" && is_pkexec_error(line) {
-            pkexec_error = Some(line.to_string());
-        }
-        if brew && brew_help.is_none() {
-            brew_help = brew_trouble(line);
-        }
-    })
+    // Both callbacks feed it; a Mutex (never contended: they run one after the other) keeps the
+    // command's future Send.
+    let watch = std::sync::Mutex::new(Watch::new(step));
+    let watched = || watch.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let forwarded = crate::platform::exec::forward_lines(
+        &mut child,
+        0,
+        |line: String| {
+            watched().line(&line);
+            on_line(line);
+        },
+        |line| watched().error_line(line),
+    )
     .await;
     if forwarded.is_ok() {
         group.disarm();
     }
     let (status, _) = forwarded?;
-    // pkexec exits 126 when the password prompt was dismissed or refused and 127 when no polkit
-    // agent could show one, but the script's own 126/127 (a command missing or not executable)
-    // come through as is: only pkexec's own message says which it was.
-    if let Some(why) = pkexec_error.filter(|_| matches!(status.code(), Some(126 | 127))) {
-        return Err(Error::Invalid(pkexec_refusal(&why).into()));
+    if let Some(note) = watch.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner).end(step, status)? {
+        on_line(note.into());
     }
-    let removing = step.args.first().is_some_and(|a| a == "uninstall");
-    match end_of(&step.program, removing, status.code(), installer_code) {
-        End::Done(note) => {
-            if let Some(note) = note {
-                on_line(note.into());
-            }
-            Ok(())
+    Ok(())
+}
+
+/// What a step's output says beyond its exit status, watched line by line for the program it
+/// runs: the exit code of the installer winget ran (whether the player cancelled it), pkexec's
+/// own refusal (told apart from the script's exit code), and a broken-Homebrew cause in brew's
+/// output (the first one seen: an update's lock error comes before the install error it leads
+/// to, so it wins; shown only if the step fails).
+struct Watch {
+    winget: bool,
+    pkexec: bool,
+    brew: bool,
+    installer_code: Option<u32>,
+    pkexec_error: Option<String>,
+    brew_help: Option<&'static str>,
+}
+
+impl Watch {
+    fn new(step: &Step) -> Watch {
+        Watch {
+            winget: step.program == "winget",
+            pkexec: step.program == "pkexec",
+            brew: is_brew_step(step),
+            installer_code: None,
+            pkexec_error: None,
+            brew_help: None,
         }
-        // A recognised broken-Homebrew cause reads as the fix for it; the raw brew lines stay in
-        // the log. Otherwise a known code reads as what happened, with the raw codes after it.
-        End::Failed(why) => Err(Error::Invalid(match brew_help {
-            Some(help) => help.to_string(),
-            None => match why {
-                Some(why) => format!("{why} (`{}` exited with {status})", step.program),
-                None => format!("`{}` exited with {status}", step.program),
-            },
-        })),
+    }
+
+    /// A line of the step's output, either stream.
+    fn line(&mut self, line: &str) {
+        if self.winget {
+            self.installer_code = exit_codes::installer_exit_code(line).or(self.installer_code);
+        }
+    }
+
+    /// A line of the step's error output.
+    fn error_line(&mut self, line: &str) {
+        if self.pkexec && is_pkexec_error(line) {
+            self.pkexec_error = Some(line.to_string());
+        }
+        if self.brew && self.brew_help.is_none() {
+            self.brew_help = brew_trouble(line);
+        }
+    }
+
+    /// How the step ended, once it exited with `status`: done, with a note for the log (winget's
+    /// "already installed", "restart to finish"), or why it failed.
+    fn end(self, step: &Step, status: std::process::ExitStatus) -> Result<Option<&'static str>> {
+        // pkexec exits 126 when the password prompt was dismissed or refused and 127 when no
+        // polkit agent could show one, but the script's own 126/127 (a command missing or not
+        // executable) come through as is: only pkexec's own message says which it was.
+        if let Some(why) = self.pkexec_error.filter(|_| matches!(status.code(), Some(126 | 127))) {
+            return Err(Error::Invalid(pkexec_refusal(&why).into()));
+        }
+        let removing = step.args.first().is_some_and(|a| a == "uninstall");
+        match end_of(&step.program, removing, status.code(), self.installer_code) {
+            End::Done(note) => Ok(note),
+            // A recognised broken-Homebrew cause reads as the fix for it; the raw brew lines stay
+            // in the log. Otherwise a known code reads as what happened, with the raw codes after.
+            End::Failed(why) => Err(Error::Invalid(match self.brew_help {
+                Some(help) => help.to_string(),
+                None => match why {
+                    Some(why) => format!("{why} (`{}` exited with {status})", step.program),
+                    None => format!("`{}` exited with {status}", step.program),
+                },
+            })),
+        }
     }
 }
 
@@ -195,6 +234,42 @@ fn end_of(program: &str, removing: bool, code: Option<i32>, installer_code: Opti
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An exit status with `code`, as the OS reports it.
+    #[cfg(unix)]
+    fn exited(code: i32) -> std::process::ExitStatus {
+        std::os::unix::process::ExitStatusExt::from_raw(code << 8)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn each_program_is_watched_for_what_its_own_output_says() {
+        // pkexec: its refusal, only with its own exit codes; a script's lines aren't watched.
+        let pkexec = step("pkexec", &["sh", "-c", "apt-get install -y x"]);
+        let mut w = Watch::new(&pkexec);
+        w.error_line("Error executing command as another user: Not authorized");
+        assert!(w.end(&pkexec, exited(126)).unwrap_err().to_string().contains("cancelled"));
+        let mut w = Watch::new(&step("sh", &["-c", "x"]));
+        w.error_line("Error executing command as another user: Not authorized");
+        assert_eq!(w.pkexec_error, None);
+        // brew: the first broken-Homebrew cause, said when the step fails, not when it succeeds.
+        let brew = step("brew", &["install", "qemu"]);
+        let mut w = Watch::new(&brew);
+        w.error_line("/opt/homebrew/var/homebrew/locks/update: Permission denied");
+        w.error_line("Error: unknown or unsupported macOS version");
+        assert_eq!(w.brew_help, Some(BREW_LOCKED));
+        assert_eq!(w.end(&brew, exited(1)).unwrap_err().to_string(), BREW_LOCKED);
+        let mut w = Watch::new(&brew);
+        w.error_line("Error: unknown or unsupported macOS version");
+        assert_eq!(w.end(&brew, exited(0)).unwrap(), None);
+        // winget: the installer's code from any line of its output; other programs' lines aren't read.
+        let mut w = Watch::new(&step("winget", &["install", "-e", "--id", "Docker.DockerDesktop"]));
+        w.line("Installer failed with exit code: 1602");
+        assert_eq!(w.installer_code, Some(1602));
+        let mut w = Watch::new(&step("powershell", &["-Command", "x"]));
+        w.line("Installer failed with exit code: 1602");
+        assert_eq!(w.installer_code, None);
+    }
 
     #[test]
     fn pkexec_refusals_name_their_cause() {
