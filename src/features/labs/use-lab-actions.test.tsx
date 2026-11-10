@@ -401,7 +401,7 @@ describe("useLabActions: operations on a built lab", () => {
     installTauri();
     let release!: () => void;
     const refresh = vi.fn(() => new Promise<void>((r) => (release = r)));
-    const hook = renderHook(() => useLabActions(refresh));
+    const hook = renderHook(() => useLabActions(refresh, []));
     let done!: Promise<unknown>;
     act(() => {
       done = hook.result.current.stop({ ...vmLab, id: "act-settle" });

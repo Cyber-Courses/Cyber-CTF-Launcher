@@ -121,7 +121,7 @@ describe("lab page actions during a worker operation", () => {
     beginDeploy("lab-r", "launch");
     appendDeployLog("lab-r", "✓ Lab is running");
     endDeploy("lab-r");
-    const { result } = renderHook(() => useLabActions(() => {}));
+    const { result } = renderHook(() => useLabActions(() => {}, []));
     await act(async () => {
       await result.current.park(lab("lab-r"), "pause");
     });
@@ -170,7 +170,7 @@ describe("reset", () => {
       },
       lab_status: () => status(),
     });
-    const { result } = renderHook(() => useLabActions(() => {}));
+    const { result } = renderHook(() => useLabActions(() => {}, []));
     let failure: string | null = null;
     await act(async () => {
       failure = await result.current.stop(lab("lab-f"));

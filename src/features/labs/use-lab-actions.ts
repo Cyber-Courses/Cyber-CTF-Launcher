@@ -19,16 +19,16 @@ import {
   type OperationBody,
 } from "@/features/labs/lab-operations";
 
-const NO_HOSTS: readonly ServerHost[] = [];
-
 /**
  * Start/stop actions for labs, shared across screens. The busy lab, its streamed log lines
  * and which lab they belong to live in a module store (runs/deploy-runs), so a deploy started
  * here keeps streaming and stays visible even after the labs screen unmounts (e.g. the user
  * opens Settings) and comes back. Keyed per lab, so two deploys at once keep separate logs; the
  * UI reads each lab's run from `runs[labId]`. The operations themselves are in lab-operations.
+ * `hosts`: the saved servers and cloud accounts, which a launch's "ready" notice names (asked
+ * for, not defaulted: without them a cloud launch said "ready on your server").
  */
-export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) => Promise<void> | void, hosts: readonly ServerHost[] = NO_HOSTS) {
+export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) => Promise<void> | void, hosts: readonly ServerHost[]) {
   // By lab id: none for a lab not run since the app started.
   const { runs }: { runs: Partial<Record<string, DeployRun>> } = useDeploy();
 

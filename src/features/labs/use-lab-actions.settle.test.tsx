@@ -27,7 +27,7 @@ describe("useLabActions: the status read after an operation", () => {
     installTauri({ deploying_labs: () => [], active_operations: () => [] });
     // A refresh that hangs: the backend never answers the status read.
     const refresh = vi.fn(() => new Promise<void>(() => {}));
-    const { result } = renderHook(() => useLabActions(refresh));
+    const { result } = renderHook(() => useLabActions(refresh, []));
     let launched: Promise<void> | undefined;
     act(() => {
       launched = result.current.launch(lab, null, undefined, null, { ports: "default" });

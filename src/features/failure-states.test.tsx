@@ -212,7 +212,7 @@ describe("a start that failed", () => {
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     let actions: ReturnType<typeof useLabActions> | null = null;
     function Probe() {
-      actions = useLabActions(() => {});
+      actions = useLabActions(() => {}, []);
       return null;
     }
     render(
