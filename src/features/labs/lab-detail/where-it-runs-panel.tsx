@@ -10,6 +10,7 @@ import { labRequirements, type LabRequirements, type LabRunOptions, type Provide
 import { cn } from "@/lib/utils";
 import { useT, type MessageKey, type T } from "@/lib/i18n";
 import { warn } from "@/lib/failure";
+import { gigabytes, MIB } from "@/lib/format";
 
 /** What a place the lab supports but the launcher isn't set up for yet tells the player to do. */
 const SETUP_HINT: Partial<Record<string, MessageKey>> = {
@@ -42,12 +43,12 @@ function useLabRequirements(labId: string, runtime: LabRuntimeInfo): LabRequirem
   return reqs;
 }
 
-/** "2–6 vCPU · 12 GB RAM · 20–60 GB disk" from a lab's lightest-to-heaviest range, a single value
- *  where the ends meet. Memory rounds up to whole GB: the figure is a floor to plan for, not a
- *  measurement. */
+/** "2–6 vCPU · 2.7–13 GB RAM · 20–60 GB disk" from a lab's lightest-to-heaviest range, a single
+ *  value where the ends meet. Memory, which the spec counts in MiB, is in the decimal GB the rest of
+ *  the app shows (the machine's free memory beside it). */
 function requirementsSummary(t: T, r: LabRequirements): string {
-  const range = (min: number, max: number) => (min === max ? String(min) : `${String(min)}–${String(max)}`);
-  const gb = (mb: number) => Math.ceil(mb / 1024);
+  const range = (min: number | string, max: number | string) => (min === max ? String(min) : `${String(min)}–${String(max)}`);
+  const gb = (mib: number) => gigabytes(mib * MIB);
   return t("labs.detail.requirementsSummary", {
     cpu: range(r.min.cpus, r.max.cpus),
     ram: range(gb(r.min.memoryMb), gb(r.max.memoryMb)),

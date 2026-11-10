@@ -82,7 +82,7 @@ describe("WhereItRunsPanel", () => {
     renderPanel({ runtime: vm });
     await flush();
     expect(screen.getByText("Needs")).toBeTruthy();
-    expect(screen.getByText("2 vCPU · 1 GB RAM · 20 GB disk")).toBeTruthy();
+    expect(screen.getByText("2 vCPU · 1.1 GB RAM · 20 GB disk")).toBeTruthy();
   });
 });
 

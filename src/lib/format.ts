@@ -34,8 +34,11 @@ export function formatAgo(at: number, now: number) {
 /** A gigabyte as sizes are shown: decimal, like the disk and memory figures next to them. */
 export const GB = 1e9;
 
+/** A mebibyte: what a lab spec's (and Vagrant's) memory "MB" counts. */
+export const MIB = 2 ** 20;
+
 /** 12, 3.4: gigabytes with one decimal under 10. */
-const gigabytes = (b: number) => decimal(b / GB, b >= 10 * GB ? 0 : 1);
+export const gigabytes = (b: number) => decimal(b / GB, b >= 10 * GB ? 0 : 1);
 
 /** 12 GB, 3.4 GB, 512 MB, 8 kB. */
 export function formatBytes(b: number) {
