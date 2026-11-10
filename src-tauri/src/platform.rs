@@ -21,6 +21,7 @@ pub mod proxy;
 pub mod redact;
 pub mod remembered;
 pub mod sys;
+pub mod tree_link;
 
 /// Resets an in-flight flag to `false` when dropped, so a single-flight scan frees the next one
 /// whether it returns normally or is cancelled. The flag is borrowed, so one guard serves every

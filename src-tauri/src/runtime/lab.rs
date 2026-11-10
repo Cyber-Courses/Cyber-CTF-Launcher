@@ -101,8 +101,8 @@ fn copy_tree_rooted(src: &Path, dst: &Path, root: &Path) -> std::io::Result<()> 
             // is recreated, not followed, so a dangling one is harmless.
             let link = std::fs::read_link(&from)?;
             let rel = from.strip_prefix(root).unwrap_or(from.as_path());
-            if crate::labs::symlink_target_within_tree(rel, &link) {
-                crate::labs::recreate_symlink(&link, &to)?;
+            if crate::platform::tree_link::symlink_target_within_tree(rel, &link) {
+                crate::platform::tree_link::recreate_symlink(&link, &to)?;
             }
             continue;
         }

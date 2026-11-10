@@ -19,7 +19,6 @@ mod offline;
 pub mod operations;
 
 use archive::extract;
-pub(crate) use archive::{recreate_symlink, symlink_target_within_tree};
 use launch_env::{EnvVar, launch_env};
 
 /// A lab to download and run, as the backend's `startLab` and `claimLaunch` answer it.
