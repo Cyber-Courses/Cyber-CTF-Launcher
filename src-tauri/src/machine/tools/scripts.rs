@@ -175,16 +175,19 @@ const DOCKER: VendorRepo = VendorRepo {
 /// root (pkexec runs as root, so `$USER` there is root: the name comes from the app). The group
 /// applies from the next login.
 ///
-/// On Ubuntu, Debian and Raspbian (and Ubuntu's derivatives, on their Ubuntu base) it sets up
-/// Docker's apt repository, the way Docker documents it, with Docker's key checked against its
-/// pinned fingerprint. Elsewhere it stops and says where to get Docker: Docker's convenience
+/// On Ubuntu, Debian and Raspbian, and their derivatives (on the Ubuntu or Debian release they are
+/// built on, when they say it), it sets up Docker's apt repository, the way Docker documents it,
+/// with Docker's key checked against its pinned fingerprint. Where that repository has no packages
+/// for the release (Kali's rolling one, Devuan's, a Debian or Ubuntu newer than Docker serves yet),
+/// it installs the distribution's own Docker (`docker.io` and its Compose), signed by the
+/// distribution's own keys. Elsewhere it stops and says where to get Docker: Docker's convenience
 /// script (get.docker.com) can't be held to a key (it fetches the key and installs what it signed
 /// in one go), so it never runs as root from here.
 #[cfg(any(target_os = "linux", test))]
 pub fn docker_script(user: Option<&str>) -> String {
     use std::fmt::Write as _;
     let mut s = format!(
-        "{PRIVATE_WORKDIR}; {DOCKER_DIST}; [ -n \"$dist\" ] || {{ echo 'No Docker apt repository fits this system. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again.' >&2; exit 1; }}; {}; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+        "{PRIVATE_WORKDIR}; {DOCKER_SERVES}; {DOCKER_DIST}; [ -n \"$dist\" ] || {{ echo 'Cyber CTF installs Docker on Debian, Ubuntu and the distributions built on them. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again.' >&2; exit 1; }}; if [ -n \"$own\" ]; then {DISTRIBUTION_DOCKER}; else {}; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; fi",
         apt_repo_script(&DOCKER)
     );
     if let Some(u) = user.filter(|u| valid_user(u)) {
@@ -193,10 +196,24 @@ pub fn docker_script(user: Option<&str>) -> String {
     s
 }
 
-/// Which of Docker's apt repositories fits this system (`$dist`, empty when none does) and its
-/// codename there. Raspbian Trixie has none: Debian's serves it (as get.docker.com does).
+/// Whether Docker's apt repository for distribution `$1` has packages for release `$2` (its
+/// `Release` file answers).
 #[cfg(any(target_os = "linux", test))]
-const DOCKER_DIST: &str = r#". /etc/os-release; dist=""; codename="${VERSION_CODENAME:-}"; case "$ID" in ubuntu|debian|raspbian) dist="$ID";; *) case " ${ID_LIKE:-} " in *" ubuntu "*) dist=ubuntu;; esac;; esac; [ "$dist" != ubuntu ] || codename="${UBUNTU_CODENAME:-$codename}"; [ "$dist$codename" != raspbiantrixie ] || dist=debian; command -v apt-get >/dev/null || dist="""#;
+const DOCKER_SERVES: &str = r#"docker_serves() { curl -fsI "https://download.docker.com/linux/$1/dists/$2/Release" >/dev/null 2>&1; }"#;
+
+/// Which of Docker's apt repositories fits this system (`$dist`, empty when none does) and its
+/// codename there; `$own` set when that repository has no packages for it, so the distribution's
+/// own Docker is installed. A derivative is known by `ID_LIKE`, on its base's release: Ubuntu's
+/// (`UBUNTU_CODENAME`, Mint), Debian's (`DEBIAN_CODENAME`, LMDE), else its own (Kali, Devuan),
+/// which Docker doesn't serve. Raspbian Trixie has none of Docker's: Debian's serves it (as
+/// get.docker.com does).
+#[cfg(any(target_os = "linux", test))]
+const DOCKER_DIST: &str = r#". /etc/os-release; dist=""; own=""; codename="${VERSION_CODENAME:-}"; case "$ID" in ubuntu|debian|raspbian) dist="$ID";; *) case " ${ID_LIKE:-} " in *" ubuntu "*) dist=ubuntu;; *" debian "*) dist=debian; codename="${DEBIAN_CODENAME:-$codename}";; esac;; esac; [ "$dist" != ubuntu ] || codename="${UBUNTU_CODENAME:-$codename}"; [ "$dist$codename" != raspbiantrixie ] || dist=debian; command -v apt-get >/dev/null || dist=""; if [ -n "$dist" ] && ! docker_serves "$dist" "$codename"; then own=1; fi"#;
+
+/// The distribution's own Docker: `docker.io`, and its Compose plugin (`docker-compose-v2` on
+/// Ubuntu, `docker-compose` on Debian and Kali), from the distribution's archive.
+#[cfg(any(target_os = "linux", test))]
+const DISTRIBUTION_DOCKER: &str = r#"echo "Docker's apt repository has no packages for $dist $codename: installing the distribution's own Docker (docker.io)."; apt-get update; apt-get install -y docker.io; if apt-cache show docker-compose-v2 >/dev/null 2>&1; then apt-get install -y docker-compose-v2; else apt-get install -y docker-compose; fi"#;
 
 /// The AWS CLI team's signing key (`aws-cli@amazon.com`, created 2019-09-18, expires 2027-07-01 as
 /// published), as AWS publishes it in "Installing or updating to the latest version of the AWS
@@ -506,7 +523,7 @@ mod tests {
     fn docker_without_its_apt_repository_stops_and_says_where_to_get_it() {
         // Only the branch past the distro check: `dist` empty, nothing else run.
         let s = docker_script(None);
-        let refuse = &s[s.find("[ -n \"$dist\" ]").unwrap()..s.find("; repo=").unwrap()];
+        let refuse = &s[s.find("[ -n \"$dist\" ]").unwrap()..s.find("; if [ -n \"$own\" ]").unwrap()];
         let out = std::process::Command::new("sh").arg("-c").arg(format!("dist=''; {refuse}; echo installed")).output().unwrap();
         assert!(!out.status.success() && !String::from_utf8_lossy(&out.stdout).contains("installed"));
         assert!(String::from_utf8_lossy(&out.stderr).contains("https://docs.docker.com/engine/install/"));
@@ -545,26 +562,52 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn docker_picks_its_apt_repository_by_distro() {
+    fn docker_picks_its_apt_repository_by_distro_or_the_distributions_own_docker() {
         let dir = std::env::temp_dir().join(format!("cyberctf-os-release-{}-{}", std::process::id(), rand::random::<u32>()));
         std::fs::create_dir_all(&dir).unwrap();
         let release = dir.join("os-release");
         assert!(DOCKER_DIST.contains(". /etc/os-release;") && DOCKER_DIST.contains("command -v apt-get >/dev/null"));
         let probe = DOCKER_DIST.replace("/etc/os-release", &release.display().to_string()).replace("command -v apt-get >/dev/null", "true");
+        // Docker's repository as it is: the releases it serves, per distribution.
+        let serves =
+            r#"docker_serves() { case "$1/$2" in debian/bookworm|debian/trixie|ubuntu/jammy|ubuntu/noble|raspbian/bookworm) return 0;; esac; return 1; }"#;
         let pick = |os: &str| {
             std::fs::write(&release, os).unwrap();
-            let out = std::process::Command::new("sh").arg("-c").arg(format!("set -e; {probe}; echo \"$dist/$codename\"")).output().unwrap();
+            let out = std::process::Command::new("sh").arg("-c").arg(format!("set -e; {serves}; {probe}; echo \"$dist/$codename/$own\"")).output().unwrap();
             assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
             String::from_utf8(out.stdout).unwrap().trim().to_string()
         };
-        assert_eq!(pick("ID=ubuntu\nID_LIKE=debian\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n"), "ubuntu/noble");
-        assert_eq!(pick("ID=linuxmint\nID_LIKE=\"ubuntu debian\"\nVERSION_CODENAME=wilma\nUBUNTU_CODENAME=noble\n"), "ubuntu/noble");
-        assert_eq!(pick("ID=debian\nVERSION_CODENAME=trixie\n"), "debian/trixie");
-        assert_eq!(pick("ID=raspbian\nID_LIKE=debian\nVERSION_CODENAME=bookworm\n"), "raspbian/bookworm");
-        assert_eq!(pick("ID=raspbian\nID_LIKE=debian\nVERSION_CODENAME=trixie\n"), "debian/trixie");
-        // No repository of Docker's: its own script.
-        assert_eq!(pick("ID=fedora\nVERSION_ID=43\n"), "/");
-        assert_eq!(pick("ID=kali\nID_LIKE=debian\nVERSION_CODENAME=kali-rolling\n"), "/kali-rolling");
+        assert_eq!(pick("ID=ubuntu\nID_LIKE=debian\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n"), "ubuntu/noble/");
+        assert_eq!(pick("ID=linuxmint\nID_LIKE=\"ubuntu debian\"\nVERSION_CODENAME=wilma\nUBUNTU_CODENAME=noble\n"), "ubuntu/noble/");
+        assert_eq!(pick("ID=debian\nVERSION_CODENAME=trixie\n"), "debian/trixie/");
+        assert_eq!(pick("ID=raspbian\nID_LIKE=debian\nVERSION_CODENAME=bookworm\n"), "raspbian/bookworm/");
+        assert_eq!(pick("ID=raspbian\nID_LIKE=debian\nVERSION_CODENAME=trixie\n"), "debian/trixie/");
+        // A Debian derivative on the Debian release it names (LMDE): Docker's Debian repository.
+        assert_eq!(pick("ID=linuxmint\nID_LIKE=debian\nVERSION_CODENAME=faye\nDEBIAN_CODENAME=bookworm\n"), "debian/bookworm/");
+        // Regression: Kali (and Devuan) had no repository at all and the install stopped. Docker
+        // serves neither release: the distribution's own Docker.
+        assert_eq!(pick("ID=kali\nID_LIKE=debian\nVERSION_CODENAME=kali-rolling\nVERSION_ID=\"2025.4\"\n"), "debian/kali-rolling/1");
+        assert_eq!(pick("ID=devuan\nID_LIKE=debian\nVERSION_CODENAME=excalibur\n"), "debian/excalibur/1");
+        // A release newer than Docker serves yet: the distribution's own too.
+        assert_eq!(pick("ID=debian\nVERSION_CODENAME=forky\n"), "debian/forky/1");
+        assert_eq!(pick("ID=ubuntu\nID_LIKE=debian\nVERSION_CODENAME=resolute\nUBUNTU_CODENAME=resolute\n"), "ubuntu/resolute/1");
+        // Neither Debian nor Ubuntu: nothing from here.
+        assert_eq!(pick("ID=fedora\nVERSION_ID=43\n"), "//");
+        assert_eq!(pick("ID=opensuse-tumbleweed\nID_LIKE=\"opensuse suse\"\n"), "//");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn where_dockers_repository_has_no_release_the_distributions_own_docker_and_compose_go_in() {
+        let s = docker_script(Some("ada"));
+        let own = &s[s.find("if [ -n \"$own\" ]; then").unwrap()..s.find("; else repo=").unwrap()];
+        assert!(
+            own.contains("apt-get install -y docker.io") && own.contains("docker-compose-v2") && own.contains("apt-get install -y docker-compose"),
+            "{own}"
+        );
+        assert!(!own.contains("docker-ce") && !own.contains("download.docker.com/linux/$dist"), "{own}");
+        // Either way the player joins the docker group, and the script parses.
+        assert!(s.ends_with("echo 'Added ada to the docker group: log out and back in (or restart) for it to apply.'"), "{s}");
+        assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
     }
 }
