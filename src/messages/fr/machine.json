@@ -2,7 +2,8 @@
   "errors": {
     "openSetup": "Impossible d'ouvrir la configuration de la machine",
     "copy": "Impossible de copier dans le presse-papiers",
-    "switchEngine": "Impossible de changer de moteur Docker"
+    "switchEngine": "Impossible de changer de moteur Docker",
+    "stopWorkload": "Impossible de l'arrêter"
   },
   "screen": {
     "title": "Machine",

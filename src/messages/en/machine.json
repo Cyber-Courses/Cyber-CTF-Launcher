@@ -2,7 +2,8 @@
   "errors": {
     "openSetup": "Couldn't open machine setup",
     "copy": "Couldn't copy to the clipboard",
-    "switchEngine": "Couldn't switch the Docker engine"
+    "switchEngine": "Couldn't switch the Docker engine",
+    "stopWorkload": "Couldn't stop it"
   },
   "screen": {
     "title": "Machine",

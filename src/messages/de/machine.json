@@ -2,7 +2,8 @@
   "errors": {
     "openSetup": "Rechner-Einrichtung konnte nicht geöffnet werden",
     "copy": "Kopieren in die Zwischenablage fehlgeschlagen",
-    "switchEngine": "Docker Engine konnte nicht gewechselt werden"
+    "switchEngine": "Docker Engine konnte nicht gewechselt werden",
+    "stopWorkload": "Konnte nicht gestoppt werden"
   },
   "screen": {
     "title": "Rechner",

@@ -2,7 +2,8 @@
   "errors": {
     "openSetup": "Não foi possível abrir a configuração da máquina",
     "copy": "Não foi possível copiar para a área de transferência",
-    "switchEngine": "Não foi possível trocar a engine do Docker"
+    "switchEngine": "Não foi possível trocar a engine do Docker",
+    "stopWorkload": "Não foi possível parar"
   },
   "screen": {
     "title": "Máquina",

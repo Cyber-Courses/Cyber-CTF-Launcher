@@ -10,7 +10,7 @@ import { providerName } from "@/features/machine/hypervisors";
 import { ListSkeleton } from "@/features/machine/machine-parts";
 import { useT } from "@/lib/i18n";
 import { apiQuery, machineWorkloadStop, machineWorkloads, type Workload } from "@/lib/tauri";
-import { ignore } from "@/lib/failure";
+import { ignore, tell } from "@/lib/failure";
 import { formatBytes, prettyLabId } from "@/lib/format";
 import { usePoll } from "@/lib/use-poll";
 
@@ -43,7 +43,8 @@ export function RunningNowPanel({ refreshKey }: { refreshKey: unknown }) {
 
   async function stop(w: Workload) {
     setStopping(`${w.kind}:${w.id}`);
-    await machineWorkloadStop(w.kind, w.id).catch(ignore("the list shows what's still running"));
+    // The list shows what's still running; why it didn't stop is said.
+    await machineWorkloadStop(w.kind, w.id).catch(tell(t("machine.errors.stopWorkload")));
     setStopping(null);
     load();
   }

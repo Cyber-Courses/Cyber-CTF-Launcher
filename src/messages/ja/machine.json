@@ -2,7 +2,8 @@
   "errors": {
     "openSetup": "マシンのセットアップを開けませんでした",
     "copy": "クリップボードにコピーできませんでした",
-    "switchEngine": "Docker エンジンを切り替えられませんでした"
+    "switchEngine": "Docker エンジンを切り替えられませんでした",
+    "stopWorkload": "停止できませんでした"
   },
   "screen": {
     "title": "マシン",

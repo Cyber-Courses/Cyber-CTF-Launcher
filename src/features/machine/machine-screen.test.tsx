@@ -602,7 +602,9 @@ describe("RunningNowPanel", () => {
     expect(text()).toContain("Nothing running.");
   });
 
-  it("keeps the list after a failed stop, and shows readable lab ids without titles", async () => {
+  it("keeps the list after a failed stop, says why, and shows readable lab ids without titles", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
     const calls = installTauri({
       api_query: () => {
         rejectWith("offline");
@@ -613,7 +615,12 @@ describe("RunningNowPanel", () => {
       },
     });
     const user = userEvent.setup();
-    render(<RunningNowPanel refreshKey={null} />);
+    render(
+      <>
+        <RunningNowPanel refreshKey={null} />
+        <Toaster />
+      </>,
+    );
     await flush();
     expect(text()).toContain("Invoice");
     expect(text()).not.toContain("lab-invoice");
@@ -621,6 +628,9 @@ describe("RunningNowPanel", () => {
     await flush();
     expect(text()).toContain("Invoice");
     expect(commands(calls).filter((c) => c === "machine_workloads").length).toBeGreaterThanOrEqual(2);
+    // Regression: the failure was ignored, and the click did nothing the player could see.
+    expect(text()).toContain("Couldn't stop it");
+    expect(text()).toContain("container is stuck");
   });
 });
 
