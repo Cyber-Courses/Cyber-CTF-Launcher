@@ -8,7 +8,7 @@ The launcher signs in to [Cyber Auth](https://www.cyberauth.co) the way desktop 
 
 While it waits, the launcher offers two fallbacks under the spinner:
 
-- **Browser didn't open? Copy the sign-in link**: for a default browser that takes the link and shows nothing.
+- **Copy the sign-in link**: for a default browser that takes the link and shows nothing.
 - **Use a code instead**: the OAuth device authorization grant (RFC 8628), for a machine whose browser can't be used (a remote desktop, a kiosk, an SSH-forwarded window). The launcher shows a short code and the cyberauth.co page to enter it on, from any device, and polls until it is approved, declined or expired (at most 30 minutes).
 
 The sidebar and **Settings > Account** show who is signed in (name and email from the ID token). Errors say what to do: a sign-in not finished within 5 minutes (or a code that expired) is cancelled, a declined consent says so, cyber-auth unreachable says to check the connection, and a keychain that can't be read (locked, its prompt dismissed, no Secret Service on Linux) is shown in Settings. Cancel always ends the wait.

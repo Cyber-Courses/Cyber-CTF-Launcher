@@ -14,7 +14,7 @@ The first run opens a short setup. After the welcome, **Sign in** opens your bro
 cyberauth.co. Sign in there (or confirm the account you're already signed in with); the browser
 tab then says you can close it, and the launcher shows your name.
 
-If no browser opens, use **Browser didn't open? Copy the sign-in link** and paste it into a
+If no browser opens, use **Copy the sign-in link** and paste it into a
 browser. On a machine whose browser you can't use, **Use a code instead** shows a code to enter on
 cyberauth.co from any device. [How sign-in works](signing-in.md).
 

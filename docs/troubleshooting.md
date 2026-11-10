@@ -12,7 +12,7 @@ logs ([SUPPORT.md](../SUPPORT.md#what-to-send-with-a-bug-report)).
 
 | Problem                                           | What to do                                                                                                                                                                     |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| No browser opens                                  | Use **Browser didn't open? Copy the sign-in link** and paste it into any browser on this machine. Or set a default browser for your account.                                   |
+| No browser opens                                  | Use **Copy the sign-in link** and paste it into any browser on this machine. Or set a default browser for your account.                                                        |
 | The browser can't be used (remote desktop, kiosk) | Use **Use a code instead** and enter the code on cyberauth.co from another device.                                                                                             |
 | "no free login callback port (47290-47292)"       | Another program holds those three local ports. Close it, or use **Use a code instead**.                                                                                        |
 | "Cyber CTF can't be reached"                      | The launcher can't reach `www.cyberauth.co` or `cyberbackend.com`. Check the connection; behind a proxy, see [Proxy](admin-guide.md#proxy-and-custom-certificate-authorities). |
