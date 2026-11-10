@@ -3,7 +3,6 @@ import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
 import type * as Generated from "@/lib/tauri/generated";
 import type {
   HostCapacity,
-  Provider,
   ProxmoxBridge,
   ProxmoxNodeChoices,
   ProxmoxPlacement,
@@ -14,13 +13,17 @@ import type {
   SshKeySignIn,
 } from "@/lib/tauri/generated";
 import type { CloudProvider } from "@/lib/tauri/cloud";
-import { SERVER_PROVIDERS as GENERATED_SERVER_PROVIDERS } from "@/lib/tauri/generated/ProviderNames";
+import { SERVER_PROVIDERS } from "@/lib/tauri/generated/ProviderNames";
 
 export type { HostCapacity, ProxmoxBridge, ProxmoxNodeChoices, ProxmoxPlacement, ServerCheck, ServerCheckState, ServerTest, SshKeySignIn };
 
 // --- Server (the player's own ESXi / Proxmox host) ---
 
-export type RemoteProvider = Extract<Provider, "vmware_esxi" | "proxmox" | "aws" | "azure" | "gcp" | "digitalocean" | "linode" | "oci">;
+/** The player's own servers' providers (the backend's `Provider::SERVERS`). */
+type ServerProvider = (typeof SERVER_PROVIDERS)[number];
+
+/** A saved host's provider: one of the player's servers, or a cloud account. */
+export type RemoteProvider = ServerProvider | CloudProvider;
 
 // A host's provider is a `Provider` on the Rust side, which refuses a local one on save: only
 // remote ones are ever stored or submitted.
@@ -31,7 +34,11 @@ export type ServerList = Omit<Generated.ServerList, "hosts"> & { hosts: ServerHo
 
 /** The player's own servers, as opposed to cloud accounts, in the launcher's order: the backend's
  *  `Provider::SERVERS`, each a host's provider. */
-export const SERVER_PROVIDERS = GENERATED_SERVER_PROVIDERS as readonly RemoteProvider[];
+export { SERVER_PROVIDERS };
+
+/** Whether `provider` is one of the player's own servers', not a cloud account's. */
+export const isServerProvider = (provider: string | null | undefined): provider is ServerProvider =>
+  !!provider && (SERVER_PROVIDERS as readonly string[]).includes(provider);
 
 export const serverList = () => invoke<ServerList>("server_list");
 export const serverSave = (input: ServerHostInput) => invoke<ServerHost>("server_save", { input });
