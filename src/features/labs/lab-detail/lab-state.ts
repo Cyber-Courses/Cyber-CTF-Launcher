@@ -1,10 +1,8 @@
 import { isLocalVmForm, type RunTarget } from "@/features/labs/run-target";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { emulatorReady, vmFormTarget, isCloudLab, isContainerLab, isLocalHypervisor, runsNatively } from "@/features/labs/lab-runtime";
-import { providerName } from "@/features/machine/hypervisors";
-import { ENGINES, engineName as dockerEngineName } from "@/features/machine/setup-steps/engines";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
-import type { ActiveOperation, DockerEngine, LabControl, LabMachine, LabStatus, Provider, Runtime, ServerHost } from "@/lib/tauri";
+import type { ActiveOperation, LabControl, LabMachine, LabStatus, Provider, Runtime, ServerHost } from "@/lib/tauri";
 
 // What the lab page shows, derived from the lab's status and what is in flight on it.
 
@@ -95,15 +93,6 @@ function leftovers(status: LabStatus | undefined, isCloud: boolean): boolean {
   return (status?.machines ?? []).some((m) => m.state !== "not_created");
 }
 
-/** The engine or hypervisor the status says the lab runs on, by name: the engine recorded at
- *  launch (Docker Desktop, OrbStack…), else "Docker" for the CLI's current one. */
-function engineName(status: LabStatus | undefined): string | null {
-  if (!status?.provider) return null;
-  if (status.provider === "docker") return "Docker";
-  if (ENGINES.some((e) => e.id === status.provider) || status.provider === "podman") return dockerEngineName(status.provider as DockerEngine);
-  return providerName(status.provider);
-}
-
 export function deriveLabState(i: LabStateInput) {
   const { status, runtime: rt } = i;
   const machines = status?.machines ?? [];
@@ -137,9 +126,6 @@ export function deriveLabState(i: LabStateInput) {
   // here, and "container" is the only place whose host ports can be swapped for random ones.
   const place = status?.place ?? null;
   const { canPause, canShutdown, canProvision, canRepair } = labControls(i);
-  // Where it actually runs: "on this machine" alone is misleading for a VM lab (which hypervisor
-  // do I open?), so name the engine or hypervisor the status reports.
-  const engine = engineName(status);
 
   const phase = labPhase({ operation, running, starting, parked, interrupted, failed: !!i.startFailed && !deploying });
 
@@ -162,7 +148,6 @@ export function deriveLabState(i: LabStateInput) {
     canShutdown,
     canProvision,
     canRepair,
-    engine,
     phase,
   };
 }

@@ -67,8 +67,6 @@ describe("deriveLabState: contradictory inputs", () => {
     const provisionOnly: LabControl[] = ["provision"];
     const esxi = derive({ runtime: vm, status: status({ running: true, host: "esxi-1", provider: "vmware_esxi", controls: provisionOnly }) });
     expect([esxi.remote, esxi.canPause, esxi.canShutdown, esxi.canProvision]).toEqual([true, false, false, true]);
-    expect(esxi.engine).toBe("VMware ESXi");
-    expect(derive({ runtime: vm, status: status({ provider: "weird" }) }).engine).toBe("weird");
   });
 
   it("a parked lab lists none of its machines as down", () => {

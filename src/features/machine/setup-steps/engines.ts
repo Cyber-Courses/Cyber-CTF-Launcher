@@ -42,6 +42,9 @@ export const ENGINES: Engine[] = [
 ];
 
 /** Display name of a Docker-compatible engine. */
+/** Whether `id` (a lab status's provider, say) names a Docker engine: one of the engines, or Podman. */
+export const isDockerEngine = (id: string): id is DockerEngine => ENGINES.some((e) => e.id === id) || id === "podman";
+
 export const engineName = (id: DockerEngine) => (id === "podman" ? "Podman" : (ENGINES.find((e) => e.id === id)?.name ?? "Docker"));
 
 /** The engines offered on `os`. */

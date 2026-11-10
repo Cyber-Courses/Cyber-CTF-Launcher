@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { placeName, placeOf, placeText } from "@/features/labs/place";
+import { deployDestination } from "@/features/labs/lab-detail/labels";
+import { isDockerEngine } from "@/features/machine/setup-steps/engines";
 import { labStatus } from "@/features/labs/labs-test-kit";
 import type { MessageKey, T, Vars } from "@/lib/i18n";
 import type { ServerHost } from "@/lib/tauri";
@@ -57,5 +59,33 @@ describe("where a lab runs", () => {
     expect(cloud).toEqual({ kind: "cloud", name: "My AWS", provider: "aws", region: "eu-west-3" });
     expect(placeName(must(cloud))).toBe("AWS");
     expect(placeText(t, must(cloud))).toBe('labs.detail.cloudWith:{"cloud":"AWS","region":"eu-west-3"}');
+  });
+});
+
+describe("where a deploy is headed (the Deployment panel)", () => {
+  it("says the place as the header and Details do", () => {
+    // Regression: a Proxmox lab read "homelab-pve · Proxmox" in Details but "homelab-pve" here.
+    const pve = placeOf(labStatus({ running: true, host: "homelab-pve", hostId: "h", place: "server" }), false, null, hosts);
+    expect(deployDestination(t, pve, { kind: "local" }, hosts)).toBe(placeText(t, must(pve)));
+    expect(deployDestination(t, pve, { kind: "local" }, hosts)).toBe('labs.detail.serverWith:{"name":"homelab-pve","kind":"Proxmox"}');
+    const engine = placeOf(labStatus({ running: true, place: "container", provider: "orbstack" }), true, null, hosts);
+    expect(deployDestination(t, engine, { kind: "local" }, hosts)).toBe('labs.detail.thisMachineWith:{"engine":"OrbStack"}');
+    const inVm = placeOf(labStatus({ running: true, place: "local_vm", provider: "utm" }), true, null, hosts);
+    expect(deployDestination(t, inVm, { kind: "local" }, hosts)).toBe('labs.detail.aVmHereWith:{"hypervisor":"UTM"}');
+  });
+
+  it("goes by the picker where the lab hasn't run yet", () => {
+    expect(deployDestination(t, null, { kind: "host", id: "aws1" }, hosts)).toBe("My AWS");
+    expect(deployDestination(t, null, { kind: "host", id: "gone" }, hosts)).toBe("labs.detail.yourServer");
+    expect(deployDestination(t, null, { kind: "local-vm", provider: "qemu" }, hosts)).toBe("labs.detail.aVmHere");
+    expect(deployDestination(t, null, { kind: "local" }, hosts)).toBe("labs.detail.thisMachine");
+    // Last run as containers here, now headed for a VM here.
+    const engine = placeOf(labStatus({ running: false, place: "container", provider: "orbstack" }), true, null, hosts);
+    expect(deployDestination(t, engine, { kind: "local-vm", provider: "qemu" }, hosts)).toBe("labs.detail.aVmHere");
+  });
+
+  it("tells a Docker engine from a hypervisor by one rule", () => {
+    expect(["docker-desktop", "orbstack", "podman"].every(isDockerEngine)).toBe(true);
+    expect(["docker", "virtualbox", "qemu", ""].some(isDockerEngine)).toBe(false);
   });
 });

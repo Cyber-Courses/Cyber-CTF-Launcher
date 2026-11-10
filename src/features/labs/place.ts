@@ -1,10 +1,11 @@
-import { ENGINES, engineName } from "@/features/machine/setup-steps/engines";
+import { engineName, isDockerEngine } from "@/features/machine/setup-steps/engines";
 import { providerName } from "@/features/machine/hypervisors";
 import { PROVIDER_NAMES, isCloudProvider, type CloudProvider, type DockerEngine, type LabStatus, type RemoteProvider, type ServerHost } from "@/lib/tauri";
 import type { T } from "@/lib/i18n";
 
-// Where a running lab runs, as one fact the page tells three times the same way: the header's
-// "on …", Details' "Runs on", and the network diagram's host card with the place's logo.
+// Where a lab runs, as one fact the page tells the same way everywhere: the header's "on …",
+// Details' "Runs on", the Deployment panel's destination, and the network diagram's host card
+// with the place's logo.
 
 export type Place =
   /** Containers on this machine: the engine the lab runs on (null: unknown, the machine report not in). */
@@ -17,8 +18,6 @@ export type Place =
   /** One of the player's cloud accounts, in `region`. */
   | { kind: "cloud"; name: string; provider: CloudProvider; region: string };
 
-const isEngine = (id: string): id is DockerEngine => ENGINES.some((e) => e.id === id) || id === "podman";
-
 /** Where the lab runs, from its status: the engine it was started on (recorded at launch) or the
  *  machine's current one, the hypervisor the status names, or the saved host of its id. */
 export function placeOf(status: LabStatus | undefined, isDocker: boolean, currentEngine: DockerEngine | null, hosts: ServerHost[]): Place | null {
@@ -29,7 +28,7 @@ export function placeOf(status: LabStatus | undefined, isDocker: boolean, curren
     return { kind: "server", name: status.host, provider: host?.provider ?? null, address: host?.host ?? null };
   }
   if (isDocker && status.place !== "local_vm") {
-    const engine = status.provider && isEngine(status.provider) ? status.provider : currentEngine;
+    const engine = status.provider && isDockerEngine(status.provider) ? status.provider : currentEngine;
     return { kind: "engine", engine };
   }
   return { kind: "hypervisor", provider: status.provider ?? "", inVm: isDocker && !status.perMachine };

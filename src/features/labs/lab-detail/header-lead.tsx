@@ -5,7 +5,7 @@ import { Badge, LevelBadge } from "@/components/ui/badge";
 import { StatusDot, type Tone } from "@/components/ui/status-pill";
 import { AutoStop } from "@/features/labs/lab-timers";
 import { runtimeWord } from "@/features/labs/lab-detail/labels";
-import { placeText, type Place } from "@/features/labs/place";
+import { placeName, placeText, type Place } from "@/features/labs/place";
 import type { LabPhase, LabState } from "@/features/labs/lab-detail/lab-state";
 import { difficultyLabel, type Lab } from "@/features/labs/use-labs";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
@@ -44,7 +44,7 @@ export function HeaderLead({ lab, state: s, status, place = null }: { lab: Lab; 
   // Where it runs, with the engine, hypervisor, server or cloud by name (a container lab in a VM
   // here says so: "on this machine" alone hides where its containers are).
   if (s.running && place) strip.push(<span key="where">{t("labs.detail.onWhere", { where: placeText(t, place) })}</span>);
-  else if (s.parked && s.engine) strip.push(<span key="where">{s.engine}</span>);
+  else if (s.parked && place && placeName(place)) strip.push(<span key="where">{placeName(place)}</span>);
   if (lab.runtime) strip.push(<span key="rt">{runtimeWord(t, s)}</span>);
   if (lab.runtime && !s.native && (s.isDocker || s.emulates))
     strip.push(

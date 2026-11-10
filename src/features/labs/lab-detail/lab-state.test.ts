@@ -85,13 +85,6 @@ describe("deriveLabState", () => {
     expect([unwired.canPause, unwired.canShutdown, unwired.canProvision]).toEqual([false, false, false]);
   });
 
-  it("names the engine or hypervisor it runs on", () => {
-    expect(derive({ status: status({ provider: "docker" }) }).engine).toBe("Docker");
-    expect(derive({ status: status({ provider: "virtualbox" }) }).engine).toBe("VirtualBox");
-    expect(derive({ status: status({ provider: "something" }) }).engine).toBe("something");
-    expect(derive({ status: status({}) }).engine).toBeNull();
-  });
-
   it("is native unless the lab is built for another CPU, and emulates with QEMU ready", () => {
     expect(derive({ runtime: vm, hostArch: "arm64" }).native).toBe(false);
     expect(derive({ runtime: vm, hostArch: "" }).native).toBe(true);
