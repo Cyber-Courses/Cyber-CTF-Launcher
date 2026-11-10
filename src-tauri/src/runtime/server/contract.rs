@@ -192,16 +192,12 @@ fn default_of(store: Store) -> Option<(String, Provider)> {
 
 // --- labs tied to a host ----------------------------------------------------
 
-/// Records (or clears) which host a VM lab directory runs on.
+/// Records (or clears) which server or cloud account a lab directory runs on, whatever its form
+/// (VMs, containers in a VM there, cloud services). A marker that can't be cleared is an error:
+/// left behind, it would send the lab's status and stop to that host, and keep the host from
+/// being removed.
 pub fn mark_lab(dir: &Path, host: Option<&str>) -> Result<()> {
-    let marker = dir.join(HOST_MARKER);
-    match host {
-        Some(id) => std::fs::write(marker, id)?,
-        None => {
-            let _ = std::fs::remove_file(marker);
-        }
-    }
-    Ok(())
+    crate::runtime::paths::set_marker(dir, HOST_MARKER, host)
 }
 
 /// The host id a lab directory is marked as running on.
@@ -332,6 +328,17 @@ mod tests {
         assert_eq!(marked_host(&dir), None);
         // Clearing an absent marker is fine.
         mark_lab(&dir, None).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_host_marker_that_cannot_be_cleared_is_an_error() {
+        // Regression: the failed removal was dropped and the marker reported cleared, so a
+        // stopped lab's status and stop still went to the old host.
+        let dir = std::env::temp_dir().join(format!("cyberctf-mark-{}", rand::random::<u32>()));
+        // A directory where the marker would be: remove_file refuses it.
+        std::fs::create_dir_all(dir.join(HOST_MARKER)).unwrap();
+        assert!(mark_lab(&dir, None).is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
 
