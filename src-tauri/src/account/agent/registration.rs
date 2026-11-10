@@ -77,6 +77,13 @@ fn agent_id_of(current: &Mutex<Option<Registration>>) -> Option<String> {
     registration(current).as_ref().map(|r| r.agent_id.clone())
 }
 
+/// The agent to heartbeat for: the current registration's, while it is for the account signed in
+/// (`user`). None while signed out, or signed in as another account (it registers again first):
+/// the heartbeat never says the agent of one account is online with another's token.
+fn heartbeat_agent(current: &Mutex<Option<Registration>>, user: Option<&str>) -> Option<String> {
+    registration(current).as_ref().filter(|r| Some(r.user.as_str()) == user).map(|r| r.agent_id.clone())
+}
+
 /// Heartbeats (~30s) for the current registration, on its own task: claiming and running a lab
 /// can block for a long time (a cloud launch waits on terraform apply, up to tens of minutes),
 /// and the machine must keep reporting that it's online for the whole launch, not drop offline
@@ -84,7 +91,7 @@ fn agent_id_of(current: &Mutex<Option<Registration>>) -> Option<String> {
 fn spawn_heartbeat(dirs: AppDirs, current: &'static Mutex<Option<Registration>>) {
     tokio::spawn(async move {
         loop {
-            if let Some(agent_id) = agent_id_of(current)
+            if let Some(agent_id) = heartbeat_agent(current, auth::signed_in_user().await.as_deref())
                 && auth::access_token().await.is_ok()
                 && let Err(e) = heartbeat(&dirs, &agent_id).await
             {
@@ -216,6 +223,11 @@ mod tests {
         assert_eq!(next_step(Some(&a), None), Next::SignedOut);
         let current = Mutex::new(Some(a));
         assert_eq!(agent_id_of(&current).as_deref(), Some("agent-1"));
+        // Regression: during a long claim, a sign-in as another account sent the first account's
+        // agent with the new account's token.
+        assert_eq!(heartbeat_agent(&current, Some("u1")).as_deref(), Some("agent-1"));
+        assert_eq!(heartbeat_agent(&current, Some("u2")), None);
+        assert_eq!(heartbeat_agent(&current, None), None);
         *current.lock().unwrap() = None;
         assert_eq!(agent_id_of(&current), None);
     }

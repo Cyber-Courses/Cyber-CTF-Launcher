@@ -154,6 +154,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **Signing in as another account mid-launch no longer reports the first one's machine
+  online.** While a website launch ran, the heartbeat kept sending the agent registered for the
+  account signed in before, with the new account's sign-in. It now waits until this machine is
+  registered for the account signed in.
 - **A relay to an ESXi host that can't start says so in the log.** On macOS, the loopback relays
   Vagrant reaches an ESXi host through (SSH, HTTPS, the WinRM proxy for Windows guests, the
   ovftool wrapper) failed silently when one couldn't start, as did a relay that couldn't reach
