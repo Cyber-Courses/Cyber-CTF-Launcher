@@ -42,7 +42,9 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
 
 /// App-menu clicks: "Settings…" opens the settings window.
 pub fn on_event(app: &AppHandle, event: &MenuEvent) {
-    if event.id().as_ref() == SETTINGS {
-        let _ = crate::app::window::open_settings_window(app);
+    if event.id().as_ref() == SETTINGS
+        && let Err(e) = crate::app::window::open_settings_window(app)
+    {
+        log::warn!("couldn't open the Settings window: {e}");
     }
 }

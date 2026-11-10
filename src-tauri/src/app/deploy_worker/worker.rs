@@ -84,8 +84,13 @@ fn end_tools_when_stopped(job_file: PathBuf, task: tauri::async_runtime::JoinHan
             term.recv().await;
             crate::platform::exec::kill_live_tools();
             task.abort();
-            let _ = task.await;
-            let _ = std::fs::remove_file(&job_file);
+            // Cancelled, as asked: the job's own outcome is moot.
+            drop(task.await);
+            if let Err(e) = std::fs::remove_file(&job_file)
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                log::warn!("couldn't remove the stopped job's file {}: {e}", job_file.display());
+            }
             std::process::exit(143);
         }
     });
@@ -107,7 +112,9 @@ fn keep_running(event: &tauri::RunEvent) {
 #[cfg(target_os = "macos")]
 fn hand_reopen_to_the_app(app: &AppHandle, event: &tauri::RunEvent) {
     if let tauri::RunEvent::Reopen { .. } = event {
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
+        if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Prohibited) {
+            log::warn!("couldn't keep the worker in the background: {e}");
+        }
         open_main_app();
     }
 }
@@ -121,16 +128,13 @@ fn read_job(path: &Path) -> Option<Job> {
 fn open_main_app() {
     // Contents/MacOS/<binary> -> the .app bundle.
     let bundle = std::env::current_exe().ok().and_then(|exe| exe.ancestors().nth(3).map(std::path::Path::to_path_buf));
-    match bundle.filter(|b| b.extension().is_some_and(|e| e == "app")) {
-        Some(b) => {
-            let _ = std::process::Command::new("/usr/bin/open").arg("-n").arg(&b).spawn();
-        }
+    let opened = match bundle.filter(|b| b.extension().is_some_and(|e| e == "app")) {
+        Some(b) => std::process::Command::new("/usr/bin/open").arg("-n").arg(&b).spawn(),
         // Not in a bundle (a dev build): run the binary without the worker arguments.
-        None => {
-            if let Ok(exe) = std::env::current_exe() {
-                let _ = std::process::Command::new(exe).spawn();
-            }
-        }
+        None => std::env::current_exe().and_then(|exe| std::process::Command::new(exe).spawn()),
+    };
+    if let Err(e) = opened {
+        log::warn!("couldn't open the app for a reopen the worker got: {e}");
     }
 }
 

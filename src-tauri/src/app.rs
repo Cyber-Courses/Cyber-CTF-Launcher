@@ -172,7 +172,9 @@ fn setup(app: &mut App) {
     #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
     {
         use tauri_plugin_deep_link::DeepLinkExt;
-        let _ = app.deep_link().register_all();
+        if let Err(e) = app.deep_link().register_all() {
+            log::warn!("couldn't register cyberctf:// links with the system (sign-in links won't come back to the app): {e}");
+        }
     }
     // Sign-in coming back as a cyberctf://auth/callback link goes to the sign-in waiting for it
     // (lab links stay the frontend's), and the app comes forward from the browser.
