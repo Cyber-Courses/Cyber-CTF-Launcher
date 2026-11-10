@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { cloudAccountsFor, formProviders, hostSupports, isCloudLab, isContainerLab, vmFormTarget } from "@/features/labs/lab-runtime";
 import type { PickerStep, Platform } from "@/features/labs/run-on";
-import { isLocalVmForm, type LocalVmForm, type RunTarget } from "@/features/labs/run-target";
+import { fromSavedForm, isLocalVmForm, toSavedForm, type LocalVmForm, type RunTarget } from "@/features/labs/run-target";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import {
   getDockerEngine,
@@ -145,8 +145,8 @@ function savedHyp(hyps: Provider[]): Provider | null {
 /** The saved VM form's target when it is still available in `vmForms`, else null: its step is then
  *  skipped straight to it. */
 function savedFormTarget(vmForms: RunTarget[]): RunTarget | null {
-  const f = getLocalVmForm();
-  return vmForms.find((t) => (f === "vm" && t.kind === "local-vm") || (f === "vms" && t.kind === "local-vms")) ?? null;
+  const saved = getLocalVmForm();
+  return saved ? (vmForms.find((t) => t.kind === fromSavedForm(saved)) ?? null) : null;
 }
 
 /** The container engines that answer here and the one a lab runs on: the engine-step pick, else the
@@ -172,7 +172,7 @@ function saveLaunchChoice(runOn: RunTarget, { ports, engine, engineCount, hyperv
     setPortMode(ports);
     if (engineCount > 1) setDockerEngine(engine);
   } else if (isLocalVmForm(runOn)) {
-    setLocalVmForm(runOn.kind === "local-vm" ? "vm" : "vms");
+    setLocalVmForm(toSavedForm(runOn.kind));
     if (hypervisorCount > 1) setVmProvider(runOn.provider);
   }
 }
