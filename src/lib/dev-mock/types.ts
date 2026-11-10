@@ -47,6 +47,7 @@ type Answers = {
   shared_folder_set: SharedFolder;
   server_list: ServerList;
   server_capacity: HostCapacity | null;
+  server_running_labs: Record<string, number>;
   server_test: ServerTest;
   aws_month_to_date_cost: number | null;
   aws_cli_identity: string | null;

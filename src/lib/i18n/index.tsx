@@ -11,9 +11,9 @@ import { oneOf, readStoredOneOf, writeStored } from "@/lib/local-store";
  * the appearance. No library: typed JSON messages per area (src/messages/<lang>/<area>.json).
  *
  *   const t = useT();
- *   t("labs.detail.stop")                      // plain
- *   t("labs.list.count", { count: 3 })         // {count} interpolation; { one, other } plurals
- *   t.rich("settings.help", { link: (s) => <a>{s}</a> })   // <link>…</link> markup in the text
+ *   t("labs.detail.start")                     // plain
+ *   t("labs.list.labCount", { count: 3 })      // {count} interpolation; { one, other } plurals
+ *   t.rich("home.title.welcome", { em: (s) => <em>{s}</em> })   // <em>…</em> markup in the text
  *
  * Outside React (error helpers, notifications): `translate(key, vars)` in the current language.
  */

@@ -194,6 +194,8 @@ const machineCommands = {
 const serverCommands = {
   server_list: servers,
   server_capacity: () => ({ cores: 32, memTotal: 64 * GB, memFree: 42 * GB }),
+  // The labs running per saved host, by its id: none of the sample's.
+  server_running_labs: () => ({}),
   server_test: () => ({ ok: true, reachable: true, authenticated: true, latencyMs: 12, message: "Connected", checks: [] }),
   aws_month_to_date_cost: () => 6.4,
   aws_cli_identity: () => "arn:aws:iam::482100000193:user/florian",

@@ -8,8 +8,8 @@ import { ignore } from "@/lib/failure";
 import { usePolled } from "@/lib/use-poll";
 import { describeError } from "@/lib/errors";
 
-/** The labs running per host. The browser dev mock answers nothing for it: none then. */
-const readRunning = (): Promise<Partial<Record<string, number>>> => serverRunningLabs().then((r: Record<string, number> | null) => r ?? {});
+/** The labs running per host, by its id (a host with none isn't listed). */
+const readRunning = (): Promise<Partial<Record<string, number>>> => serverRunningLabs();
 
 /**
  * What the Servers page shows of its hosts: the on-prem hosts and the default, each one's last

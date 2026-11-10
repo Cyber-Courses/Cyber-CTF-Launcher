@@ -85,9 +85,9 @@ export const hypervJoinAdmins = () => invokeUnit("hyperv_join_admins");
 /** Installs a Vagrant plugin (userland), streaming the output. */
 export const installVagrantPlugin = (plugin: string, onLog: (line: string) => void) => invokeStreaming("install_vagrant_plugin", { plugin }, onLog);
 
-/** Runs a setup self-test: `docker` boots a throwaway two-container lab, `vm` checks the hypervisor + Vagrant. */
-/** Runs a setup self-test: on `provider` for a VM, on the Docker CLI `context` (one engine among
- *  several; null for the current one) for containers. */
+/** Runs a setup self-test: `docker` boots a throwaway two-container lab on the Docker CLI
+ *  `context` (one engine among several; null for the current one), `vm` a throwaway VM on
+ *  `provider` through Vagrant. */
 export const machineSelftest = (kind: SelfTestKind, provider: Provider | null, onEvent: (e: SelfTestEvent) => void, context: string | null = null) =>
   invokeStreaming("machine_selftest", { kind, provider, context }, onEvent, "events");
 
