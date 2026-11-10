@@ -166,7 +166,7 @@ async fn run_claimed(dirs: &AppDirs, launch: &labs::Launch, place: &StartPlace, 
 
 /// Tells the backend the lab runs: where its target is reachable, plus a loopback control
 /// endpoint + one-time token/nonce so the website can verify co-location before trusting the
-/// 127.0.0.1 URL (the endpoint ends once it answered, when the lab stops, or after a while). The relay path for a remote/headless agent is the next step.
+/// 127.0.0.1 URL (the endpoint ends once it answered, when the lab stops, or after a while).
 async fn report_running(dirs: &AppDirs, session_id: &str, lab_id: &str, host: Option<&str>, url: Option<&str>) -> Result<()> {
     // On a host: its name, else (no longer saved, or the saved hosts unreadable) its id, never
     // "this machine".
