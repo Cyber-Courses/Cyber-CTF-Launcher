@@ -79,7 +79,7 @@ fn offline_spec(base: &Path, lab_id: &str, user: Option<&str>) -> Result<Value> 
     if kept.runtime == Runtime::Cloud {
         return Err(Error::Invalid("A cloud lab runs in your cloud account: it can't start offline.".into()));
     }
-    if !super::installed(&base.join("labs").join(lab_id).join(".cyberctf-commit"), &kept.commit) {
+    if !crate::runtime::lab::installed_at(&base.join("labs").join(lab_id), &kept.commit) {
         return Err(Error::Invalid("The copy of this lab installed here isn't the one last started online, so it can't start offline.".into()));
     }
     let spec = Spec { lab_id: &kept.lab_id, runtime: kept.runtime, repository: &kept.repository, commit: &kept.commit, env: [] };
@@ -122,7 +122,7 @@ mod tests {
     fn install(base: &Path, lab: &str, commit: &str) {
         let dir = base.join("labs").join(lab);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(".cyberctf-commit"), commit).unwrap();
+        std::fs::write(dir.join(crate::runtime::lab::COMMIT_MARKER), commit).unwrap();
     }
 
     fn unreachable() -> Error {

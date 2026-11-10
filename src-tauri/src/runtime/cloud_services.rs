@@ -314,7 +314,7 @@ mod tests {
     async fn the_preview_command_reads_the_installed_copy_at_that_commit() {
         let t = crate::testing::test_app::TestApp::new();
         let commit = "0123456789abcdef0123456789abcdef01234567";
-        t.lab("goat", &[("isoloom.yml", SPEC), ("terraform/main.tf", "variable \"region\" {}\n"), (".cyberctf-commit", commit)]);
+        t.lab("goat", &[("isoloom.yml", SPEC), ("terraform/main.tf", "variable \"region\" {}\n"), (crate::runtime::lab::COMMIT_MARKER, commit)]);
         let app = || t.handle().clone();
         let got = crate::commands::labs::lab_cloud_preview(app(), "goat".into(), "CyberCTF/goat".into(), commit.into()).await.unwrap();
         assert_eq!(got, preview(&spec(SPEC)));
@@ -322,7 +322,7 @@ mod tests {
         // A lab that isn't a cloud-services one has no preview.
         let docker =
             "version: 1\nname: web\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n";
-        t.lab("web", &[("isoloom.yml", docker), (".cyberctf-commit", commit)]);
+        t.lab("web", &[("isoloom.yml", docker), (crate::runtime::lab::COMMIT_MARKER, commit)]);
         assert_eq!(crate::commands::labs::lab_cloud_preview(app(), "web".into(), "CyberCTF/web".into(), commit.into()).await.unwrap(), None);
         // Refused before anything is downloaded: a bad lab id, another owner, a short commit.
         let refuse = |id: &str, repo: &str, commit: &str| crate::commands::labs::lab_cloud_preview(app(), id.into(), repo.into(), commit.into());

@@ -366,7 +366,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let dirs = t.dirs();
         let id = "agent-refused";
-        let dir = t.lab(id, &[(".cyberctf-commit", "ffffffffffffffffffffffffffffffffffffffff"), (".isoloom/cloud-docker/aws/main.tf", "")]);
+        let dir = t.lab(id, &[(crate::runtime::lab::COMMIT_MARKER, "ffffffffffffffffffffffffffffffffffffffff"), (".isoloom/cloud-docker/aws/main.tf", "")]);
         let aws = t.host("aws1", "aws", json!({ "useCliCreds": true }));
         server::mark_lab(&dir, Some(&aws)).unwrap();
         let state = t.data().join("deployments").join(id).join("aws");

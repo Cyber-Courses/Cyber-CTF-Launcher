@@ -102,10 +102,9 @@ async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String
     validate_source(repository, commit)?;
     let labs = dirs.data()?.join("labs");
     let dir = labs.join(lab_id);
-    let marker = dir.join(".cyberctf-commit");
     // Docker's networks now, so a new lab's instance lands on blocks nothing else holds.
     let in_use = runtime::subnets_in_use(lab_id).await;
-    if installed(&marker, commit) {
+    if runtime::lab::installed_at(&dir, commit) {
         runtime::lab::ensure_instance(&labs, &dir, &in_use)?;
         return Ok(dir);
     }
@@ -145,11 +144,6 @@ async fn clear_parked(dirs: &AppDirs, lab: runtime::LabRef<'_>, log: &impl Fn(St
     })
 }
 
-/// Whether the lab at `commit` is the one installed (its commit marker says so).
-fn installed(marker: &Path, commit: &str) -> bool {
-    std::fs::read_to_string(marker).is_ok_and(|c| c.trim() == commit)
-}
-
 /// Extracts the downloaded lab into a staging folder next to `dir`, with its source markers and
 /// the markers of where the installed copy runs. Returns the staging folder.
 fn stage(labs: &Path, dir: &Path, tarball: &[u8], release: Release<'_>) -> Result<PathBuf> {
@@ -158,7 +152,7 @@ fn stage(labs: &Path, dir: &Path, tarball: &[u8], release: Release<'_>) -> Resul
     clear_leftover(&staging);
     std::fs::create_dir_all(&staging)?;
     extract(tarball, &staging)?;
-    std::fs::write(staging.join(".cyberctf-commit"), commit)?;
+    std::fs::write(staging.join(runtime::lab::COMMIT_MARKER), commit)?;
     // Terraform targets fetch the lab themselves, from this repository at that commit.
     std::fs::write(staging.join(".cyberctf-repository"), repository)?;
     // Keep where the lab runs, so a lab still up on a server host or in a local VM can be
@@ -541,7 +535,7 @@ mod tests {
         std::fs::write(dir.join(runtime::LOCAL_VM_MARKER), "virtualbox").unwrap();
         std::fs::write(dir.join("old.txt"), "old").unwrap();
         // Nothing is installed at that commit yet.
-        assert!(!installed(&dir.join(".cyberctf-commit"), sha));
+        assert!(!runtime::lab::installed_at(&dir, sha));
 
         let staging = stage(&labs, &dir, &tarball(&[("lab-abc/isoloom.yml", b"name: invoice")]), invoice("invoice", sha)).unwrap();
         assert_eq!(staging, labs.join(".invoice.staging"));
@@ -554,8 +548,8 @@ mod tests {
         swap_in(&staging, &dir).unwrap();
         assert!(!staging.exists());
         assert!(!dir.join("old.txt").exists());
-        assert!(installed(&dir.join(".cyberctf-commit"), sha));
-        assert!(!installed(&dir.join(".cyberctf-commit"), "ffffffffffffffffffffffffffffffffffffffff"));
+        assert!(runtime::lab::installed_at(&dir, sha));
+        assert!(!runtime::lab::installed_at(&dir, "ffffffffffffffffffffffffffffffffffffffff"));
         assert!(!labs.join(".invoice.old").exists(), "the old copy is cleared");
         std::fs::remove_dir_all(labs).unwrap();
     }
@@ -626,7 +620,7 @@ mod tests {
         let log = |l: String| lines.lock().unwrap().push(l);
         let dir = install_with(&t.dirs(), invoice("invoice", SHA), &log, async || Ok(gz.clone())).await.unwrap();
         assert_eq!(dir, t.data().join("labs").join("invoice"));
-        assert!(installed(&dir.join(".cyberctf-commit"), SHA) && dir.join("isoloom.yml").is_file());
+        assert!(runtime::lab::installed_at(&dir, SHA) && dir.join("isoloom.yml").is_file());
         assert_eq!(lines.lock().unwrap().as_slice(), ["Downloading CyberCTF/invoice@0123456789ab", "Lab installed"]);
         // The same commit again: nothing downloaded.
         install_with(&t.dirs(), invoice("invoice", SHA), &log, async || panic!("no download")).await.unwrap();
@@ -644,12 +638,12 @@ mod tests {
             assert!(err.is_refusal(), "{target}: {err}");
             let expected = host.map_or_else(|| "This lab is still running on this machine".to_owned(), |h| format!("This lab is still running on {h}."));
             assert!(err.to_string().starts_with(&expected), "{target}: {err}");
-            assert!(installed(&dir.join(".cyberctf-commit"), SHA), "{target}: the running copy was replaced");
+            assert!(runtime::lab::installed_at(&dir, SHA), "{target}: the running copy was replaced");
         }
         // Stopped (the run taken down): the new version goes in.
         crate::runtime::test_support::record_run(t.data(), "invoice", None, "docker", "absent");
         install_with(&t.dirs(), invoice("invoice", newer), &log, async || Ok(gz.clone())).await.unwrap();
-        assert!(installed(&dir.join(".cyberctf-commit"), newer));
+        assert!(runtime::lab::installed_at(&dir, newer));
         // Ids and sources are checked before anything else.
         assert!(install_with(&t.dirs(), invoice("../x", SHA), &log, async || panic!()).await.is_err());
         assert!(
@@ -675,7 +669,7 @@ mod tests {
         let err = install_with(&t.dirs(), invoice("invoice", newer), &|_| {}, async || Ok(gz.clone())).await.unwrap_err();
         assert!(matches!(err, Error::Refused(_)), "{err:?}");
         assert!(err.to_string().starts_with("A parked copy of this lab is here and couldn't be removed"), "{err}");
-        assert!(installed(&dir.join(".cyberctf-commit"), SHA), "the parked copy's folder was replaced");
+        assert!(runtime::lab::installed_at(&dir, SHA), "the parked copy's folder was replaced");
         assert!(!t.data().join("labs").join(".invoice.staging").exists());
     }
 
@@ -685,7 +679,7 @@ mod tests {
         // two installs of one lab shared its staging folder and a stop could run mid-swap.
         use crate::platform::exec::fake::Tools;
         let t = crate::testing::test_app::TestApp::new();
-        let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (".cyberctf-commit", SHA)]);
+        let dir = t.lab("invoice", &[("isoloom.yml", SPEC), (runtime::lab::COMMIT_MARKER, SHA)]);
         let tools = Tools::rules(&[]);
         let held = runtime::lock_lab(&t.dirs(), "invoice").await.unwrap();
         let launch =
@@ -813,9 +807,9 @@ mod tests {
         assert_eq!(staged, staging);
         assert!(!staging.join("old").exists(), "the crashed install's files are gone");
         // The commit marker reads back with surrounding whitespace or CRLF (a hand edit).
-        std::fs::write(staging.join(".cyberctf-commit"), format!("  {SHA}\r\n")).unwrap();
-        assert!(installed(&staging.join(".cyberctf-commit"), SHA));
-        assert!(!installed(&staging.join(".cyberctf-commit"), &SHA.to_uppercase()));
+        std::fs::write(staging.join(runtime::lab::COMMIT_MARKER), format!("  {SHA}\r\n")).unwrap();
+        assert!(runtime::lab::installed_at(&staging, SHA));
+        assert!(!runtime::lab::installed_at(&staging, &SHA.to_uppercase()));
         std::fs::remove_dir_all(labs).unwrap();
     }
 

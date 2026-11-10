@@ -174,7 +174,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let dirs = t.dirs();
         let id = "agent-ask";
-        t.lab(id, &[(".cyberctf-commit", COMMIT), ("isoloom.yml", &spec(true))]);
+        t.lab(id, &[(crate::runtime::lab::COMMIT_MARKER, COMMIT), ("isoloom.yml", &spec(true))]);
         let az = t.host("az1", "azure", json!({}));
         let pve = t.host("pve1", "proxmox", json!({}));
         let claim = claim_of(id);
@@ -200,7 +200,7 @@ mod tests {
         let prompts = Arc::new(Mutex::new(Vec::new()));
         let deps = test_deps(&t, prompts.clone());
         let id = "agent-approve";
-        t.lab(id, &[(".cyberctf-commit", COMMIT), ("isoloom.yml", &spec(false))]);
+        t.lab(id, &[(crate::runtime::lab::COMMIT_MARKER, COMMIT), ("isoloom.yml", &spec(false))]);
         for (sid, approve) in [("s-here-yes", true), ("s-here-no", false)] {
             let request = launch_request(deps.dirs(), sid, &claim_of(id).launch, None).await.unwrap();
             let answered = answer(sid, approve);
@@ -232,7 +232,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let dirs = t.dirs();
         let id = "agent-policy";
-        t.lab(id, &[(".cyberctf-commit", COMMIT), ("isoloom.yml", &spec(true))]);
+        t.lab(id, &[(crate::runtime::lab::COMMIT_MARKER, COMMIT), ("isoloom.yml", &spec(true))]);
         let az = t.host("az1", "azure", json!({}));
         {
             let _policy = policy::Override::with(&[Key::RefusePrivilegedLabs]);

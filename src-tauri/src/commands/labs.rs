@@ -394,7 +394,7 @@ mod tests {
         let sha = "0123456789abcdef0123456789abcdef01234567";
         let vms = "version: 1\nname: ad\nnetworks: { lan: { cidr: 10.20.0.0/24 } }\nmachines:\n  dc: { os: windows-server@2022, networks: { lan: 10 } }\ntargets: [vagrant]\n";
         let dir = t.lab("ad", &[("isoloom.yml", vms)]);
-        std::fs::write(dir.join(".cyberctf-commit"), sha).unwrap();
+        std::fs::write(dir.join(crate::runtime::lab::COMMIT_MARKER), sha).unwrap();
         // The installed copy at that commit is read: no download.
         let options = lab_run_options(t.handle().clone(), "ad".into(), Runtime::Vm, "CyberCTF/ad".into(), sha.into()).await.unwrap();
         let servers: Vec<_> = options.servers.iter().map(|p| (p.provider, p.target.as_str())).collect();

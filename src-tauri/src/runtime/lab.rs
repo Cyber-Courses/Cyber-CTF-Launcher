@@ -290,6 +290,14 @@ pub struct Source<'a> {
     pub check: fn(&str, &str) -> Result<()>,
 }
 
+/// The marker in a lab's folder naming the commit of its source installed there.
+pub const COMMIT_MARKER: &str = ".cyberctf-commit";
+
+/// Whether the lab installed in `dir` is the one at `commit` (its [`COMMIT_MARKER`] says so).
+pub fn installed_at(dir: &Path, commit: &str) -> bool {
+    std::fs::read_to_string(dir.join(COMMIT_MARKER)).is_ok_and(|c| c.trim() == commit)
+}
+
 /// A lab's spec at a commit ([`lab_at`]'s, as the launcher reads it).
 pub async fn spec_at(dirs: &crate::platform::AppDirs, lab_id: &str, source: Source<'_>) -> Result<Spec> {
     Ok(lab_at(dirs, lab_id, source).await?.spec())
@@ -313,7 +321,7 @@ where
     crate::runtime::paths::validate_id(lab_id)?;
     check(repository, commit)?;
     if let Ok(dir) = crate::runtime::paths::lab_dir(dirs, lab_id)
-        && std::fs::read_to_string(dir.join(".cyberctf-commit")).is_ok_and(|c| c.trim() == commit)
+        && installed_at(&dir, commit)
         && let Ok(Ok(text)) = overlay::spec_text(&dir)
         && let Ok(lab) = parsed(&text)
     {

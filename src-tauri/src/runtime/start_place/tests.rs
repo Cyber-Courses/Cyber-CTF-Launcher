@@ -22,7 +22,7 @@ const DUAL: &str = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 }
 /// Lab `id` installed at [`SHA`] with `spec`, so its spec is read from the installed copy.
 fn installed(t: &TestApp, id: &str, spec: &str) {
     let dir = t.lab(id, &[("isoloom.yml", spec), ("web.sh", "true\n")]);
-    std::fs::write(dir.join(".cyberctf-commit"), SHA).unwrap();
+    std::fs::write(dir.join(crate::runtime::lab::COMMIT_MARKER), SHA).unwrap();
 }
 
 /// `id` saved as the default server.
