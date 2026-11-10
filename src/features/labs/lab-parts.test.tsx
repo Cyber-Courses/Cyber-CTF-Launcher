@@ -81,7 +81,7 @@ describe("RunOnPicker", () => {
     const user = userEvent.setup();
     const { onPickPlatform } = renderPicker();
     expect(screen.getByText("Where should it run?")).toBeTruthy();
-    expect(screen.getAllByText("Checking…").length).toBe(3);
+    expect(screen.getAllByText("Testing…").length).toBe(3);
     await flush();
     // Only the hosts the lab supports are tested.
     expect(calls.filter((c) => c.cmd === "server_test").map((c) => c.args?.id)).toEqual(["esx", "pve", "aws", "down"]);

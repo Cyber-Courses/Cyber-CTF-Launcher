@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Container } from "lucide-react";
-import { PROVIDER_NAMES, type DockerEngine, type LabRunOptions, type Provider, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { PROVIDER_NAMES, type DockerEngine, type LabRunOptions, type Provider, type ServerHost } from "@/lib/tauri";
 import { badgeOf, pathOf, refusalOn, refusalOnHypervisors, type RunBadge } from "@/features/labs/run-on-badges";
 import { testHost } from "@/features/servers/use-server-list";
+import { hostStatus, type HostTest } from "@/features/servers/servers-model";
 import { StatusPill, type Tone } from "@/components/ui/status-pill";
 import { TypeIcon } from "@/components/ui/type-icon";
 import { ProviderGlyph } from "@/features/servers/provider-glyph";
@@ -30,7 +31,7 @@ type Option = {
 };
 export type OptionGroup = { id: string; label: string; options: Option[] };
 /** Each host's test result, by id; none yet while it runs. */
-type HostChecks = Partial<Record<string, ServerTest>>;
+type HostChecks = Partial<Record<string, HostTest>>;
 
 /** Each host's connection test, run once when the picker opens (like "Test" on the Servers page).
  *  A host without an answer yet is being tested. The answers are kept with the host list they
@@ -52,14 +53,10 @@ export function useHostChecks(hosts: ServerHost[]): HostChecks {
   return answers.ids === ids ? answers.checks : {};
 }
 
-function hostStatus(t: T, check: ServerTest | undefined): Status {
-  if (!check) return { tone: "muted", label: t("labs.runOn.checking") };
-  if (check.ok) return { tone: "ok", label: t("labs.runOn.online"), title: check.message };
-  return {
-    tone: check.reachable ? "warn" : "fail",
-    label: check.reachable ? t("labs.runOn.needsAttention") : t("labs.runOn.unreachable"),
-    title: check.message,
-  };
+/** A host's pill: its test's status, as the Servers page shows it; testing until it answers. */
+function hostPill(t: T, check: HostTest | undefined): Status {
+  const { tone, status, result } = hostStatus(check ?? "testing");
+  return { tone, label: t(`servers.host.status.${status}`), title: result?.message };
 }
 
 /** A tier badge or a live status, as one aligned pill (same line-height, dot and gap). */
@@ -205,7 +202,7 @@ function localVmRow(t: T, local: LocalRows, options: LabRunOptions | null): Opti
 }
 
 /** A saved server or cloud account; one the lab can't run on says why, without a status. */
-function hostOption(t: T, options: LabRunOptions | null, h: ServerHost, ok: boolean, check: ServerTest | undefined): Option {
+function hostOption(t: T, options: LabRunOptions | null, h: ServerHost, ok: boolean, check: HostTest | undefined): Option {
   const kind = PROVIDER_NAMES[h.provider];
   const cloud = isCloudProvider(h.provider);
   return {
@@ -215,7 +212,7 @@ function hostOption(t: T, options: LabRunOptions | null, h: ServerHost, ok: bool
     ok,
     why: refusalOn(t, options, h.provider) ?? t("labs.runOn.unsupportedKind", { kind }),
     logo: <ProviderGlyph provider={h.provider} />,
-    status: ok ? hostStatus(t, check) : undefined,
+    status: ok ? hostPill(t, check) : undefined,
     badge: badgeOf(pathOf(options, { kind: "host", id: h.id }, h.provider)),
   };
 }

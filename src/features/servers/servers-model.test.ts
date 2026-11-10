@@ -65,6 +65,13 @@ describe("servers model", () => {
     expect(hostStatus(failed("connection refused"))).toMatchObject({ needsPassword: false, tone: "fail", status: "unreachable", online: false });
   });
 
+  it("says a host that answered and failed a later check needs attention, not that it is unreachable", () => {
+    // Regression: the Servers page said "Unreachable" for a host whose port answered and whose
+    // sign-in failed, where the lab's picker said "Needs attention" for the same test.
+    const signInFailed = { ok: false, reachable: true, authenticated: false, latencyMs: 9, message: "Login failed", checks: [] } as ServerTest;
+    expect(hostStatus(signInFailed)).toMatchObject({ tone: "warn", status: "needsAttention", online: false, needsPassword: false });
+  });
+
   it("tells a missing password from a host that is down by the error's code, not its words", () => {
     const missing = failedTest({ code: "noPasswordStored", message: "reworded: the keychain has nothing" });
     expect(hostStatus(missing)).toMatchObject({ needsPassword: true, tone: "warn", status: "needsPassword", online: false });

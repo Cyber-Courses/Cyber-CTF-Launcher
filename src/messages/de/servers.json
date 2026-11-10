@@ -32,6 +32,7 @@
       "notTested": "Nicht getestet",
       "online": "Online",
       "needsPassword": "Passwort nötig",
+      "needsAttention": "Prüfen nötig",
       "unreachable": "Nicht erreichbar"
     },
     "isDefaultTitle": "Standard-Host für Starts von der Website. Klicken zum Aufheben.",

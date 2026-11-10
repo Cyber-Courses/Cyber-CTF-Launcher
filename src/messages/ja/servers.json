@@ -32,6 +32,7 @@
       "notTested": "未テスト",
       "online": "オンライン",
       "needsPassword": "パスワードが必要",
+      "needsAttention": "要確認",
       "unreachable": "接続不可"
     },
     "isDefaultTitle": "Web サイトからの起動に使うデフォルトのホストです。クリックすると解除します。",

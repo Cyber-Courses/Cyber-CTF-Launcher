@@ -32,6 +32,7 @@
       "notTested": "Sin probar",
       "online": "En línea",
       "needsPassword": "Falta la contraseña",
+      "needsAttention": "Requiere atención",
       "unreachable": "Inaccesible"
     },
     "isDefaultTitle": "El host por defecto para los lanzamientos desde el sitio web. Haz clic para quitarlo.",

@@ -32,6 +32,7 @@
       "notTested": "Non testé",
       "online": "En ligne",
       "needsPassword": "Mot de passe requis",
+      "needsAttention": "À vérifier",
       "unreachable": "Injoignable"
     },
     "isDefaultTitle": "L'hôte par défaut pour les lancements depuis le site. Cliquez pour le retirer.",

@@ -52,21 +52,31 @@ export const failedTest = (e: unknown): HostTest => ({
   errorCode: errorCode(e),
 });
 
-/** What a host's last test says, as its status pill names it. */
-type HostStatusKind = "testing" | "notTested" | "online" | "needsPassword" | "unreachable";
+/** What a host's last test says, as its status pill names it (`servers.host.status.<kind>`). */
+type HostStatusKind = "testing" | "notTested" | "online" | "needsPassword" | "needsAttention" | "unreachable";
 
-const STATUS_TONE: Record<HostStatusKind, Tone> = { testing: "muted", notTested: "muted", online: "ok", needsPassword: "warn", unreachable: "fail" };
+const STATUS_TONE: Record<HostStatusKind, Tone> = {
+  testing: "muted",
+  notTested: "muted",
+  online: "ok",
+  needsPassword: "warn",
+  needsAttention: "warn",
+  unreachable: "fail",
+};
 
 function statusKind(test: HostTest | "testing" | undefined): HostStatusKind {
   if (test === "testing") return "testing";
   if (!test) return "notTested";
   if (test.ok) return "online";
-  // A missing password is a credential to enter, not a host that is down.
-  return test.errorCode === "noPasswordStored" ? "needsPassword" : "unreachable";
+  // A missing password is a credential to enter, not a host that is down; a host that answered
+  // and failed a later check (its sign-in, its API) isn't down either.
+  if (test.errorCode === "noPasswordStored") return "needsPassword";
+  return test.reachable ? "needsAttention" : "unreachable";
 }
 
-/** A host row's last test, read for its status pill: the result once it has one, whether it
- *  only lacks a stored password, the pill's tone and label, and whether the host answered. */
+/** A host's last test, read for its status pill (the Servers page's rows, the lab's "Where should
+ *  it run?" picker): the result once it has one, whether it only lacks a stored password, the
+ *  pill's tone and label, and whether the host answered. */
 export function hostStatus(test: HostTest | "testing" | undefined) {
   const status = statusKind(test);
   const result = test === "testing" ? null : (test ?? null);

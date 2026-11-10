@@ -32,6 +32,7 @@
       "notTested": "Não testado",
       "online": "Online",
       "needsPassword": "Requer senha",
+      "needsAttention": "Requer atenção",
       "unreachable": "Inacessível"
     },
     "isDefaultTitle": "O host padrão para inicializações pelo site. Clique para desmarcar.",

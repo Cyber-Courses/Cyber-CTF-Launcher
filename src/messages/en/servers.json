@@ -32,6 +32,7 @@
       "notTested": "Not tested",
       "online": "Online",
       "needsPassword": "Needs password",
+      "needsAttention": "Needs attention",
       "unreachable": "Unreachable"
     },
     "isDefaultTitle": "The default host for website launches. Click to unset.",
