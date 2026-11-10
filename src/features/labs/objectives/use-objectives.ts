@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { warn } from "@/lib/failure";
+import { useLatest } from "@/lib/use-latest";
 import {
   afterSubmit,
   challengesFor,
@@ -56,42 +57,30 @@ function useChallenges(labId: string, question: string | null, title: string) {
 const progressKeyOf = (labId: string, loggedIn: boolean) => `${labId}:${String(loggedIn)}`;
 
 /** The player's progress as last read or updated, kept with the lab and sign-in (`key`) it is
- *  for; `refresh` reads it again. */
+ *  for; `refresh` reads it again. One read serves the first load and every refresh, and only the
+ *  newest one applies: a refresh still out when the page moves to another lab never lands there. */
 function useStoredProgress(labId: string, loggedIn: boolean) {
   const [stored, setStored] = useState<Progress | null>(null);
+  const beginRead = useLatest();
 
   const refresh = useCallback(async () => {
+    const latest = beginRead();
     if (!loggedIn) return;
     const key = progressKeyOf(labId, loggedIn);
-    await loadProgress(labId)
-      .then((progress) => {
-        setStored({ key, progress });
-      })
-      .catch(
-        warn("reading the lab's progress", () => {
-          setStored((s) => (s?.key === key ? s : { key, progress: null }));
-        }),
-      );
-  }, [labId, loggedIn]);
+    await loadProgress(labId).then(
+      (progress) => {
+        if (latest()) setStored({ key, progress });
+      },
+      // Unreadable: counted as read (nothing solved, or what this page recorded since) rather than waited for.
+      warn("reading the lab's progress", () => {
+        if (latest()) setStored((s) => (s?.key === key ? s : { key, progress: null }));
+      }),
+    );
+  }, [labId, loggedIn, beginRead]);
 
   useEffect(() => {
-    let alive = true;
-    const key = progressKeyOf(labId, loggedIn);
-    if (loggedIn)
-      loadProgress(labId)
-        .then((progress) => {
-          if (alive) setStored({ key, progress });
-        })
-        // Unreadable: counted as read (nothing solved, or what this page recorded since) rather than waited for.
-        .catch(
-          warn("reading the lab's progress", () => {
-            if (alive) setStored((s) => (s?.key === key ? s : { key, progress: null }));
-          }),
-        );
-    return () => {
-      alive = false;
-    };
-  }, [labId, loggedIn]);
+    void refresh();
+  }, [refresh]);
 
   return { stored, setStored, refresh };
 }
