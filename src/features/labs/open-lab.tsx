@@ -90,13 +90,7 @@ export function OpenLab({
     <LabDetail
       lab={lab}
       status={status}
-      busy={runs[lab.id]?.busy ?? false}
-      logs={runs[lab.id]?.logs ?? []}
-      times={runs[lab.id]?.times ?? []}
-      runOp={runs[lab.id]?.op}
-      runStartedAt={runs[lab.id]?.startedAt}
-      runFailureCode={runs[lab.id]?.failureCode}
-      runFailureHolder={runs[lab.id]?.failureHolder}
+      deploy={runs[lab.id]}
       loggedIn={loggedIn}
       onLogin={onLogin}
       hostArch={hostArch}

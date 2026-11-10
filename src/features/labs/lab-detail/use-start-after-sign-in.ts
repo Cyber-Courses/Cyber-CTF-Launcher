@@ -15,7 +15,7 @@ export function useStartAfterSignIn(page: LabPage, p: LabDetailProps) {
   // it open (`chooseAtOnce`), once per sign-in.
   const [tick, setTick] = useState(0);
   const { onLogin } = p;
-  const blocked = !p.lab.runtime || p.busy || (page.s.isCloud && page.run.cloudAccounts.length === 0);
+  const blocked = !p.lab.runtime || page.busy || (page.s.isCloud && page.run.cloudAccounts.length === 0);
   const login = onLogin
     ? () =>
         onLogin().then((signedIn) => {

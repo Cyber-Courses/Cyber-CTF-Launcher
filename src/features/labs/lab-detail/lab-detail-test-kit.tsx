@@ -21,8 +21,6 @@ const pageHandlers = () => ({
  *  take it down. */
 export function renderLabPage(lab: Lab, props: Partial<Parameters<typeof LabDetail>[0]> = {}) {
   const handlers = pageHandlers();
-  const { unmount } = render(
-    <LabDetail lab={lab} busy={false} logs={[]} times={[]} loggedIn hostArch="x86_64" readyVms={["virtualbox"]} dockerRunning {...handlers} {...props} />,
-  );
+  const { unmount } = render(<LabDetail lab={lab} loggedIn hostArch="x86_64" readyVms={["virtualbox"]} dockerRunning {...handlers} {...props} />);
   return { ...handlers, unmount };
 }

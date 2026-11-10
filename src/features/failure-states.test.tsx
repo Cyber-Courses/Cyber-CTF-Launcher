@@ -85,7 +85,7 @@ const idle = { deploying_labs: () => [], active_operations: () => [] };
 
 function renderDetail(props: Partial<Parameters<typeof LabDetail>[0]> = {}) {
   const handlers = { onBack: vi.fn(), onStart: vi.fn(), onStop: vi.fn(), onPark: vi.fn(), onResume: vi.fn(), onProvision: vi.fn() };
-  render(<LabDetail lab={blind} busy={false} logs={[]} times={[]} loggedIn hostArch="x86_64" readyVms={[]} dockerRunning {...handlers} {...props} />);
+  render(<LabDetail lab={blind} loggedIn hostArch="x86_64" readyVms={[]} dockerRunning {...handlers} {...props} />);
   return handlers;
 }
 
@@ -145,7 +145,7 @@ describe("a start that failed", () => {
   it("reads Failed to start, offers Retry and, for a port clash, Retry on random ports with a hint", async () => {
     installTauri({ ...idle, lab_status: () => stopped });
     const user = userEvent.setup();
-    const h = renderDetail({ logs: [`✗ ${PORT_CLASH}`], times: [2000], runOp: "launch", runStartedAt: 500 });
+    const h = renderDetail({ deploy: { busy: false, logs: [`✗ ${PORT_CLASH}`], times: [2000], op: "launch", startedAt: 500 } });
     await flush();
     expect(document.body.textContent).toContain("Failed to start");
     expect(document.body.textContent).not.toContain("Not started");
@@ -177,11 +177,7 @@ describe("a start that failed", () => {
     installTauri({ ...idle, lab_status: () => ({ ...stopped, place: "local_vm" }) });
     renderDetail({
       status: { ...stopped, place: "local_vm" },
-      logs: [`✗ ${PORT_CLASH}`],
-      times: [10],
-      runOp: "launch",
-      runFailureCode: "portInUse",
-      runFailureHolder: "nginx (pid 4123)",
+      deploy: { busy: false, logs: [`✗ ${PORT_CLASH}`], times: [10], op: "launch", failureCode: "portInUse", failureHolder: "nginx (pid 4123)" },
     });
     await flush();
     expect(document.body.textContent).toContain("Failed to start");
@@ -199,7 +195,7 @@ describe("a start that failed", () => {
 
   it("offers no port retry for another cause, and a failed stop is not a failed start", async () => {
     installTauri({ ...idle, lab_status: () => stopped });
-    renderDetail({ logs: ["✗ Docker isn't running. Start your container engine."], times: [10], runOp: "launch" });
+    renderDetail({ deploy: { busy: false, logs: ["✗ Docker isn't running. Start your container engine."], times: [10], op: "launch" } });
     await flush();
     expect(document.body.textContent).toContain("Failed to start");
     expect(document.body.textContent).toContain("Start your container engine, then retry.");
@@ -239,10 +235,7 @@ describe("a Stop & remove that failed", () => {
       <LabDetail
         lab={blind}
         status={up}
-        busy
-        logs={[]}
-        times={[]}
-        runOp="stop"
+        deploy={{ busy: true, logs: [], times: [], op: "stop" }}
         loggedIn
         hostArch="x86_64"
         readyVms={[]}
@@ -263,11 +256,13 @@ describe("a Stop & remove that failed", () => {
       <LabDetail
         lab={blind}
         status={up}
-        busy={false}
-        logs={["✗ Couldn't remove network lab-invoice_default: has active endpoints"]}
-        times={[Date.now()]}
-        runOp="stop"
-        runStartedAt={Date.now() - 2000}
+        deploy={{
+          busy: false,
+          logs: ["✗ Couldn't remove network lab-invoice_default: has active endpoints"],
+          times: [Date.now()],
+          op: "stop",
+          startedAt: Date.now() - 2000,
+        }}
         loggedIn
         hostArch="x86_64"
         readyVms={[]}
@@ -301,9 +296,7 @@ describe("a deploy with no log here", () => {
     });
     // First seen a minute ago (this window saw it then, before the page opened).
     noteOperations([{ labId: goad.id, op: "launch", machine: "SRV02", step }], Date.now() - 61_000);
-    render(
-      <LabDetail lab={goad} busy={false} logs={[]} times={[]} loggedIn hostArch="x86_64" readyVms={[]} onBack={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} />,
-    );
+    render(<LabDetail lab={goad} loggedIn hostArch="x86_64" readyVms={[]} onBack={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} />);
     await flush(2200);
     expect(document.body.textContent).toContain(step);
     expect(document.body.textContent).not.toContain("Preparing…");

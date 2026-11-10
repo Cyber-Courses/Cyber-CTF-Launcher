@@ -49,7 +49,7 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
             onClick={() => {
               page.startOn({ kind: "local", ports: "random" });
             }}
-            disabled={p.busy || !p.loggedIn}
+            disabled={page.busy || !p.loggedIn}
           >
             <Shuffle className="size-3.5" /> {t("labs.detail.retryRandomPorts")}
           </Button>
@@ -65,7 +65,7 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
           isDocker={s.isDocker}
           cloud={s.isCloud ? { preview: page.preview } : null}
           loggedIn={p.loggedIn}
-          busy={p.busy}
+          busy={page.busy}
           dockerRunning={p.dockerRunning ?? null}
           onStart={page.startOn}
         />
@@ -76,7 +76,7 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
       mode={mode}
       state={s}
       url={p.status?.url}
-      busy={p.busy}
+      busy={page.busy}
       deploying={s.deploying}
       boxBusy={page.box.busy}
       acting={acting}
@@ -137,7 +137,7 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
         <HealthBanner
           down={s.down.map((m) => m.name)}
           check={page.check}
-          busy={p.busy}
+          busy={page.busy}
           resetting={page.resetting}
           // Reset starts the lab again from the catalogue: an imported lab isn't in it.
           onReset={
@@ -155,7 +155,7 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
 }
 
 /** The deployment's steps, and the way to run a broken VM setup again. */
-export function LabDeployment({ page, props: p }: { page: LabPage; props: LabDetailProps }) {
+export function LabDeployment({ page }: { page: LabPage }) {
   const t = useT();
   const { s, run, acting, act } = page;
   return (
@@ -168,7 +168,7 @@ export function LabDeployment({ page, props: p }: { page: LabPage; props: LabDet
       operation={s.operation ?? s.lastOperation}
       startedAt={s.startedAt}
       liveStep={s.liveStep}
-      offerRerun={s.deployFailed && s.canProvision && !p.busy && (s.running || s.interrupted)}
+      offerRerun={s.deployFailed && s.canProvision && !page.busy && (s.running || s.interrupted)}
       rerunning={acting === "provision"}
       onRerun={() => void act("provision")}
     />
@@ -177,7 +177,8 @@ export function LabDeployment({ page, props: p }: { page: LabPage; props: LabDet
 
 /** What the network panel shows (see networkView); a cloud lab has none. */
 export function labNetworkView(page: LabPage, p: LabDetailProps) {
-  const { status, busy } = p;
+  const { status } = p;
+  const { busy } = page;
   return page.s.isCloud ? "none" : networkView(page.s, { busy, acting: page.acting, hasMachines: !!status && status.machines.length > 0 });
 }
 
@@ -195,8 +196,8 @@ export function LabNetwork({ page, props: p, meta }: { page: LabPage; props: Lab
 /** The main column's panels, after the deployment on top: the cloud services or note, the
  *  network (unless the page draws it above, full width), the observers. */
 export function LabPanels({ page, props: p, meta, network = true }: { page: LabPage; props: LabDetailProps; meta: string; network?: boolean }) {
-  const { s } = page;
-  const { status, busy } = p;
+  const { s, busy } = page;
+  const { status } = p;
   const services = s.isCloud ? cloudView(s, { busy }) : "none";
   return (
     <>

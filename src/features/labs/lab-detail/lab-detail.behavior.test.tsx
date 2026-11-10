@@ -392,9 +392,6 @@ describe("LabDetail: starting", () => {
       <LabDetail
         lab={dockerLab}
         status={stopped}
-        busy={false}
-        logs={[]}
-        times={[]}
         loggedIn={loggedIn}
         hostArch="x86_64"
         readyVms={["virtualbox"]}
@@ -498,7 +495,7 @@ describe("LabDetail: a lab that is up", () => {
 
   it("says Stopping… while a stop runs", async () => {
     installTauri(quiet);
-    renderDetail({ status: status(), busy: true, logs: ["==> api: Stopping"], times: [1] });
+    renderDetail({ status: status(), deploy: { busy: true, logs: ["==> api: Stopping"], times: [1] } });
     await flush();
     expect(screen.getAllByText(/Stopping|Starting/).length).toBeGreaterThan(0);
   });
@@ -570,7 +567,10 @@ describe("LabDetail: a lab that is up", () => {
   it("offers no attacker shell on a server or cloud account until the lab is up", async () => {
     installTauri(quiet);
     // Still starting there (the infrastructure being created): no shell into a box not up yet.
-    renderDetail({ status: status({ running: false, machines: [], place: "server", host: "aws-1", controls: NOTHING, url: null }), busy: true });
+    renderDetail({
+      status: status({ running: false, machines: [], place: "server", host: "aws-1", controls: NOTHING, url: null }),
+      deploy: { busy: true, logs: [], times: [] },
+    });
     await flush();
     expect(screen.queryByRole("button", { name: /Open attacker shell/ })).toBeNull();
   });

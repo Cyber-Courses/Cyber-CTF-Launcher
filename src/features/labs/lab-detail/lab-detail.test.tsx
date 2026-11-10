@@ -150,10 +150,8 @@ describe("LabDetail", () => {
     installTauri();
     renderDetail({
       lab: vmLab,
-      busy: true,
       status: status({ running: false, machines: [], place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null }),
-      logs: ["==> DC01: Importing base box", "==> DC01: Booting VM...", "TASK [Configure SRV02] ***"],
-      times: [1, 2, 3],
+      deploy: { busy: true, logs: ["==> DC01: Importing base box", "==> DC01: Booting VM...", "TASK [Configure SRV02] ***"], times: [1, 2, 3] },
     });
     await flush();
     expect(screen.getAllByText(/Starting/).length).toBeGreaterThan(0);
@@ -172,7 +170,11 @@ describe("LabDetail", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await refreshStatus(vmLab);
     const starting = status({ running: false, machines: [], place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null });
-    const page = renderDetail({ lab: vmLab, busy: true, status: starting, logs: ["==> web: Running provisioner: provision/database.sh"], times: [1] });
+    const page = renderDetail({
+      lab: vmLab,
+      status: starting,
+      deploy: { busy: true, logs: ["==> web: Running provisioner: provision/database.sh"], times: [1] },
+    });
     await flush();
     expect(screen.getAllByText(/Starting/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Couldn’t read the state/)).toBeNull();
@@ -191,8 +193,7 @@ describe("LabDetail", () => {
     const h = renderDetail({
       lab: vmLab,
       status: status({ machines: vmMachines, place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null }),
-      logs: ["==> DC01: Booting VM...", "✗ Provisioning failed on DC01"],
-      times: [1, 2],
+      deploy: { busy: false, logs: ["==> DC01: Booting VM...", "✗ Provisioning failed on DC01"], times: [1, 2] },
     });
     await flush();
     await user.click(screen.getAllByRole("button", { name: /re-run setup|run setup/i })[0]);

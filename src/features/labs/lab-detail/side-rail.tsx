@@ -27,8 +27,8 @@ function provisionControl(page: LabPage, busy: boolean) {
  *  (running), and the sign-in note. */
 export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; props: LabDetailProps; meta: string; cost: string | null }) {
   const t = useT();
-  const { s, box, shell } = page;
-  const { lab, status, busy } = p;
+  const { s, box, shell, busy } = page;
+  const { lab, status } = p;
   return (
     <aside className="h-fit min-w-0 space-y-5 lg:sticky lg:top-2">
       {/* A backend without the objectives API: the lab's question, as before. */}

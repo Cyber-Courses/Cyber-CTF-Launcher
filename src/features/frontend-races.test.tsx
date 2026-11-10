@@ -88,9 +88,6 @@ describe("lab page actions during a worker operation", () => {
       <LabDetail
         lab={lab(id)}
         status={status({ running: true })}
-        busy={false}
-        logs={[]}
-        times={[]}
         loggedIn
         hostArch="x86_64"
         dockerRunning
@@ -146,9 +143,6 @@ describe("reset", () => {
             { name: "db", state: "exited", image: "x", ip: "", ports: [], interfaces: [], services: [], infra: false },
           ],
         })}
-        busy={false}
-        logs={[]}
-        times={[]}
         loggedIn
         hostArch="x86_64"
         dockerRunning

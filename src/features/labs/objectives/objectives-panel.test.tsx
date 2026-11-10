@@ -83,21 +83,7 @@ const flush = () => flushUi(30);
 
 function renderLab(api: Handler, props: Partial<Parameters<typeof LabDetail>[0]> = {}): Call[] {
   const calls = installTauri({ lab_status: () => stopped, deploying_labs: () => [], active_operations: () => [], api_query: api });
-  render(
-    <LabDetail
-      lab={lab}
-      status={stopped}
-      busy={false}
-      logs={[]}
-      times={[]}
-      loggedIn
-      hostArch="x86_64"
-      onBack={vi.fn()}
-      onStart={vi.fn()}
-      onStop={vi.fn()}
-      {...props}
-    />,
-  );
+  render(<LabDetail lab={lab} status={stopped} loggedIn hostArch="x86_64" onBack={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} {...props} />);
   return calls;
 }
 

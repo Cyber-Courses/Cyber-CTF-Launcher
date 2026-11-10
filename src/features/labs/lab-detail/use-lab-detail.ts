@@ -16,24 +16,17 @@ import { useLabShell } from "@/features/labs/lab-detail/use-lab-shell";
 import { useLabTools } from "@/features/labs/lab-detail/use-lab-tools";
 import { usePageActions } from "@/features/labs/lab-detail/use-page-actions";
 import { useRunTarget } from "@/features/labs/lab-detail/use-run-target";
+import type { DeployRun } from "@/features/labs/runs/deploy-runs";
 import { type DockerEngine, type LabStatus, type Park, type Provider, type Runtime } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
-import type { ErrorCode } from "@/lib/errors";
 
 export type LabDetailProps = {
   lab: Lab;
   status?: LabStatus;
-  busy: boolean;
-  logs: string[];
-  times: number[];
-  /** This session's last run on the lab: what it was (launch, stop…) and when it began. */
-  runOp?: string;
-  runStartedAt?: number;
-  /** The code of the error this session's last run failed with. */
-  runFailureCode?: ErrorCode | null;
-  /** For a port clash, what the backend found holding the host port. */
-  runFailureHolder?: string | null;
+  /** This session's run on the lab (a start, a stop…): whether it is in flight, its log, what it
+   *  is, when it began and how it failed. None before one. */
+  deploy?: DeployRun;
   loggedIn: boolean;
   /** Logged out: the start button logs in instead of being greyed out. */
   onLogin?: () => Promise<boolean>;
@@ -59,6 +52,9 @@ export type LabDetailProps = {
    *  placeholder instead of a Start button that flips to Running a moment later. */
   ready?: boolean;
 };
+
+/** No run on the lab in this session. */
+const NO_DEPLOY: DeployRun = { busy: false, logs: [], times: [] };
 
 type PageState = ReturnType<typeof useLabPageState>;
 
@@ -117,7 +113,7 @@ function useLabReset(onStop: LabDetailProps["onStop"], onStart: LabDetailProps["
  *  attack box, the health check, the observers, the objectives and Reset. */
 export function useLabDetail(p: LabDetailProps) {
   const t = useT();
-  const { lab, status, readyVms = [] } = p;
+  const { lab, status, readyVms = [], deploy = NO_DEPLOY } = p;
   const rt = lab.runtime;
   const { acting, act, provisionTarget, setProvisionTarget } = usePageActions(p);
   const s = useLabPageState(lab.id, {
@@ -125,16 +121,16 @@ export function useLabDetail(p: LabDetailProps) {
     runtime: rt,
     hostArch: p.hostArch,
     readyVms,
-    busy: p.busy,
+    busy: deploy.busy,
     acting,
     parkable: !!p.onPark,
     provisionable: !!p.onProvision,
-    logs: p.logs,
-    times: p.times,
-    runOp: p.runOp,
-    runStartedAt: p.runStartedAt,
-    runFailureCode: p.runFailureCode,
-    runFailureHolder: p.runFailureHolder,
+    logs: deploy.logs,
+    times: deploy.times,
+    runOp: deploy.op,
+    runStartedAt: deploy.startedAt,
+    runFailureCode: deploy.failureCode,
+    runFailureHolder: deploy.failureHolder,
   });
   const run = useRunTarget(lab, readyVms, p.dockerEngine ?? null, p.dockerEnginesRunning ?? []);
   const preview = useCloudPreview(lab.id, rt);
@@ -151,7 +147,25 @@ export function useLabDetail(p: LabDetailProps) {
   const startOn = (target: RunTarget) => void p.onStart(target);
   // Where it runs, said the same way by the header, Details and the diagram's host card.
   const place = placeOf(status, s.isDocker, p.dockerEngine ?? null, run.hosts);
-  return { s, acting, act, provisionTarget, setProvisionTarget, run, preview, shell, box, check, tools, objectives, resetting, reset, startOn, place };
+  return {
+    s,
+    busy: deploy.busy,
+    acting,
+    act,
+    provisionTarget,
+    setProvisionTarget,
+    run,
+    preview,
+    shell,
+    box,
+    check,
+    tools,
+    objectives,
+    resetting,
+    reset,
+    startOn,
+    place,
+  };
 }
 
 export type LabPage = ReturnType<typeof useLabDetail>;
