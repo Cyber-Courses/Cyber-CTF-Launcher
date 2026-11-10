@@ -103,6 +103,7 @@ pub(crate) fn recreate_symlink(target: &Path, at: &Path) -> std::io::Result<()> 
     std::os::unix::fs::symlink(target, at)
 }
 #[cfg(not(unix))]
+#[expect(clippy::unnecessary_wraps, reason = "the Unix version's signature: one call site for both")]
 pub(crate) fn recreate_symlink(_target: &Path, _at: &Path) -> std::io::Result<()> {
     Ok(())
 }

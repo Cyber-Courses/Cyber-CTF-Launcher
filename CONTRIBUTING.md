@@ -64,6 +64,9 @@ pnpm audit --prod
 
 - **The quality ratchet** (`pnpm quality`, `quality-baseline.json`): a count of lint warnings,
   duplication or dead code may go down, never up.
+- **Other platforms**: code behind another OS's `#[cfg]` is compiled only on that OS; CI's matrix
+  lints and tests it there. `scripts/check-other-platforms.sh` runs clippy for Linux and Windows
+  from any machine first (no tests: those need the platform).
 - **Generated types**: `cargo test` rewrites the TypeScript types of the Tauri commands
   (`src/lib/tauri/generated/`) from the Rust structs ([ts-rs](https://github.com/Aleph-Alpha/ts-rs));
   commit them with the change, or CI fails. A command taking or returning a new struct or enum
