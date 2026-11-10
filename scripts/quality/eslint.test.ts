@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { eslintExceptions } from "./eslint.ts";
+import { eslintExceptions, linted } from "./eslint.ts";
 
 // The disable comments, built from parts so this file holds none itself.
 const DISABLE = ["eslint", "-disable"].join("");
@@ -26,5 +26,12 @@ describe("eslintExceptions", () => {
       ["a.ts", `${DISABLE}-line no-console`, false],
       ["a.ts", `${DISABLE} max-lines`, false],
     ]);
+  });
+});
+
+describe("linted", () => {
+  it("lints the folders pnpm lint names, the repository's own among them", () => {
+    expect(linted(JSON.stringify({ scripts: { lint: "eslint src --cache e2e" } }))).toEqual(["src", "e2e"]);
+    expect(linted(fs.readFileSync(path.join(import.meta.dirname, "../../package.json"), "utf8"))).toEqual(["src", "scripts", "e2e"]);
   });
 });

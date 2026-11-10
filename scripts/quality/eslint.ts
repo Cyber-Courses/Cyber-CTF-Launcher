@@ -1,5 +1,6 @@
-// ESLint over the frontend and these scripts, through its API: a warning is a finding (counted by
-// the ratchet), an error fails the run. The `eslint-disable` comments are the local exceptions.
+// ESLint over what `pnpm lint` lints (the frontend, these scripts, the end-to-end tests), through
+// its API: a warning is a finding (counted by the ratchet), an error fails the run. The
+// `eslint-disable` comments are the local exceptions.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -8,8 +9,12 @@ import { ESLint } from "eslint";
 
 import type { Exception, Finding } from "./model.ts";
 
-/** What ESLint lints, relative to the repository root. */
-const LINTED = ["src", "scripts"];
+/** What ESLint lints, relative to the repository root: the folders `pnpm lint` names
+ *  (package.json's `eslint <folder>…`). */
+export function linted(packageJson: string): string[] {
+  const lint = (JSON.parse(packageJson) as { scripts?: { lint?: string } }).scripts?.lint ?? "";
+  return lint.split(/\s+/).filter((word, i) => i > 0 && !word.startsWith("-"));
+}
 
 // Built from parts, so this line isn't one.
 const DISABLE = new RegExp(["(?<=(//|/\\*)\\s*)eslint", "-disable(-next-line|-line)?\\b[^*\\n]*"].join(""));
@@ -17,7 +22,7 @@ const DISABLE = new RegExp(["(?<=(//|/\\*)\\s*)eslint", "-disable(-next-line|-li
 /** The warnings and the formatted errors. */
 export async function runEslint(root: string): Promise<{ warnings: Finding[]; errors: string }> {
   const eslint = new ESLint({ cwd: root });
-  const results = await eslint.lintFiles(LINTED);
+  const results = await eslint.lintFiles(linted(fs.readFileSync(path.join(root, "package.json"), "utf8")));
   const warnings: Finding[] = [];
   for (const result of results) {
     const file = path.relative(root, result.filePath).split(path.sep).join("/");
@@ -52,6 +57,6 @@ export function lintedFiles(root: string): string[] {
       else if (/\.(m?[jt]sx?)$/.test(entry.name)) out.push(rel);
     }
   };
-  LINTED.forEach(walk);
+  linted(fs.readFileSync(path.join(root, "package.json"), "utf8")).forEach(walk);
   return out.sort();
 }
