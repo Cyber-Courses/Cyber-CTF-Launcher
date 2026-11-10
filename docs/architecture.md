@@ -6,7 +6,7 @@ done. For how a lab runs in each place, see [running-labs.md](running-labs.md); 
 
 ## Where labs run
 
-A lab describes itself once as an `isoloom.yml` (its machines, networks, services and checks). The launcher uses Isoloom to read that spec and convert it to each target's native files (Compose, Vagrant, Terraform) under the lab's `.isoloom/` folder, then runs them in one of three modes:
+A lab describes itself once as an `isoloom.yml` (its machines, networks, services and checks). The launcher uses Isoloom to read that spec and convert it to each target's native files (Compose, Vagrant, Terraform) under the lab's `.isoloom-<n>/` folder (`n`: its instance, see [running-labs.md](running-labs.md#what-says-where-a-lab-is)), then runs them in one of three modes:
 
 | Mode       | What runs the lab                                                                                                                                                                                                              |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

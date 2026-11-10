@@ -39,9 +39,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   an operation it refuses says which setting did. A setting it doesn't know is logged and ignored;
   one whose value isn't a boolean, or a policy that can't be read, is logged and treated as on.
   `docs/reference/policy.md` has the reference.
-- **The attack box on every form a lab runs in.** The attack box is one more machine of the lab,
-  wherever it runs: on Docker, in a VM on this machine, as VMs here, on a Proxmox server, or in a
-  cloud account (containers on one VM, or one VM per machine). Beside containers it is a container
+- **The attack box on every form a lab runs in but ESXi.** The attack box is one more machine of
+  the lab, wherever it runs: on Docker, in a VM on this machine, as VMs here, on a Proxmox
+  server, or in a cloud account (containers on one VM, or one VM per machine); not yet on an ESXi
+  host. Beside containers it is a container
   from the attack box image in Settings; among VMs it is a Kali VM with Kali's headless toolset
   (installed on its first start, about 16 minutes), named `attackbox`. On an Arm Mac it runs
   natively (Kali's arm64 image; a Debian VM made Kali). Its status, address and shell are the
@@ -135,8 +136,7 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   on" say the same thing: "on this machine · OrbStack", "on this machine · QEMU", "on homelab ·
   Proxmox VE", "on AWS · eu-west-3". A container lab's status now names the engine it runs on
   instead of a bare "docker".
-- **The Machine page lists its providers, and "Add a provider" opens a guided setup per lab
-  type that starts from where the machine stands.** The Health/Setup switch and the setup
+- **The Machine page lists its providers.** The Health/Setup switch and the setup
   checklist are gone: the page shows this machine's health and every container engine and
   hypervisor found on it as a row, each with its own state (the machine check now asks every
   Docker CLI context in turn with `docker --context <c> info`, so Docker Desktop, OrbStack,
@@ -146,15 +146,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   engine's Docker context, the VM test on that hypervisor, and each row keeps its own last
   result ("tested 5 min ago", or failed and why), the lab type's own readiness following only
   the engine or hypervisor labs run on. "Use by default" on a row points Docker at that engine
-  or makes that hypervisor the Settings choice. Only what is installed is listed, in the Providers panel and in
-  Details alike: nothing for the engines and hypervisors this machine lacks. Adding one is what
-  "Add a provider" is for: in the header as the Servers page's "Add server", it opens the guided
-  setup on a choice of the providers this machine can have, a container engine or a hypervisor
-  for VMs, each row saying how far along the machine is. The setup is about this machine only
-  (cloud accounts and servers have their own pages). A path lists only its own steps and opens
-  at the first one still to do, read from the machine check and the last self-tests: a machine
-  whose engine is installed and tested goes straight past the Docker steps to its summary,
-  instead of walking them again. A row's Fix or Test still opens its step directly.
+  or makes that hypervisor the Settings choice. Only what is installed is listed, in the
+  Providers panel and in Details alike: nothing for the engines and hypervisors this machine
+  lacks; adding one is what "Add a provider", in the header as the Servers page's "Add server",
+  is for (see above). A row's Fix still opens its setup step directly.
 
 ### Fixed
 

@@ -5,7 +5,7 @@ that say where a lab is, the attack box, and the accounts and servers it reaches
 
 A lab describes itself once, in an `isoloom.yml`. For each place the launcher asks
 [Isoloom](https://www.isoloom.com) to generate that place's files (`lab::prepare`, into the lab's
-`.isoloom/<target>/`), then hands them to the Isothrum runner, which
+`.isoloom-<n>/<target>/`, `n` its instance number), then hands them to the Isothrum runner, which
 starts, reads, changes and stops the run. The launcher keeps the policy (where, with which
 account, what the player picked); the runner does the work and keeps the run's state.
 
@@ -41,11 +41,12 @@ cloud). Beside the lab, in its folder:
 | `.cyberctf-engine`         | the Docker context it was started on, when not the current one                              |
 | `.cyberctf-parked`         | parked (paused or shut down): the next start resumes it                                     |
 | `.cyberctf-overlay.yml`    | the machines the launcher added to the lab (the attack box), merged into its spec when read |
-| `.cyberctf-instance`       | its instance number, when the lab is installed more than once                               |
+| `.cyberctf-instance`       | its instance number, given at install: its networks' blocks and its generated files' folder |
 | `.cyberctf-known_hosts`    | the host keys of its own hosts, for their shells                                            |
 
-A stop clears them all once the run is gone (`lifecycle::forget_run`), so the next start is the
-lab as published.
+A stop clears them once the run is gone (`lifecycle::forget_run`; the host keys go with the
+hosts), so the next start is the lab as published. The instance number stays: it is the
+installed lab's, not the run's.
 
 ## The attack box
 
