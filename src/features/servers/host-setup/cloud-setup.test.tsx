@@ -6,7 +6,7 @@ import { EMPTY_CLOUD } from "@/features/servers/host-setup";
 import { argsOf, failsWith, go, heading, input, renderSetup, selects, title } from "@/features/servers/host-setup/setup-test-kit";
 import type { ServerHostInput } from "@/lib/tauri";
 import { freshReport } from "@/test/fixtures";
-import { installTauri, stream } from "@/test/tauri";
+import { installTauri, rejectWith, stream, type Handler } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 /** An account being edited (the provider and tools steps are skipped). */
@@ -197,30 +197,6 @@ describe("Azure account setup", () => {
     expect(document.body.textContent).toContain("the launcher tears the lab down");
     await go(user, /save and test/i);
     expect(argsOf(calls, "server_save")[0]).toMatchObject({ input: { provider: "azure", username: "sub-dev" } });
-  });
-
-  it("lets a sign-in waiting for the browser be cancelled", async () => {
-    // Regression: `cloud_login` had no cancel: a CLI waiting for a browser sign-in nobody
-    // finished kept the setup busy for good.
-    let reject: (why: string) => void = () => {};
-    const calls = installTauri({
-      azure_subscriptions: () => [],
-      cloud_login: (a) => {
-        stream(a, "Opening the browser…");
-        return new Promise((_, no) => (reject = no));
-      },
-      cloud_login_cancel: () => {
-        reject("Sign-in cancelled.");
-        return null;
-      },
-    });
-    const user = userEvent.setup();
-    await renderSetup(editing({ provider: "azure", host: "swedencentral", username: "" }));
-    await go(user, /sign in \(az login\)/i);
-    await go(user, /cancel sign-in/i);
-    expect(calls.some((c) => c.cmd === "cloud_login_cancel")).toBe(true);
-    expect(document.body.textContent).toContain("✗ Sign-in cancelled.");
-    expect(screen.queryByRole("button", { name: /cancel sign-in/i })).toBeNull();
   });
 
   it("offers the CLI sign-in when no subscription is visible, then lists them", async () => {
@@ -420,5 +396,85 @@ describe("new cloud account: provider and tools", () => {
     // Not the first step any more: Back, not Cancel.
     await go(user, /^\s*back$/i);
     expect(heading()).toBe("Command-line tools");
+  });
+});
+
+/** Each cloud whose CLI signs in through the browser: its setup before signing in, the button
+ *  that signs in, and the command it runs. */
+const CLI_SIGN_INS = [
+  {
+    cloud: "AWS",
+    initial: editing({ useCliCreds: true }),
+    toStep: true,
+    button: /sign in \(browser\)/i,
+    cmd: "aws_login",
+    others: { aws_cli_identity: () => null },
+  },
+  {
+    cloud: "Azure",
+    initial: editing({ provider: "azure", host: "swedencentral", username: "" }),
+    toStep: false,
+    button: /sign in \(az login\)/i,
+    cmd: "cloud_login",
+    others: { azure_subscriptions: () => [] },
+  },
+  {
+    cloud: "Google Cloud",
+    initial: editing({ provider: "gcp", host: "europe-west1", username: "" }),
+    toStep: false,
+    button: /sign in \(gcloud\)/i,
+    cmd: "cloud_login",
+    others: { gcp_account: () => null },
+  },
+] as const;
+
+describe.each(CLI_SIGN_INS)("the $cloud CLI sign-in", ({ initial, toStep, button: signInButton, cmd, others }) => {
+  /** The setup on the step that signs in, its sign-in answering as `signIn` does. */
+  async function open(handlers: Partial<Record<string, Handler>>) {
+    const calls = installTauri({ ...others, ...handlers });
+    const user = userEvent.setup();
+    await renderSetup(initial);
+    if (toStep) await go(user, /^continue$/i);
+    return { calls, user };
+  }
+
+  it("cancelled, hides its log and says it was cancelled, not that it failed, then retries", async () => {
+    // Regression: a cancel read "Sign in failed", its log open on "✗ Sign-in cancelled.".
+    let cancel = () => {};
+    const { calls, user } = await open({
+      [cmd]: (a) => {
+        stream(a, "Opening the browser…");
+        return new Promise<void>((stopped) => {
+          cancel = stopped;
+        }).then(() => rejectWith({ code: "signInCancelled", message: "Sign-in cancelled." }));
+      },
+      // As the core does: the CLI is stopped and the sign-in answers that it was cancelled.
+      cloud_login_cancel: () => {
+        cancel();
+        return null;
+      },
+    });
+    await go(user, signInButton);
+    expect(document.body.textContent).toContain("Opening the browser…");
+    await go(user, /cancel sign-in/i);
+    expect(calls.some((c) => c.cmd === "cloud_login_cancel")).toBe(true);
+    expect(screen.getByRole("status").textContent).toContain("Sign-in cancelled");
+    expect(document.body.textContent).not.toContain("Opening the browser…");
+    expect(document.body.textContent).not.toMatch(/failed/i);
+    expect(screen.queryByRole("button", { name: /cancel sign-in/i })).toBeNull();
+    // Retry signs in again, its log back.
+    await go(user, /^\s*retry$/i);
+    expect(argsOf(calls, cmd)).toHaveLength(2);
+    expect(document.body.textContent).toContain("Opening the browser…");
+    expect(screen.queryByText("Sign-in cancelled")).toBeNull();
+  });
+
+  it("failed, keeps its log and says why", async () => {
+    const { user } = await open({ [cmd]: failsWith("the CLI isn't installed") });
+    await go(user, signInButton);
+    expect(document.body.textContent).toContain("✗ the CLI isn't installed");
+    expect(document.body.textContent).toContain("Sign in failed");
+    expect(screen.queryByText("Sign-in cancelled")).toBeNull();
+    expect(button(signInButton).hasAttribute("disabled")).toBe(false);
   });
 });

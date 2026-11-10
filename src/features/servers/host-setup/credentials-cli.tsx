@@ -29,7 +29,7 @@ export function AzureCredentials({ s }: { s: HostSetup }) {
           <SignedInNote s={s}>
             <span className="text-muted-foreground">{t("servers.setup.credentials.signedInAzure")}</span>
           </SignedInNote>
-          <SignInLog s={s} />
+          <SignInLog s={s} onRetry={s.signIn} />
           <Field label={t("servers.setup.credentials.subscription")}>
             <Select
               value={v.username}
@@ -55,7 +55,7 @@ export function AzureCredentials({ s }: { s: HostSetup }) {
             onSignIn={s.signIn}
             signingIn={s.signingIn}
           />
-          <SignInLog s={s} />
+          <SignInLog s={s} onRetry={s.signIn} />
           <Field label={t("servers.setup.credentials.subscriptionId")} hint={t("servers.setup.credentials.orPaste")}>
             <Input {...s.text("username")} placeholder="00000000-0000-0000-0000-000000000000" />
           </Field>
@@ -88,7 +88,7 @@ export function GcpCredentials({ s }: { s: HostSetup }) {
             onSignIn={s.signIn}
             signingIn={s.signingIn}
           />
-          <SignInLog s={s} />
+          <SignInLog s={s} onRetry={s.signIn} />
           <Field label={t("servers.setup.credentials.billingAccount")} hint={t("servers.setup.credentials.orType")}>
             <Input {...s.text("username")} placeholder="0X0X0X-0X0X0X-0X0X0X" />
           </Field>
@@ -110,7 +110,7 @@ function GcpAccount({ s, email }: { s: HostSetup; email: string }) {
           <span className="text-foreground">{email}</span>
         </span>
       </SignedInNote>
-      <SignInLog s={s} />
+      <SignInLog s={s} onRetry={s.signIn} />
       {s.gcpBilling.length > 0 ? (
         <Field label={t("servers.setup.credentials.billingAccount")} hint={t("servers.setup.credentials.billingHint")}>
           <Select
@@ -177,7 +177,7 @@ export function AwsCliCredentials({ s }: { s: HostSetup }) {
         onSignIn={s.awsSignIn}
         signingIn={s.signingIn}
       />
-      <SignInLog s={s} />
+      <SignInLog s={s} onRetry={s.awsSignIn} />
       {s.profiles.length > 0 && (
         <Field label={t("servers.setup.credentials.profile")}>
           <Select

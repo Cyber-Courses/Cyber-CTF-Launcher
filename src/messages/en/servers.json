@@ -298,7 +298,9 @@
       "logSigningIn": "Signing in to {cloud}…",
       "logSignedInAs": "✓ Signed in as {id}",
       "logSignedIn": "✓ Signed in",
-      "logNotSignedIn": "✗ Not signed in"
+      "logNotSignedIn": "✗ Not signed in",
+      "signInCancelled": "Sign-in cancelled",
+      "retrySignIn": "Retry"
     },
     "options": {
       "title": "Lab settings",

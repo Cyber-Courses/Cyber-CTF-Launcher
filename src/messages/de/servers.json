@@ -298,7 +298,9 @@
       "logSigningIn": "Anmeldung bei {cloud}…",
       "logSignedInAs": "✓ Angemeldet als {id}",
       "logSignedIn": "✓ Angemeldet",
-      "logNotSignedIn": "✗ Nicht angemeldet"
+      "logNotSignedIn": "✗ Nicht angemeldet",
+      "signInCancelled": "Anmeldung abgebrochen",
+      "retrySignIn": "Erneut versuchen"
     },
     "options": {
       "title": "Lab-Einstellungen",

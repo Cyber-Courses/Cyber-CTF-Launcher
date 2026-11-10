@@ -298,7 +298,9 @@
       "logSigningIn": "{cloud} にサインイン中…",
       "logSignedInAs": "✓ {id} としてサインインしました",
       "logSignedIn": "✓ サインインしました",
-      "logNotSignedIn": "✗ サインインしていません"
+      "logNotSignedIn": "✗ サインインしていません",
+      "signInCancelled": "サインインはキャンセルされました",
+      "retrySignIn": "再試行"
     },
     "options": {
       "title": "ラボの設定",

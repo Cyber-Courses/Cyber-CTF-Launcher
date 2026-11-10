@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { CheckCircle2, ExternalLink } from "lucide-react";
+import { CheckCircle2, CircleSlash, ExternalLink, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { LogConsole } from "@/components/ui/log-console";
@@ -68,9 +68,21 @@ export function SignInNote({ hint, label, onSignIn, signingIn }: { hint: ReactNo
   );
 }
 
-/** The sign-in's streamed log, once one ran, and a way out while it waits for the browser. */
-export function SignInLog({ s }: { s: HostSetup }) {
+/** The sign-in's streamed log, once one ran, and a way out while it waits for the browser; the
+ *  same for every cloud. Cancelled, the log goes: the step says so and offers `onRetry` (the
+ *  cloud's own sign-in). A failure keeps its log, ending on why. */
+export function SignInLog({ s, onRetry }: { s: HostSetup; onRetry: () => void }) {
   const t = useT();
+  if (s.signInState === "cancelled")
+    return (
+      <Note role="status" className="flex flex-wrap items-center gap-2">
+        <CircleSlash className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="text-muted-foreground">{t("servers.setup.credentials.signInCancelled")}</span>
+        <Button variant="outline" size="xs" className="ml-auto" onClick={onRetry}>
+          <RotateCcw className="size-3" /> {t("servers.setup.credentials.retrySignIn")}
+        </Button>
+      </Note>
+    );
   if (!s.signInLog) return null;
   return (
     <>

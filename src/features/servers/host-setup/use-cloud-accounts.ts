@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useCliSignIn } from "@/features/servers/host-setup/use-cli-sign-in";
 import {
   awsCliIdentity,
   awsLogin,
@@ -8,7 +9,6 @@ import {
   awsProfiles,
   azureSubscriptions,
   cloudLogin,
-  cloudLoginCancel,
   gcpAccount,
   gcpBillingAccounts,
   gcpOrganizations,
@@ -21,7 +21,6 @@ import {
   type OciConfig,
   type ServerHostInput,
 } from "@/lib/tauri";
-import { useRunLog } from "@/lib/use-run-log";
 import { ignore, warn } from "@/lib/failure";
 import { describeError } from "@/lib/errors";
 import { useLatest } from "@/lib/use-latest";
@@ -35,15 +34,14 @@ type SetInput = Dispatch<SetStateAction<ServerHostInput>>;
  * What the chosen cloud's CLI knows on this machine, read as the provider is picked so the setup
  * offers choices instead of ids to type: AWS profiles and the signed-in identity (with this
  * month's spend), Azure subscriptions, GCP billing accounts and organizations, and ~/.oci/config.
- * Also the CLI sign-in, with its log.
+ * Also the CLI sign-in, the same for every cloud (`useCliSignIn`).
  */
 export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: boolean, cloudProvider: CloudProvider) {
   const aws = v.provider === "aws";
   const azure = v.provider === "azure";
   const gcp = v.provider === "gcp";
   const oci = v.provider === "oci";
-  const signInLog = useRunLog();
-  const [signingIn, setSigningIn] = useState(false);
+  const cliSignIn = useCliSignIn();
 
   // Only meaningful in CLI-credentials mode, where the signed-in profile *is* the account.
   // With pasted access keys these would reflect the machine's default AWS chain (a different
@@ -54,17 +52,9 @@ export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: bo
   const gcpAccounts = useGcpAccounts(gcp, setV);
   const ociCfg = useOciConfig(oci, editing, setV);
 
-  /** Runs a sign-in, logging it below, with the button busy meanwhile. Never rejects: the log
-   *  says how it went. */
-  async function signInWith(cloud: string, task: (onLog: (l: string) => void) => Promise<string>) {
-    setSigningIn(true);
-    await signInLog.run(translate("servers.setup.credentials.logSigningIn", { cloud }), task);
-    setSigningIn(false);
-  }
-
   /** The AWS CLI's browser sign-in for the chosen profile, then who it signed in as. */
   const awsSignIn = () => {
-    void signInWith("AWS", async (onLog) => {
+    void cliSignIn.run("AWS", async (onLog) => {
       await awsLogin(v.awsProfile ?? null, onLog);
       const id = await awsCliIdentity(v.awsProfile ?? undefined);
       awsAccount.setAwsIdentity(id);
@@ -77,7 +67,7 @@ export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: bo
   const signIn = () => {
     const cloud = cloudProvider;
     if (cloud !== "azure" && cloud !== "gcp") return;
-    void signInWith(PROVIDER_NAMES[cloud], async (onLog) => {
+    void cliSignIn.run(PROVIDER_NAMES[cloud], async (onLog) => {
       await cloudLogin(cloud, onLog);
       if (cloud === "azure") azureAccount.loadAzureSubs();
       else gcpAccounts.loadGcpProjects();
@@ -85,14 +75,12 @@ export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: bo
     });
   };
 
-  /** Stops the sign-in in progress: its CLI is stopped, and the log says it was cancelled. */
-  const cancelSignIn = () => void cloudLoginCancel().catch(ignore("the sign-in ends on its own within its time limit"));
-
   return {
-    signingIn,
-    signInLog: signInLog.lines,
+    signingIn: cliSignIn.running,
+    signInState: cliSignIn.state,
+    signInLog: cliSignIn.lines,
     signIn,
-    cancelSignIn,
+    cancelSignIn: cliSignIn.cancel,
     awsSignIn,
     profiles: awsAccount.profiles,
     // What another provider (or access keys) left behind isn't shown.

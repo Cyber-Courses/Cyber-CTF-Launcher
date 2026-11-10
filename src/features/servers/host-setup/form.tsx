@@ -101,8 +101,12 @@ export function Select({ className, children, ...props }: React.SelectHTMLAttrib
 }
 
 /** A quiet inline box in a step (sign-in state, a key to copy): glass with a hairline ring. */
-export function Note({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cn("rounded-control bg-glass px-3 py-2.5 text-[0.75rem] shadow-[inset_0_0_0_1px_var(--border)]", className)}>{children}</div>;
+export function Note({ className, role, children }: { className?: string; role?: "status"; children: ReactNode }) {
+  return (
+    <div role={role} className={cn("rounded-control bg-glass px-3 py-2.5 text-[0.75rem] shadow-[inset_0_0_0_1px_var(--border)]", className)}>
+      {children}
+    </div>
+  );
 }
 
 /** A provider mark in a small glass tile, leading a pick-one row. */

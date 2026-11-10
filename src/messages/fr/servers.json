@@ -298,7 +298,9 @@
       "logSigningIn": "Connexion à {cloud}…",
       "logSignedInAs": "✓ Connecté en tant que {id}",
       "logSignedIn": "✓ Connecté",
-      "logNotSignedIn": "✗ Non connecté"
+      "logNotSignedIn": "✗ Non connecté",
+      "signInCancelled": "Connexion annulée",
+      "retrySignIn": "Réessayer"
     },
     "options": {
       "title": "Paramètres des labs",

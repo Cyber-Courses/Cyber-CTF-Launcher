@@ -298,7 +298,9 @@
       "logSigningIn": "Iniciando sesión en {cloud}…",
       "logSignedInAs": "✓ Sesión iniciada como {id}",
       "logSignedIn": "✓ Sesión iniciada",
-      "logNotSignedIn": "✗ Sin sesión iniciada"
+      "logNotSignedIn": "✗ Sin sesión iniciada",
+      "signInCancelled": "Inicio de sesión cancelado",
+      "retrySignIn": "Reintentar"
     },
     "options": {
       "title": "Ajustes de los labs",
