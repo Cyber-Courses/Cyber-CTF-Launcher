@@ -88,9 +88,8 @@ export function useRunTarget(
     runOptions: options,
     runOn,
     setRunOn,
-    // `step`, `pickPlatform`, `pickForm`, `pickHypervisor`, `pickEngine`, `back`, `resetSteps`,
-    // `isLastStep`, `hypervisors`: the step flow (see usePickerSteps).
-    ...steps,
+    /** The step flow: where the dialog is, what each step picks, Back (see usePickerSteps). */
+    steps,
     ports,
     setPorts,
     /** The helper-VM hypervisor a container lab here would use (for restarting it in the same one). */
@@ -105,17 +104,13 @@ export function useRunTarget(
     formAccount: pickedHost,
     /** The hypervisor rows' default (marked, preselected): the Settings choice, else the first ready. */
     defaultHypervisor: hypervisorsFor(runOn).at(0) ?? null,
-    /** The container engine a lab here runs on, every engine that answers (engine step rows when
-     *  more than one), and what the launch records (null = current context). */
-    engine,
-    engines,
-    chosenEngine,
-    /** The default engine row (marked, preselected): the current context, else the first. */
-    defaultEngine: runningOf(dockerEngine, engines) ?? engines.at(0) ?? null,
-    /** "Don't ask again" on the last step: checked, Start saves the path (`commitChoice`). */
-    remember,
-    setRemember,
-    commitChoice,
+    /** The container engines: the one a lab here runs on (`current`), every engine that answers
+     *  (`all`, the engine step's rows when more than one), what the launch records (`chosen`, null
+     *  = the current context), and the row marked and preselected (`preselected`: the current
+     *  context, else the first). */
+    engines: { current: engine, all: engines, chosen: chosenEngine, preselected: runningOf(dockerEngine, engines) ?? engines.at(0) ?? null },
+    /** "Don't ask again" on the last step: checked, Start saves the path (`commit`). */
+    dontAskAgain: { checked: remember, set: setRemember, commit: commitChoice },
     /** The per-machine VM form here (null: not this lab, or no ready hypervisor can run it). */
     perMachine,
     /** A cloud lab: the player's accounts it can run on, and the one picked. */

@@ -126,7 +126,7 @@ describe("late answers", () => {
     expect(result.current.perMachine).toMatchObject({ provider: "qemu", providers: ["qemu"] });
     expect(result.current.hasChoice).toBe(true);
     act(() => {
-      result.current.pickForm({ kind: "local-vms", provider: "qemu" });
+      result.current.steps.pickForm({ kind: "local-vms", provider: "qemu" });
     });
     expect(result.current.runOn).toEqual({ kind: "local-vms", provider: "qemu" });
     expect(result.current.chosen()).toEqual({ kind: "local-vms", provider: "qemu" });

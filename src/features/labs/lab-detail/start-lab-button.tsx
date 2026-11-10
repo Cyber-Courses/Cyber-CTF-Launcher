@@ -66,7 +66,7 @@ export function StartLabButton({
           if (run.hasChoice) setChoosing(true);
           // Nothing to ask: run here at once, carrying a remembered engine (ports are asked/saved
           // in the launch path as before).
-          else onStart(run.chosenEngine ? { kind: "local", engine: run.chosenEngine } : { kind: "local" });
+          else onStart(run.engines.chosen ? { kind: "local", engine: run.engines.chosen } : { kind: "local" });
         }}
         disabled={!loggedIn || !rt}
         title={startHint(t, { runtime: !!rt, loggedIn })}
@@ -84,11 +84,11 @@ export function StartLabButton({
           dockerRunning={dockerRunning}
           onClose={() => {
             setChoosing(false);
-            run.resetSteps();
+            run.steps.resetSteps();
           }}
           onStart={(target) => {
             setChoosing(false);
-            run.resetSteps();
+            run.steps.resetSteps();
             onStart(target);
           }}
         />
@@ -113,12 +113,12 @@ function StartDialog({
   const footer = <StartFooter run={run} cloudGated={!!cloud} onClose={onClose} onStart={onStart} />;
   return (
     <RunOnDialog onClose={onClose} footer={footer}>
-      {run.step === "ports" ? (
+      {run.steps.step === "ports" ? (
         <PortsStep title={lab.title} run={run} />
       ) : (
         <RunOnPicker
           title={lab.title}
-          step={run.step}
+          step={run.steps.step}
           value={run.runOn}
           disabled={busy}
           hosts={run.hosts}
@@ -128,23 +128,23 @@ function StartDialog({
           offerContainers={isDocker}
           localNote={isDocker ? t("labs.detail.localNoteContainers") : t("labs.detail.localNoteVm")}
           dockerRunning={isDocker ? dockerRunning : null}
-          engine={run.engine}
+          engine={run.engines.current}
           vmForms={run.vmForms}
           formTargets={run.formTargets}
           formAccount={run.formAccount}
-          onPickPlatform={run.pickPlatform}
-          onPickForm={run.pickForm}
-          hypervisors={run.hypervisors}
+          onPickPlatform={run.steps.pickPlatform}
+          onPickForm={run.steps.pickForm}
+          hypervisors={run.steps.hypervisors}
           defaultHypervisor={run.defaultHypervisor}
-          onPickHypervisor={run.pickHypervisor}
-          engines={run.engines}
-          defaultEngine={run.defaultEngine}
-          onPickEngine={run.pickEngine}
+          onPickHypervisor={run.steps.pickHypervisor}
+          engines={run.engines.all}
+          defaultEngine={run.engines.preselected}
+          onPickEngine={run.steps.pickEngine}
         />
       )}
       {/* "Don't ask again" sits on the last step of a this-machine path (not a cloud lab, and not a
           cloud account's form step, whose choice isn't remembered). */}
-      {run.isLastStep && !cloud && run.runOn.kind !== "host" && <RememberToggle run={run} />}
+      {run.steps.isLastStep && !cloud && run.runOn.kind !== "host" && <RememberToggle run={run} />}
       {cloud && (
         <div className="mt-4">
           <CloudLaunchNote preview={cloud.preview} autoStopHours={run.pickedAccount?.autoStopHours ?? null} />
@@ -170,8 +170,8 @@ function StartFooter({
   const t = useT();
   return (
     <>
-      {run.step !== "platform" && (
-        <Button variant="ghost" size="sm" onClick={run.back}>
+      {run.steps.step !== "platform" && (
+        <Button variant="ghost" size="sm" onClick={run.steps.back}>
           {t("labs.runOn.back")}
         </Button>
       )}
@@ -183,7 +183,7 @@ function StartFooter({
         size="sm"
         disabled={cloudGated && !run.pickedAccount}
         onClick={() => {
-          run.commitChoice();
+          run.dontAskAgain.commit();
           onStart(run.chosen());
         }}
       >
