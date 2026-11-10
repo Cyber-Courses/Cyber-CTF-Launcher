@@ -85,10 +85,32 @@ fn generate(dir: &Path) {
         terminal::TermEvent,
     );
     write_provider_names(dir);
+    write_docker_engines(dir);
     write_selftest_steps(dir);
     write_deploy_log(dir);
     write_index(dir);
 }
+
+/// The file of the Docker-compatible engines and their names as the player reads them
+/// ([`Engine::label`](machine::system::docker::Engine::label)), the one list the webview knows
+/// engines from (not a type: imported by its path, not from the index).
+fn write_docker_engines(dir: &Path) {
+    use machine::system::docker::Engine;
+    let names = Engine::ALL.iter().fold(String::new(), |mut lines, e| {
+        let _ = writeln!(lines, "  \"{}\": \"{}\",", e.id(), e.label());
+        lines
+    });
+    let ids = Engine::ALL.iter().map(|e| format!("\"{}\"", e.id())).collect::<Vec<_>>().join(", ");
+    let doc_all = "/** Every Docker-compatible engine the launcher knows, in its order (Rust's `Engine::ALL`). */";
+    let doc_names = "/** Each engine's name as the player reads it (Rust's `Engine::label`). */";
+    let text = format!(
+        "{HEADER}import type {{ DockerEngine }} from \"./DockerEngine\";\n\n{doc_all}\nexport const DOCKER_ENGINES: readonly DockerEngine[] = [{ids}];\n\n{doc_names}\nexport const DOCKER_ENGINE_NAMES: Record<DockerEngine, string> = {{\n{names}}};\n"
+    );
+    fs::write(dir.join(format!("{DOCKER_ENGINES}.ts")), text).unwrap();
+}
+
+/// The generated file of the Docker engines (values, not types).
+const DOCKER_ENGINES: &str = "DockerEngines";
 
 /// The file of the steps each server's VM test reports ([`runtime::server_selftest::PLANS`]),
 /// which the Server screen lists up front (not a type: imported by its path, not from the index).
@@ -198,7 +220,7 @@ fn write_index(dir: &Path) {
     let mut names: Vec<String> = fs::read_dir(dir)
         .unwrap()
         .filter_map(|e| e.unwrap().path().file_stem().map(|s| s.to_string_lossy().into_owned()))
-        .filter(|n| n != "index" && n != PROVIDER_NAMES && n != SELFTEST_STEPS && n != DEPLOY_LOG)
+        .filter(|n| n != "index" && n != PROVIDER_NAMES && n != DOCKER_ENGINES && n != SELFTEST_STEPS && n != DEPLOY_LOG)
         .collect();
     names.sort();
     let lines = names.iter().fold(String::new(), |mut lines, n| {

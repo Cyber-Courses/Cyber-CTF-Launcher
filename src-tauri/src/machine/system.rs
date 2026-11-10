@@ -51,14 +51,11 @@ pub struct SystemReport {
     /// the webview to say in the player's language).
     pub docker_denied: bool,
     pub docker_denied_hint: Option<crate::error::Wire>,
-    /// Which Docker-compatible engine answers, when one does: `docker-desktop`, `orbstack`,
-    /// `colima`, `rancher-desktop`, `podman` or `docker-engine`.
-    #[ts(type = r#""docker-desktop" | "orbstack" | "colima" | "rancher-desktop" | "podman" | "docker-engine" | null"#)]
-    pub docker_engine: Option<&'static str>,
+    /// Which Docker-compatible engine answers, when one does.
+    pub docker_engine: Option<docker::Engine>,
     /// Every engine whose Docker context answers right now. Several can run side by side
     /// (e.g. Docker Desktop and OrbStack); `docker_engine` is the one the CLI uses.
-    #[ts(type = r#"("docker-desktop" | "orbstack" | "colima" | "rancher-desktop" | "podman" | "docker-engine")[]"#)]
-    pub docker_engines_running: Vec<&'static str>,
+    pub docker_engines_running: Vec<docker::Engine>,
     /// Every Docker-compatible engine found on this machine (one per CLI context that names
     /// one or answers), each with its own state: the Machine page lists them all, not only
     /// the one the CLI uses.

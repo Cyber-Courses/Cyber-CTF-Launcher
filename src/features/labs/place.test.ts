@@ -4,7 +4,7 @@ import { deployDestination } from "@/features/labs/lab-detail/labels";
 import { isDockerEngine } from "@/features/machine/setup-steps/engines";
 import { labStatus } from "@/features/labs/labs-test-kit";
 import type { MessageKey, T, Vars } from "@/lib/i18n";
-import type { ServerHost } from "@/lib/tauri";
+import { DOCKER_ENGINES, type ServerHost } from "@/lib/tauri";
 import { must } from "@/components/test-support";
 
 // Where a lab runs, as the header, Details and the diagram's host card all say it.
@@ -85,7 +85,12 @@ describe("where a deploy is headed (the Deployment panel)", () => {
   });
 
   it("tells a Docker engine from a hypervisor by one rule", () => {
-    expect(["docker-desktop", "orbstack", "podman"].every(isDockerEngine)).toBe(true);
+    // Every engine the backend names, Rancher Desktop included: a lab run there kept its engine.
+    expect(DOCKER_ENGINES.every(isDockerEngine)).toBe(true);
+    expect(placeOf(labStatus({ place: "container", provider: "rancher-desktop" }), true, "orbstack", [])).toEqual({
+      kind: "engine",
+      engine: "rancher-desktop",
+    });
     expect(["docker", "virtualbox", "qemu", ""].some(isDockerEngine)).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SystemReport } from "@/lib/tauri";
+import { DOCKER_ENGINES, type SystemReport } from "@/lib/tauri";
 import { engineBadge, engineName, enginesFor, recommendedEngine } from "@/features/machine/setup-steps/engines";
 
 const report = (over: Partial<SystemReport> = {}) => ({ dockerEngine: null, dockerEnginesRunning: [], ...over }) as unknown as SystemReport;
@@ -22,8 +22,10 @@ describe("container engines", () => {
     expect(engineBadge(report(), "docker-desktop", "docker-engine")).toBeUndefined();
   });
 
-  it("names engines, Podman included", () => {
+  it("names every engine the backend names, Podman and Rancher Desktop included", () => {
     expect(engineName("podman")).toBe("Podman");
     expect(engineName("colima")).toBe("Colima");
+    expect(engineName("rancher-desktop")).toBe("Rancher Desktop");
+    expect(DOCKER_ENGINES.map(engineName).every((name) => name.length > 0 && name !== "Docker")).toBe(true);
   });
 });

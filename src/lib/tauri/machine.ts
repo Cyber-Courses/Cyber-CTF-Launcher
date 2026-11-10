@@ -3,6 +3,7 @@ import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
 import type {
   CloudClis,
   Dependency,
+  DockerEngine,
   EngineStatus,
   InstalledTool,
   MachineMetrics,
@@ -26,6 +27,7 @@ import type {
 export type {
   CloudClis,
   Dependency,
+  DockerEngine,
   EngineStatus,
   InstalledTool,
   MachineMetrics,
@@ -46,18 +48,8 @@ export type {
   WslState,
 };
 
-/** A Docker-compatible engine (`docker context` names it). */
-export type DockerEngine = NonNullable<SystemReport["dockerEngine"]>;
-
-/** Every engine the backend names, each once (the record makes a missing one a type error). */
-export const DOCKER_ENGINES = Object.keys({
-  "docker-desktop": true,
-  orbstack: true,
-  colima: true,
-  "rancher-desktop": true,
-  podman: true,
-  "docker-engine": true,
-} satisfies Record<DockerEngine, true>) as readonly DockerEngine[];
+/** Every Docker-compatible engine the backend names, and each one's name (Rust's `Engine`). */
+export { DOCKER_ENGINES, DOCKER_ENGINE_NAMES } from "@/lib/tauri/generated/DockerEngines";
 
 export const systemCheck = () => invoke<SystemReport>("system_check");
 /** Points the Docker CLI at another running engine (`docker context use`). */

@@ -12,52 +12,99 @@ const ENGINE_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const START_TRIES: u32 = 90;
 const START_POLL: Duration = Duration::from_secs(2);
 
+/// A Docker-compatible engine, as the webview names it (its id) and as the player reads it (its
+/// `label`). The one list of engines: the webview's is generated from it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename = "DockerEngine")]
+pub enum Engine {
+    DockerDesktop,
+    Orbstack,
+    Colima,
+    RancherDesktop,
+    Podman,
+    /// Docker Engine, the native daemon on Linux.
+    #[serde(rename = "docker-engine")]
+    Native,
+}
+
+impl Engine {
+    /// Every engine, in the launcher's order.
+    #[cfg(test)]
+    pub const ALL: [Engine; 6] = [Engine::DockerDesktop, Engine::Orbstack, Engine::Colima, Engine::RancherDesktop, Engine::Podman, Engine::Native];
+
+    /// Its id, as the webview and a launch request name it.
+    pub fn id(self) -> &'static str {
+        match self {
+            Engine::DockerDesktop => "docker-desktop",
+            Engine::Orbstack => "orbstack",
+            Engine::Colima => "colima",
+            Engine::RancherDesktop => "rancher-desktop",
+            Engine::Podman => "podman",
+            Engine::Native => "docker-engine",
+        }
+    }
+
+    /// Its name, as the player reads it (only the webview names engines).
+    #[cfg(test)]
+    pub fn label(self) -> &'static str {
+        match self {
+            Engine::DockerDesktop => "Docker Desktop",
+            Engine::Orbstack => "OrbStack",
+            Engine::Colima => "Colima",
+            Engine::RancherDesktop => "Rancher Desktop",
+            Engine::Podman => "Podman",
+            Engine::Native => "Docker Engine",
+        }
+    }
+}
+
 /// `docker info`'s operating system line: the daemon answers (for this account).
 pub(super) async fn daemon_os() -> Result<String> {
     run_read("docker", &["info", "--format", "{{.OperatingSystem}}"], None).await
 }
 
 /// Name the running engine from the daemon's OS string and the active CLI context.
-pub(super) async fn engine_in_use(os: &str) -> &'static str {
+pub(super) async fn engine_in_use(os: &str) -> Engine {
     let context = run_read("docker", &["context", "show"], None).await.unwrap_or_default();
     engine_named(os, &context)
 }
 
 /// The engine a daemon's OS string and the CLI's current context point to.
-fn engine_named(os: &str, context: &str) -> &'static str {
+fn engine_named(os: &str, context: &str) -> Engine {
     let (os, context) = (os.to_lowercase(), context.to_lowercase());
     if os.contains("orbstack") || context.contains("orbstack") {
-        "orbstack"
+        Engine::Orbstack
     } else if context.contains("colima") {
-        "colima"
+        Engine::Colima
     } else if os.contains("rancher") || context.contains("rancher") {
-        "rancher-desktop"
+        Engine::RancherDesktop
     } else if os.contains("podman") || context.contains("podman") {
-        "podman"
+        Engine::Podman
     } else if os.contains("docker desktop") || context.starts_with("desktop-") {
-        "docker-desktop"
+        Engine::DockerDesktop
     } else {
-        "docker-engine"
+        Engine::Native
     }
 }
 
 /// The engine behind a Docker CLI context, by the names the engines give their contexts.
 /// `default` only counts on Linux, where it is the native daemon; elsewhere its socket is a
 /// link to whichever desktop app installed it, so it says nothing on its own.
-pub(crate) fn context_engine(name: &str, os: &str) -> Option<&'static str> {
+fn context_engine(name: &str, os: &str) -> Option<Engine> {
     let n = name.to_lowercase();
     if n == "orbstack" {
-        Some("orbstack")
+        Some(Engine::Orbstack)
     } else if n.starts_with("desktop-") {
-        Some("docker-desktop")
+        Some(Engine::DockerDesktop)
     } else if n == "colima" || n.starts_with("colima-") {
-        Some("colima")
+        Some(Engine::Colima)
     } else if n == "rancher-desktop" {
-        Some("rancher-desktop")
+        Some(Engine::RancherDesktop)
     } else if n.starts_with("podman") {
-        Some("podman")
+        Some(Engine::Podman)
     } else if n == "default" && os == "linux" {
-        Some("docker-engine")
+        Some(Engine::Native)
     } else {
         None
     }
@@ -68,8 +115,7 @@ pub(crate) fn context_engine(name: &str, os: &str) -> Option<&'static str> {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineStatus {
-    #[ts(type = r#""docker-desktop" | "orbstack" | "colima" | "rancher-desktop" | "podman" | "docker-engine""#)]
-    pub engine: &'static str,
+    pub engine: Engine,
     pub context: String,
     pub running: bool,
     pub current: bool,
@@ -96,7 +142,7 @@ fn contexts_from(listing: &str) -> Vec<(String, bool)> {
 }
 
 /// The Docker CLI contexts with an engine behind them (unknown contexts are left out).
-async fn engine_contexts() -> Vec<(String, &'static str)> {
+async fn engine_contexts() -> Vec<(String, Engine)> {
     let os = std::env::consts::OS;
     contexts().await.into_iter().filter_map(|(name, _)| context_engine(&name, os).map(|e| (name, e))).collect()
 }
@@ -132,14 +178,14 @@ pub(super) async fn engines() -> Vec<EngineStatus> {
 }
 
 /// The engines whose daemon answers right now.
-pub(super) fn running_of(engines: &[EngineStatus]) -> Vec<&'static str> {
+pub(super) fn running_of(engines: &[EngineStatus]) -> Vec<Engine> {
     engines.iter().filter(|e| e.running).map(|e| e.engine).collect()
 }
 
 /// The Docker context behind `engine` on this machine, for pinning a lab to it (`DOCKER_CONTEXT` /
 /// `docker --context <name>`); an error when no context on this machine names that engine.
 pub async fn engine_context(engine: &str) -> Result<String> {
-    let found = engine_contexts().await.into_iter().find(|(_, e)| *e == engine).map(|(name, _)| name);
+    let found = engine_contexts().await.into_iter().find(|(_, e)| e.id() == engine).map(|(name, _)| name);
     found.ok_or_else(|| Error::Invalid(format!("no Docker context for {engine}")))
 }
 
@@ -197,12 +243,12 @@ mod tests {
 
     #[test]
     fn names_the_engine_from_the_daemon_and_the_context() {
-        assert_eq!(engine_named("OrbStack", "default"), "orbstack");
-        assert_eq!(engine_named("Ubuntu 24.04", "colima"), "colima");
-        assert_eq!(engine_named("Rancher Desktop WSL Distribution", "default"), "rancher-desktop");
-        assert_eq!(engine_named("Docker Desktop", "default"), "docker-desktop");
-        assert_eq!(engine_named("Debian", "desktop-linux"), "docker-desktop");
-        assert_eq!(engine_named("Ubuntu 24.04 LTS", "default"), "docker-engine");
+        assert_eq!(engine_named("OrbStack", "default").id(), "orbstack");
+        assert_eq!(engine_named("Ubuntu 24.04", "colima").id(), "colima");
+        assert_eq!(engine_named("Rancher Desktop WSL Distribution", "default").id(), "rancher-desktop");
+        assert_eq!(engine_named("Docker Desktop", "default").id(), "docker-desktop");
+        assert_eq!(engine_named("Debian", "desktop-linux").id(), "docker-desktop");
+        assert_eq!(engine_named("Ubuntu 24.04 LTS", "default").id(), "docker-engine");
     }
 
     #[test]
@@ -217,12 +263,12 @@ mod tests {
 
     #[test]
     fn context_names_map_to_engines_and_default_only_counts_on_linux() {
-        assert_eq!(context_engine("desktop-linux", "macos"), Some("docker-desktop"));
-        assert_eq!(context_engine("colima-dev", "macos"), Some("colima"));
-        assert_eq!(context_engine("my-remote", "macos"), None);
-        assert_eq!(context_engine("default", "linux"), Some("docker-engine"));
-        assert_eq!(context_engine("podman-machine-default", "macos"), Some("podman"));
-        assert_eq!(context_engine("rancher-desktop", "windows"), Some("rancher-desktop"));
+        assert_eq!(context_engine("desktop-linux", "macos").map(Engine::id), Some("docker-desktop"));
+        assert_eq!(context_engine("colima-dev", "macos").map(Engine::id), Some("colima"));
+        assert_eq!(context_engine("my-remote", "macos").map(Engine::id), None);
+        assert_eq!(context_engine("default", "linux").map(Engine::id), Some("docker-engine"));
+        assert_eq!(context_engine("podman-machine-default", "macos").map(Engine::id), Some("podman"));
+        assert_eq!(context_engine("rancher-desktop", "windows").map(Engine::id), Some("rancher-desktop"));
     }
 
     /// Several engines side by side: each context is asked with `docker --context <c> info`, so
@@ -239,10 +285,10 @@ mod tests {
             _ => ok(""),
         });
         let found = engines().await;
-        let brief: Vec<(&str, &str, bool, bool)> = found.iter().map(|e| (e.engine, e.context.as_str(), e.running, e.current)).collect();
+        let brief: Vec<(&str, &str, bool, bool)> = found.iter().map(|e| (e.engine.id(), e.context.as_str(), e.running, e.current)).collect();
         // The current context first, every context probed once.
         assert_eq!(brief, [("orbstack", "orbstack", true, true), ("docker-desktop", "desktop-linux", true, false), ("colima", "colima", false, false)]);
-        assert_eq!(running_of(&found), ["orbstack", "docker-desktop"]);
+        assert_eq!(running_of(&found), [Engine::Orbstack, Engine::DockerDesktop]);
         assert_eq!(tools.calls().iter().filter(|c| c.contains(" info ")).count(), 4, "{:?}", tools.calls());
     }
 
@@ -257,7 +303,7 @@ mod tests {
         });
         let found = engines().await;
         assert_eq!(found.len(), 1);
-        assert_eq!((found[0].engine, found[0].context.as_str(), found[0].running, found[0].current), ("docker-desktop", "default", true, true));
+        assert_eq!((found[0].engine.id(), found[0].context.as_str(), found[0].running, found[0].current), ("docker-desktop", "default", true, true));
     }
 
     #[tokio::test]
@@ -343,9 +389,9 @@ mod tests {
 
     #[test]
     fn more_engines_by_name() {
-        assert_eq!(engine_named("podman", "default"), "podman");
-        assert_eq!(engine_named("Ubuntu", "rancher-desktop"), "rancher-desktop");
-        assert_eq!(context_engine("colima", "macos"), Some("colima"));
-        assert_eq!(context_engine("default", "macos"), None);
+        assert_eq!(engine_named("podman", "default").id(), "podman");
+        assert_eq!(engine_named("Ubuntu", "rancher-desktop").id(), "rancher-desktop");
+        assert_eq!(context_engine("colima", "macos").map(Engine::id), Some("colima"));
+        assert_eq!(context_engine("default", "macos").map(Engine::id), None);
     }
 }
