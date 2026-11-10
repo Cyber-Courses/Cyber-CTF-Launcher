@@ -6,7 +6,7 @@ import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { warn } from "@/lib/failure";
 
 /** The backend's answer `ask` gives for lab `labId` (its run options, its start place), from its
- *  spec at the catalogue's commit; null until it answers, when it can't (said in a toast), or
+ *  spec at the catalogue's commit; null until it answers, when it can't (the failure logged), or
  *  without the lab's source. */
 export function useLabAnswer<A>(
   labId: string,

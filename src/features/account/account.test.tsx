@@ -255,4 +255,23 @@ describe("Account", () => {
     expect(warn).toHaveBeenCalledWith("Couldn’t sign out:", "keychain locked");
     warn.mockRestore();
   });
+
+  it("keeps the session shown when a failed sign-out can't read the one it kept, and logs why", async () => {
+    // Regression: the read's rejection escaped the sign-out unhandled.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    installTauri({ auth_logout: () => rejectWith("keychain locked"), auth_status: () => rejectWith("keychain locked") });
+    const kept = { loggedIn: true, name: "Ada", email: "ada@example.com" };
+    const onChange = vi.fn();
+    render(<Account status={kept} onChange={onChange} />);
+    await userEvent.setup().click(screen.getByTitle("Sign out"));
+    await flush();
+    await new Promise((r) => setTimeout(r, 0));
+    process.off("unhandledRejection", unhandled);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith("reading the session a failed sign-out kept:", "keychain locked");
+    expect(unhandled).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });

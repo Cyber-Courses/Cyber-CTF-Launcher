@@ -54,14 +54,15 @@ async function signInAndReport(onChange: (status: AuthStatus) => void) {
 }
 
 /** Signs out. When the keychain keeps the session, says so and shows the state it leaves (still
- *  signed in), rather than a sign-out the next start would undo. */
+ *  signed in), rather than a sign-out the next start would undo; when even that state can't be
+ *  read, the one shown stays, and the failure is logged. */
 async function signOut(onChange: (status: AuthStatus) => void) {
   try {
     await authLogout();
     onChange({ loggedIn: false, name: null, email: null });
   } catch (e) {
     tell(translate("account.signOutFailed"))(e);
-    onChange(await authStatus());
+    await authStatus().then(onChange, warn("reading the session a failed sign-out kept"));
   }
 }
 
