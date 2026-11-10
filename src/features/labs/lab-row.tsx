@@ -65,8 +65,9 @@ export const LabRow = memo(function LabRow(props: LabRowProps) {
       <RowLine
         {...props}
         onAskStop={() => {
-          // Stop deletes the lab's machines: asked first, as the lab's own page does.
-          const canShutdown = !status?.host && status?.place !== "local_vm";
+          // Stop deletes the lab's machines: asked first, as the lab's own page does, offering the
+          // page's Shut down where the backend's lifecycle offers it (its status's `controls`).
+          const canShutdown = !!status?.controls.includes("shutdown");
           void confirmRemoveOnRow(t, { title: lab.title, canShutdown, cloud: lab.runtime?.runtime === "CLOUD" }).then((yes) => {
             if (yes) onStop(lab);
           });
