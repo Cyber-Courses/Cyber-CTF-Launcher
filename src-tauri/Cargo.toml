@@ -99,8 +99,8 @@ reqwest = { version = "0.13", features = ["json", "form"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
 # layered crates, the published crates.io 1.0 line. Only `src/runtime/lab/` calls them:
-# the spec (`isoloom-spec`), the check plan (`isoloom-plan`), the backends' registry and the
-# resolved snapshot (`isoloom-targets`).
+# the spec (`isoloom-spec`), the backends' registry and the resolved snapshot
+# (`isoloom-targets`).
 isoloom-spec = "1.0.9"
 isoloom-targets = "1.0.9"
 # The run manifest's types, shared with the Isothrum runner: what `runtime/isothrum` reads of a run.
