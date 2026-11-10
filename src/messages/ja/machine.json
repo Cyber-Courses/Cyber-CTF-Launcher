@@ -113,7 +113,8 @@
     "remove": "削除",
     "freed": "{size} を解放しました。",
     "nothingFreed": "削除できるものはありませんでした（すべて使用中）。",
-    "cleanFailed": "ダウンロードを削除できませんでした"
+    "cleanFailed": "ダウンロードを削除できませんでした",
+    "readFailed": "Cyber CTF がダウンロードしたものを読み取れませんでした: {why}"
   },
   "selfTest": {
     "containerTitle": "コンテナラボのテスト",

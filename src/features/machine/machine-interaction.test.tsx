@@ -245,6 +245,16 @@ describe("Downloads panel: Terraform plugins", () => {
   });
 });
 
+describe("Downloads panel: a failed read", () => {
+  it("says the read failed and why, never that nothing was downloaded", async () => {
+    installTauri({ machine_storage: () => rejectWith({ code: "other", message: "docker images: permission denied" }) });
+    render(<DownloadsPanel />);
+    await flush();
+    expect(text()).toContain("Couldn't read what Cyber CTF downloaded: docker images: permission denied");
+    expect(text()).not.toContain("No lab downloads yet");
+  });
+});
+
 describe("Downloads panel: clean-up", () => {
   const storage = () => ({
     images: [{ name: "cyberctf/attack:latest", bytes: 3_400_000_000 }],

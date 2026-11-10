@@ -113,7 +113,8 @@
     "remove": "Supprimer",
     "freed": "{size} libérés.",
     "nothingFreed": "Rien n'a pu être supprimé (tout est utilisé).",
-    "cleanFailed": "Impossible de supprimer les téléchargements"
+    "cleanFailed": "Impossible de supprimer les téléchargements",
+    "readFailed": "Impossible de lire ce que Cyber CTF a téléchargé : {why}"
   },
   "selfTest": {
     "containerTitle": "Test d'un lab conteneurs",

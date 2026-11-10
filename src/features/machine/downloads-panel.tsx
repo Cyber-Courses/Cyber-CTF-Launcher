@@ -9,7 +9,8 @@ import { StatusDot } from "@/components/ui/status-pill";
 import { ListSkeleton } from "@/features/machine/machine-parts";
 import { formatBytes } from "@/lib/format";
 import { translate, useT } from "@/lib/i18n";
-import { tell } from "@/lib/failure";
+import { tell, warn } from "@/lib/failure";
+import { describeError } from "@/lib/errors";
 import { getAttackImage, OLD_ATTACK_IMAGES } from "@/lib/settings";
 import { machineStorage, machineStorageClean, type Storage } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -21,12 +22,11 @@ function attackImages(): string[] {
   return [getAttackImage(), ...OLD_ATTACK_IMAGES.filter((i) => i.includes(":") || i.includes("@"))];
 }
 
-/** Nothing downloaded, or nothing the storage read could see. */
-const NO_STORAGE: Storage = { images: [], boxes: [], plugins: [] };
-
-/** What Cyber CTF downloaded (null until read), and its confirmed clean-up: what it freed. */
+/** What Cyber CTF downloaded (null until read, or when the read failed: `readError` says why),
+ *  and its confirmed clean-up: what it freed. */
 function useDownloads() {
   const [storage, setStorage] = useState<Storage | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
   const [confirmClean, setConfirmClean] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [freed, setFreed] = useState<number | null>(null);
@@ -40,12 +40,20 @@ function useDownloads() {
     };
   }, []);
   const load = useCallback(() => {
-    const show = (s: Storage) => {
-      if (alive.current) setStorage(s);
-    };
-    machineStorage(attackImages()).then(show, () => {
-      show(NO_STORAGE);
-    });
+    machineStorage(attackImages()).then(
+      (s) => {
+        if (!alive.current) return;
+        setStorage(s);
+        setReadError(null);
+      },
+      (e: unknown) => {
+        // Never "nothing downloaded": what is stored is unknown, and the panel says why.
+        warn("reading what Cyber CTF downloaded")(e);
+        if (!alive.current) return;
+        setStorage(null);
+        setReadError(describeError(e));
+      },
+    );
   }, []);
   useEffect(() => {
     load();
@@ -66,6 +74,7 @@ function useDownloads() {
   }
   return {
     storage,
+    readError,
     confirmClean,
     setConfirmClean,
     cleaning,
@@ -80,7 +89,7 @@ function useDownloads() {
  *  (anything in use is kept; the player's own images and boxes are never listed). */
 export function DownloadsPanel() {
   const t = useT();
-  const { storage, confirmClean, setConfirmClean, cleaning, freed, clean } = useDownloads();
+  const { storage, readError, confirmClean, setConfirmClean, cleaning, freed, clean } = useDownloads();
   const storeItems = storage ? [...storage.images, ...storage.boxes, ...storage.plugins] : [];
   const storeTotal = storeItems.reduce((a, i) => a + i.bytes, 0);
   return (
@@ -103,7 +112,9 @@ export function DownloadsPanel() {
           ) : undefined
         }
       />
-      {storage === null ? (
+      {storage === null && readError !== null ? (
+        <p className="px-4 py-3 text-[0.8125rem] text-destructive">{t("machine.downloads.readFailed", { why: readError })}</p>
+      ) : storage === null ? (
         <ListSkeleton />
       ) : (
         <>

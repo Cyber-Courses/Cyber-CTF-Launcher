@@ -113,7 +113,8 @@
     "remove": "Remove",
     "freed": "Freed {size}.",
     "nothingFreed": "Nothing could be removed (all in use).",
-    "cleanFailed": "Couldn't remove the downloads"
+    "cleanFailed": "Couldn't remove the downloads",
+    "readFailed": "Couldn't read what Cyber CTF downloaded: {why}"
   },
   "selfTest": {
     "containerTitle": "Container lab test",
