@@ -211,6 +211,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   clicked. The picker now shows those places as refused, with the setting that refuses them, and
   the buttons are disabled with a line saying why. Resuming a paused or shut-down lab with a
   privileged machine is refused under `RefusePrivilegedLabs` too, where it used to boot it again.
+- **Browsing the launch picker leaves Settings' hypervisor alone.** Picking a hypervisor for a
+  container lab's VM in the "Where should the lab run?" dialog, even one then cancelled, made it
+  the Settings choice, and the next launch skipped the question. Only "Don't ask again" saves it
+  now, with the rest of the path.
 - **A cloud-services lab gets the account's region, subscription or project.** The lab's own
   Terraform module was never given where the account works when its provider names none: the AWS
   region (`AWS_REGION`), the Azure subscription, the Google Cloud project and region. They are now

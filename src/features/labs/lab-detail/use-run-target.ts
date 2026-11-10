@@ -78,7 +78,7 @@ export function useRunTarget(
   const steps = usePickerSteps({ runOn, setRunOn, setPickedEngine, pickProvider, vmForms, cloudFormsFor, hypervisorsFor, engines });
   // Start, with "don't ask again" checked, saves what the path chose so the steps are skipped next time.
   const commitChoice = () => {
-    if (remember) saveLaunchChoice(runOn, ports, engine, engines.length);
+    if (remember) saveLaunchChoice(runOn, { ports, engine, engineCount: engines.length, hypervisorCount: hypervisorsFor(runOn).length });
   };
 
   return {
@@ -160,23 +160,26 @@ function useEngineChoice(isDocker: boolean, current: DockerEngine | null, runnin
   return { engine, engines, chosenEngine, setPickedEngine: setPicked };
 }
 
-/** Saves the path's choices for next time: engine (when there was one to choose) and ports for the
- *  container path, else the VM form (its hypervisor is saved as it is picked). */
-function saveLaunchChoice(runOn: RunTarget, ports: PortMode, engine: DockerEngine | null, engineCount: number) {
+/** What the path chose, and how many engines and hypervisors it had to choose from. */
+type LaunchChoice = { ports: PortMode; engine: DockerEngine | null; engineCount: number; hypervisorCount: number };
+
+/** Saves the path's choices for next time: the engine (when there was one to choose) and the ports
+ *  for the container path; the VM form and its hypervisor (when there was one to choose, as
+ *  Settings' choice) for the VM path. Nothing else saves them: browsing the steps changes nothing. */
+function saveLaunchChoice(runOn: RunTarget, { ports, engine, engineCount, hypervisorCount }: LaunchChoice) {
   if (runOn.kind === "local") {
     setPortMode(ports);
     if (engineCount > 1) setDockerEngine(engine);
-  } else if (runOn.kind === "local-vm") {
-    setLocalVmForm("vm");
-  } else if (runOn.kind === "local-vms") {
-    setLocalVmForm("vms");
+  } else if (runOn.kind === "local-vm" || runOn.kind === "local-vms") {
+    setLocalVmForm(runOn.kind === "local-vm" ? "vm" : "vms");
+    if (hypervisorCount > 1) setVmProvider(runOn.provider);
   }
 }
 
 /** This machine's VM forms for a container lab: the helper VM (`localVm`, on any ready hypervisor in
  *  `localVms`) and, for a dual-form lab, one VM per machine (`perMachine`, on `perMachineVms`, which
- *  excludes UTM). `pickProvider` selects the form and its hypervisor, saving it as Settings' choice.
- *  Both default to the hypervisor chosen in Settings (readyVms lists it first), else the first ready. */
+ *  excludes UTM). `pickProvider` selects the form and its hypervisor for this launch only (Start
+ *  saves it with "don't ask again"). Both default to the hypervisor chosen in Settings (readyVms lists it first), else the first ready. */
 function useLocalVmChoice(
   rt: LabRuntimeInfo | null,
   { readyVms, hostArch, options }: { readyVms: Provider[]; hostArch: string; options: LabRunOptions | null },
@@ -192,7 +195,6 @@ function useLocalVmChoice(
   const perMachineVm = resolved(perMachineVms);
   const perMachine = perMachineVm ? { provider: perMachineVm, providers: perMachineVms } : null;
   const pickProvider = (form: "local-vm" | "local-vms", provider: Provider) => {
-    setVmProvider(provider);
     setSwitched(provider);
     setRunOn(vmFormTarget(form, provider));
   };

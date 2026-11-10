@@ -9,7 +9,7 @@ import { commands, installTauri, type Handler } from "@/test/tauri";
 import { NOTHING, VMS_HERE, containerMachine, rejectWith, startIn, upStatus } from "@/features/labs/labs-test-kit";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
 import { flush } from "@/test/ui";
-import { getDockerEngine, setDockerEngine, setLocalVmForm, setPortMode, setVmProvider } from "@/lib/settings";
+import { getDockerEngine, getLocalVmForm, getVmProvider, setDockerEngine, setLocalVmForm, setPortMode, setVmProvider } from "@/lib/settings";
 
 afterEach(() => {
   setPortMode(null);
@@ -159,6 +159,32 @@ describe("LabDetail: starting", () => {
     await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local-vm", provider: "virtualbox" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it('keeps a hypervisor picked without "Don\'t ask again" to that launch: the next one asks again', async () => {
+    installTauri({ ...quiet, lab_run_options: () => runOptions({ dockerVm: [path("virtualbox"), path("qemu")] }) });
+    const { user } = await clickStart({ readyVms: ["virtualbox", "qemu"] });
+    await user.click(within(screen.getByRole("dialog")).getByText("VM"));
+    await user.click(within(screen.getByRole("dialog")).getByText("QEMU"));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    // Settings' hypervisor is untouched, so the step is asked again.
+    expect(getVmProvider()).toBeNull();
+    await user.click(screen.getByRole("button", { name: /Start lab/ }));
+    await user.click(within(screen.getByRole("dialog")).getByText("VM"));
+    expect(within(screen.getByRole("dialog")).getByText("Which hypervisor?")).toBeTruthy();
+  });
+
+  it('saves the hypervisor and the VM form picked with "Don\'t ask again"', async () => {
+    installTauri({ ...quiet, lab_run_options: () => runOptions({ dockerVm: [path("virtualbox"), path("qemu")] }) });
+    const { user, h } = await clickStart({ readyVms: ["virtualbox", "qemu"] });
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByText("VM"));
+    await user.click(within(dialog).getByText("QEMU"));
+    await user.click(within(dialog).getByRole("switch", { name: "Don't ask again" }));
+    await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
+    expect(h.onStart).toHaveBeenCalledWith({ kind: "local-vm", provider: "qemu" });
+    expect(getVmProvider()).toBe("qemu");
+    expect(getLocalVmForm()).toBe("vm");
   });
 
   it("sends Containers to a ports step, and Back returns to the places", async () => {
