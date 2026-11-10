@@ -542,12 +542,8 @@ describe("DownloadsPanel", () => {
     expect(alert).toContain("docker is not running");
   });
 
-  it("shows an empty list when there are no downloads or they can't be read", async () => {
-    installTauri({
-      machine_storage: () => {
-        rejectWith("docker is not running");
-      },
-    });
+  it("shows an empty list when there are no downloads", async () => {
+    installTauri({ machine_storage: () => ({ images: [], boxes: [], plugins: [] }) });
     render(<DownloadsPanel />);
     await flush();
     expect(text()).toContain("No lab downloads yet");
