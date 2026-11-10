@@ -33,8 +33,17 @@ export const SELFTEST_PLAN: Record<"proxmox" | "esxi", PlanStep[]> = {
     command: "servers.selfTest.steps.command",
     cleanup: "servers.selfTest.steps.cleanupLab",
   }),
-  // Connection-only for now: the host answers, and its SSH port.
-  esxi: planOf(SELFTEST_STEPS.vmware_esxi, { connect: "servers.selfTest.steps.connect", ssh: "servers.selfTest.steps.esxiSsh" }),
+  // The same lab run the way a launch runs one on ESXi: Vagrant's ESXi plugin, the OVF Tool's upload.
+  esxi: planOf(SELFTEST_STEPS.vmware_esxi, {
+    connect: "servers.selfTest.steps.connect",
+    prepare: "servers.selfTest.steps.prepareLab",
+    image: "servers.selfTest.steps.esxiImage",
+    vm: "servers.selfTest.steps.esxiVm",
+    address: "servers.selfTest.steps.esxiAddress",
+    ssh: "servers.selfTest.steps.ssh",
+    command: "servers.selfTest.steps.command",
+    cleanup: "servers.selfTest.steps.cleanupLab",
+  }),
 };
 
 /** Each step's last state and detail, by step name (none for a step not reached). */

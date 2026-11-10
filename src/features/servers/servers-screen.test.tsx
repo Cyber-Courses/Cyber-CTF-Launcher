@@ -329,20 +329,31 @@ describe("HostRow", () => {
 });
 
 describe("ServerSelfTest", () => {
-  it("plans the ESXi steps it runs and reports a failed step", async () => {
+  it("plans the ESXi steps it runs and reports a failed step, the cleanup still run", async () => {
     installTauri({
       server_selftest: (a) => {
-        stream(a, { step: "connect", state: "ok" }, { step: "ssh", state: "running" }, { step: "ssh", state: "fail", detail: "no answer on 10.0.0.9:22" });
+        stream(
+          a,
+          { step: "connect", state: "ok" },
+          { step: "prepare", state: "ok" },
+          { step: "image", state: "ok", detail: "Box bento/debian-12 v202510.26.0 (amd64)" },
+          { step: "vm", state: "ok" },
+          { step: "address", state: "fail", detail: "The test VM got no address on port group VM Network within 4 minutes" },
+          { step: "cleanup", state: "ok" },
+        );
         return null;
       },
     });
     const onDone = vi.fn();
     render(<ServerSelfTest id="esxi" provider="vmware_esxi" onDone={onDone} />);
     await flush(30);
-    expect(screen.getByText("Reach the ESXi host over SSH")).toBeTruthy();
+    expect(screen.getByText("Upload the test VM to the ESXi datastore")).toBeTruthy();
+    expect(screen.getByText("Box bento/debian-12 v202510.26.0 (amd64)")).toBeTruthy();
+    expect(screen.getByText("The test VM gets an address on the host's network")).toBeTruthy();
+    expect(screen.getByText("Run a command in the VM")).toBeTruthy();
     expect(screen.queryByText("Start the test VMs")).toBeNull();
     expect(screen.getByText("VM test failed")).toBeTruthy();
-    expect(screen.getByText("no answer on 10.0.0.9:22")).toBeTruthy();
+    expect(screen.getByText("The test VM got no address on port group VM Network within 4 minutes")).toBeTruthy();
     expect(onDone).toHaveBeenCalledWith("fail");
   });
 

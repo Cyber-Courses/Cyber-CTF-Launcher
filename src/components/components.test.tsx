@@ -14,7 +14,7 @@ import { RunOnDialog } from "@/features/labs/run-on";
 import { useEscapeBack } from "@/features/labs/lab-detail/use-escape-back";
 import { ServerSelfTest } from "@/features/servers/server-self-test";
 import { getPortMode } from "@/lib/settings";
-import type { ServerHost } from "@/lib/tauri";
+import { SELFTEST_STEPS, type ServerHost } from "@/lib/tauri";
 import { commands, installTauri, stream } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must } from "@/components/test-support";
@@ -288,7 +288,7 @@ describe("ServerSelfTest", () => {
   it("passes on ESXi when every step passes", async () => {
     installTauri({
       server_selftest: (a) => {
-        stream(a, { step: "connect", label: "Connect", state: "ok", detail: null }, { step: "ssh", label: "SSH", state: "ok", detail: null });
+        stream(a, ...SELFTEST_STEPS.vmware_esxi.map((step) => ({ step, label: step, state: "ok", detail: null })));
         return null;
       },
     });

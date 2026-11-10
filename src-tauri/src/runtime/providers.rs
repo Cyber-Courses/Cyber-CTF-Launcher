@@ -401,57 +401,70 @@ pub fn ready(statuses: &[ProviderStatus], vagrant_installed: bool) -> Vec<Provid
 
 pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
     let plugins = if vagrant_installed { installed_plugins().await } else { Vec::new() };
-
     let mut statuses = Vec::new();
     for provider in Provider::ALL {
-        // Only surface providers that can run on this machine, not the whole catalogue.
-        if !provider.applicable() {
-            continue;
-        }
-
-        // The hypervisor layer (the VM software itself).
-        let hypervisor = provider.hypervisor_installed().await;
-        if !provider.offered(hypervisor == Some(true)) {
-            continue;
-        }
-
-        // The Vagrant layer (the plugin that drives this provider): present, and not older than
-        // the one the launcher drives labs with.
-        let plugin = provider.plugin().map(str::to_string);
-        let found = plugin.as_deref().and_then(|p| plugins.iter().find(|(name, _)| name == p));
-        let plugin_version = found.and_then(|(_, version)| version.clone());
-        let plugin_installed = match &plugin {
-            None => true, // built in to Vagrant (virtualbox, hyperv)
-            Some(_) => vagrant_installed && found.is_some() && plugin_too_old(provider, plugin_version.as_deref()).is_none(),
-        };
-        // The hypervisor's own version, where its plugin is particular about it (UTM).
-        let hypervisor_version = if hypervisor == Some(true) { provider.hypervisor_version().await } else { None };
-
-        // Installed is not the same as working: `VBoxManage --version` never talks to VirtualBox's
-        // service (VBoxSVC), which can wedge so that every real call hangs (a deploy then sits on
-        // "Bringing machine up" forever). Ask it something that needs the service, briefly.
-        let unresponsive = provider == Provider::Virtualbox
-            && hypervisor == Some(true)
-            && crate::platform::exec::run_env_timed("VBoxManage", &["list", "runningvms"], None, &[], VBOX_SERVICE_WAIT).await.is_err_and(|e| timed_out(&e));
-
-        // Vagrant's Hyper-V provider refuses every command (status reads too) from an account
-        // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
-        let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !crate::platform::exec::may_manage_hyperv();
-
-        let detection = Detection {
-            unresponsive,
-            hypervisor,
-            hypervisor_version: hypervisor_version.as_deref(),
-            plugin: plugin.as_deref(),
-            plugin_installed,
-            plugin_version: plugin_version.as_deref(),
-            needs_admin,
-        };
-        let reason = unavailable_reason(provider, vagrant_installed, detection);
-
-        statuses.push(ProviderStatus { provider, remote: provider.is_remote(), available: reason.is_none(), hypervisor, plugin, plugin_installed, reason });
+        statuses.extend(detect_one(provider, vagrant_installed, &plugins).await);
     }
     statuses
+}
+
+/// `provider`'s status as the machine report gives it ([`detect`]), checked alone: none when it
+/// isn't offered on this machine. What the server self-test reads before it runs a lab on ESXi.
+pub async fn status(provider: Provider) -> Option<ProviderStatus> {
+    let vagrant_installed = run_read("vagrant", &["--version"], None).await.is_ok();
+    let plugins = if vagrant_installed { installed_plugins().await } else { Vec::new() };
+    detect_one(provider, vagrant_installed, &plugins).await
+}
+
+/// One provider's status, given whether Vagrant is installed and its `plugins`: none when it
+/// isn't offered on this machine.
+async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(String, Option<String>)]) -> Option<ProviderStatus> {
+    // Only surface providers that can run on this machine, not the whole catalogue.
+    if !provider.applicable() {
+        return None;
+    }
+
+    // The hypervisor layer (the VM software itself).
+    let hypervisor = provider.hypervisor_installed().await;
+    if !provider.offered(hypervisor == Some(true)) {
+        return None;
+    }
+
+    // The Vagrant layer (the plugin that drives this provider): present, and not older than
+    // the one the launcher drives labs with.
+    let plugin = provider.plugin().map(str::to_string);
+    let found = plugin.as_deref().and_then(|p| plugins.iter().find(|(name, _)| name == p));
+    let plugin_version = found.and_then(|(_, version)| version.clone());
+    let plugin_installed = match &plugin {
+        None => true, // built in to Vagrant (virtualbox, hyperv)
+        Some(_) => vagrant_installed && found.is_some() && plugin_too_old(provider, plugin_version.as_deref()).is_none(),
+    };
+    // The hypervisor's own version, where its plugin is particular about it (UTM).
+    let hypervisor_version = if hypervisor == Some(true) { provider.hypervisor_version().await } else { None };
+
+    // Installed is not the same as working: `VBoxManage --version` never talks to VirtualBox's
+    // service (VBoxSVC), which can wedge so that every real call hangs (a deploy then sits on
+    // "Bringing machine up" forever). Ask it something that needs the service, briefly.
+    let unresponsive = provider == Provider::Virtualbox
+        && hypervisor == Some(true)
+        && crate::platform::exec::run_env_timed("VBoxManage", &["list", "runningvms"], None, &[], VBOX_SERVICE_WAIT).await.is_err_and(|e| timed_out(&e));
+
+    // Vagrant's Hyper-V provider refuses every command (status reads too) from an account
+    // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
+    let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !crate::platform::exec::may_manage_hyperv();
+
+    let detection = Detection {
+        unresponsive,
+        hypervisor,
+        hypervisor_version: hypervisor_version.as_deref(),
+        plugin: plugin.as_deref(),
+        plugin_installed,
+        plugin_version: plugin_version.as_deref(),
+        needs_admin,
+    };
+    let reason = unavailable_reason(provider, vagrant_installed, detection);
+
+    Some(ProviderStatus { provider, remote: provider.is_remote(), available: reason.is_none(), hypervisor, plugin, plugin_installed, reason })
 }
 
 /// Why Hyper-V can't be used by this account yet, and the two ways out.

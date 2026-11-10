@@ -1,18 +1,17 @@
 //! The Proxmox self-test: a real throwaway lab on the server, through the exact path a lab takes.
 //!
-//! A one-machine Isoloom lab (one small Debian VM on its own lab network, nothing to install) is
-//! generated for the `proxmox` target and run by the Isothrum runner ([`ServerRun`]) with this
+//! The test lab ([`lab_run::LAB`]: one small Debian VM on its own lab network, nothing to install)
+//! is generated for the `proxmox` target and run by the Isothrum runner ([`ServerRun`]) with this
 //! server's profile and placement (node, datastores, uplink bridge, the jump when the lab bridge
 //! is internal), so it proves what a launch needs: the cloud image downloaded, the lab network
 //! (an SDN vnet) created, the VMs started, the lab's router given an address on the uplink (DHCP
 //! and internet), the machine reached over SSH through it and a command run inside, then
 //! everything destroyed. The teardown always runs, even after a failure, and says what is left
-//! when it fails. The run is named `cyberctf-server-selftest-<host id>`, which no catalogue lab
-//! takes.
+//! when it fails. The run is named `cyberctf-server-selftest-<host id>` ([`lab_run::run_id`]).
 
 use std::path::{Path, PathBuf};
 
-use super::{Ran, Reporter};
+use super::lab_run::{self, Course, SSH, Step, TestRun, run_id};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::docker::Check;
@@ -21,53 +20,18 @@ use crate::runtime::launch::server_place;
 use crate::runtime::paths::runner_home;
 use crate::runtime::{Runtime, lab, server};
 
-/// The test lab: one Debian VM on a lab network with internet (so the module adds its router on
-/// the uplink), a command run inside it as its check. The `/24` is the lab's own, behind its
-/// router, so it never meets the server's networks.
-pub(super) const LAB: &str = "version: 1
-name: cyberctf-server-selftest
-networks:
-  test: { cidr: 10.254.250.0/24, internet: true }
-machines:
-  probe:
-    os: debian@12
-    networks: { test: 10 }
-checks:
-  - { name: command inside the test VM, from: probe, exec: uname -sm, expect: Linux }
-";
-
-/// The steps the run reports, in order (the frontend shows the same plan).
-const PREPARE: (&str, &str) = ("prepare", "Prepare the test lab");
-const IMAGE: (&str, &str) = ("image", "Download the Debian cloud image");
-const NETWORK: (&str, &str) = ("network", "Create the test's lab network");
-const VM: (&str, &str) = ("vm", "Start the test VMs");
-const UPLINK: (&str, &str) = ("uplink", "The lab's router gets an address on the uplink");
-const SSH: (&str, &str) = ("ssh", "Reach the test VM over SSH");
-const COMMAND: (&str, &str) = ("command", "Run a command inside the test VM");
-const CLEANUP: (&str, &str) = ("cleanup", "Remove everything the test created");
+/// The steps of its own the run reports, in order (the frontend shows the same plan).
+const IMAGE: Step = ("image", "Download the Debian cloud image");
+const NETWORK: Step = ("network", "Create the test's lab network");
+const VM: Step = ("vm", "Start the test VMs");
+const UPLINK: Step = ("uplink", "The lab's router gets an address on the uplink");
 
 /// The steps the test reports, in order (the frontend lists the same: [`super::PLANS`]).
 #[cfg(test)]
-pub(super) const PLAN: [&str; 9] = [super::CONNECT, PREPARE.0, IMAGE.0, NETWORK.0, VM.0, UPLINK.0, SSH.0, COMMAND.0, CLEANUP.0];
-
-/// The steps `up` goes through, each ended by a line of its own (see [`marker`]).
-const UP: [(&str, &str); 5] = [IMAGE, NETWORK, VM, UPLINK, SSH];
-
-/// The id the test's run is named after (`cyberctf-<id>`).
-pub(super) fn run_id(host: &str) -> String {
-    format!("server-selftest-{host}")
-}
-
-/// What the test drives: the lab's run on the server (the runner's [`ServerRun`] in the app; a
-/// scripted one in tests).
-pub(super) trait TestRun {
-    async fn up(&self, log: &mut (dyn FnMut(String) + Send)) -> Result<()>;
-    async fn check(&self) -> Result<Check>;
-    async fn down(&self, log: &mut (dyn FnMut(String) + Send)) -> Result<()>;
-}
+pub(super) const PLAN: [&str; 9] = [super::CONNECT, lab_run::PREPARE.0, IMAGE.0, NETWORK.0, VM.0, UPLINK.0, SSH.0, lab_run::COMMAND.0, lab_run::CLEANUP.0];
 
 /// The test lab's run on the server, where a launch would put it.
-struct OnServer {
+pub(super) struct OnServer {
     run: ServerRun,
     place: ServerPlace,
 }
@@ -85,47 +49,30 @@ impl TestRun for OnServer {
 }
 
 /// Writes the test lab into `work` and generates it for Proxmox, as a launch does.
-pub(super) fn write_lab(work: &Path) -> Result<PathBuf> {
+fn write_lab(work: &Path) -> Result<PathBuf> {
     let dir = work.join("lab");
-    std::fs::create_dir_all(&dir)?;
-    std::fs::write(dir.join("isoloom.yml"), LAB)?;
-    lab::prepare(&dir, lab::terraform(&dir, Runtime::Vm, "proxmox").1)?;
-    Ok(dir)
+    lab_run::write_lab(work, lab::terraform(&dir, Runtime::Vm, "proxmox").1)
 }
 
-/// The test lab's run on server `id`, from its folder in `work`.
-async fn on_server(dirs: &AppDirs, id: &str, conn: &server::Connection, dir: &Path) -> Result<OnServer> {
-    let run = ServerRun::new(&runner_home(dirs)?, dir, &run_id(id), Runtime::Vm)?;
-    let place = server_place(dirs, id, conn, &run).await?;
+/// The test lab's run on server `id`, from its folder `dir`: also how a lab a previous test kept
+/// is removed ([`lab_run::clear_kept`]).
+pub(super) async fn open(dirs: &AppDirs, id: &str, conn: &server::Connection, dir: PathBuf) -> Result<OnServer> {
+    let run = ServerRun::new(&runner_home(dirs)?, &dir, &run_id(id), Runtime::Vm)?;
+    let place = Box::pin(server_place(dirs, id, conn, &run)).await?;
     Ok(OnServer { run, place })
 }
 
-/// A previous test whose teardown failed left its lab on the server: remove it from the folder it
-/// kept, before anything else.
-pub(super) async fn leftover(dirs: &AppDirs, id: &str, conn: &server::Connection, work: &Path) -> Result<()> {
-    let dir = work.join("lab");
-    if !dir.join(".isoloom").exists() {
-        return Ok(());
-    }
-    let on = Box::pin(on_server(dirs, id, conn, &dir)).await?;
-    Box::pin(on.down(&mut |_| {})).await
+/// The test lab written into `work`, generated for Proxmox, and its run opened where a launch
+/// would put it, with the node it runs on.
+pub(super) async fn prepare(dirs: &AppDirs, id: &str, conn: &server::Connection, work: &Path) -> Result<(OnServer, Option<String>)> {
+    let on = Box::pin(open(dirs, id, conn, write_lab(work)?)).await?;
+    let node = on.place.node.clone().map(|n| format!("on node {n}"));
+    Ok((on, node))
 }
 
-pub(super) async fn run(dirs: &AppDirs, id: &str, r: &Reporter, conn: &server::Connection, work: &Path) -> Ran {
-    let prepared = r
-        .step(PREPARE.0, PREPARE.1, async {
-            let dir = write_lab(work)?;
-            let on = Box::pin(on_server(dirs, id, conn, &dir)).await?;
-            let node = on.place.node.clone().map(|n| format!("on node {n}"));
-            Ok((on, node))
-        })
-        .await;
-    match prepared {
-        // Nothing reached the server yet: nothing to remove.
-        Err(e) => Ran { result: Err(e), cleaned: true },
-        // Boxed: a whole lab's run on the server makes a large future.
-        Ok(on) => Box::pin(test(r, &on, &bridge_of(conn))).await,
-    }
+/// How the test lab comes up on server `conn`: its router on the profile's uplink bridge.
+pub(super) fn course(conn: &server::Connection) -> impl Course + use<> {
+    Pve { bridge: bridge_of(conn) }
 }
 
 /// The uplink bridge the lab's router uses (the profile's, else the module's default).
@@ -133,118 +80,31 @@ fn bridge_of(conn: &server::Connection) -> String {
     conn.tf_vars.iter().find(|(k, _)| k == "uplink_bridge").map_or_else(|| "vmbr0".to_owned(), |(_, v)| v.clone())
 }
 
-/// Brings the test lab up, step by step, runs its command, and always tears it down.
-pub(super) async fn test(r: &Reporter, run: &impl TestRun, bridge: &str) -> Ran {
-    let mut steps = Steps::new(r);
-    steps.start();
-    let up = run.up(&mut |line| steps.line(&line)).await;
-    let result = match up {
-        Ok(()) => {
-            steps.finish();
-            command(r, run).await
-        }
-        Err(e) => Err(steps.fail(&e, bridge)),
-    };
-    let down = cleanup(r, run).await;
-    let cleaned = down.is_ok();
-    Ran { result: result.and(down), cleaned }
+/// How the test lab comes up on Proxmox: Terraform's lines for the image, the lab network and the
+/// VM, then the runner waiting for the lab to be ready; `bridge` is the uplink its router uses.
+struct Pve {
+    bridge: String,
 }
 
-/// The command step: the lab's check, a command run inside the VM over SSH.
-async fn command(r: &Reporter, run: &impl TestRun) -> Result<()> {
-    r.step(COMMAND.0, COMMAND.1, async {
-        let check = run.check().await?;
-        if check.ok {
-            Ok(((), Some(check.output.lines().find(|l| l.contains("Linux")).unwrap_or("Linux").trim().to_owned())))
-        } else {
-            Err(Error::Invalid(format!("the command inside the test VM failed: {}", check.output.trim())))
-        }
-    })
-    .await
-}
+impl Course for Pve {
+    const UP: &'static [Step] = &[IMAGE, NETWORK, VM, UPLINK, SSH];
 
-/// The teardown, reported whatever happened before; a failure says what is left.
-async fn cleanup(r: &Reporter, run: &impl TestRun) -> Result<()> {
-    r.send(CLEANUP.0, CLEANUP.1, "running", None);
-    match run.down(&mut |line| r.progress(CLEANUP.0, CLEANUP.1, &line)).await {
-        Ok(()) => {
-            r.send(CLEANUP.0, CLEANUP.1, "ok", Some("Nothing of the test is left on the server.".into()));
-            Ok(())
-        }
-        Err(e) => {
-            let left = format!(
-                "Couldn't remove everything the test created on the server ({e}). Its VMs (named iso<slot>-…, tagged cyberctf-server-selftest) and their lab network may still be there: the next test removes them first, or delete them in the Proxmox web UI."
-            );
-            r.send(CLEANUP.0, CLEANUP.1, "fail", Some(left.clone()));
-            Err(Error::Invalid(left))
-        }
+    fn ends(&mut self, line: &str) -> Option<usize> {
+        marker(line)
+    }
+
+    fn explain(&self, raw: &str) -> Option<(usize, String)> {
+        explain(raw, &self.bridge)
+    }
+
+    fn left(&self, e: &Error) -> String {
+        format!(
+            "Couldn't remove everything the test created on the server ({e}). Its VMs (named iso<slot>-…, tagged cyberctf-server-selftest) and their lab network may still be there: the next test removes them first, or delete them in the Proxmox web UI."
+        )
     }
 }
 
-/// Where `up` is among its steps: the first not yet done, moved on by the lines that end each.
-struct Steps<'a> {
-    r: &'a Reporter,
-    done: usize,
-}
-
-impl<'a> Steps<'a> {
-    fn new(r: &'a Reporter) -> Self {
-        Steps { r, done: 0 }
-    }
-
-    fn start(&self) {
-        if let Some((step, label)) = UP.get(self.done) {
-            self.r.send(step, label, "running", None);
-        }
-    }
-
-    /// A line of the run: the end of a step (and of any before it), else the running step's
-    /// latest detail.
-    fn line(&mut self, line: &str) {
-        match marker(line) {
-            Some(at) if at >= self.done => {
-                while self.done <= at {
-                    let (step, label) = UP[self.done];
-                    self.r.send(step, label, "ok", None);
-                    self.done += 1;
-                }
-                self.start();
-            }
-            _ => {
-                if let Some((step, label)) = UP.get(self.done) {
-                    self.r.progress(step, label, line);
-                }
-            }
-        }
-    }
-
-    /// `up` succeeded: every step is done (SSH reached the machine for its ready check).
-    fn finish(&mut self) {
-        while self.done < UP.len() {
-            let (step, label) = UP[self.done];
-            self.r.send(step, label, "ok", None);
-            self.done += 1;
-        }
-    }
-
-    /// `up` failed with `e`: the step it failed at says why in the player's terms; the ones before
-    /// it that no line ended are skipped. The error returned is that explanation.
-    fn fail(&mut self, e: &Error, bridge: &str) -> Error {
-        let raw = e.to_string();
-        let (at, why) = explain(&raw, bridge).map_or((self.done.min(UP.len() - 1), raw.clone()), |(at, why)| (at.max(self.done), why));
-        while self.done < at {
-            let (step, label) = UP[self.done];
-            self.r.send(step, label, "skip", None);
-            self.done += 1;
-        }
-        let (step, label) = UP[at];
-        self.r.send(step, label, "fail", Some(why.clone()));
-        self.done = UP.len();
-        Error::Invalid(why)
-    }
-}
-
-/// The resources whose creation ends a step of [`UP`], by what of their Terraform address can't
+/// The resources whose creation ends a step of [`Pve::UP`], by what of their Terraform address can't
 /// be masked: the runner replaces a saved secret's value in every line, and a credential that is,
 /// or contains, "proxmox" turns `proxmox_download_file.debian_12` into `***_download_file.debian_12`.
 /// So the provider's prefix isn't matched, only the rest of the type and the resource's name.
@@ -252,7 +112,7 @@ const DOWNLOAD_FILE: &str = "_download_file.";
 const SDN_APPLY: &str = "_sdn_applier.env";
 const PROBE_VM: &str = "_virtual_environment_vm.probe";
 
-/// The step a line of the run ends, as its index in [`UP`]: Terraform's line for the image, the
+/// The step a line of the run ends, as its index in [`Pve::UP`]: Terraform's line for the image, the
 /// lab network's SDN apply, the lab machine's VM, then the runner waiting for the machines to be
 /// ready (the apply, and so the router's uplink address, done).
 fn marker(line: &str) -> Option<usize> {
@@ -296,69 +156,12 @@ fn explain(raw: &str, bridge: &str) -> Option<(usize, String)> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
+    use super::super::lab_run::scripted::*;
     use super::*;
-    use crate::runtime::selftest_report::Event;
 
-    /// A scripted run: the lines its `up` prints and how it ends, its check, its teardown, and
-    /// what was called.
-    struct Scripted {
-        lines: Vec<&'static str>,
-        up: Option<&'static str>,
-        check_ok: bool,
-        down: Option<&'static str>,
-        calls: Mutex<Vec<&'static str>>,
-    }
-
-    impl Scripted {
-        fn new(lines: &[&'static str], up: Option<&'static str>) -> Self {
-            Scripted { lines: lines.to_vec(), up, check_ok: true, down: None, calls: Mutex::new(Vec::new()) }
-        }
-        fn calls(&self) -> Vec<&'static str> {
-            self.calls.lock().unwrap().clone()
-        }
-    }
-
-    impl TestRun for Scripted {
-        // A scripted run answers at once: its steps are ready futures.
-        fn up(&self, log: &mut (dyn FnMut(String) + Send)) -> impl Future<Output = Result<()>> {
-            self.calls.lock().unwrap().push("up");
-            self.lines.iter().for_each(|l| log((*l).to_owned()));
-            std::future::ready(self.up.map_or(Ok(()), |e| Err(Error::Invalid(e.into()))))
-        }
-        fn check(&self) -> impl Future<Output = Result<Check>> {
-            self.calls.lock().unwrap().push("check");
-            std::future::ready(Ok(Check { available: true, ok: self.check_ok, output: "Linux x86_64".into(), results: Vec::new() }))
-        }
-        fn down(&self, _log: &mut (dyn FnMut(String) + Send)) -> impl Future<Output = Result<()>> {
-            self.calls.lock().unwrap().push("down");
-            std::future::ready(self.down.map_or(Ok(()), |e| Err(Error::Invalid(e.into()))))
-        }
-    }
-
-    type Seen = Arc<Mutex<Vec<Event>>>;
-
-    fn reporter() -> (Reporter, Seen) {
-        let seen: Seen = Arc::new(Mutex::new(Vec::new()));
-        let sink = Arc::clone(&seen);
-        (Reporter::new(move |e| sink.lock().unwrap().push(e)), seen)
-    }
-
-    /// Each step's last state, in the order steps were first reported.
-    fn ends(seen: &Seen) -> Vec<String> {
-        let mut out: Vec<(String, String)> = Vec::new();
-        for e in seen.lock().unwrap().iter() {
-            match out.iter_mut().find(|(s, _)| s == e.step) {
-                Some(found) => found.1 = e.state.to_owned(),
-                None => out.push((e.step.to_owned(), e.state.to_owned())),
-            }
-        }
-        out.into_iter().map(|(s, st)| format!("{s}:{st}")).collect()
-    }
-
-    fn detail(seen: &Seen, step: &str, state: &str) -> String {
-        seen.lock().unwrap().iter().rev().find(|e| e.step == step && e.state == state).and_then(|e| e.detail.clone()).unwrap_or_default()
+    /// The test lab's course on Proxmox, its router on `bridge`.
+    fn pve(bridge: &str) -> Pve {
+        Pve { bridge: bridge.into() }
     }
 
     /// Terraform's and the runner's lines of a run that went all the way.
@@ -375,7 +178,7 @@ mod tests {
     async fn a_run_that_works_reports_every_step_and_tears_down() {
         let (r, seen) = reporter();
         let run = Scripted::new(&ALL_THE_WAY, None);
-        let ran = test(&r, &run, "vmbr1").await;
+        let ran = lab_run::test(&r, &run, pve("vmbr1")).await;
         assert!(ran.result.is_ok() && ran.cleaned);
         assert_eq!(ends(&seen), ["image:ok", "network:ok", "vm:ok", "uplink:ok", "ssh:ok", "command:ok", "cleanup:ok"]);
         // The steps the plan lists after the connection and the preparation, in its order.
@@ -393,7 +196,7 @@ mod tests {
         let (r, seen) = reporter();
         let raw = "terraform apply failed: Error: Resource postcondition failed … VM `router` got no IPv4 address on its uplink bridge `vmbr1` within 8m: the bridge has no DHCP…";
         let run = Scripted::new(&ALL_THE_WAY[..4], Some(raw));
-        let ran = test(&r, &run, "vmbr1").await;
+        let ran = lab_run::test(&r, &run, pve("vmbr1")).await;
         let err = ran.result.unwrap_err().to_string();
         assert_eq!(
             err,
@@ -410,7 +213,7 @@ mod tests {
     async fn an_unknown_failure_belongs_to_the_running_step() {
         let (r, seen) = reporter();
         let run = Scripted::new(&ALL_THE_WAY[..3], Some("401 Unauthorized"));
-        let ran = test(&r, &run, "vmbr0").await;
+        let ran = lab_run::test(&r, &run, pve("vmbr0")).await;
         assert_eq!(ran.result.unwrap_err().to_string(), "401 Unauthorized");
         assert_eq!(ends(&seen), ["image:ok", "network:fail", "cleanup:ok"]);
     }
@@ -420,7 +223,7 @@ mod tests {
         let (r, seen) = reporter();
         let mut run = Scripted::new(&ALL_THE_WAY, None);
         run.down = Some("terraform destroy failed: timeout");
-        let ran = test(&r, &run, "vmbr1").await;
+        let ran = lab_run::test(&r, &run, pve("vmbr1")).await;
         assert!(!ran.cleaned, "the folder stays so the next test removes the lab first");
         let err = ran.result.unwrap_err().to_string();
         assert!(err.starts_with("Couldn't remove everything the test created on the server (terraform destroy failed: timeout)"), "{err}");
@@ -430,7 +233,7 @@ mod tests {
         let (r, seen) = reporter();
         let mut run = Scripted::new(&[], Some("boom"));
         run.down = Some("still there");
-        let ran = test(&r, &run, "vmbr1").await;
+        let ran = lab_run::test(&r, &run, pve("vmbr1")).await;
         assert!(!ran.cleaned && ran.result.unwrap_err().to_string() == "boom");
         assert_eq!(ends(&seen), ["image:fail", "cleanup:fail"]);
     }
@@ -440,7 +243,7 @@ mod tests {
         let (r, seen) = reporter();
         let mut run = Scripted::new(&ALL_THE_WAY, None);
         run.check_ok = false;
-        let ran = test(&r, &run, "vmbr1").await;
+        let ran = lab_run::test(&r, &run, pve("vmbr1")).await;
         assert!(ran.result.unwrap_err().to_string().starts_with("the command inside the test VM failed"));
         assert_eq!(ends(&seen)[5..], ["command:fail".to_owned(), "cleanup:ok".to_owned()]);
     }

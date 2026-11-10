@@ -117,7 +117,10 @@ pub async fn server_month_to_date_cost(app: AppHandle, id: String) -> Result<f64
 /// [`crate::runtime::server_selftest::run`]).
 #[tauri::command]
 pub async fn server_selftest(app: AppHandle, id: String, events: Channel<Event>) -> Result<()> {
-    crate::runtime::server_selftest::run(&AppDirs::from(&app), &id, move |e| {
+    let dirs = AppDirs::from(&app);
+    let data = dirs.data().ok().map(std::path::Path::to_path_buf);
+    let ovftool = || crate::machine::tools::ovftool::usable(data);
+    crate::runtime::server_selftest::run(&dirs, &id, ovftool, move |e| {
         let _ = events.send(e);
     })
     .await
@@ -225,5 +228,21 @@ mod tests {
         assert!(steps(&events).contains(&pair("prepare", "ok")), "{:?}", steps(&events));
         assert!(!work.exists());
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    }
+
+    #[tokio::test]
+    async fn the_esxi_vm_test_stops_at_its_first_step_without_vagrants_esxi_plugin() {
+        let t = crate::testing::test_app::TestApp::new();
+        // No Vagrant on this computer: no ESXi plugin either.
+        let _tools = crate::platform::exec::fake::Tools::rules(&[("vagrant", None)]);
+        crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
+        t.host("esx", "vmware_esxi", serde_json::json!({ "host": "192.0.2.1", "port": 22, "username": "root" }));
+        crate::runtime::server::secrets::set_secret("esx", "pw").unwrap();
+        let events = crate::testing::test_app::Sink::default();
+        let err = server_selftest(t.handle().clone(), "esx".into(), events.channel()).await.unwrap_err().to_string();
+        assert!(err.starts_with("Labs on ESXi run from this computer") && err.contains("Vagrant is not installed"), "{err}");
+        // Refused up front: the host isn't reached, and no test lab is made.
+        assert_eq!(steps(&events), [("connect".to_string(), "running".to_string()), ("connect".to_string(), "fail".to_string())]);
+        assert!(!t.data().join("selftest").join("server").join("esx").exists());
     }
 }

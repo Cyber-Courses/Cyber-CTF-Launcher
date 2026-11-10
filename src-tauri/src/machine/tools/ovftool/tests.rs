@@ -521,3 +521,13 @@ async fn real_download_is_placed_and_runs() {
     println!("{outcome:?} {:?} {:?}", tool.installed, tool.version);
     assert!(tool.installed || needs_rosetta(&placed), "{:?}", tool.version);
 }
+
+#[test]
+fn what_the_esxi_test_reads_is_the_version_or_why_the_tool_cant_be_used() {
+    let at = |needs_rosetta| Location { source: Source::Fusion, path: "/x/ovftool".into(), needs_rosetta };
+    let tool = |installed, version: Option<&str>| Tool { installed, version: version.map(str::to_owned) };
+    assert_eq!(usable_from(tool(true, Some("VMware ovftool 5.1.0")), Some(&at(false))), Ok("VMware ovftool 5.1.0".into()));
+    assert_eq!(usable_from(tool(false, None), Some(&at(true))), Err("VMware's OVF Tool at /x/ovftool is built for Intel Macs and needs Rosetta".into()));
+    assert_eq!(usable_from(tool(false, None), Some(&at(false))), Err("VMware's OVF Tool at /x/ovftool doesn't run".into()));
+    assert!(usable_from(tool(false, None), None).unwrap_err().contains("wasn't found"));
+}

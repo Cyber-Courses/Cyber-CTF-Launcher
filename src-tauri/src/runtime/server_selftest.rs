@@ -5,13 +5,18 @@
 //!
 //! - `proxmox`: a one-machine Isoloom lab generated for the `proxmox` target and run by the
 //!   Isothrum runner with the server's profile, exactly as a launch runs a lab (see `proxmox`).
-//! - `esxi`: a minimal Vagrantfile booted with `vmware_esxi`, a command run over SSH, then
-//!   `vagrant destroy`.
+//! - `esxi`: the same lab generated for the `vagrant` target and run by the runner on the host
+//!   with Vagrant's `vmware_esxi`, as a launch runs a lab there, once this computer's ESXi plugin
+//!   and OVF Tool are found (see `esxi`).
+//!
+//! Both drive the lab's run the same way (`lab_run`): its steps reported as the run's lines end
+//! them, a command run inside the VM, and the teardown always run.
 //!
 //! Progress goes to the UI as one event per step (`running`, then `ok`/`fail`), as the machine
 //! self-test's does (`selftest_report`).
 
 mod esxi;
+mod lab_run;
 mod proxmox;
 
 use std::future::Future;
@@ -46,17 +51,26 @@ fn work_dir(dirs: &AppDirs, id: &str) -> Result<PathBuf> {
 }
 
 /// Runs a real-VM self-test against host `id`, streaming each step to `sink` (the
-/// `server_selftest` command wraps the webview's channel in one).
-pub(crate) async fn run(dirs: &AppDirs, id: &str, sink: impl Fn(Event) + Send + Sync + 'static) -> Result<()> {
+/// `server_selftest` command wraps the webview's channel in one). `ovftool` checks this computer's
+/// OVF Tool (its version, or why it can't be used), called only for an ESXi host: the machine
+/// layer's check, which the runtime doesn't name.
+pub(crate) async fn run<F>(dirs: &AppDirs, id: &str, ovftool: impl FnOnce() -> F, sink: impl Fn(Event) + Send + Sync + 'static) -> Result<()>
+where
+    F: Future<Output = std::result::Result<String, String>>,
+{
     let _alone = ONE_AT_A_TIME.lock().await;
     let r = Reporter::new(sink);
     // `connect` resolves the host and its secret, which proves the profile and keychain are
-    // usable before anything is created on the host.
+    // usable before anything is created on the host. On ESXi, where labs run from this computer,
+    // it also finds the tools they need here, then reaches the host over SSH.
     let conn = r
         .step(CONNECT, "Reach the host", async {
             let c = server::connection(dirs, id)?;
-            let name = c.name.clone();
-            Ok((c, Some(name)))
+            let said = match c.provider {
+                Provider::VmwareEsxi => esxi::reach(&c, ovftool()).await?,
+                _ => c.name.clone(),
+            };
+            Ok((c, Some(said)))
         })
         .await?;
 
@@ -68,9 +82,10 @@ pub(crate) async fn run(dirs: &AppDirs, id: &str, sink: impl Fn(Event) + Send + 
         let left = r
             .step("prepare", PREPARE, async {
                 r.progress("prepare", PREPARE, "Removing the VM a previous test left on the host…");
-                // Only a Proxmox test creates anything (ESXi's is connection-only).
-                if conn.provider == Provider::Proxmox {
-                    Box::pin(proxmox::leftover(dirs, id, &conn, &work)).await?;
+                match conn.provider {
+                    Provider::Proxmox => Box::pin(lab_run::clear_kept(&work, |dir| proxmox::open(dirs, id, &conn, dir))).await?,
+                    Provider::VmwareEsxi => Box::pin(lab_run::clear_kept(&work, |dir| std::future::ready(esxi::open(dirs, id, &conn, &dir)))).await?,
+                    _ => {}
                 }
                 Ok(((), None))
             })
@@ -83,8 +98,8 @@ pub(crate) async fn run(dirs: &AppDirs, id: &str, sink: impl Fn(Event) + Send + 
 
     let ran = match conn.provider {
         // Boxed: a whole lab's run on the server makes a large future.
-        Provider::Proxmox => Box::pin(proxmox::run(dirs, id, &r, &conn, &work)).await,
-        Provider::VmwareEsxi => esxi::run(&r, &conn, &work).await,
+        Provider::Proxmox => Box::pin(lab_run::prepared_test(&r, proxmox::prepare(dirs, id, &conn, &work), proxmox::course(&conn))).await,
+        Provider::VmwareEsxi => Box::pin(lab_run::prepared_test(&r, async { esxi::prepare(dirs, id, &conn, &work) }, esxi::course(&conn))).await,
         Provider::Aws => Ran::nothing(Error::Invalid("the VM test is for server hosts; AWS labs are billed, so it isn't run as a test".into())),
         _ => Ran::nothing(Error::Invalid("the VM test runs only on a Proxmox or ESXi host".into())),
     };

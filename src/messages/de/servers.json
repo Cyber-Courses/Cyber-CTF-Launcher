@@ -67,7 +67,9 @@
       "vm": "Test-VMs starten",
       "uplink": "Der Router des Labs bekommt eine Adresse am Uplink (DHCP und Internet)",
       "cleanupLab": "Alles entfernen, was der Test angelegt hat",
-      "esxiSsh": "ESXi-Host per SSH erreichen"
+      "esxiImage": "Test-VM in den ESXi-Datastore hochladen",
+      "esxiVm": "Test-VM starten",
+      "esxiAddress": "Die Test-VM bekommt eine Adresse im Netz des Hosts"
     },
     "incomplete": "VM-Test unvollständig: angehalten vor „{step}“",
     "notRun": "Dieser Schritt lief nie, daher kann der Test nicht bestehen. Diese App-Version führt ihn eventuell noch nicht aus: Aktualisiere die App und teste erneut."

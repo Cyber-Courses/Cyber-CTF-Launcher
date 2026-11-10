@@ -67,7 +67,9 @@
       "vm": "Démarrer les VM de test",
       "uplink": "Le routeur du lab obtient une adresse sur l'uplink (DHCP et internet)",
       "cleanupLab": "Supprimer tout ce que le test a créé",
-      "esxiSsh": "Joindre l'hôte ESXi en SSH"
+      "esxiImage": "Envoyer la VM de test sur le datastore ESXi",
+      "esxiVm": "Démarrer la VM de test",
+      "esxiAddress": "La VM de test obtient une adresse sur le réseau de l'hôte"
     },
     "incomplete": "Test de VM incomplet : arrêté avant « {step} »",
     "notRun": "Cette étape ne s'est jamais exécutée, le test ne peut donc pas réussir. Cette version de l'app ne l'exécute peut-être pas encore : mettez l'app à jour et relancez le test."

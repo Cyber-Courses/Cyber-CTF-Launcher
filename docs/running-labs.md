@@ -83,6 +83,13 @@ login`, Azure `az login`, Google Cloud's application-default credentials, OCI's
   the account's budget first.
 - "Test" checks a host without running anything: ESXi's SSH banner, Proxmox's API
   ticket, each cloud's credentials and what a launch needs (`server/cloud_checks.rs`).
+- The "VM test" on a Proxmox or ESXi host runs a throwaway one-machine lab
+  (`cyberctf-server-selftest-<host id>`) through the path a lab takes there, and always removes
+  it (`runtime/server_selftest/`). On Proxmox, the lab is generated for the `proxmox` target. On
+  ESXi, it is generated for `vagrant` and run with `vmware_esxi`. The ESXi test first checks
+  `vagrant-vmware-esxi` and `ovftool` on this machine. Its upload step names the box and its
+  architecture. A test whose teardown failed or was cut short keeps its folder, and the next test
+  removes that lab first.
 
 ### Requirements on a server
 

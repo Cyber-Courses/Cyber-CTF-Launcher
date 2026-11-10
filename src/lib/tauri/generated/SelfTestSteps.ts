@@ -3,5 +3,5 @@
 /** The steps each server's VM test reports, in order, by provider (Rust's `server_selftest::PLANS`). */
 export const SELFTEST_STEPS = {
   proxmox: ["connect", "prepare", "image", "network", "vm", "uplink", "ssh", "command", "cleanup"],
-  vmware_esxi: ["connect", "ssh"],
+  vmware_esxi: ["connect", "prepare", "image", "vm", "address", "ssh", "command", "cleanup"],
 } as const;

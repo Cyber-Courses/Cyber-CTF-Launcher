@@ -153,6 +153,24 @@ pub async fn probe(data: Option<&Path>) -> (Tool, Option<Location>) {
     (tool, Some(location))
 }
 
+/// The OVF Tool a lab on ESXi uploads its VMs with, as the machine check finds it ([`probe`]):
+/// its version, or why it can't be used (`data` is the app data folder). The ESXi server test
+/// checks it before it runs anything on the host.
+pub async fn usable(data: Option<PathBuf>) -> std::result::Result<String, String> {
+    let (tool, location) = probe(data.as_deref()).await;
+    usable_from(tool, location.as_ref())
+}
+
+/// [`usable`] from what the machine check found: the tool's answer, and where it is.
+fn usable_from(tool: Tool, location: Option<&Location>) -> std::result::Result<String, String> {
+    match (tool, location) {
+        (Tool { installed: true, version }, _) => Ok(version.unwrap_or_else(|| "ovftool".into())),
+        (_, Some(at)) if at.needs_rosetta => Err(format!("VMware's OVF Tool at {} is built for Intel Macs and needs Rosetta", at.path)),
+        (_, Some(at)) => Err(format!("VMware's OVF Tool at {} doesn't run", at.path)),
+        (_, None) => Err("VMware's OVF Tool (`ovftool`) wasn't found (it comes with VMware Fusion or Workstation)".into()),
+    }
+}
+
 /// `ovftool --version` of the program `file`: run by name with its folder first on `PATH` (the
 /// exec layer starts tools by name), so it is that file that answers.
 async fn version_of(file: &Path) -> Tool {
