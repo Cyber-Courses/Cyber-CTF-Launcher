@@ -56,9 +56,9 @@ fn pick_instance(labs: &Path, dir: &Path, in_use: &[String]) -> Result<u8> {
         .unwrap_or_default();
     let lab = lab(dir).ok();
     let used = ranges(in_use);
-    let n = (1..=isoloom_spec::instance::MAX)
-        .find(|n| !taken.contains(n) && blocks_clear(lab.as_ref(), *n, &used))
-        .ok_or_else(|| Error::Invalid("no free instance for this lab: 99 labs or networks already take its room on this machine".into()))?;
+    let n = (1..=isoloom_spec::instance::MAX).find(|n| !taken.contains(n) && blocks_clear(lab.as_ref(), *n, &used)).ok_or_else(|| {
+        Error::Invalid(format!("no free instance for this lab: {} labs or networks already take its room on this machine", isoloom_spec::instance::MAX))
+    })?;
     crate::platform::atomic_file::write(&dir.join(INSTANCE_MARKER), n.to_string())?;
     Ok(n)
 }
