@@ -39,15 +39,13 @@ function findingOf(root: string, msg: Diagnostic): { key: string; finding: Findi
   return { key: `${finding.rule} ${file}:${String(span.line_start)}:${String(span.column_start)}`, finding };
 }
 
-/** The clippy and rustc warnings, deduplicated by place (the lib is checked as itself and as its
- *  tests, where a future's size, say, can differ), and the rendered errors. */
-export function runClippy(root: string): { warnings: Finding[]; errors: string[] } {
-  const args = ["clippy", "--manifest-path", path.join(CRATE, "Cargo.toml"), "--all-targets", "--message-format=json"];
-  const run = spawnSync("cargo", args, { cwd: root, encoding: "utf8", maxBuffer: 1 << 30, stdio: ["ignore", "pipe", "inherit"] });
-  if (run.error) throw run.error;
+/** The clippy and rustc warnings in cargo's JSON output `stdout`, deduplicated by place (the lib
+ *  is checked as itself and as its tests, where a future's size, say, can differ), and the rendered
+ *  errors; a run that exited with `status` other than 0 and no error is one too. */
+export function clippyOutcome(root: string, stdout: string, status: number | null): { warnings: Finding[]; errors: string[] } {
   const warnings = new Map<string, Finding>();
   const errors: string[] = [];
-  for (const line of run.stdout.split("\n")) {
+  for (const line of stdout.split("\n")) {
     if (!line.startsWith("{")) continue;
     const msg = (JSON.parse(line) as CargoMessage).message;
     if (!msg) continue;
@@ -55,13 +53,26 @@ export function runClippy(root: string): { warnings: Finding[]; errors: string[]
     const found = findingOf(root, msg);
     if (found) warnings.set(found.key, found.finding);
   }
-  if (run.status !== 0 && errors.length === 0) errors.push(`cargo clippy exited with ${String(run.status)}`);
+  if (status !== 0 && errors.length === 0) errors.push(`cargo clippy exited with ${String(status)}`);
   return { warnings: [...warnings.values()], errors };
 }
 
-/** `cargo machete`'s complaint, or null when every dependency is used. */
-export function runMachete(root: string): string | null {
-  const run = spawnSync("cargo", ["machete", "--skip-target-dir", CRATE], { cwd: root, encoding: "utf8" });
+/** Clippy over the crate and its tests: its warnings and errors (`clippyOutcome`). */
+export function runClippy(root: string): { warnings: Finding[]; errors: string[] } {
+  const args = ["clippy", "--manifest-path", path.join(CRATE, "Cargo.toml"), "--all-targets", "--message-format=json"];
+  const run = spawnSync("cargo", args, { cwd: root, encoding: "utf8", maxBuffer: 1 << 30, stdio: ["ignore", "pipe", "inherit"] });
+  if (run.error) throw run.error;
+  return clippyOutcome(root, run.stdout, run.status);
+}
+
+/** What a `cargo machete` run says: why it couldn't run, the unused dependencies it found, or null
+ *  when every dependency is used. */
+export function macheteComplaint(run: { error?: Error; status: number | null; stdout: string; stderr: string }): string | null {
   if (run.error) return `cargo machete couldn't run (cargo install cargo-machete): ${run.error.message}`;
   return run.status === 0 ? null : run.stdout + run.stderr;
+}
+
+/** `cargo machete`'s complaint over the crate (`macheteComplaint`). */
+export function runMachete(root: string): string | null {
+  return macheteComplaint(spawnSync("cargo", ["machete", "--skip-target-dir", CRATE], { cwd: root, encoding: "utf8" }));
 }

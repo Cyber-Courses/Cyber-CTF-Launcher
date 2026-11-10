@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { anchors, links, slug } from "./check-doc-links.ts";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { anchors, brokenLinks, links, slug } from "./check-doc-links.ts";
 
 describe("check-doc-links", () => {
   it("makes a heading's anchor the way GitHub does", () => {
@@ -16,5 +19,35 @@ describe("check-doc-links", () => {
   it("finds inline links, images and reference definitions, not code", () => {
     const md = "See [a](a.md#x) and ![b](img.png).\n`[c](c.md)`\n\n[d]: https://example.com\n\n```\n[e](e.md)\n```\n";
     expect(links(md)).toEqual(["a.md#x", "img.png", "https://example.com"]);
+  });
+
+  describe("brokenLinks", () => {
+    let dir = "";
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("passes a file, a folder and a heading that exist, and skips a link with a scheme", () => {
+      dir = mkdtempSync(join(tmpdir(), "doc-links-"));
+      mkdirSync(join(dir, "guide"));
+      writeFileSync(join(dir, "other.md"), "# Set up\n");
+      const page = join(dir, "page.md");
+      const md = "[a](other.md) [b](other.md#set-up) [c](guide) [d](#here) [e](https://nowhere.invalid) [f](mailto:x@y.z)\n\n# Here\n";
+      writeFileSync(page, md);
+      expect(brokenLinks(page, md)).toEqual([]);
+    });
+
+    it("names a missing file and a heading the page doesn't have", () => {
+      dir = mkdtempSync(join(tmpdir(), "doc-links-"));
+      writeFileSync(join(dir, "other.md"), "# Set up\n");
+      const page = join(dir, "page.md");
+      const md = "[a](gone.md) [b](other.md#tear-down) [c](#nowhere)\n";
+      writeFileSync(page, md);
+      expect(brokenLinks(page, md)).toEqual([
+        { link: "gone.md", why: "no such file" },
+        { link: "other.md#tear-down", why: "no heading #tear-down" },
+        { link: "#nowhere", why: "no heading #nowhere" },
+      ]);
+    });
   });
 });

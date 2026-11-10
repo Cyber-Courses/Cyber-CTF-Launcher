@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { cdxLicense, licenseFiles, npmNotice, npmSbomOf, purl, type NpmLicensed, type NpmNode } from "./third-party.ts";
+import { cdxLicense, licenseFiles, npmNotice, npmSbomOf, parseArgs, purl, sbomTimestamp, type NpmLicensed, type NpmNode } from "./third-party.ts";
 
 const dirs: string[] = [];
 /** A package folder holding `files` (name: text), removed after the test. */
@@ -101,5 +101,28 @@ describe("third-party: the npm SBOM", () => {
       { ref: "pkg:npm/cyber-ctf-desktop@1.8.9", dependsOn: ["pkg:npm/%40scope/opt@0.1.0", "pkg:npm/a@2.0.0", "pkg:npm/b@2.1.0"] },
       { ref: "pkg:npm/mid@3.0.0", dependsOn: ["pkg:npm/leaf@1.0.0"] },
     ]);
+  });
+});
+
+describe("third-party: the command line", () => {
+  it("takes notices into a file and SBOMs into a folder, each with its default", () => {
+    expect(parseArgs(["notices"])).toEqual({ command: "notices", out: "THIRD_PARTY_NOTICES" });
+    expect(parseArgs(["notices", "out/NOTICES"])).toEqual({ command: "notices", out: "out/NOTICES" });
+    expect(parseArgs(["sbom"])).toEqual({ command: "sbom", out: "sbom" });
+  });
+
+  it("refuses an output that looks like an option, an extra argument and an unknown command", () => {
+    expect(parseArgs(["notices", "--help"])).toBeNull();
+    expect(parseArgs(["sbom", "-o"])).toBeNull();
+    expect(parseArgs(["sbom", "a", "b"])).toBeNull();
+    expect(parseArgs(["licences"])).toBeNull();
+    expect(parseArgs([])).toBeNull();
+  });
+
+  it("stamps the SBOM at SOURCE_DATE_EPOCH when it is set, else now", () => {
+    const now = new Date("2026-11-10T12:00:00Z");
+    expect(sbomTimestamp("1700000000", now)).toBe("2023-11-14T22:13:20.000Z");
+    expect(sbomTimestamp(undefined, now)).toBe("2026-11-10T12:00:00.000Z");
+    expect(sbomTimestamp("", now)).toBe("2026-11-10T12:00:00.000Z");
   });
 });

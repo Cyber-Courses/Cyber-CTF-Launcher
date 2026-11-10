@@ -63,3 +63,22 @@ export function raisedTotals(now: Baseline, before: Baseline, platform: string):
     raised.push(`exceptions: ${String(exceptions(now.exceptions))} (baseline ${String(exceptions(before.exceptions))})`);
   return raised;
 }
+
+/** What a run makes of the measured counts `now` against the committed `before`: whether the
+ *  baseline is rewritten, what fails the run and what is only said. Checking fails on any count
+ *  over the baseline; `update` rewrites it unless a rule's total rose, which `force` accepts too. */
+export function ratchet(
+  now: Baseline,
+  before: Baseline,
+  platform: string,
+  mode: { update: boolean; force: boolean },
+): { write: boolean; failures: string[]; notes: string[] } {
+  if (mode.update) {
+    const raised = mode.force ? [] : raisedTotals(now, before, platform);
+    return { write: raised.length === 0, failures: raised.map((r) => `raised: ${r}`), notes: [] };
+  }
+  const diff = compare(now, before, platform);
+  const notes = diff.lowered.map((l) => `under the baseline (lock it in with --update): ${l}`);
+  if (!before.clippy[platform]) notes.push(`no clippy baseline for ${platform} yet: --update records one`);
+  return { write: false, failures: diff.raised.map((r) => `over the baseline: ${r}`), notes };
+}

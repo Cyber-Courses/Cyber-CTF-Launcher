@@ -18,6 +18,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { helpAsked } from "./lib/cli.ts";
+
 const MANIFEST = "src-tauri/Cargo.toml";
 const ABOUT_CONFIG = "scripts/third-party/about.toml";
 const ABOUT_TEMPLATE = "scripts/third-party/about.hbs";
@@ -192,19 +194,31 @@ function sbom(dir: string): void {
     "-q",
   ]);
   renameSync("src-tauri/cyberctf-rust.cdx.json", join(dir, "cyberctf-rust.cdx.json"));
-  const epoch = process.env.SOURCE_DATE_EPOCH;
-  const timestamp = (epoch ? new Date(Number(epoch) * 1000) : new Date()).toISOString();
-  writeFileSync(join(dir, "cyberctf-npm.cdx.json"), `${JSON.stringify(npmSbom(timestamp), null, 2)}\n`);
+  writeFileSync(join(dir, "cyberctf-npm.cdx.json"), `${JSON.stringify(npmSbom(sbomTimestamp(process.env.SOURCE_DATE_EPOCH, new Date())), null, 2)}\n`);
   console.log(`Wrote ${join(dir, "cyberctf-rust.cdx.json")} and ${join(dir, "cyberctf-npm.cdx.json")}`);
 }
 
-if (process.argv[1]?.endsWith("third-party.ts")) {
-  const command = process.argv.at(2);
-  const out = process.argv.at(3);
-  if (command === "notices") notices(out ?? "THIRD_PARTY_NOTICES");
-  else if (command === "sbom") sbom(out ?? "sbom");
+/** The SBOM's timestamp: `SOURCE_DATE_EPOCH` (seconds) when set, for a reproducible one, else `now`. */
+export function sbomTimestamp(epoch: string | undefined, now: Date): string {
+  return (epoch ? new Date(Number(epoch) * 1000) : now).toISOString();
+}
+
+/** What the arguments ask for: notices into a file or SBOMs into a folder (each with its default),
+ *  or null for anything else, an output that looks like an option (`--help`, a typo) among it. */
+export function parseArgs(args: readonly string[]): { command: "notices" | "sbom"; out: string } | null {
+  const [command, out] = [args.at(0), args.at(1)];
+  if (args.length > 2 || out?.startsWith("-")) return null;
+  if (command === "notices") return { command, out: out ?? "THIRD_PARTY_NOTICES" };
+  if (command === "sbom") return { command, out: out ?? "sbom" };
+  return null;
+}
+
+if (process.argv[1]?.endsWith("third-party.ts") && !helpAsked(import.meta.url, process.argv.slice(2))) {
+  const asked = parseArgs(process.argv.slice(2));
+  if (asked?.command === "notices") notices(asked.out);
+  else if (asked?.command === "sbom") sbom(asked.out);
   else {
-    console.error("usage: third-party.ts notices [file] | sbom [dir]");
+    console.error("usage: third-party.ts notices [file] | sbom [dir] (--help says more)");
     process.exit(2);
   }
 }

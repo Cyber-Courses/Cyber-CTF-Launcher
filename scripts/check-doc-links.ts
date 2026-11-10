@@ -1,14 +1,11 @@
 // Every relative link in the repository's Markdown resolves: the file or folder it names exists,
 // and its `#anchor`, when it has one, is a heading of the Markdown file it points to (GitHub's
 // anchor rules). External links (http, mailto) aren't fetched. Runs in CI (`pnpm check:docs`).
-//
-// Links to docs/reference/policy.md are reported but don't fail until that page exists.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 
-/** Pages another change adds: a link to them is reported, not failed, until they exist. */
-const PENDING = new Set(["docs/reference/policy.md"]);
+import { helpAsked } from "./lib/cli.ts";
 
 /** GitHub's anchor for a heading: lowercase, punctuation dropped, spaces to hyphens. */
 export function slug(heading: string): string {
@@ -64,34 +61,36 @@ function anchorsOf(file: string): Set<string> {
   return a;
 }
 
-/** Why `link` in `file` is broken, or null when it resolves; `target` is the file it names. */
-function problem(file: string, link: string): { target: string; why: string } | null {
+/** Why `link` in `file` is broken, or null when it resolves. */
+function problem(file: string, link: string): string | null {
   const [path, anchor] = link.split("#", 2) as [string, string | undefined];
   const target = path ? normalize(join(dirname(file), decodeURIComponent(path))) : file;
-  if (!existsSync(target)) return { target, why: "no such file" };
+  if (!existsSync(target)) return "no such file";
   const isPage = target.endsWith(".md") && statSync(target).isFile();
-  if (anchor && isPage && !anchorsOf(target).has(anchor.toLowerCase())) return { target, why: `no heading #${anchor}` };
+  if (anchor && isPage && !anchorsOf(target).has(anchor.toLowerCase())) return `no heading #${anchor}`;
   return null;
+}
+
+/** The broken links of `file` (its text `markdown`), each with why; a link with a scheme (http,
+ *  mailto) isn't followed. */
+export function brokenLinks(file: string, markdown: string): { link: string; why: string }[] {
+  return links(markdown).flatMap((link) => {
+    const why = /^[a-z][a-z0-9+.-]*:/i.test(link) ? null : problem(file, link);
+    return why ? [{ link, why }] : [];
+  });
 }
 
 function check(): number {
   const files = markdownFiles();
   let broken = 0;
   for (const file of files) {
-    for (const link of links(readFileSync(file, "utf8"))) {
-      if (/^[a-z][a-z0-9+.-]*:/i.test(link)) continue;
-      const found = problem(file, link);
-      if (!found) continue;
-      if (PENDING.has(found.target)) {
-        console.log(`pending: ${file}: ${link} (${found.why})`);
-      } else {
-        console.error(`${file}: ${link}: ${found.why}`);
-        broken++;
-      }
+    for (const { link, why } of brokenLinks(file, readFileSync(file, "utf8"))) {
+      console.error(`${file}: ${link}: ${why}`);
+      broken++;
     }
   }
   console.log(`${String(files.length)} Markdown files checked, ${String(broken)} broken links.`);
   return broken;
 }
 
-if (process.argv[1]?.endsWith("check-doc-links.ts")) process.exit(check() > 0 ? 1 : 0);
+if (process.argv[1]?.endsWith("check-doc-links.ts") && !helpAsked(import.meta.url, process.argv.slice(2))) process.exit(check() > 0 ? 1 : 0);

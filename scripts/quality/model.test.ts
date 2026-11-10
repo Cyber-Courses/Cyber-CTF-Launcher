@@ -41,3 +41,18 @@ describe("repoRelative", () => {
     expect(repoRelative("/code/launcher", "/code/isoloom/crates/core/spec/src/lib.rs", path.posix)).toBe("../isoloom/crates/core/spec/src/lib.rs");
   });
 });
+
+describe("areaOf", () => {
+  it("puts the crate's files under their top module, its root files and manifest under rs:root", () => {
+    expect(areaOf("src-tauri/src/runtime/lab/names.rs")).toBe("rs:runtime");
+    expect(areaOf("src-tauri/src/cloud.rs")).toBe("rs:cloud");
+    for (const root of ["src-tauri/src/lib.rs", "src-tauri/src/main.rs", "src-tauri/src/error.rs", "src-tauri/build.rs"]) expect(areaOf(root)).toBe("rs:root");
+  });
+
+  it("puts the frontend's files under their feature or folder, and a file at the top under ts:root", () => {
+    expect(areaOf("src/features/labs/lab-row.tsx")).toBe("ts:features/labs");
+    expect(areaOf("src/lib/settings.ts")).toBe("ts:lib");
+    expect(areaOf("scripts/quality/main.ts")).toBe("ts:scripts");
+    expect(areaOf("package.json")).toBe("ts:root");
+  });
+});

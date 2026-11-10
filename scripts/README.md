@@ -13,6 +13,7 @@ Each runner takes `--help`, which prints its header (what it does, its knobs).
 | `check-doc-links.ts`       | `pnpm check:docs`                  | every relative link and `#anchor` in the repository's Markdown resolves                                  |
 | `third-party.ts`           | `pnpm notices`, `pnpm sbom`        | THIRD_PARTY_NOTICES (cargo-about + the npm licences) and the CycloneDX SBOMs a release ships             |
 | `lib/suite.sh`             | (sourced)                          | what every suite runner shares: `ONLY` / `SKIP` / `STRICT`, verdicts, logged steps, Node from `.nvmrc`   |
+| `lib/cli.ts`               | (imported)                         | what the TypeScript runners share: `--help` prints the header comment, as `suite_help` does              |
 
 `e2e/desktop/run.sh` (the desktop end-to-end) is a suite runner too, kept beside its specs.
 [`docs/testing/`](../docs/testing/README.md) says what each layer proves.

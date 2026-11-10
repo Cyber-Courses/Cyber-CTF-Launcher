@@ -9,6 +9,8 @@
 // matching crate are skipped — there is nothing to compare.
 import { readFileSync } from "node:fs";
 
+import { helpAsked } from "./lib/cli.ts";
+
 interface Version {
   major: number;
   minor: number;
@@ -97,7 +99,7 @@ export function check(pnpmLock: string, cargoLock: string): { code: number; mess
   return { code: 0, message: `Tauri version consistency OK (${String(checked)} JS package(s) checked against their Rust crates).` };
 }
 
-if (process.argv[1]?.endsWith("check-tauri-versions.ts")) {
+if (process.argv[1]?.endsWith("check-tauri-versions.ts") && !helpAsked(import.meta.url, process.argv.slice(2))) {
   const { code, message } = check(readFileSync("pnpm-lock.yaml", "utf8"), readFileSync("src-tauri/Cargo.lock", "utf8"));
   (code === 0 ? console.log : console.error)(message);
   process.exit(code);

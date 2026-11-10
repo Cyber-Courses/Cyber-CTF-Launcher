@@ -6,11 +6,13 @@
 //   pnpm quality --update        lower the baseline (refused if a rule's total rose)
 //   pnpm quality --update --force   accept new counts too (a new rule; reviewed in the diff)
 //   pnpm quality --list [prefix] print every finding, by area (e.g. --list rs:machine)
+//   pnpm quality --help          this text
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { type Baseline, compare, raisedTotals, readBaseline, writeBaseline } from "./baseline.ts";
+import { helpAsked } from "../lib/cli.ts";
+import { type Baseline, ratchet, readBaseline, writeBaseline } from "./baseline.ts";
 import { runClippy, runMachete } from "./clippy.ts";
 import { eslintExceptions, lintedFiles, runEslint } from "./eslint.ts";
 import { type Finding, type Measure, areaOf, countExceptions, countFindings, sorted, sortedKeys, total } from "./model.ts";
@@ -58,29 +60,17 @@ function list(m: Measure, prefix: string): void {
   for (const f of all) console.log(`${areaOf(f.file)}\t${f.rule}\t${f.file}:${String(f.line)}\t${f.message}`);
 }
 
-/** Prints each line, after `prefix`. */
-function printAll(print: (line: string) => void, lines: readonly string[], prefix = ""): void {
-  for (const line of lines) print(prefix + line);
-}
-
 async function main(args: readonly string[]): Promise<number> {
   const { measured, errors } = await measure();
   if (args[0] === "--list") list(measured, args[1] ?? "");
   const before = readBaseline(BASELINE);
   const now = toBaseline(measured, before);
   console.log(`Violations outside runtime/ (${process.platform}):\n${summary(now)}`);
-  printAll(console.error, errors);
-  if (args.includes("--update")) {
-    const raised = args.includes("--force") ? [] : raisedTotals(now, before, process.platform);
-    printAll(console.error, raised, "raised: ");
-    if (raised.length === 0) writeBaseline(BASELINE, now);
-    return errors.length > 0 || raised.length > 0 ? 1 : 0;
-  }
-  const diff = compare(now, before, process.platform);
-  printAll(console.error, diff.raised, "over the baseline: ");
-  printAll(console.log, diff.lowered, "under the baseline (lock it in with --update): ");
-  if (!before.clippy[process.platform]) console.log(`no clippy baseline for ${process.platform} yet: --update records one`);
-  return errors.length > 0 || diff.raised.length > 0 ? 1 : 0;
+  const { write, failures, notes } = ratchet(now, before, process.platform, { update: args.includes("--update"), force: args.includes("--force") });
+  for (const line of [...errors, ...failures]) console.error(line);
+  for (const line of notes) console.log(line);
+  if (write) writeBaseline(BASELINE, now);
+  return errors.length > 0 || failures.length > 0 ? 1 : 0;
 }
 
-process.exitCode = await main(process.argv.slice(2));
+if (!helpAsked(import.meta.url, process.argv.slice(2))) process.exitCode = await main(process.argv.slice(2));
