@@ -10,6 +10,7 @@ import {
   getVmProvider,
   setAttackImage,
   setLastTest,
+  validImage,
 } from "@/lib/settings";
 
 // What each getter does with a value that is in storage but not one it wrote: an older
@@ -98,5 +99,19 @@ describe("settings: stray values in storage", () => {
     expect(getPortMode()).toBeNull();
     localStorage.setItem("cyberctf.labs.ports", "random");
     expect(getPortMode()).toBe("random");
+  });
+});
+
+describe("validImage", () => {
+  it("takes a plain image reference, the core's own pattern", () => {
+    for (const image of ["cyberctf/attack-box", "ghcr.io/org/img:1.2@sha256:abc", "registry.local:5000/team/wordpress:6.4", "a-", "a".repeat(200)]) {
+      expect(validImage(image), image).toBe(true);
+    }
+  });
+
+  it("refuses what reads as a docker option, an empty or too long name, and characters a name hasn't", () => {
+    for (const image of ["", "-v", "--privileged", "a b", "img; rm -rf /", "é", "img\n", "a".repeat(201)]) {
+      expect(validImage(image), JSON.stringify(image)).toBe(false);
+    }
   });
 });

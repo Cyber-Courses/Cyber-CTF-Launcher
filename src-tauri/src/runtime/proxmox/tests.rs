@@ -17,6 +17,7 @@ fn recognises_token_ids() {
     assert!(!is_token("root@pam"));
     assert!(!is_token("root!x"));
     assert!(!is_token("root@pam!"));
+    assert!(is_token("api@pve!ci!2") && is_token("@!x") && !is_token("root!x@pam"), "the realm comes before the first `!`");
     assert_eq!(token_user("root@pam!cyberctf"), "root@pam");
     assert_eq!(ssh_user("root@pam!cyberctf"), "root");
     assert_eq!(ssh_user("admin@pve"), "admin");

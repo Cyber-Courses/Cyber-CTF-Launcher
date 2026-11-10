@@ -10,6 +10,7 @@ import type {
   SystemReport,
 } from "@/lib/tauri";
 import { CLOUD_PROVIDERS, HOST_KINDS, PROVIDER_NAMES, isCloudProvider, isServerProvider } from "@/lib/tauri";
+import { TOKEN_PATTERN } from "@/lib/tauri/generated/Patterns";
 import {
   AWS_REGIONS,
   AZURE_LOCATIONS,
@@ -95,11 +96,8 @@ export function startingSetup(kind: string | null, provider: string | null): { f
 export type SignIn = "sshKey" | "token" | "password";
 
 /** Whether `username` is a Proxmox API token id (`user@realm!name`) rather than a user: the
- *  backend's rule (`proxmox::is_token`), which the form reads as it is typed. */
-export function isProxmoxToken(username: string): boolean {
-  const bang = username.indexOf("!");
-  return bang >= 0 && username.slice(0, bang).includes("@") && username.slice(bang + 1) !== "";
-}
+ *  backend's own pattern (`TOKEN_PATTERN`), which the form reads as it is typed. */
+export const isProxmoxToken = (username: string): boolean => TOKEN_PATTERN.test(username);
 
 /** A saved host's sign-in; a new Proxmox setup starts on the SSH key. */
 export function initialSignIn(v: ServerHostInput): SignIn {

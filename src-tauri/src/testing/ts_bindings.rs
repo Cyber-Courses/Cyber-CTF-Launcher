@@ -100,6 +100,7 @@ fn write_values(dir: &Path) {
     write_deploy_log(dir);
     write_setup_shapes(dir);
     write_error_codes(dir);
+    write_patterns(dir);
 }
 
 /// The file of the machines the setup's plan is tested on ([`machine::setup::shapes`]), each as
@@ -278,6 +279,31 @@ fn write_error_codes(dir: &Path) {
 /// The generated file of the error codes said as their own message (a value, not a type).
 const ERROR_CODES: &str = "ErrorCodes";
 
+/// The file of the patterns the webview checks a value by as it is typed, the core's own
+/// (`regex` and JavaScript read them alike): an attack box image, a Proxmox token id (not a type:
+/// imported by its path, not from the index).
+fn write_patterns(dir: &Path) {
+    let pattern =
+        |doc: &str, name: &str, source: &str| format!("/** {doc} */\nexport const {name} = new RegExp({});\n", serde_json::to_string(source).unwrap());
+    let text = format!(
+        "{HEADER}\n{}\n{}",
+        pattern(
+            "An image the core runs (Rust's `docker::IMAGE_PATTERN`): plain ASCII name characters, not starting with a dash.",
+            "IMAGE_PATTERN",
+            crate::platform::exec::IMAGE_PATTERN
+        ),
+        pattern(
+            "A Proxmox API token id, `user@realm!name`, rather than a user (Rust's `proxmox::TOKEN_PATTERN`).",
+            "TOKEN_PATTERN",
+            runtime::proxmox::TOKEN_PATTERN
+        ),
+    );
+    fs::write(dir.join(format!("{PATTERNS}.ts")), text).unwrap();
+}
+
+/// The generated file of the input patterns (values, not types).
+const PATTERNS: &str = "Patterns";
+
 /// The `.ts` files in `dir` (none when it doesn't exist), by name.
 fn ts_files(dir: &Path) -> Vec<std::ffi::OsString> {
     let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
@@ -320,6 +346,7 @@ fn write_index(dir: &Path) {
                 && n != DEPLOY_LOG
                 && n != SETUP_SHAPES
                 && n != ERROR_CODES
+                && n != PATTERNS
         })
         .collect();
     names.sort();

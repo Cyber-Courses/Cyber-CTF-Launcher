@@ -52,9 +52,18 @@ pub fn with_default_realm(username: &str) -> String {
     token.map_or_else(|| user.clone(), |t| format!("{user}!{t}"))
 }
 
-/// `user@realm!name`: a Proxmox API token id rather than a user.
+/// A Proxmox API token id rather than a user, as a pattern: `user@realm!name`, a realm before
+/// the first `!` and a name after it. The setup form tells a token from a user by it as it is
+/// typed (the generated `Patterns.ts`), so it is written in the syntax both regex engines read.
+pub const TOKEN_PATTERN: &str = r"^[^!]*@[^!]*![\s\S]+$";
+
+/// [`TOKEN_PATTERN`], compiled; None never happens (a test compiles it), and would read every
+/// username as a user.
+static TOKEN: std::sync::LazyLock<Option<regex::Regex>> = std::sync::LazyLock::new(|| regex::Regex::new(TOKEN_PATTERN).ok());
+
+/// Whether `username` is a Proxmox API token id ([`TOKEN_PATTERN`]) rather than a user.
 pub fn is_token(username: &str) -> bool {
-    username.split_once('!').is_some_and(|(user, name)| user.contains('@') && !name.is_empty())
+    TOKEN.as_ref().is_some_and(|re| re.is_match(username))
 }
 
 /// The user a token belongs to (`root@pam!cyberctf` -> `root@pam`).

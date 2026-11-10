@@ -16,6 +16,9 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
 
+/// The image pattern, for the bindings the tests write (`testing::ts_bindings`).
+#[cfg(test)]
+pub use docker::IMAGE_PATTERN;
 #[cfg(target_os = "linux")]
 pub use docker::login_name;
 pub use docker::{ImageRef, docker_denied, docker_denied_error, groups_pending, valid_image};

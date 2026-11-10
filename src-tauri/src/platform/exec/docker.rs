@@ -36,13 +36,18 @@ pub(super) fn cli_config() -> Option<String> {
     std::fs::read_to_string(dir.join("config.json")).ok()
 }
 
-/// An image reference safe to pass to the Docker CLI: a normal `registry/name:tag@digest`,
-/// nothing that reads as a flag.
+/// An image reference safe to pass to the Docker CLI, as a pattern: a normal
+/// `registry/name:tag@digest` of plain ASCII name characters, 1 to 200 of them, not starting with
+/// a dash (it would read as a flag). The webview checks the attack box's custom image by it as it
+/// is typed (the generated `Patterns.ts`), so it is written in the syntax both regex engines read.
+pub const IMAGE_PATTERN: &str = r"^[A-Za-z0-9._/:@][A-Za-z0-9._/:@\-]{0,199}$";
+
+/// [`IMAGE_PATTERN`], compiled; None never happens (a test compiles it), and would refuse every image.
+static IMAGE: std::sync::LazyLock<Option<regex::Regex>> = std::sync::LazyLock::new(|| regex::Regex::new(IMAGE_PATTERN).ok());
+
+/// Whether `image` is a reference safe to pass to the Docker CLI ([`IMAGE_PATTERN`]).
 pub fn valid_image(image: &str) -> bool {
-    !image.is_empty()
-        && image.len() <= 200
-        && !image.starts_with('-')
-        && image.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | ':' | '@'))
+    IMAGE.as_ref().is_some_and(|re| re.is_match(image))
 }
 
 /// An image reference's parts, `[registry/]repository[:tag][@digest]`, the digest left out:
@@ -212,6 +217,8 @@ mod tests {
         assert!(valid_image("cyberctf/attack-box") && valid_image("ghcr.io/org/img:1.2@sha256:abc") && valid_image("nwodtuhs/exegol:free"));
         assert!(!valid_image("--privileged") && !valid_image("-v") && !valid_image("a b") && !valid_image("") && !valid_image(&"a".repeat(201)));
         assert!(!valid_image("img; rm -rf /"));
+        assert!(IMAGE.is_some(), "the pattern compiles");
+        assert!(valid_image(&"a".repeat(200)) && valid_image("a-") && !valid_image("é") && !valid_image("img\n"));
     }
 
     #[test]

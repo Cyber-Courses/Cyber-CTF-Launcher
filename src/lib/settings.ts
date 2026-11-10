@@ -1,4 +1,5 @@
 import { DOCKER_ENGINES, LOCAL_PROVIDERS, type DockerEngine, type Provider } from "@/lib/tauri";
+import { IMAGE_PATTERN } from "@/lib/tauri/generated/Patterns";
 import { translate } from "@/lib/i18n";
 import { readStored, readStoredOneOf, writeStored } from "@/lib/local-store";
 import { ignore } from "@/lib/failure";
@@ -120,11 +121,9 @@ export function setVmProvider(provider: Provider | null) {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(VM_PROVIDER_CHANGED));
 }
 
-/** An image name the core will run (`valid_image` in src-tauri/src/platform/exec/docker.rs): plain ASCII name characters, no
- *  leading dash (it would read as a `docker` option). */
-export function validImage(image: string): boolean {
-  return image.length > 0 && image.length <= 200 && !image.startsWith("-") && /^[A-Za-z0-9._\-/:@]+$/.test(image);
-}
+/** An image name the core will run: the core's own pattern (`IMAGE_PATTERN`), plain ASCII name
+ *  characters, no leading dash (it would read as a `docker` option). */
+export const validImage = (image: string): boolean => IMAGE_PATTERN.test(image);
 
 const TEST_KEY = "cyberctf.selftest.";
 
