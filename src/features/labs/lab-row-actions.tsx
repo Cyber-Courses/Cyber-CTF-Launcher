@@ -15,7 +15,7 @@ function RowButton({ danger = false, ...props }: ButtonHTMLAttributes<HTMLButton
 }
 
 /** Where a row's lab stands, as its action reads it. */
-export type RowActionState = {
+type RowActionState = {
   running: boolean;
   parked: LabStatus["parked"] | false;
   /** This session runs an operation on it. */
