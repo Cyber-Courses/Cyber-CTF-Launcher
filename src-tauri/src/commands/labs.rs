@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use tauri::ipc::Channel;
 
+use super::lines;
 use crate::AppHandle;
 use crate::app::deploy_worker::{self, Job, Op};
 use crate::app::operations::{self, ActiveOperation};
@@ -43,7 +44,7 @@ pub async fn lab_launch(
     };
     // The deploy runs in a detached worker process, so quitting (or crashing) the app never cuts a
     // vagrant/docker/terraform run short; this command only follows the worker's log.
-    let launch = labs::prepare_launch(&AppDirs::from(&app), request, &channel_log(logs.clone())).await?;
+    let launch = labs::prepare_launch(&AppDirs::from(&app), request, &lines(logs.clone())).await?;
     deploy_worker::run_job(&app, Job::from(launch), logs).await
 }
 
@@ -76,13 +77,6 @@ pub async fn lab_deploy_log(app: AppHandle, id: String) -> Result<String> {
     operations::lab_deploy_log(AppDirs::from(&app), id).await
 }
 
-/// A log sink that streams each line to the UI.
-fn channel_log(logs: Channel<String>) -> impl Fn(String) + Send + Sync + 'static {
-    move |line: String| {
-        let _ = logs.send(line);
-    }
-}
-
 fn check_image(image: &str) -> Result<()> {
     if crate::platform::exec::valid_image(image) { Ok(()) } else { Err(Error::Invalid(format!("invalid attack-box image `{image}`"))) }
 }
@@ -94,7 +88,7 @@ fn valid_machine_name(m: &str) -> bool {
 
 #[tauri::command]
 pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
-    stop_lab(&AppDirs::from(&app), &id, runtime, channel_log(logs)).await
+    stop_lab(&AppDirs::from(&app), &id, runtime, lines(logs)).await
 }
 
 /// Stops lab `id` wherever it runs, the deploy still running in its worker ended first (see
@@ -284,7 +278,7 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
         // window or the agent waits, rather than halting the VMs the attach is working in.
         let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
         let run = with_attack_box(&dirs, &dir, &id, runtime)?;
-        let mut log = channel_log(logs);
+        let mut log = lines(logs);
         let image = image.unwrap_or_else(|| attack_machine::default_image().to_owned());
         let attach = run.add(&dirs, &image, network.as_deref(), &mut log);
         // Only an image pulled on this machine is the app's to account for.
@@ -304,7 +298,7 @@ pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, log
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
         let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
-        with_attack_box(&dirs, &dir, &id, runtime)?.remove(&dirs, &mut channel_log(logs)).await
+        with_attack_box(&dirs, &dir, &id, runtime)?.remove(&dirs, &mut lines(logs)).await
     })
     .await
 }
@@ -320,7 +314,7 @@ pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> R
 
 #[cfg(test)]
 mod tests {
-    use super::{AttachPick, LabSource, channel_log, check_image, valid_machine_name};
+    use super::{AttachPick, LabSource, check_image, lines, valid_machine_name};
     use super::{
         attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_default_place, lab_launch, lab_launch_local, lab_park,
         lab_provision, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools, running_labs,
@@ -337,7 +331,7 @@ mod tests {
         let dirs = t.dirs();
         let dir = super::lab_dir(&dirs, id)?;
         let lab = crate::runtime::LabRef { dir: &dir, id, runtime: Runtime::Docker };
-        crate::runtime::start(&dirs, lab, crate::runtime::Destination::default(), &[], super::channel_log(logs)).await
+        crate::runtime::start(&dirs, lab, crate::runtime::Destination::default(), &[], super::lines(logs)).await
     }
 
     fn sink() -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {
@@ -526,7 +520,7 @@ mod tests {
     #[test]
     fn logs_stream_line_by_line_to_the_ui() {
         let sink = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let log = channel_log(channel(sink.clone()));
+        let log = lines(channel(sink.clone()));
         log("Starting…".into());
         log("Done".into());
         assert_eq!(*sink.lock().unwrap(), ["\"Starting…\"", "\"Done\""]);

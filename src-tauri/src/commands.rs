@@ -20,8 +20,9 @@ use tauri::ipc::Channel;
 
 use crate::AppRuntime;
 
-/// A line callback that sends each line on `logs` (a closed window drops them).
-fn lines(logs: Channel<String>) -> impl FnMut(String) + Send + 'static {
+/// A line sink that sends each line on `logs` (a closed window drops them). An `Fn`, so it also
+/// serves where a callback is shared or called through `&`.
+fn lines(logs: Channel<String>) -> impl Fn(String) + Send + Sync + 'static {
     move |line| {
         let _ = logs.send(line);
     }
