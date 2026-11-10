@@ -68,21 +68,29 @@ impl Dependency {
         }
     }
 
-    /// Its name, as a message names it.
+    /// Its name on this OS, as the setup installs it here (Docker Engine on Linux, from Docker's
+    /// repository; Docker Desktop elsewhere): what a message and Settings' list of installed
+    /// tools call it.
     pub fn name(self) -> &'static str {
+        self.name_on(std::env::consts::OS)
+    }
+
+    /// [`name`](Self::name) on `os`.
+    fn name_on(self, os: &str) -> &'static str {
         match self {
-            Dependency::Docker => "Docker",
+            Dependency::Docker if os == "linux" => "Docker Engine",
+            Dependency::Docker => "Docker Desktop",
             Dependency::Vagrant => "Vagrant",
             Dependency::Terraform => "Terraform",
             Dependency::Virtualbox => "VirtualBox",
             Dependency::Qemu => "QEMU",
             Dependency::Utm => "UTM",
             Dependency::Libvirt => "libvirt",
-            Dependency::Awscli => "the AWS CLI",
-            Dependency::Azurecli => "the Azure CLI",
-            Dependency::Gcloud => "the Google Cloud CLI",
+            Dependency::Awscli => "AWS CLI",
+            Dependency::Azurecli => "Azure CLI",
+            Dependency::Gcloud => "Google Cloud CLI",
             Dependency::Wsl => "WSL 2",
-            Dependency::VmwareUtility => "the Vagrant VMware Utility",
+            Dependency::VmwareUtility => "Vagrant VMware Utility",
             Dependency::Hyperv => "Hyper-V",
         }
     }
@@ -371,6 +379,14 @@ pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn docker_is_named_as_the_setup_installs_it_on_each_os() {
+        assert_eq!(Dependency::Docker.name_on("linux"), "Docker Engine");
+        assert_eq!(Dependency::Docker.name_on("macos"), "Docker Desktop");
+        assert_eq!(Dependency::Docker.name_on("windows"), "Docker Desktop");
+        assert_eq!(Dependency::Awscli.name_on("linux"), "AWS CLI");
+    }
 
     #[test]
     fn each_tool_runs_on_its_os_and_is_refused_elsewhere_in_one_message() {

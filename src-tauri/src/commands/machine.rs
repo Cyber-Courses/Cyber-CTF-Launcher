@@ -16,7 +16,7 @@ use crate::machine::system::metrics::{self, MachineMetrics};
 use crate::machine::system::{self, SystemReport, docker, wsl};
 use crate::machine::tools::install::{self, Dependency};
 use crate::machine::tools::ovftool;
-use crate::machine::tools::uninstall::{self, InstalledTool};
+use crate::machine::tools::uninstall::{self, Installed};
 use crate::machine::workloads::{self, Workload};
 use crate::platform::AppDirs;
 use crate::runtime::Runtime;
@@ -136,7 +136,7 @@ pub async fn install_vagrant_plugin(plugin: String, logs: Channel<String>) -> Re
 
 /// The tools Cyber CTF installed, which Cleanup may remove.
 #[tauri::command]
-pub async fn installed_tools(app: AppHandle) -> Vec<InstalledTool> {
+pub async fn installed_tools(app: AppHandle) -> Vec<Installed> {
     uninstall::installed_tools(AppDirs::from(&app)).await
 }
 

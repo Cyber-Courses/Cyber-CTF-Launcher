@@ -12,8 +12,21 @@ use super::steps::{Step, run_steps, step};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 
+/// A tool Cyber CTF installed, as Settings lists it: the record, and its name here.
+#[derive(Serialize, Clone, Debug, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "InstalledTool")]
+pub struct Installed {
+    /// The tool.
+    pub dependency: Dependency,
+    /// Its name on this OS ([`Dependency::name`]).
+    pub name: &'static str,
+    /// When Cyber CTF installed it, in seconds since the Unix epoch.
+    pub at: u64,
+}
+
 /// A tool Cyber CTF installed, on record so Cleanup removes only what it installed.
-#[derive(Serialize, Deserialize, Clone, Debug, ts_rs::TS)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledTool {
     /// The tool.
@@ -197,9 +210,9 @@ fn confirmed(tools: Vec<InstalledTool>) -> Vec<InstalledTool> {
 
 /// The tools Cyber CTF installed on this machine (and hasn't removed since). Installs that only
 /// opened the vendor's installer count once the tool is found.
-pub async fn installed_tools(dirs: AppDirs) -> Vec<InstalledTool> {
+pub async fn installed_tools(dirs: AppDirs) -> Vec<Installed> {
     confirm_pending(&dirs).await;
-    confirmed(load_or_logged(&dirs))
+    confirmed(load_or_logged(&dirs)).into_iter().map(|t| Installed { dependency: t.dependency, name: t.dependency.name(), at: t.at }).collect()
 }
 
 /// Runs a shell script with the OS admin prompt on macOS (the same dialog an installer shows).

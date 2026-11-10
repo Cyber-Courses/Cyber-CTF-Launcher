@@ -572,7 +572,7 @@ describe("InstalledToolsPanel", () => {
 
   it("offers no removal the policy turns off, and says why", async () => {
     installTauri({
-      installed_tools: () => [{ dependency: "vagrant", at: Math.floor(Date.now() / 1000) - 3600 }],
+      installed_tools: () => [{ dependency: "vagrant", name: "Vagrant", at: Math.floor(Date.now() / 1000) - 3600 }],
       ...INSTALLS_OFF,
     });
     render(<InstalledToolsPanel />);
@@ -584,8 +584,8 @@ describe("InstalledToolsPanel", () => {
   it("removes a tool only once the system dialog confirms it, then re-reads the list", async () => {
     let yes = false;
     let tools = [
-      { dependency: "vagrant", at: Math.floor(Date.now() / 1000) - 3600 },
-      { dependency: "docker", at: Math.floor(Date.now() / 1000) - 60 },
+      { dependency: "vagrant", name: "Vagrant", at: Math.floor(Date.now() / 1000) - 3600 },
+      { dependency: "docker", name: "Docker Desktop", at: Math.floor(Date.now() / 1000) - 60 },
     ];
     const calls = installTauri({
       "plugin:dialog|message": (a) => answersDialog(yes)(a),
@@ -618,10 +618,11 @@ describe("InstalledToolsPanel", () => {
     expect(calls.filter((c) => c.cmd === "installed_tools")).toHaveLength(2);
   });
 
-  it("names Docker Engine on Linux and shows a failed removal", async () => {
-    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (X11; Linux x86_64)");
+  it("names a tool as the core does (Docker Engine on Linux), not by the browser's guess, and shows a failed removal", async () => {
+    // Regression: the panel guessed Docker Engine or Desktop from the user agent.
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)");
     installTauri({
-      installed_tools: () => [{ dependency: "docker", at: Math.floor(Date.now() / 1000) }],
+      installed_tools: () => [{ dependency: "docker", name: "Docker Engine", at: Math.floor(Date.now() / 1000) }],
       uninstall_dependency: () => {
         rejectWith("apt is locked");
       },

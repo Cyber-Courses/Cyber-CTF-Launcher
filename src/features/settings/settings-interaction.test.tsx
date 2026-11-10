@@ -166,8 +166,8 @@ describe("Settings: attack box image", () => {
 
 describe("Settings: removing tools Cyber CTF installed", () => {
   const tools = () => [
-    { dependency: "vagrant", at: Math.floor(Date.now() / 1000) - 3600 },
-    { dependency: "terraform", at: Math.floor(Date.now() / 1000) - 60 },
+    { dependency: "vagrant", name: "Vagrant", at: Math.floor(Date.now() / 1000) - 3600 },
+    { dependency: "terraform", name: "Terraform", at: Math.floor(Date.now() / 1000) - 60 },
   ];
 
   it("asks in the system dialog, and Cancel uninstalls nothing", async () => {

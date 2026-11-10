@@ -2,7 +2,7 @@
 import type { Dependency } from "./Dependency";
 
 /**
- * A tool Cyber CTF installed, on record so Cleanup removes only what it installed.
+ * A tool Cyber CTF installed, as Settings lists it: the record, and its name here.
  */
 export type InstalledTool = { 
 /**
@@ -10,11 +10,10 @@ export type InstalledTool = {
  */
 dependency: Dependency, 
 /**
+ * Its name on this OS ([`Dependency::name`]).
+ */
+name: string, 
+/**
  * When Cyber CTF installed it, in seconds since the Unix epoch.
  */
-at: number, 
-/**
- * The install only opened the vendor's own installer (macOS casks) or the tool isn't found
- * yet: it counts as installed by Cyber CTF once a later check finds it. Never shown.
- */
-pending?: boolean, };
+at: number, };

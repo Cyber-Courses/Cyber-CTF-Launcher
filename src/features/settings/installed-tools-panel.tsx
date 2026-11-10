@@ -14,28 +14,6 @@ import { translate, useT } from "@/lib/i18n";
 import { useToolInstallsOff } from "@/lib/use-managed";
 import { InstallsOffNote } from "@/components/installs-off-note";
 
-const NAMES: Record<Dependency, string> = {
-  docker: "Docker",
-  vagrant: "Vagrant",
-  terraform: "Terraform",
-  virtualbox: "VirtualBox",
-  qemu: "QEMU",
-  utm: "UTM",
-  libvirt: "libvirt",
-  awscli: "AWS CLI",
-  azurecli: "Azure CLI",
-  gcloud: "Google Cloud CLI",
-  wsl: "WSL",
-  "vmware-utility": "Vagrant VMware Utility",
-  hyperv: "Hyper-V",
-};
-
-/** What setup installed under that name: Docker Engine on Linux (Docker's apt repository), Docker Desktop elsewhere. */
-function toolName(dep: Dependency): string {
-  if (dep !== "docker") return NAMES[dep];
-  return typeof navigator !== "undefined" && navigator.userAgent.includes("Linux") ? "Docker Engine" : "Docker Desktop";
-}
-
 /** The tools Cyber CTF installed, and their removal with its log (the list is read again after). */
 function useInstalledTools() {
   const [tools, setTools] = useState<InstalledTool[]>([]);
@@ -47,14 +25,14 @@ function useInstalledTools() {
   }, []);
   useEffect(load, [load]);
 
-  const uninstall = async (dep: Dependency) => {
-    setRemoving(dep);
-    await run(translate("settings.installedTools.logRemoving", { name: toolName(dep) }), (onLog) => uninstallDependency(dep, onLog));
+  const uninstall = async ({ dependency, name }: InstalledTool) => {
+    setRemoving(dependency);
+    await run(translate("settings.installedTools.logRemoving", { name }), (onLog) => uninstallDependency(dependency, onLog));
     setRemoving(null);
     load();
   };
-  const remove = (dep: Dependency) => {
-    void uninstall(dep);
+  const remove = (tool: InstalledTool) => {
+    void uninstall(tool);
   };
   return { tools, removing, log: lines ?? [], remove };
 }
@@ -77,7 +55,7 @@ function ToolRow({
   return (
     <li className="flex min-h-[3.25rem] items-center gap-3 border-t border-border px-4 py-2 transition-colors first:border-t-0 hover:bg-glass">
       <div className="min-w-0 flex-1">
-        <p className="text-[0.8125rem] font-medium text-foreground">{toolName(tool.dependency)}</p>
+        <p className="text-[0.8125rem] font-medium text-foreground">{tool.name}</p>
         <p className="font-mono text-[0.6875rem] text-faint">{t("settings.installedTools.installedAgo", { ago: formatAgo(tool.at * 1000, now) })}</p>
       </div>
       <Button variant="outline" size="xs" disabled={removing !== null || !canRemove} onClick={onRemove}>
@@ -113,13 +91,13 @@ export function InstalledToolsPanel() {
             removing={removing}
             canRemove={!installsOff}
             onRemove={() => {
-              const name = toolName(tool.dependency);
+              const { name } = tool;
               void confirmDestructive({
                 title: t("settings.installedTools.confirmTitle", { name }),
                 message: t("settings.installedTools.confirmBody", { name }),
                 confirm: t("settings.installedTools.remove"),
               }).then((yes) => {
-                if (yes) remove(tool.dependency);
+                if (yes) remove(tool);
               });
             }}
           />
